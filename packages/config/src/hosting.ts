@@ -13,7 +13,7 @@
  * `docs/plans/2026-04-17-ggui-oss-split.md` §8 for the lock.
  *
  * Open packages must not import from this module. Consumers today
- * are all closed (`@guuey-private/runtime`, `cloud/`). If an open
+ * are all closed (`@guuey-private/types`, `cloud/`). If an open
  * package ever needs one of these types, re-evaluate the
  * classification before adding the import — most likely the open
  * code should not depend on hosted-control-plane shapes at all.

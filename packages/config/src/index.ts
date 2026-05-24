@@ -5,7 +5,7 @@
  * deploy events).
  *
  * Consumers: the closed `guuey` CLI, closed Guuey-side platform
- * code (`@guuey-private/runtime`, `cloud/`). Open packages must
+ * code (`@guuey-private/types`, `cloud/`). Open packages must
  * not import from here — see `docs/plans/2026-04-17-ggui-oss-split.md`
  * §8 (correction 2026-04-18) for the ownership lock rationale.
  */
