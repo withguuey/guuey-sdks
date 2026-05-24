@@ -7,8 +7,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "guuey": "./dist/cli.js",
-    "ggui": "./dist/cli-legacy.js"
+    "guuey": "./dist/cli.js"
   },
   "exports": {
     ".": {
