@@ -1,0 +1,57 @@
+{
+  "name": "@guuey/cli",
+  "version": "0.0.1",
+  "description": "CLI tool for the guuey platform",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "guuey": "./dist/cli.js",
+    "ggui": "./dist/cli-legacy.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.6",
+    "@types/ws": "^8.5.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@ggui-ai/predefined": "0.1.0-rc.1",
+    "@ggui-ai/protocol": "0.1.0-rc.1",
+    "@ggui-ai/ui-gen": "0.1.0-rc.1",
+    "@guuey/config": "workspace:*",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
+    "ws": "^8.18.0",
+    "yaml": "^2.8.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/loqu-co/guuey.git",
+    "directory": "oss/packages/cli"
+  },
+  "homepage": "https://github.com/loqu-co/guuey/tree/main/oss/packages/cli",
+  "bugs": {
+    "url": "https://github.com/loqu-co/guuey/issues"
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "name": "@guuey/state",
+  "version": "0.0.0",
+  "description": "Open-source KV client for MCP servers hosted on guuey.com. Scoped per (user, mcp). The MCP stays stateless from its own POV while the user retains data ownership. Hard caps are the product — see docs/principles/mcp-hosting-policy.md.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./context": {
+      "types": "./dist/context.d.ts",
+      "import": "./dist/context.js"
+    },
+    "./errors": {
+      "types": "./dist/errors.d.ts",
+      "import": "./dist/errors.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "guuey",
+    "kv",
+    "key-value",
+    "storage"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/loqu-co/guuey.git",
+    "directory": "oss/packages/state"
+  },
+  "homepage": "https://github.com/loqu-co/guuey/tree/main/oss/packages/state",
+  "bugs": {
+    "url": "https://github.com/loqu-co/guuey/issues"
+  }
+}
