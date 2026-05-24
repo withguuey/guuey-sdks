@@ -201,8 +201,8 @@ Global Options:
   --version                     Show version
 
 Environment Variables:
-  GGUI_HOST                     Override platform host URL
-  GGUI_API_KEY                  Override configured API key
+  GUUEY_HOST                     Override platform host URL
+  GUUEY_API_KEY                  Override configured API key
   GGUI_APP_ID                   Override configured app ID
 
 Project Config (guuey.json):
@@ -235,7 +235,7 @@ async function main(): Promise<void> {
 
   // --host: override platform URL for this command
   if (flags.host) {
-    process.env.GGUI_HOST = flags.host as string;
+    process.env.GUUEY_HOST = flags.host as string;
   }
 
   // --config: override config file path

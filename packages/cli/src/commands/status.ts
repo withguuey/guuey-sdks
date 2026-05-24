@@ -19,7 +19,7 @@ export async function status(): Promise<void> {
   const auth = requireAuth(); // PAT required — API keys are blocked from management routes
 
   if (!config.apiUrl) {
-    out.error('REST API URL not configured. Ensure amplify_outputs.json is present or set GGUI_API_URL.');
+    out.error('REST API URL not configured. Ensure amplify_outputs.json is present or set GUUEY_API_URL.');
     process.exit(1);
   }
 

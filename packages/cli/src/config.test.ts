@@ -174,12 +174,12 @@ describe('loadProjectConfig — null semantics', () => {
 
 describe('resolveConfig — URL overrides', () => {
   const ENV_KEYS = [
-    'GGUI_HOST',
-    'GGUI_BRIDGE_URL',
-    'GGUI_WS_URL',
-    'GGUI_RENDER_URL',
+    'GUUEY_HOST',
+    'GUUEY_BRIDGE_URL',
+    'GUUEY_WS_URL',
+    'GUUEY_RENDER_URL',
     'GGUI_APP_ID',
-    'GGUI_API_KEY',
+    'GUUEY_API_KEY',
   ];
   const savedEnv: Record<string, string | undefined> = {};
 
@@ -217,8 +217,8 @@ describe('resolveConfig — URL overrides', () => {
     expect(resolved.host).toBe('https://platform.guuey.com');
   });
 
-  it('honours `GGUI_HOST` env var override', () => {
-    process.env.GGUI_HOST = 'https://env.example.com';
+  it('honours `GUUEY_HOST` env var override', () => {
+    process.env.GUUEY_HOST = 'https://env.example.com';
     const resolved = resolveConfig();
     expect(resolved.host).toBe('https://env.example.com');
   });

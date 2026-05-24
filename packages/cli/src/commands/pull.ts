@@ -15,7 +15,7 @@
  *      overlay (hosted API has no source for these).
  *   5. Write through `saveProjectConfig`.
  *
- * URL overrides (GGUI_HOST, GGUI_BRIDGE_URL, etc.) stay in `.env` —
+ * URL overrides (GUUEY_HOST, GUUEY_BRIDGE_URL, etc.) stay in `.env` —
  * `guuey pull` never touches them. `ggui.json` (the open portable
  * manifest) is never read or written by this command.
  *
@@ -262,7 +262,7 @@ async function apiRequest(
 ): Promise<Response> {
   if (!config.apiUrl) {
     throw new Error(
-      'REST API URL not configured. Ensure amplify_outputs.json is present or set GGUI_API_URL.',
+      'REST API URL not configured. Ensure amplify_outputs.json is present or set GUUEY_API_URL.',
     );
   }
   const baseUrl = config.apiUrl.replace(/\/$/, '');

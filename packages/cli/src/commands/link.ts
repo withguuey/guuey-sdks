@@ -137,7 +137,7 @@ export async function link(flags?: Record<string, string | true>): Promise<void>
 
     // Write guuey.json with the canonical hosted-overlay shape.
     // §8.4: URL overrides do NOT live in the overlay — `baseUrl` is
-    // relocated to `.env` below as `GGUI_HOST`. `project.workspaceId`
+    // relocated to `.env` below as `GUUEY_HOST`. `project.workspaceId`
     // is populated by a subsequent `guuey pull`.
     saveProjectConfig({
       schema: '1',
@@ -151,7 +151,7 @@ export async function link(flags?: Record<string, string | true>): Promise<void>
     const envPath = join(process.cwd(), '.env');
     await writeFile(
       envPath,
-      `GGUI_API_KEY=${data.apiKey}\nGGUI_HOST=${baseUrl}\n`,
+      `GUUEY_API_KEY=${data.apiKey}\nGUUEY_HOST=${baseUrl}\n`,
     );
     console.log('  API key + host saved to .env');
 

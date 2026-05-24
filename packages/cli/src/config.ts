@@ -109,8 +109,8 @@ export function getConfigPath(): string {
  * `docs/plans/2026-04-17-ggui-oss-split.md` §8 and
  * `docs/plans/2026-04-20-guuey-pull-migration-question.md`.
  *
- * Local-dev URL overrides (`GGUI_HOST`, `GGUI_BRIDGE_URL`,
- * `GGUI_WS_URL`, `GGUI_RENDER_URL`) are NO LONGER stored in
+ * Local-dev URL overrides (`GUUEY_HOST`, `GUUEY_BRIDGE_URL`,
+ * `GUUEY_WS_URL`, `GUUEY_RENDER_URL`) are NO LONGER stored in
  * `guuey.json` — they live in `.env` only per §8.4. `guuey create`
  * writes them to `.env` on project creation when a sandbox
  * `amplify_outputs.json` surfaces them.
@@ -282,8 +282,8 @@ export interface ResolvedConfig {
  * Resolve config with priority:
  *   env vars > amplify_outputs.json > ~/.guuey/config.json > defaults
  *
- * Local-dev URL overrides (`GGUI_HOST`, `GGUI_BRIDGE_URL`,
- * `GGUI_WS_URL`, `GGUI_RENDER_URL`) are `.env`-only — they no longer
+ * Local-dev URL overrides (`GUUEY_HOST`, `GUUEY_BRIDGE_URL`,
+ * `GUUEY_WS_URL`, `GUUEY_RENDER_URL`) are `.env`-only — they no longer
  * fall back through `guuey.json` per §8.4 (the overlay is hosted
  * state, not a URL-pinning surface). `appId` still comes from the
  * canonical overlay's `project.id` when present, since that IS
@@ -295,19 +295,19 @@ export function resolveConfig(): ResolvedConfig {
   const amplify = loadAmplifyOutputs();
 
   return {
-    host: process.env.GGUI_HOST ?? global.host ?? DEFAULT_ENDPOINT,
-    apiKey: process.env.GGUI_API_KEY ?? global.apiKey,
+    host: process.env.GUUEY_HOST ?? global.host ?? DEFAULT_ENDPOINT,
+    apiKey: process.env.GUUEY_API_KEY ?? global.apiKey,
     appId: process.env.GGUI_APP_ID ?? project?.project?.id ?? global.appId,
     bridgeUrl:
-      process.env.GGUI_BRIDGE_URL ??
+      process.env.GUUEY_BRIDGE_URL ??
       amplify.bridgeWebSocketUrl ??
       DEFAULT_BRIDGE_URL,
     wsUrl:
-      process.env.GGUI_WS_URL ?? amplify.websocketUrl ?? DEFAULT_WS_URL,
-    renderUrl: process.env.GGUI_RENDER_URL ?? amplify.renderUrl,
+      process.env.GUUEY_WS_URL ?? amplify.websocketUrl ?? DEFAULT_WS_URL,
+    renderUrl: process.env.GUUEY_RENDER_URL ?? amplify.renderUrl,
     appConfigUrl: process.env.GGUI_APP_CONFIG_URL ?? amplify.appConfigUrl,
-    mcpUrl: process.env.GGUI_MCP_URL ?? amplify.mcpUrl ?? DEFAULT_MCP_URL,
-    apiUrl: process.env.GGUI_API_URL ?? amplify.apiUrl,
+    mcpUrl: process.env.GUUEY_MCP_URL ?? amplify.mcpUrl ?? DEFAULT_MCP_URL,
+    apiUrl: process.env.GUUEY_API_URL ?? amplify.apiUrl,
     platformUrl: process.env.GGUI_PLATFORM_URL ?? amplify.platformUrl,
     portalUrl: process.env.GGUI_PORTAL_URL ?? amplify.portalUrl,
     mcpProxyUrl: process.env.GGUI_MCP_PROXY_URL ?? amplify.mcpProxyUrl,

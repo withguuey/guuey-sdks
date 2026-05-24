@@ -795,7 +795,7 @@ async function apiRequest(
   body?: unknown,
 ): Promise<Response> {
   if (!config.apiUrl) {
-    throw new Error('REST API URL not configured. Ensure amplify_outputs.json is present or set GGUI_API_URL.');
+    throw new Error('REST API URL not configured. Ensure amplify_outputs.json is present or set GUUEY_API_URL.');
   }
   const baseUrl = config.apiUrl.replace(/\/$/, '');
   return fetch(`${baseUrl}${path}`, {

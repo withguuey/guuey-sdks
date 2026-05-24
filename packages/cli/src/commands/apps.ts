@@ -29,7 +29,7 @@ function getApiBase(): string {
   const apiUrl = config.apiUrl;
   if (!apiUrl) {
     throw new Error(
-      'REST API URL not configured. Ensure amplify_outputs.json is present or set GGUI_API_URL.',
+      'REST API URL not configured. Ensure amplify_outputs.json is present or set GUUEY_API_URL.',
     );
   }
   return apiUrl.replace(/\/$/, '');
