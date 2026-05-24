@@ -69,16 +69,16 @@ export async function link(flags?: Record<string, string | true>): Promise<void>
 
     // 3. Discover tools
     try {
-      const toolsRes = await fetch(`${endpointUrl}/ggui/tools`);
+      const toolsRes = await fetch(`${endpointUrl}/guuey/tools`);
       if (toolsRes.ok) {
         const data = (await toolsRes.json()) as { tools?: Array<{ name: string }> };
         const tools = data.tools ?? [];
         console.log(
-          `  /ggui/tools -> ${tools.length} tools found${tools.length > 0 ? ': ' + tools.map((t) => t.name).join(', ') : ''}`,
+          `  /guuey/tools -> ${tools.length} tools found${tools.length > 0 ? ': ' + tools.map((t) => t.name).join(', ') : ''}`,
         );
       }
     } catch {
-      console.log('  /ggui/tools -> could not discover tools');
+      console.log('  /guuey/tools -> could not discover tools');
     }
 
     // 4. Get app name

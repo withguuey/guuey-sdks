@@ -197,7 +197,7 @@ let _amplifyOutputsCache: AmplifyOutputs | null = null;
 
 /**
  * Load amplify_outputs.json from known locations.
- * Search order: cwd, cloud/amplify_outputs.json, up to 3 parents.
+ * Search order: cwd, backend/amplify_outputs.json, up to 3 parents.
  * Returns empty object if not found (common for external developers).
  */
 export function loadAmplifyOutputs(): AmplifyOutputs {
