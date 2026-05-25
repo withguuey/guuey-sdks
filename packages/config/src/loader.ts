@@ -1,24 +1,26 @@
 /**
  * Node-only filesystem helpers for `guuey.json`.
  *
- * This package (`@guuey/config`) is closed, private, and
- * Node-only — the loader ships on the single barrel, no browser-safe
- * subpath split is needed.
+ * Pure-parse helpers (`parseGuueyJson` / `safeParseGuueyJson`) live in
+ * `./schema.ts` and are safe to import from non-Node contexts. This
+ * module adds the file-resolution layer: reading `guuey.json` from disk,
+ * inlining `agent.systemPrompt.file` references, and producing the
+ * snapshot the deploy upload + pod boot both read.
  *
  * Intended callers:
  *
- * - `guuey` CLI (closed hosted): `guuey deploy` reads `guuey.json` as
- *   input; `guuey pull` writes it back as output. Walks upward from
- *   `process.cwd()` to find the project-root file.
- * - Guuey hosted control-plane services that validate a submitted
- *   `guuey.json` blob server-side (hosted receive-side of deploy).
+ * - `@guuey/cli` — `guuey deploy` reads + inlines + POSTs the snapshot.
+ * - `@guuey/cli` — `guuey pull` writes back from a hosted record.
+ * - Guuey control-plane services that re-validate a submitted snapshot
+ *   server-side before persisting to `AgentDeployment`.
+ * - `nocode-runtime` / `@guuey/host` — pod reads the snapshot back at boot
+ *   (from the env-injected JSON, not directly from disk).
  *
- * The open `ggui` CLI must NOT import from this package. `guuey.json`
- * is Guuey platform config, not open protocol (see
- * `docs/plans/2026-04-17-ggui-oss-split.md` §8 correction 2026-04-18).
+ * The open `ggui` ecosystem must NOT import from this package — `guuey.json`
+ * is Guuey platform config, not protocol shape.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import {
   GUUEY_JSON_FILENAME,
   GuueyJsonV1,
@@ -34,8 +36,8 @@ export const DEFAULT_FIND_MAX_DEPTH = 8;
  * `null` if no file is found within `maxDepth` levels.
  *
  * Stops when the filesystem root is reached, regardless of `maxDepth`.
- * Never throws — a missing file is a valid result ("not in a ggui
- * project"), not an error.
+ * Never throws — a missing file is a valid result (not in a guuey project),
+ * not an error.
  */
 export function findGuueyJson(
   startDir: string = process.cwd(),
@@ -53,121 +55,128 @@ export function findGuueyJson(
 }
 
 /**
- * Error thrown when a `guuey.json` fails to load — missing file,
- * malformed JSON, or schema validation failure. Wraps the underlying
- * cause (`SyntaxError` / `ZodError`) on `.cause` so callers can
- * inspect issue lists when they need to.
- */
-export class GuueyJsonLoadError extends Error {
-  readonly path: string;
-
-  constructor(message: string, path: string, options?: { cause?: unknown }) {
-    super(message, options);
-    this.name = 'GuueyJsonLoadError';
-    this.path = path;
-  }
-}
-
-/**
- * Read `guuey.json` at `path`, parse JSON, validate against the v1
- * schema. Returns the fully-defaulted document.
+ * Read + parse `guuey.json` from `path`. Throws if the file is missing,
+ * unreadable, malformed JSON, or fails schema validation.
  *
- * Throws {@link GuueyJsonLoadError} if:
- *   - the file does not exist,
- *   - the file is not valid JSON,
- *   - the document fails schema validation (cause set to `ZodError`).
+ * Does NOT resolve `agent.systemPrompt.file` references. Use
+ * {@link loadGuueyJson} for file resolution.
  */
-export function loadGuueyJson(path: string): GuueyJsonV1 {
+export function readGuueyJsonFile(path: string): GuueyJsonV1 {
   if (!existsSync(path)) {
-    throw new GuueyJsonLoadError(
-      `guuey.json not found at ${path}`,
-      path,
-    );
+    throw new Error(`guuey.json not found at ${path}`);
   }
-
-  let raw: string;
+  const raw = readFileSync(path, 'utf-8');
+  let json: unknown;
   try {
-    raw = readFileSync(path, 'utf-8');
-  } catch (cause) {
-    throw new GuueyJsonLoadError(
-      `Failed to read guuey.json at ${path}`,
-      path,
-      { cause },
-    );
+    json = JSON.parse(raw);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`guuey.json at ${path} is not valid JSON: ${msg}`);
   }
-
-  let decoded: unknown;
-  try {
-    decoded = JSON.parse(raw);
-  } catch (cause) {
-    throw new GuueyJsonLoadError(
-      `guuey.json at ${path} is not valid JSON`,
-      path,
-      { cause },
-    );
-  }
-
-  try {
-    return parseGuueyJson(decoded);
-  } catch (cause) {
-    throw new GuueyJsonLoadError(
-      `guuey.json at ${path} failed schema validation`,
-      path,
-      { cause },
-    );
-  }
+  return parseGuueyJson(json);
 }
 
 /**
- * Result of {@link safeLoadGuueyJson} — mirrors the shape of
- * `z.safeParse` so consumers can branch without try/catch.
- */
-export type SafeLoadResult =
-  | { success: true; data: GuueyJsonV1 }
-  | { success: false; error: GuueyJsonLoadError };
-
-/**
- * Non-throwing variant of {@link loadGuueyJson}. Returns a
- * discriminated result. Use this in CLI surfaces that render issue
- * lists directly.
- */
-export function safeLoadGuueyJson(path: string): SafeLoadResult {
-  try {
-    return { success: true, data: loadGuueyJson(path) };
-  } catch (error) {
-    if (error instanceof GuueyJsonLoadError) {
-      return { success: false, error };
-    }
-    throw error;
-  }
-}
-
-/**
- * Serialize and write a `guuey.json` document to `path`. The input
- * is re-validated against the v1 schema before writing so a caller
- * cannot accidentally persist a document that wouldn't round-trip
- * through {@link loadGuueyJson}.
+ * Write a `guuey.json` to disk at `path` with stable 2-space indentation
+ * and a trailing newline.
  *
- * Output format: 2-space indent, trailing newline — matches the
- * scaffolder output and typical prettier defaults.
+ * Validates the document against {@link GuueyJsonV1} before writing — bad
+ * data never lands on disk.
  */
-export function saveGuueyJson(path: string, doc: GuueyJsonV1): void {
+export function writeGuueyJsonFile(path: string, doc: GuueyJsonV1): void {
   const validated = parseGuueyJson(doc);
-  writeFileSync(path, JSON.stringify(validated, null, 2) + '\n', 'utf-8');
+  const serialized = JSON.stringify(validated, null, 2) + '\n';
+  writeFileSync(path, serialized, 'utf-8');
 }
 
-// Re-export schema + types from the same subpath so Node callers
-// can do `import { parseGuueyJson, loadGuueyJson } from
-// '@guuey/config'` without two imports. Browser
-// callers use the root barrel, which also exports the schema.
-export {
-  GUUEY_JSON_FILENAME,
-  GuueyJsonV1,
-  parseGuueyJson,
-  safeParseGuueyJson,
-} from './schema.js';
-export type {
-  GuueyJsonDeploy,
-  GuueyJsonDeployment,
-  GuueyJsonProject,
-} from './schema.js';
+/**
+ * Result of resolving file-references inside a `guuey.json` document.
+ *
+ * `doc` is the original document (with `{ file: '...' }` references intact);
+ * `resolvedSystemPrompt` is the inlined string the pod will use at boot.
+ */
+export interface ResolvedGuueyJson {
+  /** The original parsed document. */
+  doc: GuueyJsonV1;
+  /**
+   * The resolved system prompt — either the inline string from
+   * `agent.systemPrompt`, or the file contents when it was a
+   * `{ file: '...' }` reference, or `undefined` when no prompt was set
+   * (caller falls back to `GUUEY_DEFAULT_SYSTEM_PROMPT`).
+   */
+  resolvedSystemPrompt: string | undefined;
+  /** Absolute path the document was loaded from (for diagnostics). */
+  sourcePath: string;
+}
+
+/**
+ * Load + parse `guuey.json` from `path`, then resolve any
+ * `agent.systemPrompt.file` reference into an inlined string.
+ *
+ * The resolved prompt is returned alongside the parsed document so callers
+ * can choose how to use it. The deploy snapshot inlines it into a string
+ * shape; the pod runtime reads the resolved prompt directly.
+ *
+ * Throws if the file is missing, unreadable, malformed, fails schema
+ * validation, OR the systemPrompt.file path resolves to a missing or
+ * unreadable file.
+ */
+export function loadGuueyJson(path: string): ResolvedGuueyJson {
+  const doc = readGuueyJsonFile(path);
+  const resolvedSystemPrompt = resolveSystemPrompt(doc, path);
+  return { doc, resolvedSystemPrompt, sourcePath: path };
+}
+
+/**
+ * Resolve `agent.systemPrompt` to a final string (or undefined).
+ *
+ * - Absent → undefined (caller applies platform default).
+ * - Inline string → returned as-is.
+ * - `{ file }` → resolved relative to `guueyJsonPath`'s directory, file read.
+ *
+ * File paths must be relative + must not escape the project root (no
+ * `..` traversal). Absolute paths are rejected — keeps the snapshot
+ * portable across deploy environments.
+ */
+function resolveSystemPrompt(
+  doc: GuueyJsonV1,
+  guueyJsonPath: string,
+): string | undefined {
+  const sp = doc.agent.systemPrompt;
+  if (sp === undefined) return undefined;
+  if (typeof sp === 'string') return sp;
+  // sp = { file: '...' }
+  if (isAbsolute(sp.file)) {
+    throw new Error(
+      `agent.systemPrompt.file must be a relative path (got absolute: ${sp.file})`,
+    );
+  }
+  if (sp.file.split('/').includes('..')) {
+    throw new Error(
+      `agent.systemPrompt.file must not traverse parent directories (got: ${sp.file})`,
+    );
+  }
+  const baseDir = dirname(guueyJsonPath);
+  const resolved = resolve(baseDir, sp.file);
+  if (!existsSync(resolved)) {
+    throw new Error(
+      `agent.systemPrompt.file references missing file: ${sp.file} (resolved to ${resolved})`,
+    );
+  }
+  return readFileSync(resolved, 'utf-8');
+}
+
+/**
+ * Build the snapshot the deploy upload + pod boot consume.
+ *
+ * Replaces `agent.systemPrompt = { file }` with `agent.systemPrompt = <inlined>`
+ * so the snapshot is self-contained. Returns a deep-cloned document
+ * (caller mutations don't leak back).
+ */
+export function buildDeploySnapshot(loaded: ResolvedGuueyJson): GuueyJsonV1 {
+  const cloned: GuueyJsonV1 = JSON.parse(JSON.stringify(loaded.doc));
+  if (loaded.resolvedSystemPrompt !== undefined) {
+    cloned.agent.systemPrompt = loaded.resolvedSystemPrompt;
+  }
+  return cloned;
+}

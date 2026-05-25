@@ -1,174 +1,135 @@
 /**
- * `agent.json` v1 — the declarative agent definition.
+ * `guuey.json#agent` — the agent section.
  *
- * Sibling file to `guuey.json` (hosted-deploy overlay) and `ggui.json`
- * (portable ggui-app identity). `agent.json` is the **agent definition**:
- * the prompt, the model, the framework adapter, the MCP servers the agent
- * may call, and the tool gates. The stock guuey nocode-runtime pod reads
- * this document at boot and configures the framework adapter from it —
- * no agent code required.
+ * The agent section describes the deployable agent: framework + model
+ * + system prompt + MCP host config + platform-feature opt-ins + deploy
+ * config. Read by `@guuey/host` at pod boot to construct the framework
+ * adapter; read by `@guuey/cli` to validate before submitting a deploy.
  *
- * Three-file model:
+ * Lives inside `guuey.json` post-2026-05-25 platform-architecture merge
+ * (slice 7.2). Previously a separate `agent.json` file. See
+ * `docs/plans/2026-05-25-platform-architecture.md` §14.2 for the
+ * field-by-field migration.
  *
- * - `guuey.json`  — hosted overlay (project id, deploy size/region, managed
- *                   MCP proxies). Schema lives in this same package.
- * - `ggui.json`   — open ggui-app identity (slug, gadgets, publicEnv).
- *                   Schema owned by `@ggui-ai/project-config`.
- * - `agent.json`  — declarative agent definition (this file). Schema lives
- *                   in this same package because it's read by Guuey's
- *                   closed pod runtime + closed CLI, not by the open SDK.
+ * **Minimal valid section** (all other fields default):
  *
- * A repo can ship any subset:
- *
- * - `agent.json` alone   → no-code declarative agent, deploys via
- *                          `guuey deploy --config agent.json`, runs on
- *                          stock nocode-runtime pod.
- * - `agent.json` + `Dockerfile` → declarative shape + a code-mode build.
- *                          The Dockerfile path wins; agent.json is metadata.
- * - `Dockerfile` alone   → fully code-mode; agent.json is not required.
- *
- * **Minimal valid document** (the most common shape for launch agents):
- *
- * ```json
- * { "schema": "1", "systemPrompt": { "file": "prompts/system.md" } }
+ * ```jsonc
+ * {
+ *   "framework": "claude-agent-sdk",
+ *   "model": "claude-sonnet-4-6",
+ *   "systemPrompt": { "file": "prompts/system.md" }
+ * }
  * ```
  *
  * Defaults applied by the pod runtime when fields are absent:
  * - `framework`   → `'claude-agent-sdk'`
- * - `mcpServers`  → `{ ggui: { url: 'https://mcp.ggui.ai' } }` (the
- *                    platform default; explicitly declaring `mcpServers`
- *                    REPLACES the default — it is not merged).
- * - `model`       → framework-chosen default (Claude SDK currently picks
- *                    `claude-sonnet-4-6`).
- * - `systemPrompt`→ `GUUEY_DEFAULT_SYSTEM_PROMPT` from `./system-prompt`.
+ * - `mcpServers`  → `{ ggui: { url: 'https://mcp.ggui.ai' } }` (platform default; declaring `mcpServers` REPLACES this — not merged)
+ * - `model`       → framework-chosen default (Claude SDK → `claude-sonnet-4-6`)
+ * - `systemPrompt`→ `GUUEY_DEFAULT_SYSTEM_PROMPT` from `./system-prompt`
+ * - `auth`        → `'anonymous'`
+ * - `memory`      → `'thread'`
+ * - `storage`     → `['user', 'app']`
+ * - `endpoint`    → `{ kind: 'invoke', streaming: true }`
+ * - `deploy`      → `{ size: 'xs', region: 'us-east-1' }`
  *
  * **Rules for extending:**
  *
- * 1. **Additive only within `schema: '1'`.** New optional fields are safe.
- * 2. **Framework-neutral by default.** Fields that are meaningful to only
- *    one adapter (e.g. Claude's `permissions`, OpenAI's `tools.functions`)
- *    belong on a `framework`-scoped sub-block, not at the top level.
- * 3. **No hosted-overlay fields.** Anything Guuey-specific (region, size,
- *    workspace id) belongs in `guuey.json`. Anything ggui-app-specific
- *    (slug, gadgets) belongs in `ggui.json`.
+ * 1. **Additive only within `schema: '1'` (top-level).** New optional fields on existing
+ *    objects are safe. Breaking changes bump the file-level `schema` to `'2'`.
+ * 2. **Framework-neutral by default.** Fields meaningful to only one adapter (e.g. Claude's
+ *    `permissions`, OpenAI's `tools.functions`) belong on a `framework`-scoped sub-block.
  */
 import { z } from 'zod';
+import { AGENT_SIZES } from './hosting.js';
 
 /**
  * Supported framework adapters. The pod runtime selects the matching
- * adapter at boot. `vanilla` skips the framework layer entirely — the
- * agent loop is the bare Anthropic Messages API call with manual MCP
- * tool wiring. Useful for benchmarking and for adapters not yet
- * built.
- *
- * Tuple so we can derive both the zod enum and the static type from
- * one source.
+ * `@guuey/framework-*` adapter at boot. `vanilla` skips the framework
+ * layer entirely — the agent loop is the bare Anthropic Messages API
+ * call with manual MCP tool wiring. Useful for benchmarking and for
+ * adapters not yet built.
  */
 export const AGENT_FRAMEWORKS = [
   'claude-agent-sdk',
-  'openai',
+  'openai-agents-sdk',
   'google-adk',
   'vanilla',
 ] as const;
 export type AgentFramework = (typeof AGENT_FRAMEWORKS)[number];
 
 /**
- * MCP server transport. Stock pod ships with `http` and `sse` support
- * out of the box — those are the URL-based transports the nocode
- * runtime can dial without extra code. `stdio` is reserved for code-
- * mode agents that ship their own MCP binaries in the Dockerfile; the
- * nocode runtime rejects `stdio` entries at validation time because
- * it has no way to spawn the child process safely under gVisor.
+ * MCP server transport for entries in `agent.mcpServers`. Stock pod ships
+ * with `http` and `sse` out of the box. `stdio` is reserved for code-mode
+ * agents that ship their own MCP binaries; the nocode runtime rejects
+ * `stdio` at boot.
  */
 const McpTransportSchema = z.enum(['http', 'sse', 'stdio']);
 
 /**
- * A single MCP server entry. `url` is required for `http`/`sse`;
- * `command` + `args` are required for `stdio`. The schema can't
- * cross-validate that cleanly without a discriminated union (which
- * makes JSON authoring awkward), so we keep the structural shape
- * loose and validate the mode-specific fields at pod boot.
+ * A single MCP server entry inside `agent.mcpServers`.
  *
- * `headers` is forwarded to the MCP server on every request — used
- * for static API keys, project pins, etc. Secrets should NEVER be
- * inlined here; reference them as `${env.NAME}` and let the pod's
- * env-substitution pass fill them from the deploy env block.
+ * Two reference forms supported:
+ *
+ * - **Explicit URL** — `{ url: 'https://mcp.example.com' }` for external or
+ *   guuey-hosted MCP servers reached directly.
+ * - **Guuey-hosted slug ref** — `{ ref: 'guuey://<slug>' }` for MCP servers
+ *   published to the guuey platform via `guuey.mcp.json`. The platform
+ *   resolves the slug at deploy time and inlines the URL.
+ *
+ * `headers` is forwarded on every request. Values may use `${env.NAME}`
+ * placeholders — the pod's env-substitution pass fills them from the
+ * deploy env block. Secrets MUST be referenced via `${env.NAME}` and
+ * declared in `agent.secrets`, never literal-inlined here.
+ *
+ * For OAuth-authed MCP servers, mcp-proxy fronts both forms — it
+ * injects per-user credentials at call time (Phase 3).
  */
 const McpServerSchema = z.strictObject({
-  /** Transport. Default: `http` when only `url` is set. */
   transport: McpTransportSchema.optional(),
-  /** HTTP/SSE MCP endpoint. Required for `http` and `sse`. */
+  /** HTTP/SSE MCP endpoint. Required for `http` and `sse`. Mutually exclusive with `ref` + `command`. */
   url: z.url().optional(),
-  /** Stdio executable. Required for `transport: 'stdio'`. */
+  /** Guuey-hosted MCP server slug reference (e.g. `guuey://todoist`). Resolved at deploy time. */
+  ref: z
+    .string()
+    .regex(/^guuey:\/\/[a-z0-9][a-z0-9-]{0,127}$/, 'must be `guuey://<slug>`')
+    .optional(),
+  /** Stdio executable. Required for `transport: 'stdio'`. Mutually exclusive with `url` + `ref`. */
   command: z.string().min(1).optional(),
   /** Stdio executable arguments. */
   args: z.array(z.string()).optional(),
-  /**
-   * Static headers forwarded on every request. Values may use
-   * `${env.NAME}` placeholders — the pod substitutes from its deploy
-   * env at boot. Secrets are never inlined in the literal value.
-   */
+  /** Static headers forwarded on every request. Values may use `${env.NAME}` placeholders. */
   headers: z.record(z.string().min(1), z.string()).optional(),
 });
 
 /**
- * Tool-gate block. Both lists are optional and additive — the pod
- * applies allowlist first (intersect with tools the MCP server
- * advertises) then denylist (subtract from the result).
- *
- * Tool names are MCP-namespaced: `"<server>.<tool>"` (e.g.
- * `"ggui.suggest_ui"`). A bare tool name (no server prefix) matches
- * the tool across every connected server — useful for catch-all
- * denies like `"shell"` but should be used sparingly.
+ * Tool-gate block — allowlist applied first (intersect with what the MCP
+ * server advertises), then denylist subtracts. Tool names are MCP-namespaced
+ * (`"<server>.<tool>"`). Bare names match across all connected servers.
  */
 const ToolGatesSchema = z.strictObject({
-  /**
-   * If present + non-empty, only listed tools are exposed to the model.
-   * Absent or empty array = no allowlist gating (every advertised tool
-   * is exposed before denylist runs).
-   */
   allowlist: z.array(z.string().min(1)).optional(),
-  /**
-   * Tools to strip even if they would otherwise pass the allowlist.
-   * Always wins over `allowlist`.
-   */
   denylist: z.array(z.string().min(1)).optional(),
 });
 
 /**
- * Runtime knobs the pod applies when constructing the framework
- * adapter. All optional with framework-chosen defaults.
+ * Runtime knobs the pod applies when constructing the framework adapter.
+ * All optional with framework-chosen defaults.
  *
- * - `maxTurns`     — cap on agent loop turns per user message. Stops
- *                    runaway loops on misbehaving prompts. Default:
- *                    framework default (Claude SDK = 25).
- * - `env`          — static env vars exposed to the agent process at
- *                    boot. Use for non-secret config; secrets flow
- *                    through Guuey's deploy env (set via
- *                    `guuey env set NAME=...`), not via this block.
- * - `temperature`  — model sampling temperature passthrough. Most
- *                    agents leave this at framework default.
+ * - `maxTurns`     — cap on agent loop turns per user message. Stops runaway
+ *                    loops on misbehaving prompts. Default: framework default
+ *                    (Claude SDK = 25).
+ * - `temperature`  — model sampling temperature passthrough.
  */
 const RuntimeConfigSchema = z.strictObject({
   maxTurns: z.number().int().min(1).max(200).optional(),
-  env: z.record(z.string().min(1), z.string()).optional(),
   temperature: z.number().min(0).max(2).optional(),
 });
 
 /**
- * Claude Agent SDK-specific knobs. Lives on a `framework` discriminator
- * so other adapters don't accidentally read fields they don't
- * understand. Currently the only adapter-scoped block; OpenAI and
- * Google ADK blocks land additively when their adapter ships.
+ * Claude Agent SDK-specific knobs. Lives on a `framework` discriminator so
+ * other adapters don't accidentally read fields they don't understand.
  */
 const ClaudePermissionsSchema = z.strictObject({
-  /**
-   * Permission mode for the Claude Agent SDK loop. `'default'` is the
-   * SDK default (prompt for sensitive ops); `'acceptEdits'` auto-
-   * approves file edits; `'bypassPermissions'` skips the prompt
-   * machinery entirely. The pod refuses `bypassPermissions` on
-   * production deploys — Guuey-side enforcement, not schema-level.
-   */
   mode: z.enum(['default', 'acceptEdits', 'bypassPermissions']).optional(),
 });
 
@@ -177,107 +138,136 @@ const ClaudeFrameworkConfigSchema = z.strictObject({
 });
 
 /**
- * System prompt. Two shapes for ergonomics:
- *
- * - `string` — inline. Good for one-liners and for prompts that
- *              don't merit a separate file.
- * - `{ file: 'prompts/system.md' }` — file reference resolved
- *              relative to `agent.json`. The loader inlines the
- *              file contents when called via {@link loadAgentJson}
- *              so the pod sees only resolved strings.
- *
- * Multiple file references (`files: [...]`) is intentionally NOT
- * supported in v1 — single-source-of-truth for the prompt simplifies
- * audit and replay. Compose by reading the file and assembling
- * server-side if needed.
+ * System prompt — string inline OR `{ file: 'prompts/system.md' }`.
+ * File references are resolved relative to `guuey.json` by the loader,
+ * which inlines the file contents into the snapshot before deploy upload.
  */
 const SystemPromptSchema = z.union([
   z.string().min(1),
-  z.strictObject({
-    file: z.string().min(1),
-  }),
+  z.strictObject({ file: z.string().min(1) }),
 ]);
 
 /**
- * The authoritative v1 schema.
+ * Bedrock-style invocation endpoint config.
  *
- * `model` is free-form — the framework adapter validates the literal
- * against its own supported set at boot. Pinning a model enum here
- * would force a schema bump every time Anthropic ships a new model.
+ * `kind: 'invoke'` exposes `POST /agent/invoke` with multi-modal input and
+ * SSE response per `docs/plans/2026-05-25-platform-architecture.md` §6.
+ * Reserved for future endpoint kinds (`'connect'` for WebSocket bidirectional).
  */
-export const AgentJsonV1 = z.strictObject({
-  schema: z.literal('1'),
+const EndpointConfigSchema = z.strictObject({
+  kind: z.literal('invoke').optional(),
+  streaming: z.boolean().optional(),
+});
+
+/**
+ * Deploy config — pod size + region.
+ *
+ * Lives inside the `agent` section (was top-level on the pre-merge `guuey.json`).
+ * Mirror shape on `guuey.mcp.json#mcpServer.deploy` (future) — same field set,
+ * same semantics, just attached to a different artifact.
+ *
+ * Latent fields like `tier`, `maxPods`, `idleTimeoutMinutes` exist on the
+ * AgentDeployment DDB model but are platform-managed (Reserved per design
+ * doc §14.3) — not exposed in user-facing config.
+ */
+const DeploySchema = z.strictObject({
+  /** Agent pod size. Canonical list lives in `./hosting.ts#AGENT_SIZES`. */
+  size: z.enum(AGENT_SIZES).optional(),
+  /** AWS region (e.g. `"us-east-1"`). Free-form; control plane enforces the live allow-list. */
+  region: z.string().min(1).optional(),
+});
+
+/**
+ * Auth posture for end-user invocations.
+ *
+ * - `'anonymous'` (default) — guest cookie minted on first invoke; persistent thread.
+ * - `'required'`           — end-user must present a valid Cognito JWT; anonymous rejected.
+ * - `'optional'`           — accept both; identity context reflects which.
+ */
+const AuthSchema = z.enum(['anonymous', 'required', 'optional']);
+
+/**
+ * Memory model. `'thread'` = automatic conversation history (DDB).
+ * Semantic / vector memory deferred to a later schema version.
+ */
+const MemorySchema = z.enum(['thread', 'none']);
+
+/**
+ * VFS scopes to mount into the pod. Empty array = no VFS (still uses thread + state).
+ */
+const StorageScopeSchema = z.array(z.enum(['user', 'app']));
+
+/**
+ * The agent section — composes runtime + platform features + deploy.
+ *
+ * Exported as a zod object so the top-level `GuueyJsonV1` schema (in
+ * `./schema.ts`) can nest it. Static type via {@link GuueyAgent}.
+ */
+export const AgentSectionV1 = z.strictObject({
+  // ── Framework + runtime ──
   framework: z.enum(AGENT_FRAMEWORKS).optional(),
   model: z.string().min(1).optional(),
   systemPrompt: SystemPromptSchema.optional(),
   /**
    * MCP servers the agent may call. **Replaces** the platform default
-   * (`{ ggui: { url: 'https://mcp.ggui.ai' } }`) when present — not
-   * merged. Omit the block to inherit the default; include `ggui`
-   * explicitly if you want it alongside other servers.
+   * (`{ ggui: { url: 'https://mcp.ggui.ai' } }`) when present — not merged.
+   * Omit the block to inherit the default; include `ggui` explicitly to
+   * keep it alongside other servers.
    */
   mcpServers: z.record(z.string().min(1), McpServerSchema).optional(),
   tools: ToolGatesSchema.optional(),
   runtime: RuntimeConfigSchema.optional(),
-  /**
-   * Claude Agent SDK-specific knobs. Only read when
-   * `framework: 'claude-agent-sdk'` (or absent — Claude is default).
-   */
+  /** Claude Agent SDK-specific knobs. Only read when `framework: 'claude-agent-sdk'`. */
   claude: ClaudeFrameworkConfigSchema.optional(),
+
+  // ── Platform features (opt-in, sensible defaults) ──
+  auth: AuthSchema.optional(),
+  memory: MemorySchema.optional(),
+  storage: StorageScopeSchema.optional(),
+
+  // ── Env + secrets ──
+  /** Literal non-sensitive env vars baked into the pod at boot. */
+  env: z.record(z.string().min(1), z.string()).optional(),
+  /**
+   * Names (not values) of secrets the pod needs. Values are set via
+   * `guuey secrets set NAME=...`, stored KMS-encrypted in DDB. Deploy-controller
+   * resolves to values and injects as env vars at pod boot.
+   */
+  secrets: z.array(z.string().min(1)).optional(),
+
+  // ── Invocation endpoint ──
+  endpoint: EndpointConfigSchema.optional(),
+
+  // ── Deploy ──
+  deploy: DeploySchema.optional(),
 });
 
-/** Static TypeScript type derived from the v1 schema. */
-export type AgentJsonV1 = z.infer<typeof AgentJsonV1>;
+/** Static TypeScript type derived from {@link AgentSectionV1}. */
+export type GuueyAgent = z.infer<typeof AgentSectionV1>;
 
 /** Single mcpServers entry type. */
-export type AgentJsonMcpServer = z.infer<typeof McpServerSchema>;
+export type GuueyAgentMcpServer = z.infer<typeof McpServerSchema>;
 
 /** Tool-gate block type. */
-export type AgentJsonToolGates = z.infer<typeof ToolGatesSchema>;
+export type GuueyAgentToolGates = z.infer<typeof ToolGatesSchema>;
 
 /** Runtime-config block type. */
-export type AgentJsonRuntime = z.infer<typeof RuntimeConfigSchema>;
+export type GuueyAgentRuntime = z.infer<typeof RuntimeConfigSchema>;
 
 /** System-prompt shape (string or `{ file }`). */
-export type AgentJsonSystemPrompt = z.infer<typeof SystemPromptSchema>;
+export type GuueyAgentSystemPrompt = z.infer<typeof SystemPromptSchema>;
+
+/** Endpoint config type. */
+export type GuueyAgentEndpoint = z.infer<typeof EndpointConfigSchema>;
+
+/** Deploy config type. */
+export type GuueyAgentDeploy = z.infer<typeof DeploySchema>;
 
 /**
- * Canonical filename — always at the project root, always this name.
- * Exported so tooling uses the same constant instead of hard-coding
- * the string.
+ * Platform default MCP server map. Applied by the pod when `agent.mcpServers`
+ * is absent. Exposed here so non-pod consumers (CLI dry-run, lints) can show
+ * the effective shape without duplicating the literal.
  */
-export const AGENT_JSON_FILENAME = 'agent.json';
-
-/**
- * Platform default MCP server map. Applied by the pod when
- * `agent.json#mcpServers` is absent. Exposed here so non-pod consumers
- * (CLI dry-run, lints) can show the effective shape without
- * duplicating the literal.
- */
-export const DEFAULT_AGENT_MCP_SERVERS: Record<string, AgentJsonMcpServer> = {
+export const DEFAULT_AGENT_MCP_SERVERS: Record<string, GuueyAgentMcpServer> = {
   ggui: { url: 'https://mcp.ggui.ai', transport: 'http' },
 };
-
-/**
- * Parse a raw JSON value into a validated {@link AgentJsonV1}.
- * Throws a `ZodError` with human-readable issues on invalid input.
- *
- * Does NOT resolve `systemPrompt.file` references — that's the
- * loader's job (see {@link loadAgentJson} in `./agent-loader.ts`).
- * Pure parse is safe to run anywhere; file resolution requires a
- * base directory and is Node-only.
- */
-export function parseAgentJson(raw: unknown): AgentJsonV1 {
-  return AgentJsonV1.parse(raw);
-}
-
-/**
- * Safe-parse variant — returns a discriminated `z.safeParse` result.
- * Prefer this inside CLI tooling where you want to render the issue
- * list without try/catch.
- */
-export function safeParseAgentJson(
-  raw: unknown,
-): ReturnType<typeof AgentJsonV1.safeParse> {
-  return AgentJsonV1.safeParse(raw);
-}
