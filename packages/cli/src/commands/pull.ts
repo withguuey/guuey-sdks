@@ -82,62 +82,37 @@ export interface DeploymentsResponse {
  */
 export function mapHostedStateToOverlay(
   app: AppResponse,
-  deployments: DeploymentRow[],
+  _deployments: DeploymentRow[],
   existing: GuueyJsonV1 | null,
 ): GuueyJsonV1 {
-  // `project` block — always emitted (app.id is required on wire).
-  const project: NonNullable<GuueyJsonV1['project']> = { id: app.id };
-  if (app.workspaceId) project.workspaceId = app.workspaceId;
+  if (existing === null) {
+    throw new Error(
+      'mapHostedStateToOverlay requires an existing guuey.json (with at least an `agent` section). Run `guuey create` first to scaffold one.',
+    );
+  }
 
-  // `deploy` block — only emit when at least one sub-field is set.
-  // An empty `deploy: {}` is schema-valid but visually noisy; keep
-  // it absent when all inputs are null.
-  const deploy: NonNullable<GuueyJsonV1['deploy']> = {};
+  // Refresh platform-managed fields (appId, workspaceId, agent.deploy)
+  // from hosted truth; preserve everything else the user owns.
+  const agentDeploy: NonNullable<NonNullable<GuueyJsonV1['agent']>['deploy']> = {
+    ...(existing.agent.deploy ?? {}),
+  };
   if (app.agentSize) {
-    // Narrow at runtime — the canonical schema enum is AGENT_SIZES;
-    // the hosted API returns a string. If the server emits an
-    // unknown size (shouldn't happen; deploy path validates on write),
-    // `saveProjectConfig`'s zod validation will catch it.
-    deploy.size = app.agentSize as NonNullable<
-      NonNullable<GuueyJsonV1['deploy']>['size']
+    agentDeploy.size = app.agentSize as NonNullable<
+      NonNullable<NonNullable<GuueyJsonV1['agent']>['deploy']>['size']
     >;
   }
-  if (app.primaryServingRegion) deploy.region = app.primaryServingRegion;
-  // `deploy.runtime` is intentionally absent — no hosted source.
+  if (app.primaryServingRegion) agentDeploy.region = app.primaryServingRegion;
 
-  // `deployments[]` — only rows that have both `endpointUrl` (→
-  // canonical `url`) AND `deploymentId` (→ canonical `buildId`).
-  // A queued/failed build that never produced an endpoint is not a
-  // meaningful "deployment record" for the overlay.
-  const mappedDeployments: NonNullable<GuueyJsonV1['deployments']> =
-    deployments
-      .filter(
-        (d): d is DeploymentRow & { endpointUrl: string; deploymentId: string } =>
-          typeof d.endpointUrl === 'string' &&
-          d.endpointUrl.length > 0 &&
-          typeof d.deploymentId === 'string' &&
-          d.deploymentId.length > 0,
-      )
-      .map((d) => {
-        const entry: NonNullable<GuueyJsonV1['deployments']>[number] = {
-          target: 'guuey',
-          url: d.endpointUrl,
-          buildId: d.deploymentId,
-        };
-        if (d.deployedAt) entry.deployedAt = d.deployedAt;
-        return entry;
-      });
-
-  // Merge — preserve user-owned `mcpProxies` + `mcpServers` from
-  // existing local file; replace the hosted-truth fields.
   const merged: GuueyJsonV1 = {
+    ...existing,
     schema: '1',
-    project,
-    deployments: mappedDeployments,
+    appId: app.id,
+    agent: {
+      ...existing.agent,
+      ...(Object.keys(agentDeploy).length > 0 ? { deploy: agentDeploy } : {}),
+    },
   };
-  if (Object.keys(deploy).length > 0) merged.deploy = deploy;
-  if (existing?.mcpProxies) merged.mcpProxies = existing.mcpProxies;
-  if (existing?.mcpServers) merged.mcpServers = existing.mcpServers;
+  if (app.workspaceId) merged.workspaceId = app.workspaceId;
 
   return merged;
 }
@@ -164,13 +139,21 @@ export async function pull(
     process.exit(1);
   }
 
-  // Load existing overlay (if present) for merge — `mcpProxies` +
-  // `mcpServers` survive the pull.
+  // Load existing overlay — pull refreshes platform-managed fields
+  // on an existing file. `guuey create` scaffolds the initial file
+  // with the user-owned `agent` section.
   const existing = loadProjectConfig();
-  if (existing === null && getProjectConfigPath() !== null) {
-    console.warn(
-      '  Warning: existing guuey.json failed canonical validation — it will be overwritten with a fresh canonical overlay. Any non-standard fields will be lost.',
-    );
+  if (existing === null) {
+    if (getProjectConfigPath() !== null) {
+      out.error(
+        'guuey.json exists but failed schema validation. Fix it and retry, or run `guuey create` to start fresh.',
+      );
+    } else {
+      out.error(
+        'No guuey.json found in this project. Run `guuey create` first to scaffold one — `guuey pull` refreshes platform-managed fields on an existing file.',
+      );
+    }
+    process.exit(1);
   }
 
   // Fetch hosted state.
@@ -202,24 +185,13 @@ export async function pull(
   out.success('guuey.json refreshed from hosted state');
   console.log('');
   console.log(`  App:          ${app.name ? app.name + ' (' + app.id + ')' : app.id}`);
-  if (overlay.project?.workspaceId)
-    console.log(`  Workspace:    ${overlay.project.workspaceId}`);
-  if (overlay.deploy) {
+  if (overlay.workspaceId)
+    console.log(`  Workspace:    ${overlay.workspaceId}`);
+  if (overlay.agent.deploy) {
     const parts: string[] = [];
-    if (overlay.deploy.size) parts.push(`size=${overlay.deploy.size}`);
-    if (overlay.deploy.region) parts.push(`region=${overlay.deploy.region}`);
+    if (overlay.agent.deploy.size) parts.push(`size=${overlay.agent.deploy.size}`);
+    if (overlay.agent.deploy.region) parts.push(`region=${overlay.agent.deploy.region}`);
     if (parts.length > 0) console.log(`  Deploy:       ${parts.join(', ')}`);
-  }
-  console.log(`  Deployments:  ${overlay.deployments?.length ?? 0} record(s)`);
-  if (overlay.mcpProxies) {
-    console.log(
-      `  mcpProxies:   ${Object.keys(overlay.mcpProxies).length} entry(ies) preserved`,
-    );
-  }
-  if (overlay.mcpServers) {
-    console.log(
-      `  mcpServers:   ${Object.keys(overlay.mcpServers).length} entry(ies) preserved`,
-    );
   }
   console.log('');
 }

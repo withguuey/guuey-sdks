@@ -46,9 +46,10 @@ import { execSync } from 'node:child_process';
 import { randomUUID, createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import {
-  AGENT_JSON_FILENAME,
-  loadAgentJson,
-  type ResolvedAgentJson,
+  GUUEY_JSON_FILENAME,
+  loadGuueyJson,
+  buildDeploySnapshot,
+  type ResolvedGuueyJson,
 } from '@guuey/config';
 import { requireAuth } from '../auth';
 import { resolveConfig, loadProjectConfig } from '../config';
@@ -79,7 +80,7 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
   // §8.4 (not overlay material). `target` is implicitly `'guuey'` on
   // every record the closed CLI writes — overlay-explicit target
   // selection is a future additive if non-Guuey hosted targets land.
-  const size = (flags?.size as string) ?? project?.deploy?.size ?? 'sm';
+  const size = (flags?.size as string) ?? project?.agent?.deploy?.size ?? 'sm';
   const buildSize = (flags?.['build-size'] as string) ?? 'md';
   const target = (flags?.target as string) ?? 'ggui';
   const label = flags?.label as string | undefined;
@@ -116,16 +117,16 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
     out.error('Cannot pass both --declarative and --code. Pick one.');
     process.exit(1);
   }
-  const cwdAgentJson = join(process.cwd(), AGENT_JSON_FILENAME);
+  const cwdGuueyJson = join(process.cwd(), GUUEY_JSON_FILENAME);
   const cwdDockerfile = join(process.cwd(), 'Dockerfile');
-  const hasAgentJson = existsSync(cwdAgentJson);
+  const hasGuueyJson = existsSync(cwdGuueyJson);
   const hasDockerfile = existsSync(cwdDockerfile);
 
   let mode: 'declarative' | 'code';
   if (forceDeclarative) {
-    if (!hasAgentJson) {
+    if (!hasGuueyJson) {
       out.error(
-        `--declarative requires an ${AGENT_JSON_FILENAME} in the project root.`,
+        `--declarative requires an ${GUUEY_JSON_FILENAME} in the project root.`,
       );
       process.exit(1);
     }
@@ -136,20 +137,20 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
       process.exit(1);
     }
     mode = 'code';
-  } else if (hasAgentJson && !hasDockerfile) {
+  } else if (hasGuueyJson && !hasDockerfile) {
     mode = 'declarative';
   } else if (hasDockerfile) {
-    if (hasAgentJson) {
+    if (hasGuueyJson) {
       console.log(
-        `  Both Dockerfile and ${AGENT_JSON_FILENAME} found — using Dockerfile (code mode).`,
+        `  Both Dockerfile and ${GUUEY_JSON_FILENAME} found — using Dockerfile (code mode).`,
       );
       console.log('  Pass --declarative to use agent.json instead.');
     }
     mode = 'code';
   } else {
     out.error(
-      `No ${AGENT_JSON_FILENAME} or Dockerfile found in the project root.\n` +
-        `  - Declarative agents: add an ${AGENT_JSON_FILENAME}.\n` +
+      `No ${GUUEY_JSON_FILENAME} or Dockerfile found in the project root.\n` +
+        `  - Declarative agents: add an ${GUUEY_JSON_FILENAME}.\n` +
         '  - Code-mode agents: commit a Dockerfile.',
     );
     process.exit(1);
@@ -160,7 +161,7 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
       auth,
       config,
       appId,
-      agentJsonPath: cwdAgentJson,
+      guueyJsonPath: cwdGuueyJson,
       size,
       label,
     });
@@ -510,11 +511,12 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
 
 /**
  * Declarative deploy path: skips tarball + S3 + Kaniko build entirely.
- * Loads agent.json, inlines `systemPrompt.file` references, and POSTs
- * the resolved snapshot to the trigger endpoint. The control plane
- * writes an AgentDeployment with `agentMode='nocode'` + a JSON-stringified
- * `snapshotConfig`; the stock nocode-runtime pod reads the snapshot at
- * boot and runs the framework adapter with no per-agent image build.
+ * Loads guuey.json, inlines `agent.systemPrompt.file` references, and
+ * POSTs the resolved snapshot (whole guuey.json document) to the trigger
+ * endpoint. The control plane writes an AgentDeployment with
+ * `agentMode='nocode'` + a JSON-stringified `snapshotConfig`; the stock
+ * nocode-runtime pod reads the snapshot at boot and runs the framework
+ * adapter with no per-agent image build.
  *
  * Status polling re-uses the same `/deployments/:n/status` endpoint as
  * code-mode; the controller surfaces 'live' once the pod is ready.
@@ -523,33 +525,37 @@ async function deployDeclarative(opts: {
   auth: { pat: string };
   config: { apiUrl?: string };
   appId: string;
-  agentJsonPath: string;
+  guueyJsonPath: string;
   size: string;
   label: string | undefined;
 }): Promise<void> {
-  const { auth, config, appId, agentJsonPath, size, label } = opts;
+  const { auth, config, appId, guueyJsonPath, size, label } = opts;
 
   console.log('');
   console.log('  Deploying declarative agent to guuey cloud...');
   console.log('');
 
-  // 1. Load + validate agent.json (inlines systemPrompt.file refs).
-  let snapshot: ResolvedAgentJson;
+  // 1. Load + validate guuey.json + build deploy snapshot
+  //    (inlines `agent.systemPrompt.file` references into the resolved string).
+  let resolved: ResolvedGuueyJson;
   try {
-    snapshot = loadAgentJson(agentJsonPath);
+    resolved = loadGuueyJson(guueyJsonPath);
   } catch (err) {
     out.error(
-      `Failed to load ${AGENT_JSON_FILENAME}: ${err instanceof Error ? err.message : String(err)}`,
+      `Failed to load ${GUUEY_JSON_FILENAME}: ${err instanceof Error ? err.message : String(err)}`,
     );
     process.exit(1);
   }
 
-  const systemPromptLen = snapshot.systemPrompt?.length ?? 0;
-  const mcpServers = snapshot.mcpServers
-    ? Object.keys(snapshot.mcpServers).join(', ')
+  const snapshot = buildDeploySnapshot(resolved);
+  const agent = snapshot.agent;
+  const systemPromptLen =
+    typeof agent.systemPrompt === 'string' ? agent.systemPrompt.length : 0;
+  const mcpServers = agent.mcpServers
+    ? Object.keys(agent.mcpServers).join(', ')
     : 'ggui (default)';
-  console.log(`  framework:    ${snapshot.framework ?? 'claude-agent-sdk (default)'}`);
-  console.log(`  model:        ${snapshot.model ?? '(framework default)'}`);
+  console.log(`  framework:    ${agent.framework ?? 'claude-agent-sdk (default)'}`);
+  console.log(`  model:        ${agent.model ?? '(framework default)'}`);
   console.log(`  systemPrompt: ${systemPromptLen} chars`);
   console.log(`  mcpServers:   ${mcpServers}`);
   console.log('');

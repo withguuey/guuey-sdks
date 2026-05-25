@@ -297,7 +297,7 @@ export function resolveConfig(): ResolvedConfig {
   return {
     host: process.env.GUUEY_HOST ?? global.host ?? DEFAULT_ENDPOINT,
     apiKey: process.env.GUUEY_API_KEY ?? global.apiKey,
-    appId: process.env.GGUI_APP_ID ?? project?.project?.id ?? global.appId,
+    appId: process.env.GGUI_APP_ID ?? project?.appId ?? global.appId,
     bridgeUrl:
       process.env.GUUEY_BRIDGE_URL ??
       amplify.bridgeWebSocketUrl ??

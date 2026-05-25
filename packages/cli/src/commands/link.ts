@@ -141,8 +141,12 @@ export async function link(flags?: Record<string, string | true>): Promise<void>
     // is populated by a subsequent `guuey pull`.
     saveProjectConfig({
       schema: '1',
-      project: { id: data.appId },
-      deployments: [],
+      appId: data.appId,
+      agent: {
+        framework: 'claude-agent-sdk',
+        model: 'claude-sonnet-4-6',
+        systemPrompt: { file: 'prompts/system.md' },
+      },
     });
     console.log('');
     console.log('  Project config saved to guuey.json');

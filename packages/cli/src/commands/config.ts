@@ -82,20 +82,20 @@ export function configShow(): void {
     console.log(
       `\nProject settings (${projectPath ? basename(projectPath) : 'guuey.json'}):`,
     );
-    if (project.project?.id) console.log(`  project.id: ${project.project.id}`);
-    if (project.project?.workspaceId)
-      console.log(`  project.workspaceId: ${project.project.workspaceId}`);
-    if (project.deploy) {
+    if (project.appId) console.log(`  appId: ${project.appId}`);
+    if (project.workspaceId)
+      console.log(`  workspaceId: ${project.workspaceId}`);
+    if (project.agent.framework)
+      console.log(`  agent.framework: ${project.agent.framework}`);
+    if (project.agent.model)
+      console.log(`  agent.model: ${project.agent.model}`);
+    if (project.agent.deploy) {
       const parts: string[] = [];
-      if (project.deploy.size) parts.push(`size=${project.deploy.size}`);
-      if (project.deploy.runtime)
-        parts.push(`runtime=${project.deploy.runtime}`);
-      if (project.deploy.region) parts.push(`region=${project.deploy.region}`);
-      if (parts.length > 0) console.log(`  deploy: ${parts.join(', ')}`);
+      if (project.agent.deploy.size) parts.push(`size=${project.agent.deploy.size}`);
+      if (project.agent.deploy.region) parts.push(`region=${project.agent.deploy.region}`);
+      if (parts.length > 0) console.log(`  agent.deploy: ${parts.join(', ')}`);
     }
-    if (project.deployments && project.deployments.length > 0) {
-      console.log(`  deployments: ${project.deployments.length} record(s)`);
-    }
+    if (project.app?.slug) console.log(`  app.slug: ${project.app.slug}`);
   }
 }
 
@@ -141,9 +141,19 @@ export function configInit(flags: Record<string, string | true>): void {
   const appId =
     typeof appIdFlag === 'string' ? appIdFlag : resolved.appId;
 
-  const config: ProjectConfig = appId
-    ? { schema: '1', project: { id: appId }, deployments: [] }
-    : { schema: '1', deployments: [] };
+  // Scaffold a minimum-viable guuey.json. The `agent` section is required;
+  // we populate sensible defaults the user can edit. `prompts/system.md`
+  // is referenced but may not exist yet — `guuey deploy` will fail with
+  // a clear error until the user creates it.
+  const config: ProjectConfig = {
+    schema: '1',
+    ...(appId ? { appId } : {}),
+    agent: {
+      framework: 'claude-agent-sdk',
+      model: 'claude-sonnet-4-6',
+      systemPrompt: { file: 'prompts/system.md' },
+    },
+  };
 
   saveProjectConfig(config);
   out.success('Created guuey.json');
