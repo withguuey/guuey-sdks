@@ -158,7 +158,7 @@ Apps:
   apps get [appId]              Show app details
   apps update [appId]           Update app configuration
     --name <name>               App name
-    --auth-mode <mode>          Auth mode (anonymous|native-pool|byo)
+    --auth-mode <mode>          Auth mode (anonymous|native_pool|byo)
     --styling-prompt <prompt>   Styling prompt
     --webhook-url <url>         Webhook URL
     --rate-limit <n>            Rate limit per minute
