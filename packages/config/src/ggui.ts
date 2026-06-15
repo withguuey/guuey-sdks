@@ -29,6 +29,18 @@ import { z } from 'zod';
  */
 export const GguiSectionV1 = z
   .strictObject({
+    /**
+     * The bound ggui app id — the federation `aud` target. ggui provisions
+     * the `GguiApp` and hands the builder this fixed id (federation contract
+     * §4 / `docs/plans/2026-06-14-ggui-guuey-identity-federation.md`). The
+     * pod addresses `mcp.ggui.ai/apps/<appId>` and mints tokens with
+     * `aud = https://mcp.ggui.ai/apps/<appId>`. Omit to use `mcp.ggui.ai`
+     * without per-app federation (no minted token).
+     */
+    appId: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{1,64}$/, 'ggui.appId must be a ggui app id ([A-Za-z0-9_-], ≤64)')
+      .optional(),
     configFile: z.string().min(1).optional(),
     /**
      * Inline ggui config (opaque to this package). The actual schema
