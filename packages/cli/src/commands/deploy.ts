@@ -49,6 +49,7 @@ import {
   GUUEY_JSON_FILENAME,
   loadGuueyJson,
   buildDeploySnapshot,
+  validateNoLiteralSecrets,
   type ResolvedGuueyJson,
 } from '@guuey/config';
 import { requireAuth } from '../auth';
@@ -549,6 +550,20 @@ async function deployDeclarative(opts: {
 
   const snapshot = buildDeploySnapshot(resolved);
   const agent = snapshot.agent;
+
+  // Reject literal secrets in mcpServers[].headers before upload — they'd ride
+  // into the pod's config as plaintext. The backend re-checks authoritatively;
+  // this is the fast, friendly client-side guard.
+  const secretViolations = validateNoLiteralSecrets(agent);
+  if (secretViolations.length > 0) {
+    out.error(
+      'Found literal secrets in mcpServers[].headers:\n' +
+        secretViolations.map((s) => `  - ${s}`).join('\n') +
+        '\nDeclare the secret name in agent.secrets and reference it as ${env.NAME}.',
+    );
+    process.exit(1);
+  }
+
   const systemPromptLen =
     typeof agent.systemPrompt === 'string' ? agent.systemPrompt.length : 0;
   const mcpServers = agent.mcpServers

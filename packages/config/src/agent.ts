@@ -263,6 +263,111 @@ export type GuueyAgentEndpoint = z.infer<typeof EndpointConfigSchema>;
 /** Deploy config type. */
 export type GuueyAgentDeploy = z.infer<typeof DeploySchema>;
 
+// ── No-literal-secrets validation (deploy-time contract enforcement) ──────────
+//
+// The schema (McpServerSchema JSDoc) requires secrets in `mcpServers[].headers`
+// be referenced via `${env.NAME}` (declared in `agent.secrets`), never literal-
+// inlined — otherwise the secret rides into the pod's `NOCODE_CONFIG_JSON` env
+// var as plaintext (which the B6.3 secretKeyRef hardening cannot protect, since
+// it's embedded in the config JSON, not a discrete env var). Nothing enforced
+// this at deploy time; `validateNoLiteralSecrets` does.
+
+/**
+ * Header names that carry credentials. A value here that is a bare literal (no
+ * `${env.NAME}` reference) is almost certainly a baked credential. Lowercased
+ * for case-insensitive matching. Deliberately focused on unambiguous auth
+ * headers — generic-shaped secrets in ANY header are caught separately by
+ * {@link SECRET_SHAPE_PATTERNS} (so we don't false-positive on, e.g., `Cookie`).
+ */
+const SENSITIVE_HEADER_NAMES = new Set([
+  'authorization',
+  'proxy-authorization',
+  'x-api-key',
+  'x-auth-token',
+  'x-authorization',
+  'api-key',
+  'api_key',
+  'apikey',
+]);
+
+/**
+ * Secret-shaped literal patterns — NAMED prefixes only, deliberately NOT
+ * generic entropy/length heuristics (those false-positive on legit long IDs).
+ * Applied to the header value AFTER stripping `${env.NAME}` references, so a
+ * ref-based value like `Bearer ${env.TOKEN}` never trips them.
+ */
+const SECRET_SHAPE_PATTERNS: readonly RegExp[] = [
+  /sk-ant-/, // Anthropic
+  /\bsk-[A-Za-z0-9]{20,}/, // OpenAI-style sk- keys
+  /\bAKIA[0-9A-Z]{16}\b/, // AWS access key id
+  /\bASIA[0-9A-Z]{16}\b/, // AWS temp access key id
+  /\bghp_[A-Za-z0-9]{20,}/, // GitHub PAT
+  /\bgho_[A-Za-z0-9]{20,}/, // GitHub OAuth
+  /\bgithub_pat_[A-Za-z0-9_]{20,}/, // GitHub fine-grained PAT
+  /\bxox[baprs]-[0-9A-Za-z-]{10,}/, // Slack
+  /\bglpat-[A-Za-z0-9_-]{16,}/, // GitLab PAT
+];
+
+/** Non-secret auth scheme words that may legitimately stand before an `${env.NAME}` ref. */
+const AUTH_SCHEME_WORDS = /\b(bearer|basic|token|digest|negotiate)\b/gi;
+
+const ENV_REF_GLOBAL = /\$\{env\.[A-Za-z_][A-Za-z0-9_]*\}/g;
+const HAS_ENV_REF = /\$\{env\.[A-Za-z_][A-Za-z0-9_]*\}/;
+
+/**
+ * Validate that no `mcpServers[*].headers` value carries a LITERAL secret.
+ * Returns a list of human-readable violation messages (empty = clean).
+ *
+ * Two layers:
+ *  1. Strip `${env.NAME}` refs from each value, then match the literal
+ *     remainder against {@link SECRET_SHAPE_PATTERNS} → a baked secret in ANY
+ *     header (e.g. `Authorization: Bearer sk-ant-...`).
+ *  2. For {@link SENSITIVE_HEADER_NAMES}, a value with NO `${env.NAME}` ref and
+ *     a non-trivial literal (after removing scheme words) → a baked credential
+ *     (e.g. `X-API-Key: abc123`, `Authorization: Basic <base64>`).
+ *
+ * Legit ref-based values (`Authorization: Bearer ${env.TOKEN}`,
+ * `X-API-Key: ${env.KEY}`) and non-secret literals (`Content-Type`) pass.
+ */
+export function validateNoLiteralSecrets(
+  agent: GuueyAgent | undefined,
+): string[] {
+  const violations: string[] = [];
+  const servers = agent?.mcpServers;
+  if (!servers) return violations;
+
+  for (const [serverName, server] of Object.entries(servers)) {
+    const headers = server?.headers;
+    if (!headers) continue;
+    for (const [headerName, rawValue] of Object.entries(headers)) {
+      const value = String(rawValue);
+      const literalRemainder = value.replace(ENV_REF_GLOBAL, '');
+
+      // (1) secret-shaped literal anywhere in the non-ref text.
+      if (SECRET_SHAPE_PATTERNS.some((re) => re.test(literalRemainder))) {
+        violations.push(
+          `mcpServers.${serverName}.headers.${headerName}: contains a literal secret — reference it as \${env.NAME} and declare the name in agent.secrets`,
+        );
+        continue;
+      }
+
+      // (2) sensitive header with a fully-literal (no-ref) credential value.
+      if (
+        SENSITIVE_HEADER_NAMES.has(headerName.toLowerCase()) &&
+        !HAS_ENV_REF.test(value)
+      ) {
+        const bare = literalRemainder.replace(AUTH_SCHEME_WORDS, '').trim();
+        if (bare.length > 0) {
+          violations.push(
+            `mcpServers.${serverName}.headers.${headerName}: sensitive header must reference a secret as \${env.NAME} (declared in agent.secrets), not a literal value`,
+          );
+        }
+      }
+    }
+  }
+  return violations;
+}
+
 /**
  * Platform default MCP server map. Applied by the pod when `agent.mcpServers`
  * is absent. Exposed here so non-pod consumers (CLI dry-run, lints) can show
