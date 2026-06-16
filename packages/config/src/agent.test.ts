@@ -102,6 +102,38 @@ describe('validateNoLiteralSecrets — sensitive header, fully-literal value (la
   });
 });
 
+describe('validateNoLiteralSecrets — extended patterns + name signals (review fixes)', () => {
+  it('catches Stripe + JWT shapes on any header', () => {
+    expect(
+      validateNoLiteralSecrets(withHeaders({ 'X-Stripe': 'sk_live_0123456789abcdefghij' })),
+    ).toHaveLength(1);
+    expect(
+      validateNoLiteralSecrets(
+        withHeaders({ 'X-Jwt': 'eyJhbGciOiJI.eyJzdWIiOiIx.SflKxwRJSM' }),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('name-signal headers (X-Auth-*, *-secret, *-password) need a ref, not a literal', () => {
+    expect(
+      validateNoLiteralSecrets(withHeaders({ 'X-Service-Auth': 'opaquekey123456' })),
+    ).toHaveLength(1);
+    expect(
+      validateNoLiteralSecrets(withHeaders({ 'X-Custom-Secret': 'opaqueval789' })),
+    ).toHaveLength(1);
+    // ...and a ref satisfies them.
+    expect(
+      validateNoLiteralSecrets(withHeaders({ 'X-Service-Auth': '${env.SVC_AUTH}' })),
+    ).toEqual([]);
+  });
+
+  it('does NOT false-positive on benign key/token/version headers', () => {
+    expect(validateNoLiteralSecrets(withHeaders({ 'Idempotency-Key': 'req-abc-123' }))).toEqual([]);
+    expect(validateNoLiteralSecrets(withHeaders({ 'X-Request-Token': 'trace-456' }))).toEqual([]);
+    expect(validateNoLiteralSecrets(withHeaders({ 'X-Api-Version': '2024-01-01' }))).toEqual([]);
+  });
+});
+
 describe('validateNoLiteralSecrets — aggregation', () => {
   it('reports every violating header across servers, naming server + header', () => {
     const agent: GuueyAgent = {

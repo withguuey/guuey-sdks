@@ -299,6 +299,7 @@ const SENSITIVE_HEADER_NAMES = new Set([
 const SECRET_SHAPE_PATTERNS: readonly RegExp[] = [
   /sk-ant-/, // Anthropic
   /\bsk-[A-Za-z0-9]{20,}/, // OpenAI-style sk- keys
+  /\bsk_(live|test)_[A-Za-z0-9]{16,}/, // Stripe secret keys
   /\bAKIA[0-9A-Z]{16}\b/, // AWS access key id
   /\bASIA[0-9A-Z]{16}\b/, // AWS temp access key id
   /\bghp_[A-Za-z0-9]{20,}/, // GitHub PAT
@@ -306,7 +307,24 @@ const SECRET_SHAPE_PATTERNS: readonly RegExp[] = [
   /\bgithub_pat_[A-Za-z0-9_]{20,}/, // GitHub fine-grained PAT
   /\bxox[baprs]-[0-9A-Za-z-]{10,}/, // Slack
   /\bglpat-[A-Za-z0-9_-]{16,}/, // GitLab PAT
+  /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/, // JWT (3 b64url segments)
 ];
+
+/**
+ * Is a header name credential-bearing? The explicit set plus low-false-positive
+ * NAME signals (a custom `X-Auth-*` / `*-secret` / `*-password` header is almost
+ * certainly a credential). Deliberately NOT bare `key`/`token` (benign uses:
+ * `Idempotency-Key`, `X-Request-Token`). Fully-opaque secrets in an
+ * arbitrarily-named header still slip layer 2 — that's undetectable without
+ * false-positives, so it stays best-effort (a lint, not a guarantee).
+ */
+function isSensitiveHeaderName(name: string): boolean {
+  const n = name.toLowerCase();
+  if (SENSITIVE_HEADER_NAMES.has(n)) return true;
+  if (/(^|[-_])auth(orization)?([-_]|$)/.test(n)) return true; // x-auth-*, *-auth-token
+  if (/(^|[-_])api[-_]?key([-_]|$)/.test(n)) return true; // x-api-key variants
+  return /(secret|credential|password|passwd)/.test(n);
+}
 
 /** Non-secret auth scheme words that may legitimately stand before an `${env.NAME}` ref. */
 const AUTH_SCHEME_WORDS = /\b(bearer|basic|token|digest|negotiate)\b/gi;
@@ -352,10 +370,7 @@ export function validateNoLiteralSecrets(
       }
 
       // (2) sensitive header with a fully-literal (no-ref) credential value.
-      if (
-        SENSITIVE_HEADER_NAMES.has(headerName.toLowerCase()) &&
-        !HAS_ENV_REF.test(value)
-      ) {
+      if (isSensitiveHeaderName(headerName) && !HAS_ENV_REF.test(value)) {
         const bare = literalRemainder.replace(AUTH_SCHEME_WORDS, '').trim();
         if (bare.length > 0) {
           violations.push(
