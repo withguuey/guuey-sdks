@@ -58,48 +58,96 @@ export const AGENT_FRAMEWORKS = [
 export type AgentFramework = (typeof AGENT_FRAMEWORKS)[number];
 
 /**
- * MCP server transport for entries in `agent.mcpServers`. Stock pod ships
- * with `http` and `sse` out of the box. `stdio` is reserved for code-mode
- * agents that ship their own MCP binaries; the nocode runtime rejects
- * `stdio` at boot.
+ * Static header map — forwarded on every request. Values may use `${env.NAME}`
+ * placeholders; the pod's env-substitution pass fills them at call time.
+ * Secrets MUST be referenced via `${env.NAME}` and declared in `agent.secrets`.
  */
-const McpTransportSchema = z.enum(['http', 'sse', 'stdio']);
+const HeadersSchema = z.record(z.string().min(1), z.string());
+
+/**
+ * `kind: 'colocated'` — MCP server runs as a stdio child **inside the agent
+ * pod** (co-locate = same gVisor sandbox). COGS: ~$0 (rides the agent pod).
+ * Nocode runtime spawns `command [args…]` at boot.
+ */
+const ColocatedMcp = z.strictObject({
+  kind: z.literal('colocated'),
+  /** Executable name or path. Required. */
+  command: z.string().min(1),
+  /** Argv beyond `command`. */
+  args: z.array(z.string()).optional(),
+  /** Static headers (less common for stdio, but supported for symmetry). */
+  headers: HeadersSchema.optional(),
+});
+
+/**
+ * `kind: 'hosted'` — a workspace-owned registry MCP running on guuey's
+ * `mcp-servers.guuey.com` fleet (Starter+). Exactly one of `server` or `source`
+ * must be set:
+ *
+ * - `server: '<id>'` — reuse an existing registry MCP by id.
+ * - `source: './path'` — build-or-reuse by workspace-unique name; the
+ *   deploy-controller resolves to a `server` id and writes it back.
+ */
+const HostedMcp = z
+  .strictObject({
+    kind: z.literal('hosted'),
+    /** Existing registry MCP id. Mutually exclusive with `source`. */
+    server: z.string().min(1).optional(),
+    /** Source directory relative to `guuey.json`. Mutually exclusive with `server`. */
+    source: z.string().min(1).optional(),
+  })
+  .refine((v) => (v.server == null) !== (v.source == null), {
+    message: 'hosted: exactly one of server|source must be set',
+  });
+
+/**
+ * `kind: 'proxied'` — a 3rd-party SaaS MCP reached through the mcp-proxy
+ * credential broker (Case C). Schema is present now; runtime support lands v2.
+ */
+const ProxiedMcp = z.strictObject({
+  kind: z.literal('proxied'),
+  /** mcp-proxy connection id (from `guuey connections add`). */
+  connection: z.string().min(1),
+});
+
+/**
+ * `kind: 'external'` — builder-hosted MCP at an arbitrary URL.
+ *
+ * - `transport` defaults to `'http'` (StreamableHTTP).
+ * - `federate: true` makes guuey mint a per-invoke JWT with `aud = url` that
+ *   the builder's MCP validates against the guuey JWKS. Omit for plain URL +
+ *   optional static `headers`.
+ */
+const ExternalMcp = z.strictObject({
+  kind: z.literal('external'),
+  /** Full HTTP/SSE base URL. */
+  url: z.url(),
+  /** Transport protocol. Defaults to `'http'` (StreamableHTTP). */
+  transport: z.enum(['http', 'sse']).optional(),
+  /**
+   * Mint a per-invoke `aud = url` JWT and inject it as `Authorization: Bearer`.
+   * The builder's MCP verifies it against the guuey JWKS (T6b).
+   */
+  federate: z.boolean().optional(),
+  /** Static headers forwarded on every request. Values may use `${env.NAME}` placeholders. */
+  headers: HeadersSchema.optional(),
+});
 
 /**
  * A single MCP server entry inside `agent.mcpServers`.
  *
- * Two reference forms supported:
- *
- * - **Explicit URL** — `{ url: 'https://mcp.example.com' }` for external or
- *   guuey-hosted MCP servers reached directly.
- * - **Guuey-hosted slug ref** — `{ ref: 'guuey://<slug>' }` for MCP servers
- *   published to the guuey platform via `guuey.mcp.json`. The platform
- *   resolves the slug at deploy time and inlines the URL.
- *
- * `headers` is forwarded on every request. Values may use `${env.NAME}`
- * placeholders — the pod's env-substitution pass fills them from the
- * deploy env block. Secrets MUST be referenced via `${env.NAME}` and
- * declared in `agent.secrets`, never literal-inlined here.
- *
- * For OAuth-authed MCP servers, mcp-proxy fronts both forms — it
- * injects per-user credentials at call time (Phase 3).
+ * Discriminated union on `kind` — one slot per hosting mode:
+ * - `colocated` — stdio child inside the agent pod
+ * - `hosted`    — guuey-hosted registry MCP (Starter+)
+ * - `proxied`   — 3rd-party SaaS via mcp-proxy credential broker (v2)
+ * - `external`  — builder-hosted, reached by URL (plain or federated)
  */
-const McpServerSchema = z.strictObject({
-  transport: McpTransportSchema.optional(),
-  /** HTTP/SSE MCP endpoint. Required for `http` and `sse`. Mutually exclusive with `ref` + `command`. */
-  url: z.url().optional(),
-  /** Guuey-hosted MCP server slug reference (e.g. `guuey://todoist`). Resolved at deploy time. */
-  ref: z
-    .string()
-    .regex(/^guuey:\/\/[a-z0-9][a-z0-9-]{0,127}$/, 'must be `guuey://<slug>`')
-    .optional(),
-  /** Stdio executable. Required for `transport: 'stdio'`. Mutually exclusive with `url` + `ref`. */
-  command: z.string().min(1).optional(),
-  /** Stdio executable arguments. */
-  args: z.array(z.string()).optional(),
-  /** Static headers forwarded on every request. Values may use `${env.NAME}` placeholders. */
-  headers: z.record(z.string().min(1), z.string()).optional(),
-});
+const McpServerSchema = z.discriminatedUnion('kind', [
+  ColocatedMcp,
+  HostedMcp,
+  ProxiedMcp,
+  ExternalMcp,
+]);
 
 /**
  * Tool-gate block — allowlist applied first (intersect with what the MCP
@@ -210,9 +258,15 @@ export const AgentSectionV1 = z.strictObject({
   systemPrompt: SystemPromptSchema.optional(),
   /**
    * MCP servers the agent may call. **Replaces** the platform default
-   * (`{ ggui: { url: 'https://mcp.ggui.ai' } }`) when present — not merged.
-   * Omit the block to inherit the default; include `ggui` explicitly to
-   * keep it alongside other servers.
+   * (`{ ggui: { kind: 'external', url: 'https://mcp.ggui.ai', transport: 'http' } }`)
+   * when present — not merged. Omit the block to inherit the default; include
+   * `ggui` explicitly to keep it alongside other servers.
+   *
+   * Each entry is a discriminated union on `kind`:
+   * - `'colocated'` — stdio child inside the agent pod
+   * - `'hosted'`    — guuey-hosted registry MCP (Starter+)
+   * - `'proxied'`   — 3rd-party SaaS via mcp-proxy (v2)
+   * - `'external'`  — builder-hosted URL (plain or federated)
    */
   mcpServers: z.record(z.string().min(1), McpServerSchema).optional(),
   tools: ToolGatesSchema.optional(),
@@ -355,7 +409,8 @@ export function validateNoLiteralSecrets(
   if (!servers) return violations;
 
   for (const [serverName, server] of Object.entries(servers)) {
-    const headers = server?.headers;
+    // Only `colocated` and `external` union arms carry a `headers` field.
+    const headers = 'headers' in server ? server.headers : undefined;
     if (!headers) continue;
     for (const [headerName, rawValue] of Object.entries(headers)) {
       const value = String(rawValue);
@@ -387,7 +442,11 @@ export function validateNoLiteralSecrets(
  * Platform default MCP server map. Applied by the pod when `agent.mcpServers`
  * is absent. Exposed here so non-pod consumers (CLI dry-run, lints) can show
  * the effective shape without duplicating the literal.
+ *
+ * The ggui server is `kind: 'external'` — it is builder-declared when present
+ * or injected by the platform at runtime. Federation still detects it by host
+ * (via `isGguiUrl`) regardless of which key it's declared under.
  */
 export const DEFAULT_AGENT_MCP_SERVERS: Record<string, GuueyAgentMcpServer> = {
-  ggui: { url: 'https://mcp.ggui.ai', transport: 'http' },
+  ggui: { kind: 'external', url: 'https://mcp.ggui.ai', transport: 'http' },
 };

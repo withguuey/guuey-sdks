@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { validateNoLiteralSecrets, type GuueyAgent } from './agent.js';
+import { AgentSectionV1, validateNoLiteralSecrets, type GuueyAgent } from './agent.js';
 
 /** Build a minimal agent with one mcpServer whose headers we control. */
 function withHeaders(headers: Record<string, string>): GuueyAgent {
   return {
-    mcpServers: { api: { url: 'https://mcp.example.com', headers } },
+    mcpServers: { api: { kind: 'external', url: 'https://mcp.example.com', headers } },
   };
 }
 
@@ -48,9 +48,11 @@ describe('validateNoLiteralSecrets — clean (no violations)', () => {
   it('no mcpServers / no headers / undefined agent', () => {
     expect(validateNoLiteralSecrets(undefined)).toEqual([]);
     expect(validateNoLiteralSecrets({})).toEqual([]);
-    expect(validateNoLiteralSecrets({ mcpServers: { x: { url: 'https://x' } } })).toEqual([]);
     expect(
-      validateNoLiteralSecrets({ mcpServers: { x: { command: 'node', args: ['s.js'] } } }),
+      validateNoLiteralSecrets({ mcpServers: { x: { kind: 'external', url: 'https://x' } } }),
+    ).toEqual([]);
+    expect(
+      validateNoLiteralSecrets({ mcpServers: { x: { kind: 'colocated', command: 'node', args: ['s.js'] } } }),
     ).toEqual([]);
   });
 });
@@ -138,13 +140,99 @@ describe('validateNoLiteralSecrets — aggregation', () => {
   it('reports every violating header across servers, naming server + header', () => {
     const agent: GuueyAgent = {
       mcpServers: {
-        a: { url: 'https://a', headers: { Authorization: 'Bearer sk-ant-xxxxxxxxxxxxxxxx' } },
-        b: { url: 'https://b', headers: { 'X-API-Key': 'rawkey123456', Accept: 'application/json' } },
+        a: { kind: 'external', url: 'https://a', headers: { Authorization: 'Bearer sk-ant-xxxxxxxxxxxxxxxx' } },
+        b: { kind: 'external', url: 'https://b', headers: { 'X-API-Key': 'rawkey123456', Accept: 'application/json' } },
       },
     };
     const v = validateNoLiteralSecrets(agent);
     expect(v).toHaveLength(2);
     expect(v.some((m) => m.startsWith('mcpServers.a.headers.Authorization'))).toBe(true);
     expect(v.some((m) => m.startsWith('mcpServers.b.headers.X-API-Key'))).toBe(true);
+  });
+});
+
+// ── Discriminated union schema tests ─────────────────────────────────────────
+
+describe('McpServerSchema — each kind parses correctly', () => {
+  function parseMcpServers(mcpServers: unknown) {
+    return AgentSectionV1.parse({ mcpServers });
+  }
+
+  it('colocated: command required, args/headers optional', () => {
+    const r = parseMcpServers({
+      tool: { kind: 'colocated', command: 'node', args: ['dist/tool.js'] },
+    });
+    expect(r.mcpServers?.tool).toEqual({ kind: 'colocated', command: 'node', args: ['dist/tool.js'] });
+  });
+
+  it('colocated: no command → parse error', () => {
+    expect(() =>
+      parseMcpServers({ tool: { kind: 'colocated' } }),
+    ).toThrow();
+  });
+
+  it('hosted: server id variant', () => {
+    const r = parseMcpServers({ todo: { kind: 'hosted', server: 'todo-abc123' } });
+    expect(r.mcpServers?.todo).toEqual({ kind: 'hosted', server: 'todo-abc123' });
+  });
+
+  it('hosted: source path variant', () => {
+    const r = parseMcpServers({ notes: { kind: 'hosted', source: './servers/notes' } });
+    expect(r.mcpServers?.notes).toEqual({ kind: 'hosted', source: './servers/notes' });
+  });
+
+  it('hosted: BOTH server + source → parse error (exactly one required)', () => {
+    expect(() =>
+      parseMcpServers({ h: { kind: 'hosted', server: 'abc', source: './path' } }),
+    ).toThrow(/exactly one of server\|source/);
+  });
+
+  it('hosted: NEITHER server nor source → parse error', () => {
+    expect(() =>
+      parseMcpServers({ h: { kind: 'hosted' } }),
+    ).toThrow(/exactly one of server\|source/);
+  });
+
+  it('proxied: connection required', () => {
+    const r = parseMcpServers({ gmail: { kind: 'proxied', connection: 'gmail' } });
+    expect(r.mcpServers?.gmail).toEqual({ kind: 'proxied', connection: 'gmail' });
+  });
+
+  it('external: url required', () => {
+    const r = parseMcpServers({ acme: { kind: 'external', url: 'https://mcp.acme.com/' } });
+    expect(r.mcpServers?.acme).toEqual({ kind: 'external', url: 'https://mcp.acme.com/' });
+  });
+
+  it('external: transport + federate + headers optional', () => {
+    const r = parseMcpServers({
+      acme: {
+        kind: 'external',
+        url: 'https://mcp.acme.com/',
+        transport: 'sse',
+        federate: true,
+        headers: { 'X-Tenant': 'acme' },
+      },
+    });
+    expect(r.mcpServers?.acme).toEqual({
+      kind: 'external',
+      url: 'https://mcp.acme.com/',
+      transport: 'sse',
+      federate: true,
+      headers: { 'X-Tenant': 'acme' },
+    });
+  });
+
+  it('old inferred shape (no kind, transport + url) now FAILS to parse', () => {
+    // Pre-union: { transport: 'http', url: '...' } was valid.
+    // Post-union: 'kind' discriminant is required.
+    expect(() =>
+      parseMcpServers({ old: { transport: 'http', url: 'https://mcp.example.com' } }),
+    ).toThrow();
+  });
+
+  it('old stdio shape (no kind) now FAILS to parse', () => {
+    expect(() =>
+      parseMcpServers({ old: { transport: 'stdio', command: 'node' } }),
+    ).toThrow();
   });
 });
