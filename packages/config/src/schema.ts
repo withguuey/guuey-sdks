@@ -70,6 +70,16 @@ export const GuueyJsonV1 = z.strictObject({
 
   /** Cross-protocol integration (ggui.ai rendering). Optional. */
   ggui: GguiSectionV1.optional(),
+
+  /**
+   * Platform runtime pin — lets a code-mode agent declare which Guuey Router
+   * version its worker is built against. Absence means v1 (the default and
+   * currently only supported version).
+   */
+  runtime: z.strictObject({
+    /** Guuey Router version this agent's worker is built against. */
+    router: z.enum(['v1']).default('v1'),
+  }).optional(),
 });
 
 /** Static TypeScript type for `guuey.json` v1. */
