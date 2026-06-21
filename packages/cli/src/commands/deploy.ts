@@ -40,11 +40,9 @@
  *   3. Poll for completion
  */
 
-import { readFileSync, writeFileSync, unlinkSync, mkdirSync, readdirSync, renameSync, existsSync, statSync } from 'node:fs';
-import { join, basename, resolve } from 'node:path';
-import { execSync } from 'node:child_process';
-import { randomUUID, createHash } from 'node:crypto';
-import { tmpdir } from 'node:os';
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import {
   GUUEY_JSON_FILENAME,
   loadGuueyJson,
@@ -54,6 +52,7 @@ import {
 } from '@guuey/config';
 import { requireAuth } from '../auth';
 import { resolveConfig, loadProjectConfig } from '../config';
+import { apiRequest, cleanup, packSource } from '../deploy-shared';
 import * as out from '../output';
 
 /**
@@ -175,173 +174,10 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
 
   // 1. Create tarball of source code
   const buildId = randomUUID().slice(0, 12);
-  const tarballPath = join(tmpdir(), `ggui-deploy-${buildId}.tar.gz`);
-
-  console.log('  Packaging source...');
-  // Check for uncommitted changes
-  try {
-    const status = execSync('git status --porcelain', { encoding: 'utf-8', cwd: process.cwd() });
-    if (status.trim()) {
-      console.log('  Warning: uncommitted changes detected — only committed files will be deployed.');
-    }
-  } catch {
-    // Not a git repo — fallback to tar
-  }
-
-  // Resolve workspace:* dependencies — pack them as local tarballs so the
-  // remote Docker build can install them without access to the pnpm workspace.
-  const stagingDir = join(tmpdir(), `ggui-deploy-staging-${buildId}`);
-  mkdirSync(stagingDir, { recursive: true });
-  const pkgJsonPath = join(process.cwd(), 'package.json');
-  const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
-  let hasWorkspaceDeps = false;
-
-  // Code-mode deploy requires a user-committed Dockerfile. Default-Dockerfile
-  // injection was retired with @ggui-ai/build-templates. Mode detection above
-  // already proved Dockerfile exists; this is a defensive log line only.
-  console.log("  Using your project's Dockerfile.");
-
-  // Build a {pkgName → sourceDir} map for every workspace package in the
-  // monorepo so we can recursively resolve transitive workspace deps. Without
-  // this, a packed @ggui-ai/server still references @ggui-ai/protocol@0.0.2
-  // at a real version number (pnpm pack converts workspace:* → version), and
-  // npm tries to fetch that from the public registry where it isn't published.
-  const workspaceMap = discoverWorkspacePackages(process.cwd());
-
-  // BFS: pack direct workspace deps, inspect each packed tarball for
-  // transitive workspace deps, queue those too.
-  const packedByName = new Map<string, string>();
-  const queue: string[] = [];
-  for (const depType of ['dependencies', 'devDependencies'] as const) {
-    const deps = pkgJson[depType] as Record<string, string> | undefined;
-    if (!deps) continue;
-    for (const [name, version] of Object.entries(deps)) {
-      if (version.startsWith('workspace:')) queue.push(name);
-    }
-  }
-
-  while (queue.length > 0) {
-    const name = queue.shift()!;
-    if (packedByName.has(name)) continue;
-    const sourceDir = workspaceMap.get(name);
-    if (!sourceDir) {
-      console.warn(`  Warning: workspace dep ${name} not found in monorepo`);
-      continue;
-    }
-    try {
-      const packOutput = execSync(`pnpm pack --pack-destination "${stagingDir}"`, {
-        encoding: 'utf-8',
-        stdio: 'pipe',
-        cwd: sourceDir,
-      }).trim();
-      const tgzName = packOutput.split('\n').pop()!.trim();
-      const tgzBase = basename(tgzName);
-      packedByName.set(name, tgzBase);
-      console.log(`  Packed workspace dep: ${name} → ${tgzBase}`);
-      hasWorkspaceDeps = true;
-
-      const packedPkgJson = JSON.parse(
-        execSync(`tar -xOzf "${join(stagingDir, tgzBase)}" package/package.json`, {
-          encoding: 'utf-8',
-          stdio: 'pipe',
-        }),
-      );
-      for (const depType of ['dependencies', 'peerDependencies'] as const) {
-        const deps = packedPkgJson[depType] as Record<string, string> | undefined;
-        if (!deps) continue;
-        for (const depName of Object.keys(deps)) {
-          if (workspaceMap.has(depName) && !packedByName.has(depName)) {
-            queue.push(depName);
-          }
-        }
-      }
-    } catch (err) {
-      console.warn(`  Warning: failed to pack ${name}: ${err instanceof Error ? err.message : err}`);
-    }
-  }
-
-  if (hasWorkspaceDeps) {
-    // Rewrite top-level deps to file: refs.
-    for (const depType of ['dependencies', 'devDependencies'] as const) {
-      const deps = pkgJson[depType] as Record<string, string> | undefined;
-      if (!deps) continue;
-      for (const [name, version] of Object.entries(deps)) {
-        if (!version.startsWith('workspace:')) continue;
-        const tgz = packedByName.get(name);
-        if (tgz) deps[name] = `file:./.ggui-deps/${tgz}`;
-      }
-    }
-    // Overrides force npm to resolve transitive workspace deps to our packed
-    // tarballs too (e.g. @ggui-ai/server → @ggui-ai/protocol dep).
-    const overrides = (pkgJson.overrides ??= {}) as Record<string, string>;
-    for (const [name, tgz] of packedByName) {
-      overrides[name] = `file:./.ggui-deps/${tgz}`;
-    }
-  }
-
-  // Staging path is only needed when packing workspace deps — user always
-  // commits their own Dockerfile (no injection path).
-  const useStagingPath = hasWorkspaceDeps;
-
-  // Create the tarball — use tar (not git archive) to include staged workspace deps
-  try {
-    if (useStagingPath) {
-      // rsync FIRST, so our later writes (modified package.json, generated
-      // package-lock.json) are not clobbered by the source's workspace:*
-      // package.json.
-      execSync(
-        `rsync -a --exclude=node_modules --exclude=dist --exclude=.git --exclude=.env --exclude=.ggui --exclude=.guuey . "${stagingDir}/"`,
-        { stdio: 'pipe', cwd: process.cwd() },
-      );
-      // Move packed tarballs to .ggui-deps/ inside staging
-      mkdirSync(join(stagingDir, '.ggui-deps'), { recursive: true });
-      for (const f of readdirSync(stagingDir)) {
-        if (f.endsWith('.tgz')) {
-          renameSync(join(stagingDir, f), join(stagingDir, '.ggui-deps', f));
-        }
-      }
-      if (hasWorkspaceDeps) {
-        // Now write the modified package.json (with file:./.ggui-deps/*.tgz
-        // refs + overrides) and generate its matching lockfile. Order matters
-        // — must be after rsync so rsync doesn't overwrite it.
-        writeFileSync(join(stagingDir, 'package.json'), JSON.stringify(pkgJson, null, 2));
-        try {
-          execSync('npm install --package-lock-only --ignore-scripts --legacy-peer-deps 2>/dev/null', {
-            stdio: 'pipe',
-            cwd: stagingDir,
-          });
-        } catch {
-          // lockfile gen may warn but still produce a valid file
-        }
-      }
-      execSync(`tar czf "${tarballPath}" -C "${stagingDir}" .`, { stdio: 'pipe' });
-    } else {
-      // User has their own Dockerfile and no workspace deps — git archive
-      // is fastest (only ships committed files).
-      try {
-        execSync(`git archive --format=tar HEAD | gzip > "${tarballPath}"`, {
-          stdio: 'pipe',
-          cwd: process.cwd(),
-        });
-      } catch {
-        execSync(
-          `tar czf "${tarballPath}" --exclude=node_modules --exclude=dist --exclude=.git --exclude=.env --exclude=.ggui --exclude=.guuey .`,
-          { stdio: 'pipe', cwd: process.cwd() },
-        );
-      }
-    }
-  } catch {
-    // Fallback: use tar directly
-    execSync(
-      `tar czf "${tarballPath}" --exclude=node_modules --exclude=dist --exclude=.git --exclude=.env --exclude=.ggui --exclude=.guuey .`,
-      { stdio: 'pipe', cwd: process.cwd() },
-    );
-  }
-
-  const tarballBuffer = readFileSync(tarballPath);
-  const tarballSize = tarballBuffer.length;
-  const sourceHash = createHash('sha256').update(tarballBuffer).digest('hex');
-  console.log(`  Packaged ${(tarballSize / 1024).toFixed(0)} KB`);
+  const { tarballPath, tarballSize, sourceHash } = packSource({
+    buildId,
+    cwd: process.cwd(),
+  });
 
   // 2. Check for changes + get presigned upload URL
   const force = flags?.force === true;
@@ -750,81 +586,3 @@ async function attachBuildLogStream(
   }
 }
 
-/** Remove the temporary tarball file, ignoring errors. */
-function cleanup(tarballPath: string): void {
-  try {
-    unlinkSync(tarballPath);
-  } catch {
-    /* ignore */
-  }
-}
-
-/**
- * Walk up from `startDir` to find `pnpm-workspace.yaml`, then enumerate
- * every package.json under the common workspace top-levels and return a
- * `{ pkgName → absolute dir }` map. Used by the deploy packer to resolve
- * transitive workspace deps (e.g. @ggui-ai/server → @ggui-ai/protocol)
- * so the remote `npm ci` can install them from packed tarballs.
- */
-function discoverWorkspacePackages(startDir: string): Map<string, string> {
-  const map = new Map<string, string>();
-  let dir = startDir;
-  let root: string | null = null;
-  for (let i = 0; i < 10; i++) {
-    if (existsSync(join(dir, 'pnpm-workspace.yaml'))) {
-      root = dir;
-      break;
-    }
-    const parent = resolve(dir, '..');
-    if (parent === dir) break;
-    dir = parent;
-  }
-  if (!root) return map;
-
-  const candidates = ['packages', 'core', 'cloud', 'agents', 'internal'];
-  for (const top of candidates) {
-    const topDir = join(root, top);
-    if (!existsSync(topDir)) continue;
-    let entries: string[] = [];
-    try {
-      entries = readdirSync(topDir);
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      const pkgDir = join(topDir, entry);
-      const pkgJsonPath = join(pkgDir, 'package.json');
-      try {
-        if (!statSync(pkgDir).isDirectory()) continue;
-        if (!existsSync(pkgJsonPath)) continue;
-        const pj = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
-        if (typeof pj.name === 'string') map.set(pj.name, pkgDir);
-      } catch {
-        // ignore
-      }
-    }
-  }
-  return map;
-}
-
-/** Make an authenticated JSON request to the CLI API. */
-async function apiRequest(
-  pat: string,
-  config: { apiUrl?: string },
-  method: string,
-  path: string,
-  body?: unknown,
-): Promise<Response> {
-  if (!config.apiUrl) {
-    throw new Error('REST API URL not configured. Ensure amplify_outputs.json is present or set GUUEY_API_URL.');
-  }
-  const baseUrl = config.apiUrl.replace(/\/$/, '');
-  return fetch(`${baseUrl}${path}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${pat}`,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-}

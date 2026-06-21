@@ -31,6 +31,7 @@ import { link } from './commands/link';
 import { test as testCmd } from './commands/test';
 import { logs } from './commands/logs';
 import { deploy } from './commands/deploy';
+import { mcpDeploy } from './commands/mcp';
 import { pull } from './commands/pull';
 import { undeploy } from './commands/undeploy';
 import { stop, start, restart } from './commands/agent-lifecycle';
@@ -144,6 +145,13 @@ Agent Development:
   domains remove <domain>        Remove custom domain
   slug claim <slug>              Claim a public slug ({slug}.agents.<env>)
 
+Hosted MCP Servers:
+  mcp deploy                     Deploy a hosted MCP server (code-mode, workspace-owned)
+    --name <name>                Server name (workspace-unique; default: package.json name)
+    --workspace <id>             Owning workspace (or $GUUEY_WORKSPACE)
+    --size <s>                   Pod size: xs | sm | md | lg | xl (default: sm)
+    --label <tag>                Version label
+
 Authentication:
   login                         Log in via browser (opens auth page)
   login --token <pat>           Log in with a Personal Access Token (headless)
@@ -204,6 +212,7 @@ Environment Variables:
   GUUEY_HOST                     Override platform host URL
   GUUEY_API_KEY                  Override configured API key
   GGUI_APP_ID                   Override configured app ID
+  GUUEY_WORKSPACE                Default owning workspace for 'mcp deploy'
 
 Project Config (guuey.json):
   Place a guuey.json in your project root. Non-secret settings
@@ -275,6 +284,17 @@ async function main(): Promise<void> {
 
     case 'deploy':
       await deploy(flags);
+      break;
+
+    case 'mcp':
+      switch (action) {
+        case 'deploy':
+          await mcpDeploy(flags);
+          break;
+        default:
+          console.error(`Unknown mcp command: ${action ?? '(none)'}. Use: deploy`);
+          process.exit(1);
+      }
       break;
 
     case 'pull':
