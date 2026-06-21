@@ -6,6 +6,8 @@ import {
   isValidLabel,
   buildUploadBody,
   buildTriggerBody,
+  parseSecretAssignment,
+  resolveServerId,
   MCP_SIZES,
 } from './mcp.js';
 
@@ -138,5 +140,62 @@ describe('buildTriggerBody', () => {
       label: 'v1.0',
     });
     expect(body.versionLabel).toBe('v1.0');
+  });
+});
+
+describe('parseSecretAssignment', () => {
+  it('parses a simple NAME=VALUE', () => {
+    expect(parseSecretAssignment('WEATHER_API_KEY=sk-1')).toEqual({
+      name: 'WEATHER_API_KEY',
+      value: 'sk-1',
+    });
+  });
+
+  it('splits on the FIRST = so the value may contain =', () => {
+    expect(parseSecretAssignment('X=a=b')).toEqual({ name: 'X', value: 'a=b' });
+  });
+
+  it('returns null when there is no =', () => {
+    expect(parseSecretAssignment('FOO')).toBeNull();
+  });
+
+  it('returns null for an empty name', () => {
+    expect(parseSecretAssignment('=v')).toBeNull();
+  });
+
+  it('returns null for an empty value (backend rejects empty)', () => {
+    expect(parseSecretAssignment('FOO=')).toBeNull();
+  });
+
+  it('returns null for an env-var-invalid name', () => {
+    expect(parseSecretAssignment('bad-name=v')).toBeNull();
+    expect(parseSecretAssignment('1FOO=v')).toBeNull();
+  });
+
+  it('returns null for undefined input', () => {
+    expect(parseSecretAssignment(undefined)).toBeNull();
+  });
+});
+
+describe('resolveServerId', () => {
+  it('flag wins over env', () => {
+    expect(
+      resolveServerId({ server: 'srv-flag' }, { GUUEY_MCP_SERVER: 'srv-env' }),
+    ).toBe('srv-flag');
+  });
+
+  it('falls back to GUUEY_MCP_SERVER env when no flag', () => {
+    expect(resolveServerId({}, { GUUEY_MCP_SERVER: 'srv-env' })).toBe('srv-env');
+    expect(resolveServerId(undefined, { GUUEY_MCP_SERVER: 'srv-env' })).toBe('srv-env');
+  });
+
+  it('returns null when neither is present', () => {
+    expect(resolveServerId({}, {})).toBeNull();
+    expect(resolveServerId(undefined, {})).toBeNull();
+  });
+
+  it('ignores a boolean (value-less) --server flag and an empty env', () => {
+    expect(resolveServerId({ server: true }, {})).toBeNull();
+    expect(resolveServerId({}, { GUUEY_MCP_SERVER: '' })).toBeNull();
   });
 });

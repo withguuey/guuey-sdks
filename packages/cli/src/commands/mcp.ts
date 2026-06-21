@@ -401,3 +401,195 @@ export async function mcpDeploy(flags?: Record<string, string | true>): Promise<
   console.log('  Scales to zero when idle.');
   console.log('');
 }
+
+// ─── mcp secrets (set / list / unset) ───────────────────────────────────
+//
+// Manage a hosted MCP server's secret vault via the workspace-scoped
+// `/mcp/secrets` endpoints (T7.2). Secrets are KMS-encrypted server-side; the
+// value never leaves the gateway. The CLI mirrors that contract:
+//
+//   SECURITY: the CLI NEVER prints a secret value. `set`/`unset` success
+//   messages show the NAME only; `list` prints names only (the endpoint
+//   returns no values). There is no code path here that logs a value.
+
+/** Env-var-style secret name rule — matches the backend `SECRET_NAME_RE`. */
+const SECRET_NAME_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * Parse a `NAME=VALUE` assignment into its parts.
+ *
+ * Splits on the FIRST `=` only, so a value may itself contain `=`
+ * (`X=a=b` → `{ name: 'X', value: 'a=b' }`). Returns `null` when:
+ *   - there is no `=` (e.g. `FOO`),
+ *   - the name is empty (e.g. `=v`),
+ *   - the name is not env-var-style (`^[A-Za-z_][A-Za-z0-9_]*$`), or
+ *   - the value is empty (e.g. `FOO=` — the backend rejects empty values).
+ */
+export function parseSecretAssignment(
+  arg: string | undefined,
+): { name: string; value: string } | null {
+  if (typeof arg !== 'string') return null;
+  const eq = arg.indexOf('=');
+  if (eq < 0) return null;
+  const name = arg.slice(0, eq);
+  const value = arg.slice(eq + 1);
+  if (name.length === 0 || !SECRET_NAME_REGEX.test(name)) return null;
+  if (value.length === 0) return null;
+  return { name, value };
+}
+
+/**
+ * Resolve the target hosted-MCP server id: `--server` flag wins, then the
+ * `GUUEY_MCP_SERVER` env var. Returns `null` when neither yields a value (the
+ * caller prints the error + exits). Mirrors `resolveWorkspaceId`.
+ */
+export function resolveServerId(
+  flags: Record<string, string | true> | undefined,
+  env: NodeJS.ProcessEnv,
+): string | null {
+  const flag = flags?.server;
+  if (typeof flag === 'string' && flag.length > 0) return flag;
+  const fromEnv = env.GUUEY_MCP_SERVER;
+  if (typeof fromEnv === 'string' && fromEnv.length > 0) return fromEnv;
+  return null;
+}
+
+/**
+ * The cliApi error body shape: `{ error: { code, message } }`. The handlers
+ * here may also surface a bare-string `error` on some paths, so the extractor
+ * tolerates both without erasing types.
+ */
+interface CliApiErrorBody {
+  error?: { code?: string; message?: string } | string;
+}
+
+/** Read an authenticated-error response into a human message + exit 1. */
+async function failFromResponse(res: Response): Promise<never> {
+  const data = (await res.json().catch(() => ({}))) as CliApiErrorBody;
+  let message: string;
+  if (typeof data.error === 'string') {
+    message = data.error;
+  } else if (data.error?.message) {
+    message = data.error.message;
+  } else {
+    message = `HTTP ${res.status}`;
+  }
+  out.error(message);
+  process.exit(1);
+}
+
+/**
+ * `guuey mcp secrets set NAME=VALUE --server <id>`
+ *
+ * KMS-encrypts + stores a hosted-MCP secret. The success message shows the
+ * NAME only — the value is NEVER printed.
+ */
+export async function mcpSecretsSet(
+  assignment: string | undefined,
+  flags?: Record<string, string | true>,
+): Promise<void> {
+  const parsed = parseSecretAssignment(assignment);
+  if (!parsed) {
+    out.error('Usage: guuey mcp secrets set NAME=VALUE --server <id>');
+    process.exit(1);
+  }
+
+  const serverId = resolveServerId(flags, process.env);
+  if (!serverId) {
+    out.error(
+      'No MCP server specified. Pass --server <id> or set the GUUEY_MCP_SERVER environment variable.',
+    );
+    process.exit(1);
+  }
+
+  const auth = requireAuth();
+  const config = resolveConfig();
+
+  const res = await apiRequest(auth.pat, config, 'POST', '/mcp/secrets', {
+    serverId,
+    name: parsed.name,
+    value: parsed.value,
+  });
+  if (!res.ok) return failFromResponse(res);
+
+  // SECURITY: NAME only — never print parsed.value.
+  out.success(`Set ${parsed.name} for ${serverId}`);
+}
+
+/**
+ * `guuey mcp secrets list --server <id>`
+ *
+ * Lists a server's secret NAMES. The endpoint returns names only — there is
+ * no value to print.
+ */
+export async function mcpSecretsList(
+  flags?: Record<string, string | true>,
+): Promise<void> {
+  const serverId = resolveServerId(flags, process.env);
+  if (!serverId) {
+    out.error(
+      'No MCP server specified. Pass --server <id> or set the GUUEY_MCP_SERVER environment variable.',
+    );
+    process.exit(1);
+  }
+
+  const auth = requireAuth();
+  const config = resolveConfig();
+
+  const res = await apiRequest(
+    auth.pat,
+    config,
+    'GET',
+    `/mcp/secrets?serverId=${encodeURIComponent(serverId)}`,
+  );
+  if (!res.ok) return failFromResponse(res);
+
+  const data = (await res.json()) as { names: string[] };
+
+  if (data.names.length === 0) {
+    console.log(
+      '  No secrets set. Add one: guuey mcp secrets set NAME=VALUE --server <id>',
+    );
+    return;
+  }
+
+  // SECURITY: NAMES only — the endpoint returns no values to print.
+  for (const name of data.names) {
+    console.log(`  ${name}`);
+  }
+}
+
+/**
+ * `guuey mcp secrets unset NAME --server <id>`
+ *
+ * Removes a hosted-MCP secret (idempotent server-side). The success message
+ * shows the NAME only.
+ */
+export async function mcpSecretsUnset(
+  name: string | undefined,
+  flags?: Record<string, string | true>,
+): Promise<void> {
+  if (typeof name !== 'string' || name.length === 0) {
+    out.error('Usage: guuey mcp secrets unset NAME --server <id>');
+    process.exit(1);
+  }
+
+  const serverId = resolveServerId(flags, process.env);
+  if (!serverId) {
+    out.error(
+      'No MCP server specified. Pass --server <id> or set the GUUEY_MCP_SERVER environment variable.',
+    );
+    process.exit(1);
+  }
+
+  const auth = requireAuth();
+  const config = resolveConfig();
+
+  const res = await apiRequest(auth.pat, config, 'DELETE', '/mcp/secrets', {
+    serverId,
+    name,
+  });
+  if (!res.ok) return failFromResponse(res);
+
+  out.success(`Unset ${name} for ${serverId}`);
+}

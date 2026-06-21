@@ -31,7 +31,7 @@ import { link } from './commands/link';
 import { test as testCmd } from './commands/test';
 import { logs } from './commands/logs';
 import { deploy } from './commands/deploy';
-import { mcpDeploy } from './commands/mcp';
+import { mcpDeploy, mcpSecretsSet, mcpSecretsList, mcpSecretsUnset } from './commands/mcp';
 import { pull } from './commands/pull';
 import { undeploy } from './commands/undeploy';
 import { stop, start, restart } from './commands/agent-lifecycle';
@@ -151,6 +151,10 @@ Hosted MCP Servers:
     --workspace <id>             Owning workspace (or $GUUEY_WORKSPACE)
     --size <s>                   Pod size: xs | sm | md | lg | xl (default: sm)
     --label <tag>                Version label
+  mcp secrets set NAME=VALUE     Set a hosted-MCP secret (KMS-encrypted)
+    --server <id>                Target hosted MCP server (or $GUUEY_MCP_SERVER)
+  mcp secrets list               List secret names (values never shown)
+  mcp secrets unset NAME         Remove a hosted-MCP secret
 
 Authentication:
   login                         Log in via browser (opens auth page)
@@ -213,6 +217,7 @@ Environment Variables:
   GUUEY_API_KEY                  Override configured API key
   GGUI_APP_ID                   Override configured app ID
   GUUEY_WORKSPACE                Default owning workspace for 'mcp deploy'
+  GUUEY_MCP_SERVER               Default hosted MCP server for 'mcp secrets'
 
 Project Config (guuey.json):
   Place a guuey.json in your project root. Non-secret settings
@@ -291,8 +296,26 @@ async function main(): Promise<void> {
         case 'deploy':
           await mcpDeploy(flags);
           break;
+        case 'secrets':
+          switch (rest[0]) {
+            case 'set':
+              await mcpSecretsSet(rest[1], flags);
+              break;
+            case 'list':
+              await mcpSecretsList(flags);
+              break;
+            case 'unset':
+              await mcpSecretsUnset(rest[1], flags);
+              break;
+            default:
+              console.error(
+                `Unknown mcp secrets command: ${rest[0] ?? '(none)'}. Use: set, list, unset`,
+              );
+              process.exit(1);
+          }
+          break;
         default:
-          console.error(`Unknown mcp command: ${action ?? '(none)'}. Use: deploy`);
+          console.error(`Unknown mcp command: ${action ?? '(none)'}. Use: deploy, secrets`);
           process.exit(1);
       }
       break;
