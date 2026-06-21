@@ -1,0 +1,50 @@
+{
+  "name": "@guuey/fs",
+  "version": "0.0.0",
+  "description": "GuueyFS — per-(app,user,session) 3-layer filesystem contract, FsSource port, and dev LocalFsSource adapter.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "guuey",
+    "filesystem",
+    "vfs",
+    "layers",
+    "agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/loqu-co/guuey.git",
+    "directory": "oss/packages/fs"
+  },
+  "homepage": "https://github.com/loqu-co/guuey/tree/main/oss/packages/fs",
+  "bugs": {
+    "url": "https://github.com/loqu-co/guuey/issues"
+  }
+}
