@@ -1,0 +1,50 @@
+{
+  "name": "@guuey/worker",
+  "version": "0.0.0",
+  "description": "Guuey Worker Protocol v1 — the Router↔Worker contract types and the tiered worker SDK (typed interpreter + serve loop).",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "guuey",
+    "agent",
+    "worker",
+    "protocol",
+    "sdk"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/loqu-co/guuey.git",
+    "directory": "oss/packages/worker"
+  },
+  "homepage": "https://github.com/loqu-co/guuey/tree/main/oss/packages/worker",
+  "bugs": {
+    "url": "https://github.com/loqu-co/guuey/issues"
+  }
+}
