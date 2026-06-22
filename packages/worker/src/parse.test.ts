@@ -77,6 +77,8 @@ describe("parseEvent (Worker→Router fd-3 events)", () => {
   it("ask omits schema cleanly", () => {
     const ask = parseEvent(JSON.stringify({ type: "ask", prompt: "Q?" }));
     if (!isAsk(ask)) throw new Error("expected ask");
+    // The key is ABSENT (not present-and-undefined) when no schema is given.
+    expect("schema" in ask).toBe(false);
     expect(ask.schema).toBeUndefined();
   });
 
@@ -87,6 +89,8 @@ describe("parseEvent (Worker→Router fd-3 events)", () => {
 
   it("throws on non-JSON, non-object, missing text, and unknown type", () => {
     expect(() => parseEvent("nope")).toThrow(/non-JSON event line/);
+    // A valid-JSON, non-object line (e.g. a bare number) is a protocol violation.
+    expect(() => parseEvent("42")).toThrow(/event line is not an object/);
     expect(() => parseEvent(JSON.stringify({ type: "text" }))).toThrow(/text event missing string/);
     expect(() => parseEvent(JSON.stringify({ type: "frob" }))).toThrow(/unknown event type/);
   });
