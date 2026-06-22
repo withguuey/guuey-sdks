@@ -32,6 +32,7 @@ import { test as testCmd } from './commands/test';
 import { logs } from './commands/logs';
 import { deploy } from './commands/deploy';
 import { mcpDeploy, mcpSecretsSet, mcpSecretsList, mcpSecretsUnset } from './commands/mcp';
+import { workerVerify } from './commands/worker';
 import { pull } from './commands/pull';
 import { undeploy } from './commands/undeploy';
 import { stop, start, restart } from './commands/agent-lifecycle';
@@ -155,6 +156,10 @@ Hosted MCP Servers:
     --server <id>                Target hosted MCP server (or $GUUEY_MCP_SERVER)
   mcp secrets list               List secret names (values never shown)
   mcp secrets unset NAME         Remove a hosted-MCP secret
+
+Worker Conformance:
+  worker verify [<entry>]        Verify a worker is Guuey Worker Protocol v1 conformant
+                                 (default entry: ./guuey.worker.js)
 
 Authentication:
   login                         Log in via browser (opens auth page)
@@ -316,6 +321,19 @@ async function main(): Promise<void> {
           break;
         default:
           console.error(`Unknown mcp command: ${action ?? '(none)'}. Use: deploy, secrets`);
+          process.exit(1);
+      }
+      break;
+
+    case 'worker':
+      switch (action) {
+        case 'verify':
+          await workerVerify(rest[0], flags);
+          break;
+        default:
+          console.error(
+            `Unknown worker command: ${action ?? '(none)'}. Use: verify <entry>`,
+          );
           process.exit(1);
       }
       break;
