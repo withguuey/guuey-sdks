@@ -1,14 +1,14 @@
 /**
  * `guuey worker verify [<entry>]` — a local Guuey Worker Protocol v1 conformance
  * harness. Spawns a candidate worker, sends a v1 invoke on fd 0, reads events on
- * fd 3, answers any `ask`, shuts down after `done`, and asserts conformance. This
- * is how a worker in any language proves v1-compliance (spec §1.8).
+ * fd 3, shuts down after `done`, and asserts conformance. This is how a worker in
+ * any language proves v1-compliance (spec §1.8).
  */
 import { spawn } from "node:child_process";
 import { Readable } from "node:stream";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { parseEvent, isAsk, isDone, type WorkerEvent } from "@guuey/worker";
+import { parseEvent, isDone, type WorkerEvent } from "@guuey/worker";
 import * as out from "../output";
 
 export interface VerifyCheck {
@@ -79,9 +79,7 @@ export async function verifyWorker(opts: {
           continue;
         }
         events.push(ev);
-        if (isAsk(ev)) {
-          child.stdin.write(JSON.stringify({ type: "answer", value: "verify-answer" }) + "\n");
-        } else if (isDone(ev)) {
+        if (isDone(ev)) {
           sawDone = true;
           child.stdin.write(JSON.stringify({ type: "shutdown" }) + "\n");
           child.stdin.end();

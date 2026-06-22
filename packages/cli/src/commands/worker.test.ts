@@ -27,17 +27,6 @@ describe("verifyWorker", () => {
     expect(r.events.some((e) => e.type === "done")).toBe(true);
   });
 
-  it("PASSES a worker that uses ask (the harness answers it)", async () => {
-    const entry = writeEntry(`
-      import { serve } from ${JSON.stringify(workerUrl)};
-      serve(async (turn) => { const a = await turn.ask("q?"); return "got:" + String(a); });
-    `);
-    const r = await verifyWorker({ entry, timeoutMs: 10000 });
-    expect(r.pass).toBe(true);
-    expect(r.events.some((e) => e.type === "ask")).toBe(true);
-    expect(r.events.some((e) => e.type === "done")).toBe(true);
-  });
-
   it("FAILS a worker that emits garbage on fd 3 (not valid v1 events)", async () => {
     const entry = writeEntry(`
       import fs from "node:fs";
