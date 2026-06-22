@@ -21,7 +21,17 @@ export {
   type ErrorEvent,
   type WorkerEvent,
 } from "./protocol.js";
-export { parseControl, isInvoke, isAnswer, isShutdown } from "./parse.js";
+export {
+  parseControl,
+  parseEvent,
+  isInvoke,
+  isAnswer,
+  isShutdown,
+  isText,
+  isAsk,
+  isDone,
+  isError,
+} from "./parse.js";
 export { createEmitter, type Emitter } from "./emit.js";
 export { serve, serveOn, type ServeOptions } from "./serve.js";
 export { Turn, type WorkerHandler } from "./turn.js";

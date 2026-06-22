@@ -5,14 +5,20 @@
  */
 import type {
   Answer,
+  AskEvent,
   AuthMode,
   ControlMessage,
+  DoneEvent,
+  ErrorEvent,
   Fs,
   HistoryMessage,
   Identity,
   Invoke,
   JsonValue,
   Shutdown,
+  StopReason,
+  TextEvent,
+  WorkerEvent,
 } from "./protocol.js";
 
 export function isInvoke(m: ControlMessage): m is Invoke {
@@ -87,5 +93,59 @@ export function parseControl(line: string): ControlMessage {
       return { type: "shutdown" };
     default:
       throw new Error(`unknown control message type: ${String(raw.type)}`);
+  }
+}
+
+export function isText(e: WorkerEvent): e is TextEvent {
+  return e.type === "text";
+}
+export function isAsk(e: WorkerEvent): e is AskEvent {
+  return e.type === "ask";
+}
+export function isDone(e: WorkerEvent): e is DoneEvent {
+  return e.type === "done";
+}
+export function isError(e: WorkerEvent): e is ErrorEvent {
+  return e.type === "error";
+}
+
+/**
+ * Router-side typed interpreter: validate one NDJSON event line (Worker→Router,
+ * fd 3) into a typed {@link WorkerEvent}. Mirror of {@link parseControl}; a
+ * malformed line throws (never a silent skip).
+ */
+export function parseEvent(line: string): WorkerEvent {
+  let raw: JsonValue;
+  try {
+    raw = JSON.parse(line) as JsonValue;
+  } catch {
+    throw new Error(`non-JSON event line: ${line.slice(0, 200)}`);
+  }
+  if (!isObject(raw)) {
+    throw new Error(`event line is not an object: ${line.slice(0, 200)}`);
+  }
+  switch (raw.type) {
+    case "text": {
+      if (typeof raw.text !== "string") throw new Error("text event missing string `text`");
+      return { type: "text", text: raw.text };
+    }
+    case "ask": {
+      if (typeof raw.prompt !== "string") throw new Error("ask event missing string `prompt`");
+      return raw.schema === undefined
+        ? { type: "ask", prompt: raw.prompt }
+        : { type: "ask", prompt: raw.prompt, schema: raw.schema };
+    }
+    case "done": {
+      const stopReason: StopReason =
+        raw.stopReason === "max_turns" || raw.stopReason === "error" ? raw.stopReason : "end_turn";
+      const result = typeof raw.result === "string" ? raw.result : "";
+      return { type: "done", stopReason, result };
+    }
+    case "error": {
+      const message = typeof raw.message === "string" ? raw.message : "unknown worker error";
+      return { type: "error", message };
+    }
+    default:
+      throw new Error(`unknown event type: ${String(raw.type)}`);
   }
 }
