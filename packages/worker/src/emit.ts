@@ -4,11 +4,10 @@
  * fd-3 stream; tests pass an in-memory stream. Each event is written immediately
  * (one `write` per line) so streaming never stalls behind a buffer.
  */
-import type { JsonValue, StopReason, WorkerEvent } from "./protocol.js";
+import type { StopReason, WorkerEvent } from "./protocol.js";
 
 export interface Emitter {
   text(text: string): void;
-  ask(prompt: string, schema?: JsonValue): void;
   done(result: string, stopReason?: StopReason): void;
   error(message: string): void;
 }
@@ -19,8 +18,6 @@ export function createEmitter(out: NodeJS.WritableStream): Emitter {
   };
   return {
     text: (text) => write({ type: "text", text }),
-    ask: (prompt, schema) =>
-      write(schema === undefined ? { type: "ask", prompt } : { type: "ask", prompt, schema }),
     done: (result, stopReason = "end_turn") => write({ type: "done", stopReason, result }),
     error: (message) => write({ type: "error", message }),
   };

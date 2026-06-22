@@ -63,30 +63,6 @@ describe("serveOn", () => {
     expect(h.events()).toEqual([{ type: "error", message: "kaboom" }]);
   });
 
-  it("ask blocks until an answer, then resolves the handler", async () => {
-    const h = harness();
-    const done = serveOn(
-      async (turn: Turn) => {
-        const tone = await turn.ask("Formal or casual?", { enum: ["formal", "casual"] });
-        return `tone=${String(tone)}`;
-      },
-      { input: h.input, output: h.output }
-    );
-    h.send(INVOKE);
-    // let the ask flush, then answer
-    await new Promise((r) => setTimeout(r, 10));
-    expect(h.events()).toEqual([
-      { type: "ask", prompt: "Formal or casual?", schema: { enum: ["formal", "casual"] } },
-    ]);
-    h.send({ type: "answer", value: "casual" });
-    h.send({ type: "shutdown" });
-    await done;
-    expect(h.events()).toEqual([
-      { type: "ask", prompt: "Formal or casual?", schema: { enum: ["formal", "casual"] } },
-      { type: "done", stopReason: "end_turn", result: "tone=casual" },
-    ]);
-  });
-
   it("a clean return with no explicit result uses the accumulated text", async () => {
     const h = harness();
     const done = serveOn(

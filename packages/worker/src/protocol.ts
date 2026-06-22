@@ -3,8 +3,8 @@
  * exchange. Types ARE the protocol's source of truth (per-language SDKs derive
  * from these). See the north-star design §1.
  *
- *   Router → Worker  (fd 0 / stdin):  ControlMessage  (invoke | answer | shutdown)
- *   Worker → Router  (fd 3):          WorkerEvent      (text | ask | done | error)
+ *   Router → Worker  (fd 0 / stdin):  ControlMessage  (invoke | shutdown)
+ *   Worker → Router  (fd 3):          WorkerEvent      (text | done | error)
  *   stdout (1) + stderr (2):          the builder's own logs — not the protocol.
  */
 
@@ -12,8 +12,8 @@
 export const PROTOCOL_VERSION = "v1" as const;
 export type ProtocolVersion = typeof PROTOCOL_VERSION;
 
-/** A JSON value — the precise type for the dynamic `ask.schema` + `answer.value`
- *  (NOT `unknown`: these genuinely have no static shape, but they ARE JSON). */
+/** A JSON value — the precise parse target for NDJSON control/event lines
+ *  (NOT `unknown`: a parsed line has no static shape yet, but it IS JSON). */
 export type JsonValue =
   | string
   | number
@@ -51,16 +51,11 @@ export interface Invoke {
   fs: Fs;
   history: HistoryMessage[];
 }
-/** The user's response to a prior `ask` (shape defined by that ask's `schema`). */
-export interface Answer {
-  type: "answer";
-  value: JsonValue;
-}
 /** Graceful termination (also signalled by stdin EOF). */
 export interface Shutdown {
   type: "shutdown";
 }
-export type ControlMessage = Invoke | Answer | Shutdown;
+export type ControlMessage = Invoke | Shutdown;
 
 // ── Worker → Router: the event stream (fd 3) ────────────────────────────────
 
@@ -68,14 +63,6 @@ export type ControlMessage = Invoke | Answer | Shutdown;
 export interface TextEvent {
   type: "text";
   text: string;
-}
-/** Mid-turn human-in-the-loop: pause and request a structured value. The Worker
- *  blocks until an `Answer` arrives. `schema` is the JSON Schema of the expected
- *  answer (UI-agnostic — rich rendering is an MCP concern, not the protocol). */
-export interface AskEvent {
-  type: "ask";
-  prompt: string;
-  schema?: JsonValue;
 }
 /** Terminal success. `result` is the turn's final text. */
 export interface DoneEvent {
@@ -88,4 +75,4 @@ export interface ErrorEvent {
   type: "error";
   message: string;
 }
-export type WorkerEvent = TextEvent | AskEvent | DoneEvent | ErrorEvent;
+export type WorkerEvent = TextEvent | DoneEvent | ErrorEvent;

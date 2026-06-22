@@ -4,8 +4,6 @@
  * dependency-free. A malformed line throws a clear error (never a silent skip).
  */
 import type {
-  Answer,
-  AskEvent,
   AuthMode,
   ControlMessage,
   DoneEvent,
@@ -23,9 +21,6 @@ import type {
 
 export function isInvoke(m: ControlMessage): m is Invoke {
   return m.type === "invoke";
-}
-export function isAnswer(m: ControlMessage): m is Answer {
-  return m.type === "answer";
 }
 export function isShutdown(m: ControlMessage): m is Shutdown {
   return m.type === "shutdown";
@@ -87,8 +82,6 @@ export function parseControl(line: string): ControlMessage {
         history: parseHistory(raw.history),
       };
     }
-    case "answer":
-      return { type: "answer", value: raw.value ?? null };
     case "shutdown":
       return { type: "shutdown" };
     default:
@@ -98,9 +91,6 @@ export function parseControl(line: string): ControlMessage {
 
 export function isText(e: WorkerEvent): e is TextEvent {
   return e.type === "text";
-}
-export function isAsk(e: WorkerEvent): e is AskEvent {
-  return e.type === "ask";
 }
 export function isDone(e: WorkerEvent): e is DoneEvent {
   return e.type === "done";
@@ -128,12 +118,6 @@ export function parseEvent(line: string): WorkerEvent {
     case "text": {
       if (typeof raw.text !== "string") throw new Error("text event missing string `text`");
       return { type: "text", text: raw.text };
-    }
-    case "ask": {
-      if (typeof raw.prompt !== "string") throw new Error("ask event missing string `prompt`");
-      return raw.schema === undefined
-        ? { type: "ask", prompt: raw.prompt }
-        : { type: "ask", prompt: raw.prompt, schema: raw.schema };
     }
     case "done": {
       const stopReason: StopReason =

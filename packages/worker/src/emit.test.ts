@@ -26,24 +26,18 @@ describe("createEmitter", () => {
     const { out, lines } = capture();
     const e = createEmitter(out);
     e.text("hello");
-    e.ask("Formal or casual?", { enum: ["formal", "casual"] });
     e.done("final");
     expect(lines()).toEqual([
       { type: "text", text: "hello" },
-      { type: "ask", prompt: "Formal or casual?", schema: { enum: ["formal", "casual"] } },
       { type: "done", stopReason: "end_turn", result: "final" },
     ]);
   });
 
-  it("ask omits schema when not provided; done defaults stopReason=end_turn", () => {
+  it("done defaults stopReason=end_turn", () => {
     const { out, lines } = capture();
     const e = createEmitter(out);
-    e.ask("Continue?");
     e.done("ok");
-    expect(lines()).toEqual([
-      { type: "ask", prompt: "Continue?" },
-      { type: "done", stopReason: "end_turn", result: "ok" },
-    ]);
+    expect(lines()).toEqual([{ type: "done", stopReason: "end_turn", result: "ok" }]);
   });
 
   it("error event", () => {

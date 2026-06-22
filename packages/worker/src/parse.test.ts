@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { parseControl, isInvoke, isAnswer, isShutdown } from "./parse.js";
-import { parseEvent, isText, isAsk, isDone, isError } from "./parse.js";
+import { parseControl, isInvoke, isShutdown } from "./parse.js";
+import { parseEvent, isText, isDone, isError } from "./parse.js";
 
 const INVOKE = JSON.stringify({
   type: "invoke",
@@ -22,10 +22,7 @@ describe("parseControl", () => {
     }
   });
 
-  it("parses answer + shutdown", () => {
-    const a = parseControl(JSON.stringify({ type: "answer", value: { ok: true } }));
-    expect(isAnswer(a)).toBe(true);
-    if (isAnswer(a)) expect(a.value).toEqual({ ok: true });
+  it("parses shutdown", () => {
     expect(isShutdown(parseControl(JSON.stringify({ type: "shutdown" })))).toBe(true);
   });
 
@@ -57,29 +54,16 @@ describe("parseControl", () => {
 });
 
 describe("parseEvent (Worker→Router fd-3 events)", () => {
-  it("parses text / ask / done / error", () => {
+  it("parses text / done / error", () => {
     expect(parseEvent(JSON.stringify({ type: "text", text: "hi" }))).toEqual({
       type: "text",
       text: "hi",
     });
-    const ask = parseEvent(
-      JSON.stringify({ type: "ask", prompt: "Q?", schema: { enum: ["a", "b"] } })
-    );
-    expect(isAsk(ask)).toBe(true);
-    if (isAsk(ask)) expect(ask.schema).toEqual({ enum: ["a", "b"] });
     const done = parseEvent(JSON.stringify({ type: "done", stopReason: "end_turn", result: "ok" }));
     expect(isDone(done)).toBe(true);
     if (isDone(done)) expect(done.result).toBe("ok");
     expect(isError(parseEvent(JSON.stringify({ type: "error", message: "boom" })))).toBe(true);
     expect(isText(parseEvent(JSON.stringify({ type: "text", text: "x" })))).toBe(true);
-  });
-
-  it("ask omits schema cleanly", () => {
-    const ask = parseEvent(JSON.stringify({ type: "ask", prompt: "Q?" }));
-    if (!isAsk(ask)) throw new Error("expected ask");
-    // The key is ABSENT (not present-and-undefined) when no schema is given.
-    expect("schema" in ask).toBe(false);
-    expect(ask.schema).toBeUndefined();
   });
 
   it("done normalizes an unknown stopReason to end_turn + defaults a missing result", () => {
