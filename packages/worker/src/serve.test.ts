@@ -117,4 +117,20 @@ describe("serveOn", () => {
       { type: "done", stopReason: "end_turn", result: "TWO" },
     ]);
   });
+
+  it("idle timeout cleanly ends the loop: serveOn resolves (no reject), turn done emitted", async () => {
+    const h = harness();
+    // No shutdown is ever sent; only the idle watchdog (idleMs) ends the stream.
+    const done = serveOn(async (turn: Turn) => turn.input.toUpperCase(), {
+      input: h.input,
+      output: h.output,
+      idleMs: 20,
+    });
+    h.send(INVOKE);
+    // Awaiting `done` proves it RESOLVES (a reject would throw out of the await).
+    await done;
+    expect(h.events().filter((e) => e.type === "done")).toEqual([
+      { type: "done", stopReason: "end_turn", result: "HI" },
+    ]);
+  });
 });

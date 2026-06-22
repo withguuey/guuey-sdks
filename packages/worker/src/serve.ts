@@ -50,7 +50,7 @@ export async function serveOn(handler: WorkerHandler, opts: ServeOptions): Promi
   let idle: NodeJS.Timeout | undefined;
   const arm = (): void => {
     if (idle) clearTimeout(idle);
-    idle = setTimeout(() => opts.input.destroy(), idleMs);
+    idle = setTimeout(() => opts.input.push(null), idleMs);
     if (idle.unref) idle.unref();
   };
 
