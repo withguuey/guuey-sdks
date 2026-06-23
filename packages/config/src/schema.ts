@@ -72,6 +72,19 @@ export const GuueyJsonV1 = z.strictObject({
   ggui: GguiSectionV1.optional(),
 
   /**
+   * Transport selector — which AgJSON protocol leg the pod uses when
+   * streaming responses to the client.
+   *
+   * - `'silver'` (default) — SilverProtocol / AgJSON streaming (native guuey).
+   * - `'bypass'` — raw pass-through; the agent pod writes directly to the SSE
+   *   stream without AgJSON framing. Useful for agents that produce their own
+   *   structured output or during protocol migration.
+   *
+   * No `'ag-ui'` value — AgJSON has no AG-UI output leg.
+   */
+  protocol: z.enum(['silver', 'bypass']).default('silver'),
+
+  /**
    * Platform runtime pin — lets a code-mode agent declare which Guuey Router
    * version its worker is built against. Absence means v1 (the default and
    * currently only supported version).

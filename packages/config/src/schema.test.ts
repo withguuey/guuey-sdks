@@ -7,6 +7,23 @@ import { parseGuueyJson } from './schema.js';
  */
 const minimalAgent = {};
 
+/** Minimal valid base document — used across multiple describe blocks. */
+const base = { schema: '1', agent: minimalAgent };
+
+describe('parseGuueyJson — top-level protocol field', () => {
+  it('defaults protocol to silver when omitted', () => {
+    expect(parseGuueyJson(base).protocol).toBe('silver');
+  });
+
+  it('accepts bypass', () => {
+    expect(parseGuueyJson({ ...base, protocol: 'bypass' }).protocol).toBe('bypass');
+  });
+
+  it('rejects an unknown protocol value (ag-ui)', () => {
+    expect(() => parseGuueyJson({ ...base, protocol: 'ag-ui' })).toThrow();
+  });
+});
+
 describe('parseGuueyJson — top-level runtime.router field', () => {
   it('accepts runtime.router = v1', () => {
     const doc = parseGuueyJson({
