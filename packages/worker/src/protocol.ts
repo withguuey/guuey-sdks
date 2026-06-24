@@ -75,4 +75,20 @@ export interface ErrorEvent {
   type: "error";
   message: string;
 }
-export type WorkerEvent = TextEvent | DoneEvent | ErrorEvent;
+/**
+ * Pass-through carrier for framework-native SDK events (fd-3).
+ * The Worker emits these opaquely; the Router dispatches to the matching
+ * `@silverprotocol/<framework>` normalizer.
+ *
+ * `framework` is typed as `string` rather than the `AgentFramework` enum from
+ * `@guuey/config` to keep this package dependency-free. The Router validates
+ * `framework` against the real enum before dispatching.
+ */
+export interface NativeEvent {
+  readonly type: "native";
+  /** The framework whose native event this is — Router picks the normalizer. */
+  readonly framework: string;
+  /** One native SDK event, opaque JSON; only the Router's normalizer reads it. */
+  readonly event: JsonValue;
+}
+export type WorkerEvent = TextEvent | DoneEvent | ErrorEvent | NativeEvent;

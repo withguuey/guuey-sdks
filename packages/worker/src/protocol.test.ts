@@ -6,6 +6,8 @@ import {
   type Invoke,
   type JsonValue,
 } from "./protocol.js";
+import { parseEvent, isNative } from "./parse.js";
+import { createEmitter } from "./emit.js";
 
 describe("protocol v1 shapes", () => {
   it("pins the version to v1", () => {
@@ -45,5 +47,27 @@ describe("protocol v1 shapes", () => {
     const j: JsonValue = { a: [1, "two", true, null] };
     expect(i.history).toEqual([]);
     expect(j).toEqual({ a: [1, "two", true, null] });
+  });
+});
+
+describe("NativeEvent carrier", () => {
+  it("round-trips a native event", () => {
+    const lines: string[] = [];
+    const emitter = createEmitter({
+      write: (s) => {
+        lines.push(s);
+      },
+    });
+    emitter.native("claude-agent-sdk", { type: "assistant", message: { id: "m1" } });
+    const ev = parseEvent(lines[0].trim());
+    expect(isNative(ev)).toBe(true);
+    if (isNative(ev)) {
+      expect(ev.framework).toBe("claude-agent-sdk");
+      expect(ev.event).toEqual({ type: "assistant", message: { id: "m1" } });
+    }
+  });
+
+  it("text/done/error still parse (unchanged)", () => {
+    expect(isNative(parseEvent('{"type":"text","text":"hi"}'))).toBe(false);
   });
 });
