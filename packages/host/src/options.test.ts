@@ -230,15 +230,75 @@ describe("buildOptions — GuueyFS layer binding (from the invoke fs field)", ()
     expect(opts.env?.GUUEY_APP_DIR).toBeUndefined();
   });
 
-  it("with fs: cwd=session, additionalDirectories=[home,app], file tools (no Bash), GUUEY_* env", () => {
+  it("with fs: cwd=session, additionalDirectories=[home,app], file tools + Bash, GUUEY_* env", () => {
     const opts = buildOptions({}, ctx({ fs }));
     expect(opts.cwd).toBe("/fs/session");
     expect(opts.additionalDirectories).toEqual(["/fs/home", "/fs/app/shared"]);
-    expect(opts.tools).toEqual(["Read", "Write", "Edit", "Glob", "Grep"]);
-    expect(opts.tools).not.toContain("Bash");
+    expect(opts.tools).toEqual(["Read", "Write", "Edit", "Glob", "Grep", "Bash"]);
     expect(opts.allowedTools).toContain("Read");
     expect(opts.env?.GUUEY_HOME_DIR).toBe("/fs/home");
     expect(opts.env?.GUUEY_APP_DIR).toBe("/fs/app/shared");
+  });
+});
+
+describe("buildOptions — Bash re-enabled prompt-free (Router bwrap is the isolation)", () => {
+  const fs = { app: "/fs/app", home: "/fs/home", session: "/fs/session" };
+
+  it("includes Bash in tools + allowedTools when fs is bound", () => {
+    const opts = buildOptions({}, ctx({ fs }));
+    expect(opts.tools).toContain("Bash");
+    expect(opts.allowedTools).toContain("Bash");
+  });
+
+  it("omits Bash from tools + allowedTools when fs is NOT bound", () => {
+    const opts = buildOptions({}, ctx());
+    expect(opts.tools).toEqual([]);
+    expect(opts.allowedTools).not.toContain("Bash");
+  });
+
+  it("Bash joins an explicit allowlist when fs is bound", () => {
+    const snapshot: GuueyAgent = {
+      mcpServers: { a: { kind: "external", url: "https://a.example.com" } },
+      tools: { allowlist: ["mcp__a__do_thing"] },
+    };
+    const opts = buildOptions(snapshot, ctx({ fs }));
+    expect(opts.allowedTools).toEqual([
+      "mcp__a__do_thing",
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "Bash",
+    ]);
+  });
+
+  it("installs an auto-allow canUseTool (prompt-free) when fs is bound and no mode is pinned", async () => {
+    const opts = buildOptions({}, ctx({ fs }));
+    expect(typeof opts.canUseTool).toBe("function");
+    expect("permissionMode" in opts).toBe(false);
+    // The callback must auto-allow Bash without prompting (else a headless pod hangs).
+    const signal = new AbortController().signal;
+    const result = await opts.canUseTool?.("Bash", { command: "ls" }, { signal, toolUseID: "t1" });
+    expect(result).toEqual({ behavior: "allow", updatedInput: { command: "ls" } });
+  });
+
+  it("does NOT install canUseTool when fs is NOT bound (purely MCP-driven, nothing to auto-allow)", () => {
+    const opts = buildOptions({}, ctx());
+    expect("canUseTool" in opts).toBe(false);
+  });
+
+  it("respects a pinned claude.permissions.mode instead of auto-allow (operator owns the posture)", () => {
+    const snapshot: GuueyAgent = { claude: { permissions: { mode: "acceptEdits" } } };
+    const opts = buildOptions(snapshot, ctx({ fs }));
+    expect(opts.permissionMode).toBe("acceptEdits");
+    // Mode and the auto-allow callback are mutually exclusive.
+    expect("canUseTool" in opts).toBe(false);
+  });
+
+  it("does NOT set the SDK's own sandbox block (the Router bwrap is the isolation, not a nested bwrap)", () => {
+    const opts = buildOptions({}, ctx({ fs }));
+    expect("sandbox" in opts).toBe(false);
   });
 });
 

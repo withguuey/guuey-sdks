@@ -21,7 +21,7 @@
  * credential broker). The `@silverprotocol/core`/`@guuey/fs` types the source
  * used become host-owned, dependency-free shapes here.
  */
-import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { CanUseTool, Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Fs, HistoryMessage, JsonValue } from "@guuey/worker";
 import {
   DEFAULT_AGENT_MCP_SERVERS,
@@ -47,10 +47,20 @@ export const ENV_HOME_DIR = "GUUEY_HOME_DIR";
 export const ENV_APP_DIR = "GUUEY_APP_DIR";
 
 /**
- * File tools enabled when GuueyFS layers are bound. NO `Bash` — real shell exec
- * is governed by the Router-side bubblewrap sandbox, not enabled in-process here.
+ * File tools enabled when GuueyFS layers are bound. `Bash` is added separately
+ * (see {@link BASH_TOOL}) so the two are independently testable.
  */
 const FS_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep"];
+
+/**
+ * Real shell exec, enabled alongside the file tools when GuueyFS layers are
+ * bound. Unlike the source runner — which enabled `Bash` only when the SDK's OWN
+ * `sandbox:{}` block was on — this host runs entirely INSIDE the Router's
+ * bubblewrap jail, so the OS isolation is always present whenever fs is bound.
+ * The SDK `sandbox:{}` block is therefore NOT set here (it would spawn a nested
+ * bubblewrap inside the Router's bwrap); the Router's bwrap IS the isolation.
+ */
+const BASH_TOOL = "Bash";
 
 /**
  * The well-known credential file a federated MCP server reads. Written per
@@ -157,14 +167,21 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
   const maxTurns = snapshot.runtime?.maxTurns ?? DEFAULT_MAX_TURNS;
   const fs = ctx.fs;
 
+  // Whether the operator pinned a Claude permission mode in agent.json. When
+  // set we forward it verbatim and let the SDK's mode govern the posture; when
+  // unset we install the auto-allow `canUseTool` below so the default no-code
+  // agent's Bash runs prompt-free (a never-answered prompt would hang the pod).
+  const explicitMode = snapshot.claude?.permissions?.mode;
+
   const options: Options = {
     model,
     mcpServers,
     allowedTools,
-    // With GuueyFS layers bound, expose the file tools; without them this is
-    // byte-identical to the source (purely MCP-driven). No `Bash` in-process —
-    // real shell exec is governed by the Router-side bubblewrap sandbox.
-    tools: fs ? [...FS_TOOLS] : [],
+    // With GuueyFS layers bound, expose the file tools PLUS real `Bash`; without
+    // them this is byte-identical to the source (purely MCP-driven). `Bash` is
+    // safe here because the host already runs inside the Router's bubblewrap
+    // jail — that bwrap, NOT the SDK's own `sandbox:{}` block, is the isolation.
+    tools: fs ? [...FS_TOOLS, BASH_TOOL] : [],
     // Settings isolation. Empty array = "no filesystem settings loaded" — guards
     // against a future SDK change auto-pulling `~/.claude/settings.json` and
     // leaking the operator's logged-in Claude Code MCPs into the tool catalog.
@@ -179,14 +196,51 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
     systemPrompt,
     // GuueyFS binding (opt-in): session dir as cwd, home+app as extra roots.
     ...(fs ? { cwd: fs.session, additionalDirectories: [fs.home, fs.app] } : {}),
-    ...(snapshot.claude?.permissions?.mode
-      ? { permissionMode: snapshot.claude.permissions.mode }
-      : {}),
+    // Permission posture. Two mutually-exclusive paths:
+    //
+    //  - Operator pinned `claude.permissions.mode` → forward it verbatim; the
+    //    operator owns the posture (e.g. `acceptEdits`).
+    //  - No explicit mode + fs bound → install an auto-allow `canUseTool`. In
+    //    the SDK permission flow (hooks → deny → allow → ask → mode/canUseTool),
+    //    `default` mode with no callback routes Bash subcommands through an
+    //    interactive permission prompt — which, in this headless ephemeral pod,
+    //    no one answers, so the agent would HANG. The auto-allow callback short-
+    //    circuits that: every tool the model picks (already constrained to
+    //    `tools`/`allowedTools` + `settingSources:[]` + `strictMcpConfig`) is
+    //    allowed without a prompt. This is safe precisely because the Router's
+    //    bubblewrap jail is the real isolation boundary — NOT the SDK's own
+    //    `sandbox:{}` block (which is intentionally absent to avoid a nested
+    //    bwrap inside the Router's bwrap). We do NOT use `bypassPermissions`
+    //    here: it requires `allowDangerouslySkipPermissions` and globally
+    //    disables hooks/deny-rule evaluation, whereas the callback keeps the
+    //    deny/hook stages intact while only collapsing the final ask stage.
+    ...(explicitMode
+      ? { permissionMode: explicitMode }
+      : fs
+        ? { canUseTool: autoAllowTool }
+        : {}),
     ...(ctx.abortController ? { abortController: ctx.abortController } : {}),
   };
 
   return options;
 }
+
+/**
+ * Auto-allow permission callback. Installed when fs is bound and the operator
+ * did NOT pin `claude.permissions.mode`, so the default no-code agent's `Bash`
+ * (and the file tools) run prompt-free. Returns `{ behavior: 'allow' }` for
+ * every request, passing the input through unchanged.
+ *
+ * Safe because the model's tool surface is already locked down BEFORE the
+ * callback ever fires — `tools`/`allowedTools` cap which tools exist,
+ * `settingSources:[]` blocks filesystem-loaded settings, `strictMcpConfig`
+ * pins the MCP catalog — and the real OS isolation is the Router's bubblewrap
+ * jail this whole process runs inside. The callback only collapses the SDK's
+ * final interactive "ask" stage (which would otherwise hang a headless pod);
+ * the earlier hook/deny-rule stages of the permission flow still run.
+ */
+export const autoAllowTool: CanUseTool = (_toolName, input) =>
+  Promise.resolve({ behavior: "allow", updatedInput: input });
 
 /**
  * Build the per-invoke MCP server map. Three arms (F1 binding amendment):
@@ -267,8 +321,10 @@ function toSdkMcpServer(
  * - explicit `tools.allowlist` → pass those literal names through.
  * - else → allow every tool from every declared server via `mcp__<server>`.
  *
- * When GuueyFS layers are bound, the file tools join the allowlist (so the model
- * may use them alongside the MCP allowlist).
+ * When GuueyFS layers are bound, the file tools AND `Bash` join the allowlist
+ * (an allow rule in the SDK permission flow), so the model may use them
+ * alongside the MCP allowlist. The auto-allow `canUseTool` (or the operator's
+ * pinned mode) governs whether those still prompt — see `buildOptions`.
  */
 function buildAllowedTools(
   snapshot: GuueyAgent,
@@ -280,7 +336,7 @@ function buildAllowedTools(
     explicit && explicit.length > 0
       ? explicit.slice()
       : declaredServerNames.map((s) => `mcp__${s}`);
-  return fsBound ? [...base, ...FS_TOOLS] : base;
+  return fsBound ? [...base, ...FS_TOOLS, BASH_TOOL] : base;
 }
 
 /**
