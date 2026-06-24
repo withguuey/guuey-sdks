@@ -38,18 +38,36 @@ export interface HistoryMessage {
   role: "user" | "agent";
   text: string;
 }
+/**
+ * One prior-memory record pushed by value on the invoke (§1.4). A minimal,
+ * dependency-free projection of the Router's `AgMemoryRecord` — the worker reads
+ * only `key`/`value` for its `<thread_memory>` preamble. `value` is required
+ * (the fold seeds it); `key` is optional (unkeyed records exist).
+ */
+export interface PriorMemoryRecord {
+  key?: string;
+  value: JsonValue;
+}
 export type StopReason = "end_turn" | "max_turns" | "error";
 
 // ── Router → Worker: the control stream (fd 0) ──────────────────────────────
 
 /** Start a turn. Carries the pushed context (identity, fs, a recent history
- *  window — the full transcript is at `/session/.guuey/history.jsonl`). */
+ *  window — the full transcript is at `/session/.guuey/history.jsonl`).
+ *
+ *  `priorMemory`/`priorState` are the §1.4 push-by-value context the worker
+ *  renders into its system-prompt preamble (thread memory + working state).
+ *  Both optional: an early-thread invoke carries neither. */
 export interface Invoke {
   type: "invoke";
   input: string;
   identity: Identity;
   fs: Fs;
   history: HistoryMessage[];
+  /** Thread-scoped memory folded from prior turns (the `<thread_memory>` preamble). */
+  priorMemory?: PriorMemoryRecord[];
+  /** Prior working-state blob carried from the previous turn (the `<working_state>` preamble). */
+  priorState?: JsonValue;
 }
 /** Graceful termination (also signalled by stdin EOF). */
 export interface Shutdown {

@@ -10,6 +10,7 @@ export {
   type Identity,
   type Fs,
   type HistoryMessage,
+  type PriorMemoryRecord,
   type StopReason,
   type Invoke,
   type Shutdown,

@@ -51,6 +51,58 @@ describe("parseControl", () => {
       /unknown control message type/
     );
   });
+
+  it("round-trips priorMemory (array) + priorState (JsonValue) onto the typed Invoke", () => {
+    const withPrior = JSON.stringify({
+      type: "invoke",
+      input: "go",
+      identity: { userId: "u", authMode: "authenticated" },
+      fs: { app: "/app", home: "/home", session: "/session" },
+      history: [],
+      priorMemory: [{ key: "name", value: "Ada" }, { value: 42 }],
+      priorState: { step: 1, items: ["a", "b"] },
+    });
+    const msg = parseControl(withPrior);
+    if (!isInvoke(msg)) throw new Error("expected invoke");
+    expect(msg.priorMemory).toEqual([{ key: "name", value: "Ada" }, { value: 42 }]);
+    expect(msg.priorState).toEqual({ step: 1, items: ["a", "b"] });
+  });
+
+  it("omits priorMemory/priorState when absent (no empty keys)", () => {
+    const msg = parseControl(INVOKE);
+    if (!isInvoke(msg)) throw new Error("expected invoke");
+    expect("priorMemory" in msg).toBe(false);
+    expect("priorState" in msg).toBe(false);
+  });
+
+  it("drops malformed priorMemory entries (no `value`) and an empty array maps to undefined", () => {
+    const msg = parseControl(
+      JSON.stringify({
+        type: "invoke",
+        input: "go",
+        identity: { userId: "u", authMode: "anonymous" },
+        fs: { app: "/app", home: "/home", session: "/session" },
+        priorMemory: [{ key: "noValue" }, "notAnObject", { value: "kept" }],
+      })
+    );
+    if (!isInvoke(msg)) throw new Error("expected invoke");
+    expect(msg.priorMemory).toEqual([{ value: "kept" }]);
+  });
+
+  it("preserves a falsy priorState (e.g. null) — `!== undefined` gate, not truthiness", () => {
+    const msg = parseControl(
+      JSON.stringify({
+        type: "invoke",
+        input: "go",
+        identity: { userId: "u", authMode: "anonymous" },
+        fs: { app: "/app", home: "/home", session: "/session" },
+        priorState: null,
+      })
+    );
+    if (!isInvoke(msg)) throw new Error("expected invoke");
+    expect("priorState" in msg).toBe(true);
+    expect(msg.priorState).toBeNull();
+  });
 });
 
 describe("parseEvent (Worker→Router fd-3 events)", () => {

@@ -14,6 +14,7 @@ import type {
   Invoke,
   JsonValue,
   NativeEvent,
+  PriorMemoryRecord,
   Shutdown,
   StopReason,
   TextEvent,
@@ -62,6 +63,26 @@ function parseHistory(v: JsonValue | undefined): HistoryMessage[] {
   });
 }
 
+/**
+ * Parse the optional `priorMemory` push (§1.4). Lenient by design — a malformed
+ * entry (no `value`, or a non-object) is DROPPED rather than throwing, so a
+ * stray memory record never fails an otherwise-valid turn. Returns `undefined`
+ * when absent or when no entry survives (so the field stays off the Invoke).
+ */
+function parsePriorMemory(v: JsonValue | undefined): PriorMemoryRecord[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: PriorMemoryRecord[] = [];
+  for (const entry of v) {
+    if (isObject(entry) && "value" in entry) {
+      out.push({
+        value: entry.value,
+        ...(typeof entry.key === "string" ? { key: entry.key } : {}),
+      });
+    }
+  }
+  return out.length > 0 ? out : undefined;
+}
+
 export function parseControl(line: string): ControlMessage {
   let raw: JsonValue;
   try {
@@ -75,12 +96,18 @@ export function parseControl(line: string): ControlMessage {
   switch (raw.type) {
     case "invoke": {
       if (typeof raw.input !== "string") throw new Error("invoke missing string `input`");
+      const priorMemory = parsePriorMemory(raw.priorMemory);
       return {
         type: "invoke",
         input: raw.input,
         identity: parseIdentity(raw.identity),
         fs: parseFs(raw.fs),
         history: parseHistory(raw.history),
+        // §1.4 push-by-value context — additive, both optional. `priorState` uses
+        // a `!== undefined` gate (not truthiness) so a falsy blob (null/0/"") is
+        // preserved; `priorMemory` is omitted when empty/absent.
+        ...(priorMemory ? { priorMemory } : {}),
+        ...(raw.priorState !== undefined ? { priorState: raw.priorState } : {}),
       };
     }
     case "shutdown":
