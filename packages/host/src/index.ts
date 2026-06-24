@@ -26,11 +26,10 @@ import {
   parseControl,
   type Emitter,
   type Fs,
-  type JsonValue,
 } from "@guuey/worker";
 import type { GuueyAgent } from "@guuey/config";
 import { runInvoke, type HostInvoke, type HostRuntime } from "./run.js";
-import type { CredentialFile, PriorMemoryRecord } from "./options.js";
+import type { CredentialFile } from "./options.js";
 
 /** Parse the boot snapshot — the resolved `agent` section (a {@link GuueyAgent}). */
 function readSnapshot(): GuueyAgent & { framework?: string } {
@@ -80,40 +79,6 @@ function makeCredentialReader(fs: Fs): (server: string) => CredentialFile | unde
   };
 }
 
-/** Narrow a parsed JSON value to a `PriorMemoryRecord[]` (best-effort, drops malformed entries). */
-function parsePriorMemory(v: JsonValue | undefined): PriorMemoryRecord[] | undefined {
-  if (!Array.isArray(v)) return undefined;
-  const out: PriorMemoryRecord[] = [];
-  for (const entry of v) {
-    if (typeof entry === "object" && entry !== null && !Array.isArray(entry) && "value" in entry) {
-      const key = entry.key;
-      out.push({
-        value: entry.value,
-        ...(typeof key === "string" ? { key } : {}),
-      });
-    }
-  }
-  return out.length > 0 ? out : undefined;
-}
-
-/**
- * Extend the parsed control line with the §1.4 push-by-value context
- * (`priorMemory`/`priorState`). The Worker Protocol `Invoke` does not carry
- * these yet (extended in Task 3); until then the host reads them off the raw
- * JSON object so the in-process memory-feed bug (fixed in `e9bdc2ee`) cannot
- * reappear — the host MUST read them.
- */
-function readPriorContext(line: string): { priorMemory?: PriorMemoryRecord[]; priorState?: JsonValue } {
-  const parsed: unknown = JSON.parse(line);
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
-  const obj = parsed as { priorMemory?: JsonValue; priorState?: JsonValue };
-  const priorMemory = parsePriorMemory(obj.priorMemory);
-  return {
-    ...(priorMemory ? { priorMemory } : {}),
-    ...(obj.priorState !== undefined ? { priorState: obj.priorState } : {}),
-  };
-}
-
 /** Async-iterate NDJSON lines off stdin. */
 async function* lines(input: NodeJS.ReadableStream): AsyncIterable<string> {
   let buf = "";
@@ -148,13 +113,16 @@ async function main(): Promise<void> {
       readCredential: makeCredentialReader(msg.fs),
       ...(apiKey !== undefined ? { apiKey } : {}),
     };
-    const prior = readPriorContext(line);
+    // §1.4 push-by-value context now arrives TYPED on the Invoke (extended in
+    // Task 3) — no raw-line re-parse. `priorState` uses a `!== undefined` gate so
+    // a falsy blob (null/0/"") still feeds the preamble.
     const invoke: HostInvoke = {
       input: msg.input,
       identity: msg.identity,
       fs: msg.fs,
       history: msg.history,
-      ...prior,
+      ...(msg.priorMemory !== undefined ? { priorMemory: msg.priorMemory } : {}),
+      ...(msg.priorState !== undefined ? { priorState: msg.priorState } : {}),
     };
     // Turns are sequential — await this invoke before reading the next line.
     await runInvoke(snapshot, invoke, runtime, emit, query);
