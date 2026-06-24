@@ -20,11 +20,40 @@ function ctx(over: Partial<BuildOptionsContext> = {}): BuildOptionsContext {
 }
 
 describe("buildOptions — MCP server translation", () => {
-  it("defaults to the platform ggui server (http) when snapshot omits mcpServers", () => {
-    const opts = buildOptions({}, ctx());
+  it("defaults to the platform ggui server and reads its federated credential (ggui-by-URL, no federate:true)", () => {
+    // No mcpServers → platform default { ggui: external https://mcp.ggui.ai }.
+    // The default ggui has NO federate:true, but its ggui URL federates it, so
+    // the host reads <sessionDir>/.guuey/credentials/ggui.json and applies it.
+    const reads: string[] = [];
+    const opts = buildOptions(
+      {},
+      ctx({
+        readCredential: (server) => {
+          reads.push(server);
+          return server === "ggui"
+            ? {
+                url: "https://mcp.ggui.ai/apps/app-default",
+                headers: { authorization: "Bearer default-ggui-token" },
+                expiresAt: "2030-01-01T00:00:00Z",
+              }
+            : undefined;
+        },
+      }),
+    );
+    expect(reads).toContain("ggui");
     expect(opts.mcpServers).toEqual({
-      ggui: { type: "http", url: "https://mcp.ggui.ai" },
+      ggui: {
+        type: "http",
+        url: "https://mcp.ggui.ai/apps/app-default",
+        headers: { authorization: "Bearer default-ggui-token" },
+      },
     });
+  });
+
+  it("skips the default ggui server when its federated credential is absent (federation unconfigured)", () => {
+    // Default ggui is federated-by-URL; with no credential file it's skipped.
+    const opts = buildOptions({}, ctx());
+    expect(opts.mcpServers).toEqual({});
   });
 
   it("maps a colocated entry → stdio SDK shape", () => {
@@ -136,10 +165,39 @@ describe("buildOptions — federated credential reading (F1 binding amendment)",
     expect(opts.mcpServers).toEqual({});
   });
 
-  it("a non-federated ggui server is used as declared (never reads a credential)", () => {
+  it("a ggui-URL server is federated even without federate:true (reads its credential — default ggui keeps auth)", () => {
+    // Aligned with the broker: ggui-by-URL federates regardless of `federate`,
+    // so the platform-default ggui (declared without federate) keeps its token.
     const snapshot: GuueyAgent = {
       mcpServers: {
         ggui: { kind: "external", url: "https://mcp.ggui.ai" },
+      },
+    };
+    const reads: string[] = [];
+    const opts = buildOptions(
+      snapshot,
+      ctx({
+        fs: { app: "/fs/app", home: "/fs/home", session: "/fs/session" },
+        readCredential: (server) => {
+          reads.push(server);
+          return server === "ggui" ? cred : undefined;
+        },
+      }),
+    );
+    expect(reads).toContain("ggui");
+    expect(opts.mcpServers).toEqual({
+      ggui: {
+        type: "http",
+        url: "https://dev.mcp.sandbox.ggui.ai/apps/app-123",
+        headers: { authorization: "Bearer minted-token" },
+      },
+    });
+  });
+
+  it("a NON-ggui external server without federate:true is used as declared (never reads a credential)", () => {
+    const snapshot: GuueyAgent = {
+      mcpServers: {
+        ext: { kind: "external", url: "https://mcp.example.com" },
       },
     };
     let read = false;
@@ -155,7 +213,7 @@ describe("buildOptions — federated credential reading (F1 binding amendment)",
     );
     expect(read).toBe(false);
     expect(opts.mcpServers).toEqual({
-      ggui: { type: "http", url: "https://mcp.ggui.ai" },
+      ext: { type: "http", url: "https://mcp.example.com" },
     });
   });
 });

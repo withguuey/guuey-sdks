@@ -32,6 +32,31 @@ import {
 
 export type { SDKMessage };
 
+/**
+ * Recognizes the ggui generative-UI MCP server by HOST. A lifted, dependency-
+ * free copy of the backend `ggui-host.ts` predicate (NOT imported — keeps this
+ * package OSS-legal; `@guuey/host` pulls in no `backend/*` code). It MUST stay
+ * structurally identical to the broker's so producer + consumer agree on which
+ * servers are federated.
+ *
+ * Matches the canonical prod host `mcp.ggui.ai` AND the per-environment sandbox
+ * hosts `<env>.mcp.sandbox.ggui.ai` (dev / staging). A federated ggui server is
+ * detected by host so the platform-DEFAULT ggui (declared without `federate`)
+ * still reads its Router-minted credential.
+ */
+function isGguiHost(host: string): boolean {
+  return host === "mcp.ggui.ai" || host.endsWith(".mcp.sandbox.ggui.ai");
+}
+
+/** {@link isGguiHost} for a full URL; false on a malformed URL. */
+function isGguiUrl(url: string): boolean {
+  try {
+    return isGguiHost(new URL(url).host);
+  } catch {
+    return false;
+  }
+}
+
 /** Default Claude model — only used when the snapshot omits `model`. */
 const DEFAULT_MODEL = "claude-sonnet-4-6";
 
@@ -248,9 +273,10 @@ export const autoAllowTool: CanUseTool = (_toolName, input) =>
  * - **colocated** → `{ type:'stdio', command, args }` (unchanged).
  * - **external (non-federated)** → `{ type: transport ?? 'http', url, headers }`
  *   with `${env.NAME}` header substitution (unchanged).
- * - **federated external** (`federate: true`) → read
- *   `<sessionDir>/.guuey/credentials/<server>.json` and use its `url` + `headers`.
- *   Absent file (federation unconfigured) → the server is SKIPPED this turn.
+ * - **federated external** (`isGguiUrl(url)` — incl. the platform-default ggui —
+ *   OR `federate: true`) → read `<sessionDir>/.guuey/credentials/<server>.json`
+ *   and use its `url` + `headers`. Absent file (federation unconfigured) → the
+ *   server is SKIPPED this turn.
  *
  * `hosted`/`proxied` throw (runtime support lands in later slices).
  */
@@ -269,7 +295,8 @@ function buildMcpServers(
 
 /**
  * Map one agent.json `mcpServers` entry to the SDK shape, or `undefined` when a
- * federated server has no credential file this turn (skip it — no federated MCP).
+ * federated server (ggui-by-URL or `federate:true`) has no credential file this
+ * turn (skip it — no federated MCP).
  */
 function toSdkMcpServer(
   name: string,
@@ -285,7 +312,13 @@ function toSdkMcpServer(
       };
     }
     case "external": {
-      if (entry.federate === true) {
+      // A server is federated when its URL is a ggui host (auto-federate the
+      // platform-DEFAULT ggui server + any env-specific ggui issuer, even with
+      // no `federate:true`) OR an external server opts in via `federate:true`.
+      // This is the IDENTICAL predicate the Router-side credential broker uses
+      // to decide which servers to mint + write a credential for — keeping
+      // producer + consumer in lockstep so the default agent's ggui keeps auth.
+      if (isGguiUrl(entry.url) || entry.federate === true) {
         // F1: read the Router-written credential file instead of minting.
         const cred = ctx.readCredential(name);
         if (cred === undefined) return undefined; // federation unconfigured → skip.
