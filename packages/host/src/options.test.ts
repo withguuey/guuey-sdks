@@ -56,16 +56,17 @@ describe("buildOptions — MCP server translation", () => {
     expect(opts.mcpServers).toEqual({});
   });
 
-  it("maps a colocated entry → stdio SDK shape", () => {
+  it("rejects a colocated entry (F9 — code-mode/follow concern, not the universal host)", () => {
+    // F9: a no-code snapshot ships no bundled binaries, and the host runs inside
+    // the Router's bwrap jail (which never binds builder binaries), so a colocated
+    // stdio MCP cannot run here. The host rejects it loudly rather than spawning a
+    // command that would fail opaquely with ENOENT inside the sandbox.
     const snapshot: GuueyAgent = {
       mcpServers: {
         tool: { kind: "colocated", command: "node", args: ["dist/tool.js"] },
       },
     };
-    const opts = buildOptions(snapshot, ctx());
-    expect(opts.mcpServers).toEqual({
-      tool: { type: "stdio", command: "node", args: ["dist/tool.js"] },
-    });
+    expect(() => buildOptions(snapshot, ctx())).toThrow(/colocated/);
   });
 
   it("maps an external (non-federated) entry → http SDK shape with resolved ${env.NAME} headers", () => {

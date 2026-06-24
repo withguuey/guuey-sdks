@@ -268,9 +268,8 @@ export const autoAllowTool: CanUseTool = (_toolName, input) =>
   Promise.resolve({ behavior: "allow", updatedInput: input });
 
 /**
- * Build the per-invoke MCP server map. Three arms (F1 binding amendment):
+ * Build the per-invoke MCP server map. Arms (F1 binding amendment):
  *
- * - **colocated** → `{ type:'stdio', command, args }` (unchanged).
  * - **external (non-federated)** → `{ type: transport ?? 'http', url, headers }`
  *   with `${env.NAME}` header substitution (unchanged).
  * - **federated external** (`isGguiUrl(url)` — incl. the platform-default ggui —
@@ -278,7 +277,8 @@ export const autoAllowTool: CanUseTool = (_toolName, input) =>
  *   and use its `url` + `headers`. Absent file (federation unconfigured) → the
  *   server is SKIPPED this turn.
  *
- * `hosted`/`proxied` throw (runtime support lands in later slices).
+ * `colocated`/`hosted`/`proxied` throw — runtime support is out of scope for the
+ * universal host (see {@link toSdkMcpServer} for the F9 colocated rationale).
  */
 function buildMcpServers(
   snapshot: GuueyAgent,
@@ -305,11 +305,21 @@ function toSdkMcpServer(
 ): SdkMcpServer | undefined {
   switch (entry.kind) {
     case "colocated": {
-      return {
-        type: "stdio",
-        command: entry.command,
-        ...(entry.args ? { args: entry.args } : {}),
-      };
+      // F9 — colocated/stdio MCP is REJECTED on the universal-host path. The host
+      // runs inside the Router's bubblewrap jail; the Claude SDK would spawn this
+      // `command` INSIDE that jail, but a no-code (config-only) snapshot ships no
+      // filesystem bundle — a working stdio MCP needs bundled binaries, which is
+      // inherently CODE-MODE (a `/worker` dir / custom Dockerfile that binds its
+      // own paths), not the universal host. The jail binds only the rootfs +
+      // session layers, never builder binaries the Router has no manifest of, so
+      // there is nothing safe to bind here. Reject loudly (a silent stdio spawn
+      // would fail opaquely with ENOENT inside bwrap) — colocated MCP is a
+      // code-mode/follow concern (recorded in the slice spec Non-Goals).
+      throw new Error(
+        `mcpServers["${name}"]: colocated (stdio) MCP is not supported on the universal ` +
+          `host path — it requires bundled binaries (code-mode /worker). Use a code-mode ` +
+          `agent (a /worker dir) to ship a colocated stdio MCP server.`,
+      );
     }
     case "external": {
       // A server is federated when its URL is a ggui host (auto-federate the
