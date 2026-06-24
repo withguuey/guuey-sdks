@@ -17,6 +17,7 @@ export {
   type TextEvent,
   type DoneEvent,
   type ErrorEvent,
+  type NativeEvent,
   type WorkerEvent,
 } from "./protocol.js";
 export {
@@ -27,7 +28,8 @@ export {
   isText,
   isDone,
   isError,
+  isNative,
 } from "./parse.js";
-export { createEmitter, type Emitter } from "./emit.js";
+export { createEmitter, type Emitter, type WriteSink } from "./emit.js";
 export { serve, serveOn, type ServeOptions } from "./serve.js";
 export { Turn, type WorkerHandler } from "./turn.js";

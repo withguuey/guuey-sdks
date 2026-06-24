@@ -13,6 +13,7 @@ import type {
   Identity,
   Invoke,
   JsonValue,
+  NativeEvent,
   Shutdown,
   StopReason,
   TextEvent,
@@ -98,6 +99,9 @@ export function isDone(e: WorkerEvent): e is DoneEvent {
 export function isError(e: WorkerEvent): e is ErrorEvent {
   return e.type === "error";
 }
+export function isNative(e: WorkerEvent): e is NativeEvent {
+  return e.type === "native";
+}
 
 /**
  * Router-side typed interpreter: validate one NDJSON event line (Worker→Router,
@@ -128,6 +132,15 @@ export function parseEvent(line: string): WorkerEvent {
     case "error": {
       const message = typeof raw.message === "string" ? raw.message : "unknown worker error";
       return { type: "error", message };
+    }
+    case "native": {
+      if (typeof raw.framework !== "string") {
+        throw new Error("native event missing string `framework`");
+      }
+      if (raw.event === undefined) {
+        throw new Error("native event missing `event`");
+      }
+      return { type: "native", framework: raw.framework, event: raw.event };
     }
     default:
       throw new Error(`unknown event type: ${String(raw.type)}`);
