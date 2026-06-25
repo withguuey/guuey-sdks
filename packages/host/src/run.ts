@@ -18,7 +18,7 @@ import {
   type PriorMemoryRecord,
 } from "./options.js";
 
-/** The framework this host runs. Other frameworks are a follow-slice. */
+/** The framework THIS run path runs. OpenAI has its own path (`run-openai.ts`). */
 const CLAUDE_FRAMEWORK = "claude-agent-sdk";
 
 /**
@@ -86,10 +86,13 @@ export async function runInvoke(
   emit: Emitter,
   query: QueryFn,
 ): Promise<void> {
-  // Framework gate: this slice is Claude-only. OpenAI/ADK = follow slice.
+  // Framework gate: this run path is the Claude SDK. OpenAI agents route to
+  // `runInvokeOpenai` (selected in `index.ts` by `snapshot.framework`) and never
+  // reach here. A non-claude framework arriving here (e.g. `google-adk`,
+  // `vanilla`) has no run path yet → a clear `error`, never a silent mis-run.
   if (snapshot.framework && snapshot.framework !== CLAUDE_FRAMEWORK) {
     emit.error(
-      `@guuey/host: claude-agent-sdk only this slice (got '${snapshot.framework}').`,
+      `@guuey/host: the claude run path got framework '${snapshot.framework}'; no run path for it yet.`,
     );
     return;
   }

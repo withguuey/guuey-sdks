@@ -19,6 +19,7 @@
 import { createWriteStream, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { run as openaiRun, setDefaultOpenAIKey } from "@openai/agents";
 import {
   createEmitter,
   isInvoke,
@@ -29,7 +30,20 @@ import {
 } from "@guuey/worker";
 import type { GuueyAgent } from "@guuey/config";
 import { runInvoke, type HostInvoke, type HostRuntime } from "./run.js";
+import { runInvokeOpenai, type OpenaiRunFn } from "./run-openai.js";
 import type { CredentialFile } from "./options.js";
+
+/** The OpenAI framework tag (matches `AgentFramework`). */
+const OPENAI_FRAMEWORK = "openai-agents-sdk";
+
+/**
+ * The real `@openai/agents` `run` (streamed overload), narrowed to the injected
+ * {@link OpenaiRunFn} surface the loop consumes. The SDK's `run` is generic over
+ * the agent + context; the loop only needs `(agent, input, {stream,maxTurns}) →
+ * a streamed result`. A typed adapter (NOT a cast) pins the streamed overload.
+ */
+const realOpenaiRun: OpenaiRunFn = (agent, input, options) =>
+  openaiRun(agent, input, { stream: true, ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}) });
 
 /** Parse the boot snapshot — the resolved `agent` section (a {@link GuueyAgent}). */
 function readSnapshot(): GuueyAgent & { framework?: string } {
@@ -102,7 +116,14 @@ async function main(): Promise<void> {
   // fd 3 is the write end of the pipe the Router created at spawn.
   const out = createWriteStream("", { fd: 3 });
   const emit: Emitter = createEmitter(out);
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const isOpenai = snapshot.framework === OPENAI_FRAMEWORK;
+
+  // Resolve the framework-correct API key once at boot. OpenAI keys are applied
+  // globally to the SDK (`setDefaultOpenAIKey`); Claude keys ride the per-invoke
+  // `Options.env` (the runtime carries it). A missing key is NOT fatal here —
+  // each run path emits a clear `error` per invoke if the key is absent.
+  const apiKey = isOpenai ? process.env.OPENAI_API_KEY : process.env.ANTHROPIC_API_KEY;
+  if (isOpenai && apiKey !== undefined) setDefaultOpenAIKey(apiKey);
 
   for await (const line of lines(process.stdin)) {
     const msg = parseControl(line);
@@ -125,7 +146,12 @@ async function main(): Promise<void> {
       ...(msg.priorState !== undefined ? { priorState: msg.priorState } : {}),
     };
     // Turns are sequential — await this invoke before reading the next line.
-    await runInvoke(snapshot, invoke, runtime, emit, query);
+    // Select the framework-correct run path: OpenAI agents vs the Claude SDK.
+    if (isOpenai) {
+      await runInvokeOpenai(snapshot, invoke, runtime, emit, realOpenaiRun);
+    } else {
+      await runInvoke(snapshot, invoke, runtime, emit, query);
+    }
   }
 }
 

@@ -180,7 +180,7 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
     );
   }
 
-  const mcpServers = buildMcpServers(snapshot, ctx);
+  const mcpServers = resolveMcpServers(snapshot, ctx);
   const allowedTools = buildAllowedTools(snapshot, Object.keys(mcpServers), Boolean(ctx.fs));
   const systemPrompt = withContextPreamble(
     snapshot.systemPrompt ?? GUUEY_DEFAULT_SYSTEM_PROMPT,
@@ -268,7 +268,8 @@ export const autoAllowTool: CanUseTool = (_toolName, input) =>
   Promise.resolve({ behavior: "allow", updatedInput: input });
 
 /**
- * Build the per-invoke MCP server map. Arms (F1 binding amendment):
+ * Resolve the per-invoke MCP server map — framework-NEUTRAL. Arms (F1 binding
+ * amendment):
  *
  * - **external (non-federated)** → `{ type: transport ?? 'http', url, headers }`
  *   with `${env.NAME}` header substitution (unchanged).
@@ -279,8 +280,13 @@ export const autoAllowTool: CanUseTool = (_toolName, input) =>
  *
  * `colocated`/`hosted`/`proxied` throw — runtime support is out of scope for the
  * universal host (see {@link toSdkMcpServer} for the F9 colocated rationale).
+ *
+ * Returns the dependency-free {@link SdkMcpServer} shape (the Claude SDK's
+ * `mcpServers` value AND the source for the OpenAI run path's
+ * `MCPServerStreamableHttp` construction). Keeping ONE resolver here keeps the
+ * Claude + OpenAI paths in lockstep on federation/env-substitution semantics.
  */
-function buildMcpServers(
+export function resolveMcpServers(
   snapshot: GuueyAgent,
   ctx: BuildOptionsContext,
 ): Record<string, SdkMcpServer> {

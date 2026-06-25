@@ -123,7 +123,9 @@ describe("runInvoke — native emission", () => {
     expect(events.some((e) => e.type === "done")).toBe(false);
   });
 
-  it("framework gate: a non-claude framework emits a clear error and never queries", async () => {
+  it("framework gate: a non-claude framework with no run path emits a clear error and never queries", async () => {
+    // `index.ts` routes openai to `runInvokeOpenai`; a framework with NO run path
+    // yet (e.g. `google-adk`) reaching the Claude run path errors loudly.
     const { events, sink } = collector();
     const emit = createEmitter(sink);
     let queried = false;
@@ -133,7 +135,7 @@ describe("runInvoke — native emission", () => {
     };
 
     await runInvoke(
-      { framework: "openai-agents-sdk" },
+      { framework: "google-adk" },
       invoke(),
       { apiKey: "sk-test", readCredential: () => undefined },
       emit,
@@ -145,7 +147,7 @@ describe("runInvoke — native emission", () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]).toMatchObject({
       type: "error",
-      message: expect.stringContaining("claude-agent-sdk"),
+      message: expect.stringContaining("google-adk"),
     });
   });
 
