@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createEmitter, type WorkerEvent } from "@guuey/worker";
-import { MaxTurnsExceededError, type RunStreamEvent } from "@openai/agents";
+import {
+  MaxTurnsExceededError,
+  RunRawModelStreamEvent,
+  type ResponseStreamEvent,
+  type RunStreamEvent,
+} from "@openai/agents";
 import {
   runInvokeOpenai,
   type OpenaiRunFn,
@@ -35,17 +40,14 @@ function invoke(over: Partial<HostInvoke> = {}): HostInvoke {
 }
 
 /**
- * A raw `RunStreamEvent` fixture. The SDK's union is someone else's frozen
- * surface; `runInvokeOpenai` treats each event as opaque JSON (it only
- * `toJson`s it onto the wire), so a minimal arm coerced to `RunStreamEvent` is
- * the same pass-through the host does. Test-only; never in shipping code.
+ * A raw `RunStreamEvent` fixture: a genuine `RunRawModelStreamEvent` instance
+ * wrapping the model `data` payload. `runInvokeOpenai` treats each event as
+ * opaque JSON (it only `toJson`s it onto the wire), so the payload content is
+ * behaviour-irrelevant — only the static type must be a real `RunStreamEvent`.
+ * Test-only; never in shipping code.
  */
-function rawEvent(over: Record<string, unknown>): RunStreamEvent {
-  const ev: { type: "raw_model_stream_event" } & Record<string, unknown> = {
-    type: "raw_model_stream_event",
-    ...over,
-  };
-  return ev as unknown as RunStreamEvent;
+function rawEvent(data: ResponseStreamEvent): RunStreamEvent {
+  return new RunRawModelStreamEvent(data);
 }
 
 /**
@@ -83,8 +85,8 @@ describe("runInvokeOpenai — native emission", () => {
     const { events, sink } = collector();
     const emit = createEmitter(sink);
     const streamEvents = [
-      rawEvent({ data: { type: "model", event: { type: "response.created", response: { id: "r1" } } } }),
-      rawEvent({ data: { type: "model", event: { type: "response.output_text.delta", delta: "hi" } } }),
+      rawEvent({ type: "model", event: { type: "response.created", response: { id: "r1" } } }),
+      rawEvent({ type: "model", event: { type: "response.output_text.delta", delta: "hi" } }),
     ];
     const run: OpenaiRunFn = () =>
       Promise.resolve(fakeResult({ events: streamEvents, finalOutput: "hi there" }));
@@ -106,7 +108,7 @@ describe("runInvokeOpenai — native emission", () => {
     const { events, sink } = collector();
     const emit = createEmitter(sink);
     const streamEvents = [
-      rawEvent({ data: { type: "model", event: { type: "response.created", response: { id: "r1" } } } }),
+      rawEvent({ type: "model", event: { type: "response.created", response: { id: "r1" } } }),
     ];
     const run: OpenaiRunFn = () =>
       Promise.resolve(
