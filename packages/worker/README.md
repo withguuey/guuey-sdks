@@ -2,7 +2,7 @@
 
 The Guuey Worker Protocol v1 types + the tiered worker SDK. Write an agent worker
 in any framework; Guuey runs it, isolates it per end-user, streams it, and scales
-it. You touch only: **read the request → stream your output → (optionally) `ask`.**
+it. You touch only: **read the request → stream your output (text or framework-native events).**
 
 ## Zero glue — managed Node base (1a)
 
