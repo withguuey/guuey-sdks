@@ -106,7 +106,7 @@ export async function runInvokeOpenai(
     identity: invoke.identity,
     fs: invoke.fs,
     history: invoke.history,
-    readCredential: runtime.readCredential,
+    listCredentials: runtime.listCredentials,
     ...(runtime.apiKey !== undefined ? { apiKey: runtime.apiKey } : {}),
     ...(invoke.priorMemory !== undefined ? { priorMemory: invoke.priorMemory } : {}),
     ...(invoke.priorState !== undefined ? { priorState: invoke.priorState } : {}),
@@ -134,7 +134,7 @@ export async function runInvokeOpenai(
       ctx.priorMemory,
       ctx.priorState,
     );
-    mcpServers = buildOpenaiMcpServers(snapshot, ctx);
+    mcpServers = buildOpenaiMcpServers(ctx);
   } catch (err) {
     emit.error(err instanceof Error ? err.message : String(err));
     return;
@@ -221,11 +221,8 @@ function finalText(stream: OpenaiRunResult): string {
  * `stdio` (colocated) entries never reach here — `resolveMcpServers` throws on
  * the colocated arm (F9), same as the Claude path.
  */
-function buildOpenaiMcpServers(
-  snapshot: GuueyAgent,
-  ctx: BuildOptionsContext,
-): MCPServerStreamableHttp[] {
-  const resolved = resolveMcpServers(snapshot, ctx);
+function buildOpenaiMcpServers(ctx: BuildOptionsContext): MCPServerStreamableHttp[] {
+  const resolved = resolveMcpServers(ctx);
   const servers: MCPServerStreamableHttp[] = [];
   for (const [name, entry] of Object.entries(resolved)) {
     servers.push(toOpenaiMcpServer(name, entry));

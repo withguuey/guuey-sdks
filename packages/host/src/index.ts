@@ -16,7 +16,7 @@
  * Worker→Router events on fd 3. We use the raw emitter (NOT the text-only
  * `serve(handler)`) because the host emits `native`.
  */
-import { createWriteStream, readFileSync } from "node:fs";
+import { createWriteStream, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { run as openaiRun, setDefaultOpenAIKey } from "@openai/agents";
@@ -56,40 +56,39 @@ function readSnapshot(): GuueyAgent & { framework?: string } {
 }
 
 /**
- * Read `<sessionDir>/.guuey/credentials/<server>.json` (the Router-broker
- * contract). Returns `undefined` when the file is absent (federation
- * unconfigured) or unreadable — the federated server is then skipped this turn.
+ * Read all credential files the Router broker wrote to
+ * `<sessionDir>/.guuey/credentials/` this invoke. Returns one
+ * `{ name, cred }` per valid `.json` file — malformed files are silently
+ * skipped (never crash the turn). Missing directory → empty array (no MCP).
  */
-function makeCredentialReader(fs: Fs): (server: string) => CredentialFile | undefined {
-  return (server: string): CredentialFile | undefined => {
-    const path = join(fs.session, ".guuey", "credentials", `${server}.json`);
-    let text: string;
+function listCredentials(fs: Fs): () => Array<{ name: string; cred: CredentialFile }> {
+  return () => {
+    const dir = join(fs.session, ".guuey", "credentials");
+    let names: string[];
     try {
-      text = readFileSync(path, "utf8");
+      names = readdirSync(dir).filter((n) => n.endsWith(".json"));
     } catch {
-      return undefined; // absent → no federated MCP this turn.
+      return []; // no cred dir this turn → no MCP.
     }
-    const parsed: unknown = JSON.parse(text);
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      Array.isArray(parsed) ||
-      typeof (parsed as { url?: unknown }).url !== "string"
-    ) {
-      throw new Error(`@guuey/host: malformed credential file at ${path} (missing string url).`);
-    }
-    const obj = parsed as { url: string; headers?: unknown; expiresAt?: unknown };
-    const headers: Record<string, string> = {};
-    if (typeof obj.headers === "object" && obj.headers !== null && !Array.isArray(obj.headers)) {
-      for (const [k, v] of Object.entries(obj.headers)) {
-        if (typeof v === "string") headers[k] = v;
+    const out: Array<{ name: string; cred: CredentialFile }> = [];
+    for (const file of names) {
+      try {
+        const parsed: unknown = JSON.parse(readFileSync(join(dir, file), "utf8"));
+        if (
+          typeof parsed === "object" &&
+          parsed !== null &&
+          !Array.isArray(parsed) &&
+          typeof (parsed as { url?: unknown }).url === "string" &&
+          ((parsed as { transport?: unknown }).transport === "http" ||
+            (parsed as { transport?: unknown }).transport === "sse")
+        ) {
+          out.push({ name: file.replace(/\.json$/, ""), cred: parsed as CredentialFile });
+        }
+      } catch {
+        // malformed file → skip (never crash the turn).
       }
     }
-    return {
-      url: obj.url,
-      headers,
-      ...(typeof obj.expiresAt === "string" ? { expiresAt: obj.expiresAt } : {}),
-    };
+    return out;
   };
 }
 
@@ -131,7 +130,7 @@ async function main(): Promise<void> {
     if (!isInvoke(msg)) continue;
 
     const runtime: HostRuntime = {
-      readCredential: makeCredentialReader(msg.fs),
+      listCredentials: listCredentials(msg.fs),
       ...(apiKey !== undefined ? { apiKey } : {}),
     };
     // §1.4 push-by-value context now arrives TYPED on the Invoke (extended in

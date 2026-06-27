@@ -71,7 +71,7 @@ function fakeResult(opts: {
   };
 }
 
-const runtime = { apiKey: "sk-openai-test", readCredential: () => undefined };
+const runtime = { apiKey: "sk-openai-test", listCredentials: () => [] };
 
 /** Snapshot with NO mcpServers so the path never constructs a live MCP server. */
 const snapshot: GuueyAgent = {

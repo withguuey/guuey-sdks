@@ -40,8 +40,12 @@ export interface HostInvoke {
 export interface HostRuntime {
   /** Anthropic API key (from env). */
   apiKey?: string;
-  /** Reads `<sessionDir>/.guuey/credentials/<server>.json` for a federated server. */
-  readCredential: (server: string) => CredentialFile | undefined;
+  /**
+   * Returns every credential the Router broker wrote to
+   * `<sessionDir>/.guuey/credentials/` this invoke. Injected so the run path
+   * stays pure (no disk access inside `runInvoke`).
+   */
+  listCredentials: () => Array<{ name: string; cred: CredentialFile }>;
 }
 
 /** The `query` surface the loop needs — the real SDK `query` satisfies it. */
@@ -104,7 +108,7 @@ export async function runInvoke(
       identity: invoke.identity,
       fs: invoke.fs,
       history: invoke.history,
-      readCredential: runtime.readCredential,
+      listCredentials: runtime.listCredentials,
       ...(runtime.apiKey !== undefined ? { apiKey: runtime.apiKey } : {}),
       ...(invoke.priorMemory !== undefined ? { priorMemory: invoke.priorMemory } : {}),
       ...(invoke.priorState !== undefined ? { priorState: invoke.priorState } : {}),

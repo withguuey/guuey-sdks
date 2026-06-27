@@ -87,7 +87,7 @@ describe("runInvoke — native emission", () => {
     await runInvoke(
       {},
       invoke(),
-      { apiKey: "sk-test", readCredential: () => undefined },
+      { apiKey: "sk-test", listCredentials: () => [] },
       emit,
       query,
     );
@@ -112,7 +112,7 @@ describe("runInvoke — native emission", () => {
     await runInvoke(
       {},
       invoke(),
-      { apiKey: "sk-test", readCredential: () => undefined },
+      { apiKey: "sk-test", listCredentials: () => [] },
       emit,
       query,
     );
@@ -137,7 +137,7 @@ describe("runInvoke — native emission", () => {
     await runInvoke(
       { framework: "google-adk" },
       invoke(),
-      { apiKey: "sk-test", readCredential: () => undefined },
+      { apiKey: "sk-test", listCredentials: () => [] },
       emit,
       query,
     );
@@ -160,7 +160,7 @@ describe("runInvoke — native emission", () => {
       return streamOf();
     };
 
-    await runInvoke({}, invoke(), { readCredential: () => undefined }, emit, query);
+    await runInvoke({}, invoke(), { listCredentials: () => [] }, emit, query);
 
     expect(queried).toBe(false);
     expect(events.filter((e) => e.type === "error")).toHaveLength(1);
@@ -188,7 +188,7 @@ describe("runInvoke — native emission", () => {
         priorMemory: [{ key: "name", value: "Ada" }],
         priorState: { step: 1 },
       }),
-      { apiKey: "sk-test", readCredential: () => undefined },
+      { apiKey: "sk-test", listCredentials: () => [] },
       emit,
       query,
     );

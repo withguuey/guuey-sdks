@@ -1,61 +1,29 @@
 /**
  * Snapshot → Claude Agent SDK `Options` construction. Lifted from
  * `backend/services/nocode-runtime/src/agent-runner.ts` (the pure-logic half),
- * with the F1 binding amendment: `@guuey/host` runs inside bubblewrap and must
- * NOT mint federation tokens (no IRSA in the sandbox). Instead, a federated MCP
- * server reads its credentials from a well-known path the Router-side credential
- * broker (Task 2.5) wrote — `<sessionDir>/.guuey/credentials/<server>.json`.
+ * with the B2-mcp amendment: `@guuey/host` is a THIN CRED-DIR READER. All MCP
+ * resolution (default, federation, mint, env-substitution) now lives once on the
+ * Router-side credential broker. The worker just reads
+ * `<sessionDir>/.guuey/credentials/*.json` (via ctx.listCredentials) and shapes
+ * each entry into the framework-neutral `SdkMcpServer` map.
  *
  * Two responsibilities:
  *
  * 1. **Snapshot → SDK options mapping.** Translates the agent.json shape
- *    (transport / url / headers, default MCP server, framework-scoped knobs)
+ *    (model, allowedTools, maxTurns, GuueyFS binding) and the cred-dir contents
  *    into the Claude Agent SDK's `mcpServers` + `allowedTools` + `maxTurns`.
- * 2. **Env-var substitution.** Header values written as `${env.NAME}` resolve
- *    against the supplied env at call time. Keeps secrets out of the deploy
- *    snapshot — operators set them via `guuey env set NAME=...`.
+ * 2. **Cred-dir mapping.** `resolveMcpServers(ctx)` globs the cred dir via
+ *    `ctx.listCredentials()` → one `SdkMcpServer` per file; ALL the old
+ *    federation/default/isGguiUrl/env-sub logic is DELETED (Router-side now).
  *
  * OSS-legality: this package imports ONLY `@anthropic-ai/claude-agent-sdk`,
- * `@guuey/worker`, `@guuey/config`, and Node built-ins. The federation mint
- * client and `FederationConfig` are NOT imported (they moved to the Router-side
- * credential broker). The `@silverprotocol/core`/`@guuey/fs` types the source
- * used become host-owned, dependency-free shapes here.
+ * `@guuey/worker`, `@guuey/config`, and Node built-ins.
  */
 import type { CanUseTool, Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Fs, HistoryMessage, JsonValue } from "@guuey/worker";
-import {
-  DEFAULT_AGENT_MCP_SERVERS,
-  GUUEY_DEFAULT_SYSTEM_PROMPT,
-  type GuueyAgent,
-  type GuueyAgentMcpServer,
-} from "@guuey/config";
+import { GUUEY_DEFAULT_SYSTEM_PROMPT, type GuueyAgent } from "@guuey/config";
 
 export type { SDKMessage };
-
-/**
- * Recognizes the ggui generative-UI MCP server by HOST. A lifted, dependency-
- * free copy of the backend `ggui-host.ts` predicate (NOT imported — keeps this
- * package OSS-legal; `@guuey/host` pulls in no `backend/*` code). It MUST stay
- * structurally identical to the broker's so producer + consumer agree on which
- * servers are federated.
- *
- * Matches the canonical prod host `mcp.ggui.ai` AND the per-environment sandbox
- * hosts `<env>.mcp.sandbox.ggui.ai` (dev / staging). A federated ggui server is
- * detected by host so the platform-DEFAULT ggui (declared without `federate`)
- * still reads its Router-minted credential.
- */
-function isGguiHost(host: string): boolean {
-  return host === "mcp.ggui.ai" || host.endsWith(".mcp.sandbox.ggui.ai");
-}
-
-/** {@link isGguiHost} for a full URL; false on a malformed URL. */
-function isGguiUrl(url: string): boolean {
-  try {
-    return isGguiHost(new URL(url).host);
-  } catch {
-    return false;
-  }
-}
 
 /** Default Claude model — only used when the snapshot omits `model`. */
 const DEFAULT_MODEL = "claude-sonnet-4-6";
@@ -88,13 +56,16 @@ const FS_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep"];
 const BASH_TOOL = "Bash";
 
 /**
- * The well-known credential file a federated MCP server reads. Written per
- * invoke by the Router-side credential broker (Task 2.5) at
- * `<sessionDir>/.guuey/credentials/<server>.json`. Contract from spec §7.1.
+ * The credential file the Router-side broker writes per invoke at
+ * `<sessionDir>/.guuey/credentials/<server>.json`. Shape from spec §7.1 (B2-mcp).
+ * `transport` is required so the worker knows which SDK arm to build without
+ * consulting the snapshot — the broker owns ALL resolution including transport.
  */
 export interface CredentialFile {
-  /** The per-app MCP URL the minted token is scoped to (`<host>/apps/<id>`). */
+  /** The resolved MCP URL (may be scoped `<host>/apps/<id>` for federated ggui). */
   url: string;
+  /** Transport the broker selected for this server. */
+  transport: "http" | "sse";
   /** Headers to forward — typically `{ authorization: 'Bearer <token>' }`. */
   headers: Record<string, string>;
   /** ISO expiry; informational for the worker (the Router refreshes per invoke). */
@@ -144,14 +115,15 @@ export interface BuildOptionsContext {
   priorMemory?: PriorMemoryRecord[];
   /** Prior working-state blob for the `<working_state>` preamble. */
   priorState?: JsonValue;
-  /** Env map for `${env.NAME}` header substitution (defaults to `process.env`). */
+  /** Env map — reserved for future header expansion (defaults to `process.env`). */
   env?: Record<string, string | undefined>;
   /**
-   * Reads `<sessionDir>/.guuey/credentials/<server>.json` for a federated MCP
-   * server, or `undefined` when the file is absent (federation unconfigured).
-   * Injected so the option-building stays pure (no disk in `buildOptions`).
+   * Returns every credential the Router broker wrote to
+   * `<sessionDir>/.guuey/credentials/` this invoke — one `{name, cred}` per
+   * usable MCP server. `name` is the filename stem (server name); `cred` is the
+   * parsed `CredentialFile`. Injected so option-building stays pure (no disk).
    */
-  readCredential: (server: string) => CredentialFile | undefined;
+  listCredentials: () => Array<{ name: string; cred: CredentialFile }>;
   /** Cancels the in-flight `query` when the client disconnects. */
   abortController?: AbortController;
 }
@@ -180,7 +152,7 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
     );
   }
 
-  const mcpServers = resolveMcpServers(snapshot, ctx);
+  const mcpServers = resolveMcpServers(ctx);
   const allowedTools = buildAllowedTools(snapshot, Object.keys(mcpServers), Boolean(ctx.fs));
   const systemPrompt = withContextPreamble(
     snapshot.systemPrompt ?? GUUEY_DEFAULT_SYSTEM_PROMPT,
@@ -268,98 +240,21 @@ export const autoAllowTool: CanUseTool = (_toolName, input) =>
   Promise.resolve({ behavior: "allow", updatedInput: input });
 
 /**
- * Resolve the per-invoke MCP server map — framework-NEUTRAL. Arms (F1 binding
- * amendment):
- *
- * - **external (non-federated)** → `{ type: transport ?? 'http', url, headers }`
- *   with `${env.NAME}` header substitution (unchanged).
- * - **federated external** (`isGguiUrl(url)` — incl. the platform-default ggui —
- *   OR `federate: true`) → read `<sessionDir>/.guuey/credentials/<server>.json`
- *   and use its `url` + `headers`. Absent file (federation unconfigured) → the
- *   server is SKIPPED this turn.
- *
- * `colocated`/`hosted`/`proxied` throw — runtime support is out of scope for the
- * universal host (see {@link toSdkMcpServer} for the F9 colocated rationale).
- *
- * Returns the dependency-free {@link SdkMcpServer} shape (the Claude SDK's
- * `mcpServers` value AND the source for the OpenAI run path's
- * `MCPServerStreamableHttp` construction). Keeping ONE resolver here keeps the
- * Claude + OpenAI paths in lockstep on federation/env-substitution semantics.
+ * Map the Router-resolved cred files to the framework-neutral SdkMcpServer map.
+ * The Router (credential-broker) owns ALL resolution — default, federation, mint,
+ * env-substitution; this worker just reads `<session>/.guuey/credentials/*.json`
+ * (via ctx.listCredentials) and shapes each entry. Keyed by the server name.
  */
-export function resolveMcpServers(
-  snapshot: GuueyAgent,
-  ctx: BuildOptionsContext,
-): Record<string, SdkMcpServer> {
-  const source = snapshot.mcpServers ?? DEFAULT_AGENT_MCP_SERVERS;
+export function resolveMcpServers(ctx: BuildOptionsContext): Record<string, SdkMcpServer> {
   const out: Record<string, SdkMcpServer> = {};
-  for (const [name, entry] of Object.entries(source)) {
-    const mapped = toSdkMcpServer(name, entry, ctx);
-    if (mapped !== undefined) out[name] = mapped;
+  for (const { name, cred } of ctx.listCredentials()) {
+    out[name] = {
+      type: cred.transport,
+      url: cred.url,
+      ...(Object.keys(cred.headers).length > 0 ? { headers: cred.headers } : {}),
+    };
   }
   return out;
-}
-
-/**
- * Map one agent.json `mcpServers` entry to the SDK shape, or `undefined` when a
- * federated server (ggui-by-URL or `federate:true`) has no credential file this
- * turn (skip it — no federated MCP).
- */
-function toSdkMcpServer(
-  name: string,
-  entry: GuueyAgentMcpServer,
-  ctx: BuildOptionsContext,
-): SdkMcpServer | undefined {
-  switch (entry.kind) {
-    case "colocated": {
-      // F9 — colocated/stdio MCP is REJECTED on the universal-host path. The host
-      // runs inside the Router's bubblewrap jail; the Claude SDK would spawn this
-      // `command` INSIDE that jail, but a no-code (config-only) snapshot ships no
-      // filesystem bundle — a working stdio MCP needs bundled binaries, which is
-      // inherently CODE-MODE (a `/worker` dir / custom Dockerfile that binds its
-      // own paths), not the universal host. The jail binds only the rootfs +
-      // session layers, never builder binaries the Router has no manifest of, so
-      // there is nothing safe to bind here. Reject loudly (a silent stdio spawn
-      // would fail opaquely with ENOENT inside bwrap) — colocated MCP is a
-      // code-mode/follow concern (recorded in the slice spec Non-Goals).
-      throw new Error(
-        `mcpServers["${name}"]: colocated (stdio) MCP is not supported on the universal ` +
-          `host path — it requires bundled binaries (code-mode /worker). Use a code-mode ` +
-          `agent (a /worker dir) to ship a colocated stdio MCP server.`,
-      );
-    }
-    case "external": {
-      // A server is federated when its URL is a ggui host (auto-federate the
-      // platform-DEFAULT ggui server + any env-specific ggui issuer, even with
-      // no `federate:true`) OR an external server opts in via `federate:true`.
-      // This is the IDENTICAL predicate the Router-side credential broker uses
-      // to decide which servers to mint + write a credential for — keeping
-      // producer + consumer in lockstep so the default agent's ggui keeps auth.
-      if (isGguiUrl(entry.url) || entry.federate === true) {
-        // F1: read the Router-written credential file instead of minting.
-        const cred = ctx.readCredential(name);
-        if (cred === undefined) return undefined; // federation unconfigured → skip.
-        const transport = entry.transport ?? "http";
-        return {
-          type: transport,
-          url: cred.url,
-          ...(Object.keys(cred.headers).length > 0 ? { headers: cred.headers } : {}),
-        };
-      }
-      const transport = entry.transport ?? "http";
-      const headers = entry.headers ? resolveEnvVars(entry.headers, ctx.env) : undefined;
-      return {
-        type: transport,
-        url: entry.url,
-        ...(headers ? { headers } : {}),
-      };
-    }
-    case "hosted": {
-      throw new Error(`mcpServers["${name}"]: hosted MCP resolution lands in a later slice`);
-    }
-    case "proxied": {
-      throw new Error(`mcpServers["${name}"]: proxied (Case C) runtime lands in v2`);
-    }
-  }
 }
 
 /**
@@ -386,26 +281,6 @@ function buildAllowedTools(
       ? explicit.slice()
       : declaredServerNames.map((s) => `mcp__${s}`);
   return fsBound ? [...base, ...FS_TOOLS, BASH_TOOL] : base;
-}
-
-/**
- * Substitute `${env.NAME}` placeholders in header values against `env`
- * (defaults to `process.env`). Anything else passes through unchanged. Missing
- * env vars resolve to an empty string — the upstream request fails with a
- * clearer 401/403 than a "blank header" mystery.
- */
-function resolveEnvVars(
-  headers: Record<string, string>,
-  env: Record<string, string | undefined> = process.env,
-): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(headers)) {
-    out[key] = value.replace(/\$\{env\.([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, varName: string) => {
-      const v = env[varName];
-      return v ?? "";
-    });
-  }
-  return out;
 }
 
 /**

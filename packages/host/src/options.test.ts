@@ -3,9 +3,9 @@ import type { GuueyAgent } from "@guuey/config";
 import { GUUEY_DEFAULT_SYSTEM_PROMPT } from "@guuey/config";
 import {
   buildOptions,
+  resolveMcpServers,
   withContextPreamble,
   type BuildOptionsContext,
-  type CredentialFile,
 } from "./options.js";
 
 /** Minimal invoke context with no FS layers, no credentials, default env. */
@@ -14,226 +14,92 @@ function ctx(over: Partial<BuildOptionsContext> = {}): BuildOptionsContext {
     input: "hi",
     identity: { userId: "u1", authMode: "anonymous" },
     apiKey: "sk-test",
-    readCredential: () => undefined,
+    listCredentials: () => [],
     ...over,
   };
 }
 
-describe("buildOptions — MCP server translation", () => {
-  it("defaults to the platform ggui server and reads its federated credential (ggui-by-URL, no federate:true)", () => {
-    // No mcpServers → platform default { ggui: external https://mcp.ggui.ai }.
-    // The default ggui has NO federate:true, but its ggui URL federates it, so
-    // the host reads <sessionDir>/.guuey/credentials/ggui.json and applies it.
-    const reads: string[] = [];
+describe("resolveMcpServers — cred-dir mapper", () => {
+  it("maps each cred-dir entry to an SdkMcpServer keyed by name", () => {
+    const result = resolveMcpServers(
+      ctx({
+        listCredentials: () => [
+          {
+            name: "ggui",
+            cred: {
+              url: "https://mcp.ggui.ai/apps/a",
+              transport: "http",
+              headers: { authorization: "Bearer t" },
+            },
+          },
+          { name: "ext", cred: { url: "https://x/mcp", transport: "sse" as const, headers: {} as Record<string, string> } },
+        ],
+      }),
+    );
+    expect(result).toEqual({
+      ggui: {
+        type: "http",
+        url: "https://mcp.ggui.ai/apps/a",
+        headers: { authorization: "Bearer t" },
+      },
+      ext: { type: "sse", url: "https://x/mcp" },
+    });
+  });
+
+  it("returns {} for an empty cred dir", () => {
+    expect(resolveMcpServers(ctx({ listCredentials: () => [] }))).toEqual({});
+  });
+});
+
+describe("buildOptions — MCP servers from cred dir", () => {
+  it("produces mcpServers keyed by cred-dir names when the broker wrote credentials", () => {
+    // The Router wrote ggui + ext to the cred dir; buildOptions surfaces them both.
     const opts = buildOptions(
       {},
       ctx({
-        readCredential: (server) => {
-          reads.push(server);
-          return server === "ggui"
-            ? {
-                url: "https://mcp.ggui.ai/apps/app-default",
-                headers: { authorization: "Bearer default-ggui-token" },
-                expiresAt: "2030-01-01T00:00:00Z",
-              }
-            : undefined;
-        },
+        listCredentials: () => [
+          {
+            name: "ggui",
+            cred: {
+              url: "https://mcp.ggui.ai/apps/app-default",
+              transport: "http",
+              headers: { authorization: "Bearer tok" },
+            },
+          },
+        ],
       }),
     );
-    expect(reads).toContain("ggui");
     expect(opts.mcpServers).toEqual({
       ggui: {
         type: "http",
         url: "https://mcp.ggui.ai/apps/app-default",
-        headers: { authorization: "Bearer default-ggui-token" },
+        headers: { authorization: "Bearer tok" },
       },
     });
   });
 
-  it("skips the default ggui server when its federated credential is absent (federation unconfigured)", () => {
-    // Default ggui is federated-by-URL; with no credential file it's skipped.
+  it("produces an empty mcpServers map when the cred dir is empty (no MCP this turn)", () => {
     const opts = buildOptions({}, ctx());
     expect(opts.mcpServers).toEqual({});
-  });
-
-  it("rejects a colocated entry (F9 — code-mode/follow concern, not the universal host)", () => {
-    // F9: a no-code snapshot ships no bundled binaries, and the host runs inside
-    // the Router's bwrap jail (which never binds builder binaries), so a colocated
-    // stdio MCP cannot run here. The host rejects it loudly rather than spawning a
-    // command that would fail opaquely with ENOENT inside the sandbox.
-    const snapshot: GuueyAgent = {
-      mcpServers: {
-        tool: { kind: "colocated", command: "node", args: ["dist/tool.js"] },
-      },
-    };
-    expect(() => buildOptions(snapshot, ctx())).toThrow(/colocated/);
-  });
-
-  it("maps an external (non-federated) entry → http SDK shape with resolved ${env.NAME} headers", () => {
-    const snapshot: GuueyAgent = {
-      mcpServers: {
-        ext: {
-          kind: "external",
-          url: "https://mcp.example.com",
-          headers: { Authorization: "Bearer ${env.MY_TOKEN}" },
-        },
-      },
-    };
-    const opts = buildOptions(snapshot, ctx({ env: { MY_TOKEN: "abc123" } }));
-    expect(opts.mcpServers).toEqual({
-      ext: {
-        type: "http",
-        url: "https://mcp.example.com",
-        headers: { Authorization: "Bearer abc123" },
-      },
-    });
-  });
-
-  it("honors transport: 'sse' on an external entry", () => {
-    const snapshot: GuueyAgent = {
-      mcpServers: {
-        ext: { kind: "external", url: "https://mcp.example.com", transport: "sse" },
-      },
-    };
-    const opts = buildOptions(snapshot, ctx());
-    expect(opts.mcpServers).toEqual({
-      ext: { type: "sse", url: "https://mcp.example.com" },
-    });
-  });
-
-  it("throws a descriptive error for a hosted entry", () => {
-    const snapshot: GuueyAgent = {
-      mcpServers: { h: { kind: "hosted", server: "todo-abc123" } },
-    };
-    expect(() => buildOptions(snapshot, ctx())).toThrow(/hosted MCP/);
-  });
-
-  it("throws a descriptive error for a proxied entry", () => {
-    const snapshot: GuueyAgent = {
-      mcpServers: { p: { kind: "proxied", connection: "gmail" } },
-    };
-    expect(() => buildOptions(snapshot, ctx())).toThrow(/proxied/);
-  });
-});
-
-describe("buildOptions — federated credential reading (F1 binding amendment)", () => {
-  const cred: CredentialFile = {
-    url: "https://dev.mcp.sandbox.ggui.ai/apps/app-123",
-    headers: { authorization: "Bearer minted-token" },
-    expiresAt: "2030-01-01T00:00:00Z",
-  };
-
-  it("federated ggui server → reads <sessionDir>/.guuey/credentials/<server>.json and uses its url+headers", () => {
-    const snapshot: GuueyAgent = {
-      mcpServers: {
-        ggui: { kind: "external", url: "https://mcp.ggui.ai", federate: true },
-      },
-    };
-    const reads: string[] = [];
-    const opts = buildOptions(
-      snapshot,
-      ctx({
-        fs: { app: "/fs/app", home: "/fs/home", session: "/fs/session" },
-        readCredential: (server) => {
-          reads.push(server);
-          return server === "ggui" ? cred : undefined;
-        },
-      }),
-    );
-    expect(reads).toContain("ggui");
-    expect(opts.mcpServers).toEqual({
-      ggui: {
-        type: "http",
-        url: "https://dev.mcp.sandbox.ggui.ai/apps/app-123",
-        headers: { authorization: "Bearer minted-token" },
-      },
-    });
-  });
-
-  it("federated server with ABSENT credential file → server is skipped (no federated MCP this turn)", () => {
-    const snapshot: GuueyAgent = {
-      mcpServers: {
-        ggui: { kind: "external", url: "https://mcp.ggui.ai", federate: true },
-      },
-    };
-    const opts = buildOptions(
-      snapshot,
-      ctx({
-        fs: { app: "/fs/app", home: "/fs/home", session: "/fs/session" },
-        readCredential: () => undefined,
-      }),
-    );
-    expect(opts.mcpServers).toEqual({});
-  });
-
-  it("a ggui-URL server is federated even without federate:true (reads its credential — default ggui keeps auth)", () => {
-    // Aligned with the broker: ggui-by-URL federates regardless of `federate`,
-    // so the platform-default ggui (declared without federate) keeps its token.
-    const snapshot: GuueyAgent = {
-      mcpServers: {
-        ggui: { kind: "external", url: "https://mcp.ggui.ai" },
-      },
-    };
-    const reads: string[] = [];
-    const opts = buildOptions(
-      snapshot,
-      ctx({
-        fs: { app: "/fs/app", home: "/fs/home", session: "/fs/session" },
-        readCredential: (server) => {
-          reads.push(server);
-          return server === "ggui" ? cred : undefined;
-        },
-      }),
-    );
-    expect(reads).toContain("ggui");
-    expect(opts.mcpServers).toEqual({
-      ggui: {
-        type: "http",
-        url: "https://dev.mcp.sandbox.ggui.ai/apps/app-123",
-        headers: { authorization: "Bearer minted-token" },
-      },
-    });
-  });
-
-  it("a NON-ggui external server without federate:true is used as declared (never reads a credential)", () => {
-    const snapshot: GuueyAgent = {
-      mcpServers: {
-        ext: { kind: "external", url: "https://mcp.example.com" },
-      },
-    };
-    let read = false;
-    const opts = buildOptions(
-      snapshot,
-      ctx({
-        fs: { app: "/fs/app", home: "/fs/home", session: "/fs/session" },
-        readCredential: () => {
-          read = true;
-          return undefined;
-        },
-      }),
-    );
-    expect(read).toBe(false);
-    expect(opts.mcpServers).toEqual({
-      ext: { type: "http", url: "https://mcp.example.com" },
-    });
   });
 });
 
 describe("buildOptions — allowedTools", () => {
-  it("defaults to wildcard mcp__<server> for each declared server", () => {
-    const snapshot: GuueyAgent = {
-      mcpServers: {
-        a: { kind: "external", url: "https://a.example.com" },
-        b: { kind: "external", url: "https://b.example.com" },
-      },
-    };
-    const opts = buildOptions(snapshot, ctx());
+  it("defaults to wildcard mcp__<server> for each cred-dir server name", () => {
+    const opts = buildOptions(
+      {},
+      ctx({
+        listCredentials: () => [
+          { name: "a", cred: { url: "https://a.example.com", transport: "http", headers: {} } },
+          { name: "b", cred: { url: "https://b.example.com", transport: "sse", headers: {} } },
+        ],
+      }),
+    );
     expect(opts.allowedTools).toEqual(["mcp__a", "mcp__b"]);
   });
 
-  it("passes an explicit allowlist through verbatim", () => {
+  it("passes an explicit snapshot allowlist through verbatim", () => {
     const snapshot: GuueyAgent = {
-      mcpServers: { a: { kind: "external", url: "https://a.example.com" } },
       tools: { allowlist: ["mcp__a__do_thing", "mcp__a__other"] },
     };
     const opts = buildOptions(snapshot, ctx());
@@ -317,7 +183,6 @@ describe("buildOptions — Bash re-enabled prompt-free (Router bwrap is the isol
 
   it("Bash joins an explicit allowlist when fs is bound", () => {
     const snapshot: GuueyAgent = {
-      mcpServers: { a: { kind: "external", url: "https://a.example.com" } },
       tools: { allowlist: ["mcp__a__do_thing"] },
     };
     const opts = buildOptions(snapshot, ctx({ fs }));
