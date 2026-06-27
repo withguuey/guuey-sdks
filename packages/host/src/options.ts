@@ -115,8 +115,6 @@ export interface BuildOptionsContext {
   priorMemory?: PriorMemoryRecord[];
   /** Prior working-state blob for the `<working_state>` preamble. */
   priorState?: JsonValue;
-  /** Env map — reserved for future header expansion (defaults to `process.env`). */
-  env?: Record<string, string | undefined>;
   /**
    * Returns every credential the Router broker wrote to
    * `<sessionDir>/.guuey/credentials/` this invoke — one `{name, cred}` per

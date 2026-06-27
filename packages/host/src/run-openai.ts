@@ -218,8 +218,9 @@ function finalText(stream: OpenaiRunResult): string {
  * credential file or `${env.NAME}` substitution) ride on the underlying MCP
  * transport's `RequestInit.headers` via `requestInit`.
  *
- * `stdio` (colocated) entries never reach here — `resolveMcpServers` throws on
- * the colocated arm (F9), same as the Claude path.
+ * The cred dir only yields `http`/`sse` servers (the Router resolves all
+ * transport to one of those two); the `stdio` arm below is unreachable
+ * defensive code — kept so a future schema change can't silently drop a server.
  */
 function buildOpenaiMcpServers(ctx: BuildOptionsContext): MCPServerStreamableHttp[] {
   const resolved = resolveMcpServers(ctx);
