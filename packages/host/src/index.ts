@@ -32,6 +32,7 @@ import type { GuueyAgent } from "@guuey/config";
 import { runInvoke, type HostInvoke, type HostRuntime } from "./run.js";
 import { runInvokeOpenai, type OpenaiRunFn } from "./run-openai.js";
 import type { CredentialFile } from "./options.js";
+import { buildHostContext } from "./boot-context.js";
 
 /** The OpenAI framework tag (matches `AgentFramework`). */
 const OPENAI_FRAMEWORK = "openai-agents-sdk";
@@ -117,21 +118,42 @@ async function main(): Promise<void> {
   const emit: Emitter = createEmitter(out);
   const isOpenai = snapshot.framework === OPENAI_FRAMEWORK;
 
-  // Resolve the framework-correct API key once at boot. OpenAI keys are applied
-  // globally to the SDK (`setDefaultOpenAIKey`); Claude keys ride the per-invoke
-  // `Options.env` (the runtime carries it). A missing key is NOT fatal here —
-  // each run path emits a clear `error` per invoke if the key is absent.
-  const apiKey = isOpenai ? process.env.OPENAI_API_KEY : process.env.ANTHROPIC_API_KEY;
-  if (isOpenai && apiKey !== undefined) setDefaultOpenAIKey(apiKey);
+  // Resolve the framework-correct credentials once at boot.
+  //
+  //  - OpenAI path: the key (or opaque broker token in hosted mode) is applied
+  //    globally to the SDK via `setDefaultOpenAIKey`. The OpenAI SDK also reads
+  //    `OPENAI_BASE_URL` + `OPENAI_API_KEY` from env directly, so the broker
+  //    env injected by Task 8's `buildWorkerEnv` already routes it — no extra
+  //    wiring needed here.
+  //  - Claude path (hosted/broker): `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN`
+  //    are set by the broker (Task 8); they ride the per-invoke `HostRuntime` →
+  //    `BuildOptionsContext` → `options.env`. The real `ANTHROPIC_API_KEY` is
+  //    intentionally absent so it cannot leak to agent code.
+  //  - Claude path (local-dev): only `ANTHROPIC_API_KEY` is set; the broker
+  //    fields are absent, `buildOptions` falls back to the direct-key path.
+  //
+  // A missing key is NOT fatal here — each run path emits a clear `error` per
+  // invoke if neither the broker credentials nor a direct key are present.
+  const bootCtx = buildHostContext(process.env);
+  if (isOpenai && bootCtx.openaiKey !== undefined) setDefaultOpenAIKey(bootCtx.openaiKey);
 
   for await (const line of lines(process.stdin)) {
     const msg = parseControl(line);
     if (isShutdown(msg)) break;
     if (!isInvoke(msg)) continue;
 
+    // Broker fields (`baseUrl`/`authToken`) are only wired for the Claude path.
+    // The OpenAI SDK reads OPENAI_BASE_URL + OPENAI_API_KEY from env directly.
     const runtime: HostRuntime = {
       listCredentials: listCredentials(msg.fs),
-      ...(apiKey !== undefined ? { apiKey } : {}),
+      ...(isOpenai
+        ? {}
+        : {
+            ...(bootCtx.anthropicApiKey !== undefined ? { apiKey: bootCtx.anthropicApiKey } : {}),
+            ...(bootCtx.anthropicBaseUrl !== undefined ? { baseUrl: bootCtx.anthropicBaseUrl } : {}),
+            ...(bootCtx.anthropicAuthToken !== undefined ? { authToken: bootCtx.anthropicAuthToken } : {}),
+          }
+      ),
     };
     // §1.4 push-by-value context now arrives TYPED on the Invoke (extended in
     // Task 3) — no raw-line re-parse. `priorState` uses a `!== undefined` gate so

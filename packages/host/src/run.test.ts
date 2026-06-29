@@ -198,4 +198,48 @@ describe("runInvoke — native emission", () => {
     expect(seen.systemPrompt).toContain("<working_state>");
     expect(seen.systemPrompt).toContain("Ada");
   });
+
+  it("broker path: baseUrl+authToken in runtime → options.env has ANTHROPIC_BASE_URL+ANTHROPIC_AUTH_TOKEN, no ANTHROPIC_API_KEY", async () => {
+    let capturedEnv: Record<string, string> | undefined;
+    const { sink } = collector();
+    const emit = createEmitter(sink);
+    const query: QueryFn = (args) => {
+      capturedEnv = args.options.env as Record<string, string>;
+      return streamOf();
+    };
+
+    await runInvoke(
+      {},
+      invoke(),
+      { baseUrl: "http://127.0.0.1:9911", authToken: "opaque-token", listCredentials: () => [] },
+      emit,
+      query,
+    );
+
+    expect(capturedEnv?.ANTHROPIC_BASE_URL).toBe("http://127.0.0.1:9911");
+    expect(capturedEnv?.ANTHROPIC_AUTH_TOKEN).toBe("opaque-token");
+    expect(capturedEnv?.ANTHROPIC_API_KEY).toBeUndefined();
+  });
+
+  it("local-dev path: apiKey in runtime → options.env has ANTHROPIC_API_KEY, no base-URL/token", async () => {
+    let capturedEnv: Record<string, string> | undefined;
+    const { sink } = collector();
+    const emit = createEmitter(sink);
+    const query: QueryFn = (args) => {
+      capturedEnv = args.options.env as Record<string, string>;
+      return streamOf();
+    };
+
+    await runInvoke(
+      {},
+      invoke(),
+      { apiKey: "sk-ant-local", listCredentials: () => [] },
+      emit,
+      query,
+    );
+
+    expect(capturedEnv?.ANTHROPIC_API_KEY).toBe("sk-ant-local");
+    expect(capturedEnv?.ANTHROPIC_BASE_URL).toBeUndefined();
+    expect(capturedEnv?.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+  });
 });

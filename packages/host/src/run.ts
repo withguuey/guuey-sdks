@@ -38,8 +38,24 @@ export interface HostInvoke {
 
 /** Per-process config the worker resolves once at boot. */
 export interface HostRuntime {
-  /** Anthropic API key (from env). */
+  /**
+   * Anthropic API key — local-dev fallback when `baseUrl`+`authToken` are
+   * absent. One of (`baseUrl`+`authToken`) or `apiKey` must be provided;
+   * `buildOptions` throws at invoke time if neither is present.
+   */
   apiKey?: string;
+  /**
+   * Loopback proxy base URL (hosted/broker mode). Task 8 injects this as
+   * `ANTHROPIC_BASE_URL` via `buildWorkerEnv`. When set together with
+   * `authToken`, the Claude CLI subprocess routes through the managed-LLM
+   * broker; the real API key is intentionally absent to prevent leaks.
+   */
+  baseUrl?: string;
+  /**
+   * Opaque session token for the loopback proxy (hosted/broker mode). Task 8
+   * injects this as `ANTHROPIC_AUTH_TOKEN`. Required when `baseUrl` is set.
+   */
+  authToken?: string;
   /**
    * Returns every credential the Router broker wrote to
    * `<sessionDir>/.guuey/credentials/` this invoke. Injected so the run path
@@ -110,6 +126,8 @@ export async function runInvoke(
       history: invoke.history,
       listCredentials: runtime.listCredentials,
       ...(runtime.apiKey !== undefined ? { apiKey: runtime.apiKey } : {}),
+      ...(runtime.baseUrl !== undefined ? { baseUrl: runtime.baseUrl } : {}),
+      ...(runtime.authToken !== undefined ? { authToken: runtime.authToken } : {}),
       ...(invoke.priorMemory !== undefined ? { priorMemory: invoke.priorMemory } : {}),
       ...(invoke.priorState !== undefined ? { priorState: invoke.priorState } : {}),
     };
