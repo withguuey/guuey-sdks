@@ -101,8 +101,24 @@ export interface BuildOptionsContext {
   input: string;
   /** Router-vouched end-user identity. */
   identity: { userId: string; authMode: "anonymous" | "authenticated" };
-  /** Anthropic API key (from env). Required — `buildOptions` throws if absent. */
+  /**
+   * Anthropic API key — used for local-dev / off-sandbox fallback when
+   * `baseUrl` + `authToken` are absent. One of (`baseUrl`+`authToken`) or
+   * `apiKey` must be provided; `buildOptions` throws if neither is present.
+   */
   apiKey?: string;
+  /**
+   * Loopback proxy base URL for the managed-LLM broker (`ANTHROPIC_BASE_URL`).
+   * When present together with `authToken`, the Claude CLI subprocess is routed
+   * through the broker; the real API key is intentionally omitted from
+   * `options.env` so it cannot leak to agent code.
+   */
+  baseUrl?: string;
+  /**
+   * Opaque session token for the loopback proxy (`ANTHROPIC_AUTH_TOKEN`).
+   * Required when `baseUrl` is set; ignored when only `apiKey` is present.
+   */
+  authToken?: string;
   /**
    * Per-session GuueyFS layer mounts (the invoke's `fs`). When present, the
    * invoke binds `cwd`=session, exposes home+app as `additionalDirectories`,
@@ -133,9 +149,15 @@ export interface BuildOptionsContext {
  */
 export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Options {
   const apiKey = ctx.apiKey;
-  if (!apiKey) {
+  const baseUrl = ctx.baseUrl;
+  const authToken = ctx.authToken;
+
+  // Require either the loopback proxy credentials (hosted/broker path) or a
+  // direct API key (local-dev fallback). Neither → fail loudly.
+  if (!((baseUrl !== undefined && authToken !== undefined) || apiKey)) {
     throw new Error(
-      "@guuey/host: ANTHROPIC_API_KEY env var required (the Router sets it at pod boot).",
+      "@guuey/host: either (baseUrl + authToken) for the managed-LLM proxy, " +
+        "or ANTHROPIC_API_KEY for local dev, is required.",
     );
   }
 
@@ -162,6 +184,42 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
   const maxTurns = snapshot.runtime?.maxTurns ?? DEFAULT_MAX_TURNS;
   const fs = ctx.fs;
 
+  // Build the subprocess env. Two mutually-exclusive paths:
+  //
+  //  - Proxy path (baseUrl + authToken present): route the Claude CLI
+  //    subprocess through the managed-LLM broker. baseUrl + authToken are
+  //    spread LAST so a builder's snapshot.env cannot override them.
+  //    ANTHROPIC_API_KEY is intentionally absent — the proxy owns auth.
+  //    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC suppresses telemetry pings
+  //    that would bypass the proxy.
+  //
+  //  - Local-dev fallback (only apiKey present): pass the real key directly.
+  //    The guard above guarantees apiKey is non-null on this branch.
+  // Explicit Record<string, string> annotation prevents TypeScript from widening
+  // the ternary to a union `{ K: string } | {}`, which would make spread targets
+  // produce optional-undefined keys that conflict with Record<string, string>.
+  const fsEnv: Record<string, string> = fs
+    ? { [ENV_HOME_DIR]: fs.home, [ENV_APP_DIR]: fs.app }
+    : {};
+  let env: Record<string, string>;
+  if (baseUrl !== undefined && authToken !== undefined) {
+    env = {
+      ...(snapshot.env ?? {}),
+      ...fsEnv,
+      ANTHROPIC_BASE_URL: baseUrl,
+      ANTHROPIC_AUTH_TOKEN: authToken,
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+    };
+  } else {
+    // apiKey is guaranteed non-null by the guard; the if-check narrows the type.
+    if (!apiKey) throw new Error("unreachable: apiKey guard should have prevented this path");
+    env = {
+      ANTHROPIC_API_KEY: apiKey,
+      ...(snapshot.env ?? {}),
+      ...fsEnv,
+    };
+  }
+
   // Whether the operator pinned a Claude permission mode in agent.json. When
   // set we forward it verbatim and let the SDK's mode govern the posture; when
   // unset we install the auto-allow `canUseTool` below so the default no-code
@@ -183,11 +241,7 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
     settingSources: [],
     strictMcpConfig: true,
     maxTurns,
-    env: {
-      ANTHROPIC_API_KEY: apiKey,
-      ...(snapshot.env ?? {}),
-      ...(fs ? { [ENV_HOME_DIR]: fs.home, [ENV_APP_DIR]: fs.app } : {}),
-    },
+    env,
     systemPrompt,
     // GuueyFS binding (opt-in): session dir as cwd, home+app as extra roots.
     ...(fs ? { cwd: fs.session, additionalDirectories: [fs.home, fs.app] } : {}),

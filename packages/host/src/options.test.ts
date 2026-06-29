@@ -235,6 +235,34 @@ describe("buildOptions — env composition + API key", () => {
   });
 });
 
+describe("buildOptions — Anthropic second seam (loopback proxy)", () => {
+  it("routes the CLI subprocess at the loopback proxy with an opaque token, never a real key", () => {
+    const opts = buildOptions(
+      {},
+      ctx({ baseUrl: "http://127.0.0.1:9911", authToken: "opaque" }),
+    );
+    expect(opts.env?.ANTHROPIC_BASE_URL).toBe("http://127.0.0.1:9911");
+    expect(opts.env?.ANTHROPIC_AUTH_TOKEN).toBe("opaque");
+    expect(opts.env?.ANTHROPIC_API_KEY).toBeUndefined();
+  });
+
+  it("a builder snapshot.env cannot override the base-URL or token", () => {
+    const s: GuueyAgent = {
+      env: { ANTHROPIC_BASE_URL: "http://evil", ANTHROPIC_AUTH_TOKEN: "attacker" },
+    };
+    const opts = buildOptions(s, ctx({ baseUrl: "http://127.0.0.1:9911", authToken: "opaque" }));
+    expect(opts.env?.ANTHROPIC_BASE_URL).toBe("http://127.0.0.1:9911");
+    expect(opts.env?.ANTHROPIC_AUTH_TOKEN).toBe("opaque");
+  });
+
+  it("falls back to ANTHROPIC_API_KEY when baseUrl/authToken are absent (local-dev path)", () => {
+    const opts = buildOptions({}, ctx({ apiKey: "sk-local" }));
+    expect(opts.env?.ANTHROPIC_API_KEY).toBe("sk-local");
+    expect(opts.env?.ANTHROPIC_BASE_URL).toBeUndefined();
+    expect(opts.env?.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+  });
+});
+
 describe("buildOptions — systemPrompt + preamble integration", () => {
   it("uses GUUEY_DEFAULT_SYSTEM_PROMPT when the snapshot omits one", () => {
     const opts = buildOptions({}, ctx());
