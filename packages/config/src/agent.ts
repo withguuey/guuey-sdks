@@ -255,6 +255,15 @@ export const AgentSectionV1 = z.strictObject({
   // ── Framework + runtime ──
   framework: z.enum(AGENT_FRAMEWORKS).optional(),
   model: z.string().min(1).optional(),
+  /**
+   * Managed-LLM provider selector — only meaningful for
+   * `framework: 'openai-agents-sdk'`, where OpenAI and OpenRouter share the
+   * identical OpenAI wire and the Router must pick the upstream + platform key
+   * at invoke time. `'openrouter'` routes managed traffic to OpenRouter;
+   * absent or `'openai'` uses native OpenAI. Ignored for other frameworks
+   * (claude → Anthropic, google-adk → Gemini are framework-determined).
+   */
+  modelProvider: z.enum(['openai', 'openrouter']).optional(),
   systemPrompt: SystemPromptSchema.optional(),
   /**
    * MCP servers the agent may call. **Replaces** the platform default

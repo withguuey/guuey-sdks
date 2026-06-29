@@ -151,6 +151,27 @@ describe('validateNoLiteralSecrets — aggregation', () => {
   });
 });
 
+// ── modelProvider schema tests ───────────────────────────────────────────────
+
+describe("AgentSectionV1.modelProvider (P2 OpenRouter selection)", () => {
+  it("accepts 'openrouter'", () => {
+    const r = AgentSectionV1.safeParse({ framework: "openai-agents-sdk", modelProvider: "openrouter" });
+    expect(r.success).toBe(true);
+  });
+  it("accepts 'openai'", () => {
+    const r = AgentSectionV1.safeParse({ framework: "openai-agents-sdk", modelProvider: "openai" });
+    expect(r.success).toBe(true);
+  });
+  it("is optional (absent is valid)", () => {
+    const r = AgentSectionV1.safeParse({ framework: "openai-agents-sdk" });
+    expect(r.success).toBe(true);
+  });
+  it("rejects an unknown provider value", () => {
+    const r = AgentSectionV1.safeParse({ modelProvider: "bedrock" });
+    expect(r.success).toBe(false);
+  });
+});
+
 // ── Discriminated union schema tests ─────────────────────────────────────────
 
 describe('McpServerSchema — each kind parses correctly', () => {
