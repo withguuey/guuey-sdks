@@ -65,6 +65,7 @@ import {
   resolveDeployMode,
   shouldOfferAppCreate,
 } from '../deploy-plan';
+import { packGguiAssets, pushGguiAssetsLeg } from '../ggui-assets';
 import * as out from '../output';
 
 const DEFAULT_PORTAL_URL = 'https://app.guuey.com';
@@ -260,33 +261,6 @@ async function ensureLinkedApp(opts: {
   return data.appId;
 }
 
-// ─── ggui asset leg (Task 15 seam) ────────────────────────────────────────
-
-/**
- * Thrown by {@link pushGguiAssetsLeg} until Task 15 lands — matches the
- * real endpoint's own env-dormant `not-yet-supported` response (design doc
- * §8) so the orchestrator's warn-and-continue handling is exercised
- * identically before and after the swap.
- */
-class GguiAssetsNotYetSupportedError extends Error {
-  constructor(message = 'ggui asset push is not implemented yet') {
-    super(message);
-    this.name = 'GguiAssetsNotYetSupportedError';
-  }
-}
-
-/**
- * SEAM — placeholder for Task 15's real ggui asset-push leg (design doc
- * §8: pack the `ggui/` dir referenced by `guuey.json#ggui.configFile` →
- * `POST /v1/apps/:id/ggui-assets/push`). Task 15 replaces the BODY of this
- * function with the real call; the call site in {@link deployCode} does
- * not need to change (its `not-yet-supported` vs. real-error handling
- * already matches the endpoint's contract).
- */
-async function pushGguiAssetsLeg(_opts: { configFile: string; root: string }): Promise<void> {
-  throw new GguiAssetsNotYetSupportedError();
-}
-
 // ─── Code mode: one-command orchestrator ──────────────────────────────────
 
 /**
@@ -374,15 +348,23 @@ async function deployCode(opts: {
 
   // ── Step 3: ggui asset leg ──
   if (doc.ggui?.configFile) {
+    let bundle: ReturnType<typeof packGguiAssets>;
     try {
-      await pushGguiAssetsLeg({ configFile: doc.ggui.configFile, root });
+      bundle = packGguiAssets(root, doc.ggui.configFile);
     } catch (err) {
-      if (err instanceof GguiAssetsNotYetSupportedError) {
-        console.log('  ggui assets: not yet supported — skipping (assets stay local-only for now).');
-      } else {
-        out.error(`ggui asset push failed: ${err instanceof Error ? err.message : String(err)}`);
-        process.exit(1);
+      out.error(`Failed to pack ggui assets: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+    try {
+      const result = await pushGguiAssetsLeg({ appId, bundle, auth, config });
+      if (!result.pushed) {
+        console.log(
+          '  ggui assets not pushed — the platform-side API is pending (tracked cross-team); deploy continues',
+        );
       }
+    } catch (err) {
+      out.error(`ggui asset push failed: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
     }
   }
 
