@@ -36,3 +36,5 @@ export {
 export { createEmitter, type Emitter, type WriteSink } from "./emit.js";
 export { serve, serveOn, type ServeOptions } from "./serve.js";
 export { Turn, type WorkerHandler } from "./turn.js";
+export { serveNative, serveNativeOn } from "./serve-native.js";
+export type { NativeEmit, NativeHandler, NativeServeInfo } from "./serve-native.js";

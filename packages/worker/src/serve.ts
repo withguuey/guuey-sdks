@@ -11,6 +11,7 @@
 import { createWriteStream } from "node:fs";
 import type { Readable, Writable } from "node:stream";
 import { createEmitter } from "./emit.js";
+import { lines } from "./lines.js";
 import { isInvoke, isShutdown, parseControl } from "./parse.js";
 import { Turn, type WorkerHandler } from "./turn.js";
 
@@ -19,23 +20,6 @@ export interface ServeOptions {
   output: Writable;
   /** Stop the loop after this many ms with no control input (default 5 min). */
   idleMs?: number;
-}
-
-/** Async-iterate NDJSON lines off a Readable. */
-async function* lines(input: Readable): AsyncIterable<string> {
-  let buf = "";
-  for await (const chunk of input) {
-    buf += typeof chunk === "string" ? chunk : (chunk as Buffer).toString("utf8");
-    let nl = buf.indexOf("\n");
-    while (nl !== -1) {
-      const line = buf.slice(0, nl).trim();
-      buf = buf.slice(nl + 1);
-      if (line.length > 0) yield line;
-      nl = buf.indexOf("\n");
-    }
-  }
-  const tail = buf.trim();
-  if (tail.length > 0) yield tail;
 }
 
 export async function serveOn(handler: WorkerHandler, opts: ServeOptions): Promise<void> {
