@@ -11,6 +11,14 @@
  * AppRenderer>` instead of importing `@modelcontextprotocol/sdk`'s request
  * types directly — that keeps this file honest against whatever the
  * installed `@mcp-ui/client` version actually expects, with zero guessing.
+ *
+ * Sandbox origin (MCP Apps spec, double-iframe architecture): the untrusted
+ * app HTML must be mounted from a DIFFERENT origin than this page. In dev,
+ * `vite.config.ts`'s `sandboxProxyPlugin` serves the spec-canonical
+ * `sandbox.html` on :6891 (a different localhost port = a different origin);
+ * deployed builds must set `VITE_SANDBOX_URL` to a hosted copy (see
+ * `../sandbox-proxy.ts` + `.env.example`). Without a resolvable sandbox URL,
+ * UI resources fall back to a visible notice — NEVER a same-origin mount.
  */
 import {
   Fragment,
@@ -27,6 +35,24 @@ import { AGENT_URL, useAgentChat } from "./useAgentChat";
 type AppRendererProps = ComponentProps<typeof AppRenderer>;
 type CallToolHandler = NonNullable<AppRendererProps["onCallTool"]>;
 type ReadResourceHandler = NonNullable<AppRendererProps["onReadResource"]>;
+
+/**
+ * The dev sandbox proxy served by `vite.config.ts`'s `sandboxProxyPlugin`.
+ * The `6891` literal mirrors `SANDBOX_PROXY_PORT` in `../sandbox-proxy.ts`
+ * (not imported — that module pulls in `node:http`, which must never enter
+ * the browser bundle). Keep the two in sync.
+ */
+const DEV_SANDBOX_URL = "http://127.0.0.1:6891/sandbox.html";
+
+/**
+ * The sandbox origin UI resources mount from. `VITE_SANDBOX_URL` (a deployed
+ * copy of the sandbox page on its own origin) wins; in dev the local proxy
+ * is the fallback. `undefined` (a production build without the env) shows
+ * the plain-text fallback below instead — the untrusted HTML is never
+ * mounted same-origin.
+ */
+const SANDBOX_URL: string | undefined =
+  import.meta.env.VITE_SANDBOX_URL ?? (import.meta.env.DEV ? DEV_SANDBOX_URL : undefined);
 
 // ── MCP-embedded-resource narrowing (opaque JsonValue → typed payload) ──────
 
@@ -66,6 +92,19 @@ function asUiResource(uiData: JsonValue | undefined): McpUiResourcePayload | und
   return nested !== undefined ? asResourcePayload(nested) : undefined;
 }
 
+/** The resource's HTML: inline `text` wins; else base64-decode `blob`. */
+function resourceHtml(resource: McpUiResourcePayload): string | undefined {
+  if (resource.text !== undefined) return resource.text;
+  if (resource.blob !== undefined) {
+    try {
+      return atob(resource.blob);
+    } catch {
+      return undefined; // not valid base64 — treat as no renderable payload
+    }
+  }
+  return undefined;
+}
+
 /** The tool name for a tool-result block, read off its paired tool-call block in the same message. */
 function toolNameFor(message: AgMessage, toolCallId: string): string {
   const call = message.content.find(
@@ -93,14 +132,26 @@ function renderBlock(
       );
     case "tool-result": {
       const resource = asUiResource(block.uiData);
-      if (resource?.text !== undefined) {
+      const html = resource !== undefined ? resourceHtml(resource) : undefined;
+      if (html !== undefined) {
+        if (SANDBOX_URL === undefined) {
+          // No second-origin sandbox available (production build without
+          // VITE_SANDBOX_URL). Never mount the untrusted HTML same-origin —
+          // degrade to a visible notice instead.
+          return (
+            <p className="block block-tool-result">
+              ← UI resource received — set <code>VITE_SANDBOX_URL</code> to render it (see{" "}
+              <code>.env.example</code>).
+            </p>
+          );
+        }
         return (
           <div className="block block-ui-resource">
             <AppRenderer
               key={block.toolCallId}
               toolName={toolNameFor(message, block.toolCallId)}
-              sandbox={{ url: new URL(window.location.origin) }}
-              html={resource.text}
+              sandbox={{ url: new URL(SANDBOX_URL) }}
+              html={html}
               onCallTool={handlers.onCallTool}
               onReadResource={handlers.onReadResource}
               onError={(err: unknown) => console.warn("[AppRenderer]", err)}

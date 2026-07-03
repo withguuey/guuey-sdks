@@ -6,11 +6,13 @@
  * Router via `emit.native`, and resolve the turn's final text from
  * `stream.finalOutput`.
  *
- * `MaxTurnsExceededError` is swallowed here (unlike `run-openai.ts`, which
- * emits a `__host_error__` sentinel native event for its normalizer) —
- * `serveNative`'s handler contract has no such sentinel channel; the caught
- * error just becomes the turn's (empty) result, and `serveNative` itself
- * would otherwise turn an uncaught throw into a Worker Protocol `error` event.
+ * `MaxTurnsExceededError` handling mirrors `run-openai.ts`'s INTENT — there
+ * max-turns is a soft terminal (`done(finalText, "max_turns")` after a
+ * sentinel), NOT a hard `error`; the partial output is still the turn's
+ * result. `serveNative`'s handler contract has neither a stopReason nor a
+ * sentinel channel (a return is always `done(.., "end_turn")`; a throw is a
+ * hard `error` that would discard the partial text), so the cutoff is made
+ * visible by appending a note to the returned result instead of rethrowing.
  */
 import { Agent, MaxTurnsExceededError, MCPServerStreamableHttp, run } from "@openai/agents";
 import type { MCPServer } from "@openai/agents";
@@ -54,7 +56,13 @@ await serveNative(
       try {
         await stream.completed;
       } catch (err) {
-        if (err instanceof MaxTurnsExceededError) return "";
+        if (err instanceof MaxTurnsExceededError) {
+          // Soft terminal (see module doc): keep whatever partial output the
+          // stream produced and make the cutoff visible in the result text.
+          const partial = typeof stream.finalOutput === "string" ? stream.finalOutput : "";
+          const note = "[agent stopped: maxTurns limit reached]";
+          return partial ? `${partial}\n\n${note}` : note;
+        }
         throw err;
       }
 
