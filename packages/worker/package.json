@@ -1,6 +1,6 @@
 {
   "name": "@guuey/worker",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Guuey Worker Protocol v1 — the Router↔Worker contract types and the tiered worker SDK (typed interpreter + serve loop).",
   "license": "MIT",
   "type": "module",
