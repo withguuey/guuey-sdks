@@ -11,13 +11,18 @@ const work = mkdtempSync(join(tmpdir(), "caa-smoke-"));
 const sh = (cmd, args, opts = {}) =>
   execFileSync(cmd, args, { stdio: "inherit", cwd: repoRoot, ...opts });
 
-// 1. Pack every internal package a scaffolded app depends on.
+// 1. Pack every internal package a scaffolded app depends on — including
+// TRANSITIVE internal deps: @guuey/cli itself depends on the silverprotocol
+// facet packages (claude-agent-sdk, openai-agents), all unpublished, so
+// omitting them makes pnpm fall through to the public registry and 404.
 const INTERNAL = [
   "oss/packages/worker",
   "oss/packages/config",
   "oss/packages/create-agentic-app",
   "oss/packages/cli",
   "silverprotocol/sdks/typescript/packages/core",
+  "silverprotocol/sdks/typescript/packages/claude-agent-sdk",
+  "silverprotocol/sdks/typescript/packages/openai-agents",
 ];
 const tarballs = {};
 for (const dir of INTERNAL) {
