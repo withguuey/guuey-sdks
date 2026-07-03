@@ -1,35 +1,28 @@
 /**
  * guuey deploy -- Package, upload, and deploy an agent to guuey cloud.
  *
- * Three deploy shapes, auto-detected from the project root:
+ * Three deploy shapes, routed by `resolveDeployMode` (`../deploy-plan.ts`
+ * — pure, unit-tested; see its doc comment for the full rule table):
  *
- *   1. **Code (worker-based)** — repo has a `guuey.json` + `package.json`
- *      (a `@guuey/create-agentic-app` scaffold, or any project with a
- *      buildable framework worker). This is the **one-command orchestrator**
- *      (design doc `2026-07-03-guuey-create-agentic-app-design.md` §7):
- *      resolve/create the app, deploy each hosted-MCP `source` leg, push
- *      ggui assets, build the worker (`corepack pnpm build` →
+ *   1. **Code (worker-based, orchestrated)** — selected EXPLICITLY via the
+ *      `--code` flag or `guuey.json#agent.mode: 'code'` (stamped by
+ *      `@guuey/create-agentic-app` scaffolds). This is the one-command
+ *      orchestrator (design doc `2026-07-03-guuey-create-agentic-app-design.md`
+ *      §7): resolve/create the app, deploy each hosted-MCP `source` leg,
+ *      push ggui assets, build the worker (`corepack pnpm build` →
  *      `guuey.worker.js`), then pack + upload + trigger + poll like any
  *      code-mode deploy. The backend builds the runtime image `FROM` its
  *      own base image (Kaniko `Dockerfile.worker` template) — no
  *      user-committed Dockerfile is read or required for this shape.
- *   2. **Code (user-Dockerfile)** — repo has a `Dockerfile` at the root
- *      (and no `guuey.json`). Legacy shape, preserved unchanged: packs +
+ *   2. **Code (user-Dockerfile, legacy)** — repo has a root `Dockerfile`
+ *      and no explicit code declaration. Preserved unchanged: packs +
  *      uploads + triggers + polls with no MCP/ggui legs, no build step, no
  *      config snapshot.
- *   3. **Declarative** — repo has a `guuey.json`, no `package.json`, no
- *      Dockerfile (e.g. `guuey pull`'d Studio/no-code agent). No tarball,
- *      no build. The agent.json snapshot (system prompt inlined) is
+ *   3. **Declarative** — `guuey.json` with `agent.mode: 'declarative'` or
+ *      no mode + no Dockerfile (e.g. `guuey pull`'d Studio/no-code agent).
+ *      No tarball, no build. The snapshot (system prompt inlined) is
  *      POSTed directly to the control plane and the stock
  *      `nocode-runtime` pod boots off it.
- *
- * Detection precedence:
- *   - `--declarative` flag → force declarative (errors if no guuey.json)
- *   - `--code` flag        → force code (errors if no guuey.json/Dockerfile)
- *   - else: Dockerfile present               → code (user-Dockerfile)
- *   - else: guuey.json + package.json present → code (worker-based, orchestrated)
- *   - else: guuey.json present                → declarative
- *   - else: error (need one of the three)
  *
  * Usage:
  *   guuey deploy                 # Auto-detect mode
@@ -65,7 +58,13 @@ import {
 } from '../config';
 import { apiRequest, cleanup, packSource } from '../deploy-shared';
 import { deployMcpFromSource, resolveServerName, resolveWorkspaceId, readPackageName } from './mcp';
-import { planMcpLegs, writeBackServerId, snapshotWithServerIds } from '../deploy-plan';
+import {
+  planMcpLegs,
+  writeBackServerId,
+  snapshotWithServerIds,
+  resolveDeployMode,
+  shouldOfferAppCreate,
+} from '../deploy-plan';
 import * as out from '../output';
 
 const DEFAULT_PORTAL_URL = 'https://app.guuey.com';
@@ -88,16 +87,47 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
   const hasDockerfile = existsSync(cwdDockerfile);
   const hasPackageJson = existsSync(cwdPackageJson);
 
+  // ── Mode resolution (single decision, pure + unit-tested) ────────────
+  // `agent.mode` must come from the ROOT guuey.json — loadProjectConfig
+  // walks parent directories, so gate on hasGuueyJson (cwd) to avoid a
+  // parent project's declaration leaking into an unrelated subdirectory.
+  const decision = resolveDeployMode({
+    forceDeclarative: flags?.declarative === true,
+    forceCode: flags?.code === true,
+    hasGuueyJson,
+    hasDockerfile,
+    hasPackageJson,
+    agentMode: hasGuueyJson ? project?.agent?.mode : undefined,
+  });
+  if (decision.kind === 'error') {
+    out.error(decision.message);
+    process.exit(1);
+  }
+  const mode = decision.mode;
+  if (mode === 'code-legacy-dockerfile' && hasGuueyJson) {
+    console.log(
+      `  Both Dockerfile and ${GUUEY_JSON_FILENAME} found — using Dockerfile (legacy code mode).`,
+    );
+    console.log(
+      `  Set ${GUUEY_JSON_FILENAME}#agent.mode or pass --declarative/--code to route explicitly.`,
+    );
+  }
+
   // ── Step 1: Preflight — auth + app linked ─────────────────────────────
-  // First run in a fresh project offers to create + link an app right here
-  // (design doc §7.1), instead of forcing a separate `guuey create`/`guuey
-  // link` step.
+  // The orchestrated code path (only) offers to create + link an app right
+  // here on a first interactive run (design doc §7.1). Every other case —
+  // non-TTY invocations included — keeps the pre-existing fail-fast error.
   let appId = config.appId;
   if (!appId) {
-    appId = await ensureLinkedApp({ auth, config, project, guueyJsonPath: cwdGuueyJson });
-    // ensureLinkedApp may have written `appId` into guuey.json — reload so
-    // downstream reads (deploy.size default, etc.) see it.
-    project = loadProjectConfig();
+    if (shouldOfferAppCreate(mode, process.stdin.isTTY, process.stdout.isTTY)) {
+      appId = await ensureLinkedApp({ auth, config, project, guueyJsonPath: cwdGuueyJson });
+      // ensureLinkedApp may have written `appId` into guuey.json — reload so
+      // downstream reads (deploy.size default, etc.) see it.
+      project = loadProjectConfig();
+    } else {
+      out.error('No app ID found. Run "guuey create" or "guuey link" first.');
+      process.exit(1);
+    }
   }
 
   // `deploy.size` on the canonical overlay is the app-level default
@@ -130,59 +160,6 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
 
   if (target !== 'ggui') {
     out.error(`Target "${target}" is not yet supported. Only "ggui" is available.`);
-    process.exit(1);
-  }
-
-  // ── Mode detection ──────────────────────────────────────────────────
-  const forceDeclarative = flags?.declarative === true;
-  const forceCode = flags?.code === true;
-  if (forceDeclarative && forceCode) {
-    out.error('Cannot pass both --declarative and --code. Pick one.');
-    process.exit(1);
-  }
-
-  // A single three-way decision, made once and dispatched on directly below
-  // (never re-derived from hasGuueyJson/hasDockerfile a second time) — so
-  // the printed detection message and the actual dispatched path can never
-  // diverge.
-  let mode: 'declarative' | 'code-orchestrated' | 'code-legacy-dockerfile';
-  if (forceDeclarative) {
-    if (!hasGuueyJson) {
-      out.error(
-        `--declarative requires an ${GUUEY_JSON_FILENAME} in the project root.`,
-      );
-      process.exit(1);
-    }
-    mode = 'declarative';
-  } else if (forceCode) {
-    if (hasGuueyJson) {
-      mode = 'code-orchestrated';
-    } else if (hasDockerfile) {
-      mode = 'code-legacy-dockerfile';
-    } else {
-      out.error(`--code requires a ${GUUEY_JSON_FILENAME} or a Dockerfile in the project root.`);
-      process.exit(1);
-    }
-  } else if (hasDockerfile) {
-    // Legacy user-Dockerfile shape wins even if a guuey.json also happens
-    // to be present — preserves pre-existing behavior for that (untested,
-    // unused-in-repo) combination rather than silently changing it.
-    if (hasGuueyJson) {
-      console.log(
-        `  Both Dockerfile and ${GUUEY_JSON_FILENAME} found — using Dockerfile (legacy code mode).`,
-      );
-    }
-    mode = 'code-legacy-dockerfile';
-  } else if (hasGuueyJson && hasPackageJson) {
-    mode = 'code-orchestrated';
-  } else if (hasGuueyJson) {
-    mode = 'declarative';
-  } else {
-    out.error(
-      `No ${GUUEY_JSON_FILENAME} or Dockerfile found in the project root.\n` +
-        `  - Declarative agents: add an ${GUUEY_JSON_FILENAME}.\n` +
-        '  - Code-mode agents: run "guuey create" (scaffolds guuey.json + a buildable worker).',
-    );
     process.exit(1);
   }
 

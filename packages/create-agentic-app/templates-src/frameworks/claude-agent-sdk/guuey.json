@@ -1,6 +1,7 @@
 {
   "schema": "1",
   "agent": {
+    "mode": "code",
     "framework": "claude-agent-sdk",
     "model": "MODEL_PLACEHOLDER",
     "systemPrompt": { "file": "prompts/system.md" },
