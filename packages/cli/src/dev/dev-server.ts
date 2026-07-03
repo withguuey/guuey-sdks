@@ -305,7 +305,10 @@ export function startDevServer(opts: DevServerOptions): Promise<DevServerHandle>
   });
 
   return new Promise((resolve) => {
-    server.listen(opts.port, () => {
+    // Bind loopback-only (mirrors sandbox-proxy.ts) — this server proxies
+    // invokes straight to the dev's LLM key; binding all interfaces would
+    // let anything on the LAN spend it.
+    server.listen(opts.port, "127.0.0.1", () => {
       const addr = server.address();
       const boundPort = typeof addr === "object" && addr !== null ? addr.port : opts.port;
       resolve({
