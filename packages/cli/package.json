@@ -38,6 +38,7 @@
     "@ggui-ai/predefined": "0.1.0-rc.1",
     "@ggui-ai/protocol": "0.1.0-rc.1",
     "@ggui-ai/ui-gen": "0.1.0-rc.1",
+    "@guuey/create-agentic-app": "workspace:*",
     "@guuey/config": "workspace:*",
     "@guuey/worker": "workspace:*",
     "qrcode": "^1.5.4",
