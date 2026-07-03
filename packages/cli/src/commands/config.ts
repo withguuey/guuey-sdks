@@ -10,6 +10,7 @@ import {
   type ProjectConfigInput,
 } from '../config';
 import { basename } from 'node:path';
+import { defaultModelFor } from '@guuey/config';
 import * as out from '../output';
 
 const ALLOWED_KEYS: Record<string, keyof CliConfig> = {
@@ -150,7 +151,7 @@ export function configInit(flags: Record<string, string | true>): void {
     ...(appId ? { appId } : {}),
     agent: {
       framework: 'claude-agent-sdk',
-      model: 'claude-sonnet-5',
+      model: defaultModelFor('claude-agent-sdk'),
       systemPrompt: { file: 'prompts/system.md' },
     },
   };

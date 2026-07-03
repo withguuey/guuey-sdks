@@ -21,12 +21,17 @@
  */
 import type { CanUseTool, Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Fs, HistoryMessage, JsonValue } from "@guuey/worker";
-import { GUUEY_DEFAULT_SYSTEM_PROMPT, type GuueyAgent } from "@guuey/config";
+import { GUUEY_DEFAULT_SYSTEM_PROMPT, defaultModelFor, type GuueyAgent } from "@guuey/config";
 
 export type { SDKMessage };
 
-/** Default Claude model — only used when the snapshot omits `model`. */
-const DEFAULT_MODEL = "claude-sonnet-5";
+/**
+ * Default Claude model — only used when the snapshot omits `model`. Derived
+ * from the `@guuey/config` registry (single source of truth per the
+ * model-release playbook §8 item A) rather than a bare literal, so a
+ * registry default change propagates here automatically.
+ */
+const DEFAULT_MODEL = defaultModelFor("claude-agent-sdk");
 
 /** Default cap on agent-loop turns per user message (matches the SDK/runner default). */
 const DEFAULT_MAX_TURNS = 25;

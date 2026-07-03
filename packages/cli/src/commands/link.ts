@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { isLoggedIn, requireAuth } from '../auth';
 import { resolveConfig, loadConfig, saveConfig, saveProjectConfig } from '../config';
 import { login } from './login';
+import { defaultModelFor } from '@guuey/config';
 import * as out from '../output';
 
 /** Prompt the user for a single line of input. */
@@ -144,7 +145,7 @@ export async function link(flags?: Record<string, string | true>): Promise<void>
       appId: data.appId,
       agent: {
         framework: 'claude-agent-sdk',
-        model: 'claude-sonnet-5',
+        model: defaultModelFor('claude-agent-sdk'),
         systemPrompt: { file: 'prompts/system.md' },
       },
     });
