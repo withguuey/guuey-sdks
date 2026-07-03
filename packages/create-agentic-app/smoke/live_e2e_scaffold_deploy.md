@@ -71,7 +71,7 @@ ggui     ggui serve --mcp-only --dev-allow-all http://localhost:6781
 web      vite                                 http://localhost:6890
 ```
 
-# EXPECT: all 5 lines print ready/listening with no crash loop.
+**Expect:** all 5 lines print ready/listening with no crash loop.
 
 ### A2 — Live browser turn (todo-create via chat + a ggui render)
 
@@ -79,14 +79,14 @@ Open `http://localhost:6890`. It's a minimal chat: a scrollback + a text input.
 
 1. Send: `create a todo: buy milk`. The system prompt routes this to the todo MCP's
    `todo_create` tool (`{title: string}` → returns the created `Todo`).
-   # EXPECT: a tool-result block appears in the scrollback for the `todo_create` call.
+   **Expect:** a tool-result block appears in the scrollback for the `todo_create` call.
 2. If the result renders as an interactive card (not just plain text), that's the
    ggui MCP-Apps leg working — the block mounts via `@mcp-ui/client`'s
    `<AppRenderer>` in a sandboxed iframe (dev sandbox at
    `http://127.0.0.1:6891/sandbox.html`, the vite `sandboxProxyPlugin`).
-   # EXPECT: either a rendered card OR plain text — both are a PASS for A2 (ggui
-   # generation can fall back to text on a cache miss / model hiccup); a thrown
-   # error in the scrollback or a blank pod is the FAIL signal.
+   **Expect:** either a rendered card OR plain text — both are a PASS for A2 (ggui
+   generation can fall back to text on a cache miss / model hiccup); a thrown
+   error in the scrollback or a blank pod is the FAIL signal.
 3. Optional: send `list my todos` to exercise `todo_list` too.
 
 **Known template limitation (not a bug):** clicking an interactive element that
@@ -107,7 +107,7 @@ guuey login
 ```
 
 Opens a browser against `${host}/cli/authorize`; completes, saves a `ggui_pat_...`
-token. # EXPECT: "Logged in" confirmation printed.
+token. **Expect:** "Logged in" confirmation printed.
 
 ### B1 — Deploy
 
@@ -135,7 +135,7 @@ the scaffold) — `deploy.ts`'s `deployCode()`:
 4. **Agent leg** — `pnpm build` (must produce `guuey.worker.js`), tars, uploads,
    triggers, polls `AgentDeployment.status` to a terminal state.
 
-# EXPECT: final output block:
+**Expect** the final output block:
 
 ```
 Live at https://<something>.<agents-domain>/agent/invoke
@@ -154,19 +154,17 @@ APP_ID=$(node -e "console.log(require('./guuey.json').project?.appId ?? require(
 ### B2 — Assert `McpServer` / `McpServerDeployment` live
 
 ```bash
-guuey.json | jq -r '.agent.mcpServers.todo.server'   # (or: cat guuey.json | jq ...)
+jq -r '.agent.mcpServers.todo.server' guuey.json
 ```
 
-# EXPECT: `guuey.json`'s `agent.mcpServers.todo.server` is now a real serverId (was
-
-# absent pre-deploy) — this is the write-back proof, not a guess: `deploy-plan.ts`'s
-
-# `writeBackServerId()` lands it to disk immediately after the MCP leg succeeds.
+**Expect:** `guuey.json`'s `agent.mcpServers.todo.server` is now a real serverId
+(was absent pre-deploy) — this is the write-back proof, not a guess:
+`deploy-plan.ts`'s `writeBackServerId()` lands it to disk immediately after the MCP
+leg succeeds.
 
 Cross-check via AppSync/DynamoDB console or `guuey mcp deploy --status <serverId>`
-if exposed — either way: # EXPECT `McpServer.runtimeUrl` set (in-cluster URL,
-e.g. `mcp-servers.guuey.com/<serverId>`) and the deployment row's
-`status: 'live'`.
+if exposed — either way, **expect** `McpServer.runtimeUrl` set (in-cluster URL,
+e.g. `mcp-servers.guuey.com/<serverId>`) and the deployment row's `status: 'live'`.
 
 ### B3 — Assert `AgentDeployment` live + curl the deployed endpoint
 
@@ -176,15 +174,11 @@ curl -sS -N -X POST "<the printed Live-at URL>" \
   -d '{"input":"create a todo: buy milk"}'
 ```
 
-# EXPECT: an SSE stream — `event: session`, one or more `event: message` frames
-
-# (AgJSON-shaped `AgentEvent`s, not raw provider deltas), then `event: done`. No
-
-# `Authorization` header needed for this default anonymous-auth app (the endpoint
-
-# resolves identity via `resolveIdentity`, not a bearer check — a bearer header on
-
-# `/agent/invoke` itself 501s by design, that's expected, don't chase it as a bug).
+**Expect:** an SSE stream — `event: session`, one or more `event: message` frames
+(AgJSON-shaped `AgentEvent`s, not raw provider deltas), then `event: done`. No
+`Authorization` header needed for this default anonymous-auth app (the endpoint
+resolves identity via `resolveIdentity`, not a bearer check — a bearer header on
+`/agent/invoke` itself 501s by design, that's expected, don't chase it as a bug).
 
 `AgentDeployment.status` should read `'live'` and `endpointUrl` should match the
 printed URL (`https://<appId>.<agentsDomain>/agent/invoke`) — confirm via the same
@@ -195,15 +189,11 @@ console/query path used for B2.
 Open Portal → **My Agents** (`apps/portal/app/my-agents.tsx`, backed by
 `services/ownerApps.ts`: `GET /apps` + `GET /apps/:appId/deployments`).
 
-# EXPECT: the app you just created appears with `deploymentStatus: 'live'` and a
-
-# non-empty `endpointUrl` matching B3's URL. (Note: the deploy controller writes
-
-# `endpointUrl`/`status` only onto `AgentDeployment`, never back onto `GuueyApp` —
-
-# Portal joins deployments in to get this, so an app with zero deployments would
-
-# show no endpoint even if the `GuueyApp` row itself is healthy.)
+**Expect:** the app you just created appears with `deploymentStatus: 'live'` and a
+non-empty `endpointUrl` matching B3's URL. (Note: the deploy controller writes
+`endpointUrl`/`status` only onto `AgentDeployment`, never back onto `GuueyApp` —
+Portal joins deployments in to get this, so an app with zero deployments would show
+no endpoint even if the `GuueyApp` row itself is healthy.)
 
 ### B5 — Rollback / cleanup
 
@@ -213,13 +203,10 @@ guuey delete "$APP_ID" --force        # removes the throwaway GuueyApp entirely
 rm -rf /tmp/caa-live-smoke
 ```
 
-# EXPECT: `guuey undeploy` prints "Agent torn down. App is still available for
-
-# future deploys."; `guuey delete` removes it from **My Agents**. Also confirm the
-
-# `agent-$APP_ID` k8s namespace is gone (`kubectl get ns agent-$APP_ID` → NotFound)
-
-# if you have cluster access — undeploy should have reaped it.
+**Expect:** `guuey undeploy` prints "Agent torn down. App is still available for
+future deploys."; `guuey delete` removes it from **My Agents**. Also confirm the
+`agent-$APP_ID` k8s namespace is gone (`kubectl get ns agent-$APP_ID` → NotFound) if
+you have cluster access — undeploy should have reaped it.
 
 ---
 
