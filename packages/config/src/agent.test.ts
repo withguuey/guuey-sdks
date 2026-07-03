@@ -202,16 +202,44 @@ describe('McpServerSchema — each kind parses correctly', () => {
     expect(r.mcpServers?.notes).toEqual({ kind: 'hosted', source: './servers/notes' });
   });
 
-  it('hosted: BOTH server + source → parse error (exactly one required)', () => {
-    expect(() =>
-      parseMcpServers({ h: { kind: 'hosted', server: 'abc', source: './path' } }),
-    ).toThrow(/exactly one of server\|source/);
+  it('hosted: BOTH server + source → allowed (deploy write-back keeps source, adds resolved server)', () => {
+    const r = parseMcpServers({ h: { kind: 'hosted', server: 'abc', source: './path' } });
+    expect(r.mcpServers?.h).toEqual({ kind: 'hosted', server: 'abc', source: './path' });
   });
 
   it('hosted: NEITHER server nor source → parse error', () => {
     expect(() =>
       parseMcpServers({ h: { kind: 'hosted' } }),
-    ).toThrow(/exactly one of server\|source/);
+    ).toThrow(/needs `server`and\/or`source`/);
+  });
+
+  it('hosted entry accepts devPort and server+source together', () => {
+    const parsed = AgentSectionV1.parse({
+      mcpServers: {
+        todo: { kind: 'hosted', source: './mcps/todo', server: 'mcp-todo-abc12345', devPort: 6782 },
+      },
+    });
+    const todo = parsed.mcpServers?.todo;
+    expect(todo).toMatchObject({
+      kind: 'hosted',
+      server: 'mcp-todo-abc12345',
+      source: './mcps/todo',
+      devPort: 6782,
+    });
+  });
+
+  it('hosted entry still rejects neither server nor source', () => {
+    expect(() => AgentSectionV1.parse({ mcpServers: { t: { kind: 'hosted' } } })).toThrow();
+  });
+
+  it('external entry accepts devPort; rejects out-of-range', () => {
+    expect(() =>
+      AgentSectionV1.parse({ mcpServers: { g: { kind: 'external', url: 'http://x', devPort: 0 } } }),
+    ).toThrow();
+    const ok = AgentSectionV1.parse({
+      mcpServers: { g: { kind: 'external', url: 'http://x', devPort: 6781 } },
+    });
+    expect(ok.mcpServers?.g).toMatchObject({ devPort: 6781 });
   });
 
   it('proxied: connection required', () => {

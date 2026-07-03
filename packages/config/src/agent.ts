@@ -81,23 +81,27 @@ const ColocatedMcp = z.strictObject({
 
 /**
  * `kind: 'hosted'` — a workspace-owned registry MCP running on guuey's
- * `mcp-servers.guuey.com` fleet (Starter+). Exactly one of `server` or `source`
+ * `mcp-servers.guuey.com` fleet (Starter+). At least one of `server` or `source`
  * must be set:
  *
  * - `server: '<id>'` — reuse an existing registry MCP by id.
  * - `source: './path'` — build-or-reuse by workspace-unique name; the
- *   deploy-controller resolves to a `server` id and writes it back.
+ *   deploy-controller resolves to a `server` id and writes it back — WITHOUT
+ *   removing `source`, so both are legitimately present after a `guuey deploy`
+ *   (`server` wins at resolve time; `source` remains the build recipe).
  */
 const HostedMcp = z
   .strictObject({
     kind: z.literal('hosted'),
-    /** Existing registry MCP id. Mutually exclusive with `source`. */
+    /** Existing registry MCP id. May coexist with `source` post-deploy write-back. */
     server: z.string().min(1).optional(),
-    /** Source directory relative to `guuey.json`. Mutually exclusive with `server`. */
+    /** Source directory relative to `guuey.json`. May coexist with `server` post-deploy write-back. */
     source: z.string().min(1).optional(),
+    /** Local dev-loop port (`guuey dev`) this MCP is served on for name→localhost URL resolution. */
+    devPort: z.number().int().min(1).max(65535).optional(),
   })
-  .refine((v) => (v.server == null) !== (v.source == null), {
-    message: 'hosted: exactly one of server|source must be set',
+  .refine((v) => v.server != null || v.source != null, {
+    message: 'hosted MCP needs `server`and/or`source`',
   });
 
 /**
@@ -131,6 +135,8 @@ const ExternalMcp = z.strictObject({
   federate: z.boolean().optional(),
   /** Static headers forwarded on every request. Values may use `${env.NAME}` placeholders. */
   headers: HeadersSchema.optional(),
+  /** Local dev-loop port (`guuey dev`) this MCP is served on for name→localhost URL resolution. */
+  devPort: z.number().int().min(1).max(65535).optional(),
 });
 
 /**
