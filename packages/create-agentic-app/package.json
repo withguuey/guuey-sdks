@@ -20,7 +20,8 @@
     "pretest": "node scripts/build-templates.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "eslint src --ext .ts"
+    "lint": "eslint src --ext .ts",
+    "smoke": "node scripts/scaffold-smoke.mjs"
   },
   "devDependencies": {
     "@guuey/config": "workspace:*",
