@@ -258,6 +258,22 @@ const StorageScopeSchema = z.array(z.enum(['user', 'app']));
  * `./schema.ts`) can nest it. Static type via {@link GuueyAgent}.
  */
 export const AgentSectionV1 = z.strictObject({
+  // ── Deploy routing ──
+  /**
+   * Routing declaration for `guuey deploy`:
+   *
+   * - `'code'` — a worker-entry project: the CLI runs the package build
+   *   (`corepack pnpm build` → `guuey.worker.js`), packs the project root,
+   *   and the platform builds the runtime image from its own base image
+   *   (code-mode `AgentDeployment`). Stamped by `@guuey/create-agentic-app`
+   *   scaffolds so they route explicitly.
+   * - `'declarative'` — no source to build; the CLI POSTs the guuey.json
+   *   snapshot directly (nocode `AgentDeployment`, stock runtime pod).
+   * - absent — the platform infers: declarative when the project has no
+   *   Dockerfile (a root Dockerfile keeps the legacy user-image code path).
+   */
+  mode: z.enum(['code', 'declarative']).optional(),
+
   // ── Framework + runtime ──
   framework: z.enum(AGENT_FRAMEWORKS).optional(),
   model: z.string().min(1).optional(),

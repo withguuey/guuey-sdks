@@ -172,6 +172,30 @@ describe("AgentSectionV1.modelProvider (P2 OpenRouter selection)", () => {
   });
 });
 
+describe('AgentSectionV1.mode (guuey deploy routing declaration)', () => {
+  it("accepts 'code'", () => {
+    const r = AgentSectionV1.safeParse({ mode: 'code' });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.mode).toBe('code');
+  });
+  it("accepts 'declarative'", () => {
+    const r = AgentSectionV1.safeParse({ mode: 'declarative' });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.mode).toBe('declarative');
+  });
+  it('is optional (absent is valid, stays absent — platform infers)', () => {
+    const r = AgentSectionV1.safeParse({});
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.mode).toBeUndefined();
+  });
+  it('rejects junk values', () => {
+    expect(AgentSectionV1.safeParse({ mode: 'nocode' }).success).toBe(false);
+    expect(AgentSectionV1.safeParse({ mode: 'dockerfile' }).success).toBe(false);
+    expect(AgentSectionV1.safeParse({ mode: true }).success).toBe(false);
+    expect(AgentSectionV1.safeParse({ mode: 1 }).success).toBe(false);
+  });
+});
+
 // ── Discriminated union schema tests ─────────────────────────────────────────
 
 describe('McpServerSchema — each kind parses correctly', () => {
