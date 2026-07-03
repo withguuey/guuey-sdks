@@ -7,7 +7,7 @@ import {
   getProjectConfigPath,
   resolveConfig,
   type CliConfig,
-  type ProjectConfig,
+  type ProjectConfigInput,
 } from '../config';
 import { basename } from 'node:path';
 import * as out from '../output';
@@ -145,7 +145,7 @@ export function configInit(flags: Record<string, string | true>): void {
   // we populate sensible defaults the user can edit. `prompts/system.md`
   // is referenced but may not exist yet — `guuey deploy` will fail with
   // a clear error until the user creates it.
-  const config: ProjectConfig = {
+  const config: ProjectConfigInput = {
     schema: '1',
     ...(appId ? { appId } : {}),
     agent: {

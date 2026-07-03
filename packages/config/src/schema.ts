@@ -98,6 +98,13 @@ export const GuueyJsonV1 = z.strictObject({
 /** Static TypeScript type for `guuey.json` v1. */
 export type GuueyJsonV1 = z.infer<typeof GuueyJsonV1>;
 
+/**
+ * Author-side shape for `guuey.json` v1 — what a writer may construct before
+ * `parseGuueyJson` applies schema defaults (e.g. `protocol` → `'silver'`).
+ * Fields with defaults are optional here and required on {@link GuueyJsonV1}.
+ */
+export type GuueyJsonV1Input = z.input<typeof GuueyJsonV1>;
+
 // Re-export sub-section types so consumers can import everything from `@guuey/config`.
 export type { GuueyAgent, GuueyApp, GuueyGguiSection };
 

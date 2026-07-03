@@ -3,6 +3,7 @@ import { join, resolve } from 'path';
 import {
   GUUEY_JSON_FILENAME,
   type GuueyJsonV1,
+  type GuueyJsonV1Input,
   parseGuueyJson,
   safeParseGuueyJson,
 } from '@guuey/config';
@@ -117,6 +118,12 @@ export function getConfigPath(): string {
  */
 export type ProjectConfig = GuueyJsonV1;
 
+/**
+ * Author-side project config — what scaffolding/linking code may construct
+ * before validation applies schema defaults (`protocol`, `runtime.router`).
+ */
+export type ProjectConfigInput = GuueyJsonV1Input;
+
 /** Find `guuey.json` in current directory or parents (up to 5 levels). */
 export function findProjectConfig(): string | null {
   let dir = process.cwd();
@@ -162,7 +169,7 @@ export function loadProjectConfig(): ProjectConfig | null {
  * @param filePath - Target path (defaults to `./guuey.json` in CWD)
  */
 export function saveProjectConfig(
-  config: GuueyJsonV1,
+  config: GuueyJsonV1Input,
   filePath?: string,
 ): void {
   const target = filePath ?? join(process.cwd(), GUUEY_JSON_FILENAME);
