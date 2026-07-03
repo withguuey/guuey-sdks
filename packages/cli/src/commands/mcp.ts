@@ -32,7 +32,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { requireAuth, type AuthTokens } from '../auth';
 import { resolveConfig, type ResolvedConfig } from '../config';
-import { apiRequest, cleanup, packSource } from '../deploy-shared';
+import { apiRequest, cleanup, packSource, parseApiError } from '../deploy-shared';
 import * as out from '../output';
 
 /** Valid hosted-MCP pod sizes (matches the backend `validateSize`). */
@@ -218,7 +218,7 @@ export async function deployMcpFromSource(
     /** Workspace-unique server name. */
     name: string;
     workspaceId: string;
-    /** Runtime pod size. Defaults to `'xs'`. */
+    /** Runtime pod size. Defaults to `'sm'` (matches `guuey mcp deploy`'s own default). */
     size?: McpSize;
     auth: AuthTokens;
     config: ResolvedConfig;
@@ -229,7 +229,7 @@ export async function deployMcpFromSource(
 ): Promise<McpSourceDeployResult> {
   const api = deps?.api ?? apiRequest;
   const { dir, name, workspaceId, auth, config, label } = opts;
-  const size = opts.size ?? 'xs';
+  const size = opts.size ?? 'sm';
 
   if (!existsSync(join(dir, 'Dockerfile'))) {
     throw new Error(
@@ -251,9 +251,9 @@ export async function deployMcpFromSource(
   });
 
   if (!uploadRes.ok) {
-    const data = (await uploadRes.json().catch(() => ({}))) as { error?: string };
+    const data: unknown = await uploadRes.json().catch(() => ({}));
     cleanup(tarballPath);
-    throw new Error(data.error ?? `Upload failed: HTTP ${uploadRes.status}`);
+    throw new Error(parseApiError(data, `Upload failed: HTTP ${uploadRes.status}`));
   }
 
   const { uploadUrl, serverId, buildNumber, s3Key } = (await uploadRes.json()) as {
@@ -295,10 +295,7 @@ export async function deployMcpFromSource(
   });
 
   if (triggerRes.status !== 202) {
-    const data = (await triggerRes.json().catch(() => ({}))) as {
-      error?: string;
-      retryAfterSeconds?: number;
-    };
+    const data = (await triggerRes.json().catch(() => ({}))) as { retryAfterSeconds?: number };
     cleanup(tarballPath);
     if (triggerRes.status === 429) {
       // Quota hit — surface the reason + a Retry-After hint if we got one.
@@ -306,10 +303,10 @@ export async function deployMcpFromSource(
         data.retryAfterSeconds ?? triggerRes.headers.get('Retry-After') ?? 0,
       );
       const when = secs > 0 ? ` Retry in ~${Math.ceil(secs / 60)} minute(s).` : '';
-      throw new Error(`${data.error ?? 'Build quota exceeded.'}${when}`);
+      throw new Error(`${parseApiError(data, 'Build quota exceeded.')}${when}`);
     }
     // Includes 409 (concurrent build number) — surface its message.
-    throw new Error(data.error ?? `Deploy trigger failed: HTTP ${triggerRes.status}`);
+    throw new Error(parseApiError(data, `Deploy trigger failed: HTTP ${triggerRes.status}`));
   }
 
   // 5. Poll for completion. No build-log streaming endpoint for MCP — poll only.
@@ -507,27 +504,10 @@ export function resolveServerId(
   return null;
 }
 
-/**
- * The cliApi error body shape: `{ error: { code, message } }`. The handlers
- * here may also surface a bare-string `error` on some paths, so the extractor
- * tolerates both without erasing types.
- */
-interface CliApiErrorBody {
-  error?: { code?: string; message?: string } | string;
-}
-
 /** Read an authenticated-error response into a human message + exit 1. */
 async function failFromResponse(res: Response): Promise<never> {
-  const data = (await res.json().catch(() => ({}))) as CliApiErrorBody;
-  let message: string;
-  if (typeof data.error === 'string') {
-    message = data.error;
-  } else if (data.error?.message) {
-    message = data.error.message;
-  } else {
-    message = `HTTP ${res.status}`;
-  }
-  out.error(message);
+  const data: unknown = await res.json().catch(() => ({}));
+  out.error(parseApiError(data, `HTTP ${res.status}`));
   process.exit(1);
 }
 
