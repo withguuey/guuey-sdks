@@ -17,3 +17,4 @@ export * from './ggui.js';
 export * from './loader.js';
 export * from './hosting.js';
 export * from './system-prompt.js';
+export * from './registry.js';
