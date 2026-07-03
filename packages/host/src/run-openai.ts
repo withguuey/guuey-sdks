@@ -249,6 +249,16 @@ function toOpenaiMcpServer(name: string, entry: SdkMcpServer): MCPServerStreamab
     url: entry.url,
     name,
     ...(headers && Object.keys(headers).length > 0 ? { requestInit: { headers } } : {}),
+    // `customDataExtractor` (agents 0.12+) is the ONLY channel that carries an
+    // MCP tool result's `structuredContent` onto the wire (`item.customData`)
+    // WITHOUT leaking it into model-visible text — without this, the ggui cache
+    // marker never reaches the normalizer and render metering goes blind.
+    // Mirrors the verified silverprotocol capture-agent wiring; the facet reads
+    // `item.customData.structuredContent`.
+    customDataExtractor: (context) =>
+      context.structuredContent !== undefined
+        ? { structuredContent: context.structuredContent }
+        : undefined,
   });
 }
 
