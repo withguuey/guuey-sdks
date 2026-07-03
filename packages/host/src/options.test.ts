@@ -108,9 +108,9 @@ describe("buildOptions — allowedTools", () => {
 });
 
 describe("buildOptions — model + maxTurns + isolation flags", () => {
-  it("defaults model to claude-sonnet-4-6 and maxTurns to 25", () => {
+  it("defaults model to claude-sonnet-5 and maxTurns to 25", () => {
     const opts = buildOptions({}, ctx());
-    expect(opts.model).toBe("claude-sonnet-4-6");
+    expect(opts.model).toBe("claude-sonnet-5");
     expect(opts.maxTurns).toBe(25);
   });
 

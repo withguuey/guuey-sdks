@@ -144,7 +144,7 @@ export async function link(flags?: Record<string, string | true>): Promise<void>
       appId: data.appId,
       agent: {
         framework: 'claude-agent-sdk',
-        model: 'claude-sonnet-4-6',
+        model: 'claude-sonnet-5',
         systemPrompt: { file: 'prompts/system.md' },
       },
     });

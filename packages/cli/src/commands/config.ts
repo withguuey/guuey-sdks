@@ -150,7 +150,7 @@ export function configInit(flags: Record<string, string | true>): void {
     ...(appId ? { appId } : {}),
     agent: {
       framework: 'claude-agent-sdk',
-      model: 'claude-sonnet-4-6',
+      model: 'claude-sonnet-5',
       systemPrompt: { file: 'prompts/system.md' },
     },
   };

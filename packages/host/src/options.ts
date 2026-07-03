@@ -26,7 +26,7 @@ import { GUUEY_DEFAULT_SYSTEM_PROMPT, type GuueyAgent } from "@guuey/config";
 export type { SDKMessage };
 
 /** Default Claude model — only used when the snapshot omits `model`. */
-const DEFAULT_MODEL = "claude-sonnet-4-6";
+const DEFAULT_MODEL = "claude-sonnet-5";
 
 /** Default cap on agent-loop turns per user message (matches the SDK/runner default). */
 const DEFAULT_MAX_TURNS = 25;

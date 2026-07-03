@@ -16,7 +16,7 @@
  * ```jsonc
  * {
  *   "framework": "claude-agent-sdk",
- *   "model": "claude-sonnet-4-6",
+ *   "model": "claude-sonnet-5",
  *   "systemPrompt": { "file": "prompts/system.md" }
  * }
  * ```
@@ -24,7 +24,7 @@
  * Defaults applied by the pod runtime when fields are absent:
  * - `framework`   → `'claude-agent-sdk'`
  * - `mcpServers`  → `{ ggui: { url: 'https://mcp.ggui.ai' } }` (platform default; declaring `mcpServers` REPLACES this — not merged)
- * - `model`       → framework-chosen default (Claude SDK → `claude-sonnet-4-6`)
+ * - `model`       → framework-chosen default (Claude SDK → `claude-sonnet-5`)
  * - `systemPrompt`→ `GUUEY_DEFAULT_SYSTEM_PROMPT` from `./system-prompt`
  * - `auth`        → `'anonymous'`
  * - `memory`      → `'thread'`
