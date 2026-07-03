@@ -155,9 +155,12 @@ describe('pushGguiAssetsLeg', () => {
     expect(result.reason).toBe('ggui asset push is not yet enabled on this environment.');
   });
 
-  it('other non-2xx (e.g. 500) throws', async () => {
+  it('other non-2xx (e.g. 500) throws with the real httpError nested {error:{code,message}} shape', async () => {
     const api: typeof apiRequest = vi.fn(async () =>
-      new Response(JSON.stringify({ error: 'internal error' }), { status: 500 }),
+      new Response(
+        JSON.stringify({ error: { code: 'InternalError', message: 'internal error' } }),
+        { status: 500 },
+      ),
     );
 
     await expect(
@@ -165,9 +168,14 @@ describe('pushGguiAssetsLeg', () => {
     ).rejects.toThrow('internal error');
   });
 
-  it('409 (no federated gguiAppId) throws', async () => {
+  it('409 (no federated gguiAppId) throws with the real httpError nested {error:{code,message}} shape', async () => {
     const api: typeof apiRequest = vi.fn(async () =>
-      new Response(JSON.stringify({ error: 'App app-1 has no federated ggui app' }), { status: 409 }),
+      new Response(
+        JSON.stringify({
+          error: { code: 'ConflictError', message: 'App app-1 has no federated ggui app' },
+        }),
+        { status: 409 },
+      ),
     );
 
     await expect(

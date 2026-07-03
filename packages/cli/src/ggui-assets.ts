@@ -15,7 +15,7 @@ import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { dirname, extname, join, relative, sep } from 'node:path';
 import type { AuthTokens } from './auth';
 import type { ResolvedConfig } from './config';
-import { apiRequest } from './deploy-shared';
+import { apiRequest, parseApiError } from './deploy-shared';
 
 /**
  * Wire contract for `POST /v1/apps/:id/ggui-assets/push`. Mirrors
@@ -141,6 +141,6 @@ export async function pushGguiAssetsLeg(
     };
   }
 
-  const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
-  throw new Error(data.error ?? data.message ?? `ggui asset push failed: HTTP ${res.status}`);
+  const data: unknown = await res.json().catch(() => ({}));
+  throw new Error(parseApiError(data, `ggui asset push failed: HTTP ${res.status}`));
 }
