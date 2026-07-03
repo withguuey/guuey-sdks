@@ -16,12 +16,14 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && node scripts/build-templates.mjs && node scripts/check-templates.mjs",
+    "pretest": "node scripts/build-templates.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint src --ext .ts"
   },
   "devDependencies": {
+    "@guuey/config": "workspace:*",
     "tsup": "^8.5.0",
     "typescript": "^5.8.0",
     "vitest": "^3.2.4"
