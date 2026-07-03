@@ -56,7 +56,7 @@ import {
   type ResolvedConfig,
   type ProjectConfig,
 } from '../config';
-import { apiRequest, cleanup, packSource } from '../deploy-shared';
+import { apiRequest, cleanup, packSource, parseApiError } from '../deploy-shared';
 import { deployMcpFromSource, resolveServerName, resolveWorkspaceId, readPackageName } from './mcp';
 import {
   planMcpLegs,
@@ -237,8 +237,8 @@ async function ensureLinkedApp(opts: {
     userAuthMode: 'anonymous',
   });
   if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as { error?: string };
-    out.error(`Failed to create app: ${data.error ?? `HTTP ${res.status}`}`);
+    const data: unknown = await res.json().catch(() => ({}));
+    out.error(`Failed to create app: ${parseApiError(data, `HTTP ${res.status}`)}`);
     process.exit(1);
   }
   const data = (await res.json()) as { appId: string; apiKey: string };
@@ -377,8 +377,25 @@ async function deployCode(opts: {
     process.exit(1);
   }
 
+  // Hard gate BEFORE packing: a build misconfiguration (wrong tsup entry,
+  // missing noExternal, etc.) must never silently ship a tarball with no
+  // worker in it — the deploy-controller would fall back to a host default,
+  // and the pod would come up running the wrong (or no) agent code.
+  const workerEntryPath = join(root, 'guuey.worker.js');
+  if (!existsSync(workerEntryPath)) {
+    out.error(
+      `Build succeeded but ${workerEntryPath} was not produced. Check the root ` +
+        '"build" script (expected to emit guuey.worker.js via tsup) and retry.',
+    );
+    process.exit(1);
+  }
+
   const buildId = randomUUID().slice(0, 12);
-  const { tarballPath, tarballSize, sourceHash } = packSource({ buildId, cwd: root });
+  const { tarballPath, tarballSize, sourceHash } = packSource({
+    buildId,
+    cwd: root,
+    includeWorkingTree: true,
+  });
 
   const uploadRes = await apiRequest(auth.pat, config, 'POST', `/apps/${appId}/deploy/upload`, {
     buildId,
@@ -395,8 +412,8 @@ async function deployCode(opts: {
   }
 
   if (!uploadRes.ok) {
-    const data = (await uploadRes.json().catch(() => ({}))) as Record<string, string>;
-    out.error(data.error ?? `Upload failed: HTTP ${uploadRes.status}`);
+    const data: unknown = await uploadRes.json().catch(() => ({}));
+    out.error(parseApiError(data, `Upload failed: HTTP ${uploadRes.status}`));
     cleanup(tarballPath);
     process.exit(1);
   }
@@ -452,13 +469,13 @@ async function deployCode(opts: {
   });
 
   if (deployRes.status !== 202) {
-    const data = (await deployRes.json().catch(() => ({}))) as Record<string, string | number>;
+    const data = (await deployRes.json().catch(() => ({}))) as { retryAfterSeconds?: number };
     if (deployRes.status === 429) {
       const secs = Number(data.retryAfterSeconds ?? deployRes.headers.get('Retry-After') ?? 0);
       const when = secs > 0 ? ` Retry in ~${Math.ceil(secs / 60)} minute(s).` : '';
-      out.error(`${data.error ?? 'Build quota exceeded.'}${when}`);
+      out.error(`${parseApiError(data, 'Build quota exceeded.')}${when}`);
     } else {
-      out.error(String(data.error ?? `Deploy trigger failed: HTTP ${deployRes.status}`));
+      out.error(parseApiError(data, `Deploy trigger failed: HTTP ${deployRes.status}`));
     }
     cleanup(tarballPath);
     process.exit(1);
@@ -514,15 +531,34 @@ async function deployCode(opts: {
   console.log('');
 }
 
-/** Poll `/apps/:id/deploy/status/:n` to a terminal status. Shared by both code-mode paths. */
-async function pollDeployStatus(opts: {
-  auth: AuthTokens;
-  config: ResolvedConfig;
-  appId: string;
-  buildNumber: number;
-  timeoutMs: number;
-  tarballPath: string;
-}): Promise<{ status: string; url: string }> {
+/**
+ * Poll `GET /apps/:id/deployments/:n/status` to a terminal status. Shared by
+ * every deploy path (code-orchestrated, legacy-Dockerfile, declarative).
+ *
+ * The route + response shape MUST match the real handler
+ * (`backend/amplify/functions/cliApi/handler.ts` route table +
+ * `handlers/deploy.ts#handleGetDeploymentStatus`'s projection):
+ * `/apps/:id/deployments/:n/status` (NOT `/deploy/status/:n` — that route
+ * doesn't exist), returning `endpointUrl`/`errorMessage` (NOT `url`/`error`).
+ *
+ * `tarballPath` is optional — code-mode callers pass it so a timeout/error
+ * cleans up the tarball; the declarative path has no tarball to clean up.
+ *
+ * `deps.api` defaults to the real `apiRequest` and exists purely for test
+ * injection (mirrors `deployMcpFromSource`'s `deps.api` seam in `commands/mcp.ts`).
+ */
+export async function pollDeployStatus(
+  opts: {
+    auth: { pat: string };
+    config: { apiUrl?: string };
+    appId: string;
+    buildNumber: number;
+    timeoutMs: number;
+    tarballPath?: string;
+  },
+  deps?: { api?: typeof apiRequest },
+): Promise<{ status: string; url: string }> {
+  const api = deps?.api ?? apiRequest;
   const { auth, config, appId, buildNumber, timeoutMs, tarballPath } = opts;
   let status = 'queued';
   let url = '';
@@ -532,17 +568,17 @@ async function pollDeployStatus(opts: {
   while (status !== 'live' && status !== 'failed' && status !== 'superseded') {
     if (Date.now() - startTime > timeoutMs) {
       out.error(`Deploy timed out after ${Math.round(timeoutMs / 60000)} minutes.`);
-      cleanup(tarballPath);
+      if (tarballPath) cleanup(tarballPath);
       process.exit(1);
     }
 
     await new Promise((r) => setTimeout(r, 3000));
 
-    const statusRes = await apiRequest(
+    const statusRes = await api(
       auth.pat,
       config,
       'GET',
-      `/apps/${appId}/deploy/status/${buildNumber}`,
+      `/apps/${appId}/deployments/${buildNumber}/status`,
     );
     if (!statusRes.ok) {
       if (process.env.GGUI_DEBUG) {
@@ -555,8 +591,8 @@ async function pollDeployStatus(opts: {
     const data = (await statusRes.json()) as {
       status: string;
       message?: string;
-      url?: string;
-      error?: string;
+      endpointUrl?: string | null;
+      errorMessage?: string | null;
     };
 
     if (data.status === 'queued' && lastMessage !== 'Queued...') {
@@ -568,10 +604,10 @@ async function pollDeployStatus(opts: {
     }
 
     status = data.status;
-    if (data.url) url = data.url;
-    if (data.error) {
-      out.error(data.error);
-      cleanup(tarballPath);
+    if (data.endpointUrl) url = data.endpointUrl;
+    if (data.errorMessage) {
+      out.error(data.errorMessage);
+      if (tarballPath) cleanup(tarballPath);
       process.exit(1);
     }
   }
@@ -625,8 +661,8 @@ async function deployLegacyDockerfile(opts: {
   }
 
   if (!uploadRes.ok) {
-    const data = (await uploadRes.json().catch(() => ({}))) as Record<string, string>;
-    out.error(data.error ?? `Upload failed: HTTP ${uploadRes.status}`);
+    const data: unknown = await uploadRes.json().catch(() => ({}));
+    out.error(parseApiError(data, `Upload failed: HTTP ${uploadRes.status}`));
     cleanup(tarballPath);
     process.exit(1);
   }
@@ -666,13 +702,13 @@ async function deployLegacyDockerfile(opts: {
   });
 
   if (deployRes.status !== 202) {
-    const data = (await deployRes.json().catch(() => ({}))) as Record<string, string | number>;
+    const data = (await deployRes.json().catch(() => ({}))) as { retryAfterSeconds?: number };
     if (deployRes.status === 429) {
       const secs = Number(data.retryAfterSeconds ?? deployRes.headers.get('Retry-After') ?? 0);
       const when = secs > 0 ? ` Retry in ~${Math.ceil(secs / 60)} minute(s).` : '';
-      out.error(`${data.error ?? 'Build quota exceeded.'}${when}`);
+      out.error(`${parseApiError(data, 'Build quota exceeded.')}${when}`);
     } else {
-      out.error(String(data.error ?? `Deploy trigger failed: HTTP ${deployRes.status}`));
+      out.error(parseApiError(data, `Deploy trigger failed: HTTP ${deployRes.status}`));
     }
     cleanup(tarballPath);
     process.exit(1);
@@ -795,78 +831,33 @@ async function deployDeclarative(opts: {
   });
 
   if (triggerRes.status !== 202) {
-    const data = (await triggerRes.json().catch(() => ({}))) as Record<
-      string,
-      string | number
-    >;
+    const data = (await triggerRes.json().catch(() => ({}))) as { retryAfterSeconds?: number };
     if (triggerRes.status === 429) {
       const secs = Number(
         data.retryAfterSeconds ?? triggerRes.headers.get('Retry-After') ?? 0,
       );
       const when = secs > 0 ? ` Retry in ~${Math.ceil(secs / 60)} minute(s).` : '';
-      out.error(`${data.error ?? 'Deploy quota exceeded.'}${when}`);
+      out.error(`${parseApiError(data, 'Deploy quota exceeded.')}${when}`);
     } else {
-      out.error(String(data.error ?? `Deploy trigger failed: HTTP ${triggerRes.status}`));
+      out.error(parseApiError(data, `Deploy trigger failed: HTTP ${triggerRes.status}`));
     }
     process.exit(1);
   }
 
   const { buildNumber } = (await triggerRes.json()) as { buildNumber: number };
 
-  // 3. Poll for live (no Kaniko log stream — declarative deploys skip the build).
+  // 3. Poll for live (no Kaniko log stream — declarative deploys skip the
+  //    build; no tarball either, so `pollDeployStatus` gets no tarballPath).
   console.log('  Provisioning pod...');
-  let status = 'queued';
-  let url = '';
-  let lastMessage = '';
-  const startTime = Date.now();
   // Declarative deploys skip the build entirely, so the deploy/readiness
   // budget alone applies. 5 min readiness + slack ≈ 7 min ceiling.
-  const TIMEOUT_MS = 7 * 60 * 1000;
-
-  while (status !== 'live' && status !== 'failed' && status !== 'superseded') {
-    if (Date.now() - startTime > TIMEOUT_MS) {
-      out.error('Deploy timed out after 7 minutes.');
-      process.exit(1);
-    }
-
-    await new Promise((r) => setTimeout(r, 3000));
-
-    const statusRes = await apiRequest(
-      auth.pat,
-      config,
-      'GET',
-      `/apps/${appId}/deploy/status/${buildNumber}`,
-    );
-    if (!statusRes.ok) {
-      if (process.env.GGUI_DEBUG) {
-        const errBody = await statusRes.text().catch(() => '');
-        console.error(`  [poll] HTTP ${statusRes.status}: ${errBody.slice(0, 100)}`);
-      }
-      continue;
-    }
-
-    const data = (await statusRes.json()) as {
-      status: string;
-      message?: string;
-      url?: string;
-      error?: string;
-    };
-
-    if (data.status === 'queued' && lastMessage !== 'Queued...') {
-      console.log('  Queued...');
-      lastMessage = 'Queued...';
-    } else if (data.message && data.message !== lastMessage) {
-      console.log(`  ${data.message}`);
-      lastMessage = data.message;
-    }
-
-    status = data.status;
-    if (data.url) url = data.url;
-    if (data.error) {
-      out.error(data.error);
-      process.exit(1);
-    }
-  }
+  const { status, url } = await pollDeployStatus({
+    auth,
+    config,
+    appId,
+    buildNumber,
+    timeoutMs: 7 * 60 * 1000,
+  });
 
   if (status === 'superseded') {
     console.log('');
