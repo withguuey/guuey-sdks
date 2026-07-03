@@ -17,7 +17,19 @@
 import { useCallback, useRef, useState } from "react";
 import { Reducer, ingestAgEvents, type AgReduceResult, type JsonValue } from "@silverprotocol/core";
 
-export const AGENT_URL = import.meta.env.VITE_AGENT_ENDPOINT_URL ?? "http://localhost:6790";
+/**
+ * Normalize a `VITE_*` env URL: an empty/whitespace declaration (e.g. a
+ * `VITE_X=` line copied from `.env.example`) loads as `""`, not `undefined`,
+ * which would defeat a `??` fallback — treat it as unset. Shared by this
+ * file's `AGENT_URL` and `App.tsx`'s `SANDBOX_URL` so both read sites agree.
+ */
+export function envUrl(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+export const AGENT_URL =
+  envUrl(import.meta.env.VITE_AGENT_ENDPOINT_URL) ?? "http://localhost:6790";
 
 /** Parse complete SSE frame blocks ("event: x\ndata: {...}") out of a growing buffer. */
 function parseFrames(buffer: string): {

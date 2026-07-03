@@ -30,7 +30,7 @@ import {
 } from "react";
 import { AppRenderer } from "@mcp-ui/client";
 import type { AgBlock, AgMessage, JsonValue } from "@silverprotocol/core";
-import { AGENT_URL, useAgentChat } from "./useAgentChat";
+import { AGENT_URL, envUrl, useAgentChat } from "./useAgentChat";
 
 type AppRendererProps = ComponentProps<typeof AppRenderer>;
 type CallToolHandler = NonNullable<AppRendererProps["onCallTool"]>;
@@ -49,10 +49,12 @@ const DEV_SANDBOX_URL = "http://127.0.0.1:6891/sandbox.html";
  * copy of the sandbox page on its own origin) wins; in dev the local proxy
  * is the fallback. `undefined` (a production build without the env) shows
  * the plain-text fallback below instead — the untrusted HTML is never
- * mounted same-origin.
+ * mounted same-origin. `envUrl` treats an empty `VITE_SANDBOX_URL=`
+ * declaration as unset (it loads as `""`, which would defeat `??` and make
+ * `new URL("")` throw mid-render).
  */
 const SANDBOX_URL: string | undefined =
-  import.meta.env.VITE_SANDBOX_URL ?? (import.meta.env.DEV ? DEV_SANDBOX_URL : undefined);
+  envUrl(import.meta.env.VITE_SANDBOX_URL) ?? (import.meta.env.DEV ? DEV_SANDBOX_URL : undefined);
 
 // ── MCP-embedded-resource narrowing (opaque JsonValue → typed payload) ──────
 
@@ -92,12 +94,16 @@ function asUiResource(uiData: JsonValue | undefined): McpUiResourcePayload | und
   return nested !== undefined ? asResourcePayload(nested) : undefined;
 }
 
-/** The resource's HTML: inline `text` wins; else base64-decode `blob`. */
+/**
+ * The resource's HTML: inline `text` wins; else base64-decode `blob`.
+ * `atob` alone yields a Latin-1 string (mojibake on multibyte UTF-8), so
+ * decode via bytes + `TextDecoder`.
+ */
 function resourceHtml(resource: McpUiResourcePayload): string | undefined {
   if (resource.text !== undefined) return resource.text;
   if (resource.blob !== undefined) {
     try {
-      return atob(resource.blob);
+      return new TextDecoder().decode(Uint8Array.from(atob(resource.blob), (c) => c.charCodeAt(0)));
     } catch {
       return undefined; // not valid base64 — treat as no renderable payload
     }
