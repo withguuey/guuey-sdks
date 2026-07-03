@@ -1,0 +1,32 @@
+{
+  "name": "@guuey/create-agentic-app",
+  "version": "0.0.1",
+  "description": "Scaffold a guuey agentic app: code-mode agent + custom MCP + ggui + web, local pnpm dev, one-command guuey deploy.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "create-agentic-app": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint src --ext .ts"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
