@@ -30,8 +30,8 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { requireAuth } from '../auth';
-import { resolveConfig } from '../config';
+import { requireAuth, type AuthTokens } from '../auth';
+import { resolveConfig, type ResolvedConfig } from '../config';
 import { apiRequest, cleanup, packSource } from '../deploy-shared';
 import * as out from '../output';
 
@@ -181,13 +181,220 @@ function readPackageName(cwd: string): string | undefined {
   }
 }
 
+/** Result of a successful {@link deployMcpFromSource} call. */
+export interface McpSourceDeployResult {
+  serverId: string;
+  runtimeUrl?: string;
+  buildNumber: number;
+}
+
+/**
+ * Deploy a hosted MCP server from a local source directory.
+ *
+ * This is the reusable core of `guuey mcp deploy`: pack `dir` into a
+ * tarball, upload it to S3 via a presigned URL (`serverId` + `buildNumber`
+ * come back on the upload response), trigger the build with the upload's
+ * `s3Key`, then poll `/mcp/deployments/:serverId/:buildNumber/status` until
+ * the deploy reaches a terminal state. Throws on `failed` (using the status
+ * payload's `errorMessage`), `superseded`, a non-202 trigger response, an S3
+ * PUT failure, or a 22-minute timeout — callers decide how to present the
+ * error (the CLI command prints it + exits; `guuey deploy`'s orchestrator
+ * may aggregate it across multiple hosted MCP entries).
+ *
+ * `deps.api` defaults to the real `apiRequest` and exists purely for test
+ * injection — network stubbing without a live backend.
+ */
+export async function deployMcpFromSource(
+  opts: {
+    /** Absolute path to the MCP package (must contain a Dockerfile). */
+    dir: string;
+    /** Workspace-unique server name. */
+    name: string;
+    workspaceId: string;
+    /** Runtime pod size. Defaults to `'xs'`. */
+    size?: McpSize;
+    auth: AuthTokens;
+    config: ResolvedConfig;
+    /** Git-tag-style version label. Omitted entirely when not given. */
+    label?: string;
+  },
+  deps?: { api?: typeof apiRequest },
+): Promise<McpSourceDeployResult> {
+  const api = deps?.api ?? apiRequest;
+  const { dir, name, workspaceId, auth, config, label } = opts;
+  const size = opts.size ?? 'xs';
+
+  if (!existsSync(join(dir, 'Dockerfile'))) {
+    throw new Error(
+      'guuey mcp deploy requires a Dockerfile in the current directory (hosted MCP servers are code-mode).',
+    );
+  }
+
+  console.log('');
+  console.log('  Deploying hosted MCP server to guuey cloud...');
+  console.log('');
+
+  // 1. Pack source into a tarball.
+  const buildId = randomUUID().slice(0, 12);
+  const { tarballPath, tarballSize, sourceHash } = packSource({ buildId, cwd: dir });
+
+  // 2. Get presigned upload URL + reserve serverId + buildNumber.
+  const uploadRes = await api(auth.pat, config, 'POST', '/mcp/deploy/upload', {
+    ...buildUploadBody({ workspaceId, name, size, contentLength: tarballSize, sourceHash }),
+  });
+
+  if (!uploadRes.ok) {
+    const data = (await uploadRes.json().catch(() => ({}))) as { error?: string };
+    cleanup(tarballPath);
+    throw new Error(data.error ?? `Upload failed: HTTP ${uploadRes.status}`);
+  }
+
+  const { uploadUrl, serverId, buildNumber, s3Key } = (await uploadRes.json()) as {
+    uploadUrl: string;
+    uploadId: string;
+    serverId: string;
+    buildNumber: number;
+    s3Key: string;
+  };
+
+  // 3. Upload tarball to S3 via the presigned URL.
+  const fileBuffer = readFileSync(tarballPath);
+  const uploadToS3 = await fetch(uploadUrl, {
+    method: 'PUT',
+    body: fileBuffer,
+    headers: {
+      'Content-Type': 'application/gzip',
+      'Content-Length': String(tarballSize),
+    },
+  });
+
+  if (!uploadToS3.ok) {
+    cleanup(tarballPath);
+    throw new Error(`S3 upload failed: HTTP ${uploadToS3.status}`);
+  }
+
+  // 4. Trigger the build + deploy.
+  console.log('  Building & deploying...');
+  const triggerRes = await api(auth.pat, config, 'POST', '/mcp/deploy/trigger', {
+    ...buildTriggerBody({
+      workspaceId,
+      serverId,
+      buildNumber,
+      size,
+      sourceTarballKey: s3Key,
+      sourceHash,
+      label,
+    }),
+  });
+
+  if (triggerRes.status !== 202) {
+    const data = (await triggerRes.json().catch(() => ({}))) as {
+      error?: string;
+      retryAfterSeconds?: number;
+    };
+    cleanup(tarballPath);
+    if (triggerRes.status === 429) {
+      // Quota hit — surface the reason + a Retry-After hint if we got one.
+      const secs = Number(
+        data.retryAfterSeconds ?? triggerRes.headers.get('Retry-After') ?? 0,
+      );
+      const when = secs > 0 ? ` Retry in ~${Math.ceil(secs / 60)} minute(s).` : '';
+      throw new Error(`${data.error ?? 'Build quota exceeded.'}${when}`);
+    }
+    // Includes 409 (concurrent build number) — surface its message.
+    throw new Error(data.error ?? `Deploy trigger failed: HTTP ${triggerRes.status}`);
+  }
+
+  // 5. Poll for completion. No build-log streaming endpoint for MCP — poll only.
+  let status = 'queued';
+  let runtimeUrl: string | null = null;
+  let lastMessage = '';
+  const startTime = Date.now();
+  // Kaniko build budget — matches code-mode deploy's 22-minute ceiling.
+  const TIMEOUT_MS = 22 * 60 * 1000;
+
+  while (status !== 'live' && status !== 'failed' && status !== 'superseded') {
+    if (Date.now() - startTime > TIMEOUT_MS) {
+      cleanup(tarballPath);
+      throw new Error('Deploy timed out after 22 minutes.');
+    }
+
+    await new Promise((r) => setTimeout(r, 3000));
+
+    const statusRes = await api(
+      auth.pat,
+      config,
+      'GET',
+      `/mcp/deployments/${serverId}/${buildNumber}/status`,
+    );
+    if (!statusRes.ok) {
+      if (process.env.GGUI_DEBUG) {
+        const errBody = await statusRes.text().catch(() => '');
+        console.error(`  [poll] HTTP ${statusRes.status}: ${errBody.slice(0, 100)}`);
+      }
+      continue;
+    }
+
+    const data = (await statusRes.json()) as {
+      status: string;
+      runtimeUrl?: string | null;
+      errorMessage?: string | null;
+      message?: string;
+    };
+
+    if (data.status === 'queued' && lastMessage !== 'Queued...') {
+      console.log('  Queued...');
+      lastMessage = 'Queued...';
+    } else if (data.message && data.message !== lastMessage) {
+      console.log(`  ${data.message}`);
+      lastMessage = data.message;
+    } else if (data.status !== status && data.status !== 'queued') {
+      console.log(`  ${data.status}...`);
+    }
+
+    status = data.status;
+    if (data.runtimeUrl) runtimeUrl = data.runtimeUrl;
+    // The MCP status payload uses `errorMessage` (the app-deploy one used `error`).
+    if (data.errorMessage) {
+      cleanup(tarballPath);
+      throw new Error(data.errorMessage);
+    }
+  }
+
+  // 6. Done.
+  cleanup(tarballPath);
+
+  if (status === 'superseded') {
+    console.log('');
+    throw new Error(
+      'Deployment superseded by a newer deploy. Run "guuey mcp deploy" again if needed.',
+    );
+  }
+
+  if (status === 'failed') {
+    console.log('');
+    throw new Error('Deployment failed.');
+  }
+
+  console.log('');
+  out.success(`Hosted MCP live at ${runtimeUrl}`);
+  console.log('');
+  console.log(`  Server: ${name}`);
+  console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
+  console.log(`  Size:   ${size}`);
+  console.log('  Scales to zero when idle.');
+  console.log('');
+
+  return { serverId, runtimeUrl: runtimeUrl ?? undefined, buildNumber };
+}
+
 /**
  * Handle the `guuey mcp deploy` command.
  *
- * Resolves + validates inputs (workspace, name, size, label), requires a
- * Dockerfile (hosted MCP servers are code-mode), then packs the source,
- * uploads it to S3 via a presigned URL, triggers the build, and polls until
- * the server is live or the deploy fails.
+ * Resolves + validates inputs (workspace, name, size, label) from CLI flags
+ * exactly as before, then delegates the pack→upload→trigger→poll flow to
+ * {@link deployMcpFromSource}, printing its thrown error + exiting 1 on
+ * failure (matching the command's pre-refactor behavior).
  *
  * @param flags - CLI flags (e.g., `{ name: 'mcp-weather', size: 'md' }`)
  */
@@ -233,173 +440,12 @@ export async function mcpDeploy(flags?: Record<string, string | true>): Promise<
   const auth = requireAuth();
   const config = resolveConfig();
 
-  if (!existsSync(join(cwd, 'Dockerfile'))) {
-    out.error(
-      'guuey mcp deploy requires a Dockerfile in the current directory (hosted MCP servers are code-mode).',
-    );
+  try {
+    await deployMcpFromSource({ dir: cwd, name, workspaceId, size, auth, config, label });
+  } catch (err) {
+    out.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
   }
-
-  console.log('');
-  console.log('  Deploying hosted MCP server to guuey cloud...');
-  console.log('');
-
-  // 1. Pack source into a tarball.
-  const buildId = randomUUID().slice(0, 12);
-  const { tarballPath, tarballSize, sourceHash } = packSource({ buildId, cwd });
-
-  // 2. Get presigned upload URL + reserve serverId + buildNumber.
-  const uploadRes = await apiRequest(auth.pat, config, 'POST', '/mcp/deploy/upload', {
-    ...buildUploadBody({ workspaceId, name, size, contentLength: tarballSize, sourceHash }),
-  });
-
-  if (!uploadRes.ok) {
-    const data = (await uploadRes.json().catch(() => ({}))) as { error?: string };
-    out.error(data.error ?? `Upload failed: HTTP ${uploadRes.status}`);
-    cleanup(tarballPath);
-    process.exit(1);
-  }
-
-  const { uploadUrl, serverId, buildNumber, s3Key } = (await uploadRes.json()) as {
-    uploadUrl: string;
-    uploadId: string;
-    serverId: string;
-    buildNumber: number;
-    s3Key: string;
-  };
-
-  // 3. Upload tarball to S3 via the presigned URL.
-  const fileBuffer = readFileSync(tarballPath);
-  const uploadToS3 = await fetch(uploadUrl, {
-    method: 'PUT',
-    body: fileBuffer,
-    headers: {
-      'Content-Type': 'application/gzip',
-      'Content-Length': String(tarballSize),
-    },
-  });
-
-  if (!uploadToS3.ok) {
-    out.error(`S3 upload failed: HTTP ${uploadToS3.status}`);
-    cleanup(tarballPath);
-    process.exit(1);
-  }
-
-  // 4. Trigger the build + deploy.
-  console.log('  Building & deploying...');
-  const triggerRes = await apiRequest(auth.pat, config, 'POST', '/mcp/deploy/trigger', {
-    ...buildTriggerBody({
-      workspaceId,
-      serverId,
-      buildNumber,
-      size,
-      sourceTarballKey: s3Key,
-      sourceHash,
-      label,
-    }),
-  });
-
-  if (triggerRes.status !== 202) {
-    const data = (await triggerRes.json().catch(() => ({}))) as {
-      error?: string;
-      retryAfterSeconds?: number;
-    };
-    if (triggerRes.status === 429) {
-      // Quota hit — show the reason + a Retry-After hint if we got one.
-      const secs = Number(
-        data.retryAfterSeconds ?? triggerRes.headers.get('Retry-After') ?? 0,
-      );
-      const when = secs > 0 ? ` Retry in ~${Math.ceil(secs / 60)} minute(s).` : '';
-      out.error(`${data.error ?? 'Build quota exceeded.'}${when}`);
-    } else {
-      // Includes 409 (concurrent build number) — surface its message + exit 1.
-      out.error(data.error ?? `Deploy trigger failed: HTTP ${triggerRes.status}`);
-    }
-    cleanup(tarballPath);
-    process.exit(1);
-  }
-
-  // 5. Poll for completion. No build-log streaming endpoint for MCP — poll only.
-  let status = 'queued';
-  let runtimeUrl: string | null = null;
-  let lastMessage = '';
-  const startTime = Date.now();
-  // Kaniko build budget — matches code-mode deploy's 22-minute ceiling.
-  const TIMEOUT_MS = 22 * 60 * 1000;
-
-  while (status !== 'live' && status !== 'failed' && status !== 'superseded') {
-    if (Date.now() - startTime > TIMEOUT_MS) {
-      out.error('Deploy timed out after 22 minutes.');
-      cleanup(tarballPath);
-      process.exit(1);
-    }
-
-    await new Promise((r) => setTimeout(r, 3000));
-
-    const statusRes = await apiRequest(
-      auth.pat,
-      config,
-      'GET',
-      `/mcp/deployments/${serverId}/${buildNumber}/status`,
-    );
-    if (!statusRes.ok) {
-      if (process.env.GGUI_DEBUG) {
-        const errBody = await statusRes.text().catch(() => '');
-        console.error(`  [poll] HTTP ${statusRes.status}: ${errBody.slice(0, 100)}`);
-      }
-      continue;
-    }
-
-    const data = (await statusRes.json()) as {
-      status: string;
-      runtimeUrl?: string | null;
-      errorMessage?: string | null;
-      message?: string;
-    };
-
-    if (data.status === 'queued' && lastMessage !== 'Queued...') {
-      console.log('  Queued...');
-      lastMessage = 'Queued...';
-    } else if (data.message && data.message !== lastMessage) {
-      console.log(`  ${data.message}`);
-      lastMessage = data.message;
-    } else if (data.status !== status && data.status !== 'queued') {
-      console.log(`  ${data.status}...`);
-    }
-
-    status = data.status;
-    if (data.runtimeUrl) runtimeUrl = data.runtimeUrl;
-    // The MCP status payload uses `errorMessage` (the app-deploy one used `error`).
-    if (data.errorMessage) {
-      out.error(data.errorMessage);
-      cleanup(tarballPath);
-      process.exit(1);
-    }
-  }
-
-  // 6. Done.
-  cleanup(tarballPath);
-
-  if (status === 'superseded') {
-    console.log('');
-    out.error('Deployment superseded by a newer deploy. Run "guuey mcp deploy" again if needed.');
-    process.exit(1);
-  }
-
-  if (status === 'failed') {
-    console.log('');
-    out.error('Deployment failed.');
-    process.exit(1);
-  }
-
-  console.log('');
-  out.success(`Hosted MCP live at ${runtimeUrl}`);
-  console.log('');
-  console.log(`  Server: ${name}`);
-  console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
-  console.log(`  Size:   ${size}`);
-  console.log('  Scales to zero when idle.');
-  console.log('');
 }
 
 // ─── mcp secrets (set / list / unset) ───────────────────────────────────

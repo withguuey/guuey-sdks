@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execSync } from 'node:child_process';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   resolveWorkspaceId,
   resolveServerName,
@@ -8,8 +12,12 @@ import {
   buildTriggerBody,
   parseSecretAssignment,
   resolveServerId,
+  deployMcpFromSource,
   MCP_SIZES,
 } from './mcp.js';
+import type { AuthTokens } from '../auth.js';
+import type { ResolvedConfig } from '../config.js';
+import type { apiRequest } from '../deploy-shared.js';
 
 describe('resolveWorkspaceId', () => {
   it('flag wins over env', () => {
@@ -198,4 +206,132 @@ describe('resolveServerId', () => {
     expect(resolveServerId({ server: true }, {})).toBeNull();
     expect(resolveServerId({}, { GUUEY_MCP_SERVER: '' })).toBeNull();
   });
+});
+
+describe('deployMcpFromSource', () => {
+  const auth: AuthTokens = { pat: 'pat-test', expiresAt: '2099-01-01T00:00:00.000Z' };
+  const config: ResolvedConfig = { host: 'https://guuey.test', apiUrl: 'https://api.guuey.test' };
+
+  let dir: string;
+
+  beforeEach(() => {
+    // A minimal committed git repo with a Dockerfile + package.json, matching
+    // what `packSource`'s git-archive fast path expects.
+    dir = mkdtempSync(join(tmpdir(), 'mcp-deploy-test-'));
+    writeFileSync(join(dir, 'Dockerfile'), 'FROM node:20-slim\n');
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify({ name: 'mcp-fixture', version: '0.0.1' }),
+    );
+    execSync('git init -q', { cwd: dir });
+    execSync('git -c user.email=test@test.com -c user.name=test add -A', { cwd: dir });
+    execSync(
+      'git -c user.email=test@test.com -c user.name=test commit -q -m init',
+      { cwd: dir },
+    );
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it(
+    'packs, uploads, triggers, and polls to a live result (happy path)',
+    async () => {
+      const calls: { method: string; path: string; body?: unknown }[] = [];
+      const api: typeof apiRequest = vi.fn(async (_pat, _cfg, method, path, body) => {
+        calls.push({ method, path, body });
+        if (path === '/mcp/deploy/upload') {
+          return new Response(
+            JSON.stringify({
+              uploadUrl: 'https://s3.example.com/put',
+              uploadId: 'up-1',
+              serverId: 'srv-1',
+              buildNumber: 4,
+              s3Key: 'workspaces/ws-1/mcp/srv-1/build.tar.gz',
+            }),
+            { status: 200 },
+          );
+        }
+        if (path === '/mcp/deploy/trigger') {
+          return new Response(null, { status: 202 });
+        }
+        if (path === '/mcp/deployments/srv-1/4/status') {
+          return new Response(
+            JSON.stringify({ status: 'live', runtimeUrl: 'https://srv-1.mcp.guuey.com' }),
+            { status: 200 },
+          );
+        }
+        throw new Error(`unexpected apiRequest call: ${method} ${path}`);
+      });
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(new Response(null, { status: 200 }));
+
+      const result = await deployMcpFromSource(
+        { dir, name: 'mcp-weather', workspaceId: 'ws-1', size: 'sm', auth, config },
+        { api },
+      );
+
+      expect(result).toEqual({
+        serverId: 'srv-1',
+        runtimeUrl: 'https://srv-1.mcp.guuey.com',
+        buildNumber: 4,
+      });
+      expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+        'POST /mcp/deploy/upload',
+        'POST /mcp/deploy/trigger',
+        'GET /mcp/deployments/srv-1/4/status',
+      ]);
+      // The trigger body carries the s3Key the upload response returned, NOT
+      // a recomputed key.
+      expect((calls[1]!.body as { sourceTarballKey: string }).sourceTarballKey).toBe(
+        'workspaces/ws-1/mcp/srv-1/build.tar.gz',
+      );
+
+      fetchSpy.mockRestore();
+    },
+    10_000,
+  );
+
+  it(
+    'throws with the status payload errorMessage when the deploy fails',
+    async () => {
+      const api: typeof apiRequest = vi.fn(async (_pat, _cfg, method, path) => {
+        if (path === '/mcp/deploy/upload') {
+          return new Response(
+            JSON.stringify({
+              uploadUrl: 'https://s3.example.com/put',
+              uploadId: 'up-1',
+              serverId: 'srv-2',
+              buildNumber: 1,
+              s3Key: 'workspaces/ws-1/mcp/srv-2/build.tar.gz',
+            }),
+            { status: 200 },
+          );
+        }
+        if (path === '/mcp/deploy/trigger') {
+          return new Response(null, { status: 202 });
+        }
+        if (path === '/mcp/deployments/srv-2/1/status') {
+          return new Response(
+            JSON.stringify({ status: 'failed', errorMessage: 'Docker build failed: exit 1' }),
+            { status: 200 },
+          );
+        }
+        throw new Error(`unexpected apiRequest call: ${method} ${path}`);
+      });
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }));
+
+      await expect(
+        deployMcpFromSource(
+          { dir, name: 'mcp-weather', workspaceId: 'ws-1', size: 'sm', auth, config },
+          { api },
+        ),
+      ).rejects.toThrow('Docker build failed: exit 1');
+
+      vi.restoreAllMocks();
+    },
+    10_000,
+  );
 });
