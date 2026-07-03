@@ -23,6 +23,16 @@ import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 
+/**
+ * `tar --exclude` flags shared by every non-git-archive packing path
+ * (working-tree tar, and both tar fallbacks). `.env*` (glob, not the
+ * previous exact-match `.env`) so `.env.local`/`.env.production` etc. never
+ * land in a tarball; `.guuey-dev` and `*.tsbuildinfo` are dev/build
+ * artifacts that don't belong in a deploy either.
+ */
+const WORKING_TREE_TAR_EXCLUDES =
+  "--exclude=node_modules --exclude=dist --exclude=.git --exclude='.env*' --exclude=.guuey-dev --exclude='*.tsbuildinfo' --exclude=.ggui --exclude=.guuey";
+
 /** Result of packing a project's source into an upload-ready tarball. */
 export interface PackResult {
   /** Absolute path of the gzip tarball on disk (caller must `cleanup`). */
@@ -40,13 +50,29 @@ export interface PackResult {
  * (`pnpm pack`) and rewriting the package.json refs to `file:./.ggui-deps/*`,
  * so the remote Docker build can `npm ci` without the pnpm workspace. When
  * there are no workspace deps, ships committed files via `git archive`
- * (fastest), falling back to a `tar` of the tree.
+ * (fastest), falling back to a `tar` of the tree — UNLESS `includeWorkingTree`
+ * is set (see below).
+ *
+ * `includeWorkingTree` (opt-in, default `false`): tars the actual working
+ * tree instead of `git archive`'s committed-files-only snapshot. The
+ * code-orchestrated agent leg (`commands/deploy.ts`) needs this — it builds
+ * `guuey.worker.js` locally right before packing, and the scaffold's
+ * `.gitignore` ignores that build artifact, so `git archive HEAD` would ship
+ * a tarball with no worker in it. SECURITY-CRITICAL: this path excludes
+ * `.env*`, `node_modules`, `.git`, `.guuey-dev`, `dist`, and `*.tsbuildinfo`
+ * explicitly — a working-tree tar is the one packing path that could
+ * otherwise leak an uncommitted local secret file into a build image.
  *
  * Behavior is byte-identical to the logic that was previously inline in
  * `deploy()` — this is a pure extraction so `guuey mcp deploy` can reuse it.
  */
-export function packSource(opts: { buildId: string; cwd: string }): PackResult {
-  const { buildId, cwd } = opts;
+export function packSource(opts: {
+  buildId: string;
+  cwd: string;
+  /** Tar the working tree instead of `git archive` (committed-only). Default `false`. */
+  includeWorkingTree?: boolean;
+}): PackResult {
+  const { buildId, cwd, includeWorkingTree = false } = opts;
   const tarballPath = join(tmpdir(), `ggui-deploy-${buildId}.tar.gz`);
 
   console.log('  Packaging source...');
@@ -68,10 +94,16 @@ export function packSource(opts: { buildId: string; cwd: string }): PackResult {
   const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
   let hasWorkspaceDeps = false;
 
-  // Code-mode deploy requires a user-committed Dockerfile. Default-Dockerfile
-  // injection was retired with @ggui-ai/build-templates. Mode detection by the
-  // caller already proved Dockerfile exists; this is a defensive log line only.
-  console.log("  Using your project's Dockerfile.");
+  // The legacy (non-orchestrated) code-mode deploy requires a user-committed
+  // Dockerfile — default-Dockerfile injection was retired with
+  // @ggui-ai/build-templates, and mode detection by the caller already
+  // proved one exists, so this is a defensive log line only. It does NOT
+  // apply to the code-orchestrated agent leg (`includeWorkingTree`): that
+  // shape is built from guuey's own Kaniko Dockerfile template, so there is
+  // no user Dockerfile in play, and printing this line there would be false.
+  if (!includeWorkingTree) {
+    console.log("  Using your project's Dockerfile.");
+  }
 
   // Build a {pkgName → sourceDir} map for every workspace package in the
   // monorepo so we can recursively resolve transitive workspace deps. Without
@@ -162,7 +194,7 @@ export function packSource(opts: { buildId: string; cwd: string }): PackResult {
       // package-lock.json) are not clobbered by the source's workspace:*
       // package.json.
       execSync(
-        `rsync -a --exclude=node_modules --exclude=dist --exclude=.git --exclude=.env --exclude=.ggui --exclude=.guuey . "${stagingDir}/"`,
+        `rsync -a --exclude=node_modules --exclude=dist --exclude=.git --exclude='.env*' --exclude=.guuey-dev --exclude='*.tsbuildinfo' --exclude=.ggui --exclude=.guuey . "${stagingDir}/"`,
         { stdio: 'pipe', cwd },
       );
       // Move packed tarballs to .ggui-deps/ inside staging
@@ -187,6 +219,13 @@ export function packSource(opts: { buildId: string; cwd: string }): PackResult {
         }
       }
       execSync(`tar czf "${tarballPath}" -C "${stagingDir}" .`, { stdio: 'pipe' });
+    } else if (includeWorkingTree) {
+      // Opt-in working-tree tar (see doc comment) — NOT git archive, so
+      // uncommitted/gitignored files (e.g. the freshly built
+      // `guuey.worker.js`) are included. SECURITY-CRITICAL: exclude secrets
+      // and build/dev artifacts explicitly, since this is the one packing
+      // path that ships more than `git archive`'s committed-files snapshot.
+      execSync(`tar czf "${tarballPath}" ${WORKING_TREE_TAR_EXCLUDES} .`, { stdio: 'pipe', cwd });
     } else {
       // User has their own Dockerfile and no workspace deps — git archive
       // is fastest (only ships committed files).
@@ -196,18 +235,12 @@ export function packSource(opts: { buildId: string; cwd: string }): PackResult {
           cwd,
         });
       } catch {
-        execSync(
-          `tar czf "${tarballPath}" --exclude=node_modules --exclude=dist --exclude=.git --exclude=.env --exclude=.ggui --exclude=.guuey .`,
-          { stdio: 'pipe', cwd },
-        );
+        execSync(`tar czf "${tarballPath}" ${WORKING_TREE_TAR_EXCLUDES} .`, { stdio: 'pipe', cwd });
       }
     }
   } catch {
     // Fallback: use tar directly
-    execSync(
-      `tar czf "${tarballPath}" --exclude=node_modules --exclude=dist --exclude=.git --exclude=.env --exclude=.ggui --exclude=.guuey .`,
-      { stdio: 'pipe', cwd },
-    );
+    execSync(`tar czf "${tarballPath}" ${WORKING_TREE_TAR_EXCLUDES} .`, { stdio: 'pipe', cwd });
   }
 
   const tarballBuffer = readFileSync(tarballPath);
@@ -225,6 +258,31 @@ export function cleanup(tarballPath: string): void {
   } catch {
     /* ignore */
   }
+}
+
+/**
+ * Parse a cliApi error response body into a human-readable message.
+ *
+ * `backend/amplify/functions/shared/response.ts#httpError` serializes every
+ * error NESTED — `{ error: { code, message } }` — but every CLI call site
+ * used to read `data.error` as though it were a flat string, which prints
+ * `[object Object]` on every real API error. This is the one parser every
+ * caller should use: it tries the nested `{error:{message}}` shape first,
+ * then a flat `{error: string}` shape (for any legacy/ad-hoc response that
+ * isn't `httpError`-shaped), then a top-level `message` field, and finally
+ * falls back to the caller-supplied default (typically `HTTP <status>`).
+ */
+export function parseApiError(data: unknown, fallback: string): string {
+  if (data === null || typeof data !== 'object') return fallback;
+  const record = data as Record<string, unknown>;
+  const err = record.error;
+  if (err !== null && typeof err === 'object') {
+    const nested = (err as Record<string, unknown>).message;
+    if (typeof nested === 'string' && nested.length > 0) return nested;
+  }
+  if (typeof err === 'string' && err.length > 0) return err;
+  if (typeof record.message === 'string' && record.message.length > 0) return record.message;
+  return fallback;
 }
 
 /**
