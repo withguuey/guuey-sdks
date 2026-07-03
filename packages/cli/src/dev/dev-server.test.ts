@@ -132,6 +132,31 @@ describe("startDevServer", () => {
     expect(text).not.toMatch(/"subtype":"success"/);
   });
 
+  it("terminates with an error frame when silver has no normalizer for the framework", async () => {
+    // Regression: makeNormalizer must throw INSIDE the invoke try block so the
+    // stream still ends in the standard `event: error` frame (every invoke
+    // that emitted `session` terminates) — not a dangling session-only stream.
+    srv = await startDevServer({
+      port: 0,
+      framework: "fixture", // no @silverprotocol normalizer for this
+      protocol: "silver",
+      workerCommand: process.execPath,
+      workerArgs: [echoFixture],
+      agentSnapshotJson: "{}",
+      projectRoot: freshProjectRoot(),
+    });
+    const res = await fetch(`http://localhost:${srv.port}/agent/invoke`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input: "hi" }),
+    });
+    const text = await res.text();
+    expect(text).toMatch(/^event: session\n/);
+    expect(text).toMatch(
+      /event: error\ndata: \{"code":"WORKER_ERROR","message":"AGJSON_NO_NORMALIZER:fixture"\}/,
+    );
+  });
+
   it("returns 204 for OPTIONS preflight and 200 for /healthz", async () => {
     srv = await startDevServer({
       port: 0,

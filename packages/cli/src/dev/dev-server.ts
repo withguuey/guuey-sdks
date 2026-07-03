@@ -195,13 +195,17 @@ async function handleInvoke(
     if (!abortController.signal.aborted) abortController.abort();
   });
 
-  const normalizer: Normalizer | undefined =
-    opts.protocol === "silver" ? makeNormalizer(opts.framework) : undefined;
-
   let stopReason: "end_turn" | "max_turns" | "error" = "end_turn";
   let agentText = "";
 
   try {
+    // Inside the try so an unknown-framework throw (`AGJSON_NO_NORMALIZER:*`)
+    // still terminates the stream with the standard `event: error` frame —
+    // every invoke that emitted a `session` frame MUST end in `done`/`error`,
+    // even for callers that bypass commands/dev.ts's framework gate.
+    const normalizer: Normalizer | undefined =
+      opts.protocol === "silver" ? makeNormalizer(opts.framework) : undefined;
+
     for await (const ev of driver({
       input: body.input,
       history: state.history,
@@ -228,6 +232,13 @@ async function handleInvoke(
       }
       // bypass mode (any event type), OR a `text` event in silver mode (no
       // native SDKMessage to push — relay verbatim rather than drop it).
+      // PARITY GAP (tracked): the pod's F3 path instead SYNTHESIZES an
+      // assistant SDKMessage from a `text` event and runs it through the full
+      // normalize path so the turn folds (`backend/services/nocode-runtime/
+      // src/sse-server.ts` ~299-320, `assistantMessage()` + the `text` arm).
+      // Revisit if hand-authored `serve()`-based workers (text-only, no
+      // native events) are supported in local dev — until then verbatim
+      // relay is the honest minimal behavior.
       sendEvent(res, "message", ev);
     }
     if (normalizer) {
