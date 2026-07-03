@@ -102,14 +102,16 @@ function printHelp(): void {
 Usage: guuey <command> [options]
 
 Agent Development:
-  create [name]                  Create a new guuey agent project
-    --framework <f>              Framework: claude-agent-sdk | openai-agents-sdk | google-adk | vanilla
-    --target <dir>               Output directory (default: ./<name>)
+  create <target>                Create a new guuey agent project (target is
+                                 the positional output directory)
+    --framework <f>              Framework: claude-agent-sdk | openai-agents-sdk
   delete [appId]                 Delete a guuey app from the platform
     --force                      Skip confirmation prompt
-  dev                            Start agent server locally (with hot reload)
-    --port <port>                Port (default: 3000)
-    --entry <file>               Entry file (default: src/index.ts)
+  dev --serve                    Run a pod-parity local SSE server against
+                                 your built worker (POST /agent/invoke)
+    --port <port>                Port (default: 6790)
+                                 Without --serve, prints the Expo-style
+                                 bridge/QR "coming soon" note (slice 2+).
   link                           Connect an existing agent to guuey platform
     --url <endpoint>             Agent endpoint URL
     --name <name>                App name
