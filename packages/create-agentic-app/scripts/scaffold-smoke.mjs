@@ -62,7 +62,8 @@ for (const framework of ["claude-agent-sdk", "openai-agents-sdk"]) {
 
   // 4. Install + typecheck + build (recursive: root worker, todo MCP, web).
   sh("corepack", ["pnpm", "install", "--no-frozen-lockfile"], { cwd: appDir });
-  sh("corepack", ["pnpm", "-r", "typecheck"], { cwd: appDir });
+  sh("corepack", ["pnpm", "-r", "typecheck"], { cwd: appDir }); // workspace packages (mcps/*, web)
+  sh("corepack", ["pnpm", "typecheck"], { cwd: appDir }); // root worker (not a workspace member of `-r`)
   sh("corepack", ["pnpm", "-r", "build"], { cwd: appDir });
   sh("corepack", ["pnpm", "build"], { cwd: appDir }); // root build → guuey.worker.js
   sh("node", ["-e", "require('fs').accessSync('guuey.worker.js')"], { cwd: appDir });

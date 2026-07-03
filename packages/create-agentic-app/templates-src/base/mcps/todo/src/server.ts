@@ -75,7 +75,11 @@ function buildMcpServer(): McpServer {
     async ({ title }) => {
       const todo: Todo = { id: randomUUID(), title, done: false };
       todos.set(todo.id, todo);
-      return toolResult(todo);
+      // Spread into a fresh object literal — `toolResult` takes
+      // `Record<string, unknown>`, and a named interface like `Todo` isn't
+      // structurally assignable to that without an (unwanted) index
+      // signature of its own; a fresh literal is.
+      return toolResult({ ...todo });
     },
   );
 
@@ -91,7 +95,7 @@ function buildMcpServer(): McpServer {
       const todo = todos.get(id);
       if (!todo) throw new Error(`todo not found: ${id}`);
       todo.done = !todo.done;
-      return toolResult(todo);
+      return toolResult({ ...todo }); // fresh literal — see the create() comment above
     },
   );
 
