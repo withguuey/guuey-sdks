@@ -203,7 +203,7 @@ describe("buildOptions — Bash re-enabled prompt-free (Router bwrap is the isol
     expect("permissionMode" in opts).toBe(false);
     // The callback must auto-allow Bash without prompting (else a headless pod hangs).
     const signal = new AbortController().signal;
-    const result = await opts.canUseTool?.("Bash", { command: "ls" }, { signal, toolUseID: "t1" });
+    const result = await opts.canUseTool?.("Bash", { command: "ls" }, { signal, toolUseID: "t1", requestId: "req1" });
     expect(result).toEqual({ behavior: "allow", updatedInput: { command: "ls" } });
   });
 
