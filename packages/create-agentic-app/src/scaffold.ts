@@ -112,10 +112,35 @@ async function seedEnvLocal(projectDir: string): Promise<void> {
   await fs.copyFile(envExample, envLocal);
 }
 
+/**
+ * `git init` + initial commit in the new project. Non-fatal: the scaffolded
+ * files are already on disk, so a broken/missing git must not reject the
+ * whole scaffold(). The commit pins an inline identity via `-c` so fresh
+ * machines/CI containers without a global git identity succeed instead of
+ * falling into the warning path.
+ */
 async function initGit(projectDir: string): Promise<void> {
-  await execFileAsync('git', ['init'], { cwd: projectDir });
-  await execFileAsync('git', ['add', '-A'], { cwd: projectDir });
-  await execFileAsync('git', ['commit', '-m', 'chore: scaffold'], { cwd: projectDir });
+  try {
+    await execFileAsync('git', ['init'], { cwd: projectDir });
+    await execFileAsync('git', ['add', '-A'], { cwd: projectDir });
+    await execFileAsync(
+      'git',
+      [
+        '-c',
+        'user.name=guuey',
+        '-c',
+        'user.email=scaffold@guuey.com',
+        'commit',
+        '-m',
+        'chore: scaffold',
+      ],
+      { cwd: projectDir }
+    );
+  } catch {
+    console.error(
+      `Warning: git init failed; the project was scaffolded without a repo. Initialize it manually:\n  cd ${projectDir}\n  git init && git add -A && git commit -m "chore: scaffold"`
+    );
+  }
 }
 
 async function runInstall(projectDir: string): Promise<void> {
