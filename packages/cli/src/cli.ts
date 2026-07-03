@@ -122,9 +122,11 @@ Agent Development:
     --tail <n>                   Number of lines from end (default: 500)
     --follow, -f                 Live tail (Ctrl+C to stop)
   deploy                         Deploy agent to guuey hosting (auto-detects
-                                 declarative vs code mode)
-    --declarative                Force declarative mode (uses agent.json)
-    --code                       Force code mode (uses Dockerfile)
+                                 declarative vs code mode; code mode deploys
+                                 MCP + ggui + agent legs in one command)
+    --declarative                Force declarative mode (uses guuey.json, no build)
+    --code                       Force code mode (builds+deploys guuey.worker.js,
+                                 or uses a root Dockerfile if present)
     --force                      Force deploy even if unchanged
     --size <s>                   Runtime pod size: xs | sm | md | lg | xl (default: sm)
     --build-size <s>             Build Job size: sm | md | lg | xl (default: md, code-mode only)

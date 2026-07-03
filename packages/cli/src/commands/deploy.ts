@@ -1,78 +1,103 @@
 /**
  * guuey deploy -- Package, upload, and deploy an agent to guuey cloud.
  *
- * Two deploy modes, auto-detected from the project root:
+ * Three deploy shapes, auto-detected from the project root:
  *
- *   1. **Declarative** — repo has an `agent.json`, no `Dockerfile`.
- *      No tarball, no build. The agent.json snapshot (system prompt
- *      inlined) is POSTed directly to the control plane and the stock
+ *   1. **Code (worker-based)** — repo has a `guuey.json` + `package.json`
+ *      (a `@guuey/create-agentic-app` scaffold, or any project with a
+ *      buildable framework worker). This is the **one-command orchestrator**
+ *      (design doc `2026-07-03-guuey-create-agentic-app-design.md` §7):
+ *      resolve/create the app, deploy each hosted-MCP `source` leg, push
+ *      ggui assets, build the worker (`corepack pnpm build` →
+ *      `guuey.worker.js`), then pack + upload + trigger + poll like any
+ *      code-mode deploy. The backend builds the runtime image `FROM` its
+ *      own base image (Kaniko `Dockerfile.worker` template) — no
+ *      user-committed Dockerfile is read or required for this shape.
+ *   2. **Code (user-Dockerfile)** — repo has a `Dockerfile` at the root
+ *      (and no `guuey.json`). Legacy shape, preserved unchanged: packs +
+ *      uploads + triggers + polls with no MCP/ggui legs, no build step, no
+ *      config snapshot.
+ *   3. **Declarative** — repo has a `guuey.json`, no `package.json`, no
+ *      Dockerfile (e.g. `guuey pull`'d Studio/no-code agent). No tarball,
+ *      no build. The agent.json snapshot (system prompt inlined) is
+ *      POSTed directly to the control plane and the stock
  *      `nocode-runtime` pod boots off it.
- *   2. **Code** — repo has a `Dockerfile`. The CLI packs the source
- *      tree, uploads to S3, triggers a Kaniko build, and the resulting
- *      image runs as the agent. agent.json is ignored if also present
- *      unless `--declarative` is passed.
  *
  * Detection precedence:
- *   - `--declarative` flag    → force declarative (errors if no agent.json)
- *   - `--code` flag           → force code (errors if no Dockerfile)
- *   - else: agent.json + no Dockerfile → declarative
- *   - else: Dockerfile present         → code
- *   - else: error (need one or the other)
+ *   - `--declarative` flag → force declarative (errors if no guuey.json)
+ *   - `--code` flag        → force code (errors if no guuey.json/Dockerfile)
+ *   - else: Dockerfile present               → code (user-Dockerfile)
+ *   - else: guuey.json + package.json present → code (worker-based, orchestrated)
+ *   - else: guuey.json present                → declarative
+ *   - else: error (need one of the three)
  *
  * Usage:
  *   guuey deploy                 # Auto-detect mode
- *   guuey deploy --declarative   # Force declarative (uses agent.json)
- *   guuey deploy --code          # Force code-mode (uses Dockerfile)
+ *   guuey deploy --declarative   # Force declarative (uses guuey.json, no build)
+ *   guuey deploy --code          # Force code mode
  *   guuey deploy --size sm       # Override runtime pod size
  *   guuey deploy --build-size lg # Override build Job size (code mode only)
  *   guuey deploy --force         # Force deploy even if no changes detected
- *
- * Flow (code mode):
- *   1. Create tarball of source code (via git archive or tar fallback)
- *   2. Get presigned S3 upload URL from API
- *   3. Upload tarball to S3
- *   4. Trigger deployment
- *   5. Poll for completion
- *
- * Flow (declarative mode):
- *   1. Load + validate agent.json via @guuey/config
- *   2. POST snapshot to /deploy/trigger with agentMode='nocode'
- *   3. Poll for completion
  */
 
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { execSync } from 'node:child_process';
+import { createInterface } from 'node:readline';
 import {
   GUUEY_JSON_FILENAME,
   loadGuueyJson,
   buildDeploySnapshot,
   validateNoLiteralSecrets,
+  writeGuueyJsonFile,
   type ResolvedGuueyJson,
+  type GuueyJsonV1,
 } from '@guuey/config';
-import { requireAuth } from '../auth';
-import { resolveConfig, loadProjectConfig } from '../config';
+import { requireAuth, type AuthTokens } from '../auth';
+import {
+  resolveConfig,
+  loadProjectConfig,
+  loadConfig,
+  saveConfig,
+  type ResolvedConfig,
+  type ProjectConfig,
+} from '../config';
 import { apiRequest, cleanup, packSource } from '../deploy-shared';
+import { deployMcpFromSource, resolveServerName, resolveWorkspaceId, readPackageName } from './mcp';
+import { planMcpLegs, writeBackServerId, snapshotWithServerIds } from '../deploy-plan';
 import * as out from '../output';
+
+const DEFAULT_PORTAL_URL = 'https://app.guuey.com';
 
 /**
  * Handle the `guuey deploy` command.
- *
- * Packages the current project as a tarball, uploads it to S3 via
- * a presigned URL, triggers a deployment, and polls until the agent
- * is live or the deployment fails.
  *
  * @param flags - CLI flags (e.g., `{ size: 'sm', target: 'ggui' }`)
  */
 export async function deploy(flags?: Record<string, string | true>): Promise<void> {
   const auth = requireAuth();
   const config = resolveConfig();
-  const project = loadProjectConfig();
+  let project = loadProjectConfig();
 
-  const appId = config.appId;
+  const cwd = process.cwd();
+  const cwdGuueyJson = join(cwd, GUUEY_JSON_FILENAME);
+  const cwdDockerfile = join(cwd, 'Dockerfile');
+  const cwdPackageJson = join(cwd, 'package.json');
+  const hasGuueyJson = existsSync(cwdGuueyJson);
+  const hasDockerfile = existsSync(cwdDockerfile);
+  const hasPackageJson = existsSync(cwdPackageJson);
+
+  // ── Step 1: Preflight — auth + app linked ─────────────────────────────
+  // First run in a fresh project offers to create + link an app right here
+  // (design doc §7.1), instead of forcing a separate `guuey create`/`guuey
+  // link` step.
+  let appId = config.appId;
   if (!appId) {
-    out.error('No app ID found. Run "guuey create" or "guuey link" first.');
-    process.exit(1);
+    appId = await ensureLinkedApp({ auth, config, project, guueyJsonPath: cwdGuueyJson });
+    // ensureLinkedApp may have written `appId` into guuey.json — reload so
+    // downstream reads (deploy.size default, etc.) see it.
+    project = loadProjectConfig();
   }
 
   // `deploy.size` on the canonical overlay is the app-level default
@@ -84,6 +109,7 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
   const buildSize = (flags?.['build-size'] as string) ?? 'md';
   const target = (flags?.target as string) ?? 'ggui';
   const label = flags?.label as string | undefined;
+  const force = flags?.force === true;
 
   const VALID_BUILD_SIZES = ['sm', 'md', 'lg', 'xl'];
   if (!VALID_BUILD_SIZES.includes(buildSize)) {
@@ -108,21 +134,18 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
   }
 
   // ── Mode detection ──────────────────────────────────────────────────
-  // Declarative mode: agent.json present + no Dockerfile (or --declarative).
-  // Code mode: Dockerfile present (or --code).
-  // The two modes share size/label/poll plumbing but diverge on packaging.
   const forceDeclarative = flags?.declarative === true;
   const forceCode = flags?.code === true;
   if (forceDeclarative && forceCode) {
     out.error('Cannot pass both --declarative and --code. Pick one.');
     process.exit(1);
   }
-  const cwdGuueyJson = join(process.cwd(), GUUEY_JSON_FILENAME);
-  const cwdDockerfile = join(process.cwd(), 'Dockerfile');
-  const hasGuueyJson = existsSync(cwdGuueyJson);
-  const hasDockerfile = existsSync(cwdDockerfile);
 
-  let mode: 'declarative' | 'code';
+  // A single three-way decision, made once and dispatched on directly below
+  // (never re-derived from hasGuueyJson/hasDockerfile a second time) — so
+  // the printed detection message and the actual dispatched path can never
+  // diverge.
+  let mode: 'declarative' | 'code-orchestrated' | 'code-legacy-dockerfile';
   if (forceDeclarative) {
     if (!hasGuueyJson) {
       out.error(
@@ -132,26 +155,33 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
     }
     mode = 'declarative';
   } else if (forceCode) {
-    if (!hasDockerfile) {
-      out.error('--code requires a Dockerfile in the project root.');
+    if (hasGuueyJson) {
+      mode = 'code-orchestrated';
+    } else if (hasDockerfile) {
+      mode = 'code-legacy-dockerfile';
+    } else {
+      out.error(`--code requires a ${GUUEY_JSON_FILENAME} or a Dockerfile in the project root.`);
       process.exit(1);
     }
-    mode = 'code';
-  } else if (hasGuueyJson && !hasDockerfile) {
-    mode = 'declarative';
   } else if (hasDockerfile) {
+    // Legacy user-Dockerfile shape wins even if a guuey.json also happens
+    // to be present — preserves pre-existing behavior for that (untested,
+    // unused-in-repo) combination rather than silently changing it.
     if (hasGuueyJson) {
       console.log(
-        `  Both Dockerfile and ${GUUEY_JSON_FILENAME} found — using Dockerfile (code mode).`,
+        `  Both Dockerfile and ${GUUEY_JSON_FILENAME} found — using Dockerfile (legacy code mode).`,
       );
-      console.log('  Pass --declarative to use agent.json instead.');
     }
-    mode = 'code';
+    mode = 'code-legacy-dockerfile';
+  } else if (hasGuueyJson && hasPackageJson) {
+    mode = 'code-orchestrated';
+  } else if (hasGuueyJson) {
+    mode = 'declarative';
   } else {
     out.error(
       `No ${GUUEY_JSON_FILENAME} or Dockerfile found in the project root.\n` +
         `  - Declarative agents: add an ${GUUEY_JSON_FILENAME}.\n` +
-        '  - Code-mode agents: commit a Dockerfile.',
+        '  - Code-mode agents: run "guuey create" (scaffolds guuey.json + a buildable worker).',
     );
     process.exit(1);
   }
@@ -165,22 +195,232 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
       size,
       label,
     });
-    return;
+  } else if (mode === 'code-orchestrated') {
+    await deployCode({
+      auth,
+      config,
+      appId,
+      guueyJsonPath: cwdGuueyJson,
+      root: cwd,
+      size,
+      buildSize,
+      label,
+      force,
+      flags,
+    });
+  } else {
+    await deployLegacyDockerfile({ auth, config, appId, size, buildSize, label, force });
   }
+}
+
+// ─── Preflight: first-run app create + link write-back ───────────────────
+
+/** Prompt for a single line of input via readline. */
+function prompt(rl: ReturnType<typeof createInterface>, question: string): Promise<string> {
+  return new Promise((res) => rl.question(question, res));
+}
+
+/**
+ * Step 1 of the deploy orchestrator (design doc §7.1): resolve the linked
+ * app, or — on a first run with none — offer to create one right here.
+ *
+ * Mirrors `apps.ts#appsCreate` (POST /apps, persist to the global CLI
+ * config) and `link.ts` (write the new appId back into the project
+ * overlay), so a fresh `@guuey/create-agentic-app` scaffold can go straight
+ * from `guuey create` to `guuey deploy` with no separate `guuey create
+ * <app>`/`guuey link` step.
+ *
+ * Returns the resolved appId; exits the process on API failure.
+ */
+async function ensureLinkedApp(opts: {
+  auth: AuthTokens;
+  config: ResolvedConfig;
+  project: ProjectConfig | null;
+  guueyJsonPath: string;
+}): Promise<string> {
+  const { auth, config, project, guueyJsonPath } = opts;
+  if (config.appId) return config.appId;
+
+  console.log('');
+  console.log('  No app linked yet.');
+  const defaultName = readPackageName(process.cwd()) ?? 'My Agent';
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  let appName: string;
+  try {
+    const answer = await prompt(rl, `  App name [${defaultName}]: `);
+    appName = answer.trim() || defaultName;
+  } finally {
+    rl.close();
+  }
+
+  console.log('  Creating platform app...');
+  const res = await apiRequest(auth.pat, config, 'POST', '/apps', {
+    name: appName,
+    userAuthMode: 'anonymous',
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    out.error(`Failed to create app: ${data.error ?? `HTTP ${res.status}`}`);
+    process.exit(1);
+  }
+  const data = (await res.json()) as { appId: string; apiKey: string };
+
+  out.success(`Created app "${appName}"`);
+  console.log(`  App ID:  ${data.appId}`);
+  console.log('');
+
+  // Write-back: project overlay (if one exists yet) + the global config —
+  // mirrors link.ts's dual write so the appId resolves next run too.
+  if (project) {
+    writeGuueyJsonFile(guueyJsonPath, { ...project, appId: data.appId });
+    console.log(`  Wrote appId back to ${GUUEY_JSON_FILENAME}`);
+  }
+  const existing = loadConfig();
+  existing.appId = data.appId;
+  existing.apiKey = data.apiKey;
+  saveConfig(existing);
+
+  return data.appId;
+}
+
+// ─── ggui asset leg (Task 15 seam) ────────────────────────────────────────
+
+/**
+ * Thrown by {@link pushGguiAssetsLeg} until Task 15 lands — matches the
+ * real endpoint's own env-dormant `not-yet-supported` response (design doc
+ * §8) so the orchestrator's warn-and-continue handling is exercised
+ * identically before and after the swap.
+ */
+class GguiAssetsNotYetSupportedError extends Error {
+  constructor(message = 'ggui asset push is not implemented yet') {
+    super(message);
+    this.name = 'GguiAssetsNotYetSupportedError';
+  }
+}
+
+/**
+ * SEAM — placeholder for Task 15's real ggui asset-push leg (design doc
+ * §8: pack the `ggui/` dir referenced by `guuey.json#ggui.configFile` →
+ * `POST /v1/apps/:id/ggui-assets/push`). Task 15 replaces the BODY of this
+ * function with the real call; the call site in {@link deployCode} does
+ * not need to change (its `not-yet-supported` vs. real-error handling
+ * already matches the endpoint's contract).
+ */
+async function pushGguiAssetsLeg(_opts: { configFile: string; root: string }): Promise<void> {
+  throw new GguiAssetsNotYetSupportedError();
+}
+
+// ─── Code mode: one-command orchestrator ──────────────────────────────────
+
+/**
+ * The orchestrated code-mode deploy (design doc §7): MCP legs → ggui leg →
+ * build-then-pack agent leg. Requires a `guuey.json` — the config that
+ * drives every leg (hosted-MCP entries, the ggui asset dir, the snapshot
+ * shipped alongside the tarball).
+ */
+async function deployCode(opts: {
+  auth: AuthTokens;
+  config: ResolvedConfig;
+  appId: string;
+  guueyJsonPath: string;
+  root: string;
+  size: string;
+  buildSize: string;
+  label: string | undefined;
+  force: boolean;
+  flags?: Record<string, string | true>;
+}): Promise<void> {
+  const { auth, config, appId, guueyJsonPath, root, size, buildSize, label, force, flags } = opts;
 
   console.log('');
   console.log('  Deploying agent to guuey cloud...');
   console.log('');
 
-  // 1. Create tarball of source code
-  const buildId = randomUUID().slice(0, 12);
-  const { tarballPath, tarballSize, sourceHash } = packSource({
-    buildId,
-    cwd: process.cwd(),
-  });
+  // ── Load guuey.json + validate ──
+  let loaded: ResolvedGuueyJson;
+  try {
+    loaded = loadGuueyJson(guueyJsonPath);
+  } catch (err) {
+    out.error(
+      `Failed to load ${GUUEY_JSON_FILENAME}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    process.exit(1);
+  }
+  let doc: GuueyJsonV1 = loaded.doc;
 
-  // 2. Check for changes + get presigned upload URL
-  const force = flags?.force === true;
+  const secretViolations = validateNoLiteralSecrets(doc.agent);
+  if (secretViolations.length > 0) {
+    out.error(
+      'Found literal secrets in mcpServers[].headers:\n' +
+        secretViolations.map((s) => `  - ${s}`).join('\n') +
+        '\nDeclare the secret name in agent.secrets and reference it as ${env.NAME}.',
+    );
+    process.exit(1);
+  }
+
+  // ── Step 2: MCP legs ──
+  // Re-deploys of an entry that already has `server` still run — the
+  // backend reuse-or-creates by name, so this ships a new version of the
+  // SAME server. Write-backs are facts, applied immediately per leg (not
+  // staged), so a later leg's failure never loses an earlier leg's result.
+  const legs = planMcpLegs(doc.agent);
+  const mcpRuntimeUrls: Record<string, string | undefined> = {};
+  if (legs.length > 0) {
+    const workspaceId = doc.workspaceId ?? resolveWorkspaceId(flags, process.env);
+    if (!workspaceId) {
+      out.error(
+        'Hosted MCP servers need a workspace. Set guuey.json#workspaceId (via "guuey pull"), ' +
+          'pass --workspace <id>, or set GUUEY_WORKSPACE.',
+      );
+      process.exit(1);
+    }
+
+    for (const leg of legs) {
+      const dir = join(root, leg.source);
+      const name = resolveServerName(undefined, readPackageName(dir)) ?? leg.name;
+      console.log(`  MCP "${leg.name}" (${leg.source}) → deploying as "${name}"...`);
+      try {
+        // eslint-disable-next-line no-await-in-loop -- MCP legs deploy sequentially by design (each write-back must land before the next leg starts).
+        const result = await deployMcpFromSource({ dir, name, workspaceId, auth, config });
+        doc = writeBackServerId(doc, leg.name, result.serverId);
+        writeGuueyJsonFile(guueyJsonPath, doc);
+        mcpRuntimeUrls[leg.name] = result.runtimeUrl;
+      } catch (err) {
+        out.error(
+          `MCP "${leg.name}" failed to deploy: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        console.log('  Run "guuey deployments logs <buildNumber>" for details.');
+        process.exit(1);
+      }
+    }
+  }
+
+  // ── Step 3: ggui asset leg ──
+  if (doc.ggui?.configFile) {
+    try {
+      await pushGguiAssetsLeg({ configFile: doc.ggui.configFile, root });
+    } catch (err) {
+      if (err instanceof GguiAssetsNotYetSupportedError) {
+        console.log('  ggui assets: not yet supported — skipping (assets stay local-only for now).');
+      } else {
+        out.error(`ggui asset push failed: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    }
+  }
+
+  // ── Step 4: agent leg (last) — build, THEN pack ──
+  console.log('  Building...');
+  try {
+    execSync('corepack pnpm build', { cwd: root, stdio: 'inherit' });
+  } catch {
+    out.error('Build failed ("corepack pnpm build" exited non-zero). Fix the error above and retry.');
+    process.exit(1);
+  }
+
+  const buildId = randomUUID().slice(0, 12);
+  const { tarballPath, tarballSize, sourceHash } = packSource({ buildId, cwd: root });
+
   const uploadRes = await apiRequest(auth.pat, config, 'POST', `/apps/${appId}/deploy/upload`, {
     buildId,
     size,
@@ -208,7 +448,6 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
     buildNumber: number;
   };
 
-  // 3. Upload tarball to S3 via presigned URL
   const fileBuffer = readFileSync(tarballPath);
   const uploadToS3 = await fetch(uploadUrl, {
     method: 'PUT',
@@ -225,7 +464,21 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
     process.exit(1);
   }
 
-  // 4. Trigger deploy
+  // Assert every hosted mcpServers entry resolved before shipping the
+  // snapshot — a throw here means an MCP leg was skipped without a
+  // write-back landing, which "should never happen" given the loop above,
+  // but the deploy-controller would otherwise boot a pod that can't reach
+  // the server, so this stays a hard client-side gate.
+  let resolvedDoc: GuueyJsonV1;
+  try {
+    resolvedDoc = snapshotWithServerIds(doc);
+  } catch (err) {
+    out.error(err instanceof Error ? err.message : String(err));
+    cleanup(tarballPath);
+    process.exit(1);
+  }
+  const snapshotConfig = JSON.stringify(buildDeploySnapshot({ ...loaded, doc: resolvedDoc }));
+
   console.log('  Building & deploying...');
   const deployRes = await apiRequest(auth.pat, config, 'POST', `/apps/${appId}/deploy/trigger`, {
     deploymentId: buildId,
@@ -234,13 +487,14 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
     buildSize,
     sourceHash,
     sourceTarballKey: `${appId}/${uploadId}.tar.gz`,
+    agentMode: 'code',
+    snapshotConfig,
     ...(label ? { versionLabel: label } : {}),
   });
 
   if (deployRes.status !== 202) {
     const data = (await deployRes.json().catch(() => ({}))) as Record<string, string | number>;
     if (deployRes.status === 429) {
-      // Quota hit — show the reason + a Retry-After hint if we got one.
       const secs = Number(data.retryAfterSeconds ?? deployRes.headers.get('Retry-After') ?? 0);
       const when = secs > 0 ? ` Retry in ~${Math.ceil(secs / 60)} minute(s).` : '';
       out.error(`${data.error ?? 'Build quota exceeded.'}${when}`);
@@ -251,10 +505,6 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
     process.exit(1);
   }
 
-  // 5. Stream build logs inline (best-effort) while polling for completion.
-  // The log-stream attach may fail (controller not ready, Job not yet
-  // scheduled) — the background poller is authoritative for deploy outcome,
-  // so a stream failure never blocks the deploy itself.
   const streamAbort = new AbortController();
   void attachBuildLogStream(auth.pat, config, appId, buildNumber, streamAbort.signal).catch(
     (e) => {
@@ -262,18 +512,67 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
     },
   );
 
+  const { status, url } = await pollDeployStatus({
+    auth,
+    config,
+    appId,
+    buildNumber,
+    timeoutMs: 22 * 60 * 1000,
+    tarballPath,
+  });
+  streamAbort.abort();
+  cleanup(tarballPath);
+
+  if (status === 'superseded') {
+    console.log('');
+    out.error('Deployment superseded by a newer deploy. Run "guuey deploy" again if needed.');
+    process.exit(1);
+  }
+  if (status === 'failed') {
+    console.log('');
+    out.error('Deployment failed. Run "guuey deployments list" for details.');
+    process.exit(1);
+  }
+
+  // ── Step 5: output ──
+  console.log('');
+  out.success(`Live at ${url}`);
+  console.log('');
+  console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
+  console.log(`  Size:   runtime=${size}, build=${buildSize}`);
+  console.log('  Scales to zero when idle.');
+  console.log('');
+  console.log(`  Portal: ${config.portalUrl ?? DEFAULT_PORTAL_URL}/${appId}`);
+  if (Object.keys(mcpRuntimeUrls).length > 0) {
+    console.log('');
+    console.log('  Hosted MCP servers:');
+    for (const [name, runtimeUrl] of Object.entries(mcpRuntimeUrls)) {
+      console.log(`    ${name}: ${runtimeUrl ?? '(runtime URL not yet available)'}`);
+    }
+  }
+  console.log('');
+  console.log(`  Build logs retained for 30 days. View with \`guuey deployments logs ${buildNumber}\`.`);
+  console.log('');
+}
+
+/** Poll `/apps/:id/deploy/status/:n` to a terminal status. Shared by both code-mode paths. */
+async function pollDeployStatus(opts: {
+  auth: AuthTokens;
+  config: ResolvedConfig;
+  appId: string;
+  buildNumber: number;
+  timeoutMs: number;
+  tarballPath: string;
+}): Promise<{ status: string; url: string }> {
+  const { auth, config, appId, buildNumber, timeoutMs, tarballPath } = opts;
   let status = 'queued';
   let url = '';
   let lastMessage = '';
   const startTime = Date.now();
-  // Controller budgets: 15 min build + 5 min readiness + slack. Must stay
-  // >= backend's sum or the CLI will report failure on a build the backend
-  // still considers valid. See reconcile-one.ts BUILD_TIMEOUT_MS + DEPLOY_TIMEOUT_MS.
-  const TIMEOUT_MS = 22 * 60 * 1000; // 22 minutes
 
   while (status !== 'live' && status !== 'failed' && status !== 'superseded') {
-    if (Date.now() - startTime > TIMEOUT_MS) {
-      out.error('Deploy timed out after 22 minutes.');
+    if (Date.now() - startTime > timeoutMs) {
+      out.error(`Deploy timed out after ${Math.round(timeoutMs / 60000)} minutes.`);
       cleanup(tarballPath);
       process.exit(1);
     }
@@ -287,9 +586,10 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
       `/apps/${appId}/deploy/status/${buildNumber}`,
     );
     if (!statusRes.ok) {
-      // Debug: log non-200 responses during polling
-      const errBody = await statusRes.text().catch(() => '');
-      if (process.env.GGUI_DEBUG) console.error(`  [poll] HTTP ${statusRes.status}: ${errBody.slice(0, 100)}`);
+      if (process.env.GGUI_DEBUG) {
+        const errBody = await statusRes.text().catch(() => '');
+        console.error(`  [poll] HTTP ${statusRes.status}: ${errBody.slice(0, 100)}`);
+      }
       continue;
     }
 
@@ -317,10 +617,124 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
     }
   }
 
-  // Stop following the Kaniko log stream — the poll loop is authoritative.
-  streamAbort.abort();
+  return { status, url };
+}
 
-  // 6. Done
+// ─── Legacy code mode: user-committed Dockerfile, no guuey.json ─────────
+//
+// Preserved unchanged from the pre-orchestrator implementation for the
+// (untested, unused-in-repo) case of a root Dockerfile with no guuey.json
+// at all — so there is no guuey.json to load, no MCP/ggui legs to run, and
+// no framework worker to build. `agentMode: 'code'` is now sent explicitly
+// (previously implicit via the backend's own default) for parity with
+// `deployCode`; `snapshotConfig` is omitted since there is nothing to
+// snapshot.
+
+async function deployLegacyDockerfile(opts: {
+  auth: AuthTokens;
+  config: ResolvedConfig;
+  appId: string;
+  size: string;
+  buildSize: string;
+  label: string | undefined;
+  force: boolean;
+}): Promise<void> {
+  const { auth, config, appId, size, buildSize, label, force } = opts;
+
+  console.log('');
+  console.log('  Deploying agent to guuey cloud...');
+  console.log('');
+
+  const buildId = randomUUID().slice(0, 12);
+  const { tarballPath, tarballSize, sourceHash } = packSource({
+    buildId,
+    cwd: process.cwd(),
+  });
+
+  const uploadRes = await apiRequest(auth.pat, config, 'POST', `/apps/${appId}/deploy/upload`, {
+    buildId,
+    size,
+    contentLength: tarballSize,
+    sourceHash,
+  });
+
+  if (!force && uploadRes.status === 304) {
+    console.log('');
+    out.success('Nothing to deploy. Agent is up to date.');
+    cleanup(tarballPath);
+    return;
+  }
+
+  if (!uploadRes.ok) {
+    const data = (await uploadRes.json().catch(() => ({}))) as Record<string, string>;
+    out.error(data.error ?? `Upload failed: HTTP ${uploadRes.status}`);
+    cleanup(tarballPath);
+    process.exit(1);
+  }
+
+  const { uploadUrl, uploadId, buildNumber } = (await uploadRes.json()) as {
+    uploadUrl: string;
+    uploadId: string;
+    buildNumber: number;
+  };
+
+  const fileBuffer = readFileSync(tarballPath);
+  const uploadToS3 = await fetch(uploadUrl, {
+    method: 'PUT',
+    body: fileBuffer,
+    headers: {
+      'Content-Type': 'application/gzip',
+      'Content-Length': String(tarballSize),
+    },
+  });
+
+  if (!uploadToS3.ok) {
+    out.error(`S3 upload failed: HTTP ${uploadToS3.status}`);
+    cleanup(tarballPath);
+    process.exit(1);
+  }
+
+  console.log('  Building & deploying...');
+  const deployRes = await apiRequest(auth.pat, config, 'POST', `/apps/${appId}/deploy/trigger`, {
+    deploymentId: buildId,
+    buildNumber,
+    size,
+    buildSize,
+    sourceHash,
+    sourceTarballKey: `${appId}/${uploadId}.tar.gz`,
+    agentMode: 'code',
+    ...(label ? { versionLabel: label } : {}),
+  });
+
+  if (deployRes.status !== 202) {
+    const data = (await deployRes.json().catch(() => ({}))) as Record<string, string | number>;
+    if (deployRes.status === 429) {
+      const secs = Number(data.retryAfterSeconds ?? deployRes.headers.get('Retry-After') ?? 0);
+      const when = secs > 0 ? ` Retry in ~${Math.ceil(secs / 60)} minute(s).` : '';
+      out.error(`${data.error ?? 'Build quota exceeded.'}${when}`);
+    } else {
+      out.error(String(data.error ?? `Deploy trigger failed: HTTP ${deployRes.status}`));
+    }
+    cleanup(tarballPath);
+    process.exit(1);
+  }
+
+  const streamAbort = new AbortController();
+  void attachBuildLogStream(auth.pat, config, appId, buildNumber, streamAbort.signal).catch(
+    (e) => {
+      if (process.env.GGUI_DEBUG) console.error(`  [stream] ${String(e)}`);
+    },
+  );
+
+  const { status, url } = await pollDeployStatus({
+    auth,
+    config,
+    appId,
+    buildNumber,
+    timeoutMs: 22 * 60 * 1000,
+    tarballPath,
+  });
+  streamAbort.abort();
   cleanup(tarballPath);
 
   if (status === 'superseded') {
@@ -585,4 +999,3 @@ async function attachBuildLogStream(
     console.log('');
   }
 }
-

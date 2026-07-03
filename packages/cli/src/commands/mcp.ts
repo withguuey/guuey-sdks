@@ -169,8 +169,15 @@ export function buildTriggerBody(opts: {
 
 // ─── Command ────────────────────────────────────────────────────────────
 
-/** Read the local package.json `name`, or `undefined` if absent/unreadable. */
-function readPackageName(cwd: string): string | undefined {
+/**
+ * Read the local package.json `name`, or `undefined` if absent/unreadable.
+ * Exported for reuse by the `guuey deploy` orchestrator (`../deploy-plan.ts`
+ * consumer in `deploy.ts`), which resolves each hosted-MCP leg's deploy
+ * name the same way `guuey mcp deploy` does — so a leg deployed via
+ * `guuey deploy` and the same directory deployed directly via
+ * `guuey mcp deploy` land on the identical workspace-unique name.
+ */
+export function readPackageName(cwd: string): string | undefined {
   const pkgJsonPath = join(cwd, 'package.json');
   if (!existsSync(pkgJsonPath)) return undefined;
   try {
