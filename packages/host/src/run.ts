@@ -3,7 +3,7 @@
  * Claude Agent SDK and emits each native `SDKMessage` to fd-3 as a `native`
  * WorkerEvent (the Router dispatches them to the matching normalizer). On the
  * SDK result message it emits `done`; on a throw or a framework-gate violation
- * it emits `error`.
+ * it emits `error`. Emits `hello` FIRST (§8 item B) — the SDK-version handshake.
  *
  * `query` is injected so the loop is unit-testable without a live model. The
  * worker entrypoint (`index.ts`) passes the real `@anthropic-ai/claude-agent-sdk`
@@ -17,9 +17,12 @@ import {
   type CredentialFile,
   type PriorMemoryRecord,
 } from "./options.js";
+import { resolveSdkVersion } from "./sdk-version.js";
 
 /** The framework THIS run path runs. OpenAI has its own path (`run-openai.ts`). */
 const CLAUDE_FRAMEWORK = "claude-agent-sdk";
+/** The npm package whose installed version is this framework's `hello.sdkVersion`. */
+const CLAUDE_SDK_PACKAGE = "@anthropic-ai/claude-agent-sdk";
 
 /**
  * The invoke this host consumes. A superset of `@guuey/worker`'s `Invoke`:
@@ -106,6 +109,12 @@ export async function runInvoke(
   emit: Emitter,
   query: QueryFn,
 ): Promise<void> {
+  // The SDK-version handshake (§8 item B, additive-optional) — ALWAYS the
+  // first event of this invoke's fd-3 stream, before the framework gate or any
+  // native/turn event. `sdkVersion` is resolved at runtime, never hardcoded;
+  // `null` (SDK not resolvable) is tolerated by the Router.
+  emit.hello(CLAUDE_FRAMEWORK, CLAUDE_SDK_PACKAGE, resolveSdkVersion(CLAUDE_SDK_PACKAGE));
+
   // Framework gate: this run path is the Claude SDK. OpenAI agents route to
   // `runInvokeOpenai` (selected in `index.ts` by `snapshot.framework`) and never
   // reach here. A non-claude framework arriving here (e.g. `google-adk`,

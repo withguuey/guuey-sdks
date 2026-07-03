@@ -164,7 +164,8 @@ describe("runInvoke — native emission", () => {
 
     expect(queried).toBe(false);
     expect(events.filter((e) => e.type === "error")).toHaveLength(1);
-    expect(events[0]).toMatchObject({
+    // events[0] is `hello` (always first); the error follows it.
+    expect(events.filter((e) => e.type === "error")[0]).toMatchObject({
       type: "error",
       message: expect.stringContaining("ANTHROPIC_API_KEY"),
     });
@@ -241,5 +242,45 @@ describe("runInvoke — native emission", () => {
     expect(capturedEnv?.ANTHROPIC_API_KEY).toBe("sk-ant-local");
     expect(capturedEnv?.ANTHROPIC_BASE_URL).toBeUndefined();
     expect(capturedEnv?.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+  });
+});
+
+describe("runInvoke — hello handshake (§8 item B)", () => {
+  it("emits hello FIRST, before any native/done event, with a non-null real sdkVersion", async () => {
+    const { events, sink } = collector();
+    const emit = createEmitter(sink);
+    const query: QueryFn = () => streamOf(resultMessage("success", "ok"));
+
+    await runInvoke({}, invoke(), { apiKey: "sk-test", listCredentials: () => [] }, emit, query);
+
+    expect(events[0]).toMatchObject({
+      type: "hello",
+      framework: "claude-agent-sdk",
+      sdkName: "@anthropic-ai/claude-agent-sdk",
+    });
+    // Real environment: @anthropic-ai/claude-agent-sdk is an installed dependency.
+    expect((events[0] as { sdkVersion: string | null }).sdkVersion).not.toBeNull();
+    // hello precedes every native/done event.
+    const helloIdx = events.findIndex((e) => e.type === "hello");
+    const firstOtherIdx = events.findIndex((e) => e.type !== "hello");
+    expect(helloIdx).toBe(0);
+    expect(firstOtherIdx).toBeGreaterThan(helloIdx);
+  });
+
+  it("still emits hello first even on the framework gate (no run path for this framework)", async () => {
+    const { events, sink } = collector();
+    const emit = createEmitter(sink);
+    const query: QueryFn = () => streamOf();
+
+    await runInvoke(
+      { framework: "google-adk" },
+      invoke(),
+      { apiKey: "sk-test", listCredentials: () => [] },
+      emit,
+      query,
+    );
+
+    expect(events[0]?.type).toBe("hello");
+    expect(events[1]).toMatchObject({ type: "error" });
   });
 });

@@ -207,3 +207,26 @@ describe("runInvokeOpenai — native emission", () => {
     expect(seen.instructions).toContain("<working_state>");
   });
 });
+
+describe("runInvokeOpenai — hello handshake (§8 item B)", () => {
+  it("emits hello FIRST, before any native/done event, with a non-null real sdkVersion", async () => {
+    const { events, sink } = collector();
+    const emit = createEmitter(sink);
+    const run: OpenaiRunFn = () =>
+      Promise.resolve(fakeResult({ events: [], finalOutput: "ok" }));
+
+    await runInvokeOpenai(snapshot, invoke(), runtime, emit, run);
+
+    expect(events[0]).toMatchObject({
+      type: "hello",
+      framework: "openai-agents-sdk",
+      sdkName: "@openai/agents",
+    });
+    // Real environment: @openai/agents is an installed dependency.
+    expect((events[0] as { sdkVersion: string | null }).sdkVersion).not.toBeNull();
+    const helloIdx = events.findIndex((e) => e.type === "hello");
+    const firstOtherIdx = events.findIndex((e) => e.type !== "hello");
+    expect(helloIdx).toBe(0);
+    expect(firstOtherIdx).toBeGreaterThan(helloIdx);
+  });
+});

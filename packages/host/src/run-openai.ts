@@ -7,7 +7,8 @@
  * `done`; on `MaxTurnsExceededError` it emits the `__host_error__` sentinel the
  * normalizer maps to `turn.error` (code `max_turns`), THEN `done(..,"max_turns")`;
  * on any other failure it emits `error`. Never throws — every failure path is a
- * terminal event so the Router always sees one.
+ * terminal event so the Router always sees one. Emits `hello` FIRST (§8 item B)
+ * — the SDK-version handshake.
  *
  * `run` (the `@openai/agents` runner) is injected so the loop is unit-testable
  * without a live model — the entrypoint (`index.ts`) passes the real SDK `run`.
@@ -42,9 +43,12 @@ import {
 } from "./options.js";
 import type { HostInvoke, HostRuntime } from "./run.js";
 import { GUUEY_DEFAULT_SYSTEM_PROMPT, type GuueyAgent } from "@guuey/config";
+import { resolveSdkVersion } from "./sdk-version.js";
 
 /** The framework tag this arm runs — matches the `AgentFramework` enum value. */
 const OPENAI_FRAMEWORK = "openai-agents-sdk";
+/** The npm package whose installed version is this framework's `hello.sdkVersion`. */
+const OPENAI_SDK_PACKAGE = "@openai/agents";
 
 /**
  * The streamed-result surface the loop CONSUMES — exactly the three members it
@@ -98,6 +102,12 @@ export async function runInvokeOpenai(
   emit: Emitter,
   run: OpenaiRunFn,
 ): Promise<void> {
+  // The SDK-version handshake (§8 item B, additive-optional) — ALWAYS the
+  // first event of this invoke's fd-3 stream, before any native/turn event.
+  // `sdkVersion` is resolved at runtime, never hardcoded; `null` (SDK not
+  // resolvable) is tolerated by the Router.
+  emit.hello(OPENAI_FRAMEWORK, OPENAI_SDK_PACKAGE, resolveSdkVersion(OPENAI_SDK_PACKAGE));
+
   // The host runs inside the Router's bubblewrap jail with NO IRSA; a federated
   // MCP server reads its Router-written credential file. `resolveMcpServers`
   // needs the same per-invoke context the Claude path builds.

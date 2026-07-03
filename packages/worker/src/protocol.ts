@@ -109,4 +109,23 @@ export interface NativeEvent {
   /** One native SDK event, opaque JSON; only the Router's normalizer reads it. */
   readonly event: JsonValue;
 }
-export type WorkerEvent = TextEvent | DoneEvent | ErrorEvent | NativeEvent;
+/**
+ * Additive-optional in protocol v1 (the SDK-version handshake, model-release
+ * playbook §8 item B). A worker MAY emit this once, before any native/turn
+ * event, to report its own SDK provenance. The Router treats it as Router-plane
+ * ONLY: never forwarded to the SSE client, never fed to a `@silverprotocol/*`
+ * normalizer (it is not an AgJSON-eligible event) — just logged + carried into
+ * the invoke's completion telemetry. Absence is fully tolerated (older workers
+ * that predate this event, or a builder's own `serve()`-based worker that never
+ * emits it): the Router simply has no SDK provenance to log for that invoke.
+ */
+export interface WorkerHelloEvent {
+  readonly type: "hello";
+  /** The framework this worker runs — matches `NativeEvent.framework`. */
+  readonly framework: string;
+  /** The SDK package name, e.g. `"@anthropic-ai/claude-agent-sdk"`; `null` when unknown/inapplicable. */
+  readonly sdkName: string | null;
+  /** The SDK's installed version, resolved at RUNTIME (never a hardcoded literal); `null` when unresolvable. */
+  readonly sdkVersion: string | null;
+}
+export type WorkerEvent = TextEvent | DoneEvent | ErrorEvent | NativeEvent | WorkerHelloEvent;

@@ -5,8 +5,9 @@ import {
   type WorkerEvent,
   type Invoke,
   type JsonValue,
+  type WorkerHelloEvent,
 } from "./protocol.js";
-import { parseEvent, isNative } from "./parse.js";
+import { parseEvent, isNative, isHello } from "./parse.js";
 import { createEmitter } from "./emit.js";
 
 describe("protocol v1 shapes", () => {
@@ -47,6 +48,47 @@ describe("protocol v1 shapes", () => {
     const j: JsonValue = { a: [1, "two", true, null] };
     expect(i.history).toEqual([]);
     expect(j).toEqual({ a: [1, "two", true, null] });
+  });
+});
+
+describe("WorkerHelloEvent — the SDK-version handshake (additive-optional, §8 item B)", () => {
+  it("is a member of the WorkerEvent union", () => {
+    const hello: WorkerHelloEvent = {
+      type: "hello",
+      framework: "claude-agent-sdk",
+      sdkName: "@anthropic-ai/claude-agent-sdk",
+      sdkVersion: "0.3.199",
+    };
+    const events: WorkerEvent[] = [hello];
+    expect(events[0]?.type).toBe("hello");
+  });
+
+  it("tolerates null sdkName/sdkVersion", () => {
+    const hello: WorkerHelloEvent = {
+      type: "hello",
+      framework: "vanilla",
+      sdkName: null,
+      sdkVersion: null,
+    };
+    expect(hello.sdkName).toBeNull();
+    expect(hello.sdkVersion).toBeNull();
+  });
+
+  it("round-trips via the emitter + parser", () => {
+    const lines: string[] = [];
+    const emitter = createEmitter({
+      write: (s) => {
+        lines.push(s);
+      },
+    });
+    emitter.hello("claude-agent-sdk", "@anthropic-ai/claude-agent-sdk", "0.3.199");
+    const ev = parseEvent(lines[0].trim());
+    expect(isHello(ev)).toBe(true);
+    if (isHello(ev)) {
+      expect(ev.framework).toBe("claude-agent-sdk");
+      expect(ev.sdkName).toBe("@anthropic-ai/claude-agent-sdk");
+      expect(ev.sdkVersion).toBe("0.3.199");
+    }
   });
 });
 

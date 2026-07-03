@@ -19,6 +19,7 @@ import type {
   StopReason,
   TextEvent,
   WorkerEvent,
+  WorkerHelloEvent,
 } from "./protocol.js";
 
 export function isInvoke(m: ControlMessage): m is Invoke {
@@ -129,6 +130,9 @@ export function isError(e: WorkerEvent): e is ErrorEvent {
 export function isNative(e: WorkerEvent): e is NativeEvent {
   return e.type === "native";
 }
+export function isHello(e: WorkerEvent): e is WorkerHelloEvent {
+  return e.type === "hello";
+}
 
 /**
  * Router-side typed interpreter: validate one NDJSON event line (Worker→Router,
@@ -168,6 +172,14 @@ export function parseEvent(line: string): WorkerEvent {
         throw new Error("native event missing `event`");
       }
       return { type: "native", framework: raw.framework, event: raw.event };
+    }
+    case "hello": {
+      if (typeof raw.framework !== "string") {
+        throw new Error("hello event missing string `framework`");
+      }
+      const sdkName = typeof raw.sdkName === "string" ? raw.sdkName : null;
+      const sdkVersion = typeof raw.sdkVersion === "string" ? raw.sdkVersion : null;
+      return { type: "hello", framework: raw.framework, sdkName, sdkVersion };
     }
     default:
       throw new Error(`unknown event type: ${String(raw.type)}`);

@@ -45,4 +45,23 @@ describe("createEmitter", () => {
     createEmitter(out).error("boom");
     expect(lines()).toEqual([{ type: "error", message: "boom" }]);
   });
+
+  it("hello event (the SDK-version handshake, §8 item B)", () => {
+    const { out, lines } = capture();
+    createEmitter(out).hello("claude-agent-sdk", "@anthropic-ai/claude-agent-sdk", "0.3.199");
+    expect(lines()).toEqual([
+      {
+        type: "hello",
+        framework: "claude-agent-sdk",
+        sdkName: "@anthropic-ai/claude-agent-sdk",
+        sdkVersion: "0.3.199",
+      },
+    ]);
+  });
+
+  it("hello event tolerates null sdkName/sdkVersion", () => {
+    const { out, lines } = capture();
+    createEmitter(out).hello("vanilla", null, null);
+    expect(lines()).toEqual([{ type: "hello", framework: "vanilla", sdkName: null, sdkVersion: null }]);
+  });
 });

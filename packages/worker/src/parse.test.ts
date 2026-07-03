@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseControl, isInvoke, isShutdown } from "./parse.js";
-import { parseEvent, isText, isDone, isError } from "./parse.js";
+import { parseEvent, isText, isDone, isError, isHello } from "./parse.js";
 
 const INVOKE = JSON.stringify({
   type: "invoke",
@@ -129,5 +129,44 @@ describe("parseEvent (Worker→Router fd-3 events)", () => {
     expect(() => parseEvent("42")).toThrow(/event line is not an object/);
     expect(() => parseEvent(JSON.stringify({ type: "text" }))).toThrow(/text event missing string/);
     expect(() => parseEvent(JSON.stringify({ type: "frob" }))).toThrow(/unknown event type/);
+  });
+
+  it("parses hello with sdkName/sdkVersion present", () => {
+    const ev = parseEvent(
+      JSON.stringify({
+        type: "hello",
+        framework: "claude-agent-sdk",
+        sdkName: "@anthropic-ai/claude-agent-sdk",
+        sdkVersion: "0.3.199",
+      }),
+    );
+    expect(isHello(ev)).toBe(true);
+    if (isHello(ev)) {
+      expect(ev.framework).toBe("claude-agent-sdk");
+      expect(ev.sdkName).toBe("@anthropic-ai/claude-agent-sdk");
+      expect(ev.sdkVersion).toBe("0.3.199");
+    }
+  });
+
+  it("parses hello, normalizing missing/null sdkName/sdkVersion to null", () => {
+    const ev = parseEvent(JSON.stringify({ type: "hello", framework: "vanilla" }));
+    expect(isHello(ev)).toBe(true);
+    if (isHello(ev)) {
+      expect(ev.sdkName).toBeNull();
+      expect(ev.sdkVersion).toBeNull();
+    }
+    const ev2 = parseEvent(
+      JSON.stringify({ type: "hello", framework: "vanilla", sdkName: null, sdkVersion: null }),
+    );
+    if (isHello(ev2)) {
+      expect(ev2.sdkName).toBeNull();
+      expect(ev2.sdkVersion).toBeNull();
+    }
+  });
+
+  it("throws on hello missing string `framework`", () => {
+    expect(() => parseEvent(JSON.stringify({ type: "hello" }))).toThrow(
+      /hello event missing string `framework`/,
+    );
   });
 });
