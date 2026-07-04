@@ -36,6 +36,7 @@ describe('packSource', () => {
       // SECURITY-CRITICAL fixtures: none of these may ever reach the tarball.
       writeFileSync(join(dir, '.env.local'), 'ANTHROPIC_API_KEY=sk-should-not-leak\n');
       writeFileSync(join(dir, '.env.production'), 'SECRET=also-should-not-leak\n');
+      writeFileSync(join(dir, '.npmrc'), '//registry.npmjs.org/:_authToken=npm_should-not-leak\n');
       mkdirSync(join(dir, 'node_modules', 'somedep'), { recursive: true });
       writeFileSync(join(dir, 'node_modules', 'somedep', 'index.js'), '');
       mkdirSync(join(dir, 'dist'), { recursive: true });
@@ -54,6 +55,7 @@ describe('packSource', () => {
 
       expect(contents).not.toContain('.env.local');
       expect(contents).not.toContain('.env.production');
+      expect(contents).not.toContain('.npmrc');
       expect(contents.some((p) => p.startsWith('node_modules/'))).toBe(false);
       expect(contents.some((p) => p.startsWith('dist/'))).toBe(false);
       expect(contents.some((p) => p.startsWith('.guuey-dev/'))).toBe(false);

@@ -27,11 +27,12 @@ import { tmpdir } from 'node:os';
  * `tar --exclude` flags shared by every non-git-archive packing path
  * (working-tree tar, and both tar fallbacks). `.env*` (glob, not the
  * previous exact-match `.env`) so `.env.local`/`.env.production` etc. never
- * land in a tarball; `.guuey-dev` and `*.tsbuildinfo` are dev/build
- * artifacts that don't belong in a deploy either.
+ * land in a tarball; `.npmrc` is a registry-token carrier; `.guuey-dev` and
+ * `*.tsbuildinfo` are dev/build artifacts that don't belong in a deploy
+ * either.
  */
 const WORKING_TREE_TAR_EXCLUDES =
-  "--exclude=node_modules --exclude=dist --exclude=.git --exclude='.env*' --exclude=.guuey-dev --exclude='*.tsbuildinfo' --exclude=.ggui --exclude=.guuey";
+  "--exclude=node_modules --exclude=dist --exclude=.git --exclude='.env*' --exclude=.npmrc --exclude=.guuey-dev --exclude='*.tsbuildinfo' --exclude=.ggui --exclude=.guuey";
 
 /** Result of packing a project's source into an upload-ready tarball. */
 export interface PackResult {
@@ -59,9 +60,10 @@ export interface PackResult {
  * `guuey.worker.js` locally right before packing, and the scaffold's
  * `.gitignore` ignores that build artifact, so `git archive HEAD` would ship
  * a tarball with no worker in it. SECURITY-CRITICAL: this path excludes
- * `.env*`, `node_modules`, `.git`, `.guuey-dev`, `dist`, and `*.tsbuildinfo`
- * explicitly — a working-tree tar is the one packing path that could
- * otherwise leak an uncommitted local secret file into a build image.
+ * `.env*`, `.npmrc`, `node_modules`, `.git`, `.guuey-dev`, `dist`, and
+ * `*.tsbuildinfo` explicitly — a working-tree tar is the one packing path
+ * that could otherwise leak an uncommitted local secret file into a build
+ * image.
  *
  * Behavior is byte-identical to the logic that was previously inline in
  * `deploy()` — this is a pure extraction so `guuey mcp deploy` can reuse it.
@@ -76,14 +78,18 @@ export function packSource(opts: {
   const tarballPath = join(tmpdir(), `ggui-deploy-${buildId}.tar.gz`);
 
   console.log('  Packaging source...');
-  // Check for uncommitted changes
-  try {
-    const status = execSync('git status --porcelain', { encoding: 'utf-8', cwd });
-    if (status.trim()) {
-      console.log('  Warning: uncommitted changes detected — only committed files will be deployed.');
+  // Check for uncommitted changes — committed-files-only packing paths only.
+  // A working-tree run ships uncommitted files by design, so this warning
+  // would state the opposite of reality there.
+  if (!includeWorkingTree) {
+    try {
+      const status = execSync('git status --porcelain', { encoding: 'utf-8', cwd });
+      if (status.trim()) {
+        console.log('  Warning: uncommitted changes detected — only committed files will be deployed.');
+      }
+    } catch {
+      // Not a git repo — fallback to tar
     }
-  } catch {
-    // Not a git repo — fallback to tar
   }
 
   // Resolve workspace:* dependencies — pack them as local tarballs so the

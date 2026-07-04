@@ -381,11 +381,20 @@ async function deployCode(opts: {
   // missing noExternal, etc.) must never silently ship a tarball with no
   // worker in it — the deploy-controller would fall back to a host default,
   // and the pod would come up running the wrong (or no) agent code.
-  const workerEntryPath = join(root, 'guuey.worker.js');
+  //
+  // `guuey.json#worker` is a raw string field NOT in the canonical zod
+  // schema (a template-authored override for a non-default build output
+  // path, honored by the runtime's worker-select) — read the raw file
+  // rather than the validated `doc`, which would strip an unrecognized
+  // field under `strictObject`. Mirrors `dev.ts`'s worker-entry resolution.
+  const rawDoc = JSON.parse(readFileSync(guueyJsonPath, 'utf8')) as Record<string, unknown>;
+  const workerField =
+    typeof rawDoc.worker === 'string' && rawDoc.worker.length > 0 ? rawDoc.worker : undefined;
+  const workerEntryPath = join(root, workerField ?? 'guuey.worker.js');
   if (!existsSync(workerEntryPath)) {
     out.error(
       `Build succeeded but ${workerEntryPath} was not produced. Check the root ` +
-        '"build" script (expected to emit guuey.worker.js via tsup) and retry.',
+        `"build" script (expected to emit ${workerField ?? 'guuey.worker.js'} via tsup) and retry.`,
     );
     process.exit(1);
   }

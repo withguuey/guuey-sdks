@@ -241,7 +241,8 @@ store-dir=${join(work, `pnpm-store-${framework}`)}
     console.log(`[verdaccio-smoke] installing ${framework}`);
     sh("corepack", ["pnpm", "install"], { cwd: appDir });
     console.log(`[verdaccio-smoke] typecheck ${framework}`);
-    sh("corepack", ["pnpm", "-r", "typecheck"], { cwd: appDir });
+    sh("corepack", ["pnpm", "-r", "typecheck"], { cwd: appDir }); // workspace packages (mcps/*, web)
+    sh("corepack", ["pnpm", "typecheck"], { cwd: appDir }); // root worker (not a workspace member of `-r`)
     console.log(`[verdaccio-smoke] build ${framework}`);
     sh("corepack", ["pnpm", "-r", "build"], { cwd: appDir });
     sh("corepack", ["pnpm", "build"], { cwd: appDir }); // root build → guuey.worker.js
