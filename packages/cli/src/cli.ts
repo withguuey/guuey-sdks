@@ -31,7 +31,7 @@ import { link } from './commands/link';
 import { test as testCmd } from './commands/test';
 import { logs } from './commands/logs';
 import { deploy } from './commands/deploy';
-import { mcpDeploy, mcpSecretsSet, mcpSecretsList, mcpSecretsUnset } from './commands/mcp';
+import { mcpDeploy, mcpLogs, mcpSecretsSet, mcpSecretsList, mcpSecretsUnset } from './commands/mcp';
 import { workerVerify } from './commands/worker';
 import { pull } from './commands/pull';
 import { undeploy } from './commands/undeploy';
@@ -156,6 +156,13 @@ Hosted MCP Servers:
     --workspace <id>             Owning workspace (or $GUUEY_WORKSPACE)
     --size <s>                   Pod size: xs | sm | md | lg | xl (default: sm)
     --label <tag>                Version label
+  mcp logs [<server>]            Show captured build output for a build
+                                 (default: latest; only failed builds capture
+                                 output — streaming is a future slice)
+    --build <n>                  Select a specific build number
+    --server <id>                Target server (or positional / $GUUEY_MCP_SERVER)
+    --workspace <id>             Owning workspace (or $GUUEY_WORKSPACE)
+    --json                       Emit the selected deployment row as JSON
   mcp secrets set NAME=VALUE     Set a hosted-MCP secret (KMS-encrypted)
     --server <id>                Target hosted MCP server (or $GUUEY_MCP_SERVER)
   mcp secrets list               List secret names (values never shown)
@@ -225,8 +232,8 @@ Environment Variables:
   GUUEY_HOST                     Override platform host URL
   GUUEY_API_KEY                  Override configured API key
   GGUI_APP_ID                   Override configured app ID
-  GUUEY_WORKSPACE                Default owning workspace for 'mcp deploy'
-  GUUEY_MCP_SERVER               Default hosted MCP server for 'mcp secrets'
+  GUUEY_WORKSPACE                Default owning workspace for 'mcp deploy' / 'mcp logs'
+  GUUEY_MCP_SERVER               Default hosted MCP server for 'mcp secrets' / 'mcp logs'
 
 Project Config (guuey.json):
   Place a guuey.json in your project root. Non-secret settings
@@ -305,6 +312,9 @@ async function main(): Promise<void> {
         case 'deploy':
           await mcpDeploy(flags);
           break;
+        case 'logs':
+          await mcpLogs(rest[0], flags);
+          break;
         case 'secrets':
           switch (rest[0]) {
             case 'set':
@@ -324,7 +334,7 @@ async function main(): Promise<void> {
           }
           break;
         default:
-          console.error(`Unknown mcp command: ${action ?? '(none)'}. Use: deploy, secrets`);
+          console.error(`Unknown mcp command: ${action ?? '(none)'}. Use: deploy, logs, secrets`);
           process.exit(1);
       }
       break;

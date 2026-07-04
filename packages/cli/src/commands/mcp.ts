@@ -626,3 +626,231 @@ export async function mcpSecretsUnset(
 
   out.success(`Unset ${name} for ${serverId}`);
 }
+
+// ─── mcp logs (captured build output) ───────────────────────────────────
+//
+// `guuey mcp logs <server> [--build N]` renders the CAPTURED build output for
+// one build of a hosted MCP server — there is NO live log streaming (spec M4,
+// amended 2026-07-04: zero new log infrastructure in this cut).
+//
+// Source of truth: the Task-1 status route
+// `GET /mcp/servers/:serverId?workspaceId=…`, whose `deployments[]` rows carry
+// `errorMessage` — the deploy-controller's best-effort tail-50-lines Kaniko
+// capture (≤2000 chars, see `deploy-controller/src/k8s/mcp-build.ts
+// #captureMcpBuildLogs`). The reconciler writes it ONLY on the
+// `building → failed` transitions (build error or timeout — see
+// `reconcile-mcp-one.ts`), so successful builds have no captured output; the
+// renderer says so honestly instead of implying logs were lost.
+
+/**
+ * Resolve the target server for positional-style mcp commands
+ * (`guuey mcp logs <server>`): `--server` flag wins, then the positional
+ * argument, then the `GUUEY_MCP_SERVER` env var (via {@link resolveServerId}).
+ * Returns `null` when nothing yields a value (the caller prints the error +
+ * exits).
+ */
+export function resolveServerRef(
+  positional: string | undefined,
+  flags: Record<string, string | true> | undefined,
+  env: NodeJS.ProcessEnv,
+): string | null {
+  const flag = flags?.server;
+  if (typeof flag === 'string' && flag.length > 0) return flag;
+  if (typeof positional === 'string' && positional.length > 0) return positional;
+  return resolveServerId(undefined, env);
+}
+
+/**
+ * One row of the status route's `deployments[]` projection (the T1
+ * `mcp-registry.ts#McpDeploymentProjection` wire shape — newest-first,
+ * capped at the 10 most recent builds).
+ */
+export interface McpDeploymentInfo {
+  buildNumber: number;
+  status: string;
+  /** Captured build-failure tail (only failed builds carry one). */
+  errorMessage?: string;
+  updatedAt: string;
+}
+
+/** The `GET /mcp/servers/:serverId` (T1 status route) response shape. */
+export interface McpServerStatusResponse {
+  server: {
+    serverId: string;
+    name: string;
+    hostingStatus: string;
+    size: string;
+    runtimeUrl?: string;
+    updatedAt: string;
+  };
+  deployments: McpDeploymentInfo[];
+  grantCount: number;
+}
+
+/**
+ * Pick the build to render: `--build N` selects by build number; no flag
+ * means the latest build (`deployments[0]` — the route returns newest-first).
+ * Errors are returned (not thrown) so the pure helper stays I/O-free; every
+ * error names `guuey mcp status` as the next step.
+ */
+export function selectMcpBuild(
+  deployments: McpDeploymentInfo[],
+  buildFlag: string | true | undefined,
+): { ok: true; deployment: McpDeploymentInfo } | { ok: false; error: string } {
+  if (deployments.length === 0) {
+    return {
+      ok: false,
+      error:
+        'No builds found for this server. Run "guuey mcp status <server>" to check its deploy history.',
+    };
+  }
+  if (buildFlag === undefined) {
+    // Newest-first projection — the first row is the latest build.
+    return { ok: true, deployment: deployments[0]! };
+  }
+  if (typeof buildFlag !== 'string' || !/^[1-9][0-9]*$/.test(buildFlag)) {
+    return {
+      ok: false,
+      error: `Invalid --build "${String(buildFlag)}". Pass a positive build number, e.g. --build 3.`,
+    };
+  }
+  const wanted = Number(buildFlag);
+  const deployment = deployments.find((d) => d.buildNumber === wanted);
+  if (!deployment) {
+    return {
+      ok: false,
+      error:
+        `Build #${wanted} not found in the ${deployments.length} most recent build(s). ` +
+        'Run "guuey mcp status <server>" to see available builds.',
+    };
+  }
+  return { ok: true, deployment };
+}
+
+/**
+ * Render one build's captured output as plain lines (pure — the command adds
+ * the indent + prints). Layout:
+ *
+ *   1. Header: build number, status, updatedAt.
+ *   2. The `errorMessage` content VERBATIM when present (it is the
+ *      deploy-controller's tail-50 Kaniko capture), else an honest
+ *      "no captured output" line — plus, for non-failed builds, a note that
+ *      only failed builds capture output at all.
+ *   3. ALWAYS ends with the one-liner that full build/runtime log streaming
+ *      is a future observability slice — never implies more logs exist.
+ */
+export function renderMcpBuildLogs(deployment: McpDeploymentInfo): string[] {
+  const lines: string[] = [
+    `Build #${deployment.buildNumber} — ${deployment.status} — ${deployment.updatedAt}`,
+    '',
+  ];
+  if (deployment.errorMessage) {
+    lines.push(...deployment.errorMessage.split('\n'));
+  } else {
+    lines.push('No captured output for this build.');
+    if (deployment.status !== 'failed') {
+      lines.push('(Only failed builds capture output — the build-failure tail from the builder.)');
+    }
+  }
+  lines.push('');
+  lines.push(
+    'Note: full build/runtime log streaming is a future observability slice; this shows the captured build output only.',
+  );
+  return lines;
+}
+
+/**
+ * The reusable core of `guuey mcp logs`: fetch the server's status
+ * projection, select the requested build (default: latest), and print its
+ * captured output — or the selected deployment row as JSON with `--json`.
+ * Throws on API failures (via `parseApiError`) and on build-selection errors;
+ * the command wrapper prints + exits.
+ *
+ * `deps.api` defaults to the real `apiRequest` and exists purely for test
+ * injection (mirrors {@link deployMcpFromSource}).
+ */
+export async function mcpLogsCore(
+  opts: {
+    serverId: string;
+    workspaceId: string;
+    /** Raw `--build` flag value; `undefined` = latest build. */
+    buildFlag: string | true | undefined;
+    json: boolean;
+    auth: AuthTokens;
+    config: ResolvedConfig;
+  },
+  deps?: { api?: typeof apiRequest },
+): Promise<void> {
+  const api = deps?.api ?? apiRequest;
+
+  const res = await api(
+    opts.auth.pat,
+    opts.config,
+    'GET',
+    `/mcp/servers/${encodeURIComponent(opts.serverId)}?workspaceId=${encodeURIComponent(opts.workspaceId)}`,
+  );
+  if (!res.ok) {
+    const data: unknown = await res.json().catch(() => ({}));
+    throw new Error(parseApiError(data, `HTTP ${res.status}`));
+  }
+
+  const data = (await res.json()) as McpServerStatusResponse;
+  const selected = selectMcpBuild(data.deployments, opts.buildFlag);
+  if (!selected.ok) throw new Error(selected.error);
+
+  if (opts.json) {
+    out.json(selected.deployment);
+    return;
+  }
+
+  console.log('');
+  for (const line of renderMcpBuildLogs(selected.deployment)) {
+    console.log(line.length > 0 ? `  ${line}` : '');
+  }
+  console.log('');
+}
+
+/**
+ * `guuey mcp logs <server> [--build N] [--workspace <id>] [--json]`
+ *
+ * Show the captured build output for one build of a hosted MCP server
+ * (default: the latest build). Server resolution: `--server` | positional |
+ * `$GUUEY_MCP_SERVER`; workspace: `--workspace` | `$GUUEY_WORKSPACE`.
+ */
+export async function mcpLogs(
+  serverArg: string | undefined,
+  flags?: Record<string, string | true>,
+): Promise<void> {
+  const serverId = resolveServerRef(serverArg, flags, process.env);
+  if (!serverId) {
+    out.error(
+      'No MCP server specified. Pass <server>, --server <id>, or set the GUUEY_MCP_SERVER environment variable.',
+    );
+    process.exit(1);
+  }
+
+  const workspaceId = resolveWorkspaceId(flags, process.env);
+  if (!workspaceId) {
+    out.error(
+      'No workspace specified. Pass --workspace <id> or set the GUUEY_WORKSPACE environment variable.',
+    );
+    process.exit(1);
+  }
+
+  const auth = requireAuth();
+  const config = resolveConfig();
+
+  try {
+    await mcpLogsCore({
+      serverId,
+      workspaceId,
+      buildFlag: flags?.build,
+      json: flags?.json === true,
+      auth,
+      config,
+    });
+  } catch (err) {
+    out.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+}

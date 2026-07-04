@@ -12,8 +12,13 @@ import {
   buildTriggerBody,
   parseSecretAssignment,
   resolveServerId,
+  resolveServerRef,
+  selectMcpBuild,
+  renderMcpBuildLogs,
+  mcpLogsCore,
   deployMcpFromSource,
   MCP_SIZES,
+  type McpDeploymentInfo,
 } from './mcp.js';
 import type { AuthTokens } from '../auth.js';
 import type { ResolvedConfig } from '../config.js';
@@ -205,6 +210,220 @@ describe('resolveServerId', () => {
   it('ignores a boolean (value-less) --server flag and an empty env', () => {
     expect(resolveServerId({ server: true }, {})).toBeNull();
     expect(resolveServerId({}, { GUUEY_MCP_SERVER: '' })).toBeNull();
+  });
+});
+
+describe('resolveServerRef', () => {
+  it('--server flag wins over the positional and env', () => {
+    expect(
+      resolveServerRef('srv-pos', { server: 'srv-flag' }, { GUUEY_MCP_SERVER: 'srv-env' }),
+    ).toBe('srv-flag');
+  });
+
+  it('positional wins over env when no flag', () => {
+    expect(resolveServerRef('srv-pos', {}, { GUUEY_MCP_SERVER: 'srv-env' })).toBe('srv-pos');
+  });
+
+  it('falls back to GUUEY_MCP_SERVER when neither flag nor positional', () => {
+    expect(resolveServerRef(undefined, {}, { GUUEY_MCP_SERVER: 'srv-env' })).toBe('srv-env');
+    expect(resolveServerRef('', undefined, { GUUEY_MCP_SERVER: 'srv-env' })).toBe('srv-env');
+  });
+
+  it('returns null when nothing yields a value', () => {
+    expect(resolveServerRef(undefined, undefined, {})).toBeNull();
+    expect(resolveServerRef('', { server: true }, {})).toBeNull();
+  });
+});
+
+describe('selectMcpBuild', () => {
+  const deployments: McpDeploymentInfo[] = [
+    { buildNumber: 3, status: 'failed', errorMessage: 'boom', updatedAt: '2026-07-04T10:00:00Z' },
+    { buildNumber: 2, status: 'superseded', updatedAt: '2026-07-03T10:00:00Z' },
+    { buildNumber: 1, status: 'superseded', updatedAt: '2026-07-02T10:00:00Z' },
+  ];
+
+  it('defaults to the latest (first, newest-first) build', () => {
+    const res = selectMcpBuild(deployments, undefined);
+    expect(res).toEqual({ ok: true, deployment: deployments[0] });
+  });
+
+  it('selects a specific build via --build N', () => {
+    const res = selectMcpBuild(deployments, '2');
+    expect(res).toEqual({ ok: true, deployment: deployments[1] });
+  });
+
+  it('unknown build N → actionable error naming "guuey mcp status"', () => {
+    const res = selectMcpBuild(deployments, '9');
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error).toContain('Build #9');
+      expect(res.error).toContain('guuey mcp status');
+    }
+  });
+
+  it('no builds at all → actionable error naming "guuey mcp status"', () => {
+    const res = selectMcpBuild([], undefined);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain('guuey mcp status');
+  });
+
+  it('rejects a non-numeric or value-less --build', () => {
+    for (const bad of ['abc', '-1', '0', '1.5', true as const]) {
+      const res = selectMcpBuild(deployments, bad);
+      expect(res.ok).toBe(false);
+    }
+  });
+});
+
+describe('renderMcpBuildLogs', () => {
+  const honestNote = 'future observability slice';
+
+  it('renders header + errorMessage verbatim for a failed build', () => {
+    const lines = renderMcpBuildLogs({
+      buildNumber: 3,
+      status: 'failed',
+      errorMessage: 'step 4/9 RUN pnpm build\nERROR: exit code 1',
+      updatedAt: '2026-07-04T10:00:00Z',
+    });
+    const text = lines.join('\n');
+    expect(lines[0]).toContain('Build #3');
+    expect(lines[0]).toContain('failed');
+    expect(lines[0]).toContain('2026-07-04T10:00:00Z');
+    // errorMessage content verbatim, split into lines.
+    expect(lines).toContain('step 4/9 RUN pnpm build');
+    expect(lines).toContain('ERROR: exit code 1');
+    // ALWAYS ends with the honest streaming one-liner.
+    expect(lines[lines.length - 1]).toContain(honestNote);
+    expect(text).not.toContain('No captured output');
+  });
+
+  it('renders the no-capture message + only-failure note for a live build', () => {
+    const lines = renderMcpBuildLogs({
+      buildNumber: 4,
+      status: 'live',
+      updatedAt: '2026-07-04T11:00:00Z',
+    });
+    const text = lines.join('\n');
+    expect(text).toContain('No captured output for this build');
+    // Non-failed builds get the honesty note that only failure output is captured.
+    expect(text.toLowerCase()).toContain('failed builds');
+    expect(lines[lines.length - 1]).toContain(honestNote);
+  });
+
+  it('omits the only-failure note for a failed build with no capture', () => {
+    const lines = renderMcpBuildLogs({
+      buildNumber: 5,
+      status: 'failed',
+      updatedAt: '2026-07-04T12:00:00Z',
+    });
+    const text = lines.join('\n');
+    expect(text).toContain('No captured output for this build');
+    expect(text.toLowerCase()).not.toContain('only failed builds');
+    expect(lines[lines.length - 1]).toContain(honestNote);
+  });
+});
+
+describe('mcpLogsCore', () => {
+  const auth: AuthTokens = { pat: 'pat-test', expiresAt: '2099-01-01T00:00:00.000Z' };
+  const config: ResolvedConfig = { host: 'https://guuey.test', apiUrl: 'https://api.guuey.test' };
+
+  const statusPayload = {
+    server: {
+      serverId: 'srv-1',
+      name: 'mcp-weather',
+      hostingStatus: 'live',
+      size: 'sm',
+      updatedAt: '2026-07-01T00:00:00Z',
+    },
+    deployments: [
+      {
+        buildNumber: 3,
+        status: 'failed',
+        errorMessage: 'kaniko tail line 1\nkaniko tail line 2',
+        updatedAt: '2026-07-04T10:00:00Z',
+      },
+      { buildNumber: 2, status: 'live', updatedAt: '2026-07-03T10:00:00Z' },
+    ],
+    grantCount: 0,
+  };
+
+  function okApi(calls?: { method: string; path: string }[]): typeof apiRequest {
+    return vi.fn(async (_pat, _cfg, method, path) => {
+      calls?.push({ method, path });
+      return new Response(JSON.stringify(statusPayload), { status: 200 });
+    });
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('defaults to the latest build and hits the Task-1 status route', async () => {
+    const calls: { method: string; path: string }[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await mcpLogsCore(
+      { serverId: 'srv-1', workspaceId: 'ws-1', buildFlag: undefined, json: false, auth, config },
+      { api: okApi(calls) },
+    );
+
+    expect(calls).toEqual([
+      { method: 'GET', path: '/mcp/servers/srv-1?workspaceId=ws-1' },
+    ]);
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain('Build #3');
+    expect(output).toContain('kaniko tail line 1');
+    expect(output).toContain('kaniko tail line 2');
+  });
+
+  it('--build selects an older build (no-capture path for a live build)', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await mcpLogsCore(
+      { serverId: 'srv-1', workspaceId: 'ws-1', buildFlag: '2', json: false, auth, config },
+      { api: okApi() },
+    );
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain('Build #2');
+    expect(output).toContain('No captured output for this build');
+    expect(output).not.toContain('kaniko tail line 1');
+  });
+
+  it('--json emits the selected deployment row', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await mcpLogsCore(
+      { serverId: 'srv-1', workspaceId: 'ws-1', buildFlag: undefined, json: true, auth, config },
+      { api: okApi() },
+    );
+
+    const printed = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(JSON.parse(printed)).toEqual(statusPayload.deployments[0]);
+  });
+
+  it('unknown build → throws the actionable error (naming guuey mcp status)', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await expect(
+      mcpLogsCore(
+        { serverId: 'srv-1', workspaceId: 'ws-1', buildFlag: '9', json: false, auth, config },
+        { api: okApi() },
+      ),
+    ).rejects.toThrow(/guuey mcp status/);
+  });
+
+  it('API failure → throws the parseApiError message', async () => {
+    const api: typeof apiRequest = vi.fn(async () => {
+      return new Response(JSON.stringify({ error: 'MCP server srv-1 not found' }), {
+        status: 404,
+      });
+    });
+    await expect(
+      mcpLogsCore(
+        { serverId: 'srv-1', workspaceId: 'ws-1', buildFlag: undefined, json: false, auth, config },
+        { api },
+      ),
+    ).rejects.toThrow('MCP server srv-1 not found');
   });
 });
 
