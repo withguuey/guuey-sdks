@@ -31,7 +31,15 @@ import { link } from './commands/link';
 import { test as testCmd } from './commands/test';
 import { logs } from './commands/logs';
 import { deploy } from './commands/deploy';
-import { mcpDeploy, mcpLogs, mcpSecretsSet, mcpSecretsList, mcpSecretsUnset } from './commands/mcp';
+import {
+  mcpDeploy,
+  mcpList,
+  mcpStatus,
+  mcpLogs,
+  mcpSecretsSet,
+  mcpSecretsList,
+  mcpSecretsUnset,
+} from './commands/mcp';
 import { workerVerify } from './commands/worker';
 import { pull } from './commands/pull';
 import { undeploy } from './commands/undeploy';
@@ -156,6 +164,13 @@ Hosted MCP Servers:
     --workspace <id>             Owning workspace (or $GUUEY_WORKSPACE)
     --size <s>                   Pod size: xs | sm | md | lg | xl (default: sm)
     --label <tag>                Version label
+  mcp list                       List the workspace's hosted MCP server registry
+    --workspace <id>             Owning workspace (or $GUUEY_WORKSPACE)
+    --json                       Emit the raw servers array as JSON
+  mcp status [<server>]          Show a server's registry row, deploy history, and grant count
+    --server <id>                Target server (or positional / $GUUEY_MCP_SERVER)
+    --workspace <id>             Owning workspace (or $GUUEY_WORKSPACE)
+    --json                       Emit the full status response as JSON
   mcp logs [<server>]            Show captured build output for a build
                                  (default: latest; only failed builds capture
                                  output — streaming is a future slice)
@@ -312,6 +327,12 @@ async function main(): Promise<void> {
         case 'deploy':
           await mcpDeploy(flags);
           break;
+        case 'list':
+          await mcpList(flags);
+          break;
+        case 'status':
+          await mcpStatus(rest[0], flags);
+          break;
         case 'logs':
           await mcpLogs(rest[0], flags);
           break;
@@ -334,7 +355,9 @@ async function main(): Promise<void> {
           }
           break;
         default:
-          console.error(`Unknown mcp command: ${action ?? '(none)'}. Use: deploy, logs, secrets`);
+          console.error(
+            `Unknown mcp command: ${action ?? '(none)'}. Use: list, status, deploy, logs, secrets`,
+          );
           process.exit(1);
       }
       break;

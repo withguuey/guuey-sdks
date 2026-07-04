@@ -18,7 +18,13 @@ import {
   mcpLogsCore,
   deployMcpFromSource,
   MCP_SIZES,
+  formatLatestBuild,
+  mcpServerListRow,
+  mcpDeploymentRow,
+  mcpListCore,
+  mcpStatusCore,
   type McpDeploymentInfo,
+  type McpServerListItem,
 } from './mcp.js';
 import type { AuthTokens } from '../auth.js';
 import type { ResolvedConfig } from '../config.js';
@@ -553,4 +559,237 @@ describe('deployMcpFromSource', () => {
     },
     10_000,
   );
+});
+
+describe('formatLatestBuild', () => {
+  it('renders "#<n> <status>" when present', () => {
+    expect(formatLatestBuild({ buildNumber: 5, status: 'live' })).toBe('#5 live');
+  });
+
+  it('renders an em dash when absent', () => {
+    expect(formatLatestBuild(undefined)).toBe('—');
+  });
+});
+
+describe('mcpServerListRow', () => {
+  const server: McpServerListItem = {
+    serverId: 'srv-1',
+    name: 'mcp-weather',
+    hostingStatus: 'live',
+    size: 'sm',
+    runtimeUrl: 'https://srv-1.mcp.guuey.com',
+    updatedAt: '2026-07-01T00:00:00Z',
+    latestBuild: { buildNumber: 4, status: 'live' },
+  };
+
+  it('produces the exact NAME/SERVER ID/STATUS/SIZE/URL/LAST BUILD columns', () => {
+    expect(mcpServerListRow(server)).toEqual({
+      NAME: 'mcp-weather',
+      'SERVER ID': 'srv-1',
+      STATUS: 'live',
+      SIZE: 'sm',
+      URL: 'https://srv-1.mcp.guuey.com',
+      'LAST BUILD': '#4 live',
+    });
+  });
+
+  it('renders an em dash URL and last-build when both are absent', () => {
+    const { runtimeUrl: _runtimeUrl, latestBuild: _latestBuild, ...rest } = server;
+    expect(mcpServerListRow(rest)).toEqual({
+      NAME: 'mcp-weather',
+      'SERVER ID': 'srv-1',
+      STATUS: 'live',
+      SIZE: 'sm',
+      URL: '—',
+      'LAST BUILD': '—',
+    });
+  });
+});
+
+describe('mcpDeploymentRow', () => {
+  it('renders BUILD/STATUS/UPDATED/NOTE with no note when errorMessage is absent', () => {
+    expect(
+      mcpDeploymentRow({ buildNumber: 2, status: 'live', updatedAt: '2026-07-03T10:00:00Z' }),
+    ).toEqual({
+      BUILD: '#2',
+      STATUS: 'live',
+      UPDATED: '2026-07-03T10:00:00Z',
+      NOTE: '',
+    });
+  });
+
+  it('flags a note when errorMessage is present (without leaking its content)', () => {
+    const row = mcpDeploymentRow({
+      buildNumber: 3,
+      status: 'failed',
+      errorMessage: 'kaniko tail...',
+      updatedAt: '2026-07-04T10:00:00Z',
+    });
+    expect(row.NOTE).not.toBe('');
+    expect(String(row.NOTE)).not.toContain('kaniko tail');
+    expect(String(row.NOTE).toLowerCase()).toContain('mcp logs');
+  });
+});
+
+describe('mcpListCore', () => {
+  const auth: AuthTokens = { pat: 'pat-test', expiresAt: '2099-01-01T00:00:00.000Z' };
+  const config: ResolvedConfig = { host: 'https://guuey.test', apiUrl: 'https://api.guuey.test' };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('hits the servers-list route and renders a table', async () => {
+    const calls: { method: string; path: string }[] = [];
+    const api: typeof apiRequest = vi.fn(async (_pat, _cfg, method, path) => {
+      calls.push({ method, path });
+      return new Response(
+        JSON.stringify({
+          servers: [
+            {
+              serverId: 'srv-1',
+              name: 'mcp-weather',
+              hostingStatus: 'live',
+              size: 'sm',
+              runtimeUrl: 'https://srv-1.mcp.guuey.com',
+              updatedAt: '2026-07-01T00:00:00Z',
+              latestBuild: { buildNumber: 4, status: 'live' },
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await mcpListCore({ workspaceId: 'ws-1', json: false, auth, config }, { api });
+
+    expect(calls).toEqual([{ method: 'GET', path: '/mcp/servers?workspaceId=ws-1' }]);
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain('mcp-weather');
+    expect(output).toContain('srv-1');
+    expect(output).toContain('#4 live');
+  });
+
+  it('--json passes the raw servers array through', async () => {
+    const servers = [
+      {
+        serverId: 'srv-1',
+        name: 'mcp-weather',
+        hostingStatus: 'live',
+        size: 'sm',
+        updatedAt: '2026-07-01T00:00:00Z',
+      },
+    ];
+    const api: typeof apiRequest = vi.fn(async () => {
+      return new Response(JSON.stringify({ servers }), { status: 200 });
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await mcpListCore({ workspaceId: 'ws-1', json: true, auth, config }, { api });
+
+    const printed = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(JSON.parse(printed)).toEqual(servers);
+  });
+
+  it('empty workspace prints a friendly "no hosted MCP servers" line, not an error', async () => {
+    const api: typeof apiRequest = vi.fn(async () => {
+      return new Response(JSON.stringify({ servers: [] }), { status: 200 });
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await mcpListCore({ workspaceId: 'ws-1', json: false, auth, config }, { api });
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output.toLowerCase()).toContain('no hosted mcp servers');
+  });
+
+  it('API failure throws the parseApiError message', async () => {
+    const api: typeof apiRequest = vi.fn(async () => {
+      return new Response(JSON.stringify({ error: 'forbidden' }), { status: 403 });
+    });
+    await expect(
+      mcpListCore({ workspaceId: 'ws-1', json: false, auth, config }, { api }),
+    ).rejects.toThrow('forbidden');
+  });
+});
+
+describe('mcpStatusCore', () => {
+  const auth: AuthTokens = { pat: 'pat-test', expiresAt: '2099-01-01T00:00:00.000Z' };
+  const config: ResolvedConfig = { host: 'https://guuey.test', apiUrl: 'https://api.guuey.test' };
+
+  const statusPayload = {
+    server: {
+      serverId: 'srv-1',
+      name: 'mcp-weather',
+      hostingStatus: 'live',
+      size: 'sm',
+      runtimeUrl: 'https://srv-1.mcp.guuey.com',
+      updatedAt: '2026-07-01T00:00:00Z',
+    },
+    deployments: [
+      { buildNumber: 3, status: 'failed', errorMessage: 'boom', updatedAt: '2026-07-04T10:00:00Z' },
+      { buildNumber: 2, status: 'live', updatedAt: '2026-07-03T10:00:00Z' },
+    ],
+    grantCount: 2,
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('hits the server-get route and renders a summary + deployments table + grant count', async () => {
+    const calls: { method: string; path: string }[] = [];
+    const api: typeof apiRequest = vi.fn(async (_pat, _cfg, method, path) => {
+      calls.push({ method, path });
+      return new Response(JSON.stringify(statusPayload), { status: 200 });
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await mcpStatusCore(
+      { serverId: 'srv-1', workspaceId: 'ws-1', json: false, auth, config },
+      { api },
+    );
+
+    expect(calls).toEqual([
+      { method: 'GET', path: '/mcp/servers/srv-1?workspaceId=ws-1' },
+    ]);
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain('mcp-weather');
+    expect(output).toContain('srv-1');
+    expect(output).toContain('live');
+    expect(output).toContain('https://srv-1.mcp.guuey.com');
+    expect(output).toContain('#3');
+    expect(output).toContain('#2');
+    expect(output).toContain('Grants: 2');
+  });
+
+  it('--json emits the whole response', async () => {
+    const api: typeof apiRequest = vi.fn(async () => {
+      return new Response(JSON.stringify(statusPayload), { status: 200 });
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await mcpStatusCore(
+      { serverId: 'srv-1', workspaceId: 'ws-1', json: true, auth, config },
+      { api },
+    );
+
+    const printed = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(JSON.parse(printed)).toEqual(statusPayload);
+  });
+
+  it('API failure (e.g. 404 unknown server) throws the parseApiError message', async () => {
+    const api: typeof apiRequest = vi.fn(async () => {
+      return new Response(JSON.stringify({ error: 'MCP server srv-1 not found' }), {
+        status: 404,
+      });
+    });
+    await expect(
+      mcpStatusCore(
+        { serverId: 'srv-1', workspaceId: 'ws-1', json: false, auth, config },
+        { api },
+      ),
+    ).rejects.toThrow('MCP server srv-1 not found');
+  });
 });

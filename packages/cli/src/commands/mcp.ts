@@ -810,6 +810,255 @@ export async function mcpLogsCore(
   console.log('');
 }
 
+// ─── mcp list / mcp status ──────────────────────────────────────────────
+//
+// `guuey mcp list` and `guuey mcp status <server>` render the T1 registry
+// read routes (`GET /mcp/servers` / `GET /mcp/servers/:serverId`). Both
+// reuse `McpServerStatusResponse`/`McpDeploymentInfo` (declared above for
+// `mcp logs`) plus the new `McpServerListItem` for the list projection,
+// which additionally carries `latestBuild` (list-only — the status route's
+// `server` projection omits it since `deployments[]` already covers build
+// history there).
+
+/**
+ * One row of the `servers-list` route's projection (the T1
+ * `mcp-registry.ts#McpServerListItem` wire shape).
+ */
+export interface McpServerListItem {
+  serverId: string;
+  name: string;
+  hostingStatus: string;
+  size: string;
+  runtimeUrl?: string;
+  updatedAt: string;
+  /** Newest deployment for this server, if any have been triggered yet. */
+  latestBuild?: { buildNumber: number; status: string };
+}
+
+/** The `GET /mcp/servers` (T1 list route) response shape. */
+export interface McpServersListResponse {
+  servers: McpServerListItem[];
+}
+
+/**
+ * Render a `latestBuild` as `"#<n> <status>"`, or an em dash when the
+ * server has never had a build triggered.
+ */
+export function formatLatestBuild(
+  latestBuild: { buildNumber: number; status: string } | undefined,
+): string {
+  if (!latestBuild) return '—';
+  return `#${latestBuild.buildNumber} ${latestBuild.status}`;
+}
+
+/**
+ * Build one `out.table` row for `guuey mcp list`: NAME, SERVER ID, STATUS,
+ * SIZE, URL, LAST BUILD (an em dash for an absent URL/build, matching
+ * {@link formatLatestBuild}'s convention).
+ */
+export function mcpServerListRow(server: McpServerListItem): Record<string, string> {
+  return {
+    NAME: server.name,
+    'SERVER ID': server.serverId,
+    STATUS: server.hostingStatus,
+    SIZE: server.size,
+    URL: server.runtimeUrl ?? '—',
+    'LAST BUILD': formatLatestBuild(server.latestBuild),
+  };
+}
+
+/** Column order for the `guuey mcp list` table (passed to `out.table`). */
+const MCP_LIST_COLUMNS = ['NAME', 'SERVER ID', 'STATUS', 'SIZE', 'URL', 'LAST BUILD'];
+
+/**
+ * Build one `out.table` row for `guuey mcp status`'s deployments table:
+ * BUILD, STATUS, UPDATED, NOTE. `NOTE` flags (never prints the content of)
+ * a captured build-failure tail — pointing at `mcp logs` for the detail,
+ * so the status view stays a short scannable table.
+ */
+export function mcpDeploymentRow(d: McpDeploymentInfo): Record<string, string> {
+  return {
+    BUILD: `#${d.buildNumber}`,
+    STATUS: d.status,
+    UPDATED: d.updatedAt,
+    NOTE: d.errorMessage ? 'captured output — see mcp logs' : '',
+  };
+}
+
+/** Column order for the `guuey mcp status` deployments table. */
+const MCP_STATUS_DEPLOYMENTS_COLUMNS = ['BUILD', 'STATUS', 'UPDATED', 'NOTE'];
+
+/**
+ * The reusable core of `guuey mcp list`: fetch the workspace's server
+ * registry and render it as a table (or the raw `servers` array with
+ * `--json`). An empty workspace prints a friendly line instead of an empty
+ * table — this is a normal, expected state (a fresh workspace with no
+ * hosted MCP servers yet), not an error.
+ *
+ * `deps.api` defaults to the real `apiRequest` and exists purely for test
+ * injection (mirrors {@link mcpLogsCore}).
+ */
+export async function mcpListCore(
+  opts: {
+    workspaceId: string;
+    json: boolean;
+    auth: AuthTokens;
+    config: ResolvedConfig;
+  },
+  deps?: { api?: typeof apiRequest },
+): Promise<void> {
+  const api = deps?.api ?? apiRequest;
+
+  const res = await api(
+    opts.auth.pat,
+    opts.config,
+    'GET',
+    `/mcp/servers?workspaceId=${encodeURIComponent(opts.workspaceId)}`,
+  );
+  if (!res.ok) {
+    const data: unknown = await res.json().catch(() => ({}));
+    throw new Error(parseApiError(data, `HTTP ${res.status}`));
+  }
+
+  const data = (await res.json()) as McpServersListResponse;
+
+  if (opts.json) {
+    out.json(data.servers);
+    return;
+  }
+
+  if (data.servers.length === 0) {
+    console.log('  No hosted MCP servers in this workspace yet. Run "guuey mcp deploy" to add one.');
+    return;
+  }
+
+  out.table(data.servers.map(mcpServerListRow), MCP_LIST_COLUMNS);
+}
+
+/**
+ * `guuey mcp list [--workspace <id>] [--json]`
+ *
+ * List the workspace's hosted MCP server registry as a table (name, id,
+ * status, size, URL, last build) — or the raw servers array with `--json`.
+ * Workspace resolution: `--workspace` | `$GUUEY_WORKSPACE`.
+ */
+export async function mcpList(flags?: Record<string, string | true>): Promise<void> {
+  const workspaceId = resolveWorkspaceId(flags, process.env);
+  if (!workspaceId) {
+    out.error(
+      'No workspace specified. Pass --workspace <id> or set the GUUEY_WORKSPACE environment variable.',
+    );
+    process.exit(1);
+  }
+
+  const auth = requireAuth();
+  const config = resolveConfig();
+
+  try {
+    await mcpListCore({ workspaceId, json: flags?.json === true, auth, config });
+  } catch (err) {
+    out.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+}
+
+/**
+ * The reusable core of `guuey mcp status`: fetch one server's registry row
+ * + deployment history + grant count (the T1 status route) and render a
+ * summary block + deployments table + grant count — or the whole response
+ * verbatim with `--json`.
+ *
+ * `deps.api` defaults to the real `apiRequest` and exists purely for test
+ * injection (mirrors {@link mcpLogsCore}).
+ */
+export async function mcpStatusCore(
+  opts: {
+    serverId: string;
+    workspaceId: string;
+    json: boolean;
+    auth: AuthTokens;
+    config: ResolvedConfig;
+  },
+  deps?: { api?: typeof apiRequest },
+): Promise<void> {
+  const api = deps?.api ?? apiRequest;
+
+  const res = await api(
+    opts.auth.pat,
+    opts.config,
+    'GET',
+    `/mcp/servers/${encodeURIComponent(opts.serverId)}?workspaceId=${encodeURIComponent(opts.workspaceId)}`,
+  );
+  if (!res.ok) {
+    const data: unknown = await res.json().catch(() => ({}));
+    throw new Error(parseApiError(data, `HTTP ${res.status}`));
+  }
+
+  const data = (await res.json()) as McpServerStatusResponse;
+
+  if (opts.json) {
+    out.json(data);
+    return;
+  }
+
+  const { server, deployments, grantCount } = data;
+  console.log('');
+  console.log(`  ${server.name} (${server.serverId})`);
+  console.log(`  Status:  ${server.hostingStatus}`);
+  console.log(`  Size:    ${server.size}`);
+  console.log(`  URL:     ${server.runtimeUrl ?? '—'}`);
+  console.log(`  Updated: ${server.updatedAt}`);
+  console.log('');
+  out.table(deployments.map(mcpDeploymentRow), MCP_STATUS_DEPLOYMENTS_COLUMNS);
+  console.log('');
+  console.log(`  Grants: ${grantCount} app(s)`);
+  console.log('');
+}
+
+/**
+ * `guuey mcp status <server> [--workspace <id>] [--json]`
+ *
+ * Show one hosted MCP server's registry row, deployment history, and grant
+ * count. Server resolution: `--server` | positional | `$GUUEY_MCP_SERVER`;
+ * workspace: `--workspace` | `$GUUEY_WORKSPACE`.
+ */
+export async function mcpStatus(
+  serverArg: string | undefined,
+  flags?: Record<string, string | true>,
+): Promise<void> {
+  const serverId = resolveServerRef(serverArg, flags, process.env);
+  if (!serverId) {
+    out.error(
+      'No MCP server specified. Pass <server>, --server <id>, or set the GUUEY_MCP_SERVER environment variable.',
+    );
+    process.exit(1);
+  }
+
+  const workspaceId = resolveWorkspaceId(flags, process.env);
+  if (!workspaceId) {
+    out.error(
+      'No workspace specified. Pass --workspace <id> or set the GUUEY_WORKSPACE environment variable.',
+    );
+    process.exit(1);
+  }
+
+  const auth = requireAuth();
+  const config = resolveConfig();
+
+  try {
+    await mcpStatusCore({
+      serverId,
+      workspaceId,
+      json: flags?.json === true,
+      auth,
+      config,
+    });
+  } catch (err) {
+    out.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+}
+
 /**
  * `guuey mcp logs <server> [--build N] [--workspace <id>] [--json]`
  *
