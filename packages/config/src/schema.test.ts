@@ -24,6 +24,19 @@ describe('parseGuueyJson — top-level protocol field', () => {
   });
 });
 
+describe('parseGuueyJson — top-level worker field', () => {
+  it('accepts a worker entry override and leaves it absent by default', () => {
+    expect(parseGuueyJson(base).worker).toBeUndefined();
+    expect(parseGuueyJson({ ...base, worker: './echo-worker.e2e.mjs' }).worker).toBe(
+      './echo-worker.e2e.mjs',
+    );
+  });
+
+  it('rejects an empty worker path', () => {
+    expect(() => parseGuueyJson({ ...base, worker: '' })).toThrow();
+  });
+});
+
 describe('parseGuueyJson — top-level runtime.router field', () => {
   it('accepts runtime.router = v1', () => {
     const doc = parseGuueyJson({

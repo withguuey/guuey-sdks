@@ -72,6 +72,18 @@ export const GuueyJsonV1 = z.strictObject({
   ggui: GguiSectionV1.optional(),
 
   /**
+   * Worker entry override — path to the built worker bundle, relative to the
+   * project root. Absence means the default build output, `guuey.worker.js`.
+   *
+   * This is the template-authored escape hatch `guuey dev` (`commands/
+   * dev.ts`) and `guuey deploy` (`commands/deploy.ts`) resolve for a
+   * non-default build output path; without this field in the schema the
+   * strict parse rejected any document that used it, contradicting both
+   * consumers' documented contract.
+   */
+  worker: z.string().min(1).optional(),
+
+  /**
    * Transport selector — which AgJSON protocol leg the pod uses when
    * streaming responses to the client.
    *

@@ -132,13 +132,10 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
     return;
   }
 
-  // Worker entry: `guuey.json#worker` is a raw string field NOT in the
-  // canonical zod schema (a template-authored override for a non-default
-  // build output path) — read the raw file rather than the validated `doc`,
-  // which would strip an unrecognized field under `strictObject`.
-  const rawDoc = JSON.parse(readFileSync(configPath, 'utf8')) as Record<string, unknown>;
-  const workerField = typeof rawDoc.worker === 'string' ? rawDoc.worker : undefined;
-  const workerEntry = join(projectRoot, workerField ?? 'guuey.worker.js');
+  // Worker entry: `guuey.json#worker` (the template-authored override for a
+  // non-default build output path) when declared, else the default build
+  // output. Mirrors `deploy.ts`'s worker-entry resolution.
+  const workerEntry = join(projectRoot, loaded.doc.worker ?? 'guuey.worker.js');
   if (!existsSync(workerEntry)) {
     out.error(
       `Worker entry not found at ${workerEntry} — run pnpm build first (or pnpm dev which watches).`,
