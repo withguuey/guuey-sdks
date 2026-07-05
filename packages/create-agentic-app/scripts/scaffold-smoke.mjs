@@ -1,41 +1,23 @@
 #!/usr/bin/env node
 // Pack-tarball scaffold smoke (silverprotocol pack-smoke pattern):
 // validates what npm users actually install, before anything is published.
+// The pack/override mechanism itself lives in `./lib/pack-cohort.mjs`
+// (shared with `../e2e/scripts/dev-env-e2e.mjs` — stage-3 real-infra e2e
+// reuses the exact same tarball-override scaffold, since npm publishes may
+// not exist yet either).
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { packInternalCohort, applyPackOverrides } from "./lib/pack-cohort.mjs";
 
 const repoRoot = resolve(import.meta.dirname, "../../../..");
 const work = mkdtempSync(join(tmpdir(), "caa-smoke-"));
 const sh = (cmd, args, opts = {}) =>
   execFileSync(cmd, args, { stdio: "inherit", cwd: repoRoot, ...opts });
 
-// 1. Pack every internal package a scaffolded app depends on — including
-// TRANSITIVE internal deps: @guuey/cli itself depends on the silverprotocol
-// facet packages (claude-agent-sdk, openai-agents), all unpublished, so
-// omitting them makes pnpm fall through to the public registry and 404.
-const INTERNAL = [
-  "oss/packages/worker",
-  "oss/packages/config",
-  "oss/packages/create-agentic-app",
-  "oss/packages/cli",
-  "silverprotocol/sdks/typescript/packages/core",
-  "silverprotocol/sdks/typescript/packages/claude-agent-sdk",
-  "silverprotocol/sdks/typescript/packages/openai-agents",
-];
-const tarballs = {};
-for (const dir of INTERNAL) {
-  const out = execFileSync("corepack", ["pnpm", "pack", "--pack-destination", work], {
-    cwd: join(repoRoot, dir),
-    encoding: "utf8",
-  })
-    .trim()
-    .split("\n")
-    .at(-1);
-  const name = JSON.parse(readFileSync(join(repoRoot, dir, "package.json"), "utf8")).name;
-  tarballs[name] = out;
-}
+// 1. Pack every internal package a scaffolded app depends on.
+const tarballs = packInternalCohort(repoRoot, work);
 
 // 2. Scaffold both frameworks from the built CLI.
 for (const framework of ["claude-agent-sdk", "openai-agents-sdk"]) {
@@ -51,14 +33,7 @@ for (const framework of ["claude-agent-sdk", "openai-agents-sdk"]) {
   ]);
 
   // 3. Point internal deps at the packed tarballs (validates packed artifacts, not workspace links).
-  // pnpm 10+ moved `overrides` out of package.json's "pnpm" field into pnpm-workspace.yaml
-  // (root-of-project-only setting) — see https://pnpm.io/settings#overrides.
-  const workspaceYamlPath = join(appDir, "pnpm-workspace.yaml");
-  const workspaceYaml = readFileSync(workspaceYamlPath, "utf8");
-  const overridesYaml = Object.entries(tarballs)
-    .map(([n, t]) => `  "${n}": "file:${t}"`)
-    .join("\n");
-  writeFileSync(workspaceYamlPath, `${workspaceYaml}\noverrides:\n${overridesYaml}\n`);
+  applyPackOverrides(appDir, tarballs);
 
   // 4. Install + typecheck + build (recursive: root worker, todo MCP, web).
   sh("corepack", ["pnpm", "install", "--no-frozen-lockfile"], { cwd: appDir });

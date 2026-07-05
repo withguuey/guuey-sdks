@@ -22,7 +22,8 @@
     "test": "vitest run",
     "lint": "eslint src --ext .ts",
     "smoke": "node scripts/scaffold-smoke.mjs",
-    "smoke:verdaccio": "node scripts/verdaccio-smoke.mjs"
+    "smoke:verdaccio": "node scripts/verdaccio-smoke.mjs",
+    "e2e:dev-env": "node e2e/scripts/dev-env-e2e.mjs"
   },
   "devDependencies": {
     "@guuey/config": "workspace:*",

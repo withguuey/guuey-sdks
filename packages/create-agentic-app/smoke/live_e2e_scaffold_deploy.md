@@ -1,39 +1,45 @@
 # `@guuey/create-agentic-app` live e2e — scaffold → dev → deploy (operator)
 
-**What this proves:** the whole builder golden path is real end-to-end against the
-**main sandbox** AWS account — `npx @guuey/create-agentic-app` scaffolds a working
-local dev stack (agent + todo MCP + ggui + web chat), and `guuey deploy` takes that
-same project from a laptop to a live pod behind a public `/agent/invoke` endpoint,
-with the hosted-MCP leg's `McpServer`/`McpServerDeployment` rows and the
-`AgentDeployment` row both reaching `status: 'live'`.
+**What this proves:** the whole builder golden path is real end-to-end — scaffold
+a working local dev stack (agent + todo MCP + ggui + web chat), and `guuey deploy`
+takes that same project from a laptop to a live pod behind a public
+`/agent/invoke` endpoint, with the hosted-MCP leg's `McpServer`/
+`McpServerDeployment` rows and the `AgentDeployment` row both reaching
+`status: 'live'`.
 
 Two parts:
 
 - **Part A — local dev.** Scaffold + install + `pnpm dev`, one live browser turn.
-- **Part B — hosted deploy.** `guuey deploy` (code-orchestrated), assert every leg,
-  curl the deployed endpoint, confirm Portal shows the app, clean up.
+  Manual, run against whatever AWS account you like (only needs an
+  `ANTHROPIC_API_KEY`; no platform deploy involved).
+- **Part B — hosted deploy.** Fully automated by
+  `e2e/scripts/dev-env-e2e.mjs` (`pnpm --filter @guuey/create-agentic-app run
+e2e:dev-env`) — the stage-3 real-infra e2e from the scaffolder-e2e-tiers plan.
+  It scaffolds to a temp dir, logs in headlessly, creates a throwaway app,
+  deploys, asserts every leg, curls the deployed endpoint, and tears everything
+  down in a `finally` (pass `--keep` to skip teardown for debugging). This
+  section is now just: prereqs → run the one command → eyeball Portal.
 
-> Mechanics verified against source (Task 16 research pass, 2026-07-03):
+> Mechanics verified against source (Task 16 research pass, 2026-07-03; Part B
+> re-verified + automated in the scaffolder-e2e-tiers Task 3 pass, 2026-07-04):
 > `oss/packages/cli/src/commands/deploy.ts` (deploy orchestrator),
 > `oss/packages/cli/src/deploy-plan.ts` (mode routing + `writeBackServerId`),
+> `oss/packages/cli/src/commands/mcp.ts` (`resolveServerName`/`resolveWorkspaceId`/
+> `mcpStatus`/`mcpDelete` — the real flag shapes `e2e/scripts/dev-env-e2e.mjs` drives),
+> `oss/packages/cli/src/commands/{login,apps,delete,undeploy,deployments}.ts`
+> (`--token`, `apps create --json`, `delete --force` [not `--yes`],
+> `undeploy --app-id --force`, `deployments list --json`),
 > `oss/packages/cli/src/ggui-assets.ts` (ggui-asset leg, env-dormant by design),
 > `backend/amplify/data/mcp.ts` (`McpServer`/`McpServerDeployment`),
 > `backend/amplify/data/marketplace.ts` (`AgentDeployment`),
-> `backend/services/nocode-runtime/src/sse-server.ts` (`/agent/invoke` SSE contract),
+> `oss/packages/cli/src/dev/dev-server.ts` (`/agent/invoke` SSE contract — byte-matches
+> `backend/services/nocode-runtime/src/sse-server.ts`'s framing by design),
 > `apps/portal/services/ownerApps.ts` + `apps/portal/app/my-agents.tsx` ("My Agents").
 
-**Prereqs:**
+**Part A prereqs:**
 
-- `make aws` (SSO login, `guuey-sandbox`, us-east-1, PowerUserAccess).
-- The **main sandbox** `amplify_outputs.json` at the project root (or an ancestor —
-  the CLI walks up 3 dirs from cwd) or as `GUUEY_API_URL`/`GUUEY_HOST` env vars. Its
-  `custom.cliApiUrl` is what `guuey deploy`/`undeploy` actually POST to; `host`
-  (default `https://platform.guuey.com`, override via `GUUEY_HOST`) is only used by
-  `guuey login`'s browser-authorize flow.
-- A real `ANTHROPIC_API_KEY` (drives the scaffolded agent locally; the hosted pod
-  gets its own key via the platform's managed-LLM broker, not this one).
-- `guuey login` completed (PAT saved to `~/.guuey/config.json`) against that same
-  host — see Part B step 0.
+- A real `ANTHROPIC_API_KEY` (drives the scaffolded agent locally). No AWS account
+  or platform deploy is involved in Part A.
 - Node ≥20, pnpm via corepack (matches `packageManager` pin), a spare terminal for
   `pnpm dev`'s foreground process.
 
@@ -98,162 +104,164 @@ Ctrl-C to stop `pnpm dev` before Part B (frees 6781/6782/6790/6890/6891).
 
 ---
 
-## Part B — hosted deploy
+## Part B — hosted deploy (dev env, automated)
 
-### B0 — Auth
+Automated end-to-end by `e2e/scripts/dev-env-e2e.mjs` per the scaffolder-e2e-tiers
+plan (Task 3) — this section used to be six manual steps (auth, deploy, four
+assertion passes, rollback); it is now prereqs + one command + an eyeball check.
 
-```bash
-guuey login
-```
+### B0 — Prereqs
 
-Opens a browser against `${host}/cli/authorize`; completes, saves a `ggui_pat_...`
-token. **Expect:** "Logged in" confirmation printed.
+1. **Dev's `amplify_outputs.json`.** Fetch it the same way any dev-env operator
+   does (Amplify console → the dev app → download `amplify_outputs.json`, or
+   `ampx generate outputs` against the dev backend if you have CLI access). You
+   only need two fields out of it:
+   - `custom.cliApiUrl` → `GUUEY_E2E_API_URL`
+   - the dev platform's friendly host (e.g. `https://dev.platform.guuey.com` —
+     confirm the exact dev domain with whoever owns the dev environment; the
+     script's dev-env guard requires this host to carry a recognizable "dev"
+     label and rejects anything staging/release/prod-shaped) → `GUUEY_E2E_HOST`
+2. **Mint a dev-env PAT.** Log in to the dev platform as a real user (browser
+   `guuey login` against `GUUEY_E2E_HOST`, or the dev dashboard's "Generate
+   Personal Access Token" if one exists) and copy the `ggui_pat_...` token →
+   `GUUEY_E2E_PAT`. This must be a token for a user who can create apps AND
+   deploy hosted MCP servers in the target workspace.
+3. **A workspace id.** `guuey deploy`'s MCP leg refuses to run without one — the
+   scaffold's fresh `guuey.json` has no `workspaceId` (that's only stamped by
+   `guuey pull` against an already-linked app). Grab the id of a workspace the
+   PAT's user belongs to (Workspace settings in the dev platform, or
+   `WorkspaceMembership` in the dev DynamoDB console) → `GUUEY_E2E_WORKSPACE`.
+4. Repo built (`pnpm install` at the repo root) — the script builds
+   `@guuey/cli` + `@guuey/create-agentic-app` itself via turbo, but needs the
+   workspace installed first.
 
-### B1 — Deploy
+**Never** put these in `.env` files or commit them — export them in your shell
+for the one command below and nothing else. The script masks the PAT in its own
+logs and never touches your real `~/.guuey` (it runs with an isolated `HOME`).
 
-```bash
-cd /tmp/caa-live-smoke
-guuey deploy
-```
-
-This is the **code-orchestrated** pipeline (`guuey.json#agent.mode: 'code'`, set by
-the scaffold) — `deploy.ts`'s `deployCode()`:
-
-1. **First-run app-create-and-link** (TTY only): prompts for an app name, creates a
-   `GuueyApp` (`userAuthMode: 'anonymous'`), writes `appId` into `guuey.json` +
-   `~/.guuey/config.json`.
-2. **MCP leg** — deploys the `todo` MCP server (`agent.mcpServers.todo`, `kind:
-'hosted'`) via the same path as `guuey mcp deploy`; polls until
-   `McpServerDeployment.status: 'live'`; writes `agent.mcpServers.todo.server =
-"<serverId>"` back into `guuey.json` on disk.
-3. **ggui-asset leg** — packs `ggui/` and POSTs it. **Expected WARN, not a FAIL**:
-   this endpoint is env-dormant until the ggui provisioning API lands
-   (`GGUI_PROVISIONING_API_URL` unset on the platform side today), so it returns 501
-   and the CLI prints `ggui assets not pushed — the platform-side API is pending
-(tracked cross-team); deploy continues` and proceeds. A non-501 error here WOULD
-   be a real FAIL (aborts before the agent leg).
-4. **Agent leg** — `pnpm build` (must produce `guuey.worker.js`), tars, uploads,
-   triggers, polls `AgentDeployment.status` to a terminal state.
-
-**Expect** the final output block:
-
-```
-Live at https://<something>.<agents-domain>/agent/invoke
-Build #<n>, size sm
-Portal: <portalUrl>/<appId>
-todo → <runtimeUrl>
-```
-
-Save `APP_ID`, `SERVER_ID` (the todo MCP's), and the printed live `URL` — used below.
+### B1 — Run it
 
 ```bash
-APP_ID=$(node -e "console.log(require('./guuey.json').project?.appId ?? require('./guuey.json').appId)" 2>/dev/null || true)
-# If that doesn't resolve, read the appId from the deploy output / ~/.guuey/config.json directly.
+GUUEY_E2E_PAT=ggui_pat_... \
+GUUEY_E2E_API_URL=https://<dev-api-id>.execute-api.<region>.amazonaws.com/v1 \
+GUUEY_E2E_HOST=https://<dev-domain> \
+GUUEY_E2E_WORKSPACE=<workspace-id> \
+  pnpm --filter @guuey/create-agentic-app run e2e:dev-env
 ```
 
-### B2 — Assert `McpServer` / `McpServerDeployment` live
+Add `--keep` at the end to skip teardown on success too (leaves the app + hosted
+MCP server live for manual poking — print the cleanup commands yourself from the
+script's own "residue"/`--keep` output).
+
+If any of the four `GUUEY_E2E_*` vars is unset, the script prints a skip note and
+exits 0 — safe to leave wired into CI, it just never runs there without secrets.
+If `GUUEY_E2E_HOST`/`GUUEY_E2E_API_URL` don't look like a dev environment
+(contain `staging`/`release`/the bare prod host/no `dev` label), it refuses with
+exit 1 unless `GUUEY_E2E_I_KNOW_WHAT_IM_DOING=1` is also set.
+
+**What it does** (mirrors the six manual steps this section used to have):
+
+1. Builds `@guuey/cli` + `@guuey/create-agentic-app` (+ deps) via turbo.
+2. Packs the internal cohort to tarballs (same pack-tarball-override mechanism
+   as `pnpm smoke` — no registry, no reliance on npm publishes existing yet).
+3. Scaffolds the `claude-agent-sdk` framework to a temp dir.
+4. Fixes the todo MCP's hosted name to the fixed `e2e-todo` (edits
+   `mcps/todo/package.json#name` — **not** `guuey.json`; the deploy
+   orchestrator resolves a hosted MCP's server name from the source package's
+   `package.json#name`, scope-stripped — `guuey.json#agent.mcpServers.todo` is
+   only the internal leg key used for the `server` write-back).
+5. `pnpm install`.
+6. `guuey login --token $GUUEY_E2E_PAT` (isolated `HOME`).
+7. `guuey apps create --name e2e-caa-<unix-ts> --json` (throwaway app).
+8. `guuey deploy` — asserts: exits 0; prints the ggui-leg warn-and-continue line
+   verbatim (env-dormant leg — a FAIL here would be anything else); prints
+   `Live at <url>`.
+9. Asserts `guuey.json#agent.mcpServers.todo.server` was written back.
+10. `guuey mcp status <serverId> --json` — asserts `hostingStatus: 'live'` +
+    `runtimeUrl` set.
+11. `guuey deployments list --json` — asserts the newest build's `status` is
+    `'live'`.
+12. POSTs `{"input":"create a todo: buy milk"}` to the deployed
+    `/agent/invoke` and asserts the SSE stream is `event: session` → ≥1
+    `event: message` → `event: done`.
+13. **Teardown, always, in a `finally`:** `guuey undeploy --app-id <id> --force`
+    → `guuey delete <id> --force` → `guuey mcp delete <serverId> --force
+--yes`. Anything that fails to clean up is printed as a "RESIDUE" list at
+    the end (never silently swallowed) so you can clean it up by hand.
+
+### B2 — Eyeball Portal
+
+While the script is mid-run (or right after, if you passed `--keep`), open the
+dev Portal → **My Agents** and confirm the throwaway `e2e-caa-<ts>` app shows up
+with `deploymentStatus: 'live'` and an `endpointUrl` matching the script's
+printed URL. This is the one thing the script can't assert from the CLI side
+(no Portal API surfaced here) — it's a manual sanity check, not a blocking gate.
+
+### B3 — Debugging a failure
+
+Pass `--keep` to skip teardown and leave the app/pod/hosted-MCP-server live:
 
 ```bash
-jq -r '.agent.mcpServers.todo.server' guuey.json
+GUUEY_E2E_PAT=... GUUEY_E2E_API_URL=... GUUEY_E2E_HOST=... GUUEY_E2E_WORKSPACE=... \
+  pnpm --filter @guuey/create-agentic-app run e2e:dev-env --keep
 ```
 
-**Expect:** `guuey.json`'s `agent.mcpServers.todo.server` is now a real serverId
-(was absent pre-deploy) — this is the write-back proof, not a guess:
-`deploy-plan.ts`'s `writeBackServerId()` lands it to disk immediately after the MCP
-leg succeeds.
-
-Cross-check via AppSync/DynamoDB console or `guuey mcp deploy --status <serverId>`
-if exposed — either way, **expect** `McpServer.runtimeUrl` set (in-cluster URL,
-e.g. `mcp-servers.guuey.com/<serverId>`) and the deployment row's `status: 'live'`.
-
-### B3 — Assert `AgentDeployment` live + curl the deployed endpoint
-
-```bash
-curl -sS -N -X POST "<the printed Live-at URL>" \
-  -H 'Content-Type: application/json' \
-  -d '{"input":"create a todo: buy milk"}'
-```
-
-**Expect:** an SSE stream — `event: session`, one or more `event: message` frames
-(AgJSON-shaped `AgentEvent`s, not raw provider deltas), then `event: done`. No
-`Authorization` header needed for this default anonymous-auth app (the endpoint
-resolves identity via `resolveIdentity`, not a bearer check — a bearer header on
-`/agent/invoke` itself 501s by design, that's expected, don't chase it as a bug).
-
-`AgentDeployment.status` should read `'live'` and `endpointUrl` should match the
-printed URL (`https://<appId>.<agentsDomain>/agent/invoke`) — confirm via the same
-console/query path used for B2.
-
-### B4 — Assert Portal shows the app
-
-Open Portal → **My Agents** (`apps/portal/app/my-agents.tsx`, backed by
-`services/ownerApps.ts`: `GET /apps` + `GET /apps/:appId/deployments`).
-
-**Expect:** the app you just created appears with `deploymentStatus: 'live'` and a
-non-empty `endpointUrl` matching B3's URL. (Note: the deploy controller writes
-`endpointUrl`/`status` only onto `AgentDeployment`, never back onto `GuueyApp` —
-Portal joins deployments in to get this, so an app with zero deployments would show
-no endpoint even if the `GuueyApp` row itself is healthy.)
-
-### B5 — Rollback / cleanup
-
-```bash
-guuey undeploy --app-id "$APP_ID"     # tears down the live pod; app row survives
-guuey delete "$APP_ID" --force        # removes the throwaway GuueyApp entirely
-rm -rf /tmp/caa-live-smoke
-```
-
-**Expect:** `guuey undeploy` prints "Agent torn down. App is still available for
-future deploys."; `guuey delete` removes it from **My Agents**. Also confirm the
-`agent-$APP_ID` k8s namespace is gone (`kubectl get ns agent-$APP_ID` → NotFound) if
-you have cluster access — undeploy should have reaped it.
+On `--keep`, the script prints the exact `appId`/`serverId`/temp-dir it left
+behind plus the manual `guuey undeploy` / `guuey delete` / `guuey mcp delete`
+commands to run once you're done investigating — copy them verbatim (they carry
+the right `--force`/`--yes` flags).
 
 ---
 
 ## Pass / Fail summary
 
-| Part | Check                             | Expected                                                  |
-| ---- | --------------------------------- | --------------------------------------------------------- |
-| A1   | `pnpm dev` 5-process boot         | all ready, no crash loop                                  |
-| A2   | chat → `todo_create` tool call    | tool-result block in scrollback (rendered or plain)       |
-| B1   | `guuey deploy` MCP leg            | `McpServerDeployment.status: 'live'`                      |
-| B1   | `guuey deploy` ggui-asset leg     | WARN "not pushed... deploy continues" (501, expected)     |
-| B1   | `guuey deploy` agent leg          | `AgentDeployment.status: 'live'`, `Live at <url>` printed |
-| B2   | `guuey.json` write-back           | `agent.mcpServers.todo.server` populated post-deploy      |
-| B3   | `curl <url>/agent/invoke`         | SSE `session` → `message`(s) → `done`, AgJSON-shaped      |
-| B4   | Portal "My Agents"                | app listed, `deploymentStatus: 'live'`, endpoint matches  |
-| B5   | `guuey undeploy` + `guuey delete` | pod torn down, app removed from My Agents                 |
+| Part | Check                          | Expected                                                              |
+| ---- | ------------------------------ | --------------------------------------------------------------------- |
+| A1   | `pnpm dev` 5-process boot      | all ready, no crash loop                                              |
+| A2   | chat → `todo_create` tool call | tool-result block in scrollback (rendered or plain)                   |
+| B1   | `e2e:dev-env` exit code        | `0`                                                                   |
+| B1   | MCP leg                        | `guuey mcp status e2e-todo` → `hostingStatus: 'live'`, runtimeUrl set |
+| B1   | ggui-asset leg                 | warn-and-continue line printed verbatim (env-dormant, expected)       |
+| B1   | agent leg                      | `Live at <url>` printed; newest `deployments list` row `'live'`       |
+| B1   | `guuey.json` write-back        | `agent.mcpServers.todo.server` populated post-deploy                  |
+| B1   | `/agent/invoke` SSE            | `session` → `message`(s) → `done`                                     |
+| B1   | Teardown                       | no "RESIDUE" lines printed                                            |
+| B2   | Portal "My Agents"             | app listed, `deploymentStatus: 'live'`, endpoint matches              |
 
-All rows PASS (with B1's ggui-asset leg landing on its expected WARN, not a FAIL) →
-**the create-agentic-app → guuey deploy golden path is validated live on the main
-sandbox.**
+All rows PASS → **the create-agentic-app → guuey deploy golden path is validated
+live against the dev environment.**
 
 ---
 
 ## Troubleshooting / known gaps
 
-- **ggui-asset leg returns something other than 501 "not-yet-supported"** — that IS
-  a real FAIL (deploy aborts before the agent leg per `ggui-assets.ts`'s ordering).
-  Don't confuse it with the expected WARN case.
-- **`guuey deploy` fails at "No app ID found. Run guuey create or guuey link
-  first."`** — you're running non-interactively (no TTY), so the first-run
-  app-create-and-link prompt is skipped by design. Run interactively once, or
-  `guuey create`/`guuey link` an app id ahead of time.
-- **`guuey.json#agent.mcpServers.todo.server` never appears** — the MCP leg didn't
-  land; check `guuey.json#workspaceId` is set (`guuey pull` sets it) or pass
-  `--workspace`/`GUUEY_WORKSPACE` explicitly — the MCP leg needs a workspace to
-  attribute the hosted server to.
-- **`curl .../agent/invoke` hangs with nothing streamed** — confirm the pod is
-  actually `status: 'live'` (not still `deploying`) before curling; a `queued`/
-  `building` app has no listener yet.
-- **Portal shows the app but no live deployment** — `GuueyApp` and
-  `AgentDeployment` are separate rows; Portal's "My Agents" joins them via
-  `GET /apps/:appId/deployments`, so re-check B1 actually reached `status: 'live'`
-  rather than `failed`/`superseded`.
-- **This is the FIRST live run of the create-agentic-app → deploy path** (as of
-  2026-07-03) — if something upstream in the deploy pipeline itself is broken (not
-  create-agentic-app-specific), cross-reference the deploy-controller's own live
-  runbooks (`backend/services/deploy-controller/smoke/`,
+- **Script exits 0 immediately with a SKIPPED note** — one of the four
+  `GUUEY_E2E_*` vars is unset. That's by design (never blocks keyless CI); set
+  all four per B0.
+- **Script REFUSES with exit 1 before doing anything** — the dev-env guard
+  rejected `GUUEY_E2E_HOST`/`GUUEY_E2E_API_URL` as not dev-shaped. Double-check
+  you copied the DEV amplify_outputs, not main/staging/release. Only override
+  with `GUUEY_E2E_I_KNOW_WHAT_IM_DOING=1` if you are certain.
+- **Fails at "guuey deploy"'s MCP leg with a workspace error** — `guuey.json`
+  has no `workspaceId` and `GUUEY_E2E_WORKSPACE` didn't resolve; re-check the
+  PAT's user is actually a member of that workspace.
+- **ggui-asset leg returns something other than the warn-and-continue line** —
+  that IS a real FAIL (`ggui-assets.ts`'s ordering aborts before the agent leg
+  on anything but the expected 501/warn). Don't confuse it with the expected
+  case.
+- **"RESIDUE" printed at the end** — teardown couldn't clean something up (the
+  script never silently swallows a cleanup failure). The residue lines name the
+  exact leftover (`appId`/`serverId`) — clean it up by hand with the flags shown
+  in B3.
+- **`/agent/invoke` never sends `event: done`** — confirm the pod actually
+  reached `status: 'live'` (not still `deploying`) before the script curled it;
+  a `queued`/`building` app has no listener yet. Re-run with `--keep` and poll
+  `guuey mcp status`/`guuey deployments list` by hand to see where it's stuck.
+- **This is the FIRST live run of the create-agentic-app → deploy path against
+  the dev env** (as of 2026-07-04) — if something upstream in the deploy
+  pipeline itself is broken (not create-agentic-app-specific), cross-reference
+  the deploy-controller's own live runbooks
+  (`backend/services/deploy-controller/smoke/`,
   `backend/services/adk-host-py/smoke/live_e2e_code_mode_python.md`) — they've
-  already live-proven the underlying build→deploy→invoke mechanics independently of
-  this CLI-driven entrypoint.
+  already live-proven the underlying build→deploy→invoke mechanics independently
+  of this CLI-driven entrypoint.
