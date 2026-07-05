@@ -58,7 +58,9 @@ tmp
 **/*.log
 **/.DS_Store
 
-# Secrets — never bake env files into the image.
-.env
-.env.*
-!.env.example
+# Secrets — never bake env files into the image, at ANY depth: bare `.env`
+# patterns are ROOT-ONLY under dockerignore semantics, so nested env files
+# (e.g. apps/*/.env.local) would otherwise transfer — hence the `**/`.
+**/.env
+**/.env.*
+!**/.env.example
