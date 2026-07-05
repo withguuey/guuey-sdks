@@ -26,6 +26,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { packInternalCohort, applyPackOverrides } from "../../scripts/lib/pack-cohort.mjs";
+import { collectSecretsFromEnv, redactSecrets } from "./lib/redact.mjs";
 
 const REPO_ROOT = resolve(import.meta.dirname, "../../../../..");
 const CAA_ROOT = join(REPO_ROOT, "oss/packages/create-agentic-app");
@@ -149,7 +150,16 @@ function deriveExpectedGguiDevSubstring(host) {
 
 // ─── Process helpers ───────────────────────────────────────────────────
 
-/** Run a command, streaming its output live while also capturing it. */
+// Central secret registry (populated in main(), once the gate passes):
+// every value from *_PAT/*_TOKEN/*_KEY/*_SECRET/*_PASSWORD env vars. run()
+// scrubs these from BOTH its echoed output chunks and every constructed
+// error message (which embeds argv — the login step passes the PAT as a
+// literal arg), so no call site — present or future — can leak a secret
+// into logs. See ./lib/redact.mjs for the rationale + unit tests.
+let SECRETS = [];
+
+/** Run a command, streaming its (redacted) output live while also
+ * capturing it. Error messages embed argv, so they are redacted too. */
 function run(cmd, args, opts = {}) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"], ...opts });
@@ -157,16 +167,18 @@ function run(cmd, args, opts = {}) {
     let stderr = "";
     child.stdout.on("data", (d) => {
       stdout += d;
-      process.stdout.write(d);
+      process.stdout.write(redactSecrets(String(d), SECRETS));
     });
     child.stderr.on("data", (d) => {
       stderr += d;
-      process.stderr.write(d);
+      process.stderr.write(redactSecrets(String(d), SECRETS));
     });
-    child.on("error", reject);
+    child.on("error", (err) =>
+      reject(new Error(redactSecrets(err instanceof Error ? err.message : String(err), SECRETS))),
+    );
     child.on("close", (code) => {
       if (code !== 0 && !opts.allowFailure) {
-        reject(new Error(`${cmd} ${args.join(" ")} exited ${code}`));
+        reject(new Error(redactSecrets(`${cmd} ${args.join(" ")} exited ${code}`, SECRETS)));
       } else {
         resolvePromise({ code, stdout, stderr });
       }
@@ -276,6 +288,10 @@ async function main() {
   assertDevEnv(apiUrl, host);
   const expectedGguiSubstring = deriveExpectedGguiDevSubstring(host);
 
+  // Register every secret in play BEFORE any child process runs, so run()'s
+  // echoed output and error messages are scrubbed from the very first call.
+  SECRETS = collectSecretsFromEnv(process.env, [pat]);
+
   const TOTAL = 13;
   const work = mkdtempSync(join(tmpdir(), "caa-dev-e2e-"));
   const fakeHome = mkdtempSync(join(tmpdir(), "caa-dev-e2e-home-"));
@@ -341,7 +357,16 @@ async function main() {
     await run("corepack", ["pnpm", "install", "--no-frozen-lockfile"], { cwd: appDir });
 
     step(6, TOTAL, "guuey login --token *** (PAT masked; isolated HOME)");
-    await guuey(["login", "--token", pat]);
+    try {
+      await guuey(["login", "--token", pat]);
+    } catch (err) {
+      // run() already redacts the PAT out of this message; re-wrap it to
+      // stay actionable without re-echoing argv at all.
+      throw new Error(
+        `guuey login failed (${err instanceof Error ? err.message : String(err)}) — ` +
+          "is GUUEY_E2E_PAT a valid, unexpired dev-env PAT (ggui_pat_...)?",
+      );
+    }
 
     step(7, TOTAL, `guuey apps create --name ${appName}`);
     const createRes = await guuey(["apps", "create", "--name", appName, "--json"]);
@@ -494,7 +519,13 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(`\n[dev-env-e2e] FAILED: ${err instanceof Error ? err.message : String(err)}`);
-  if (err instanceof Error && err.stack && process.env.DEBUG) console.error(err.stack);
+  // Belt-and-braces: run() already redacts its own messages, but ANY error
+  // reaching this top-level handler (assertion text embedding captured CLI
+  // output, fetch failures, …) gets scrubbed again before printing.
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(`\n[dev-env-e2e] FAILED: ${redactSecrets(message, SECRETS)}`);
+  if (err instanceof Error && err.stack && process.env.DEBUG) {
+    console.error(redactSecrets(err.stack, SECRETS));
+  }
   process.exitCode = 1;
 });
