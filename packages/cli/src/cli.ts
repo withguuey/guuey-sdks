@@ -40,6 +40,7 @@ import {
   mcpSecretsList,
   mcpSecretsUnset,
 } from './commands/mcp';
+import { mcpNew } from './commands/mcp-new';
 import { workerVerify } from './commands/worker';
 import { pull } from './commands/pull';
 import { undeploy } from './commands/undeploy';
@@ -182,6 +183,16 @@ Hosted MCP Servers:
     --server <id>                Target hosted MCP server (or $GUUEY_MCP_SERVER)
   mcp secrets list               List secret names (values never shown)
   mcp secrets unset NAME         Remove a hosted-MCP secret
+  mcp new <name>                 Scaffold a hosted MCP from the shared mcp-base template
+    --scope <scope>              Package scope override (default: project scope, or <name> standalone)
+                                 Inside a guuey project: scaffolds mcps/<name>/ and wires it
+                                 into guuey.json#agent.mcpServers (kind: hosted). Outside one:
+                                 scaffolds a self-contained ./<name>/ package for "guuey mcp deploy".
+                                 Asks no questions — pick the mcpServers kind yourself:
+                                   hosted (this)  — you own the code, want guuey to build+run it
+                                   colocated      — a stdio MCP that can ride the agent pod for free
+                                   external       — you already host it somewhere reachable by URL
+                                   proxied        — 3rd-party SaaS MCP via the mcp-proxy credential broker (v2)
 
 Worker Conformance:
   worker verify [<entry>]        Verify a worker is Guuey Worker Protocol v1 conformant
@@ -336,6 +347,9 @@ async function main(): Promise<void> {
         case 'logs':
           await mcpLogs(rest[0], flags);
           break;
+        case 'new':
+          await mcpNew(rest[0], flags);
+          break;
         case 'secrets':
           switch (rest[0]) {
             case 'set':
@@ -356,7 +370,7 @@ async function main(): Promise<void> {
           break;
         default:
           console.error(
-            `Unknown mcp command: ${action ?? '(none)'}. Use: list, status, deploy, logs, secrets`,
+            `Unknown mcp command: ${action ?? '(none)'}. Use: list, status, deploy, logs, new, secrets`,
           );
           process.exit(1);
       }
