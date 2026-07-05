@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { renameContent, isProbablyText } from './rename.js';
+import { assertNpmSafeName, ensureTargetDir, isErrnoException, pathExists } from './shared.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -32,26 +33,10 @@ export interface ScaffoldResult {
   projectDir: string;
 }
 
-const NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
-
 const here = dirname(fileURLToPath(import.meta.url));
 /** Package root: this module lives at `<packageRoot>/dist/*.js` once built. */
 const packageRoot = join(here, '..');
 const defaultTemplatesDir = join(packageRoot, 'dist', 'templates');
-
-function isErrnoException(err: unknown): err is NodeJS.ErrnoException {
-  return err instanceof Error && 'code' in err;
-}
-
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await fs.access(path);
-    return true;
-  } catch (err) {
-    if (isErrnoException(err) && err.code === 'ENOENT') return false;
-    throw err;
-  }
-}
 
 async function listAvailableFrameworks(templatesDir: string): Promise<string[]> {
   try {
@@ -69,19 +54,6 @@ async function resolveTemplateDir(templatesDir: string, framework: string): Prom
   const available = await listAvailableFrameworks(templatesDir);
   const list = available.length > 0 ? available.join(', ') : `(none found under ${templatesDir})`;
   throw new Error(`No template for framework "${framework}". Available frameworks: ${list}`);
-}
-
-async function ensureTargetDir(targetDir: string, force: boolean | undefined): Promise<void> {
-  if (!(await pathExists(targetDir))) {
-    await fs.mkdir(targetDir, { recursive: true });
-    return;
-  }
-  const entries = await fs.readdir(targetDir);
-  if (entries.length > 0 && !force) {
-    throw new Error(
-      `Target directory "${targetDir}" is not empty. Pass force: true (or --force) to scaffold into it anyway.`
-    );
-  }
 }
 
 async function copyTree(src: string, dest: string, name: string, scope: string): Promise<void> {
@@ -163,11 +135,7 @@ async function runInstall(projectDir: string): Promise<void> {
  * `git init` + an initial commit and/or `pnpm install` in the new project.
  */
 export async function scaffold(opts: ScaffoldOptions): Promise<ScaffoldResult> {
-  if (!NAME_PATTERN.test(opts.name)) {
-    throw new Error(
-      `Invalid project name "${opts.name}": must be npm-safe (match ${NAME_PATTERN.toString()}).`
-    );
-  }
+  assertNpmSafeName(opts.name, 'project');
 
   const scope = opts.scope ?? opts.name;
   const templatesDir = opts.templatesDir ?? defaultTemplatesDir;
