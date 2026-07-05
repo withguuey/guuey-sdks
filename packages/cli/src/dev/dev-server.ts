@@ -22,9 +22,11 @@ import type { Normalizer } from "@silverprotocol/core";
 import { createLocalDriver, type LocalRunInput } from "./local-driver.js";
 import { makeNormalizer } from "./normalize.js";
 
-/** Local dev-loop's default `ggui serve` port — mirrors the platform
- *  injecting `mcp.ggui.ai` for deployed agents (see `lowerForDev`). */
-const DEFAULT_GGUI_DEV_URL = "http://localhost:6781";
+/** Local dev-loop's default `ggui serve` MCP endpoint — mirrors the platform
+ *  injecting `mcp.ggui.ai` for deployed agents (see `lowerForDev`). `ggui
+ *  serve --mcp-only` (booted on :6781 by the scaffolded `pnpm dev`) mounts
+ *  its MCP transport at `/mcp`, like every colocated dev MCP. */
+const DEFAULT_GGUI_DEV_URL = "http://localhost:6781/mcp";
 
 /** 256KB request-body cap — matches the pod's `readJsonBody` (`sse-server.ts`). */
 const MAX_BODY_BYTES = 256 * 1024;
@@ -89,7 +91,11 @@ export function lowerForDev(agent: GuueyAgent): GuueyAgent {
     if ((entry.kind === "hosted" || entry.kind === "external") && entry.devPort !== undefined) {
       lowered[name] = {
         kind: "external",
-        url: `http://localhost:${entry.devPort}`,
+        // `/mcp` is the colocated dev servers' fixed mount point (the
+        // scaffolded todo MCP, `guuey mcp new`'s mcp-base, `ggui serve` all
+        // serve the streamable-HTTP transport there); a bare
+        // `localhost:<port>` would 404 at MCP-connect time.
+        url: `http://localhost:${entry.devPort}/mcp`,
         transport: "http",
       };
       continue;

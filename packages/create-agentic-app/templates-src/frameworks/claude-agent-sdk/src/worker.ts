@@ -17,7 +17,11 @@ await serveNative(
     const mcpServers = Object.fromEntries(
       Object.entries(mcpEndpoints(invoke, agent)).map(([name, ep]) => [
         name,
-        { type: ep.transport, url: ep.url, headers: ep.headers },
+        // `alwaysLoad` — this agent's declared MCP servers ARE its tool
+        // surface; without it the CLI defers MCP tools behind its ToolSearch
+        // built-in (absent here — see `tools: []` below), leaving the model
+        // tool-less.
+        { type: ep.transport, url: ep.url, headers: ep.headers, alwaysLoad: true },
       ])
     );
     let result = "";
@@ -27,7 +31,21 @@ await serveNative(
         ...(agent.model ? { model: agent.model } : {}),
         ...(systemPrompt(invoke, agent) ? { systemPrompt: systemPrompt(invoke, agent) } : {}),
         mcpServers,
-        ...(agent.tools?.allowlist ? { allowedTools: agent.tools.allowlist } : {}),
+        // Same posture as `@guuey/host`'s `buildOptions` (options.ts):
+        // - allowedTools: the snapshot allowlist verbatim, else every tool
+        //   from every declared server (`mcp__<server>` prefix match) — MCP
+        //   calls would otherwise hit the SDK's interactive ask stage, which
+        //   nothing answers headless, so they'd be silently denied.
+        // - tools: [] — purely MCP-driven; no Bash/file/search built-ins.
+        // - settingSources: [] — never load the machine's ~/.claude or
+        //   project settings into this worker (a dev box's logged-in Claude
+        //   Code MCPs/plugins would leak into the tool catalog).
+        // - strictMcpConfig: true — the snapshot's servers only; ignore
+        //   .mcp.json / user settings / plugins.
+        allowedTools: agent.tools?.allowlist ?? Object.keys(mcpServers).map((s) => `mcp__${s}`),
+        tools: [],
+        settingSources: [],
+        strictMcpConfig: true,
         ...(agent.runtime?.maxTurns ? { maxTurns: agent.runtime.maxTurns } : {}),
       },
     })) {

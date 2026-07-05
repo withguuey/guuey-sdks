@@ -185,7 +185,7 @@ describe("lowerForDev", () => {
     });
     expect(lowered.mcpServers?.todo).toEqual({
       kind: "external",
-      url: "http://localhost:6782",
+      url: "http://localhost:6782/mcp",
       transport: "http",
     });
   });
@@ -216,7 +216,7 @@ describe("lowerForDev", () => {
     const lowered = lowerForDev({});
     expect(lowered.mcpServers?.ggui).toEqual({
       kind: "external",
-      url: "http://localhost:6781",
+      url: "http://localhost:6781/mcp",
       transport: "http",
     });
   });
