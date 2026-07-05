@@ -1,0 +1,52 @@
+# Throwaway local npm registry for the scaffolder clean-room gate.
+#
+# `@guuey/*` and `@silverprotocol/*` are served locally (published fresh by
+# run-gate.mjs on every run); every other dependency is proxied from npmjs
+# through the `npmjs` uplink so the scaffolded apps' installs resolve their
+# full tree without touching the public registry directly.
+#
+# Storage lives in the verdaccio image's own anonymous volume (the
+# verdaccio/verdaccio image declares `VOLUME /verdaccio/storage`) —
+# `make test-scaffold-clean-room` runs `docker compose down -v`, which drops
+# it between runs, so publishing the same version twice never collides.
+storage: /verdaccio/storage
+
+# Verdaccio's default (10mb) is too small for some packages; real npmjs
+# accepts these fine, so raise the cap here rather than have the gate flag a
+# non-issue.
+max_body_size: 200mb
+
+uplinks:
+  npmjs:
+    url: https://registry.npmjs.org/
+    cache: true
+
+packages:
+  "@guuey/*":
+    # Local-only: never proxy @guuey/* to npmjs. The whole point of the gate
+    # is to exercise the freshly-published local copies, not whatever (if
+    # anything) is live on the real registry.
+    access: $all
+    publish: $all
+    unpublish: $all
+  "@silverprotocol/*":
+    # Same reasoning — unpublished upstream today; a fallthrough to npmjs
+    # would silently false-pass the gate if a same-named prerelease ever
+    # exists there.
+    access: $all
+    publish: $all
+    unpublish: $all
+  "**":
+    access: $all
+    publish: $all
+    proxy: npmjs
+
+server:
+  keepAliveTimeout: 60
+
+listen: 0.0.0.0:4873
+
+log:
+  type: stdout
+  format: pretty
+  level: warn
