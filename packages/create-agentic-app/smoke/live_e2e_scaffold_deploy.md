@@ -121,6 +121,15 @@ assertion passes, rollback); it is now prereqs + one command + an eyeball check.
      confirm the exact dev domain with whoever owns the dev environment; the
      script's dev-env guard requires this host to carry a recognizable "dev"
      label and rejects anything staging/release/prod-shaped) → `GUUEY_E2E_HOST`
+
+   **BOTH vars must come from the same dev `amplify_outputs.json`.** The
+   guard's "must contain dev" check runs on `GUUEY_E2E_HOST`, but every
+   mutation (create/deploy/delete) targets `GUUEY_E2E_API_URL` — a dev HOST
+   paired with a non-dev API_URL passes the guard and tears down the wrong
+   environment. The script prints the resolved API endpoint plus a read-only
+   `apps list` fingerprint in a preflight banner right after login; eyeball
+   it before letting a run proceed unattended.
+
 2. **Mint a dev-env PAT.** Log in to the dev platform as a real user (browser
    `guuey login` against `GUUEY_E2E_HOST`, or the dev dashboard's "Generate
    Personal Access Token" if one exists) and copy the `ggui_pat_...` token →
