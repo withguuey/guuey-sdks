@@ -23,6 +23,11 @@ import {
   mcpDeploymentRow,
   mcpListCore,
   mcpStatusCore,
+  resolveMcpDeleteConfirmation,
+  parseYesNoAnswer,
+  pollMcpDeleteStatus,
+  mcpDeleteCore,
+  McpDeleteGrantsExistError,
   type McpDeploymentInfo,
   type McpServerListItem,
 } from './mcp.js';
@@ -790,6 +795,206 @@ describe('mcpStatusCore', () => {
         { serverId: 'srv-1', workspaceId: 'ws-1', json: false, auth, config },
         { api },
       ),
+    ).rejects.toThrow('MCP server srv-1 not found');
+  });
+});
+
+describe('resolveMcpDeleteConfirmation', () => {
+  it('--yes always skips the prompt, even non-TTY', () => {
+    expect(
+      resolveMcpDeleteConfirmation({ yes: true, stdinIsTTY: undefined, stdoutIsTTY: undefined }),
+    ).toBe('skip');
+    expect(
+      resolveMcpDeleteConfirmation({ yes: true, stdinIsTTY: true, stdoutIsTTY: true }),
+    ).toBe('skip');
+  });
+
+  it('interactive session (both stdin and stdout TTY) without --yes prompts', () => {
+    expect(
+      resolveMcpDeleteConfirmation({ yes: false, stdinIsTTY: true, stdoutIsTTY: true }),
+    ).toBe('prompt');
+  });
+
+  it('non-interactive session (either side not a TTY) without --yes refuses', () => {
+    expect(
+      resolveMcpDeleteConfirmation({ yes: false, stdinIsTTY: undefined, stdoutIsTTY: undefined }),
+    ).toBe('refuse');
+    expect(
+      resolveMcpDeleteConfirmation({ yes: false, stdinIsTTY: true, stdoutIsTTY: undefined }),
+    ).toBe('refuse');
+    expect(
+      resolveMcpDeleteConfirmation({ yes: false, stdinIsTTY: undefined, stdoutIsTTY: true }),
+    ).toBe('refuse');
+  });
+});
+
+describe('parseYesNoAnswer', () => {
+  it('accepts y/yes case-insensitively, with surrounding whitespace', () => {
+    expect(parseYesNoAnswer('y')).toBe(true);
+    expect(parseYesNoAnswer('Y')).toBe(true);
+    expect(parseYesNoAnswer('yes')).toBe(true);
+    expect(parseYesNoAnswer('YES')).toBe(true);
+    expect(parseYesNoAnswer('  y  ')).toBe(true);
+  });
+
+  it('rejects everything else, including empty input', () => {
+    expect(parseYesNoAnswer('')).toBe(false);
+    expect(parseYesNoAnswer('n')).toBe(false);
+    expect(parseYesNoAnswer('no')).toBe(false);
+    expect(parseYesNoAnswer('sure')).toBe(false);
+  });
+});
+
+describe('pollMcpDeleteStatus', () => {
+  const auth = { pat: 'pat-test' };
+  const config = { apiUrl: 'https://api.guuey.test' };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it(
+    'polls delete-status and treats a registry 404 as terminal success',
+    async () => {
+      const responses = [
+        () => new Response(JSON.stringify({ status: 'deleting' }), { status: 200 }),
+        () => new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'gone' } }), { status: 404 }),
+      ];
+      let call = 0;
+      const api: typeof apiRequest = vi.fn(async () => {
+        const make = responses[Math.min(call, responses.length - 1)]!;
+        call += 1;
+        return make();
+      });
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      const result = await pollMcpDeleteStatus(
+        { auth, config, serverId: 'srv-1', workspaceId: 'ws-1', timeoutMs: 60_000, intervalMs: 1 },
+        { api },
+      );
+
+      expect(result).toBe('deleted');
+      expect(logSpy.mock.calls.flat()).toContain('  deleting...');
+    },
+    10_000,
+  );
+
+  it('surfaces a non-404 poll failure (e.g. 409 not-deleting) via parseApiError', async () => {
+    const api: typeof apiRequest = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ error: { code: 'CONFLICT', message: "server 'srv-1' is not being deleted (status: live)" } }),
+        { status: 409 },
+      ),
+    );
+
+    await expect(
+      pollMcpDeleteStatus(
+        { auth, config, serverId: 'srv-1', workspaceId: 'ws-1', timeoutMs: 60_000, intervalMs: 1 },
+        { api },
+      ),
+    ).rejects.toThrow('is not being deleted');
+  });
+
+  it('times out with an actionable message when the row never reaches deleted', async () => {
+    const api: typeof apiRequest = vi.fn(async () =>
+      new Response(JSON.stringify({ status: 'deleting' }), { status: 200 }),
+    );
+
+    await expect(
+      pollMcpDeleteStatus(
+        { auth, config, serverId: 'srv-1', workspaceId: 'ws-1', timeoutMs: 5, intervalMs: 10 },
+        { api },
+      ),
+    ).rejects.toThrow(/timed out/i);
+  });
+});
+
+describe('mcpDeleteCore', () => {
+  const auth: AuthTokens = { pat: 'pat-test', expiresAt: '2099-01-01T00:00:00.000Z' };
+  const config: ResolvedConfig = { host: 'https://guuey.test', apiUrl: 'https://api.guuey.test' };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('no-force grants-exist 409 throws McpDeleteGrantsExistError carrying the app ids', async () => {
+    const api: typeof apiRequest = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          code: 'grants-exist',
+          apps: ['app-1', 'app-2'],
+          message: "MCP server 'srv-1' is attached to 2 app(s): app-1, app-2. Re-run with --force to delete anyway.",
+        }),
+        { status: 409 },
+      ),
+    );
+
+    const err = await mcpDeleteCore(
+      { serverId: 'srv-1', workspaceId: 'ws-1', force: false, auth, config },
+      { api },
+    ).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(McpDeleteGrantsExistError);
+    expect((err as McpDeleteGrantsExistError).apps).toEqual(['app-1', 'app-2']);
+    expect((err as Error).message).toContain('--force');
+  });
+
+  it('deployment-in-progress 409 throws a plain Error with the backend message', async () => {
+    const api: typeof apiRequest = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          code: 'deployment-in-progress',
+          message: "MCP server 'srv-1' has a deployment in progress. Wait for it to finish (or fail) before deleting.",
+        }),
+        { status: 409 },
+      ),
+    );
+
+    await expect(
+      mcpDeleteCore({ serverId: 'srv-1', workspaceId: 'ws-1', force: false, auth, config }, { api }),
+    ).rejects.toThrow('deployment in progress');
+  });
+
+  it('202 -> polls delete-status -> 404-as-success, sending force=1 in the DELETE query when --force', async () => {
+    const calls: { method: string; path: string }[] = [];
+    let deleteStatusCalls = 0;
+    const api: typeof apiRequest = vi.fn(async (_pat, _cfg, method, path) => {
+      calls.push({ method, path });
+      if (method === 'DELETE') {
+        return new Response(JSON.stringify({ status: 'deleting' }), { status: 202 });
+      }
+      // GET delete-status
+      deleteStatusCalls += 1;
+      if (deleteStatusCalls === 1) {
+        return new Response(JSON.stringify({ status: 'deleting' }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'gone' } }), {
+        status: 404,
+      });
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await mcpDeleteCore(
+      { serverId: 'srv-1', workspaceId: 'ws-1', force: true, auth, config, pollIntervalMs: 1 },
+      { api },
+    );
+
+    expect(calls[0]).toEqual({
+      method: 'DELETE',
+      path: '/mcp/servers/srv-1?workspaceId=ws-1&force=1',
+    });
+    expect(calls.slice(1).every((c) => c.path === '/mcp/servers/srv-1/delete-status?workspaceId=ws-1')).toBe(
+      true,
+    );
+  });
+
+  it('other DELETE failures (e.g. 404 unknown server) throw the parseApiError message', async () => {
+    const api: typeof apiRequest = vi.fn(async () =>
+      new Response(JSON.stringify({ error: 'MCP server srv-1 not found' }), { status: 404 }),
+    );
+
+    await expect(
+      mcpDeleteCore({ serverId: 'srv-1', workspaceId: 'ws-1', force: false, auth, config }, { api }),
     ).rejects.toThrow('MCP server srv-1 not found');
   });
 });

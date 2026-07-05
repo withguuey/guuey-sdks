@@ -36,6 +36,7 @@ import {
   mcpList,
   mcpStatus,
   mcpLogs,
+  mcpDelete,
   mcpSecretsSet,
   mcpSecretsList,
   mcpSecretsUnset,
@@ -179,6 +180,14 @@ Hosted MCP Servers:
     --server <id>                Target server (or positional / $GUUEY_MCP_SERVER)
     --workspace <id>             Owning workspace (or $GUUEY_WORKSPACE)
     --json                       Emit the selected deployment row as JSON
+  mcp delete [<server>]          Fail-closed deprovision; polls until deleted
+                                 Prompts "delete <serverId>? [y/N]" on a TTY
+                                 unless --yes; refuses outright on a
+                                 non-interactive session without --yes.
+    --force                      Delete even if apps are attached (revokes their access)
+    --yes                        Skip the interactive confirmation prompt
+    --server <id>                Target server (or positional / $GUUEY_MCP_SERVER)
+    --workspace <id>             Owning workspace (or $GUUEY_WORKSPACE)
   mcp secrets set NAME=VALUE     Set a hosted-MCP secret (KMS-encrypted)
     --server <id>                Target hosted MCP server (or $GUUEY_MCP_SERVER)
   mcp secrets list               List secret names (values never shown)
@@ -347,6 +356,9 @@ async function main(): Promise<void> {
         case 'logs':
           await mcpLogs(rest[0], flags);
           break;
+        case 'delete':
+          await mcpDelete(rest[0], flags);
+          break;
         case 'new':
           await mcpNew(rest[0], flags);
           break;
@@ -370,7 +382,7 @@ async function main(): Promise<void> {
           break;
         default:
           console.error(
-            `Unknown mcp command: ${action ?? '(none)'}. Use: list, status, deploy, logs, new, secrets`,
+            `Unknown mcp command: ${action ?? '(none)'}. Use: list, status, deploy, logs, delete, new, secrets`,
           );
           process.exit(1);
       }

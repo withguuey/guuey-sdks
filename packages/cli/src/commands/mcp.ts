@@ -30,6 +30,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { createInterface } from 'node:readline';
 import { requireAuth, type AuthTokens } from '../auth';
 import { resolveConfig, type ResolvedConfig } from '../config';
 import { apiRequest, cleanup, packSource, parseApiError } from '../deploy-shared';
@@ -1099,6 +1100,310 @@ export async function mcpLogs(
       config,
     });
   } catch (err) {
+    out.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+}
+
+// ─── mcp delete (fail-closed deprovision) ───────────────────────────────
+//
+// `guuey mcp delete <server> [--force] [--yes]` requests deprovision via the
+// T4 `DELETE /mcp/servers/:serverId` route, then polls
+// `/mcp/servers/:serverId/delete-status` to completion. Deletion is
+// fail-closed (spec M3): the backend refuses while `HostedMcpGrant` rows
+// exist unless `--force` is passed (which also revokes those grants), and
+// refuses while a deployment is in-flight regardless of `--force`. Both
+// cases come back as a TOP-LEVEL `{code, ...}` 409 body (NOT the standard
+// nested `{error:{code,message}}` envelope) so the CLI can special-case the
+// grants-exist app list; every other failure goes through the shared
+// `parseApiError`, which already falls back to a top-level `message` field.
+
+/**
+ * Thrown when the DELETE route refuses because `HostedMcpGrant` rows still
+ * exist and `--force` was not passed. Carries the attached app ids
+ * separately from `message` so the command can render them as a list
+ * instead of the single comma-joined sentence the backend message uses.
+ */
+export class McpDeleteGrantsExistError extends Error {
+  readonly apps: string[];
+
+  constructor(apps: string[], message: string) {
+    super(message);
+    this.name = 'McpDeleteGrantsExistError';
+    this.apps = apps;
+  }
+}
+
+/** The DELETE route's top-level `grants-exist` 409 body (spec §3-4 / T4). */
+interface McpDeleteGrantsExistBody {
+  code: 'grants-exist';
+  apps: string[];
+  message: string;
+}
+
+/** The DELETE route's top-level `deployment-in-progress` 409 body. */
+interface McpDeleteInProgressBody {
+  code: 'deployment-in-progress';
+  message: string;
+}
+
+function isGrantsExistBody(data: unknown): data is McpDeleteGrantsExistBody {
+  if (data === null || typeof data !== 'object') return false;
+  const record = data as Record<string, unknown>;
+  return (
+    record.code === 'grants-exist' &&
+    Array.isArray(record.apps) &&
+    record.apps.every((app) => typeof app === 'string') &&
+    typeof record.message === 'string'
+  );
+}
+
+function isDeploymentInProgressBody(data: unknown): data is McpDeleteInProgressBody {
+  if (data === null || typeof data !== 'object') return false;
+  const record = data as Record<string, unknown>;
+  return record.code === 'deployment-in-progress' && typeof record.message === 'string';
+}
+
+/**
+ * Destructive-op confirmation gate for `guuey mcp delete` (pure — no I/O).
+ *
+ *   - `--yes` always skips the prompt (`'skip'`).
+ *   - An interactive session (both stdin AND stdout are TTYs) without
+ *     `--yes` prompts (`'prompt'`) — the caller runs the actual readline
+ *     question.
+ *   - A non-interactive session (script/CI/pipe) without `--yes` refuses
+ *     outright (`'refuse'`) — there is no channel to confirm on, and
+ *     silently proceeding on a destructive op would be unsafe.
+ */
+export function resolveMcpDeleteConfirmation(opts: {
+  yes: boolean;
+  stdinIsTTY: boolean | undefined;
+  stdoutIsTTY: boolean | undefined;
+}): 'skip' | 'prompt' | 'refuse' {
+  if (opts.yes) return 'skip';
+  if (opts.stdinIsTTY === true && opts.stdoutIsTTY === true) return 'prompt';
+  return 'refuse';
+}
+
+/** Parse a readline answer as an affirmative confirmation (`y`/`yes`, case-insensitive). */
+export function parseYesNoAnswer(raw: string): boolean {
+  const normalized = raw.trim().toLowerCase();
+  return normalized === 'y' || normalized === 'yes';
+}
+
+/**
+ * Poll `GET /mcp/servers/:serverId/delete-status` until the deprovision
+ * completes. Per spec §3-4 / T4: the route reports `{status:'deleting'}`
+ * while the deploy-controller's deleting phase is still tearing down
+ * resources; once its FINAL step (the `McpServer` row delete) lands, the
+ * route 404s — the CLI treats that 404 as terminal success, never a
+ * fabricated `'deleted'` status. A 409 (the row exists but isn't in
+ * `'deleting'` status) or any other failure surfaces via `parseApiError`.
+ *
+ * `deps.api` defaults to the real `apiRequest` and exists purely for test
+ * injection (mirrors {@link mcpLogsCore}). `intervalMs` defaults to 3
+ * seconds in production; tests override it (and `timeoutMs`) to stay fast.
+ */
+export async function pollMcpDeleteStatus(
+  opts: {
+    auth: { pat: string };
+    config: { apiUrl?: string };
+    serverId: string;
+    workspaceId: string;
+    timeoutMs: number;
+    intervalMs?: number;
+  },
+  deps?: { api?: typeof apiRequest },
+): Promise<'deleted'> {
+  const api = deps?.api ?? apiRequest;
+  const { auth, config, serverId, workspaceId, timeoutMs } = opts;
+  const intervalMs = opts.intervalMs ?? 3000;
+  const startTime = Date.now();
+  let lastStatus = '';
+  let deleted = false;
+
+  while (!deleted) {
+    if (Date.now() - startTime > timeoutMs) {
+      throw new Error(
+        `Delete timed out after ${Math.round(timeoutMs / 60000)} minute(s). ` +
+          `The deprovision may still complete in the background — check ` +
+          `"guuey mcp status ${serverId}" later.`,
+      );
+    }
+
+    await new Promise((r) => setTimeout(r, intervalMs));
+
+    const res = await api(
+      auth.pat,
+      config,
+      'GET',
+      `/mcp/servers/${encodeURIComponent(serverId)}/delete-status?workspaceId=${encodeURIComponent(workspaceId)}`,
+    );
+
+    // Registry 404 = deleted (success) — the row's final teardown step.
+    if (res.status === 404) {
+      deleted = true;
+      continue;
+    }
+
+    if (!res.ok) {
+      const data: unknown = await res.json().catch(() => ({}));
+      throw new Error(parseApiError(data, `HTTP ${res.status}`));
+    }
+
+    const data = (await res.json()) as { status: string };
+    if (data.status !== lastStatus) {
+      console.log(`  ${data.status}...`);
+      lastStatus = data.status;
+    }
+  }
+
+  return 'deleted';
+}
+
+/**
+ * The reusable core of `guuey mcp delete`: request deprovision (T4's
+ * `DELETE /mcp/servers/:serverId`), then poll to completion. Throws
+ * {@link McpDeleteGrantsExistError} for the no-force grants-exist 409,
+ * a plain `Error` (backend's message verbatim) for the deployment-in-progress
+ * 409, and a `parseApiError`-derived `Error` for every other failure.
+ *
+ * `deps.api` defaults to the real `apiRequest` and exists purely for test
+ * injection (mirrors {@link deployMcpFromSource}).
+ */
+export async function mcpDeleteCore(
+  opts: {
+    serverId: string;
+    workspaceId: string;
+    force: boolean;
+    auth: AuthTokens;
+    config: ResolvedConfig;
+    /** Poll timeout in ms; defaults to 5 minutes. Tests override to stay fast. */
+    pollTimeoutMs?: number;
+    /** Poll interval in ms; defaults to 3 seconds. Tests override to stay fast. */
+    pollIntervalMs?: number;
+  },
+  deps?: { api?: typeof apiRequest },
+): Promise<void> {
+  const api = deps?.api ?? apiRequest;
+  const { serverId, workspaceId, force, auth, config } = opts;
+
+  const query = `workspaceId=${encodeURIComponent(workspaceId)}${force ? '&force=1' : ''}`;
+  const res = await api(
+    auth.pat,
+    config,
+    'DELETE',
+    `/mcp/servers/${encodeURIComponent(serverId)}?${query}`,
+  );
+
+  if (res.status !== 202) {
+    const data: unknown = await res.json().catch(() => ({}));
+    if (isGrantsExistBody(data)) {
+      throw new McpDeleteGrantsExistError(data.apps, data.message);
+    }
+    if (isDeploymentInProgressBody(data)) {
+      throw new Error(data.message);
+    }
+    throw new Error(parseApiError(data, `HTTP ${res.status}`));
+  }
+
+  console.log('');
+  console.log(`  Deleting ${serverId}...`);
+
+  await pollMcpDeleteStatus(
+    {
+      auth,
+      config,
+      serverId,
+      workspaceId,
+      timeoutMs: opts.pollTimeoutMs ?? 5 * 60 * 1000,
+      intervalMs: opts.pollIntervalMs,
+    },
+    { api },
+  );
+
+  console.log('');
+  out.success(`Deleted ${serverId}`);
+  console.log('');
+}
+
+/**
+ * `guuey mcp delete <server> [--force] [--yes] [--workspace <id>]`
+ *
+ * Fail-closed deprovision of a hosted MCP server. Destructive — gated by
+ * {@link resolveMcpDeleteConfirmation}: an interactive TTY session prompts
+ * "delete <serverId>? [y/N]" unless `--yes` is passed; a non-interactive
+ * session without `--yes` refuses outright. `--force` overrides the
+ * backend's grants-exist refusal (and revokes those grants). Server
+ * resolution: `--server` | positional | `$GUUEY_MCP_SERVER`; workspace:
+ * `--workspace` | `$GUUEY_WORKSPACE`.
+ */
+export async function mcpDelete(
+  serverArg: string | undefined,
+  flags?: Record<string, string | true>,
+): Promise<void> {
+  const serverId = resolveServerRef(serverArg, flags, process.env);
+  if (!serverId) {
+    out.error(
+      'No MCP server specified. Pass <server>, --server <id>, or set the GUUEY_MCP_SERVER environment variable.',
+    );
+    process.exit(1);
+  }
+
+  const workspaceId = resolveWorkspaceId(flags, process.env);
+  if (!workspaceId) {
+    out.error(
+      'No workspace specified. Pass --workspace <id> or set the GUUEY_WORKSPACE environment variable.',
+    );
+    process.exit(1);
+  }
+
+  const force = flags?.force === true;
+  const yes = flags?.yes === true;
+
+  const confirmation = resolveMcpDeleteConfirmation({
+    yes,
+    stdinIsTTY: process.stdin.isTTY,
+    stdoutIsTTY: process.stdout.isTTY,
+  });
+
+  if (confirmation === 'refuse') {
+    out.error(
+      `Refusing to delete '${serverId}' without confirmation in a non-interactive session. Pass --yes to confirm.`,
+    );
+    process.exit(1);
+  }
+
+  if (confirmation === 'prompt') {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    let answer: string;
+    try {
+      answer = await new Promise<string>((res) =>
+        rl.question(`  Delete '${serverId}'? [y/N] `, res),
+      );
+    } finally {
+      rl.close();
+    }
+    if (!parseYesNoAnswer(answer)) {
+      console.log('  Aborted.');
+      return;
+    }
+  }
+
+  const auth = requireAuth();
+  const config = resolveConfig();
+
+  try {
+    await mcpDeleteCore({ serverId, workspaceId, force, auth, config });
+  } catch (err) {
+    if (err instanceof McpDeleteGrantsExistError) {
+      out.error(err.message);
+      console.log('');
+      console.log('  Attached app(s):');
+      for (const appId of err.apps) console.log(`    - ${appId}`);
+      console.log('');
+      process.exit(1);
+    }
     out.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
   }
