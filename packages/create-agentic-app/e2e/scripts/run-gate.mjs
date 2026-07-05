@@ -24,23 +24,21 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, readFileSync, accessSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const REPO_ROOT = "/build";
 const REGISTRY = process.env.VERDACCIO_URL ?? "http://verdaccio:4873";
 
-// Same cohort + order as the host verdaccio-smoke.mjs / scaffold-smoke.mjs:
-// every internal package a scaffolded app depends on, directly or
-// transitively (@guuey/cli depends on the silverprotocol facet packages +
-// create-agentic-app itself).
-const INTERNAL = [
-  "oss/packages/worker",
-  "oss/packages/config",
-  "oss/packages/create-agentic-app",
-  "oss/packages/cli",
-  "silverprotocol/sdks/typescript/packages/core",
-  "silverprotocol/sdks/typescript/packages/claude-agent-sdk",
-  "silverprotocol/sdks/typescript/packages/openai-agents",
-];
+// The publish cohort is single-sourced in the scaffolder package's
+// pack-cohort module (shared with scaffold-smoke.mjs, verdaccio-smoke.mjs
+// and dev-env-e2e.mjs): every internal package a scaffolded app depends on,
+// directly or transitively. This script is bind-mounted at /gate/scripts —
+// OUTSIDE the COPY'd repo tree — so a relative import can't reach the
+// module; dynamic-import it from the baked repo copy instead.
+const { INTERNAL_COHORT: INTERNAL } = await import(
+  pathToFileURL(join(REPO_ROOT, "oss/packages/create-agentic-app/scripts/lib/pack-cohort.mjs"))
+    .href
+);
 const FRAMEWORKS = ["claude-agent-sdk", "openai-agents-sdk"];
 
 const work = mkdtempSync(join(tmpdir(), "caa-gate-"));

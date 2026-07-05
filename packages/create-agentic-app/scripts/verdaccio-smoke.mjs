@@ -27,6 +27,7 @@ import { spawn, execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, accessSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { INTERNAL_COHORT } from "./lib/pack-cohort.mjs";
 
 if (process.env.RUN_VERDACCIO_SMOKE !== "1") {
   console.log(
@@ -39,18 +40,12 @@ const repoRoot = resolve(import.meta.dirname, "../../../..");
 const REGISTRY = "http://localhost:4874";
 const PORT = 4874;
 
-// Same cohort + order as scaffold-smoke.mjs's INTERNAL: every internal
-// package a scaffolded app depends on, directly or transitively (@guuey/cli
-// depends on the silverprotocol facet packages + create-agentic-app itself).
-const INTERNAL = [
-  "oss/packages/worker",
-  "oss/packages/config",
-  "oss/packages/create-agentic-app",
-  "oss/packages/cli",
-  "silverprotocol/sdks/typescript/packages/core",
-  "silverprotocol/sdks/typescript/packages/claude-agent-sdk",
-  "silverprotocol/sdks/typescript/packages/openai-agents",
-];
+// Single-sourced publish cohort (`./lib/pack-cohort.mjs`, shared with
+// scaffold-smoke.mjs, the clean-room run-gate.mjs and dev-env-e2e.mjs):
+// every internal package a scaffolded app depends on, directly or
+// transitively (@guuey/cli depends on the silverprotocol facet packages +
+// create-agentic-app itself).
+const INTERNAL = INTERNAL_COHORT;
 const FRAMEWORKS = ["claude-agent-sdk", "openai-agents-sdk"];
 
 const work = mkdtempSync(join(tmpdir(), "caa-verdaccio-"));
