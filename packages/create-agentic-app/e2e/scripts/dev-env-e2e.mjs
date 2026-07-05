@@ -237,8 +237,14 @@ function step(n, total, msg) {
   console.log(`\n[dev-env-e2e] [${n}/${total}] ${msg}`);
 }
 
+/** Loose tool-signal sniff over a message frame's data payload: AgJSON tool
+ * blocks (`"type":"tool_use"` / `"tool_call"`) or the template's `todo_*`
+ * tool names. Log-only today — see the known-blocker note at step 12. */
+const TOOL_SIGNAL = /"type"\s*:\s*"tool|tool_use|tool_call|todo_/;
+
 /** POST one turn to a deployed `/agent/invoke` and assert SSE framing:
- * `event: session` → ≥1 `event: message` → `event: done`. */
+ * `event: session` → ≥1 `event: message` → `event: done`. Also sniffs
+ * (without asserting) whether any message frame carried a tool signal. */
 async function assertAgentInvokeStreams(url, timeoutMs = 90_000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -254,6 +260,7 @@ async function assertAgentInvokeStreams(url, timeoutMs = 90_000) {
     }
 
     const events = [];
+    let toolSignal = false;
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = "";
@@ -269,14 +276,15 @@ async function assertAgentInvokeStreams(url, timeoutMs = 90_000) {
         if (m) {
           const name = m[1].trim();
           events.push(name);
+          if (name === "message" && TOOL_SIGNAL.test(frame)) toolSignal = true;
           if (name === "done") {
             await reader.cancel().catch(() => {});
-            return events;
+            return { events, toolSignal };
           }
         }
       }
     }
-    return events;
+    return { events, toolSignal };
   } finally {
     clearTimeout(timer);
   }
@@ -469,7 +477,17 @@ async function main() {
     }
 
     step(12, TOTAL, `POST ${deployedUrl} — asserting session → message(s) → done`);
-    const events = await assertAgentInvokeStreams(deployedUrl);
+    // KNOWN BLOCKER — do NOT assert tool calls on this turn yet: the hosted-
+    // MCP path serves `runtimeUrl` WITHOUT the /mcp suffix (buildMcpRuntimeUrl,
+    // mcp-store.ts emits https://<domain>/<serverId>/ bare) while every
+    // shipped MCP template only answers /mcp, and the gateway fetches the URL
+    // literally — so the agent's todo_* tool calls 404 against the hosted
+    // server until a platform slice fixes buildMcpRuntimeUrl + gateway + aud
+    // together. The SSE framing assertion below still holds (the LLM answers
+    // without the tool); the tool signal is LOGGED, not asserted — tighten to
+    // an assert once that slice lands. Ledger: .superpowers/sdd/progress.md
+    // "PLATFORM FOLLOW-UPS" item (2).
+    const { events, toolSignal } = await assertAgentInvokeStreams(deployedUrl);
     if (events[0] !== "session") {
       throw new Error(`expected first SSE event 'session', got '${events[0]}' (all: ${events.join(",")})`);
     }
@@ -480,6 +498,12 @@ async function main() {
       throw new Error(`expected the stream to end with 'done' (all: ${events.join(",")})`);
     }
     console.log(`[dev-env-e2e]   SSE events: ${events.join(" → ")}`);
+    console.log(
+      `[dev-env-e2e]   tool-signal: ${toolSignal ? "present" : "absent"} ` +
+        "(known-blocker: hosted-MCP runtimeUrl lacks the /mcp suffix, templates 404 " +
+        "non-/mcp paths — log-only until buildMcpRuntimeUrl+gateway+aud are fixed together; " +
+        "see .superpowers/sdd/progress.md PLATFORM FOLLOW-UPS (2))",
+    );
 
     step(13, TOTAL, "ALL ASSERTIONS PASSED");
     console.log(`[dev-env-e2e] appId=${appId} serverId=${serverId} url=${deployedUrl}`);

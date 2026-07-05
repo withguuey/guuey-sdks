@@ -184,6 +184,22 @@ exit 1 unless `GUUEY_E2E_I_KNOW_WHAT_IM_DOING=1` is also set.
 12. POSTs `{"input":"create a todo: buy milk"}` to the deployed
     `/agent/invoke` and asserts the SSE stream is `event: session` → ≥1
     `event: message` → `event: done`.
+
+    > **Known blocker — the todo tool call itself can't work yet.** The
+    > hosted-MCP path serves `runtimeUrl` WITHOUT the `/mcp` suffix
+    > (`buildMcpRuntimeUrl` in mcp-store.ts emits
+    > `https://<domain>/<serverId>/` bare), the gateway fetches that URL
+    > literally, and every shipped MCP template only answers `/mcp` — so the
+    > agent's `todo_*` tool calls 404 against the hosted server until a
+    > platform slice fixes `buildMcpRuntimeUrl` + gateway + aud together.
+    > **What you'll see:** the turn still streams `session` →
+    > `message`(s) → `done` (the LLM answers without the tool), and the
+    > script prints a `tool-signal: present|absent (known-blocker: …)` line —
+    > logged, not asserted, so the run passes; expect `absent` until the fix
+    > lands, after which the script's log-only check should be tightened to
+    > an assertion. Ledger: `.superpowers/sdd/progress.md`, "PLATFORM
+    > FOLLOW-UPS" item (2).
+
 13. **Teardown, always, in a `finally`:** `guuey undeploy --app-id <id> --force`
     → `guuey delete <id> --force` → `guuey mcp delete <serverId> --force
 --yes`. Anything that fails to clean up is printed as a "RESIDUE" list at
