@@ -17,9 +17,11 @@
 // → build the internal cohort (turbo) → publish the cohort to Verdaccio →
 // per framework: npx-scaffold from the registry → project .npmrc pinning
 // the registry → install → `-r typecheck` → `-r build` → root
-// typecheck+build → assert `guuey.worker.js`. Any failing step throws,
-// which — uncaught — exits the process non-zero, so any failure blocks the
-// gate (`--exit-code-from gate-runner`).
+// typecheck+build → assert `guuey.worker.js` → local e2e turn (stage 2,
+// ./local-turn.mjs: keyless fixture turn always; a real-LLM turn on the
+// claude app when ANTHROPIC_API_KEY came through compose). Any failing step
+// throws, which — uncaught — exits the process non-zero, so any failure
+// blocks the gate (`--exit-code-from gate-runner`).
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, readFileSync, accessSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -149,6 +151,19 @@ store-dir=${join(work, `pnpm-store-${framework}`)}
   sh("corepack", ["pnpm", "build"], { cwd: appDir }); // root build → guuey.worker.js
   accessSync(join(appDir, "guuey.worker.js"));
   console.log(`[run-gate]   ✓ ${framework} scaffold (real Verdaccio npx resolution) builds clean`);
+
+  // Stage-2 local e2e turn (sibling script — also bind-mounted). Keyless
+  // fixture turn always; the real-LLM turn only on the claude app and only
+  // when a key actually came through compose's ANTHROPIC_API_KEY
+  // pass-through (empty by default — keyless is the CI gate).
+  const localTurn = join(import.meta.dirname, "local-turn.mjs");
+  const turnEnv = { ...process.env, GUUEY_REPO_ROOT: REPO_ROOT };
+  console.log(`[run-gate]   local e2e turn (keyless fixture) ${framework}`);
+  sh("node", [localTurn, appDir], { env: turnEnv });
+  if (framework === "claude-agent-sdk" && process.env.ANTHROPIC_API_KEY) {
+    console.log(`[run-gate]   local e2e turn (--real-llm) ${framework}`);
+    sh("node", [localTurn, appDir, "--real-llm"], { env: turnEnv });
+  }
 }
 
 console.log("[run-gate] all frameworks green — CLEAN-ROOM GATE PASSED");
