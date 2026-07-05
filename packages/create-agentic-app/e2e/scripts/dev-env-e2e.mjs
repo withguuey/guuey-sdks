@@ -373,6 +373,11 @@ async function main() {
     const created = extractFirstJson(createRes.stdout);
     appId = created.appId;
     if (!appId) throw new Error(`apps create did not return an appId: ${createRes.stdout}`);
+    // Add the apiKey to the redaction set so it never prints to logs
+    if (created.apiKey && typeof created.apiKey === "string") {
+      SECRETS.push(created.apiKey);
+      SECRETS.sort((a, b) => b.length - a.length);
+    }
     console.log(`[dev-env-e2e]   appId: ${appId}`);
 
     step(8, TOTAL, "guuey deploy (MCP leg + ggui leg + agent leg)");
