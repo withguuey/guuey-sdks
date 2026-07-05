@@ -102,6 +102,19 @@ function globCoversMcps(glob: unknown): boolean {
 }
 
 /**
+ * The one field of `pnpm-workspace.yaml` this module reads/writes.
+ * `packages` is the only field we know the shape of (and the only one we
+ * ever touch); every other pnpm-workspace.yaml key (`catalogs`,
+ * `overrides`, `onlyBuiltDependencies`, …) is passed through untouched and
+ * genuinely unknown to us, so it keeps an index signature rather than a
+ * `Record<string, unknown>` erasing the one field we DO care about.
+ */
+interface PnpmWorkspaceDoc {
+  packages: string[];
+  [key: string]: unknown;
+}
+
+/**
  * Ensure `<root>/pnpm-workspace.yaml` globs `mcps/*`. Creates the file
  * fresh (minimal `packages: [mcps/*]`) when absent; otherwise adds the
  * glob to the existing `packages` list when missing. Returns whether the
@@ -117,7 +130,8 @@ export function ensureMcpsWorkspaceGlob(root: string): boolean {
   }
 
   const raw = readFileSync(path, 'utf-8');
-  const doc = (parseYaml(raw) ?? {}) as { packages?: unknown };
+  const parsed: PnpmWorkspaceDoc | undefined = parseYaml(raw) ?? undefined;
+  const doc: PnpmWorkspaceDoc = parsed ?? { packages: [] };
   const packages = Array.isArray(doc.packages) ? doc.packages : [];
   if (packages.some(globCoversMcps)) return false;
 
@@ -125,7 +139,7 @@ export function ensureMcpsWorkspaceGlob(root: string): boolean {
   return true;
 }
 
-function writeYamlFile(path: string, doc: Record<string, unknown>): void {
+function writeYamlFile(path: string, doc: PnpmWorkspaceDoc): void {
   writeFileSync(path, stringifyYaml(doc), 'utf-8');
 }
 

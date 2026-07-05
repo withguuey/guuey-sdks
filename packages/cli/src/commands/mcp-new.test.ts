@@ -13,7 +13,7 @@ import {
   ensureMcpsWorkspaceGlob,
   MIN_MCP_DEV_PORT,
 } from './mcp-new.js';
-import type { GuueyJsonV1, GuueyJsonV1Input } from '@guuey/config';
+import { parseGuueyJson, type GuueyJsonV1, type GuueyJsonV1Input } from '@guuey/config';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesTemplatesDir = join(__dirname, '__fixtures__', 'mcp-base-templates');
@@ -60,23 +60,34 @@ describe('nextFreeDevPort', () => {
   });
 });
 
+/** A minimal-but-complete `GuueyJsonV1`, `mcpServers` overridable per test — runs the authored
+ * input through the real `parseGuueyJson` so schema defaults land exactly like production. */
+function makeDoc(mcpServers?: GuueyJsonV1Input['agent']['mcpServers']): GuueyJsonV1 {
+  const input: GuueyJsonV1Input = {
+    schema: '1',
+    agent: {
+      framework: 'claude-agent-sdk',
+      model: 'claude-sonnet-5',
+      systemPrompt: 'You are a helpful agent.',
+      ...(mcpServers ? { mcpServers } : {}),
+    },
+  };
+  return parseGuueyJson(input);
+}
+
 describe('collectUsedDevPorts', () => {
   it('collects devPort from hosted and external entries, skipping colocated/proxied', () => {
-    const doc = {
-      agent: {
-        mcpServers: {
-          todo: { kind: 'hosted', source: './mcps/todo', devPort: 6782 },
-          weather: { kind: 'external', url: 'https://x.example', devPort: 6783 },
-          local: { kind: 'colocated', command: 'node' },
-          third: { kind: 'proxied', connection: 'conn-1' },
-        },
-      },
-    } as unknown as GuueyJsonV1;
+    const doc = makeDoc({
+      todo: { kind: 'hosted', source: './mcps/todo', devPort: 6782 },
+      weather: { kind: 'external', url: 'https://x.example', devPort: 6783 },
+      local: { kind: 'colocated', command: 'node' },
+      third: { kind: 'proxied', connection: 'conn-1' },
+    });
     expect(collectUsedDevPorts(doc)).toEqual([6782, 6783]);
   });
 
   it('returns an empty array when mcpServers is absent', () => {
-    const doc = { agent: {} } as unknown as GuueyJsonV1;
+    const doc = makeDoc();
     expect(collectUsedDevPorts(doc)).toEqual([]);
   });
 });
