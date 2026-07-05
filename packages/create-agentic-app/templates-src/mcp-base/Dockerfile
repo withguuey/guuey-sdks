@@ -1,4 +1,4 @@
-# todo-mcp — guuey hosted MCP server image.
+# NAME_PLACEHOLDER-mcp — guuey hosted MCP server image.
 #
 # Self-sufficient multi-stage build: `guuey mcp deploy` packs this directory
 # into a tarball and hands it straight to the builder with no external
@@ -10,13 +10,13 @@
 #
 # Build + run locally:
 #
-#   docker build -t todo-mcp .
-#   docker run -p 8080:8080 todo-mcp
+#   docker build -t NAME_PLACEHOLDER-mcp .
+#   docker run -p 8080:8080 NAME_PLACEHOLDER-mcp
 #   curl http://localhost:8080/health
 #
 # Deploy to guuey:
 #
-#   cd mcps/todo && guuey mcp deploy
+#   cd mcps/NAME_PLACEHOLDER && guuey mcp deploy
 
 FROM node:22-slim AS build
 WORKDIR /app

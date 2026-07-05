@@ -20,6 +20,17 @@
  * `build-templates.mjs` did stamp it, `versions.json` is out of date with
  * what the templates actually need).
  *
+ * `NAME_PLACEHOLDER` is checked separately from the banned-substrings list
+ * above because, unlike `MODEL_PLACEHOLDER`, it is INTENTIONALLY unresolved
+ * in one specific spot: `dist/templates/mcp-base/**` (the shared starter
+ * `guuey mcp new` scaffolds from — the name token is resolved at scaffold
+ * time, not at template-build time). The guard therefore requires the
+ * token stays confined to that directory: a violation if it leaks into any
+ * per-framework tree (e.g. `dist/templates/<fw>/mcps/todo/`, where
+ * `build-templates.mjs` must have already resolved it to `todo`), and a
+ * violation if `dist/templates/mcp-base/` doesn't contain it at all (a sign
+ * the emission step silently resolved or dropped it).
+ *
  * Violations print as `<file>:<line>: <message>`; the process exits 1 if
  * any were found, 0 otherwise.
  */
@@ -66,8 +77,29 @@ function isProbablyText(buf) {
   return !window.includes(0);
 }
 
+const MCP_BASE_PREFIX = join('dist', 'templates', 'mcp-base') + '/';
+
 /** @type {{ file: string, line: number, message: string }[]} */
 const violations = [];
+let foundNamePlaceholderInMcpBase = false;
+
+function checkNamePlaceholder(relPath, content) {
+  if (!content.includes('NAME_PLACEHOLDER')) return;
+  if (relPath.startsWith(MCP_BASE_PREFIX)) {
+    foundNamePlaceholderInMcpBase = true;
+    return;
+  }
+  const lines = content.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes('NAME_PLACEHOLDER')) {
+      violations.push({
+        file: relPath,
+        line: i + 1,
+        message: 'unresolved NAME_PLACEHOLDER outside dist/templates/mcp-base (should have been stamped to the mcp name)',
+      });
+    }
+  }
+}
 
 function checkBannedSubstrings(file, relPath, content) {
   const lines = content.split('\n');
@@ -114,6 +146,15 @@ for (const file of walkFiles(distTemplatesDir)) {
   const content = buf.toString('utf8');
   checkBannedSubstrings(file, relPath, content);
   checkPackageJsonPins(file, relPath, content);
+  checkNamePlaceholder(relPath, content);
+}
+
+if (!foundNamePlaceholderInMcpBase) {
+  violations.push({
+    file: join('dist', 'templates', 'mcp-base'),
+    line: 1,
+    message: 'expected NAME_PLACEHOLDER somewhere under dist/templates/mcp-base but found none — check build-templates.mjs mcp-base emission',
+  });
 }
 
 if (violations.length > 0) {
