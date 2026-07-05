@@ -267,8 +267,10 @@ Environment Variables:
   GUUEY_HOST                     Override platform host URL
   GUUEY_API_KEY                  Override configured API key
   GGUI_APP_ID                   Override configured app ID
-  GUUEY_WORKSPACE                Default owning workspace for 'mcp deploy' / 'mcp logs'
-  GUUEY_MCP_SERVER               Default hosted MCP server for 'mcp secrets' / 'mcp logs'
+  GUUEY_WORKSPACE                Default owning workspace for 'mcp deploy' / 'mcp list' /
+                                 'mcp status' / 'mcp logs' / 'mcp delete'
+  GUUEY_MCP_SERVER               Default hosted MCP server for 'mcp status' / 'mcp logs' /
+                                 'mcp delete' / 'mcp secrets'
 
 Project Config (guuey.json):
   Place a guuey.json in your project root. Non-secret settings

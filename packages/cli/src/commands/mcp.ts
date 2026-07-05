@@ -1012,7 +1012,7 @@ export async function mcpStatusCore(
   console.log('');
   out.table(deployments.map(mcpDeploymentRow), MCP_STATUS_DEPLOYMENTS_COLUMNS);
   console.log('');
-  console.log(`  Grants: ${grantCount} app(s)`);
+  console.log(`  Grants: ${grantCount} ${grantCount === 1 ? 'app' : 'apps'}`);
   console.log('');
 }
 

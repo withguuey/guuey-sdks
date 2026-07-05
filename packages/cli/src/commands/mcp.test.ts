@@ -990,7 +990,10 @@ describe('mcpDeleteCore', () => {
 
   it('other DELETE failures (e.g. 404 unknown server) throw the parseApiError message', async () => {
     const api: typeof apiRequest = vi.fn(async () =>
-      new Response(JSON.stringify({ error: 'MCP server srv-1 not found' }), { status: 404 }),
+      new Response(
+        JSON.stringify({ error: { code: 'NOT_FOUND', message: 'MCP server srv-1 not found' } }),
+        { status: 404 },
+      ),
     );
 
     await expect(
