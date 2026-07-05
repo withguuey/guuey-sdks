@@ -159,7 +159,14 @@ function deriveExpectedGguiDevSubstring(host) {
 let SECRETS = [];
 
 /** Run a command, streaming its (redacted) output live while also
- * capturing it. Error messages embed argv, so they are redacted too. */
+ * capturing it. Error messages embed argv, so they are redacted too.
+ *
+ * `opts.bufferOutput: true` suppresses the live echo and ONLY accumulates —
+ * for calls whose output CONTAINS a secret not yet in SECRETS (e.g. `apps
+ * create --json` prints the app's apiKey). Live streaming would leak the
+ * secret DURING the call, before any post-hoc SECRETS.push could apply; the
+ * caller extracts + registers the secret, then echoes the buffered output
+ * through `redactSecrets` itself. */
 function run(cmd, args, opts = {}) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"], ...opts });
@@ -167,11 +174,11 @@ function run(cmd, args, opts = {}) {
     let stderr = "";
     child.stdout.on("data", (d) => {
       stdout += d;
-      process.stdout.write(redactSecrets(String(d), SECRETS));
+      if (!opts.bufferOutput) process.stdout.write(redactSecrets(String(d), SECRETS));
     });
     child.stderr.on("data", (d) => {
       stderr += d;
-      process.stderr.write(redactSecrets(String(d), SECRETS));
+      if (!opts.bufferOutput) process.stderr.write(redactSecrets(String(d), SECRETS));
     });
     child.on("error", (err) =>
       reject(new Error(redactSecrets(err instanceof Error ? err.message : String(err), SECRETS))),
@@ -369,14 +376,24 @@ async function main() {
     }
 
     step(7, TOTAL, `guuey apps create --name ${appName}`);
-    const createRes = await guuey(["apps", "create", "--name", appName, "--json"]);
+    // bufferOutput: the --json response carries the app's apiKey, which is
+    // not in SECRETS yet — live streaming would print it before we could
+    // register it. Buffer → extract → register → echo redacted, in order.
+    const createRes = await guuey(["apps", "create", "--name", appName, "--json"], {
+      bufferOutput: true,
+    });
     const created = extractFirstJson(createRes.stdout);
-    appId = created.appId;
-    if (!appId) throw new Error(`apps create did not return an appId: ${createRes.stdout}`);
-    // Add the apiKey to the redaction set so it never prints to logs
-    if (created.apiKey && typeof created.apiKey === "string") {
+    if (typeof created.apiKey === "string" && created.apiKey.length > 0) {
       SECRETS.push(created.apiKey);
       SECRETS.sort((a, b) => b.length - a.length);
+    }
+    process.stdout.write(redactSecrets(createRes.stdout, SECRETS));
+    process.stderr.write(redactSecrets(createRes.stderr, SECRETS));
+    appId = created.appId;
+    if (!appId) {
+      throw new Error(
+        `apps create did not return an appId: ${redactSecrets(createRes.stdout, SECRETS)}`,
+      );
     }
     console.log(`[dev-env-e2e]   appId: ${appId}`);
 
