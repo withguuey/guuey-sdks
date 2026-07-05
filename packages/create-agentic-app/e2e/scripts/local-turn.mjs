@@ -10,9 +10,10 @@
 // KEYLESS mode (default — the CI gate): swaps the app's worker for the
 // CLI's keyless fixture worker (`oss/packages/cli/src/dev/fixtures/
 // echo-worker.mjs` — echoes the invoke as one native event, zero network
-// calls) via the platform's own `guuey.json#worker` raw-string escape hatch
-// (see `oss/packages/cli/src/commands/dev.ts` — a template-authored
-// override outside the zod schema), plus `protocol: "bypass"` so the native
+// calls) via the platform's own `guuey.json#worker` override — a
+// first-class field of the v1 zod schema since e5797ce64 (it was an
+// out-of-schema escape hatch before that, which made it unusable; see
+// `oss/packages/config`), plus `protocol: "bypass"` so the native
 // echo event is relayed verbatim as a `message` frame (the CLI's own
 // dev-server test contract for this fixture; the default `silver` protocol
 // would push the fixture's non-SDK event into a real framework normalizer).
@@ -212,8 +213,18 @@ async function assertPortFree(port, what, overrideVar) {
       signal: AbortSignal.timeout(1_000),
     });
     await res.body?.cancel?.();
-  } catch {
-    return; // connection refused/timeout — free
+  } catch (err) {
+    // A TIMEOUT is NOT "free": something accepted the connection and sat on
+    // it (a slow squatter) — treat it as occupied like any responding server.
+    // Only a connection-level failure (ECONNREFUSED under fetch's TypeError)
+    // means nothing is listening.
+    if (err instanceof Error && err.name === "TimeoutError") {
+      throw new Error(
+        `port ${port} (${what}) accepted a connection but did not respond within 1s — ` +
+          `treating as occupied (slow squatter); stop the other server or set ${overrideVar}`,
+      );
+    }
+    return; // connection refused — free
   }
   throw new Error(
     `port ${port} (${what}) is already in use — stop the other server or set ${overrideVar}`,

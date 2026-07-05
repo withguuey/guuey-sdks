@@ -139,14 +139,14 @@ function assertDevEnv(apiUrl, host) {
   }
 }
 
-// Derive the expected ggui-dev federation substring from the resolved dev
-// host at runtime (never hardcoded) — per the memory note on issuer naming
-// (`<env>.id.sandbox.guuey.com`), the env label is the host's first
-// subdomain component.
-function deriveExpectedGguiDevSubstring(host) {
-  const label = hostnameOf(host).split(".")[0];
-  return `${label}.sandbox.guuey.com`;
-}
+// Dev-marker requirement for any ggui-family host the deploy output ever
+// mentions. The ggui leg is env-dormant today, so the exact federated-host
+// shape it will print is not fixed yet — a guuey-family expectation here
+// (the issuers are named `<env>.id.sandbox.guuey.com`) could never match a
+// ggui.ai-family mention, so this stays a loose "must look dev, must not be
+// prod" marker. When the leg activates, tighten this to the exact expected
+// host derived from the env's real issuer format.
+const GGUI_DEV_MARKER = /\bdev\b|\.dev\./i;
 
 // ─── Process helpers ───────────────────────────────────────────────────
 
@@ -301,7 +301,6 @@ async function main() {
   const workspace = process.env.GUUEY_E2E_WORKSPACE;
 
   assertDevEnv(apiUrl, host);
-  const expectedGguiSubstring = deriveExpectedGguiDevSubstring(host);
 
   // Register every secret in play BEFORE any child process runs, so run()'s
   // echoed output and error messages are scrubbed from the very first call.
@@ -383,6 +382,34 @@ async function main() {
       );
     }
 
+    // Preflight banner — the dev-env guard's "must contain dev" check runs
+    // on GUUEY_E2E_HOST, but every mutation below hits GUUEY_E2E_API_URL.
+    // Print the actual mutation target prominently, and fingerprint it with
+    // a READ-ONLY call before anything destructive runs, so a mismatched
+    // host/apiUrl pair (dev HOST + non-dev API_URL passes the guard!) is
+    // visible to the operator before the first write.
+    console.log("\n[dev-env-e2e] ── PREFLIGHT ─────────────────────────────────────────");
+    console.log(`[dev-env-e2e]   API endpoint (ALL mutations target this): ${apiUrl}`);
+    console.log(`[dev-env-e2e]   platform host (what the dev-guard checked): ${host}`);
+    console.log("[dev-env-e2e]   both MUST come from the same dev amplify_outputs.json");
+    const fingerprintRes = await guuey(["apps", "list", "--json"], { allowFailure: true });
+    if (fingerprintRes.code === 0) {
+      try {
+        const fingerprint = extractFirstJson(fingerprintRes.stdout);
+        const count = Array.isArray(fingerprint) ? fingerprint.length : "?";
+        console.log(
+          `[dev-env-e2e]   read-only fingerprint: apps list OK — ${count} app(s) visible to this PAT`,
+        );
+      } catch {
+        console.log("[dev-env-e2e]   read-only fingerprint: apps list returned non-JSON output");
+      }
+    } else {
+      console.log(
+        `[dev-env-e2e]   read-only fingerprint: apps list exited ${fingerprintRes.code} (continuing — the guard already passed)`,
+      );
+    }
+    console.log("[dev-env-e2e] ──────────────────────────────────────────────────────");
+
     step(7, TOTAL, `guuey apps create --name ${appName}`);
     // bufferOutput: the --json response carries the app's apiKey, which is
     // not in SECRETS yet — live streaming would print it before we could
@@ -390,7 +417,16 @@ async function main() {
     const createRes = await guuey(["apps", "create", "--name", appName, "--json"], {
       bufferOutput: true,
     });
-    const created = extractFirstJson(createRes.stdout);
+    let created;
+    try {
+      created = extractFirstJson(createRes.stdout);
+    } catch (err) {
+      // extractFirstJson embeds the raw output in its error text, and the
+      // apiKey is NOT in SECRETS yet at this point — scrub anything
+      // token-shaped (ggui_sk_… / ggui_pat_… style) before rethrowing.
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(msg.replace(/ggui_[a-z0-9]+_\S+/gi, "***"));
+    }
     if (typeof created.apiKey === "string" && created.apiKey.length > 0) {
       SECRETS.push(created.apiKey);
       SECRETS.sort((a, b) => b.length - a.length);
@@ -426,21 +462,26 @@ async function main() {
     }
     // Forward-compatible: once PushAppAssets lands and the ggui leg starts
     // printing a real federated host, it must land in the dev cloud, never
-    // prod. Today the leg is env-dormant (see the warn line above) so this
-    // is a no-op most of the time — logged either way for visibility.
+    // prod. The bare-prod check above (mcp.ggui.ai) is the hard fail; beyond
+    // it, any matched ggui-family host must carry a recognizable dev marker
+    // (see GGUI_DEV_MARKER for why this is a marker, not an exact-host
+    // assertion, until the leg activates). ABSENT match = dormant leg =
+    // log-only, never a throw.
     const gguiHostMention = deployRes.stdout.match(/https?:\/\/\S*ggui\S*/i);
     if (gguiHostMention) {
-      if (!gguiHostMention[0].includes(expectedGguiSubstring)) {
+      const mentionHost = hostnameOf(gguiHostMention[0]);
+      if (!GGUI_DEV_MARKER.test(mentionHost)) {
         throw new Error(
-          `deploy output mentions a ggui host (${gguiHostMention[0]}) that doesn't match ` +
-            `the dev pattern ("${expectedGguiSubstring}")`,
+          `deploy output mentions a ggui host (${gguiHostMention[0]}) with no dev marker ` +
+            `on its hostname (${mentionHost}) — prod-shaped ggui hosts are a hard fail`,
         );
       }
-      console.log(`[dev-env-e2e]   ggui host observed and matches dev pattern: ${gguiHostMention[0]}`);
+      console.log(
+        `[dev-env-e2e]   ggui host observed and carries a dev marker: ${gguiHostMention[0]}`,
+      );
     } else {
       console.log(
-        "[dev-env-e2e]   no ggui host observed in deploy output (leg is env-dormant today — " +
-          `expected dev pattern pre-computed as "${expectedGguiSubstring}" for when it lands)`,
+        "[dev-env-e2e]   no ggui host observed in deploy output (leg is env-dormant today)",
       );
     }
 
@@ -523,6 +564,9 @@ async function main() {
           `[dev-env-e2e]   guuey mcp delete ${serverId} --force --yes --workspace ${workspace}`,
         );
       }
+      console.log(
+        `[dev-env-e2e]   rm -rf ${work} ${fakeHome}  # fakeHome holds the PAT/apiKey auth files — do not leave it around`,
+      );
     } else {
       if (appId) {
         try {
