@@ -7,9 +7,39 @@
  * "success"` result-detection — mirror `@guuey/host`'s `buildOptions` /
  * `runInvoke`, the platform's own consumer of this exact snapshot shape).
  */
+import { createRequire } from "node:module";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { serveNative } from "@guuey/worker";
 import { loadAgent, systemPrompt, mcpEndpoints, withHistory } from "./agent-config.js";
+
+/**
+ * This worker is tsup-bundled (`noExternal`), which breaks the SDK's own
+ * native-CLI lookup: the SDK resolves `claude-agent-sdk-<platform>-<arch>`
+ * relative to its OWN module location, and once inlined into
+ * `guuey.worker.js` that location is the bundle's — where no node_modules
+ * has the binary. Resolution order here:
+ *   1. `GUUEY_CLAUDE_CODE_EXECUTABLE` — set by the guuey pod Router, pointing
+ *      at the platform image's binary (a deployed `/worker` has no
+ *      node_modules at all).
+ *   2. Anchored resolve — find the *installed* SDK from the bundle's location
+ *      (it is this app's direct dependency), then resolve the platform binary
+ *      package from the SDK's real location, exactly as the unbundled SDK
+ *      would. Covers local `guuey dev --serve`, where the bundle runs next to
+ *      the app's node_modules.
+ *   3. undefined — let the SDK try (and fail with its actionable error).
+ */
+function claudeExecutable(): string | undefined {
+  if (process.env.GUUEY_CLAUDE_CODE_EXECUTABLE) return process.env.GUUEY_CLAUDE_CODE_EXECUTABLE;
+  try {
+    const sdkEntry = createRequire(import.meta.url).resolve("@anthropic-ai/claude-agent-sdk");
+    return createRequire(sdkEntry).resolve(
+      `@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}/claude`
+    );
+  } catch {
+    return undefined;
+  }
+}
+const pathToClaudeCodeExecutable = claudeExecutable();
 
 await serveNative(
   async (invoke, emit) => {
@@ -47,6 +77,7 @@ await serveNative(
         settingSources: [],
         strictMcpConfig: true,
         ...(agent.runtime?.maxTurns ? { maxTurns: agent.runtime.maxTurns } : {}),
+        ...(pathToClaudeCodeExecutable ? { pathToClaudeCodeExecutable } : {}),
       },
     })) {
       emit.native(JSON.parse(JSON.stringify(message)));
