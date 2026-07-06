@@ -9,18 +9,16 @@ import { execFileSync } from "node:child_process";
 import { writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-// Every internal package a scaffolded app depends on — including
-// TRANSITIVE internal deps: @guuey/cli itself depends on the silverprotocol
-// facet packages (claude-agent-sdk, openai-agents), all unpublished, so
-// omitting them makes pnpm fall through to the public registry and 404.
+// Every internal package a scaffolded app depends on, including transitive
+// internal deps of @guuey/cli. NOTE (2026-07-06): @silverprotocol/* left this
+// cohort — published to npm (0.1.0), so scaffolded apps and @guuey/cli resolve
+// them from the public registry like any other dep. Only the still-unpublished
+// @guuey/* packages need packing.
 export const INTERNAL_COHORT = [
   "oss/packages/worker",
   "oss/packages/config",
   "oss/packages/create-agentic-app",
   "oss/packages/cli",
-  "silverprotocol/sdks/typescript/packages/core",
-  "silverprotocol/sdks/typescript/packages/claude-agent-sdk",
-  "silverprotocol/sdks/typescript/packages/openai-agents",
 ];
 
 /**
