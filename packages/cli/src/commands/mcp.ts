@@ -242,9 +242,18 @@ export async function deployMcpFromSource(
   console.log('  Deploying hosted MCP server to guuey cloud...');
   console.log('');
 
-  // 1. Pack source into a tarball.
+  // 1. Pack source into a tarball. `includeWorkingTree` — a hosted MCP's
+  // source lives in the builder's project tree (often uncommitted, e.g. a
+  // scaffolded `mcps/todo`); tar the working tree deterministically rather
+  // than `git archive`'s committed-only snapshot (which is empty for a
+  // freshly scaffolded, not-yet-committed app). Same robust path the agent
+  // leg uses.
   const buildId = randomUUID().slice(0, 12);
-  const { tarballPath, tarballSize, sourceHash } = packSource({ buildId, cwd: dir });
+  const { tarballPath, tarballSize, sourceHash } = packSource({
+    buildId,
+    cwd: dir,
+    includeWorkingTree: true,
+  });
 
   // 2. Get presigned upload URL + reserve serverId + buildNumber.
   const uploadRes = await api(auth.pat, config, 'POST', '/mcp/deploy/upload', {

@@ -234,13 +234,24 @@ export function packSource(opts: {
       execSync(`tar czf "${tarballPath}" ${WORKING_TREE_TAR_EXCLUDES} .`, { stdio: 'pipe', cwd });
     } else {
       // User has their own Dockerfile and no workspace deps — git archive
-      // is fastest (only ships committed files).
+      // is fastest (only ships committed files). CRITICAL: run git archive
+      // to a temp tar FIRST (not piped into gzip) — a `git archive | gzip`
+      // pipeline masks git's failure behind gzip's success and silently
+      // writes a 0-byte tarball. Verify a non-empty result before trusting
+      // it; otherwise fall back to a working-tree tar (covers non-git dirs
+      // and repos with no HEAD — e.g. a freshly scaffolded `--no-git` app).
+      let archived = false;
       try {
-        execSync(`git archive --format=tar HEAD | gzip > "${tarballPath}"`, {
+        execSync(`git rev-parse --verify HEAD`, { stdio: 'pipe', cwd });
+        execSync(`git archive --format=tar.gz -o "${tarballPath}" HEAD`, {
           stdio: 'pipe',
           cwd,
         });
+        archived = statSync(tarballPath).size > 0;
       } catch {
+        archived = false;
+      }
+      if (!archived) {
         execSync(`tar czf "${tarballPath}" ${WORKING_TREE_TAR_EXCLUDES} .`, { stdio: 'pipe', cwd });
       }
     }
