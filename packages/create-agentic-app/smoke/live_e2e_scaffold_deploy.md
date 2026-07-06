@@ -13,8 +13,8 @@ Two parts:
   Manual, run against whatever AWS account you like (only needs an
   `ANTHROPIC_API_KEY`; no platform deploy involved).
 - **Part B — hosted deploy.** Fully automated by
-  `e2e/scripts/dev-env-e2e.mjs` (`pnpm --filter @guuey/create-agentic-app run
-e2e:dev-env`) — the stage-3 real-infra e2e from the scaffolder-e2e-tiers plan.
+  `e2e/scaffolder/scripts/dev-env-e2e.mjs` (repo root;
+  `make e2e-scaffold-dev-env`) — the stage-3 real-infra e2e from the scaffolder-e2e-tiers plan.
   It scaffolds to a temp dir, logs in headlessly, creates a throwaway app,
   deploys, asserts every leg, curls the deployed endpoint, and tears everything
   down in a `finally` (pass `--keep` to skip teardown for debugging). This
@@ -25,7 +25,7 @@ e2e:dev-env`) — the stage-3 real-infra e2e from the scaffolder-e2e-tiers plan.
 > `oss/packages/cli/src/commands/deploy.ts` (deploy orchestrator),
 > `oss/packages/cli/src/deploy-plan.ts` (mode routing + `writeBackServerId`),
 > `oss/packages/cli/src/commands/mcp.ts` (`resolveServerName`/`resolveWorkspaceId`/
-> `mcpStatus`/`mcpDelete` — the real flag shapes `e2e/scripts/dev-env-e2e.mjs` drives),
+> `mcpStatus`/`mcpDelete` — the real flag shapes `e2e/scaffolder/scripts/dev-env-e2e.mjs` (repo root) drives),
 > `oss/packages/cli/src/commands/{login,apps,delete,undeploy,deployments}.ts`
 > (`--token`, `apps create --json`, `delete --force` [not `--yes`],
 > `undeploy --app-id --force`, `deployments list --json`),
@@ -106,7 +106,7 @@ Ctrl-C to stop `pnpm dev` before Part B (frees 6781/6782/6790/6890/6891).
 
 ## Part B — hosted deploy (dev env, automated)
 
-Automated end-to-end by `e2e/scripts/dev-env-e2e.mjs` per the scaffolder-e2e-tiers
+Automated end-to-end by the repo-root `e2e/scaffolder/scripts/dev-env-e2e.mjs` per the scaffolder-e2e-tiers
 plan (Task 3) — this section used to be six manual steps (auth, deploy, four
 assertion passes, rollback); it is now prereqs + one command + an eyeball check.
 
