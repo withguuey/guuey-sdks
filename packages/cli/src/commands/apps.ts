@@ -137,34 +137,33 @@ export async function appsCreate(opts: {
     await login();
   }
 
+  // cliApi POST /v1/apps expects `displayName` and returns `{ app: {...} }`
+  // (the app's own PAT already authorizes deploys — no separate per-app API
+  // key is minted here). `link` is the path that provisions an api key.
   const res = await apiRequest('POST', '/apps', {
-    name: opts.name,
-    userAuthMode: opts.authMode ?? 'anonymous',
+    displayName: opts.name,
   });
 
   if (!res.ok) return handleError(res, 'Failed to create app');
 
-  const data = (await res.json()) as { appId: string; apiKey: string };
+  const data = (await res.json()) as { app: { id: string; displayName: string } };
+  const appId = data.app.id;
 
-  // Always auto-configure the CLI with the new app
+  // Auto-configure the CLI with the new app id.
   const existing = loadConfig();
-  existing.appId = data.appId;
-  existing.apiKey = data.apiKey;
+  existing.appId = appId;
   saveConfig(existing);
 
   if (opts.json) {
-    out.json(data);
+    out.json({ appId, displayName: data.app.displayName });
     return;
   }
 
   out.success(`Created app "${opts.name}"`);
   console.log('');
-  console.log(`  App ID:   ${data.appId}`);
-  console.log(`  API Key:  ${data.apiKey}`);
+  console.log(`  App ID:   ${appId}`);
   console.log('');
-  console.log('  Save the API key now — it won\'t be shown again.');
-  console.log('');
-  console.log('  Auto-configured: app-id and api-key saved to ~/.guuey/config.json');
+  console.log('  Auto-configured: app-id saved to ~/.guuey/config.json');
 }
 
 /**
