@@ -50,8 +50,21 @@ export async function login(flags: Record<string, string | true> = {}): Promise<
   // --token flag: headless login with a pre-generated PAT
   const tokenValue = flags.token;
   if (tokenValue && typeof tokenValue === 'string') {
+    // `guuey_user_*` is the cliApi-native API key (hash-verified server-side;
+    // opaque to the client — no payload to decode, the server enforces the
+    // row's real expiry). Store as-is with a nominal local expiry.
+    if (tokenValue.startsWith('guuey_user_')) {
+      saveAuth({
+        pat: tokenValue,
+        expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+      });
+      out.success('Logged in with API key (server-side expiry applies)');
+      return;
+    }
     if (!tokenValue.startsWith('ggui_pat_')) {
-      out.error('Invalid token format. Token must start with "ggui_pat_".');
+      out.error(
+        'Invalid token format. Token must start with "guuey_user_" (API key) or "ggui_pat_" (dashboard PAT).',
+      );
       process.exit(1);
     }
 
