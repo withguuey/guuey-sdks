@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Silver-protocol fixture worker: replays REAL captured Claude Agent SDK
 // `SDKMessage`s (copied verbatim from
-// `silverprotocol/sdks/typescript/packages/e2e/corpus/echo-sonnet5/claude.native.json`,
+// `../silverprotocol/sdks/typescript/packages/e2e/corpus/echo-sonnet5/claude.native.json`
 // entries [3] and [4] — the assistant text turn + its `result` message) as
 // `native` events, so `dev-server.test.ts` exercises the REAL
 // `createClaudeNormalizer()` facet end-to-end instead of a synthetic shape.
