@@ -83,9 +83,9 @@ export interface CredentialFile {
  * and pulling out a single arm is awkward in TS.
  */
 export type SdkMcpServer =
-  | { type: "http"; url: string; headers?: Record<string, string> }
-  | { type: "sse"; url: string; headers?: Record<string, string> }
-  | { type: "stdio"; command: string; args?: string[] };
+  | { type: "http"; url: string; headers?: Record<string, string>; alwaysLoad?: boolean }
+  | { type: "sse"; url: string; headers?: Record<string, string>; alwaysLoad?: boolean }
+  | { type: "stdio"; command: string; args?: string[]; alwaysLoad?: boolean };
 
 /**
  * One prior memory record fed into the `<thread_memory>` preamble. Host-owned,
@@ -308,6 +308,12 @@ export function resolveMcpServers(ctx: BuildOptionsContext): Record<string, SdkM
     out[name] = {
       type: cred.transport,
       url: cred.url,
+      // Declared MCP servers ARE this agent's tool surface. Without
+      // alwaysLoad the CLI defers MCP tools behind its ToolSearch built-in —
+      // absent here (tools: []) — leaving the model tool-less. Empirically
+      // load-bearing; mirrors the scaffold template's worker (see
+      // create-agentic-app templates-src claude worker.ts).
+      alwaysLoad: true,
       ...(Object.keys(cred.headers).length > 0 ? { headers: cred.headers } : {}),
     };
   }

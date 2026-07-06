@@ -40,9 +40,12 @@ describe("resolveMcpServers — cred-dir mapper", () => {
       ggui: {
         type: "http",
         url: "https://mcp.ggui.ai/apps/a",
+        // alwaysLoad on every entry: declared servers ARE the tool surface;
+        // without it the CLI defers MCP tools behind its (absent) ToolSearch.
+        alwaysLoad: true,
         headers: { authorization: "Bearer t" },
       },
-      ext: { type: "sse", url: "https://x/mcp" },
+      ext: { type: "sse", url: "https://x/mcp", alwaysLoad: true },
     });
   });
 
@@ -73,6 +76,7 @@ describe("buildOptions — MCP servers from cred dir", () => {
       ggui: {
         type: "http",
         url: "https://mcp.ggui.ai/apps/app-default",
+        alwaysLoad: true,
         headers: { authorization: "Bearer tok" },
       },
     });
