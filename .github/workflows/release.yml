@@ -153,18 +153,36 @@ jobs:
 
       - name: Post-publish consumer smoke
         if: steps.mode.outputs.dry_run == 'false'
+        # NEVER fails the release: publish already happened (irreversible), so a
+        # red job here would falsely brand a successful release as broken. npm
+        # CDN propagation for `npx @latest` can lag minutes behind a successful
+        # publish — this step is a best-effort post-check that WARNS on a miss,
+        # not a gate. `continue-on-error` keeps the run green; the annotation
+        # below surfaces a genuine (non-propagation) problem to a human.
+        continue-on-error: true
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          # Pin the just-published version, not @latest — the version resolves on
+          # the registry before the `latest` dist-tag fully propagates to every
+          # CDN edge, so this races less.
+          VER=$(node -pe "require('./packages/create-agentic-app/package.json').version")
+          echo "smoke target: @guuey/create-agentic-app@${VER}"
           mkdir -p /tmp/consumer-smoke && cd /tmp/consumer-smoke
-          for attempt in 1 2 3 4 5; do
-            # npx resolution is the real user path: scaffold an app from the
-            # registry, then run the CLI binary from the registry.
-            if npx --yes @guuey/create-agentic-app@latest ./smoke-app --framework claude-agent-sdk --skip-install; then
+
+          # Wait (up to ~6 min) for the exact version to be resolvable, THEN npx.
+          for attempt in $(seq 1 18); do
+            if npm view "@guuey/create-agentic-app@${VER}" version >/dev/null 2>&1; then
+              echo "version live on registry (attempt ${attempt})"
               break
             fi
-            echo "npx failed (registry propagation?) — retry $attempt/5 in 20s"
+            echo "not propagated yet — retry ${attempt}/18 in 20s"
             sleep 20
           done
-          test -f ./smoke-app/guuey.json
-          npx --yes @guuey/cli@latest --version
-          echo "consumer smoke OK — scaffold + CLI resolve from the public registry"
+
+          if npx --yes "@guuey/create-agentic-app@${VER}" ./smoke-app --framework claude-agent-sdk --skip-install \
+            && test -f ./smoke-app/guuey.json \
+            && npx --yes "@guuey/cli@${VER}" --version; then
+            echo "consumer smoke OK — scaffold + CLI resolve from the public registry"
+          else
+            echo "::warning title=Consumer smoke did not complete::Publish SUCCEEDED (versions are on npm); the post-publish npx check did not resolve @${VER} in time — almost always CDN propagation lag. Verify manually: npx @guuey/create-agentic-app@${VER}"
+          fi
