@@ -11,19 +11,21 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { packInternalCohort, applyPackOverrides } from "./lib/pack-cohort.mjs";
 
-const repoRoot = resolve(import.meta.dirname, "../../../..");
+// Layout-agnostic: everything resolves from THIS package's root — the tree
+// is oss/packages/* in the monorepo and packages/* in the guuey-sdks mirror.
+const pkgRoot = resolve(import.meta.dirname, "..");
 const work = mkdtempSync(join(tmpdir(), "caa-smoke-"));
 const sh = (cmd, args, opts = {}) =>
-  execFileSync(cmd, args, { stdio: "inherit", cwd: repoRoot, ...opts });
+  execFileSync(cmd, args, { stdio: "inherit", cwd: pkgRoot, ...opts });
 
 // 1. Pack every internal package a scaffolded app depends on.
-const tarballs = packInternalCohort(repoRoot, work);
+const tarballs = packInternalCohort(work);
 
 // 2. Scaffold both frameworks from the built CLI.
 for (const framework of ["claude-agent-sdk", "openai-agents-sdk"]) {
   const appDir = join(work, `app-${framework}`);
   sh("node", [
-    join(repoRoot, "oss/packages/create-agentic-app/dist/cli.js"),
+    join(pkgRoot, "dist/cli.js"),
     appDir,
     "--framework",
     framework,
