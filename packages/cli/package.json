@@ -1,6 +1,6 @@
 {
   "name": "@guuey/cli",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "CLI tool for the guuey platform",
   "license": "MIT",
   "type": "module",
