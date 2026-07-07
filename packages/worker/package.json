@@ -7,7 +7,9 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "README.md"
   ],
   "exports": {
     ".": {
@@ -38,11 +40,6 @@
     "protocol",
     "sdk"
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/loqu-co/guuey.git",
-    "directory": "oss/packages/worker"
-  },
   "homepage": "https://github.com/loqu-co/guuey/tree/main/oss/packages/worker",
   "bugs": {
     "url": "https://github.com/loqu-co/guuey/issues"
