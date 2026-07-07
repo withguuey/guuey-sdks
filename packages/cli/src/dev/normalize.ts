@@ -6,6 +6,7 @@
  */
 import type { Normalizer } from "@silverprotocol/core";
 import { createClaudeNormalizer } from "@silverprotocol/claude-agent-sdk";
+import { createAdkNormalizer } from "@silverprotocol/google-adk";
 import { createOpenaiNormalizer } from "@silverprotocol/openai-agents";
 
 /**
@@ -19,6 +20,8 @@ export function makeNormalizer(framework: string): Normalizer {
       return createClaudeNormalizer();
     case "openai-agents-sdk":
       return createOpenaiNormalizer();
+    case "google-adk":
+      return createAdkNormalizer();
     default:
       throw new Error(`AGJSON_NO_NORMALIZER:${framework}`);
   }

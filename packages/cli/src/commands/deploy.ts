@@ -385,12 +385,15 @@ async function deployCode(opts: {
   // `guuey.json#worker` is the template-authored override for a non-default
   // build output path, honored by the runtime's worker-select. Mirrors
   // `dev.ts`'s worker-entry resolution.
+  // Graceful projects (guuey.json#agent.entry, no #worker) build the agent
+  // MODULE instead of a worker bundle — gate on that file instead.
   const workerField = doc.worker;
-  const workerEntryPath = join(root, workerField ?? 'guuey.worker.js');
+  const expectedOut = workerField ?? doc.agent?.entry ?? 'guuey.worker.js';
+  const workerEntryPath = join(root, expectedOut);
   if (!existsSync(workerEntryPath)) {
     out.error(
       `Build succeeded but ${workerEntryPath} was not produced. Check the root ` +
-        `"build" script (expected to emit ${workerField ?? 'guuey.worker.js'} via tsup) and retry.`,
+        `"build" script (expected to emit ${expectedOut} via tsup) and retry.`,
     );
     process.exit(1);
   }

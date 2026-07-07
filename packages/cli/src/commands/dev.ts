@@ -11,6 +11,7 @@
  * the bridge-gateway flow (`guuey dev` w/o flags) lands slice 2+.
  */
 import { existsSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { loadGuueyJson, buildDeploySnapshot } from '@guuey/config';
 import { findProjectConfig } from '../config.js';
@@ -20,7 +21,7 @@ import * as out from '../output.js';
 const DEFAULT_PORT = 6790;
 
 /** Frameworks `guuey dev --serve` can run locally (v1). */
-const SUPPORTED_FRAMEWORKS = ['claude-agent-sdk', 'openai-agents-sdk'] as const;
+const SUPPORTED_FRAMEWORKS = ['claude-agent-sdk', 'openai-agents-sdk', 'google-adk'] as const;
 type SupportedFramework = (typeof SUPPORTED_FRAMEWORKS)[number];
 
 function isSupportedFramework(v: string): v is SupportedFramework {
@@ -31,6 +32,7 @@ function isSupportedFramework(v: string): v is SupportedFramework {
 const KEY_ENV_VAR: Record<SupportedFramework, string> = {
   'claude-agent-sdk': 'ANTHROPIC_API_KEY',
   'openai-agents-sdk': 'OPENAI_API_KEY',
+  'google-adk': 'GEMINI_API_KEY',
 };
 
 /**
@@ -132,16 +134,28 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
     return;
   }
 
-  // Worker entry: `guuey.json#worker` (the template-authored override for a
-  // non-default build output path) when declared, else the default build
-  // output. Mirrors `deploy.ts`'s worker-entry resolution.
-  const workerEntry = join(projectRoot, loaded.doc.worker ?? 'guuey.worker.js');
-  if (!existsSync(workerEntry)) {
+  // Graceful mode: guuey.json#agent.entry (no #worker) — the CLI spawns the
+  // SAME universal host that runs the agent in production, pointed at the
+  // built agent module (GUUEY_AGENT_ENTRY, contained under the project root).
+  // Full-worker mode otherwise: `guuey.json#worker` (the template-authored
+  // override for a non-default build output path) when declared, else the
+  // default build output. Mirrors `deploy.ts`'s entry resolution.
+  const gracefulEntry = loaded.doc.worker === undefined ? loaded.doc.agent.entry : undefined;
+  const builtEntry = join(projectRoot, gracefulEntry ?? loaded.doc.worker ?? 'guuey.worker.js');
+  if (!existsSync(builtEntry)) {
     out.error(
-      `Worker entry not found at ${workerEntry} — run pnpm build first (or pnpm dev which watches).`,
+      `${gracefulEntry !== undefined ? 'Agent entry' : 'Worker entry'} not found at ${builtEntry} — run pnpm build first (or pnpm dev which watches).`,
     );
     process.exit(1);
     return;
+  }
+  let workerEntry = builtEntry;
+  if (gracefulEntry !== undefined) {
+    // Production topology, locally: node <@guuey/host> with the entry env.
+    const require = createRequire(import.meta.url);
+    workerEntry = require.resolve('@guuey/host');
+    process.env.GUUEY_AGENT_ENTRY = gracefulEntry;
+    process.env.GUUEY_WORKER_ROOT = projectRoot;
   }
 
   // Lowered snapshot: the deploy-shaped agent section (systemPrompt resolved
@@ -151,6 +165,20 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
   const agent = lowerForDev(buildDeploySnapshot(loaded).agent);
   const agentSnapshotJson = JSON.stringify(agent);
 
+  // Graceful mode: the CLI is also the LOCAL credential broker — the host
+  // sources MCP exclusively from cred files (production contract), which
+  // nothing else writes locally.
+  const localCredentials =
+    gracefulEntry !== undefined
+      ? Object.fromEntries(
+          Object.entries(agent.mcpServers ?? {}).flatMap(([name, s]) =>
+            s.kind === 'external' && typeof s.url === 'string'
+              ? [[name, { url: s.url, transport: s.transport ?? 'http' }]]
+              : [],
+          ),
+        )
+      : undefined;
+
   const srv = await startDevServer({
     port,
     framework,
@@ -159,6 +187,7 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
     workerArgs: [workerEntry],
     agentSnapshotJson,
     projectRoot,
+    ...(localCredentials !== undefined ? { localCredentials } : {}),
   });
 
   console.log(`\nguuey dev server listening on http://localhost:${srv.port}`);

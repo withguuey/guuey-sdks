@@ -14,7 +14,13 @@ describe("makeNormalizer", () => {
     expect(typeof n.flush).toBe("function");
   });
 
+  it("returns a normalizer for google-adk (the JS-ADK lane)", () => {
+    const n = makeNormalizer("google-adk");
+    expect(typeof n.push).toBe("function");
+    expect(typeof n.flush).toBe("function");
+  });
+
   it("throws AGJSON_NO_NORMALIZER:<framework> for an unknown framework", () => {
-    expect(() => makeNormalizer("google-adk")).toThrow("AGJSON_NO_NORMALIZER:google-adk");
+    expect(() => makeNormalizer("langgraph")).toThrow("AGJSON_NO_NORMALIZER:langgraph");
   });
 });

@@ -1,0 +1,14 @@
+{
+  "schema": "1",
+  "agent": {
+    "mode": "code",
+    "framework": "google-adk",
+    "model": "MODEL_PLACEHOLDER",
+    "entry": "agent.js",
+    "systemPrompt": { "file": "prompts/system.md" },
+    "mcpServers": {
+      "todo": { "kind": "hosted", "source": "./mcps/todo", "devPort": 6782 }
+    }
+  },
+  "ggui": { "configFile": "./ggui/ggui.json" }
+}

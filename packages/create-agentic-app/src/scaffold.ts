@@ -9,7 +9,7 @@ import { assertNpmSafeName, ensureTargetDir, isErrnoException, pathExists } from
 const execFileAsync = promisify(execFile);
 
 /** Frameworks the scaffolder ships templates for. */
-export type Framework = 'claude-agent-sdk' | 'openai-agents-sdk';
+export type Framework = 'claude-agent-sdk' | 'openai-agents-sdk' | 'google-adk';
 
 export interface ScaffoldOptions {
   /** Absolute or cwd-relative path to create/populate the new project in. */

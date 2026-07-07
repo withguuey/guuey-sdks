@@ -1,0 +1,34 @@
+packages:
+  - "mcps/*"
+  - "web"
+
+# pnpm 11 default `strictDepBuilds: true` blocks install scripts for any
+# dependency with a build script (esbuild's native binary fetch, sharp,
+# etc.) unless individually allowlisted, and fails the whole `install`
+# with ERR_PNPM_IGNORED_BUILDS otherwise. Scaffolded apps pull in build-
+# script deps transitively (tsup/vite -> esbuild, mcp/ui deps, etc.) that
+# we can't enumerate up front, so match pnpm 9/10 behavior here.
+strictDepBuilds: false
+
+# pnpm 11 default `verifyDepsBeforeRun: 'install'` re-verifies the
+# lockfile against supply-chain policies (including minimumReleaseAge)
+# before every `pnpm run <script>`, hitting the registry even for
+# already-installed deps. That check 404s for any dependency that only
+# exists as a local tarball (not yet published), which is expected
+# during local/dev/CI installs. Restore pnpm 9/10 behavior: only verify
+# on an explicit `pnpm install`.
+verifyDepsBeforeRun: false
+
+# See above — same registry-lookback problem hits a plain `pnpm install`
+# too when minimumReleaseAge is nonzero; disable it for scaffolded apps.
+minimumReleaseAge: 0
+
+# @google/adk declares five NON-optional @mikro-orm/* database-driver peer
+# dependencies (mariadb/mssql/mysql/postgresql/sqlite). Auto-installing
+# them drags in sqlite3 — a NATIVE module whose install script needs a
+# GitHub prebuild download or a full node-gyp toolchain, neither of which
+# exists in the platform's image build. None of the drivers is needed:
+# they back DatabaseSessionService, and Guuey runs the ADK with
+# InMemoryRunner (conversation state rides Guuey's own history/memory
+# fold). The unmet-peer warnings this produces are expected and harmless.
+autoInstallPeers: false

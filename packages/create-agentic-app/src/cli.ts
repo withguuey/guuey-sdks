@@ -11,7 +11,7 @@ import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { scaffold, type Framework } from './index.js';
 
-const FRAMEWORKS: Framework[] = ['claude-agent-sdk', 'openai-agents-sdk'];
+const FRAMEWORKS: Framework[] = ['claude-agent-sdk', 'openai-agents-sdk', 'google-adk'];
 
 function isFramework(value: string): value is Framework {
   return (FRAMEWORKS as string[]).includes(value);

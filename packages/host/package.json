@@ -1,6 +1,6 @@
 {
   "name": "@guuey/host",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "The universal config-driven Guuey worker. Reads the resolved agent.json snapshot, runs the Claude Agent SDK, and emits each native SDKMessage to fd-3 as a `native` WorkerEvent.",
   "license": "MIT",
   "type": "module",
@@ -10,7 +10,9 @@
     "guuey-host": "dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "README.md"
   ],
   "exports": {
     ".": {

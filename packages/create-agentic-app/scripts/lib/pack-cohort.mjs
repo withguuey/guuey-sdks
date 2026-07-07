@@ -20,7 +20,7 @@ import { join, resolve } from "node:path";
 // guuey-sdks mirror — a hardcoded prefix broke the mirror's cold-clone smoke
 // (nonexistent cwd surfaces as a misleading `spawnSync corepack ENOENT`).
 const PACKAGES_ROOT = resolve(import.meta.dirname, "../../..");
-export const INTERNAL_COHORT = ["worker", "config", "create-agentic-app", "cli"].map(
+export const INTERNAL_COHORT = ["worker", "config", "host", "create-agentic-app", "cli"].map(
   (name) => join(PACKAGES_ROOT, name),
 );
 

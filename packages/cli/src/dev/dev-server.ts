@@ -14,7 +14,7 @@
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { WorkerEvent } from "@guuey/worker";
 import type { GuueyAgent, GuueyAgentMcpServer } from "@guuey/config";
@@ -46,6 +46,14 @@ export interface DevServerOptions {
   /** Project root — `fs.app` for every invoke, and the base for per-session
    *  `.guuey-dev/sessions/<sessionId>/{home,session}` tmp dirs. */
   projectRoot: string;
+  /**
+   * Graceful mode: the CLI acts as the LOCAL credential broker. When set,
+   * every invoke first writes `<session>/.guuey/credentials/<name>.json`
+   * (the exact file contract the Router's broker writes in production) from
+   * these lowered servers — the platform host sources MCP exclusively from
+   * cred files and would otherwise run tool-less locally.
+   */
+  localCredentials?: Record<string, { url: string; transport: "http" | "sse" }>;
 }
 
 export interface DevServerHandle {
@@ -151,6 +159,22 @@ async function readInvokeBody(
   return { input: obj.input, sessionId };
 }
 
+/**
+ * Write the local broker's credential files (see
+ * {@link DevServerOptions.localCredentials}) into a session dir. Idempotent
+ * per invoke; no tokens locally — headers are empty.
+ */
+export function writeLocalCredentials(
+  sessionDir: string,
+  servers: Record<string, { url: string; transport: "http" | "sse" }>,
+): void {
+  const dir = join(sessionDir, ".guuey", "credentials");
+  mkdirSync(dir, { recursive: true });
+  for (const [name, s] of Object.entries(servers)) {
+    writeFileSync(join(dir, `${name}.json`), JSON.stringify({ url: s.url, transport: s.transport, headers: {} }));
+  }
+}
+
 /** mkdir-ing per-session `{home,session}` dirs under `<projectRoot>/.guuey-dev/sessions/<sessionId>`. */
 function sessionFs(projectRoot: string, sessionId: string): LocalRunInput["fs"] {
   const base = join(projectRoot, ".guuey-dev", "sessions", sessionId);
@@ -212,10 +236,12 @@ async function handleInvoke(
     const normalizer: Normalizer | undefined =
       opts.protocol === "silver" ? makeNormalizer(opts.framework) : undefined;
 
+    const fs = sessionFs(opts.projectRoot, sessionId);
+    if (opts.localCredentials) writeLocalCredentials(fs.session, opts.localCredentials);
     for await (const ev of driver({
       input: body.input,
       history: state.history,
-      fs: sessionFs(opts.projectRoot, sessionId),
+      fs,
       env: { ...process.env, GUUEY_AGENT_SNAPSHOT: opts.agentSnapshotJson },
       abortSignal: abortController.signal,
     })) {

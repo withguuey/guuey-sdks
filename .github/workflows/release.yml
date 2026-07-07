@@ -111,9 +111,9 @@ jobs:
           DRY_RUN: ${{ steps.mode.outputs.dry_run }}
         run: |
           set -euo pipefail
-          # Fixed leaf-first order: config/worker are leaves,
-          # create-agentic-app needs config, cli needs all three.
-          ORDER=(config worker create-agentic-app cli)
+          # Fixed leaf-first order: config/worker are leaves, host needs
+          # config+worker, create-agentic-app needs config, cli needs all.
+          ORDER=(config worker host create-agentic-app cli)
 
           TODO=()
           for pkg in "${ORDER[@]}"; do

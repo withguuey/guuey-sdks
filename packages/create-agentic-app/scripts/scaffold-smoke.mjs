@@ -21,8 +21,8 @@ const sh = (cmd, args, opts = {}) =>
 // 1. Pack every internal package a scaffolded app depends on.
 const tarballs = packInternalCohort(work);
 
-// 2. Scaffold both frameworks from the built CLI.
-for (const framework of ["claude-agent-sdk", "openai-agents-sdk"]) {
+// 2. Scaffold every framework from the built CLI.
+for (const framework of ["claude-agent-sdk", "openai-agents-sdk", "google-adk"]) {
   const appDir = join(work, `app-${framework}`);
   sh("node", [
     join(pkgRoot, "dist/cli.js"),
@@ -42,7 +42,10 @@ for (const framework of ["claude-agent-sdk", "openai-agents-sdk"]) {
   sh("corepack", ["pnpm", "-r", "typecheck"], { cwd: appDir }); // workspace packages (mcps/*, web)
   sh("corepack", ["pnpm", "typecheck"], { cwd: appDir }); // root worker (not a workspace member of `-r`)
   sh("corepack", ["pnpm", "-r", "build"], { cwd: appDir });
-  sh("corepack", ["pnpm", "build"], { cwd: appDir }); // root build → guuey.worker.js
-  sh("node", ["-e", "require('fs').accessSync('guuey.worker.js')"], { cwd: appDir });
+  // Root build output: full-worker templates emit guuey.worker.js; the
+  // graceful google-adk template emits the agent module (guuey.json#agent.entry).
+  const expectedOut = framework === "google-adk" ? "agent.js" : "guuey.worker.js";
+  sh("corepack", ["pnpm", "build"], { cwd: appDir });
+  sh("node", ["-e", `require('fs').accessSync('${expectedOut}')`], { cwd: appDir });
   console.log(`\n✓ ${framework} scaffold builds clean\n`);
 }
