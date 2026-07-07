@@ -2,11 +2,21 @@
 /**
  * `@guuey/host` — the universal config-driven Guuey worker.
  *
- * Reads the resolved agent.json snapshot (`GUUEY_AGENT_SNAPSHOT`), runs the
- * Claude Agent SDK per invoke, and emits each native `SDKMessage` to fd-3 as a
- * `native` WorkerEvent. The Router dispatches those to the matching
- * `@silverprotocol/<framework>` normalizer. On the SDK result it emits `done`;
- * on a throw it emits `error`; on `shutdown` (or stdin EOF) it exits.
+ * Reads the resolved agent.json snapshot (`GUUEY_AGENT_SNAPSHOT`), lazily
+ * loads the runner for `snapshot.framework`, and drives one turn per
+ * `invoke`, emitting each framework-native event to fd-3 as a `native`
+ * WorkerEvent. The Router dispatches those to the matching
+ * `@silverprotocol/<framework>` normalizer. On the runner's result it emits
+ * `done`; on a throw it emits `error`; on `shutdown` (or stdin EOF) it exits.
+ *
+ * **Thin-wrapper contract:** the agent runtimes
+ * (`@anthropic-ai/claude-agent-sdk`, `@openai/agents`, `@google/adk`) are
+ * OPTIONAL PEER dependencies — the host is orchestration; the runtime is the
+ * installer's declaration (the platform pins them in
+ * `@guuey-private/host-shared`, the `/shared` composition package). Runners
+ * are loaded via dynamic `import()` so a pod only ever loads the one SDK its
+ * framework needs; a missing peer fails with an actionable install hint, not
+ * a bare module-resolution stack.
  *
  * Runs inside bubblewrap with NO IRSA — it never mints federation tokens. A
  * federated MCP server's credentials are read from the well-known path the
@@ -16,81 +26,77 @@
  * Worker→Router events on fd 3. We use the raw emitter (NOT the text-only
  * `serve(handler)`) because the host emits `native`.
  */
-import { createWriteStream, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { query } from "@anthropic-ai/claude-agent-sdk";
-import { run as openaiRun, setDefaultOpenAIKey } from "@openai/agents";
+import { createWriteStream } from "node:fs";
 import {
   createEmitter,
   isInvoke,
   isShutdown,
   parseControl,
   type Emitter,
-  type Fs,
+  type Invoke,
 } from "@guuey/worker";
 import type { GuueyAgent } from "@guuey/config";
-import { runInvoke, type HostInvoke, type HostRuntime } from "./run.js";
-import { runInvokeOpenai, type OpenaiRunFn } from "./run-openai.js";
-import type { CredentialFile } from "./options.js";
-import { buildHostContext } from "./boot-context.js";
 
-/** The OpenAI framework tag (matches `AgentFramework`). */
-const OPENAI_FRAMEWORK = "openai-agents-sdk";
+/** The snapshot shape the host boots from (`framework` selects the runner). */
+export type HostSnapshot = GuueyAgent & { framework?: string };
 
 /**
- * The real `@openai/agents` `run` (streamed overload), narrowed to the injected
- * {@link OpenaiRunFn} surface the loop consumes. The SDK's `run` is generic over
- * the agent + context; the loop only needs `(agent, input, {stream,maxTurns}) →
- * a streamed result`. A typed adapter (NOT a cast) pins the streamed overload.
+ * One turn's input, as a runner receives it — the `Invoke` control message
+ * minus the discriminator.
  */
-const realOpenaiRun: OpenaiRunFn = (agent, input, options) =>
-  openaiRun(agent, input, { stream: true, ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}) });
+export type HostTurn = Omit<Invoke, "type">;
+
+/** The uniform surface every framework runner module exposes. */
+export interface FrameworkRunner {
+  /** Run one turn: drive the SDK, emit native events; resolve when the turn ends. */
+  runTurn(snapshot: HostSnapshot, turn: HostTurn, emit: Emitter): Promise<void>;
+}
+
+/**
+ * Per-framework runner registry: module path + the peer package whose absence
+ * is the overwhelmingly likely cause of an import failure (the install hint).
+ */
+const RUNNERS: Record<string, { module: string; peer: string }> = {
+  "claude-agent-sdk": { module: "./frameworks/claude-runner.js", peer: "@anthropic-ai/claude-agent-sdk" },
+  "openai-agents-sdk": { module: "./frameworks/openai-runner.js", peer: "@openai/agents" },
+  "google-adk": { module: "./frameworks/google-adk.js", peer: "@google/adk" },
+};
 
 /** Parse the boot snapshot — the resolved `agent` section (a {@link GuueyAgent}). */
-function readSnapshot(): GuueyAgent & { framework?: string } {
+function readSnapshot(): HostSnapshot {
   const raw = process.env.GUUEY_AGENT_SNAPSHOT ?? "{}";
   const parsed: unknown = JSON.parse(raw);
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     throw new Error("@guuey/host: GUUEY_AGENT_SNAPSHOT must be a JSON object (the agent section).");
   }
-  return parsed as GuueyAgent & { framework?: string };
+  return parsed as HostSnapshot;
 }
 
 /**
- * Read all credential files the Router broker wrote to
- * `<sessionDir>/.guuey/credentials/` this invoke. Returns one
- * `{ name, cred }` per valid `.json` file — malformed files are silently
- * skipped (never crash the turn). Missing directory → empty array (no MCP).
+ * Load the runner for `framework`, translating a module-resolution failure
+ * into the actionable missing-peer message (the runtimes are optional peers —
+ * the host deliberately does not bundle them).
  */
-function listCredentials(fs: Fs): () => Array<{ name: string; cred: CredentialFile }> {
-  return () => {
-    const dir = join(fs.session, ".guuey", "credentials");
-    let names: string[];
-    try {
-      names = readdirSync(dir).filter((n) => n.endsWith(".json"));
-    } catch {
-      return []; // no cred dir this turn → no MCP.
+export async function loadRunner(framework: string): Promise<FrameworkRunner> {
+  const entry = RUNNERS[framework];
+  if (!entry) {
+    throw new Error(
+      `@guuey/host: unknown framework "${framework}" — supported: ${Object.keys(RUNNERS).join(", ")}`,
+    );
+  }
+  try {
+    const mod = (await import(entry.module)) as { createRunner: () => FrameworkRunner };
+    return mod.createRunner();
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code === "ERR_MODULE_NOT_FOUND" || code === "MODULE_NOT_FOUND") {
+      throw new Error(
+        `@guuey/host: cannot load the "${framework}" runner — its runtime is an optional peer. ` +
+          `Install ${entry.peer} next to @guuey/host to run this framework. (${String(err)})`,
+      );
     }
-    const out: Array<{ name: string; cred: CredentialFile }> = [];
-    for (const file of names) {
-      try {
-        const parsed: unknown = JSON.parse(readFileSync(join(dir, file), "utf8"));
-        if (
-          typeof parsed === "object" &&
-          parsed !== null &&
-          !Array.isArray(parsed) &&
-          typeof (parsed as { url?: unknown }).url === "string" &&
-          ((parsed as { transport?: unknown }).transport === "http" ||
-            (parsed as { transport?: unknown }).transport === "sse")
-        ) {
-          out.push({ name: file.replace(/\.json$/, ""), cred: parsed as CredentialFile });
-        }
-      } catch {
-        // malformed file → skip (never crash the turn).
-      }
-    }
-    return out;
-  };
+    throw err;
+  }
 }
 
 /** Async-iterate NDJSON lines off stdin. */
@@ -110,69 +116,24 @@ async function* lines(input: NodeJS.ReadableStream): AsyncIterable<string> {
   if (tail.length > 0) yield tail;
 }
 
-/** The worker loop: per `invoke` run the SDK emitting native; on `shutdown`/EOF exit. */
+/** The worker loop: per `invoke` run the framework runner; on `shutdown`/EOF exit. */
 async function main(): Promise<void> {
   const snapshot = readSnapshot();
+  const framework = snapshot.framework ?? "claude-agent-sdk";
   // fd 3 is the write end of the pipe the Router created at spawn.
   const out = createWriteStream("", { fd: 3 });
   const emit: Emitter = createEmitter(out);
-  const isOpenai = snapshot.framework === OPENAI_FRAMEWORK;
-
-  // Resolve the framework-correct credentials once at boot.
-  //
-  //  - OpenAI path: the key (or opaque broker token in hosted mode) is applied
-  //    globally to the SDK via `setDefaultOpenAIKey`. The OpenAI SDK also reads
-  //    `OPENAI_BASE_URL` + `OPENAI_API_KEY` from env directly, so the broker
-  //    env injected by Task 8's `buildWorkerEnv` already routes it — no extra
-  //    wiring needed here.
-  //  - Claude path (hosted/broker): `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN`
-  //    are set by the broker (Task 8); they ride the per-invoke `HostRuntime` →
-  //    `BuildOptionsContext` → `options.env`. The real `ANTHROPIC_API_KEY` is
-  //    intentionally absent so it cannot leak to agent code.
-  //  - Claude path (local-dev): only `ANTHROPIC_API_KEY` is set; the broker
-  //    fields are absent, `buildOptions` falls back to the direct-key path.
-  //
-  // A missing key is NOT fatal here — each run path emits a clear `error` per
-  // invoke if neither the broker credentials nor a direct key are present.
-  const bootCtx = buildHostContext(process.env);
-  if (isOpenai && bootCtx.openaiKey !== undefined) setDefaultOpenAIKey(bootCtx.openaiKey);
+  // Load ONCE at boot — the pod runs one framework for its whole life, and a
+  // missing peer must fail the first turn loudly, not lazily mid-session.
+  const runner = await loadRunner(framework);
 
   for await (const line of lines(process.stdin)) {
     const msg = parseControl(line);
     if (isShutdown(msg)) break;
     if (!isInvoke(msg)) continue;
-
-    // Broker fields (`baseUrl`/`authToken`) are only wired for the Claude path.
-    // The OpenAI SDK reads OPENAI_BASE_URL + OPENAI_API_KEY from env directly.
-    const runtime: HostRuntime = {
-      listCredentials: listCredentials(msg.fs),
-      ...(isOpenai
-        ? {}
-        : {
-            ...(bootCtx.anthropicApiKey !== undefined ? { apiKey: bootCtx.anthropicApiKey } : {}),
-            ...(bootCtx.anthropicBaseUrl !== undefined ? { baseUrl: bootCtx.anthropicBaseUrl } : {}),
-            ...(bootCtx.anthropicAuthToken !== undefined ? { authToken: bootCtx.anthropicAuthToken } : {}),
-          }
-      ),
-    };
-    // §1.4 push-by-value context now arrives TYPED on the Invoke (extended in
-    // Task 3) — no raw-line re-parse. `priorState` uses a `!== undefined` gate so
-    // a falsy blob (null/0/"") still feeds the preamble.
-    const invoke: HostInvoke = {
-      input: msg.input,
-      identity: msg.identity,
-      fs: msg.fs,
-      history: msg.history,
-      ...(msg.priorMemory !== undefined ? { priorMemory: msg.priorMemory } : {}),
-      ...(msg.priorState !== undefined ? { priorState: msg.priorState } : {}),
-    };
+    const { type: _type, ...turn } = msg;
     // Turns are sequential — await this invoke before reading the next line.
-    // Select the framework-correct run path: OpenAI agents vs the Claude SDK.
-    if (isOpenai) {
-      await runInvokeOpenai(snapshot, invoke, runtime, emit, realOpenaiRun);
-    } else {
-      await runInvoke(snapshot, invoke, runtime, emit, query);
-    }
+    await runner.runTurn(snapshot, turn, emit);
   }
 }
 

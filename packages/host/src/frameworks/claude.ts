@@ -16,8 +16,8 @@ import {
   type BuildOptionsContext,
   type CredentialFile,
   type PriorMemoryRecord,
-} from "./options.js";
-import { resolveSdkVersion } from "./sdk-version.js";
+} from "./claude-options.js";
+import { resolveSdkVersion } from "../sdk-version.js";
 
 /** The framework THIS run path runs. OpenAI has its own path (`run-openai.ts`). */
 const CLAUDE_FRAMEWORK = "claude-agent-sdk";

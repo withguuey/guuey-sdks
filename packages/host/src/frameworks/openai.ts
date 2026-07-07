@@ -40,10 +40,10 @@ import {
   withContextPreamble,
   type BuildOptionsContext,
   type SdkMcpServer,
-} from "./options.js";
-import type { HostInvoke, HostRuntime } from "./run.js";
+} from "./claude-options.js";
+import type { HostInvoke, HostRuntime } from "./claude.js";
 import { GUUEY_DEFAULT_SYSTEM_PROMPT, type GuueyAgent } from "@guuey/config";
-import { resolveSdkVersion } from "./sdk-version.js";
+import { resolveSdkVersion } from "../sdk-version.js";
 
 /** The framework tag this arm runs — matches the `AgentFramework` enum value. */
 const OPENAI_FRAMEWORK = "openai-agents-sdk";

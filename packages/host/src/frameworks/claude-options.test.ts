@@ -6,7 +6,7 @@ import {
   resolveMcpServers,
   withContextPreamble,
   type BuildOptionsContext,
-} from "./options.js";
+} from "./claude-options.js";
 
 /** Minimal invoke context with no FS layers, no credentials, default env. */
 function ctx(over: Partial<BuildOptionsContext> = {}): BuildOptionsContext {

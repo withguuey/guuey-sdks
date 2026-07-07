@@ -60,22 +60,10 @@ const FS_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep"];
  */
 const BASH_TOOL = "Bash";
 
-/**
- * The credential file the Router-side broker writes per invoke at
- * `<sessionDir>/.guuey/credentials/<server>.json`. Shape from spec §7.1 (B2-mcp).
- * `transport` is required so the worker knows which SDK arm to build without
- * consulting the snapshot — the broker owns ALL resolution including transport.
- */
-export interface CredentialFile {
-  /** The resolved MCP URL (may be scoped `<host>/apps/<id>` for federated ggui). */
-  url: string;
-  /** Transport the broker selected for this server. */
-  transport: "http" | "sse";
-  /** Headers to forward — typically `{ authorization: 'Bearer <token>' }`. */
-  headers: Record<string, string>;
-  /** ISO expiry; informational for the worker (the Router refreshes per invoke). */
-  expiresAt?: string;
-}
+// CredentialFile now lives in ../creds.js (framework-neutral, shared by every
+// runner); re-exported here so existing importers keep working.
+export type { CredentialFile } from "../creds.js";
+import type { CredentialFile } from "../creds.js";
 
 /**
  * SDK's `mcpServers` value shape — recreated structurally rather than imported

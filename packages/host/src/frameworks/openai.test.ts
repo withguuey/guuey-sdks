@@ -10,8 +10,8 @@ import {
   runInvokeOpenai,
   type OpenaiRunFn,
   type OpenaiRunResult,
-} from "./run-openai.js";
-import type { HostInvoke } from "./run.js";
+} from "./openai.js";
+import type { HostInvoke } from "./claude.js";
 import type { GuueyAgent } from "@guuey/config";
 
 /** Collect every emitted WorkerEvent into an array (the fd-3 sink, in memory). */

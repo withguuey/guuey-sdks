@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createEmitter, type WorkerEvent } from "@guuey/worker";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import { runInvoke, type HostInvoke, type QueryFn } from "./run.js";
+import { runInvoke, type HostInvoke, type QueryFn } from "./claude.js";
 
 /** Collect every emitted WorkerEvent into an array (the fd-3 sink, in memory). */
 function collector(): { events: WorkerEvent[]; sink: { write(s: string): void } } {
