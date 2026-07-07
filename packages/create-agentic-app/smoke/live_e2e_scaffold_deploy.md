@@ -287,6 +287,6 @@ live against the dev environment.**
   pipeline itself is broken (not create-agentic-app-specific), cross-reference
   the deploy-controller's own live runbooks
   (`backend/services/deploy-controller/smoke/`,
-  `backend/services/adk-host-py/smoke/live_e2e_code_mode_python.md`) — they've
+  `docs/operations/runbooks/live_e2e_code_mode_python.md`) — they've
   already live-proven the underlying build→deploy→invoke mechanics independently
   of this CLI-driven entrypoint.
