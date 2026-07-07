@@ -1,0 +1,170 @@
+name: npm Release
+
+# npm publish path for the @guuey/* cohort, via npm Trusted Publishing
+# (GitHub OIDC — no NPM_TOKEN secret anywhere). This file lives at the
+# guuey-sdks mirror (withguuey/guuey-sdks) — the repo the npmjs
+# trusted-publisher config points at.
+#
+# Cohort (leaf-first): @guuey/config, @guuey/worker,
+# @guuey/create-agentic-app, @guuey/cli — exactly the packages a scaffolded
+# app resolves from the registry (the clean-room gate's cohort). @guuey/host,
+# @guuey/fs, @guuey/state are platform-side and stay unpublished until their
+# own cut.
+#
+# Release model: "publish what's in git."
+#   - Versions come from each packages/<pkg>/package.json as committed.
+#     This workflow never mutates package.json or git state.
+#   - Already-published `name@version` targets are skipped (idempotent
+#     re-runs after a partial publish), never overwritten.
+#   - `workspace:*` deps are rewritten to real versions by `pnpm publish`.
+#
+# Triggers:
+#   1. `workflow_dispatch` — dry-run by default; a live publish requires
+#      `dry-run: false` AND `confirm: yes` (a misclick cannot ship).
+#   2. `release: [published]` — cutting a GitHub Release IS the human
+#      acknowledgement; always live.
+#
+# npmjs.com one-time setup (org owner): for each of the four packages,
+# configure a Trusted Publisher — owner `withguuey`, repo `guuey-sdks`, workflow
+# `release.yml`, environment `npm-publish`. NOTE: npm requires a package
+# to exist before a trusted publisher can be attached — first-ever publishes
+# are manual (`pnpm publish` locally with 2FA), same bootstrap as the
+# @silverprotocol/* cohort.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "If true (default), pnpm publish --dry-run only — nothing lands on npm."
+        required: false
+        type: boolean
+        default: true
+      confirm:
+        description: "Must be exactly 'yes' to allow a live (non-dry-run) dispatch publish."
+        required: false
+        default: "no"
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Publish gate (cohort CI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm test
+      - name: Scaffold smoke (both frameworks scaffold + build clean)
+        run: pnpm smoke
+
+  publish:
+    name: Publish to npm (OIDC trusted publishing)
+    needs: gate
+    runs-on: ubuntu-latest
+    # The GitHub environment named in the npmjs trusted-publisher config.
+    environment: npm-publish
+    permissions:
+      contents: read
+      # Required for npm Trusted Publishing + `--provenance`.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          # Deliberately NO `registry-url:` — setting it writes an
+          # `_authToken=${NODE_AUTH_TOKEN}` line to .npmrc, and with the
+          # token unset (we use OIDC) pnpm passes the literal placeholder
+          # through and the registry 404s BEFORE OIDC fallback fires
+          # (see ggui oss/release.yml for the full war story).
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Resolve run mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ inputs.dry-run }}" = "false" ] && [ "${{ inputs.confirm }}" = "yes" ]; then
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "dry_run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish (leaf-first, idempotent)
+        env:
+          DRY_RUN: ${{ steps.mode.outputs.dry_run }}
+        run: |
+          set -euo pipefail
+          # Fixed leaf-first order: config/worker are leaves,
+          # create-agentic-app needs config, cli needs all three.
+          ORDER=(config worker create-agentic-app cli)
+
+          TODO=()
+          for pkg in "${ORDER[@]}"; do
+            name=$(node -pe "require('./packages/$pkg/package.json').name")
+            ver=$(node -pe "require('./packages/$pkg/package.json').version")
+            if [ -n "$(npm view "$name@$ver" version 2>/dev/null)" ]; then
+              echo "• $name@$ver already on npm — skipping"
+              continue
+            fi
+            TODO+=("$pkg")
+          done
+
+          if [ "${#TODO[@]}" -eq 0 ]; then
+            echo "Nothing to publish — every target version is already on npm."
+            exit 0
+          fi
+
+          # Dry-run GATE first: pack + validate every target before any
+          # irreversible publish. (--provenance is omitted here — dry runs
+          # cannot mint provenance.)
+          for pkg in "${TODO[@]}"; do
+            (cd "packages/$pkg" && pnpm publish --dry-run --no-git-checks)
+          done
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "DRY RUN — stopping before live publish. Targets validated:"
+            printf '  %s\n' "${TODO[@]}"
+            exit 0
+          fi
+
+          for pkg in "${TODO[@]}"; do
+            name=$(node -pe "require('./packages/$pkg/package.json').name")
+            ver=$(node -pe "require('./packages/$pkg/package.json').version")
+            echo "Publishing $name@$ver ..."
+            (cd "packages/$pkg" && pnpm publish --provenance --no-git-checks)
+          done
+
+      - name: Post-publish consumer smoke
+        if: steps.mode.outputs.dry_run == 'false'
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/consumer-smoke && cd /tmp/consumer-smoke
+          for attempt in 1 2 3 4 5; do
+            # npx resolution is the real user path: scaffold an app from the
+            # registry, then run the CLI binary from the registry.
+            if npx --yes @guuey/create-agentic-app@latest ./smoke-app --framework claude-agent-sdk --skip-install; then
+              break
+            fi
+            echo "npx failed (registry propagation?) — retry $attempt/5 in 20s"
+            sleep 20
+          done
+          test -f ./smoke-app/guuey.json
+          npx --yes @guuey/cli@latest --version
+          echo "consumer smoke OK — scaffold + CLI resolve from the public registry"

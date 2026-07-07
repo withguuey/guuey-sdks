@@ -50,8 +50,13 @@
     "ws": "^8.18.0",
     "yaml": "^2.8.2"
   },
-  "homepage": "https://github.com/loqu-co/guuey/tree/main/oss/packages/cli",
+  "homepage": "https://guuey.com",
   "bugs": {
     "url": "https://github.com/loqu-co/guuey/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/withguuey/guuey-sdks.git",
+    "directory": "packages/cli"
   }
 }

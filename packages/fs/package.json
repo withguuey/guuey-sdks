@@ -40,10 +40,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/loqu-co/guuey.git",
-    "directory": "oss/packages/fs"
+    "url": "git+https://github.com/withguuey/guuey-sdks.git",
+    "directory": "packages/fs"
   },
-  "homepage": "https://github.com/loqu-co/guuey/tree/main/oss/packages/fs",
+  "homepage": "https://guuey.com",
   "bugs": {
     "url": "https://github.com/loqu-co/guuey/issues"
   }

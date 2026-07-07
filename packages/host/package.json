@@ -54,10 +54,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/loqu-co/guuey.git",
-    "directory": "oss/packages/host"
+    "url": "git+https://github.com/withguuey/guuey-sdks.git",
+    "directory": "packages/host"
   },
-  "homepage": "https://github.com/loqu-co/guuey/tree/main/oss/packages/host",
+  "homepage": "https://guuey.com",
   "bugs": {
     "url": "https://github.com/loqu-co/guuey/issues"
   }

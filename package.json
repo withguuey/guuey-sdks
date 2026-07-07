@@ -1,0 +1,17 @@
+{
+  "name": "guuey-sdks",
+  "version": "0.0.0",
+  "private": true,
+  "description": "guuey open-source SDKs — the @guuey/* npm cohort (CLI, worker protocol, config, scaffolder)",
+  "license": "MIT",
+  "packageManager": "pnpm@11.2.2",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "smoke": "pnpm --filter @guuey/create-agentic-app run smoke"
+  }
+}
