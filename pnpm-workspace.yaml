@@ -17,3 +17,15 @@ allowBuilds:
   onnxruntime-node: false
   protobufjs: false
   sharp: false
+
+# pnpm 11's supply-chain age gate (minimumReleaseAge, default 1440 min in
+# fresh CI) blocks deps published <24h ago. @silverprotocol/* is FIRST-PARTY
+# (we publish it, often consumed same-day — the 0.3.2 bump tripped this in
+# the v0.1.2 release gate), so exclude the scope's packages UNVERSIONED:
+# exact name@version pins would need editing on every silverprotocol
+# release. Third-party deps keep the full age gate.
+minimumReleaseAgeExclude:
+  - "@silverprotocol/core"
+  - "@silverprotocol/claude-agent-sdk"
+  - "@silverprotocol/openai-agents"
+  - "@silverprotocol/google-adk"
