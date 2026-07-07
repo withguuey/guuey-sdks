@@ -1,8 +1,8 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { join } from "node:path";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { startDevServer, lowerForDev, type DevServerHandle } from "./dev-server.js";
+import { startDevServer, lowerForDev, writeLocalCredentials, type DevServerHandle } from "./dev-server.js";
 
 const echoFixture = join(__dirname, "fixtures", "echo-worker.mjs");
 const errorFixture = join(__dirname, "fixtures", "error-worker.mjs");
@@ -230,5 +230,45 @@ describe("lowerForDev", () => {
       url: "https://mcp.ggui.ai",
       transport: "http",
     });
+  });
+});
+
+describe("the local credential broker (graceful mode)", () => {
+  it("writeLocalCredentials writes the production cred-file contract (url/transport/empty headers)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "guuey-local-creds-"));
+    writeLocalCredentials(dir, {
+      todo: { url: "http://localhost:6782/mcp", transport: "http" },
+      ggui: { url: "http://localhost:6781/mcp", transport: "http" },
+    });
+    const todo = JSON.parse(readFileSync(join(dir, ".guuey", "credentials", "todo.json"), "utf8")) as {
+      url: string;
+      transport: string;
+      headers: Record<string, string>;
+    };
+    expect(todo).toEqual({ url: "http://localhost:6782/mcp", transport: "http", headers: {} });
+    expect(readFileSync(join(dir, ".guuey", "credentials", "ggui.json"), "utf8")).toContain("6781");
+  });
+
+  it("startDevServer writes cred files into the session dir BEFORE the worker runs", async () => {
+    const root = freshProjectRoot();
+    srv = await startDevServer({
+      port: 0,
+      framework: "fixture",
+      protocol: "bypass",
+      workerCommand: process.execPath,
+      workerArgs: [echoFixture],
+      agentSnapshotJson: "{}",
+      projectRoot: root,
+      localCredentials: { todo: { url: "http://localhost:6782/mcp", transport: "http" } },
+    });
+    const res = await fetch(`http://localhost:${srv.port}/agent/invoke`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input: "hi", sessionId: "cred-sess" }),
+    });
+    await res.text();
+    const credPath = join(root, ".guuey-dev", "sessions", "cred-sess", "session", ".guuey", "credentials", "todo.json");
+    const cred = JSON.parse(readFileSync(credPath, "utf8")) as { url: string };
+    expect(cred.url).toBe("http://localhost:6782/mcp");
   });
 });

@@ -141,6 +141,14 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
   // override for a non-default build output path) when declared, else the
   // default build output. Mirrors `deploy.ts`'s entry resolution.
   const gracefulEntry = loaded.doc.worker === undefined ? loaded.doc.agent.entry : undefined;
+  if (gracefulEntry !== undefined && framework !== 'google-adk') {
+    out.error(
+      `guuey.json#agent.entry (graceful mode) currently supports framework google-adk only — ` +
+        `"${framework}" needs a full worker (serveNative). Remove agent.entry or switch framework.`,
+    );
+    process.exit(1);
+    return;
+  }
   const builtEntry = join(projectRoot, gracefulEntry ?? loaded.doc.worker ?? 'guuey.worker.js');
   if (!existsSync(builtEntry)) {
     out.error(

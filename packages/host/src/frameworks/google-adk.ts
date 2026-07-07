@@ -32,7 +32,9 @@
  * NEVER rejects to the loop — every failure becomes a terminal `error` event
  * (the wire contract the Python host also kept).
  */
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { GuueyContext } from "@guuey/config";
 import type { Emitter, JsonValue } from "@guuey/worker";
@@ -50,6 +52,36 @@ import { withContextPreamble } from "../preamble.js";
 import { resolveSdkVersion } from "../sdk-version.js";
 
 const ADK_FRAMEWORK = "google-adk";
+
+/**
+ * Given a require-resolved entry file inside a package, walk up to the
+ * package root and return the absolute path of the root export's `import`
+ * condition (string conditions only — `@google/adk` 1.3.0's shape), or
+ * `undefined` when there is no exports map / no import condition.
+ */
+export function importConditionEntry(resolvedEntry: string): string | undefined {
+  let dir = dirname(resolvedEntry);
+  for (let depth = 0; depth < 6; depth++) {
+    const pkgPath = join(dir, "package.json");
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as {
+        name?: string;
+        exports?: { "."?: { import?: string } } | string;
+      };
+      if (pkg.name === ADK_PACKAGE) {
+        const root = typeof pkg.exports === "object" && pkg.exports !== null ? pkg.exports["."] : undefined;
+        const target = typeof root === "object" && root !== null ? root.import : undefined;
+        return typeof target === "string" ? join(dir, target) : undefined;
+      }
+    } catch {
+      // not at this level — keep walking.
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return undefined;
+}
 const ADK_PACKAGE = "@google/adk";
 const DEFAULT_MODEL = "gemini-3.5-flash";
 
@@ -86,6 +118,7 @@ interface AdkRunner {
     userId: string;
     sessionId: string;
     newMessage: { role: "user"; parts: Array<{ text: string }> };
+    runConfig: { streamingMode: "sse" };
   }): AsyncGenerator<JsonValue, void, undefined>;
 }
 
@@ -101,7 +134,14 @@ export async function loadAdk(entryPath?: string): Promise<AdkModule> {
     if (entryPath !== undefined) {
       const entryRequire = createRequire(pathToFileURL(entryPath).href);
       const resolved = entryRequire.resolve(ADK_PACKAGE);
-      return nativeLoad(resolved) as AdkModule;
+      // Dual-package hazard (review finding): `require.resolve` picks the
+      // exports REQUIRE condition (CJS build), but the dev's ESM agent module
+      // `import`s the IMPORT condition (ESM build) — same version, two module
+      // instances. Re-resolve the IMPORT-condition entry from the package
+      // root so the runner drives the SAME instance the dev's agent was
+      // built with; fall back to the require resolution when the package has
+      // no exports map (plain `main`).
+      return nativeLoad(importConditionEntry(resolved) ?? resolved) as AdkModule;
     }
     return (await import(ADK_PACKAGE)) as AdkModule;
   } catch (err) {
@@ -185,6 +225,10 @@ export async function runAdkTurn(
       sessionId: session.id,
       // `role` pinned — see the module header (adk-js#475).
       newMessage: { role: "user", parts: [{ text: turn.input }] },
+      // SSE streaming, matching the Python host's RunConfig(streaming_mode=SSE)
+      // — the ADK default is NONE, which silently drops incremental text
+      // (review finding). "sse" is StreamingMode.SSE's literal value.
+      runConfig: { streamingMode: "sse" },
     })) {
       // The full native event passes to the normalizer untouched; JS events
       // are already the camelCase shapes the AdkEvent contract expects.
@@ -222,7 +266,13 @@ export function buildGuueyContext(
   };
 }
 
-export function createRunner(): FrameworkRunner {
+/** Injectable boot deps — the unit-test seam for the no-code path. */
+export interface AdkRunnerDeps {
+  load?: typeof loadAdk;
+}
+
+export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
+  const load = deps.load ?? loadAdk;
   // Graceful mode: guuey.json#agent.entry → GUUEY_AGENT_ENTRY (relative),
   // resolved strictly under the worker root. Read once at runner creation —
   // the pod runs one agent module for its whole life.
@@ -236,11 +286,11 @@ export function createRunner(): FrameworkRunner {
         if (entryRel !== undefined && entryRel !== "") {
           const entryPath = resolveAgentEntry(entryRel, workerRoot);
           // Single-copy rule: the SDK comes from the AGENT's own tree.
-          const adk = await loadAdk(entryPath);
+          const adk = await load(entryPath);
           const exported = await loadAgentEntry(entryPath);
           return { adk, exported, entryPath };
         }
-        return { adk: await loadAdk(), exported: undefined };
+        return { adk: await load(), exported: undefined };
       })();
       let adk: AdkModule;
       let exported: unknown;

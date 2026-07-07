@@ -10,8 +10,15 @@ packages:
 # binaries as optionalDependencies; the rest are native/CLI extras unused
 # by the build, tests, and scaffold smoke — all verified green on a cold
 # clone with every entry false).
+# @google/adk (host devDep/peer) declares five NON-optional @mikro-orm/*
+# driver peers; auto-installing them drags in sqlite3's native build. None
+# are needed (InMemoryRunner only) — same posture as the scaffolded
+# templates and the guuey monorepo root.
+autoInstallPeers: false
+
 allowBuilds:
   "@anthropic-ai/claude-agent-sdk": false
+  sqlite3: false
   "@google/genai": false
   esbuild: false
   onnxruntime-node: false

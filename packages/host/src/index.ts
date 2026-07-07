@@ -56,11 +56,32 @@ export interface FrameworkRunner {
  * Per-framework runner registry: module path + the peer package whose absence
  * is the overwhelmingly likely cause of an import failure (the install hint).
  */
-const RUNNERS: Record<string, { module: string; peer: string }> = {
-  "claude-agent-sdk": { module: "./frameworks/claude-runner.js", peer: "@anthropic-ai/claude-agent-sdk" },
-  "openai-agents-sdk": { module: "./frameworks/openai-runner.js", peer: "@openai/agents" },
-  "google-adk": { module: "./frameworks/google-adk.js", peer: "@google/adk" },
+const RUNNERS: Record<string, { module: string; peer: string; agentEntry: boolean }> = {
+  "claude-agent-sdk": { module: "./frameworks/claude-runner.js", peer: "@anthropic-ai/claude-agent-sdk", agentEntry: false },
+  "openai-agents-sdk": { module: "./frameworks/openai-runner.js", peer: "@openai/agents", agentEntry: false },
+  "google-adk": { module: "./frameworks/google-adk.js", peer: "@google/adk", agentEntry: true },
 };
+
+/**
+ * Graceful mode (`GUUEY_AGENT_ENTRY`) is per-runner: a framework whose runner
+ * ignores the entry env must FAIL LOUDLY, not silently run the no-code
+ * snapshot instead of the dev's module (review finding — "non-goal" means
+ * rejected, not ignored). Boot-time check, same posture as a missing peer.
+ */
+export function assertGracefulSupport(framework: string, agentEntryEnv: string | undefined): void {
+  if (agentEntryEnv === undefined || agentEntryEnv === "") return;
+  const entry = RUNNERS[framework];
+  if (entry !== undefined && !entry.agentEntry) {
+    throw new Error(
+      `@guuey/host: guuey.json#agent.entry (graceful mode) is not supported for framework "${framework}" yet — ` +
+        `only ${Object.entries(RUNNERS)
+          .filter(([, r]) => r.agentEntry)
+          .map(([f]) => f)
+          .join(", ")} run a dev-exported agent module. ` +
+        `Use a full worker (serveNative) for this framework, or remove agent.entry.`,
+    );
+  }
+}
 
 /** Parse the boot snapshot — the resolved `agent` section (a {@link GuueyAgent}). */
 function readSnapshot(): HostSnapshot {
@@ -125,6 +146,7 @@ async function main(): Promise<void> {
   const emit: Emitter = createEmitter(out);
   // Load ONCE at boot — the pod runs one framework for its whole life, and a
   // missing peer must fail the first turn loudly, not lazily mid-session.
+  assertGracefulSupport(framework, process.env.GUUEY_AGENT_ENTRY);
   const runner = await loadRunner(framework);
 
   for await (const line of lines(process.stdin)) {

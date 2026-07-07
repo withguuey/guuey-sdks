@@ -121,6 +121,7 @@ describe("runAdkTurn — the wire contract", () => {
       userId: "u-42",
       sessionId: "sess-u-42",
       newMessage: { role: "user", parts: [{ text: "hi there" }] },
+      runConfig: { streamingMode: "sse" },
     });
   });
 
@@ -198,9 +199,18 @@ describe("loadAdk — resolution order", () => {
     expect(mod.COPY_MARKER).toBe("dev-tree-copy");
   });
 
-  it("with an entryPath whose tree lacks the SDK, fails with the actionable missing-peer error", async () => {
+  it("with an entryPath whose tree cannot resolve the SDK, fails with the actionable missing-peer error", async () => {
+    // A deterministic unresolvable: the package EXISTS but its exports map
+    // points at a missing file — a FINAL resolution error under plain node
+    // AND under vitest (whose resolver adds an ambient workspace fallback for
+    // bare not-found specifiers that plain Node does not have).
     const bare = join(base, "bare");
-    mkdirSync(bare, { recursive: true });
+    const broken = join(bare, "node_modules", "@google", "adk");
+    mkdirSync(broken, { recursive: true });
+    writeFileSync(
+      join(broken, "package.json"),
+      JSON.stringify({ name: "@google/adk", version: "0.0.0", exports: { ".": "./does-not-exist.js" } }),
+    );
     writeFileSync(join(bare, "agent.js"), "export default {};\n");
     await expect(loadAdk(join(bare, "agent.js"))).rejects.toThrow(/optional peer.*Install @google\/adk/s);
   });
