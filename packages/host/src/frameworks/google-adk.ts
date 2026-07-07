@@ -34,8 +34,17 @@
  */
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
+import type { GuueyContext } from "@guuey/config";
 import type { Emitter, JsonValue } from "@guuey/worker";
 import type { FrameworkRunner, HostSnapshot, HostTurn } from "../index.js";
+import {
+  AGENT_ENTRY_ENV,
+  WORKER_ROOT_ENV,
+  loadAgentEntry,
+  materializeAgent,
+  nativeLoad,
+  resolveAgentEntry,
+} from "../agent-entry.js";
 import { listCredentials, type CredentialFile } from "../creds.js";
 import { withContextPreamble } from "../preamble.js";
 import { resolveSdkVersion } from "../sdk-version.js";
@@ -92,7 +101,7 @@ export async function loadAdk(entryPath?: string): Promise<AdkModule> {
     if (entryPath !== undefined) {
       const entryRequire = createRequire(pathToFileURL(entryPath).href);
       const resolved = entryRequire.resolve(ADK_PACKAGE);
-      return (await import(pathToFileURL(resolved).href)) as AdkModule;
+      return nativeLoad(resolved) as AdkModule;
     }
     return (await import(ADK_PACKAGE)) as AdkModule;
   } catch (err) {
@@ -189,25 +198,66 @@ export async function runAdkTurn(
   }
 }
 
+/**
+ * Assemble the per-turn {@link GuueyContext} — the ONE discoverable object a
+ * graceful factory receives (spec §2.2). `instruction` carries the standard
+ * context preamble already prepended; the raw fields ride alongside for
+ * factories that render context themselves.
+ */
+export function buildGuueyContext(
+  snapshot: HostSnapshot,
+  turn: HostTurn,
+  instruction: string,
+  mcpToolsets: unknown[],
+): GuueyContext {
+  return {
+    model: snapshot.model ?? DEFAULT_MODEL,
+    instruction,
+    mcpToolsets,
+    user: { id: turn.identity.userId, authMode: turn.identity.authMode },
+    files: { app: turn.fs.app, home: turn.fs.home, session: turn.fs.session },
+    history: turn.history.map((m) => ({ role: m.role, text: m.text })),
+    memory: (turn.priorMemory ?? []).map((m) => (m.key !== undefined ? { key: m.key, value: m.value } : { value: m.value })),
+    workingState: turn.priorState,
+  };
+}
+
 export function createRunner(): FrameworkRunner {
-  let adkPromise: Promise<AdkModule> | undefined;
+  // Graceful mode: guuey.json#agent.entry → GUUEY_AGENT_ENTRY (relative),
+  // resolved strictly under the worker root. Read once at runner creation —
+  // the pod runs one agent module for its whole life.
+  const entryRel = process.env[AGENT_ENTRY_ENV];
+  const workerRoot = process.env[WORKER_ROOT_ENV];
+  let boot: Promise<{ adk: AdkModule; exported: unknown; entryPath?: string }> | undefined;
+
   return {
     async runTurn(snapshot: HostSnapshot, turn: HostTurn, emit: Emitter): Promise<void> {
-      // Load once per process (no-code path; graceful arrives in T3).
-      adkPromise ??= loadAdk();
+      boot ??= (async () => {
+        if (entryRel !== undefined && entryRel !== "") {
+          const entryPath = resolveAgentEntry(entryRel, workerRoot);
+          // Single-copy rule: the SDK comes from the AGENT's own tree.
+          const adk = await loadAdk(entryPath);
+          const exported = await loadAgentEntry(entryPath);
+          return { adk, exported, entryPath };
+        }
+        return { adk: await loadAdk(), exported: undefined };
+      })();
       let adk: AdkModule;
+      let exported: unknown;
+      let entryPath: string | undefined;
       try {
-        adk = await adkPromise;
+        ({ adk, exported, entryPath } = await boot);
       } catch (err) {
         emit.hello(ADK_FRAMEWORK, ADK_PACKAGE, null);
         emit.error(err instanceof Error ? err.message : String(err));
         return;
       }
+      const sdkVersion = resolveSdkVersion(ADK_PACKAGE, entryPath);
       // Snapshots reach the worker fully resolved — a `{file}` systemPrompt
       // here means an un-resolved snapshot hit the API directly; reject loudly
       // (same posture as the claude path).
       if (snapshot.systemPrompt !== undefined && typeof snapshot.systemPrompt !== "string") {
-        emit.hello(ADK_FRAMEWORK, ADK_PACKAGE, resolveSdkVersion(ADK_PACKAGE));
+        emit.hello(ADK_FRAMEWORK, ADK_PACKAGE, sdkVersion);
         emit.error(
           `@guuey/host: snapshot.systemPrompt must be a resolved string (got ${JSON.stringify(snapshot.systemPrompt)}).`,
         );
@@ -221,18 +271,26 @@ export function createRunner(): FrameworkRunner {
       );
       let agent: AdkAgent;
       try {
-        agent = new adk.LlmAgent({
-          name: "guuey",
-          model: snapshot.model ?? DEFAULT_MODEL,
-          instruction,
-          tools: buildToolsets(adk, listCredentials(turn.fs)()),
-        });
+        const toolsets = buildToolsets(adk, listCredentials(turn.fs)());
+        if (exported !== undefined) {
+          // Graceful: the dev's export (plain agent or factory(GuueyContext)).
+          const ctx = buildGuueyContext(snapshot, turn, instruction, toolsets);
+          agent = await materializeAgent(exported, ctx, (message) => process.stderr.write(`${message}\n`));
+        } else {
+          // No-code: construct from the snapshot.
+          agent = new adk.LlmAgent({
+            name: "guuey",
+            model: snapshot.model ?? DEFAULT_MODEL,
+            instruction,
+            tools: toolsets,
+          });
+        }
       } catch (err) {
-        emit.hello(ADK_FRAMEWORK, ADK_PACKAGE, resolveSdkVersion(ADK_PACKAGE));
+        emit.hello(ADK_FRAMEWORK, ADK_PACKAGE, sdkVersion);
         emit.error(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
         return;
       }
-      await runAdkTurn(adk, agent, turn, emit, resolveSdkVersion(ADK_PACKAGE));
+      await runAdkTurn(adk, agent, turn, emit, sdkVersion);
     },
   };
 }

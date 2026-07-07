@@ -15,6 +15,7 @@
  * deep), until we find the `package.json` whose own `name` matches.
  */
 import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -26,9 +27,13 @@ const MAX_WALK_UP_DEPTH = 5;
 /** Reads the installed `pkgName` package's own `package.json#version`, or
  *  `null` when the package isn't installed / its version can't be resolved
  *  (never throws — a missing SDK is tolerated, not fatal). */
-export function resolveSdkVersion(pkgName: string): string | null {
+export function resolveSdkVersion(pkgName: string, anchorPath?: string): string | null {
   try {
-    const mainEntryPath = require.resolve(pkgName);
+    // `anchorPath` re-anchors resolution to another tree (the graceful agent
+    // entry's node_modules) — the single-copy rule needs the version of the
+    // copy actually driven, not the host's.
+    const resolver = anchorPath !== undefined ? createRequire(pathToFileURL(anchorPath).href) : require;
+    const mainEntryPath = resolver.resolve(pkgName);
     let dir = dirname(mainEntryPath);
     for (let depth = 0; depth < MAX_WALK_UP_DEPTH; depth++) {
       const candidate = join(dir, "package.json");
