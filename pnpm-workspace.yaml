@@ -1,2 +1,19 @@
 packages:
   - "packages/*"
+
+# pnpm 11 blocks dependency install scripts by default and hard-errors the
+# install while unapproved ones exist. The key it actually reads is
+# `allowBuilds` (per-package boolean; `onlyBuiltDependencies` is silently
+# ignored in both package.json and this file — verified empirically in the
+# silverprotocol SDK, same pnpm). Every flagged package is listed with
+# `false`: none need their scripts here (esbuild ships prebuilt platform
+# binaries as optionalDependencies; the rest are native/CLI extras unused
+# by the build, tests, and scaffold smoke — all verified green on a cold
+# clone with every entry false).
+allowBuilds:
+  "@anthropic-ai/claude-agent-sdk": false
+  "@google/genai": false
+  esbuild: false
+  onnxruntime-node: false
+  protobufjs: false
+  sharp: false

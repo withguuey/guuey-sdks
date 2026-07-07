@@ -13,11 +13,5 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "smoke": "pnpm --filter @guuey/create-agentic-app run smoke"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "@anthropic-ai/claude-agent-sdk"
-    ]
   }
 }
