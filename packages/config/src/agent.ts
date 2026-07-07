@@ -276,6 +276,14 @@ export const AgentSectionV1 = z.strictObject({
 
   // ── Framework + runtime ──
   framework: z.enum(AGENT_FRAMEWORKS).optional(),
+  /**
+   * Graceful code-mode: a module (path relative to the project root, built
+   * output) whose default export is the framework-native agent object or a
+   * factory `(guuey: GuueyContext) => agent`. The platform host imports and
+   * runs it — the dev writes zero harness code. Mutually exclusive with the
+   * full-worker `worker` field (which wins when both are present).
+   */
+  entry: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
   /**
    * Managed-LLM provider selector — only meaningful for
