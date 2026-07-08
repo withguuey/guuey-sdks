@@ -3,12 +3,6 @@ import { tokensFromCallback } from './login.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Build a decodable `ggui_pat_` token: `ggui_pat_<base64url(payload)>.<sig>`. */
-function makePat(payload: Record<string, unknown>): string {
-  const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  return `ggui_pat_${encoded}.signature`;
-}
-
 describe('tokensFromCallback', () => {
   it('accepts a guuey_user_ API key and honors the callback expiresAt', () => {
     const expiresAt = '2026-10-01T00:00:00.000Z';
@@ -40,25 +34,12 @@ describe('tokensFromCallback', () => {
     expect(deltaMs).toBeLessThan(91 * DAY_MS);
   });
 
-  it('decodes a ggui_pat_ token for identity and honors the callback expiresAt', () => {
-    const exp = Math.floor(Date.parse('2026-10-01T00:00:00.000Z') / 1000);
-    const pat = makePat({ sub: 'user-123', email: 'dev@example.com', exp });
-    const bodyExpiry = '2026-09-01T00:00:00.000Z';
-    const tokens = tokensFromCallback(pat, bodyExpiry);
-    expect(tokens).toEqual({
-      pat,
-      expiresAt: bodyExpiry,
-      email: 'dev@example.com',
-      userId: 'user-123',
-    });
-  });
-
-  it('derives ggui_pat_ expiry from the decoded payload when the callback omits expiresAt', () => {
-    const exp = Math.floor(Date.parse('2026-10-01T00:00:00.000Z') / 1000);
-    const pat = makePat({ sub: 'user-123', email: 'dev@example.com', exp });
-    const tokens = tokensFromCallback(pat);
-    expect(tokens?.expiresAt).toBe('2026-10-01T00:00:00.000Z');
-    expect(tokens?.userId).toBe('user-123');
+  it('rejects a retired ggui_pat_ token — returns null with or without a callback expiresAt', () => {
+    // `ggui_pat_` was the old HMAC dashboard PAT; the contract is retired and
+    // such a bearer 401s at the cliApi, so the callback must never store it.
+    const pat = 'ggui_pat_eyJzdWIiOiJ1c2VyLTEyMyJ9.signature';
+    expect(tokensFromCallback(pat, '2026-09-01T00:00:00.000Z')).toBeNull();
+    expect(tokensFromCallback(pat)).toBeNull();
   });
 
   it('returns null for a token with an unrecognized prefix', () => {

@@ -10,7 +10,7 @@ import * as http from 'node:http';
 import { execFile, execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { resolveConfig } from '../config';
-import { CLI_CALLBACK_PORT, saveAuth, decodePatPayload, type AuthTokens } from '../auth';
+import { CLI_CALLBACK_PORT, saveAuth, type AuthTokens } from '../auth';
 import * as out from '../output';
 
 /** Open a URL in the default browser (cross-platform). Returns false if no browser available. */
@@ -42,52 +42,29 @@ function openBrowser(url: string): boolean {
  * Handle the `guuey login` command.
  *
  * Two modes:
- * 1. **Browser auth** (default): Opens browser, generates PAT server-side,
- *    delivers to CLI via localhost callback.
- * 2. **Token auth** (`--token`): Accepts a pre-generated PAT for headless/CI.
+ * 1. **Browser auth** (default): Opens browser, mints a `guuey_user_*` API key
+ *    server-side, delivers it to the CLI via localhost callback.
+ * 2. **Token auth** (`--token`): Accepts a pre-minted `guuey_user_*` API key
+ *    for headless/CI use.
  */
 export async function login(flags: Record<string, string | true> = {}): Promise<void> {
-  // --token flag: headless login with a pre-generated PAT
+  // --token flag: headless login with a pre-minted API key
   const tokenValue = flags.token;
   if (tokenValue && typeof tokenValue === 'string') {
     // `guuey_user_*` is the cliApi-native API key (hash-verified server-side;
     // opaque to the client — no payload to decode, the server enforces the
     // row's real expiry). Store as-is with a nominal local expiry.
-    if (tokenValue.startsWith('guuey_user_')) {
-      saveAuth({
-        pat: tokenValue,
-        expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
-      });
-      out.success('Logged in with API key (server-side expiry applies)');
-      return;
-    }
-    if (!tokenValue.startsWith('ggui_pat_')) {
+    if (!tokenValue.startsWith('guuey_user_')) {
       out.error(
-        'Invalid token format. Token must start with "guuey_user_" (API key) or "ggui_pat_" (dashboard PAT).',
+        'Invalid token format. Token must start with "guuey_user_" (a Guuey API key from the dashboard).',
       );
       process.exit(1);
     }
-
-    try {
-      const payload = decodePatPayload(tokenValue);
-
-      if (!payload.exp || (payload.exp as number) * 1000 < Date.now()) {
-        out.error('Token has expired. Generate a new one from the dashboard.');
-        process.exit(1);
-      }
-
-      saveAuth({
-        pat: tokenValue,
-        expiresAt: new Date((payload.exp as number) * 1000).toISOString(),
-        email: payload.email as string | undefined,
-        userId: payload.sub as string | undefined,
-      });
-
-      out.success(`Logged in as ${payload.email ?? payload.sub ?? 'unknown'}`);
-    } catch {
-      out.error('Invalid token. Generate a new one from the dashboard.');
-      process.exit(1);
-    }
+    saveAuth({
+      pat: tokenValue,
+      expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    out.success('Logged in with API key (server-side expiry applies)');
     return;
   }
 
@@ -118,14 +95,8 @@ export async function login(flags: Record<string, string | true> = {}): Promise<
     const tokens = await tokenPromise;
     saveAuth(tokens);
 
-    // ggui_pat_ tokens carry decoded identity; guuey_user_ keys are opaque,
-    // so there is no email/sub to print — say what we actually have.
-    const identity = tokens.email ?? tokens.userId;
-    if (identity) {
-      out.success(`Logged in as ${identity}`);
-    } else {
-      out.success('Logged in with API key (server-side expiry applies)');
-    }
+    // guuey_user_ keys are opaque — there is no email/sub to print.
+    out.success('Logged in with API key (server-side expiry applies)');
   } catch (err) {
     out.error((err as Error).message);
     process.exit(1);
@@ -136,17 +107,15 @@ export async function login(flags: Record<string, string | true> = {}): Promise<
 const NOMINAL_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 
 /**
- * Build the stored auth record from a browser-callback body, mirroring the
- * `--token` path's prefix handling:
+ * Build the stored auth record from a browser-callback body.
  *
- *   - `guuey_user_*` — the cliApi-native API key. Opaque to the client (no
- *     payload to decode); the server hash-verifies it and enforces the row's
- *     real expiry. Store the callback's `expiresAt` when it parses as a date,
- *     else a nominal +90d local expiry.
- *   - `ggui_pat_*` — the HMAC-signed dashboard PAT. Decode it for identity
- *     (`email`/`sub`) and expiry, preferring the callback's `expiresAt`.
+ * The platform delivers a `guuey_user_*` API key: opaque to the client (no
+ * payload to decode); the server hash-verifies it and enforces the row's real
+ * expiry. Store the callback's `expiresAt` when it parses as a date, else a
+ * nominal +90d local expiry.
  *
- * Returns `null` when the token carries neither prefix (the caller rejects it).
+ * Returns `null` when the token does not carry the `guuey_user_` prefix (the
+ * caller rejects it).
  */
 export function tokensFromCallback(pat: string, expiresAt?: string): AuthTokens | null {
   if (pat.startsWith('guuey_user_')) {
@@ -154,15 +123,6 @@ export function tokensFromCallback(pat: string, expiresAt?: string): AuthTokens 
     return {
       pat,
       expiresAt: parsed ?? new Date(Date.now() + NOMINAL_TTL_MS).toISOString(),
-    };
-  }
-  if (pat.startsWith('ggui_pat_')) {
-    const payload = decodePatPayload(pat);
-    return {
-      pat,
-      expiresAt: expiresAt ?? new Date((payload.exp as number) * 1000).toISOString(),
-      email: payload.email as string | undefined,
-      userId: payload.sub as string | undefined,
     };
   }
   return null;
@@ -250,7 +210,7 @@ function waitForCallback(expectedState: string): Promise<AuthTokens> {
             res.end(
               JSON.stringify({
                 ok: false,
-                error: 'Invalid token received (expected "guuey_user_" or "ggui_pat_" prefix)',
+                error: 'Invalid token received (expected a "guuey_user_" API key)',
               }),
             );
             return;

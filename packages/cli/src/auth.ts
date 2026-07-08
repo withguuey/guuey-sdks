@@ -1,21 +1,23 @@
 /**
- * CLI authentication — manages PAT (Personal Access Token) stored in ~/.guuey/auth.json.
+ * CLI authentication — manages the `guuey_user_*` API key stored in
+ * ~/.guuey/auth.json.
  *
  * Flow:
  *   1. `guuey login` opens browser to platform auth page
  *   2. User authenticates in the browser
- *   3. Platform generates a PAT (90-day, HMAC-signed) — auth tokens stay in browser
- *   4. PAT is sent to CLI's localhost callback
- *   5. CLI stores the PAT in ~/.guuey/auth.json
+ *   3. Platform mints a `guuey_user_*` API key — Cognito tokens stay in browser
+ *   4. The key is sent to CLI's localhost callback
+ *   5. CLI stores the key in ~/.guuey/auth.json
  *
- * The PAT is self-contained (no refresh needed) and valid for 90 days.
+ * The key is opaque; the server hash-verifies it and enforces the real expiry
+ * on every request.
  */
 
 import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'node:fs';
 import { getAuthFile, getConfigDir } from './paths';
 
 export interface AuthTokens {
-  /** CLI Personal Access Token (ggui_pat_...) */
+  /** Guuey API key (guuey_user_...) — opaque, server-verified. */
   pat: string;
   /** Token expiry (ISO string) */
   expiresAt: string;
@@ -88,16 +90,4 @@ export function requireAuth(): AuthTokens {
     throw new Error('Session expired. Run: guuey login');
   }
   return auth;
-}
-
-/**
- * Decode a PAT payload (without verification — server verifies on each request).
- */
-export function decodePatPayload(pat: string): Record<string, unknown> {
-  if (!pat.startsWith('ggui_pat_')) throw new Error('Invalid PAT format');
-  const stripped = pat.slice('ggui_pat_'.length);
-  const dotIndex = stripped.lastIndexOf('.');
-  if (dotIndex === -1) throw new Error('Invalid PAT format');
-  const payloadStr = stripped.slice(0, dotIndex);
-  return JSON.parse(Buffer.from(payloadStr, 'base64url').toString('utf-8')) as Record<string, unknown>;
 }
