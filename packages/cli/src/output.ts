@@ -54,3 +54,22 @@ export function success(msg: string): void {
 export function error(msg: string): void {
   console.error(`✗ ${msg}`);
 }
+
+/**
+ * Render a cliApi error body to a human string. The API's envelope is
+ * `{ error: { code, message } }`; older surfaces used `{ error: string }`.
+ * Never yields "[object Object]" (the undeploy/delete regression class).
+ */
+export function apiErrorMessage(body: unknown, fallback: string): string {
+  if (typeof body === "object" && body !== null && "error" in body) {
+    const err = (body as { error?: unknown }).error;
+    if (typeof err === "string" && err.length > 0) return err;
+    if (typeof err === "object" && err !== null) {
+      const { code, message } = err as { code?: unknown; message?: unknown };
+      if (typeof message === "string" && message.length > 0) {
+        return typeof code === "string" ? `${code}: ${message}` : message;
+      }
+    }
+  }
+  return fallback;
+}

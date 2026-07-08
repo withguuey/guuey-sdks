@@ -56,9 +56,16 @@ export async function deleteApp(
     await login();
   }
   const auth = requireAuth();
-  const baseUrl = config.host!.replace(/\/$/, '');
+  // The cliApi owns app deletion (DELETE /v1/apps/:id → archive + 30-day TTL
+  // cascade). The old platform-host route (/api/cli/apps) retired with the
+  // cliApi migration — targeting it 404'd every delete (review finding).
+  if (!config.apiUrl) {
+    out.error('REST API URL not configured.');
+    process.exit(1);
+  }
+  const baseUrl = config.apiUrl.replace(/\/$/, '');
 
-  const res = await fetch(`${baseUrl}/api/cli/apps/${appId}`, {
+  const res = await fetch(`${baseUrl}/apps/${appId}`, {
     method: 'DELETE',
     headers: {
       Authorization: `Bearer ${auth.pat}`,
@@ -66,14 +73,8 @@ export async function deleteApp(
   });
 
   if (!res.ok) {
-    let message: string;
-    try {
-      const data = (await res.json()) as { error?: string };
-      message = data.error ?? `HTTP ${res.status}`;
-    } catch {
-      message = `HTTP ${res.status} ${res.statusText}`;
-    }
-    out.error(`Failed to delete app: ${message}`);
+    const body: unknown = await res.json().catch(() => undefined);
+    out.error(`Failed to delete app: ${out.apiErrorMessage(body, `HTTP ${res.status} ${res.statusText}`)}`);
     process.exit(1);
   }
 

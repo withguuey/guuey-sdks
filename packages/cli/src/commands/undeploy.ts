@@ -55,8 +55,17 @@ export async function undeploy(
   });
 
   if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as Record<string, string>;
-    out.error(data.error ?? `Undeploy failed: HTTP ${res.status}`);
+    const body: unknown = await res.json().catch(() => undefined);
+    if (res.status === 404) {
+      // The undeploy endpoint is a deferred cliApi surface (handler.ts
+      // "Deferred to follow-up slices" — /deploy/undeploy is EKS-bound).
+      out.error(
+        'Undeploy is not available on this API yet — use "guuey delete" to archive the app ' +
+          '(tears down via the 30-day deletion cascade), or redeploy to replace the running agent.',
+      );
+    } else {
+      out.error(out.apiErrorMessage(body, `Undeploy failed: HTTP ${res.status}`));
+    }
     process.exit(1);
   }
 
