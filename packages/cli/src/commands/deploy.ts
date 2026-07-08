@@ -340,7 +340,7 @@ async function deployCode(opts: {
         out.error(
           `MCP "${leg.name}" failed to deploy: ${err instanceof Error ? err.message : String(err)}`,
         );
-        console.log('  Run "guuey deployments logs <buildNumber>" for details.');
+        console.log(`  Run "guuey mcp logs ${leg.name}" for the captured build output.`);
         process.exit(1);
       }
     }
@@ -534,8 +534,6 @@ async function deployCode(opts: {
       console.log(`    ${name}: ${runtimeUrl ?? '(runtime URL not yet available)'}`);
     }
   }
-  console.log('');
-  console.log(`  Build logs retained for 30 days. View with \`guuey deployments logs ${buildNumber}\`.`);
   console.log('');
 }
 
@@ -758,8 +756,6 @@ async function deployLegacyDockerfile(opts: {
   console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
   console.log(`  Size:   runtime=${size}, build=${buildSize}`);
   console.log('  Scales to zero when idle.');
-  console.log('');
-  console.log(`  Build logs retained for 30 days. View with \`guuey deployments logs ${buildNumber}\`.`);
   console.log('');
 }
 
