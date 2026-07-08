@@ -257,6 +257,14 @@ const StorageScopeSchema = z.array(z.enum(['user', 'app']));
  * Exported as a zod object so the top-level `GuueyJsonV1` schema (in
  * `./schema.ts`) can nest it. Static type via {@link GuueyAgent}.
  */
+/**
+ * The `agent.mcpServers` map alone — for consumers that resolve/lower the
+ * servers SUBTREE without validating the whole snapshot (deploy-controller's
+ * resolve-mcp): whole-snapshot strictness made lowering fail open on any
+ * schema field the running consumer predates.
+ */
+export const McpServersSection = z.record(z.string().min(1), McpServerSchema);
+
 export const AgentSectionV1 = z.strictObject({
   // ── Deploy routing ──
   /**
