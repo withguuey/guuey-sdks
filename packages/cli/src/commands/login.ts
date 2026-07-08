@@ -118,15 +118,58 @@ export async function login(flags: Record<string, string | true> = {}): Promise<
     const tokens = await tokenPromise;
     saveAuth(tokens);
 
-    out.success(`Logged in as ${tokens.email ?? tokens.userId ?? 'unknown'}`);
+    // ggui_pat_ tokens carry decoded identity; guuey_user_ keys are opaque,
+    // so there is no email/sub to print — say what we actually have.
+    const identity = tokens.email ?? tokens.userId;
+    if (identity) {
+      out.success(`Logged in as ${identity}`);
+    } else {
+      out.success('Logged in with API key (server-side expiry applies)');
+    }
   } catch (err) {
     out.error((err as Error).message);
     process.exit(1);
   }
 }
 
+/** Nominal local expiry for opaque keys — the server enforces the real one. */
+const NOMINAL_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+
 /**
- * Start a local HTTP server and wait for the PAT callback.
+ * Build the stored auth record from a browser-callback body, mirroring the
+ * `--token` path's prefix handling:
+ *
+ *   - `guuey_user_*` — the cliApi-native API key. Opaque to the client (no
+ *     payload to decode); the server hash-verifies it and enforces the row's
+ *     real expiry. Store the callback's `expiresAt` when it parses as a date,
+ *     else a nominal +90d local expiry.
+ *   - `ggui_pat_*` — the HMAC-signed dashboard PAT. Decode it for identity
+ *     (`email`/`sub`) and expiry, preferring the callback's `expiresAt`.
+ *
+ * Returns `null` when the token carries neither prefix (the caller rejects it).
+ */
+export function tokensFromCallback(pat: string, expiresAt?: string): AuthTokens | null {
+  if (pat.startsWith('guuey_user_')) {
+    const parsed = expiresAt && !Number.isNaN(Date.parse(expiresAt)) ? expiresAt : undefined;
+    return {
+      pat,
+      expiresAt: parsed ?? new Date(Date.now() + NOMINAL_TTL_MS).toISOString(),
+    };
+  }
+  if (pat.startsWith('ggui_pat_')) {
+    const payload = decodePatPayload(pat);
+    return {
+      pat,
+      expiresAt: expiresAt ?? new Date((payload.exp as number) * 1000).toISOString(),
+      email: payload.email as string | undefined,
+      userId: payload.sub as string | undefined,
+    };
+  }
+  return null;
+}
+
+/**
+ * Start a local HTTP server and wait for the token callback.
  */
 function waitForCallback(expectedState: string): Promise<AuthTokens> {
   return new Promise((resolve, reject) => {
@@ -201,20 +244,17 @@ function waitForCallback(expectedState: string): Promise<AuthTokens> {
           }
 
           const pat = data.pat;
-          if (!pat?.startsWith('ggui_pat_')) {
+          const tokens = pat ? tokensFromCallback(pat, data.expiresAt) : null;
+          if (!tokens) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ok: false, error: 'Invalid token received' }));
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error: 'Invalid token received (expected "guuey_user_" or "ggui_pat_" prefix)',
+              }),
+            );
             return;
           }
-
-          // Decode the PAT to extract user info
-          const payload = decodePatPayload(pat);
-          const tokens: AuthTokens = {
-            pat,
-            expiresAt: data.expiresAt ?? new Date((payload.exp as number) * 1000).toISOString(),
-            email: payload.email as string | undefined,
-            userId: payload.sub as string | undefined,
-          };
 
           res.writeHead(200, {
             'Content-Type': 'application/json',
