@@ -1,6 +1,6 @@
 {
   "name": "@guuey/create-agentic-app",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Scaffold a guuey agentic app: code-mode agent + custom MCP + ggui + web, local pnpm dev, one-command guuey deploy.",
   "license": "MIT",
   "type": "module",
