@@ -5,6 +5,12 @@
  *   set    --provider <name> --key <value>   Store a provider API key
  *   list                                      List configured provider keys
  *   remove --provider <name>                  Remove a provider key
+ *
+ * NOT YET AVAILABLE: the `/v1/apps/:id/keys/*` cliApi routes are deferred
+ * (B6 — see cliApi handler.ts "Deferred to follow-up slices"). Every
+ * subcommand fails fast with a roadmap notice and is de-advertised from
+ * `guuey --help`. The full implementation below is kept intact and
+ * re-activates by removing the `notYetAvailable` gates when the routes ship.
  */
 
 import { requireAuth } from '../auth';
@@ -63,6 +69,9 @@ async function handleError(res: Response): Promise<never> {
  * `guuey byok set --provider <name> --key <value>`
  */
 export async function byokSet(flags: Record<string, string | true>): Promise<void> {
+  out.notYetAvailable(
+    "guuey byok set isn't available yet — bring-your-own-key provider keys are on the guuey launch roadmap.",
+  );
   const provider = flags.provider as string | undefined;
   const apiKey = flags.key as string | undefined;
   const appId = (flags['app-id'] as string) ?? resolveConfig().appId;
@@ -95,6 +104,9 @@ export async function byokSet(flags: Record<string, string | true>): Promise<voi
  * `guuey byok list`
  */
 export async function byokList(flags: Record<string, string | true>): Promise<void> {
+  out.notYetAvailable(
+    "guuey byok list isn't available yet — bring-your-own-key provider keys are on the guuey launch roadmap.",
+  );
   const appId = (flags['app-id'] as string) ?? resolveConfig().appId;
   const jsonFlag = flags.json === true;
 
@@ -134,6 +146,9 @@ export async function byokList(flags: Record<string, string | true>): Promise<vo
  * `guuey byok remove --provider <name>`
  */
 export async function byokRemove(flags: Record<string, string | true>): Promise<void> {
+  out.notYetAvailable(
+    "guuey byok remove isn't available yet — bring-your-own-key provider keys are on the guuey launch roadmap.",
+  );
   const provider = flags.provider as string | undefined;
   const appId = (flags['app-id'] as string) ?? resolveConfig().appId;
 

@@ -127,10 +127,6 @@ Agent Development:
     --name <name>                App name
   test <message>                 Send a test message and print agent response
     --session <id>               Reuse existing session
-  logs                           Fetch deployment logs for your agent
-    --since <duration>           Time window (default: 1h). Examples: 30m, 2h, 1d
-    --tail <n>                   Number of lines from end (default: 500)
-    --follow, -f                 Live tail (Ctrl+C to stop)
   deploy                         Deploy agent to guuey hosting (auto-detects
                                  declarative vs code mode; code mode deploys
                                  MCP + ggui + agent legs in one command)
@@ -145,20 +141,10 @@ Agent Development:
     --app-id <id>                Override the resolved appId
   undeploy                       Tear down deployed agent (keeps app)
     --app-id <id>                Target a specific app
-  stop                           Pause deployed agent (scale to 0)
-  start                          Resume stopped agent
-  restart                        Rolling restart of agent pods
-    --app-id <id>                Target a specific app (all lifecycle commands)
   env set KEY=VALUE              Set environment variables
   env list                       List environment variables
   env unset KEY                  Remove environment variables
   deployments [list]             List deployment builds
-  deployments rollback [build]   Rollback to a previous build number
-  domains add <domain>           Add custom domain (CNAME required)
-  domains list                   List configured domains
-  domains verify <domain>        Re-verify CNAME for pending domain
-  domains remove <domain>        Remove custom domain
-  slug claim <slug>              Claim a public slug ({slug}.agents.<env>)
 
 Hosted MCP Servers:
   mcp deploy                     Deploy a hosted MCP server (code-mode, workspace-owned)
@@ -227,14 +213,6 @@ Apps:
     --rate-limit <n>            Rate limit per minute
     --domains <d1,d2>           Allowed domains (comma-separated)
   apps delete [appId]           Delete an app
-
-BYOK (Bring Your Own Key):
-  byok set                      Store a provider API key
-    --provider <name>           Provider: anthropic | openai | google | bedrock | openrouter
-    --key <value>               API key value
-  byok list                     List configured provider keys
-  byok remove                   Remove a provider key
-    --provider <name>           Provider to remove
 
 Configuration:
   config show                   Show resolved configuration

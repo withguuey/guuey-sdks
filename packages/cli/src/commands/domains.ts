@@ -8,6 +8,12 @@
  *
  * Before adding a domain, create a CNAME record:
  *   example.com  →  {appId}.agents.guuey.com
+ *
+ * NOT YET AVAILABLE: the `/v1/apps/:id/domains/*` cliApi routes are deferred
+ * (see cliApi handler.ts "Deferred to follow-up slices"). Every subcommand
+ * fails fast with a roadmap notice and is de-advertised from `guuey --help`.
+ * The full implementation below is kept intact and re-activates by removing
+ * the `notYetAvailable` gates when the routes ship.
  */
 
 import { requireAuth } from '../auth';
@@ -35,6 +41,9 @@ export async function domainsAdd(
   domain: string | undefined,
   flags?: Record<string, string | true>,
 ): Promise<void> {
+  out.notYetAvailable(
+    "guuey domains add isn't available yet — custom domains are on the guuey launch roadmap.",
+  );
   if (!domain) {
     out.error('Usage: guuey domains add <domain>');
     process.exit(1);
@@ -92,6 +101,9 @@ export async function domainsAdd(
 export async function domainsList(
   flags?: Record<string, string | true>,
 ): Promise<void> {
+  out.notYetAvailable(
+    "guuey domains list isn't available yet — custom domains are on the guuey launch roadmap.",
+  );
   const auth = requireAuth();
   const config = resolveConfig();
   const appId = (flags?.['app-id'] as string) ?? config.appId;
@@ -139,6 +151,9 @@ export async function domainsVerify(
   domain: string | undefined,
   flags?: Record<string, string | true>,
 ): Promise<void> {
+  out.notYetAvailable(
+    "guuey domains verify isn't available yet — custom domains are on the guuey launch roadmap.",
+  );
   if (!domain) {
     out.error('Usage: guuey domains verify <domain>');
     process.exit(1);
@@ -186,6 +201,9 @@ export async function domainsRemove(
   domain: string | undefined,
   flags?: Record<string, string | true>,
 ): Promise<void> {
+  out.notYetAvailable(
+    "guuey domains remove isn't available yet — custom domains are on the guuey launch roadmap.",
+  );
   if (!domain) {
     out.error('Usage: guuey domains remove <domain>');
     process.exit(1);

@@ -12,6 +12,13 @@
  *   guuey deployments rollback       # Rollback to previous version
  *   guuey deployments rollback 3     # Rollback to version 3
  *   guuey deployments logs 5         # Show build logs for build #5
+ *
+ * NOT YET AVAILABLE (rollback + logs only): the `/v1/apps/:id/deploy/rollback`
+ * and `/v1/apps/:id/deploy/build-logs/:n` cliApi routes are deferred (see
+ * cliApi handler.ts "Deferred to follow-up slices"). Those two subcommands
+ * fail fast with a roadmap notice and are de-advertised from `guuey --help`;
+ * `deployments list` is live. The full implementations are kept intact and
+ * re-activate by removing the `notYetAvailable` gates when the routes ship.
  */
 
 import { requireAuth } from '../auth';
@@ -86,6 +93,9 @@ export async function deploymentsRollback(
   versionArg?: string,
   _flags?: Record<string, string | true>,
 ): Promise<void> {
+  out.notYetAvailable(
+    "guuey deployments rollback isn't available yet — deploy rollback is on the guuey launch roadmap.",
+  );
   const auth = requireAuth();
   const config = resolveConfig();
   const appId = config.appId;
@@ -120,6 +130,9 @@ export async function deploymentsLogs(
   buildNumberArg: string | undefined,
   opts: { json?: boolean },
 ): Promise<void> {
+  out.notYetAvailable(
+    "guuey deployments logs isn't available yet — build-log retrieval is on the guuey launch roadmap.",
+  );
   const auth = requireAuth();
   const config = resolveConfig();
   const appId = config.appId;

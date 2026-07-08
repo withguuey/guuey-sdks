@@ -9,6 +9,13 @@
  *   guuey logs --since 30m         # Fetch last 30 minutes
  *   guuey logs --follow            # Live tail (Ctrl+C to stop)
  *   guuey logs -f --since 5m       # Live tail starting from last 5 minutes
+ *
+ * NOT YET AVAILABLE: there is no `/v1/apps/:id/logs` cliApi route (runtime
+ * log access is deferred — see cliApi handler.ts "Deferred to follow-up
+ * slices"). The command fails fast with a roadmap notice and is
+ * de-advertised from `guuey --help`. The full implementation below is kept
+ * intact and re-activates by removing the `notYetAvailable` gate when the
+ * route ships.
  */
 
 import { requireAuth } from '../auth';
@@ -52,6 +59,9 @@ async function fetchLogs(
 export async function logs(
   flags?: Record<string, string | true>,
 ): Promise<void> {
+  out.notYetAvailable(
+    "guuey logs isn't available yet — runtime log streaming is on the guuey launch roadmap.",
+  );
   const auth = requireAuth();
   const config = resolveConfig();
   const appId = (flags?.['app-id'] as string) ?? config.appId;

@@ -5,6 +5,13 @@
  *   guuey stop                # Pause deployed agent (scale to 0)
  *   guuey start               # Resume stopped agent
  *   guuey restart              # Rolling restart of agent pods
+ *
+ * NOT YET AVAILABLE: the `/v1/apps/:id/deploy/{stop,start,restart}` cliApi
+ * routes are deferred (EKS-bound — see cliApi handler.ts "Deferred to
+ * follow-up slices"). Every command fails fast with a roadmap notice and is
+ * de-advertised from `guuey --help`. The full implementation below is kept
+ * intact and re-activates by removing the `notYetAvailable` gate when the
+ * routes ship.
  */
 
 import { resolveConfig } from '../config';
@@ -15,6 +22,9 @@ async function lifecycleRequest(
   action: 'stop' | 'start' | 'restart',
   flags?: Record<string, string | true>,
 ): Promise<void> {
+  out.notYetAvailable(
+    `guuey ${action} isn't available yet — agent lifecycle controls (stop/start/restart) are on the guuey launch roadmap.`,
+  );
   const config = resolveConfig();
   const appId = (flags?.['app-id'] as string) ?? config.appId;
 

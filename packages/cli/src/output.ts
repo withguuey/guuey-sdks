@@ -56,6 +56,22 @@ export function error(msg: string): void {
 }
 
 /**
+ * Fail fast for a command whose cliApi routes are still deferred (see the
+ * "Deferred to follow-up slices" block in cliApi handler.ts). The command
+ * stays registered (no unknown-command noise) but is de-advertised from
+ * `guuey --help`; prints a one-line roadmap notice to stderr and exits 1.
+ * Delete the call site when the routes ship.
+ *
+ * Declared `void` (not `never`) on purpose: a `never` return would make TS
+ * narrow every statement after the gate to unreachable/`never`, breaking
+ * typechecking of the dormant implementations the gates guard.
+ */
+export function notYetAvailable(message: string): void {
+  error(message);
+  process.exit(1);
+}
+
+/**
  * Render a cliApi error body to a human string. The API's envelope is
  * `{ error: { code, message } }`; older surfaces used `{ error: string }`.
  * Never yields "[object Object]" (the undeploy/delete regression class).

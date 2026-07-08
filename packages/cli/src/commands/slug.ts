@@ -8,6 +8,11 @@
  * Usage:
  *   guuey slug claim weather-bot        # Claim weather-bot for this app
  *   guuey slug claim weather-bot --app-id <id>
+ *
+ * NOT YET AVAILABLE: there is no `/v1/apps/:id/slug` cliApi route yet. The
+ * command fails fast with a roadmap notice and is de-advertised from
+ * `guuey --help`. The full implementation below is kept intact and
+ * re-activates by removing the `notYetAvailable` gate when the route ships.
  */
 
 import { requireAuth } from '../auth';
@@ -27,6 +32,9 @@ export async function slugClaim(
   slug: string | undefined,
   flags?: Record<string, string | true>,
 ): Promise<void> {
+  out.notYetAvailable(
+    "guuey slug claim isn't available yet — public agent slugs are on the guuey launch roadmap.",
+  );
   if (!slug) {
     out.error('Usage: guuey slug claim <slug>');
     process.exit(1);
