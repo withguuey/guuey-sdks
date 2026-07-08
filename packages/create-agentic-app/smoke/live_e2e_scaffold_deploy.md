@@ -130,11 +130,11 @@ assertion passes, rollback); it is now prereqs + one command + an eyeball check.
    `apps list` fingerprint in a preflight banner right after login; eyeball
    it before letting a run proceed unattended.
 
-2. **Mint a dev-env PAT.** Log in to the dev platform as a real user (browser
-   `guuey login` against `GUUEY_E2E_HOST`, or the dev dashboard's "Generate
-   Personal Access Token" if one exists) and copy the `ggui_pat_...` token →
-   `GUUEY_E2E_PAT`. This must be a token for a user who can create apps AND
-   deploy hosted MCP servers in the target workspace.
+2. **Mint a dev-env API key.** Log in to the dev platform as a real user, then
+   mint a `guuey_user_...` key from the workspace **API Keys** page (Workspace
+   settings → API Keys) and copy it → `GUUEY_E2E_PAT`. This must be a key for a
+   user who can create apps AND deploy hosted MCP servers in the target
+   workspace.
 3. **A workspace id.** `guuey deploy`'s MCP leg refuses to run without one — the
    scaffold's fresh `guuey.json` has no `workspaceId` (that's only stamped by
    `guuey pull` against an already-linked app). Grab the id of a workspace the
@@ -151,7 +151,7 @@ logs and never touches your real `~/.guuey` (it runs with an isolated `HOME`).
 ### B1 — Run it
 
 ```bash
-GUUEY_E2E_PAT=ggui_pat_... \
+GUUEY_E2E_PAT=guuey_user_... \
 GUUEY_E2E_API_URL=https://<dev-api-id>.execute-api.<region>.amazonaws.com/v1 \
 GUUEY_E2E_HOST=https://<dev-domain> \
 GUUEY_E2E_WORKSPACE=<workspace-id> \
