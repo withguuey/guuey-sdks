@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@mcp-ui/client": "^7.1.1",
-    "@silverprotocol/core": "0.1.0",
+    "@silverprotocol/core": "0.3.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
