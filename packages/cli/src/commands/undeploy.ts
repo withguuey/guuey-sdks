@@ -54,11 +54,13 @@ export async function undeploy(
     },
   });
 
+  const body: unknown = await res.json().catch(() => undefined);
+
   if (!res.ok) {
-    const body: unknown = await res.json().catch(() => undefined);
     if (res.status === 404) {
-      // The undeploy endpoint is a deferred cliApi surface (handler.ts
-      // "Deferred to follow-up slices" — /deploy/undeploy is EKS-bound).
+      // Older backends that predate the undeploy cliApi surface return 404 for
+      // this route. Keep an honest fallback so a stale control plane degrades
+      // gracefully rather than printing a raw HTTP error.
       out.error(
         'Undeploy is not available on this API yet — use "guuey delete" to archive the app ' +
           '(tears down via the 30-day deletion cascade), or redeploy to replace the running agent.',
@@ -69,7 +71,20 @@ export async function undeploy(
     process.exit(1);
   }
 
+  // The backend claimed the deployment (status → 'undeploying'); the
+  // deploy-controller deletes the agent's namespace on its next reconcile tick,
+  // so teardown completes asynchronously after this call returns.
+  const buildNumber =
+    body && typeof body === 'object' && 'buildNumber' in body
+      ? (body as { buildNumber?: unknown }).buildNumber
+      : undefined;
+
   console.log('');
-  out.success('Agent torn down. App is still available for future deploys.');
+  out.success(
+    typeof buildNumber === 'number'
+      ? `Undeploy queued for build #${buildNumber}.`
+      : 'Undeploy queued.',
+  );
+  console.log('  Teardown completes asynchronously; the app stays available for future deploys.');
   console.log('');
 }
