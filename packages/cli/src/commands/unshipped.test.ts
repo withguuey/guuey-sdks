@@ -14,7 +14,6 @@ import type { MockInstance } from 'vitest';
 import { byokSet, byokList, byokRemove } from './byok.js';
 import { domainsAdd, domainsList, domainsVerify, domainsRemove } from './domains.js';
 import { stop, start, restart } from './agent-lifecycle.js';
-import { logs } from './logs.js';
 import { slugClaim } from './slug.js';
 import { deploymentsRollback, deploymentsLogs } from './deployments.js';
 
@@ -36,7 +35,6 @@ const gatedCommands: Array<{ name: string; run: () => Promise<void> }> = [
   { name: 'guuey stop', run: () => stop() },
   { name: 'guuey start', run: () => start() },
   { name: 'guuey restart', run: () => restart() },
-  { name: 'guuey logs', run: () => logs() },
   { name: 'guuey slug claim', run: () => slugClaim('weather-bot') },
   { name: 'guuey deployments rollback', run: () => deploymentsRollback('3') },
   { name: 'guuey deployments logs', run: () => deploymentsLogs('3', {}) },

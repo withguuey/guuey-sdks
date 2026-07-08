@@ -145,6 +145,10 @@ Agent Development:
   env list                       List environment variables
   env unset KEY                  Remove environment variables
   deployments [list]             List deployment builds
+  logs                           Fetch runtime logs for your deployed agent
+    --since <duration>           Time window (default: 1h). Examples: 30s, 15m, 2h, 1d
+    --tail <n>                   Only the last <n> lines
+    --follow                     Live tail (Ctrl+C to stop)
 
 Hosted MCP Servers:
   mcp deploy                     Deploy a hosted MCP server (code-mode, workspace-owned)
