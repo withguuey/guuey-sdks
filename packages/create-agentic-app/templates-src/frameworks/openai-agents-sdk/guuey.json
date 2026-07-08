@@ -1,13 +1,22 @@
 {
   "schema": "1",
+  "worker": "worker.js",
   "agent": {
     "mode": "code",
     "framework": "openai-agents-sdk",
     "model": "MODEL_PLACEHOLDER",
-    "systemPrompt": { "file": "prompts/system.md" },
+    "systemPrompt": {
+      "file": "prompts/system.md"
+    },
     "mcpServers": {
-      "todo": { "kind": "hosted", "source": "./mcps/todo", "devPort": 6782 }
+      "todo": {
+        "kind": "hosted",
+        "source": "./mcps/todo",
+        "devPort": 6782
+      }
     }
   },
-  "ggui": { "configFile": "./ggui/ggui.json" }
+  "ggui": {
+    "configFile": "./ggui/ggui.json"
+  }
 }

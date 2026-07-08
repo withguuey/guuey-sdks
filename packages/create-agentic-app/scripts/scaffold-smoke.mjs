@@ -42,9 +42,12 @@ for (const framework of ["claude-agent-sdk", "openai-agents-sdk", "google-adk"])
   sh("corepack", ["pnpm", "-r", "typecheck"], { cwd: appDir }); // workspace packages (mcps/*, web)
   sh("corepack", ["pnpm", "typecheck"], { cwd: appDir }); // root worker (not a workspace member of `-r`)
   sh("corepack", ["pnpm", "-r", "build"], { cwd: appDir });
-  // Root build output: full-worker templates emit guuey.worker.js; the
-  // graceful google-adk template emits the agent module (guuey.json#agent.entry).
-  const expectedOut = framework === "google-adk" ? "agent.js" : "guuey.worker.js";
+  // Root build output: claude bundles self-contained guuey.worker.js; openai
+  // emits worker.js (external deps, guuey.json#worker — the guuey.worker.js
+  // name means skip-install to the image build); google-adk emits the
+  // graceful agent module (guuey.json#agent.entry).
+  const expectedOut =
+    framework === "google-adk" ? "agent.js" : framework === "openai-agents-sdk" ? "worker.js" : "guuey.worker.js";
   sh("corepack", ["pnpm", "build"], { cwd: appDir });
   sh("node", ["-e", `require('fs').accessSync('${expectedOut}')`], { cwd: appDir });
   console.log(`\n✓ ${framework} scaffold builds clean\n`);
