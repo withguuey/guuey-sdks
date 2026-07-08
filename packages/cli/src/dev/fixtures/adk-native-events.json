@@ -1,0 +1,110 @@
+[
+  {
+    "invocationId": "e-464a2c1c-9fdc-4dd8-b781-fa3fc2b81eab",
+    "author": "spike",
+    "id": "9X7rT5NT",
+    "actions": {
+      "stateDelta": {},
+      "artifactDelta": {},
+      "requestedAuthConfigs": {},
+      "requestedToolConfirmations": {}
+    },
+    "longRunningToolIds": [],
+    "timestamp": 1783480544796,
+    "content": {
+      "parts": [
+        {
+          "functionCall": {
+            "name": "echo",
+            "args": {
+              "message": "conformance-probe"
+            },
+            "id": "adk-5e25963a-5f96-4847-83e1-49cff7dd4ea5"
+          },
+          "thoughtSignature": "CoUCARFNMg+02wTRqzktpU1qp8ju2XCxfzJi8oAJOtK944Ifo+1m8TzbS9XObLSjwMlbItFDHqW0EYikUOXJNGOLYqdxivCNW5X5PrW0az28fv+ylebUxt6SGsAgAW92o3DRiNe8Hgd9K6NHfQwf8PxNGWxNJrnF482HBT7CirGiQjf5OLeIHp4AE2eZMlk9tprjRs5wsrmwqLU4lsgtOTLBmYu7KJ4n+ILepAXWKwwIsT8BKNhur4sCOalobsUEoiccxHpxR4peU/TRtgGLLXJCYKIld1z49YusmpIDGeVafmMChkHJZByziLOHPGJT0ALnUIDNItyl2tRJcYOZx9XlLSNsiKSy"
+        }
+      ],
+      "role": "model"
+    },
+    "usageMetadata": {
+      "promptTokenCount": 103,
+      "candidatesTokenCount": 16,
+      "totalTokenCount": 173,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 103
+        }
+      ],
+      "thoughtsTokenCount": 54,
+      "serviceTier": "standard"
+    },
+    "finishReason": "STOP"
+  },
+  {
+    "invocationId": "e-464a2c1c-9fdc-4dd8-b781-fa3fc2b81eab",
+    "author": "spike",
+    "content": {
+      "role": "user",
+      "parts": [
+        {
+          "functionResponse": {
+            "id": "adk-5e25963a-5f96-4847-83e1-49cff7dd4ea5",
+            "name": "echo",
+            "response": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "conformance-probe"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "actions": {
+      "stateDelta": {},
+      "artifactDelta": {},
+      "requestedAuthConfigs": {},
+      "requestedToolConfirmations": {}
+    },
+    "id": "chsL8tEG",
+    "longRunningToolIds": [],
+    "timestamp": 1783480546095
+  },
+  {
+    "invocationId": "e-464a2c1c-9fdc-4dd8-b781-fa3fc2b81eab",
+    "author": "spike",
+    "id": "IZjids2K",
+    "actions": {
+      "stateDelta": {},
+      "artifactDelta": {},
+      "requestedAuthConfigs": {},
+      "requestedToolConfirmations": {}
+    },
+    "longRunningToolIds": [],
+    "timestamp": 1783480546119,
+    "content": {
+      "parts": [
+        {
+          "text": "The message 'conformance-probe' has been echoed back."
+        }
+      ],
+      "role": "model"
+    },
+    "usageMetadata": {
+      "promptTokenCount": 146,
+      "candidatesTokenCount": 13,
+      "totalTokenCount": 159,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 146
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "finishReason": "STOP"
+  }
+]

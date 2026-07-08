@@ -2,11 +2,13 @@ import { describe, it, expect, afterEach } from "vitest";
 import { join } from "node:path";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import type { AgEvent } from "@silverprotocol/core";
 import { startDevServer, lowerForDev, writeLocalCredentials, type DevServerHandle } from "./dev-server.js";
 
 const echoFixture = join(__dirname, "fixtures", "echo-worker.mjs");
 const errorFixture = join(__dirname, "fixtures", "error-worker.mjs");
 const claudeNativeFixture = join(__dirname, "fixtures", "claude-native-worker.mjs");
+const adkNativeFixture = join(__dirname, "fixtures", "adk-native-worker.mjs");
 
 let srv: DevServerHandle | undefined;
 let projectRoot: string | undefined;
@@ -130,6 +132,63 @@ describe("startDevServer", () => {
     // Never raw SDKMessage shapes on the wire in silver mode.
     expect(text).not.toMatch(/"type":"assistant"/);
     expect(text).not.toMatch(/"subtype":"success"/);
+  });
+
+  it("streams real AgJSON lifecycle events for a google-adk worker on protocol silver", async () => {
+    // End-to-end through the REAL createAdkNormalizer(): the fixture worker
+    // replays the captured ADK cassette (functionCall → functionResponse →
+    // final text — see fixtures/adk-native-worker.mjs), and the SSE `message`
+    // frames must carry the normalized AgJSON, not the raw ADK shapes.
+    srv = await startDevServer({
+      port: 0,
+      framework: "google-adk",
+      protocol: "silver",
+      workerCommand: process.execPath,
+      workerArgs: [adkNativeFixture],
+      agentSnapshotJson: "{}",
+      projectRoot: freshProjectRoot(),
+    });
+    const res = await fetch(`http://localhost:${srv.port}/agent/invoke`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input: "hi" }),
+    });
+    const text = await res.text();
+    expect(text).toMatch(/^event: session\n/);
+    expect(text).toMatch(/event: done\ndata: \{"stopReason":"end_turn"\}/);
+
+    const events = [...text.matchAll(/event: message\ndata: (\[.*?\])\n\n/g)].flatMap(
+      (m) => JSON.parse(m[1]!) as AgEvent[],
+    );
+    // Tool turn: the captured functionCall/functionResponse pair came out as
+    // AgJSON tool lifecycle under the REAL adk call id.
+    const toolStarts = events.filter(
+      (e): e is Extract<AgEvent, { type: "tool.start" }> => e.type === "tool.start",
+    );
+    expect(toolStarts).toHaveLength(1);
+    expect(toolStarts[0]).toMatchObject({
+      toolCallId: "adk-5e25963a-5f96-4847-83e1-49cff7dd4ea5",
+      name: "echo",
+    });
+    const toolDones = events.filter(
+      (e): e is Extract<AgEvent, { type: "tool.done" }> => e.type === "tool.done",
+    );
+    expect(toolDones).toHaveLength(1);
+    expect(toolDones[0]).toMatchObject({
+      toolCallId: "adk-5e25963a-5f96-4847-83e1-49cff7dd4ea5",
+      outcome: "ok",
+    });
+    // Text turn: the streamed deltas reassemble the captured reply.
+    const deltas = events.filter(
+      (e): e is Extract<AgEvent, { type: "text.delta" }> => e.type === "text.delta",
+    );
+    expect(deltas.map((d) => d.delta).join("")).toBe(
+      "The message 'conformance-probe' has been echoed back.",
+    );
+    expect(events.some((e) => e.type === "turn.done")).toBe(true);
+    // Never raw ADK Event shapes on the wire in silver mode.
+    expect(text).not.toMatch(/"invocationId"/);
+    expect(text).not.toMatch(/"functionCall"/);
   });
 
   it("terminates with an error frame when silver has no normalizer for the framework", async () => {
