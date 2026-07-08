@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { PassThrough } from "node:stream";
-import { serveNativeOn } from "./serve-native.js";
+import { serveNativeOn, resolveInstalledVersion } from "./serve-native.js";
 import type { Invoke } from "./protocol.js";
 
 function invokeLine(input: string): string {
@@ -65,5 +65,15 @@ describe("serveNativeOn", () => {
   it("a void handler return produces done with empty result", async () => {
     const events = await run(invokeLine("hi"), async () => {});
     expect(events.at(-1)).toEqual({ type: "done", stopReason: "end_turn", result: "" });
+  });
+});
+
+describe("resolveInstalledVersion — the hello handshake's runtime resolution", () => {
+  it("resolves an installed package's real version (never the manifest range)", () => {
+    const v = resolveInstalledVersion("zod");
+    expect(v).toMatch(/^\d+\.\d+\.\d+/);
+  });
+  it("returns null for a package that is not installed (bundled-worker degradation)", () => {
+    expect(resolveInstalledVersion("@guuey/definitely-not-installed")).toBeNull();
   });
 });

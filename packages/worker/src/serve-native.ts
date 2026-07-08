@@ -5,7 +5,11 @@
  * `Turn`. Lets a template worker emit `hello` → `native`* → `done` per invoke,
  * like `@guuey/host` does.
  */
-import { createWriteStream } from "node:fs";
+import { createWriteStream, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+
+const require = createRequire(import.meta.url);
 import { createEmitter, type Emitter } from "./emit.js";
 import { lines } from "./lines.js";
 import { isInvoke, isShutdown, parseControl } from "./parse.js";
@@ -23,7 +27,42 @@ export type NativeHandler = (
 export interface NativeServeInfo {
   framework: string;
   sdkName?: string | null;
+  /** Installed SDK version for the hello handshake. When OMITTED (the
+   *  template default), it is resolved at runtime from `sdkName`'s installed
+   *  package.json — works for unbundled workers with a real node_modules;
+   *  degrades to null inside a self-contained bundle (nothing to resolve). */
   sdkVersion?: string | null;
+}
+
+/**
+ * Resolve `pkgName`'s installed version by walking up from its resolved main
+ * entry (a `require.resolve(pkg + "/package.json")` throws
+ * ERR_PACKAGE_PATH_NOT_EXPORTED for SDKs whose exports map omits the
+ * subpath — the claude/openai SDKs both do). Never throws: null when the
+ * package can't be resolved (bundled worker, absent dep).
+ */
+export function resolveInstalledVersion(pkgName: string): string | null {
+  try {
+    const entry = require.resolve(pkgName);
+    let dir = dirname(entry);
+    for (let depth = 0; depth < 6; depth++) {
+      try {
+        const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as {
+          name?: string;
+          version?: string;
+        };
+        if (pkg.name === pkgName) return pkg.version ?? null;
+      } catch {
+        // not at this level — keep walking
+      }
+      const parent = dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export async function serveNativeOn(
@@ -48,7 +87,15 @@ export async function serveNativeOn(
     if (isShutdown(msg)) break;
     if (!isInvoke(msg)) continue;
 
-    emitter.hello(info.framework, info.sdkName ?? null, info.sdkVersion ?? null);
+    emitter.hello(
+      info.framework,
+      info.sdkName ?? null,
+      info.sdkVersion !== undefined
+        ? info.sdkVersion
+        : info.sdkName
+          ? resolveInstalledVersion(info.sdkName)
+          : null,
+    );
     try {
       const scoped: NativeEmit = {
         native: (event) => emitter.native(info.framework, event),
