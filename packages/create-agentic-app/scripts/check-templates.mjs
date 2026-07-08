@@ -166,3 +166,26 @@ if (violations.length > 0) {
 }
 
 console.log('check-templates: dist/templates is publish-clean.');
+
+// ── versions.json freshness (the one-generation-behind scaffold-chain guard) ──
+// Every @guuey/* pin in templates-src/versions.json must equal the CURRENT
+// workspace package version — a stale pin ships templates that install an
+// older cli (the caa@0.1.2 incident: scaffolded ADK apps got a cli with no
+// ADK normalizer and hard-failed `guuey dev`).
+import { readFileSync as _rf } from "node:fs";
+{
+  const versions = JSON.parse(_rf(new URL("../templates-src/versions.json", import.meta.url), "utf8"));
+  const workspacePkg = { "@guuey/worker": "worker", "@guuey/config": "config", "@guuey/cli": "cli" };
+  const stale = [];
+  for (const [name, dir] of Object.entries(workspacePkg)) {
+    const pinned = versions[name];
+    if (!pinned) continue;
+    const actual = JSON.parse(_rf(new URL(`../../${dir}/package.json`, import.meta.url), "utf8")).version;
+    if (pinned.replace(/^[\^~]/, "") !== actual) stale.push(`${name}: versions.json pins ${pinned}, workspace is ${actual}`);
+  }
+  if (stale.length) {
+    console.error("check-templates: STALE versions.json pins (bump before release):\n  " + stale.join("\n  "));
+    process.exit(1);
+  }
+  console.log("check-templates: versions.json pins match the workspace.");
+}
