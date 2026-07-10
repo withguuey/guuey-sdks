@@ -350,8 +350,9 @@ export async function appsAccess(
       body.guestDailyMessageLimit = null;
     } else {
       const raw = typeof opts.guestLimit === 'string' ? opts.guestLimit.trim() : '';
-      const n = Number(raw);
-      if (!raw || !Number.isInteger(n) || n < 1) {
+      // Digits-only pre-check: Number() alone would admit '1e2', '0x10', etc.
+      const n = /^[0-9]+$/.test(raw) ? Number(raw) : NaN;
+      if (!Number.isInteger(n) || n < 1) {
         out.error("Invalid --guest-limit value. Use a positive integer, or 'off' to clear.");
         process.exit(1);
       }

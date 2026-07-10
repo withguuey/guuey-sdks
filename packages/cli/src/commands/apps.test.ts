@@ -152,7 +152,7 @@ describe('appsAccess', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it.each(['0', '-5', '1.5', 'abc'])(
+  it.each(['0', '-5', '1.5', 'abc', '1e2', '0x10'])(
     'rejects an invalid --guest-limit value %s before any API call',
     async (bad) => {
       await expect(appsAccess('app1', { guestLimit: bad })).rejects.toBeInstanceOf(ExitSignal);
@@ -215,6 +215,20 @@ describe('appsAccess', () => {
     await expect(appsAccess('app1', { guests: 'on' })).rejects.toBeInstanceOf(ExitSignal);
 
     expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
+  });
+
+  it('--json emits the resulting access state as JSON', async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(
+        JSON.stringify({ app: { guestAccess: false, guestDailyMessageLimit: 20 } }),
+        { status: 200 },
+      ),
+    );
+
+    await appsAccess('app1', { guests: 'off', guestLimit: '20', json: true });
+
+    const printed = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(JSON.parse(printed)).toEqual({ guestAccess: false, guestDailyMessageLimit: 20 });
   });
 });
 
@@ -292,6 +306,19 @@ describe('appsPublish', () => {
 
     expect(exitSpy).toHaveBeenCalledWith(1);
   });
+
+  it('--json emits the share link and the listing as JSON', async () => {
+    const listing = { name: 'Weather Bot', status: 'published', visibility: 'public' };
+    fetchSpy.mockResolvedValue(new Response(JSON.stringify({ listing }), { status: 200 }));
+
+    await appsPublish('app1', { json: true });
+
+    const printed = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(JSON.parse(printed)).toEqual({
+      shareLink: 'https://app.guuey.com/agent/app1',
+      listing,
+    });
+  });
 });
 
 describe('appsUnpublish', () => {
@@ -334,5 +361,24 @@ describe('appsUnpublish', () => {
 
     const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
     expect(output).toContain('unpublished — the share link still works');
+  });
+
+  it('--json with the { listing: null } idempotent response emits { unpublished: true, listing: null }', async () => {
+    fetchSpy.mockResolvedValue(new Response(JSON.stringify({ listing: null }), { status: 200 }));
+
+    await appsUnpublish('app1', { json: true });
+
+    const printed = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(JSON.parse(printed)).toEqual({ unpublished: true, listing: null });
+  });
+
+  it('--json with an archived listing emits { unpublished: true, listing }', async () => {
+    const listing = { name: 'Bot', status: 'archived' };
+    fetchSpy.mockResolvedValue(new Response(JSON.stringify({ listing }), { status: 200 }));
+
+    await appsUnpublish('app1', { json: true });
+
+    const printed = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(JSON.parse(printed)).toEqual({ unpublished: true, listing });
   });
 });
