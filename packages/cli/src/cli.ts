@@ -17,7 +17,17 @@
  */
 
 import { configSet, configShow, configUnset, configInit } from './commands/config';
-import { appsList, appsGet, appsCreate, appsUpdate, appsDelete, appsRecover } from './commands/apps';
+import {
+  appsList,
+  appsGet,
+  appsCreate,
+  appsUpdate,
+  appsDelete,
+  appsRecover,
+  appsAccess,
+  appsPublish,
+  appsUnpublish,
+} from './commands/apps';
 import { status } from './commands/status';
 import { typegen } from './commands/typegen';
 import { login } from './commands/login';
@@ -217,6 +227,23 @@ Apps:
     --rate-limit <n>            Rate limit per minute
     --domains <d1,d2>           Allowed domains (comma-separated)
   apps delete [appId]           Delete an app
+  apps access [appId]           Set guest-chat access policy (personal apps only;
+                                 workspace-owned apps 404 — use the platform UI)
+    --guests <on|off>           Allow unauthenticated guest chat
+    --guest-limit <n|off>       Per-guest daily message cap ('off' clears it)
+                                 At least one of the two flags is required.
+  apps publish [appId]          List the app in the store (personal apps only;
+                                 workspace-owned apps 404 — use the platform UI)
+    --name <name>               Listing name (defaults to the app's display name)
+    --description <text>        Listing description
+    --category <category>       Listing category
+    --icon-url <url>            Listing icon URL
+                                 Prints the share link, https://app.guuey.com/agent/<appId>
+                                 (production portal origin; sandbox/dev envs serve the
+                                 same route at a different origin).
+  apps unpublish [appId]        Remove the app from the store (personal apps only;
+                                 workspace-owned apps 404 — use the platform UI)
+                                 Idempotent; the share link keeps working after unpublish.
 
 Configuration:
   config show                   Show resolved configuration
@@ -560,8 +587,29 @@ async function main(): Promise<void> {
         case 'recover':
           await appsRecover(rest[0], { json: jsonFlag });
           break;
+        case 'access':
+          await appsAccess(rest[0], {
+            guests: flags.guests as string | true | undefined,
+            guestLimit: flags['guest-limit'] as string | true | undefined,
+            json: jsonFlag,
+          });
+          break;
+        case 'publish':
+          await appsPublish(rest[0], {
+            name: flags.name as string | undefined,
+            description: flags.description as string | undefined,
+            category: flags.category as string | undefined,
+            iconUrl: flags['icon-url'] as string | undefined,
+            json: jsonFlag,
+          });
+          break;
+        case 'unpublish':
+          await appsUnpublish(rest[0], { json: jsonFlag });
+          break;
         default:
-          console.error(`Unknown apps command: ${action ?? '(none)'}`);
+          console.error(
+            `Unknown apps command: ${action ?? '(none)'}. Use: list, get, create, update, delete, recover, access, publish, unpublish`,
+          );
           process.exit(1);
       }
       break;

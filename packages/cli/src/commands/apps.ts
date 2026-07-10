@@ -24,6 +24,26 @@ interface AppDetail extends AppSummary {
   rateLimitPerMinute?: number;
 }
 
+interface AppAccessState {
+  guestAccess: boolean | null;
+  guestDailyMessageLimit: number | null;
+}
+
+interface AppListing {
+  name: string;
+  status?: string;
+  visibility?: string;
+}
+
+/**
+ * Production portal origin for the printed share link — deliberately a
+ * single hardcoded constant, not `resolveConfig().portalUrl`. Sandbox/dev
+ * envs serve the same `/agent/<appId>` route at a different origin; the
+ * `--help` text calls that out rather than making this command silently
+ * env-aware.
+ */
+const PORTAL_ORIGIN = 'https://app.guuey.com';
+
 function getApiBase(): string {
   const config = resolveConfig();
   const apiUrl = config.apiUrl;
@@ -286,4 +306,156 @@ export async function appsRecover(
   } else {
     out.success(`Recovered app ${appId}`);
   }
+}
+
+/**
+ * Handle `guuey apps access [appId]`.
+ *
+ * Personal-apps-only: `PUT /apps/:id` 404s for workspace-owned apps (see
+ * `guuey apps access --help`).
+ */
+export async function appsAccess(
+  appId: string | undefined,
+  opts: {
+    guests?: string | true;
+    guestLimit?: string | true;
+    json?: boolean;
+  },
+): Promise<void> {
+  const resolved = appId ?? resolveConfig().appId;
+  if (!resolved) {
+    out.error('No app ID provided. Pass an app ID or set via: guuey config set app-id <id>');
+    process.exit(1);
+  }
+
+  if (opts.guests === undefined && opts.guestLimit === undefined) {
+    out.error(
+      'No flags provided. Use --guests on|off and/or --guest-limit N|off. See: guuey apps access --help',
+    );
+    process.exit(1);
+  }
+
+  const body: Record<string, unknown> = {};
+
+  if (opts.guests !== undefined) {
+    if (opts.guests !== 'on' && opts.guests !== 'off') {
+      out.error('Invalid --guests value. Use: on | off');
+      process.exit(1);
+    }
+    body.guestAccess = opts.guests === 'on';
+  }
+
+  if (opts.guestLimit !== undefined) {
+    if (opts.guestLimit === 'off') {
+      body.guestDailyMessageLimit = null;
+    } else {
+      const raw = typeof opts.guestLimit === 'string' ? opts.guestLimit.trim() : '';
+      const n = Number(raw);
+      if (!raw || !Number.isInteger(n) || n < 1) {
+        out.error("Invalid --guest-limit value. Use a positive integer, or 'off' to clear.");
+        process.exit(1);
+      }
+      body.guestDailyMessageLimit = n;
+    }
+  }
+
+  const res = await apiRequest('PUT', `/apps/${resolved}`, body);
+  if (!res.ok) return handleError(res);
+
+  const data = (await res.json()) as { app: AppAccessState };
+
+  if (opts.json) {
+    out.json(data.app);
+    return;
+  }
+
+  out.success(`Updated access for app ${resolved}`);
+  console.log('');
+  console.log(`  Guests:            ${data.app.guestAccess === false ? 'off' : 'on'}`);
+  console.log(
+    `  Guest daily limit: ${
+      data.app.guestDailyMessageLimit == null ? 'unlimited' : data.app.guestDailyMessageLimit
+    }`,
+  );
+}
+
+/**
+ * Handle `guuey apps publish [appId]`.
+ *
+ * Personal-apps-only: `POST /apps/:id/listing` 404s for workspace-owned
+ * apps (see `guuey apps publish --help`). Always forces `status:
+ * 'published'` and `visibility: 'public'` over whatever metadata flags
+ * are passed — those flags only control the listing's display fields.
+ */
+export async function appsPublish(
+  appId: string | undefined,
+  opts: {
+    name?: string;
+    description?: string;
+    category?: string;
+    iconUrl?: string;
+    json?: boolean;
+  },
+): Promise<void> {
+  const resolved = appId ?? resolveConfig().appId;
+  if (!resolved) {
+    out.error('No app ID provided. Pass an app ID or set via: guuey config set app-id <id>');
+    process.exit(1);
+  }
+
+  const body: Record<string, unknown> = {};
+  if (opts.name) body.name = opts.name;
+  if (opts.description) body.description = opts.description;
+  if (opts.category) body.category = opts.category;
+  if (opts.iconUrl) body.iconUrl = opts.iconUrl;
+  // Publishing always forces these — metadata flags never override them.
+  body.status = 'published';
+  body.visibility = 'public';
+
+  const res = await apiRequest('POST', `/apps/${resolved}/listing`, body);
+  if (!res.ok) return handleError(res, 'Failed to publish app');
+
+  const data = (await res.json()) as { listing: AppListing };
+  const shareLink = `${PORTAL_ORIGIN}/agent/${resolved}`;
+
+  if (opts.json) {
+    out.json({ shareLink, listing: data.listing });
+    return;
+  }
+
+  out.success(`Published "${data.listing.name}" — listed in the store`);
+  console.log('');
+  console.log(`  Share link: ${shareLink}`);
+}
+
+/**
+ * Handle `guuey apps unpublish [appId]`.
+ *
+ * Personal-apps-only: `DELETE /apps/:id/listing` 404s for workspace-owned
+ * apps (see `guuey apps unpublish --help`). Idempotent — unpublishing an
+ * app with no listing (or an already-archived one) still succeeds.
+ * Deactivating the listing does not tear down the app itself, so the
+ * direct share link keeps working; only store-browse discovery goes away.
+ */
+export async function appsUnpublish(
+  appId: string | undefined,
+  opts: { json?: boolean },
+): Promise<void> {
+  const resolved = appId ?? resolveConfig().appId;
+  if (!resolved) {
+    out.error('No app ID provided. Pass an app ID or set via: guuey config set app-id <id>');
+    process.exit(1);
+  }
+
+  const res = await apiRequest('DELETE', `/apps/${resolved}/listing`);
+  if (!res.ok) return handleError(res, 'Failed to unpublish app');
+
+  const data = (await res.json()) as { listing: AppListing | null };
+
+  if (opts.json) {
+    out.json({ unpublished: true, listing: data.listing });
+    return;
+  }
+
+  out.success(`App ${resolved} unpublished — the share link still works`);
 }
