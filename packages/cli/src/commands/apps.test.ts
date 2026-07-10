@@ -207,14 +207,22 @@ describe('appsAccess', () => {
     expect(output).toContain('unlimited');
   });
 
-  it('a non-ok API response prints the error and exits 1', async () => {
+  it('a non-ok API response prints the wire envelope message and exits 1', async () => {
+    // Real cliApi envelope: `{ error: { code, message } }` (see
+    // backend/amplify/functions/shared/response.ts#httpError).
     fetchSpy.mockResolvedValue(
-      new Response(JSON.stringify({ error: 'App not found' }), { status: 404 }),
+      new Response(
+        JSON.stringify({ error: { code: 'NOT_FOUND', message: 'App app1 not found' } }),
+        { status: 404 },
+      ),
     );
 
     await expect(appsAccess('app1', { guests: 'on' })).rejects.toBeInstanceOf(ExitSignal);
 
     expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('App app1 not found');
+    expect(printed).not.toContain('[object Object]');
   });
 
   it('--json emits the resulting access state as JSON', async () => {
@@ -234,6 +242,7 @@ describe('appsAccess', () => {
 
 describe('appsPublish', () => {
   let fetchSpy: MockInstance<typeof fetch>;
+  let errSpy: MockInstance<typeof console.error>;
   let logSpy: MockInstance<typeof console.log>;
 
   beforeEach(() => {
@@ -241,7 +250,7 @@ describe('appsPublish', () => {
     vi.spyOn(process, 'exit').mockImplementation((code) => {
       throw new ExitSignal(typeof code === 'number' ? code : undefined);
     });
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   });
 
@@ -296,15 +305,25 @@ describe('appsPublish', () => {
     expect(output.toLowerCase()).toContain('listed in the store');
   });
 
-  it('a non-ok API response (e.g. workspace app 404) prints the error and exits 1', async () => {
+  it('a workspace-app 404 prints the wire envelope message (not [object Object]) and exits 1', async () => {
+    // The documented primary failure: listing routes are personal-apps-only,
+    // so a workspace app 404s with the real cliApi envelope
+    // `{ error: { code, message } }` (shared/response.ts#httpError).
     fetchSpy.mockResolvedValue(
-      new Response(JSON.stringify({ error: 'App not found' }), { status: 404 }),
+      new Response(
+        JSON.stringify({ error: { code: 'NOT_FOUND', message: 'App app1 not found' } }),
+        { status: 404 },
+      ),
     );
     const exitSpy = vi.spyOn(process, 'exit');
 
     await expect(appsPublish('app1', {})).rejects.toBeInstanceOf(ExitSignal);
 
     expect(exitSpy).toHaveBeenCalledWith(1);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('Failed to publish app');
+    expect(printed).toContain('App app1 not found');
+    expect(printed).not.toContain('[object Object]');
   });
 
   it('--json emits the share link and the listing as JSON', async () => {

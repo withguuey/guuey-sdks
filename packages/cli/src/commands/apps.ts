@@ -70,8 +70,12 @@ async function apiRequest(method: string, path: string, body?: unknown): Promise
 async function handleError(res: Response, prefix?: string): Promise<never> {
   let message: string;
   try {
-    const data = (await res.json()) as { error?: string };
-    message = data.error ?? `HTTP ${res.status}`;
+    // cliApi's envelope is `{ error: { code, message } }` (see
+    // backend/amplify/functions/shared/response.ts#httpError); older
+    // surfaces used `{ error: string }`. `out.apiErrorMessage` renders
+    // both and never yields "[object Object]".
+    const body: unknown = await res.json();
+    message = out.apiErrorMessage(body, `HTTP ${res.status}`);
   } catch {
     message = `HTTP ${res.status} ${res.statusText}`;
   }
