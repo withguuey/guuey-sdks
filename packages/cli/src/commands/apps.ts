@@ -11,7 +11,12 @@ import * as out from '../output';
 
 interface AppSummary {
   id: string;
-  name: string;
+  /**
+   * The cliApi wire field is `displayName` (see
+   * `backend/amplify/functions/cliApi/handlers/apps.ts#AppWire`) — NOT
+   * `name`. Reading `.name` here silently rendered an empty column (S5).
+   */
+  displayName: string;
   hasBYOK: boolean;
   userAuthMode: string;
   createdAt: string;
@@ -84,6 +89,21 @@ async function handleError(res: Response, prefix?: string): Promise<never> {
 }
 
 /**
+ * Build one `out.table` row for `guuey apps list` (pure — no I/O), so the
+ * Name-column-uses-`displayName` fix (S5) is unit-testable without a
+ * `fetch` mock.
+ */
+export function appsListRow(a: AppSummary): Record<string, string> {
+  return {
+    ID: a.id,
+    Name: a.displayName,
+    Auth: a.userAuthMode,
+    BYOK: a.hasBYOK ? 'yes' : 'no',
+    Created: a.createdAt?.slice(0, 10) ?? '-',
+  };
+}
+
+/**
  * Handle `guuey apps list`.
  */
 export async function appsList(opts: { json?: boolean }): Promise<void> {
@@ -97,15 +117,7 @@ export async function appsList(opts: { json?: boolean }): Promise<void> {
     return;
   }
 
-  out.table(
-    data.apps.map((a) => ({
-      ID: a.id,
-      Name: a.name,
-      Auth: a.userAuthMode,
-      BYOK: a.hasBYOK ? 'yes' : 'no',
-      Created: a.createdAt?.slice(0, 10) ?? '-',
-    })),
-  );
+  out.table(data.apps.map(appsListRow));
 }
 
 /**
@@ -132,7 +144,7 @@ export async function appsGet(
   }
 
   const app = data.app;
-  console.log(`App: ${app.name} (${app.id})`);
+  console.log(`App: ${app.displayName} (${app.id})`);
   console.log(`  Auth Mode:    ${app.userAuthMode}`);
   console.log(`  BYOK:         ${app.hasBYOK ? 'yes' : 'no'}`);
   if (app.webhookUrl) console.log(`  Webhook:      ${app.webhookUrl}`);

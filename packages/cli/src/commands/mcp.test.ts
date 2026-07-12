@@ -36,25 +36,69 @@ import type { ResolvedConfig } from '../config.js';
 import type { apiRequest } from '../deploy-shared.js';
 
 describe('resolveWorkspaceId', () => {
-  it('flag wins over env', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('flag wins over env', async () => {
     expect(
-      resolveWorkspaceId({ workspace: 'ws-flag' }, { GUUEY_WORKSPACE: 'ws-env' }),
+      await resolveWorkspaceId({ workspace: 'ws-flag' }, { GUUEY_WORKSPACE: 'ws-env' }),
     ).toBe('ws-flag');
   });
 
-  it('falls back to GUUEY_WORKSPACE env when no flag', () => {
-    expect(resolveWorkspaceId({}, { GUUEY_WORKSPACE: 'ws-env' })).toBe('ws-env');
-    expect(resolveWorkspaceId(undefined, { GUUEY_WORKSPACE: 'ws-env' })).toBe('ws-env');
+  it('falls back to GUUEY_WORKSPACE env when no flag', async () => {
+    expect(await resolveWorkspaceId({}, { GUUEY_WORKSPACE: 'ws-env' })).toBe('ws-env');
+    expect(await resolveWorkspaceId(undefined, { GUUEY_WORKSPACE: 'ws-env' })).toBe('ws-env');
   });
 
-  it('returns null when neither is present', () => {
-    expect(resolveWorkspaceId({}, {})).toBeNull();
-    expect(resolveWorkspaceId(undefined, {})).toBeNull();
+  it('returns null when neither is present and no opts (auth/config) given', async () => {
+    expect(await resolveWorkspaceId({}, {})).toBeNull();
+    expect(await resolveWorkspaceId(undefined, {})).toBeNull();
   });
 
-  it('ignores a boolean (value-less) --workspace flag and an empty env', () => {
-    expect(resolveWorkspaceId({ workspace: true }, {})).toBeNull();
-    expect(resolveWorkspaceId({}, { GUUEY_WORKSPACE: '' })).toBeNull();
+  it('ignores a boolean (value-less) --workspace flag and an empty env', async () => {
+    expect(await resolveWorkspaceId({ workspace: true }, {})).toBeNull();
+    expect(await resolveWorkspaceId({}, { GUUEY_WORKSPACE: '' })).toBeNull();
+  });
+
+  // ── Personal-workspace fallback (front-door PNA fix) ──────────────────
+  // No flag/env value + `opts.auth`/`opts.config` given → GET
+  // /v1/me/personal-workspace (Task 4), the idempotent-ensure route a
+  // stranger's first hosted-MCP deploy leg needs since they have no
+  // workspace of their own yet.
+  const auth = { pat: 'pat-test', expiresAt: '2099-01-01T00:00:00.000Z' };
+  const config = { host: 'https://platform.guuey.test', apiUrl: 'https://api.guuey.test' };
+
+  it('falls back to GET /me/personal-workspace when opts are given and flag/env are absent', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ workspaceId: 'ws-personal-1' }), { status: 200 }),
+    );
+
+    const result = await resolveWorkspaceId({}, {}, { auth, config });
+
+    expect(result).toBe('ws-personal-1');
+    const [url, init] = fetchSpy.mock.calls.at(-1)!;
+    expect(new URL(String(url)).pathname).toBe('/me/personal-workspace');
+    expect(init?.headers).toMatchObject({ Authorization: 'Bearer pat-test' });
+  });
+
+  it('flag still wins over the personal-workspace fallback even when opts are given', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    const result = await resolveWorkspaceId({ workspace: 'ws-flag' }, {}, { auth, config });
+
+    expect(result).toBe('ws-flag');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('returns null (not throws) when the personal-workspace request fails', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: 'INTERNAL', message: 'boom' } }), {
+        status: 500,
+      }),
+    );
+
+    expect(await resolveWorkspaceId({}, {}, { auth, config })).toBeNull();
   });
 });
 

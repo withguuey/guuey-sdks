@@ -7,7 +7,8 @@
  *   1. `--url <https://…>` flag
  *   2. `{appId}.{agentsDomain}` if `AGENTS_DOMAIN` or amplify_outputs
  *      carries an agents root
- *   3. `guuey.json` host (local `guuey dev`)
+ *   3. The newest live deployment's `endpointUrl`, from
+ *      `GET /apps/:id/deployments`
  *
  * Usage:
  *   guuey test "What's the weather in Tokyo?"
@@ -17,6 +18,7 @@
 
 import { resolveConfig, loadAmplifyOutputs } from '../config';
 import { requireAuth } from '../auth';
+import { apiRequest } from '../deploy-shared';
 import * as out from '../output';
 
 // Streamable invoke protocol version — distinct from the MCP wire-protocol
@@ -47,7 +49,7 @@ export async function test(
 
   const { pat } = requireAuth();
   const sessionId = (flags?.session as string) ?? `test-${Date.now()}`;
-  const endpoint = resolveAgentEndpoint(config, flags);
+  const endpoint = await resolveAgentEndpoint(config, flags, pat);
 
   console.log(`  App:      ${config.appId}`);
   console.log(`  Session:  ${sessionId}`);
@@ -177,13 +179,23 @@ function parseFrame(frame: string): SseEvent {
 }
 
 /**
- * Resolve the agent base URL. Priority: `--url` flag, then
- * `{appId}.{agentsDomain}` via amplify outputs, then project host.
+ * Resolve the agent base URL. Priority:
+ *   1. `--url <https://…>` flag
+ *   2. `{appId}.{agentsDomain}` via amplify outputs / `$AGENTS_DOMAIN`
+ *   3. The newest deployment with a live `endpointUrl`, read from
+ *      `GET /apps/:id/deployments` (the same route `commands/deployments.ts`
+ *      speaks — newest-first per the backend's GSI query).
+ *
+ * The old fallback here (`config.host` — the PLATFORM host, not an agent
+ * pod) was S13: it silently POSTed `/invoke` at the platform origin and
+ * got back a 404 HTML page. There is no safe URL to fall back to once the
+ * deployments lookup comes up empty — this errors out instead of guessing.
  */
-function resolveAgentEndpoint(
+export async function resolveAgentEndpoint(
   config: ReturnType<typeof resolveConfig>,
-  flags?: Record<string, string | true>,
-): string {
+  flags: Record<string, string | true> | undefined,
+  pat: string,
+): Promise<string> {
   const override = flags?.url as string | undefined;
   if (override) return override.replace(/\/$/, '');
 
@@ -193,10 +205,17 @@ function resolveAgentEndpoint(
     return `https://${config.appId}.${agentsDomain}`;
   }
 
-  if (config.host && !config.host.includes('localhost')) {
-    return config.host.replace(/\/$/, '');
+  if (config.appId) {
+    const res = await apiRequest(pat, config, 'GET', `/apps/${config.appId}/deployments`);
+    if (res.ok) {
+      const data = (await res.json()) as {
+        deployments: Array<{ endpointUrl: string | null }>;
+      };
+      const live = data.deployments.find((d) => d.endpointUrl);
+      if (live?.endpointUrl) return live.endpointUrl.replace(/\/$/, '');
+    }
   }
 
-  // Last-resort — local dev.
-  return (config.host ?? 'http://localhost:6681').replace(/\/$/, '');
+  out.error('No live deployment found — run "guuey deploy" first.');
+  process.exit(1);
 }

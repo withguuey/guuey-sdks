@@ -47,18 +47,39 @@ const LABEL_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 
 /**
  * Resolve the owning workspace id: `--workspace` flag wins, then the
- * `GUUEY_WORKSPACE` env var. Returns `null` when neither yields a value
- * (the caller prints the error + exits).
+ * `GUUEY_WORKSPACE` env var, then — when `opts.auth`/`opts.config` are
+ * given — a fallback to `GET /v1/me/personal-workspace` (Task 4), which
+ * idempotently ensures + returns the caller's personal workspace. This is
+ * the PNA/front-door fix: a stranger's first `guuey deploy` with a hosted
+ * MCP `source` leg in `guuey.json` has no `--workspace`/`$GUUEY_WORKSPACE`
+ * and no personal workspace provisioned yet either — without this
+ * fallback, deploy hard-fails with "needs a workspace" even though the
+ * platform can trivially provision one for them.
+ *
+ * Returns `null` when no flag/env value is present AND either `opts` was
+ * omitted or the personal-workspace request itself failed (network error,
+ * non-2xx) — never on a request that merely succeeds with an unexpected
+ * shape (that would be a backend contract break, not a "no workspace"
+ * state). The caller prints the error + exits.
+ *
+ * Async (unlike the flag/env-only shape it replaces) because the fallback
+ * is a network call — every call site must now `await` it.
  */
-export function resolveWorkspaceId(
+export async function resolveWorkspaceId(
   flags: Record<string, string | true> | undefined,
   env: NodeJS.ProcessEnv,
-): string | null {
+  opts?: { auth: AuthTokens; config: ResolvedConfig },
+): Promise<string | null> {
   const flag = flags?.workspace;
   if (typeof flag === 'string' && flag.length > 0) return flag;
   const fromEnv = env.GUUEY_WORKSPACE;
   if (typeof fromEnv === 'string' && fromEnv.length > 0) return fromEnv;
-  return null;
+  if (!opts) return null;
+
+  const res = await apiRequest(opts.auth.pat, opts.config, 'GET', '/me/personal-workspace');
+  if (!res.ok) return null;
+  const data = (await res.json()) as { workspaceId: string };
+  return data.workspaceId;
 }
 
 /**
@@ -416,7 +437,7 @@ export async function mcpDeploy(flags?: Record<string, string | true>): Promise<
   const cwd = process.cwd();
 
   // ── Resolve + validate inputs BEFORE any I/O ─────────────────────────
-  const workspaceId = resolveWorkspaceId(flags, process.env);
+  const workspaceId = await resolveWorkspaceId(flags, process.env);
   if (!workspaceId) {
     out.error(
       'No workspace specified. Pass --workspace <id> or set the GUUEY_WORKSPACE environment variable.',
@@ -953,7 +974,7 @@ export async function mcpListCore(
  * Workspace resolution: `--workspace` | `$GUUEY_WORKSPACE`.
  */
 export async function mcpList(flags?: Record<string, string | true>): Promise<void> {
-  const workspaceId = resolveWorkspaceId(flags, process.env);
+  const workspaceId = await resolveWorkspaceId(flags, process.env);
   if (!workspaceId) {
     out.error(
       'No workspace specified. Pass --workspace <id> or set the GUUEY_WORKSPACE environment variable.',
@@ -1044,7 +1065,7 @@ export async function mcpStatus(
     process.exit(1);
   }
 
-  const workspaceId = resolveWorkspaceId(flags, process.env);
+  const workspaceId = await resolveWorkspaceId(flags, process.env);
   if (!workspaceId) {
     out.error(
       'No workspace specified. Pass --workspace <id> or set the GUUEY_WORKSPACE environment variable.',
@@ -1088,7 +1109,7 @@ export async function mcpLogs(
     process.exit(1);
   }
 
-  const workspaceId = resolveWorkspaceId(flags, process.env);
+  const workspaceId = await resolveWorkspaceId(flags, process.env);
   if (!workspaceId) {
     out.error(
       'No workspace specified. Pass --workspace <id> or set the GUUEY_WORKSPACE environment variable.',
@@ -1359,7 +1380,7 @@ export async function mcpDelete(
     process.exit(1);
   }
 
-  const workspaceId = resolveWorkspaceId(flags, process.env);
+  const workspaceId = await resolveWorkspaceId(flags, process.env);
   if (!workspaceId) {
     out.error(
       'No workspace specified. Pass --workspace <id> or set the GUUEY_WORKSPACE environment variable.',

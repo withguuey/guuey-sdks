@@ -11,7 +11,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
-import { appsAccess, appsPublish, appsUnpublish } from './apps.js';
+import { appsAccess, appsList, appsListRow, appsPublish, appsUnpublish } from './apps.js';
 import { resolveConfig } from '../config.js';
 
 vi.mock('../auth.js', async (importOriginal) => {
@@ -60,6 +60,71 @@ function lastRequest(fetchSpy: MockInstance<typeof fetch>): CapturedRequest {
     body: init?.body ? JSON.parse(String(init.body)) : undefined,
   };
 }
+
+// Regression coverage for S5: the cliApi wire field is `displayName`
+// (`backend/amplify/functions/cliApi/handlers/apps.ts#AppWire`), not
+// `name` — reading `.name` rendered an empty Name column in `guuey apps
+// list` even though the API call succeeded.
+describe('appsListRow', () => {
+  it('maps the Name column from displayName (not the nonexistent `name` field)', () => {
+    expect(
+      appsListRow({
+        id: 'app-1',
+        displayName: 'Todo',
+        hasBYOK: false,
+        userAuthMode: 'anonymous',
+        createdAt: '2026-07-01T00:00:00.000Z',
+      }),
+    ).toEqual({
+      ID: 'app-1',
+      Name: 'Todo',
+      Auth: 'anonymous',
+      BYOK: 'no',
+      Created: '2026-07-01',
+    });
+  });
+});
+
+describe('appsList', () => {
+  let fetchSpy: MockInstance<typeof fetch>;
+  let logSpy: MockInstance<typeof console.log>;
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, 'fetch');
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('prints displayName under the Name column end-to-end', async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          apps: [
+            {
+              id: 'app-1',
+              displayName: 'Todo',
+              hasBYOK: false,
+              userAuthMode: 'anonymous',
+              createdAt: '2026-07-01T00:00:00.000Z',
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await appsList({});
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain('Todo');
+  });
+});
 
 describe('appsAccess', () => {
   let fetchSpy: MockInstance<typeof fetch>;

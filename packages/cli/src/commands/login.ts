@@ -130,8 +130,14 @@ export function tokensFromCallback(pat: string, expiresAt?: string): AuthTokens 
 
 /**
  * Start a local HTTP server and wait for the token callback.
+ *
+ * Exported for the PNA regression test (`login.test.ts`) — the browser
+ * page that opens `authUrl` runs on a public origin while this callback
+ * server is localhost, so Chrome's Local-Network-Access preflight
+ * (spec §3.3) gates the POST behind an OPTIONS request that must carry
+ * `Access-Control-Allow-Private-Network: true`.
  */
-function waitForCallback(expectedState: string): Promise<AuthTokens> {
+export function waitForCallback(expectedState: string): Promise<AuthTokens> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       server.close();
@@ -147,6 +153,12 @@ function waitForCallback(expectedState: string): Promise<AuthTokens> {
       }
       res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      // Chrome's Local-Network-Access preflight (PNA, spec §3.3): the
+      // browser page lives on a public origin (the platform) and this
+      // callback server is localhost — a private-network target — so
+      // Chrome's OPTIONS preflight requires this header before it will
+      // let the follow-up POST through.
+      res.setHeader('Access-Control-Allow-Private-Network', 'true');
 
       if (req.method === 'OPTIONS') {
         res.writeHead(204);

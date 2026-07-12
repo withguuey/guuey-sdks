@@ -68,7 +68,37 @@ import {
 import { packGguiAssets, pushGguiAssetsLeg } from '../ggui-assets';
 import * as out from '../output';
 
-const DEFAULT_PORTAL_URL = 'https://app.guuey.com';
+/**
+ * Map a platform host to its portal origin — mirrors the live-verified
+ * prefix map in `apps/platform/src/lib/env.ts#getPortalUrl` (dev/staging
+ * sandbox hosts and the production apex), keyed off `config.host` (NOT
+ * `config.portalUrl`/amplify outputs — those are unset in most envs today,
+ * which is exactly how S12 shipped a hardcoded prod origin for a dev
+ * deploy). Returns `null` for an unrecognized host so the caller can omit
+ * the Portal line entirely rather than print a wrong origin.
+ */
+export function portalOriginForHost(host: string | undefined): string | null {
+  if (!host) return null;
+  let hostname: string;
+  try {
+    hostname = new URL(host).hostname;
+  } catch {
+    return null;
+  }
+  if (hostname === 'platform.guuey.com') return 'https://app.guuey.com';
+  const sandboxMatch = hostname.match(/^([a-z0-9-]+)\.platform\.sandbox\.guuey\.com$/);
+  if (sandboxMatch) return `https://${sandboxMatch[1]}.app.sandbox.guuey.com`;
+  return null;
+}
+
+/**
+ * The full Portal share-link line for a deployed app, or `null` when
+ * `host` doesn't map to a known portal origin (see {@link portalOriginForHost}).
+ */
+export function portalLine(host: string | undefined, appId: string): string | null {
+  const origin = portalOriginForHost(host);
+  return origin ? `${origin}/agent/${appId}` : null;
+}
 
 /**
  * Handle the `guuey deploy` command.
@@ -126,7 +156,9 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
       // downstream reads (deploy.size default, etc.) see it.
       project = loadProjectConfig();
     } else {
-      out.error('No app ID found. Run "guuey create" or "guuey link" first.');
+      out.error(
+        'No app linked. Set "appId" in guuey.json, run "guuey link", or run "guuey deploy" in an interactive terminal to create one.',
+      );
       process.exit(1);
     }
   }
@@ -199,6 +231,59 @@ function prompt(rl: ReturnType<typeof createInterface>, question: string): Promi
 }
 
 /**
+ * The reusable core of the app-create offer (S9 regression coverage):
+ * send the create request with an already-resolved `appName`, parse the
+ * REAL response shape, and write back to both the project overlay and the
+ * global config. Split out of `ensureLinkedApp` so the actual bug surface
+ * (wrong payload key, wrong response parse) is unit-testable without
+ * mocking the interactive readline prompt.
+ *
+ * cliApi POST /v1/apps expects `displayName` (NOT `name`) and returns 201
+ * `{ app: {...AppWire} }` — no `apiKey` (see
+ * `backend/amplify/functions/cliApi/handlers/apps.ts#handleCreateApp`/
+ * `toWire`). Mirrors `apps.ts#appsCreate`'s parse of the same route.
+ *
+ * Returns the resolved appId; exits the process on API failure.
+ */
+export async function createLinkedApp(opts: {
+  auth: AuthTokens;
+  config: ResolvedConfig;
+  project: ProjectConfig | null;
+  guueyJsonPath: string;
+  appName: string;
+}): Promise<string> {
+  const { auth, config, project, guueyJsonPath, appName } = opts;
+
+  console.log('  Creating platform app...');
+  const res = await apiRequest(auth.pat, config, 'POST', '/apps', {
+    displayName: appName,
+    userAuthMode: 'anonymous',
+  });
+  if (!res.ok) {
+    const data: unknown = await res.json().catch(() => ({}));
+    out.error(`Failed to create app: ${parseApiError(data, `HTTP ${res.status}`)}`);
+    process.exit(1);
+  }
+  const { app } = (await res.json()) as { app: { id: string; displayName: string } };
+
+  out.success(`Created app "${app.displayName}"`);
+  console.log(`  App ID:  ${app.id}`);
+  console.log('');
+
+  // Write-back: project overlay (if one exists yet) + the global config —
+  // mirrors link.ts's dual write so the appId resolves next run too.
+  if (project) {
+    writeGuueyJsonFile(guueyJsonPath, { ...project, appId: app.id });
+    console.log(`  Wrote appId back to ${GUUEY_JSON_FILENAME}`);
+  }
+  const existing = loadConfig();
+  existing.appId = app.id;
+  saveConfig(existing);
+
+  return app.id;
+}
+
+/**
  * Step 1 of the deploy orchestrator (design doc §7.1): resolve the linked
  * app, or — on a first run with none — offer to create one right here.
  *
@@ -231,34 +316,7 @@ async function ensureLinkedApp(opts: {
     rl.close();
   }
 
-  console.log('  Creating platform app...');
-  const res = await apiRequest(auth.pat, config, 'POST', '/apps', {
-    name: appName,
-    userAuthMode: 'anonymous',
-  });
-  if (!res.ok) {
-    const data: unknown = await res.json().catch(() => ({}));
-    out.error(`Failed to create app: ${parseApiError(data, `HTTP ${res.status}`)}`);
-    process.exit(1);
-  }
-  const data = (await res.json()) as { appId: string; apiKey: string };
-
-  out.success(`Created app "${appName}"`);
-  console.log(`  App ID:  ${data.appId}`);
-  console.log('');
-
-  // Write-back: project overlay (if one exists yet) + the global config —
-  // mirrors link.ts's dual write so the appId resolves next run too.
-  if (project) {
-    writeGuueyJsonFile(guueyJsonPath, { ...project, appId: data.appId });
-    console.log(`  Wrote appId back to ${GUUEY_JSON_FILENAME}`);
-  }
-  const existing = loadConfig();
-  existing.appId = data.appId;
-  existing.apiKey = data.apiKey;
-  saveConfig(existing);
-
-  return data.appId;
+  return createLinkedApp({ auth, config, project, guueyJsonPath, appName });
 }
 
 // ─── Code mode: one-command orchestrator ──────────────────────────────────
@@ -317,7 +375,8 @@ async function deployCode(opts: {
   const legs = planMcpLegs(doc.agent);
   const mcpRuntimeUrls: Record<string, string | undefined> = {};
   if (legs.length > 0) {
-    const workspaceId = doc.workspaceId ?? resolveWorkspaceId(flags, process.env);
+    const workspaceId =
+      doc.workspaceId ?? (await resolveWorkspaceId(flags, process.env, { auth, config }));
     if (!workspaceId) {
       out.error(
         'Hosted MCP servers need a workspace. Set guuey.json#workspaceId (via "guuey pull"), ' +
@@ -526,7 +585,8 @@ async function deployCode(opts: {
   console.log(`  Size:   runtime=${size}, build=${buildSize}`);
   console.log('  Scales to zero when idle.');
   console.log('');
-  console.log(`  Portal: ${config.portalUrl ?? DEFAULT_PORTAL_URL}/${appId}`);
+  const portal = portalLine(config.host, appId);
+  if (portal) console.log(`  Portal: ${portal}`);
   if (Object.keys(mcpRuntimeUrls).length > 0) {
     console.log('');
     console.log('  Hosted MCP servers:');
