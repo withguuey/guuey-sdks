@@ -437,10 +437,13 @@ export async function mcpDeploy(flags?: Record<string, string | true>): Promise<
   const cwd = process.cwd();
 
   // ── Resolve + validate inputs BEFORE any I/O ─────────────────────────
-  const workspaceId = await resolveWorkspaceId(flags, process.env);
+  const auth = requireAuth();
+  const config = resolveConfig();
+  const workspaceId = await resolveWorkspaceId(flags, process.env, { auth, config });
   if (!workspaceId) {
     out.error(
-      'No workspace specified. Pass --workspace <id> or set the GUUEY_WORKSPACE environment variable.',
+      'No workspace resolved. Pass --workspace <id>, set GUUEY_WORKSPACE, or check ' +
+        'connectivity — the personal-workspace fallback (GET /v1/me/personal-workspace) also failed.',
     );
     process.exit(1);
   }
@@ -472,9 +475,6 @@ export async function mcpDeploy(flags?: Record<string, string | true>): Promise<
   }
 
   // ── Preconditions ────────────────────────────────────────────────────
-  const auth = requireAuth();
-  const config = resolveConfig();
-
   try {
     await deployMcpFromSource({ dir: cwd, name, workspaceId, size, auth, config, label });
   } catch (err) {
@@ -974,16 +974,16 @@ export async function mcpListCore(
  * Workspace resolution: `--workspace` | `$GUUEY_WORKSPACE`.
  */
 export async function mcpList(flags?: Record<string, string | true>): Promise<void> {
-  const workspaceId = await resolveWorkspaceId(flags, process.env);
+  const auth = requireAuth();
+  const config = resolveConfig();
+  const workspaceId = await resolveWorkspaceId(flags, process.env, { auth, config });
   if (!workspaceId) {
     out.error(
-      'No workspace specified. Pass --workspace <id> or set the GUUEY_WORKSPACE environment variable.',
+      'No workspace resolved. Pass --workspace <id>, set GUUEY_WORKSPACE, or check ' +
+        'connectivity — the personal-workspace fallback (GET /v1/me/personal-workspace) also failed.',
     );
     process.exit(1);
   }
-
-  const auth = requireAuth();
-  const config = resolveConfig();
 
   try {
     await mcpListCore({ workspaceId, json: flags?.json === true, auth, config });
@@ -1065,16 +1065,16 @@ export async function mcpStatus(
     process.exit(1);
   }
 
-  const workspaceId = await resolveWorkspaceId(flags, process.env);
+  const auth = requireAuth();
+  const config = resolveConfig();
+  const workspaceId = await resolveWorkspaceId(flags, process.env, { auth, config });
   if (!workspaceId) {
     out.error(
-      'No workspace specified. Pass --workspace <id> or set the GUUEY_WORKSPACE environment variable.',
+      'No workspace resolved. Pass --workspace <id>, set GUUEY_WORKSPACE, or check ' +
+        'connectivity — the personal-workspace fallback (GET /v1/me/personal-workspace) also failed.',
     );
     process.exit(1);
   }
-
-  const auth = requireAuth();
-  const config = resolveConfig();
 
   try {
     await mcpStatusCore({
@@ -1109,16 +1109,16 @@ export async function mcpLogs(
     process.exit(1);
   }
 
-  const workspaceId = await resolveWorkspaceId(flags, process.env);
+  const auth = requireAuth();
+  const config = resolveConfig();
+  const workspaceId = await resolveWorkspaceId(flags, process.env, { auth, config });
   if (!workspaceId) {
     out.error(
-      'No workspace specified. Pass --workspace <id> or set the GUUEY_WORKSPACE environment variable.',
+      'No workspace resolved. Pass --workspace <id>, set GUUEY_WORKSPACE, or check ' +
+        'connectivity — the personal-workspace fallback (GET /v1/me/personal-workspace) also failed.',
     );
     process.exit(1);
   }
-
-  const auth = requireAuth();
-  const config = resolveConfig();
 
   try {
     await mcpLogsCore({
@@ -1380,10 +1380,13 @@ export async function mcpDelete(
     process.exit(1);
   }
 
-  const workspaceId = await resolveWorkspaceId(flags, process.env);
+  const auth = requireAuth();
+  const config = resolveConfig();
+  const workspaceId = await resolveWorkspaceId(flags, process.env, { auth, config });
   if (!workspaceId) {
     out.error(
-      'No workspace specified. Pass --workspace <id> or set the GUUEY_WORKSPACE environment variable.',
+      'No workspace resolved. Pass --workspace <id>, set GUUEY_WORKSPACE, or check ' +
+        'connectivity — the personal-workspace fallback (GET /v1/me/personal-workspace) also failed.',
     );
     process.exit(1);
   }
@@ -1419,9 +1422,6 @@ export async function mcpDelete(
       return;
     }
   }
-
-  const auth = requireAuth();
-  const config = resolveConfig();
 
   try {
     await mcpDeleteCore({ serverId, workspaceId, force, auth, config });
