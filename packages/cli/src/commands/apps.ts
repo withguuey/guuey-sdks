@@ -277,10 +277,10 @@ export async function appsDelete(
   if (!res.ok) return handleError(res);
 
   const data = (await res.json()) as {
-    deleted: boolean;
+    archived: boolean;
     appId: string;
-    recoverable: boolean;
-    expiresAt: string;
+    scheduledDeleteAt: string;
+    teardown?: { buildNumber: number; status: string };
   };
 
   // Clear local config if this was the active app
@@ -294,10 +294,12 @@ export async function appsDelete(
   if (opts.json) {
     out.json(data);
   } else {
-    out.success(`Deleted app ${resolved}`);
-    if (data.recoverable) {
-      console.log(`  Recoverable until ${data.expiresAt.slice(0, 10)}`);
-      console.log(`  To recover: guuey apps recover ${resolved}`);
+    out.success(`Archived app ${resolved}`);
+    console.log(`  Hard delete scheduled: ${data.scheduledDeleteAt.slice(0, 10)}`);
+    if (data.teardown) {
+      console.log(
+        `  Tearing down live deployment (build #${data.teardown.buildNumber})`,
+      );
     }
   }
 }
@@ -309,6 +311,9 @@ export async function appsRecover(
   appId: string | undefined,
   opts: { json?: boolean },
 ): Promise<void> {
+  out.notYetAvailable(
+    "guuey apps recover isn't available yet — archived apps are kept 30 days before hard delete; restore is on the guuey launch roadmap.",
+  );
   if (!appId) {
     out.error('App ID is required. Use: guuey apps recover <appId>');
     process.exit(1);

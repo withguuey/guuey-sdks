@@ -11,6 +11,11 @@
  *   guuey agent config                           # Show current config
  *   guuey agent config --size md                  # Change to medium container
  *   guuey agent config --timeout 30 --max-pods 3  # Update scaling config
+ *
+ * DEFERRED: the /apps/:id/config route is not in cliApi yet — the whole
+ * command gates with out.notYetAvailable (see unshipped.test.ts). The
+ * dormant implementation below re-activates by removing the gate when
+ * the route ships.
  */
 
 import { requireAuth } from '../auth';
@@ -36,6 +41,9 @@ const SIZE_LABELS: Record<string, string> = {
 export async function agentConfig(
   flags: Record<string, string | true>,
 ): Promise<void> {
+  out.notYetAvailable(
+    "guuey agent config isn't available yet — hosted-agent runtime config (size/timeout/max-pods) is on the guuey launch roadmap.",
+  );
   const auth = requireAuth();
   const config = resolveConfig();
   const appId = config.appId;
