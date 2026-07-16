@@ -28,6 +28,7 @@ import { ingestMessageFrame } from "./blocks";
 import type {
   AgentInvokeAdapters,
   AgentMessage,
+  HistoryCard,
   HistoryLoadResult,
   UseAgentInvokeOptions,
   UseAgentInvokeReturn,
@@ -70,6 +71,10 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
   // starts null and only becomes non-null once the per-conversation reducer
   // folds a valid AgEvent (so it stays null forever in bypass mode).
   const [reduceResult, setReduceResult] = useState<AgReduceResult | null>(null);
+  // Persisted generative-UI cards rehydrated from history (see return-type
+  // contract). Independent of the live `reduceResult` fold — populated only
+  // when a card-carrying history load seeds the transcript.
+  const [historyCards, setHistoryCards] = useState<HistoryCard[]>([]);
 
   const abortRef = useRef<AbortController | null>(null);
   // Mirror the latest threadId + adapters into refs so `send` reads fresh
@@ -102,9 +107,10 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     setError(null);
     setIsStreaming(false);
     // Fresh conversation → drop the old fold; the reducer is rebuilt lazily on
-    // the next valid AgEvent (Task 4 will rehydrate it from history).
+    // the next valid AgEvent. Persisted cards are re-seeded below from history.
     reducerRef.current = null;
     setReduceResult(null);
+    setHistoryCards([]);
 
     let cancelled = false;
     const key = threadStorageKey(appId);
@@ -157,6 +163,13 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         const application = applyHistoryResult(result, prev);
         return application.kind === "seed" ? application.messages : prev;
       });
+      // Surface any persisted cards the loader opted to include (independent of
+      // the text seed decision — cards are their own render lane, never
+      // optimistically added by send(), so there is nothing to clobber). Empty
+      // when the adapter is text-only (no `cards` key on the result).
+      if ("cards" in result && result.cards && result.cards.length > 0) {
+        setHistoryCards(result.cards);
+      }
     });
     return () => {
       cancelled = true;
@@ -180,9 +193,10 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     setError(null);
     setIsStreaming(false);
     // Re-create the reducer for the new conversation (rebuilt lazily on the
-    // next valid AgEvent) and clear the exposed fold.
+    // next valid AgEvent) and clear the exposed fold + any rehydrated cards.
     reducerRef.current = null;
     setReduceResult(null);
+    setHistoryCards([]);
   }, [appId]);
 
   const send = useCallback(
@@ -285,5 +299,5 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     [endpointUrl, appId, isStreaming],
   );
 
-  return { messages, send, isStreaming, error, threadId, abort, reset, reduceResult };
+  return { messages, send, isStreaming, error, threadId, abort, reset, reduceResult, historyCards };
 }

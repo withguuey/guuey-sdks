@@ -2,12 +2,15 @@ import { describe, it, expect, vi } from "vitest";
 import {
   fetchThreadHistory,
   threadHistoryRowsToMessages,
+  threadHistoryRowsToCards,
   type ThreadHistoryRow,
 } from "./history";
 
 function row(partial: Partial<ThreadHistoryRow>): ThreadHistoryRow {
   return { seq: 1, at: "2026-07-15T00:00:00Z", kind: "text", authorRole: "user", text: "hi", ...partial };
 }
+
+const CARD = { artifactId: "a1", turnId: "t1", data: { n: 1 } };
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status });
@@ -49,6 +52,38 @@ describe("threadHistoryRowsToMessages", () => {
   it("treats any non-user author as assistant", () => {
     const messages = threadHistoryRowsToMessages([row({ authorRole: "system", text: "x" })]);
     expect(messages).toEqual([{ role: "assistant", text: "x" }]);
+  });
+
+  it("ignores card rows entirely (text-only surface is unchanged)", () => {
+    const messages = threadHistoryRowsToMessages([
+      row({ seq: 1, authorRole: "user", text: "hi" }),
+      row({ seq: 2, kind: "card", authorRole: "agent", text: null, cardSnapshot: CARD }),
+      row({ seq: 3, authorRole: "assistant", text: "there" }),
+    ]);
+    expect(messages).toEqual([
+      { role: "user", text: "hi" },
+      { role: "assistant", text: "there" },
+    ]);
+  });
+});
+
+describe("threadHistoryRowsToCards", () => {
+  it("keeps card rows with a snapshot, tagged by seq/at", () => {
+    const cards = threadHistoryRowsToCards([
+      row({ seq: 1, authorRole: "user", text: "hi" }),
+      row({ seq: 2, at: "2026-07-15T00:00:02Z", kind: "card", authorRole: "agent", text: null, cardSnapshot: CARD }),
+    ]);
+    expect(cards).toEqual([{ seq: 2, at: "2026-07-15T00:00:02Z", cardSnapshot: CARD }]);
+  });
+
+  it("drops non-card rows and card rows with a null/absent snapshot", () => {
+    const cards = threadHistoryRowsToCards([
+      row({ seq: 1, kind: "text", text: "hi" }),
+      row({ seq: 2, kind: "card", text: null, cardSnapshot: null }),
+      row({ seq: 3, kind: "card", text: null }), // absent snapshot
+      row({ seq: 4, kind: "event", text: null }),
+    ]);
+    expect(cards).toEqual([]);
   });
 });
 
@@ -104,6 +139,47 @@ describe("fetchThreadHistory", () => {
     await expect(
       fetchThreadHistory({ baseUrl: "https://api.example.com/v1", threadId: "t_1", fetchImpl }),
     ).rejects.toThrow(/history load failed: 500/);
+  });
+
+  it("omits cards by default (text-only consumers unaffected)", async () => {
+    const fetchImpl = mockFetch([
+      jsonResponse({
+        rows: [
+          row({ seq: 1, authorRole: "user", text: "hi" }),
+          row({ seq: 2, kind: "card", authorRole: "agent", text: null, cardSnapshot: CARD }),
+        ],
+        nextToken: null,
+      }),
+    ]);
+    const result = await fetchThreadHistory({
+      baseUrl: "https://api.example.com/v1",
+      threadId: "t_1",
+      fetchImpl,
+    });
+    expect(result).toEqual({ messages: [{ role: "user", text: "hi" }] });
+    expect(result).not.toHaveProperty("cards");
+  });
+
+  it("populates cards when includeCards is set, preserving text alongside", async () => {
+    const fetchImpl = mockFetch([
+      jsonResponse({
+        rows: [
+          row({ seq: 1, authorRole: "user", text: "hi" }),
+          row({ seq: 2, at: "2026-07-15T00:00:02Z", kind: "card", authorRole: "agent", text: null, cardSnapshot: CARD }),
+        ],
+        nextToken: null,
+      }),
+    ]);
+    const result = await fetchThreadHistory({
+      baseUrl: "https://api.example.com/v1",
+      threadId: "t_1",
+      includeCards: true,
+      fetchImpl,
+    });
+    expect(result).toEqual({
+      messages: [{ role: "user", text: "hi" }],
+      cards: [{ seq: 2, at: "2026-07-15T00:00:02Z", cardSnapshot: CARD }],
+    });
   });
 
   it("passes the caller's requestInit (identity headers) to fetch", async () => {

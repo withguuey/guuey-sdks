@@ -16,6 +16,7 @@ export {
 export {
   fetchThreadHistory,
   threadHistoryRowsToMessages,
+  threadHistoryRowsToCards,
   type ThreadHistoryRow,
   type ThreadHistoryFetchOptions,
 } from "./history";
@@ -26,6 +27,7 @@ export { ingestMessageFrame } from "./blocks";
 export type { AgEvent, AgReduceResult } from "@silverprotocol/core";
 export type {
   AgentMessage,
+  HistoryCard,
   ThreadIdStore,
   GenerateId,
   InvokeRequest,

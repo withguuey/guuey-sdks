@@ -10,12 +10,26 @@
  * `MessageStorageAdapter` injection pattern.
  */
 
-import type { AgReduceResult } from "@silverprotocol/core";
+import type { AgReduceResult, JsonValue } from "@silverprotocol/core";
 
 /** A flat chat turn as rendered by the consumer UI. */
 export interface AgentMessage {
   role: "user" | "assistant";
   text: string;
+}
+
+/**
+ * A persisted generative-UI card rehydrated from thread history — the verbatim
+ * `AgArtifact` snapshot the pod stored on a `kind: "card"` row, tagged with its
+ * transcript position. A block-preserving renderer interleaves these with
+ * {@link AgentMessage}s (and the live {@link UseAgentInvokeReturn.reduceResult}
+ * fold) by ascending `seq`. `cardSnapshot` is forwarded opaquely from the read
+ * plane — the SDK does not re-parse it into AgEvents.
+ */
+export interface HistoryCard {
+  seq: number;
+  at: string;
+  cardSnapshot: JsonValue;
 }
 
 /**
@@ -48,8 +62,18 @@ export interface InvokeRequest {
  */
 export type InvokeTransport = (req: InvokeRequest) => AsyncIterable<string>;
 
-/** The persisted transcript for a thread, or a signal that it no longer exists. */
-export type HistoryLoadResult = { messages: AgentMessage[] } | { gone: true };
+/**
+ * The persisted transcript for a thread, or a signal that it no longer exists.
+ *
+ * `cards` is populated ONLY when the loader opts in (see
+ * `fetchThreadHistory`'s `includeCards`); the default text-only mapping omits
+ * it so existing text-only consumers (portal-native) are unaffected. When
+ * present it carries the thread's persisted {@link HistoryCard}s for a
+ * block-preserving renderer to interleave by `seq`.
+ */
+export type HistoryLoadResult =
+  | { messages: AgentMessage[]; cards?: HistoryCard[] }
+  | { gone: true };
 
 /**
  * Optional seam for rehydrating a chat transcript from a server-side read
@@ -112,7 +136,18 @@ export interface UseAgentInvokeReturn {
    * validate as AgEvents, so nothing folds and `reduceResult` stays `null` for
    * the whole conversation — the reducer only makes sense for silver AgJSON
    * frames. `reset()` returns it to `null`. History rehydrate does NOT populate
-   * it (Task 4).
+   * it — persisted cards surface via {@link historyCards} instead (Task 4), so
+   * a snapshot never has to be lied back into the live reducer.
    */
   reduceResult: AgReduceResult | null;
+  /**
+   * Persisted generative-UI cards rehydrated from thread history, ascending by
+   * `seq`. Empty (`[]`) unless the injected history adapter opted into cards
+   * (`fetchThreadHistory({ includeCards: true })`) AND the rehydrate seeded a
+   * transcript. Independent of {@link reduceResult}: `reduceResult` is the
+   * LIVE turn's fold, `historyCards` is the persisted PRIOR turns' cards — a
+   * block-preserving renderer interleaves both (and {@link messages}) by `seq`.
+   * `reset()` clears it back to `[]`.
+   */
+  historyCards: HistoryCard[];
 }

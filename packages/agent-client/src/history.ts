@@ -10,7 +10,8 @@
  * `credentials: "include"`). Consumed by {@link createWebAdapters}; Portal
  * has its own copy today and can migrate onto this later.
  */
-import type { AgentMessage, HistoryLoadResult } from "./types";
+import type { JsonValue } from "@silverprotocol/core";
+import type { AgentMessage, HistoryCard, HistoryLoadResult } from "./types";
 
 /** One row of `GET /v1/threads/:id/messages`. */
 export interface ThreadHistoryRow {
@@ -19,6 +20,12 @@ export interface ThreadHistoryRow {
   kind: string;
   authorRole: string;
   text: string | null;
+  /**
+   * The verbatim persisted `AgArtifact` on `kind === "card"` rows; `null` or
+   * absent on text/event rows (the read plane omits it there). Forwarded
+   * opaquely — never re-parsed into AgEvents.
+   */
+  cardSnapshot?: JsonValue | null;
 }
 
 interface ThreadMessagesResponse {
@@ -49,12 +56,34 @@ export function threadHistoryRowsToMessages(rows: ThreadHistoryRow[]): AgentMess
   return messages;
 }
 
+/**
+ * Project raw rows to persisted generative-UI cards: `kind === "card"` rows
+ * that actually carry a snapshot, tagged with their transcript position. The
+ * additive counterpart to {@link threadHistoryRowsToMessages} — a
+ * block-preserving consumer merges both by `seq`.
+ */
+export function threadHistoryRowsToCards(rows: ThreadHistoryRow[]): HistoryCard[] {
+  const cards: HistoryCard[] = [];
+  for (const row of rows) {
+    if (row.kind !== "card" || row.cardSnapshot == null) continue;
+    cards.push({ seq: row.seq, at: row.at, cardSnapshot: row.cardSnapshot });
+  }
+  return cards;
+}
+
 export interface ThreadHistoryFetchOptions {
   /** Public read-plane base, already ending in `/v1`. */
   baseUrl: string;
   threadId: string;
   /** Per-request init merged into each page fetch (headers, credentials). */
   requestInit?: RequestInit;
+  /**
+   * Opt-in: ALSO project `kind === "card"` rows into `result.cards` (see
+   * {@link HistoryLoadResult}). Off by default so text-only consumers get the
+   * byte-identical `{ messages }` shape. On, a block-preserving renderer gets
+   * the persisted cards to interleave by `seq`.
+   */
+  includeCards?: boolean;
   /** Injection seam for tests; defaults to the global `fetch`. */
   fetchImpl?: typeof fetch;
 }
@@ -70,6 +99,7 @@ export async function fetchThreadHistory({
   baseUrl,
   threadId,
   requestInit,
+  includeCards = false,
   fetchImpl = fetch,
 }: ThreadHistoryFetchOptions): Promise<HistoryLoadResult> {
   const routeUrl = `${baseUrl}/threads/${encodeURIComponent(threadId)}/messages`;
@@ -89,5 +119,8 @@ export async function fetchThreadHistory({
     if (!nextToken) break;
   }
 
-  return { messages: threadHistoryRowsToMessages(rows) };
+  return {
+    messages: threadHistoryRowsToMessages(rows),
+    ...(includeCards ? { cards: threadHistoryRowsToCards(rows) } : {}),
+  };
 }
