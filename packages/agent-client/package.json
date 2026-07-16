@@ -1,0 +1,65 @@
+{
+  "name": "@guuey/agent-client",
+  "version": "0.1.0",
+  "description": "Client SDK for Guuey's agent runtime: the `useAgentInvoke` React hook + pure SSE helpers that speak the /agent/invoke streaming contract, plus the paginated thread-history read plane. Host adapters (storage / id / transport) are injected, so it runs on web (Next) and React Native alike.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "default": "./dist/react.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "guuey",
+    "agent",
+    "sse",
+    "chat",
+    "react",
+    "client"
+  ],
+  "homepage": "https://guuey.com",
+  "bugs": {
+    "url": "https://github.com/loqu-co/guuey/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/withguuey/guuey-sdks.git",
+    "directory": "packages/agent-client"
+  }
+}

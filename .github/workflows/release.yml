@@ -7,9 +7,10 @@ name: npm Release
 #
 # Cohort (leaf-first): @guuey/config, @guuey/worker,
 # @guuey/create-agentic-app, @guuey/cli — exactly the packages a scaffolded
-# app resolves from the registry (the clean-room gate's cohort). @guuey/host,
-# @guuey/fs, @guuey/state are platform-side and stay unpublished until their
-# own cut.
+# app resolves from the registry (the clean-room gate's cohort).
+# @guuey/agent-client (the embed chat SDK), @guuey/host, @guuey/fs,
+# @guuey/state are platform-/consumer-side and stay unpublished until their
+# own cut (first publish is a manual, operator-gated bootstrap — see below).
 #
 # Release model: "publish what's in git."
 #   - Versions come from each packages/<pkg>/package.json as committed.
@@ -111,9 +112,10 @@ jobs:
           DRY_RUN: ${{ steps.mode.outputs.dry_run }}
         run: |
           set -euo pipefail
-          # Fixed leaf-first order: config/worker are leaves, host needs
-          # config+worker, create-agentic-app needs config, cli needs all.
-          ORDER=(config worker host create-agentic-app cli)
+          # Fixed leaf-first order: config/worker/agent-client are leaves,
+          # host needs config+worker, create-agentic-app needs config, cli
+          # needs all.
+          ORDER=(config worker agent-client host create-agentic-app cli)
 
           TODO=()
           for pkg in "${ORDER[@]}"; do
