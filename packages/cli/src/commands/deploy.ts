@@ -257,7 +257,6 @@ export async function createLinkedApp(opts: {
   console.log('  Creating platform app...');
   const res = await apiRequest(auth.pat, config, 'POST', '/apps', {
     displayName: appName,
-    userAuthMode: 'anonymous',
   });
   if (!res.ok) {
     const data: unknown = await res.json().catch(() => ({}));

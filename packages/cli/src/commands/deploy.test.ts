@@ -187,16 +187,16 @@ describe('portalOriginForHost / portalLine', () => {
 });
 
 // Regression coverage for S9: deploy's interactive app-create offer sent
-// `{name, userAuthMode}` (the API wants `displayName`) and parsed
-// `{appId, apiKey}` (the handler returns `{app: {id, displayName}}` — no
-// apiKey at all). `createLinkedApp` is the testable core split out of
-// `ensureLinkedApp` so this doesn't require driving the readline prompt.
+// `{name}` (the API wants `displayName`) and parsed `{appId, apiKey}` (the
+// handler returns `{app: {id, displayName}}` — no apiKey at all).
+// `createLinkedApp` is the testable core split out of `ensureLinkedApp` so
+// this doesn't require driving the readline prompt.
 describe('createLinkedApp (S9)', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('sends {displayName, userAuthMode} and parses the real {app} response shape', async () => {
+  it('sends {displayName} and parses the real {app} response shape', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ app: { id: 'app-1', displayName: 'My Agent' } }), {
         status: 201,
@@ -217,7 +217,6 @@ describe('createLinkedApp (S9)', () => {
     expect(new URL(String(url)).pathname).toBe('/apps');
     expect(JSON.parse(String(init?.body))).toEqual({
       displayName: 'My Agent',
-      userAuthMode: 'anonymous',
     });
   });
 

@@ -18,7 +18,6 @@ interface AppSummary {
    */
   displayName: string;
   hasBYOK: boolean;
-  userAuthMode: string;
   createdAt: string;
 }
 
@@ -97,7 +96,6 @@ export function appsListRow(a: AppSummary): Record<string, string> {
   return {
     ID: a.id,
     Name: a.displayName,
-    Auth: a.userAuthMode,
     BYOK: a.hasBYOK ? 'yes' : 'no',
     Created: a.createdAt?.slice(0, 10) ?? '-',
   };
@@ -145,7 +143,6 @@ export async function appsGet(
 
   const app = data.app;
   console.log(`App: ${app.displayName} (${app.id})`);
-  console.log(`  Auth Mode:    ${app.userAuthMode}`);
   console.log(`  BYOK:         ${app.hasBYOK ? 'yes' : 'no'}`);
   if (app.webhookUrl) console.log(`  Webhook:      ${app.webhookUrl}`);
   if (app.rateLimitPerMinute)
@@ -159,7 +156,6 @@ export async function appsGet(
  */
 export async function appsCreate(opts: {
   name?: string;
-  authMode?: string;
   json?: boolean;
 }): Promise<void> {
   if (!opts.name) {
@@ -209,7 +205,6 @@ export async function appsUpdate(
   appId: string | undefined,
   opts: {
     name?: string;
-    authMode?: string;
     stylingPrompt?: string;
     webhookUrl?: string;
     rateLimit?: string;
@@ -225,14 +220,13 @@ export async function appsUpdate(
 
   const body: Record<string, unknown> = {};
   if (opts.name) body.name = opts.name;
-  if (opts.authMode) body.userAuthMode = opts.authMode;
   if (opts.stylingPrompt) body.stylingPrompt = opts.stylingPrompt;
   if (opts.webhookUrl) body.webhookUrl = opts.webhookUrl;
   if (opts.rateLimit) body.rateLimitPerMinute = parseInt(opts.rateLimit, 10);
   if (opts.domains) body.allowedDomains = opts.domains.split(',').map((d) => d.trim());
 
   if (Object.keys(body).length === 0) {
-    out.error('No fields to update. Use --name, --auth-mode, --styling-prompt, etc.');
+    out.error('No fields to update. Use --name, --styling-prompt, etc.');
     process.exit(1);
   }
 

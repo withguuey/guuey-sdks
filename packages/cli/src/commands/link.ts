@@ -109,7 +109,6 @@ export async function link(flags?: Record<string, string | true>): Promise<void>
         name: appName,
         endpointUrl,
         connectionMode: 'endpoint',
-        userAuthMode: 'anonymous',
       }),
     });
 

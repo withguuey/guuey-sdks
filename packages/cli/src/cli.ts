@@ -216,12 +216,10 @@ Authentication:
 Apps:
   apps create                   Create a new app (auto-login if needed)
     --name <name>               App name (required)
-    --auth-mode <mode>          Auth mode (default: anonymous)
   apps list                     List your apps
   apps get [appId]              Show app details
   apps update [appId]           Update app configuration
     --name <name>               App name
-    --auth-mode <mode>          Auth mode (anonymous|native_pool|byo)
     --styling-prompt <prompt>   Styling prompt
     --webhook-url <url>         Webhook URL
     --rate-limit <n>            Rate limit per minute
@@ -566,14 +564,12 @@ async function main(): Promise<void> {
         case 'create':
           await appsCreate({
             name: flags.name as string | undefined,
-            authMode: flags['auth-mode'] as string | undefined,
             json: jsonFlag,
           });
           break;
         case 'update':
           await appsUpdate(rest[0], {
             name: flags.name as string | undefined,
-            authMode: flags['auth-mode'] as string | undefined,
             stylingPrompt: flags['styling-prompt'] as string | undefined,
             webhookUrl: flags['webhook-url'] as string | undefined,
             rateLimit: flags['rate-limit'] as string | undefined,
