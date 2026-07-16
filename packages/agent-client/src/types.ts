@@ -10,6 +10,8 @@
  * `MessageStorageAdapter` injection pattern.
  */
 
+import type { AgReduceResult } from "@silverprotocol/core";
+
 /** A flat chat turn as rendered by the consumer UI. */
 export interface AgentMessage {
   role: "user" | "assistant";
@@ -76,6 +78,13 @@ export interface UseAgentInvokeOptions {
   appId?: string;
   /** Platform host couplings (storage / crypto / transport). */
   adapters: AgentInvokeAdapters;
+  /**
+   * Opt-in: ALSO fold the full AgJSON (silver-mode) stream into a
+   * block-preserving transcript exposed as {@link UseAgentInvokeReturn.reduceResult},
+   * alongside the always-on flat text surface. Off by default; when off the
+   * reducer is never constructed and the text behaviour is byte-identical.
+   */
+  preserveBlocks?: boolean;
 }
 
 export interface UseAgentInvokeReturn {
@@ -87,4 +96,23 @@ export interface UseAgentInvokeReturn {
   /** Abort the in-flight turn (the stream stops; partial text is kept). */
   abort: () => void;
   reset: () => void;
+  /**
+   * The folded AgJSON transcript, or `null`.
+   *
+   * Contract — **null-until-first-valid-AgEvent** (the documented choice for
+   * the ambiguous "which protocol?" case; see {@link UseAgentInvokeOptions.preserveBlocks}):
+   *
+   *  - `null` whenever `preserveBlocks` is off (the reducer is never built);
+   *  - when `preserveBlocks` is on, `null` UNTIL the per-conversation `Reducer`
+   *    has folded at least one VALID AgEvent, then the reducer's live
+   *    `result()` snapshot (a fresh object on each fold, so it re-renders).
+   *
+   * The hook cannot know a priori whether the pod is in silver or bypass mode.
+   * In **bypass mode** the `message` frames are SDKMessage shapes that never
+   * validate as AgEvents, so nothing folds and `reduceResult` stays `null` for
+   * the whole conversation — the reducer only makes sense for silver AgJSON
+   * frames. `reset()` returns it to `null`. History rehydrate does NOT populate
+   * it (Task 4).
+   */
+  reduceResult: AgReduceResult | null;
 }

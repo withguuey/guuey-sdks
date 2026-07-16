@@ -34,6 +34,9 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
+  "dependencies": {
+    "@silverprotocol/core": "0.3.2"
+  },
   "peerDependencies": {
     "react": ">=18"
   },

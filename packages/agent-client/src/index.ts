@@ -19,6 +19,11 @@ export {
   type ThreadHistoryRow,
   type ThreadHistoryFetchOptions,
 } from "./history";
+export { ingestMessageFrame } from "./blocks";
+// Re-export the AgJSON types the block-preserving transcript surfaces, so
+// consumers can name `reduceResult` / block types without a direct
+// `@silverprotocol/core` import.
+export type { AgEvent, AgReduceResult } from "@silverprotocol/core";
 export type {
   AgentMessage,
   ThreadIdStore,

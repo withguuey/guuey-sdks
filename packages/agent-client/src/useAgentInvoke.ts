@@ -22,7 +22,9 @@
  * `./web-adapters` for the web (Studio) bundle; Portal supplies RN adapters.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Reducer, type AgReduceResult } from "@silverprotocol/core";
 import { parseSseEvents, reduceAssistantText, stringField } from "./sse";
+import { ingestMessageFrame } from "./blocks";
 import type {
   AgentInvokeAdapters,
   AgentMessage,
@@ -63,6 +65,11 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
+  // Opt-in block-preserving transcript. `reduceResult` follows the
+  // null-until-first-valid-AgEvent contract documented on the return type: it
+  // starts null and only becomes non-null once the per-conversation reducer
+  // folds a valid AgEvent (so it stays null forever in bypass mode).
+  const [reduceResult, setReduceResult] = useState<AgReduceResult | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   // Mirror the latest threadId + adapters into refs so `send` reads fresh
@@ -71,6 +78,12 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
   const threadIdRef = useRef<string | null>(null);
   const adaptersRef = useRef<AgentInvokeAdapters>(opts.adapters);
   adaptersRef.current = opts.adapters;
+  // The per-conversation AgJSON reducer (only built when `preserveBlocks`).
+  // Lazily (re)created on the first valid AgEvent after a fresh start / reset,
+  // so an off run never constructs one and a bypass run never allocates.
+  const reducerRef = useRef<Reducer | null>(null);
+  const preserveBlocksRef = useRef<boolean>(opts.preserveBlocks ?? false);
+  preserveBlocksRef.current = opts.preserveBlocks ?? false;
   // The in-flight threadId hydration for the current appId. `send` awaits it
   // so a fast first send replays the persisted thread instead of minting a
   // new (orphan) one — critical on async stores (AsyncStorage).
@@ -88,6 +101,10 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     setMessages([]);
     setError(null);
     setIsStreaming(false);
+    // Fresh conversation → drop the old fold; the reducer is rebuilt lazily on
+    // the next valid AgEvent (Task 4 will rehydrate it from history).
+    reducerRef.current = null;
+    setReduceResult(null);
 
     let cancelled = false;
     const key = threadStorageKey(appId);
@@ -162,6 +179,10 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     setMessages([]);
     setError(null);
     setIsStreaming(false);
+    // Re-create the reducer for the new conversation (rebuilt lazily on the
+    // next valid AgEvent) and clear the exposed fold.
+    reducerRef.current = null;
+    setReduceResult(null);
   }, [appId]);
 
   const send = useCallback(
@@ -223,6 +244,18 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
               }
             } else if (ev.event === "message") {
               renderAssistant(reduceAssistantText(assistantText, ev.data));
+              // Additively fold the SAME frame into the AgJSON reducer when
+              // opted in. The text surface above is untouched; only VALID
+              // AgEvents advance the reducer (bypass frames ingest to [] and
+              // leave `reduceResult` null — see the return-type contract).
+              if (preserveBlocksRef.current) {
+                const agEvents = ingestMessageFrame(ev.data);
+                if (agEvents.length > 0) {
+                  if (!reducerRef.current) reducerRef.current = new Reducer();
+                  for (const agEvent of agEvents) reducerRef.current.push(agEvent);
+                  setReduceResult(reducerRef.current.result());
+                }
+              }
             } else if (ev.event === "error") {
               setError(stringField(ev.data, "message") ?? "agent error");
             }
@@ -252,5 +285,5 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     [endpointUrl, appId, isStreaming],
   );
 
-  return { messages, send, isStreaming, error, threadId, abort, reset };
+  return { messages, send, isStreaming, error, threadId, abort, reset, reduceResult };
 }

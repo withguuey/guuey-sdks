@@ -7,3 +7,7 @@
  * import React at all; consumers that render chat import the hook from here.
  */
 export { useAgentInvoke, applyHistoryResult, type HistoryApplication } from "./useAgentInvoke";
+// The block-preserving transcript surfaces `AgReduceResult`; re-export it (and
+// `AgEvent`) here so `./react` consumers can type `reduceResult` without a
+// direct `@silverprotocol/core` import.
+export type { AgEvent, AgReduceResult } from "@silverprotocol/core";
