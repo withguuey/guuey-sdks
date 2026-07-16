@@ -16,6 +16,18 @@ packages:
 # templates and the guuey monorepo root.
 autoInstallPeers: false
 
+# pnpm resolves the NEAREST workspace file, so any script executed inside
+# oss/packages/* binds to THIS workspace — not the monorepo root, whose
+# pnpm-workspace.yaml already sets `verifyDepsBeforeRun: false`. Without
+# the same setting here, pnpm 11's pre-run deps check fires when the
+# monorepo's turbo graph runs an oss package's build (Amplify does
+# filtered installs, so the check always reads "outdated") and auto-runs
+# `pnpm install` — two oss builds in parallel then race each other
+# (EISDIR renames; broke platform Amplify job 108 on 2026-07-16). The
+# oss standalone CI does explicit installs, so nothing relies on the
+# auto-install.
+verifyDepsBeforeRun: false
+
 allowBuilds:
   "@anthropic-ai/claude-agent-sdk": false
   sqlite3: false
