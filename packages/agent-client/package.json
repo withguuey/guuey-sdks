@@ -8,16 +8,20 @@
   "types": "dist/index.d.ts",
   "files": [
     "dist",
+    "src",
+    "!src/**/*.test.ts",
     "README.md",
     "LICENSE"
   ],
   "exports": {
     ".": {
+      "react-native": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./react": {
+      "react-native": "./src/react.ts",
       "types": "./dist/react.d.ts",
       "import": "./dist/react.js",
       "default": "./dist/react.js"

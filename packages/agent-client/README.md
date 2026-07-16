@@ -53,3 +53,12 @@ export function Chat({ endpointUrl, appId }: { endpointUrl: string; appId: strin
 
 On React Native, supply your own adapters (AsyncStorage + an `expo/fetch`
 transport) in place of `createWebAdapters` — the hook's contract is identical.
+
+## React Native / Metro
+
+Both entry points declare a `react-native` export condition that points at the
+**TypeScript source** (shipped in the npm tarball alongside `dist/` for exactly
+this reason — the standard RN package pattern). Metro resolves that condition
+by default and transpiles the source with your app's Babel config; Node and
+web bundlers ignore it and use the compiled ESM in `dist/`. No
+`transpilePackages`-style configuration is needed on either side.
