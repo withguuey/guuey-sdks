@@ -51,7 +51,7 @@ export async function slugClaim(
   const config = resolveConfig();
   const appId = (flags?.['app-id'] as string) ?? config.appId;
   if (!appId) {
-    out.error('No app ID found. Run "guuey link" or "guuey create" first.');
+    out.error('No app ID found. Run "guuey pull --app-id <id>" to bind an existing app, or "guuey create" to scaffold a new project first.');
     process.exit(1);
   }
 

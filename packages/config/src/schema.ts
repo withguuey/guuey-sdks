@@ -8,7 +8,7 @@
  * - `ggui`  (optional) — cross-protocol integration if the agent uses ggui rendering
  *
  * Plus top-level platform identity (`appId`, `workspaceId`) populated by
- * the CLI after `guuey create` / `guuey link`.
+ * the CLI after `guuey create` / `guuey pull --app-id`.
  *
  * **Filename convention** (filename = artifact kind, see design doc §3):
  * ```
@@ -49,8 +49,8 @@ import { GguiSectionV1, type GuueyGguiSection } from './ggui.js';
  * only an MCP server uses `guuey.mcp.json` instead (separate schema).
  *
  * `appId` and `workspaceId` are platform-resolved identifiers stamped by
- * the CLI after `guuey create` / `guuey link`. A fresh project has neither.
- * After first `guuey create`, both may be present.
+ * the CLI after `guuey create` / `guuey pull --app-id`. A fresh project has
+ * neither. After first `guuey create`, both may be present.
  *
  * Re-exports the sub-section types for consumer convenience.
  */

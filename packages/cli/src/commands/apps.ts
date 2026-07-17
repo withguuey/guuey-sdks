@@ -171,7 +171,7 @@ export async function appsCreate(opts: {
 
   // cliApi POST /v1/apps expects `displayName` and returns `{ app: {...} }`
   // (the app's own PAT already authorizes deploys — no separate per-app API
-  // key is minted here). `link` is the path that provisions an api key.
+  // key is minted anywhere in the CLI).
   const res = await apiRequest('POST', '/apps', {
     displayName: opts.name,
   });

@@ -127,7 +127,7 @@ export function configUnset(key: string): void {
  * Writes the canonical `GuueyJsonV1` overlay shape. If an `--app-id`
  * flag (or a resolved `appId` from env / global config) is present,
  * stamps it as `project.id`. Otherwise writes just the schema pin —
- * `guuey link` / `guuey pull` will later enrich the overlay with
+ * `guuey pull --app-id <id>` will later enrich the overlay with
  * project identity.
  */
 export function configInit(flags: Record<string, string | true>): void {

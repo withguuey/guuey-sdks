@@ -315,7 +315,7 @@ describe('deploy() — no app linked, no interactive offer (S4)', () => {
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
-    expect(printed).toContain('guuey link');
+    expect(printed).toContain('guuey pull --app-id');
     expect(printed).not.toContain('guuey create');
     expect(fetchSpy).not.toHaveBeenCalled();
   });

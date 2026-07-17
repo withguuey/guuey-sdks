@@ -37,7 +37,6 @@ import { open } from './commands/open';
 import { create } from './commands/create';
 import { deleteApp } from './commands/delete';
 import { dev } from './commands/dev';
-import { link } from './commands/link';
 import { test as testCmd } from './commands/test';
 import { logs } from './commands/logs';
 import { deploy } from './commands/deploy';
@@ -132,9 +131,6 @@ Agent Development:
     --port <port>                Port (default: 6790)
                                  Without --serve, prints the Expo-style
                                  bridge/QR "coming soon" note (slice 2+).
-  link                           Connect an existing agent to guuey platform
-    --url <endpoint>             Agent endpoint URL
-    --name <name>                App name
   test <message>                 Send a test message and print agent response
     --session <id>               Reuse existing session
   deploy                         Deploy agent to guuey hosting (auto-detects
@@ -499,10 +495,6 @@ async function main(): Promise<void> {
 
     case 'dev':
       await dev(flags);
-      break;
-
-    case 'link':
-      await link(flags);
       break;
 
     case 'test':

@@ -54,7 +54,7 @@ export async function domainsAdd(
   const appId = (flags?.['app-id'] as string) ?? config.appId;
 
   if (!appId) {
-    out.error('No app ID found. Run "guuey link" or "guuey create" first.');
+    out.error('No app ID found. Run "guuey pull --app-id <id>" to bind an existing app, or "guuey create" to scaffold a new project first.');
     process.exit(1);
   }
 
@@ -109,7 +109,7 @@ export async function domainsList(
   const appId = (flags?.['app-id'] as string) ?? config.appId;
 
   if (!appId) {
-    out.error('No app ID found. Run "guuey link" or "guuey create" first.');
+    out.error('No app ID found. Run "guuey pull --app-id <id>" to bind an existing app, or "guuey create" to scaffold a new project first.');
     process.exit(1);
   }
 
@@ -164,7 +164,7 @@ export async function domainsVerify(
   const appId = (flags?.['app-id'] as string) ?? config.appId;
 
   if (!appId) {
-    out.error('No app ID found. Run "guuey link" or "guuey create" first.');
+    out.error('No app ID found. Run "guuey pull --app-id <id>" to bind an existing app, or "guuey create" to scaffold a new project first.');
     process.exit(1);
   }
 
@@ -214,7 +214,7 @@ export async function domainsRemove(
   const appId = (flags?.['app-id'] as string) ?? config.appId;
 
   if (!appId) {
-    out.error('No app ID found. Run "guuey link" or "guuey create" first.');
+    out.error('No app ID found. Run "guuey pull --app-id <id>" to bind an existing app, or "guuey create" to scaffold a new project first.');
     process.exit(1);
   }
 

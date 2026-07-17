@@ -157,7 +157,7 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
       project = loadProjectConfig();
     } else {
       out.error(
-        'No app linked. Set "appId" in guuey.json, run "guuey link", or run "guuey deploy" in an interactive terminal to create one.',
+        'No app linked. Set "appId" in guuey.json, run "guuey pull --app-id <id>" to bind an existing app, or run "guuey deploy" in an interactive terminal to create one.',
       );
       process.exit(1);
     }
@@ -269,8 +269,8 @@ export async function createLinkedApp(opts: {
   console.log(`  App ID:  ${app.id}`);
   console.log('');
 
-  // Write-back: project overlay (if one exists yet) + the global config —
-  // mirrors link.ts's dual write so the appId resolves next run too.
+  // Write-back: project overlay (if one exists yet) + the global config,
+  // so the appId resolves next run too.
   if (project) {
     writeGuueyJsonFile(guueyJsonPath, { ...project, appId: app.id });
     console.log(`  Wrote appId back to ${GUUEY_JSON_FILENAME}`);
@@ -287,10 +287,9 @@ export async function createLinkedApp(opts: {
  * app, or — on a first run with none — offer to create one right here.
  *
  * Mirrors `apps.ts#appsCreate` (POST /apps, persist to the global CLI
- * config) and `link.ts` (write the new appId back into the project
- * overlay), so a fresh `@guuey/create-agentic-app` scaffold can go straight
- * from `guuey create` to `guuey deploy` with no separate `guuey create
- * <app>`/`guuey link` step.
+ * config), writing the new appId back into the project overlay too, so a
+ * fresh `@guuey/create-agentic-app` scaffold can go straight from `guuey
+ * create` to `guuey deploy` with no separate `guuey apps create` step.
  *
  * Returns the resolved appId; exits the process on API failure.
  */

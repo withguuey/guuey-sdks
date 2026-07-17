@@ -49,7 +49,7 @@ export async function envSet(args: string[], _flags?: Record<string, string | tr
   const appId = config.appId;
 
   if (!appId) {
-    out.error('No app ID found. Run "guuey create" or "guuey link" first.');
+    out.error('No app ID found. Run "guuey pull --app-id <id>" to bind an existing app, or "guuey create" to scaffold a new project first.');
     process.exit(1);
   }
 
@@ -96,7 +96,7 @@ export async function envList(opts: { json?: boolean }): Promise<void> {
   const appId = config.appId;
 
   if (!appId) {
-    out.error('No app ID found. Run "guuey create" or "guuey link" first.');
+    out.error('No app ID found. Run "guuey pull --app-id <id>" to bind an existing app, or "guuey create" to scaffold a new project first.');
     process.exit(1);
   }
 
@@ -142,7 +142,7 @@ export async function envUnset(args: string[], _flags?: Record<string, string | 
   const appId = config.appId;
 
   if (!appId) {
-    out.error('No app ID found. Run "guuey create" or "guuey link" first.');
+    out.error('No app ID found. Run "guuey pull --app-id <id>" to bind an existing app, or "guuey create" to scaffold a new project first.');
     process.exit(1);
   }
 
