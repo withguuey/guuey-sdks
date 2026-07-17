@@ -45,7 +45,7 @@ import {
   saveProjectConfig,
   type ResolvedConfig,
 } from '../config';
-import type { GuueyJsonV1 } from '@guuey/config';
+import type { GuueyAgent, GuueyJsonV1 } from '@guuey/config';
 import * as out from '../output';
 
 /**
@@ -191,12 +191,32 @@ export function mapHostedStateToOverlay(
   // Nocode snapshot present → replace the local agent with the pulled
   // definition. Externalize an inlined systemPrompt string so the
   // ejected project stays editable; honor an already-externalized ref.
-  let agent = snapshot.agent;
+  //
+  // Deploy ROUTING is never imported from the snapshot: Studio stamps
+  // `mode: 'declarative'` on every snapshot it deploys, so importing it
+  // wholesale would silently reroute a code-mode scaffold's `guuey deploy`
+  // back to a nocode POST one step after "eject to code" — the exact 409
+  // this command exists to prevent. `mode` is the only deploy-routing
+  // field on `GuueyAgent` (see its `AgentSectionV1` "── Deploy routing ──"
+  // section in `@guuey/config`; `deploy.size`/`deploy.region` only
+  // parametrize pod sizing, they don't select a code path in
+  // `resolveDeployMode`), so preserving it alone is the complete fix.
+  // The local value always wins; when the local project has none (a
+  // hand-authored declarative project), the key is omitted entirely
+  // rather than importing the snapshot's `'declarative'` stamp.
+  const localMode = existing.agent.mode;
+  let agent: GuueyAgent = snapshot.agent;
   let promptFile: { path: string; content: string } | null = null;
   const sp = snapshot.agent.systemPrompt;
   if (typeof sp === 'string') {
     promptFile = { path: SYSTEM_PROMPT_FILE, content: sp };
     agent = { ...snapshot.agent, systemPrompt: { file: SYSTEM_PROMPT_FILE } };
+  }
+  if (localMode === undefined) {
+    const { mode: _snapshotMode, ...rest } = agent;
+    agent = rest;
+  } else {
+    agent = { ...agent, mode: localMode };
   }
 
   const overlay: GuueyJsonV1 = {

@@ -34,7 +34,7 @@ npx @guuey/create-agentic-app <dir> [--framework claude-agent-sdk|openai-agents-
 
 `guuey deploy` (above) creates a new app on first run. To bind this
 scaffold to an app you already have — including a no-code agent built in
-[Studio](https://guuey.com) — run `guuey pull --app-id <id>` instead: it
+[Studio](https://studio.guuey.com) — run `guuey pull --app-id <id>` instead: it
 refreshes `guuey.json`'s `appId`, and for a Studio no-code app pulls the
 Studio-authored system prompt/model/MCP servers down into the scaffold too.
 There is no `guuey link` command — `guuey pull --app-id` is the only way

@@ -78,12 +78,19 @@ function localScaffold(): GuueyJsonV1 {
   };
 }
 
-/** A deployed no-code definition snapshot (systemPrompt inlined string). */
+/**
+ * A deployed no-code definition snapshot (systemPrompt inlined string).
+ * Studio stamps `mode: 'declarative'` into every snapshot it deploys
+ * (`apps/studio/src/lib/agents/agent-config.ts`) — this fixture must carry
+ * it too, or the mode-preservation regression it's meant to catch can't
+ * repro.
+ */
 function nocodeSnapshot(): GuueyJsonV1 {
   return {
     schema: '1',
     appId: 'app-1',
     agent: {
+      mode: 'declarative',
       framework: 'claude-agent-sdk',
       model: 'claude-opus-4-8',
       systemPrompt: 'You are the deployed studio agent.',
@@ -148,9 +155,12 @@ describe('mapHostedStateToOverlay', () => {
     // Non-agent top-level fields preserved from the local overlay.
     expect(overlay.workspaceId).toBe('ws-1');
     expect(overlay.worker).toBe('guuey.worker.js');
-    // Agent section fully REPLACED (not merged): scaffold `mode: 'code'`
-    // and the todo MCP are gone; the snapshot's definition is present.
-    expect(overlay.agent.mode).toBeUndefined();
+    // Agent section fully REPLACED (not merged) EXCEPT deploy routing: the
+    // scaffold's `mode: 'code'` survives even though the snapshot says
+    // `mode: 'declarative'` (Studio's stamp) — pull replaces the agent
+    // DEFINITION, never the local deploy ROUTING. The todo MCP is gone;
+    // the snapshot's definition (framework/model/mcpServers) is present.
+    expect(overlay.agent.mode).toBe('code');
     expect(overlay.agent.model).toBe('claude-opus-4-8');
     expect(overlay.agent.deploy).toEqual({ size: 'sm', region: 'us-east-1' });
     expect(Object.keys(overlay.agent.mcpServers ?? {})).toEqual(['ggui']);
@@ -160,6 +170,17 @@ describe('mapHostedStateToOverlay', () => {
       path: SYSTEM_PROMPT_FILE,
       content: 'You are the deployed studio agent.',
     });
+  });
+
+  it('omits agent.mode entirely (not `undefined`, not the snapshot\'s `declarative`) when the local project has none', () => {
+    const local = localScaffold();
+    delete local.agent.mode;
+    const { overlay } = mapHostedStateToOverlay(APP, nocodeSnapshot(), local);
+
+    expect('mode' in overlay.agent).toBe(false);
+    expect(overlay.agent.mode).toBeUndefined();
+    // Definition fields still come from the snapshot.
+    expect(overlay.agent.model).toBe('claude-opus-4-8');
   });
 
   it('honors a snapshot systemPrompt that is already a { file } ref (no externalize write)', () => {
