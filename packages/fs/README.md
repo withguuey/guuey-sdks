@@ -69,10 +69,13 @@ contract:
   signed-in — by contract, not a deferred feature. Don't put anything there
   you need past the current session.
 
-Until the rollout reaches an environment, `homeDir()` isn't reachable there
-at all: `GUUEY_HOME_DIR`/`GUUEY_APP_DIR` are never injected, so the helpers
-throw immediately (see "Install" above) rather than silently handing back a
-non-durable directory.
+Until the rollout reaches an environment, hosted agents there DO still get
+`GUUEY_HOME_DIR`/`GUUEY_APP_DIR` — pointing at pod-local ephemeral storage.
+Writes to `homeDir()` work, but nothing survives the pod: treat every layer
+as session-lifetime until the durable filesystem is enabled for your
+environment. The helpers' throw only signals you're outside the guuey
+runtime entirely (no `guuey dev`, no hosted pod) — it is not a durability
+signal.
 
 ## What this package is NOT
 
@@ -103,9 +106,10 @@ what's coming:
 | Guest `home` = pod-local ephemeral                  | 🔜 lands with the GuueyFS rollout (operator-gated per env) |
 | Per-user/per-app storage quotas                     | 🔜 enforced at the filesystem layer, not visible here      |
 
-Until the rollout reaches an environment, `GUUEY_FS_BASE` is unset there
-and the whole GuueyFS layer is off — this package's helpers throw
-immediately rather than silently degrading (see "Install" above).
+Until the rollout reaches an environment, the durable backing is off there
+(`GUUEY_FS_BASE` unset) — but hosted agents still get the env vars, pointing
+at pod-local ephemeral storage: writes work, nothing survives the pod (see
+Memory behavior above).
 
 This package is optional sugar — three one-line env-var reads. You can
 skip it entirely and read `process.env.GUUEY_HOME_DIR` /
