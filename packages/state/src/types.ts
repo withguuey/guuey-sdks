@@ -41,13 +41,20 @@
  *   GuueyFS rule: guests are excluded at the platform layer, not
  *   by the tool surface).
  *
- * Until that ships, `ScopeContext` is caller-asserted and only the
- * in-memory binding exists — fine for tests and local dev, where
- * the process owns all its data anyway.
+ * Until that ships, `ScopeContext` is caller-asserted: the hosted
+ * HTTP binding trusts whatever `userId`/`mcpId` the caller passes
+ * (or derives from `scopeFromAuthorization`), the same way the
+ * in-memory binding always has — fine for tests, local dev, and
+ * MCP servers that verify the caller's Bearer token themselves.
  */
 export interface ScopeContext {
   readonly userId: string;
   readonly mcpId: string;
+  /**
+   * The inbound Bearer JWT guuey sent this MCP server (hosted binding
+   * only; in-memory ignores it). Obtain via `scopeFromAuthorization`.
+   */
+  readonly token?: string;
 }
 
 /**
@@ -203,16 +210,15 @@ export interface Kv {
  * Options for `createGuueyState`. Binding selection:
  *
  * 1. If `bindingUrl` (or the `GUUEY_KV_URL` env) is set → the hosted
- *    HTTP binding. 🔜 NOT BUILT YET — requesting it throws
- *    `TransportError` today, because silently handing back a
- *    non-durable in-memory store to a caller who asked for the
- *    hosted one would lose data with zero signal.
+ *    HTTP binding (`HttpKv`). Requires a token — see `authToken`
+ *    below — or `createGuueyState` throws `InvalidContextError`
+ *    rather than silently handing back a non-durable in-memory store
+ *    to a caller who asked for the hosted one.
  * 2. Otherwise → in-memory binding (one-time warning).
  *
  * The in-memory binding is right for unit tests + local development.
- * When the hosted binding ships, guuey-hosted pods will get
- * `GUUEY_KV_URL` + `GUUEY_KV_TOKEN` injected at boot and the same
- * code will pick it up unchanged.
+ * guuey-hosted pods get `GUUEY_KV_URL` + `GUUEY_KV_TOKEN` injected at
+ * boot and pick up the hosted binding unchanged.
  */
 export interface CreateGuueyStateOptions {
   /** Scope identity. Required. */
@@ -220,10 +226,11 @@ export interface CreateGuueyStateOptions {
   /** Override the binding URL (defaults to `GUUEY_KV_URL` env). */
   readonly bindingUrl?: string;
   /**
-   * Override the auth token (defaults to `GUUEY_KV_TOKEN` env).
-   * Per-deploy pod credential — see the `ScopeContext` trust model:
-   * the hosted KV API derives the mcp scope from this token
-   * server-side rather than trusting the caller's `mcpId`.
+   * Override the auth token (defaults to `GUUEY_KV_TOKEN` env, then
+   * `context.token`). Per-deploy pod credential — see the
+   * `ScopeContext` trust model: the hosted KV API derives the mcp
+   * scope from this token server-side rather than trusting the
+   * caller's `mcpId`. Overrides `context.token` when both are set.
    */
   readonly authToken?: string;
 }

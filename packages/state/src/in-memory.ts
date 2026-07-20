@@ -18,8 +18,6 @@
  */
 import {
   InvalidArgumentError,
-  InvalidKeyError,
-  InvalidTtlError,
   QuotaExceededError,
   TypeMismatchError,
   ValueTooLargeError,
@@ -32,13 +30,14 @@ import type {
   ScopeInfo,
   SetOptions,
 } from "./types.js";
-
-const SCOPE_LIMIT_BYTES = 1 * 1024 * 1024; // 1 MiB
-const VALUE_LIMIT_BYTES = 64 * 1024; // 64 KiB
-const KEY_LIMIT_BYTES = 1024;
-const TTL_MAX_SECONDS = 60 * 60 * 24 * 90; // 90 days
-const MGET_LIMIT = 100;
-const VALID_KEY = /^[A-Za-z0-9_.:\-/]+$/;
+import {
+  MGET_LIMIT,
+  SCOPE_LIMIT_BYTES,
+  VALUE_LIMIT_BYTES,
+  encodeValue,
+  validateKey,
+  validateTtl,
+} from "./validate.js";
 
 interface Entry {
   /** JSON-encoded value. */
@@ -52,34 +51,6 @@ interface Entry {
   bytes: number;
   /** Epoch ms when this key expires. */
   expiresAt: number;
-}
-
-/**
- * JSON-encode a value for storage, converting every serialization
- * failure into the library's typed error. `JSON.stringify` returns
- * the VALUE `undefined` (not a string) for top-level `undefined`,
- * functions, and symbols, and throws natively for circular
- * structures and `BigInt` — none of which may escape as a bare
- * `TypeError` (the error contract promises `GuueyStateError`
- * subclasses from every failable operation).
- */
-function encodeValue(key: string, value: unknown): string {
-  let json: string | undefined;
-  try {
-    json = JSON.stringify(value);
-  } catch (err) {
-    throw new InvalidArgumentError(
-      `value for key ${JSON.stringify(key)} is not JSON-serializable ` +
-        `(${err instanceof Error ? err.message : String(err)})`,
-    );
-  }
-  if (json === undefined) {
-    throw new InvalidArgumentError(
-      `value for key ${JSON.stringify(key)} is not JSON-serializable ` +
-        `(top-level undefined, function, or symbol)`,
-    );
-  }
-  return json;
 }
 
 /**
@@ -109,8 +80,8 @@ function emitOneTimeWarning(): void {
   console.warn(
     "[@guuey/state] Using the in-memory KV binding. Data is " +
       "per-process and non-durable (lost on restart, not shared " +
-      "across pods). No hosted binding exists yet — this is " +
-      "currently the only implementation.",
+      "across pods). Set GUUEY_KV_URL (guuey-hosted pods get this " +
+      "injected automatically) to use the durable hosted binding.",
   );
 }
 
@@ -334,33 +305,5 @@ export class InMemoryKv implements Kv {
       total += entry.bytes;
     }
     return total;
-  }
-}
-
-function validateKey(key: string): void {
-  if (key.length === 0) {
-    throw new InvalidKeyError(key, "must be non-empty");
-  }
-  if (Buffer.byteLength(key, "utf8") > KEY_LIMIT_BYTES) {
-    throw new InvalidKeyError(key, `must be <= ${KEY_LIMIT_BYTES} bytes`);
-  }
-  if (!VALID_KEY.test(key)) {
-    throw new InvalidKeyError(
-      key,
-      "may only contain ASCII letters, digits, and `_.:-/`",
-    );
-  }
-}
-
-function validateTtl(ttl: number): void {
-  if (!Number.isFinite(ttl) || ttl <= 0) {
-    throw new InvalidTtlError(ttl, "must be a positive finite number");
-  }
-  if (ttl > TTL_MAX_SECONDS) {
-    throw new InvalidTtlError(
-      ttl,
-      `must be <= ${TTL_MAX_SECONDS} seconds (90 days). ` +
-        `Long-lived data belongs in user-owned storage via mcp-proxy.`,
-    );
   }
 }

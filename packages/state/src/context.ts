@@ -20,6 +20,7 @@
  * isolation.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash } from "node:crypto";
 import { InvalidContextError } from "./errors.js";
 import type { ScopeContext } from "./types.js";
 
@@ -83,4 +84,43 @@ export function withGuueyContext<T>(
  */
 export function getCurrentContext(): ScopeContext | undefined {
   return storage.getStore();
+}
+
+/**
+ * Derive a ScopeContext from the Authorization header guuey sent this
+ * MCP server. Decodes WITHOUT verifying — the KV API is the verifier;
+ * this is DX so `withGuueyContext(scopeFromAuthorization(h), fn)` is
+ * one line. mcpId = "mcp_" + first 32 hex of sha256(canonical aud URL),
+ * identical to the server derivation (auth.ts — keep in sync).
+ */
+export function scopeFromAuthorization(header: string): ScopeContext {
+  const m = /^Bearer\s+(.+)$/i.exec(header.trim());
+  if (!m) throw new InvalidContextError("userId", "not a Bearer authorization header");
+  const token = m[1] ?? "";
+  const parts = token.split(".");
+  if (parts.length !== 3 || parts[1] === undefined) {
+    throw new InvalidContextError("userId", "malformed JWT");
+  }
+  let payload: { sub?: string; aud?: string | string[] };
+  try {
+    payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as {
+      sub?: string;
+      aud?: string | string[];
+    };
+  } catch {
+    throw new InvalidContextError("userId", "JWT payload is not valid JSON");
+  }
+  const aud = Array.isArray(payload.aud) ? payload.aud[0] : payload.aud;
+  if (typeof payload.sub !== "string" || payload.sub.length === 0)
+    throw new InvalidContextError("userId", "JWT has no sub claim");
+  if (typeof aud !== "string" || aud.length === 0)
+    throw new InvalidContextError("mcpId", "JWT has no aud claim");
+  return { userId: payload.sub, mcpId: mcpIdFromResourceUrl(aud), token };
+}
+
+/** Canonicalize + hash a resource URL into a scope-safe mcpId. */
+export function mcpIdFromResourceUrl(url: string): string {
+  const u = new URL(url);
+  const canonical = `${u.protocol.toLowerCase()}//${u.host.toLowerCase()}${u.pathname.replace(/\/+$/, "")}`;
+  return `mcp_${createHash("sha256").update(canonical).digest("hex").slice(0, 32)}`;
 }

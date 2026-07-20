@@ -33,7 +33,8 @@
  */
 
 import { getCurrentContext, validateContext } from "./context.js";
-import { MissingContextError, TransportError } from "./errors.js";
+import { InvalidContextError, MissingContextError } from "./errors.js";
+import { HttpKv } from "./http.js";
 import { InMemoryKv } from "./in-memory.js";
 import type {
   CreateGuueyStateOptions,
@@ -67,8 +68,12 @@ export {
 export {
   withGuueyContext,
   getCurrentContext,
+  mcpIdFromResourceUrl,
+  scopeFromAuthorization,
   validateContext,
 } from "./context.js";
+
+export { HttpKv } from "./http.js";
 
 /**
  * Create a KV instance bound to the given scope context.
@@ -76,11 +81,13 @@ export {
  * Binding selection:
  *
  *   1. `options.bindingUrl` or `GUUEY_KV_URL` env → the hosted HTTP
- *      binding. NOT BUILT YET (no guuey KV API exists on any env), so
- *      requesting it throws `TransportError` — failing loud beats
- *      silently handing back a non-durable in-memory store to a caller
- *      who explicitly asked for the hosted one (data would vanish on
- *      pod restart with zero signal).
+ *      binding (`HttpKv`). Requires a token — `options.authToken`,
+ *      `GUUEY_KV_TOKEN` env, or `context.token` (from
+ *      `scopeFromAuthorization`), checked in that order — or this
+ *      throws `InvalidContextError` rather than silently handing back
+ *      a non-durable in-memory store to a caller who explicitly asked
+ *      for the hosted one (data would vanish on pod restart with zero
+ *      signal).
  *   2. Otherwise → in-memory binding with a one-time warning.
  *      Suitable for tests and `guuey dev` runs.
  */
@@ -88,12 +95,14 @@ export function createGuueyState(opts: CreateGuueyStateOptions): Kv {
   validateContext(opts.context);
   const bindingUrl = opts.bindingUrl ?? process.env.GUUEY_KV_URL;
   if (bindingUrl) {
-    throw new TransportError(
-      `The hosted KV binding is not implemented yet (requested via ` +
-        `${opts.bindingUrl ? "options.bindingUrl" : "GUUEY_KV_URL"}=` +
-        `${JSON.stringify(bindingUrl)}). Unset it to use the in-memory ` +
-        `binding, or wait for the guuey KV API to ship.`,
-    );
+    const token = opts.authToken ?? process.env.GUUEY_KV_TOKEN ?? opts.context.token;
+    if (!token) {
+      throw new InvalidContextError(
+        "userId",
+        "hosted binding requires a token: pass context from scopeFromAuthorization(header), or set authToken/GUUEY_KV_TOKEN",
+      );
+    }
+    return new HttpKv(bindingUrl, opts.context, token);
   }
   return new InMemoryKv(opts.context);
 }
