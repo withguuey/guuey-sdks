@@ -76,6 +76,63 @@ If you call `kv.*` outside a context, you get a clear
 `MissingContextError` instead of silently writing to a fallback
 scope.
 
+## Hosted binding
+
+The hosted binding is a fetch-based transport that talks to guuey's KV
+API. It activates automatically when `GUUEY_KV_URL` (or
+`options.bindingUrl`) is set — nothing else about your code changes,
+because it implements the same `Kv` interface as the in-memory binding.
+
+```sh
+# .env / deploy env — bare origin, NO trailing /v1 or /v1/state.
+# The client appends `/v1/state/<op>` itself.
+GUUEY_KV_URL=https://api.dev.sandbox.guuey.com     # dev sandbox
+# GUUEY_KV_URL=https://api.staging.sandbox.guuey.com  # staging sandbox
+# GUUEY_KV_URL=https://api.us-east-1.guuey.com        # prod (region-qualified)
+```
+
+An MCP server hosted on guuey doesn't need to set `GUUEY_KV_URL` by
+hand — the platform injects it. What you do need is an auth token per
+request, which the platform also gives you for free: **only federated
+MCP servers get one.** Set `federate: true` on an `external` entry in
+`guuey.json` (or use `kind: 'hosted'`, or a `ggui` URL — those are
+federated automatically):
+
+```json
+{ "kind": "external", "url": "https://your-server.example.com", "federate": true }
+```
+
+Federation makes guuey mint a per-invoke Bearer JWT and send it as this
+server's `Authorization` header on every call. That inbound token IS
+the credential — a plain `external` entry with static `headers` gets no
+token and can't use hosted state. Derive the `ScopeContext` from it with
+`scopeFromAuthorization` and bind it per request:
+
+```ts
+import { withGuueyContext, scopeFromAuthorization, kv } from "@guuey/state";
+
+// Middleware / per-request handler — `req.headers.authorization` is the
+// Bearer JWT guuey sent this (federated) server.
+async function handler(req: { headers: { authorization?: string } }) {
+  const authHeader = req.headers.authorization;
+  if (typeof authHeader !== "string") throw new Error("missing Authorization header");
+
+  return withGuueyContext(scopeFromAuthorization(authHeader), async () => {
+    // kv.* inside here is scoped to this request's (userId, mcpId).
+    await kv.set("last-seen", Date.now(), { ttl: 60 * 60 * 24 });
+  });
+}
+```
+
+`scopeFromAuthorization` decodes the JWT client-side (unverified — the
+KV API is the verifier) into `{ userId, mcpId, token }`; the returned
+`token` is what `createGuueyState`/the ALS-bound `kv` uses to
+authenticate the hosted binding's requests, so you never touch
+`GUUEY_KV_TOKEN` yourself in this path. `mcpId` is derived from the
+JWT's `aud` claim (the server's federated resource URL) — deterministic
+and identical to the server-side derivation, so two agents pointing at
+the same external MCP share that MCP's per-user state.
+
 ## API
 
 | Method                               | Purpose                                                      |
@@ -153,10 +210,11 @@ one-time `console.warn` on first use; data is per-process and lost on
 restart. That's exactly right for tests and `guuey dev` runs — and it
 is also the honest current ceiling in production (see Status below).
 
-Setting `GUUEY_KV_URL` (or `options.bindingUrl`) **throws
-`TransportError` today**: the hosted HTTP binding doesn't exist yet,
-and silently handing back a non-durable store to a caller who asked
-for the hosted one would be worse than failing loud.
+Setting `GUUEY_KV_URL` (or `options.bindingUrl`) activates the hosted
+HTTP binding — see "Hosted binding" above. It requires a token
+(`authToken`/`GUUEY_KV_TOKEN`/`context.token`) or throws
+`InvalidContextError` rather than silently handing back a non-durable
+in-memory store to a caller who explicitly asked for the durable one.
 
 ## Errors
 
