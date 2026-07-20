@@ -272,8 +272,17 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
   // pod-local) session dir — spec §4 belt-and-braces, alongside the
   // unconditional `settings.autoMemoryEnabled:false` below — so CLI session
   // state never lands in the durable, quota-billed home layer.
+  // XDG_CACHE_HOME likewise: the CLI's cache tree (~/.cache/claude-cli-nodejs,
+  // MCP logs etc.) follows $HOME by XDG default, and $HOME resolves inside the
+  // durable home mount — live-found on the first G5 gate run (2026-07-20)
+  // leaking per-invoke log files into quota-billed storage.
   const fsEnv: Record<string, string> = fs
-    ? { [ENV_HOME_DIR]: fs.home, [ENV_APP_DIR]: fs.app, CLAUDE_CONFIG_DIR: fs.session }
+    ? {
+        [ENV_HOME_DIR]: fs.home,
+        [ENV_APP_DIR]: fs.app,
+        CLAUDE_CONFIG_DIR: fs.session,
+        XDG_CACHE_HOME: fs.session,
+      }
     : {};
   let env: Record<string, string>;
   if (baseUrl !== undefined && authToken !== undefined) {
