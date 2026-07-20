@@ -352,6 +352,22 @@ describe("@guuey/state — HttpKv", () => {
     expect(calls).toBe(2);
   });
 
+  it("spends only ONE retry total across a network failure then a 5xx (never 3 requests)", async () => {
+    // Regression: the retry budget for a network failure and a 5xx
+    // response must be shared. Attempt 1 throws (network), attempt 2
+    // (the one retry) comes back 500 — that must throw immediately,
+    // not spend a third attempt the budget doesn't have.
+    let calls = 0;
+    const fetchImpl: typeof fetch = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) throw new TypeError("fetch failed");
+      return jsonResponse(500, { code: "TRANSPORT", message: "server exploded" });
+    });
+    const kv = makeHttpKv(fetchImpl);
+    await expect(kv.get("k")).rejects.toBeInstanceOf(TransportError);
+    expect(calls).toBe(2);
+  });
+
   it("does NOT retry a write on a 5xx response", async () => {
     let calls = 0;
     const fetchImpl: typeof fetch = vi.fn(async () => {

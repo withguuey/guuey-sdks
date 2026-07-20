@@ -170,6 +170,13 @@ export class HttpKv implements Kv {
 
   // ── internals ──────────────────────────────────────────────────────
 
+  /**
+   * One shared retry budget (`retried`) covers BOTH retry triggers —
+   * a network failure and a 5xx response — so a retryable op makes
+   * at most 2 total requests, never 3. (A network failure on attempt
+   * 1 followed by a 5xx on attempt 2 must throw immediately, not
+   * spend a third attempt the budget doesn't have.)
+   */
   private async call<R>(op: string, args: object, retryable: boolean): Promise<R> {
     const doOnce = async (): Promise<Response> =>
       this.fetchImpl(`${this.baseUrl.replace(/\/+$/, "")}/v1/state/${op}`, {
@@ -184,15 +191,26 @@ export class HttpKv implements Kv {
         }),
       });
     let res: Response;
-    try {
-      res = await doOnce();
-    } catch (err) {
-      if (!retryable) throw new TransportError("network failure calling guuey state API", err);
-      res = await doOnce().catch((err2: unknown) => {
-        throw new TransportError("network failure calling guuey state API (after retry)", err2);
-      });
+    let retried = false;
+    for (;;) {
+      try {
+        res = await doOnce();
+      } catch (err) {
+        if (!retryable || retried) {
+          throw new TransportError(
+            `network failure calling guuey state API${retried ? " (after retry)" : ""}`,
+            err,
+          );
+        }
+        retried = true;
+        continue;
+      }
+      if (res.status >= 500 && retryable && !retried) {
+        retried = true;
+        continue;
+      }
+      break;
     }
-    if (res.status >= 500 && retryable) res = await doOnce();
     if (!res.ok) throw await toTypedError(res);
     const body = (await res.json()) as ResultEnvelope<R>;
     return body.result;

@@ -19,33 +19,21 @@
  * platform-derived id for BYO-auth users). `mcpId` is the MCP
  * server's stable identifier (the deploy's app id).
  *
- * 🔜 **Planned injection contract (not wired yet — the hosted
- * binding doesn't exist):** guuey's ingress will inject the
- * end-user identity per request, and the deploy controller will
- * inject the MCP identity at pod boot. Trust model, so the caps
- * mean something:
- *
- * - `mcpId` is bound SERVER-SIDE from the pod's own credential
- *   (`GUUEY_KV_TOKEN`, per-deploy). Whatever a buggy or malicious
- *   MCP passes as `mcpId`, the KV API scopes writes to the app the
- *   token belongs to — cross-MCP reach is impossible by
- *   construction, not by cooperation.
- * - `userId` arrives on a platform-set header the pod cannot see
- *   forged from outside (guuey's ingress strips inbound copies and
- *   re-sets it from the verified caller token — the same pattern
- *   the agent Router uses for `authMode`). Within its OWN app, an
- *   MCP server necessarily handles every user's requests, so its
- *   blast radius if compromised is its own app's scopes — never
- *   another app's.
- * - Anonymous/guest callers get NO durable scope (mirrors the
- *   GuueyFS rule: guests are excluded at the platform layer, not
- *   by the tool surface).
- *
- * Until that ships, `ScopeContext` is caller-asserted: the hosted
- * HTTP binding trusts whatever `userId`/`mcpId` the caller passes
- * (or derives from `scopeFromAuthorization`), the same way the
- * in-memory binding always has — fine for tests, local dev, and
- * MCP servers that verify the caller's Bearer token themselves.
+ * **Trust model (spec §3):** the hosted CLIENT binding (`HttpKv`)
+ * ships now; the server (`stateApi`, in build) is the actual
+ * verifier. It authenticates the federation-minted Bearer JWT and
+ * derives `userId` (the `sub` claim) + `mcpId` (hash of the
+ * canonicalized `aud` URL, see `mcpIdFromResourceUrl`)
+ * AUTHORITATIVELY server-side — the `context` this package puts on
+ * the wire is advisory-must-match, never trusted on its own. An MCP
+ * can only present tokens guuey itself issued it, so a compromised
+ * MCP's blast radius is its own app's scopes, across its own calling
+ * users — never another app's. Tokens with
+ * `issuerAuthMode !== 'authenticated'` are rejected: guests get no
+ * durable scope (mirrors the GuueyFS rule). `ScopeContext` itself
+ * stays caller-asserted at the type level — `scopeFromAuthorization`
+ * decodes without verifying, same as the in-memory binding always
+ * has; verification is the server's job, not this package's.
  */
 export interface ScopeContext {
   readonly userId: string;
