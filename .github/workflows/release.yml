@@ -5,12 +5,14 @@ name: npm Release
 # guuey-sdks mirror (withguuey/guuey-sdks) — the repo the npmjs
 # trusted-publisher config points at.
 #
-# Cohort (leaf-first): @guuey/config, @guuey/worker,
-# @guuey/create-agentic-app, @guuey/cli — exactly the packages a scaffolded
-# app resolves from the registry (the clean-room gate's cohort).
-# @guuey/agent-client (the embed chat SDK), @guuey/host, @guuey/fs,
-# @guuey/state are platform-/consumer-side and stay unpublished until their
-# own cut (first publish is a manual, operator-gated bootstrap — see below).
+# Cohort (leaf-first, mirrors the ORDER array below): @guuey/config,
+# @guuey/state (KV developer preview — in-memory binding, contract locked),
+# @guuey/worker, @guuey/agent-client (the embed chat SDK), @guuey/host,
+# @guuey/create-agentic-app, @guuey/cli.
+# @guuey/fs stays unpublished until its own cut (workspace-internal today;
+# the Router consumes it as a workspace dep, no registry consumer exists).
+# First-ever publish of any package is a manual, operator-gated bootstrap
+# (npm requires the package to exist before a trusted publisher attaches).
 #
 # Release model: "publish what's in git."
 #   - Versions come from each packages/<pkg>/package.json as committed.
@@ -115,7 +117,7 @@ jobs:
           # Fixed leaf-first order: config/worker/agent-client are leaves,
           # host needs config+worker, create-agentic-app needs config, cli
           # needs all.
-          ORDER=(config worker agent-client host create-agentic-app cli)
+          ORDER=(config state worker agent-client host create-agentic-app cli)
 
           TODO=()
           for pkg in "${ORDER[@]}"; do

@@ -1,6 +1,6 @@
 {
   "name": "@guuey/state",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Open-source KV client for MCP servers hosted on guuey.com. Scoped per (user, mcp). The MCP stays stateless from its own POV while the user retains data ownership. Hard caps are the product — see docs/principles/mcp-hosting-policy.md.",
   "license": "MIT",
   "type": "module",

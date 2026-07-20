@@ -103,11 +103,15 @@ that backend as your MCP's "well-defined API."
 
 ## Local development
 
-When `GUUEY_KV_URL` is unset (typical for `pnpm test` and `guuey dev`
-runs without the bridge), the library uses an in-memory fallback and
-emits a one-time `console.warn`. Data is per-process and lost on
-restart. **Never deploy with this — guuey-hosted pods get
-`GUUEY_KV_URL` injected at boot.**
+The library currently ships **one binding: in-memory**. It emits a
+one-time `console.warn` on first use; data is per-process and lost on
+restart. That's exactly right for tests and `guuey dev` runs — and it
+is also the honest current ceiling in production (see Status below).
+
+Setting `GUUEY_KV_URL` (or `options.bindingUrl`) **throws
+`TransportError` today**: the hosted HTTP binding doesn't exist yet,
+and silently handing back a non-durable store to a caller who asked
+for the hosted one would be worse than failing loud.
 
 ## Errors
 
@@ -146,8 +150,19 @@ Codes: `QUOTA_EXCEEDED`, `VALUE_TOO_LARGE`, `INVALID_KEY`,
 
 ## Status
 
-🚧 **Sketch.** The HTTP binding (against guuey's KV API) isn't
-wired yet — every binding selection falls through to in-memory.
-The API surface, error shapes, and limits ARE locked; only the
-transport layer is unfinished. Pin to `0.0.x` until the first
-real customer asks for it.
+🧪 **Developer preview (`0.x`).** The API surface, error shapes, and
+hard caps are **locked and enforced** — code written against this
+package today keeps working unchanged when the hosted binding ships.
+What exists vs. what's coming:
+
+| Piece                                       | Status                               |
+| ------------------------------------------- | ------------------------------------ |
+| `Kv` API, typed errors, context middleware  | ✅ locked + tested                   |
+| Cap enforcement (scope/value/TTL/key rules) | ✅ enforced in every binding         |
+| In-memory binding (dev, tests)              | ✅ shipped                           |
+| Hosted binding (durable, cross-pod)         | 🔜 lands with guuey-hosted MCP state |
+| Console export + delete (data ownership)    | 🔜 ships with the hosted binding     |
+
+Until the hosted binding lands, state is per-pod and non-durable in
+every environment — design your MCP so that losing this state is an
+inconvenience (re-auth, cache miss), never data loss.
