@@ -28,8 +28,10 @@ You should **not** reach for `@guuey/state` if you need:
   live in the user's own SaaS via mcp-proxy credential brokering).
 
 Those cases are explicitly out of scope. The hard caps are the
-product — see [guuey MCP Hosting Policy](https://github.com/loqu-co/guuey/blob/main/docs/principles/mcp-hosting-policy.md)
-for the full rationale.
+product — per the guuey MCP Hosting Policy: most stateful MCPs only
+need a tiny bit of state (idempotency tokens, rate-limit counters,
+OAuth nonces, small preferences), and a scoped 1 MiB KV covers that
+long tail without turning guuey into a backend-as-a-service.
 
 ## Quick start
 
@@ -48,10 +50,12 @@ const prefs = await kv.get<{ theme: string }>("user-prefs");
 
 ### Implicit context (production MCP servers)
 
-In production, guuey-hosted MCP pods install a middleware that
-sets the `(userId, mcpId)` context per incoming request from the
-`X-Guuey-User-Id` / `X-Guuey-Mcp-Id` headers. Inside tool handlers
-you just import the barrel-exported `kv`:
+🔜 When the hosted binding ships, guuey-hosted MCP pods will install
+a middleware that sets the `(userId, mcpId)` context per incoming
+request from platform-injected identity (see "Identity & trust
+model" below). Today you install `withGuueyContext` yourself with
+whatever identity your server derives. Inside tool handlers you
+just import the barrel-exported `kv`:
 
 ```ts
 import { kv } from "@guuey/state";
@@ -96,6 +100,40 @@ scope.
 | Key character set  | `[A-Za-z0-9_.:\-/]+` | Same set CloudWatch/Datadog use.                   |
 | TTL max            | 90 days              | Longer-lived data → user-owned SaaS via mcp-proxy. |
 | `keys()` page size | 1000                 | Diagnostics tool, not a query engine.              |
+| `mget()` batch     | 100 keys             | Bulk convenience, not a table scan.                |
+| Counters           | Safe integers only   | Rate limits + sequences; not float math.           |
+
+Sizes are **UTF-8 bytes** of the JSON-encoded value — the same
+accounting every binding uses, so quota behavior is identical in
+tests and production.
+
+## Identity & trust model
+
+Every operation is scoped by a `ScopeContext` (`userId`, `mcpId`).
+Where those ids come from — and who is trusted to assert them —
+is the access-control story:
+
+- **Today (in-memory binding only):** the context is caller-asserted.
+  That's fine because the store is process-local — your process owns
+  all of its own data, and both ids are validated (non-empty, no
+  whitespace/control characters, ≤256 chars) to fail wiring bugs
+  loudly.
+- **🔜 Hosted binding (planned contract):** `mcpId` is derived
+  **server-side** from the pod's per-deploy credential
+  (`GUUEY_KV_TOKEN`) — a compromised MCP server can never reach
+  another MCP's scopes, by construction. `userId` comes from
+  platform-injected per-request identity (guuey's ingress strips any
+  inbound copy of the header and re-sets it from the verified caller
+  token). Anonymous/guest callers get no durable scope at all —
+  the same platform-layer exclusion guuey applies to durable file
+  storage.
+- **Blast radius:** within its own app an MCP server necessarily
+  handles every one of its users' requests, so a compromised server
+  can touch its own app's scopes — never another app's. Cross-MCP
+  isolation is enforced by the storage layer, not by cooperation.
+- **Data ownership:** per-user export + delete lands in the guuey
+  console together with the hosted binding — end users can see and
+  remove what an MCP stored about them.
 
 If you outgrow any of these, you're having a **Case-B moment** (per
 the hosting policy) — build a real backend on a real cloud and treat
@@ -135,7 +173,8 @@ try {
 ```
 
 Codes: `QUOTA_EXCEEDED`, `VALUE_TOO_LARGE`, `INVALID_KEY`,
-`INVALID_TTL`, `MISSING_CONTEXT`, `TRANSPORT`.
+`INVALID_TTL`, `INVALID_ARGUMENT`, `INVALID_CONTEXT`,
+`TYPE_MISMATCH`, `MISSING_CONTEXT`, `TRANSPORT`.
 
 ## What this library is NOT
 
@@ -145,8 +184,8 @@ Codes: `QUOTA_EXCEEDED`, `VALUE_TOO_LARGE`, `INVALID_KEY`,
   own SaaS via mcp-proxy.
 - **Not cross-MCP.** Two MCPs cannot share data via `@guuey/state`
   even for the same user — by design.
-- **Not for storing the agent's chat history** — that's portal's
-  job via `@guuey-private/chat-managed-amplify` + AppSync.
+- **Not for storing the agent's chat history** — the platform's
+  managed conversation history already handles that.
 
 ## Status
 

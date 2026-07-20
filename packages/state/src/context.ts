@@ -20,9 +20,36 @@
  * isolation.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
+import { InvalidContextError } from "./errors.js";
 import type { ScopeContext } from "./types.js";
 
 const storage = new AsyncLocalStorage<ScopeContext>();
+
+/**
+ * Reject unusable scope ids at bind time. Scope ids are
+ * platform-issued opaque identifiers (Cognito subs, app ids) —
+ * whitespace or control characters in one is always a wiring bug,
+ * and catching it here beats a scope-ambiguity bug in storage.
+ * Shared by `withGuueyContext` and `createGuueyState` so both
+ * entry points enforce the same contract.
+ */
+export function validateContext(context: ScopeContext): void {
+  for (const field of ["userId", "mcpId"] as const) {
+    const value = context[field];
+    if (typeof value !== "string" || value.length === 0) {
+      throw new InvalidContextError(field, "must be a non-empty string");
+    }
+    if (/[\s\p{Cc}]/u.test(value)) {
+      throw new InvalidContextError(
+        field,
+        "must not contain whitespace or control characters",
+      );
+    }
+    if (value.length > 256) {
+      throw new InvalidContextError(field, "must be <= 256 characters");
+    }
+  }
+}
 
 /**
  * Run `fn` with the given scope context bound to AsyncLocalStorage.
@@ -37,6 +64,15 @@ export function withGuueyContext<T>(
   context: ScopeContext,
   fn: () => T | Promise<T>,
 ): Promise<T> {
+  // Validation failures surface as a rejected promise (matching the
+  // return type), never a synchronous throw. `storage.run` itself must
+  // stay synchronous — AsyncLocalStorage binds the context only for
+  // the synchronous extent of `run`, and `fn` starts inside it.
+  try {
+    validateContext(context);
+  } catch (err) {
+    return Promise.reject(err);
+  }
   return Promise.resolve(storage.run(context, fn));
 }
 

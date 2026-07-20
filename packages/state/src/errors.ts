@@ -60,17 +60,16 @@ export class ValueTooLargeError extends GuueyStateError {
 
 /**
  * Key string is too long or contains a forbidden character. Today:
- * 1 KiB max length; ASCII printable + `:` + `.` + `-` + `_` only
+ * 1 KiB max length; ASCII letters, digits, and `_.:-/` only
  * (the standard "URL-safe-ish" set). Keeps keys cheap to log + index.
  */
 export class InvalidKeyError extends GuueyStateError {
   readonly key: string;
 
   constructor(key: string, reason: string) {
-    super(
-      "INVALID_KEY",
-      `Invalid key ${JSON.stringify(key.slice(0, 64))}…: ${reason}`,
-    );
+    const shown =
+      key.length > 64 ? `${JSON.stringify(key.slice(0, 64))}…` : JSON.stringify(key);
+    super("INVALID_KEY", `Invalid key ${shown}: ${reason}`);
     this.name = "InvalidKeyError";
     this.key = key;
   }
@@ -104,6 +103,57 @@ export class MissingContextError extends GuueyStateError {
         `in withGuueyContext({ userId, mcpId }, async () => { ... }).`,
     );
     this.name = "MissingContextError";
+  }
+}
+
+/**
+ * `increment`/`decrement` was called on a key whose stored value is
+ * not a number. Counter ops require number-typed keys; mixing a
+ * counter and a JSON value under one key is a calling-code bug.
+ */
+export class TypeMismatchError extends GuueyStateError {
+  readonly key: string;
+  readonly actualType: string;
+
+  constructor(key: string, actualType: string) {
+    super(
+      "TYPE_MISMATCH",
+      `Key ${JSON.stringify(key)} holds a ${actualType} value; ` +
+        `increment/decrement require number-typed keys.`,
+    );
+    this.name = "TypeMismatchError";
+    this.key = key;
+    this.actualType = actualType;
+  }
+}
+
+/**
+ * A per-call argument is outside its allowed range — e.g. a
+ * `keys()` limit outside 1..1000, or an `mget` batch over 100 keys.
+ * Distinct from `InvalidKeyError`/`InvalidTtlError`, which cover the
+ * key and TTL contracts specifically.
+ */
+export class InvalidArgumentError extends GuueyStateError {
+  constructor(reason: string) {
+    super("INVALID_ARGUMENT", `Invalid argument: ${reason}`);
+    this.name = "InvalidArgumentError";
+  }
+}
+
+/**
+ * A `ScopeContext` field is unusable — empty, or containing
+ * whitespace/control characters. Scope ids are platform-issued
+ * opaque identifiers (Cognito subs, app ids); anything with
+ * whitespace in it is a wiring bug at the call site, and the
+ * storage layer refuses it rather than risking scope ambiguity.
+ */
+export class InvalidContextError extends GuueyStateError {
+  readonly field: "userId" | "mcpId";
+
+  constructor(field: "userId" | "mcpId", reason: string) {
+    super("INVALID_CONTEXT", `Invalid ScopeContext.${field}: ${reason}`);
+    this.name = "InvalidContextError";
+    this.field = field;
   }
 }
 

@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   GuueyStateError,
+  InvalidArgumentError,
+  InvalidContextError,
   InvalidKeyError,
   InvalidTtlError,
   MissingContextError,
   QuotaExceededError,
+  TypeMismatchError,
   ValueTooLargeError,
   createGuueyState,
   getCurrentContext,
@@ -195,6 +198,9 @@ describe("@guuey/state — error envelope", () => {
     const errs: GuueyStateError[] = [
       new InvalidKeyError("k", "bad"),
       new InvalidTtlError(0, "zero"),
+      new InvalidArgumentError("bad limit"),
+      new InvalidContextError("userId", "empty"),
+      new TypeMismatchError("k", "string"),
       new QuotaExceededError(2_000_000, 1_048_576),
       new ValueTooLargeError(100_000, 65_536),
       new MissingContextError(),
@@ -203,6 +209,82 @@ describe("@guuey/state — error envelope", () => {
       expect(err).toBeInstanceOf(GuueyStateError);
       expect(err.code).toMatch(/^[A-Z_]+$/);
     }
+  });
+
+  it("EVERY failable operation throws a GuueyStateError subclass — no bare TypeError/RangeError", async () => {
+    const kv = createGuueyState({ context: CTX });
+    // increment on a non-number key
+    await kv.set("json-key", { a: 1 }, { ttl: 60 });
+    await expect(
+      kv.increment("json-key", { ttl: 60 }),
+    ).rejects.toBeInstanceOf(TypeMismatchError);
+    // keys() limit out of range / non-integer
+    await expect(kv.keys({ limit: 0 })).rejects.toBeInstanceOf(
+      InvalidArgumentError,
+    );
+    await expect(kv.keys({ limit: 1001 })).rejects.toBeInstanceOf(
+      InvalidArgumentError,
+    );
+    await expect(kv.keys({ limit: 2.5 })).rejects.toBeInstanceOf(
+      InvalidArgumentError,
+    );
+    // mget over the batch cap
+    const tooMany = Array.from({ length: 101 }, (_, i) => `k:${i}`);
+    await expect(kv.mget(tooMany)).rejects.toBeInstanceOf(
+      InvalidArgumentError,
+    );
+    // non-integer counter step
+    await expect(
+      kv.increment("counter", { ttl: 60, by: 0.5 }),
+    ).rejects.toBeInstanceOf(InvalidArgumentError);
+  });
+});
+
+describe("@guuey/state — scope context validation", () => {
+  it("rejects empty / whitespace / control-character ids at both entry points", () => {
+    for (const bad of ["", "a b", "a\tb", "a\nb", "a\u0000b", "a\u00a0b"]) {
+      expect(() =>
+        createGuueyState({ context: { userId: bad, mcpId: "mcp_ok" } }),
+      ).toThrow(InvalidContextError);
+      expect(() =>
+        createGuueyState({ context: { userId: "u_ok", mcpId: bad } }),
+      ).toThrow(InvalidContextError);
+    }
+    return expect(
+      withGuueyContext({ userId: "a b", mcpId: "mcp_ok" }, async () => {}),
+    ).rejects.toBeInstanceOf(InvalidContextError);
+  });
+
+  it("scope keys cannot collide across (userId, mcpId) splits", async () => {
+    // With a printable delimiter, {"a b","c"} and {"a","b c"} could
+    // alias — the validator rejects whitespace, and the store uses a
+    // NUL delimiter. Verify adjacent-looking ids stay isolated.
+    const a = createGuueyState({ context: { userId: "a", mcpId: "b_c" } });
+    const b = createGuueyState({ context: { userId: "a_b", mcpId: "c" } });
+    await a.set("k", "from-a", { ttl: 60 });
+    expect(await b.get("k")).toBeUndefined();
+  });
+});
+
+describe("@guuey/state — byte accounting (audit 2026-07-20 round 2)", () => {
+  it("counts UTF-8 bytes, not UTF-16 code units", async () => {
+    const kv = createGuueyState({ context: CTX });
+    // "🎉" is 1 JSON string char pair (2 UTF-16 units) but 4 UTF-8 bytes.
+    const emoji = "🎉".repeat(1000);
+    await kv.set("emoji", emoji, { ttl: 60 });
+    const info = await kv.scope();
+    // JSON adds 2 quote bytes; each 🎉 is 4 bytes UTF-8.
+    expect(info.usedBytes).toBe(4000 + 2);
+  });
+
+  it("rejects a value whose UTF-8 size exceeds the cap even when .length does not", async () => {
+    const kv = createGuueyState({ context: CTX });
+    // 17k emoji = 34k UTF-16 units (under 64 KiB as .length) but
+    // 68 KB UTF-8 (over the cap).
+    const sneaky = "🎉".repeat(17 * 1024);
+    await expect(kv.set("sneaky", sneaky, { ttl: 60 })).rejects.toBeInstanceOf(
+      ValueTooLargeError,
+    );
   });
 });
 

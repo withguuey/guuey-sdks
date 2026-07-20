@@ -15,12 +15,35 @@
  * explicitly to `createGuueyState` or set them via
  * `withGuueyContext` (see `./context`).
  *
- * `userId` is the end-user's guuey identity (Cognito sub, or
- * the anonymous-session id for guest pods). `mcpId` is the
- * MCP server's stable identifier (the deploy's app id). Both
- * are injected into the hosted pod by the deploy controller
- * via `GUUEY_USER_ID` / `GUUEY_MCP_ID` env vars + per-request
- * `X-Guuey-User-Id` / `X-Guuey-Mcp-Id` headers.
+ * `userId` is the end-user's guuey identity (Cognito sub, or the
+ * platform-derived id for BYO-auth users). `mcpId` is the MCP
+ * server's stable identifier (the deploy's app id).
+ *
+ * 🔜 **Planned injection contract (not wired yet — the hosted
+ * binding doesn't exist):** guuey's ingress will inject the
+ * end-user identity per request, and the deploy controller will
+ * inject the MCP identity at pod boot. Trust model, so the caps
+ * mean something:
+ *
+ * - `mcpId` is bound SERVER-SIDE from the pod's own credential
+ *   (`GUUEY_KV_TOKEN`, per-deploy). Whatever a buggy or malicious
+ *   MCP passes as `mcpId`, the KV API scopes writes to the app the
+ *   token belongs to — cross-MCP reach is impossible by
+ *   construction, not by cooperation.
+ * - `userId` arrives on a platform-set header the pod cannot see
+ *   forged from outside (guuey's ingress strips inbound copies and
+ *   re-sets it from the verified caller token — the same pattern
+ *   the agent Router uses for `authMode`). Within its OWN app, an
+ *   MCP server necessarily handles every user's requests, so its
+ *   blast radius if compromised is its own app's scopes — never
+ *   another app's.
+ * - Anonymous/guest callers get NO durable scope (mirrors the
+ *   GuueyFS rule: guests are excluded at the platform layer, not
+ *   by the tool surface).
+ *
+ * Until that ships, `ScopeContext` is caller-asserted and only the
+ * in-memory binding exists — fine for tests and local dev, where
+ * the process owns all its data anyway.
  */
 export interface ScopeContext {
   readonly userId: string;
@@ -120,6 +143,10 @@ export interface Kv {
    * value. Useful for rate-limit counters, generated-id
    * sequences, simple analytics.
    *
+   * Counters are integer-only: `by` must be a safe integer
+   * (`InvalidArgumentError` otherwise), and a key holding a
+   * non-number value throws `TypeMismatchError`.
+   *
    * The TTL is reset on every increment to the value passed —
    * idle counters expire naturally.
    */
@@ -128,7 +155,10 @@ export interface Kv {
   /** Inverse of `increment`. Same semantics. */
   decrement(key: string, opts: IncrementOptions): Promise<number>;
 
-  /** Bulk read. Missing keys map to `undefined`. */
+  /**
+   * Bulk read. Missing keys map to `undefined`. Cap: 100 keys per
+   * call (`InvalidArgumentError` beyond) — batch if you need more.
+   */
   mget<T = unknown>(keys: string[]): Promise<Record<string, T | undefined>>;
 
   /**
@@ -140,22 +170,30 @@ export interface Kv {
 }
 
 /**
- * Options for `createGuueyState`. The library tries to pick the
- * right binding automatically:
+ * Options for `createGuueyState`. Binding selection:
  *
- * 1. If `bindingUrl` is set → HTTP binding against guuey's KV API.
- * 2. Else if `GUUEY_KV_URL` env is set → same.
- * 3. Else → in-memory fallback (with a one-time warning).
+ * 1. If `bindingUrl` (or the `GUUEY_KV_URL` env) is set → the hosted
+ *    HTTP binding. 🔜 NOT BUILT YET — requesting it throws
+ *    `TransportError` today, because silently handing back a
+ *    non-durable in-memory store to a caller who asked for the
+ *    hosted one would lose data with zero signal.
+ * 2. Otherwise → in-memory binding (one-time warning).
  *
- * The in-memory fallback exists for unit tests + local development
- * outside `guuey dev`. Never use it in production — guuey-hosted
- * pods get `GUUEY_KV_URL` injected at boot.
+ * The in-memory binding is right for unit tests + local development.
+ * When the hosted binding ships, guuey-hosted pods will get
+ * `GUUEY_KV_URL` + `GUUEY_KV_TOKEN` injected at boot and the same
+ * code will pick it up unchanged.
  */
 export interface CreateGuueyStateOptions {
   /** Scope identity. Required. */
   readonly context: ScopeContext;
   /** Override the binding URL (defaults to `GUUEY_KV_URL` env). */
   readonly bindingUrl?: string;
-  /** Override the auth token (defaults to `GUUEY_KV_TOKEN` env). */
+  /**
+   * Override the auth token (defaults to `GUUEY_KV_TOKEN` env).
+   * Per-deploy pod credential — see the `ScopeContext` trust model:
+   * the hosted KV API derives the mcp scope from this token
+   * server-side rather than trusting the caller's `mcpId`.
+   */
   readonly authToken?: string;
 }

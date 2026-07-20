@@ -32,7 +32,7 @@
  * `docs/principles/mcp-hosting-policy.md`.
  */
 
-import { getCurrentContext } from "./context.js";
+import { getCurrentContext, validateContext } from "./context.js";
 import { MissingContextError, TransportError } from "./errors.js";
 import { InMemoryKv } from "./in-memory.js";
 import type {
@@ -52,15 +52,22 @@ export type {
 
 export {
   GuueyStateError,
+  InvalidArgumentError,
+  InvalidContextError,
   InvalidKeyError,
   InvalidTtlError,
   MissingContextError,
   QuotaExceededError,
   TransportError,
+  TypeMismatchError,
   ValueTooLargeError,
 } from "./errors.js";
 
-export { withGuueyContext, getCurrentContext } from "./context.js";
+export {
+  withGuueyContext,
+  getCurrentContext,
+  validateContext,
+} from "./context.js";
 
 /**
  * Create a KV instance bound to the given scope context.
@@ -77,6 +84,7 @@ export { withGuueyContext, getCurrentContext } from "./context.js";
  *      Suitable for tests and `guuey dev` runs.
  */
 export function createGuueyState(opts: CreateGuueyStateOptions): Kv {
+  validateContext(opts.context);
   const bindingUrl = opts.bindingUrl ?? process.env.GUUEY_KV_URL;
   if (bindingUrl) {
     throw new TransportError(
