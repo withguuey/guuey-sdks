@@ -200,6 +200,55 @@ describe("runInvoke — native emission", () => {
     expect(seen.systemPrompt).toContain("Ada");
   });
 
+  it("threads invoke.userMemory (Task 3 prompted-file memory) into the buildOptions ctx → the recall block renders", async () => {
+    const { sink } = collector();
+    const emit = createEmitter(sink);
+    let seenSystemPrompt: string | undefined;
+    const query: QueryFn = (args) => {
+      seenSystemPrompt = typeof args.options.systemPrompt === "string" ? args.options.systemPrompt : undefined;
+      return streamOf();
+    };
+
+    await runInvoke(
+      {},
+      invoke({
+        identity: { userId: "u1", authMode: "authenticated" },
+        fs: { app: "/fs/app", home: "/fs/home", session: "/fs/session" },
+        userMemory: "User's favorite color is teal.",
+      }),
+      { apiKey: "sk-test", listCredentials: () => [] },
+      emit,
+      query,
+    );
+
+    expect(seenSystemPrompt).toContain("## What you remember about this user");
+    expect(seenSystemPrompt).toContain("User's favorite color is teal.");
+  });
+
+  it("omits userMemory from the ctx when the invoke carries none (no recall block)", async () => {
+    const { sink } = collector();
+    const emit = createEmitter(sink);
+    let seenSystemPrompt: string | undefined;
+    const query: QueryFn = (args) => {
+      seenSystemPrompt = typeof args.options.systemPrompt === "string" ? args.options.systemPrompt : undefined;
+      return streamOf();
+    };
+
+    await runInvoke(
+      {},
+      invoke({
+        identity: { userId: "u1", authMode: "authenticated" },
+        fs: { app: "/fs/app", home: "/fs/home", session: "/fs/session" },
+      }),
+      { apiKey: "sk-test", listCredentials: () => [] },
+      emit,
+      query,
+    );
+
+    expect(seenSystemPrompt).not.toContain("## What you remember about this user");
+    expect(seenSystemPrompt).toContain("$GUUEY_HOME_DIR/memories/MEMORY.md");
+  });
+
   it("broker path: baseUrl+authToken in runtime → options.env has ANTHROPIC_BASE_URL+ANTHROPIC_AUTH_TOKEN, no ANTHROPIC_API_KEY", async () => {
     let capturedEnv: Record<string, string> | undefined;
     const { sink } = collector();

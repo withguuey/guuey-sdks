@@ -297,6 +297,96 @@ describe("buildOptions — systemPrompt + preamble integration", () => {
   });
 });
 
+describe("buildOptions — settings: autoMemoryEnabled:false UNCONDITIONALLY (spec §4 belt-and-braces)", () => {
+  it("is set even with no fs bound and an anonymous identity", () => {
+    const opts = buildOptions({}, ctx());
+    expect(opts.settings).toEqual({ autoMemoryEnabled: false });
+  });
+
+  it("is set for an authenticated caller with fs bound + userMemory present", () => {
+    const fs = { app: "/fs/app", home: "/fs/home", session: "/fs/session" };
+    const opts = buildOptions(
+      {},
+      ctx({
+        identity: { userId: "u1", authMode: "authenticated" },
+        fs,
+        userMemory: "some facts",
+      }),
+    );
+    expect(opts.settings).toEqual({ autoMemoryEnabled: false });
+  });
+
+  it("is set for an anonymous caller with fs bound", () => {
+    const fs = { app: "/fs/app", home: "/fs/home", session: "/fs/session" };
+    const opts = buildOptions({}, ctx({ fs }));
+    expect(opts.settings).toEqual({ autoMemoryEnabled: false });
+  });
+});
+
+describe("buildOptions — CLAUDE_CONFIG_DIR pinned to the session dir when fs is bound", () => {
+  it("sets CLAUDE_CONFIG_DIR = fs.session", () => {
+    const fs = { app: "/fs/app", home: "/fs/home", session: "/fs/session" };
+    const opts = buildOptions({}, ctx({ fs }));
+    expect(opts.env?.CLAUDE_CONFIG_DIR).toBe("/fs/session");
+  });
+
+  it("omits CLAUDE_CONFIG_DIR when fs is not bound", () => {
+    const opts = buildOptions({}, ctx());
+    expect(opts.env?.CLAUDE_CONFIG_DIR).toBeUndefined();
+  });
+});
+
+describe("buildOptions — prompted file memory system-prompt section (Task 3, spec §4)", () => {
+  const fs = { app: "/fs/app", home: "/fs/home", session: "/fs/session" };
+  const authed = { userId: "u1", authMode: "authenticated" as const };
+  const anon = { userId: "g_1", authMode: "anonymous" as const };
+  const SAVE_TEXT = "$GUUEY_HOME_DIR/memories/MEMORY.md";
+  const RECALL_HEADING = "## What you remember about this user";
+
+  it("authenticated + fs + userMemory present → BOTH the save instruction and the recall block with the content", () => {
+    const opts = buildOptions(
+      {},
+      ctx({ identity: authed, fs, userMemory: "User's name is Ada." }),
+    );
+    const sp = opts.systemPrompt as string;
+    expect(sp).toContain(SAVE_TEXT);
+    expect(sp).toContain(RECALL_HEADING);
+    expect(sp).toContain("User's name is Ada.");
+  });
+
+  it("authenticated + fs + NO userMemory → save instruction only, no recall block", () => {
+    const opts = buildOptions({}, ctx({ identity: authed, fs }));
+    const sp = opts.systemPrompt as string;
+    expect(sp).toContain(SAVE_TEXT);
+    expect(sp).not.toContain(RECALL_HEADING);
+  });
+
+  it("anonymous + fs → NO memory section at all, even if userMemory were somehow present", () => {
+    const opts = buildOptions(
+      {},
+      ctx({ identity: anon, fs, userMemory: "should never render for a guest" }),
+    );
+    const sp = opts.systemPrompt as string;
+    expect(sp).not.toContain(SAVE_TEXT);
+    expect(sp).not.toContain(RECALL_HEADING);
+    expect(sp).not.toContain("should never render for a guest");
+  });
+
+  it("authenticated + NO fs → NO memory section (no home dir to point at)", () => {
+    const opts = buildOptions({}, ctx({ identity: authed, userMemory: "orphaned, no fs" }));
+    const sp = opts.systemPrompt as string;
+    expect(sp).not.toContain(SAVE_TEXT);
+    expect(sp).not.toContain(RECALL_HEADING);
+  });
+
+  it("anonymous + NO fs (the bare default ctx()) → NO memory section", () => {
+    const opts = buildOptions({}, ctx());
+    const sp = opts.systemPrompt as string;
+    expect(sp).not.toContain(SAVE_TEXT);
+    expect(sp).not.toContain(RECALL_HEADING);
+  });
+});
+
 describe("withContextPreamble", () => {
   it("renders all three sections when history + memory + state are present", () => {
     const out = withContextPreamble(

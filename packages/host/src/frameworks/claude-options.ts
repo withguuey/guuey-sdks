@@ -19,7 +19,7 @@
  * OSS-legality: this package imports ONLY `@anthropic-ai/claude-agent-sdk`,
  * `@guuey/worker`, `@guuey/config`, and Node built-ins.
  */
-import type { CanUseTool, Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { CanUseTool, Options, SDKMessage, Settings } from "@anthropic-ai/claude-agent-sdk";
 import type { Fs, HistoryMessage, JsonValue } from "@guuey/worker";
 import { GUUEY_DEFAULT_SYSTEM_PROMPT, defaultModelFor, type GuueyAgent } from "@guuey/config";
 
@@ -59,6 +59,45 @@ const FS_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep"];
  * bubblewrap inside the Router's bwrap); the Router's bwrap IS the isolation.
  */
 const BASH_TOOL = "Bash";
+
+/**
+ * Belt-and-braces (spec §4): guuey's memory mechanism is prompted file memory
+ * (a platform-owned system-prompt section, below), never the SDK's own
+ * auto-memory. Set UNCONDITIONALLY on every `Options` this module builds so a
+ * future SDK default flip can never start writing its own memory format into
+ * the durable, quota-billed home layer without Guuey explicitly opting in.
+ */
+const AUTO_MEMORY_DISABLED: Settings = { autoMemoryEnabled: false };
+
+/**
+ * SAVE half of prompted file memory (spec §4) — a platform-owned instruction
+ * pointing the model at its own file tools + the well-known memory path.
+ * Deliberately generic (no per-user content): the model decides WHAT is
+ * durable-worthy, this just tells it WHERE.
+ */
+const MEMORY_SAVE_INSTRUCTION =
+  "## Persistent user memory\n\n" +
+  "Your persistent memory for this user lives at $GUUEY_HOME_DIR/memories/MEMORY.md — " +
+  "read it if you need older detail, and update it via your file tools whenever you " +
+  "learn durable facts about the user.";
+
+/** Heading for the RECALL block — matched by callers/tests, kept as one constant. */
+const MEMORY_RECALL_HEADING = "## What you remember about this user";
+
+/**
+ * Build the platform-owned memory system-prompt section (spec §4): the SAVE
+ * instruction plus, when {@link BuildOptionsContext.userMemory} is present, a
+ * RECALL block rendering the Router-read `MEMORY.md` content. Scoped to
+ * `authMode === "authenticated"` AND an fs binding — a guest has no durable
+ * home to point at (and the spec forbids offering guests a memory tool at
+ * all), and no fs means no file tools exist to act on the instruction.
+ * Returns `""` (append-safe, no leading/trailing noise) when out of scope.
+ */
+function buildMemorySection(ctx: BuildOptionsContext): string {
+  if (!ctx.fs || ctx.identity.authMode !== "authenticated") return "";
+  const recall = ctx.userMemory ? `\n\n${MEMORY_RECALL_HEADING}\n\n${ctx.userMemory}` : "";
+  return `\n\n${MEMORY_SAVE_INSTRUCTION}${recall}`;
+}
 
 // CredentialFile now lives in ../creds.js (framework-neutral, shared by every
 // runner); re-exported here so existing importers keep working.
@@ -125,6 +164,19 @@ export interface BuildOptionsContext {
   /** Prior working-state blob for the `<working_state>` preamble. */
   priorState?: JsonValue;
   /**
+   * Content of the authenticated caller's `<home>/memories/MEMORY.md` file —
+   * prompted file memory's RECALL half (guueyfs-slice4 spec §4), read
+   * Router-side BEFORE this invoke so recall never depends on the model
+   * choosing to read a file. Rendered into a platform-owned "## What you
+   * remember about this user" system-prompt section when present. DISTINCT
+   * from {@link priorMemory}: that is the persistence-fold THREAD-scoped
+   * conversation memory (AgJSON `<thread_memory>` preamble); this is the
+   * cross-session, cross-thread USER memory file. Absent for an anonymous
+   * caller (never read Router-side) and for an authenticated caller with no
+   * memory file yet.
+   */
+  userMemory?: string;
+  /**
    * Returns every credential the Router broker wrote to
    * `<sessionDir>/.guuey/credentials/` this invoke — one `{name, cred}` per
    * usable MCP server. `name` is the filename stem (server name); `cred` is the
@@ -167,12 +219,13 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
 
   const mcpServers = resolveMcpServers(ctx);
   const allowedTools = buildAllowedTools(snapshot, Object.keys(mcpServers), Boolean(ctx.fs));
-  const systemPrompt = withContextPreamble(
-    snapshot.systemPrompt ?? GUUEY_DEFAULT_SYSTEM_PROMPT,
-    ctx.history,
-    ctx.priorMemory,
-    ctx.priorState,
-  );
+  const systemPrompt =
+    withContextPreamble(
+      snapshot.systemPrompt ?? GUUEY_DEFAULT_SYSTEM_PROMPT,
+      ctx.history,
+      ctx.priorMemory,
+      ctx.priorState,
+    ) + buildMemorySection(ctx);
   const model = snapshot.model ?? DEFAULT_MODEL;
   const maxTurns = snapshot.runtime?.maxTurns ?? DEFAULT_MAX_TURNS;
   const fs = ctx.fs;
@@ -191,8 +244,12 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
   // Explicit Record<string, string> annotation prevents TypeScript from widening
   // the ternary to a union `{ K: string } | {}`, which would make spread targets
   // produce optional-undefined keys that conflict with Record<string, string>.
+  // CLAUDE_CONFIG_DIR pins the CLI's own config/state root to the (ephemeral,
+  // per-invoke) session dir — spec §4 belt-and-braces, alongside the
+  // unconditional `settings.autoMemoryEnabled:false` below — so CLI session
+  // state never lands in the durable, quota-billed home layer.
   const fsEnv: Record<string, string> = fs
-    ? { [ENV_HOME_DIR]: fs.home, [ENV_APP_DIR]: fs.app }
+    ? { [ENV_HOME_DIR]: fs.home, [ENV_APP_DIR]: fs.app, CLAUDE_CONFIG_DIR: fs.session }
     : {};
   let env: Record<string, string>;
   if (baseUrl !== undefined && authToken !== undefined) {
@@ -232,6 +289,13 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
     // against a future SDK change auto-pulling `~/.claude/settings.json` and
     // leaking the operator's logged-in Claude Code MCPs into the tool catalog.
     settingSources: [],
+    // Belt-and-braces (spec §4): the SDK's OWN auto-memory is disabled
+    // UNCONDITIONALLY, on every invoke, regardless of fs/authMode — Guuey's
+    // memory mechanism is the platform-owned prompted-file scheme above, not
+    // the SDK's. This guards against a future SDK default flip writing its
+    // own memory format into (durable, quota-billed) home without Guuey ever
+    // opting in.
+    settings: AUTO_MEMORY_DISABLED,
     strictMcpConfig: true,
     maxTurns,
     env,

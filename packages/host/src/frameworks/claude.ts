@@ -25,10 +25,11 @@ const CLAUDE_FRAMEWORK = "claude-agent-sdk";
 const CLAUDE_SDK_PACKAGE = "@anthropic-ai/claude-agent-sdk";
 
 /**
- * The invoke this host consumes. A superset of `@guuey/worker`'s `Invoke`:
- * `priorMemory`/`priorState` are the §1.4 push-by-value context the worker reads
- * for the preamble (the Worker Protocol `Invoke` is EXTENDED with these in
- * Task 3; until then the worker loop parses them off the raw control line).
+ * The invoke this host consumes. Mirrors `@guuey/worker`'s `Invoke` (minus the
+ * `type` discriminator): `priorMemory`/`priorState` are the §1.4 push-by-value
+ * context the worker renders into the preamble; `userMemory` is the
+ * guueyfs-slice4 prompted-file-memory RECALL push (Task 3) — see the doc on
+ * `Invoke.userMemory` in `@guuey/worker` for how it differs from `priorMemory`.
  */
 export interface HostInvoke {
   input: string;
@@ -37,6 +38,7 @@ export interface HostInvoke {
   history: HistoryMessage[];
   priorMemory?: PriorMemoryRecord[];
   priorState?: JsonValue;
+  userMemory?: string;
 }
 
 /** Per-process config the worker resolves once at boot. */
@@ -139,6 +141,7 @@ export async function runInvoke(
       ...(runtime.authToken !== undefined ? { authToken: runtime.authToken } : {}),
       ...(invoke.priorMemory !== undefined ? { priorMemory: invoke.priorMemory } : {}),
       ...(invoke.priorState !== undefined ? { priorState: invoke.priorState } : {}),
+      ...(invoke.userMemory !== undefined ? { userMemory: invoke.userMemory } : {}),
     };
     options = buildOptions(snapshot, ctx);
   } catch (err) {

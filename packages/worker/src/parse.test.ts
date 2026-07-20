@@ -103,6 +103,26 @@ describe("parseControl", () => {
     expect("priorState" in msg).toBe(true);
     expect(msg.priorState).toBeNull();
   });
+
+  it("round-trips userMemory (Task 3 prompted-file memory) onto the typed Invoke", () => {
+    const withMemory = JSON.stringify({
+      type: "invoke",
+      input: "go",
+      identity: { userId: "u", authMode: "authenticated" },
+      fs: { app: "/app", home: "/home", session: "/session" },
+      history: [],
+      userMemory: "# Notes\nUser likes tea.",
+    });
+    const msg = parseControl(withMemory);
+    if (!isInvoke(msg)) throw new Error("expected invoke");
+    expect(msg.userMemory).toBe("# Notes\nUser likes tea.");
+  });
+
+  it("omits userMemory when absent (no empty key) — distinct from priorMemory/priorState", () => {
+    const msg = parseControl(INVOKE);
+    if (!isInvoke(msg)) throw new Error("expected invoke");
+    expect("userMemory" in msg).toBe(false);
+  });
 });
 
 describe("parseEvent (Worker→Router fd-3 events)", () => {

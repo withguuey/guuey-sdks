@@ -68,6 +68,18 @@ export interface Invoke {
   priorMemory?: PriorMemoryRecord[];
   /** Prior working-state blob carried from the previous turn (the `<working_state>` preamble). */
   priorState?: JsonValue;
+  /**
+   * Content of the authenticated caller's persistent `MEMORY.md` file —
+   * prompted file memory's RECALL half (guueyfs-slice4 spec §4), read
+   * Router-side BEFORE this invoke and pushed by value so recall never
+   * depends on the model choosing to read a file. DISTINCT from
+   * `priorMemory`: that is thread-scoped conversation memory folded from
+   * AgJSON (the persistence-fold's `<thread_memory>` push); this is the
+   * user's own cross-session, cross-thread memory file at
+   * `$GUUEY_HOME_DIR/memories/MEMORY.md`. Absent for an anonymous caller
+   * (never read) or an authenticated caller with no memory file yet.
+   */
+  userMemory?: string;
 }
 /** Graceful termination (also signalled by stdin EOF). */
 export interface Shutdown {
