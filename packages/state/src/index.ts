@@ -33,7 +33,7 @@
  */
 
 import { getCurrentContext } from "./context.js";
-import { MissingContextError } from "./errors.js";
+import { MissingContextError, TransportError } from "./errors.js";
 import { InMemoryKv } from "./in-memory.js";
 import type {
   CreateGuueyStateOptions,
@@ -65,21 +65,26 @@ export { withGuueyContext, getCurrentContext } from "./context.js";
 /**
  * Create a KV instance bound to the given scope context.
  *
- * Binding selection (in priority order):
+ * Binding selection:
  *
- *   1. `options.bindingUrl` or `GUUEY_KV_URL` env → HTTP binding
- *      against guuey's KV API (TODO — wires when the API ships).
- *   2. Otherwise → in-memory fallback with a one-time warning.
+ *   1. `options.bindingUrl` or `GUUEY_KV_URL` env → the hosted HTTP
+ *      binding. NOT BUILT YET (no guuey KV API exists on any env), so
+ *      requesting it throws `TransportError` — failing loud beats
+ *      silently handing back a non-durable in-memory store to a caller
+ *      who explicitly asked for the hosted one (data would vanish on
+ *      pod restart with zero signal).
+ *   2. Otherwise → in-memory binding with a one-time warning.
  *      Suitable for tests and `guuey dev` runs.
  */
 export function createGuueyState(opts: CreateGuueyStateOptions): Kv {
   const bindingUrl = opts.bindingUrl ?? process.env.GUUEY_KV_URL;
   if (bindingUrl) {
-    // TODO(slice 4.1+): swap in the HTTP binding when the guuey
-    // KV API endpoint ships. Today we still fall through to the
-    // in-memory binding so the library compiles + ships ahead of
-    // the platform-side API.
-    return new InMemoryKv(opts.context);
+    throw new TransportError(
+      `The hosted KV binding is not implemented yet (requested via ` +
+        `${opts.bindingUrl ? "options.bindingUrl" : "GUUEY_KV_URL"}=` +
+        `${JSON.stringify(bindingUrl)}). Unset it to use the in-memory ` +
+        `binding, or wait for the guuey KV API to ship.`,
+    );
   }
   return new InMemoryKv(opts.context);
 }

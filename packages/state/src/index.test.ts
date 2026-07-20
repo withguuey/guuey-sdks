@@ -205,3 +205,57 @@ describe("@guuey/state — error envelope", () => {
     }
   });
 });
+
+describe("@guuey/state — audit regressions (2026-07-20)", () => {
+  it("concurrent increments never lose updates (sync read-modify-write)", async () => {
+    const kv = createGuueyState({ context: CTX });
+    // Pre-fix, get-then-set across await points let all of these read
+    // the same base and collapse to 1.
+    const results = await Promise.all(
+      Array.from({ length: 25 }, () => kv.increment("counter", { ttl: 60 })),
+    );
+    expect(await kv.get<number>("counter")).toBe(25);
+    // Every intermediate value observed exactly once.
+    expect([...results].sort((a, b) => a - b)).toEqual(
+      Array.from({ length: 25 }, (_, i) => i + 1),
+    );
+  });
+
+  it("expired keys stop counting toward the scope quota", async () => {
+    vi.useFakeTimers();
+    try {
+      const kv = createGuueyState({ context: CTX });
+      // ~896 KiB of payload under a 1 MiB scope cap, with a 1s TTL.
+      const big = "x".repeat(63 * 1024);
+      for (let i = 0; i < 14; i++) {
+        await kv.set(`dead:${i}`, big, { ttl: 1 });
+      }
+      vi.advanceTimersByTime(2_000); // everything above is now expired
+      // Pre-fix this threw QuotaExceededError: expired corpses still
+      // summed into usedBytes.
+      await kv.set("fresh", big, { ttl: 60 });
+      expect(await kv.get("fresh")).toBe(big);
+      const info = await kv.scope();
+      expect(info.usedBytes).toBeLessThan(70 * 1024);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("requesting the hosted binding fails loud (no silent in-memory)", () => {
+    // Pre-fix, bindingUrl/GUUEY_KV_URL silently returned the in-memory
+    // store — an operator following the old warning's instruction got
+    // non-durable storage with zero signal.
+    expect(() =>
+      createGuueyState({ context: CTX, bindingUrl: "https://kv.example" }),
+    ).toThrow(/not implemented yet/);
+    process.env.GUUEY_KV_URL = "https://kv.example";
+    try {
+      expect(() => createGuueyState({ context: CTX })).toThrow(
+        /GUUEY_KV_URL/,
+      );
+    } finally {
+      delete process.env.GUUEY_KV_URL;
+    }
+  });
+});
