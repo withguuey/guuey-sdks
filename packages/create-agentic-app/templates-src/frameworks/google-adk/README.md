@@ -58,6 +58,13 @@ Two honest notes:
 - **Writing `workingState` for the next turn** is a platform feature in
   flight; today the fold carries what the conversation itself establishes.
 
+The three `guuey.files` paths above are the same platform-wide filesystem
+contract every framework gets (plain paths, `$GUUEY_HOME_DIR`/
+`$GUUEY_APP_DIR` under the hood) — see the guuey monorepo's
+`docs/quickstart.md` ("Your agent's filesystem") for the full contract,
+memory behavior, and rollout status if you want the framework-neutral
+version.
+
 ## MCP servers
 
 `guuey.json#mcpServers` declares them; the platform connects them and hands

@@ -94,6 +94,18 @@ anything user-visible changes:
 Re-running `guuey deploy` converges: unchanged pieces are skipped or reused,
 nothing is duplicated.
 
+## Filesystem + memory
+
+Every deployed invoke gets three bound directories — `$GUUEY_HOME_DIR`
+(durable, per-user), `$GUUEY_APP_DIR` (read-only, shared), and cwd (session
+scratch) — plain `node:fs`, no wrapper API required. Signed-in users get
+durable cross-session memory for free (a platform-owned prompt tells the
+model to read/write `$GUUEY_HOME_DIR/memories/MEMORY.md`); guests never get
+durable storage, by design. Full contract, code examples, and rollout
+status: the "Your agent's filesystem" section of the guuey monorepo's
+`docs/quickstart.md`, or [`@guuey/fs`](https://www.npmjs.com/package/@guuey/fs)'s
+own README — an optional, three-helper sugar layer over the same paths.
+
 ## How people talk to your agent
 
 - **guuey Portal** — a Telegram-like agent App Store and universal chat
