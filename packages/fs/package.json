@@ -1,13 +1,14 @@
 {
   "name": "@guuey/fs",
-  "version": "0.0.0",
-  "description": "GuueyFS — per-(app,user,session) 3-layer filesystem contract, FsSource port, and dev LocalFsSource adapter.",
+  "version": "0.1.0",
+  "description": "GuueyFS dev-guidance helper — homeDir()/appDir()/sessionDir() read the three env-var/cwd paths the guuey Router injects into every hosted agent. No wrapper API: plain node:fs on the returned paths IS the contract.",
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "exports": {
     ".": {

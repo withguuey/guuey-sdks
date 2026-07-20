@@ -7,10 +7,9 @@ name: npm Release
 #
 # Cohort (leaf-first, mirrors the ORDER array below): @guuey/config,
 # @guuey/state (KV developer preview — in-memory binding, contract locked),
-# @guuey/worker, @guuey/agent-client (the embed chat SDK), @guuey/host,
-# @guuey/create-agentic-app, @guuey/cli.
-# @guuey/fs stays unpublished until its own cut (workspace-internal today;
-# the Router consumes it as a workspace dep, no registry consumer exists).
+# @guuey/fs (GuueyFS dev-guidance helper — homeDir/appDir/sessionDir, zero
+# deps, a leaf), @guuey/worker, @guuey/agent-client (the embed chat SDK),
+# @guuey/host, @guuey/create-agentic-app, @guuey/cli.
 # First-ever publish of any package is a manual, operator-gated bootstrap
 # (npm requires the package to exist before a trusted publisher attaches).
 #
@@ -114,10 +113,10 @@ jobs:
           DRY_RUN: ${{ steps.mode.outputs.dry_run }}
         run: |
           set -euo pipefail
-          # Fixed leaf-first order: config/worker/agent-client are leaves,
-          # host needs config+worker, create-agentic-app needs config, cli
-          # needs all.
-          ORDER=(config state worker agent-client host create-agentic-app cli)
+          # Fixed leaf-first order: config/state/fs/worker/agent-client are
+          # leaves, host needs config+worker, create-agentic-app needs
+          # config, cli needs all.
+          ORDER=(config state fs worker agent-client host create-agentic-app cli)
 
           TODO=()
           for pkg in "${ORDER[@]}"; do

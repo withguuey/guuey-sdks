@@ -1,26 +1,10 @@
 /**
- * @guuey/fs — GuueyFS per-(app,user,session) 3-layer filesystem contract, the
- * FsSource port, the dev LocalFsSource adapter, the injected-roots helper, and the
- * pure overlay/CoW semantics. See docs/superpowers/specs/2026-06-21-agent-runtime-guueyfs-design.md.
+ * @guuey/fs — a tiny dev-guidance helper for the GuueyFS 3-layer contract every
+ * hosted guuey agent runs inside. `homeDir()`/`appDir()`/`sessionDir()` just read
+ * the env vars the Router already injects (`GUUEY_HOME_DIR`/`GUUEY_APP_DIR`) plus
+ * `process.cwd()` — there is no wrapper API, no adapter, no storage abstraction.
+ * Plain `node:fs` on the three paths IS the contract. See README.md and
+ * docs/superpowers/specs/2026-07-20-guueyfs-slice4-design.md §6.
  */
 
-export {
-  LAYER_NAMES,
-  ENV_HOME_DIR,
-  ENV_APP_DIR,
-  MOUNT_APP,
-  MOUNT_HOME,
-  MOUNT_SESSION,
-  assertSafeSegment,
-  layerSegments,
-} from "./contract.js";
-export type { LayerName, Layers, LayerKey } from "./contract.js";
-
-export type { FsSource } from "./fs-source.js";
-export { LocalFsSource } from "./local-fs-source.js";
-export type { LocalFsSourceOptions } from "./local-fs-source.js";
-
-export { homeDir, appDir, sessionDir } from "./roots.js";
-
-export { resolveRead, resolveWrite } from "./overlay.js";
-export type { LayerPresence, WriteResolution } from "./overlay.js";
+export { ENV_HOME_DIR, ENV_APP_DIR, homeDir, appDir, sessionDir } from "./roots.js";
