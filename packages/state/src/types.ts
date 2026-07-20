@@ -82,6 +82,16 @@ export interface IncrementOptions {
 }
 
 /**
+ * One page of a `keys()` listing. `cursor` is present when more
+ * keys remain — pass it back to `keys()` to continue. Treat it as
+ * an opaque token (its format may differ between bindings).
+ */
+export interface KeysPage {
+  readonly keys: string[];
+  readonly cursor?: string;
+}
+
+/**
  * Snapshot of the current scope's storage usage. Returned by
  * `kv.scope()`. Cheap to call; pulled from the platform on each
  * invocation (no client-side caching) so quota checks before
@@ -90,7 +100,12 @@ export interface IncrementOptions {
 export interface ScopeInfo {
   readonly userId: string;
   readonly mcpId: string;
-  /** Bytes used in this `(user, mcp)` scope. */
+  /**
+   * Bytes used in this `(user, mcp)` scope — UTF-8 bytes of every
+   * live key PLUS its JSON-encoded value. Keys count because they
+   * are storage too: a scope of 1 KiB keys with 1-byte values is
+   * not "empty".
+   */
   readonly usedBytes: number;
   /** Hard cap for the scope. Today: 1 MiB. */
   readonly limitBytes: number;
@@ -118,7 +133,16 @@ export interface Kv {
   /** Read a key. Returns `undefined` if absent or expired. */
   get<T = unknown>(key: string): Promise<T | undefined>;
 
-  /** Write a key. TTL is required (no permanent keys). */
+  /**
+   * Write a key. TTL is required (no permanent keys).
+   *
+   * Values must be JSON-serializable: top-level `undefined`,
+   * functions, symbols, `BigInt`, and circular structures throw
+   * `InvalidArgumentError`. Standard JSON semantics otherwise
+   * apply — `NaN`/`Infinity` serialize as `null`, and nested
+   * `undefined`/function properties are dropped, exactly as
+   * `JSON.stringify` does.
+   */
   set<T = unknown>(key: string, value: T, opts: SetOptions): Promise<void>;
 
   /** Delete a key. No-op if absent. */
@@ -128,14 +152,20 @@ export interface Kv {
   has(key: string): Promise<boolean>;
 
   /**
-   * List keys in this scope, optionally filtered by prefix.
-   * Cap: 1000 keys per call. Use this for diagnostics and small
-   * housekeeping; do NOT use it as a query engine. A scope that
-   * needs to "find all keys matching pattern X across millions
-   * of entries" wants a real database (Case B in the hosting
-   * policy).
+   * List keys in this scope, optionally filtered by prefix, in
+   * lexicographic order. Pages of up to 1000 keys; pass the
+   * returned `cursor` back to continue. Use this for diagnostics
+   * and small housekeeping; do NOT use it as a query engine. A
+   * scope that needs to "find all keys matching pattern X across
+   * millions of entries" wants a real database (Case B in the
+   * hosting policy).
    */
-  keys(opts?: { prefix?: string; limit?: number }): Promise<string[]>;
+  keys(opts?: {
+    prefix?: string;
+    limit?: number;
+    /** Opaque continuation token from a previous page. */
+    cursor?: string;
+  }): Promise<KeysPage>;
 
   /**
    * Atomic increment. Creates the key (initialized to 0) if

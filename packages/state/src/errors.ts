@@ -128,8 +128,10 @@ export class TypeMismatchError extends GuueyStateError {
 }
 
 /**
- * A per-call argument is outside its allowed range — e.g. a
- * `keys()` limit outside 1..1000, or an `mget` batch over 100 keys.
+ * A per-call argument is unusable — a `keys()` limit outside
+ * 1..1000, an `mget` batch over 100 keys, a non-integer counter
+ * step, or a value that isn't JSON-serializable (top-level
+ * `undefined`/function/symbol, `BigInt`, circular structure).
  * Distinct from `InvalidKeyError`/`InvalidTtlError`, which cover the
  * key and TTL contracts specifically.
  */

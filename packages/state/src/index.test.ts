@@ -60,13 +60,30 @@ describe("@guuey/state — explicit context", () => {
     await kv.set("user:1", "a", { ttl: 60 });
     await kv.set("user:2", "b", { ttl: 60 });
     await kv.set("post:1", "c", { ttl: 60 });
-    expect(await kv.keys()).toEqual(
+    const all = await kv.keys();
+    expect(all.keys).toEqual(
       expect.arrayContaining(["user:1", "user:2", "post:1"]),
     );
-    expect((await kv.keys({ prefix: "user:" })).sort()).toEqual([
+    expect(all.cursor).toBeUndefined();
+    expect((await kv.keys({ prefix: "user:" })).keys).toEqual([
       "user:1",
       "user:2",
     ]);
+  });
+
+  it("keys paginates lexicographically via cursor", async () => {
+    const kv = createGuueyState({ context: CTX });
+    for (const k of ["e", "c", "a", "d", "b"]) {
+      await kv.set(`p:${k}`, 1, { ttl: 60 });
+    }
+    const page1 = await kv.keys({ prefix: "p:", limit: 2 });
+    expect(page1.keys).toEqual(["p:a", "p:b"]);
+    expect(page1.cursor).toBe("p:b");
+    const page2 = await kv.keys({ prefix: "p:", limit: 2, cursor: page1.cursor });
+    expect(page2.keys).toEqual(["p:c", "p:d"]);
+    const page3 = await kv.keys({ prefix: "p:", limit: 2, cursor: page2.cursor });
+    expect(page3.keys).toEqual(["p:e"]);
+    expect(page3.cursor).toBeUndefined();
   });
 
   it("increment + decrement are atomic on number-typed keys", async () => {
@@ -237,6 +254,40 @@ describe("@guuey/state — error envelope", () => {
     await expect(
       kv.increment("counter", { ttl: 60, by: 0.5 }),
     ).rejects.toBeInstanceOf(InvalidArgumentError);
+    // non-JSON-serializable values (stringify returns undefined)
+    await expect(kv.set("u", undefined, { ttl: 60 })).rejects.toBeInstanceOf(
+      InvalidArgumentError,
+    );
+    await expect(
+      kv.set("f", () => "nope", { ttl: 60 }),
+    ).rejects.toBeInstanceOf(InvalidArgumentError);
+    // non-JSON-serializable values (stringify throws natively)
+    interface Circular {
+      self?: Circular;
+    }
+    const circular: Circular = {};
+    circular.self = circular;
+    await expect(kv.set("c", circular, { ttl: 60 })).rejects.toBeInstanceOf(
+      InvalidArgumentError,
+    );
+    await expect(kv.set("b", 10n, { ttl: 60 })).rejects.toBeInstanceOf(
+      InvalidArgumentError,
+    );
+  });
+});
+
+describe("@guuey/state — mget prototype safety", () => {
+  it('a key literally named "__proto__" round-trips through mget', async () => {
+    const kv = createGuueyState({ context: CTX });
+    await kv.set("__proto__", { isAdmin: true }, { ttl: 60 });
+    await kv.set("normal", "ok", { ttl: 60 });
+    const out = await kv.mget<unknown>(["__proto__", "normal"]);
+    // The entry must exist as an OWN property with the stored value…
+    expect(Object.prototype.hasOwnProperty.call(out, "__proto__")).toBe(true);
+    expect(out["__proto__"]).toEqual({ isAdmin: true });
+    expect(out["normal"]).toBe("ok");
+    // …and must NOT have replaced the result object's prototype.
+    expect((out as { isAdmin?: boolean }).isAdmin).toBeUndefined();
   });
 });
 
@@ -267,14 +318,35 @@ describe("@guuey/state — scope context validation", () => {
 });
 
 describe("@guuey/state — byte accounting (audit 2026-07-20 round 2)", () => {
-  it("counts UTF-8 bytes, not UTF-16 code units", async () => {
+  it("counts UTF-8 bytes of key + value, not UTF-16 code units", async () => {
     const kv = createGuueyState({ context: CTX });
-    // "🎉" is 1 JSON string char pair (2 UTF-16 units) but 4 UTF-8 bytes.
+    // "🎉" is 2 UTF-16 units but 4 UTF-8 bytes.
     const emoji = "🎉".repeat(1000);
     await kv.set("emoji", emoji, { ttl: 60 });
     const info = await kv.scope();
-    // JSON adds 2 quote bytes; each 🎉 is 4 bytes UTF-8.
-    expect(info.usedBytes).toBe(4000 + 2);
+    // 5 key bytes + 2 JSON quote bytes + 4000 emoji bytes.
+    expect(info.usedBytes).toBe(5 + 2 + 4000);
+  });
+
+  it("key bytes count toward the scope quota (long keys can't dodge the cap)", async () => {
+    const kv = createGuueyState({ context: CTX });
+    // 1023-byte keys with 1-byte values: value bytes alone would say
+    // "nearly empty"; key-inclusive accounting fills the 1 MiB cap
+    // after ~1024 keys.
+    const longKey = (i: number) => `k${String(i).padStart(4, "0")}`.padEnd(1023, "x");
+    let threw: unknown;
+    for (let i = 0; i < 1100; i++) {
+      try {
+        await kv.set(longKey(i), 1, { ttl: 60 });
+      } catch (err) {
+        threw = err;
+        break;
+      }
+    }
+    expect(threw).toBeInstanceOf(QuotaExceededError);
+    const info = await kv.scope();
+    expect(info.usedBytes).toBeLessThanOrEqual(1024 * 1024);
+    expect(info.usedBytes).toBeGreaterThan(1024 * 1000);
   });
 
   it("rejects a value whose UTF-8 size exceeds the cap even when .length does not", async () => {

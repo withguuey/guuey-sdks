@@ -78,17 +78,17 @@ scope.
 
 ## API
 
-| Method                         | Purpose                                                      |
-| ------------------------------ | ------------------------------------------------------------ |
-| `get<T>(key)`                  | Read. Returns `undefined` if absent or expired.              |
-| `set(key, value, { ttl })`     | Write. TTL required (no permanent keys).                     |
-| `delete(key)`                  | Delete (no-op if absent).                                    |
-| `has(key)`                     | Existence check.                                             |
-| `keys({ prefix?, limit? })`    | List keys (cap 1000 per call).                               |
-| `increment(key, { ttl, by? })` | Atomic counter (creates key if absent).                      |
-| `decrement(key, { ttl, by? })` | Inverse of `increment`.                                      |
-| `mget(keys[])`                 | Bulk read.                                                   |
-| `scope()`                      | Live usage snapshot (`usedBytes`, `limitBytes`, `keyCount`). |
+| Method                               | Purpose                                                      |
+| ------------------------------------ | ------------------------------------------------------------ |
+| `get<T>(key)`                        | Read. Returns `undefined` if absent or expired.              |
+| `set(key, value, { ttl })`           | Write. TTL required (no permanent keys).                     |
+| `delete(key)`                        | Delete (no-op if absent).                                    |
+| `has(key)`                           | Existence check.                                             |
+| `keys({ prefix?, limit?, cursor? })` | List keys, paginated (`{ keys, cursor? }`, ≤1000/page).      |
+| `increment(key, { ttl, by? })`       | Atomic counter (creates key if absent).                      |
+| `decrement(key, { ttl, by? })`       | Inverse of `increment`.                                      |
+| `mget(keys[])`                       | Bulk read.                                                   |
+| `scope()`                            | Live usage snapshot (`usedBytes`, `limitBytes`, `keyCount`). |
 
 ## Limits (== the product)
 
@@ -103,9 +103,16 @@ scope.
 | `mget()` batch     | 100 keys             | Bulk convenience, not a table scan.                |
 | Counters           | Safe integers only   | Rate limits + sequences; not float math.           |
 
-Sizes are **UTF-8 bytes** of the JSON-encoded value — the same
-accounting every binding uses, so quota behavior is identical in
-tests and production.
+Sizes are **UTF-8 bytes of the key plus its JSON-encoded value** —
+keys are storage too, so a scope of long keys with tiny values
+cannot dodge the cap. The same accounting applies in every binding,
+so quota behavior is identical in tests and production.
+
+Values must be JSON-serializable: top-level `undefined`, functions,
+symbols, `BigInt`, and circular structures throw
+`InvalidArgumentError`. Standard JSON semantics otherwise apply
+(`NaN`/`Infinity` become `null`; nested `undefined` properties are
+dropped) — if that matters for your data, validate before writing.
 
 ## Identity & trust model
 

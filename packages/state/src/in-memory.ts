@@ -26,6 +26,7 @@ import {
 } from "./errors.js";
 import type {
   IncrementOptions,
+  KeysPage,
   Kv,
   ScopeContext,
   ScopeInfo,
@@ -42,10 +43,43 @@ const VALID_KEY = /^[A-Za-z0-9_.:\-/]+$/;
 interface Entry {
   /** JSON-encoded value. */
   jsonValue: string;
-  /** UTF-8 byte size of `jsonValue` (computed once at write). */
+  /**
+   * UTF-8 byte size of the KEY plus `jsonValue` (computed once at
+   * write). Keys count toward the scope quota too — otherwise a
+   * scope full of 1 KiB keys with 1-byte values would report as
+   * nearly empty while holding megabytes.
+   */
   bytes: number;
   /** Epoch ms when this key expires. */
   expiresAt: number;
+}
+
+/**
+ * JSON-encode a value for storage, converting every serialization
+ * failure into the library's typed error. `JSON.stringify` returns
+ * the VALUE `undefined` (not a string) for top-level `undefined`,
+ * functions, and symbols, and throws natively for circular
+ * structures and `BigInt` — none of which may escape as a bare
+ * `TypeError` (the error contract promises `GuueyStateError`
+ * subclasses from every failable operation).
+ */
+function encodeValue(key: string, value: unknown): string {
+  let json: string | undefined;
+  try {
+    json = JSON.stringify(value);
+  } catch (err) {
+    throw new InvalidArgumentError(
+      `value for key ${JSON.stringify(key)} is not JSON-serializable ` +
+        `(${err instanceof Error ? err.message : String(err)})`,
+    );
+  }
+  if (json === undefined) {
+    throw new InvalidArgumentError(
+      `value for key ${JSON.stringify(key)} is not JSON-serializable ` +
+        `(top-level undefined, function, or symbol)`,
+    );
+  }
+  return json;
 }
 
 /**
@@ -106,11 +140,12 @@ export class InMemoryKv implements Kv {
   ): Promise<void> {
     validateKey(key);
     validateTtl(opts.ttl);
-    const json = JSON.stringify(value);
-    const bytes = Buffer.byteLength(json, "utf8");
-    if (bytes > VALUE_LIMIT_BYTES) {
-      throw new ValueTooLargeError(bytes, VALUE_LIMIT_BYTES);
+    const json = encodeValue(key, value);
+    const valueBytes = Buffer.byteLength(json, "utf8");
+    if (valueBytes > VALUE_LIMIT_BYTES) {
+      throw new ValueTooLargeError(valueBytes, VALUE_LIMIT_BYTES);
     }
+    const bytes = Buffer.byteLength(key, "utf8") + valueBytes;
     const scope = this.scopeMap();
     const existing = scope.get(key);
     const projectedBytes = this.usedBytes() - (existing?.bytes ?? 0) + bytes;
@@ -140,7 +175,11 @@ export class InMemoryKv implements Kv {
     return true;
   }
 
-  async keys(opts?: { prefix?: string; limit?: number }): Promise<string[]> {
+  async keys(opts?: {
+    prefix?: string;
+    limit?: number;
+    cursor?: string;
+  }): Promise<KeysPage> {
     const prefix = opts?.prefix ?? "";
     const limit = opts?.limit ?? 1000;
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
@@ -148,18 +187,28 @@ export class InMemoryKv implements Kv {
         `keys() limit must be an integer in 1..1000 (got ${limit})`,
       );
     }
-    const out: string[] = [];
+    // Lexicographic pagination: sort matching live keys, resume
+    // strictly after the cursor. Deterministic and binding-portable
+    // (any sorted-key store paginates the same way); O(n log n) per
+    // page is fine for a dev binding capped at 1 MiB per scope.
     const now = Date.now();
+    const live: string[] = [];
     for (const [k, entry] of this.scopeMap()) {
-      if (out.length >= limit) break;
-      if (!k.startsWith(prefix)) continue;
       if (entry.expiresAt <= now) {
         this.scopeMap().delete(k);
         continue;
       }
-      out.push(k);
+      if (!k.startsWith(prefix)) continue;
+      if (opts?.cursor !== undefined && k <= opts.cursor) continue;
+      live.push(k);
     }
-    return out;
+    live.sort();
+    const page = live.slice(0, limit);
+    const last = page[page.length - 1];
+    if (live.length > limit && last !== undefined) {
+      return { keys: page, cursor: last };
+    }
+    return { keys: page };
   }
 
   async increment(key: string, opts: IncrementOptions): Promise<number> {
@@ -199,7 +248,7 @@ export class InMemoryKv implements Kv {
       );
     }
     const json = JSON.stringify(next);
-    const bytes = Buffer.byteLength(json, "utf8");
+    const bytes = Buffer.byteLength(key, "utf8") + Buffer.byteLength(json, "utf8");
     const projectedBytes = this.usedBytes() - liveEntryBytes + bytes;
     if (projectedBytes > SCOPE_LIMIT_BYTES) {
       throw new QuotaExceededError(projectedBytes, SCOPE_LIMIT_BYTES);
@@ -225,7 +274,15 @@ export class InMemoryKv implements Kv {
           `${keys.length}) — split into batches`,
       );
     }
-    const out: Record<string, T | undefined> = {};
+    // Null-prototype accumulator: a plain `{}` inherits the
+    // `Object.prototype.__proto__` accessor, so a key literally named
+    // "__proto__" (legal under VALID_KEY) would either vanish from the
+    // result (primitive value) or REPLACE the result's prototype
+    // (object value). `Object.create(null)` has no such accessor.
+    const out: Record<string, T | undefined> = Object.create(null) as Record<
+      string,
+      T | undefined
+    >;
     for (const k of keys) {
       out[k] = await this.get<T>(k);
     }

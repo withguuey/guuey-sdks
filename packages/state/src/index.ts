@@ -44,6 +44,7 @@ import type {
 export type {
   CreateGuueyStateOptions,
   IncrementOptions,
+  KeysPage,
   Kv,
   ScopeContext,
   ScopeInfo,
