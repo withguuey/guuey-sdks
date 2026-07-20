@@ -245,7 +245,7 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
   // the ternary to a union `{ K: string } | {}`, which would make spread targets
   // produce optional-undefined keys that conflict with Record<string, string>.
   // CLAUDE_CONFIG_DIR pins the CLI's own config/state root to the (ephemeral,
-  // per-invoke) session dir — spec §4 belt-and-braces, alongside the
+  // pod-local) session dir — spec §4 belt-and-braces, alongside the
   // unconditional `settings.autoMemoryEnabled:false` below — so CLI session
   // state never lands in the durable, quota-billed home layer.
   const fsEnv: Record<string, string> = fs
