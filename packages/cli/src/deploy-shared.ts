@@ -30,9 +30,48 @@ import { tmpdir } from 'node:os';
  * land in a tarball; `.npmrc` is a registry-token carrier; `.guuey-dev` and
  * `*.tsbuildinfo` are dev/build artifacts that don't belong in a deploy
  * either.
+ *
+ * NOTE: deliberately no `--exclude=dist` here — see `workingTreeTarSources`
+ * below for why the project's OWN root `dist/` is stripped by omitting it
+ * from the tar source arguments instead of via a pattern flag.
  */
 const WORKING_TREE_TAR_EXCLUDES =
-  "--exclude=node_modules --exclude=dist --exclude=.git --exclude='.env*' --exclude=.npmrc --exclude=.guuey-dev --exclude='*.tsbuildinfo' --exclude=.ggui --exclude=.guuey";
+  "--exclude=node_modules --exclude=.git --exclude='.env*' --exclude=.npmrc --exclude=.guuey-dev --exclude='*.tsbuildinfo' --exclude=.ggui --exclude=.guuey";
+
+/**
+ * Build the tar source-argument list for a working-tree tar invocation,
+ * stripping the project's own root-level `dist/` WITHOUT touching a nested
+ * `dist/` inside a vendored dependency (e.g. `vendor/some-dep/dist/`).
+ *
+ * A bare `--exclude=dist` flag is NOT anchored to the archive root on any
+ * tar implementation this CLI runs under — it strips a `dist/` at ANY
+ * depth. Confirmed empirically:
+ *   - bsdtar 3.5.3 / libarchive 3.7.4 (macOS default `tar`, what a dev's
+ *     local machine runs): `--exclude=dist` AND `--exclude='./dist'` both
+ *     strip nested `dist/` too. `--anchored` is not supported at all.
+ *   - GNU tar 1.35 (Linux, what CI/customer Linux machines run):
+ *     `--exclude='./dist'` (member-name-prefixed) DOES anchor to the root
+ *     when members are named `./...`, and `--anchored --exclude=dist`
+ *     (without the `./` prefix) does NOT match the root entry — no single
+ *     flag spelling behaves correctly on both.
+ * Since the two tar implementations disagree on every pattern-anchoring
+ * spelling, we don't use `--exclude` for `dist` at all: enumerate the
+ * project's own top-level entries and simply never pass a top-level `dist`
+ * to `tar` as a source argument. A nested `dist/` is never named directly —
+ * it is only ever reached by tar recursing into a sibling like `vendor/`
+ * that we DO pass — so it is preserved. The other exclude patterns
+ * (`node_modules`, `.git`, `.env*`, …) are intentionally left depth-matching:
+ * they are the *desired* behavior at any depth (a nested `node_modules` or
+ * `.env.local` inside a vendored dep is still junk/a leak risk to strip),
+ * and `tar --exclude` still applies to these explicitly-named top-level
+ * arguments, not just implicit recursion.
+ */
+function workingTreeTarSources(cwd: string): string {
+  return readdirSync(cwd)
+    .filter((entry) => entry !== 'dist')
+    .map((entry) => `'./${entry.replace(/'/g, `'\\''`)}'`)
+    .join(' ');
+}
 
 /** Result of packing a project's source into an upload-ready tarball. */
 export interface PackResult {
@@ -199,8 +238,13 @@ export function packSource(opts: {
       // rsync FIRST, so our later writes (modified package.json, generated
       // package-lock.json) are not clobbered by the source's workspace:*
       // package.json.
+      // `--exclude=/dist` (leading `/`) anchors to the root of the rsync
+      // transfer (here, `cwd`) on both GNU rsync and BSD/openrsync —
+      // verified empirically on rsync 3.2.7 (Linux) and openrsync (macOS).
+      // A bare `--exclude=dist` matches at ANY depth on both, which would
+      // silently strip a vendored dependency's `vendor/some-dep/dist/`.
       execSync(
-        `rsync -a --exclude=node_modules --exclude=dist --exclude=.git --exclude='.env*' --exclude=.guuey-dev --exclude='*.tsbuildinfo' --exclude=.ggui --exclude=.guuey . "${stagingDir}/"`,
+        `rsync -a --exclude=node_modules --exclude=/dist --exclude=.git --exclude='.env*' --exclude=.guuey-dev --exclude='*.tsbuildinfo' --exclude=.ggui --exclude=.guuey . "${stagingDir}/"`,
         { stdio: 'pipe', cwd },
       );
       // Move packed tarballs to .ggui-deps/ inside staging
@@ -231,7 +275,10 @@ export function packSource(opts: {
       // `guuey.worker.js`) are included. SECURITY-CRITICAL: exclude secrets
       // and build/dev artifacts explicitly, since this is the one packing
       // path that ships more than `git archive`'s committed-files snapshot.
-      execSync(`tar czf "${tarballPath}" ${WORKING_TREE_TAR_EXCLUDES} .`, { stdio: 'pipe', cwd });
+      execSync(`tar czf "${tarballPath}" ${WORKING_TREE_TAR_EXCLUDES} ${workingTreeTarSources(cwd)}`, {
+        stdio: 'pipe',
+        cwd,
+      });
     } else {
       // User has their own Dockerfile and no workspace deps — git archive
       // is fastest (only ships committed files). CRITICAL: run git archive
@@ -252,12 +299,18 @@ export function packSource(opts: {
         archived = false;
       }
       if (!archived) {
-        execSync(`tar czf "${tarballPath}" ${WORKING_TREE_TAR_EXCLUDES} .`, { stdio: 'pipe', cwd });
+        execSync(`tar czf "${tarballPath}" ${WORKING_TREE_TAR_EXCLUDES} ${workingTreeTarSources(cwd)}`, {
+          stdio: 'pipe',
+          cwd,
+        });
       }
     }
   } catch {
     // Fallback: use tar directly
-    execSync(`tar czf "${tarballPath}" ${WORKING_TREE_TAR_EXCLUDES} .`, { stdio: 'pipe', cwd });
+    execSync(`tar czf "${tarballPath}" ${WORKING_TREE_TAR_EXCLUDES} ${workingTreeTarSources(cwd)}`, {
+      stdio: 'pipe',
+      cwd,
+    });
   }
 
   const tarballBuffer = readFileSync(tarballPath);

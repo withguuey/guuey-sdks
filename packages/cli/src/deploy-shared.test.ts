@@ -61,6 +61,26 @@ describe('packSource', () => {
       expect(contents.some((p) => p.startsWith('.guuey-dev/'))).toBe(false);
       expect(contents).not.toContain('tsconfig.tsbuildinfo');
     });
+
+    it('strips the project-root dist/ but RETAINS a nested dist/ inside a vendored dependency', () => {
+      // Regression test: a bare `tar --exclude=dist` matches at ANY depth on
+      // both GNU tar and BSD/libarchive tar, so a vendored dependency's own
+      // build output (e.g. `vendor/some-dep/dist/`) was being silently
+      // stripped from the uploaded tarball — the dependency then fails to
+      // load in the pod with no error at deploy time. The exclude must only
+      // ever remove the PROJECT's own root dist/ (rebuilt in-image).
+      mkdirSync(join(dir, 'dist'), { recursive: true });
+      writeFileSync(join(dir, 'dist', 'bundle.js'), 'root build output\n');
+      mkdirSync(join(dir, 'vendor', 'some-dep', 'dist'), { recursive: true });
+      writeFileSync(join(dir, 'vendor', 'some-dep', 'dist', 'index.js'), 'vendored build output\n');
+
+      const { tarballPath } = packSource({ buildId: 'nested-dist-test', cwd: dir, includeWorkingTree: true });
+      const contents = tarballContents(tarballPath);
+      cleanup(tarballPath);
+
+      expect(contents.some((p) => p === 'dist/bundle.js' || p.startsWith('dist/'))).toBe(false);
+      expect(contents).toContain('vendor/some-dep/dist/index.js');
+    });
   });
 
   describe('includeWorkingTree omitted (default false — the pre-existing committed-files-only path)', () => {
