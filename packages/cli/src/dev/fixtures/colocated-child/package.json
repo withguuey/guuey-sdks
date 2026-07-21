@@ -1,0 +1,7 @@
+{
+  "name": "colocated-child-fixture",
+  "private": true,
+  "scripts": {
+    "dev": "node index.mjs"
+  }
+}
