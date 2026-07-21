@@ -80,7 +80,7 @@ describe('collectUsedDevPorts', () => {
     const doc = makeDoc({
       todo: { kind: 'hosted', source: './mcps/todo', devPort: 6782 },
       weather: { kind: 'external', url: 'https://x.example', devPort: 6783 },
-      local: { kind: 'colocated', command: 'node' },
+      local: { kind: 'colocated', source: './mcps/local' },
       third: { kind: 'proxied', connection: 'conn-1' },
     });
     expect(collectUsedDevPorts(doc)).toEqual([6782, 6783]);

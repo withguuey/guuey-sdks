@@ -187,7 +187,7 @@ describe('planMcpLegs', () => {
   it('skips colocated + proxied entries', () => {
     const agent = {
       mcpServers: {
-        local: { kind: 'colocated', command: 'node', args: ['s.js'] },
+        local: { kind: 'colocated', source: './mcps/local' },
         conn: { kind: 'proxied', connection: 'conn-1' },
       },
     } as GuueyAgent;

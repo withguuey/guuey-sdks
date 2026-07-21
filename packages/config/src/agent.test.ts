@@ -52,7 +52,7 @@ describe('validateNoLiteralSecrets — clean (no violations)', () => {
       validateNoLiteralSecrets({ mcpServers: { x: { kind: 'external', url: 'https://x' } } }),
     ).toEqual([]);
     expect(
-      validateNoLiteralSecrets({ mcpServers: { x: { kind: 'colocated', command: 'node', args: ['s.js'] } } }),
+      validateNoLiteralSecrets({ mcpServers: { x: { kind: 'colocated', source: './mcps/x' } } }),
     ).toEqual([]);
   });
 });
@@ -203,14 +203,18 @@ describe('McpServerSchema — each kind parses correctly', () => {
     return AgentSectionV1.parse({ mcpServers });
   }
 
-  it('colocated: command required, args/headers optional', () => {
+  it('colocated: source required, devPort optional', () => {
     const r = parseMcpServers({
-      tool: { kind: 'colocated', command: 'node', args: ['dist/tool.js'] },
+      tool: { kind: 'colocated', source: './mcps/tool', devPort: 6784 },
     });
-    expect(r.mcpServers?.tool).toEqual({ kind: 'colocated', command: 'node', args: ['dist/tool.js'] });
+    expect(r.mcpServers?.tool).toEqual({
+      kind: 'colocated',
+      source: './mcps/tool',
+      devPort: 6784,
+    });
   });
 
-  it('colocated: no command → parse error', () => {
+  it('colocated: no source → parse error', () => {
     expect(() =>
       parseMcpServers({ tool: { kind: 'colocated' } }),
     ).toThrow();

@@ -263,7 +263,7 @@ describe("lowerForDev", () => {
   it("drops colocated and proxied entries", () => {
     const lowered = lowerForDev({
       mcpServers: {
-        stdio: { kind: "colocated", command: "node", args: ["server.js"] },
+        stdio: { kind: "colocated", source: "./mcps/local" },
         saas: { kind: "proxied", connection: "conn_123" },
       },
     });

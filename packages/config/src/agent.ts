@@ -65,18 +65,19 @@ export type AgentFramework = (typeof AGENT_FRAMEWORKS)[number];
 const HeadersSchema = z.record(z.string().min(1), z.string());
 
 /**
- * `kind: 'colocated'` — MCP server runs as a stdio child **inside the agent
- * pod** (co-locate = same gVisor sandbox). COGS: ~$0 (rides the agent pod).
- * Nocode runtime spawns `command [args…]` at boot.
+ * `kind: 'colocated'` — MCP server runs as a guuey-managed HTTP child
+ * **inside the agent pod** (co-locate = same gVisor sandbox). COGS: ~$0
+ * (rides the agent pod). `source` is a project-relative path the Router
+ * lowering builds/boots as a local HTTP server; `devPort` mirrors the
+ * `hosted`/`external` dev-loop story (name→localhost URL resolution for
+ * `guuey dev`).
  */
 const ColocatedMcp = z.strictObject({
   kind: z.literal('colocated'),
-  /** Executable name or path. Required. */
-  command: z.string().min(1),
-  /** Argv beyond `command`. */
-  args: z.array(z.string()).optional(),
-  /** Static headers (less common for stdio, but supported for symmetry). */
-  headers: HeadersSchema.optional(),
+  /** Source directory relative to `guuey.json`. Required. */
+  source: z.string().min(1),
+  /** Local dev-loop port (`guuey dev`) this MCP is served on for name→localhost URL resolution. */
+  devPort: z.number().int().min(1).max(65535).optional(),
 });
 
 /**
@@ -137,13 +138,18 @@ const ExternalMcp = z.strictObject({
   headers: HeadersSchema.optional(),
   /** Local dev-loop port (`guuey dev`) this MCP is served on for name→localhost URL resolution. */
   devPort: z.number().int().min(1).max(65535).optional(),
+  /**
+   * INTERNAL — set only by Router lowering; when present the federation mint
+   * uses this as the RFC 8707 resource instead of `url`.
+   */
+  mcpResourceUrl: z.url().optional(),
 });
 
 /**
  * A single MCP server entry inside `agent.mcpServers`.
  *
  * Discriminated union on `kind` — one slot per hosting mode:
- * - `colocated` — stdio child inside the agent pod
+ * - `colocated` — guuey-managed HTTP child inside the agent pod
  * - `hosted`    — guuey-hosted registry MCP (Starter+)
  * - `proxied`   — 3rd-party SaaS via mcp-proxy credential broker (v2)
  * - `external`  — builder-hosted, reached by URL (plain or federated)
@@ -310,7 +316,7 @@ export const AgentSectionV1 = z.strictObject({
    * `ggui` explicitly to keep it alongside other servers.
    *
    * Each entry is a discriminated union on `kind`:
-   * - `'colocated'` — stdio child inside the agent pod
+   * - `'colocated'` — guuey-managed HTTP child inside the agent pod
    * - `'hosted'`    — guuey-hosted registry MCP (Starter+)
    * - `'proxied'`   — 3rd-party SaaS via mcp-proxy (v2)
    * - `'external'`  — builder-hosted URL (plain or federated)
@@ -456,7 +462,7 @@ export function validateNoLiteralSecrets(
   if (!servers) return violations;
 
   for (const [serverName, server] of Object.entries(servers)) {
-    // Only `colocated` and `external` union arms carry a `headers` field.
+    // Only the `external` union arm carries a `headers` field.
     const headers = 'headers' in server ? server.headers : undefined;
     if (!headers) continue;
     for (const [headerName, rawValue] of Object.entries(headers)) {
