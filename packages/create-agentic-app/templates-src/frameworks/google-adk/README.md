@@ -41,11 +41,11 @@ Your factory runs **once per turn** and receives:
 
 ## Where state lives (the three-tier map)
 
-| you want to…                                                     | use                                                                                                                            | persistence                                                                                                                                                         |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| save/read **files** from agent code or tools                     | `guuey.files.home` (per-USER durable) · `guuey.files.session` (per-session scratch) · `guuey.files.app` (read-only app assets) | `home` survives across sessions per user                                                                                                                            |
-| have the agent **remember the conversation**                     | nothing — `instruction` already carries history + thread memory + working state                                                | automatic (Guuey folds every turn)                                                                                                                                  |
-| store data from your **MCP server's tools** (e.g. the todo list) | `@guuey/state` KV inside the MCP server — scoped per `(user, server)`                                                          | **in-memory in the current release** (durable managed KV + console export/delete is on the roadmap) — persist anything you can't lose to `guuey.files.home` for now |
+| you want to…                                                     | use                                                                                                                            | persistence                                                                                                                                                                                                                   |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| save/read **files** from agent code or tools                     | `guuey.files.home` (per-USER durable) · `guuey.files.session` (per-session scratch) · `guuey.files.app` (read-only app assets) | `home` survives across sessions per user                                                                                                                                                                                      |
+| have the agent **remember the conversation**                     | nothing — `instruction` already carries history + thread memory + working state                                                | automatic (Guuey folds every turn)                                                                                                                                                                                            |
+| store data from your **MCP server's tools** (e.g. the todo list) | `@guuey/state` KV inside the MCP server — scoped per `(user, server)`                                                          | **durable when `GUUEY_KV_URL` is injected — colocated (like `mcps/todo`) and hosted servers get it automatically on deploy**; the scope survives pod restarts and redeploys. Locally (`pnpm dev`) it falls back to in-memory. |
 
 Two honest notes:
 
@@ -68,8 +68,10 @@ version.
 ## MCP servers
 
 `guuey.json#mcpServers` declares them; the platform connects them and hands
-you `guuey.mcpToolsets`. Locally, `pnpm dev` boots the colocated `mcps/todo`
-server on its `devPort`. Note: ADK speaks **Streamable HTTP** only — an
+you `guuey.mcpToolsets`. Locally, `pnpm dev`'s `guuey dev` auto-spawns the
+colocated `mcps/todo` server on its `devPort`; deployed, the same code runs
+as a supervised child inside your agent's pod. Note: ADK speaks
+**Streamable HTTP** only — an
 `sse` transport server will be rejected with a clear error.
 
 ## When you outgrow the factory

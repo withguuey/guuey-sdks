@@ -9,7 +9,7 @@ locally with one command, and deployable to guuey with one more.
 ```
 .
 ├── guuey.json          # the deploy contract: agent framework/model, system prompt,
-│                        #   mcpServers (name → local dev port / hosted source), ggui config
+│                        #   mcpServers (name → colocated source + devPort), ggui config
 ├── package.json         # agent deps + the pnpm workspace root (workspaces: mcps/*, web)
 ├── src/worker.ts        # your agent code (code-mode worker); build emits ./guuey.worker.js
 ├── prompts/system.md    # system prompt, referenced from guuey.json#agent.systemPrompt.file
@@ -38,16 +38,19 @@ cp .env.example .env.local   # done automatically on scaffold if .env.local is a
 pnpm dev
 ```
 
-`pnpm dev` (`scripts/dev.mjs`) boots five processes with prefixed, interleaved
+`pnpm dev` (`scripts/dev.mjs`) boots four processes with prefixed, interleaved
 logs. Ctrl-C tears all of them down together.
 
-| process      | port  | what                                                         |
-| ------------ | ----- | ------------------------------------------------------------ |
-| `worker`     | —     | `tsup --watch` — rebuilds `guuey.worker.js` on every save    |
-| `guuey dev`  | :6790 | local router: spawns your worker per turn, streams SSE       |
-| `mcps/todo`  | :6782 | the example MCP server (copy this directory to add your own) |
-| `ggui serve` | :6781 | local generative-UI server, over `ggui/`                     |
-| `web`        | :6890 | the Vite chat SPA                                            |
+| process      | port  | what                                                                                                                                       |
+| ------------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `worker`     | —     | `tsup --watch` — rebuilds `guuey.worker.js` on every save                                                                                  |
+| `guuey dev`  | :6790 | local router: spawns your worker per turn, streams SSE; auto-spawns every `colocated` MCP entry — `mcps/todo` lands on its `devPort` :6782 |
+| `ggui serve` | :6781 | local generative-UI server, over `ggui/`                                                                                                   |
+| `web`        | :6890 | the Vite chat SPA                                                                                                                          |
+
+The todo MCP still answers on :6782 — it's just a supervised child of
+`guuey dev` now (copy `mcps/todo/` to add your own server; new `colocated`
+entries in `guuey.json` are auto-spawned the same way).
 
 Open http://localhost:6890 to chat with your agent locally.
 
@@ -68,9 +71,13 @@ that only matter once real users and real money are involved:
   DynamoDB so users can resume a thread.
 
 None of this changes your code — `guuey.json` is the same file in both
-worlds; only how it's resolved differs (`guuey dev` points MCP server names
-at `localhost:<devPort>`, `guuey deploy` points them at the platform's
-federated URLs).
+worlds; only how it's resolved differs. Locally, `guuey dev` auto-spawns each
+`colocated` entry on its `devPort` and points the agent at
+`localhost:<devPort>`; deployed, the same server code runs as a supervised
+child inside your agent's pod, reached over the pod's loopback with a
+per-request federated identity. (`hosted` entries deploy to the platform's
+federated URLs; locally they need a `devPort` pointing at a server you run
+yourself, or they're skipped with a warning.)
 
 ## Deploying
 
@@ -83,12 +90,16 @@ guuey deploy   # ships everything
 anything user-visible changes:
 
 1. **MCP leg** — deploys each `hosted` entry under `guuey.json#agent.mcpServers`
-   (e.g. `mcps/todo`) as its own hosted MCP server (build → deploy → registry),
-   then writes the resulting server id back into `guuey.json`.
+   as its own hosted MCP server (build → deploy → registry), then writes the
+   resulting server id back into `guuey.json`. This scaffold has none — the
+   todo MCP is `colocated`, so this leg is a no-op here.
 2. **ggui asset leg** — pushes `ggui/` (ggui.json, blueprints, themes) to your
    app's guuey-managed ggui instance.
 3. **Agent leg** — builds `src/worker.ts` into `guuey.worker.js`, packs the
-   project root, and deploys it as a gVisor-isolated, scale-to-zero pod.
+   project root (including `mcps/`), and deploys it as a gVisor-isolated,
+   scale-to-zero pod. Each `colocated` entry (e.g. `mcps/todo`) is built into
+   the worker image and auto-spawned as a supervised, sandboxed child at pod
+   boot — no separate server, registry row, or write-back.
 4. **Output** — prints your agent's endpoint URL and a Portal deep link.
 
 Re-running `guuey deploy` converges: unchanged pieces are skipped or reused,
