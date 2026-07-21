@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { colocatedResourceUrl, isValidColocatedServerName } from './colocated.js';
+import { COLOCATED_ORIGIN, colocatedResourceUrl, isValidColocatedServerName } from './colocated.js';
 
 /**
  * Copied-in predicate of `backend/amplify/functions/oidcMint/handler.ts`'s
@@ -23,6 +23,10 @@ describe('colocatedResourceUrl', () => {
 
   it('satisfies the oidcMint parseMcpResourceUrl rule', () => {
     expect(satisfiesOidcMintRule(colocatedResourceUrl('app1', 'notes'))).toBe(true);
+  });
+
+  it('lives on COLOCATED_ORIGIN — the exported constant origin-filter consumers (stateApi admin-ownership) rely on', () => {
+    expect(new URL(colocatedResourceUrl('app1', 'notes')).origin).toBe(COLOCATED_ORIGIN);
   });
 
   it('rejects an appId with a space', () => {

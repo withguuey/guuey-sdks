@@ -19,6 +19,16 @@
 const SAFE_SEGMENT_RE = /^[A-Za-z0-9_-]+$/;
 
 /**
+ * The synthetic origin every colocated resource URL lives on. Guuey-owned
+ * and compile-time-fixed (NOT env-varying — the host never resolves; it
+ * exists only as a stable RFC 8707 `aud` / KV-scope namespace), so
+ * consumers that must recognize "is this URL guuey-controlled?" (e.g. the
+ * stateApi admin-ownership walk's origin filter) import THIS constant
+ * instead of re-declaring the string or threading a new env var.
+ */
+export const COLOCATED_ORIGIN = 'https://colocated.guuey.com';
+
+/**
  * Whether `value` is safe to use as a `colocatedResourceUrl` path segment /
  * KV scope key (letters, digits, hyphen, underscore only). Single source of
  * truth for that rule — reused by {@link assertSafeSegment} here AND by
@@ -48,5 +58,5 @@ function assertSafeSegment(value: string, label: string): void {
 export function colocatedResourceUrl(appId: string, serverName: string): string {
   assertSafeSegment(appId, 'appId');
   assertSafeSegment(serverName, 'serverName');
-  return `https://colocated.guuey.com/${appId}/${serverName}/`;
+  return `${COLOCATED_ORIGIN}/${appId}/${serverName}/`;
 }
