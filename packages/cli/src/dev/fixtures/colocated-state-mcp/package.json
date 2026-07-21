@@ -1,0 +1,7 @@
+{
+  "name": "colocated-state-mcp-fixture",
+  "private": true,
+  "scripts": {
+    "dev": "node index.mjs"
+  }
+}
