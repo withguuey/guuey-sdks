@@ -1,6 +1,6 @@
 {
   "name": "@guuey/config",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Open-source schemas + loaders for the three guuey config files: agent.json (declarative agent definition), guuey.json (hosted-deploy overlay), and the helper types around them. Consumed by @guuey/cli, the guuey backend, and devs writing their own agent or MCP server.",
   "license": "MIT",
   "type": "module",

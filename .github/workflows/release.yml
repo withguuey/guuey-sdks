@@ -13,6 +13,18 @@ name: npm Release
 # First-ever publish of any package is a manual, operator-gated bootstrap
 # (npm requires the package to exist before a trusted publisher attaches).
 #
+# COUPLED SET-MOVE — config + cli + create-agentic-app publish TOGETHER.
+# The colocated-MCP flip (slice B, 2026-07-21) made these three a single
+# unit: @guuey/config >=0.1.2 carries the `kind:'colocated'` zod arm,
+# @guuey/cli >=0.1.4 carries colocated auto-spawn, and
+# @guuey/create-agentic-app >=0.1.4 scaffolds a guuey.json whose todo MCP
+# is `kind:'colocated'` and pins config/cli via templates-src/versions.json.
+# Publishing create-agentic-app WITHOUT the matching config/cli versions
+# ships a scaffold whose pinned config rejects its own guuey.json
+# (`Invalid discriminator value`) — golden path broken out of the box.
+# Bump + publish all three as a set; `check-templates.mjs` enforces
+# versions.json == workspace versions at build time.
+#
 # Release model: "publish what's in git."
 #   - Versions come from each packages/<pkg>/package.json as committed.
 #     This workflow never mutates package.json or git state.
