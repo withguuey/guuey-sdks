@@ -43,6 +43,7 @@ import {
   loadGuueyJson,
   buildDeploySnapshot,
   validateNoLiteralSecrets,
+  validateColocatedServerNames,
   writeGuueyJsonFile,
   type ResolvedGuueyJson,
   type GuueyJsonV1,
@@ -362,6 +363,16 @@ async function deployCode(opts: {
         secretViolations.map((s) => `  - ${s}`).join('\n') +
         '\nDeclare the secret name in agent.secrets and reference it as ${env.NAME}.',
     );
+    process.exit(1);
+  }
+
+  // A colocated server's name becomes a URL path segment + KV scope key at
+  // pod boot (`lowerColocated` -> `colocatedResourceUrl`) — catch an invalid
+  // one HERE, before upload, instead of letting it surface only as an
+  // unactionable POD_FATAL_BOOT_ERROR crash-loop.
+  const colocatedNameViolations = validateColocatedServerNames(doc.agent);
+  if (colocatedNameViolations.length > 0) {
+    out.error(colocatedNameViolations.map((v) => `  - ${v}`).join('\n'));
     process.exit(1);
   }
 
@@ -868,6 +879,16 @@ async function deployDeclarative(opts: {
         secretViolations.map((s) => `  - ${s}`).join('\n') +
         '\nDeclare the secret name in agent.secrets and reference it as ${env.NAME}.',
     );
+    process.exit(1);
+  }
+
+  // Same colocated-server-name gate as the code-orchestrated path (see
+  // deployCode) — the declarative path skips the build/pack pipeline but
+  // still ships a snapshot the pod's `lowerColocated` will crash-loop on
+  // if a colocated name is invalid.
+  const colocatedNameViolations = validateColocatedServerNames(agent);
+  if (colocatedNameViolations.length > 0) {
+    out.error(colocatedNameViolations.map((v) => `  - ${v}`).join('\n'));
     process.exit(1);
   }
 

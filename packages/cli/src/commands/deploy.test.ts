@@ -320,3 +320,102 @@ describe('deploy() — no app linked, no interactive offer (S4)', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
+
+// Whole-branch follow-up fix (colocated MCP slice): a colocated server's
+// NAME is schema-typed only `z.string().min(1)`, but at pod boot
+// `lowerColocated` composes it into `colocatedResourceUrl(appId, name)`,
+// which THROWS for anything outside `/^[A-Za-z0-9_-]+$/` — an unactionable
+// POD_FATAL_BOOT_ERROR crash-loop. `validateColocatedServerNames`
+// (`@guuey/config`) is the deploy-time pre-flight `deployDeclarative` runs
+// right before the trigger POST; these tests drive the real `deploy()`
+// declarative path end-to-end (appId linked, no Dockerfile/agent.mode ->
+// 'declarative' per `deploy-plan.ts#resolveDeployMode`).
+describe('deploy() — colocated MCP server-name validation (deploy-time gate)', () => {
+  let dir: string;
+  let originalCwd: string;
+  let exitSpy: MockInstance<typeof process.exit>;
+  let errSpy: MockInstance<typeof console.error>;
+  let fetchSpy: MockInstance<typeof fetch>;
+
+  function writeGuueyJson(colocatedName: string): void {
+    writeFileSync(
+      join(dir, 'guuey.json'),
+      JSON.stringify({
+        schema: '1',
+        agent: {
+          mcpServers: {
+            [colocatedName]: { kind: 'colocated', source: './mcps/tool' },
+          },
+        },
+      }),
+    );
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    dir = mkdtempSync(join(tmpdir(), 'deploy-colocated-name-test-'));
+    process.chdir(dir);
+
+    vi.mocked(resolveConfig).mockReturnValue({
+      host: 'https://platform.guuey.test',
+      apiUrl: 'https://api.guuey.test',
+      appId: 'app-1',
+    });
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it('rejects a colocated name with a space, printing the actionable message, before any network call', async () => {
+    writeGuueyJson('my tool');
+    fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    await expect(deploy({})).rejects.toBeInstanceOf(ExitSignal);
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain(
+      'colocated MCP server name "my tool" is invalid — use only letters, digits, hyphen, underscore (it becomes part of a URL and a storage scope)',
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it(
+    'a valid colocated name passes the gate (deploy proceeds to the trigger call)',
+    async () => {
+      writeGuueyJson('notes_v1');
+      fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        const url = String(input);
+        if (url.includes('/deploy/trigger')) {
+          return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
+        }
+        if (url.includes('/deployments/1/status')) {
+          return new Response(
+            JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null }),
+            { status: 200 },
+          );
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      });
+
+      await deploy({});
+
+      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+      expect(printed).not.toContain('colocated MCP server name');
+      expect(fetchSpy).toHaveBeenCalled();
+      const triggerCall = fetchSpy.mock.calls.find(([u]) => String(u).includes('/deploy/trigger'));
+      expect(triggerCall).toBeDefined();
+    },
+    10_000,
+  );
+});

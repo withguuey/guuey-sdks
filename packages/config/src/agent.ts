@@ -41,6 +41,7 @@
  */
 import { z } from 'zod';
 import { AGENT_SIZES } from './hosting.js';
+import { isValidColocatedServerName } from './colocated.js';
 
 /**
  * Supported framework adapters. The pod runtime selects the matching
@@ -486,6 +487,43 @@ export function validateNoLiteralSecrets(
           );
         }
       }
+    }
+  }
+  return violations;
+}
+
+// ── No-invalid-colocated-names validation (deploy-time contract enforcement) ──
+//
+// `agent.mcpServers`' key is schema-typed only `z.string().min(1)` — any
+// non-empty string parses. But at pod boot, `lowerColocated` composes the
+// KEY (not just `source`) into `colocatedResourceUrl(appId, name)`, which
+// THROWS for anything outside `/^[A-Za-z0-9_-]+$/` (see `./colocated.ts`).
+// An invalid colocated name therefore parses fine client-side and only
+// fails once the pod is already booting, as an unactionable
+// `POD_FATAL_BOOT_ERROR` crash-loop. `validateColocatedServerNames` is the
+// deploy-time pre-flight that catches it first — mirrors
+// `validateNoLiteralSecrets`'s shape (explicit lint, called by
+// `@guuey/cli`'s `commands/deploy.ts` right before upload).
+
+/**
+ * Validate that every `kind: 'colocated'` entry's NAME (the `mcpServers`
+ * map key) is safe to compose into `colocatedResourceUrl` — i.e. passes
+ * {@link isValidColocatedServerName} (from `./colocated.ts`, the single
+ * source of truth for the rule). Returns a list of human-readable
+ * violation messages (empty = clean).
+ */
+export function validateColocatedServerNames(
+  agent: GuueyAgent | undefined,
+): string[] {
+  const violations: string[] = [];
+  const servers = agent?.mcpServers;
+  if (!servers) return violations;
+
+  for (const [name, server] of Object.entries(servers)) {
+    if (server.kind === 'colocated' && !isValidColocatedServerName(name)) {
+      violations.push(
+        `colocated MCP server name "${name}" is invalid — use only letters, digits, hyphen, underscore (it becomes part of a URL and a storage scope)`,
+      );
     }
   }
   return violations;

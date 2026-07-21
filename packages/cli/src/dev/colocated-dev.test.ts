@@ -9,16 +9,6 @@ const projectRoot = __dirname;
 let handle: ColocatedDevHandle | undefined;
 let markerDir: string | undefined;
 
-afterEach(() => {
-  handle?.stop();
-  handle = undefined;
-  if (markerDir) {
-    delete process.env.FIXTURE_MARKER_DIR;
-    rmSync(markerDir, { recursive: true, force: true });
-    markerDir = undefined;
-  }
-});
-
 function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void> {
   return new Promise((resolve, reject) => {
     const start = Date.now();
@@ -36,6 +26,43 @@ function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void> {
     tick();
   });
 }
+
+/**
+ * Wait for the fixture child's `<dir>/stopped` marker to appear.
+ *
+ * `spawnColocatedDev`'s `stop()` is deliberately fire-and-forget SIGTERM
+ * (product semantics — unchanged here): it signals the child and returns
+ * immediately, without waiting for the child to actually exit. The fixture
+ * (`fixtures/colocated-child/index.mjs`) writes a `stopped` marker file
+ * asynchronously, right before it calls `process.exit(0)`.
+ *
+ * Not every test in this file awaited that marker itself before finishing
+ * (e.g. the idempotent-stop() test asserted synchronously), so `afterEach`'s
+ * `rmSync(markerDir)` could race the child's still-in-flight write — the
+ * child creating `stopped` AFTER `rmSync`'s recursive directory listing but
+ * BEFORE its final `rmdir` produced an intermittent `ENOTEMPTY`. Waiting
+ * here, once, in `afterEach`, closes that race for every test without
+ * touching `stop()`'s real fire-and-forget contract. A genuine timeout (the
+ * child never wrote its marker) is a real problem, not something to hide —
+ * it propagates and fails the test, same as every other `waitFor` call in
+ * this file.
+ */
+function waitForStoppedMarker(dir: string, timeoutMs = 5000): Promise<void> {
+  return waitFor(() => existsSync(join(dir, "stopped")), timeoutMs);
+}
+
+afterEach(async () => {
+  handle?.stop();
+  if (markerDir) {
+    await waitForStoppedMarker(markerDir);
+  }
+  handle = undefined;
+  if (markerDir) {
+    delete process.env.FIXTURE_MARKER_DIR;
+    rmSync(markerDir, { recursive: true, force: true });
+    markerDir = undefined;
+  }
+});
 
 describe("spawnColocatedDev", () => {
   it("spawns the entry's dev script with PORT set in its env, and stop() SIGTERMs it", async () => {

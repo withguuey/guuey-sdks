@@ -18,8 +18,22 @@
 
 const SAFE_SEGMENT_RE = /^[A-Za-z0-9_-]+$/;
 
+/**
+ * Whether `value` is safe to use as a `colocatedResourceUrl` path segment /
+ * KV scope key (letters, digits, hyphen, underscore only). Single source of
+ * truth for that rule — reused by {@link assertSafeSegment} here AND by
+ * `./agent.ts#validateColocatedServerNames` (the CLI deploy-time check
+ * `@guuey/cli`'s `commands/deploy.ts` runs before upload), so a bad
+ * colocated server name is rejected before deploy instead of surfacing only
+ * as a `POD_FATAL_BOOT_ERROR` crash-loop when the pod's `lowerColocated`
+ * calls `colocatedResourceUrl` at boot.
+ */
+export function isValidColocatedServerName(value: string): boolean {
+  return SAFE_SEGMENT_RE.test(value);
+}
+
 function assertSafeSegment(value: string, label: string): void {
-  if (!SAFE_SEGMENT_RE.test(value)) {
+  if (!isValidColocatedServerName(value)) {
     throw new Error(
       `colocatedResourceUrl: ${label} "${value}" must match ${SAFE_SEGMENT_RE.source} (it composes a URL path segment and a KV scope key)`,
     );

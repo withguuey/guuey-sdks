@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { AgentSectionV1, validateNoLiteralSecrets, type GuueyAgent } from './agent.js';
+import {
+  AgentSectionV1,
+  validateColocatedServerNames,
+  validateNoLiteralSecrets,
+  type GuueyAgent,
+} from './agent.js';
 
 /** Build a minimal agent with one mcpServer whose headers we control. */
 function withHeaders(headers: Record<string, string>): GuueyAgent {
@@ -148,6 +153,66 @@ describe('validateNoLiteralSecrets — aggregation', () => {
     expect(v).toHaveLength(2);
     expect(v.some((m) => m.startsWith('mcpServers.a.headers.Authorization'))).toBe(true);
     expect(v.some((m) => m.startsWith('mcpServers.b.headers.X-API-Key'))).toBe(true);
+  });
+});
+
+// ── validateColocatedServerNames (deploy-time colocated-name check) ─────────
+//
+// `agent.mcpServers`'s key is schema-typed only `z.string().min(1)` — bad
+// names (spaces, slashes, ...) parse fine but throw at pod boot inside
+// `lowerColocated` -> `colocatedResourceUrl`. This is the client-side
+// pre-flight `@guuey/cli`'s `commands/deploy.ts` runs before upload.
+
+describe('validateColocatedServerNames', () => {
+  it('no mcpServers / undefined agent -> clean', () => {
+    expect(validateColocatedServerNames(undefined)).toEqual([]);
+    expect(validateColocatedServerNames({})).toEqual([]);
+  });
+
+  it('a valid colocated name passes', () => {
+    const agent: GuueyAgent = {
+      mcpServers: { notes_v1: { kind: 'colocated', source: './mcps/notes' } },
+    };
+    expect(validateColocatedServerNames(agent)).toEqual([]);
+  });
+
+  it('non-colocated entries are never checked, even with "invalid" names', () => {
+    const agent: GuueyAgent = {
+      mcpServers: {
+        'not a name': { kind: 'external', url: 'https://mcp.example.com' },
+      },
+    };
+    expect(validateColocatedServerNames(agent)).toEqual([]);
+  });
+
+  it('a colocated name with a space is rejected with the actionable message', () => {
+    const agent: GuueyAgent = {
+      mcpServers: { 'my tool': { kind: 'colocated', source: './mcps/tool' } },
+    };
+    expect(validateColocatedServerNames(agent)).toEqual([
+      'colocated MCP server name "my tool" is invalid — use only letters, digits, hyphen, underscore (it becomes part of a URL and a storage scope)',
+    ]);
+  });
+
+  it('a colocated name with a slash is rejected', () => {
+    const agent: GuueyAgent = {
+      mcpServers: { 'a/b': { kind: 'colocated', source: './mcps/tool' } },
+    };
+    expect(validateColocatedServerNames(agent)).toHaveLength(1);
+  });
+
+  it('reports every violating colocated entry across servers', () => {
+    const agent: GuueyAgent = {
+      mcpServers: {
+        'bad one': { kind: 'colocated', source: './mcps/a' },
+        good: { kind: 'colocated', source: './mcps/b' },
+        'bad two': { kind: 'colocated', source: './mcps/c' },
+      },
+    };
+    const v = validateColocatedServerNames(agent);
+    expect(v).toHaveLength(2);
+    expect(v.some((m) => m.includes('"bad one"'))).toBe(true);
+    expect(v.some((m) => m.includes('"bad two"'))).toBe(true);
   });
 });
 
