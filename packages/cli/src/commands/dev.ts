@@ -16,6 +16,7 @@ import { dirname, join } from 'node:path';
 import { loadGuueyJson, buildDeploySnapshot } from '@guuey/config';
 import { findProjectConfig } from '../config.js';
 import { startDevServer, lowerForDev } from '../dev/dev-server.js';
+import { spawnColocatedDev, type ColocatedDevEntry } from '../dev/colocated-dev.js';
 import * as out from '../output.js';
 
 const DEFAULT_PORT = 6790;
@@ -166,11 +167,24 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
     process.env.GUUEY_WORKER_ROOT = projectRoot;
   }
 
-  // Lowered snapshot: the deploy-shaped agent section (systemPrompt resolved
-  // inline via `resolvedSystemPrompt` — the worker needn't re-read the file)
-  // run through `lowerForDev` (hosted/external+devPort → localhost, default
-  // ggui injected).
-  const agent = lowerForDev(buildDeploySnapshot(loaded).agent);
+  // Auto-spawn colocated dev-loop parity (Task 7): the deploy-shaped
+  // snapshot (pre-lowering) still carries every `colocated` entry's
+  // `source`/`devPort` — spawn each one's own dev server BEFORE the dev
+  // server starts, so `lowerForDev`'s localhost URLs are dialable from the
+  // first invoke.
+  const snapshotAgent = buildDeploySnapshot(loaded).agent;
+  const colocatedEntries: ColocatedDevEntry[] = [];
+  for (const [name, entry] of Object.entries(snapshotAgent.mcpServers ?? {})) {
+    if (entry.kind === 'colocated' && entry.devPort !== undefined) {
+      colocatedEntries.push({ name, source: entry.source, devPort: entry.devPort });
+    }
+  }
+  const colocatedDev = spawnColocatedDev(colocatedEntries, projectRoot);
+
+  // Lowered snapshot: run through `lowerForDev` (hosted/external+devPort →
+  // localhost, colocated+devPort → localhost + tracked in `colocatedNames`,
+  // default ggui injected).
+  const { agent, colocatedNames } = lowerForDev(snapshotAgent);
   const agentSnapshotJson = JSON.stringify(agent);
 
   // Graceful mode: the CLI is also the LOCAL credential broker — the host
@@ -187,6 +201,15 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
         )
       : undefined;
 
+  // Dev-identity: which of those `localCredentials` servers are
+  // colocated-derived (see `lowerForDev`'s `colocatedNames`), plus the
+  // `colocatedResourceUrl` appId segment — `guuey.json#appId` if this
+  // project has been through `guuey create`/`guuey pull --app-id`, else the
+  // literal `'local'`.
+  const devAppId = loaded.doc.appId ?? 'local';
+  const devIdentity =
+    gracefulEntry !== undefined ? { colocatedNames, devAppId } : undefined;
+
   const srv = await startDevServer({
     port,
     framework,
@@ -196,6 +219,7 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
     agentSnapshotJson,
     projectRoot,
     ...(localCredentials !== undefined ? { localCredentials } : {}),
+    ...(devIdentity !== undefined ? { devIdentity } : {}),
   });
 
   console.log(`\nguuey dev server listening on http://localhost:${srv.port}`);
@@ -209,6 +233,7 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
   );
 
   const shutdown = (): void => {
+    colocatedDev.stop();
     void srv.close().then(() => process.exit(0));
   };
   process.on('SIGINT', shutdown);

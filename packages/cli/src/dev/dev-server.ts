@@ -17,7 +17,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { WorkerEvent } from "@guuey/worker";
-import type { GuueyAgent, GuueyAgentMcpServer } from "@guuey/config";
+import { colocatedResourceUrl, type GuueyAgent, type GuueyAgentMcpServer } from "@guuey/config";
 import type { Normalizer } from "@silverprotocol/core";
 import { createLocalDriver, type LocalRunInput } from "./local-driver.js";
 import { makeNormalizer } from "./normalize.js";
@@ -54,6 +54,23 @@ export interface DevServerOptions {
    * cred files and would otherwise run tool-less locally.
    */
   localCredentials?: Record<string, { url: string; transport: "http" | "sse" }>;
+  /**
+   * Dev-identity: which of `localCredentials`' servers were lowered FROM a
+   * `colocated` entry (`lowerForDev`'s `colocatedNames`), plus the
+   * `colocatedResourceUrl` `appId` segment (`guuey.json#appId` if present,
+   * else `'local'`). Threaded through to {@link writeLocalCredentials} so
+   * only those servers' credential files carry the unsigned dev-identity
+   * bearer token.
+   */
+  devIdentity?: DevIdentity;
+}
+
+/** See {@link DevServerOptions.devIdentity}. */
+export interface DevIdentity {
+  /** Names of servers lowered FROM a `colocated` entry — see {@link LowerForDevResult.colocatedNames}. */
+  colocatedNames: ReadonlySet<string>;
+  /** `colocatedResourceUrl`'s `appId` segment for this project. */
+  devAppId: string;
 }
 
 export interface DevServerHandle {
@@ -71,6 +88,21 @@ function sendEvent(res: ServerResponse, event: string, data: unknown): void {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
+export interface LowerForDevResult {
+  /** The agent with every `mcpServers` entry lowered (or dropped). */
+  agent: GuueyAgent;
+  /**
+   * Names of servers lowered FROM a `colocated` entry. Consumed by
+   * `commands/dev.ts` to build the {@link DevIdentity} `writeLocalCredentials`
+   * needs: colocated MCP servers are the only local servers whose handler
+   * code calls `scopeFromAuthorization` (they run the guuey-managed
+   * `@guuey/state` middleware pattern), so they're the only ones that need a
+   * guuey-shaped bearer token — hosted/external servers are the builder's own
+   * infra and get `headers: {}`, same as today.
+   */
+  colocatedNames: Set<string>;
+}
+
 /**
  * Lower an agent's `mcpServers` for local dev — the CLI-side mirror of what
  * the deploy-controller resolves server-side for a live pod:
@@ -79,18 +111,25 @@ function sendEvent(res: ServerResponse, event: string, data: unknown): void {
  *   `{ kind: 'external', url: 'http://localhost:<devPort>', transport: 'http' }`
  *   (the entry is served locally by another `pnpm dev` process, e.g. a
  *   colocated MCP's own dev server).
+ * - `colocated` WITH `devPort` → rewritten the same way (and its name is
+ *   recorded in `colocatedNames`) — `devPort` is REQUIRED for a colocated
+ *   entry to work locally, since `guuey dev` has no pod/Router to supervise
+ *   it and no port to dial otherwise.
  * - `external` WITHOUT `devPort` → unchanged (already a real, reachable URL).
- * - `colocated` / `proxied` / `hosted` WITHOUT `devPort` → no local-dev story
- *   yet (v1) — dropped with a console warning rather than silently failing
- *   at invoke time.
+ * - `colocated` WITHOUT `devPort` → dropped with a console warning naming the
+ *   fix (add `devPort`).
+ * - `proxied` / `hosted` WITHOUT `devPort` → no local-dev story yet (v1) —
+ *   dropped with a console warning rather than silently failing at invoke
+ *   time.
  *
  * Also platform-injects the default local `ggui serve` endpoint when no
  * `ggui` entry is present — mirrors the platform injecting `mcp.ggui.ai` for
  * a deployed agent that never declared `mcpServers.ggui`.
  */
-export function lowerForDev(agent: GuueyAgent): GuueyAgent {
+export function lowerForDev(agent: GuueyAgent): LowerForDevResult {
   const servers = agent.mcpServers ?? {};
   const lowered: Record<string, GuueyAgentMcpServer> = {};
+  const colocatedNames = new Set<string>();
   let hasGgui = false;
 
   for (const [name, entry] of Object.entries(servers)) {
@@ -108,6 +147,21 @@ export function lowerForDev(agent: GuueyAgent): GuueyAgent {
       };
       continue;
     }
+    if (entry.kind === "colocated") {
+      if (entry.devPort === undefined) {
+        console.warn(
+          `guuey dev: dropping MCP server "${name}" (kind: colocated) — add devPort to the colocated entry in guuey.json`,
+        );
+        continue;
+      }
+      lowered[name] = {
+        kind: "external",
+        url: `http://localhost:${entry.devPort}/mcp`,
+        transport: "http",
+      };
+      colocatedNames.add(name);
+      continue;
+    }
     if (entry.kind === "external") {
       lowered[name] = entry;
       continue;
@@ -121,7 +175,7 @@ export function lowerForDev(agent: GuueyAgent): GuueyAgent {
     lowered.ggui = { kind: "external", url: DEFAULT_GGUI_DEV_URL, transport: "http" };
   }
 
-  return { ...agent, mcpServers: lowered };
+  return { agent: { ...agent, mcpServers: lowered }, colocatedNames };
 }
 
 /** Parse + size-cap the invoke request body. Throws a plain `Error` with a
@@ -160,18 +214,52 @@ async function readInvokeBody(
 }
 
 /**
+ * Build the unsigned dev-identity JWT `@guuey/state`'s `scopeFromAuthorization`
+ * decodes (see its doc comment: decodes WITHOUT verifying, the KV API is the
+ * verifier — DX only). `alg: 'none'`, empty signature segment (the token
+ * still has the 3 dot-separated parts `scopeFromAuthorization` requires; the
+ * 3rd is just `''`) — honest about being unsigned rather than faking a sig.
+ * `aud` is the same `colocatedResourceUrl(devAppId, serverName)` production's
+ * `lowerColocated` mints against, so the decoded `mcpId` matches what a
+ * deployed colocated MCP would see for the same `(appId, name)`.
+ */
+function buildDevToken(devAppId: string, serverName: string): string {
+  const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
+  const iat = Math.floor(Date.now() / 1000);
+  const payload = Buffer.from(
+    JSON.stringify({
+      sub: "dev-user",
+      aud: colocatedResourceUrl(devAppId, serverName),
+      iat,
+      exp: iat + 86400,
+    }),
+  ).toString("base64url");
+  return `${header}.${payload}.`;
+}
+
+/**
  * Write the local broker's credential files (see
  * {@link DevServerOptions.localCredentials}) into a session dir. Idempotent
- * per invoke; no tokens locally — headers are empty.
+ * per invoke.
+ *
+ * Servers named in `devIdentity.colocatedNames` (colocated-derived — see
+ * {@link LowerForDevResult.colocatedNames}) get `headers: { authorization:
+ * 'Bearer <dev token>' }` so their `scopeFromAuthorization` middleware yields
+ * a real scope locally. Every other server keeps `headers: {}` (unchanged —
+ * no tokens locally for builder-hosted infra).
  */
 export function writeLocalCredentials(
   sessionDir: string,
   servers: Record<string, { url: string; transport: "http" | "sse" }>,
+  devIdentity?: DevIdentity,
 ): void {
   const dir = join(sessionDir, ".guuey", "credentials");
   mkdirSync(dir, { recursive: true });
   for (const [name, s] of Object.entries(servers)) {
-    writeFileSync(join(dir, `${name}.json`), JSON.stringify({ url: s.url, transport: s.transport, headers: {} }));
+    const headers = devIdentity?.colocatedNames.has(name)
+      ? { authorization: `Bearer ${buildDevToken(devIdentity.devAppId, name)}` }
+      : {};
+    writeFileSync(join(dir, `${name}.json`), JSON.stringify({ url: s.url, transport: s.transport, headers }));
   }
 }
 
@@ -237,7 +325,7 @@ async function handleInvoke(
       opts.protocol === "silver" ? makeNormalizer(opts.framework) : undefined;
 
     const fs = sessionFs(opts.projectRoot, sessionId);
-    if (opts.localCredentials) writeLocalCredentials(fs.session, opts.localCredentials);
+    if (opts.localCredentials) writeLocalCredentials(fs.session, opts.localCredentials, opts.devIdentity);
     for await (const ev of driver({
       input: body.input,
       history: state.history,

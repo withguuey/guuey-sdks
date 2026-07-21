@@ -195,7 +195,7 @@ Hosted MCP Servers:
                                  scaffolds a self-contained ./<name>/ package for "guuey mcp deploy".
                                  Asks no questions — pick the mcpServers kind yourself:
                                    hosted (this)  — you own the code, want guuey to build+run it
-                                   colocated      — a stdio MCP that can ride the agent pod for free
+                                   colocated      — an HTTP child that rides the agent pod for free
                                    external       — you already host it somewhere reachable by URL
                                    proxied        — 3rd-party SaaS MCP via the mcp-proxy credential broker (v2)
 

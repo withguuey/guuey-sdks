@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { join } from "node:path";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -242,38 +242,58 @@ describe("lowerForDev", () => {
     const lowered = lowerForDev({
       mcpServers: { todo: { kind: "hosted", source: "./mcps/todo", devPort: 6782 } },
     });
-    expect(lowered.mcpServers?.todo).toEqual({
+    expect(lowered.agent.mcpServers?.todo).toEqual({
       kind: "external",
       url: "http://localhost:6782/mcp",
       transport: "http",
     });
+    expect(lowered.colocatedNames.size).toBe(0);
   });
 
   it("leaves external without devPort unchanged", () => {
     const lowered = lowerForDev({
       mcpServers: { custom: { kind: "external", url: "https://example.com/mcp", transport: "http" } },
     });
-    expect(lowered.mcpServers?.custom).toEqual({
+    expect(lowered.agent.mcpServers?.custom).toEqual({
       kind: "external",
       url: "https://example.com/mcp",
       transport: "http",
     });
   });
 
-  it("drops colocated and proxied entries", () => {
+  it("rewrites colocated+devPort to external localhost and records the name in colocatedNames", () => {
     const lowered = lowerForDev({
-      mcpServers: {
-        stdio: { kind: "colocated", source: "./mcps/local" },
-        saas: { kind: "proxied", connection: "conn_123" },
-      },
+      mcpServers: { notes: { kind: "colocated", source: "./mcps/notes", devPort: 6783 } },
     });
-    expect(lowered.mcpServers?.stdio).toBeUndefined();
-    expect(lowered.mcpServers?.saas).toBeUndefined();
+    expect(lowered.agent.mcpServers?.notes).toEqual({
+      kind: "external",
+      url: "http://localhost:6783/mcp",
+      transport: "http",
+    });
+    expect(lowered.colocatedNames).toEqual(new Set(["notes"]));
+  });
+
+  it("drops a colocated entry with no devPort, warning with the fix", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const lowered = lowerForDev({
+      mcpServers: { notes: { kind: "colocated", source: "./mcps/notes" } },
+    });
+    expect(lowered.agent.mcpServers?.notes).toBeUndefined();
+    expect(lowered.colocatedNames.size).toBe(0);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("add devPort to the colocated entry in guuey.json"));
+    warn.mockRestore();
+  });
+
+  it("drops proxied entries", () => {
+    const lowered = lowerForDev({
+      mcpServers: { saas: { kind: "proxied", connection: "conn_123" } },
+    });
+    expect(lowered.agent.mcpServers?.saas).toBeUndefined();
   });
 
   it("injects the default local ggui server when none is declared", () => {
     const lowered = lowerForDev({});
-    expect(lowered.mcpServers?.ggui).toEqual({
+    expect(lowered.agent.mcpServers?.ggui).toEqual({
       kind: "external",
       url: "http://localhost:6781/mcp",
       transport: "http",
@@ -284,7 +304,7 @@ describe("lowerForDev", () => {
     const lowered = lowerForDev({
       mcpServers: { ggui: { kind: "external", url: "https://mcp.ggui.ai", transport: "http" } },
     });
-    expect(lowered.mcpServers?.ggui).toEqual({
+    expect(lowered.agent.mcpServers?.ggui).toEqual({
       kind: "external",
       url: "https://mcp.ggui.ai",
       transport: "http",
@@ -306,6 +326,39 @@ describe("the local credential broker (graceful mode)", () => {
     };
     expect(todo).toEqual({ url: "http://localhost:6782/mcp", transport: "http", headers: {} });
     expect(readFileSync(join(dir, ".guuey", "credentials", "ggui.json"), "utf8")).toContain("6781");
+  });
+
+  it("writes a dev-identity bearer token for colocated-derived servers only, decodable via the REAL scopeFromAuthorization", async () => {
+    const { scopeFromAuthorization, mcpIdFromResourceUrl } = await import("@guuey/state");
+    const { colocatedResourceUrl } = await import("@guuey/config");
+
+    const dir = mkdtempSync(join(tmpdir(), "guuey-local-creds-dev-identity-"));
+    writeLocalCredentials(
+      dir,
+      {
+        notes: { url: "http://localhost:6783/mcp", transport: "http" },
+        todo: { url: "http://localhost:6782/mcp", transport: "http" },
+      },
+      { colocatedNames: new Set(["notes"]), devAppId: "app_abc123" },
+    );
+
+    const notes = JSON.parse(readFileSync(join(dir, ".guuey", "credentials", "notes.json"), "utf8")) as {
+      headers: Record<string, string>;
+    };
+    const todo = JSON.parse(readFileSync(join(dir, ".guuey", "credentials", "todo.json"), "utf8")) as {
+      headers: Record<string, string>;
+    };
+
+    // Non-colocated server: unchanged, empty headers.
+    expect(todo.headers).toEqual({});
+
+    // Colocated-derived server: a Bearer token the REAL scopeFromAuthorization
+    // decodes to the dev-user scope, aud'd at the same colocatedResourceUrl
+    // production's lowerColocated mints against.
+    expect(notes.headers.authorization).toMatch(/^Bearer /);
+    const scope = scopeFromAuthorization(notes.headers.authorization!);
+    expect(scope.userId).toBe("dev-user");
+    expect(scope.mcpId).toBe(mcpIdFromResourceUrl(colocatedResourceUrl("app_abc123", "notes")));
   });
 
   it("startDevServer writes cred files into the session dir BEFORE the worker runs", async () => {

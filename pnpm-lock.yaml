@@ -90,6 +90,9 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.110.0
         version: 0.110.0(zod@4.4.3)
+      '@guuey/state':
+        specifier: workspace:*
+        version: link:../state
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.2
