@@ -98,7 +98,7 @@ export function createGuueyState(opts: CreateGuueyStateOptions): Kv {
     const token = opts.authToken ?? process.env.GUUEY_KV_TOKEN ?? opts.context.token;
     if (!token) {
       throw new InvalidContextError(
-        "userId",
+        "token",
         "hosted binding requires a token: pass context from scopeFromAuthorization(header), or set authToken/GUUEY_KV_TOKEN",
       );
     }

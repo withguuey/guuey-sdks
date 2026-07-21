@@ -19,7 +19,7 @@ import {
   TypeMismatchError,
   ValueTooLargeError,
 } from "../errors.js";
-import type { Kv, ScopeContext } from "../types.js";
+import type { Kv, ScopeContext, SetOptions } from "../types.js";
 
 export interface KvHarness {
   kv: Kv;
@@ -32,6 +32,18 @@ export interface KvHarness {
 
 /** Scope context used by tests that assert exact `scope()` field values. */
 const CTX: ScopeContext = { userId: "u_test", mcpId: "mcp_test" };
+
+/**
+ * View of `Kv` that models a plain-JS caller who skipped the required
+ * `ttl`. Assigning a `Kv` to this interface is legal without any cast
+ * or suppression comment: TypeScript compares METHOD parameters
+ * bivariantly by design, so the `SetOptions` → `Partial<SetOptions>`
+ * widening type-checks. The runtime validation contract — not the
+ * type system — is what the "rejects a missing TTL" case exercises.
+ */
+interface KvWithLooseSetOptions {
+  set(key: string, value: unknown, opts: Partial<SetOptions>): Promise<void>;
+}
 
 async function withHarness<T>(
   makeKv: () => Promise<KvHarness>,
@@ -201,8 +213,8 @@ export function runKvContractSuite(
 
       it("rejects a missing TTL", async () => {
         await withHarness(makeKv, async (harness) => {
-          const kv = harness.kv;
-          // @ts-expect-error — intentionally drop required ttl
+          // Untyped-caller simulation — see KvWithLooseSetOptions.
+          const kv: KvWithLooseSetOptions = harness.kv;
           await expect(kv.set("a", 1, {})).rejects.toBeInstanceOf(
             InvalidTtlError,
           );

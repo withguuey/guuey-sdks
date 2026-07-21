@@ -20,16 +20,16 @@
  * server's stable identifier (the deploy's app id).
  *
  * **Trust model (spec §3):** the hosted CLIENT binding (`HttpKv`)
- * ships now; the server (`stateApi`, in build) is the actual
- * verifier. It authenticates the federation-minted Bearer JWT and
+ * and the server (`stateApi`, the actual verifier) both ship. The
+ * server authenticates the federation-minted Bearer JWT and
  * derives `userId` (the `sub` claim) + `mcpId` (hash of the
  * canonicalized `aud` URL, see `mcpIdFromResourceUrl`)
  * AUTHORITATIVELY server-side — the `context` this package puts on
  * the wire is advisory-must-match, never trusted on its own. An MCP
  * can only present tokens guuey itself issued it, so a compromised
  * MCP's blast radius is its own app's scopes, across its own calling
- * users — never another app's. Tokens with
- * `issuerAuthMode !== 'authenticated'` are rejected: guests get no
+ * users — never another app's. Tokens minted for guest sessions
+ * (`issuerAuthMode: 'anonymous'`) are rejected: guests get no
  * durable scope (mirrors the GuueyFS rule). `ScopeContext` itself
  * stays caller-asserted at the type level — `scopeFromAuthorization`
  * decodes without verifying, same as the in-memory binding always
@@ -205,8 +205,11 @@ export interface Kv {
  * 2. Otherwise → in-memory binding (one-time warning).
  *
  * The in-memory binding is right for unit tests + local development.
- * guuey-hosted pods get `GUUEY_KV_URL` + `GUUEY_KV_TOKEN` injected at
- * boot and pick up the hosted binding unchanged.
+ * guuey-hosted and colocated MCP servers get `GUUEY_KV_URL` injected
+ * at boot and pick up the hosted binding unchanged; a dev-hosted
+ * `external` server sets it itself. No token env var is injected —
+ * the auth token is the inbound federation Bearer JWT, obtained per
+ * request via `scopeFromAuthorization` (`context.token`).
  */
 export interface CreateGuueyStateOptions {
   /** Scope identity. Required. */
@@ -215,10 +218,14 @@ export interface CreateGuueyStateOptions {
   readonly bindingUrl?: string;
   /**
    * Override the auth token (defaults to `GUUEY_KV_TOKEN` env, then
-   * `context.token`). Per-deploy pod credential — see the
-   * `ScopeContext` trust model: the hosted KV API derives the mcp
-   * scope from this token server-side rather than trusting the
-   * caller's `mcpId`. Overrides `context.token` when both are set.
+   * `context.token`). Normally you never set this: the token is the
+   * inbound federation Bearer JWT and arrives via
+   * `scopeFromAuthorization` as `context.token`. `GUUEY_KV_TOKEN` /
+   * `authToken` are manual escape hatches (scripts, tests) — nothing
+   * on the platform injects them. See the `ScopeContext` trust model:
+   * the hosted KV API derives the mcp scope from this token
+   * server-side rather than trusting the caller's `mcpId`. Overrides
+   * `context.token` when both are set.
    */
   readonly authToken?: string;
 }

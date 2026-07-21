@@ -50,12 +50,10 @@ const prefs = await kv.get<{ theme: string }>("user-prefs");
 
 ### Implicit context (production MCP servers)
 
-🔜 When the hosted binding ships, guuey-hosted MCP pods will install
-a middleware that sets the `(userId, mcpId)` context per incoming
-request from platform-injected identity (see "Identity & trust
-model" below). Today you install `withGuueyContext` yourself with
-whatever identity your server derives. Inside tool handlers you
-just import the barrel-exported `kv`:
+You install `withGuueyContext` yourself — in production typically
+one line per request via `scopeFromAuthorization` on the Bearer JWT
+guuey sends federated servers (see "Hosted binding" below). Inside
+tool handlers you just import the barrel-exported `kv`:
 
 ```ts
 import { kv } from "@guuey/state";
@@ -182,20 +180,25 @@ Every operation is scoped by a `ScopeContext` (`userId`, `mcpId`).
 Where those ids come from — and who is trusted to assert them —
 is the access-control story:
 
-- **Today (in-memory binding only):** the context is caller-asserted.
+- **In-memory binding:** the context is caller-asserted.
   That's fine because the store is process-local — your process owns
   all of its own data, and both ids are validated (non-empty, no
   whitespace/control characters, ≤256 chars) to fail wiring bugs
   loudly.
-- **🔜 Hosted binding (planned contract):** `mcpId` is derived
-  **server-side** from the pod's per-deploy credential
-  (`GUUEY_KV_TOKEN`) — a compromised MCP server can never reach
-  another MCP's scopes, by construction. `userId` comes from
-  platform-injected per-request identity (guuey's ingress strips any
-  inbound copy of the header and re-sets it from the verified caller
-  token). Anonymous/guest callers get no durable scope at all —
-  the same platform-layer exclusion guuey applies to durable file
-  storage.
+- **🔜 Hosted binding:** the client sends the federation-minted
+  Bearer JWT (the `token` from `scopeFromAuthorization`) with every
+  request, and guuey's KV API is the verifier: it authenticates the
+  JWT and derives `userId` (the `sub` claim) and `mcpId` (hash of
+  the canonicalized `aud` resource URL) **server-side** — the
+  context the client sends is advisory-must-match, never trusted on
+  its own. An MCP server can only present tokens guuey itself minted
+  for it, so it can never reach another MCP's scopes, by
+  construction. Anonymous/guest callers get no durable scope at all —
+  their tokens are rejected outright, the same platform-layer
+  exclusion guuey applies to durable file storage. Reaching the
+  hosted binding is per-rung: guuey-hosted and colocated MCP servers
+  get `GUUEY_KV_URL` injected automatically; a dev-hosted `external`
+  server sets it itself (see "Hosted binding" above).
 - **Blast radius:** within its own app an MCP server necessarily
   handles every one of its users' requests, so a compromised server
   can touch its own app's scopes — never another app's. Cross-MCP
@@ -210,10 +213,10 @@ that backend as your MCP's "well-defined API."
 
 ## Local development
 
-The library currently ships **one binding: in-memory**. It emits a
-one-time `console.warn` on first use; data is per-process and lost on
-restart. That's exactly right for tests and `guuey dev` runs — and it
-is also the honest current ceiling in production (see Status below).
+Without `GUUEY_KV_URL` (or `options.bindingUrl`) the library uses the
+**in-memory binding**. It emits a one-time `console.warn` on first
+use; data is per-process and lost on restart. That's exactly right
+for tests and `guuey dev` runs.
 
 Setting `GUUEY_KV_URL` (or `options.bindingUrl`) activates the hosted
 HTTP binding — see "Hosted binding" above. It requires a token
@@ -272,6 +275,6 @@ What exists vs. what's coming:
 | Hosted binding (durable, cross-pod)         | 🔜 lands with guuey-hosted MCP state |
 | Console export + delete (data ownership)    | 🔜 ships with the hosted binding     |
 
-Until the hosted binding lands, state is per-pod and non-durable in
-every environment — design your MCP so that losing this state is an
-inconvenience (re-auth, cache miss), never data loss.
+Until the hosted binding is live in your environment, state is
+per-pod and non-durable — design your MCP so that losing this state
+is an inconvenience (re-auth, cache miss), never data loss.

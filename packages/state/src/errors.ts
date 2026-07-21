@@ -143,16 +143,17 @@ export class InvalidArgumentError extends GuueyStateError {
 }
 
 /**
- * A `ScopeContext` field is unusable — empty, or containing
- * whitespace/control characters. Scope ids are platform-issued
+ * A `ScopeContext` field is unusable — an id that is empty or contains
+ * whitespace/control characters, or a missing `token` when the hosted
+ * binding was explicitly requested. Scope ids are platform-issued
  * opaque identifiers (Cognito subs, app ids); anything with
  * whitespace in it is a wiring bug at the call site, and the
  * storage layer refuses it rather than risking scope ambiguity.
  */
 export class InvalidContextError extends GuueyStateError {
-  readonly field: "userId" | "mcpId";
+  readonly field: "userId" | "mcpId" | "token";
 
-  constructor(field: "userId" | "mcpId", reason: string) {
+  constructor(field: "userId" | "mcpId" | "token", reason: string) {
     super("INVALID_CONTEXT", `Invalid ScopeContext.${field}: ${reason}`);
     this.name = "InvalidContextError";
     this.field = field;
