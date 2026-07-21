@@ -29,10 +29,11 @@ if (!existsSync(".env.local"))
   console.warn("hint: cp .env.example .env.local and set your LLM key");
 
 boot("worker", "pnpm", ["exec", "tsup", "--watch"]); // rebuilds guuey.worker.js on change
+// `guuey dev` auto-spawns every `kind: 'colocated'` mcpServers entry itself
+// (name→localhost devPort resolution) — the todo MCP is colocated, so it no
+// longer needs its own boot() here; a manual second spawn would double-bind
+// :6782 and crash with EADDRINUSE.
 boot("agent", "pnpm", ["exec", "guuey", "dev", "--serve", "--port", "6790"]);
-boot("todo", "pnpm", ["--filter", "@agentic-app-template/todo-mcp", "dev"], {
-  env: { ...process.env, PORT: "6782" },
-});
 boot("ggui", "pnpm", ["exec", "ggui", "serve", "--mcp-only", "--dev-allow-all", "--port", "6781"], {
   cwd: "ggui",
 });

@@ -6,7 +6,7 @@
     "model": "MODEL_PLACEHOLDER",
     "systemPrompt": { "file": "prompts/system.md" },
     "mcpServers": {
-      "todo": { "kind": "hosted", "source": "./mcps/todo", "devPort": 6782 }
+      "todo": { "kind": "colocated", "source": "./mcps/todo", "devPort": 6782 }
     }
   },
   "ggui": { "configFile": "./ggui/ggui.json" }

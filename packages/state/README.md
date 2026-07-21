@@ -91,15 +91,17 @@ GUUEY_KV_URL=https://api.dev.sandbox.guuey.com     # dev sandbox
 # GUUEY_KV_URL=https://api.us-east-1.guuey.com        # prod (region-qualified)
 ```
 
-**Today, every deployment — guuey-hosted or dev-hosted — must set
-`GUUEY_KV_URL` itself** (per-env values above); platform auto-injection
-for guuey-hosted MCPs is planned but not wired yet, and omitting the
-var silently falls back to the non-durable in-memory binding rather than
-failing loud. The per-request auth token, in contrast, you don't
-provision by hand: **only federated MCP servers get one**, minted by the
-platform on every call. Set `federate: true` on an `external` entry in
-`guuey.json` (or use `kind: 'hosted'`, or a `ggui` URL — those are
-federated automatically):
+**`GUUEY_KV_URL` is injected automatically for guuey-hosted
+(`kind: 'hosted'`) and colocated (`kind: 'colocated'`, agent-pod) MCP
+servers** — no setup required, state just works. A **dev-hosted external**
+server (your own `kind: 'external'` deployment reached over a real URL,
+including federated ones) sets `GUUEY_KV_URL` itself (per-env values
+above); omitting it silently falls back to the non-durable in-memory
+binding rather than failing loud. The per-request auth token, in
+contrast, you don't provision by hand: **only federated MCP servers get
+one**, minted by the platform on every call. Set `federate: true` on an
+`external` entry in `guuey.json` (or use `kind: 'hosted'`/`kind:
+'colocated'`, or a `ggui` URL — those are federated automatically):
 
 ```json
 { "kind": "external", "url": "https://your-server.example.com", "federate": true }

@@ -10,7 +10,7 @@
     },
     "mcpServers": {
       "todo": {
-        "kind": "hosted",
+        "kind": "colocated",
         "source": "./mcps/todo",
         "devPort": 6782
       }

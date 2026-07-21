@@ -25,6 +25,24 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 
+// ─────────────────────────────────────────────────────────────────────────
+// Optional: per-user durable state via `@guuey/state`.
+//
+// Hosted (`kind: 'hosted'`) and colocated (`kind: 'colocated'`) MCP servers
+// get `GUUEY_KV_URL` (and a per-request auth token) injected automatically —
+// zero setup, state just works. A `dev-hosted` external server (your own
+// `kind: 'external', federate: true` deployment reached over a real URL)
+// sets `GUUEY_KV_URL` itself, per the package README.
+//
+// Uncomment to try it: `pnpm add @guuey/state` (not yet on npm as of this
+// scaffold — developer preview, see the guuey monorepo's publish runbook —
+// so it's commented rather than a hard dependency, to keep this starter
+// installing cleanly out of the box), then uncomment the import + the
+// `withGuueyContext(...)` wrapper below.
+//
+// import { withGuueyContext, scopeFromAuthorization, kv } from "@guuey/state";
+// ─────────────────────────────────────────────────────────────────────────
+
 const SERVER_NAME = "NAME_PLACEHOLDER-mcp";
 
 /** Wrap a structured result as both `structuredContent` and a text block. */
@@ -35,6 +53,9 @@ function toolResult(data: Record<string, unknown>) {
   };
 }
 
+// To uncomment the `@guuey/state` example below, change this signature to
+// `buildMcpServer(authHeader: string | undefined)` and pass
+// `req.headers.authorization` at the one call site further down.
 function buildMcpServer(): McpServer {
   const server = new McpServer({
     name: SERVER_NAME,
@@ -52,6 +73,32 @@ function buildMcpServer(): McpServer {
     },
     async ({ message }) => toolResult({ message }),
   );
+
+  // ── Example: a durable, per-user tool via `@guuey/state` (uncomment) ──
+  //
+  // server.registerTool(
+  //   "remember",
+  //   {
+  //     title: "Remember",
+  //     description: "Store a value under a key, scoped to the calling user.",
+  //     inputSchema: {
+  //       key: z.string().min(1),
+  //       value: z.string(),
+  //     },
+  //     outputSchema: { stored: z.boolean() },
+  //   },
+  //   async ({ key, value }) => {
+  //     if (!authHeader) throw new Error("missing Authorization header");
+  //     return withGuueyContext(scopeFromAuthorization(authHeader), async () => {
+  //       await kv.set(key, value, { ttl: 60 * 60 * 24 * 7 }); // 7 days
+  //       return toolResult({ stored: true });
+  //     });
+  //   },
+  // );
+  //
+  // A companion "recall" tool would mirror this with `await kv.get(key)`.
+  // See `@guuey/state`'s README for the full API (increment/decrement,
+  // keys(), scope() usage quota, etc).
 
   return server;
 }
@@ -73,6 +120,8 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
   }
 
   // Fresh server + transport per request (stateless mode) — see module doc.
+  // (`buildMcpServer(req.headers.authorization)` once the `@guuey/state`
+  // example above is uncommented.)
   const mcp = buildMcpServer();
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
 
