@@ -95,11 +95,11 @@ export function getCurrentContext(): ScopeContext | undefined {
  */
 export function scopeFromAuthorization(header: string): ScopeContext {
   const m = /^Bearer\s+(.+)$/i.exec(header.trim());
-  if (!m) throw new InvalidContextError("userId", "not a Bearer authorization header");
+  if (!m) throw new InvalidContextError("token", "not a Bearer authorization header");
   const token = m[1] ?? "";
   const parts = token.split(".");
   if (parts.length !== 3 || parts[1] === undefined) {
-    throw new InvalidContextError("userId", "malformed JWT");
+    throw new InvalidContextError("token", "malformed JWT");
   }
   let payload: { sub?: string; aud?: string | string[] };
   try {
@@ -108,7 +108,7 @@ export function scopeFromAuthorization(header: string): ScopeContext {
       aud?: string | string[];
     };
   } catch {
-    throw new InvalidContextError("userId", "JWT payload is not valid JSON");
+    throw new InvalidContextError("token", "JWT payload is not valid JSON");
   }
   const aud = Array.isArray(payload.aud) ? payload.aud[0] : payload.aud;
   if (typeof payload.sub !== "string" || payload.sub.length === 0)

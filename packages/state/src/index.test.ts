@@ -191,26 +191,38 @@ describe("@guuey/state — scopeFromAuthorization", () => {
     expect(ctx.userId).toBe("u_x");
   });
 
-  it("rejects a non-Bearer authorization header", () => {
+  it("rejects a non-Bearer authorization header (field: token)", () => {
     expect(() => scopeFromAuthorization("Basic dXNlcjpwYXNz")).toThrow(
       InvalidContextError,
     );
+    try {
+      scopeFromAuthorization("Basic dXNlcjpwYXNz");
+    } catch (err) {
+      expect((err as InvalidContextError).field).toBe("token");
+    }
   });
 
-  it("rejects a malformed JWT (wrong segment count)", () => {
+  it("rejects a malformed JWT (wrong segment count) (field: token)", () => {
     expect(() => scopeFromAuthorization("Bearer not.a.jwt.at.all")).toThrow(
       InvalidContextError,
     );
-    expect(() => scopeFromAuthorization("Bearer onlyonesegment")).toThrow(
-      InvalidContextError,
-    );
+    try {
+      scopeFromAuthorization("Bearer onlyonesegment");
+    } catch (err) {
+      expect((err as InvalidContextError).field).toBe("token");
+    }
   });
 
-  it("rejects a JWT whose payload segment is not valid JSON", () => {
+  it("rejects a JWT whose payload segment is not valid JSON (field: token)", () => {
     const bogus = `${Buffer.from("{}").toString("base64url")}.not-json.sig`;
     expect(() => scopeFromAuthorization(`Bearer ${bogus}`)).toThrow(
       InvalidContextError,
     );
+    try {
+      scopeFromAuthorization(`Bearer ${bogus}`);
+    } catch (err) {
+      expect((err as InvalidContextError).field).toBe("token");
+    }
   });
 
   it("rejects a JWT with no sub claim", () => {

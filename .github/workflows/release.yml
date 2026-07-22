@@ -38,7 +38,7 @@ name: npm Release
 #   2. `release: [published]` — cutting a GitHub Release IS the human
 #      acknowledgement; always live.
 #
-# npmjs.com one-time setup (org owner): for each of the four packages,
+# npmjs.com one-time setup (org owner): for each package in the publish ORDER,
 # configure a Trusted Publisher — owner `withguuey`, repo `guuey-sdks`, workflow
 # `release.yml`, environment `npm-publish`. NOTE: npm requires a package
 # to exist before a trusted publisher can be attached — first-ever publishes
