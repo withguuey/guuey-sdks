@@ -290,6 +290,9 @@ describe("lowerForDev", () => {
       mcpServers: { saas: { kind: "proxied", connection: "conn_123" } },
     });
     expect(lowered.agent.mcpServers?.saas).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('dropping MCP server "saas" (kind: proxied) — unsupported in local dev v1'),
+    );
     warn.mockRestore();
   });
 
@@ -330,13 +333,18 @@ describe("lowerForDev", () => {
     });
   });
 
-  it("does not throw for a hosted entry with only `source` (build-only, not yet resolved) and no devPort", () => {
+  it("does not throw for a hosted entry with only `source` (build-only, not yet resolved) and no devPort — warn-drops instead", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect(() =>
-      lowerForDev({
+    let lowered: ReturnType<typeof lowerForDev> | undefined;
+    expect(() => {
+      lowered = lowerForDev({
         mcpServers: { todo: { kind: "hosted", source: "./mcps/todo" } },
-      }),
-    ).not.toThrow();
+      });
+    }).not.toThrow();
+    expect(lowered?.agent.mcpServers?.todo).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('dropping MCP server "todo" (kind: hosted) — unsupported in local dev v1'),
+    );
     warn.mockRestore();
   });
 
