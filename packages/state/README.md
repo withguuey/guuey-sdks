@@ -275,6 +275,11 @@ What exists vs. what's coming:
 | Hosted binding (durable, cross-pod)         | 🔜 lands with guuey-hosted MCP state |
 | Console export + delete (data ownership)    | 🔜 ships with the hosted binding     |
 
+The hosted-binding client (`HttpKv`) and its server counterpart already
+ship — the 🔜 rows track **per-environment availability** (whether
+`GUUEY_KV_URL` points at a live gateway in your environment), not
+whether the code exists.
+
 Until the hosted binding is live in your environment, state is
 per-pod and non-durable — design your MCP so that losing this state
 is an inconvenience (re-auth, cache miss), never data loss.
