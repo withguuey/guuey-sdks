@@ -3,6 +3,7 @@ import {
   AgentSectionV1,
   validateColocatedServerNames,
   validateNoLiteralSecrets,
+  validateNoProxiedServers,
   type GuueyAgent,
 } from './agent.js';
 
@@ -213,6 +214,58 @@ describe('validateColocatedServerNames', () => {
     expect(v).toHaveLength(2);
     expect(v.some((m) => m.includes('"bad one"'))).toBe(true);
     expect(v.some((m) => m.includes('"bad two"'))).toBe(true);
+  });
+});
+
+// ── validateNoProxiedServers (deploy-time proxied-kind rejection) ───────────
+//
+// `kind: 'proxied'` keeps its schema arm (the documented mcp-proxy broker
+// deferral) but is unsupported at runtime — an agent that deploys one boots
+// silently missing those tools. This deploy-time pre-flight (mirrors
+// `validateColocatedServerNames`'s shape) rejects it loudly; the
+// deploy-controller's `resolveMcpServersInSnapshot` throw is the authoritative
+// backstop for code deploys.
+
+describe('validateNoProxiedServers', () => {
+  it('no mcpServers / undefined agent -> clean', () => {
+    expect(validateNoProxiedServers(undefined)).toEqual([]);
+    expect(validateNoProxiedServers({})).toEqual([]);
+  });
+
+  it('a proxied entry is reported with an actionable message', () => {
+    const agent: GuueyAgent = {
+      mcpServers: { saas: { kind: 'proxied', connection: 'conn-1' } },
+    };
+    const v = validateNoProxiedServers(agent);
+    expect(v).toHaveLength(1);
+    expect(v[0]).toContain('"saas"');
+    expect(v[0]).toContain('proxied');
+    expect(v[0]).toContain('not yet supported');
+  });
+
+  it('non-proxied entries (colocated / external / hosted) pass clean', () => {
+    const agent: GuueyAgent = {
+      mcpServers: {
+        local: { kind: 'colocated', source: './mcps/local' },
+        ext: { kind: 'external', url: 'https://mcp.example.com' },
+        reg: { kind: 'hosted', server: 'srv-1' },
+      },
+    };
+    expect(validateNoProxiedServers(agent)).toEqual([]);
+  });
+
+  it('reports every proxied entry across servers', () => {
+    const agent: GuueyAgent = {
+      mcpServers: {
+        a: { kind: 'proxied', connection: 'c1' },
+        good: { kind: 'external', url: 'https://mcp.example.com' },
+        b: { kind: 'proxied', connection: 'c2' },
+      },
+    };
+    const v = validateNoProxiedServers(agent);
+    expect(v).toHaveLength(2);
+    expect(v.some((m) => m.includes('"a"'))).toBe(true);
+    expect(v.some((m) => m.includes('"b"'))).toBe(true);
   });
 });
 

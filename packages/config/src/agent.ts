@@ -112,7 +112,7 @@ const HostedMcp = z
  */
 const ProxiedMcp = z.strictObject({
   kind: z.literal('proxied'),
-  /** mcp-proxy connection id (from `guuey connections add`). */
+  /** mcp-proxy connection id (not yet available — rides with the mcp-proxy credential broker). */
   connection: z.string().min(1),
 });
 
@@ -523,6 +523,39 @@ export function validateColocatedServerNames(
     if (server.kind === 'colocated' && !isValidColocatedServerName(name)) {
       violations.push(
         `colocated MCP server name "${name}" is invalid — use only letters, digits, hyphen, underscore (it becomes part of a URL and a storage scope)`,
+      );
+    }
+  }
+  return violations;
+}
+
+// ── No-proxied-servers validation (deploy-time contract enforcement) ────────
+//
+// `kind: 'proxied'` keeps its schema arm (the documented mcp-proxy
+// credential-broker deferral — wires when the 2nd stored-creds customer signs
+// up) but has NO runtime support today: a pod that booted one would silently
+// miss those tools. `validateNoProxiedServers` is the synchronous deploy-time
+// pre-flight (mirrors `validateColocatedServerNames`'s shape) that rejects it
+// with a fast, actionable error. The deploy-controller's
+// `resolveMcpServersInSnapshot` carries the authoritative backstop throw for
+// code deploys, which never pass through this validator.
+
+/**
+ * Validate that no `agent.mcpServers` entry uses `kind: 'proxied'`. Returns a
+ * list of human-readable violation messages (empty = clean), one per proxied
+ * entry, naming the server so the builder knows which ref to change.
+ */
+export function validateNoProxiedServers(
+  agent: GuueyAgent | undefined,
+): string[] {
+  const violations: string[] = [];
+  const servers = agent?.mcpServers;
+  if (!servers) return violations;
+
+  for (const [name, server] of Object.entries(servers)) {
+    if (server.kind === 'proxied') {
+      violations.push(
+        `MCP server "${name}": kind 'proxied' (the mcp-proxy credential broker) is not yet supported — use 'external', 'hosted', or 'colocated'.`,
       );
     }
   }
