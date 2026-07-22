@@ -76,8 +76,13 @@ export interface Invoke {
    * `priorMemory`: that is thread-scoped conversation memory folded from
    * AgJSON (the persistence-fold's `<thread_memory>` push); this is the
    * user's own cross-session, cross-thread memory file at
-   * `$GUUEY_HOME_DIR/memories/MEMORY.md`. Absent for an anonymous caller
-   * (never read) or an authenticated caller with no memory file yet.
+   * `$GUUEY_HOME_DIR/memories/MEMORY.md`. Present only for an authenticated
+   * caller on the `claude-agent-sdk` framework (close-walls Wave 3 item 1) —
+   * the Router's `recallUserMemory` gate is the single producer and
+   * canonical statement of this invariant. Absent for an anonymous caller
+   * (never read), a non-Claude framework (openai-agents-sdk / google-adk —
+   * no consumer for this field today), or an authenticated Claude caller
+   * with no memory file yet.
    */
   userMemory?: string;
 }
