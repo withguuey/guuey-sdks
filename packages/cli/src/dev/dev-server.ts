@@ -118,9 +118,16 @@ export interface LowerForDevResult {
  * - `external` WITHOUT `devPort` → unchanged (already a real, reachable URL).
  * - `colocated` WITHOUT `devPort` → dropped with a console warning naming the
  *   fix (add `devPort`).
- * - `proxied` / `hosted` WITHOUT `devPort` → no local-dev story yet (v1) —
- *   dropped with a console warning rather than silently failing at invoke
- *   time.
+ * - `hosted` WITHOUT `devPort` carrying `server` (a registry-reuse entry —
+ *   an existing MCP on the guuey fleet) → THROWS, failing the dev boot: the
+ *   fleet isn't reachable from a local `guuey dev` loop, so silently
+ *   dropping it would boot an agent silently missing the tools its system
+ *   prompt promises. Message names both fixes (`devPort` to run a local
+ *   copy, `guuey deploy` to test against the live server).
+ * - `proxied` / `hosted` WITHOUT `devPort` and WITHOUT `server` (still
+ *   build-only — not yet resolved to a registry id by a deploy) → no
+ *   local-dev story yet (v1) — dropped with a console warning rather than
+ *   silently failing at invoke time.
  *
  * Also platform-injects the default local `ggui serve` endpoint when no
  * `ggui` entry is present — mirrors the platform injecting `mcp.ggui.ai` for
@@ -165,6 +172,11 @@ export function lowerForDev(agent: GuueyAgent): LowerForDevResult {
     if (entry.kind === "external") {
       lowered[name] = entry;
       continue;
+    }
+    if (entry.kind === "hosted" && entry.server !== undefined) {
+      throw new Error(
+        `hosted registry MCP "${name}" can't run in guuey dev — it runs on the guuey fleet. Add a devPort to run a local copy, or run 'guuey deploy' to test against the live server.`,
+      );
     }
     console.warn(
       `guuey dev: dropping MCP server "${name}" (kind: ${entry.kind}) — unsupported in local dev v1`,

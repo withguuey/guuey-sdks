@@ -284,11 +284,60 @@ describe("lowerForDev", () => {
     warn.mockRestore();
   });
 
-  it("drops proxied entries", () => {
+  it("drops proxied entries (warns, does not throw)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const lowered = lowerForDev({
       mcpServers: { saas: { kind: "proxied", connection: "conn_123" } },
     });
     expect(lowered.agent.mcpServers?.saas).toBeUndefined();
+    warn.mockRestore();
+  });
+
+  it("throws for a hosted registry-reuse entry (server, no devPort) instead of silently dropping it", () => {
+    expect(() =>
+      lowerForDev({
+        mcpServers: { todo: { kind: "hosted", server: "srv_x" } },
+      }),
+    ).toThrow(/devPort/);
+    expect(() =>
+      lowerForDev({
+        mcpServers: { todo: { kind: "hosted", server: "srv_x" } },
+      }),
+    ).toThrow(/guuey deploy/);
+  });
+
+  it("still lowers a hosted entry with devPort even when it carries `server` (registry write-back)", () => {
+    const lowered = lowerForDev({
+      mcpServers: { todo: { kind: "hosted", server: "srv_x", devPort: 6782 } },
+    });
+    expect(lowered.agent.mcpServers?.todo).toEqual({
+      kind: "external",
+      url: "http://localhost:6782/mcp",
+      transport: "http",
+    });
+  });
+
+  it("still lowers an external entry with devPort", () => {
+    const lowered = lowerForDev({
+      mcpServers: {
+        custom: { kind: "external", url: "https://example.com/mcp", transport: "http", devPort: 6784 },
+      },
+    });
+    expect(lowered.agent.mcpServers?.custom).toEqual({
+      kind: "external",
+      url: "http://localhost:6784/mcp",
+      transport: "http",
+    });
+  });
+
+  it("does not throw for a hosted entry with only `source` (build-only, not yet resolved) and no devPort", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(() =>
+      lowerForDev({
+        mcpServers: { todo: { kind: "hosted", source: "./mcps/todo" } },
+      }),
+    ).not.toThrow();
+    warn.mockRestore();
   });
 
   it("injects the default local ggui server when none is declared", () => {
