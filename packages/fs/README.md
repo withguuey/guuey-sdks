@@ -69,6 +69,21 @@ contract:
   signed-in — by contract, not a deferred feature. Don't put anything there
   you need past the current session.
 
+**Automatic recall is `claude-agent-sdk`-only today.** The three paths above
+— including `homeDir()`'s durable-for-signed-in-users behavior — are the
+same on every framework Guuey hosts. What's framework-scoped is the
+Router's automatic recall: on `claude-agent-sdk`, the platform reads
+`<home>/memories/MEMORY.md` before each turn and injects it into the
+model's context for you, for free. On openai-agents-sdk and google-adk,
+that automatic injection doesn't happen yet — an agent on those frameworks
+can still read/write the same file with plain `node:fs` (as above), it just
+has to do the reading itself. All-framework automatic recall arrives with
+guuey's own memory MCP (a platform tool every framework calls over its
+existing MCP channel). Separately: framework-native memory backends (e.g.
+Google ADK's Vertex MemoryBank) are unsupported on Guuey — they store user
+data outside guuey's deletion boundary, and there's no data-governance
+policy for that yet.
+
 Until the rollout reaches an environment, hosted agents there DO still get
 `GUUEY_HOME_DIR`/`GUUEY_APP_DIR` — pointing at pod-local ephemeral storage.
 Writes to `homeDir()` work, but nothing survives the pod: treat every layer

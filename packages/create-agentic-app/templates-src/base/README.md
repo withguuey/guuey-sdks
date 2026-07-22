@@ -112,10 +112,17 @@ Every deployed invoke gets three bound directories — `$GUUEY_HOME_DIR`
 scratch) — plain `node:fs`, no wrapper API required. Signed-in users get
 durable cross-session memory for free (a platform-owned prompt tells the
 model to read/write `$GUUEY_HOME_DIR/memories/MEMORY.md`); guests never get
-durable storage, by design. Full contract, code examples, and rollout
-status: the "Your agent's filesystem" section of the guuey monorepo's
-`docs/quickstart.md`, or [`@guuey/fs`](https://www.npmjs.com/package/@guuey/fs)'s
-own README — an optional, three-helper sugar layer over the same paths.
+durable storage, by design. **This recall is `claude-agent-sdk`-only today**
+— openai-agents-sdk and google-adk agents get the three bound directories
+but not the automatic memory-file recall; all-framework support arrives
+with guuey's own memory MCP (a platform tool every framework can call over
+its existing MCP channel). Framework-native memory backends (e.g. ADK's
+Vertex MemoryBank) are unsupported on Guuey — they'd store user data
+outside guuey's deletion boundary. Full contract, code examples, and
+rollout status: the "Your agent's filesystem" section of the guuey
+monorepo's `docs/quickstart.md`, or
+[`@guuey/fs`](https://www.npmjs.com/package/@guuey/fs)'s own README — an
+optional, three-helper sugar layer over the same paths.
 
 ## How people talk to your agent
 

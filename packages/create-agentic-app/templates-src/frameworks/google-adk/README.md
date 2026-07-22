@@ -47,7 +47,7 @@ Your factory runs **once per turn** and receives:
 | have the agent **remember the conversation**                     | nothing — `instruction` already carries history + thread memory + working state                                                | automatic (Guuey folds every turn)                                                                                                                                                                                            |
 | store data from your **MCP server's tools** (e.g. the todo list) | `@guuey/state` KV inside the MCP server — scoped per `(user, server)`                                                          | **durable when `GUUEY_KV_URL` is injected — colocated (like `mcps/todo`) and hosted servers get it automatically on deploy**; the scope survives pod restarts and redeploys. Locally (`pnpm dev`) it falls back to in-memory. |
 
-Two honest notes:
+Three honest notes:
 
 - **ADK-native session state does not persist across turns here.** Guuey
   runs your agent with a fresh `InMemoryRunner` per turn (that's what makes
@@ -57,6 +57,12 @@ Two honest notes:
   pre-rendered in `instruction`.
 - **Writing `workingState` for the next turn** is a platform feature in
   flight; today the fold carries what the conversation itself establishes.
+- **Guuey's cross-session `MEMORY.md` file recall is `claude-agent-sdk`-only
+  today** — ADK agents get `guuey.files.home` for their own reads/writes,
+  but not the platform's automatic recall of it into `instruction`.
+  All-framework support arrives with guuey's own memory MCP. Separately,
+  ADK's own durable-memory feature (Vertex MemoryBank) is unsupported on
+  Guuey — it stores user data in GCP, outside guuey's deletion boundary.
 
 The three `guuey.files` paths above are the same platform-wide filesystem
 contract every framework gets (plain paths, `$GUUEY_HOME_DIR`/
