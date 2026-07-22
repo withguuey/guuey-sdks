@@ -49,6 +49,9 @@ import {
   mcpSecretsSet,
   mcpSecretsList,
   mcpSecretsUnset,
+  mcpStateList,
+  mcpStateExport,
+  mcpStateWipe,
 } from './commands/mcp';
 import { mcpNew } from './commands/mcp-new';
 import { workerVerify } from './commands/worker';
@@ -67,6 +70,7 @@ import { checkForUpdate, printUpdateNotice } from './update-check';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { getConfigDir } from './paths';
+import { parseArgs } from './parse-args';
 
 declare const __CLI_VERSION__: string;
 
@@ -74,43 +78,6 @@ const VERSION = typeof __CLI_VERSION__ !== 'undefined' ? __CLI_VERSION__ : '0.0.
 
 // Start update check in background (non-blocking)
 const updateCheckPromise = checkForUpdate(VERSION).catch(() => null);
-
-// ─── Minimal arg parser ──────────────────────────────────────────────
-
-/**
- * Parse CLI arguments into positional commands and named flags.
- *
- * Flags starting with `--` are extracted as key-value pairs. A flag followed
- * by a non-flag value is treated as `key=value`; otherwise it is `key=true`.
- *
- * @param argv - Raw argument list (typically `process.argv.slice(2)`)
- * @returns Parsed `command` positional args and `flags` key-value map
- */
-function parseArgs(argv: string[]): {
-  command: string[];
-  flags: Record<string, string | true>;
-} {
-  const command: string[] = [];
-  const flags: Record<string, string | true> = {};
-
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]!;
-    if (arg.startsWith('--')) {
-      const key = arg.slice(2);
-      const next = argv[i + 1];
-      if (next && !next.startsWith('--')) {
-        flags[key] = next;
-        i++;
-      } else {
-        flags[key] = true;
-      }
-    } else {
-      command.push(arg);
-    }
-  }
-
-  return { command, flags };
-}
 
 // ─── Help text ───────────────────────────────────────────────────────
 
@@ -188,6 +155,22 @@ Hosted MCP Servers:
     --server <id>                Target hosted MCP server (or $GUUEY_MCP_SERVER)
   mcp secrets list               List secret names (values never shown)
   mcp secrets unset NAME         Remove a hosted-MCP secret
+  mcp state list                 List per-user stored-state usage for an MCP server
+    --server <id>                Target hosted MCP server (or --colocated)
+    --colocated <appId>/<name>   Target a colocated MCP server instead of --server
+    --workspace <id>             Owning workspace (or $GUUEY_WORKSPACE; --server only)
+    --json                       Emit the raw scopes array as JSON
+  mcp state export --user <id>   Export one user's stored KV entries as pretty JSON
+    --server <id>                Target hosted MCP server (or --colocated)
+    --colocated <appId>/<name>   Target a colocated MCP server instead of --server
+    -o <file>                    Write the export to a file instead of stdout
+  mcp state wipe --user <id>     Irreversibly delete one user's stored KV entries
+                                 Prompts "Wipe stored state for '<userId>' on
+                                 '<server>'? [y/N]" on a TTY unless --yes;
+                                 refuses outright on a non-interactive session.
+    --server <id>                Target hosted MCP server (or --colocated)
+    --colocated <appId>/<name>   Target a colocated MCP server instead of --server
+    --yes                        Skip the interactive confirmation prompt
   mcp new <name>                 Scaffold a hosted MCP from the shared mcp-base template
     --scope <scope>              Package scope override (default: project scope, or <name> standalone)
                                  Inside a guuey project: scaffolds mcps/<name>/ and wires it
@@ -274,6 +257,8 @@ Environment Variables:
                                  'mcp status' / 'mcp logs' / 'mcp delete'
   GUUEY_MCP_SERVER               Default hosted MCP server for 'mcp status' / 'mcp logs' /
                                  'mcp delete' / 'mcp secrets'
+                                 ('mcp state' resolves via --server / --colocated only, not
+                                 this env var)
 
 Project Config (guuey.json):
   Place a guuey.json in your project root. Non-secret settings
@@ -385,9 +370,27 @@ async function main(): Promise<void> {
               process.exit(1);
           }
           break;
+        case 'state':
+          switch (rest[0]) {
+            case 'list':
+              await mcpStateList(flags);
+              break;
+            case 'export':
+              await mcpStateExport(flags);
+              break;
+            case 'wipe':
+              await mcpStateWipe(flags);
+              break;
+            default:
+              console.error(
+                `Unknown mcp state command: ${rest[0] ?? '(none)'}. Use: list, export, wipe`,
+              );
+              process.exit(1);
+          }
+          break;
         default:
           console.error(
-            `Unknown mcp command: ${action ?? '(none)'}. Use: list, status, deploy, logs, delete, new, secrets`,
+            `Unknown mcp command: ${action ?? '(none)'}. Use: list, status, deploy, logs, delete, new, secrets, state`,
           );
           process.exit(1);
       }

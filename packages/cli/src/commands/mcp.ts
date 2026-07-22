@@ -27,10 +27,11 @@
  *   5. Poll /mcp/deployments/:serverId/:buildNumber/status until live/failed
  */
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createInterface } from 'node:readline';
+import { colocatedResourceUrl } from '@guuey/config';
 import { requireAuth, type AuthTokens } from '../auth';
 import { resolveConfig, type ResolvedConfig } from '../config';
 import { apiRequest, cleanup, packSource, parseApiError } from '../deploy-shared';
@@ -1434,6 +1435,430 @@ export async function mcpDelete(
       console.log('');
       process.exit(1);
     }
+    out.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+}
+
+// ─── mcp state list|export|wipe (spec §4, walls2 T6) ────────────────────
+//
+// The ratified colocated-state admin leg: `guuey mcp state ...` lets a
+// builder inspect/export/wipe end-user KV state on ONE MCP server (hosted
+// or colocated) they administer. It hits the stateApi's Task-8 admin
+// surface (`POST /state/admin.{list,export,wipe}`), NOT the cliApi — same
+// HttpApi origin, same PAT `apiRequest` helper, but a DIFFERENT (flat
+// `{code,message}`) error envelope. `parseApiError` already falls through
+// to its top-level `record.message` branch for a body with no `error`
+// field, so it renders the flat envelope correctly with no changes needed
+// here or in `deploy-shared.ts`.
+
+/** One user's usage row within `guuey mcp state list`'s `admin.list` result. */
+export interface McpStateScopeUsage {
+  userId: string;
+  usedBytes: number;
+  keyCount: number;
+}
+
+/** The stateApi `admin.list` route's `{ result: { scopes } }` response shape. */
+interface McpStateAdminListResponse {
+  result: { scopes: McpStateScopeUsage[] };
+}
+
+/** The stateApi `admin.export` route's `{ result: { entries } }` response shape. */
+interface McpStateAdminExportResponse {
+  result: { entries: Record<string, unknown> };
+}
+
+/** The stateApi `admin.wipe` route's `{ result: { deleted } }` response shape. */
+interface McpStateAdminWipeResponse {
+  result: { deleted: number };
+}
+
+/**
+ * Resolve the target MCP server's admin `serverUrl` for `guuey mcp state
+ * list|export|wipe`: `--colocated <appId>/<name>` composes
+ * `colocatedResourceUrl(appId, name)` directly — a colocated server has no
+ * `McpServer` registry row, so no network round-trip is needed or possible.
+ * `--server <id>` resolves via the T1 status route (`GET
+ * /mcp/servers/:serverId`) to its `runtimeUrl`. Exactly one of the two
+ * flags must be given. `label` is the human-readable ref (the raw flag
+ * value the caller typed) for prompts/messages — never the resolved URL.
+ *
+ * `deps.api` defaults to the real `apiRequest` and exists purely for test
+ * injection (mirrors {@link mcpLogsCore}).
+ */
+export async function resolveMcpStateServerUrl(
+  flags: Record<string, string | true> | undefined,
+  opts: { workspaceId: string; auth: AuthTokens; config: ResolvedConfig },
+  deps?: { api?: typeof apiRequest },
+): Promise<{ ok: true; serverUrl: string; label: string } | { ok: false; error: string }> {
+  const serverFlag = flags?.server;
+  const colocatedFlag = flags?.colocated;
+  const hasServer = typeof serverFlag === 'string' && serverFlag.length > 0;
+  const hasColocated = typeof colocatedFlag === 'string' && colocatedFlag.length > 0;
+
+  if (hasServer && hasColocated) {
+    return {
+      ok: false,
+      error: 'Pass either --server <id> or --colocated <appId>/<name>, not both.',
+    };
+  }
+
+  if (hasColocated) {
+    const ref = colocatedFlag as string;
+    const slash = ref.indexOf('/');
+    if (slash <= 0 || slash === ref.length - 1) {
+      return { ok: false, error: `Invalid --colocated "${ref}". Expected <appId>/<name>.` };
+    }
+    try {
+      return {
+        ok: true,
+        serverUrl: colocatedResourceUrl(ref.slice(0, slash), ref.slice(slash + 1)),
+        label: ref,
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  if (hasServer) {
+    const ref = serverFlag as string;
+    const api = deps?.api ?? apiRequest;
+    const res = await api(
+      opts.auth.pat,
+      opts.config,
+      'GET',
+      `/mcp/servers/${encodeURIComponent(ref)}?workspaceId=${encodeURIComponent(opts.workspaceId)}`,
+    );
+    if (!res.ok) {
+      const data: unknown = await res.json().catch(() => ({}));
+      return { ok: false, error: parseApiError(data, `HTTP ${res.status}`) };
+    }
+    const data = (await res.json()) as McpServerStatusResponse;
+    if (!data.server.runtimeUrl) {
+      return {
+        ok: false,
+        error:
+          `Server '${ref}' has no runtime URL yet — it may not be deployed live. ` +
+          `Run "guuey mcp status ${ref}" to check.`,
+      };
+    }
+    return { ok: true, serverUrl: data.server.runtimeUrl, label: ref };
+  }
+
+  return {
+    ok: false,
+    error: 'No MCP server specified. Pass --server <id> or --colocated <appId>/<name>.',
+  };
+}
+
+/**
+ * Resolve `--workspace <id>` (or `$GUUEY_WORKSPACE`, or the personal-
+ * workspace fallback) ONLY when `--server <id>` is the server-selection
+ * flag in play — a `--colocated` ref composes its URL directly and needs
+ * no workspace resolution at all. Exits the process (mirroring every other
+ * `mcp` command's workspace-resolution failure) when `--server` is given
+ * but no workspace resolves.
+ */
+async function resolveMcpStateWorkspaceIfNeeded(
+  flags: Record<string, string | true> | undefined,
+  auth: AuthTokens,
+  config: ResolvedConfig,
+): Promise<string> {
+  if (typeof flags?.server !== 'string') return '';
+  const workspaceId = await resolveWorkspaceId(flags, process.env, { auth, config });
+  if (!workspaceId) {
+    out.error(
+      'No workspace resolved. Pass --workspace <id>, set GUUEY_WORKSPACE, or check ' +
+        'connectivity — the personal-workspace fallback (GET /v1/me/personal-workspace) also failed.',
+    );
+    process.exit(1);
+  }
+  return workspaceId;
+}
+
+/** Column order for `guuey mcp state list`'s table. */
+const MCP_STATE_LIST_COLUMNS = ['USER ID', 'USED BYTES', 'KEY COUNT'];
+
+/** Build one `out.table` row for `guuey mcp state list`. */
+export function mcpStateScopeRow(scope: McpStateScopeUsage): Record<string, string> {
+  return {
+    'USER ID': scope.userId,
+    'USED BYTES': String(scope.usedBytes),
+    'KEY COUNT': String(scope.keyCount),
+  };
+}
+
+/**
+ * The reusable core of `guuey mcp state list`: POST `/state/admin.list`
+ * and render a table of per-user usage — or the raw `scopes` array with
+ * `--json`.
+ *
+ * `deps.api` defaults to the real `apiRequest` and exists purely for test
+ * injection (mirrors {@link mcpLogsCore}).
+ */
+export async function mcpStateListCore(
+  opts: { serverUrl: string; json: boolean; auth: AuthTokens; config: ResolvedConfig },
+  deps?: { api?: typeof apiRequest },
+): Promise<void> {
+  const api = deps?.api ?? apiRequest;
+  const res = await api(opts.auth.pat, opts.config, 'POST', '/state/admin.list', {
+    serverUrl: opts.serverUrl,
+  });
+  if (!res.ok) {
+    const data: unknown = await res.json().catch(() => ({}));
+    throw new Error(parseApiError(data, `HTTP ${res.status}`));
+  }
+  const data = (await res.json()) as McpStateAdminListResponse;
+
+  if (opts.json) {
+    out.json(data.result.scopes);
+    return;
+  }
+
+  if (data.result.scopes.length === 0) {
+    console.log('  No stored state for this server yet.');
+    return;
+  }
+
+  out.table(data.result.scopes.map(mcpStateScopeRow), MCP_STATE_LIST_COLUMNS);
+}
+
+/**
+ * `guuey mcp state list (--server <id> | --colocated <appId>/<name>) [--workspace <id>] [--json]`
+ *
+ * List per-user stored-state usage for one MCP server as a table — or the
+ * raw `scopes` array with `--json`.
+ */
+export async function mcpStateList(flags?: Record<string, string | true>): Promise<void> {
+  const auth = requireAuth();
+  const config = resolveConfig();
+  const workspaceId = await resolveMcpStateWorkspaceIfNeeded(flags, auth, config);
+
+  const resolved = await resolveMcpStateServerUrl(flags, { workspaceId, auth, config });
+  if (!resolved.ok) {
+    out.error(resolved.error);
+    process.exit(1);
+  }
+
+  try {
+    await mcpStateListCore({ serverUrl: resolved.serverUrl, json: flags?.json === true, auth, config });
+  } catch (err) {
+    out.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+}
+
+/**
+ * The reusable core of `guuey mcp state export`: POST `/state/admin.export`
+ * and either print the entries as pretty JSON to stdout (default) or write
+ * them to `opts.outFile` (`-o <file>`).
+ *
+ * `deps.api` defaults to the real `apiRequest` and exists purely for test
+ * injection (mirrors {@link mcpLogsCore}).
+ */
+export async function mcpStateExportCore(
+  opts: {
+    serverUrl: string;
+    userId: string;
+    /** `-o <file>` target; `undefined` prints to stdout instead. */
+    outFile?: string;
+    auth: AuthTokens;
+    config: ResolvedConfig;
+  },
+  deps?: { api?: typeof apiRequest },
+): Promise<void> {
+  const api = deps?.api ?? apiRequest;
+  const res = await api(opts.auth.pat, opts.config, 'POST', '/state/admin.export', {
+    serverUrl: opts.serverUrl,
+    userId: opts.userId,
+  });
+  if (!res.ok) {
+    const data: unknown = await res.json().catch(() => ({}));
+    throw new Error(parseApiError(data, `HTTP ${res.status}`));
+  }
+  const data = (await res.json()) as McpStateAdminExportResponse;
+  const pretty = JSON.stringify(data.result.entries, null, 2);
+
+  if (opts.outFile) {
+    writeFileSync(opts.outFile, `${pretty}\n`, 'utf-8');
+    out.success(`Wrote state export for '${opts.userId}' to ${opts.outFile}`);
+    return;
+  }
+
+  console.log(pretty);
+}
+
+/**
+ * `guuey mcp state export (--server <id> | --colocated <appId>/<name>) --user <userId> [-o <file>] [--json]`
+ *
+ * Export one user's stored KV entries for an MCP server. Prints pretty
+ * JSON to stdout by default; `-o <file>` writes it to a file instead.
+ * `--json` is accepted for symmetry with `mcp state list` but changes
+ * nothing here — the default output is already the raw pretty-printed
+ * entries, with no table view to switch away from.
+ */
+export async function mcpStateExport(flags?: Record<string, string | true>): Promise<void> {
+  const userId = flags?.user;
+  if (typeof userId !== 'string' || userId.length === 0) {
+    out.error(
+      'Usage: guuey mcp state export (--server <id> | --colocated <appId>/<name>) --user <userId>',
+    );
+    process.exit(1);
+  }
+
+  const auth = requireAuth();
+  const config = resolveConfig();
+  const workspaceId = await resolveMcpStateWorkspaceIfNeeded(flags, auth, config);
+
+  const resolved = await resolveMcpStateServerUrl(flags, { workspaceId, auth, config });
+  if (!resolved.ok) {
+    out.error(resolved.error);
+    process.exit(1);
+  }
+
+  const outFile = typeof flags?.o === 'string' ? flags.o : undefined;
+
+  try {
+    await mcpStateExportCore({ serverUrl: resolved.serverUrl, userId, outFile, auth, config });
+  } catch (err) {
+    out.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+}
+
+/**
+ * Ask `question` on `process.stdin`/`process.stdout` via a one-shot
+ * readline interface and return the raw answer. The default
+ * `deps.confirm` for {@link mcpStateWipeCore} — mirrors `mcp delete`'s
+ * inline readline usage, factored out so tests can inject a fake asker
+ * instead of driving real stdin.
+ */
+async function defaultConfirm(question: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return await new Promise<string>((res) => rl.question(question, res));
+  } finally {
+    rl.close();
+  }
+}
+
+/**
+ * The reusable core of `guuey mcp state wipe`: resolves the destructive-
+ * confirm gate ({@link resolveMcpDeleteConfirmation}, the SAME contract
+ * `mcp delete` uses), asks for confirmation when interactive (via
+ * `deps.confirm`), and POSTs `/state/admin.wipe` only once confirmed.
+ * Unlike `mcp delete` (which puts the confirm flow in its I/O wrapper,
+ * untested), the confirm flow lives HERE — behind injectable `deps.api`
+ * and `deps.confirm` — so the whole refuse/prompt/abort/proceed flow is
+ * unit-testable without touching real stdin or `requireAuth`/`resolveConfig`.
+ *
+ * `deps.api` defaults to the real `apiRequest`; `deps.confirm` defaults to
+ * {@link defaultConfirm}. Both exist purely for test injection.
+ */
+export async function mcpStateWipeCore(
+  opts: {
+    serverUrl: string;
+    userId: string;
+    /** The raw `--server`/`--colocated` ref, for the confirm prompt. */
+    label: string;
+    yes: boolean;
+    stdinIsTTY: boolean | undefined;
+    stdoutIsTTY: boolean | undefined;
+    auth: AuthTokens;
+    config: ResolvedConfig;
+  },
+  deps?: { api?: typeof apiRequest; confirm?: (question: string) => Promise<string> },
+): Promise<
+  | { status: 'refused'; error: string }
+  | { status: 'aborted' }
+  | { status: 'wiped'; deleted: number }
+> {
+  const api = deps?.api ?? apiRequest;
+
+  const confirmation = resolveMcpDeleteConfirmation({
+    yes: opts.yes,
+    stdinIsTTY: opts.stdinIsTTY,
+    stdoutIsTTY: opts.stdoutIsTTY,
+  });
+
+  if (confirmation === 'refuse') {
+    return {
+      status: 'refused',
+      error: `Refusing to wipe state for '${opts.userId}' without confirmation in a non-interactive session. Pass --yes to confirm.`,
+    };
+  }
+
+  if (confirmation === 'prompt') {
+    const ask = deps?.confirm ?? defaultConfirm;
+    const answer = await ask(`  Wipe stored state for '${opts.userId}' on '${opts.label}'? [y/N] `);
+    if (!parseYesNoAnswer(answer)) {
+      return { status: 'aborted' };
+    }
+  }
+
+  const res = await api(opts.auth.pat, opts.config, 'POST', '/state/admin.wipe', {
+    serverUrl: opts.serverUrl,
+    userId: opts.userId,
+  });
+  if (!res.ok) {
+    const data: unknown = await res.json().catch(() => ({}));
+    throw new Error(parseApiError(data, `HTTP ${res.status}`));
+  }
+  const data = (await res.json()) as McpStateAdminWipeResponse;
+  return { status: 'wiped', deleted: data.result.deleted };
+}
+
+/**
+ * `guuey mcp state wipe (--server <id> | --colocated <appId>/<name>) --user <userId> [--yes]`
+ *
+ * Irreversibly deletes one user's stored KV entries for an MCP server.
+ * Destructive — gated by {@link resolveMcpDeleteConfirmation} via
+ * {@link mcpStateWipeCore}: an interactive TTY session prompts "Wipe
+ * stored state for '<userId>' on '<server>'? [y/N]" unless `--yes` is
+ * passed; a non-interactive session without `--yes` refuses outright.
+ */
+export async function mcpStateWipe(flags?: Record<string, string | true>): Promise<void> {
+  const userId = flags?.user;
+  if (typeof userId !== 'string' || userId.length === 0) {
+    out.error(
+      'Usage: guuey mcp state wipe (--server <id> | --colocated <appId>/<name>) --user <userId>',
+    );
+    process.exit(1);
+  }
+
+  const auth = requireAuth();
+  const config = resolveConfig();
+  const workspaceId = await resolveMcpStateWorkspaceIfNeeded(flags, auth, config);
+
+  const resolved = await resolveMcpStateServerUrl(flags, { workspaceId, auth, config });
+  if (!resolved.ok) {
+    out.error(resolved.error);
+    process.exit(1);
+  }
+
+  try {
+    const result = await mcpStateWipeCore({
+      serverUrl: resolved.serverUrl,
+      userId,
+      label: resolved.label,
+      yes: flags?.yes === true,
+      stdinIsTTY: process.stdin.isTTY,
+      stdoutIsTTY: process.stdout.isTTY,
+      auth,
+      config,
+    });
+
+    if (result.status === 'refused') {
+      out.error(result.error);
+      process.exit(1);
+    }
+    if (result.status === 'aborted') {
+      console.log('  Aborted.');
+      return;
+    }
+    out.success(`Wiped ${result.deleted} entries`);
+  } catch (err) {
     out.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
   }

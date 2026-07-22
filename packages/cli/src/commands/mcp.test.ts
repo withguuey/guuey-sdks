@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
@@ -28,6 +28,11 @@ import {
   pollMcpDeleteStatus,
   mcpDeleteCore,
   McpDeleteGrantsExistError,
+  resolveMcpStateServerUrl,
+  mcpStateScopeRow,
+  mcpStateListCore,
+  mcpStateExportCore,
+  mcpStateWipeCore,
   type McpDeploymentInfo,
   type McpServerListItem,
 } from './mcp.js';
@@ -1043,5 +1048,427 @@ describe('mcpDeleteCore', () => {
     await expect(
       mcpDeleteCore({ serverId: 'srv-1', workspaceId: 'ws-1', force: false, auth, config }, { api }),
     ).rejects.toThrow('MCP server srv-1 not found');
+  });
+});
+
+// ─── guuey mcp state list|export|wipe (walls2 T6) ──────────────────────
+
+describe('resolveMcpStateServerUrl', () => {
+  const auth: AuthTokens = { pat: 'pat-test', expiresAt: '2099-01-01T00:00:00.000Z' };
+  const config: ResolvedConfig = { host: 'https://guuey.test', apiUrl: 'https://api.guuey.test' };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('--colocated composes colocatedResourceUrl(appId, name) with no API call', async () => {
+    const api: typeof apiRequest = vi.fn(async () => {
+      throw new Error('should not be called for --colocated');
+    });
+
+    const result = await resolveMcpStateServerUrl(
+      { colocated: 'app_abc123/notes' },
+      { workspaceId: '', auth, config },
+      { api },
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      serverUrl: 'https://colocated.guuey.com/app_abc123/notes/',
+      label: 'app_abc123/notes',
+    });
+    expect(api).not.toHaveBeenCalled();
+  });
+
+  it('--colocated without a slash returns an error', async () => {
+    const result = await resolveMcpStateServerUrl(
+      { colocated: 'no-slash-here' },
+      { workspaceId: '', auth, config },
+    );
+    expect(result).toEqual({ ok: false, error: expect.stringContaining('Invalid --colocated') });
+  });
+
+  it('--server resolves via GET /mcp/servers/:serverId to runtimeUrl', async () => {
+    const calls: { method: string; path: string }[] = [];
+    const api: typeof apiRequest = vi.fn(async (_pat, _cfg, method, path) => {
+      calls.push({ method, path });
+      return new Response(
+        JSON.stringify({
+          server: {
+            serverId: 'srv-1',
+            name: 'mcp-weather',
+            hostingStatus: 'live',
+            size: 'sm',
+            runtimeUrl: 'https://srv-1.mcp.guuey.com',
+            updatedAt: '2026-07-01T00:00:00Z',
+          },
+          deployments: [],
+          grantCount: 0,
+        }),
+        { status: 200 },
+      );
+    });
+
+    const result = await resolveMcpStateServerUrl(
+      { server: 'srv-1' },
+      { workspaceId: 'ws-1', auth, config },
+      { api },
+    );
+
+    expect(calls).toEqual([{ method: 'GET', path: '/mcp/servers/srv-1?workspaceId=ws-1' }]);
+    expect(result).toEqual({ ok: true, serverUrl: 'https://srv-1.mcp.guuey.com', label: 'srv-1' });
+  });
+
+  it('--server with no runtimeUrl yet returns an actionable error', async () => {
+    const api: typeof apiRequest = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          server: {
+            serverId: 'srv-1',
+            name: 'mcp-weather',
+            hostingStatus: 'building',
+            size: 'sm',
+            updatedAt: '2026-07-01T00:00:00Z',
+          },
+          deployments: [],
+          grantCount: 0,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await resolveMcpStateServerUrl(
+      { server: 'srv-1' },
+      { workspaceId: 'ws-1', auth, config },
+      { api },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: expect.stringContaining('no runtime URL yet'),
+    });
+  });
+
+  it('--server API failure surfaces the parseApiError message', async () => {
+    const api: typeof apiRequest = vi.fn(async () =>
+      new Response(JSON.stringify({ error: 'MCP server srv-1 not found' }), { status: 404 }),
+    );
+
+    const result = await resolveMcpStateServerUrl(
+      { server: 'srv-1' },
+      { workspaceId: 'ws-1', auth, config },
+      { api },
+    );
+
+    expect(result).toEqual({ ok: false, error: 'MCP server srv-1 not found' });
+  });
+
+  it('neither --server nor --colocated returns an error', async () => {
+    const result = await resolveMcpStateServerUrl(undefined, { workspaceId: '', auth, config });
+    expect(result).toEqual({ ok: false, error: expect.stringContaining('No MCP server specified') });
+  });
+
+  it('both --server and --colocated returns an error', async () => {
+    const result = await resolveMcpStateServerUrl(
+      { server: 'srv-1', colocated: 'app1/notes' },
+      { workspaceId: 'ws-1', auth, config },
+    );
+    expect(result).toEqual({ ok: false, error: expect.stringContaining('not both') });
+  });
+});
+
+describe('mcpStateScopeRow', () => {
+  it('maps a scope-usage row to table columns', () => {
+    expect(mcpStateScopeRow({ userId: 'u-1', usedBytes: 512, keyCount: 3 })).toEqual({
+      'USER ID': 'u-1',
+      'USED BYTES': '512',
+      'KEY COUNT': '3',
+    });
+  });
+});
+
+describe('mcpStateListCore', () => {
+  const auth: AuthTokens = { pat: 'pat-test', expiresAt: '2099-01-01T00:00:00.000Z' };
+  const config: ResolvedConfig = { host: 'https://guuey.test', apiUrl: 'https://api.guuey.test' };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('POSTs /state/admin.list with {serverUrl} and renders a table', async () => {
+    const calls: { method: string; path: string; body: unknown }[] = [];
+    const api: typeof apiRequest = vi.fn(async (_pat, _cfg, method, path, body) => {
+      calls.push({ method, path, body });
+      return new Response(
+        JSON.stringify({ result: { scopes: [{ userId: 'u-1', usedBytes: 512, keyCount: 3 }] } }),
+        { status: 200 },
+      );
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await mcpStateListCore(
+      { serverUrl: 'https://srv-1.mcp.guuey.com', json: false, auth, config },
+      { api },
+    );
+
+    expect(calls).toEqual([
+      {
+        method: 'POST',
+        path: '/state/admin.list',
+        body: { serverUrl: 'https://srv-1.mcp.guuey.com' },
+      },
+    ]);
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain('u-1');
+  });
+
+  it('--json emits the raw scopes array', async () => {
+    const api: typeof apiRequest = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ result: { scopes: [{ userId: 'u-1', usedBytes: 512, keyCount: 3 }] } }),
+        { status: 200 },
+      ),
+    );
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await mcpStateListCore(
+      { serverUrl: 'https://srv-1.mcp.guuey.com', json: true, auth, config },
+      { api },
+    );
+
+    const printed = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(JSON.parse(printed)).toEqual([{ userId: 'u-1', usedBytes: 512, keyCount: 3 }]);
+  });
+
+  it('empty scopes prints a friendly line, not an empty table', async () => {
+    const api: typeof apiRequest = vi.fn(async () =>
+      new Response(JSON.stringify({ result: { scopes: [] } }), { status: 200 }),
+    );
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await mcpStateListCore(
+      { serverUrl: 'https://srv-1.mcp.guuey.com', json: false, auth, config },
+      { api },
+    );
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain('No stored state');
+  });
+
+  it('stateApi flat {code,message} error envelope surfaces via the thrown message', async () => {
+    const api: typeof apiRequest = vi.fn(async () =>
+      new Response(JSON.stringify({ code: 'FORBIDDEN', message: "caller's workspace does not own this server" }), {
+        status: 403,
+      }),
+    );
+
+    await expect(
+      mcpStateListCore({ serverUrl: 'https://srv-1.mcp.guuey.com', json: false, auth, config }, { api }),
+    ).rejects.toThrow("caller's workspace does not own this server");
+  });
+});
+
+describe('mcpStateExportCore', () => {
+  const auth: AuthTokens = { pat: 'pat-test', expiresAt: '2099-01-01T00:00:00.000Z' };
+  const config: ResolvedConfig = { host: 'https://guuey.test', apiUrl: 'https://api.guuey.test' };
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'guuey-state-export-'));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('POSTs /state/admin.export with {serverUrl, userId} and prints pretty JSON to stdout by default', async () => {
+    const calls: { method: string; path: string; body: unknown }[] = [];
+    const api: typeof apiRequest = vi.fn(async (_pat, _cfg, method, path, body) => {
+      calls.push({ method, path, body });
+      return new Response(JSON.stringify({ result: { entries: { foo: 'bar' } } }), { status: 200 });
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await mcpStateExportCore(
+      { serverUrl: 'https://srv-1.mcp.guuey.com', userId: 'u-1', auth, config },
+      { api },
+    );
+
+    expect(calls).toEqual([
+      {
+        method: 'POST',
+        path: '/state/admin.export',
+        body: { serverUrl: 'https://srv-1.mcp.guuey.com', userId: 'u-1' },
+      },
+    ]);
+    const printed = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(JSON.parse(printed)).toEqual({ foo: 'bar' });
+  });
+
+  it('-o writes the export to a file instead of stdout', async () => {
+    const api: typeof apiRequest = vi.fn(async () =>
+      new Response(JSON.stringify({ result: { entries: { foo: 'bar' } } }), { status: 200 }),
+    );
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const outFile = join(dir, 'export.json');
+
+    await mcpStateExportCore(
+      { serverUrl: 'https://srv-1.mcp.guuey.com', userId: 'u-1', outFile, auth, config },
+      { api },
+    );
+
+    const written = JSON.parse(readFileSync(outFile, 'utf-8')) as unknown;
+    expect(written).toEqual({ foo: 'bar' });
+    const printed = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).not.toContain('"foo"');
+  });
+
+  it('stateApi flat error envelope surfaces via the thrown message', async () => {
+    const api: typeof apiRequest = vi.fn(async () =>
+      new Response(JSON.stringify({ code: 'UNAUTHORIZED', message: 'invalid PAT' }), { status: 401 }),
+    );
+
+    await expect(
+      mcpStateExportCore({ serverUrl: 'https://srv-1.mcp.guuey.com', userId: 'u-1', auth, config }, { api }),
+    ).rejects.toThrow('invalid PAT');
+  });
+});
+
+describe('mcpStateWipeCore', () => {
+  const auth: AuthTokens = { pat: 'pat-test', expiresAt: '2099-01-01T00:00:00.000Z' };
+  const config: ResolvedConfig = { host: 'https://guuey.test', apiUrl: 'https://api.guuey.test' };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('--yes skips confirmation and POSTs /state/admin.wipe with {serverUrl, userId}', async () => {
+    const calls: { method: string; path: string; body: unknown }[] = [];
+    const api: typeof apiRequest = vi.fn(async (_pat, _cfg, method, path, body) => {
+      calls.push({ method, path, body });
+      return new Response(JSON.stringify({ result: { deleted: 5 } }), { status: 200 });
+    });
+
+    const result = await mcpStateWipeCore(
+      {
+        serverUrl: 'https://srv-1.mcp.guuey.com',
+        userId: 'u-1',
+        label: 'srv-1',
+        yes: true,
+        stdinIsTTY: false,
+        stdoutIsTTY: false,
+        auth,
+        config,
+      },
+      { api },
+    );
+
+    expect(calls).toEqual([
+      {
+        method: 'POST',
+        path: '/state/admin.wipe',
+        body: { serverUrl: 'https://srv-1.mcp.guuey.com', userId: 'u-1' },
+      },
+    ]);
+    expect(result).toEqual({ status: 'wiped', deleted: 5 });
+  });
+
+  it('non-TTY without --yes refuses without ever calling the API', async () => {
+    const api: typeof apiRequest = vi.fn(async () => {
+      throw new Error('should not be called');
+    });
+
+    const result = await mcpStateWipeCore(
+      {
+        serverUrl: 'https://srv-1.mcp.guuey.com',
+        userId: 'u-1',
+        label: 'srv-1',
+        yes: false,
+        stdinIsTTY: false,
+        stdoutIsTTY: false,
+        auth,
+        config,
+      },
+      { api },
+    );
+
+    expect(result.status).toBe('refused');
+    expect(api).not.toHaveBeenCalled();
+  });
+
+  it('interactive session prompts and aborts on "n" without calling the API', async () => {
+    const api: typeof apiRequest = vi.fn(async () => {
+      throw new Error('should not be called');
+    });
+    const confirm = vi.fn(async (question: string) => {
+      expect(question).toContain("Wipe stored state for 'u-1' on 'srv-1'");
+      return 'n';
+    });
+
+    const result = await mcpStateWipeCore(
+      {
+        serverUrl: 'https://srv-1.mcp.guuey.com',
+        userId: 'u-1',
+        label: 'srv-1',
+        yes: false,
+        stdinIsTTY: true,
+        stdoutIsTTY: true,
+        auth,
+        config,
+      },
+      { api, confirm },
+    );
+
+    expect(result.status).toBe('aborted');
+    expect(api).not.toHaveBeenCalled();
+    expect(confirm).toHaveBeenCalledTimes(1);
+  });
+
+  it('interactive session prompts and proceeds on "y"', async () => {
+    const api: typeof apiRequest = vi.fn(async () =>
+      new Response(JSON.stringify({ result: { deleted: 2 } }), { status: 200 }),
+    );
+    const confirm = vi.fn(async () => 'y');
+
+    const result = await mcpStateWipeCore(
+      {
+        serverUrl: 'https://srv-1.mcp.guuey.com',
+        userId: 'u-1',
+        label: 'srv-1',
+        yes: false,
+        stdinIsTTY: true,
+        stdoutIsTTY: true,
+        auth,
+        config,
+      },
+      { api, confirm },
+    );
+
+    expect(result).toEqual({ status: 'wiped', deleted: 2 });
+  });
+
+  it('stateApi flat error envelope surfaces via the thrown message', async () => {
+    const api: typeof apiRequest = vi.fn(async () =>
+      new Response(JSON.stringify({ code: 'FORBIDDEN', message: 'admin op requires admin role' }), {
+        status: 403,
+      }),
+    );
+
+    await expect(
+      mcpStateWipeCore(
+        {
+          serverUrl: 'https://srv-1.mcp.guuey.com',
+          userId: 'u-1',
+          label: 'srv-1',
+          yes: true,
+          stdinIsTTY: false,
+          stdoutIsTTY: false,
+          auth,
+          config,
+        },
+        { api },
+      ),
+    ).rejects.toThrow('admin op requires admin role');
   });
 });
