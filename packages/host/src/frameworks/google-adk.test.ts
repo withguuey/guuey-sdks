@@ -9,8 +9,10 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import type { BaseLlmConnection, LlmRequest, LlmResponse } from "@google/adk";
 import type { Emitter, JsonValue, StopReason } from "@guuey/worker";
 import type { HostTurn } from "../index.js";
+import { withContextPreamble } from "../preamble.js";
 import { buildToolsets, finalTextOf, loadAdk, runAdkTurn } from "./google-adk.js";
 
 // ── fakes ────────────────────────────────────────────────────────────────────
@@ -160,6 +162,70 @@ describe("runAdkTurn — the wire contract", () => {
     expect(got.order).toEqual(["hello", "error"]);
     expect(got.error[0]).toMatch(/boom at session/);
     expect(got.done).toHaveLength(0);
+  });
+});
+
+// ── F7: instruction as function bypasses ADK's {var} substitution ──────────
+//
+// ADK's `canonicalInstruction` only routes a STRING instruction through
+// `injectSessionState` (`requireStateInjection: true`, verified against the
+// installed 1.3.0 source at agents/llm_agent.js +
+// agents/processors/instructions_llm_request_processor.js); a function
+// instruction (`InstructionProvider`) sets `requireStateInjection: false` and
+// is never substituted. Our preamble embeds user-authored conversation
+// content, so a STRING-instruction agent crashes on a turn whose input
+// contains `{anything}`-shaped text. These tests drive the REAL @google/adk
+// `LlmAgent` + `InMemoryRunner` runtime loop (a fake `BaseLlm` subclass
+// stands in for the network call, so nothing here hits a real model) — the
+// crash is reproducible in-harness, not just a type-level claim.
+
+async function buildRealAgentWithInstruction(instruction: string | (() => string)): Promise<object> {
+  const RealAdk = await import("@google/adk");
+  class FakeLlm extends RealAdk.BaseLlm {
+    async *generateContentAsync(_llmRequest: LlmRequest): AsyncGenerator<LlmResponse, void> {
+      yield { content: { role: "model", parts: [{ text: "fake reply" }] } };
+    }
+    async connect(_llmRequest: LlmRequest): Promise<BaseLlmConnection> {
+      throw new Error("connect() not used in this test — streamingMode 'sse' never calls it");
+    }
+  }
+  return new RealAdk.LlmAgent({
+    name: "guuey",
+    model: new FakeLlm({ model: "fake-model" }),
+    instruction,
+    tools: [],
+  });
+}
+
+const BRACE_TURN: HostTurn = {
+  ...TURN,
+  input: "please format the answer as {anything} for me",
+};
+const BRACE_PREAMBLE = withContextPreamble(
+  "Be terse.",
+  [{ role: "user", text: "please format the answer as {anything} for me" }],
+  undefined,
+  undefined,
+);
+
+describe("F7 — instruction as function bypasses ADK's {var} substitution (real SDK)", () => {
+  it("STRING instruction throws Context-variable-not-found on {anything} user content (RED)", async () => {
+    const agent = await buildRealAgentWithInstruction(BRACE_PREAMBLE);
+    const adk = await loadAdk();
+    const { emit, got } = fakeEmitter();
+    await runAdkTurn(adk, agent, BRACE_TURN, emit, "1.3.0");
+    expect(got.error).toHaveLength(1);
+    expect(got.error[0]).toMatch(/Context variable not found.*anything/);
+    expect(got.done).toHaveLength(0);
+  });
+
+  it("FUNCTION instruction survives the same {anything} user content (GREEN)", async () => {
+    const agent = await buildRealAgentWithInstruction(() => BRACE_PREAMBLE);
+    const adk = await loadAdk();
+    const { emit, got } = fakeEmitter();
+    await runAdkTurn(adk, agent, BRACE_TURN, emit, "1.3.0");
+    expect(got.error).toEqual([]);
+    expect(got.done[0]?.result).toBe("fake reply");
   });
 });
 

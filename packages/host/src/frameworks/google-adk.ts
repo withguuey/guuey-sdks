@@ -95,7 +95,17 @@ interface AdkModule {
   LlmAgent: new (params: {
     name: string;
     model: string;
-    instruction: string;
+    // `string | InstructionProvider` in the real SDK (verified against the
+    // installed 1.3.0 typings, `agents/llm_agent.d.ts`); `() => string`
+    // (the zero-arg slice we actually construct) is a valid InstructionProvider
+    // — ADK invokes it with a context argument our closures simply ignore.
+    // F7: a plain string instruction goes through ADK's `{var}` session-state
+    // substitution (`canonicalInstruction` → `requireStateInjection: true`);
+    // our preamble embeds user-authored conversation content, so a message
+    // containing `{anything}` throws `Context variable not found` and kills
+    // the turn. The function form sets `requireStateInjection: false`,
+    // bypassing substitution entirely.
+    instruction: string | (() => string);
     tools: unknown[];
   }) => AdkAgent;
   InMemoryRunner: new (params: { agent: AdkAgent }) => AdkRunner;
@@ -327,11 +337,15 @@ export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
           const ctx = buildGuueyContext(snapshot, turn, instruction, toolsets);
           agent = await materializeAgent(exported, ctx, (message) => process.stderr.write(`${message}\n`));
         } else {
-          // No-code: construct from the snapshot.
+          // No-code: construct from the snapshot. `instruction` rides as a
+          // function (F7, see AdkModule) — the preamble embeds user-authored
+          // conversation content that may itself contain `{...}`, and a
+          // string instruction would run it through ADK's session-state
+          // substitution.
           agent = new adk.LlmAgent({
             name: "guuey",
             model: snapshot.model ?? DEFAULT_MODEL,
-            instruction,
+            instruction: () => instruction,
             tools: toolsets,
           });
         }

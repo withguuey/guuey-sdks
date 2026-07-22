@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import type { Emitter, JsonValue, StopReason } from "@guuey/worker";
 import { assertGracefulSupport, loadRunner, type HostTurn } from "../index.js";
+import { withContextPreamble } from "../preamble.js";
 import { createRunner, importConditionEntry, loadAdk } from "./google-adk.js";
 
 function fakeEmitter() {
@@ -50,7 +51,14 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     const captured: { agent?: unknown; runAsync?: unknown; toolsets: unknown[] } = { toolsets: [] };
     const fakeAdk = {
       LlmAgent: class {
-        constructor(public readonly params: { name: string; model: string; instruction: string; tools: unknown[] }) {
+        constructor(
+          public readonly params: {
+            name: string;
+            model: string;
+            instruction: string | (() => string);
+            tools: unknown[];
+          },
+        ) {
           captured.agent = this;
         }
       },
@@ -84,13 +92,24 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     await runner.runTurn({ model: "gemini-3.5-pro", systemPrompt: "be terse" }, turn, emit);
 
     expect(got.error).toEqual([]);
-    const agent = captured.agent as { params: { name: string; model: string; instruction: string; tools: unknown[] } };
+    const agent = captured.agent as {
+      params: { name: string; model: string; instruction: string | (() => string); tools: unknown[] };
+    };
     expect(agent.params.model).toBe("gemini-3.5-pro");
+    // F7: instruction rides as a FUNCTION, never a raw string — a string
+    // instruction is routed through ADK's `{var}` session-state substitution,
+    // and the preamble embeds user-authored conversation content that may
+    // itself contain `{...}` (see google-adk.test.ts for the crash proof
+    // against the real SDK). Invoking it must return the EXACT preamble
+    // `withContextPreamble` assembles — byte-identical to the old string form.
+    expect(typeof agent.params.instruction).toBe("function");
+    const resolvedInstruction = (agent.params.instruction as () => string)();
+    expect(resolvedInstruction).toBe(withContextPreamble("be terse", turn.history, turn.priorMemory, turn.priorState));
     // preamble AUTO-INJECTED (history + memory + state) even in no-code:
-    expect(agent.params.instruction).toContain("<conversation_history>");
-    expect(agent.params.instruction).toContain("<thread_memory>");
-    expect(agent.params.instruction).toContain("<working_state>");
-    expect(agent.params.instruction.endsWith("be terse")).toBe(true);
+    expect(resolvedInstruction).toContain("<conversation_history>");
+    expect(resolvedInstruction).toContain("<thread_memory>");
+    expect(resolvedInstruction).toContain("<working_state>");
+    expect(resolvedInstruction.endsWith("be terse")).toBe(true);
     expect(agent.params.tools).toHaveLength(1);
     expect(captured.toolsets[0]).toEqual({
       type: "StreamableHTTPConnectionParams",
@@ -116,7 +135,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     );
     const fakeAdk = {
       LlmAgent: class {
-        constructor(_: { name: string; model: string; instruction: string; tools: unknown[] }) {}
+        constructor(_: { name: string; model: string; instruction: string | (() => string); tools: unknown[] }) {}
       },
       MCPToolset: class {
         constructor(_: unknown) {}
