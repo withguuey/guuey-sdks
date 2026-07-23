@@ -109,10 +109,14 @@ export function parseControl(line: string): ControlMessage {
         // preserved; `priorMemory` is omitted when empty/absent.
         ...(priorMemory ? { priorMemory } : {}),
         ...(raw.priorState !== undefined ? { priorState: raw.priorState } : {}),
-        // Task 3 prompted-file memory (guueyfs-slice4 spec §4) — DISTINCT from
-        // `priorMemory` above (see the `Invoke.userMemory` doc). Omitted when
-        // absent/non-string so it never lands on the typed Invoke as `undefined`.
+        // memory-mcp prompted memory (spec §4) — DISTINCT from `priorMemory`
+        // above (see the `Invoke.userMemory` doc). Omitted when absent/non-string
+        // so it never lands on the typed Invoke as `undefined`.
         ...(typeof raw.userMemory === "string" ? { userMemory: raw.userMemory } : {}),
+        // memory-mcp T5: the memory-child attachment signal — gates the SAVE
+        // instruction (all three frameworks) independent of `userMemory`.
+        // Omitted unless a real boolean so it never lands as `undefined`.
+        ...(typeof raw.memoryAttached === "boolean" ? { memoryAttached: raw.memoryAttached } : {}),
       };
     }
     case "shutdown":

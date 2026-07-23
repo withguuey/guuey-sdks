@@ -113,16 +113,19 @@ export function renderUserMemoryRecall(userMemory: string): string {
  * it appends after `withContextPreamble`'s output (mirror where each framework
  * places that preamble).
  *
- * Callers own the GATE, which differs by framework:
- *  - Claude renders it for an authenticated caller with fs bound (its own
- *    guest/no-fs guard, unchanged), passing `ctx.userMemory` (possibly absent
- *    → save-only, for a brand-new user with no memory file yet).
- *  - OpenAI/ADK render it iff `invoke.userMemory` is present — and presence of
- *    `userMemory` IMPLIES the memory child is attached: the Router only reads
- *    the file when `authenticated && memoryAttached` (memory-mcp spec §4 gate),
- *    the SAME signal T4's splice uses to inject the `save_memory` tool. The
- *    splice and this gate are COUPLED, so a rendered save instruction always
- *    names a tool that exists.
+ * TWO gates, and they are DIFFERENT (memory-mcp T5 review):
+ *  - The SAVE instruction gates on `authenticated && memoryAttached` — owned by
+ *    the CALLER (all three adapters identically). `memoryAttached` is the pod-
+ *    boot signal that the memory child booted, which is the SAME signal T4's
+ *    splice uses to inject the `save_memory` tool. The splice and this gate are
+ *    COUPLED in BOTH directions: no false positive (a rendered save instruction
+ *    always names a live tool) AND no false NEGATIVE — a brand-new authenticated
+ *    user with no `MEMORY.md` yet STILL gets the save instruction (save-only),
+ *    so turn-one durable memory can bootstrap. Gating the save on `userMemory`
+ *    presence instead was the bootstrap gap this review fixed.
+ *  - The RECALL block gates on `userMemory` presence — owned HERE (the ternary
+ *    below). Absent → save-only section; present → save + the byte-identical
+ *    recall block.
  */
 export function renderMemorySection(userMemory: string | undefined): string {
   return `\n\n${MEMORY_SAVE_INSTRUCTION}${userMemory ? renderUserMemoryRecall(userMemory) : ""}`;

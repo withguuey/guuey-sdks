@@ -39,6 +39,13 @@ export interface HostInvoke {
   priorMemory?: PriorMemoryRecord[];
   priorState?: JsonValue;
   userMemory?: string;
+  /**
+   * Whether the memory MCP child booted this pod (memory-mcp T5) — gates the
+   * SAVE instruction on `authenticated && memoryAttached`, independent of
+   * `userMemory` (the bootstrap fix). See `Invoke.memoryAttached` in
+   * `@guuey/worker`.
+   */
+  memoryAttached?: boolean;
 }
 
 /** Per-process config the worker resolves once at boot. */
@@ -142,6 +149,7 @@ export async function runInvoke(
       ...(invoke.priorMemory !== undefined ? { priorMemory: invoke.priorMemory } : {}),
       ...(invoke.priorState !== undefined ? { priorState: invoke.priorState } : {}),
       ...(invoke.userMemory !== undefined ? { userMemory: invoke.userMemory } : {}),
+      ...(invoke.memoryAttached !== undefined ? { memoryAttached: invoke.memoryAttached } : {}),
     };
     options = buildOptions(snapshot, ctx);
   } catch (err) {

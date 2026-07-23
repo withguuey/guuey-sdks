@@ -80,11 +80,25 @@ export interface Invoke {
    * when the memory MCP child is attached this pod (the Router's
    * `recallUserMemory` gate — `authenticated && memoryAttached`, the single
    * producer and canonical statement of this invariant), for ANY framework
-   * (all three renderers consume it). Absent for an anonymous caller (never
-   * read), a memory-off / pre-rollout pod, or an authenticated caller with no
-   * memory file yet.
+   * (all three renderers consume it as the RECALL block). Absent for an
+   * anonymous caller (never read), a memory-off / pre-rollout pod, or — the
+   * bootstrap case — an authenticated caller on an attached pod with no memory
+   * file YET (turn one): {@link memoryAttached} is still true, so the SAVE
+   * instruction still renders (save-only) even though this is absent.
    */
   userMemory?: string;
+  /**
+   * Whether the auto-injected memory MCP child booted with a ready port this
+   * pod (memory-mcp T5) — the pod-boot constant the Router threads from
+   * `SseServerOptions.memoryAttached`. When true, an AUTHENTICATED invoke has
+   * the `save_memory` tool spliced (T4), so all three framework renderers emit
+   * the SAVE instruction — independent of whether {@link userMemory} exists
+   * (fixing the bootstrap gap: turn one, no file yet, the model must still be
+   * told the tool exists). Absent/false → no memory tool → no SAVE instruction.
+   * DISTINCT from {@link userMemory}, which gates only the RECALL block: the
+   * SAVE gate is attachment, the RECALL gate is file presence.
+   */
+  memoryAttached?: boolean;
 }
 /** Graceful termination (also signalled by stdin EOF). */
 export interface Shutdown {

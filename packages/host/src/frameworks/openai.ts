@@ -139,20 +139,22 @@ export async function runInvokeOpenai(
         )}). The CLI inlines {file} references before upload; workers never read the filesystem.`,
       );
     }
-    // `instructions` = the context preamble PLUS, when the Router pushed
-    // recalled user memory, the framework-blind memory section (memory-mcp T5:
-    // save `save_memory` instruction + RECALL block, identical to the Claude &
-    // ADK renderers). Gated on `userMemory` presence — which implies the memory
-    // child is attached (the Router reads the file only when
-    // `authenticated && memoryAttached`, the SAME signal that splices the
-    // `save_memory` tool), so the save instruction always names a live tool.
+    // `instructions` = the context preamble PLUS the framework-blind memory
+    // section (memory-mcp T5: `save_memory` instruction + optional RECALL block,
+    // identical to the Claude & ADK renderers). The SAVE half is gated on
+    // `authenticated && memoryAttached` — the memory child booted, so the
+    // `save_memory` tool is spliced (T4) — NOT on `userMemory` presence: a
+    // brand-new authenticated user has no file yet but must still be told the
+    // tool exists (the bootstrap fix). The RECALL block inside
+    // `renderMemorySection` stays gated on `userMemory` presence.
+    const memoryOn = invoke.identity.authMode === "authenticated" && invoke.memoryAttached === true;
     instructions =
       withContextPreamble(
         snapshot.systemPrompt ?? GUUEY_DEFAULT_SYSTEM_PROMPT,
         ctx.history,
         ctx.priorMemory,
         ctx.priorState,
-      ) + (invoke.userMemory !== undefined ? renderMemorySection(invoke.userMemory) : "");
+      ) + (memoryOn ? renderMemorySection(invoke.userMemory) : "");
     mcpServers = buildOpenaiMcpServers(ctx);
   } catch (err) {
     emit.error(err instanceof Error ? err.message : String(err));

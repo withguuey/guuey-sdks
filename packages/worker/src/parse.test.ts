@@ -123,6 +123,38 @@ describe("parseControl", () => {
     if (!isInvoke(msg)) throw new Error("expected invoke");
     expect("userMemory" in msg).toBe(false);
   });
+
+  it("round-trips memoryAttached (boolean) onto the typed Invoke (memory-mcp T5 SAVE-gate signal)", () => {
+    const withAttach = JSON.stringify({
+      type: "invoke",
+      input: "go",
+      identity: { userId: "u", authMode: "authenticated" },
+      fs: { app: "/app", home: "/home", session: "/session" },
+      history: [],
+      memoryAttached: true,
+    });
+    const msg = parseControl(withAttach);
+    if (!isInvoke(msg)) throw new Error("expected invoke");
+    expect(msg.memoryAttached).toBe(true);
+  });
+
+  it("omits memoryAttached when absent or non-boolean (never lands as undefined)", () => {
+    const bare = parseControl(INVOKE);
+    if (!isInvoke(bare)) throw new Error("expected invoke");
+    expect("memoryAttached" in bare).toBe(false);
+    // A non-boolean is dropped, not coerced.
+    const nonBool = parseControl(
+      JSON.stringify({
+        type: "invoke",
+        input: "go",
+        identity: { userId: "u", authMode: "authenticated" },
+        fs: { app: "/app", home: "/home", session: "/session" },
+        memoryAttached: "yes",
+      }),
+    );
+    if (!isInvoke(nonBool)) throw new Error("expected invoke");
+    expect("memoryAttached" in nonBool).toBe(false);
+  });
 });
 
 describe("parseEvent (Worker→Router fd-3 events)", () => {

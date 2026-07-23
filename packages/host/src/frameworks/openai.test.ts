@@ -206,13 +206,16 @@ describe("runInvokeOpenai — native emission", () => {
     expect(seen.instructions).toContain("<thread_memory>");
     expect(seen.instructions).toContain("Ada");
     expect(seen.instructions).toContain("<working_state>");
-    // No userMemory pushed → NO memory section (framework-blind gate: present
-    // iff `invoke.userMemory` is present).
+    // Default invoke is anonymous + not attached → NO memory section (the SAVE
+    // gate is `authenticated && memoryAttached`).
     expect(seen.instructions).not.toContain("`save_memory` tool");
     expect(seen.instructions).not.toContain("## What you remember about this user");
   });
+});
 
-  it("renders the framework-blind memory section (save + recall) into instructions when userMemory is present (memory-mcp T5)", async () => {
+describe("runInvokeOpenai — memory section (memory-mcp T5, gated on authenticated && memoryAttached)", () => {
+  /** Capture the built Agent's assembled `instructions`. */
+  function captureInstructions(over: Partial<HostInvoke>): Promise<string | undefined> {
     const { sink } = collector();
     const emit = createEmitter(sink);
     let instructions: string | undefined;
@@ -220,25 +223,52 @@ describe("runInvokeOpenai — native emission", () => {
       instructions = typeof agent.instructions === "string" ? agent.instructions : undefined;
       return Promise.resolve(fakeResult({ events: [], finalOutput: "ok" }));
     };
-
-    await runInvokeOpenai(
+    return runInvokeOpenai(
       { framework: "openai-agents-sdk", model: "gpt-4o-mini", systemPrompt: "SYS", mcpServers: {} },
-      invoke({ userMemory: "User's name is Ada." }),
+      invoke(over),
       runtime,
       emit,
       run,
-    );
+    ).then(() => instructions);
+  }
+  const authed = { userId: "u1", authMode: "authenticated" as const };
 
-    // Identical block content to Claude/ADK: the save one-liner + the
-    // byte-identical RECALL block appended AFTER the context preamble (mirror
-    // where the Claude path puts it — trailing the system prompt).
+  it("authenticated + attached + userMemory → save + byte-identical recall block, after the preamble", async () => {
+    const instructions = await captureInstructions({
+      identity: authed,
+      memoryAttached: true,
+      userMemory: "User's name is Ada.",
+    });
+    // Identical block content to Claude/ADK, appended AFTER the context preamble.
     expect(instructions).toContain("SYS");
     expect(instructions).toContain("`save_memory` tool");
     expect(instructions?.endsWith(renderMemorySection("User's name is Ada."))).toBe(true);
-    // The preamble output precedes the memory section.
     expect((instructions ?? "").indexOf("SYS")).toBeLessThan(
       (instructions ?? "").indexOf("`save_memory` tool"),
     );
+  });
+
+  it("BOOTSTRAP: authenticated + attached + NO userMemory (brand-new user) → save-only section, NO recall block", async () => {
+    const instructions = await captureInstructions({ identity: authed, memoryAttached: true });
+    expect(instructions).toContain("`save_memory` tool");
+    expect(instructions?.endsWith(renderMemorySection(undefined))).toBe(true);
+    expect(instructions).not.toContain("## What you remember about this user");
+  });
+
+  it("authenticated + NOT attached → NO section even if userMemory somehow present (no tool → no instruction)", async () => {
+    const instructions = await captureInstructions({
+      identity: authed,
+      memoryAttached: false,
+      userMemory: "orphaned",
+    });
+    expect(instructions).not.toContain("`save_memory` tool");
+    expect(instructions).not.toContain("orphaned");
+  });
+
+  it("anonymous + attached → NO section (guest never gets the memory tool)", async () => {
+    const instructions = await captureInstructions({ memoryAttached: true, userMemory: "guest" });
+    expect(instructions).not.toContain("`save_memory` tool");
+    expect(instructions).not.toContain("guest");
   });
 });
 

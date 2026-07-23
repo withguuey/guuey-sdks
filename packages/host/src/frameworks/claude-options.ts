@@ -76,22 +76,26 @@ const AUTO_MEMORY_DISABLED: Settings = { autoMemoryEnabled: false };
 /**
  * Build the platform-owned memory system-prompt section (memory-mcp spec §4):
  * the SAVE instruction plus, when {@link BuildOptionsContext.userMemory} is
- * present, a RECALL block rendering the Router-read `MEMORY.md` content. Scoped
- * to `authMode === "authenticated"` AND an fs binding — a guest has no durable
- * home (and the spec forbids offering guests a memory tool at all), and no fs
- * means the memory child never bound its app-tree. Returns `""` (append-safe,
- * no leading/trailing noise) when out of scope.
+ * present, a RECALL block rendering the Router-read `MEMORY.md` content. Gated
+ * on `authMode === "authenticated"` AND {@link BuildOptionsContext.memoryAttached}
+ * — the memory child booted this pod, so the `save_memory` tool is spliced. A
+ * guest has no memory tool (the spec forbids offering it), and an unattached pod
+ * has no tool to name. Returns `""` (append-safe) when out of scope.
  *
- * Delegates the section rendering to the framework-neutral
- * {@link renderMemorySection} (`../preamble.js`) — Claude, OpenAI, and ADK all
- * render the IDENTICAL section from that one function; the RECALL block within
- * it is byte-identical to the pre-factor inline string (pinned in
- * `preamble.test.ts`). This Claude gate is unchanged from the pre-factor code
- * (the only Claude-visible text change is the SAVE instruction, now pointing at
- * the `save_memory` tool instead of file tools).
+ * The SAVE gate is ATTACHMENT, not file presence — so a brand-new authenticated
+ * user (no `MEMORY.md` yet) STILL gets the save instruction (save-only section)
+ * and can bootstrap turn-one durable memory. The RECALL block is separately
+ * gated on `userMemory` presence INSIDE {@link renderMemorySection}.
+ *
+ * Gate change (memory-mcp T5 review): was `ctx.fs` (a proxy for attachment).
+ * `memoryAttached` is the REAL signal — it no longer over-renders in the
+ * transient fs-on-but-child-unattached window, and no longer under-renders when
+ * the tool exists. Delegates to the framework-neutral {@link renderMemorySection}
+ * (`../preamble.js`) so Claude, OpenAI, and ADK all render the IDENTICAL section;
+ * its RECALL block is byte-identical to the pre-factor inline string (pinned).
  */
 function buildMemorySection(ctx: BuildOptionsContext): string {
-  if (!ctx.fs || ctx.identity.authMode !== "authenticated") return "";
+  if (ctx.identity.authMode !== "authenticated" || !ctx.memoryAttached) return "";
   return renderMemorySection(ctx.userMemory);
 }
 
@@ -161,17 +165,28 @@ export interface BuildOptionsContext {
   priorState?: JsonValue;
   /**
    * Content of the authenticated caller's `<home>/memories/MEMORY.md` file —
-   * prompted file memory's RECALL half (guueyfs-slice4 spec §4), read
-   * Router-side BEFORE this invoke so recall never depends on the model
-   * choosing to read a file. Rendered into a platform-owned "## What you
-   * remember about this user" system-prompt section when present. DISTINCT
-   * from {@link priorMemory}: that is the persistence-fold THREAD-scoped
-   * conversation memory (AgJSON `<thread_memory>` preamble); this is the
-   * cross-session, cross-thread USER memory file. Absent for an anonymous
+   * prompted memory's RECALL half (memory-mcp spec §4), read Router-side BEFORE
+   * this invoke so recall never depends on the model choosing to read a file.
+   * Rendered into the RECALL block of the "## What you remember about this user"
+   * section when present (the SAVE half is gated on {@link memoryAttached}, not
+   * this). DISTINCT from {@link priorMemory}: that is the persistence-fold
+   * THREAD-scoped conversation memory (AgJSON `<thread_memory>` preamble); this
+   * is the cross-session, cross-thread USER memory file. Absent for an anonymous
    * caller (never read Router-side) and for an authenticated caller with no
-   * memory file yet.
+   * memory file yet (turn one — the SAVE instruction still renders via
+   * {@link memoryAttached}).
    */
   userMemory?: string;
+  /**
+   * Whether the memory MCP child booted this pod (memory-mcp T5) — the Router
+   * threads it per-invoke. Gates the SAVE instruction (`save_memory`) on
+   * `authMode === "authenticated" && memoryAttached`, INDEPENDENT of
+   * {@link userMemory}: the bootstrap fix so a brand-new authenticated user is
+   * told the tool exists before any file. Was previously proxied by `fs`; this
+   * is the real signal (the tool is spliced iff this is true for an
+   * authenticated invoke).
+   */
+  memoryAttached?: boolean;
   /**
    * Returns every credential the Router broker wrote to
    * `<sessionDir>/.guuey/credentials/` this invoke — one `{name, cred}` per

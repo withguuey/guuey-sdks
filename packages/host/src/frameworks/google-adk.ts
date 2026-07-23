@@ -323,19 +323,21 @@ export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
         );
         return;
       }
-      // The context preamble PLUS, when the Router pushed recalled user memory,
-      // the framework-blind memory section (memory-mcp T5: save `save_memory`
-      // instruction + RECALL block, identical to the Claude & OpenAI renderers).
-      // Gated on `userMemory` presence — which implies the memory child is
-      // attached (the Router reads the file only when
-      // `authenticated && memoryAttached`, the SAME signal that splices the
-      // `save_memory` tool), so the save instruction always names a live tool.
-      // The brace-content in recalled memory is safe: no-code rides `instruction`
-      // as a FUNCTION (F7 — bypasses ADK `{var}` substitution), and the graceful
-      // path hands it to the dev's factory verbatim.
+      // The context preamble PLUS the framework-blind memory section (memory-mcp
+      // T5: `save_memory` instruction + optional RECALL block, identical to the
+      // Claude & OpenAI renderers). The SAVE half is gated on `authenticated &&
+      // memoryAttached` — the memory child booted, so the `save_memory` tool is
+      // spliced (T4) — NOT on `userMemory` presence: a brand-new authenticated
+      // user has no file yet but must still be told the tool exists (the
+      // bootstrap fix). The RECALL block inside `renderMemorySection` stays
+      // gated on `userMemory` presence. Brace-content in recalled memory is
+      // safe: no-code rides `instruction` as a FUNCTION (F7 — bypasses ADK
+      // `{var}` substitution), and the graceful path hands it to the dev's
+      // factory verbatim.
+      const memoryOn = turn.identity.authMode === "authenticated" && turn.memoryAttached === true;
       const instruction =
         withContextPreamble(snapshot.systemPrompt ?? "", turn.history, turn.priorMemory, turn.priorState) +
-        (turn.userMemory !== undefined ? renderMemorySection(turn.userMemory) : "");
+        (memoryOn ? renderMemorySection(turn.userMemory) : "");
       let agent: AdkAgent;
       try {
         const toolsets = buildToolsets(adk, listCredentials(turn.fs)());

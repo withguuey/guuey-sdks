@@ -200,7 +200,7 @@ describe("runInvoke — native emission", () => {
     expect(seen.systemPrompt).toContain("Ada");
   });
 
-  it("threads invoke.userMemory (Task 3 prompted-file memory) into the buildOptions ctx → the recall block renders", async () => {
+  it("threads invoke.userMemory + memoryAttached into the buildOptions ctx → the recall block renders", async () => {
     const { sink } = collector();
     const emit = createEmitter(sink);
     let seenSystemPrompt: string | undefined;
@@ -214,6 +214,7 @@ describe("runInvoke — native emission", () => {
       invoke({
         identity: { userId: "u1", authMode: "authenticated" },
         fs: { app: "/fs/app", home: "/fs/home", session: "/fs/session" },
+        memoryAttached: true,
         userMemory: "User's favorite color is teal.",
       }),
       { apiKey: "sk-test", listCredentials: () => [] },
@@ -225,7 +226,7 @@ describe("runInvoke — native emission", () => {
     expect(seenSystemPrompt).toContain("User's favorite color is teal.");
   });
 
-  it("omits userMemory from the ctx when the invoke carries none (no recall block)", async () => {
+  it("BOOTSTRAP: authenticated + memoryAttached + no userMemory → save instruction still renders (no recall block)", async () => {
     const { sink } = collector();
     const emit = createEmitter(sink);
     let seenSystemPrompt: string | undefined;
@@ -239,6 +240,7 @@ describe("runInvoke — native emission", () => {
       invoke({
         identity: { userId: "u1", authMode: "authenticated" },
         fs: { app: "/fs/app", home: "/fs/home", session: "/fs/session" },
+        memoryAttached: true,
       }),
       { apiKey: "sk-test", listCredentials: () => [] },
       emit,
@@ -246,8 +248,8 @@ describe("runInvoke — native emission", () => {
     );
 
     expect(seenSystemPrompt).not.toContain("## What you remember about this user");
-    // Save instruction still present (authenticated + fs) — memory-mcp T5 points
-    // it at the `save_memory` tool; the old file-tools path phrasing is gone.
+    // Save instruction still present (authenticated + attached, no file yet) —
+    // memory-mcp T5 points it at the `save_memory` tool; old file phrasing gone.
     expect(seenSystemPrompt).toContain("`save_memory` tool");
     expect(seenSystemPrompt).not.toContain("$GUUEY_HOME_DIR/memories/MEMORY.md");
   });

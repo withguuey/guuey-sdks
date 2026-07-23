@@ -126,8 +126,13 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     expect(got.done[0]?.result).toBe("streamed answer");
   });
 
-  it("appends the framework-blind memory section (save + recall) to the F7 function instruction when userMemory is present (memory-mcp T5)", async () => {
-    const session = join(base, "mem-session");
+  /**
+   * Run one no-code turn and return the resolved F7 function-instruction string
+   * (memory-mcp T5 gate coverage). Asserts the instruction is a FUNCTION (F7
+   * brace-safety) and returns its resolved value.
+   */
+  async function resolveInstruction(over: Partial<HostTurn>): Promise<string> {
+    const session = join(base, `mem-${Math.random().toString(36).slice(2)}`);
     mkdirSync(join(session, ".guuey", "credentials"), { recursive: true });
     const captured: { agent?: unknown } = {};
     const fakeAdk = {
@@ -159,24 +164,60 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
       identity: { userId: "u-mem", authMode: "authenticated" },
       fs: { app: base, home: base, session },
       history: [],
-      // Router pushed recalled memory (implies memoryAttached — see the gate).
-      userMemory: "User's name is Ada.",
+      ...over,
     };
     await runner.runTurn({ model: "gemini-3.5-pro", systemPrompt: "be terse" }, turn, emit);
-
     expect(got.error).toEqual([]);
     const agent = captured.agent as { params: { instruction: string | (() => string) } };
-    // Still a FUNCTION (F7 brace-safety inherited) — the recalled memory may
-    // contain `{...}`, which a string instruction would 400 on.
+    // Still a FUNCTION (F7 brace-safety) — recalled memory may contain `{...}`,
+    // which a string instruction would 400 on.
     expect(typeof agent.params.instruction).toBe("function");
-    const resolved = (agent.params.instruction as () => string)();
+    return (agent.params.instruction as () => string)();
+  }
+
+  it("authenticated + attached + userMemory → save + byte-identical recall block after the preamble (memory-mcp T5)", async () => {
+    const resolved = await resolveInstruction({
+      identity: { userId: "u-mem", authMode: "authenticated" },
+      memoryAttached: true,
+      userMemory: "User's name is Ada.",
+    });
     // Identical section content to Claude/OpenAI, appended after the preamble.
     expect(resolved).toBe(
-      withContextPreamble("be terse", turn.history, turn.priorMemory, turn.priorState) +
-        renderMemorySection("User's name is Ada."),
+      withContextPreamble("be terse", [], undefined, undefined) + renderMemorySection("User's name is Ada."),
     );
     expect(resolved).toContain("`save_memory` tool");
     expect(resolved).toContain("<user_memory>\nUser's name is Ada.\n</user_memory>");
+  });
+
+  it("BOOTSTRAP: authenticated + attached + NO userMemory (brand-new user) → save-only section, NO recall block", async () => {
+    const resolved = await resolveInstruction({
+      identity: { userId: "u-mem", authMode: "authenticated" },
+      memoryAttached: true,
+    });
+    expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined) + renderMemorySection(undefined));
+    expect(resolved).toContain("`save_memory` tool");
+    expect(resolved).not.toContain("## What you remember about this user");
+  });
+
+  it("authenticated + NOT attached → NO memory section, even with userMemory (no tool → no instruction)", async () => {
+    const resolved = await resolveInstruction({
+      identity: { userId: "u-mem", authMode: "authenticated" },
+      memoryAttached: false,
+      userMemory: "orphaned",
+    });
+    expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined));
+    expect(resolved).not.toContain("`save_memory` tool");
+    expect(resolved).not.toContain("orphaned");
+  });
+
+  it("anonymous + attached → NO memory section (guest never gets the memory tool)", async () => {
+    const resolved = await resolveInstruction({
+      identity: { userId: "g-1", authMode: "anonymous" },
+      memoryAttached: true,
+      userMemory: "guest",
+    });
+    expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined));
+    expect(resolved).not.toContain("`save_memory` tool");
   });
 
   it("an sse cred file fails the turn with the actionable transport error", async () => {
