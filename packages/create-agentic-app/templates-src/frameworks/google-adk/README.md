@@ -12,7 +12,8 @@ import type { GuueyContext } from "@guuey/config";
 export default (guuey: GuueyContext<MCPToolset>) =>
   new LlmAgent({
     model: guuey.model,
-    instruction: guuey.instruction,
+    // Wrapped as a function — see the "instruction" row below.
+    instruction: () => guuey.instruction,
     tools: [myTool, ...guuey.mcpToolsets],
   });
 ```
@@ -30,14 +31,14 @@ guuey deploy                    # same code, hosted
 
 Your factory runs **once per turn** and receives:
 
-| field                                 | what it is                                                                                                                                        |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `model`                               | resolved model id (from `guuey.json`, registry default otherwise)                                                                                 |
-| `instruction`                         | your system prompt **with the conversation preamble already prepended** — feed it to the agent and it is conversational with zero state code      |
-| `mcpToolsets`                         | ready-to-use ADK `MCPToolset`s for every server in `guuey.json#mcpServers` — credentials, URLs, and auth headers already resolved by the platform |
-| `user`                                | the end user this turn serves: `{ id, authMode }` — build multi-tenant behavior on `user.id`                                                      |
-| `files`                               | three storage tiers (absolute paths — see the state map below)                                                                                    |
-| `history` / `memory` / `workingState` | the raw conversation state, if you want to render context yourself instead of using `instruction`                                                 |
+| field                                 | what it is                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`                               | resolved model id (from `guuey.json`, registry default otherwise)                                                                                                                                                                                                                                                                                                                                 |
+| `instruction`                         | your system prompt **with the conversation preamble already prepended** — feed it to the agent and it is conversational with zero state code. **Pass it as `() => guuey.instruction`, not a bare string** — ADK applies `{var}` session-state substitution to a string instruction, and the preamble embeds prior user messages verbatim; a message containing `{anything}` would crash the turn. |
+| `mcpToolsets`                         | ready-to-use ADK `MCPToolset`s for every server in `guuey.json#mcpServers` — credentials, URLs, and auth headers already resolved by the platform                                                                                                                                                                                                                                                 |
+| `user`                                | the end user this turn serves: `{ id, authMode }` — build multi-tenant behavior on `user.id`                                                                                                                                                                                                                                                                                                      |
+| `files`                               | three storage tiers (absolute paths — see the state map below)                                                                                                                                                                                                                                                                                                                                    |
+| `history` / `memory` / `workingState` | the raw conversation state, if you want to render context yourself instead of using `instruction`                                                                                                                                                                                                                                                                                                 |
 
 ## Where state lives (the three-tier map)
 

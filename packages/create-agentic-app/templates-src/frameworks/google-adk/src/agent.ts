@@ -31,8 +31,12 @@ export default (guuey: GuueyContext<MCPToolset>) =>
     model: guuey.model,
     // `instruction` already carries your system prompt PLUS the conversation
     // preamble (history, thread memory, working state) — your agent is
-    // conversational without writing any state code.
-    instruction: guuey.instruction,
+    // conversational without writing any state code. Wrapped as a function:
+    // ADK applies `{var}` session-state substitution to a STRING instruction,
+    // and the preamble embeds prior user messages verbatim — if one contains
+    // `{anything}`, a string instruction crashes the turn. The function form
+    // bypasses substitution entirely.
+    instruction: () => guuey.instruction,
     // Your own tools compose with the MCP servers from guuey.json. Drop
     // `...guuey.mcpToolsets` if you want a fully self-contained agent.
     tools: [rollDice, ...guuey.mcpToolsets],
