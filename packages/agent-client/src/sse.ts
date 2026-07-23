@@ -4,6 +4,8 @@
  * verbatim across web (Studio) and React-Native (Portal).
  */
 
+import type { ProfileConsentRequest } from "./types";
+
 export interface ParsedSseEvent {
   event: string;
   data: unknown;
@@ -112,4 +114,21 @@ export function stringField(data: unknown, key: string): string | undefined {
   if (typeof data !== "object" || data === null) return undefined;
   const v = (data as Record<string, unknown>)[key];
   return typeof v === "string" ? v : undefined;
+}
+
+/**
+ * Parse a `profile-consent-needed` SSE payload into a typed
+ * {@link ProfileConsentRequest}, or `null` if it does not conform. `appId`
+ * must be a non-empty string and `requested` exactly `"read"` or
+ * `"read-write"`; extra keys are tolerated (ignored). Returns a fresh
+ * normalized object so callers get exactly the typed shape, never the raw
+ * wire payload with unknown extras.
+ */
+export function parseConsentRequest(data: unknown): ProfileConsentRequest | null {
+  if (typeof data !== "object" || data === null || Array.isArray(data)) return null;
+  const appId = (data as { appId?: unknown }).appId;
+  const requested = (data as { requested?: unknown }).requested;
+  if (typeof appId !== "string" || appId.length === 0) return null;
+  if (requested !== "read" && requested !== "read-write") return null;
+  return { appId, requested };
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSseEvents, extractAssistantText, reduceAssistantText } from "./sse";
+import { parseSseEvents, extractAssistantText, reduceAssistantText, parseConsentRequest } from "./sse";
 
 const assistantMsg = (text: string) => ({
   type: "assistant",
@@ -290,5 +290,43 @@ describe("silver protocol (AgJSON) — the pod DEFAULT (audit G14)", () => {
     expect(text).toBe("G14-PROBE-OK");
     expect(text).not.toContain("STATE-LEAK");
     expect(text).not.toContain("RAW-LEAK");
+  });
+});
+
+describe("parseConsentRequest", () => {
+  it("accepts a well-formed read grant", () => {
+    expect(parseConsentRequest({ appId: "app_1", requested: "read" })).toEqual({
+      appId: "app_1",
+      requested: "read",
+    });
+  });
+
+  it("accepts a well-formed read-write grant", () => {
+    expect(parseConsentRequest({ appId: "app_1", requested: "read-write" })).toEqual({
+      appId: "app_1",
+      requested: "read-write",
+    });
+  });
+
+  it("strips extra junk, returning only the typed shape", () => {
+    expect(
+      parseConsentRequest({ appId: "app_1", requested: "read", extra: 9, nested: { x: 1 } }),
+    ).toEqual({ appId: "app_1", requested: "read" });
+  });
+
+  it.each([
+    ["null", null],
+    ["undefined", undefined],
+    ["a string", "app_1"],
+    ["a number", 5],
+    ["an array", [{ appId: "app_1", requested: "read" }]],
+    ["missing appId", { requested: "read" }],
+    ["an empty appId", { appId: "", requested: "read" }],
+    ["a non-string appId", { appId: 5, requested: "read" }],
+    ["missing requested", { appId: "app_1" }],
+    ["an out-of-range requested", { appId: "app_1", requested: "write" }],
+    ["a non-string requested", { appId: "app_1", requested: 2 }],
+  ])("rejects %s", (_label, input) => {
+    expect(parseConsentRequest(input)).toBeNull();
   });
 });

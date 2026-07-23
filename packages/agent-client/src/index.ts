@@ -3,6 +3,7 @@ export {
   extractAssistantText,
   reduceAssistantText,
   stringField,
+  parseConsentRequest,
   type ParsedSseEvent,
 } from "./sse";
 export {
@@ -43,6 +44,7 @@ export type { AgEvent, AgReduceResult, AgMessage, AgBlock } from "@silverprotoco
 export type {
   AgentMessage,
   HistoryCard,
+  ProfileConsentRequest,
   ThreadIdStore,
   GenerateId,
   InvokeRequest,

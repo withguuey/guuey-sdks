@@ -23,13 +23,14 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Reducer, type AgReduceResult } from "@silverprotocol/core";
-import { parseSseEvents, reduceAssistantText, stringField } from "./sse";
+import { parseConsentRequest, parseSseEvents, reduceAssistantText, stringField } from "./sse";
 import { ingestMessageFrame } from "./blocks";
 import type {
   AgentInvokeAdapters,
   AgentMessage,
   HistoryCard,
   HistoryLoadResult,
+  ProfileConsentRequest,
   UseAgentInvokeOptions,
   UseAgentInvokeReturn,
 } from "./types";
@@ -75,6 +76,10 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
   // contract). Independent of the live `reduceResult` fold — populated only
   // when a card-carrying history load seeds the transcript.
   const [historyCards, setHistoryCards] = useState<HistoryCard[]>([]);
+  // The pod's latest cross-app profile consent ask on this conversation (T6's
+  // `profile-consent-needed` SSE event), or null. Cleared on app switch /
+  // reset / explicit dismiss. Consumers with no consent UI just ignore it.
+  const [profileConsentRequest, setProfileConsentRequest] = useState<ProfileConsentRequest | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   // Mirror the latest threadId + adapters into refs so `send` reads fresh
@@ -111,6 +116,8 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     reducerRef.current = null;
     setReduceResult(null);
     setHistoryCards([]);
+    // A prior app's consent ask must never leak into the new conversation.
+    setProfileConsentRequest(null);
 
     let cancelled = false;
     const key = threadStorageKey(appId);
@@ -197,7 +204,12 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     reducerRef.current = null;
     setReduceResult(null);
     setHistoryCards([]);
+    setProfileConsentRequest(null);
   }, [appId]);
+
+  const clearProfileConsentRequest = useCallback(() => {
+    setProfileConsentRequest(null);
+  }, []);
 
   const send = useCallback(
     async (input: string) => {
@@ -272,8 +284,16 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
               }
             } else if (ev.event === "error") {
               setError(stringField(ev.data, "message") ?? "agent error");
+            } else if (ev.event === "profile-consent-needed") {
+              // Cross-app profile consent ask (T6). Only a well-formed payload
+              // updates state; a malformed one is dropped, leaving any prior
+              // valid request untouched (never clobbered to null).
+              const parsed = parseConsentRequest(ev.data);
+              if (parsed) setProfileConsentRequest(parsed);
             }
-            // `done` needs no handling — the stream closes after it.
+            // `done` needs no handling — the stream closes after it. Any other
+            // (unknown) event falls through silently — there is no default
+            // branch, so a consumer that never renders a field is unaffected.
           }
         }
       } catch (e) {
@@ -299,5 +319,17 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     [endpointUrl, appId, isStreaming],
   );
 
-  return { messages, send, isStreaming, error, threadId, abort, reset, reduceResult, historyCards };
+  return {
+    messages,
+    send,
+    isStreaming,
+    error,
+    threadId,
+    abort,
+    reset,
+    reduceResult,
+    historyCards,
+    profileConsentRequest,
+    clearProfileConsentRequest,
+  };
 }

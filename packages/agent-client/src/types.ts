@@ -19,6 +19,20 @@ export interface AgentMessage {
 }
 
 /**
+ * A cross-app profile consent request surfaced mid-stream by the pod's
+ * `profile-consent-needed` SSE event (nocode-runtime T6). Emitted when the
+ * agent declares a profile intent the caller has NOT yet granted for this app,
+ * so the consumer UI can prompt the user to authorize `read` or `read-write`
+ * access. `requested` mirrors the pod's `ProfileAccess` posture verbatim; the
+ * literal union is inlined rather than imported to keep this client SDK free of
+ * any backend-package dependency.
+ */
+export interface ProfileConsentRequest {
+  appId: string;
+  requested: "read" | "read-write";
+}
+
+/**
  * A persisted generative-UI card rehydrated from thread history — the verbatim
  * `AgArtifact` snapshot the pod stored on a `kind: "card"` row, tagged with its
  * transcript position. A block-preserving renderer interleaves these with
@@ -150,4 +164,15 @@ export interface UseAgentInvokeReturn {
    * `reset()` clears it back to `[]`.
    */
   historyCards: HistoryCard[];
+  /**
+   * The latest cross-app profile consent request the pod asked for on THIS
+   * conversation, or `null`. Set from a well-formed `profile-consent-needed`
+   * SSE event (see {@link ProfileConsentRequest}); malformed payloads are
+   * dropped and leave the field untouched. `reset()` and an app switch clear
+   * it back to `null`. Consumers that never render a consent prompt (e.g.
+   * Studio) simply ignore this field.
+   */
+  profileConsentRequest: ProfileConsentRequest | null;
+  /** Dismiss the pending {@link profileConsentRequest} (back to `null`). */
+  clearProfileConsentRequest: () => void;
 }
