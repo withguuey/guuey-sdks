@@ -6,7 +6,9 @@
  * import type { GuueyContext } from "@guuey/config";
  * export default (guuey: GuueyContext) => new LlmAgent({
  *   model: guuey.model,
- *   instruction: guuey.instruction,
+ *   // Function form — safe for every framework; required for ADK, which
+ *   // applies `{var}` substitution to a plain-string instruction.
+ *   instruction: () => guuey.instruction,
  *   tools: [myTool, ...guuey.mcpToolsets],
  * });
  * ```
