@@ -41,7 +41,7 @@ import {
   type BuildOptionsContext,
   type SdkMcpServer,
 } from "./claude-options.js";
-import { renderMemorySection } from "../preamble.js";
+import { renderMemorySection, renderProfileSection } from "../preamble.js";
 import type { HostInvoke, HostRuntime } from "./claude.js";
 import { GUUEY_DEFAULT_SYSTEM_PROMPT, type GuueyAgent } from "@guuey/config";
 import { resolveSdkVersion } from "../sdk-version.js";
@@ -148,13 +148,22 @@ export async function runInvokeOpenai(
     // tool exists (the bootstrap fix). The RECALL block inside
     // `renderMemorySection` stays gated on `userMemory` presence.
     const memoryOn = invoke.identity.authMode === "authenticated" && invoke.memoryAttached === true;
+    // cross-app-profile T7: the profile section is a SIBLING of the memory
+    // section, appended AFTER it. Gated on `authenticated && profileAccess`
+    // (a live, clamped grant); `renderProfileSection` owns the inner SAVE/RECALL
+    // gates. `profileAccess` is aliased to a const so the truthy branch narrows
+    // it to the non-undefined `ProfileAccess` the renderer requires.
+    const profileAccess = invoke.profileAccess;
+    const profileOn = invoke.identity.authMode === "authenticated" && profileAccess !== undefined;
     instructions =
       withContextPreamble(
         snapshot.systemPrompt ?? GUUEY_DEFAULT_SYSTEM_PROMPT,
         ctx.history,
         ctx.priorMemory,
         ctx.priorState,
-      ) + (memoryOn ? renderMemorySection(invoke.userMemory) : "");
+      ) +
+      (memoryOn ? renderMemorySection(invoke.userMemory) : "") +
+      (profileOn ? renderProfileSection(invoke.profileSections, profileAccess) : "");
     mcpServers = buildOpenaiMcpServers(ctx);
   } catch (err) {
     emit.error(err instanceof Error ? err.message : String(err));

@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import type { Emitter, JsonValue, StopReason } from "@guuey/worker";
 import { assertGracefulSupport, loadRunner, type HostTurn } from "../index.js";
-import { renderMemorySection, withContextPreamble } from "../preamble.js";
+import { renderMemorySection, renderProfileSection, withContextPreamble } from "../preamble.js";
 import { createRunner, importConditionEntry, loadAdk } from "./google-adk.js";
 
 function fakeEmitter() {
@@ -218,6 +218,60 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     });
     expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined));
     expect(resolved).not.toContain("`save_memory` tool");
+  });
+
+  // ── cross-app profile section (profile T7) — SIBLING of the memory section ──
+  const PROFILE_SECTIONS = [{ app: "Todoist", content: "Prefers short replies." }];
+
+  it("authenticated + read-write + sections → memory THEN profile, byte-identical to the framework-blind renderers", async () => {
+    const resolved = await resolveInstruction({
+      identity: { userId: "u-mem", authMode: "authenticated" },
+      memoryAttached: true,
+      userMemory: "User's name is Ada.",
+      profileAccess: "read-write",
+      profileSections: PROFILE_SECTIONS,
+    });
+    expect(resolved).toBe(
+      withContextPreamble("be terse", [], undefined, undefined) +
+        renderMemorySection("User's name is Ada.") +
+        renderProfileSection(PROFILE_SECTIONS, "read-write"),
+    );
+    expect(resolved).toContain("`save_profile` tool");
+    expect(resolved).toContain("### From Todoist");
+  });
+
+  it("authenticated + read (read-only) + sections → recall only, NO save instruction", async () => {
+    const resolved = await resolveInstruction({
+      identity: { userId: "u-mem", authMode: "authenticated" },
+      profileAccess: "read",
+      profileSections: PROFILE_SECTIONS,
+    });
+    expect(resolved).toBe(
+      withContextPreamble("be terse", [], undefined, undefined) +
+        renderProfileSection(PROFILE_SECTIONS, "read"),
+    );
+    expect(resolved).not.toContain("`save_profile` tool");
+    expect(resolved).toContain("## What you know about this user from other apps");
+  });
+
+  it("authenticated + NO profileAccess → NO profile section (fail-closed default)", async () => {
+    const resolved = await resolveInstruction({
+      identity: { userId: "u-mem", authMode: "authenticated" },
+      profileSections: PROFILE_SECTIONS,
+    });
+    expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined));
+    expect(resolved).not.toContain("`save_profile` tool");
+    expect(resolved).not.toContain("Prefers short replies.");
+  });
+
+  it("anonymous + profileAccess present → NO profile section (guest never gets the profile)", async () => {
+    const resolved = await resolveInstruction({
+      identity: { userId: "g-1", authMode: "anonymous" },
+      profileAccess: "read-write",
+      profileSections: PROFILE_SECTIONS,
+    });
+    expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined));
+    expect(resolved).not.toContain("`save_profile` tool");
   });
 
   it("an sse cred file fails the turn with the actionable transport error", async () => {

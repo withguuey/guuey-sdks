@@ -15,6 +15,7 @@ import type {
   JsonValue,
   NativeEvent,
   PriorMemoryRecord,
+  ProfileSection,
   Shutdown,
   StopReason,
   TextEvent,
@@ -84,6 +85,23 @@ function parsePriorMemory(v: JsonValue | undefined): PriorMemoryRecord[] | undef
   return out.length > 0 ? out : undefined;
 }
 
+/**
+ * Parse the optional `profileSections` push (cross-app-profile T7). Lenient like
+ * {@link parsePriorMemory}: a non-conforming entry (not an object, or missing a
+ * string `app`/`content`) is DROPPED, never throwing. Returns `undefined` when
+ * absent or when no entry survives (so the field stays off the Invoke).
+ */
+function parseProfileSections(v: JsonValue | undefined): ProfileSection[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: ProfileSection[] = [];
+  for (const entry of v) {
+    if (isObject(entry) && typeof entry.app === "string" && typeof entry.content === "string") {
+      out.push({ app: entry.app, content: entry.content });
+    }
+  }
+  return out.length > 0 ? out : undefined;
+}
+
 export function parseControl(line: string): ControlMessage {
   let raw: JsonValue;
   try {
@@ -98,6 +116,7 @@ export function parseControl(line: string): ControlMessage {
     case "invoke": {
       if (typeof raw.input !== "string") throw new Error("invoke missing string `input`");
       const priorMemory = parsePriorMemory(raw.priorMemory);
+      const profileSections = parseProfileSections(raw.profileSections);
       return {
         type: "invoke",
         input: raw.input,
@@ -117,6 +136,15 @@ export function parseControl(line: string): ControlMessage {
         // instruction (all three frameworks) independent of `userMemory`.
         // Omitted unless a real boolean so it never lands as `undefined`.
         ...(typeof raw.memoryAttached === "boolean" ? { memoryAttached: raw.memoryAttached } : {}),
+        // cross-app-profile T7: the resolved profile access + recall sections.
+        // `profileAccess` is an explicit enum allowlist (an out-of-enum string —
+        // e.g. `'write'` — is dropped, not coerced), mirroring the fail-closed
+        // mint-claim check; `profileSections` drops malformed entries. Both
+        // omitted when absent so they never land as `undefined`.
+        ...(raw.profileAccess === "read" || raw.profileAccess === "read-write"
+          ? { profileAccess: raw.profileAccess }
+          : {}),
+        ...(profileSections ? { profileSections } : {}),
       };
     }
     case "shutdown":

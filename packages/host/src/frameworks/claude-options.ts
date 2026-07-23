@@ -20,8 +20,13 @@
  * `@guuey/worker`, `@guuey/config`, and Node built-ins.
  */
 import type { CanUseTool, Options, SDKMessage, Settings } from "@anthropic-ai/claude-agent-sdk";
-import type { Fs, HistoryMessage, JsonValue } from "@guuey/worker";
-import { GUUEY_DEFAULT_SYSTEM_PROMPT, defaultModelFor, type GuueyAgent } from "@guuey/config";
+import type { Fs, HistoryMessage, JsonValue, ProfileSection } from "@guuey/worker";
+import {
+  GUUEY_DEFAULT_SYSTEM_PROMPT,
+  defaultModelFor,
+  type GuueyAgent,
+  type ProfileAccess,
+} from "@guuey/config";
 
 export type { SDKMessage };
 
@@ -97,6 +102,22 @@ const AUTO_MEMORY_DISABLED: Settings = { autoMemoryEnabled: false };
 function buildMemorySection(ctx: BuildOptionsContext): string {
   if (ctx.identity.authMode !== "authenticated" || !ctx.memoryAttached) return "";
   return renderMemorySection(ctx.userMemory);
+}
+
+/**
+ * Build the platform-owned cross-app profile system-prompt section
+ * (cross-app-profile spec §4) — the SIBLING of {@link buildMemorySection},
+ * appended AFTER it. Gated on `authMode === "authenticated"` AND a resolved
+ * {@link BuildOptionsContext.profileAccess} (the Router's fail-closed grant
+ * check produced a live, clamped access level). A guest / an ungranted app never
+ * reaches here. Delegates to the framework-neutral {@link renderProfileSection}
+ * (`../preamble.js`) so Claude, OpenAI, and ADK render the IDENTICAL section; that
+ * renderer owns the two inner gates (SAVE on `read-write`, RECALL on sections
+ * presence). Returns `""` (append-safe) when out of scope.
+ */
+function buildProfileSection(ctx: BuildOptionsContext): string {
+  if (ctx.identity.authMode !== "authenticated" || ctx.profileAccess === undefined) return "";
+  return renderProfileSection(ctx.profileSections, ctx.profileAccess);
 }
 
 // CredentialFile now lives in ../creds.js (framework-neutral, shared by every
@@ -188,6 +209,19 @@ export interface BuildOptionsContext {
    */
   memoryAttached?: boolean;
   /**
+   * The Router's fail-closed cross-app profile access for this invoke
+   * (cross-app-profile T7) — present ONLY for a consenting authenticated caller,
+   * clamped to the app's declared posture. Gates the profile system-prompt
+   * section ({@link buildProfileSection}): the `save_profile` SAVE instruction on
+   * `read-write`, the RECALL block on {@link profileSections}. DISTINCT from
+   * {@link memoryAttached}: that is this app's own memory tool; this is the
+   * consent-gated cross-app profile.
+   */
+  profileAccess?: ProfileAccess;
+  /** The user's cross-app profile sections for the RECALL push (cross-app-profile
+   *  T7), read Router-side. Gated by {@link profileAccess}. */
+  profileSections?: ProfileSection[];
+  /**
    * Returns every credential the Router broker wrote to
    * `<sessionDir>/.guuey/credentials/` this invoke — one `{name, cred}` per
    * usable MCP server. `name` is the filename stem (server name); `cred` is the
@@ -236,7 +270,12 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
       ctx.history,
       ctx.priorMemory,
       ctx.priorState,
-    ) + buildMemorySection(ctx);
+    ) +
+    buildMemorySection(ctx) +
+    // cross-app-profile T7: the profile section is a SIBLING of the memory
+    // section, appended AFTER it (memory first, then profile). Both are
+    // framework-blind renderers from ../preamble.js.
+    buildProfileSection(ctx);
   const model = snapshot.model ?? DEFAULT_MODEL;
   const maxTurns = snapshot.runtime?.maxTurns ?? DEFAULT_MAX_TURNS;
   const fs = ctx.fs;
@@ -423,4 +462,4 @@ function buildAllowedTools(
 // `renderMemorySection` (the memory SAVE + RECALL block, memory-mcp T5) lives
 // there too — framework-blind, so openai/adk render the identical section.
 export { withContextPreamble } from "../preamble.js";
-import { renderMemorySection, withContextPreamble } from "../preamble.js";
+import { renderMemorySection, renderProfileSection, withContextPreamble } from "../preamble.js";

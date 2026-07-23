@@ -48,6 +48,19 @@ export interface PriorMemoryRecord {
   key?: string;
   value: JsonValue;
 }
+/**
+ * One app's section of the user's cross-app profile (cross-app-profile T7). The
+ * Router reads every section it may recall (`readProfileSections`), resolves the
+ * writing app's display `name` for provenance, and pushes them by value so the
+ * worker renders them into the `<user_profile>` RECALL block. `app` is the
+ * source app's display name (or a synthetic `""` for the truncation marker line,
+ * whose `content` is the `[…omitted…]` note); `content` is the section body.
+ * Minimal + dependency-free, mirroring {@link PriorMemoryRecord}.
+ */
+export interface ProfileSection {
+  app: string;
+  content: string;
+}
 export type StopReason = "end_turn" | "max_turns" | "error";
 
 // ── Router → Worker: the control stream (fd 0) ──────────────────────────────
@@ -99,6 +112,29 @@ export interface Invoke {
    * SAVE gate is attachment, the RECALL gate is file presence.
    */
   memoryAttached?: boolean;
+  /**
+   * The resolved cross-app profile access for THIS invoke (cross-app-profile
+   * T6/T7) — the Router's fail-closed grant check (`resolveProfileForInvoke`)
+   * clamps the honored grant to the app's declared posture and threads the
+   * result here. Present ONLY for an authenticated caller with a live grant;
+   * absent → no profile surface this turn. Gates BOTH halves of the profile
+   * system-prompt section across all three frameworks: the `save_profile` SAVE
+   * instruction renders ONLY when this is `"read-write"` (a `"read"` grant has
+   * no write tool to name), and the RECALL block renders whenever
+   * {@link profileSections} is present. Kept as an inline literal (NOT imported
+   * from `@guuey/config`) to keep this package dependency-free.
+   */
+  profileAccess?: "read" | "read-write";
+  /**
+   * The user's cross-app profile sections for the RECALL push
+   * (cross-app-profile T7). Each entry is one writing-app's section (plus, when
+   * older sections were dropped to fit the 64 KiB recall budget, a leading
+   * marker entry with `app: ""`). Pushed by value like {@link priorMemory}; the
+   * worker renders them into the `<user_profile>` block. Absent → nothing to
+   * recall. Gated by {@link profileAccess} (never rendered for a guest / an
+   * ungranted app).
+   */
+  profileSections?: ProfileSection[];
 }
 /** Graceful termination (also signalled by stdin EOF). */
 export interface Shutdown {

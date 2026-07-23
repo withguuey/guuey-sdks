@@ -11,6 +11,7 @@ export {
   type Fs,
   type HistoryMessage,
   type PriorMemoryRecord,
+  type ProfileSection,
   type StopReason,
   type Invoke,
   type Shutdown,

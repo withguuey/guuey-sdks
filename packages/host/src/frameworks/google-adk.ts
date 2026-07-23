@@ -48,7 +48,7 @@ import {
   resolveAgentEntry,
 } from "../agent-entry.js";
 import { listCredentials, type CredentialFile } from "../creds.js";
-import { renderMemorySection, withContextPreamble } from "../preamble.js";
+import { renderMemorySection, renderProfileSection, withContextPreamble } from "../preamble.js";
 import { resolveSdkVersion } from "../sdk-version.js";
 
 const ADK_FRAMEWORK = "google-adk";
@@ -335,9 +335,18 @@ export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
       // `{var}` substitution), and the graceful path hands it to the dev's
       // factory verbatim.
       const memoryOn = turn.identity.authMode === "authenticated" && turn.memoryAttached === true;
+      // cross-app-profile T7: the profile section is a SIBLING of the memory
+      // section, appended AFTER it, gated on `authenticated && profileAccess`
+      // (a live, clamped grant). Brace-content in recalled profile sections is
+      // safe: no-code rides `instruction` as a FUNCTION (F7), and the graceful
+      // path hands it to the dev's factory verbatim. `profileAccess` is aliased
+      // to a const so the truthy branch narrows it to the required `ProfileAccess`.
+      const profileAccess = turn.profileAccess;
+      const profileOn = turn.identity.authMode === "authenticated" && profileAccess !== undefined;
       const instruction =
         withContextPreamble(snapshot.systemPrompt ?? "", turn.history, turn.priorMemory, turn.priorState) +
-        (memoryOn ? renderMemorySection(turn.userMemory) : "");
+        (memoryOn ? renderMemorySection(turn.userMemory) : "") +
+        (profileOn ? renderProfileSection(turn.profileSections, profileAccess) : "");
       let agent: AdkAgent;
       try {
         const toolsets = buildToolsets(adk, listCredentials(turn.fs)());

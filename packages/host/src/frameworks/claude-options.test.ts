@@ -436,6 +436,76 @@ describe("buildOptions — platform-owned memory system-prompt section (memory-m
   });
 });
 
+describe("buildOptions — cross-app profile system-prompt section (profile T7)", () => {
+  const fs = { app: "/fs/app", home: "/fs/home", session: "/fs/session" };
+  const authed = { userId: "u1", authMode: "authenticated" as const };
+  const anon = { userId: "g_1", authMode: "anonymous" as const };
+  const PROFILE_SAVE = "`save_profile` tool";
+  const PROFILE_RECALL = "## What you know about this user from other apps";
+  const sections = [{ app: "Todoist", content: "Prefers short replies." }];
+
+  it("authenticated + read-write + sections → save instruction AND recall block, AFTER the memory section", () => {
+    const opts = buildOptions(
+      {},
+      ctx({
+        identity: authed,
+        fs,
+        memoryAttached: true,
+        userMemory: "User's name is Ada.",
+        profileAccess: "read-write",
+        profileSections: sections,
+      }),
+    );
+    const sp = opts.systemPrompt as string;
+    expect(sp).toContain(PROFILE_SAVE);
+    expect(sp).toContain(PROFILE_RECALL);
+    expect(sp).toContain("### From Todoist");
+    // Ordering: memory section BEFORE the profile section (both after the prompt).
+    expect(sp.indexOf("## What you remember about this user")).toBeLessThan(sp.indexOf(PROFILE_RECALL));
+    expect(sp.indexOf("`save_memory` tool")).toBeLessThan(sp.indexOf(PROFILE_SAVE));
+  });
+
+  it("authenticated + read-write + NO sections (bootstrap) → save instruction only, no recall block", () => {
+    const opts = buildOptions({}, ctx({ identity: authed, fs, profileAccess: "read-write" }));
+    const sp = opts.systemPrompt as string;
+    expect(sp).toContain(PROFILE_SAVE);
+    expect(sp).not.toContain(PROFILE_RECALL);
+  });
+
+  it("authenticated + read (read-only) + sections → recall block only, NO save instruction", () => {
+    const opts = buildOptions(
+      {},
+      ctx({ identity: authed, fs, profileAccess: "read", profileSections: sections }),
+    );
+    const sp = opts.systemPrompt as string;
+    expect(sp).not.toContain(PROFILE_SAVE);
+    expect(sp).toContain(PROFILE_RECALL);
+    expect(sp).toContain("### From Todoist");
+  });
+
+  it("authenticated + NO profileAccess → NO profile section (fail-closed default)", () => {
+    const opts = buildOptions(
+      {},
+      ctx({ identity: authed, fs, profileSections: sections }),
+    );
+    const sp = opts.systemPrompt as string;
+    expect(sp).not.toContain(PROFILE_SAVE);
+    expect(sp).not.toContain(PROFILE_RECALL);
+    expect(sp).not.toContain("Prefers short replies.");
+  });
+
+  it("anonymous + profileAccess somehow present → NO profile section (guest never gets the profile)", () => {
+    const opts = buildOptions(
+      {},
+      ctx({ identity: anon, fs, profileAccess: "read-write", profileSections: sections }),
+    );
+    const sp = opts.systemPrompt as string;
+    expect(sp).not.toContain(PROFILE_SAVE);
+    expect(sp).not.toContain(PROFILE_RECALL);
+    expect(sp).not.toContain("Prefers short replies.");
+  });
+});
+
 describe("withContextPreamble", () => {
   it("renders all three sections when history + memory + state are present", () => {
     const out = withContextPreamble(

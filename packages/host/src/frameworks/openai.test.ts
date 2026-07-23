@@ -12,7 +12,7 @@ import {
   type OpenaiRunResult,
 } from "./openai.js";
 import type { HostInvoke } from "./claude.js";
-import { renderMemorySection } from "../preamble.js";
+import { renderMemorySection, renderProfileSection } from "../preamble.js";
 import type { GuueyAgent } from "@guuey/config";
 
 /** Collect every emitted WorkerEvent into an array (the fd-3 sink, in memory). */
@@ -269,6 +269,75 @@ describe("runInvokeOpenai — memory section (memory-mcp T5, gated on authentica
     const instructions = await captureInstructions({ memoryAttached: true, userMemory: "guest" });
     expect(instructions).not.toContain("`save_memory` tool");
     expect(instructions).not.toContain("guest");
+  });
+});
+
+describe("runInvokeOpenai — cross-app profile section (profile T7, gated on authenticated && profileAccess)", () => {
+  function captureInstructions(over: Partial<HostInvoke>): Promise<string | undefined> {
+    const { sink } = collector();
+    const emit = createEmitter(sink);
+    let instructions: string | undefined;
+    const run: OpenaiRunFn = (agent) => {
+      instructions = typeof agent.instructions === "string" ? agent.instructions : undefined;
+      return Promise.resolve(fakeResult({ events: [], finalOutput: "ok" }));
+    };
+    return runInvokeOpenai(
+      { framework: "openai-agents-sdk", model: "gpt-4o-mini", systemPrompt: "SYS", mcpServers: {} },
+      invoke(over),
+      runtime,
+      emit,
+      run,
+    ).then(() => instructions);
+  }
+  const authed = { userId: "u1", authMode: "authenticated" as const };
+  const sections = [{ app: "Todoist", content: "Prefers short replies." }];
+
+  it("authenticated + read-write + sections → save + recall, byte-identical to renderProfileSection, after the memory section", async () => {
+    const instructions = await captureInstructions({
+      identity: authed,
+      memoryAttached: true,
+      userMemory: "Ada",
+      profileAccess: "read-write",
+      profileSections: sections,
+    });
+    // The section content is byte-identical to Claude/ADK.
+    expect(
+      instructions?.endsWith(
+        renderMemorySection("Ada") + renderProfileSection(sections, "read-write"),
+      ),
+    ).toBe(true);
+    expect(instructions).toContain("`save_profile` tool");
+    expect(instructions).toContain("### From Todoist");
+    // memory section precedes profile section.
+    expect((instructions ?? "").indexOf("`save_memory` tool")).toBeLessThan(
+      (instructions ?? "").indexOf("`save_profile` tool"),
+    );
+  });
+
+  it("authenticated + read (read-only) + sections → recall only, NO save instruction", async () => {
+    const instructions = await captureInstructions({
+      identity: authed,
+      profileAccess: "read",
+      profileSections: sections,
+    });
+    expect(instructions).not.toContain("`save_profile` tool");
+    expect(instructions).toContain("## What you know about this user from other apps");
+    expect(instructions).toContain("### From Todoist");
+  });
+
+  it("authenticated + NO profileAccess → NO profile section", async () => {
+    const instructions = await captureInstructions({ identity: authed, profileSections: sections });
+    expect(instructions).not.toContain("`save_profile` tool");
+    expect(instructions).not.toContain("Prefers short replies.");
+  });
+
+  it("anonymous + profileAccess present → NO profile section (guest never gets the profile)", async () => {
+    const instructions = await captureInstructions({
+      profileAccess: "read-write",
+      profileSections: sections,
+    });
+    expect(instructions).not.toContain("`save_profile` tool");
+    expect(instructions).not.toContain("Prefers short replies.");
   });
 });
 

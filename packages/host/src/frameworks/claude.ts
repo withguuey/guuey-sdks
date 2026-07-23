@@ -10,7 +10,15 @@
  * `query`.
  */
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { Emitter, Fs, HistoryMessage, Identity, JsonValue, StopReason } from "@guuey/worker";
+import type {
+  Emitter,
+  Fs,
+  HistoryMessage,
+  Identity,
+  JsonValue,
+  ProfileSection,
+  StopReason,
+} from "@guuey/worker";
 import {
   buildOptions,
   type BuildOptionsContext,
@@ -46,6 +54,17 @@ export interface HostInvoke {
    * `@guuey/worker`.
    */
   memoryAttached?: boolean;
+  /**
+   * The resolved cross-app profile access for this invoke (cross-app-profile
+   * T7) — gates the profile system-prompt section: the `save_profile` SAVE
+   * instruction on `read-write`, the RECALL block on {@link profileSections}.
+   * Present only for a consenting authenticated caller. See `Invoke.profileAccess`
+   * in `@guuey/worker`.
+   */
+  profileAccess?: "read" | "read-write";
+  /** The user's cross-app profile sections for the RECALL push (cross-app-profile
+   *  T7). See `Invoke.profileSections` in `@guuey/worker`. */
+  profileSections?: ProfileSection[];
 }
 
 /** Per-process config the worker resolves once at boot. */
@@ -150,6 +169,8 @@ export async function runInvoke(
       ...(invoke.priorState !== undefined ? { priorState: invoke.priorState } : {}),
       ...(invoke.userMemory !== undefined ? { userMemory: invoke.userMemory } : {}),
       ...(invoke.memoryAttached !== undefined ? { memoryAttached: invoke.memoryAttached } : {}),
+      ...(invoke.profileAccess !== undefined ? { profileAccess: invoke.profileAccess } : {}),
+      ...(invoke.profileSections !== undefined ? { profileSections: invoke.profileSections } : {}),
     };
     options = buildOptions(snapshot, ctx);
   } catch (err) {

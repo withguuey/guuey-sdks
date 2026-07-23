@@ -155,6 +155,89 @@ describe("parseControl", () => {
     if (!isInvoke(nonBool)) throw new Error("expected invoke");
     expect("memoryAttached" in nonBool).toBe(false);
   });
+
+  it("round-trips profileAccess (cross-app profile T7) onto the typed Invoke", () => {
+    const rw = parseControl(
+      JSON.stringify({
+        type: "invoke",
+        input: "go",
+        identity: { userId: "u", authMode: "authenticated" },
+        fs: { app: "/app", home: "/home", session: "/session" },
+        profileAccess: "read-write",
+      }),
+    );
+    if (!isInvoke(rw)) throw new Error("expected invoke");
+    expect(rw.profileAccess).toBe("read-write");
+    const ro = parseControl(
+      JSON.stringify({
+        type: "invoke",
+        input: "go",
+        identity: { userId: "u", authMode: "authenticated" },
+        fs: { app: "/app", home: "/home", session: "/session" },
+        profileAccess: "read",
+      }),
+    );
+    if (!isInvoke(ro)) throw new Error("expected invoke");
+    expect(ro.profileAccess).toBe("read");
+  });
+
+  it("omits profileAccess when absent or not a known enum value (never lands as undefined)", () => {
+    const bare = parseControl(INVOKE);
+    if (!isInvoke(bare)) throw new Error("expected invoke");
+    expect("profileAccess" in bare).toBe(false);
+    // An out-of-enum string (e.g. the reject-me 'write') is dropped, not coerced.
+    const bad = parseControl(
+      JSON.stringify({
+        type: "invoke",
+        input: "go",
+        identity: { userId: "u", authMode: "authenticated" },
+        fs: { app: "/app", home: "/home", session: "/session" },
+        profileAccess: "write",
+      }),
+    );
+    if (!isInvoke(bad)) throw new Error("expected invoke");
+    expect("profileAccess" in bad).toBe(false);
+  });
+
+  it("round-trips profileSections (cross-app profile T7 recall push), dropping malformed entries", () => {
+    const msg = parseControl(
+      JSON.stringify({
+        type: "invoke",
+        input: "go",
+        identity: { userId: "u", authMode: "authenticated" },
+        fs: { app: "/app", home: "/home", session: "/session" },
+        profileSections: [
+          { app: "Todoist", content: "likes tea" },
+          { app: "", content: "[…older profile sections from 1 app(s) omitted at 64 KiB…]" },
+          { app: "no-content" }, // malformed — dropped
+          { content: "no-app" }, // malformed — dropped
+          "not-an-object", // malformed — dropped
+        ],
+      }),
+    );
+    if (!isInvoke(msg)) throw new Error("expected invoke");
+    expect(msg.profileSections).toEqual([
+      { app: "Todoist", content: "likes tea" },
+      { app: "", content: "[…older profile sections from 1 app(s) omitted at 64 KiB…]" },
+    ]);
+  });
+
+  it("omits profileSections when absent or when no entry survives", () => {
+    const bare = parseControl(INVOKE);
+    if (!isInvoke(bare)) throw new Error("expected invoke");
+    expect("profileSections" in bare).toBe(false);
+    const allBad = parseControl(
+      JSON.stringify({
+        type: "invoke",
+        input: "go",
+        identity: { userId: "u", authMode: "authenticated" },
+        fs: { app: "/app", home: "/home", session: "/session" },
+        profileSections: [{ app: 1, content: 2 }, "x"],
+      }),
+    );
+    if (!isInvoke(allBad)) throw new Error("expected invoke");
+    expect("profileSections" in allBad).toBe(false);
+  });
 });
 
 describe("parseEvent (Worker→Router fd-3 events)", () => {
