@@ -124,10 +124,15 @@ export interface LowerForDevResult {
  *   dropping it would boot an agent silently missing the tools its system
  *   prompt promises. Message names both fixes (`devPort` to run a local
  *   copy, `guuey deploy` to test against the live server).
- * - `proxied` / `hosted` WITHOUT `devPort` and WITHOUT `server` (still
- *   build-only — not yet resolved to a registry id by a deploy) → no
- *   local-dev story yet (v1) — dropped with a console warning rather than
- *   silently failing at invoke time.
+ * - `hosted` WITHOUT `devPort` and WITHOUT `server` (build-from-source —
+ *   `source` only, not yet resolved to a registry id by a deploy) → dropped
+ *   with an actionable console warning naming both fixes (`devPort` to run
+ *   it locally now; `guuey deploy` — there's no live server to dial before
+ *   that). Warns rather than throws: pre-deploy there's no live server this
+ *   would silently miss, unlike the registry-reuse case above.
+ * - `proxied` (schema has no `devPort`/`source` slot at all — v2, runtime
+ *   support not yet built) → no local-dev story yet — dropped with the
+ *   generic console warning rather than silently failing at invoke time.
  *
  * Also platform-injects the default local `ggui serve` endpoint when no
  * `ggui` entry is present — mirrors the platform injecting `mcp.ggui.ai` for
@@ -177,6 +182,12 @@ export function lowerForDev(agent: GuueyAgent): LowerForDevResult {
       throw new Error(
         `hosted registry MCP "${name}" can't run in guuey dev — it runs on the guuey fleet. Add a devPort to run a local copy, or run 'guuey deploy' to test against the live server.`,
       );
+    }
+    if (entry.kind === "hosted" && entry.source !== undefined) {
+      console.warn(
+        `guuey dev: dropping MCP server "${name}" (kind: hosted) — built from source with no devPort set; add a devPort to run it locally, or run 'guuey deploy' first (nothing live to dial until then)`,
+      );
+      continue;
     }
     console.warn(
       `guuey dev: dropping MCP server "${name}" (kind: ${entry.kind}) — unsupported in local dev v1`,

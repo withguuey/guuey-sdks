@@ -333,7 +333,7 @@ describe("lowerForDev", () => {
     });
   });
 
-  it("does not throw for a hosted entry with only `source` (build-only, not yet resolved) and no devPort — warn-drops instead", () => {
+  it("does not throw for a hosted entry with only `source` (build-only, not yet resolved) and no devPort — warns with the actionable fix and drops instead", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     let lowered: ReturnType<typeof lowerForDev> | undefined;
     expect(() => {
@@ -342,9 +342,8 @@ describe("lowerForDev", () => {
       });
     }).not.toThrow();
     expect(lowered?.agent.mcpServers?.todo).toBeUndefined();
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('dropping MCP server "todo" (kind: hosted) — unsupported in local dev v1'),
-    );
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("devPort"));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("guuey deploy"));
     warn.mockRestore();
   });
 
