@@ -6,7 +6,9 @@ import {
   validateNoProxiedServers,
   validateReservedServerNames,
   RESERVED_MEMORY_SERVER_NAME,
+  RESERVED_MCP_SERVER_NAMES,
   type GuueyAgent,
+  type GuueyAgentMcpServer,
 } from './agent.js';
 
 /** Build a minimal agent with one mcpServer whose headers we control. */
@@ -494,5 +496,45 @@ describe('McpServerSchema — each kind parses correctly', () => {
     expect(() =>
       parseMcpServers({ old: { transport: 'stdio', command: 'node' } }),
     ).toThrow();
+  });
+});
+
+// ── guuey-profile reservation + profileAccess schema (profile T1) ──────────
+//
+// Sibling of the guuey-memory reservation above: `guuey-profile` is the
+// RESERVED mcpServers key the profile MCP will be spliced under (a later
+// task); reserving it now closes the same builder-shadow hole
+// validateReservedServerNames already guards for guuey-memory.
+// `profileAccess` is the agent-level opt-in (read vs read-write) that later
+// tasks read off the resolved snapshot — an optional enum, same shape as
+// `AuthSchema`/`MemorySchema`.
+
+/** Minimal valid agent section — mirrors schema.test.ts's `minimalAgent`. */
+const minimalAgent: GuueyAgent = {};
+
+/** A plain external mcpServers entry, reused across reserved-name checks. */
+const externalEntry: GuueyAgentMcpServer = { kind: 'external', url: 'https://mcp.example.com' };
+
+/** Parse helper mirroring `parseMcpServers` above. */
+function parseAgent(agent: unknown): GuueyAgent {
+  return AgentSectionV1.parse(agent);
+}
+
+describe('guuey-profile reservation + profileAccess schema', () => {
+  it('guuey-profile is reserved', () => {
+    expect(RESERVED_MCP_SERVER_NAMES).toContain('guuey-profile');
+    const violations = validateReservedServerNames({
+      ...minimalAgent,
+      mcpServers: { 'guuey-profile': externalEntry },
+    });
+    expect(violations).toHaveLength(1);
+  });
+
+  it('profileAccess parses as an optional enum', () => {
+    expect(parseAgent({ ...minimalAgent, profileAccess: 'read-write' }).profileAccess).toBe(
+      'read-write',
+    );
+    expect(() => parseAgent({ ...minimalAgent, profileAccess: 'write' })).toThrow();
+    expect(parseAgent(minimalAgent).profileAccess).toBeUndefined();
   });
 });

@@ -66,6 +66,15 @@ export type AgentFramework = (typeof AGENT_FRAMEWORKS)[number];
 const HeadersSchema = z.record(z.string().min(1), z.string());
 
 /**
+ * Cross-app profile access posture. `'read'` = the agent may recall the
+ * user's cross-app profile; `'read-write'` additionally lets it write this
+ * app's section. Absent = no profile access (default-closed, consent-gated).
+ */
+export const ProfileAccessSchema = z.enum(['read', 'read-write']);
+/** Static TypeScript type derived from {@link ProfileAccessSchema}. */
+export type ProfileAccess = z.infer<typeof ProfileAccessSchema>;
+
+/**
  * `kind: 'colocated'` — MCP server runs as a guuey-managed HTTP child
  * **inside the agent pod** (co-locate = same gVisor sandbox). COGS: ~$0
  * (rides the agent pod). `source` is a project-relative path the Router
@@ -144,6 +153,13 @@ const ExternalMcp = z.strictObject({
    * uses this as the RFC 8707 resource instead of `url`.
    */
   mcpResourceUrl: z.url().optional(),
+  /**
+   * INTERNAL — set only by Router lowering when this entry is the spliced
+   * profile MCP; carries the agent's `profileAccess` posture onto the entry
+   * itself so the profile child's tool gate (read vs read-write) survives
+   * independent of the top-level `agent.profileAccess` field.
+   */
+  profileAccess: ProfileAccessSchema.optional(),
 });
 
 /**
@@ -332,6 +348,7 @@ export const AgentSectionV1 = z.strictObject({
   auth: AuthSchema.optional(),
   memory: MemorySchema.optional(),
   storage: StorageScopeSchema.optional(),
+  profileAccess: ProfileAccessSchema.optional(),
 
   // ── Env + secrets ──
   /** Literal non-sensitive env vars baked into the pod at boot. */
@@ -584,12 +601,22 @@ export function validateNoProxiedServers(
 export const RESERVED_MEMORY_SERVER_NAME = 'guuey-memory';
 
 /**
+ * The reserved colocated key the auto-injected cross-app profile MCP is
+ * booted + spliced under (profile T1+). NEVER builder-declarable — mirrors
+ * {@link RESERVED_MEMORY_SERVER_NAME}'s reservation for the same reason: a
+ * builder-declared server under this key would be silently replaced by the
+ * platform entry at invoke time.
+ */
+export const RESERVED_PROFILE_SERVER_NAME = 'guuey-profile';
+
+/**
  * Every `mcpServers` map key the platform reserves. Extensible — one entry
  * today ({@link RESERVED_MEMORY_SERVER_NAME}); future platform-injected
  * servers add their key here and inherit the deploy-time rejection for free.
  */
 export const RESERVED_MCP_SERVER_NAMES: readonly string[] = [
   RESERVED_MEMORY_SERVER_NAME,
+  RESERVED_PROFILE_SERVER_NAME,
 ];
 
 /**
