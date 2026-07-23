@@ -562,6 +562,61 @@ export function validateNoProxiedServers(
   return violations;
 }
 
+// ── Reserved platform MCP server names (deploy-time reservation) ────────────
+//
+// Some `mcpServers` map keys are OWNED by the platform: the runtime splices a
+// platform-managed entry under them (memmcp — the auto-injected memory MCP is
+// spliced under `guuey-memory` for authenticated invokes; see
+// `nocode-runtime/src/run-seam.ts` + `boot-colocated.ts`). A builder that
+// declares a server under a reserved key would (a) boot as builder code under
+// the same key the platform child owns, and (b) be silently REPLACED by the
+// platform entry at invoke time. `validateReservedServerNames` is the
+// synchronous deploy-time pre-flight that rejects it with a fast, actionable
+// 400 — the primary guard; the run-seam collision guard is defense-in-depth for
+// stale pre-validator snapshots. Single source of the reserved literal: this
+// module. The boot/splice layer (`boot-colocated.ts`) imports it from here.
+
+/**
+ * The reserved colocated key the auto-injected memory MCP is booted + spliced
+ * under (memmcp). NEVER builder-declarable — the memory child's own server
+ * advertises this same name and its aud is `colocatedResourceUrl(appId, this)`.
+ */
+export const RESERVED_MEMORY_SERVER_NAME = 'guuey-memory';
+
+/**
+ * Every `mcpServers` map key the platform reserves. Extensible — one entry
+ * today ({@link RESERVED_MEMORY_SERVER_NAME}); future platform-injected
+ * servers add their key here and inherit the deploy-time rejection for free.
+ */
+export const RESERVED_MCP_SERVER_NAMES: readonly string[] = [
+  RESERVED_MEMORY_SERVER_NAME,
+];
+
+/**
+ * Validate that no `agent.mcpServers` entry uses a platform-RESERVED name
+ * ({@link RESERVED_MCP_SERVER_NAMES}) — regardless of `kind` (the key is
+ * reserved, not just one hosting mode; a builder must not shadow it as
+ * `colocated`, `external`, or anything else). Returns a list of human-readable
+ * violation messages (empty = clean), one per reserved entry. Mirrors
+ * {@link validateNoProxiedServers}'s shape.
+ */
+export function validateReservedServerNames(
+  agent: GuueyAgent | undefined,
+): string[] {
+  const violations: string[] = [];
+  const servers = agent?.mcpServers;
+  if (!servers) return violations;
+
+  for (const name of Object.keys(servers)) {
+    if (RESERVED_MCP_SERVER_NAMES.includes(name)) {
+      violations.push(
+        `MCP server "${name}": that name is reserved by the platform (an auto-injected server uses it) — rename this server.`,
+      );
+    }
+  }
+  return violations;
+}
+
 /**
  * Platform default MCP server map. Applied by the pod when `agent.mcpServers`
  * is absent. Exposed here so non-pod consumers (CLI dry-run, lints) can show

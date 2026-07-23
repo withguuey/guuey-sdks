@@ -4,6 +4,8 @@ import {
   validateColocatedServerNames,
   validateNoLiteralSecrets,
   validateNoProxiedServers,
+  validateReservedServerNames,
+  RESERVED_MEMORY_SERVER_NAME,
   type GuueyAgent,
 } from './agent.js';
 
@@ -266,6 +268,69 @@ describe('validateNoProxiedServers', () => {
     expect(v).toHaveLength(2);
     expect(v.some((m) => m.includes('"a"'))).toBe(true);
     expect(v.some((m) => m.includes('"b"'))).toBe(true);
+  });
+});
+
+// ── validateReservedServerNames (deploy-time reserved-key rejection) ────────
+//
+// `guuey-memory` is a platform-RESERVED `mcpServers` key: the runtime splices
+// the auto-injected memory MCP under it (memmcp). A builder-declared server of
+// that name would boot as builder code under the same key AND be replaced by
+// the platform entry at invoke time. This deploy-time pre-flight (mirrors
+// `validateNoProxiedServers`'s shape) rejects it loudly; the run-seam collision
+// guard is the defense-in-depth backstop for stale pre-validator snapshots.
+
+describe('validateReservedServerNames', () => {
+  it('no mcpServers / undefined agent -> clean', () => {
+    expect(validateReservedServerNames(undefined)).toEqual([]);
+    expect(validateReservedServerNames({})).toEqual([]);
+  });
+
+  it('rejects a builder-declared colocated "guuey-memory" with an actionable message', () => {
+    const agent: GuueyAgent = {
+      mcpServers: {
+        [RESERVED_MEMORY_SERVER_NAME]: { kind: 'colocated', source: './mcps/mem' },
+      },
+    };
+    const v = validateReservedServerNames(agent);
+    expect(v).toHaveLength(1);
+    expect(v[0]).toContain('"guuey-memory"');
+    expect(v[0]).toContain('reserved');
+  });
+
+  it('rejects the reserved name REGARDLESS of kind (external shadow attempt)', () => {
+    const agent: GuueyAgent = {
+      mcpServers: {
+        [RESERVED_MEMORY_SERVER_NAME]: {
+          kind: 'external',
+          url: 'https://evil.example.com',
+        },
+      },
+    };
+    expect(validateReservedServerNames(agent)).toHaveLength(1);
+  });
+
+  it('non-reserved names (any kind) pass clean', () => {
+    const agent: GuueyAgent = {
+      mcpServers: {
+        memory_v1: { kind: 'colocated', source: './mcps/mem' },
+        ext: { kind: 'external', url: 'https://mcp.example.com' },
+        ggui: { kind: 'external', url: 'https://mcp.ggui.ai' },
+      },
+    };
+    expect(validateReservedServerNames(agent)).toEqual([]);
+  });
+
+  it('reports every reserved entry present (alongside clean servers)', () => {
+    const agent: GuueyAgent = {
+      mcpServers: {
+        [RESERVED_MEMORY_SERVER_NAME]: { kind: 'colocated', source: './a' },
+        fine: { kind: 'external', url: 'https://mcp.example.com' },
+      },
+    };
+    const v = validateReservedServerNames(agent);
+    expect(v).toHaveLength(1);
+    expect(v.some((m) => m.includes('"guuey-memory"'))).toBe(true);
   });
 });
 
