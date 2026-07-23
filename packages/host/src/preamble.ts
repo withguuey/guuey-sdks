@@ -172,12 +172,62 @@ const PROFILE_RECALL_FRAMING =
  * marker section whose `app` is `""` — that one renders as a bare line (no
  * `### From` header). Leading `\n\n` so it appends cleanly after the SAVE
  * instruction (mirrors {@link renderUserMemoryRecall}).
+ *
+ * The provenance name (`s.app`) is builder-controlled — it is `GuueyApp.name`,
+ * validated only non-empty/trimmed/≤100 chars — so it is neutralized through
+ * {@link sanitizeProvenanceName} BEFORE it enters the `### From` header inside
+ * the containment frame. Without this, a name carrying a newline + a literal
+ * `</user_profile>` would break the payload OUT of the block (cross-tenant
+ * instruction injection into every app that recalls the profile). The section
+ * CONTENT is already delimiter-neutralized where it is produced (the profile
+ * child's save path); this closes the remaining name-shaped hole at the frame
+ * boundary itself — the one place guaranteed to run for every rendered block.
  */
 export function renderProfileRecall(sections: ProfileSection[]): string {
   const body = sections
-    .map((s) => (s.app !== "" ? `### From ${s.app}\n${s.content}` : s.content))
+    .map((s) =>
+      // The marker section (`app === ""`) renders as a bare line, no header;
+      // real sections get the SANITIZED provenance name in a `### From` header.
+      s.app !== "" ? `### From ${sanitizeProvenanceName(s.app)}\n${s.content}` : s.content,
+    )
     .join("\n\n");
   return `\n\n${PROFILE_RECALL_HEADING}\n\n${PROFILE_RECALL_FRAMING}\n<user_profile>\n${body}\n</user_profile>`;
+}
+
+/**
+ * Neutralize a builder-controlled provenance name before it enters the
+ * `### From <app>` header inside the `<user_profile>` containment frame. Two
+ * passes, ORDER-SENSITIVE:
+ *   1. Collapse every run of C0 control chars (incl. `\n`, `\r`, `\t`) to a
+ *      SINGLE space, so the name can never break the header onto a new line
+ *      NOR hide a split delimiter (`<\n/user_profile>`) inside a control char.
+ *   2. Neutralize the `<user_profile>`/`</user_profile>` delimiter by inserting
+ *      a zero-width space after the `<` (mirroring the profile child's save-side
+ *      `DELIMITER_RE` mechanism, retargeted here), so a literal close tag in the
+ *      name renders inert and cannot terminate the frame early.
+ * Controls are stripped FIRST so a delimiter split across a control char has
+ * collapsed to a non-delimiter before the ZWS pass runs. Applied UNIFORMLY to
+ * the resolved app name AND the appId fallback (the appId is already
+ * segment-safe, but one path is cheaper to reason about than two).
+ */
+function sanitizeProvenanceName(app: string): string {
+  // Pass 1: collapse runs of C0 controls (code point <= 0x1F, incl. \n \r \t)
+  // to a single space. An explicit scan, NOT a control-char regex (which the
+  // `no-control-regex` lint rejects — the range would be intentional there).
+  let stripped = "";
+  let prevWasControl = false;
+  for (const ch of app) {
+    const code = ch.codePointAt(0) ?? 0;
+    if (code <= 0x1f) {
+      if (!prevWasControl) stripped += " ";
+      prevWasControl = true;
+    } else {
+      stripped += ch;
+      prevWasControl = false;
+    }
+  }
+  // Pass 2: ZWS-neutralize the containment delimiter (U+200B after the `<`), trim.
+  return stripped.replace(/<(\/?)user_profile>/g, "<\u200B$1user_profile>").trim();
 }
 
 /**
