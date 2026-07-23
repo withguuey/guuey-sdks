@@ -41,6 +41,7 @@ import {
   type BuildOptionsContext,
   type SdkMcpServer,
 } from "./claude-options.js";
+import { renderMemorySection } from "../preamble.js";
 import type { HostInvoke, HostRuntime } from "./claude.js";
 import { GUUEY_DEFAULT_SYSTEM_PROMPT, type GuueyAgent } from "@guuey/config";
 import { resolveSdkVersion } from "../sdk-version.js";
@@ -138,12 +139,20 @@ export async function runInvokeOpenai(
         )}). The CLI inlines {file} references before upload; workers never read the filesystem.`,
       );
     }
-    instructions = withContextPreamble(
-      snapshot.systemPrompt ?? GUUEY_DEFAULT_SYSTEM_PROMPT,
-      ctx.history,
-      ctx.priorMemory,
-      ctx.priorState,
-    );
+    // `instructions` = the context preamble PLUS, when the Router pushed
+    // recalled user memory, the framework-blind memory section (memory-mcp T5:
+    // save `save_memory` instruction + RECALL block, identical to the Claude &
+    // ADK renderers). Gated on `userMemory` presence — which implies the memory
+    // child is attached (the Router reads the file only when
+    // `authenticated && memoryAttached`, the SAME signal that splices the
+    // `save_memory` tool), so the save instruction always names a live tool.
+    instructions =
+      withContextPreamble(
+        snapshot.systemPrompt ?? GUUEY_DEFAULT_SYSTEM_PROMPT,
+        ctx.history,
+        ctx.priorMemory,
+        ctx.priorState,
+      ) + (invoke.userMemory !== undefined ? renderMemorySection(invoke.userMemory) : "");
     mcpServers = buildOpenaiMcpServers(ctx);
   } catch (err) {
     emit.error(err instanceof Error ? err.message : String(err));

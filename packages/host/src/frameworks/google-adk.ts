@@ -48,7 +48,7 @@ import {
   resolveAgentEntry,
 } from "../agent-entry.js";
 import { listCredentials, type CredentialFile } from "../creds.js";
-import { withContextPreamble } from "../preamble.js";
+import { renderMemorySection, withContextPreamble } from "../preamble.js";
 import { resolveSdkVersion } from "../sdk-version.js";
 
 const ADK_FRAMEWORK = "google-adk";
@@ -323,12 +323,19 @@ export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
         );
         return;
       }
-      const instruction = withContextPreamble(
-        snapshot.systemPrompt ?? "",
-        turn.history,
-        turn.priorMemory,
-        turn.priorState,
-      );
+      // The context preamble PLUS, when the Router pushed recalled user memory,
+      // the framework-blind memory section (memory-mcp T5: save `save_memory`
+      // instruction + RECALL block, identical to the Claude & OpenAI renderers).
+      // Gated on `userMemory` presence — which implies the memory child is
+      // attached (the Router reads the file only when
+      // `authenticated && memoryAttached`, the SAME signal that splices the
+      // `save_memory` tool), so the save instruction always names a live tool.
+      // The brace-content in recalled memory is safe: no-code rides `instruction`
+      // as a FUNCTION (F7 — bypasses ADK `{var}` substitution), and the graceful
+      // path hands it to the dev's factory verbatim.
+      const instruction =
+        withContextPreamble(snapshot.systemPrompt ?? "", turn.history, turn.priorMemory, turn.priorState) +
+        (turn.userMemory !== undefined ? renderMemorySection(turn.userMemory) : "");
       let agent: AdkAgent;
       try {
         const toolsets = buildToolsets(adk, listCredentials(turn.fs)());

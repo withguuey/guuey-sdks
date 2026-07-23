@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import type { Emitter, JsonValue, StopReason } from "@guuey/worker";
 import { assertGracefulSupport, loadRunner, type HostTurn } from "../index.js";
-import { withContextPreamble } from "../preamble.js";
+import { renderMemorySection, withContextPreamble } from "../preamble.js";
 import { createRunner, importConditionEntry, loadAdk } from "./google-adk.js";
 
 function fakeEmitter() {
@@ -124,6 +124,59 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
       runConfig: { streamingMode: "sse" },
     });
     expect(got.done[0]?.result).toBe("streamed answer");
+  });
+
+  it("appends the framework-blind memory section (save + recall) to the F7 function instruction when userMemory is present (memory-mcp T5)", async () => {
+    const session = join(base, "mem-session");
+    mkdirSync(join(session, ".guuey", "credentials"), { recursive: true });
+    const captured: { agent?: unknown } = {};
+    const fakeAdk = {
+      LlmAgent: class {
+        constructor(
+          public readonly params: { name: string; model: string; instruction: string | (() => string); tools: unknown[] },
+        ) {
+          captured.agent = this;
+        }
+      },
+      MCPToolset: class {
+        constructor(_: unknown) {}
+      },
+      InMemoryRunner: class {
+        readonly appName = "fake";
+        readonly sessionService = {
+          createSession: ({ userId }: { appName: string; userId: string }) => Promise.resolve({ id: `s-${userId}` }),
+        };
+        constructor(_: { agent: object }) {}
+        async *runAsync(): AsyncGenerator<JsonValue, void, undefined> {
+          yield { content: { parts: [{ text: "ok" }] } };
+        }
+      },
+    };
+    const runner = createRunner({ load: () => Promise.resolve(fakeAdk) });
+    const { emit, got } = fakeEmitter();
+    const turn: HostTurn = {
+      input: "hi",
+      identity: { userId: "u-mem", authMode: "authenticated" },
+      fs: { app: base, home: base, session },
+      history: [],
+      // Router pushed recalled memory (implies memoryAttached — see the gate).
+      userMemory: "User's name is Ada.",
+    };
+    await runner.runTurn({ model: "gemini-3.5-pro", systemPrompt: "be terse" }, turn, emit);
+
+    expect(got.error).toEqual([]);
+    const agent = captured.agent as { params: { instruction: string | (() => string) } };
+    // Still a FUNCTION (F7 brace-safety inherited) — the recalled memory may
+    // contain `{...}`, which a string instruction would 400 on.
+    expect(typeof agent.params.instruction).toBe("function");
+    const resolved = (agent.params.instruction as () => string)();
+    // Identical section content to Claude/OpenAI, appended after the preamble.
+    expect(resolved).toBe(
+      withContextPreamble("be terse", turn.history, turn.priorMemory, turn.priorState) +
+        renderMemorySection("User's name is Ada."),
+    );
+    expect(resolved).toContain("`save_memory` tool");
+    expect(resolved).toContain("<user_memory>\nUser's name is Ada.\n</user_memory>");
   });
 
   it("an sse cred file fails the turn with the actionable transport error", async () => {

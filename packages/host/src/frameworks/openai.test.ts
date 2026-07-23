@@ -12,6 +12,7 @@ import {
   type OpenaiRunResult,
 } from "./openai.js";
 import type { HostInvoke } from "./claude.js";
+import { renderMemorySection } from "../preamble.js";
 import type { GuueyAgent } from "@guuey/config";
 
 /** Collect every emitted WorkerEvent into an array (the fd-3 sink, in memory). */
@@ -205,6 +206,39 @@ describe("runInvokeOpenai — native emission", () => {
     expect(seen.instructions).toContain("<thread_memory>");
     expect(seen.instructions).toContain("Ada");
     expect(seen.instructions).toContain("<working_state>");
+    // No userMemory pushed → NO memory section (framework-blind gate: present
+    // iff `invoke.userMemory` is present).
+    expect(seen.instructions).not.toContain("`save_memory` tool");
+    expect(seen.instructions).not.toContain("## What you remember about this user");
+  });
+
+  it("renders the framework-blind memory section (save + recall) into instructions when userMemory is present (memory-mcp T5)", async () => {
+    const { sink } = collector();
+    const emit = createEmitter(sink);
+    let instructions: string | undefined;
+    const run: OpenaiRunFn = (agent) => {
+      instructions = typeof agent.instructions === "string" ? agent.instructions : undefined;
+      return Promise.resolve(fakeResult({ events: [], finalOutput: "ok" }));
+    };
+
+    await runInvokeOpenai(
+      { framework: "openai-agents-sdk", model: "gpt-4o-mini", systemPrompt: "SYS", mcpServers: {} },
+      invoke({ userMemory: "User's name is Ada." }),
+      runtime,
+      emit,
+      run,
+    );
+
+    // Identical block content to Claude/ADK: the save one-liner + the
+    // byte-identical RECALL block appended AFTER the context preamble (mirror
+    // where the Claude path puts it — trailing the system prompt).
+    expect(instructions).toContain("SYS");
+    expect(instructions).toContain("`save_memory` tool");
+    expect(instructions?.endsWith(renderMemorySection("User's name is Ada."))).toBe(true);
+    // The preamble output precedes the memory section.
+    expect((instructions ?? "").indexOf("SYS")).toBeLessThan(
+      (instructions ?? "").indexOf("`save_memory` tool"),
+    );
   });
 });
 

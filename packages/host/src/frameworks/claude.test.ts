@@ -246,7 +246,10 @@ describe("runInvoke — native emission", () => {
     );
 
     expect(seenSystemPrompt).not.toContain("## What you remember about this user");
-    expect(seenSystemPrompt).toContain("$GUUEY_HOME_DIR/memories/MEMORY.md");
+    // Save instruction still present (authenticated + fs) — memory-mcp T5 points
+    // it at the `save_memory` tool; the old file-tools path phrasing is gone.
+    expect(seenSystemPrompt).toContain("`save_memory` tool");
+    expect(seenSystemPrompt).not.toContain("$GUUEY_HOME_DIR/memories/MEMORY.md");
   });
 
   it("broker path: baseUrl+authToken in runtime → options.env has ANTHROPIC_BASE_URL+ANTHROPIC_AUTH_TOKEN, no ANTHROPIC_API_KEY", async () => {
