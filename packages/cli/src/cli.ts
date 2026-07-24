@@ -28,6 +28,7 @@ import {
   appsPublish,
   appsUnpublish,
 } from './commands/apps';
+import { appByoUserErase } from './commands/app';
 import { status } from './commands/status';
 import { typegen } from './commands/typegen';
 import { login } from './commands/login';
@@ -221,6 +222,20 @@ Apps:
   apps unpublish [appId]        Remove the app from the store (personal apps only;
                                  workspace-owned apps 404 — use the platform UI)
                                  Idempotent; the share link keeps working after unpublish.
+
+App Admin (BYO-auth apps; workspace-admin only):
+  app byo-user erase            Erase one BYO end-user's app data (GDPR):
+                                 enqueues the durable-home memory wipe (done
+                                 within ~15 min) and synchronously deletes
+                                 their threads/sessions for this app.
+                                 Idempotent — re-running is safe.
+    --app <appId>                Target app (or resolved app-id config)
+    --sub <sub>                  The end-user's raw issuer sub (required)
+  app byo-user erase --status   Poll the erase state instead of enqueuing:
+                                 queued | done | none. stuck: true means
+                                 the wipe hasn't drained — contact support.
+    --app <appId>                Target app (or resolved app-id config)
+    --sub <sub>                  The end-user's raw issuer sub (required)
 
 Configuration:
   config show                   Show resolved configuration
@@ -601,6 +616,29 @@ async function main(): Promise<void> {
           console.error(
             `Unknown apps command: ${action ?? '(none)'}. Use: list, get, create, update, delete, recover, access, publish, unpublish`,
           );
+          process.exit(1);
+      }
+      break;
+
+    case 'app':
+      switch (action) {
+        case 'byo-user':
+          switch (rest[0]) {
+            case 'erase':
+              await appByoUserErase({
+                app: flags.app as string | undefined,
+                sub: flags.sub as string | undefined,
+                status: flags.status as string | true | undefined,
+                json: jsonFlag,
+              });
+              break;
+            default:
+              console.error(`Unknown app byo-user command: ${rest[0] ?? '(none)'}. Use: erase`);
+              process.exit(1);
+          }
+          break;
+        default:
+          console.error(`Unknown app command: ${action ?? '(none)'}. Use: byo-user`);
           process.exit(1);
       }
       break;
