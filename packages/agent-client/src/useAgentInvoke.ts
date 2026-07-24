@@ -23,7 +23,13 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Reducer, type AgReduceResult } from "@silverprotocol/core";
-import { parseConsentRequest, parseSseEvents, reduceAssistantText, stringField } from "./sse";
+import {
+  parseConsentRequest,
+  parseLinkRequest,
+  parseSseEvents,
+  reduceAssistantText,
+  stringField,
+} from "./sse";
 import { ingestMessageFrame } from "./blocks";
 import type {
   AgentInvokeAdapters,
@@ -31,6 +37,7 @@ import type {
   HistoryCard,
   HistoryLoadResult,
   ProfileConsentRequest,
+  ProfileLinkRequest,
   UseAgentInvokeOptions,
   UseAgentInvokeReturn,
 } from "./types";
@@ -80,6 +87,11 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
   // `profile-consent-needed` SSE event), or null. Cleared on app switch /
   // reset / explicit dismiss. Consumers with no consent UI just ignore it.
   const [profileConsentRequest, setProfileConsentRequest] = useState<ProfileConsentRequest | null>(null);
+  // The pod's latest cross-app profile LINK invite on this conversation (T3's
+  // `profile-link-needed` SSE event), or null. Cleared on app switch / reset /
+  // explicit dismiss, same lifecycle as `profileConsentRequest` — the two are
+  // independent (an unlinked-invite vs an already-linked consent ask).
+  const [profileLinkRequest, setProfileLinkRequest] = useState<ProfileLinkRequest | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   // Mirror the latest threadId + adapters into refs so `send` reads fresh
@@ -118,6 +130,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     setHistoryCards([]);
     // A prior app's consent ask must never leak into the new conversation.
     setProfileConsentRequest(null);
+    setProfileLinkRequest(null);
 
     let cancelled = false;
     const key = threadStorageKey(appId);
@@ -205,10 +218,15 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     setReduceResult(null);
     setHistoryCards([]);
     setProfileConsentRequest(null);
+    setProfileLinkRequest(null);
   }, [appId]);
 
   const clearProfileConsentRequest = useCallback(() => {
     setProfileConsentRequest(null);
+  }, []);
+
+  const clearProfileLinkRequest = useCallback(() => {
+    setProfileLinkRequest(null);
   }, []);
 
   const send = useCallback(
@@ -290,6 +308,11 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
               // valid request untouched (never clobbered to null).
               const parsed = parseConsentRequest(ev.data);
               if (parsed) setProfileConsentRequest(parsed);
+            } else if (ev.event === "profile-link-needed") {
+              // Cross-app profile LINK invite (linkcoh T3) for an unlinked byo
+              // caller. Same drop-if-malformed contract as consent above.
+              const parsed = parseLinkRequest(ev.data);
+              if (parsed) setProfileLinkRequest(parsed);
             }
             // `done` needs no handling — the stream closes after it. Any other
             // (unknown) event falls through silently — there is no default
@@ -331,5 +354,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     historyCards,
     profileConsentRequest,
     clearProfileConsentRequest,
+    profileLinkRequest,
+    clearProfileLinkRequest,
   };
 }

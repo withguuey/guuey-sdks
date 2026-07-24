@@ -33,6 +33,21 @@ export interface ProfileConsentRequest {
 }
 
 /**
+ * A cross-app profile LINK invite surfaced mid-stream by the pod's
+ * `profile-link-needed` SSE event (nocode-runtime linkcoh T3). Emitted when an
+ * unlinked byo end-user's declared profile posture booted, inviting them to
+ * link their guuey account (via the named `/link` ceremony) so they earn the
+ * guuey-wide cross-app profile. `requested` mirrors the pod's `ProfileAccess`
+ * posture verbatim (the builder's declared access, not a live ask) — the
+ * literal union is inlined rather than imported, same rationale as
+ * {@link ProfileConsentRequest}.
+ */
+export interface ProfileLinkRequest {
+  appId: string;
+  requested: "read" | "read-write";
+}
+
+/**
  * A persisted generative-UI card rehydrated from thread history — the verbatim
  * `AgArtifact` snapshot the pod stored on a `kind: "card"` row, tagged with its
  * transcript position. A block-preserving renderer interleaves these with
@@ -175,4 +190,17 @@ export interface UseAgentInvokeReturn {
   profileConsentRequest: ProfileConsentRequest | null;
   /** Dismiss the pending {@link profileConsentRequest} (back to `null`). */
   clearProfileConsentRequest: () => void;
+  /**
+   * The latest cross-app profile LINK invite the pod asked for on THIS
+   * conversation, or `null`. Set from a well-formed `profile-link-needed`
+   * SSE event (see {@link ProfileLinkRequest}); malformed payloads are
+   * dropped and leave the field untouched. `reset()` and an app switch clear
+   * it back to `null`. Consumers that never render a link prompt simply
+   * ignore this field. Distinct from {@link profileConsentRequest}: this one
+   * invites an UNLINKED byo user to link their account; consent asks an
+   * already-linked user to grant an app read/read-write access.
+   */
+  profileLinkRequest: ProfileLinkRequest | null;
+  /** Dismiss the pending {@link profileLinkRequest} (back to `null`). */
+  clearProfileLinkRequest: () => void;
 }

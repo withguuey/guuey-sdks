@@ -4,8 +4,10 @@ export {
   reduceAssistantText,
   stringField,
   parseConsentRequest,
+  parseLinkRequest,
   type ParsedSseEvent,
 } from "./sse";
+export { dismissLinkPrompt } from "./link-prompt";
 export {
   createWebAdapters,
   localStorageThreadStore,
@@ -45,6 +47,7 @@ export type {
   AgentMessage,
   HistoryCard,
   ProfileConsentRequest,
+  ProfileLinkRequest,
   ThreadIdStore,
   GenerateId,
   InvokeRequest,

@@ -4,7 +4,7 @@
  * verbatim across web (Studio) and React-Native (Portal).
  */
 
-import type { ProfileConsentRequest } from "./types";
+import type { ProfileConsentRequest, ProfileLinkRequest } from "./types";
 
 export interface ParsedSseEvent {
   event: string;
@@ -125,6 +125,23 @@ export function stringField(data: unknown, key: string): string | undefined {
  * wire payload with unknown extras.
  */
 export function parseConsentRequest(data: unknown): ProfileConsentRequest | null {
+  if (typeof data !== "object" || data === null || Array.isArray(data)) return null;
+  const appId = (data as { appId?: unknown }).appId;
+  const requested = (data as { requested?: unknown }).requested;
+  if (typeof appId !== "string" || appId.length === 0) return null;
+  if (requested !== "read" && requested !== "read-write") return null;
+  return { appId, requested };
+}
+
+/**
+ * Parse a `profile-link-needed` SSE payload into a typed
+ * {@link ProfileLinkRequest}, or `null` if it does not conform. Same shape +
+ * validation as {@link parseConsentRequest} (`appId` non-empty string,
+ * `requested` exactly `"read"` or `"read-write"`, extra keys tolerated) — the
+ * pod emits an identically-shaped payload for both events; only the event
+ * NAME (and what it means to the consumer) differs.
+ */
+export function parseLinkRequest(data: unknown): ProfileLinkRequest | null {
   if (typeof data !== "object" || data === null || Array.isArray(data)) return null;
   const appId = (data as { appId?: unknown }).appId;
   const requested = (data as { requested?: unknown }).requested;
