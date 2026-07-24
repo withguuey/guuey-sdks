@@ -27,8 +27,8 @@ import {
   appsAccess,
   appsPublish,
   appsUnpublish,
+  appsByoUserErase,
 } from './commands/apps';
-import { appByoUserErase } from './commands/app';
 import { status } from './commands/status';
 import { typegen } from './commands/typegen';
 import { login } from './commands/login';
@@ -224,17 +224,16 @@ Apps:
                                  Idempotent; the share link keeps working after unpublish.
 
 App Admin (BYO-auth apps; workspace-admin only):
-  app byo-user erase            Erase one BYO end-user's app data (GDPR):
+  apps byo-user erase [appId]   Erase one BYO end-user's app data (GDPR):
                                  enqueues the durable-home memory wipe (done
                                  within ~15 min) and synchronously deletes
                                  their threads/sessions for this app.
                                  Idempotent — re-running is safe.
-    --app <appId>                Target app (or resolved app-id config)
     --sub <sub>                  The end-user's raw issuer sub (required)
-  app byo-user erase --status   Poll the erase state instead of enqueuing:
+  apps byo-user erase [appId] --status
+                                 Poll the erase state instead of enqueuing:
                                  queued | done | none. stuck: true means
                                  the wipe hasn't drained — contact support.
-    --app <appId>                Target app (or resolved app-id config)
     --sub <sub>                  The end-user's raw issuer sub (required)
 
 Configuration:
@@ -612,33 +611,24 @@ async function main(): Promise<void> {
         case 'unpublish':
           await appsUnpublish(rest[0], { json: jsonFlag });
           break;
-        default:
-          console.error(
-            `Unknown apps command: ${action ?? '(none)'}. Use: list, get, create, update, delete, recover, access, publish, unpublish`,
-          );
-          process.exit(1);
-      }
-      break;
-
-    case 'app':
-      switch (action) {
         case 'byo-user':
           switch (rest[0]) {
             case 'erase':
-              await appByoUserErase({
-                app: flags.app as string | undefined,
+              await appsByoUserErase(rest[1], {
                 sub: flags.sub as string | undefined,
                 status: flags.status as string | true | undefined,
                 json: jsonFlag,
               });
               break;
             default:
-              console.error(`Unknown app byo-user command: ${rest[0] ?? '(none)'}. Use: erase`);
+              console.error(`Unknown apps byo-user command: ${rest[0] ?? '(none)'}. Use: erase`);
               process.exit(1);
           }
           break;
         default:
-          console.error(`Unknown app command: ${action ?? '(none)'}. Use: byo-user`);
+          console.error(
+            `Unknown apps command: ${action ?? '(none)'}. Use: list, get, create, update, delete, recover, access, publish, unpublish, byo-user`,
+          );
           process.exit(1);
       }
       break;

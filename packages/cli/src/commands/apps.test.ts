@@ -11,7 +11,14 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
-import { appsAccess, appsList, appsListRow, appsPublish, appsUnpublish } from './apps.js';
+import {
+  appsAccess,
+  appsByoUserErase,
+  appsList,
+  appsListRow,
+  appsPublish,
+  appsUnpublish,
+} from './apps.js';
 import { resolveConfig } from '../config.js';
 
 vi.mock('../auth.js', async (importOriginal) => {
@@ -49,14 +56,20 @@ interface CapturedRequest {
   body: unknown;
 }
 
-/** Reads the most recent `fetch(url, init)` call back into wire-request shape. */
+/**
+ * Reads the most recent `fetch(url, init)` call back into wire-request shape.
+ * `path` includes the query string (`pathname + search`) — empty for every
+ * existing query-less caller here, load-bearing for `appsByoUserErase`'s
+ * `--status` GET (`?sub=…`).
+ */
 function lastRequest(fetchSpy: MockInstance<typeof fetch>): CapturedRequest {
   const call = fetchSpy.mock.calls.at(-1);
   if (!call) throw new Error('fetch was not called');
   const [url, init] = call;
+  const parsed = new URL(String(url));
   return {
     method: String(init?.method),
-    path: new URL(String(url)).pathname,
+    path: parsed.pathname + parsed.search,
     body: init?.body ? JSON.parse(String(init.body)) : undefined,
   };
 }
@@ -461,5 +474,241 @@ describe('appsUnpublish', () => {
 
     const printed = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
     expect(JSON.parse(printed)).toEqual({ unpublished: true, listing });
+  });
+});
+
+/**
+ * `guuey apps byo-user erase [appId] --sub <sub>` (+ `--status`) — erasecomp
+ * Task 6, the CLI wrapper over Task 3's cliApi routes
+ * (`backend/amplify/functions/cliApi/handlers/byo-users.ts`):
+ *
+ *   POST /v1/apps/{appId}/byo-users/erase           (default)
+ *   GET  /v1/apps/{appId}/byo-users/erase-status?sub=…   (--status)
+ *
+ * Folded (erasecomp polish, founder decision) from a short-lived singular
+ * `guuey app byo-user erase --app <appId> --sub <sub>` group into this
+ * plural `apps` group, appId as a positional argument like its siblings
+ * above — every behavioral assertion below carries over from the old
+ * `app.test.ts`, adapted to the new `(appId, opts)` invocation.
+ */
+describe('appsByoUserErase', () => {
+  let fetchSpy: MockInstance<typeof fetch>;
+  let exitSpy: MockInstance<typeof process.exit>;
+  let errSpy: MockInstance<typeof console.error>;
+  let logSpy: MockInstance<typeof console.log>;
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, 'fetch');
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('POSTs /apps/:id/byo-users/erase with { sub }', async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ wipeId: 'app-user-app1-byo_abc', status: 'queued' }), {
+        status: 202,
+      }),
+    );
+
+    await appsByoUserErase('app1', { sub: 'raw-sub-123' });
+
+    expect(lastRequest(fetchSpy)).toEqual({
+      method: 'POST',
+      path: '/apps/app1/byo-users/erase',
+      body: { sub: 'raw-sub-123' },
+    });
+  });
+
+  it('prints the wipeId and the honest async contract on erase success', async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ wipeId: 'app-user-app1-byo_abc', status: 'queued' }), {
+        status: 202,
+      }),
+    );
+
+    await appsByoUserErase('app1', { sub: 'raw-sub-123' });
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain('app-user-app1-byo_abc');
+    expect(output).toContain('queued');
+    expect(output).toContain('~15 minutes');
+    expect(output).toContain('--status');
+    expect(output).toContain('thread/session deletion already completed with this command');
+  });
+
+  it('--json emits the raw erase response as JSON', async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ wipeId: 'app-user-app1-byo_abc', status: 'queued' }), {
+        status: 202,
+      }),
+    );
+
+    await appsByoUserErase('app1', { sub: 'raw-sub-123', json: true });
+
+    const printed = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(JSON.parse(printed)).toEqual({ wipeId: 'app-user-app1-byo_abc', status: 'queued' });
+  });
+
+  it('--status GETs erase-status with the url-encoded sub', async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ wipeId: 'app-user-app1-byo_abc', status: 'done' }), {
+        status: 200,
+      }),
+    );
+
+    await appsByoUserErase('app1', { sub: 'raw sub/123', status: true });
+
+    expect(lastRequest(fetchSpy)).toEqual({
+      method: 'GET',
+      path: '/apps/app1/byo-users/erase-status?sub=raw%20sub%2F123',
+      body: undefined,
+    });
+  });
+
+  it('--status renders "status: none"', async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ wipeId: 'w1', status: 'none' }), { status: 200 }),
+    );
+
+    await appsByoUserErase('app1', { sub: 'sub1', status: true });
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain('status: none');
+  });
+
+  it('--status renders "status: done"', async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ wipeId: 'w1', status: 'done' }), { status: 200 }),
+    );
+
+    await appsByoUserErase('app1', { sub: 'sub1', status: true });
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain('status: done');
+  });
+
+  it('--status renders "status: queued" plus the requestedAt/attempts passthrough lines', async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          wipeId: 'w1',
+          status: 'queued',
+          requestedAt: '2026-07-01T00:00:00.000Z',
+          attempts: 3,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await appsByoUserErase('app1', { sub: 'sub1', status: true });
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain('status: queued');
+    expect(output).toContain('requested at: 2026-07-01T00:00:00.000Z');
+    expect(output).toContain('attempts: 3');
+  });
+
+  it('--status with stuck: true prints a visible warning (plus the requestedAt/attempts passthrough)', async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          wipeId: 'w1',
+          status: 'queued',
+          requestedAt: '2026-07-01T00:00:00.000Z',
+          attempts: 3,
+          stuck: true,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await appsByoUserErase('app1', { sub: 'sub1', status: true });
+
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('wipe appears stuck');
+    expect(printed).toContain('contact support');
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain('requested at: 2026-07-01T00:00:00.000Z');
+    expect(output).toContain('attempts: 3');
+  });
+
+  it('--status --json emits the raw status response as JSON', async () => {
+    const body = { wipeId: 'w1', status: 'queued', requestedAt: '2026-07-01T00:00:00.000Z', attempts: 1 };
+    fetchSpy.mockResolvedValue(new Response(JSON.stringify(body), { status: 200 }));
+
+    await appsByoUserErase('app1', { sub: 'sub1', status: true, json: true });
+
+    const printed = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(JSON.parse(printed)).toEqual(body);
+  });
+
+  it('a non-2xx erase response prints the server message and exits 1 (no retry)', async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: { code: 'FORBIDDEN', message: "caller has 'member'" } }),
+        { status: 403 },
+      ),
+    );
+
+    await expect(appsByoUserErase('app1', { sub: 'sub1' })).rejects.toBeInstanceOf(ExitSignal);
+
+    expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain("caller has 'member'");
+    expect(printed).not.toContain('[object Object]');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('a non-2xx status response prints the server message and exits 1', async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'App app1 not found' } }), {
+        status: 404,
+      }),
+    );
+
+    await expect(
+      appsByoUserErase('app1', { sub: 'sub1', status: true }),
+    ).rejects.toBeInstanceOf(ExitSignal);
+
+    expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('App app1 not found');
+  });
+
+  it('missing --sub errors without calling the API', async () => {
+    await expect(appsByoUserErase('app1', {})).rejects.toBeInstanceOf(ExitSignal);
+
+    expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(String(errSpy.mock.calls[0]?.[0])).toContain('--sub');
+  });
+
+  it('missing positional appId falls back to resolveConfig().appId', async () => {
+    vi.mocked(resolveConfig).mockReturnValueOnce({
+      host: 'https://guuey.test',
+      apiUrl: 'https://api.guuey.test',
+      appId: 'app-from-config',
+    });
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ wipeId: 'w1', status: 'queued' }), { status: 202 }),
+    );
+
+    await appsByoUserErase(undefined, { sub: 'sub1' });
+
+    expect(lastRequest(fetchSpy).path).toBe('/apps/app-from-config/byo-users/erase');
+  });
+
+  it('missing positional appId and no configured appId errors without calling the API', async () => {
+    await expect(appsByoUserErase(undefined, { sub: 'sub1' })).rejects.toBeInstanceOf(ExitSignal);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(String(errSpy.mock.calls[0]?.[0])).toContain('No app ID provided');
   });
 });

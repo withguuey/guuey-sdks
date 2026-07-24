@@ -475,3 +475,105 @@ export async function appsUnpublish(
 
   out.success(`App ${resolved} unpublished — the share link still works`);
 }
+
+/** `POST /v1/apps/:id/byo-users/erase` response (202). */
+interface ByoUserEraseResponse {
+  wipeId: string;
+  status: 'queued';
+}
+
+/** `GET /v1/apps/:id/byo-users/erase-status` response. */
+interface ByoUserEraseStatusResponse {
+  wipeId: string;
+  status: 'queued' | 'done' | 'none';
+  requestedAt?: string;
+  attempts?: number;
+  stuck?: boolean;
+}
+
+/**
+ * Handle `guuey apps byo-user erase [appId] --sub <sub>` and its `--status`
+ * variant (same command; `--status` switches the request to a GET against
+ * `erase-status` instead of POSTing `erase`). A thin wrapper over cliApi's
+ * builder byo-user erase routes (erasecomp Task 3,
+ * `backend/amplify/functions/cliApi/handlers/byo-users.ts`):
+ *
+ *   POST /v1/apps/{appId}/byo-users/erase                (default)
+ *   GET  /v1/apps/{appId}/byo-users/erase-status?sub=…   (--status)
+ *
+ * Lets a builder honor a BYO-auth end-user's GDPR erasure request without
+ * deleting the builder's whole Guuey app — see the handler's module doc for
+ * the full authz ladder + cross-tenant boundary. Folded into this plural
+ * `apps` group (erasecomp polish, founder decision) from a short-lived
+ * singular `app` group that was a near-homograph beside it — appId is now
+ * a positional argument, mirroring `appsGet`/`appsAccess`/… above.
+ */
+export async function appsByoUserErase(
+  appId: string | undefined,
+  opts: { sub?: string; status?: string | true; json?: boolean },
+): Promise<void> {
+  const resolved = appId ?? resolveConfig().appId;
+  if (!resolved) {
+    out.error('No app ID provided. Pass an app ID or set via: guuey config set app-id <id>');
+    process.exit(1);
+  }
+
+  const sub = opts.sub;
+  if (!sub) {
+    out.error('Usage: guuey apps byo-user erase [appId] --sub <sub> [--status]');
+    process.exit(1);
+  }
+
+  if (opts.status !== undefined) {
+    return appsByoUserEraseStatus(resolved, sub, opts);
+  }
+
+  const res = await apiRequest('POST', `/apps/${resolved}/byo-users/erase`, { sub });
+  if (!res.ok) return handleError(res, 'Failed to erase byo-user');
+
+  const data = (await res.json()) as ByoUserEraseResponse;
+
+  if (opts.json) {
+    out.json(data);
+    return;
+  }
+
+  out.success(`Erase queued (wipeId: ${data.wipeId}, status: ${data.status})`);
+  console.log('');
+  console.log(
+    '  queued; the memory wipe completes within ~15 minutes — check with --status;',
+  );
+  console.log('  thread/session deletion already completed with this command');
+}
+
+/**
+ * `--status` leg: point-poll `erase-status` and render `queued|done|none`,
+ * surfacing `stuck: true` as a visible operator-facing warning (the janitor
+ * has retried without draining — the same `FS_WIPE_STUCK` log marker the
+ * operator watches for; no CloudWatch alarm exists on it yet).
+ */
+async function appsByoUserEraseStatus(
+  appId: string,
+  sub: string,
+  opts: { json?: boolean },
+): Promise<void> {
+  const res = await apiRequest(
+    'GET',
+    `/apps/${appId}/byo-users/erase-status?sub=${encodeURIComponent(sub)}`,
+  );
+  if (!res.ok) return handleError(res, 'Failed to fetch erase status');
+
+  const data = (await res.json()) as ByoUserEraseStatusResponse;
+
+  if (opts.json) {
+    out.json(data);
+    return;
+  }
+
+  console.log(`  status: ${data.status}`);
+  if (data.requestedAt) console.log(`  requested at: ${data.requestedAt}`);
+  if (typeof data.attempts === 'number') console.log(`  attempts: ${data.attempts}`);
+  if (data.stuck) {
+    out.error('wipe appears stuck — contact support');
+  }
+}
