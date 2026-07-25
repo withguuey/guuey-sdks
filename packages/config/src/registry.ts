@@ -22,18 +22,36 @@ export interface FrameworkEntry {
   readonly defaultProvider: "anthropic" | "openai" | "google";
 }
 
+/**
+ * Array order is picker order AFTER `modelsForProvider` floats the default to
+ * the front — the platform's app-behavior picker shows only `.slice(0, 2)` for
+ * google + openai, so the second array entry per provider is a product-visible
+ * choice, not incidental. Pinned by
+ * `apps/platform/.../ModelSection/ModelSection.test.ts`.
+ */
 export const MODEL_REGISTRY: readonly ModelEntry[] = [
   { id: "claude-sonnet-5", provider: "anthropic", label: "Claude Sonnet 5", status: "ga", isDefault: true },
   { id: "claude-fable-5", provider: "anthropic", label: "Claude Fable 5", status: "ga" },
+  { id: "claude-opus-5", provider: "anthropic", label: "Claude Opus 5", status: "ga" },
   { id: "claude-sonnet-4-6", provider: "anthropic", label: "Claude Sonnet 4.6", status: "ga" },
   { id: "claude-haiku-4-5", provider: "anthropic", label: "Claude Haiku 4.5", status: "ga" },
   { id: "claude-opus-4-8", provider: "anthropic", label: "Claude Opus 4.8", status: "ga" },
-  { id: "gpt-5.5", provider: "openai", label: "GPT-5.5", status: "ga", isDefault: true },
+  // Terra — guuey's OpenAI default (founder call 2026-07-25). This DELIBERATELY
+  // diverges from OpenAI's own `gpt-5.6` alias, which routes to Sol: Terra is
+  // half Sol's price and the better cost/balance pick for hosted agent
+  // workloads. The bare `gpt-5.6` alias is intentionally NOT a registry id
+  // (never offered in a picker) — the rate card still rows it at Sol's price so
+  // an alias call from BYO config can't under-meter.
+  { id: "gpt-5.6-terra", provider: "openai", label: "GPT-5.6 Terra", status: "ga", isDefault: true },
+  { id: "gpt-5.6-sol", provider: "openai", label: "GPT-5.6 Sol", status: "ga" },
+  { id: "gpt-5.6-luna", provider: "openai", label: "GPT-5.6 Luna", status: "ga" },
+  { id: "gpt-5.5", provider: "openai", label: "GPT-5.5", status: "ga" },
   { id: "gpt-5.4", provider: "openai", label: "GPT-5.4", status: "ga" },
   { id: "gpt-4o", provider: "openai", label: "GPT-4o", status: "ga" },
   { id: "gpt-4o-mini", provider: "openai", label: "GPT-4o Mini", status: "ga" },
-  { id: "gpt-5.6", provider: "openai", label: "GPT-5.6", status: "announced" },
-  { id: "gemini-3.5-flash", provider: "google", label: "Gemini 3.5 Flash", status: "ga", isDefault: true },
+  { id: "gemini-3.6-flash", provider: "google", label: "Gemini 3.6 Flash", status: "ga", isDefault: true },
+  { id: "gemini-3.5-flash-lite", provider: "google", label: "Gemini 3.5 Flash Lite", status: "ga" },
+  { id: "gemini-3.5-flash", provider: "google", label: "Gemini 3.5 Flash", status: "ga" },
   { id: "gemini-3.1-pro", provider: "google", label: "Gemini 3.1 Pro", status: "ga" },
   { id: "gemini-2.5-flash", provider: "google", label: "Gemini 2.5 Flash", status: "ga" },
   { id: "gemini-2.5-pro", provider: "google", label: "Gemini 2.5 Pro", status: "ga" },

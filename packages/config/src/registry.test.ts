@@ -25,18 +25,38 @@ describe('MODEL_REGISTRY invariants', () => {
   it('defaultModelFor("claude-agent-sdk") === "claude-sonnet-5"', () => {
     expect(defaultModelFor('claude-agent-sdk')).toBe('claude-sonnet-5');
   });
+
+  // Per-provider defaults are money-visible (they pick the rate a new agent
+  // meters at) and product-visible (the picker's first item), so each one is
+  // pinned by id, not just by "some default exists".
+  it('defaultModelFor("openai-agents-sdk") === "gpt-5.6-terra"', () => {
+    // Deliberate divergence from OpenAI's own `gpt-5.6` alias (which routes to
+    // Sol) — founder cost/balance call 2026-07-25; see MODEL_REGISTRY comment.
+    expect(defaultModelFor('openai-agents-sdk')).toBe('gpt-5.6-terra');
+  });
+
+  it('defaultModelFor("google-adk") === "gemini-3.6-flash"', () => {
+    expect(defaultModelFor('google-adk')).toBe('gemini-3.6-flash');
+  });
 });
 
 describe('modelsForProvider', () => {
-  it('excludes announced entries', () => {
-    const openaiModels = modelsForProvider('openai');
-    expect(openaiModels.find((m) => m.id === 'gpt-5.6')).toBeUndefined();
+  it('exposes exactly the ga|preview entries per provider (announced/deprecated never reach a picker)', () => {
+    // Stated structurally rather than by pinning one `announced` id: the July
+    // 2026 wave retired the last stub (`gpt-5.6` → the real sol/terra/luna
+    // ids), so an id-pinned version of this test would be vacuous.
+    for (const provider of ['anthropic', 'openai', 'google', 'openrouter'] as const) {
+      const invocable = MODEL_REGISTRY.filter(
+        (m) => m.provider === provider && (m.status === 'ga' || m.status === 'preview'),
+      ).map((m) => m.id);
+      expect([...modelsForProvider(provider)].map((m) => m.id).sort()).toEqual([...invocable].sort());
+    }
   });
 
   it('lists the default first', () => {
     const openaiModels = modelsForProvider('openai');
     expect(openaiModels[0].isDefault).toBe(true);
-    expect(openaiModels[0].id).toBe('gpt-5.5');
+    expect(openaiModels[0].id).toBe('gpt-5.6-terra');
   });
 
   it('only includes ga and preview status', () => {
@@ -52,8 +72,15 @@ describe('modelEntry', () => {
     expect(modelEntry('unknown-model')).toBeUndefined();
   });
 
-  it('gpt-5.6 is announced', () => {
-    expect(modelEntry('gpt-5.6')?.status).toBe('announced');
+  it('the bare `gpt-5.6` alias is NOT a registry id — only sol/terra/luna are offered', () => {
+    // OpenAI's `gpt-5.6` alias routes to Sol. guuey never offers the alias in a
+    // picker (it would be an ambiguous, silently-repointable id); the rate card
+    // still rows it at Sol's price so a BYO-config call using it can't
+    // under-meter against the bare `gpt-5` row.
+    expect(modelEntry('gpt-5.6')).toBeUndefined();
+    expect(modelEntry('gpt-5.6-sol')?.status).toBe('ga');
+    expect(modelEntry('gpt-5.6-terra')?.isDefault).toBe(true);
+    expect(modelEntry('gpt-5.6-luna')?.status).toBe('ga');
   });
 
   it('returns the correct model entry', () => {
