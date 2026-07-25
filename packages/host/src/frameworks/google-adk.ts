@@ -36,7 +36,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { GuueyContext } from "@guuey/config";
+import { defaultModelFor, type GuueyContext } from "@guuey/config";
 import type { Emitter, JsonValue } from "@guuey/worker";
 import type { FrameworkRunner, HostSnapshot, HostTurn } from "../index.js";
 import {
@@ -83,7 +83,15 @@ export function importConditionEntry(resolvedEntry: string): string | undefined 
   return undefined;
 }
 const ADK_PACKAGE = "@google/adk";
-const DEFAULT_MODEL = "gemini-3.5-flash";
+
+/**
+ * Default ADK model — only used when the snapshot omits `model`. Derived
+ * from the `@guuey/config` registry (single source of truth per the
+ * model-release playbook §8 item A) rather than a bare literal, so a
+ * registry default change propagates here automatically — the same idiom
+ * `claude-options.ts`'s `DEFAULT_MODEL` uses.
+ */
+const DEFAULT_MODEL = defaultModelFor("google-adk");
 
 /**
  * The narrow structural slice of `@google/adk`'s module surface this runner

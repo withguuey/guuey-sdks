@@ -8,7 +8,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import type { GuueyContext } from "@guuey/config";
+import { defaultModelFor, type GuueyContext } from "@guuey/config";
 import type { Emitter, JsonValue, StopReason } from "@guuey/worker";
 import { loadAgentEntry, materializeAgent, resolveAgentEntry } from "./agent-entry.js";
 import { buildGuueyContext, createRunner } from "./frameworks/google-adk.js";
@@ -116,7 +116,11 @@ describe("buildGuueyContext — every platform field populated", () => {
     });
   });
   it("defaults the model when the snapshot has none", () => {
-    expect(buildGuueyContext({}, TURN, "i", []).model).toBe("gemini-3.5-flash");
+    // Derived, not pinned to a bare literal — proves buildGuueyContext falls
+    // back to the SAME registry default google-adk.ts's DEFAULT_MODEL derives
+    // (defaultModelFor("google-adk")), so this assertion tracks a future
+    // registry default change instead of silently going stale.
+    expect(buildGuueyContext({}, TURN, "i", []).model).toBe(defaultModelFor("google-adk"));
   });
 });
 
