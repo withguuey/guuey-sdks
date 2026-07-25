@@ -14,8 +14,10 @@
  * without a live model — the entrypoint (`index.ts`) passes the real SDK `run`.
  *
  * Snapshot → Agent mapping:
- *  - `model`        → `snapshot.model` (or the SDK's own default when absent —
- *                     NOT Claude's; this is the OpenAI path).
+ *  - `model`        → `snapshot.model`, or (when absent) guuey's own
+ *                     `defaultModelFor("openai-agents-sdk")` — NOT the
+ *                     `@openai/agents` SDK's own built-in fallback. Mirrors
+ *                     `claude-options.ts`'s `DEFAULT_MODEL` idiom.
  *  - `instructions` → `systemPrompt` + the §1.4 context preamble (reuses
  *                     `withContextPreamble`, identical to the Claude path).
  *  - `mcpServers`   → the framework-neutral `resolveMcpServers` output (same
@@ -43,13 +45,27 @@ import {
 } from "./claude-options.js";
 import { renderMemorySection, renderProfileSection } from "../preamble.js";
 import type { HostInvoke, HostRuntime } from "./claude.js";
-import { GUUEY_DEFAULT_SYSTEM_PROMPT, type GuueyAgent } from "@guuey/config";
+import { GUUEY_DEFAULT_SYSTEM_PROMPT, defaultModelFor, type GuueyAgent } from "@guuey/config";
 import { resolveSdkVersion } from "../sdk-version.js";
 
 /** The framework tag this arm runs — matches the `AgentFramework` enum value. */
 const OPENAI_FRAMEWORK = "openai-agents-sdk";
 /** The npm package whose installed version is this framework's `hello.sdkVersion`. */
 const OPENAI_SDK_PACKAGE = "@openai/agents";
+
+/**
+ * Default OpenAI model — only used when the snapshot omits `model`. Derived
+ * from the `@guuey/config` registry (single source of truth per the
+ * model-release playbook §8 item A) rather than a bare literal, so a registry
+ * default change propagates here automatically — the same idiom
+ * `claude-options.ts`'s `DEFAULT_MODEL` / `google-adk.ts`'s `DEFAULT_MODEL`
+ * use. Before this constant existed, a model-less snapshot silently fell
+ * through to `@openai/agents`' OWN built-in default (verified
+ * `gpt-5.4-mini`) — not a registry id, so it escaped the rate-card
+ * exact-match guard and shadow-resolved through the `gpt-5.4` row,
+ * over-metering a mini model (playbook run 2026-07-25, finding M7).
+ */
+const DEFAULT_MODEL = defaultModelFor(OPENAI_FRAMEWORK);
 
 /**
  * The streamed-result surface the loop CONSUMES — exactly the three members it
@@ -189,7 +205,7 @@ export async function runInvokeOpenai(
       name: "guuey-agent",
       instructions,
       mcpServers: servers,
-      ...(snapshot.model !== undefined ? { model: snapshot.model } : {}),
+      model: snapshot.model ?? DEFAULT_MODEL,
     });
 
     const stream = await run(agent, invoke.input, {

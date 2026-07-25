@@ -13,7 +13,7 @@ import {
 } from "./openai.js";
 import type { HostInvoke } from "./claude.js";
 import { renderMemorySection, renderProfileSection } from "../preamble.js";
-import type { GuueyAgent } from "@guuey/config";
+import { defaultModelFor, type GuueyAgent } from "@guuey/config";
 
 /** Collect every emitted WorkerEvent into an array (the fd-3 sink, in memory). */
 function collector(): { events: WorkerEvent[]; sink: { write(s: string): void } } {
@@ -210,6 +210,36 @@ describe("runInvokeOpenai — native emission", () => {
     // gate is `authenticated && memoryAttached`).
     expect(seen.instructions).not.toContain("`save_memory` tool");
     expect(seen.instructions).not.toContain("## What you remember about this user");
+  });
+
+  it("defaults the model to defaultModelFor('openai-agents-sdk') when the snapshot omits model (M7: was silently falling to the SDK's own default)", async () => {
+    const { sink } = collector();
+    const emit = createEmitter(sink);
+    const seen: { model?: string } = {};
+    const run: OpenaiRunFn = (agent) => {
+      seen.model = typeof agent.model === "string" ? agent.model : undefined;
+      return Promise.resolve(fakeResult({ events: [], finalOutput: "ok" }));
+    };
+
+    await runInvokeOpenai(
+      { framework: "openai-agents-sdk", mcpServers: {} },
+      invoke(),
+      runtime,
+      emit,
+      run,
+    );
+
+    // Derived, not pinned to a bare literal — proves runInvokeOpenai falls back
+    // to the SAME registry default openai.ts's DEFAULT_MODEL derives
+    // (defaultModelFor("openai-agents-sdk")), so this assertion tracks a
+    // future registry default change instead of silently going stale. Mirrors
+    // agent-entry.test.ts's "defaults the model when the snapshot has none"
+    // pin for the google-adk lane.
+    expect(seen.model).toBe(defaultModelFor("openai-agents-sdk"));
+    // Non-vacuous: the derived default must actually differ from the explicit
+    // literal the sibling test above pins, or this assertion would pass
+    // whether or not the `??` fallback is wired up.
+    expect(seen.model).not.toBe("gpt-4o-mini");
   });
 });
 
