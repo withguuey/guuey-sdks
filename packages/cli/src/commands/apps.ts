@@ -549,8 +549,13 @@ export async function appsByoUserErase(
 /**
  * `--status` leg: point-poll `erase-status` and render `queued|done|none`,
  * surfacing `stuck: true` as a visible operator-facing warning (the janitor
- * has retried without draining — the same `FS_WIPE_STUCK` log marker the
- * operator watches for; no CloudWatch alarm exists on it yet).
+ * has retried without draining — the same condition the `fsWipeCanary`
+ * Lambda's `FsWipeStuckCount`/`FsWipeOldestQueuedAgeMinutes` CloudWatch
+ * alarms watch for independently; see
+ * docs/operations/runbooks/followups-wave-gate.md. The alarms are a
+ * backend-only addition — this doc comment change rides the CLI's next
+ * published npm cut, same operator-owned ritual as every other
+ * `@guuey/cli` release.
  */
 async function appsByoUserEraseStatus(
   appId: string,
