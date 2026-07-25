@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Silver-protocol fixture worker: replays REAL captured Claude Agent SDK
-// `SDKMessage`s (copied verbatim from the external silverprotocol repo,
+// `SDKMessage`s (captured from the silverprotocol workspace repo —
 // `github.com/silverprotocol/workspace`'s
 // `sdks/typescript/packages/e2e/corpus/echo-sonnet5/claude.native.json`
 // entries [3] and [4] — the assistant text turn + its `result` message) as
