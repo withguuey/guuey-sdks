@@ -41,15 +41,46 @@ describe('MODEL_REGISTRY invariants', () => {
 });
 
 describe('modelsForProvider', () => {
-  it('exposes exactly the ga|preview entries per provider (announced/deprecated never reach a picker)', () => {
-    // Stated structurally rather than by pinning one `announced` id: the July
-    // 2026 wave retired the last stub (`gpt-5.6` → the real sol/terra/luna
-    // ids), so an id-pinned version of this test would be vacuous.
+  it('exposes exactly this literal id set per provider (a drop, rename or provider re-tag goes red)', () => {
+    // LITERAL expectations on purpose. Re-deriving the expected side from
+    // `MODEL_REGISTRY` with modelsForProvider's OWN predicate makes both sides
+    // move together, so it can only ever prove provider membership — never the
+    // status filter. Written out, the sets are pinned against silent drops,
+    // renames and provider re-tags. Update these arrays deliberately when a wave
+    // adds or retires a model.
+    //
+    // Honest scope of the status half: the July 2026 wave retired the last
+    // `announced` entry, so there is nothing for `modelsForProvider` to exclude
+    // and its exclusion branch is currently UNTESTED — no test in this file can
+    // catch a widening today. What the literal side buys is that the day a
+    // future wave re-introduces an `announced` stub, a filter widened to admit
+    // it turns this red; the re-derived version never would.
+    const expected: Record<'anthropic' | 'openai' | 'google' | 'openrouter', string[]> = {
+      anthropic: [
+        'claude-sonnet-5',
+        'claude-fable-5',
+        'claude-opus-5',
+        'claude-sonnet-4-6',
+        'claude-haiku-4-5',
+        'claude-opus-4-8',
+      ],
+      openai: ['gpt-5.6-terra', 'gpt-5.6-sol', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-4o', 'gpt-4o-mini'],
+      google: [
+        'gemini-3.6-flash',
+        'gemini-3.5-flash-lite',
+        'gemini-3.5-flash',
+        'gemini-3.1-pro',
+        'gemini-2.5-flash',
+        'gemini-2.5-pro',
+      ],
+      // No openrouter model is offered today — pinned so one can't appear unnoticed.
+      openrouter: [],
+    };
     for (const provider of ['anthropic', 'openai', 'google', 'openrouter'] as const) {
-      const invocable = MODEL_REGISTRY.filter(
-        (m) => m.provider === provider && (m.status === 'ga' || m.status === 'preview'),
-      ).map((m) => m.id);
-      expect([...modelsForProvider(provider)].map((m) => m.id).sort()).toEqual([...invocable].sort());
+      expect(
+        modelsForProvider(provider).map((m) => m.id).sort(),
+        `modelsForProvider("${provider}") drifted from the pinned id set`,
+      ).toEqual([...expected[provider]].sort());
     }
   });
 
