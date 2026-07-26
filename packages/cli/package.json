@@ -42,9 +42,6 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
-    "@ggui-ai/predefined": "0.1.0-rc.1",
-    "@ggui-ai/protocol": "0.1.0-rc.1",
-    "@ggui-ai/ui-gen": "0.1.0-rc.1",
     "@guuey/config": "workspace:*",
     "@guuey/create-agentic-app": "workspace:*",
     "@guuey/host": "workspace:*",
