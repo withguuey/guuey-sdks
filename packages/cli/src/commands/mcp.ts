@@ -33,7 +33,7 @@ import { randomUUID } from 'node:crypto';
 import { createInterface } from 'node:readline';
 import { colocatedResourceUrl } from '@guuey/config';
 import { requireAuth, type AuthTokens } from '../auth';
-import { resolveConfig, type ResolvedConfig } from '../config';
+import { resolveConfig, DEFAULT_ENDPOINT, type ResolvedConfig } from '../config';
 import { apiRequest, cleanup, packSource, parseApiError } from '../deploy-shared';
 import * as out from '../output';
 
@@ -873,6 +873,60 @@ export interface McpServersListResponse {
 }
 
 /**
+ * The auto-pause-on-lapse lapse family (spec §2) — the `hostingStatus`
+ * values a hosted row moves through while its workspace has no hosting
+ * subscription. Hand-mirrored, deliberately: unlike the console's
+ * `hosting-display.ts` mirror (which has a cross-package sync-guard test)
+ * and the backend's own `shared/hosting-live-servers.ts` original, **the CLI
+ * types `hostingStatus` as a bare `string`** on both
+ * {@link McpServerListItem} and {@link McpServerStatusResponse} (spec §4) —
+ * there is no compile-time catch here at all if this list drifts from the
+ * backend's. {@link formatMcpHostingStatus} is written defensively for
+ * exactly that reason: any status NOT in this set (including a genuinely new
+ * future literal) falls through the `default` branch and prints verbatim,
+ * never throws.
+ */
+const MCP_LAPSE_FAMILY_STATUSES = new Set(['lapsing', 'lapsed', 'resuming']);
+
+/**
+ * The hosting-billing console route, resolved against the CLI's own
+ * `platformUrl` (falls back to {@link DEFAULT_ENDPOINT} when unresolved —
+ * e.g. an external developer with no `amplify_outputs.json` and no
+ * `GGUI_PLATFORM_URL`) — mirrors the backend's `consoleOrigin` +
+ * `MCP_BILLING_ROUTE` pointer construction
+ * (`cliApi/handlers/mcp-deploy.ts#assertHostedServerNotLapsed`).
+ */
+function mcpBillingPointer(platformUrl: string | undefined): string {
+  const base = (platformUrl ?? DEFAULT_ENDPOINT).replace(/\/$/, '');
+  return `${base}/mcp-registries/billing`;
+}
+
+/**
+ * Human status text for the STATUS column of `mcp list` / the `Status:` line
+ * of `mcp status`. Lapse-family statuses render a one-line reason + pointer
+ * (spec §4); every other status (including one this renderer does not
+ * recognize) prints verbatim — see {@link MCP_LAPSE_FAMILY_STATUSES}'s doc
+ * for why that matters here specifically.
+ *
+ * `resuming` gets its OWN truthful copy, not the `lapsing`/`lapsed` one: the
+ * workspace has ALREADY re-subscribed, so "hosting subscription canceled"
+ * would be false and a billing pointer would send a paying customer back to
+ * checkout — the same distinction Task 9's review forced at the deploy/
+ * secrets/gateway refusal sites (auto-pause-on-lapse task 9 review
+ * IMPORTANT 1).
+ */
+export function formatMcpHostingStatus(
+  hostingStatus: string,
+  platformUrl: string | undefined,
+): string {
+  if (!MCP_LAPSE_FAMILY_STATUSES.has(hostingStatus)) return hostingStatus;
+  if (hostingStatus === 'resuming') {
+    return 'resuming — hosting subscription active again; retry shortly';
+  }
+  return `paused — hosting subscription canceled; resume at ${mcpBillingPointer(platformUrl)}`;
+}
+
+/**
  * Render a `latestBuild` as `"#<n> <status>"`, or an em dash when the
  * server has never had a build triggered.
  */
@@ -888,11 +942,14 @@ export function formatLatestBuild(
  * SIZE, URL, LAST BUILD (an em dash for an absent URL/build, matching
  * {@link formatLatestBuild}'s convention).
  */
-export function mcpServerListRow(server: McpServerListItem): Record<string, string> {
+export function mcpServerListRow(
+  server: McpServerListItem,
+  platformUrl: string | undefined,
+): Record<string, string> {
   return {
     NAME: server.name,
     'SERVER ID': server.serverId,
-    STATUS: server.hostingStatus,
+    STATUS: formatMcpHostingStatus(server.hostingStatus, platformUrl),
     SIZE: server.size,
     URL: server.runtimeUrl ?? '—',
     'LAST BUILD': formatLatestBuild(server.latestBuild),
@@ -964,7 +1021,10 @@ export async function mcpListCore(
     return;
   }
 
-  out.table(data.servers.map(mcpServerListRow), MCP_LIST_COLUMNS);
+  out.table(
+    data.servers.map((server) => mcpServerListRow(server, opts.config.platformUrl)),
+    MCP_LIST_COLUMNS,
+  );
 }
 
 /**
@@ -1036,7 +1096,7 @@ export async function mcpStatusCore(
   const { server, deployments, grantCount } = data;
   console.log('');
   console.log(`  ${server.name} (${server.serverId})`);
-  console.log(`  Status:  ${server.hostingStatus}`);
+  console.log(`  Status:  ${formatMcpHostingStatus(server.hostingStatus, opts.config.platformUrl)}`);
   console.log(`  Size:    ${server.size}`);
   console.log(`  URL:     ${server.runtimeUrl ?? '—'}`);
   console.log(`  Updated: ${server.updatedAt}`);

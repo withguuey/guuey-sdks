@@ -19,6 +19,7 @@ import {
   deployMcpFromSource,
   MCP_SIZES,
   formatLatestBuild,
+  formatMcpHostingStatus,
   mcpServerListRow,
   mcpDeploymentRow,
   mcpListCore,
@@ -37,7 +38,7 @@ import {
   type McpServerListItem,
 } from './mcp.js';
 import type { AuthTokens } from '../auth.js';
-import type { ResolvedConfig } from '../config.js';
+import { DEFAULT_ENDPOINT, type ResolvedConfig } from '../config.js';
 import type { apiRequest } from '../deploy-shared.js';
 
 describe('resolveWorkspaceId', () => {
@@ -637,7 +638,7 @@ describe('mcpServerListRow', () => {
   };
 
   it('produces the exact NAME/SERVER ID/STATUS/SIZE/URL/LAST BUILD columns', () => {
-    expect(mcpServerListRow(server)).toEqual({
+    expect(mcpServerListRow(server, 'https://platform.guuey.com')).toEqual({
       NAME: 'mcp-weather',
       'SERVER ID': 'srv-1',
       STATUS: 'live',
@@ -649,7 +650,7 @@ describe('mcpServerListRow', () => {
 
   it('renders an em dash URL and last-build when both are absent', () => {
     const { runtimeUrl: _runtimeUrl, latestBuild: _latestBuild, ...rest } = server;
-    expect(mcpServerListRow(rest)).toEqual({
+    expect(mcpServerListRow(rest, 'https://platform.guuey.com')).toEqual({
       NAME: 'mcp-weather',
       'SERVER ID': 'srv-1',
       STATUS: 'live',
@@ -657,6 +658,55 @@ describe('mcpServerListRow', () => {
       URL: '—',
       'LAST BUILD': '—',
     });
+  });
+
+  it('a lapse-family hostingStatus renders the one-line reason + pointer in the STATUS column', () => {
+    expect(
+      mcpServerListRow({ ...server, hostingStatus: 'lapsed' }, 'https://platform.guuey.com'),
+    ).toMatchObject({
+      STATUS: 'paused — hosting subscription canceled; resume at https://platform.guuey.com/mcp-registries/billing',
+    });
+  });
+});
+
+describe('formatMcpHostingStatus', () => {
+  it.each(['lapsing', 'lapsed'] as const)(
+    '%s renders "paused — hosting subscription canceled; resume at <billing route>" (spec §4, verbatim)',
+    (status) => {
+      expect(formatMcpHostingStatus(status, 'https://platform.guuey.com')).toBe(
+        'paused — hosting subscription canceled; resume at https://platform.guuey.com/mcp-registries/billing',
+      );
+    },
+  );
+
+  it('resuming gets its OWN truthful copy — no "canceled", no billing pointer (task 9 review IMPORTANT 1 parity)', () => {
+    expect(formatMcpHostingStatus('resuming', 'https://platform.guuey.com')).toBe(
+      'resuming — hosting subscription active again; retry shortly',
+    );
+    expect(formatMcpHostingStatus('resuming', 'https://platform.guuey.com')).not.toMatch(/canceled/);
+    expect(formatMcpHostingStatus('resuming', 'https://platform.guuey.com')).not.toMatch(
+      /mcp-registries\/billing/,
+    );
+  });
+
+  it('falls back to DEFAULT_ENDPOINT when platformUrl cannot be resolved', () => {
+    expect(formatMcpHostingStatus('lapsed', undefined)).toBe(
+      `paused — hosting subscription canceled; resume at ${DEFAULT_ENDPOINT}/mcp-registries/billing`,
+    );
+  });
+
+  it('every non-lapse-family status prints VERBATIM, unchanged', () => {
+    expect(formatMcpHostingStatus('live', 'https://platform.guuey.com')).toBe('live');
+    expect(formatMcpHostingStatus('paused', 'https://platform.guuey.com')).toBe('paused');
+    expect(formatMcpHostingStatus('deprecated', 'https://platform.guuey.com')).toBe('deprecated');
+    expect(formatMcpHostingStatus('deleting', 'https://platform.guuey.com')).toBe('deleting');
+  });
+
+  it('an UNKNOWN future literal prints verbatim without throwing — the defensive fallback spec §4 requires', () => {
+    expect(() => formatMcpHostingStatus('zzz-future-status', 'https://platform.guuey.com')).not.toThrow();
+    expect(formatMcpHostingStatus('zzz-future-status', 'https://platform.guuey.com')).toBe(
+      'zzz-future-status',
+    );
   });
 });
 
@@ -766,6 +816,34 @@ describe('mcpListCore', () => {
       mcpListCore({ workspaceId: 'ws-1', json: false, auth, config }, { api }),
     ).rejects.toThrow('forbidden');
   });
+
+  it('a lapsed server renders the one-line reason + billing pointer in the STATUS column (spec §4)', async () => {
+    const lapsedConfig: ResolvedConfig = { ...config, platformUrl: 'https://platform.guuey.test' };
+    const api: typeof apiRequest = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          servers: [
+            {
+              serverId: 'srv-1',
+              name: 'mcp-weather',
+              hostingStatus: 'lapsed',
+              size: 'sm',
+              runtimeUrl: 'https://srv-1.mcp.guuey.com',
+              updatedAt: '2026-07-01T00:00:00Z',
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await mcpListCore({ workspaceId: 'ws-1', json: false, auth, config: lapsedConfig }, { api });
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain('hosting subscription canceled');
+    expect(output).toContain('https://platform.guuey.test/mcp-registries/billing');
+  });
 });
 
 describe('mcpStatusCore', () => {
@@ -845,6 +923,27 @@ describe('mcpStatusCore', () => {
         { api },
       ),
     ).rejects.toThrow('MCP server srv-1 not found');
+  });
+
+  it('a resuming server\'s "Status:" line reads truthfully — active again, no billing pointer', async () => {
+    const resumingPayload = {
+      ...statusPayload,
+      server: { ...statusPayload.server, hostingStatus: 'resuming' },
+    };
+    const api: typeof apiRequest = vi.fn(async () => {
+      return new Response(JSON.stringify(resumingPayload), { status: 200 });
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await mcpStatusCore(
+      { serverId: 'srv-1', workspaceId: 'ws-1', json: false, auth, config },
+      { api },
+    );
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain('hosting subscription active again');
+    expect(output).not.toContain('canceled');
+    expect(output).not.toContain('mcp-registries/billing');
   });
 });
 
