@@ -155,6 +155,30 @@ describe('pushGguiAssetsLeg', () => {
     expect(result.reason).toBe('ggui asset push is not yet enabled on this environment.');
   });
 
+  it('501 not-yet-supported with message absent → { pushed: false } with the built-in reason', async () => {
+    const api: typeof apiRequest = vi.fn(async () =>
+      new Response(JSON.stringify({ code: 'not-yet-supported' }), { status: 501 }),
+    );
+
+    const result = await pushGguiAssetsLeg({ appId: 'app-1', bundle, auth, config }, { api });
+
+    expect(result.pushed).toBe(false);
+    expect(result.reason).toBe('ggui asset push is not yet enabled on this environment.');
+  });
+
+  it('501 not-yet-supported with a non-string message fails the guard → throws (deploy aborts)', async () => {
+    const api: typeof apiRequest = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ code: 'not-yet-supported', message: 42 }),
+        { status: 501 },
+      ),
+    );
+
+    await expect(
+      pushGguiAssetsLeg({ appId: 'app-1', bundle, auth, config }, { api }),
+    ).rejects.toThrow();
+  });
+
   it('501 with a code other than not-yet-supported throws (deploy aborts) instead of warn-and-continue', async () => {
     const api: typeof apiRequest = vi.fn(async () =>
       new Response(
