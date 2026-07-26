@@ -102,6 +102,21 @@ export function packGguiAssets(projectRoot: string, configFile: string): GguiAss
 }
 
 /**
+ * The exact dormancy-501 shape the backend returns
+ * (`httpJson(501, {code:'not-yet-supported', message})` in
+ * `ggui-assets.ts`'s `handleGguiAssetsPush`) — a deliberate non-error
+ * signal, distinct from a real 501 `GuueyError` (which serializes nested,
+ * `{error:{code,message}}`, per `httpError`).
+ */
+function isDormancy501(data: unknown): data is { code: string; message?: string } {
+  return (
+    data !== null &&
+    typeof data === 'object' &&
+    (data as Record<string, unknown>).code === 'not-yet-supported'
+  );
+}
+
+/**
  * Push a packed {@link GguiAssetBundle} to
  * `POST /v1/apps/:id/ggui-assets/push`.
  *
@@ -109,7 +124,10 @@ export function packGguiAssets(projectRoot: string, configFile: string): GguiAss
  * - `501 {code:'not-yet-supported'}` (env-dormant on the backend until
  *   ggui's provisioning API is wired) → `{ pushed: false, reason }`, NOT a
  *   throw — this is the warn-and-continue leg, distinct from a real error.
- * - Any other non-2xx → throws.
+ * - Any other non-2xx, INCLUDING a 501 that isn't the exact dormancy shape
+ *   above → throws. A 501 is only ever a signal we've defined ourselves;
+ *   any other code on that status is unexpected and must abort the deploy
+ *   rather than silently continue.
  *
  * `deps.api` defaults to the real `apiRequest` and exists purely for test
  * injection — network stubbing without a live backend (mirrors
@@ -133,14 +151,14 @@ export async function pushGguiAssetsLeg(
     return { pushed: true };
   }
 
-  if (res.status === 501) {
-    const data = (await res.json().catch(() => ({}))) as { code?: string; message?: string };
+  const data: unknown = await res.json().catch(() => ({}));
+
+  if (res.status === 501 && isDormancy501(data)) {
     return {
       pushed: false,
       reason: data.message ?? 'ggui asset push is not yet enabled on this environment.',
     };
   }
 
-  const data: unknown = await res.json().catch(() => ({}));
   throw new Error(parseApiError(data, `ggui asset push failed: HTTP ${res.status}`));
 }

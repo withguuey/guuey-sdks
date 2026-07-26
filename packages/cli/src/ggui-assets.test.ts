@@ -155,6 +155,19 @@ describe('pushGguiAssetsLeg', () => {
     expect(result.reason).toBe('ggui asset push is not yet enabled on this environment.');
   });
 
+  it('501 with a code other than not-yet-supported throws (deploy aborts) instead of warn-and-continue', async () => {
+    const api: typeof apiRequest = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ error: { code: 'other', message: 'some other 501' } }),
+        { status: 501 },
+      ),
+    );
+
+    await expect(
+      pushGguiAssetsLeg({ appId: 'app-1', bundle, auth, config }, { api }),
+    ).rejects.toThrow('some other 501');
+  });
+
   it('other non-2xx (e.g. 500) throws with the real httpError nested {error:{code,message}} shape', async () => {
     const api: typeof apiRequest = vi.fn(async () =>
       new Response(
