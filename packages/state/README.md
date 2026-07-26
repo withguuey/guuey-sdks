@@ -185,7 +185,7 @@ is the access-control story:
   all of its own data, and both ids are validated (non-empty, no
   whitespace/control characters, ≤256 chars) to fail wiring bugs
   loudly.
-- **🔜 Hosted binding:** the client sends the federation-minted
+- **Hosted binding:** the client sends the federation-minted
   Bearer JWT (the `token` from `scopeFromAuthorization`) with every
   request, and guuey's KV API is the verifier: it authenticates the
   JWT and derives `userId` (the `sub` claim) and `mcpId` (hash of
@@ -267,13 +267,13 @@ hard caps are **locked and enforced** — code written against this
 package today keeps working unchanged when the hosted binding ships.
 What exists vs. what's coming:
 
-| Piece                                       | Status                               |
-| ------------------------------------------- | ------------------------------------ |
-| `Kv` API, typed errors, context middleware  | ✅ locked + tested                   |
-| Cap enforcement (scope/value/TTL/key rules) | ✅ enforced in every binding         |
-| In-memory binding (dev, tests)              | ✅ shipped                           |
-| Hosted binding (durable, cross-pod)         | 🔜 lands with guuey-hosted MCP state |
-| Console export + delete (data ownership)    | 🔜 ships with the hosted binding     |
+| Piece                                       | Status                                 |
+| ------------------------------------------- | -------------------------------------- |
+| `Kv` API, typed errors, context middleware  | ✅ locked + tested                     |
+| Cap enforcement (scope/value/TTL/key rules) | ✅ enforced in every binding           |
+| In-memory binding (dev, tests)              | ✅ shipped                             |
+| Hosted binding (durable, cross-pod)         | ✅ shipped (dev gate green 2026-07-27) |
+| Console export + delete (data ownership)    | ✅ shipped with the hosted binding     |
 
 The hosted-binding client (`HttpKv`) and its server counterpart already
 ship — the 🔜 rows track **per-environment availability** (whether
