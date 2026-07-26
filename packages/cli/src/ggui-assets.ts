@@ -5,11 +5,13 @@
  * Design doc `2026-07-03-guuey-create-agentic-app-design.md` §8: the deploy
  * orchestrator (`commands/deploy.ts`, Step 3 — after MCP legs, before the
  * agent leg) calls {@link packGguiAssets} then {@link pushGguiAssetsLeg}.
- * The push endpoint is env-dormant until ggui's provisioning API is wired
- * (`GGUI_PROVISIONING_API_URL`), so it returns `501 {code:'not-yet-supported'}`
- * rather than a hard failure — the CLI is expected to warn and continue,
- * distinct from a real (non-2xx, non-501) error, which aborts the deploy
- * before the agent leg runs (§7 ordering).
+ * The push endpoint is env-dormant until ggui lands the asset route and an
+ * operator sets the route-specific `GGUI_ASSETS_PUSH_API_URL` on cliApi
+ * (deliberately unset everywhere; the shared `GGUI_PROVISIONING_API_URL`
+ * does NOT arm this route). Dormant, it returns the flat
+ * `501 {code:'not-yet-supported'}` — the ONLY response the CLI treats as
+ * warn-and-continue. Every other error, including any other 501, aborts
+ * the deploy before the agent leg runs (§7 ordering).
  */
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { dirname, extname, join, relative, sep } from 'node:path';
@@ -108,7 +110,7 @@ export function packGguiAssets(projectRoot: string, configFile: string): GguiAss
  * signal, distinct from a real 501 `GuueyError` (which serializes nested,
  * `{error:{code,message}}`, per `httpError`).
  */
-function isDormancy501(data: unknown): data is { code: string; message?: string } {
+function isDormancy501(data: unknown): data is { code: string } {
   return (
     data !== null &&
     typeof data === 'object' &&
