@@ -110,11 +110,12 @@ export function packGguiAssets(projectRoot: string, configFile: string): GguiAss
  * signal, distinct from a real 501 `GuueyError` (which serializes nested,
  * `{error:{code,message}}`, per `httpError`).
  */
-function isDormancy501(data: unknown): data is { code: string } {
+function isDormancy501(data: unknown): data is { code: string; message?: string } {
+  if (data === null || typeof data !== 'object') return false;
+  const rec = data as Record<string, unknown>;
   return (
-    data !== null &&
-    typeof data === 'object' &&
-    (data as Record<string, unknown>).code === 'not-yet-supported'
+    rec.code === 'not-yet-supported' &&
+    (rec.message === undefined || typeof rec.message === 'string')
   );
 }
 
