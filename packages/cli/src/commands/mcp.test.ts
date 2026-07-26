@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -20,6 +21,9 @@ import {
   MCP_SIZES,
   formatLatestBuild,
   formatMcpHostingStatus,
+  formatMcpHostingStatusShort,
+  mcpListLapseFamilyNote,
+  MCP_BILLING_ROUTE,
   mcpServerListRow,
   mcpDeploymentRow,
   mcpListCore,
@@ -638,7 +642,7 @@ describe('mcpServerListRow', () => {
   };
 
   it('produces the exact NAME/SERVER ID/STATUS/SIZE/URL/LAST BUILD columns', () => {
-    expect(mcpServerListRow(server, 'https://platform.guuey.com')).toEqual({
+    expect(mcpServerListRow(server)).toEqual({
       NAME: 'mcp-weather',
       'SERVER ID': 'srv-1',
       STATUS: 'live',
@@ -650,7 +654,7 @@ describe('mcpServerListRow', () => {
 
   it('renders an em dash URL and last-build when both are absent', () => {
     const { runtimeUrl: _runtimeUrl, latestBuild: _latestBuild, ...rest } = server;
-    expect(mcpServerListRow(rest, 'https://platform.guuey.com')).toEqual({
+    expect(mcpServerListRow(rest)).toEqual({
       NAME: 'mcp-weather',
       'SERVER ID': 'srv-1',
       STATUS: 'live',
@@ -660,12 +664,77 @@ describe('mcpServerListRow', () => {
     });
   });
 
-  it('a lapse-family hostingStatus renders the one-line reason + pointer in the STATUS column', () => {
-    expect(
-      mcpServerListRow({ ...server, hostingStatus: 'lapsed' }, 'https://platform.guuey.com'),
-    ).toMatchObject({
-      STATUS: 'paused — hosting subscription canceled; resume at https://platform.guuey.com/mcp-registries/billing',
+  it('a lapse-family hostingStatus renders the SHORT "paused (billing)" cell — not the 99-char reason + pointer (T10 review Important 2)', () => {
+    expect(mcpServerListRow({ ...server, hostingStatus: 'lapsed' })).toMatchObject({
+      STATUS: 'paused (billing)',
     });
+    expect(mcpServerListRow({ ...server, hostingStatus: 'lapsing' })).toMatchObject({
+      STATUS: 'paused (billing)',
+    });
+  });
+
+  it('a resuming hostingStatus renders the SHORT "resuming" cell', () => {
+    expect(mcpServerListRow({ ...server, hostingStatus: 'resuming' })).toMatchObject({
+      STATUS: 'resuming',
+    });
+  });
+});
+
+describe('formatMcpHostingStatusShort', () => {
+  it('lapsing/lapsed render "paused (billing)"', () => {
+    expect(formatMcpHostingStatusShort('lapsing')).toBe('paused (billing)');
+    expect(formatMcpHostingStatusShort('lapsed')).toBe('paused (billing)');
+  });
+
+  it('resuming renders bare "resuming" — no reason, no pointer', () => {
+    expect(formatMcpHostingStatusShort('resuming')).toBe('resuming');
+  });
+
+  it('every non-lapse-family status prints verbatim, including an unrecognized future literal', () => {
+    expect(formatMcpHostingStatusShort('live')).toBe('live');
+    expect(formatMcpHostingStatusShort('paused')).toBe('paused');
+    expect(formatMcpHostingStatusShort('deprecated')).toBe('deprecated');
+    expect(formatMcpHostingStatusShort('deleting')).toBe('deleting');
+    expect(formatMcpHostingStatusShort('zzz-future-status')).toBe('zzz-future-status');
+  });
+});
+
+describe('mcpListLapseFamilyNote', () => {
+  it('null when the fleet has no lapse-family row', () => {
+    expect(
+      mcpListLapseFamilyNote(
+        [{ hostingStatus: 'live' }, { hostingStatus: 'paused' }],
+        'https://platform.guuey.com',
+      ),
+    ).toBeNull();
+  });
+
+  it('carries the full reason + billing pointer when a lapsing/lapsed row exists', () => {
+    const note = mcpListLapseFamilyNote(
+      [{ hostingStatus: 'live' }, { hostingStatus: 'lapsed' }],
+      'https://platform.guuey.com',
+    );
+    expect(note).toContain('paused (billing)');
+    expect(note).toContain('hosting subscription canceled');
+    expect(note).toContain('https://platform.guuey.com/mcp-registries/billing');
+  });
+
+  it('a resuming-only fleet never renders a billing pointer or "canceled" (task 9 review IMPORTANT 1 parity)', () => {
+    const note = mcpListLapseFamilyNote([{ hostingStatus: 'resuming' }], 'https://platform.guuey.com');
+    expect(note).not.toBeNull();
+    expect(note).toContain('resuming');
+    expect(note).not.toMatch(/canceled/);
+    expect(note).not.toMatch(/mcp-registries\/billing/);
+  });
+
+  it('a mixed fleet (some lapsed, some resuming) surfaces both, truthfully', () => {
+    const note = mcpListLapseFamilyNote(
+      [{ hostingStatus: 'lapsed' }, { hostingStatus: 'resuming' }],
+      'https://platform.guuey.com',
+    );
+    expect(note).toContain('paused (billing)');
+    expect(note).toContain('hosting subscription canceled');
+    expect(note).toContain('resuming');
   });
 });
 
@@ -707,6 +776,37 @@ describe('formatMcpHostingStatus', () => {
     expect(formatMcpHostingStatus('zzz-future-status', 'https://platform.guuey.com')).toBe(
       'zzz-future-status',
     );
+  });
+});
+
+// ── MCP_BILLING_ROUTE — the fourth hand-synced copy, now pinned ─────────
+//
+// The backend already carries THREE copies of this route, each pinned by a
+// source-text SYNC GUARD against the others (`mcp-deploy.test.ts`,
+// `handle-post-gateway.test.ts`, `resolve-mcp.test.ts` / `mcp-store.test.ts`).
+// The CLI's copy had none (T10 review Minor 4) — this guard reads the
+// backend's canonical declaration off disk (test-only; never bundled into
+// the published CLI package) and fails if either side moves without the
+// other.
+describe('MCP_BILLING_ROUTE — sync guard against the backend copies', () => {
+  it('is the console route, relative', () => {
+    expect(MCP_BILLING_ROUTE).toBe('/mcp-registries/billing');
+    expect(MCP_BILLING_ROUTE.startsWith('http')).toBe(false);
+  });
+
+  it('SYNC GUARD: the backend cliApi handler still declares the same route', () => {
+    const source = readFileSync(
+      fileURLToPath(
+        new URL(
+          '../../../../../backend/amplify/functions/cliApi/handlers/mcp-deploy.ts',
+          import.meta.url,
+        ),
+      ),
+      'utf8',
+    );
+    const declaration = source.match(/export const MCP_BILLING_ROUTE = '([^']*)';/);
+    expect(declaration).not.toBeNull();
+    expect(declaration?.[1]).toBe(MCP_BILLING_ROUTE);
   });
 });
 
@@ -817,7 +917,7 @@ describe('mcpListCore', () => {
     ).rejects.toThrow('forbidden');
   });
 
-  it('a lapsed server renders the one-line reason + billing pointer in the STATUS column (spec §4)', async () => {
+  it('a lapsed server renders the SHORT "paused (billing)" cell in the table, and the full reason + billing pointer ONCE as a note underneath — never the 99-char string in the table itself (T10 review Important 2)', async () => {
     const lapsedConfig: ResolvedConfig = { ...config, platformUrl: 'https://platform.guuey.test' };
     const api: typeof apiRequest = vi.fn(async () => {
       return new Response(
@@ -840,9 +940,68 @@ describe('mcpListCore', () => {
 
     await mcpListCore({ workspaceId: 'ws-1', json: false, auth, config: lapsedConfig }, { api });
 
-    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    const calls = logSpy.mock.calls.map((c) => String(c[0] ?? ''));
+    const output = calls.join('\n');
+    // The full reason + pointer still reach the operator...
     expect(output).toContain('hosting subscription canceled');
     expect(output).toContain('https://platform.guuey.test/mcp-registries/billing');
+    // ...but the TABLE rows themselves (every line before the trailing note)
+    // carry only the short cell, never the 99-char reason string.
+    const tableLines = calls.slice(0, -1);
+    expect(tableLines.some((l) => l.includes('paused (billing)'))).toBe(true);
+    expect(tableLines.some((l) => l.includes('hosting subscription canceled'))).toBe(false);
+  });
+
+  it('a fleet with no lapse-family row prints no extra note under the table', async () => {
+    const api: typeof apiRequest = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          servers: [
+            {
+              serverId: 'srv-1',
+              name: 'mcp-weather',
+              hostingStatus: 'live',
+              size: 'sm',
+              updatedAt: '2026-07-01T00:00:00Z',
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await mcpListCore({ workspaceId: 'ws-1', json: false, auth, config }, { api });
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).not.toContain('Note:');
+  });
+
+  it('a GUUEY_HOST dev with no platformUrl points the billing note at `host`, never the hardcoded prod DEFAULT_ENDPOINT (T10 review Minor 1)', async () => {
+    const devConfig: ResolvedConfig = { host: 'https://dev.guuey.test', apiUrl: 'https://api.dev.guuey.test' };
+    const api: typeof apiRequest = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          servers: [
+            {
+              serverId: 'srv-1',
+              name: 'mcp-weather',
+              hostingStatus: 'lapsed',
+              size: 'sm',
+              updatedAt: '2026-07-01T00:00:00Z',
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await mcpListCore({ workspaceId: 'ws-1', json: false, auth, config: devConfig }, { api });
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain('https://dev.guuey.test/mcp-registries/billing');
+    expect(output).not.toContain(DEFAULT_ENDPOINT);
   });
 });
 
@@ -944,6 +1103,27 @@ describe('mcpStatusCore', () => {
     expect(output).toContain('hosting subscription active again');
     expect(output).not.toContain('canceled');
     expect(output).not.toContain('mcp-registries/billing');
+  });
+
+  it('a lapsed server\'s "Status:" line points at the resolved `host`, never the hardcoded prod DEFAULT_ENDPOINT, when platformUrl is unresolved (T10 review Minor 1)', async () => {
+    const devConfig: ResolvedConfig = { host: 'https://dev.guuey.test', apiUrl: 'https://api.dev.guuey.test' };
+    const lapsedPayload = {
+      ...statusPayload,
+      server: { ...statusPayload.server, hostingStatus: 'lapsed' },
+    };
+    const api: typeof apiRequest = vi.fn(async () => {
+      return new Response(JSON.stringify(lapsedPayload), { status: 200 });
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await mcpStatusCore(
+      { serverId: 'srv-1', workspaceId: 'ws-1', json: false, auth, config: devConfig },
+      { api },
+    );
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain('https://dev.guuey.test/mcp-registries/billing');
+    expect(output).not.toContain(DEFAULT_ENDPOINT);
   });
 });
 

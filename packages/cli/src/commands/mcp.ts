@@ -889,6 +889,22 @@ export interface McpServersListResponse {
 const MCP_LAPSE_FAMILY_STATUSES = new Set(['lapsing', 'lapsed', 'resuming']);
 
 /**
+ * The hosting-billing console route — a PLAIN RELATIVE ROUTE, hand-synced
+ * across the CLI/backend wall (the CLI is a separately published package
+ * with no pre-launch shared dependency onto `@guuey-private/backend`). The
+ * backend already carries THREE copies of this same literal, each pinned by
+ * a source-text SYNC GUARD against the others
+ * (`cliApi/handlers/mcp-deploy.ts#MCP_BILLING_ROUTE`,
+ * `mcp-proxy/src/errors.ts#MCP_BILLING_ROUTE`,
+ * `deploy-controller/src/mcp-store.ts#MCP_BILLING_ROUTE`) — this was the
+ * fourth copy, with no pin at all (T10 review Minor 4). Pinned here by the
+ * same idiom in `mcp.test.ts`: a console-route rename now fails THIS test
+ * too, instead of silently 404ing a builder who has just been told to go
+ * pay.
+ */
+export const MCP_BILLING_ROUTE = '/mcp-registries/billing';
+
+/**
  * The hosting-billing console route, resolved against the CLI's own
  * `platformUrl` (falls back to {@link DEFAULT_ENDPOINT} when unresolved —
  * e.g. an external developer with no `amplify_outputs.json` and no
@@ -898,7 +914,7 @@ const MCP_LAPSE_FAMILY_STATUSES = new Set(['lapsing', 'lapsed', 'resuming']);
  */
 function mcpBillingPointer(platformUrl: string | undefined): string {
   const base = (platformUrl ?? DEFAULT_ENDPOINT).replace(/\/$/, '');
-  return `${base}/mcp-registries/billing`;
+  return `${base}${MCP_BILLING_ROUTE}`;
 }
 
 /**
@@ -927,6 +943,57 @@ export function formatMcpHostingStatus(
 }
 
 /**
+ * Short STATUS-column cell for `guuey mcp list`'s table — `formatMcpHosting
+ * Status`'s full reason + pointer is 99 characters for `lapsing`/`lapsed`
+ * (`paused — hosting subscription canceled; resume at <route>`), and
+ * `out.table` (`output.ts`) computes column width as `max(header, …every
+ * cell…)` with no truncation: a single such row widens the STATUS column to
+ * 99 for every row and pads every non-lapsed row with ~90 trailing blank
+ * columns, making the whole table unreadable (T10 review IMPORTANT 2). The
+ * short cell keeps the table scannable; the full reason still reaches the
+ * operator once, as a note under the table ({@link mcpListLapseFamilyNote})
+ * and in full on `guuey mcp status <id>`'s `Status:` line, which is a single
+ * row with no table-width constraint to defeat.
+ */
+export function formatMcpHostingStatusShort(hostingStatus: string): string {
+  if (hostingStatus === 'resuming') return 'resuming';
+  if (MCP_LAPSE_FAMILY_STATUSES.has(hostingStatus)) return 'paused (billing)';
+  return hostingStatus;
+}
+
+/**
+ * One-line note printed under `guuey mcp list`'s table when the fleet holds
+ * any lapse-family server — carries the full reason
+ * {@link formatMcpHostingStatusShort} deliberately drops from the table cell
+ * (T10 review IMPORTANT 2), printed ONCE regardless of how many rows are
+ * affected rather than per row. Split by which lapse-family states are
+ * actually present so a fleet with ONLY `resuming` rows (already
+ * re-subscribed) never renders a billing pointer telling it to pay again —
+ * the same truthfulness split {@link formatMcpHostingStatus} already makes
+ * (Task 9 review IMPORTANT 1 parity). Returns `null` when no lapse-family
+ * row is present, so the caller prints nothing extra for a healthy fleet.
+ */
+export function mcpListLapseFamilyNote(
+  servers: Pick<McpServerListItem, 'hostingStatus'>[],
+  platformUrl: string | undefined,
+): string | null {
+  const hasPausedBilling = servers.some(
+    (s) => s.hostingStatus === 'lapsing' || s.hostingStatus === 'lapsed',
+  );
+  const hasResuming = servers.some((s) => s.hostingStatus === 'resuming');
+  if (!hasPausedBilling && !hasResuming) return null;
+
+  const notes: string[] = [];
+  if (hasPausedBilling) {
+    notes.push(`"paused (billing)" — ${formatMcpHostingStatus('lapsed', platformUrl)}`);
+  }
+  if (hasResuming) {
+    notes.push(`"resuming" — ${formatMcpHostingStatus('resuming', platformUrl)}`);
+  }
+  return `Note: ${notes.join(' | ')} (see "guuey mcp status <server-id>" for detail)`;
+}
+
+/**
  * Render a `latestBuild` as `"#<n> <status>"`, or an em dash when the
  * server has never had a build triggered.
  */
@@ -940,16 +1007,15 @@ export function formatLatestBuild(
 /**
  * Build one `out.table` row for `guuey mcp list`: NAME, SERVER ID, STATUS,
  * SIZE, URL, LAST BUILD (an em dash for an absent URL/build, matching
- * {@link formatLatestBuild}'s convention).
+ * {@link formatLatestBuild}'s convention). STATUS uses the SHORT cell
+ * ({@link formatMcpHostingStatusShort}) — the full lapse-family reason is
+ * printed once, under the table, by {@link mcpListLapseFamilyNote}.
  */
-export function mcpServerListRow(
-  server: McpServerListItem,
-  platformUrl: string | undefined,
-): Record<string, string> {
+export function mcpServerListRow(server: McpServerListItem): Record<string, string> {
   return {
     NAME: server.name,
     'SERVER ID': server.serverId,
-    STATUS: formatMcpHostingStatus(server.hostingStatus, platformUrl),
+    STATUS: formatMcpHostingStatusShort(server.hostingStatus),
     SIZE: server.size,
     URL: server.runtimeUrl ?? '—',
     'LAST BUILD': formatLatestBuild(server.latestBuild),
@@ -1022,9 +1088,17 @@ export async function mcpListCore(
   }
 
   out.table(
-    data.servers.map((server) => mcpServerListRow(server, opts.config.platformUrl)),
+    data.servers.map((server) => mcpServerListRow(server)),
     MCP_LIST_COLUMNS,
   );
+
+  // `platformUrl ?? host`, never `platformUrl ?? DEFAULT_ENDPOINT` bare: a
+  // developer pointed at dev/staging via `GUUEY_HOST` but with no
+  // `amplify_outputs.json` (so `platformUrl` never resolves) must still be
+  // sent to THEIR environment's billing page, not the hardcoded prod default
+  // (T10 review Minor 1).
+  const note = mcpListLapseFamilyNote(data.servers, opts.config.platformUrl ?? opts.config.host);
+  if (note) console.log(`\n${note}`);
 }
 
 /**
@@ -1096,7 +1170,12 @@ export async function mcpStatusCore(
   const { server, deployments, grantCount } = data;
   console.log('');
   console.log(`  ${server.name} (${server.serverId})`);
-  console.log(`  Status:  ${formatMcpHostingStatus(server.hostingStatus, opts.config.platformUrl)}`);
+  // `platformUrl ?? host` — see the identical comment in `mcpListCore`
+  // (T10 review Minor 1): never fall back straight to the hardcoded prod
+  // `DEFAULT_ENDPOINT` when a resolved dev/staging `host` is available.
+  console.log(
+    `  Status:  ${formatMcpHostingStatus(server.hostingStatus, opts.config.platformUrl ?? opts.config.host)}`,
+  );
   console.log(`  Size:    ${server.size}`);
   console.log(`  URL:     ${server.runtimeUrl ?? '—'}`);
   console.log(`  Updated: ${server.updatedAt}`);
