@@ -885,8 +885,14 @@ export interface McpServersListResponse {
  * exactly that reason: any status NOT in this set (including a genuinely new
  * future literal) falls through the `default` branch and prints verbatim,
  * never throws.
+ *
+ * EXPORTED (final-review seam audit M1) so `mcp.test.ts` can pin it with the
+ * same source-text SYNC GUARD idiom {@link MCP_BILLING_ROUTE} already carries
+ * just below — this was a fifth hand-synced copy of the lapse family
+ * (`hosting-live-servers.ts`, `mcp-store.ts`, `mcp-proxy`'s `types.ts`,
+ * the console's `hosting-display.ts`, and this one) with no pin at all.
  */
-const MCP_LAPSE_FAMILY_STATUSES = new Set(['lapsing', 'lapsed', 'resuming']);
+export const MCP_LAPSE_FAMILY_STATUSES = new Set(['lapsing', 'lapsed', 'resuming']);
 
 /**
  * The hosting-billing console route — a PLAIN RELATIVE ROUTE, hand-synced
