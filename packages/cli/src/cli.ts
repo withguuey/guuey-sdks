@@ -2,8 +2,8 @@
 /**
  * guuey CLI -- command-line interface for the guuey platform.
  *
- * Provides authentication, app management, project configuration, and
- * type generation from the terminal.
+ * Provides authentication, app management, and project configuration
+ * from the terminal.
  *
  * Legacy binary name `ggui` is still available as a deprecated compat shim.
  *
@@ -30,7 +30,6 @@ import {
   appsByoUserErase,
 } from './commands/apps';
 import { status } from './commands/status';
-import { typegen } from './commands/typegen';
 import { login } from './commands/login';
 import { logout } from './commands/logout';
 import { whoami } from './commands/whoami';
@@ -242,11 +241,6 @@ Configuration:
   config unset <key>            Remove a global config value
   config init                   Create guuey.json in the current directory
 
-Type Generation:
-  typegen                       Generate TypeScript types from predefined blueprints
-    --out <file>                Output file path (default: stdout)
-    --path <dir>                Custom blueprints directory
-
 Navigation:
   open [page]                   Open a console page in the browser
                                 Pages: dashboard, settings, billing,
@@ -284,7 +278,6 @@ Examples:
   guuey deploy
   guuey open dashboard
   guuey config init
-  guuey typegen --out ggui-blueprints.d.ts
 `);
 }
 
@@ -648,10 +641,6 @@ async function main(): Promise<void> {
           console.error(`Unknown byok command: ${action ?? '(none)'}. Use: set, list, remove`);
           process.exit(1);
       }
-      break;
-
-    case 'typegen':
-      typegen(flags);
       break;
 
     case 'open':
