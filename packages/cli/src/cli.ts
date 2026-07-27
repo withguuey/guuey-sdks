@@ -199,10 +199,18 @@ Apps:
   apps get [appId]              Show app details
   apps update [appId]           Update app configuration
     --name <name>               App name
-    --styling-prompt <prompt>   Styling prompt
-    --webhook-url <url>         Webhook URL
-    --rate-limit <n>            Rate limit per minute
-    --domains <d1,d2>           Allowed domains (comma-separated)
+    --description <text>        App description
+    --domains <d1,d2>           Allowed domains (comma-separated; pass
+                                 --domains with no value to clear). Each entry
+                                 is a bare domain (example.com) or a full
+                                 origin (https://app.example.com[:port]) —
+                                 no paths and no wildcards.
+    --auth-mode <mode>          End-user auth: anonymous | native_pool | byo
+    --issuer-url <url>          BYO OIDC issuer (https://…), with --audience
+    --audience <aud>            Expected aud claim, with --issuer-url
+    --clear-auth-config         Remove the issuer/audience binding
+                                 Styling, webhooks and rate limits are managed
+                                 in the console, not here.
   apps delete [appId]           Delete an app
   apps access [appId]           Set guest-chat access policy (personal apps only;
                                  workspace-owned apps 404 — use the platform UI)
@@ -325,6 +333,15 @@ async function main(): Promise<void> {
 
   const [group, action, ...rest] = command;
   const jsonFlag = flags.json === true;
+
+  /**
+   * A flag's string value, or `undefined` when it is absent OR present
+   * without a value. `parseArgs` yields `true` for a valueless flag, so
+   * `flags.x as string | undefined` would hand a boolean to a
+   * string-typed parameter and ship it onto the wire.
+   */
+  const str = (value: string | true | undefined): string | undefined =>
+    typeof value === 'string' ? value : undefined;
 
   switch (group) {
     case 'create':
@@ -571,11 +588,14 @@ async function main(): Promise<void> {
           break;
         case 'update':
           await appsUpdate(rest[0], {
-            name: flags.name as string | undefined,
-            stylingPrompt: flags['styling-prompt'] as string | undefined,
-            webhookUrl: flags['webhook-url'] as string | undefined,
-            rateLimit: flags['rate-limit'] as string | undefined,
-            domains: flags.domains as string | undefined,
+            name: str(flags.name),
+            description: str(flags.description),
+            // `--domains` with no value clears the allowlist.
+            domains: flags.domains === true ? '' : str(flags.domains),
+            authMode: str(flags['auth-mode']),
+            issuerUrl: str(flags['issuer-url']),
+            audience: str(flags.audience),
+            clearAuthConfig: flags['clear-auth-config'] === true,
             json: jsonFlag,
           });
           break;

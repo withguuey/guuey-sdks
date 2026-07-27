@@ -18,6 +18,9 @@ import {
   appsListRow,
   appsPublish,
   appsUnpublish,
+  appsUpdate,
+  buildUpdateAppBody,
+  type UpdateAppRequest,
 } from './apps.js';
 import { resolveConfig } from '../config.js';
 
@@ -133,6 +136,134 @@ describe('appsList', () => {
 
     const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
     expect(output).toContain('Todo');
+  });
+});
+
+// `guuey apps update` was wire-broken for its entire life: it sent
+// `{name, stylingPrompt, webhookUrl, rateLimitPerMinute, allowedDomains}`
+// while the handler mapped only `displayName`/`description`/`guestAccess`/
+// `guestDailyMessageLimit`, so no key ever matched and EVERY flag came
+// back 400 "No updatable fields provided". These cases pin the field
+// names against the handler's `UpdateAppBody`.
+describe('buildUpdateAppBody', () => {
+  /** Unwraps a built body, failing loudly when the builder rejected. */
+  function built(opts: Parameters<typeof buildUpdateAppBody>[0]): UpdateAppRequest {
+    const body = buildUpdateAppBody(opts);
+    if (typeof body === 'string') throw new Error(`expected a body, got: ${body}`);
+    return body;
+  }
+
+  /** Unwraps a rejection message, failing loudly when the builder accepted. */
+  function refused(opts: Parameters<typeof buildUpdateAppBody>[0]): string {
+    const body = buildUpdateAppBody(opts);
+    if (typeof body !== 'string') throw new Error('expected a rejection');
+    return body;
+  }
+
+  it('sends displayName — NOT `name`, the field that never matched', () => {
+    expect(built({ name: 'Renamed' })).toEqual({ displayName: 'Renamed' });
+  });
+
+  it('splits and trims --domains into allowedDomains', () => {
+    expect(built({ domains: 'example.com, https://app.example.com' })).toEqual({
+      allowedDomains: ['example.com', 'https://app.example.com'],
+    });
+  });
+
+  it('a valueless --domains clears the allowlist', () => {
+    expect(built({ domains: '' })).toEqual({ allowedDomains: [] });
+  });
+
+  it('drops empty segments from a trailing comma', () => {
+    expect(built({ domains: 'example.com,' })).toEqual({
+      allowedDomains: ['example.com'],
+    });
+  });
+
+  it('passes userAuthMode straight through for the server to validate', () => {
+    expect(built({ authMode: 'byo' })).toEqual({ userAuthMode: 'byo' });
+  });
+
+  it('pairs --issuer-url and --audience into userAuthConfig', () => {
+    expect(built({ issuerUrl: 'https://issuer.example.com', audience: 'my-app' })).toEqual({
+      userAuthConfig: { issuerUrl: 'https://issuer.example.com', audience: 'my-app' },
+    });
+  });
+
+  it('--clear-auth-config sends an explicit null', () => {
+    expect(built({ clearAuthConfig: true })).toEqual({ userAuthConfig: null });
+  });
+
+  it.each([
+    [{ issuerUrl: 'https://issuer.example.com' }, /together/],
+    [{ audience: 'my-app' }, /together/],
+  ])('refuses a half issuer pair %p without a round trip', (opts, pattern) => {
+    expect(refused(opts)).toMatch(pattern);
+  });
+
+  it('refuses --clear-auth-config combined with the issuer pair', () => {
+    expect(
+      refused({
+        clearAuthConfig: true,
+        issuerUrl: 'https://issuer.example.com',
+        audience: 'my-app',
+      }),
+    ).toMatch(/cannot be combined/);
+  });
+
+  it('refuses an empty flag set, naming the flags that exist', () => {
+    const message = refused({});
+    expect(message).toMatch(/No fields to update/);
+    expect(message).toContain('--domains');
+    expect(message).toContain('--auth-mode');
+  });
+
+  it('never emits the retired console-managed fields', () => {
+    const body = built({ name: 'X', domains: 'example.com', authMode: 'byo' });
+    expect(Object.keys(body).sort()).toEqual([
+      'allowedDomains',
+      'displayName',
+      'userAuthMode',
+    ]);
+  });
+});
+
+describe('appsUpdate', () => {
+  let fetchSpy: MockInstance<typeof fetch>;
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, 'fetch');
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('PUTs /apps/:id with the handler-aligned body', async () => {
+    fetchSpy.mockResolvedValue(new Response(JSON.stringify({ app: {} }), { status: 200 }));
+
+    await appsUpdate('app-1', {
+      name: 'Renamed',
+      domains: 'example.com',
+      authMode: 'byo',
+      issuerUrl: 'https://issuer.example.com',
+      audience: 'my-app',
+    });
+
+    expect(lastRequest(fetchSpy)).toEqual({
+      method: 'PUT',
+      path: '/apps/app-1',
+      body: {
+        displayName: 'Renamed',
+        allowedDomains: ['example.com'],
+        userAuthMode: 'byo',
+        userAuthConfig: { issuerUrl: 'https://issuer.example.com', audience: 'my-app' },
+      },
+    });
   });
 });
 

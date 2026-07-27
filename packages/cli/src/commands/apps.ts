@@ -21,11 +21,17 @@ interface AppSummary {
   createdAt: string;
 }
 
+/**
+ * `GET /v1/apps/:id`. Only fields the server's `AppWire` actually sends —
+ * `stylingPrompt` / `webhookUrl` / `rateLimitPerMinute` used to be
+ * declared here and printed below, but `toWire` has never returned them,
+ * so those lines were permanently dead. They are Console-managed fields;
+ * the CLI does not read or write them.
+ */
 interface AppDetail extends AppSummary {
-  defaultShellType?: string;
-  stylingPrompt?: string;
-  webhookUrl?: string;
-  rateLimitPerMinute?: number;
+  allowedDomains?: string[];
+  userAuthMode?: string | null;
+  userAuthConfig?: { issuerUrl: string | null; audience: string | null } | null;
 }
 
 interface AppAccessState {
@@ -144,10 +150,13 @@ export async function appsGet(
   const app = data.app;
   console.log(`App: ${app.displayName} (${app.id})`);
   console.log(`  BYOK:         ${app.hasBYOK ? 'yes' : 'no'}`);
-  if (app.webhookUrl) console.log(`  Webhook:      ${app.webhookUrl}`);
-  if (app.rateLimitPerMinute)
-    console.log(`  Rate Limit:   ${app.rateLimitPerMinute}/min`);
-  if (app.stylingPrompt) console.log(`  Styling:      ${app.stylingPrompt}`);
+  if (app.userAuthMode) console.log(`  Auth Mode:    ${app.userAuthMode}`);
+  if (app.userAuthConfig?.issuerUrl)
+    console.log(`  Issuer:       ${app.userAuthConfig.issuerUrl}`);
+  if (app.userAuthConfig?.audience)
+    console.log(`  Audience:     ${app.userAuthConfig.audience}`);
+  if (app.allowedDomains?.length)
+    console.log(`  Domains:      ${app.allowedDomains.join(', ')}`);
   console.log(`  Created:      ${app.createdAt}`);
 }
 
@@ -199,16 +208,91 @@ export async function appsCreate(opts: {
 }
 
 /**
+ * Request body for `PUT /v1/apps/:id`. Mirrors the handler's
+ * `UpdateAppBody` (`backend/amplify/functions/cliApi/handlers/apps.ts`) —
+ * one contract, both sides.
+ *
+ * This used to be a `Record<string, unknown>` filled with field names the
+ * handler never mapped (`name`, `stylingPrompt`, `webhookUrl`,
+ * `rateLimitPerMinute`), so EVERY flag of `guuey apps update` 400'd with
+ * "No updatable fields provided". A typed body is what keeps the two
+ * sides from drifting apart again silently.
+ */
+export interface UpdateAppRequest {
+  displayName?: string;
+  description?: string;
+  allowedDomains?: string[];
+  userAuthMode?: string;
+  userAuthConfig?: { issuerUrl: string; audience: string } | null;
+}
+
+/**
+ * Build the `apps update` request body from parsed flags (pure — no I/O,
+ * so the wire shape is unit-testable without a `fetch` mock).
+ *
+ * Returns a `string` instead of a body when the flag combination is
+ * unusable, so the caller can print it and exit non-zero. Catching
+ * these locally beats a server round-trip for something the CLI can see.
+ */
+export function buildUpdateAppBody(opts: {
+  name?: string;
+  description?: string;
+  domains?: string;
+  authMode?: string;
+  issuerUrl?: string;
+  audience?: string;
+  clearAuthConfig?: boolean;
+}): UpdateAppRequest | string {
+  const body: UpdateAppRequest = {};
+  if (opts.name) body.displayName = opts.name;
+  if (opts.description) body.description = opts.description;
+  if (opts.domains !== undefined) {
+    // An explicit empty string clears the allowlist; the server validates
+    // and normalizes every entry (`validateAllowedDomains`).
+    body.allowedDomains =
+      opts.domains.trim() === ''
+        ? []
+        : opts.domains
+            .split(',')
+            .map((d) => d.trim())
+            .filter((d) => d !== '');
+  }
+  if (opts.authMode) body.userAuthMode = opts.authMode;
+
+  const hasIssuerPair = Boolean(opts.issuerUrl) || Boolean(opts.audience);
+  if (opts.clearAuthConfig && hasIssuerPair) {
+    return '--clear-auth-config cannot be combined with --issuer-url / --audience.';
+  }
+  if (opts.clearAuthConfig) {
+    body.userAuthConfig = null;
+  } else if (hasIssuerPair) {
+    // Both-or-neither: a half-configured issuer binding verifies nothing,
+    // so the server rejects it too — this just fails faster.
+    if (!opts.issuerUrl || !opts.audience) {
+      return '--issuer-url and --audience must be provided together.';
+    }
+    body.userAuthConfig = { issuerUrl: opts.issuerUrl, audience: opts.audience };
+  }
+
+  if (Object.keys(body).length === 0) {
+    return 'No fields to update. Use --name, --description, --domains, --auth-mode, --issuer-url + --audience, or --clear-auth-config.';
+  }
+  return body;
+}
+
+/**
  * Handle `guuey apps update [appId]`.
  */
 export async function appsUpdate(
   appId: string | undefined,
   opts: {
     name?: string;
-    stylingPrompt?: string;
-    webhookUrl?: string;
-    rateLimit?: string;
+    description?: string;
     domains?: string;
+    authMode?: string;
+    issuerUrl?: string;
+    audience?: string;
+    clearAuthConfig?: boolean;
     json?: boolean;
   },
 ): Promise<void> {
@@ -218,15 +302,9 @@ export async function appsUpdate(
     process.exit(1);
   }
 
-  const body: Record<string, unknown> = {};
-  if (opts.name) body.name = opts.name;
-  if (opts.stylingPrompt) body.stylingPrompt = opts.stylingPrompt;
-  if (opts.webhookUrl) body.webhookUrl = opts.webhookUrl;
-  if (opts.rateLimit) body.rateLimitPerMinute = parseInt(opts.rateLimit, 10);
-  if (opts.domains) body.allowedDomains = opts.domains.split(',').map((d) => d.trim());
-
-  if (Object.keys(body).length === 0) {
-    out.error('No fields to update. Use --name, --styling-prompt, etc.');
+  const body = buildUpdateAppBody(opts);
+  if (typeof body === 'string') {
+    out.error(body);
     process.exit(1);
   }
 
