@@ -169,7 +169,7 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
   // §8.4 (not overlay material). `target` is implicitly `'guuey'` on
   // every record the closed CLI writes — overlay-explicit target
   // selection is a future additive if non-Guuey hosted targets land.
-  const size = (flags?.size as string) ?? project?.agent?.deploy?.size ?? 'sm';
+  const size = (flags?.size as string) ?? project?.agent?.deploy?.size ?? 'xs';
   const buildSize = (flags?.['build-size'] as string) ?? 'md';
   const target = (flags?.target as string) ?? 'ggui';
   const label = flags?.label as string | undefined;

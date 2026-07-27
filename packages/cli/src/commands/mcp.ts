@@ -106,7 +106,7 @@ export function resolveServerName(
 /**
  * Validate a raw `--size` flag against the allowed pod sizes. Returns the
  * narrowed size on success, or `null` on an invalid/non-string value (the
- * caller prints the error + exits). The default of `'sm'` is applied by the
+ * caller prints the error + exits). The default of `'xs'` is applied by the
  * caller before validation, not here.
  */
 export function validateMcpSize(raw: string | true | undefined): McpSize | null {
@@ -241,7 +241,7 @@ export async function deployMcpFromSource(
     /** Workspace-unique server name. */
     name: string;
     workspaceId: string;
-    /** Runtime pod size. Defaults to `'sm'` (matches `guuey mcp deploy`'s own default). */
+    /** Runtime pod size. Defaults to `'xs'` (matches `guuey mcp deploy`'s own default). */
     size?: McpSize;
     auth: AuthTokens;
     config: ResolvedConfig;
@@ -252,7 +252,7 @@ export async function deployMcpFromSource(
 ): Promise<McpSourceDeployResult> {
   const api = deps?.api ?? apiRequest;
   const { dir, name, workspaceId, auth, config, label } = opts;
-  const size = opts.size ?? 'sm';
+  const size = opts.size ?? 'xs';
 
   if (!existsSync(join(dir, 'Dockerfile'))) {
     throw new Error(
@@ -457,8 +457,8 @@ export async function mcpDeploy(flags?: Record<string, string | true>): Promise<
     process.exit(1);
   }
 
-  // Default to 'sm' before validating; the validator only accepts/rejects.
-  const rawSize = flags?.size ?? 'sm';
+  // Default to 'xs' before validating; the validator only accepts/rejects.
+  const rawSize = flags?.size ?? 'xs';
   const size = validateMcpSize(rawSize);
   if (!size) {
     out.error(
