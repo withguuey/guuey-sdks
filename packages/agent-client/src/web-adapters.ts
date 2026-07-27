@@ -61,16 +61,66 @@ export function webGenerateId(): string {
 }
 
 /**
- * Web SSE transport. When `accessToken` is present the pod identifies the
- * caller by their verified Cognito access token (the same identity the
- * history read plane uses, so persisted threads round-trip on reload).
- * Otherwise it falls back to `credentials: "include"`, which round-trips the
- * HttpOnly `guuey_guest` cookie the pod mints for anonymous browser callers.
+ * Header carrying a caller-owned anonymous guest secret. A LOCAL MIRROR of the
+ * two server-side constants — the pod's `GUEST_HEADER_NAME`
+ * (`backend/services/nocode-runtime/src/identity.ts`) and the read plane's
+ * `GUEST_HEADER` (`backend/amplify/functions/publicApi/identity.ts`) — because
+ * this is a published npm package and cannot take a `@guuey-private` dep (same
+ * arrangement as `@guuey/host`'s mirrored fs-contract constants). The string is
+ * a wire contract: both planes already advertise it in
+ * `Access-Control-Allow-Headers`, so changing it is a breaking protocol change,
+ * not a rename.
+ */
+const GUEST_HEADER = "x-guuey-guest";
+
+/**
+ * A well-formed guest secret: exactly 32 bytes as 64 LOWERCASE hex chars —
+ * the shape `crypto.getRandomValues` + hex-encoding mints.
+ *
+ * Deliberately stricter than the server's `/^[a-f0-9]{64}$/i` (pod
+ * `identity.ts`, publicApi `identity.ts`): both sides lowercase before
+ * hashing, so an uppercase secret would in fact be accepted, but the only
+ * supported mint path emits lowercase and a non-canonical value means the
+ * caller's storage is not what this adapter expects. Anything that fails is
+ * IGNORED — the request falls through to cookie mode rather than sending a
+ * secret the two identity planes might key differently.
+ */
+const GUEST_SECRET_RE = /^[0-9a-f]{64}$/;
+
+/**
+ * Narrow a caller-supplied guest secret to a value that is safe to put on the
+ * wire, or `null`. The single gate for the header: every write of
+ * {@link GUEST_HEADER} in this module goes through it, so a malformed secret
+ * can never reach a request. The value is never logged (here or anywhere on
+ * this path) — it IS the anonymous identity, so a leak is an impersonation.
+ */
+function sendableGuestSecret(secret: string | null | undefined): string | null {
+  return typeof secret === "string" && GUEST_SECRET_RE.test(secret) ? secret : null;
+}
+
+/**
+ * Web SSE transport. Exactly ONE identity carrier per request, in order:
+ *
+ *  1. `accessToken` → `Authorization: Bearer` — the pod identifies the caller
+ *     by their verified access token (the same identity the history read
+ *     plane uses, so persisted threads round-trip on reload).
+ *  2. a well-formed `guestSecret` → `x-guuey-guest` — the caller owns and
+ *     persists its own anonymous secret. The path for hosts with no usable
+ *     cookie jar: React-Native, and the embedded widget, whose third-party
+ *     iframe cannot rely on the pod's cookie surviving browser partitioning.
+ *     The pod never mints a cookie for a header client.
+ *  3. neither → `credentials: "include"`, which round-trips the HttpOnly
+ *     `guuey_guest` cookie the pod mints for anonymous browser callers.
+ *
+ * Never two at once: a bearer wins over a guest secret, and a request that
+ * carries either header does NOT also send cookie credentials.
+ *
  * Reads the body via `ReadableStream.getReader()` (browser).
  */
 export async function* fetchStreamTransport(
   req: InvokeRequest,
   accessToken?: string | null,
+  guestSecret?: string | null,
 ): AsyncGenerator<string> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -82,8 +132,11 @@ export async function* fetchStreamTransport(
     headers,
     body: JSON.stringify(req.body),
   };
+  const guest = sendableGuestSecret(guestSecret);
   if (accessToken) {
     headers.Authorization = `Bearer ${accessToken}`;
+  } else if (guest) {
+    headers[GUEST_HEADER] = guest;
   } else {
     init.credentials = "include";
   }
@@ -124,28 +177,49 @@ export interface CreateWebAdaptersOptions {
    * Resolve the caller's Cognito access token (fresh), or `null` when signed
    * out. When a token is present the chat transport AND the history read
    * authenticate as that user, so a reload restores the transcript. Without
-   * a token the transport falls back to the guest cookie and history is
-   * skipped — the read plane can't identify a cookie-only browser caller
-   * (it reads the `x-guuey-guest` header or a Bearer, not the HttpOnly
-   * guest cookie), so there is no identity to replay.
+   * a token, identity falls to {@link getGuestSecret} (if supplied) and then
+   * to the guest cookie.
    */
   getAccessToken?: () => Promise<string | null>;
+  /**
+   * Resolve the caller's own persisted anonymous guest secret (64 lowercase
+   * hex chars), or `null` when there is none. Supply this on hosts whose
+   * cookie jar can't carry the pod's HttpOnly `guuey_guest` — notably the
+   * embedded widget, a third-party iframe whose cookies browsers partition
+   * or block outright.
+   *
+   * With a secret, BOTH the chat transport and the history read send
+   * `x-guuey-guest`, so an anonymous transcript replays on reload the same
+   * way a signed-in one does — the read plane identifies a guest by that
+   * header (it cannot see the HttpOnly cookie, which is why a cookie-only
+   * caller still gets no history).
+   *
+   * Called once per request, so a rotated secret takes effect immediately.
+   * MUST be synchronous and MUST NOT throw — a host reading `localStorage`
+   * owns its own storage-blocked handling and should return `null` there.
+   * A value that isn't 64 lowercase hex is ignored (never sent) and the
+   * request falls through to cookie mode.
+   */
+  getGuestSecret?: () => string | null;
 }
 
 /**
  * Build the web host-adapter bundle for {@link useAgentInvoke}. Pass an
- * access-token resolver (and the read-plane base) to authenticate the chat
- * transport and enable transcript restore on reload; omit them for an
- * anonymous, history-less bundle.
+ * access-token resolver and/or a guest-secret resolver (plus the read-plane
+ * base) to give the chat transport an identity the read plane can also see,
+ * which is what enables transcript restore on reload; omit both for a
+ * cookie-only, history-less bundle.
  */
 export function createWebAdapters(
   opts: CreateWebAdaptersOptions = {},
 ): AgentInvokeAdapters {
-  const { apiBaseUrl, getAccessToken } = opts;
+  const { apiBaseUrl, getAccessToken, getGuestSecret } = opts;
 
   const transport: InvokeTransport = async function* (req) {
     const token = getAccessToken ? await getAccessToken() : null;
-    yield* fetchStreamTransport(req, token);
+    // Both candidates go to the transport; it owns the precedence (and the
+    // never-two-carriers rule) so there is exactly one place that decides.
+    yield* fetchStreamTransport(req, token, getGuestSecret ? getGuestSecret() : null);
   };
 
   const adapters: AgentInvokeAdapters = {
@@ -154,18 +228,27 @@ export function createWebAdapters(
     transport,
   };
 
-  if (apiBaseUrl && getAccessToken) {
+  // History needs an identity the READ plane can resolve: a Bearer or the
+  // `x-guuey-guest` header. Either resolver can supply one, so either one
+  // installs the adapter; a cookie-only caller is unidentifiable there and
+  // gets no adapter at all.
+  if (apiBaseUrl && (getAccessToken || getGuestSecret)) {
     adapters.history = {
       load: async (threadId) => {
-        const token = await getAccessToken();
-        // No readable identity → leave the chat empty (skip) rather than
-        // `gone`, which would clear the persisted threadId.
-        if (!token) return { messages: [] };
-        return fetchThreadHistory({
-          baseUrl: apiBaseUrl,
-          threadId,
-          requestInit: { headers: { Authorization: `Bearer ${token}` } },
-        });
+        const token = getAccessToken ? await getAccessToken() : null;
+        const guest = sendableGuestSecret(getGuestSecret?.());
+        // Same precedence, and the same one-carrier rule, as the transport.
+        const headers: Record<string, string> = {};
+        if (token) {
+          headers.Authorization = `Bearer ${token}`;
+        } else if (guest) {
+          headers[GUEST_HEADER] = guest;
+        } else {
+          // No readable identity → leave the chat empty (skip) rather than
+          // `gone`, which would clear the persisted threadId.
+          return { messages: [] };
+        }
+        return fetchThreadHistory({ baseUrl: apiBaseUrl, threadId, requestInit: { headers } });
       },
     };
   }

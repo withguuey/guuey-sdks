@@ -6,7 +6,10 @@
  * (which also carries anonymous identity) — are INJECTED by the consumer via
  * {@link AgentInvokeAdapters}. Web (Studio) passes localStorage / crypto /
  * credentialed-cookie fetch; React-Native (Portal) passes AsyncStorage /
- * getRandomValues / header-identity SSE fetch. This mirrors the ggui
+ * getRandomValues / header-identity SSE fetch. Anonymous identity is per-host,
+ * not per-platform: a web host with no usable cookie jar (an embedded
+ * third-party iframe) carries its own guest secret in a header too — see
+ * `createWebAdapters`'s `getGuestSecret`. This mirrors the ggui
  * `MessageStorageAdapter` injection pattern.
  */
 
@@ -87,7 +90,7 @@ export interface InvokeRequest {
  * Opens an invoke request and yields decoded UTF-8 text chunks of the SSE
  * stream (the hook accumulates + parses frames itself). MUST throw on a
  * non-OK response or network failure. Owns headers + identity entirely, so
- * the hook never sees cookies or bearer tokens.
+ * the hook never sees cookies, bearer tokens, or guest secrets.
  */
 export type InvokeTransport = (req: InvokeRequest) => AsyncIterable<string>;
 
