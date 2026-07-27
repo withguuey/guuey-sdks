@@ -30,14 +30,53 @@ export interface ColocatedDevEntry {
 }
 
 export interface ColocatedDevHandle {
-  /** SIGTERM every spawned child. Idempotent — safe to call more than once
-   *  (e.g. once from `guuey dev`'s own shutdown handler and once from a
-   *  test's cleanup). */
+  /** SIGTERM every spawned child's whole process group (see
+   *  `terminateGroup`). Idempotent — safe to call more than once (e.g. once
+   *  from `guuey dev`'s own shutdown handler and once from a test's
+   *  cleanup). */
   stop(): void;
 }
 
 interface PackageJsonScripts {
   scripts?: Record<string, string>;
+}
+
+/**
+ * SIGTERM a spawned child's whole process group.
+ *
+ * `pnpm run <script>` is not one process. The `pnpm` on PATH re-execs the
+ * version-managed pnpm, which then runs the script's command as a child of
+ * its own (through a shell, depending on the script) — so the dev server we
+ * actually want to stop is a grand- or great-grandchild. `child.kill()`
+ * signals only the direct child, which pnpm does NOT forward: the dev
+ * server survives `guuey dev`, keeps `devPort` bound, and the next
+ * `guuey dev` dies with EADDRINUSE.
+ *
+ * So children are spawned `detached` — POSIX `setsid()`, which makes the
+ * child its own process-group leader with `pgid === child.pid` — and torn
+ * down by signalling the negative pid, which the kernel delivers to every
+ * process in that group. Same idiom, same reason as `create-agentic-app`'s
+ * `scripts/verdaccio-smoke.mjs#killGroup`.
+ *
+ * POSIX-only, like the bare-spawn stance above (`process.kill(-pid)` has no
+ * Windows equivalent, and `spawn('pnpm', …)` without a shell doesn't resolve
+ * `pnpm.cmd` there either).
+ */
+function terminateGroup(child: ChildProcess): void {
+  const pid = child.pid;
+  // No pid at all = the spawn itself failed; a settled exitCode/signalCode =
+  // the group is already gone. Either way there is nothing to signal, and
+  // `process.kill(-undefined)` / a recycled pid must never be attempted.
+  if (pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
+  try {
+    process.kill(-pid, "SIGTERM");
+  } catch (err) {
+    // ESRCH: the group exited between the liveness check above and the
+    // signal. That IS the state stop() asked for, not a failure. Anything
+    // else (EPERM, …) is a real fault and must surface.
+    if (typeof err === "object" && err !== null && "code" in err && err.code === "ESRCH") return;
+    throw err;
+  }
 }
 
 /** `"dev"` if the entry's `package.json` declares one, else `"start"`, else
@@ -63,7 +102,9 @@ function resolveScript(packageJsonPath: string): "dev" | "start" | undefined {
  * `PORT=<devPort>` in its env — the same `PORT` contract the scaffolded
  * `mcp-base` template (and the pod) already read.
  *
- * Returns a handle whose `stop()` SIGTERMs every spawned child. Never
+ * Returns a handle whose `stop()` SIGTERMs every spawned child's whole
+ * process group (`terminateGroup` — the dev server is pnpm's child, not
+ * ours, so signalling the direct child alone would leak it). Never
  * throws on a per-entry spawn/script-resolution problem — a broken
  * colocated MCP shouldn't take down the rest of `guuey dev`.
  */
@@ -87,6 +128,10 @@ export function spawnColocatedDev(
       cwd,
       env: { ...process.env, PORT: String(entry.devPort) },
       stdio: ["ignore", "pipe", "pipe"],
+      // Own process group, so stop() can tear down the whole pnpm→dev-server
+      // tree — see `terminateGroup`. NOT unref'd: this process still owns the
+      // child's stdio relay and its shutdown.
+      detached: true,
     });
     const prefix = `[${entry.name}]`.padEnd(9);
     child.stdout?.on("data", (d: Buffer) =>
@@ -98,11 +143,12 @@ export function spawnColocatedDev(
     children.push(child);
   }
 
+  let stopped = false;
   return {
     stop(): void {
-      for (const child of children) {
-        if (!child.killed) child.kill("SIGTERM");
-      }
+      if (stopped) return;
+      stopped = true;
+      for (const child of children) terminateGroup(child);
     },
   };
 }

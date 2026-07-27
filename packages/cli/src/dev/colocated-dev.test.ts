@@ -65,6 +65,13 @@ afterEach(async () => {
 });
 
 describe("spawnColocatedDev", () => {
+  // The `stopped` half of this test is the regression pin for
+  // `terminateGroup`: the fixture that writes the marker is NOT the process
+  // `spawnColocatedDev` spawned — `pnpm` sits between them (and re-execs
+  // itself), so the marker only ever appears if stop() signalled the child's
+  // whole process group rather than just the direct child. Keep the fixture
+  // behind `pnpm run` for that reason; spawning it directly would still pass
+  // while leaking every real dev server.
   it("spawns the entry's dev script with PORT set in its env, and stop() SIGTERMs it", async () => {
     markerDir = mkdtempSync(join(tmpdir(), "guuey-colocated-dev-"));
     process.env.FIXTURE_MARKER_DIR = markerDir;
