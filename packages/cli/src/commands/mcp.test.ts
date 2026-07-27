@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -780,6 +780,31 @@ describe('formatMcpHostingStatus', () => {
   });
 });
 
+// ── Where the SYNC GUARDs below read their canonical copy from ──────────
+//
+// Both guards read a backend source file off disk (test-only; never bundled
+// into the published CLI package) to pin a constant the CLI hand-mirrors.
+// Their whole purpose is monorepo-side drift detection — "did someone move
+// the Lambda's declaration without moving the CLI's copy?" — so they only
+// have a subject where `backend/` exists.
+//
+// `@guuey/cli` is also published from the standalone mirror
+// `withguuey/guuey-sdks`, which contains ONLY the `oss/` tree; there the
+// guarded copy is absent BY CONSTRUCTION, so `skipIf` below is structural,
+// not a suppressed regression. The guard stays fully live where it can
+// actually detect drift: the monorepo CI runs this same file with
+// `backend/` present, and that is the only place a divergence can be
+// introduced in the first place.
+function backendSourcePath(relativeToThisFile: string): string {
+  return fileURLToPath(new URL(relativeToThisFile, import.meta.url));
+}
+const MCP_DEPLOY_HANDLER_PATH = backendSourcePath(
+  '../../../../../backend/amplify/functions/cliApi/handlers/mcp-deploy.ts',
+);
+const HOSTING_LIVE_SERVERS_PATH = backendSourcePath(
+  '../../../../../backend/amplify/functions/shared/hosting-live-servers.ts',
+);
+
 // ── MCP_BILLING_ROUTE — the fourth hand-synced copy, now pinned ─────────
 //
 // The backend already carries THREE copies of this route, each pinned by a
@@ -795,20 +820,15 @@ describe('MCP_BILLING_ROUTE — sync guard against the backend copies', () => {
     expect(MCP_BILLING_ROUTE.startsWith('http')).toBe(false);
   });
 
-  it('SYNC GUARD: the backend cliApi handler still declares the same route', () => {
-    const source = readFileSync(
-      fileURLToPath(
-        new URL(
-          '../../../../../backend/amplify/functions/cliApi/handlers/mcp-deploy.ts',
-          import.meta.url,
-        ),
-      ),
-      'utf8',
-    );
-    const declaration = source.match(/export const MCP_BILLING_ROUTE = '([^']*)';/);
-    expect(declaration).not.toBeNull();
-    expect(declaration?.[1]).toBe(MCP_BILLING_ROUTE);
-  });
+  it.skipIf(!existsSync(MCP_DEPLOY_HANDLER_PATH))(
+    'SYNC GUARD: the backend cliApi handler still declares the same route',
+    () => {
+      const source = readFileSync(MCP_DEPLOY_HANDLER_PATH, 'utf8');
+      const declaration = source.match(/export const MCP_BILLING_ROUTE = '([^']*)';/);
+      expect(declaration).not.toBeNull();
+      expect(declaration?.[1]).toBe(MCP_BILLING_ROUTE);
+    },
+  );
 });
 
 // ── MCP_LAPSE_FAMILY_STATUSES — the fifth hand-synced copy, now pinned ──
@@ -826,26 +846,21 @@ describe('MCP_LAPSE_FAMILY_STATUSES — sync guard against the backend copies', 
     expect([...MCP_LAPSE_FAMILY_STATUSES]).toEqual(['lapsing', 'lapsed', 'resuming']);
   });
 
-  it('SYNC GUARD: the Lambda-side lapse family is still exactly these three statuses', () => {
-    const source = readFileSync(
-      fileURLToPath(
-        new URL(
-          '../../../../../backend/amplify/functions/shared/hosting-live-servers.ts',
-          import.meta.url,
-        ),
-      ),
-      'utf8',
-    );
-    const declaration = source.match(
-      /export const LAPSE_FAMILY_STATUSES = \[([^\]]*)\] as const;/,
-    );
-    expect(declaration).not.toBeNull();
-    const lambdaStatuses = (declaration?.[1] ?? '')
-      .split(',')
-      .map((entry) => entry.trim().replace(/^['"]|['"]$/g, ''))
-      .filter((entry) => entry.length > 0);
-    expect(lambdaStatuses).toEqual([...MCP_LAPSE_FAMILY_STATUSES]);
-  });
+  it.skipIf(!existsSync(HOSTING_LIVE_SERVERS_PATH))(
+    'SYNC GUARD: the Lambda-side lapse family is still exactly these three statuses',
+    () => {
+      const source = readFileSync(HOSTING_LIVE_SERVERS_PATH, 'utf8');
+      const declaration = source.match(
+        /export const LAPSE_FAMILY_STATUSES = \[([^\]]*)\] as const;/,
+      );
+      expect(declaration).not.toBeNull();
+      const lambdaStatuses = (declaration?.[1] ?? '')
+        .split(',')
+        .map((entry) => entry.trim().replace(/^['"]|['"]$/g, ''))
+        .filter((entry) => entry.length > 0);
+      expect(lambdaStatuses).toEqual([...MCP_LAPSE_FAMILY_STATUSES]);
+    },
+  );
 });
 
 describe('mcpDeploymentRow', () => {
