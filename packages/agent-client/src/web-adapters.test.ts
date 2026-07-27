@@ -4,6 +4,8 @@ import type { InvokeRequest } from "./types";
 
 /** A well-formed guest secret: 64 lowercase hex chars. */
 const SECRET = "0123456789abcdef".repeat(4);
+/** A second well-formed secret, for the rotation pin. */
+const SECRET_B = "fedcba9876543210".repeat(4);
 
 function sseResponse(body = 'data: {"type":"text"}\n\n'): Response {
   return new Response(body, {
@@ -121,17 +123,23 @@ describe("fetchStreamTransport identity headers", () => {
 });
 
 describe("createWebAdapters transport", () => {
-  it("carries the guest secret resolved per request", async () => {
+  it("re-resolves the secret per request, so a rotation takes effect on the next one", async () => {
     const fetchImpl = mockFetch([sseResponse(), sseResponse()]);
-    const getGuestSecret = vi.fn<() => string | null>().mockReturnValue(SECRET);
+    // Asserting two DIFFERENT headers pins the documented behaviour (the value
+    // is re-read per request); a call-count assertion would also pass for an
+    // implementation that calls the resolver every time but memoises the first
+    // value it got.
+    const getGuestSecret = vi
+      .fn<() => string | null>()
+      .mockReturnValueOnce(SECRET)
+      .mockReturnValueOnce(SECRET_B);
     const adapters = createWebAdapters({ getGuestSecret });
     await withGlobalFetch(fetchImpl, async () => {
       await drain(adapters.transport(invokeRequest()));
       await drain(adapters.transport(invokeRequest()));
     });
-    expect(getGuestSecret).toHaveBeenCalledTimes(2);
     expect(headersOf(fetchImpl.mock.calls[0][1])["x-guuey-guest"]).toBe(SECRET);
-    expect(headersOf(fetchImpl.mock.calls[1][1])["x-guuey-guest"]).toBe(SECRET);
+    expect(headersOf(fetchImpl.mock.calls[1][1])["x-guuey-guest"]).toBe(SECRET_B);
   });
 
   it("prefers the token when both resolvers are supplied", async () => {
@@ -227,6 +235,60 @@ describe("createWebAdapters history install", () => {
     if (!history) throw new Error("history adapter not installed in guest mode");
     const result = await withGlobalFetch(fetchImpl, () => history.load("t_1"));
     expect(result).toEqual({ messages: [{ role: "user", text: "hi" }] });
+  });
+});
+
+describe("identity-resolution failures", () => {
+  const apiBaseUrl = "https://api.example.com/v1";
+  const rejectingToken = async (): Promise<string | null> => {
+    throw new Error("token refresh failed");
+  };
+
+  // A failing token read must FAIL, never quietly become an anonymous send:
+  // the pod accepts anonymous invokes unconditionally, so a fall-through would
+  // succeed and fork the caller's turns into an unreachable guest thread.
+  // These pin the semantics against a refactor that hoists the guest read above
+  // the `await`, or wraps the token read in a try/catch.
+  it("rejects the invoke when the token resolver rejects, even with a guest secret to hand", async () => {
+    const fetchImpl = mockFetch([]);
+    const adapters = createWebAdapters({
+      getAccessToken: rejectingToken,
+      getGuestSecret: () => SECRET,
+    });
+    await withGlobalFetch(fetchImpl, async () => {
+      await expect(drain(adapters.transport(invokeRequest()))).rejects.toThrow("token refresh failed");
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("rejects the history load when the token resolver rejects, even with a guest secret to hand", async () => {
+    const fetchImpl = mockFetch([]);
+    const history = createWebAdapters({
+      apiBaseUrl,
+      getAccessToken: rejectingToken,
+      getGuestSecret: () => SECRET,
+    }).history;
+    if (!history) throw new Error("history adapter not installed");
+    // The adapter REJECTS (it does not return an empty transcript). The hook is
+    // what makes history best-effort: `useAgentInvoke` catches a rejected
+    // `load` and leaves the chat empty.
+    await withGlobalFetch(fetchImpl, async () => {
+      await expect(history.load("t_1")).rejects.toThrow("token refresh failed");
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("propagates a throwing guest resolver rather than degrading to cookie mode", async () => {
+    const fetchImpl = mockFetch([]);
+    const adapters = createWebAdapters({
+      getGuestSecret: () => {
+        throw new DOMException("localStorage is blocked", "SecurityError");
+      },
+    });
+    await withGlobalFetch(fetchImpl, async () => {
+      await expect(drain(adapters.transport(invokeRequest()))).rejects.toThrow(/blocked/);
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
 

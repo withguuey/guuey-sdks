@@ -195,10 +195,31 @@ export interface CreateWebAdaptersOptions {
    * caller still gets no history).
    *
    * Called once per request, so a rotated secret takes effect immediately.
-   * MUST be synchronous and MUST NOT throw — a host reading `localStorage`
-   * owns its own storage-blocked handling and should return `null` there.
    * A value that isn't 64 lowercase hex is ignored (never sent) and the
    * request falls through to cookie mode.
+   *
+   * **Supply at most ONE identity resolver per mode.** Anonymous hosts pass
+   * this one; identified hosts pass {@link getAccessToken} and surface a token
+   * failure rather than continuing. Passing BOTH is a hazard, not a fallback
+   * chain: `getAccessToken` resolving `null` is indistinguishable here from
+   * "signed out on purpose", so a merely *expired or unavailable* token
+   * silently downgrades the caller to the anonymous identity. The request then
+   * SUCCEEDS — the pod accepts anonymous invokes unconditionally — but the
+   * turns land in a different thread (the pod forks on an owner mismatch
+   * rather than appending), unreachable from the identified session, which
+   * gets its own transcript back minus those turns on the next good load. A
+   * 401-then-re-request-token retry loop is exactly this window.
+   *
+   * MUST be synchronous and MUST NOT throw: a throw propagates and fails the
+   * invoke. This is a real hazard for the widget, not a formality —
+   * `localStorage` access raises `SecurityError` in a third-party iframe with
+   * storage blocked (Safari's default for embedded content), which is normal
+   * operation here. A host reading storage owns that handling and MUST return
+   * `null` on a blocked read, the way {@link localStorageThreadStore} does for
+   * the threadId; `null` degrades to cookie mode, whereas a throw takes the
+   * chat down. Deliberately NOT caught at this seam: catching a host-supplied
+   * callback would also swallow ordinary host bugs into a silent anonymous
+   * downgrade — the same failure this docblock warns about above.
    */
   getGuestSecret?: () => string | null;
 }
