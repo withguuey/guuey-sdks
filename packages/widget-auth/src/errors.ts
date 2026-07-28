@@ -24,6 +24,16 @@
  * `cause` is attached with the `Error` options form deliberately: that makes it
  * non-enumerable, so a structured logger serializing the error cannot drag a
  * transport error's request dump — headers included — into the log line.
+ *
+ * **The honest bound on that claim.** It covers what this package constructs:
+ * the message, the stack, and `JSON.stringify`. It does NOT cover
+ * `console.error(err)`, which in Node prints the cause chain through
+ * `util.inspect` and reaches the non-enumerable `cause` — so a `fetch`
+ * implementation that puts the secret in its OWN error's message escapes
+ * redaction by that path. Closing it means wrapping the cause in a redacted
+ * copy, which costs the caller the original error object (`cause.code`,
+ * `instanceof`); that trade is worth making deliberately rather than as a side
+ * effect, so it is documented here and in the README instead of half-done.
  */
 
 /** What a caller may do about a failure, without parsing messages. */

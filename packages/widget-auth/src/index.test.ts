@@ -9,7 +9,7 @@ import {
   WidgetAuthRequestError,
   WidgetAuthServiceError,
   type FetchLike,
-} from './index';
+} from './index.js';
 
 /**
  * A secret with a distinctive tail, so the "never leaks" assertions cannot pass
@@ -128,6 +128,11 @@ describe('signUserToken — request shape', () => {
    * package ever started sending any of them, `appSigner`'s strict parser would
    * 400 the unknown key and every mint would fail — so the failure mode this
    * pins is a hard outage, not a subtle one.
+   *
+   * Note what a re-implemented backdate would NOT do: shorten the token. `exp`
+   * anchors to the real now, so it does not move. It would widen the acceptance
+   * window (`nbf` another 60s earlier, so the skew margin stops meaning 60s) and
+   * make `iat` misstate the token's age.
    */
   it('sends no time or identity claims — assembly is server-side', async () => {
     const fetchImpl = stubFetch({ status: 200 });

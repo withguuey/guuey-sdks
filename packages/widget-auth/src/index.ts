@@ -28,6 +28,12 @@
  * parser, which allowlists exactly `sub`, `name` and `email` — so the rule is
  * enforced by the other end rather than merely stated here.
  *
+ * Were the backdate re-implemented here anyway, the damage would not be a
+ * shorter token: `exp` does not move, so nothing expires sooner. It would WIDEN
+ * the acceptance window — `nbf` slides another 60s into the past, so the
+ * skew margin silently stops being the 60 seconds it is documented as — and
+ * `iat` would misstate the token's age to every consumer that reads it.
+ *
  * ## The app secret is a SERVER-side credential
  *
  * `appSecret` authorizes minting an identity for *any* user of your app. It must
@@ -46,7 +52,7 @@ import {
   WidgetAuthNetworkError,
   WidgetAuthRequestError,
   WidgetAuthServiceError,
-} from './errors';
+} from './errors.js';
 
 export {
   WidgetAuthAppNotConfiguredError,

@@ -1,8 +1,18 @@
 {
   "compilerOptions": {
-    "target": "ES2023",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
+    "target": "ES2022",
+    // NodeNext, not `bundler` — this package is consumed by a customer's Node
+    // backend through Node's own ESM resolver, which requires the extension on
+    // relative specifiers. Under `bundler`, tsc emitted `./errors` verbatim into
+    // dist and the published package could not be imported at all
+    // (ERR_MODULE_NOT_FOUND), with the same defect in the .d.ts breaking
+    // consumers on node16/nodenext resolution. `@guuey/state` is the precedent.
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    // Pinned to match `engines.node: >=18`. The default ES2023 lib admits
+    // Array.prototype.toSorted / findLast, which are Node 20+ — an unpinned lib
+    // lets a call that breaks the stated floor typecheck clean.
+    "lib": ["ES2022"],
     "declaration": true,
     "declarationMap": true,
     "outDir": "dist",

@@ -26,8 +26,9 @@
     "prepack": "rm -rf dist && pnpm build",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run && pnpm run smoke:dist",
+    "test:watch": "vitest",
+    "smoke:dist": "pnpm build && node scripts/import-smoke.mjs"
   },
   "devDependencies": {
     "@types/node": "24.12.4",
