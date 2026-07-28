@@ -1,0 +1,234 @@
+# @guuey/widget-auth
+
+Mint end-user identity tokens for a [guuey](https://guuey.com) embeddable widget, from your own backend.
+
+Zero runtime dependencies. Node 18+.
+
+```bash
+npm install @guuey/widget-auth
+```
+
+## Why this exists
+
+The widget on your page needs to know **who the visitor is** — otherwise every visit
+starts from scratch, with no history, memory or files. It learns that from a short-lived
+signed token, and only your backend can issue one, because only your backend knows who
+is logged in.
+
+You never hold a signing key. Your app's private key is sealed in the platform's KMS and
+never leaves it; this package is a typed, validated call to the mint route.
+
+## Quick start
+
+**1. Enrol your app once** and keep the secret it prints:
+
+```bash
+guuey widget keys create <appId> --audience <your-app-audience>
+```
+
+The secret is shown **once**. Store it the way you store a database password.
+
+**2. Add a token endpoint to your backend.** This example is a Next.js route handler;
+any framework works the same way.
+
+```ts
+// app/api/guuey-token/route.ts
+import { signUserToken } from "@guuey/widget-auth";
+import { getSession } from "@/lib/auth";
+
+export async function GET() {
+  const session = await getSession();
+  if (!session) return new Response("Unauthorized", { status: 401 });
+
+  const { token } = await signUserToken(
+    { userId: session.userId, name: session.name, email: session.email },
+    {
+      appId: process.env.GUUEY_APP_ID!,
+      appSecret: process.env.GUUEY_APP_SECRET!,
+    }
+  );
+
+  // The widget's `getToken` expects the raw token string.
+  return new Response(token, { headers: { "content-type": "text/plain" } });
+}
+```
+
+**3. Point the widget at it** in the embed snippet:
+
+```html
+<script>
+  window.guuey =
+    window.guuey ||
+    function () {
+      (guuey.q = guuey.q || []).push(arguments);
+    };
+</script>
+<script async src="https://widget.guuey.com/v1.js"></script>
+<script>
+  guuey("init", {
+    appId: "app_abc123",
+    identity: {
+      getToken: (reason) =>
+        fetch("/api/guuey-token?reason=" + reason).then((r) => {
+          if (!r.ok) throw new Error("token endpoint failed: " + r.status);
+          return r.text();
+        }),
+    },
+  });
+</script>
+```
+
+Your endpoint is called by the browser; the app secret stays on your server.
+
+## The app secret is server-side only
+
+`appSecret` authorizes minting an identity for **any user of your app**. If it reaches a
+browser — bundled into frontend code, or because you called this package from the client —
+anyone who reads it can impersonate any of your users.
+
+That is the whole reason the widget asks _your_ server for a token instead of minting one
+itself. Keep the secret in an environment variable on the server, and never return it from
+an endpoint.
+
+If it does leak, rotate it:
+
+```bash
+guuey widget keys rotate <appId> --new-secret
+```
+
+## Caching tokens
+
+Tokens are short-lived (15 minutes by default). Minting one per page load is fine, but if
+your token endpoint is hot you can cache.
+
+**Cache per user, and expire ~2 minutes before the token does.** The margin covers the
+round trip plus any clock difference between your server and the visitor's browser.
+
+```ts
+const cache = new Map<string, { token: string; refreshAt: number }>();
+const MARGIN_SECONDS = 120;
+
+async function tokenFor(user: { userId: string; name?: string }, force: boolean) {
+  const hit = cache.get(user.userId);
+  if (!force && hit && Date.now() / 1000 < hit.refreshAt) return hit.token;
+
+  const { token, expiresAtEpoch } = await signUserToken(user, {
+    appId: process.env.GUUEY_APP_ID!,
+    appSecret: process.env.GUUEY_APP_SECRET!,
+  });
+  cache.set(user.userId, { token, refreshAt: expiresAtEpoch - MARGIN_SECONDS });
+  return token;
+}
+```
+
+**If you cache, you must honour `reason`.** The widget calls `getToken(reason)` with:
+
+| `reason`    | Meaning                                                                       |
+| ----------- | ----------------------------------------------------------------------------- |
+| `'initial'` | First token needed for this session — a cached token is fine.                 |
+| `'expired'` | The token was rejected as expired. **Mint a fresh one, ignoring your cache.** |
+
+A cache that ignores `'expired'` keeps returning the same dead token, and every turn after
+the first expiry fails. Forward the reason to your endpoint and pass it through:
+
+```ts
+export async function GET(request: Request) {
+  const session = await getSession();
+  if (!session) return new Response("Unauthorized", { status: 401 });
+
+  const reason = new URL(request.url).searchParams.get("reason");
+  const token = await tokenFor(session, reason === "expired");
+  return new Response(token, { headers: { "content-type": "text/plain" } });
+}
+```
+
+## Errors
+
+Every failure throws a subclass of `WidgetAuthError` — never a partial result, and never a
+token-shaped value. A service that returns a 500, an HTML error page, or a 200 with an
+unusable body all raise an error rather than producing a token nobody issued.
+
+| Class                             | Cause                                                                                                                                  | Retry?                        |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| `WidgetAuthConfigError`           | Bad arguments — missing `appId`/`appSecret`/base URL, over-long field, `ttlSeconds` outside `1..3600`. Thrown before any network call. | No                            |
+| `WidgetAuthCredentialError`       | HTTP 401. The secret is wrong, revoked, or for another app.                                                                            | No                            |
+| `WidgetAuthAppNotConfiguredError` | HTTP 409. The app isn't wired to its own widget issuer; the message names the fixing command.                                          | No                            |
+| `WidgetAuthRequestError`          | HTTP 400. Usually means this package is out of date with the deployed API.                                                             | No                            |
+| `WidgetAuthServiceError`          | 5xx, an unexpected status, or an unusable response body.                                                                               | `retryable` is `true` for 5xx |
+| `WidgetAuthNetworkError`          | The request never arrived — DNS, TLS, timeout, abort. Original error on `cause`.                                                       | Yes                           |
+
+Each carries `status` (when there was one) and `retryable`:
+
+```ts
+try {
+  await signUserToken(user, config);
+} catch (err) {
+  if (err instanceof WidgetAuthError && err.retryable) {
+    // transient — back off and try again
+  }
+  throw err;
+}
+```
+
+A 401 does not tell you _which_ of "wrong secret", "revoked key" or "app not enrolled" it
+was. That is deliberate: the app id is caller-supplied, so a more specific answer would let
+anyone probe which apps exist.
+
+**The app secret never appears in an error** — not in the message, not in the stack, not in
+a serialized log line. Any text sourced from the service or from a transport error is
+redacted before it reaches a message.
+
+## What the platform sets, and you must not
+
+The token's claims are assembled **server-side**. Do not re-implement any of this:
+
+- **`iat` and `nbf` are backdated 60 seconds.** The agent verifies with zero clock
+  tolerance, so this absorbs ordinary drift. `exp` is measured from the real current time,
+  so backdating costs no usable life. **Backdating again here would halve every token's
+  lifetime.**
+- **`exp`** defaults to 15 minutes; `ttlSeconds` may set `1..3600`. Shorter is safer — the
+  token is a bearer credential held in a browser, and the widget re-requests one when it
+  expires. It is not a session length.
+- **`iss`** is your app's canonical issuer, and **`aud`** is your app's configured audience.
+
+Attempting to send any of them is rejected by the signer outright.
+
+## API
+
+### `signUserToken(user, config): Promise<WidgetToken>`
+
+**`user`**
+
+| Field    | Type     |                                                                        |
+| -------- | -------- | ---------------------------------------------------------------------- |
+| `userId` | `string` | **Required.** Your stable id for this user; becomes the token's `sub`. |
+| `name`   | `string` | Optional. Display name.                                                |
+| `email`  | `string` | Optional.                                                              |
+
+`userId` must be **stable for the life of the account** — it is what ties a returning
+visitor to their existing conversations, memory and files. A value that changes (a session
+id, an editable email) silently orphans all of it and the user reappears as a stranger.
+
+**`config`**
+
+| Field        | Type          |                                                                                             |
+| ------------ | ------------- | ------------------------------------------------------------------------------------------- |
+| `appId`      | `string`      | **Required.**                                                                               |
+| `appSecret`  | `string`      | **Required.** Server-side only.                                                             |
+| `apiBaseUrl` | `string`      | Defaults to `GUUEY_API_URL`. No compiled-in default — the API base differs per environment. |
+| `ttlSeconds` | `number`      | `1..3600`. Defaults to the service's 15 minutes.                                            |
+| `signal`     | `AbortSignal` | Aborts the request.                                                                         |
+| `fetch`      | `FetchLike`   | Override the HTTP client. For tests.                                                        |
+
+**Returns `WidgetToken`**
+
+| Field            | Type     |                                                 |
+| ---------------- | -------- | ----------------------------------------------- |
+| `token`          | `string` | The signed JWT to hand to the widget.           |
+| `expiresAtEpoch` | `number` | Unix epoch seconds. Use it to drive your cache. |
+| `issuer`         | `string` | The issuer that signed it.                      |
+| `kid`            | `string` | The signing key's id.                           |
+
+## License
+
+MIT

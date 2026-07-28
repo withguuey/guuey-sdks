@@ -1,0 +1,57 @@
+{
+  "name": "@guuey/widget-auth",
+  "version": "0.1.0",
+  "description": "Mint end-user identity tokens for a guuey embeddable widget from your own backend. One call, zero runtime dependencies — your app secret stays on your server and the platform holds the signing key.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "rm -rf dist && pnpm build",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "24.12.4",
+    "typescript": "^5.0.0",
+    "vitest": "^3.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "guuey",
+    "widget",
+    "embed",
+    "auth",
+    "jwt",
+    "identity"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/withguuey/guuey-sdks.git",
+    "directory": "packages/widget-auth"
+  },
+  "homepage": "https://guuey.com",
+  "bugs": {
+    "url": "https://github.com/loqu-co/guuey/issues"
+  }
+}
