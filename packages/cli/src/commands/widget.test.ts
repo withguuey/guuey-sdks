@@ -119,6 +119,50 @@ describe('resolveWidgetConfigure', () => {
     );
   });
 
+  // I3: a mode change is never a side effect. `native_pool` and `anonymous`
+  // apps both have `issuerUrl: null`, so the conflict branch above does not see
+  // them — yet flipping a live `native_pool` app to `byo` re-keys its ENTIRE
+  // user base exactly as repointing an issuer would, just by a different route.
+  it.each(['native_pool', 'anonymous'])(
+    'REFUSES to flip a %s app to byo as a side effect of --audience',
+    (mode) => {
+      const decision = resolveWidgetConfigure({
+        issuerUrl: ISSUER,
+        audience: 'my-widget',
+        currentAuth: { mode, issuerUrl: null, audience: null },
+      });
+
+      expect(decision.action).toBe('conflict');
+      expect(decision.action === 'conflict' && decision.message).toContain(mode);
+      // It must name the explicit path rather than just refusing.
+      expect(decision.action === 'conflict' && decision.message).toMatch(
+        /guuey apps update/,
+      );
+    },
+  );
+
+  it('configures an app that is ALREADY byo without complaint', () => {
+    expect(
+      resolveWidgetConfigure({
+        issuerUrl: ISSUER,
+        audience: 'my-widget',
+        currentAuth: { mode: 'byo', issuerUrl: null, audience: null },
+      }),
+    ).toMatchObject({ action: 'configure' });
+  });
+
+  // A brand-new app has no mode at all — that is the happy path and must stay
+  // one click, not a lecture.
+  it('configures an app with no mode set at all', () => {
+    expect(
+      resolveWidgetConfigure({
+        issuerUrl: ISSUER,
+        audience: 'my-widget',
+        currentAuth: { mode: null, issuerUrl: null, audience: null },
+      }),
+    ).toMatchObject({ action: 'configure' });
+  });
+
   // No `--audience` is not an error: the key is minted and usable, the app just
   // is not wired up yet. Say exactly what to run.
   it('skips with the exact follow-up command when no audience was given', () => {

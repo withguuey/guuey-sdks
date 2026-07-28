@@ -129,6 +129,27 @@ export function resolveWidgetConfigure(opts: {
     };
   }
 
+  // A mode change is never a side effect of a convenience flag. `native_pool`
+  // and `anonymous` apps both have a null `issuerUrl`, so the stored-issuer
+  // branch below cannot see them — yet flipping a live `native_pool` app to
+  // `byo` re-keys its ENTIRE user base just as repointing an issuer would:
+  // every existing end-user resolves to a different guuey userId, orphaning
+  // their threads, memory and durable FS home. Same harm, different route.
+  const mode = opts.currentAuth.mode;
+  if (mode !== null && mode !== 'byo') {
+    return {
+      action: 'conflict',
+      message:
+        `This app's end-user auth mode is "${mode}", and the key was minted but ` +
+        'the app was left on it. Switching an app to "byo" gives every existing ' +
+        'end-user a new identity — orphaning their threads, memory and files — ' +
+        'so it is not something --audience does for you. If that is genuinely ' +
+        'what you want, say so explicitly:\n' +
+        `    guuey apps update <appId> --auth-mode byo --issuer-url ${opts.issuerUrl} ` +
+        `--audience ${opts.audience}`,
+    };
+  }
+
   const stored = opts.currentAuth.issuerUrl;
   if (stored && stored !== opts.issuerUrl) {
     return {

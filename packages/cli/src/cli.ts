@@ -260,8 +260,10 @@ Embeddable Widget (guuey-issued end-user identity):
     --audience <aud>            Also point the app at this issuer in one step
                                  (sets --auth-mode byo + the issuer binding).
                                  Refused if the app already trusts a DIFFERENT
-                                 issuer, since changing it re-keys every
-                                 existing end-user.
+                                 issuer, or is already on another auth mode,
+                                 since either change re-keys every existing
+                                 end-user. The key is still minted; finish with
+                                 'guuey apps update' if you really mean it.
   widget keys rotate [appId]    Replace the signing keypair with no downtime —
                                  both public keys stay published for ~65 minutes,
                                  so tokens already issued keep verifying.
