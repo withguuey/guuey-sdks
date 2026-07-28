@@ -434,8 +434,8 @@ export async function widgetKeysRevokeCore(
       status: 'refused',
       error:
         `Refusing to revoke the widget signing key for '${opts.appId}' without ` +
-        'confirmation in a non-interactive session. Revocation is permanent — ' +
-        'pass --yes to confirm.',
+        'confirmation in a non-interactive session. Revoke disables minting and ' +
+        'unpublishes the JWKS immediately — pass --yes to confirm.',
     };
   }
 

@@ -274,10 +274,14 @@ Embeddable Widget (guuey-issued end-user identity):
     --new-secret                Also mint a new app secret (printed once). The
                                  old secret stops working IMMEDIATELY, so your
                                  backend must ship the new one.
-  widget keys revoke [appId]    Permanently switch the app's widget identity off:
-                                 no more JWKS, no more token minting. There is no
-                                 un-revoke. Prompts on a TTY unless --yes;
-                                 refuses outright in a non-interactive session.
+  widget keys revoke [appId]    Switch the app's widget identity off: revoke
+                                 disables minting and unpublishes the JWKS
+                                 immediately — every embedded widget for this
+                                 app stops authenticating end-users. 'widget
+                                 keys create' re-enrols with a fresh key —
+                                 end-users keep their identity. Prompts on a
+                                 TTY unless --yes; refuses outright in a
+                                 non-interactive session.
     --yes                       Skip the interactive confirmation prompt
 
 Configuration:

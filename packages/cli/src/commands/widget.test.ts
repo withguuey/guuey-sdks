@@ -326,6 +326,23 @@ describe('widgetKeysRevokeCore', () => {
     expect(api).not.toHaveBeenCalled();
   });
 
+  // Same regression the prompt test below guards against (T16 review I1):
+  // this refusal message was the OTHER copy site that used to say
+  // "Revocation is permanent" — untested before, which is why it drifted
+  // false the moment `create` started re-enrolling revoked rows.
+  it('the non-interactive refusal does not claim revocation is permanent', async () => {
+    const api = fakeApi(async () => revoked());
+    const result = await widgetKeysRevokeCore(
+      { appId: APP, yes: false, stdinIsTTY: false, stdoutIsTTY: false, auth, config },
+      { api },
+    );
+
+    expect(result.status).toBe('refused');
+    const error = result.status === 'refused' ? result.error : '';
+    expect(error).not.toMatch(/permanent|cannot be undone|cannot be restored|no un-revoke/i);
+    expect(error).toMatch(/disables minting/i);
+  });
+
   // Revoking stops every embedded widget authenticating end-users IMMEDIATELY
   // — the prompt has to say so rather than reading like a no-op. It must NOT
   // say "permanent"/"cannot be undone" any more: `widget keys create`
