@@ -3,6 +3,7 @@ import {
   fetchThreadHistory,
   threadHistoryRowsToMessages,
   threadHistoryRowsToCards,
+  HistoryUnauthorizedError,
   type ThreadHistoryRow,
 } from "./history";
 
@@ -139,6 +140,17 @@ describe("fetchThreadHistory", () => {
     await expect(
       fetchThreadHistory({ baseUrl: "https://api.example.com/v1", threadId: "t_1", fetchImpl }),
     ).rejects.toThrow(/history load failed: 500/);
+  });
+
+  it("throws HistoryUnauthorizedError — distinctly from a generic non-OK — on 401", async () => {
+    // Distinct from the generic `Error` above: a caller holding a token can
+    // `instanceof`-match this to retry once with a freshly-refreshed one
+    // (`createWebAdapters`'s history adapter). A 500 or a malformed request
+    // gets no such retry — those aren't identity problems.
+    const fetchImpl = mockFetch([jsonResponse({}, 401)]);
+    await expect(
+      fetchThreadHistory({ baseUrl: "https://api.example.com/v1", threadId: "t_1", fetchImpl }),
+    ).rejects.toBeInstanceOf(HistoryUnauthorizedError);
   });
 
   it("omits cards by default (text-only consumers unaffected)", async () => {

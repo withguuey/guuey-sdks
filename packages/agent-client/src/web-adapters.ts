@@ -12,7 +12,7 @@ import type {
   InvokeTransport,
   ThreadIdStore,
 } from "./types";
-import { fetchThreadHistory } from "./history";
+import { fetchThreadHistory, HistoryUnauthorizedError } from "./history";
 
 /**
  * Thrown when the pod returns a non-2xx status on `/agent/invoke` (before any
@@ -179,8 +179,19 @@ export interface CreateWebAdaptersOptions {
    * authenticate as that user, so a reload restores the transcript. Without
    * a token, identity falls to {@link getGuestSecret} (if supplied) and then
    * to the guest cookie.
+   *
+   * Called with `{ forceRefresh: true }` exactly once: when the history read
+   * gets a 401 on a token this resolver already returned (a token cached
+   * before the mount-time history read fired can be stale by the time it
+   * runs — the same window the send path's own 401-retry closes). A resolver
+   * that caches (Amplify's `fetchAuthSession` does, and so does the widget's
+   * `createHostTokenProvider`) MUST bypass that cache for a forced call and
+   * obtain a genuinely fresh token — returning the SAME stale value would
+   * make the retry indistinguishable from not retrying at all. A resolver
+   * with nothing fresher to offer returns `null`, and the read surfaces the
+   * ORIGINAL 401 rather than replaying the value that just failed.
    */
-  getAccessToken?: () => Promise<string | null>;
+  getAccessToken?: (opts?: { forceRefresh?: boolean }) => Promise<string | null>;
   /**
    * Resolve the caller's own persisted anonymous guest secret (64 lowercase
    * hex chars), or `null` when there is none. Supply this on hosts whose
@@ -256,20 +267,44 @@ export function createWebAdapters(
   if (apiBaseUrl && (getAccessToken || getGuestSecret)) {
     adapters.history = {
       load: async (threadId) => {
+        // Same precedence, and the same one-carrier rule, as the transport:
+        // a bearer wins over the guest header, and the two never combine.
         const token = getAccessToken ? await getAccessToken() : null;
-        const guest = sendableGuestSecret(getGuestSecret?.());
-        // Same precedence, and the same one-carrier rule, as the transport.
-        const headers: Record<string, string> = {};
         if (token) {
-          headers.Authorization = `Bearer ${token}`;
-        } else if (guest) {
-          headers[GUEST_HEADER] = guest;
-        } else {
-          // No readable identity → leave the chat empty (skip) rather than
-          // `gone`, which would clear the persisted threadId.
-          return { messages: [] };
+          try {
+            return await fetchThreadHistory({
+              baseUrl: apiBaseUrl,
+              threadId,
+              requestInit: { headers: { Authorization: `Bearer ${token}` } },
+            });
+          } catch (err) {
+            if (!(err instanceof HistoryUnauthorizedError)) throw err;
+            // The one retry the send path already gets on a 401
+            // (`withIdentifiedToken`): this read runs from a mount effect,
+            // before the send path has asked anyone for anything, so a token
+            // cached earlier can be the exact stale value that just failed.
+            // `forceRefresh` is the signal that asks past whatever cache the
+            // resolver keeps instead of returning that same dead value.
+            const fresh = getAccessToken ? await getAccessToken({ forceRefresh: true }) : null;
+            if (!fresh) throw err; // nothing fresher to retry with — the ORIGINAL 401 is the honest cause
+            return fetchThreadHistory({
+              baseUrl: apiBaseUrl,
+              threadId,
+              requestInit: { headers: { Authorization: `Bearer ${fresh}` } },
+            });
+          }
         }
-        return fetchThreadHistory({ baseUrl: apiBaseUrl, threadId, requestInit: { headers } });
+        const guest = sendableGuestSecret(getGuestSecret?.());
+        if (guest) {
+          return fetchThreadHistory({
+            baseUrl: apiBaseUrl,
+            threadId,
+            requestInit: { headers: { [GUEST_HEADER]: guest } },
+          });
+        }
+        // No readable identity → leave the chat empty (skip) rather than
+        // `gone`, which would clear the persisted threadId.
+        return { messages: [] };
       },
     };
   }

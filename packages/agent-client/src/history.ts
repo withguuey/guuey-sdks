@@ -33,6 +33,22 @@ interface ThreadMessagesResponse {
   nextToken: string | null;
 }
 
+/**
+ * Thrown when the read plane returns 401 on a transcript fetch — distinct
+ * from the generic non-OK throw below so a caller holding a token can
+ * `instanceof`-match it and retry once with a freshly-refreshed one
+ * (`createWebAdapters`'s history adapter is the concrete retry). A cached
+ * bearer that has expired since the caller last checked it is exactly the
+ * shape a refresh can fix; a 500 or a malformed request is not, and gets no
+ * such retry.
+ */
+export class HistoryUnauthorizedError extends Error {
+  constructor(message = "history load failed: 401") {
+    super(message);
+    this.name = "HistoryUnauthorizedError";
+  }
+}
+
 /** Rows requested per history page. */
 const HISTORY_PAGE_LIMIT = 100;
 
@@ -112,6 +128,7 @@ export async function fetchThreadHistory({
       (nextToken ? `&nextToken=${encodeURIComponent(nextToken)}` : "");
     const res = await fetchImpl(url, requestInit);
     if (res.status === 403 || res.status === 404) return { gone: true };
+    if (res.status === 401) throw new HistoryUnauthorizedError();
     if (!res.ok) throw new Error(`history load failed: ${res.status}`);
     const body: ThreadMessagesResponse = await res.json();
     rows.push(...body.rows);

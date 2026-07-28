@@ -238,6 +238,87 @@ describe("createWebAdapters history install", () => {
   });
 });
 
+/**
+ * The history-401-retry (widget wave 2 / T15, B4 live-gate finding): a token
+ * this resolver already returned can be stale by the time the MOUNT-time
+ * transcript read fires, before the send path's own `withIdentifiedToken` has
+ * asked anyone for anything. Same single-retry discipline as that send path —
+ * ask once with `forceRefresh`, retry once, and let a genuine failure surface
+ * rather than looping or silently returning an empty transcript.
+ */
+describe("createWebAdapters history — 401 retry", () => {
+  const apiBaseUrl = "https://api.example.com/v1";
+  const TRANSCRIPT = jsonResponse({
+    rows: [{ seq: 1, at: "2026-07-28T00:00:00Z", kind: "text", authorRole: "user", text: "hi" }],
+    nextToken: null,
+  });
+
+  it("retries once with a force-refreshed token after a 401, and succeeds", async () => {
+    const fetchImpl = mockFetch([jsonResponse({}, 401), TRANSCRIPT]);
+    const getAccessToken = vi.fn(async (opts?: { forceRefresh?: boolean }) =>
+      opts?.forceRefresh ? "fresh-token" : "stale-token",
+    );
+    const history = createWebAdapters({ apiBaseUrl, getAccessToken }).history;
+    if (!history) throw new Error("history adapter not installed");
+    const result = await withGlobalFetch(fetchImpl, () => history.load("t_1"));
+    expect(result).toEqual({ messages: [{ role: "user", text: "hi" }] });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(headersOf(fetchImpl.mock.calls[0][1]).Authorization).toBe("Bearer stale-token");
+    expect(headersOf(fetchImpl.mock.calls[1][1]).Authorization).toBe("Bearer fresh-token");
+    expect(getAccessToken).toHaveBeenCalledWith({ forceRefresh: true });
+  });
+
+  it("retries exactly once — a second 401 surfaces rather than looping", async () => {
+    const fetchImpl = mockFetch([jsonResponse({}, 401), jsonResponse({}, 401)]);
+    const getAccessToken = vi.fn(async (opts?: { forceRefresh?: boolean }) =>
+      opts?.forceRefresh ? "fresh-token" : "stale-token",
+    );
+    const history = createWebAdapters({ apiBaseUrl, getAccessToken }).history;
+    if (!history) throw new Error("history adapter not installed");
+    await withGlobalFetch(fetchImpl, async () => {
+      await expect(history.load("t_1")).rejects.toThrow(/401/);
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces the ORIGINAL 401 when the forced refresh has nothing fresher to offer", async () => {
+    const fetchImpl = mockFetch([jsonResponse({}, 401)]);
+    const getAccessToken = vi.fn(async (opts?: { forceRefresh?: boolean }) =>
+      opts?.forceRefresh ? null : "stale-token",
+    );
+    const history = createWebAdapters({ apiBaseUrl, getAccessToken }).history;
+    if (!history) throw new Error("history adapter not installed");
+    await withGlobalFetch(fetchImpl, async () => {
+      await expect(history.load("t_1")).rejects.toThrow(/401/);
+    });
+    // No second network call: a resolver with nothing fresher to offer must
+    // not spend a request replaying the token that just failed.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry a non-401 failure", async () => {
+    const fetchImpl = mockFetch([jsonResponse({}, 500)]);
+    const getAccessToken = vi.fn(async () => "tok_abc");
+    const history = createWebAdapters({ apiBaseUrl, getAccessToken }).history;
+    if (!history) throw new Error("history adapter not installed");
+    await withGlobalFetch(fetchImpl, async () => {
+      await expect(history.load("t_1")).rejects.toThrow(/500/);
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(getAccessToken).not.toHaveBeenCalledWith({ forceRefresh: true });
+  });
+
+  it("never retries a guest-header 401 — there is no fresher identity to force-refresh", async () => {
+    const fetchImpl = mockFetch([jsonResponse({}, 401)]);
+    const history = createWebAdapters({ apiBaseUrl, getGuestSecret: () => SECRET }).history;
+    if (!history) throw new Error("history adapter not installed");
+    await withGlobalFetch(fetchImpl, async () => {
+      await expect(history.load("t_1")).rejects.toThrow(/401/);
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("identity-resolution failures", () => {
   const apiBaseUrl = "https://api.example.com/v1";
   const rejectingToken = async (): Promise<string | null> => {

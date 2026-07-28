@@ -20,6 +20,7 @@ export {
   fetchThreadHistory,
   threadHistoryRowsToMessages,
   threadHistoryRowsToCards,
+  HistoryUnauthorizedError,
   type ThreadHistoryRow,
   type ThreadHistoryFetchOptions,
 } from "./history";
