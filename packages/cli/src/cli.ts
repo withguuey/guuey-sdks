@@ -54,6 +54,11 @@ import {
   mcpStateWipe,
 } from './commands/mcp';
 import { mcpNew } from './commands/mcp-new';
+import {
+  widgetKeysCreate,
+  widgetKeysRotate,
+  widgetKeysRevoke,
+} from './commands/widget';
 import { workerVerify } from './commands/worker';
 import { pull } from './commands/pull';
 import { undeploy } from './commands/undeploy';
@@ -242,6 +247,32 @@ App Admin (BYO-auth apps; workspace-admin only):
                                  queued | done | none. stuck: true means
                                  the wipe hasn't drained — contact support.
     --sub <sub>                  The end-user's raw issuer sub (required)
+
+Embeddable Widget (guuey-issued end-user identity):
+  widget keys create [appId]    Enrol the app in guuey's per-app token issuer.
+                                 Generates an RSA keypair (the private half is
+                                 KMS-sealed and never leaves the platform) and
+                                 prints an app secret ONCE — store it now, it
+                                 cannot be shown again. Your backend signs
+                                 end-user tokens with it via @guuey/widget-auth.
+                                 Skip this entirely if you already run your own
+                                 OIDC issuer — use 'apps update' instead.
+    --audience <aud>            Also point the app at this issuer in one step
+                                 (sets --auth-mode byo + the issuer binding).
+                                 Refused if the app already trusts a DIFFERENT
+                                 issuer, since changing it re-keys every
+                                 existing end-user.
+  widget keys rotate [appId]    Replace the signing keypair with no downtime —
+                                 both public keys stay published for ~65 minutes,
+                                 so tokens already issued keep verifying.
+    --new-secret                Also mint a new app secret (printed once). The
+                                 old secret stops working IMMEDIATELY, so your
+                                 backend must ship the new one.
+  widget keys revoke [appId]    Permanently switch the app's widget identity off:
+                                 no more JWKS, no more token minting. There is no
+                                 un-revoke. Prompts on a TTY unless --yes;
+                                 refuses outright in a non-interactive session.
+    --yes                       Skip the interactive confirmation prompt
 
 Configuration:
   config show                   Show resolved configuration
@@ -642,6 +673,41 @@ async function main(): Promise<void> {
           console.error(
             `Unknown apps command: ${action ?? '(none)'}. Use: list, get, create, update, delete, recover, access, publish, unpublish, byo-user`,
           );
+          process.exit(1);
+      }
+      break;
+
+    case 'widget':
+      switch (action) {
+        case 'keys':
+          switch (rest[0]) {
+            case 'create':
+              await widgetKeysCreate(rest[1], {
+                audience: str(flags.audience),
+                json: jsonFlag,
+              });
+              break;
+            case 'rotate':
+              await widgetKeysRotate(rest[1], {
+                newSecret: flags['new-secret'] === true,
+                json: jsonFlag,
+              });
+              break;
+            case 'revoke':
+              await widgetKeysRevoke(rest[1], {
+                yes: flags.yes === true,
+                json: jsonFlag,
+              });
+              break;
+            default:
+              console.error(
+                `Unknown widget keys command: ${rest[0] ?? '(none)'}. Use: create, rotate, revoke`,
+              );
+              process.exit(1);
+          }
+          break;
+        default:
+          console.error(`Unknown widget command: ${action ?? '(none)'}. Use: keys`);
           process.exit(1);
       }
       break;
