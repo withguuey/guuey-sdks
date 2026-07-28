@@ -269,29 +269,32 @@ export function createWebAdapters(
       load: async (threadId) => {
         // Same precedence, and the same one-carrier rule, as the transport:
         // a bearer wins over the guest header, and the two never combine.
-        const token = getAccessToken ? await getAccessToken() : null;
-        if (token) {
-          try {
-            return await fetchThreadHistory({
-              baseUrl: apiBaseUrl,
-              threadId,
-              requestInit: { headers: { Authorization: `Bearer ${token}` } },
-            });
-          } catch (err) {
-            if (!(err instanceof HistoryUnauthorizedError)) throw err;
-            // The one retry the send path already gets on a 401
-            // (`withIdentifiedToken`): this read runs from a mount effect,
-            // before the send path has asked anyone for anything, so a token
-            // cached earlier can be the exact stale value that just failed.
-            // `forceRefresh` is the signal that asks past whatever cache the
-            // resolver keeps instead of returning that same dead value.
-            const fresh = getAccessToken ? await getAccessToken({ forceRefresh: true }) : null;
-            if (!fresh) throw err; // nothing fresher to retry with — the ORIGINAL 401 is the honest cause
-            return fetchThreadHistory({
-              baseUrl: apiBaseUrl,
-              threadId,
-              requestInit: { headers: { Authorization: `Bearer ${fresh}` } },
-            });
+        if (getAccessToken) {
+          const token = await getAccessToken();
+          if (token) {
+            try {
+              return await fetchThreadHistory({
+                baseUrl: apiBaseUrl,
+                threadId,
+                requestInit: { headers: { Authorization: `Bearer ${token}` } },
+              });
+            } catch (err) {
+              if (!(err instanceof HistoryUnauthorizedError)) throw err;
+              // The one retry the send path already gets on a 401
+              // (`withIdentifiedToken`): this read runs from a mount effect,
+              // before the send path has asked anyone for anything, so a
+              // token cached earlier can be the exact stale value that just
+              // failed. `forceRefresh` is the signal that asks past whatever
+              // cache the resolver keeps instead of returning that same dead
+              // value.
+              const fresh = await getAccessToken({ forceRefresh: true });
+              if (!fresh) throw err; // nothing fresher to retry with — the ORIGINAL 401 is the honest cause
+              return fetchThreadHistory({
+                baseUrl: apiBaseUrl,
+                threadId,
+                requestInit: { headers: { Authorization: `Bearer ${fresh}` } },
+              });
+            }
           }
         }
         const guest = sendableGuestSecret(getGuestSecret?.());
