@@ -91,6 +91,11 @@ That is the whole reason the widget asks _your_ server for a token instead of mi
 itself. Keep the secret in an environment variable on the server, and never return it from
 an endpoint.
 
+**`signUserToken` refuses to run in a browser** — it throws a `WidgetAuthConfigError` if it
+detects a DOM, before doing anything else — so this fails loudly at your first call rather
+than silently shipping the secret to every visitor. Edge runtimes (Cloudflare Workers,
+Vercel Edge, Deno Deploy) are not browsers and are fine.
+
 If it does leak, rotate it:
 
 ```bash
@@ -149,14 +154,14 @@ Every failure throws a subclass of `WidgetAuthError` — never a partial result,
 token-shaped value. A service that returns a 500, an HTML error page, or a 200 with an
 unusable body all raise an error rather than producing a token nobody issued.
 
-| Class                             | Cause                                                                                                                                  | Retry?                        |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| `WidgetAuthConfigError`           | Bad arguments — missing `appId`/`appSecret`/base URL, over-long field, `ttlSeconds` outside `1..3600`. Thrown before any network call. | No                            |
-| `WidgetAuthCredentialError`       | HTTP 401. The secret is wrong, revoked, or for another app.                                                                            | No                            |
-| `WidgetAuthAppNotConfiguredError` | HTTP 409. The app isn't wired to its own widget issuer; the message names the fixing command.                                          | No                            |
-| `WidgetAuthRequestError`          | HTTP 400. Usually means this package is out of date with the deployed API.                                                             | No                            |
-| `WidgetAuthServiceError`          | 5xx, an unexpected status, or an unusable response body.                                                                               | `retryable` is `true` for 5xx |
-| `WidgetAuthNetworkError`          | The request never arrived — DNS, TLS, timeout, abort. Original error on `cause`.                                                       | Yes                           |
+| Class                             | Cause                                                                                                                                                                       | Retry?                        |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| `WidgetAuthConfigError`           | Running in a browser (see above), or bad arguments — missing `appId`/`appSecret`/base URL, over-long field, `ttlSeconds` outside `1..3600`. Thrown before any network call. | No                            |
+| `WidgetAuthCredentialError`       | HTTP 401. The secret is wrong, revoked, or for another app.                                                                                                                 | No                            |
+| `WidgetAuthAppNotConfiguredError` | HTTP 409. The app isn't wired to its own widget issuer; the message names the fixing command.                                                                               | No                            |
+| `WidgetAuthRequestError`          | HTTP 400. Usually means this package is out of date with the deployed API.                                                                                                  | No                            |
+| `WidgetAuthServiceError`          | 5xx, an unexpected status, or an unusable response body.                                                                                                                    | `retryable` is `true` for 5xx |
+| `WidgetAuthNetworkError`          | The request never arrived — DNS, TLS, timeout, abort. Original error on `cause`.                                                                                            | Yes                           |
 
 Each carries `status` (when there was one) and `retryable`:
 

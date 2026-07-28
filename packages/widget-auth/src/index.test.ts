@@ -206,6 +206,93 @@ describe('signUserToken — apiBaseUrl resolution', () => {
   });
 });
 
+/**
+ * The guard for the package's central threat model.
+ *
+ * A `window`-and-`document` pair is what distinguishes a page from a server-side
+ * JS runtime, so these tests stub that pair rather than switching the suite to
+ * jsdom: the condition under test IS `typeof window`/`typeof document`, stubbing
+ * reproduces it exactly, and it keeps a deliberately zero-dependency published
+ * package from acquiring jsdom (and a second round of two-workspace lockfile
+ * churn) to assert two `typeof` checks. Same idiom as the missing-global-fetch
+ * test above.
+ */
+describe('signUserToken — refuses to run in a browser', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('throws before anything else when window and document are both present', async () => {
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('document', {});
+    const fetchImpl = forbiddenFetch();
+
+    const err = await signUserToken(
+      { userId: 'u' },
+      config({ fetch: fetchImpl }),
+    ).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(WidgetAuthConfigError);
+    expect(fetchImpl.calls).toHaveLength(0);
+  });
+
+  it('says why, and names the rotation the situation calls for', async () => {
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('document', {});
+
+    const err = await signUserToken({ userId: 'u' }, config()).catch(
+      (e: unknown) => e,
+    );
+
+    const message = (err as Error).message;
+    expect(message).toContain('browser');
+    // The secret is already exposed at this point; saying so is the whole value.
+    expect(message).toContain('every visitor can read it');
+    expect(message).toContain('guuey widget keys rotate');
+  });
+
+  /**
+   * The conjunction is load-bearing, not defensive noise. Edge runtimes are a
+   * legitimate place to mint from and some define a `window`-ish global with no
+   * `document` — testing `window` alone would refuse a correct deployment.
+   */
+  it('allows an edge runtime that has a window-ish global but no document', async () => {
+    vi.stubGlobal('window', {});
+    const fetchImpl = stubFetch({ status: 200 });
+
+    const result = await signUserToken({ userId: 'u' }, config({ fetch: fetchImpl }));
+
+    expect(result).toEqual(OK_BODY);
+    expect(fetchImpl.calls).toHaveLength(1);
+  });
+
+  it('allows a document-ish global with no window', async () => {
+    vi.stubGlobal('document', {});
+    const fetchImpl = stubFetch({ status: 200 });
+
+    await signUserToken({ userId: 'u' }, config({ fetch: fetchImpl }));
+
+    expect(fetchImpl.calls).toHaveLength(1);
+  });
+
+  /**
+   * The guard runs BEFORE validation: someone whose secret is in a shipped
+   * bundle must be told that, not that their `appId` is empty.
+   */
+  it('reports the browser before any field-level complaint', async () => {
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('document', {});
+
+    const err = await signUserToken(
+      { userId: '' },
+      config({ appId: '', ttlSeconds: 99999 }),
+    ).catch((e: unknown) => e);
+
+    expect((err as Error).message).toContain('browser');
+    expect((err as Error).message).not.toContain('appId is required');
+  });
+});
+
 describe('signUserToken — config validation happens before any network call', () => {
   const cases: Array<{
     name: string;
@@ -505,6 +592,33 @@ describe('signUserToken — the app secret never reaches an error', () => {
       expect(wire).not.toContain('LeakCanaryTail');
     });
   }
+
+  /**
+   * The browser refusal is the one error raised in a context where the secret is
+   * already exposed. Its message is static today, so this cannot fail — which is
+   * the point of pinning it: the next person to make that message more helpful
+   * by interpolating the config gets caught here.
+   */
+  it('keeps the secret out of the browser refusal', async () => {
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('document', {});
+    try {
+      const err = await signUserToken({ userId: 'u' }, config()).catch(
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(WidgetAuthConfigError);
+      const wire = [
+        (err as Error).message,
+        String(err),
+        (err as Error).stack ?? '',
+        JSON.stringify(err),
+      ].join('\n');
+      expect(wire).not.toContain(SECRET);
+      expect(wire).not.toContain('LeakCanaryTail');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 
   it('does not retain the secret on the error object', async () => {
     const err = await signUserToken(

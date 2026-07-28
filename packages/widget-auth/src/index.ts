@@ -198,6 +198,12 @@ export async function signUserToken(
   user: WidgetUser,
   config: WidgetAuthConfig,
 ): Promise<WidgetToken> {
+  // FIRST, before any other check. Running in a browser is not one
+  // misconfiguration among several — it means the secret is already in a
+  // shipped bundle, and saying "appId is required" to someone in that position
+  // would be answering the wrong question.
+  assertNotBrowser();
+
   const { appId, appSecret } = config;
 
   // Validate everything before touching the network: a configuration mistake
@@ -258,6 +264,53 @@ export async function signUserToken(
 
 // ─── Validation ────────────────────────────────────────────────────────
 
+/**
+ * Refuse to run in a browser.
+ *
+ * This package's entire threat model is that `appSecret` never leaves the
+ * server. Everything else here — the redaction, the non-enumerable `cause`, the
+ * never-a-garbage-token property — defends a secret that is already in the right
+ * place. None of it helps if the secret was bundled into a page, where every
+ * visitor can read it and mint an identity for any of your users. That is the
+ * one failure this package can detect itself, so it does, loudly, instead of
+ * documenting it and hoping.
+ *
+ * **Why BOTH `window` and `document`, and not either alone.** Edge runtimes
+ * (Cloudflare Workers, Vercel Edge, Deno Deploy) are legitimate places to mint
+ * from, and some of them define a `window`-ish global while defining no `document`
+ * — testing `window` alone would refuse a correct deployment. A DOM is the thing
+ * that actually distinguishes a page from a server-side JS runtime, so the pair
+ * is the discriminator and the conjunction is deliberate, not defensive noise.
+ *
+ * Called from every exported entry path. There is one today; anything added
+ * later calls this first, for the same reason.
+ *
+ * Probed through `globalThis` by name rather than written as
+ * `typeof window !== 'undefined'` because `lib` is pinned to `["ES2022"]` with
+ * no `dom`, so those identifiers do not exist for the compiler. Adding `dom`
+ * to satisfy the check would declare browser globals throughout a package whose
+ * whole point is that it does not run in one — the wrong fix. Comparing the
+ * value against `undefined` (rather than testing key presence) keeps the
+ * `typeof` semantics: a runtime that defines `globalThis.window = undefined` is
+ * not a browser and must not be refused.
+ */
+function globalIsDefined(name: string): boolean {
+  return Reflect.get(globalThis, name) !== undefined;
+}
+
+function assertNotBrowser(): void {
+  if (globalIsDefined('window') && globalIsDefined('document')) {
+    throw new WidgetAuthConfigError(
+      '@guuey/widget-auth ran in a browser, and refused. Your app secret authorizes minting ' +
+        'an identity for ANY user of your app, so if this code reached a browser the secret is ' +
+        'in your shipped bundle and every visitor can read it — rotate it now with ' +
+        '`guuey widget keys rotate <appId> --new-secret`. Mint on your server instead and hand ' +
+        'the returned token to the widget: that is what the widget asks your backend for a ' +
+        'token rather than minting one itself.',
+    );
+  }
+}
+
 function requireNonEmpty(value: string, field: string): void {
   if (typeof value !== 'string' || value.length === 0) {
     throw new WidgetAuthConfigError(`${field} is required.`);
@@ -288,8 +341,14 @@ function resolveBaseUrl(configured: string | undefined): string {
 }
 
 /**
- * Read an environment variable without assuming a Node-shaped global, so
- * importing this package cannot crash an edge or browser bundle at module load.
+ * Read an environment variable without assuming a Node-shaped global.
+ *
+ * The tolerance is for EDGE RUNTIMES — Cloudflare Workers, Vercel Edge, Deno
+ * Deploy — which are legitimate places to mint from and may not expose
+ * `process`. It is emphatically not tolerance for browsers, which
+ * {@link assertNotBrowser} refuses outright; an earlier version of this comment
+ * said "edge or browser bundle", which read as sanctioning exactly the
+ * deployment this package exists to prevent.
  */
 function readEnv(name: string): string | undefined {
   if (typeof process === 'undefined') return undefined;
