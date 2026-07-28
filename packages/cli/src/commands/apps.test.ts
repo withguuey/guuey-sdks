@@ -218,6 +218,27 @@ describe('buildUpdateAppBody', () => {
     expect(message).toContain('--auth-mode');
   });
 
+  // Widget wave 2, ratification #3 — `--widget-embed-identity
+  // <identified|anonymous|clear>` writes `GuueyApp.widgetEmbedIdentity`,
+  // the per-app embed identity-mode policy the console Embed panel (T18/T19)
+  // and Studio (T20) both configure.
+  it.each([['identified'], ['anonymous']])(
+    'passes widgetEmbedIdentity %p straight through for the server to validate',
+    (mode) => {
+      expect(built({ widgetEmbedIdentity: mode })).toEqual({ widgetEmbedIdentity: mode });
+    },
+  );
+
+  it('--widget-embed-identity clear sends an explicit null', () => {
+    expect(built({ widgetEmbedIdentity: 'clear' })).toEqual({ widgetEmbedIdentity: null });
+  });
+
+  it('refuses a bad --widget-embed-identity value, naming the accepted ones', () => {
+    expect(refused({ widgetEmbedIdentity: 'byo' })).toMatch(
+      /--widget-embed-identity must be one of: identified, anonymous, clear/,
+    );
+  });
+
   it('never emits the retired console-managed fields', () => {
     const body = built({ name: 'X', domains: 'example.com', authMode: 'byo' });
     expect(Object.keys(body).sort()).toEqual([

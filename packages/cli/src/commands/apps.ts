@@ -224,6 +224,8 @@ export interface UpdateAppRequest {
   allowedDomains?: string[];
   userAuthMode?: string;
   userAuthConfig?: { issuerUrl: string; audience: string } | null;
+  /** Widget wave-2 embed identity-mode policy (ratification #3). */
+  widgetEmbedIdentity?: 'identified' | 'anonymous' | null;
 }
 
 /**
@@ -242,6 +244,7 @@ export function buildUpdateAppBody(opts: {
   issuerUrl?: string;
   audience?: string;
   clearAuthConfig?: boolean;
+  widgetEmbedIdentity?: string;
 }): UpdateAppRequest | string {
   const body: UpdateAppRequest = {};
   if (opts.name) body.displayName = opts.name;
@@ -274,8 +277,24 @@ export function buildUpdateAppBody(opts: {
     body.userAuthConfig = { issuerUrl: opts.issuerUrl, audience: opts.audience };
   }
 
+  if (opts.widgetEmbedIdentity !== undefined) {
+    if (opts.widgetEmbedIdentity === 'clear') {
+      body.widgetEmbedIdentity = null;
+    } else if (
+      opts.widgetEmbedIdentity === 'identified' ||
+      opts.widgetEmbedIdentity === 'anonymous'
+    ) {
+      body.widgetEmbedIdentity = opts.widgetEmbedIdentity;
+    } else {
+      return (
+        `--widget-embed-identity must be one of: identified, anonymous, clear ` +
+        `(got "${opts.widgetEmbedIdentity}").`
+      );
+    }
+  }
+
   if (Object.keys(body).length === 0) {
-    return 'No fields to update. Use --name, --description, --domains, --auth-mode, --issuer-url + --audience, or --clear-auth-config.';
+    return 'No fields to update. Use --name, --description, --domains, --auth-mode, --issuer-url + --audience, --clear-auth-config, or --widget-embed-identity.';
   }
   return body;
 }
@@ -293,6 +312,7 @@ export async function appsUpdate(
     issuerUrl?: string;
     audience?: string;
     clearAuthConfig?: boolean;
+    widgetEmbedIdentity?: string;
     json?: boolean;
   },
 ): Promise<void> {

@@ -214,6 +214,10 @@ Apps:
     --issuer-url <url>          BYO OIDC issuer (https://…), with --audience
     --audience <aud>            Expected aud claim, with --issuer-url
     --clear-auth-config         Remove the issuer/audience binding
+    --widget-embed-identity <identified|anonymous|clear>
+                                 Embed identity-mode policy (widget wave 2).
+                                 Read only when --auth-mode is byo; 'clear'
+                                 restores the default (identified).
                                  Styling, webhooks and rate limits are managed
                                  in the console, not here.
   apps delete [appId]           Delete an app
@@ -629,6 +633,7 @@ async function main(): Promise<void> {
             issuerUrl: str(flags['issuer-url']),
             audience: str(flags.audience),
             clearAuthConfig: flags['clear-auth-config'] === true,
+            widgetEmbedIdentity: str(flags['widget-embed-identity']),
             json: jsonFlag,
           });
           break;
