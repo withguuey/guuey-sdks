@@ -305,7 +305,8 @@ describe('widgetKeysRotateCore', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────
-// revoke — destructive, and terminal
+// revoke — destructive immediately; the retired key is terminal, the app's
+// widget identity is not (T16: `create` re-enrols a revoked row deliberately)
 // ─────────────────────────────────────────────────────────────────────
 
 describe('widgetKeysRevokeCore', () => {
@@ -325,9 +326,12 @@ describe('widgetKeysRevokeCore', () => {
     expect(api).not.toHaveBeenCalled();
   });
 
-  // Terminal means terminal: there is no un-revoke, so the prompt has to say so
-  // rather than reading like a reversible toggle.
-  it('warns that revocation is permanent when it prompts', async () => {
+  // Revoking stops every embedded widget authenticating end-users IMMEDIATELY
+  // — the prompt has to say so rather than reading like a no-op. It must NOT
+  // say "permanent"/"cannot be undone" any more: `widget keys create`
+  // deliberately re-enrols a revoked row with a fresh key (T16), and telling
+  // the builder the identity is gone forever would be false.
+  it('warns of the immediate effect and names `widget keys create` as the way back', async () => {
     const api = fakeApi(async () => revoked());
     const confirm = vi.fn(async (_question: string) => 'y');
 
@@ -336,7 +340,10 @@ describe('widgetKeysRevokeCore', () => {
       { api, confirm },
     );
 
-    expect(String(confirm.mock.calls[0]?.[0])).toMatch(/permanent|cannot be undone/i);
+    const question = String(confirm.mock.calls[0]?.[0]);
+    expect(question).toMatch(/stops authenticating end-users/i);
+    expect(question).toMatch(/widget keys create/);
+    expect(question).not.toMatch(/permanent|cannot be undone|cannot be restored/i);
     expect(api).toHaveBeenCalledTimes(1);
   });
 

@@ -51,6 +51,13 @@ export interface WidgetKeyCreated {
   appSecret: string;
   createdAt: string;
   currentAuth: WidgetCurrentAuth;
+  /**
+   * Set only when this `create` re-enrolled a REVOKED row (T16) rather than
+   * enrolling a fresh app — never present on an ordinary create. Branches the
+   * CLI's success copy so a builder who ran `create` after a `revoke` sees
+   * "re-enrolled", not "created".
+   */
+  reEnrolled?: true;
 }
 
 export interface WidgetKeyRotated {
@@ -280,7 +287,11 @@ export async function widgetKeysCreate(
   }
 
   const { created } = result;
-  out.success(`Widget signing key created for ${created.appId}`);
+  if (created.reEnrolled) {
+    out.success(`Widget signing key re-enrolled for ${created.appId}`);
+  } else {
+    out.success(`Widget signing key created for ${created.appId}`);
+  }
   console.log('');
   console.log(`  Issuer:      ${created.issuerUrl}`);
   console.log(`  Key ID:      ${created.kid}`);
@@ -289,6 +300,12 @@ export async function widgetKeysCreate(
   console.log('');
   console.log(`    ${created.appSecret}`);
   console.log('');
+  if (created.reEnrolled) {
+    console.log(
+      '  This app was revoked — it has a fresh key and secret now. End-users keep their identity.',
+    );
+    console.log('');
+  }
 
   if (result.configured) {
     console.log('  The app is configured to trust this issuer (userAuthMode: byo).');
@@ -382,12 +399,18 @@ export type WidgetKeysRevokeResult =
   | { status: 'revoked'; revokedAt: string };
 
 /**
- * Revocation is TERMINAL: `create` is create-only and `rotate` refuses a
- * revoked row, so nothing brings the app's widget identity back. It therefore
- * runs behind the same destructive-op gate as `mcp delete` / `mcp state wipe`
- * — `--yes`, or an interactive confirmation, or an outright refusal when there
- * is no channel to confirm on ({@link resolveMcpDeleteConfirmation}, reused
- * rather than re-derived so all three commands cannot drift apart).
+ * Revocation stops minting and publication IMMEDIATELY, and the retired
+ * keypair itself never comes back: `rotate` still refuses a revoked row, and
+ * revoke itself writes nothing but `revokedAt`. What CAN come back is the
+ * app's widget identity — `widget keys create` re-enrols a revoked row with a
+ * FRESH key (T16), deliberately, through the command named for creating one,
+ * never as a side effect of anything reachable from here. Confirmation is
+ * still required because every embedded widget for this app stops
+ * authenticating end-users the instant this runs, so it runs behind the same
+ * destructive-op gate as `mcp delete` / `mcp state wipe` — `--yes`, or an
+ * interactive confirmation, or an outright refusal when there is no channel
+ * to confirm on ({@link resolveMcpDeleteConfirmation}, reused rather than
+ * re-derived so all three commands cannot drift apart).
  */
 export async function widgetKeysRevokeCore(
   opts: {
@@ -419,9 +442,10 @@ export async function widgetKeysRevokeCore(
   if (confirmation === 'prompt') {
     const ask = deps?.confirm ?? defaultConfirm;
     const answer = await ask(
-      `  Revoke the widget signing key for '${opts.appId}'? This is permanent — ` +
-        'every embedded widget for this app stops authenticating end-users, and ' +
-        'the key cannot be restored. [y/N] ',
+      `  Revoke the widget signing key for '${opts.appId}'? Revoke disables minting ` +
+        'and unpublishes the JWKS immediately — every embedded widget for this app ' +
+        'stops authenticating end-users. `widget keys create` re-enrols with a fresh ' +
+        'key — end-users keep their identity. [y/N] ',
     );
     if (!parseYesNoAnswer(answer)) return { status: 'aborted' };
   }
@@ -482,4 +506,5 @@ export async function widgetKeysRevoke(
   }
   out.success(`Revoked the widget signing key for ${resolved}`);
   console.log('  The app no longer publishes a JWKS and cannot mint end-user tokens.');
+  console.log('  Run `guuey widget keys create` to re-enrol with a fresh key.');
 }
