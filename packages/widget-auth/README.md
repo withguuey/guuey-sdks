@@ -184,8 +184,7 @@ The token's claims are assembled **server-side**. Do not re-implement any of thi
 
 - **`iat` and `nbf` are backdated 60 seconds.** The agent verifies with zero clock
   tolerance, so this absorbs ordinary drift. `exp` is measured from the real current time,
-  so backdating costs no usable life. **Backdating again here would halve every token's
-  lifetime.**
+  not from the backdated `iat`, so the headroom costs no usable life.
 - **`exp`** defaults to 15 minutes; `ttlSeconds` may set `1..3600`. Shorter is safer — the
   token is a bearer credential held in a browser, and the widget re-requests one when it
   expires. It is not a session length.

@@ -125,9 +125,9 @@ describe('signUserToken — request shape', () => {
   /**
    * The load-bearing one (R2). `iat`/`nbf` are backdated 60s and `exp` is
    * derived from the TTL SERVER-side, in `assembleAppUserClaims`. If this
-   * package ever started sending them, `appSigner`'s strict parser would 400 the
-   * unknown key — and if it silently "helped" by backdating too, every token's
-   * usable life would be halved. Neither may happen by accident.
+   * package ever started sending any of them, `appSigner`'s strict parser would
+   * 400 the unknown key and every mint would fail — so the failure mode this
+   * pins is a hard outage, not a subtle one.
    */
   it('sends no time or identity claims — assembly is server-side', async () => {
     const fetchImpl = stubFetch({ status: 200 });

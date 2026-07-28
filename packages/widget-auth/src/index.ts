@@ -24,8 +24,9 @@
  * from the real current time, so the backdating buys verification headroom
  * without shortening the token's usable life. It also sets `iss` from the app's
  * canonical issuer string and `aud` from the app's own configuration. Sending
- * any of those from here would be rejected outright by the signer's strict claim
- * parser, and re-implementing the backdate would halve every token's usable life.
+ * any of those from here is rejected outright by the signer's strict claim
+ * parser, which allowlists exactly `sub`, `name` and `email` — so the rule is
+ * enforced by the other end rather than merely stated here.
  *
  * ## The app secret is a SERVER-side credential
  *
