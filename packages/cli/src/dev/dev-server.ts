@@ -147,6 +147,12 @@ export function lowerForDev(agent: GuueyAgent): LowerForDevResult {
   for (const [name, entry] of Object.entries(servers)) {
     if (name === "ggui") hasGgui = true;
 
+    // `ggui: false` — the generative-UI opt-out (guuey#24). NOT a server: there
+    // is nothing to lower, and the `hasGgui` flag above already suppresses the
+    // default local `ggui serve` injection below, so `guuey dev` matches the
+    // deployed behaviour (the pod's `effectiveMcpServers` drops it too).
+    if (entry === false) continue;
+
     if ((entry.kind === "hosted" || entry.kind === "external") && entry.devPort !== undefined) {
       lowered[name] = {
         kind: "external",

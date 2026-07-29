@@ -25,6 +25,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import {
+  declaredServerEntries,
   loadGuueyJson,
   writeGuueyJsonFile,
   type GuueyJsonV1,
@@ -58,7 +59,9 @@ export function collectUsedDevPorts(doc: GuueyJsonV1): number[] {
   const servers = doc.agent.mcpServers;
   if (!servers) return [];
   const ports: number[] = [];
-  for (const entry of Object.values(servers)) {
+  // `declaredServerEntries` filters the `ggui: false` opt-out (guuey#24) — not a
+  // server, so it holds no devPort.
+  for (const [, entry] of declaredServerEntries(servers)) {
     if ('devPort' in entry && typeof entry.devPort === 'number') {
       ports.push(entry.devPort);
     }

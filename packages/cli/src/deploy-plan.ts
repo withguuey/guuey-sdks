@@ -10,7 +10,7 @@
  * See `docs/superpowers/specs/2026-07-03-guuey-create-agentic-app-design.md`
  * §7 for the 5-step deploy pipeline this supports.
  */
-import type { GuueyAgent, GuueyJsonV1 } from '@guuey/config';
+import { declaredServerEntries, type GuueyAgent, type GuueyJsonV1 } from '@guuey/config';
 
 // ─── Deploy-mode routing ─────────────────────────────────────────────────
 
@@ -172,7 +172,9 @@ export function planMcpLegs(agent: GuueyAgent): McpLeg[] {
   if (!servers) return [];
 
   const legs: McpLeg[] = [];
-  for (const [name, entry] of Object.entries(servers)) {
+  // `declaredServerEntries` filters the `ggui: false` opt-out (guuey#24) — not a
+  // server, so never a deploy leg.
+  for (const [name, entry] of declaredServerEntries(servers)) {
     if (entry.kind !== 'hosted') continue;
     if (entry.source === undefined) continue;
     legs.push({ name, source: entry.source, hasServerId: entry.server !== undefined });
@@ -233,7 +235,9 @@ export function snapshotWithServerIds(doc: GuueyJsonV1): GuueyJsonV1 {
   const servers = doc.agent.mcpServers;
   if (!servers) return doc;
 
-  const offenders = Object.entries(servers)
+  // `declaredServerEntries` filters the `ggui: false` opt-out (guuey#24) — not a
+  // server, so it can never be an unresolved hosted ref.
+  const offenders = declaredServerEntries(servers)
     .filter(([, entry]) => entry.kind === 'hosted' && entry.server === undefined)
     .map(([name]) => name);
 

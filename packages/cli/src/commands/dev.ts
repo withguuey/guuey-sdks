@@ -13,7 +13,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import { loadGuueyJson, buildDeploySnapshot } from '@guuey/config';
+import { loadGuueyJson, buildDeploySnapshot, declaredServerEntries } from '@guuey/config';
 import { findProjectConfig } from '../config.js';
 import { startDevServer, lowerForDev } from '../dev/dev-server.js';
 import { spawnColocatedDev, type ColocatedDevEntry } from '../dev/colocated-dev.js';
@@ -174,7 +174,9 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
   // first invoke.
   const snapshotAgent = buildDeploySnapshot(loaded).agent;
   const colocatedEntries: ColocatedDevEntry[] = [];
-  for (const [name, entry] of Object.entries(snapshotAgent.mcpServers ?? {})) {
+  // `declaredServerEntries` filters the `ggui: false` opt-out (guuey#24) — not a
+  // server, so there is never a dev child to spawn for it.
+  for (const [name, entry] of declaredServerEntries(snapshotAgent.mcpServers)) {
     if (entry.kind === 'colocated' && entry.devPort !== undefined) {
       colocatedEntries.push({ name, source: entry.source, devPort: entry.devPort });
     }
@@ -193,7 +195,7 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
   const localCredentials =
     gracefulEntry !== undefined
       ? Object.fromEntries(
-          Object.entries(agent.mcpServers ?? {}).flatMap(([name, s]) =>
+          declaredServerEntries(agent.mcpServers).flatMap(([name, s]) =>
             s.kind === 'external' && typeof s.url === 'string'
               ? [[name, { url: s.url, transport: s.transport ?? 'http' }]]
               : [],
