@@ -22,7 +22,8 @@
  * `./web-adapters` for the web (Studio) bundle; Portal supplies RN adapters.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Reducer, type AgReduceResult } from "@silverprotocol/core";
+import type { AgReduceResult } from "@silverprotocol/core";
+import { BlockFold } from "./fold";
 import {
   parseConsentRequest,
   parseLinkRequest,
@@ -100,10 +101,13 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
   const threadIdRef = useRef<string | null>(null);
   const adaptersRef = useRef<AgentInvokeAdapters>(opts.adapters);
   adaptersRef.current = opts.adapters;
-  // The per-conversation AgJSON reducer (only built when `preserveBlocks`).
+  // The per-conversation AgJSON fold (only built when `preserveBlocks`).
   // Lazily (re)created on the first valid AgEvent after a fresh start / reset,
   // so an off run never constructs one and a bypass run never allocates.
-  const reducerRef = useRef<Reducer | null>(null);
+  // `BlockFold` is the pinned `Reducer` plus `_meta` carriage onto tool-result
+  // blocks — the reducer drops `ev._meta`, and BOTH generative-UI channels
+  // (MCP-Apps `_meta.ui`, ggui's render bootstrap) live there. See `fold.ts`.
+  const reducerRef = useRef<BlockFold | null>(null);
   const preserveBlocksRef = useRef<boolean>(opts.preserveBlocks ?? false);
   preserveBlocksRef.current = opts.preserveBlocks ?? false;
   // The in-flight threadId hydration for the current appId. `send` awaits it
@@ -295,7 +299,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
               if (preserveBlocksRef.current) {
                 const agEvents = ingestMessageFrame(ev.data);
                 if (agEvents.length > 0) {
-                  if (!reducerRef.current) reducerRef.current = new Reducer();
+                  if (!reducerRef.current) reducerRef.current = new BlockFold();
                   for (const agEvent of agEvents) reducerRef.current.push(agEvent);
                   setReduceResult(reducerRef.current.result());
                 }

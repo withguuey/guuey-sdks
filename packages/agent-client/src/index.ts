@@ -40,6 +40,24 @@ export {
   toolResultUiResource,
   type McpUiResourcePayload,
 } from "./block-ui";
+// The ggui render channel (`uiData.resourceUri` + the `_meta["ai.ggui/render"]`
+// bootstrap) and the dispatcher that mounts EITHER channel through the same
+// second-origin sandbox path.
+export {
+  asGguiRender,
+  asGguiRenderBootstrap,
+  blockGguiRender,
+  gguiRenderResource,
+  gguiShellHtml,
+  toolResultGguiRender,
+  GGUI_RENDER_META_KEY,
+  type GguiRenderBootstrap,
+  type GguiRenderDescriptor,
+} from "./ggui-render";
+export { cardCardResource, toolResultCardResource } from "./card-mount";
+// The block-preserving fold: the pinned `Reducer` plus `_meta` carriage onto
+// `tool-result` blocks (which the reducer drops, and generative UI needs).
+export { BlockFold, withToolResultMeta } from "./fold";
 // Re-export the AgJSON types the block-preserving transcript surfaces, so
 // consumers can name `reduceResult` / block types without a direct
 // `@silverprotocol/core` import.
