@@ -41,6 +41,7 @@ export interface McpEndpoint {
 export function mcpEndpoints(invoke: Invoke, agent: GuueyAgent): Record<string, McpEndpoint> {
   const out: Record<string, McpEndpoint> = {};
   for (const [name, entry] of Object.entries(agent.mcpServers ?? {})) {
+    if (entry === false) continue; // `ggui: false` is the generative-UI opt-out, not a server entry
     if (entry.kind !== "external") continue; // hosted/proxied are lowered to external before a worker ever runs
     let url = entry.url;
     let transport: "http" | "sse" = entry.transport ?? "http";

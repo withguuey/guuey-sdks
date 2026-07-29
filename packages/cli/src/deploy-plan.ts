@@ -198,8 +198,13 @@ export function writeBackServerId(
 ): GuueyJsonV1 {
   const servers = doc.agent.mcpServers;
   const entry = servers?.[name];
-  if (!entry) {
+  if (entry === undefined) {
     throw new Error(`writeBackServerId: no mcpServers entry named "${name}"`);
+  }
+  if (entry === false) {
+    throw new Error(
+      `writeBackServerId: mcpServers entry "${name}" is the generative-UI opt-out (\`ggui: false\`), not a deployable server`,
+    );
   }
   if (entry.kind !== 'hosted') {
     throw new Error(`writeBackServerId: mcpServers entry "${name}" is not hosted (kind: ${entry.kind})`);

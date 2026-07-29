@@ -45,7 +45,7 @@ import {
   saveProjectConfig,
   type ResolvedConfig,
 } from '../config';
-import type { GuueyAgent, GuueyJsonV1 } from '@guuey/config';
+import { declaredServerEntries, type GuueyAgent, type GuueyJsonV1 } from '@guuey/config';
 import * as out from '../output';
 
 /**
@@ -338,8 +338,11 @@ export async function pull(
     if (promptFile) {
       console.log(`  systemPrompt: ${promptFile.path} (${promptFile.content.length} chars)`);
     }
+    // `declaredServerEntries` drops the `ggui: false` opt-out — it is not a
+    // configured server, and listing it here would read as "ggui is on".
     const mcpServers = overlay.agent.mcpServers
-      ? Object.keys(overlay.agent.mcpServers).join(', ')
+      ? declaredServerEntries(overlay.agent.mcpServers).map(([name]) => name).join(', ') ||
+        '(none — ggui disabled)'
       : 'ggui (default)';
     console.log(`  mcpServers:   ${mcpServers}`);
     if (overlay.agent.deploy) {

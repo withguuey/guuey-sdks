@@ -45,6 +45,7 @@ import {
   validateNoLiteralSecrets,
   validateColocatedServerNames,
   writeGuueyJsonFile,
+  declaredServerEntries,
   type ResolvedGuueyJson,
   type GuueyJsonV1,
 } from '@guuey/config';
@@ -894,8 +895,10 @@ async function deployDeclarative(opts: {
 
   const systemPromptLen =
     typeof agent.systemPrompt === 'string' ? agent.systemPrompt.length : 0;
+  // `declaredServerEntries` drops the `ggui: false` opt-out — it is not a
+  // configured server, and listing it here would read as "ggui is on".
   const mcpServers = agent.mcpServers
-    ? Object.keys(agent.mcpServers).join(', ')
+    ? declaredServerEntries(agent.mcpServers).map(([name]) => name).join(', ') || '(none — ggui disabled)'
     : 'ggui (default)';
   console.log(`  framework:    ${agent.framework ?? 'claude-agent-sdk (default)'}`);
   console.log(`  model:        ${agent.model ?? '(framework default)'}`);
