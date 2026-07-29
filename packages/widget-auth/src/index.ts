@@ -44,6 +44,7 @@
  * token rather than minting one itself.
  */
 import {
+  isAbortError,
   redactSecret,
   WidgetAuthAppNotConfiguredError,
   WidgetAuthConfigError,
@@ -240,9 +241,13 @@ export async function signUserToken(
   try {
     response = await doFetch(`${baseUrl}${MINT_PATH}`, init);
   } catch (err) {
+    // A caller-initiated abort is NOT retryable — see `isAbortError`.
+    const aborted = isAbortError(err);
     throw new WidgetAuthNetworkError(
-      `Could not reach the guuey token service at ${baseUrl}: ${describe(err, appSecret)}`,
-      { cause: err },
+      aborted
+        ? `The mint request to ${baseUrl} was aborted by the caller.`
+        : `Could not reach the guuey token service at ${baseUrl}: ${describe(err, appSecret)}`,
+      { cause: err, retryable: !aborted },
     );
   }
 

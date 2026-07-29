@@ -151,9 +151,31 @@ export class WidgetAuthServiceError extends WidgetAuthError {
  * land in a serialized log line) and its text is redacted into the message.
  */
 export class WidgetAuthNetworkError extends WidgetAuthError {
-  constructor(message: string, options?: { cause?: unknown }) {
-    super(message, true, undefined, options);
+  constructor(message: string, options?: { cause?: unknown; retryable?: boolean }) {
+    super(message, options?.retryable ?? true, undefined, options);
   }
+}
+
+/**
+ * Was this transport failure the CALLER cancelling the request?
+ *
+ * A caller-initiated abort is the one transport failure that must not be
+ * `retryable`: the integrator asked for this mint to stop, and a retry loop
+ * keyed on `retryable` would re-issue the very call they abandoned — spending
+ * a mint (and a rate-limit slot) against their own intent. Everything else
+ * here — DNS, TCP, TLS, a timeout — genuinely may succeed on a second try.
+ *
+ * Detected structurally rather than by message text: the DOM standard's
+ * `AbortError` name is what `fetch` rejects with on `signal.abort()`, and
+ * undici/Node use the same name.
+ */
+export function isAbortError(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'name' in err &&
+    (err as { name?: unknown }).name === 'AbortError'
+  );
 }
 
 /**

@@ -461,6 +461,24 @@ describe('signUserToken — status mapping', () => {
     expect((err as WidgetAuthNetworkError).cause).toBe(cause);
   });
 
+  it('classes a caller-initiated abort as NOT retryable', async () => {
+    // The integrator asked for this mint to stop; a retry loop keyed on
+    // `retryable` must not re-issue the call they abandoned (T11-I2).
+    const cause = Object.assign(new Error('The operation was aborted'), {
+      name: 'AbortError',
+    });
+    const fetchImpl: FetchLike = async () => {
+      throw cause;
+    };
+    const err = await signUserToken({ userId: 'u' }, config({ fetch: fetchImpl })).catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(WidgetAuthNetworkError);
+    expect((err as WidgetAuthNetworkError).retryable).toBe(false);
+    expect((err as WidgetAuthNetworkError).message).toContain('aborted by the caller');
+    expect((err as WidgetAuthNetworkError).cause).toBe(cause);
+  });
+
   it('reports a runtime with no global fetch as a config error naming Node 18', async () => {
     // Node 18 is the floor precisely because `fetch` became global there; on an
     // older runtime the failure would otherwise be a bare ReferenceError from
