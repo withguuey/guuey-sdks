@@ -23,7 +23,7 @@
  *
  * Defaults applied by the pod runtime when fields are absent:
  * - `framework`   → `'claude-agent-sdk'`
- * - `mcpServers`  → `{ ggui: { url: 'https://mcp.ggui.ai' } }` (platform default; declaring `mcpServers` REPLACES this — not merged)
+ * - `mcpServers`  → `{ ggui: { url: 'https://mcp.ggui.ai' } }` (platform default; declaring `mcpServers` MERGES ON TOP of this (guuey#24 option A); opt out with `ggui: false`)
  * - `model`       → framework-chosen default (Claude SDK → `claude-sonnet-5`)
  * - `systemPrompt`→ `GUUEY_DEFAULT_SYSTEM_PROMPT` from `./system-prompt`
  * - `auth`        → `'anonymous'`
@@ -179,6 +179,14 @@ const McpServerSchema = z.discriminatedUnion('kind', [
 ]);
 
 /**
+ * One declared `mcpServers` VALUE: a real server entry, or the literal `false`
+ * — the generative-UI opt-out, valid ONLY under the `ggui` key (enforced by
+ * the agent-level refine; the subtree schema stays lenient by design).
+ */
+export const McpServerEntrySchema = z.union([McpServerSchema, z.literal(false)]);
+export type DeclaredMcpServers = Record<string, GuueyAgentMcpServer | false>;
+
+/**
  * Tool-gate block — allowlist applied first (intersect with what the MCP
  * server advertises), then denylist subtracts. Tool names are MCP-namespaced
  * (`"<server>.<tool>"`). Bare names match across all connected servers.
@@ -286,7 +294,7 @@ const StorageScopeSchema = z.array(z.enum(['user', 'app']));
  * resolve-mcp): whole-snapshot strictness made lowering fail open on any
  * schema field the running consumer predates.
  */
-export const McpServersSection = z.record(z.string().min(1), McpServerSchema);
+export const McpServersSection = z.record(z.string().min(1), McpServerEntrySchema);
 
 export const AgentSectionV1 = z.strictObject({
   // ── Deploy routing ──
@@ -327,18 +335,33 @@ export const AgentSectionV1 = z.strictObject({
   modelProvider: z.enum(['openai', 'openrouter']).optional(),
   systemPrompt: SystemPromptSchema.optional(),
   /**
-   * MCP servers the agent may call. **Replaces** the platform default
-   * (`{ ggui: { kind: 'external', url: 'https://mcp.ggui.ai', transport: 'http' } }`)
-   * when present — not merged. Omit the block to inherit the default; include
-   * `ggui` explicitly to keep it alongside other servers.
+   * MCP servers the agent may call. **Merges on top of** the platform default
+   * (`{ ggui: { kind: 'external', url: 'https://mcp.ggui.ai', transport: 'http' } }`,
+   * guuey#24 option A) — see {@link effectiveMcpServers}. Omit the block to
+   * inherit the default unchanged; declare `ggui` explicitly to override it;
+   * declare `ggui: false` to opt out of it entirely.
    *
-   * Each entry is a discriminated union on `kind`:
+   * Each entry is a discriminated union on `kind`, or the literal `false`
+   * (valid only under the `ggui` key):
    * - `'colocated'` — guuey-managed HTTP child inside the agent pod
    * - `'hosted'`    — guuey-hosted registry MCP (Starter+)
    * - `'proxied'`   — 3rd-party SaaS via mcp-proxy (v2)
    * - `'external'`  — builder-hosted URL (plain or federated)
    */
-  mcpServers: z.record(z.string().min(1), McpServerSchema).optional(),
+  mcpServers: z
+    .record(z.string().min(1), McpServerEntrySchema)
+    .superRefine((servers, ctx) => {
+      for (const [name, entry] of Object.entries(servers)) {
+        if (entry === false && name !== 'ggui') {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [name],
+            message: `mcpServers.${name}: false is only valid for the "ggui" key (it opts out of the platform-default generative-UI server) — remove the "${name}" entry instead`,
+          });
+        }
+      }
+    })
+    .optional(),
   tools: ToolGatesSchema.optional(),
   runtime: RuntimeConfigSchema.optional(),
   /** Claude Agent SDK-specific knobs. Only read when `framework: 'claude-agent-sdk'`. */
@@ -479,7 +502,7 @@ export function validateNoLiteralSecrets(
   const servers = agent?.mcpServers;
   if (!servers) return violations;
 
-  for (const [serverName, server] of Object.entries(servers)) {
+  for (const [serverName, server] of declaredServerEntries(servers)) {
     // Only the `external` union arm carries a `headers` field.
     const headers = 'headers' in server ? server.headers : undefined;
     if (!headers) continue;
@@ -536,7 +559,7 @@ export function validateColocatedServerNames(
   const servers = agent?.mcpServers;
   if (!servers) return violations;
 
-  for (const [name, server] of Object.entries(servers)) {
+  for (const [name, server] of declaredServerEntries(servers)) {
     if (server.kind === 'colocated' && !isValidColocatedServerName(name)) {
       violations.push(
         `colocated MCP server name "${name}" is invalid — use only letters, digits, hyphen, underscore (it becomes part of a URL and a storage scope)`,
@@ -569,7 +592,7 @@ export function validateNoProxiedServers(
   const servers = agent?.mcpServers;
   if (!servers) return violations;
 
-  for (const [name, server] of Object.entries(servers)) {
+  for (const [name, server] of declaredServerEntries(servers)) {
     if (server.kind === 'proxied') {
       violations.push(
         `MCP server "${name}": kind 'proxied' (the mcp-proxy credential broker) is not yet supported — use 'external', 'hosted', or 'colocated'.`,
@@ -645,9 +668,10 @@ export function validateReservedServerNames(
 }
 
 /**
- * Platform default MCP server map. Applied by the pod when `agent.mcpServers`
- * is absent. Exposed here so non-pod consumers (CLI dry-run, lints) can show
- * the effective shape without duplicating the literal.
+ * Platform default MCP server map. Seeded under every declared map by
+ * {@link effectiveMcpServers} (opt out with `ggui: false`). Exposed here so
+ * non-pod consumers (CLI dry-run, lints) can show the effective shape without
+ * duplicating the literal.
  *
  * The ggui server is `kind: 'external'` — it is builder-declared when present
  * or injected by the platform at runtime. Federation still detects it by host
@@ -656,3 +680,30 @@ export function validateReservedServerNames(
 export const DEFAULT_AGENT_MCP_SERVERS: Record<string, GuueyAgentMcpServer> = {
   ggui: { kind: 'external', url: 'https://mcp.ggui.ai', transport: 'http' },
 };
+
+/**
+ * The EFFECTIVE server map (guuey#24, option A): seed the platform default,
+ * layer the declared map on top (explicit wins), drop `ggui: false`. This is
+ * the ONE owner of default-application semantics — the resolution seams
+ * (credential broker, render-tool resolution) call this; declared-map
+ * ITERATION sites use {@link declaredServerEntries} instead.
+ */
+export function effectiveMcpServers(
+  declared: DeclaredMcpServers | undefined
+): Record<string, GuueyAgentMcpServer> {
+  const merged: DeclaredMcpServers = { ...DEFAULT_AGENT_MCP_SERVERS, ...declared };
+  const out: Record<string, GuueyAgentMcpServer> = {};
+  for (const [name, entry] of Object.entries(merged)) {
+    if (entry !== false) out[name] = entry;
+  }
+  return out;
+}
+
+/** The declared entries that are real servers (the `ggui: false` opt-out filtered out) — the narrowing every declared-map iteration site uses. */
+export function declaredServerEntries(
+  servers: DeclaredMcpServers | undefined
+): Array<[string, GuueyAgentMcpServer]> {
+  return Object.entries(servers ?? {}).filter(
+    (e): e is [string, GuueyAgentMcpServer] => e[1] !== false
+  );
+}

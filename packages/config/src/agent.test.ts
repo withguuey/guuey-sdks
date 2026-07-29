@@ -7,6 +7,9 @@ import {
   validateReservedServerNames,
   RESERVED_MEMORY_SERVER_NAME,
   RESERVED_MCP_SERVER_NAMES,
+  DEFAULT_AGENT_MCP_SERVERS,
+  effectiveMcpServers,
+  declaredServerEntries,
   type GuueyAgent,
   type GuueyAgentMcpServer,
 } from './agent.js';
@@ -536,5 +539,60 @@ describe('guuey-profile reservation + profileAccess schema', () => {
     );
     expect(() => parseAgent({ ...minimalAgent, profileAccess: 'write' })).toThrow();
     expect(parseAgent(minimalAgent).profileAccess).toBeUndefined();
+  });
+});
+
+describe("mcpServers ggui:false opt-out (guuey#24)", () => {
+  const todo = { kind: "colocated", source: "./mcps/todo" } as const;
+
+  it("schema accepts false for the ggui key only", () => {
+    expect(() =>
+      AgentSectionV1.parse({
+        mode: "code",
+        framework: "claude-agent-sdk",
+        mcpServers: { ggui: false, todo },
+      })
+    ).not.toThrow();
+  });
+
+  it("schema rejects false for any other key, naming the key", () => {
+    const r = AgentSectionV1.safeParse({
+      mode: "code",
+      framework: "claude-agent-sdk",
+      mcpServers: { todo: false },
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) expect(JSON.stringify(r.error.issues)).toContain("todo");
+  });
+
+  it("effectiveMcpServers seeds the default under a declared-only map", () => {
+    expect(effectiveMcpServers({ todo })).toEqual({
+      ggui: DEFAULT_AGENT_MCP_SERVERS.ggui,
+      todo,
+    });
+  });
+
+  it("effectiveMcpServers: a declared ggui entry wins over the default", () => {
+    const mine = {
+      kind: "external",
+      url: "https://mcp.ggui.ai",
+      transport: "http",
+      headers: { "x-custom": "v" },
+    } as const;
+    expect(effectiveMcpServers({ ggui: mine }).ggui).toEqual(mine);
+  });
+
+  it("effectiveMcpServers: ggui:false drops the default entirely", () => {
+    expect(effectiveMcpServers({ ggui: false, todo })).toEqual({ todo });
+  });
+
+  it("effectiveMcpServers: undefined and empty behave as today (default applies)", () => {
+    expect(effectiveMcpServers(undefined)).toEqual(DEFAULT_AGENT_MCP_SERVERS);
+    expect(effectiveMcpServers({})).toEqual(DEFAULT_AGENT_MCP_SERVERS);
+  });
+
+  it("declaredServerEntries filters the false entry and keeps real ones", () => {
+    expect(declaredServerEntries({ ggui: false, todo })).toEqual([["todo", todo]]);
+    expect(declaredServerEntries(undefined)).toEqual([]);
   });
 });
