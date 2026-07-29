@@ -22,7 +22,8 @@
  *
  * Upstream is the right long-term home for this (the reducer should copy
  * `ev._meta` the way its text/reasoning arms already do — filed against
- * `@silverprotocol/core`); until that lands and this repo's `0.3.2` pin moves,
+ * `@silverprotocol/core`); it has NOT landed as of the pinned `0.3.9` (the
+ * reducer is byte-identical across the 0.3.x cohorts), so until it does,
  * this wrapper is the guuey-side carriage the card-mount design calls for. It
  * is deliberately NOT a re-implementation of the fold: every event still goes
  * through the real `Reducer`, and the only thing added is a `toolCallId →

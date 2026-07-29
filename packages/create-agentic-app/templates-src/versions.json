@@ -2,5 +2,5 @@
   "@guuey/worker": "0.1.2",
   "@guuey/config": "0.1.2",
   "@guuey/cli": "0.1.4",
-  "@silverprotocol/core": "0.3.2"
+  "@silverprotocol/core": "0.3.9"
 }
