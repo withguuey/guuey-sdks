@@ -7,13 +7,15 @@
  * `block-ui.ts`'s original narrowing accepts exactly one shape — an mcp-ui
  * embedded resource that carries its HTML INLINE (`{uri, text|blob}`). A ggui
  * render carries no HTML at all. Its `tool.done` looks like this on the wire
- * (verbatim from the production capture the widget's fixtures replay):
+ * (shaped identically to the production capture the widget's fixtures
+ * replay, but with the SAME synthetic ids those redacted fixtures use —
+ * `apps/widget/src/fixtures/issue2627-render-capture.sse.txt` seq 48):
  *
  * ```jsonc
- * {"type":"tool.done", "toolCallId":"toolu_01E7…",
- *  "uiData":{"sessionId":"render_54fa…",
- *            "resourceUri":"ui://ggui/render/render_54fa…/c10a2055…", … },
- *  "_meta":{"ai.ggui/render":{"sessionId":"render_54fa…","appId":"5rEJa9NH",
+ * {"type":"tool.done", "toolCallId":"toolu_0000…0005",
+ *  "uiData":{"sessionId":"render_0000…0001",
+ *            "resourceUri":"ui://ggui/render/render_0000…0001/c10a2055…", … },
+ *  "_meta":{"ai.ggui/render":{"sessionId":"render_0000…0001","appId":"APP00000",
  *              "runtimeUrl":"https://dev.mcp.sandbox.ggui.ai/_ggui/iframe-runtime.js",
  *              "wsUrl":"wss://…/ws","wsToken":"eyJ…","expiresAt":"…",
  *              "propsJson":"{…}"},
@@ -104,12 +106,37 @@ export interface GguiRenderDescriptor {
   bootstrap?: GguiRenderBootstrap;
 }
 
+/** A non-empty JSON string field. */
+function isNonEmptyString(value: JsonValue | undefined): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+/**
+ * Does this slice carry at least one MOUNT MODE discriminator?
+ *
+ * Mirrors `@ggui-ai/iframe-runtime`'s `validateMeta` (see
+ * `node_modules/@ggui-ai/iframe-runtime/dist/meta-parse.d.ts`) and the
+ * `McpAppAiGguiRenderMeta` doc comment it implements
+ * (`@ggui-ai/protocol/integrations/mcp-apps`): the runtime needs `runtimeUrl`
+ * PLUS one of live mode (`wsUrl` + `wsToken` together), `codeUrl`, or `kind` —
+ * without one of those three the iframe has nothing to mount.
+ */
+function hasModeDiscriminator(slice: { [key: string]: JsonValue }): boolean {
+  if (isNonEmptyString(slice.wsUrl) && isNonEmptyString(slice.wsToken)) return true;
+  if (isNonEmptyString(slice.codeUrl)) return true;
+  if (isNonEmptyString(slice.kind)) return true;
+  return false;
+}
+
 /**
  * A `_meta` container → the ggui render bootstrap, or `undefined`.
  *
- * `runtimeUrl` is the one hard requirement: the runtime's own `validateMeta`
- * rejects a slice without it (`MALFORMED_BOOTSTRAP`), so a shell built from
- * one could only ever render a blank frame.
+ * Two hard requirements, both the runtime's own `validateMeta` enforces
+ * (`MALFORMED_BOOTSTRAP`): a non-empty `runtimeUrl`, AND at least one mode
+ * discriminator (see {@link hasModeDiscriminator}). A slice with `runtimeUrl`
+ * alone has a bundle to load but nothing for it to mount — the runtime would
+ * boot into a blank shell rather than a card, so this guard treats that shape
+ * as unmountable too and returns `undefined`.
  */
 export function asGguiRenderBootstrap(meta: JsonValue | undefined): GguiRenderBootstrap | undefined {
   if (!isJsonObject(meta)) return undefined;
@@ -117,6 +144,7 @@ export function asGguiRenderBootstrap(meta: JsonValue | undefined): GguiRenderBo
   if (!isJsonObject(slice)) return undefined;
   const runtimeUrl = slice.runtimeUrl;
   if (typeof runtimeUrl !== "string" || runtimeUrl.length === 0) return undefined;
+  if (!hasModeDiscriminator(slice)) return undefined;
   return { runtimeUrl, slice };
 }
 

@@ -15,7 +15,11 @@ const INLINE_HTML = "<p>inline card</p>";
 const RESOURCE_URI = "ui://ggui/render/render_1/hash";
 const RUNTIME_URL = "https://dev.mcp.sandbox.ggui.ai/_ggui/iframe-runtime.js";
 const META: JsonValue = {
-  [GGUI_RENDER_META_KEY]: { sessionId: "render_1", runtimeUrl: RUNTIME_URL },
+  // `kind` is one of the three mode discriminators `asGguiRenderBootstrap`
+  // requires alongside `runtimeUrl` (see `ggui-render.ts`'s
+  // `hasModeDiscriminator`) — without one a real bootstrap is malformed and
+  // this fixture would (correctly) fail to mount, same as production.
+  [GGUI_RENDER_META_KEY]: { sessionId: "render_1", runtimeUrl: RUNTIME_URL, kind: "system-card" },
 };
 
 function block(uiData: JsonValue, meta?: JsonValue): Extract<AgBlock, { type: "tool-result" }> {

@@ -18,25 +18,32 @@ import {
   GGUI_RENDER_META_KEY,
 } from "./ggui-render";
 
-const RESOURCE_URI = "ui://ggui/render/render_54fadefb-fc82-4fba-a9b0-212e965eca1d/c10a20553df2349b";
+// Synthetic ids below reuse the SAME ordinal-keyed remap the widget's
+// derived capture fixtures use (`apps/widget/scripts/derive-coalesced-capture.mjs`,
+// `apps/widget/src/fixtures/issue2627-render-capture.sse.txt` seq 48) — no
+// production identifiers, but shaped identically to the real render.
+const RESOURCE_URI =
+  "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c10a20553df2349b";
 const RUNTIME_URL = "https://dev.mcp.sandbox.ggui.ai/_ggui/iframe-runtime.js";
 
 const UI_DATA: JsonValue = {
-  sessionId: "render_54fadefb-fc82-4fba-a9b0-212e965eca1d",
+  sessionId: "render_00000000-0000-4000-8000-300000000001",
   resourceUri: RESOURCE_URI,
   action: "create",
   contractHash: "c10a20553df2349b",
 };
 
 const SLICE: JsonValue = {
-  sessionId: "render_54fadefb-fc82-4fba-a9b0-212e965eca1d",
-  appId: "5rEJa9NH",
+  sessionId: "render_00000000-0000-4000-8000-300000000001",
+  appId: "APP00000",
   runtimeUrl: RUNTIME_URL,
   wsUrl: "wss://dev.mcp.sandbox.ggui.ai/ws",
-  wsToken: "eyJzZXNzaW9uSWQiOiJyZW5kZXJfNTRmYWRlZmIifQ.sig",
+  wsToken:
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJraW5kIjoid3MiLCJpYXQiOjAsImV4cCI6MH0.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
   expiresAt: "2026-07-29T11:07:58.000Z",
   lastSequence: 0,
-  propsJson: '{"todos":[{"id":"552c8fb0","title":"Buy milk","done":false}]}',
+  propsJson:
+    '{"todos":[{"id":"00000000-0000-4000-8000-100000000004","title":"Buy milk","done":false}]}',
 };
 
 const META: JsonValue = {
@@ -51,7 +58,7 @@ function toolResultBlock(
 ): Extract<AgBlock, { type: "tool-result" }> {
   const block: Extract<AgBlock, { type: "tool-result" }> = {
     type: "tool-result",
-    toolCallId: "toolu_01E7h34fDPEQCPYdsmNQo8aJ",
+    toolCallId: "toolu_000000000000000000000005",
     content: [],
     ...(uiData !== undefined ? { uiData } : {}),
   };
@@ -73,6 +80,28 @@ describe("asGguiRenderBootstrap", () => {
     expect(asGguiRenderBootstrap({ [GGUI_RENDER_META_KEY]: { runtimeUrl: "" } })).toBeUndefined();
   });
 
+  it("rejects runtimeUrl with no mode discriminator — a bundle to load but nothing to mount", () => {
+    // No wsUrl+wsToken, no codeUrl, no kind: ggui's own validateMeta rejects
+    // this shape as MALFORMED_BOOTSTRAP, so mounting it would boot a blank
+    // shell instead of a card. Undefined here means CanvasPane's empty state,
+    // not a mount attempt.
+    expect(
+      asGguiRenderBootstrap({ [GGUI_RENDER_META_KEY]: { sessionId: "s", runtimeUrl: RUNTIME_URL } }),
+    ).toBeUndefined();
+    // Half a live-mode pair is still no discriminator.
+    expect(
+      asGguiRenderBootstrap({
+        [GGUI_RENDER_META_KEY]: { runtimeUrl: RUNTIME_URL, wsUrl: "wss://x.test/ws" },
+      }),
+    ).toBeUndefined();
+    // Any one of the three real discriminators is enough.
+    expect(
+      asGguiRenderBootstrap({
+        [GGUI_RENDER_META_KEY]: { runtimeUrl: RUNTIME_URL, kind: "system-card" },
+      }),
+    ).toBeDefined();
+  });
+
   it("rejects a `_meta` with no ggui slice at all (the MCP-Apps-only case)", () => {
     expect(asGguiRenderBootstrap({ ui: { resourceUri: RESOURCE_URI } })).toBeUndefined();
     expect(asGguiRenderBootstrap(undefined)).toBeUndefined();
@@ -85,7 +114,7 @@ describe("asGguiRender", () => {
     const render = asGguiRender(UI_DATA, META);
     expect(render).toBeDefined();
     expect(render?.resourceUri).toBe(RESOURCE_URI);
-    expect(render?.sessionId).toBe("render_54fadefb-fc82-4fba-a9b0-212e965eca1d");
+    expect(render?.sessionId).toBe("render_00000000-0000-4000-8000-300000000001");
     expect(render?.bootstrap?.runtimeUrl).toBe(RUNTIME_URL);
   });
 
