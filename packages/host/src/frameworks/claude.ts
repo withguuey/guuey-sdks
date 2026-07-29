@@ -11,6 +11,7 @@
  */
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type {
+  CredentialFile,
   Emitter,
   Fs,
   HistoryMessage,
@@ -22,7 +23,6 @@ import type {
 import {
   buildOptions,
   type BuildOptionsContext,
-  type CredentialFile,
   type PriorMemoryRecord,
 } from "./claude-options.js";
 import { resolveSdkVersion } from "../sdk-version.js";

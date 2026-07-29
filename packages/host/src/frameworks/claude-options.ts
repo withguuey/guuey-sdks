@@ -120,10 +120,6 @@ function buildProfileSection(ctx: BuildOptionsContext): string {
   return renderProfileSection(ctx.profileSections, ctx.profileAccess);
 }
 
-// CredentialFile now lives in `@guuey/worker` (framework-neutral, shared by
-// every worker — the host runners and the code-mode templates alike);
-// re-exported here so existing importers keep working.
-export type { CredentialFile } from "@guuey/worker";
 import type { CredentialFile } from "@guuey/worker";
 
 /**
