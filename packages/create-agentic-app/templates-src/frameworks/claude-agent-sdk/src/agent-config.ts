@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseGuueyJson, type GuueyAgent } from "@guuey/config";
-import type { Invoke } from "@guuey/worker";
+import { listCredentials, type Invoke } from "@guuey/worker";
 
 /** GUUEY_AGENT_SNAPSHOT (set by the platform pod and by `guuey dev`) wins; guuey.json is the fallback. */
 export function loadAgent(invoke: Invoke): GuueyAgent {
@@ -26,9 +26,9 @@ export function systemPrompt(invoke: Invoke, agent: GuueyAgent): string | undefi
 
 /**
  * One resolved MCP endpoint this worker may connect to. `transport` rides
- * alongside `url`/`headers` (not hardcoded to `"http"`) because a federation
- * credential file — `<session>/.guuey/credentials/<name>.json`, shape
- * `{url, transport, headers}` per `@guuey/host`'s `CredentialFile` — may
+ * alongside `url`/`headers` (not hardcoded to `"http"`) because a credential
+ * file — `<session>/.guuey/credentials/<name>.json`, shape
+ * `{url, transport, headers}` per `@guuey/worker`'s `CredentialFile` — may
  * resolve a server onto the `sse` transport arm.
  */
 export interface McpEndpoint {
@@ -37,27 +37,33 @@ export interface McpEndpoint {
   headers: Record<string, string>;
 }
 
-/** Lowered entries are `external`; federation credentials (if any) arrive as per-session files. */
+/**
+ * Endpoint set = broker-written credential DIRECTORY (source of truth for
+ * federated + platform-injected servers — incl. guuey-memory/guuey-profile,
+ * invisible to the declared map by design) ∪ declared external entries that
+ * have no credential file (plain endpoints, static headers). Credential wins
+ * per name. One honest log line names both sets — no silent fallback.
+ */
 export function mcpEndpoints(invoke: Invoke, agent: GuueyAgent): Record<string, McpEndpoint> {
   const out: Record<string, McpEndpoint> = {};
   for (const [name, entry] of Object.entries(agent.mcpServers ?? {})) {
     if (entry === false) continue; // `ggui: false` is the generative-UI opt-out, not a server entry
     if (entry.kind !== "external") continue; // hosted/proxied are lowered to external before a worker ever runs
-    let url = entry.url;
-    let transport: "http" | "sse" = entry.transport ?? "http";
-    let headers: Record<string, string> = { ...(entry.headers ?? {}) };
-    try {
-      const cred = JSON.parse(
-        readFileSync(join(invoke.fs.session, ".guuey", "credentials", `${name}.json`), "utf8")
-      ) as { url: string; transport: "http" | "sse"; headers: Record<string, string> };
-      url = cred.url;
-      transport = cred.transport;
-      headers = cred.headers;
-    } catch {
-      // no credential file — plain external endpoint; static headers apply
-    }
-    out[name] = { url, transport, headers };
+    out[name] = {
+      url: entry.url,
+      transport: entry.transport ?? "http",
+      headers: { ...(entry.headers ?? {}) },
+    };
   }
+  const creds = listCredentials(invoke.fs)();
+  for (const { name, cred } of creds) {
+    out[name] = { url: cred.url, transport: cred.transport, headers: cred.headers };
+  }
+  const credentialed = creds.map((c) => c.name);
+  const declaredOnly = Object.keys(out).filter((n) => !credentialed.includes(n));
+  console.log(
+    `[guuey] mcp endpoints: credentialed=[${credentialed.join(",")}] declared-only=[${declaredOnly.join(",")}]`
+  );
   return out;
 }
 
