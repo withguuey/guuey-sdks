@@ -37,7 +37,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { defaultModelFor, type GuueyContext } from "@guuey/config";
-import type { Emitter, JsonValue } from "@guuey/worker";
+import { listCredentials, type CredentialFile, type Emitter, type JsonValue } from "@guuey/worker";
 import type { FrameworkRunner, HostSnapshot, HostTurn } from "../index.js";
 import {
   AGENT_ENTRY_ENV,
@@ -47,7 +47,6 @@ import {
   nativeLoad,
   resolveAgentEntry,
 } from "../agent-entry.js";
-import { listCredentials, type CredentialFile } from "../creds.js";
 import { renderMemorySection, renderProfileSection, withContextPreamble } from "../preamble.js";
 import { resolveSdkVersion } from "../sdk-version.js";
 

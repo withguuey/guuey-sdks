@@ -11,11 +11,10 @@
  * injected by the Router's `buildWorkerEnv` already routes it.
  */
 import { run as openaiRun, setDefaultOpenAIKey } from "@openai/agents";
-import type { Emitter } from "@guuey/worker";
+import { listCredentials, type Emitter } from "@guuey/worker";
 import type { FrameworkRunner, HostSnapshot, HostTurn } from "../index.js";
 import type { HostRuntime } from "./claude.js";
 import { runInvokeOpenai, type OpenaiRunFn } from "./openai.js";
-import { listCredentials } from "../creds.js";
 import { buildHostContext } from "../boot-context.js";
 
 /**

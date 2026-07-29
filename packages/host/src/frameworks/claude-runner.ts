@@ -14,10 +14,9 @@
  *  per invoke if neither form is present.
  */
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { Emitter } from "@guuey/worker";
+import { listCredentials, type Emitter } from "@guuey/worker";
 import type { FrameworkRunner, HostSnapshot, HostTurn } from "../index.js";
 import { runInvoke, type HostRuntime } from "./claude.js";
-import { listCredentials } from "../creds.js";
 import { buildHostContext } from "../boot-context.js";
 
 export function createRunner(): FrameworkRunner {

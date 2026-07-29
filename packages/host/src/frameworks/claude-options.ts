@@ -120,10 +120,11 @@ function buildProfileSection(ctx: BuildOptionsContext): string {
   return renderProfileSection(ctx.profileSections, ctx.profileAccess);
 }
 
-// CredentialFile now lives in ../creds.js (framework-neutral, shared by every
-// runner); re-exported here so existing importers keep working.
-export type { CredentialFile } from "../creds.js";
-import type { CredentialFile } from "../creds.js";
+// CredentialFile now lives in `@guuey/worker` (framework-neutral, shared by
+// every worker — the host runners and the code-mode templates alike);
+// re-exported here so existing importers keep working.
+export type { CredentialFile } from "@guuey/worker";
+import type { CredentialFile } from "@guuey/worker";
 
 /**
  * SDK's `mcpServers` value shape — recreated structurally rather than imported

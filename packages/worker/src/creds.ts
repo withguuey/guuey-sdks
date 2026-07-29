@@ -1,14 +1,17 @@
 /**
- * Framework-neutral credential-file reading, shared by every runner.
+ * Framework-neutral credential-file reading, shared by every worker — the
+ * `@guuey/host` runners AND the code-mode workers scaffolded by
+ * `@guuey/create-agentic-app` (which is why it lives in the protocol package
+ * rather than in the host: both sides read the same broker-written directory).
  *
  * The Router-side credential broker resolves EVERYTHING (default server,
  * federation, minting, env substitution) and writes one JSON file per MCP
  * server to `<sessionDir>/.guuey/credentials/<server>.json` before each
- * worker spawn. Runners only read and shape — no resolution logic here.
+ * worker spawn. Workers only read and shape — no resolution logic here.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Fs } from "@guuey/worker";
+import type { Fs } from "./protocol.js";
 
 /**
  * One parsed credential file. The shape is the broker's §7.1 contract — the

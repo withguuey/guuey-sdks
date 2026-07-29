@@ -35,6 +35,7 @@ export {
   isHello,
 } from "./parse.js";
 export { createEmitter, type Emitter, type WriteSink } from "./emit.js";
+export { listCredentials, type CredentialFile } from "./creds.js";
 export { serve, serveOn, type ServeOptions } from "./serve.js";
 export { Turn, type WorkerHandler } from "./turn.js";
 export { serveNative, serveNativeOn } from "./serve-native.js";
