@@ -21,41 +21,68 @@
  * server's explicit, self-sufficient HTML. A ggui render only ever wins when
  * there is no inline resource to prefer, so this dispatcher can never change
  * what an existing inline card renders.
+ *
+ * ## Why the CHANNEL is returned alongside the resource
+ *
+ * The payload alone cannot say where it came from — a ggui shell is a string
+ * of HTML like any other. But a host has one decision that genuinely depends
+ * on the origin of that HTML: WHICH sandbox host page to mount it in. A ggui
+ * shell must load ggui's runtime bundle and open its WSS, so it needs a page
+ * whose CSP names the ggui origins; an inline card is arbitrary tenant HTML
+ * and must keep the self-only page it has always had. Handing back the channel
+ * keeps that one narrowing in one place — the alternative was for every host
+ * to re-run `toolResultGguiRender` beside this call and ask again.
  */
 import { cardUiResource, toolResultUiResource, type McpUiResourcePayload } from "./block-ui";
 import { blockGguiRender, gguiRenderResource, toolResultGguiRender } from "./ggui-render";
 import type { AgBlock, JsonValue } from "@silverprotocol/core";
 
-/**
- * A live `tool-result` block → the resource to mount, across both channels.
- * `undefined` when the block carries no generative UI at all (or carries a
- * ggui render whose bootstrap did not reach us — see `ggui-render.ts`).
- */
-export function toolResultCardResource(
-  block: Extract<AgBlock, { type: "tool-result" }>,
-): McpUiResourcePayload | undefined {
-  const inline = toolResultUiResource(block);
-  if (inline) return inline;
-  const ggui = toolResultGguiRender(block);
-  return ggui ? gguiRenderResource(ggui) : undefined;
+/** Which generative-UI channel produced a mount. See this module's header. */
+export type CardMountChannel = "inline" | "ggui";
+
+/** A mountable card: the resource to hand the host, and where it came from. */
+export interface CardMount {
+  /** The payload an mcp-ui host mounts, identical in shape for both channels. */
+  resource: McpUiResourcePayload;
+  /**
+   * `"inline"` — the server's own HTML, untrusted tenant content.
+   * `"ggui"` — a shell that boots the ggui runtime from a platform-pinned
+   * origin, and therefore needs a host page whose CSP allows that origin.
+   */
+  channel: CardMountChannel;
 }
 
 /**
- * A persisted `HistoryCard`'s `cardSnapshot` → the resource to mount, across
- * both channels.
+ * A live `tool-result` block → the card to mount, across both channels.
+ * `undefined` when the block carries no generative UI at all (or carries a
+ * ggui render whose bootstrap did not reach us — see `ggui-render.ts`).
+ */
+export function toolResultCardMount(
+  block: Extract<AgBlock, { type: "tool-result" }>,
+): CardMount | undefined {
+  const inline = toolResultUiResource(block);
+  if (inline) return { resource: inline, channel: "inline" };
+  const ggui = toolResultGguiRender(block);
+  const resource = ggui ? gguiRenderResource(ggui) : undefined;
+  return resource ? { resource, channel: "ggui" } : undefined;
+}
+
+/**
+ * A persisted `HistoryCard`'s `cardSnapshot` → the card to mount, across both
+ * channels.
  *
  * The ggui arm is reached only for a snapshot that stored the render's
  * `_meta`; a bootstrap old enough to have been persisted has an expired
  * `wsToken` anyway, so in practice a ggui history card resolves to `undefined`
  * and the host renders its placeholder — honest, and NOT a broken mount.
  */
-export function cardCardResource(cardSnapshot: JsonValue): McpUiResourcePayload | undefined {
+export function cardCardMount(cardSnapshot: JsonValue): CardMount | undefined {
   const inline = cardUiResource(cardSnapshot);
-  if (inline) return inline;
+  if (inline) return { resource: inline, channel: "inline" };
   for (const block of snapshotBlocks(cardSnapshot)) {
     const ggui = blockGguiRender(block);
     const resource = ggui ? gguiRenderResource(ggui) : undefined;
-    if (resource) return resource;
+    if (resource) return { resource, channel: "ggui" };
   }
   return undefined;
 }

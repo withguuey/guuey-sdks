@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { AgBlock, JsonValue } from "@silverprotocol/core";
-import { cardCardResource, toolResultCardResource } from "./card-mount";
+import { cardCardMount, toolResultCardMount } from "./card-mount";
 import { GGUI_RENDER_META_KEY } from "./ggui-render";
 
 const INLINE_HTML = "<p>inline card</p>";
@@ -35,22 +35,26 @@ function block(uiData: JsonValue, meta?: JsonValue): Extract<AgBlock, { type: "t
   return { ...base, _meta: meta };
 }
 
-describe("toolResultCardResource", () => {
+describe("toolResultCardMount", () => {
   it("still mounts an inline mcp-ui resource, byte-for-byte as before", () => {
-    const resource = toolResultCardResource(
+    const mount = toolResultCardMount(
       block({ uri: "ui://tool/app.html", mimeType: "text/html", text: INLINE_HTML }),
     );
-    expect(resource).toEqual({
-      uri: "ui://tool/app.html",
-      mimeType: "text/html",
-      text: INLINE_HTML,
+    expect(mount).toEqual({
+      channel: "inline",
+      resource: {
+        uri: "ui://tool/app.html",
+        mimeType: "text/html",
+        text: INLINE_HTML,
+      },
     });
   });
 
-  it("mounts a ggui render through its self-contained shell", () => {
-    const resource = toolResultCardResource(block({ resourceUri: RESOURCE_URI }, META));
-    expect(resource?.uri).toBe(RESOURCE_URI);
-    expect(resource?.text).toContain(RUNTIME_URL);
+  it("mounts a ggui render through its self-contained shell, on the ggui channel", () => {
+    const mount = toolResultCardMount(block({ resourceUri: RESOURCE_URI }, META));
+    expect(mount?.channel).toBe("ggui");
+    expect(mount?.resource.uri).toBe(RESOURCE_URI);
+    expect(mount?.resource.text).toContain(RUNTIME_URL);
   });
 
   it("prefers the inline resource when a block somehow carries both", () => {
@@ -58,22 +62,26 @@ describe("toolResultCardResource", () => {
       { uri: "ui://tool/app.html", text: INLINE_HTML, resourceUri: RESOURCE_URI },
       META,
     );
-    expect(toolResultCardResource(both)?.text).toBe(INLINE_HTML);
+    // Both the payload AND the channel come from the inline arm — a host must
+    // not be told to grant ggui egress to HTML the server wrote itself.
+    expect(toolResultCardMount(both)?.resource.text).toBe(INLINE_HTML);
+    expect(toolResultCardMount(both)?.channel).toBe("inline");
   });
 
   it("returns undefined for a ggui render with no bootstrap, and for plain results", () => {
-    expect(toolResultCardResource(block({ resourceUri: RESOURCE_URI }))).toBeUndefined();
-    expect(toolResultCardResource(block({ events: [], status: "active" }))).toBeUndefined();
+    expect(toolResultCardMount(block({ resourceUri: RESOURCE_URI }))).toBeUndefined();
+    expect(toolResultCardMount(block({ events: [], status: "active" }))).toBeUndefined();
   });
 });
 
-describe("cardCardResource", () => {
+describe("cardCardMount", () => {
   it("mounts an inline resource out of a persisted artifact's parts", () => {
     const snapshot: JsonValue = {
       artifactId: "a1",
       parts: [{ type: "resource", resource: { uri: "ui://x", text: INLINE_HTML } }],
     };
-    expect(cardCardResource(snapshot)?.text).toBe(INLINE_HTML);
+    expect(cardCardMount(snapshot)?.resource.text).toBe(INLINE_HTML);
+    expect(cardCardMount(snapshot)?.channel).toBe("inline");
   });
 
   it("mounts a ggui render part when the snapshot preserved its `_meta`", () => {
@@ -81,7 +89,8 @@ describe("cardCardResource", () => {
       artifactId: "a1",
       parts: [{ type: "tool-result", uiData: { resourceUri: RESOURCE_URI }, _meta: META }],
     };
-    expect(cardCardResource(snapshot)?.uri).toBe(RESOURCE_URI);
+    expect(cardCardMount(snapshot)?.resource.uri).toBe(RESOURCE_URI);
+    expect(cardCardMount(snapshot)?.channel).toBe("ggui");
   });
 
   it("stays undefined for a ggui card whose stored bootstrap is absent", () => {
@@ -92,14 +101,14 @@ describe("cardCardResource", () => {
       artifactId: "a1",
       parts: [{ type: "tool-result", uiData: { resourceUri: RESOURCE_URI } }],
     };
-    expect(cardCardResource(snapshot)).toBeUndefined();
+    expect(cardCardMount(snapshot)).toBeUndefined();
   });
 
   it("reads a bare block snapshot (no `parts` wrapper)", () => {
     expect(
-      cardCardResource({ type: "tool-result", uiData: { resourceUri: RESOURCE_URI }, _meta: META })
-        ?.uri,
+      cardCardMount({ type: "tool-result", uiData: { resourceUri: RESOURCE_URI }, _meta: META })
+        ?.resource.uri,
     ).toBe(RESOURCE_URI);
-    expect(cardCardResource("nope")).toBeUndefined();
+    expect(cardCardMount("nope")).toBeUndefined();
   });
 });

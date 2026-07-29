@@ -54,7 +54,12 @@ export {
   type GguiRenderBootstrap,
   type GguiRenderDescriptor,
 } from "./ggui-render";
-export { cardCardResource, toolResultCardResource } from "./card-mount";
+export {
+  cardCardMount,
+  toolResultCardMount,
+  type CardMount,
+  type CardMountChannel,
+} from "./card-mount";
 // The block-preserving fold: the pinned `Reducer` plus `_meta` carriage onto
 // `tool-result` blocks (which the reducer drops, and generative UI needs).
 export { BlockFold, withToolResultMeta } from "./fold";
