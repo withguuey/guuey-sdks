@@ -7,7 +7,8 @@
     "entry": "agent.js",
     "systemPrompt": { "file": "prompts/system.md" },
     "mcpServers": {
-      "todo": { "kind": "colocated", "source": "./mcps/todo", "devPort": 6782 }
+      "todo": { "kind": "colocated", "source": "./mcps/todo", "devPort": 6782 },
+      "ggui": { "kind": "external", "url": "https://mcp.ggui.ai", "transport": "http" }
     }
   },
   "ggui": { "configFile": "./ggui/ggui.json" }
