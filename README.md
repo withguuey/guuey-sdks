@@ -3,15 +3,6 @@
 The open-source surface of [guuey](https://guuey.com) — deploy AI agents,
 their MCP servers, and generative UI from one config file.
 
-> **Maintainers: never commit to the `guuey-sdks` repo directly.** It is a
-> mirror produced by `git subtree split` from the guuey monorepo's `oss/`
-> tree — a commit made on the mirror (even a lockfile regen) breaks every
-> subsequent sync push as non-fast-forward, which is exactly what happened
-> on 2026-07-30. Make ALL changes — manifests, lockfile, code — in the
-> monorepo's `oss/` directory and let the sync workflow carry them here.
-> npm releases run from the mirror (`release.yml`), but their content
-> always originates upstream.
-
 This repo is the source of truth published to npm as the `@guuey/*` scope:
 
 | package                                                    | what it is                                                            |
