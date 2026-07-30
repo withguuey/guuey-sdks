@@ -9,6 +9,20 @@ import { isLoggedIn, requireAuth } from '../auth';
 import { login } from './login';
 import * as out from '../output';
 
+/**
+ * `GET /v1/apps`'s per-app projection — a strict subset of the server's
+ * `AppWire` (`backend/libs/cli-wire/apps.ts`), pinned field-for-field by
+ * `wire-sync.test.ts`.
+ *
+ * NOT a member: `hasBYOK`. It was declared and rendered here (a `BYOK`
+ * column in `apps list`, a `BYOK:` line in `apps get`) but `toWire` has
+ * NEVER sent it — the field lives on the `GuueyApp` model and is reachable
+ * over AppSync, not over this REST surface — so both readings were
+ * permanently `undefined` and both surfaces permanently printed `no`. The
+ * sync guard is what surfaced it (guuey#33); `guuey byok list` is the
+ * command that actually knows. Same bug class as the `displayName` note
+ * below, found the same way.
+ */
 interface AppSummary {
   id: string;
   /**
@@ -17,7 +31,6 @@ interface AppSummary {
    * `name`. Reading `.name` here silently rendered an empty column (S5).
    */
   displayName: string;
-  hasBYOK: boolean;
   createdAt: string;
 }
 
@@ -102,7 +115,6 @@ export function appsListRow(a: AppSummary): Record<string, string> {
   return {
     ID: a.id,
     Name: a.displayName,
-    BYOK: a.hasBYOK ? 'yes' : 'no',
     Created: a.createdAt?.slice(0, 10) ?? '-',
   };
 }
@@ -149,7 +161,6 @@ export async function appsGet(
 
   const app = data.app;
   console.log(`App: ${app.displayName} (${app.id})`);
-  console.log(`  BYOK:         ${app.hasBYOK ? 'yes' : 'no'}`);
   if (app.userAuthMode) console.log(`  Auth Mode:    ${app.userAuthMode}`);
   if (app.userAuthConfig?.issuerUrl)
     console.log(`  Issuer:       ${app.userAuthConfig.issuerUrl}`);

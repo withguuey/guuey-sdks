@@ -87,13 +87,11 @@ describe('appsListRow', () => {
       appsListRow({
         id: 'app-1',
         displayName: 'Todo',
-        hasBYOK: false,
         createdAt: '2026-07-01T00:00:00.000Z',
       }),
     ).toEqual({
       ID: 'app-1',
       Name: 'Todo',
-      BYOK: 'no',
       Created: '2026-07-01',
     });
   });
@@ -123,7 +121,6 @@ describe('appsList', () => {
             {
               id: 'app-1',
               displayName: 'Todo',
-              hasBYOK: false,
               createdAt: '2026-07-01T00:00:00.000Z',
             },
           ],

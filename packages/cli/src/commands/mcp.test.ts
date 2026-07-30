@@ -801,8 +801,8 @@ function backendSourcePath(relativeToThisFile: string): string {
 const MCP_DEPLOY_HANDLER_PATH = backendSourcePath(
   '../../../../../backend/amplify/functions/cliApi/handlers/mcp-deploy.ts',
 );
-const HOSTING_LIVE_SERVERS_PATH = backendSourcePath(
-  '../../../../../backend/amplify/functions/shared/hosting-live-servers.ts',
+const HOSTING_STATUS_WIRE_PATH = backendSourcePath(
+  '../../../../../backend/libs/cli-wire/hosting-status.ts',
 );
 
 // ── MCP_BILLING_ROUTE — the fourth hand-synced copy, now pinned ─────────
@@ -831,34 +831,35 @@ describe('MCP_BILLING_ROUTE — sync guard against the backend copies', () => {
   );
 });
 
-// ── MCP_LAPSE_FAMILY_STATUSES — the fifth hand-synced copy, now pinned ──
+// ── MCP_LAPSE_FAMILY_STATUSES — a hand-synced copy, pinned ─────────────
 //
-// `hosting-live-servers.ts` (the Lambda side), `mcp-store.ts` (the
-// controller), `mcp-proxy`'s `types.ts` and the console's
-// `hosting-display.ts` each already guard their copy of this same three-item
-// list against the Lambda's canonical `LAPSE_FAMILY_STATUSES`. The CLI's copy
-// had none (final-review seam audit M1) — this guard reads the Lambda's
-// canonical declaration off disk (test-only; never bundled into the
-// published CLI package), exactly the same idiom as the `MCP_BILLING_ROUTE`
-// guard above.
+// The canonical list is `@guuey-private/cli-wire#LAPSE_FAMILY_STATUSES`
+// (guuey#33 moved it out of `shared/hosting-live-servers.ts`). `@guuey/cli`
+// is a PUBLISHED npm package and cli-wire is `private: true`, so a real
+// import edge is not available here — the mirror stays, guarded. The two
+// container services (`deploy-controller`, `mcp-proxy`) mirror it too, for
+// their own reason (plain-`tsc` builds), each with the same kind of guard.
+// This guard reads the canonical declaration off disk (test-only; never
+// bundled into the published CLI package), the same idiom as the
+// `MCP_BILLING_ROUTE` guard above.
 describe('MCP_LAPSE_FAMILY_STATUSES — sync guard against the backend copies', () => {
   it('is exactly lapsing/lapsed/resuming', () => {
     expect([...MCP_LAPSE_FAMILY_STATUSES]).toEqual(['lapsing', 'lapsed', 'resuming']);
   });
 
-  it.skipIf(!existsSync(HOSTING_LIVE_SERVERS_PATH))(
-    'SYNC GUARD: the Lambda-side lapse family is still exactly these three statuses',
+  it.skipIf(!existsSync(HOSTING_STATUS_WIRE_PATH))(
+    'SYNC GUARD: the canonical lapse family is still exactly these three statuses',
     () => {
-      const source = readFileSync(HOSTING_LIVE_SERVERS_PATH, 'utf8');
+      const source = readFileSync(HOSTING_STATUS_WIRE_PATH, 'utf8');
       const declaration = source.match(
         /export const LAPSE_FAMILY_STATUSES = \[([^\]]*)\] as const;/,
       );
       expect(declaration).not.toBeNull();
-      const lambdaStatuses = (declaration?.[1] ?? '')
+      const canonicalStatuses = (declaration?.[1] ?? '')
         .split(',')
         .map((entry) => entry.trim().replace(/^['"]|['"]$/g, ''))
         .filter((entry) => entry.length > 0);
-      expect(lambdaStatuses).toEqual([...MCP_LAPSE_FAMILY_STATUSES]);
+      expect(canonicalStatuses).toEqual([...MCP_LAPSE_FAMILY_STATUSES]);
     },
   );
 });
