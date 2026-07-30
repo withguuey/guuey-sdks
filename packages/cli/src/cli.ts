@@ -221,6 +221,12 @@ Apps:
                                  Styling, webhooks and rate limits are managed
                                  in the console, not here.
   apps delete [appId]           Delete an app
+  apps recover [appId]          Cancel a pending deletion inside the 30-day
+                                 window. Brings the widget signing key back
+                                 with it (same app secret, so embeds need no
+                                 changes); does NOT resume billing, so the app
+                                 returns on free-tier limits until you
+                                 resubscribe in the console.
   apps access [appId]           Set guest-chat access policy (personal apps only;
                                  workspace-owned apps 404 — use the platform UI)
     --guests <on|off>           Allow unauthenticated guest chat

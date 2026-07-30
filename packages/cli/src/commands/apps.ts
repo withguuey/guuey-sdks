@@ -397,15 +397,25 @@ export async function appsDelete(
 }
 
 /**
- * Handle `guuey apps recover [appId]`.
+ * Handle `guuey apps recover [appId]` — the undo for `guuey apps archive`.
+ *
+ * Live since guuey#41. It was a `notYetAvailable` stub before that, because
+ * the platform's restore only cancelled the deletion request: the app came
+ * back with its widget signing key still revoked, so every embed stayed dark
+ * behind a 404 JWKS. Restore now un-revokes that key — the app's original
+ * `kid` and app secret, so nothing the customer deployed has to change — which
+ * is why `signingKey` is reported below rather than assumed.
+ *
+ * The one thing recover does NOT bring back is the per-app subscription
+ * archive cancelled. Resubscribing means charging, and that is a decision the
+ * builder makes at checkout, not a side effect of an undo — so the app returns
+ * on free-tier limits until they resubscribe in the console, and this says so
+ * out loud rather than letting the next deploy fail with a tier error.
  */
 export async function appsRecover(
   appId: string | undefined,
   opts: { json?: boolean },
 ): Promise<void> {
-  out.notYetAvailable(
-    "guuey apps recover isn't available yet — archived apps are kept 30 days before hard delete; restore is on the guuey launch roadmap.",
-  );
   if (!appId) {
     out.error('App ID is required. Use: guuey apps recover <appId>');
     process.exit(1);
@@ -414,11 +424,38 @@ export async function appsRecover(
   const res = await apiRequest('POST', `/apps/${appId}/recover`);
   if (!res.ok) return handleError(res);
 
+  const data = (await res.json()) as {
+    recovered: boolean;
+    appId: string;
+    requestedAt: string;
+    signingKey:
+      | 'restored'
+      | 'already-live'
+      | 'left-revoked'
+      | 'no-enrolment'
+      | 'unprovisioned';
+  };
+
   if (opts.json) {
-    out.json({ recovered: true, appId });
-  } else {
-    out.success(`Recovered app ${appId}`);
+    out.json(data);
+    return;
   }
+
+  out.success(`Recovered app ${appId}`);
+  if (data.signingKey === 'restored' || data.signingKey === 'already-live') {
+    console.log('  Widget signing key is live again — embeds need no changes.');
+  } else if (data.signingKey === 'left-revoked') {
+    console.log(
+      '  Widget signing key stays revoked — you revoked it yourself, so recover',
+    );
+    console.log(
+      '  left it alone. Run `guuey widget keys create` to re-enrol (new app secret).',
+    );
+  }
+  console.log(
+    '  Billing was not resumed: the app is on free-tier limits until you',
+  );
+  console.log('  resubscribe in the console.');
 }
 
 /**
