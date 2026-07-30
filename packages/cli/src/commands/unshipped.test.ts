@@ -17,7 +17,6 @@ import { stop, start, restart } from './agent-lifecycle.js';
 import { slugClaim } from './slug.js';
 import { deploymentsRollback, deploymentsLogs } from './deployments.js';
 import { agentConfig } from './agent.js';
-import { appsRecover } from './apps.js';
 
 /** Thrown by the process.exit mock so execution stops like the real thing. */
 class ExitSignal extends Error {
@@ -41,7 +40,10 @@ const gatedCommands: Array<{ name: string; run: () => Promise<void> }> = [
   { name: 'guuey deployments rollback', run: () => deploymentsRollback('3') },
   { name: 'guuey deployments logs', run: () => deploymentsLogs('3', {}) },
   { name: 'guuey agent config', run: () => agentConfig({}) },
-  { name: 'guuey apps recover', run: () => appsRecover('app-123', {}) },
+  // `guuey apps recover` left this list in guuey#41, per the "delete the
+  // matching case when a route ships" instruction above: its cliApi route
+  // (`POST /v1/apps/:id/recover`) now exists, so the command reaches the
+  // network like any other. Its coverage moved to `apps.recover.test.ts`.
 ];
 
 describe('unshipped command gates', () => {
