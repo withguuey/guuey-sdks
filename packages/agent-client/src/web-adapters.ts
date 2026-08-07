@@ -276,6 +276,7 @@ export function createWebAdapters(
               return await fetchThreadHistory({
                 baseUrl: apiBaseUrl,
                 threadId,
+                includeCards: true,
                 requestInit: { headers: { Authorization: `Bearer ${token}` } },
               });
             } catch (err) {
@@ -292,6 +293,7 @@ export function createWebAdapters(
               return fetchThreadHistory({
                 baseUrl: apiBaseUrl,
                 threadId,
+                includeCards: true,
                 requestInit: { headers: { Authorization: `Bearer ${fresh}` } },
               });
             }
@@ -302,6 +304,7 @@ export function createWebAdapters(
           return fetchThreadHistory({
             baseUrl: apiBaseUrl,
             threadId,
+            includeCards: true,
             requestInit: { headers: { [GUEST_HEADER]: guest } },
           });
         }

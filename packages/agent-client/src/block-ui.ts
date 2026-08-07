@@ -86,7 +86,12 @@ export function scanProviderRawForUiResource(
  * Extract a mountable UI resource from an opaque AgBlock-shaped `JsonValue`
  * (used for persisted card snapshot parts, which arrive untyped). Dispatches
  * by `block.type`:
- *   - `tool-result` → its `uiData` surface channel
+ *   - `tool-result` → its `uiData` surface channel, then a `ui://` resource
+ *     degraded into a `provider-raw` content part — the SAME two channels
+ *     the live path ({@link toolResultUiResource}) mounts. The write side
+ *     (`nocode-runtime`'s `uiCardArtifactsFromMessages`, guuey#86) persists
+ *     card rows for both, so the snapshot arm must mount both or
+ *     provider-raw-only cards rehydrate as placeholders.
  *   - `provider-raw` → a `ui://` resource hiding in `raw`
  *   - `resource`     → a first-class embedded resource (gated on `ui://`)
  * Everything else → `undefined`.
@@ -94,8 +99,19 @@ export function scanProviderRawForUiResource(
 export function blockUiResource(block: JsonValue): McpUiResourcePayload | undefined {
   if (!isJsonObject(block)) return undefined;
   switch (block.type) {
-    case "tool-result":
-      return asUiResource(block.uiData);
+    case "tool-result": {
+      const fromUiData = asUiResource(block.uiData);
+      if (fromUiData) return fromUiData;
+      if (Array.isArray(block.content)) {
+        for (const part of block.content) {
+          if (isJsonObject(part) && part.type === "provider-raw") {
+            const found = scanProviderRawForUiResource(part.raw);
+            if (found) return found;
+          }
+        }
+      }
+      return undefined;
+    }
     case "provider-raw":
       return scanProviderRawForUiResource(block.raw);
     case "resource": {

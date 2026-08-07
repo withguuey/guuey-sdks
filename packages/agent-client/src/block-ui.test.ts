@@ -232,3 +232,38 @@ describe("sortHistoryCards", () => {
     expect(out[1].at).toBe("second");
   });
 });
+
+describe("blockUiResource — tool-result provider-raw arm (guuey#86 snapshot parity)", () => {
+  const uiResource = { uri: "ui://checklist/1", mimeType: "text/html", text: "<html>card</html>" };
+
+  it("mounts a snapshot tool-result whose UI rides only a provider-raw content part", () => {
+    const block = {
+      type: "tool-result",
+      toolCallId: "c1",
+      content: [{ type: "provider-raw", provider: "anthropic", raw: { resource: uiResource } }],
+    };
+    expect(blockUiResource(block)).toEqual(uiResource);
+  });
+
+  it("still prefers uiData over the content scan", () => {
+    const surfaced = { uri: "ui://surfaced/1", text: "<html>surfaced</html>" };
+    const block = {
+      type: "tool-result",
+      toolCallId: "c1",
+      content: [{ type: "provider-raw", provider: "anthropic", raw: { resource: uiResource } }],
+      uiData: surfaced,
+    };
+    expect(blockUiResource(block)).toEqual(surfaced);
+  });
+
+  it("keeps rejecting non-ui:// provider-raw resources in the content scan", () => {
+    const block = {
+      type: "tool-result",
+      toolCallId: "c1",
+      content: [
+        { type: "provider-raw", provider: "anthropic", raw: { resource: { uri: "file://a.txt", text: "hi" } } },
+      ],
+    };
+    expect(blockUiResource(block)).toBeUndefined();
+  });
+});
