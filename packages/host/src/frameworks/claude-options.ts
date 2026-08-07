@@ -336,6 +336,15 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
     model,
     mcpServers,
     allowedTools,
+    // Token streaming (guuey#91 consumer half): the SDK interleaves
+    // `stream_event` partials, which `@silverprotocol/claude-agent-sdk` ≥0.4
+    // maps to token-granular text/reasoning/tool.args deltas and dedupes
+    // against the complete assistant message that follows. The Router passes
+    // stream_event through its structural SDKMessage guard untouched, and the
+    // render meter never reads partials (it bills user-message tool-results,
+    // idempotent by tool_use id), so this flag's only observable effect is
+    // incremental frames on the SSE wire.
+    includePartialMessages: true,
     // With GuueyFS layers bound, expose the file tools PLUS real `Bash`; without
     // them this is byte-identical to the source (purely MCP-driven). `Bash` is
     // safe here because the host already runs inside the Router's bubblewrap

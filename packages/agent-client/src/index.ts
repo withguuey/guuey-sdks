@@ -60,9 +60,6 @@ export {
   type CardMount,
   type CardMountChannel,
 } from "./card-mount";
-// The block-preserving fold: the pinned `Reducer` plus `_meta` carriage onto
-// `tool-result` blocks (which the reducer drops, and generative UI needs).
-export { BlockFold, withToolResultMeta } from "./fold";
 // Re-export the AgJSON types the block-preserving transcript surfaces, so
 // consumers can name `reduceResult` / block types without a direct
 // `@silverprotocol/core` import.

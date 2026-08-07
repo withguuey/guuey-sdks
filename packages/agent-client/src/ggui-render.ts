@@ -26,9 +26,8 @@
  *
  *  1. **`uiData.resourceUri` is the RECOGNITION signal.** It is the only part
  *     of the render's identity that survives `@silverprotocol/core`'s fold
- *     (the reducer copies `uiData` onto the `tool-result` block but drops
- *     `ev._meta` — see `fold.ts` for the guuey-side carriage that puts it
- *     back).
+ *     (the reducer copies `uiData` — and, as of `@silverprotocol/core`
+ *     0.4.1 (workspace#9), `_meta` — onto the `tool-result` block).
  *  2. **`_meta["ai.ggui/render"]` is the MOUNT MATERIAL.** Everything needed
  *     to boot the card — which runtime bundle to load, which live-channel to
  *     open, which props to seed — lives there and nowhere else.
@@ -256,7 +255,7 @@ export function gguiShellHtml(bootstrap: GguiRenderBootstrap): string {
  * `contractHash`, `blueprintId`, `variantKey`, `cache`, `nextStep`, and that is
  * all. So a bootstrap-less descriptor could only ever produce a blank frame;
  * returning `undefined` and letting the host show its own placeholder is the
- * honest answer, not a deferral. `@guuey/agent-client`'s `BlockFold` is what
+ * honest answer, not a deferral. `@silverprotocol/core`'s `Reducer` is what
  * puts `_meta` on the block for a live turn, in-repo, today.
  */
 export function gguiRenderResource(
