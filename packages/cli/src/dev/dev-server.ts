@@ -6,7 +6,12 @@
  * sandboxed pod. Deliberately minimal vs. the pod: no persistence (in-memory
  * per-session history only), no render metering, no reducer/fold, no
  * ceiling timer, no JWT auth — those are platform concerns this local loop
- * doesn't need.
+ * doesn't need. The in-memory history IS served back over
+ * `GET /threads/:id/messages` (guuey#110) in the read-plane's row shape
+ * (`@guuey/agent-client`'s `fetchThreadHistory` contract), so a client
+ * reload repaints against the dev server the same way it does hosted —
+ * text rows only (no fold means no `kind:'card'` rows locally), and a
+ * restart forgets sessions, surfacing as 404 → the client's `gone` path.
  *
  * `sendEvent`'s two-line framing (`event: <name>\ndata: <JSON>\n\n`) MUST
  * byte-match the pod's `sendEvent` (`sse-server.ts:1166`) — the chat client
@@ -80,7 +85,9 @@ export interface DevServerHandle {
 }
 
 interface SessionState {
-  history: Array<{ role: "user" | "agent"; text: string }>;
+  /** `at` rides along for the history route's row shape; the worker driver's
+   *  `LocalRunInput['history']` only reads `role`/`text` (structural). */
+  history: Array<{ role: "user" | "agent"; text: string; at: string }>;
 }
 
 function sendEvent(res: ServerResponse, event: string, data: unknown): void {
@@ -304,9 +311,61 @@ function sessionFs(projectRoot: string, sessionId: string): LocalRunInput["fs"] 
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  // Authorization / x-guuey-guest: the client's history reader attaches its
+  // host identity headers unconditionally (`fetchThreadHistory` requestInit);
+  // the dev server ignores them, but the browser preflight must not.
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, x-guuey-guest",
 };
+
+/** `GET /threads/:id/messages` — the read-plane route the dev server mirrors. */
+const THREAD_MESSAGES_ROUTE = /^\/threads\/([^/]+)\/messages$/;
+
+/** Page size cap, matching the client's `HISTORY_PAGE_LIMIT`. */
+const HISTORY_MAX_LIMIT = 100;
+
+/**
+ * Serve a session's in-memory history in the public read-plane's wire shape
+ * (guuey#110): `{ rows, nextToken }`, rows ascending by seq, `nextToken` a
+ * plain offset. Thread id = the `sessionId` the first SSE `session` frame
+ * handed the client. Unknown ids 404 — a restarted dev server forgot its
+ * sessions, and the client's `gone` handling (drop the stale id, start
+ * fresh) is exactly the right local behavior.
+ */
+function handleThreadMessages(
+  res: ServerResponse,
+  sessions: Map<string, SessionState>,
+  threadId: string,
+  searchParams: URLSearchParams,
+): void {
+  const state = sessions.get(threadId);
+  if (!state) {
+    res.writeHead(404, { "Content-Type": "application/json", ...CORS_HEADERS });
+    res.end(JSON.stringify({ error: "unknown thread" }));
+    return;
+  }
+  const limitRaw = Number(searchParams.get("limit") ?? String(HISTORY_MAX_LIMIT));
+  const limit =
+    Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, HISTORY_MAX_LIMIT) : HISTORY_MAX_LIMIT;
+  const tokenRaw = searchParams.get("nextToken");
+  const offset = tokenRaw === null ? 0 : Number(tokenRaw);
+  if (!Number.isInteger(offset) || offset < 0) {
+    res.writeHead(400, { "Content-Type": "application/json", ...CORS_HEADERS });
+    res.end(JSON.stringify({ error: "nextToken must be a non-negative integer offset" }));
+    return;
+  }
+  const rows = state.history.slice(offset, offset + limit).map((entry, i) => ({
+    seq: offset + i + 1,
+    at: entry.at,
+    kind: "text",
+    authorRole: entry.role,
+    text: entry.text,
+  }));
+  const consumed = offset + rows.length;
+  const nextToken = consumed < state.history.length ? String(consumed) : null;
+  res.writeHead(200, { "Content-Type": "application/json", ...CORS_HEADERS });
+  res.end(JSON.stringify({ rows, nextToken }));
+}
 
 async function handleInvoke(
   req: IncomingMessage,
@@ -394,8 +453,10 @@ async function handleInvoke(
       const flushed = normalizer.flush();
       if (flushed.length > 0) sendEvent(res, "message", flushed);
     }
-    state.history.push({ role: "user", text: body.input });
-    if (agentText) state.history.push({ role: "agent", text: agentText });
+    state.history.push({ role: "user", text: body.input, at: new Date().toISOString() });
+    if (agentText) {
+      state.history.push({ role: "agent", text: agentText, at: new Date().toISOString() });
+    }
     sendEvent(res, "done", { stopReason });
   } catch (err) {
     sendEvent(res, "error", {
@@ -419,13 +480,19 @@ async function handleRequest(
     res.end("ok");
     return;
   }
-  if (req.method === "OPTIONS" && req.url === "/agent/invoke") {
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const threadMatch = THREAD_MESSAGES_ROUTE.exec(url.pathname);
+  if (req.method === "OPTIONS" && (req.url === "/agent/invoke" || threadMatch !== null)) {
     res.writeHead(204, CORS_HEADERS);
     res.end();
     return;
   }
   if (req.method === "POST" && req.url === "/agent/invoke") {
     await handleInvoke(req, res, opts, driver, sessions);
+    return;
+  }
+  if (req.method === "GET" && threadMatch !== null) {
+    handleThreadMessages(res, sessions, decodeURIComponent(threadMatch[1]!), url.searchParams);
     return;
   }
   res.writeHead(404, { "Content-Type": "text/plain" });

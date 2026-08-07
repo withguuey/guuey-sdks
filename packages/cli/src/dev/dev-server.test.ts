@@ -440,3 +440,107 @@ describe("the local credential broker (graceful mode)", () => {
     expect(cred.url).toBe("http://localhost:6782/mcp");
   });
 });
+
+describe("GET /threads/:id/messages (guuey#110)", () => {
+  async function bootAndRunTwoTurns(): Promise<{ port: number; sessionId: string }> {
+    srv = await startDevServer({
+      port: 0,
+      framework: "fixture",
+      protocol: "bypass",
+      workerCommand: process.execPath,
+      workerArgs: [echoFixture],
+      agentSnapshotJson: "{}",
+      projectRoot: freshProjectRoot(),
+    });
+    const first = await fetch(`http://localhost:${srv.port}/agent/invoke`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input: "turn one" }),
+    });
+    const sessionId = /"sessionId":"([^"]+)"/.exec(await first.text())?.[1];
+    if (!sessionId) throw new Error("no sessionId in first turn");
+    const second = await fetch(`http://localhost:${srv.port}/agent/invoke`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input: "turn two", sessionId }),
+    });
+    await second.text();
+    return { port: srv.port, sessionId };
+  }
+
+  it("serves the session history in the read-plane row shape", async () => {
+    const { port, sessionId } = await bootAndRunTwoTurns();
+    const res = await fetch(`http://localhost:${port}/threads/${sessionId}/messages?limit=100`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      rows: Array<{ seq: number; at: string; kind: string; authorRole: string; text: string }>;
+      nextToken: string | null;
+    };
+    expect(body.nextToken).toBeNull();
+    expect(body.rows.map((r) => [r.seq, r.kind, r.authorRole, r.text])).toEqual([
+      [1, "text", "user", "turn one"],
+      [2, "text", "agent", "echo:turn one"],
+      [3, "text", "user", "turn two"],
+      [4, "text", "agent", "echo:turn two"],
+    ]);
+    for (const row of body.rows) {
+      expect(Number.isNaN(Date.parse(row.at))).toBe(false);
+    }
+  });
+
+  it("pages ascending with offset nextTokens", async () => {
+    const { port, sessionId } = await bootAndRunTwoTurns();
+    const page1 = (await (
+      await fetch(`http://localhost:${port}/threads/${sessionId}/messages?limit=3`)
+    ).json()) as { rows: Array<{ seq: number }>; nextToken: string | null };
+    expect(page1.rows.map((r) => r.seq)).toEqual([1, 2, 3]);
+    expect(page1.nextToken).toBe("3");
+    const page2 = (await (
+      await fetch(
+        `http://localhost:${port}/threads/${sessionId}/messages?limit=3&nextToken=${page1.nextToken}`,
+      )
+    ).json()) as { rows: Array<{ seq: number }>; nextToken: string | null };
+    expect(page2.rows.map((r) => r.seq)).toEqual([4]);
+    expect(page2.nextToken).toBeNull();
+  });
+
+  it("404s an unknown thread id (client's `gone` path on dev-server restart)", async () => {
+    srv = await startDevServer({
+      port: 0,
+      framework: "fixture",
+      protocol: "bypass",
+      workerCommand: process.execPath,
+      workerArgs: [echoFixture],
+      agentSnapshotJson: "{}",
+      projectRoot: freshProjectRoot(),
+    });
+    const res = await fetch(`http://localhost:${srv.port}/threads/nope/messages`);
+    expect(res.status).toBe(404);
+  });
+
+  it("400s a malformed nextToken", async () => {
+    const { port, sessionId } = await bootAndRunTwoTurns();
+    const res = await fetch(
+      `http://localhost:${port}/threads/${sessionId}/messages?nextToken=banana`,
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("answers the CORS preflight for the history route", async () => {
+    srv = await startDevServer({
+      port: 0,
+      framework: "fixture",
+      protocol: "bypass",
+      workerCommand: process.execPath,
+      workerArgs: [echoFixture],
+      agentSnapshotJson: "{}",
+      projectRoot: freshProjectRoot(),
+    });
+    const res = await fetch(`http://localhost:${srv.port}/threads/any/messages`, {
+      method: "OPTIONS",
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get("access-control-allow-methods")).toContain("GET");
+    expect(res.headers.get("access-control-allow-headers")).toContain("Authorization");
+  });
+});

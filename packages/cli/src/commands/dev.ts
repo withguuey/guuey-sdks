@@ -2,10 +2,13 @@
  * `guuey dev --serve` — boot a local, pod-parity SSE server against the
  * project's own worker build (Task 11).
  *
- * Loads `guuey.json`, resolves the worker entry (`guuey.json#worker` when
- * declared, else `<root>/guuey.worker.js`), preflights the framework's LLM
- * key, lowers the agent's `mcpServers` for local dev (`lowerForDev`), and
- * hands off to `startDevServer` (`../dev/dev-server.js`).
+ * Loads `guuey.json`, resolves the boot mode — `#worker` (or a default
+ * build) → full-worker; `#agent.entry` → entry-graceful host (google-adk);
+ * neither, on a snapshot-driven framework (claude-agent-sdk /
+ * openai-agents-sdk) → snapshot-only host boot, zero agent code (guuey#111)
+ * — preflights the framework's LLM key, lowers the agent's `mcpServers`
+ * for local dev (`lowerForDev`), and hands off to `startDevServer`
+ * (`../dev/dev-server.js`).
  *
  * Without `--serve`, prints the Expo-style QR/bridge "coming soon" note —
  * the bridge-gateway flow (`guuey dev` w/o flags) lands slice 2+.
@@ -60,6 +63,31 @@ function parseEnvLocal(path: string): Record<string, string> {
     env[key] = value;
   }
   return env;
+}
+
+/**
+ * Snapshot-only host boot decision (guuey#111): for frameworks whose host
+ * runner is snapshot-driven (claude-agent-sdk / openai-agents-sdk —
+ * `agentEntry: false` in @guuey/host's framework registry), a project with
+ * no `#worker`, no `#agent.entry`, and no default worker build boots the
+ * SAME universal host a production pod runs, from `GUUEY_AGENT_SNAPSHOT`
+ * alone — zero agent code, zero build step. A declared worker, or a build
+ * present at the default path, still wins (the builder wrote it; never
+ * silently ignore it). google-adk stays entry/worker-driven — its runner
+ * LOADS the agent module.
+ */
+export function isSnapshotOnlyBoot(input: {
+  worker: string | undefined;
+  agentEntry: string | undefined;
+  framework: string;
+  defaultWorkerBuildExists: boolean;
+}): boolean {
+  return (
+    input.worker === undefined &&
+    input.agentEntry === undefined &&
+    input.framework !== 'google-adk' &&
+    !input.defaultWorkerBuildExists
+  );
 }
 
 function printComingSoon(): void {
@@ -144,26 +172,36 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
   const gracefulEntry = loaded.doc.worker === undefined ? loaded.doc.agent.entry : undefined;
   if (gracefulEntry !== undefined && framework !== 'google-adk') {
     out.error(
-      `guuey.json#agent.entry (graceful mode) currently supports framework google-adk only — ` +
-        `"${framework}" needs a full worker (serveNative). Remove agent.entry or switch framework.`,
+      `guuey.json#agent.entry (graceful mode) supports framework google-adk only — ` +
+        `"${framework}" agents are snapshot-only (the host ignores an agent entry). ` +
+        `Remove agent.entry: with no #worker either, guuey dev --serve boots @guuey/host ` +
+        `from guuey.json directly, no build step.`,
     );
     process.exit(1);
     return;
   }
   const builtEntry = join(projectRoot, gracefulEntry ?? loaded.doc.worker ?? 'guuey.worker.js');
-  if (!existsSync(builtEntry)) {
+  const snapshotOnly = isSnapshotOnlyBoot({
+    worker: loaded.doc.worker,
+    agentEntry: loaded.doc.agent.entry,
+    framework,
+    defaultWorkerBuildExists: existsSync(builtEntry),
+  });
+  if (!snapshotOnly && !existsSync(builtEntry)) {
     out.error(
       `${gracefulEntry !== undefined ? 'Agent entry' : 'Worker entry'} not found at ${builtEntry} — run pnpm build first (or pnpm dev which watches).`,
     );
     process.exit(1);
     return;
   }
+  const hostMode = gracefulEntry !== undefined || snapshotOnly;
   let workerEntry = builtEntry;
-  if (gracefulEntry !== undefined) {
-    // Production topology, locally: node <@guuey/host> with the entry env.
+  if (hostMode) {
+    // Production topology, locally: node <@guuey/host>. Entry-graceful mode
+    // (google-adk) additionally points the host at the built agent module.
     const require = createRequire(import.meta.url);
     workerEntry = require.resolve('@guuey/host');
-    process.env.GUUEY_AGENT_ENTRY = gracefulEntry;
+    if (gracefulEntry !== undefined) process.env.GUUEY_AGENT_ENTRY = gracefulEntry;
     process.env.GUUEY_WORKER_ROOT = projectRoot;
   }
 
@@ -189,11 +227,11 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
   const { agent, colocatedNames } = lowerForDev(snapshotAgent);
   const agentSnapshotJson = JSON.stringify(agent);
 
-  // Graceful mode: the CLI is also the LOCAL credential broker — the host
-  // sources MCP exclusively from cred files (production contract), which
-  // nothing else writes locally.
+  // Host modes (entry-graceful AND snapshot-only): the CLI is also the LOCAL
+  // credential broker — the host sources MCP exclusively from cred files
+  // (production contract), which nothing else writes locally.
   const localCredentials =
-    gracefulEntry !== undefined
+    hostMode
       ? Object.fromEntries(
           declaredServerEntries(agent.mcpServers).flatMap(([name, s]) =>
             s.kind === 'external' && typeof s.url === 'string'
@@ -209,8 +247,7 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
   // project has been through `guuey create`/`guuey pull --app-id`, else the
   // literal `'local'`.
   const devAppId = loaded.doc.appId ?? 'local';
-  const devIdentity =
-    gracefulEntry !== undefined ? { colocatedNames, devAppId } : undefined;
+  const devIdentity = hostMode ? { colocatedNames, devAppId } : undefined;
 
   const srv = await startDevServer({
     port,
@@ -224,8 +261,14 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
     ...(devIdentity !== undefined ? { devIdentity } : {}),
   });
 
+  if (snapshotOnly) {
+    console.log(
+      `\nSnapshot-only mode: no worker build found — booting @guuey/host straight from guuey.json (production topology).`,
+    );
+  }
   console.log(`\nguuey dev server listening on http://localhost:${srv.port}`);
-  console.log(`  POST /agent/invoke   (SSE stream)`);
+  console.log(`  POST /agent/invoke              (SSE stream)`);
+  console.log(`  GET  /threads/:id/messages      (in-memory history, read-plane shape)`);
   console.log(`  GET  /healthz\n`);
   console.log('Example:');
   console.log(
