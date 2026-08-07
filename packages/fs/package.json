@@ -1,6 +1,6 @@
 {
   "name": "@guuey/fs",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "GuueyFS dev-guidance helper — homeDir()/appDir()/sessionDir() read the three env-var/cwd paths the guuey Router injects into every hosted agent. No wrapper API: plain node:fs on the returned paths IS the contract.",
   "license": "MIT",
   "type": "module",
