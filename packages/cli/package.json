@@ -1,6 +1,6 @@
 {
   "name": "@guuey/cli",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publishConfig": {
     "access": "public"
   },
@@ -26,6 +26,7 @@
   ],
   "scripts": {
     "build": "tsup",
+    "prepack": "rm -rf dist && pnpm build",
     "dev": "tsup --watch",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
