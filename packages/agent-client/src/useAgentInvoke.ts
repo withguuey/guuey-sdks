@@ -34,6 +34,7 @@ import {
 import { ingestMessageFrame } from "./blocks";
 import type {
   AgentInvokeAdapters,
+  AgentInvokeStatus,
   AgentMessage,
   HistoryCard,
   HistoryLoadResult,
@@ -72,7 +73,11 @@ export function applyHistoryResult(
 export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeReturn {
   const { endpointUrl, appId } = opts;
   const [messages, setMessages] = useState<AgentMessage[]>([]);
-  const [isStreaming, setIsStreaming] = useState(false);
+  // Per-turn lifecycle (guuey#91) — derived purely from the frames below; see
+  // the `AgentInvokeStatus` doc for the state meanings. `activeTool` carries
+  // the wire tool name only while status is 'using-tool'.
+  const [status, setStatus] = useState<AgentInvokeStatus>("ready");
+  const [activeTool, setActiveTool] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
   // Opt-in block-preserving transcript. `reduceResult` follows the
@@ -126,7 +131,8 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     setThreadId(null);
     setMessages([]);
     setError(null);
-    setIsStreaming(false);
+    setStatus("ready");
+    setActiveTool(null);
     // Fresh conversation → drop the old fold; the reducer is rebuilt lazily on
     // the next valid AgEvent. Persisted cards are re-seeded below from history.
     reducerRef.current = null;
@@ -215,7 +221,8 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     void adaptersRef.current.storage.save(threadStorageKey(appId), "");
     setMessages([]);
     setError(null);
-    setIsStreaming(false);
+    setStatus("ready");
+    setActiveTool(null);
     // Re-create the reducer for the new conversation (rebuilt lazily on the
     // next valid AgEvent) and clear the exposed fold + any rehydrated cards.
     reducerRef.current = null;
@@ -235,9 +242,9 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
 
   const send = useCallback(
     async (input: string) => {
-      if (!endpointUrl || !input.trim() || isStreaming) return;
+      if (!endpointUrl || !input.trim() || status !== "ready") return;
       setError(null);
-      setIsStreaming(true);
+      setStatus("connecting");
       setMessages((prev) => [...prev, { role: "user", text: input }, { role: "assistant", text: "" }]);
 
       const controller = new AbortController();
@@ -250,7 +257,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         await hydrationRef.current;
       }
       if (controller.signal.aborted) {
-        setIsStreaming(false);
+        setStatus("ready");
         abortRef.current = null;
         return;
       }
@@ -284,6 +291,10 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
           buffer = rest;
           for (const ev of events) {
             if (ev.event === "session") {
+              // The pod is awake and the turn is admitted — 'connecting' ends
+              // here (this frame arrives within ~1s of a warm pod; a cold
+              // scale-to-zero start is exactly the long 'connecting' phase).
+              setStatus("thinking");
               const tid = stringField(ev.data, "threadId");
               if (tid) {
                 threadIdRef.current = tid;
@@ -291,6 +302,26 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
                 void adapters.storage.save(threadStorageKey(appId), tid);
               }
             } else if (ev.event === "message") {
+              // Status derivation (guuey#91) — read the frame's `type` before
+              // the text fold. Silver frames announce tools + text explicitly;
+              // bypass frames ('text' / 'assistant' SDKMessages) only ever
+              // carry assistant text, so they map to 'responding'. Unknown
+              // types deliberately leave the status untouched.
+              const frameType = stringField(ev.data, "type");
+              if (frameType === "tool.start") {
+                setStatus("using-tool");
+                setActiveTool(stringField(ev.data, "name") ?? null);
+              } else if (frameType === "tool.done") {
+                setStatus("thinking");
+                setActiveTool(null);
+              } else if (
+                frameType === "text.start" ||
+                frameType === "text.delta" ||
+                frameType === "text" ||
+                frameType === "assistant"
+              ) {
+                setStatus("responding");
+              }
               renderAssistant(reduceAssistantText(assistantText, ev.data));
               // Additively fold the SAME frame into the AgJSON reducer when
               // opted in. The text surface above is untouched; only VALID
@@ -328,7 +359,8 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
           setError(e instanceof Error ? e.message : "failed to reach agent");
         }
       } finally {
-        setIsStreaming(false);
+        setStatus("ready");
+        setActiveTool(null);
         abortRef.current = null;
         // A turn aborted before any assistant text streamed leaves an empty
         // placeholder bubble — drop it so a stopped turn doesn't linger as a
@@ -343,13 +375,14 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         }
       }
     },
-    [endpointUrl, appId, isStreaming],
+    [endpointUrl, appId, status],
   );
 
   return {
     messages,
     send,
-    isStreaming,
+    status,
+    activeTool,
     error,
     threadId,
     abort,

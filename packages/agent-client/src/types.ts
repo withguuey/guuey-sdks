@@ -143,10 +143,36 @@ export interface UseAgentInvokeOptions {
   preserveBlocks?: boolean;
 }
 
+/**
+ * The per-turn lifecycle (guuey#91), derived ENTIRELY from frames the pod
+ * already emits — no protocol addition:
+ *
+ *  - `ready`      — no turn in flight (initial, after `done`/failure/abort).
+ *  - `connecting` — `send()` fired, no `session` frame yet. With
+ *    scale-to-zero pods this phase can span a cold start, so hosts typically
+ *    swap to "waking your agent" copy after a few seconds.
+ *  - `thinking`   — the pod is awake and the turn is running, but no text is
+ *    flowing and no tool is announced (between `session` and the first
+ *    content, and between a `tool.done` and whatever follows it).
+ *  - `using-tool` — a `tool.start` frame arrived; {@link UseAgentInvokeReturn.activeTool}
+ *    carries the wire tool name until the matching `tool.done`.
+ *  - `responding` — assistant text is arriving (`text.start`/`text.delta`
+ *    silver frames, or bypass text/assistant frames).
+ *
+ * Failure keeps its own channel ({@link UseAgentInvokeReturn.error}) — there
+ * is deliberately no `error` status: after any terminal outcome the status
+ * returns to `ready` so the composer re-enables.
+ */
+export type AgentInvokeStatus = "ready" | "connecting" | "thinking" | "using-tool" | "responding";
+
 export interface UseAgentInvokeReturn {
   messages: AgentMessage[];
   send: (input: string) => Promise<void>;
-  isStreaming: boolean;
+  /** The per-turn lifecycle — see {@link AgentInvokeStatus}. Anything other
+   *  than `ready` means a turn is in flight (the old `isStreaming === true`). */
+  status: AgentInvokeStatus;
+  /** The active tool's wire name while `status === 'using-tool'`, else null. */
+  activeTool: string | null;
   error: string | null;
   threadId: string | null;
   /** Abort the in-flight turn (the stream stops; partial text is kept). */

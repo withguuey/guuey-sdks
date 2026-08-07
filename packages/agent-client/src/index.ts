@@ -78,6 +78,7 @@ export type {
   InvokeTransport,
   AgentInvokeAdapters,
   AgentInvokeHistoryAdapter,
+  AgentInvokeStatus,
   HistoryLoadResult,
   UseAgentInvokeOptions,
   UseAgentInvokeReturn,
