@@ -1,0 +1,69 @@
+{
+  "name": "@guuey/threads",
+  "version": "0.2.2",
+  "description": "Universal session/thread persistence for AgJSON agents — the ThreadStore contract (append-fold, history, snapshots), the fold↔row mapping, and an in-memory binding. Guuey's hosted runtime is one binding; implement the port against your own store and run the exported contract suite for the same guarantees.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/contract-suite.d.ts",
+      "import": "./dist/testing/contract-suite.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "rm -rf dist && pnpm build",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@silverprotocol/core": "0.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "guuey",
+    "threads",
+    "sessions",
+    "persistence",
+    "rehydration",
+    "agjson",
+    "agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/withguuey/guuey-sdks.git",
+    "directory": "packages/threads"
+  },
+  "homepage": "https://guuey.com",
+  "bugs": {
+    "url": "https://github.com/loqu-co/guuey/issues"
+  },
+  "peerDependencies": {
+    "vitest": "^3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "vitest": {
+      "optional": true
+    }
+  }
+}

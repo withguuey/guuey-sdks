@@ -240,7 +240,7 @@ describe("blockUiResource — tool-result provider-raw arm (guuey#86 snapshot pa
     const block = {
       type: "tool-result",
       toolCallId: "c1",
-      content: [{ type: "provider-raw", provider: "anthropic", raw: { resource: uiResource } }],
+      content: [{ type: "provider-raw", vendor: "anthropic", raw: { resource: uiResource } }],
     };
     expect(blockUiResource(block)).toEqual(uiResource);
   });
@@ -250,7 +250,7 @@ describe("blockUiResource — tool-result provider-raw arm (guuey#86 snapshot pa
     const block = {
       type: "tool-result",
       toolCallId: "c1",
-      content: [{ type: "provider-raw", provider: "anthropic", raw: { resource: uiResource } }],
+      content: [{ type: "provider-raw", vendor: "anthropic", raw: { resource: uiResource } }],
       uiData: surfaced,
     };
     expect(blockUiResource(block)).toEqual(surfaced);
@@ -261,7 +261,7 @@ describe("blockUiResource — tool-result provider-raw arm (guuey#86 snapshot pa
       type: "tool-result",
       toolCallId: "c1",
       content: [
-        { type: "provider-raw", provider: "anthropic", raw: { resource: { uri: "file://a.txt", text: "hi" } } },
+        { type: "provider-raw", vendor: "anthropic", raw: { resource: { uri: "file://a.txt", text: "hi" } } },
       ],
     };
     expect(blockUiResource(block)).toBeUndefined();
