@@ -38,13 +38,15 @@ allowBuilds:
   sharp: false
 
 # pnpm 11's supply-chain age gate (minimumReleaseAge, default 1440 min in
-# fresh CI) blocks deps published <24h ago. @silverprotocol/* is FIRST-PARTY
-# (we publish it, often consumed same-day — the 0.3.2 bump tripped this in
-# the v0.1.2 release gate), so exclude the scope's packages UNVERSIONED:
-# exact name@version pins would need editing on every silverprotocol
-# release. Third-party deps keep the full age gate.
+# fresh CI) blocks deps published <24h ago. @silverprotocol/* and @ggui-ai/*
+# are FIRST-PARTY (we publish both, often consumed same-day — the
+# silverprotocol 0.3.2 bump tripped this in the v0.1.2 release gate;
+# @ggui-ai/protocol 0.6.3 tripped it again in v0.2.3), so exclude those
+# packages UNVERSIONED: exact name@version pins would need editing on every
+# same-day release. Third-party deps keep the full age gate.
 minimumReleaseAgeExclude:
   - "@silverprotocol/core"
   - "@silverprotocol/claude-agent-sdk"
   - "@silverprotocol/openai-agents"
   - "@silverprotocol/google-adk"
+  - "@ggui-ai/protocol"
