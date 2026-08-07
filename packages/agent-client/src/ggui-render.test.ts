@@ -161,15 +161,19 @@ describe("gguiShellHtml", () => {
   it("inlines the slice ENVELOPE at __GGUI_META__, keyed exactly as the wire is", () => {
     // The runtime's `parseMetaFromGlobal` defers to the same combiner as the
     // wire `_meta`, so the global must carry the envelope — not the bare slice.
-    const match = /globalThis\.__GGUI_META__=(\{[\s\S]*?\});/.exec(html);
+    const match = /globalThis\.__GGUI_META__\s*=\s*(\{[\s\S]*?\});/.exec(html);
     expect(match).not.toBeNull();
     expect(JSON.parse(match![1])).toEqual({
       [GGUI_RENDER_META_KEY]: { runtimeUrl: RUNTIME_URL },
     });
   });
 
-  it("loads the runtime from `runtimeUrl` verbatim, as a module", () => {
-    expect(html).toContain(`<script type="module" src="${RUNTIME_URL}"></script>`);
+  it("loads the runtime from `runtimeUrl` verbatim, as an anonymous-CORS module", () => {
+    // `crossorigin="anonymous"` is part of the shell contract: without it a
+    // cross-origin module failure sanitizes to a detail-free "script error".
+    expect(html).toContain(
+      `<script type="module" crossorigin="anonymous" src="${RUNTIME_URL}"></script>`,
+    );
   });
 
   it("populates the global BEFORE the runtime module tag", () => {
@@ -185,7 +189,7 @@ describe("gguiShellHtml", () => {
     });
     expect(hostile).not.toContain("</script><script>alert(1)");
     expect(hostile.match(/<script/g)).toHaveLength(2);
-    const match = /globalThis\.__GGUI_META__=(\{[\s\S]*?\});/.exec(hostile);
+    const match = /globalThis\.__GGUI_META__\s*=\s*(\{[\s\S]*?\});/.exec(hostile);
     // Escaped, but still the SAME JSON value — escaping must not corrupt it.
     expect(JSON.parse(match![1])[GGUI_RENDER_META_KEY].propsJson).toBe(
       '</script><script>alert(1)</script>',
@@ -208,5 +212,14 @@ describe("gguiRenderResource", () => {
     expect(resource?.mimeType).toBe("text/html");
     expect(resource?.text).toContain(GGUI_RENDER_META_KEY);
     expect(resource?.text).toContain(RUNTIME_URL);
+  });
+
+  it("builds the shell transparent — guuey hosts draw their own card chrome", () => {
+    // The upstream default is `'surface'` (for standalone served documents);
+    // this adapter must keep the host-composited posture every guuey mount
+    // relied on before the helper moved upstream (guuey#108 / ggui#427).
+    const resource = gguiRenderResource(asGguiRender(UI_DATA, META)!);
+    expect(resource?.text).toContain("background:transparent");
+    expect(resource?.text).not.toContain("--ggui-color-surface");
   });
 });

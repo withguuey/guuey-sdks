@@ -53,6 +53,7 @@ export {
   GGUI_RENDER_META_KEY,
   type GguiRenderBootstrap,
   type GguiRenderDescriptor,
+  type GguiShellHtmlOptions,
 } from "./ggui-render";
 export {
   cardCardMount,
