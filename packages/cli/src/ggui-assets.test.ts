@@ -1,118 +1,160 @@
+import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { packGguiAssets, pushGguiAssetsLeg, type GguiAssetBundle } from './ggui-assets.js';
+import { toPortableBlueprint } from '@ggui-ai/protocol/blueprint-key';
+import type { DataContract } from '@ggui-ai/protocol';
+import { buildGguiAssetPush, pushGguiAssetsLeg, type GguiAssetPushBody } from './ggui-assets.js';
 import type { AuthTokens } from './auth.js';
 import type { ResolvedConfig } from './config.js';
 import type { apiRequest } from './deploy-shared.js';
 
-// ─── packGguiAssets ────────────────────────────────────────────────────────
+// ─── buildGguiAssetPush ────────────────────────────────────────────────────
 
-describe('packGguiAssets', () => {
+describe('buildGguiAssetPush', () => {
   let root: string;
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), 'ggui-assets-test-'));
+    mkdirSync(join(root, 'ggui', 'blueprints'), { recursive: true });
   });
 
   afterEach(() => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  /** Lay down the standard fixture: ggui.json + blueprints/hello.json + themes/default.json. */
-  function writeFixture(): void {
-    mkdirSync(join(root, 'ggui', 'blueprints'), { recursive: true });
-    mkdirSync(join(root, 'ggui', 'themes'), { recursive: true });
-    writeFileSync(join(root, 'ggui', 'ggui.json'), JSON.stringify({ appId: 'app-1' }));
-    writeFileSync(
-      join(root, 'ggui', 'blueprints', 'hello.json'),
-      JSON.stringify({ blueprint: 'hello' }),
-    );
-    writeFileSync(
-      join(root, 'ggui', 'themes', 'default.json'),
-      JSON.stringify({ theme: 'default' }),
-    );
+  /** Write the project's ggui.json with the given document. */
+  function writeGguiJson(doc: unknown): void {
+    writeFileSync(join(root, 'ggui', 'ggui.json'), JSON.stringify(doc));
   }
 
-  it('reads gguiJson content and packs files as dir-relative forward-slash paths', () => {
-    writeFixture();
+  it('lifts generation.model, and only the model', async () => {
+    // `keySource` is a PLATFORM fact composed at cliApi — a project that
+    // declares one must not have it ride onto the wire.
+    writeGguiJson({
+      schema: '1',
+      generation: { model: 'anthropic:claude-haiku-4-5-20251001', keySource: 'own' },
+    });
 
-    const bundle = packGguiAssets(root, './ggui/ggui.json');
+    const body = await buildGguiAssetPush(root, './ggui/ggui.json');
 
-    expect(bundle.gguiJson).toBe(JSON.stringify({ appId: 'app-1' }));
-    expect(bundle.files).toEqual([
-      { path: 'blueprints/hello.json', content: JSON.stringify({ blueprint: 'hello' }) },
-      { path: 'themes/default.json', content: JSON.stringify({ theme: 'default' }) },
-    ]);
+    expect(body.generation).toEqual({ model: 'anthropic:claude-haiku-4-5-20251001' });
   });
 
-  it('orders files deterministically regardless of directory-listing order', () => {
-    writeFixture();
-    // Add more files so alphabetical vs. filesystem order could plausibly diverge.
-    writeFileSync(join(root, 'ggui', 'themes', 'alt.json'), '{}');
-    writeFileSync(join(root, 'ggui', 'blueprints', 'zzz.json'), '{}');
-    writeFileSync(join(root, 'ggui', 'README.md'), '# notes');
+  it('omits every field the project does not declare', async () => {
+    writeGguiJson({ schema: '1', app: { slug: 'demo', name: 'demo' } });
 
-    const bundle1 = packGguiAssets(root, './ggui/ggui.json');
-    const bundle2 = packGguiAssets(root, './ggui/ggui.json');
+    const body = await buildGguiAssetPush(root, './ggui/ggui.json');
 
-    const paths = bundle1.files.map((f) => f.path);
-    expect(paths).toEqual([...paths].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)));
-    expect(bundle2.files.map((f) => f.path)).toEqual(paths);
+    expect(body).toEqual({});
   });
 
-  it('skips dotfiles and .gitkeep', () => {
-    writeFixture();
+  it('ignores a project-declared theme (the brand theme is platform-composed)', async () => {
+    writeGguiJson({ schema: '1', theme: { preset: 'indigo', mode: 'dark' } });
+
+    const body = await buildGguiAssetPush(root, './ggui/ggui.json');
+
+    expect(body).not.toHaveProperty('theme');
+  });
+
+  it('passes gadgets and publicEnv through verbatim when declared', async () => {
+    const gadgets = [{ name: 'geolocation', version: '1' }];
+    writeGguiJson({ gadgets, publicEnv: { BRAND: 'acme', REGION: 'us-east-1' } });
+
+    const body = await buildGguiAssetPush(root, './ggui/ggui.json');
+
+    expect(body.gadgets).toEqual(gadgets);
+    expect(body.publicEnv).toEqual({ BRAND: 'acme', REGION: 'us-east-1' });
+  });
+
+  it('throws when the ggui.json config file is missing', async () => {
+    await expect(buildGguiAssetPush(root, './ggui/ggui.json')).rejects.toThrow(
+      /ggui config file not found/,
+    );
+  });
+
+  it('throws when ggui.json is malformed JSON', async () => {
+    writeFileSync(join(root, 'ggui', 'ggui.json'), '{ "generation": ');
+
+    await expect(buildGguiAssetPush(root, './ggui/ggui.json')).rejects.toThrow(
+      /is not valid JSON/,
+    );
+  });
+
+  it('throws when ggui.json is valid JSON but not an object', async () => {
+    writeGguiJson(['not', 'an', 'object']);
+
+    await expect(buildGguiAssetPush(root, './ggui/ggui.json')).rejects.toThrow(
+      /must contain a JSON object/,
+    );
+  });
+
+  it('throws when gadgets is declared with the wrong type', async () => {
+    writeGguiJson({ gadgets: { geolocation: true } });
+
+    await expect(buildGguiAssetPush(root, './ggui/ggui.json')).rejects.toThrow(/#gadgets must be/);
+  });
+
+  it('throws when publicEnv carries a non-string value', async () => {
+    writeGguiJson({ publicEnv: { PORT: 8080 } });
+
+    await expect(buildGguiAssetPush(root, './ggui/ggui.json')).rejects.toThrow(
+      /#publicEnv must be/,
+    );
+  });
+
+  it('throws when the serialized body exceeds the 1 MiB cap', async () => {
+    writeGguiJson({ publicEnv: { BIG: 'x'.repeat(1024 * 1024 + 64) } });
+
+    await expect(buildGguiAssetPush(root, './ggui/ggui.json')).rejects.toThrow(/1 MiB/);
+  });
+
+  it('includes compiled blueprints when the blueprints dir holds a pool artifact', async () => {
+    writeGguiJson({ generation: { model: 'anthropic:claude-haiku-4-5-20251001' } });
+
+    const componentCode =
+      'export default function Hello({ title }: { title: string }) { return <div>{title}</div>; }\n';
+    const contract: DataContract = {
+      propsSpec: {
+        description: 'greeting card',
+        properties: {
+          title: { description: 'Title', schema: { type: 'string' }, required: true },
+        },
+      },
+    };
+    const full = toPortableBlueprint({
+      contract,
+      componentCode,
+      variance: { seedPrompt: 'a hello card' },
+      source: { kind: 'user' },
+    });
+    const { componentCode: _code, ...record } = full;
+    const codeRef = `${createHash('sha256').update(componentCode, 'utf8').digest('hex')}.tsx`;
+
+    const bpDir = join(root, 'ggui', 'blueprints');
+    writeFileSync(
+      join(bpDir, 'manifest.json'),
+      JSON.stringify({ schemaVersion: 2, blueprints: [{ record, codeRef }] }),
+    );
+    mkdirSync(join(bpDir, 'codes'), { recursive: true });
+    writeFileSync(join(bpDir, 'codes', codeRef), componentCode, 'utf-8');
+
+    const body = await buildGguiAssetPush(root, './ggui/ggui.json');
+
+    expect(body.blueprints).toHaveLength(1);
+    expect(body.blueprints?.[0]?.artifactId).toBe(`${full.contractHash}-${full.variantKey}`);
+    expect(body.blueprints?.[0]?.compiledBytes).toContain('function Hello');
+  });
+
+  it('omits blueprints entirely when the dir holds no pool artifact', async () => {
+    writeGguiJson({ generation: { model: 'anthropic:claude-haiku-4-5-20251001' } });
+    // A fresh scaffold ships `blueprints/.gitkeep` and nothing else.
     writeFileSync(join(root, 'ggui', 'blueprints', '.gitkeep'), '');
-    writeFileSync(join(root, 'ggui', '.DS_Store'), 'junk');
 
-    const bundle = packGguiAssets(root, './ggui/ggui.json');
+    const body = await buildGguiAssetPush(root, './ggui/ggui.json');
 
-    expect(bundle.files.map((f) => f.path)).toEqual([
-      'blueprints/hello.json',
-      'themes/default.json',
-    ]);
-  });
-
-  it('skips non-allowlisted extensions', () => {
-    writeFixture();
-    writeFileSync(join(root, 'ggui', 'blueprints', 'icon.png'), 'not-really-png-bytes');
-
-    const bundle = packGguiAssets(root, './ggui/ggui.json');
-
-    expect(bundle.files.map((f) => f.path)).toEqual([
-      'blueprints/hello.json',
-      'themes/default.json',
-    ]);
-  });
-
-  it('includes .md and .css files', () => {
-    writeFixture();
-    writeFileSync(join(root, 'ggui', 'themes', 'style.css'), 'body { color: red; }');
-    writeFileSync(join(root, 'ggui', 'README.md'), '# hi');
-
-    const bundle = packGguiAssets(root, './ggui/ggui.json');
-
-    expect(bundle.files.map((f) => f.path)).toEqual([
-      'README.md',
-      'blueprints/hello.json',
-      'themes/default.json',
-      'themes/style.css',
-    ]);
-  });
-
-  it('throws when the ggui.json config file is missing', () => {
-    mkdirSync(join(root, 'ggui'), { recursive: true });
-
-    expect(() => packGguiAssets(root, './ggui/ggui.json')).toThrow(/ggui config file not found/);
-  });
-
-  it('throws when the total bundle exceeds the 1 MiB cap', () => {
-    writeFixture();
-    writeFileSync(join(root, 'ggui', 'blueprints', 'huge.json'), 'x'.repeat(1024 * 1024 + 1));
-
-    expect(() => packGguiAssets(root, './ggui/ggui.json')).toThrow(/1 MiB/);
+    expect(body).not.toHaveProperty('blueprints');
   });
 });
 
@@ -121,24 +163,60 @@ describe('packGguiAssets', () => {
 describe('pushGguiAssetsLeg', () => {
   const auth: AuthTokens = { pat: 'pat-test', expiresAt: '2099-01-01T00:00:00.000Z' };
   const config: ResolvedConfig = { host: 'https://guuey.test', apiUrl: 'https://api.guuey.test' };
-  const bundle: GguiAssetBundle = {
-    gguiJson: JSON.stringify({ appId: 'app-1' }),
-    files: [{ path: 'blueprints/hello.json', content: '{}' }],
+  const body: GguiAssetPushBody = {
+    generation: { model: 'anthropic:claude-haiku-4-5-20251001' },
+    blueprints: [
+      {
+        artifactId: 'abc123-def456',
+        version: '1',
+        manifest: { contract: {}, generatorProtocolVersion: 'draft-2026-06-12' },
+        compiledBytes: 'export default function Hello(){}',
+      },
+    ],
   };
 
-  it('200 → { pushed: true }, hitting POST /apps/:id/ggui-assets/push with the bundle body', async () => {
+  it('200 → { pushed: true }, hitting POST /apps/:id/ggui-assets/push with the push body', async () => {
     const calls: { method: string; path: string; body?: unknown }[] = [];
-    const api: typeof apiRequest = vi.fn(async (_pat, _cfg, method, path, body) => {
-      calls.push({ method, path, body });
-      return new Response(JSON.stringify({ status: 'pushed', fileCount: 1 }), { status: 200 });
+    const api: typeof apiRequest = vi.fn(async (_pat, _cfg, method, path, reqBody) => {
+      calls.push({ method, path, body: reqBody });
+      return new Response(JSON.stringify({ status: 'pushed' }), { status: 200 });
     });
 
-    const result = await pushGguiAssetsLeg({ appId: 'app-1', bundle, auth, config }, { api });
+    const result = await pushGguiAssetsLeg({ appId: 'app-1', body, auth, config }, { api });
+
+    expect(result.pushed).toBe(true);
+    expect(calls).toEqual([{ method: 'POST', path: '/apps/app-1/ggui-assets/push', body }]);
+  });
+
+  it('surfaces the handler echo of what landed', async () => {
+    const api: typeof apiRequest = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          status: 'pushed',
+          configFields: ['generation'],
+          blueprintsPushed: 1,
+          blueprintsDeleted: 2,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await pushGguiAssetsLeg({ appId: 'app-1', body, auth, config }, { api });
+
+    expect(result).toEqual({
+      pushed: true,
+      configFields: ['generation'],
+      blueprintsPushed: 1,
+      blueprintsDeleted: 2,
+    });
+  });
+
+  it('200 with an unparseable body is still a success (the push landed)', async () => {
+    const api: typeof apiRequest = vi.fn(async () => new Response('not json', { status: 200 }));
+
+    const result = await pushGguiAssetsLeg({ appId: 'app-1', body, auth, config }, { api });
 
     expect(result).toEqual({ pushed: true });
-    expect(calls).toEqual([
-      { method: 'POST', path: '/apps/app-1/ggui-assets/push', body: bundle },
-    ]);
   });
 
   it('501 not-yet-supported → { pushed: false, reason }', async () => {
@@ -149,7 +227,7 @@ describe('pushGguiAssetsLeg', () => {
       ),
     );
 
-    const result = await pushGguiAssetsLeg({ appId: 'app-1', bundle, auth, config }, { api });
+    const result = await pushGguiAssetsLeg({ appId: 'app-1', body, auth, config }, { api });
 
     expect(result.pushed).toBe(false);
     expect(result.reason).toBe('ggui asset push is not yet enabled on this environment.');
@@ -160,7 +238,7 @@ describe('pushGguiAssetsLeg', () => {
       new Response(JSON.stringify({ code: 'not-yet-supported' }), { status: 501 }),
     );
 
-    const result = await pushGguiAssetsLeg({ appId: 'app-1', bundle, auth, config }, { api });
+    const result = await pushGguiAssetsLeg({ appId: 'app-1', body, auth, config }, { api });
 
     expect(result.pushed).toBe(false);
     expect(result.reason).toBe('ggui asset push is not yet enabled on this environment.');
@@ -168,14 +246,11 @@ describe('pushGguiAssetsLeg', () => {
 
   it('501 not-yet-supported with a non-string message fails the guard → throws (deploy aborts)', async () => {
     const api: typeof apiRequest = vi.fn(async () =>
-      new Response(
-        JSON.stringify({ code: 'not-yet-supported', message: 42 }),
-        { status: 501 },
-      ),
+      new Response(JSON.stringify({ code: 'not-yet-supported', message: 42 }), { status: 501 }),
     );
 
     await expect(
-      pushGguiAssetsLeg({ appId: 'app-1', bundle, auth, config }, { api }),
+      pushGguiAssetsLeg({ appId: 'app-1', body, auth, config }, { api }),
     ).rejects.toThrow();
   });
 
@@ -188,7 +263,7 @@ describe('pushGguiAssetsLeg', () => {
     );
 
     await expect(
-      pushGguiAssetsLeg({ appId: 'app-1', bundle, auth, config }, { api }),
+      pushGguiAssetsLeg({ appId: 'app-1', body, auth, config }, { api }),
     ).rejects.toThrow('some other 501');
   });
 
@@ -201,8 +276,26 @@ describe('pushGguiAssetsLeg', () => {
     );
 
     await expect(
-      pushGguiAssetsLeg({ appId: 'app-1', bundle, auth, config }, { api }),
+      pushGguiAssetsLeg({ appId: 'app-1', body, auth, config }, { api }),
     ).rejects.toThrow('internal error');
+  });
+
+  it('400 from ggui-side validation surfaces ggui\'s own message', async () => {
+    const api: typeof apiRequest = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 'ValidationError',
+            message: 'ggui rejected the asset payload: unknown gadget descriptor',
+          },
+        }),
+        { status: 400 },
+      ),
+    );
+
+    await expect(
+      pushGguiAssetsLeg({ appId: 'app-1', body, auth, config }, { api }),
+    ).rejects.toThrow('unknown gadget descriptor');
   });
 
   it('409 (no federated gguiAppId) throws with the real httpError nested {error:{code,message}} shape', async () => {
@@ -216,7 +309,7 @@ describe('pushGguiAssetsLeg', () => {
     );
 
     await expect(
-      pushGguiAssetsLeg({ appId: 'app-1', bundle, auth, config }, { api }),
+      pushGguiAssetsLeg({ appId: 'app-1', body, auth, config }, { api }),
     ).rejects.toThrow('App app-1 has no federated ggui app');
   });
 });

@@ -50,3 +50,4 @@ minimumReleaseAgeExclude:
   - "@silverprotocol/openai-agents"
   - "@silverprotocol/google-adk"
   - "@ggui-ai/protocol"
+  - "@ggui-ai/artifact-manifest"

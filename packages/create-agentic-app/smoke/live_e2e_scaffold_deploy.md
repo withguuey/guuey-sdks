@@ -34,7 +34,9 @@ Two parts:
 > `oss/packages/cli/src/commands/{login,apps,delete,undeploy,deployments}.ts`
 > (`--token`, `apps create --json`, `delete --force` [not `--yes`],
 > `undeploy --app-id --force`, `deployments list --json`),
-> `oss/packages/cli/src/ggui-assets.ts` (ggui-asset leg, env-dormant by design),
+> `oss/packages/cli/src/ggui-assets.ts` (ggui-asset leg; both sides of the
+> contract exist since guuey#121 — what's unset on this env is the
+> `GGUI_ASSETS_PUSH_API_URL` arming, so the leg 501s and warns),
 > `backend/amplify/data/marketplace.ts` (`AgentDeployment`),
 > `oss/packages/cli/src/dev/dev-server.ts` (`/agent/invoke` SSE contract — byte-matches
 > `backend/services/nocode-runtime/src/sse-server.ts`'s framing by design; also
@@ -267,7 +269,7 @@ exit 1 unless `GUUEY_E2E_I_KNOW_WHAT_IM_DOING=1` is also set.
 5. `guuey login --token $GUUEY_E2E_PAT` (isolated `HOME`).
 6. `guuey apps create --name e2e-caa-<unix-ts> --json` (throwaway app).
 7. `guuey deploy` — asserts: exits 0; prints the ggui-leg warn-and-continue line
-   verbatim (env-dormant leg — a FAIL here would be anything else); prints
+   verbatim (leg un-armed on this env — a FAIL here would be anything else); prints
    `Live at <url>`. The colocated todo is agent-leg cargo: it is built into
    the worker image and auto-spawned as a supervised child at pod boot.
 8. Asserts `guuey.json#agent.mcpServers.todo` stayed `kind: 'colocated'` and
@@ -370,7 +372,7 @@ it verbatim (it carries the right `--force` flag).
 | A2   | chat → `todo_create` tool call | tool-result block in scrollback (rendered or plain)                      |
 | B1   | `e2e:dev-env` exit code        | `0`                                                                      |
 | B1   | colocated todo (no hosted leg) | no `MCP "…" → deploying as …` line in deploy output                      |
-| B1   | ggui-asset leg                 | warn-and-continue line printed verbatim (env-dormant, expected)          |
+| B1   | ggui-asset leg                 | warn-and-continue line printed verbatim (leg un-armed on env, expected)  |
 | B1   | agent leg                      | `Live at <url>` printed; newest `deployments list` row `'live'`          |
 | B1   | `guuey.json` untouched         | `agent.mcpServers.todo` still `kind: 'colocated'`, no `server` field     |
 | B1   | `/agent/invoke` SSE            | `session` → `message`(s) → `done` + typed tool-signal present            |

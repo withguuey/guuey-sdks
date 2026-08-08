@@ -67,7 +67,7 @@ import {
   resolveDeployMode,
   shouldOfferAppCreate,
 } from '../deploy-plan';
-import { packGguiAssets, pushGguiAssetsLeg } from '../ggui-assets';
+import { buildGguiAssetPush, pushGguiAssetsLeg, type GguiAssetPushBody } from '../ggui-assets';
 import * as out from '../output';
 
 /**
@@ -417,18 +417,18 @@ async function deployCode(opts: {
 
   // ── Step 3: ggui asset leg ──
   if (doc.ggui?.configFile) {
-    let bundle: ReturnType<typeof packGguiAssets>;
+    let body: GguiAssetPushBody;
     try {
-      bundle = packGguiAssets(root, doc.ggui.configFile);
+      body = await buildGguiAssetPush(root, doc.ggui.configFile);
     } catch (err) {
       out.error(`Failed to pack ggui assets: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
     }
     try {
-      const result = await pushGguiAssetsLeg({ appId, bundle, auth, config });
+      const result = await pushGguiAssetsLeg({ appId, body, auth, config });
       if (!result.pushed) {
         console.log(
-          '  ggui assets not pushed — the platform-side API is pending (tracked cross-team); deploy continues',
+          '  ggui assets not pushed — the leg is not yet armed on this environment; deploy continues',
         );
       }
     } catch (err) {

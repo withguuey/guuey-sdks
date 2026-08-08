@@ -43,6 +43,8 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
+    "@ggui-ai/artifact-manifest": "0.6.3",
+    "@ggui-ai/protocol": "0.6.3",
     "@guuey/config": "workspace:*",
     "@guuey/create-agentic-app": "workspace:*",
     "@guuey/host": "workspace:*",
@@ -51,6 +53,7 @@
     "@silverprotocol/core": "0.4.1",
     "@silverprotocol/google-adk": "0.4.1",
     "@silverprotocol/openai-agents": "0.4.1",
+    "esbuild": "^0.25.12",
     "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0",
     "ws": "^8.18.0",
