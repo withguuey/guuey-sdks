@@ -86,7 +86,7 @@ describe("rowToAgMessage — user-row synthesis", () => {
 });
 
 describe("messageText", () => {
-  it("concatenates text blocks, ignoring non-text", () => {
+  it("joins text blocks with a paragraph break (#98), ignoring non-text", () => {
     expect(
       messageText({
         id: "m",
@@ -96,7 +96,21 @@ describe("messageText", () => {
           { type: "text", text: "b" },
         ],
       } as AgMessage)
-    ).toBe("ab");
+    ).toBe("a\n\nb");
+  });
+
+  it("skips empty text blocks without stacking separators", () => {
+    expect(
+      messageText({
+        id: "m",
+        role: "assistant",
+        content: [
+          { type: "text", text: "a" },
+          { type: "text", text: "" },
+          { type: "text", text: "b" },
+        ],
+      } as AgMessage)
+    ).toBe("a\n\nb");
   });
 });
 

@@ -71,7 +71,7 @@ describe("useAgentInvoke preserveBlocks", () => {
   });
 
   it("stays null in bypass mode even with preserveBlocks on (reducer is silver-only)", async () => {
-    const { result, unmount } = mount([bypassFrame("Hi "), bypassFrame("there")], {
+    const { result, unmount } = mount([bypassFrame("Hi."), bypassFrame("There.")], {
       preserveBlocks: true,
     });
     await act(async () => {
@@ -79,8 +79,9 @@ describe("useAgentInvoke preserveBlocks", () => {
     });
     // Bypass SDKMessage frames never validate as AgEvents → no fold.
     expect(result.current.reduceResult).toBeNull();
-    // But the text surface still renders (bypass text extraction unaffected).
-    expect(result.current.messages.at(-1)).toEqual({ role: "assistant", text: "Hi there" });
+    // But the text surface still renders (bypass text extraction unaffected;
+    // distinct assistant messages join as paragraphs — #98).
+    expect(result.current.messages.at(-1)).toEqual({ role: "assistant", text: "Hi.\n\nThere." });
     unmount();
   });
 

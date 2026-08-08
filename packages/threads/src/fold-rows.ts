@@ -32,13 +32,19 @@ function roleToAuthor(role: AgRole): ThreadMessageRole {
   return "agent"; // assistant | tool
 }
 
-/** Plain-text projection of an AgMessage — concatenated text blocks. */
+/**
+ * Plain-text projection of an AgMessage. Distinct text blocks are distinct
+ * paragraphs, so they join with a paragraph break — the same block-boundary
+ * contract as `@guuey/agent-client`'s live flat-text fold (guuey#98); raw
+ * concatenation jammed "…instead.Here's your packing…". Empty blocks
+ * contribute nothing (no stacked separators).
+ */
 export function messageText(msg: AgMessage): string {
-  let out = "";
+  const parts: string[] = [];
   for (const block of msg.content) {
-    if (block.type === "text") out += block.text;
+    if (block.type === "text" && block.text) parts.push(block.text);
   }
-  return out;
+  return parts.join("\n\n");
 }
 
 export function agMessageToRow(

@@ -39,12 +39,24 @@ export function parseSseEvents(buffer: string): { events: ParsedSseEvent[]; rest
   return { events, rest };
 }
 
+function frameType(data: unknown): unknown {
+  if (typeof data !== "object" || data === null) return undefined;
+  return (data as { type?: unknown }).type;
+}
+
 function isResultMessage(data: unknown): boolean {
-  return (
-    typeof data === "object" &&
-    data !== null &&
-    (data as { type?: unknown }).type === "result"
-  );
+  return frameType(data) === "result";
+}
+
+/**
+ * Join point where a NEW text block begins: distinct blocks are distinct
+ * paragraphs on the flat text surface (guuey#98 — raw concatenation rendered
+ * "…instead.Here's your packing…"). Idempotent so an empty block between two
+ * boundaries never stacks separators.
+ */
+function withBlockBreak(current: string): string {
+  if (!current || current.endsWith("\n\n")) return current;
+  return current + "\n\n";
 }
 
 /**
@@ -52,13 +64,22 @@ function isResultMessage(data: unknown): boolean {
  * messages APPEND (streaming). The success `result` message carries the SAME
  * final text, so it REPLACES rather than appends — otherwise the answer renders
  * twice. The result is also the fallback for result-only turns.
+ *
+ * Block boundaries become paragraph breaks: a silver `text.start` frame (and,
+ * on the bypass arm, each new `assistant` message) opens a new block, so the
+ * separator lands exactly there — never per `text.delta`, which must stay a
+ * raw append for streaming (#91).
  */
 export function reduceAssistantText(current: string, data: unknown): string {
   if (isResultMessage(data)) {
     const result = extractAssistantText(data);
     return result || current;
   }
-  return current + extractAssistantText(data);
+  if (frameType(data) === "text.start") return withBlockBreak(current);
+  const text = extractAssistantText(data);
+  if (!text) return current;
+  if (frameType(data) === "assistant") return withBlockBreak(current) + text;
+  return current + text;
 }
 
 /**
@@ -87,6 +108,8 @@ export function extractAssistantText(data: unknown): string {
     if (typeof message === "object" && message !== null && "content" in message) {
       const content = (message as { content?: unknown }).content;
       if (Array.isArray(content)) {
+        // Distinct text blocks are distinct paragraphs (guuey#98) — same
+        // block-boundary contract as the silver arm's text.start handling.
         return content
           .filter(
             (b): b is { type: "text"; text: string } =>
@@ -96,7 +119,8 @@ export function extractAssistantText(data: unknown): string {
               typeof (b as { text?: unknown }).text === "string",
           )
           .map((b) => b.text)
-          .join("");
+          .filter((t) => t.length > 0)
+          .join("\n\n");
       }
     }
     return "";

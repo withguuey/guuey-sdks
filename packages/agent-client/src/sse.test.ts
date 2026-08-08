@@ -51,18 +51,32 @@ describe("parseSseEvents", () => {
 });
 
 describe("extractAssistantText", () => {
-  it("concatenates text blocks from an assistant message", () => {
+  it("joins text blocks from an assistant message with a paragraph break (#98)", () => {
     const text = extractAssistantText({
       type: "assistant",
       message: {
         content: [
-          { type: "text", text: "Hello " },
+          { type: "text", text: "First paragraph." },
           { type: "tool_use", id: "x", name: "t", input: {} },
-          { type: "text", text: "world" },
+          { type: "text", text: "Second paragraph." },
         ],
       },
     });
-    expect(text).toBe("Hello world");
+    expect(text).toBe("First paragraph.\n\nSecond paragraph.");
+  });
+
+  it("skips empty text blocks without stacking separators", () => {
+    const text = extractAssistantText({
+      type: "assistant",
+      message: {
+        content: [
+          { type: "text", text: "Kept." },
+          { type: "text", text: "" },
+          { type: "text", text: "Also kept." },
+        ],
+      },
+    });
+    expect(text).toBe("Kept.\n\nAlso kept.");
   });
 
   it("returns '' for an assistant message with only tool_use blocks", () => {
@@ -101,11 +115,11 @@ describe("reduceAssistantText", () => {
     expect(acc).toBe("Hi there!"); // not "Hi there!Hi there!"
   });
 
-  it("accumulates across multiple assistant messages, then the result replaces", () => {
+  it("accumulates across multiple assistant messages as paragraphs, then the result replaces", () => {
     let acc = "";
-    acc = reduceAssistantText(acc, assistantMsg("Let me check. "));
+    acc = reduceAssistantText(acc, assistantMsg("Let me check."));
     acc = reduceAssistantText(acc, assistantMsg("The answer is 42."));
-    expect(acc).toBe("Let me check. The answer is 42.");
+    expect(acc).toBe("Let me check.\n\nThe answer is 42."); // #98: distinct messages, distinct paragraphs
     acc = reduceAssistantText(acc, resultMsg("The answer is 42."));
     expect(acc).toBe("The answer is 42."); // canonical final supersedes
   });
@@ -178,30 +192,51 @@ describe("silver protocol (AgJSON) — the pod DEFAULT (audit G14)", () => {
     ];
     let text = "";
     for (const f of mixedTurn) text = reduceAssistantText(text, f);
-    expect(text).toBe("Creating a todo… Done!");
+    expect(text).toBe("Creating a todo… \n\nDone!");
     expect(text).not.toContain("TOOL-OUTPUT-NOT-PROSE");
   });
 
-  it("concatenates text across two message.start/message.end cycles in one turn", () => {
+  it("joins text across two message.start/message.end cycles as paragraphs (#98)", () => {
     // Multi-message turns (assistant → tool → assistant) render as ONE
-    // bubble in the base client: deltas from BOTH messages append in order.
+    // bubble in the base client: each text.start opens a new block, so the
+    // blocks join with a paragraph break — the raw-concatenation defect
+    // rendered "…card instead.Here's your packing checklist card".
     const twoMessages = [
       { type: "turn.start", seq: 0, turnId: "t3" },
       { type: "message.start", seq: 1, id: "msg_1", turnId: "t3" },
       { type: "text.start", seq: 2, id: "text:0", turnId: "t3" },
-      { type: "text.delta", seq: 3, id: "text:0", delta: "First part.", turnId: "t3" },
+      { type: "text.delta", seq: 3, id: "text:0", delta: "I'll render the card instead.", turnId: "t3" },
       { type: "text.end", seq: 4, id: "text:0", turnId: "t3" },
       { type: "message.end", seq: 5, id: "msg_1", turnId: "t3" },
       { type: "message.start", seq: 6, id: "msg_2", turnId: "t3" },
       { type: "text.start", seq: 7, id: "text:1", turnId: "t3" },
-      { type: "text.delta", seq: 8, id: "text:1", delta: " Second part.", turnId: "t3" },
+      { type: "text.delta", seq: 8, id: "text:1", delta: "Here's your packing checklist card.", turnId: "t3" },
       { type: "text.end", seq: 9, id: "text:1", turnId: "t3" },
       { type: "message.end", seq: 10, id: "msg_2", turnId: "t3" },
       { type: "turn.done", seq: 11, turnId: "t3" },
     ];
     let text = "";
     for (const f of twoMessages) text = reduceAssistantText(text, f);
-    expect(text).toBe("First part. Second part.");
+    expect(text).toBe("I'll render the card instead.\n\nHere's your packing checklist card.");
+  });
+
+  it("never adds a separator before the first block or per delta, and empty blocks don't stack separators", () => {
+    let text = "";
+    // First block: text.start on an empty accumulator adds nothing.
+    text = reduceAssistantText(text, { type: "text.start", seq: 0, id: "text:0" });
+    expect(text).toBe("");
+    text = reduceAssistantText(text, { type: "text.delta", seq: 1, id: "text:0", delta: "One. " });
+    // Deltas within a block are raw appends (#91 streaming — no per-delta separator).
+    text = reduceAssistantText(text, { type: "text.delta", seq: 2, id: "text:0", delta: "Two." });
+    expect(text).toBe("One. Two.");
+    text = reduceAssistantText(text, { type: "text.end", seq: 3, id: "text:0" });
+    // An empty block (start immediately followed by another start) must not
+    // stack "\n\n\n\n".
+    text = reduceAssistantText(text, { type: "text.start", seq: 4, id: "text:1" });
+    text = reduceAssistantText(text, { type: "text.end", seq: 5, id: "text:1" });
+    text = reduceAssistantText(text, { type: "text.start", seq: 6, id: "text:2" });
+    text = reduceAssistantText(text, { type: "text.delta", seq: 7, id: "text:2", delta: "Three." });
+    expect(text).toBe("One. Two.\n\nThree.");
   });
 
   it("treats malformed and unknown frames as '' and never throws", () => {
