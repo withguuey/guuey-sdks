@@ -10,7 +10,7 @@
  * `credentials: "include"`). Consumed by {@link createWebAdapters}; Portal
  * has its own copy today and can migrate onto this later.
  */
-import type { JsonValue } from "@silverprotocol/core";
+import type { AgMessage, JsonValue } from "@silverprotocol/core";
 import type { AgentMessage, HistoryCard, HistoryLoadResult } from "./types";
 
 /** One row of `GET /v1/threads/:id/messages`. */
@@ -140,4 +140,26 @@ export async function fetchThreadHistory({
     messages: threadHistoryRowsToMessages(rows),
     ...(includeCards ? { cards: threadHistoryRowsToCards(rows) } : {}),
   };
+}
+
+/**
+ * The tool name for a `tool-result` block, read off its paired `tool-call`
+ * block in the same message (the reducer keeps both in one message's content).
+ * Falls back to `"tool"` when the pair is missing.
+ */
+export function toolNameFor(message: AgMessage, toolCallId: string): string {
+  for (const b of message.content) {
+    if (b.type === "tool-call" && b.toolCallId === toolCallId) return b.name;
+  }
+  return "tool";
+}
+
+/**
+ * Persisted cards, ascending by transcript `seq` (stable; input untouched).
+ * These are PRIOR-turn cards — they always precede the live fold, so a
+ * block-preserving renderer surfaces them first (e.g. under an "Earlier in
+ * this conversation" divider).
+ */
+export function sortHistoryCards(cards: readonly HistoryCard[]): HistoryCard[] {
+  return [...cards].sort((a, b) => a.seq - b.seq);
 }

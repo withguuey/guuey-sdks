@@ -10,9 +10,6 @@ importers:
 
   packages/agent-client:
     dependencies:
-      '@ggui-ai/protocol':
-        specifier: 0.6.3
-        version: 0.6.3(@modelcontextprotocol/sdk@1.29.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@silverprotocol/core':
         specifier: 0.4.1
         version: 0.4.1
@@ -183,6 +180,25 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@24.13.2)(jsdom@25.0.1)(yaml@2.9.0)
 
+  packages/mcp-apps-host:
+    dependencies:
+      '@ggui-ai/protocol':
+        specifier: 0.6.3
+        version: 0.6.3(@modelcontextprotocol/sdk@1.29.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@silverprotocol/core':
+        specifier: 0.4.1
+        version: 0.4.1
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.12.4
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@24.12.4)(jsdom@25.0.1)(yaml@2.9.0)
+
   packages/state:
     devDependencies:
       '@types/node':
@@ -197,6 +213,9 @@ importers:
 
   packages/threads:
     dependencies:
+      '@guuey/mcp-apps-host':
+        specifier: workspace:*
+        version: link:../mcp-apps-host
       '@silverprotocol/core':
         specifier: 0.4.1
         version: 0.4.1

@@ -473,3 +473,38 @@ describe("tool-result _meta never persists; ui:// locators earn placeholder rows
     expect(row.content).toBe(plain);
   });
 });
+
+// #122 hardening (five-lens revisit): the artifact LANE — real artifact.*
+// events, not the projection — must obey the same persistence boundary.
+describe("agArtifactToCardRow strips tool-result _meta and artifact _meta (#122 artifact lane)", () => {
+  it("never persists a wsToken riding an artifact's tool-result part or the artifact's own _meta", () => {
+    const art = {
+      artifactId: "a-leak",
+      turnId: "t1",
+      threadId: "th1",
+      parts: [
+        {
+          type: "tool-result",
+          toolCallId: "c1",
+          content: [],
+          uiData: { resourceUri: "ui://ggui/render/s/h" },
+          _meta: { "ai.ggui/render": { wsToken: "SHORT-TTL-SECRET" } },
+        },
+        { type: "text", text: "kept" },
+      ],
+      _meta: { transport: { wsToken: "ALSO-SECRET" } },
+    } as unknown as AgArtifact;
+    const row = agArtifactToCardRow(art, {
+      threadId: "th1",
+      userId: "u",
+      seq: 9,
+      at: "2026-08-08T00:00:00Z",
+      clientMessageId: "c-leak",
+    });
+    expect(JSON.stringify(row)).not.toContain("wsToken");
+    expect(JSON.stringify(row)).not.toContain("SECRET");
+    const snap = row.cardSnapshot as AgArtifact;
+    expect(snap.parts[1]).toEqual({ type: "text", text: "kept" });
+    expect(snap.parts[0]).toMatchObject({ uiData: { resourceUri: "ui://ggui/render/s/h" } });
+  });
+});

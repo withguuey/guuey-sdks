@@ -5,13 +5,14 @@ their MCP servers, and generative UI from one config file.
 
 This repo is the source of truth published to npm as the `@guuey/*` scope:
 
-| package                                                    | what it is                                                            |
-| ---------------------------------------------------------- | --------------------------------------------------------------------- |
-| [`@guuey/cli`](packages/cli)                               | `guuey login / deploy / dev / mcp …` — the command line               |
-| [`@guuey/create-agentic-app`](packages/create-agentic-app) | `npx @guuey/create-agentic-app` — scaffold a deployable agent         |
-| [`@guuey/worker`](packages/worker)                         | the Worker Protocol — the contract your agent code implements         |
-| [`@guuey/config`](packages/config)                         | `guuey.json` types, schema, and loader                                |
-| `@guuey/host` / `@guuey/fs` / `@guuey/state`               | platform worker + filesystem/state libs (published as they stabilize) |
+| package                                                    | what it is                                                              |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------- |
+| [`@guuey/cli`](packages/cli)                               | `guuey login / deploy / dev / mcp …` — the command line                 |
+| [`@guuey/create-agentic-app`](packages/create-agentic-app) | `npx @guuey/create-agentic-app` — scaffold a deployable agent           |
+| [`@guuey/mcp-apps-host`](packages/mcp-apps-host)           | the MCP Apps (SEP-1865) Host role — view mounting + locator rehydration |
+| [`@guuey/worker`](packages/worker)                         | the Worker Protocol — the contract your agent code implements           |
+| [`@guuey/config`](packages/config)                         | `guuey.json` types, schema, and loader                                  |
+| `@guuey/host` / `@guuey/fs` / `@guuey/state`               | platform worker + filesystem/state libs (published as they stabilize)   |
 
 ## Quick start
 

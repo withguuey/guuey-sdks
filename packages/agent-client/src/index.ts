@@ -27,40 +27,9 @@ export {
 export { ingestMessageFrame } from "./blocks";
 // Pure block-walk / resource-narrowing helpers for a block-preserving renderer
 // (shared by Studio's `AgentBlocks` and Portal-web's agent chat). React-free.
-export {
-  asResourcePayload,
-  asUiResource,
-  blockUiResource,
-  cardUiResource,
-  isJsonObject,
-  resourceHtml,
-  scanProviderRawForUiResource,
-  sortHistoryCards,
-  toolNameFor,
-  toolResultUiResource,
-  type McpUiResourcePayload,
-} from "./block-ui";
-// The ggui render channel (`uiData.resourceUri` + the `_meta["ai.ggui/render"]`
-// bootstrap) and the dispatcher that mounts EITHER channel through the same
-// second-origin sandbox path.
-export {
-  asGguiRender,
-  asGguiRenderBootstrap,
-  blockGguiRender,
-  gguiRenderResource,
-  gguiShellHtml,
-  toolResultGguiRender,
-  GGUI_RENDER_META_KEY,
-  type GguiRenderBootstrap,
-  type GguiRenderDescriptor,
-  type GguiShellHtmlOptions,
-} from "./ggui-render";
-export {
-  cardCardMount,
-  toolResultCardMount,
-  type CardMount,
-  type CardMountChannel,
-} from "./card-mount";
+// Transcript labeling/ordering helpers (mount narrowing itself moved to
+// @guuey/mcp-apps-host — the SEP-1865 Host role package; import it directly).
+export { sortHistoryCards, toolNameFor } from "./history";
 // Re-export the AgJSON types the block-preserving transcript surfaces, so
 // consumers can name `reduceResult` / block types without a direct
 // `@silverprotocol/core` import.

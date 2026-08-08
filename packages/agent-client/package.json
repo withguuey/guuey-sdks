@@ -1,6 +1,6 @@
 {
   "name": "@guuey/agent-client",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Client SDK for Guuey's agent runtime: the `useAgentInvoke` React hook + pure SSE helpers that speak the /agent/invoke streaming contract, plus the paginated thread-history read plane. Host adapters (storage / id / transport) are injected, so it runs on web (Next) and React Native alike.",
   "license": "MIT",
   "type": "module",
@@ -36,7 +36,6 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@ggui-ai/protocol": "0.6.3",
     "@silverprotocol/core": "0.4.1"
   },
   "peerDependencies": {

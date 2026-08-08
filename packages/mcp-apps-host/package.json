@@ -1,24 +1,29 @@
 {
-  "name": "@guuey/host",
+  "name": "@guuey/mcp-apps-host",
   "version": "0.3.0",
-  "description": "The universal config-driven Guuey worker. Reads the resolved agent.json snapshot, runs the Claude Agent SDK, and emits each native SDKMessage to fd-3 as a `native` WorkerEvent.",
+  "description": "The MCP Apps (SEP-1865) Host role for guuey's chat surfaces — view-mount narrowing across UI channels, ui:// locator rehydration by resources/read, and the sandbox-trust channel contract. Vendor-neutral: any spec-following MCP App mounts through it.",
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "bin": {
-    "guuey-host": "dist/index.js"
-  },
   "files": [
     "dist",
-    "LICENSE",
+    "src",
+    "!src/**/*.test.ts",
     "README.md"
   ],
   "exports": {
     ".": {
+      "react-native": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./narrowing": {
+      "react-native": "./src/narrowing.ts",
+      "types": "./dist/narrowing.d.ts",
+      "import": "./dist/narrowing.js",
+      "default": "./dist/narrowing.js"
     }
   },
   "scripts": {
@@ -30,50 +35,33 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@guuey/config": "workspace:*",
-    "@guuey/worker": "workspace:*"
+    "@ggui-ai/protocol": "0.6.3",
+    "@silverprotocol/core": "0.4.1"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "typescript": "^5.0.0",
-    "vitest": "^3.0.0",
-    "@anthropic-ai/claude-agent-sdk": "^0.3.199",
-    "@openai/agents": "^0.12.0",
-    "@google/adk": "^1.3.0"
+    "vitest": "^3.0.0"
   },
   "publishConfig": {
     "access": "public"
   },
   "keywords": [
     "guuey",
-    "agent",
-    "worker",
+    "mcp",
+    "mcp-apps",
+    "sep-1865",
     "host",
-    "claude-agent-sdk"
+    "generative-ui",
+    "view"
   ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/withguuey/guuey-sdks.git",
-    "directory": "packages/host"
+    "directory": "packages/mcp-apps-host"
   },
   "homepage": "https://guuey.com",
   "bugs": {
     "url": "https://github.com/loqu-co/guuey/issues"
-  },
-  "peerDependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.199",
-    "@google/adk": ">=1.0.0 <2",
-    "@openai/agents": "^0.12.0"
-  },
-  "peerDependenciesMeta": {
-    "@anthropic-ai/claude-agent-sdk": {
-      "optional": true
-    },
-    "@google/adk": {
-      "optional": true
-    },
-    "@openai/agents": {
-      "optional": true
-    }
   }
 }

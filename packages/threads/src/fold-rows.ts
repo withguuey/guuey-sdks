@@ -16,6 +16,7 @@ import type {
 } from "@silverprotocol/core";
 import { AgMessage as AgMessageSchema } from "@silverprotocol/core";
 import type { ThreadMessageRow, ThreadMessageRole, ThreadMessageKind, ThreadSnapshotRow } from "./rows.js";
+import { asUiResource, scanProviderRawForUiResource, uiLocator } from "@guuey/mcp-apps-host/narrowing";
 
 export interface RowCtx {
   threadId: string;
@@ -67,6 +68,12 @@ export function agMessageToRow(
     // stripped before persistence, on the message row exactly as on the
     // card projection.
     content: messageWithoutToolResultMeta(msg),
+    // SANCTIONED EXCEPTION to the #122 no-short-TTL rule (explicit decision,
+    // 2026-08-08): the turnRecord persists verbatim, INCLUDING paused-outcome
+    // asks[].token/expiresAt — reassembleFold round-trips turns into the
+    // reducer seed, so stripping could orphan a paused turn's resume after a
+    // reload, and the token authorizes the thread owner's OWN resume (not a
+    // cross-trust credential like a render wsToken). Revisit on guuey#122.
     ...(ctx.turnRecord ? { aiContext: ctx.turnRecord } : {}),
   };
 }
@@ -89,57 +96,19 @@ function messageWithoutToolResultMeta(msg: AgMessage): AgMessage {
  * misses every generative-UI card and nothing ever wrote a `kind:'card'`
  * row for them (guuey#86: cards never rehydrated after a reload). Project
  * UI-carrying tool-result blocks into synthetic AgArtifacts so the
- * EXISTING card-row lane persists them; the client's `cardCardMount`
+ * EXISTING card-row lane persists them; the client's `snapshotViewMount`
  * mounts `{ parts: [block] }` through its inline arm unchanged. Facets
  * that DO emit artifact events don't stamp `uiData` on tool-results, so
  * the two sources don't double-write for one card.
  *
- * The narrowing MIRRORS `@guuey/agent-client`'s `toolResultUiResource`
- * (@guuey/agent-client's block-ui.ts — keep the two in sync):
+ * The narrowing is IMPORTED from `@guuey/mcp-apps-host` (the SEP-1865 Host
+ * package) — one implementation, no mirror to keep in sync:
  *   1. `uiData` carrying an MCP resource payload (`{uri, text|blob}`,
  *      inlined directly or wrapped as `{ resource: {...} }`) — the explicit
  *      surface channel, no `ui://` gate on purpose;
  *   2. a `ui://` resource degraded into a `provider-raw` content part —
  *      gated on the scheme, because provider-raw is a lossy catch-all.
  */
-function isJsonObject(v: unknown): v is Record<string, JsonValue> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-function isResourcePayload(v: JsonValue | undefined): boolean {
-  if (!isJsonObject(v)) return false;
-  if (typeof v.uri !== "string") return false;
-  return typeof v.text === "string" || typeof v.blob === "string";
-}
-
-function resourceUri(v: JsonValue | undefined): string | undefined {
-  if (!isJsonObject(v)) return undefined;
-  return typeof v.uri === "string" ? v.uri : undefined;
-}
-
-function uiDataCarriesResource(uiData: JsonValue | undefined): boolean {
-  if (!isJsonObject(uiData)) return false;
-  return isResourcePayload(uiData) || isResourcePayload(uiData.resource);
-}
-
-function providerRawCarriesUiResource(raw: JsonValue | undefined): boolean {
-  if (!isJsonObject(raw)) return false;
-  const candidate = raw.resource !== undefined ? raw.resource : raw;
-  if (!isResourcePayload(candidate)) return false;
-  return resourceUri(candidate)?.startsWith("ui://") === true;
-}
-
-/**
- * A tool result whose `uiData` carries a `ui://`-scheme `resourceUri` — the
- * MCP-Apps LOCATOR shape (vendor-neutral: ggui is merely one producer). The
- * locator is durable identity; it earns a placeholder card row that
- * rehydrates by re-fetching the uri, never by replaying mount material.
- */
-function uiDataCarriesUiLocator(uiData: JsonValue | undefined): boolean {
-  if (!isJsonObject(uiData)) return false;
-  return typeof uiData.resourceUri === "string" && uiData.resourceUri.startsWith("ui://");
-}
-
 /**
  * Persistence boundary rule (guuey#122): a tool-result block's `_meta` is
  * live-turn MOUNT/TRANSPORT material — vendor slices there routinely carry
@@ -168,10 +137,11 @@ export function uiCardArtifactsFromMessages(messages: AgMessage[]): AgArtifact[]
       // mount material (mount = re-fetch of the resourceUri). Before this,
       // locator-only results persisted nothing and vanished from history.
       const carriesUi =
-        uiDataCarriesResource(block.uiData) ||
-        uiDataCarriesUiLocator(block.uiData) ||
+        asUiResource(block.uiData) !== undefined ||
+        uiLocator(block.uiData) !== undefined ||
         block.content.some(
-          (part) => part.type === "provider-raw" && providerRawCarriesUiResource(part.raw),
+          (part) =>
+            part.type === "provider-raw" && scanProviderRawForUiResource(part.raw) !== undefined,
         );
       if (!carriesUi) continue;
       artifacts.push({
@@ -186,6 +156,15 @@ export function uiCardArtifactsFromMessages(messages: AgMessage[]): AgArtifact[]
 }
 
 export function agArtifactToCardRow(art: AgArtifact, ctx: RowCtx): ThreadMessageRow {
+  // guuey#122: the projection lane strips tool-result _meta upstream, but
+  // REAL artifact.* events land here verbatim — apply the same persistence
+  // boundary to any tool-result-typed part (and the artifact-level _meta),
+  // so no lane can persist a short-TTL credential.
+  const parts = art.parts.map((part) =>
+    isJsonObjectLike(part) && part.type === "tool-result" ? withoutToolResultMeta(part) : part,
+  );
+  const { _meta: _artifactMeta, ...artRest } = art as AgArtifact & { _meta?: unknown };
+  const snapshot: AgArtifact = { ...artRest, parts };
   return {
     threadId: ctx.threadId,
     seq: ctx.seq,
@@ -195,8 +174,13 @@ export function agArtifactToCardRow(art: AgArtifact, ctx: RowCtx): ThreadMessage
     kind: "card",
     authorRole: "agent",
     content: { producedInTurnId: art.turnId },
-    cardSnapshot: art,
+    cardSnapshot: snapshot,
   };
+}
+
+/** Local structural check (narrow enough for the strip dispatch above). */
+function isJsonObjectLike(v: unknown): v is { type?: unknown; _meta?: unknown } {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 /**

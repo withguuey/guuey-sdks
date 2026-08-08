@@ -8,9 +8,12 @@ name: npm Release
 # Cohort (leaf-first, mirrors the ORDER array below): @guuey/config,
 # @guuey/state (KV developer preview — in-memory binding, contract locked),
 # @guuey/fs (GuueyFS dev-guidance helper — homeDir/appDir/sessionDir, zero
-# deps, a leaf), @guuey/threads (universal session/thread persistence —
-# ThreadStore + fold↔row mapping + in-memory binding; only npm dep is
-# @silverprotocol/core, a leaf), @guuey/widget-auth (embeddable-widget
+# deps, a leaf), @guuey/mcp-apps-host (the MCP Apps SEP-1865 Host role —
+# view-mount narrowing + locator rehydration; deps @silverprotocol/core +
+# @ggui-ai/protocol, a leaf), @guuey/threads (universal session/thread
+# persistence — ThreadStore + fold↔row mapping + in-memory binding; npm
+# deps are @silverprotocol/core and @guuey/mcp-apps-host/narrowing),
+# @guuey/widget-auth (embeddable-widget
 # token minting for a customer's backend — zero deps, a leaf), @guuey/worker,
 # @guuey/agent-client (the embed chat SDK), @guuey/host,
 # @guuey/create-agentic-app, @guuey/cli.
@@ -130,9 +133,9 @@ jobs:
         run: |
           set -euo pipefail
           # Fixed leaf-first order: config/state/fs/widget-auth/worker/
-          # agent-client are leaves, host needs config+worker,
+          # host needs config+worker, threads needs mcp-apps-host,
           # create-agentic-app needs config, cli needs all.
-          ORDER=(config state fs threads widget-auth worker agent-client host create-agentic-app cli)
+          ORDER=(config state fs mcp-apps-host threads widget-auth worker agent-client host create-agentic-app cli)
 
           TODO=()
           for pkg in "${ORDER[@]}"; do
