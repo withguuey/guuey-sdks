@@ -100,9 +100,21 @@ export async function buildGguiAssetPush(
       throw new Error(`${configFile}#generation must be an object`);
     }
     const model = generation['model'];
-    if (typeof model === 'string' && model.length > 0) {
-      body.generation = { model };
+    if (typeof model !== 'string' || model.length === 0) {
+      // Fail fast, never drop: the endpoint is FULL-STATE REPLACE, so a
+      // silently-omitted generation would REMOVE the app's pushed model
+      // override on a green deploy. Same message shape as cliApi's own
+      // validation of this wire slice.
+      throw new Error(`${configFile}#generation.model must be a non-empty string`);
     }
+    const extraKeys = Object.keys(generation).filter((k) => k !== 'model');
+    if (extraKeys.length > 0) {
+      throw new Error(
+        `${configFile}#generation has unsupported field(s) ${extraKeys.join(', ')} — ` +
+          'only {model} is project-declared (keySource is platform-composed)',
+      );
+    }
+    body.generation = { model };
   }
 
   const gadgets = doc['gadgets'];

@@ -29,17 +29,34 @@ describe('buildGguiAssetPush', () => {
     writeFileSync(join(root, 'ggui', 'ggui.json'), JSON.stringify(doc));
   }
 
-  it('lifts generation.model, and only the model', async () => {
-    // `keySource` is a PLATFORM fact composed at cliApi — a project that
-    // declares one must not have it ride onto the wire.
+  it('lifts generation.model', async () => {
     writeGguiJson({
       schema: '1',
-      generation: { model: 'anthropic:claude-haiku-4-5-20251001', keySource: 'own' },
+      generation: { model: 'anthropic:claude-haiku-4-5-20251001' },
     });
 
     const body = await buildGguiAssetPush(root, './ggui/ggui.json');
 
     expect(body.generation).toEqual({ model: 'anthropic:claude-haiku-4-5-20251001' });
+  });
+
+  it('throws on a declared keySource — a PLATFORM fact must not be project input', async () => {
+    writeGguiJson({
+      schema: '1',
+      generation: { model: 'anthropic:claude-haiku-4-5-20251001', keySource: 'own' },
+    });
+    await expect(buildGguiAssetPush(root, './ggui/ggui.json')).rejects.toThrow(
+      /generation has unsupported field\(s\) keySource/,
+    );
+  });
+
+  it('throws on a declared-but-malformed generation.model — never a silent drop (full-state replace would strip the pushed override)', async () => {
+    for (const generation of [{}, { model: '' }, { model: 42 }]) {
+      writeGguiJson({ schema: '1', generation });
+      await expect(buildGguiAssetPush(root, './ggui/ggui.json')).rejects.toThrow(
+        /generation\.model must be a non-empty string/,
+      );
+    }
   });
 
   it('omits every field the project does not declare', async () => {
