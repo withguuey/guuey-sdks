@@ -30,7 +30,15 @@ export {
 export {
   snapshotViewMount,
   toolResultViewMount,
+  type LocatorViewMount,
+  type ResolvedViewMount,
   type UiResourceReader,
   type ViewMount,
   type ViewMountChannel,
 } from "./card-mount.js";
+export {
+  createMcpUiResourceReader,
+  uiResourceChannel,
+  type CreateMcpUiResourceReaderDeps,
+  type McpResourceReadResult,
+} from "./reader.js";

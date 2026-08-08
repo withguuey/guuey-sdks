@@ -490,4 +490,16 @@ describe("createUiResourceReader", () => {
     });
     expect(await read("ui://x/y")).toBeUndefined();
   });
+
+  it("a blob-only body passes through — the proxy's blob arm is not silently a miss (guuey#127)", async () => {
+    const read = createUiResourceReader({
+      apiBaseUrl: "https://api.example/v1",
+      threadId: "t1",
+      fetchImpl: mkFetch(200, { uri: "ui://x/y", mimeType: "text/html", blob: "PGI+aGk8L2I+" }),
+    });
+    expect(await read("ui://x/y")).toEqual({
+      channel: "inline",
+      resource: { uri: "ui://x/y", mimeType: "text/html", blob: "PGI+aGk8L2I+" },
+    });
+  });
 });

@@ -63,17 +63,25 @@ export type ViewMountChannel = "inline" | "ggui" | "locator";
  * + its tool result — see the conformance map.) Until a reader is wired, the honest render
  * is the host's own placeholder, never a stale mount.
  */
-export type ViewMount =
-  | {
-      channel: "inline" | "ggui";
-      /** The payload an mcp-ui host mounts, identical in shape for both channels. */
-      resource: McpUiResourcePayload;
-    }
-  | {
-      channel: "locator";
-      /** The persisted `uiData.resourceUri` (`ui://` scheme) to re-fetch. */
-      resourceUri: string;
-    };
+export type ViewMount = ResolvedViewMount | LocatorViewMount;
+
+/**
+ * A view with mount material in hand — the arms a host can render directly,
+ * and the ONLY arms a `UiResourceReader` resolves (guuey#127): a read either
+ * yields mount material or the honest placeholder, never another locator.
+ */
+export interface ResolvedViewMount {
+  channel: "inline" | "ggui";
+  /** The payload an mcp-ui host mounts, identical in shape for both channels. */
+  resource: McpUiResourcePayload;
+}
+
+/** The durable-identity arm: no mount material, only the uri to re-fetch. */
+export interface LocatorViewMount {
+  channel: "locator";
+  /** The persisted `uiData.resourceUri` (`ui://` scheme) to re-fetch. */
+  resourceUri: string;
+}
 
 /**
  * Resolves a `"locator"` mount by a fresh `resources/read` of the uri over

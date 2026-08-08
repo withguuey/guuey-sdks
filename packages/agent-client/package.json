@@ -36,6 +36,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@guuey/mcp-apps-host": "workspace:*",
     "@silverprotocol/core": "0.4.1"
   },
   "peerDependencies": {

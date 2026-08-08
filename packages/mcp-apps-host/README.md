@@ -18,6 +18,13 @@ role's client-side narrowing and mount contract:
   result) — never by replaying stored mount material. The read transport is injected
   (`UiResourceReader`); the host owns auth and user-ownership enforcement,
   and a deny is byte-identical to a miss.
+- **Generic reader assembly** (`createMcpUiResourceReader`): hand it one
+  host-owned `resources/read` callable (a raw MCP client, an authenticated
+  proxy — no SDK dependency imposed) and get a `UiResourceReader` back, with
+  the trust rules built in: deny == miss == placeholder, and the sandbox
+  channel derives from the _requested_ locator uri, never the response
+  (`uiResourceChannel`). `@guuey/agent-client`'s `createUiResourceReader` is
+  this assembly over guuey's platform proxy.
 - **Sandbox-trust channels** (`ViewMountChannel`): which sandbox host page a
   payload may mount in, until per-resource declared-CSP construction lands.
 

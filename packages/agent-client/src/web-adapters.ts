@@ -6,6 +6,11 @@
  * functions — never at module load — so this file is import-safe under SSR
  * (the functions guard on `typeof window`).
  */
+import {
+  createMcpUiResourceReader,
+  type McpResourceReadResult,
+  type ResolvedViewMount,
+} from "@guuey/mcp-apps-host";
 import type {
   AgentInvokeAdapters,
   InvokeRequest,
@@ -333,39 +338,24 @@ export interface CreateUiResourceReaderOptions {
 }
 
 /**
- * Build a `@guuey/mcp-apps-host` `UiResourceReader` over guuey's
- * authenticated resources/read proxy (guuey#122 Gap 1:
- * `GET /v1/threads/:threadId/ui-resource?uri=…`).
+ * Build a `UiResourceReader` over guuey's authenticated resources/read proxy
+ * (guuey#122 Gap 1: `GET /v1/threads/:threadId/ui-resource?uri=…`).
  *
+ * This is `@guuey/mcp-apps-host`'s `createMcpUiResourceReader` assembly over
+ * a guuey-platform transport (guuey#127) — channel resolution and payload
+ * narrowing live in the host package; only the transport is guuey-shaped.
  * The proxy owns EVERYTHING trust-shaped: caller identity (the same three
  * families as the history read), thread ownership, the locator-to-thread
- * scope guard, and the per-user federation mint. This reader only carries
+ * scope guard, and the per-user federation mint. This transport only carries
  * the surface's existing credential and maps EVERY non-OK — 401/403/404/502
  * alike — to `undefined`: deny is byte-identical to a miss, and a miss
  * renders the host's placeholder, never an error surface.
- *
- * Channel resolution is the phase-1 heuristic: a `ui://ggui/…` uri mounts in
- * the ggui-CSP sandbox page (`channel: "ggui"`), anything else in the
- * self-only page (`channel: "inline"`). Phase 2 (per-resource declared-CSP
- * construction from the response `_meta.ui.csp`) retires the heuristic —
- * conformance map, retirement step 3.
  */
-/**
- * The mount the reader resolves — structurally assignable to
- * `@guuey/mcp-apps-host`'s `ViewMount` mountable arms (typed inline so this
- * package carries no dependency on the host package; hosts that consume
- * both see one structural type).
- */
-export interface ResolvedUiResourceMount {
-  channel: "inline" | "ggui";
-  resource: { uri: string; mimeType?: string; text: string };
-}
-
 export function createUiResourceReader(
   options: CreateUiResourceReaderOptions,
-): (resourceUri: string) => Promise<ResolvedUiResourceMount | undefined> {
+): (resourceUri: string) => Promise<ResolvedViewMount | undefined> {
   const fetchImpl = options.fetchImpl ?? fetch;
-  return async (resourceUri) => {
+  const readResource = async (resourceUri: string): Promise<McpResourceReadResult | undefined> => {
     const headers: Record<string, string> = {};
     const token = options.getAccessToken ? await options.getAccessToken() : null;
     const guest = sendableGuestSecret(options.guestSecret);
@@ -397,20 +387,22 @@ export function createUiResourceReader(
       }
     }
     if (!res.ok) return undefined;
-    let body: { uri?: unknown; mimeType?: unknown; text?: unknown };
+    let body: { uri?: unknown; mimeType?: unknown; text?: unknown; blob?: unknown };
     try {
       body = (await res.json()) as typeof body;
     } catch {
       return undefined;
     }
-    if (typeof body.uri !== "string" || typeof body.text !== "string") return undefined;
+    // The proxy passes the blob arm through (a blob-only resource is not
+    // silently a miss — its route contract); mirror that here.
+    if (typeof body.uri !== "string") return undefined;
+    if (typeof body.text !== "string" && typeof body.blob !== "string") return undefined;
     return {
-      channel: resourceUri.startsWith("ui://ggui/") ? "ggui" : "inline",
-      resource: {
-        uri: body.uri,
-        ...(typeof body.mimeType === "string" ? { mimeType: body.mimeType } : {}),
-        text: body.text,
-      },
+      uri: body.uri,
+      ...(typeof body.mimeType === "string" ? { mimeType: body.mimeType } : {}),
+      ...(typeof body.text === "string" ? { text: body.text } : {}),
+      ...(typeof body.blob === "string" ? { blob: body.blob } : {}),
     };
   };
+  return createMcpUiResourceReader({ readResource });
 }
