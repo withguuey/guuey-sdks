@@ -52,6 +52,15 @@ The todo MCP still answers on :6782 — it's just a supervised child of
 `guuey dev` now (copy `mcps/todo/` to add your own server; new `colocated`
 entries in `guuey.json` are auto-spawned the same way).
 
+> **If a server's deps carry build scripts** (the classic: `tsx` → esbuild's
+> platform-binary fetch), pnpm ≥11 refuses to run them on a fresh install —
+> `ERR_PNPM_IGNORED_BUILDS` — and the server never boots. Approve the
+> specific packages declaratively in the workspace-root `package.json` (or
+> the server's own, for a standalone install):
+> `"pnpm": { "onlyBuiltDependencies": ["esbuild"] }`. This scaffold ships
+> the approval already; add to the list when a new dep needs its build step.
+> Don't disable the gate wholesale — it's pnpm's supply-chain protection.
+
 Open http://localhost:6890 to chat with your agent locally.
 
 ## Local dev vs. deployed — what's different

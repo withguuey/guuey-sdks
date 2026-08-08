@@ -98,6 +98,32 @@ describe("spawnColocatedDev", () => {
     warn.mockRestore();
   });
 
+  // guuey#120: pnpm ≥11's fatal ignored-builds gate kills fresh colocated
+  // installs (tsx → esbuild postinstall) with nothing actionable at the
+  // dev-serve level. The fixture emits the marker SPLIT across two stderr
+  // chunks (boundary regression) and then again whole (once-only
+  // regression) before exiting 1, like the real failure.
+  it("prints one targeted onlyBuiltDependencies hint when a child hits ERR_PNPM_IGNORED_BUILDS", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    handle = spawnColocatedDev(
+      [{ name: "my-mcp", source: "fixtures/ignored-builds-child", devPort: 34569 }],
+      projectRoot,
+    );
+
+    await waitFor(() =>
+      warn.mock.calls.some((c) => String(c[0]).includes("onlyBuiltDependencies")),
+    );
+    const hints = warn.mock.calls.filter((c) =>
+      String(c[0]).includes("onlyBuiltDependencies"),
+    );
+    expect(hints).toHaveLength(1);
+    expect(String(hints[0]![0])).toContain('colocated MCP "my-mcp" (fixtures/ignored-builds-child)');
+    expect(String(hints[0]![0])).toContain('"pnpm": { "onlyBuiltDependencies": ["esbuild"] }');
+    // The gate stays intact — the hint must never suggest a blanket allow.
+    expect(String(hints[0]![0])).not.toContain("--allow-build");
+    warn.mockRestore();
+  });
+
   it("stop() is idempotent (safe to call more than once)", async () => {
     markerDir = mkdtempSync(join(tmpdir(), "guuey-colocated-dev-idempotent-"));
     process.env.FIXTURE_MARKER_DIR = markerDir;

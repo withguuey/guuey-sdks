@@ -18,5 +18,10 @@
     "tsx": "^4.19.0",
     "typescript": "^5.8.0",
     "@guuey/config": "0.0.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }

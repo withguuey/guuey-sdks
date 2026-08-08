@@ -79,6 +79,48 @@ function terminateGroup(child: ChildProcess): void {
   }
 }
 
+/**
+ * pnpm ≥11 makes the ignored-build-scripts gate FATAL on fresh installs: a
+ * colocated server whose deps carry postinstall scripts (the classic: tsx →
+ * esbuild's platform-binary fetch) dies with `ERR_PNPM_IGNORED_BUILDS`, the
+ * server never binds its devPort, and the raw pnpm stack scrolling past a
+ * child prefix names no fix (guuey#120). When the marker shows up in a
+ * child's output, print ONE targeted hint naming the dir + the declarative
+ * per-package approval. Deliberately NOT auto-passing an allow-builds flag —
+ * that would defeat pnpm's supply-chain gate; trust stays a human decision.
+ */
+const IGNORED_BUILDS_MARKER = "ERR_PNPM_IGNORED_BUILDS";
+
+function ignoredBuildsHint(name: string, source: string): string {
+  return [
+    `guuey dev: colocated MCP "${name}" (${source}) hit pnpm's ignored-build-scripts gate (${IGNORED_BUILDS_MARKER}).`,
+    `  A dependency's build script needs approval before pnpm will run it (classic: tsx → esbuild's platform-binary fetch).`,
+    `  Declare the trust where pnpm reads it — the workspace-root package.json (or ${source}/package.json for a standalone install):`,
+    `    "pnpm": { "onlyBuiltDependencies": ["esbuild"] }`,
+    `  then re-run pnpm install there. Approve the specific packages only — don't disable the build gate wholesale.`,
+  ].join("\n");
+}
+
+/**
+ * Watch a child's output for {@link IGNORED_BUILDS_MARKER} and fire `onHit`
+ * once. The marker can straddle chunk boundaries, so a tail of the previous
+ * chunk is kept and prepended before scanning.
+ */
+function makeIgnoredBuildsScanner(onHit: () => void): (chunk: string) => void {
+  let tail = "";
+  let hit = false;
+  return (chunk: string): void => {
+    if (hit) return;
+    const hay = tail + chunk;
+    if (hay.includes(IGNORED_BUILDS_MARKER)) {
+      hit = true;
+      onHit();
+      return;
+    }
+    tail = hay.slice(-(IGNORED_BUILDS_MARKER.length - 1));
+  };
+}
+
 /** `"dev"` if the entry's `package.json` declares one, else `"start"`, else
  *  `undefined` (neither present — nothing to spawn, caller warns + skips). */
 function resolveScript(packageJsonPath: string): "dev" | "start" | undefined {
@@ -134,12 +176,21 @@ export function spawnColocatedDev(
       detached: true,
     });
     const prefix = `[${entry.name}]`.padEnd(9);
-    child.stdout?.on("data", (d: Buffer) =>
-      process.stdout.write(String(d).replace(/^/gm, prefix)),
+    // One scanner per entry, shared across both streams (pnpm's error can
+    // land on either) — the hint fires at most once per colocated server.
+    const scanForIgnoredBuilds = makeIgnoredBuildsScanner(() =>
+      console.warn(ignoredBuildsHint(entry.name, entry.source)),
     );
-    child.stderr?.on("data", (d: Buffer) =>
-      process.stderr.write(String(d).replace(/^/gm, prefix)),
-    );
+    child.stdout?.on("data", (d: Buffer) => {
+      const text = String(d);
+      process.stdout.write(text.replace(/^/gm, prefix));
+      scanForIgnoredBuilds(text);
+    });
+    child.stderr?.on("data", (d: Buffer) => {
+      const text = String(d);
+      process.stderr.write(text.replace(/^/gm, prefix));
+      scanForIgnoredBuilds(text);
+    });
     children.push(child);
   }
 
