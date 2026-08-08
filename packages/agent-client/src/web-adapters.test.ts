@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createWebAdapters, fetchStreamTransport } from "./web-adapters";
+import { createUiResourceReader, createWebAdapters, fetchStreamTransport } from "./web-adapters";
 import type { InvokeRequest } from "./types";
 
 /** A well-formed guest secret: 64 lowercase hex chars. */
@@ -398,5 +398,96 @@ describe("guest secret confidentiality", () => {
     } finally {
       for (const spy of spies) spy.mockRestore();
     }
+  });
+});
+
+// guuey#122 Gap 1 — the ui-resource reader: deny == miss == undefined, and
+// the same credential precedence as the transport.
+describe("createUiResourceReader", () => {
+  const OK_BODY = { uri: "ui://ggui/render/s/h", mimeType: "text/html", text: "<html>x</html>" };
+  function mkFetch(status: number, body?: unknown) {
+    return vi.fn(async () => ({
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => body,
+    })) as unknown as typeof fetch;
+  }
+
+  it("resolves a ggui-uri to the ggui channel with the fetched payload", async () => {
+    const fetchImpl = mkFetch(200, OK_BODY);
+    const read = createUiResourceReader({
+      apiBaseUrl: "https://api.example/v1",
+      threadId: "t1",
+      guestSecret: "a".repeat(64),
+      fetchImpl,
+    });
+    const mount = await read("ui://ggui/render/s/h");
+    expect(mount).toEqual({ channel: "ggui", resource: OK_BODY });
+    const call = (fetchImpl as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]!;
+    expect(String(call[0])).toBe(
+      "https://api.example/v1/threads/t1/ui-resource?uri=ui%3A%2F%2Fggui%2Frender%2Fs%2Fh",
+    );
+    expect((call[1] as { headers: Record<string, string> }).headers["x-guuey-guest"]).toBe(
+      "a".repeat(64),
+    );
+  });
+
+  it("a bearer wins over a guest secret (same rule as the transport)", async () => {
+    const fetchImpl = mkFetch(200, OK_BODY);
+    const read = createUiResourceReader({
+      apiBaseUrl: "https://api.example/v1",
+      threadId: "t1",
+      getAccessToken: async () => "tok",
+      guestSecret: "a".repeat(64),
+      fetchImpl,
+    });
+    await read("ui://x/y");
+    const headers = (
+      (fetchImpl as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]![1] as {
+        headers: Record<string, string>;
+      }
+    ).headers;
+    expect(headers["authorization"]).toBe("Bearer tok");
+    expect(headers["x-guuey-guest"]).toBeUndefined();
+  });
+
+  it("maps EVERY non-OK (401/403/404/502) and transport failure to undefined — deny == miss", async () => {
+    for (const status of [401, 403, 404, 502]) {
+      const read = createUiResourceReader({
+        apiBaseUrl: "https://api.example/v1",
+        threadId: "t1",
+        fetchImpl: mkFetch(status),
+      });
+      expect(await read("ui://x/y")).toBeUndefined();
+    }
+    const throwing = createUiResourceReader({
+      apiBaseUrl: "https://api.example/v1",
+      threadId: "t1",
+      fetchImpl: vi.fn(async () => {
+        throw new Error("ECONNREFUSED");
+      }) as unknown as typeof fetch,
+    });
+    expect(await throwing("ui://x/y")).toBeUndefined();
+  });
+
+  it("a non-ggui ui:// uri resolves to the inline (self-only sandbox) channel", async () => {
+    const read = createUiResourceReader({
+      apiBaseUrl: "https://api.example/v1",
+      threadId: "t1",
+      fetchImpl: mkFetch(200, { uri: "ui://other/app", text: "<html>y</html>" }),
+    });
+    expect(await read("ui://other/app")).toEqual({
+      channel: "inline",
+      resource: { uri: "ui://other/app", text: "<html>y</html>" },
+    });
+  });
+
+  it("a malformed body (missing text) is undefined, never a broken mount", async () => {
+    const read = createUiResourceReader({
+      apiBaseUrl: "https://api.example/v1",
+      threadId: "t1",
+      fetchImpl: mkFetch(200, { uri: "ui://x/y" }),
+    });
+    expect(await read("ui://x/y")).toBeUndefined();
   });
 });

@@ -317,3 +317,87 @@ export function createWebAdapters(
 
   return adapters;
 }
+
+/** Options for {@link createUiResourceReader} — same credential surface as the history adapter. */
+export interface CreateUiResourceReaderOptions {
+  /** The guuey public API base (`…/v1`). */
+  apiBaseUrl: string;
+  /** The thread whose persisted locators this reader may resolve. */
+  threadId: string;
+  /** Signed-in bearer — wins over the guest secret (same rule as the transport). */
+  getAccessToken?: (opts?: { forceRefresh?: boolean }) => Promise<string | null>;
+  /** Caller-owned anonymous guest secret (widget / guest chat). */
+  guestSecret?: string | null;
+  /** Injectable for tests. */
+  fetchImpl?: typeof fetch;
+}
+
+/**
+ * Build a `@guuey/mcp-apps-host` `UiResourceReader` over guuey's
+ * authenticated resources/read proxy (guuey#122 Gap 1:
+ * `GET /v1/threads/:threadId/ui-resource?uri=…`).
+ *
+ * The proxy owns EVERYTHING trust-shaped: caller identity (the same three
+ * families as the history read), thread ownership, the locator-to-thread
+ * scope guard, and the per-user federation mint. This reader only carries
+ * the surface's existing credential and maps EVERY non-OK — 401/403/404/502
+ * alike — to `undefined`: deny is byte-identical to a miss, and a miss
+ * renders the host's placeholder, never an error surface.
+ *
+ * Channel resolution is the phase-1 heuristic: a `ui://ggui/…` uri mounts in
+ * the ggui-CSP sandbox page (`channel: "ggui"`), anything else in the
+ * self-only page (`channel: "inline"`). Phase 2 (per-resource declared-CSP
+ * construction from the response `_meta.ui.csp`) retires the heuristic —
+ * conformance map, retirement step 3.
+ */
+/**
+ * The mount the reader resolves — structurally assignable to
+ * `@guuey/mcp-apps-host`'s `ViewMount` mountable arms (typed inline so this
+ * package carries no dependency on the host package; hosts that consume
+ * both see one structural type).
+ */
+export interface ResolvedUiResourceMount {
+  channel: "inline" | "ggui";
+  resource: { uri: string; mimeType?: string; text: string };
+}
+
+export function createUiResourceReader(
+  options: CreateUiResourceReaderOptions,
+): (resourceUri: string) => Promise<ResolvedUiResourceMount | undefined> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  return async (resourceUri) => {
+    const headers: Record<string, string> = {};
+    const token = options.getAccessToken ? await options.getAccessToken() : null;
+    const guest = sendableGuestSecret(options.guestSecret);
+    if (token) {
+      headers["authorization"] = `Bearer ${token}`;
+    } else if (guest) {
+      headers[GUEST_HEADER] = guest;
+    }
+    let res: Response;
+    try {
+      res = await fetchImpl(
+        `${options.apiBaseUrl}/threads/${encodeURIComponent(options.threadId)}/ui-resource?uri=${encodeURIComponent(resourceUri)}`,
+        { headers },
+      );
+    } catch {
+      return undefined; // transport failure == miss == placeholder
+    }
+    if (!res.ok) return undefined;
+    let body: { uri?: unknown; mimeType?: unknown; text?: unknown };
+    try {
+      body = (await res.json()) as typeof body;
+    } catch {
+      return undefined;
+    }
+    if (typeof body.uri !== "string" || typeof body.text !== "string") return undefined;
+    return {
+      channel: resourceUri.startsWith("ui://ggui/") ? "ggui" : "inline",
+      resource: {
+        uri: body.uri,
+        ...(typeof body.mimeType === "string" ? { mimeType: body.mimeType } : {}),
+        text: body.text,
+      },
+    };
+  };
+}
