@@ -9,6 +9,9 @@ export {
 } from "./sse";
 export { dismissLinkPrompt } from "./link-prompt";
 export {
+  createUiResourceReader,
+  type CreateUiResourceReaderOptions,
+  type ResolvedUiResourceMount,
   createWebAdapters,
   localStorageThreadStore,
   webGenerateId,
