@@ -62,9 +62,25 @@ export function agMessageToRow(
     kind,
     authorRole: roleToAuthor(msg.role),
     ...(text ? { text } : {}),
-    content: msg,
+    // guuey#122: the ONE deliberate byte-identity exception — tool-result
+    // `_meta` (live-turn mount material, incl. short-TTL credentials) is
+    // stripped before persistence, on the message row exactly as on the
+    // card projection.
+    content: messageWithoutToolResultMeta(msg),
     ...(ctx.turnRecord ? { aiContext: ctx.turnRecord } : {}),
   };
+}
+
+/** Strip every tool-result block's `_meta` (guuey#122); identity when none carried one. */
+function messageWithoutToolResultMeta(msg: AgMessage): AgMessage {
+  let changed = false;
+  const content = msg.content.map((block) => {
+    if (block.type !== "tool-result") return block;
+    const stripped = withoutToolResultMeta(block);
+    if (stripped !== block) changed = true;
+    return stripped;
+  });
+  return changed ? { ...msg, content } : msg;
 }
 
 /**
@@ -113,14 +129,47 @@ function providerRawCarriesUiResource(raw: JsonValue | undefined): boolean {
   return resourceUri(candidate)?.startsWith("ui://") === true;
 }
 
+/**
+ * A tool result whose `uiData` carries a `ui://`-scheme `resourceUri` — the
+ * MCP-Apps LOCATOR shape (vendor-neutral: ggui is merely one producer). The
+ * locator is durable identity; it earns a placeholder card row that
+ * rehydrates by re-fetching the uri, never by replaying mount material.
+ */
+function uiDataCarriesUiLocator(uiData: JsonValue | undefined): boolean {
+  if (!isJsonObject(uiData)) return false;
+  return typeof uiData.resourceUri === "string" && uiData.resourceUri.startsWith("ui://");
+}
+
+/**
+ * Persistence boundary rule (guuey#122): a tool-result block's `_meta` is
+ * live-turn MOUNT/TRANSPORT material — vendor slices there routinely carry
+ * short-TTL credentials (ggui's render bootstrap `wsToken` is the concrete
+ * case) and are dead on arrival when replayed, so `_meta` NEVER persists.
+ * Durable identity belongs in `uiData`/`content`, which survive untouched.
+ * Deliberately vendor-agnostic: no `_meta` key list to maintain, and the
+ * next vendor's expiring credential is unpersistable by construction.
+ */
+function withoutToolResultMeta(
+  block: Extract<AgMessage["content"][number], { type: "tool-result" }>,
+): typeof block {
+  if (block._meta === undefined) return block;
+  const { _meta: _dropped, ...rest } = block;
+  return rest;
+}
+
 export function uiCardArtifactsFromMessages(messages: AgMessage[]): AgArtifact[] {
   const artifacts: AgArtifact[] = [];
   for (const msg of messages) {
     for (let i = 0; i < msg.content.length; i++) {
       const block = msg.content[i]!;
       if (block.type !== "tool-result") continue;
+      // guuey#122: a ui:// locator (uiData.resourceUri — ggui renders are
+      // one producer) persists as a PLACEHOLDER row: the locator without
+      // mount material (mount = re-fetch of the resourceUri). Before this,
+      // locator-only results persisted nothing and vanished from history.
       const carriesUi =
         uiDataCarriesResource(block.uiData) ||
+        uiDataCarriesUiLocator(block.uiData) ||
         block.content.some(
           (part) => part.type === "provider-raw" && providerRawCarriesUiResource(part.raw),
         );
@@ -129,7 +178,7 @@ export function uiCardArtifactsFromMessages(messages: AgMessage[]): AgArtifact[]
         artifactId: `${msg.id}#ui#${i}`,
         turnId: msg.turnId ?? "",
         threadId: msg.threadId ?? "",
-        parts: [block],
+        parts: [withoutToolResultMeta(block)],
       });
     }
   }

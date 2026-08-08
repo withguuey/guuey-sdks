@@ -53,8 +53,9 @@ describe("toolResultCardMount", () => {
   it("mounts a ggui render through its self-contained shell, on the ggui channel", () => {
     const mount = toolResultCardMount(block({ resourceUri: RESOURCE_URI }, META));
     expect(mount?.channel).toBe("ggui");
-    expect(mount?.resource.uri).toBe(RESOURCE_URI);
-    expect(mount?.resource.text).toContain(RUNTIME_URL);
+    if (mount?.channel !== "ggui") throw new Error("narrowed above");
+    expect(mount.resource.uri).toBe(RESOURCE_URI);
+    expect(mount.resource.text).toContain(RUNTIME_URL);
   });
 
   it("prefers the inline resource when a block somehow carries both", () => {
@@ -64,12 +65,17 @@ describe("toolResultCardMount", () => {
     );
     // Both the payload AND the channel come from the inline arm — a host must
     // not be told to grant ggui egress to HTML the server wrote itself.
-    expect(toolResultCardMount(both)?.resource.text).toBe(INLINE_HTML);
-    expect(toolResultCardMount(both)?.channel).toBe("inline");
+    expect(toolResultCardMount(both)).toMatchObject({
+      channel: "inline",
+      resource: { text: INLINE_HTML },
+    });
   });
 
-  it("returns undefined for a ggui render with no bootstrap, and for plain results", () => {
-    expect(toolResultCardMount(block({ resourceUri: RESOURCE_URI }))).toBeUndefined();
+  it("falls back to the locator channel for a live render whose bootstrap didn't reach us (#122)", () => {
+    expect(toolResultCardMount(block({ resourceUri: RESOURCE_URI }))).toEqual({
+      channel: "locator",
+      resourceUri: RESOURCE_URI,
+    });
     expect(toolResultCardMount(block({ events: [], status: "active" }))).toBeUndefined();
   });
 });
@@ -80,35 +86,36 @@ describe("cardCardMount", () => {
       artifactId: "a1",
       parts: [{ type: "resource", resource: { uri: "ui://x", text: INLINE_HTML } }],
     };
-    expect(cardCardMount(snapshot)?.resource.text).toBe(INLINE_HTML);
-    expect(cardCardMount(snapshot)?.channel).toBe("inline");
+    expect(cardCardMount(snapshot)).toMatchObject({
+      channel: "inline",
+      resource: { text: INLINE_HTML },
+    });
   });
 
-  it("mounts a ggui render part when the snapshot preserved its `_meta`", () => {
+  it("resolves a persisted locator to the locator channel even when a stale bootstrap survived (#122)", () => {
+    // Persistence strips `_meta` (@guuey/threads), but a foreign snapshot
+    // may still carry one — its wsToken is expired, so a mount off it would
+    // be dead. The locator ALWAYS wins on the persisted path: rehydration
+    // is a fresh resources/read, never a bootstrap replay.
     const snapshot: JsonValue = {
       artifactId: "a1",
       parts: [{ type: "tool-result", uiData: { resourceUri: RESOURCE_URI }, _meta: META }],
     };
-    expect(cardCardMount(snapshot)?.resource.uri).toBe(RESOURCE_URI);
-    expect(cardCardMount(snapshot)?.channel).toBe("ggui");
+    expect(cardCardMount(snapshot)).toEqual({ channel: "locator", resourceUri: RESOURCE_URI });
   });
 
-  it("stays undefined for a ggui card whose stored bootstrap is absent", () => {
-    // The realistic persisted case: the fold never stored `_meta`, and a
-    // stored bootstrap's wsToken would be expired anyway. The host shows its
-    // placeholder rather than a broken mount.
+  it("resolves the realistic persisted case (no stored `_meta`) to the locator channel (#122)", () => {
     const snapshot: JsonValue = {
       artifactId: "a1",
       parts: [{ type: "tool-result", uiData: { resourceUri: RESOURCE_URI } }],
     };
-    expect(cardCardMount(snapshot)).toBeUndefined();
+    expect(cardCardMount(snapshot)).toEqual({ channel: "locator", resourceUri: RESOURCE_URI });
   });
 
   it("reads a bare block snapshot (no `parts` wrapper)", () => {
     expect(
-      cardCardMount({ type: "tool-result", uiData: { resourceUri: RESOURCE_URI }, _meta: META })
-        ?.resource.uri,
-    ).toBe(RESOURCE_URI);
+      cardCardMount({ type: "tool-result", uiData: { resourceUri: RESOURCE_URI }, _meta: META }),
+    ).toEqual({ channel: "locator", resourceUri: RESOURCE_URI });
     expect(cardCardMount("nope")).toBeUndefined();
   });
 });

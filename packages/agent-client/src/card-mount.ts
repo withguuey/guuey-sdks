@@ -38,19 +38,42 @@ import { blockGguiRender, gguiRenderResource, toolResultGguiRender } from "./ggu
 import type { AgBlock, JsonValue } from "@silverprotocol/core";
 
 /** Which generative-UI channel produced a mount. See this module's header. */
-export type CardMountChannel = "inline" | "ggui";
+export type CardMountChannel = "inline" | "ggui" | "locator";
 
-/** A mountable card: the resource to hand the host, and where it came from. */
-export interface CardMount {
-  /** The payload an mcp-ui host mounts, identical in shape for both channels. */
-  resource: McpUiResourcePayload;
-  /**
-   * `"inline"` — the server's own HTML, untrusted tenant content.
-   * `"ggui"` — a shell that boots the ggui runtime from a platform-pinned
-   * origin, and therefore needs a host page whose CSP allows that origin.
-   */
-  channel: CardMountChannel;
-}
+/**
+ * A mountable card, or the locator to fetch one with.
+ *
+ * `"inline"` — the server's own HTML, untrusted tenant content.
+ * `"ggui"` — a shell that boots the ggui runtime from a platform-pinned
+ * origin, and therefore needs a host page whose CSP allows that origin.
+ * `"locator"` — no mount material in hand, only the durable `ui://`
+ * identity (guuey#122): the host resolves it with a fresh, authenticated
+ * `resources/read` of the uri ({@link UiResourceReader}) — MCP-Apps-spec
+ * rehydration, vendor-neutral. Until a reader is wired, the honest render
+ * is the host's own placeholder, never a stale mount.
+ */
+export type CardMount =
+  | {
+      channel: "inline" | "ggui";
+      /** The payload an mcp-ui host mounts, identical in shape for both channels. */
+      resource: McpUiResourcePayload;
+    }
+  | {
+      channel: "locator";
+      /** The persisted `uiData.resourceUri` (`ui://` scheme) to re-fetch. */
+      resourceUri: string;
+    };
+
+/**
+ * Resolves a `"locator"` mount by a fresh `resources/read` of the uri over
+ * an AUTHENTICATED channel the HOST owns — guuey must enforce its own
+ * user-ownership before fetching on a user's behalf, and a deny is
+ * byte-identical to a miss (`undefined` → placeholder, never an error
+ * surface). The reader returns a full {@link CardMount} because only the
+ * transport knows which sandbox trust the fetched HTML needs (a ggui shell
+ * wants the ggui-CSP page; arbitrary tenant HTML wants the self-only page).
+ */
+export type UiResourceReader = (resourceUri: string) => Promise<CardMount | undefined>;
 
 /**
  * A live `tool-result` block → the card to mount, across both channels.
@@ -64,25 +87,29 @@ export function toolResultCardMount(
   if (inline) return { resource: inline, channel: "inline" };
   const ggui = toolResultGguiRender(block);
   const resource = ggui ? gguiRenderResource(ggui) : undefined;
-  return resource ? { resource, channel: "ggui" } : undefined;
+  if (resource) return { resource, channel: "ggui" };
+  // A live locator whose mount material didn't reach us (a fold that
+  // dropped `_meta`): re-fetch works on live turns too — the resource is
+  // freshly minted (guuey#122).
+  return ggui ? { channel: "locator", resourceUri: ggui.resourceUri } : undefined;
 }
 
 /**
- * A persisted `HistoryCard`'s `cardSnapshot` → the card to mount, across both
- * channels.
+ * A persisted `HistoryCard`'s `cardSnapshot` → the card to mount.
  *
- * The ggui arm is reached only for a snapshot that stored the render's
- * `_meta`; a bootstrap old enough to have been persisted has an expired
- * `wsToken` anyway, so in practice a ggui history card resolves to `undefined`
- * and the host renders its placeholder — honest, and NOT a broken mount.
+ * There is deliberately NO bootstrap arm here (guuey#122): persistence
+ * strips tool-result `_meta` (see `@guuey/threads`' fold-rows), and a
+ * foreign snapshot that still carries one holds an expired `wsToken` — a
+ * dead mount. A persisted `ui://` locator resolves to the `"locator"`
+ * channel instead: rehydration is a fresh `resources/read` of the uri,
+ * MCP-Apps-spec-shaped and vendor-neutral.
  */
 export function cardCardMount(cardSnapshot: JsonValue): CardMount | undefined {
   const inline = cardUiResource(cardSnapshot);
   if (inline) return { resource: inline, channel: "inline" };
   for (const block of snapshotBlocks(cardSnapshot)) {
-    const ggui = blockGguiRender(block);
-    const resource = ggui ? gguiRenderResource(ggui) : undefined;
-    if (resource) return { resource, channel: "ggui" };
+    const render = blockGguiRender(block);
+    if (render) return { channel: "locator", resourceUri: render.resourceUri };
   }
   return undefined;
 }

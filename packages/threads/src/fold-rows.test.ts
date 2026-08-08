@@ -362,12 +362,13 @@ describe("uiCardArtifactsFromMessages (guuey#86 card rehydration)", () => {
   });
 });
 
-describe("uiCardArtifactsFromMessages — ggui channel stays out (deliberate)", () => {
-  it("rejects a ggui-render uiData ({sessionId, resourceUri} — no inline payload)", () => {
-    // A persisted ggui card would pass cardCardMount's ggui arm with an
-    // EXPIRED wsToken and mount dead — the placeholder story for ggui
-    // rehydration rides guuey#86's persistence-ownership decision, so the
-    // projector must keep rejecting this shape until that lands.
+describe("uiCardArtifactsFromMessages — ui:// locators persist as placeholders (#122, reverses the old deliberate exclusion)", () => {
+  it("projects a locator-only uiData ({sessionId, resourceUri}) into a placeholder row with no mount material", () => {
+    // Pre-#122 the projector deliberately REJECTED this shape (a persisted
+    // bootstrap would remount dead on its expired wsToken). The spec-shaped
+    // answer landed instead: persist the locator, strip `_meta`, and
+    // rehydrate by a fresh `resources/read` of the uri — so the projector
+    // now KEEPS the block, minus its mount material.
     const gguiBlock = {
       type: "tool-result" as const,
       toolCallId: "call1",
@@ -388,6 +389,87 @@ describe("uiCardArtifactsFromMessages — ggui channel stays out (deliberate)", 
       turnId: "turn10",
       threadId: "t1",
     };
-    expect(uiCardArtifactsFromMessages([msg])).toHaveLength(0);
+    const arts = uiCardArtifactsFromMessages([msg]);
+    expect(arts).toHaveLength(1);
+    expect(arts[0]!.parts[0]).toMatchObject({
+      uiData: { resourceUri: "ui://ggui/render/abc" },
+    });
+    expect(JSON.stringify(arts[0])).not.toContain("wsToken");
+  });
+});
+
+// guuey#122 — the persistence boundary strips tool-result `_meta` (live-turn
+// mount material; vendor slices carry short-TTL credentials) and persists a
+// placeholder row for ui:// locators. The fixture is ggui-render-shaped
+// because that's the concrete producer, but the rule is vendor-neutral.
+describe("tool-result _meta never persists; ui:// locators earn placeholder rows (#122)", () => {
+  const gguiBlock = {
+    type: "tool-result" as const,
+    toolCallId: "toolu_g1",
+    content: [],
+    uiData: {
+      resourceUri: "ui://ggui/render/sess-1/hash-1",
+      sessionId: "sess-1",
+    },
+    _meta: {
+      "ai.ggui/render": {
+        runtimeUrl: "https://runtime.ggui.ai/r.js",
+        wsUrl: "wss://live.ggui.ai/sess-1",
+        wsToken: "SHORT-TTL-SECRET",
+        sessionId: "sess-1",
+      },
+    },
+  };
+  const msg: AgMessage = {
+    id: "m9",
+    role: "assistant",
+    content: [gguiBlock],
+    turnId: "t9",
+    threadId: "th9",
+  };
+  const ctx = {
+    threadId: "th9",
+    userId: "u9",
+    seq: 3,
+    at: "2026-08-08T00:00:00Z",
+    clientMessageId: "c9",
+  };
+
+  it("projects a ui:// locator result into a card row — locator kept, _meta gone, no wsToken anywhere", () => {
+    const artifacts = uiCardArtifactsFromMessages([msg]);
+    expect(artifacts).toHaveLength(1);
+    const part = artifacts[0]!.parts[0]!;
+    expect(part).toMatchObject({
+      type: "tool-result",
+      uiData: { resourceUri: "ui://ggui/render/sess-1/hash-1", sessionId: "sess-1" },
+    });
+    expect("_meta" in part).toBe(false);
+    const row = agArtifactToCardRow(artifacts[0]!, ctx);
+    expect(JSON.stringify(row)).not.toContain("wsToken");
+    expect(JSON.stringify(row)).not.toContain("SHORT-TTL-SECRET");
+  });
+
+  it("strips _meta from the message row's persisted content too", () => {
+    const row = agMessageToRow(msg, ctx);
+    expect(JSON.stringify(row)).not.toContain("wsToken");
+    const persisted = row.content as AgMessage;
+    expect("_meta" in persisted.content[0]!).toBe(false);
+    // The locator survives on the persisted block.
+    expect(persisted.content[0]).toMatchObject({
+      uiData: { resourceUri: "ui://ggui/render/sess-1/hash-1" },
+    });
+  });
+
+  it("leaves messages without tool-result _meta untouched (identity, no gratuitous copies)", () => {
+    const plain: AgMessage = {
+      id: "m10",
+      role: "assistant",
+      content: [{ type: "text", text: "hi" }],
+    };
+    const row = agMessageToRow(plain, {
+      ...ctx,
+      clientMessageId: "c10",
+    });
+    expect(row.content).toBe(plain);
   });
 });
