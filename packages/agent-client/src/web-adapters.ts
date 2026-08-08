@@ -374,14 +374,27 @@ export function createUiResourceReader(
     } else if (guest) {
       headers[GUEST_HEADER] = guest;
     }
+    const requestUrl = `${options.apiBaseUrl}/threads/${encodeURIComponent(options.threadId)}/ui-resource?uri=${encodeURIComponent(resourceUri)}`;
     let res: Response;
     try {
-      res = await fetchImpl(
-        `${options.apiBaseUrl}/threads/${encodeURIComponent(options.threadId)}/ui-resource?uri=${encodeURIComponent(resourceUri)}`,
-        { headers },
-      );
+      res = await fetchImpl(requestUrl, { headers });
     } catch {
       return undefined; // transport failure == miss == placeholder
+    }
+    // One forceRefresh retry on 401 with a bearer in play — the same
+    // expired-but-refreshable recovery the history adapter performs;
+    // without it a stale token degrades to a permanent placeholder.
+    if (res.status === 401 && options.getAccessToken) {
+      const fresh = await options.getAccessToken({ forceRefresh: true }).catch(() => null);
+      if (fresh) {
+        try {
+          res = await fetchImpl(requestUrl, {
+            headers: { ...headers, authorization: `Bearer ${fresh}` },
+          });
+        } catch {
+          return undefined;
+        }
+      }
     }
     if (!res.ok) return undefined;
     let body: { uri?: unknown; mimeType?: unknown; text?: unknown };
