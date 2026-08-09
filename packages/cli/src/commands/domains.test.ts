@@ -289,6 +289,29 @@ describe('guuey domains', () => {
       expect(output).toContain('c.example.com  ✗ failed');
     });
 
+    it('renders the serving/TLS state when the wire carries servingStatus — and no serving column when absent', async () => {
+      const rows: DomainWire[] = [
+        { ...VERIFIED, domain: 'a.example.com', servingStatus: 'active' },
+        { ...VERIFIED, domain: 'b.example.com', servingStatus: 'provisioning' },
+        { ...VERIFIED, domain: 'c.example.com', servingStatus: 'failed' },
+        // Pre-edge row (reconciler hasn't converged): verification only.
+        { ...VERIFIED, domain: 'd.example.com' },
+      ];
+      fetchSpy.mockResolvedValue(
+        new Response(JSON.stringify({ domains: rows, defaultDomain: CNAME_TARGET }), {
+          status: 200,
+        }),
+      );
+
+      await domainsList({ 'app-id': 'app1' });
+
+      const output = stdout();
+      expect(output).toContain('a.example.com  ✓ verified  🔒 serving  →');
+      expect(output).toContain('b.example.com  ✓ verified  ⏳ TLS provisioning  →');
+      expect(output).toContain('c.example.com  ✓ verified  ✗ TLS failed  →');
+      expect(output).toContain(`d.example.com  ✓ verified  →  ${CNAME_TARGET}`);
+    });
+
     it('a non-ok response renders the wire envelope message and exits 1', async () => {
       fetchSpy.mockResolvedValue(
         new Response(
@@ -318,12 +341,16 @@ describe('guuey domains', () => {
       });
     });
 
-    it('prints the success copy and exits 0 when the row was promoted', async () => {
+    it('prints the serving-aware success copy and exits 0 when the row was promoted', async () => {
       fetchSpy.mockResolvedValue(new Response(JSON.stringify(VERIFIED), { status: 200 }));
 
       await domainsVerify('chat.example.com', { 'app-id': 'app1' });
 
-      expect(stdout()).toContain('chat.example.com verified');
+      // The spec copy (component 5): verification is done, serving/TLS is
+      // the edge's asynchronous half — the success message says so.
+      expect(stdout()).toContain(
+        'chat.example.com verified — TLS is provisioning, usually live in minutes',
+      );
       expect(exitSpy).not.toHaveBeenCalled();
     });
 

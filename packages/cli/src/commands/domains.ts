@@ -8,6 +8,10 @@
  *   guuey domains verify chat.example.com   # Run the DNS check now (exits 1 until verified)
  *   guuey domains remove chat.example.com   # Remove custom domain
  *
+ * A verified domain serves the agent with automatic TLS (slice 2): `list`
+ * renders the wire's `servingStatus` (provisioning/active/failed) next to
+ * the verification status once the edge has state for the row.
+ *
  * The customer CNAMEs their hostname at the `cnameTarget` returned by
  * add/list — the app's own always-on `{appId}.{agentsDomain}` name. That same
  * record doubles as the ownership challenge: verification passes when the
@@ -45,6 +49,9 @@ export interface DomainWire {
   verifiedAt?: string;
   /** Set when the 7-day verification window elapsed. */
   failedAt?: string;
+  /** TLS/serving state on the edge (slice 2) — derived server-side; absent
+   * until edge state exists for the row. */
+  readonly servingStatus?: 'provisioning' | 'active' | 'failed';
 }
 
 /** `GET /v1/apps/:appId/domains` — 200. */
@@ -123,6 +130,15 @@ const STATUS_LABEL: Record<DomainVerificationStatus, string> = {
   failed: '✗ failed',
 };
 
+/** Serving/TLS glyphs for the slice-2 `servingStatus` axis. Rendered only
+ * when the wire carries the field — absent means the edge has no state for
+ * the row yet, and printing a guess would be a lie. */
+const SERVING_LABEL: Record<NonNullable<DomainWire['servingStatus']>, string> = {
+  provisioning: '⏳ TLS provisioning',
+  active: '🔒 serving',
+  failed: '✗ TLS failed',
+};
+
 export async function domainsAdd(
   domain: string | undefined,
   flags?: Record<string, string | true>,
@@ -193,7 +209,11 @@ export async function domainsList(
   } else {
     console.log('');
     for (const d of data.domains) {
-      console.log(`  ${d.domain}  ${STATUS_LABEL[d.verificationStatus]}  →  ${d.cnameTarget}`);
+      const serving =
+        d.servingStatus !== undefined ? `  ${SERVING_LABEL[d.servingStatus]}` : '';
+      console.log(
+        `  ${d.domain}  ${STATUS_LABEL[d.verificationStatus]}${serving}  →  ${d.cnameTarget}`,
+      );
     }
   }
   console.log('');
@@ -221,7 +241,9 @@ export async function domainsVerify(
 
   console.log('');
   if (data.verificationStatus === 'verified') {
-    out.success(`Domain ${domain} verified!`);
+    out.success(
+      `Domain ${domain} verified — TLS is provisioning, usually live in minutes.`,
+    );
     console.log('');
     return;
   }

@@ -266,7 +266,9 @@ Domains:
                                  Apex domains are unsupported — use a
                                  subdomain (chat.example.com).
   domains list                  Default domain plus each custom domain's
-                                 status: verified / pending / failed
+                                 verification status (verified / pending /
+                                 failed) and, once the edge picks it up,
+                                 its TLS serving status
   domains verify <domain>       Run the DNS check now instead of waiting
                                  for the poll; prints the CNAME record to
                                  create if it does not match yet
