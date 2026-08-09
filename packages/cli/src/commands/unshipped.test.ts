@@ -12,7 +12,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 import { byokSet, byokList, byokRemove } from './byok.js';
-import { domainsAdd, domainsList, domainsVerify, domainsRemove } from './domains.js';
 import { stop, start, restart } from './agent-lifecycle.js';
 import { slugClaim } from './slug.js';
 import { deploymentsRollback, deploymentsLogs } from './deployments.js';
@@ -29,10 +28,6 @@ const gatedCommands: Array<{ name: string; run: () => Promise<void> }> = [
   { name: 'guuey byok set', run: () => byokSet({}) },
   { name: 'guuey byok list', run: () => byokList({}) },
   { name: 'guuey byok remove', run: () => byokRemove({}) },
-  { name: 'guuey domains add', run: () => domainsAdd('api.example.com') },
-  { name: 'guuey domains list', run: () => domainsList() },
-  { name: 'guuey domains verify', run: () => domainsVerify('api.example.com') },
-  { name: 'guuey domains remove', run: () => domainsRemove('api.example.com') },
   { name: 'guuey stop', run: () => stop() },
   { name: 'guuey start', run: () => start() },
   { name: 'guuey restart', run: () => restart() },
@@ -44,6 +39,9 @@ const gatedCommands: Array<{ name: string; run: () => Promise<void> }> = [
   // matching case when a route ships" instruction above: its cliApi route
   // (`POST /v1/apps/:id/recover`) now exists, so the command reaches the
   // network like any other. Its coverage moved to `apps.recover.test.ts`.
+  // `guuey domains add|list|verify|remove` left the same way in guuey#132
+  // slice 1: the `/v1/apps/:id/domains*` routes now exist. Coverage lives
+  // in `domains.test.ts`.
 ];
 
 describe('unshipped command gates', () => {

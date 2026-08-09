@@ -258,6 +258,24 @@ App Admin (BYO-auth apps; workspace-admin only):
                                  the wipe hasn't drained — contact support.
     --sub <sub>                  The end-user's raw issuer sub (required)
 
+Domains:
+  domains add <domain>          Register a custom domain for the app and
+                                 start DNS verification: point a CNAME at
+                                 the cnameTarget the command prints (the
+                                 app's always-on <appId>.agents… hostname).
+                                 Apex domains are unsupported — use a
+                                 subdomain (chat.example.com).
+  domains list                  Default domain plus each custom domain's
+                                 status: verified / pending / failed
+  domains verify <domain>       Run the DNS check now instead of waiting
+                                 for the poll; prints the CNAME record to
+                                 create if it does not match yet
+  domains remove <domain>       Remove a custom domain
+    --app-id <id>               Target a specific app (all subcommands)
+                                 Not 'apps update --domains' — that flag is
+                                 the CORS/embed origin allowlist, unrelated
+                                 to custom domains.
+
 Embeddable Widget (guuey-issued end-user identity):
   widget keys create [appId]    Enrol the app in guuey's per-app token issuer.
                                  Generates an RSA keypair (the private half is
