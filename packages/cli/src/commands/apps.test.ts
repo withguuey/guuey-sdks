@@ -244,6 +244,53 @@ describe('buildUpdateAppBody', () => {
       'userAuthMode',
     ]);
   });
+
+  // Standalone-page branding (guuey#137 slice 3). The CLI deliberately does
+  // NOT mirror the server's shape rules (https / #rrggbb / the WCAG-AA
+  // contrast floor / the 280-char single line) — one place to read them, no
+  // drift. What it owns is the clear convention and not sending absent flags.
+  describe('branding flags', () => {
+    it.each([
+      ['brandIconUrl', 'https://cdn.example/icon.png'],
+      ['brandOgImageUrl', 'https://cdn.example/og.png'],
+      ['brandAccent', '#b8ff3a'],
+      ['welcomeCopy', 'Ask me about shipping.'],
+    ])('passes %s straight through for the server to validate', (flag, value) => {
+      expect(built({ [flag]: value })).toEqual({ [flag]: value });
+    });
+
+    it.each([['brandIconUrl'], ['brandOgImageUrl'], ['brandAccent'], ['welcomeCopy']])(
+      "%s 'clear' sends an explicit null",
+      (flag) => {
+        expect(built({ [flag]: 'clear' })).toEqual({ [flag]: null });
+      },
+    );
+
+    it.each([['brandIconUrl'], ['brandOgImageUrl'], ['brandAccent'], ['welcomeCopy']])(
+      '%s given as a bare flag (empty string) also clears',
+      (flag) => {
+        expect(built({ [flag]: '' })).toEqual({ [flag]: null });
+      },
+    );
+
+    it('does NOT pre-validate — a bad accent still reaches the server, which owns the rule', () => {
+      expect(built({ brandAccent: 'not-a-colour' })).toEqual({ brandAccent: 'not-a-colour' });
+    });
+
+    it('omits every branding key when no branding flag was passed', () => {
+      const body = built({ name: 'X' });
+      for (const key of ['brandIconUrl', 'brandOgImageUrl', 'brandAccent', 'welcomeCopy']) {
+        expect(body).not.toHaveProperty(key);
+      }
+    });
+
+    it('names the branding flags in the empty-flag-set refusal', () => {
+      const message = refused({});
+      expect(message).toContain('--brand-icon-url');
+      expect(message).toContain('--brand-accent');
+      expect(message).toContain('--welcome-copy');
+    });
+  });
 });
 
 describe('appsUpdate', () => {

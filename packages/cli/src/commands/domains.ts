@@ -59,6 +59,8 @@ export interface DomainsListResponse {
   domains: DomainWire[];
   /** The always-on hostname every app serves at: `${appId}.${agentsDomain}`. */
   defaultDomain: string;
+  /** guuey#137: the app's slug host, when it has claimed one. */
+  slugDomain?: string;
 }
 
 /** `DELETE /v1/apps/:appId/domains` — 200. */
@@ -203,6 +205,9 @@ export async function domainsList(
 
   console.log('');
   console.log(`  Default: ${data.defaultDomain}`);
+  // The slug host is not a `domains` row — it is guuey-owned and managed by
+  // `guuey slug`, so it prints beside the default rather than in the list.
+  if (data.slugDomain) console.log(`  Slug:    ${data.slugDomain}`);
 
   if (data.domains.length === 0) {
     console.log('  No custom domains configured.');

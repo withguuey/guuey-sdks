@@ -237,6 +237,32 @@ export interface UpdateAppRequest {
   userAuthConfig?: { issuerUrl: string; audience: string } | null;
   /** Widget wave-2 embed identity-mode policy (ratification #3). */
   widgetEmbedIdentity?: 'identified' | 'anonymous' | null;
+  /**
+   * Standalone-page branding (guuey#137 slice 3). `null` clears the stored
+   * value. These are the APP's branding, not a store listing's: they show up
+   * on the agent's own page whether or not it is listed in Discover, which is
+   * why `guuey apps publish --icon-url` is gone and these live here.
+   *
+   * The server validates shape (https, `#rrggbb`, ≤280 single-line copy) plus
+   * a WCAG-AA contrast floor on the accent, and returns a 400 naming the
+   * field — this command deliberately does NOT mirror those rules, so there
+   * is one place to read them and no chance of the two drifting.
+   */
+  brandIconUrl?: string | null;
+  brandOgImageUrl?: string | null;
+  brandAccent?: string | null;
+  welcomeCopy?: string | null;
+}
+
+/**
+ * `--clear` on any branding flag means "unset it". An empty string means the
+ * same thing and is accepted for shell-friendliness (`--brand-accent ""`);
+ * anything else goes to the server verbatim, unvalidated — see
+ * {@link UpdateAppRequest}'s branding block for why the CLI does not mirror
+ * the server's rules.
+ */
+function brandFlagValue(raw: string): string | null {
+  return raw === 'clear' || raw.trim() === '' ? null : raw;
 }
 
 /**
@@ -256,6 +282,10 @@ export function buildUpdateAppBody(opts: {
   audience?: string;
   clearAuthConfig?: boolean;
   widgetEmbedIdentity?: string;
+  brandIconUrl?: string;
+  brandOgImageUrl?: string;
+  brandAccent?: string;
+  welcomeCopy?: string;
 }): UpdateAppRequest | string {
   const body: UpdateAppRequest = {};
   if (opts.name) body.displayName = opts.name;
@@ -304,8 +334,27 @@ export function buildUpdateAppBody(opts: {
     }
   }
 
+  // Standalone-page branding. Sent verbatim (or as an explicit `null` clear);
+  // the server owns every rule and returns a field-named 400.
+  if (opts.brandIconUrl !== undefined) {
+    body.brandIconUrl = brandFlagValue(opts.brandIconUrl);
+  }
+  if (opts.brandOgImageUrl !== undefined) {
+    body.brandOgImageUrl = brandFlagValue(opts.brandOgImageUrl);
+  }
+  if (opts.brandAccent !== undefined) {
+    body.brandAccent = brandFlagValue(opts.brandAccent);
+  }
+  if (opts.welcomeCopy !== undefined) {
+    body.welcomeCopy = brandFlagValue(opts.welcomeCopy);
+  }
+
   if (Object.keys(body).length === 0) {
-    return 'No fields to update. Use --name, --description, --domains, --auth-mode, --issuer-url + --audience, --clear-auth-config, or --widget-embed-identity.';
+    return (
+      'No fields to update. Use --name, --description, --domains, --auth-mode, ' +
+      '--issuer-url + --audience, --clear-auth-config, --widget-embed-identity, ' +
+      '--brand-icon-url, --brand-og-image-url, --brand-accent, or --welcome-copy.'
+    );
   }
   return body;
 }
@@ -324,6 +373,10 @@ export async function appsUpdate(
     audience?: string;
     clearAuthConfig?: boolean;
     widgetEmbedIdentity?: string;
+    brandIconUrl?: string;
+    brandOgImageUrl?: string;
+    brandAccent?: string;
+    welcomeCopy?: string;
     json?: boolean;
   },
 ): Promise<void> {
@@ -548,6 +601,12 @@ export async function appsAccess(
  * apps (see `guuey apps publish --help`). Always forces `status:
  * 'published'` and `visibility: 'public'` over whatever metadata flags
  * are passed — those flags only control the listing's display fields.
+ *
+ * **`--icon-url` is GONE (guuey#137 slice 3.)** The icon is app branding, not
+ * listing metadata — an unlisted, share-linked agent is the flagship surface
+ * and it has no listing to carry one. Set it with
+ * `guuey apps update --brand-icon-url <url>`, which brands the agent whether
+ * or not it is ever published.
  */
 export async function appsPublish(
   appId: string | undefined,
@@ -555,7 +614,6 @@ export async function appsPublish(
     name?: string;
     description?: string;
     category?: string;
-    iconUrl?: string;
     json?: boolean;
   },
 ): Promise<void> {
@@ -569,7 +627,6 @@ export async function appsPublish(
   if (opts.name) body.name = opts.name;
   if (opts.description) body.description = opts.description;
   if (opts.category) body.category = opts.category;
-  if (opts.iconUrl) body.iconUrl = opts.iconUrl;
   // Publishing always forces these — metadata flags never override them.
   body.status = 'published';
   body.visibility = 'public';

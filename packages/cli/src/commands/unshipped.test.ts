@@ -13,7 +13,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 import { byokSet, byokList, byokRemove } from './byok.js';
 import { stop, start, restart } from './agent-lifecycle.js';
-import { slugClaim } from './slug.js';
 import { deploymentsRollback, deploymentsLogs } from './deployments.js';
 import { agentConfig } from './agent.js';
 
@@ -31,7 +30,6 @@ const gatedCommands: Array<{ name: string; run: () => Promise<void> }> = [
   { name: 'guuey stop', run: () => stop() },
   { name: 'guuey start', run: () => start() },
   { name: 'guuey restart', run: () => restart() },
-  { name: 'guuey slug claim', run: () => slugClaim('weather-bot') },
   { name: 'guuey deployments rollback', run: () => deploymentsRollback('3') },
   { name: 'guuey deployments logs', run: () => deploymentsLogs('3', {}) },
   { name: 'guuey agent config', run: () => agentConfig({}) },

@@ -68,7 +68,7 @@ import { byokSet, byokList, byokRemove } from './commands/byok';
 import { deploymentsList, deploymentsRollback, deploymentsLogs } from './commands/deployments';
 import { agentConfig } from './commands/agent';
 import { domainsAdd, domainsList, domainsVerify, domainsRemove } from './commands/domains';
-import { slugClaim } from './commands/slug';
+import { slugClaim, slugRelease } from './commands/slug';
 import { ApiError } from './client';
 import { printWelcome, printQuickGuide } from './logo';
 import { checkForUpdate, printUpdateNotice } from './update-check';
@@ -218,8 +218,21 @@ Apps:
                                  Embed identity-mode policy (widget wave 2).
                                  Read only when --auth-mode is byo; 'clear'
                                  restores the default (identified).
-                                 Styling, webhooks and rate limits are managed
-                                 in the console, not here.
+    --brand-icon-url <url>      Icon shown on the agent's page and in Discover
+                                 (https://…). Pass 'clear' to unset.
+    --brand-og-image-url <url>  Social-preview image for share links
+                                 (https://…). Pass 'clear' to unset.
+    --brand-accent <#rrggbb>    Accent colour for the send button and live dot.
+                                 Must clear a 4.5:1 WCAG-AA contrast floor
+                                 against the fixed #0e1014 foreground, or the
+                                 server rejects it. Pass 'clear' to unset.
+    --welcome-copy <text>       One-line welcome shown on the agent's own page
+                                 before the first message (≤280 chars). Pass
+                                 'clear' to unset.
+                                 Branding applies whether or not the app is
+                                 published — an unlisted share link is branded
+                                 too. Styling, webhooks and rate limits are
+                                 managed in the console, not here.
   apps delete [appId]           Delete an app
   apps recover [appId]          Cancel a pending deletion inside the 30-day
                                  window. Brings the widget signing key back
@@ -237,7 +250,8 @@ Apps:
     --name <name>               Listing name (defaults to the app's display name)
     --description <text>        Listing description
     --category <category>       Listing category
-    --icon-url <url>            Listing icon URL
+                                 The icon moved to: apps update --brand-icon-url
+                                 — it brands the agent whether or not it is listed.
                                  Prints the share link, https://app.guuey.com/agent/<appId>
                                  (production portal origin; sandbox/dev envs serve the
                                  same route at a different origin).
@@ -277,6 +291,19 @@ Domains:
                                  Not 'apps update --domains' — that flag is
                                  the CORS/embed origin allowlist, unrelated
                                  to custom domains.
+
+Slug (free on every plan):
+  slug claim <slug>             Claim the app's public short name, or change
+                                 it. Buys BOTH surfaces at once: the portal
+                                 path (/agent/<slug>) and the guuey-hosted
+                                 <slug>.agents… subdomain, whose address the
+                                 command prints. 3-50 characters, lowercase
+                                 letters/digits/hyphens. The app's uuid
+                                 address keeps working.
+  slug release                  Give the slug back — its address stops
+                                 resolving and the name becomes claimable
+                                 by anyone
+    --app-id <id>               Target a specific app (both subcommands)
 
 Embeddable Widget (guuey-issued end-user identity):
   widget keys create [appId]    Enrol the app in guuey's per-app token issuer.
@@ -564,8 +591,13 @@ async function main(): Promise<void> {
         case 'claim':
           await slugClaim(rest[0], flags);
           break;
+        case 'release':
+          await slugRelease(flags);
+          break;
         default:
-          console.error(`Unknown slug command: ${action ?? '(none)'}. Use: claim <slug>`);
+          console.error(
+            `Unknown slug command: ${action ?? '(none)'}. Use: claim <slug>, release`,
+          );
           process.exit(1);
       }
       break;
@@ -664,6 +696,14 @@ async function main(): Promise<void> {
             audience: str(flags.audience),
             clearAuthConfig: flags['clear-auth-config'] === true,
             widgetEmbedIdentity: str(flags['widget-embed-identity']),
+            // Standalone-page branding (guuey#137 slice 3). A bare flag
+            // (`--brand-accent` with no value) reads as an explicit clear,
+            // same convention as `--domains`.
+            brandIconUrl: flags['brand-icon-url'] === true ? '' : str(flags['brand-icon-url']),
+            brandOgImageUrl:
+              flags['brand-og-image-url'] === true ? '' : str(flags['brand-og-image-url']),
+            brandAccent: flags['brand-accent'] === true ? '' : str(flags['brand-accent']),
+            welcomeCopy: flags['welcome-copy'] === true ? '' : str(flags['welcome-copy']),
             json: jsonFlag,
           });
           break;
@@ -685,7 +725,9 @@ async function main(): Promise<void> {
             name: flags.name as string | undefined,
             description: flags.description as string | undefined,
             category: flags.category as string | undefined,
-            iconUrl: flags['icon-url'] as string | undefined,
+            // No `--icon-url` (guuey#137 slice 3): the icon is app branding —
+            // `apps update --brand-icon-url` — because an unlisted share link
+            // has no listing to hang one on.
             json: jsonFlag,
           });
           break;
