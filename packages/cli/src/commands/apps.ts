@@ -252,6 +252,14 @@ export interface UpdateAppRequest {
   brandOgImageUrl?: string | null;
   brandAccent?: string | null;
   welcomeCopy?: string | null;
+  /**
+   * Standalone-page "C" identity-endpoint URL (guuey#137 slice 3): an https URL
+   * on the builder's own site the standalone page fetches with credentials to
+   * mint an identified token. `null` clears it. Sent verbatim — the server owns
+   * the shape rule (https, ≤2048, no control chars) and returns a field-named
+   * 400, exactly like the branding fields above; one place to read it, no drift.
+   */
+  identityEndpointUrl?: string | null;
 }
 
 /**
@@ -286,6 +294,7 @@ export function buildUpdateAppBody(opts: {
   brandOgImageUrl?: string;
   brandAccent?: string;
   welcomeCopy?: string;
+  identityEndpointUrl?: string;
 }): UpdateAppRequest | string {
   const body: UpdateAppRequest = {};
   if (opts.name) body.displayName = opts.name;
@@ -349,11 +358,18 @@ export function buildUpdateAppBody(opts: {
     body.welcomeCopy = brandFlagValue(opts.welcomeCopy);
   }
 
+  // Standalone-page "C" identity endpoint. Same clear convention (empty string
+  // or 'clear' unsets); the server owns the https/length/control-char rule.
+  if (opts.identityEndpointUrl !== undefined) {
+    body.identityEndpointUrl = brandFlagValue(opts.identityEndpointUrl);
+  }
+
   if (Object.keys(body).length === 0) {
     return (
       'No fields to update. Use --name, --description, --domains, --auth-mode, ' +
       '--issuer-url + --audience, --clear-auth-config, --widget-embed-identity, ' +
-      '--brand-icon-url, --brand-og-image-url, --brand-accent, or --welcome-copy.'
+      '--brand-icon-url, --brand-og-image-url, --brand-accent, --welcome-copy, ' +
+      'or --identity-endpoint-url.'
     );
   }
   return body;
@@ -377,6 +393,7 @@ export async function appsUpdate(
     brandOgImageUrl?: string;
     brandAccent?: string;
     welcomeCopy?: string;
+    identityEndpointUrl?: string;
     json?: boolean;
   },
 ): Promise<void> {

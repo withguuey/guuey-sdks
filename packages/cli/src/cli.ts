@@ -229,6 +229,10 @@ Apps:
     --welcome-copy <text>       One-line welcome shown on the agent's own page
                                  before the first message (≤280 chars). Pass
                                  'clear' to unset.
+    --identity-endpoint-url <url>  https endpoint on your own site the
+                                 standalone page fetches (with credentials) to
+                                 sign end-users in — the "C" identified-auth
+                                 path. Pass with no value to unset.
                                  Branding applies whether or not the app is
                                  published — an unlisted share link is branded
                                  too. Styling, webhooks and rate limits are
@@ -704,6 +708,10 @@ async function main(): Promise<void> {
               flags['brand-og-image-url'] === true ? '' : str(flags['brand-og-image-url']),
             brandAccent: flags['brand-accent'] === true ? '' : str(flags['brand-accent']),
             welcomeCopy: flags['welcome-copy'] === true ? '' : str(flags['welcome-copy']),
+            identityEndpointUrl:
+              flags['identity-endpoint-url'] === true
+                ? ''
+                : str(flags['identity-endpoint-url']),
             json: jsonFlag,
           });
           break;

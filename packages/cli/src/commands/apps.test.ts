@@ -291,6 +291,40 @@ describe('buildUpdateAppBody', () => {
       expect(message).toContain('--welcome-copy');
     });
   });
+
+  // Standalone-page "C" identity endpoint (guuey#137 slice 3). Same
+  // clear-convention + send-verbatim posture as the branding flags — the
+  // server owns the https/length/control-char rule and returns a field-named
+  // 400, so the CLI never mirrors it.
+  describe('identity endpoint flag', () => {
+    it('passes identityEndpointUrl straight through for the server to validate', () => {
+      expect(built({ identityEndpointUrl: 'https://acme.example.com/whoami' })).toEqual({
+        identityEndpointUrl: 'https://acme.example.com/whoami',
+      });
+    });
+
+    it("'clear' sends an explicit null", () => {
+      expect(built({ identityEndpointUrl: 'clear' })).toEqual({ identityEndpointUrl: null });
+    });
+
+    it('a bare flag (empty string) also clears', () => {
+      expect(built({ identityEndpointUrl: '' })).toEqual({ identityEndpointUrl: null });
+    });
+
+    it('does NOT pre-validate — a non-https endpoint still reaches the server', () => {
+      expect(built({ identityEndpointUrl: 'http://acme.example.com/whoami' })).toEqual({
+        identityEndpointUrl: 'http://acme.example.com/whoami',
+      });
+    });
+
+    it('omits the key when the flag was not passed', () => {
+      expect(built({ name: 'X' })).not.toHaveProperty('identityEndpointUrl');
+    });
+
+    it('names --identity-endpoint-url in the empty-flag-set refusal', () => {
+      expect(refused({})).toContain('--identity-endpoint-url');
+    });
+  });
 });
 
 describe('appsUpdate', () => {
