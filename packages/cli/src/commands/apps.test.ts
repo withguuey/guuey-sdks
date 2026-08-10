@@ -8,7 +8,18 @@
  * and `../config` for the auth/base-URL inputs and spy on `globalThis.fetch`
  * for the wire-level assertions, reading `(url, init)` back into the same
  * `{ method, path, body }` shape the request builder produces.
+ *
+ * The trailing describe block is the SYNC GUARD pinning this module's
+ * hand-written brand-asset wire mirrors (guuey#138) against
+ * `backend/libs/cli-wire/brand-assets.ts` — the single source cliApi serves
+ * those shapes from. Read `../wire-mirror-parse.ts`'s header for why the CLI
+ * mirrors instead of importing (published npm package, private source
+ * package).
  */
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 import {
@@ -23,6 +34,7 @@ import {
   type UpdateAppRequest,
 } from './apps.js';
 import { resolveConfig } from '../config.js';
+import { parseInterfaceFields, parseStringLiterals } from '../wire-mirror-parse';
 
 vi.mock('../auth.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../auth.js')>();
@@ -66,8 +78,19 @@ interface CapturedRequest {
  * `--status` GET (`?sub=…`).
  */
 function lastRequest(fetchSpy: MockInstance<typeof fetch>): CapturedRequest {
-  const call = fetchSpy.mock.calls.at(-1);
-  if (!call) throw new Error('fetch was not called');
+  if (fetchSpy.mock.calls.length === 0) throw new Error('fetch was not called');
+  return requestAt(fetchSpy, fetchSpy.mock.calls.length - 1);
+}
+
+/**
+ * Same decoding for the `index`-th call — the brand-asset upload pipeline
+ * (guuey#138) makes three calls per file, so its cases assert each one. NOT
+ * for the raw S3 PUT leg: its body is the file bytes, not JSON, so those
+ * cases read `fetchSpy.mock.calls[i]` directly.
+ */
+function requestAt(fetchSpy: MockInstance<typeof fetch>, index: number): CapturedRequest {
+  const call = fetchSpy.mock.calls[index];
+  if (!call) throw new Error(`fetch call ${index} was not made`);
   const [url, init] = call;
   const parsed = new URL(String(url));
   return {
@@ -287,6 +310,8 @@ describe('buildUpdateAppBody', () => {
     it('names the branding flags in the empty-flag-set refusal', () => {
       const message = refused({});
       expect(message).toContain('--brand-icon-url');
+      expect(message).toContain('--brand-icon-file');
+      expect(message).toContain('--brand-og-image-file');
       expect(message).toContain('--brand-accent');
       expect(message).toContain('--welcome-copy');
     });
@@ -942,3 +967,331 @@ describe('appsByoUserErase', () => {
     expect(String(errSpy.mock.calls[0]?.[0])).toContain('No app ID provided');
   });
 });
+
+/**
+ * `guuey apps update --brand-icon-file / --brand-og-image-file` (guuey#138) —
+ * the presign → PUT → commit pipeline. The commit writes the app row itself
+ * (an immediate single-field save, spec D9), so a file-only invocation must
+ * issue NO `PUT /apps/:id`; every server rule (byte cap, magic-byte sniff,
+ * per-app cap) stays server-side and the CLI only renders the envelope.
+ */
+describe('appsUpdate — brand-asset file uploads', () => {
+  let fetchSpy: MockInstance<typeof fetch>;
+  let exitSpy: MockInstance<typeof process.exit>;
+  let errSpy: MockInstance<typeof console.error>;
+  let logSpy: MockInstance<typeof console.log>;
+  let fixtureDir: string;
+
+  /** Any bytes will do: the CLI never sniffs — the server owns that rule. */
+  const ICON_BYTES = Buffer.from('89504e470d0a1a0a', 'hex');
+
+  const UPLOAD_ID = '9f8b6c2a-1111-4222-8333-444455556666';
+  const PRESIGN = {
+    uploadUrl: `https://bucket.s3.test/stg/app1/${UPLOAD_ID}?sig=1`,
+    uploadId: UPLOAD_ID,
+    expiresIn: 300,
+    contentType: 'image/png',
+  };
+  const CDN_URL = 'https://assets.dev.sandbox.guueyusercontent.com/app1/abc123.png';
+
+  function fixture(name: string): string {
+    const filePath = join(fixtureDir, name);
+    writeFileSync(filePath, ICON_BYTES);
+    return filePath;
+  }
+
+  /** Queues the three pipeline responses: presign 200 → S3 PUT 200 → commit 200. */
+  function mockPipeline(
+    presign: typeof PRESIGN = PRESIGN,
+    field: string = 'brandIconUrl',
+  ): void {
+    fetchSpy
+      .mockResolvedValueOnce(new Response(JSON.stringify(presign), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ url: CDN_URL, field }), { status: 200 }),
+      );
+  }
+
+  beforeEach(() => {
+    fixtureDir = mkdtempSync(join(tmpdir(), 'guuey-cli-brand-assets-'));
+    fetchSpy = vi.spyOn(globalThis, 'fetch');
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rmSync(fixtureDir, { recursive: true, force: true });
+  });
+
+  it('runs presign → PUT → commit with the wire bodies, and no PUT /apps/:id', async () => {
+    mockPipeline();
+
+    await appsUpdate('app1', { brandIconFile: fixture('icon.png') });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(requestAt(fetchSpy, 0)).toEqual({
+      method: 'POST',
+      path: '/apps/app1/brand-assets/upload',
+      body: { field: 'brandIconUrl', contentType: 'image/png', contentLength: ICON_BYTES.length },
+    });
+    const [putUrl, putInit] = fetchSpy.mock.calls[1] ?? [];
+    expect(String(putUrl)).toBe(PRESIGN.uploadUrl);
+    expect(putInit?.method).toBe('PUT');
+    expect(requestAt(fetchSpy, 2)).toEqual({
+      method: 'POST',
+      path: '/apps/app1/brand-assets/commit',
+      body: { field: 'brandIconUrl', uploadId: UPLOAD_ID },
+    });
+  });
+
+  it("sets the S3 PUT's Content-Type from the presign response's ECHO, never from the file", async () => {
+    // The echoed value is a signed header (spec D3.1): the client must send
+    // it byte-for-byte. A deliberately-different echo proves the code reads
+    // the response, not its own extension mapping.
+    mockPipeline({ ...PRESIGN, contentType: 'image/echo-proof' });
+
+    await appsUpdate('app1', { brandIconFile: fixture('icon.png') });
+
+    const [, putInit] = fetchSpy.mock.calls[1] ?? [];
+    expect(putInit?.headers).toEqual({
+      'Content-Type': 'image/echo-proof',
+      'Content-Length': String(ICON_BYTES.length),
+    });
+  });
+
+  it.each([
+    ['icon.png', 'image/png'],
+    ['icon.jpg', 'image/jpeg'],
+    ['icon.jpeg', 'image/jpeg'],
+    ['icon.webp', 'image/webp'],
+  ])('declares %s as %s in the presign body', async (name, contentType) => {
+    mockPipeline();
+
+    await appsUpdate('app1', { brandIconFile: fixture(name) });
+
+    expect(requestAt(fetchSpy, 0).body).toEqual({
+      field: 'brandIconUrl',
+      contentType,
+      contentLength: ICON_BYTES.length,
+    });
+  });
+
+  it('--brand-og-image-file targets the brandOgImageUrl column', async () => {
+    mockPipeline(PRESIGN, 'brandOgImageUrl');
+
+    await appsUpdate('app1', { brandOgImageFile: fixture('og.png') });
+
+    expect(requestAt(fetchSpy, 0).body).toEqual({
+      field: 'brandOgImageUrl',
+      contentType: 'image/png',
+      contentLength: ICON_BYTES.length,
+    });
+    expect(requestAt(fetchSpy, 2).body).toEqual({
+      field: 'brandOgImageUrl',
+      uploadId: UPLOAD_ID,
+    });
+  });
+
+  it("prints the field's new CDN URL on success", async () => {
+    mockPipeline();
+
+    await appsUpdate('app1', { brandIconFile: fixture('icon.png') });
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain(CDN_URL);
+  });
+
+  it('--json emits the uploaded URL under its field name', async () => {
+    mockPipeline();
+
+    await appsUpdate('app1', { brandIconFile: fixture('icon.png'), json: true });
+
+    const printed = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(JSON.parse(printed)).toEqual({ success: true, brandIconUrl: CDN_URL });
+  });
+
+  it('combines with other flags: upload first, then ONE PUT /apps/:id without the uploaded field', async () => {
+    mockPipeline();
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ app: {} }), { status: 200 }));
+
+    await appsUpdate('app1', { name: 'Renamed', brandIconFile: fixture('icon.png') });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(4);
+    expect(requestAt(fetchSpy, 3)).toEqual({
+      method: 'PUT',
+      path: '/apps/app1',
+      body: { displayName: 'Renamed' },
+    });
+  });
+
+  it.each([
+    [
+      { brandIconFile: 'icon.png', brandIconUrl: 'https://cdn.example/icon.png' },
+      '--brand-icon-file cannot be combined with --brand-icon-url',
+    ],
+    [
+      { brandOgImageFile: 'og.png', brandOgImageUrl: 'https://cdn.example/og.png' },
+      '--brand-og-image-file cannot be combined with --brand-og-image-url',
+    ],
+  ])('refuses a file flag beside its URL flag without calling the API', async (opts, message) => {
+    await expect(appsUpdate('app1', opts)).rejects.toBeInstanceOf(ExitSignal);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(String(errSpy.mock.calls[0]?.[0])).toContain(message);
+  });
+
+  it('a bare (value-less) file flag errors without calling the API', async () => {
+    // cli.ts maps a value-less flag to '' — the refusal must name the flag.
+    await expect(appsUpdate('app1', { brandIconFile: '' })).rejects.toBeInstanceOf(ExitSignal);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(String(errSpy.mock.calls[0]?.[0])).toContain('--brand-icon-file requires a file path');
+  });
+
+  it('an unmapped extension errors before any network call, naming the accepted ones', async () => {
+    await expect(
+      appsUpdate('app1', { brandIconFile: fixture('logo.svg') }),
+    ).rejects.toBeInstanceOf(ExitSignal);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const printed = String(errSpy.mock.calls[0]?.[0]);
+    expect(printed).toContain('.png');
+    expect(printed).toContain('export a raster');
+  });
+
+  it('an unreadable file errors before any network call', async () => {
+    await expect(
+      appsUpdate('app1', { brandIconFile: join(fixtureDir, 'missing.png') }),
+    ).rejects.toBeInstanceOf(ExitSignal);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(String(errSpy.mock.calls[0]?.[0])).toContain('Cannot read file');
+  });
+
+  it('a presign refusal renders the wire envelope message and exits 1 — no PUT, no commit', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: { code: 'VALIDATION_ERROR', message: 'contentLength exceeds 1048576 bytes' },
+        }),
+        { status: 400 },
+      ),
+    );
+
+    await expect(
+      appsUpdate('app1', { brandIconFile: fixture('icon.png') }),
+    ).rejects.toBeInstanceOf(ExitSignal);
+
+    expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('contentLength exceeds 1048576 bytes');
+    expect(printed).not.toContain('[object Object]');
+  });
+
+  it('a storage refusal (S3 403) prints the typed message, not raw XML, and never commits', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(new Response(JSON.stringify(PRESIGN), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response('<?xml version="1.0"?><Error><Code>SignatureDoesNotMatch</Code></Error>', {
+          status: 403,
+        }),
+      );
+
+    await expect(
+      appsUpdate('app1', { brandIconFile: fixture('icon.png') }),
+    ).rejects.toBeInstanceOf(ExitSignal);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const printed = String(errSpy.mock.calls[0]?.[0]);
+    expect(printed).toContain('refused by storage');
+    expect(printed).not.toContain('SignatureDoesNotMatch');
+  });
+
+  it('a commit refusal renders the wire envelope message and exits 1', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(new Response(JSON.stringify(PRESIGN), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: { code: 'CONFLICT', message: 'upload not found or expired' },
+          }),
+          { status: 409 },
+        ),
+      );
+
+    await expect(
+      appsUpdate('app1', { brandIconFile: fixture('icon.png') }),
+    ).rejects.toBeInstanceOf(ExitSignal);
+
+    expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('upload not found or expired');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// SYNC GUARD: the brand-asset wire mirrors above vs.
+// `backend/libs/cli-wire/brand-assets.ts` (guuey#138, AV-16). Reads both
+// sides off disk (nothing importable — the source package is private, the
+// CLI is published npm; see `../wire-mirror-parse.ts`) and skips when
+// `backend/` is absent — a consumer's installed copy has no monorepo around
+// it, and the monorepo is the only place drift can start.
+// ─────────────────────────────────────────────────────────────────────
+
+function repoPath(relativeToThisFile: string): string {
+  return fileURLToPath(new URL(relativeToThisFile, import.meta.url));
+}
+
+const WIRE_BRAND_ASSETS = repoPath('../../../../../backend/libs/cli-wire/brand-assets.ts');
+const CLI_APPS = repoPath('./apps.ts');
+const haveWire = existsSync(WIRE_BRAND_ASSETS);
+
+describe.skipIf(!haveWire)(
+  'brand-asset wire mirrors — sync guard against @guuey-private/cli-wire',
+  () => {
+    // Read lazily inside the cases: at module load `backend/` may be absent
+    // (consumer install), and `skipIf` only guards the cases themselves.
+    const read = (path: string): string => readFileSync(path, 'utf8');
+
+    // `BrandAssetDeleteBody`/`Response` are deliberately NOT mirrored: the
+    // CLI never calls the DELETE route (clearing goes through
+    // `--brand-icon-url clear`, the pre-existing PUT path).
+    it.each([
+      'BrandAssetUploadBody',
+      'BrandAssetUploadResponse',
+      'BrandAssetCommitBody',
+      'BrandAssetCommitResponse',
+    ])('%s declares exactly the wire fields, with the same optionality', (name) => {
+      expect(parseInterfaceFields(read(CLI_APPS), name)).toEqual(
+        parseInterfaceFields(read(WIRE_BRAND_ASSETS), name),
+      );
+    });
+
+    it('BRAND_ASSET_CONTENT_TYPES is exactly the wire allowlist, in order', () => {
+      expect(parseStringLiterals(read(CLI_APPS), 'BRAND_ASSET_CONTENT_TYPES')).toEqual(
+        parseStringLiterals(read(WIRE_BRAND_ASSETS), 'BRAND_ASSET_CONTENT_TYPES'),
+      );
+    });
+
+    it('the guard itself is not a tautology — a drifted fixture fails', () => {
+      // A missing interface throws rather than comparing nothing…
+      expect(() =>
+        parseInterfaceFields('interface Unrelated { a: string; }', 'BrandAssetCommitBody'),
+      ).toThrow();
+      // …and a dropped/re-optionalized field compares unequal.
+      expect(
+        parseInterfaceFields(
+          'interface BrandAssetCommitBody { uploadId?: string; }',
+          'BrandAssetCommitBody',
+        ),
+      ).not.toEqual(parseInterfaceFields(read(WIRE_BRAND_ASSETS), 'BrandAssetCommitBody'));
+    });
+  },
+);

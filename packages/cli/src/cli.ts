@@ -222,6 +222,13 @@ Apps:
                                  (https://…). Pass 'clear' to unset.
     --brand-og-image-url <url>  Social-preview image for share links
                                  (https://…). Pass 'clear' to unset.
+    --brand-icon-file <path>    Upload a local image as the icon instead of
+                                 hosting it yourself (.png/.jpg/.jpeg/.webp —
+                                 GIF and SVG are refused). Guuey serves it
+                                 from the assets CDN and saves the URL
+                                 immediately. Not with --brand-icon-url.
+    --brand-og-image-file <path>  Same upload path, for the social-preview
+                                 image. Not with --brand-og-image-url.
     --brand-accent <#rrggbb>    Accent colour for the send button and live dot.
                                  Must clear a 4.5:1 WCAG-AA contrast floor
                                  against the fixed #0e1014 foreground, or the
@@ -706,6 +713,12 @@ async function main(): Promise<void> {
             brandIconUrl: flags['brand-icon-url'] === true ? '' : str(flags['brand-icon-url']),
             brandOgImageUrl:
               flags['brand-og-image-url'] === true ? '' : str(flags['brand-og-image-url']),
+            // Upload flags (guuey#138). A bare flag maps to '' so appsUpdate
+            // can refuse it with a usage message instead of dropping it.
+            brandIconFile:
+              flags['brand-icon-file'] === true ? '' : str(flags['brand-icon-file']),
+            brandOgImageFile:
+              flags['brand-og-image-file'] === true ? '' : str(flags['brand-og-image-file']),
             brandAccent: flags['brand-accent'] === true ? '' : str(flags['brand-accent']),
             welcomeCopy: flags['welcome-copy'] === true ? '' : str(flags['welcome-copy']),
             identityEndpointUrl:

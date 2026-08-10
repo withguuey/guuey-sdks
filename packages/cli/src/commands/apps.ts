@@ -4,6 +4,8 @@
  * All operations use PAT auth against the platform REST API.
  */
 
+import { readFileSync } from 'node:fs';
+import { extname } from 'node:path';
 import { resolveConfig, saveConfig, loadConfig } from '../config';
 import { isLoggedIn, requireAuth } from '../auth';
 import { login } from './login';
@@ -273,6 +275,141 @@ function brandFlagValue(raw: string): string | null {
   return raw === 'clear' || raw.trim() === '' ? null : raw;
 }
 
+// ─── Brand-asset upload wire mirrors (guuey#138) ───────────────────────
+//
+// Mirrors of `backend/libs/cli-wire/brand-assets.ts`, pinned field-for-field
+// (and, for the content-type list, member-for-member in order) by the SYNC
+// GUARD block in `apps.test.ts` — the CLI is published npm and cannot import
+// the private wire package; see `../wire-mirror-parse.ts`.
+//
+// `BRAND_ASSET_MAX_BYTES` and `MAX_BRAND_ASSETS_PER_APP` are deliberately
+// NOT mirrored: `wire-mirror-parse.ts` has no numeric-constant parser, so a
+// mirrored number would be an unguardable second copy. The CLI sends
+// `contentLength` verbatim and renders the server's field-named 400.
+
+/** Mirror of the wire's declared-type allowlist. GIF and SVG are refused. */
+const BRAND_ASSET_CONTENT_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
+
+/** The two `GuueyApp` columns an upload may target — nothing else. */
+type BrandAssetField = 'brandIconUrl' | 'brandOgImageUrl';
+
+/** `POST /v1/apps/:appId/brand-assets/upload`. */
+export interface BrandAssetUploadBody {
+  field: BrandAssetField;
+  contentType: string;
+  contentLength: number;
+}
+
+/** The presign. `contentType` is the SIGNED value — the PUT must send it
+ * byte-for-byte or S3 403s with an opaque `SignatureDoesNotMatch`. */
+export interface BrandAssetUploadResponse {
+  uploadUrl: string;
+  uploadId: string;
+  expiresIn: number;
+  contentType: string;
+}
+
+/** `POST /v1/apps/:appId/brand-assets/commit` — the `uploadId`, never a key. */
+export interface BrandAssetCommitBody {
+  field: BrandAssetField;
+  uploadId: string;
+}
+
+/** The commit receipt: the row is already written; `url` is the CDN URL now
+ * stored in `field`'s column. */
+export interface BrandAssetCommitResponse {
+  url: string;
+  field: BrandAssetField;
+}
+
+/**
+ * Extension → declared content type for the `--brand-*-file` flags. Local
+ * pre-flight only — the server sniffs the actual bytes at commit and owns
+ * the rule; what this buys is a legible refusal before any network call,
+ * plus the declared value the presign body requires. The result is narrowed
+ * through the mirrored allowlist, so a mapping entry can never drift
+ * outside what the sync guard pins.
+ */
+function brandAssetContentTypeFor(
+  filePath: string,
+): (typeof BRAND_ASSET_CONTENT_TYPES)[number] | null {
+  const byExtension: Record<string, string> = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+  };
+  const declared = byExtension[extname(filePath).toLowerCase()];
+  return BRAND_ASSET_CONTENT_TYPES.find((t) => t === declared) ?? null;
+}
+
+/**
+ * One `--brand-*-file` upload: presign → PUT the bytes → commit (guuey#138).
+ * The commit itself writes the app row's `field` column, so there is no
+ * follow-up `PUT /apps/:id` for this field — an upload is an immediate
+ * single-field save.
+ */
+async function uploadBrandAssetFile(
+  appId: string,
+  field: BrandAssetField,
+  filePath: string,
+): Promise<BrandAssetCommitResponse> {
+  const contentType = brandAssetContentTypeFor(filePath);
+  if (contentType === null) {
+    out.error(
+      `Cannot infer an image type from ${filePath} — use a .png, .jpg/.jpeg or .webp ` +
+        'file. GIF and SVG are not accepted; export a raster for an SVG logo.',
+    );
+    process.exit(1);
+  }
+
+  // `Buffer<ArrayBuffer>`, not bare `Buffer`: the bare annotation widens to
+  // `ArrayBufferLike`, which `fetch`'s `BodyInit` refuses — the parameterized
+  // type is what `readFileSync` actually returns (`NonSharedBuffer`).
+  let bytes: Buffer<ArrayBuffer>;
+  try {
+    bytes = readFileSync(filePath);
+  } catch {
+    out.error(`Cannot read file: ${filePath}`);
+    process.exit(1);
+  }
+
+  const uploadBody: BrandAssetUploadBody = {
+    field,
+    contentType,
+    contentLength: bytes.length,
+  };
+  const presignRes = await apiRequest('POST', `/apps/${appId}/brand-assets/upload`, uploadBody);
+  if (!presignRes.ok) return handleError(presignRes, `Failed to start ${field} upload`);
+  const presign = (await presignRes.json()) as BrandAssetUploadResponse;
+
+  // Content-Type MUST be the presign response's echoed value — it is a
+  // signed header, so any variant spelling 403s. Same PUT shape as the
+  // deploy tarball upload.
+  const putRes = await fetch(presign.uploadUrl, {
+    method: 'PUT',
+    body: bytes,
+    headers: {
+      'Content-Type': presign.contentType,
+      'Content-Length': String(bytes.length),
+    },
+  });
+  if (!putRes.ok) {
+    // A typed message, never the raw S3 XML: a 403 here usually means the
+    // presign window elapsed — re-running mints a fresh URL.
+    out.error(
+      `Upload of ${filePath} was refused by storage (HTTP ${putRes.status}). ` +
+        'Re-run the command to mint a fresh upload URL.',
+    );
+    process.exit(1);
+  }
+
+  const commitBody: BrandAssetCommitBody = { field, uploadId: presign.uploadId };
+  const commitRes = await apiRequest('POST', `/apps/${appId}/brand-assets/commit`, commitBody);
+  if (!commitRes.ok) return handleError(commitRes, `Failed to commit ${field} upload`);
+  return (await commitRes.json()) as BrandAssetCommitResponse;
+}
+
 /**
  * Build the `apps update` request body from parsed flags (pure — no I/O,
  * so the wire shape is unit-testable without a `fetch` mock).
@@ -365,18 +502,32 @@ export function buildUpdateAppBody(opts: {
   }
 
   if (Object.keys(body).length === 0) {
-    return (
-      'No fields to update. Use --name, --description, --domains, --auth-mode, ' +
-      '--issuer-url + --audience, --clear-auth-config, --widget-embed-identity, ' +
-      '--brand-icon-url, --brand-og-image-url, --brand-accent, --welcome-copy, ' +
-      'or --identity-endpoint-url.'
-    );
+    return NO_UPDATE_FIELDS_MESSAGE;
   }
   return body;
 }
 
 /**
+ * The one `buildUpdateAppBody` refusal `appsUpdate` may tolerate: an empty
+ * PUT body is fine when a `--brand-*-file` upload is doing the saving (the
+ * commit writes the row itself — no PUT needed). Compared by identity there,
+ * so every OTHER refusal (half issuer pair, bad enum value, …) still exits.
+ */
+const NO_UPDATE_FIELDS_MESSAGE =
+  'No fields to update. Use --name, --description, --domains, --auth-mode, ' +
+  '--issuer-url + --audience, --clear-auth-config, --widget-embed-identity, ' +
+  '--brand-icon-url, --brand-og-image-url, --brand-icon-file, ' +
+  '--brand-og-image-file, --brand-accent, --welcome-copy, ' +
+  'or --identity-endpoint-url.';
+
+/**
  * Handle `guuey apps update [appId]`.
+ *
+ * The two `--brand-*-file` flags (guuey#138) run the upload pipeline instead
+ * of joining the `PUT /apps/:id` body: each one is an immediate single-field
+ * save through `POST …/brand-assets/commit`, which writes the row itself. The
+ * remaining flags still travel as one PUT, issued after the uploads so a
+ * refused file never leaves a half-applied update behind it.
  */
 export async function appsUpdate(
   appId: string | undefined,
@@ -391,6 +542,8 @@ export async function appsUpdate(
     widgetEmbedIdentity?: string;
     brandIconUrl?: string;
     brandOgImageUrl?: string;
+    brandIconFile?: string;
+    brandOgImageFile?: string;
     brandAccent?: string;
     welcomeCopy?: string;
     identityEndpointUrl?: string;
@@ -403,18 +556,60 @@ export async function appsUpdate(
     process.exit(1);
   }
 
+  // A file upload and a URL write name the same column — refuse the
+  // ambiguity instead of silently picking a winner.
+  if (opts.brandIconFile !== undefined && opts.brandIconUrl !== undefined) {
+    out.error('--brand-icon-file cannot be combined with --brand-icon-url.');
+    process.exit(1);
+  }
+  if (opts.brandOgImageFile !== undefined && opts.brandOgImageUrl !== undefined) {
+    out.error('--brand-og-image-file cannot be combined with --brand-og-image-url.');
+    process.exit(1);
+  }
+  if (opts.brandIconFile !== undefined && opts.brandIconFile.trim() === '') {
+    out.error('--brand-icon-file requires a file path.');
+    process.exit(1);
+  }
+  if (opts.brandOgImageFile !== undefined && opts.brandOgImageFile.trim() === '') {
+    out.error('--brand-og-image-file requires a file path.');
+    process.exit(1);
+  }
+
+  const uploads: Array<{ field: BrandAssetField; filePath: string }> = [];
+  if (opts.brandIconFile !== undefined) {
+    uploads.push({ field: 'brandIconUrl', filePath: opts.brandIconFile });
+  }
+  if (opts.brandOgImageFile !== undefined) {
+    uploads.push({ field: 'brandOgImageUrl', filePath: opts.brandOgImageFile });
+  }
+
   const body = buildUpdateAppBody(opts);
-  if (typeof body === 'string') {
+  if (typeof body === 'string' && (body !== NO_UPDATE_FIELDS_MESSAGE || uploads.length === 0)) {
     out.error(body);
     process.exit(1);
   }
 
-  const res = await apiRequest('PUT', `/apps/${resolved}`, body);
-  if (!res.ok) return handleError(res);
+  const uploaded: BrandAssetCommitResponse[] = [];
+  for (const upload of uploads) {
+    uploaded.push(await uploadBrandAssetFile(resolved, upload.field, upload.filePath));
+  }
+
+  if (typeof body !== 'string') {
+    const res = await apiRequest('PUT', `/apps/${resolved}`, body);
+    if (!res.ok) return handleError(res);
+  }
 
   if (opts.json) {
-    out.json({ success: true });
-  } else {
+    out.json({
+      success: true,
+      ...Object.fromEntries(uploaded.map((commit) => [commit.field, commit.url])),
+    });
+    return;
+  }
+  for (const commit of uploaded) {
+    out.success(`${commit.field} set to ${commit.url}`);
+  }
+  if (typeof body !== 'string') {
     out.success(`Updated app ${resolved}`);
   }
 }
