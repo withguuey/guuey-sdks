@@ -47,6 +47,14 @@ interface AppDetail extends AppSummary {
   allowedDomains?: string[];
   userAuthMode?: string | null;
   userAuthConfig?: { issuerUrl: string | null; audience: string | null } | null;
+  /**
+   * Standalone-page branding, echoed as stored (guuey#149) — so
+   * `guuey apps get` shows what `guuey apps update --brand-*` wrote.
+   */
+  brandIconUrl?: string | null;
+  brandOgImageUrl?: string | null;
+  brandAccent?: string | null;
+  welcomeCopy?: string | null;
 }
 
 interface AppAccessState {
@@ -170,6 +178,10 @@ export async function appsGet(
     console.log(`  Audience:     ${app.userAuthConfig.audience}`);
   if (app.allowedDomains?.length)
     console.log(`  Domains:      ${app.allowedDomains.join(', ')}`);
+  if (app.brandIconUrl) console.log(`  Brand Icon:   ${app.brandIconUrl}`);
+  if (app.brandOgImageUrl) console.log(`  OG Image:     ${app.brandOgImageUrl}`);
+  if (app.brandAccent) console.log(`  Brand Accent: ${app.brandAccent}`);
+  if (app.welcomeCopy) console.log(`  Welcome Copy: ${app.welcomeCopy}`);
   console.log(`  Created:      ${app.createdAt}`);
 }
 
