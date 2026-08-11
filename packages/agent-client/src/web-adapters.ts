@@ -7,9 +7,13 @@
  * (the functions guard on `typeof window`).
  */
 import {
+  createMcpUiActionRelay,
   createMcpUiResourceReader,
   type McpResourceReadResult,
+  type McpToolCallResult,
+  type McpToolStructuredContent,
   type ResolvedViewMount,
+  type UiActionRequest,
 } from "@guuey/mcp-apps-host";
 import type {
   AgentInvokeAdapters,
@@ -405,4 +409,81 @@ export function createUiResourceReader(
     };
   };
   return createMcpUiResourceReader({ readResource });
+}
+
+/** Options for {@link createUiActionRelay} — same credential surface as the reader. */
+export interface CreateUiActionRelayOptions {
+  /** The guuey public API base (`…/v1`). */
+  apiBaseUrl: string;
+  /** The thread whose persisted cards this relay may act for. */
+  threadId: string;
+  /** Signed-in bearer — wins over the guest secret (same rule as the transport). */
+  getAccessToken?: (opts?: { forceRefresh?: boolean }) => Promise<string | null>;
+  /** Caller-owned anonymous guest secret (widget / guest chat). */
+  guestSecret?: string | null;
+  /** Injectable for tests. */
+  fetchImpl?: typeof fetch;
+}
+
+/**
+ * Build the card action relay over guuey's authenticated `tools/call` proxy
+ * (guuey#158: `POST /v1/threads/:threadId/ui-action`) — the mirror of
+ * {@link createUiResourceReader}. Allowlisting, arm narrowing, and the
+ * never-reject contract live in `@guuey/mcp-apps-host`'s
+ * `createMcpUiActionRelay`; only the transport is guuey-shaped. The proxy
+ * owns EVERYTHING trust-shaped (identity, thread ownership, the
+ * locator-to-thread guard, its own server-side allowlist, the per-user
+ * federation mint) — and every non-OK here collapses to `undefined`, which
+ * the host relay answers in-band as an `isError` result, never a thrown
+ * error into the sandbox bridge.
+ */
+export function createUiActionRelay(
+  options: CreateUiActionRelayOptions,
+): (request: UiActionRequest) => Promise<McpToolCallResult> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const callTool = async (
+    uri: string,
+    name: string,
+    args: McpToolStructuredContent | undefined,
+  ): Promise<unknown> => {
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    const token = options.getAccessToken ? await options.getAccessToken() : null;
+    const guest = sendableGuestSecret(options.guestSecret);
+    if (token) {
+      headers["authorization"] = `Bearer ${token}`;
+    } else if (guest) {
+      headers[GUEST_HEADER] = guest;
+    }
+    const requestUrl = `${options.apiBaseUrl}/threads/${encodeURIComponent(options.threadId)}/ui-action`;
+    const body = JSON.stringify({ uri, name, ...(args !== undefined ? { arguments: args } : {}) });
+    let res: Response;
+    try {
+      res = await fetchImpl(requestUrl, { method: "POST", headers, body });
+    } catch {
+      return undefined; // transport failure — the host relay answers in-band
+    }
+    // One forceRefresh retry on 401 with a bearer in play — the same
+    // expired-but-refreshable recovery the reader performs.
+    if (res.status === 401 && options.getAccessToken) {
+      const fresh = await options.getAccessToken({ forceRefresh: true }).catch(() => null);
+      if (fresh) {
+        try {
+          res = await fetchImpl(requestUrl, {
+            method: "POST",
+            headers: { ...headers, authorization: `Bearer ${fresh}` },
+            body,
+          });
+        } catch {
+          return undefined;
+        }
+      }
+    }
+    if (!res.ok) return undefined;
+    try {
+      return (await res.json()) as unknown;
+    } catch {
+      return undefined;
+    }
+  };
+  return createMcpUiActionRelay({ callTool });
 }

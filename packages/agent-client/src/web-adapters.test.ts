@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
-import { createUiResourceReader, createWebAdapters, fetchStreamTransport } from "./web-adapters";
+import {
+  createUiActionRelay,
+  createUiResourceReader,
+  createWebAdapters,
+  fetchStreamTransport,
+} from "./web-adapters";
 import type { InvokeRequest } from "./types";
 
 /** A well-formed guest secret: 64 lowercase hex chars. */
@@ -501,5 +506,94 @@ describe("createUiResourceReader", () => {
       channel: "inline",
       resource: { uri: "ui://x/y", mimeType: "text/html", blob: "PGI+aGk8L2I+" },
     });
+  });
+});
+
+// guuey#158 — the ui-action relay: the reader's credential surface on the
+// POST side, answering in-band (never rejecting into the sandbox bridge).
+describe("createUiActionRelay", () => {
+  const OK_BODY = { content: [{ type: "text", text: "toggled" }] };
+  const REQUEST = {
+    resourceUri: "ui://ggui/render/s/h",
+    name: "ggui_runtime_submit_action",
+    arguments: { actionId: "toggle" },
+  };
+  function mkFetch(status: number, body?: unknown) {
+    return vi.fn(async () => ({
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => body,
+    })) as unknown as typeof fetch;
+  }
+
+  it("POSTs {uri, name, arguments} to the ui-action route and passes the result through", async () => {
+    const fetchImpl = mkFetch(200, OK_BODY);
+    const relay = createUiActionRelay({
+      apiBaseUrl: "https://api.example/v1",
+      threadId: "t1",
+      getAccessToken: async () => "tok",
+      fetchImpl,
+    });
+    const out = await relay(REQUEST);
+    expect(out).toEqual(OK_BODY);
+    const call = (fetchImpl as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]!;
+    expect(String(call[0])).toBe("https://api.example/v1/threads/t1/ui-action");
+    const init = call[1] as { method: string; headers: Record<string, string>; body: string };
+    expect(init.method).toBe("POST");
+    expect(init.headers["authorization"]).toBe("Bearer tok");
+    expect(JSON.parse(init.body)).toEqual({
+      uri: REQUEST.resourceUri,
+      name: REQUEST.name,
+      arguments: REQUEST.arguments,
+    });
+  });
+
+  it("every non-OK answers in-band isError — never a rejection", async () => {
+    for (const status of [400, 403, 404, 502]) {
+      const relay = createUiActionRelay({
+        apiBaseUrl: "https://api.example/v1",
+        threadId: "t1",
+        guestSecret: "a".repeat(64),
+        fetchImpl: mkFetch(status),
+      });
+      const out = await relay(REQUEST);
+      expect(out.isError).toBe(true);
+      expect(out.content[0]!.type).toBe("text");
+    }
+  });
+
+  it("a disallowed tool never reaches the network", async () => {
+    const fetchImpl = mkFetch(200, OK_BODY);
+    const relay = createUiActionRelay({
+      apiBaseUrl: "https://api.example/v1",
+      threadId: "t1",
+      fetchImpl,
+    });
+    const out = await relay({ ...REQUEST, name: "shell_exec" });
+    expect(out.isError).toBe(true);
+    expect((fetchImpl as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(0);
+  });
+
+  it("retries ONCE with a forceRefresh token on 401", async () => {
+    const responses = [
+      { ok: false, status: 401, json: async () => ({}) },
+      { ok: true, status: 200, json: async () => OK_BODY },
+    ];
+    const fetchImpl = vi.fn(async () => responses.shift()!) as unknown as typeof fetch;
+    const getAccessToken = vi.fn(
+      async (opts?: { forceRefresh?: boolean }) => (opts?.forceRefresh ? "fresh" : "stale"),
+    );
+    const relay = createUiActionRelay({
+      apiBaseUrl: "https://api.example/v1",
+      threadId: "t1",
+      getAccessToken,
+      fetchImpl,
+    });
+    const out = await relay(REQUEST);
+    expect(out).toEqual(OK_BODY);
+    const second = (fetchImpl as unknown as { mock: { calls: unknown[][] } }).mock.calls[1]!;
+    expect(
+      (second[1] as { headers: Record<string, string> }).headers["authorization"],
+    ).toBe("Bearer fresh");
   });
 });

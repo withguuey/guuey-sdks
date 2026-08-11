@@ -9,6 +9,8 @@ export {
 } from "./sse";
 export { dismissLinkPrompt } from "./link-prompt";
 export {
+  createUiActionRelay,
+  type CreateUiActionRelayOptions,
   createUiResourceReader,
   type CreateUiResourceReaderOptions,
   createWebAdapters,

@@ -42,3 +42,14 @@ export {
   type CreateMcpUiResourceReaderDeps,
   type McpResourceReadResult,
 } from "./reader.js";
+export {
+  asToolCallResult,
+  createMcpUiActionRelay,
+  UI_ACTION_TOOLS,
+  UI_ACTION_UNAVAILABLE_TEXT,
+  type CreateMcpUiActionRelayDeps,
+  type McpToolCallContent,
+  type McpToolCallResult,
+  type McpToolStructuredContent,
+  type UiActionRequest,
+} from "./action.js";
