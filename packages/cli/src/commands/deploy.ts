@@ -30,6 +30,7 @@
  *   guuey deploy --code          # Force code mode
  *   guuey deploy --size sm       # Override runtime pod size
  *   guuey deploy --build-size lg # Override build Job size (code mode only)
+ *   guuey deploy --max-pods 3    # Set the app's replica count (scaling S1)
  *   guuey deploy --force         # Force deploy even if no changes detected
  */
 
@@ -100,6 +101,24 @@ export function portalOriginForHost(host: string | undefined): string | null {
 export function portalLine(host: string | undefined, appId: string): string | null {
   const origin = portalOriginForHost(host);
   return origin ? `${origin}/agent/${appId}` : null;
+}
+
+/**
+ * The pod-lifetime footer under every deploy summary.
+ *
+ * Agent pods are ALWAYS-ON: the controller holds `spec.replicas` at the
+ * app's pod limit and nothing reaps a live agent on idle. This used to
+ * promise "Scales to zero when idle", which was never true of an agent pod
+ * and read as a billing promise (scaling S1, guuey#162). One helper so the
+ * three deploy paths cannot drift back apart.
+ */
+function printPodLifetime(maxPods: number | undefined): void {
+  console.log('  Pods run continuously — no scale-to-zero, no idle timeout.');
+  console.log(
+    maxPods === undefined
+      ? '  Set the pod limit with --max-pods, or "guuey agent config --max-pods <n>".'
+      : '  Change the limit with "guuey agent config --max-pods <n>" — no redeploy.',
+  );
 }
 
 /**
@@ -176,6 +195,25 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
   const label = flags?.label as string | undefined;
   const force = flags?.force === true;
 
+  // `--max-pods` is FLAG-ONLY, unlike `--size`: `guuey.json#agent.deploy` is
+  // a strictObject of `{size, region}` (`@guuey/config#DeploySchema`), so
+  // there is no overlay key to fall back to — adding one is a schema change,
+  // not a CLI change. Absent flag = field omitted from the trigger body =
+  // the app's persisted knob is left untouched (a redeploy never resets it).
+  // The real ceiling is the SERVER's (plan tier, or an admin per-app raise);
+  // it answers 409 AGENT_MAX_PODS naming the number, so this validates only
+  // "positive integer" and never guesses a limit.
+  const maxPodsFlag = flags?.['max-pods'];
+  let maxPods: number | undefined;
+  if (maxPodsFlag !== undefined) {
+    const parsed = maxPodsFlag === true ? NaN : Number(maxPodsFlag);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      out.error('--max-pods must be a positive integer (e.g. --max-pods 3).');
+      process.exit(1);
+    }
+    maxPods = parsed;
+  }
+
   const VALID_BUILD_SIZES = ['sm', 'md', 'lg', 'xl'];
   if (!VALID_BUILD_SIZES.includes(buildSize)) {
     out.error(
@@ -205,6 +243,7 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
       appId,
       guueyJsonPath: cwdGuueyJson,
       size,
+      maxPods,
       label,
     });
   } else if (mode === 'code-orchestrated') {
@@ -216,12 +255,13 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
       root: cwd,
       size,
       buildSize,
+      maxPods,
       label,
       force,
       flags,
     });
   } else {
-    await deployLegacyDockerfile({ auth, config, appId, size, buildSize, label, force });
+    await deployLegacyDockerfile({ auth, config, appId, size, buildSize, maxPods, label, force });
   }
 }
 
@@ -335,11 +375,13 @@ async function deployCode(opts: {
   root: string;
   size: string;
   buildSize: string;
+  maxPods: number | undefined;
   label: string | undefined;
   force: boolean;
   flags?: Record<string, string | true>;
 }): Promise<void> {
-  const { auth, config, appId, guueyJsonPath, root, size, buildSize, label, force, flags } = opts;
+  const { auth, config, appId, guueyJsonPath, root, size, buildSize, maxPods, label, force, flags } =
+    opts;
 
   console.log('');
   console.log('  Deploying agent to guuey cloud...');
@@ -543,6 +585,7 @@ async function deployCode(opts: {
     agentMode: 'code',
     snapshotConfig,
     ...(label ? { versionLabel: label } : {}),
+    ...(maxPods !== undefined ? { maxPods } : {}),
   });
 
   if (deployRes.status !== 202) {
@@ -593,7 +636,8 @@ async function deployCode(opts: {
   console.log('');
   console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
   console.log(`  Size:   runtime=${size}, build=${buildSize}`);
-  console.log('  Scales to zero when idle.');
+  if (maxPods !== undefined) console.log(`  Pods:   max=${maxPods}`);
+  printPodLifetime(maxPods);
   console.log('');
   const portal = portalLine(config.host, appId);
   if (portal) console.log(`  Portal: ${portal}`);
@@ -707,10 +751,11 @@ async function deployLegacyDockerfile(opts: {
   appId: string;
   size: string;
   buildSize: string;
+  maxPods: number | undefined;
   label: string | undefined;
   force: boolean;
 }): Promise<void> {
-  const { auth, config, appId, size, buildSize, label, force } = opts;
+  const { auth, config, appId, size, buildSize, maxPods, label, force } = opts;
 
   console.log('');
   console.log('  Deploying agent to guuey cloud...');
@@ -775,6 +820,7 @@ async function deployLegacyDockerfile(opts: {
     sourceTarballKey: `${appId}/${uploadId}.tar.gz`,
     agentMode: 'code',
     ...(label ? { versionLabel: label } : {}),
+    ...(maxPods !== undefined ? { maxPods } : {}),
   });
 
   if (deployRes.status !== 202) {
@@ -825,7 +871,8 @@ async function deployLegacyDockerfile(opts: {
   console.log('');
   console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
   console.log(`  Size:   runtime=${size}, build=${buildSize}`);
-  console.log('  Scales to zero when idle.');
+  if (maxPods !== undefined) console.log(`  Pods:   max=${maxPods}`);
+  printPodLifetime(maxPods);
   console.log('');
 }
 
@@ -847,9 +894,10 @@ async function deployDeclarative(opts: {
   appId: string;
   guueyJsonPath: string;
   size: string;
+  maxPods: number | undefined;
   label: string | undefined;
 }): Promise<void> {
-  const { auth, config, appId, guueyJsonPath, size, label } = opts;
+  const { auth, config, appId, guueyJsonPath, size, maxPods, label } = opts;
 
   console.log('');
   console.log('  Deploying declarative agent to guuey cloud...');
@@ -914,6 +962,7 @@ async function deployDeclarative(opts: {
     agentMode: 'nocode',
     snapshotConfig: snapshot,
     ...(label ? { versionLabel: label } : {}),
+    ...(maxPods !== undefined ? { maxPods } : {}),
   });
 
   if (triggerRes.status !== 202) {
@@ -962,7 +1011,9 @@ async function deployDeclarative(opts: {
   console.log('');
   console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
   console.log(`  Size:   runtime=${size}`);
-  console.log('  Stock nocode-runtime pod; scales to zero when idle.');
+  if (maxPods !== undefined) console.log(`  Pods:   max=${maxPods}`);
+  console.log('  Stock nocode-runtime pod.');
+  printPodLifetime(maxPods);
   console.log('');
 }
 

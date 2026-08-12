@@ -27,12 +27,18 @@ const CLI_WIRE_DIR = '../../../../../backend/libs/cli-wire';
 const WIRE_APPS = repoPath(`${CLI_WIRE_DIR}/apps.ts`);
 const WIRE_MCP = repoPath(`${CLI_WIRE_DIR}/mcp.ts`);
 const WIRE_WIDGET_KEYS = repoPath(`${CLI_WIRE_DIR}/widget-keys.ts`);
+const WIRE_DEPLOY = repoPath(`${CLI_WIRE_DIR}/deploy.ts`);
 
 const CLI_APPS = repoPath('./apps.ts');
 const CLI_MCP = repoPath('./mcp.ts');
 const CLI_WIDGET = repoPath('./widget.ts');
+const CLI_AGENT = repoPath('./agent.ts');
 
-const haveWire = existsSync(WIRE_APPS) && existsSync(WIRE_MCP) && existsSync(WIRE_WIDGET_KEYS);
+const haveWire =
+  existsSync(WIRE_APPS) &&
+  existsSync(WIRE_MCP) &&
+  existsSync(WIRE_WIDGET_KEYS) &&
+  existsSync(WIRE_DEPLOY);
 const read = (path: string): string => readFileSync(path, 'utf8');
 
 /** Field names only — the shared assertion for "these two declare the same members". */
@@ -96,6 +102,15 @@ describe.skipIf(!haveWire)('CLI wire mirrors — sync guards against @guuey-priv
     for (const field of fieldNames(read(CLI_APPS), 'UpdateAppRequest')) {
       expect(accepted).toContain(field);
     }
+  });
+
+  it('AgentConfig declares exactly the AgentConfigWire fields, with the same optionality', () => {
+    // `guuey agent config` renders every one of these. Equality, not subset:
+    // the wire is four fields the command exists to print, so a field added
+    // server-side and not here is a knob the CLI silently never shows.
+    expect(parseInterfaceFields(read(CLI_AGENT), 'AgentConfig')).toEqual(
+      parseInterfaceFields(read(WIRE_DEPLOY), 'AgentConfigWire'),
+    );
   });
 
   it('MCP_SIZES is exactly the wire McpServerSize union', () => {

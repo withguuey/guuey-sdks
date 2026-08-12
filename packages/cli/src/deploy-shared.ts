@@ -341,6 +341,12 @@ export function cleanup(tarballPath: string): void {
  * then a flat `{error: string}` shape (for any legacy/ad-hoc response that
  * isn't `httpError`-shaped), then a top-level `message` field, and finally
  * falls back to the caller-supplied default (typically `HTTP <status>`).
+ *
+ * The nested shape's `code` is PRINTED, as a `[CODE] ` prefix. Two of the
+ * codes a CLI user meets are only actionable once named — `AGENT_MAX_PODS`
+ * (the plan/admin replica ceiling) and `COLOCATED_STATE_UNARMED` (durable
+ * state not armed for this env), both 409s off the same `--max-pods` write —
+ * and the message alone gives a support thread nothing to grep for.
  */
 export function parseApiError(data: unknown, fallback: string): string {
   if (data === null || typeof data !== 'object') return fallback;
@@ -348,7 +354,10 @@ export function parseApiError(data: unknown, fallback: string): string {
   const err = record.error;
   if (err !== null && typeof err === 'object') {
     const nested = (err as Record<string, unknown>).message;
-    if (typeof nested === 'string' && nested.length > 0) return nested;
+    if (typeof nested === 'string' && nested.length > 0) {
+      const code = (err as Record<string, unknown>).code;
+      return typeof code === 'string' && code.length > 0 ? `[${code}] ${nested}` : nested;
+    }
   }
   if (typeof err === 'string' && err.length > 0) return err;
   if (typeof record.message === 'string' && record.message.length > 0) return record.message;

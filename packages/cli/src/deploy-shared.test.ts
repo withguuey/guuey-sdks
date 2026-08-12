@@ -103,10 +103,32 @@ describe('packSource', () => {
 });
 
 describe('parseApiError', () => {
-  it('reads the real httpError nested {error:{code,message}} shape', () => {
+  it('reads the real httpError nested {error:{code,message}} shape, prefixing the code', () => {
     expect(
       parseApiError({ error: { code: 'ValidationError', message: 'bad input' } }, 'fallback'),
-    ).toBe('bad input');
+    ).toBe('[ValidationError] bad input');
+  });
+
+  it('names the scaling 409 codes so the message is self-diagnosing', () => {
+    // The two codes `guuey deploy --max-pods` / `guuey agent config
+    // --max-pods` can 409 with. Without the prefix both read as generic
+    // prose and neither is greppable in a support thread.
+    expect(
+      parseApiError(
+        { error: { code: 'AGENT_MAX_PODS', message: "maxPods 5 exceeds this app's ceiling of 3" } },
+        'fallback',
+      ),
+    ).toBe("[AGENT_MAX_PODS] maxPods 5 exceeds this app's ceiling of 3");
+    expect(
+      parseApiError(
+        { error: { code: 'COLOCATED_STATE_UNARMED', message: 'maxPods > 1 requires durable state' } },
+        'fallback',
+      ),
+    ).toBe('[COLOCATED_STATE_UNARMED] maxPods > 1 requires durable state');
+  });
+
+  it('omits the prefix when the nested envelope carries no code', () => {
+    expect(parseApiError({ error: { message: 'no code here' } }, 'fallback')).toBe('no code here');
   });
 
   it('reads a flat {error: string} shape (legacy/ad-hoc handlers)', () => {

@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 import { createLinkedApp, deploy, pollDeployStatus, portalLine, portalOriginForHost } from './deploy.js';
@@ -418,4 +419,139 @@ describe('deploy() — colocated MCP server-name validation (deploy-time gate)',
     },
     10_000,
   );
+});
+
+// `guuey deploy --max-pods N` (scaling S1-F4, guuey#162): the flag rides
+// `DeployTriggerBody.maxPods` at every trigger POST. Driven through the
+// declarative shape — it is the one that reaches the trigger with no
+// tarball, no build, and no S3 round trip — plus a body-literal guard that
+// the other two shapes carry the field too.
+describe('deploy() — --max-pods rides the trigger body', () => {
+  let dir: string;
+  let originalCwd: string;
+  let exitSpy: MockInstance<typeof process.exit>;
+  let errSpy: MockInstance<typeof console.error>;
+  let fetchSpy: MockInstance<typeof fetch>;
+
+  /** The trigger POST's parsed JSON body, or `undefined` if it never fired. */
+  function triggerBody(): Record<string, unknown> | undefined {
+    const call = fetchSpy.mock.calls.find(([u]) => String(u).includes('/deploy/trigger'));
+    if (!call) return undefined;
+    return JSON.parse(String(call[1]?.body)) as Record<string, unknown>;
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    dir = mkdtempSync(join(tmpdir(), 'deploy-max-pods-test-'));
+    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {} }));
+    process.chdir(dir);
+
+    vi.mocked(resolveConfig).mockReturnValue({
+      host: 'https://platform.guuey.test',
+      apiUrl: 'https://api.guuey.test',
+      appId: 'app-1',
+    });
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/deploy/trigger')) {
+        return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
+      }
+      if (url.includes('/deployments/1/status')) {
+        return new Response(
+          JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it('sends maxPods on the trigger body when the flag is given', async () => {
+    await deploy({ 'max-pods': '3' });
+
+    expect(triggerBody()?.maxPods).toBe(3);
+  });
+
+  it('OMITS maxPods when the flag is absent, so a redeploy never resets the knob', async () => {
+    await deploy({});
+
+    const body = triggerBody();
+    expect(body).toBeDefined();
+    expect(body).not.toHaveProperty('maxPods');
+  });
+
+  it.each(['0', '-2', '1.5', 'many', ''])(
+    'rejects --max-pods %j client-side, before any network call',
+    async (value) => {
+      await expect(deploy({ 'max-pods': value })).rejects.toBeInstanceOf(ExitSignal);
+
+      expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+      expect(printed).toContain('--max-pods must be a positive integer');
+    },
+  );
+
+  it('rejects a valueless --max-pods (parsed as `true`) rather than sending NaN', async () => {
+    await expect(deploy({ 'max-pods': true })).rejects.toBeInstanceOf(ExitSignal);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('surfaces the server 409 with its code (the ceiling is the server\'s to name)', async () => {
+    fetchSpy.mockImplementation(async (input) => {
+      if (String(input).includes('/deploy/trigger')) {
+        return new Response(
+          JSON.stringify({
+            error: {
+              code: 'AGENT_MAX_PODS',
+              message: "maxPods 9 exceeds this app's ceiling of 3 (the Free plan's limit).",
+            },
+          }),
+          { status: 409 },
+        );
+      }
+      throw new Error(`unexpected fetch: ${String(input)}`);
+    });
+
+    await expect(deploy({ 'max-pods': '9' })).rejects.toBeInstanceOf(ExitSignal);
+
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('[AGENT_MAX_PODS]');
+    expect(printed).toContain("ceiling of 3");
+  });
+});
+
+// The declarative test above proves ONE of the three trigger POST sites
+// carries the field. The other two (code-orchestrated, legacy Dockerfile)
+// each need a build + tarball + presigned-S3 round trip to reach their
+// trigger, which this suite has no harness for — so they are pinned at the
+// source level instead: every `/deploy/trigger` body literal in deploy.ts
+// must spread maxPods. A new deploy shape that forgets the field fails here.
+describe('deploy.ts — every trigger POST site carries maxPods', () => {
+  it('all three body literals spread the knob', () => {
+    const source = readFileSync(
+      fileURLToPath(new URL('./deploy.ts', import.meta.url)),
+      'utf8',
+    );
+    const triggerPosts = source.split("'POST', `/apps/${appId}/deploy/trigger`").slice(1);
+    expect(triggerPosts).toHaveLength(3);
+    for (const site of triggerPosts) {
+      const body = site.slice(0, site.indexOf('});'));
+      expect(body).toContain('...(maxPods !== undefined ? { maxPods } : {})');
+    }
+  });
 });

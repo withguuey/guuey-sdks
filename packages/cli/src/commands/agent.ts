@@ -2,48 +2,61 @@
  * guuey agent -- Agent hosting management commands.
  *
  * Subcommands:
- *   config                     Show current agent hosting config
- *   config --size <size>       Update container size (xs/sm/md/lg/xl)
- *   config --timeout <min>     Update idle timeout in minutes
- *   config --max-pods <n>      Update max pod replicas
+ *   config                     Show the app's scaling config
+ *   config --max-pods <n>      Set the app's replica count
  *
  * Usage:
- *   guuey agent config                           # Show current config
- *   guuey agent config --size md                  # Change to medium container
- *   guuey agent config --timeout 30 --max-pods 3  # Update scaling config
+ *   guuey agent config                 # Show maxPods + the ceiling it is gated at
+ *   guuey agent config --max-pods 3    # Scale a LIVE app, no redeploy
+ *   guuey agent config --json          # Machine-readable (either mode)
  *
- * DEFERRED: the /apps/:id/config route is not in cliApi yet — the whole
- * command gates with out.notYetAvailable (see unshipped.test.ts). The
- * dormant implementation below re-activates by removing the gate when
- * the route ships.
+ * Backed by `GET|PATCH /v1/apps/:id/config` (scaling S1-F4, guuey#162) —
+ * the route this command was gated behind `notYetAvailable` waiting for. A
+ * PATCH lands without a redeploy: the deploy-controller's tier-sweep reads
+ * `AppBilling.maxPods` on its 5-min converge pass and patches `spec.replicas`
+ * toward it. The same knob also rides `guuey deploy --max-pods`.
+ *
+ * The ceiling is the SERVER's to name — plan tier, or an admin per-app raise
+ * — so this validates only "positive integer" and prints the ceiling from
+ * the response rather than hardcoding one (the old dormant body's 1..10 was
+ * a guess that matched no tier).
+ *
+ * Pod size and idle timeout are deliberately NOT here: size is a per-deploy
+ * choice (`guuey deploy --size`, shown by `guuey deployments`), and neither
+ * has a config route. One knob, one contract.
  */
 
 import { requireAuth } from '../auth';
 import { resolveConfig } from '../config';
+import { apiRequest, parseApiError } from '../deploy-shared';
 import * as out from '../output';
 
-const VALID_SIZES = ['xs', 'sm', 'md', 'lg', 'xl'];
-
-const SIZE_LABELS: Record<string, string> = {
-  xs: 'XS (256MB / 0.25 vCPU)',
-  sm: 'SM (512MB / 0.5 vCPU)',
-  md: 'MD (1GB / 1 vCPU)',
-  lg: 'LG (2GB / 2 vCPU)',
-  xl: 'XL (4GB / 4 vCPU)',
-};
+/**
+ * MIRROR of `@guuey-private/cli-wire#AgentConfigWire` — the `GET|PATCH
+ * /v1/apps/:id/config` response. Hand-mirrored rather than imported (the
+ * wire package is private, this one is published npm); pinned against the
+ * wire source by `wire-sync.test.ts`. See `../wire-mirror-parse.ts`.
+ */
+export interface AgentConfig {
+  appId: string;
+  /** The persisted knob; `null` = unset, which the platform runs as 1 replica. */
+  maxPods: number | null;
+  /** The ceiling the next write is gated at (tier limit, or an admin raise). */
+  maxPodsCeiling: number;
+  /** The effective tier the ceiling derives from (admin raise aside). */
+  tier: string;
+}
 
 /**
  * Handle the `guuey agent config` command.
  *
- * With no update flags: shows current config from latest deployment.
- * With flags: updates config via PATCH /apps/:appId/config.
+ * No update flags: GET the config and display it. With `--max-pods`: PATCH
+ * it, then display the server's readback (never the requested value — the
+ * readback is what actually persisted).
  */
 export async function agentConfig(
   flags: Record<string, string | true>,
 ): Promise<void> {
-  out.notYetAvailable(
-    "guuey agent config isn't available yet — hosted-agent runtime config (size/timeout/max-pods) is on the guuey launch roadmap.",
-  );
   const auth = requireAuth();
   const config = resolveConfig();
   const appId = config.appId;
@@ -58,125 +71,81 @@ export async function agentConfig(
     process.exit(1);
   }
 
-  const baseUrl = config.apiUrl.replace(/\/$/, '');
-  const hasUpdates =
-    flags.size !== undefined ||
-    flags.timeout !== undefined ||
-    flags['max-pods'] !== undefined;
+  const json = flags.json === true;
+  const maxPodsFlag = flags['max-pods'];
 
-  if (!hasUpdates) {
-    // Show current config from latest deployment
-    await showConfig(baseUrl, appId, auth.pat, flags.json === true);
+  if (maxPodsFlag === undefined) {
+    await showConfig(auth.pat, config, appId, json);
     return;
   }
 
-  // Build update payload
-  const body: Record<string, unknown> = {};
-
-  if (flags.size) {
-    const size = flags.size as string;
-    if (!VALID_SIZES.includes(size)) {
-      out.error(
-        `Invalid size: ${size}. Must be one of: ${VALID_SIZES.join(', ')}`,
-      );
-      process.exit(1);
-    }
-    body.size = size;
-  }
-
-  if (flags.timeout) {
-    const timeout = Number(flags.timeout);
-    if (isNaN(timeout) || timeout < 1 || timeout > 1440) {
-      out.error('--timeout must be between 1 and 1440 minutes');
-      process.exit(1);
-    }
-    body.idleTimeoutMinutes = timeout;
-  }
-
-  if (flags['max-pods']) {
-    const maxPods = Number(flags['max-pods']);
-    if (isNaN(maxPods) || maxPods < 1 || maxPods > 10) {
-      out.error('--max-pods must be between 1 and 10');
-      process.exit(1);
-    }
-    body.maxPods = maxPods;
-  }
-
-  const res = await fetch(`${baseUrl}/apps/${appId}/config`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${auth.pat}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as Record<
-      string,
-      string
-    >;
-    out.error(data.error ?? `Config update failed: HTTP ${res.status}`);
+  const maxPods = maxPodsFlag === true ? NaN : Number(maxPodsFlag);
+  if (!Number.isInteger(maxPods) || maxPods < 1) {
+    out.error('--max-pods must be a positive integer (e.g. --max-pods 3).');
     process.exit(1);
   }
 
-  const data = (await res.json()) as { updated: string[] };
-  out.success(`Updated: ${data.updated.join(', ')}`);
-  console.log('Controller will reconcile with new config.');
+  const res = await apiRequest(auth.pat, config, 'PATCH', `/apps/${appId}/config`, { maxPods });
+
+  if (!res.ok) {
+    const data: unknown = await res.json().catch(() => ({}));
+    // A 409 here is AGENT_MAX_PODS (over the ceiling) or
+    // COLOCATED_STATE_UNARMED (durable state off for this env) — both name
+    // the actual constraint in their message, and `parseApiError` prefixes
+    // the code so the failure is greppable.
+    out.error(parseApiError(data, `Config update failed: HTTP ${res.status}`));
+    process.exit(1);
+  }
+
+  const updated = (await res.json()) as AgentConfig;
+  if (json) {
+    out.json(updated);
+    return;
+  }
+  out.success(`Max pods set to ${updated.maxPods ?? 1}.`);
+  printConfig(updated);
+  console.log('');
+  console.log('  Takes effect without a redeploy — the controller converges within ~5 minutes.');
 }
 
+/** GET + render the app's current config. */
 async function showConfig(
-  baseUrl: string,
-  appId: string,
   pat: string,
+  config: { apiUrl?: string },
+  appId: string,
   json: boolean,
 ): Promise<void> {
-  // Fetch deployments to find the currently live config
-  const res = await fetch(`${baseUrl}/apps/${appId}/deployments`, {
-    headers: { Authorization: `Bearer ${pat}` },
-  });
+  const res = await apiRequest(pat, config, 'GET', `/apps/${appId}/config`);
 
   if (!res.ok) {
-    out.error('Failed to fetch deployment config');
+    const data: unknown = await res.json().catch(() => ({}));
+    out.error(parseApiError(data, `Failed to fetch config: HTTP ${res.status}`));
     process.exit(1);
   }
 
-  const data = (await res.json()) as {
-    deployments: Array<{
-      buildNumber: number;
-      status: string;
-      size: string;
-      idleTimeoutMinutes?: number;
-      maxPods?: number;
-    }>;
-  };
-
-  if (data.deployments.length === 0) {
-    console.log('No deployments yet. Run "guuey deploy" first.');
-    return;
-  }
-
-  // Use the live deployment's config, not just the newest record.
-  // If no deployment is live, fall back to the most recent one.
-  const latest =
-    data.deployments.find((d) => d.status === 'live') ?? data.deployments[0];
-
+  const current = (await res.json()) as AgentConfig;
   if (json) {
-    out.json({
-      size: latest.size,
-      sizeLabel: SIZE_LABELS[latest.size] ?? latest.size,
-      idleTimeoutMinutes: latest.idleTimeoutMinutes ?? 10,
-      maxPods: latest.maxPods ?? 1,
-      buildNumber: latest.buildNumber,
-      status: latest.status,
-    });
+    out.json(current);
     return;
   }
 
   console.log('Agent Hosting Configuration');
   console.log('');
-  console.log(`  Size:            ${SIZE_LABELS[latest.size] ?? latest.size}`);
-  console.log(`  Idle Timeout:    ${latest.idleTimeoutMinutes ?? 10} minutes`);
-  console.log(`  Max Pods:        ${latest.maxPods ?? 1}`);
-  console.log(`  Current Build:   #${latest.buildNumber} (${latest.status})`);
+  printConfig(current);
+}
+
+/**
+ * Render the wire as-is. `maxPods: null` prints as 1 — that IS the running
+ * replica count for an unset knob — with `(default)` so the reader can tell
+ * the two apart before running `--max-pods 1` and seeing nothing change.
+ *
+ * Ceiling and plan print on separate lines on purpose: the ceiling may come
+ * from an admin per-app raise rather than the plan, and the wire does not
+ * say which, so "3 (free plan)" would be a claim this command cannot make.
+ */
+function printConfig(wire: AgentConfig): void {
+  const pods = wire.maxPods === null ? '1 (default)' : String(wire.maxPods);
+  console.log(`  Max Pods:        ${pods}`);
+  console.log(`  Ceiling:         ${wire.maxPodsCeiling}`);
+  console.log(`  Plan:            ${wire.tier}`);
 }

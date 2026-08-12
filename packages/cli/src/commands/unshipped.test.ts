@@ -14,7 +14,6 @@ import type { MockInstance } from 'vitest';
 import { byokSet, byokList, byokRemove } from './byok.js';
 import { stop, start, restart } from './agent-lifecycle.js';
 import { deploymentsRollback, deploymentsLogs } from './deployments.js';
-import { agentConfig } from './agent.js';
 
 /** Thrown by the process.exit mock so execution stops like the real thing. */
 class ExitSignal extends Error {
@@ -32,7 +31,9 @@ const gatedCommands: Array<{ name: string; run: () => Promise<void> }> = [
   { name: 'guuey restart', run: () => restart() },
   { name: 'guuey deployments rollback', run: () => deploymentsRollback('3') },
   { name: 'guuey deployments logs', run: () => deploymentsLogs('3', {}) },
-  { name: 'guuey agent config', run: () => agentConfig({}) },
+  // `guuey agent config` left this list in guuey#162 (scaling S1-F4): its
+  // route (`GET|PATCH /v1/apps/:id/config`) now exists and the command
+  // reaches the network. Coverage lives in `agent.test.ts`.
   // `guuey apps recover` left this list in guuey#41, per the "delete the
   // matching case when a route ships" instruction above: its cliApi route
   // (`POST /v1/apps/:id/recover`) now exists, so the command reaches the
