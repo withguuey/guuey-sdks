@@ -34,7 +34,11 @@ import { createWebAdapters } from "@guuey/agent-client";
 
 export function Chat({ endpointUrl, appId }: { endpointUrl: string; appId: string }) {
   const adapters = createWebAdapters({ getAccessToken: async () => myToken });
-  const { messages, send, isStreaming } = useAgentInvoke({ endpointUrl, appId, adapters });
+  const { messages, send, status, activeTool, error } = useAgentInvoke({
+    endpointUrl,
+    appId,
+    adapters,
+  });
 
   return (
     <>
@@ -43,13 +47,22 @@ export function Chat({ endpointUrl, appId }: { endpointUrl: string; appId: strin
           {m.text}
         </p>
       ))}
-      <button disabled={isStreaming} onClick={() => send("hello")}>
+      {status === "connecting" && <p>Waking your agent…</p>}
+      {status === "using-tool" && <p>Using {activeTool}…</p>}
+      {error && <p role="alert">{error}</p>}
+      <button disabled={status !== "ready"} onClick={() => send("hello")}>
         Send
       </button>
     </>
   );
 }
 ```
+
+`status` walks the turn lifecycle — `ready` → `connecting` → `thinking` /
+`using-tool` (with `activeTool` naming the tool) / `responding` → back to
+`ready`. Failures never occupy `status`; they land in `error` and the
+composer re-enables. The full vocabulary is documented at
+[docs.guuey.com/sdk](https://docs.guuey.com/sdk).
 
 On React Native, supply your own adapters (AsyncStorage + an `expo/fetch`
 transport) in place of `createWebAdapters` — the hook's contract is identical.

@@ -147,6 +147,53 @@ export async function appsList(opts: { json?: boolean }): Promise<void> {
 }
 
 /**
+ * The two `DeploymentWire` fields this module reads off
+ * `GET /apps/:id/deployments` (the full wire lives in
+ * `backend/amplify/functions/cliApi/handlers/deploy.ts#DeploymentWire`;
+ * `commands/deploy.ts` reads the status-route projection of the same row).
+ */
+interface DeploymentSummary {
+  status: string;
+  endpointUrl: string | null;
+}
+
+/**
+ * The app's live agent endpoint — the newest `'live'` deployment row's
+ * `endpointUrl` — or `null` when the app has no live deployment (guuey#134:
+ * the URL used to be printed exactly once, by `guuey deploy`, and was
+ * otherwise undiscoverable from the CLI).
+ *
+ * The walk is TEARDOWN-AWARE: an `'undeploying'`/`'undeployed'` row above
+ * any `'live'` row means the per-app workload (one shared namespace — the
+ * k8s name carries no build number) has been torn down, so an older row
+ * still stamped `'live'` is stale, not reachable — code-mode history keeps
+ * such rows (nothing supersedes a code-mode predecessor), and printing its
+ * URL would advertise a dead endpoint. `'failed'`/`'superseded'`/in-flight
+ * rows pass through (a failed redeploy does not take the live app down).
+ *
+ * Best-effort BY DESIGN: `apps get` must not fail because this OPTIONAL
+ * enrichment did — any failure of the history read (network, body stream,
+ * unparseable body) reads as "no live endpoint to show". And it reads the
+ * route's single newest-first page (50 rows): a live row buried under 50+
+ * later-touched rows is not found — the honest answer is then no line,
+ * never a wrong one.
+ */
+async function liveEndpointUrl(appId: string): Promise<string | null> {
+  try {
+    const res = await apiRequest('GET', `/apps/${appId}/deployments`);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { deployments: DeploymentSummary[] };
+    for (const d of data.deployments) {
+      if (d.status === 'undeploying' || d.status === 'undeployed') return null;
+      if (d.status === 'live') return d.endpointUrl ?? null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Handle `guuey apps get [appId]`.
  */
 export async function appsGet(
@@ -163,14 +210,16 @@ export async function appsGet(
   if (!res.ok) return handleError(res);
 
   const data = (await res.json()) as { app: AppDetail };
+  const endpointUrl = await liveEndpointUrl(resolved);
 
   if (opts.json) {
-    out.json(data.app);
+    out.json({ ...data.app, endpointUrl });
     return;
   }
 
   const app = data.app;
   console.log(`App: ${app.displayName} (${app.id})`);
+  if (endpointUrl) console.log(`  Endpoint:     ${endpointUrl}`);
   if (app.userAuthMode) console.log(`  Auth Mode:    ${app.userAuthMode}`);
   if (app.userAuthConfig?.issuerUrl)
     console.log(`  Issuer:       ${app.userAuthConfig.issuerUrl}`);

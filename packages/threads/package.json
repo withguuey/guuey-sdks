@@ -55,10 +55,10 @@
     "url": "git+https://github.com/withguuey/guuey-sdks.git",
     "directory": "packages/threads"
   },
-  "homepage": "https://guuey.com",
   "bugs": {
-    "url": "https://github.com/loqu-co/guuey/issues"
+    "url": "https://github.com/withguuey/guuey-sdks/issues"
   },
+  "homepage": "https://guuey.com",
   "peerDependencies": {
     "vitest": "^3.0.0"
   },

@@ -64,12 +64,12 @@
     "client"
   ],
   "homepage": "https://guuey.com",
-  "bugs": {
-    "url": "https://github.com/loqu-co/guuey/issues"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/withguuey/guuey-sdks.git",
     "directory": "packages/agent-client"
+  },
+  "bugs": {
+    "url": "https://github.com/withguuey/guuey-sdks/issues"
   }
 }

@@ -25,6 +25,7 @@ import type { MockInstance } from 'vitest';
 import {
   appsAccess,
   appsByoUserErase,
+  appsGet,
   appsList,
   appsListRow,
   appsPublish,
@@ -156,6 +157,137 @@ describe('appsList', () => {
 
     const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
     expect(output).toContain('Todo');
+  });
+});
+
+// guuey#134: the agent endpoint URL used to be printed exactly once (by
+// `guuey deploy`) — `apps get` now surfaces the live deployment's
+// endpointUrl, best-effort (a failed history read must never fail the
+// command).
+describe('appsGet endpoint discovery', () => {
+  let fetchSpy: MockInstance<typeof fetch>;
+  let logSpy: MockInstance<typeof console.log>;
+
+  const APP = { id: 'app-1', displayName: 'Todo', createdAt: '2026-07-01T00:00:00.000Z' };
+
+  /** First call = GET /apps/:id; second = GET /apps/:id/deployments. */
+  function mockAppThenDeployments(deploymentsResponse: Response): void {
+    fetchSpy
+      .mockResolvedValueOnce(new Response(JSON.stringify({ app: APP }), { status: 200 }))
+      .mockResolvedValueOnce(deploymentsResponse);
+  }
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, 'fetch');
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('prints the live deployment endpoint', async () => {
+    mockAppThenDeployments(
+      new Response(
+        JSON.stringify({
+          deployments: [
+            { buildNumber: 3, status: 'failed', endpointUrl: null },
+            { buildNumber: 2, status: 'live', endpointUrl: 'https://app-1.agents.guuey.com' },
+            { buildNumber: 1, status: 'superseded', endpointUrl: 'https://stale.example' },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await appsGet('app-1', {});
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain('Endpoint:     https://app-1.agents.guuey.com');
+    expect(output).not.toContain('stale.example');
+    const deploymentsCall = String(fetchSpy.mock.calls[1]?.[0]);
+    expect(deploymentsCall).toContain('/apps/app-1/deployments');
+  });
+
+  it('includes endpointUrl in --json output', async () => {
+    mockAppThenDeployments(
+      new Response(
+        JSON.stringify({
+          deployments: [{ buildNumber: 1, status: 'live', endpointUrl: 'https://e.example' }],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await appsGet('app-1', { json: true });
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    const parsed = JSON.parse(output) as { id: string; endpointUrl: string | null };
+    expect(parsed.endpointUrl).toBe('https://e.example');
+    expect(parsed.id).toBe('app-1');
+  });
+
+  it('shows no Endpoint line for an app with no live deployment', async () => {
+    mockAppThenDeployments(
+      new Response(
+        JSON.stringify({
+          deployments: [{ buildNumber: 1, status: 'failed', endpointUrl: null }],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await appsGet('app-1', {});
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).not.toContain('Endpoint:');
+    expect(output).toContain('Todo');
+  });
+
+  it('a failed deployments read never fails the command (best-effort)', async () => {
+    mockAppThenDeployments(new Response('nope', { status: 500 }));
+
+    await appsGet('app-1', {});
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).not.toContain('Endpoint:');
+    expect(output).toContain('Todo');
+  });
+
+  it('a 200 with an unparseable body never fails the command either (review: the guard covers the whole read)', async () => {
+    mockAppThenDeployments(new Response('<html>proxy interstitial</html>', { status: 200 }));
+
+    await appsGet('app-1', {});
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).not.toContain('Endpoint:');
+    expect(output).toContain('Todo');
+  });
+
+  it('teardown-aware: an undeploy above a stale code-mode live row means NO endpoint (never a dead URL)', async () => {
+    // Code-mode history keeps predecessor 'live' rows (nothing supersedes
+    // them); the undeploy tore down the whole per-app workload, so the
+    // older live row's URL is dead and must not print.
+    mockAppThenDeployments(
+      new Response(
+        JSON.stringify({
+          deployments: [
+            { buildNumber: 2, status: 'undeployed', endpointUrl: null },
+            { buildNumber: 1, status: 'live', endpointUrl: 'https://dead.example' },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await appsGet('app-1', {});
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).not.toContain('Endpoint:');
+    expect(output).not.toContain('dead.example');
   });
 });
 

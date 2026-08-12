@@ -42,5 +42,8 @@
     "url": "git+https://github.com/withguuey/guuey-sdks.git",
     "directory": "packages/create-agentic-app"
   },
+  "bugs": {
+    "url": "https://github.com/withguuey/guuey-sdks/issues"
+  },
   "homepage": "https://guuey.com"
 }

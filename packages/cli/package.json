@@ -60,12 +60,12 @@
     "yaml": "^2.8.2"
   },
   "homepage": "https://guuey.com",
-  "bugs": {
-    "url": "https://github.com/loqu-co/guuey/issues"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/withguuey/guuey-sdks.git",
     "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/withguuey/guuey-sdks/issues"
   }
 }
