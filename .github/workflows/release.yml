@@ -85,6 +85,8 @@ jobs:
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm test
+      - name: Plain-Node ESM import smoke (guuey#153 — every exports arm under bare node)
+        run: pnpm check:esm
       - name: Scaffold smoke (both frameworks scaffold + build clean)
         run: pnpm smoke
 

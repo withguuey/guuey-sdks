@@ -4,7 +4,7 @@
  * verbatim across web (Studio) and React-Native (Portal).
  */
 
-import type { ProfileConsentRequest, ProfileLinkRequest } from "./types";
+import type { ProfileConsentRequest, ProfileLinkRequest } from "./types.js";
 
 export interface ParsedSseEvent {
   event: string;

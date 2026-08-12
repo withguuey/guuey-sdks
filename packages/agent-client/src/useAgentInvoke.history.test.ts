@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyHistoryResult } from "./useAgentInvoke";
+import { applyHistoryResult } from "./useAgentInvoke.js";
 
 describe("applyHistoryResult", () => {
   it("seeds messages when transcript non-empty and chat untouched", () => {

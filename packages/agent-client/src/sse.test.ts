@@ -5,7 +5,7 @@ import {
   reduceAssistantText,
   parseConsentRequest,
   parseLinkRequest,
-} from "./sse";
+} from "./sse.js";
 
 const assistantMsg = (text: string) => ({
   type: "assistant",

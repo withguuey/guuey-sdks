@@ -4,8 +4,8 @@ import {
   createUiResourceReader,
   createWebAdapters,
   fetchStreamTransport,
-} from "./web-adapters";
-import type { InvokeRequest } from "./types";
+} from "./web-adapters.js";
+import type { InvokeRequest } from "./types.js";
 
 /** A well-formed guest secret: 64 lowercase hex chars. */
 const SECRET = "0123456789abcdef".repeat(4);

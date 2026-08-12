@@ -29,8 +29,8 @@ import {
   parseSseEvents,
   reduceAssistantText,
   stringField,
-} from "./sse";
-import { ingestMessageFrame } from "./blocks";
+} from "./sse.js";
+import { ingestMessageFrame } from "./blocks.js";
 import type {
   AgentInvokeAdapters,
   AgentInvokeStatus,
@@ -41,7 +41,7 @@ import type {
   ProfileLinkRequest,
   UseAgentInvokeOptions,
   UseAgentInvokeReturn,
-} from "./types";
+} from "./types.js";
 
 function threadStorageKey(appId: string | undefined): string {
   return `guuey:thread:${appId ?? "default"}`;

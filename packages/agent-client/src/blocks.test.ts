@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ingestMessageFrame } from "./blocks";
+import { ingestMessageFrame } from "./blocks.js";
 
 // A minimal VALID AgJSON event (the pod emits ONE such object per `message`
 // frame in silver mode). `text.delta` requires { type, id, delta, seq }.

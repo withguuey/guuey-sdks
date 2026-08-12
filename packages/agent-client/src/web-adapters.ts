@@ -20,8 +20,8 @@ import type {
   InvokeRequest,
   InvokeTransport,
   ThreadIdStore,
-} from "./types";
-import { fetchThreadHistory, HistoryUnauthorizedError } from "./history";
+} from "./types.js";
+import { fetchThreadHistory, HistoryUnauthorizedError } from "./history.js";
 
 /**
  * Thrown when the pod returns a non-2xx status on `/agent/invoke` (before any

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { dismissLinkPrompt } from "./link-prompt";
+import { dismissLinkPrompt } from "./link-prompt.js";
 
 function response(status: number, body: unknown = {}): Response {
   return new Response(JSON.stringify(body), { status });

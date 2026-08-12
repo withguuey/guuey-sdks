@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgMessage } from "@silverprotocol/core";
-import type { HistoryCard } from "./types";
-import { sortHistoryCards, toolNameFor } from "./history";
+import type { HistoryCard } from "./types.js";
+import { sortHistoryCards, toolNameFor } from "./history.js";
 
 describe("toolNameFor", () => {
   const message: AgMessage = {

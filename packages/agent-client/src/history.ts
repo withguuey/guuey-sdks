@@ -11,7 +11,7 @@
  * has its own copy today and can migrate onto this later.
  */
 import type { AgMessage, JsonValue } from "@silverprotocol/core";
-import type { AgentMessage, HistoryCard, HistoryLoadResult } from "./types";
+import type { AgentMessage, HistoryCard, HistoryLoadResult } from "./types.js";
 
 /** One row of `GET /v1/threads/:id/messages`. */
 export interface ThreadHistoryRow {

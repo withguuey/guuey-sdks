@@ -6,8 +6,8 @@ export {
   parseConsentRequest,
   parseLinkRequest,
   type ParsedSseEvent,
-} from "./sse";
-export { dismissLinkPrompt } from "./link-prompt";
+} from "./sse.js";
+export { dismissLinkPrompt } from "./link-prompt.js";
 export {
   createUiActionRelay,
   type CreateUiActionRelayOptions,
@@ -19,7 +19,7 @@ export {
   fetchStreamTransport,
   AgentResponseError,
   type CreateWebAdaptersOptions,
-} from "./web-adapters";
+} from "./web-adapters.js";
 export {
   fetchThreadHistory,
   threadHistoryRowsToMessages,
@@ -27,13 +27,13 @@ export {
   HistoryUnauthorizedError,
   type ThreadHistoryRow,
   type ThreadHistoryFetchOptions,
-} from "./history";
-export { ingestMessageFrame } from "./blocks";
+} from "./history.js";
+export { ingestMessageFrame } from "./blocks.js";
 // Pure block-walk / resource-narrowing helpers for a block-preserving renderer
 // (shared by Studio's `AgentBlocks` and Portal-web's agent chat). React-free.
 // Transcript labeling/ordering helpers (mount narrowing itself moved to
 // @guuey/mcp-apps-host — the SEP-1865 Host role package; import it directly).
-export { sortHistoryCards, toolNameFor } from "./history";
+export { sortHistoryCards, toolNameFor } from "./history.js";
 // Re-export the AgJSON types the block-preserving transcript surfaces, so
 // consumers can name `reduceResult` / block types without a direct
 // `@silverprotocol/core` import.
@@ -53,4 +53,4 @@ export type {
   HistoryLoadResult,
   UseAgentInvokeOptions,
   UseAgentInvokeReturn,
-} from "./types";
+} from "./types.js";

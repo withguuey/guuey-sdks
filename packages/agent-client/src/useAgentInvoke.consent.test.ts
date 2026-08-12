@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { useAgentInvoke } from "./useAgentInvoke";
-import type { AgentInvokeAdapters, InvokeRequest, UseAgentInvokeOptions } from "./types";
+import { useAgentInvoke } from "./useAgentInvoke.js";
+import type { AgentInvokeAdapters, InvokeRequest, UseAgentInvokeOptions } from "./types.js";
 
 const APP_ID = "app-consent";
 

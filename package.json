@@ -12,6 +12,7 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "smoke": "pnpm --filter @guuey/create-agentic-app run smoke"
+    "smoke": "pnpm --filter @guuey/create-agentic-app run smoke",
+    "check:esm": "node scripts/check-esm-importable.mjs"
   }
 }

@@ -5,7 +5,7 @@ import {
   threadHistoryRowsToCards,
   HistoryUnauthorizedError,
   type ThreadHistoryRow,
-} from "./history";
+} from "./history.js";
 
 function row(partial: Partial<ThreadHistoryRow>): ThreadHistoryRow {
   return { seq: 1, at: "2026-07-15T00:00:00Z", kind: "text", authorRole: "user", text: "hi", ...partial };
