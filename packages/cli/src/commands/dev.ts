@@ -266,6 +266,16 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
       `\nSnapshot-only mode: no worker build found — booting @guuey/host straight from guuey.json (production topology).`,
     );
   }
+  // guuey#112: the trust posture is a decision the user reads, not one
+  // they discover — one line, every boot, pointing at the full statement.
+  // The tools clause is conditional on purpose: full-worker mode runs the
+  // scaffold's own worker with its own tool policy; the unprompted grant
+  // is @guuey/host's fs-bound behavior (host modes).
+  console.log(
+    '\nTrust posture: your agent runs UNSANDBOXED as a local process with your full' +
+      '\nshell environment — and, when fs layers bind (@guuey/host modes), unprompted' +
+      '\nshell/file tools. Details: @guuey/cli README.',
+  );
   console.log(`\nguuey dev server listening on http://localhost:${srv.port}`);
   console.log(`  POST /agent/invoke              (SSE stream)`);
   console.log(`  GET  /threads/:id/messages      (in-memory history, read-plane shape)`);

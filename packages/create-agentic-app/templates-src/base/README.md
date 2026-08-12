@@ -67,12 +67,23 @@ Open http://localhost:6890 to chat with your agent locally.
 
 `guuey dev` is the open, local equivalent of the pod router that runs your
 worker in production. It mirrors the real spawn/stream contract closely — the
-same normalizer, the same SSE shape — but it deliberately cuts three corners
-that only matter once real users and real money are involved:
+same normalizer, the same SSE shape — but it deliberately cuts three corners:
+two that only matter once real users and real money are involved, and one
+you should read twice:
 
-- **No sandboxing.** Locally your worker runs as a plain child process — no
-  `bwrap`/gVisor isolation. In production every invocation runs inside a
-  gVisor-isolated pod.
+- **No sandboxing — read this one twice.** Locally your worker runs as a
+  plain child process: no `bwrap`/gVisor isolation on any platform, it
+  inherits your **full shell environment** (every variable, including
+  credentials unrelated to this agent), and when filesystem layers are
+  bound the host grants the agent shell and file tools **without
+  prompting** (the production jail those tools assume does not exist
+  locally). Net: `guuey dev` runs an LLM-driven agent with unprompted
+  shell access as you, with your env. That's a deliberate dev-trust
+  posture, not an accident — treat the agent like any script you'd run
+  from the internet: run `guuey dev` in a throwaway shell/container with
+  a minimal environment if your agent (or any MCP server it talks to)
+  handles untrusted input. In production every invocation runs inside a
+  gVisor-isolated pod with only its declared environment.
 - **Permissive auth.** `ggui serve --dev-allow-all` accepts any bearer
   locally. The deployed ggui instance enforces real auth.
 - **No metering or history.** Local runs aren't billed and aren't persisted.
