@@ -5,6 +5,7 @@ import {
   reduceAssistantText,
   parseConsentRequest,
   parseLinkRequest,
+  stringField,
 } from "./sse.js";
 
 const assistantMsg = (text: string) => ({
@@ -47,6 +48,29 @@ describe("parseSseEvents", () => {
   it("defaults the event name to 'message' when absent", () => {
     const { events } = parseSseEvents('data: {"a":1}\n\n');
     expect(events[0]?.event).toBe("message");
+  });
+
+  /**
+   * The in-band failure frame (scaling S1-F5, guuey#162): `{code, message}`,
+   * the same envelope the pre-stream refusals use. `useAgentInvoke` reads both
+   * fields off it — `message` into `error`, `code` into `errorCode`.
+   */
+  it("parses an in-band error frame's code alongside its message", () => {
+    const { events } = parseSseEvents(
+      'event: error\ndata: {"code":"PLATFORM_ERROR","message":"the model provider is unavailable"}\n\n',
+    );
+    expect(events).toEqual([
+      {
+        event: "error",
+        data: { code: "PLATFORM_ERROR", message: "the model provider is unavailable" },
+      },
+    ]);
+    expect(stringField(events[0]?.data, "code")).toBe("PLATFORM_ERROR");
+  });
+
+  it("reads no code off an error frame that carries only a message", () => {
+    const { events } = parseSseEvents('event: error\ndata: {"message":"agent blew up"}\n\n');
+    expect(stringField(events[0]?.data, "code")).toBeUndefined();
   });
 });
 

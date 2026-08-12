@@ -22,24 +22,12 @@ import type {
   ThreadIdStore,
 } from "./types.js";
 import { fetchThreadHistory, HistoryUnauthorizedError } from "./history.js";
-
-/**
- * Thrown when the pod returns a non-2xx status on `/agent/invoke` (before any
- * SSE stream opens). Carries the pod's structured `{ code, message }` when
- * present — e.g. a `QUOTA_EXCEEDED` 429 whose message ("…reached its plan
- * generation limit…") the chat UI should surface — falling back to the bare
- * status for non-JSON failures.
- */
-export class AgentResponseError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly code?: string,
-  ) {
-    super(message);
-    this.name = "AgentResponseError";
-  }
-}
+import { AgentResponseError } from "./errors.js";
+import {
+  parseRetryAfterSeconds,
+  withSaturationRetry,
+  type SaturationRetryOptions,
+} from "./saturation-retry.js";
 
 /** Persists the threadId in `window.localStorage` (synchronously). */
 export const localStorageThreadStore: ThreadIdStore = {
@@ -108,7 +96,11 @@ function sendableGuestSecret(secret: string | null | undefined): string | null {
 }
 
 /**
- * Web SSE transport. Exactly ONE identity carrier per request, in order:
+ * One invoke attempt: opens the request and yields decoded SSE chunks.
+ * {@link fetchStreamTransport} wraps this with the shared saturation retry —
+ * every behaviour below is per-attempt.
+ *
+ * Exactly ONE identity carrier per request, in order:
  *
  *  1. `accessToken` → `Authorization: Bearer` — the pod identifies the caller
  *     by their verified access token (the same identity the history read
@@ -126,7 +118,7 @@ function sendableGuestSecret(secret: string | null | undefined): string | null {
  *
  * Reads the body via `ReadableStream.getReader()` (browser).
  */
-export async function* fetchStreamTransport(
+async function* streamInvokeOnce(
   req: InvokeRequest,
   accessToken?: string | null,
   guestSecret?: string | null,
@@ -165,7 +157,12 @@ export async function* fetchStreamTransport(
         code = body.code;
       }
     }
-    throw new AgentResponseError(message, resp.status, code);
+    throw new AgentResponseError(
+      message,
+      resp.status,
+      code,
+      parseRetryAfterSeconds(resp.headers.get("Retry-After")),
+    );
   }
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
@@ -174,6 +171,26 @@ export async function* fetchStreamTransport(
     if (done) break;
     yield decoder.decode(value, { stream: true });
   }
+}
+
+/**
+ * The web SSE transport: {@link streamInvokeOnce} under the shared
+ * {@link withSaturationRetry} wrapper. Every consumer of this transport
+ * (Studio, the widget, anything built on {@link createWebAdapters}) therefore
+ * inherits the single `POD_SATURATED` retry, and inherits the SAME one Portal's
+ * React-Native transport wears — see that wrapper's docblock for which refusals
+ * retry, which deliberately do not, and why the retry is invisible to the hook.
+ */
+export function fetchStreamTransport(
+  req: InvokeRequest,
+  accessToken?: string | null,
+  guestSecret?: string | null,
+  options: SaturationRetryOptions = {},
+): AsyncIterable<string> {
+  return withSaturationRetry(
+    (attempt) => streamInvokeOnce(attempt, accessToken, guestSecret),
+    options,
+  )(req);
 }
 
 export interface CreateWebAdaptersOptions {

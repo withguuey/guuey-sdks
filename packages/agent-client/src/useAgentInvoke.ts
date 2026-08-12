@@ -31,6 +31,7 @@ import {
   stringField,
 } from "./sse.js";
 import { ingestMessageFrame } from "./blocks.js";
+import { AgentResponseError } from "./errors.js";
 import type {
   AgentInvokeAdapters,
   AgentInvokeStatus,
@@ -78,6 +79,10 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
   const [status, setStatus] = useState<AgentInvokeStatus>("ready");
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The pod's wire code for whatever put `error` there, when the failure
+  // carried one (see the return-type contract). Moves in lockstep with
+  // `error` — every set/clear of one touches the other.
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
   // Opt-in block-preserving transcript. `reduceResult` follows the
   // null-until-first-valid-AgEvent contract documented on the return type: it
@@ -131,6 +136,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     setThreadId(null);
     setMessages([]);
     setError(null);
+    setErrorCode(null);
     setStatus("ready");
     setActiveTool(null);
     // Fresh conversation → drop the old fold; the reducer is rebuilt lazily on
@@ -221,6 +227,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     void adaptersRef.current.storage.save(threadStorageKey(appId), "");
     setMessages([]);
     setError(null);
+    setErrorCode(null);
     setStatus("ready");
     setActiveTool(null);
     // Re-create the reducer for the new conversation (rebuilt lazily on the
@@ -244,6 +251,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     async (input: string) => {
       if (!endpointUrl || !input.trim() || status !== "ready") return;
       setError(null);
+      setErrorCode(null);
       setStatus("connecting");
       setMessages((prev) => [...prev, { role: "user", text: input }, { role: "assistant", text: "" }]);
 
@@ -336,7 +344,12 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
                 }
               }
             } else if (ev.event === "error") {
+              // In-band failure frame — one of the two channels that carry the
+              // pod's wire code (the other is the pre-stream refusal caught
+              // below). A frame without a `code` clears it rather than leaving
+              // a previous turn's code standing beside a new message.
               setError(stringField(ev.data, "message") ?? "agent error");
+              setErrorCode(stringField(ev.data, "code") ?? null);
             } else if (ev.event === "profile-consent-needed") {
               // Cross-app profile consent ask (T6). Only a well-formed payload
               // updates state; a malformed one is dropped, leaving any prior
@@ -357,6 +370,12 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
       } catch (e) {
         if (!controller.signal.aborted) {
           setError(e instanceof Error ? e.message : "failed to reach agent");
+          // Pre-stream refusals arrive as a thrown AgentResponseError carrying
+          // the pod's structured code (a transport-level saturation retry has
+          // already happened and failed by the time one surfaces here). Any
+          // other throw — a network drop, a host-adapter failure — has no wire
+          // code, so the field stays null beside the message.
+          setErrorCode(e instanceof AgentResponseError ? (e.code ?? null) : null);
         }
       } finally {
         setStatus("ready");
@@ -384,6 +403,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     status,
     activeTool,
     error,
+    errorCode,
     threadId,
     abort,
     reset,

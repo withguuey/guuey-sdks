@@ -17,9 +17,23 @@ export {
   localStorageThreadStore,
   webGenerateId,
   fetchStreamTransport,
-  AgentResponseError,
   type CreateWebAdaptersOptions,
 } from "./web-adapters.js";
+// The `POD_SATURATED` single-retry wrapper, transport-agnostic: a host that
+// brings its own `fetch` (Portal's React-Native transport) wraps it to wear the
+// same semantics as the web transport instead of hand-rolling a second copy.
+// `parseRetryAfterSeconds` ships with it because filling
+// `AgentResponseError.retryAfterSeconds` the same way is what makes the wrapper
+// honour the pod's hint.
+export {
+  withSaturationRetry,
+  parseRetryAfterSeconds,
+  type SaturationRetryOptions,
+} from "./saturation-retry.js";
+export { AgentResponseError } from "./errors.js";
+// The pod's wire-code vocabulary, mirrored — branch on these instead of
+// re-typing the string literals (see the module docblock for the sync guard).
+export { AGENT_ERROR_CODES, type AgentErrorCode } from "./error-codes.js";
 export {
   fetchThreadHistory,
   threadHistoryRowsToMessages,

@@ -159,9 +159,16 @@ export interface UseAgentInvokeOptions {
  *  - `responding` — assistant text is arriving (`text.start`/`text.delta`
  *    silver frames, or bypass text/assistant frames).
  *
- * Failure keeps its own channel ({@link UseAgentInvokeReturn.error}) — there
- * is deliberately no `error` status: after any terminal outcome the status
- * returns to `ready` so the composer re-enables.
+ * Failure keeps its own channel ({@link UseAgentInvokeReturn.error} +
+ * {@link UseAgentInvokeReturn.errorCode}) — there is deliberately no `error`
+ * status: after any terminal outcome the status returns to `ready` so the
+ * composer re-enables.
+ *
+ * There is likewise no `retrying` state. `fetchStreamTransport` retries a
+ * `POD_SATURATED` refusal once by itself, but that happens before any frame is
+ * yielded, so the turn stays in `connecting` for the backoff and the hook never
+ * learns it happened. This union describes the POD's turn lifecycle; transport
+ * plumbing does not belong in it.
  */
 export type AgentInvokeStatus = "ready" | "connecting" | "thinking" | "using-tool" | "responding";
 
@@ -174,6 +181,25 @@ export interface UseAgentInvokeReturn {
   /** The active tool's wire name while `status === 'using-tool'`, else null. */
   activeTool: string | null;
   error: string | null;
+  /**
+   * The pod's wire code for the failure in {@link error}, when it carried one
+   * — `QUOTA_EXCEEDED`, `POD_SATURATED`, `GUEST_ACCESS_DISABLED`, … (see
+   * `AGENT_ERROR_CODES`, and branch on those constants rather than re-typing
+   * the literals). `null` when there is no error, or when the failure had no
+   * code: a network drop, a host-adapter throw, or an `event: error` frame
+   * without one.
+   *
+   * Both failure channels feed it — the pre-stream refusal (thrown as
+   * `AgentResponseError`) and the in-band `event: error` frame — because the
+   * two carry the SAME vocabulary; a consumer branches once, not per channel.
+   * Set and cleared in lockstep with {@link error}: a new `send()`, `reset()`,
+   * or an app switch clears both.
+   *
+   * It is a `string`, not the `AgentErrorCode` union: the pod may ship a new
+   * code before a consumer upgrades this SDK, and a narrowed type would make
+   * that unrepresentable rather than merely unhandled.
+   */
+  errorCode: string | null;
   threadId: string | null;
   /** Abort the in-flight turn (the stream stops; partial text is kept). */
   abort: () => void;
