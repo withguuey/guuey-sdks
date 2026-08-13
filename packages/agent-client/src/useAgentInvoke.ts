@@ -2,7 +2,7 @@
  * useAgentInvoke — the base-platform chat client.
  *
  * Speaks the nocode-runtime pod's Bedrock-style SSE contract (NOT the parked
- * ggui generative-UI protocol that `@ggui-ai/react`'s useInvoke targets):
+ * ggui generative-UI protocol that `@ggui-ai/mcp-apps-react`'s useInvoke targets):
  *
  *   POST {endpointUrl}/agent/invoke
  *     body: { input, threadId?, clientMessageId }
