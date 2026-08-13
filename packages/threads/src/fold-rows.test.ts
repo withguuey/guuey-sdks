@@ -350,6 +350,28 @@ describe("uiCardArtifactsFromMessages (guuey#86 card rehydration)", () => {
     expect(uiCardArtifactsFromMessages([msgWith([plain, textual, file])])).toHaveLength(0);
   });
 
+  it("_meta alone never mints — a render-slice-bearing result with no uiData yields no card row (guuey#170)", () => {
+    // The card criterion reads uiData/content ONLY; `_meta` is live-turn
+    // material the boundary strips. This pins the repo-side half of the
+    // #170 coupling: the claude-agent-sdk facet stamps uiData exactly when
+    // the result's `_meta.ui` is present, so meta-less ggui amend/no-op
+    // results reach this projector without uiData and must persist nothing.
+    // If either side of that coupling shifts, this is the test that names it.
+    const metaOnly = {
+      type: "tool-result" as const,
+      toolCallId: "c",
+      content: [],
+      _meta: {
+        "ai.ggui/render": {
+          runtimeUrl: "https://mcp.ggui.ai/runtime.js",
+          wsUrl: "wss://mcp.ggui.ai/session",
+          wsToken: "short-ttl",
+        },
+      },
+    };
+    expect(uiCardArtifactsFromMessages([msgWith([metaOnly])])).toHaveLength(0);
+  });
+
   it("indexes multiple UI results within one message distinctly", () => {
     const b = (id: string) => ({
       type: "tool-result" as const,

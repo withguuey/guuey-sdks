@@ -136,6 +136,12 @@ export function uiCardArtifactsFromMessages(messages: AgMessage[]): AgArtifact[]
       // one producer) persists as a PLACEHOLDER row: the locator without
       // mount material (mount = re-fetch of the resourceUri). Before this,
       // locator-only results persisted nothing and vanished from history.
+      // The locator arm leans on an UPSTREAM gate (guuey#170): the
+      // claude-agent-sdk facet stamps `uiData` only when the result's
+      // sibling `_meta.ui` is present, so ggui's meta-less amend/no-op
+      // update results arrive here WITHOUT uiData and mint nothing. This
+      // projector itself never reads `_meta` — mount material rides
+      // uiData/content only (see the metaOnly pin in fold-rows.test.ts).
       const carriesUi =
         asUiResource(block.uiData) !== undefined ||
         uiLocator(block.uiData) !== undefined ||
