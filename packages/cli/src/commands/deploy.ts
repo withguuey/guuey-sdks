@@ -575,6 +575,7 @@ async function deployCode(opts: {
   const snapshotConfig = JSON.stringify(buildDeploySnapshot({ ...loaded, doc: resolvedDoc }));
 
   console.log('  Building & deploying...');
+  const runtimePinBefore = await captureRuntimePin(auth.pat, config, appId);
   const deployRes = await apiRequest(auth.pat, config, 'POST', `/apps/${appId}/deploy/trigger`, {
     deploymentId: buildId,
     buildNumber,
@@ -633,6 +634,7 @@ async function deployCode(opts: {
   // ── Step 5: output ──
   console.log('');
   out.success(`Live at ${url}`);
+  await maybePrintRuntimePinNotice(auth.pat, config, appId, runtimePinBefore);
   console.log('');
   console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
   console.log(`  Size:   runtime=${size}, build=${buildSize}`);
@@ -667,6 +669,45 @@ async function deployCode(opts: {
  * `deps.api` defaults to the real `apiRequest` and exists purely for test
  * injection (mirrors `deployMcpFromSource`'s `deps.api` seam in `commands/mcp.ts`).
  */
+
+/**
+ * The pinned-redeploy notice (runtime-update-channel §10.1, founder-
+ * ratified): "redeploy refreshes the pin" stays one rule — AND the
+ * builder is told when their pinned app's runtime moved because of it.
+ * Best-effort on both legs (a notice must never fail a deploy): capture
+ * the pre-deploy state before the trigger, compare after live.
+ */
+async function captureRuntimePin(
+  pat: string,
+  config: { apiUrl?: string },
+  appId: string,
+): Promise<{ pinned: boolean; digest: string | null } | undefined> {
+  try {
+    const res = await apiRequest(pat, config, 'GET', `/apps/${appId}/config`);
+    if (!res.ok) return undefined;
+    const wire = (await res.json()) as { runtimeAutoUpdate?: boolean; runtimeImageDigest?: string | null };
+    return { pinned: wire.runtimeAutoUpdate === false, digest: wire.runtimeImageDigest ?? null };
+  } catch {
+    return undefined;
+  }
+}
+
+async function maybePrintRuntimePinNotice(
+  pat: string,
+  config: { apiUrl?: string },
+  appId: string,
+  before: { pinned: boolean; digest: string | null } | undefined,
+): Promise<void> {
+  if (!before?.pinned || !before.digest) return;
+  const after = await captureRuntimePin(pat, config, appId);
+  if (!after?.digest || after.digest === before.digest) return;
+  console.log('');
+  console.log(
+    `  Note: this app pins its runtime, and this deploy refreshed the pin — ` +
+      `runtime updated from ${before.digest.slice(0, 19)}… to ${after.digest.slice(0, 19)}….`,
+  );
+}
+
 export async function pollDeployStatus(
   opts: {
     auth: { pat: string };
@@ -811,6 +852,7 @@ async function deployLegacyDockerfile(opts: {
   }
 
   console.log('  Building & deploying...');
+  const runtimePinBefore = await captureRuntimePin(auth.pat, config, appId);
   const deployRes = await apiRequest(auth.pat, config, 'POST', `/apps/${appId}/deploy/trigger`, {
     deploymentId: buildId,
     buildNumber,
@@ -868,6 +910,7 @@ async function deployLegacyDockerfile(opts: {
 
   console.log('');
   out.success(`Live at ${url}`);
+  await maybePrintRuntimePinNotice(auth.pat, config, appId, runtimePinBefore);
   console.log('');
   console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
   console.log(`  Size:   runtime=${size}, build=${buildSize}`);
@@ -956,6 +999,7 @@ async function deployDeclarative(opts: {
 
   // 2. POST the trigger directly. No tarball, no upload step.
   const deploymentId = randomUUID().slice(0, 12);
+  const runtimePinBefore = await captureRuntimePin(auth.pat, config, appId);
   const triggerRes = await apiRequest(auth.pat, config, 'POST', `/apps/${appId}/deploy/trigger`, {
     deploymentId,
     size,
@@ -1008,6 +1052,7 @@ async function deployDeclarative(opts: {
 
   console.log('');
   out.success(`Live at ${url}`);
+  await maybePrintRuntimePinNotice(auth.pat, config, appId, runtimePinBefore);
   console.log('');
   console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
   console.log(`  Size:   runtime=${size}`);

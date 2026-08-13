@@ -71,6 +71,8 @@ const UNSET: AgentConfig = {
   maxPods: null,
   maxPodsCeiling: 1,
   tier: 'free',
+  runtimeAutoUpdate: true,
+  runtimeImageDigest: null,
 };
 
 const SCALED: AgentConfig = {
@@ -78,6 +80,8 @@ const SCALED: AgentConfig = {
   maxPods: 3,
   maxPodsCeiling: 5,
   tier: 'pro',
+  runtimeAutoUpdate: true,
+  runtimeImageDigest: 'sha256:abc123',
 };
 
 /**
@@ -92,6 +96,8 @@ const NO_OP: AgentConfig = {
   maxPods: 1,
   maxPodsCeiling: 5,
   tier: 'pro',
+  runtimeAutoUpdate: true,
+  runtimeImageDigest: null,
 };
 
 describe('guuey agent config', () => {

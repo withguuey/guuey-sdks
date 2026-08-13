@@ -45,6 +45,12 @@ export interface AgentConfig {
   maxPodsCeiling: number;
   /** The effective tier the ceiling derives from (admin raise aside). */
   tier: string;
+  /** Resolved runtime-update posture — absent knob reads back `true`
+   * (the platform-timed default); only a stored `false` reads `false`. */
+  runtimeAutoUpdate: boolean;
+  /** Read-only: the runtime digest the latest LIVE build renders, or
+   * `null` before the controller has stamped one. */
+  runtimeImageDigest: string | null;
 }
 
 /**
@@ -73,19 +79,31 @@ export async function agentConfig(
 
   const json = flags.json === true;
   const maxPodsFlag = flags['max-pods'];
+  const autoUpdateFlag = flags['runtime-auto-update'];
 
-  if (maxPodsFlag === undefined) {
+  if (maxPodsFlag === undefined && autoUpdateFlag === undefined) {
     await showConfig(auth.pat, config, appId, json);
     return;
   }
 
-  const maxPods = maxPodsFlag === true ? NaN : Number(maxPodsFlag);
-  if (!Number.isInteger(maxPods) || maxPods < 1) {
-    out.error('--max-pods must be a positive integer (e.g. --max-pods 3).');
-    process.exit(1);
+  const patch: { maxPods?: number; runtimeAutoUpdate?: boolean } = {};
+  if (maxPodsFlag !== undefined) {
+    const maxPods = maxPodsFlag === true ? NaN : Number(maxPodsFlag);
+    if (!Number.isInteger(maxPods) || maxPods < 1) {
+      out.error('--max-pods must be a positive integer (e.g. --max-pods 3).');
+      process.exit(1);
+    }
+    patch.maxPods = maxPods;
+  }
+  if (autoUpdateFlag !== undefined) {
+    if (autoUpdateFlag !== 'on' && autoUpdateFlag !== 'off') {
+      out.error('--runtime-auto-update takes "on" or "off" (e.g. --runtime-auto-update off pins the runtime at its last deploy).');
+      process.exit(1);
+    }
+    patch.runtimeAutoUpdate = autoUpdateFlag === 'on';
   }
 
-  const res = await apiRequest(auth.pat, config, 'PATCH', `/apps/${appId}/config`, { maxPods });
+  const res = await apiRequest(auth.pat, config, 'PATCH', `/apps/${appId}/config`, patch);
 
   if (!res.ok) {
     const data: unknown = await res.json().catch(() => ({}));
@@ -102,7 +120,14 @@ export async function agentConfig(
     out.json(updated);
     return;
   }
-  out.success(`Max pods set to ${updated.maxPods ?? 1}.`);
+  if (patch.maxPods !== undefined) out.success(`Max pods set to ${updated.maxPods ?? 1}.`);
+  if (patch.runtimeAutoUpdate !== undefined) {
+    out.success(
+      updated.runtimeAutoUpdate
+        ? 'Runtime updates: automatic — the platform keeps this agent on the current runtime.'
+        : 'Runtime updates: pinned — this agent stays on its deploy-time runtime until you deploy again or turn auto-update back on.',
+    );
+  }
   printConfig(updated);
   console.log('');
   console.log('  Takes effect without a redeploy — the controller converges within ~5 minutes.');
@@ -148,4 +173,10 @@ function printConfig(wire: AgentConfig): void {
   console.log(`  Max Pods:        ${pods}`);
   console.log(`  Ceiling:         ${wire.maxPodsCeiling}`);
   console.log(`  Plan:            ${wire.tier}`);
+  console.log(
+    `  Runtime updates: ${wire.runtimeAutoUpdate ? 'automatic (default)' : 'pinned to deploy'}`,
+  );
+  if (wire.runtimeImageDigest) {
+    console.log(`  Runtime digest:  ${wire.runtimeImageDigest}`);
+  }
 }

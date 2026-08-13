@@ -116,6 +116,9 @@ Agent Development:
     --build-size <s>             Build Job size: sm | md | lg | xl (default: md, code-mode only)
     --max-pods <n>               Replica count for the app (plan ceiling applies;
                                  omit to leave the current setting untouched)
+    --runtime-auto-update on|off Runtime update channel: "on" (the default) keeps
+                                 the agent on the platform's current runtime;
+                                 "off" pins it at each deploy's runtime
     --label <tag>                Version label (e.g., v1.0, release-candidate)
   pull                           Refresh guuey.json from hosted state
     --app-id <id>                Override the resolved appId
@@ -125,9 +128,11 @@ Agent Development:
   env list                       List environment variables
   env unset KEY                  Remove environment variables
   deployments [list]             List deployment builds
-  agent config                   Show the app's scaling config (max pods + ceiling)
+  agent config                   Show the app's hosting config (pods, runtime updates)
     --max-pods <n>               Set the replica count — applies to the LIVE app,
                                  no redeploy (converges within ~5 minutes)
+    --runtime-auto-update on|off Automatic runtime updates (default on) or pinned
+                                 to the runtime captured at the last deploy
     --json                       Emit the config as JSON
   logs                           Fetch runtime logs for your deployed agent
     --since <duration>           Time window (default: 1h). Examples: 30s, 15m, 2h, 1d
