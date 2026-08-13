@@ -336,6 +336,31 @@ describe("buildOptions — CLAUDE_CONFIG_DIR pinned to the session dir when fs i
   });
 });
 
+describe("buildOptions — HOME reaches the agent's shell when fs is bound (guuey#176)", () => {
+  it("sets HOME = fs.home so `~` expansion works inside the sandbox", () => {
+    // This env REPLACES the subprocess env wholesale — omitting HOME left
+    // the agent shell with no `~` even though bwrap set it on the worker
+    // (live-found on the multi-pod gate walk, leg (a)2).
+    const fs = { app: "/fs/app", home: "/fs/home", session: "/fs/session" };
+    const opts = buildOptions({}, ctx({ fs }));
+    expect(opts.env?.HOME).toBe("/fs/home");
+  });
+
+  it("a builder snapshot.env cannot repoint HOME off the fs layer", () => {
+    const fs = { app: "/fs/app", home: "/fs/home", session: "/fs/session" };
+    const opts = buildOptions(
+      { env: { HOME: "/tmp/elsewhere" } },
+      ctx({ fs })
+    );
+    expect(opts.env?.HOME).toBe("/fs/home");
+  });
+
+  it("omits HOME when fs is not bound (pre-fs behavior unchanged)", () => {
+    const opts = buildOptions({}, ctx());
+    expect(opts.env?.HOME).toBeUndefined();
+  });
+});
+
 describe("buildOptions — platform-owned memory system-prompt section (memory-mcp spec §4)", () => {
   const fs = { app: "/fs/app", home: "/fs/home", session: "/fs/session" };
   const authed = { userId: "u1", authMode: "authenticated" as const };

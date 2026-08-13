@@ -299,8 +299,16 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
   // MCP logs etc.) follows $HOME by XDG default, and $HOME resolves inside the
   // durable home mount — live-found on the first G5 gate run (2026-07-20)
   // leaking per-invoke log files into quota-billed storage.
+  // HOME rides along (guuey#176): this env REPLACES the subprocess env
+  // wholesale, and omitting HOME left the agent's shell with no `~` even
+  // though bwrap set HOME=/home on the worker (live-found on the multi-pod
+  // gate walk — GUUEY_HOME_DIR set, `~` expansion dead). Safe now that the
+  // CLI's own state is pinned away from the durable layer via
+  // CLAUDE_CONFIG_DIR + XDG_CACHE_HOME below (the G5 leak this env once
+  // avoided by omission).
   const fsEnv: Record<string, string> = fs
     ? {
+        HOME: fs.home,
         [ENV_HOME_DIR]: fs.home,
         [ENV_APP_DIR]: fs.app,
         CLAUDE_CONFIG_DIR: fs.session,
