@@ -213,6 +213,18 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
     }
     maxPods = parsed;
   }
+  // Same absent-keeps semantics as --max-pods (runtime-update-channel §4.2):
+  // a carried value persists via the trigger; a builder's opt-out must never
+  // be silently dropped.
+  const autoUpdateFlag = flags?.['runtime-auto-update'];
+  let runtimeAutoUpdate: boolean | undefined;
+  if (autoUpdateFlag !== undefined) {
+    if (autoUpdateFlag !== 'on' && autoUpdateFlag !== 'off') {
+      out.error('--runtime-auto-update takes "on" or "off" (e.g. --runtime-auto-update off pins the runtime at this deploy).');
+      process.exit(1);
+    }
+    runtimeAutoUpdate = autoUpdateFlag === 'on';
+  }
 
   const VALID_BUILD_SIZES = ['sm', 'md', 'lg', 'xl'];
   if (!VALID_BUILD_SIZES.includes(buildSize)) {
@@ -244,6 +256,7 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
       guueyJsonPath: cwdGuueyJson,
       size,
       maxPods,
+      runtimeAutoUpdate,
       label,
     });
   } else if (mode === 'code-orchestrated') {
@@ -256,12 +269,13 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
       size,
       buildSize,
       maxPods,
+      runtimeAutoUpdate,
       label,
       force,
       flags,
     });
   } else {
-    await deployLegacyDockerfile({ auth, config, appId, size, buildSize, maxPods, label, force });
+    await deployLegacyDockerfile({ auth, config, appId, size, buildSize, maxPods, runtimeAutoUpdate, label, force });
   }
 }
 
@@ -376,11 +390,12 @@ async function deployCode(opts: {
   size: string;
   buildSize: string;
   maxPods: number | undefined;
+  runtimeAutoUpdate?: boolean | undefined;
   label: string | undefined;
   force: boolean;
   flags?: Record<string, string | true>;
 }): Promise<void> {
-  const { auth, config, appId, guueyJsonPath, root, size, buildSize, maxPods, label, force, flags } =
+  const { auth, config, appId, guueyJsonPath, root, size, buildSize, maxPods, runtimeAutoUpdate, label, force, flags } =
     opts;
 
   console.log('');
@@ -587,6 +602,7 @@ async function deployCode(opts: {
     snapshotConfig,
     ...(label ? { versionLabel: label } : {}),
     ...(maxPods !== undefined ? { maxPods } : {}),
+    ...(runtimeAutoUpdate !== undefined ? { runtimeAutoUpdate } : {}),
   });
 
   if (deployRes.status !== 202) {
@@ -793,10 +809,11 @@ async function deployLegacyDockerfile(opts: {
   size: string;
   buildSize: string;
   maxPods: number | undefined;
+  runtimeAutoUpdate?: boolean | undefined;
   label: string | undefined;
   force: boolean;
 }): Promise<void> {
-  const { auth, config, appId, size, buildSize, maxPods, label, force } = opts;
+  const { auth, config, appId, size, buildSize, maxPods, runtimeAutoUpdate, label, force } = opts;
 
   console.log('');
   console.log('  Deploying agent to guuey cloud...');
@@ -863,6 +880,7 @@ async function deployLegacyDockerfile(opts: {
     agentMode: 'code',
     ...(label ? { versionLabel: label } : {}),
     ...(maxPods !== undefined ? { maxPods } : {}),
+    ...(runtimeAutoUpdate !== undefined ? { runtimeAutoUpdate } : {}),
   });
 
   if (deployRes.status !== 202) {
@@ -938,9 +956,10 @@ async function deployDeclarative(opts: {
   guueyJsonPath: string;
   size: string;
   maxPods: number | undefined;
+  runtimeAutoUpdate?: boolean | undefined;
   label: string | undefined;
 }): Promise<void> {
-  const { auth, config, appId, guueyJsonPath, size, maxPods, label } = opts;
+  const { auth, config, appId, guueyJsonPath, size, maxPods, runtimeAutoUpdate, label } = opts;
 
   console.log('');
   console.log('  Deploying declarative agent to guuey cloud...');
@@ -1007,6 +1026,7 @@ async function deployDeclarative(opts: {
     snapshotConfig: snapshot,
     ...(label ? { versionLabel: label } : {}),
     ...(maxPods !== undefined ? { maxPods } : {}),
+    ...(runtimeAutoUpdate !== undefined ? { runtimeAutoUpdate } : {}),
   });
 
   if (triggerRes.status !== 202) {

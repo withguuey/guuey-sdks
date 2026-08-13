@@ -284,6 +284,81 @@ describe('guuey agent config', () => {
     });
   });
 
+  describe('write mode (--runtime-auto-update)', () => {
+    /** The readback for a successful pin — `runtimeAutoUpdate: false`. */
+    const PINNED: AgentConfig = {
+      appId: 'app1',
+      maxPods: 3,
+      maxPodsCeiling: 5,
+      tier: 'pro',
+      runtimeAutoUpdate: false,
+      runtimeImageDigest: 'sha256:abc123',
+    };
+
+    it('PATCHes /apps/:id/config with { runtimeAutoUpdate: false } for "off"', async () => {
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify(PINNED), { status: 200 }));
+
+      await agentConfig({ 'runtime-auto-update': 'off' });
+
+      expect(lastRequest(fetchSpy)).toEqual({
+        method: 'PATCH',
+        path: '/apps/app1/config',
+        body: { runtimeAutoUpdate: false },
+      });
+    });
+
+    it('PATCHes { runtimeAutoUpdate: true } for "on" and prints the automatic copy', async () => {
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify(SCALED), { status: 200 }));
+
+      await agentConfig({ 'runtime-auto-update': 'on' });
+
+      expect(lastRequest(fetchSpy)).toEqual({
+        method: 'PATCH',
+        path: '/apps/app1/config',
+        body: { runtimeAutoUpdate: true },
+      });
+      expect(stdout()).toContain('Runtime updates: automatic');
+    });
+
+    it("reports the server's readback for a pin — the pinned copy + the pinned config line", async () => {
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify(PINNED), { status: 200 }));
+
+      await agentConfig({ 'runtime-auto-update': 'off' });
+
+      expect(stdout()).toContain('Runtime updates: pinned');
+      expect(stdout()).toContain('pinned to deploy');
+      expect(stdout()).toContain('Runtime digest:  sha256:abc123');
+    });
+
+    it.each(['true', 'false', '1', true])(
+      'rejects --runtime-auto-update %j client-side, before any network call',
+      async (value) => {
+        await expect(
+          agentConfig({ 'runtime-auto-update': value as string | true }),
+        ).rejects.toBeInstanceOf(ExitSignal);
+
+        expect(fetchSpy).not.toHaveBeenCalled();
+        expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
+        expect(stderr()).toContain('--runtime-auto-update takes "on" or "off"');
+      },
+    );
+
+    it('combines with --max-pods into ONE PATCH carrying both knobs', async () => {
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify(PINNED), { status: 200 }));
+
+      await agentConfig({ 'max-pods': '3', 'runtime-auto-update': 'off' });
+
+      expect(lastRequest(fetchSpy)).toEqual({
+        method: 'PATCH',
+        path: '/apps/app1/config',
+        body: { maxPods: 3, runtimeAutoUpdate: false },
+      });
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(stdout()).toContain('Max pods set to 3.');
+      expect(stdout()).toContain('Runtime updates: pinned');
+    });
+  });
+
   it('no configured appId errors without calling the API', async () => {
     vi.mocked(resolveConfig).mockReturnValueOnce({
       host: 'https://guuey.test',
