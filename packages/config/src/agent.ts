@@ -132,35 +132,56 @@ const ProxiedMcp = z.strictObject({
  * - `federate: true` makes guuey mint a per-invoke JWT with `aud = url` that
  *   the builder's MCP validates against the guuey JWKS. Omit for plain URL +
  *   optional static `headers`.
+ * - `credential: 'caller'` forwards the invoke's own byo-verified bearer as
+ *   this server's per-turn credential (guuey#179) — see the field doc.
  */
-const ExternalMcp = z.strictObject({
-  kind: z.literal('external'),
-  /** Full HTTP/SSE base URL. */
-  url: z.url(),
-  /** Transport protocol. Defaults to `'http'` (StreamableHTTP). */
-  transport: z.enum(['http', 'sse']).optional(),
-  /**
-   * Mint a per-invoke `aud = url` JWT and inject it as `Authorization: Bearer`.
-   * The builder's MCP verifies it against the guuey JWKS (T6b).
-   */
-  federate: z.boolean().optional(),
-  /** Static headers forwarded on every request. Values may use `${env.NAME}` placeholders. */
-  headers: HeadersSchema.optional(),
-  /** Local dev-loop port (`guuey dev`) this MCP is served on for name→localhost URL resolution. */
-  devPort: z.number().int().min(1).max(65535).optional(),
-  /**
-   * INTERNAL — set only by Router lowering; when present the federation mint
-   * uses this as the RFC 8707 resource instead of `url`.
-   */
-  mcpResourceUrl: z.url().optional(),
-  /**
-   * INTERNAL — set only by Router lowering when this entry is the spliced
-   * profile MCP; carries the agent's `profileAccess` posture onto the entry
-   * itself so the profile child's tool gate (read vs read-write) survives
-   * independent of the top-level `agent.profileAccess` field.
-   */
-  profileAccess: ProfileAccessSchema.optional(),
-});
+const ExternalMcp = z
+  .strictObject({
+    kind: z.literal('external'),
+    /** Full HTTP/SSE base URL. */
+    url: z.url(),
+    /** Transport protocol. Defaults to `'http'` (StreamableHTTP). */
+    transport: z.enum(['http', 'sse']).optional(),
+    /**
+     * Mint a per-invoke `aud = url` JWT and inject it as `Authorization: Bearer`.
+     * The builder's MCP verifies it against the guuey JWKS (T6b).
+     */
+    federate: z.boolean().optional(),
+    /**
+     * `'caller'` — the third credential source (guuey#179, beside static
+     * `headers` and `federate`): per invoke, the pod forwards the request's OWN
+     * VERIFIED `Authorization` bearer as this server's credential. Only a bearer
+     * verified by the app's BYO IdP (`userAuthMode: 'byo'`) is ever forwarded —
+     * a guuey-native Cognito token is never eligible, so a builder cannot use
+     * this mode to harvest platform tokens. Fail-closed: an invoke with no
+     * byo-verified bearer writes no credential file and that server's calls
+     * fail loudly. Caller-opt-in by construction (the embedding client chooses
+     * which app receives its token); FIRST-PARTY USE ONLY for now — gate this
+     * (URL allowlist or console warning) before opening it to arbitrary
+     * builders. Mutually exclusive with `federate: true`.
+     */
+    credential: z.literal('caller').optional(),
+    /** Static headers forwarded on every request. Values may use `${env.NAME}` placeholders. */
+    headers: HeadersSchema.optional(),
+    /** Local dev-loop port (`guuey dev`) this MCP is served on for name→localhost URL resolution. */
+    devPort: z.number().int().min(1).max(65535).optional(),
+    /**
+     * INTERNAL — set only by Router lowering; when present the federation mint
+     * uses this as the RFC 8707 resource instead of `url`.
+     */
+    mcpResourceUrl: z.url().optional(),
+    /**
+     * INTERNAL — set only by Router lowering when this entry is the spliced
+     * profile MCP; carries the agent's `profileAccess` posture onto the entry
+     * itself so the profile child's tool gate (read vs read-write) survives
+     * independent of the top-level `agent.profileAccess` field.
+     */
+    profileAccess: ProfileAccessSchema.optional(),
+  })
+  .refine((v) => !(v.credential === 'caller' && v.federate === true), {
+    message:
+      "credential: 'caller' cannot be combined with federate: true — the forwarded caller bearer IS the credential; a minted federation token would shadow it",
+  });
 
 /**
  * A single MCP server entry inside `agent.mcpServers`.

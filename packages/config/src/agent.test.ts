@@ -596,3 +596,82 @@ describe("mcpServers ggui:false opt-out (guuey#24)", () => {
     expect(declaredServerEntries(undefined)).toEqual([]);
   });
 });
+
+describe("credential: 'caller' (guuey#179 — the third credential source)", () => {
+  it('parses on a plain external entry', () => {
+    const r = AgentSectionV1.safeParse({
+      mcpServers: {
+        control: {
+          kind: 'external',
+          url: 'https://mcp.ggui.ai/control',
+          transport: 'http',
+          credential: 'caller',
+        },
+      },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('coexists with static headers (merged under the forwarded authorization)', () => {
+    const r = AgentSectionV1.safeParse({
+      mcpServers: {
+        control: {
+          kind: 'external',
+          url: 'https://api.example.com',
+          credential: 'caller',
+          headers: { 'X-Tenant': 'acme' },
+        },
+      },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects credential:caller combined with federate:true', () => {
+    const r = AgentSectionV1.safeParse({
+      mcpServers: {
+        control: {
+          kind: 'external',
+          url: 'https://mcp.ggui.ai/control',
+          credential: 'caller',
+          federate: true,
+        },
+      },
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(JSON.stringify(r.error.issues)).toContain('cannot be combined with federate');
+    }
+  });
+
+  it('credential:caller with federate:false is fine (explicit non-federation)', () => {
+    const r = AgentSectionV1.safeParse({
+      mcpServers: {
+        control: {
+          kind: 'external',
+          url: 'https://mcp.ggui.ai/control',
+          credential: 'caller',
+          federate: false,
+        },
+      },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects any credential value other than 'caller'", () => {
+    const r = AgentSectionV1.safeParse({
+      mcpServers: {
+        control: { kind: 'external', url: 'https://api.example.com', credential: 'oauth' },
+      },
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('rejects credential on non-external kinds (strict objects)', () => {
+    const r = AgentSectionV1.safeParse({
+      mcpServers: {
+        tools: { kind: 'colocated', source: './mcp', credential: 'caller' },
+      },
+    });
+    expect(r.success).toBe(false);
+  });
+});
