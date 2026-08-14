@@ -120,7 +120,14 @@ export async function agentConfig(
     out.json(updated);
     return;
   }
-  if (patch.maxPods !== undefined) out.success(`Max pods set to ${updated.maxPods ?? 1}.`);
+  if (patch.maxPods !== undefined) {
+    out.success(`Max pods set to ${updated.maxPods ?? 1}.`);
+    if ((updated.maxPods ?? 1) > 1) {
+      console.log(
+        '  Each pod beyond the first bills at $0.04/unit-hour on the invoice and does NOT count toward the spending cap — this limit is the control on that spend.',
+      );
+    }
+  }
   if (patch.runtimeAutoUpdate !== undefined) {
     out.success(
       updated.runtimeAutoUpdate
