@@ -70,9 +70,29 @@ export function clearAuth(): void {
 }
 
 /**
- * Check if the user has a valid (non-expired) PAT.
+ * The per-invocation key override — `GUUEY_API_KEY` (documented in
+ * `cli.ts`'s env help) wins over the stored login for EVERY authenticated
+ * command. Pre-guuey#182 only the legacy admin client honored it; the
+ * cliApi command family read `requireAuth()` directly and silently sent
+ * the stale stored PAT instead, so `GUUEY_API_KEY=… guuey apps list`
+ * failed against a key that worked via curl. No local expiry check: the
+ * value is opaque (a PAT or a Cognito bearer) and the server enforces the
+ * real expiry on every request (see the module doc) — `expiresAt` here is
+ * synthetic because callers only ever read `.pat`.
+ */
+function envKeyOverride(): AuthTokens | null {
+  const key = process.env['GUUEY_API_KEY'];
+  if (!key) return null;
+  return { pat: key, expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() };
+}
+
+/**
+ * Check if the user has a valid (non-expired) PAT. A `GUUEY_API_KEY`
+ * override counts as logged in — otherwise commands that pre-check this
+ * would force an interactive login the override was set to avoid.
  */
 export function isLoggedIn(): boolean {
+  if (envKeyOverride()) return true;
   const auth = loadAuth();
   if (!auth?.pat) return false;
   return new Date(auth.expiresAt) > new Date();
@@ -80,8 +100,11 @@ export function isLoggedIn(): boolean {
 
 /**
  * Load and validate the PAT, throwing if not logged in or expired.
+ * `GUUEY_API_KEY` wins over the stored login (see {@link envKeyOverride}).
  */
 export function requireAuth(): AuthTokens {
+  const override = envKeyOverride();
+  if (override) return override;
   const auth = loadAuth();
   if (!auth?.pat) {
     throw new Error('Not logged in. Run: guuey login');
