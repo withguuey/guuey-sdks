@@ -144,6 +144,33 @@ export function snapshotViewMount(cardSnapshot: JsonValue): ViewMount | undefine
 }
 
 /**
+ * The resolved-only convenience over the mount union (guuey#186 G6): every
+ * consumer that renders was writing the same two-call walk — narrow the
+ * union, then feed the `"locator"` arm to a reader. This collapses it:
+ *
+ *  - already-resolved mounts pass through untouched (no reader round-trip);
+ *  - a `"locator"` arm resolves via the reader — or the honest `undefined`
+ *    (placeholder) when no reader is wired: never a stale mount;
+ *  - a reader that answers with ANOTHER locator is treated as a miss. The
+ *    {@link UiResourceReader} contract says a read yields mount material or
+ *    nothing (guuey#127); a locator answer would loop, so the honest
+ *    reading is "could not resolve", not recursion.
+ *
+ * Takes `ViewMount | undefined` so it chains directly off
+ * `toolResultViewMount`/`snapshotViewMount` without a narrowing dance at
+ * the call site.
+ */
+export async function resolveViewMount(
+  mount: ViewMount | undefined,
+  reader?: UiResourceReader,
+): Promise<ResolvedViewMount | undefined> {
+  if (mount === undefined || mount.channel !== "locator") return mount;
+  if (reader === undefined) return undefined;
+  const read = await reader(mount.resourceUri);
+  return read === undefined || read.channel === "locator" ? undefined : read;
+}
+
+/**
  * The blocks to scan inside a card snapshot: the stored `AgArtifact`'s `parts`
  * when present, then the snapshot root itself — exactly `snapshotUiResource`'s own
  * walk order, so both channels see the same candidates in the same order.

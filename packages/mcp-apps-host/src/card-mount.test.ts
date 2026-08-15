@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { AgBlock, JsonValue } from "@silverprotocol/core";
-import { snapshotViewMount, toolResultViewMount } from "./card-mount.js";
+import { resolveViewMount, snapshotViewMount, toolResultViewMount } from "./card-mount.js";
 import { GGUI_RENDER_META_KEY } from "./ggui-render.js";
 
 const INLINE_HTML = "<p>inline card</p>";
@@ -117,5 +117,58 @@ describe("snapshotViewMount", () => {
       snapshotViewMount({ type: "tool-result", uiData: { resourceUri: RESOURCE_URI }, _meta: META }),
     ).toEqual({ channel: "locator", resourceUri: RESOURCE_URI });
     expect(snapshotViewMount("nope")).toBeUndefined();
+  });
+});
+
+describe("resolveViewMount (guuey#186 G6 — the resolved-only convenience)", () => {
+  const RESOLVED = {
+    channel: "inline",
+    resource: { uri: "ui://tool/app.html", text: INLINE_HTML },
+  } as const;
+
+  it("passes an already-resolved mount through untouched — no reader round-trip", async () => {
+    let reads = 0;
+    const resolved = await resolveViewMount(RESOLVED, () => {
+      reads++;
+      return Promise.resolve(undefined);
+    });
+    expect(resolved).toBe(RESOLVED);
+    expect(reads).toBe(0);
+  });
+
+  it("chains directly off a mount-less block (undefined in, undefined out)", async () => {
+    expect(await resolveViewMount(undefined)).toBeUndefined();
+  });
+
+  it("resolves a locator through the reader", async () => {
+    const seen: string[] = [];
+    const resolved = await resolveViewMount(
+      { channel: "locator", resourceUri: RESOURCE_URI },
+      (uri) => {
+        seen.push(uri);
+        return Promise.resolve(RESOLVED);
+      },
+    );
+    expect(resolved).toBe(RESOLVED);
+    expect(seen).toEqual([RESOURCE_URI]);
+  });
+
+  it("is the honest placeholder (undefined) when no reader is wired — never a stale mount", async () => {
+    expect(
+      await resolveViewMount({ channel: "locator", resourceUri: RESOURCE_URI }),
+    ).toBeUndefined();
+  });
+
+  it("treats a reader miss — and a locator answer, which would loop — as unresolved", async () => {
+    expect(
+      await resolveViewMount({ channel: "locator", resourceUri: RESOURCE_URI }, () =>
+        Promise.resolve(undefined),
+      ),
+    ).toBeUndefined();
+    expect(
+      await resolveViewMount({ channel: "locator", resourceUri: RESOURCE_URI }, () =>
+        Promise.resolve({ channel: "locator", resourceUri: "ui://another" }),
+      ),
+    ).toBeUndefined();
   });
 });
