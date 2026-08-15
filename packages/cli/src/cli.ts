@@ -72,17 +72,35 @@ import { slugClaim, slugRelease } from './commands/slug';
 import { ApiError } from './client';
 import { printWelcome, printQuickGuide } from './logo';
 import { checkForUpdate, printUpdateNotice } from './update-check';
-import { existsSync } from 'fs';
-import { join } from 'path';
+import { existsSync, readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { getConfigDir } from './paths';
 import { parseArgs } from './parse-args';
 
 declare const __CLI_VERSION__: string;
 
-const VERSION = typeof __CLI_VERSION__ !== 'undefined' ? __CLI_VERSION__ : '0.0.1';
+// tsup injects __CLI_VERSION__ into dist builds; a source run (tsx via the
+// repo's ./guuey wrapper) has no build step, so report our own package.json
+// version instead of a placeholder the update check would flag as stale.
+const IS_SOURCE_RUN = typeof __CLI_VERSION__ === 'undefined';
 
-// Start update check in background (non-blocking)
-const updateCheckPromise = checkForUpdate(VERSION).catch(() => null);
+function readOwnPackageVersion(): string {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const pkg = JSON.parse(readFileSync(join(here, '..', 'package.json'), 'utf-8')) as {
+    version: string;
+  };
+  return pkg.version;
+}
+
+const VERSION = IS_SOURCE_RUN ? readOwnPackageVersion() : __CLI_VERSION__;
+
+// Start update check in background (non-blocking). Source runs skip it:
+// the workspace tree is not an npm install, so "curl install.sh" is the
+// wrong advice and the npm latest comparison is meaningless there.
+const updateCheckPromise: Promise<string | null> = IS_SOURCE_RUN
+  ? Promise.resolve(null)
+  : checkForUpdate(VERSION).catch(() => null);
 
 // ─── Help text ───────────────────────────────────────────────────────
 
