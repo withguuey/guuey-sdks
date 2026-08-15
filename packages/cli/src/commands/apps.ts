@@ -9,6 +9,7 @@ import { extname } from 'node:path';
 import { resolveConfig, saveConfig, loadConfig } from '../config';
 import { isLoggedIn, requireAuth } from '../auth';
 import { login } from './login';
+import { resolveTargetAppId } from '../app-id';
 import * as out from '../output';
 
 /**
@@ -673,6 +674,19 @@ export async function appsUpdate(
   if (typeof body !== 'string') {
     out.success(`Updated app ${resolved}`);
   }
+
+  // Arming byo is the moment the embed-origin gap becomes real (guuey#186
+  // Gap 2). When `--domains` rode the same call the final allowlist is
+  // known right here (non-empty ⇒ no gap; explicit clear ⇒ gap); otherwise
+  // re-read the app so an allowlist configured earlier correctly
+  // suppresses the warning.
+  if (opts.authMode === 'byo') {
+    const gap =
+      opts.domains === undefined
+        ? await fetchByoOriginGap(resolved)
+        : opts.domains.trim() === '';
+    if (gap) printByoOriginWarning(resolved);
+  }
 }
 
 /**
@@ -1056,5 +1070,284 @@ async function appsByoUserEraseStatus(
   if (typeof data.attempts === 'number') console.log(`  attempts: ${data.attempts}`);
   if (data.stuck) {
     out.error('wipe appears stuck — contact support');
+  }
+}
+
+// ─── Origin preflight probe — `guuey apps check --origin` (guuey#186 Gap 2) ──
+//
+// A browser embed's first request to the agent is a CORS preflight, and when
+// the page's origin is not on the app's `allowedDomains` the browser surfaces
+// only an opaque "Failed to fetch". This command sends the SAME preflight the
+// browser would — a real `OPTIONS` on the live invoke URL with `Origin` +
+// `Access-Control-Request-Method: POST` — and prints the verdict, so origin
+// config is verified against LIVE state instead of documents. No backend
+// endpoint involved: a preflight is just an HTTP request anyone may send.
+
+/**
+ * Normalise the `--origin` value to the exact origin string a browser would
+ * send (scheme + host + optional port, no path). A value with a path or
+ * trailing slash is accepted and reduced to its origin, with a note; a value
+ * that does not parse as an http(s) URL is refused — probing a malformed
+ * origin would test nothing.
+ */
+export function normalizeProbeOrigin(
+  raw: string,
+): { origin: string; note?: string } | { error: string } {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return {
+      error: `"${raw}" is not a full origin. Pass scheme + host, e.g. --origin https://www.example.com`,
+    };
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    return { error: `"${raw}" must be an http(s) origin.` };
+  }
+  const origin = parsed.origin;
+  return origin === raw ? { origin } : { origin, note: `checking origin ${origin} (from ${raw})` };
+}
+
+/**
+ * The live invoke URL the browser's preflight targets. Byte-parity with
+ * `@guuey/agent-client`'s `toInvokeUrl` (the CLI cannot import it — the SDK
+ * is a separate published package): strip trailing slashes, append
+ * `/agent/invoke` unless already present.
+ */
+export function invokePreflightUrl(endpointUrl: string): string {
+  const base = endpointUrl.replace(/\/+$/, '');
+  return base.endsWith('/agent/invoke') ? base : `${base}/agent/invoke`;
+}
+
+/** What one real CORS preflight against the invoke URL observed. */
+export interface OriginPreflightObservation {
+  /** HTTP status of the OPTIONS response, or null when the request never completed. */
+  status: number | null;
+  allowOrigin: string | null;
+  allowMethods: string | null;
+  /** Network-level failure message when the endpoint was unreachable. */
+  failure?: string;
+}
+
+export type OriginVerdict =
+  | { kind: 'allowed'; detail: string }
+  | { kind: 'blocked'; detail: string }
+  | { kind: 'no-preflight'; detail: string }
+  | { kind: 'unreachable'; detail: string };
+
+/**
+ * Read a preflight observation the way the browser would (pure — the whole
+ * verdict table is unit-tested without a network).
+ *
+ * HONESTY RULE: a 405/501 with no CORS headers means the endpoint did not
+ * answer the preflight at all — the probe then says it CANNOT verify the
+ * allowlist rather than faking a verdict either way.
+ */
+export function originPreflightVerdict(
+  origin: string,
+  obs: OriginPreflightObservation,
+): OriginVerdict {
+  if (obs.failure !== undefined || obs.status === null) {
+    return { kind: 'unreachable', detail: obs.failure ?? 'no response from the endpoint' };
+  }
+  const acao = obs.allowOrigin;
+  if (acao === origin || acao === '*') {
+    const methods = obs.allowMethods;
+    if (
+      methods !== null &&
+      methods !== '*' &&
+      !methods
+        .toUpperCase()
+        .split(/[\s,]+/)
+        .includes('POST')
+    ) {
+      return {
+        kind: 'blocked',
+        detail: `origin is allowed but POST is not (Access-Control-Allow-Methods: ${methods})`,
+      };
+    }
+    return { kind: 'allowed', detail: `Access-Control-Allow-Origin: ${acao}` };
+  }
+  if (acao !== null) {
+    return {
+      kind: 'blocked',
+      detail: `the endpoint answered for a different origin (Access-Control-Allow-Origin: ${acao})`,
+    };
+  }
+  if (obs.status === 405 || obs.status === 501) {
+    return {
+      kind: 'no-preflight',
+      detail: `the endpoint did not answer the preflight (HTTP ${obs.status}, no CORS headers) — this probe cannot verify the allowlist; test from a real browser`,
+    };
+  }
+  return {
+    kind: 'blocked',
+    detail: `no Access-Control-Allow-Origin came back (HTTP ${obs.status}) — the origin is not on the app's allowlist`,
+  };
+}
+
+/**
+ * Send the browser-identical preflight. Deliberately NO Authorization header
+ * — browsers never send credentials on a preflight, and the point is to see
+ * exactly what the browser sees. 10s bound so a black-holed endpoint reads
+ * as "unreachable" instead of hanging the command.
+ */
+async function probeOriginPreflight(
+  invokeUrl: string,
+  origin: string,
+): Promise<OriginPreflightObservation> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const res = await fetch(invokeUrl, {
+      method: 'OPTIONS',
+      headers: {
+        Origin: origin,
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'content-type',
+      },
+      signal: controller.signal,
+    });
+    return {
+      status: res.status,
+      allowOrigin: res.headers.get('access-control-allow-origin'),
+      allowMethods: res.headers.get('access-control-allow-methods'),
+    };
+  } catch (err) {
+    return {
+      status: null,
+      allowOrigin: null,
+      allowMethods: null,
+      failure: err instanceof Error ? err.message : String(err),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Handle `guuey apps check --origin <https://…> [appId]`.
+ */
+export async function appsCheck(
+  appId: string | undefined,
+  flags: Record<string, string | true> | undefined,
+): Promise<void> {
+  const jsonFlag = flags?.json === true;
+  const rawOrigin = flags?.origin;
+  if (typeof rawOrigin !== 'string' || rawOrigin.trim() === '') {
+    out.error('Missing --origin. Use: guuey apps check --origin https://www.example.com');
+    process.exit(1);
+  }
+  const normalized = normalizeProbeOrigin(rawOrigin.trim());
+  if ('error' in normalized) {
+    out.error(normalized.error);
+    process.exit(1);
+  }
+
+  const resolved = appId ?? resolveTargetAppId(flags, resolveConfig());
+  if (!resolved) {
+    out.error('No app ID provided. Pass --app-id or set via: guuey config set app-id <id>');
+    process.exit(1);
+  }
+
+  requireAuth();
+  const endpointUrl = await liveEndpointUrl(resolved);
+  if (!endpointUrl) {
+    out.error(
+      `App ${resolved} has no live deployment — there is no endpoint to preflight. Run "guuey deploy" first.`,
+    );
+    process.exit(1);
+  }
+
+  const invokeUrl = invokePreflightUrl(endpointUrl);
+  const obs = await probeOriginPreflight(invokeUrl, normalized.origin);
+  const verdict = originPreflightVerdict(normalized.origin, obs);
+
+  if (jsonFlag) {
+    out.json({
+      appId: resolved,
+      origin: normalized.origin,
+      invokeUrl,
+      status: obs.status,
+      allowOrigin: obs.allowOrigin,
+      allowMethods: obs.allowMethods,
+      verdict: verdict.kind,
+      detail: verdict.detail,
+    });
+    if (verdict.kind !== 'allowed') process.exitCode = 1;
+    return;
+  }
+
+  if (normalized.note) console.log(`  ${normalized.note}`);
+  console.log(`  Preflight: OPTIONS ${invokeUrl}`);
+  console.log(`  Origin:    ${normalized.origin}`);
+  console.log('');
+  switch (verdict.kind) {
+    case 'allowed':
+      out.success(`Origin is allowed — ${verdict.detail}`);
+      break;
+    case 'blocked':
+      out.error(`Origin is NOT allowed — ${verdict.detail}`);
+      console.log(
+        `\n  Allow it with: guuey apps update ${resolved} --domains "${normalized.origin}"\n  (propagates in seconds — re-run this check to confirm)`,
+      );
+      process.exitCode = 1;
+      break;
+    case 'no-preflight':
+      out.error(`Cannot verify — ${verdict.detail}`);
+      process.exitCode = 1;
+      break;
+    case 'unreachable':
+      out.error(`Endpoint unreachable — ${verdict.detail}`);
+      process.exitCode = 1;
+      break;
+  }
+}
+
+// ─── byo embed-origin warning (guuey#186 Gap 2) ───────────────────────────
+//
+// `userAuthMode: 'byo'` is the browser-embed use case by definition, and an
+// empty `allowedDomains` means every browser call from the builder's site
+// dies as an opaque "Failed to fetch". Warn — loudly, but never block — at
+// the moments the gap becomes real: arming byo (`apps update --auth-mode
+// byo`) and deploying an app already in that state.
+
+/** True when this app config will refuse browser embeds: byo armed, allowlist empty. */
+export function byoEmbedOriginGap(app: {
+  userAuthMode?: string | null;
+  allowedDomains?: string[] | null;
+}): boolean {
+  return app.userAuthMode === 'byo' && !(app.allowedDomains && app.allowedDomains.length > 0);
+}
+
+/** The shared warning text — printed by `apps update` and `deploy`. */
+export function printByoOriginWarning(appId: string): void {
+  console.error(
+    [
+      '',
+      '  ⚠ This app uses bring-your-own auth (the browser-embed use case), but its',
+      '    origin allowlist is EMPTY — browser embeds will be refused with an opaque',
+      "    \"Failed to fetch\" until you allow your site's origin:",
+      `      guuey apps update ${appId} --domains "https://yourapp.com"`,
+      `    Verify with: guuey apps check --origin https://yourapp.com --app-id ${appId}`,
+      '',
+    ].join('\n'),
+  );
+}
+
+/**
+ * Best-effort read of the fields `byoEmbedOriginGap` needs. Failure reads as
+ * "no warning" BY DESIGN — the warning is optional enrichment, and neither
+ * `apps update` nor `deploy` may fail because it could not be computed (same
+ * contract as `liveEndpointUrl` above).
+ */
+export async function fetchByoOriginGap(appId: string): Promise<boolean> {
+  try {
+    const res = await apiRequest('GET', `/apps/${appId}`);
+    if (!res.ok) return false;
+    const data = (await res.json()) as { app: AppDetail };
+    return byoEmbedOriginGap(data.app);
+  } catch {
+    return false;
   }
 }

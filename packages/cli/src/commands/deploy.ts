@@ -61,6 +61,7 @@ import {
 } from '../config';
 import { apiRequest, cleanup, packSource, parseApiError } from '../deploy-shared';
 import { deployMcpFromSource, resolveServerName, resolveWorkspaceId, readPackageName } from './mcp';
+import { fetchByoOriginGap, printByoOriginWarning } from './apps';
 import {
   planMcpLegs,
   writeBackServerId,
@@ -277,6 +278,14 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
   } else {
     await deployLegacyDockerfile({ auth, config, appId, size, buildSize, maxPods, runtimeAutoUpdate, label, force });
   }
+
+  // A deployed byo app with an empty origin allowlist is an embed browsers
+  // will refuse (guuey#186 Gap 2) — the moment the deploy lands is the
+  // moment the builder can act on it. Warn, never block; placed AFTER the
+  // deploy legs so every client-side validation error above stays
+  // network-free, and best-effort by the helper's own contract (a failed
+  // read means no warning).
+  if (await fetchByoOriginGap(appId)) printByoOriginWarning(appId);
 }
 
 // ─── Preflight: first-run app create + link write-back ───────────────────

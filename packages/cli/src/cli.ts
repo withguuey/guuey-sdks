@@ -20,6 +20,7 @@ import { configSet, configShow, configUnset, configInit } from './commands/confi
 import {
   appsList,
   appsGet,
+  appsCheck,
   appsCreate,
   appsUpdate,
   appsDelete,
@@ -237,6 +238,15 @@ Apps:
     --name <name>               App name (required)
   apps list                     List your apps
   apps get [appId]              Show app details
+  apps check [appId]            Verify a browser origin can reach the app's live
+                                 agent: sends the same CORS preflight a browser
+                                 would to the live invoke endpoint and prints
+                                 the verdict against the app's domain allowlist
+                                 (set with: apps update --domains). Exits
+                                 non-zero unless the origin is allowed
+    --origin <https://...>       Required. The exact origin your page is served
+                                 from (scheme + host)
+    --app-id <id>               Target a specific app
   apps update [appId]           Update app configuration
     --name <name>               App name
     --description <text>        App description
@@ -725,6 +735,9 @@ async function main(): Promise<void> {
         case 'get':
           await appsGet(rest[0], { json: jsonFlag });
           break;
+        case 'check':
+          await appsCheck(rest[0], flags);
+          break;
         case 'create':
           await appsCreate({
             name: flags.name as string | undefined,
@@ -806,7 +819,7 @@ async function main(): Promise<void> {
           break;
         default:
           console.error(
-            `Unknown apps command: ${action ?? '(none)'}. Use: list, get, create, update, delete, recover, access, publish, unpublish, byo-user`,
+            `Unknown apps command: ${action ?? '(none)'}. Use: list, get, check, create, update, delete, recover, access, publish, unpublish, byo-user`,
           );
           process.exit(1);
       }
