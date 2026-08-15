@@ -8,7 +8,7 @@
  * THE STANDING RULE (see README.md): a new weird transcript found in
  * production becomes a fixture BEFORE its fix lands. The corpus only grows.
  */
-import type { AgEvent } from "@silverprotocol/core";
+import { Reducer, type AgEvent } from "@silverprotocol/core";
 import type { InvokeTurnEvent } from "@guuey/agent-client";
 import type { TranscriptInputs } from "../types.js";
 import {
@@ -318,6 +318,99 @@ export function userSendFailure(): TranscriptInputs {
     finalStatus: "ready",
     sendStates: { "cm-1": "failed" },
   });
+}
+
+/**
+ * 19. persisted-plus-live — the turn-scoped fold composition (portal's
+ * persisted-overlay data model): a persisted prefix the session's Reducer
+ * never saw + a session fold covering the trailing turns, one settled (its
+ * card ALSO persisted — the dedupe case) and one live with a running tool.
+ */
+export function persistedPlusLive(): TranscriptInputs {
+  const reducer = new Reducer();
+  let seq = 0;
+  const s = (): number => seq++;
+  const push = (events: AgEvent[]): void => {
+    for (const ev of events) reducer.push(ev);
+  };
+  // Session turn A (settled — turn.done carries the outcome):
+  push([
+    { type: "turn.start", threadId: "thread-corpus", turnId: "turn-a", seq: s() },
+    { type: "message.start", id: "msg-a", role: "assistant", turnId: "turn-a", threadId: "thread-corpus", seq: s() },
+    { type: "text.start", id: "ta", seq: s() },
+    { type: "text.delta", id: "ta", delta: "Booked the second option.", seq: s() },
+    { type: "text.end", id: "ta", seq: s() },
+    { type: "tool.start", toolCallId: "tA", name: "ggui_render", seq: s() },
+    {
+      type: "tool.done",
+      toolCallId: "tA",
+      content: [],
+      outcome: "ok",
+      uiData: { sessionId: GGUI_SLICE.sessionId, resourceUri: GGUI_RESOURCE_URI, action: "create" },
+      _meta: { [GGUI_META_KEY]: GGUI_SLICE },
+      seq: s(),
+    },
+    { type: "turn.done", turnId: "turn-a", outcome: { type: "success" }, seq: s() },
+  ]);
+  // Session turn B (live — no turn.done yet): one completed tool already in
+  // the fold, a second still active (the fold materializes a tool-call at
+  // `tool.done`; the ACTIVE call is the status line's job, not a row).
+  push([
+    { type: "turn.start", threadId: "thread-corpus", turnId: "turn-b", seq: s() },
+    { type: "message.start", id: "msg-b", role: "assistant", turnId: "turn-b", threadId: "thread-corpus", seq: s() },
+    { type: "tool.start", toolCallId: "tB", name: "load_booking", turnId: "turn-b", seq: s() },
+    { type: "tool.args.assembled", toolCallId: "tB", input: { id: "second" }, turnId: "turn-b", seq: s() },
+    {
+      type: "tool.done",
+      toolCallId: "tB",
+      content: [{ type: "text", text: "loaded" }],
+      outcome: "ok",
+      turnId: "turn-b",
+      seq: s(),
+    },
+  ]);
+  return {
+    result: reducer.result(),
+    assistantText: "",
+    status: "using-tool",
+    statusElapsedMs: 0,
+    activeTool: "check_calendar",
+    error: null,
+    prompts: [],
+    // The flat transcript: one PERSISTED turn the fold never saw, then the
+    // session turns (turn A's settled text row is present — the thread
+    // viewer's liveTail/refetch carries it; turn B is in flight, no row).
+    messages: [
+      { role: "user", text: "plan my trip" },
+      { role: "assistant", text: "Here are some options." },
+      { role: "user", text: "book the second one" },
+      { role: "assistant", text: "Booked the second option." },
+      { role: "user", text: "now move it to Thursday" },
+    ],
+    historyCards: [
+      // An OLD persisted card (pre-session) — must render.
+      {
+        seq: 1,
+        at: "2026-08-15T00:00:00Z",
+        cardSnapshot: {
+          parts: [
+            { type: "tool-result", toolCallId: "old1", content: [], uiData: { resourceUri: "ui://ggui/render/old/1" } },
+          ],
+        },
+      },
+      // Turn A's card, ALSO persisted by the read plane — the live fold's
+      // mount owns this identity; the snapshot must dedupe away.
+      {
+        seq: 5,
+        at: "2026-08-15T00:05:00Z",
+        cardSnapshot: {
+          parts: [
+            { type: "tool-result", toolCallId: "tA", content: [], uiData: { resourceUri: GGUI_RESOURCE_URI } },
+          ],
+        },
+      },
+    ],
+  };
 }
 
 /** 17. stalled-then-adopted — #192: calm identical, debug carries the marker. */

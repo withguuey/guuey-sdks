@@ -32,7 +32,10 @@ witness.
 - `drive.ts` — test-only assembler: events → `TranscriptInputs`, applying
   the hook's documented accumulation rules. The 3b live/history assemblers
   are its production twins.
-- `fixtures.ts` — the 17 named fixtures, spec §8 order.
+- `fixtures.ts` — the named fixtures, spec §8 order: the original 17 plus
+  family 19 (`persisted-plus-live` — the turn-scoped fold composition:
+  a persisted prefix the session's Reducer never saw + a fold covering
+  the trailing turns, with the overlapping-card dedupe case).
 - `capture.ts` / `captures/` — family 18: production-capture replay
   through the real `invokeTurn` (provenance in the module header).
 - `corpus.test.ts` — the runner: per-fixture assertions + snapshots, plain

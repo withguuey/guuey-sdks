@@ -19,6 +19,7 @@ import {
   historyDeadLocators,
   interleavedMediaCodeCitations,
   midstreamToolFailure,
+  persistedPlusLive,
   reasoningHeavy,
   saturatedThenServed,
   stalledThenAdopted,
@@ -233,6 +234,38 @@ describe("corpus", () => {
     expect(planTranscript(adopted, calm).recovery).toBeNull();
     expect(planTranscript(adopted, debug).recovery).toBe("recovered from history");
     expect(planTranscript(streamed, debug).recovery).toBeNull();
+  });
+
+  it("19. persisted-plus-live — the fold owns its trailing turns; the prefix stays flat; overlapping cards dedupe", () => {
+    const inputs = persistedPlusLive();
+    const plan = planTranscript(inputs, calm);
+
+    // The persisted prefix turn (the fold never saw it) renders as flat text.
+    const texts = plan.items.filter((i) => i.kind === "text");
+    expect(texts.some((t) => t.kind === "text" && t.text === "Here are some options.")).toBe(true);
+    // The fold's settled turn renders RICH: its text and its view mount.
+    expect(texts.some((t) => t.kind === "text" && t.text === "Booked the second option.")).toBe(true);
+    // ...and exactly once — the trailing flat duplicate was replaced, not doubled.
+    expect(texts.filter((t) => t.kind === "text" && t.text === "Booked the second option.")).toHaveLength(1);
+    const views = plan.items.filter((i): i is ViewMountItem => i.kind === "view");
+    const liveView = views.find((v) => v.key === "view.tA");
+    expect(liveView?.actionScope).toBe(
+      "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee",
+    );
+    // The live turn's completed tool renders as a ROW mid-turn, and the
+    // still-active call rides the status line (the acceptance: thread-view
+    // live turns light up like agent-chat's).
+    const liveTool = allTools(plan.items).find((t) => t.toolCallId === "tB");
+    expect(liveTool?.state).toBe("done");
+    expect(plan.status?.state).toBe("using-tool");
+    // Turn A's ALSO-persisted card deduped (the live mount owns the identity);
+    // the old pre-session card still renders.
+    expect(views.some((v) => v.key === "card.5")).toBe(false);
+    expect(views.some((v) => v.key === "card.1")).toBe(true);
+    // All three user turns present, in order.
+    expect(plan.items.filter((i) => i.kind === "user")).toHaveLength(3);
+    expect(planTranscript(inputs, calm)).toEqual(plan);
+    expect(plan).toMatchSnapshot();
   });
 
   it("determinism — same inputs ⇒ a deeply equal plan (spec §7, literally)", () => {

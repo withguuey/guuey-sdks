@@ -9,11 +9,14 @@
  * Source-ownership rules (spec §9 Change-1 — one unified plan owns both):
  *
  *  - USER rows always come from the flat `inputs.messages`.
- *  - ASSISTANT content comes from the fold (`inputs.result`) when present;
- *    otherwise from the flat assistant entries plus the in-flight
- *    `assistantText`. Both paths normalize to the same block walk, so a
- *    silver stream carrying only text plans byte-identically to a bypass
- *    stream (fixture 5).
+ *  - ASSISTANT content comes from the fold (`inputs.result`) for the
+ *    TRAILING turns the fold covers; earlier flat assistant entries (a
+ *    rehydrated/persisted prefix the session's Reducer never saw) render as
+ *    text slots in front (the turn-scoped refinement — see
+ *    `TranscriptInputs.result`). Without a fold, flat entries plus the
+ *    in-flight `assistantText` own everything. Both paths normalize to the
+ *    same block walk, so a silver stream carrying only text plans
+ *    byte-identically to a bypass stream (fixture 5).
  *  - Interleaving is conversational alternation (user[i] then assistant[i]) —
  *    the transcript invariant of a request/reply chat. Finer-grained
  *    interleaving (true seq-ordering of history cards inside turns) needs
@@ -98,17 +101,38 @@ function foldAssistantSources(result: AgReduceResult, inFlight: boolean, aborted
   // assistant-only filter orphans every call and drops every mount. A tool
   // message's blocks belong to the PRECEDING assistant slot's walk, exactly
   // the whole-fold message order the retired first-party renderers used.
+  //
+  // LIVE detection is turn-identity-based where the fold carries it: while
+  // a turn is in flight, an assistant message whose `turnId` maps to a turn
+  // record WITHOUT an `outcome` belongs to the open turn — settled earlier
+  // turns stay settled even mid-session (what makes the tail alignment
+  // below count them correctly). Nothing is live once the status is back to
+  // `ready`, whatever the records say (a fold that missed `turn.done` must
+  // not pin a settled turn open forever). Folds without turn identity (a
+  // hand-driven fold that never saw `turn.*` lifecycle) fall back to the
+  // last-source-is-live-iff-in-flight heuristic — the pre-refinement
+  // behaviour, kept so identity-less folds plan exactly as before.
+  const openTurns = new Set(
+    result.turns.filter((t) => t.outcome === undefined).map((t) => t.turnId),
+  );
+  const hasTurnIdentity = result.messages.some(
+    (m) => m.role === "assistant" && m.turnId !== undefined,
+  );
   const sources: AssistantSource[] = [];
   for (const m of result.messages) {
     if (m.role === "assistant") {
-      sources.push({ blocks: [...m.content], live: false, stopped: false });
+      sources.push({
+        blocks: [...m.content],
+        live: inFlight && hasTurnIdentity && m.turnId !== undefined && openTurns.has(m.turnId),
+        stopped: false,
+      });
     } else if (m.role === "tool" && sources.length > 0) {
       sources[sources.length - 1]!.blocks.push(...m.content);
     }
   }
   const last = sources[sources.length - 1];
   if (last) {
-    last.live = inFlight;
+    if (!hasTurnIdentity) last.live = inFlight;
     last.stopped = aborted;
   }
   return sources;
@@ -621,9 +645,38 @@ export function planTranscript(
 
   const inFlight = inputs.status !== "ready";
   const users = inputs.messages.filter((m) => m.role === "user");
-  const assistants = inputs.result
-    ? foldAssistantSources(inputs.result, inFlight, inputs.aborted === true)
-    : flatAssistantSources(inputs, inFlight);
+  // Turn-scoped fold composition (guuey#135 kit refinement): the fold owns
+  // the TRAILING assistant turns it actually covers — its settled sources
+  // replace that many trailing flat assistant entries; any EARLIER flat
+  // entries (a rehydrated/persisted prefix the session's Reducer never saw)
+  // keep rendering as flat text slots in front. When the fold spans the
+  // whole conversation (a pure-live session — the corpus's world), the kept
+  // prefix is empty and the plan is byte-identical to the old wholesale
+  // replace. Alignment is by COUNT (trailing flat entries ↔ settled fold
+  // sources): flat rows carry no turn identity, so a persisted CARD-ONLY
+  // turn inside the fold's span (an empty-text assistant row the assembler
+  // dropped) can offset the seam by one — a documented approximation, same
+  // class as the header's read-plane-seq note, resolved for the visible
+  // cards by the actionScope dedupe below.
+  let assistants: AssistantSource[];
+  if (inputs.result) {
+    const foldSources = foldAssistantSources(inputs.result, inFlight, inputs.aborted === true);
+    const settledFoldCount = foldSources.filter((s) => !s.live).length;
+    const flatSettled = inputs.messages.filter((m) => m.role === "assistant");
+    const keep = Math.max(0, flatSettled.length - settledFoldCount);
+    assistants = [
+      ...flatSettled.slice(0, keep).map(
+        (m): AssistantSource => ({
+          blocks: [{ type: "text", text: m.text }],
+          live: false,
+          stopped: false,
+        }),
+      ),
+      ...foldSources,
+    ];
+  } else {
+    assistants = flatAssistantSources(inputs, inFlight);
+  }
 
   const slots = Math.max(users.length, assistants.length);
   const conversation: DisplayItem[] = [];
@@ -654,10 +707,28 @@ export function planTranscript(
   // R13 — persisted cards, seq order. (Position: after the settled
   // conversation; true in-turn interleave needs read-plane seqs the flat
   // surface lacks — the 3b assemblers own that refinement.)
+  //
+  // Dedupe against LIVE mounts by actionScope (the persisted `ui://`
+  // identity both sides carry): a session whose fold still holds a turn the
+  // read plane has ALSO persisted — the #192 adopted turn, a thread view's
+  // post-handoff refetch — would otherwise render the same card twice. The
+  // fold's view row owns it (richer phase state); the history snapshot
+  // renders only when no live mount claims its identity.
+  const liveViewScopes = new Set<string>();
+  for (const item of items) {
+    if (item.kind === "view" && item.actionScope !== null) liveViewScopes.add(item.actionScope);
+  }
   const cards = [...(inputs.historyCards ?? [])].sort((a, b) => a.seq - b.seq);
   for (const card of cards) {
     const key = `card.${card.seq}`;
     const mount = snapshotViewMount(card.cardSnapshot);
+    const scope =
+      mount === undefined
+        ? null
+        : mount.channel === "locator"
+          ? mount.resourceUri
+          : mount.resource.uri;
+    if (scope !== null && liveViewScopes.has(scope)) continue; // live mount owns it
     const view: ViewMountItem = {
       kind: "view",
       key,
@@ -668,12 +739,7 @@ export function planTranscript(
       label: null,
       attribution: null,
       toolTitle: null,
-      actionScope:
-        mount === undefined
-          ? null
-          : mount.channel === "locator"
-            ? mount.resourceUri
-            : mount.resource.uri,
+      actionScope: scope,
     };
     view.label = viewLabel(view, policy);
     items.push(view);

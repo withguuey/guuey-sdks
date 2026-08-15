@@ -44,7 +44,18 @@ export interface PromptItemInput {
 
 /** Everything the plan derives from. All fields are data — no clocks, no DOM. */
 export interface TranscriptInputs {
-  /** The Reducer's fold (silver mode); null on bypass-frame streams. */
+  /**
+   * The Reducer's fold (silver mode); null on bypass-frame streams.
+   *
+   * TURN-SCOPED (guuey#135 kit refinement): the fold owns the TRAILING
+   * assistant turns it covers — its settled sources replace that many
+   * trailing flat assistant entries, and any earlier flat entries (a
+   * rehydrated/persisted prefix the session's Reducer never saw) render as
+   * text in front. A fold spanning the whole conversation plans exactly as
+   * before, so pure-live sessions are unaffected; persisted-overlay hosts
+   * (portal's thread views) can now pass the session fold beside their
+   * persisted rows instead of nulling it.
+   */
   result: AgReduceResult | null;
   /**
    * The in-flight turn's cumulative text fold (ALWAYS present; the sole

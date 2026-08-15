@@ -1588,3 +1588,131 @@ exports[`corpus > 16. user-send-failure — R0 failed with retry; the message ne
   "status": null,
 }
 `;
+
+exports[`corpus > 19. persisted-plus-live — the fold owns its trailing turns; the prefix stays flat; overlapping cards dedupe 1`] = `
+{
+  "items": [
+    {
+      "expanded": true,
+      "key": "u0",
+      "kind": "user",
+      "retry": false,
+      "state": "sent",
+      "text": "plan my trip",
+    },
+    {
+      "expanded": true,
+      "key": "a0.t0",
+      "kind": "text",
+      "markdown": true,
+      "stopped": false,
+      "streaming": false,
+      "text": "Here are some options.",
+    },
+    {
+      "expanded": true,
+      "key": "u1",
+      "kind": "user",
+      "retry": false,
+      "state": "sent",
+      "text": "book the second one",
+    },
+    {
+      "expanded": true,
+      "key": "a1.t0",
+      "kind": "text",
+      "markdown": true,
+      "stopped": false,
+      "streaming": false,
+      "text": "Booked the second option.",
+    },
+    {
+      "argsPreview": null,
+      "attribution": true,
+      "expanded": false,
+      "key": "tool.tA",
+      "kind": "tool",
+      "name": "ggui_render",
+      "result": null,
+      "state": "done",
+      "title": "ggui render",
+      "toolCallId": "tA",
+    },
+    {
+      "actionScope": "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee",
+      "attribution": "via ggui render",
+      "channel": "ggui",
+      "expanded": true,
+      "key": "view.tA",
+      "kind": "view",
+      "label": "Loading view…",
+      "mount": {
+        "channel": "ggui",
+        "resource": {
+          "mimeType": "text/html",
+          "text": "<!doctype html>
+<html lang="en" style="background:transparent"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>ggui render</title></head>
+<body style="margin:0;background:transparent">
+<script>globalThis.__GGUI_META__ = {"ai.ggui/render":{"sessionId":"render_00000000-0000-4000-8000-300000000001","appId":"APP00000","runtimeUrl":"https://dev.mcp.sandbox.ggui.ai/_ggui/iframe-runtime.js","wsUrl":"wss://dev.mcp.sandbox.ggui.ai/ws","wsToken":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","expiresAt":"2026-07-29T11:07:58.000Z","lastSequence":0,"propsJson":"{}"}};</script>
+<script type="module" crossorigin="anonymous" src="https://dev.mcp.sandbox.ggui.ai/_ggui/iframe-runtime.js"></script>
+</body></html>",
+          "uri": "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee",
+        },
+      },
+      "phase": "negotiating",
+      "toolTitle": "ggui render",
+    },
+    {
+      "expanded": true,
+      "key": "u2",
+      "kind": "user",
+      "retry": false,
+      "state": "sent",
+      "text": "now move it to Thursday",
+    },
+    {
+      "argsPreview": null,
+      "attribution": false,
+      "expanded": false,
+      "key": "tool.tB",
+      "kind": "tool",
+      "name": "load_booking",
+      "result": {
+        "byteCount": 6,
+        "expanded": true,
+        "key": "tool.tB.result",
+        "kind": "data-result",
+        "preview": "loaded",
+        "showBytes": false,
+        "state": "small",
+      },
+      "state": "done",
+      "title": "load booking",
+      "toolCallId": "tB",
+    },
+    {
+      "actionScope": "ui://ggui/render/old/1",
+      "attribution": null,
+      "channel": "locator",
+      "expanded": true,
+      "key": "card.1",
+      "kind": "view",
+      "label": "Loading view…",
+      "mount": {
+        "channel": "locator",
+        "resourceUri": "ui://ggui/render/old/1",
+      },
+      "phase": "negotiating",
+      "toolTitle": null,
+    },
+  ],
+  "recovery": null,
+  "status": {
+    "copy": "Using check calendar…",
+    "detail": null,
+    "key": "status",
+    "kind": "status",
+    "state": "using-tool",
+  },
+}
+`;
