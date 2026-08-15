@@ -65,12 +65,34 @@ export interface TranscriptItemContext {
   resolvedMounts: ReadonlyMap<ItemKey, ResolvedViewMount | "expired">;
   /** R6: live phase reports wired back into the next plan. */
   onViewPhase: (key: ItemKey, phase: ViewHostPhase) => void;
-  /** R6 pass-through (sandbox overrides etc. — policy-gated by the host). */
-  viewProps?: Pick<
-    GuueyViewProps,
-    "hostCapabilities" | "hostInfo" | "hostContext" | "onCallTool" | "negotiationTimeoutMs" | "dangerouslyAddSandboxFlags" | "allow"
-  >;
+  /**
+   * R6 pass-through (sandbox overrides, the two-origin mount, relay hooks
+   * — policy-gated by the host). Static, or a FUNCTION of the mount being
+   * rendered: view configuration legitimately varies per mount — the
+   * relay-page URL picks a per-channel egress grant (`?channel=`), and a
+   * `tools/call` hook scopes to the item's persisted locator (guuey#158) —
+   * so the function form receives the item and its resolved mount and is
+   * called only when something actually mounts. Static keeps working
+   * unchanged.
+   */
+  viewProps?: ViewSlotProps | ((item: ViewMountItem, mount: ResolvedViewMount) => ViewSlotProps);
 }
+
+/** The per-view slice of `GuueyViewProps` a transcript may configure. */
+export type ViewSlotProps = Pick<
+  GuueyViewProps,
+  | "hostCapabilities"
+  | "hostInfo"
+  | "hostContext"
+  | "onCallTool"
+  | "onReadResource"
+  | "onSizeChanged"
+  | "negotiationTimeoutMs"
+  | "dangerouslyAddSandboxFlags"
+  | "allow"
+  | "sandboxPageUrl"
+  | "autoResize"
+>;
 
 interface ItemProps<T> {
   item: T;
@@ -318,11 +340,15 @@ export function DefaultView({ item, ctx }: ItemProps<ViewMountItem>): ReactNode 
       </div>
     );
   }
+  // The function form resolves against the ACTUAL mount (per-channel relay
+  // URLs, per-locator action scoping); it runs only when something mounts.
+  const viewProps =
+    typeof ctx.viewProps === "function" ? ctx.viewProps(item, mount) : (ctx.viewProps ?? {});
   return (
     <div className="guuey-chat-view">
       <GuueyView
         mount={mount}
-        {...(ctx.viewProps ?? {})}
+        {...viewProps}
         onPhaseChange={(phase) => ctx.onViewPhase(item.key, phase)}
       />
       {item.attribution !== null ? (

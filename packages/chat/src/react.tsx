@@ -38,6 +38,7 @@ export {
   DefaultStatus,
   type TranscriptComponents,
   type TranscriptItemContext,
+  type ViewSlotProps,
 } from "./react/components.js";
 export {
   useTranscript,
