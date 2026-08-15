@@ -287,7 +287,11 @@ const DeploySchema = z.strictObject({
  * Auth posture for end-user invocations.
  *
  * - `'anonymous'` (default) — guest cookie minted on first invoke; persistent thread.
- * - `'required'`           — end-user must present a valid Cognito JWT; anonymous rejected.
+ * - `'required'`           — end-user must present a verified credential (guuey Cognito
+ *                            JWT, or the app's configured BYO issuer); the pod refuses
+ *                            an anonymous invoke pre-model with HTTP 403 `AUTH_REQUIRED`
+ *                            (guuey#181). Independent of the app record's `guestAccess`
+ *                            runtime override — either gate can refuse.
  * - `'optional'`           — accept both; identity context reflects which.
  */
 const AuthSchema = z.enum(['anonymous', 'required', 'optional']);

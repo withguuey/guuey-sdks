@@ -27,6 +27,13 @@ export const AGENT_ERROR_CODES = {
   INVALID_REQUEST: "INVALID_REQUEST",
   /** The builder turned anonymous access off for this agent. */
   GUEST_ACCESS_DISABLED: "GUEST_ACCESS_DISABLED",
+  /**
+   * The agent's own definition declares `auth: 'required'` and the caller is
+   * anonymous — sign in and retry with a bearer. The snapshot-declared twin of
+   * {@link AGENT_ERROR_CODES.GUEST_ACCESS_DISABLED} (the app-record runtime
+   * override); either gate can refuse.
+   */
+  AUTH_REQUIRED: "AUTH_REQUIRED",
   /** The caller (or the app) is out of plan allowance — the upgrade prompt. */
   QUOTA_EXCEEDED: "QUOTA_EXCEEDED",
   /** The app hit its builder-set managed spend cap. */
