@@ -48,6 +48,6 @@ export {
   type UseTranscriptResult,
   type UseTranscriptInputsResult,
 } from "./react/use-transcript.js";
-export { GuueyChat, type GuueyChatProps } from "./react/guuey-chat.js";
+export { GuueyChat, type GuueyChatProps, type GuueyChatHandle } from "./react/guuey-chat.js";
 export { Markdown } from "./react/markdown.js";
 export { themeCssVars, type ThemeMode } from "./react/theme-css.js";

@@ -31,8 +31,30 @@
  * adapter (e.g. `createWebAdapters({ apiBaseUrl, … })`) and a persisted
  * threadId rehydrates on mount — text transcript + persisted cards, which
  * mount through the same R6 path as live views. Nothing here to configure.
+ *
+ * ## The imperative seam (guuey#210)
+ *
+ * Suggested-prompt chips and other host-driven sends stay on the
+ * batteries-included path via {@link GuueyChatHandle} — a ref handle
+ * (`forwardRef`) and/or the `onReady` callback, ONE stable object for the
+ * component's whole life. `send` runs through exactly the Send button's
+ * gate (never bypasses it; the typed draft is left untouched — a chip send
+ * must not eat a half-typed message); `prefill` mirrors the widget's
+ * staged-composer semantics (append joins with a space, never clobbers).
+ * Web-only for now: the native tier ships `<NativeTranscript>` without a
+ * native GuueyChat, so there is no native surface to put a handle on yet.
  */
-import { useCallback, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { createWebAdapters, type AgentInvokeAdapters } from "@guuey/agent-client";
 import type { AgHitlAnswer, AgPausedAsk } from "@silverprotocol/core";
 import { useAgentInvoke } from "@guuey/agent-client/react";
@@ -45,6 +67,33 @@ import type { ThemeMode } from "./theme-css.js";
 import { Transcript, type TranscriptWindowing } from "./transcript.js";
 import type { TranscriptComponents, TranscriptItemContext } from "./components.js";
 import { useTranscript, useTranscriptInputs } from "./use-transcript.js";
+
+/**
+ * The imperative seam (guuey#210): programmatic send/prefill/focus for
+ * hosts that stay on the batteries-included path (suggested-prompt chips
+ * being the filing use case). Reach it via `ref` or `onReady` — both
+ * deliver the SAME stable object, valid for the component's whole life.
+ */
+export interface GuueyChatHandle {
+  /**
+   * Send `text` through exactly the Send button's gate: returns `false`
+   * and does nothing when chat is unavailable (`endpointUrl === null`), a
+   * turn is in flight, or the text is blank — it NEVER bypasses the
+   * composer's rules. The typed draft is left untouched (a programmatic
+   * send must not eat a half-typed message). Failures surface the same
+   * way a composer send's do (the hook's `error` / R0 failed-send).
+   */
+  send(text: string): boolean;
+  /**
+   * Put `text` into the composer draft. `append: true` joins onto a
+   * non-empty draft with a single space (the widget's staged-composer
+   * semantic — never clobbers); default replaces. Focuses the input
+   * unless `focus: false`.
+   */
+  prefill(text: string, opts?: { focus?: boolean; append?: boolean }): void;
+  /** Focus the composer input. */
+  focusComposer(): void;
+}
 
 export interface GuueyChatProps {
   /** Pod base URL (with or without `/agent/invoke`). `null` disables chat. */
@@ -92,6 +141,12 @@ export interface GuueyChatProps {
   onHitlAnswer?: (answer: AgHitlAnswer, ask: AgPausedAsk) => void;
   /** R11 action slot (sign-in / retry affordances). */
   onErrorAction?: (item: ErrorItem) => void;
+  /**
+   * Callback route to the {@link GuueyChatHandle} for hosts that prefer
+   * wiring over refs. Fires ONCE per component instance, on mount, with
+   * the same stable handle the ref receives.
+   */
+  onReady?: (handle: GuueyChatHandle) => void;
   className?: string;
   style?: CSSProperties;
 }
@@ -102,7 +157,10 @@ const PROMPT_STATE = {
   dismiss: "dismissed",
 } as const;
 
-export function GuueyChat(props: GuueyChatProps): ReactNode {
+export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function GuueyChat(
+  props: GuueyChatProps,
+  ref,
+): ReactNode {
   const {
     endpointUrl,
     appId,
@@ -120,6 +178,7 @@ export function GuueyChat(props: GuueyChatProps): ReactNode {
     onPromptAction,
     onHitlAnswer,
     onErrorAction,
+    onReady,
     className,
     style,
   } = props;
@@ -147,9 +206,57 @@ export function GuueyChat(props: GuueyChatProps): ReactNode {
 
   // ── Composer ─────────────────────────────────────────────────────────
   const [input, setInput] = useState("");
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const busy = invoke.status !== "ready";
   const available = endpointUrl !== null;
   const canSend = available && !busy && input.trim() !== "";
+
+  // ── The imperative seam (guuey#210) ──────────────────────────────────
+  // ONE stable handle for the component's whole life (hosts capture it in
+  // `onReady` and keep it), reading live truth through a ref so a call
+  // always sees the CURRENT gate — never a stale closure's.
+  const liveRef = useRef({ available, busy, invoke, onReady });
+  useEffect(() => {
+    liveRef.current = { available, busy, invoke, onReady };
+  });
+
+  const handle = useMemo<GuueyChatHandle>(
+    () => ({
+      send: (text: string): boolean => {
+        const live = liveRef.current;
+        const trimmed = text.trim();
+        // Exactly the Send button's gate — a handle send never bypasses it.
+        if (!live.available || live.busy || trimmed === "") return false;
+        void live.invoke.send(trimmed).catch(() => {
+          // Same contract as submit: the hook owns failure surfacing.
+        });
+        return true;
+      },
+      prefill: (text: string, opts?: { focus?: boolean; append?: boolean }): void => {
+        setInput((prev) =>
+          // The widget's staged-composer semantic: append joins with a
+          // space onto a non-empty draft, never clobbers it.
+          opts?.append === true && prev.trim() !== "" ? `${prev.trimEnd()} ${text}` : text,
+        );
+        if (opts?.focus !== false) inputRef.current?.focus();
+      },
+      focusComposer: (): void => {
+        inputRef.current?.focus();
+      },
+    }),
+    [],
+  );
+
+  useImperativeHandle(ref, () => handle, [handle]);
+
+  // `onReady` fires once per instance, on mount, with the stable handle
+  // (guarded ref: StrictMode's remount cycle must not double-fire it).
+  const readyFiredRef = useRef(false);
+  useEffect(() => {
+    if (readyFiredRef.current) return;
+    readyFiredRef.current = true;
+    liveRef.current.onReady?.(handle);
+  }, [handle]);
 
   const submit = useCallback((): void => {
     const text = input.trim();
@@ -218,6 +325,7 @@ export function GuueyChat(props: GuueyChatProps): ReactNode {
         }}
       >
         <textarea
+          ref={inputRef}
           className="guuey-chat-composer-input"
           rows={1}
           value={input}
@@ -250,4 +358,4 @@ export function GuueyChat(props: GuueyChatProps): ReactNode {
       </form>
     </div>
   );
-}
+});

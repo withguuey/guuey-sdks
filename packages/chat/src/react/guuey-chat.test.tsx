@@ -5,10 +5,11 @@
  * unavailable mode, string overrides. The transport is scripted; nothing
  * else is faked.
  */
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createRef, useRef } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { AgentInvokeAdapters, InvokeRequest } from "@guuey/agent-client";
-import { GuueyChat } from "./guuey-chat.js";
+import { GuueyChat, type GuueyChatHandle } from "./guuey-chat.js";
 
 afterEach(cleanup);
 
@@ -129,5 +130,153 @@ describe("<GuueyChat> composer", () => {
     renderChat(adapters, { strings: { send: "Fire", composerPlaceholder: "Ask me…" } });
     expect(screen.getByRole("button", { name: "Fire" })).toBeTruthy();
     expect((screen.getByLabelText("Message") as HTMLTextAreaElement).placeholder).toBe("Ask me…");
+  });
+});
+
+/** Render with a ref and return the attached handle (throws if missing). */
+function renderWithHandle(
+  adapters: AgentInvokeAdapters,
+  extra: Partial<Parameters<typeof GuueyChat>[0]> = {},
+) {
+  const ref = createRef<GuueyChatHandle>();
+  const view = render(
+    <GuueyChat
+      ref={ref}
+      endpointUrl="https://pod.example/agent/invoke"
+      adapters={adapters}
+      {...extra}
+    />,
+  );
+  const handle = ref.current;
+  if (handle === null) throw new Error("handle not attached");
+  return { handle, view };
+}
+
+describe("<GuueyChat> imperative seam (guuey#210)", () => {
+  it("handle.send sends through the composer gate and leaves the typed draft untouched", async () => {
+    const { adapters, calls } = scriptedAdapters();
+    const { handle } = renderWithHandle(adapters);
+    const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "half-typed draft" } });
+
+    let ok = false;
+    act(() => {
+      ok = handle.send("What can you do?");
+    });
+    expect(ok).toBe(true);
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(JSON.stringify(calls[0].body)).toContain("What can you do?");
+    // A chip send must not eat the half-typed message.
+    expect(input.value).toBe("half-typed draft");
+    await waitFor(() => expect(screen.getByText("Hello.")).toBeTruthy());
+  });
+
+  it("send returns false and no-ops while a turn is in flight, then works after Stop", async () => {
+    const { adapters, calls } = scriptedAdapters({ holdOpen: true });
+    const { handle } = renderWithHandle(adapters);
+
+    act(() => {
+      expect(handle.send("first")).toBe(true);
+    });
+    await screen.findByRole("button", { name: "Stop" });
+    act(() => {
+      expect(handle.send("while busy")).toBe(false);
+    });
+    expect(calls).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    await screen.findByRole("button", { name: "Send" });
+    act(() => {
+      expect(handle.send("after stop")).toBe(true);
+    });
+    await waitFor(() => expect(calls).toHaveLength(2));
+  });
+
+  it("send returns false for blank text, and always when the endpoint is null", () => {
+    const { adapters, calls } = scriptedAdapters();
+    const { handle } = renderWithHandle(adapters);
+    act(() => {
+      expect(handle.send("   ")).toBe(false);
+    });
+    expect(calls).toHaveLength(0);
+
+    cleanup();
+    const second = scriptedAdapters();
+    const ref = createRef<GuueyChatHandle>();
+    render(<GuueyChat ref={ref} endpointUrl={null} adapters={second.adapters} />);
+    act(() => {
+      expect(ref.current?.send("hello")).toBe(false);
+    });
+    expect(second.calls).toHaveLength(0);
+  });
+
+  it("prefill replaces, appends with a single space, and owns focus", () => {
+    const { adapters } = scriptedAdapters();
+    const { handle } = renderWithHandle(adapters);
+    const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+
+    act(() => {
+      handle.prefill("hello");
+    });
+    expect(input.value).toBe("hello");
+    expect(document.activeElement).toBe(input);
+
+    act(() => {
+      handle.prefill("world", { append: true });
+    });
+    expect(input.value).toBe("hello world");
+
+    input.blur();
+    act(() => {
+      handle.prefill("replaced", { focus: false });
+    });
+    expect(input.value).toBe("replaced");
+    expect(document.activeElement).not.toBe(input);
+  });
+
+  it("onReady fires once with the SAME stable handle the ref receives, across re-renders", async () => {
+    const { adapters, calls } = scriptedAdapters();
+    const onReady = vi.fn<(handle: GuueyChatHandle) => void>();
+    const { handle, view } = renderWithHandle(adapters, { onReady });
+
+    expect(onReady).toHaveBeenCalledTimes(1);
+    expect(onReady.mock.calls[0][0]).toBe(handle);
+
+    view.rerender(
+      <GuueyChat
+        endpointUrl="https://pod.example/agent/invoke"
+        adapters={adapters}
+        onReady={onReady}
+        strings={{ send: "Fire" }}
+      />,
+    );
+    expect(onReady).toHaveBeenCalledTimes(1);
+    // The captured handle still drives the CURRENT instance.
+    act(() => {
+      expect(handle.send("still wired")).toBe(true);
+    });
+    await waitFor(() => expect(calls).toHaveLength(1));
+  });
+
+  it("suggested-prompt chips: the filing use case works batteries-included", async () => {
+    const { adapters, calls } = scriptedAdapters();
+    function ChipsHost() {
+      const ref = useRef<GuueyChatHandle>(null);
+      return (
+        <div>
+          <button type="button" onClick={() => ref.current?.send("Plan my week")}>
+            Plan my week
+          </button>
+          <GuueyChat ref={ref} endpointUrl="https://pod.example/agent/invoke" adapters={adapters} />
+        </div>
+      );
+    }
+    render(<ChipsHost />);
+    fireEvent.click(screen.getByRole("button", { name: "Plan my week" }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(JSON.stringify(calls[0].body)).toContain("Plan my week");
+    // The chip text lands as the user bubble; the turn round-trips.
+    await waitFor(() => expect(screen.getAllByText("Plan my week").length).toBe(2));
+    await waitFor(() => expect(screen.getByText("Hello.")).toBeTruthy());
   });
 });
