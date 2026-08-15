@@ -20,7 +20,6 @@ import { configSet, configShow, configUnset, configInit } from './commands/confi
 import {
   appsList,
   appsGet,
-  appsCheck,
   appsCreate,
   appsUpdate,
   appsDelete,
@@ -69,6 +68,7 @@ import { byokSet, byokList, byokRemove } from './commands/byok';
 import { deploymentsList, deploymentsRollback, deploymentsLogs } from './commands/deployments';
 import { agentConfig } from './commands/agent';
 import { domainsAdd, domainsList, domainsVerify, domainsRemove } from './commands/domains';
+import { tokensCreate, tokensList, tokensRevoke } from './commands/tokens';
 import { slugClaim, slugRelease } from './commands/slug';
 import { ApiError } from './client';
 import { printWelcome, printQuickGuide } from './logo';
@@ -238,15 +238,6 @@ Apps:
     --name <name>               App name (required)
   apps list                     List your apps
   apps get [appId]              Show app details
-  apps check [appId]            Verify a browser origin can reach the app's live
-                                 agent: sends the same CORS preflight a browser
-                                 would to the live invoke endpoint and prints
-                                 the verdict against the app's domain allowlist
-                                 (set with: apps update --domains). Exits
-                                 non-zero unless the origin is allowed
-    --origin <https://...>       Required. The exact origin your page is served
-                                 from (scheme + host)
-    --app-id <id>               Target a specific app
   apps update [appId]           Update app configuration
     --name <name>               App name
     --description <text>        App description
@@ -347,6 +338,17 @@ Domains:
                                  Not 'apps update --domains' — that flag is
                                  the CORS/embed origin allowlist, unrelated
                                  to custom domains.
+
+Service tokens (headless CI, guuey#217):
+  tokens create --label <l>     Mint an app-scoped service token
+                                 (guuey_svc_*) for CI reconcile/deploy
+                                 reads. Secret printed ONCE — store it as
+                                 a CI secret, pass via GUUEY_API_KEY. No
+                                 expiry; revoke is the kill switch.
+  tokens list                   Prefix, label, and lifecycle per token
+                                 (never the secret)
+  tokens revoke <tokenId>       Revoke — auth stops within seconds
+    --app-id <id>               Target a specific app (all subcommands)
 
 Slug (free on every plan):
   slug claim <slug>             Claim the app's public short name, or change
@@ -642,6 +644,24 @@ async function main(): Promise<void> {
       }
       break;
 
+    case 'tokens':
+      switch (action) {
+        case 'create':
+          await tokensCreate(flags);
+          break;
+        case 'list':
+        case undefined:
+          await tokensList(flags);
+          break;
+        case 'revoke':
+          await tokensRevoke(rest[0], flags);
+          break;
+        default:
+          console.error(`Unknown tokens command: ${action}. Use: create, list, revoke`);
+          process.exit(1);
+      }
+      break;
+
     case 'slug':
       switch (action) {
         case 'claim':
@@ -735,9 +755,6 @@ async function main(): Promise<void> {
         case 'get':
           await appsGet(rest[0], { json: jsonFlag });
           break;
-        case 'check':
-          await appsCheck(rest[0], flags);
-          break;
         case 'create':
           await appsCreate({
             name: flags.name as string | undefined,
@@ -819,7 +836,7 @@ async function main(): Promise<void> {
           break;
         default:
           console.error(
-            `Unknown apps command: ${action ?? '(none)'}. Use: list, get, check, create, update, delete, recover, access, publish, unpublish, byo-user`,
+            `Unknown apps command: ${action ?? '(none)'}. Use: list, get, create, update, delete, recover, access, publish, unpublish, byo-user`,
           );
           process.exit(1);
       }
