@@ -1,6 +1,6 @@
 {
-  "@guuey/worker": "0.3.1",
-  "@guuey/config": "0.3.1",
-  "@guuey/cli": "0.3.1",
+  "@guuey/worker": "0.4.0",
+  "@guuey/config": "0.4.0",
+  "@guuey/cli": "0.4.0",
   "@silverprotocol/core": "0.4.1"
 }
