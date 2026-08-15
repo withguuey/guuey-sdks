@@ -32,13 +32,21 @@
  * `"inline"` card is arbitrary tenant HTML with no handshake obligation,
  * so the status line simply retires and the document stands as rendered.
  */
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { attachViewHost, viewDocumentHtml, type AttachViewHostConfig } from "./view-host.js";
+import { attachSandboxPageDelivery } from "./sandbox-page.js";
 import type { ViewHostPhase } from "./view-host-protocol.js";
 import type { ResolvedViewMount } from "./card-mount.js";
 
 export { attachViewHost, viewDocumentHtml } from "./view-host.js";
 export type { AttachViewHostConfig, ViewFrameLike, ViewHostEvents } from "./view-host.js";
+export {
+  attachSandboxPageDelivery,
+  isSandboxProxyReady,
+  SANDBOX_PROXY_READY_METHOD,
+  SANDBOX_RESOURCE_READY_METHOD,
+  type SandboxPageDeliveryConfig,
+} from "./sandbox-page.js";
 export type { ViewHostPhase } from "./view-host-protocol.js";
 export type { ResolvedViewMount, ViewMount, ViewMountChannel } from "./card-mount.js";
 
@@ -53,9 +61,28 @@ export interface GuueyViewProps
   /** The resolved card to mount (see `toolResultViewMount`/`resolveViewMount`). */
   mount: ResolvedViewMount;
   /**
+   * Opt into the TWO-ORIGIN mount: instead of `srcdoc`, the frame loads
+   * this host-served sandbox page (guuey's `/mcp-app-sandbox` pattern — the
+   * caller builds the full URL, channel/app query included) and the
+   * document is delivered over the page's relay protocol
+   * (`attachSandboxPageDelivery`). Why: a `srcdoc` frame INHERITS the
+   * embedder's CSP, so its egress confinement is whatever the page happens
+   * to carry; the sandbox page is served WITH the per-request CSP that
+   * confines the mount — and the untrusted document lands in the page's
+   * own inner opaque frame, never in this one. In this mode the frame's
+   * `sandbox` gains `allow-same-origin` — REQUIRED and safe: the frame
+   * holds the cross-origin RELAY PAGE (which must run as its real origin
+   * for its CSP + referrer checks to mean anything), never agent HTML.
+   * The page must be a genuinely different origin; a same-origin URL is
+   * refused with a labeled state, never mounted.
+   */
+  sandboxPageUrl?: string;
+  /**
    * Sandbox flags appended to the safe default (`allow-scripts`). Every
    * entry widens what agent-generated HTML may do — `allow-same-origin`
    * in particular hands it the embedder's origin. Prefer leaving unset.
+   * In `sandboxPageUrl` mode these forward to the INNER frame via the
+   * page's relay (which strips `allow-same-origin` regardless).
    */
   dangerouslyAddSandboxFlags?: string[];
   /** Permissions-Policy delegation for the frame. Default `clipboard-write`. */
@@ -112,6 +139,7 @@ function defaultStatus(phase: ViewHostPhase, channel: ResolvedViewMount["channel
 export function GuueyView(props: GuueyViewProps): ReactNode {
   const {
     mount,
+    sandboxPageUrl,
     dangerouslyAddSandboxFlags,
     allow,
     title,
@@ -125,11 +153,29 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
   const [phase, setPhase] = useState<ViewHostPhase>("negotiating");
   const html = viewDocumentHtml(mount.resource);
 
+  // Vet the sandbox page once per URL. Same-origin is REFUSED (the widget's
+  // ResourceMount precedent, generalized): the whole point of the page is
+  // being a different origin — same-origin would hand the relay page (and
+  // through `allow-same-origin`, everything it can reach) the embedder's
+  // own origin.
+  const sandboxPage: URL | "refused" | undefined = useMemo(() => {
+    if (sandboxPageUrl === undefined) return undefined;
+    let url: URL;
+    try {
+      url = new URL(sandboxPageUrl);
+    } catch {
+      return "refused";
+    }
+    if (typeof window !== "undefined" && url.origin === window.location.origin) return "refused";
+    return url;
+  }, [sandboxPageUrl]);
+  const page = sandboxPage instanceof URL ? sandboxPage : undefined;
+
   // The attachment is keyed to the mounted DOCUMENT, not to every render's
   // fresh callback identities — host config rides a ref so the effect's
   // dependency list is honestly just the document identity.
-  const latest = useRef({ hostConfig, onPhaseChange });
-  latest.current = { hostConfig, onPhaseChange };
+  const latest = useRef({ hostConfig, onPhaseChange, dangerouslyAddSandboxFlags });
+  latest.current = { hostConfig, onPhaseChange, dangerouslyAddSandboxFlags };
 
   useEffect(() => {
     // Keyed to the same identity the frame is (the resource uri): a new
@@ -138,8 +184,9 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
     setPhase("negotiating");
     const frame = frameRef.current;
     if (frame === null || html === undefined) return;
+    if (sandboxPageUrl !== undefined && page === undefined) return; // refused config — nothing mounts
     const resourceUri = mount.resource.uri;
-    return attachViewHost(frame, {
+    const detachHost = attachViewHost(frame, {
       ...latest.current.hostConfig,
       resourceUri,
       onPhaseChange: (next) => {
@@ -147,7 +194,23 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
         latest.current.onPhaseChange?.(next);
       },
     });
-  }, [mount.resource.uri, html]);
+    if (page === undefined) return detachHost;
+    // Two-origin mode: the page announces readiness, the document is
+    // delivered over its relay (re-delivered on a reload's re-announce),
+    // and the view-host handshake crosses the same relay transparently.
+    const flags = latest.current.dangerouslyAddSandboxFlags;
+    const detachDelivery = attachSandboxPageDelivery(frame, {
+      pageOrigin: page.origin,
+      html,
+      ...(flags !== undefined && flags.length > 0
+        ? { sandbox: ["allow-scripts", ...flags].join(" ") }
+        : {}),
+    });
+    return () => {
+      detachDelivery();
+      detachHost();
+    };
+  }, [mount.resource.uri, html, sandboxPageUrl, page]);
 
   if (html === undefined) {
     // A resolved mount with no document is producer-side breakage; an
@@ -162,18 +225,40 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
     );
   }
 
+  if (sandboxPageUrl !== undefined && page === undefined) {
+    // A malformed or SAME-ORIGIN sandbox page is a configuration state, not
+    // a property of the card — refused, labeled, never mounted.
+    return (
+      <div className={className} style={{ position: "relative", ...style }}>
+        <p role="alert" style={{ ...statusLineStyle, opacity: 1, pointerEvents: "auto" }}>
+          Interactive view unavailable — the sandbox page is not usable from this origin.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className={className} style={{ position: "relative", ...style }}>
       <iframe
         ref={frameRef}
-        // Remount on a new resource rather than reusing the frame: a view
-        // runtime boots once from the document it was handed, so swapping
-        // `srcDoc` in place would leave the old boot running against new
-        // markup.
-        key={mount.resource.uri}
-        srcDoc={html}
+        // Remount on a new resource (or mount mode) rather than reusing the
+        // frame: a view runtime boots once from the document it was handed,
+        // so swapping `srcDoc` in place would leave the old boot running
+        // against new markup.
+        key={`${page?.href ?? "srcdoc"}::${mount.resource.uri}`}
+        {...(page !== undefined ? { src: page.href } : { srcDoc: html })}
         title={title ?? DEFAULT_TITLE}
-        sandbox={["allow-scripts", ...(dangerouslyAddSandboxFlags ?? [])].join(" ")}
+        // srcdoc mode: the INVARIANT — agent HTML in an opaque origin, extra
+        // flags only widen knowingly. Page mode: the frame holds the
+        // cross-origin RELAY PAGE, which must run as its real origin
+        // (`allow-same-origin`) for its CSP/referrer machinery to exist at
+        // all; the agent HTML lands in the page's own inner opaque frame,
+        // and the caller's extra flags travel to THAT frame via the relay.
+        sandbox={
+          page !== undefined
+            ? "allow-scripts allow-same-origin allow-forms"
+            : ["allow-scripts", ...(dangerouslyAddSandboxFlags ?? [])].join(" ")
+        }
         allow={allow ?? "clipboard-write"}
         style={{ display: "block", width: "100%", height: "100%", border: 0 }}
       />

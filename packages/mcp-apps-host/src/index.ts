@@ -79,3 +79,10 @@ export {
   type ViewFrameLike,
   type ViewHostEvents,
 } from "./view-host.js";
+export {
+  attachSandboxPageDelivery,
+  isSandboxProxyReady,
+  SANDBOX_PROXY_READY_METHOD,
+  SANDBOX_RESOURCE_READY_METHOD,
+  type SandboxPageDeliveryConfig,
+} from "./sandbox-page.js";
