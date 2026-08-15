@@ -23,6 +23,7 @@
 
 import { requireAuth } from '../auth';
 import { resolveConfig } from '../config';
+import { resolveTargetAppId } from '../app-id';
 import * as out from '../output';
 
 /**
@@ -32,11 +33,15 @@ import * as out from '../output';
  * and prints them as a table (or JSON with `--json`).
  *
  * @param opts - Output options (e.g., `{ json: true }`)
+ * @param flags - CLI flags (`--app-id` targets a specific app)
  */
-export async function deploymentsList(opts: { json?: boolean }): Promise<void> {
+export async function deploymentsList(
+  opts: { json?: boolean },
+  flags?: Record<string, string | true>,
+): Promise<void> {
   const auth = requireAuth();
   const config = resolveConfig();
-  const appId = config.appId;
+  const appId = resolveTargetAppId(flags, config);
 
   if (!appId) {
     out.error('No app ID found.');
@@ -91,14 +96,14 @@ export async function deploymentsList(opts: { json?: boolean }): Promise<void> {
  */
 export async function deploymentsRollback(
   versionArg?: string,
-  _flags?: Record<string, string | true>,
+  flags?: Record<string, string | true>,
 ): Promise<void> {
   out.notYetAvailable(
     "guuey deployments rollback isn't available yet — deploy rollback is on the guuey launch roadmap.",
   );
   const auth = requireAuth();
   const config = resolveConfig();
-  const appId = config.appId;
+  const appId = resolveTargetAppId(flags, config);
 
   if (!appId) {
     out.error('No app ID found.');
@@ -129,13 +134,14 @@ export async function deploymentsRollback(
 export async function deploymentsLogs(
   buildNumberArg: string | undefined,
   opts: { json?: boolean },
+  flags?: Record<string, string | true>,
 ): Promise<void> {
   out.notYetAvailable(
     "guuey deployments logs isn't available yet — build-log retrieval is on the guuey launch roadmap.",
   );
   const auth = requireAuth();
   const config = resolveConfig();
-  const appId = config.appId;
+  const appId = resolveTargetAppId(flags, config);
 
   if (!appId) {
     out.error('No app ID found.');

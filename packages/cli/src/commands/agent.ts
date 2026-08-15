@@ -9,6 +9,7 @@
  *   guuey agent config                 # Show maxPods + the ceiling it is gated at
  *   guuey agent config --max-pods 3    # Scale a LIVE app, no redeploy
  *   guuey agent config --json          # Machine-readable (either mode)
+ *   guuey agent config --app-id <id>   # Target a specific app (overrides the binding)
  *
  * Backed by `GET|PATCH /v1/apps/:id/config` (scaling S1-F4, guuey#162) —
  * the route this command was gated behind `notYetAvailable` waiting for. A
@@ -28,6 +29,7 @@
 
 import { requireAuth } from '../auth';
 import { resolveConfig } from '../config';
+import { resolveTargetAppId } from '../app-id';
 import { apiRequest, parseApiError } from '../deploy-shared';
 import * as out from '../output';
 
@@ -65,10 +67,10 @@ export async function agentConfig(
 ): Promise<void> {
   const auth = requireAuth();
   const config = resolveConfig();
-  const appId = config.appId;
+  const appId = resolveTargetAppId(flags, config);
 
   if (!appId) {
-    out.error('No app ID found. Run "guuey pull --app-id <id>" to bind an existing app, or "guuey create" to scaffold a new project first.');
+    out.error('No app ID found. Pass --app-id <id>, run "guuey pull --app-id <id>" to bind an existing app, or "guuey create" to scaffold a new project first.');
     process.exit(1);
   }
 

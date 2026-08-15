@@ -10,6 +10,7 @@
 
 import { requireAuth } from '../auth';
 import { resolveConfig } from '../config';
+import { resolveTargetAppId } from '../app-id';
 import * as out from '../output';
 
 /** Make an authenticated JSON request to the CLI API. */
@@ -41,12 +42,12 @@ async function apiRequest(
  * to the platform API.
  *
  * @param args - Positional arguments (KEY=VALUE pairs) from the CLI parser
- * @param flags - CLI flags (unused, reserved for future options)
+ * @param flags - CLI flags (`--app-id` targets a specific app)
  */
-export async function envSet(args: string[], _flags?: Record<string, string | true>): Promise<void> {
+export async function envSet(args: string[], flags?: Record<string, string | true>): Promise<void> {
   const auth = requireAuth();
   const config = resolveConfig();
-  const appId = config.appId;
+  const appId = resolveTargetAppId(flags, config);
 
   if (!appId) {
     out.error('No app ID found. Run "guuey pull --app-id <id>" to bind an existing app, or "guuey create" to scaffold a new project first.');
@@ -89,11 +90,15 @@ export async function envSet(args: string[], _flags?: Record<string, string | tr
  * them as a table (or JSON with `--json`).
  *
  * @param opts - Output options (`json` for JSON output)
+ * @param flags - CLI flags (`--app-id` targets a specific app)
  */
-export async function envList(opts: { json?: boolean }): Promise<void> {
+export async function envList(
+  opts: { json?: boolean },
+  flags?: Record<string, string | true>,
+): Promise<void> {
   const auth = requireAuth();
   const config = resolveConfig();
-  const appId = config.appId;
+  const appId = resolveTargetAppId(flags, config);
 
   if (!appId) {
     out.error('No app ID found. Run "guuey pull --app-id <id>" to bind an existing app, or "guuey create" to scaffold a new project first.');
@@ -134,12 +139,12 @@ export async function envList(opts: { json?: boolean }): Promise<void> {
  * Removes the specified environment variable keys from the current app.
  *
  * @param args - Positional arguments (key names) from the CLI parser
- * @param flags - CLI flags (unused, reserved for future options)
+ * @param flags - CLI flags (`--app-id` targets a specific app)
  */
-export async function envUnset(args: string[], _flags?: Record<string, string | true>): Promise<void> {
+export async function envUnset(args: string[], flags?: Record<string, string | true>): Promise<void> {
   const auth = requireAuth();
   const config = resolveConfig();
-  const appId = config.appId;
+  const appId = resolveTargetAppId(flags, config);
 
   if (!appId) {
     out.error('No app ID found. Run "guuey pull --app-id <id>" to bind an existing app, or "guuey create" to scaffold a new project first.');

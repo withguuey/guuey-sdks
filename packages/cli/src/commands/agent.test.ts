@@ -370,4 +370,41 @@ describe('guuey agent config', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(stderr()).toContain('No app ID found');
   });
+
+  describe('--app-id targeting (guuey#183)', () => {
+    // The flag was silently swallowed: the command resolved only
+    // `config.appId`, so `--app-id <id>` read as broken auth/binding
+    // (the staging multi-pod walk fell back to GGUI_APP_ID=<id>).
+    it('--app-id wins over the bound config.appId', async () => {
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify(SCALED), { status: 200 }));
+
+      await agentConfig({ 'app-id': 'app-override' });
+
+      expect(lastRequest(fetchSpy).path).toBe('/apps/app-override/config');
+    });
+
+    it('--app-id targets writes too, not just reads', async () => {
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify(SCALED), { status: 200 }));
+
+      await agentConfig({ 'app-id': 'app-override', 'max-pods': '3' });
+
+      expect(lastRequest(fetchSpy)).toEqual({
+        method: 'PATCH',
+        path: '/apps/app-override/config',
+        body: { maxPods: 3 },
+      });
+    });
+
+    it('--app-id works with NO bound project at all', async () => {
+      vi.mocked(resolveConfig).mockReturnValueOnce({
+        host: 'https://guuey.test',
+        apiUrl: 'https://api.guuey.test',
+      });
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify(SCALED), { status: 200 }));
+
+      await agentConfig({ 'app-id': 'app-override' });
+
+      expect(lastRequest(fetchSpy).path).toBe('/apps/app-override/config');
+    });
+  });
 });
