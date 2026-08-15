@@ -63,6 +63,22 @@ export function sendableGuestSecret(secret: string | null | undefined): string |
 }
 
 /**
+ * Is this request a cross-origin call from a browser document? Only then can
+ * a fetch `TypeError` be a CORS refusal worth hinting about. `location` is
+ * read via `typeof` so Node and React Native (where CORS does not exist)
+ * answer false; an unparseable URL answers false rather than throwing from
+ * inside error handling.
+ */
+function isCrossOriginBrowserCall(url: string): boolean {
+  if (typeof location === "undefined") return false;
+  try {
+    return new URL(url).origin !== location.origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * One invoke attempt: opens the request and yields decoded SSE chunks.
  * {@link fetchStreamTransport} wraps this with the shared saturation retry —
  * every behaviour below is per-attempt.
@@ -108,7 +124,27 @@ async function* streamInvokeOnce(
   } else {
     init.credentials = "include";
   }
-  const resp = await fetch(req.url, init);
+  let resp: Response;
+  try {
+    resp = await fetch(req.url, init);
+  } catch (err) {
+    // A network-level TypeError on a CROSS-ORIGIN invoke from a browser is,
+    // in practice, very often a missing allowedDomains entry — the CORS
+    // preflight failed and the web platform deliberately reports nothing
+    // more specific (guuey#186 Gap 2: the console.ggui.ai embed lost real
+    // time to an unexplained "Failed to fetch"). The error stays a
+    // TypeError with the original as `cause`; the added sentence is a HINT,
+    // not a diagnosis — offline, DNS and CSP failures throw the same shape.
+    // Same-origin calls and non-browser runtimes (no `location`) cannot be
+    // CORS refusals, so they pass through untouched.
+    if (err instanceof TypeError && isCrossOriginBrowserCall(req.url)) {
+      throw new TypeError(
+        `${err.message} — if this is a browser embed, check the app's allowedDomains (the CORS allowlist must include this page's origin)`,
+        { cause: err },
+      );
+    }
+    throw err;
+  }
   if (!resp.ok || !resp.body) {
     // Surface a structured pod error ({ code, message }) when present — e.g. a
     // QUOTA_EXCEEDED 429 carries an upgrade message the UI should show. Fall

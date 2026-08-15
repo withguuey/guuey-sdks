@@ -570,3 +570,17 @@ describe("fetchStreamTransport — injectable getBearer", () => {
     expect(headers[GUEST_HEADER]).toBe(SECRET);
   });
 });
+
+describe("fetchStreamTransport — network TypeError outside a browser", () => {
+  it("never adds the CORS hint where no `location` exists — Node/RN cannot be a CORS refusal", async () => {
+    // This suite runs in the node environment (no jsdom): `location` is
+    // undefined, which IS the case under test. The browser halves live in
+    // `transport.cors-hint.test.ts`.
+    const original = new TypeError("fetch failed");
+    const failing = vi.fn(() => Promise.reject(original));
+    const err = await withGlobalFetch(failing, () =>
+      rejection(fetchStreamTransport(invokeRequest())),
+    );
+    expect(err).toBe(original);
+  });
+});
