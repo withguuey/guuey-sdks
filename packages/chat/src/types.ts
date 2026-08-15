@@ -317,6 +317,25 @@ export interface StatusLineItem {
   detail: string | null;
 }
 
+/**
+ * The debug sink's event union (spec §5's `onDebugEvent`, shipped as real
+ * API in the #135 refinement wave) — built strictly from what the kit
+ * actually knows, never invented telemetry:
+ *
+ *  - `view-phase`: an R6 mount's host-phase transition (incl. the R13
+ *    `expired` verdict from a failed locator resolution);
+ *  - `unknown-block`: an R15 sighting — a block type this kit version does
+ *    not know rendered as a labeled row;
+ *  - `turn-recovered`: the #192 adopted-turn marker resolved on the plan.
+ *
+ * The sink only fires under the debug policy (`debugDetail`) — `calm`
+ * ignores it by design (spec §5's per-preset row).
+ */
+export type ChatDebugEvent =
+  | { type: "view-phase"; key: ItemKey; phase: ViewHostPhase | "expired" }
+  | { type: "unknown-block"; key: ItemKey; typeName: string; byteSize: number }
+  | { type: "turn-recovered"; marker: string };
+
 export interface TranscriptPlan {
   /** Ordered, stable keys (spec §7's determinism contract). */
   items: DisplayItem[];

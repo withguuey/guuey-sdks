@@ -22,6 +22,7 @@ import {
 import { planTranscript } from "../plan.js";
 import type { TranscriptPolicy } from "../policy.js";
 import type {
+  ChatDebugEvent,
   ItemKey,
   PromptItemInput,
   TranscriptInputs,
@@ -42,6 +43,13 @@ export interface UseTranscriptArgs {
    * resolution — labeled, never blank.
    */
   reader?: UiResourceReader;
+  /**
+   * The debug sink (spec §5, real API since the #135 refinement wave):
+   * receives {@link ChatDebugEvent}s — view-phase transitions, R15
+   * unknown-block sightings, the #192 recovered-turn marker. Fires ONLY
+   * under the debug policy (`debugDetail`); `calm` ignores it by design.
+   */
+  onDebugEvent?: (event: ChatDebugEvent) => void;
 }
 
 export interface UseTranscriptResult {
@@ -56,12 +64,21 @@ export interface UseTranscriptResult {
   resolvedMounts: ReadonlyMap<ItemKey, ResolvedViewMount | "expired">;
 }
 
-export function useTranscript({ inputs, policy, reader }: UseTranscriptArgs): UseTranscriptResult {
+export function useTranscript({
+  inputs,
+  policy,
+  reader,
+  onDebugEvent,
+}: UseTranscriptArgs): UseTranscriptResult {
   const [overrides, setOverrides] = useState<TranscriptOverrides>({});
   const [phases, setPhases] = useState<Readonly<Record<string, ViewHostPhase>>>({});
   const [resolvedMounts, setResolvedMounts] = useState<
     ReadonlyMap<ItemKey, ResolvedViewMount | "expired">
   >(new Map());
+
+  // The debug sink (gated on the debug policy — calm ignores it, spec §5).
+  const debugSink = useRef<((event: ChatDebugEvent) => void) | null>(null);
+  debugSink.current = policy.debugDetail && onDebugEvent !== undefined ? onDebugEvent : null;
 
   const merged = useMemo<TranscriptInputs>(
     () => ({ ...inputs, viewPhases: { ...inputs.viewPhases, ...phases } }),
@@ -92,9 +109,36 @@ export function useTranscript({ inputs, policy, reader }: UseTranscriptArgs): Us
     setOverrides((prev) => ({ ...prev, [key]: { expanded: !current } }));
   }, []);
 
+  // Mirror of `phases` for the change check OUTSIDE the state updater — a
+  // sink call inside an updater would double-fire under StrictMode.
+  const phasesRef = useRef<Readonly<Record<string, ViewHostPhase>>>({});
   const onViewPhase = useCallback((key: ItemKey, phase: ViewHostPhase) => {
+    if (phasesRef.current[key] !== phase) {
+      phasesRef.current = { ...phasesRef.current, [key]: phase };
+      debugSink.current?.({ type: "view-phase", key, phase });
+    }
     setPhases((prev) => (prev[key] === phase ? prev : { ...prev, [key]: phase }));
   }, []);
+
+  // Plan-derived debug events, emitted once per sighting (post-render — the
+  // plan itself stays pure data).
+  const emittedUnknowns = useRef(new Set<ItemKey>());
+  const recoveryEmitted = useRef(false);
+  useEffect(() => {
+    const sink = debugSink.current;
+    if (sink === null) return;
+    for (const item of plan.items) {
+      if (item.kind !== "unknown" || emittedUnknowns.current.has(item.key)) continue;
+      emittedUnknowns.current.add(item.key);
+      sink({ type: "unknown-block", key: item.key, typeName: item.typeName, byteSize: item.byteSize });
+    }
+    if (plan.recovery !== null && !recoveryEmitted.current) {
+      recoveryEmitted.current = true;
+      sink({ type: "turn-recovered", marker: plan.recovery });
+    } else if (plan.recovery === null) {
+      recoveryEmitted.current = false;
+    }
+  }, [plan]);
 
   // Locator resolution — one read per locator key, misses become "expired".
   const readerRef = useRef(reader);
@@ -110,6 +154,10 @@ export function useTranscript({ inputs, policy, reader }: UseTranscriptArgs): Us
       inFlight.current.add(item.key);
       const settle = (value: ResolvedViewMount | "expired"): void => {
         inFlight.current.delete(item.key);
+        // The R13 expired verdict is a phase transition too (debug sink).
+        if (value === "expired") {
+          debugSink.current?.({ type: "view-phase", key: item.key, phase: "expired" });
+        }
         setResolvedMounts((prev) => {
           const next = new Map(prev);
           next.set(item.key, value);

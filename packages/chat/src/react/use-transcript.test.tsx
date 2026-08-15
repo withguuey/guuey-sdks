@@ -7,8 +7,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { act, renderHook , cleanup } from "@testing-library/react";
 import type { UseAgentInvokeReturn } from "@guuey/agent-client";
-import { calmPolicy } from "../policy.js";
-import type { TranscriptInputs } from "../types.js";
+import { Reducer } from "@silverprotocol/core";
+import { calmPolicy, debugPolicy } from "../policy.js";
+import type { ChatDebugEvent, TranscriptInputs } from "../types.js";
 import { useTranscript, useTranscriptInputs } from "./use-transcript.js";
 
 afterEach(cleanup);
@@ -72,6 +73,88 @@ describe("useTranscript", () => {
     act(() => result.current.onViewPhase(view!.key, "connected"));
     const after = result.current.plan.items.find((i) => i.kind === "view");
     expect(after!.kind === "view" && after!.phase).toBe("connected");
+  });
+
+  it("onDebugEvent fires under debug — phase transitions, unknown blocks, the recovered marker — and calm ignores it", () => {
+    const events: ChatDebugEvent[] = [];
+    const sink = (ev: ChatDebugEvent): void => {
+      events.push(ev);
+    };
+    const inputs = baseInputs({
+      adopted: true,
+      historyCards: [
+        {
+          seq: 1,
+          at: "2026-08-15T00:00:00Z",
+          cardSnapshot: {
+            parts: [
+              {
+                type: "tool-result",
+                toolCallId: "c1",
+                content: [],
+                uiData: { resourceUri: "ui://app/1" },
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    // Debug policy: all three event kinds reach the sink.
+    const { result } = renderHook(() =>
+      useTranscript({ inputs, policy: debugPolicy(), onDebugEvent: sink }),
+    );
+    expect(events.some((e) => e.type === "turn-recovered")).toBe(true);
+    const view = result.current.plan.items.find((i) => i.kind === "view");
+    act(() => result.current.onViewPhase(view!.key, "connected"));
+    // A repeat of the SAME phase does not re-fire; the reader-less locator's
+    // "expired" settle emitted its own phase event alongside.
+    act(() => result.current.onViewPhase(view!.key, "connected"));
+    const phases = events.filter((e) => e.type === "view-phase");
+    expect(phases.filter((e) => e.phase === "connected")).toHaveLength(1);
+    expect(phases.some((e) => e.phase === "expired")).toBe(true);
+
+    // An R15 sighting emits once per key, and a re-render does not re-fire.
+    const reducer = new Reducer();
+    const unknownEvents: import("@silverprotocol/core").AgEvent[] = [
+      { type: "turn.start", threadId: "t", turnId: "turn-u", seq: 0 },
+      { type: "message.start", id: "m", role: "assistant", turnId: "turn-u", threadId: "t", seq: 1 },
+      {
+        type: "content.block",
+        block: { type: "provider-raw", vendor: "futurecorp", raw: { x: 1 } },
+        turnId: "turn-u",
+        seq: 2,
+      },
+    ];
+    for (const ev of unknownEvents) reducer.push(ev);
+    const events2: ChatDebugEvent[] = [];
+    const unknown = renderHook(() =>
+      useTranscript({
+        inputs: baseInputs({ result: reducer.result(), messages: [{ role: "user", text: "?" }] }),
+        policy: debugPolicy(),
+        onDebugEvent: (ev) => {
+          events2.push(ev);
+        },
+      }),
+    );
+    expect(events2.filter((e) => e.type === "unknown-block")).toHaveLength(1);
+    unknown.rerender();
+    expect(events2.filter((e) => e.type === "unknown-block")).toHaveLength(1);
+
+    // Calm: the same inputs produce ZERO sink calls (spec §5's row).
+    const calmEvents: ChatDebugEvent[] = [];
+    const calm = renderHook(() =>
+      useTranscript({
+        inputs,
+        policy: calmPolicy(),
+        onDebugEvent: (ev) => {
+          calmEvents.push(ev);
+        },
+      }),
+    );
+    const calmView = calm.result.current.plan.items.find((i) => i.kind === "view");
+    act(() => calm.result.current.onViewPhase(calmView!.key, "connected"));
+    expect(calmEvents).toHaveLength(0);
   });
 
   it("locator mounts without a reader settle to 'expired' (labeled, never blank)", async () => {

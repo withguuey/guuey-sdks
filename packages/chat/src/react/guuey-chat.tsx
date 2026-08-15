@@ -39,7 +39,7 @@ import type { UiResourceReader } from "@guuey/mcp-apps-host";
 import { calmPolicy, debugPolicy, type TranscriptPolicy } from "../policy.js";
 import { defaultChatStrings, type ChatStrings } from "../strings.js";
 import { DEFAULT_CHAT_THEME, type GuueyChatTheme } from "../theme.js";
-import type { ErrorItem, PromptItem, UserMessageItem } from "../types.js";
+import type { ChatDebugEvent, ErrorItem, PromptItem, UserMessageItem } from "../types.js";
 import type { ThemeMode } from "./theme-css.js";
 import { Transcript, type TranscriptWindowing } from "./transcript.js";
 import type { TranscriptComponents, TranscriptItemContext } from "./components.js";
@@ -70,6 +70,8 @@ export interface GuueyChatProps {
   window?: TranscriptWindowing | false;
   /** R6 locator resolution (history cards). See `useTranscript`. */
   reader?: UiResourceReader;
+  /** The debug sink (spec §5) — fires only under the debug policy. */
+  onDebugEvent?: (event: ChatDebugEvent) => void;
   /** R6 pass-through (relay hook, sandbox page/flags, host context…). */
   viewProps?: TranscriptItemContext["viewProps"];
   /**
@@ -103,6 +105,7 @@ export function GuueyChat(props: GuueyChatProps): ReactNode {
     mode = "light",
     window: windowing,
     reader,
+    onDebugEvent,
     viewProps,
     onPromptAction,
     onErrorAction,
@@ -128,6 +131,7 @@ export function GuueyChat(props: GuueyChatProps): ReactNode {
     inputs,
     policy,
     ...(reader !== undefined ? { reader } : {}),
+    ...(onDebugEvent !== undefined ? { onDebugEvent } : {}),
   });
 
   // ── Composer ─────────────────────────────────────────────────────────

@@ -32,6 +32,7 @@ export {
   resolveTheme,
 } from "./theme.js";
 export type {
+  ChatDebugEvent,
   CitationsItem,
   CodeItem,
   CompactionItem,
