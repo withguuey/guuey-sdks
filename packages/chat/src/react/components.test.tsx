@@ -16,6 +16,7 @@ import {
   DefaultToolGroup,
   DefaultUnknown,
   DefaultUserMessage,
+  DefaultView,
   type TranscriptItemContext,
 } from "./components.js";
 import { defaultChatStrings } from "../strings.js";
@@ -28,6 +29,7 @@ import type {
   ToolItem,
   UnknownItem,
   UserMessageItem,
+  ViewMountItem,
 } from "../types.js";
 
 afterEach(cleanup);
@@ -213,6 +215,89 @@ describe("R15 unknown stays labeled and collapsed", () => {
     render(<DefaultUnknown item={item} ctx={ctx()} />);
     expect(screen.getByText(/quantum-block/)).toBeTruthy();
     expect(screen.getByText("2 KB")).toBeTruthy();
+  });
+});
+
+describe("DefaultView — per-mount viewProps + autoResize (guuey#135 kit-refinement)", () => {
+  const viewItem = (): ViewMountItem => ({
+    kind: "view",
+    key: "view.c9",
+    expanded: true,
+    mount: {
+      channel: "inline",
+      resource: { uri: "ui://tool/card", mimeType: "text/html", text: "<p>card</p>" },
+    },
+    channel: "inline",
+    phase: "negotiating",
+    label: null,
+    attribution: null,
+    toolTitle: "show card",
+    actionScope: "ui://persisted/locator",
+  });
+
+  it("the viewProps FUNCTION form resolves against the item and its resolved mount", () => {
+    const seen: Array<{ key: string; uri: string }> = [];
+    render(
+      <DefaultView
+        item={viewItem()}
+        ctx={ctx({
+          viewProps: (item, mount) => {
+            seen.push({ key: item.key, uri: mount.resource.uri });
+            return { negotiationTimeoutMs: 0 };
+          },
+        })}
+      />,
+    );
+    expect(seen).toEqual([{ key: "view.c9", uri: "ui://tool/card" }]);
+  });
+
+  it("autoResize applies the view's reported height to the frame", async () => {
+    const { container } = render(
+      <DefaultView item={viewItem()} ctx={ctx({ viewProps: { autoResize: true } })} />,
+    );
+    const frame = container.querySelector("iframe");
+    expect(frame).not.toBeNull();
+    expect(frame!.style.height).toBe("100%");
+    // The host filters by event.source — synthesize the message the way a
+    // real view posts it (jsdom's about:srcdoc frame has a contentWindow).
+    const source = frame!.contentWindow;
+    expect(source).not.toBeNull();
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: {
+          jsonrpc: "2.0",
+          method: "ui/notifications/size-changed",
+          params: { height: 420 },
+        },
+        source,
+      }),
+    );
+    await vi.waitFor(() => expect(frame!.style.height).toBe("420px"));
+  });
+
+  it("without autoResize the reported height is NOT applied — additive by default", async () => {
+    const { container } = render(<DefaultView item={viewItem()} ctx={ctx()} />);
+    const frame = container.querySelector("iframe")!;
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: {
+          jsonrpc: "2.0",
+          method: "ui/notifications/size-changed",
+          params: { height: 420 },
+        },
+        source: frame.contentWindow,
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(frame.style.height).toBe("100%");
+  });
+
+  it("sandboxPageUrl: null refuses with the labeled state — srcdoc is never a fallback", () => {
+    const { container } = render(
+      <DefaultView item={viewItem()} ctx={ctx({ viewProps: { sandboxPageUrl: null } })} />,
+    );
+    expect(container.querySelector("iframe")).toBeNull();
+    expect(screen.getByRole("alert").textContent).toContain("no sandbox page is configured");
   });
 });
 

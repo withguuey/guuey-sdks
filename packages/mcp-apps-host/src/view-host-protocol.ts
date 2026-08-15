@@ -34,11 +34,13 @@ import {
   INITIALIZE_METHOD,
   LATEST_PROTOCOL_VERSION,
   RESOURCE_TEARDOWN_METHOD,
+  SIZE_CHANGED_METHOD,
   type McpUiHostCapabilities,
   type McpUiHostContext,
   type McpUiInitializeResult,
 } from "@modelcontextprotocol/ext-apps";
 import type { McpToolStructuredContent } from "./action.js";
+import type { McpResourceReadResult } from "./reader.js";
 
 /**
  * The host identity in the initialize result — structurally the spec's
@@ -55,6 +57,23 @@ const METHOD_NOT_SUPPORTED = -32601;
 
 /** The standard MCP method a view uses to reach host-proxied tools. */
 export const TOOLS_CALL_METHOD = "tools/call";
+
+/**
+ * The standard MCP method a view uses to read host-proxied resources —
+ * `ReadResourceRequest` in the spec's App→Host request union
+ * (`@modelcontextprotocol/ext-apps` `AppRequest`). A local constant, same
+ * as {@link TOOLS_CALL_METHOD}: the string is MCP-core vocabulary the
+ * ext-apps root does not re-export, and this package deliberately carries
+ * no `@modelcontextprotocol/sdk` dependency.
+ */
+export const RESOURCES_READ_METHOD = "resources/read";
+
+/**
+ * MCP's `Resource not found` JSON-RPC code — the one answer for a miss, a
+ * transport deny, AND a relay failure (deny == miss: the reader discipline,
+ * `reader.ts` — the view gets no oracle for which locators resolve).
+ */
+const RESOURCE_NOT_FOUND = -32002;
 
 /** A JSON-RPC id as the wire allows it. */
 export type ViewRequestId = number | string;
@@ -117,6 +136,33 @@ export type ViewHostEffect =
       id: ViewRequestId;
       name: string;
       arguments?: McpToolStructuredContent;
+    }
+  | {
+      /**
+       * A `resources/read` the config accepted for relaying (spec surface:
+       * `ReadResourceRequest` rides the App→Host union, and the matching
+       * advertisement is `hostCapabilities.serverResources`). The glue runs
+       * the read hook and posts {@link resourceReadResponse}. Only emitted
+       * when {@link ViewHostBehavior.resourceRelay} is true — unwired, the
+       * machine refuses in-band like every other unsupported request.
+       */
+      kind: "relay-resource-read";
+      id: ViewRequestId;
+      uri: string;
+    }
+  | {
+      /**
+       * The view reported its content size (`ui/notifications/size-changed`
+       * — spec notification, App → Host). At least one of the two fields is
+       * a finite number; a notification carrying neither is consumed
+       * silently instead. The glue forwards this to the embedder
+       * ({@link AttachViewHostConfig.onSizeChanged} in `view-host.ts`) —
+       * whether/how to resize the frame is the embedder's layout decision,
+       * never the machine's.
+       */
+      kind: "size-changed";
+      width?: number;
+      height?: number;
     };
 
 /**
@@ -138,6 +184,8 @@ export interface ViewHostBehavior {
   hostContext: McpUiHostContext;
   /** Whether a `tools/call` relay hook is wired (see `view-host.ts`). */
   toolRelay: boolean;
+  /** Whether a `resources/read` relay hook is wired (see `view-host.ts`). */
+  resourceRelay: boolean;
 }
 
 /** The result of feeding one inbound frame (or the timeout) to the machine. */
@@ -206,6 +254,26 @@ export function toolCallResponse(
 }
 
 /**
+ * Build the in-band response for a relayed `resources/read`. An entry
+ * becomes the spec's `ReadResourceResult` (`contents: [entry]`); `undefined`
+ * — a miss, a deny, or a relay failure alike — becomes the one
+ * `Resource not found` error (deny == miss, {@link RESOURCE_NOT_FOUND}).
+ */
+export function resourceReadResponse(
+  id: ViewRequestId,
+  entry: McpResourceReadResult | undefined,
+): ViewHostOutbound {
+  if (entry === undefined) {
+    return {
+      jsonrpc: "2.0",
+      id,
+      error: { code: RESOURCE_NOT_FOUND, message: "resource unavailable" },
+    };
+  }
+  return { jsonrpc: "2.0", id, result: { contents: [entry] } };
+}
+
+/**
  * The spec-mannered farewell a detaching host posts (`ui/resource-teardown`).
  * Sent WITHOUT an id — a host that is tearing the frame down cannot await a
  * response, and an id-less JSON-RPC message is a notification the view may
@@ -237,9 +305,28 @@ export function viewHostReceive(
   if (req === undefined) return { state, effects: [] };
 
   if (req.id === undefined) {
-    // A notification. Track the one the handshake defines; consume the rest.
+    // A notification. Track the one the handshake defines, surface the one
+    // the embedder may act on; consume the rest.
     if (req.method === "ui/notifications/initialized" && !state.initializedSeen) {
       return { state: { ...state, initializedSeen: true }, effects: [] };
+    }
+    if (req.method === SIZE_CHANGED_METHOD) {
+      const width = req.params?.["width"];
+      const height = req.params?.["height"];
+      const validWidth = typeof width === "number" && Number.isFinite(width);
+      const validHeight = typeof height === "number" && Number.isFinite(height);
+      if (validWidth || validHeight) {
+        return {
+          state,
+          effects: [
+            {
+              kind: "size-changed",
+              ...(validWidth ? { width } : {}),
+              ...(validHeight ? { height } : {}),
+            },
+          ],
+        };
+      }
     }
     return { state, effects: [] };
   }
@@ -271,6 +358,19 @@ export function viewHostReceive(
     // fall through: a nameless tools/call is not a call we can relay.
   }
 
+  if (req.method === RESOURCES_READ_METHOD && behavior.resourceRelay) {
+    const uri = req.params?.["uri"];
+    if (typeof uri === "string") {
+      return { state, effects: [{ kind: "relay-resource-read", id: req.id, uri }] };
+    }
+    // fall through: a uri-less read is not a read we can relay.
+  }
+
+  const answered = [
+    INITIALIZE_METHOD,
+    ...(behavior.toolRelay ? [TOOLS_CALL_METHOD] : []),
+    ...(behavior.resourceRelay ? [RESOURCES_READ_METHOD] : []),
+  ];
   return {
     state,
     effects: [
@@ -281,7 +381,7 @@ export function viewHostReceive(
           id: req.id,
           error: {
             code: METHOD_NOT_SUPPORTED,
-            message: `method_not_supported: ${req.method} — this host answers ${INITIALIZE_METHOD}${behavior.toolRelay ? ` and ${TOOLS_CALL_METHOD}` : ""} only`,
+            message: `method_not_supported: ${req.method} — this host answers ${answered.join(", ")} only`,
           },
         },
       },

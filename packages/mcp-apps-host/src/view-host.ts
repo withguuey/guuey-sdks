@@ -29,6 +29,7 @@
  */
 import {
   initialViewHostState,
+  resourceReadResponse,
   teardownMessage,
   toolCallResponse,
   viewHostElapsed,
@@ -38,6 +39,7 @@ import {
   type ViewHostPhase,
   type ViewHostState,
 } from "./view-host-protocol.js";
+import type { McpResourceReadResult } from "./reader.js";
 import {
   unavailableToolCallResult,
   type McpToolCallResult,
@@ -107,6 +109,25 @@ export interface AttachViewHostConfig {
    * `<GuueyView>` fills it from the mount automatically.
    */
   resourceUri?: string;
+  /**
+   * The `resources/read` relay — a PRIVILEGE boundary like
+   * {@link onCallTool}, default off: with no hook, the machine refuses
+   * `resources/read` in-band and advertises no `serverResources`. The hook
+   * is structurally the SAME transport `createMcpUiResourceReader`
+   * assembles over ({@link CreateMcpUiResourceReaderDeps.readResource}) —
+   * a host with a locator reader wires the identical function here. Trust
+   * rules ride the reader discipline (`reader.ts`): enforcement lives
+   * INSIDE the transport; a miss, a deny, and a throw all answer the view
+   * with the one `Resource not found` error (deny == miss — no oracle).
+   */
+  onReadResource?: (uri: string) => Promise<McpResourceReadResult | undefined>;
+  /**
+   * The view reported its content size (`ui/notifications/size-changed` —
+   * spec notification). Whether and how to resize the frame is the
+   * embedder's layout decision; `<GuueyView autoResize>` is one wiring of
+   * exactly this callback.
+   */
+  onSizeChanged?: (size: { width?: number; height?: number }) => void;
   /** Observe phase transitions (see {@link ViewHostPhase}). */
   onPhaseChange?: (phase: ViewHostPhase) => void;
   /**
@@ -136,14 +157,37 @@ function hostContextFor(frame: ViewFrameLike, config: AttachViewHostConfig): Mcp
 
 function behaviorFor(frame: ViewFrameLike, config: AttachViewHostConfig): ViewHostBehavior {
   const relayWired = config.onCallTool !== undefined && config.resourceUri !== undefined;
+  const readWired = config.onReadResource !== undefined;
   return {
     hostInfo: config.hostInfo ?? DEFAULT_HOST_INFO,
     hostCapabilities: {
+      // A wired relay IS the implementation — advertise it; an explicit
+      // hostCapabilities entry still wins (the serverTools precedent).
       ...(relayWired ? { serverTools: {} } : {}),
+      ...(readWired ? { serverResources: {} } : {}),
       ...config.hostCapabilities,
     },
     hostContext: hostContextFor(frame, config),
     toolRelay: relayWired,
+    resourceRelay: readWired,
+  };
+}
+
+/**
+ * Re-narrow a read hook's answer at the trust boundary — hooks are embedder
+ * code (possibly plain JS), and the wire entry the view receives must be a
+ * real `contents[]` entry: `uri` required, a string payload arm required
+ * (a payload-less entry is a miss — the `createMcpUiResourceReader`
+ * discipline, applied to the WIRE entry rather than the mountable payload).
+ */
+function narrowReadEntry(entry: McpResourceReadResult | undefined): McpResourceReadResult | undefined {
+  if (entry === undefined || typeof entry.uri !== "string") return undefined;
+  if (typeof entry.text !== "string" && typeof entry.blob !== "string") return undefined;
+  return {
+    uri: entry.uri,
+    ...(typeof entry.mimeType === "string" ? { mimeType: entry.mimeType } : {}),
+    ...(typeof entry.text === "string" ? { text: entry.text } : {}),
+    ...(typeof entry.blob === "string" ? { blob: entry.blob } : {}),
   };
 }
 
@@ -183,13 +227,31 @@ export function attachViewHost(frame: ViewFrameLike, config: AttachViewHostConfi
     );
   };
 
+  const relayRead = (id: number | string, uri: string): void => {
+    const { onReadResource } = config;
+    if (onReadResource === undefined) return; // machine-guarded invariant, as with `relay`
+    onReadResource(uri).then(
+      (entry) => post(resourceReadResponse(id, narrowReadEntry(entry))),
+      // A throwing hook still owes the view an answer — the same not-found
+      // the reader discipline gives a deny (deny == miss), never a hang.
+      () => post(resourceReadResponse(id, undefined)),
+    );
+  };
+
   const onMessage = (event: { data: unknown; source: unknown }): void => {
     if (frame.contentWindow === null || event.source !== frame.contentWindow) return;
     const { state: next, effects } = viewHostReceive(state, behaviorFor(frame, config), event.data);
     setState(next);
     for (const effect of effects) {
       if (effect.kind === "respond") post(effect.message);
-      else relay(effect.id, effect.name, effect.arguments);
+      else if (effect.kind === "relay-tool-call") relay(effect.id, effect.name, effect.arguments);
+      else if (effect.kind === "relay-resource-read") relayRead(effect.id, effect.uri);
+      else {
+        config.onSizeChanged?.({
+          ...(effect.width !== undefined ? { width: effect.width } : {}),
+          ...(effect.height !== undefined ? { height: effect.height } : {}),
+        });
+      }
     }
   };
 

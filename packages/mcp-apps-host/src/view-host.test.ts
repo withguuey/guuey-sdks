@@ -279,6 +279,108 @@ describe("attachViewHost", () => {
   });
 });
 
+describe("attachViewHost — resources/read relay", () => {
+  const READ = {
+    jsonrpc: "2.0",
+    id: "r1",
+    method: "resources/read",
+    params: { uri: "ui://tool/card.html" },
+  };
+
+  it("relays through the read hook and posts the spec's ReadResourceResult", async () => {
+    const { frame, posted, contentWindow } = fakeFrame();
+    const { events, emit } = fakeEvents();
+    const reads: string[] = [];
+    attachViewHost(frame, {
+      events,
+      onReadResource: (uri) => {
+        reads.push(uri);
+        return Promise.resolve({ uri, mimeType: "text/html", text: "<p>fresh</p>" });
+      },
+    });
+    emit(READ, contentWindow);
+    await vi.waitFor(() => expect(posted).toHaveLength(1));
+    expect(reads).toEqual(["ui://tool/card.html"]);
+    expect(posted[0]?.message).toEqual({
+      jsonrpc: "2.0",
+      id: "r1",
+      result: {
+        contents: [{ uri: "ui://tool/card.html", mimeType: "text/html", text: "<p>fresh</p>" }],
+      },
+    });
+  });
+
+  it("answers a miss AND a throwing hook with the one not-found error — never a hang", async () => {
+    for (const hook of [
+      () => Promise.resolve(undefined),
+      () => Promise.reject(new Error("embedder bug")),
+    ]) {
+      const { frame, posted, contentWindow } = fakeFrame();
+      const { events, emit } = fakeEvents();
+      attachViewHost(frame, { events, onReadResource: hook });
+      emit(READ, contentWindow);
+      await vi.waitFor(() => expect(posted).toHaveLength(1));
+      expect(posted[0]?.message.error?.code).toBe(-32002);
+    }
+  });
+
+  it("re-narrows at runtime: an entry with neither text nor blob is a miss", async () => {
+    // Host hooks may be plain JS — the annotation is not trusted (the
+    // createMcpUiResourceReader discipline, reader.test.ts).
+    const { frame, posted, contentWindow } = fakeFrame();
+    const { events, emit } = fakeEvents();
+    attachViewHost(frame, {
+      events,
+      onReadResource: () => Promise.resolve({ uri: "ui://tool/card.html" }),
+    });
+    emit(READ, contentWindow);
+    await vi.waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]?.message.error?.code).toBe(-32002);
+  });
+
+  it("advertises serverResources automatically when (and only when) the read hook is wired", () => {
+    const wired = fakeFrame();
+    const wiredEvents = fakeEvents();
+    attachViewHost(wired.frame, {
+      events: wiredEvents.events,
+      onReadResource: () => Promise.resolve(undefined),
+    });
+    wiredEvents.emit(INITIALIZE, wired.contentWindow);
+    expect(wired.posted[0]?.message.result?.["hostCapabilities"]).toEqual({ serverResources: {} });
+
+    const unwired = fakeFrame();
+    const unwiredEvents = fakeEvents();
+    attachViewHost(unwired.frame, { events: unwiredEvents.events });
+    unwiredEvents.emit(INITIALIZE, unwired.contentWindow);
+    expect(unwired.posted[0]?.message.result?.["hostCapabilities"]).toEqual({});
+  });
+});
+
+describe("attachViewHost — size-changed", () => {
+  it("forwards the view's size report to onSizeChanged", () => {
+    const { frame, contentWindow } = fakeFrame();
+    const { events, emit } = fakeEvents();
+    const sizes: { width?: number; height?: number }[] = [];
+    attachViewHost(frame, { events, onSizeChanged: (size) => sizes.push(size) });
+    emit(
+      { jsonrpc: "2.0", method: "ui/notifications/size-changed", params: { height: 420 } },
+      contentWindow,
+    );
+    expect(sizes).toEqual([{ height: 420 }]);
+  });
+
+  it("a size report with no observer is consumed silently — additive by construction", () => {
+    const { frame, posted, contentWindow } = fakeFrame();
+    const { events, emit } = fakeEvents();
+    attachViewHost(frame, { events });
+    emit(
+      { jsonrpc: "2.0", method: "ui/notifications/size-changed", params: { height: 420 } },
+      contentWindow,
+    );
+    expect(posted).toEqual([]); // no answer owed to a notification
+  });
+});
+
 describe("viewDocumentHtml", () => {
   it("prefers text verbatim", () => {
     expect(viewDocumentHtml({ uri: "ui://x", text: "<p>hi</p>" })).toBe("<p>hi</p>");
