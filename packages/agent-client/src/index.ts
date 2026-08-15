@@ -57,7 +57,10 @@ export { ingestMessageFrame } from "./blocks.js";
 export { sortHistoryCards, toolNameFor } from "./history.js";
 // Re-export the AgJSON types the block-preserving transcript surfaces, so
 // consumers can name `reduceResult` / block types without a direct
-// `@silverprotocol/core` import.
+// `@silverprotocol/core` import — and the `Reducer` CLASS beside them, so a
+// host folding `invokeTurn`'s agEvents outside the hook builds its transcript
+// on the same terms (the types alone forced the direct dep back, guuey#186 G4).
+export { Reducer } from "@silverprotocol/core";
 export type { AgEvent, AgReduceResult, AgMessage, AgBlock } from "@silverprotocol/core";
 export type {
   AgentMessage,
