@@ -92,12 +92,26 @@ interface AssistantSource {
 }
 
 function foldAssistantSources(result: AgReduceResult, inFlight: boolean, aborted: boolean): AssistantSource[] {
-  const assistants = result.messages.filter((m) => m.role === "assistant");
-  return assistants.map((m, i) => ({
-    blocks: m.content,
-    live: inFlight && i === assistants.length - 1,
-    stopped: aborted && i === assistants.length - 1,
-  }));
+  // Real pod folds carry `tool-result` blocks in separate `role: "tool"`
+  // messages between assistant turns (the production ggui-render capture is
+  // the receipt — guuey#135 3b widget convergence found this): an
+  // assistant-only filter orphans every call and drops every mount. A tool
+  // message's blocks belong to the PRECEDING assistant slot's walk, exactly
+  // the whole-fold message order the retired first-party renderers used.
+  const sources: AssistantSource[] = [];
+  for (const m of result.messages) {
+    if (m.role === "assistant") {
+      sources.push({ blocks: [...m.content], live: false, stopped: false });
+    } else if (m.role === "tool" && sources.length > 0) {
+      sources[sources.length - 1]!.blocks.push(...m.content);
+    }
+  }
+  const last = sources[sources.length - 1];
+  if (last) {
+    last.live = inFlight;
+    last.stopped = aborted;
+  }
+  return sources;
 }
 
 function flatAssistantSources(inputs: TranscriptInputs, inFlight: boolean): AssistantSource[] {
