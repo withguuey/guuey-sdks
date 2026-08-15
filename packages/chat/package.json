@@ -1,0 +1,63 @@
+{
+  "name": "@guuey/chat",
+  "version": "0.4.0",
+  "description": "The default end-user transcript UI for guuey agents — wave 3a: the headless view-model (planTranscript), calm/debug presets, the GuueyChatTheme token schema, and the ChatStrings i18n seam. Zero DOM, zero React; the component kit arrives at ./react in wave 3b.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src",
+    "!src/**/*.test.ts",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "react-native": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "rm -rf dist && pnpm build",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@guuey/agent-client": "workspace:*",
+    "@guuey/mcp-apps-host": "workspace:*",
+    "@silverprotocol/core": "0.4.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "guuey",
+    "chat",
+    "transcript",
+    "agent",
+    "generative-ui",
+    "view-model",
+    "agjson"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/withguuey/guuey-sdks.git",
+    "directory": "packages/chat"
+  },
+  "bugs": {
+    "url": "https://github.com/withguuey/guuey-sdks/issues"
+  },
+  "homepage": "https://guuey.com"
+}

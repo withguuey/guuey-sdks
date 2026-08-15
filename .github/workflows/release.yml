@@ -15,7 +15,10 @@ name: npm Release
 # deps are @silverprotocol/core and @guuey/mcp-apps-host/narrowing),
 # @guuey/widget-auth (embeddable-widget
 # token minting for a customer's backend — zero deps, a leaf), @guuey/worker,
-# @guuey/agent-client (the embed chat SDK), @guuey/host,
+# @guuey/agent-client (the embed chat SDK), @guuey/chat (the default
+# transcript UI — wave 3a headless view-model + calm/debug presets + the
+# GuueyChatTheme platform-data schema; deps agent-client + mcp-apps-host +
+# @silverprotocol/core), @guuey/host,
 # @guuey/create-agentic-app, @guuey/cli.
 # First-ever publish of any package is a manual, operator-gated bootstrap
 # (npm requires the package to exist before a trusted publisher attaches).
@@ -136,8 +139,9 @@ jobs:
           set -euo pipefail
           # Fixed leaf-first order: config/state/fs/widget-auth/worker/
           # host needs config+worker, threads needs mcp-apps-host,
+          # chat needs agent-client+mcp-apps-host,
           # create-agentic-app needs config, cli needs all.
-          ORDER=(config state fs mcp-apps-host threads widget-auth worker agent-client host create-agentic-app cli)
+          ORDER=(config state fs mcp-apps-host threads widget-auth worker agent-client chat host create-agentic-app cli)
 
           TODO=()
           for pkg in "${ORDER[@]}"; do
