@@ -6,6 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { calmPolicy, debugPolicy } from "../policy.js";
+import { buildHitlAnswer, hitlPromptsFromFold } from "../hitl.js";
 import { planTranscript } from "../plan.js";
 import type { DisplayItem, ToolGroupItem, ToolItem, ViewMountItem } from "../types.js";
 import {
@@ -23,6 +24,8 @@ import {
   reasoningHeavy,
   saturatedThenServed,
   stalledThenAdopted,
+  hitlGrantModes,
+  noticeRows,
   toolsAroundAView,
   unknownBlockStorm,
   userSendFailure,
@@ -266,6 +269,92 @@ describe("corpus", () => {
     expect(plan.items.filter((i) => i.kind === "user")).toHaveLength(3);
     expect(planTranscript(inputs, calm)).toEqual(plan);
     expect(plan).toMatchSnapshot();
+  });
+
+  it("20. hitl-grant-modes — the persisted declaration renders; answers echo; cancelled re-asks (draft.2)", () => {
+    const base = hitlGrantModes();
+    const ask = (() => {
+      const t = base.result?.turns.find((x) => x.outcome?.type === "paused");
+      if (t?.outcome?.type !== "paused") throw new Error("fixture must pause");
+      return t.outcome.asks[0]!;
+    })();
+
+    // Pending: one action per declared mode + the universal decline —
+    // rendered from the PERSISTED record, display text = the asker's label.
+    const pending = { ...base, prompts: hitlPromptsFromFold(base.result) };
+    const pendingPlan = planTranscript(pending, calm);
+    const card = pendingPlan.items.find((i) => i.kind === "prompt");
+    if (card?.kind !== "prompt" || card.promptKind !== "hitl") throw new Error("hitl card expected");
+    expect(card.state).toBe("pending");
+    expect(card.message).toBe("Remember your seating preference?");
+    expect(card.grantModes.map((m) => m.label ?? m.id)).toEqual(["Always", "Just this chat"]);
+    expect(pendingPlan).toMatchSnapshot();
+
+    // Resolved with a mode: the record collapses to the CHOSEN LABEL (ids
+    // are echo-only identity). The answer itself validates by construction
+    // and carries the requestState byte-echo.
+    const answer = buildHitlAnswer(ask, { grantModeId: "m.durable" });
+    expect(answer).toEqual({
+      askId: "ask-remember-1",
+      status: "resolved",
+      grantModeId: "m.durable",
+      requestState: "rs-bytes-1",
+    });
+    const resolved = {
+      ...base,
+      prompts: hitlPromptsFromFold(base.result, {
+        "ask-remember-1": { status: "resolved", grantModeId: "m.durable" },
+      }),
+    };
+    const record = planTranscript(resolved, calm).items.find((i) => i.kind === "prompt");
+    if (record?.kind !== "prompt" || record.promptKind !== "hitl") throw new Error("hitl record expected");
+    expect(record.state).toBe("resolved");
+    expect(record.chosenModeLabel).toBe("Always");
+
+    // Dismissal = cancelled = still-pending/re-askable (the #16 ruling):
+    // the card collapses to a dismissed record but STAYS answerable when
+    // expanded — unlike declined, the durable deny.
+    expect(buildHitlAnswer(ask, "dismiss").status).toBe("cancelled");
+    expect(buildHitlAnswer(ask, "decline").status).toBe("declined");
+    const cancelled = {
+      ...base,
+      prompts: hitlPromptsFromFold(base.result, { "ask-remember-1": { status: "cancelled" } }),
+    };
+    const dismissed = planTranscript(cancelled, calm).items.find((i) => i.kind === "prompt");
+    if (dismissed?.kind !== "prompt" || dismissed.promptKind !== "hitl") throw new Error("hitl record expected");
+    expect(dismissed.state).toBe("cancelled");
+    expect(dismissed.expanded).toBe(false);
+    const reopened = planTranscript(cancelled, calm, { "p.ask-remember-1": { expanded: true } })
+      .items.find((i) => i.kind === "prompt");
+    expect(reopened?.kind === "prompt" && reopened.expanded).toBe(true);
+
+    // An undeclared echo can never dispatch: construction throws.
+    expect(() => buildHitlAnswer(ask, { grantModeId: "not-declared" })).toThrow();
+    // With a declaration, a plain accept can't stand in for a mode pick.
+    expect(() => buildHitlAnswer(ask, "accept")).toThrow();
+  });
+
+  it("21. notice-rows — both arrival paths render labeled, never agent-voiced (draft.2)", () => {
+    const inputs = noticeRows();
+    const calmPlan = planTranscript(inputs, calm);
+    const notices = calmPlan.items.filter((i) => i.kind === "notice");
+    expect(notices).toHaveLength(2);
+    // The flat adapter notice precedes the conversation; the fold-borne
+    // framework notice anchors before its assistant turn's content.
+    expect(notices[0]?.kind === "notice" && notices[0].text).toBe("Session resumed on a new device");
+    expect(notices[0]?.kind === "notice" && notices[0].source).toBe("adapter");
+    expect(notices[1]?.kind === "notice" && notices[1].text).toBe("Model fell back to concise mode");
+    expect(notices[1]?.kind === "notice" && notices[1].source).toBe("framework");
+    // Calm hides provenance; debug shows the facet verbatim.
+    expect(notices.every((n) => n.kind === "notice" && n.sourceLabel === null)).toBe(true);
+    const debugNotices = planTranscript(inputs, debug).items.filter((i) => i.kind === "notice");
+    expect(debugNotices[0]?.kind === "notice" && debugNotices[0].sourceLabel).toBe("adapter");
+    // A notice is never an assistant bubble: the assistant text renders
+    // separately and exactly once.
+    const texts = calmPlan.items.filter((i) => i.kind === "text");
+    expect(texts.filter((t) => t.kind === "text" && t.text === "Done.")).toHaveLength(1);
+    expect(texts.some((t) => t.kind === "text" && t.text.includes("concise mode"))).toBe(false);
+    expect(calmPlan).toMatchSnapshot();
   });
 
   it("determinism — same inputs ⇒ a deeply equal plan (spec §7, literally)", () => {

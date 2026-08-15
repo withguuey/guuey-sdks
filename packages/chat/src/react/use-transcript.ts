@@ -13,18 +13,20 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { UseAgentInvokeReturn } from "@guuey/agent-client";
+import type { AgHitlAnswer, AgPausedAsk } from "@silverprotocol/core";
 import {
   resolveViewMount,
   type ResolvedViewMount,
   type UiResourceReader,
   type ViewHostPhase,
 } from "@guuey/mcp-apps-host";
+import { buildHitlAnswer, hitlPromptsFromFold, type HitlAnswerRecord, type HitlPromptAction } from "../hitl.js";
 import { planTranscript } from "../plan.js";
 import type { TranscriptPolicy } from "../policy.js";
 import type {
   ChatDebugEvent,
   ItemKey,
-  PromptItemInput,
+  ProfilePromptInput,
   TranscriptInputs,
   TranscriptMessage,
   TranscriptOverrides,
@@ -189,6 +191,16 @@ export interface UseTranscriptInputsResult {
    * without a recorded action reads as `dismissed`.
    */
   resolvePrompt: (id: string, state: "answered" | "declined" | "dismissed") => void;
+  /**
+   * Answer an AgJSON HITL ask (spec draft.2): constructs the wire answer,
+   * VALIDATES it against the ask's persisted record (`validateHitlAnswer`
+   * — required-iff-declared, echo-must-be-declared, requestState byte-echo)
+   * BEFORE anything dispatches, records it in the ledger, and returns it
+   * for the HOST to deliver — the kit renders and validates; the answer
+   * transport is the host's (no client→pod hitl-answer channel exists on
+   * the guuey wire today; see the #16 producer flag).
+   */
+  answerHitlPrompt: (ask: AgPausedAsk, action: HitlPromptAction) => AgHitlAnswer;
 }
 
 /** How often the escalation clock ticks while a status needs one. */
@@ -209,7 +221,7 @@ export function useTranscriptInputs(invoke: UseAgentInvokeReturn): UseTranscript
 
   // R10 ledger: the hook exposes only the LATEST pending ask; the
   // transcript keeps the record of every ask and its resolution.
-  const [prompts, setPrompts] = useState<PromptItemInput[]>([]);
+  const [prompts, setPrompts] = useState<ProfilePromptInput[]>([]);
   const promptSeq = useRef(0);
   useEffect(() => {
     const request = invoke.profileConsentRequest;
@@ -276,6 +288,23 @@ export function useTranscriptInputs(invoke: UseAgentInvokeReturn): UseTranscript
     [invoke, prompts],
   );
 
+  // HITL ledger (spec draft.2): asks come from the FOLD's persisted
+  // records; this ledger holds only the host-side answers, keyed by askId.
+  // A `cancelled` record keeps the card re-askable (guuey's #16 ruling) —
+  // a later action on the same ask simply overwrites it.
+  const [hitlAnswers, setHitlAnswers] = useState<Readonly<Record<string, HitlAnswerRecord>>>({});
+  const answerHitlPrompt = useCallback((ask: AgPausedAsk, action: HitlPromptAction): AgHitlAnswer => {
+    const answer = buildHitlAnswer(ask, action);
+    setHitlAnswers((prev) => ({
+      ...prev,
+      [ask.askId]: {
+        status: answer.status,
+        ...(answer.grantModeId !== undefined ? { grantModeId: answer.grantModeId } : {}),
+      },
+    }));
+    return answer;
+  }, []);
+
   const inputs = useMemo<TranscriptInputs>(() => {
     // Source-ownership split (plan.ts's rules): the trailing assistant
     // entry is the IN-FLIGHT fold (or the abort-kept partial) — it moves to
@@ -296,7 +325,7 @@ export function useTranscriptInputs(invoke: UseAgentInvokeReturn): UseTranscript
       statusElapsedMs: elapsedMs,
       activeTool: invoke.activeTool,
       error: invoke.error !== null ? { message: invoke.error, code: invoke.errorCode } : null,
-      prompts,
+      prompts: [...prompts, ...hitlPromptsFromFold(invoke.reduceResult, hitlAnswers)],
       messages,
       ...(invoke.historyCards.length > 0 ? { historyCards: invoke.historyCards } : {}),
       sendStates: invoke.sendStates,
@@ -316,7 +345,8 @@ export function useTranscriptInputs(invoke: UseAgentInvokeReturn): UseTranscript
     invoke.adopted,
     elapsedMs,
     prompts,
+    hitlAnswers,
   ]);
 
-  return { inputs, resolvePrompt };
+  return { inputs, resolvePrompt, answerHitlPrompt };
 }

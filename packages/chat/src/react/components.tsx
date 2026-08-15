@@ -38,6 +38,7 @@ import type {
   HistoryBoundaryItem,
   ItemKey,
   MediaItem,
+  NoticeItem,
   PromptItem,
   ReasoningItem,
   StatusLineItem,
@@ -57,8 +58,15 @@ export interface TranscriptItemContext {
   onToggle: (key: ItemKey) => void;
   /** R0 failed-send retry. */
   onRetry?: (item: UserMessageItem) => void;
-  /** R10 prompt actions — the host owns what accept/decline DO. */
-  onPromptAction?: (item: PromptItem, action: "accept" | "decline" | "dismiss") => void;
+  /**
+   * R10 prompt actions — the host owns what accept/decline DO. A hitl card
+   * with declared grant modes reports the pick as `{ grantModeId }` (spec
+   * draft.2); plain accepts stay the `"accept"` string.
+   */
+  onPromptAction?: (
+    item: PromptItem,
+    action: "accept" | "decline" | "dismiss" | { grantModeId: string },
+  ) => void;
   /** R11 action slots (sign-in / upgrade / retry affordances). */
   onErrorAction?: (item: ErrorItem) => void;
   /** R6: locator mounts resolved by `useTranscript` ("expired" = failed). */
@@ -465,6 +473,72 @@ export function DefaultPrompt({ item, ctx }: ItemProps<PromptItem>): ReactNode {
     wasPending.current = item.state === "pending";
   }, [item.state]);
 
+  if (item.promptKind === "hitl") {
+    const s = ctx.strings;
+    // Settled records: resolved shows the CHOSEN MODE'S LABEL (ids are
+    // echo-only identity — asker-scoped semantics, spec §7); declined is
+    // the durable deny. `cancelled` is guuey's re-askable dismissal: it
+    // collapses to a record but stays answerable when expanded.
+    if (item.state === "resolved" || item.state === "declined") {
+      return (
+        <p className={`guuey-chat-prompt-record guuey-chat-prompt-${item.state}`}>
+          {item.state === "resolved"
+            ? item.chosenModeLabel !== null
+              ? s.promptAnsweredWith(item.chosenModeLabel)
+              : s.promptAccept
+            : s.promptDeclinedRecord}
+        </p>
+      );
+    }
+    const answerable = item.state === "pending" || (item.state === "cancelled" && item.expanded);
+    return (
+      <div className="guuey-chat-prompt" role="group">
+        {item.state === "cancelled" && (
+          <button
+            type="button"
+            className="guuey-chat-prompt-record guuey-chat-prompt-cancelled"
+            aria-expanded={item.expanded}
+            onClick={() => ctx.onToggle(item.key)}
+          >
+            {s.promptDismissed}
+          </button>
+        )}
+        {answerable && (
+          <>
+            {item.message !== null && <p className="guuey-chat-prompt-ask">{item.message}</p>}
+            <div className="guuey-chat-prompt-actions">
+              {item.grantModes.length === 0 ? (
+                <button
+                  ref={firstAction}
+                  type="button"
+                  className="guuey-chat-prompt-accept"
+                  onClick={() => ctx.onPromptAction?.(item, "accept")}
+                >
+                  {s.promptAccept}
+                </button>
+              ) : (
+                item.grantModes.map((mode, i) => (
+                  <button
+                    key={mode.id}
+                    ref={i === 0 ? firstAction : undefined}
+                    type="button"
+                    className="guuey-chat-prompt-accept"
+                    title={mode.description}
+                    onClick={() => ctx.onPromptAction?.(item, { grantModeId: mode.id })}
+                  >
+                    {mode.label ?? mode.id}
+                  </button>
+                ))
+              )}
+              <button type="button" onClick={() => ctx.onPromptAction?.(item, "decline")}>
+                {s.promptDecline}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
   if (item.state !== "pending") {
     return (
       <p className={`guuey-chat-prompt-record guuey-chat-prompt-${item.state}`}>
@@ -495,6 +569,25 @@ export function DefaultPrompt({ item, ctx }: ItemProps<PromptItem>): ReactNode {
       {item.raw !== null ? (
         <pre className="guuey-chat-prompt-raw">{JSON.stringify(item.raw, null, 2)}</pre>
       ) : null}
+    </div>
+  );
+}
+
+// ─── R16 ──────────────────────────────────────────────────────────────────
+
+/**
+ * A `role:"notice"` session annotation (spec draft.2) — a labeled,
+ * non-conversational row that must never read as agent-authored. Calm
+ * shows the quiet label; debug appends the provenance facet verbatim.
+ */
+export function DefaultNotice({ item, ctx }: ItemProps<NoticeItem>): ReactNode {
+  return (
+    <div className="guuey-chat-notice" role="note">
+      <span className="guuey-chat-notice-label">
+        {ctx.strings.noticeLabel}
+        {item.sourceLabel !== null ? ` · ${item.sourceLabel}` : ""}
+      </span>
+      {item.text !== "" && <span className="guuey-chat-notice-text">{item.text}</span>}
     </div>
   );
 }
@@ -584,6 +677,7 @@ export interface TranscriptComponents {
   code: ComponentType<ItemProps<CodeItem>>;
   citations: ComponentType<ItemProps<CitationsItem>>;
   prompt: ComponentType<ItemProps<PromptItem>>;
+  notice: ComponentType<ItemProps<NoticeItem>>;
   error: ComponentType<ItemProps<ErrorItem>>;
   history: ComponentType<ItemProps<HistoryBoundaryItem>>;
   compaction: ComponentType<ItemProps<CompactionItem>>;
@@ -603,6 +697,7 @@ export const defaultTranscriptComponents: TranscriptComponents = {
   code: DefaultCode,
   citations: DefaultCitations,
   prompt: DefaultPrompt,
+  notice: DefaultNotice,
   error: DefaultError,
   history: DefaultHistoryBoundary,
   compaction: DefaultCompaction,
@@ -659,6 +754,10 @@ export function renderItem(
     }
     case "prompt": {
       const C = components.prompt;
+      return <C key={item.key} item={item} ctx={ctx} />;
+    }
+    case "notice": {
+      const C = components.notice;
       return <C key={item.key} item={item} ctx={ctx} />;
     }
     case "error": {

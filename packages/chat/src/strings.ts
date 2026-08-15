@@ -74,6 +74,17 @@ export interface ChatStrings {
   copy: string;
   copied: string;
 
+  /** R10 hitl actions (spec draft.2) — mode buttons use the ASKER's labels. */
+  promptAccept: string;
+  promptDecline: string;
+  promptDismissed: string;
+  /** The answered record line, e.g. `Allowed — Always`. */
+  promptAnsweredWith: (modeLabel: string) => string;
+  promptDeclinedRecord: string;
+
+  /** R16 — the notice row's label (provenance shows only under debug). */
+  noticeLabel: string;
+
   /** The 3c composer (`<GuueyChat>`). */
   composerPlaceholder: string;
   composerUnavailable: string;
@@ -135,6 +146,14 @@ export const defaultChatStrings: ChatStrings = {
   showEarlier: (count) => `Show ${count} earlier`,
   copy: "Copy",
   copied: "Copied",
+
+  promptAccept: "Allow",
+  promptDecline: "Don't allow",
+  promptDismissed: "Dismissed",
+  promptAnsweredWith: (modeLabel) => `Allowed — ${modeLabel}`,
+  promptDeclinedRecord: "Not allowed",
+
+  noticeLabel: "Note",
 
   composerPlaceholder: "Message the agent…",
   composerUnavailable: "Chat is unavailable.",

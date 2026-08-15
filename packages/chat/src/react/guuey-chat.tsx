@@ -34,6 +34,7 @@
  */
 import { useCallback, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { createWebAdapters, type AgentInvokeAdapters } from "@guuey/agent-client";
+import type { AgHitlAnswer, AgPausedAsk } from "@silverprotocol/core";
 import { useAgentInvoke } from "@guuey/agent-client/react";
 import type { UiResourceReader } from "@guuey/mcp-apps-host";
 import { calmPolicy, debugPolicy, type TranscriptPolicy } from "../policy.js";
@@ -79,7 +80,16 @@ export interface GuueyChatProps {
    * The transcript record moves regardless; without a handler the prompt
    * card is record-only.
    */
-  onPromptAction?: (item: PromptItem, action: "accept" | "decline" | "dismiss") => void;
+  onPromptAction?: (
+    item: PromptItem,
+    action: "accept" | "decline" | "dismiss" | { grantModeId: string },
+  ) => void;
+  /**
+   * Receives the VALIDATED wire answer for an AgJSON HITL ask (spec
+   * draft.2) — the host owns delivering it (the kit has no answer
+   * transport). Fired after the transcript record moves.
+   */
+  onHitlAnswer?: (answer: AgHitlAnswer, ask: AgPausedAsk) => void;
   /** R11 action slot (sign-in / retry affordances). */
   onErrorAction?: (item: ErrorItem) => void;
   className?: string;
@@ -108,6 +118,7 @@ export function GuueyChat(props: GuueyChatProps): ReactNode {
     onDebugEvent,
     viewProps,
     onPromptAction,
+    onHitlAnswer,
     onErrorAction,
     className,
     style,
@@ -126,7 +137,7 @@ export function GuueyChat(props: GuueyChatProps): ReactNode {
     return factory({ ...policyOverrides, strings });
   }, [preset, policyOverrides, stringOverrides]);
 
-  const { inputs, resolvePrompt } = useTranscriptInputs(invoke);
+  const { inputs, resolvePrompt, answerHitlPrompt } = useTranscriptInputs(invoke);
   const { plan, toggle, resolvedMounts, onViewPhase } = useTranscript({
     inputs,
     policy,
@@ -159,11 +170,22 @@ export function GuueyChat(props: GuueyChatProps): ReactNode {
   );
 
   const handlePromptAction = useCallback(
-    (item: PromptItem, action: "accept" | "decline" | "dismiss") => {
-      resolvePrompt(item.promptId, PROMPT_STATE[action]);
+    (item: PromptItem, action: "accept" | "decline" | "dismiss" | { grantModeId: string }) => {
+      if (item.promptKind === "hitl") {
+        const answer = answerHitlPrompt(
+          item.ask,
+          typeof action === "object" ? action : action === "accept" ? "accept" : action,
+        );
+        onHitlAnswer?.(answer, item.ask);
+        onPromptAction?.(item, action);
+        return;
+      }
+      // Profile prompts only ever receive the string actions (the default
+      // card renders no mode buttons for them).
+      if (typeof action !== "object") resolvePrompt(item.promptId, PROMPT_STATE[action]);
       onPromptAction?.(item, action);
     },
-    [resolvePrompt, onPromptAction],
+    [resolvePrompt, answerHitlPrompt, onHitlAnswer, onPromptAction],
   );
 
   const strings = policy.strings;

@@ -7,7 +7,7 @@
  */
 import { Reducer, type AgEvent } from "@silverprotocol/core";
 import type { InvokeTurnEvent } from "@guuey/agent-client";
-import type { PromptItemInput, TranscriptInputs, TranscriptMessage } from "../types.js";
+import type { ProfilePromptInput, TranscriptInputs, TranscriptMessage } from "../types.js";
 
 export interface DriveOptions {
   userText?: string;
@@ -22,7 +22,7 @@ export interface DriveOptions {
   historyCards?: TranscriptInputs["historyCards"];
   historyState?: TranscriptInputs["historyState"];
   /** Resolve accumulated prompts to this state (fixture 4's answered leg). */
-  promptState?: PromptItemInput["state"];
+  promptState?: ProfilePromptInput["state"];
 }
 
 export function driveTurn(events: InvokeTurnEvent[], opts: DriveOptions = {}): TranscriptInputs {
@@ -32,7 +32,7 @@ export function driveTurn(events: InvokeTurnEvent[], opts: DriveOptions = {}): T
   let assistantText = "";
   let activeTool: string | null = null;
   let error: TranscriptInputs["error"] = null;
-  const prompts: PromptItemInput[] = [];
+  const prompts: ProfilePromptInput[] = [];
   let done = false;
 
   for (const ev of events) {

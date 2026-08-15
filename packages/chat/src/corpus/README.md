@@ -35,7 +35,13 @@ witness.
 - `fixtures.ts` — the named fixtures, spec §8 order: the original 17 plus
   family 19 (`persisted-plus-live` — the turn-scoped fold composition:
   a persisted prefix the session's Reducer never saw + a fold covering
-  the trailing turns, with the overlapping-card dedupe case).
+  the trailing turns, with the overlapping-card dedupe case), family 20
+  (`hitl-grant-modes` — spec draft.2: the persisted `AgPausedAsk`
+  declaration renders asker-labeled mode actions; answers echo and are
+  validated by core's `validateHitlAnswer` before anything dispatches;
+  dismissal = `cancelled` = re-askable per the silverprotocol#16 ruling),
+  and family 21 (`notice-rows` — draft.2's `role:"notice"`: both arrival
+  paths, labeled and never agent-voiced, provenance under debug only).
 - `capture.ts` / `captures/` — family 18: production-capture replay
   through the real `invokeTurn` (provenance in the module header).
 - `corpus.test.ts` — the runner: per-fixture assertions + snapshots, plain

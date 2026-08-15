@@ -22,7 +22,8 @@ import {
 import { defaultChatStrings } from "../strings.js";
 import type {
   ErrorItem,
-  PromptItem,
+  HitlPromptItem,
+  ProfilePromptItem,
   StatusLineItem,
   TextItem,
   ToolGroupItem,
@@ -125,7 +126,7 @@ describe("streaming text announces politely; stopped marks the partial", () => {
 });
 
 describe("R10 prompt focus management", () => {
-  const prompt = (state: PromptItem["state"]): PromptItem => ({
+  const prompt = (state: ProfilePromptItem["state"]): ProfilePromptItem => ({
     kind: "prompt",
     promptId: "consent.0",
     key: "p.consent.0",
@@ -306,3 +307,54 @@ function _assertRenderable(node: ReactNode): ReactNode {
   return node;
 }
 void _assertRenderable;
+
+describe("R10 hitl card (spec draft.2)", () => {
+  const ask = {
+    askId: "ask-1",
+    kind: "approval" as const,
+    message: "Remember this?",
+    grantModes: [
+      { id: "m.durable", label: "Always", description: "Keep it forever" },
+      { id: "m.scoped", label: "Just this chat" },
+    ],
+  };
+  const hitl = (state: HitlPromptItem["state"], expanded = true): HitlPromptItem => ({
+    kind: "prompt",
+    promptId: "ask-1",
+    key: "p.ask-1",
+    expanded,
+    promptKind: "hitl",
+    ask,
+    message: ask.message,
+    askKind: "approval",
+    grantModes: ask.grantModes,
+    state,
+    chosenModeId: state === "resolved" ? "m.durable" : null,
+    chosenModeLabel: state === "resolved" ? "Always" : null,
+    raw: null,
+  });
+
+  it("pending renders one action per declared mode + decline, firing the mode ECHO", () => {
+    const onPromptAction = vi.fn();
+    render(<DefaultPrompt item={hitl("pending")} ctx={ctx({ onPromptAction })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Always" }));
+    expect(onPromptAction).toHaveBeenCalledWith(hitl("pending"), { grantModeId: "m.durable" });
+    fireEvent.click(screen.getByRole("button", { name: "Don't allow" }));
+    expect(onPromptAction).toHaveBeenLastCalledWith(hitl("pending"), "decline");
+  });
+
+  it("resolved collapses to the CHOSEN MODE'S LABEL — ids never display as meaning", () => {
+    render(<DefaultPrompt item={hitl("resolved")} ctx={ctx()} />);
+    expect(screen.getByText("Allowed — Always")).toBeTruthy();
+    expect(screen.queryByText(/m\.durable/)).toBeNull();
+  });
+
+  it("cancelled is a dismissed record that reopens to the actions (re-askable ruling)", () => {
+    render(<DefaultPrompt item={hitl("cancelled", false)} ctx={ctx()} />);
+    expect(screen.getByText("Dismissed")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Always" })).toBeNull();
+    render(<DefaultPrompt item={hitl("cancelled", true)} ctx={ctx()} />);
+    expect(screen.getByRole("button", { name: "Always" })).toBeTruthy();
+  });
+});
+

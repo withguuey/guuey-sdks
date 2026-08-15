@@ -69,6 +69,8 @@ export interface TranscriptPolicy {
   };
   /** R12 — thresholds are chosen-not-measured (§10-F6; 3b validates vs #188 data). */
   status: { wakingMs: number; longStartMs: number };
+  /** R16 (spec draft.2) — notice rows; provenance facet shows under debug. */
+  notice: { show: boolean };
   /** R14. */
   compaction: { show: boolean };
   /** R15. */
@@ -95,6 +97,7 @@ function withOverrides(base: TranscriptPolicy, overrides?: Partial<TranscriptPol
     prompt: { ...base.prompt, ...(overrides.prompt ?? {}) },
     error: { ...base.error, ...(overrides.error ?? {}) },
     status: { ...base.status, ...(overrides.status ?? {}) },
+    notice: { ...base.notice, ...(overrides.notice ?? {}) },
     compaction: { ...base.compaction, ...(overrides.compaction ?? {}) },
     unknown: { ...base.unknown, ...(overrides.unknown ?? {}) },
   };
@@ -115,6 +118,7 @@ function calmBase(): TranscriptPolicy {
     media: { inlineImageCapRem: 20, chipOnly: false },
     code: { capRem: 16, wrap: false },
     citations: { style: "chips" },
+    notice: { show: true },
     prompt: { placement: "inline", rawPayload: false },
     error: { verbatim: false, copyByCode: {}, verbatimCodes: [] },
     status: { wakingMs: 2500, longStartMs: 15_000 },

@@ -34,11 +34,13 @@
 import type { AgBlock, AgReduceResult, JsonValue } from "@silverprotocol/core";
 import { snapshotViewMount, toolResultViewMount, uiLocator, type ViewMount } from "@guuey/mcp-apps-host";
 import type { TranscriptPolicy } from "./policy.js";
+import { grantModeDisplay } from "./hitl.js";
 import type {
   CitationsItem,
   DataResultItem,
   DisplayItem,
   ItemKey,
+  NoticeItem,
   StatusLineItem,
   ToolGroupItem,
   ToolItem,
@@ -94,7 +96,27 @@ interface AssistantSource {
   stopped: boolean;
 }
 
-function foldAssistantSources(result: AgReduceResult, inFlight: boolean, aborted: boolean): AssistantSource[] {
+/** A fold-borne `role:"notice"` row, anchored to the source it followed. */
+interface FoldNotice {
+  text: string;
+  source: NoticeItem["source"];
+  /** Index into the returned sources of the message this notice followed; -1 = before any. */
+  afterSourceIndex: number;
+}
+
+/** R16 notice text: the message's text blocks, joined (non-text blocks carry no notice prose). */
+function noticeText(content: readonly AgBlock[]): string {
+  return content
+    .filter((b): b is Extract<AgBlock, { type: "text" }> => b.type === "text")
+    .map((b) => b.text)
+    .join("\n");
+}
+
+function foldAssistantSources(
+  result: AgReduceResult,
+  inFlight: boolean,
+  aborted: boolean,
+): { sources: AssistantSource[]; notices: FoldNotice[] } {
   // Real pod folds carry `tool-result` blocks in separate `role: "tool"`
   // messages between assistant turns (the production ggui-render capture is
   // the receipt — guuey#135 3b widget convergence found this): an
@@ -119,6 +141,7 @@ function foldAssistantSources(result: AgReduceResult, inFlight: boolean, aborted
     (m) => m.role === "assistant" && m.turnId !== undefined,
   );
   const sources: AssistantSource[] = [];
+  const notices: FoldNotice[] = [];
   for (const m of result.messages) {
     if (m.role === "assistant") {
       sources.push({
@@ -128,6 +151,14 @@ function foldAssistantSources(result: AgReduceResult, inFlight: boolean, aborted
       });
     } else if (m.role === "tool" && sources.length > 0) {
       sources[sources.length - 1]!.blocks.push(...m.content);
+    } else if (m.role === "notice") {
+      // R16 (spec draft.2): a session annotation — a PEER row, never folded
+      // into assistant content; it anchors after the source it followed.
+      notices.push({
+        text: noticeText(m.content),
+        source: m.noticeSource ?? null,
+        afterSourceIndex: sources.length - 1,
+      });
     }
   }
   const last = sources[sources.length - 1];
@@ -135,7 +166,7 @@ function foldAssistantSources(result: AgReduceResult, inFlight: boolean, aborted
     if (!hasTurnIdentity) last.live = inFlight;
     last.stopped = aborted;
   }
-  return sources;
+  return { sources, notices };
 }
 
 function flatAssistantSources(inputs: TranscriptInputs, inFlight: boolean): AssistantSource[] {
@@ -645,6 +676,21 @@ export function planTranscript(
 
   const inFlight = inputs.status !== "ready";
   const users = inputs.messages.filter((m) => m.role === "user");
+  // R16 — notice rows are session annotations anchored between turns: a
+  // flat notice renders after the conversation slot of the user turn it
+  // followed (usersSeen-1; -1 = before the conversation). They are PEER
+  // rows — excluded from both the user pairing and the assistant seam
+  // count, so the fold alignment below never sees them.
+  const notices: Array<{ key: string; text: string; source: NoticeItem["source"]; afterSlot: number }> = [];
+  if (policy.notice.show) {
+    let usersSeen = 0;
+    inputs.messages.forEach((m, i) => {
+      if (m.role === "user") usersSeen += 1;
+      else if (m.role === "notice") {
+        notices.push({ key: `n${i}`, text: m.text, source: m.noticeSource ?? null, afterSlot: usersSeen - 1 });
+      }
+    });
+  }
   // Turn-scoped fold composition (guuey#135 kit refinement): the fold owns
   // the TRAILING assistant turns it actually covers — its settled sources
   // replace that many trailing flat assistant entries; any EARLIER flat
@@ -660,7 +706,8 @@ export function planTranscript(
   // cards by the actionScope dedupe below.
   let assistants: AssistantSource[];
   if (inputs.result) {
-    const foldSources = foldAssistantSources(inputs.result, inFlight, inputs.aborted === true);
+    const fold = foldAssistantSources(inputs.result, inFlight, inputs.aborted === true);
+    const foldSources = fold.sources;
     const settledFoldCount = foldSources.filter((s) => !s.live).length;
     const flatSettled = inputs.messages.filter((m) => m.role === "assistant");
     const keep = Math.max(0, flatSettled.length - settledFoldCount);
@@ -674,12 +721,28 @@ export function planTranscript(
       ),
       ...foldSources,
     ];
+    if (policy.notice.show) {
+      // Fold-borne notices anchor to the fold source they followed, which
+      // sits at global slot `keep + afterSourceIndex` after the seam.
+      fold.notices.forEach((n, i) => {
+        notices.push({ key: `nf${i}`, text: n.text, source: n.source, afterSlot: keep + n.afterSourceIndex });
+      });
+    }
   } else {
     assistants = flatAssistantSources(inputs, inFlight);
   }
 
   const slots = Math.max(users.length, assistants.length);
   const conversation: DisplayItem[] = [];
+  const noticeItem = (n: (typeof notices)[number]): NoticeItem => ({
+    kind: "notice",
+    key: n.key,
+    expanded: true,
+    text: n.text,
+    source: n.source,
+    sourceLabel: policy.debugDetail && n.source !== null ? n.source : null,
+  });
+  for (const n of notices) if (n.afterSlot < 0) conversation.push(noticeItem(n));
   for (let slot = 0; slot < slots; slot++) {
     const user = users[slot];
     if (user) {
@@ -701,6 +764,7 @@ export function planTranscript(
     if (assistant) {
       conversation.push(...planAssistantSource(assistant, slot, inputs, policy, overrides));
     }
+    for (const n of notices) if (n.afterSlot === slot) conversation.push(noticeItem(n));
   }
   items.push(...groupTools(conversation, policy, overrides));
 
@@ -745,9 +809,36 @@ export function planTranscript(
     items.push(view);
   }
 
-  // R10 — prompts, in input order.
+  // R10 — prompts, in input order (narrow on `kind`: the guuey-wire
+  // profile arm vs the AgJSON hitl arm, spec draft.2).
   for (const prompt of inputs.prompts) {
     const key = `p.${prompt.id}`;
+    if (prompt.kind === "hitl") {
+      const chosen =
+        prompt.grantModeId !== undefined
+          ? (prompt.ask.grantModes ?? []).find((m) => m.id === prompt.grantModeId)
+          : undefined;
+      items.push({
+        kind: "prompt",
+        key,
+        promptId: prompt.id,
+        // `cancelled` collapses to a dismissed record but stays expandable —
+        // guuey's re-askable ruling (silverprotocol#16); pending opens.
+        expanded: resolveExpanded(key, prompt.state === "pending", overrides),
+        promptKind: "hitl",
+        ask: prompt.ask,
+        message: prompt.ask.message ?? null,
+        askKind: prompt.ask.kind,
+        grantModes: prompt.ask.grantModes ?? [],
+        state: prompt.state,
+        chosenModeId: prompt.grantModeId ?? null,
+        chosenModeLabel: chosen !== undefined ? grantModeDisplay(chosen) : null,
+        raw: policy.prompt.rawPayload
+          ? { askId: prompt.ask.askId, kind: prompt.ask.kind, state: prompt.state, grantModeId: prompt.grantModeId ?? null }
+          : null,
+      });
+      continue;
+    }
     items.push({
       kind: "prompt",
       key,

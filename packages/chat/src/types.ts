@@ -11,7 +11,14 @@
  * events. A category this UI needs but AgJSON cannot express is an upstream
  * silverprotocol change, never a guuey-side extension.
  */
-import type { AgReduceResult, AgSource, JsonValue } from "@silverprotocol/core";
+import type {
+  AgGrantMode,
+  AgNoticeSource,
+  AgPausedAsk,
+  AgReduceResult,
+  AgSource,
+  JsonValue,
+} from "@silverprotocol/core";
 import type { AgentInvokeStatus, HistoryCard } from "@guuey/agent-client";
 import type { ViewHostPhase, ViewMount, ViewMountChannel } from "@guuey/mcp-apps-host";
 
@@ -20,12 +27,18 @@ import type { ViewHostPhase, ViewMount, ViewMountChannel } from "@guuey/mcp-apps
  * compatible with the hook's `AgentMessage`, plus the optional
  * `clientMessageId` the R0 send-lifecycle join needs (the 3b live assembler
  * threads it through; history entries and older callers simply omit it).
+ *
+ * `role: "notice"` (spec draft.2, silverprotocol#16) is a host/adapter/
+ * framework-injected session annotation — a PEER of user/assistant rows,
+ * never assistant content. `noticeSource` is its provenance label (R16).
  */
 export interface TranscriptMessage {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "notice";
   text: string;
   /** Present on live-sent user turns — the `sendStates` join key (R0). */
   clientMessageId?: string;
+  /** R16 provenance — meaningful only when `role === "notice"`. */
+  noticeSource?: AgNoticeSource;
 }
 
 /**
@@ -34,13 +47,42 @@ export interface TranscriptMessage {
  * The assembler (3b) accumulates these from `invokeTurn` events; `id` is
  * assembler-chosen and stable for the ask's lifetime.
  */
-export interface PromptItemInput {
+export interface ProfilePromptInput {
   id: string;
   kind: "consent" | "link";
   appId: string;
   requested: "read" | "read-write";
   state: "pending" | "answered" | "declined" | "dismissed";
 }
+
+/**
+ * An AgJSON HITL ask (spec draft.2, silverprotocol#16) lifted from the
+ * fold's PERSISTED declaration — the `AgPausedAsk` record in
+ * `turn.done.outcome:"paused".asks[]` (the ask event itself is live-only;
+ * the paused record is what a late-joining client renders from). Produced
+ * by `hitlPromptsFromFold`; `id === ask.askId`.
+ *
+ * States encode guuey's ratified dismissal ruling (issue #16): `cancelled`
+ * is still-pending-and-re-askable (the card stays answerable), `declined`
+ * is the durable explicit deny.
+ */
+export interface HitlPromptInput {
+  id: string;
+  kind: "hitl";
+  /** The persisted declaration — message, kind, and any declared grantModes. */
+  ask: AgPausedAsk;
+  state: "pending" | "resolved" | "declined" | "cancelled";
+  /** Echo of the chosen declared mode; present iff `state === "resolved"`. */
+  grantModeId?: string;
+}
+
+/**
+ * R10 prompt inputs — a discriminated union (narrow on `kind`). The
+ * profile arm is the original guuey-wire shape unchanged; `hitl` arrived
+ * with spec draft.2. (Direct un-narrowed reads of profile-only fields are
+ * the one shape this union retired — narrow first.)
+ */
+export type PromptItemInput = ProfilePromptInput | HitlPromptInput;
 
 /** Everything the plan derives from. All fields are data — no clocks, no DOM. */
 export interface TranscriptInputs {
@@ -231,8 +273,8 @@ export interface CitationsItem extends BaseItem {
   style: "chips" | "list";
 }
 
-/** R10 — a consent/link prompt card. */
-export interface PromptItem extends BaseItem {
+/** R10 — the guuey-wire consent/link prompt card (the original arm). */
+export interface ProfilePromptItem extends BaseItem {
   kind: "prompt";
   /** The `PromptItemInput.id` this row records — the host's resolution key. */
   promptId: string;
@@ -242,6 +284,50 @@ export interface PromptItem extends BaseItem {
   state: "pending" | "answered" | "declined" | "dismissed";
   /** Raw ask payload, populated only under the debug policy. */
   raw: JsonValue | null;
+}
+
+/**
+ * R10 — an AgJSON HITL ask card (spec draft.2). Display keys off each
+ * mode's `label`/`description` ONLY — ids are echo-only identity, and
+ * mode SEMANTICS are asker-scoped (normative: never hard-code meaning
+ * onto an id string). `cancelled` renders as a dismissed record that is
+ * still answerable when expanded (guuey's re-askable ruling); `declined`
+ * and `resolved` are settled records.
+ */
+export interface HitlPromptItem extends BaseItem {
+  kind: "prompt";
+  promptId: string;
+  promptKind: "hitl";
+  /** The persisted declaration — carried so answer construction/validation has the record. */
+  ask: AgPausedAsk;
+  /** The asker's message, when it sent one. */
+  message: string | null;
+  askKind: AgPausedAsk["kind"];
+  /** Declared accept variants; empty = a plain accept/decline ask. */
+  grantModes: readonly AgGrantMode[];
+  state: "pending" | "resolved" | "declined" | "cancelled";
+  /** Echo of the chosen mode id (identity, never displayed as meaning). */
+  chosenModeId: string | null;
+  /** Resolved display text for the chosen mode (label, else the id as literal text). */
+  chosenModeLabel: string | null;
+  /** Raw ask payload, populated only under the debug policy. */
+  raw: JsonValue | null;
+}
+
+/** R10 union — narrow on `promptKind`. */
+export type PromptItem = ProfilePromptItem | HitlPromptItem;
+
+/**
+ * R16 — a `role:"notice"` session annotation (spec draft.2): a labeled,
+ * NON-conversational row that must never read as agent-authored.
+ */
+export interface NoticeItem extends BaseItem {
+  kind: "notice";
+  text: string;
+  /** Provenance facet; null when the producer omitted it. */
+  source: AgNoticeSource | null;
+  /** Resolved provenance display — the facet verbatim under debug, else null. */
+  sourceLabel: string | null;
 }
 
 /** R11 — a coded, human-worded error notice. */
@@ -296,6 +382,7 @@ export type DisplayItem =
   | CodeItem
   | CitationsItem
   | PromptItem
+  | NoticeItem
   | ErrorItem
   | HistoryBoundaryItem
   | CompactionItem

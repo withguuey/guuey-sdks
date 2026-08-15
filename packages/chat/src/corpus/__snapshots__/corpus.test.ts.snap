@@ -1716,3 +1716,112 @@ exports[`corpus > 19. persisted-plus-live — the fold owns its trailing turns; 
   },
 }
 `;
+
+exports[`corpus > 20. hitl-grant-modes — the persisted declaration renders; answers echo; cancelled re-asks (draft.2) 1`] = `
+{
+  "items": [
+    {
+      "expanded": true,
+      "key": "u0",
+      "kind": "user",
+      "retry": false,
+      "state": "sent",
+      "text": "book my usual seat",
+    },
+    {
+      "expanded": true,
+      "key": "a0.t0",
+      "kind": "text",
+      "markdown": true,
+      "stopped": false,
+      "streaming": false,
+      "text": "I can remember this preference.",
+    },
+    {
+      "ask": {
+        "askId": "ask-remember-1",
+        "grantModes": [
+          {
+            "description": "Keep it for every future chat",
+            "id": "m.durable",
+            "label": "Always",
+          },
+          {
+            "id": "m.scoped",
+            "label": "Just this chat",
+          },
+        ],
+        "kind": "approval",
+        "message": "Remember your seating preference?",
+        "requestState": "rs-bytes-1",
+      },
+      "askKind": "approval",
+      "chosenModeId": null,
+      "chosenModeLabel": null,
+      "expanded": true,
+      "grantModes": [
+        {
+          "description": "Keep it for every future chat",
+          "id": "m.durable",
+          "label": "Always",
+        },
+        {
+          "id": "m.scoped",
+          "label": "Just this chat",
+        },
+      ],
+      "key": "p.ask-remember-1",
+      "kind": "prompt",
+      "message": "Remember your seating preference?",
+      "promptId": "ask-remember-1",
+      "promptKind": "hitl",
+      "raw": null,
+      "state": "pending",
+    },
+  ],
+  "recovery": null,
+  "status": null,
+}
+`;
+
+exports[`corpus > 21. notice-rows — both arrival paths render labeled, never agent-voiced (draft.2) 1`] = `
+{
+  "items": [
+    {
+      "expanded": true,
+      "key": "n0",
+      "kind": "notice",
+      "source": "adapter",
+      "sourceLabel": null,
+      "text": "Session resumed on a new device",
+    },
+    {
+      "expanded": true,
+      "key": "nf0",
+      "kind": "notice",
+      "source": "framework",
+      "sourceLabel": null,
+      "text": "Model fell back to concise mode",
+    },
+    {
+      "expanded": true,
+      "key": "u0",
+      "kind": "user",
+      "retry": false,
+      "state": "sent",
+      "text": "hi",
+    },
+    {
+      "expanded": true,
+      "key": "a0.t0",
+      "kind": "text",
+      "markdown": true,
+      "stopped": false,
+      "streaming": false,
+      "text": "Done.",
+    },
+  ],
+  "recovery": null,
+  "status": null,
+}
+`;

@@ -39,6 +39,7 @@ import type {
   HistoryBoundaryItem,
   ItemKey,
   MediaItem,
+  NoticeItem,
   PromptItem,
   ReasoningItem,
   StatusLineItem,
@@ -63,7 +64,10 @@ export interface NativeTranscriptItemContext {
   /** R0 failed-send retry. */
   onRetry?: (item: UserMessageItem) => void;
   /** R10 prompt actions — the host owns what accept/decline DO. */
-  onPromptAction?: (item: PromptItem, action: "accept" | "decline" | "dismiss") => void;
+  onPromptAction?: (
+    item: PromptItem,
+    action: "accept" | "decline" | "dismiss" | { grantModeId: string },
+  ) => void;
   /** R11 action slots (sign-in / retry affordances). */
   onErrorAction?: (item: ErrorItem) => void;
   /** R6: locator mounts resolved by `useTranscript` ("expired" = failed). */
@@ -442,6 +446,70 @@ export function NativeCitations({ item, ctx }: ItemProps<CitationsItem>): ReactN
 
 export function NativePrompt({ item, ctx }: ItemProps<PromptItem>): ReactNode {
   const { tokens } = ctx;
+  if (item.promptKind === "hitl") {
+    const s = ctx.strings;
+    if (item.state === "resolved" || item.state === "declined") {
+      return (
+        <MutedText ctx={ctx}>
+          {item.state === "resolved"
+            ? item.chosenModeLabel !== null
+              ? s.promptAnsweredWith(item.chosenModeLabel)
+              : s.promptAccept
+            : s.promptDeclinedRecord}
+        </MutedText>
+      );
+    }
+    // `cancelled` = guuey's re-askable dismissal: a record row that reopens
+    // to the actions on toggle (silverprotocol#16 ruling).
+    const answerable = item.state === "pending" || (item.state === "cancelled" && item.expanded);
+    return (
+      <View
+        accessibilityLiveRegion="polite"
+        accessible
+        style={{ backgroundColor: tokens.palette.surface, borderRadius: tokens.radius, padding: tokens.pad, gap: 8 }}
+      >
+        {item.state === "cancelled" && (
+          <Pressable accessibilityRole="button" accessibilityState={{ expanded: item.expanded }} onPress={() => ctx.onToggle(item.key)}>
+            <Text style={{ color: tokens.palette.inkMuted, fontSize: tokens.fontSize }}>{s.promptDismissed}</Text>
+          </Pressable>
+        )}
+        {answerable && (
+          <>
+            {item.message !== null && (
+              <Text style={{ color: tokens.palette.ink, fontSize: tokens.fontSize, fontFamily: tokens.fontFamily }}>
+                {item.message}
+              </Text>
+            )}
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+              {item.grantModes.length === 0 ? (
+                <Pressable accessibilityRole="button" onPress={() => ctx.onPromptAction?.(item, "accept")}>
+                  <Text style={{ color: tokens.palette.accent, fontWeight: "700", fontSize: tokens.fontSize }}>
+                    {s.promptAccept}
+                  </Text>
+                </Pressable>
+              ) : (
+                item.grantModes.map((mode) => (
+                  <Pressable
+                    key={mode.id}
+                    accessibilityRole="button"
+                    accessibilityHint={mode.description}
+                    onPress={() => ctx.onPromptAction?.(item, { grantModeId: mode.id })}
+                  >
+                    <Text style={{ color: tokens.palette.accent, fontWeight: "700", fontSize: tokens.fontSize }}>
+                      {mode.label ?? mode.id}
+                    </Text>
+                  </Pressable>
+                ))
+              )}
+              <Pressable accessibilityRole="button" onPress={() => ctx.onPromptAction?.(item, "decline")}>
+                <Text style={{ color: tokens.palette.inkMuted, fontSize: tokens.fontSize }}>{s.promptDecline}</Text>
+              </Pressable>
+            </View>
+          </>
+        )}
+      </View>
+    );
+  }
   if (item.state !== "pending") {
     return (
       <MutedText ctx={ctx}>
@@ -470,6 +538,22 @@ export function NativePrompt({ item, ctx }: ItemProps<PromptItem>): ReactNode {
           <Text style={{ color: tokens.palette.inkMuted, fontSize: tokens.fontSize }}>Decline</Text>
         </Pressable>
       </View>
+    </View>
+  );
+}
+
+// ─── R16 ──────────────────────────────────────────────────────────────────
+
+/** The notice row (spec draft.2) — labeled, non-conversational, never agent-voiced. */
+export function NativeNotice({ item, ctx }: ItemProps<NoticeItem>): ReactNode {
+  const { tokens } = ctx;
+  return (
+    <View accessible accessibilityRole="text" style={{ paddingVertical: 4 }}>
+      <Text style={{ color: tokens.palette.inkMuted, fontSize: tokens.fontSize - 2 }}>
+        {ctx.strings.noticeLabel}
+        {item.sourceLabel !== null ? ` · ${item.sourceLabel}` : ""}
+        {item.text !== "" ? ` — ${item.text}` : ""}
+      </Text>
     </View>
   );
 }
@@ -580,6 +664,7 @@ export interface NativeTranscriptComponents {
   code: ComponentType<ItemProps<CodeItem>>;
   citations: ComponentType<ItemProps<CitationsItem>>;
   prompt: ComponentType<ItemProps<PromptItem>>;
+  notice: ComponentType<ItemProps<NoticeItem>>;
   error: ComponentType<ItemProps<ErrorItem>>;
   history: ComponentType<ItemProps<HistoryBoundaryItem>>;
   compaction: ComponentType<ItemProps<CompactionItem>>;
@@ -599,6 +684,7 @@ export const nativeTranscriptComponents: NativeTranscriptComponents = {
   code: NativeCode,
   citations: NativeCitations,
   prompt: NativePrompt,
+  notice: NativeNotice,
   error: NativeError,
   history: NativeHistoryBoundary,
   compaction: NativeCompaction,
@@ -655,6 +741,10 @@ export function renderNativeItem(
     }
     case "prompt": {
       const C = components.prompt;
+      return <C key={item.key} item={item} ctx={ctx} />;
+    }
+    case "notice": {
+      const C = components.notice;
       return <C key={item.key} item={item} ctx={ctx} />;
     }
     case "error": {

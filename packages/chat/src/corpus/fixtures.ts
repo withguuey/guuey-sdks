@@ -429,3 +429,105 @@ export function stalledThenAdopted(): { adopted: TranscriptInputs; streamed: Tra
     streamed: driveTurn(build(), { userText: "move my booking" }),
   };
 }
+
+/**
+ * 20. hitl-grant-modes (spec draft.2, silverprotocol#16) — a paused turn's
+ * PERSISTED ask declares three asker-scoped accept variants. Driven through
+ * the real Reducer: the declaration the card renders from is
+ * `turn.done.outcome:"paused".asks[]`, exactly what a late-joining client
+ * sees. Ids are deliberately arbitrary strings — display must key off
+ * label/description, never id semantics.
+ */
+export function hitlGrantModes(): TranscriptInputs {
+  const reducer = new Reducer();
+  let seq = 0;
+  const s = (): number => seq++;
+  const events: AgEvent[] = [
+    { type: "turn.start", threadId: "thread-hitl", turnId: "turn-h", seq: s() },
+    { type: "message.start", id: "msg-h", role: "assistant", turnId: "turn-h", threadId: "thread-hitl", seq: s() },
+    { type: "text.start", id: "th", seq: s() },
+    { type: "text.delta", id: "th", delta: "I can remember this preference.", seq: s() },
+    { type: "text.end", id: "th", seq: s() },
+    {
+      type: "turn.done",
+      turnId: "turn-h",
+      outcome: {
+        type: "paused",
+        asks: [
+          {
+            askId: "ask-remember-1",
+            kind: "approval",
+            message: "Remember your seating preference?",
+            grantModes: [
+              { id: "m.durable", label: "Always", description: "Keep it for every future chat" },
+              { id: "m.scoped", label: "Just this chat" },
+            ],
+            requestState: "rs-bytes-1",
+          },
+        ],
+      },
+      seq: s(),
+    },
+  ];
+  for (const ev of events) reducer.push(ev);
+  return {
+    result: reducer.result(),
+    assistantText: "",
+    status: "ready",
+    statusElapsedMs: 0,
+    activeTool: null,
+    error: null,
+    prompts: [], // the test composes these via hitlPromptsFromFold + the answer ledger
+    messages: [{ role: "user", text: "book my usual seat" }],
+  };
+}
+
+/**
+ * 21. notice-rows (spec draft.2) — both arrival paths: a flat adapter
+ * notice (the portal self-hosted mapping) and a fold-borne framework
+ * notice (the claude informational promotion). Labeled, non-conversational,
+ * never agent-voiced; provenance shows only under debug.
+ */
+export function noticeRows(): TranscriptInputs {
+  const reducer = new Reducer();
+  let seq = 0;
+  const s = (): number => seq++;
+  const events: AgEvent[] = [
+    { type: "turn.start", threadId: "thread-n", turnId: "turn-n", seq: s() },
+    {
+      type: "message.start",
+      id: "msg-n0",
+      role: "notice",
+      noticeSource: "framework",
+      turnId: "turn-n",
+      threadId: "thread-n",
+      seq: s(),
+    },
+    // The notice's text lands while it is the sole open message, so block
+    // routing is unambiguous; the assistant message opens after.
+    { type: "text.start", id: "tn0", seq: s() },
+    { type: "text.delta", id: "tn0", delta: "Model fell back to concise mode", seq: s() },
+    { type: "text.end", id: "tn0", seq: s() },
+    { type: "message.end", id: "msg-n0", turnId: "turn-n", seq: s() },
+    { type: "message.start", id: "msg-n1", role: "assistant", turnId: "turn-n", threadId: "thread-n", seq: s() },
+    { type: "text.start", id: "tn", seq: s() },
+    { type: "text.delta", id: "tn", delta: "Done.", seq: s() },
+    { type: "text.end", id: "tn", seq: s() },
+    { type: "turn.done", turnId: "turn-n", outcome: { type: "success" }, seq: s() },
+  ];
+  for (const ev of events) reducer.push(ev);
+  return {
+    result: reducer.result(),
+    assistantText: "",
+    status: "ready",
+    statusElapsedMs: 0,
+    activeTool: null,
+    error: null,
+    prompts: [],
+    messages: [
+      { role: "notice", text: "Session resumed on a new device", noticeSource: "adapter" },
+      { role: "user", text: "hi" },
+      { role: "assistant", text: "Done." },
+    ],
+  };
+}

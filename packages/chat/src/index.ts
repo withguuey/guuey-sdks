@@ -25,6 +25,13 @@ export {
 } from "./strings.js";
 export { transcriptInputsFromHistory } from "./history-inputs.js";
 export {
+  buildHitlAnswer,
+  grantModeDisplay,
+  hitlPromptsFromFold,
+  type HitlAnswerRecord,
+  type HitlPromptAction,
+} from "./hitl.js";
+export {
   DEFAULT_CHAT_THEME,
   GUUEY_CHAT_THEME,
   GuueyChatPalette,
@@ -41,7 +48,12 @@ export type {
   ErrorItem,
   HistoryBoundaryItem,
   ItemKey,
+  HitlPromptInput,
+  HitlPromptItem,
   MediaItem,
+  NoticeItem,
+  ProfilePromptInput,
+  ProfilePromptItem,
   PromptItem,
   PromptItemInput,
   ReasoningItem,
