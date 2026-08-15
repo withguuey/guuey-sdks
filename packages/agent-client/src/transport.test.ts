@@ -397,3 +397,129 @@ describe("fetchStreamTransport — POD_SATURATED auto-retry", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });
+
+/** The cold-start refusal: an envelope-LESS 503 straight from infra. */
+const coldStart = (retryAfter?: string): Response =>
+  new Response("Service Unavailable", {
+    status: 503,
+    headers: retryAfter === undefined ? {} : { "Retry-After": retryAfter },
+  });
+
+/**
+ * guuey#186 Gap 3: for ~30–60s after a redeploy the invoke endpoint answers a
+ * bare 503 (no ready pod → no wire envelope). First-party embeds already ride
+ * this out; the transport now gives SDK consumers the same bounded retry —
+ * distinct from the saturation policy, which only ever matches coded refusals.
+ */
+describe("fetchStreamTransport — cold-start 503 bounded retry", () => {
+  it("retries an envelope-less 503 with doubling backoff and streams the recovery", async () => {
+    const fetchImpl = mockFetch([coldStart(), coldStart(), sseResponse("data: ok\n\n")]);
+    const { sleep, waits } = fakeSleep();
+    const out = await withGlobalFetch(fetchImpl, () =>
+      drain(fetchStreamTransport(invokeRequest(), null, null, { sleep })),
+    );
+    expect(out).toBe("data: ok\n\n");
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(waits).toEqual([2000, 4000]);
+  });
+
+  it("honours a Retry-After hint on the bare 503, capped at 10s", async () => {
+    const fetchImpl = mockFetch([coldStart("3"), coldStart("600"), sseResponse("data: ok\n\n")]);
+    const { sleep, waits } = fakeSleep();
+    await withGlobalFetch(fetchImpl, () =>
+      drain(fetchStreamTransport(invokeRequest(), null, null, { sleep })),
+    );
+    expect(waits).toEqual([3000, 10000]);
+  });
+
+  it("exhausts the budget to the final refusal — bounded, never a loop", async () => {
+    const fetchImpl = mockFetch([coldStart(), coldStart(), coldStart(), coldStart()]);
+    const { sleep, waits } = fakeSleep();
+    const err = (await withGlobalFetch(fetchImpl, () =>
+      rejection(fetchStreamTransport(invokeRequest(), null, null, { sleep })),
+    )) as AgentResponseError;
+    expect(err).toBeInstanceOf(AgentResponseError);
+    expect(err.status).toBe(503);
+    expect(err.code).toBeUndefined();
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(waits).toEqual([2000, 4000, 8000]);
+  });
+
+  it("is configurable off — `coldStartRetry: false` surfaces the first 503 untouched", async () => {
+    const fetchImpl = mockFetch([coldStart()]);
+    const { sleep } = fakeSleep();
+    const err = (await withGlobalFetch(fetchImpl, () =>
+      rejection(
+        fetchStreamTransport(invokeRequest(), null, null, { sleep, coldStartRetry: false }),
+      ),
+    )) as AgentResponseError;
+    expect(err.status).toBe(503);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("takes a re-budget — attempts/base/cap drive the schedule", async () => {
+    const fetchImpl = mockFetch([coldStart(), coldStart()]);
+    const { sleep, waits } = fakeSleep();
+    const err = (await withGlobalFetch(fetchImpl, () =>
+      rejection(
+        fetchStreamTransport(invokeRequest(), null, null, {
+          sleep,
+          coldStartRetry: { attempts: 1, baseDelayMs: 500 },
+        }),
+      ),
+    )) as AgentResponseError;
+    expect(err.status).toBe(503);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(waits).toEqual([500]);
+  });
+
+  it("never replays a stream that already yielded — mid-turn death is not a cold start", async () => {
+    // The pre-stream-only guard, for THIS wrapper's predicate: a stream that
+    // dies with an envelope-less 503 shape after yielding must surface, not
+    // re-POST — the turn may have had side effects and the consumer already
+    // rendered partial output.
+    const encoder = new TextEncoder();
+    let pulls = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        if (pulls === 1) {
+          controller.enqueue(encoder.encode("data: partial\n\n"));
+          return;
+        }
+        controller.error(new AgentResponseError("agent responded 503", 503));
+      },
+    });
+    const fetchImpl = mockFetch([
+      new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
+    ]);
+    const { sleep } = fakeSleep();
+    const chunks: string[] = [];
+    await withGlobalFetch(fetchImpl, async () => {
+      const stream = fetchStreamTransport(invokeRequest(), null, null, { sleep });
+      await expect(
+        (async () => {
+          for await (const chunk of stream) chunks.push(chunk);
+        })(),
+      ).rejects.toThrow("agent responded 503");
+    });
+    expect(chunks).toEqual(["data: partial\n\n"]);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("surfaces the refusal when the turn is aborted during a backoff wait", async () => {
+    const controller = new AbortController();
+    const fetchImpl = mockFetch([coldStart()]);
+    const sleep = vi.fn(async () => {
+      controller.abort();
+    });
+    const err = (await withGlobalFetch(fetchImpl, () =>
+      rejection(fetchStreamTransport(invokeRequest(controller.signal), null, null, { sleep })),
+    )) as AgentResponseError;
+    expect(err.status).toBe(503);
+    expect(err.code).toBeUndefined();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});

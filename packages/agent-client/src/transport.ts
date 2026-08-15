@@ -18,7 +18,9 @@ import type { InvokeRequest } from "./types.js";
 import { AgentResponseError } from "./errors.js";
 import {
   parseRetryAfterSeconds,
+  withColdStartRetry,
   withSaturationRetry,
+  type ColdStartRetryOptions,
   type SaturationRetryOptions,
 } from "./saturation-retry.js";
 
@@ -138,22 +140,43 @@ async function* streamInvokeOnce(
   }
 }
 
+/** Options for {@link fetchStreamTransport}. */
+export interface FetchStreamTransportOptions extends SaturationRetryOptions {
+  /**
+   * Bounded retry on cold-start 503s — the envelope-less refusal an embed
+   * eats for ~30–60s after the agent redeploys (guuey#186 Gap 3). ON by
+   * default (small budget: 3 attempts, 2s/4s/8s) for parity with guuey's
+   * first-party embeds; pass `false` to disable, or options to re-budget.
+   * See {@link withColdStartRetry} for exactly what matches (and what
+   * deliberately stays with the saturation policy instead).
+   */
+  coldStartRetry?: ColdStartRetryOptions | false;
+}
+
 /**
  * The web SSE transport: {@link streamInvokeOnce} under the shared
- * {@link withSaturationRetry} wrapper. Every consumer of this transport
- * (Studio, the widget, anything built on `createWebAdapters`) therefore
- * inherits the single `POD_SATURATED` retry, and inherits the SAME one Portal's
- * React-Native transport wears — see that wrapper's docblock for which refusals
- * retry, which deliberately do not, and why the retry is invisible to the hook.
+ * {@link withSaturationRetry} wrapper, itself under {@link withColdStartRetry}.
+ * Every consumer of this transport (Studio, the widget, anything built on
+ * `createWebAdapters`) therefore inherits the single `POD_SATURATED` retry AND
+ * the bounded cold-start 503 retry, the same pair Portal's React-Native
+ * transport wears — see the wrappers' docblocks for which refusals retry,
+ * which deliberately do not, and why both retries are invisible to the hook.
+ * Both wrappers guard on "nothing yielded yet": once a chunk has streamed,
+ * NOTHING re-POSTs.
  */
 export function fetchStreamTransport(
   req: InvokeRequest,
   accessToken?: string | null,
   guestSecret?: string | null,
-  options: SaturationRetryOptions = {},
+  options: FetchStreamTransportOptions = {},
 ): AsyncIterable<string> {
-  return withSaturationRetry(
+  const saturated = withSaturationRetry(
     (attempt) => streamInvokeOnce(attempt, accessToken, guestSecret),
-    options,
-  )(req);
+    { sleep: options.sleep },
+  );
+  if (options.coldStartRetry === false) return saturated(req);
+  return withColdStartRetry(saturated, {
+    sleep: options.sleep,
+    ...options.coldStartRetry,
+  })(req);
 }
