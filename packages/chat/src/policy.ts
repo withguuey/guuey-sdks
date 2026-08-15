@@ -50,8 +50,23 @@ export interface TranscriptPolicy {
   citations: { style: "chips" | "list" };
   /** R10. */
   prompt: { placement: "inline" | "modal"; rawPayload: boolean };
-  /** R11. */
-  error: { verbatim: boolean };
+  /**
+   * R11. `copyByCode` is the specced per-code copy knob (the directive's
+   * `errorCopy`, nested here so it doesn't stutter as `error.errorCopy`):
+   * an exact wire-code → sentence map that wins over everything else.
+   * `verbatimCodes` renders the SOURCE message instead of family copy for
+   * the listed codes — or for every error (`"all"`, the widget's #162
+   * posture: pod refusal bodies are already written for a reader, and
+   * client-side identity copy arrives code-less). Precedence per error:
+   * `copyByCode[code]` → verbatim source message (when matched and
+   * non-empty) → family copy. `verbatim` stays the DEBUG formatting knob
+   * (code-prefixed raw line under the notice), independent of voice.
+   */
+  error: {
+    verbatim: boolean;
+    copyByCode: Readonly<Record<string, string>>;
+    verbatimCodes: readonly string[] | "all";
+  };
   /** R12 — thresholds are chosen-not-measured (§10-F6; 3b validates vs #188 data). */
   status: { wakingMs: number; longStartMs: number };
   /** R14. */
@@ -101,7 +116,7 @@ function calmBase(): TranscriptPolicy {
     code: { capRem: 16, wrap: false },
     citations: { style: "chips" },
     prompt: { placement: "inline", rawPayload: false },
-    error: { verbatim: false },
+    error: { verbatim: false, copyByCode: {}, verbatimCodes: [] },
     status: { wakingMs: 2500, longStartMs: 15_000 },
     compaction: { show: true },
     unknown: { show: true, raw: false },
@@ -124,7 +139,7 @@ export function debugPolicy(overrides?: Partial<TranscriptPolicy>): TranscriptPo
     toolGroup: { threshold: false },
     dataResult: { ...base.dataResult, capRem: 32, alwaysShowBytes: true },
     prompt: { ...base.prompt, rawPayload: true },
-    error: { verbatim: true },
+    error: { ...base.error, verbatim: true },
     unknown: { ...base.unknown, raw: true },
   };
   return withOverrides(debug, overrides);

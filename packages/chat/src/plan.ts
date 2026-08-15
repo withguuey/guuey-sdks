@@ -701,7 +701,7 @@ export function planTranscript(
   if (inputs.error) {
     const code = inputs.error.code;
     const family = (code !== null ? ERROR_FAMILIES[code] : undefined) ?? "transient";
-    const copy =
+    const familyCopy =
       family === "auth"
         ? policy.strings.errorAuth
         : family === "quota"
@@ -709,6 +709,16 @@ export function planTranscript(
           : family === "invalid"
             ? policy.strings.errorInvalid
             : policy.strings.errorTransient;
+    // Voice resolution (R11's per-code knob): an exact per-code sentence
+    // wins; then a verbatim match renders the SOURCE message ("all" covers
+    // code-less client errors too — the widget's #162 posture); an empty
+    // source message falls back to family copy rather than a blank notice.
+    const { copyByCode, verbatimCodes } = policy.error;
+    const perCode = code !== null ? copyByCode[code] : undefined;
+    const verbatimVoice =
+      verbatimCodes === "all" || (code !== null && verbatimCodes.includes(code));
+    const copy =
+      perCode ?? (verbatimVoice && inputs.error.message !== "" ? inputs.error.message : familyCopy);
     items.push({
       kind: "error",
       key: "error",
