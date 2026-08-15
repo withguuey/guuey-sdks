@@ -29,7 +29,7 @@
  * append ordinals, so every existing key survives each re-plan.
  */
 import type { AgBlock, AgReduceResult, JsonValue } from "@silverprotocol/core";
-import { snapshotViewMount, toolResultViewMount, type ViewMount } from "@guuey/mcp-apps-host";
+import { snapshotViewMount, toolResultViewMount, uiLocator, type ViewMount } from "@guuey/mcp-apps-host";
 import type { TranscriptPolicy } from "./policy.js";
 import type {
   CitationsItem,
@@ -337,6 +337,10 @@ function planAssistantSource(
             phase: inputs.viewPhases?.[viewKey] ?? "negotiating",
             label: null,
             attribution: policy.debugDetail ? null : policy.strings.viaTool(tool.title),
+            // `result` is narrowed by `mount !== undefined` above; the scope
+            // is the PERSISTED locator (`uiData.resourceUri`), never the
+            // mount payload's own uri (synthetic for a ggui shell).
+            actionScope: result ? (uiLocator(result.uiData) ?? null) : null,
           };
           view.label = viewLabel(view, policy);
           items.push(view);
@@ -648,6 +652,12 @@ export function planTranscript(
       phase: mount === undefined ? "expired" : (inputs.viewPhases?.[key] ?? "negotiating"),
       label: null,
       attribution: null,
+      actionScope:
+        mount === undefined
+          ? null
+          : mount.channel === "locator"
+            ? mount.resourceUri
+            : mount.resource.uri,
     };
     view.label = viewLabel(view, policy);
     items.push(view);
@@ -659,6 +669,7 @@ export function planTranscript(
     items.push({
       kind: "prompt",
       key,
+      promptId: prompt.id,
       expanded: resolveExpanded(key, prompt.state === "pending", overrides),
       promptKind: prompt.kind,
       appId: prompt.appId,

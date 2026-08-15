@@ -183,6 +183,14 @@ export interface ViewMountItem extends BaseItem {
   label: string | null;
   /** Calm chrome: "via {tool}" when this mount broke an R4 group. */
   attribution: string | null;
+  /**
+   * The persisted `ui://` locator a mounted card's runtime actions bind to
+   * (guuey#158) — the block's `uiData.resourceUri` for live mounts, the
+   * card's own persisted identity for history snapshots; never a ggui
+   * shell's synthetic payload uri. `null` → the host's relay answers its
+   * in-band "not available" stub.
+   */
+  actionScope: string | null;
 }
 
 /** R7 — media blocks. */
@@ -213,6 +221,8 @@ export interface CitationsItem extends BaseItem {
 /** R10 — a consent/link prompt card. */
 export interface PromptItem extends BaseItem {
   kind: "prompt";
+  /** The `PromptItemInput.id` this row records — the host's resolution key. */
+  promptId: string;
   promptKind: "consent" | "link";
   appId: string;
   requested: "read" | "read-write";

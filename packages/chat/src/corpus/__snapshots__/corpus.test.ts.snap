@@ -1020,6 +1020,7 @@ exports[`corpus > 4. consent-gate — pending card → answered one-line collaps
       "expanded": true,
       "key": "p.consent-0",
       "kind": "prompt",
+      "promptId": "consent-0",
       "promptKind": "consent",
       "raw": null,
       "requested": "read",
@@ -1081,6 +1082,7 @@ exports[`corpus > 7. view-never-handshakes — channel-aware labels on both chan
       "toolCallId": "tInline",
     },
     {
+      "actionScope": null,
       "attribution": "via render form",
       "channel": "inline",
       "expanded": true,
@@ -1110,6 +1112,7 @@ exports[`corpus > 7. view-never-handshakes — channel-aware labels on both chan
       "toolCallId": "tGgui",
     },
     {
+      "actionScope": "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee",
       "attribution": "via ggui render",
       "channel": "ggui",
       "expanded": true,
@@ -1202,6 +1205,7 @@ exports[`corpus > 9. history-dead-locators — the expired path beside a healthy
       "text": "Welcome back.",
     },
     {
+      "actionScope": "ui://ggui/render/old/1",
       "attribution": null,
       "channel": "locator",
       "expanded": true,
@@ -1215,6 +1219,7 @@ exports[`corpus > 9. history-dead-locators — the expired path beside a healthy
       "phase": "negotiating",
     },
     {
+      "actionScope": null,
       "attribution": null,
       "channel": null,
       "expanded": true,
@@ -1489,6 +1494,7 @@ exports[`corpus > 15. tools-around-a-view — the group SPLITS at the view's pos
       "toolCallId": "t3",
     },
     {
+      "actionScope": null,
       "attribution": "via ggui render",
       "channel": "inline",
       "expanded": true,

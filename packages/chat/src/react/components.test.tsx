@@ -125,6 +125,7 @@ describe("streaming text announces politely; stopped marks the partial", () => {
 describe("R10 prompt focus management", () => {
   const prompt = (state: PromptItem["state"]): PromptItem => ({
     kind: "prompt",
+    promptId: "consent.0",
     key: "p.consent.0",
     expanded: true,
     promptKind: "consent",
