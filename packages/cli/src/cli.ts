@@ -221,7 +221,10 @@ Worker Conformance:
                                  (default entry: ./guuey.worker.js)
 
 Authentication:
-  login                         Log in via browser (opens auth page)
+  login                         Log in via browser (opens auth page; a token
+                                pasted at the prompt also works)
+  login --no-browser            Print the auth URL only; paste the token back
+                                (remote/SSH sessions)
   login --token <pat>           Log in with a Personal Access Token (headless)
   logout                        Clear stored credentials
   whoami                        Show current authenticated user

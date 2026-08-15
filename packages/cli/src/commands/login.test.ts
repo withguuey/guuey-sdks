@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { tokensFromCallback, waitForCallback } from './login.js';
+import { PassThrough } from 'node:stream';
+import {
+  pasteAuthorizeUrl,
+  tokensFromCallback,
+  waitForCallback,
+  waitForPastedToken,
+} from './login.js';
 import { CLI_CALLBACK_PORT } from '../auth.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -78,5 +84,69 @@ describe('waitForCallback — OPTIONS preflight (Chrome PNA, spec §3.3)', () =>
       });
       await tokenPromise;
     }
+  });
+});
+
+// guuey#180 — device-code-style paste fallback: on remote sessions (SSH,
+// devcontainer, CI box) the browser's localhost redirect lands on the wrong
+// machine, so a token pasted on stdin must be a first-class channel.
+describe('waitForPastedToken — paste fallback (guuey#180)', () => {
+  it('resolves on a valid guuey_user_ paste with the nominal +90d expiry', async () => {
+    const input = new PassThrough();
+    const promise = waitForPastedToken(undefined, input);
+    const before = Date.now();
+    input.write('guuey_user_pasted123\n');
+    const tokens = await promise;
+    expect(tokens.pat).toBe('guuey_user_pasted123');
+    const deltaMs = new Date(tokens.expiresAt).getTime() - before;
+    expect(deltaMs).toBeGreaterThan(89 * DAY_MS);
+    expect(deltaMs).toBeLessThan(91 * DAY_MS);
+  });
+
+  it('trims surrounding whitespace from the paste', async () => {
+    const input = new PassThrough();
+    const promise = waitForPastedToken(undefined, input);
+    input.write('   guuey_user_padded  \n');
+    const tokens = await promise;
+    expect(tokens.pat).toBe('guuey_user_padded');
+  });
+
+  it('re-prompts on an invalid paste instead of resolving or rejecting', async () => {
+    const input = new PassThrough();
+    const promise = waitForPastedToken(undefined, input);
+    input.write('ggui_pat_retired.token\n');
+    input.write('\n');
+    // Still pending after the bad + empty lines...
+    const pending = await Promise.race([
+      promise.then(() => 'settled'),
+      new Promise<string>((resolve) => setTimeout(() => resolve('pending'), 50)),
+    ]);
+    expect(pending).toBe('pending');
+    // ...and a subsequent valid paste wins.
+    input.write('guuey_user_second_try\n');
+    const tokens = await promise;
+    expect(tokens.pat).toBe('guuey_user_second_try');
+  });
+
+  it('an aborted signal releases the input stream (race loser teardown)', async () => {
+    const input = new PassThrough();
+    const abort = new AbortController();
+    void waitForPastedToken(abort.signal, input);
+    abort.abort();
+    // The reader is gone: a post-abort paste is not consumed as a token
+    // (nothing to observe on the promise — it stays forever pending by
+    // design) and the stream is paused so the event loop can drain.
+    expect(input.isPaused()).toBe(true);
+  });
+});
+
+describe('pasteAuthorizeUrl — the --no-browser authorize URL', () => {
+  it('carries mode=paste and neither state nor callback', () => {
+    const url = new URL(pasteAuthorizeUrl('https://dev.guuey.com'));
+    expect(url.origin).toBe('https://dev.guuey.com');
+    expect(url.pathname).toBe('/cli/authorize');
+    expect(url.searchParams.get('mode')).toBe('paste');
+    expect(url.searchParams.has('state')).toBe(false);
+    expect(url.searchParams.has('callback')).toBe(false);
   });
 });
