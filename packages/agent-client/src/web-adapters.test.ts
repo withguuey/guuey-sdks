@@ -110,6 +110,31 @@ describe("createWebAdapters saturation-retry inheritance", () => {
       vi.useRealTimers();
     }
   });
+
+  it("re-reads the bearer per ATTEMPT: a cold-start retry sends the fresh token, not the stale one", async () => {
+    vi.useFakeTimers();
+    try {
+      // Envelope-less 503 (the cold-start shape), then success. tok-1 may
+      // have expired during the backoff wait; the retry must carry tok-2.
+      const fetchImpl = mockFetch([
+        new Response("Service Unavailable", { status: 503 }),
+        sseResponse("data: ok\n\n"),
+      ]);
+      const getAccessToken = vi
+        .fn<() => Promise<string | null>>()
+        .mockResolvedValueOnce("tok-1")
+        .mockResolvedValueOnce("tok-2");
+      const adapters = createWebAdapters({ getAccessToken });
+      const streamed = withGlobalFetch(fetchImpl, () => drain(adapters.transport(invokeRequest())));
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(await streamed).toBe("data: ok\n\n");
+      expect(getAccessToken).toHaveBeenCalledTimes(2);
+      expect(headersOf(fetchImpl.mock.calls[0][1]).Authorization).toBe("Bearer tok-1");
+      expect(headersOf(fetchImpl.mock.calls[1][1]).Authorization).toBe("Bearer tok-2");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("createWebAdapters transport", () => {

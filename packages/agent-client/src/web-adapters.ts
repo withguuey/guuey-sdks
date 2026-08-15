@@ -128,10 +128,16 @@ export function createWebAdapters(
   const { apiBaseUrl, getAccessToken, getGuestSecret } = opts;
 
   const transport: InvokeTransport = async function* (req) {
-    const token = getAccessToken ? await getAccessToken() : null;
     // Both candidates go to the transport; it owns the precedence (and the
     // never-two-carriers rule) so there is exactly one place that decides.
-    yield* fetchStreamTransport(req, token, getGuestSecret ? getGuestSecret() : null);
+    // The bearer goes through as the PROVIDER, not a pre-resolved value:
+    // the transport re-asks it per attempt, so a cold-start retry after a
+    // backoff wait re-reads a fresh token instead of replaying one that may
+    // have expired during the wait (the same reason Portal's RN transport
+    // resolves inside its generator).
+    yield* fetchStreamTransport(req, null, getGuestSecret ? getGuestSecret() : null, {
+      getBearer: getAccessToken,
+    });
   };
 
   const adapters: AgentInvokeAdapters = {
