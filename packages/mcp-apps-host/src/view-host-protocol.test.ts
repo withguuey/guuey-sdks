@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   initializeResult,
   initialViewHostState,
+  resourceReadResponse,
   teardownMessage,
   toolCallResponse,
   viewHostElapsed,
@@ -21,6 +22,7 @@ function behavior(overrides: Partial<ViewHostBehavior> = {}): ViewHostBehavior {
     hostCapabilities: {},
     hostContext: { locale: "en-US" },
     toolRelay: false,
+    resourceRelay: false,
     ...overrides,
   };
 }
@@ -114,13 +116,23 @@ describe("viewHostReceive — refusals and silence", () => {
   });
 
   it("consumes notifications silently — JSON-RPC notifications never get a response", () => {
+    // (This pin's original example was size-changed; that notification now
+    // legitimately surfaces an EFFECT for the embedder — see its own suite
+    // — but the JSON-RPC rule stands: a notification never earns a respond.)
     const { state, effects } = viewHostReceive(initialViewHostState(), behavior(), {
+      jsonrpc: "2.0",
+      method: "ui/notifications/unknown-future-thing",
+      params: { anything: true },
+    });
+    expect(effects).toEqual([]);
+    expect(state).toEqual(initialViewHostState());
+
+    const sized = viewHostReceive(initialViewHostState(), behavior(), {
       jsonrpc: "2.0",
       method: "ui/notifications/size-changed",
       params: { width: 1, height: 1 },
     });
-    expect(effects).toEqual([]);
-    expect(state).toEqual(initialViewHostState());
+    expect(sized.effects.some((e) => e.kind === "respond")).toBe(false);
   });
 
   it("remembers the initialized ack on the state", () => {
@@ -224,5 +236,106 @@ describe("outbound builders", () => {
     const farewell = teardownMessage();
     expect(farewell).toEqual({ jsonrpc: "2.0", method: "ui/resource-teardown", params: {} });
     expect("id" in farewell).toBe(false);
+  });
+});
+
+describe("viewHostReceive — size-changed (spec notification, App → Host)", () => {
+  it("surfaces a finite width/height as a size-changed effect", () => {
+    const { state, effects } = viewHostReceive(initialViewHostState(), behavior(), {
+      jsonrpc: "2.0",
+      method: "ui/notifications/size-changed",
+      params: { width: 320, height: 480 },
+    });
+    expect(state.phase).toBe("negotiating"); // a notification moves no phase
+    expect(effects).toEqual([{ kind: "size-changed", width: 320, height: 480 }]);
+  });
+
+  it("surfaces a height-only report (the common transcript-card case)", () => {
+    const { effects } = viewHostReceive(initialViewHostState(), behavior(), {
+      jsonrpc: "2.0",
+      method: "ui/notifications/size-changed",
+      params: { height: 420 },
+    });
+    expect(effects).toEqual([{ kind: "size-changed", height: 420 }]);
+  });
+
+  it("consumes a malformed report silently — non-finite and non-numeric never surface", () => {
+    for (const params of [{}, { width: "wide" }, { height: Infinity }, { height: NaN }]) {
+      const { effects } = viewHostReceive(initialViewHostState(), behavior(), {
+        jsonrpc: "2.0",
+        method: "ui/notifications/size-changed",
+        params,
+      });
+      expect(effects).toEqual([]);
+    }
+  });
+});
+
+describe("viewHostReceive — resources/read (spec request, App → Host)", () => {
+  const READ = {
+    jsonrpc: "2.0",
+    id: "read-1",
+    method: "resources/read",
+    params: { uri: "ui://tool/card.html" },
+  };
+
+  it("relays when the read hook is wired", () => {
+    const { effects } = viewHostReceive(
+      initialViewHostState(),
+      behavior({ resourceRelay: true }),
+      READ,
+    );
+    expect(effects).toEqual([
+      { kind: "relay-resource-read", id: "read-1", uri: "ui://tool/card.html" },
+    ]);
+  });
+
+  it("refuses in-band when no read hook is wired — never a hang", () => {
+    const { effects } = viewHostReceive(initialViewHostState(), behavior(), READ);
+    expect(effects).toHaveLength(1);
+    const effect = effects[0]!;
+    if (effect.kind !== "respond") throw new Error("expected an in-band refusal");
+    expect(effect.message.id).toBe("read-1");
+    expect(effect.message.error?.message).toContain("method_not_supported");
+  });
+
+  it("a uri-less read is refused, not relayed", () => {
+    const { effects } = viewHostReceive(
+      initialViewHostState(),
+      behavior({ resourceRelay: true }),
+      { jsonrpc: "2.0", id: 9, method: "resources/read", params: {} },
+    );
+    expect(effects).toHaveLength(1);
+    expect(effects[0]!.kind).toBe("respond");
+  });
+
+  it("names every answered method in the refusal, capability-accurately", () => {
+    const { effects } = viewHostReceive(
+      initialViewHostState(),
+      behavior({ toolRelay: true, resourceRelay: true }),
+      { jsonrpc: "2.0", id: 2, method: "ui/unknown", params: {} },
+    );
+    const effect = effects[0]!;
+    if (effect.kind !== "respond") throw new Error("expected a refusal");
+    expect(effect.message.error?.message).toContain("tools/call");
+    expect(effect.message.error?.message).toContain("resources/read");
+  });
+});
+
+describe("resourceReadResponse", () => {
+  it("wraps an entry as the spec's ReadResourceResult", () => {
+    expect(
+      resourceReadResponse("read-1", { uri: "ui://tool/card.html", text: "<p>hi</p>" }),
+    ).toEqual({
+      jsonrpc: "2.0",
+      id: "read-1",
+      result: { contents: [{ uri: "ui://tool/card.html", text: "<p>hi</p>" }] },
+    });
+  });
+
+  it("answers a miss, a deny, and a failure with the ONE not-found error (deny == miss)", () => {
+    const refusal = resourceReadResponse("read-1", undefined);
+    expect(refusal.error).toEqual({ code: -32002, message: "resource unavailable" });
+    expect(refusal.result).toBeUndefined();
   });
 });

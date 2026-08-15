@@ -58,6 +58,8 @@ export {
 export {
   initializeResult,
   initialViewHostState,
+  resourceReadResponse,
+  RESOURCES_READ_METHOD,
   teardownMessage,
   toolCallResponse,
   TOOLS_CALL_METHOD,
