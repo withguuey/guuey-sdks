@@ -10,12 +10,57 @@ every unknown block renders as a labeled row (never blank, never raw JSON).
 npm install @guuey/chat
 ```
 
-## Wave 3a: the headless view-model
+## The React kit (`@guuey/chat/react`)
 
-This release ships the **headless** half — a pure function from agent state
-to an ordered display plan. The React component kit (`@guuey/chat/react`)
-and the batteries-included `<GuueyChat>` surface arrive in the next waves;
-the root subpath stays React-free forever.
+The fastest path on the web — the component kit over the live assembler,
+with the default stylesheet:
+
+```tsx
+import { useAgentInvoke, createWebAdapters } from "@guuey/agent-client/react";
+import { calmPolicy } from "@guuey/chat";
+import { Transcript, useTranscript, useTranscriptInputs } from "@guuey/chat/react";
+import "@guuey/chat/styles.css";
+
+function Chat({ endpointUrl }: { endpointUrl: string }) {
+  const invoke = useAgentInvoke({ endpointUrl, appId: "my-app", adapters: createWebAdapters() });
+  const { inputs } = useTranscriptInputs(invoke);
+  const { plan, toggle, onViewPhase, resolvedMounts } = useTranscript({
+    inputs,
+    policy: calmPolicy(),
+  });
+  return (
+    <Transcript
+      plan={plan}
+      onToggle={toggle}
+      onViewPhase={onViewPhase}
+      resolvedMounts={resolvedMounts}
+    />
+  );
+}
+```
+
+What the kit owns (so you don't): stick-to-bottom scroll with a
+jump-to-latest release, windowed rendering for long transcripts,
+`aria-live`/keyboard/focus accessibility, sanitized markdown (typed AST —
+raw HTML is unrepresentable, links are scheme-allowlisted), generative-UI
+views mounting through `@guuey/mcp-apps-host`'s sandboxed host, and theming
+from the `GuueyChatTheme` token schema (`--guuey-chat-*` custom properties;
+`GUUEY_CHAT_THEME` ships beside the neutral default).
+
+Override one row without forfeiting the rest:
+
+```tsx
+<Transcript plan={plan} components={{ tool: MyToolChip }} … />
+```
+
+Server-side (no hook, no DOM): assemble inputs from a persisted thread read
+with `transcriptInputsFromHistory` and plan/render anywhere Node runs.
+
+## The headless view-model (the root subpath)
+
+The **headless** half — a pure function from agent state to an ordered
+display plan. The root subpath stays React-free forever (the
+batteries-included `<GuueyChat>` surface arrives in the next wave).
 
 ```ts
 import { planTranscript, calmPolicy } from "@guuey/chat";

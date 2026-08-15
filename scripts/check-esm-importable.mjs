@@ -65,6 +65,19 @@ for (const dir of readdirSync(PACKAGES_DIR).sort()) {
     if (subpath === './package.json') continue;
     const target = importTarget(entry);
     const label = subpath === '.' ? pkg.name : `${pkg.name}/${subpath.slice(2)}`;
+    // Non-module assets (a shipped stylesheet) are existence-checked but not
+    // imported — plain Node has no loader for them, and consumers reach them
+    // through a bundler by design.
+    if (target !== undefined && target.endsWith('.css')) {
+      const assetFile = join(PACKAGES_DIR, dir, target);
+      if (!existsSync(assetFile)) {
+        console.error(`FAIL ${label} — exports target missing on disk: ${target}`);
+        failures++;
+      } else {
+        console.log(`skip ${label} (stylesheet asset, existence-checked)`);
+      }
+      continue;
+    }
     if (TEST_RUNNER_ONLY.has(label)) {
       console.log(`skip ${label} (test-runner-hosted contract suite)`);
       continue;

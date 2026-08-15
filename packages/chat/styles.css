@@ -1,0 +1,454 @@
+/**
+ * @guuey/chat — the default stylesheet (wave 3b, guuey#135).
+ *
+ * One import: `import "@guuey/chat/styles.css"`. Every color/shape value
+ * comes from the `--guuey-chat-*` custom properties `<Transcript>` sets
+ * from the resolved `GuueyChatTheme` — restyle by theming (the schema is
+ * platform data), or replace this sheet entirely (the class names are the
+ * stable surface).
+ *
+ * Shimmer/pulse are CSS-only and disabled under prefers-reduced-motion
+ * (spec §3.2).
+ */
+
+.guuey-chat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--guuey-chat-canvas);
+  color: var(--guuey-chat-ink);
+  font-family: var(--guuey-chat-font, system-ui, -apple-system, sans-serif);
+  font-size: calc(15px * var(--guuey-chat-scale, 1));
+  line-height: 1.45;
+}
+
+.guuey-chat-scroller {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.guuey-chat-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--guuey-chat-gap);
+  padding: calc(var(--guuey-chat-gap) * 1.5);
+  max-width: 48rem;
+  margin-inline: auto;
+}
+
+/* ── R0 user ── */
+.guuey-chat-user {
+  align-self: flex-end;
+  max-width: 85%;
+}
+.guuey-chat-user-bubble {
+  background: var(--guuey-chat-accent);
+  color: var(--guuey-chat-on-accent);
+  border-radius: var(--guuey-chat-radius);
+  border-end-end-radius: 4px;
+  padding: 8px 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.guuey-chat-user-sending .guuey-chat-user-bubble {
+  opacity: 0.6;
+}
+.guuey-chat-send-failed {
+  margin: 4px 0 0;
+  font-size: 0.85em;
+  color: var(--guuey-chat-error);
+  text-align: end;
+}
+.guuey-chat-retry {
+  margin-inline-start: 8px;
+  border: 1px solid var(--guuey-chat-error);
+  background: none;
+  color: var(--guuey-chat-error);
+  border-radius: 6px;
+  padding: 1px 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: inherit;
+}
+
+/* ── R1 assistant text ── */
+.guuey-chat-text {
+  align-self: flex-start;
+  max-width: 92%;
+  background: var(--guuey-chat-surface);
+  border: 1px solid color-mix(in srgb, var(--guuey-chat-ink) 8%, transparent);
+  border-radius: var(--guuey-chat-radius);
+  border-end-start-radius: 4px;
+  padding: 8px 12px;
+  overflow-wrap: anywhere;
+}
+.guuey-chat-text p {
+  margin: 0;
+}
+.guuey-chat-text p + p,
+.guuey-chat-text pre + p,
+.guuey-chat-text p + pre,
+.guuey-chat-text ul + p,
+.guuey-chat-text p + ul,
+.guuey-chat-text p + ol {
+  margin-top: 8px;
+}
+.guuey-chat-heading {
+  font-weight: 600;
+}
+.guuey-chat-heading-major {
+  font-size: 1.1em;
+}
+.guuey-chat-inline-code,
+.guuey-chat-code-fence {
+  font-family: var(--guuey-chat-mono-font, ui-monospace, monospace);
+  font-size: 0.88em;
+  background: color-mix(in srgb, var(--guuey-chat-ink) 7%, transparent);
+  border-radius: 5px;
+}
+.guuey-chat-inline-code {
+  padding: 0 4px;
+}
+.guuey-chat-code-fence {
+  padding: 8px 10px;
+  overflow-x: auto;
+}
+.guuey-chat-verbatim {
+  white-space: pre-wrap;
+  margin: 0;
+}
+.guuey-chat-cursor {
+  color: var(--guuey-chat-accent);
+}
+.guuey-chat-stopped {
+  margin: 6px 0 0;
+  font-size: 0.85em;
+  color: var(--guuey-chat-ink-muted);
+}
+
+/* ── Toggles (R2/R3/R4/R9/R15 headers) ── */
+.guuey-chat-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: none;
+  color: var(--guuey-chat-ink-muted);
+  font: inherit;
+  font-size: 0.9em;
+  padding: 2px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.guuey-chat-toggle:hover {
+  background: color-mix(in srgb, var(--guuey-chat-ink) 6%, transparent);
+}
+.guuey-chat-toggle:focus-visible {
+  outline: 2px solid var(--guuey-chat-accent);
+  outline-offset: 1px;
+}
+.guuey-chat-body {
+  margin-top: 4px;
+  padding-inline-start: 14px;
+}
+
+/* ── R3 tools ── */
+.guuey-chat-tool-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.guuey-chat-tool-running .guuey-chat-tool-glyph {
+  display: inline-block;
+  animation: guuey-chat-spin 1s linear infinite;
+}
+.guuey-chat-tool-failed {
+  color: var(--guuey-chat-error);
+}
+.guuey-chat-tool-note {
+  color: var(--guuey-chat-ink-muted);
+  font-size: 0.85em;
+}
+.guuey-chat-tool-args,
+.guuey-chat-data-preview {
+  font-family: var(--guuey-chat-mono-font, ui-monospace, monospace);
+  font-size: 0.82em;
+  background: color-mix(in srgb, var(--guuey-chat-ink) 5%, transparent);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin: 4px 0;
+  max-height: var(--guuey-chat-data-cap, 16rem);
+  overflow: auto;
+}
+
+/* ── R4 group ── */
+.guuey-chat-failure-badge {
+  margin-inline-start: 8px;
+  color: var(--guuey-chat-error);
+  font-size: 0.85em;
+}
+
+/* ── R5 data ── */
+.guuey-chat-data-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--guuey-chat-ink-muted);
+  font-size: 0.8em;
+}
+.guuey-chat-data-empty,
+.guuey-chat-data-binary {
+  color: var(--guuey-chat-ink-muted);
+  font-size: 0.85em;
+  margin: 2px 0;
+}
+.guuey-chat-copy {
+  border: 0;
+  background: none;
+  color: var(--guuey-chat-ink-muted);
+  font: inherit;
+  font-size: 0.9em;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* ── R6 views ── */
+.guuey-chat-view {
+  border: 1px solid color-mix(in srgb, var(--guuey-chat-ink) 8%, transparent);
+  border-radius: var(--guuey-chat-radius);
+  overflow: hidden;
+  background: var(--guuey-chat-surface);
+  min-height: 3rem;
+}
+.guuey-chat-view iframe {
+  min-height: 16rem;
+}
+.guuey-chat-view-negotiating p,
+.guuey-chat-view-expired p {
+  margin: 0;
+  padding: 12px;
+  color: var(--guuey-chat-ink-muted);
+  font-size: 0.9em;
+}
+.guuey-chat-attribution {
+  margin: 0;
+  padding: 4px 12px;
+  color: var(--guuey-chat-ink-muted);
+  font-size: 0.78em;
+  border-top: 1px solid color-mix(in srgb, var(--guuey-chat-ink) 6%, transparent);
+}
+
+/* ── R7 media ── */
+.guuey-chat-media-image img {
+  max-width: 100%;
+  max-height: var(--guuey-chat-image-cap, 20rem);
+  border-radius: var(--guuey-chat-radius);
+  display: block;
+}
+.guuey-chat-media-chip {
+  display: inline-block;
+  border: 1px solid color-mix(in srgb, var(--guuey-chat-ink) 12%, transparent);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.85em;
+  color: var(--guuey-chat-ink-muted);
+}
+
+/* ── R8 code ── */
+.guuey-chat-code pre {
+  font-family: var(--guuey-chat-mono-font, ui-monospace, monospace);
+  font-size: 0.85em;
+  background: color-mix(in srgb, var(--guuey-chat-ink) 6%, transparent);
+  border-radius: var(--guuey-chat-radius);
+  padding: 10px 12px;
+  margin: 0;
+  max-height: var(--guuey-chat-code-cap, 16rem);
+  overflow: auto;
+}
+.guuey-chat-code-wrap {
+  white-space: pre-wrap;
+}
+.guuey-chat-code-meta {
+  display: flex;
+  justify-content: space-between;
+  color: var(--guuey-chat-ink-muted);
+  font-size: 0.8em;
+  padding: 2px 4px;
+}
+
+/* ── R9 citations ── */
+.guuey-chat-citations ul {
+  margin: 4px 0 0;
+  padding-inline-start: 18px;
+}
+.guuey-chat-citations-chips li {
+  display: inline-block;
+  margin-inline-end: 10px;
+}
+
+/* ── R10 prompts ── */
+.guuey-chat-prompt {
+  border: 1px solid var(--guuey-chat-accent);
+  border-radius: var(--guuey-chat-radius);
+  background: var(--guuey-chat-surface);
+  padding: 12px;
+}
+.guuey-chat-prompt-ask {
+  margin: 0 0 8px;
+}
+.guuey-chat-prompt-actions {
+  display: flex;
+  gap: 8px;
+}
+.guuey-chat-prompt-actions button {
+  font: inherit;
+  border-radius: 8px;
+  padding: 4px 14px;
+  cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--guuey-chat-ink) 15%, transparent);
+  background: var(--guuey-chat-surface);
+  color: var(--guuey-chat-ink);
+}
+.guuey-chat-prompt-accept {
+  background: var(--guuey-chat-accent) !important;
+  color: var(--guuey-chat-on-accent) !important;
+  border-color: transparent !important;
+}
+.guuey-chat-prompt-actions button:focus-visible {
+  outline: 2px solid var(--guuey-chat-accent);
+  outline-offset: 1px;
+}
+.guuey-chat-prompt-record {
+  color: var(--guuey-chat-ink-muted);
+  font-size: 0.85em;
+  margin: 0;
+}
+
+/* ── R11 errors ── */
+.guuey-chat-error {
+  border: 1px solid color-mix(in srgb, var(--guuey-chat-error) 45%, transparent);
+  border-radius: var(--guuey-chat-radius);
+  background: color-mix(in srgb, var(--guuey-chat-error) 7%, var(--guuey-chat-surface));
+  padding: 10px 12px;
+}
+.guuey-chat-error p {
+  margin: 0;
+}
+.guuey-chat-error-action {
+  margin-top: 6px;
+  font: inherit;
+  border: 1px solid var(--guuey-chat-error);
+  color: var(--guuey-chat-error);
+  background: none;
+  border-radius: 8px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.guuey-chat-error-verbatim {
+  margin: 8px 0 0;
+  font-family: var(--guuey-chat-mono-font, ui-monospace, monospace);
+  font-size: 0.8em;
+  color: var(--guuey-chat-ink-muted);
+  white-space: pre-wrap;
+}
+
+/* ── R12 status ── */
+.guuey-chat-status {
+  margin: 0;
+  color: var(--guuey-chat-ink-muted);
+  font-size: 0.9em;
+}
+.guuey-chat-status-detail {
+  font-family: var(--guuey-chat-mono-font, ui-monospace, monospace);
+  font-size: 0.85em;
+}
+
+/* ── R13/R14/R15 ── */
+.guuey-chat-history {
+  color: var(--guuey-chat-ink-muted);
+  text-align: center;
+  font-size: 0.9em;
+  padding: 8px;
+}
+.guuey-chat-compaction {
+  color: var(--guuey-chat-ink-muted);
+  font-size: 0.8em;
+  text-align: center;
+  border-top: 1px solid color-mix(in srgb, var(--guuey-chat-ink) 8%, transparent);
+  padding-top: 6px;
+  margin-top: 4px;
+}
+.guuey-chat-unknown-type,
+.guuey-chat-unknown-size {
+  color: var(--guuey-chat-ink-muted);
+  font-size: 0.85em;
+}
+.guuey-chat-unknown-raw {
+  font-family: var(--guuey-chat-mono-font, ui-monospace, monospace);
+  font-size: 0.8em;
+  max-height: 16rem;
+  overflow: auto;
+}
+
+/* ── Chrome ── */
+.guuey-chat-show-earlier {
+  align-self: center;
+  font: inherit;
+  font-size: 0.85em;
+  border: 1px solid color-mix(in srgb, var(--guuey-chat-ink) 12%, transparent);
+  background: var(--guuey-chat-surface);
+  color: var(--guuey-chat-ink-muted);
+  border-radius: 999px;
+  padding: 3px 14px;
+  cursor: pointer;
+}
+.guuey-chat-jump {
+  position: absolute;
+  inset-inline-end: 16px;
+  inset-block-end: 16px;
+  font: inherit;
+  font-size: 0.85em;
+  border: 0;
+  background: var(--guuey-chat-ink);
+  color: var(--guuey-chat-canvas);
+  border-radius: 999px;
+  padding: 6px 14px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.25);
+}
+.guuey-chat-jump:focus-visible,
+.guuey-chat-show-earlier:focus-visible,
+.guuey-chat-copy:focus-visible,
+.guuey-chat-retry:focus-visible {
+  outline: 2px solid var(--guuey-chat-accent);
+  outline-offset: 1px;
+}
+
+/* ── Motion (disabled under prefers-reduced-motion, §3.2) ── */
+@keyframes guuey-chat-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes guuey-chat-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+.guuey-chat-pulse {
+  animation: guuey-chat-pulse 1.6s ease-in-out infinite;
+}
+.guuey-chat-shimmer {
+  animation: guuey-chat-pulse 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .guuey-chat-pulse,
+  .guuey-chat-shimmer,
+  .guuey-chat-tool-running .guuey-chat-tool-glyph {
+    animation: none;
+  }
+}

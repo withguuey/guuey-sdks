@@ -23,6 +23,7 @@ export {
   humanizeToolName,
   type ChatStrings,
 } from "./strings.js";
+export { transcriptInputsFromHistory } from "./history-inputs.js";
 export {
   DEFAULT_CHAT_THEME,
   GUUEY_CHAT_THEME,

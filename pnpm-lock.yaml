@@ -53,13 +53,34 @@ importers:
       '@silverprotocol/core':
         specifier: 0.4.1
         version: 0.4.1
+      '@silverprotocol/richtext':
+        specifier: 0.4.1
+        version: 0.4.1
       zod:
         specifier: ^4.3.6
         version: 4.4.3
     devDependencies:
+      '@testing-library/dom':
+        specifier: ^10.0.0
+        version: 10.4.1
+      '@testing-library/react':
+        specifier: ^16.3.2
+        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@types/node':
         specifier: ^24.0.0
         version: 24.12.4
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.17
+      jsdom:
+        specifier: ^25.0.1
+        version: 25.0.1
+      react:
+        specifier: ^19.0.0
+        version: 19.2.7
+      react-dom:
+        specifier: ^19.0.0
+        version: 19.2.7(react@19.2.7)
       typescript:
         specifier: ^5.0.0
         version: 5.9.3
@@ -1399,6 +1420,9 @@ packages:
     peerDependenciesMeta:
       '@openai/agents':
         optional: true
+
+  '@silverprotocol/richtext@0.4.1':
+    resolution: {integrity: sha512-G/I+ejVRiYJ6RfVHDKkqCZYnmEawv/DvzBoh+t1BfQz04jBx80R0NblmZimhPrsAJK6z4J4Nrr8YqCo5WILuIg==}
 
   '@so-ric/colorspace@1.1.6':
     resolution: {integrity: sha512-/KiKkpHNOBgkFJwu9sh48LkHSMYGyuTcSFK/qMBdnOAlrRJzRSXAOFB5qwzaVQuDl8wAvHVMkaASQDReTahxuw==}
@@ -4068,6 +4092,8 @@ snapshots:
       '@silverprotocol/core': 0.4.1
     optionalDependencies:
       '@openai/agents': 0.12.0(ws@8.21.0)(zod@4.4.3)
+
+  '@silverprotocol/richtext@0.4.1': {}
 
   '@so-ric/colorspace@1.1.6':
     dependencies:
