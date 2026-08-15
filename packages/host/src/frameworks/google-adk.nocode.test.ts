@@ -10,8 +10,9 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { GUUEY_DEFAULT_SYSTEM_PROMPT } from "@guuey/config";
 import type { Emitter, JsonValue, StopReason } from "@guuey/worker";
-import { assertGracefulSupport, loadRunner, type HostTurn } from "../index.js";
+import { assertGracefulSupport, loadRunner, type HostSnapshot, type HostTurn } from "../index.js";
 import { renderMemorySection, renderProfileSection, withContextPreamble } from "../preamble.js";
 import { createRunner, importConditionEntry, loadAdk } from "./google-adk.js";
 
@@ -131,7 +132,10 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
    * (memory-mcp T5 gate coverage). Asserts the instruction is a FUNCTION (F7
    * brace-safety) and returns its resolved value.
    */
-  async function resolveInstruction(over: Partial<HostTurn>): Promise<string> {
+  async function resolveInstruction(
+    over: Partial<HostTurn>,
+    snapshot: HostSnapshot = { model: "gemini-3.5-pro", systemPrompt: "be terse" }
+  ): Promise<string> {
     const session = join(base, `mem-${Math.random().toString(36).slice(2)}`);
     mkdirSync(join(session, ".guuey", "credentials"), { recursive: true });
     const captured: { agent?: unknown } = {};
@@ -166,7 +170,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
       history: [],
       ...over,
     };
-    await runner.runTurn({ model: "gemini-3.5-pro", systemPrompt: "be terse" }, turn, emit);
+    await runner.runTurn(snapshot, turn, emit);
     expect(got.error).toEqual([]);
     const agent = captured.agent as { params: { instruction: string | (() => string) } };
     // Still a FUNCTION (F7 brace-safety) — recalled memory may contain `{...}`,
@@ -174,6 +178,11 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     expect(typeof agent.params.instruction).toBe("function");
     return (agent.params.instruction as () => string)();
   }
+
+  it("prompt-less snapshot → GUUEY_DEFAULT_SYSTEM_PROMPT rides the preamble (parity with the claude/openai arms)", async () => {
+    const resolved = await resolveInstruction({}, { model: "gemini-3.5-pro" });
+    expect(resolved).toBe(withContextPreamble(GUUEY_DEFAULT_SYSTEM_PROMPT, [], undefined, undefined));
+  });
 
   it("authenticated + attached + userMemory → save + byte-identical recall block after the preamble (memory-mcp T5)", async () => {
     const resolved = await resolveInstruction({

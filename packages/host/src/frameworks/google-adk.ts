@@ -36,7 +36,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { defaultModelFor, type GuueyContext } from "@guuey/config";
+import { GUUEY_DEFAULT_SYSTEM_PROMPT, defaultModelFor, type GuueyContext } from "@guuey/config";
 import { listCredentials, type CredentialFile, type Emitter, type JsonValue } from "@guuey/worker";
 import type { FrameworkRunner, HostSnapshot, HostTurn } from "../index.js";
 import {
@@ -351,7 +351,15 @@ export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
       const profileAccess = turn.profileAccess;
       const profileOn = turn.identity.authMode === "authenticated" && profileAccess !== undefined;
       const instruction =
-        withContextPreamble(snapshot.systemPrompt ?? "", turn.history, turn.priorMemory, turn.priorState) +
+        // Prompt-less snapshots run the platform default — same fallback as
+        // the claude and openai arms (this arm used to fall back to "",
+        // leaving google-adk agents effectively promptless).
+        withContextPreamble(
+          snapshot.systemPrompt ?? GUUEY_DEFAULT_SYSTEM_PROMPT,
+          turn.history,
+          turn.priorMemory,
+          turn.priorState,
+        ) +
         (memoryOn ? renderMemorySection(turn.userMemory) : "") +
         (profileOn ? renderProfileSection(turn.profileSections, profileAccess) : "");
       let agent: AdkAgent;
