@@ -25,6 +25,12 @@
       "types": "./dist/react.d.ts",
       "import": "./dist/react.js",
       "default": "./dist/react.js"
+    },
+    "./transport": {
+      "react-native": "./src/transport.ts",
+      "types": "./dist/transport.d.ts",
+      "import": "./dist/transport.js",
+      "default": "./dist/transport.js"
     }
   },
   "scripts": {

@@ -16,9 +16,13 @@ export {
   createWebAdapters,
   localStorageThreadStore,
   webGenerateId,
-  fetchStreamTransport,
   type CreateWebAdaptersOptions,
 } from "./web-adapters.js";
+// The invoke transport + guest-identity wire pieces, in their own
+// mcp-apps-host-free module. Consumers that want ONLY this graph (no
+// host-role card layer riding along) import `@guuey/agent-client/transport`
+// instead of the barrel — see that module's docblock (guuey#186 G2).
+export { fetchStreamTransport, sendableGuestSecret, GUEST_HEADER } from "./transport.js";
 // The `POD_SATURATED` single-retry wrapper, transport-agnostic: a host that
 // brings its own `fetch` (Portal's React-Native transport) wraps it to wear the
 // same semantics as the web transport instead of hand-rolling a second copy.
