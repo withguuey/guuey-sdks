@@ -20,8 +20,10 @@ name: npm Release
 # GuueyChatTheme platform-data schema; deps agent-client + mcp-apps-host +
 # @silverprotocol/core), @guuey/host,
 # @guuey/create-agentic-app, @guuey/cli.
-# First-ever publish of any package is a manual, operator-gated bootstrap
-# (npm requires the package to exist before a trusted publisher attaches).
+# First-ever publishes ride OIDC too: npm now supports PRE-ATTACHING a
+# trusted publisher to an unpublished package name (proven 2026-08-15 —
+# @guuey/chat@0.4.0 was first-published by this workflow). Pre-attach the
+# publisher config on npmjs BEFORE the cut that introduces a new package.
 #
 # COUPLED SET-MOVE — config + cli + create-agentic-app publish TOGETHER.
 # The colocated-MCP flip (slice B, 2026-07-21) made these three a single
