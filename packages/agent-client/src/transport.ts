@@ -151,6 +151,21 @@ export interface FetchStreamTransportOptions extends SaturationRetryOptions {
    * deliberately stays with the saturation policy instead).
    */
   coldStartRetry?: ColdStartRetryOptions | false;
+  /**
+   * Injectable bearer provider (guuey#186 Gap 4) — identity is a transport
+   * concern (see {@link InvokeTransport}: "owns headers + identity
+   * entirely"), and a harness or non-React host holds credentials in its own
+   * lifecycle, not in a closure minted once at page load. Resolved PER
+   * ATTEMPT, before each request — a retry after a backoff wait re-reads it,
+   * so a token that expired during the wait is refreshed rather than
+   * replayed. When present it takes precedence over the positional
+   * `accessToken`; resolving `null` falls through to the guest secret /
+   * cookie chain exactly as a null `accessToken` does (and carries the same
+   * silent-anonymous-downgrade hazard the `createWebAdapters` docs warn
+   * about). A throw propagates and fails the invoke — deliberately not
+   * caught, for the same reason as `getGuestSecret` there.
+   */
+  getBearer?: () => string | null | Promise<string | null>;
 }
 
 /**
@@ -170,10 +185,14 @@ export function fetchStreamTransport(
   guestSecret?: string | null,
   options: FetchStreamTransportOptions = {},
 ): AsyncIterable<string> {
-  const saturated = withSaturationRetry(
-    (attempt) => streamInvokeOnce(attempt, accessToken, guestSecret),
-    { sleep: options.sleep },
-  );
+  const { getBearer } = options;
+  const once = async function* (attempt: InvokeRequest): AsyncGenerator<string> {
+    // Per-attempt resolution: each retry re-asks the provider (fresh token
+    // after a backoff wait) instead of replaying a captured one.
+    const bearer = getBearer ? await getBearer() : accessToken;
+    yield* streamInvokeOnce(attempt, bearer, guestSecret);
+  };
+  const saturated = withSaturationRetry(once, { sleep: options.sleep });
   if (options.coldStartRetry === false) return saturated(req);
   return withColdStartRetry(saturated, {
     sleep: options.sleep,

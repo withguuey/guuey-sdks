@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect, vi } from "vitest";
-import { fetchStreamTransport } from "./transport.js";
+import { fetchStreamTransport, GUEST_HEADER } from "./transport.js";
 import { AgentResponseError } from "./errors.js";
 import { AGENT_ERROR_CODES } from "./error-codes.js";
 import type { InvokeRequest } from "./types.js";
@@ -521,5 +521,52 @@ describe("fetchStreamTransport — cold-start 503 bounded retry", () => {
     expect(err.status).toBe(503);
     expect(err.code).toBeUndefined();
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * guuey#186 Gap 4: identity is a transport concern — the injectable provider
+ * lives HERE, resolved per attempt, not as closure state a page-load minted
+ * once (the console.ggui.ai harness had to bolt credentials on around the
+ * client because this seam was fused shut).
+ */
+describe("fetchStreamTransport — injectable getBearer", () => {
+  it("wins over the positional accessToken and carries exactly one identity", async () => {
+    const fetchImpl = mockFetch([sseResponse()]);
+    await withGlobalFetch(fetchImpl, () =>
+      drain(
+        fetchStreamTransport(invokeRequest(), "stale-positional", SECRET, {
+          getBearer: () => "fresh-injected",
+        }),
+      ),
+    );
+    const [, init] = fetchImpl.mock.calls[0];
+    const headers = headersOf(init);
+    expect(headers.Authorization).toBe("Bearer fresh-injected");
+    expect(headers[GUEST_HEADER]).toBeUndefined();
+    expect(init?.credentials).toBeUndefined();
+  });
+
+  it("is resolved PER ATTEMPT — a retry re-reads a fresh token instead of replaying", async () => {
+    const fetchImpl = mockFetch([coldStart(), sseResponse("data: ok\n\n")]);
+    const { sleep } = fakeSleep();
+    const tokens = ["tok-before-wait", "tok-after-wait"];
+    const getBearer = vi.fn(() => Promise.resolve(tokens.shift() ?? null));
+    await withGlobalFetch(fetchImpl, () =>
+      drain(fetchStreamTransport(invokeRequest(), null, null, { sleep, getBearer })),
+    );
+    expect(getBearer).toHaveBeenCalledTimes(2);
+    expect(headersOf(fetchImpl.mock.calls[0][1]).Authorization).toBe("Bearer tok-before-wait");
+    expect(headersOf(fetchImpl.mock.calls[1][1]).Authorization).toBe("Bearer tok-after-wait");
+  });
+
+  it("resolving null falls through the normal identity chain (guest secret next)", async () => {
+    const fetchImpl = mockFetch([sseResponse()]);
+    await withGlobalFetch(fetchImpl, () =>
+      drain(fetchStreamTransport(invokeRequest(), null, SECRET, { getBearer: () => null })),
+    );
+    const headers = headersOf(fetchImpl.mock.calls[0][1]);
+    expect(headers.Authorization).toBeUndefined();
+    expect(headers[GUEST_HEADER]).toBe(SECRET);
   });
 });
