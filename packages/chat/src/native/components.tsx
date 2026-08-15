@@ -49,6 +49,7 @@ import type {
   UserMessageItem,
   TextItem,
   ViewMountItem,
+  ViewRefItem,
 } from "../types.js";
 import { Linking } from "react-native";
 import { NativeMarkdown } from "./markdown.js";
@@ -74,6 +75,11 @@ export interface NativeTranscriptItemContext {
   resolvedMounts: ReadonlyMap<ItemKey, ResolvedViewMount | "expired">;
   /** R6: live phase reports wired back into the next plan. */
   onViewPhase: (key: ItemKey, phase: ViewHostPhase) => void;
+  /**
+   * guuey#204: a promoted-view reference chip was activated — the host
+   * focuses/reveals its stage. Absent ⇒ the chip renders as a label.
+   */
+  onViewRef?: (item: ViewRefItem) => void;
 }
 
 interface ItemProps<T> {
@@ -348,6 +354,39 @@ export function NativeView({ item, ctx }: ItemProps<ViewMountItem>): ReactNode {
       <MutedText ctx={ctx}>{label}</MutedText>
       {item.attribution !== null ? <MutedText ctx={ctx}>{item.attribution}</MutedText> : null}
     </View>
+  );
+}
+
+/**
+ * guuey#204: the "promote and reference" chip — a Pressable when the host
+ * wires `onViewRef`, a plain labeled row otherwise. Never a second mount.
+ */
+export function NativeViewRef({ item, ctx }: ItemProps<ViewRefItem>): ReactNode {
+  const { tokens } = ctx;
+  const chipStyle = {
+    alignSelf: "flex-start" as const,
+    backgroundColor: tokens.palette.surface,
+    borderRadius: 999,
+    paddingHorizontal: tokens.pad,
+    paddingVertical: 6,
+  };
+  if (ctx.onViewRef === undefined) {
+    return (
+      <View accessibilityRole="text" style={chipStyle}>
+        <MutedText ctx={ctx}>{item.label}</MutedText>
+      </View>
+    );
+  }
+  const onViewRef = ctx.onViewRef;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={item.label}
+      onPress={() => onViewRef(item)}
+      style={chipStyle}
+    >
+      <MutedText ctx={ctx}>{item.label}</MutedText>
+    </Pressable>
   );
 }
 
@@ -660,6 +699,7 @@ export interface NativeTranscriptComponents {
   toolGroup: ComponentType<ItemProps<ToolGroupItem>>;
   dataResult: ComponentType<ItemProps<DataResultItem>>;
   view: ComponentType<ItemProps<ViewMountItem>>;
+  viewRef: ComponentType<ItemProps<ViewRefItem>>;
   media: ComponentType<ItemProps<MediaItem>>;
   code: ComponentType<ItemProps<CodeItem>>;
   citations: ComponentType<ItemProps<CitationsItem>>;
@@ -680,6 +720,7 @@ export const nativeTranscriptComponents: NativeTranscriptComponents = {
   toolGroup: NativeToolGroup,
   dataResult: NativeDataResult,
   view: NativeView,
+  viewRef: NativeViewRef,
   media: NativeMedia,
   code: NativeCode,
   citations: NativeCitations,
@@ -725,6 +766,10 @@ export function renderNativeItem(
     }
     case "view": {
       const C = components.view;
+      return <C key={item.key} item={item} ctx={ctx} />;
+    }
+    case "viewRef": {
+      const C = components.viewRef;
       return <C key={item.key} item={item} ctx={ctx} />;
     }
     case "media": {

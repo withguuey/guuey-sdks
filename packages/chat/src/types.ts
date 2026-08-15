@@ -128,6 +128,19 @@ export interface TranscriptInputs {
   sendStates?: Readonly<Record<string, "sending" | "failed">>;
   /** mountKey → live phase (R6 states). Keys match `ViewMountItem.key`. */
   viewPhases?: Readonly<Record<string, ViewHostPhase>>;
+  /**
+   * The mount key a host-owned stage/canvas surface currently shows
+   * (guuey#204 "promote and reference") — renderer-supplied state, like
+   * `sendStates`. When set, the plan emits a compact {@link ViewRefItem}
+   * in that mount's transcript slot instead of the full
+   * {@link ViewMountItem}, so an interactive surface exists exactly ONCE.
+   * Absent (or matching nothing / an expired mount) = today's behavior —
+   * every mount renders inline. Hosts derive the key with
+   * {@link newestViewKey} rather than hand-building it; the issue's
+   * phase-2 (every card a chip, click-to-swap) is this same field set per
+   * host click, no further plan changes.
+   */
+  promotedViewKey?: string;
   /** The last turn ended by user abort (R1 aborted-partial + "Stopped."). */
   aborted?: boolean;
   /**
@@ -246,6 +259,21 @@ export interface ViewMountItem extends BaseItem {
    * in-band "not available" stub.
    */
   actionScope: string | null;
+}
+
+/**
+ * R6's "promote and reference" chip (guuey#204): stands in for the ONE
+ * {@link ViewMountItem} a host's stage/canvas currently shows
+ * (`TranscriptInputs.promotedViewKey`), so the interactive surface exists
+ * exactly once. `key` is the replaced mount's key — overrides and phase
+ * reports keep their identity if the item swaps back to a full mount.
+ */
+export interface ViewRefItem extends BaseItem {
+  kind: "viewRef";
+  /** The display title (the producing call's, or the strings fallback). */
+  title: string;
+  /** The full resolved chip text (`strings.viewPromoted(title)`). */
+  label: string;
 }
 
 /** R7 — media blocks. */
@@ -378,6 +406,7 @@ export type DisplayItem =
   | ToolGroupItem
   | DataResultItem
   | ViewMountItem
+  | ViewRefItem
   | MediaItem
   | CodeItem
   | CitationsItem

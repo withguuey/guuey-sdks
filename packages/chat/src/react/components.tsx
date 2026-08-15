@@ -48,6 +48,7 @@ import type {
   UserMessageItem,
   TextItem,
   ViewMountItem,
+  ViewRefItem,
 } from "../types.js";
 import { Markdown } from "./markdown.js";
 
@@ -73,6 +74,12 @@ export interface TranscriptItemContext {
   resolvedMounts: ReadonlyMap<ItemKey, ResolvedViewMount | "expired">;
   /** R6: live phase reports wired back into the next plan. */
   onViewPhase: (key: ItemKey, phase: ViewHostPhase) => void;
+  /**
+   * guuey#204: a promoted-view reference chip was activated — the host
+   * focuses/reveals its stage (canvas). Absent ⇒ the chip renders as a
+   * non-interactive label.
+   */
+  onViewRef?: (item: ViewRefItem) => void;
   /**
    * R6 pass-through (sandbox overrides, the two-origin mount, relay hooks
    * — policy-gated by the host). Static, or a FUNCTION of the mount being
@@ -363,6 +370,31 @@ export function DefaultView({ item, ctx }: ItemProps<ViewMountItem>): ReactNode 
         <p className="guuey-chat-attribution">{item.attribution}</p>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * guuey#204: the "promote and reference" chip — stands in for the one
+ * mount the host's stage shows. A real button when the host wires
+ * `onViewRef` (keyboard-accessible for free); a plain label otherwise.
+ */
+export function DefaultViewRef({ item, ctx }: ItemProps<ViewRefItem>): ReactNode {
+  if (ctx.onViewRef === undefined) {
+    return (
+      <p className="guuey-chat-view-ref" role="note">
+        {item.label}
+      </p>
+    );
+  }
+  const onViewRef = ctx.onViewRef;
+  return (
+    <button
+      type="button"
+      className="guuey-chat-view-ref guuey-chat-view-ref-button"
+      onClick={() => onViewRef(item)}
+    >
+      {item.label}
+    </button>
   );
 }
 
@@ -673,6 +705,7 @@ export interface TranscriptComponents {
   toolGroup: ComponentType<ItemProps<ToolGroupItem>>;
   dataResult: ComponentType<ItemProps<DataResultItem>>;
   view: ComponentType<ItemProps<ViewMountItem>>;
+  viewRef: ComponentType<ItemProps<ViewRefItem>>;
   media: ComponentType<ItemProps<MediaItem>>;
   code: ComponentType<ItemProps<CodeItem>>;
   citations: ComponentType<ItemProps<CitationsItem>>;
@@ -693,6 +726,7 @@ export const defaultTranscriptComponents: TranscriptComponents = {
   toolGroup: DefaultToolGroup,
   dataResult: DefaultDataResult,
   view: DefaultView,
+  viewRef: DefaultViewRef,
   media: DefaultMedia,
   code: DefaultCode,
   citations: DefaultCitations,
@@ -738,6 +772,10 @@ export function renderItem(
     }
     case "view": {
       const C = components.view;
+      return <C key={item.key} item={item} ctx={ctx} />;
+    }
+    case "viewRef": {
+      const C = components.viewRef;
       return <C key={item.key} item={item} ctx={ctx} />;
     }
     case "media": {

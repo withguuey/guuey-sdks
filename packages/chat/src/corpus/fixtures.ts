@@ -531,3 +531,27 @@ export function noticeRows(): TranscriptInputs {
     ],
   };
 }
+
+/**
+ * 22. promoted-view — guuey#204 "promote and reference": the mount a host
+ * stage shows chips in the transcript; every other mount stays full; no
+ * key (or a stale one) is byte-identical to today.
+ */
+export function promotedView(): { inputs: TranscriptInputs; promotedKey: string } {
+  const s = seqSource();
+  const events: InvokeTurnEvent[] = [session, frame(boot(s), { status: "thinking" })];
+  for (const id of ["t1", "t2"] as const) {
+    events.push(
+      frame(
+        toolPart(s, id, "ggui_render", {
+          uiData: { uri: `ui://cards/${id}`, mimeType: "text/html", text: `<div>${id}</div>` },
+          content: [],
+        }),
+        { status: "using-tool", activeTool: "ggui_render" },
+      ),
+    );
+  }
+  events.push(doneEvent);
+  const inputs = driveTurn(events, { userText: "show me two cards" });
+  return { inputs, promotedKey: "view.t2" };
+}

@@ -66,7 +66,7 @@ export type NativeTranscriptListProps = Pick<
 export interface NativeTranscriptProps
   extends Pick<
     NativeTranscriptItemContext,
-    "onToggle" | "onRetry" | "onPromptAction" | "onErrorAction" | "resolvedMounts" | "onViewPhase"
+    "onToggle" | "onRetry" | "onPromptAction" | "onErrorAction" | "resolvedMounts" | "onViewPhase" | "onViewRef"
   > {
   plan: TranscriptPlan;
   /** Per-slot component overrides (spec §3's override column). */
@@ -93,6 +93,7 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
     onErrorAction,
     resolvedMounts,
     onViewPhase,
+    onViewRef,
   } = props;
 
   const tokens = useMemo(() => resolveNativeTheme(theme, mode), [theme, mode]);
@@ -101,8 +102,8 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
     [components],
   );
   const ctx: NativeTranscriptItemContext = useMemo(
-    () => ({ strings, tokens, onToggle, onRetry, onPromptAction, onErrorAction, resolvedMounts, onViewPhase }),
-    [strings, tokens, onToggle, onRetry, onPromptAction, onErrorAction, resolvedMounts, onViewPhase],
+    () => ({ strings, tokens, onToggle, onRetry, onPromptAction, onErrorAction, resolvedMounts, onViewPhase, onViewRef }),
+    [strings, tokens, onToggle, onRetry, onPromptAction, onErrorAction, resolvedMounts, onViewPhase, onViewRef],
   );
 
   // Inverted-list data: reversed plan, newest at index 0 (the visual

@@ -27,6 +27,7 @@ export {
   DefaultToolGroup,
   DefaultDataResult,
   DefaultView,
+  DefaultViewRef,
   DefaultMedia,
   DefaultCode,
   DefaultCitations,

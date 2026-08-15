@@ -1825,3 +1825,70 @@ exports[`corpus > 21. notice-rows — both arrival paths render labeled, never a
   "status": null,
 }
 `;
+
+exports[`corpus > 22. promoted-view — the stage's mount chips (guuey#204); others stay; no/stale key = no-op 1`] = `
+{
+  "items": [
+    {
+      "expanded": true,
+      "key": "u0",
+      "kind": "user",
+      "retry": false,
+      "state": "sent",
+      "text": "show me two cards",
+    },
+    {
+      "argsPreview": null,
+      "attribution": true,
+      "expanded": false,
+      "key": "tool.t1",
+      "kind": "tool",
+      "name": "ggui_render",
+      "result": null,
+      "state": "done",
+      "title": "ggui render",
+      "toolCallId": "t1",
+    },
+    {
+      "actionScope": null,
+      "attribution": "via ggui render",
+      "channel": "inline",
+      "expanded": true,
+      "key": "view.t1",
+      "kind": "view",
+      "label": "Loading view…",
+      "mount": {
+        "channel": "inline",
+        "resource": {
+          "mimeType": "text/html",
+          "text": "<div>t1</div>",
+          "uri": "ui://cards/t1",
+        },
+      },
+      "phase": "negotiating",
+      "toolTitle": "ggui render",
+    },
+    {
+      "argsPreview": null,
+      "attribution": true,
+      "expanded": false,
+      "key": "tool.t2",
+      "kind": "tool",
+      "name": "ggui_render",
+      "result": null,
+      "state": "done",
+      "title": "ggui render",
+      "toolCallId": "t2",
+    },
+    {
+      "expanded": false,
+      "key": "view.t2",
+      "kind": "viewRef",
+      "label": "ggui render — on canvas",
+      "title": "ggui render",
+    },
+  ],
+  "recovery": null,
+  "status": null,
+}
+`;

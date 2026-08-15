@@ -41,7 +41,10 @@ witness.
   validated by core's `validateHitlAnswer` before anything dispatches;
   dismissal = `cancelled` = re-askable per the silverprotocol#16 ruling),
   and family 21 (`notice-rows` — draft.2's `role:"notice"`: both arrival
-  paths, labeled and never agent-voiced, provenance under debug only).
+  paths, labeled and never agent-voiced, provenance under debug only),
+  and family 22 (`promoted-view` — guuey#204 "promote and reference": the
+  one mount a host stage shows chips via `promotedViewKey`, every other
+  mount stays full, no/stale key is byte-identical to today).
 - `capture.ts` / `captures/` — family 18: production-capture replay
   through the real `invokeTurn` (provenance in the module header).
 - `corpus.test.ts` — the runner: per-fixture assertions + snapshots, plain

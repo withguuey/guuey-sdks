@@ -11,6 +11,7 @@
  * rendering, tests, and RN bundlers consume the view-model directly.
  */
 export {
+  newestViewKey,
   planTranscript,
 } from "./plan.js";
 export {
@@ -68,4 +69,5 @@ export type {
   UnknownItem,
   UserMessageItem,
   ViewMountItem,
+  ViewRefItem,
 } from "./types.js";

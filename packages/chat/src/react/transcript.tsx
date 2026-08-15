@@ -46,7 +46,7 @@ export interface TranscriptWindowing {
 export interface TranscriptProps
   extends Pick<
     TranscriptItemContext,
-    "onToggle" | "onRetry" | "onPromptAction" | "onErrorAction" | "resolvedMounts" | "onViewPhase" | "viewProps"
+    "onToggle" | "onRetry" | "onPromptAction" | "onErrorAction" | "resolvedMounts" | "onViewPhase" | "onViewRef" | "viewProps"
   > {
   plan: TranscriptPlan;
   /** Per-slot component overrides (spec §3's override column). */
@@ -77,6 +77,7 @@ export function Transcript(props: TranscriptProps): ReactNode {
     onErrorAction,
     resolvedMounts,
     onViewPhase,
+    onViewRef,
     viewProps,
   } = props;
 
@@ -85,8 +86,8 @@ export function Transcript(props: TranscriptProps): ReactNode {
     [components],
   );
   const ctx: TranscriptItemContext = useMemo(
-    () => ({ strings, onToggle, onRetry, onPromptAction, onErrorAction, resolvedMounts, onViewPhase, viewProps }),
-    [strings, onToggle, onRetry, onPromptAction, onErrorAction, resolvedMounts, onViewPhase, viewProps],
+    () => ({ strings, onToggle, onRetry, onPromptAction, onErrorAction, resolvedMounts, onViewPhase, onViewRef, viewProps }),
+    [strings, onToggle, onRetry, onPromptAction, onErrorAction, resolvedMounts, onViewPhase, onViewRef, viewProps],
   );
 
   // ── Windowing ────────────────────────────────────────────────────────

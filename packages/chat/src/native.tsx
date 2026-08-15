@@ -33,6 +33,7 @@ export {
   NativeToolGroup,
   NativeDataResult,
   NativeView,
+  NativeViewRef,
   NativeMedia,
   NativeCode,
   NativeCitations,

@@ -55,6 +55,10 @@ export interface ChatStrings {
   viewInlineFallback: string;
   viewExpired: string;
   viewSandboxUnavailable: string;
+  /** guuey#204: the chip text for a mount promoted to a host stage/canvas. */
+  viewPromoted: (title: string) => string;
+  /** Chip title when the mount has no producing-call title (history cards). */
+  viewRefFallbackTitle: string;
 
   /** #192 debug-preset marker (calm never shows it — spec §3, F10). */
   recoveredFromHistory: string;
@@ -132,6 +136,8 @@ export const defaultChatStrings: ChatStrings = {
   viewInlineFallback: "Showing plain content",
   viewExpired: "This view expired",
   viewSandboxUnavailable: "Interactive view unavailable",
+  viewPromoted: (title) => `${title} — on canvas`,
+  viewRefFallbackTitle: "Card",
 
   recoveredFromHistory: "recovered from history",
 

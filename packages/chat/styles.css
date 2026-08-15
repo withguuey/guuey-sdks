@@ -241,6 +241,27 @@
   font-size: 0.78em;
   border-top: 1px solid color-mix(in srgb, var(--guuey-chat-ink) 6%, transparent);
 }
+/* guuey#204: the promoted-view reference chip — compact, never a frame. */
+.guuey-chat-view-ref {
+  display: inline-block;
+  margin: 0;
+  padding: 6px 12px;
+  border: 1px solid color-mix(in srgb, var(--guuey-chat-ink) 12%, transparent);
+  border-radius: 999px;
+  background: var(--guuey-chat-surface);
+  color: var(--guuey-chat-ink-muted);
+  font-size: 0.85em;
+  line-height: 1.2;
+}
+.guuey-chat-view-ref-button {
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85em;
+}
+.guuey-chat-view-ref-button:hover {
+  color: var(--guuey-chat-ink);
+  border-color: color-mix(in srgb, var(--guuey-chat-ink) 24%, transparent);
+}
 
 /* ── R7 media ── */
 .guuey-chat-media-image img {

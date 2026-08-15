@@ -7,8 +7,8 @@
 import { describe, expect, it } from "vitest";
 import { calmPolicy, debugPolicy } from "../policy.js";
 import { buildHitlAnswer, hitlPromptsFromFold } from "../hitl.js";
-import { planTranscript } from "../plan.js";
-import type { DisplayItem, ToolGroupItem, ToolItem, ViewMountItem } from "../types.js";
+import { newestViewKey, planTranscript } from "../plan.js";
+import type { DisplayItem, ToolGroupItem, ToolItem, ViewMountItem, ViewRefItem } from "../types.js";
 import {
   abortedMidStream,
   bypassVsSilver,
@@ -21,6 +21,7 @@ import {
   interleavedMediaCodeCitations,
   midstreamToolFailure,
   persistedPlusLive,
+  promotedView,
   reasoningHeavy,
   saturatedThenServed,
   stalledThenAdopted,
@@ -355,6 +356,32 @@ describe("corpus", () => {
     expect(texts.filter((t) => t.kind === "text" && t.text === "Done.")).toHaveLength(1);
     expect(texts.some((t) => t.kind === "text" && t.text.includes("concise mode"))).toBe(false);
     expect(calmPlan).toMatchSnapshot();
+  });
+
+  it("22. promoted-view — the stage's mount chips (guuey#204); others stay; no/stale key = no-op", () => {
+    const { inputs, promotedKey } = promotedView();
+    // Hosts derive the key, never hand-build it.
+    expect(newestViewKey(inputs)?.key).toBe(promotedKey);
+    const baseline = planTranscript(inputs, calm);
+    expect(
+      baseline.items.filter((i): i is ViewMountItem => i.kind === "view").map((v) => v.key),
+    ).toEqual(["view.t1", "view.t2"]);
+    const promoted = planTranscript({ ...inputs, promotedViewKey: promotedKey }, calm);
+    const byKey = new Map(promoted.items.map((i) => [i.key, i]));
+    const ref = byKey.get(promotedKey);
+    expect(ref?.kind).toBe("viewRef");
+    expect(ref?.kind === "viewRef" && ref.label).toContain("on canvas");
+    // The interactive surface exists exactly ONCE: one full mount remains.
+    expect(byKey.get("view.t1")?.kind).toBe("view");
+    expect(promoted.items.filter((i) => i.kind === "view")).toHaveLength(1);
+    // The chip keeps the mount's key (overrides/phase identity survives).
+    const refs = promoted.items.filter((i): i is ViewRefItem => i.kind === "viewRef");
+    expect(refs.map((r) => r.key)).toEqual([promotedKey]);
+    // No key and a stale key are byte-identical no-ops; the swap is deterministic.
+    expect(planTranscript(inputs, calm)).toEqual(baseline);
+    expect(planTranscript({ ...inputs, promotedViewKey: "view.nope" }, calm)).toEqual(baseline);
+    expect(planTranscript({ ...inputs, promotedViewKey: promotedKey }, calm)).toEqual(promoted);
+    expect(promoted).toMatchSnapshot();
   });
 
   it("determinism — same inputs ⇒ a deeply equal plan (spec §7, literally)", () => {

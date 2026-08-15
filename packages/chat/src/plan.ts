@@ -49,6 +49,7 @@ import type {
   TranscriptPlan,
   UnknownItem,
   ViewMountItem,
+  ViewRefItem,
 } from "./types.js";
 
 /** R5's giant threshold: above this byte count the state is `giant`. */
@@ -888,10 +889,65 @@ export function planTranscript(
     });
   }
 
+  // guuey#204 "promote and reference": the ONE mount a host-owned stage
+  // shows (`inputs.promotedViewKey`) renders as a compact reference chip
+  // instead of a second live app instance. A key matching nothing (stale
+  // host state) or an expired mount promotes nothing — the honest no-op;
+  // the next render's key corrects it. The chip keeps the mount's key, so
+  // overrides and phase reports survive a swap back to the full mount.
+  const promoted = inputs.promotedViewKey;
+  const finalItems =
+    promoted === undefined
+      ? items
+      : items.map((item): DisplayItem => {
+          if (item.kind !== "view" || item.key !== promoted) return item;
+          if (item.phase === "expired" || item.mount === null) return item;
+          const title = item.toolTitle ?? policy.strings.viewRefFallbackTitle;
+          const ref: ViewRefItem = {
+            kind: "viewRef",
+            key: item.key,
+            expanded: false,
+            title,
+            label: policy.strings.viewPromoted(title),
+          };
+          return ref;
+        });
+
   return {
-    items,
+    items: finalItems,
     status: deriveStatus(inputs, policy),
     recovery:
       inputs.adopted === true && policy.debugDetail ? policy.strings.recoveredFromHistory : null,
   };
+}
+
+/**
+ * The plan key of the NEWEST mountable view — what a "most recent card"
+ * stage (the widget's CanvasPane) will show, derived in the same family
+ * the plan's own emission uses: live fold mounts (transcript order, last
+ * wins) outrank history cards (ascending `seq`). `undefined` when nothing
+ * narrows to a mountable resource. Hosts pass the key back as
+ * `TranscriptInputs.promotedViewKey`; `channel` lets a host decline to
+ * promote a bare locator when no reader is wired (the stage would show
+ * nothing, and a chip must never point at an empty canvas).
+ */
+export function newestViewKey(
+  inputs: Pick<TranscriptInputs, "result" | "historyCards">,
+): { key: string; channel: ViewMount["channel"] } | undefined {
+  let newest: { key: string; channel: ViewMount["channel"] } | undefined;
+  const cards = [...(inputs.historyCards ?? [])].sort((a, b) => a.seq - b.seq);
+  for (const card of cards) {
+    const mount = snapshotViewMount(card.cardSnapshot);
+    if (mount === undefined) continue;
+    newest = { key: `card.${card.seq}`, channel: mount.channel };
+  }
+  for (const message of inputs.result?.messages ?? []) {
+    for (const block of message.content) {
+      if (block.type !== "tool-result") continue;
+      const mount = toolResultViewMount(block);
+      if (mount === undefined) continue;
+      newest = { key: `view.${block.toolCallId}`, channel: mount.channel };
+    }
+  }
+  return newest;
 }
