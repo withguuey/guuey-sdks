@@ -7,6 +7,7 @@
  */
 
 import * as http from 'node:http';
+import * as readline from 'node:readline';
 import { execFile, execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { resolveConfig } from '../config';
@@ -41,10 +42,16 @@ function openBrowser(url: string): boolean {
 /**
  * Handle the `guuey login` command.
  *
- * Two modes:
+ * Three modes:
  * 1. **Browser auth** (default): Opens browser, mints a `guuey_user_*` API key
- *    server-side, delivers it to the CLI via localhost callback.
- * 2. **Token auth** (`--token`): Accepts a pre-minted `guuey_user_*` API key
+ *    server-side, delivers it to the CLI via localhost callback. While the
+ *    callback listener waits, a token pasted on stdin is accepted too — the
+ *    first channel to produce a valid key wins (the authorize page shows the
+ *    key for copy-paste, so a browser on another machine still works).
+ * 2. **Paste-only** (`--no-browser`): For known-headless sessions (SSH,
+ *    devcontainer, CI box). Prints the authorize URL with no callback param;
+ *    the page always shows the minted key, the CLI just waits for the paste.
+ * 3. **Token auth** (`--token`): Accepts a pre-minted `guuey_user_*` API key
  *    for headless/CI use.
  */
 export async function login(flags: Record<string, string | true> = {}): Promise<void> {
@@ -62,7 +69,7 @@ export async function login(flags: Record<string, string | true> = {}): Promise<
     }
     saveAuth({
       pat: tokenValue,
-      expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+      expiresAt: new Date(Date.now() + NOMINAL_TTL_MS).toISOString(),
     });
     out.success('Logged in with API key (server-side expiry applies)');
     return;
@@ -71,13 +78,38 @@ export async function login(flags: Record<string, string | true> = {}): Promise<
   const config = resolveConfig();
   const endpoint = config.host!;
 
+  // Print the resolved host BEFORE anything opens — a prod-minted key against
+  // a dev API reads as broken auth (the 2026-08-08 / 2026-08-14 mismatch
+  // class); this line makes the mismatch visible while it is still cheap.
+  console.log(`Authenticating against ${endpoint}`);
+
+  if (flags['no-browser'] === true) {
+    // Known-headless: no listener, no callback param — the authorize page
+    // sees mode=paste and always displays the minted key for copy-paste.
+    const authUrl = pasteAuthorizeUrl(endpoint);
+    console.log('Open this URL in a browser to authenticate:\n');
+    console.log(`  ${authUrl}\n`);
+    console.log('Then paste the token shown in the browser here:');
+    const tokens = await waitForPastedToken();
+    saveAuth(tokens);
+    out.success('Logged in with API key (server-side expiry applies)');
+    return;
+  }
+
   const state = randomBytes(16).toString('hex');
   const callbackUrl = `http://localhost:${CLI_CALLBACK_PORT}/callback`;
 
   const authUrl = `${endpoint}/cli/authorize?state=${state}&callback=${encodeURIComponent(callbackUrl)}`;
 
-  // Start the callback server, then try to open browser
-  const tokenPromise = waitForCallback(state);
+  // Start the callback server, then try to open browser. When stdin is a
+  // TTY, ALSO accept a pasted token — on a remote session the browser's
+  // localhost redirect lands on the wrong machine, and the paste is the
+  // only channel that can ever complete. First valid token wins; the
+  // AbortController tears down the losing channel.
+  const abort = new AbortController();
+  const channels = [waitForCallback(state, abort.signal)];
+  const canPaste = process.stdin.isTTY === true;
+  if (canPaste) channels.push(waitForPastedToken(abort.signal));
 
   setTimeout(() => {
     const opened = openBrowser(authUrl);
@@ -88,11 +120,15 @@ export async function login(flags: Record<string, string | true> = {}): Promise<
       console.log('Open this URL in your browser to authenticate:\n');
     }
     console.log(`  ${authUrl}\n`);
-    console.log('Waiting for authentication...');
+    console.log(
+      canPaste
+        ? 'Waiting for authentication... (or paste the token from the browser here)'
+        : 'Waiting for authentication...',
+    );
   }, 300);
 
   try {
-    const tokens = await tokenPromise;
+    const tokens = await Promise.race(channels);
     saveAuth(tokens);
 
     // guuey_user_ keys are opaque — there is no email/sub to print.
@@ -100,7 +136,63 @@ export async function login(flags: Record<string, string | true> = {}): Promise<
   } catch (err) {
     out.error((err as Error).message);
     process.exit(1);
+  } finally {
+    // Tear down the losing channel (close the HTTP listener / release
+    // stdin) so the process can exit.
+    abort.abort();
   }
+}
+
+/**
+ * The `--no-browser` authorize URL: no state (there is no listener to bind
+ * to — possession of the pasted key is the proof) and no callback; the
+ * `mode=paste` marker tells the authorize page to always display the
+ * minted key for copy-paste.
+ */
+export function pasteAuthorizeUrl(endpoint: string): string {
+  return `${endpoint}/cli/authorize?mode=paste`;
+}
+
+/**
+ * Wait for a `guuey_user_*` key pasted on stdin (one per line).
+ *
+ * Never rejects — invalid pastes re-prompt — so it is safe on the losing
+ * side of a `Promise.race`. An aborted signal releases stdin and leaves the
+ * promise forever pending (post-race that is unobservable and un-leaked;
+ * a rejection here would surface as an unhandled rejection instead).
+ *
+ * `input` is injectable for tests only; production callers use stdin.
+ */
+export function waitForPastedToken(
+  signal?: AbortSignal,
+  input: NodeJS.ReadableStream = process.stdin,
+): Promise<AuthTokens> {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input, terminal: false });
+    const stop = () => {
+      rl.close();
+      // readline leaves a resumed stream flowing, which keeps the event
+      // loop alive after login returns — release it explicitly.
+      input.pause();
+    };
+    signal?.addEventListener('abort', stop, { once: true });
+    rl.on('line', (line) => {
+      const pasted = line.trim();
+      if (!pasted) return;
+      // Same validation + storage shape as the callback / --token paths:
+      // possession of the opaque key IS the proof (no `state` needed).
+      const tokens = tokensFromCallback(pasted);
+      if (!tokens) {
+        out.error(
+          'That does not look like a Guuey API key (expected a "guuey_user_" token). Paste the token shown in the browser.',
+        );
+        return;
+      }
+      signal?.removeEventListener('abort', stop);
+      stop();
+      resolve(tokens);
+    });
+  });
 }
 
 /** Nominal local expiry for opaque keys — the server enforces the real one. */
@@ -136,13 +228,26 @@ export function tokensFromCallback(pat: string, expiresAt?: string): AuthTokens 
  * server is localhost, so Chrome's Local-Network-Access preflight
  * (spec §3.3) gates the POST behind an OPTIONS request that must carry
  * `Access-Control-Allow-Private-Network: true`.
+ *
+ * An aborted `signal` (the stdin paste won the race) closes the listener
+ * and leaves the promise forever pending — post-race that is unobservable;
+ * rejecting would surface as an unhandled rejection.
  */
-export function waitForCallback(expectedState: string): Promise<AuthTokens> {
+export function waitForCallback(expectedState: string, signal?: AbortSignal): Promise<AuthTokens> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       server.close();
       reject(new Error('Login timed out after 5 minutes. Try again.'));
     }, 5 * 60 * 1000);
+
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timeout);
+        server.close();
+      },
+      { once: true },
+    );
 
     const MAX_BODY_SIZE = 16 * 1024;
 
