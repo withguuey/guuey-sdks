@@ -142,6 +142,9 @@ Agent Development:
     --app-id <id>                Override the resolved appId
   undeploy                       Tear down deployed agent (keeps app)
     --app-id <id>                Target a specific app
+    --force                      Skip the [y/N] confirmation (required when not
+                                 running in an interactive terminal; a declined
+                                 or refused confirmation exits non-zero)
   env set KEY=VALUE              Set environment variables
   env list                       List environment variables
   env unset KEY                  Remove environment variables
@@ -591,13 +594,13 @@ async function main(): Promise<void> {
       switch (action) {
         case 'list':
         case undefined:
-          await deploymentsList({ json: jsonFlag });
+          await deploymentsList({ json: jsonFlag }, flags);
           break;
         case 'rollback':
           await deploymentsRollback(rest[0], flags);
           break;
         case 'logs':
-          await deploymentsLogs(rest[0], { json: jsonFlag });
+          await deploymentsLogs(rest[0], { json: jsonFlag }, flags);
           break;
         default:
           console.error(`Unknown deployments command: ${action}. Use: list, rollback, logs`);
@@ -648,7 +651,7 @@ async function main(): Promise<void> {
           await envSet(rest, flags);
           break;
         case 'list':
-          await envList({ json: jsonFlag });
+          await envList({ json: jsonFlag }, flags);
           break;
         case 'unset':
           await envUnset(rest, flags);

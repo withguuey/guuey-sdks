@@ -2,20 +2,43 @@
  * guuey undeploy -- Tear down a deployed agent without deleting the app.
  *
  * Usage:
- *   guuey undeploy              # Undeploy the current app
- *   guuey undeploy --force      # Skip confirmation
+ *   guuey undeploy              # Undeploy the current app (prompts [y/N] on a TTY)
+ *   guuey undeploy --force      # Skip confirmation — required in non-interactive
+ *                               # sessions; declined/refused confirmations exit 1
  */
 
 import { createInterface } from 'node:readline';
 import { resolveConfig } from '../config';
+import { resolveTargetAppId } from '../app-id';
 import { requireAuth } from '../auth';
 import * as out from '../output';
+
+/**
+ * Destructive-op confirmation gate for `guuey undeploy` (pure — no I/O).
+ *
+ *   - `--force` always skips the prompt (`'skip'`).
+ *   - An interactive session (both stdin AND stdout are TTYs) without
+ *     `--force` prompts (`'prompt'`).
+ *   - A non-interactive session (script/CI/pipe) without `--force` refuses
+ *     outright (`'refuse'`) — there is no channel to confirm on. The old
+ *     behavior read EOF as the default N and exited 0, which false-greened
+ *     scripted teardowns (guuey#183).
+ */
+export function resolveUndeployConfirmation(opts: {
+  force: boolean;
+  stdinIsTTY: boolean | undefined;
+  stdoutIsTTY: boolean | undefined;
+}): 'skip' | 'prompt' | 'refuse' {
+  if (opts.force) return 'skip';
+  if (opts.stdinIsTTY === true && opts.stdoutIsTTY === true) return 'prompt';
+  return 'refuse';
+}
 
 export async function undeploy(
   flags?: Record<string, string | true>,
 ): Promise<void> {
   const config = resolveConfig();
-  const appId = (flags?.['app-id'] as string) ?? config.appId;
+  const appId = resolveTargetAppId(flags, config);
 
   if (!appId) {
     out.error('No app configured. Run "guuey pull --app-id <id>" to bind an existing app, or "guuey create" to scaffold a new project first.');
@@ -24,16 +47,30 @@ export async function undeploy(
 
   const auth = requireAuth();
 
-  // Confirm unless --force
-  if (flags?.force !== true) {
+  const confirmation = resolveUndeployConfirmation({
+    force: flags?.force === true,
+    stdinIsTTY: process.stdin.isTTY,
+    stdoutIsTTY: process.stdout.isTTY,
+  });
+
+  if (confirmation === 'refuse') {
+    out.error(
+      `Refusing to undeploy app ${appId} without confirmation in a non-interactive session. Pass --force to confirm.`,
+    );
+    process.exit(1);
+  }
+
+  if (confirmation === 'prompt') {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
     const answer = await new Promise<string>((resolve) => {
       rl.question(`  Tear down deployed agent for app ${appId}? [y/N] `, resolve);
     });
     rl.close();
-    if (answer.toLowerCase() !== 'y') {
+    if (answer.trim().toLowerCase() !== 'y') {
+      // Non-zero on decline: automation must not read a declined prompt as
+      // a completed teardown.
       console.log('  Cancelled.');
-      return;
+      process.exit(1);
     }
   }
 
