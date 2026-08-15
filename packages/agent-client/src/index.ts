@@ -29,6 +29,7 @@ export {
   fetchStreamTransport,
   sendableGuestSecret,
   GUEST_HEADER,
+  withActivityObserver,
   type FetchStreamTransportOptions,
 } from "./transport.js";
 // The invoke-refusal retry wrappers, transport-agnostic: a host that brings
@@ -47,7 +48,12 @@ export {
 export { AgentResponseError } from "./errors.js";
 // The pod's wire-code vocabulary, mirrored — branch on these instead of
 // re-typing the string literals (see the module docblock for the sync guard).
-export { AGENT_ERROR_CODES, type AgentErrorCode } from "./error-codes.js";
+export {
+  AGENT_ERROR_CODES,
+  type AgentErrorCode,
+  CLIENT_ERROR_CODES,
+  type ClientErrorCode,
+} from "./error-codes.js";
 export {
   fetchThreadHistory,
   threadHistoryRowsToMessages,
@@ -82,6 +88,7 @@ export type {
   AgentInvokeHistoryAdapter,
   AgentInvokeStatus,
   HistoryLoadResult,
+  StallRecoveryOptions,
   UseAgentInvokeOptions,
   UseAgentInvokeReturn,
 } from "./types.js";

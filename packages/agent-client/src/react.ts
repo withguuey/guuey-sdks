@@ -6,7 +6,13 @@
  * history reader, and the web adapters). Consumers that only need those never
  * import React at all; consumers that render chat import the hook from here.
  */
-export { useAgentInvoke, applyHistoryResult, type HistoryApplication } from "./useAgentInvoke.js";
+export {
+  useAgentInvoke,
+  applyHistoryResult,
+  type HistoryApplication,
+  stallProbeDecision,
+  STALL_RECOVERY_DEFAULTS,
+} from "./useAgentInvoke.js";
 // The block-preserving transcript surfaces `AgReduceResult`; re-export it (and
 // `AgEvent`) here so `./react` consumers can type `reduceResult` without a
 // direct `@silverprotocol/core` import.

@@ -14,7 +14,7 @@
  * from HERE, never the reverse, and `@guuey/agent-client/transport`
  * publishes exactly this graph.
  */
-import type { InvokeRequest } from "./types.js";
+import type { InvokeRequest, InvokeTransport } from "./types.js";
 import { AgentResponseError } from "./errors.js";
 import {
   parseRetryAfterSeconds,
@@ -234,4 +234,27 @@ export function fetchStreamTransport(
     sleep: options.sleep,
     ...options.coldStartRetry,
   })(req);
+}
+
+/**
+ * Wrap a transport so every yielded chunk ALSO pings `onChunk` — the
+ * byte-level liveness signal `useAgentInvoke`'s stall watchdog runs on
+ * (guuey#192). Purely observational: chunks pass through unchanged, errors
+ * and completion propagate untouched, and the wrapper adds no timers of its
+ * own — the OBSERVER owns the clock, this module only reports activity. The
+ * first ping doubles as the "first byte seen" arming signal, which is why
+ * the watchdog never fires during a silent cold start: no bytes, no ping,
+ * no armed timer (that phase belongs to {@link withColdStartRetry} and the
+ * user's own abort).
+ */
+export function withActivityObserver(
+  transport: InvokeTransport,
+  onChunk: () => void,
+): InvokeTransport {
+  return async function* observed(req: InvokeRequest): AsyncGenerator<string> {
+    for await (const chunk of transport(req)) {
+      onChunk();
+      yield chunk;
+    }
+  };
 }

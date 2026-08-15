@@ -25,6 +25,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Reducer, type AgReduceResult } from "@silverprotocol/core";
 import { invokeTurn, toInvokeUrl } from "./invoke-turn.js";
 import { AgentResponseError } from "./errors.js";
+import { withActivityObserver } from "./transport.js";
+import { CLIENT_ERROR_CODES } from "./error-codes.js";
 import type {
   AgentInvokeAdapters,
   AgentInvokeStatus,
@@ -33,6 +35,7 @@ import type {
   HistoryLoadResult,
   ProfileConsentRequest,
   ProfileLinkRequest,
+  StallRecoveryOptions,
   UseAgentInvokeOptions,
   UseAgentInvokeReturn,
 } from "./types.js";
@@ -61,6 +64,53 @@ export function applyHistoryResult(
   if ("gone" in result) return { kind: "clear" };
   if (currentMessages.length > 0 || result.messages.length === 0) return { kind: "skip" };
   return { kind: "seed", messages: result.messages };
+}
+
+/** The guuey#192 stall watchdog's resolved tuning (see {@link stallProbeDecision}). */
+export const STALL_RECOVERY_DEFAULTS = { windowMs: 25_000, probeAttempts: 4 } as const;
+
+function resolveStallRecovery(
+  option: false | StallRecoveryOptions | undefined,
+): { windowMs: number; probeAttempts: number } | null {
+  if (option === false) return null;
+  return {
+    windowMs: option?.windowMs ?? STALL_RECOVERY_DEFAULTS.windowMs,
+    probeAttempts: option?.probeAttempts ?? STALL_RECOVERY_DEFAULTS.probeAttempts,
+  };
+}
+
+/**
+ * Pure decision seam for the guuey#192 stall probe: does a freshly-loaded
+ * transcript already contain THIS turn's finished reply?
+ *
+ * `adopt` requires BOTH signals, because each alone lies in a real case:
+ *
+ *  - **user-count**: history must hold at least as many user turns as the
+ *    local transcript (which includes the just-sent optimistic one). Without
+ *    it, a thread whose PREVIOUS turn ended in a completed assistant reply
+ *    would adopt that OLD transcript and silently drop the in-flight turn.
+ *  - **finished tail**: history's last message must be a non-empty assistant
+ *    reply. Without it, a history read that caught the persisted user row
+ *    before the assistant row would adopt a reply-less transcript.
+ *
+ * KNOWN LIMIT (documented, accepted): the runtime persists a turn's rows at
+ * completion — the guuey#192 evidence (a reload mid-stall renders the FULL
+ * reply) is only possible under that model, and the read plane carries no
+ * per-row clientMessageId to match against. If persistence ever becomes
+ * progressive (partial assistant rows), this heuristic needs the read plane
+ * to grow a turn-completion marker — do not "fix" it client-side by text
+ * comparison, which cannot distinguish a partial row from a finished one.
+ */
+export function stallProbeDecision(
+  history: AgentMessage[],
+  localUserCount: number,
+): "adopt" | "in-flight" {
+  let historyUserCount = 0;
+  for (const m of history) if (m.role === "user") historyUserCount += 1;
+  if (historyUserCount < localUserCount) return "in-flight";
+  const last = history[history.length - 1];
+  if (!last || last.role !== "assistant" || last.text.trim() === "") return "in-flight";
+  return "adopt";
 }
 
 export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeReturn {
@@ -103,6 +153,13 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
   const threadIdRef = useRef<string | null>(null);
   const adaptersRef = useRef<AgentInvokeAdapters>(opts.adapters);
   adaptersRef.current = opts.adapters;
+  // The stall probe (guuey#192) needs the committed transcript's user-turn
+  // count long after `send`'s closures captured state — same render-time
+  // mirror idiom as `adaptersRef`.
+  const messagesRef = useRef<AgentMessage[]>(messages);
+  messagesRef.current = messages;
+  const stallRecoveryRef = useRef(opts.stallRecovery);
+  stallRecoveryRef.current = opts.stallRecovery;
   // The per-conversation AgJSON fold (only built when `preserveBlocks`).
   // Lazily (re)created on the first valid AgEvent after a fresh start / reset,
   // so an off run never constructs one and a bypass run never allocates.
@@ -282,6 +339,99 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         });
       };
 
+      // ── guuey#192 stall watchdog ─────────────────────────────────────
+      // A half-dead connection (TCP alive, zero bytes, no error, no `done`)
+      // never resolves the read below, so a parallel clock watches byte
+      // activity: armed by the FIRST chunk (so a silent cold start never
+      // trips it), reset by every chunk, and on expiry it probes history
+      // WITHOUT touching the stream — killing a live-but-quiet stream on a
+      // timer would trade a frozen cursor for a lost turn. Only two things
+      // end the turn early: adoption (history already holds the finished
+      // reply — the reload the user would have done, minus the reload) and
+      // the bounded give-up (STREAM_STALLED after `probeAttempts` fruitless
+      // probes with still-zero bytes).
+      const stall = resolveStallRecovery(stallRecoveryRef.current);
+      let turnEnded = false;
+      let probeInFlight = false;
+      let fruitlessProbes = 0;
+      let activityCount = 0;
+      let stallTimer: ReturnType<typeof setTimeout> | null = null;
+      const clearStallTimer = (): void => {
+        if (stallTimer !== null) {
+          clearTimeout(stallTimer);
+          stallTimer = null;
+        }
+      };
+      const armStallTimer = (): void => {
+        if (!stall || turnEnded || controller.signal.aborted) return;
+        clearStallTimer();
+        stallTimer = setTimeout(() => {
+          void onStallWindow();
+        }, stall.windowMs);
+      };
+      const endTurnWith = (apply: () => void): void => {
+        turnEnded = true;
+        clearStallTimer();
+        apply();
+        // Unwinds the suspended read; the catch sees `aborted` and stays
+        // silent, so whatever `apply` decided IS the turn's outcome.
+        controller.abort();
+      };
+      const onStallWindow = async (): Promise<void> => {
+        if (!stall || turnEnded || controller.signal.aborted || probeInFlight) return;
+        const tid = threadIdRef.current;
+        const history = adaptersRef.current.history;
+        if (tid && history) {
+          probeInFlight = true;
+          const countAtProbe = activityCount;
+          let result: HistoryLoadResult | null = null;
+          try {
+            result = await history.load(tid);
+          } catch {
+            result = null; // transient read failure = one fruitless probe
+          }
+          probeInFlight = false;
+          if (turnEnded || controller.signal.aborted) return;
+          // Bytes resumed while the probe was in flight: the stream is alive
+          // — discard the now-stale read; the chunk observer already reset
+          // the count and re-armed the clock.
+          if (activityCount !== countAtProbe) return;
+          if (result && !("gone" in result)) {
+            let localUserCount = 0;
+            for (const m of messagesRef.current) if (m.role === "user") localUserCount += 1;
+            if (stallProbeDecision(result.messages, localUserCount) === "adopt") {
+              const adopted = result;
+              endTurnWith(() => {
+                setMessages(adopted.messages);
+                if ("cards" in adopted && adopted.cards && adopted.cards.length > 0) {
+                  setHistoryCards(adopted.cards);
+                }
+              });
+              return;
+            }
+          }
+        }
+        // No probe possible (no threadId yet / no history adapter), a failed
+        // read, or history says the turn is still in flight — all count the
+        // same: one fruitless window.
+        fruitlessProbes += 1;
+        if (fruitlessProbes >= stall.probeAttempts) {
+          endTurnWith(() => {
+            setError("The response stream stalled and the finished reply was not found in history.");
+            setErrorCode(CLIENT_ERROR_CODES.STREAM_STALLED);
+          });
+          return;
+        }
+        armStallTimer();
+      };
+      const transport = stall
+        ? withActivityObserver(adapters.transport, () => {
+            activityCount += 1;
+            fruitlessProbes = 0;
+            armStallTimer();
+          })
+        : adapters.transport;
+
       try {
         const invokeUrl = toInvokeUrl(endpointUrl);
         const body = {
@@ -295,7 +445,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         // semantic event onto React state.
         for await (const ev of invokeTurn(
           { url: invokeUrl, body, signal: controller.signal },
-          adapters.transport,
+          transport,
         )) {
           if (ev.kind === "session") {
             // The pod is awake and the turn is admitted — 'connecting' ends
@@ -345,6 +495,10 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
           setErrorCode(e instanceof AgentResponseError ? (e.code ?? null) : null);
         }
       } finally {
+        // The turn is over however it ended — no probe may fire after this,
+        // and the pending timer must not leak past the turn.
+        turnEnded = true;
+        clearStallTimer();
         externalSignal?.removeEventListener("abort", onExternalAbort);
         setStatus("ready");
         setActiveTool(null);

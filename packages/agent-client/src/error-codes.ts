@@ -63,3 +63,27 @@ export const AGENT_ERROR_CODES = {
 
 /** One of the pod's wire codes — see {@link AGENT_ERROR_CODES}. */
 export type AgentErrorCode = (typeof AGENT_ERROR_CODES)[keyof typeof AGENT_ERROR_CODES];
+
+/**
+ * CLIENT-originated failure codes — minted by THIS SDK, never by the pod.
+ *
+ * Deliberately a SEPARATE constant from {@link AGENT_ERROR_CODES}: that
+ * object is a transcribed mirror of the runtime's wire vocabulary, guarded by
+ * the runtime-side `agent-client-codes.sync.test.ts` — adding a code the pod
+ * never emits there would both break the sync guard and lie about the wire.
+ * These codes surface through the SAME `errorCode` channel (it is a plain
+ * `string` for exactly this kind of growth), so consumers branch the same
+ * way; the split exists so each vocabulary keeps one honest owner.
+ */
+export const CLIENT_ERROR_CODES = {
+  /**
+   * The SSE stream went byte-silent mid-turn and bounded history probes never
+   * found the finished reply (guuey#192's stall watchdog giving up). The turn
+   * is over (`status` returns to `ready`); a retry or a reload may still find
+   * the reply if the backend completes later.
+   */
+  STREAM_STALLED: "STREAM_STALLED",
+} as const;
+
+/** One of this SDK's client-originated codes — see {@link CLIENT_ERROR_CODES}. */
+export type ClientErrorCode = (typeof CLIENT_ERROR_CODES)[keyof typeof CLIENT_ERROR_CODES];

@@ -127,6 +127,23 @@ export interface AgentInvokeAdapters {
   history?: AgentInvokeHistoryAdapter;
 }
 
+/** Tuning for the guuey#192 stall watchdog — see {@link UseAgentInvokeOptions.stallRecovery}. */
+export interface StallRecoveryOptions {
+  /**
+   * Byte-inactivity window (ms) before a history probe fires. Armed only
+   * AFTER the first byte of the turn — pre-first-byte silence is a legitimate
+   * cold start and never triggers. Every received chunk resets it.
+   * Default 25000.
+   */
+  windowMs?: number;
+  /**
+   * Fruitless probes (history shows the turn still in flight, or no probe is
+   * possible) before the turn fails with `CLIENT_ERROR_CODES.STREAM_STALLED`.
+   * Any received byte resets the count. Default 4.
+   */
+  probeAttempts?: number;
+}
+
 export interface UseAgentInvokeOptions {
   /** Pod base URL (with or without a trailing `/agent/invoke`). Chat is disabled when null. */
   endpointUrl: string | null;
@@ -141,6 +158,18 @@ export interface UseAgentInvokeOptions {
    * reducer is never constructed and the text behaviour is byte-identical.
    */
   preserveBlocks?: boolean;
+  /**
+   * Stall recovery for a half-dead stream (guuey#192). A connection that dies
+   * WITHOUT erroring (TCP alive, zero bytes, no `done`) would otherwise leave
+   * the turn suspended forever — a frozen cursor while the backend may have
+   * completed and persisted the reply. On by default; `false` restores the
+   * old hang-forever behaviour; an object tunes the window/attempts. Armed
+   * only after the first byte; probes are non-destructive (they read history
+   * WITHOUT touching the live stream) and adopt the finished reply from the
+   * history adapter when it is already persisted — see the watchdog notes in
+   * `useAgentInvoke`.
+   */
+  stallRecovery?: false | StallRecoveryOptions;
   /**
    * Optional external abort authority (guuey#186 Gap 4): a host lifecycle —
    * route change, dialog close, screen unmount — that must be able to stop
@@ -208,7 +237,9 @@ export interface UseAgentInvokeReturn {
    *
    * It is a `string`, not the `AgentErrorCode` union: the pod may ship a new
    * code before a consumer upgrades this SDK, and a narrowed type would make
-   * that unrepresentable rather than merely unhandled.
+   * that unrepresentable rather than merely unhandled. ONE code is
+   * client-originated rather than a pod wire code: `STREAM_STALLED` (see
+   * `CLIENT_ERROR_CODES`), set when the guuey#192 stall watchdog gives up.
    */
   errorCode: string | null;
   threadId: string | null;
