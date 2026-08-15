@@ -9,7 +9,22 @@
     "rootDir": "src",
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    // Upstream quirk, typing side only: @modelcontextprotocol/ext-apps'
+    // root d.ts (dist/src/app.d.ts) re-exports its spec types through
+    // EXTENSIONLESS relative specifiers ("./types"), which NodeNext
+    // resolution rejects — so the bare specifier is mapped to the inner
+    // types.d.ts, whose specifiers are extension-correct. Runtime is
+    // untouched: tsc still emits the bare specifier, and the package's
+    // runtime entry is a self-contained bundle that resolves fine under
+    // plain Node (check:esm covers it).
+    "paths": {
+      "@modelcontextprotocol/ext-apps": [
+        "./node_modules/@modelcontextprotocol/ext-apps/dist/src/types.d.ts"
+      ]
+    }
   },
   "include": ["src"]
 }

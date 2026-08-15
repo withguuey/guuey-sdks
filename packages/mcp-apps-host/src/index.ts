@@ -28,6 +28,7 @@ export {
   type GguiShellHtmlOptions,
 } from "./ggui-render.js";
 export {
+  resolveViewMount,
   snapshotViewMount,
   toolResultViewMount,
   type LocatorViewMount,
@@ -45,6 +46,7 @@ export {
 export {
   asToolCallResult,
   createMcpUiActionRelay,
+  unavailableToolCallResult,
   UI_ACTION_TOOLS,
   UI_ACTION_UNAVAILABLE_TEXT,
   type CreateMcpUiActionRelayDeps,
@@ -53,3 +55,27 @@ export {
   type McpToolStructuredContent,
   type UiActionRequest,
 } from "./action.js";
+export {
+  initializeResult,
+  initialViewHostState,
+  teardownMessage,
+  toolCallResponse,
+  TOOLS_CALL_METHOD,
+  viewHostElapsed,
+  viewHostReceive,
+  type ViewHostBehavior,
+  type ViewHostEffect,
+  type ViewHostOutbound,
+  type ViewHostPhase,
+  type ViewHostInfo,
+  type ViewHostState,
+  type ViewHostTransition,
+  type ViewRequestId,
+} from "./view-host-protocol.js";
+export {
+  attachViewHost,
+  viewDocumentHtml,
+  type AttachViewHostConfig,
+  type ViewFrameLike,
+  type ViewHostEvents,
+} from "./view-host.js";

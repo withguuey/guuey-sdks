@@ -58,7 +58,12 @@ export const UI_ACTION_TOOLS: ReadonlySet<string> = new Set([
 export const UI_ACTION_UNAVAILABLE_TEXT =
   "This action isn't available right now.";
 
-function unavailable(): McpToolCallResult {
+/**
+ * The in-band `isError` result for an action that cannot be performed —
+ * the relay's own refusals use it, and `attachViewHost` posts it when an
+ * embedder-supplied relay hook rejects (the view is always answered).
+ */
+export function unavailableToolCallResult(): McpToolCallResult {
   return {
     content: [{ type: "text", text: UI_ACTION_UNAVAILABLE_TEXT }],
     isError: true,
@@ -152,15 +157,15 @@ export function createMcpUiActionRelay(
   deps: CreateMcpUiActionRelayDeps,
 ): (request: UiActionRequest) => Promise<McpToolCallResult> {
   return async (request) => {
-    if (!UI_ACTION_TOOLS.has(request.name)) return unavailable();
-    if (!request.resourceUri.startsWith("ui://")) return unavailable();
+    if (!UI_ACTION_TOOLS.has(request.name)) return unavailableToolCallResult();
+    if (!request.resourceUri.startsWith("ui://")) return unavailableToolCallResult();
     let raw: unknown;
     try {
       raw = await deps.callTool(request.resourceUri, request.name, request.arguments);
     } catch {
-      return unavailable(); // transport failure == unavailable, in-band
+      return unavailableToolCallResult(); // transport failure == unavailable, in-band
     }
-    if (raw === undefined) return unavailable();
-    return asToolCallResult(raw) ?? unavailable();
+    if (raw === undefined) return unavailableToolCallResult();
+    return asToolCallResult(raw) ?? unavailableToolCallResult();
   };
 }

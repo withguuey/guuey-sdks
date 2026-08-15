@@ -27,6 +27,24 @@ role's client-side narrowing and mount contract:
   this assembly over guuey's platform proxy.
 - **Sandbox-trust channels** (`ViewMountChannel`): which sandbox host page a
   payload may mount in, until per-resource declared-CSP construction lands.
+- **The host itself** (`attachViewHost`, and `<GuueyView>` from
+  `@guuey/mcp-apps-host/react`): a spec-following view opens with the
+  `ui/initialize` App handshake and **blocks on it** — mount material alone
+  renders a blank frame forever. `attachViewHost(iframe, config)` answers
+  that handshake for any embedder (framework-agnostic, one call); the React
+  component additionally owns iframe creation, lifecycle, and the safe
+  sandbox default (`allow-scripts` **without** `allow-same-origin` — with
+  it, agent-generated HTML would run as your origin — plus
+  `allow="clipboard-write"` so generated copy buttons work). Configurable
+  where a host genuinely varies: `hostCapabilities` (default `{}` —
+  advertise only what you implement), an optional `tools/call` relay hook
+  (privilege boundary, default off; pair with `createMcpUiActionRelay`),
+  `hostContext`, and the negotiation timeout. While a frame negotiates, the
+  state is labeled (`negotiating` / `connected` / `no-handshake`), never a
+  blank page.
+- **Resolved-only mount walk** (`resolveViewMount`): chain it off
+  `toolResultViewMount`/`snapshotViewMount` with your reader and render
+  only `ResolvedViewMount`s — the locator round-trip is folded in.
 
 Vendor-neutral by principle: ggui's MCP Apps run on any spec-following host
 (claude.ai, chatgpt.com, guuey) precisely because they follow the spec; this
