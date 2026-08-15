@@ -517,6 +517,114 @@ describe("createUiResourceReader", () => {
       resource: { uri: "ui://x/y", mimeType: "text/html", blob: "PGI+aGk8L2I+" },
     });
   });
+
+  // guuey#209 C1 — the two-door contract: pod door (live turns) first,
+  // platform door (persisted locators) second; each miss falls through.
+  describe("the pod door (endpointUrl)", () => {
+    /** URL-routed mock: `answers` maps a URL PREFIX to its response. */
+    function mkDoorFetch(answers: Record<string, { status: number; body?: unknown } | "throw">) {
+      return vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        for (const [prefix, answer] of Object.entries(answers)) {
+          if (!url.startsWith(prefix)) continue;
+          if (answer === "throw") throw new Error("ECONNREFUSED");
+          return {
+            ok: answer.status >= 200 && answer.status < 300,
+            status: answer.status,
+            json: async () => answer.body,
+          };
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      }) as unknown as typeof fetch;
+    }
+    const urls = (fetchImpl: typeof fetch): string[] =>
+      (fetchImpl as unknown as { mock: { calls: unknown[][] } }).mock.calls.map((c) =>
+        String(c[0]),
+      );
+
+    it("a live-turn locator resolves on the pod door alone — the platform door is never asked", async () => {
+      const fetchImpl = mkDoorFetch({
+        "https://pod.example/agent/ui-resource": { status: 200, body: OK_BODY },
+      });
+      const read = createUiResourceReader({
+        apiBaseUrl: "https://api.example/v1",
+        threadId: "t1",
+        endpointUrl: "https://pod.example",
+        guestSecret: "a".repeat(64),
+        fetchImpl,
+      });
+      expect(await read("ui://ggui/render/s/h")).toEqual({ channel: "ggui", resource: OK_BODY });
+      expect(urls(fetchImpl)).toEqual([
+        "https://pod.example/agent/ui-resource?uri=ui%3A%2F%2Fggui%2Frender%2Fs%2Fh",
+      ]);
+      // Same identity carrier on the pod door as everywhere else.
+      const headers = (
+        (fetchImpl as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]![1] as {
+          headers: Record<string, string>;
+        }
+      ).headers;
+      expect(headers["x-guuey-guest"]).toBe("a".repeat(64));
+    });
+
+    it("a pod miss (completed turn, past the grace window) falls through to the platform door", async () => {
+      const fetchImpl = mkDoorFetch({
+        "https://pod.example/agent/ui-resource": { status: 404 },
+        "https://api.example/v1/threads/t1/ui-resource": { status: 200, body: OK_BODY },
+      });
+      const read = createUiResourceReader({
+        apiBaseUrl: "https://api.example/v1",
+        threadId: "t1",
+        endpointUrl: "https://pod.example",
+        fetchImpl,
+      });
+      expect(await read("ui://ggui/render/s/h")).toEqual({ channel: "ggui", resource: OK_BODY });
+      expect(urls(fetchImpl)).toHaveLength(2);
+    });
+
+    it("a pod transport failure is a miss, not an error — the platform door is still tried", async () => {
+      const fetchImpl = mkDoorFetch({
+        "https://pod.example/agent/ui-resource": "throw",
+        "https://api.example/v1/threads/t1/ui-resource": { status: 200, body: OK_BODY },
+      });
+      const read = createUiResourceReader({
+        apiBaseUrl: "https://api.example/v1",
+        threadId: "t1",
+        endpointUrl: "https://pod.example",
+        fetchImpl,
+      });
+      expect(await read("ui://ggui/render/s/h")).toEqual({ channel: "ggui", resource: OK_BODY });
+    });
+
+    it("accepts the full invoke URL shape and normalizes it (same rule as the transport)", async () => {
+      const fetchImpl = mkDoorFetch({
+        "https://pod.example/agent/ui-resource": { status: 200, body: OK_BODY },
+      });
+      const read = createUiResourceReader({
+        apiBaseUrl: "https://api.example/v1",
+        threadId: "t1",
+        endpointUrl: "https://pod.example/agent/invoke",
+        fetchImpl,
+      });
+      expect(await read("ui://ggui/render/s/h")).toBeDefined();
+      expect(urls(fetchImpl)[0]).toBe(
+        "https://pod.example/agent/ui-resource?uri=ui%3A%2F%2Fggui%2Frender%2Fs%2Fh",
+      );
+    });
+
+    it("both doors missing is undefined — deny == miss, placeholder, never an error", async () => {
+      const fetchImpl = mkDoorFetch({
+        "https://pod.example/agent/ui-resource": { status: 404 },
+        "https://api.example/v1/threads/t1/ui-resource": { status: 404 },
+      });
+      const read = createUiResourceReader({
+        apiBaseUrl: "https://api.example/v1",
+        threadId: "t1",
+        endpointUrl: "https://pod.example",
+        fetchImpl,
+      });
+      expect(await read("ui://ggui/render/s/h")).toBeUndefined();
+    });
+  });
 });
 
 // guuey#158 — the ui-action relay: the reader's credential surface on the

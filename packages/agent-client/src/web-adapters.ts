@@ -18,6 +18,7 @@ import {
 import type { AgentInvokeAdapters, InvokeTransport, ThreadIdStore } from "./types.js";
 import { fetchThreadHistory, HistoryUnauthorizedError } from "./history.js";
 import { fetchStreamTransport, sendableGuestSecret, GUEST_HEADER } from "./transport.js";
+import { toInvokeUrl } from "./invoke-turn.js";
 
 /** Persists the threadId in `window.localStorage` (synchronously). */
 export const localStorageThreadStore: ThreadIdStore = {
@@ -210,6 +211,18 @@ export interface CreateUiResourceReaderOptions {
   apiBaseUrl: string;
   /** The thread whose persisted locators this reader may resolve. */
   threadId: string;
+  /**
+   * The pod base (or full invoke URL — same normalization as the invoke
+   * transport). When set, the reader tries the POD door first
+   * (`GET <base>/agent/ui-resource`, guuey#209 C1): the pod is the only
+   * party that can vouch for a locator whose turn is still streaming —
+   * persisted `kind:'card'` rows land at turn COMPLETION, so the platform
+   * door 404s mid-turn by construction. Completed turns 404 on the pod
+   * (past its grace window) and resolve on the platform door instead: one
+   * authority per lifecycle phase, and this reader tries both in that
+   * order. Absent → platform door only (pre-#209 behavior).
+   */
+  endpointUrl?: string | null;
   /** Signed-in bearer — wins over the guest secret (same rule as the transport). */
   getAccessToken?: (opts?: { forceRefresh?: boolean }) => Promise<string | null>;
   /** Caller-owned anonymous guest secret (widget / guest chat). */
@@ -218,25 +231,40 @@ export interface CreateUiResourceReaderOptions {
   fetchImpl?: typeof fetch;
 }
 
+/** `<pod base>/agent/ui-resource` from whatever endpoint shape the surface holds. */
+function toUiResourceUrl(endpointUrl: string): string {
+  return toInvokeUrl(endpointUrl).replace(/\/agent\/invoke$/, "/agent/ui-resource");
+}
+
 /**
- * Build a `UiResourceReader` over guuey's authenticated resources/read proxy
- * (guuey#122 Gap 1: `GET /v1/threads/:threadId/ui-resource?uri=…`).
+ * Build a `UiResourceReader` over guuey's authenticated resources/read
+ * doors — the pod door for LIVE turns (guuey#209 C1:
+ * `GET <pod>/agent/ui-resource?uri=…`, when {@link CreateUiResourceReaderOptions.endpointUrl}
+ * is set) and the platform proxy for persisted locators (guuey#122 Gap 1:
+ * `GET /v1/threads/:threadId/ui-resource?uri=…`). Both doors answer the
+ * same body and speak the same identity (bearer wins, guest header
+ * otherwise — the pod's `resolveIdentity` and the proxy's identity chain
+ * accept the identical carriers), so one parse serves both.
  *
  * This is `@guuey/mcp-apps-host`'s `createMcpUiResourceReader` assembly over
  * a guuey-platform transport (guuey#127) — channel resolution and payload
  * narrowing live in the host package; only the transport is guuey-shaped.
- * The proxy owns EVERYTHING trust-shaped: caller identity (the same three
- * families as the history read), thread ownership, the locator-to-thread
- * scope guard, and the per-user federation mint. This transport only carries
- * the surface's existing credential and maps EVERY non-OK — 401/403/404/502
- * alike — to `undefined`: deny is byte-identical to a miss, and a miss
- * renders the host's placeholder, never an error surface.
+ * The doors own EVERYTHING trust-shaped: caller identity (the same three
+ * families as the history read), tenancy (the pod's live-card ledger; the
+ * proxy's thread-ownership + locator-to-thread scope guard), and the
+ * per-user federation mint. This transport only carries the surface's
+ * existing credential and maps EVERY non-OK — 401/403/404/502 alike — to
+ * "try the next door", and a miss on the last door to `undefined`: deny is
+ * byte-identical to a miss, and a miss renders the host's placeholder,
+ * never an error surface.
  */
 export function createUiResourceReader(
   options: CreateUiResourceReaderOptions,
 ): (resourceUri: string) => Promise<ResolvedViewMount | undefined> {
   const fetchImpl = options.fetchImpl ?? fetch;
-  const readResource = async (resourceUri: string): Promise<McpResourceReadResult | undefined> => {
+
+  /** One door: fetch + the history adapter's 401-forceRefresh recovery + parse. */
+  const readDoor = async (requestUrl: string): Promise<McpResourceReadResult | undefined> => {
     const headers: Record<string, string> = {};
     const token = options.getAccessToken ? await options.getAccessToken() : null;
     const guest = sendableGuestSecret(options.guestSecret);
@@ -245,12 +273,11 @@ export function createUiResourceReader(
     } else if (guest) {
       headers[GUEST_HEADER] = guest;
     }
-    const requestUrl = `${options.apiBaseUrl}/threads/${encodeURIComponent(options.threadId)}/ui-resource?uri=${encodeURIComponent(resourceUri)}`;
     let res: Response;
     try {
       res = await fetchImpl(requestUrl, { headers });
     } catch {
-      return undefined; // transport failure == miss == placeholder
+      return undefined; // transport failure == miss (the next door may still answer)
     }
     // One forceRefresh retry on 401 with a bearer in play — the same
     // expired-but-refreshable recovery the history adapter performs;
@@ -274,8 +301,8 @@ export function createUiResourceReader(
     } catch {
       return undefined;
     }
-    // The proxy passes the blob arm through (a blob-only resource is not
-    // silently a miss — its route contract); mirror that here.
+    // Both doors pass the blob arm through (a blob-only resource is not
+    // silently a miss — the route contract); mirror that here.
     if (typeof body.uri !== "string") return undefined;
     if (typeof body.text !== "string" && typeof body.blob !== "string") return undefined;
     return {
@@ -284,6 +311,18 @@ export function createUiResourceReader(
       ...(typeof body.text === "string" ? { text: body.text } : {}),
       ...(typeof body.blob === "string" ? { blob: body.blob } : {}),
     };
+  };
+
+  const podUrl = options.endpointUrl ? toUiResourceUrl(options.endpointUrl) : null;
+  const readResource = async (resourceUri: string): Promise<McpResourceReadResult | undefined> => {
+    const query = `?uri=${encodeURIComponent(resourceUri)}`;
+    if (podUrl !== null) {
+      const live = await readDoor(`${podUrl}${query}`);
+      if (live !== undefined) return live;
+    }
+    return readDoor(
+      `${options.apiBaseUrl}/threads/${encodeURIComponent(options.threadId)}/ui-resource${query}`,
+    );
   };
   return createMcpUiResourceReader({ readResource });
 }
