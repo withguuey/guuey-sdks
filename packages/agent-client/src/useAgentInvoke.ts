@@ -23,14 +23,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Reducer, type AgReduceResult } from "@silverprotocol/core";
-import {
-  parseConsentRequest,
-  parseLinkRequest,
-  parseSseEvents,
-  reduceAssistantText,
-  stringField,
-} from "./sse.js";
-import { ingestMessageFrame } from "./blocks.js";
+import { invokeTurn } from "./invoke-turn.js";
 import { AgentResponseError } from "./errors.js";
 import type {
   AgentInvokeAdapters,
@@ -292,80 +285,49 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
           clientMessageId: adapters.generateId(),
         };
 
-        let buffer = "";
-        for await (const chunk of adapters.transport({ url: invokeUrl, body, signal: controller.signal })) {
-          buffer += chunk;
-          const { events, rest } = parseSseEvents(buffer);
-          buffer = rest;
-          for (const ev of events) {
-            if (ev.event === "session") {
-              // The pod is awake and the turn is admitted — 'connecting' ends
-              // here (this frame arrives within ~1s of a warm pod; a cold
-              // scale-to-zero start is exactly the long 'connecting' phase).
-              setStatus("thinking");
-              const tid = stringField(ev.data, "threadId");
-              if (tid) {
-                threadIdRef.current = tid;
-                setThreadId(tid);
-                void adapters.storage.save(threadStorageKey(appId), tid);
-              }
-            } else if (ev.event === "message") {
-              // Status derivation (guuey#91) — read the frame's `type` before
-              // the text fold. Silver frames announce tools + text explicitly;
-              // bypass frames ('text' / 'assistant' SDKMessages) only ever
-              // carry assistant text, so they map to 'responding'. Unknown
-              // types deliberately leave the status untouched.
-              const frameType = stringField(ev.data, "type");
-              if (frameType === "tool.start") {
-                setStatus("using-tool");
-                setActiveTool(stringField(ev.data, "name") ?? null);
-              } else if (frameType === "tool.done") {
-                setStatus("thinking");
-                setActiveTool(null);
-              } else if (
-                frameType === "text.start" ||
-                frameType === "text.delta" ||
-                frameType === "text" ||
-                frameType === "assistant"
-              ) {
-                setStatus("responding");
-              }
-              renderAssistant(reduceAssistantText(assistantText, ev.data));
-              // Additively fold the SAME frame into the AgJSON reducer when
-              // opted in. The text surface above is untouched; only VALID
-              // AgEvents advance the reducer (bypass frames ingest to [] and
-              // leave `reduceResult` null — see the return-type contract).
-              if (preserveBlocksRef.current) {
-                const agEvents = ingestMessageFrame(ev.data);
-                if (agEvents.length > 0) {
-                  if (!reducerRef.current) reducerRef.current = new Reducer();
-                  for (const agEvent of agEvents) reducerRef.current.push(agEvent);
-                  setReduceResult(reducerRef.current.result());
-                }
-              }
-            } else if (ev.event === "error") {
-              // In-band failure frame — one of the two channels that carry the
-              // pod's wire code (the other is the pre-stream refusal caught
-              // below). A frame without a `code` clears it rather than leaving
-              // a previous turn's code standing beside a new message.
-              setError(stringField(ev.data, "message") ?? "agent error");
-              setErrorCode(stringField(ev.data, "code") ?? null);
-            } else if (ev.event === "profile-consent-needed") {
-              // Cross-app profile consent ask (T6). Only a well-formed payload
-              // updates state; a malformed one is dropped, leaving any prior
-              // valid request untouched (never clobbered to null).
-              const parsed = parseConsentRequest(ev.data);
-              if (parsed) setProfileConsentRequest(parsed);
-            } else if (ev.event === "profile-link-needed") {
-              // Cross-app profile LINK invite (linkcoh T3) for an unlinked byo
-              // caller. Same drop-if-malformed contract as consent above.
-              const parsed = parseLinkRequest(ev.data);
-              if (parsed) setProfileLinkRequest(parsed);
+        // The wire walk lives in `invokeTurn` (the pure per-turn generator —
+        // its docblock owns the switch semantics); this hook only maps each
+        // semantic event onto React state.
+        for await (const ev of invokeTurn(
+          { url: invokeUrl, body, signal: controller.signal },
+          adapters.transport,
+        )) {
+          if (ev.kind === "session") {
+            // The pod is awake and the turn is admitted — 'connecting' ends
+            // here.
+            setStatus("thinking");
+            if (ev.threadId) {
+              threadIdRef.current = ev.threadId;
+              setThreadId(ev.threadId);
+              void adapters.storage.save(threadStorageKey(appId), ev.threadId);
             }
-            // `done` needs no handling — the stream closes after it. Any other
-            // (unknown) event falls through silently — there is no default
-            // branch, so a consumer that never renders a field is unaffected.
+          } else if (ev.kind === "message") {
+            // Absent status/activeTool mean "no change" — never touched, so
+            // an unknown frame type leaves both standing (guuey#91 rule).
+            if (ev.status !== undefined) setStatus(ev.status);
+            if (ev.activeTool !== undefined) setActiveTool(ev.activeTool);
+            renderAssistant(ev.assistantText);
+            // Additively fold the frame's AgEvents into the AgJSON reducer
+            // when opted in. The text surface above is untouched; only VALID
+            // AgEvents advance the reducer (bypass frames carry [] and leave
+            // `reduceResult` null — see the return-type contract).
+            if (preserveBlocksRef.current && ev.agEvents.length > 0) {
+              if (!reducerRef.current) reducerRef.current = new Reducer();
+              for (const agEvent of ev.agEvents) reducerRef.current.push(agEvent);
+              setReduceResult(reducerRef.current.result());
+            }
+          } else if (ev.kind === "error") {
+            // In-band failure frame — the code moves in lockstep with the
+            // message (an event without one carries null rather than leaving
+            // a previous turn's code standing).
+            setError(ev.message);
+            setErrorCode(ev.code);
+          } else if (ev.kind === "profile-consent") {
+            setProfileConsentRequest(ev.request);
+          } else if (ev.kind === "profile-link") {
+            setProfileLinkRequest(ev.request);
           }
+          // `done` needs no handling here — the stream closes after it.
         }
       } catch (e) {
         if (!controller.signal.aborted) {
