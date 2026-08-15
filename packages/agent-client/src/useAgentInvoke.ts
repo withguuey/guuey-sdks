@@ -145,6 +145,13 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
   // explicit dismiss, same lifecycle as `profileConsentRequest` — the two are
   // independent (an unlinked-invite vs an already-linked consent ask).
   const [profileLinkRequest, setProfileLinkRequest] = useState<ProfileLinkRequest | null>(null);
+  // The last turn's ending posture + the optimistic-send ledger — the
+  // transcript renderer's inputs (guuey#135 wave 3b; see the return-type
+  // contract for each). `aborted` is USER abort only — the #192 watchdog's
+  // internal stream abort never sets it.
+  const [aborted, setAborted] = useState(false);
+  const [adopted, setAdopted] = useState(false);
+  const [sendStates, setSendStates] = useState<Readonly<Record<string, "sending" | "failed">>>({});
 
   const abortRef = useRef<AbortController | null>(null);
   // Mirror the latest threadId + adapters into refs so `send` reads fresh
@@ -197,6 +204,9 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     // A prior app's consent ask must never leak into the new conversation.
     setProfileConsentRequest(null);
     setProfileLinkRequest(null);
+    setAborted(false);
+    setAdopted(false);
+    setSendStates({});
 
     let cancelled = false;
     const key = threadStorageKey(appId);
@@ -287,6 +297,9 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     setHistoryCards([]);
     setProfileConsentRequest(null);
     setProfileLinkRequest(null);
+    setAborted(false);
+    setAdopted(false);
+    setSendStates({});
   }, [appId]);
 
   const clearProfileConsentRequest = useCallback(() => {
@@ -304,8 +317,32 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
       if (!endpointUrl || !input.trim() || status !== "ready" || opts.signal?.aborted) return;
       setError(null);
       setErrorCode(null);
+      setAborted(false);
+      setAdopted(false);
       setStatus("connecting");
-      setMessages((prev) => [...prev, { role: "user", text: input }, { role: "assistant", text: "" }]);
+      // ONE id for the whole turn: the optimistic user entry, the send-state
+      // ledger, and the invoke body all carry it — the R0 lifecycle join.
+      const clientMessageId = adaptersRef.current.generateId();
+      /** Move this turn's ledger entry; `null` removes it (absent = sent). */
+      const markSend = (state: "sending" | "failed" | null): void => {
+        setSendStates((prev) => {
+          if (state === null) {
+            if (!(clientMessageId in prev)) return prev;
+            const next: Record<string, "sending" | "failed"> = { ...prev };
+            delete next[clientMessageId];
+            return next;
+          }
+          if (prev[clientMessageId] === state) return prev;
+          return { ...prev, [clientMessageId]: state };
+        });
+      };
+      markSend("sending");
+      let admitted = false;
+      setMessages((prev) => [
+        ...prev,
+        { role: "user", text: input, clientMessageId },
+        { role: "assistant", text: "" },
+      ]);
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -400,12 +437,15 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
             let localUserCount = 0;
             for (const m of messagesRef.current) if (m.role === "user") localUserCount += 1;
             if (stallProbeDecision(result.messages, localUserCount) === "adopt") {
-              const adopted = result;
+              const adoptedResult = result;
               endTurnWith(() => {
-                setMessages(adopted.messages);
-                if ("cards" in adopted && adopted.cards && adopted.cards.length > 0) {
-                  setHistoryCards(adopted.cards);
+                setMessages(adoptedResult.messages);
+                if ("cards" in adoptedResult && adoptedResult.cards && adoptedResult.cards.length > 0) {
+                  setHistoryCards(adoptedResult.cards);
                 }
+                // The renderer's #192 signal: calm renders the adopted turn
+                // identically; debug may mark it (guuey#135 3b).
+                setAdopted(true);
               });
               return;
             }
@@ -437,7 +477,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         const body = {
           input,
           ...(threadIdRef.current ? { threadId: threadIdRef.current } : {}),
-          clientMessageId: adapters.generateId(),
+          clientMessageId,
         };
 
         // The wire walk lives in `invokeTurn` (the pure per-turn generator —
@@ -449,7 +489,9 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         )) {
           if (ev.kind === "session") {
             // The pod is awake and the turn is admitted — 'connecting' ends
-            // here.
+            // here, and so does the R0 "sending" state (absent = sent).
+            admitted = true;
+            markSend(null);
             setStatus("thinking");
             if (ev.threadId) {
               threadIdRef.current = ev.threadId;
@@ -493,10 +535,18 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
           // other throw — a network drop, a host-adapter failure — has no wire
           // code, so the field stays null beside the message.
           setErrorCode(e instanceof AgentResponseError ? (e.code ?? null) : null);
+          // A failure BEFORE admission means the message never reached the
+          // agent — the R0 failed-to-send state. Post-admission failures
+          // leave the entry removed (the send itself succeeded).
+          if (!admitted) markSend("failed");
         }
       } finally {
         // The turn is over however it ended — no probe may fire after this,
-        // and the pending timer must not leak past the turn.
+        // and the pending timer must not leak past the turn. `turnEnded`
+        // already true here ⟺ the #192 watchdog ended the turn (adoption or
+        // stall give-up) — its internal `controller.abort()` must not read
+        // as a USER abort below.
+        const endedByWatchdog = turnEnded;
         turnEnded = true;
         clearStallTimer();
         externalSignal?.removeEventListener("abort", onExternalAbort);
@@ -513,6 +563,13 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
               ? prev.slice(0, -1)
               : prev;
           });
+        }
+        if (controller.signal.aborted && !endedByWatchdog) {
+          // USER abort (abort() or the external signal): surface it, and a
+          // pre-admission cancel clears the "sending" entry — a turn the
+          // user stopped is not a failed send.
+          setAborted(true);
+          if (!admitted) markSend(null);
         }
       }
     },
@@ -535,5 +592,8 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     clearProfileConsentRequest,
     profileLinkRequest,
     clearProfileLinkRequest,
+    aborted,
+    adopted,
+    sendStates,
   };
 }

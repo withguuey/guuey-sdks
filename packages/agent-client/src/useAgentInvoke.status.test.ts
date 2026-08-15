@@ -148,9 +148,10 @@ describe("useAgentInvoke status lifecycle", () => {
     await act(async () => {
       await result.current.send("second"); // no-op: status !== 'ready'
     });
-    // Only the first turn's user message (+ its placeholder) exists.
+    // Only the first turn's user message (+ its placeholder) exists — carrying
+    // the turn's clientMessageId (the R0 send-lifecycle join, guuey#135 3b).
     expect(result.current.messages.filter((m) => m.role === "user")).toEqual([
-      { role: "user", text: "first" },
+      { role: "user", text: "first", clientMessageId: "cmid-status" },
     ]);
     await feed(null);
     await act(async () => {

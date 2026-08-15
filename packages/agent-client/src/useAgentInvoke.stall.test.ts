@@ -124,6 +124,10 @@ describe("useAgentInvoke stall recovery (guuey#192)", () => {
     expect(result.current.error).toBeNull();
     expect(result.current.errorCode).toBeNull();
     expect(result.current.status).toBe("ready");
+    // The renderer's signals (guuey#135 3b): adopted is surfaced; the
+    // watchdog's internal stream abort must NOT read as a user abort.
+    expect(result.current.adopted).toBe(true);
+    expect(result.current.aborted).toBe(false);
     expect(sent[0].signal.aborted).toBe(true);
     expect(load).toHaveBeenCalledTimes(1);
     expect(load).toHaveBeenCalledWith("t-192");

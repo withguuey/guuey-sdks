@@ -19,6 +19,13 @@ import type { AgReduceResult, JsonValue } from "@silverprotocol/core";
 export interface AgentMessage {
   role: "user" | "assistant";
   text: string;
+  /**
+   * The invoke body's `clientMessageId`, present on user turns this client
+   * sent live (the optimistic push tags it). History-rehydrated entries and
+   * assistant turns omit it. The transcript renderer's R0 send-lifecycle
+   * join key (`UseAgentInvokeReturn.sendStates`).
+   */
+  clientMessageId?: string;
 }
 
 /**
@@ -300,4 +307,28 @@ export interface UseAgentInvokeReturn {
   profileLinkRequest: ProfileLinkRequest | null;
   /** Dismiss the pending {@link profileLinkRequest} (back to `null`). */
   clearProfileLinkRequest: () => void;
+  /**
+   * The LAST turn ended by user abort (`abort()` or the external signal) —
+   * the transcript renderer's R1 aborted-partial + "Stopped." signal.
+   * Distinct from the #192 watchdog's internal stream abort, which never
+   * sets it. Cleared by the next `send()` and by `reset()`.
+   */
+  aborted: boolean;
+  /**
+   * The LAST turn was ADOPTED from persisted history by the guuey#192 stall
+   * watchdog (the reply was already durably written; the dead stream was
+   * discarded). Presentation contract: calm surfaces render an adopted turn
+   * identically to a streamed one; debug surfaces may mark it. Cleared by
+   * the next `send()` and by `reset()`.
+   */
+  adopted: boolean;
+  /**
+   * The optimistic-send lifecycle, keyed by each live user turn's
+   * `clientMessageId` (see {@link AgentMessage.clientMessageId}):
+   * `"sending"` until the pod's `session` frame admits the turn, `"failed"`
+   * when the turn errored BEFORE admission (the message never reached the
+   * agent — the R0 failed-to-send state with its retry affordance). Entries
+   * for admitted turns are removed (absent = sent). `reset()` clears it.
+   */
+  sendStates: Readonly<Record<string, "sending" | "failed">>;
 }
