@@ -49,5 +49,6 @@ minimumReleaseAgeExclude:
   - "@silverprotocol/claude-agent-sdk"
   - "@silverprotocol/openai-agents"
   - "@silverprotocol/google-adk"
+  - "@silverprotocol/richtext"
   - "@ggui-ai/protocol"
   - "@ggui-ai/artifact-manifest"
