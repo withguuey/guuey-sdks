@@ -8,6 +8,9 @@ export {
   type ParsedSseEvent,
 } from "./sse.js";
 export { dismissLinkPrompt } from "./link-prompt.js";
+// One agent turn as a pure async generator — the wire walk `useAgentInvoke`
+// wraps, for hosts that drive their own turn state machine (guuey#186 G5).
+export { invokeTurn, toInvokeUrl, type InvokeTurnEvent } from "./invoke-turn.js";
 export {
   createUiActionRelay,
   type CreateUiActionRelayOptions,
@@ -16,9 +19,13 @@ export {
   createWebAdapters,
   localStorageThreadStore,
   webGenerateId,
-  fetchStreamTransport,
   type CreateWebAdaptersOptions,
 } from "./web-adapters.js";
+// The invoke transport + guest-identity wire pieces, in their own
+// mcp-apps-host-free module. Consumers that want ONLY this graph (no
+// host-role card layer riding along) import `@guuey/agent-client/transport`
+// instead of the barrel — see that module's docblock (guuey#186 G2).
+export { fetchStreamTransport, sendableGuestSecret, GUEST_HEADER } from "./transport.js";
 // The `POD_SATURATED` single-retry wrapper, transport-agnostic: a host that
 // brings its own `fetch` (Portal's React-Native transport) wraps it to wear the
 // same semantics as the web transport instead of hand-rolling a second copy.
@@ -50,7 +57,10 @@ export { ingestMessageFrame } from "./blocks.js";
 export { sortHistoryCards, toolNameFor } from "./history.js";
 // Re-export the AgJSON types the block-preserving transcript surfaces, so
 // consumers can name `reduceResult` / block types without a direct
-// `@silverprotocol/core` import.
+// `@silverprotocol/core` import — and the `Reducer` CLASS beside them, so a
+// host folding `invokeTurn`'s agEvents outside the hook builds its transcript
+// on the same terms (the types alone forced the direct dep back, guuey#186 G4).
+export { Reducer } from "@silverprotocol/core";
 export type { AgEvent, AgReduceResult, AgMessage, AgBlock } from "@silverprotocol/core";
 export type {
   AgentMessage,
