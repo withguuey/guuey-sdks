@@ -23,7 +23,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Reducer, type AgReduceResult } from "@silverprotocol/core";
-import { invokeTurn } from "./invoke-turn.js";
+import { invokeTurn, toInvokeUrl } from "./invoke-turn.js";
 import { AgentResponseError } from "./errors.js";
 import type {
   AgentInvokeAdapters,
@@ -274,11 +274,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
       };
 
       try {
-        // The endpointUrl may be a pod base (`https://host`) or the full
-        // invoke URL the deploy-controller records (`https://host/agent/invoke`).
-        // Normalize to exactly one `/agent/invoke`.
-        const base = endpointUrl.replace(/\/+$/, "");
-        const invokeUrl = base.endsWith("/agent/invoke") ? base : `${base}/agent/invoke`;
+        const invokeUrl = toInvokeUrl(endpointUrl);
         const body = {
           input,
           ...(threadIdRef.current ? { threadId: threadIdRef.current } : {}),

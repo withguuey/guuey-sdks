@@ -10,7 +10,7 @@ export {
 export { dismissLinkPrompt } from "./link-prompt.js";
 // One agent turn as a pure async generator — the wire walk `useAgentInvoke`
 // wraps, for hosts that drive their own turn state machine (guuey#186 G5).
-export { invokeTurn, type InvokeTurnEvent } from "./invoke-turn.js";
+export { invokeTurn, toInvokeUrl, type InvokeTurnEvent } from "./invoke-turn.js";
 export {
   createUiActionRelay,
   type CreateUiActionRelayOptions,

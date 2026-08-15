@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { invokeTurn, type InvokeTurnEvent } from "./invoke-turn.js";
+import { invokeTurn, toInvokeUrl, type InvokeTurnEvent } from "./invoke-turn.js";
 import type { InvokeRequest, InvokeTransport } from "./types.js";
 
 function request(): InvokeRequest {
@@ -26,6 +26,25 @@ async function collect(transport: InvokeTransport): Promise<InvokeTurnEvent[]> {
   for await (const ev of invokeTurn(request(), transport)) events.push(ev);
   return events;
 }
+
+describe("toInvokeUrl", () => {
+  it("appends /agent/invoke to a pod base", () => {
+    expect(toInvokeUrl("https://pod.example.com")).toBe("https://pod.example.com/agent/invoke");
+  });
+
+  it("keeps a full invoke URL as-is — never a double /agent/invoke", () => {
+    expect(toInvokeUrl("https://pod.example.com/agent/invoke")).toBe(
+      "https://pod.example.com/agent/invoke",
+    );
+  });
+
+  it("drops trailing slashes from either shape", () => {
+    expect(toInvokeUrl("https://pod.example.com/")).toBe("https://pod.example.com/agent/invoke");
+    expect(toInvokeUrl("https://pod.example.com/agent/invoke/")).toBe(
+      "https://pod.example.com/agent/invoke",
+    );
+  });
+});
 
 describe("invokeTurn", () => {
   it("walks a full turn: session → tool → text → done, with semantic events", async () => {

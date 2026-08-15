@@ -68,6 +68,20 @@ export type InvokeTurnEvent =
   | { kind: "done"; stopReason: string | null };
 
 /**
+ * Normalize an agent endpoint to its invoke URL (guuey#186 G3). Accepts BOTH
+ * shapes a consumer legitimately holds — a pod base (`https://host`) and the
+ * full invoke URL the deploy-controller records (`https://host/agent/invoke`)
+ * — and returns exactly one `/agent/invoke`, trailing slashes dropped. This
+ * is the single normalization `useAgentInvoke` applies to its `endpointUrl`;
+ * a host driving {@link invokeTurn} (or any raw transport) directly builds
+ * its request URL with the same call instead of re-implementing the rule.
+ */
+export function toInvokeUrl(endpointUrl: string): string {
+  const base = endpointUrl.replace(/\/+$/, "");
+  return base.endsWith("/agent/invoke") ? base : `${base}/agent/invoke`;
+}
+
+/**
  * Drive one `/agent/invoke` turn over `transport`, yielding semantic events.
  * Pure per-turn: no React, no storage, no retry policy (the transport owns
  * saturation retry), no reducer — see the module docblock for what belongs
