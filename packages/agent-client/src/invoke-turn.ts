@@ -86,6 +86,26 @@ export function toInvokeUrl(endpointUrl: string): string {
  * Pure per-turn: no React, no storage, no retry policy (the transport owns
  * saturation retry), no reducer — see the module docblock for what belongs
  * to the caller.
+ *
+ * The event stream is also the OBSERVATION channel (guuey#186 Gap 4): there
+ * is deliberately no `onToolResult` callback API, because filtering the
+ * generator expresses it directly — every tool result arrives as a typed
+ * `tool.done` AgEvent on a `message` event, carrying `toolCallId`,
+ * `content`, `outcome` and `structuredContent`.
+ *
+ * @example Telemetry off the fold — observe tool results without touching
+ * the transcript path:
+ * ```ts
+ * for await (const ev of invokeTurn(req, transport)) {
+ *   if (ev.kind !== "message") continue;
+ *   for (const agEvent of ev.agEvents) {
+ *     if (agEvent.type === "tool.done") {
+ *       telemetry.record(agEvent.toolCallId, agEvent.outcome ?? "ok");
+ *     }
+ *   }
+ *   render(ev.assistantText); // the fold is untouched by the observation
+ * }
+ * ```
  */
 export async function* invokeTurn(
   req: InvokeRequest,

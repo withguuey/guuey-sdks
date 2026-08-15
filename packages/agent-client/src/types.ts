@@ -141,6 +141,17 @@ export interface UseAgentInvokeOptions {
    * reducer is never constructed and the text behaviour is byte-identical.
    */
   preserveBlocks?: boolean;
+  /**
+   * Optional external abort authority (guuey#186 Gap 4): a host lifecycle —
+   * route change, dialog close, screen unmount — that must be able to stop
+   * an in-flight turn without holding the hook's own `abort()`. Composed
+   * with (never replacing) the hook's internal per-turn controller: when
+   * this signal aborts, the current turn aborts exactly as `abort()` would;
+   * the hook's `abort()`/`reset()` keep working regardless. Already-aborted
+   * at send time means the send is refused before any request is made. The
+   * signal may span many turns — each send observes its CURRENT state.
+   */
+  signal?: AbortSignal;
 }
 
 /**

@@ -25,17 +25,24 @@ export {
 // mcp-apps-host-free module. Consumers that want ONLY this graph (no
 // host-role card layer riding along) import `@guuey/agent-client/transport`
 // instead of the barrel — see that module's docblock (guuey#186 G2).
-export { fetchStreamTransport, sendableGuestSecret, GUEST_HEADER } from "./transport.js";
-// The `POD_SATURATED` single-retry wrapper, transport-agnostic: a host that
-// brings its own `fetch` (Portal's React-Native transport) wraps it to wear the
-// same semantics as the web transport instead of hand-rolling a second copy.
-// `parseRetryAfterSeconds` ships with it because filling
-// `AgentResponseError.retryAfterSeconds` the same way is what makes the wrapper
-// honour the pod's hint.
+export {
+  fetchStreamTransport,
+  sendableGuestSecret,
+  GUEST_HEADER,
+  type FetchStreamTransportOptions,
+} from "./transport.js";
+// The invoke-refusal retry wrappers, transport-agnostic: a host that brings
+// its own `fetch` (Portal's React-Native transport) wraps them to wear the
+// same semantics as the web transport instead of hand-rolling second copies.
+// `parseRetryAfterSeconds` ships with them because filling
+// `AgentResponseError.retryAfterSeconds` the same way is what makes the
+// wrappers honour the pod's hint.
 export {
   withSaturationRetry,
+  withColdStartRetry,
   parseRetryAfterSeconds,
   type SaturationRetryOptions,
+  type ColdStartRetryOptions,
 } from "./saturation-retry.js";
 export { AgentResponseError } from "./errors.js";
 // The pod's wire-code vocabulary, mirrored — branch on these instead of

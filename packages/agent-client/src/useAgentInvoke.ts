@@ -242,7 +242,9 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
 
   const send = useCallback(
     async (input: string) => {
-      if (!endpointUrl || !input.trim() || status !== "ready") return;
+      // An already-aborted external signal refuses the send outright —
+      // before the optimistic transcript push, so nothing is left to undo.
+      if (!endpointUrl || !input.trim() || status !== "ready" || opts.signal?.aborted) return;
       setError(null);
       setErrorCode(null);
       setStatus("connecting");
@@ -250,6 +252,13 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
 
       const controller = new AbortController();
       abortRef.current = controller;
+      // Compose the host's external abort authority (opts.signal) with the
+      // per-turn controller: an external abort stops this turn exactly as
+      // `abort()` would. Listener removed in `finally` — the signal outlives
+      // the turn, the subscription must not.
+      const externalSignal = opts.signal;
+      const onExternalAbort = (): void => controller.abort();
+      externalSignal?.addEventListener("abort", onExternalAbort, { once: true });
       const adapters = adaptersRef.current;
       // Wait for the persisted threadId to load before deciding whether to
       // replay it — otherwise a fast first send mints a new orphan thread and
@@ -336,6 +345,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
           setErrorCode(e instanceof AgentResponseError ? (e.code ?? null) : null);
         }
       } finally {
+        externalSignal?.removeEventListener("abort", onExternalAbort);
         setStatus("ready");
         setActiveTool(null);
         abortRef.current = null;
@@ -352,7 +362,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         }
       }
     },
-    [endpointUrl, appId, status],
+    [endpointUrl, appId, status, opts.signal],
   );
 
   return {

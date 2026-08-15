@@ -18,7 +18,9 @@ import type { InvokeRequest } from "./types.js";
 import { AgentResponseError } from "./errors.js";
 import {
   parseRetryAfterSeconds,
+  withColdStartRetry,
   withSaturationRetry,
+  type ColdStartRetryOptions,
   type SaturationRetryOptions,
 } from "./saturation-retry.js";
 
@@ -58,6 +60,22 @@ const GUEST_SECRET_RE = /^[0-9a-f]{64}$/;
  */
 export function sendableGuestSecret(secret: string | null | undefined): string | null {
   return typeof secret === "string" && GUEST_SECRET_RE.test(secret) ? secret : null;
+}
+
+/**
+ * Is this request a cross-origin call from a browser document? Only then can
+ * a fetch `TypeError` be a CORS refusal worth hinting about. `location` is
+ * read via `typeof` so Node and React Native (where CORS does not exist)
+ * answer false; an unparseable URL answers false rather than throwing from
+ * inside error handling.
+ */
+function isCrossOriginBrowserCall(url: string): boolean {
+  if (typeof location === "undefined") return false;
+  try {
+    return new URL(url).origin !== location.origin;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -106,7 +124,27 @@ async function* streamInvokeOnce(
   } else {
     init.credentials = "include";
   }
-  const resp = await fetch(req.url, init);
+  let resp: Response;
+  try {
+    resp = await fetch(req.url, init);
+  } catch (err) {
+    // A network-level TypeError on a CROSS-ORIGIN invoke from a browser is,
+    // in practice, very often a missing allowedDomains entry — the CORS
+    // preflight failed and the web platform deliberately reports nothing
+    // more specific (guuey#186 Gap 2: the console.ggui.ai embed lost real
+    // time to an unexplained "Failed to fetch"). The error stays a
+    // TypeError with the original as `cause`; the added sentence is a HINT,
+    // not a diagnosis — offline, DNS and CSP failures throw the same shape.
+    // Same-origin calls and non-browser runtimes (no `location`) cannot be
+    // CORS refusals, so they pass through untouched.
+    if (err instanceof TypeError && isCrossOriginBrowserCall(req.url)) {
+      throw new TypeError(
+        `${err.message} — if this is a browser embed, check the app's allowedDomains (the CORS allowlist must include this page's origin)`,
+        { cause: err },
+      );
+    }
+    throw err;
+  }
   if (!resp.ok || !resp.body) {
     // Surface a structured pod error ({ code, message }) when present — e.g. a
     // QUOTA_EXCEEDED 429 carries an upgrade message the UI should show. Fall
@@ -138,22 +176,62 @@ async function* streamInvokeOnce(
   }
 }
 
+/** Options for {@link fetchStreamTransport}. */
+export interface FetchStreamTransportOptions extends SaturationRetryOptions {
+  /**
+   * Bounded retry on cold-start 503s — the envelope-less refusal an embed
+   * eats for ~30–60s after the agent redeploys (guuey#186 Gap 3). ON by
+   * default (small budget: 3 attempts, 2s/4s/8s) for parity with guuey's
+   * first-party embeds; pass `false` to disable, or options to re-budget.
+   * See {@link withColdStartRetry} for exactly what matches (and what
+   * deliberately stays with the saturation policy instead).
+   */
+  coldStartRetry?: ColdStartRetryOptions | false;
+  /**
+   * Injectable bearer provider (guuey#186 Gap 4) — identity is a transport
+   * concern (see {@link InvokeTransport}: "owns headers + identity
+   * entirely"), and a harness or non-React host holds credentials in its own
+   * lifecycle, not in a closure minted once at page load. Resolved PER
+   * ATTEMPT, before each request — a retry after a backoff wait re-reads it,
+   * so a token that expired during the wait is refreshed rather than
+   * replayed. When present it takes precedence over the positional
+   * `accessToken`; resolving `null` falls through to the guest secret /
+   * cookie chain exactly as a null `accessToken` does (and carries the same
+   * silent-anonymous-downgrade hazard the `createWebAdapters` docs warn
+   * about). A throw propagates and fails the invoke — deliberately not
+   * caught, for the same reason as `getGuestSecret` there.
+   */
+  getBearer?: () => string | null | Promise<string | null>;
+}
+
 /**
  * The web SSE transport: {@link streamInvokeOnce} under the shared
- * {@link withSaturationRetry} wrapper. Every consumer of this transport
- * (Studio, the widget, anything built on `createWebAdapters`) therefore
- * inherits the single `POD_SATURATED` retry, and inherits the SAME one Portal's
- * React-Native transport wears — see that wrapper's docblock for which refusals
- * retry, which deliberately do not, and why the retry is invisible to the hook.
+ * {@link withSaturationRetry} wrapper, itself under {@link withColdStartRetry}.
+ * Every consumer of this transport (Studio, the widget, anything built on
+ * `createWebAdapters`) therefore inherits the single `POD_SATURATED` retry AND
+ * the bounded cold-start 503 retry, the same pair Portal's React-Native
+ * transport wears — see the wrappers' docblocks for which refusals retry,
+ * which deliberately do not, and why both retries are invisible to the hook.
+ * Both wrappers guard on "nothing yielded yet": once a chunk has streamed,
+ * NOTHING re-POSTs.
  */
 export function fetchStreamTransport(
   req: InvokeRequest,
   accessToken?: string | null,
   guestSecret?: string | null,
-  options: SaturationRetryOptions = {},
+  options: FetchStreamTransportOptions = {},
 ): AsyncIterable<string> {
-  return withSaturationRetry(
-    (attempt) => streamInvokeOnce(attempt, accessToken, guestSecret),
-    options,
-  )(req);
+  const { getBearer } = options;
+  const once = async function* (attempt: InvokeRequest): AsyncGenerator<string> {
+    // Per-attempt resolution: each retry re-asks the provider (fresh token
+    // after a backoff wait) instead of replaying a captured one.
+    const bearer = getBearer ? await getBearer() : accessToken;
+    yield* streamInvokeOnce(attempt, bearer, guestSecret);
+  };
+  const saturated = withSaturationRetry(once, { sleep: options.sleep });
+  if (options.coldStartRetry === false) return saturated(req);
+  return withColdStartRetry(saturated, {
+    sleep: options.sleep,
+    ...options.coldStartRetry,
+  })(req);
 }
