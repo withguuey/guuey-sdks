@@ -1,0 +1,173 @@
+event: session
+data: {"sessionId":"00000000-0000-4000-8000-100000000001","userId":"g_000000000000000000000000000001","authMode":"anonymous","threadId":"00000000-0000-4000-8000-100000000002"}
+
+event: message
+data: {"type":"turn.start","seq":0,"turnId":"turn_00000000-0000-4000-8000-200000000001","threadId":"00000000-0000-4000-8000-100000000003"}
+
+event: message
+data: {"type":"message.start","seq":1,"id":"msg_000000000000000000000001","turnId":"turn_00000000-0000-4000-8000-200000000001","threadId":"00000000-0000-4000-8000-100000000003","role":"assistant","model":"claude-sonnet-5"}
+
+event: message
+data: {"type":"reasoning.start","seq":2,"id":"msg_000000000000000000000001:reasoning:0","messageId":"msg_000000000000000000000001","turnId":"turn_00000000-0000-4000-8000-200000000001"}
+
+event: message
+data: {"type":"reasoning.delta","seq":3,"id":"msg_000000000000000000000001:reasoning:0","messageId":"msg_000000000000000000000001","delta":"","turnId":"turn_00000000-0000-4000-8000-200000000001"}
+
+event: message
+data: {"type":"reasoning.end","seq":4,"id":"msg_000000000000000000000001:reasoning:0","messageId":"msg_000000000000000000000001","turnId":"turn_00000000-0000-4000-8000-200000000001"}
+
+event: message
+data: {"type":"reasoning.opaque","seq":5,"id":"msg_000000000000000000000001:reasoning:0","messageId":"msg_000000000000000000000001","kind":"signature","value":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","turnId":"turn_00000000-0000-4000-8000-200000000001","provider":"anthropic"}
+
+event: message
+data: {"type":"tool.start","seq":6,"turnId":"turn_00000000-0000-4000-8000-200000000001","toolCallId":"toolu_000000000000000000000001","name":"mcp__todo__todo_create","index":0,"messageId":"msg_000000000000000000000001","providerExecuted":false}
+
+event: message
+data: {"type":"tool.args.delta","seq":7,"toolCallId":"toolu_000000000000000000000001","delta":"{\"title\":\"Buy milk\"}"}
+
+event: message
+data: {"type":"tool.args.assembled","seq":8,"toolCallId":"toolu_000000000000000000000001","input":{"title":"Buy milk"}}
+
+event: message
+data: {"type":"message.end","seq":9,"id":"msg_000000000000000000000001","usage":{"inputTokens":2,"outputTokens":2,"cacheReadTokens":11664,"cacheWriteTokens":206,"cumulative":true}}
+
+event: message
+data: {"type":"tool.done","seq":10,"turnId":"turn_00000000-0000-4000-8000-200000000001","toolCallId":"toolu_000000000000000000000001","content":[{"type":"text","text":"{\"id\":\"00000000-0000-4000-8000-100000000004\",\"title\":\"Buy milk\",\"done\":false}"}],"outcome":"ok","isError":false,"messageId":"toolu_000000000000000000000001:result","structuredContent":{"id":"00000000-0000-4000-8000-100000000004","title":"Buy milk","done":false}}
+
+event: message
+data: {"type":"message.start","seq":11,"id":"msg_000000000000000000000002","turnId":"turn_00000000-0000-4000-8000-200000000001","threadId":"00000000-0000-4000-8000-100000000003","role":"assistant","model":"claude-sonnet-5"}
+
+event: message
+data: {"type":"reasoning.start","seq":12,"id":"msg_000000000000000000000002:reasoning:0","messageId":"msg_000000000000000000000002","turnId":"turn_00000000-0000-4000-8000-200000000001"}
+
+event: message
+data: {"type":"reasoning.delta","seq":13,"id":"msg_000000000000000000000002:reasoning:0","messageId":"msg_000000000000000000000002","delta":"","turnId":"turn_00000000-0000-4000-8000-200000000001"}
+
+event: message
+data: {"type":"reasoning.end","seq":14,"id":"msg_000000000000000000000002:reasoning:0","messageId":"msg_000000000000000000000002","turnId":"turn_00000000-0000-4000-8000-200000000001"}
+
+event: message
+data: {"type":"reasoning.opaque","seq":15,"id":"msg_000000000000000000000002:reasoning:0","messageId":"msg_000000000000000000000002","kind":"signature","value":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","turnId":"turn_00000000-0000-4000-8000-200000000001","provider":"anthropic"}
+
+event: message
+data: {"type":"tool.start","seq":16,"turnId":"turn_00000000-0000-4000-8000-200000000001","toolCallId":"toolu_000000000000000000000002","name":"mcp__todo__todo_list","index":0,"messageId":"msg_000000000000000000000002","providerExecuted":false}
+
+event: message
+data: {"type":"tool.args.delta","seq":17,"toolCallId":"toolu_000000000000000000000002","delta":"{}"}
+
+event: message
+data: {"type":"tool.args.assembled","seq":18,"toolCallId":"toolu_000000000000000000000002","input":{}}
+
+event: message
+data: {"type":"tool.start","seq":19,"turnId":"turn_00000000-0000-4000-8000-200000000001","toolCallId":"toolu_000000000000000000000003","name":"mcp__ggui__ggui_discover","index":0,"messageId":"msg_000000000000000000000002","providerExecuted":false}
+
+event: message
+data: {"type":"tool.args.delta","seq":20,"toolCallId":"toolu_000000000000000000000003","delta":"{}"}
+
+event: message
+data: {"type":"tool.args.assembled","seq":21,"toolCallId":"toolu_000000000000000000000003","input":{}}
+
+event: message
+data: {"type":"message.end","seq":22,"id":"msg_000000000000000000000002","usage":{"inputTokens":2,"outputTokens":2,"cacheReadTokens":11870,"cacheWriteTokens":128,"cumulative":true}}
+
+event: message
+data: {"type":"tool.done","seq":23,"turnId":"turn_00000000-0000-4000-8000-200000000001","toolCallId":"toolu_000000000000000000000002","content":[{"type":"text","text":"{\"todos\":[{\"id\":\"00000000-0000-4000-8000-100000000004\",\"title\":\"Buy milk\",\"done\":false}]}"}],"outcome":"ok","isError":false,"messageId":"toolu_000000000000000000000002:result","structuredContent":{"todos":[{"id":"00000000-0000-4000-8000-100000000004","title":"Buy milk","done":false}]}}
+
+event: message
+data: {"type":"tool.done","seq":24,"turnId":"turn_00000000-0000-4000-8000-200000000001","toolCallId":"toolu_000000000000000000000003","content":[{"type":"text","text":"{\"protocolVersion\":\"draft-2026-06-12\",\"contentTypes\":[\"application/javascript+react\"],\"shellTypes\":[\"chat\",\"fullscreen\",\"spatial\"],\"adapterTypes\":[\"voice\",\"camera\",\"location\",\"bluetooth\"],\"componentCapabilities\":[\"network\",\"storage\",\"dom\",\"eval\",\"navigation\",\"device\"]}"}],"outcome":"ok","isError":false,"messageId":"toolu_000000000000000000000003:result","structuredContent":{"protocolVersion":"draft-2026-06-12","contentTypes":["application/javascript+react"],"shellTypes":["chat","fullscreen","spatial"],"adapterTypes":["voice","camera","location","bluetooth"],"componentCapabilities":["network","storage","dom","eval","navigation","device"]}}
+
+event: message
+data: {"type":"message.start","seq":25,"id":"msg_000000000000000000000003","turnId":"turn_00000000-0000-4000-8000-200000000001","threadId":"00000000-0000-4000-8000-100000000003","role":"assistant","model":"claude-sonnet-5"}
+
+event: message
+data: {"type":"reasoning.start","seq":26,"id":"msg_000000000000000000000003:reasoning:0","messageId":"msg_000000000000000000000003","turnId":"turn_00000000-0000-4000-8000-200000000001"}
+
+event: message
+data: {"type":"reasoning.delta","seq":27,"id":"msg_000000000000000000000003:reasoning:0","messageId":"msg_000000000000000000000003","delta":"","turnId":"turn_00000000-0000-4000-8000-200000000001"}
+
+event: message
+data: {"type":"reasoning.end","seq":28,"id":"msg_000000000000000000000003:reasoning:0","messageId":"msg_000000000000000000000003","turnId":"turn_00000000-0000-4000-8000-200000000001"}
+
+event: message
+data: {"type":"reasoning.opaque","seq":29,"id":"msg_000000000000000000000003:reasoning:0","messageId":"msg_000000000000000000000003","kind":"signature","value":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","turnId":"turn_00000000-0000-4000-8000-200000000001","provider":"anthropic"}
+
+event: message
+data: {"type":"tool.start","seq":30,"turnId":"turn_00000000-0000-4000-8000-200000000001","toolCallId":"toolu_000000000000000000000004","name":"mcp__ggui__ggui_handshake","index":0,"messageId":"msg_000000000000000000000003","providerExecuted":false}
+
+event: message
+data: {"type":"tool.args.delta","seq":31,"toolCallId":"toolu_000000000000000000000004","delta":"{\"intent\":\"Show a rich todo list card with items that can be toggled done/undone\",\"blueprintDraft\":{\"contract\":{\"propsSpec\":{\"properties\":{\"todos\":{\"schema\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"title\":{\"type\":\"string\"},\"done\":{\"type\":\"boolean\"}},\"required\":[\"id\",\"title\",\"done\"]}},\"description\":\"List of todo items\"}}},\"actionSpec\":{\"toggle\":{\"label\":\"Toggle done\",\"description\":\"Toggle a todo's done state\",\"schema\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"]},\"nextStep\":\"todo_toggle\"}},\"agentCapabilities\":{\"tools\":{\"todo_toggle\":{\"toolInfo\":{\"description\":\"Flip a todo's done state.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\",\"description\":\"Todo id.\"}},\"required\":[\"id\"]}},\"serverInfo\":{\"name\":\"todo\"}}}}}}}"}
+
+event: message
+data: {"type":"tool.args.assembled","seq":32,"toolCallId":"toolu_000000000000000000000004","input":{"intent":"Show a rich todo list card with items that can be toggled done/undone","blueprintDraft":{"contract":{"propsSpec":{"properties":{"todos":{"schema":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"},"done":{"type":"boolean"}},"required":["id","title","done"]}},"description":"List of todo items"}}},"actionSpec":{"toggle":{"label":"Toggle done","description":"Toggle a todo's done state","schema":{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]},"nextStep":"todo_toggle"}},"agentCapabilities":{"tools":{"todo_toggle":{"toolInfo":{"description":"Flip a todo's done state.","inputSchema":{"type":"object","properties":{"id":{"type":"string","description":"Todo id."}},"required":["id"]}},"serverInfo":{"name":"todo"}}}}}}}}
+
+event: message
+data: {"type":"message.end","seq":33,"id":"msg_000000000000000000000003","usage":{"inputTokens":2,"outputTokens":4,"cacheReadTokens":11998,"cacheWriteTokens":320,"cumulative":true}}
+
+event: message
+data: {"type":"tool.done","seq":34,"turnId":"turn_00000000-0000-4000-8000-200000000001","toolCallId":"toolu_000000000000000000000004","content":[{"type":"text","text":"{\"handshakeId\":\"00000000-0000-4000-8000-100000000005\",\"action\":\"create\",\"suggestion\":{\"origin\":\"agent\",\"rationale\":\"agent draft passed validateContract; accepted verbatim (origin: agent)\",\"blueprintMeta\":{\"contractHash\":\"c10a20553df2349b\",\"variance\":{}},\"proposedContractSummary\":\"slots=∅; actions=toggle(id); streams=∅; props=todos:array\",\"validationFindings\":[{\"code\":\"LINT_MISSING_USAGE\",\"severity\":\"warn\",\"path\":\"agentCapabilities.tools.todo_toggle.usage\",\"message\":\"agentCapabilities.tools.todo_toggle has no 'usage' prose. The agent's reasoning loop reads usage as context-of-use; tools without it tend to get invoked at the wrong time.\"},{\"code\":\"LINT_MISSING_EXAMPLE\",\"severity\":\"warn\",\"path\":\"agentCapabilities.tools.todo_toggle.example\",\"message\":\"agentCapabilities.tools.todo_toggle has no 'example'. Examples ground the agent's invocation patterns; tools without one are harder to use correctly on the first call.\"}]},\"nextStep\":{\"tool\":\"ggui_render\",\"example\":\"ggui_render({\\\"handshakeId\\\":\\\"00000000-0000-4000-8000-100000000005\\\",\\\"props\\\":{}})\"}}"}],"outcome":"ok","isError":false,"messageId":"toolu_000000000000000000000004:result","structuredContent":{"handshakeId":"00000000-0000-4000-8000-100000000005","action":"create","suggestion":{"origin":"agent","rationale":"agent draft passed validateContract; accepted verbatim (origin: agent)","blueprintMeta":{"contractHash":"c10a20553df2349b","variance":{}},"proposedContractSummary":"slots=∅; actions=toggle(id); streams=∅; props=todos:array","validationFindings":[{"code":"LINT_MISSING_USAGE","severity":"warn","path":"agentCapabilities.tools.todo_toggle.usage","message":"agentCapabilities.tools.todo_toggle has no 'usage' prose. The agent's reasoning loop reads usage as context-of-use; tools without it tend to get invoked at the wrong time."},{"code":"LINT_MISSING_EXAMPLE","severity":"warn","path":"agentCapabilities.tools.todo_toggle.example","message":"agentCapabilities.tools.todo_toggle has no 'example'. Examples ground the agent's invocation patterns; tools without one are harder to use correctly on the first call."}]},"nextStep":{"tool":"ggui_render","example":"ggui_render({\"handshakeId\":\"00000000-0000-4000-8000-100000000005\",\"props\":{}})"}}}
+
+event: message
+data: {"type":"message.start","seq":35,"id":"msg_000000000000000000000004","turnId":"turn_00000000-0000-4000-8000-200000000001","threadId":"00000000-0000-4000-8000-100000000003","role":"assistant","model":"claude-sonnet-5"}
+
+event: message
+data: {"type":"tool.start","seq":36,"turnId":"turn_00000000-0000-4000-8000-200000000001","toolCallId":"toolu_000000000000000000000005","name":"mcp__ggui__ggui_render","index":0,"messageId":"msg_000000000000000000000004","providerExecuted":false}
+
+event: message
+data: {"type":"tool.args.delta","seq":37,"toolCallId":"toolu_000000000000000000000005","delta":"{\"handshakeId\":\"00000000-0000-4000-8000-100000000005\",\"props\":{\"todos\":[{\"id\":\"00000000-0000-4000-8000-100000000004\",\"title\":\"Buy milk\",\"done\":false}]}}"}
+
+event: message
+data: {"type":"tool.args.assembled","seq":38,"toolCallId":"toolu_000000000000000000000005","input":{"handshakeId":"00000000-0000-4000-8000-100000000005","props":{"todos":[{"id":"00000000-0000-4000-8000-100000000004","title":"Buy milk","done":false}]}}}
+
+event: message
+data: {"type":"message.end","seq":39,"id":"msg_000000000000000000000004","usage":{"inputTokens":2,"outputTokens":66,"cacheReadTokens":12318,"cacheWriteTokens":956,"cumulative":true}}
+
+event: message
+data: {"type":"tool.done","seq":40,"turnId":"turn_00000000-0000-4000-8000-200000000001","toolCallId":"toolu_000000000000000000000005","content":[{"type":"text","text":"{\"sessionId\":\"render_00000000-0000-4000-8000-300000000001\",\"resourceUri\":\"ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c10a20553df2349b\",\"action\":\"create\",\"contractHash\":\"c10a20553df2349b\",\"blueprintId\":\"bp_00000000-0000-4000-8000-400000000001\",\"variantKey\":\"44136fa355b3678a\",\"cache\":{\"hit\":false,\"llmCallsAvoided\":0,\"kind\":\"cold\",\"reason\":\"cold: generated fresh — no stored component was reused for this render\"},\"nextStep\":{\"tool\":\"ggui_consume\",\"description\":\"Drain the action pipe for this render — long-polls until a user gesture arrives or 15s timeout.\",\"example\":\"ggui_consume({ sessionId: \\\"render_00000000-0000-4000-8000-300000000001\\\" })\",\"args\":{\"sessionId\":\"render_00000000-0000-4000-8000-300000000001\"}}}"}],"outcome":"ok","isError":false,"messageId":"toolu_000000000000000000000005:result","uiData":{"sessionId":"render_00000000-0000-4000-8000-300000000001","resourceUri":"ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c10a20553df2349b","action":"create","contractHash":"c10a20553df2349b","blueprintId":"bp_00000000-0000-4000-8000-400000000001","variantKey":"44136fa355b3678a","cache":{"hit":false,"llmCallsAvoided":0,"kind":"cold","reason":"cold: generated fresh — no stored component was reused for this render"},"nextStep":{"tool":"ggui_consume","description":"Drain the action pipe for this render — long-polls until a user gesture arrives or 15s timeout.","example":"ggui_consume({ sessionId: \"render_00000000-0000-4000-8000-300000000001\" })","args":{"sessionId":"render_00000000-0000-4000-8000-300000000001"}}},"_meta":{"ai.ggui/render":{"sessionId":"render_00000000-0000-4000-8000-300000000001","appId":"APP00000","runtimeUrl":"https://dev.mcp.sandbox.ggui.ai/_ggui/iframe-runtime.js","wsUrl":"wss://dev.mcp.sandbox.ggui.ai/ws","wsToken":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJraW5kIjoid3MiLCJpYXQiOjAsImV4cCI6MH0.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","expiresAt":"2026-07-29T11:07:58.000Z","lastSequence":0,"propsJson":"{\"todos\":[{\"id\":\"00000000-0000-4000-8000-100000000004\",\"title\":\"Buy milk\",\"done\":false}]}"},"ui":{"resourceUri":"ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c10a20553df2349b"},"ui/resourceUri":"ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c10a20553df2349b"}}
+
+event: message
+data: {"type":"message.start","seq":41,"id":"msg_000000000000000000000005","turnId":"turn_00000000-0000-4000-8000-200000000001","threadId":"00000000-0000-4000-8000-100000000003","role":"assistant","model":"claude-sonnet-5"}
+
+event: message
+data: {"type":"text.start","seq":42,"id":"msg_000000000000000000000005:text:0","messageId":"msg_000000000000000000000005","turnId":"turn_00000000-0000-4000-8000-200000000001"}
+
+event: message
+data: {"type":"text.delta","seq":43,"id":"msg_000000000000000000000005:text:0","messageId":"msg_000000000000000000000005","delta":"I created \"Buy milk\" and rendered your todo list as a rich UI card — it currently shows that one item, unchecked. I'll keep listening for any toggle actions you make in the card.","turnId":"turn_00000000-0000-4000-8000-200000000001"}
+
+event: message
+data: {"type":"text.end","seq":44,"id":"msg_000000000000000000000005:text:0","messageId":"msg_000000000000000000000005","turnId":"turn_00000000-0000-4000-8000-200000000001"}
+
+event: message
+data: {"type":"tool.start","seq":45,"turnId":"turn_00000000-0000-4000-8000-200000000001","toolCallId":"toolu_000000000000000000000006","name":"mcp__ggui__ggui_consume","index":0,"messageId":"msg_000000000000000000000005","providerExecuted":false}
+
+event: message
+data: {"type":"tool.args.delta","seq":46,"toolCallId":"toolu_000000000000000000000006","delta":"{\"sessionId\":\"render_00000000-0000-4000-8000-300000000001\",\"timeout\":20}"}
+
+event: message
+data: {"type":"tool.args.assembled","seq":47,"toolCallId":"toolu_000000000000000000000006","input":{"sessionId":"render_00000000-0000-4000-8000-300000000001","timeout":20}}
+
+event: message
+data: {"type":"message.end","seq":48,"id":"msg_000000000000000000000005","usage":{"inputTokens":2,"outputTokens":1,"cacheReadTokens":13274,"cacheWriteTokens":543,"cumulative":true}}
+
+event: message
+data: {"type":"tool.done","seq":49,"turnId":"turn_00000000-0000-4000-8000-200000000001","toolCallId":"toolu_000000000000000000000006","content":[{"type":"text","text":"{\"events\":[],\"status\":\"active\"}"}],"outcome":"ok","isError":false,"messageId":"toolu_000000000000000000000006:result","structuredContent":{"events":[],"status":"active"}}
+
+event: message
+data: {"type":"message.start","seq":50,"id":"msg_000000000000000000000006","turnId":"turn_00000000-0000-4000-8000-200000000001","threadId":"00000000-0000-4000-8000-100000000003","role":"assistant","model":"claude-sonnet-5"}
+
+event: message
+data: {"type":"text.start","seq":51,"id":"msg_000000000000000000000006:text:0","messageId":"msg_000000000000000000000006","turnId":"turn_00000000-0000-4000-8000-200000000001"}
+
+event: message
+data: {"type":"text.delta","seq":52,"id":"msg_000000000000000000000006:text:0","messageId":"msg_000000000000000000000006","delta":"No actions yet — the card is live and waiting for you. Let me know if you'd like to check it off, add more todos, or anything else, and I'll update the UI accordingly.","turnId":"turn_00000000-0000-4000-8000-200000000001"}
+
+event: message
+data: {"type":"text.end","seq":53,"id":"msg_000000000000000000000006:text:0","messageId":"msg_000000000000000000000006","turnId":"turn_00000000-0000-4000-8000-200000000001"}
+
+event: message
+data: {"type":"message.end","seq":54,"id":"msg_000000000000000000000006","usage":{"inputTokens":2,"outputTokens":1,"cacheReadTokens":13817,"cacheWriteTokens":189,"cumulative":true}}
+
+event: message
+data: {"type":"turn.done","seq":55,"turnId":"turn_00000000-0000-4000-8000-200000000001","outcome":{"type":"success","result":"No actions yet — the card is live and waiting for you. Let me know if you'd like to check it off, add more todos, or anything else, and I'll update the UI accordingly."},"finishReason":"stop","usage":{"inputTokens":12,"outputTokens":1112,"cacheReadTokens":74941,"cacheWriteTokens":2342,"serverToolRequests":0,"costUsd":0.0479808,"cumulative":true,"byModel":{"claude-sonnet-5":{"inputTokens":12,"outputTokens":1112,"cacheReadTokens":74941,"cacheWriteTokens":2342,"costUsd":0.0479808,"serverToolRequests":0,"cumulative":true}}}}
+
+event: done
+data: {"stopReason":"end_turn","threadId":"00000000-0000-4000-8000-100000000002","userSeq":1,"agentSeq":2}
