@@ -190,6 +190,7 @@ describe("status + error live semantics", () => {
       expanded: true,
       family: "transient",
       code: "TIMEOUT",
+      message: "upstream timeout",
       copy: defaultChatStrings.errorTransient,
       verbatim: null,
     };

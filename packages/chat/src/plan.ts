@@ -716,6 +716,7 @@ export function planTranscript(
       family,
       code,
       copy,
+      message: inputs.error.message,
       verbatim: policy.error.verbatim ? `${code ?? "uncoded"}: ${inputs.error.message}` : null,
     });
   }

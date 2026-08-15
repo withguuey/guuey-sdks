@@ -236,6 +236,13 @@ export interface PromptItem extends BaseItem {
 /** R11 — a coded, human-worded error notice. */
 export interface ErrorItem extends BaseItem {
   kind: "error";
+  /**
+   * The source message (wire body or client-side error copy), regardless of
+   * policy — `copy` is the calm family sentence; overrides that keep a
+   * surface's own voice (the widget renders pod messages verbatim) need the
+   * original without opting into debug's `verbatim` formatting.
+   */
+  message: string;
   family: "auth" | "quota" | "transient" | "invalid";
   code: string | null;
   copy: string;
