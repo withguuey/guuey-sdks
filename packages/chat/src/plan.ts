@@ -337,6 +337,7 @@ function planAssistantSource(
             phase: inputs.viewPhases?.[viewKey] ?? "negotiating",
             label: null,
             attribution: policy.debugDetail ? null : policy.strings.viaTool(tool.title),
+            toolTitle: tool.title,
             // `result` is narrowed by `mount !== undefined` above; the scope
             // is the PERSISTED locator (`uiData.resourceUri`), never the
             // mount payload's own uri (synthetic for a ggui shell).
@@ -652,6 +653,7 @@ export function planTranscript(
       phase: mount === undefined ? "expired" : (inputs.viewPhases?.[key] ?? "negotiating"),
       label: null,
       attribution: null,
+      toolTitle: null,
       actionScope:
         mount === undefined
           ? null

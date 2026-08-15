@@ -1098,6 +1098,7 @@ exports[`corpus > 7. view-never-handshakes — channel-aware labels on both chan
         },
       },
       "phase": "no-handshake",
+      "toolTitle": "render form",
     },
     {
       "argsPreview": null,
@@ -1133,6 +1134,7 @@ exports[`corpus > 7. view-never-handshakes — channel-aware labels on both chan
         },
       },
       "phase": "no-handshake",
+      "toolTitle": "ggui render",
     },
   ],
   "recovery": null,
@@ -1217,6 +1219,7 @@ exports[`corpus > 9. history-dead-locators — the expired path beside a healthy
         "resourceUri": "ui://ggui/render/old/1",
       },
       "phase": "negotiating",
+      "toolTitle": null,
     },
     {
       "actionScope": null,
@@ -1228,6 +1231,7 @@ exports[`corpus > 9. history-dead-locators — the expired path beside a healthy
       "label": "This view expired",
       "mount": null,
       "phase": "expired",
+      "toolTitle": null,
     },
   ],
   "recovery": null,
@@ -1510,6 +1514,7 @@ exports[`corpus > 15. tools-around-a-view — the group SPLITS at the view's pos
         },
       },
       "phase": "negotiating",
+      "toolTitle": "ggui render",
     },
     {
       "expanded": false,

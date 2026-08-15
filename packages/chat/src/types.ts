@@ -183,6 +183,8 @@ export interface ViewMountItem extends BaseItem {
   label: string | null;
   /** Calm chrome: "via {tool}" when this mount broke an R4 group. */
   attribution: string | null;
+  /** The producing call's humanized title (live mounts); null for history cards. */
+  toolTitle: string | null;
   /**
    * The persisted `ui://` locator a mounted card's runtime actions bind to
    * (guuey#158) — the block's `uiData.resourceUri` for live mounts, the
