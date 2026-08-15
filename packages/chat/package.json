@@ -1,7 +1,7 @@
 {
   "name": "@guuey/chat",
   "version": "0.4.0",
-  "description": "The default end-user transcript UI for guuey agents — the headless view-model (planTranscript), calm/debug presets, the GuueyChatTheme token schema, the ChatStrings i18n seam, and (at ./react) the component kit that renders it: per-category components, <Transcript>, the live + history input assemblers, and stick-to-bottom/windowed/accessible transcript behavior.",
+  "description": "The default end-user transcript UI for guuey agents — the headless view-model (planTranscript), calm/debug presets, the GuueyChatTheme token schema, the ChatStrings i18n seam, and (at ./react) the component kit that renders it: per-category components, <Transcript>, the live + history input assemblers, and stick-to-bottom/windowed/accessible transcript behavior; at ./native, the React Native renderer over the same view-model.",
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
@@ -27,6 +27,12 @@
       "import": "./dist/react.js",
       "default": "./dist/react.js"
     },
+    "./native": {
+      "react-native": "./src/native.tsx",
+      "types": "./dist/native.d.ts",
+      "import": "./dist/native.js",
+      "default": "./dist/native.js"
+    },
     "./styles.css": "./styles.css"
   },
   "scripts": {
@@ -45,10 +51,14 @@
     "zod": "^4.3.6"
   },
   "peerDependencies": {
-    "react": ">=18"
+    "react": ">=18",
+    "react-native": ">=0.76"
   },
   "peerDependenciesMeta": {
     "react": {
+      "optional": true
+    },
+    "react-native": {
       "optional": true
     }
   },
@@ -60,6 +70,7 @@
     "jsdom": "^25.0.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-native": "0.81.5",
     "typescript": "^5.0.0",
     "vitest": "^3.0.0"
   },

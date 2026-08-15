@@ -38,6 +38,19 @@ const PACKAGES_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'pac
 const TEST_RUNNER_ONLY = new Set(['@guuey/state/testing', '@guuey/threads/testing']);
 
 /**
+ * Exports arms that are REACT-NATIVE-RUNTIME-HOSTED by design: they import
+ * `react-native`, whose entry is Flow-typed CommonJS that only a Metro (or
+ * jest-expo) transform can load — bare Node cannot parse it, ever, and
+ * that is a property of the platform, not a packaging bug. These arms are
+ * EXISTENCE-CHECKED (the dist target must be on disk) but not imported;
+ * their behavioral coverage lives in the consuming app's jest-expo suite
+ * (portal, for `@guuey/chat/native`). Same rule as TEST_RUNNER_ONLY: a new
+ * arm that fails under bare node still fails this smoke until it is either
+ * fixed or classified here with a reason.
+ */
+const NATIVE_RUNTIME_ONLY = new Set(['@guuey/chat/native']);
+
+/**
  * An exports entry → its plain-Node ESM target, honoring the condition
  * order Node itself applies for `import` (skipping `react-native`/`types`,
  * which never apply under plain node).
@@ -80,6 +93,16 @@ for (const dir of readdirSync(PACKAGES_DIR).sort()) {
     }
     if (TEST_RUNNER_ONLY.has(label)) {
       console.log(`skip ${label} (test-runner-hosted contract suite)`);
+      continue;
+    }
+    if (NATIVE_RUNTIME_ONLY.has(label)) {
+      const nativeFile = join(PACKAGES_DIR, dir, target);
+      if (!existsSync(nativeFile)) {
+        console.error(`FAIL ${label} — exports target missing on disk: ${target}`);
+        failures++;
+      } else {
+        console.log(`skip ${label} (react-native-runtime-hosted, existence-checked)`);
+      }
       continue;
     }
     if (target === undefined) {
