@@ -73,6 +73,13 @@ export interface ChatStrings {
   showEarlier: (count: number) => string;
   copy: string;
   copied: string;
+
+  /** The 3c composer (`<GuueyChat>`). */
+  composerPlaceholder: string;
+  composerUnavailable: string;
+  composerLabel: string;
+  send: string;
+  stop: string;
 }
 
 /** Humanize a wire tool name: `render_weather-card` → `render weather card`. */
@@ -128,4 +135,10 @@ export const defaultChatStrings: ChatStrings = {
   showEarlier: (count) => `Show ${count} earlier`,
   copy: "Copy",
   copied: "Copied",
+
+  composerPlaceholder: "Message the agent…",
+  composerUnavailable: "Chat is unavailable.",
+  composerLabel: "Message",
+  send: "Send",
+  stop: "Stop",
 };
