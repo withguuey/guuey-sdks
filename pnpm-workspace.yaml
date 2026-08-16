@@ -52,3 +52,11 @@ minimumReleaseAgeExclude:
   - "@silverprotocol/richtext"
   - "@ggui-ai/protocol"
   - "@ggui-ai/artifact-manifest"
+
+# guuey#227: brace-expansion patched-line pins — see the root
+# pnpm-workspace.yaml `overrides:` comment (same family, this workspace has
+# its own lockfile so it needs its own block).
+overrides:
+  "brace-expansion@1": ^1.1.18
+  "brace-expansion@2": ^2.1.4
+  "brace-expansion@5": ^5.0.9
