@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   __resetReaderEndpointWarning,
+  __resetRelayEndpointWarning,
   createUiActionRelay,
   createUiResourceReader,
   createWebAdapters,
@@ -721,6 +722,7 @@ describe("createUiActionRelay", () => {
     const relay = createUiActionRelay({
       apiBaseUrl: "https://api.example/v1",
       threadId: "t1",
+      endpointUrl: null, // persisted-door test — declared, not forgotten
       getAccessToken: async () => "tok",
       fetchImpl,
     });
@@ -743,6 +745,7 @@ describe("createUiActionRelay", () => {
       const relay = createUiActionRelay({
         apiBaseUrl: "https://api.example/v1",
         threadId: "t1",
+        endpointUrl: null, // persisted-door test — declared, not forgotten
         guestSecret: "a".repeat(64),
         fetchImpl: mkFetch(status),
       });
@@ -757,6 +760,7 @@ describe("createUiActionRelay", () => {
     const relay = createUiActionRelay({
       apiBaseUrl: "https://api.example/v1",
       threadId: "t1",
+      endpointUrl: null, // persisted-door test — declared, not forgotten
       fetchImpl,
     });
     const out = await relay({ ...REQUEST, name: "shell_exec" });
@@ -776,6 +780,7 @@ describe("createUiActionRelay", () => {
     const relay = createUiActionRelay({
       apiBaseUrl: "https://api.example/v1",
       threadId: "t1",
+      endpointUrl: null, // persisted-door test — declared, not forgotten
       getAccessToken,
       fetchImpl,
     });
@@ -785,5 +790,147 @@ describe("createUiActionRelay", () => {
     expect(
       (second[1] as { headers: Record<string, string> }).headers["authorization"],
     ).toBe("Bearer fresh");
+  });
+
+  // guuey#222 — the pod door: the relay is the reader's two-door twin.
+  const POD = "https://pod.example";
+  const POD_URL = "https://pod.example/agent/ui-action";
+  const PERSISTED_URL = "https://api.example/v1/threads/t1/ui-action";
+  function urlsOf(fetchImpl: typeof fetch): string[] {
+    return (fetchImpl as unknown as { mock: { calls: unknown[][] } }).mock.calls.map((c) => String(c[0]));
+  }
+  function seqFetch(responses: Array<{ status: number; body?: unknown }>) {
+    const q = [...responses];
+    return vi.fn(async () => {
+      const r = q.shift();
+      if (!r) throw new Error("seqFetch: no queued response");
+      return { ok: r.status >= 200 && r.status < 300, status: r.status, json: async () => r.body };
+    }) as unknown as typeof fetch;
+  }
+
+  it("pod door answers → result verbatim, persisted door NOT called", async () => {
+    const fetchImpl = seqFetch([{ status: 200, body: OK_BODY }]);
+    const relay = createUiActionRelay({
+      apiBaseUrl: "https://api.example/v1",
+      threadId: "t1",
+      endpointUrl: POD,
+      getAccessToken: async () => "tok",
+      fetchImpl,
+    });
+    expect(await relay(REQUEST)).toEqual(OK_BODY);
+    expect(urlsOf(fetchImpl)).toEqual([POD_URL]);
+  });
+
+  it("accepts a full /agent/invoke URL as the endpoint and derives the pod door from it", async () => {
+    const fetchImpl = seqFetch([{ status: 200, body: OK_BODY }]);
+    const relay = createUiActionRelay({
+      apiBaseUrl: "https://api.example/v1",
+      threadId: "t1",
+      endpointUrl: `${POD}/agent/invoke`,
+      guestSecret: "a".repeat(64),
+      fetchImpl,
+    });
+    await relay(REQUEST);
+    expect(urlsOf(fetchImpl)).toEqual([POD_URL]);
+  });
+
+  it("pod 404 (not live / past grace) falls through to the persisted door", async () => {
+    const fetchImpl = seqFetch([{ status: 404 }, { status: 200, body: OK_BODY }]);
+    const relay = createUiActionRelay({
+      apiBaseUrl: "https://api.example/v1",
+      threadId: "t1",
+      endpointUrl: POD,
+      guestSecret: "a".repeat(64),
+      fetchImpl,
+    });
+    expect(await relay(REQUEST)).toEqual(OK_BODY);
+    expect(urlsOf(fetchImpl)).toEqual([POD_URL, PERSISTED_URL]);
+  });
+
+  it("pod 502 UPSTREAM_UNAVAILABLE is terminal — in-band isError, NO fall-through", async () => {
+    const fetchImpl = seqFetch([{ status: 502 }, { status: 200, body: OK_BODY }]);
+    const relay = createUiActionRelay({
+      apiBaseUrl: "https://api.example/v1",
+      threadId: "t1",
+      endpointUrl: POD,
+      guestSecret: "a".repeat(64),
+      fetchImpl,
+    });
+    const out = await relay(REQUEST);
+    expect(out.isError).toBe(true);
+    expect(urlsOf(fetchImpl)).toEqual([POD_URL]);
+  });
+
+  it("pod 400/403 are terminal too (deny is not a miss)", async () => {
+    for (const status of [400, 403]) {
+      const fetchImpl = seqFetch([{ status }, { status: 200, body: OK_BODY }]);
+      const relay = createUiActionRelay({
+        apiBaseUrl: "https://api.example/v1",
+        threadId: "t1",
+        endpointUrl: POD,
+        guestSecret: "a".repeat(64),
+        fetchImpl,
+      });
+      expect((await relay(REQUEST)).isError).toBe(true);
+      expect(urlsOf(fetchImpl)).toEqual([POD_URL]);
+    }
+  });
+
+  it("both doors 404 → in-band isError (unchanged never-reject contract)", async () => {
+    const fetchImpl = seqFetch([{ status: 404 }, { status: 404 }]);
+    const relay = createUiActionRelay({
+      apiBaseUrl: "https://api.example/v1",
+      threadId: "t1",
+      endpointUrl: POD,
+      guestSecret: "a".repeat(64),
+      fetchImpl,
+    });
+    expect((await relay(REQUEST)).isError).toBe(true);
+    expect(urlsOf(fetchImpl)).toEqual([POD_URL, PERSISTED_URL]);
+  });
+
+  it("cookie mode sends credentials:'include' and NO identity headers; bearer/guest send no credentials", async () => {
+    const initOf = (f: typeof fetch, i = 0) =>
+      (f as unknown as { mock: { calls: unknown[][] } }).mock.calls[i]![1] as {
+        headers: Record<string, string>;
+        credentials?: string;
+      };
+    const cookie = seqFetch([{ status: 200, body: OK_BODY }]);
+    await createUiActionRelay({ apiBaseUrl: "https://api.example/v1", threadId: "t1", endpointUrl: POD, fetchImpl: cookie })(REQUEST);
+    expect(initOf(cookie).credentials).toBe("include");
+    expect(initOf(cookie).headers["authorization"]).toBeUndefined();
+    expect(initOf(cookie).headers["x-guuey-guest"]).toBeUndefined();
+
+    const bearer = seqFetch([{ status: 200, body: OK_BODY }]);
+    await createUiActionRelay({ apiBaseUrl: "https://api.example/v1", threadId: "t1", endpointUrl: POD, getAccessToken: async () => "tok", fetchImpl: bearer })(REQUEST);
+    expect(initOf(bearer).credentials).toBeUndefined();
+    expect(initOf(bearer).headers["authorization"]).toBe("Bearer tok");
+
+    const guest = seqFetch([{ status: 200, body: OK_BODY }]);
+    await createUiActionRelay({ apiBaseUrl: "https://api.example/v1", threadId: "t1", endpointUrl: POD, guestSecret: "a".repeat(64), fetchImpl: guest })(REQUEST);
+    expect(initOf(guest).credentials).toBeUndefined();
+    expect(initOf(guest).headers["x-guuey-guest"]).toBe("a".repeat(64));
+  });
+
+  it("absent endpointUrl → persisted door only, warns ONCE; null → silent", async () => {
+    __resetRelayEndpointWarning();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const f1 = seqFetch([{ status: 200, body: OK_BODY }]);
+      await createUiActionRelay({ apiBaseUrl: "https://api.example/v1", threadId: "t1", fetchImpl: f1 })(REQUEST);
+      expect(urlsOf(f1)).toEqual([PERSISTED_URL]);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]?.[0])).toMatch(/endpointUrl/);
+      expect(String(warn.mock.calls[0]?.[0])).toMatch(/mid-turn/);
+      // once per module, not per construction
+      createUiActionRelay({ apiBaseUrl: "https://api.example/v1", threadId: "t1", fetchImpl: f1 });
+      expect(warn).toHaveBeenCalledTimes(1);
+      // declared history-only viewer: silent
+      __resetRelayEndpointWarning();
+      createUiActionRelay({ apiBaseUrl: "https://api.example/v1", threadId: "t1", endpointUrl: null, fetchImpl: f1 });
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

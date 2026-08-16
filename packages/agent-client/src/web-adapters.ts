@@ -252,6 +252,18 @@ function toUiResourceUrl(endpointUrl: string): string {
   return toInvokeUrl(endpointUrl).replace(/\/agent\/invoke$/, "/agent/ui-resource");
 }
 
+/** `<pod base>/agent/ui-action` — the live ACTION door (guuey#222), the read door's twin. */
+function toUiActionUrl(endpointUrl: string): string {
+  return toInvokeUrl(endpointUrl).replace(/\/agent\/invoke$/, "/agent/ui-action");
+}
+
+/** Warn once per module load — sibling of the reader's flag; per-surface, not per-click. */
+let relayEndpointWarned = false;
+/** @internal test seam — the once-flag is module state; suites reset it between cases. */
+export function __resetRelayEndpointWarning(): void {
+  relayEndpointWarned = false;
+}
+
 /**
  * Build a `UiResourceReader` over guuey's authenticated resources/read
  * doors — the pod door for LIVE turns (guuey#209 C1:
@@ -370,6 +382,24 @@ export interface CreateUiActionRelayOptions {
   apiBaseUrl: string;
   /** The thread whose persisted cards this relay may act for. */
   threadId: string;
+  /**
+   * The surface's invoke endpoint (pod base URL or full `/agent/invoke`
+   * URL). When set, actions POST to the POD's live door first
+   * (`POST <pod>/agent/ui-action`, guuey#222) — the only authority that
+   * can relay a click for a card whose turn is still streaming (persisted
+   * `kind:'card'` rows land at turn COMPLETION, so the platform door 404s
+   * mid-turn by construction). A pod 404 (not live, or past the ledger's
+   * grace window) falls through to the platform door; every other pod
+   * answer is terminal for the same reason it would be on the platform
+   * door. Absent → platform door only (pre-#222 behavior): **a click on a
+   * card produced mid-turn cannot reach the agent until its turn
+   * completes** — the exact "no moment where a click both resolves AND
+   * finds a live consumer" defect. A live surface MUST pass it; omitting it
+   * is only correct for a pure history viewer with no pod. The relay warns
+   * once at construction when a platform door is configured without a pod
+   * door (same guardrail as {@link createUiResourceReader}).
+   */
+  endpointUrl?: string | null;
   /** Signed-in bearer — wins over the guest secret (same rule as the transport). */
   getAccessToken?: (opts?: { forceRefresh?: boolean }) => Promise<string | null>;
   /** Caller-owned anonymous guest secret (widget / guest chat). */
@@ -394,29 +424,61 @@ export function createUiActionRelay(
   options: CreateUiActionRelayOptions,
 ): (request: UiActionRequest) => Promise<McpToolCallResult> {
   const fetchImpl = options.fetchImpl ?? fetch;
-  const callTool = async (
-    uri: string,
-    name: string,
-    args: McpToolStructuredContent | undefined,
-  ): Promise<unknown> => {
+  // A platform door without a pod door is almost always a live surface
+  // that forgot `endpointUrl` — its cards' clicks would go nowhere for the
+  // whole mid-turn window (guuey#222). `null` is the explicit "history-only
+  // viewer, there is no pod" opt-out; `undefined` is the forgotten case.
+  if (options.endpointUrl === undefined && !relayEndpointWarned) {
+    relayEndpointWarned = true;
+    console.warn(
+      "createUiActionRelay: no `endpointUrl` — a click on a card produced mid-turn cannot reach the agent until the turn completes (the pod door is the only authority while a turn streams; post-turn clicks reach the platform door). Pass the surface's invoke endpoint, or `endpointUrl: null` to declare a history-only viewer.",
+    );
+  }
+
+  /**
+   * One door: POST + the reader's 401-forceRefresh recovery. Returns the
+   * parsed result on 2xx, `"miss"` on 404 (the pod's "not live / not yours /
+   * past grace" — deny==miss, so the NEXT door may still answer), and
+   * `undefined` for every other failure (terminal: the host relay answers
+   * in-band as an `isError` result, never a thrown error into the sandbox
+   * bridge). A pod 502 UPSTREAM_UNAVAILABLE is a real failure, not a miss —
+   * the persisted door cannot relay a mid-turn click either, so falling
+   * through would only trade one honest error for a misleading 404.
+   */
+  const postDoor = async (
+    requestUrl: string,
+    body: string,
+  ): Promise<{ kind: "result"; value: unknown } | "miss" | undefined> => {
+    // Exactly ONE identity carrier per call — the reader's rule verbatim:
+    // bearer → guest header → else cookie credentials (the HttpOnly
+    // `guuey_guest` cookie the pod mints for anonymous browser callers).
+    // Without the third arm a cookie-mode guest POSTed identity-less and
+    // every click failed auth (the guuey#221 class, on the relay). A JSON
+    // POST is always preflighted, so unlike the reader's GET this arm can
+    // never be a CORS "simple request" — which is fine because both doors
+    // answer a credentialed preflight: the pod echoes origin +
+    // `Access-Control-Allow-Credentials` on OPTIONS and every status, and
+    // the platform door's own OPTIONS branch does the same (guuey#224).
     const headers: Record<string, string> = { "content-type": "application/json" };
+    const init: RequestInit = { method: "POST", headers, body };
     const token = options.getAccessToken ? await options.getAccessToken() : null;
     const guest = sendableGuestSecret(options.guestSecret);
     if (token) {
       headers["authorization"] = `Bearer ${token}`;
     } else if (guest) {
       headers[GUEST_HEADER] = guest;
+    } else {
+      init.credentials = "include";
     }
-    const requestUrl = `${options.apiBaseUrl}/threads/${encodeURIComponent(options.threadId)}/ui-action`;
-    const body = JSON.stringify({ uri, name, ...(args !== undefined ? { arguments: args } : {}) });
     let res: Response;
     try {
-      res = await fetchImpl(requestUrl, { method: "POST", headers, body });
+      res = await fetchImpl(requestUrl, init);
     } catch {
       return undefined; // transport failure — the host relay answers in-band
     }
     // One forceRefresh retry on 401 with a bearer in play — the same
-    // expired-but-refreshable recovery the reader performs.
+    // expired-but-refreshable recovery the reader performs. The retry
+    // carries the fresh bearer and nothing else (same one-carrier rule).
     if (res.status === 401 && options.getAccessToken) {
       const fresh = await options.getAccessToken({ forceRefresh: true }).catch(() => null);
       if (fresh) {
@@ -431,12 +493,36 @@ export function createUiActionRelay(
         }
       }
     }
+    if (res.status === 404) return "miss";
     if (!res.ok) return undefined;
     try {
-      return (await res.json()) as unknown;
+      return { kind: "result", value: (await res.json()) as unknown };
     } catch {
       return undefined;
     }
+  };
+
+  const podUrl = options.endpointUrl ? toUiActionUrl(options.endpointUrl) : null;
+  const callTool = async (
+    uri: string,
+    name: string,
+    args: McpToolStructuredContent | undefined,
+  ): Promise<unknown> => {
+    // The kit sends only what the click carries; the pod overwrites any
+    // sessionId/appId from the authorized locator + its own binding.
+    const body = JSON.stringify({ uri, name, ...(args !== undefined ? { arguments: args } : {}) });
+    if (podUrl !== null) {
+      const live = await postDoor(podUrl, body);
+      if (live === undefined) return undefined; // terminal on the pod — no fall-through
+      if (live !== "miss") return live.value;
+      // 404 → not live here (completed turn past grace, or never live):
+      // the persisted door owns it.
+    }
+    const persisted = await postDoor(
+      `${options.apiBaseUrl}/threads/${encodeURIComponent(options.threadId)}/ui-action`,
+      body,
+    );
+    return persisted === undefined || persisted === "miss" ? undefined : persisted.value;
   };
   return createMcpUiActionRelay({ callTool });
 }
