@@ -175,6 +175,27 @@ export function uiLocator(uiData: JsonValue | undefined): string | undefined {
   return typeof uri === "string" && uri.startsWith("ui://") ? uri : undefined;
 }
 
+/**
+ * The `ui://` locator a `tool-result` block carries, from EITHER channel it
+ * can arrive on — the single seam every locator reader goes through.
+ *
+ * AgJSON §2.1 routes a tool result's `structuredContent` by its `_meta.ui`
+ * sibling: WITH the sibling it is surface data and the normalizer stamps
+ * `uiData`; WITHOUT it, it is model-channel data and lands in
+ * `structuredContent`. A producer that withholds `_meta` (ggui's non-prod
+ * posture; any plain-locator MCP server) therefore delivers a locator that
+ * is byte-identical in shape but lives one field over — reading `uiData`
+ * alone renders NOTHING for it (dark, not "expired"), and the persistence
+ * projector minted no placeholder row (the read plane 404s). `uiData` wins
+ * when both carry one (guuey#209 route-A finding).
+ */
+export function toolResultLocator(block: {
+  uiData?: JsonValue;
+  structuredContent?: JsonValue;
+}): string | undefined {
+  return uiLocator(block.uiData) ?? uiLocator(block.structuredContent);
+}
+
 export function snapshotUiResource(cardSnapshot: JsonValue): McpUiResourcePayload | undefined {
   if (!isJsonObject(cardSnapshot)) return undefined;
   const parts = cardSnapshot.parts;

@@ -33,7 +33,7 @@
  * keeps that one narrowing in one place — the alternative was for every host
  * to re-run `toolResultGguiRender` beside this call and ask again.
  */
-import { snapshotUiResource, toolResultUiResource, uiLocator, type McpUiResourcePayload } from "./block-ui.js";
+import { snapshotUiResource, toolResultLocator, toolResultUiResource, type McpUiResourcePayload } from "./block-ui.js";
 import { GGUI_RENDER_META_KEY, gguiRenderResource, toolResultGguiRender } from "./ggui-render.js";
 import type { AgBlock, JsonValue } from "@silverprotocol/core";
 
@@ -56,7 +56,9 @@ export type ViewMountChannel = "inline" | "ggui" | "locator";
  * `"ggui"` — a shell that boots the ggui runtime from a platform-pinned
  * origin, and therefore needs a host page whose CSP allows that origin.
  * `"locator"` — no mount material in hand, only the durable `ui://`
- * identity (guuey#122): the host resolves it with a fresh, authenticated
+ * identity (guuey#122) — read from `uiData` OR, for a producer that
+ * withheld `_meta` (AgJSON §2.1 then routes it to `structuredContent`),
+ * from `structuredContent` (guuey#209): the host resolves it with a fresh, authenticated
  * `resources/read` of the uri ({@link UiResourceReader}) — the spec-consistent
  * template fetch, vendor-neutral. (The spec defers persistence/restoration
  * itself; a full remount additionally owes the View `ui/notifications/tool-input`
@@ -79,7 +81,7 @@ export interface ResolvedViewMount {
 /** The durable-identity arm: no mount material, only the uri to re-fetch. */
 export interface LocatorViewMount {
   channel: "locator";
-  /** The persisted `uiData.resourceUri` (`ui://` scheme) to re-fetch. */
+  /** The durable `ui://` locator to re-fetch (`uiData.resourceUri`, else `structuredContent.resourceUri`). */
   resourceUri: string;
 }
 
@@ -108,8 +110,10 @@ export function toolResultViewMount(
   const resource = ggui ? gguiRenderResource(ggui) : undefined;
   if (resource) return { resource, channel: "ggui" };
   // A live locator whose mount material didn't reach us (a fold that
-  // dropped `_meta`): re-fetch works on live turns too — the resource is
-  // freshly minted (guuey#122). One diagnostic when `_meta` DID carry the
+  // dropped `_meta`, or a producer that never sent it — the locator then
+  // rides `structuredContent`, see `toolResultLocator`): re-fetch works on
+  // live turns too — the resource is freshly minted (guuey#122). One
+  // diagnostic when `_meta` DID carry the
   // vendor key but failed validation — a producer bug would otherwise be
   // indistinguishable from a meta-less fold (blank UI, zero errors).
   if (ggui && !ggui.bootstrap && blockCarriesGguiMetaKey(block)) {
@@ -117,7 +121,7 @@ export function toolResultViewMount(
       `mcp-apps-host: tool result ${block.toolCallId} carries a malformed ggui render bootstrap — degrading to the locator channel`,
     );
   }
-  const locator = uiLocator(block.uiData);
+  const locator = toolResultLocator(block);
   return locator !== undefined ? { channel: "locator", resourceUri: locator } : undefined;
 }
 
@@ -137,7 +141,7 @@ export function snapshotViewMount(cardSnapshot: JsonValue): ViewMount | undefine
   for (const block of snapshotBlocks(cardSnapshot)) {
     if (typeof block !== "object" || block === null || Array.isArray(block)) continue;
     if (block.type !== "tool-result") continue;
-    const locator = uiLocator(block.uiData);
+    const locator = toolResultLocator(block);
     if (locator !== undefined) return { channel: "locator", resourceUri: locator };
   }
   return undefined;

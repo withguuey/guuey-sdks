@@ -418,6 +418,34 @@ describe("uiCardArtifactsFromMessages — ui:// locators persist as placeholders
     });
     expect(JSON.stringify(arts[0])).not.toContain("wsToken");
   });
+
+  // guuey#209 (route-A finding): a producer that withholds `_meta` gets NO
+  // `uiData` from the normalizer (AgJSON §2.1 — no `_meta.ui` sibling ⇒
+  // structuredContent is model-channel data), so the locator arrives in
+  // `structuredContent.resourceUri`. Before this read the projector minted
+  // nothing for it and the read plane 404'd the render's own locator.
+  it("projects a META-LESS locator (structuredContent.resourceUri, no uiData, no _meta) into a placeholder row (#209)", () => {
+    const metaLess = {
+      type: "tool-result" as const,
+      toolCallId: "call1",
+      content: [{ type: "text" as const, text: "rendered" }],
+      outcome: "ok" as const,
+      isError: false,
+      structuredContent: { resourceUri: "ui://ggui/render/abc/h1", sessionId: "render_abc" },
+    };
+    const msg: AgMessage = {
+      id: "m11",
+      role: "tool",
+      content: [metaLess],
+      turnId: "turn11",
+      threadId: "t1",
+    };
+    const arts = uiCardArtifactsFromMessages([msg]);
+    expect(arts).toHaveLength(1);
+    expect(arts[0]!.parts[0]).toMatchObject({
+      structuredContent: { resourceUri: "ui://ggui/render/abc/h1" },
+    });
+  });
 });
 
 // guuey#122 — the persistence boundary strips tool-result `_meta` (live-turn

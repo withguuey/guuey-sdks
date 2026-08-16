@@ -1892,3 +1892,47 @@ exports[`corpus > 22. promoted-view — the stage's mount chips (guuey#204); oth
   "status": null,
 }
 `;
+
+exports[`corpus > 23. meta-less-locator — a \`_meta\`-withholding producer's render still mounts (as a locator), never dark (guuey#209) 1`] = `
+{
+  "items": [
+    {
+      "expanded": true,
+      "key": "u0",
+      "kind": "user",
+      "retry": false,
+      "state": "sent",
+      "text": "render a slot picker",
+    },
+    {
+      "argsPreview": null,
+      "attribution": true,
+      "expanded": false,
+      "key": "tool.t1",
+      "kind": "tool",
+      "name": "ggui_render",
+      "result": null,
+      "state": "done",
+      "title": "ggui render",
+      "toolCallId": "t1",
+    },
+    {
+      "actionScope": "ui://ggui/render/render_dark/h1",
+      "attribution": "via ggui render",
+      "channel": "locator",
+      "expanded": true,
+      "key": "view.t1",
+      "kind": "view",
+      "label": "Loading view…",
+      "mount": {
+        "channel": "locator",
+        "resourceUri": "ui://ggui/render/render_dark/h1",
+      },
+      "phase": "negotiating",
+      "toolTitle": "ggui render",
+    },
+  ],
+  "recovery": null,
+  "status": null,
+}
+`;

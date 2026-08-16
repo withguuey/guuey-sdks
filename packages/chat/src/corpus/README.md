@@ -44,7 +44,11 @@ witness.
   paths, labeled and never agent-voiced, provenance under debug only),
   and family 22 (`promoted-view` — guuey#204 "promote and reference": the
   one mount a host stage shows chips via `promotedViewKey`, every other
-  mount stays full, no/stale key is byte-identical to today).
+  mount stays full, no/stale key is byte-identical to today), and family
+  23 (`meta-less-locator` — guuey#209 route-A: a `_meta`-withholding
+  producer's `ui://` locator rides `structuredContent` (AgJSON §2.1 model-
+  channel routing) and STILL mounts as a locator — before this it rendered
+  nothing at all, the corpus's first "dark, not degraded" shape).
 - `capture.ts` / `captures/` — family 18: production-capture replay
   through the real `invokeTurn` (provenance in the module header).
 - `corpus.test.ts` — the runner: per-fixture assertions + snapshots, plain

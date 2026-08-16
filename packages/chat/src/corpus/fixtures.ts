@@ -555,3 +555,32 @@ export function promotedView(): { inputs: TranscriptInputs; promotedKey: string 
   const inputs = driveTurn(events, { userText: "show me two cards" });
   return { inputs, promotedKey: "view.t2" };
 }
+
+/**
+ * 23. meta-less-locator — guuey#209 route-A finding: a producer that
+ * withholds tool-result `_meta` (ggui's non-prod posture; any plain-locator
+ * MCP server) yields a fold block with NO uiData and NO _meta — AgJSON §2.1
+ * routes the sibling structuredContent to the MODEL channel — and the
+ * `ui://` locator rides `structuredContent.resourceUri`. Wire keys per the
+ * 2026-08-16 dev dump: type,toolCallId,content,outcome,isError,
+ * structuredContent. Before #209 this rendered NOTHING (dark, not
+ * "expired") and persisted no placeholder row.
+ */
+export function metaLessLocator(): TranscriptInputs {
+  const s = seqSource();
+  const events: InvokeTurnEvent[] = [
+    session,
+    frame(boot(s), { status: "thinking" }),
+    frame(
+      toolPart(s, "t1", "ggui_render", {
+        content: [{ type: "text", text: "rendered" }],
+        outcome: "ok",
+        isError: false,
+        structuredContent: { resourceUri: "ui://ggui/render/render_dark/h1", sessionId: "render_dark" },
+      }),
+      { status: "using-tool", activeTool: "ggui_render" },
+    ),
+    doneEvent,
+  ];
+  return driveTurn(events, { userText: "render a slot picker" });
+}

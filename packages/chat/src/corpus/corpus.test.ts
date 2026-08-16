@@ -19,6 +19,7 @@ import {
   giantJsonResult,
   historyDeadLocators,
   interleavedMediaCodeCitations,
+  metaLessLocator,
   midstreamToolFailure,
   persistedPlusLive,
   promotedView,
@@ -356,6 +357,23 @@ describe("corpus", () => {
     expect(texts.filter((t) => t.kind === "text" && t.text === "Done.")).toHaveLength(1);
     expect(texts.some((t) => t.kind === "text" && t.text.includes("concise mode"))).toBe(false);
     expect(calmPlan).toMatchSnapshot();
+  });
+
+  it("23. meta-less-locator — a `_meta`-withholding producer's render still mounts (as a locator), never dark (guuey#209)", () => {
+    const inputs = metaLessLocator();
+    const plan = planTranscript(inputs, calm);
+    const view = plan.items.find((i): i is ViewMountItem => i.kind === "view");
+    expect(view).toBeDefined();
+    expect(view?.key).toBe("view.t1");
+    expect(view?.channel).toBe("locator");
+    expect(view?.mount).toEqual({ channel: "locator", resourceUri: "ui://ggui/render/render_dark/h1" });
+    // The #158 action scope binds to the same locator, whichever channel carried it.
+    expect(view?.actionScope).toBe("ui://ggui/render/render_dark/h1");
+    // The #204 promotion walk sees it too — a meta-less card can be the stage's newest.
+    expect(newestViewKey(inputs)?.key).toBe("view.t1");
+    // Nothing degraded to R15 — a locator is a first-class mount, not unknown content.
+    expect(plan.items.some((i) => i.kind === "unknown")).toBe(false);
+    expect(plan).toMatchSnapshot();
   });
 
   it("22. promoted-view — the stage's mount chips (guuey#204); others stay; no/stale key = no-op", () => {

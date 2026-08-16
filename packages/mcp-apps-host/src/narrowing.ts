@@ -13,6 +13,7 @@ export {
   resourceHtml,
   scanProviderRawForUiResource,
   snapshotUiResource,
+  toolResultLocator,
   toolResultUiResource,
   uiLocator,
   type McpUiResourcePayload,

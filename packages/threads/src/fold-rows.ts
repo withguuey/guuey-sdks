@@ -16,7 +16,7 @@ import type {
 } from "@silverprotocol/core";
 import { AgMessage as AgMessageSchema } from "@silverprotocol/core";
 import type { ThreadMessageRow, ThreadMessageRole, ThreadMessageKind, ThreadSnapshotRow } from "./rows.js";
-import { asUiResource, scanProviderRawForUiResource, uiLocator } from "@guuey/mcp-apps-host/narrowing";
+import { asUiResource, scanProviderRawForUiResource, toolResultLocator } from "@guuey/mcp-apps-host/narrowing";
 
 export interface RowCtx {
   threadId: string;
@@ -136,15 +136,17 @@ export function uiCardArtifactsFromMessages(messages: AgMessage[]): AgArtifact[]
       // one producer) persists as a PLACEHOLDER row: the locator without
       // mount material (mount = re-fetch of the resourceUri). Before this,
       // locator-only results persisted nothing and vanished from history.
-      // The locator arm leans on an UPSTREAM gate (guuey#170): the
-      // claude-agent-sdk facet stamps `uiData` only when the result's
-      // sibling `_meta.ui` is present, so ggui's meta-less amend/no-op
-      // update results arrive here WITHOUT uiData and mint nothing. This
-      // projector itself never reads `_meta` — mount material rides
-      // uiData/content only (see the metaOnly pin in fold-rows.test.ts).
+      // The locator reads BOTH channels (guuey#209): the claude-agent-sdk
+      // facet stamps `uiData` only when the result's sibling `_meta.ui` is
+      // present (guuey#170); a producer that withholds `_meta` delivers the
+      // same `ui://` locator in `structuredContent` instead — without this
+      // read the render's own locator would never mint a placeholder row and
+      // the read plane 404s it. Mount MATERIAL still never rides `_meta` here
+      // (see the metaOnly pin in fold-rows.test.ts): a bare locator persists
+      // as a placeholder whose mount is a re-fetch.
       const carriesUi =
         asUiResource(block.uiData) !== undefined ||
-        uiLocator(block.uiData) !== undefined ||
+        toolResultLocator(block) !== undefined ||
         block.content.some(
           (part) =>
             part.type === "provider-raw" && scanProviderRawForUiResource(part.raw) !== undefined,

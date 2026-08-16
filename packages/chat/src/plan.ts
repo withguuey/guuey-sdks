@@ -32,7 +32,7 @@
  * append ordinals, so every existing key survives each re-plan.
  */
 import type { AgBlock, AgReduceResult, JsonValue } from "@silverprotocol/core";
-import { snapshotViewMount, toolResultViewMount, uiLocator, type ViewMount } from "@guuey/mcp-apps-host";
+import { snapshotViewMount, toolResultLocator, toolResultViewMount, type ViewMount } from "@guuey/mcp-apps-host";
 import type { TranscriptPolicy } from "./policy.js";
 import { grantModeDisplay } from "./hitl.js";
 import type {
@@ -411,7 +411,7 @@ function planAssistantSource(
             // `result` is narrowed by `mount !== undefined` above; the scope
             // is the PERSISTED locator (`uiData.resourceUri`), never the
             // mount payload's own uri (synthetic for a ggui shell).
-            actionScope: result ? (uiLocator(result.uiData) ?? null) : null,
+            actionScope: result ? (toolResultLocator(result) ?? null) : null,
           };
           view.label = viewLabel(view, policy);
           items.push(view);

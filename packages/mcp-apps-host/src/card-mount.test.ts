@@ -78,6 +78,41 @@ describe("toolResultViewMount", () => {
     });
     expect(toolResultViewMount(block({ events: [], status: "active" }))).toBeUndefined();
   });
+
+  // guuey#209 (route-A finding, ggui's 2026-08-16 dev dump): a producer that
+  // withholds tool-result `_meta` yields a block with NO uiData and NO _meta —
+  // AgJSON §2.1 routes the sibling structuredContent to the MODEL channel —
+  // and the `ui://` locator rides `structuredContent.resourceUri`. Keys on
+  // the wire: type,toolCallId,content,outcome,isError,structuredContent.
+  it("reads a meta-less locator from structuredContent — the production shape a `_meta`-withholding producer emits (#209)", () => {
+    const metaLess: Extract<AgBlock, { type: "tool-result" }> = {
+      type: "tool-result",
+      toolCallId: "call-1",
+      content: [{ type: "text", text: "rendered" }],
+      outcome: "ok",
+      isError: false,
+      structuredContent: { resourceUri: RESOURCE_URI, sessionId: "render_1" },
+    };
+    expect(toolResultViewMount(metaLess)).toEqual({ channel: "locator", resourceUri: RESOURCE_URI });
+  });
+
+  it("prefers uiData over structuredContent when both carry a locator (surface routing wins)", () => {
+    const both: Extract<AgBlock, { type: "tool-result" }> = {
+      ...block({ resourceUri: RESOURCE_URI }),
+      structuredContent: { resourceUri: "ui://ggui/render/other/hash" },
+    };
+    expect(toolResultViewMount(both)).toEqual({ channel: "locator", resourceUri: RESOURCE_URI });
+  });
+
+  it("does not treat a non-ui:// structuredContent.resourceUri as a locator", () => {
+    const notUi: Extract<AgBlock, { type: "tool-result" }> = {
+      type: "tool-result",
+      toolCallId: "call-1",
+      content: [],
+      structuredContent: { resourceUri: "https://example.com/not-a-locator" },
+    };
+    expect(toolResultViewMount(notUi)).toBeUndefined();
+  });
 });
 
 describe("snapshotViewMount", () => {
@@ -108,6 +143,21 @@ describe("snapshotViewMount", () => {
     const snapshot: JsonValue = {
       artifactId: "a1",
       parts: [{ type: "tool-result", uiData: { resourceUri: RESOURCE_URI } }],
+    };
+    expect(snapshotViewMount(snapshot)).toEqual({ channel: "locator", resourceUri: RESOURCE_URI });
+  });
+
+  it("resolves a persisted META-LESS placeholder (locator in structuredContent) to the locator channel (#209)", () => {
+    const snapshot: JsonValue = {
+      artifactId: "a1",
+      parts: [
+        {
+          type: "tool-result",
+          toolCallId: "call-1",
+          content: [],
+          structuredContent: { resourceUri: RESOURCE_URI },
+        },
+      ],
     };
     expect(snapshotViewMount(snapshot)).toEqual({ channel: "locator", resourceUri: RESOURCE_URI });
   });
