@@ -7,10 +7,12 @@
  * results in `role: "tool"` messages, mounts silently dropped).
  */
 import { describe, expect, it } from "vitest";
+import { createMcpUiResourceReader, resolveViewMount } from "@guuey/mcp-apps-host";
 import { planTranscript } from "../plan.js";
 import { calmPolicy, debugPolicy } from "../policy.js";
 import type { ToolItem, ViewMountItem } from "../types.js";
 import { CAPTURE_RENDER_URI, captureTurnEvents, productionGguiRenderCapture } from "./capture.js";
+import { gguiReadShell } from "./fixtures.js";
 
 describe("corpus 18: production-capture-ggui-render", () => {
   it("replays through the real invokeTurn: session, frames, done", async () => {
@@ -42,6 +44,37 @@ describe("corpus 18: production-capture-ggui-render", () => {
     // Nothing degraded to the R15 unknown row: every block in a production
     // ggui-render turn has a real category.
     expect(plan.items.some((i) => i.kind === "unknown")).toBe(false);
+  });
+
+  it("the capture's bootstrap-carrying render takes the LOCATOR arm — and resolves to the same ggui shell (guuey#209)", async () => {
+    // This capture is 0.6.0-era: its render tool-result still carries the
+    // `_meta["ai.ggui/render"]` bootstrap. Since the vendor arm retired that
+    // is inert — the plan carries the locator (uiData won: the normalizer
+    // stamped it because `_meta.ui` was present), and the mount comes from
+    // a read. Same visual outcome as the prod-wire meta-less shape (family
+    // 24), different arm; the ONLY witness that a consumer needs no code
+    // path keyed on whether a producer inlined mount material.
+    const inputs = await productionGguiRenderCapture();
+    const view = planTranscript(inputs, calmPolicy()).items.find(
+      (i): i is ViewMountItem => i.kind === "view",
+    );
+    expect(view?.channel).toBe("locator");
+    expect(view?.mount).toEqual({ channel: "locator", resourceUri: CAPTURE_RENDER_URI });
+    const reader = createMcpUiResourceReader({
+      readResource: (uri) =>
+        Promise.resolve({
+          uri,
+          mimeType: "text/html;profile=mcp-app",
+          text: gguiReadShell({
+            runtimeUrl: "https://dev.mcp.sandbox.ggui.ai/_ggui/iframe-runtime.js",
+            wsUrl: "wss://dev.mcp.sandbox.ggui.ai/ws",
+          }),
+        }),
+    });
+    const resolved = await resolveViewMount(view?.mount ?? undefined, reader);
+    expect(resolved?.channel).toBe("ggui");
+    expect(resolved?.resource.uri).toBe(CAPTURE_RENDER_URI);
+    expect(resolved?.resource.text).toContain("__GGUI_META__");
   });
 
   it("the producing call folds into the card's chrome in calm (attribution)", async () => {

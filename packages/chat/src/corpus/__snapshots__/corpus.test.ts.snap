@@ -1918,3 +1918,56 @@ exports[`corpus > 23. meta-less-locator — a \`_meta\`-withholding producer's r
   "status": null,
 }
 `;
+
+exports[`corpus > 24. prod-wire-ggui-render — ggui's production posture: no _meta, no uiData, a structuredContent locator → mounts as a locator (guuey#209) 1`] = `
+{
+  "items": [
+    {
+      "expanded": true,
+      "key": "u0",
+      "kind": "user",
+      "retry": false,
+      "state": "sent",
+      "text": "show me the board",
+    },
+    {
+      "argsPreview": null,
+      "attribution": true,
+      "expanded": false,
+      "key": "tool.t1",
+      "kind": "tool",
+      "name": "ggui_render",
+      "result": null,
+      "state": "done",
+      "title": "ggui render",
+      "toolCallId": "t1",
+    },
+    {
+      "actionScope": "ui://ggui/render/render_5d11b1b4-75ba-44e5-81bb-0b420b86bb8e/7328555b44e72bd7",
+      "attribution": "via ggui render",
+      "channel": "locator",
+      "expanded": true,
+      "key": "view.t1",
+      "kind": "view",
+      "label": "Loading view…",
+      "mount": {
+        "channel": "locator",
+        "resourceUri": "ui://ggui/render/render_5d11b1b4-75ba-44e5-81bb-0b420b86bb8e/7328555b44e72bd7",
+      },
+      "phase": "negotiating",
+      "toolTitle": "ggui render",
+    },
+    {
+      "expanded": true,
+      "key": "a0.t0",
+      "kind": "text",
+      "markdown": true,
+      "stopped": false,
+      "streaming": false,
+      "text": "Here is your board.",
+    },
+  ],
+  "recovery": null,
+  "status": null,
+}
+`;

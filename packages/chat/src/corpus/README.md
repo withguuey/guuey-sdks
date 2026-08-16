@@ -48,7 +48,15 @@ witness.
   23 (`meta-less-locator` — guuey#209 route-A: a `_meta`-withholding
   producer's `ui://` locator rides `structuredContent` (AgJSON §2.1 model-
   channel routing) and STILL mounts as a locator — before this it rendered
-  nothing at all, the corpus's first "dark, not degraded" shape).
+  nothing at all, the corpus's first "dark, not degraded" shape), and
+  family 24 (`prod-wire-ggui-render` — the vendor arm's retirement,
+  guuey#209: the EXACT shape ggui's read-plane-only PRODUCTION posture
+  emits (no `_meta`, no `uiData`, a `structuredContent` locator), planned as
+  a locator and RESOLVED through the kit's real reader assembly over a
+  C2-shaped read shell (`gguiReadShell`) to the `"ggui"` channel — the
+  whole converged path in plain Node; 24c pins that a bootstrap-carrying
+  result (fixture 7's shape) rides the same arm to the same outcome, and
+  family 18's production capture asserts the same).
 - `capture.ts` / `captures/` — family 18: production-capture replay
   through the real `invokeTurn` (provenance in the module header).
 - `corpus.test.ts` — the runner: per-fixture assertions + snapshots, plain

@@ -584,3 +584,70 @@ export function metaLessLocator(): TranscriptInputs {
   ];
   return driveTurn(events, { userText: "render a slot picker" });
 }
+
+/**
+ * 24. prod-wire-ggui-render — the EXACT shape ggui's read-plane-only PRODUCTION
+ * posture emits (guuey#209 prod probe, 2026-08-16): a `ggui_render` tool.done
+ * with NO `_meta["ai.ggui/render"]`, NO `uiData`, only
+ * `structuredContent.resourceUri = ui://ggui/render/<renderId>/<hash>`. The
+ * vendor arm is retired: this mounts as a LOCATOR, and the "ggui" trust
+ * channel is assigned at RESOLUTION from the uri — the corpus resolves it
+ * through the kit's real reader assembly over a C2-shaped read shell
+ * ({@link gguiReadShell}) to prove the whole converged path in plain Node.
+ */
+export const PROD_WIRE_RENDER_URI =
+  "ui://ggui/render/render_5d11b1b4-75ba-44e5-81bb-0b420b86bb8e/7328555b44e72bd7";
+export const PROD_WIRE_RUNTIME_URL = "https://mcp.ggui.ai/_ggui/iframe-runtime.js";
+export const PROD_WIRE_WS_URL = "wss://mcp.ggui.ai/ws";
+
+export function prodWireGguiRender(): TranscriptInputs {
+  const s = seqSource();
+  const events: InvokeTurnEvent[] = [
+    session,
+    frame(boot(s), { status: "thinking" }),
+    frame(
+      toolPart(s, "t1", "ggui_render", {
+        content: [{ type: "text", text: PROD_WIRE_RENDER_URI }],
+        outcome: "ok",
+        isError: false,
+        structuredContent: {
+          resourceUri: PROD_WIRE_RENDER_URI,
+          sessionId: "render_5d11b1b4-75ba-44e5-81bb-0b420b86bb8e",
+        },
+      }),
+      { status: "using-tool", activeTool: "ggui_render" },
+    ),
+    frame(textPart(s, "x", "Here is your board."), {
+      status: "responding",
+      activeTool: null,
+      text: "Here is your board.",
+    }),
+    doneEvent,
+  ];
+  return driveTurn(events, { userText: "show me the board" });
+}
+
+/**
+ * What ggui's `resources/read` answers for a render locator (guuey#209 C2):
+ * the shell that boots ggui's runtime with the live-channel material
+ * (`wsUrl`, a `wsToken` minted FRESH at read time, `expiresAt`) inlined as
+ * `__GGUI_META__` — the same envelope the retired bootstrap arm used to get
+ * on the tool result, now younger than any inlined copy could be.
+ */
+export function gguiReadShell(opts: { runtimeUrl: string; wsUrl: string }): string {
+  const meta = {
+    "ai.ggui/render": {
+      runtimeUrl: opts.runtimeUrl,
+      wsUrl: opts.wsUrl,
+      wsToken: "minted-fresh-at-read",
+      expiresAt: "2026-08-16T00:03:00.000Z",
+    },
+  };
+  return (
+    `<!doctype html><html><head><meta charset="utf-8">` +
+    `<script>globalThis.__GGUI_META__ = ${JSON.stringify(meta)};</script>` +
+    `<script type="module" crossorigin="anonymous" src="${opts.runtimeUrl}"></script>` +
+    `</head><body style="margin:0;background:transparent"></body></html>`
+  );
+}
+

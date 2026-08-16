@@ -5,6 +5,7 @@
  * Storybook/screenshot leg.
  */
 import { describe, expect, it } from "vitest";
+import { createMcpUiResourceReader, resolveViewMount } from "@guuey/mcp-apps-host";
 import { calmPolicy, debugPolicy } from "../policy.js";
 import { buildHitlAnswer, hitlPromptsFromFold } from "../hitl.js";
 import { newestViewKey, planTranscript } from "../plan.js";
@@ -17,6 +18,11 @@ import {
   emptyTurn,
   fortyTools,
   GGUI_RESOURCE_URI,
+  gguiReadShell,
+  PROD_WIRE_RENDER_URI,
+  PROD_WIRE_RUNTIME_URL,
+  PROD_WIRE_WS_URL,
+  prodWireGguiRender,
   giantJsonResult,
   historyDeadLocators,
   interleavedMediaCodeCitations,
@@ -406,6 +412,81 @@ describe("corpus", () => {
     expect(planTranscript({ ...inputs, promotedViewKey: "view.nope" }, calm)).toEqual(baseline);
     expect(planTranscript({ ...inputs, promotedViewKey: promotedKey }, calm)).toEqual(promoted);
     expect(promoted).toMatchSnapshot();
+  });
+
+  it("24. prod-wire-ggui-render — ggui's production posture: no _meta, no uiData, a structuredContent locator → mounts as a locator (guuey#209)", () => {
+    const inputs = prodWireGguiRender();
+    const plan = planTranscript(inputs, calm);
+    const view = plan.items.find((i): i is ViewMountItem => i.kind === "view");
+    expect(view).toBeDefined();
+    expect(view?.key).toBe("view.t1");
+    // The retired arm never runs: the plan carries the LOCATOR, and the
+    // channel at plan time is the arm ("locator"), not a vendor tag.
+    expect(view?.channel).toBe("locator");
+    expect(view?.mount).toEqual({ channel: "locator", resourceUri: PROD_WIRE_RENDER_URI });
+    // #158's action scope binds to the same durable locator.
+    expect(view?.actionScope).toBe(PROD_WIRE_RENDER_URI);
+    // The producing call folds into the card's chrome (R4 display-bearing).
+    expect(view?.attribution).not.toBeNull();
+    // #204's promotion walk sees the prod-shaped card as the newest.
+    expect(newestViewKey(inputs)?.key).toBe("view.t1");
+    // Nothing hits R15 — this is a first-class mount, not unknown content.
+    expect(plan.items.some((i) => i.kind === "unknown")).toBe(false);
+    expect(plan).toMatchSnapshot();
+  });
+
+  it("24b. the prod-wire locator resolves through the REAL reader assembly to the ggui channel + the runtime shell", async () => {
+    const plan = planTranscript(prodWireGguiRender(), calm);
+    const view = plan.items.find((i): i is ViewMountItem => i.kind === "view");
+    const requested: string[] = [];
+    const reader = createMcpUiResourceReader({
+      readResource: (uri) => {
+        requested.push(uri);
+        return Promise.resolve({
+          uri,
+          mimeType: "text/html;profile=mcp-app",
+          text: gguiReadShell({ runtimeUrl: PROD_WIRE_RUNTIME_URL, wsUrl: PROD_WIRE_WS_URL }),
+        });
+      },
+    });
+    const resolved = await resolveViewMount(view?.mount ?? undefined, reader);
+    // ONE read of the plan's own locator…
+    expect(requested).toEqual([PROD_WIRE_RENDER_URI]);
+    // …the "ggui" sandbox-trust channel — the reader's `uiResourceChannel`
+    // verdict on the REQUESTED uri, assigned at resolution, never carried in
+    // from the tool result (which carried nothing to carry)…
+    expect(resolved?.channel).toBe("ggui");
+    if (resolved?.channel !== "ggui") throw new Error("narrowed above");
+    // …and the mount material: ggui's runtime + the live channel minted at
+    // read time (C2). Everything the bootstrap arm used to inline, fresher.
+    expect(resolved.resource.uri).toBe(PROD_WIRE_RENDER_URI);
+    expect(resolved.resource.text).toContain(PROD_WIRE_RUNTIME_URL);
+    expect(resolved.resource.text).toContain("__GGUI_META__");
+    expect(resolved.resource.text).toContain(PROD_WIRE_WS_URL);
+    expect(resolved.resource.text).toContain("minted-fresh-at-read");
+  });
+
+  it("24c. a bootstrap-carrying render (fixture 7's shape) takes the SAME locator arm — same visual outcome, different arm", async () => {
+    // Family 7 still carries `_meta["ai.ggui/render"]` on its ggui result (a
+    // pod that inlines mount material). Post-retirement the bootstrap is
+    // inert: same locator arm as the prod-wire shape, same reader, same
+    // channel + shell out — the visual outcome is unchanged; only the arm
+    // that produced it moved.
+    const plan = planTranscript(viewNeverHandshakes(), calm);
+    const ggui = plan.items.find((i): i is ViewMountItem => i.kind === "view" && i.key === "view.tGgui");
+    expect(ggui?.mount).toEqual({ channel: "locator", resourceUri: GGUI_RESOURCE_URI });
+    const reader = createMcpUiResourceReader({
+      readResource: (uri) =>
+        Promise.resolve({
+          uri,
+          mimeType: "text/html;profile=mcp-app",
+          text: gguiReadShell({ runtimeUrl: PROD_WIRE_RUNTIME_URL, wsUrl: PROD_WIRE_WS_URL }),
+        }),
+    });
+    const resolved = await resolveViewMount(ggui?.mount ?? undefined, reader);
+    expect(resolved?.channel).toBe("ggui");
+    expect(resolved?.resource.uri).toBe(GGUI_RESOURCE_URI);
+    expect(resolved?.resource.text).toContain("__GGUI_META__");
   });
 
   it("determinism — same inputs ⇒ a deeply equal plan (spec §7, literally)", () => {
