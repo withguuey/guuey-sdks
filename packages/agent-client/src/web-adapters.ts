@@ -265,23 +265,34 @@ export function createUiResourceReader(
 
   /** One door: fetch + the history adapter's 401-forceRefresh recovery + parse. */
   const readDoor = async (requestUrl: string): Promise<McpResourceReadResult | undefined> => {
+    // Exactly ONE identity carrier per read, the invoke transport's rule
+    // (`streamInvokeOnce`): bearer → guest header → else cookie credentials,
+    // which round-trip the HttpOnly `guuey_guest` cookie the pod mints for
+    // anonymous browser callers. Without the third arm a cookie-mode guest
+    // sent an identity-less read and every locator rendered as expired
+    // (guuey#221). Never two at once: a request carrying either header does
+    // NOT also send cookies.
     const headers: Record<string, string> = {};
+    const init: RequestInit = { headers };
     const token = options.getAccessToken ? await options.getAccessToken() : null;
     const guest = sendableGuestSecret(options.guestSecret);
     if (token) {
       headers["authorization"] = `Bearer ${token}`;
     } else if (guest) {
       headers[GUEST_HEADER] = guest;
+    } else {
+      init.credentials = "include";
     }
     let res: Response;
     try {
-      res = await fetchImpl(requestUrl, { headers });
+      res = await fetchImpl(requestUrl, init);
     } catch {
       return undefined; // transport failure == miss (the next door may still answer)
     }
     // One forceRefresh retry on 401 with a bearer in play — the same
     // expired-but-refreshable recovery the history adapter performs;
-    // without it a stale token degrades to a permanent placeholder.
+    // without it a stale token degrades to a permanent placeholder. The
+    // retry carries the fresh bearer and nothing else (same one-carrier rule).
     if (res.status === 401 && options.getAccessToken) {
       const fresh = await options.getAccessToken({ forceRefresh: true }).catch(() => null);
       if (fresh) {

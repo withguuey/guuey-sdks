@@ -466,6 +466,42 @@ describe("createUiResourceReader", () => {
     expect(headers["x-guuey-guest"]).toBeUndefined();
   });
 
+  it("cookie mode (no bearer, no guest) sends credentials:'include' and NO identity header — the transport's third arm (guuey#221)", async () => {
+    const fetchImpl = mkFetch(200, OK_BODY);
+    const read = createUiResourceReader({
+      apiBaseUrl: "https://api.example/v1",
+      threadId: "t1",
+      fetchImpl,
+    });
+    await read("ui://x/y");
+    const init = (fetchImpl as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]![1] as {
+      headers: Record<string, string>;
+      credentials?: string;
+    };
+    expect(init.credentials).toBe("include");
+    expect(init.headers["authorization"]).toBeUndefined();
+    expect(init.headers["x-guuey-guest"]).toBeUndefined();
+  });
+
+  it("a header carrier (bearer OR guest) never ALSO sends cookie credentials — one carrier per read", async () => {
+    for (const identity of [
+      { getAccessToken: async () => "tok" },
+      { guestSecret: "a".repeat(64) },
+    ]) {
+      const fetchImpl = mkFetch(200, OK_BODY);
+      const read = createUiResourceReader({
+        apiBaseUrl: "https://api.example/v1",
+        threadId: "t1",
+        fetchImpl,
+        ...identity,
+      });
+      await read("ui://x/y");
+      const init = (fetchImpl as unknown as { mock: { calls: unknown[][] } }).mock
+        .calls[0]![1] as { credentials?: string };
+      expect(init.credentials).toBeUndefined();
+    }
+  });
+
   it("maps EVERY non-OK (401/403/404/502) and transport failure to undefined — deny == miss", async () => {
     for (const status of [401, 403, 404, 502]) {
       const read = createUiResourceReader({
