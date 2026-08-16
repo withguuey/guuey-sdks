@@ -97,6 +97,15 @@ export interface GuueyChatHandle {
   prefill(text: string, opts?: { focus?: boolean; append?: boolean }): void;
   /** Focus the composer input. */
   focusComposer(): void;
+  /**
+   * The CURRENT persisted thread id, or `null` before the first turn is
+   * admitted (it hydrates from storage on mount and from the pod's
+   * `session` frame on the first send). Read on demand — a live value, not
+   * a mount-time snapshot — so a host can key its own per-thread state
+   * without wrapping `adapters.storage`. For a push-style notification use
+   * {@link GuueyChatProps.onThread}.
+   */
+  readonly threadId: string | null;
 }
 
 export interface GuueyChatProps {
@@ -176,6 +185,14 @@ export interface GuueyChatProps {
    * the same stable handle the ref receives.
    */
   onReady?: (handle: GuueyChatHandle) => void;
+  /**
+   * Fires with the thread id when it first hydrates and again whenever it
+   * changes to a DIFFERENT id (a new chat, a reset that starts a fresh
+   * thread). Never fires for `null`, and never re-fires for the same id
+   * across re-renders or StrictMode's remount cycle. Pair with
+   * {@link GuueyChatHandle.threadId} for the pull-style read.
+   */
+  onThread?: (threadId: string) => void;
   className?: string;
   style?: CSSProperties;
 }
@@ -211,6 +228,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     onHitlAnswer,
     onErrorAction,
     onReady,
+    onThread,
     className,
     style,
   } = props;
@@ -316,11 +334,32 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       focusComposer: (): void => {
         inputRef.current?.focus();
       },
+      // A getter, not a captured value: the handle is created once, but the
+      // thread hydrates after mount and can change — reads go through the
+      // same ref the default reader uses, so it is always the live id.
+      get threadId(): string | null {
+        return threadIdRef.current;
+      },
     }),
     [],
   );
 
   useImperativeHandle(ref, () => handle, [handle]);
+
+  // `onThread` fires on the first hydrated id and on each DISTINCT change —
+  // never for null, never twice for the same id (a StrictMode remount
+  // re-runs the effect with the same value; the last-notified ref absorbs
+  // it). Read the callback through the live ref so an inline arrow prop
+  // doesn't churn the effect.
+  const lastNotifiedThreadRef = useRef<string | null>(null);
+  const onThreadRef = useRef(onThread);
+  onThreadRef.current = onThread;
+  useEffect(() => {
+    const id = invoke.threadId;
+    if (id === null || id === lastNotifiedThreadRef.current) return;
+    lastNotifiedThreadRef.current = id;
+    onThreadRef.current?.(id);
+  }, [invoke.threadId]);
 
   // `onReady` fires once per instance, on mount, with the stable handle
   // (guarded ref: StrictMode's remount cycle must not double-fire it).

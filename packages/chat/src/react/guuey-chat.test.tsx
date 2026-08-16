@@ -281,6 +281,88 @@ describe("<GuueyChat> imperative seam (guuey#210)", () => {
   });
 });
 
+/**
+ * Adapters whose transport stamps a caller-chosen thread id per turn, so a
+ * test can drive a REAL thread change through the wire (the pod's session
+ * frame is the only thing that ever moves the hook's threadId).
+ */
+function threadedAdapters(ids: string[]) {
+  const queue = [...ids];
+  const store = new Map<string, string>();
+  const adapters: AgentInvokeAdapters = {
+    storage: {
+      load: (key) => store.get(key) ?? null,
+      save: (key, threadId) => {
+        store.set(key, threadId);
+      },
+    },
+    generateId: (() => {
+      let n = 0;
+      return () => `cmid-${n++}`;
+    })(),
+    transport: async function* () {
+      const id = queue.shift() ?? "t-last";
+      yield `event: session\ndata: {"threadId":"${id}"}\n\n`;
+      yield TEXT_FRAME;
+      yield DONE_FRAME;
+    },
+  };
+  return adapters;
+}
+
+describe("<GuueyChat> thread identity on the handle (guuey#210 pairing)", () => {
+  it("handle.threadId is null before hydration and reflects the live id after the session frame", async () => {
+    const { adapters } = scriptedAdapters();
+    const { handle } = renderWithHandle(adapters);
+    expect(handle.threadId).toBeNull();
+    act(() => {
+      expect(handle.send("hi")).toBe(true);
+    });
+    await waitFor(() => expect(handle.threadId).toBe("t-3c"));
+  });
+
+  it("onThread fires once per DISTINCT id — not for null, not on rerender — and again on a real change", async () => {
+    const adapters = threadedAdapters(["t-a", "t-b"]);
+    const onThread = vi.fn<(id: string) => void>();
+    const { handle, view } = renderWithHandle(adapters, { onThread });
+    // Nothing hydrated yet: no null notification.
+    expect(onThread).not.toHaveBeenCalled();
+
+    act(() => {
+      expect(handle.send("first")).toBe(true);
+    });
+    await waitFor(() => expect(onThread).toHaveBeenCalledTimes(1));
+    expect(onThread).toHaveBeenLastCalledWith("t-a");
+    expect(handle.threadId).toBe("t-a");
+
+    // A rerender with the same thread does not re-fire.
+    view.rerender(
+      <GuueyChat
+        endpointUrl="https://pod.example/agent/invoke"
+        adapters={adapters}
+        onThread={onThread}
+        className="rerendered"
+      />,
+    );
+    expect(onThread).toHaveBeenCalledTimes(1);
+
+    // The next turn arrives on a different thread (a fresh session): one more fire.
+    await waitFor(() => expect(handle.send("second")).toBe(true));
+    await waitFor(() => expect(onThread).toHaveBeenCalledTimes(2));
+    expect(onThread).toHaveBeenLastCalledWith("t-b");
+    expect(handle.threadId).toBe("t-b");
+  });
+
+  it("existing #210 handle members are unchanged beside threadId", () => {
+    const { adapters } = scriptedAdapters();
+    const { handle } = renderWithHandle(adapters);
+    expect(typeof handle.send).toBe("function");
+    expect(typeof handle.prefill).toBe("function");
+    expect(typeof handle.focusComposer).toBe("function");
+    expect("threadId" in handle).toBe(true);
+  });
+});
+
 describe("<GuueyChat> default reader (guuey#221)", () => {
   const LOCATOR = "ui://ggui/render/render_dark/h1";
   // A meta-less ggui render on the wire (guuey#209 route-A shape): the
