@@ -55,7 +55,19 @@ interface AppDetail extends AppSummary {
   brandIconUrl?: string | null;
   brandOgImageUrl?: string | null;
   brandAccent?: string | null;
-  welcomeCopy?: string | null;
+  /**
+   * The standalone page's policy object (guuey#140), echoed as stored with
+   * defaults applied — so `guuey apps get` shows what `--page` / `--welcome-copy`
+   * / `--cta-*` / `--identity-endpoint-url` / `--noindex` wrote.
+   */
+  standalonePage?: {
+    enabled: boolean;
+    welcomeCopy: string | null;
+    ctaLabel: string | null;
+    ctaUrl: string | null;
+    identityEndpointUrl: string | null;
+    noindex: boolean;
+  } | null;
 }
 
 interface AppAccessState {
@@ -231,7 +243,13 @@ export async function appsGet(
   if (app.brandIconUrl) console.log(`  Brand Icon:   ${app.brandIconUrl}`);
   if (app.brandOgImageUrl) console.log(`  OG Image:     ${app.brandOgImageUrl}`);
   if (app.brandAccent) console.log(`  Brand Accent: ${app.brandAccent}`);
-  if (app.welcomeCopy) console.log(`  Welcome Copy: ${app.welcomeCopy}`);
+  const page = app.standalonePage;
+  if (page) {
+    console.log(`  Standalone page: ${page.enabled ? 'on' : 'off'}${page.noindex ? ' (noindex)' : ''}`);
+    if (page.welcomeCopy) console.log(`    Welcome:    ${page.welcomeCopy}`);
+    if (page.ctaLabel && page.ctaUrl) console.log(`    CTA:        ${page.ctaLabel} → ${page.ctaUrl}`);
+    if (page.identityEndpointUrl) console.log(`    Identity:   ${page.identityEndpointUrl}`);
+  }
   console.log(`  Created:      ${app.createdAt}`);
 }
 
@@ -315,15 +333,22 @@ export interface UpdateAppRequest {
   brandIconUrl?: string | null;
   brandOgImageUrl?: string | null;
   brandAccent?: string | null;
-  welcomeCopy?: string | null;
   /**
-   * Standalone-page "C" identity-endpoint URL (guuey#137 slice 3): an https URL
-   * on the builder's own site the standalone page fetches with credentials to
-   * mint an identified token. `null` clears it. Sent verbatim — the server owns
-   * the shape rule (https, ≤2048, no control chars) and returns a field-named
-   * 400, exactly like the branding fields above; one place to read it, no drift.
+   * The standalone page's policy PATCH (guuey#140) — `GuueyApp.standalonePage`.
+   * Partial: each member `undefined` = leave, `null` = clear to default, a
+   * value = set. Sent verbatim — the server owns every rule (page on/off,
+   * ≤280 single-line welcome, ≤40 CTA label, https CTA/identity URLs, the CTA
+   * both-or-neither rule) and returns a member-named 400; one place to read
+   * them, no drift.
    */
-  identityEndpointUrl?: string | null;
+  standalonePage?: {
+    enabled?: boolean | null;
+    welcomeCopy?: string | null;
+    ctaLabel?: string | null;
+    ctaUrl?: string | null;
+    identityEndpointUrl?: string | null;
+    noindex?: boolean | null;
+  };
 }
 
 /**
@@ -492,8 +517,12 @@ export function buildUpdateAppBody(opts: {
   brandIconUrl?: string;
   brandOgImageUrl?: string;
   brandAccent?: string;
+  page?: string;
   welcomeCopy?: string;
+  ctaLabel?: string;
+  ctaUrl?: string;
   identityEndpointUrl?: string;
+  noindex?: string;
 }): UpdateAppRequest | string {
   const body: UpdateAppRequest = {};
   if (opts.name) body.displayName = opts.name;
@@ -553,15 +582,30 @@ export function buildUpdateAppBody(opts: {
   if (opts.brandAccent !== undefined) {
     body.brandAccent = brandFlagValue(opts.brandAccent);
   }
-  if (opts.welcomeCopy !== undefined) {
-    body.welcomeCopy = brandFlagValue(opts.welcomeCopy);
-  }
 
-  // Standalone-page "C" identity endpoint. Same clear convention (empty string
-  // or 'clear' unsets); the server owns the https/length/control-char rule.
-  if (opts.identityEndpointUrl !== undefined) {
-    body.identityEndpointUrl = brandFlagValue(opts.identityEndpointUrl);
+  // The standalone page's policy object (guuey#140). Every page flag composes
+  // into ONE `standalonePage` partial patch; the string members keep the
+  // branding clear convention (empty string or 'clear' unsets), the two
+  // switches take on|off ('clear' restores the default). The server owns the
+  // rules and returns a member-named 400.
+  const page: NonNullable<UpdateAppRequest['standalonePage']> = {};
+  if (opts.page !== undefined) {
+    const flag = onOffFlag(opts.page, '--page');
+    if (typeof flag === 'string') return flag;
+    page.enabled = flag;
   }
+  if (opts.noindex !== undefined) {
+    const flag = onOffFlag(opts.noindex, '--noindex');
+    if (typeof flag === 'string') return flag;
+    page.noindex = flag;
+  }
+  if (opts.welcomeCopy !== undefined) page.welcomeCopy = brandFlagValue(opts.welcomeCopy);
+  if (opts.ctaLabel !== undefined) page.ctaLabel = brandFlagValue(opts.ctaLabel);
+  if (opts.ctaUrl !== undefined) page.ctaUrl = brandFlagValue(opts.ctaUrl);
+  if (opts.identityEndpointUrl !== undefined) {
+    page.identityEndpointUrl = brandFlagValue(opts.identityEndpointUrl);
+  }
+  if (Object.keys(page).length > 0) body.standalonePage = page;
 
   if (Object.keys(body).length === 0) {
     return NO_UPDATE_FIELDS_MESSAGE;
@@ -579,8 +623,21 @@ const NO_UPDATE_FIELDS_MESSAGE =
   'No fields to update. Use --name, --description, --domains, --auth-mode, ' +
   '--issuer-url + --audience, --clear-auth-config, --widget-embed-identity, ' +
   '--brand-icon-url, --brand-og-image-url, --brand-icon-file, ' +
-  '--brand-og-image-file, --brand-accent, --welcome-copy, ' +
-  'or --identity-endpoint-url.';
+  '--brand-og-image-file, --brand-accent, --page, --welcome-copy, ' +
+  '--cta-label, --cta-url, --identity-endpoint-url, or --noindex.';
+
+/**
+ * An `on|off|clear` switch flag: `true` / `false` to set, `null` to restore
+ * the server default (which is what a bare flag or an empty value means too),
+ * or a usage message.
+ */
+function onOffFlag(raw: string, flag: string): boolean | null | string {
+  const v = raw.trim().toLowerCase();
+  if (v === 'on') return true;
+  if (v === 'off') return false;
+  if (v === '' || v === 'clear') return null;
+  return `${flag} must be one of: on, off, clear (got "${raw}").`;
+}
 
 /**
  * Handle `guuey apps update [appId]`.
@@ -607,8 +664,12 @@ export async function appsUpdate(
     brandIconFile?: string;
     brandOgImageFile?: string;
     brandAccent?: string;
+    page?: string;
     welcomeCopy?: string;
+    ctaLabel?: string;
+    ctaUrl?: string;
     identityEndpointUrl?: string;
+    noindex?: string;
     json?: boolean;
   },
 ): Promise<void> {

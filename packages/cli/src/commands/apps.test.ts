@@ -402,26 +402,25 @@ describe('buildUpdateAppBody', () => {
 
   // Standalone-page branding (guuey#137 slice 3). The CLI deliberately does
   // NOT mirror the server's shape rules (https / #rrggbb / the WCAG-AA
-  // contrast floor / the 280-char single line) — one place to read them, no
-  // drift. What it owns is the clear convention and not sending absent flags.
+  // contrast floor) — one place to read them, no drift. What it owns is the
+  // clear convention and not sending absent flags.
   describe('branding flags', () => {
     it.each([
       ['brandIconUrl', 'https://cdn.example/icon.png'],
       ['brandOgImageUrl', 'https://cdn.example/og.png'],
       ['brandAccent', '#b8ff3a'],
-      ['welcomeCopy', 'Ask me about shipping.'],
     ])('passes %s straight through for the server to validate', (flag, value) => {
       expect(built({ [flag]: value })).toEqual({ [flag]: value });
     });
 
-    it.each([['brandIconUrl'], ['brandOgImageUrl'], ['brandAccent'], ['welcomeCopy']])(
+    it.each([['brandIconUrl'], ['brandOgImageUrl'], ['brandAccent']])(
       "%s 'clear' sends an explicit null",
       (flag) => {
         expect(built({ [flag]: 'clear' })).toEqual({ [flag]: null });
       },
     );
 
-    it.each([['brandIconUrl'], ['brandOgImageUrl'], ['brandAccent'], ['welcomeCopy']])(
+    it.each([['brandIconUrl'], ['brandOgImageUrl'], ['brandAccent']])(
       '%s given as a bare flag (empty string) also clears',
       (flag) => {
         expect(built({ [flag]: '' })).toEqual({ [flag]: null });
@@ -434,7 +433,7 @@ describe('buildUpdateAppBody', () => {
 
     it('omits every branding key when no branding flag was passed', () => {
       const body = built({ name: 'X' });
-      for (const key of ['brandIconUrl', 'brandOgImageUrl', 'brandAccent', 'welcomeCopy']) {
+      for (const key of ['brandIconUrl', 'brandOgImageUrl', 'brandAccent', 'standalonePage']) {
         expect(body).not.toHaveProperty(key);
       }
     });
@@ -445,41 +444,82 @@ describe('buildUpdateAppBody', () => {
       expect(message).toContain('--brand-icon-file');
       expect(message).toContain('--brand-og-image-file');
       expect(message).toContain('--brand-accent');
-      expect(message).toContain('--welcome-copy');
     });
   });
 
-  // Standalone-page "C" identity endpoint (guuey#137 slice 3). Same
-  // clear-convention + send-verbatim posture as the branding flags — the
-  // server owns the https/length/control-char rule and returns a field-named
-  // 400, so the CLI never mirrors it.
-  describe('identity endpoint flag', () => {
-    it('passes identityEndpointUrl straight through for the server to validate', () => {
-      expect(built({ identityEndpointUrl: 'https://acme.example.com/whoami' })).toEqual({
-        identityEndpointUrl: 'https://acme.example.com/whoami',
+  // The standalone page's policy object (guuey#140). Every page flag composes
+  // into ONE `standalonePage` partial patch. Same send-verbatim posture as the
+  // branding flags — the server owns every rule (incl. the CTA both-or-neither)
+  // and returns a member-named 400, so the CLI never mirrors it.
+  describe('standalone page flags', () => {
+    it('composes every page flag into one standalonePage patch', () => {
+      expect(
+        built({
+          page: 'off',
+          welcomeCopy: 'Ask me about shipping.',
+          ctaLabel: 'Book a demo',
+          ctaUrl: 'https://acme.example/demo',
+          identityEndpointUrl: 'https://acme.example.com/whoami',
+          noindex: 'on',
+        }),
+      ).toEqual({
+        standalonePage: {
+          enabled: false,
+          welcomeCopy: 'Ask me about shipping.',
+          ctaLabel: 'Book a demo',
+          ctaUrl: 'https://acme.example/demo',
+          identityEndpointUrl: 'https://acme.example.com/whoami',
+          noindex: true,
+        },
       });
     });
 
-    it("'clear' sends an explicit null", () => {
-      expect(built({ identityEndpointUrl: 'clear' })).toEqual({ identityEndpointUrl: null });
+    it.each([['welcomeCopy'], ['ctaLabel'], ['ctaUrl'], ['identityEndpointUrl']])(
+      "%s 'clear' (or a bare flag) sends an explicit null member",
+      (flag) => {
+        expect(built({ [flag]: 'clear' })).toEqual({ standalonePage: { [flag]: null } });
+        expect(built({ [flag]: '' })).toEqual({ standalonePage: { [flag]: null } });
+      },
+    );
+
+    it.each([
+      ['page', 'on', { enabled: true }],
+      ['page', 'off', { enabled: false }],
+      ['page', 'clear', { enabled: null }],
+      ['page', '', { enabled: null }],
+      ['noindex', 'on', { noindex: true }],
+      ['noindex', 'off', { noindex: false }],
+      ['noindex', 'clear', { noindex: null }],
+    ])('--%s %s maps to %o', (flag, value, expected) => {
+      expect(built({ [flag]: value })).toEqual({ standalonePage: expected });
     });
 
-    it('a bare flag (empty string) also clears', () => {
-      expect(built({ identityEndpointUrl: '' })).toEqual({ identityEndpointUrl: null });
+    it.each([['page'], ['noindex']])('refuses a --%s value that is not on|off|clear', (flag) => {
+      expect(refused({ [flag]: 'maybe' })).toContain(`--${flag} must be one of: on, off, clear`);
     });
 
-    it('does NOT pre-validate — a non-https endpoint still reaches the server', () => {
-      expect(built({ identityEndpointUrl: 'http://acme.example.com/whoami' })).toEqual({
-        identityEndpointUrl: 'http://acme.example.com/whoami',
+    it('does NOT pre-validate — a non-https endpoint and a half CTA still reach the server', () => {
+      expect(built({ identityEndpointUrl: 'http://acme.example.com/whoami', ctaLabel: 'Go' })).toEqual({
+        standalonePage: { identityEndpointUrl: 'http://acme.example.com/whoami', ctaLabel: 'Go' },
       });
     });
 
-    it('omits the key when the flag was not passed', () => {
-      expect(built({ name: 'X' })).not.toHaveProperty('identityEndpointUrl');
+    it('omits standalonePage when no page flag was passed', () => {
+      expect(built({ name: 'X' })).not.toHaveProperty('standalonePage');
     });
 
-    it('names --identity-endpoint-url in the empty-flag-set refusal', () => {
-      expect(refused({})).toContain('--identity-endpoint-url');
+    it('names the page flags in the empty-flag-set refusal', () => {
+      const message = refused({});
+      for (const flag of [
+        '--page',
+        '--welcome-copy',
+        '--cta-label',
+        '--cta-url',
+        '--identity-endpoint-url',
+        '--noindex',
+      ]) {
+        expect(message).toContain(flag);
+      }
     });
   });
 });

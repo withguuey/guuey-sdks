@@ -293,17 +293,25 @@ Apps:
                                  Must clear a 4.5:1 WCAG-AA contrast floor
                                  against the fixed #0e1014 foreground, or the
                                  server rejects it. Pass 'clear' to unset.
-    --welcome-copy <text>       One-line welcome shown on the agent's own page
-                                 before the first message (≤280 chars). Pass
-                                 'clear' to unset.
-    --identity-endpoint-url <url>  https endpoint on your own site the
-                                 standalone page fetches (with credentials) to
-                                 sign end-users in — the "C" identified-auth
-                                 path. Pass with no value to unset.
                                  Branding applies whether or not the app is
                                  published — an unlisted share link is branded
                                  too. Styling, webhooks and rate limits are
                                  managed in the console, not here.
+    Standalone page (the agent's own page — slug host + custom domains):
+    --page <on|off>             Turn the standalone page on or off. Off shows
+                                 "no public page" there; embeds, the Portal
+                                 listing and the agent keep working.
+    --welcome-copy <text>       One-line welcome shown on the page before the
+                                 first message (≤280 chars). Pass 'clear' to
+                                 unset. The page's title is always the app name.
+    --cta-label <text>          Call-to-action button label (≤40 chars), with
+                                 --cta-url. Pass 'clear' to unset both.
+    --cta-url <url>             https link the button opens, with --cta-label.
+    --identity-endpoint-url <url>  https endpoint on your own site the page
+                                 fetches (with credentials) to sign end-users
+                                 in on your custom domain — the "C"
+                                 identified-auth path. Pass 'clear' to unset.
+    --noindex <on|off>          Ask search engines not to index the page.
   apps delete [appId]           Delete an app
   apps recover [appId]          Cancel a pending deletion inside the 30-day
                                  window. Brings the widget signing key back
@@ -820,11 +828,16 @@ async function main(): Promise<void> {
             brandOgImageFile:
               flags['brand-og-image-file'] === true ? '' : str(flags['brand-og-image-file']),
             brandAccent: flags['brand-accent'] === true ? '' : str(flags['brand-accent']),
+            // Standalone page policy (guuey#140) — same bare-flag-clears rule.
+            page: flags.page === true ? '' : str(flags.page),
             welcomeCopy: flags['welcome-copy'] === true ? '' : str(flags['welcome-copy']),
+            ctaLabel: flags['cta-label'] === true ? '' : str(flags['cta-label']),
+            ctaUrl: flags['cta-url'] === true ? '' : str(flags['cta-url']),
             identityEndpointUrl:
               flags['identity-endpoint-url'] === true
                 ? ''
                 : str(flags['identity-endpoint-url']),
+            noindex: flags.noindex === true ? '' : str(flags.noindex),
             json: jsonFlag,
           });
           break;
