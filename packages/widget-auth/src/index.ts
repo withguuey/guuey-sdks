@@ -11,6 +11,18 @@
  * );
  * ```
  *
+ * ## One token, every surface
+ *
+ * The token is a plain RS256 JWT bound to your app's own issuer and audience —
+ * `iss`, `sub` (= `userId`), `aud`, `iat`/`nbf`/`exp`, optional `name`/`email` —
+ * with nothing widget-specific in it. Every guuey consumer verifies it the same
+ * way and derives the same end-user identity from `userId`, so the widget
+ * embed, a standalone agent page and **your own page built on
+ * `@guuey/agent-client` / `@guuey/chat`** (`createWebAdapters({ getAccessToken })`)
+ * all see one user with one history, memory and profile. "widget" in this
+ * package's name is the name of the app's per-app issuer, not a limit on where
+ * the token may be presented (guuey#206).
+ *
  * ## What this package does NOT do, and why that matters
  *
  * It holds no key material and assembles no claims. The app's RSA private key
@@ -141,9 +153,13 @@ export interface WidgetAuthConfig {
   fetch?: FetchLike;
 }
 
-/** A minted token, exactly as the mint route returns it. */
+/**
+ * A minted token, exactly as the mint route returns it — a hand mirror of
+ * `@guuey-private/cli-wire`'s `AppUserTokenMintResponse`, pinned by
+ * `wire-sync.test.ts`.
+ */
 export interface WidgetToken {
-  /** The signed JWT to hand to the widget. */
+  /** The signed JWT — hand it to the widget, or to your own surface's `getAccessToken`. */
   token: string;
   /** Unix epoch seconds at which `token` stops verifying. */
   expiresAtEpoch: number;
@@ -176,7 +192,12 @@ export type FetchLike = (
   init: WidgetAuthRequestInit,
 ) => Promise<WidgetAuthFetchResponse>;
 
-/** The JSON body the mint route accepts. */
+/**
+ * The JSON body the mint route accepts — a hand mirror of
+ * `@guuey-private/cli-wire`'s `AppUserTokenMintBody` (this package is
+ * published and cannot import the private lib); `wire-sync.test.ts` pins the
+ * two together whenever the monorepo is present.
+ */
 interface MintRequestBody {
   appId: string;
   userId: string;

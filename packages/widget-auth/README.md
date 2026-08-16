@@ -1,6 +1,7 @@
 # @guuey/widget-auth
 
-Mint end-user identity tokens for a [guuey](https://guuey.com) embeddable widget, from your own backend.
+Mint end-user identity tokens for a [guuey](https://guuey.com) embeddable widget — or for any
+surface you build on `@guuey/agent-client` / `@guuey/chat` — from your own backend.
 
 Zero runtime dependencies. Node 18+.
 
@@ -80,6 +81,39 @@ export async function GET() {
 ```
 
 Your endpoint is called by the browser; the app secret stays on your server.
+
+## Using the token on your own surface
+
+The token is not widget-specific: it is a plain signed JWT bound to your app's own issuer
+and audience, and every guuey surface verifies it the same way and derives the same
+end-user identity from `userId`. So the same token endpoint also signs users into a page
+you build yourself with [`@guuey/agent-client`](https://www.npmjs.com/package/@guuey/agent-client)
+or [`@guuey/chat`](https://www.npmjs.com/package/@guuey/chat) — hand it to `getAccessToken`:
+
+```ts
+import { createWebAdapters } from "@guuey/agent-client";
+
+const adapters = createWebAdapters({
+  apiBaseUrl: "https://api.us-east-1.guuey.com/v1",
+  getAccessToken: async ({ forceRefresh } = {}) => {
+    // `forceRefresh` is the SDK's "that token was rejected" signal — the same
+    // as the widget's reason "expired". Mint fresh, ignoring any cache.
+    const res = await fetch(`/api/guuey-token?reason=${forceRefresh ? "expired" : "initial"}`);
+    if (!res.ok) throw new Error(`token endpoint failed: ${res.status}`);
+    return res.text();
+  },
+});
+```
+
+**Throw on failure — never return `null`.** To the SDK, `null` means "signed out on
+purpose", and a signed-in surface would silently continue as an anonymous visitor.
+
+A user is **the same identity on every surface** — widget embed, standalone agent page,
+your own page — as long as your backend sends the same `userId`. Conversations, memory,
+files and profile follow them across all three. Add your page's origin to the app's
+allowed domains (`guuey apps update <appId> --domains yourapp.com`) so the browser can
+reach the agent from it. The full walkthrough is at
+[docs.guuey.com/surface-identity](https://docs.guuey.com/surface-identity/).
 
 ## The app secret is server-side only
 
@@ -237,12 +271,12 @@ id, an editable email) silently orphans all of it and the user reappears as a st
 
 **Returns `WidgetToken`**
 
-| Field            | Type     |                                                 |
-| ---------------- | -------- | ----------------------------------------------- |
-| `token`          | `string` | The signed JWT to hand to the widget.           |
-| `expiresAtEpoch` | `number` | Unix epoch seconds. Use it to drive your cache. |
-| `issuer`         | `string` | The issuer that signed it.                      |
-| `kid`            | `string` | The signing key's id.                           |
+| Field            | Type     |                                                                          |
+| ---------------- | -------- | ------------------------------------------------------------------------ |
+| `token`          | `string` | The signed JWT — for the widget, or your own surface's `getAccessToken`. |
+| `expiresAtEpoch` | `number` | Unix epoch seconds. Use it to drive your cache.                          |
+| `issuer`         | `string` | The issuer that signed it.                                               |
+| `kid`            | `string` | The signing key's id.                                                    |
 
 ## License
 
