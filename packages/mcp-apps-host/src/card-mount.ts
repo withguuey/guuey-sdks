@@ -1,52 +1,54 @@
 /**
  * The card-mount dispatcher: ONE narrowing that answers "what, if anything,
- * does this block mount?" across BOTH generative-UI channels a guuey pod
- * emits.
+ * does this block mount?" for every generative-UI shape a guuey pod emits.
  *
  *   1. **inline mcp-ui resource** — `{uri, text|blob}` on `uiData`, or a
  *      `ui://` resource degraded into a `provider-raw` content part. Handled
  *      verbatim by `block-ui.ts`; this module does not touch that path, it
  *      only tries it FIRST.
- *   2. **ggui render** — `uiData.resourceUri` + the `_meta["ai.ggui/render"]`
- *      bootstrap, mounted through ggui's self-contained shell. See
- *      `ggui-render.ts`.
+ *   2. **`ui://` locator** — the durable identity of a view produced by ANY
+ *      MCP server (ggui's `ggui_render` included), on `uiData.resourceUri`
+ *      when the producer sent `_meta.ui` (AgJSON §2.1 surface routing) or on
+ *      `structuredContent.resourceUri` when it did not. The host resolves it
+ *      by a fresh, authenticated `resources/read` of the uri
+ *      ({@link UiResourceReader}) — the spec-consistent template fetch, on
+ *      the live turn (pod door) and on rehydration (persisted door) alike.
  *
- * Both channels land on the SAME `McpUiResourcePayload`, which is the whole
- * point: a host that already mounts inline resources through
- * `@mcp-ui/client`'s `AppRenderer` in a second-origin sandbox gains ggui cards
- * without a second mount mechanism, a second iframe contract, or a second
- * security posture to review.
+ * ## The ggui vendor arm is retired (guuey#209, 2026-08-16)
  *
- * Precedence is inline-first and deliberate: an inline resource is the
- * server's explicit, self-sufficient HTML. A ggui render only ever wins when
- * there is no inline resource to prefer, so this dispatcher can never change
- * what an existing inline card renders.
+ * This dispatcher used to carry a THIRD arm: when a `tool-result` carried the
+ * `_meta["ai.ggui/render"]` bootstrap it built ggui's self-contained shell
+ * inline and mounted it without a read — a fast path that existed only
+ * because the pod holds the MCP connection and a live locator had no host-
+ * side read channel. That precondition is gone: the pod door
+ * (`GET <pod>/agent/ui-resource`) answers live-turn locators, the persisted
+ * door answers rehydration, and ggui's `resources/read` mints the live-
+ * channel material FRESH at read time — strictly fresher than any inlined
+ * bootstrap. A ggui render is therefore just another locator producer; live
+ * == rehydrated == spec. The arm's narrowing helpers stay exported one
+ * minor as `@deprecated` (`ggui-render.ts`); nothing here consumes them.
  *
  * ## Why the CHANNEL is returned alongside the resource
  *
- * The payload alone cannot say where it came from — a ggui shell is a string
+ * The payload alone cannot say where it came from — ggui's shell is a string
  * of HTML like any other. But a host has one decision that genuinely depends
  * on the origin of that HTML: WHICH sandbox host page to mount it in. A ggui
  * shell must load ggui's runtime bundle and open its WSS, so it needs a page
  * whose CSP names the ggui origins; an inline card is arbitrary tenant HTML
- * and must keep the self-only page it has always had. Handing back the channel
- * keeps that one narrowing in one place — the alternative was for every host
- * to re-run `toolResultGguiRender` beside this call and ask again.
+ * and must keep the self-only page it has always had. Since the flip the
+ * channel is assigned at RESOLUTION time from the requested locator uri
+ * (`uiResourceChannel` in `reader.ts` — `ui://ggui/…` → `"ggui"`), never
+ * from the response and never from mount material a producer inlined.
  */
 import { snapshotUiResource, toolResultLocator, toolResultUiResource, type McpUiResourcePayload } from "./block-ui.js";
-import { GGUI_RENDER_META_KEY, gguiRenderResource, toolResultGguiRender } from "./ggui-render.js";
 import type { AgBlock, JsonValue } from "@silverprotocol/core";
 
-
-/** Does the block's `_meta` carry the ggui render key at all (valid or not)? */
-function blockCarriesGguiMetaKey(block: Extract<AgBlock, { type: "tool-result" }>): boolean {
-  const meta = block._meta;
-  return (
-    typeof meta === "object" && meta !== null && !Array.isArray(meta) && GGUI_RENDER_META_KEY in meta
-  );
-}
-
-/** Which generative-UI channel produced a mount. See this module's header. */
+/**
+ * Which sandbox-trust channel a mount rides. See this module's header.
+ * `"ggui"` is assigned at RESOLUTION time from the requested locator uri
+ * (`uiResourceChannel`) — a `toolResultViewMount` result is only ever
+ * `"inline"` or `"locator"`.
+ */
 export type ViewMountChannel = "inline" | "ggui" | "locator";
 
 /**
@@ -71,6 +73,8 @@ export type ViewMount = ResolvedViewMount | LocatorViewMount;
  * A view with mount material in hand — the arms a host can render directly,
  * and the ONLY arms a `UiResourceReader` resolves (guuey#127): a read either
  * yields mount material or the honest placeholder, never another locator.
+ * `"ggui"` here always comes from a reader (`uiResourceChannel` on the
+ * requested uri) — no dispatcher in this module produces it.
  */
 export interface ResolvedViewMount {
   channel: "inline" | "ggui";
@@ -97,30 +101,20 @@ export interface LocatorViewMount {
 export type UiResourceReader = (resourceUri: string) => Promise<ViewMount | undefined>;
 
 /**
- * A live `tool-result` block → the card to mount, across both channels.
- * `undefined` when the block carries no generative UI at all (or carries a
- * ggui render whose bootstrap did not reach us — see `ggui-render.ts`).
+ * A live `tool-result` block → the card to mount: an inline resource, else the
+ * `ui://` locator (either channel — see `toolResultLocator`), else `undefined`
+ * when the block carries no generative UI at all.
+ *
+ * A locator on a LIVE turn resolves through the pod door (its live-card
+ * ledger registers the locator the moment the result streams — guuey#209
+ * C1/C5); the same locator persisted resolves through the platform door.
+ * One authority per lifecycle phase, one dispatcher for both.
  */
 export function toolResultViewMount(
   block: Extract<AgBlock, { type: "tool-result" }>,
 ): ViewMount | undefined {
   const inline = toolResultUiResource(block);
   if (inline) return { resource: inline, channel: "inline" };
-  const ggui = toolResultGguiRender(block);
-  const resource = ggui ? gguiRenderResource(ggui) : undefined;
-  if (resource) return { resource, channel: "ggui" };
-  // A live locator whose mount material didn't reach us (a fold that
-  // dropped `_meta`, or a producer that never sent it — the locator then
-  // rides `structuredContent`, see `toolResultLocator`): re-fetch works on
-  // live turns too — the resource is freshly minted (guuey#122). One
-  // diagnostic when `_meta` DID carry the
-  // vendor key but failed validation — a producer bug would otherwise be
-  // indistinguishable from a meta-less fold (blank UI, zero errors).
-  if (ggui && !ggui.bootstrap && blockCarriesGguiMetaKey(block)) {
-    console.warn(
-      `mcp-apps-host: tool result ${block.toolCallId} carries a malformed ggui render bootstrap — degrading to the locator channel`,
-    );
-  }
   const locator = toolResultLocator(block);
   return locator !== undefined ? { channel: "locator", resourceUri: locator } : undefined;
 }
@@ -128,12 +122,12 @@ export function toolResultViewMount(
 /**
  * A persisted `HistoryCard`'s `cardSnapshot` → the card to mount.
  *
- * There is deliberately NO bootstrap arm here (guuey#122): persistence
- * strips tool-result `_meta` (see `@guuey/threads`' fold-rows), and a
- * foreign snapshot that still carries one holds an expired `wsToken` — a
- * dead mount. A persisted `ui://` locator resolves to the `"locator"`
- * channel instead: rehydration is a fresh `resources/read` of the uri,
- * the spec-consistent template fetch, vendor-neutral.
+ * Same two arms as the live dispatcher (since guuey#209 there is no third):
+ * an inline resource, else the `ui://` locator. Persistence strips
+ * tool-result `_meta` (see `@guuey/threads`' fold-rows), and a foreign
+ * snapshot that still carries a stale bootstrap is ignored — its `wsToken`
+ * expired minutes after the render. Rehydration is a fresh `resources/read`
+ * of the uri, the spec-consistent template fetch, vendor-neutral.
  */
 export function snapshotViewMount(cardSnapshot: JsonValue): ViewMount | undefined {
   const inline = snapshotUiResource(cardSnapshot);

@@ -16,6 +16,7 @@ import {
   consentGate,
   emptyTurn,
   fortyTools,
+  GGUI_RESOURCE_URI,
   giantJsonResult,
   historyDeadLocators,
   interleavedMediaCodeCitations,
@@ -121,7 +122,12 @@ describe("corpus", () => {
     const ggui = views.find((v) => v.key === "view.tGgui");
     expect(inline?.channel).toBe("inline");
     expect(inline?.label).toBe("Showing plain content");
-    expect(ggui?.channel).toBe("ggui");
+    // guuey#209: the ggui vendor arm is retired — a ggui render (even one
+    // still carrying its `_meta` bootstrap) is a LOCATOR at plan time; the
+    // "ggui" trust channel is assigned at resolution from the uri. The
+    // channel-aware label still names it a boot failure, by the same rule.
+    expect(ggui?.channel).toBe("locator");
+    expect(ggui?.mount).toEqual({ channel: "locator", resourceUri: GGUI_RESOURCE_URI });
     expect(ggui?.label).toBe("This view couldn't start");
     expect(plan).toMatchSnapshot();
   });

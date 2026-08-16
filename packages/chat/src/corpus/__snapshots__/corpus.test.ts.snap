@@ -1115,23 +1115,14 @@ exports[`corpus > 7. view-never-handshakes — channel-aware labels on both chan
     {
       "actionScope": "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee",
       "attribution": "via ggui render",
-      "channel": "ggui",
+      "channel": "locator",
       "expanded": true,
       "key": "view.tGgui",
       "kind": "view",
       "label": "This view couldn't start",
       "mount": {
-        "channel": "ggui",
-        "resource": {
-          "mimeType": "text/html",
-          "text": "<!doctype html>
-<html lang="en" style="background:transparent"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>ggui render</title></head>
-<body style="margin:0;background:transparent">
-<script>globalThis.__GGUI_META__ = {"ai.ggui/render":{"sessionId":"render_00000000-0000-4000-8000-300000000001","appId":"APP00000","runtimeUrl":"https://dev.mcp.sandbox.ggui.ai/_ggui/iframe-runtime.js","wsUrl":"wss://dev.mcp.sandbox.ggui.ai/ws","wsToken":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","expiresAt":"2026-07-29T11:07:58.000Z","lastSequence":0,"propsJson":"{}"}};</script>
-<script type="module" crossorigin="anonymous" src="https://dev.mcp.sandbox.ggui.ai/_ggui/iframe-runtime.js"></script>
-</body></html>",
-          "uri": "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee",
-        },
+        "channel": "locator",
+        "resourceUri": "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee",
       },
       "phase": "no-handshake",
       "toolTitle": "ggui render",
@@ -1641,23 +1632,14 @@ exports[`corpus > 19. persisted-plus-live — the fold owns its trailing turns; 
     {
       "actionScope": "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee",
       "attribution": "via ggui render",
-      "channel": "ggui",
+      "channel": "locator",
       "expanded": true,
       "key": "view.tA",
       "kind": "view",
       "label": "Loading view…",
       "mount": {
-        "channel": "ggui",
-        "resource": {
-          "mimeType": "text/html",
-          "text": "<!doctype html>
-<html lang="en" style="background:transparent"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>ggui render</title></head>
-<body style="margin:0;background:transparent">
-<script>globalThis.__GGUI_META__ = {"ai.ggui/render":{"sessionId":"render_00000000-0000-4000-8000-300000000001","appId":"APP00000","runtimeUrl":"https://dev.mcp.sandbox.ggui.ai/_ggui/iframe-runtime.js","wsUrl":"wss://dev.mcp.sandbox.ggui.ai/ws","wsToken":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","expiresAt":"2026-07-29T11:07:58.000Z","lastSequence":0,"propsJson":"{}"}};</script>
-<script type="module" crossorigin="anonymous" src="https://dev.mcp.sandbox.ggui.ai/_ggui/iframe-runtime.js"></script>
-</body></html>",
-          "uri": "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee",
-        },
+        "channel": "locator",
+        "resourceUri": "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee",
       },
       "phase": "negotiating",
       "toolTitle": "ggui render",

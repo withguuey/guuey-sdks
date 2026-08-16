@@ -32,7 +32,13 @@
  * append ordinals, so every existing key survives each re-plan.
  */
 import type { AgBlock, AgReduceResult, JsonValue } from "@silverprotocol/core";
-import { snapshotViewMount, toolResultLocator, toolResultViewMount, type ViewMount } from "@guuey/mcp-apps-host";
+import {
+  snapshotViewMount,
+  toolResultLocator,
+  toolResultViewMount,
+  uiResourceChannel,
+  type ViewMount,
+} from "@guuey/mcp-apps-host";
 import type { TranscriptPolicy } from "./policy.js";
 import { grantModeDisplay } from "./hitl.js";
 import type {
@@ -252,8 +258,21 @@ function toolFailed(result: ToolResultBlock): boolean {
   return false;
 }
 
+/**
+ * The sandbox-trust channel a view item will MOUNT on. For a resolved mount
+ * that is the mount's own channel; for the `"locator"` arm it is what the
+ * reader will assign at resolution — derived from the requested uri
+ * (`uiResourceChannel`), the same rule the reader itself applies. Since the
+ * ggui vendor arm retired (guuey#209) every live ggui card is a locator at
+ * plan time, so the channel-aware label must look through the arm.
+ */
+function trustChannel(item: Pick<ViewMountItem, "mount" | "channel">): "inline" | "ggui" | null {
+  if (item.mount === null) return item.channel === "ggui" || item.channel === "inline" ? item.channel : null;
+  return item.mount.channel === "locator" ? uiResourceChannel(item.mount.resourceUri) : item.mount.channel;
+}
+
 function viewLabel(
-  item: Pick<ViewMountItem, "phase" | "channel">,
+  item: Pick<ViewMountItem, "phase" | "channel" | "mount">,
   policy: TranscriptPolicy,
 ): string | null {
   const s = policy.strings;
@@ -267,7 +286,9 @@ function viewLabel(
     case "no-handshake":
       // Channel-aware (R6): a ggui shell that never handshakes is a boot
       // failure; inline tenant HTML may legitimately be a non-App document.
-      return item.channel === "ggui" ? s.viewBootFailure : s.viewInlineFallback;
+      // Keyed on the TRUST channel (locators resolve to it by uri), not the
+      // mount arm — a live ggui card is a locator until its read lands.
+      return trustChannel(item) === "ggui" ? s.viewBootFailure : s.viewInlineFallback;
   }
 }
 

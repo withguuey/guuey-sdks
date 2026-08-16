@@ -24,7 +24,7 @@ import {
 
 // The ggui render shapes below mirror mcp-apps-host's own capture-derived
 // test fixtures (synthetic ids, production shape — ggui-render.test.ts).
-const GGUI_RESOURCE_URI = "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee";
+export const GGUI_RESOURCE_URI = "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee";
 const GGUI_META_KEY = "ai.ggui/render";
 const GGUI_SLICE = {
   sessionId: "render_00000000-0000-4000-8000-300000000001",

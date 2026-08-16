@@ -1,26 +1,44 @@
 /**
- * The card-mount dispatcher — both generative-UI channels, one resource shape,
- * inline-first precedence.
+ * The card-mount dispatcher — inline resource, else `ui://` locator; one
+ * resource shape; inline-first precedence.
  *
  * The point of the precedence test is a guarantee, not a preference: no
- * existing inline card can change what it renders because the ggui branch
+ * existing inline card can change what it renders because a locator arm
  * exists.
+ *
+ * guuey#209 (2026-08-16): the ggui bootstrap arm is RETIRED. A tool result
+ * that still carries `_meta["ai.ggui/render"]` (a producer that inlines
+ * mount material) takes the locator arm like any other `ui://` producer;
+ * the mount comes from a `resources/read`, and the `"ggui"` sandbox-trust
+ * channel is assigned at resolution from the requested uri
+ * (`uiResourceChannel`). "Same visual outcome, different arm" is pinned
+ * below through the real reader assembly.
  */
 import { describe, expect, it } from "vitest";
 import type { AgBlock, JsonValue } from "@silverprotocol/core";
 import { resolveViewMount, snapshotViewMount, toolResultViewMount } from "./card-mount.js";
-import { GGUI_RENDER_META_KEY } from "./ggui-render.js";
+import { createMcpUiResourceReader } from "./reader.js";
 
 const INLINE_HTML = "<p>inline card</p>";
 const RESOURCE_URI = "ui://ggui/render/render_1/hash";
 const RUNTIME_URL = "https://dev.mcp.sandbox.ggui.ai/_ggui/iframe-runtime.js";
+/**
+ * ggui's `_meta["ai.ggui/render"]` bootstrap, as a producer that inlines
+ * mount material still sends it (the key spelling is ggui's — the retired
+ * arm's constant is deprecated, so this file carries the literal on purpose).
+ */
 const META: JsonValue = {
-  // `kind` is one of the three mode discriminators `asGguiRenderBootstrap`
-  // requires alongside `runtimeUrl` (see `ggui-render.ts`'s
-  // `hasModeDiscriminator`) — without one a real bootstrap is malformed and
-  // this fixture would (correctly) fail to mount, same as production.
-  [GGUI_RENDER_META_KEY]: { sessionId: "render_1", runtimeUrl: RUNTIME_URL, kind: "system-card" },
+  "ai.ggui/render": { sessionId: "render_1", runtimeUrl: RUNTIME_URL, kind: "system-card" },
 };
+/**
+ * What ggui's `resources/read` answers for a render locator (guuey#209 C2):
+ * the shell with the live-channel material minted FRESH at read time.
+ */
+const READ_SHELL_HTML =
+  `<!doctype html><html><head><script>window.__GGUI_META__=` +
+  `{"ai.ggui/render":{"runtimeUrl":"${RUNTIME_URL}","wsUrl":"wss://dev.mcp.sandbox.ggui.ai/ws",` +
+  `"wsToken":"fresh-at-read","expiresAt":"2026-08-16T00:03:00Z"}}</script>` +
+  `<script type="module" src="${RUNTIME_URL}"></script></head><body></body></html>`;
 
 function block(uiData: JsonValue, meta?: JsonValue): Extract<AgBlock, { type: "tool-result" }> {
   const base: Extract<AgBlock, { type: "tool-result" }> = {
@@ -50,12 +68,40 @@ describe("toolResultViewMount", () => {
     });
   });
 
-  it("mounts a ggui render through its self-contained shell, on the ggui channel", () => {
+  it("a ggui render carrying its `_meta` bootstrap takes the LOCATOR arm — the vendor arm is retired (#209)", () => {
+    // Before 2026-08-16 this block mounted inline through ggui's shell on the
+    // "ggui" channel, without a read. Now the bootstrap is inert: the
+    // dispatcher hands back the durable locator (uiData won — the normalizer
+    // stamped it because `_meta.ui` was present) and the mount comes from a
+    // resources/read, exactly like a meta-less render or a non-ggui producer.
+    expect(toolResultViewMount(block({ resourceUri: RESOURCE_URI }, META))).toEqual({
+      channel: "locator",
+      resourceUri: RESOURCE_URI,
+    });
+  });
+
+  it("same visual outcome, different arm: the locator resolves through a reader to the ggui channel + shell", async () => {
     const mount = toolResultViewMount(block({ resourceUri: RESOURCE_URI }, META));
-    expect(mount?.channel).toBe("ggui");
-    if (mount?.channel !== "ggui") throw new Error("narrowed above");
-    expect(mount.resource.uri).toBe(RESOURCE_URI);
-    expect(mount.resource.text).toContain(RUNTIME_URL);
+    const requested: string[] = [];
+    const reader = createMcpUiResourceReader({
+      readResource: (uri) => {
+        requested.push(uri);
+        return Promise.resolve({ uri, mimeType: "text/html;profile=mcp-app", text: READ_SHELL_HTML });
+      },
+    });
+    const resolved = await resolveViewMount(mount, reader);
+    // ONE read of the block's own locator…
+    expect(requested).toEqual([RESOURCE_URI]);
+    // …the "ggui" sandbox-trust channel, assigned at RESOLUTION from the
+    // requested uri (never from the response, never from inlined `_meta`)…
+    expect(resolved?.channel).toBe("ggui");
+    if (resolved?.channel !== "ggui") throw new Error("narrowed above");
+    // …and the mount material a consumer used to get from the bootstrap arm,
+    // now minted fresh at read time (C2): runtime module + live channel.
+    expect(resolved.resource.uri).toBe(RESOURCE_URI);
+    expect(resolved.resource.text).toContain(RUNTIME_URL);
+    expect(resolved.resource.text).toContain("__GGUI_META__");
+    expect(resolved.resource.text).toContain("wss://dev.mcp.sandbox.ggui.ai/ws");
   });
 
   it("prefers the inline resource when a block somehow carries both", () => {
@@ -71,12 +117,22 @@ describe("toolResultViewMount", () => {
     });
   });
 
-  it("falls back to the locator channel for a live render whose bootstrap didn't reach us (#122)", () => {
+  it("a live locator with no `_meta` at all is the same locator arm (#122)", () => {
     expect(toolResultViewMount(block({ resourceUri: RESOURCE_URI }))).toEqual({
       channel: "locator",
       resourceUri: RESOURCE_URI,
     });
     expect(toolResultViewMount(block({ events: [], status: "active" }))).toBeUndefined();
+  });
+
+  it("a malformed bootstrap changes nothing — the locator arm never looked at `_meta` (#209)", () => {
+    // Pre-flip this warned "malformed ggui render bootstrap — degrading to
+    // the locator channel"; there is no longer a bootstrap to be malformed.
+    const malformed: JsonValue = { "ai.ggui/render": { sessionId: "render_1" } };
+    expect(toolResultViewMount(block({ resourceUri: RESOURCE_URI }, malformed))).toEqual({
+      channel: "locator",
+      resourceUri: RESOURCE_URI,
+    });
   });
 
   // guuey#209 (route-A finding, ggui's 2026-08-16 dev dump): a producer that
