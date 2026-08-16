@@ -35,11 +35,11 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { attachViewHost, viewDocumentHtml, type AttachViewHostConfig } from "./view-host.js";
 import { attachSandboxPageDelivery } from "./sandbox-page.js";
-import type { ViewHostPhase } from "./view-host-protocol.js";
+import type { ViewCspDiagnosis, ViewHostPhase } from "./view-host-protocol.js";
 import type { ResolvedViewMount } from "./card-mount.js";
 
 export { attachViewHost, viewDocumentHtml } from "./view-host.js";
-export type { AttachViewHostConfig, ViewFrameLike, ViewHostEvents } from "./view-host.js";
+export type { AttachViewHostConfig, ViewCspEvents, ViewFrameLike, ViewHostEvents } from "./view-host.js";
 export {
   attachSandboxPageDelivery,
   isSandboxProxyReady,
@@ -47,7 +47,7 @@ export {
   SANDBOX_RESOURCE_READY_METHOD,
   type SandboxPageDeliveryConfig,
 } from "./sandbox-page.js";
-export type { ViewHostPhase } from "./view-host-protocol.js";
+export type { ViewCspDiagnosis, ViewCspOrigins, ViewHostPhase } from "./view-host-protocol.js";
 export type { ResolvedViewMount, ViewMount, ViewMountChannel } from "./card-mount.js";
 
 /** Accessible name for a mounted view when the caller has nothing better. */
@@ -63,6 +63,8 @@ export interface GuueyViewProps
     | "onReadResource"
     | "onSizeChanged"
     | "negotiationTimeoutMs"
+    | "cspOrigins"
+    | "onCspDiagnosis"
   > {
   /** The resolved card to mount (see `toolResultViewMount`/`resolveViewMount`). */
   mount: ResolvedViewMount;
@@ -119,9 +121,12 @@ export interface GuueyViewProps
    * "render nothing". The default: a quiet "Negotiating with view…" line
    * while `"negotiating"`; a labeled failure for `"no-handshake"` on the
    * `"ggui"` channel; nothing once `"connected"` (the view owns its
-   * pixels) and nothing for a silent `"inline"` card.
+   * pixels) and nothing for a silent `"inline"` card. The second argument
+   * is the CSP diagnosis when the tripwire caught one (see
+   * {@link AttachViewHostConfig.cspOrigins}) — the default label folds it
+   * in; a custom renderer decides how to show it.
    */
-  renderStatus?: (phase: ViewHostPhase) => ReactNode;
+  renderStatus?: (phase: ViewHostPhase, diagnosis?: ViewCspDiagnosis) => ReactNode;
 }
 
 const statusLineStyle: CSSProperties = {
@@ -136,9 +141,24 @@ const statusLineStyle: CSSProperties = {
   pointerEvents: "none",
 };
 
-function defaultStatus(phase: ViewHostPhase, channel: ResolvedViewMount["channel"]): ReactNode {
+function defaultStatus(
+  phase: ViewHostPhase,
+  channel: ResolvedViewMount["channel"],
+  diagnosis: ViewCspDiagnosis | undefined,
+): ReactNode {
   if (phase === "negotiating") {
     return <p style={statusLineStyle}>Negotiating with view…</p>;
+  }
+  // A CSP diagnosis (guuey#235) is the WHY behind a silent frame — on any
+  // channel: a blocked runtime bundle never gets to negotiate, so the
+  // tripwire's verdict outranks the channel heuristic below. Actionable
+  // over accurate-but-mute: name the blocked URI and the allowance.
+  if (phase === "no-handshake" && diagnosis !== undefined) {
+    return (
+      <p role="alert" style={{ ...statusLineStyle, opacity: 1, pointerEvents: "auto" }}>
+        {diagnosis.message}
+      </p>
+    );
   }
   if (phase === "no-handshake" && channel === "ggui") {
     // A ggui shell negotiates unconditionally before painting, so silence
@@ -173,6 +193,8 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
   } = props;
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [phase, setPhase] = useState<ViewHostPhase>("negotiating");
+  // The CSP tripwire's verdict for THIS document, if any (guuey#235).
+  const [diagnosis, setDiagnosis] = useState<ViewCspDiagnosis | undefined>(undefined);
   // The view's own size report, applied only under `autoResize`.
   const [reportedHeight, setReportedHeight] = useState<number | undefined>(undefined);
   const html = viewDocumentHtml(mount.resource);
@@ -208,6 +230,7 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
     // document boots fresh, and the previous negotiation's phase must not
     // paper over it — nor must the previous document's reported size.
     setPhase("negotiating");
+    setDiagnosis(undefined);
     setReportedHeight(undefined);
     const frame = frameRef.current;
     if (frame === null || html === undefined) return;
@@ -219,6 +242,10 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
       onPhaseChange: (next) => {
         setPhase(next);
         latest.current.onPhaseChange?.(next);
+      },
+      onCspDiagnosis: (found) => {
+        setDiagnosis(found);
+        latest.current.hostConfig.onCspDiagnosis?.(found);
       },
       onSizeChanged: (size) => {
         if (latest.current.autoResize === true && size.height !== undefined) {
@@ -308,7 +335,9 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
           border: 0,
         }}
       />
-      {renderStatus !== undefined ? renderStatus(phase) : defaultStatus(phase, mount.channel)}
+      {renderStatus !== undefined
+        ? renderStatus(phase, diagnosis)
+        : defaultStatus(phase, mount.channel, diagnosis)}
     </div>
   );
 }

@@ -26,7 +26,7 @@ import {
   type ReactNode,
 } from "react";
 import { GuueyView, type GuueyViewProps } from "@guuey/mcp-apps-host/react";
-import type { ResolvedViewMount, ViewHostPhase } from "@guuey/mcp-apps-host";
+import type { ResolvedViewMount, ViewCspDiagnosis, ViewHostPhase } from "@guuey/mcp-apps-host";
 import type { ChatStrings } from "../strings.js";
 import type {
   CitationsItem,
@@ -75,6 +75,12 @@ export interface TranscriptItemContext {
   /** R6: live phase reports wired back into the next plan. */
   onViewPhase: (key: ItemKey, phase: ViewHostPhase) => void;
   /**
+   * R6: the host's CSP tripwire diagnosed the embedding page blocking a
+   * view (guuey#235) — wired back so the label names the cause. Optional:
+   * a hand-wired host that omits it simply keeps the channel heuristic.
+   */
+  onViewDiagnosis?: (key: ItemKey, diagnosis: ViewCspDiagnosis) => void;
+  /**
    * guuey#204: a promoted-view reference chip was activated — the host
    * focuses/reveals its stage (canvas). Absent ⇒ the chip renders as a
    * non-interactive label.
@@ -107,6 +113,7 @@ export type ViewSlotProps = Pick<
   | "allow"
   | "sandboxPageUrl"
   | "autoResize"
+  | "cspOrigins"
 >;
 
 interface ItemProps<T> {
@@ -365,6 +372,7 @@ export function DefaultView({ item, ctx }: ItemProps<ViewMountItem>): ReactNode 
         mount={mount}
         {...viewProps}
         onPhaseChange={(phase) => ctx.onViewPhase(item.key, phase)}
+        onCspDiagnosis={(diagnosis) => ctx.onViewDiagnosis?.(item.key, diagnosis)}
       />
       {item.attribution !== null ? (
         <p className="guuey-chat-attribution">{item.attribution}</p>

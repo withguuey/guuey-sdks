@@ -288,7 +288,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   }, [preset, policyOverrides, stringOverrides]);
 
   const { inputs, resolvePrompt, answerHitlPrompt } = useTranscriptInputs(invoke);
-  const { plan, toggle, resolvedMounts, onViewPhase } = useTranscript({
+  const { plan, toggle, resolvedMounts, onViewPhase, onViewDiagnosis } = useTranscript({
     inputs,
     policy,
     ...(effectiveReader !== undefined ? { reader: effectiveReader } : {}),
@@ -427,6 +427,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         {...(onErrorAction !== undefined ? { onErrorAction } : {})}
         resolvedMounts={resolvedMounts}
         onViewPhase={onViewPhase}
+        onViewDiagnosis={onViewDiagnosis}
         {...(viewProps !== undefined ? { viewProps } : {})}
       />
       <form

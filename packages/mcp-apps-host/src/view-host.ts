@@ -28,12 +28,16 @@
  * re-derived here against the pure machine + our own tests.
  */
 import {
+  diagnoseCspViolation,
   initialViewHostState,
   resourceReadResponse,
   teardownMessage,
   toolCallResponse,
   viewHostElapsed,
   viewHostReceive,
+  type CspViolationLike,
+  type ViewCspDiagnosis,
+  type ViewCspOrigins,
   type ViewHostBehavior,
   type ViewHostOutbound,
   type ViewHostPhase,
@@ -72,6 +76,16 @@ export interface ViewHostEvents {
     type: "message",
     listener: (event: { data: unknown; source: unknown }) => void,
   ): void;
+}
+
+/**
+ * Where CSP violations are observed — the EMBEDDING document (the frame's
+ * blocked loads report there, not inside the opaque frame). Structural like
+ * {@link ViewHostEvents}, injectable for tests. Default: `document`.
+ */
+export interface ViewCspEvents {
+  addEventListener(type: "securitypolicyviolation", listener: (event: CspViolationLike) => void): void;
+  removeEventListener(type: "securitypolicyviolation", listener: (event: CspViolationLike) => void): void;
 }
 
 export interface AttachViewHostConfig {
@@ -130,6 +144,41 @@ export interface AttachViewHostConfig {
   onSizeChanged?: (size: { width?: number; height?: number }) => void;
   /** Observe phase transitions (see {@link ViewHostPhase}). */
   onPhaseChange?: (phase: ViewHostPhase) => void;
+  /**
+   * The origins this view needs the embedding PAGE's CSP to allow — the
+   * spec's per-resource declaration (`McpUiResourceCsp`). Given, the host
+   * arms a CSP tripwire for the attachment's lifetime: a
+   * `securitypolicyviolation` on the EMBEDDING document whose blocked URI
+   * lands on one of these hosts is upgraded from a silent "never
+   * negotiated" into an actionable {@link ViewCspDiagnosis} (guuey#235).
+   * The phase itself stays `"no-handshake"` — honest about WHAT happened;
+   * the diagnosis says WHY. Absent → tripwire not installed, zero behavior
+   * change (the default for every existing caller).
+   *
+   * REACH (pinned by the browser leg, `e2e/tests/sdk/view-host.spec.ts`):
+   * the listener lives on the embedding document, so it sees violations
+   * the PAGE incurs on the view's origins — a runtime bundle the page
+   * loads at page level, a live channel the page opens on the view's
+   * behalf (the shape ggui's landing tripwire exercised). It does NOT see
+   * a `srcdoc` view's own blocked loads: the frame inherits the page's
+   * policy, but the browser enforces that copy in — and dispatches the
+   * violation on — the FRAME's document, which is opaque-origin and cannot
+   * be listened to from outside. A frame-side reporter would need host
+   * script injected into untrusted view HTML, a trust-boundary change this
+   * primitive deliberately does not make; the `sandboxPageUrl` mount owns
+   * its own policy and reports nothing here by construction.
+   */
+  cspOrigins?: ViewCspOrigins;
+  /**
+   * A CSP violation ABOUT this view was observed (see {@link cspOrigins}).
+   * Fires at most once per attachment, as soon as the violation lands —
+   * typically BEFORE the negotiation window lapses, since a blocked runtime
+   * never gets to negotiate. `<GuueyView>` folds it into the no-handshake
+   * label; a custom renderer shows/logs it as it likes.
+   */
+  onCspDiagnosis?: (diagnosis: ViewCspDiagnosis) => void;
+  /** CSP-violation event source, injectable for tests. Default: `document`. */
+  cspEvents?: ViewCspEvents;
   /**
    * How long to wait for `ui/initialize` before declaring
    * `"no-handshake"` (ms). `0` disables the timer. Default 8000 — a view
@@ -270,6 +319,33 @@ export function attachViewHost(frame: ViewFrameLike, config: AttachViewHostConfi
   };
   const unsubscribe = subscribe();
 
+  // The CSP tripwire (guuey#235): armed only when the caller declared the
+  // view's origins — with none, there is nothing to match and nothing is
+  // installed. It only ever ADDS a diagnosis; it never changes what the
+  // machine does. Once per attachment: the first violation about the view
+  // is the diagnosis (later ones are the same failure repeating).
+  const unsubscribeCsp = ((): (() => void) => {
+    const { cspOrigins, onCspDiagnosis } = config;
+    if (cspOrigins === undefined) return () => {};
+    let reported = false;
+    const onViolation = (event: CspViolationLike): void => {
+      if (reported) return;
+      const diagnosis = diagnoseCspViolation(event, cspOrigins);
+      if (diagnosis === undefined) return;
+      reported = true;
+      onCspDiagnosis?.(diagnosis);
+    };
+    const { cspEvents } = config;
+    if (cspEvents !== undefined) {
+      cspEvents.addEventListener("securitypolicyviolation", onViolation);
+      return () => cspEvents.removeEventListener("securitypolicyviolation", onViolation);
+    }
+    if (typeof document === "undefined") return () => {}; // no embedding document — nothing reports there
+    const domListener = (event: SecurityPolicyViolationEvent): void => onViolation(event);
+    document.addEventListener("securitypolicyviolation", domListener);
+    return () => document.removeEventListener("securitypolicyviolation", domListener);
+  })();
+
   const timeoutMs = config.negotiationTimeoutMs ?? DEFAULT_NEGOTIATION_TIMEOUT_MS;
   const timer =
     timeoutMs > 0 ? setTimeout(() => setState(viewHostElapsed(state)), timeoutMs) : undefined;
@@ -277,6 +353,7 @@ export function attachViewHost(frame: ViewFrameLike, config: AttachViewHostConfi
   return () => {
     if (timer !== undefined) clearTimeout(timer);
     unsubscribe();
+    unsubscribeCsp();
     cachedWindow?.postMessage(teardownMessage(), "*");
   };
 }

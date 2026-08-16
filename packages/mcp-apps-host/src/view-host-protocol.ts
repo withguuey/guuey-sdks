@@ -39,6 +39,7 @@ import {
   type McpUiHostCapabilities,
   type McpUiHostContext,
   type McpUiInitializeResult,
+  type McpUiResourceCsp,
 } from "@modelcontextprotocol/ext-apps";
 import type { McpToolStructuredContent } from "./action.js";
 import type { McpResourceReadResult } from "./reader.js";
@@ -397,4 +398,105 @@ export function viewHostReceive(
  */
 export function viewHostElapsed(state: ViewHostState): ViewHostState {
   return state.phase === "negotiating" ? { ...state, phase: "no-handshake" } : state;
+}
+
+// ─── CSP diagnosis (guuey#235) ────────────────────────────────────────────
+
+/**
+ * The origins a view needs the EMBEDDER's page to allow — the spec's own
+ * per-resource CSP declaration (`McpUiResourceCsp`: `connectDomains` →
+ * `connect-src`, `resourceDomains` → `script-src`/`style-src`/…,
+ * `frameDomains` → `frame-src`). This is the honest filter for the CSP
+ * tripwire: a `securitypolicyviolation` whose `blockedURI` lands on one of
+ * these hosts is a violation ABOUT the view, not about anything else the
+ * page loads. Empty/absent → nothing to match, tripwire inert.
+ */
+export type ViewCspOrigins = McpUiResourceCsp;
+
+/**
+ * What the embedder can act on when its own CSP blocked the view: the
+ * URI the browser refused, the directive that refused it, and the entry
+ * that would allow it (the blocked URI's origin — the smallest allowance
+ * that fixes exactly this). Rides beside `"no-handshake"` — the phase
+ * stays honest ("it never negotiated"); this is WHY.
+ */
+export interface ViewCspDiagnosis {
+  blockedUri: string;
+  violatedDirective: string;
+  /** The origin to add under `violatedDirective` — e.g. `https://assets.mcp.example`. */
+  suggestedEntry: string;
+  /** Operator-facing sentence, ready to label. */
+  message: string;
+}
+
+/**
+ * The slice of a `SecurityPolicyViolationEvent` the tripwire reads —
+ * structural, so Node tests hand in plain objects (lib.dom's class is not
+ * constructible outside a browser).
+ */
+export interface CspViolationLike {
+  blockedURI: string;
+  /** e.g. `script-src-elem`, `connect-src`. */
+  violatedDirective: string;
+  /** The directive as the policy spelled it (`script-src` may govern `script-src-elem`). */
+  effectiveDirective?: string;
+}
+
+/** Every declared origin's HOST, wildcards (`https://*.x`) reduced to their suffix. */
+function declaredHosts(origins: ViewCspOrigins): { host: string; wildcard: boolean }[] {
+  const out: { host: string; wildcard: boolean }[] = [];
+  for (const list of [origins.connectDomains, origins.resourceDomains, origins.frameDomains]) {
+    for (const entry of list ?? []) {
+      // `https://*.example.com` → wildcard suffix `.example.com`
+      const wildcard = /^[a-z]+:\/\/\*\./i.exec(entry);
+      if (wildcard) {
+        out.push({ host: entry.slice(wildcard[0].length - 1).toLowerCase(), wildcard: true });
+        continue;
+      }
+      try {
+        out.push({ host: new URL(entry).hostname.toLowerCase(), wildcard: false });
+      } catch {
+        // A malformed declaration is producer-side wire data; it simply
+        // never matches. The tripwire only ever ADDS a diagnosis, never
+        // blocks, so there is nothing to guard.
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Pure: is this violation ABOUT the view (its blocked URI lands on a
+ * declared origin), and if so, what should the embedder add?
+ *
+ * `blockedURI` is a full URL for network/script blocks; the browser sends
+ * bare tokens (`eval`, `inline`, `data`) for policy-class blocks — those
+ * carry no host and never match a declared origin, which is right: a
+ * `script-src eval` report is not the view's (see guuey#236 for the zod
+ * probe that produces exactly one such report at boot).
+ */
+export function diagnoseCspViolation(
+  violation: CspViolationLike,
+  origins: ViewCspOrigins | undefined,
+): ViewCspDiagnosis | undefined {
+  if (origins === undefined) return undefined;
+  let blocked: URL;
+  try {
+    blocked = new URL(violation.blockedURI);
+  } catch {
+    return undefined; // bare token (eval/inline/data/…) — not a host, not the view's
+  }
+  const host = blocked.hostname.toLowerCase();
+  const hit = declaredHosts(origins).some((d) =>
+    d.wildcard ? host.endsWith(d.host) : host === d.host,
+  );
+  if (!hit) return undefined;
+  const directive = violation.effectiveDirective || violation.violatedDirective;
+  const suggestedEntry = blocked.origin;
+  return {
+    blockedUri: violation.blockedURI,
+    violatedDirective: directive,
+    suggestedEntry,
+    message: `This page's Content-Security-Policy blocks ${violation.blockedURI} (${directive}) — the view cannot start. Add \`${directive} ${suggestedEntry}\` to the page's policy.`,
+  };
 }
