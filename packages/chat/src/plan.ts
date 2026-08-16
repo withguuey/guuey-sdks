@@ -272,7 +272,7 @@ function trustChannel(item: Pick<ViewMountItem, "mount" | "channel">): "inline" 
 }
 
 function viewLabel(
-  item: Pick<ViewMountItem, "phase" | "channel" | "mount">,
+  item: Pick<ViewMountItem, "phase" | "channel" | "mount" | "diagnosis">,
   policy: TranscriptPolicy,
 ): string | null {
   const s = policy.strings;
@@ -284,6 +284,10 @@ function viewLabel(
     case "expired":
       return s.viewExpired;
     case "no-handshake":
+      // The host's CSP tripwire outranks the channel heuristic (guuey#235):
+      // a blocked runtime never negotiates on ANY channel, and the verdict
+      // is actionable — name the blocked URI and the allowance.
+      if (item.diagnosis !== null) return s.viewCspBlocked(item.diagnosis);
       // Channel-aware (R6): a ggui shell that never handshakes is a boot
       // failure; inline tenant HTML may legitimately be a non-App document.
       // Keyed on the TRUST channel (locators resolve to it by uri), not the
@@ -427,6 +431,7 @@ function planAssistantSource(
             channel: mount.channel,
             phase: inputs.viewPhases?.[viewKey] ?? "negotiating",
             label: null,
+            diagnosis: inputs.viewDiagnoses?.[viewKey] ?? null,
             attribution: policy.debugDetail ? null : policy.strings.viaTool(tool.title),
             toolTitle: tool.title,
             // `result` is narrowed by `mount !== undefined` above; the scope
@@ -823,6 +828,7 @@ export function planTranscript(
       channel: mount?.channel ?? null,
       phase: mount === undefined ? "expired" : (inputs.viewPhases?.[key] ?? "negotiating"),
       label: null,
+      diagnosis: mount === undefined ? null : (inputs.viewDiagnoses?.[key] ?? null),
       attribution: null,
       toolTitle: null,
       actionScope: scope,

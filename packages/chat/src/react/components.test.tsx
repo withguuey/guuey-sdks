@@ -231,6 +231,7 @@ describe("DefaultView — per-mount viewProps + autoResize (guuey#135 kit-refine
     channel: "inline",
     phase: "negotiating",
     label: null,
+    diagnosis: null,
     attribution: null,
     toolTitle: "show card",
     actionScope: "ui://persisted/locator",

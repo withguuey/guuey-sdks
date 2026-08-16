@@ -18,6 +18,7 @@ import {
   resolveViewMount,
   type ResolvedViewMount,
   type UiResourceReader,
+  type ViewCspDiagnosis,
   type ViewHostPhase,
 } from "@guuey/mcp-apps-host";
 import { buildHitlAnswer, hitlPromptsFromFold, type HitlAnswerRecord, type HitlPromptAction } from "../hitl.js";
@@ -62,6 +63,12 @@ export interface UseTranscriptResult {
   overrides: TranscriptOverrides;
   /** Wire to `<GuueyView onPhaseChange>` (the default kit already does). */
   onViewPhase: (key: ItemKey, phase: ViewHostPhase) => void;
+  /**
+   * Wire to `<GuueyView onCspDiagnosis>` (the default kit already does):
+   * the host's CSP tripwire caught the embedding page blocking this view
+   * (guuey#235). Feeds `viewDiagnoses` so the R6 label names the cause.
+   */
+  onViewDiagnosis: (key: ItemKey, diagnosis: ViewCspDiagnosis) => void;
   /** Locator resolutions: mount material, or `"expired"` for a miss. */
   resolvedMounts: ReadonlyMap<ItemKey, ResolvedViewMount | "expired">;
 }
@@ -74,6 +81,7 @@ export function useTranscript({
 }: UseTranscriptArgs): UseTranscriptResult {
   const [overrides, setOverrides] = useState<TranscriptOverrides>({});
   const [phases, setPhases] = useState<Readonly<Record<string, ViewHostPhase>>>({});
+  const [diagnoses, setDiagnoses] = useState<Readonly<Record<string, ViewCspDiagnosis>>>({});
   const [resolvedMounts, setResolvedMounts] = useState<
     ReadonlyMap<ItemKey, ResolvedViewMount | "expired">
   >(new Map());
@@ -83,8 +91,12 @@ export function useTranscript({
   debugSink.current = policy.debugDetail && onDebugEvent !== undefined ? onDebugEvent : null;
 
   const merged = useMemo<TranscriptInputs>(
-    () => ({ ...inputs, viewPhases: { ...inputs.viewPhases, ...phases } }),
-    [inputs, phases],
+    () => ({
+      ...inputs,
+      viewPhases: { ...inputs.viewPhases, ...phases },
+      viewDiagnoses: { ...inputs.viewDiagnoses, ...diagnoses },
+    }),
+    [inputs, phases, diagnoses],
   );
   const plan = useMemo(() => planTranscript(merged, policy, overrides), [merged, policy, overrides]);
 
@@ -114,12 +126,31 @@ export function useTranscript({
   // Mirror of `phases` for the change check OUTSIDE the state updater — a
   // sink call inside an updater would double-fire under StrictMode.
   const phasesRef = useRef<Readonly<Record<string, ViewHostPhase>>>({});
+  const diagnosesRef = useRef<Readonly<Record<string, ViewCspDiagnosis>>>({});
   const onViewPhase = useCallback((key: ItemKey, phase: ViewHostPhase) => {
     if (phasesRef.current[key] !== phase) {
       phasesRef.current = { ...phasesRef.current, [key]: phase };
-      debugSink.current?.({ type: "view-phase", key, phase });
+      const diagnosis = diagnosesRef.current[key];
+      debugSink.current?.({
+        type: "view-phase",
+        key,
+        phase,
+        ...(diagnosis !== undefined ? { diagnosis } : {}),
+      });
     }
     setPhases((prev) => (prev[key] === phase ? prev : { ...prev, [key]: phase }));
+  }, []);
+  // The tripwire fires BEFORE the negotiation window lapses (a blocked
+  // runtime never negotiates), so the diagnosis is usually known by the
+  // time `no-handshake` arrives — the phase event above carries it. If it
+  // lands after, re-emit the current phase with the verdict so a debug
+  // sink still sees the pairing.
+  const onViewDiagnosis = useCallback((key: ItemKey, diagnosis: ViewCspDiagnosis) => {
+    if (diagnosesRef.current[key] === diagnosis) return;
+    diagnosesRef.current = { ...diagnosesRef.current, [key]: diagnosis };
+    const phase = phasesRef.current[key];
+    if (phase !== undefined) debugSink.current?.({ type: "view-phase", key, phase, diagnosis });
+    setDiagnoses((prev) => (prev[key] === diagnosis ? prev : { ...prev, [key]: diagnosis }));
   }, []);
 
   // Plan-derived debug events, emitted once per sighting (post-render — the
@@ -177,7 +208,7 @@ export function useTranscript({
     }
   }, [plan, resolvedMounts]);
 
-  return { plan, toggle, overrides, onViewPhase, resolvedMounts };
+  return { plan, toggle, overrides, onViewPhase, onViewDiagnosis, resolvedMounts };
 }
 
 // ─── useTranscriptInputs (the live assembler) ──────────────────────────────

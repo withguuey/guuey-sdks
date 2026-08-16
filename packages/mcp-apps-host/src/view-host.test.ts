@@ -2,10 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   attachViewHost,
   viewDocumentHtml,
+  type ViewCspEvents,
   type ViewFrameLike,
   type ViewHostEvents,
 } from "./view-host.js";
-import type { ViewHostOutbound, ViewHostPhase } from "./view-host-protocol.js";
+import type {
+  CspViolationLike,
+  ViewCspDiagnosis,
+  ViewCspOrigins,
+  ViewHostOutbound,
+  ViewHostPhase,
+} from "./view-host-protocol.js";
 
 // The glue, exercised through its injectable seams (fake frame + fake
 // event source) in plain Node — no DOM. What genuinely needs a browser
@@ -378,6 +385,90 @@ describe("attachViewHost — size-changed", () => {
       contentWindow,
     );
     expect(posted).toEqual([]); // no answer owed to a notification
+  });
+});
+
+// The CSP tripwire (guuey#235), through its injectable seam. The pure
+// verdict is pinned in view-host-protocol.test.ts; this pins the WIRING:
+// armed only with cspOrigins, first matching violation reported once,
+// removed on detach, inert for callers that never opt in.
+function fakeCspEvents(): {
+  cspEvents: ViewCspEvents;
+  violate: (v: CspViolationLike) => void;
+  listenerCount: () => number;
+} {
+  const listeners = new Set<(event: CspViolationLike) => void>();
+  return {
+    cspEvents: {
+      addEventListener: (_type, listener) => listeners.add(listener),
+      removeEventListener: (_type, listener) => listeners.delete(listener),
+    },
+    violate: (v) => {
+      for (const listener of [...listeners]) listener(v);
+    },
+    listenerCount: () => listeners.size,
+  };
+}
+
+const VIEW_ORIGINS: ViewCspOrigins = {
+  resourceDomains: ["https://assets.mcp.example"],
+  connectDomains: ["https://mcp.example", "wss://mcp.example"],
+};
+
+describe("attachViewHost — the CSP tripwire (guuey#235)", () => {
+  it("installs no listener without cspOrigins — zero behavior change for existing callers", () => {
+    const { frame } = fakeFrame();
+    const { events } = fakeEvents();
+    const { cspEvents, listenerCount } = fakeCspEvents();
+    const detach = attachViewHost(frame, { events, cspEvents });
+    expect(listenerCount()).toBe(0);
+    detach();
+  });
+
+  it("reports the first violation ABOUT the view once, with the actionable allowance", () => {
+    const { frame } = fakeFrame();
+    const { events } = fakeEvents();
+    const { cspEvents, violate, listenerCount } = fakeCspEvents();
+    const diagnoses: ViewCspDiagnosis[] = [];
+    const detach = attachViewHost(frame, {
+      events,
+      cspEvents,
+      cspOrigins: VIEW_ORIGINS,
+      onCspDiagnosis: (d) => diagnoses.push(d),
+    });
+    expect(listenerCount()).toBe(1);
+    // Not the view's: a bare policy token (the zod eval probe of guuey#236)
+    // and some unrelated third-party script.
+    violate({ blockedURI: "eval", violatedDirective: "script-src" });
+    violate({ blockedURI: "https://cdn.other.example/x.js", violatedDirective: "script-src-elem" });
+    expect(diagnoses).toEqual([]);
+    // The view's runtime bundle, refused by script-src-elem.
+    violate({
+      blockedURI: "https://assets.mcp.example/runtime/v1.js",
+      violatedDirective: "script-src-elem",
+    });
+    expect(diagnoses).toHaveLength(1);
+    expect(diagnoses[0]).toMatchObject({
+      blockedUri: "https://assets.mcp.example/runtime/v1.js",
+      violatedDirective: "script-src-elem",
+      suggestedEntry: "https://assets.mcp.example",
+    });
+    expect(diagnoses[0]?.message).toContain("script-src-elem https://assets.mcp.example");
+    // A second matching violation is the same failure repeating — once per attachment.
+    violate({ blockedURI: "wss://mcp.example/live", violatedDirective: "connect-src" });
+    expect(diagnoses).toHaveLength(1);
+    detach();
+    expect(listenerCount()).toBe(0);
+  });
+
+  it("removes the listener on detach even when nothing ever fired", () => {
+    const { frame } = fakeFrame();
+    const { events } = fakeEvents();
+    const { cspEvents, listenerCount } = fakeCspEvents();
+    const detach = attachViewHost(frame, { events, cspEvents, cspOrigins: VIEW_ORIGINS });
+    expect(listenerCount()).toBe(1);
+    detach();
+    expect(listenerCount()).toBe(0);
   });
 });
 

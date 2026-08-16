@@ -72,6 +72,10 @@ export {
   TOOLS_CALL_METHOD,
   viewHostElapsed,
   viewHostReceive,
+  diagnoseCspViolation,
+  type CspViolationLike,
+  type ViewCspDiagnosis,
+  type ViewCspOrigins,
   type ViewHostBehavior,
   type ViewHostEffect,
   type ViewHostOutbound,
@@ -85,6 +89,7 @@ export {
   attachViewHost,
   viewDocumentHtml,
   type AttachViewHostConfig,
+  type ViewCspEvents,
   type ViewFrameLike,
   type ViewHostEvents,
 } from "./view-host.js";

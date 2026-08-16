@@ -20,7 +20,12 @@ import type {
   JsonValue,
 } from "@silverprotocol/core";
 import type { AgentInvokeStatus, HistoryCard } from "@guuey/agent-client";
-import type { ViewHostPhase, ViewMount, ViewMountChannel } from "@guuey/mcp-apps-host";
+import type {
+  ViewCspDiagnosis,
+  ViewHostPhase,
+  ViewMount,
+  ViewMountChannel,
+} from "@guuey/mcp-apps-host";
 
 /**
  * One settled entry of the flat conversation transcript — structurally
@@ -128,6 +133,14 @@ export interface TranscriptInputs {
   sendStates?: Readonly<Record<string, "sending" | "failed">>;
   /** mountKey → live phase (R6 states). Keys match `ViewMountItem.key`. */
   viewPhases?: Readonly<Record<string, ViewHostPhase>>;
+  /**
+   * mountKey → the host's CSP tripwire verdict (guuey#235): the embedding
+   * page's own policy blocked the view. Renderer-supplied like
+   * `viewPhases` (`<GuueyView onCspDiagnosis>` → `useTranscript`); a
+   * `no-handshake` mount with a diagnosis labels the actionable cause
+   * instead of the channel heuristic.
+   */
+  viewDiagnoses?: Readonly<Record<string, ViewCspDiagnosis>>;
   /**
    * The mount key a host-owned stage/canvas surface currently shows
    * (guuey#204 "promote and reference") — renderer-supplied state, like
@@ -247,6 +260,12 @@ export interface ViewMountItem extends BaseItem {
   phase: ViewHostPhase | "expired";
   /** The channel-aware state label the renderer shows for non-connected phases. */
   label: string | null;
+  /**
+   * The CSP tripwire's verdict when the embedding page blocked this view
+   * (guuey#235) — WHY a `no-handshake`; `label` already carries its
+   * message, this is the structured form for renderers/debug sinks.
+   */
+  diagnosis: ViewCspDiagnosis | null;
   /** Calm chrome: "via {tool}" when this mount broke an R4 group. */
   attribution: string | null;
   /** The producing call's humanized title (live mounts); null for history cards. */
@@ -448,7 +467,13 @@ export interface StatusLineItem {
  * ignores it by design (spec §5's per-preset row).
  */
 export type ChatDebugEvent =
-  | { type: "view-phase"; key: ItemKey; phase: ViewHostPhase | "expired" }
+  | {
+      type: "view-phase";
+      key: ItemKey;
+      phase: ViewHostPhase | "expired";
+      /** Present when the host's CSP tripwire diagnosed the failure (guuey#235). */
+      diagnosis?: ViewCspDiagnosis;
+    }
   | { type: "unknown-block"; key: ItemKey; typeName: string; byteSize: number }
   | { type: "turn-recovered"; marker: string };
 

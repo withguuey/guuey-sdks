@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  diagnoseCspViolation,
   initializeResult,
   initialViewHostState,
   resourceReadResponse,
@@ -337,5 +338,77 @@ describe("resourceReadResponse", () => {
     const refusal = resourceReadResponse("read-1", undefined);
     expect(refusal.error).toEqual({ code: -32002, message: "resource unavailable" });
     expect(refusal.result).toBeUndefined();
+  });
+});
+
+describe("diagnoseCspViolation — pure verdict (guuey#235)", () => {
+  const origins = {
+    resourceDomains: ["https://assets.mcp.example", "https://*.cdn.example"],
+    connectDomains: ["https://mcp.example", "wss://mcp.example"],
+    frameDomains: ["https://frames.example"],
+  };
+
+  it("matches a blocked URI on a declared origin and names the allowance (blocked origin under the effective directive)", () => {
+    const d = diagnoseCspViolation(
+      {
+        blockedURI: "https://assets.mcp.example/runtime/v1.js?x=1",
+        violatedDirective: "script-src",
+        effectiveDirective: "script-src-elem",
+      },
+      origins,
+    );
+    expect(d).toMatchObject({
+      blockedUri: "https://assets.mcp.example/runtime/v1.js?x=1",
+      violatedDirective: "script-src-elem",
+      suggestedEntry: "https://assets.mcp.example",
+    });
+    expect(d?.message).toContain("`script-src-elem https://assets.mcp.example`");
+  });
+
+  it("matches connect-src (https + wss) and frame-src declarations", () => {
+    expect(
+      diagnoseCspViolation({ blockedURI: "wss://mcp.example/live", violatedDirective: "connect-src" }, origins)
+        ?.suggestedEntry,
+    ).toBe("wss://mcp.example");
+    expect(
+      diagnoseCspViolation({ blockedURI: "https://frames.example/x", violatedDirective: "frame-src" }, origins)
+        ?.suggestedEntry,
+    ).toBe("https://frames.example");
+  });
+
+  it("matches wildcard subdomain declarations by suffix", () => {
+    expect(
+      diagnoseCspViolation({ blockedURI: "https://a.b.cdn.example/lib.js", violatedDirective: "script-src-elem" }, origins)
+        ?.suggestedEntry,
+    ).toBe("https://a.b.cdn.example");
+    // The apex is NOT covered by `*.cdn.example` (CSP wildcard semantics).
+    expect(
+      diagnoseCspViolation({ blockedURI: "https://cdn.example/lib.js", violatedDirective: "script-src-elem" }, origins),
+    ).toBeUndefined();
+  });
+
+  it("is undefined for violations that are NOT the view's: other hosts, bare policy tokens, no declaration", () => {
+    expect(
+      diagnoseCspViolation({ blockedURI: "https://analytics.other/x.js", violatedDirective: "script-src-elem" }, origins),
+    ).toBeUndefined();
+    // Bare tokens carry no host — `eval` here is exactly the zod v4 probe of guuey#236.
+    for (const token of ["eval", "inline", "data", "blob"]) {
+      expect(diagnoseCspViolation({ blockedURI: token, violatedDirective: "script-src" }, origins)).toBeUndefined();
+    }
+    expect(
+      diagnoseCspViolation({ blockedURI: "https://assets.mcp.example/x.js", violatedDirective: "script-src-elem" }, undefined),
+    ).toBeUndefined();
+    expect(
+      diagnoseCspViolation({ blockedURI: "https://assets.mcp.example/x.js", violatedDirective: "script-src-elem" }, {}),
+    ).toBeUndefined();
+  });
+
+  it("ignores a malformed declared origin instead of throwing (producer wire data)", () => {
+    expect(
+      diagnoseCspViolation(
+        { blockedURI: "https://assets.mcp.example/x.js", violatedDirective: "script-src-elem" },
+        { resourceDomains: ["not a url", "https://assets.mcp.example"] },
+      )?.suggestedEntry,
+    ).toBe("https://assets.mcp.example");
   });
 });

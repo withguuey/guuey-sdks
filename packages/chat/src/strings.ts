@@ -55,6 +55,17 @@ export interface ChatStrings {
   viewInlineFallback: string;
   viewExpired: string;
   viewSandboxUnavailable: string;
+  /**
+   * R6 no-handshake with a CSP diagnosis (guuey#235): the embedding page's
+   * own policy blocked the view. Receives the structured verdict so a
+   * locale can shape the sentence; the en default names the blocked URI
+   * and the exact allowance to add.
+   */
+  viewCspBlocked: (diagnosis: {
+    blockedUri: string;
+    violatedDirective: string;
+    suggestedEntry: string;
+  }) => string;
   /** guuey#204: the chip text for a mount promoted to a host stage/canvas. */
   viewPromoted: (title: string) => string;
   /** Chip title when the mount has no producing-call title (history cards). */
@@ -136,6 +147,8 @@ export const defaultChatStrings: ChatStrings = {
   viewInlineFallback: "Showing plain content",
   viewExpired: "This view expired",
   viewSandboxUnavailable: "Interactive view unavailable",
+  viewCspBlocked: (d) =>
+    `This page's Content-Security-Policy blocks ${d.blockedUri} — add "${d.violatedDirective} ${d.suggestedEntry}" to the policy so the view can start`,
   viewPromoted: (title) => `${title} — on canvas`,
   viewRefFallbackTitle: "Card",
 
