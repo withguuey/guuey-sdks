@@ -47,10 +47,38 @@ export type McpToolCallResult = {
 };
 
 /**
- * The runtime-action tools a card sandbox may relay — the client-side twin
- * of the server allowlist (defense in depth: the proxy enforces it again).
+ * The runtime tools a card sandbox may RELAY over `tools/call` — the
+ * client-side twin of the server allowlist (defense in depth: the proxy
+ * enforces it again). Exactly ggui's iframe-runtime surface, all declared
+ * `_meta.ui.visibility: ['app']` (never model-callable):
+ *
+ *  - `ggui_runtime_submit_action` — the user's gesture (the SEMANTIC one);
+ *  - `ggui_runtime_refresh_ws_token` — live-channel credential refresh
+ *    (the wsToken TTL is 180 s; without the relay a view on SSE/polling
+ *    dies at that mark — guuey#220);
+ *  - `ggui_runtime_pull` — the host-relayed polling rung where the
+ *    sandbox's own transports are blocked (bridge-pull, terminal rung).
+ *
+ * Two of these are transport plumbing whose arguments are opaque runtime
+ * state — see {@link UI_SEMANTIC_ACTION_TOOLS} for the ONLY set a host may
+ * treat as "the user did something".
  */
 export const UI_ACTION_TOOLS: ReadonlySet<string> = new Set([
+  "ggui_runtime_submit_action",
+  "ggui_runtime_refresh_ws_token",
+  "ggui_runtime_pull",
+]);
+
+/**
+ * The strict subset of {@link UI_ACTION_TOOLS} that carries a USER gesture —
+ * the only calls a host may project into user-facing affordances (composer
+ * staging, "the user selected X" copy, telemetry as intent). Every other
+ * relayed tool is runtime plumbing whose payload must NEVER reach the user
+ * verbatim (guuey#215/#218: a staged `sessionId …` was exactly that leak).
+ * A tool that is relayable is NOT thereby semantic; a host that widens
+ * this set is asserting the wire semantics of the new name.
+ */
+export const UI_SEMANTIC_ACTION_TOOLS: ReadonlySet<string> = new Set([
   "ggui_runtime_submit_action",
 ]);
 

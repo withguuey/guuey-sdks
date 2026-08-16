@@ -6,7 +6,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   asToolCallResult,
   createMcpUiActionRelay,
+  UI_ACTION_TOOLS,
   UI_ACTION_UNAVAILABLE_TEXT,
+  UI_SEMANTIC_ACTION_TOOLS,
 } from "./action.js";
 
 const URI = "ui://ggui/render/sess-1/hash-1";
@@ -66,6 +68,33 @@ describe("createMcpUiActionRelay", () => {
     const out = await relay(request);
     expect(out).toEqual({ content: [{ type: "text", text: "done" }] });
     expect(callTool).toHaveBeenCalledWith(URI, TOOL, { actionId: "t" });
+  });
+
+  // guuey#220: the iframe-runtime rides the SAME relay for its transport
+  // rungs — the credential refresh (wsToken TTL 180 s) and the bridge-pull
+  // polling rung. Admitting only submit_action killed views on SSE/polling
+  // at 180 s (410s on /events + /stream, seen live on the ggui landing).
+  it("relays ggui's transport rungs too — refresh_ws_token and pull are relayable (#220)", async () => {
+    for (const name of ["ggui_runtime_refresh_ws_token", "ggui_runtime_pull"]) {
+      const callTool = vi.fn(async () => ({ content: [{ type: "text", text: "ok" }] }));
+      const relay = createMcpUiActionRelay({ callTool });
+      const out = await relay({ resourceUri: URI, name, arguments: { sessionId: "sess-1" } });
+      expect(out.isError).toBeUndefined();
+      expect(callTool).toHaveBeenCalledWith(URI, name, { sessionId: "sess-1" });
+    }
+  });
+
+  it("keeps relayable ≠ semantic: only submit_action is a user gesture (#218/#220 interlock)", () => {
+    expect([...UI_ACTION_TOOLS].sort()).toEqual([
+      "ggui_runtime_pull",
+      "ggui_runtime_refresh_ws_token",
+      "ggui_runtime_submit_action",
+    ]);
+    expect([...UI_SEMANTIC_ACTION_TOOLS]).toEqual(["ggui_runtime_submit_action"]);
+    // Structural: every semantic tool is relayable, never the reverse.
+    for (const name of UI_SEMANTIC_ACTION_TOOLS) expect(UI_ACTION_TOOLS.has(name)).toBe(true);
+    expect(UI_SEMANTIC_ACTION_TOOLS.has("ggui_runtime_pull")).toBe(false);
+    expect(UI_SEMANTIC_ACTION_TOOLS.has("ggui_runtime_refresh_ws_token")).toBe(false);
   });
 
   it("answers in-band unavailable for a tool outside the allowlist — transport never fires", async () => {
