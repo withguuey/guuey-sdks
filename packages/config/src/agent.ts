@@ -328,8 +328,25 @@ const MemorySchema = z.enum(['thread', 'none']);
 
 /**
  * VFS scopes to mount into the pod. Empty array = no VFS (still uses thread + state).
+ * Absent = the platform default `['user', 'app']`. Consumed by
+ * {@link agentDeclaresVfs} — the per-AGENT half of the runtime's `fsBound`
+ * signal (guuey#234): a `storage: []` agent gets NO built-in file tools even on
+ * a GuueyFS-armed pod.
  */
 const StorageScopeSchema = z.array(z.enum(['user', 'app']));
+
+/**
+ * Whether the agent wants VFS layers at all (guuey#234). `storage` absent →
+ * the platform default (`['user','app']`) → true; `storage: []` → false; any
+ * non-empty list → true. The runtime ANDs this with the pod's own GuueyFS
+ * arming to decide `Invoke.fsBound` (→ built-in file tools + `Bash`), so an
+ * agent whose definition says "no VFS" never carries a catalog wider than its
+ * definition, whatever the pod is capable of.
+ */
+export function agentDeclaresVfs(agent: { storage?: ReadonlyArray<'user' | 'app'> } | undefined): boolean {
+  const storage = agent?.storage;
+  return storage === undefined || storage.length > 0;
+}
 
 /**
  * The agent section — composes runtime + platform features + deploy.

@@ -7,6 +7,7 @@ import {
   validateReservedServerNames,
   validateToolGates,
   parseToolGateEntry,
+  agentDeclaresVfs,
   RESERVED_MEMORY_SERVER_NAME,
   RESERVED_MCP_SERVER_NAMES,
   DEFAULT_AGENT_MCP_SERVERS,
@@ -338,6 +339,20 @@ describe('validateReservedServerNames', () => {
     const v = validateReservedServerNames(agent);
     expect(v).toHaveLength(1);
     expect(v.some((m) => m.includes('"guuey-memory"'))).toBe(true);
+  });
+});
+
+describe('agentDeclaresVfs — the per-agent half of fsBound (guuey#234)', () => {
+  it('absent storage → the platform default → true', () => {
+    expect(agentDeclaresVfs(undefined)).toBe(true);
+    expect(agentDeclaresVfs({})).toBe(true);
+  });
+  it('storage: [] → "no VFS" → false (no file tools even on an armed pod)', () => {
+    expect(agentDeclaresVfs({ storage: [] })).toBe(false);
+  });
+  it('any non-empty scope list → true', () => {
+    expect(agentDeclaresVfs({ storage: ['user'] })).toBe(true);
+    expect(agentDeclaresVfs({ storage: ['user', 'app'] })).toBe(true);
   });
 });
 
