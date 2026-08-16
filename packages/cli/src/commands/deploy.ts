@@ -31,6 +31,7 @@
  *   guuey deploy --size sm       # Override runtime pod size
  *   guuey deploy --build-size lg # Override build Job size (code mode only)
  *   guuey deploy --max-pods 3    # Set the app's replica count (scaling S1)
+ *   guuey deploy --app-id <id>   # Deploy to another app (binding untouched, guuey#232)
  *   guuey deploy --force         # Force deploy even if no changes detected
  */
 
@@ -171,7 +172,25 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
   // The orchestrated code path (only) offers to create + link an app right
   // here on a first interactive run (design doc §7.1). Every other case —
   // non-TTY invocations included — keeps the pre-existing fail-fast error.
-  let appId = config.appId;
+  //
+  // guuey#232: an explicit `--app-id` WINS over the guuey.json binding — the
+  // same precedence every other subcommand already applies
+  // (`flags['app-id'] ?? config.appId`), and what "deploy this one scaffold
+  // to a second environment" needs. Before this, the flag was read by no
+  // one here and a bound scaffold silently deployed to its bound id (the
+  // demo-tier stand-up hit exactly that). The guuey.json binding is NOT
+  // rewritten by an override — the working copy stays bound to its own id.
+  const explicitAppId = typeof flags?.['app-id'] === 'string' ? flags['app-id'].trim() : undefined;
+  if (flags?.['app-id'] !== undefined && !explicitAppId) {
+    out.error('--app-id needs a value (e.g. --app-id <uuid>).');
+    process.exit(1);
+  }
+  if (explicitAppId && config.appId && explicitAppId !== config.appId) {
+    console.log(
+      `  --app-id ${explicitAppId} overrides the ${GUUEY_JSON_FILENAME} binding (${config.appId}) for this deploy only.`,
+    );
+  }
+  let appId = explicitAppId ?? config.appId;
   if (!appId) {
     if (shouldOfferAppCreate(mode, process.stdin.isTTY, process.stdout.isTTY)) {
       appId = await ensureLinkedApp({ auth, config, project, guueyJsonPath: cwdGuueyJson });

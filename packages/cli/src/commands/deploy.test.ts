@@ -555,3 +555,69 @@ describe('deploy.ts — every trigger POST site carries maxPods', () => {
     }
   });
 });
+
+describe('deploy() — --app-id overrides the guuey.json binding (guuey#232)', () => {
+  let dir: string;
+  let originalCwd: string;
+  let fetchSpy: MockInstance<typeof fetch>;
+
+  function triggerUrl(): string | undefined {
+    const call = fetchSpy.mock.calls.find(([u]) => String(u).includes('/deploy/trigger'));
+    return call ? String(call[0]) : undefined;
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    dir = mkdtempSync(join(tmpdir(), 'deploy-app-id-test-'));
+    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', appId: 'app-bound', agent: {} }));
+    process.chdir(dir);
+    vi.mocked(resolveConfig).mockReturnValue({
+      host: 'https://platform.guuey.test',
+      apiUrl: 'https://api.guuey.test',
+      appId: 'app-bound',
+    });
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/deploy/trigger')) {
+        return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
+      }
+      if (url.includes('/deployments/1/status')) {
+        return new Response(
+          JSON.stringify({ status: 'live', endpointUrl: 'https://x.guuey.app', errorMessage: null }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it('★ a bound scaffold + --app-id Y deploys to Y — never silently to the bound id', async () => {
+    await deploy({ 'app-id': 'app-other' });
+    expect(triggerUrl()).toContain('/apps/app-other/deploy/trigger');
+    expect(triggerUrl()).not.toContain('app-bound');
+    // The binding on disk is untouched: an override is per-deploy, not a rebind.
+    expect(JSON.parse(readFileSync(join(dir, 'guuey.json'), 'utf8')).appId).toBe('app-bound');
+  });
+
+  it('without the flag the binding is used, exactly as before', async () => {
+    await deploy({});
+    expect(triggerUrl()).toContain('/apps/app-bound/deploy/trigger');
+  });
+
+  it('a valueless --app-id (parsed as `true`) is rejected before any network call', async () => {
+    await expect(deploy({ 'app-id': true })).rejects.toBeInstanceOf(ExitSignal);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});

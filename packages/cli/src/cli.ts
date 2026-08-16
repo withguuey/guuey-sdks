@@ -127,6 +127,8 @@ Agent Development:
   deploy                         Deploy agent to guuey hosting (auto-detects
                                  declarative vs code mode; code mode deploys
                                  MCP + ggui + agent legs in one command)
+    --app-id <id>                Deploy to this app instead of the guuey.json
+                                 binding (the binding is left untouched)
     --declarative                Force declarative mode (uses guuey.json, no build)
     --code                       Force code mode (builds+deploys guuey.worker.js,
                                  or uses a root Dockerfile if present)
