@@ -67,6 +67,7 @@ import { envSet, envList, envUnset } from './commands/env';
 import { byokSet, byokList, byokRemove } from './commands/byok';
 import { deploymentsList, deploymentsRollback, deploymentsLogs } from './commands/deployments';
 import { agentConfig } from './commands/agent';
+import { agentApply, agentStatus } from './commands/agent-apply';
 import { domainsAdd, domainsList, domainsVerify, domainsRemove } from './commands/domains';
 import { tokensCreate, tokensList, tokensRevoke } from './commands/tokens';
 import { slugClaim, slugRelease } from './commands/slug';
@@ -158,6 +159,27 @@ Agent Development:
     --runtime-auto-update on|off Automatic runtime updates (default on) or pinned
                                  to the runtime captured at the last deploy
     --json                       Emit the config as JSON
+
+Agents as code (GitOps — CI-safe with a service token):
+  agent apply                    Converge the hosted agent to this checkout's
+                                 guuey.json (+ its prompt file) and its
+                                 app.access policy in ONE idempotent call:
+                                 unchanged bytes never roll the pod
+    --dry-run                    Plan only: print the diff + content hashes,
+                                 exit 2 when there is drift, write nothing
+    --wait                       After applying, poll the build until live
+    --provenance <p>             auto (default: GITHUB_REPOSITORY/GITHUB_SHA,
+                                 else git origin + HEAD) | none |
+                                 <org/repo>@<sha>[:<path>] — recorded on the
+                                 build for "guuey agent status"
+    --json                       Emit the reconcile response as JSON
+  agent status                   What is live: build, provenance (repo@sha),
+                                 persisted-snapshot hash, and the app's
+                                 access config as stored
+    --check                      Also compare THIS checkout byte-exact against
+                                 the live build (exit 2 on drift)
+    --json                       Emit the status (and check) as JSON
+    --app-id <id>                Target a specific app (both subcommands)
   logs                           Fetch runtime logs for your deployed agent
     --since <duration>           Time window (default: 1h). Examples: 30s, 15m, 2h, 1d
     --tail <n>                   Only the last <n> lines
@@ -905,8 +927,14 @@ async function main(): Promise<void> {
         case 'config':
           await agentConfig(flags);
           break;
+        case 'apply':
+          await agentApply(flags);
+          break;
+        case 'status':
+          await agentStatus(flags);
+          break;
         default:
-          console.error(`Unknown agent command: ${action ?? '(none)'}. Use: config`);
+          console.error(`Unknown agent command: ${action ?? '(none)'}. Use: config, apply, status`);
           process.exit(1);
       }
       break;

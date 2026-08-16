@@ -51,6 +51,46 @@ const CustomDomainSchema = z
   );
 
 /**
+ * End-user auth modes an app record accepts — mirrors the platform's
+ * `USER_AUTH_MODES` (`@guuey-private/types` `security/user-auth-mode.ts`),
+ * which this published package cannot import; the backend pins the two
+ * lists equal (`handlers/reconcile.test.ts`).
+ */
+export const APP_USER_AUTH_MODES = ['anonymous', 'native_pool', 'byo'] as const;
+export type AppUserAuthMode = (typeof APP_USER_AUTH_MODES)[number];
+
+/**
+ * `guuey.json#app.access` — the app record's ACCESS POLICY, declared in the
+ * manifest so `guuey agent apply` (agents-as-code, guuey#190) converges it
+ * alongside the agent definition. Field names ARE the platform API's
+ * (`PUT /v1/apps/:id` / the reconcile `config` block): no translation.
+ *
+ * PUT-per-field semantics: a field that is absent is left untouched by a
+ * reconcile (never reset). `userAuthConfig: null` is the explicit "clear the
+ * issuer binding". The hosted `GuueyApp` row remains the only enforcement
+ * source — this block is the DECLARATION reconcile makes it agree with;
+ * the pod ignores it.
+ *
+ * Tier is deliberately absent (admin plane, never CI); slug/customDomain/
+ * listing stay declared-not-converged (they have their own ceremonies).
+ */
+export const AppAccessV1 = z.strictObject({
+  userAuthMode: z.enum(APP_USER_AUTH_MODES).optional(),
+  userAuthConfig: z
+    .strictObject({
+      issuerUrl: z.string().min(1),
+      audience: z.string().min(1),
+    })
+    .nullable()
+    .optional(),
+  allowedDomains: z.array(z.string().min(1)).optional(),
+  guestAccess: z.boolean().nullable().optional(),
+});
+
+/** Static TypeScript type for `app.access`. */
+export type GuueyAppAccess = z.infer<typeof AppAccessV1>;
+
+/**
  * The app section schema. All fields optional in v1 — a project may carry
  * the bare minimum at first and grow the listing as it publishes.
  */
@@ -61,6 +101,8 @@ export const AppSectionV1 = z.strictObject({
   iconUrl: z.url().optional(),
   tags: z.array(TagSchema).max(10).optional(),
   customDomain: CustomDomainSchema.optional(),
+  /** Access policy converged by `guuey agent apply` — see {@link AppAccessV1}. */
+  access: AppAccessV1.optional(),
 });
 
 /** Static TypeScript type for the app section. */
