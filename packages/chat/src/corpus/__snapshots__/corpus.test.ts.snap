@@ -995,7 +995,7 @@ exports[`corpus > 3. cold-start — R12 escalation at 0 / 2.5 s / 15 s 1`] = `
 }
 `;
 
-exports[`corpus > 4. consent-gate — pending card → answered one-line collapse 1`] = `
+exports[`corpus > 4. consent-gate — pending grant-mode card → answered one-line collapse (guuey#207 hitl arm) 1`] = `
 {
   "items": [
     {
@@ -1013,17 +1013,52 @@ exports[`corpus > 4. consent-gate — pending card → answered one-line collaps
       "markdown": true,
       "stopped": false,
       "streaming": false,
-      "text": "May I use your profile?",
+      "text": "Booked your usual — I couldn't see your profile yet.",
     },
     {
-      "appId": "app-1",
+      "ask": {
+        "askId": "profile-consent:app-1:thread-corpus",
+        "grantModes": [
+          {
+            "description": "Every conversation with this agent",
+            "id": "always",
+            "label": "Always allow",
+          },
+          {
+            "description": "Only this conversation",
+            "id": "once",
+            "label": "Allow this chat",
+          },
+        ],
+        "kind": "approval",
+        "message": "Trip Planner wants to read your guuey profile — the notes agents keep about you across apps.",
+        "metadata": {
+          "appId": "app-1",
+          "requested": "read",
+        },
+      },
+      "askKind": "approval",
+      "chosenModeId": null,
+      "chosenModeLabel": null,
       "expanded": true,
-      "key": "p.consent-0",
+      "grantModes": [
+        {
+          "description": "Every conversation with this agent",
+          "id": "always",
+          "label": "Always allow",
+        },
+        {
+          "description": "Only this conversation",
+          "id": "once",
+          "label": "Allow this chat",
+        },
+      ],
+      "key": "p.profile-consent:app-1:thread-corpus",
       "kind": "prompt",
-      "promptId": "consent-0",
-      "promptKind": "consent",
+      "message": "Trip Planner wants to read your guuey profile — the notes agents keep about you across apps.",
+      "promptId": "profile-consent:app-1:thread-corpus",
+      "promptKind": "hitl",
       "raw": null,
-      "requested": "read",
       "state": "pending",
     },
   ],

@@ -3,7 +3,6 @@ export {
   extractAssistantText,
   reduceAssistantText,
   stringField,
-  parseConsentRequest,
   parseLinkRequest,
   type ParsedSseEvent,
 } from "./sse.js";
@@ -12,6 +11,9 @@ export { dismissLinkPrompt } from "./link-prompt.js";
 // wraps, for hosts that drive their own turn state machine (guuey#186 G5).
 export { invokeTurn, toInvokeUrl, type InvokeTurnEvent } from "./invoke-turn.js";
 export {
+  createHitlAnswerRelay,
+  type CreateHitlAnswerRelayOptions,
+  type HitlAnswerRelayResult,
   createUiActionRelay,
   type CreateUiActionRelayOptions,
   createUiResourceReader,
@@ -74,11 +76,20 @@ export { sortHistoryCards, toolNameFor } from "./history.js";
 // host folding `invokeTurn`'s agEvents outside the hook builds its transcript
 // on the same terms (the types alone forced the direct dep back, guuey#186 G4).
 export { Reducer } from "@silverprotocol/core";
-export type { AgEvent, AgReduceResult, AgMessage, AgBlock } from "@silverprotocol/core";
+export type {
+  AgEvent,
+  AgReduceResult,
+  AgMessage,
+  AgBlock,
+  // The client→pod capability advertisement + the HITL answer the relay
+  // delivers (guuey#207) — re-exported so a host names them without a direct
+  // `@silverprotocol/core` import.
+  AgClientCapabilities,
+  AgHitlAnswer,
+} from "@silverprotocol/core";
 export type {
   AgentMessage,
   HistoryCard,
-  ProfileConsentRequest,
   ProfileLinkRequest,
   ThreadIdStore,
   GenerateId,

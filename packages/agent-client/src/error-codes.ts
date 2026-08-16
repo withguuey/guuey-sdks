@@ -53,6 +53,12 @@ export const AGENT_ERROR_CODES = {
   DRAINING: "DRAINING",
   /** Refused for this caller — e.g. the link-prompt dismiss route's byo-only rule. */
   FORBIDDEN: "FORBIDDEN",
+  /**
+   * The consent-answer door's deny==miss (guuey#207): the `AgHitlAnswer` names
+   * an ask this pod did not mint (wrong app, a thread the caller does not
+   * own, or a pod that takes no profile consent). Never an existence oracle.
+   */
+  NOT_FOUND: "NOT_FOUND",
   /** The turn ran past the pod's wall-clock budget. */
   TIMEOUT: "TIMEOUT",
   /** A guuey-side dependency failed (not the agent's own code). */

@@ -89,6 +89,19 @@ describe('ThreadStore.ensureThread', () => {
   });
 });
 
+describe('ThreadStore.ownsThread (guuey#207 — the bind-without-mint ownership predicate)', () => {
+  it('is true only for an existing thread owned by the caller; a miss and another owner are the same false', async () => {
+    const db = new FakePersistence();
+    const store = new ThreadStore(db);
+    const id = await store.ensureThread({ userId: 'g_owner', appId: 'app_1', region: 'us-east-1' });
+    expect(await store.ownsThread(id, 'g_owner')).toBe(true);
+    expect(await store.ownsThread(id, 'g_other')).toBe(false);
+    expect(await store.ownsThread('does-not-exist', 'g_owner')).toBe(false);
+    // Never mints: the store still holds exactly the one thread.
+    expect(db.threads.size).toBe(1);
+  });
+});
+
 describe('ThreadStore.appendMessage', () => {
   it('allocates gap-free, monotonic seqs', async () => {
     const db = new FakePersistence();

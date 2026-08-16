@@ -128,10 +128,10 @@ describe("streaming text announces politely; stopped marks the partial", () => {
 describe("R10 prompt focus management", () => {
   const prompt = (state: ProfilePromptItem["state"]): ProfilePromptItem => ({
     kind: "prompt",
-    promptId: "consent.0",
-    key: "p.consent.0",
+    promptId: "link.0",
+    key: "p.link.0",
     expanded: true,
-    promptKind: "consent",
+    promptKind: "link",
     appId: "app-1",
     requested: "read",
     state,
@@ -156,7 +156,7 @@ describe("R10 prompt focus management", () => {
     const onPromptAction = vi.fn();
     render(<DefaultPrompt item={prompt("pending")} ctx={ctx({ onPromptAction })} />);
     fireEvent.click(screen.getByText("Decline"));
-    expect(onPromptAction).toHaveBeenCalledWith(expect.objectContaining({ key: "p.consent.0" }), "decline");
+    expect(onPromptAction).toHaveBeenCalledWith(expect.objectContaining({ key: "p.link.0" }), "decline");
   });
 });
 

@@ -91,13 +91,22 @@ describe("corpus", () => {
     expect(planTranscript(coldStart(2500), calm)).toMatchSnapshot();
   });
 
-  it("4. consent-gate — pending card → answered one-line collapse", () => {
+  it("4. consent-gate — pending grant-mode card → answered one-line collapse (guuey#207 hitl arm)", () => {
     const pending = planTranscript(consentGate("pending"), calm);
     const pendingPrompt = pending.items.find((i) => i.kind === "prompt");
     expect(pendingPrompt?.expanded).toBe(true);
+    expect(pendingPrompt).toMatchObject({
+      promptKind: "hitl",
+      askKind: "approval",
+      grantModes: [expect.objectContaining({ id: "always" }), expect.objectContaining({ id: "once" })],
+      state: "pending",
+    });
     const answered = planTranscript(consentGate("answered"), calm);
     const answeredPrompt = answered.items.find((i) => i.kind === "prompt");
     expect(answeredPrompt?.expanded).toBe(false);
+    expect(answeredPrompt).toMatchObject({ promptKind: "hitl", state: "resolved", chosenModeLabel: "Always allow" });
+    // The agent's own settled text is untouched by the trailing paused turn.
+    expect(pending.items.some((i) => i.kind === "text")).toBe(true);
     expect(pending).toMatchSnapshot();
   });
 

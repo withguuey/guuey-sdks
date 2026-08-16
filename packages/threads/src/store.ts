@@ -130,6 +130,19 @@ export class ThreadStore {
     return row.id;
   }
 
+  /**
+   * Whether `threadId` exists AND is owned by `userId` — the SAME ownership
+   * predicate `ensureThread` applies before honouring a client-replayed id,
+   * exposed for doors that must BIND a client-echoed thread to the verified
+   * caller without minting anything (the pod's consent-answer door binds a
+   * `once` grant to a thread this way — guuey#207). No existence oracle: a
+   * missing thread and another user's thread are the same `false`.
+   */
+  async ownsThread(threadId: string, userId: string): Promise<boolean> {
+    const existing = await this.db.getThread(threadId);
+    return existing !== undefined && existing.userId === userId;
+  }
+
   /** Prior messages for the thread (seq-ASC, capped to the most recent N). */
   async loadHistory(
     threadId: string,

@@ -23,21 +23,9 @@
  * fall-through, so new wire events are additive for every consumer.
  */
 import type { AgEvent } from "@silverprotocol/core";
-import {
-  parseConsentRequest,
-  parseLinkRequest,
-  parseSseEvents,
-  reduceAssistantText,
-  stringField,
-} from "./sse.js";
+import { parseLinkRequest, parseSseEvents, reduceAssistantText, stringField } from "./sse.js";
 import { ingestMessageFrame } from "./blocks.js";
-import type {
-  AgentInvokeStatus,
-  InvokeRequest,
-  InvokeTransport,
-  ProfileConsentRequest,
-  ProfileLinkRequest,
-} from "./types.js";
+import type { AgentInvokeStatus, InvokeRequest, InvokeTransport, ProfileLinkRequest } from "./types.js";
 
 /**
  * One semantic step of a turn. Field conventions:
@@ -63,7 +51,6 @@ export type InvokeTurnEvent =
       agEvents: AgEvent[];
     }
   | { kind: "error"; message: string; code: string | null }
-  | { kind: "profile-consent"; request: ProfileConsentRequest }
   | { kind: "profile-link"; request: ProfileLinkRequest }
   | { kind: "done"; stopReason: string | null };
 
@@ -164,15 +151,12 @@ export async function* invokeTurn(
           message: stringField(ev.data, "message") ?? "agent error",
           code: stringField(ev.data, "code") ?? null,
         };
-      } else if (ev.event === "profile-consent-needed") {
-        // Cross-app profile consent ask (T6). Only a well-formed payload
-        // yields; a malformed one is dropped, leaving any prior valid
-        // request untouched (never clobbered to null).
-        const parsed = parseConsentRequest(ev.data);
-        if (parsed) yield { kind: "profile-consent", request: parsed };
       } else if (ev.event === "profile-link-needed") {
         // Cross-app profile LINK invite (linkcoh T3) for an unlinked byo
-        // caller. Same drop-if-malformed contract as consent above.
+        // caller. Only a well-formed payload yields; a malformed one is
+        // dropped, leaving any prior valid request untouched (never clobbered
+        // to null). (Consent is NOT a bespoke event: it rides the AgJSON fold
+        // as `hitl.ask` + `turn.done outcome:"paused"` — guuey#207.)
         const parsed = parseLinkRequest(ev.data);
         if (parsed) yield { kind: "profile-link", request: parsed };
       } else if (ev.event === "done") {

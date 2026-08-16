@@ -227,9 +227,9 @@ export interface UseTranscriptInputsResult {
    * VALIDATES it against the ask's persisted record (`validateHitlAnswer`
    * — required-iff-declared, echo-must-be-declared, requestState byte-echo)
    * BEFORE anything dispatches, records it in the ledger, and returns it
-   * for the HOST to deliver — the kit renders and validates; the answer
-   * transport is the host's (no client→pod hitl-answer channel exists on
-   * the guuey wire today; see the #16 producer flag).
+   * for the HOST to deliver — the kit renders and validates; the transport
+   * is the host's (`@guuey/agent-client`'s `createHitlAnswerRelay` posts it
+   * to `<pod>/agent/hitl-answer`, guuey#207).
    */
   answerHitlPrompt: (ask: AgPausedAsk, action: HitlPromptAction) => AgHitlAnswer;
 }
@@ -250,36 +250,12 @@ export function useTranscriptInputs(invoke: UseAgentInvokeReturn): UseTranscript
     return () => clearInterval(timer);
   }, [invoke.status]);
 
-  // R10 ledger: the hook exposes only the LATEST pending ask; the
-  // transcript keeps the record of every ask and its resolution.
+  // R10 ledger (the LINK invite): the hook exposes only the LATEST pending
+  // invite; the transcript keeps the record of every ask and its resolution.
+  // Consent is NOT ledgered here — it is an AgJSON paused turn in the fold
+  // (`hitlPromptsFromFold` below, guuey#207).
   const [prompts, setPrompts] = useState<ProfilePromptInput[]>([]);
   const promptSeq = useRef(0);
-  useEffect(() => {
-    const request = invoke.profileConsentRequest;
-    if (request === null) {
-      setPrompts((prev) =>
-        prev.some((p) => p.kind === "consent" && p.state === "pending")
-          ? prev.map((p) =>
-              p.kind === "consent" && p.state === "pending" ? { ...p, state: "dismissed" } : p,
-            )
-          : prev,
-      );
-      return;
-    }
-    setPrompts((prev) => {
-      if (prev.some((p) => p.kind === "consent" && p.state === "pending")) return prev;
-      return [
-        ...prev,
-        {
-          id: `consent.${promptSeq.current++}`,
-          kind: "consent",
-          appId: request.appId,
-          requested: request.requested,
-          state: "pending",
-        },
-      ];
-    });
-  }, [invoke.profileConsentRequest]);
   useEffect(() => {
     const request = invoke.profileLinkRequest;
     if (request === null) {
@@ -313,7 +289,6 @@ export function useTranscriptInputs(invoke: UseAgentInvokeReturn): UseTranscript
       // Clearing the hook's pending request AFTER the ledger moved keeps the
       // dismissal effect above from double-transitioning it.
       const pending = prompts.find((p) => p.id === id);
-      if (pending?.kind === "consent") invoke.clearProfileConsentRequest();
       if (pending?.kind === "link") invoke.clearProfileLinkRequest();
     },
     [invoke, prompts],

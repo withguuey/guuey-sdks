@@ -47,14 +47,17 @@ export interface TranscriptMessage {
 }
 
 /**
- * A pending/resolved consent or link ask (R10) — the turn-level
- * `profile-consent` / `profile-link` events lifted into renderable state.
- * The assembler (3b) accumulates these from `invokeTurn` events; `id` is
- * assembler-chosen and stable for the ask's lifetime.
+ * A pending/resolved account-LINK invite (R10) — the turn-level
+ * `profile-link` event lifted into renderable state. The assembler (3b)
+ * accumulates these from `invokeTurn` events; `id` is assembler-chosen and
+ * stable for the ask's lifetime. (Consent is NOT a profile arm any more:
+ * since guuey#207 the pod asks over AgJSON `hitl.ask` + `turn.done
+ * outcome:"paused"` with declared `grantModes`, and it renders through
+ * {@link HitlPromptInput}.)
  */
 export interface ProfilePromptInput {
   id: string;
-  kind: "consent" | "link";
+  kind: "link";
   appId: string;
   requested: "read" | "read-write";
   state: "pending" | "answered" | "declined" | "dismissed";
@@ -83,9 +86,9 @@ export interface HitlPromptInput {
 
 /**
  * R10 prompt inputs — a discriminated union (narrow on `kind`). The
- * profile arm is the original guuey-wire shape unchanged; `hitl` arrived
- * with spec draft.2. (Direct un-narrowed reads of profile-only fields are
- * the one shape this union retired — narrow first.)
+ * profile arm is the guuey-wire LINK invite; `hitl` (spec draft.2) carries
+ * every AgJSON ask, consent included. (Direct un-narrowed reads of
+ * profile-only fields are the one shape this union retired — narrow first.)
  */
 export type PromptItemInput = ProfilePromptInput | HitlPromptInput;
 
@@ -117,7 +120,7 @@ export interface TranscriptInputs {
   statusElapsedMs: number;
   activeTool: string | null;
   error: { message: string; code: string | null } | null;
-  /** Pending/answered consent + link asks (R10). */
+  /** Pending/answered asks (R10): the link invite + AgJSON hitl asks (consent). */
   prompts: PromptItemInput[];
   /**
    * The settled conversation, both roles, in order. Assistant entries are
@@ -320,12 +323,12 @@ export interface CitationsItem extends BaseItem {
   style: "chips" | "list";
 }
 
-/** R10 — the guuey-wire consent/link prompt card (the original arm). */
+/** R10 — the guuey-wire account-LINK prompt card (the original arm). */
 export interface ProfilePromptItem extends BaseItem {
   kind: "prompt";
   /** The `PromptItemInput.id` this row records — the host's resolution key. */
   promptId: string;
-  promptKind: "consent" | "link";
+  promptKind: "link";
   appId: string;
   requested: "read" | "read-write";
   state: "pending" | "answered" | "declined" | "dismissed";

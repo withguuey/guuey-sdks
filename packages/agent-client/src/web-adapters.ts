@@ -15,6 +15,7 @@ import {
   type ResolvedViewMount,
   type UiActionRequest,
 } from "@guuey/mcp-apps-host";
+import type { AgHitlAnswer } from "@silverprotocol/core";
 import type { AgentInvokeAdapters, InvokeTransport, ThreadIdStore } from "./types.js";
 import { fetchThreadHistory, HistoryUnauthorizedError } from "./history.js";
 import { fetchStreamTransport, sendableGuestSecret, GUEST_HEADER } from "./transport.js";
@@ -525,4 +526,115 @@ export function createUiActionRelay(
     return persisted === undefined || persisted === "miss" ? undefined : persisted.value;
   };
   return createMcpUiActionRelay({ callTool });
+}
+
+/** `<pod base>/agent/hitl-answer` — the AgJSON HITL answer door (guuey#207). */
+function toHitlAnswerUrl(endpointUrl: string): string {
+  return toInvokeUrl(endpointUrl).replace(/\/agent\/invoke$/, "/agent/hitl-answer");
+}
+
+/** Options for {@link createHitlAnswerRelay} — the same credential surface as the card relays. */
+export interface CreateHitlAnswerRelayOptions {
+  /** The surface's invoke endpoint (pod base URL or full `/agent/invoke` URL) — the answer door lives on the pod. */
+  endpointUrl: string;
+  /** Signed-in bearer — wins over the guest secret (same rule as the transport). */
+  getAccessToken?: (opts?: { forceRefresh?: boolean }) => Promise<string | null>;
+  /** Caller-owned anonymous guest secret (widget / guest chat). */
+  guestSecret?: string | null;
+  /** Injectable for tests. */
+  fetchImpl?: typeof fetch;
+}
+
+/**
+ * The pod's answer to a delivered {@link AgHitlAnswer}. `ok` carries the
+ * body the door returns (`askId`, echoed `status`, and — for a recorded
+ * consent — the grant `mode` written); every non-2xx collapses to the pod's
+ * `{ code, message }` envelope (the same vocabulary as `AGENT_ERROR_CODES`,
+ * e.g. `NOT_FOUND` for an ask this pod did not mint, `INVALID_REQUEST` for a
+ * spec-invalid answer) with the HTTP status; a transport failure is
+ * `status: 0` with a null code.
+ */
+export type HitlAnswerRelayResult =
+  | { ok: true; body: { askId: string; status: AgHitlAnswer["status"]; mode?: string } }
+  | { ok: false; status: number; code: string | null; message: string };
+
+/**
+ * Build the client→pod channel for AgJSON HITL answers (guuey#207): `POST
+ * <pod>/agent/hitl-answer` with the spec {@link AgHitlAnswer} the kit's
+ * `answerHitlPrompt` constructed (already validated against the ask's
+ * persisted declaration). The pod owns EVERYTHING trust-shaped — caller
+ * identity (the same three families as the invoke), which ask it minted,
+ * the thread a `once` grant binds to, the access level written — this
+ * transport only carries the surface's existing credential under the
+ * one-carrier rule (bearer → guest header → cookie), with the card relays'
+ * single 401 forceRefresh retry.
+ *
+ * Today the only producer is the pod's cross-app profile consent ask (the
+ * three-mode grant), whose answer resolves into the caller's own
+ * `ProfileGrant` row; the channel is generic by construction — any future
+ * `hitl.ask` the runtime emits is answered through this same door.
+ */
+export function createHitlAnswerRelay(
+  options: CreateHitlAnswerRelayOptions,
+): (answer: AgHitlAnswer) => Promise<HitlAnswerRelayResult> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const url = toHitlAnswerUrl(options.endpointUrl);
+  return async (answer) => {
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    const body = JSON.stringify(answer);
+    const init: RequestInit = { method: "POST", headers, body };
+    const token = options.getAccessToken ? await options.getAccessToken() : null;
+    const guest = sendableGuestSecret(options.guestSecret);
+    if (token) {
+      headers["authorization"] = `Bearer ${token}`;
+    } else if (guest) {
+      headers[GUEST_HEADER] = guest;
+    } else {
+      init.credentials = "include";
+    }
+    let res: Response;
+    try {
+      res = await fetchImpl(url, init);
+    } catch (err) {
+      return { ok: false, status: 0, code: null, message: err instanceof Error ? err.message : String(err) };
+    }
+    if (res.status === 401 && options.getAccessToken) {
+      const fresh = await options.getAccessToken({ forceRefresh: true }).catch(() => null);
+      if (fresh) {
+        try {
+          res = await fetchImpl(url, {
+            method: "POST",
+            headers: { ...headers, authorization: `Bearer ${fresh}` },
+            body,
+          });
+        } catch (err) {
+          return { ok: false, status: 0, code: null, message: err instanceof Error ? err.message : String(err) };
+        }
+      }
+    }
+    let parsed: unknown = undefined;
+    try {
+      parsed = await res.json();
+    } catch {
+      parsed = undefined;
+    }
+    if (res.ok) {
+      const b = (parsed ?? {}) as { askId?: unknown; status?: unknown; mode?: unknown };
+      return {
+        ok: true,
+        body: {
+          askId: typeof b.askId === "string" ? b.askId : answer.askId,
+          status: b.status === "resolved" || b.status === "declined" || b.status === "cancelled" ? b.status : answer.status,
+          ...(typeof b.mode === "string" ? { mode: b.mode } : {}),
+        },
+      };
+    }
+    const env = (parsed ?? {}) as { code?: unknown; message?: unknown };
+    return {
+      ok: false,
+      status: res.status,
+      code: typeof env.code === "string" ? env.code : null,
+      message: typeof env.message === "string" ? env.message : `hitl-answer failed (${res.status})`,
+    };
+  };
 }

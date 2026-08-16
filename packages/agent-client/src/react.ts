@@ -12,6 +12,7 @@ export {
   type HistoryApplication,
   stallProbeDecision,
   STALL_RECOVERY_DEFAULTS,
+  DEFAULT_BLOCK_PRESERVING_CAPABILITIES,
 } from "./useAgentInvoke.js";
 // The block-preserving transcript surfaces `AgReduceResult`; re-export it (and
 // `AgEvent`) here so `./react` consumers can type `reduceResult` without a

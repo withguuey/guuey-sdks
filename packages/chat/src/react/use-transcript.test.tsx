@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { act, renderHook , cleanup } from "@testing-library/react";
 import type { UseAgentInvokeReturn } from "@guuey/agent-client";
-import { Reducer } from "@silverprotocol/core";
+import { Reducer, type AgHitlAnswer, type AgPausedAsk, type AgReduceResult } from "@silverprotocol/core";
 import { calmPolicy, debugPolicy } from "../policy.js";
 import type { ChatDebugEvent, TranscriptInputs } from "../types.js";
 import { useTranscript, useTranscriptInputs } from "./use-transcript.js";
@@ -201,8 +201,6 @@ function invokeReturn(over: Partial<UseAgentInvokeReturn> = {}): UseAgentInvokeR
     reset: vi.fn(),
     reduceResult: null,
     historyCards: [],
-    profileConsentRequest: null,
-    clearProfileConsentRequest: vi.fn(),
     profileLinkRequest: null,
     clearProfileLinkRequest: vi.fn(),
     aborted: false,
@@ -241,39 +239,34 @@ describe("useTranscriptInputs (the live assembler)", () => {
     expect(result.current.inputs.error).toEqual({ message: "boom", code: "TIMEOUT" });
   });
 
-  it("ledgers a consent ask: pending on arrival, answered via resolvePrompt, dismissed on silent clear", () => {
-    const cleared = vi.fn();
-    const { result, rerender } = renderHook(
-      ({ invoke }: { invoke: UseAgentInvokeReturn }) => useTranscriptInputs(invoke),
-      {
-        initialProps: {
-          invoke: invokeReturn({
-            profileConsentRequest: { appId: "app-1", requested: "read" },
-            clearProfileConsentRequest: cleared,
-          }),
-        },
-      },
-    );
+  it("lifts the pod's consent ask from the FOLD (guuey#207): a paused turn with declared grantModes → a pending hitl prompt; answering ledgers the pick", () => {
+    const ask: AgPausedAsk = {
+      askId: "profile-consent:app-1:t1",
+      kind: "approval",
+      message: "App wants to read your guuey profile.",
+      grantModes: [
+        { id: "always", label: "Always allow" },
+        { id: "once", label: "Allow this chat" },
+      ],
+    };
+    const reduceResult: AgReduceResult = {
+      messages: [],
+      artifacts: [],
+      memory: [],
+      turns: [
+        { turnId: `${ask.askId}#turn`, threadId: "t1", finishReason: "paused", outcome: { type: "paused", asks: [ask] } },
+      ],
+    };
+    const { result } = renderHook(() => useTranscriptInputs(invokeReturn({ reduceResult })));
     expect(result.current.inputs.prompts).toEqual([
-      expect.objectContaining({ kind: "consent", state: "pending", appId: "app-1" }),
+      expect.objectContaining({ kind: "hitl", id: ask.askId, state: "pending", ask }),
     ]);
-
-    const id = result.current.inputs.prompts[0].id;
-    act(() => result.current.resolvePrompt(id, "answered"));
-    expect(result.current.inputs.prompts[0].state).toBe("answered");
-    expect(cleared).toHaveBeenCalled();
-
-    // A NEW ask arrives and then vanishes without a recorded action → dismissed.
-    rerender({
-      invoke: invokeReturn({
-        profileConsentRequest: { appId: "app-2", requested: "read-write" },
-        clearProfileConsentRequest: cleared,
-      }),
+    let answer: AgHitlAnswer | undefined;
+    act(() => {
+      answer = result.current.answerHitlPrompt(ask, { grantModeId: "once" });
     });
-    expect(result.current.inputs.prompts).toHaveLength(2);
-    rerender({ invoke: invokeReturn({ profileConsentRequest: null }) });
-    expect(result.current.inputs.prompts[1].state).toBe("dismissed");
-    // The answered record is untouched.
-    expect(result.current.inputs.prompts[0].state).toBe("answered");
+    // The built answer is spec-valid and ready for the host's relay.
+    expect(answer).toEqual({ askId: ask.askId, status: "resolved", grantModeId: "once" });
+    expect(result.current.inputs.prompts[0]).toMatchObject({ kind: "hitl", state: "resolved", grantModeId: "once" });
   });
 });

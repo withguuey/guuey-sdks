@@ -19,6 +19,11 @@
  * Answer states encode guuey's ratified dismissal ruling (#16): dismissal
  * maps to `cancelled` (still-pending, re-askable — the card stays
  * answerable), `declined` is the durable explicit deny.
+ *
+ * The first producer is the guuey runtime's cross-app profile consent
+ * (guuey#207): the pod appends a paused turn whose ask declares
+ * `grantModes: [always, once?]`; the host delivers the built answer through
+ * `@guuey/agent-client`'s `createHitlAnswerRelay` (`POST <pod>/agent/hitl-answer`).
  */
 import {
   validateHitlAnswer,

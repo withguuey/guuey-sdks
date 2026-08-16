@@ -99,19 +99,4 @@ describe("useAgentInvoke profile-link-needed", () => {
     expect(result.current.profileLinkRequest).toBeNull();
     unmount();
   });
-
-  it("is independent of profileConsentRequest — both can be set from the same turn", async () => {
-    const consentFrame = (data: unknown) =>
-      `event: profile-consent-needed\ndata: ${JSON.stringify(data)}\n\n`;
-    const { result, unmount } = mount([
-      linkFrame({ appId: "app_1", requested: "read" }),
-      consentFrame({ appId: "app_2", requested: "read-write" }),
-    ]);
-    await act(async () => {
-      await result.current.send("hi");
-    });
-    expect(result.current.profileLinkRequest).toEqual({ appId: "app_1", requested: "read" });
-    expect(result.current.profileConsentRequest).toEqual({ appId: "app_2", requested: "read-write" });
-    unmount();
-  });
 });
