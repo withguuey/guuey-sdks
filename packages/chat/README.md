@@ -105,6 +105,19 @@ string (`ChatStrings`, the i18n seam) without forfeiting the rest:
 calmPolicy({ toolGroup: { threshold: 3 }, strings: { thinking: "Pondering…" } });
 ```
 
+## Strict-CSP hosts
+
+Generated views boot a runtime and open a live channel to their MCP host;
+a page CSP that omits those origins leaves the frame blank. Pass the view's
+declared origins via `viewProps={{ cspOrigins: { resourceDomains, connectDomains } }}`
+and a policy violation your page incurs on them upgrades the "didn't start"
+label into the exact allowance to add. And on a policy without
+`'unsafe-eval'`, zod v4 (a dependency) reports one `script-src eval`
+violation at boot from its `new Function("")` probe — harmless, but noise
+on that same channel; opt out with `z.config({ jitless: true })` in a
+side-effect module that is your entry's FIRST import. Full notes on
+docs.guuey.com → Chat UI kit → "Strict Content-Security-Policy hosts".
+
 ## Theme
 
 `GuueyChatTheme` is a serializable token schema (zod) — the same object a
