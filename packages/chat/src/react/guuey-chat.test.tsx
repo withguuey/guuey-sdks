@@ -280,3 +280,137 @@ describe("<GuueyChat> imperative seam (guuey#210)", () => {
     await waitFor(() => expect(screen.getByText("Hello.")).toBeTruthy());
   });
 });
+
+describe("<GuueyChat> default reader (guuey#221)", () => {
+  const LOCATOR = "ui://ggui/render/render_dark/h1";
+  // A meta-less ggui render on the wire (guuey#209 route-A shape): the
+  // locator rides structuredContent, no uiData, no _meta.
+  const wire = (events: object[]): string => `event: message\ndata: ${JSON.stringify(events)}\n\n`;
+  const TOOL_FRAMES = [
+    wire([
+      { type: "turn.start", threadId: "t-3c", turnId: "turn-1", seq: 1 },
+      { type: "message.start", id: "m1", role: "assistant", turnId: "turn-1", threadId: "t-3c", seq: 2 },
+    ]),
+    wire([
+      { type: "tool.start", toolCallId: "t1", name: "ggui_render", seq: 3 },
+      { type: "tool.args.assembled", toolCallId: "t1", input: { q: "ggui_render" }, seq: 4 },
+      {
+        type: "tool.done",
+        toolCallId: "t1",
+        content: [{ type: "text", text: "rendered" }],
+        outcome: "ok",
+        isError: false,
+        structuredContent: { resourceUri: LOCATOR, sessionId: "render_dark" },
+        seq: 5,
+      },
+    ]),
+  ];
+
+  function locatorAdapters(): AgentInvokeAdapters {
+    const store = new Map<string, string>();
+    return {
+      storage: {
+        load: (key) => store.get(key) ?? null,
+        save: (key, threadId) => {
+          store.set(key, threadId);
+        },
+      },
+      generateId: (() => {
+        let n = 0;
+        return () => `cmid-${n++}`;
+      })(),
+      transport: async function* () {
+        yield SESSION_FRAME;
+        for (const f of TOOL_FRAMES) yield f;
+        yield DONE_FRAME;
+      },
+    };
+  }
+
+  /** Capture every fetch the reader makes; answer the pod door with a mountable payload. */
+  function mockReadFetch() {
+    const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
+    const impl: typeof fetch = async (input, init) => {
+      calls.push({ url: String(input), init });
+      return new Response(
+        JSON.stringify({ uri: LOCATOR, mimeType: "text/html", text: "<html>card</html>" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    };
+    return { calls, impl };
+  }
+
+  function sendRender(): void {
+    const input = screen.getByLabelText("Message");
+    fireEvent.change(input, { target: { value: "render a slot picker" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+  }
+
+  it("with apiBaseUrl and no explicit reader, resolves a locator through the pod door first, in cookie mode", async () => {
+    const { calls, impl } = mockReadFetch();
+    const original = globalThis.fetch;
+    globalThis.fetch = impl;
+    try {
+      render(
+        <GuueyChat
+          endpointUrl="https://pod.example/agent/invoke"
+          apiBaseUrl="https://api.example/v1"
+          adapters={locatorAdapters()}
+        />,
+      );
+      sendRender();
+      await waitFor(() => expect(calls.length).toBeGreaterThan(0));
+      const first = calls[0]!;
+      // Pod door first (guuey#209 C1), scoped to the locator…
+      expect(first.url).toBe(
+        `https://pod.example/agent/ui-resource?uri=${encodeURIComponent(LOCATOR)}`,
+      );
+      // …with the cookie arm: no bearer, no guest header, credentials included.
+      expect(first.init?.credentials).toBe("include");
+      const headers = (first.init?.headers ?? {}) as Record<string, string>;
+      expect(headers["authorization"]).toBeUndefined();
+      expect(headers["x-guuey-guest"]).toBeUndefined();
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("without apiBaseUrl nothing is read — behavior unchanged", async () => {
+    const { calls, impl } = mockReadFetch();
+    const original = globalThis.fetch;
+    globalThis.fetch = impl;
+    try {
+      render(<GuueyChat endpointUrl="https://pod.example/agent/invoke" adapters={locatorAdapters()} />);
+      sendRender();
+      // Let the turn complete and any resolution effect run.
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 30));
+      });
+      expect(calls).toHaveLength(0);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("an explicit reader wins over the default", async () => {
+    const { calls, impl } = mockReadFetch();
+    const original = globalThis.fetch;
+    globalThis.fetch = impl;
+    const explicit = vi.fn(async () => undefined);
+    try {
+      render(
+        <GuueyChat
+          endpointUrl="https://pod.example/agent/invoke"
+          apiBaseUrl="https://api.example/v1"
+          adapters={locatorAdapters()}
+          reader={explicit}
+        />,
+      );
+      sendRender();
+      await waitFor(() => expect(explicit).toHaveBeenCalled());
+      expect(calls).toHaveLength(0);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+});

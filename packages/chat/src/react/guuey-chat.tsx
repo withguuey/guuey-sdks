@@ -55,7 +55,11 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { createWebAdapters, type AgentInvokeAdapters } from "@guuey/agent-client";
+import {
+  createUiResourceReader,
+  createWebAdapters,
+  type AgentInvokeAdapters,
+} from "@guuey/agent-client";
 import type { AgHitlAnswer, AgPausedAsk } from "@silverprotocol/core";
 import { useAgentInvoke } from "@guuey/agent-client/react";
 import type { UiResourceReader } from "@guuey/mcp-apps-host";
@@ -101,9 +105,30 @@ export interface GuueyChatProps {
   /** Owning app id — namespaces the persisted threadId. */
   appId?: string;
   /**
+   * The guuey public API base (`…/v1`). Enables the batteries-included
+   * read paths without hand-wiring: when set and no `adapters` are given,
+   * the default `createWebAdapters` gains transcript history; when set and
+   * no `reader` is given, a `UiResourceReader` is built over the same
+   * identity so generative-UI locators resolve (guuey#221 — a guest kit
+   * user has no bearer to construct one with). Explicit `adapters` /
+   * `reader` always win. Absent → today's behavior (no history, no
+   * default reader; locators render as expired, labeled).
+   */
+  apiBaseUrl?: string;
+  /**
+   * Identity for the default adapters + default reader — the same two
+   * resolvers `createWebAdapters` takes (bearer wins; guest secret next;
+   * neither → cookie identity). Ignored when explicit `adapters` and
+   * `reader` are both supplied.
+   */
+  getAccessToken?: (opts?: { forceRefresh?: boolean }) => Promise<string | null>;
+  getGuestSecret?: () => string | null;
+  /**
    * Host couplings (storage / id / transport / history). Default:
-   * `createWebAdapters()` — localStorage thread persistence + the web SSE
-   * transport (cookie/guest identity, saturation + cold-start retries).
+   * `createWebAdapters({ apiBaseUrl, getAccessToken, getGuestSecret })` —
+   * localStorage thread persistence + the web SSE transport (cookie/guest
+   * identity, saturation + cold-start retries), plus history when
+   * `apiBaseUrl` is set.
    */
   adapters?: AgentInvokeAdapters;
   /** Policy preset (spec §5). Default `"calm"`. */
@@ -118,7 +143,11 @@ export interface GuueyChatProps {
   mode?: ThemeMode;
   /** DOM windowing (§3.2). `false` renders everything. */
   window?: TranscriptWindowing | false;
-  /** R6 locator resolution (history cards). See `useTranscript`. */
+  /**
+   * R6 locator resolution (history cards + meta-less live renders). See
+   * `useTranscript`. Defaults from `apiBaseUrl` (+ `endpointUrl` for the
+   * pod door) when omitted; an explicit reader always wins.
+   */
   reader?: UiResourceReader;
   /** The debug sink (spec §5) — fires only under the debug policy. */
   onDebugEvent?: (event: ChatDebugEvent) => void;
@@ -164,6 +193,9 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   const {
     endpointUrl,
     appId,
+    apiBaseUrl,
+    getAccessToken,
+    getGuestSecret,
     adapters: adaptersProp,
     preset = "calm",
     policy: policyOverrides,
@@ -183,8 +215,49 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     style,
   } = props;
 
-  const adapters = useMemo(() => adaptersProp ?? createWebAdapters(), [adaptersProp]);
+  const adapters = useMemo(
+    () =>
+      adaptersProp ??
+      createWebAdapters({
+        ...(apiBaseUrl !== undefined ? { apiBaseUrl } : {}),
+        ...(getAccessToken !== undefined ? { getAccessToken } : {}),
+        ...(getGuestSecret !== undefined ? { getGuestSecret } : {}),
+      }),
+    [adaptersProp, apiBaseUrl, getAccessToken, getGuestSecret],
+  );
   const invoke = useAgentInvoke({ endpointUrl, ...(appId !== undefined ? { appId } : {}), adapters, preserveBlocks: true });
+
+  // Default reader (guuey#221): built over the SAME identity as the
+  // transport/history, targeting the pod door (live turns) then the
+  // platform door (persisted). The threadId hydrates after mount and can
+  // change on reset, so the reader is a stable function that reads the
+  // CURRENT thread through a ref — `useTranscript` sees one reader for the
+  // component's life and never re-resolves every mount on a thread flip.
+  const threadIdRef = useRef<string | null>(invoke.threadId);
+  threadIdRef.current = invoke.threadId;
+  const defaultReader = useMemo<UiResourceReader | undefined>(() => {
+    if (apiBaseUrl === undefined) return undefined;
+    return async (resourceUri: string) => {
+      const threadId = threadIdRef.current;
+      // No thread yet ⇒ nothing persisted to scope a read to; a live-turn
+      // locator always arrives with the thread already admitted (the
+      // `session` frame precedes tool results).
+      if (threadId === null) return undefined;
+      // Assembled per read: `createUiResourceReader` is a cheap closure, and
+      // the guest secret is re-resolved each call so a rotation takes
+      // effect immediately — the same per-request property
+      // `createWebAdapters` documents for its own resolvers.
+      const read = createUiResourceReader({
+        apiBaseUrl,
+        threadId,
+        endpointUrl,
+        ...(getAccessToken !== undefined ? { getAccessToken } : {}),
+        guestSecret: getGuestSecret ? getGuestSecret() : null,
+      });
+      return read(resourceUri);
+    };
+  }, [apiBaseUrl, endpointUrl, getAccessToken, getGuestSecret]);
+  const effectiveReader = reader ?? defaultReader;
 
   const policy = useMemo(() => {
     const factory = preset === "debug" ? debugPolicy : calmPolicy;
@@ -200,7 +273,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   const { plan, toggle, resolvedMounts, onViewPhase } = useTranscript({
     inputs,
     policy,
-    ...(reader !== undefined ? { reader } : {}),
+    ...(effectiveReader !== undefined ? { reader: effectiveReader } : {}),
     ...(onDebugEvent !== undefined ? { onDebugEvent } : {}),
   });
 
