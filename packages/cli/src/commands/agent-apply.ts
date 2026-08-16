@@ -303,9 +303,9 @@ export function renderPlan(res: AgentReconcileResult): string[] {
     }
   }
   const h = res.deployedContentHash;
-  lines.push(`  agentDef:  sha256 ${h.agentDef}`);
-  if (h.systemPrompt) lines.push(`  prompt:    sha256 ${h.systemPrompt}`);
-  lines.push(`  snapshot:  sha256 ${h.snapshot}`);
+  lines.push(`  sha256 agentDef:  ${h.agentDef}`);
+  if (h.systemPrompt) lines.push(`  sha256 prompt:    ${h.systemPrompt}`);
+  lines.push(`  sha256 snapshot:  ${h.snapshot}`);
   return lines;
 }
 

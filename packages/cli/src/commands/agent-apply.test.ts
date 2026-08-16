@@ -261,7 +261,7 @@ describe('agentApply', () => {
     const output = logs.join('\n');
     expect(output).toContain('Applied — build #12 queued');
     expect(output).toContain('guestAccess: (unset) → false');
-    expect(output).toContain('sha256 ' + 'c'.repeat(64));
+    expect(output).toContain('sha256 snapshot:  ' + 'c'.repeat(64));
   });
 
   it('--provenance none sends no provenance block', async () => {
