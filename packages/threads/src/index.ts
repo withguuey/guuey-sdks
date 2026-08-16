@@ -8,7 +8,9 @@
  *     (messages + card rows + snapshot), prompt-lane history.
  *   - {@link ThreadPersistencePort} — the narrow surface a binding
  *     implements. `InMemoryThreadPersistence` ships here; guuey's hosted
- *     runtime binds DynamoDB; bring your own store for ejected agents.
+ *     runtime binds DynamoDB; `HttpThreadPersistence` points an ejected
+ *     agent at guuey's hosted thread API with an end-user token ("eject
+ *     the code, keep your memory"); or bring your own store.
  *   - fold↔row mapping — `agMessageToRow`/`reassembleFold`/friends, the
  *     byte-identity persistence of an `AgReduceResult`, including the
  *     UI-card projection (`uiCardArtifactsFromMessages`, guuey#86).
@@ -33,6 +35,12 @@ export {
   type EnsureThreadInput,
 } from "./store.js";
 export { InMemoryThreadPersistence } from "./in-memory.js";
+export {
+  HttpThreadPersistence,
+  HttpThreadStoreError,
+  type HttpThreadPersistenceOptions,
+  type ThreadScope,
+} from "./http.js";
 export {
   agArtifactToCardRow,
   agMessageToRow,
