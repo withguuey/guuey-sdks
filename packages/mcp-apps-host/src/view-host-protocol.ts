@@ -28,8 +28,8 @@
  * SEP-1865 surface itself, someone else's frozen contract. Zero ggui
  * imports, deliberately (guuey#123): this host answers ANY spec-following
  * view. (The ggui vendor arm that used to live beside it in
- * `ggui-render.ts` retired 2026-08-16 — guuey#209; that module is now
- * deprecated re-exports only.)
+ * `ggui-render.ts` retired 2026-08-16 — guuey#209; the module shipped one
+ * minor as deprecated re-exports and was deleted at 0.8.0.)
  */
 import {
   INITIALIZE_METHOD,

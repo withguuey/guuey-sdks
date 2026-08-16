@@ -16,23 +16,6 @@ export {
   uiLocator,
   type McpUiResourcePayload,
 } from "./block-ui.js";
-// The retired ggui vendor arm (guuey#209, 2026-08-16). Every symbol below
-// is `@deprecated` and stays exported for ONE MINOR under the post-launch
-// compat rule — removed in the minor after the one shipping this notice.
-// Nothing in this package calls them; `toolResultViewMount` hands a ggui
-// render back as a locator, and the reader assigns the "ggui" channel.
-export {
-  asGguiRender,
-  asGguiRenderBootstrap,
-  blockGguiRender,
-  gguiRenderResource,
-  gguiShellHtml,
-  toolResultGguiRender,
-  GGUI_RENDER_META_KEY,
-  type GguiRenderBootstrap,
-  type GguiRenderDescriptor,
-  type GguiShellHtmlOptions,
-} from "./ggui-render.js";
 export {
   resolveViewMount,
   snapshotViewMount,

@@ -25,8 +25,8 @@
  * door answers rehydration, and ggui's `resources/read` mints the live-
  * channel material FRESH at read time — strictly fresher than any inlined
  * bootstrap. A ggui render is therefore just another locator producer; live
- * == rehydrated == spec. The arm's narrowing helpers stay exported one
- * minor as `@deprecated` (`ggui-render.ts`); nothing here consumes them.
+ * == rehydrated == spec. The arm's narrowing helpers were exported one
+ * minor as `@deprecated` and removed at 0.8.0 (`ggui-render.ts` deleted).
  *
  * ## Why the CHANNEL is returned alongside the resource
  *
