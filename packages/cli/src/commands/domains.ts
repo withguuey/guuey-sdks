@@ -12,13 +12,20 @@
  * renders the wire's `servingStatus` (provisioning/active/failed) next to
  * the verification status once the edge has state for the row.
  *
- * The customer CNAMEs their hostname at the `cnameTarget` returned by
- * add/list — the app's own always-on `{appId}.{agentsDomain}` name. That same
- * record doubles as the ownership challenge: verification passes when the
- * domain's CNAME chain resolves there (1-min poll cron, or on demand via
- * `verify`). The record can be created before or after `add`. Apex domains
- * are unsupported — CNAME-only verification cannot cover them; use a
- * subdomain (chat.example.com).
+ * Two row shapes (`verificationMethod`, guuey#139):
+ *   - `cname` — a subdomain: the customer CNAMEs their hostname at the
+ *     `cnameTarget` returned by add/list (the app's own always-on
+ *     `{appId}.{agentsDomain}` name). That same record doubles as the
+ *     ownership challenge: verification passes when the domain's CNAME
+ *     chain resolves there (1-min poll cron, or on demand via `verify`).
+ *   - `txt` — a root/apex domain (`example.com`, auto-detected server-side
+ *     by its SOA record, or forced with `--txt`): a CNAME is impossible at
+ *     a zone apex, so ownership is the `txtChallenge` TXT and serving is the
+ *     customer's own ALIAS/ANAME at the edge endpoint plus a `_cf-challenge`
+ *     TXT (`apex` on the wire — THREE records instead of one). Only
+ *     ALIAS/ANAME/flattening-capable DNS providers can do it; the recommended
+ *     alternative is `www` + a registrar forward of the root.
+ * Records can be created before or after `add`.
  *
  * NOT the same thing as `guuey apps update --domains`, which sets the
  * CORS/frame-ancestors origin allowlist.
@@ -36,6 +43,25 @@ import * as out from '../output';
  */
 export type DomainVerificationStatus = 'pending' | 'verified' | 'failed';
 
+/** `cname` = subdomain (the CNAME is the challenge); `txt` = zone apex. */
+export type DomainVerificationMethod = 'cname' | 'txt';
+
+/** One TXT record the customer creates: `name` → `"value"`. */
+export interface DomainTxtChallenge {
+  name: string;
+  value: string;
+}
+
+/** Apex serving instructions — present iff the row is a `txt` row. */
+export interface ApexServingWire {
+  /** ALIAS/ANAME/flattened-CNAME target at the zone root: the edge endpoint. */
+  aliasTarget: string;
+  /** `_cf-challenge.<domain>` TXT = the edge endpoint (CloudFront ownership + DCV). */
+  edgeChallenge: DomainTxtChallenge;
+  /** Verify responses only: whether the edge TXT was observed on that check. */
+  readonly edgeChallengeObserved?: boolean;
+}
+
 /** One custom-domain registration — the `CustomDomain` row's wire projection. */
 export interface DomainWire {
   domain: string;
@@ -43,8 +69,14 @@ export interface DomainWire {
   /** Convenience mirror of `verificationStatus === 'verified'`. */
   verified: boolean;
   verificationStatus: DomainVerificationStatus;
-  /** Where the customer points their CNAME: `${appId}.${agentsDomain}`. */
+  /** The app's always-on name: the CNAME target for `cname` rows; for `txt`
+   * rows the name the TXT value embeds (not a record to create). */
   cnameTarget: string;
+  verificationMethod: DomainVerificationMethod;
+  /** The ownership TXT — `txt` rows only. */
+  txtChallenge?: DomainTxtChallenge;
+  /** Apex serving instructions — `txt` rows only. */
+  apex?: ApexServingWire;
   addedAt: string;
   verifiedAt?: string;
   /** Set when the 7-day verification window elapsed. */
@@ -141,12 +173,39 @@ const SERVING_LABEL: Record<NonNullable<DomainWire['servingStatus']>, string> = 
   failed: '✗ TLS failed',
 };
 
+/**
+ * Print the record(s) the customer must create for this row — ONE line for a
+ * cname row, the three-record apex block for a txt row (guuey#139). Shared
+ * by add and verify so the two can never disagree about what to create.
+ */
+function printRecords(data: DomainWire): void {
+  if (data.verificationMethod === 'txt' && data.txtChallenge && data.apex) {
+    console.log('  This is a root (apex) domain — create these THREE records at your DNS provider:');
+    console.log('');
+    console.log('    1. Ownership (TXT):');
+    console.log(`       ${data.txtChallenge.name}  →  TXT  →  ${data.txtChallenge.value}`);
+    console.log('    2. Serving (ALIAS / ANAME / flattened CNAME at the root):');
+    console.log(`       ${data.domain}  →  ALIAS  →  ${data.apex.aliasTarget}`);
+    console.log('    3. Edge certificate (TXT):');
+    console.log(`       ${data.apex.edgeChallenge.name}  →  TXT  →  ${data.apex.edgeChallenge.value}`);
+    console.log('');
+    console.log('  Your DNS provider must support ALIAS/ANAME/CNAME-flattening at the root (Route 53,');
+    console.log('  Cloudflare, DNSimple, and others do; many do not). If yours does not, serve at');
+    console.log(`  www.${data.domain} with one CNAME and forward the root at your registrar — the`);
+    console.log('  recommended setup either way. If we ever move our edge, records 2 and 3 must be');
+    console.log('  updated by you; subdomain records never change.');
+    return;
+  }
+  console.log('  Create a CNAME record:');
+  console.log(`    ${data.domain}  →  ${data.cnameTarget}`);
+}
+
 export async function domainsAdd(
   domain: string | undefined,
   flags?: Record<string, string | true>,
 ): Promise<void> {
   if (!domain) {
-    out.error('Usage: guuey domains add <domain>');
+    out.error('Usage: guuey domains add <domain> [--txt]');
     process.exit(1);
   }
 
@@ -162,7 +221,11 @@ export async function domainsAdd(
   console.log('');
   console.log(`  Adding domain: ${domain}`);
 
-  const res = await apiRequest(pat, baseUrl, 'POST', `/apps/${appId}/domains`, { domain });
+  // `--txt` forces apex (TXT) verification — for a zone the server's SOA
+  // probe cannot see yet. Absent ⇒ the server decides.
+  const body: { domain: string; verificationMethod?: DomainVerificationMethod } =
+    flags?.['txt'] === true ? { domain, verificationMethod: 'txt' } : { domain };
+  const res = await apiRequest(pat, baseUrl, 'POST', `/apps/${appId}/domains`, body);
 
   if (!res.ok) await handleApiError(res);
 
@@ -175,17 +238,19 @@ export async function domainsAdd(
     // Idempotent re-add of a row whose 7-day verification window elapsed —
     // `verified` is false here just like pending, which is why this branches
     // on `verificationStatus` (same doctrine as STATUS_LABEL above).
-    console.log(`  ✗ ${domain} failed verification — the 7-day window expired before its CNAME resolved.`);
+    console.log(
+      `  ✗ ${domain} failed verification — the 7-day window expired before its ` +
+        `${data.verificationMethod === 'txt' ? 'ownership TXT' : 'CNAME'} resolved.`,
+    );
     console.log('');
-    console.log('  Fix the CNAME record:');
-    console.log(`    ${domain}  →  ${data.cnameTarget}`);
+    console.log('  Fix the record(s):');
+    printRecords(data);
     console.log('');
     console.log(`  Then run "guuey domains verify ${domain}" to restart verification.`);
   } else {
     out.success(`Domain ${domain} added (DNS verification pending).`);
     console.log('');
-    console.log('  Create a CNAME record:');
-    console.log(`    ${domain}  →  ${data.cnameTarget}`);
+    printRecords(data);
     console.log('');
     console.log('  DNS propagation may take a few minutes; run "guuey domains verify" to check now.');
   }
@@ -216,8 +281,14 @@ export async function domainsList(
     for (const d of data.domains) {
       const serving =
         d.servingStatus !== undefined ? `  ${SERVING_LABEL[d.servingStatus]}` : '';
+      // An apex row has no CNAME target to point at — its serving record is
+      // the ALIAS at the edge endpoint (guuey#139).
+      const target =
+        d.verificationMethod === 'txt' && d.apex
+          ? `ALIAS ${d.apex.aliasTarget}`
+          : d.cnameTarget;
       console.log(
-        `  ${d.domain}  ${STATUS_LABEL[d.verificationStatus]}${serving}  →  ${d.cnameTarget}`,
+        `  ${d.domain}  ${STATUS_LABEL[d.verificationStatus]}${serving}  →  ${target}`,
       );
     }
   }
@@ -236,7 +307,7 @@ export async function domainsVerify(
   const { pat, baseUrl, appId } = requestContext(flags);
 
   console.log('');
-  console.log(`  Verifying CNAME for ${domain}...`);
+  console.log(`  Verifying DNS for ${domain}...`);
 
   const res = await apiRequest(pat, baseUrl, 'POST', `/apps/${appId}/domains/verify`, { domain });
 
@@ -246,6 +317,27 @@ export async function domainsVerify(
 
   console.log('');
   if (data.verificationStatus === 'verified') {
+    if (data.verificationMethod === 'txt' && data.apex && data.servingStatus !== 'active') {
+      // An apex row: ownership is settled, but serving needs the customer's
+      // _cf-challenge TXT too — the server just re-checked it (guuey#139).
+      if (data.apex.edgeChallengeObserved === true) {
+        out.success(
+          `Domain ${domain} verified — edge record ${data.apex.edgeChallenge.name} found; ` +
+            'serving is converging and TLS provisions in the background.',
+        );
+      } else {
+        out.success(`Domain ${domain} verified (ownership).`);
+        console.log('');
+        console.log('  Serving is waiting on the edge certificate record — create (or wait for):');
+        console.log(
+          `    ${data.apex.edgeChallenge.name}  →  TXT  →  ${data.apex.edgeChallenge.value}`,
+        );
+        console.log(`  and the root ALIAS: ${data.domain}  →  ALIAS  →  ${data.apex.aliasTarget}`);
+        console.log(`  Then run "guuey domains verify ${domain}" again to pick it up immediately.`);
+      }
+      console.log('');
+      return;
+    }
     out.success(
       `Domain ${domain} verified — TLS is provisioning, usually live in minutes.`,
     );
@@ -255,16 +347,20 @@ export async function domainsVerify(
 
   // Not verified → exit 1 like every other failure path in this file, so
   // scripts can branch on the result instead of scraping output.
+  const record = data.verificationMethod === 'txt' ? 'ownership TXT record' : 'CNAME record';
   if (data.verificationStatus === 'failed') {
     // The server re-arms the verification window on every verify call, so
-    // "fix the CNAME and run verify" is truthful remediation.
-    out.error('Verification failed — the 7-day verification window expired. Fix the CNAME record:');
-    console.log(`    ${domain}  →  ${data.cnameTarget}`);
+    // "fix the record and run verify" is truthful remediation.
+    out.error(`Verification failed — the 7-day verification window expired. Fix the ${record}:`);
+    printRecords(data);
     console.log('');
     console.log(`  Then run "guuey domains verify ${domain}" to restart verification.`);
   } else {
-    out.error('CNAME not found yet. Create (or wait for) this record:');
-    console.log(`    ${domain}  →  ${data.cnameTarget}`);
+    out.error(
+      `${data.verificationMethod === 'txt' ? 'Ownership TXT' : 'CNAME'} not found yet. ` +
+        'Create (or wait for) the record(s):',
+    );
+    printRecords(data);
   }
   console.log('');
   process.exit(1);

@@ -84,7 +84,26 @@ const PENDING: DomainWire = {
   verified: false,
   verificationStatus: 'pending',
   cnameTarget: CNAME_TARGET,
+  verificationMethod: 'cname',
   addedAt: '2026-08-09T00:00:00.000Z',
+};
+
+const ROUTING_ENDPOINT = 'd111111abcdef8.cloudfront.net';
+
+/** A pending APEX row (guuey#139) — TXT-verified, ALIAS-served: three records. */
+const APEX_PENDING: DomainWire = {
+  domain: 'example.com',
+  appId: 'app1',
+  verified: false,
+  verificationStatus: 'pending',
+  cnameTarget: CNAME_TARGET,
+  verificationMethod: 'txt',
+  txtChallenge: { name: '_guuey-challenge.example.com', value: `guuey-verify=${CNAME_TARGET}` },
+  apex: {
+    aliasTarget: ROUTING_ENDPOINT,
+    edgeChallenge: { name: '_cf-challenge.example.com', value: ROUTING_ENDPOINT },
+  },
+  addedAt: '2026-08-17T00:00:00.000Z',
 };
 
 const VERIFIED: DomainWire = {
@@ -168,6 +187,37 @@ describe('guuey domains', () => {
       expect(output).toContain(`chat.example.com  →  ${CNAME_TARGET}`);
       expect(output).toContain('guuey domains verify chat.example.com');
       expect(exitSpy).not.toHaveBeenCalled();
+    });
+
+    it('an APEX row prints the three-record block — ownership TXT, root ALIAS, edge TXT — plus the provider caveat (guuey#139)', async () => {
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify(APEX_PENDING), { status: 201 }));
+
+      await domainsAdd('example.com', { 'app-id': 'app1' });
+
+      const output = stdout();
+      expect(output).toContain('root (apex) domain');
+      expect(output).toContain(`_guuey-challenge.example.com  →  TXT  →  guuey-verify=${CNAME_TARGET}`);
+      expect(output).toContain(`example.com  →  ALIAS  →  ${ROUTING_ENDPOINT}`);
+      expect(output).toContain(`_cf-challenge.example.com  →  TXT  →  ${ROUTING_ENDPOINT}`);
+      expect(output).toContain('ALIAS/ANAME/CNAME-flattening');
+      expect(output).toContain('www.example.com');
+      // Never the subdomain instruction — an apex has no CNAME target to point at.
+      expect(output).not.toContain('Create a CNAME record');
+    });
+
+    it('--txt forces verificationMethod: txt in the request body; without it the body carries only the domain', async () => {
+      fetchSpy.mockImplementation(
+        async () => new Response(JSON.stringify(APEX_PENDING), { status: 201 }),
+      );
+
+      await domainsAdd('example.co.uk', { 'app-id': 'app1', txt: true });
+      expect(lastRequest(fetchSpy).body).toEqual({
+        domain: 'example.co.uk',
+        verificationMethod: 'txt',
+      });
+
+      await domainsAdd('example.co.uk', { 'app-id': 'app1' });
+      expect(lastRequest(fetchSpy).body).toEqual({ domain: 'example.co.uk' });
     });
 
     it('missing domain errors without calling the API', async () => {
@@ -312,6 +362,21 @@ describe('guuey domains', () => {
       expect(output).toContain(`d.example.com  ✓ verified  →  ${CNAME_TARGET}`);
     });
 
+    it('renders an APEX row against its ALIAS target, not the CNAME target (guuey#139)', async () => {
+      fetchSpy.mockResolvedValue(
+        new Response(
+          JSON.stringify({ domains: [APEX_PENDING, PENDING], defaultDomain: CNAME_TARGET }),
+          { status: 200 },
+        ),
+      );
+
+      await domainsList({ 'app-id': 'app1' });
+
+      const output = stdout();
+      expect(output).toContain(`example.com  ⏳ pending  →  ALIAS ${ROUTING_ENDPOINT}`);
+      expect(output).toContain(`chat.example.com  ⏳ pending  →  ${CNAME_TARGET}`);
+    });
+
     it('a non-ok response renders the wire envelope message and exits 1', async () => {
       fetchSpy.mockResolvedValue(
         new Response(
@@ -378,6 +443,73 @@ describe('guuey domains', () => {
       expect(stderr()).not.toContain('CNAME not found yet');
       expect(stdout()).toContain(`chat.example.com  →  ${CNAME_TARGET}`);
       expect(stdout()).toContain('guuey domains verify chat.example.com');
+    });
+
+    it('a pending APEX row → prints the three-record block with the TXT-not-found copy and exits 1', async () => {
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify(APEX_PENDING), { status: 200 }));
+
+      await expect(domainsVerify('example.com', { 'app-id': 'app1' })).rejects.toBeInstanceOf(
+        ExitSignal,
+      );
+
+      expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
+      expect(stderr()).toContain('Ownership TXT not found yet');
+      expect(stderr()).not.toContain('CNAME not found yet');
+      expect(stdout()).toContain(`_guuey-challenge.example.com  →  TXT  →  guuey-verify=${CNAME_TARGET}`);
+      expect(stdout()).toContain(`example.com  →  ALIAS  →  ${ROUTING_ENDPOINT}`);
+    });
+
+    it('a VERIFIED apex row whose edge TXT was observed → converging copy, exit 0', async () => {
+      const row: DomainWire = {
+        ...APEX_PENDING,
+        verified: true,
+        verificationStatus: 'verified',
+        verifiedAt: '2026-08-17T00:05:00.000Z',
+        apex: { ...APEX_PENDING.apex!, edgeChallengeObserved: true },
+      };
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify(row), { status: 200 }));
+
+      await domainsVerify('example.com', { 'app-id': 'app1' });
+
+      expect(stdout()).toContain('edge record _cf-challenge.example.com found');
+      expect(stdout()).toContain('serving is converging');
+      expect(exitSpy).not.toHaveBeenCalled();
+    });
+
+    it('a VERIFIED apex row whose edge TXT is missing → ownership-verified copy naming the two serving records, exit 0', async () => {
+      const row: DomainWire = {
+        ...APEX_PENDING,
+        verified: true,
+        verificationStatus: 'verified',
+        verifiedAt: '2026-08-17T00:05:00.000Z',
+        apex: { ...APEX_PENDING.apex!, edgeChallengeObserved: false },
+      };
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify(row), { status: 200 }));
+
+      await domainsVerify('example.com', { 'app-id': 'app1' });
+
+      const output = stdout();
+      expect(output).toContain('example.com verified (ownership)');
+      expect(output).toContain(`_cf-challenge.example.com  →  TXT  →  ${ROUTING_ENDPOINT}`);
+      expect(output).toContain(`example.com  →  ALIAS  →  ${ROUTING_ENDPOINT}`);
+      expect(output).not.toContain('TLS is provisioning');
+      expect(exitSpy).not.toHaveBeenCalled();
+    });
+
+    it('a VERIFIED apex row that is already serving → the plain success copy', async () => {
+      const row: DomainWire = {
+        ...APEX_PENDING,
+        verified: true,
+        verificationStatus: 'verified',
+        servingStatus: 'active',
+        apex: { ...APEX_PENDING.apex!, edgeChallengeObserved: true },
+      };
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify(row), { status: 200 }));
+
+      await domainsVerify('example.com', { 'app-id': 'app1' });
+
+      expect(stdout()).toContain('example.com verified — TLS is provisioning');
+      expect(exitSpy).not.toHaveBeenCalled();
     });
 
     it('missing domain errors without calling the API', async () => {
@@ -464,7 +596,13 @@ describe.skipIf(!haveWire)('domains wire mirrors — sync guard against @guuey-p
   // (consumer install), and `skipIf` only guards the cases themselves.
   const read = (path: string): string => readFileSync(path, 'utf8');
 
-  it.each(['DomainWire', 'DomainsListResponse', 'DomainRemoveResponse'])(
+  it.each([
+    'DomainWire',
+    'DomainTxtChallenge',
+    'ApexServingWire',
+    'DomainsListResponse',
+    'DomainRemoveResponse',
+  ])(
     '%s declares exactly the wire fields, with the same optionality',
     (name) => {
       expect(parseInterfaceFields(read(CLI_DOMAINS), name)).toEqual(
@@ -473,9 +611,12 @@ describe.skipIf(!haveWire)('domains wire mirrors — sync guard against @guuey-p
     },
   );
 
-  it('DomainVerificationStatus is exactly the wire union, in order', () => {
-    expect(parseStringLiterals(read(CLI_DOMAINS), 'DomainVerificationStatus')).toEqual(
-      parseStringLiterals(read(WIRE_DOMAINS), 'DomainVerificationStatus'),
-    );
-  });
+  it.each(['DomainVerificationStatus', 'DomainVerificationMethod'])(
+    '%s is exactly the wire union, in order',
+    (name) => {
+      expect(parseStringLiterals(read(CLI_DOMAINS), name)).toEqual(
+        parseStringLiterals(read(WIRE_DOMAINS), name),
+      );
+    },
+  );
 });

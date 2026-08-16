@@ -345,18 +345,29 @@ App Admin (BYO-auth apps; workspace-admin only):
 
 Domains:
   domains add <domain>          Register a custom domain for the app and
-                                 start DNS verification: point a CNAME at
-                                 the cnameTarget the command prints (the
-                                 app's always-on <appId>.agents… hostname).
-                                 Apex domains are unsupported — use a
-                                 subdomain (chat.example.com).
+                                 start DNS verification. A subdomain
+                                 (chat.example.com): point one CNAME at the
+                                 cnameTarget the command prints (the app's
+                                 always-on <appId>.agents… hostname). A root
+                                 (apex) domain (example.com), detected by
+                                 its SOA record: the command prints THREE
+                                 records instead — a _guuey-challenge TXT,
+                                 an ALIAS/ANAME at the edge endpoint, and a
+                                 _cf-challenge TXT. Your DNS provider must
+                                 support ALIAS/ANAME/CNAME-flattening at the
+                                 root; otherwise serve at www and forward the
+                                 root at your registrar (recommended).
+    --txt                        Force TXT (apex) verification when the zone
+                                 is not live yet for the SOA probe
   domains list                  Default domain plus each custom domain's
                                  verification status (verified / pending /
                                  failed) and, once the edge picks it up,
                                  its TLS serving status
   domains verify <domain>       Run the DNS check now instead of waiting
-                                 for the poll; prints the CNAME record to
-                                 create if it does not match yet
+                                 for the poll; prints the record(s) to
+                                 create if it does not match yet. On a
+                                 verified apex row, also reports whether
+                                 the _cf-challenge TXT is in place
   domains remove <domain>       Remove a custom domain
     --app-id <id>               Target a specific app (all subcommands)
                                  Not 'apps update --domains' — that flag is
