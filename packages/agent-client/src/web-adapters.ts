@@ -220,7 +220,16 @@ export interface CreateUiResourceReaderOptions {
    * door 404s mid-turn by construction. Completed turns 404 on the pod
    * (past its grace window) and resolve on the platform door instead: one
    * authority per lifecycle phase, and this reader tries both in that
-   * order. Absent → platform door only (pre-#209 behavior).
+   * order. Absent → platform door only (pre-#209 behavior) — which means
+   * **a card produced mid-turn cannot resolve until its turn completes**:
+   * under a producer that inlines no mount material (any plain-locator MCP
+   * server, ggui's read-plane-only posture) every fresh card renders
+   * "expired" until reload. A live surface that holds an invoke endpoint
+   * MUST pass it here; omitting it is only correct for a pure history
+   * viewer with no pod (SelfHostedThreadViewer). The reader warns once at
+   * construction when a platform door is configured without a pod door,
+   * because the failure it prevents is silent by nature (guuey#209 /
+   * ggui cac966a2d — both first external embeds shipped without it).
    */
   endpointUrl?: string | null;
   /** Signed-in bearer — wins over the guest secret (same rule as the transport). */
@@ -229,6 +238,13 @@ export interface CreateUiResourceReaderOptions {
   guestSecret?: string | null;
   /** Injectable for tests. */
   fetchImpl?: typeof fetch;
+}
+
+/** Warn once per module load — the misconfiguration is per-surface, not per-read. */
+let readerEndpointWarned = false;
+/** @internal test seam — the once-flag is module state; suites reset it between cases. */
+export function __resetReaderEndpointWarning(): void {
+  readerEndpointWarned = false;
 }
 
 /** `<pod base>/agent/ui-resource` from whatever endpoint shape the surface holds. */
@@ -262,6 +278,16 @@ export function createUiResourceReader(
   options: CreateUiResourceReaderOptions,
 ): (resourceUri: string) => Promise<ResolvedViewMount | undefined> {
   const fetchImpl = options.fetchImpl ?? fetch;
+  // A platform door without a pod door is almost always a live surface
+  // that forgot `endpointUrl` — its cards would die silently for the whole
+  // mid-turn window. `null` is the explicit "I am a history-only viewer,
+  // there is no pod" opt-out; `undefined` is the forgotten case.
+  if (options.endpointUrl === undefined && !readerEndpointWarned) {
+    readerEndpointWarned = true;
+    console.warn(
+      "createUiResourceReader: no `endpointUrl` — cards produced mid-turn cannot resolve until the turn completes (the pod door is the only authority while a turn streams). Pass the surface's invoke endpoint, or `endpointUrl: null` to declare a history-only viewer.",
+    );
+  }
 
   /** One door: fetch + the history adapter's 401-forceRefresh recovery + parse. */
   const readDoor = async (requestUrl: string): Promise<McpResourceReadResult | undefined> => {

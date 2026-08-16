@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import {
+  __resetReaderEndpointWarning,
   createUiActionRelay,
   createUiResourceReader,
   createWebAdapters,
@@ -96,6 +97,32 @@ async function drain(stream: AsyncIterable<string>): Promise<string> {
  * This one test stays here because it pins the ADAPTER property: every
  * `createWebAdapters` consumer inherits that retry without opting in.
  */
+describe("createUiResourceReader — missing pod door warns at construction", () => {
+  it("warns once when endpointUrl is omitted (undefined), never when null is declared or a pod door is given", () => {
+    __resetReaderEndpointWarning();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      // `null` = declared history-only viewer: silent.
+      createUiResourceReader({ apiBaseUrl: "https://api.example", threadId: "t", endpointUrl: null });
+      expect(warn).not.toHaveBeenCalled();
+      // A real pod door: silent.
+      createUiResourceReader({ apiBaseUrl: "https://api.example", threadId: "t", endpointUrl: "https://pod.example" });
+      expect(warn).not.toHaveBeenCalled();
+      // Forgotten: warns, naming endpointUrl and the mid-turn consequence.
+      createUiResourceReader({ apiBaseUrl: "https://api.example", threadId: "t" });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]?.[0])).toMatch(/endpointUrl/);
+      expect(String(warn.mock.calls[0]?.[0])).toMatch(/mid-turn/);
+      // Once per module, not per construction — a surface re-creating the
+      // reader per render must not spam.
+      createUiResourceReader({ apiBaseUrl: "https://api.example", threadId: "t" });
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
 describe("createWebAdapters saturation-retry inheritance", () => {
   it("every createWebAdapters consumer inherits the retry, on the real timer-based wait", async () => {
     vi.useFakeTimers();
@@ -431,6 +458,7 @@ describe("createUiResourceReader", () => {
   it("resolves a ggui-uri to the ggui channel with the fetched payload", async () => {
     const fetchImpl = mkFetch(200, OK_BODY);
     const read = createUiResourceReader({
+      endpointUrl: null, // history-door-only test — declared, not forgotten
       apiBaseUrl: "https://api.example/v1",
       threadId: "t1",
       guestSecret: "a".repeat(64),
@@ -450,6 +478,7 @@ describe("createUiResourceReader", () => {
   it("a bearer wins over a guest secret (same rule as the transport)", async () => {
     const fetchImpl = mkFetch(200, OK_BODY);
     const read = createUiResourceReader({
+      endpointUrl: null, // history-door-only test — declared, not forgotten
       apiBaseUrl: "https://api.example/v1",
       threadId: "t1",
       getAccessToken: async () => "tok",
@@ -469,6 +498,7 @@ describe("createUiResourceReader", () => {
   it("cookie mode (no bearer, no guest) sends credentials:'include' and NO identity header — the transport's third arm (guuey#221)", async () => {
     const fetchImpl = mkFetch(200, OK_BODY);
     const read = createUiResourceReader({
+      endpointUrl: null, // history-door-only test — declared, not forgotten
       apiBaseUrl: "https://api.example/v1",
       threadId: "t1",
       fetchImpl,
@@ -490,6 +520,7 @@ describe("createUiResourceReader", () => {
     ]) {
       const fetchImpl = mkFetch(200, OK_BODY);
       const read = createUiResourceReader({
+        endpointUrl: null, // history-door-only test — declared, not forgotten
         apiBaseUrl: "https://api.example/v1",
         threadId: "t1",
         fetchImpl,
@@ -505,6 +536,7 @@ describe("createUiResourceReader", () => {
   it("maps EVERY non-OK (401/403/404/502) and transport failure to undefined — deny == miss", async () => {
     for (const status of [401, 403, 404, 502]) {
       const read = createUiResourceReader({
+        endpointUrl: null, // history-door-only test — declared, not forgotten
         apiBaseUrl: "https://api.example/v1",
         threadId: "t1",
         fetchImpl: mkFetch(status),
@@ -512,6 +544,7 @@ describe("createUiResourceReader", () => {
       expect(await read("ui://x/y")).toBeUndefined();
     }
     const throwing = createUiResourceReader({
+      endpointUrl: null, // history-door-only test — declared, not forgotten
       apiBaseUrl: "https://api.example/v1",
       threadId: "t1",
       fetchImpl: vi.fn(async () => {
@@ -523,6 +556,7 @@ describe("createUiResourceReader", () => {
 
   it("a non-ggui ui:// uri resolves to the inline (self-only sandbox) channel", async () => {
     const read = createUiResourceReader({
+      endpointUrl: null, // history-door-only test — declared, not forgotten
       apiBaseUrl: "https://api.example/v1",
       threadId: "t1",
       fetchImpl: mkFetch(200, { uri: "ui://other/app", text: "<html>y</html>" }),
@@ -535,6 +569,7 @@ describe("createUiResourceReader", () => {
 
   it("a malformed body (missing text) is undefined, never a broken mount", async () => {
     const read = createUiResourceReader({
+      endpointUrl: null, // history-door-only test — declared, not forgotten
       apiBaseUrl: "https://api.example/v1",
       threadId: "t1",
       fetchImpl: mkFetch(200, { uri: "ui://x/y" }),
@@ -544,6 +579,7 @@ describe("createUiResourceReader", () => {
 
   it("a blob-only body passes through — the proxy's blob arm is not silently a miss (guuey#127)", async () => {
     const read = createUiResourceReader({
+      endpointUrl: null, // history-door-only test — declared, not forgotten
       apiBaseUrl: "https://api.example/v1",
       threadId: "t1",
       fetchImpl: mkFetch(200, { uri: "ui://x/y", mimeType: "text/html", blob: "PGI+aGk8L2I+" }),
