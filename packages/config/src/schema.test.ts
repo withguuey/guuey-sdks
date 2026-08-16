@@ -58,3 +58,37 @@ describe('parseGuueyJson — top-level runtime.router field', () => {
     expect(doc.runtime).toBeUndefined();
   });
 });
+
+describe('parseGuueyJson — app.access (agents-as-code, guuey#190)', () => {
+  it('accepts the four reconcilable fields with the API field names', () => {
+    const doc = parseGuueyJson({
+      ...base,
+      app: {
+        access: {
+          userAuthMode: 'byo',
+          userAuthConfig: { issuerUrl: 'https://id.example.com', audience: 'console' },
+          allowedDomains: ['https://console.example.com'],
+          guestAccess: false,
+        },
+      },
+    });
+    expect(doc.app?.access).toEqual({
+      userAuthMode: 'byo',
+      userAuthConfig: { issuerUrl: 'https://id.example.com', audience: 'console' },
+      allowedDomains: ['https://console.example.com'],
+      guestAccess: false,
+    });
+  });
+
+  it('every field is optional (PUT-per-field: absent = untouched) and null clears the issuer binding', () => {
+    const doc = parseGuueyJson({ ...base, app: { access: { userAuthConfig: null } } });
+    expect(doc.app?.access).toEqual({ userAuthConfig: null });
+  });
+
+  it('rejects an unknown auth mode and unknown keys (tier is NOT declarable here)', () => {
+    expect(() =>
+      parseGuueyJson({ ...base, app: { access: { userAuthMode: 'magic' } } }),
+    ).toThrow();
+    expect(() => parseGuueyJson({ ...base, app: { access: { tier: 'pro' } } })).toThrow();
+  });
+});
