@@ -122,14 +122,36 @@ describe("invokeTurn", () => {
     ]);
   });
 
-  it("yields profile events only for well-formed payloads — malformed ones drop", async () => {
+  it("yields the link event only for a well-formed payload — a malformed one drops", async () => {
+    const events = await collect(transportOf(sse("profile-link-needed", { alsoBotched: true })));
+    expect(events).toEqual([]);
+  });
+
+  it("the retired `profile-consent-needed` event is just an unknown event now (guuey#207) — consent rides the AgJSON fold", async () => {
+    // A `hitl.ask` frame is a valid AgEvent: it surfaces as a message event's
+    // agEvents (for the caller's Reducer), never as a bespoke hook state.
     const events = await collect(
       transportOf(
-        sse("profile-consent-needed", { botched: true }),
-        sse("profile-link-needed", { alsoBotched: true }),
+        sse("profile-consent-needed", { appId: "app_1", requested: "read" }),
+        sse("message", {
+          type: "hitl.ask",
+          seq: 7,
+          turnId: "profile-consent:app_1:t1#turn",
+          askId: "profile-consent:app_1:t1",
+          kind: "approval",
+          grantModes: [{ id: "always", label: "Always allow" }],
+        }),
       ),
     );
-    expect(events).toEqual([]);
+    expect(events).toEqual([
+      {
+        kind: "message",
+        assistantText: "",
+        agEvents: [
+          expect.objectContaining({ type: "hitl.ask", askId: "profile-consent:app_1:t1" }),
+        ],
+      },
+    ]);
   });
 
   it("silently ignores unknown SSE events — additive wire events cost consumers nothing", async () => {

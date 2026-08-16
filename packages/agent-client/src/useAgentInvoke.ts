@@ -5,7 +5,7 @@
  * ggui generative-UI protocol that `@ggui-ai/mcp-apps-react`'s useInvoke targets):
  *
  *   POST {endpointUrl}/agent/invoke
- *     body: { input, threadId?, clientMessageId }
+ *     body: { input, threadId?, clientMessageId, capabilities? }
  *   ← SSE:
  *     event: session  { sessionId, userId, threadId? }
  *     event: message  <SDKMessage JSON>          (assistant turns + result)
@@ -22,7 +22,7 @@
  * `./web-adapters` for the web (Studio) bundle; Portal supplies RN adapters.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Reducer, type AgReduceResult } from "@silverprotocol/core";
+import { Reducer, type AgClientCapabilities, type AgReduceResult } from "@silverprotocol/core";
 import { invokeTurn, toInvokeUrl } from "./invoke-turn.js";
 import { AgentResponseError } from "./errors.js";
 import { withActivityObserver } from "./transport.js";
@@ -33,7 +33,6 @@ import type {
   AgentMessage,
   HistoryCard,
   HistoryLoadResult,
-  ProfileConsentRequest,
   ProfileLinkRequest,
   StallRecoveryOptions,
   UseAgentInvokeOptions,
@@ -43,6 +42,16 @@ import type {
 function threadStorageKey(appId: string | undefined): string {
   return `guuey:thread:${appId ?? "default"}`;
 }
+
+/**
+ * What a block-preserving consumer advertises by default (guuey#207): it
+ * folds `turn.done outcome:"paused"` records, so it can render the AgJSON
+ * hitl card with declared grant modes — the `@guuey/chat` path. See
+ * `UseAgentInvokeOptions.capabilities`.
+ */
+export const DEFAULT_BLOCK_PRESERVING_CAPABILITIES: AgClientCapabilities = {
+  hitl: { ask: true, grantModes: true },
+};
 
 /** The decision `applyHistoryResult` reaches for a loaded transcript. */
 export type HistoryApplication =
@@ -136,14 +145,11 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
   // contract). Independent of the live `reduceResult` fold — populated only
   // when a card-carrying history load seeds the transcript.
   const [historyCards, setHistoryCards] = useState<HistoryCard[]>([]);
-  // The pod's latest cross-app profile consent ask on this conversation (T6's
-  // `profile-consent-needed` SSE event), or null. Cleared on app switch /
-  // reset / explicit dismiss. Consumers with no consent UI just ignore it.
-  const [profileConsentRequest, setProfileConsentRequest] = useState<ProfileConsentRequest | null>(null);
   // The pod's latest cross-app profile LINK invite on this conversation (T3's
   // `profile-link-needed` SSE event), or null. Cleared on app switch / reset /
-  // explicit dismiss, same lifecycle as `profileConsentRequest` — the two are
-  // independent (an unlinked-invite vs an already-linked consent ask).
+  // explicit dismiss. (Consent is NOT hook state: it rides the AgJSON fold as
+  // a paused turn — `reduceResult` — and is answered through
+  // `createHitlAnswerRelay`, guuey#207.)
   const [profileLinkRequest, setProfileLinkRequest] = useState<ProfileLinkRequest | null>(null);
   // The last turn's ending posture + the optimistic-send ledger — the
   // transcript renderer's inputs (guuey#135 wave 3b; see the return-type
@@ -201,8 +207,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     reducerRef.current = null;
     setReduceResult(null);
     setHistoryCards([]);
-    // A prior app's consent ask must never leak into the new conversation.
-    setProfileConsentRequest(null);
+    // A prior app's link invite must never leak into the new conversation.
     setProfileLinkRequest(null);
     setAborted(false);
     setAdopted(false);
@@ -295,16 +300,11 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     reducerRef.current = null;
     setReduceResult(null);
     setHistoryCards([]);
-    setProfileConsentRequest(null);
     setProfileLinkRequest(null);
     setAborted(false);
     setAdopted(false);
     setSendStates({});
   }, [appId]);
-
-  const clearProfileConsentRequest = useCallback(() => {
-    setProfileConsentRequest(null);
-  }, []);
 
   const clearProfileLinkRequest = useCallback(() => {
     setProfileLinkRequest(null);
@@ -474,10 +474,17 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
 
       try {
         const invokeUrl = toInvokeUrl(endpointUrl);
+        // The advertised AgJSON client capabilities (spec §3, guuey#207): an
+        // explicit option wins; else a block-preserving consumer advertises
+        // the hitl grant-mode card it can render, and a text-only one nothing.
+        const capabilities =
+          opts.capabilities ??
+          (preserveBlocksRef.current ? DEFAULT_BLOCK_PRESERVING_CAPABILITIES : undefined);
         const body = {
           input,
           ...(threadIdRef.current ? { threadId: threadIdRef.current } : {}),
           clientMessageId,
+          ...(capabilities !== undefined ? { capabilities } : {}),
         };
 
         // The wire walk lives in `invokeTurn` (the pure per-turn generator —
@@ -519,8 +526,6 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
             // a previous turn's code standing).
             setError(ev.message);
             setErrorCode(ev.code);
-          } else if (ev.kind === "profile-consent") {
-            setProfileConsentRequest(ev.request);
           } else if (ev.kind === "profile-link") {
             setProfileLinkRequest(ev.request);
           }
@@ -588,8 +593,6 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     reset,
     reduceResult,
     historyCards,
-    profileConsentRequest,
-    clearProfileConsentRequest,
     profileLinkRequest,
     clearProfileLinkRequest,
     aborted,

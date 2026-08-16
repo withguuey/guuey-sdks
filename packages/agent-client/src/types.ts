@@ -13,7 +13,7 @@
  * `MessageStorageAdapter` injection pattern.
  */
 
-import type { AgReduceResult, JsonValue } from "@silverprotocol/core";
+import type { AgClientCapabilities, AgReduceResult, JsonValue } from "@silverprotocol/core";
 
 /** A flat chat turn as rendered by the consumer UI. */
 export interface AgentMessage {
@@ -29,28 +29,16 @@ export interface AgentMessage {
 }
 
 /**
- * A cross-app profile consent request surfaced mid-stream by the pod's
- * `profile-consent-needed` SSE event (nocode-runtime T6). Emitted when the
- * agent declares a profile intent the caller has NOT yet granted for this app,
- * so the consumer UI can prompt the user to authorize `read` or `read-write`
- * access. `requested` mirrors the pod's `ProfileAccess` posture verbatim; the
- * literal union is inlined rather than imported to keep this client SDK free of
- * any backend-package dependency.
- */
-export interface ProfileConsentRequest {
-  appId: string;
-  requested: "read" | "read-write";
-}
-
-/**
  * A cross-app profile LINK invite surfaced mid-stream by the pod's
  * `profile-link-needed` SSE event (nocode-runtime linkcoh T3). Emitted when an
  * unlinked byo end-user's declared profile posture booted, inviting them to
  * link their guuey account (via the named `/link` ceremony) so they earn the
  * guuey-wide cross-app profile. `requested` mirrors the pod's `ProfileAccess`
  * posture verbatim (the builder's declared access, not a live ask) — the
- * literal union is inlined rather than imported, same rationale as
- * {@link ProfileConsentRequest}.
+ * literal union is inlined rather than imported to keep this client SDK free
+ * of any backend-package dependency. (Consent itself is no longer a bespoke
+ * event: it rides AgJSON `hitl.ask` + `turn.done outcome:"paused"` in the
+ * fold and is answered through `createHitlAnswerRelay` — guuey#207.)
  */
 export interface ProfileLinkRequest {
   appId: string;
@@ -87,7 +75,7 @@ export type GenerateId = () => string;
 export interface InvokeRequest {
   /** Fully-resolved POST target (already normalised to end in `/agent/invoke`). */
   url: string;
-  /** JSON request body: `{ input, threadId?, clientMessageId }`. */
+  /** JSON request body: `{ input, threadId?, clientMessageId, capabilities? }`. */
   body: unknown;
   /** Aborts the in-flight stream. */
   signal: AbortSignal;
@@ -165,6 +153,18 @@ export interface UseAgentInvokeOptions {
    * reducer is never constructed and the text behaviour is byte-identical.
    */
   preserveBlocks?: boolean;
+  /**
+   * The AgJSON client capabilities advertised on every invoke body (spec §3
+   * `AgClientCapabilities`, guuey#207). The pod reads them to decide what it
+   * may ask: today it declares consent `grantModes` (the three-mode profile
+   * grant the `@guuey/chat` card renders) ONLY to a client that advertised
+   * `hitl.grantModes` — a client that cannot render the decision surface is
+   * simply not asked. Default: when {@link preserveBlocks} is on,
+   * `{ hitl: { ask: true, grantModes: true } }` (a block-preserving consumer
+   * folds the paused turn the ask rides on — the kit's exact path); when off,
+   * nothing is advertised. Pass an explicit object to override either way.
+   */
+  capabilities?: AgClientCapabilities;
   /**
    * Stall recovery for a half-dead stream (guuey#192). A connection that dies
    * WITHOUT erroring (TCP alive, zero bytes, no `done`) would otherwise leave
@@ -284,25 +284,15 @@ export interface UseAgentInvokeReturn {
    */
   historyCards: HistoryCard[];
   /**
-   * The latest cross-app profile consent request the pod asked for on THIS
-   * conversation, or `null`. Set from a well-formed `profile-consent-needed`
-   * SSE event (see {@link ProfileConsentRequest}); malformed payloads are
-   * dropped and leave the field untouched. `reset()` and an app switch clear
-   * it back to `null`. Consumers that never render a consent prompt (e.g.
-   * Studio) simply ignore this field.
-   */
-  profileConsentRequest: ProfileConsentRequest | null;
-  /** Dismiss the pending {@link profileConsentRequest} (back to `null`). */
-  clearProfileConsentRequest: () => void;
-  /**
    * The latest cross-app profile LINK invite the pod asked for on THIS
    * conversation, or `null`. Set from a well-formed `profile-link-needed`
    * SSE event (see {@link ProfileLinkRequest}); malformed payloads are
    * dropped and leave the field untouched. `reset()` and an app switch clear
    * it back to `null`. Consumers that never render a link prompt simply
-   * ignore this field. Distinct from {@link profileConsentRequest}: this one
-   * invites an UNLINKED byo user to link their account; consent asks an
-   * already-linked user to grant an app read/read-write access.
+   * ignore this field. Distinct from consent (an AgJSON `hitl.ask` in the
+   * fold, guuey#207): this one invites an UNLINKED byo user to link their
+   * account; consent asks an already-linked user to grant an app
+   * read/read-write access.
    */
   profileLinkRequest: ProfileLinkRequest | null;
   /** Dismiss the pending {@link profileLinkRequest} (back to `null`). */
