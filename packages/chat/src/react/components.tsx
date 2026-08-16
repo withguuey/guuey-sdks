@@ -588,11 +588,7 @@ export function DefaultPrompt({ item, ctx }: ItemProps<PromptItem>): ReactNode {
   }
   return (
     <div className="guuey-chat-prompt" role="group">
-      <p className="guuey-chat-prompt-ask">
-        {item.promptKind === "consent"
-          ? `${item.appId} requests ${item.requested} access`
-          : `Link your account to ${item.appId}`}
-      </p>
+      <p className="guuey-chat-prompt-ask">{`Link your account to ${item.appId}`}</p>
       <div className="guuey-chat-prompt-actions">
         <button
           ref={firstAction}

@@ -13,6 +13,8 @@ import type { InvokeTurnEvent } from "@guuey/agent-client";
 import type { TranscriptInputs } from "../types.js";
 import {
   boot,
+  CONSENT_ASK,
+  consentTurn,
   doneEvent,
   driveTurn,
   frame,
@@ -81,17 +83,29 @@ export function coldStart(elapsedMs: number): TranscriptInputs {
   return driveTurn([], { userText: "hi", finalStatus: "connecting", statusElapsedMs: elapsedMs });
 }
 
-/** 4. consent-gate — R10 pending → answered collapse. */
+/**
+ * 4. consent-gate — R10 pending grant-mode card → answered one-line collapse.
+ * The pod's real shape (guuey#207): the agent turn runs WITHOUT the profile
+ * and closes, then the paused consent turn rides after it; the answered leg
+ * is the host ledger recording the picked mode (`resolved` + `always`).
+ */
 export function consentGate(state: "pending" | "answered"): TranscriptInputs {
   const s = seqSource();
   const events: InvokeTurnEvent[] = [
     session,
     frame(boot(s), { status: "thinking" }),
-    { kind: "profile-consent", request: { appId: "app-1", requested: "read" } },
-    frame(textPart(s, "x", "May I use your profile?"), { status: "responding", text: "May I use your profile?" }),
+    frame(textPart(s, "x", "Booked your usual — I couldn't see your profile yet."), {
+      status: "responding",
+      text: "Booked your usual — I couldn't see your profile yet.",
+    }),
+    frame([{ type: "message.end", id: "msg-corpus", seq: s() }, { type: "turn.done", turnId: "turn-corpus", finishReason: "stop", outcome: { type: "success" }, seq: s() }]),
+    frame(consentTurn(s)),
     doneEvent,
   ];
-  return driveTurn(events, { userText: "book my usual", promptState: state });
+  return driveTurn(events, {
+    userText: "book my usual",
+    ...(state === "answered" ? { hitlAnswers: { [CONSENT_ASK.askId]: { status: "resolved", grantModeId: "always" } } } : {}),
+  });
 }
 
 /** 5. bypass-text-only — plan identical to a silver stream carrying only text. */

@@ -565,9 +565,7 @@ export function NativePrompt({ item, ctx }: ItemProps<PromptItem>): ReactNode {
       style={{ backgroundColor: tokens.palette.surface, borderRadius: tokens.radius, padding: tokens.pad, gap: 8 }}
     >
       <Text style={{ color: tokens.palette.ink, fontSize: tokens.fontSize, fontFamily: tokens.fontFamily }}>
-        {item.promptKind === "consent"
-          ? `${item.appId} requests ${item.requested} access`
-          : `Link your account to ${item.appId}`}
+        {`Link your account to ${item.appId}`}
       </Text>
       <View style={{ flexDirection: "row", gap: 12 }}>
         <Pressable accessibilityRole="button" onPress={() => ctx.onPromptAction?.(item, "accept")}>

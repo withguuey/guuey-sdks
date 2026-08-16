@@ -838,7 +838,8 @@ export function planTranscript(
   }
 
   // R10 — prompts, in input order (narrow on `kind`: the guuey-wire
-  // profile arm vs the AgJSON hitl arm, spec draft.2).
+  // link-invite arm vs the AgJSON hitl arm — spec draft.2; consent rides
+  // hitl since guuey#207).
   for (const prompt of inputs.prompts) {
     const key = `p.${prompt.id}`;
     if (prompt.kind === "hitl") {
