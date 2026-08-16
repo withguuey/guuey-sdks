@@ -27,8 +27,9 @@
  * Types and method names come from `@modelcontextprotocol/ext-apps` — the
  * SEP-1865 surface itself, someone else's frozen contract. Zero ggui
  * imports, deliberately (guuey#123): this host answers ANY spec-following
- * view; everything ggui-specific stays in `ggui-render.ts` behind ggui's
- * own published protocol package.
+ * view. (The ggui vendor arm that used to live beside it in
+ * `ggui-render.ts` retired 2026-08-16 — guuey#209; that module is now
+ * deprecated re-exports only.)
  */
 import {
   INITIALIZE_METHOD,

@@ -5,6 +5,12 @@
  * The payloads below are the VERBATIM shapes from the production capture the
  * widget's fixtures replay (`.superpowers/sdd/issue2627-render-capture.sse.txt`,
  * seq 48) — not invented ones.
+ *
+ * guuey#209 (2026-08-16): these are the DEPRECATED arm's own tests. The
+ * helpers stay exported for one minor (post-launch compat) and must keep
+ * their contract byte-identical until removal — that is what this file
+ * pins. Nothing in the package calls them; the dispatcher's own tests are
+ * `card-mount.test.ts` (locator arm + reader resolution).
  */
 import { describe, expect, it } from "vitest";
 import type { AgBlock, JsonValue } from "@silverprotocol/core";

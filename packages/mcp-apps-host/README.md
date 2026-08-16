@@ -9,8 +9,12 @@ role's client-side narrowing and mount contract:
 - **View-mount dispatch** (`toolResultViewMount`, `snapshotViewMount`): one
   narrowing that answers "what, if anything, does this block mount?" across
   the UI channels a transcript carries — an inline `ui://` resource payload,
-  a vendor fast-path (ggui's render shell, until its retirement per the
-  conformance map), or a bare `ui://` **locator**.
+  or a bare `ui://` **locator** (from `uiData.resourceUri`, else
+  `structuredContent.resourceUri`). Every `ui://` producer, ggui's
+  `ggui_render` included, is a locator producer: the ggui vendor fast-path
+  retired 2026-08-16 (guuey#209) once the pod's live read door and ggui's
+  read-time mint made the spec's read path strictly fresher than any
+  inlined bootstrap. Its helpers stay exported one minor as `@deprecated`.
 - **Locator rehydration**: a persisted `ui://` locator remounts by a fresh,
   authenticated `resources/read` of the uri — the spec-consistent template
   fetch (the spec itself defers persistence/restoration; a full remount

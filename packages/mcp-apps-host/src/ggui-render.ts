@@ -1,49 +1,42 @@
 /**
- * The **ggui render** channel: narrowing + self-contained shell construction
- * for a generative-UI card produced by the ggui MCP server (`ggui_render`).
+ * @deprecated — the ggui vendor arm is RETIRED (guuey#209, 2026-08-16).
  *
- * ## Where the pieces live (guuey#108 / ggui#427)
+ * Everything in this module is kept exported for ONE MINOR under the
+ * post-launch compatibility rule and is removed in the minor after the one
+ * that ships this notice. Nothing in `@guuey/mcp-apps-host` calls it any
+ * more: `toolResultViewMount` hands a ggui render back as a `ui://`
+ * **locator** (`toolResultLocator`, either channel), the mount material
+ * comes from a `resources/read` through a `UiResourceReader` (pod door
+ * live, persisted door on rehydration), and the `"ggui"` sandbox-trust
+ * channel is assigned at resolution from the requested uri
+ * (`uiResourceChannel` in `reader.ts`). Migration per symbol:
  *
- * The two halves of this channel have different owners, and the module is
- * split along that line:
+ *  - {@link asGguiRender} / {@link toolResultGguiRender} /
+ *    {@link blockGguiRender} → `toolResultLocator(block)` — the locator is
+ *    the recognition signal; there is no descriptor to build.
+ *  - {@link gguiRenderResource} → resolve the locator through a reader
+ *    (`resolveViewMount(mount, reader)`); ggui's `resources/read` returns
+ *    the shell with live-channel material minted FRESH at read time.
+ *  - {@link GGUI_RENDER_META_KEY} → the wire key is ggui's; import
+ *    `MCP_APP_AI_GGUI_RENDER_META_KEY` from
+ *    `@ggui-ai/protocol/integrations/mcp-apps` if you still inspect
+ *    `_meta` (nothing here does).
+ *  - {@link asGguiRenderBootstrap} / {@link gguiShellHtml} and their types
+ *    are pure re-exports of ggui's protocol package — import them from
+ *    `@ggui-ai/protocol/integrations/mcp-apps` directly.
  *
- *  - **ggui's wire contract** — what makes a `_meta` slice a mountable
- *    render bootstrap, and what the self-contained shell must contain — is
- *    OWNED by ggui and imported from
- *    `@ggui-ai/protocol/integrations/mcp-apps` ({@link asGguiRenderBootstrap},
- *    {@link gguiShellHtml}, the `ai.ggui/render` key). This package used to
- *    carry byte-compatible private copies (lifted upstream as ggui#427);
- *    re-exporting the originals means a shell-contract change lands here by
- *    bumping the pin, not by mirror-editing two repos.
- *  - **host/silverprotocol shapes** — the `uiData`-keyed RECOGNITION signal,
- *    the `AgBlock` tool-result narrowing, and the `McpUiResourcePayload`
- *    adapter onto the host's existing mcp-ui mount path — are guuey-side
- *    contracts and stay implemented here.
+ * ## Why the arm existed, for the record
  *
- * ## Why recognition and mounting are separate
- *
- * A ggui render's `tool.done` carries two distinct signals:
- *
- *  1. **`uiData.resourceUri` is the RECOGNITION signal.** It is the only part
- *     of the render's identity that survives `@silverprotocol/core`'s fold
- *     (the reducer copies `uiData` — and, as of `@silverprotocol/core`
- *     0.4.1 (workspace#9), `_meta` — onto the `tool-result` block).
- *  2. **`_meta["ai.ggui/render"]` is the MOUNT MATERIAL.** Everything needed
- *     to boot the card — which runtime bundle to load, which live-channel to
- *     open, which props to seed — lives there and nowhere else.
- *
- * The shell {@link gguiShellHtml} builds is a string of HTML, so the ggui
- * card rides the host's EXISTING mcp-ui mount path unchanged: it narrows to
- * the same `McpUiResourcePayload` an inline resource does, so
- * `@mcp-ui/client`'s `AppRenderer` posts it as `srcdoc` into the
- * second-origin `mcp-app-sandbox.html` page — same double-iframe rule, same
- * sandbox origin, same opaque inner frame. No second mount mechanism.
- *
- * NOT in scope here: rehydrating a ggui card from persisted history. The
- * bootstrap's `wsToken` expires minutes after the render, so a stored
- * bootstrap is dead on arrival — a history card resolves to the `locator`
- * channel (`card-mount.ts`, guuey#122) and remounts by a fresh
- * `resources/read`, never a bootstrap replay.
+ * A ggui render's `tool.done` used to carry two signals: `uiData.resourceUri`
+ * (recognition — the only part surviving the fold) and the
+ * `_meta["ai.ggui/render"]` bootstrap (mount material: runtime bundle,
+ * live channel, seeded props). Because guuey's chat client is not an MCP
+ * client (the pod holds the connection), a live locator had no host-side
+ * read channel, so the bootstrap was inlined as a read-skipping fast path
+ * and this module built ggui's self-contained shell from it. The pod door
+ * (`GET <pod>/agent/ui-resource`, guuey#209 C1) closed that gap; ggui's
+ * read-time mint (C2) made the read strictly fresher than the inlined
+ * copy; the vendor arm's only reason to exist was gone.
  */
 import type { AgBlock, JsonValue } from "@silverprotocol/core";
 import {
@@ -55,24 +48,37 @@ import {
 import { isJsonObject, type McpUiResourcePayload } from "./block-ui.js";
 
 export {
+  /** @deprecated import from `@ggui-ai/protocol/integrations/mcp-apps` (guuey#209; removed next minor). */
   asGguiRenderBootstrap,
+  /** @deprecated import from `@ggui-ai/protocol/integrations/mcp-apps` (guuey#209; removed next minor). */
   gguiShellHtml,
 } from "@ggui-ai/protocol/integrations/mcp-apps";
 export type {
+  /** @deprecated import from `@ggui-ai/protocol/integrations/mcp-apps` (guuey#209; removed next minor). */
   GguiRenderBootstrap,
+  /** @deprecated import from `@ggui-ai/protocol/integrations/mcp-apps` (guuey#209; removed next minor). */
   GguiShellHtmlOptions,
 } from "@ggui-ai/protocol/integrations/mcp-apps";
 
 /**
  * The `_meta` key the ggui render bootstrap rides on. Alias of the
  * protocol package's own constant — one spelling, owned upstream.
+ *
+ * @deprecated guuey#209 — nothing in this package reads `_meta` any more.
+ * Import `MCP_APP_AI_GGUI_RENDER_META_KEY` from
+ * `@ggui-ai/protocol/integrations/mcp-apps` if you still need the key.
+ * Removed in the minor after the one shipping this notice.
  */
 export const GGUI_RENDER_META_KEY = MCP_APP_AI_GGUI_RENDER_META_KEY;
 
 /** The `ui://` scheme prefix every ggui render resource uri carries. */
 const UI_SCHEME = "ui://";
 
-/** A ggui render recognised on a tool result: its resource uri + mount material. */
+/**
+ * A ggui render recognised on a tool result: its resource uri + mount material.
+ * @deprecated guuey#209 — the locator (`toolResultLocator`) is the whole
+ * recognition signal now; there is no descriptor to build. Removed next minor.
+ */
 export interface GguiRenderDescriptor {
   /** `uiData.resourceUri` — `ui://ggui/render/<sessionId>/<contractHash>`. */
   resourceUri: string;
@@ -93,6 +99,9 @@ export interface GguiRenderDescriptor {
  * The `ui://` scheme gate is deliberate: `uiData` is a general-purpose channel
  * (every `structuredContent` of a `_meta.ui`-stamped tool lands there), so a
  * bare `resourceUri` string is not on its own a claim of generative UI.
+ *
+ * @deprecated guuey#209 — use `toolResultLocator(block)`; the vendor arm is
+ * retired and nothing consumes the descriptor. Removed next minor.
  */
 export function asGguiRender(
   uiData: JsonValue | undefined,
@@ -116,6 +125,8 @@ export function asGguiRender(
  * same name that narrows a spec-canonical MCP `CallToolResult` instead. This
  * one is the silverprotocol-side twin — the input is the FOLDED block, whose
  * `uiData`/`_meta` carriage is `@silverprotocol/core`'s contract, not ggui's.
+ *
+ * @deprecated guuey#209 — use `toolResultLocator(block)`. Removed next minor.
  */
 export function toolResultGguiRender(
   block: Extract<AgBlock, { type: "tool-result" }>,
@@ -123,7 +134,11 @@ export function toolResultGguiRender(
   return asGguiRender(block.uiData, block._meta);
 }
 
-/** An untyped (persisted-snapshot) block → its ggui render descriptor, if it is one. */
+/**
+ * An untyped (persisted-snapshot) block → its ggui render descriptor, if it is one.
+ * @deprecated guuey#209 — use `snapshotViewMount(cardSnapshot)`, whose locator
+ * arm is the persisted path. Removed next minor.
+ */
 export function blockGguiRender(block: JsonValue): GguiRenderDescriptor | undefined {
   if (!isJsonObject(block)) return undefined;
   if (block.type !== "tool-result") return undefined;
@@ -134,6 +149,11 @@ export function blockGguiRender(block: JsonValue): GguiRenderDescriptor | undefi
  * A ggui render descriptor → the mountable resource the host's existing
  * mcp-ui path already knows how to mount, or `undefined` when the descriptor
  * carries no bootstrap (history cards, and any fold that dropped `_meta`).
+ *
+ * @deprecated guuey#209 — resolve the locator through a `UiResourceReader`
+ * (`resolveViewMount`); ggui's `resources/read` returns the shell with
+ * live-channel material minted FRESH at read time, which this inlined
+ * copy could never be. Removed next minor.
  *
  * The `uri` is the render's REAL `resourceUri` — the shell is the payload, not
  * a renaming of the resource.
