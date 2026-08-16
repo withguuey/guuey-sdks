@@ -138,6 +138,37 @@ describe("parseControl", () => {
     expect(msg.memoryAttached).toBe(true);
   });
 
+  it("round-trips fsBound (boolean) onto the typed Invoke — the host's built-in tool gate (guuey#234)", () => {
+    const withBound = JSON.stringify({
+      type: "invoke",
+      input: "go",
+      identity: { userId: "u", authMode: "anonymous" },
+      fs: { app: "/app", home: "/home", session: "/session" },
+      history: [],
+      fsBound: true,
+    });
+    const msg = parseControl(withBound);
+    if (!isInvoke(msg)) throw new Error("expected invoke");
+    expect(msg.fsBound).toBe(true);
+  });
+
+  it("omits fsBound when absent or non-boolean — a missing signal reads as NOT bound (fail-closed)", () => {
+    const bare = parseControl(INVOKE);
+    if (!isInvoke(bare)) throw new Error("expected invoke");
+    expect("fsBound" in bare).toBe(false);
+    const nonBool = parseControl(
+      JSON.stringify({
+        type: "invoke",
+        input: "go",
+        identity: { userId: "u", authMode: "anonymous" },
+        fs: { app: "/app", home: "/home", session: "/session" },
+        fsBound: "true",
+      }),
+    );
+    if (!isInvoke(nonBool)) throw new Error("expected invoke");
+    expect("fsBound" in nonBool).toBe(false);
+  });
+
   it("omits memoryAttached when absent or non-boolean (never lands as undefined)", () => {
     const bare = parseControl(INVOKE);
     if (!isInvoke(bare)) throw new Error("expected invoke");

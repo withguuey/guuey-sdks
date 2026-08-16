@@ -24,6 +24,7 @@ import type { Fs, HistoryMessage, JsonValue, ProfileSection } from "@guuey/worke
 import {
   GUUEY_DEFAULT_SYSTEM_PROMPT,
   defaultModelFor,
+  parseToolGateEntry,
   type GuueyAgent,
   type ProfileAccess,
 } from "@guuey/config";
@@ -54,8 +55,9 @@ export const ENV_HOME_DIR = "GUUEY_HOME_DIR";
 export const ENV_APP_DIR = "GUUEY_APP_DIR";
 
 /**
- * File tools enabled when GuueyFS layers are bound. `Bash` is added separately
- * (see {@link BASH_TOOL}) so the two are independently testable.
+ * File tools enabled when GuueyFS layers are bound
+ * ({@link BuildOptionsContext.fsBound}). `Bash` is added separately (see
+ * {@link BASH_TOOL}) so the two are independently testable.
  */
 const FS_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep"];
 
@@ -68,6 +70,13 @@ const FS_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep"];
  * bubblewrap inside the Router's bwrap); the Router's bwrap IS the isolation.
  */
 const BASH_TOOL = "Bash";
+
+/**
+ * The built-in tool catalog this host can expose — exactly the file tools plus
+ * `Bash`, all keyed on {@link BuildOptionsContext.fsBound}. A bare tool-gate
+ * entry (`"Bash"`, `"Write"`) matches one of these by name.
+ */
+const BUILTIN_TOOLS: readonly string[] = [...FS_TOOLS, BASH_TOOL];
 
 /**
  * Belt-and-braces (spec §4): guuey's memory mechanism is prompted file memory
@@ -170,11 +179,27 @@ export interface BuildOptionsContext {
    */
   authToken?: string;
   /**
-   * Per-session GuueyFS layer mounts (the invoke's `fs`). When present, the
-   * invoke binds `cwd`=session, exposes home+app as `additionalDirectories`,
-   * enables the file tools, and injects `GUUEY_*` env. Absent → no FS binding.
+   * Per-session layer mounts (the invoke's `fs`). When present, the invoke
+   * binds `cwd`=session, exposes home+app as `additionalDirectories`, and
+   * injects the `HOME`/`GUUEY_*`/`CLAUDE_CONFIG_DIR` env. NOTE: the wire
+   * carries a NON-NULL `fs` on every turn (spec §1.4 — the spec-default
+   * `/app`/`/home`/`/session` mounts when GuueyFS is off), so presence here
+   * says nothing about whether durable storage is bound. It is therefore NOT
+   * the tool-catalog gate — {@link fsBound} is (guuey#234).
    */
   fs?: Fs;
+  /**
+   * Whether {@link fs} names REAL GuueyFS layers this turn — the pod has
+   * `GUUEY_FS_BASE` armed and the Router resolved per-session layer dirs under
+   * it — as opposed to the spec-default / federation-ephemeral mounts. THE gate
+   * for the built-in file tools + `Bash` (`tools`, and their `allowedTools`
+   * entries): absent/false → `tools: []`, purely MCP-driven. Threaded from the
+   * runtime on the invoke (`Invoke.fsBound`); mirrors {@link memoryAttached}
+   * (the memory-mcp T5 lesson: gate on the real signal, not on `fs` presence —
+   * which is why the pre-#234 `Boolean(ctx.fs)` gate put Bash in EVERY no-code
+   * agent's catalog on EVERY env).
+   */
+  fsBound?: boolean;
   /** Recent conversation window for the `<conversation_history>` preamble. */
   history?: HistoryMessage[];
   /** Thread-scoped memory for the `<thread_memory>` preamble (the §1.4 push). */
@@ -260,7 +285,8 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
   }
 
   const mcpServers = resolveMcpServers(ctx);
-  const allowedTools = buildAllowedTools(snapshot, Object.keys(mcpServers), Boolean(ctx.fs));
+  const fsBound = ctx.fsBound === true;
+  const gates = resolveToolGates(snapshot, Object.keys(mcpServers), fsBound);
   const systemPrompt =
     withContextPreamble(
       snapshot.systemPrompt ?? GUUEY_DEFAULT_SYSTEM_PROMPT,
@@ -336,14 +362,18 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
 
   // Whether the operator pinned a Claude permission mode in agent.json. When
   // set we forward it verbatim and let the SDK's mode govern the posture; when
-  // unset we install the auto-allow `canUseTool` below so the default no-code
-  // agent's Bash runs prompt-free (a never-answered prompt would hang the pod).
+  // unset we ALWAYS install a `canUseTool` below (guuey#234) so no tool pick can
+  // ever reach the SDK's interactive ask stage — a never-answered prompt would
+  // hang this headless pod.
   const explicitMode = snapshot.claude?.permissions?.mode;
 
   const options: Options = {
     model,
     mcpServers,
-    allowedTools,
+    allowedTools: gates.allowedTools,
+    // Deny-listed tools (`tools.denylist`, translated) are removed from the
+    // model's catalog outright — the SDK's own mechanism, not a callback.
+    ...(gates.disallowedTools.length > 0 ? { disallowedTools: gates.disallowedTools } : {}),
     // Token streaming (guuey#91 consumer half): the SDK interleaves
     // `stream_event` partials, which `@silverprotocol/claude-agent-sdk` ≥0.4
     // maps to token-granular text/reasoning/tool.args deltas and dedupes
@@ -353,11 +383,12 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
     // idempotent by tool_use id), so this flag's only observable effect is
     // incremental frames on the SSE wire.
     includePartialMessages: true,
-    // With GuueyFS layers bound, expose the file tools PLUS real `Bash`; without
-    // them this is byte-identical to the source (purely MCP-driven). `Bash` is
-    // safe here because the host already runs inside the Router's bubblewrap
-    // jail — that bwrap, NOT the SDK's own `sandbox:{}` block, is the isolation.
-    tools: fs ? [...FS_TOOLS, BASH_TOOL] : [],
+    // With GuueyFS layers REALLY bound (`fsBound`, guuey#234 — never `fs`
+    // presence, which is unconditional on the wire), expose the file tools PLUS
+    // real `Bash`; otherwise purely MCP-driven. `Bash` is safe here because the
+    // host already runs inside the Router's bubblewrap jail — that bwrap, NOT
+    // the SDK's own `sandbox:{}` block, is the isolation.
+    tools: gates.tools,
     // Settings isolation. Empty array = "no filesystem settings loaded" — guards
     // against a future SDK change auto-pulling `~/.claude/settings.json` and
     // leaking the operator's logged-in Claude Code MCPs into the tool catalog.
@@ -379,25 +410,28 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
     //
     //  - Operator pinned `claude.permissions.mode` → forward it verbatim; the
     //    operator owns the posture (e.g. `acceptEdits`).
-    //  - No explicit mode + fs bound → install an auto-allow `canUseTool`. In
-    //    the SDK permission flow (hooks → deny → allow → ask → mode/canUseTool),
-    //    `default` mode with no callback routes Bash subcommands through an
-    //    interactive permission prompt — which, in this headless ephemeral pod,
-    //    no one answers, so the agent would HANG. The auto-allow callback short-
-    //    circuits that: every tool the model picks (already constrained to
-    //    `tools`/`allowedTools` + `settingSources:[]` + `strictMcpConfig`) is
-    //    allowed without a prompt. This is safe precisely because the Router's
-    //    bubblewrap jail is the real isolation boundary — NOT the SDK's own
-    //    `sandbox:{}` block (which is intentionally absent to avoid a nested
-    //    bwrap inside the Router's bwrap). We do NOT use `bypassPermissions`
-    //    here: it requires `allowDangerouslySkipPermissions` and globally
-    //    disables hooks/deny-rule evaluation, whereas the callback keeps the
-    //    deny/hook stages intact while only collapsing the final ask stage.
+    //  - No explicit mode → ALWAYS install a `canUseTool` (guuey#234: it used
+    //    to be installed only when fs was "bound", which was every turn — once
+    //    the gate is real, an fs-off pod with an explicit allowlist would sit
+    //    in `default` mode). In the SDK permission flow (hooks → deny → allow →
+    //    ask → mode/canUseTool), `default` mode with no callback routes any
+    //    tool not covered by an allow rule through an interactive permission
+    //    prompt — which, in this headless ephemeral pod, no one answers, so
+    //    the agent would HANG. The callback short-circuits that stage: with no
+    //    explicit allowlist every pick is allowed (the tool surface is already
+    //    capped by `tools`/`allowedTools` + `settingSources:[]` +
+    //    `strictMcpConfig`, and the Router's bubblewrap jail is the real
+    //    isolation boundary — NOT the SDK's own `sandbox:{}` block, which is
+    //    intentionally absent to avoid a nested bwrap); with an explicit
+    //    allowlist an UNLISTED pick is DENIED with a message the model can read
+    //    — that is what makes the allowlist a real narrowing, and it can never
+    //    hang. We do NOT use `bypassPermissions`: it requires
+    //    `allowDangerouslySkipPermissions` and globally disables hooks/deny-rule
+    //    evaluation, whereas the callback keeps those stages intact while only
+    //    collapsing the final ask stage.
     ...(explicitMode
       ? { permissionMode: explicitMode }
-      : fs
-        ? { canUseTool: autoAllowTool }
-        : {}),
+      : { canUseTool: gates.explicitAllowlist ? denyUnlistedTool(gates.allowedSet) : autoAllowTool }),
     ...(ctx.abortController ? { abortController: ctx.abortController } : {}),
   };
 
@@ -405,21 +439,46 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
 }
 
 /**
- * Auto-allow permission callback. Installed when fs is bound and the operator
- * did NOT pin `claude.permissions.mode`, so the default no-code agent's `Bash`
- * (and the file tools) run prompt-free. Returns `{ behavior: 'allow' }` for
+ * Auto-allow permission callback. Installed when the operator did NOT pin
+ * `claude.permissions.mode` and the snapshot has NO explicit `tools.allowlist`,
+ * so the default no-code agent's MCP tools (and, on a GuueyFS-armed pod, its
+ * `Bash` + file tools) run prompt-free. Returns `{ behavior: 'allow' }` for
  * every request, passing the input through unchanged.
  *
  * Safe because the model's tool surface is already locked down BEFORE the
- * callback ever fires — `tools`/`allowedTools` cap which tools exist,
- * `settingSources:[]` blocks filesystem-loaded settings, `strictMcpConfig`
- * pins the MCP catalog — and the real OS isolation is the Router's bubblewrap
- * jail this whole process runs inside. The callback only collapses the SDK's
- * final interactive "ask" stage (which would otherwise hang a headless pod);
- * the earlier hook/deny-rule stages of the permission flow still run.
+ * callback ever fires — `tools`/`allowedTools`/`disallowedTools` cap which
+ * tools exist, `settingSources:[]` blocks filesystem-loaded settings,
+ * `strictMcpConfig` pins the MCP catalog — and the real OS isolation is the
+ * Router's bubblewrap jail this whole process runs inside. The callback only
+ * collapses the SDK's final interactive "ask" stage (which would otherwise
+ * hang a headless pod); the earlier hook/deny-rule stages still run.
  */
 export const autoAllowTool: CanUseTool = (_toolName, input) =>
   Promise.resolve({ behavior: "allow", updatedInput: input });
+
+/**
+ * Deny-unlisted permission callback (guuey#234). Installed instead of
+ * {@link autoAllowTool} when the snapshot carries an explicit `tools.allowlist`
+ * (and no pinned mode). Tools that ARE listed never reach any callback — they
+ * are SDK allow rules (`allowedTools`) and are auto-allowed upstream. So every
+ * tool that DOES arrive here is, by construction, one the builder did not
+ * list: it is denied with a message the model can act on. Never `null`, never
+ * an ask — the invariant "an explicit allowlist can never hang the pod".
+ *
+ * `allowedSet` is consulted anyway (belt-and-braces against an SDK that
+ * routes an allow-listed name here after all): a listed name is allowed.
+ */
+export function denyUnlistedTool(allowedSet: ReadonlySet<string>): CanUseTool {
+  return (toolName, input) =>
+    Promise.resolve(
+      allowedSet.has(toolName)
+        ? { behavior: "allow", updatedInput: input }
+        : {
+            behavior: "deny",
+            message: `Tool "${toolName}" is not in this agent's tools.allowlist. Allowed: ${[...allowedSet].join(", ") || "(none)"}.`,
+          },
+    );
+}
 
 /**
  * Map the Router-resolved cred files to the framework-neutral SdkMcpServer map.
@@ -446,29 +505,96 @@ export function resolveMcpServers(ctx: BuildOptionsContext): Record<string, SdkM
 }
 
 /**
- * Build the SDK's `allowedTools` array. MCP tools are auto-namespaced by the SDK
- * as `mcp__<server>__<tool>`; we can't enumerate the namespaces ahead of time,
- * so the allowlist is necessarily wildcard-ish.
- *
- * - explicit `tools.allowlist` → pass those literal names through.
- * - else → allow every tool from every declared server via `mcp__<server>`.
- *
- * When GuueyFS layers are bound, the file tools AND `Bash` join the allowlist
- * (an allow rule in the SDK permission flow), so the model may use them
- * alongside the MCP allowlist. The auto-allow `canUseTool` (or the operator's
- * pinned mode) governs whether those still prompt — see `buildOptions`.
+ * The resolved tool surface for one invoke — what `buildOptions` hands the SDK.
+ * Exported for the invariant tests ("an explicit allowlist can never hang").
  */
-function buildAllowedTools(
-  snapshot: GuueyAgent,
-  declaredServerNames: string[],
+export interface ResolvedToolGates {
+  /** The built-in catalog: `[...FS_TOOLS, Bash]` when fs is bound, else `[]`. */
+  tools: string[];
+  /** SDK allow rules — MCP names in the SDK's `mcp__<server>[__<tool>]` spelling plus the built-ins in `tools`. */
+  allowedTools: string[];
+  /** SDK `disallowedTools` — the translated `tools.denylist` (removed from the catalog). */
+  disallowedTools: string[];
+  /** Whether the snapshot carried a non-empty `tools.allowlist` (→ deny-unlisted posture). */
+  explicitAllowlist: boolean;
+  /** `allowedTools` as a set, for the deny-unlisted callback. */
+  allowedSet: ReadonlySet<string>;
+}
+
+/**
+ * Translate one parsed tool-gate entry (the `@guuey/config` grammar) into the
+ * SDK's tool-name spelling(s). MCP tools are auto-namespaced by the SDK as
+ * `mcp__<server>__<tool>`, and `mcp__<server>` is the SDK's own "every tool of
+ * that server" rule. A bare name fans out to EVERY declared server (we cannot
+ * enumerate a server's tools ahead of connecting) and, when it names one of the
+ * host's built-ins, to that built-in — but only while fs is bound, since an
+ * unbound turn has no built-in catalog for it to match.
+ */
+function toSdkToolNames(
+  raw: string,
+  declaredServerNames: readonly string[],
   fsBound: boolean,
 ): string[] {
-  const explicit = snapshot.tools?.allowlist;
-  const base =
-    explicit && explicit.length > 0
-      ? explicit.slice()
-      : declaredServerNames.map((s) => `mcp__${s}`);
-  return fsBound ? [...base, ...FS_TOOLS, BASH_TOOL] : base;
+  const parsed = parseToolGateEntry(raw);
+  // Deploy-time validation (`validateToolGates`) rejects malformed entries
+  // before a snapshot ever ships; a stale snapshot that slips one through is
+  // dropped here (NOT passed verbatim — an unknown allow rule is inert, and an
+  // unknown name reaching the ask stage is the hang this fix exists to close).
+  if ("error" in parsed) return [];
+  switch (parsed.kind) {
+    case "server-tool":
+      return [`mcp__${parsed.server}__${parsed.tool}`];
+    case "server-all":
+      return [`mcp__${parsed.server}`];
+    case "bare":
+      return [
+        ...declaredServerNames.map((s) => `mcp__${s}__${parsed.tool}`),
+        ...(fsBound && BUILTIN_TOOLS.includes(parsed.tool) ? [parsed.tool] : []),
+      ];
+  }
+}
+
+/**
+ * Resolve the invoke's tool surface (guuey#234). Pure.
+ *
+ * - `tools` (the built-in catalog) is keyed ONLY on `fsBound` — the real
+ *   "GuueyFS layers are bound this turn" signal from the runtime.
+ * - `allowedTools`: an explicit `tools.allowlist` is TRANSLATED from the config
+ *   grammar (`<server>.<tool>` / `<server>.*` / bare) into SDK names — never
+ *   passed verbatim; absent → every tool of every declared server
+ *   (`mcp__<server>`). When fs is bound the built-ins join as allow rules so
+ *   the platform's memory feature (file tools + `Bash` in the jail) is never
+ *   silently switched off by a builder's MCP-only allowlist; a builder who
+ *   wants them gone deny-lists them (`"Bash"`).
+ * - `disallowedTools`: the translated `tools.denylist` — the SDK removes those
+ *   from the model's catalog outright.
+ */
+export function resolveToolGates(
+  snapshot: GuueyAgent,
+  declaredServerNames: readonly string[],
+  fsBound: boolean,
+): ResolvedToolGates {
+  const explicit = snapshot.tools?.allowlist ?? [];
+  const explicitAllowlist = explicit.length > 0;
+  const builtins = fsBound ? [...BUILTIN_TOOLS] : [];
+  const mcpAllowed = explicitAllowlist
+    ? explicit.flatMap((e) => toSdkToolNames(e, declaredServerNames, fsBound))
+    : declaredServerNames.map((s) => `mcp__${s}`);
+  const allowedTools = dedupe([...mcpAllowed, ...builtins]);
+  const disallowedTools = dedupe(
+    (snapshot.tools?.denylist ?? []).flatMap((e) => toSdkToolNames(e, declaredServerNames, fsBound)),
+  );
+  return {
+    tools: builtins,
+    allowedTools,
+    disallowedTools,
+    explicitAllowlist,
+    allowedSet: new Set(allowedTools),
+  };
+}
+
+function dedupe(names: string[]): string[] {
+  return [...new Set(names)];
 }
 
 // withContextPreamble now lives in ../preamble.js (framework-neutral — the

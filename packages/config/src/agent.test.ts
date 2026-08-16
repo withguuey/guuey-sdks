@@ -5,6 +5,8 @@ import {
   validateNoLiteralSecrets,
   validateNoProxiedServers,
   validateReservedServerNames,
+  validateToolGates,
+  parseToolGateEntry,
   RESERVED_MEMORY_SERVER_NAME,
   RESERVED_MCP_SERVER_NAMES,
   DEFAULT_AGENT_MCP_SERVERS,
@@ -336,6 +338,100 @@ describe('validateReservedServerNames', () => {
     const v = validateReservedServerNames(agent);
     expect(v).toHaveLength(1);
     expect(v.some((m) => m.includes('"guuey-memory"'))).toBe(true);
+  });
+});
+
+describe('parseToolGateEntry — the ONE tool-gate grammar (guuey#234)', () => {
+  it('"<server>.<tool>" → server-tool', () => {
+    expect(parseToolGateEntry('todoist.create_task')).toEqual({
+      kind: 'server-tool',
+      server: 'todoist',
+      tool: 'create_task',
+    });
+  });
+
+  it('"<server>.*" → server-all', () => {
+    expect(parseToolGateEntry('ggui.*')).toEqual({ kind: 'server-all', server: 'ggui' });
+  });
+
+  it('a bare name → bare (matches every connected server + the built-in of that name)', () => {
+    expect(parseToolGateEntry('search')).toEqual({ kind: 'bare', tool: 'search' });
+    expect(parseToolGateEntry('Bash')).toEqual({ kind: 'bare', tool: 'Bash' });
+  });
+
+  it('a dotted tool name splits on the FIRST dot only', () => {
+    expect(parseToolGateEntry('svc.ns.tool')).toEqual({
+      kind: 'server-tool',
+      server: 'svc',
+      tool: 'ns.tool',
+    });
+  });
+
+  it('rejects the framework-internal mcp__ spelling with a pointer to the grammar', () => {
+    const r = parseToolGateEntry('mcp__ggui__render');
+    expect('error' in r && r.error).toContain('<server>.<tool>');
+  });
+
+  it('rejects empty halves and partial wildcards', () => {
+    expect('error' in parseToolGateEntry('.tool')).toBe(true);
+    expect('error' in parseToolGateEntry('server.')).toBe(true);
+    expect('error' in parseToolGateEntry('server.cre*')).toBe(true);
+    expect('error' in parseToolGateEntry('   ')).toBe(true);
+  });
+});
+
+describe('validateToolGates — deploy-time pre-flight (guuey#234)', () => {
+  it('no tools block / undefined agent → clean', () => {
+    expect(validateToolGates(undefined)).toEqual([]);
+    expect(validateToolGates({})).toEqual([]);
+    expect(validateToolGates({ tools: {} })).toEqual([]);
+  });
+
+  it('accepts entries against declared servers, the platform-default ggui, and reserved servers', () => {
+    const agent: GuueyAgent = {
+      mcpServers: { todoist: { kind: 'external', url: 'https://mcp.example.com' } },
+      tools: {
+        allowlist: ['todoist.create_task', 'ggui.*', 'search', `${RESERVED_MEMORY_SERVER_NAME}.save_memory`],
+        denylist: ['todoist.delete_project', 'Bash'],
+      },
+    };
+    expect(validateToolGates(agent)).toEqual([]);
+  });
+
+  it('with NO mcpServers declared, ggui is still a known server (the platform default)', () => {
+    expect(validateToolGates({ tools: { allowlist: ['ggui.render'] } })).toEqual([]);
+  });
+
+  it('rejects a server the agent does not connect — and names the ones it does', () => {
+    const agent: GuueyAgent = {
+      mcpServers: { todoist: { kind: 'external', url: 'https://mcp.example.com' } },
+      tools: { allowlist: ['linear.create_issue'] },
+    };
+    const v = validateToolGates(agent);
+    expect(v).toHaveLength(1);
+    expect(v[0]).toContain('tools.allowlist');
+    expect(v[0]).toContain('"linear"');
+    expect(v[0]).toContain('todoist');
+    expect(v[0]).toContain('ggui');
+  });
+
+  it('honours the ggui: false opt-out — "ggui.*" is then unknown', () => {
+    const agent: GuueyAgent = { mcpServers: { ggui: false }, tools: { allowlist: ['ggui.*'] } };
+    expect(validateToolGates(agent)).toHaveLength(1);
+  });
+
+  it('rejects the mcp__ spelling and malformed entries in BOTH lists, one message each', () => {
+    const agent: GuueyAgent = {
+      tools: { allowlist: ['mcp__ggui__render', 'ggui.'], denylist: ['.x'] },
+    };
+    const v = validateToolGates(agent);
+    expect(v).toHaveLength(3);
+    expect(v.filter((m) => m.startsWith('tools.allowlist:'))).toHaveLength(2);
+    expect(v.filter((m) => m.startsWith('tools.denylist:'))).toHaveLength(1);
+  });
+
+  it('bare names are never server-checked (they resolve against whatever connects at turn time)', () => {
+    expect(validateToolGates({ tools: { allowlist: ['anything_at_all'] } })).toEqual([]);
   });
 });
 

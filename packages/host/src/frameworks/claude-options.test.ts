@@ -4,6 +4,7 @@ import { GUUEY_DEFAULT_SYSTEM_PROMPT } from "@guuey/config";
 import {
   buildOptions,
   resolveMcpServers,
+  resolveToolGates,
   withContextPreamble,
   type BuildOptionsContext,
 } from "./claude-options.js";
@@ -102,12 +103,48 @@ describe("buildOptions — allowedTools", () => {
     expect(opts.allowedTools).toEqual(["mcp__a", "mcp__b"]);
   });
 
-  it("passes an explicit snapshot allowlist through verbatim", () => {
+  it("TRANSLATES an explicit snapshot allowlist from the config grammar — never verbatim (guuey#234)", () => {
     const snapshot: GuueyAgent = {
-      tools: { allowlist: ["mcp__a__do_thing", "mcp__a__other"] },
+      tools: { allowlist: ["a.do_thing", "a.other", "b.*"] },
     };
     const opts = buildOptions(snapshot, ctx());
-    expect(opts.allowedTools).toEqual(["mcp__a__do_thing", "mcp__a__other"]);
+    expect(opts.allowedTools).toEqual(["mcp__a__do_thing", "mcp__a__other", "mcp__b"]);
+  });
+
+  it("a bare allowlist name fans out to every declared server", () => {
+    const opts = buildOptions(
+      { tools: { allowlist: ["search"] } },
+      ctx({
+        listCredentials: () => [
+          { name: "a", cred: { url: "https://a.example.com", transport: "http", headers: {} } },
+          { name: "b", cred: { url: "https://b.example.com", transport: "sse", headers: {} } },
+        ],
+      }),
+    );
+    expect(opts.allowedTools).toEqual(["mcp__a__search", "mcp__b__search"]);
+  });
+
+  it("the framework-internal mcp__ spelling is DROPPED, not forwarded (deploy-time validation rejects it; a stale snapshot must not reach the ask stage)", () => {
+    const opts = buildOptions({ tools: { allowlist: ["mcp__a__do_thing", "a.ok"] } }, ctx());
+    expect(opts.allowedTools).toEqual(["mcp__a__ok"]);
+  });
+
+  it("translates tools.denylist into the SDK's disallowedTools (removed from the catalog)", () => {
+    const opts = buildOptions(
+      { tools: { denylist: ["a.delete_everything", "b.*"] } },
+      ctx({
+        listCredentials: () => [
+          { name: "a", cred: { url: "https://a.example.com", transport: "http", headers: {} } },
+        ],
+      }),
+    );
+    expect(opts.disallowedTools).toEqual(["mcp__a__delete_everything", "mcp__b"]);
+    // No allowlist → the default wildcard allow rule is untouched.
+    expect(opts.allowedTools).toEqual(["mcp__a"]);
+  });
+
+  it("omits disallowedTools entirely when there is no denylist", () => {
+    expect("disallowedTools" in buildOptions({}, ctx())).toBe(false);
   });
 });
 
@@ -147,10 +184,10 @@ describe("buildOptions — permissionMode", () => {
   });
 });
 
-describe("buildOptions — GuueyFS layer binding (from the invoke fs field)", () => {
+describe("buildOptions — layer binding (from the invoke fs field) vs the tool catalog (fsBound)", () => {
   const fs = { app: "/fs/app/shared", home: "/fs/home", session: "/fs/session" };
 
-  it("without fs: tools:[] and no cwd/additionalDirectories, no GUUEY_* env", () => {
+  it("without fs: no cwd/additionalDirectories, no GUUEY_* env, tools:[]", () => {
     const opts = buildOptions({}, ctx());
     expect(opts.tools).toEqual([]);
     expect("cwd" in opts).toBe(false);
@@ -159,37 +196,50 @@ describe("buildOptions — GuueyFS layer binding (from the invoke fs field)", ()
     expect(opts.env?.GUUEY_APP_DIR).toBeUndefined();
   });
 
-  it("with fs: cwd=session, additionalDirectories=[home,app], file tools + Bash, GUUEY_* env", () => {
+  it("with fs but NOT fsBound (the wire's unconditional spec-default mounts): cwd/env bind, but tools:[] — the guuey#234 pin", () => {
     const opts = buildOptions({}, ctx({ fs }));
     expect(opts.cwd).toBe("/fs/session");
     expect(opts.additionalDirectories).toEqual(["/fs/home", "/fs/app/shared"]);
-    expect(opts.tools).toEqual(["Read", "Write", "Edit", "Glob", "Grep", "Bash"]);
-    expect(opts.allowedTools).toContain("Read");
     expect(opts.env?.GUUEY_HOME_DIR).toBe("/fs/home");
     expect(opts.env?.GUUEY_APP_DIR).toBe("/fs/app/shared");
+    expect(opts.tools).toEqual([]);
+    expect(opts.allowedTools).not.toContain("Read");
+    expect(opts.allowedTools).not.toContain("Bash");
+  });
+
+  it("with fs AND fsBound: file tools + Bash in tools and allowedTools", () => {
+    const opts = buildOptions({}, ctx({ fs, fsBound: true }));
+    expect(opts.tools).toEqual(["Read", "Write", "Edit", "Glob", "Grep", "Bash"]);
+    expect(opts.allowedTools).toContain("Read");
+    expect(opts.allowedTools).toContain("Bash");
+  });
+
+  it("fsBound:false is exactly the unbound catalog", () => {
+    expect(buildOptions({}, ctx({ fs, fsBound: false })).tools).toEqual([]);
   });
 });
 
 describe("buildOptions — Bash re-enabled prompt-free (Router bwrap is the isolation)", () => {
   const fs = { app: "/fs/app", home: "/fs/home", session: "/fs/session" };
+  const bound = { fs, fsBound: true };
 
   it("includes Bash in tools + allowedTools when fs is bound", () => {
-    const opts = buildOptions({}, ctx({ fs }));
+    const opts = buildOptions({}, ctx(bound));
     expect(opts.tools).toContain("Bash");
     expect(opts.allowedTools).toContain("Bash");
   });
 
   it("omits Bash from tools + allowedTools when fs is NOT bound", () => {
-    const opts = buildOptions({}, ctx());
+    const opts = buildOptions({}, ctx({ fs }));
     expect(opts.tools).toEqual([]);
     expect(opts.allowedTools).not.toContain("Bash");
   });
 
-  it("Bash joins an explicit allowlist when fs is bound", () => {
+  it("the built-ins join an explicit (translated) allowlist when fs is bound — the platform's memory feature is not switched off by an MCP-only allowlist", () => {
     const snapshot: GuueyAgent = {
-      tools: { allowlist: ["mcp__a__do_thing"] },
+      tools: { allowlist: ["a.do_thing"] },
     };
-    const opts = buildOptions(snapshot, ctx({ fs }));
+    const opts = buildOptions(snapshot, ctx(bound));
     expect(opts.allowedTools).toEqual([
       "mcp__a__do_thing",
       "Read",
@@ -201,8 +251,26 @@ describe("buildOptions — Bash re-enabled prompt-free (Router bwrap is the isol
     ]);
   });
 
+  it("a builder who wants Bash gone deny-lists it by bare name → disallowedTools", () => {
+    const opts = buildOptions({ tools: { denylist: ["Bash"] } }, ctx(bound));
+    expect(opts.disallowedTools).toContain("Bash");
+  });
+
+  it("a bare built-in name in the denylist is NOT a built-in when fs is unbound (nothing to remove) — only the MCP fan-out remains", () => {
+    const opts = buildOptions(
+      { tools: { denylist: ["Bash"] } },
+      ctx({
+        fs,
+        listCredentials: () => [
+          { name: "a", cred: { url: "https://a.example.com", transport: "http", headers: {} } },
+        ],
+      }),
+    );
+    expect(opts.disallowedTools).toEqual(["mcp__a__Bash"]);
+  });
+
   it("installs an auto-allow canUseTool (prompt-free) when fs is bound and no mode is pinned", async () => {
-    const opts = buildOptions({}, ctx({ fs }));
+    const opts = buildOptions({}, ctx(bound));
     expect(typeof opts.canUseTool).toBe("function");
     expect("permissionMode" in opts).toBe(false);
     // The callback must auto-allow Bash without prompting (else a headless pod hangs).
@@ -211,22 +279,83 @@ describe("buildOptions — Bash re-enabled prompt-free (Router bwrap is the isol
     expect(result).toEqual({ behavior: "allow", updatedInput: { command: "ls" } });
   });
 
-  it("does NOT install canUseTool when fs is NOT bound (purely MCP-driven, nothing to auto-allow)", () => {
+  it("STILL installs canUseTool when fs is NOT bound — a headless pod is never left in the SDK's default (ask) mode (guuey#234)", async () => {
     const opts = buildOptions({}, ctx());
-    expect("canUseTool" in opts).toBe(false);
+    expect(typeof opts.canUseTool).toBe("function");
+    expect("permissionMode" in opts).toBe(false);
+    const signal = new AbortController().signal;
+    const result = await opts.canUseTool?.("mcp__a__anything", { x: 1 }, { signal, toolUseID: "t1", requestId: "req1" });
+    expect(result).toEqual({ behavior: "allow", updatedInput: { x: 1 } });
   });
 
   it("respects a pinned claude.permissions.mode instead of auto-allow (operator owns the posture)", () => {
     const snapshot: GuueyAgent = { claude: { permissions: { mode: "acceptEdits" } } };
-    const opts = buildOptions(snapshot, ctx({ fs }));
+    const opts = buildOptions(snapshot, ctx(bound));
     expect(opts.permissionMode).toBe("acceptEdits");
-    // Mode and the auto-allow callback are mutually exclusive.
+    // Mode and the callback are mutually exclusive.
     expect("canUseTool" in opts).toBe(false);
   });
 
   it("does NOT set the SDK's own sandbox block (the Router bwrap is the isolation, not a nested bwrap)", () => {
-    const opts = buildOptions({}, ctx({ fs }));
+    const opts = buildOptions({}, ctx(bound));
     expect("sandbox" in opts).toBe(false);
+  });
+});
+
+describe("INVARIANT — an explicit allowlist can never hang the pod (guuey#234)", () => {
+  const signal = new AbortController().signal;
+  const call = (opts: ReturnType<typeof buildOptions>, tool: string) =>
+    opts.canUseTool?.(tool, { k: "v" }, { signal, toolUseID: "t", requestId: "r" });
+  const servers = () => [
+    { name: "a", cred: { url: "https://a.example.com", transport: "http" as const, headers: {} } },
+    { name: "b", cred: { url: "https://b.example.com", transport: "http" as const, headers: {} } },
+  ];
+
+  const shapes: Array<{ label: string; allowlist: string[]; fsBound: boolean }> = [
+    { label: "namespaced", allowlist: ["a.do_thing"], fsBound: false },
+    { label: "server wildcard", allowlist: ["a.*"], fsBound: false },
+    { label: "bare", allowlist: ["do_thing"], fsBound: false },
+    { label: "wrong (mcp__) spelling", allowlist: ["mcp__a__do_thing"], fsBound: false },
+    { label: "unknown server", allowlist: ["zzz.nope"], fsBound: false },
+    { label: "namespaced + fs bound", allowlist: ["a.do_thing"], fsBound: true },
+    { label: "bare built-in + fs bound", allowlist: ["Bash"], fsBound: true },
+    { label: "bare built-in + fs UNbound", allowlist: ["Bash"], fsBound: false },
+  ];
+
+  for (const shape of shapes) {
+    it(`${shape.label}: every SDK name is valid, and an unlisted pick is DENIED (never null / never an ask)`, async () => {
+      const opts = buildOptions(
+        { tools: { allowlist: shape.allowlist } },
+        ctx({
+          fs: { app: "/a", home: "/h", session: "/s" },
+          fsBound: shape.fsBound,
+          listCredentials: servers,
+        }),
+      );
+      // Every allow rule handed to the SDK is in the SDK's own spelling.
+      for (const name of opts.allowedTools ?? []) {
+        expect(name).toMatch(/^(mcp__[A-Za-z0-9_-]+(__.+)?|Read|Write|Edit|Glob|Grep|Bash)$/);
+      }
+      // The posture is a callback, never the SDK's default ask mode.
+      expect("permissionMode" in opts).toBe(false);
+      expect(typeof opts.canUseTool).toBe("function");
+      // An unlisted pick → deny with a readable message; a listed pick → allow.
+      const unlisted = await call(opts, "mcp__b__something_else");
+      expect(unlisted?.behavior).toBe("deny");
+      expect(unlisted && "message" in unlisted && unlisted.message).toContain("tools.allowlist");
+      for (const name of opts.allowedTools ?? []) {
+        expect((await call(opts, name))?.behavior).toBe("allow");
+      }
+    });
+  }
+
+  it("resolveToolGates: the wrong-spelling / unknown-server shapes resolve to NO rules rather than a bad one", () => {
+    expect(resolveToolGates({ tools: { allowlist: ["mcp__a__x"] } }, ["a"], false).allowedTools).toEqual([]);
+    // (unknown server is a deploy-time rejection; at turn time it is a valid,
+    // merely inert, SDK rule — nothing for the model to hang on)
+    expect(resolveToolGates({ tools: { allowlist: ["zzz.nope"] } }, ["a"], false).allowedTools).toEqual([
+      "mcp__zzz__nope",
+    ]);
   });
 });
 

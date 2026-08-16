@@ -208,9 +208,33 @@ export const McpServerEntrySchema = z.union([McpServerSchema, z.literal(false)])
 export type DeclaredMcpServers = Record<string, GuueyAgentMcpServer | false>;
 
 /**
- * Tool-gate block — allowlist applied first (intersect with what the MCP
- * server advertises), then denylist subtracts. Tool names are MCP-namespaced
- * (`"<server>.<tool>"`). Bare names match across all connected servers.
+ * Tool-gate block — `allowlist` first (the model may call ONLY these), then
+ * `denylist` subtracts (removed from the model's catalog outright). Both
+ * optional; both empty/absent → every tool of every connected server.
+ *
+ * Entry shapes (guuey#234 — the ONE grammar, parsed by
+ * {@link parseToolGateEntry}, validated at deploy time by
+ * {@link validateToolGates}, and translated to the framework's own tool
+ * names by the host at turn time):
+ *
+ * - `"<server>.<tool>"` — one tool of one declared MCP server
+ *   (`"todoist.create_task"`).
+ * - `"<server>.*"`      — every tool of one declared server (`"ggui.*"`).
+ * - `"<tool>"`          — a bare name: that tool on EVERY connected server
+ *   (`"search"`), and — for a Claude agent on a GuueyFS-armed pod — the
+ *   built-in file tool of that name (`"Bash"`, `"Write"`, …).
+ *
+ * `<server>` must name a server this agent connects: a declared
+ * `mcpServers` key, the platform default `ggui` (unless opted out with
+ * `ggui: false`), or a platform-injected reserved server
+ * ({@link RESERVED_MCP_SERVER_NAMES}). The framework-internal spellings
+ * (`mcp__server__tool`) are NOT accepted — write the config grammar and
+ * let the host translate.
+ *
+ * Runtime posture (Claude): a tool the model picks that is NOT in an explicit
+ * allowlist is DENIED with a message the model can read — never routed to an
+ * interactive prompt (a headless pod has no one to answer one). Deny-listed
+ * tools never reach the model's catalog at all.
  */
 const ToolGatesSchema = z.strictObject({
   allowlist: z.array(z.string().min(1)).optional(),
@@ -687,6 +711,108 @@ export function validateReservedServerNames(
       violations.push(
         `MCP server "${name}": that name is reserved by the platform (an auto-injected server uses it) — rename this server.`,
       );
+    }
+  }
+  return violations;
+}
+
+// ── Tool-gate grammar (guuey#234) ────────────────────────────────────────────
+//
+// `agent.tools.{allowlist,denylist}` entries are schema-typed only
+// `z.string().min(1)`. Before #234 the Claude host passed the allowlist
+// VERBATIM into the SDK's `allowedTools` (which speaks `mcp__<server>__<tool>`)
+// and nothing consumed the denylist at all — so the documented `<server>.<tool>`
+// grammar was inert, and a mis-spelled entry could only surface at turn time,
+// where an unrecognized name on a headless pod means an interactive permission
+// prompt nobody answers. `parseToolGateEntry` is the ONE grammar (config side);
+// `validateToolGates` is the deploy-time pre-flight (mirrors
+// `validateReservedServerNames`'s shape — called by `@guuey/cli`'s
+// `commands/deploy.ts` and, authoritatively, the cliApi deploy handler); the
+// host translates the parsed shape into its framework's own tool names.
+
+/** One parsed `tools.allowlist` / `tools.denylist` entry. */
+export type ToolGateEntry =
+  /** `"<server>.<tool>"` — one tool of one server. */
+  | { kind: 'server-tool'; server: string; tool: string }
+  /** `"<server>.*"` — every tool of one server. */
+  | { kind: 'server-all'; server: string }
+  /** `"<tool>"` — that tool on every connected server (and the built-in of that name). */
+  | { kind: 'bare'; tool: string };
+
+/**
+ * The framework-internal MCP tool-name prefix (Claude Agent SDK:
+ * `mcp__<server>__<tool>`). Rejected in config — builders write the
+ * `<server>.<tool>` grammar; the host translates.
+ */
+const SDK_INTERNAL_TOOL_PREFIX = /^mcp__/;
+
+/**
+ * Parse one tool-gate entry per the {@link ToolGatesSchema} grammar. Returns
+ * the parsed shape, or a human-readable reason string when the entry is
+ * malformed (never throws — callers decide whether to reject or report).
+ */
+export function parseToolGateEntry(raw: string): ToolGateEntry | { error: string } {
+  const entry = raw.trim();
+  if (entry.length === 0) return { error: 'empty entry' };
+  if (SDK_INTERNAL_TOOL_PREFIX.test(entry)) {
+    return {
+      error: `"${entry}" uses the framework-internal spelling — write "<server>.<tool>" (or "<server>.*", or a bare tool name) instead`,
+    };
+  }
+  const dot = entry.indexOf('.');
+  if (dot === -1) return { kind: 'bare', tool: entry };
+  const server = entry.slice(0, dot);
+  const tool = entry.slice(dot + 1);
+  if (server.length === 0) return { error: `"${entry}" has an empty server name before the dot` };
+  if (tool.length === 0) return { error: `"${entry}" has an empty tool name after the dot` };
+  if (tool === '*') return { kind: 'server-all', server };
+  if (tool.includes('*')) {
+    return { error: `"${entry}": wildcards are only valid as the whole tool part ("${server}.*")` };
+  }
+  return { kind: 'server-tool', server, tool };
+}
+
+/**
+ * The server names a tool-gate entry may qualify with: every EFFECTIVE server
+ * (declared map with the platform default seeded and `ggui: false` honoured —
+ * {@link effectiveMcpServers}) plus the platform-injected reserved servers
+ * ({@link RESERVED_MCP_SERVER_NAMES}: memory / profile, spliced at invoke time
+ * for authenticated callers).
+ */
+export function toolGateServerNames(agent: GuueyAgent | undefined): string[] {
+  return [
+    ...Object.keys(effectiveMcpServers(agent?.mcpServers)),
+    ...RESERVED_MCP_SERVER_NAMES,
+  ];
+}
+
+/**
+ * Validate `agent.tools.allowlist` / `agent.tools.denylist` at deploy time
+ * (guuey#234). Every entry must parse per {@link parseToolGateEntry}, and a
+ * server-qualified entry must name a server this agent connects
+ * ({@link toolGateServerNames}). Returns a list of human-readable violation
+ * messages (empty = clean). Tool-level existence against a server's live
+ * manifest is NOT checked here (a hosted server's tool set is only known once
+ * it is connected) — that is why the host DENIES an unlisted pick at turn time
+ * instead of prompting.
+ */
+export function validateToolGates(agent: GuueyAgent | undefined): string[] {
+  const violations: string[] = [];
+  const gates = agent?.tools;
+  if (!gates) return violations;
+  const known = new Set(toolGateServerNames(agent));
+  for (const list of ['allowlist', 'denylist'] as const) {
+    for (const raw of gates[list] ?? []) {
+      const parsed = parseToolGateEntry(raw);
+      if ('error' in parsed) {
+        violations.push(`tools.${list}: ${parsed.error}`);
+        continue;
+      }
+      if (parsed.kind !== 'bare' && !known.has(parsed.server)) {
+        violations.push(
+          `tools.${list}: "${raw}" names MCP server "${parsed.server}", which this agent does not connect — declare it under mcpServers or use one of: ${[...known].join(', ')}`,
+        );
+      }
     }
   }
   return violations;

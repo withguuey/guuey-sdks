@@ -75,7 +75,25 @@ export interface Invoke {
   type: "invoke";
   input: string;
   identity: Identity;
+  /**
+   * The three layer mounts. NON-NULL on every turn (§1.4): real GuueyFS layers
+   * when the pod has durable storage armed, the spec-default `/app`/`/home`/
+   * `/session` mounts otherwise — so presence says nothing about whether the
+   * layers are real. See {@link fsBound}.
+   */
   fs: Fs;
+  /**
+   * Whether {@link fs} names REAL GuueyFS layers this turn (guuey#234): the
+   * pod has `GUUEY_FS_BASE` armed by the operator and the Router resolved
+   * per-session layer dirs under it — NOT the spec-default mounts, NOT the
+   * federation-only ephemeral base the broker uses for credential files. THE
+   * gate for a host's built-in file tools + shell (`@guuey/host`'s Claude
+   * adapter: `tools: [Read, Write, Edit, Glob, Grep, Bash]` iff true). Absent/
+   * false → the host is purely MCP-driven. Mirrors {@link memoryAttached}: a
+   * pod-side signal threaded per invoke, never re-derived from `fs` presence
+   * (the pre-#234 proxy that put Bash in EVERY no-code agent's catalog).
+   */
+  fsBound?: boolean;
   history: HistoryMessage[];
   /** Thread-scoped memory folded from prior turns (the `<thread_memory>` preamble). */
   priorMemory?: PriorMemoryRecord[];

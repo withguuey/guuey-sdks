@@ -43,6 +43,12 @@ export interface HostInvoke {
   input: string;
   identity: Identity;
   fs: Fs;
+  /**
+   * Whether `fs` names REAL GuueyFS layers this turn (guuey#234) — the gate
+   * for the built-in file tools + `Bash`. See `Invoke.fsBound` in
+   * `@guuey/worker`. Absent/false → purely MCP-driven.
+   */
+  fsBound?: boolean;
   history: HistoryMessage[];
   priorMemory?: PriorMemoryRecord[];
   priorState?: JsonValue;
@@ -160,6 +166,7 @@ export async function runInvoke(
       input: invoke.input,
       identity: invoke.identity,
       fs: invoke.fs,
+      ...(invoke.fsBound !== undefined ? { fsBound: invoke.fsBound } : {}),
       history: invoke.history,
       listCredentials: runtime.listCredentials,
       ...(runtime.apiKey !== undefined ? { apiKey: runtime.apiKey } : {}),

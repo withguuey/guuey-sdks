@@ -122,6 +122,10 @@ export function parseControl(line: string): ControlMessage {
         input: raw.input,
         identity: parseIdentity(raw.identity),
         fs: parseFs(raw.fs),
+        // guuey#234: the "fs names REAL GuueyFS layers" signal — the host's
+        // built-in tool gate. Omitted unless a real boolean so it never lands
+        // as `undefined` (and a missing field reads as NOT bound, fail-closed).
+        ...(typeof raw.fsBound === "boolean" ? { fsBound: raw.fsBound } : {}),
         history: parseHistory(raw.history),
         // §1.4 push-by-value context — additive, both optional. `priorState` uses
         // a `!== undefined` gate (not truthiness) so a falsy blob (null/0/"") is

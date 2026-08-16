@@ -45,6 +45,7 @@ import {
   buildDeploySnapshot,
   validateNoLiteralSecrets,
   validateColocatedServerNames,
+  validateToolGates,
   writeGuueyJsonFile,
   declaredServerEntries,
   type ResolvedGuueyJson,
@@ -440,6 +441,19 @@ async function deployCode(opts: {
   const colocatedNameViolations = validateColocatedServerNames(doc.agent);
   if (colocatedNameViolations.length > 0) {
     out.error(colocatedNameViolations.map((v) => `  - ${v}`).join('\n'));
+    process.exit(1);
+  }
+
+  // guuey#234: tool-gate entries must parse the config grammar and name servers
+  // this agent connects — caught HERE, before upload; the alternative is a
+  // mis-spelled tool surfacing at turn time inside a headless pod.
+  const toolGateViolations = validateToolGates(doc.agent);
+  if (toolGateViolations.length > 0) {
+    out.error(
+      'Invalid tools.allowlist / tools.denylist entries:\n' +
+        toolGateViolations.map((v) => `  - ${v}`).join('\n') +
+        '\nUse "<server>.<tool>", "<server>.*", or a bare tool name.',
+    );
     process.exit(1);
   }
 
@@ -1009,6 +1023,17 @@ async function deployDeclarative(opts: {
   const colocatedNameViolations = validateColocatedServerNames(agent);
   if (colocatedNameViolations.length > 0) {
     out.error(colocatedNameViolations.map((v) => `  - ${v}`).join('\n'));
+    process.exit(1);
+  }
+
+  // Same tool-gate grammar gate as the code-orchestrated path (guuey#234).
+  const toolGateViolations = validateToolGates(agent);
+  if (toolGateViolations.length > 0) {
+    out.error(
+      'Invalid tools.allowlist / tools.denylist entries:\n' +
+        toolGateViolations.map((v) => `  - ${v}`).join('\n') +
+        '\nUse "<server>.<tool>", "<server>.*", or a bare tool name.',
+    );
     process.exit(1);
   }
 
