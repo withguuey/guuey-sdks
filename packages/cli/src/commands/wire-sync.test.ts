@@ -28,17 +28,20 @@ const WIRE_APPS = repoPath(`${CLI_WIRE_DIR}/apps.ts`);
 const WIRE_MCP = repoPath(`${CLI_WIRE_DIR}/mcp.ts`);
 const WIRE_WIDGET_KEYS = repoPath(`${CLI_WIRE_DIR}/widget-keys.ts`);
 const WIRE_DEPLOY = repoPath(`${CLI_WIRE_DIR}/deploy.ts`);
+const WIRE_MCP_CONNECTIONS = repoPath(`${CLI_WIRE_DIR}/mcp-connections.ts`);
 
 const CLI_APPS = repoPath('./apps.ts');
 const CLI_MCP = repoPath('./mcp.ts');
 const CLI_WIDGET = repoPath('./widget.ts');
 const CLI_AGENT = repoPath('./agent.ts');
+const CLI_MCP_CONNECTIONS = repoPath('./mcp-connections.ts');
 
 const haveWire =
   existsSync(WIRE_APPS) &&
   existsSync(WIRE_MCP) &&
   existsSync(WIRE_WIDGET_KEYS) &&
-  existsSync(WIRE_DEPLOY);
+  existsSync(WIRE_DEPLOY) &&
+  existsSync(WIRE_MCP_CONNECTIONS);
 const read = (path: string): string => readFileSync(path, 'utf8');
 
 /** Field names only — the shared assertion for "these two declare the same members". */
@@ -117,5 +120,16 @@ describe.skipIf(!haveWire)('CLI wire mirrors — sync guards against @guuey-priv
     expect(parseStringLiterals(read(CLI_MCP), 'MCP_SIZES')).toEqual(
       parseStringLiterals(read(WIRE_MCP), 'McpServerSize'),
     );
+  });
+
+  it('the OAuth-broker connection mirrors declare exactly the wire fields (guuey#178 Slice 5)', () => {
+    // `guuey mcp connections` renders these; `guuey mcp connect` reads the
+    // start answer. Equality on every one — a renamed field is a blank
+    // column or a broken authorize link, silently.
+    const cli = read(CLI_MCP_CONNECTIONS);
+    const wire = read(WIRE_MCP_CONNECTIONS);
+    for (const name of ['McpAttachmentWire', 'McpConnectionWire', 'McpConnectionsWire', 'McpConnectStartWire']) {
+      expect(parseInterfaceFields(cli, name)).toEqual(parseInterfaceFields(wire, name));
+    }
   });
 });

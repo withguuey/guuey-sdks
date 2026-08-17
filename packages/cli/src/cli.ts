@@ -53,6 +53,7 @@ import {
   mcpStateExport,
   mcpStateWipe,
 } from './commands/mcp';
+import { mcpConnect, mcpConnectionsList, mcpConnectionsRevoke } from './commands/mcp-connections';
 import { mcpNew } from './commands/mcp-new';
 import {
   widgetKeysCreate,
@@ -233,6 +234,21 @@ Hosted MCP Servers:
     --server <id>                Target hosted MCP server (or --colocated)
     --colocated <appId>/<name>   Target a colocated MCP server instead of --server
     --yes                        Skip the interactive confirmation prompt
+  mcp connections                List MY connected third-party MCP accounts (the OAuth
+                                 broker: one row per authorized server, with each app's
+                                 grant — always / once / denied)
+    --json                       Emit the raw connections array as JSON
+  mcp connections revoke <id>    Revoke one connection: tokens deleted, every app grant
+                                 dropped, the server's AS told (RFC 7009, best-effort)
+  mcp connect <serverName>       Authorize a credential:'oauth' server for MY identity on
+                                 a DEPLOYED app — prints the authorize URL and opens it
+    --app <appId>                The app (default: the linked app in guuey.json)
+    --mode always|once           Grant mode (default always; once needs --thread <id>)
+    --return-to <url>            Where the browser lands afterwards (default: the app's
+                                 console Tools tab; must be on the app's allowedDomains
+                                 or a guuey first-party origin)
+    --no-browser                 Print the URL only
+    --json                       Emit { authorizeUrl, expiresAt } as JSON
   mcp new <name>                 Scaffold a hosted MCP from the shared mcp-base template
     --scope <scope>              Package scope override (default: project scope, or <name> standalone)
                                  Inside a guuey project: scaffolds mcps/<name>/ and wires it
@@ -591,6 +607,25 @@ async function main(): Promise<void> {
               process.exit(1);
           }
           break;
+        case 'connections':
+          switch (rest[0]) {
+            case undefined:
+            case 'list':
+              await mcpConnectionsList(flags);
+              break;
+            case 'revoke':
+              await mcpConnectionsRevoke(rest[1]);
+              break;
+            default:
+              console.error(
+                `Unknown mcp connections command: ${rest[0]}. Use: list, revoke`,
+              );
+              process.exit(1);
+          }
+          break;
+        case 'connect':
+          await mcpConnect(rest[0], flags);
+          break;
         case 'state':
           switch (rest[0]) {
             case 'list':
@@ -611,7 +646,7 @@ async function main(): Promise<void> {
           break;
         default:
           console.error(
-            `Unknown mcp command: ${action ?? '(none)'}. Use: list, status, deploy, logs, delete, new, secrets, state`,
+            `Unknown mcp command: ${action ?? '(none)'}. Use: list, status, deploy, logs, delete, new, secrets, state, connections, connect`,
           );
           process.exit(1);
       }
