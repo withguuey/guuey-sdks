@@ -19,10 +19,22 @@
     // types.d.ts, whose specifiers are extension-correct. Runtime is
     // untouched: tsc still emits the bare specifier, and the package's
     // runtime entry is a self-contained bundle that resolves fine under
-    // plain Node (check:esm covers it).
+    // plain Node (check:esm covers it). Still true at 1.7.5 (the newest
+    // release as of 2026-08-17); re-check when bumping the range.
+    //
+    // TWO candidates, tried in order, because the package's physical
+    // location depends on which workspace installed it (guuey#240):
+    //  1. this package's OWN nested copy — the oss workspace's layout
+    //     (isolated install; the guuey-sdks mirror is exactly this);
+    //  2. the monorepo root's HOISTED copy — under the root workspace's
+    //     `nodeLinker: hoisted` + the ext-apps override, one copy wins at
+    //     the root and pnpm nests nothing here, so candidate 1 is absent.
+    // Both point at the same file inside whichever ext-apps satisfies the
+    // ^1.7.5 range; the override guarantees that is one version everywhere.
     "paths": {
       "@modelcontextprotocol/ext-apps": [
-        "./node_modules/@modelcontextprotocol/ext-apps/dist/src/types.d.ts"
+        "./node_modules/@modelcontextprotocol/ext-apps/dist/src/types.d.ts",
+        "../../../node_modules/@modelcontextprotocol/ext-apps/dist/src/types.d.ts"
       ]
     }
   },
