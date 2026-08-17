@@ -32,6 +32,7 @@ import {
   appsUnpublish,
   appsUpdate,
   buildUpdateAppBody,
+  oidcRelayRedirectUri,
   type UpdateAppRequest,
 } from './apps.js';
 import { resolveConfig } from '../config.js';
@@ -368,6 +369,53 @@ describe('buildUpdateAppBody', () => {
     expect(message).toMatch(/No fields to update/);
     expect(message).toContain('--domains');
     expect(message).toContain('--auth-mode');
+    expect(message).toContain('--oidc-client-id');
+  });
+
+  // ── The standalone-page OIDC client (guuey#141) ────────────────────────
+  describe('--oidc-client-id / --oidc-client-secret / --clear-oidc-client', () => {
+    const pair = { issuerUrl: 'https://login.acme.example', audience: 'client-1' };
+
+    it('registers the client on the same wire member as the binding; the secret rides once, plaintext', () => {
+      expect(built({ ...pair, oidcClientId: 'client-1', oidcClientSecret: 's3cr3t' })).toEqual({
+        userAuthConfig: {
+          ...pair,
+          oidcClientId: 'client-1',
+          oidcClientSecret: 's3cr3t',
+        },
+      });
+      expect(built({ ...pair, oidcClientId: 'client-1' })).toEqual({
+        userAuthConfig: { ...pair, oidcClientId: 'client-1' },
+      });
+    });
+
+    it('a bare/empty --oidc-client-secret removes the stored secret (public client from now on)', () => {
+      expect(built({ ...pair, oidcClientSecret: '' })).toEqual({
+        userAuthConfig: { ...pair, oidcClientSecret: null },
+      });
+    });
+
+    it('--clear-oidc-client sends oidcClientId: null (the server drops the secret with it)', () => {
+      expect(built({ ...pair, clearOidcClient: true })).toEqual({
+        userAuthConfig: { ...pair, oidcClientId: null },
+      });
+    });
+
+    it('needs the issuer/audience pair on the same call, and refuses contradictory clears', () => {
+      expect(refused({ oidcClientId: 'client-1' })).toMatch(/need --issuer-url and --audience/);
+      expect(refused({ ...pair, clearOidcClient: true, oidcClientId: 'x' })).toMatch(/cannot be combined/);
+      expect(refused({ clearAuthConfig: true, oidcClientId: 'x' })).toMatch(/cannot be combined/);
+      expect(refused({ ...pair, oidcClientId: '' })).toMatch(/requires a value/);
+    });
+  });
+
+  it('oidcRelayRedirectUri is the env api origin + the ONE relay callback', () => {
+    expect(oidcRelayRedirectUri('https://api.dev.sandbox.guuey.com/v1')).toBe(
+      'https://api.dev.sandbox.guuey.com/v1/auth/relay/complete',
+    );
+    expect(oidcRelayRedirectUri('https://api.us-east-1.guuey.com/v1/')).toBe(
+      'https://api.us-east-1.guuey.com/v1/auth/relay/complete',
+    );
   });
 
   // Widget wave 2, ratification #3 — `--widget-embed-identity

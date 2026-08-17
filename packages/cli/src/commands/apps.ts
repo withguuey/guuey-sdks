@@ -47,7 +47,14 @@ interface AppSummary {
 interface AppDetail extends AppSummary {
   allowedDomains?: string[];
   userAuthMode?: string | null;
-  userAuthConfig?: { issuerUrl: string | null; audience: string | null } | null;
+  userAuthConfig?: {
+    issuerUrl: string | null;
+    audience: string | null;
+    /** Standalone-page OIDC client (guuey#141); `null` = page sign-in not registered. */
+    oidcClientId?: string | null;
+    /** Whether a client secret is stored (sealed) — the secret itself is never echoed. */
+    hasOidcClientSecret?: boolean;
+  } | null;
   /**
    * Standalone-page branding, echoed as stored (guuey#149) — so
    * `guuey apps get` shows what `guuey apps update --brand-*` wrote.
@@ -99,6 +106,20 @@ function getApiBase(): string {
     );
   }
   return apiUrl.replace(/\/$/, '');
+}
+
+/**
+ * The redirect URI a customer registers at their IdP for the standalone-page
+ * OIDC sign-in (guuey#141): the env's ONE relay callback,
+ * `https://api.<env-host>/v1/auth/relay/complete`. Derived from the same
+ * api base every other call here uses (`…/v1`), so `guuey apps get` prints
+ * the byte-exact value the relay sends as `redirect_uri`. Mirror of
+ * `@guuey-private/cli-wire`'s `oidcRelayRedirectUri` (this package cannot
+ * take the private dep).
+ */
+export function oidcRelayRedirectUri(apiBase: string = getApiBase()): string {
+  const origin = new URL(apiBase).origin;
+  return `${origin}/v1/auth/relay/complete`;
 }
 
 async function apiRequest(method: string, path: string, body?: unknown): Promise<Response> {
@@ -238,6 +259,14 @@ export async function appsGet(
     console.log(`  Issuer:       ${app.userAuthConfig.issuerUrl}`);
   if (app.userAuthConfig?.audience)
     console.log(`  Audience:     ${app.userAuthConfig.audience}`);
+  if (app.userAuthConfig?.oidcClientId) {
+    // guuey#141 — the app's own IdP signs visitors into the standalone page.
+    console.log(
+      `  Page sign-in: OIDC redirect (client ${app.userAuthConfig.oidcClientId}, ` +
+        `${app.userAuthConfig.hasOidcClientSecret ? 'secret stored' : 'public client'})`,
+    );
+    console.log(`  Redirect URI: ${oidcRelayRedirectUri()}`);
+  }
   if (app.allowedDomains?.length)
     console.log(`  Domains:      ${app.allowedDomains.join(', ')}`);
   if (app.brandIconUrl) console.log(`  Brand Icon:   ${app.brandIconUrl}`);
@@ -316,7 +345,16 @@ export interface UpdateAppRequest {
   description?: string;
   allowedDomains?: string[];
   userAuthMode?: string;
-  userAuthConfig?: { issuerUrl: string; audience: string } | null;
+  userAuthConfig?:
+    | {
+        issuerUrl: string;
+        audience: string;
+        /** Standalone-page OIDC client (guuey#141): a string registers, `null` de-registers. */
+        oidcClientId?: string | null;
+        /** Plaintext ONCE — cliApi seals it under KMS; `null` removes the stored secret. */
+        oidcClientSecret?: string | null;
+      }
+    | null;
   /** Widget wave-2 embed identity-mode policy (ratification #3). */
   widgetEmbedIdentity?: 'identified' | 'anonymous' | null;
   /**
@@ -513,6 +551,9 @@ export function buildUpdateAppBody(opts: {
   issuerUrl?: string;
   audience?: string;
   clearAuthConfig?: boolean;
+  oidcClientId?: string;
+  oidcClientSecret?: string;
+  clearOidcClient?: boolean;
   widgetEmbedIdentity?: string;
   brandIconUrl?: string;
   brandOgImageUrl?: string;
@@ -541,18 +582,42 @@ export function buildUpdateAppBody(opts: {
   if (opts.authMode) body.userAuthMode = opts.authMode;
 
   const hasIssuerPair = Boolean(opts.issuerUrl) || Boolean(opts.audience);
-  if (opts.clearAuthConfig && hasIssuerPair) {
-    return '--clear-auth-config cannot be combined with --issuer-url / --audience.';
+  // The standalone-page OIDC client (guuey#141) rides the SAME wire member —
+  // the server merges it onto the stored binding, but the wire needs the
+  // issuer/audience pair alongside (both-or-neither on the server too), so
+  // the client flags require the pair on the same invocation.
+  const hasOidcClient =
+    opts.oidcClientId !== undefined || opts.oidcClientSecret !== undefined || opts.clearOidcClient;
+  if (opts.clearAuthConfig && (hasIssuerPair || hasOidcClient)) {
+    return '--clear-auth-config cannot be combined with --issuer-url / --audience / --oidc-client-*.';
+  }
+  if (opts.clearOidcClient && (opts.oidcClientId !== undefined || opts.oidcClientSecret !== undefined)) {
+    return '--clear-oidc-client cannot be combined with --oidc-client-id / --oidc-client-secret.';
   }
   if (opts.clearAuthConfig) {
     body.userAuthConfig = null;
-  } else if (hasIssuerPair) {
+  } else if (hasIssuerPair || hasOidcClient) {
     // Both-or-neither: a half-configured issuer binding verifies nothing,
     // so the server rejects it too — this just fails faster.
     if (!opts.issuerUrl || !opts.audience) {
-      return '--issuer-url and --audience must be provided together.';
+      return hasOidcClient
+        ? '--oidc-client-id / --oidc-client-secret / --clear-oidc-client need --issuer-url and --audience on the same call.'
+        : '--issuer-url and --audience must be provided together.';
     }
     body.userAuthConfig = { issuerUrl: opts.issuerUrl, audience: opts.audience };
+    if (opts.clearOidcClient) {
+      body.userAuthConfig.oidcClientId = null;
+    } else {
+      if (opts.oidcClientId !== undefined) {
+        if (opts.oidcClientId.trim() === '') return '--oidc-client-id requires a value.';
+        body.userAuthConfig.oidcClientId = opts.oidcClientId;
+      }
+      if (opts.oidcClientSecret !== undefined) {
+        // An empty value removes the stored secret (public client from now on).
+        body.userAuthConfig.oidcClientSecret =
+          opts.oidcClientSecret.trim() === '' ? null : opts.oidcClientSecret;
+      }
+    }
   }
 
   if (opts.widgetEmbedIdentity !== undefined) {
@@ -621,7 +686,8 @@ export function buildUpdateAppBody(opts: {
  */
 const NO_UPDATE_FIELDS_MESSAGE =
   'No fields to update. Use --name, --description, --domains, --auth-mode, ' +
-  '--issuer-url + --audience, --clear-auth-config, --widget-embed-identity, ' +
+  '--issuer-url + --audience, --clear-auth-config, --oidc-client-id, ' +
+  '--oidc-client-secret, --clear-oidc-client, --widget-embed-identity, ' +
   '--brand-icon-url, --brand-og-image-url, --brand-icon-file, ' +
   '--brand-og-image-file, --brand-accent, --page, --welcome-copy, ' +
   '--cta-label, --cta-url, --identity-endpoint-url, or --noindex.';
@@ -658,6 +724,9 @@ export async function appsUpdate(
     issuerUrl?: string;
     audience?: string;
     clearAuthConfig?: boolean;
+    oidcClientId?: string;
+    oidcClientSecret?: string;
+    clearOidcClient?: boolean;
     widgetEmbedIdentity?: string;
     brandIconUrl?: string;
     brandOgImageUrl?: string;
