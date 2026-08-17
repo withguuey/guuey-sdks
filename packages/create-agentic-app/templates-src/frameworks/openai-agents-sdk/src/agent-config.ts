@@ -48,7 +48,7 @@ export function mcpEndpoints(invoke: Invoke, agent: GuueyAgent): Record<string, 
   const out: Record<string, McpEndpoint> = {};
   for (const [name, entry] of Object.entries(agent.mcpServers ?? {})) {
     if (entry === false) continue; // `ggui: false` is the generative-UI opt-out, not a server entry
-    if (entry.kind !== "external") continue; // hosted/proxied are lowered to external before a worker ever runs
+    if (entry.kind !== "external") continue; // hosted/colocated are lowered to external before a worker ever runs
     out[name] = {
       url: entry.url,
       transport: entry.transport ?? "http",

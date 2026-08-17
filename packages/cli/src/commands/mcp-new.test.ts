@@ -76,12 +76,12 @@ function makeDoc(mcpServers?: GuueyJsonV1Input['agent']['mcpServers']): GuueyJso
 }
 
 describe('collectUsedDevPorts', () => {
-  it('collects devPort from hosted and external entries, skipping colocated/proxied', () => {
+  it('collects devPort from hosted and external entries, skipping colocated / devPort-less oauth externals', () => {
     const doc = makeDoc({
       todo: { kind: 'hosted', source: './mcps/todo', devPort: 6782 },
       weather: { kind: 'external', url: 'https://x.example', devPort: 6783 },
       local: { kind: 'colocated', source: './mcps/local' },
-      third: { kind: 'proxied', connection: 'conn-1' },
+      third: { kind: 'external', url: 'https://mcp.linear.app/mcp', credential: 'oauth' },
     });
     expect(collectUsedDevPorts(doc)).toEqual([6782, 6783]);
   });

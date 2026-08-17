@@ -137,9 +137,11 @@ export interface LowerForDevResult {
  *   it locally now; `guuey deploy` — there's no live server to dial before
  *   that). Warns rather than throws: pre-deploy there's no live server this
  *   would silently miss, unlike the registry-reuse case above.
- * - `proxied` (schema has no `devPort`/`source` slot at all — v2, runtime
- *   support not yet built) → no local-dev story yet — dropped with the
- *   generic console warning rather than silently failing at invoke time.
+ * - `external` with `credential: 'oauth'` (guuey#178) → dropped with an
+ *   actionable console warning: the third-party OAuth broker is a deploy-only
+ *   path (the pod dials the hosted gateway route the deploy-controller lowers
+ *   the entry to; there is no lowered snapshot in a local loop) — `guuey
+ *   deploy` to test it.
  *
  * Also platform-injects the default local `ggui serve` endpoint when no
  * `ggui` entry is present — mirrors the platform injecting `mcp.ggui.ai` for
@@ -188,6 +190,12 @@ export function lowerForDev(agent: GuueyAgent): LowerForDevResult {
       continue;
     }
     if (entry.kind === "external") {
+      if (entry.credential === "oauth") {
+        console.warn(
+          `guuey dev: dropping MCP server "${name}" (credential: oauth) — third-party OAuth servers run through the hosted credential-broker gateway, which has no local-dev counterpart; run 'guuey deploy' to test it`,
+        );
+        continue;
+      }
       lowered[name] = entry;
       continue;
     }
@@ -202,9 +210,6 @@ export function lowerForDev(agent: GuueyAgent): LowerForDevResult {
       );
       continue;
     }
-    console.warn(
-      `guuey dev: dropping MCP server "${name}" (kind: ${entry.kind}) — unsupported in local dev v1`,
-    );
   }
 
   if (!hasGgui) {

@@ -116,22 +116,18 @@ const HostedMcp = z
   });
 
 /**
- * `kind: 'proxied'` — a 3rd-party SaaS MCP reached through the mcp-proxy
- * credential broker (Case C). Schema is present now; runtime support lands v2.
- */
-const ProxiedMcp = z.strictObject({
-  kind: z.literal('proxied'),
-  /** mcp-proxy connection id (not yet available — rides with the mcp-proxy credential broker). */
-  connection: z.string().min(1),
-});
-
-/**
- * `kind: 'external'` — builder-hosted MCP at an arbitrary URL.
+ * `kind: 'external'` — any MCP reached by URL: builder-hosted, or a
+ * third-party SaaS server (Linear, Notion, GitHub, …).
  *
+ * One map, three credential sources + one forward (guuey#178 D1):
  * - `transport` defaults to `'http'` (StreamableHTTP).
+ * - static `headers` (values may use `${env.NAME}`) — API-key servers.
  * - `federate: true` makes guuey mint a per-invoke JWT with `aud = url` that
- *   the builder's MCP validates against the guuey JWKS. Omit for plain URL +
- *   optional static `headers`.
+ *   the builder's MCP validates against the guuey JWKS.
+ * - `credential: 'oauth'` — the server's users sign in with the server's OWN
+ *   OAuth authorization server; guuey brokers the dance and the token
+ *   (see the field doc). URL + `credential: 'oauth'` is the whole
+ *   declaration — nothing is builder-registered; discovery does the rest.
  * - `credential: 'caller'` forwards the invoke's own byo-verified bearer as
  *   this server's per-turn credential (guuey#179) — see the field doc.
  */
@@ -159,8 +155,23 @@ const ExternalMcp = z
      * which app receives its token); FIRST-PARTY USE ONLY for now — gate this
      * (URL allowlist or console warning) before opening it to arbitrary
      * builders. Mutually exclusive with `federate: true`.
+     *
+     * `'oauth'` — the FOURTH mode (guuey#178): the server is a third-party
+     * MCP whose end users must sign in with the server's own OAuth
+     * authorization server (RFC 9728 / 8414 discovery, PKCE, RFC 8707
+     * resource). guuey runs the dance ONCE per (user, server) from a
+     * consent card in the chat, seals the token in the platform's
+     * credential broker, and the agent's calls to this server go through
+     * the broker's gateway (`https://mcp.<apex>/brokered/<appId>/<name>/`),
+     * which injects the user's token per call — the agent pod never holds
+     * the third-party token. The deploy-controller lowers this entry by
+     * setting {@link mcpResourceUrl} to that route while `url` keeps the
+     * upstream. Deploy-only: `guuey dev` has no lowered snapshot. Mutually
+     * exclusive with `federate: true` (the broker route IS the federation
+     * target) and with a declared `authorization` header (the broker
+     * injects the only Authorization this server ever sees).
      */
-    credential: z.literal('caller').optional(),
+    credential: z.enum(['caller', 'oauth']).optional(),
     /** Static headers forwarded on every request. Values may use `${env.NAME}` placeholders. */
     headers: HeadersSchema.optional(),
     /** Local dev-loop port (`guuey dev`) this MCP is served on for name→localhost URL resolution. */
@@ -181,7 +192,22 @@ const ExternalMcp = z
   .refine((v) => !(v.credential === 'caller' && v.federate === true), {
     message:
       "credential: 'caller' cannot be combined with federate: true — the forwarded caller bearer IS the credential; a minted federation token would shadow it",
-  });
+  })
+  .refine((v) => !(v.credential === 'oauth' && v.federate === true), {
+    message:
+      "credential: 'oauth' cannot be combined with federate: true — the brokered gateway route IS this server's federation target; the pod mints for it automatically",
+  })
+  .refine(
+    (v) =>
+      !(
+        v.credential === 'oauth' &&
+        Object.keys(v.headers ?? {}).some((h) => h.toLowerCase() === 'authorization')
+      ),
+    {
+      message:
+        "credential: 'oauth' cannot be combined with an `authorization` header — the credential broker injects the user's OAuth token as the only Authorization this server sees",
+    },
+  );
 
 /**
  * A single MCP server entry inside `agent.mcpServers`.
@@ -189,13 +215,16 @@ const ExternalMcp = z
  * Discriminated union on `kind` — one slot per hosting mode:
  * - `colocated` — guuey-managed HTTP child inside the agent pod
  * - `hosted`    — guuey-hosted registry MCP (Starter+)
- * - `proxied`   — 3rd-party SaaS via mcp-proxy credential broker (v2)
- * - `external`  — builder-hosted, reached by URL (plain or federated)
+ * - `external`  — reached by URL: builder-hosted (plain / federated /
+ *                 caller-forwarded) or third-party OAuth (`credential: 'oauth'`)
+ *
+ * (`kind: 'proxied'` — the pre-registration placeholder the mcp-proxy broker
+ * once reserved — is gone: `credential: 'oauth'` on an `external` entry IS
+ * that arm, guuey#178 D1.)
  */
 const McpServerSchema = z.discriminatedUnion('kind', [
   ColocatedMcp,
   HostedMcp,
-  ProxiedMcp,
   ExternalMcp,
 ]);
 
@@ -411,8 +440,8 @@ export const AgentSectionV1 = z.strictObject({
    * (valid only under the `ggui` key):
    * - `'colocated'` — guuey-managed HTTP child inside the agent pod
    * - `'hosted'`    — guuey-hosted registry MCP (Starter+)
-   * - `'proxied'`   — 3rd-party SaaS via mcp-proxy (v2)
-   * - `'external'`  — builder-hosted URL (plain or federated)
+   * - `'external'`  — reached by URL (plain / federated / caller-forwarded /
+   *                   third-party OAuth via `credential: 'oauth'`)
    */
   mcpServers: z
     .record(z.string().min(1), McpServerEntrySchema)
@@ -635,39 +664,6 @@ export function validateColocatedServerNames(
   return violations;
 }
 
-// ── No-proxied-servers validation (deploy-time contract enforcement) ────────
-//
-// `kind: 'proxied'` keeps its schema arm (the documented mcp-proxy
-// credential-broker deferral — wires when the 2nd stored-creds customer signs
-// up) but has NO runtime support today: a pod that booted one would silently
-// miss those tools. `validateNoProxiedServers` is the synchronous deploy-time
-// pre-flight (mirrors `validateColocatedServerNames`'s shape) that rejects it
-// with a fast, actionable error. The deploy-controller's
-// `resolveMcpServersInSnapshot` carries the authoritative backstop throw for
-// code deploys, which never pass through this validator.
-
-/**
- * Validate that no `agent.mcpServers` entry uses `kind: 'proxied'`. Returns a
- * list of human-readable violation messages (empty = clean), one per proxied
- * entry, naming the server so the builder knows which ref to change.
- */
-export function validateNoProxiedServers(
-  agent: GuueyAgent | undefined,
-): string[] {
-  const violations: string[] = [];
-  const servers = agent?.mcpServers;
-  if (!servers) return violations;
-
-  for (const [name, server] of declaredServerEntries(servers)) {
-    if (server.kind === 'proxied') {
-      violations.push(
-        `MCP server "${name}": kind 'proxied' (the mcp-proxy credential broker) is not yet supported — use 'external', 'hosted', or 'colocated'.`,
-      );
-    }
-  }
-  return violations;
-}
-
 // ── Reserved platform MCP server names (deploy-time reservation) ────────────
 //
 // Some `mcpServers` map keys are OWNED by the platform: the runtime splices a
@@ -714,7 +710,7 @@ export const RESERVED_MCP_SERVER_NAMES: readonly string[] = [
  * reserved, not just one hosting mode; a builder must not shadow it as
  * `colocated`, `external`, or anything else). Returns a list of human-readable
  * violation messages (empty = clean), one per reserved entry. Mirrors
- * {@link validateNoProxiedServers}'s shape.
+ * {@link validateColocatedServerNames}'s shape.
  */
 export function validateReservedServerNames(
   agent: GuueyAgent | undefined,

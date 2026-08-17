@@ -3,7 +3,7 @@
  * `mcp-base` template (`@guuey/create-agentic-app#scaffoldMcp`).
  *
  * Asks no questions (mcp-lifecycle design spec M6): the old co-locate /
- * external / proxied decision-tree is printed guidance in `--help` (see
+ * external decision-tree is printed guidance in `--help` (see
  * `cli.ts`'s `printHelp`), not an interrogation — its tier-aware routing
  * depended on the deferred pricing axis.
  *

@@ -184,11 +184,11 @@ describe('planMcpLegs', () => {
     expect(planMcpLegs(agent)).toEqual([]);
   });
 
-  it('skips colocated + proxied entries', () => {
+  it('skips colocated + credential:oauth external entries (nothing of the builder\'s to build)', () => {
     const agent = {
       mcpServers: {
         local: { kind: 'colocated', source: './mcps/local' },
-        conn: { kind: 'proxied', connection: 'conn-1' },
+        linear: { kind: 'external', url: 'https://mcp.linear.app/mcp', credential: 'oauth' },
       },
     } as GuueyAgent;
 

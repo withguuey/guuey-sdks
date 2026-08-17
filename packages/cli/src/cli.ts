@@ -242,7 +242,9 @@ Hosted MCP Servers:
                                    hosted (this)  — you own the code, want guuey to build+run it
                                    colocated      — an HTTP child that rides the agent pod for free
                                    external       — you already host it somewhere reachable by URL
-                                   proxied        — 3rd-party SaaS MCP via the mcp-proxy credential broker (v2)
+                                                    (add "credential": "oauth" for a 3rd-party server
+                                                    whose users sign in with its own OAuth — guuey
+                                                    brokers the dance + the token; deploy to test)
 
 Worker Conformance:
   worker verify [<entry>]        Verify a worker is Guuey Worker Protocol v1 conformant

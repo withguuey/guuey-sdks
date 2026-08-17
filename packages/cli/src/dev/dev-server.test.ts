@@ -284,15 +284,20 @@ describe("lowerForDev", () => {
     warn.mockRestore();
   });
 
-  it("drops proxied entries (warns, does not throw)", () => {
+  it("drops credential:'oauth' external entries (deploy-only broker path — warns, does not throw)", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const lowered = lowerForDev({
-      mcpServers: { saas: { kind: "proxied", connection: "conn_123" } },
+      mcpServers: {
+        linear: { kind: "external", url: "https://mcp.linear.app/mcp", credential: "oauth" },
+        plain: { kind: "external", url: "https://mcp.example.com/mcp" },
+      },
     });
-    expect(lowered.agent.mcpServers?.saas).toBeUndefined();
+    expect(lowered.agent.mcpServers?.linear).toBeUndefined();
+    expect(lowered.agent.mcpServers?.plain).toEqual({ kind: "external", url: "https://mcp.example.com/mcp" });
     expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('dropping MCP server "saas" (kind: proxied) — unsupported in local dev v1'),
+      expect.stringContaining('dropping MCP server "linear" (credential: oauth)'),
     );
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("guuey deploy"));
     warn.mockRestore();
   });
 

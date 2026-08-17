@@ -3,7 +3,6 @@ import {
   AgentSectionV1,
   validateColocatedServerNames,
   validateNoLiteralSecrets,
-  validateNoProxiedServers,
   validateReservedServerNames,
   validateToolGates,
   parseToolGateEntry,
@@ -227,65 +226,13 @@ describe('validateColocatedServerNames', () => {
   });
 });
 
-// ── validateNoProxiedServers (deploy-time proxied-kind rejection) ───────────
-//
-// `kind: 'proxied'` keeps its schema arm (the documented mcp-proxy broker
-// deferral) but is unsupported at runtime — an agent that deploys one boots
-// silently missing those tools. This deploy-time pre-flight (mirrors
-// `validateColocatedServerNames`'s shape) rejects it loudly; the
-// deploy-controller's `resolveMcpServersInSnapshot` throw is the authoritative
-// backstop for code deploys.
-
-describe('validateNoProxiedServers', () => {
-  it('no mcpServers / undefined agent -> clean', () => {
-    expect(validateNoProxiedServers(undefined)).toEqual([]);
-    expect(validateNoProxiedServers({})).toEqual([]);
-  });
-
-  it('a proxied entry is reported with an actionable message', () => {
-    const agent: GuueyAgent = {
-      mcpServers: { saas: { kind: 'proxied', connection: 'conn-1' } },
-    };
-    const v = validateNoProxiedServers(agent);
-    expect(v).toHaveLength(1);
-    expect(v[0]).toContain('"saas"');
-    expect(v[0]).toContain('proxied');
-    expect(v[0]).toContain('not yet supported');
-  });
-
-  it('non-proxied entries (colocated / external / hosted) pass clean', () => {
-    const agent: GuueyAgent = {
-      mcpServers: {
-        local: { kind: 'colocated', source: './mcps/local' },
-        ext: { kind: 'external', url: 'https://mcp.example.com' },
-        reg: { kind: 'hosted', server: 'srv-1' },
-      },
-    };
-    expect(validateNoProxiedServers(agent)).toEqual([]);
-  });
-
-  it('reports every proxied entry across servers', () => {
-    const agent: GuueyAgent = {
-      mcpServers: {
-        a: { kind: 'proxied', connection: 'c1' },
-        good: { kind: 'external', url: 'https://mcp.example.com' },
-        b: { kind: 'proxied', connection: 'c2' },
-      },
-    };
-    const v = validateNoProxiedServers(agent);
-    expect(v).toHaveLength(2);
-    expect(v.some((m) => m.includes('"a"'))).toBe(true);
-    expect(v.some((m) => m.includes('"b"'))).toBe(true);
-  });
-});
-
 // ── validateReservedServerNames (deploy-time reserved-key rejection) ────────
 //
 // `guuey-memory` is a platform-RESERVED `mcpServers` key: the runtime splices
 // the auto-injected memory MCP under it (memmcp). A builder-declared server of
 // that name would boot as builder code under the same key AND be replaced by
 // the platform entry at invoke time. This deploy-time pre-flight (mirrors
-// `validateNoProxiedServers`'s shape) rejects it loudly; the run-seam collision
+// `validateColocatedServerNames`'s shape) rejects it loudly; the run-seam collision
 // guard is the defense-in-depth backstop for stale pre-validator snapshots.
 
 describe('validateReservedServerNames', () => {
@@ -569,9 +516,10 @@ describe('McpServerSchema — each kind parses correctly', () => {
     expect(ok.mcpServers?.g).toMatchObject({ devPort: 6781 });
   });
 
-  it('proxied: connection required', () => {
-    const r = parseMcpServers({ gmail: { kind: 'proxied', connection: 'gmail' } });
-    expect(r.mcpServers?.gmail).toEqual({ kind: 'proxied', connection: 'gmail' });
+  it("kind: 'proxied' is gone (guuey#178 D1) — the schema rejects it", () => {
+    expect(() =>
+      parseMcpServers({ gmail: { kind: 'proxied', connection: 'gmail' } }),
+    ).toThrow();
   });
 
   it('external: url required', () => {
@@ -768,10 +716,10 @@ describe("credential: 'caller' (guuey#179 — the third credential source)", () 
     expect(r.success).toBe(true);
   });
 
-  it("rejects any credential value other than 'caller'", () => {
+  it("rejects any credential value other than 'caller' / 'oauth'", () => {
     const r = AgentSectionV1.safeParse({
       mcpServers: {
-        control: { kind: 'external', url: 'https://api.example.com', credential: 'oauth' },
+        control: { kind: 'external', url: 'https://api.example.com', credential: 'apiKey' },
       },
     });
     expect(r.success).toBe(false);
@@ -781,6 +729,97 @@ describe("credential: 'caller' (guuey#179 — the third credential source)", () 
     const r = AgentSectionV1.safeParse({
       mcpServers: {
         tools: { kind: 'colocated', source: './mcp', credential: 'caller' },
+      },
+    });
+    expect(r.success).toBe(false);
+  });
+});
+
+describe("credential: 'oauth' (guuey#178 — the third-party OAuth broker arm)", () => {
+  it('parses on a plain external entry — URL + credential is the whole declaration', () => {
+    const r = AgentSectionV1.safeParse({
+      mcpServers: {
+        linear: { kind: 'external', url: 'https://mcp.linear.app/mcp', credential: 'oauth' },
+      },
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.mcpServers?.linear).toEqual({
+        kind: 'external',
+        url: 'https://mcp.linear.app/mcp',
+        credential: 'oauth',
+      });
+    }
+  });
+
+  it('accepts the INTERNAL lowered shape (mcpResourceUrl = the brokered gateway route)', () => {
+    const r = AgentSectionV1.safeParse({
+      mcpServers: {
+        linear: {
+          kind: 'external',
+          url: 'https://mcp.linear.app/mcp',
+          credential: 'oauth',
+          mcpResourceUrl: 'https://mcp.dev.sandbox.guuey.com/brokered/app_1/linear/',
+        },
+      },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('coexists with non-authorization static headers', () => {
+    const r = AgentSectionV1.safeParse({
+      mcpServers: {
+        linear: {
+          kind: 'external',
+          url: 'https://mcp.linear.app/mcp',
+          credential: 'oauth',
+          headers: { 'X-Tenant': 'acme' },
+        },
+      },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects credential:oauth combined with federate:true', () => {
+    const r = AgentSectionV1.safeParse({
+      mcpServers: {
+        linear: {
+          kind: 'external',
+          url: 'https://mcp.linear.app/mcp',
+          credential: 'oauth',
+          federate: true,
+        },
+      },
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(JSON.stringify(r.error.issues)).toContain("credential: 'oauth' cannot be combined with federate");
+    }
+  });
+
+  it('rejects credential:oauth combined with a declared authorization header (any casing)', () => {
+    for (const name of ['authorization', 'Authorization', 'AUTHORIZATION']) {
+      const r = AgentSectionV1.safeParse({
+        mcpServers: {
+          linear: {
+            kind: 'external',
+            url: 'https://mcp.linear.app/mcp',
+            credential: 'oauth',
+            headers: { [name]: 'Bearer ${env.LINEAR_TOKEN}' },
+          },
+        },
+      });
+      expect(r.success).toBe(false);
+      if (!r.success) {
+        expect(JSON.stringify(r.error.issues)).toContain('cannot be combined with an `authorization` header');
+      }
+    }
+  });
+
+  it('rejects credential on non-external kinds (strict objects)', () => {
+    const r = AgentSectionV1.safeParse({
+      mcpServers: {
+        reg: { kind: 'hosted', server: 'srv-1', credential: 'oauth' },
       },
     });
     expect(r.success).toBe(false);
