@@ -56,7 +56,13 @@ witness.
   C2-shaped read shell (`gguiReadShell`) to the `"ggui"` channel — the
   whole converged path in plain Node; 24c pins that a bootstrap-carrying
   result (fixture 7's shape) rides the same arm to the same outcome, and
-  family 18's production capture asserts the same).
+  family 18's production capture asserts the same), and family 25
+  (`oauth-auth-ask` — guuey#178: the MCP OAuth broker's "authorize this
+  server" card, `hitl.ask kind:"auth"` + `authConfig:{scheme:"oauth2",
+authorizationUrl}` + grant modes; the SAME hitl card with an `oauth` arm,
+  where a mode pick is a LINK (`oauthAuthorizeHref` — `&mode=` +
+  `&returnTo=` appended by the client) and "Not now" is a dismissal —
+  there is no answer door, the answer is the redirect).
 - `capture.ts` / `captures/` — family 18: production-capture replay
   through the real `invokeTurn` (provenance in the module header).
 - `corpus.test.ts` — the runner: per-fixture assertions + snapshots, plain

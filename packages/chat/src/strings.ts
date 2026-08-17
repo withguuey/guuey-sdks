@@ -96,6 +96,16 @@ export interface ChatStrings {
   /** The answered record line, e.g. `Allowed — Always`. */
   promptAnsweredWith: (modeLabel: string) => string;
   promptDeclinedRecord: string;
+  /**
+   * The OAuth arm (guuey#178): the dismiss action ("Not now" — nothing is
+   * written, the ask re-emits next turn), the answered record (the user was
+   * sent to the provider), and the return notices the surface shows after
+   * the broker 302s back with `?connected=<serverName>` / `?error=<reason>`.
+   */
+  promptNotNow: string;
+  promptOAuthSent: (modeLabel: string) => string;
+  oauthConnected: (serverName: string) => string;
+  oauthFailed: (reason: string) => string;
 
   /** R16 — the notice row's label (provenance shows only under debug). */
   noticeLabel: string;
@@ -171,6 +181,10 @@ export const defaultChatStrings: ChatStrings = {
   promptDismissed: "Dismissed",
   promptAnsweredWith: (modeLabel) => `Allowed — ${modeLabel}`,
   promptDeclinedRecord: "Not allowed",
+  promptNotNow: "Not now",
+  promptOAuthSent: (modeLabel) => `Connecting — ${modeLabel}`,
+  oauthConnected: (serverName) => `Connected ${serverName}. The agent can use it from your next message.`,
+  oauthFailed: (reason) => `Couldn't connect: ${reason}`,
 
   noticeLabel: "Note",
 

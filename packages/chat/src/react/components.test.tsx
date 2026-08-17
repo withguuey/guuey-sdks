@@ -329,6 +329,7 @@ describe("R10 hitl card (spec draft.2)", () => {
     message: ask.message,
     askKind: "approval",
     grantModes: ask.grantModes,
+    oauth: null,
     state,
     chosenModeId: state === "resolved" ? "m.durable" : null,
     chosenModeLabel: state === "resolved" ? "Always" : null,
@@ -348,6 +349,43 @@ describe("R10 hitl card (spec draft.2)", () => {
     render(<DefaultPrompt item={hitl("resolved")} ctx={ctx()} />);
     expect(screen.getByText("Allowed — Always")).toBeTruthy();
     expect(screen.queryByText(/m\.durable/)).toBeNull();
+  });
+
+  // guuey#178: the OAuth arm — the SAME card; the deny becomes "Not now"
+  // (a dismissal: there is no durable deny for an authorize ask), the
+  // resolved record says the user was sent to the provider.
+  it("an oauth2 auth ask renders the mode buttons + Not now (dismiss), and a resolved record reads Connecting", () => {
+    const authAsk = {
+      askId: "mcp-oauth:app_1:linear:t1",
+      kind: "auth" as const,
+      message: "Trip Planner wants to use your Linear account",
+      authConfig: { scheme: "oauth2", authorizationUrl: "https://mcp.example/oauth/start?state=abc" },
+      grantModes: [
+        { id: "always", label: "Always allow" },
+        { id: "once", label: "Allow this chat" },
+      ],
+    };
+    const oauthItem = (state: HitlPromptItem["state"]): HitlPromptItem => ({
+      ...hitl(state),
+      promptId: authAsk.askId,
+      key: `p.${authAsk.askId}`,
+      ask: authAsk,
+      message: authAsk.message,
+      askKind: "auth",
+      grantModes: authAsk.grantModes,
+      oauth: { authorizationUrl: authAsk.authConfig.authorizationUrl, scopes: [] },
+      chosenModeId: state === "resolved" ? "always" : null,
+      chosenModeLabel: state === "resolved" ? "Always allow" : null,
+    });
+    const onPromptAction = vi.fn();
+    render(<DefaultPrompt item={oauthItem("pending")} ctx={ctx({ onPromptAction })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Allow this chat" }));
+    expect(onPromptAction).toHaveBeenCalledWith(oauthItem("pending"), { grantModeId: "once" });
+    expect(screen.queryByRole("button", { name: "Don't allow" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+    expect(onPromptAction).toHaveBeenLastCalledWith(oauthItem("pending"), "dismiss");
+    render(<DefaultPrompt item={oauthItem("resolved")} ctx={ctx()} />);
+    expect(screen.getByText("Connecting — Always allow")).toBeTruthy();
   });
 
   it("cancelled is a dismissed record that reopens to the actions (re-askable ruling)", () => {

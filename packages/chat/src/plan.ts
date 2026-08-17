@@ -41,6 +41,7 @@ import {
 } from "@guuey/mcp-apps-host";
 import type { TranscriptPolicy } from "./policy.js";
 import { grantModeDisplay } from "./hitl.js";
+import { oauthAuthorizeAsk } from "./oauth.js";
 import type {
   CitationsItem,
   DataResultItem,
@@ -859,6 +860,7 @@ export function planTranscript(
         message: prompt.ask.message ?? null,
         askKind: prompt.ask.kind,
         grantModes: prompt.ask.grantModes ?? [],
+        oauth: oauthAuthorizeAsk(prompt.ask),
         state: prompt.state,
         chosenModeId: prompt.grantModeId ?? null,
         chosenModeLabel: chosen !== undefined ? grantModeDisplay(chosen) : null,

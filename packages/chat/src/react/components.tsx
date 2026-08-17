@@ -520,11 +520,15 @@ export function DefaultPrompt({ item, ctx }: ItemProps<PromptItem>): ReactNode {
     // the durable deny. `cancelled` is guuey's re-askable dismissal: it
     // collapses to a record but stays answerable when expanded.
     if (item.state === "resolved" || item.state === "declined") {
+      // The OAuth arm's resolved record: the pick SENT the user to the
+      // provider (no answer door) — the grant lands on the next turn.
       return (
         <p className={`guuey-chat-prompt-record guuey-chat-prompt-${item.state}`}>
           {item.state === "resolved"
             ? item.chosenModeLabel !== null
-              ? s.promptAnsweredWith(item.chosenModeLabel)
+              ? item.oauth !== null
+                ? s.promptOAuthSent(item.chosenModeLabel)
+                : s.promptAnsweredWith(item.chosenModeLabel)
               : s.promptAccept
             : s.promptDeclinedRecord}
         </p>
@@ -570,9 +574,17 @@ export function DefaultPrompt({ item, ctx }: ItemProps<PromptItem>): ReactNode {
                   </button>
                 ))
               )}
-              <button type="button" onClick={() => ctx.onPromptAction?.(item, "decline")}>
-                {s.promptDecline}
-              </button>
+              {/* The OAuth arm has no durable deny — "Not now" dismisses
+                  (nothing written; the ask re-emits next turn). */}
+              {item.oauth !== null ? (
+                <button type="button" onClick={() => ctx.onPromptAction?.(item, "dismiss")}>
+                  {s.promptNotNow}
+                </button>
+              ) : (
+                <button type="button" onClick={() => ctx.onPromptAction?.(item, "decline")}>
+                  {s.promptDecline}
+                </button>
+              )}
             </div>
           </>
         )}

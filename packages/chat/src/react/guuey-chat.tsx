@@ -71,6 +71,7 @@ import type { ThemeMode } from "./theme-css.js";
 import { Transcript, type TranscriptWindowing } from "./transcript.js";
 import type { TranscriptComponents, TranscriptItemContext } from "./components.js";
 import { useTranscript, useTranscriptInputs } from "./use-transcript.js";
+import { oauthPromptAction, useOAuthReturn } from "./oauth-return.js";
 
 /**
  * The imperative seam (guuey#210): programmatic send/prefill/focus for
@@ -177,6 +178,20 @@ export interface GuueyChatProps {
    * transport). Fired after the transcript record moves.
    */
   onHitlAnswer?: (answer: AgHitlAnswer, ask: AgPausedAsk) => void;
+  /**
+   * The OAuth "authorize this server" arm (guuey#178): where the broker
+   * sends the user back after the provider dance. Defaults to this page's
+   * own location (stale return params stripped). Pass a value when the
+   * chat lives at a URL that is not where the user should land.
+   */
+  oauthReturnTo?: string;
+  /**
+   * How the authorize link is opened. Defaults to `openOAuthAuthorize`
+   * (in-place navigation; a new tab when framed). The composite ALSO shows
+   * the return notice itself (`useOAuthReturn`) — a host that overrides
+   * `open` and lands elsewhere renders its own.
+   */
+  onOAuthAuthorize?: (href: string, ask: AgPausedAsk) => void;
   /** R11 action slot (sign-in / retry affordances). */
   onErrorAction?: (item: ErrorItem) => void;
   /**
@@ -226,6 +241,8 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     viewProps,
     onPromptAction,
     onHitlAnswer,
+    oauthReturnTo,
+    onOAuthAuthorize,
     onErrorAction,
     onReady,
     onThread,
@@ -388,9 +405,27 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     [invoke],
   );
 
+  // guuey#178: the broker's return notice (`?connected=` / `?error=`), read
+  // + stripped off the address bar once on mount.
+  const oauthReturn = useOAuthReturn();
+
   const handlePromptAction = useCallback(
     (item: PromptItem, action: "accept" | "decline" | "dismiss" | { grantModeId: string }) => {
       if (item.promptKind === "hitl") {
+        // The OAuth arm: the answer is the redirect (no pod door, no
+        // `onHitlAnswer`); the ledger records the pick and the link opens.
+        if (
+          oauthPromptAction({
+            item,
+            action,
+            answerHitlPrompt,
+            ...(oauthReturnTo !== undefined ? { returnTo: oauthReturnTo } : {}),
+            ...(onOAuthAuthorize !== undefined ? { open: onOAuthAuthorize } : {}),
+          })
+        ) {
+          onPromptAction?.(item, action);
+          return;
+        }
         const answer = answerHitlPrompt(
           item.ask,
           typeof action === "object" ? action : action === "accept" ? "accept" : action,
@@ -404,7 +439,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       if (typeof action !== "object") resolvePrompt(item.promptId, PROMPT_STATE[action]);
       onPromptAction?.(item, action);
     },
-    [resolvePrompt, answerHitlPrompt, onHitlAnswer, onPromptAction],
+    [resolvePrompt, answerHitlPrompt, onHitlAnswer, onPromptAction, oauthReturnTo, onOAuthAuthorize],
   );
 
   const strings = policy.strings;
@@ -430,6 +465,19 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         onViewDiagnosis={onViewDiagnosis}
         {...(viewProps !== undefined ? { viewProps } : {})}
       />
+      {oauthReturn.notice !== null && (
+        <p
+          role="status"
+          className={`guuey-chat-oauth-notice guuey-chat-oauth-${oauthReturn.notice.kind}`}
+        >
+          {oauthReturn.notice.kind === "connected"
+            ? strings.oauthConnected(oauthReturn.notice.serverName)
+            : strings.oauthFailed(oauthReturn.notice.reason)}
+          <button type="button" className="guuey-chat-oauth-dismiss" onClick={oauthReturn.dismiss}>
+            {strings.promptDismissed}
+          </button>
+        </p>
+      )}
       <form
         className="guuey-chat-composer"
         onSubmit={(e) => {

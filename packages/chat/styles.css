@@ -349,6 +349,32 @@
   margin: 0;
 }
 
+/* The OAuth "authorize this server" return notice (guuey#178) — shown by
+   <GuueyChat> after the broker sends the user back with ?connected= / ?error=. */
+.guuey-chat-oauth-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 0.85em;
+  color: var(--guuey-chat-ink);
+  background: color-mix(in srgb, var(--guuey-chat-accent) 10%, var(--guuey-chat-surface));
+  border-top: 1px solid var(--guuey-chat-canvas-muted);
+}
+.guuey-chat-oauth-error {
+  background: color-mix(in srgb, var(--guuey-chat-error) 7%, var(--guuey-chat-surface));
+}
+.guuey-chat-oauth-dismiss {
+  font: inherit;
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  color: var(--guuey-chat-ink-muted);
+  text-decoration: underline;
+}
+
 /* ── R11 errors ── */
 .guuey-chat-error {
   border: 1px solid color-mix(in srgb, var(--guuey-chat-error) 45%, transparent);

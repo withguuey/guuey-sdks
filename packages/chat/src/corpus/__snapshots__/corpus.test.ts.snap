@@ -1056,6 +1056,7 @@ exports[`corpus > 4. consent-gate — pending grant-mode card → answered one-l
       "key": "p.profile-consent:app-1:thread-corpus",
       "kind": "prompt",
       "message": "Trip Planner wants to read your guuey profile — the notes agents keep about you across apps.",
+      "oauth": null,
       "promptId": "profile-consent:app-1:thread-corpus",
       "promptKind": "hitl",
       "raw": null,
@@ -1797,6 +1798,7 @@ exports[`corpus > 20. hitl-grant-modes — the persisted declaration renders; an
       "key": "p.ask-remember-1",
       "kind": "prompt",
       "message": "Remember your seating preference?",
+      "oauth": null,
       "promptId": "ask-remember-1",
       "promptKind": "hitl",
       "raw": null,
@@ -2010,6 +2012,88 @@ exports[`corpus > 24. prod-wire-ggui-render — ggui's production posture: no _m
       "stopped": false,
       "streaming": false,
       "text": "Here is your board.",
+    },
+  ],
+  "recovery": null,
+  "status": null,
+}
+`;
+
+exports[`corpus > 25. oauth-auth-ask — kind:auth + authConfig oauth2 plans as the SAME hitl card with an oauth arm; a mode pick is a link, not an answer (guuey#178) 1`] = `
+{
+  "items": [
+    {
+      "expanded": true,
+      "key": "u0",
+      "kind": "user",
+      "retry": false,
+      "state": "sent",
+      "text": "what's on my Linear board?",
+    },
+    {
+      "expanded": true,
+      "key": "a0.t0",
+      "kind": "text",
+      "markdown": true,
+      "stopped": false,
+      "streaming": false,
+      "text": "I can't reach Linear yet.",
+    },
+    {
+      "ask": {
+        "askId": "mcp-oauth:app_1:linear:thread-oauth",
+        "authConfig": {
+          "authorizationUrl": "https://mcp.dev.sandbox.guuey.com/oauth/start?state=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "scheme": "oauth2",
+        },
+        "expiresAt": "2026-08-17T10:10:00.000Z",
+        "grantModes": [
+          {
+            "description": "Every conversation with this agent",
+            "id": "always",
+            "label": "Always allow",
+          },
+          {
+            "description": "Only this conversation",
+            "id": "once",
+            "label": "Allow this chat",
+          },
+        ],
+        "kind": "auth",
+        "message": "Trip Planner wants to use your Linear account",
+        "metadata": {
+          "appId": "app_1",
+          "expiresAt": "2026-08-17T10:10:00.000Z",
+          "serverName": "linear",
+        },
+      },
+      "askKind": "auth",
+      "chosenModeId": null,
+      "chosenModeLabel": null,
+      "expanded": true,
+      "grantModes": [
+        {
+          "description": "Every conversation with this agent",
+          "id": "always",
+          "label": "Always allow",
+        },
+        {
+          "description": "Only this conversation",
+          "id": "once",
+          "label": "Allow this chat",
+        },
+      ],
+      "key": "p.mcp-oauth:app_1:linear:thread-oauth",
+      "kind": "prompt",
+      "message": "Trip Planner wants to use your Linear account",
+      "oauth": {
+        "authorizationUrl": "https://mcp.dev.sandbox.guuey.com/oauth/start?state=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "scopes": [],
+      },
+      "promptId": "mcp-oauth:app_1:linear:thread-oauth",
+      "promptKind": "hitl",
+      "raw": null,
+      "state": "pending",
     },
   ],
   "recovery": null,

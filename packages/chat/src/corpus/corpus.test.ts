@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { createMcpUiResourceReader, resolveViewMount } from "@guuey/mcp-apps-host";
 import { calmPolicy, debugPolicy } from "../policy.js";
 import { buildHitlAnswer, hitlPromptsFromFold } from "../hitl.js";
+import { oauthAuthorizeAsk, oauthAuthorizeHref } from "../oauth.js";
 import { newestViewKey, planTranscript } from "../plan.js";
 import type { DisplayItem, ToolGroupItem, ToolItem, ViewMountItem, ViewRefItem } from "../types.js";
 import {
@@ -35,6 +36,8 @@ import {
   stalledThenAdopted,
   hitlGrantModes,
   noticeRows,
+  OAUTH_ASK_AUTHORIZE_URL,
+  oauthAuthAsk,
   toolsAroundAView,
   unknownBlockStorm,
   userSendFailure,
@@ -355,6 +358,57 @@ describe("corpus", () => {
     expect(() => buildHitlAnswer(ask, { grantModeId: "not-declared" })).toThrow();
     // With a declaration, a plain accept can't stand in for a mode pick.
     expect(() => buildHitlAnswer(ask, "accept")).toThrow();
+  });
+
+  it("25. oauth-auth-ask — kind:auth + authConfig oauth2 plans as the SAME hitl card with an oauth arm; a mode pick is a link, not an answer (guuey#178)", () => {
+    const base = oauthAuthAsk();
+    const askId = "mcp-oauth:app_1:linear:thread-oauth";
+    const ask = (() => {
+      const t = base.result?.turns.find((x) => x.outcome?.type === "paused");
+      if (t?.outcome?.type !== "paused") throw new Error("fixture must pause");
+      return t.outcome.asks[0]!;
+    })();
+    // The paused turn folded AFTER the agent's own turn — two turns, one card.
+    expect(base.result?.turns.map((t) => t.outcome?.type)).toEqual(["success", "paused"]);
+
+    const pending = { ...base, prompts: hitlPromptsFromFold(base.result) };
+    const pendingPlan = planTranscript(pending, calm);
+    const card = pendingPlan.items.find((i) => i.kind === "prompt");
+    if (card?.kind !== "prompt" || card.promptKind !== "hitl") throw new Error("hitl card expected");
+    expect(card.state).toBe("pending");
+    expect(card.askKind).toBe("auth");
+    expect(card.message).toBe("Trip Planner wants to use your Linear account");
+    expect(card.grantModes.map((m) => m.label)).toEqual(["Always allow", "Allow this chat"]);
+    // The oauth arm is derived from the persisted declaration — the SAME
+    // narrowing every surface uses (`oauthAuthorizeAsk`).
+    expect(card.oauth).toEqual({ authorizationUrl: OAUTH_ASK_AUTHORIZE_URL, scopes: [] });
+    expect(oauthAuthorizeAsk(ask)).toEqual(card.oauth);
+    expect(pendingPlan).toMatchSnapshot();
+
+    // A mode pick is a LINK: authorizationUrl + &mode=<id> + &returnTo=<here>.
+    // (Nothing is posted anywhere — there is no answer door for this ask.)
+    expect(oauthAuthorizeHref(ask, "once", "https://app.example.com/chat?tab=1")).toBe(
+      `${OAUTH_ASK_AUTHORIZE_URL}&mode=once&returnTo=${encodeURIComponent("https://app.example.com/chat?tab=1")}`,
+    );
+    expect(() => oauthAuthorizeHref(ask, "never-declared", "https://app.example.com/")).toThrow();
+    // A family-20 approval ask has no oauth arm.
+    expect(oauthAuthorizeAsk({ askId: "x", kind: "approval", grantModes: ask.grantModes })).toBeNull();
+
+    // The local ledger after the pick: the record reads "Connecting — <mode>"
+    // (the surface navigates away on web; on native the card stays until the
+    // next turn's preflight resolves `connected`).
+    const sent = { ...base, prompts: hitlPromptsFromFold(base.result, { [askId]: { status: "resolved", grantModeId: "always" } }) };
+    const record = planTranscript(sent, calm).items.find((i) => i.kind === "prompt");
+    if (record?.kind !== "prompt" || record.promptKind !== "hitl") throw new Error("hitl record expected");
+    expect(record.state).toBe("resolved");
+    expect(record.chosenModeLabel).toBe("Always allow");
+    expect(record.oauth).not.toBeNull();
+
+    // "Not now" = cancelled = still pending, re-askable — nothing written.
+    expect(buildHitlAnswer(ask, "dismiss").status).toBe("cancelled");
+    const dismissed = { ...base, prompts: hitlPromptsFromFold(base.result, { [askId]: { status: "cancelled" } }) };
+    const rec = planTranscript(dismissed, calm).items.find((i) => i.kind === "prompt");
+    expect(rec?.kind === "prompt" && rec.state).toBe("cancelled");
   });
 
   it("21. notice-rows — both arrival paths render labeled, never agent-voiced (draft.2)", () => {

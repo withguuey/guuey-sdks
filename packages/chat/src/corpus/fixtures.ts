@@ -642,6 +642,83 @@ export function prodWireGguiRender(): TranscriptInputs {
 }
 
 /**
+ * 25. oauth-auth-ask (guuey#178 Slice 4) — the MCP OAuth broker's "authorize
+ * this server" card: a paused turn whose PERSISTED ask is `kind:"auth"` with
+ * `authConfig:{ scheme:"oauth2", authorizationUrl }` + the two grant modes
+ * (the exact wire `nocode-runtime/src/mcp-oauth-consent.ts` emits — askId
+ * `mcp-oauth:<appId>:<serverName>:<threadId>`, `metadata:{appId, serverName,
+ * expiresAt}`, top-level `expiresAt`). Unlike family 20 there is NO answer
+ * door: a mode pick opens `authorizationUrl&mode=<id>&returnTo=<here>`; the
+ * decline is a dismissal ("Not now"). Driven through the real Reducer.
+ */
+export const OAUTH_ASK_AUTHORIZE_URL = "https://mcp.dev.sandbox.guuey.com/oauth/start?state=" + "a".repeat(64);
+export function oauthAuthAsk(): TranscriptInputs {
+  const reducer = new Reducer();
+  let seq = 0;
+  const s = (): number => seq++;
+  const askId = "mcp-oauth:app_1:linear:thread-oauth";
+  const events: AgEvent[] = [
+    { type: "turn.start", threadId: "thread-oauth", turnId: "turn-o", seq: s() },
+    { type: "message.start", id: "msg-o", role: "assistant", turnId: "turn-o", threadId: "thread-oauth", seq: s() },
+    { type: "text.start", id: "to", seq: s() },
+    { type: "text.delta", id: "to", delta: "I can't reach Linear yet.", seq: s() },
+    { type: "text.end", id: "to", seq: s() },
+    { type: "turn.done", turnId: "turn-o", outcome: { type: "success" }, seq: s() },
+    { type: "turn.start", threadId: "thread-oauth", turnId: `${askId}#turn`, seq: s() },
+    {
+      type: "hitl.ask",
+      turnId: `${askId}#turn`,
+      askId,
+      kind: "auth",
+      message: "Trip Planner wants to use your Linear account",
+      authConfig: { scheme: "oauth2", authorizationUrl: OAUTH_ASK_AUTHORIZE_URL },
+      grantModes: [
+        { id: "always", label: "Always allow", description: "Every conversation with this agent" },
+        { id: "once", label: "Allow this chat", description: "Only this conversation" },
+      ],
+      metadata: { appId: "app_1", serverName: "linear", expiresAt: "2026-08-17T10:10:00.000Z" },
+      expiresAt: "2026-08-17T10:10:00.000Z",
+      continuation: "turn",
+      seq: s(),
+    },
+    {
+      type: "turn.done",
+      turnId: `${askId}#turn`,
+      finishReason: "paused",
+      outcome: {
+        type: "paused",
+        asks: [
+          {
+            askId,
+            kind: "auth",
+            message: "Trip Planner wants to use your Linear account",
+            authConfig: { scheme: "oauth2", authorizationUrl: OAUTH_ASK_AUTHORIZE_URL },
+            grantModes: [
+              { id: "always", label: "Always allow", description: "Every conversation with this agent" },
+              { id: "once", label: "Allow this chat", description: "Only this conversation" },
+            ],
+            metadata: { appId: "app_1", serverName: "linear", expiresAt: "2026-08-17T10:10:00.000Z" },
+            expiresAt: "2026-08-17T10:10:00.000Z",
+          },
+        ],
+      },
+      seq: s(),
+    },
+  ];
+  for (const ev of events) reducer.push(ev);
+  return {
+    result: reducer.result(),
+    assistantText: "",
+    status: "ready",
+    statusElapsedMs: 0,
+    activeTool: null,
+    error: null,
+    prompts: [], // the test composes these via hitlPromptsFromFold + the answer ledger
+    messages: [{ role: "user", text: "what's on my Linear board?" }],
+  };
+}
+
+/**
  * What ggui's `resources/read` answers for a render locator (guuey#209 C2):
  * the shell that boots ggui's runtime with the live-channel material
  * (`wsUrl`, a `wsToken` minted FRESH at read time, `expiresAt`) inlined as

@@ -492,7 +492,9 @@ export function NativePrompt({ item, ctx }: ItemProps<PromptItem>): ReactNode {
         <MutedText ctx={ctx}>
           {item.state === "resolved"
             ? item.chosenModeLabel !== null
-              ? s.promptAnsweredWith(item.chosenModeLabel)
+              ? item.oauth !== null
+                ? s.promptOAuthSent(item.chosenModeLabel)
+                : s.promptAnsweredWith(item.chosenModeLabel)
               : s.promptAccept
             : s.promptDeclinedRecord}
         </MutedText>
@@ -540,9 +542,17 @@ export function NativePrompt({ item, ctx }: ItemProps<PromptItem>): ReactNode {
                   </Pressable>
                 ))
               )}
-              <Pressable accessibilityRole="button" onPress={() => ctx.onPromptAction?.(item, "decline")}>
-                <Text style={{ color: tokens.palette.inkMuted, fontSize: tokens.fontSize }}>{s.promptDecline}</Text>
-              </Pressable>
+              {/* The OAuth arm has no durable deny — "Not now" dismisses
+                  (nothing written; the ask re-emits next turn). */}
+              {item.oauth !== null ? (
+                <Pressable accessibilityRole="button" onPress={() => ctx.onPromptAction?.(item, "dismiss")}>
+                  <Text style={{ color: tokens.palette.inkMuted, fontSize: tokens.fontSize }}>{s.promptNotNow}</Text>
+                </Pressable>
+              ) : (
+                <Pressable accessibilityRole="button" onPress={() => ctx.onPromptAction?.(item, "decline")}>
+                  <Text style={{ color: tokens.palette.inkMuted, fontSize: tokens.fontSize }}>{s.promptDecline}</Text>
+                </Pressable>
+              )}
             </View>
           </>
         )}

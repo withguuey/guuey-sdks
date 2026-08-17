@@ -355,6 +355,14 @@ export interface HitlPromptItem extends BaseItem {
   askKind: AgPausedAsk["kind"];
   /** Declared accept variants; empty = a plain accept/decline ask. */
   grantModes: readonly AgGrantMode[];
+  /**
+   * The OAuth arm (guuey#178): set when the ask is `kind:"auth"` with
+   * `authConfig.scheme:"oauth2"` + an `authorizationUrl`. There is no
+   * answer door for this ask — a mode pick OPENS `authorizationUrl` with
+   * `&mode=` + `&returnTo=` appended (`oauthAuthorizeHref`); "Not now" is a
+   * plain dismissal. `null` for every other ask.
+   */
+  oauth: { authorizationUrl: string; scopes: readonly string[] } | null;
   state: "pending" | "resolved" | "declined" | "cancelled";
   /** Echo of the chosen mode id (identity, never displayed as meaning). */
   chosenModeId: string | null;

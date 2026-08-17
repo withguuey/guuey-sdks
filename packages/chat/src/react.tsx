@@ -49,5 +49,14 @@ export {
   type UseTranscriptInputsResult,
 } from "./react/use-transcript.js";
 export { GuueyChat, type GuueyChatProps, type GuueyChatHandle } from "./react/guuey-chat.js";
+export {
+  oauthPromptAction,
+  oauthReturnToHere,
+  openOAuthAuthorize,
+  useOAuthReturn,
+  type OAuthPromptActionArgs,
+  type OAuthWindow,
+  type UseOAuthReturnResult,
+} from "./react/oauth-return.js";
 export { Markdown } from "./react/markdown.js";
 export { themeCssVars, type ThemeMode } from "./react/theme-css.js";

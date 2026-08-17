@@ -33,6 +33,17 @@ export {
   type HitlPromptAction,
 } from "./hitl.js";
 export {
+  OAUTH_LINK_PARAMS,
+  OAUTH_RETURN_PARAMS,
+  OAUTH_SCHEME,
+  oauthAuthorizeAsk,
+  oauthAuthorizeHref,
+  parseOAuthReturn,
+  stripOAuthReturn,
+  type OAuthAuthorizeAsk,
+  type OAuthReturn,
+} from "./oauth.js";
+export {
   DEFAULT_CHAT_THEME,
   GUUEY_CHAT_THEME,
   GuueyChatPalette,
