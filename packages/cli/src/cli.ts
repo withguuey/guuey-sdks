@@ -292,6 +292,18 @@ Apps:
     --issuer-url <url>          BYO OIDC issuer (https://…), with --audience
     --audience <aud>            Expected aud claim, with --issuer-url
     --clear-auth-config         Remove the issuer/audience binding
+    --oidc-client-id <id>       Let your OWN identity provider sign visitors
+                                 into the agent's standalone page (with
+                                 --issuer-url + --audience; must equal the
+                                 audience — the page verifies the ID token
+                                 your IdP issues to this client). Register
+                                 the redirect URI 'guuey apps get' prints.
+    --oidc-client-secret <s>    Optional client secret for IdPs that need a
+                                 confidential client (sealed under KMS; pass
+                                 an empty value to remove it). PKCE public
+                                 client by default.
+    --clear-oidc-client         Turn standalone-page sign-in off (drops the
+                                 stored secret too).
     --widget-embed-identity <identified|anonymous|clear>
                                  Embed identity-mode policy (widget wave 2).
                                  Read only when --auth-mode is byo; 'clear'
@@ -851,6 +863,12 @@ async function main(): Promise<void> {
             issuerUrl: str(flags['issuer-url']),
             audience: str(flags.audience),
             clearAuthConfig: flags['clear-auth-config'] === true,
+            // Standalone-page OIDC client (guuey#141). A bare
+            // `--oidc-client-secret` reads as "remove the stored secret".
+            oidcClientId: flags['oidc-client-id'] === true ? '' : str(flags['oidc-client-id']),
+            oidcClientSecret:
+              flags['oidc-client-secret'] === true ? '' : str(flags['oidc-client-secret']),
+            clearOidcClient: flags['clear-oidc-client'] === true,
             widgetEmbedIdentity: str(flags['widget-embed-identity']),
             // Standalone-page branding (guuey#137 slice 3). A bare flag
             // (`--brand-accent` with no value) reads as an explicit clear,
