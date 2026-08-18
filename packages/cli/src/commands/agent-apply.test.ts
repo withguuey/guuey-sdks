@@ -15,14 +15,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 import {
   agentApply,
+  agentRollback,
   agentStatus,
   EXIT_DRIFT,
   loadLocalArtifacts,
   parseProvenanceFlag,
+  parseRollbackTarget,
   repoSlugFromRemote,
   resolveProvenance,
   type AgentReconcileResult,
   type AgentReconcileStatus,
+  type AgentRollbackResult,
 } from './agent-apply.js';
 import { parseInterfaceFields } from '../wire-mirror-parse';
 
@@ -365,6 +368,7 @@ describe('agentStatus', () => {
       size: 'xs',
       provenance: { repo: 'loqu-co/ggui', sha: 'da49f6dcaabcdef', path: 'guuey-agents/helper' },
       contentHash: 'c'.repeat(64),
+      rolledBackFrom: null,
     },
     config: {
       userAuthMode: 'byo',
@@ -373,6 +377,14 @@ describe('agentStatus', () => {
       guestAccess: false,
     },
   };
+
+  it('a rolled-back live build reads "build 9 (rolled back from #7)" (guuey#248 b3)', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, { ...STATUS, live: { ...STATUS.live, buildNumber: 9, rolledBackFrom: 7 } }),
+    );
+    await agentStatus({});
+    expect(logs.join('\n')).toContain('Live: build #9 (live) (rolled back from #7) · xs');
+  });
 
   it('GETs /apps/:id/reconcile and renders live build, provenance, config', async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, STATUS));
@@ -436,6 +448,88 @@ describe('agentStatus', () => {
   });
 });
 
+describe('agentRollback (guuey#248 b3 — pin-to-build, no checkout needed)', () => {
+  function rollbackResult(over: Partial<AgentRollbackResult> = {}): AgentRollbackResult {
+    return {
+      applied: true,
+      unchanged: false,
+      appId: 'app-1',
+      rolledBackFrom: 7,
+      buildNumber: 9,
+      deploymentId: 'dep-9',
+      status: 'queued',
+      contentHash: 'c'.repeat(64),
+      provenance: { repo: 'loqu-co/ggui', sha: 'da49f6dcaabcdef', path: 'guuey-agents/helper' },
+      statusPath: '/v1/apps/app-1/deployments/9/status',
+      ...over,
+    };
+  }
+
+  it('parseRollbackTarget: positive integers only; bare/missing/junk are usage errors', () => {
+    expect(parseRollbackTarget('7')).toBe(7);
+    expect(parseRollbackTarget('12')).toBe(12);
+    const bads: Array<string | true | undefined> = [undefined, true, '0', '-1', '1.5', 'seven', '07'];
+    for (const bad of bads) {
+      expect(typeof parseRollbackTarget(bad)).toBe('string');
+    }
+  });
+
+  it('POSTs { buildNumber } to /apps/:id/reconcile/rollback and reports the new build + pinned provenance', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, rollbackResult()));
+    // No guuey.json needed: run from an empty directory with --app-id.
+    rmSync(join(dir, 'guuey.json'));
+    await agentRollback({ to: '7', 'app-id': 'app-1' });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://api.guuey.test/apps/app-1/reconcile/rollback');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ buildNumber: 7 });
+    const output = logs.join('\n');
+    expect(output).toContain(
+      'Rolled back — build #9 queued, re-serving build #7 byte-exact — bytes from loqu-co/ggui@da49f6dcaabc (guuey-agents/helper)',
+    );
+    expect(output).toContain('sha256 snapshot:  ' + 'c'.repeat(64));
+  });
+
+  it('unchanged (the pinned bytes already serve) → success line, nothing queued', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, rollbackResult({ applied: false, unchanged: true, buildNumber: 8, status: 'live', provenance: null })),
+    );
+    await agentRollback({ to: '7' });
+    expect(logs.join('\n')).toContain("Unchanged — build #8 (live) already serves build #7's bytes. Nothing queued.");
+  });
+
+  it('--json emits the wire response verbatim', async () => {
+    const wire = rollbackResult();
+    fetchMock.mockResolvedValue(jsonResponse(200, wire));
+    await agentRollback({ to: '7', json: true });
+    expect(JSON.parse(logs.join('\n'))).toEqual(wire);
+  });
+
+  it('--wait polls the new build to live', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, rollbackResult()));
+    await agentRollback({ to: '7', wait: true });
+    const { pollDeployStatus } = await import('./deploy.js');
+    expect(pollDeployStatus).toHaveBeenCalledWith(expect.objectContaining({ appId: 'app-1', buildNumber: 9 }));
+    expect(logs.join('\n')).toContain('Live at https://app-1.agents.guuey.test');
+  });
+
+  it('renders the 409 ROLLBACK_NOT_EXACT refusal and exits 1', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(409, {
+        error: { code: 'ROLLBACK_NOT_EXACT', message: "Build #7's stored snapshot no longer round-trips byte-exact" },
+      }),
+    );
+    await expect(agentRollback({ to: '7' })).rejects.toThrow(new ExitSignal(1).message);
+    expect(logs.join('\n')).toContain('[ROLLBACK_NOT_EXACT]');
+  });
+
+  it('a missing/invalid --to is a usage error before any network call', async () => {
+    await expect(agentRollback({})).rejects.toThrow(new ExitSignal(1).message);
+    await expect(agentRollback({ to: 'latest' })).rejects.toThrow(new ExitSignal(1).message);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────
 // SYNC GUARD: the wire mirrors above vs `backend/libs/cli-wire/reconcile.ts`.
 // Field names + optionality only (types are widened on purpose — see
@@ -463,6 +557,8 @@ describe.skipIf(!haveWire)('reconcile wire mirrors — sync guard against @guuey
     'ReconcilePlan',
     'AgentReconcileResult',
     'AgentReconcileStatus',
+    'AgentRollbackBody',
+    'AgentRollbackResult',
   ])('%s declares exactly the wire fields, with the same optionality', (name) => {
     expect(parseInterfaceFields(read(CLI_RECONCILE), name)).toEqual(
       parseInterfaceFields(read(WIRE_RECONCILE), name),

@@ -3,22 +3,24 @@
  *
  * Subcommands:
  *   list                           List all deployments for the current app
- *   rollback [version]             Rollback to a specific version (or previous)
  *   logs <buildNumber>             Show build logs for a specific deployment
  *
  * Usage:
  *   guuey deployments                # List all deployments (default)
  *   guuey deployments list           # Same as above
- *   guuey deployments rollback       # Rollback to previous version
- *   guuey deployments rollback 3     # Rollback to version 3
  *   guuey deployments logs 5         # Show build logs for build #5
  *
- * NOT YET AVAILABLE (rollback + logs only): the `/v1/apps/:id/deploy/rollback`
- * and `/v1/apps/:id/deploy/build-logs/:n` cliApi routes are deferred (see
- * cliApi handler.ts "Deferred to follow-up slices"). Those two subcommands
- * fail fast with a roadmap notice and are de-advertised from `guuey --help`;
- * `deployments list` is live. The full implementations are kept intact and
- * re-activate by removing the `notYetAvailable` gates when the routes ship.
+ * Rollback lives on `guuey agent rollback --to <n>` (`commands/agent-apply.ts`,
+ * guuey#248 b3) — the dormant `deployments rollback` stub that targeted a
+ * never-shipped `/deploy/rollback` route was deleted when that landed (one
+ * contract, one path).
+ *
+ * NOT YET AVAILABLE (logs only): the `/v1/apps/:id/deploy/build-logs/:n`
+ * cliApi route is deferred (see cliApi handler.ts "Deferred to follow-up
+ * slices"). The subcommand fails fast with a roadmap notice and is
+ * de-advertised from `guuey --help`; `deployments list` is live. The full
+ * implementation is kept intact and re-activates by removing the
+ * `notYetAvailable` gate when the route ships.
  */
 
 import { requireAuth } from '../auth';
@@ -83,47 +85,6 @@ export async function deploymentsList(
       'Deployed At': d.createdAt ? new Date(d.createdAt).toLocaleString() : '-',
     })),
   );
-}
-
-/**
- * Handle the `guuey deployments rollback` command.
- *
- * Triggers a rollback to a specific deployment version (or the
- * previous version if no version is specified).
- *
- * @param versionArg - Target version number (optional)
- * @param flags - CLI flags
- */
-export async function deploymentsRollback(
-  versionArg?: string,
-  flags?: Record<string, string | true>,
-): Promise<void> {
-  out.notYetAvailable(
-    "guuey deployments rollback isn't available yet — deploy rollback is on the guuey launch roadmap.",
-  );
-  const auth = requireAuth();
-  const config = resolveConfig();
-  const appId = resolveTargetAppId(flags, config);
-
-  if (!appId) {
-    out.error('No app ID found.');
-    process.exit(1);
-  }
-
-  const buildNumber = versionArg ? parseInt(versionArg, 10) : undefined;
-
-  const res = await apiRequest(auth.pat, config, 'POST', `/apps/${appId}/deploy/rollback`, {
-    buildNumber,
-  });
-
-  if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as Record<string, string>;
-    out.error(data.error ?? `Rollback failed: HTTP ${res.status}`);
-    process.exit(1);
-  }
-
-  const data = (await res.json()) as { buildNumber: number; status: string };
-  out.success(`Rolled back to build #${data.buildNumber}`);
 }
 
 /**

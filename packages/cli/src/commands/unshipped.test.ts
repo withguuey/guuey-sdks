@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 import { byokSet, byokList, byokRemove } from './byok.js';
 import { stop, start, restart } from './agent-lifecycle.js';
-import { deploymentsRollback, deploymentsLogs } from './deployments.js';
+import { deploymentsLogs } from './deployments.js';
 
 /** Thrown by the process.exit mock so execution stops like the real thing. */
 class ExitSignal extends Error {
@@ -29,7 +29,10 @@ const gatedCommands: Array<{ name: string; run: () => Promise<void> }> = [
   { name: 'guuey stop', run: () => stop() },
   { name: 'guuey start', run: () => start() },
   { name: 'guuey restart', run: () => restart() },
-  { name: 'guuey deployments rollback', run: () => deploymentsRollback('3') },
+  // `guuey deployments rollback` left this list in guuey#248 b3: the stub
+  // (never-shipped `/deploy/rollback`) was deleted; rollback is now
+  // `guuey agent rollback --to <n>` over `/reconcile/rollback`. Coverage
+  // lives in `agent-apply.test.ts`.
   { name: 'guuey deployments logs', run: () => deploymentsLogs('3', {}) },
   // `guuey agent config` left this list in guuey#162 (scaling S1-F4): its
   // route (`GET|PATCH /v1/apps/:id/config`) now exists and the command
