@@ -24,6 +24,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import {
   GUUEY_JSON_FILENAME,
   GuueyJsonV1,
+  assertSupportedGuueyJsonSchema,
   parseGuueyJson,
 } from './schema.js';
 
@@ -56,7 +57,9 @@ export function findGuueyJson(
 
 /**
  * Read + parse `guuey.json` from `path`. Throws if the file is missing,
- * unreadable, malformed JSON, or fails schema validation.
+ * unreadable, malformed JSON, declares a `schema` version this package
+ * cannot honor (`GuueyJsonSchemaError` — `SCHEMA_TOO_NEW` / `SCHEMA_UNSUPPORTED`,
+ * see `assertSupportedGuueyJsonSchema`), or fails schema validation.
  *
  * Does NOT resolve `agent.systemPrompt.file` references. Use
  * {@link loadGuueyJson} for file resolution.
@@ -73,6 +76,9 @@ export function readGuueyJsonFile(path: string): GuueyJsonV1 {
     const msg = err instanceof Error ? err.message : String(err);
     throw new Error(`guuey.json at ${path} is not valid JSON: ${msg}`);
   }
+  // Version gate BEFORE the shape parse: a too-new document must say
+  // "upgrade", not `at "schema": expected "1"` (guuey#248 b2).
+  assertSupportedGuueyJsonSchema(json);
   return parseGuueyJson(json);
 }
 

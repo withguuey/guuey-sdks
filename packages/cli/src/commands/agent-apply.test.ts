@@ -236,6 +236,11 @@ describe('loadLocalArtifacts', () => {
     writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {}, name: 'x' }));
     expect(() => loadLocalArtifacts(dir)).toThrow();
   });
+
+  it('a NEWER schema is refused before any network call: [SCHEMA_TOO_NEW] + "upgrade @guuey/cli" (guuey#248 b2)', () => {
+    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '2', agent: {} }));
+    expect(() => loadLocalArtifacts(dir)).toThrow(/^\[SCHEMA_TOO_NEW\] .*schema "2".*npm i -g @guuey\/cli@latest/);
+  });
 });
 
 // ─── Commands ────────────────────────────────────────────────────────────
@@ -327,6 +332,13 @@ describe('agentApply', () => {
     );
     await expect(agentApply({ provenance: 'none' })).rejects.toThrow(new ExitSignal(1).message);
     expect(logs.join('\n')).toContain('[VALIDATION] artifacts.guueyJson failed');
+  });
+
+  it('a too-new guuey.json exits 1 with the SCHEMA_TOO_NEW face and never reaches the API', async () => {
+    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '3', agent: {} }));
+    await expect(agentApply({ provenance: 'none' })).rejects.toThrow(new ExitSignal(1).message);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(logs.join('\n')).toContain('[SCHEMA_TOO_NEW]');
   });
 
   it('a bad --provenance value is a usage error before any network call', async () => {

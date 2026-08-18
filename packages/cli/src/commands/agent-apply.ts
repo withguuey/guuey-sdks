@@ -37,7 +37,7 @@
 import { readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { execSync } from 'node:child_process';
-import { GUUEY_JSON_FILENAME, loadGuueyJson } from '@guuey/config';
+import { GUUEY_JSON_FILENAME, GuueyJsonSchemaError, loadGuueyJson } from '@guuey/config';
 import { requireAuth } from '../auth';
 import { resolveConfig } from '../config';
 import { resolveTargetAppId } from '../app-id';
@@ -272,11 +272,28 @@ export interface LocalArtifacts {
  * when `agent.systemPrompt` is a `{ file }` reference, the prompt file's
  * bytes. Validation + file resolution ride `loadGuueyJson` — the same
  * loader `guuey deploy` uses — so a schema error reads the same here.
+ *
+ * Schema-version stance (guuey#248 b2): the loader refuses a document whose
+ * root `schema` is newer than this CLI's `@guuey/config` understands
+ * (`SCHEMA_TOO_NEW` — upgrade `@guuey/cli`) or older with no migration
+ * (`SCHEMA_UNSUPPORTED`). The platform's reconcile route runs the same gate
+ * against the same constant, so the two never disagree about a document —
+ * an apply that passes here and 400s server-side means this CLI is AHEAD
+ * of the platform. The error is re-thrown with its code prefixed so the
+ * failure is greppable in CI logs.
  */
 export function loadLocalArtifacts(cwd: string): LocalArtifacts {
   const path = join(cwd, GUUEY_JSON_FILENAME);
   const guueyJson = readFileSync(path, 'utf8');
-  const loaded = loadGuueyJson(path);
+  let loaded: ReturnType<typeof loadGuueyJson>;
+  try {
+    loaded = loadGuueyJson(path);
+  } catch (err) {
+    if (err instanceof GuueyJsonSchemaError) {
+      throw new Error(`[${err.code}] ${err.message}`);
+    }
+    throw err;
+  }
   const ref = loaded.doc.agent.systemPrompt;
   if (ref !== undefined && typeof ref !== 'string' && loaded.resolvedSystemPrompt !== undefined) {
     return { guueyJson, systemPrompt: loaded.resolvedSystemPrompt };

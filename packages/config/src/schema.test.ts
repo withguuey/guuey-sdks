@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { parseGuueyJson } from './schema.js';
+import {
+  GuueyJsonSchemaError,
+  SUPPORTED_GUUEY_JSON_SCHEMA,
+  assertSupportedGuueyJsonSchema,
+  classifyGuueyJsonSchema,
+  parseGuueyJson,
+} from './schema.js';
 
 /**
  * Minimal valid `agent` section — all fields optional; empty object is
@@ -90,5 +96,46 @@ describe('parseGuueyJson — app.access (agents-as-code, guuey#190)', () => {
       parseGuueyJson({ ...base, app: { access: { userAuthMode: 'magic' } } }),
     ).toThrow();
     expect(() => parseGuueyJson({ ...base, app: { access: { tier: 'pro' } } })).toThrow();
+  });
+});
+
+describe('schema-version stance (guuey#248 b2) — SUPPORTED_GUUEY_JSON_SCHEMA + the gate', () => {
+  it('the zod literal and the exported constant are the same value (one source of truth)', () => {
+    expect(SUPPORTED_GUUEY_JSON_SCHEMA).toBe('1');
+    expect(parseGuueyJson(base).schema).toBe(SUPPORTED_GUUEY_JSON_SCHEMA);
+  });
+
+  it('classifies equal / newer / invalid without throwing (nothing is "older" than the first version)', () => {
+    expect(classifyGuueyJsonSchema({ schema: '1' })).toEqual({ kind: 'supported', found: '1' });
+    expect(classifyGuueyJsonSchema({ schema: '2' })).toEqual({ kind: 'newer', found: '2' });
+    expect(classifyGuueyJsonSchema({ schema: '10' })).toEqual({ kind: 'newer', found: '10' });
+    // Not a decimal integer string ⇒ the shape parse owns the message.
+    expect(classifyGuueyJsonSchema({ schema: '0' })).toEqual({ kind: 'invalid', found: '0' });
+    expect(classifyGuueyJsonSchema({ schema: 1 })).toEqual({ kind: 'invalid', found: undefined });
+    expect(classifyGuueyJsonSchema({ schema: 'v1' })).toEqual({ kind: 'invalid', found: 'v1' });
+    expect(classifyGuueyJsonSchema({})).toEqual({ kind: 'invalid', found: undefined });
+    expect(classifyGuueyJsonSchema(null)).toEqual({ kind: 'invalid', found: undefined });
+    expect(classifyGuueyJsonSchema('nope')).toEqual({ kind: 'invalid', found: undefined });
+  });
+
+  it('a NEWER schema is refused with SCHEMA_TOO_NEW and the upgrade remedy', () => {
+    let caught: unknown;
+    try {
+      assertSupportedGuueyJsonSchema({ schema: '2', agent: {} });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(GuueyJsonSchemaError);
+    const e = caught as GuueyJsonSchemaError;
+    expect(e.code).toBe('SCHEMA_TOO_NEW');
+    expect(e.found).toBe('2');
+    expect(e.message).toMatch(/schema "2"/);
+    expect(e.message).toMatch(/npm i -g @guuey\/cli@latest/);
+  });
+
+  it('a supported schema passes the gate silently; an invalid one is left to the shape parse', () => {
+    expect(() => assertSupportedGuueyJsonSchema({ schema: '1', agent: {} })).not.toThrow();
+    expect(() => assertSupportedGuueyJsonSchema({ schema: 'v1', agent: {} })).not.toThrow();
+    expect(() => parseGuueyJson({ schema: 'v1', agent: {} })).toThrow();
   });
 });
