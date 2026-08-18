@@ -161,7 +161,8 @@ Agent Development:
                                  to the runtime captured at the last deploy
     --json                       Emit the config as JSON
 
-Agents as code (GitOps — CI-safe with a service token):
+Agents as code (GitOps — CI-safe with a service token, or a workspace
+API key for workspace-owned apps, via GUUEY_API_KEY):
   agent apply                    Converge the hosted agent to this checkout's
                                  guuey.json (+ its prompt file) and its
                                  app.access policy in ONE idempotent call:
