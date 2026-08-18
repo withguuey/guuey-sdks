@@ -231,6 +231,41 @@ describe('appsGet endpoint discovery', () => {
     expect(deploymentsCall).toContain('/apps/app-1/deployments');
   });
 
+  // guuey#249 — every deployed agent has a page (default slug at first
+  // Live); `apps get` prints the SERVER-composed URL + the slug verbatim.
+  it('prints the app\'s page URL and slug when the wire carries them', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            app: { ...APP, urlSlug: 'todo-k7q2', pageUrl: 'https://todo-k7q2.agents.guuey.com/' },
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ deployments: [] }), { status: 200 }));
+
+    await appsGet('app-1', {});
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain('Page:         https://todo-k7q2.agents.guuey.com/');
+    expect(output).toContain('Slug:         todo-k7q2');
+  });
+
+  it('prints NO page/slug lines for an unslugged app (never a guessed host)', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ app: { ...APP, urlSlug: null, pageUrl: null } }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ deployments: [] }), { status: 200 }));
+
+    await appsGet('app-1', {});
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).not.toContain('Page:');
+    expect(output).not.toContain('Slug:');
+  });
+
   it('includes endpointUrl in --json output', async () => {
     mockAppThenDeployments(
       new Response(

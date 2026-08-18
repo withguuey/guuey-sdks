@@ -48,7 +48,17 @@ vi.mock('../config.js', async (importOriginal) => {
 
 // `--wait` polls through the deploy module's poller; stub it so no timers run.
 vi.mock('./deploy.js', () => ({
-  pollDeployStatus: vi.fn(async () => ({ status: 'live', url: 'https://app-1.agents.guuey.test' })),
+  pollDeployStatus: vi.fn(async () => ({
+    status: 'live',
+    url: 'https://app-1.agents.guuey.test',
+    pageUrl: null,
+  })),
+  // guuey#249 — the page URL is read back from the status projection (the
+  // default slug lands a beat after Live); stubbed to the settled answer.
+  awaitPageUrl: vi.fn(async () => 'https://todo-k7q2.agents.guuey.test/'),
+  printPageLine: (pageUrl: string | null) => {
+    if (pageUrl) console.log(`  Your agent's page: ${pageUrl}`);
+  },
 }));
 
 class ExitSignal extends Error {
@@ -319,6 +329,8 @@ describe('agentApply', () => {
       expect.objectContaining({ appId: 'app-1', buildNumber: 12 }),
     );
     expect(logs.join('\n')).toContain('Live at https://app-1.agents.guuey.test');
+    // guuey#249 — the app's page, printed right after Live.
+    expect(logs.join('\n')).toContain("Your agent's page: https://todo-k7q2.agents.guuey.test/");
   });
 
   it('renders the cliApi error envelope and exits 1 (a service token on the wrong app, a schema 400, …)', async () => {

@@ -57,6 +57,15 @@ interface AppSummary {
  * the CLI does not read or write them.
  */
 interface AppDetail extends AppSummary {
+  /**
+   * The app's slug — a builder's `guuey slug claim`, or the DEFAULT one the
+   * platform claims at first Live (guuey#249) — and its standalone page
+   * URL, SERVER-composed (`https://<slug>.<slug-agents-domain>/`; the CLI
+   * never derives the slug host). Both `null` for a never-deployed,
+   * never-claimed app.
+   */
+  urlSlug?: string | null;
+  pageUrl?: string | null;
   allowedDomains?: string[];
   userAuthMode?: string | null;
   userAuthConfig?: {
@@ -282,6 +291,10 @@ export async function appsGet(
   const app = data.app;
   console.log(`App: ${app.displayName} (${app.id})`);
   if (endpointUrl) console.log(`  Endpoint:     ${endpointUrl}`);
+  // guuey#249 — the shareable page every deployed agent has (default slug
+  // at first Live; `guuey slug claim` to change it).
+  if (app.pageUrl) console.log(`  Page:         ${app.pageUrl}`);
+  if (app.urlSlug) console.log(`  Slug:         ${app.urlSlug}`);
   // guuey#250 — printed whenever the app is on a trial, so a builder sees
   // the pause date (or the pause) without opening the console.
   if (app.trial) console.log(`  Trial:        ${trialLabel(app.trial)}`);

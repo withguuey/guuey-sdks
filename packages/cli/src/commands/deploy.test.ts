@@ -4,7 +4,15 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
-import { createLinkedApp, deploy, pollDeployStatus, portalLine, portalOriginForHost } from './deploy.js';
+import {
+  awaitPageUrl,
+  createLinkedApp,
+  deploy,
+  pollDeployStatus,
+  portalLine,
+  portalOriginForHost,
+  printPageLine,
+} from './deploy.js';
 import { resolveConfig, loadProjectConfig } from '../config.js';
 import type { apiRequest } from '../deploy-shared.js';
 
@@ -79,8 +87,31 @@ describe('pollDeployStatus', () => {
         { api },
       );
 
-      expect(result).toEqual({ status: 'live', url: 'https://app-1.guuey.app' });
+      expect(result).toEqual({ status: 'live', url: 'https://app-1.guuey.app', pageUrl: null });
       expect(calls).toEqual([{ method: 'GET', path: '/apps/app-1/deployments/4/status' }]);
+    },
+    10_000,
+  );
+
+  it(
+    'carries the projection\'s pageUrl through (guuey#249) — read, never derived',
+    async () => {
+      const api: typeof apiRequest = vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            status: 'live',
+            endpointUrl: 'https://app-1.guuey.app',
+            errorMessage: null,
+            pageUrl: 'https://weather-bot-k7q2.agents.guuey.test/',
+          }),
+          { status: 200 },
+        ),
+      );
+      const result = await pollDeployStatus(
+        { auth, config, appId: 'app-1', buildNumber: 4, timeoutMs: 60_000 },
+        { api },
+      );
+      expect(result.pageUrl).toBe('https://weather-bot-k7q2.agents.guuey.test/');
     },
     10_000,
   );
@@ -148,6 +179,82 @@ describe('pollDeployStatus', () => {
     },
     10_000,
   );
+});
+
+// guuey#249 — the "Your agent's page" line. The default slug is claimed
+// SERVER-SIDE on the row's first `→ live` edge (deployStream), so the poll
+// that sees `live` on a first deploy can beat it by a second or two; the CLI
+// re-reads the status route for a bounded window and prints ONLY what the
+// server hands back.
+describe('awaitPageUrl / printPageLine (guuey#249)', () => {
+  const auth = { pat: 'pat-test' };
+  const config = { apiUrl: 'https://api.guuey.test' };
+  const noSleep = async () => {};
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('returns the poll\'s pageUrl immediately without another request', async () => {
+    const api = vi.fn<typeof apiRequest>();
+    const url = await awaitPageUrl(
+      { auth, config, appId: 'app-1', buildNumber: 4, pageUrl: 'https://x.agents.guuey.test/' },
+      { api, sleep: noSleep },
+    );
+    expect(url).toBe('https://x.agents.guuey.test/');
+    expect(api).not.toHaveBeenCalled();
+  });
+
+  it('re-reads the status route until the server-side claim lands, then returns that URL', async () => {
+    const bodies = [
+      { status: 'live', endpointUrl: 'https://e', errorMessage: null, pageUrl: null },
+      { status: 'live', endpointUrl: 'https://e', errorMessage: null, pageUrl: null },
+      { status: 'live', endpointUrl: 'https://e', errorMessage: null, pageUrl: 'https://weather-bot-k7q2.agents.guuey.test/' },
+    ];
+    let call = 0;
+    const paths: string[] = [];
+    const api: typeof apiRequest = vi.fn(async (_pat, _cfg, _method, path) => {
+      paths.push(path);
+      const body = bodies[Math.min(call, bodies.length - 1)];
+      call += 1;
+      return new Response(JSON.stringify(body), { status: 200 });
+    });
+    const url = await awaitPageUrl(
+      { auth, config, appId: 'app-1', buildNumber: 4, pageUrl: null, waitMs: 60_000 },
+      { api, sleep: noSleep },
+    );
+    expect(url).toBe('https://weather-bot-k7q2.agents.guuey.test/');
+    expect(paths).toEqual(Array(3).fill('/apps/app-1/deployments/4/status'));
+  });
+
+  it('gives up with null after the wait window — the deploy is still a success, no guessed URL', async () => {
+    const api: typeof apiRequest = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ status: 'live', endpointUrl: 'https://e', errorMessage: null, pageUrl: null }),
+        { status: 200 },
+      ),
+    );
+    let now = 0;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const sleep = async (ms: number) => {
+      now += ms;
+    };
+    const url = await awaitPageUrl(
+      { auth, config, appId: 'app-1', buildNumber: 4, pageUrl: null, waitMs: 6_000 },
+      { api, sleep },
+    );
+    expect(url).toBeNull();
+    expect(api).toHaveBeenCalledTimes(3);
+  });
+
+  it('printPageLine prints the one line for a URL and nothing for null', () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    printPageLine('https://weather-bot-k7q2.agents.guuey.test/');
+    printPageLine(null);
+    expect(logSpy.mock.calls.flat()).toEqual([
+      "  Your agent's page: https://weather-bot-k7q2.agents.guuey.test/",
+    ]);
+  });
 });
 
 // Regression coverage for S12: the printed Portal line was a hardcoded prod
@@ -402,7 +509,7 @@ describe('deploy() — colocated MCP server-name validation (deploy-time gate)',
         }
         if (url.includes('/deployments/1/status')) {
           return new Response(
-            JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null }),
+            JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null, pageUrl: 'https://app-k7q2.agents.guuey.test/' }),
             { status: 200 },
           );
         }
@@ -465,7 +572,7 @@ describe('deploy() — --max-pods rides the trigger body', () => {
       }
       if (url.includes('/deployments/1/status')) {
         return new Response(
-          JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null }),
+          JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null, pageUrl: 'https://app-k7q2.agents.guuey.test/' }),
           { status: 200 },
         );
       }
@@ -589,7 +696,7 @@ describe('deploy() — --app-id overrides the guuey.json binding (guuey#232)', (
       }
       if (url.includes('/deployments/1/status')) {
         return new Response(
-          JSON.stringify({ status: 'live', endpointUrl: 'https://x.guuey.app', errorMessage: null }),
+          JSON.stringify({ status: 'live', endpointUrl: 'https://x.guuey.app', errorMessage: null, pageUrl: 'https://x-k7q2.agents.guuey.test/' }),
           { status: 200 },
         );
       }

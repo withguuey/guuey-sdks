@@ -667,7 +667,7 @@ async function deployCode(opts: {
     },
   );
 
-  const { status, url } = await pollDeployStatus({
+  const { status, url, pageUrl: polledPageUrl } = await pollDeployStatus({
     auth,
     config,
     appId,
@@ -692,6 +692,7 @@ async function deployCode(opts: {
   // ── Step 5: output ──
   console.log('');
   out.success(`Live at ${url}`);
+  printPageLine(await awaitPageUrl({ auth, config, appId, buildNumber, pageUrl: polledPageUrl }));
   await maybePrintRuntimePinNotice(auth.pat, config, appId, runtimePinBefore);
   console.log('');
   console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
@@ -776,11 +777,12 @@ export async function pollDeployStatus(
     tarballPath?: string;
   },
   deps?: { api?: typeof apiRequest },
-): Promise<{ status: string; url: string }> {
+): Promise<{ status: string; url: string; pageUrl: string | null }> {
   const api = deps?.api ?? apiRequest;
   const { auth, config, appId, buildNumber, timeoutMs, tarballPath } = opts;
   let status = 'queued';
   let url = '';
+  let pageUrl: string | null = null;
   let lastMessage = '';
   const startTime = Date.now();
 
@@ -807,12 +809,7 @@ export async function pollDeployStatus(
       continue;
     }
 
-    const data = (await statusRes.json()) as {
-      status: string;
-      message?: string;
-      endpointUrl?: string | null;
-      errorMessage?: string | null;
-    };
+    const data = (await statusRes.json()) as DeploymentStatusPoll;
 
     if (data.status === 'queued' && lastMessage !== 'Queued...') {
       console.log('  Queued...');
@@ -824,6 +821,7 @@ export async function pollDeployStatus(
 
     status = data.status;
     if (data.endpointUrl) url = data.endpointUrl;
+    if (data.pageUrl) pageUrl = data.pageUrl;
     if (data.errorMessage) {
       out.error(data.errorMessage);
       if (tarballPath) cleanup(tarballPath);
@@ -831,7 +829,78 @@ export async function pollDeployStatus(
     }
   }
 
-  return { status, url };
+  return { status, url, pageUrl };
+}
+
+/**
+ * The status projection's fields this loop reads — a strict subset of the
+ * server's `DeploymentStatusWire` (`backend/libs/cli-wire/deploy.ts`).
+ * `pageUrl` (guuey#249) is the APP's standalone page, server-composed from
+ * its slug; the CLI prints it verbatim and never derives the slug host.
+ */
+interface DeploymentStatusPoll {
+  status: string;
+  message?: string;
+  endpointUrl?: string | null;
+  errorMessage?: string | null;
+  pageUrl?: string | null;
+}
+
+/** How long {@link awaitPageUrl} re-reads after Live before giving up. */
+export const PAGE_URL_WAIT_MS = 12_000;
+const PAGE_URL_TICK_MS = 2_000;
+
+/**
+ * The app's page URL after a Live — read back from the status projection,
+ * never computed here (guuey#249).
+ *
+ * The platform claims an app's DEFAULT slug server-side, on the
+ * `AgentDeployment` row's first `→ live` edge (the deployStream Lambda), so
+ * on a FIRST deploy the poll that sees `live` can land a second or two
+ * before the slug does. This re-reads the same status route until `pageUrl`
+ * is non-null or {@link PAGE_URL_WAIT_MS} passes; a redeploy of a slugged
+ * app returns immediately (the poll already carried it). `null` after the
+ * wait means "no page to print" — the deploy is still a success, and the
+ * builder can `guuey slug claim` (or `guuey apps get` a moment later).
+ */
+export async function awaitPageUrl(
+  opts: {
+    auth: { pat: string };
+    config: { apiUrl?: string };
+    appId: string;
+    buildNumber: number;
+    /** What the poll loop already saw — returned as-is when non-null. */
+    pageUrl: string | null;
+    waitMs?: number;
+  },
+  deps?: { api?: typeof apiRequest; sleep?: (ms: number) => Promise<void> },
+): Promise<string | null> {
+  if (opts.pageUrl) return opts.pageUrl;
+  const api = deps?.api ?? apiRequest;
+  const sleep = deps?.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const deadline = Date.now() + (opts.waitMs ?? PAGE_URL_WAIT_MS);
+  while (Date.now() < deadline) {
+    await sleep(PAGE_URL_TICK_MS);
+    const res = await api(
+      opts.auth.pat,
+      opts.config,
+      'GET',
+      `/apps/${opts.appId}/deployments/${opts.buildNumber}/status`,
+    );
+    if (!res.ok) continue;
+    const data = (await res.json()) as DeploymentStatusPoll;
+    if (data.pageUrl) return data.pageUrl;
+  }
+  return null;
+}
+
+/**
+ * The one "Your agent's page" line every deploy surface prints after Live
+ * (guuey#249). Prints nothing when there is no page to print — never a
+ * guessed URL.
+ */
+export function printPageLine(pageUrl: string | null): void {
+  if (pageUrl) console.log(`  Your agent's page: ${pageUrl}`);
 }
 
 // ─── Legacy code mode: user-committed Dockerfile, no guuey.json ─────────
@@ -945,7 +1014,7 @@ async function deployLegacyDockerfile(opts: {
     },
   );
 
-  const { status, url } = await pollDeployStatus({
+  const { status, url, pageUrl: polledPageUrl } = await pollDeployStatus({
     auth,
     config,
     appId,
@@ -970,6 +1039,7 @@ async function deployLegacyDockerfile(opts: {
 
   console.log('');
   out.success(`Live at ${url}`);
+  printPageLine(await awaitPageUrl({ auth, config, appId, buildNumber, pageUrl: polledPageUrl }));
   await maybePrintRuntimePinNotice(auth.pat, config, appId, runtimePinBefore);
   console.log('');
   console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
@@ -1103,7 +1173,7 @@ async function deployDeclarative(opts: {
   console.log('  Provisioning pod...');
   // Declarative deploys skip the build entirely, so the deploy/readiness
   // budget alone applies. 5 min readiness + slack ≈ 7 min ceiling.
-  const { status, url } = await pollDeployStatus({
+  const { status, url, pageUrl: polledPageUrl } = await pollDeployStatus({
     auth,
     config,
     appId,
@@ -1125,6 +1195,7 @@ async function deployDeclarative(opts: {
 
   console.log('');
   out.success(`Live at ${url}`);
+  printPageLine(await awaitPageUrl({ auth, config, appId, buildNumber, pageUrl: polledPageUrl }));
   await maybePrintRuntimePinNotice(auth.pat, config, appId, runtimePinBefore);
   console.log('');
   console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);

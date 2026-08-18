@@ -42,7 +42,7 @@ import { requireAuth } from '../auth';
 import { resolveConfig } from '../config';
 import { resolveTargetAppId } from '../app-id';
 import { apiRequest, parseApiError } from '../deploy-shared';
-import { pollDeployStatus } from './deploy';
+import { awaitPageUrl, pollDeployStatus, printPageLine } from './deploy';
 import * as out from '../output';
 
 // ─── Wire mirrors of `backend/libs/cli-wire/reconcile.ts` ────────────────
@@ -430,8 +430,9 @@ export async function agentApply(flags?: Record<string, string | true>): Promise
 
   if (wait) {
     console.log('  Waiting for the build to go live...');
-    const { status, url } = await pollDeployStatus({
-      auth: { pat: ctx.pat },
+    const auth = { pat: ctx.pat };
+    const { status, url, pageUrl } = await pollDeployStatus({
+      auth,
       config: ctx.config,
       appId: ctx.appId,
       buildNumber: result.buildNumber,
@@ -439,6 +440,17 @@ export async function agentApply(flags?: Record<string, string | true>): Promise
     });
     if (status === 'live') {
       out.success(`Live at ${url}`);
+      // guuey#249 — the app's page (default slug claimed at first Live),
+      // read back from the status projection, never derived here.
+      printPageLine(
+        await awaitPageUrl({
+          auth,
+          config: ctx.config,
+          appId: ctx.appId,
+          buildNumber: result.buildNumber,
+          pageUrl,
+        }),
+      );
       return;
     }
     out.error(
