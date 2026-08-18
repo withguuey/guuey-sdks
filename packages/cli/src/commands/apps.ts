@@ -35,6 +35,18 @@ interface AppSummary {
    */
   displayName: string;
   createdAt: string;
+  /**
+   * Free-trial state (guuey#250) — the wire's `AppTrialWire | null`: present
+   * ONLY while the app is on a trial (billing resolves to the free tier and
+   * the deploy-controller has stamped its clock). `expired` = the platform
+   * paused it until a plan is chosen; `null` = paying / comped / not
+   * deployed yet.
+   */
+  trial?: {
+    startedAt: string | null;
+    endsAt: string;
+    status: 'active' | 'expired';
+  } | null;
 }
 
 /**
@@ -159,8 +171,24 @@ export function appsListRow(a: AppSummary): Record<string, string> {
   return {
     ID: a.id,
     Name: a.displayName,
+    Trial: trialLabel(a.trial),
     Created: a.createdAt?.slice(0, 10) ?? '-',
   };
+}
+
+/**
+ * The one-line trial state (guuey#250) both `apps list` and `apps get`
+ * print (pure). `-` when the app is not on a trial; the end DATE while it
+ * runs (the day the app pauses without a plan); `EXPIRED — paused until a
+ * plan is chosen` past it. Copy stays truthful to the platform: a paused
+ * app resumes on its own once a plan is attached, no redeploy.
+ */
+export function trialLabel(trial: AppSummary['trial']): string {
+  if (!trial) return '-';
+  const endsOn = trial.endsAt.slice(0, 10);
+  return trial.status === 'expired'
+    ? `EXPIRED ${endsOn} — paused until a plan is chosen`
+    : `ends ${endsOn}`;
 }
 
 /**
@@ -254,6 +282,9 @@ export async function appsGet(
   const app = data.app;
   console.log(`App: ${app.displayName} (${app.id})`);
   if (endpointUrl) console.log(`  Endpoint:     ${endpointUrl}`);
+  // guuey#250 — printed whenever the app is on a trial, so a builder sees
+  // the pause date (or the pause) without opening the console.
+  if (app.trial) console.log(`  Trial:        ${trialLabel(app.trial)}`);
   if (app.userAuthMode) console.log(`  Auth Mode:    ${app.userAuthMode}`);
   if (app.userAuthConfig?.issuerUrl)
     console.log(`  Issuer:       ${app.userAuthConfig.issuerUrl}`);

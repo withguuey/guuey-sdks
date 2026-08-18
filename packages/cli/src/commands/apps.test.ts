@@ -117,8 +117,26 @@ describe('appsListRow', () => {
     ).toEqual({
       ID: 'app-1',
       Name: 'Todo',
+      Trial: '-',
       Created: '2026-07-01',
     });
+  });
+
+  it('prints the trial column (guuey#250): end date while active, EXPIRED + paused past it, `-` off-trial', () => {
+    const base = { id: 'app-1', displayName: 'Todo', createdAt: '2026-07-01T00:00:00.000Z' };
+    expect(
+      appsListRow({
+        ...base,
+        trial: { startedAt: '2026-08-18T00:00:00.000Z', endsAt: '2026-08-25T00:00:00.000Z', status: 'active' },
+      }).Trial,
+    ).toBe('ends 2026-08-25');
+    expect(
+      appsListRow({
+        ...base,
+        trial: { startedAt: '2026-08-01T00:00:00.000Z', endsAt: '2026-08-08T00:00:00.000Z', status: 'expired' },
+      }).Trial,
+    ).toBe('EXPIRED 2026-08-08 — paused until a plan is chosen');
+    expect(appsListRow({ ...base, trial: null }).Trial).toBe('-');
   });
 });
 
