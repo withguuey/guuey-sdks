@@ -43,6 +43,117 @@ import { AppSectionV1, type GuueyApp } from './app.js';
 import { GguiSectionV1, type GuueyGguiSection } from './ggui.js';
 
 /**
+ * The ONE `guuey.json` `schema` value this package understands — the
+ * schema-version stance (guuey#248 b2):
+ *
+ * - The root `schema` is a decimal integer string (`"1"`, `"2"`, …), bumped
+ *   only on a change that an older reader cannot interpret correctly.
+ * - A document declaring a NEWER schema than this constant is refused
+ *   everywhere: the CLI (`SCHEMA_TOO_NEW` — upgrade `@guuey/cli`) and the
+ *   reconcile / deploy-trigger APIs (`400 SCHEMA_UNSUPPORTED`). Never
+ *   "best-effort parse what we recognize" — the unknown half is precisely
+ *   the half that matters.
+ * - A document declaring an OLDER schema is accepted only when a migration
+ *   to this version exists. Today there is exactly one version and no
+ *   migrations, so the rule collapses to equal-or-refuse; when `"2"` ships,
+ *   the `1 → 2` migration lands in this package and BOTH sides (CLI + API)
+ *   pick it up through {@link classifyGuueyJsonSchema}.
+ *
+ * The CLI and the platform API compare against the SAME constant (both
+ * consume this package), so "the CLI accepted it but the API refused it"
+ * can only ever mean a version skew between the two — which is exactly the
+ * message the API's refusal names.
+ */
+export const SUPPORTED_GUUEY_JSON_SCHEMA = '1';
+
+/**
+ * Where a raw `guuey.json` document's `schema` sits relative to
+ * {@link SUPPORTED_GUUEY_JSON_SCHEMA}:
+ *
+ * - `supported` — equal (or an older version a migration exists for; none
+ *   today).
+ * - `newer` — a later version than this reader knows: refuse + upgrade.
+ * - `older` — an earlier version with NO migration: refuse.
+ * - `invalid` — absent, not a string, or not a decimal integer string; the
+ *   full schema parse reports the precise issue, this verdict only says the
+ *   version-gate cannot even compare.
+ */
+export type GuueyJsonSchemaVerdict =
+  | { kind: 'supported'; found: string }
+  | { kind: 'newer'; found: string }
+  | { kind: 'older'; found: string }
+  | { kind: 'invalid'; found: string | undefined };
+
+/**
+ * Classify a raw (JSON-decoded, NOT yet schema-parsed) document's root
+ * `schema` against {@link SUPPORTED_GUUEY_JSON_SCHEMA}. Pure; never throws.
+ * Run it BEFORE `parseGuueyJson` so a too-new document gets the "upgrade
+ * your CLI" face instead of zod's `expected "1"` at the first field.
+ */
+export function classifyGuueyJsonSchema(raw: unknown): GuueyJsonSchemaVerdict {
+  const found =
+    raw !== null && typeof raw === 'object' && 'schema' in raw
+      ? (raw as { schema: unknown }).schema
+      : undefined;
+  if (typeof found !== 'string' || !/^[1-9][0-9]*$/.test(found)) {
+    return { kind: 'invalid', found: typeof found === 'string' ? found : undefined };
+  }
+  const have = Number.parseInt(SUPPORTED_GUUEY_JSON_SCHEMA, 10);
+  const got = Number.parseInt(found, 10);
+  if (got === have) return { kind: 'supported', found };
+  return got > have ? { kind: 'newer', found } : { kind: 'older', found };
+}
+
+/**
+ * Thrown by {@link assertSupportedGuueyJsonSchema} — carries the code the
+ * CLI prints and the API maps to its 400 (`SCHEMA_TOO_NEW` = upgrade the
+ * reader; `SCHEMA_UNSUPPORTED` = an older version no migration exists for).
+ * The message already names the found + supported versions and the remedy.
+ */
+export class GuueyJsonSchemaError extends Error {
+  constructor(
+    public readonly code: 'SCHEMA_TOO_NEW' | 'SCHEMA_UNSUPPORTED',
+    public readonly found: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'GuueyJsonSchemaError';
+  }
+}
+
+/**
+ * Refuse a document whose `schema` this reader cannot honor. `invalid`
+ * verdicts pass through untouched — the schema parse that follows reports
+ * the precise issue (`at "schema": expected "1"`), which is the right face
+ * for a typo; this gate exists for the version SKEW cases only.
+ *
+ * Runs inside `readGuueyJsonFile` / `loadGuueyJson` (every CLI read of a
+ * checked-in file — `deploy`, `dev`, `agent apply`, …) and in the platform's
+ * reconcile + deploy-trigger handlers, so both ends of the wire refuse the
+ * same documents for the same reason. The message names the remedy for the
+ * only reader outside the platform: the CLI.
+ */
+export function assertSupportedGuueyJsonSchema(raw: unknown): void {
+  const verdict = classifyGuueyJsonSchema(raw);
+  if (verdict.kind === 'newer') {
+    throw new GuueyJsonSchemaError(
+      'SCHEMA_TOO_NEW',
+      verdict.found,
+      `guuey.json declares schema "${verdict.found}", but this reader understands schema "${SUPPORTED_GUUEY_JSON_SCHEMA}" only. ` +
+        'Upgrade the tool reading it — for the CLI: npm i -g @guuey/cli@latest — and re-run.',
+    );
+  }
+  if (verdict.kind === 'older') {
+    throw new GuueyJsonSchemaError(
+      'SCHEMA_UNSUPPORTED',
+      verdict.found,
+      `guuey.json declares schema "${verdict.found}", but no migration to schema "${SUPPORTED_GUUEY_JSON_SCHEMA}" exists — ` +
+        `set "schema": "${SUPPORTED_GUUEY_JSON_SCHEMA}" and update the document to the current shape.`,
+    );
+  }
+}
+
+/**
  * Top-level guuey.json v1 schema.
  *
  * `agent` is required — there's no "empty" guuey.json. A repo that hosts
@@ -55,7 +166,7 @@ import { GguiSectionV1, type GuueyGguiSection } from './ggui.js';
  * Re-exports the sub-section types for consumer convenience.
  */
 export const GuueyJsonV1 = z.strictObject({
-  schema: z.literal('1'),
+  schema: z.literal(SUPPORTED_GUUEY_JSON_SCHEMA),
 
   /** Stable agent identifier minted by the control plane on first `guuey create`. */
   appId: z.string().min(1).max(128).optional(),

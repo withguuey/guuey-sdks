@@ -1,13 +1,14 @@
 /**
- * guuey agent apply / guuey agent status — agents-as-code (guuey#190).
+ * guuey agent apply / status / rollback — agents-as-code (guuey#190, #248).
  *
  * The GitOps verbs: converge the hosted agent to the checked-in
- * `guuey.json` (+ its prompt file) from CI, and read back what is live and
- * which commit built it. Both talk ONLY to `/v1/apps/:id/reconcile`, the
- * one route an app service token (`guuey_svc_*`, `guuey tokens create`)
- * may write — so they are the CI-safe path (`guuey deploy` needs a user
- * key; its `/deploy/trigger` route is deliberately outside the service
- * token's scope).
+ * `guuey.json` (+ its prompt file) from CI, read back what is live and
+ * which commit built it, and re-serve a previous build byte-exact. All
+ * talk ONLY to `/v1/apps/:id/reconcile[/rollback]`, the routes an app
+ * service token (`guuey_svc_*`, `guuey tokens create`) may write — so they
+ * are the CI-safe path (`guuey deploy` needs a user or workspace key; its
+ * `/deploy/trigger` route is deliberately outside the service token's
+ * scope).
  *
  * Usage:
  *   guuey agent apply                     # converge; prints applied build / unchanged
@@ -16,6 +17,7 @@
  *   guuey agent apply --provenance none   # don't stamp repo@sha (default: auto)
  *   guuey agent status                    # live build + provenance + app config
  *   guuey agent status --check            # + byte-exact parity of THIS checkout
+ *   guuey agent rollback --to 7           # re-serve build #7's bytes as a new build (no checkout)
  *   … --json                              # the wire response, verbatim
  *   … --app-id <id>                       # target another app (binding untouched)
  *
@@ -37,7 +39,7 @@
 import { readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { execSync } from 'node:child_process';
-import { GUUEY_JSON_FILENAME, loadGuueyJson } from '@guuey/config';
+import { GUUEY_JSON_FILENAME, GuueyJsonSchemaError, loadGuueyJson } from '@guuey/config';
 import { requireAuth } from '../auth';
 import { resolveConfig } from '../config';
 import { resolveTargetAppId } from '../app-id';
@@ -122,6 +124,7 @@ export interface AgentReconcileStatus {
     size: string | null;
     provenance: DeployProvenance | null;
     contentHash: string | null;
+    rolledBackFrom: number | null;
   } | null;
   config: {
     userAuthMode: string | null;
@@ -129,6 +132,24 @@ export interface AgentReconcileStatus {
     allowedDomains: string[];
     guestAccess: boolean | null;
   };
+}
+
+export interface AgentRollbackBody {
+  buildNumber: number;
+  deploymentId?: string;
+}
+
+export interface AgentRollbackResult {
+  applied: boolean;
+  unchanged: boolean;
+  appId: string;
+  rolledBackFrom: number;
+  buildNumber: number;
+  deploymentId?: string;
+  status: string;
+  contentHash: string;
+  provenance: DeployProvenance | null;
+  statusPath: string;
 }
 
 // ─── Exit codes ──────────────────────────────────────────────────────────
@@ -272,11 +293,28 @@ export interface LocalArtifacts {
  * when `agent.systemPrompt` is a `{ file }` reference, the prompt file's
  * bytes. Validation + file resolution ride `loadGuueyJson` — the same
  * loader `guuey deploy` uses — so a schema error reads the same here.
+ *
+ * Schema-version stance (guuey#248 b2): the loader refuses a document whose
+ * root `schema` is newer than this CLI's `@guuey/config` understands
+ * (`SCHEMA_TOO_NEW` — upgrade `@guuey/cli`) or older with no migration
+ * (`SCHEMA_UNSUPPORTED`). The platform's reconcile route runs the same gate
+ * against the same constant, so the two never disagree about a document —
+ * an apply that passes here and 400s server-side means this CLI is AHEAD
+ * of the platform. The error is re-thrown with its code prefixed so the
+ * failure is greppable in CI logs.
  */
 export function loadLocalArtifacts(cwd: string): LocalArtifacts {
   const path = join(cwd, GUUEY_JSON_FILENAME);
   const guueyJson = readFileSync(path, 'utf8');
-  const loaded = loadGuueyJson(path);
+  let loaded: ReturnType<typeof loadGuueyJson>;
+  try {
+    loaded = loadGuueyJson(path);
+  } catch (err) {
+    if (err instanceof GuueyJsonSchemaError) {
+      throw new Error(`[${err.code}] ${err.message}`);
+    }
+    throw err;
+  }
   const ref = loaded.doc.agent.systemPrompt;
   if (ref !== undefined && typeof ref !== 'string' && loaded.resolvedSystemPrompt !== undefined) {
     return { guueyJson, systemPrompt: loaded.resolvedSystemPrompt };
@@ -497,7 +535,9 @@ export async function agentStatus(flags?: Record<string, string | true>): Promis
     console.log('  Live: no active build');
   } else {
     const l = status.live;
-    console.log(`  Live: build #${l.buildNumber} (${l.status})${l.size ? ` · ${l.size}` : ''}${l.deployedAt ? ` · deployed ${l.deployedAt}` : ''}`);
+    console.log(
+      `  Live: build #${l.buildNumber} (${l.status})${l.rolledBackFrom !== null ? ` (rolled back from #${l.rolledBackFrom})` : ''}${l.size ? ` · ${l.size}` : ''}${l.deployedAt ? ` · deployed ${l.deployedAt}` : ''}`,
+    );
     console.log(
       l.provenance
         ? `        managed from ${l.provenance.repo}@${l.provenance.sha.slice(0, 12)} (${l.provenance.path})`
@@ -527,4 +567,89 @@ export async function agentStatus(flags?: Record<string, string | true>): Promis
   }
   console.log('');
   if (parity && !parity.unchanged) process.exit(EXIT_DRIFT);
+}
+
+// ─── guuey agent rollback ────────────────────────────────────────────────
+
+/**
+ * Parse `--to <n>`: a positive integer build number, or a usage message.
+ * Exported for tests; the command exits 1 on the message.
+ */
+export function parseRollbackTarget(value: string | true | undefined): number | string {
+  if (value === undefined || value === true) {
+    return '--to <buildNumber> is required — the build whose bytes to re-serve (see "guuey deployments").';
+  }
+  const n = Number(value);
+  if (!/^[1-9][0-9]*$/.test(value) || !Number.isSafeInteger(n)) {
+    return `--to "${value}" is not a build number (a positive integer, e.g. --to 7).`;
+  }
+  return n;
+}
+
+/**
+ * `guuey agent rollback --to <n> [--wait] [--json] [--app-id <id>]` —
+ * pin-to-build rollback (guuey#248 b3): re-serve build N's persisted
+ * snapshot byte-exact as a new build. Needs NO checkout: it runs anywhere
+ * with `--app-id` (or the binding). The platform refuses (409
+ * ROLLBACK_NOT_EXACT) rather than approximate when the stored snapshot
+ * would not re-serialize byte-identical — the message names the way out.
+ */
+export async function agentRollback(flags?: Record<string, string | true>): Promise<void> {
+  const wait = flags?.wait === true;
+  const jsonOut = flags?.json === true;
+  const target = parseRollbackTarget(flags?.to);
+  if (typeof target === 'string') {
+    out.error(target);
+    process.exit(1);
+  }
+  const ctx = context(flags);
+
+  const body: AgentRollbackBody = { buildNumber: target };
+  const res = await apiRequest(ctx.pat, ctx.config, 'POST', `/apps/${ctx.appId}/reconcile/rollback`, body);
+  if (!res.ok) await failFromResponse(res, 'Rollback failed');
+  const result = (await res.json()) as AgentRollbackResult;
+
+  if (jsonOut) {
+    out.json(result);
+    return;
+  }
+
+  console.log('');
+  const prov = result.provenance
+    ? ` — bytes from ${result.provenance.repo}@${result.provenance.sha.slice(0, 12)} (${result.provenance.path})`
+    : '';
+  if (result.unchanged) {
+    out.success(
+      `Unchanged — build #${result.buildNumber} (${result.status}) already serves build #${result.rolledBackFrom}'s bytes. Nothing queued.`,
+    );
+    console.log(`  sha256 snapshot:  ${result.contentHash}${prov}`);
+    console.log('');
+    return;
+  }
+
+  out.success(`Rolled back — build #${result.buildNumber} queued, re-serving build #${result.rolledBackFrom} byte-exact${prov}.`);
+  console.log(`  sha256 snapshot:  ${result.contentHash}`);
+  console.log(`  status:    guuey deployments  ·  ${result.statusPath}`);
+  console.log('');
+
+  if (wait) {
+    console.log('  Waiting for the build to go live...');
+    const { status, url } = await pollDeployStatus({
+      auth: { pat: ctx.pat },
+      config: ctx.config,
+      appId: ctx.appId,
+      buildNumber: result.buildNumber,
+      timeoutMs: 7 * 60 * 1000,
+    });
+    if (status === 'live') {
+      out.success(`Live at ${url}`);
+      return;
+    }
+    out.error(
+      status === 'superseded'
+        ? 'Build superseded by a newer deploy.'
+        : 'Build failed. Run "guuey deployments list" for details.',
+    );
+    process.exit(1);
+  }
 }

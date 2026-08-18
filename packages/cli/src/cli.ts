@@ -66,9 +66,9 @@ import { undeploy } from './commands/undeploy';
 import { stop, start, restart } from './commands/agent-lifecycle';
 import { envSet, envList, envUnset } from './commands/env';
 import { byokSet, byokList, byokRemove } from './commands/byok';
-import { deploymentsList, deploymentsRollback, deploymentsLogs } from './commands/deployments';
+import { deploymentsList, deploymentsLogs } from './commands/deployments';
 import { agentConfig } from './commands/agent';
-import { agentApply, agentStatus } from './commands/agent-apply';
+import { agentApply, agentRollback, agentStatus } from './commands/agent-apply';
 import { domainsAdd, domainsList, domainsVerify, domainsRemove } from './commands/domains';
 import { tokensCreate, tokensList, tokensRevoke } from './commands/tokens';
 import { slugClaim, slugRelease } from './commands/slug';
@@ -161,7 +161,8 @@ Agent Development:
                                  to the runtime captured at the last deploy
     --json                       Emit the config as JSON
 
-Agents as code (GitOps — CI-safe with a service token):
+Agents as code (GitOps — CI-safe with a service token, or a workspace
+API key for workspace-owned apps, via GUUEY_API_KEY):
   agent apply                    Converge the hosted agent to this checkout's
                                  guuey.json (+ its prompt file) and its
                                  app.access policy in ONE idempotent call:
@@ -180,7 +181,13 @@ Agents as code (GitOps — CI-safe with a service token):
     --check                      Also compare THIS checkout byte-exact against
                                  the live build (exit 2 on drift)
     --json                       Emit the status (and check) as JSON
-    --app-id <id>                Target a specific app (both subcommands)
+  agent rollback --to <n>        Re-serve build #n's exact bytes as a new build
+                                 (no checkout needed; refuses rather than
+                                 approximate if the stored snapshot no longer
+                                 round-trips byte-exact)
+    --wait                       Poll the new build until live
+    --json                       Emit the rollback response as JSON
+    --app-id <id>                Target a specific app (all three subcommands)
   logs                           Fetch runtime logs for your deployed agent
     --since <duration>           Time window (default: 1h). Examples: 30s, 15m, 2h, 1d
     --tail <n>                   Only the last <n> lines
@@ -703,14 +710,11 @@ async function main(): Promise<void> {
         case undefined:
           await deploymentsList({ json: jsonFlag }, flags);
           break;
-        case 'rollback':
-          await deploymentsRollback(rest[0], flags);
-          break;
         case 'logs':
           await deploymentsLogs(rest[0], { json: jsonFlag }, flags);
           break;
         default:
-          console.error(`Unknown deployments command: ${action}. Use: list, rollback, logs`);
+          console.error(`Unknown deployments command: ${action}. Use: list, logs (rollback: guuey agent rollback --to <n>)`);
           process.exit(1);
       }
       break;
@@ -1012,8 +1016,11 @@ async function main(): Promise<void> {
         case 'status':
           await agentStatus(flags);
           break;
+        case 'rollback':
+          await agentRollback(flags);
+          break;
         default:
-          console.error(`Unknown agent command: ${action ?? '(none)'}. Use: config, apply, status`);
+          console.error(`Unknown agent command: ${action ?? '(none)'}. Use: config, apply, status, rollback`);
           process.exit(1);
       }
       break;
