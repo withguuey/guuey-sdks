@@ -14,7 +14,7 @@
 }
 
 .sidebar {
-  width: 220px;
+  width: 320px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -51,42 +51,40 @@
   font-weight: 600;
 }
 
-.sidebar-dock {
+.agent-rail {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 8px;
+  min-height: 0;
+  height: 46vh;
   border-top: 1px solid var(--line);
+  background: var(--bg);
 }
 
-.sidebar-dock a {
-  padding: 9px 12px;
-  border-radius: 8px;
-  color: var(--fg-soft);
-  text-decoration: none;
+.rail-chat {
+  flex: 1;
+  min-height: 0;
 }
 
-.sidebar-dock a.active {
-  background: var(--app-accent);
-  color: #fff;
+.canvas-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.canvas-view-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
   font-weight: 600;
 }
 
-.dock-agent {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.dock-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--ok);
-}
-
-.dock-agent.active .dock-dot {
-  background: #fff;
+.canvas-view-mount {
+  flex: 1;
+  min-height: 0;
 }
 
 .dock-logout {

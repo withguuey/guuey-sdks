@@ -5,22 +5,12 @@
  * never the chat route directly. Plain URL today; upgrades to a native
  * deep link when portal applinks land (same path, so the QR stays valid).
  */
-import { useEffect, useRef, useState } from "react";
-import QRCode from "qrcode";
 import { appConfig } from "../config";
+import { QrLink } from "../components/QrLink";
 
 export function TalkOnMobile() {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const link = appConfig.link;
   const target = link ? `${link.portalUrl}/agent/${link.slug ?? link.appId}` : null;
-
-  useEffect(() => {
-    if (!target || !canvasRef.current) return;
-    QRCode.toCanvas(canvasRef.current, target, { width: 240, margin: 1 }).catch((err: unknown) => {
-      setError(err instanceof Error ? err.message : String(err));
-    });
-  }, [target]);
 
   return (
     <div className="page mobile-page">
@@ -31,13 +21,7 @@ export function TalkOnMobile() {
             Scan with a phone — the same agent, in the guuey portal. (The portal
             has its own sign-in, so phone conversations are separate threads.)
           </p>
-          <canvas ref={canvasRef} className="qr" />
-          <p>
-            <a href={target} target="_blank" rel="noreferrer">
-              {target}
-            </a>
-          </p>
-          {error ? <p className="error">QR render failed: {error}</p> : null}
+          <QrLink url={target} size={240} />
         </>
       ) : (
         <p className="calm">

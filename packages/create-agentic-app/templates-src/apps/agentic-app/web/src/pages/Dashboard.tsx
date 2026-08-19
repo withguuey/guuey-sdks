@@ -12,15 +12,12 @@ export function Dashboard() {
       <h1>Dashboard</h1>
       <p className="calm">
         This is your product's canvas — replace this page with the real thing. The agent lives in
-        the dock at the bottom of the sidebar; activating it swaps this whole canvas to the
-        fullscreen agent.
+        the RAIL at the bottom of the sidebar: type there, and any UI the agent draws takes this
+        whole canvas (the rail's chips are the history — click one to bring its render back).
       </p>
       <section className="card">
         <h2>Getting oriented</h2>
         <ul>
-          <li>
-            <Link to="/app/agent">● Agent</Link> — the fullscreen chat with generative UI
-          </li>
           <li>
             <Link to="/app/mobile">📱 Talk on mobile</Link> — the same agent, on a phone via the
             guuey portal

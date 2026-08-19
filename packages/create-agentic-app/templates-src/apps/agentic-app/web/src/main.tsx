@@ -13,7 +13,6 @@ import { Login } from "./pages/Login";
 import { Home } from "./pages/Home";
 import { Dashboard } from "./pages/Dashboard";
 import { Reports } from "./pages/Reports";
-import { AgentCanvas } from "./pages/AgentCanvas";
 import { TalkOnMobile } from "./pages/TalkOnMobile";
 
 document.documentElement.dataset.mode = appConfig.theme.mode;
@@ -30,14 +29,14 @@ const router = createBrowserRouter([
     ],
   },
   {
-    // The product: split sidebar, fullscreen-swap agent canvas.
+    // The product: chat-rail shell — the agent rail in the lower
+    // sidebar, generated UI on the main canvas (guuey#303).
     path: "/app",
     element: <AppShell />,
     children: [
       { index: true, element: <Dashboard /> },
       { path: "reports", element: <Reports /> },
       { path: "setup", element: <Home /> },
-      { path: "agent", element: <AgentCanvas /> },
       { path: "mobile", element: <TalkOnMobile /> },
     ],
   },

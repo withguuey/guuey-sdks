@@ -17,6 +17,20 @@ document.documentElement.dataset.mode = appConfig.theme.mode;
 document.documentElement.style.setProperty("--app-accent", appConfig.theme.accent);
 document.title = appConfig.brand.name;
 
+// Optional external script (the analytics-snippet pattern): a build-time
+// env names a script URL and this app loads it — the demo tour rides this
+// hook (its bundle lives OUTSIDE the template; guuey#303). The script can
+// anchor on the `data-tour` attributes the pages carry and listen for the
+// `demo:render-complete` CustomEvent the app shell dispatches when a
+// generative view first lands on the canvas.
+const tourSrc = import.meta.env.VITE_DEMO_TOUR_SRC;
+if (tourSrc !== undefined && tourSrc !== "") {
+  const script = document.createElement("script");
+  script.src = tourSrc;
+  script.defer = true;
+  document.head.appendChild(script);
+}
+
 const router = createBrowserRouter([
   {
     element: <Shell />,

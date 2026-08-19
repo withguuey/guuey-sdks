@@ -3,5 +3,6 @@
   "@guuey/config": "0.10.0",
   "@guuey/cli": "0.10.0",
   "@guuey/chat": "0.10.0",
+  "@guuey/mcp-apps-host": "0.10.0",
   "@silverprotocol/core": "0.5.0"
 }

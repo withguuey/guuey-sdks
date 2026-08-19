@@ -175,7 +175,7 @@ console.log('check-templates: dist/templates is publish-clean.');
 import { readFileSync as _rf } from "node:fs";
 {
   const versions = JSON.parse(_rf(new URL("../templates-src/versions.json", import.meta.url), "utf8"));
-  const workspacePkg = { "@guuey/worker": "worker", "@guuey/config": "config", "@guuey/cli": "cli", "@guuey/chat": "chat" };
+  const workspacePkg = { "@guuey/worker": "worker", "@guuey/config": "config", "@guuey/cli": "cli", "@guuey/chat": "chat", "@guuey/mcp-apps-host": "mcp-apps-host" };
   const stale = [];
   for (const [name, dir] of Object.entries(workspacePkg)) {
     const pinned = versions[name];

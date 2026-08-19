@@ -53,7 +53,6 @@ describe("assembled templates", () => {
         ...SHARED_LAYOUT,
         "web/src/components/AppShell.tsx",
         "web/src/pages/Dashboard.tsx",
-        "web/src/pages/AgentCanvas.tsx",
         "web/src/pages/TalkOnMobile.tsx",
         "web/src/styles-app.css",
       ])
@@ -63,7 +62,11 @@ describe("assembled templates", () => {
       expect(existsSync(join(root, ".overlay-remove"))).toBe(false);
       expect(existsSync(join(root, "web/src/pages/Chat.tsx"))).toBe(false);
       const routes = readFileSync(join(root, "web/src/routes.ts"), "utf8");
-      expect(routes).toContain("/app/agent");
+      expect(routes).toContain('CHAT_PATH = "/app"');
+      // The chat-rail shell (guuey#303): the rail IS the chat surface.
+      const shell = readFileSync(join(root, "web/src/components/AppShell.tsx"), "utf8");
+      expect(shell).toContain("agent-rail");
+      expect(shell).toContain("demo:render-complete");
     }
   );
 

@@ -339,13 +339,23 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   });
 
   // guuey#301: hand the host the plan's view roster whenever it changes —
-  // the stage renders the selected mount from it. Ref'd callback so a
-  // host passing a fresh closure each render doesn't loop the effect.
+  // the stage renders the selected mount from it. Locator entries carry
+  // the RESOLUTION overlay (a stage mounts material, not identities):
+  // resolved material replaces the locator mount, a failed read surfaces
+  // as the expired phase. Ref'd callback so a host passing a fresh
+  // closure each render doesn't loop the effect.
   const onViewsChangeRef = useRef(onViewsChange);
   onViewsChangeRef.current = onViewsChange;
   useEffect(() => {
-    onViewsChangeRef.current?.(plan.views);
-  }, [plan.views]);
+    if (onViewsChangeRef.current === undefined) return;
+    const overlaid = plan.views.map((view) => {
+      const resolved = resolvedMounts.get(view.key);
+      if (resolved === undefined) return view;
+      if (resolved === "expired") return { ...view, phase: "expired" as const };
+      return { ...view, mount: resolved };
+    });
+    onViewsChangeRef.current(overlaid);
+  }, [plan.views, resolvedMounts]);
 
   // ── Composer ─────────────────────────────────────────────────────────
   const [input, setInput] = useState("");

@@ -174,12 +174,15 @@ export function useTranscript({
   }, [plan]);
 
   // Locator resolution — one read per locator key, misses become "expired".
+  // Walks the plan's VIEWS roster, not the display items: under the chips
+  // presentation (guuey#301) no inline mount renders, but the host's canvas
+  // still needs every locator resolved — the roster is presentation-
+  // independent, so resolution is too.
   const readerRef = useRef(reader);
   readerRef.current = reader;
   const inFlight = useRef(new Set<ItemKey>());
   useEffect(() => {
-    for (const item of plan.items) {
-      if (item.kind !== "view") continue;
+    for (const item of plan.views) {
       if (item.mount === null || item.mount.channel !== "locator") continue;
       if (resolvedMounts.has(item.key) || inFlight.current.has(item.key)) continue;
       const read = readerRef.current;

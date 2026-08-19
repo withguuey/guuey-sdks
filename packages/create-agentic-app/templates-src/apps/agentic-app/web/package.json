@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@guuey/chat": "0.0.1",
+    "@guuey/mcp-apps-host": "0.0.1",
     "oidc-client-ts": "^3.1.0",
     "qrcode": "^1.5.4",
     "react": "^19.0.0",

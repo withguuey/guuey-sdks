@@ -2,6 +2,6 @@
 # project-relative path per line; '#' comments). The build fails if a listed
 # path does not exist — a stale entry is a bug, not a no-op.
 #
-# The standalone /chat page is superseded by the fullscreen agent canvas
-# inside the app shell (pages/AgentCanvas.tsx).
+# The standalone /chat page is superseded by the agent RAIL inside the
+# app shell (the chat-rail layout, guuey#303).
 web/src/pages/Chat.tsx
