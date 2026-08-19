@@ -63,5 +63,10 @@ overrides:
   # guuey#219 P2 — see the root pnpm-workspace.yaml comment (own lockfile).
   "body-parser@1": ^1.20.6
   "uuid@11": ^11.1.1
+  # guuey#289 (#219's leftover major): GHSA-w5hq-g745-h8pq patches only
+  # 11.1.1 — uuid@9 rides the googleapis chain under @guuey/host's
+  # @google/adk DEVdep (v4()-only callers; never in a published artifact's
+  # runtime dependency tree). See the root pnpm-workspace.yaml comment.
+  "uuid@<11": ^11.1.1
   "@hono/node-server": ^1.19.15
   "@opentelemetry/core@2": ^2.8.0
