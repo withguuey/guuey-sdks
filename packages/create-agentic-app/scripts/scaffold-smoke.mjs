@@ -49,8 +49,17 @@ for (const { framework, template } of MATRIX) {
   // 4. Point internal deps at the packed tarballs (validates packed artifacts, not workspace links).
   applyPackOverrides(appDir, tarballs);
 
-  // 4. Install + typecheck + build (recursive: root worker, todo MCP, web).
+  // 5. Install + typecheck + build (recursive: root worker, todo MCP, web).
   sh("corepack", ["pnpm", "install", "--no-frozen-lockfile"], { cwd: appDir });
+
+  // 6. Every bin `scripts/dev.mjs` execs must resolve from DECLARED deps —
+  // the missing-bin class breaks `pnpm dev` on every fresh scaffold while
+  // install/typecheck/build stay green (the @ggui-ai/cli gap, guuey#279).
+  // A resolution check is deterministic where a full dev-stack boot in CI
+  // would be flaky; `pnpm exec` fails loudly when the bin has no provider.
+  for (const bin of ["ggui", "guuey", "tsup"]) {
+    sh("corepack", ["pnpm", "exec", bin, "--version"], { cwd: appDir });
+  }
   sh("corepack", ["pnpm", "-r", "typecheck"], { cwd: appDir }); // workspace packages (mcps/*, web)
   sh("corepack", ["pnpm", "typecheck"], { cwd: appDir }); // root worker (not a workspace member of `-r`)
   sh("corepack", ["pnpm", "-r", "build"], { cwd: appDir });
