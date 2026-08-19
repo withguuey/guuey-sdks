@@ -48,6 +48,7 @@ import {
   forwardRef,
   useCallback,
   useEffect,
+  useId,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -315,6 +316,10 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // ── Composer ─────────────────────────────────────────────────────────
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Browser form-field heuristics (a11y/autofill lints) flag a field with
+  // neither id nor name on every embedding site. useId keeps the id unique
+  // when several chats mount on one page — a static id would collide.
+  const composerId = useId();
   const busy = invoke.status !== "ready";
   const available = endpointUrl !== null;
   const canSend = available && !busy && input.trim() !== "";
@@ -487,6 +492,8 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       >
         <textarea
           ref={inputRef}
+          id={composerId}
+          name="message"
           className="guuey-chat-composer-input"
           rows={1}
           value={input}
