@@ -107,11 +107,11 @@ importers:
   packages/cli:
     dependencies:
       '@ggui-ai/artifact-manifest':
-        specifier: 0.9.0
-        version: 0.9.0(@modelcontextprotocol/sdk@1.29.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        specifier: 0.10.0
+        version: 0.10.0(@modelcontextprotocol/sdk@1.29.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@ggui-ai/protocol':
-        specifier: 0.9.0
-        version: 0.9.0(@modelcontextprotocol/sdk@1.29.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        specifier: 0.10.0
+        version: 0.10.0(@modelcontextprotocol/sdk@1.29.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@guuey/config':
         specifier: workspace:*
         version: link:../config
@@ -261,8 +261,8 @@ importers:
   packages/mcp-apps-host:
     dependencies:
       '@ggui-ai/protocol':
-        specifier: 0.9.0
-        version: 0.9.0(@modelcontextprotocol/sdk@1.29.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        specifier: 0.10.0
+        version: 0.10.0(@modelcontextprotocol/sdk@1.29.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@modelcontextprotocol/ext-apps':
         specifier: ^1.7.5
         version: 1.7.5(@modelcontextprotocol/sdk@1.29.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3)
@@ -1079,12 +1079,12 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@ggui-ai/artifact-manifest@0.9.0':
-    resolution: {integrity: sha512-KDHZYdV5kd6RchyowzjNhG0wq0zaKi3/P6BwHOx9nuPKLhPqofdtnIcMMe4zNtYRghNY9F4JDU+5a3vLf+1fxQ==}
+  '@ggui-ai/artifact-manifest@0.10.0':
+    resolution: {integrity: sha512-eAY0DttVabVheQP/mYyz7g46jBjnF8sOWAZhxT0b3GmkkFPrU/l1WWDRTimm3g1+fv7BPPTSXpipa7Aq9aYENQ==}
     engines: {node: '>=20.0.0'}
 
-  '@ggui-ai/protocol@0.9.0':
-    resolution: {integrity: sha512-rV1b/zcbeS1C0tnLCm0Y4KemtD9slphhB252DEHXSixB6mQPJbGifgs25FTs8G1d+J7zC0PL0nQVbcc3X94EZw==}
+  '@ggui-ai/protocol@0.10.0':
+    resolution: {integrity: sha512-5rkrTX32ThWcM+DCEKFxyy/L7Y7e2e+KIZM9kwK4PsYGckXOMfNZMp75R/7a4YlH9NAk+PRUhQPakTxFpcObfA==}
     engines: {node: '>=20.0.0'}
 
   '@google-cloud/opentelemetry-cloud-monitoring-exporter@0.21.0':
@@ -4560,16 +4560,16 @@ snapshots:
   '@esbuild/win32-x64@0.28.1':
     optional: true
 
-  '@ggui-ai/artifact-manifest@0.9.0(@modelcontextprotocol/sdk@1.29.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
+  '@ggui-ai/artifact-manifest@0.10.0(@modelcontextprotocol/sdk@1.29.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
     dependencies:
-      '@ggui-ai/protocol': 0.9.0(@modelcontextprotocol/sdk@1.29.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@ggui-ai/protocol': 0.10.0(@modelcontextprotocol/sdk@1.29.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       zod: 4.4.3
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - react
       - react-dom
 
-  '@ggui-ai/protocol@0.9.0(@modelcontextprotocol/sdk@1.29.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
+  '@ggui-ai/protocol@0.10.0(@modelcontextprotocol/sdk@1.29.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
     dependencies:
       '@modelcontextprotocol/ext-apps': 1.7.5(@modelcontextprotocol/sdk@1.29.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3)
       ajv: 8.20.0
