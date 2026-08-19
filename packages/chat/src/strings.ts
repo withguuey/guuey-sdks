@@ -68,6 +68,10 @@ export interface ChatStrings {
   }) => string;
   /** guuey#204: the chip text for a mount promoted to a host stage/canvas. */
   viewPromoted: (title: string) => string;
+  /** guuey#301 chips presentation: an unselected, mountable view's chip text. */
+  viewChip: (title: string) => string;
+  /** guuey#301 chips presentation: an expired/dead view's chip text (honest state). */
+  viewChipExpired: (title: string) => string;
   /** Chip title when the mount has no producing-call title (history cards). */
   viewRefFallbackTitle: string;
 
@@ -160,6 +164,8 @@ export const defaultChatStrings: ChatStrings = {
   viewCspBlocked: (d) =>
     `This page's Content-Security-Policy blocks ${d.blockedUri} — add "${d.violatedDirective} ${d.suggestedEntry}" to the policy so the view can start`,
   viewPromoted: (title) => `${title} — on canvas`,
+  viewChip: (title) => title,
+  viewChipExpired: (title) => `${title} — expired`,
   viewRefFallbackTitle: "Card",
 
   recoveredFromHistory: "recovered from history",

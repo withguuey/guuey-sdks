@@ -262,6 +262,16 @@
   color: var(--guuey-chat-ink);
   border-color: color-mix(in srgb, var(--guuey-chat-ink) 24%, transparent);
 }
+/* guuey#301 chips presentation: the selected (on-stage) chip + honest expired state. */
+.guuey-chat-view-ref-selected {
+  border-color: var(--guuey-chat-accent);
+  color: var(--guuey-chat-ink);
+  background: color-mix(in srgb, var(--guuey-chat-accent) 12%, var(--guuey-chat-surface));
+}
+.guuey-chat-view-ref-expired {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
 
 /* ── R7 media ── */
 .guuey-chat-media-image img {

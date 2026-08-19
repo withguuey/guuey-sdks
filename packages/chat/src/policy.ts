@@ -40,8 +40,15 @@ export interface TranscriptPolicy {
     /** Preview bound — the plan never carries a full giant payload (fixture 6). */
     previewChars: number;
   };
-  /** R6 (sandbox overrides pass through to `<GuueyView>` in 3b). */
-  view: { timeoutMs: number };
+  /**
+   * R6 (sandbox overrides pass through to `<GuueyView>` in 3b).
+   * `presentation` (guuey#301): `"inline"` = every mount renders as a live
+   * view in the transcript (the default, unchanged); `"chips"` = EVERY
+   * view plans as a compact {@link ViewRefItem} — the full render belongs
+   * to a host-owned stage fed by `TranscriptPlan.views` + the selection
+   * input `promotedViewKey`.
+   */
+  view: { timeoutMs: number; presentation: "inline" | "chips" };
   /** R7. */
   media: { inlineImageCapRem: number; chipOnly: boolean };
   /** R8. */
@@ -114,7 +121,7 @@ function calmBase(): TranscriptPolicy {
     tool: { expandByDefault: false, argsVisible: false, humanizeTitle: humanizeToolName },
     toolGroup: { threshold: 2 },
     dataResult: { capRem: 16, prettyPrint: true, alwaysShowBytes: false, previewChars: 2048 },
-    view: { timeoutMs: 8000 },
+    view: { timeoutMs: 8000, presentation: "inline" },
     media: { inlineImageCapRem: 20, chipOnly: false },
     code: { capRem: 16, wrap: false },
     citations: { style: "chips" },

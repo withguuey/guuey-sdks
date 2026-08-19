@@ -152,9 +152,11 @@ export interface TranscriptInputs {
    * {@link ViewMountItem}, so an interactive surface exists exactly ONCE.
    * Absent (or matching nothing / an expired mount) = today's behavior —
    * every mount renders inline. Hosts derive the key with
-   * {@link newestViewKey} rather than hand-building it; the issue's
-   * phase-2 (every card a chip, click-to-swap) is this same field set per
-   * host click, no further plan changes.
+   * {@link newestViewKey} rather than hand-building it. Set per host
+   * click (via `onViewRef`) this is the SELECTION half of guuey#301's
+   * browser-history mechanic; the collapse-ALL-views half is the policy
+   * knob `view.presentation: "chips"` — the two compose, this field alone
+   * never chips more than the one promoted view.
    */
   promotedViewKey?: string;
   /** The last turn ended by user abort (R1 aborted-partial + "Stopped."). */
@@ -294,8 +296,23 @@ export interface ViewRefItem extends BaseItem {
   kind: "viewRef";
   /** The display title (the producing call's, or the strings fallback). */
   title: string;
-  /** The full resolved chip text (`strings.viewPromoted(title)`). */
+  /**
+   * The full resolved chip text — `strings.viewPromoted(title)` for the
+   * selected chip, `strings.viewChip(title)` / `viewChipExpired(title)`
+   * for the rest under chips presentation (guuey#301).
+   */
   label: string;
+  /**
+   * True when this chip's mount is the one the host's stage currently
+   * shows (`key === promotedViewKey` and mountable). Renderers style it
+   * as the active history entry (guuey#301).
+   */
+  selected: boolean;
+  /**
+   * The underlying mount's phase — chips presentation keeps expired /
+   * unresolved views honest instead of hiding their state (guuey#301).
+   */
+  phase: ViewHostPhase | "expired";
 }
 
 /** R7 — media blocks. */
@@ -488,6 +505,23 @@ export type ChatDebugEvent =
   | { type: "unknown-block"; key: ItemKey; typeName: string; byteSize: number }
   | { type: "turn-recovered"; marker: string };
 
+/**
+ * One renderable view the plan saw, BEFORE any chips/promotion pass —
+ * the host-canvas contract (guuey#301): everything a stage needs to
+ * render the selected mount and label a history rail, in transcript
+ * order (history cards first, live mounts after — the same order the
+ * items carry).
+ */
+export interface PlanViewSummary {
+  key: ItemKey;
+  /** The display title (the producing call's, or the strings fallback). */
+  title: string;
+  phase: ViewHostPhase | "expired";
+  channel: ViewMountChannel | null;
+  /** Null when the locator is dead (the R13 expired path). */
+  mount: ViewMount | null;
+}
+
 export interface TranscriptPlan {
   /** Ordered, stable keys (spec §7's determinism contract). */
   items: DisplayItem[];
@@ -499,4 +533,10 @@ export interface TranscriptPlan {
    * byte-identical to a streamed turn's (fixture 17).
    */
   recovery: string | null;
+  /**
+   * Every view the plan saw (guuey#301's host-canvas contract) — present
+   * regardless of `view.presentation`, so a stage can render the selected
+   * mount even when the transcript shows only chips.
+   */
+  views: PlanViewSummary[];
 }

@@ -67,7 +67,14 @@ import type { UiResourceReader } from "@guuey/mcp-apps-host";
 import { calmPolicy, debugPolicy, type TranscriptPolicy } from "../policy.js";
 import { defaultChatStrings, type ChatStrings } from "../strings.js";
 import { DEFAULT_CHAT_THEME, type GuueyChatTheme } from "../theme.js";
-import type { ChatDebugEvent, ErrorItem, PromptItem, UserMessageItem } from "../types.js";
+import type {
+  ChatDebugEvent,
+  ErrorItem,
+  PlanViewSummary,
+  PromptItem,
+  UserMessageItem,
+  ViewRefItem,
+} from "../types.js";
 import type { ThemeMode } from "./theme-css.js";
 import { Transcript, type TranscriptWindowing } from "./transcript.js";
 import type { TranscriptComponents, TranscriptItemContext } from "./components.js";
@@ -209,6 +216,19 @@ export interface GuueyChatProps {
    * {@link GuueyChatHandle.threadId} for the pull-style read.
    */
   onThread?: (threadId: string) => void;
+  /**
+   * guuey#301's host-stage trio (all optional; absent = today's inline
+   * behavior). `promotedViewKey` = the mount key the host's stage/canvas
+   * currently shows (chips it in the transcript — with
+   * `policy.view.presentation: "chips"` EVERY view chips and this key
+   * marks the selected one). `onViewRef` fires on chip click — set the
+   * key from it for the browser-history mechanic. `onViewsChange`
+   * delivers the plan's view roster (key/title/phase/channel/mount) so
+   * the host can render the selected mount with `<GuueyView>`.
+   */
+  promotedViewKey?: string;
+  onViewRef?: (item: ViewRefItem) => void;
+  onViewsChange?: (views: PlanViewSummary[]) => void;
   className?: string;
   style?: CSSProperties;
 }
@@ -240,6 +260,9 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     reader,
     onDebugEvent,
     viewProps,
+    promotedViewKey,
+    onViewRef,
+    onViewsChange,
     onPromptAction,
     onHitlAnswer,
     oauthReturnTo,
@@ -306,12 +329,23 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   }, [preset, policyOverrides, stringOverrides]);
 
   const { inputs, resolvePrompt, answerHitlPrompt } = useTranscriptInputs(invoke);
+  const transcriptInputs =
+    promotedViewKey !== undefined ? { ...inputs, promotedViewKey } : inputs;
   const { plan, toggle, resolvedMounts, onViewPhase, onViewDiagnosis } = useTranscript({
-    inputs,
+    inputs: transcriptInputs,
     policy,
     ...(effectiveReader !== undefined ? { reader: effectiveReader } : {}),
     ...(onDebugEvent !== undefined ? { onDebugEvent } : {}),
   });
+
+  // guuey#301: hand the host the plan's view roster whenever it changes —
+  // the stage renders the selected mount from it. Ref'd callback so a
+  // host passing a fresh closure each render doesn't loop the effect.
+  const onViewsChangeRef = useRef(onViewsChange);
+  onViewsChangeRef.current = onViewsChange;
+  useEffect(() => {
+    onViewsChangeRef.current?.(plan.views);
+  }, [plan.views]);
 
   // ── Composer ─────────────────────────────────────────────────────────
   const [input, setInput] = useState("");
@@ -468,6 +502,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         resolvedMounts={resolvedMounts}
         onViewPhase={onViewPhase}
         onViewDiagnosis={onViewDiagnosis}
+        {...(onViewRef !== undefined ? { onViewRef } : {})}
         {...(viewProps !== undefined ? { viewProps } : {})}
       />
       {oauthReturn.notice !== null && (

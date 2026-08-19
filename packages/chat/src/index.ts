@@ -77,6 +77,7 @@ export type {
   TranscriptMessage,
   TranscriptOverrides,
   TranscriptPlan,
+  PlanViewSummary,
   UnknownItem,
   UserMessageItem,
   ViewMountItem,

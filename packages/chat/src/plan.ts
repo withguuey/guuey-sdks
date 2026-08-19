@@ -48,6 +48,7 @@ import type {
   DisplayItem,
   ItemKey,
   NoticeItem,
+  PlanViewSummary,
   StatusLineItem,
   ToolGroupItem,
   ToolItem,
@@ -919,26 +920,73 @@ export function planTranscript(
     });
   }
 
-  // guuey#204 "promote and reference": the ONE mount a host-owned stage
-  // shows (`inputs.promotedViewKey`) renders as a compact reference chip
-  // instead of a second live app instance. A key matching nothing (stale
-  // host state) or an expired mount promotes nothing — the honest no-op;
-  // the next render's key corrects it. The chip keeps the mount's key, so
-  // overrides and phase reports survive a swap back to the full mount.
+  // The host-canvas contract (guuey#301): every view the plan saw, with
+  // its mount material — collected BEFORE any chips/promotion pass, so a
+  // stage can render the selected mount even when the transcript shows
+  // only chips.
+  const views: PlanViewSummary[] = [];
+  for (const item of items) {
+    if (item.kind !== "view") continue;
+    views.push({
+      key: item.key,
+      title: item.toolTitle ?? policy.strings.viewRefFallbackTitle,
+      phase: item.phase,
+      channel: item.channel,
+      mount: item.mount,
+    });
+  }
+
+  // Two composable behaviors over the assembled items:
+  //
+  // guuey#204 "promote and reference" (inline presentation): the ONE mount
+  // a host-owned stage shows (`inputs.promotedViewKey`) renders as a
+  // compact reference chip instead of a second live app instance. A key
+  // matching nothing (stale host state) or an expired mount promotes
+  // nothing — the honest no-op; the next render's key corrects it.
+  //
+  // guuey#301 chips presentation (`policy.view.presentation === "chips"`):
+  // EVERY view plans as a chip — the full render belongs to the host's
+  // stage; the promoted key marks the SELECTED chip (browser-history
+  // mechanic), and expired/dead views chip with their honest state.
+  //
+  // Either way a chip keeps the mount's key, so overrides and phase
+  // reports survive a swap back to the full mount.
   const promoted = inputs.promotedViewKey;
+  const chips = policy.view.presentation === "chips";
   const finalItems =
-    promoted === undefined
+    !chips && promoted === undefined
       ? items
       : items.map((item): DisplayItem => {
-          if (item.kind !== "view" || item.key !== promoted) return item;
-          if (item.phase === "expired" || item.mount === null) return item;
+          if (item.kind !== "view") return item;
           const title = item.toolTitle ?? policy.strings.viewRefFallbackTitle;
+          if (chips) {
+            const mountable = item.phase !== "expired" && item.mount !== null;
+            const selected = mountable && item.key === promoted;
+            const ref: ViewRefItem = {
+              kind: "viewRef",
+              key: item.key,
+              expanded: false,
+              title,
+              label: selected
+                ? policy.strings.viewPromoted(title)
+                : mountable
+                  ? policy.strings.viewChip(title)
+                  : policy.strings.viewChipExpired(title),
+              selected,
+              phase: item.phase,
+            };
+            return ref;
+          }
+          if (item.key !== promoted) return item;
+          if (item.phase === "expired" || item.mount === null) return item;
           const ref: ViewRefItem = {
             kind: "viewRef",
             key: item.key,
             expanded: false,
             title,
             label: policy.strings.viewPromoted(title),
+            selected: true,
+            phase: item.phase,
           };
           return ref;
         });
@@ -948,6 +996,7 @@ export function planTranscript(
     status: deriveStatus(inputs, policy),
     recovery:
       inputs.adopted === true && policy.debugDetail ? policy.strings.recoveredFromHistory : null,
+    views,
   };
 }
 

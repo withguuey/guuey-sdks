@@ -387,9 +387,12 @@ export function DefaultView({ item, ctx }: ItemProps<ViewMountItem>): ReactNode 
  * `onViewRef` (keyboard-accessible for free); a plain label otherwise.
  */
 export function DefaultViewRef({ item, ctx }: ItemProps<ViewRefItem>): ReactNode {
+  const stateClasses = `${item.selected ? " guuey-chat-view-ref-selected" : ""}${
+    item.phase === "expired" ? " guuey-chat-view-ref-expired" : ""
+  }`;
   if (ctx.onViewRef === undefined) {
     return (
-      <p className="guuey-chat-view-ref" role="note">
+      <p className={`guuey-chat-view-ref${stateClasses}`} role="note">
         {item.label}
       </p>
     );
@@ -398,7 +401,8 @@ export function DefaultViewRef({ item, ctx }: ItemProps<ViewRefItem>): ReactNode
   return (
     <button
       type="button"
-      className="guuey-chat-view-ref guuey-chat-view-ref-button"
+      className={`guuey-chat-view-ref guuey-chat-view-ref-button${stateClasses}`}
+      aria-pressed={item.selected}
       onClick={() => onViewRef(item)}
     >
       {item.label}

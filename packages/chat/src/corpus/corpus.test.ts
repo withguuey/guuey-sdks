@@ -477,6 +477,31 @@ describe("corpus", () => {
     expect(promoted).toMatchSnapshot();
   });
 
+  it("25. chips-presentation — EVERY view chips; the promoted key marks the selection; views roster carries the mounts (guuey#301)", () => {
+    const { inputs, promotedKey } = promotedView();
+    const chips = calmPolicy({ view: { timeoutMs: 8000, presentation: "chips" } });
+    const plan = planTranscript({ ...inputs, promotedViewKey: promotedKey }, chips);
+    // No live mounts remain in the transcript — the stage owns the render.
+    expect(plan.items.filter((i) => i.kind === "view")).toHaveLength(0);
+    const refs = plan.items.filter((i): i is ViewRefItem => i.kind === "viewRef");
+    expect(refs.map((r) => r.key)).toEqual(["view.t1", "view.t2"]);
+    // Selection: exactly the promoted chip, labeled as on-stage.
+    expect(refs.map((r) => r.selected)).toEqual([false, true]);
+    expect(refs[1]?.label).toContain("on canvas");
+    expect(refs[0]?.label).not.toContain("on canvas");
+    // The host-canvas contract: mounts survive OUTSIDE the items.
+    expect(plan.views.map((v) => v.key)).toEqual(["view.t1", "view.t2"]);
+    expect(plan.views.every((v) => v.mount !== null)).toBe(true);
+    // Without a promoted key every chip is unselected — same roster.
+    const unselected = planTranscript(inputs, chips);
+    expect(
+      unselected.items.filter((i): i is ViewRefItem => i.kind === "viewRef").map((r) => r.selected),
+    ).toEqual([false, false]);
+    // Determinism: same inputs + policy ⇒ same plan.
+    expect(planTranscript({ ...inputs, promotedViewKey: promotedKey }, chips)).toEqual(plan);
+    expect(plan).toMatchSnapshot();
+  });
+
   it("24. prod-wire-ggui-render — ggui's production posture: no _meta, no uiData, a structuredContent locator → mounts as a locator (guuey#209)", () => {
     const inputs = prodWireGguiRender();
     const plan = planTranscript(inputs, calm);
