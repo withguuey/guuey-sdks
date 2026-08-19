@@ -341,6 +341,39 @@ describe('agentApply', () => {
     expect(logs.join('\n')).toContain("Your agent's page: https://todo-k7q2.agents.guuey.test/");
   });
 
+  it('--wait --json REALLY waits: polls to live and emits ONE JSON doc with a wait block (guuey#280 review find — --wait was silently inert under --json)', async () => {
+    const wire = reconcileResult();
+    fetchMock.mockResolvedValue(jsonResponse(200, wire));
+    await agentApply({ wait: true, json: true, provenance: 'none' });
+    const { pollDeployStatus } = await import('./deploy.js');
+    expect(pollDeployStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ appId: 'app-1', buildNumber: 12 }),
+    );
+    const emitted = JSON.parse(logs.join('\n'));
+    expect(emitted).toEqual({
+      ...wire,
+      wait: {
+        status: 'live',
+        url: 'https://app-1.agents.guuey.test',
+        pageUrl: null,
+      },
+    });
+  });
+
+  it('--wait --json exits 1 on a failed build, after emitting the JSON', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, reconcileResult()));
+    const { pollDeployStatus } = await import('./deploy.js');
+    vi.mocked(pollDeployStatus).mockResolvedValueOnce({
+      status: 'failed',
+      url: '',
+      pageUrl: null,
+    });
+    await expect(agentApply({ wait: true, json: true, provenance: 'none' })).rejects.toThrow(
+      new ExitSignal(1).message,
+    );
+    expect(JSON.parse(logs.join('\n')).wait.status).toBe('failed');
+  });
+
   it('renders the cliApi error envelope and exits 1 (a service token on the wrong app, a schema 400, …)', async () => {
     fetchMock.mockResolvedValue(
       jsonResponse(400, { error: { code: 'VALIDATION', message: 'artifacts.guueyJson failed guuey.json schema validation at "schema"' } }),

@@ -18,7 +18,9 @@
  *   guuey agent status                    # live build + provenance + app config
  *   guuey agent status --check            # + byte-exact parity of THIS checkout
  *   guuey agent rollback --to 7           # re-serve build #7's bytes as a new build (no checkout)
- *   … --json                              # the wire response, verbatim
+ *   … --json                              # the wire response, verbatim (with --wait, apply adds a
+ *                                         # `wait: {status,url,pageUrl}` block after polling; a
+ *                                         # non-live final status exits 1)
  *   … --app-id <id>                       # target another app (binding untouched)
  *
  * What gets sent: the `guuey.json` bytes VERBATIM (so `deployedContentHash.
@@ -432,8 +434,29 @@ export async function agentApply(flags?: Record<string, string | true>): Promise
   const result = await postReconcile(ctx, body);
 
   if (jsonOut) {
+    if (dryRun) {
+      out.json(result);
+      if (!result.unchanged) process.exit(EXIT_DRIFT);
+      return;
+    }
+    // `--wait --json`: poll exactly like the human path, then emit ONE
+    // JSON document — the wire response plus a `wait` block with the
+    // final build status. Without this, `--wait` was silently inert
+    // under `--json` and CI went green on a still-queued build that
+    // could later fail (found by the guuey#280 helper-agent review).
+    if (wait && !result.unchanged) {
+      const { status, url, pageUrl } = await pollDeployStatus({
+        auth: { pat: ctx.pat },
+        config: ctx.config,
+        appId: ctx.appId,
+        buildNumber: result.buildNumber,
+        timeoutMs: 7 * 60 * 1000,
+      });
+      out.json({ ...result, wait: { status, url, pageUrl } });
+      if (status !== 'live') process.exit(1);
+      return;
+    }
     out.json(result);
-    if (dryRun && !result.unchanged) process.exit(EXIT_DRIFT);
     return;
   }
 
