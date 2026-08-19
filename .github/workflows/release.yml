@@ -81,6 +81,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Publication hygiene (leak-scan — this tree is public)
+        run: bash scripts/leak-scan.sh
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
