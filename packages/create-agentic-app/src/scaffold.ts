@@ -11,12 +11,21 @@ const execFileAsync = promisify(execFile);
 /** Frameworks the scaffolder ships templates for. */
 export type Framework = 'claude-agent-sdk' | 'openai-agents-sdk' | 'google-adk';
 
+/**
+ * App templates the scaffolder ships. `base` = landing + login + home +
+ * chat; `agentic-app` extends it with the split-sidebar product shell whose
+ * agent dock swaps the main canvas to a fullscreen agent.
+ */
+export type Template = 'base' | 'agentic-app';
+
 export interface ScaffoldOptions {
   /** Absolute or cwd-relative path to create/populate the new project in. */
   targetDir: string;
   /** npm-safe project name (also used as the default scope). */
   name: string;
   framework: Framework;
+  /** App template. Default: `base`. */
+  template?: Template;
   /** Package scope for `@<scope>/*` packages. Default: `name`. */
   scope?: string;
   /** Run `pnpm install` in the new project after scaffolding. Default: false. */
@@ -38,9 +47,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const packageRoot = join(here, '..');
 const defaultTemplatesDir = join(packageRoot, 'dist', 'templates');
 
-async function listAvailableFrameworks(templatesDir: string): Promise<string[]> {
+async function listDirs(root: string): Promise<string[]> {
   try {
-    const entries = await fs.readdir(templatesDir, { withFileTypes: true });
+    const entries = await fs.readdir(root, { withFileTypes: true });
     return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
   } catch (err) {
     if (isErrnoException(err) && err.code === 'ENOENT') return [];
@@ -48,11 +57,22 @@ async function listAvailableFrameworks(templatesDir: string): Promise<string[]> 
   }
 }
 
-async function resolveTemplateDir(templatesDir: string, framework: string): Promise<string> {
-  const dir = join(templatesDir, framework);
+async function resolveTemplateDir(
+  templatesDir: string,
+  template: string,
+  framework: string,
+): Promise<string> {
+  const dir = join(templatesDir, template, framework);
   if (await pathExists(dir)) return dir;
-  const available = await listAvailableFrameworks(templatesDir);
-  const list = available.length > 0 ? available.join(', ') : `(none found under ${templatesDir})`;
+  // `mcp-base` sits alongside the templates (the `guuey mcp new` starter) —
+  // never offer it as an app template.
+  const templates = (await listDirs(templatesDir)).filter((name) => name !== 'mcp-base');
+  if (!templates.includes(template)) {
+    const list = templates.length > 0 ? templates.join(', ') : `(none found under ${templatesDir})`;
+    throw new Error(`No template "${template}". Available templates: ${list}`);
+  }
+  const frameworks = await listDirs(join(templatesDir, template));
+  const list = frameworks.length > 0 ? frameworks.join(', ') : `(none found under ${join(templatesDir, template)})`;
   throw new Error(`No template for framework "${framework}". Available frameworks: ${list}`);
 }
 
@@ -139,7 +159,7 @@ export async function scaffold(opts: ScaffoldOptions): Promise<ScaffoldResult> {
 
   const scope = opts.scope ?? opts.name;
   const templatesDir = opts.templatesDir ?? defaultTemplatesDir;
-  const templateDir = await resolveTemplateDir(templatesDir, opts.framework);
+  const templateDir = await resolveTemplateDir(templatesDir, opts.template ?? 'base', opts.framework);
 
   const projectDir = resolve(opts.targetDir);
   await ensureTargetDir(projectDir, opts.force);

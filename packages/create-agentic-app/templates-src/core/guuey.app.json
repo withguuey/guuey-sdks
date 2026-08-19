@@ -1,0 +1,28 @@
+{
+  "$schema": "./guuey.app.schema.json",
+  "schema": 1,
+  "bootstrapped": false,
+  "brand": {
+    "name": "agentic-app-template",
+    "tagline": "An agentic app built on guuey",
+    "logoText": "AA"
+  },
+  "theme": {
+    "accent": "#6c5ce7",
+    "mode": "light"
+  },
+  "copy": {
+    "landing": {
+      "headline": "Ask anything.",
+      "sub": "This site has an agent. Open the chat, or use the launcher in the corner."
+    },
+    "login": {
+      "guestHint": "One click, no account — this browser gets its own private thread the agent remembers."
+    }
+  },
+  "auth": {
+    "oidc": null
+  },
+  "link": null,
+  "demoMode": false
+}

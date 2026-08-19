@@ -6,12 +6,17 @@
  * Authentication not required for scaffolding.
  */
 import * as out from '../output.js';
-import { scaffold, type Framework, type ScaffoldOptions } from '@guuey/create-agentic-app';
+import { scaffold, type Framework, type ScaffoldOptions, type Template } from '@guuey/create-agentic-app';
 
 const FRAMEWORKS: Framework[] = ['claude-agent-sdk', 'openai-agents-sdk'];
+const TEMPLATES: Template[] = ['base', 'agentic-app'];
 
 function isFramework(value: string): value is Framework {
   return (FRAMEWORKS as string[]).includes(value);
+}
+
+function isTemplate(value: string): value is Template {
+  return (TEMPLATES as string[]).includes(value);
 }
 
 /** Derive an npm-safe default project name from the target path's basename. */
@@ -47,6 +52,12 @@ export function buildScaffoldOptions(
     );
   }
 
+  const templateFlag = flags?.template;
+  const templateInput = typeof templateFlag === 'string' ? templateFlag : 'base';
+  if (!isTemplate(templateInput)) {
+    throw new Error(`Unknown template "${templateInput}". Available templates: ${TEMPLATES.join(', ')}.`);
+  }
+
   const name = typeof flags?.name === 'string' ? flags.name : deriveName(target);
   const scope = typeof flags?.scope === 'string' ? flags.scope : undefined;
   const install = flags?.install === true;
@@ -55,6 +66,7 @@ export function buildScaffoldOptions(
     targetDir: target,
     name,
     framework: frameworkInput,
+    template: templateInput,
     scope,
     install,
     git: flags?.['no-git'] !== true,

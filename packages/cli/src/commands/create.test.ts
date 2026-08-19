@@ -14,6 +14,7 @@ describe("buildScaffoldOptions", () => {
       targetDir: "my-app",
       name: "my-app",
       framework: "openai-agents-sdk",
+      template: "base",
       scope: "acme",
       git: false,
       force: true,
@@ -25,6 +26,15 @@ describe("buildScaffoldOptions", () => {
       "claude-agent-sdk"
     );
     expect(() => buildScaffoldOptions("x", { framework: "google-adk" })).toThrow(/framework/);
+  });
+  it("--template selects the app template, defaults to base, rejects unknown values", () => {
+    expect(
+      buildScaffoldOptions("x", { framework: "claude-agent-sdk", template: "agentic-app" }).template
+    ).toBe("agentic-app");
+    expect(buildScaffoldOptions("x", { framework: "claude-agent-sdk" }).template).toBe("base");
+    expect(() =>
+      buildScaffoldOptions("x", { framework: "claude-agent-sdk", template: "fancy" })
+    ).toThrow(/template/);
   });
   it("--name overrides the target-derived name", () => {
     expect(

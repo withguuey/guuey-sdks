@@ -10,19 +10,29 @@ import { writeFileSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 // Every internal package a scaffolded app depends on, including transitive
-// internal deps of @guuey/cli. NOTE (2026-07-06): @silverprotocol/* left this
-// cohort — published to npm (0.1.0), so scaffolded apps and @guuey/cli resolve
-// them from the public registry like any other dep. Only the still-unpublished
-// @guuey/* packages need packing.
+// internal deps. This cohort MUST cover every @guuey/* dep a template pins,
+// because the release gate runs the smoke BEFORE the npm publish — the
+// version the templates pin does not exist on the registry yet, so anything
+// missing from this list fails the gate's install at every cut. (chat +
+// agent-client + mcp-apps-host joined when the web templates moved onto
+// @guuey/chat, guuey#279.) @silverprotocol/* stays off the list — external
+// npm dep at an already-published pin.
 // Package dirs are resolved as SIBLINGS of create-agentic-app (this script
 // lives at <pkg>/scripts/lib/), NOT repo-root-relative: the same tree is
 // `oss/packages/*` in the guuey monorepo and `packages/*` in the public
 // guuey-sdks mirror — a hardcoded prefix broke the mirror's cold-clone smoke
 // (nonexistent cwd surfaces as a misleading `spawnSync corepack ENOENT`).
 const PACKAGES_ROOT = resolve(import.meta.dirname, "../../..");
-export const INTERNAL_COHORT = ["worker", "config", "host", "create-agentic-app", "cli"].map(
-  (name) => join(PACKAGES_ROOT, name),
-);
+export const INTERNAL_COHORT = [
+  "worker",
+  "config",
+  "host",
+  "agent-client",
+  "mcp-apps-host",
+  "chat",
+  "create-agentic-app",
+  "cli",
+].map((name) => join(PACKAGES_ROOT, name));
 
 /**
  * `pnpm pack` every {@link INTERNAL_COHORT} package into `destDir`.

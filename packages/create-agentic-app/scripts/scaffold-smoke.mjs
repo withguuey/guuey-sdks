@@ -21,12 +21,20 @@ const sh = (cmd, args, opts = {}) =>
 // 1. Pack every internal package a scaffolded app depends on.
 const tarballs = packInternalCohort(work);
 
-// 2. Scaffold every framework from the built CLI.
+// 2. Scaffold the full template × framework matrix from the built CLI.
+const MATRIX = [];
 for (const framework of ["claude-agent-sdk", "openai-agents-sdk", "google-adk"]) {
-  const appDir = join(work, `app-${framework}`);
+  for (const template of ["base", "agentic-app"]) {
+    MATRIX.push({ framework, template });
+  }
+}
+for (const { framework, template } of MATRIX) {
+  const appDir = join(work, `app-${template}-${framework}`);
   sh("node", [
     join(pkgRoot, "dist/cli.js"),
     appDir,
+    "--template",
+    template,
     "--framework",
     framework,
     "--name",
@@ -34,7 +42,11 @@ for (const framework of ["claude-agent-sdk", "openai-agents-sdk", "google-adk"])
     "--no-git",
   ]);
 
-  // 3. Point internal deps at the packed tarballs (validates packed artifacts, not workspace links).
+  // 3. The golden path's next step: bootstrap (local phase, no account, no
+  // deps — plain node). Production web builds are gated on this by design.
+  sh("node", ["scripts/bootstrap.mjs", "--yes"], { cwd: appDir });
+
+  // 4. Point internal deps at the packed tarballs (validates packed artifacts, not workspace links).
   applyPackOverrides(appDir, tarballs);
 
   // 4. Install + typecheck + build (recursive: root worker, todo MCP, web).
@@ -50,5 +62,5 @@ for (const framework of ["claude-agent-sdk", "openai-agents-sdk", "google-adk"])
     framework === "google-adk" ? "agent.js" : framework === "openai-agents-sdk" ? "worker.js" : "guuey.worker.js";
   sh("corepack", ["pnpm", "build"], { cwd: appDir });
   sh("node", ["-e", `require('fs').accessSync('${expectedOut}')`], { cwd: appDir });
-  console.log(`\n✓ ${framework} scaffold builds clean\n`);
+  console.log(`\n✓ ${template}/${framework} scaffold builds clean\n`);
 }

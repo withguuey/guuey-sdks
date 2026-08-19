@@ -1,0 +1,7 @@
+# Files the agentic-app overlay REMOVES from the assembled base (one
+# project-relative path per line; '#' comments). The build fails if a listed
+# path does not exist — a stale entry is a bug, not a no-op.
+#
+# The standalone /chat page is superseded by the fullscreen agent canvas
+# inside the app shell (pages/AgentCanvas.tsx).
+web/src/pages/Chat.tsx

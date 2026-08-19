@@ -117,6 +117,9 @@ Agent Development:
   create <target>                Create a new guuey agent project (target is
                                  the positional output directory)
     --framework <f>              Framework: claude-agent-sdk | openai-agents-sdk
+    --template <t>               App template: base | agentic-app (default:
+                                 base). agentic-app adds the split-sidebar
+                                 product shell with a fullscreen agent canvas.
   delete [appId]                 Delete a guuey app from the platform
     --force                      Skip confirmation prompt
   dev --serve                    Run a pod-parity local SSE server against

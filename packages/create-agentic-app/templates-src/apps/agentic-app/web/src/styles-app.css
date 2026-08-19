@@ -1,0 +1,132 @@
+/* agentic-app shell — split sidebar + fullscreen-swap canvas. Loaded after
+   styles.css; only shell-specific rules live here. */
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--line);
+  background: var(--bg-soft);
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  padding: 16px;
+}
+
+.sidebar-menus {
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  gap: 2px;
+  flex: 1;
+}
+
+.sidebar-menus a {
+  padding: 9px 12px;
+  border-radius: 8px;
+  color: var(--fg-soft);
+  text-decoration: none;
+}
+
+.sidebar-menus a.active {
+  background: var(--bg);
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.sidebar-dock {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.sidebar-dock a {
+  padding: 9px 12px;
+  border-radius: 8px;
+  color: var(--fg-soft);
+  text-decoration: none;
+}
+
+.sidebar-dock a.active {
+  background: var(--app-accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.dock-agent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dock-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.dock-agent.active .dock-dot {
+  background: #fff;
+}
+
+.dock-logout {
+  margin-top: 4px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg-soft);
+  text-align: left;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.canvas {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.canvas .page {
+  max-width: 880px;
+}
+
+.agent-canvas {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  padding: 16px;
+}
+
+.mobile-page {
+  text-align: center;
+}
+
+.qr {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px;
+  background: #fff;
+}

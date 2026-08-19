@@ -175,7 +175,7 @@ console.log('check-templates: dist/templates is publish-clean.');
 import { readFileSync as _rf } from "node:fs";
 {
   const versions = JSON.parse(_rf(new URL("../templates-src/versions.json", import.meta.url), "utf8"));
-  const workspacePkg = { "@guuey/worker": "worker", "@guuey/config": "config", "@guuey/cli": "cli" };
+  const workspacePkg = { "@guuey/worker": "worker", "@guuey/config": "config", "@guuey/cli": "cli", "@guuey/chat": "chat" };
   const stale = [];
   for (const [name, dir] of Object.entries(workspacePkg)) {
     const pinned = versions[name];
@@ -188,4 +188,34 @@ import { readFileSync as _rf } from "node:fs";
     process.exit(1);
   }
   console.log("check-templates: versions.json pins match the workspace.");
+}
+
+// ── agentic-app web/package.json ⊇ base web/package.json (drift guard) ──────
+// The agentic-app overlay REPLACES web/package.json wholesale (cpSync has no
+// JSON merge), so the two manifests live apart and could drift. Enforce the
+// contract: every dep/devDep the base web app declares must be present in the
+// agentic-app web manifest AT THE SAME RANGE; agentic may only ADD (qrcode…).
+{
+  const baseRoot = join(distTemplatesDir, 'base');
+  const agenticRoot = join(distTemplatesDir, 'agentic-app');
+  const driftViolations = [];
+  for (const fw of readdirSync(baseRoot, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)) {
+    const basePkg = JSON.parse(readFileSync(join(baseRoot, fw, 'web', 'package.json'), 'utf8'));
+    const agenticPkg = JSON.parse(readFileSync(join(agenticRoot, fw, 'web', 'package.json'), 'utf8'));
+    for (const field of ['dependencies', 'devDependencies']) {
+      for (const [name, range] of Object.entries(basePkg[field] ?? {})) {
+        const got = agenticPkg[field]?.[name];
+        if (got !== range) {
+          driftViolations.push(
+            `${fw}: agentic-app web ${field}.${name} = ${got ?? '(missing)'} but base declares ${range} — templates-src/apps/agentic-app/web/package.json drifted from apps/base's`,
+          );
+        }
+      }
+    }
+  }
+  if (driftViolations.length > 0) {
+    console.error('check-templates: agentic-app web manifest drift:\n  ' + driftViolations.join('\n  '));
+    process.exit(1);
+  }
+  console.log('check-templates: agentic-app web manifest is a superset of base.');
 }

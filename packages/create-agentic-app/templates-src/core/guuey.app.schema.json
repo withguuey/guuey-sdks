@@ -1,0 +1,119 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "guuey.app.json",
+  "description": "App-level configuration for this guuey agentic app. Written by `pnpm bootstrap`; safe to hand-edit. Public-safe by construction: nothing in this file is a secret (the appId ships in page HTML by design).",
+  "type": "object",
+  "required": ["schema", "bootstrapped", "brand", "theme", "copy", "auth", "link", "demoMode"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema": { "const": 1 },
+    "bootstrapped": {
+      "type": "boolean",
+      "description": "Flipped true by `pnpm bootstrap`. Dev renders a setup screen until then; production builds fail."
+    },
+    "brand": {
+      "type": "object",
+      "required": ["name", "tagline", "logoText"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "tagline": { "type": "string" },
+        "logoText": {
+          "type": "string",
+          "maxLength": 4,
+          "description": "1-4 characters shown in the square brand mark."
+        }
+      }
+    },
+    "theme": {
+      "type": "object",
+      "required": ["accent", "mode"],
+      "additionalProperties": false,
+      "properties": {
+        "accent": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+        "mode": { "enum": ["light", "dark"] }
+      }
+    },
+    "copy": {
+      "type": "object",
+      "required": ["landing", "login"],
+      "additionalProperties": false,
+      "properties": {
+        "landing": {
+          "type": "object",
+          "required": ["headline", "sub"],
+          "additionalProperties": false,
+          "properties": {
+            "headline": { "type": "string" },
+            "sub": { "type": "string" }
+          }
+        },
+        "login": {
+          "type": "object",
+          "required": ["guestHint"],
+          "additionalProperties": false,
+          "properties": {
+            "guestHint": { "type": "string" }
+          }
+        }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "required": ["oidc"],
+      "additionalProperties": false,
+      "properties": {
+        "oidc": {
+          "description": "BYO-OIDC sign-in. null = guest-only. When set, the bound guuey app must be in BYO auth mode for the same issuer: `guuey apps update <appId> --auth-mode byo --issuer-url <issuer> --audience <clientId>`.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["issuer", "clientId"],
+              "additionalProperties": false,
+              "properties": {
+                "issuer": { "type": "string", "format": "uri" },
+                "clientId": { "type": "string", "minLength": 1 }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "link": {
+      "description": "The bound guuey app. null until `pnpm bootstrap -- --link`. Every value here is read back from the platform, never derived by hand.",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": [
+            "appId",
+            "env",
+            "apiBaseUrl",
+            "endpointUrl",
+            "widgetOrigin",
+            "portalUrl",
+            "slug",
+            "pageUrl"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "appId": { "type": "string", "minLength": 1 },
+            "env": { "enum": ["dev", "staging", "release"] },
+            "apiBaseUrl": { "type": "string", "format": "uri" },
+            "endpointUrl": { "type": "string", "format": "uri" },
+            "widgetOrigin": { "type": "string", "format": "uri" },
+            "portalUrl": { "type": "string", "format": "uri" },
+            "slug": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+            "pageUrl": { "oneOf": [{ "type": "string", "format": "uri" }, { "type": "null" }] }
+          }
+        }
+      ]
+    },
+    "demoMode": {
+      "type": "boolean",
+      "description": "Renders the demo chrome (banner + fictional-product honesty strip). Off in every customer clone."
+    }
+  }
+}

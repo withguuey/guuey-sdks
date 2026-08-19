@@ -9,12 +9,17 @@
  */
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-import { scaffold, type Framework } from './index.js';
+import { scaffold, type Framework, type Template } from './index.js';
 
 const FRAMEWORKS: Framework[] = ['claude-agent-sdk', 'openai-agents-sdk', 'google-adk'];
+const TEMPLATES: Template[] = ['base', 'agentic-app'];
 
 function isFramework(value: string): value is Framework {
   return (FRAMEWORKS as string[]).includes(value);
+}
+
+function isTemplate(value: string): value is Template {
+  return (TEMPLATES as string[]).includes(value);
 }
 
 /**
@@ -61,6 +66,10 @@ Arguments:
 Options:
   --name <name>         Project name (default: derived from target)
   --scope <scope>       npm scope for @<scope>/* packages (default: name)
+  --template <t>        App template: ${TEMPLATES.join(' | ')} (default: base)
+                        base = landing + login + home + chat;
+                        agentic-app = base + split-sidebar product shell with
+                        a fullscreen agent canvas and "talk on mobile" QR
   --framework <f>       Framework: ${FRAMEWORKS.join(' | ')}
   --agent <f>           Alias for --framework
   --install             Run "pnpm install" after scaffolding
@@ -117,6 +126,15 @@ async function main(): Promise<void> {
     return;
   }
 
+  const templateFlag = flags.template;
+  const templateInput = typeof templateFlag === 'string' ? templateFlag : 'base';
+  if (!isTemplate(templateInput)) {
+    console.error(`Unknown template "${templateInput}". Available: ${TEMPLATES.join(', ')}`);
+    process.exit(1);
+    return;
+  }
+  const template = templateInput;
+
   const frameworkFlag = flags.framework ?? flags.agent;
   let frameworkInput = typeof frameworkFlag === 'string' ? frameworkFlag : undefined;
   if (!frameworkInput) {
@@ -137,6 +155,7 @@ async function main(): Promise<void> {
     targetDir: target,
     name,
     framework,
+    template,
     scope,
     install,
     git: flags['no-git'] !== true,

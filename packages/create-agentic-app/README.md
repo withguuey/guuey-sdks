@@ -7,9 +7,11 @@ MCP servers, and generative UI, in one workspace.
 npx @guuey/create-agentic-app my-agent
 cd my-agent
 pnpm install
-pnpm dev            # local: your agent + your MCP servers, hot reload
+pnpm bootstrap      # brand, theme, copy → guuey.app.json + AGENTS.md (local, no account)
+pnpm dev            # local: your agent + MCP servers + the web app, hot reload
 guuey login
 guuey deploy        # hosted: agent + MCP servers live on guuey
+pnpm bootstrap -- --link   # bind the deployed app into the frontend
 ```
 
 ## What you get
@@ -27,8 +29,19 @@ guuey deploy        # hosted: agent + MCP servers live on guuey
 ## Options
 
 ```
-npx @guuey/create-agentic-app <dir> [--framework claude-agent-sdk|openai-agents-sdk] [--skip-install]
+npx @guuey/create-agentic-app <dir> [--template base|agentic-app] [--framework claude-agent-sdk|openai-agents-sdk|google-adk] [--install]
 ```
+
+- `--template base` (default) — a three-page app: landing (with the guuey
+  widget), login (guest + BYO-OIDC seam), home (live status + the
+  three-ways distribution guide), plus an embedded-chat page on
+  [`@guuey/chat`](https://www.npmjs.com/package/@guuey/chat).
+- `--template agentic-app` — everything in base, plus a split-sidebar
+  product shell: upper sidebar = your menus, lower sidebar = the agent
+  dock; activating the dock swaps the main canvas to a fullscreen agent
+  (generative-UI cards get the whole width), and "Talk on mobile" shows a
+  QR to the same agent in the guuey portal.
+- `--install` — run `pnpm install` after scaffolding (off by default).
 
 ## Binding to an existing app
 
