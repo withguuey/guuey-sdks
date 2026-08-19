@@ -26,6 +26,9 @@
     "smoke": "node scripts/scaffold-smoke.mjs",
     "smoke:verdaccio": "node scripts/verdaccio-smoke.mjs"
   },
+  "dependencies": {
+    "tar": "^7.5.22"
+  },
   "devDependencies": {
     "@guuey/config": "workspace:*",
     "@guuey/worker": "workspace:*",

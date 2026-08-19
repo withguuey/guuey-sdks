@@ -9,7 +9,7 @@
  */
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-import { scaffold, type Framework, type Template } from './index.js';
+import { scaffold, scaffoldExample, type Framework, type Template } from './index.js';
 
 const FRAMEWORKS: Framework[] = ['claude-agent-sdk', 'openai-agents-sdk', 'google-adk'];
 const TEMPLATES: Template[] = ['base', 'agentic-app'];
@@ -72,6 +72,9 @@ Options:
                         a fullscreen agent canvas and "talk on mobile" QR
   --framework <f>       Framework: ${FRAMEWORKS.join(' | ')}
   --agent <f>           Alias for --framework
+  --example <vertical>  Extract a demo app from github.com/withguuey/demos
+                        instead of a blank template (mutually exclusive with
+                        --template/--framework; re-brand via pnpm bootstrap)
   --install             Run "pnpm install" after scaffolding
   --no-git              Skip "git init" + initial commit
   --force               Scaffold into a non-empty target directory
@@ -94,7 +97,16 @@ function deriveName(target: string): string {
   return slug || 'agentic-app';
 }
 
-async function promptFor(question: string): Promise<string> {
+/**
+ * Interactive prompt — but a headless run (CI, a coding agent, a piped
+ * stdin) must FAIL LOUDLY instead of hanging on a prompt nobody will
+ * answer. `missingFlagHint` names the flag to pass instead.
+ */
+async function promptFor(question: string, missingFlagHint: string): Promise<string> {
+  if (stdin.isTTY !== true) {
+    console.error(`Non-interactive run: pass ${missingFlagHint} explicitly.`);
+    process.exit(1);
+  }
   const rl = createInterface({ input: stdin, output: stdout });
   try {
     return (await rl.question(question)).trim();
@@ -118,7 +130,7 @@ async function main(): Promise<void> {
 
   let target = positional[0];
   if (!target) {
-    target = await promptFor('Project directory: ');
+    target = await promptFor('Project directory: ', 'the target directory as the first argument');
   }
   if (!target) {
     console.error('A target directory is required.');
@@ -126,14 +138,33 @@ async function main(): Promise<void> {
     return;
   }
 
-  // `--example <vertical>` (pull a demo app out of withguuey/demos) is part
-  // of the settled contract but ships with the demos content — reject it
-  // loudly rather than silently scaffolding the wrong thing.
+  // `--example <vertical>`: pull an already-branded demo app out of the
+  // public withguuey/demos monorepo. Mutually exclusive with the template
+  // axis — an example IS a pre-templated app with its framework baked in.
   if (flags.example !== undefined) {
-    console.error(
-      '--example is not available yet — it lands together with the withguuey/demos content. Use --template base|agentic-app meanwhile.',
-    );
-    process.exit(1);
+    if (flags.template !== undefined || flags.framework !== undefined || flags.agent !== undefined) {
+      console.error('--example is mutually exclusive with --template/--framework (an example is already a complete app).');
+      process.exit(1);
+      return;
+    }
+    if (typeof flags.example !== 'string') {
+      console.error('--example needs a value, e.g. --example trimly');
+      process.exit(1);
+      return;
+    }
+    const { projectDir } = await scaffoldExample({
+      targetDir: target,
+      example: flags.example,
+      install: flags.install === true,
+      git: flags['no-git'] !== true,
+      force: flags.force === true,
+    });
+    console.log(`\nExtracted the "${flags.example}" example into ${projectDir}\n`);
+    console.log('Next steps:');
+    console.log(`  cd ${projectDir}`);
+    if (flags.install !== true) console.log('  pnpm install');
+    console.log('  pnpm bootstrap        # re-brand it as yours (also turns the demo chrome off)');
+    console.log('  pnpm dev');
     return;
   }
 
@@ -149,7 +180,7 @@ async function main(): Promise<void> {
   const frameworkFlag = flags.framework ?? flags.agent;
   let frameworkInput = typeof frameworkFlag === 'string' ? frameworkFlag : undefined;
   if (!frameworkInput) {
-    frameworkInput = await promptFor(`Framework (${FRAMEWORKS.join(' | ')}): `);
+    frameworkInput = await promptFor(`Framework (${FRAMEWORKS.join(' | ')}): `, '--framework <f>');
   }
   if (!isFramework(frameworkInput)) {
     console.error(`Unknown framework "${frameworkInput}". Available: ${FRAMEWORKS.join(', ')}`);

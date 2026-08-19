@@ -102,7 +102,7 @@ async function copyTree(src: string, dest: string, name: string, scope: string):
   }
 }
 
-async function seedEnvLocal(projectDir: string): Promise<void> {
+export async function seedEnvLocal(projectDir: string): Promise<void> {
   const envExample = join(projectDir, '.env.example');
   const envLocal = join(projectDir, '.env.local');
   if (!(await pathExists(envExample))) return;
@@ -117,7 +117,7 @@ async function seedEnvLocal(projectDir: string): Promise<void> {
  * machines/CI containers without a global git identity succeed instead of
  * falling into the warning path.
  */
-async function initGit(projectDir: string): Promise<void> {
+export async function initGit(projectDir: string): Promise<void> {
   try {
     await execFileAsync('git', ['init'], { cwd: projectDir });
     await execFileAsync('git', ['add', '-A'], { cwd: projectDir });
@@ -141,7 +141,7 @@ async function initGit(projectDir: string): Promise<void> {
   }
 }
 
-async function runInstall(projectDir: string): Promise<void> {
+export async function runInstall(projectDir: string): Promise<void> {
   try {
     await execFileAsync('pnpm', ['install'], { cwd: projectDir });
   } catch {

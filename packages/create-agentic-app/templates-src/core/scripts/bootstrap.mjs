@@ -353,6 +353,9 @@ async function main() {
   config.theme.mode = mode;
   config.copy.landing.headline = headline;
   config.bootstrapped = true;
+  // A bootstrap makes the app YOURS — if this started life as a demo
+  // extraction (`--example`), the demo chrome turns off here.
+  config.demoMode = false;
   writeConfig(config);
   regenerateAgentsMd(config);
 

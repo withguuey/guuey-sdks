@@ -42,6 +42,13 @@ npx @guuey/create-agentic-app <dir> [--template base|agentic-app] [--framework c
   (generative-UI cards get the whole width), and "Talk on mobile" shows a
   QR to the same agent in the guuey portal.
 - `--install` — run `pnpm install` after scaffolding (off by default).
+- `--example <vertical>` — instead of a blank template, extract one of the
+  open-source demo apps from
+  [`withguuey/demos`](https://github.com/withguuey/demos) (e.g.
+  `--example trimly`) — the exact app behind the live demo, already wired
+  end to end. Re-brand it with `pnpm bootstrap` (which also turns the demo
+  chrome off). Mutually exclusive with `--template`/`--framework`. Manual
+  alternative: `npx degit withguuey/demos/<vertical>`.
 
 ## Binding to an existing app
 
