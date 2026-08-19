@@ -8,6 +8,7 @@
 
 import * as http from 'node:http';
 import * as readline from 'node:readline';
+import { Writable } from 'node:stream';
 import { execFile, execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { resolveConfig } from '../config';
@@ -89,8 +90,17 @@ export async function login(flags: Record<string, string | true> = {}): Promise<
     const authUrl = pasteAuthorizeUrl(endpoint);
     console.log('Open this URL in a browser to authenticate:\n');
     console.log(`  ${authUrl}\n`);
-    console.log('Then paste the token shown in the browser here:');
-    const tokens = await waitForPastedToken();
+    console.log('Then paste the token shown in the browser here (input is hidden):');
+    let tokens: AuthTokens;
+    try {
+      // Paste is the ONLY channel here — an input that ends without a valid
+      // token must fail loudly (exit 1), not drain the event loop into a
+      // false-success exit 0 (guuey#255, the scripts-piping-stdin case).
+      tokens = await waitForPastedToken(undefined, process.stdin, { rejectOnEnd: true });
+    } catch (err) {
+      out.error((err as Error).message);
+      process.exit(1);
+    }
     saveAuth(tokens);
     out.success('Logged in with API key (server-side expiry applies)');
     return;
@@ -122,7 +132,7 @@ export async function login(flags: Record<string, string | true> = {}): Promise<
     console.log(`  ${authUrl}\n`);
     console.log(
       canPaste
-        ? 'Waiting for authentication... (or paste the token from the browser here)'
+        ? 'Waiting for authentication... (or paste the token from the browser here — input is hidden)'
         : 'Waiting for authentication...',
     );
   }, 300);
@@ -154,30 +164,87 @@ export function pasteAuthorizeUrl(endpoint: string): string {
 }
 
 /**
+ * Mask an API key for display: public prefix + last 4 characters only
+ * (`guuey_user_…abc4`). Everything a paste flow prints about the token
+ * goes through this — the cleartext key must never reach the terminal
+ * (guuey#255; the terminal echo itself is muted separately below).
+ */
+export function maskToken(pat: string): string {
+  return `${pat.slice(0, 11)}…${pat.slice(-4)}`;
+}
+
+/** Options for {@link waitForPastedToken}. */
+export interface PasteWaitOptions {
+  /**
+   * When true, an input that ends (EOF / closed pipe) before a valid token
+   * REJECTS with a clear error. Set by the paste-only `--no-browser` path,
+   * where the paste is the sole channel — a script piping empty stdin must
+   * exit non-zero, not fall off the event loop as a false-success exit 0
+   * (guuey#255).
+   *
+   * Default (false): end-of-input releases the stream and leaves the
+   * promise pending — race-loser semantics for the browser+paste race,
+   * where a stray Ctrl-D must not kill a still-pending browser callback.
+   */
+  rejectOnEnd?: boolean;
+}
+
+/**
  * Wait for a `guuey_user_*` key pasted on stdin (one per line).
  *
- * Never rejects — invalid pastes re-prompt — so it is safe on the losing
- * side of a `Promise.race`. An aborted signal releases stdin and leaves the
- * promise forever pending (post-race that is unobservable and un-leaked;
- * a rejection here would surface as an unhandled rejection instead).
+ * **The paste is never echoed** (guuey#255): on a TTY, readline runs in
+ * terminal mode — which puts the stream in raw mode, disabling the TTY
+ * driver's own echo — with a discarding output stream, so neither the
+ * driver nor readline writes the key back to the terminal. On success a
+ * masked confirmation (`guuey_user_…abc4`) is printed instead. Non-TTY
+ * input (pipes, tests) is read as plain lines — nothing echoes there.
+ *
+ * Invalid pastes re-prompt (never reject), so the promise is safe on the
+ * losing side of a `Promise.race`. An aborted signal releases stdin and
+ * leaves the promise forever pending (post-race that is unobservable and
+ * un-leaked; a rejection here would surface as an unhandled rejection).
+ * End-of-input behavior is governed by `opts.rejectOnEnd` (see
+ * {@link PasteWaitOptions}).
  *
  * `input` is injectable for tests only; production callers use stdin.
  */
 export function waitForPastedToken(
   signal?: AbortSignal,
   input: NodeJS.ReadableStream = process.stdin,
+  opts: PasteWaitOptions = {},
 ): Promise<AuthTokens> {
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({ input, terminal: false });
-    const stop = () => {
+  return new Promise((resolve, reject) => {
+    const isTTY = (input as NodeJS.ReadStream).isTTY === true;
+    // Terminal-mode echo target that discards everything — the mute half
+    // of the #255 fix. Only constructed for TTYs; plain streams read in
+    // non-terminal mode where readline never echoes anyway.
+    const muted = new Writable({
+      write(_chunk, _encoding, callback) {
+        callback();
+      },
+    });
+    const rl = isTTY
+      ? readline.createInterface({ input, output: muted, terminal: true })
+      : readline.createInterface({ input, terminal: false });
+    // Set before any deliberate teardown (resolve / reject / abort) so the
+    // trailing 'close' event can tell deliberate teardown from EOF.
+    let done = false;
+    const release = () => {
       rl.close();
       // readline leaves a resumed stream flowing, which keeps the event
       // loop alive after login returns — release it explicitly.
       input.pause();
     };
-    signal?.addEventListener('abort', stop, { once: true });
+    const onAbort = () => {
+      done = true;
+      release();
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
     rl.on('line', (line) => {
       const pasted = line.trim();
+      // In terminal mode the muted output swallows the Enter keypress too —
+      // emit the line break ourselves so the prompt line ends visibly.
+      if (isTTY) process.stdout.write('\n');
       if (!pasted) return;
       // Same validation + storage shape as the callback / --token paths:
       // possession of the opaque key IS the proof (no `state` needed).
@@ -188,9 +255,34 @@ export function waitForPastedToken(
         );
         return;
       }
-      signal?.removeEventListener('abort', stop);
-      stop();
+      done = true;
+      signal?.removeEventListener('abort', onAbort);
+      release();
+      console.log(`Token received: ${maskToken(pasted)}`);
       resolve(tokens);
+    });
+    rl.on('close', () => {
+      if (done) return;
+      done = true;
+      input.pause();
+      if (opts.rejectOnEnd) {
+        reject(
+          new Error(
+            'Input ended before a token was pasted — nothing was stored. ' +
+              'Run `guuey login --no-browser` in an interactive terminal, or use `guuey login --token <guuey_user_...>`.',
+          ),
+        );
+      }
+      // Default: stay pending — race-loser semantics (the browser-callback
+      // channel owns the outcome).
+    });
+    // Terminal mode (raw): Ctrl-C no longer delivers SIGINT to the process —
+    // readline surfaces it as an event. Restore the terminal and exit with
+    // the conventional SIGINT status so Ctrl-C keeps working mid-paste.
+    rl.on('SIGINT', () => {
+      release();
+      process.stdout.write('\n');
+      process.exit(130);
     });
   });
 }

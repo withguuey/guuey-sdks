@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PassThrough } from 'node:stream';
 import {
+  maskToken,
   pasteAuthorizeUrl,
   tokensFromCallback,
   waitForCallback,
@@ -137,6 +138,97 @@ describe('waitForPastedToken — paste fallback (guuey#180)', () => {
     // (nothing to observe on the promise — it stays forever pending by
     // design) and the stream is paused so the event loop can drain.
     expect(input.isPaused()).toBe(true);
+  });
+});
+
+// guuey#255 — the paste must never reach the terminal in cleartext, and a
+// paste-only read whose input ends without a token must fail loudly.
+describe('waitForPastedToken — echo mute + masked confirm + EOF (guuey#255)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** A PassThrough dressed as a TTY so readline takes the terminal path. */
+  function fakeTty(): { input: PassThrough; setRawMode: ReturnType<typeof vi.fn> } {
+    const input = new PassThrough();
+    const setRawMode = vi.fn();
+    Object.assign(input, { isTTY: true, setRawMode });
+    return { input, setRawMode };
+  }
+
+  it('TTY: engages raw mode (driver echo off), never writes the cleartext token, prints the masked confirm', async () => {
+    const { input, setRawMode } = fakeTty();
+    const writes: string[] = [];
+    // Capture EVERYTHING this process could put on the terminal. Terminal-mode
+    // readline echoes into the interface's own muted output — so nothing here
+    // may ever contain the key.
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    // Vitest routes console.* through its own interceptor, not stdout.write —
+    // capture it as terminal output too.
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' '));
+    });
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' '));
+    });
+
+    const secret = 'guuey_user_super_secret_value_abc4';
+    const promise = waitForPastedToken(undefined, input);
+    input.write(`${secret}\r`);
+    const tokens = await promise;
+
+    expect(tokens.pat).toBe(secret);
+    // Raw mode was engaged for the read (this is what disables the TTY
+    // driver's echo) and restored on close.
+    expect(setRawMode).toHaveBeenCalledWith(true);
+    expect(setRawMode.mock.calls.at(-1)).toEqual([false]);
+    // The cleartext key appears in NOTHING written by this process; the
+    // masked form does.
+    const all = writes.join('');
+    expect(all).not.toContain(secret);
+    expect(all).toContain(maskToken(secret));
+  });
+
+  it('rejectOnEnd: input EOF before a valid token rejects (script pipes must exit non-zero, not false-success)', async () => {
+    const input = new PassThrough();
+    const promise = waitForPastedToken(undefined, input, { rejectOnEnd: true });
+    input.end();
+    await expect(promise).rejects.toThrow(/Input ended before a token was pasted/);
+  });
+
+  it('rejectOnEnd: a trailing line WITHOUT a newline still ends in rejection, not silence', async () => {
+    const input = new PassThrough();
+    const promise = waitForPastedToken(undefined, input, { rejectOnEnd: true });
+    input.end('not-a-token');
+    await expect(promise).rejects.toThrow(/Input ended before a token was pasted/);
+  });
+
+  it('default (race mode): input EOF stays pending and releases the stream — a Ctrl-D must not kill the browser channel', async () => {
+    const input = new PassThrough();
+    const promise = waitForPastedToken(undefined, input);
+    input.end();
+    const outcome = await Promise.race([
+      promise.then(
+        () => 'resolved',
+        () => 'rejected',
+      ),
+      new Promise<string>((resolve) => setTimeout(() => resolve('pending'), 50)),
+    ]);
+    expect(outcome).toBe('pending');
+    expect(input.isPaused()).toBe(true);
+  });
+});
+
+describe('maskToken', () => {
+  it('shows only the public prefix and the last 4 characters', () => {
+    expect(maskToken('guuey_user_super_secret_value_abc4')).toBe('guuey_user_…abc4');
   });
 });
 
