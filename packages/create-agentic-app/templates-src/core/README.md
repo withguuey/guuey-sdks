@@ -15,9 +15,11 @@ locally with one command, and deployable to guuey with one more.
 ├── prompts/system.md    # system prompt, referenced from guuey.json#agent.systemPrompt.file
 ├── mcps/todo/           # the "copy-me" custom MCP server — @modelcontextprotocol/sdk,
 │                         #   Streamable HTTP, in-memory todo list, port :6782
-├── ggui/                # ggui.json + blueprints/ + themes/ — generative-UI config.
-│                         #   `ggui serve` runs against this locally; it's pushed to your
-│                         #   deployed app's guuey-managed ggui instance on `guuey deploy`.
+├── ggui/                # ggui.json + blueprints/ — generative-UI config.
+│                         #   `ggui serve` runs against this locally; `guuey deploy` pushes
+│                         #   generation config + blueprints (the deployed RENDER THEME is
+│                         #   platform data, not this dir — ggui.json#theme is local-preview
+│                         #   only, kept in step with guuey.app.json by `pnpm bootstrap`).
 ├── web/                 # the product frontend (Vite + React on @guuey/chat):
 │                         #   landing (widget) · login (guest + BYO-OIDC seam) · home
 │                         #   (status + distribution guide) · the chat surface
@@ -127,7 +129,7 @@ anything user-visible changes:
    as its own hosted MCP server (build → deploy → registry), then writes the
    resulting server id back into `guuey.json`. This scaffold has none — the
    todo MCP is `colocated`, so this leg is a no-op here.
-2. **ggui asset leg** — pushes `ggui/` (ggui.json, blueprints, themes) to your
+2. **ggui asset leg** — pushes `ggui/` (generation config, blueprints) to your
    app's guuey-managed ggui instance.
 3. **Agent leg** — builds `src/worker.ts` into `guuey.worker.js`, packs the
    project root (including `mcps/`), and deploys it as a gVisor-isolated,
