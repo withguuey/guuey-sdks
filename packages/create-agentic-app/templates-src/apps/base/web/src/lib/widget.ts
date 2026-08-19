@@ -71,6 +71,16 @@ export function mountWidget(onOutcome?: (o: WidgetOutcome) => void): boolean {
   return true;
 }
 
+/**
+ * A value embedded inside an inline <script> on the customer's page: JSON
+ * string escaping, plus a `<` rewrite so a pathological brand name cannot
+ * smuggle `</script>` and terminate the element (the same rule the widget's
+ * own snippet generator applies).
+ */
+function jsString(value: string): string {
+  return JSON.stringify(value).replaceAll("<", "\\u003c");
+}
+
 /** The copy-paste embed snippet with this app's real values, for the Home guide. */
 export function widgetSnippet(): string | null {
   const link = appConfig.link;
@@ -79,7 +89,7 @@ export function widgetSnippet(): string | null {
     "<!-- guuey widget. Add this site to the app's allowed domains or the embed is refused. -->",
     "<script>",
     "  window.guuey = window.guuey || function(){(guuey.q=guuey.q||[]).push(arguments)};",
-    `  guuey("init", { app: "${link.appId}", launcher: "Ask ${appConfig.brand.name}" });`,
+    `  guuey("init", { app: ${jsString(link.appId)}, launcher: ${jsString(`Ask ${appConfig.brand.name}`)} });`,
     "</script>",
     `<script src="${link.widgetOrigin}/v1.js" async></script>`,
   ].join("\n");

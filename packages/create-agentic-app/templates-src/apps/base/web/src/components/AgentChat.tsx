@@ -11,16 +11,20 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { GuueyChat } from "@guuey/chat/react";
 import { agentEndpointUrl, appConfig, historyBaseUrl } from "../config";
-import { ensureGuestSecret } from "../lib/identity";
+import { currentIdentityMode, ensureGuestSecret } from "../lib/identity";
 import { getBearerToken, currentUser, oidcConfigured } from "../lib/oidc";
 
 export function AgentChat({ className, style }: { className?: string; style?: CSSProperties }) {
+  // The user's CHOSEN mode wins: an explicit "Continue as guest" must never
+  // be shadowed by a cached OIDC session. Only when no choice is recorded
+  // does a live session imply oidc.
+  const chosen = currentIdentityMode();
   const [identity, setIdentity] = useState<"resolving" | "guest" | "oidc">(
-    oidcConfigured() ? "resolving" : "guest",
+    chosen === "guest" || !oidcConfigured() ? "guest" : chosen === "oidc" ? "oidc" : "resolving",
   );
 
   useEffect(() => {
-    if (!oidcConfigured()) return;
+    if (identity !== "resolving") return;
     let cancelled = false;
     void currentUser().then((user) => {
       if (!cancelled) setIdentity(user ? "oidc" : "guest");
@@ -28,7 +32,7 @@ export function AgentChat({ className, style }: { className?: string; style?: CS
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [identity]);
 
   if (identity === "resolving") return null;
 

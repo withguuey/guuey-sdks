@@ -86,8 +86,10 @@ export async function create(
     console.log('Next steps:');
     console.log(`  cd ${projectDir}`);
     if (!opts.install) console.log('  pnpm install');
+    console.log('  pnpm bootstrap        # brand, theme, copy — the web app is gated on this');
     console.log('  pnpm dev');
     console.log('  guuey login && guuey deploy');
+    console.log('  pnpm bootstrap -- --link   # bind the deployed app into the frontend');
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     out.error(message);

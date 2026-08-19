@@ -16,12 +16,15 @@
  *
  * Flags:
  *   --yes                 accept defaults for every prompt
- *   --check               report state as JSON and exit (0 = complete,
- *                         3 = steps missing; never mutates)
+ *   --check               report state as JSON and exit (0 = every required
+ *                         step done, 3 = a required step missing; optional
+ *                         steps are listed but never fail; never mutates)
  *   --link                run the bind phase (implies the local phase ran)
  *   --app-id <id>         the app to bind (default: guuey.json's appId,
  *                         else prompted)
  *   --env <e>             dev|staging|release when it cannot be derived
+ *   --domains <d1,d2>     allowed origins to push on --link (prompted when
+ *                         interactive; skipped under --yes without the flag)
  *   --name/--tagline/--accent/--mode/--headline   local-phase overrides
  */
 import { execFile } from "node:child_process";
@@ -42,24 +45,31 @@ const GUUEY_JSON_PATH = join(projectRoot, "guuey.json");
 const START_MARK = "<!-- guuey:bootstrap:start -->";
 const END_MARK = "<!-- guuey:bootstrap:end -->";
 
+// Per-env public hosts. Two distinct "agents" domain families exist and must
+// not be confused: SLUG pages live at <slug>.agents.guuey.com (prod) /
+// <slug>.agents.<env>.sandbox.guuey.com — always read back from the platform
+// as pageUrl, never derived here — while canonical appId ENDPOINTS live at
+// <appId>.agents.us-east-1.guuey.com (prod) / <appId>.agents.<env>.sandbox
+// .guuey.com. `endpointDomain` below is the ENDPOINT family, used only as
+// the fallback when the app has no live deployment to read the URL from.
 const ENV_HOSTS = {
   release: {
     apiBaseUrl: "https://api.us-east-1.guuey.com/v1",
     widgetOrigin: "https://widget.guuey.com",
     portalUrl: "https://app.guuey.com",
-    agentsDomain: "agents.guuey.com",
+    endpointDomain: "agents.us-east-1.guuey.com",
   },
   staging: {
     apiBaseUrl: "https://api.staging.sandbox.guuey.com/v1",
     widgetOrigin: "https://staging.widget.sandbox.guuey.com",
     portalUrl: "https://staging.app.sandbox.guuey.com",
-    agentsDomain: "agents.staging.sandbox.guuey.com",
+    endpointDomain: "agents.staging.sandbox.guuey.com",
   },
   dev: {
     apiBaseUrl: "https://api.dev.sandbox.guuey.com/v1",
     widgetOrigin: "https://dev.widget.sandbox.guuey.com",
     portalUrl: "https://dev.app.sandbox.guuey.com",
-    agentsDomain: "agents.dev.sandbox.guuey.com",
+    endpointDomain: "agents.dev.sandbox.guuey.com",
   },
 };
 
@@ -186,7 +196,17 @@ async function linkPhase(config, flags, yes) {
     console.error("Log in first (`guuey login`) and check the id (`guuey apps list`).");
     process.exit(1);
   }
-  const app = JSON.parse(res.stdout);
+  let app;
+  try {
+    app = JSON.parse(res.stdout);
+  } catch {
+    console.error(
+      "`guuey apps get --json` did not return parseable JSON. Raw output follows — " +
+        "if extra lines surround the JSON, that is a guuey CLI bug worth reporting:\n" +
+        res.stdout,
+    );
+    process.exit(1);
+  }
 
   const env = typeof flags.env === "string" ? flags.env : deriveEnv(app);
   if (!env || !ENV_HOSTS[env]) {
@@ -197,11 +217,18 @@ async function linkPhase(config, flags, yes) {
   }
   const hosts = ENV_HOSTS[env];
 
+  // The platform's deployment records carry the full `…/agent/invoke` URL;
+  // the config contract stores the ORIGIN (the web app appends paths).
+  const endpointOrigin = (app.endpointUrl || `https://${appId}.${hosts.endpointDomain}`).replace(
+    /\/agent\/invoke\/?$/,
+    "",
+  );
+
   config.link = {
     appId,
     env,
     apiBaseUrl: hosts.apiBaseUrl,
-    endpointUrl: app.endpointUrl || `https://${appId}.${env === "release" ? "agents.us-east-1.guuey.com" : `agents.${env}.sandbox.guuey.com`}`,
+    endpointUrl: endpointOrigin,
     widgetOrigin: hosts.widgetOrigin,
     portalUrl: hosts.portalUrl,
     slug: app.urlSlug ?? null,
@@ -210,9 +237,27 @@ async function linkPhase(config, flags, yes) {
   writeConfig(config);
   console.log(`Linked ${config.brand.name} → ${appId} (${env}).`);
 
+  // Allowed domains: the origins this frontend will serve from (needed for
+  // the widget's frame-ancestors AND the pod's CORS). Flag wins; prompted
+  // when interactive; skipped (with the hint below) under --yes.
+  let domains = typeof flags.domains === "string" ? flags.domains : null;
+  if (domains === null && !yes) {
+    const rl = createInterface({ input: stdin, output: stdout });
+    domains = (
+      await rl.question("Allowed origins for this frontend (comma-separated, empty to skip): ")
+    ).trim();
+    rl.close();
+  }
+
   // Platform pushes — each one a CLI primitive; failures are reported, not
   // hidden, and the run keeps converging on the rest.
   const pushes = [];
+  if (domains) {
+    pushes.push({
+      step: "allowed-domains",
+      result: await guuey(["apps", "update", appId, "--domains", domains]),
+    });
+  }
   pushes.push({
     step: "brand-accent",
     result: await guuey(["apps", "update", appId, "--brand-accent", config.theme.accent]),
@@ -228,7 +273,9 @@ async function linkPhase(config, flags, yes) {
   }
 
   console.log("\nNext steps (each is one command — run when ready):");
-  console.log(`  guuey apps update ${appId} --domains <https://your-site.example>   # allow this frontend's origin`);
+  if (!domains) {
+    console.log(`  guuey apps update ${appId} --domains <https://your-site.example>   # allow this frontend's origin`);
+  }
   if (!config.link.slug) console.log("  guuey slug claim <name>            # public short name → portal link + hosted page");
   console.log("  guuey deploy                        # ship the agent definition in guuey.json");
   if (config.auth.oidc) {
@@ -239,11 +286,15 @@ async function linkPhase(config, flags, yes) {
 // ── check ───────────────────────────────────────────────────────────────────
 
 function check(config) {
+  // Required steps gate the exit code; optional ones are informational.
   const missing = [];
+  const optional = [];
   if (!config.bootstrapped) missing.push({ step: "bootstrap", fix: "pnpm bootstrap" });
   if (!config.link) missing.push({ step: "link", fix: "pnpm bootstrap -- --link --app-id <id>" });
-  if (config.link && !config.link.slug) missing.push({ step: "slug", fix: "guuey slug claim <name>" });
-  if (!config.auth.oidc) missing.push({ step: "oidc", fix: "optional: set auth.oidc {issuer, clientId} for sign-in (guest works without it)" });
+  if (config.link && !config.link.slug)
+    optional.push({ step: "slug", fix: "guuey slug claim <name> (portal link + hosted page)" });
+  if (!config.auth.oidc)
+    optional.push({ step: "oidc", fix: "set auth.oidc {issuer, clientId} for sign-in (guest works without it)" });
   const report = {
     bootstrapped: config.bootstrapped,
     linked: config.link !== null,
@@ -252,9 +303,10 @@ function check(config) {
     oidcConfigured: config.auth.oidc !== null,
     demoMode: config.demoMode,
     missing,
+    optional,
   };
   console.log(JSON.stringify(report, null, 2));
-  process.exit(missing.some((m) => m.step === "bootstrap" || m.step === "link") ? 3 : 0);
+  process.exit(missing.length > 0 ? 3 : 0);
 }
 
 // ── main ────────────────────────────────────────────────────────────────────

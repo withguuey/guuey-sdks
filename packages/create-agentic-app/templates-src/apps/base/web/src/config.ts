@@ -94,7 +94,11 @@ function validate(raw: unknown): AppConfig {
       appId: str(l.appId, "link.appId"),
       env,
       apiBaseUrl: str(l.apiBaseUrl, "link.apiBaseUrl"),
-      endpointUrl: str(l.endpointUrl, "link.endpointUrl"),
+      // Normalize to the ORIGIN whatever shape was stored: the platform's
+      // deployment records carry the full `…/agent/invoke` URL, while this
+      // contract (and the probe) wants the base. The chat kit accepts
+      // either, so normalizing here makes both consumers correct.
+      endpointUrl: str(l.endpointUrl, "link.endpointUrl").replace(/\/agent\/invoke\/?$/, ""),
       widgetOrigin: str(l.widgetOrigin, "link.widgetOrigin"),
       portalUrl: str(l.portalUrl, "link.portalUrl"),
       slug: typeof l.slug === "string" ? l.slug : null,

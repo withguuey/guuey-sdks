@@ -26,7 +26,7 @@
  * `guuey mcp new` scaffolds from — the name token is resolved at scaffold
  * time, not at template-build time). The guard therefore requires the
  * token stays confined to that directory: a violation if it leaks into any
- * per-framework tree (e.g. `dist/templates/<fw>/mcps/todo/`, where
+ * per-framework tree (e.g. `dist/templates/<template>/<fw>/mcps/todo/`, where
  * `build-templates.mjs` must have already resolved it to `todo`), and a
  * violation if `dist/templates/mcp-base/` doesn't contain it at all (a sign
  * the emission step silently resolved or dropped it).

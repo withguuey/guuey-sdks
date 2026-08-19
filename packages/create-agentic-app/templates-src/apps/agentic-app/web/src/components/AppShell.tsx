@@ -33,14 +33,6 @@ export function AppShell() {
 
   return (
     <div className="app-shell">
-      {appConfig.demoMode ? (
-        <div className="demo-strip">
-          Demo — a fictional product built with guuey.{" "}
-          <a href="https://guuey.com" target="_blank" rel="noreferrer">
-            Build your own agentic app →
-          </a>
-        </div>
-      ) : null}
       <div className="app-body">
         <aside className="sidebar">
           <div className="sidebar-brand">

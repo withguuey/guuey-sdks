@@ -34,7 +34,7 @@ export interface ScaffoldOptions {
   git?: boolean;
   /** Scaffold into a non-empty targetDir anyway. Default: false. */
   force?: boolean;
-  /** Root directory holding one subdirectory per framework. Default: dist/templates. */
+  /** Root directory holding `<template>/<framework>` trees (+ `mcp-base/`). Default: dist/templates. */
   templatesDir?: string;
 }
 
@@ -80,7 +80,13 @@ async function copyTree(src: string, dest: string, name: string, scope: string):
   await fs.mkdir(dest, { recursive: true });
   const entries = await fs.readdir(src, { withFileTypes: true });
   for (const entry of entries) {
-    const destName = renameContent(entry.name, name, scope);
+    // Templates ship `.gitignore` files under the dot-less name `gitignore`
+    // because npm-packlist strips `.gitignore` at every depth from published
+    // tarballs — the scaffold restores the real name (create-next-app's
+    // pattern). Without this, npm-scaffolded projects would `git add -A`
+    // their .env.local into the initial commit.
+    const rawName = entry.name === 'gitignore' ? '.gitignore' : entry.name;
+    const destName = renameContent(rawName, name, scope);
     const srcPath = join(src, entry.name);
     const destPath = join(dest, destName);
     if (entry.isDirectory()) {

@@ -8,24 +8,30 @@
  *   "Sign in with Google" plugs in). The bound guuey app must be in BYO
  *   auth mode for the same issuer.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { appConfig } from "../config";
+import { CHAT_PATH } from "../routes";
 import { continueAsGuest, setIdentityMode } from "../lib/identity";
-import { completeSignIn, isSigninCallback, oidcConfigured, signIn } from "../lib/oidc";
+import { completeSignIn, isSigninCallback, oidcConfigured, signIn, signOutOidc } from "../lib/oidc";
 
 export function Login() {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [completing, setCompleting] = useState(isSigninCallback());
+  // One-shot: StrictMode double-invokes effects in dev, and the OIDC
+  // authorization code is single-use — a second signinCallback() would
+  // double-spend it and flash a bogus failure.
+  const callbackStarted = useRef(false);
 
   // Finish the redirect flow when the IdP sent us back here.
   useEffect(() => {
-    if (!isSigninCallback()) return;
+    if (!isSigninCallback() || callbackStarted.current) return;
+    callbackStarted.current = true;
     completeSignIn()
       .then(() => {
         setIdentityMode("oidc");
-        navigate("/chat", { replace: true });
+        navigate(CHAT_PATH, { replace: true });
       })
       .catch((err: unknown) => {
         setCompleting(false);
@@ -34,8 +40,11 @@ export function Login() {
   }, [navigate]);
 
   function guest() {
+    // One identity mode per surface: an explicit guest choice also drops
+    // any cached OIDC session, so a stale bearer can never shadow it.
+    void signOutOidc();
     continueAsGuest();
-    navigate("/chat");
+    navigate(CHAT_PATH);
   }
 
   if (completing) {

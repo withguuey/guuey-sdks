@@ -126,6 +126,17 @@ async function main(): Promise<void> {
     return;
   }
 
+  // `--example <vertical>` (pull a demo app out of withguuey/demos) is part
+  // of the settled contract but ships with the demos content — reject it
+  // loudly rather than silently scaffolding the wrong thing.
+  if (flags.example !== undefined) {
+    console.error(
+      '--example is not available yet — it lands together with the withguuey/demos content. Use --template base|agentic-app meanwhile.',
+    );
+    process.exit(1);
+    return;
+  }
+
   const templateFlag = flags.template;
   const templateInput = typeof templateFlag === 'string' ? templateFlag : 'base';
   if (!isTemplate(templateInput)) {
@@ -166,8 +177,10 @@ async function main(): Promise<void> {
   console.log('Next steps:');
   console.log(`  cd ${projectDir}`);
   if (!install) console.log('  pnpm install');
+  console.log('  pnpm bootstrap        # brand, theme, copy — the web app is gated on this');
   console.log('  pnpm dev');
   console.log('  guuey login && guuey deploy');
+  console.log('  pnpm bootstrap -- --link   # bind the deployed app into the frontend');
 }
 
 main().catch((err: unknown) => {

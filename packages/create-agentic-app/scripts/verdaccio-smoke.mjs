@@ -180,7 +180,7 @@ try {
   // 3. Build the cohort so `dist/` is fresh before packing (turbo's
   // dependsOn:['^build'] pulls in the transitive internal deps too).
   const names = INTERNAL.map(
-    (dir) => JSON.parse(readFileSync(join(repoRoot, dir, "package.json"), "utf8")).name,
+    (dir) => JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).name,
   );
   console.log(`[verdaccio-smoke] building cohort: ${names.join(", ")}`);
   sh("corepack", [
@@ -196,10 +196,10 @@ try {
   // `workspace:*` dependency to the real local version, exactly as a publish
   // to npmjs would.
   for (const dir of INTERNAL) {
-    const name = JSON.parse(readFileSync(join(repoRoot, dir, "package.json"), "utf8")).name;
+    const name = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).name;
     console.log(`[verdaccio-smoke] publishing ${name} (${dir})`);
     sh("corepack", ["pnpm", "publish", "--registry", REGISTRY, "--no-git-checks", "--access", "public"], {
-      cwd: join(repoRoot, dir),
+      cwd: dir,
     });
   }
 
@@ -232,6 +232,10 @@ cache-dir=${join(work, `pnpm-cache-${framework}`)}
 store-dir=${join(work, `pnpm-store-${framework}`)}
 `,
     );
+
+    // The golden path's bootstrap step — production web builds are gated on it.
+    console.log(`[verdaccio-smoke] bootstrap ${framework}`);
+    sh("node", ["scripts/bootstrap.mjs", "--yes"], { cwd: appDir });
 
     console.log(`[verdaccio-smoke] installing ${framework}`);
     sh("corepack", ["pnpm", "install"], { cwd: appDir });

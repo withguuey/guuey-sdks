@@ -54,19 +54,6 @@ a {
   flex-direction: column;
 }
 
-.demo-strip {
-  background: var(--app-accent);
-  color: #fff;
-  text-align: center;
-  padding: 6px 12px;
-  font-size: 14px;
-}
-
-.demo-strip a {
-  color: #fff;
-  font-weight: 600;
-}
-
 .topbar {
   display: flex;
   align-items: center;

@@ -18,9 +18,15 @@ locally with one command, and deployable to guuey with one more.
 ├── ggui/                # ggui.json + blueprints/ + themes/ — generative-UI config.
 │                         #   `ggui serve` runs against this locally; it's pushed to your
 │                         #   deployed app's guuey-managed ggui instance on `guuey deploy`.
-├── web/                 # a small Vite SPA chat client — the local dev surface, and a
-│                         #   worked example of the bring-your-own-frontend path
+├── web/                 # the product frontend (Vite + React on @guuey/chat):
+│                         #   landing (widget) · login (guest + BYO-OIDC seam) · home
+│                         #   (status + distribution guide) · the chat surface
+├── guuey.app.json       # frontend/brand config — written by `pnpm bootstrap`
+│                         #   (schema: guuey.app.schema.json; public-safe by design)
+├── AGENTS.md            # coding-agent steering; `pnpm bootstrap` maintains the
+│                         #   managed block with this project's real facts
 ├── scripts/dev.mjs      # `pnpm dev` orchestrator — boots the whole local stack
+├── scripts/bootstrap.mjs # `pnpm bootstrap` — configure, then `-- --link` to bind
 ├── .env.example          # ANTHROPIC_API_KEY / OPENAI_API_KEY for local dev
 └── .mcp.json             # Claude Code convenience wiring (mcp.ggui.ai/dev)
 ```
@@ -33,10 +39,18 @@ level rather than nested under a `servers/` or `apps/` folder.
 
 ```bash
 pnpm install
+pnpm bootstrap               # brand, theme, copy → guuey.app.json + AGENTS.md (no account needed;
+                             #   every web page is gated on this, and production builds fail without it)
 cp .env.example .env.local   # done automatically on scaffold if .env.local is absent
 # set ANTHROPIC_API_KEY (or OPENAI_API_KEY, for the openai-agents-sdk template) in .env.local
 pnpm dev
 ```
+
+When the agent is deployed (`guuey login && guuey deploy`), bind it into the
+frontend: `pnpm bootstrap -- --link` — that records the app id, endpoint,
+widget origin and portal link in `guuey.app.json` and pushes brand basics to
+the platform. `pnpm status` shows the live app state; `pnpm bootstrap -- --check`
+prints machine-readable configuration state.
 
 `pnpm dev` (`scripts/dev.mjs`) boots four processes with prefixed, interleaved
 logs. Ctrl-C tears all of them down together.
@@ -46,7 +60,7 @@ logs. Ctrl-C tears all of them down together.
 | `worker`     | —     | `tsup --watch` — rebuilds `guuey.worker.js` on every save                                                                                  |
 | `guuey dev`  | :6790 | local router: spawns your worker per turn, streams SSE; auto-spawns every `colocated` MCP entry — `mcps/todo` lands on its `devPort` :6782 |
 | `ggui serve` | :6781 | local generative-UI server, over `ggui/`                                                                                                   |
-| `web`        | :6890 | the Vite chat SPA                                                                                                                          |
+| `web`        | :6890 | the product frontend (landing/login/home/chat on @guuey/chat)                                                                              |
 
 The todo MCP still answers on :6782 — it's just a supervised child of
 `guuey dev` now (copy `mcps/todo/` to add your own server; new `colocated`

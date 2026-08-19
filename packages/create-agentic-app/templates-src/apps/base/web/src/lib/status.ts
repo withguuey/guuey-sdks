@@ -1,11 +1,14 @@
 /**
  * Live-ness probe for the Home page.
  *
- * Probes the agent's own `/healthz` from the browser — the pod's CORS
- * admits the app's allowed domains (plus localhost in dev), so this works
- * exactly where the chat itself works. The platform's richer status API is
- * credentialed and guuey-origin-CORS'd, so the CLI is the tool for detail:
- * `pnpm status` runs `guuey apps get` + `guuey agent status`.
+ * Probes the agent's invoke route with a CORS preflight-shaped OPTIONS —
+ * the ONE route both servers answer cross-origin: the pod's CORS covers
+ * `/agent/invoke` for the app's allowed domains, and `guuey dev --serve`
+ * answers OPTIONS 204 on it too. (A bare `/healthz` GET carries no CORS
+ * headers on either server, so it is useless from a browser.) The
+ * platform's richer status API is credentialed and guuey-origin-CORS'd, so
+ * the CLI is the tool for detail: `pnpm status` runs `guuey apps get` +
+ * `guuey agent status`.
  */
 import { agentEndpointUrl, isLinked } from "../config";
 
@@ -25,9 +28,12 @@ export type AgentProbe =
 export async function probeAgent(): Promise<AgentProbe> {
   const base = agentEndpointUrl().replace(/\/+$/, "");
   try {
-    const res = await fetch(`${base}/healthz`, { signal: AbortSignal.timeout(5000) });
+    const res = await fetch(`${base}/agent/invoke`, {
+      method: "OPTIONS",
+      signal: AbortSignal.timeout(5000),
+    });
     if (res.ok) return { state: "reachable" };
-    return { state: "unreachable", hint: `healthz answered ${res.status}` };
+    return { state: "unreachable", hint: `agent answered ${res.status}` };
   } catch {
     return {
       state: "unreachable",

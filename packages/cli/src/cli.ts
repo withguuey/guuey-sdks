@@ -1039,11 +1039,17 @@ async function main(): Promise<void> {
   }
 }
 
+// `--json` promises MACHINE-PARSEABLE stdout: the update notice must never
+// pollute it (a scaffold's bootstrap JSON.parses `apps get --json` output —
+// one stray line breaks every scripted consumer the moment a newer version
+// publishes). Stderr keeps the human informed either way.
+const JSON_MODE = process.argv.includes('--json');
+
 main()
   .then(async () => {
     // Show update notice after command completes (non-blocking)
     const latest = await updateCheckPromise;
-    if (latest) printUpdateNotice(latest, VERSION);
+    if (latest && !JSON_MODE) printUpdateNotice(latest, VERSION);
   })
   .catch(async (err: unknown) => {
     if (err instanceof ApiError) {
@@ -1056,6 +1062,6 @@ main()
     }
     // Still show update notice on error
     const latest = await updateCheckPromise.catch(() => null);
-    if (latest) printUpdateNotice(latest, VERSION);
+    if (latest && !JSON_MODE) printUpdateNotice(latest, VERSION);
     process.exit(1);
   });

@@ -28,7 +28,8 @@ export function TalkOnMobile() {
       {target ? (
         <>
           <p className="calm">
-            Scan with a phone — the same agent, same memory, in the guuey portal.
+            Scan with a phone — the same agent, in the guuey portal. (The portal
+            has its own sign-in, so phone conversations are separate threads.)
           </p>
           <canvas ref={canvasRef} className="qr" />
           <p>

@@ -481,7 +481,9 @@ async function handleRequest(
   sessions: Map<string, SessionState>,
 ): Promise<void> {
   if (req.method === "GET" && req.url === "/healthz") {
-    res.writeHead(200, { "Content-Type": "text/plain" });
+    // CORS so a browser frontend (the scaffolded web app on another port)
+    // can probe liveness — every other route already carries these.
+    res.writeHead(200, { "Content-Type": "text/plain", ...CORS_HEADERS });
     res.end("ok");
     return;
   }

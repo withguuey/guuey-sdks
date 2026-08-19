@@ -2,7 +2,7 @@
 // Pack-tarball scaffold smoke (silverprotocol pack-smoke pattern):
 // validates what npm users actually install, before anything is published.
 // The pack/override mechanism itself lives in `./lib/pack-cohort.mjs`
-// (shared with `../e2e/scripts/dev-env-e2e.mjs` — stage-3 real-infra e2e
+// (shared with `e2e/scaffolder/scripts/dev-env-e2e.mjs` — stage-3 real-infra e2e
 // reuses the exact same tarball-override scaffold, since npm publishes may
 // not exist yet either).
 import { execFileSync } from "node:child_process";

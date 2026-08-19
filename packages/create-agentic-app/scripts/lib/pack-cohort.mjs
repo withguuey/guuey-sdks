@@ -2,7 +2,7 @@
 // Shared pack-tarball-cohort helper (silverprotocol `pack-smoke` pattern):
 // validates what npm users actually install, before anything is published.
 // Extracted from scaffold-smoke.mjs so the stage-3 dev-env e2e script
-// (`../../e2e/scripts/dev-env-e2e.mjs`) can reuse the exact same mechanism
+// (`e2e/scaffolder/scripts/dev-env-e2e.mjs`) can reuse the exact same mechanism
 // instead of re-deriving it — see the scaffolder-e2e-tiers plan (Task 3,
 // Global Constraints: "reuse, not duplicate").
 import { execFileSync } from "node:child_process";

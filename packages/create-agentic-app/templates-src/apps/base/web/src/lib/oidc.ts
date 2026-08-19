@@ -60,9 +60,12 @@ export async function currentUser(): Promise<User | null> {
 }
 
 /**
- * `getAccessToken` for `<GuueyChat>`: the current ID token, refreshed via
- * silent renew when the IdP supports it; null when signed out (the caller
- * falls back to guest mode — never mix the two on one surface).
+ * `getAccessToken` for `<GuueyChat>`: the current stored ID token, or null
+ * when signed out / expired (the chat surfaces it as needs-sign-in; they
+ * never silently fall back to guest — one identity mode per surface).
+ * There is NO silent renew here — when the session expires the user signs
+ * in again via /login. Wiring `automaticSilentRenew` (plus a silent
+ * redirect page) is the documented upgrade if your IdP supports it.
  */
 export async function getBearerToken(): Promise<string | null> {
   const user = await currentUser();
