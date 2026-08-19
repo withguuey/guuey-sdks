@@ -90,7 +90,15 @@ export async function login(flags: Record<string, string | true> = {}): Promise<
     const authUrl = pasteAuthorizeUrl(endpoint);
     console.log('Open this URL in a browser to authenticate:\n');
     console.log(`  ${authUrl}\n`);
-    console.log('Then paste the token shown in the browser here (input is hidden):');
+    // Claim "hidden" only when it is true: echo-muting is TTY-gated below,
+    // and interactive-but-non-TTY stdin (git-bash/mintty ptys present as
+    // pipes) still echoes at the pty layer — a hiddenness claim there would
+    // be false security.
+    console.log(
+      process.stdin.isTTY === true
+        ? 'Then paste the token shown in the browser here (input is hidden):'
+        : 'Then paste the token shown in the browser here:',
+    );
     let tokens: AuthTokens;
     try {
       // Paste is the ONLY channel here — an input that ends without a valid
@@ -277,12 +285,19 @@ export function waitForPastedToken(
       // channel owns the outcome).
     });
     // Terminal mode (raw): Ctrl-C no longer delivers SIGINT to the process —
-    // readline surfaces it as an event. Restore the terminal and exit with
-    // the conventional SIGINT status so Ctrl-C keeps working mid-paste.
+    // readline surfaces it as an event. Mark done FIRST (rl.close() emits
+    // 'close' synchronously; without the flag the EOF branch would schedule
+    // a spurious rejection), restore the terminal, then RE-RAISE the signal
+    // so the process dies BY SIGINT (WIFSIGNALED) — a plain exit(130) would
+    // hide the interrupt from wrapping shells' abort-on-child-SIGINT
+    // convention (e.g. a `for` loop would keep iterating past Ctrl-C). No
+    // process-level SIGINT listener is installed, so the default
+    // disposition terminates.
     rl.on('SIGINT', () => {
+      done = true;
       release();
       process.stdout.write('\n');
-      process.exit(130);
+      process.kill(process.pid, 'SIGINT');
     });
   });
 }
