@@ -520,6 +520,15 @@ export interface PlanViewSummary {
   channel: ViewMountChannel | null;
   /** Null when the locator is dead (the R13 expired path). */
   mount: ViewMount | null;
+  /** The persisted `ui://` locator actions bind to (guuey#158), or null. */
+  actionScope: string | null;
+  /**
+   * Provenance: a LIVE fold mount vs a persisted HISTORY card. The roster
+   * is in transcript order (history cards sit with the settled prefix), so
+   * "newest" recency needs this — live outranks history, exactly
+   * {@link newestViewKey}'s walk.
+   */
+  origin: "live" | "history";
 }
 
 export interface TranscriptPlan {

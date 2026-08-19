@@ -933,6 +933,10 @@ export function planTranscript(
       phase: item.phase,
       channel: item.channel,
       mount: item.mount,
+      actionScope: item.actionScope,
+      // The kit's own key scheme is authoritative here: `card.{seq}` is
+      // exactly the history-card emission (this file builds both).
+      origin: item.key.startsWith("card.") ? "history" : "live",
     });
   }
 

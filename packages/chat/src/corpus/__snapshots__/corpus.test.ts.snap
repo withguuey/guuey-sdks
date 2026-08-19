@@ -1175,6 +1175,7 @@ exports[`corpus > 7. view-never-handshakes — channel-aware labels on both chan
   "status": null,
   "views": [
     {
+      "actionScope": null,
       "channel": "inline",
       "key": "view.tInline",
       "mount": {
@@ -1185,16 +1186,19 @@ exports[`corpus > 7. view-never-handshakes — channel-aware labels on both chan
           "uri": "ui://forms/1",
         },
       },
+      "origin": "live",
       "phase": "no-handshake",
       "title": "render form",
     },
     {
+      "actionScope": "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee",
       "channel": "locator",
       "key": "view.tGgui",
       "mount": {
         "channel": "locator",
         "resourceUri": "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee",
       },
+      "origin": "live",
       "phase": "no-handshake",
       "title": "ggui render",
     },
@@ -1301,19 +1305,23 @@ exports[`corpus > 9. history-dead-locators — the expired path beside a healthy
   "status": null,
   "views": [
     {
+      "actionScope": "ui://ggui/render/old/1",
       "channel": "locator",
       "key": "card.1",
       "mount": {
         "channel": "locator",
         "resourceUri": "ui://ggui/render/old/1",
       },
+      "origin": "history",
       "phase": "negotiating",
       "title": "Card",
     },
     {
+      "actionScope": null,
       "channel": null,
       "key": "card.2",
       "mount": null,
+      "origin": "history",
       "phase": "expired",
       "title": "Card",
     },
@@ -1659,6 +1667,7 @@ exports[`corpus > 15. tools-around-a-view — the group SPLITS at the view's pos
   "status": null,
   "views": [
     {
+      "actionScope": null,
       "channel": "inline",
       "key": "view.t3",
       "mount": {
@@ -1669,6 +1678,7 @@ exports[`corpus > 15. tools-around-a-view — the group SPLITS at the view's pos
           "uri": "ui://cards/slot-picker",
         },
       },
+      "origin": "live",
       "phase": "negotiating",
       "title": "ggui render",
     },
@@ -1814,22 +1824,26 @@ exports[`corpus > 19. persisted-plus-live — the fold owns its trailing turns; 
   },
   "views": [
     {
+      "actionScope": "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee",
       "channel": "locator",
       "key": "view.tA",
       "mount": {
         "channel": "locator",
         "resourceUri": "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee",
       },
+      "origin": "live",
       "phase": "negotiating",
       "title": "ggui render",
     },
     {
+      "actionScope": "ui://ggui/render/old/1",
       "channel": "locator",
       "key": "card.1",
       "mount": {
         "channel": "locator",
         "resourceUri": "ui://ggui/render/old/1",
       },
+      "origin": "history",
       "phase": "negotiating",
       "title": "Card",
     },
@@ -2018,6 +2032,7 @@ exports[`corpus > 22. promoted-view — the stage's mount chips (guuey#204); oth
   "status": null,
   "views": [
     {
+      "actionScope": null,
       "channel": "inline",
       "key": "view.t1",
       "mount": {
@@ -2028,10 +2043,12 @@ exports[`corpus > 22. promoted-view — the stage's mount chips (guuey#204); oth
           "uri": "ui://cards/t1",
         },
       },
+      "origin": "live",
       "phase": "negotiating",
       "title": "ggui render",
     },
     {
+      "actionScope": null,
       "channel": "inline",
       "key": "view.t2",
       "mount": {
@@ -2042,6 +2059,7 @@ exports[`corpus > 22. promoted-view — the stage's mount chips (guuey#204); oth
           "uri": "ui://cards/t2",
         },
       },
+      "origin": "live",
       "phase": "negotiating",
       "title": "ggui render",
     },
@@ -2093,12 +2111,14 @@ exports[`corpus > 23. meta-less-locator — a \`_meta\`-withholding producer's r
   "status": null,
   "views": [
     {
+      "actionScope": "ui://ggui/render/render_dark/h1",
       "channel": "locator",
       "key": "view.t1",
       "mount": {
         "channel": "locator",
         "resourceUri": "ui://ggui/render/render_dark/h1",
       },
+      "origin": "live",
       "phase": "negotiating",
       "title": "ggui render",
     },
@@ -2159,12 +2179,14 @@ exports[`corpus > 24. prod-wire-ggui-render — ggui's production posture: no _m
   "status": null,
   "views": [
     {
+      "actionScope": "ui://ggui/render/render_5d11b1b4-75ba-44e5-81bb-0b420b86bb8e/7328555b44e72bd7",
       "channel": "locator",
       "key": "view.t1",
       "mount": {
         "channel": "locator",
         "resourceUri": "ui://ggui/render/render_5d11b1b4-75ba-44e5-81bb-0b420b86bb8e/7328555b44e72bd7",
       },
+      "origin": "live",
       "phase": "negotiating",
       "title": "ggui render",
     },
@@ -2230,6 +2252,7 @@ exports[`corpus > 25. chips-presentation — EVERY view chips; the promoted key 
   "status": null,
   "views": [
     {
+      "actionScope": null,
       "channel": "inline",
       "key": "view.t1",
       "mount": {
@@ -2240,10 +2263,12 @@ exports[`corpus > 25. chips-presentation — EVERY view chips; the promoted key 
           "uri": "ui://cards/t1",
         },
       },
+      "origin": "live",
       "phase": "negotiating",
       "title": "ggui render",
     },
     {
+      "actionScope": null,
       "channel": "inline",
       "key": "view.t2",
       "mount": {
@@ -2254,6 +2279,7 @@ exports[`corpus > 25. chips-presentation — EVERY view chips; the promoted key 
           "uri": "ui://cards/t2",
         },
       },
+      "origin": "live",
       "phase": "negotiating",
       "title": "ggui render",
     },
