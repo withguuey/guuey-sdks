@@ -149,17 +149,43 @@ function foldAssistantSources(
   const hasTurnIdentity = result.messages.some(
     (m) => m.role === "assistant" && m.turnId !== undefined,
   );
+  // ONE source per conversational TURN, not per assistant message segment
+  // (guuey#306 — the mis-slotting bug): a pod fold emits SEVERAL assistant
+  // messages per turn (thought/text/tool interleave — a generative-card
+  // turn is ~6-8 segments), and the conversation loop pairs users to
+  // sources BY SLOT — per-segment sources stretched the index space, so
+  // from turn 2 on every user bubble rendered clustered inside turn 1's
+  // segment run. Grouping: a `user` row closes the current group (the
+  // fold's messages are the whole conversation, users included), and a
+  // turnId CHANGE between assistant segments splits too (identity beats
+  // adjacency — two turns without an intervening user row still separate).
   const sources: AssistantSource[] = [];
   const notices: FoldNotice[] = [];
+  let current: AssistantSource | null = null;
+  let currentTurnId: string | undefined;
   for (const m of result.messages) {
-    if (m.role === "assistant") {
-      sources.push({
-        blocks: [...m.content],
-        live: inFlight && hasTurnIdentity && m.turnId !== undefined && openTurns.has(m.turnId),
-        stopped: false,
-      });
+    if (m.role === "user") {
+      current = null;
+      currentTurnId = undefined;
+    } else if (m.role === "assistant") {
+      const startsNewTurn =
+        current === null ||
+        (m.turnId !== undefined && currentTurnId !== undefined && m.turnId !== currentTurnId);
+      if (startsNewTurn) {
+        current = { blocks: [], live: false, stopped: false };
+        sources.push(current);
+        currentTurnId = undefined;
+      }
+      if (m.turnId !== undefined) currentTurnId = m.turnId;
+      current!.blocks.push(...m.content);
+      if (inFlight && hasTurnIdentity && m.turnId !== undefined && openTurns.has(m.turnId)) {
+        current!.live = true;
+      }
     } else if (m.role === "tool" && sources.length > 0) {
-      sources[sources.length - 1]!.blocks.push(...m.content);
+      // Tool results belong to the turn in progress — or, when they trail a
+      // user boundary before the next assistant segment, to the PRECEDING
+      // turn (the pre-#306 last-source semantics, kept).
+      (current ?? sources[sources.length - 1]!).blocks.push(...m.content);
     } else if (m.role === "notice") {
       // R16 (spec draft.2): a session annotation — a PEER row, never folded
       // into assistant content; it anchors after the source it followed.
@@ -178,10 +204,33 @@ function foldAssistantSources(
   return { sources, notices };
 }
 
+/**
+ * Flat assistant rows grouped by conversational ORDER (guuey#306): a user
+ * row closes the current slot, consecutive assistant rows merge into one —
+ * the assembler's interleave IS the turn structure, and the old
+ * filter/zip threw it away (double/empty assistant rows drifted every
+ * later user bubble by one). Shared by the flat path and the fold-vs-flat
+ * seam, so both count the same slots.
+ */
+function flatSettledGroups(messages: TranscriptInputs["messages"]): AssistantSource[] {
+  const groups: AssistantSource[] = [];
+  let current: AssistantSource | null = null;
+  for (const m of messages) {
+    if (m.role === "user") {
+      current = null;
+    } else if (m.role === "assistant") {
+      if (current === null) {
+        current = { blocks: [], live: false, stopped: false };
+        groups.push(current);
+      }
+      current.blocks.push({ type: "text", text: m.text });
+    }
+  }
+  return groups;
+}
+
 function flatAssistantSources(inputs: TranscriptInputs, inFlight: boolean): AssistantSource[] {
-  const settled: AssistantSource[] = inputs.messages
-    .filter((m) => m.role === "assistant")
-    .map((m) => ({ blocks: [{ type: "text", text: m.text }], live: false, stopped: false }));
+  const settled: AssistantSource[] = flatSettledGroups(inputs.messages);
   // The in-flight (or abort-kept) partial is its own trailing slot — settled
   // turns live in `messages`; `assistantText` is ignored once `ready` again
   // UNLESS the turn ended by abort (R1 aborted-partial keeps it).
@@ -727,29 +776,23 @@ export function planTranscript(
   // keep rendering as flat text slots in front. When the fold spans the
   // whole conversation (a pure-live session — the corpus's world), the kept
   // prefix is empty and the plan is byte-identical to the old wholesale
-  // replace. Alignment is by COUNT (trailing flat entries ↔ settled fold
-  // sources): flat rows carry no turn identity, so a persisted CARD-ONLY
-  // turn inside the fold's span (an empty-text assistant row the assembler
-  // dropped) can offset the seam by one — a documented approximation, same
-  // class as the header's read-plane-seq note, resolved for the visible
-  // cards by the actionScope dedupe below.
+  // replace. Alignment counts TURNS on
+  // both sides (guuey#306): fold sources group per turn (user boundary +
+  // turnId change), flat entries group by conversational order — the old
+  // per-message COUNT approximation (and its one-off seam drift on
+  // card-only turns) is gone.
   let assistants: AssistantSource[];
   if (inputs.result) {
     const fold = foldAssistantSources(inputs.result, inFlight, inputs.aborted === true);
     const foldSources = fold.sources;
     const settledFoldCount = foldSources.filter((s) => !s.live).length;
-    const flatSettled = inputs.messages.filter((m) => m.role === "assistant");
-    const keep = Math.max(0, flatSettled.length - settledFoldCount);
-    assistants = [
-      ...flatSettled.slice(0, keep).map(
-        (m): AssistantSource => ({
-          blocks: [{ type: "text", text: m.text }],
-          live: false,
-          stopped: false,
-        }),
-      ),
-      ...foldSources,
-    ];
+    // Both sides of the seam now count TURNS (guuey#306): fold sources are
+    // per-turn groups, and the flat prefix uses the SAME order-derived
+    // grouping — the old per-message counts were the documented
+    // approximation this replaces.
+    const flatGroups = flatSettledGroups(inputs.messages);
+    const keep = Math.max(0, flatGroups.length - settledFoldCount);
+    assistants = [...flatGroups.slice(0, keep), ...foldSources];
     if (policy.notice.show) {
       // Fold-borne notices anchor to the fold source they followed, which
       // sits at global slot `keep + afterSourceIndex` after the seam.
