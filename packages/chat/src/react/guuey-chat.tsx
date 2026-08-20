@@ -57,13 +57,15 @@ import {
   type ReactNode,
 } from "react";
 import {
+  createUiActionRelay,
   createUiResourceReader,
   createWebAdapters,
   type AgentInvokeAdapters,
 } from "@guuey/agent-client";
 import type { AgHitlAnswer, AgPausedAsk } from "@silverprotocol/core";
 import { useAgentInvoke } from "@guuey/agent-client/react";
-import type { UiResourceReader } from "@guuey/mcp-apps-host";
+import { unavailableToolCallResult } from "@guuey/mcp-apps-host";
+import type { McpToolCallResult, UiActionRequest, UiResourceReader } from "@guuey/mcp-apps-host";
 import { calmPolicy, debugPolicy, type TranscriptPolicy } from "../policy.js";
 import { useStructuralIdentity } from "./structural-identity.js";
 import { defaultChatStrings, type ChatStrings } from "../strings.js";
@@ -91,8 +93,16 @@ import { oauthPromptAction, useOAuthReturn } from "./oauth-return.js";
 export function viewPropsWithThemeAnnounce(
   viewProps: TranscriptItemContext["viewProps"],
   mode: ThemeMode,
+  defaults: Pick<ViewSlotProps, "onCallTool" | "onUpdateModelContext"> = {},
 ): TranscriptItemContext["viewProps"] {
   const themed = (base: ViewSlotProps | undefined): ViewSlotProps => ({
+    // Kit-default host wires (guuey#335): the ACTION RELAY (Confirm inside
+    // a rendered card is a tools/call — without a relay the initialize-only
+    // host -32601s and the interaction visibly fails) and the
+    // model-context sink (a COMPLEMENT channel — producers mirror the
+    // snapshot server-side, so a recording sink is honest). A caller-
+    // declared slot prop always wins.
+    ...defaults,
     ...base,
     hostContext: { theme: mode, ...base?.hostContext },
   });
@@ -136,6 +146,16 @@ export interface GuueyChatHandle {
    * {@link GuueyChatProps.onThread}.
    */
   readonly threadId: string | null;
+  /**
+   * The slot props the kit's OWN inline mounts run with — theme announce,
+   * default action relay, model-context sink (guuey#335). A host mounting
+   * a roster view on its own canvas (`<GuueyView {...handle.viewSlotProps()}`>)
+   * gets the identical wiring, so a rendered card's Confirm works there
+   * too. Live values (read on demand); when the host passed a FUNCTION-form
+   * `viewProps`, this returns the kit defaults (per-item resolution belongs
+   * to the transcript).
+   */
+  viewSlotProps(): ViewSlotProps;
 }
 
 export interface GuueyChatProps {
@@ -423,10 +443,67 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // `viewProps.hostContext` keys win; `theme` is only defaulted. Hosts
   // mounting views DIRECTLY (a canvas over the roster) announce on their
   // own <GuueyView hostContext> — this covers the kit's own mounts.
+  // The DEFAULT ACTION RELAY (guuey#335 — the founder-hit Confirm bug):
+  // pod-then-persisted, built over the SAME identity as the reader, thread
+  // read through the ref at CALL time. Without it, a kit-mounted render's
+  // tools/call hits an initialize-only host and the card's interaction
+  // visibly fails — the #221 batteries-included treatment, applied to the
+  // ACTION half. No thread yet ⇒ the in-band unavailable result (a card
+  // cannot exist before its thread, but a race answers honestly).
+  const defaultOnCallTool = useMemo<((request: UiActionRequest) => Promise<McpToolCallResult>) | undefined>(() => {
+    if (apiBaseUrl === undefined) return undefined;
+    return async (request) => {
+      const threadId = threadIdRef.current;
+      if (threadId === null) return unavailableToolCallResult();
+      const getToken = getAccessTokenRef.current;
+      const getGuest = getGuestSecretRef.current;
+      const relay = createUiActionRelay({
+        apiBaseUrl,
+        threadId,
+        endpointUrl,
+        ...(getToken !== undefined ? { getAccessToken: getToken } : {}),
+        guestSecret: getGuest !== undefined ? getGuest() : null,
+      });
+      return relay(request);
+    };
+  }, [apiBaseUrl, endpointUrl]);
+
+  // Model-context sink (guuey#335): the snapshot is a complement (producers
+  // mirror it server-side), so recording to the debug surface is the honest
+  // kit default — and answering the method keeps strict producers green.
+  const onDebugEventRef = useRef(onDebugEvent);
+  onDebugEventRef.current = onDebugEvent;
+  const defaultOnUpdateModelContext = useCallback((params: { [key: string]: unknown }) => {
+    onDebugEventRef.current?.({
+      type: "model-context-update",
+      byteSize: JSON.stringify(params)?.length ?? 0,
+    });
+  }, []);
+
   const effectiveViewProps = useMemo<TranscriptItemContext["viewProps"]>(
-    () => viewPropsWithThemeAnnounce(viewProps, mode),
-    [viewProps, mode],
+    () =>
+      viewPropsWithThemeAnnounce(viewProps, mode, {
+        ...(defaultOnCallTool !== undefined ? { onCallTool: defaultOnCallTool } : {}),
+        onUpdateModelContext: defaultOnUpdateModelContext,
+      }),
+    [viewProps, mode, defaultOnCallTool, defaultOnUpdateModelContext],
   );
+
+  // The canvas-host door (guuey#335): a host mounting views DIRECTLY from
+  // the roster (the chat-rail shell) needs the SAME slot wiring the kit's
+  // inline mounts get — theme announce, action relay, context sink. Read
+  // through a ref so the lifetime-stable handle always hands out current
+  // wiring; a caller-passed FUNCTION-form viewProps resolves per transcript
+  // item only, so the handle returns the kit defaults in that case.
+  const staticSlotPropsRef = useRef<ViewSlotProps>({});
+  staticSlotPropsRef.current =
+    typeof effectiveViewProps === "function"
+      ? {
+          ...(defaultOnCallTool !== undefined ? { onCallTool: defaultOnCallTool } : {}),
+          onUpdateModelContext: defaultOnUpdateModelContext,
+          hostContext: { theme: mode },
+        }
+      : (effectiveViewProps ?? {});
 
   // ── Composer ─────────────────────────────────────────────────────────
   const [input, setInput] = useState("");
@@ -477,6 +554,9 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       get threadId(): string | null {
         return threadIdRef.current;
       },
+      // Same live-read discipline as `threadId`: the ref always holds the
+      // CURRENT kit wiring (guuey#335 — the canvas-host door).
+      viewSlotProps: (): ViewSlotProps => staticSlotPropsRef.current,
     }),
     [],
   );

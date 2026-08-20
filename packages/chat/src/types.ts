@@ -503,7 +503,14 @@ export type ChatDebugEvent =
       diagnosis?: ViewCspDiagnosis;
     }
   | { type: "unknown-block"; key: ItemKey; typeName: string; byteSize: number }
-  | { type: "turn-recovered"; marker: string };
+  | { type: "turn-recovered"; marker: string }
+  /**
+   * A view pushed a `ui/update-model-context` snapshot and the kit's
+   * default sink recorded it (guuey#335). The snapshot itself is a
+   * COMPLEMENT — producers mirror it server-side — so the debug surface
+   * carries the fact and the size, not the payload.
+   */
+  | { type: "model-context-update"; byteSize: number };
 
 /**
  * One renderable view the plan saw, BEFORE any chips/promotion pass —

@@ -24,6 +24,7 @@ function behavior(overrides: Partial<ViewHostBehavior> = {}): ViewHostBehavior {
     hostContext: { locale: "en-US" },
     toolRelay: false,
     resourceRelay: false,
+    modelContextSink: false,
     ...overrides,
   };
 }
@@ -410,5 +411,63 @@ describe("diagnoseCspViolation — pure verdict (guuey#235)", () => {
         { resourceDomains: ["not a url", "https://assets.mcp.example"] },
       )?.suggestedEntry,
     ).toBe("https://assets.mcp.example");
+  });
+});
+
+
+// ─── ui/update-model-context (guuey#335) ───────────────────────────────────
+describe("ui/update-model-context", () => {
+  it("with a sink wired: answers success AND emits the delivery effect", () => {
+    const { effects } = viewHostReceive(
+      initialViewHostState(),
+      behavior({ modelContextSink: true }),
+      {
+        jsonrpc: "2.0",
+        id: 16,
+        method: "ui/update-model-context",
+        params: { structuredContent: { slot: "tuesday-3pm" } },
+      },
+    );
+    expect(effects).toEqual([
+      { kind: "respond", message: { jsonrpc: "2.0", id: 16, result: {} } },
+      { kind: "model-context-update", params: { structuredContent: { slot: "tuesday-3pm" } } },
+    ]);
+  });
+
+  it("unwired: refuses in-band like every other unsupported method", () => {
+    const { effects } = viewHostReceive(initialViewHostState(), behavior(), {
+      jsonrpc: "2.0",
+      id: 16,
+      method: "ui/update-model-context",
+      params: {},
+    });
+    expect(effects).toHaveLength(1);
+    const only = effects[0];
+    if (only?.kind !== "respond") throw new Error("expected a respond effect");
+    expect(JSON.stringify(only.message)).toContain("method_not_supported");
+  });
+
+  it("the wired method joins the answered list in refusals of OTHER methods", () => {
+    const { effects } = viewHostReceive(
+      initialViewHostState(),
+      behavior({ modelContextSink: true }),
+      { jsonrpc: "2.0", id: 9, method: "ui/no-such-thing", params: {} },
+    );
+    const only = effects[0];
+    if (only?.kind !== "respond") throw new Error("expected a respond effect");
+    expect(JSON.stringify(only.message)).toContain("ui/update-model-context");
+  });
+
+  it("malformed params collapse to an empty bag — success + delivery, never a hang", () => {
+    const { effects } = viewHostReceive(
+      initialViewHostState(),
+      behavior({ modelContextSink: true }),
+      { jsonrpc: "2.0", id: 17, method: "ui/update-model-context", params: "nope" },
+    );
+    expect(effects[0]).toEqual({
+      kind: "respond",
+      message: { jsonrpc: "2.0", id: 17, result: {} },
+    });
+    expect(effects[1]).toEqual({ kind: "model-context-update", params: {} });
   });
 });

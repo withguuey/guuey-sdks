@@ -640,3 +640,82 @@ describe("viewPropsWithThemeAnnounce", () => {
     });
   });
 });
+
+// ─── Kit-default host wiring (guuey#335 — the founder-hit Confirm bug) ─────
+describe("kit-default view-host wiring (guuey#335)", () => {
+  it("viewPropsWithThemeAnnounce fills the default wires; caller-declared slots win", () => {
+    const kitRelay = async () => ({ content: [] });
+    const kitSink = () => {};
+    const out = viewPropsWithThemeAnnounce(undefined, "light", {
+      onCallTool: kitRelay,
+      onUpdateModelContext: kitSink,
+    });
+    expect(out).toEqual({
+      onCallTool: kitRelay,
+      onUpdateModelContext: kitSink,
+      hostContext: { theme: "light" },
+    });
+
+    const own = async () => ({ content: [] });
+    const withOwn = viewPropsWithThemeAnnounce({ onCallTool: own }, "light", {
+      onCallTool: kitRelay,
+      onUpdateModelContext: kitSink,
+    });
+    if (typeof withOwn === "function") throw new Error("static in, static out");
+    expect(withOwn?.onCallTool).toBe(own);
+    expect(withOwn?.onUpdateModelContext).toBe(kitSink);
+  });
+
+  it("handle.viewSlotProps() hands a canvas host the relay + sink + theme announce", async () => {
+    const { adapters } = scriptedAdapters();
+    let handle: GuueyChatHandle | null = null;
+    renderChat(adapters, {
+      apiBaseUrl: "https://api.example/v1",
+      mode: "dark",
+      onReady: (h) => {
+        handle = h;
+      },
+    });
+    await waitFor(() => expect(handle).not.toBeNull());
+    const slot = handle!.viewSlotProps();
+    expect(typeof slot.onCallTool).toBe("function");
+    expect(typeof slot.onUpdateModelContext).toBe("function");
+    expect(slot.hostContext).toEqual({ theme: "dark" });
+  });
+
+  it("without apiBaseUrl there is no default relay — the slot stays honest", async () => {
+    const { adapters } = scriptedAdapters();
+    let handle: GuueyChatHandle | null = null;
+    renderChat(adapters, {
+      onReady: (h) => {
+        handle = h;
+      },
+    });
+    await waitFor(() => expect(handle).not.toBeNull());
+    expect(handle!.viewSlotProps().onCallTool).toBeUndefined();
+    expect(typeof handle!.viewSlotProps().onUpdateModelContext).toBe("function");
+  });
+
+  it("the default model-context sink records to the debug surface (fact + size, not payload)", async () => {
+    const { adapters } = scriptedAdapters();
+    const events: Array<{ type: string }> = [];
+    let handle: GuueyChatHandle | null = null;
+    renderChat(adapters, {
+      apiBaseUrl: "https://api.example/v1",
+      preset: "debug",
+      onDebugEvent: (e) => events.push(e),
+      onReady: (h) => {
+        handle = h;
+      },
+    });
+    await waitFor(() => expect(handle).not.toBeNull());
+    const sink = handle!.viewSlotProps().onUpdateModelContext;
+    if (sink === undefined) throw new Error("sink expected");
+    sink({ structuredContent: { slot: "tuesday-3pm" } });
+    const recorded = events.find((e) => e.type === "model-context-update");
+    expect(recorded).toEqual({
+      type: "model-context-update",
+      byteSize: JSON.stringify({ structuredContent: { slot: "tuesday-3pm" } }).length,
+    });
+  });
+});

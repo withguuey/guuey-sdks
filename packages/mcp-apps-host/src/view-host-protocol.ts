@@ -61,6 +61,16 @@ const METHOD_NOT_SUPPORTED = -32601;
 export const TOOLS_CALL_METHOD = "tools/call";
 
 /**
+ * The spec method a view uses to push a model-context snapshot at its host
+ * (`McpUiUpdateModelContextRequest`). A local constant — the ext-apps root
+ * exports the TYPE but no method constant for it (guuey#335). Producers
+ * (ggui context-observer) fire it on slot changes as a COMPLEMENT to the
+ * action path; the choice itself always rides tools/call or the live
+ * channel ("Actions drive turns; context observes state").
+ */
+export const UPDATE_MODEL_CONTEXT_METHOD = "ui/update-model-context";
+
+/**
  * The standard MCP method a view uses to read host-proxied resources —
  * `ReadResourceRequest` in the spec's App→Host request union
  * (`@modelcontextprotocol/ext-apps` `AppRequest`). A local constant, same
@@ -154,6 +164,18 @@ export type ViewHostEffect =
     }
   | {
       /**
+       * A `ui/update-model-context` snapshot to hand the embedder
+       * (guuey#335). The machine already ANSWERED the view (success — the
+       * spec result is empty), so this effect is pure delivery: a throwing
+       * sink can never leave the view hanging. Only emitted when
+       * {@link ViewHostBehavior.modelContextSink} is true — unwired, the
+       * machine refuses in-band like every other unsupported request.
+       */
+      kind: "model-context-update";
+      params: { [key: string]: unknown };
+    }
+  | {
+      /**
        * The view reported its content size (`ui/notifications/size-changed`
        * — spec notification, App → Host). At least one of the two fields is
        * a finite number; a notification carrying neither is consumed
@@ -186,6 +208,8 @@ export interface ViewHostBehavior {
   hostContext: McpUiHostContext;
   /** Whether a `tools/call` relay hook is wired (see `view-host.ts`). */
   toolRelay: boolean;
+  /** Whether a model-context sink is wired (see `view-host.ts`, guuey#335). */
+  modelContextSink: boolean;
   /** Whether a `resources/read` relay hook is wired (see `view-host.ts`). */
   resourceRelay: boolean;
 }
@@ -360,6 +384,21 @@ export function viewHostReceive(
     // fall through: a nameless tools/call is not a call we can relay.
   }
 
+  if (req.method === UPDATE_MODEL_CONTEXT_METHOD && behavior.modelContextSink) {
+    // Answer success FIRST-class (the spec result is empty) and hand the
+    // params to the sink as an effect. Producers fire-and-forget this
+    // method (ggui swallows failures), but answering honestly keeps any
+    // strict producer green — and the sink gets the snapshot either way.
+    const params = isPlainObject(req.params) ? req.params : {};
+    return {
+      state,
+      effects: [
+        { kind: "respond", message: { jsonrpc: "2.0", id: req.id, result: {} } },
+        { kind: "model-context-update", params },
+      ],
+    };
+  }
+
   if (req.method === RESOURCES_READ_METHOD && behavior.resourceRelay) {
     const uri = req.params?.["uri"];
     if (typeof uri === "string") {
@@ -372,6 +411,7 @@ export function viewHostReceive(
     INITIALIZE_METHOD,
     ...(behavior.toolRelay ? [TOOLS_CALL_METHOD] : []),
     ...(behavior.resourceRelay ? [RESOURCES_READ_METHOD] : []),
+    ...(behavior.modelContextSink ? [UPDATE_MODEL_CONTEXT_METHOD] : []),
   ];
   return {
     state,

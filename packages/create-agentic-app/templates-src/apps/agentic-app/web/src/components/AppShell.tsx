@@ -20,6 +20,7 @@
  * menu swaps the canvas back to your pages.
  */
 import { useCallback, useRef, useState } from "react";
+import type { GuueyChatHandle } from "@guuey/chat/react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import type { PlanViewSummary, ViewRefItem } from "@guuey/chat";
 import { GuueyView } from "@guuey/mcp-apps-host/react";
@@ -36,6 +37,10 @@ export function AppShell() {
   // here, the rail shows only chips), the selected key, and whether the
   // canvas currently shows a view or the routed pages.
   const [views, setViews] = useState<PlanViewSummary[]>([]);
+  // The chat handle carries the kit's view-host wiring (action relay,
+  // model-context sink, theme announce) — the canvas mounts with it so a
+  // rendered card's Confirm works OUTSIDE the transcript too (guuey#335).
+  const [chat, setChat] = useState<GuueyChatHandle | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | undefined>(undefined);
   const [canvasShowsView, setCanvasShowsView] = useState(false);
   const newestKeyRef = useRef<string | undefined>(undefined);
@@ -103,6 +108,7 @@ export function AppShell() {
             <AgentChat
               className="rail-chat"
               viewsBridge={{ promotedViewKey: selectedKey, onViewRef, onViewsChange }}
+              onReady={setChat}
             />
           </div>
         </aside>
@@ -121,11 +127,13 @@ export function AppShell() {
                   mount={selected.mount}
                   title={selected.title}
                   className="canvas-view-mount"
-                  // guuey#302: the theme announce — render bundles read
-                  // hostContext.theme at ui/initialize, so a canvas mount
-                  // must speak it too or generated UI ignores the app's
-                  // light/dark mode (chat-inline mounts announce via the
-                  // kit; a DIRECT GuueyView mount announces here).
+                  // The kit's slot wiring (guuey#335): action relay +
+                  // model-context sink + the #302 theme announce, identical
+                  // to the transcript's own mounts — Confirm inside a
+                  // canvas-mounted card is a tools/call and needs the relay.
+                  {...(chat !== null ? chat.viewSlotProps() : {})}
+                  // Explicit announce kept (same value the kit defaults):
+                  // the canvas mounts correctly even pre-handle.
                   hostContext={{ theme: appConfig.theme.mode }}
                 />
               ) : (

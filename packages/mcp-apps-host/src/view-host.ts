@@ -118,6 +118,18 @@ export interface AttachViewHostConfig {
    */
   onCallTool?: (request: UiActionRequest) => Promise<McpToolCallResult>;
   /**
+   * Sink for `ui/update-model-context` snapshots (guuey#335): the view
+   * pushes its context state (e.g. ggui slot values) for the model's
+   * FUTURE turns. Wiring it makes the host ANSWER the method (empty
+   * result, per spec) instead of `method_not_supported`, and advertises
+   * `updateModelContext` (an explicit `hostCapabilities` entry still
+   * wins). The machine answers BEFORE delivery — a throwing sink never
+   * leaves the view hanging. Producers treat this channel as a COMPLEMENT
+   * to the action path (the choice itself rides tools/call / the live
+   * channel), so a sink that only records is honest.
+   */
+  onUpdateModelContext?: (params: { [key: string]: unknown }) => void;
+  /**
    * The mounted resource's `ui://` locator — the scope stamped on every
    * relayed {@link UiActionRequest}. Required for the relay to fire;
    * `<GuueyView>` fills it from the mount automatically.
@@ -207,6 +219,7 @@ function hostContextFor(frame: ViewFrameLike, config: AttachViewHostConfig): Mcp
 function behaviorFor(frame: ViewFrameLike, config: AttachViewHostConfig): ViewHostBehavior {
   const relayWired = config.onCallTool !== undefined && config.resourceUri !== undefined;
   const readWired = config.onReadResource !== undefined;
+  const contextSinkWired = config.onUpdateModelContext !== undefined;
   return {
     hostInfo: config.hostInfo ?? DEFAULT_HOST_INFO,
     hostCapabilities: {
@@ -214,11 +227,13 @@ function behaviorFor(frame: ViewFrameLike, config: AttachViewHostConfig): ViewHo
       // hostCapabilities entry still wins (the serverTools precedent).
       ...(relayWired ? { serverTools: {} } : {}),
       ...(readWired ? { serverResources: {} } : {}),
+      ...(contextSinkWired ? { updateModelContext: { text: {} } } : {}),
       ...config.hostCapabilities,
     },
     hostContext: hostContextFor(frame, config),
     toolRelay: relayWired,
     resourceRelay: readWired,
+    modelContextSink: contextSinkWired,
   };
 }
 
@@ -295,6 +310,16 @@ export function attachViewHost(frame: ViewFrameLike, config: AttachViewHostConfi
       if (effect.kind === "respond") post(effect.message);
       else if (effect.kind === "relay-tool-call") relay(effect.id, effect.name, effect.arguments);
       else if (effect.kind === "relay-resource-read") relayRead(effect.id, effect.uri);
+      else if (effect.kind === "model-context-update") {
+        // Delivery only — the machine already answered the view. Contained:
+        // a throwing embedder sink must not unwind the message pump.
+        try {
+          config.onUpdateModelContext?.(effect.params);
+        } catch {
+          // Observer failure is the embedder's bug to notice in its own
+          // logs; the view's contract is already satisfied.
+        }
+      }
       else {
         config.onSizeChanged?.({
           ...(effect.width !== undefined ? { width: effect.width } : {}),
