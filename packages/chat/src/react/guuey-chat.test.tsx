@@ -5,11 +5,12 @@
  * unavailable mode, string overrides. The transport is scripted; nothing
  * else is faked.
  */
-import { createRef, useRef } from "react";
+import { createRef, useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { AgentInvokeAdapters, InvokeRequest } from "@guuey/agent-client";
 import { GuueyChat, type GuueyChatHandle } from "./guuey-chat.js";
+import type { PlanViewSummary } from "../types.js";
 
 afterEach(cleanup);
 
@@ -494,5 +495,102 @@ describe("<GuueyChat> default reader (guuey#221)", () => {
     } finally {
       globalThis.fetch = original;
     }
+  });
+});
+
+// ─── Identity churn (guuey#303 QA — the chat-rail template's render loop) ──
+//
+// The failing shape, live-reproduced by the agentic-app shell: a host that
+// (a) passes `policy` as an INLINE literal, and (b) stores the roster from
+// `onViewsChange` in state. Every emission re-rendered the host, the fresh
+// literal re-minted the policy → plan → views-emission effect → host
+// setState → re-render → "Maximum update depth exceeded". The second leg:
+// with `promotedViewKey` set, the inputs spread was re-minted per render —
+// same loop through the plan's identity path even with a hoisted policy.
+describe("<GuueyChat> host-identity churn", () => {
+  // The breaker caps a regressed loop at 50 renders so the test FAILS
+  // fast instead of starving the event loop for the suite timeout (the
+  // un-broken loop never yields to timers — observed, not theorized).
+  function HostWithInlineLiterals({ adapters }: { adapters: AgentInvokeAdapters }) {
+    const renders = useRef(0);
+    renders.current += 1;
+    const [, setViews] = useState<PlanViewSummary[]>([]);
+    const onViewsChange = renders.current > 50 ? undefined : (next: PlanViewSummary[]) => setViews(next);
+    return (
+      <div data-testid="renders" data-renders={renders.current}>
+        <GuueyChat
+          endpointUrl="https://pod.example/agent/invoke"
+          adapters={adapters}
+          policy={{ view: { timeoutMs: 8000, presentation: "chips" } }}
+          onViewsChange={onViewsChange}
+        />
+      </div>
+    );
+  }
+
+  it("an inline policy literal + roster-in-state host settles instead of looping", async () => {
+    const { adapters } = scriptedAdapters();
+    const { getByTestId } = render(<HostWithInlineLiterals adapters={adapters} />);
+    // One roster emission lands post-mount; give effects a beat to cascade
+    // if they are going to. Pre-fix this line never resolves — React throws
+    // "Maximum update depth exceeded" out of render.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
+    const renders = Number(getByTestId("renders").dataset["renders"]);
+    expect(renders).toBeLessThan(10);
+  });
+
+  const RAIL_POLICY = { view: { timeoutMs: 8000, presentation: "chips" as const } };
+
+  function HostWithPromotedKey({ adapters }: { adapters: AgentInvokeAdapters }) {
+    const renders = useRef(0);
+    renders.current += 1;
+    const [, setViews] = useState<PlanViewSummary[]>([]);
+    const onViewsChange = renders.current > 50 ? undefined : (next: PlanViewSummary[]) => setViews(next);
+    return (
+      <div data-testid="renders-promoted" data-renders={renders.current}>
+        <GuueyChat
+          endpointUrl="https://pod.example/agent/invoke"
+          adapters={adapters}
+          policy={RAIL_POLICY}
+          promotedViewKey="view-1"
+          onViewsChange={onViewsChange}
+        />
+      </div>
+    );
+  }
+
+  it("a set promotedViewKey does not re-open the loop (hoisted policy, per-render spread leg)", async () => {
+    const { adapters } = scriptedAdapters();
+    const { getByTestId } = render(<HostWithPromotedKey adapters={adapters} />);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
+    const renders = Number(getByTestId("renders-promoted").dataset["renders"]);
+    expect(renders).toBeLessThan(10);
+  });
+
+  it("fresh getter arrows per render keep one adapter/reader identity (no transport re-mint)", async () => {
+    // No `adapters` prop here — the getter props feed createWebAdapters, so
+    // this covers the default-construction path the templates use.
+    function GetterHost() {
+      const [, setViews] = useState<PlanViewSummary[]>([]);
+      return (
+        <GuueyChat
+          endpointUrl="https://pod.example/agent/invoke"
+          apiBaseUrl="https://api.example/v1"
+          policy={RAIL_POLICY}
+          getGuestSecret={() => "guest-secret"}
+          onViewsChange={(next) => setViews(next)}
+        />
+      );
+    }
+    render(<GetterHost />);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
+    // Settling at all is the assertion — pre-fix the getter arrows churned
+    // the adapters memo every render on this path.
   });
 });

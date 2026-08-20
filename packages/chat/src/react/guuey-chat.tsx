@@ -65,6 +65,7 @@ import type { AgHitlAnswer, AgPausedAsk } from "@silverprotocol/core";
 import { useAgentInvoke } from "@guuey/agent-client/react";
 import type { UiResourceReader } from "@guuey/mcp-apps-host";
 import { calmPolicy, debugPolicy, type TranscriptPolicy } from "../policy.js";
+import { useStructuralIdentity } from "./structural-identity.js";
 import { defaultChatStrings, type ChatStrings } from "../strings.js";
 import { DEFAULT_CHAT_THEME, type GuueyChatTheme } from "../theme.js";
 import type {
@@ -274,15 +275,37 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     style,
   } = props;
 
+  // Identity stabilization (guuey#303 QA — the template's own chat-rail
+  // shipped the failure): hosts pass inline literals and arrows, so prop
+  // IDENTITY is noise. The getter props route through refs (presence, not
+  // identity, is the re-mint trigger — flipping guest↔bearer is a real
+  // change; a fresh arrow per render is not), and the policy/strings
+  // overrides stabilize structurally below. Without this, every host
+  // re-render re-minted the plan, whose views-emission effect calls the
+  // host back → setState → re-render → "Maximum update depth exceeded".
+  const getAccessTokenRef = useRef(getAccessToken);
+  getAccessTokenRef.current = getAccessToken;
+  const getGuestSecretRef = useRef(getGuestSecret);
+  getGuestSecretRef.current = getGuestSecret;
+  const hasAccessToken = getAccessToken !== undefined;
+  const hasGuestSecret = getGuestSecret !== undefined;
+
   const adapters = useMemo(
     () =>
       adaptersProp ??
       createWebAdapters({
         ...(apiBaseUrl !== undefined ? { apiBaseUrl } : {}),
-        ...(getAccessToken !== undefined ? { getAccessToken } : {}),
-        ...(getGuestSecret !== undefined ? { getGuestSecret } : {}),
+        ...(hasAccessToken
+          ? {
+              getAccessToken: (opts?: { forceRefresh?: boolean }) =>
+                getAccessTokenRef.current?.(opts) ?? Promise.resolve(null),
+            }
+          : {}),
+        ...(hasGuestSecret
+          ? { getGuestSecret: () => getGuestSecretRef.current?.() ?? null }
+          : {}),
       }),
-    [adaptersProp, apiBaseUrl, getAccessToken, getGuestSecret],
+    [adaptersProp, apiBaseUrl, hasAccessToken, hasGuestSecret],
   );
   const invoke = useAgentInvoke({ endpointUrl, ...(appId !== undefined ? { appId } : {}), adapters, preserveBlocks: true });
 
@@ -306,31 +329,47 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       // the guest secret is re-resolved each call so a rotation takes
       // effect immediately — the same per-request property
       // `createWebAdapters` documents for its own resolvers.
+      // Getters read through the refs at CALL time — the reader's identity
+      // survives a host re-render handing in fresh arrows, and a rotated
+      // getter takes effect on the next read (the same per-request property
+      // `createWebAdapters` documents).
+      const getToken = getAccessTokenRef.current;
+      const getGuest = getGuestSecretRef.current;
       const read = createUiResourceReader({
         apiBaseUrl,
         threadId,
         endpointUrl,
-        ...(getAccessToken !== undefined ? { getAccessToken } : {}),
-        guestSecret: getGuestSecret ? getGuestSecret() : null,
+        ...(getToken !== undefined ? { getAccessToken: getToken } : {}),
+        guestSecret: getGuest !== undefined ? getGuest() : null,
       });
       return read(resourceUri);
     };
-  }, [apiBaseUrl, endpointUrl, getAccessToken, getGuestSecret]);
+  }, [apiBaseUrl, endpointUrl]);
   const effectiveReader = reader ?? defaultReader;
 
+  // Structurally-stable overrides: `policy={{ view: { … } }}` inline
+  // literals keep ONE identity while their contents hold still, so the
+  // policy (and through it the plan) does not re-mint per host render.
+  const stablePolicyOverrides = useStructuralIdentity(policyOverrides);
+  const stableStringOverrides = useStructuralIdentity(stringOverrides);
   const policy = useMemo(() => {
     const factory = preset === "debug" ? debugPolicy : calmPolicy;
     const strings: ChatStrings = {
       ...defaultChatStrings,
-      ...policyOverrides?.strings,
-      ...stringOverrides,
+      ...stablePolicyOverrides?.strings,
+      ...stableStringOverrides,
     };
-    return factory({ ...policyOverrides, strings });
-  }, [preset, policyOverrides, stringOverrides]);
+    return factory({ ...stablePolicyOverrides, strings });
+  }, [preset, stablePolicyOverrides, stableStringOverrides]);
 
   const { inputs, resolvePrompt, answerHitlPrompt } = useTranscriptInputs(invoke);
-  const transcriptInputs =
-    promotedViewKey !== undefined ? { ...inputs, promotedViewKey } : inputs;
+  // Memoized: once a chip is selected (`promotedViewKey` set) this object
+  // is on the plan's identity path — a per-render fresh spread here was the
+  // second leg of the render loop the template surfaced.
+  const transcriptInputs = useMemo(
+    () => (promotedViewKey !== undefined ? { ...inputs, promotedViewKey } : inputs),
+    [inputs, promotedViewKey],
+  );
   const { plan, toggle, resolvedMounts, onViewPhase, onViewDiagnosis } = useTranscript({
     inputs: transcriptInputs,
     policy,

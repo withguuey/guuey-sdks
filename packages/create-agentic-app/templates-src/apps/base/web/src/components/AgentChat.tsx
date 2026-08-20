@@ -28,6 +28,12 @@ export interface ViewsBridge {
   onViewsChange: (views: PlanViewSummary[]) => void;
 }
 
+// Module scope on purpose: props want STABLE identities. An inline
+// `policy={{ … }}` literal (or per-render arrow getters) re-mints every
+// render; the kit stabilizes structurally since 0.11.0, but the template
+// models the correct shape — one identity for the app's whole life.
+const RAIL_POLICY = { view: { timeoutMs: 8000, presentation: "chips" as const } };
+
 export function AgentChat({
   className,
   style,
@@ -67,7 +73,7 @@ export function AgentChat({
     style,
     ...(viewsBridge !== undefined
       ? {
-          policy: { view: { timeoutMs: 8000, presentation: "chips" as const } },
+          policy: RAIL_POLICY,
           promotedViewKey: viewsBridge.promotedViewKey,
           onViewRef: viewsBridge.onViewRef,
           onViewsChange: viewsBridge.onViewsChange,
@@ -75,9 +81,11 @@ export function AgentChat({
       : {}),
   };
 
+  // The lib functions ARE the stable getters — no wrapping arrows (a fresh
+  // closure per render is the identity churn RAIL_POLICY exists to avoid).
   return identity === "oidc" ? (
-    <GuueyChat {...shared} getAccessToken={() => getBearerToken()} />
+    <GuueyChat {...shared} getAccessToken={getBearerToken} />
   ) : (
-    <GuueyChat {...shared} getGuestSecret={() => ensureGuestSecret()} />
+    <GuueyChat {...shared} getGuestSecret={ensureGuestSecret} />
   );
 }
