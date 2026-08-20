@@ -41,6 +41,7 @@
  * from the response and never from mount material a producer inlined.
  */
 import { snapshotUiResource, toolResultLocator, toolResultUiResource, type McpUiResourcePayload } from "./block-ui.js";
+import type { McpUiResourceCsp } from "@modelcontextprotocol/ext-apps";
 import type { AgBlock, JsonValue } from "@silverprotocol/core";
 
 /**
@@ -80,6 +81,16 @@ export interface ResolvedViewMount {
   channel: "inline" | "ggui";
   /** The payload an mcp-ui host mounts, identical in shape for both channels. */
   resource: McpUiResourcePayload;
+  /**
+   * The server's per-resource CSP declaration (`_meta.ui.csp` on the
+   * `resources/read` result — MCP Apps SEP-1865; guuey#312), when the read
+   * path saw one. Spec-schema-validated at the reader
+   * (`declaredResourceCsp`) — never fabricated, absent = undeclared. This
+   * is the generic successor to the uri-prefix channel heuristic: hosts
+   * derive per-card sandbox CSP / tripwire filters from it
+   * (`<GuueyView>` defaults its `cspOrigins` from here).
+   */
+  csp?: McpUiResourceCsp;
 }
 
 /** The durable-identity arm: no mount material, only the uri to re-fetch. */

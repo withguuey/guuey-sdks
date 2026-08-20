@@ -934,3 +934,41 @@ describe("createUiActionRelay", () => {
     }
   });
 });
+
+describe("createUiResourceReader — per-resource declared CSP passthrough (guuey#312)", () => {
+  it("a response carrying _meta.ui.csp yields a mount with the declaration", async () => {
+    const read = createUiResourceReader({
+      apiBaseUrl: "https://api.example/v1",
+      threadId: "t-312",
+      endpointUrl: null, // history-only viewer: one door, one queued response
+      fetchImpl: mockFetch([
+        jsonResponse({
+          uri: "ui://ggui/render/s/h",
+          mimeType: "text/html",
+          text: "<html>card</html>",
+          _meta: { ui: { csp: { connectDomains: ["wss://engine.ggui.ai"] } } },
+        }),
+      ]),
+    });
+    await expect(read("ui://ggui/render/s/h")).resolves.toEqual({
+      channel: "ggui",
+      resource: { uri: "ui://ggui/render/s/h", mimeType: "text/html", text: "<html>card</html>" },
+      csp: { connectDomains: ["wss://engine.ggui.ai"] },
+    });
+  });
+
+  it("a response without _meta yields the same mount as before — undeclared, no csp key", async () => {
+    const read = createUiResourceReader({
+      apiBaseUrl: "https://api.example/v1",
+      threadId: "t-312",
+      endpointUrl: null,
+      fetchImpl: mockFetch([
+        jsonResponse({ uri: "ui://weather/card", text: "<html>card</html>" }),
+      ]),
+    });
+    await expect(read("ui://weather/card")).resolves.toEqual({
+      channel: "inline",
+      resource: { uri: "ui://weather/card", text: "<html>card</html>" },
+    });
+  });
+});

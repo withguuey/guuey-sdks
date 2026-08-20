@@ -345,7 +345,7 @@ export function createUiResourceReader(
       }
     }
     if (!res.ok) return undefined;
-    let body: { uri?: unknown; mimeType?: unknown; text?: unknown; blob?: unknown };
+    let body: { uri?: unknown; mimeType?: unknown; text?: unknown; blob?: unknown; _meta?: unknown };
     try {
       body = (await res.json()) as typeof body;
     } catch {
@@ -360,6 +360,12 @@ export function createUiResourceReader(
       ...(typeof body.mimeType === "string" ? { mimeType: body.mimeType } : {}),
       ...(typeof body.text === "string" ? { text: body.text } : {}),
       ...(typeof body.blob === "string" ? { blob: body.blob } : {}),
+      // guuey#312: forward the entry's `_meta` untouched — the per-resource
+      // CSP declaration (`_meta.ui.csp`) is narrowed by the assembly's
+      // schema-validated door (`declaredResourceCsp`), never here. Routes
+      // that don't forward `_meta` yet simply leave it absent (undeclared —
+      // the secure default); this client is ready the day they do.
+      ...(body._meta !== undefined ? { _meta: body._meta } : {}),
     };
   };
 

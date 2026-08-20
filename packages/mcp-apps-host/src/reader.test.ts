@@ -6,7 +6,7 @@
  * response.
  */
 import { describe, expect, it, vi } from "vitest";
-import { createMcpUiResourceReader, uiResourceChannel } from "./reader.js";
+import { createMcpUiResourceReader, declaredResourceCsp, uiResourceChannel } from "./reader.js";
 
 const SHELL = "<html>card</html>";
 
@@ -86,5 +86,104 @@ describe("createMcpUiResourceReader", () => {
       readResource: async () => ({ uri: "ui://weather/card-3" }),
     });
     await expect(read("ui://weather/card-3")).resolves.toBeUndefined();
+  });
+});
+
+// ─── Per-resource declared CSP (guuey#312 — the phase-2 growth) ────────────
+//
+// The fixture mirrors ggui's production read-result shape as described by
+// ggui-oss (ggui#553 move 2): `_meta.ui.csp` on the per-render read, gadget
+// origins unioned into resourceDomains. SWAP the values for their real
+// capture when it arrives — shape verified against the MCP Apps spec type
+// either way (McpUiResourceCspSchema is the validator).
+describe("declaredResourceCsp (guuey#312)", () => {
+  const GGUI_SHAPED_META = {
+    ui: {
+      csp: {
+        connectDomains: ["wss://engine.ggui.ai", "https://api.ggui.ai"],
+        resourceDomains: ["https://cdn.ggui.ai", "https://*.gadgets.ggui.ai"],
+      },
+    },
+  };
+
+  it("rides the resolved mount when the read result declares it", async () => {
+    const read = createMcpUiResourceReader({
+      readResource: async () => ({
+        uri: "ui://ggui/render/s/h",
+        mimeType: "text/html",
+        text: SHELL,
+        _meta: GGUI_SHAPED_META,
+      }),
+    });
+    await expect(read("ui://ggui/render/s/h")).resolves.toEqual({
+      channel: "ggui",
+      resource: { uri: "ui://ggui/render/s/h", mimeType: "text/html", text: SHELL },
+      csp: {
+        connectDomains: ["wss://engine.ggui.ai", "https://api.ggui.ai"],
+        resourceDomains: ["https://cdn.ggui.ai", "https://*.gadgets.ggui.ai"],
+      },
+    });
+  });
+
+  it("all four spec domain arrays survive the schema door", () => {
+    const csp = declaredResourceCsp({
+      uri: "ui://a",
+      text: SHELL,
+      _meta: {
+        ui: {
+          csp: {
+            connectDomains: ["https://api.example"],
+            resourceDomains: ["https://cdn.example"],
+            frameDomains: ["https://player.example"],
+            baseUriDomains: ["https://base.example"],
+          },
+        },
+      },
+    });
+    expect(csp).toEqual({
+      connectDomains: ["https://api.example"],
+      resourceDomains: ["https://cdn.example"],
+      frameDomains: ["https://player.example"],
+      baseUriDomains: ["https://base.example"],
+    });
+  });
+
+  it("absent _meta / absent ui / absent csp → undefined (undeclared, never fabricated)", () => {
+    expect(declaredResourceCsp({ uri: "ui://a", text: SHELL })).toBeUndefined();
+    expect(declaredResourceCsp({ uri: "ui://a", text: SHELL, _meta: {} })).toBeUndefined();
+    expect(declaredResourceCsp({ uri: "ui://a", text: SHELL, _meta: { ui: {} } })).toBeUndefined();
+  });
+
+  it("malformed declarations collapse to undefined — a bad declaration widens nothing", () => {
+    // Not an object at each level of the walk.
+    expect(declaredResourceCsp({ uri: "ui://a", text: SHELL, _meta: "nope" })).toBeUndefined();
+    expect(
+      declaredResourceCsp({ uri: "ui://a", text: SHELL, _meta: { ui: "nope" } }),
+    ).toBeUndefined();
+    // csp present but spec-invalid (numbers where the schema wants strings).
+    expect(
+      declaredResourceCsp({
+        uri: "ui://a",
+        text: SHELL,
+        _meta: { ui: { csp: { connectDomains: [42] } } },
+      }),
+    ).toBeUndefined();
+    expect(
+      declaredResourceCsp({ uri: "ui://a", text: SHELL, _meta: { ui: { csp: "nope" } } }),
+    ).toBeUndefined();
+  });
+
+  it("a malformed declaration does NOT sink the mount — the resource still resolves, undeclared", async () => {
+    const read = createMcpUiResourceReader({
+      readResource: async () => ({
+        uri: "ui://weather/card-3",
+        text: SHELL,
+        _meta: { ui: { csp: { connectDomains: [42] } } },
+      }),
+    });
+    await expect(read("ui://weather/card-3")).resolves.toEqual({
+      channel: "inline",
+      resource: { uri: "ui://weather/card-3", text: SHELL },
+    });
   });
 });

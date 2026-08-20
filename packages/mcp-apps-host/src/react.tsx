@@ -236,8 +236,15 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
     if (frame === null || html === undefined) return;
     if (sandboxPageUrl !== undefined && page === undefined) return; // refused config — nothing mounts
     const resourceUri = mount.resource.uri;
+    // guuey#312: the resolved mount's DECLARED per-resource CSP
+    // (`_meta.ui.csp`, spec-schema-validated at the reader) is the CSP
+    // tripwire's default filter — the declaration finally doing host-side
+    // work. An explicit `cspOrigins` prop always wins; both absent keeps
+    // the tripwire inert exactly as before.
+    const cspOrigins = latest.current.hostConfig.cspOrigins ?? mount.csp;
     const detachHost = attachViewHost(frame, {
       ...latest.current.hostConfig,
+      ...(cspOrigins !== undefined ? { cspOrigins } : {}),
       resourceUri,
       onPhaseChange: (next) => {
         setPhase(next);

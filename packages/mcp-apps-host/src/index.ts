@@ -28,10 +28,15 @@ export {
 } from "./card-mount.js";
 export {
   createMcpUiResourceReader,
+  declaredResourceCsp,
   uiResourceChannel,
   type CreateMcpUiResourceReaderDeps,
   type McpResourceReadResult,
 } from "./reader.js";
+// The spec's own per-resource CSP type (SEP-1865 `_meta.ui.csp`) — the
+// shape of `ResolvedViewMount.csp` (guuey#312); identical to
+// `ViewCspOrigins`, re-exported under its spec name for mount consumers.
+export type { McpUiResourceCsp } from "@modelcontextprotocol/ext-apps";
 export {
   asToolCallResult,
   createMcpUiActionRelay,
