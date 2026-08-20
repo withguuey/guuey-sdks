@@ -9,8 +9,9 @@ import { createRef, useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { AgentInvokeAdapters, InvokeRequest } from "@guuey/agent-client";
-import { GuueyChat, type GuueyChatHandle } from "./guuey-chat.js";
-import type { PlanViewSummary } from "../types.js";
+import { GuueyChat, viewPropsWithThemeAnnounce, type GuueyChatHandle } from "./guuey-chat.js";
+import type { PlanViewSummary, ViewMountItem } from "../types.js";
+import type { ResolvedViewMount } from "@guuey/mcp-apps-host";
 
 afterEach(cleanup);
 
@@ -592,5 +593,50 @@ describe("<GuueyChat> host-identity churn", () => {
     });
     // Settling at all is the assertion — pre-fix the getter arrows churned
     // the adapters memo every render on this path.
+  });
+});
+
+// ─── The kit-tier theme announce (guuey#302) ───────────────────────────────
+describe("viewPropsWithThemeAnnounce", () => {
+  it("fills hostContext.theme from the mode when the host passes nothing", () => {
+    const out = viewPropsWithThemeAnnounce(undefined, "dark");
+    expect(out).toEqual({ hostContext: { theme: "dark" } });
+  });
+
+  it("merges under a static viewProps object — other keys pass through, theme fills in", () => {
+    const out = viewPropsWithThemeAnnounce({ autoResize: true, hostContext: { locale: "de" } }, "light");
+    expect(out).toEqual({ autoResize: true, hostContext: { theme: "light", locale: "de" } });
+  });
+
+  it("a caller-declared theme WINS over the mode default", () => {
+    const out = viewPropsWithThemeAnnounce({ hostContext: { theme: "dark" } }, "light");
+    expect(out).toEqual({ hostContext: { theme: "dark" } });
+  });
+
+  it("wraps the FUNCTION form — per-item results get the same merge", () => {
+    const wrapped = viewPropsWithThemeAnnounce(() => ({ autoResize: true }), "dark");
+    expect(typeof wrapped).toBe("function");
+    if (typeof wrapped !== "function") throw new Error("unreachable");
+    const mount: ResolvedViewMount = {
+      channel: "inline",
+      resource: { uri: "ui://tool/card", mimeType: "text/html", text: "<p>card</p>" },
+    };
+    const item: ViewMountItem = {
+      kind: "view",
+      key: "view.k",
+      expanded: true,
+      mount,
+      channel: "inline",
+      phase: "negotiating",
+      label: null,
+      diagnosis: null,
+      attribution: null,
+      toolTitle: "show card",
+      actionScope: null,
+    };
+    expect(wrapped(item, mount)).toEqual({
+      autoResize: true,
+      hostContext: { theme: "dark" },
+    });
   });
 });

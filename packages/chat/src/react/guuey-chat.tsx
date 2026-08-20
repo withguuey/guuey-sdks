@@ -78,9 +78,29 @@ import type {
 } from "../types.js";
 import type { ThemeMode } from "./theme-css.js";
 import { Transcript, type TranscriptWindowing } from "./transcript.js";
-import type { TranscriptComponents, TranscriptItemContext } from "./components.js";
+import type { TranscriptComponents, TranscriptItemContext, ViewSlotProps } from "./components.js";
 import { useTranscript, useTranscriptInputs } from "./use-transcript.js";
 import { oauthPromptAction, useOAuthReturn } from "./oauth-return.js";
+
+/**
+ * The kit-tier theme announce (guuey#302): default `hostContext.theme`
+ * from the transcript mode onto every view slot. A caller-declared
+ * `hostContext` key wins field-by-field; `theme` is only filled in.
+ * Exported for tests; not part of the package surface.
+ */
+export function viewPropsWithThemeAnnounce(
+  viewProps: TranscriptItemContext["viewProps"],
+  mode: ThemeMode,
+): TranscriptItemContext["viewProps"] {
+  const themed = (base: ViewSlotProps | undefined): ViewSlotProps => ({
+    ...base,
+    hostContext: { theme: mode, ...base?.hostContext },
+  });
+  if (typeof viewProps === "function") {
+    return (item, mount) => themed(viewProps(item, mount));
+  }
+  return themed(viewProps);
+}
 
 /**
  * The imperative seam (guuey#210): programmatic send/prefill/focus for
@@ -396,6 +416,18 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     onViewsChangeRef.current(overlaid);
   }, [plan.views, resolvedMounts]);
 
+  // The theme announce, completed at the kit tier (guuey#302): every
+  // inline mount carries `hostContext.theme` from the transcript's `mode`
+  // — render bundles read it at ui/initialize (ggui precedence: slice
+  // wins, host falls back — their #551/#573). A caller's explicit
+  // `viewProps.hostContext` keys win; `theme` is only defaulted. Hosts
+  // mounting views DIRECTLY (a canvas over the roster) announce on their
+  // own <GuueyView hostContext> — this covers the kit's own mounts.
+  const effectiveViewProps = useMemo<TranscriptItemContext["viewProps"]>(
+    () => viewPropsWithThemeAnnounce(viewProps, mode),
+    [viewProps, mode],
+  );
+
   // ── Composer ─────────────────────────────────────────────────────────
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -552,7 +584,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         onViewPhase={onViewPhase}
         onViewDiagnosis={onViewDiagnosis}
         {...(onViewRef !== undefined ? { onViewRef } : {})}
-        {...(viewProps !== undefined ? { viewProps } : {})}
+        viewProps={effectiveViewProps}
       />
       {oauthReturn.notice !== null && (
         <p

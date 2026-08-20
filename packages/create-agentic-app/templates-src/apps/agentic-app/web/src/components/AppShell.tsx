@@ -121,6 +121,12 @@ export function AppShell() {
                   mount={selected.mount}
                   title={selected.title}
                   className="canvas-view-mount"
+                  // guuey#302: the theme announce — render bundles read
+                  // hostContext.theme at ui/initialize, so a canvas mount
+                  // must speak it too or generated UI ignores the app's
+                  // light/dark mode (chat-inline mounts announce via the
+                  // kit; a DIRECT GuueyView mount announces here).
+                  hostContext={{ theme: appConfig.theme.mode }}
                 />
               ) : (
                 // A locator still resolving — the kit reads it and the next
