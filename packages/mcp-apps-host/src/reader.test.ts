@@ -141,6 +141,38 @@ describe("declaredResourceCsp (guuey#312)", () => {
     });
   });
 
+  it("gadget-augmented render: the installed gadget's bundle origin is unioned into resourceDomains (capture-derived)", () => {
+    // Second real capture (same pod, 2026-08-20): private one-hook gadget
+    // published + installed + bound via clientCapabilities.gadgets, then a
+    // raw read. connectDomains identical to the baseline; resourceDomains
+    // gains the gadget bundle origin — the union behavior, pinned.
+    const csp = declaredResourceCsp({
+      uri: "ui://ggui/render/render_c1c74796-c6d8-41c1-bc4b-d121bc0d901a/bc802d825b56f9b4",
+      text: SHELL,
+      _meta: {
+        ui: {
+          csp: {
+            connectDomains: [
+              "https://assets.dev.mcp.sandbox.ggui.ai",
+              "wss://assets.dev.mcp.sandbox.ggui.ai",
+              "wss://dev.mcp.sandbox.ggui.ai",
+              "https://dev.mcp.sandbox.ggui.ai",
+            ],
+            resourceDomains: [
+              "https://assets.dev.mcp.sandbox.ggui.ai",
+              "https://dev.registry.sandbox.ggui.ai",
+            ],
+          },
+        },
+      },
+    });
+    expect(csp?.resourceDomains).toEqual([
+      "https://assets.dev.mcp.sandbox.ggui.ai",
+      "https://dev.registry.sandbox.ggui.ai",
+    ]);
+    expect(csp?.connectDomains).toHaveLength(4);
+  });
+
   it("all four spec domain arrays survive the schema door", () => {
     const csp = declaredResourceCsp({
       uri: "ui://a",
