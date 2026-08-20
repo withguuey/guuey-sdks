@@ -91,36 +91,52 @@ describe("createMcpUiResourceReader", () => {
 
 // ─── Per-resource declared CSP (guuey#312 — the phase-2 growth) ────────────
 //
-// The fixture mirrors ggui's production read-result shape as described by
-// ggui-oss (ggui#553 move 2): `_meta.ui.csp` on the per-render read, gadget
-// origins unioned into resourceDomains. SWAP the values for their real
-// capture when it arrives — shape verified against the MCP Apps spec type
-// either way (McpUiResourceCspSchema is the validator).
+// CAPTURE-DERIVED fixture — real wire bytes from a ggui dev read
+// (2026-08-20, pod ggui-protocol-0a6d38e19b46: fresh trier app →
+// weekly-availability render → raw MCP client `resources/read`, trier torn
+// down after). Load-bearing placement the capture pins: the block rides
+// `contents[0]._meta.ui.csp` — result-level `_meta` is ABSENT on the wire,
+// so a transport MUST hand over the CONTENTS ENTRY (this module's
+// documented contract). The shell HTML is deliberately not reproduced here
+// (it inlines a render envelope); SHELL stands in — the csp door never
+// reads the body. This render was gadget-less, so csp == template baseline
+// (a gadget-augmented variant would union extra origins in).
 describe("declaredResourceCsp (guuey#312)", () => {
-  const GGUI_SHAPED_META = {
+  const CAPTURED_URI = "ui://ggui/render/render_f619920f-bd61-4f70-9f09-64d6f69c0b5b/44136fa355b3678a";
+  const CAPTURED_META = {
     ui: {
       csp: {
-        connectDomains: ["wss://engine.ggui.ai", "https://api.ggui.ai"],
-        resourceDomains: ["https://cdn.ggui.ai", "https://*.gadgets.ggui.ai"],
+        connectDomains: [
+          "https://assets.dev.mcp.sandbox.ggui.ai",
+          "wss://assets.dev.mcp.sandbox.ggui.ai",
+          "wss://dev.mcp.sandbox.ggui.ai",
+          "https://dev.mcp.sandbox.ggui.ai",
+        ],
+        resourceDomains: ["https://assets.dev.mcp.sandbox.ggui.ai"],
       },
     },
   };
 
-  it("rides the resolved mount when the read result declares it", async () => {
+  it("rides the resolved mount when the read result declares it (real ggui wire shape)", async () => {
     const read = createMcpUiResourceReader({
       readResource: async () => ({
-        uri: "ui://ggui/render/s/h",
-        mimeType: "text/html",
+        uri: CAPTURED_URI,
+        mimeType: "text/html;profile=mcp-app",
         text: SHELL,
-        _meta: GGUI_SHAPED_META,
+        _meta: CAPTURED_META,
       }),
     });
-    await expect(read("ui://ggui/render/s/h")).resolves.toEqual({
+    await expect(read(CAPTURED_URI)).resolves.toEqual({
       channel: "ggui",
-      resource: { uri: "ui://ggui/render/s/h", mimeType: "text/html", text: SHELL },
+      resource: { uri: CAPTURED_URI, mimeType: "text/html;profile=mcp-app", text: SHELL },
       csp: {
-        connectDomains: ["wss://engine.ggui.ai", "https://api.ggui.ai"],
-        resourceDomains: ["https://cdn.ggui.ai", "https://*.gadgets.ggui.ai"],
+        connectDomains: [
+          "https://assets.dev.mcp.sandbox.ggui.ai",
+          "wss://assets.dev.mcp.sandbox.ggui.ai",
+          "wss://dev.mcp.sandbox.ggui.ai",
+          "https://dev.mcp.sandbox.ggui.ai",
+        ],
+        resourceDomains: ["https://assets.dev.mcp.sandbox.ggui.ai"],
       },
     });
   });
