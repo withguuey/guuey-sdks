@@ -1,6 +1,6 @@
 {
   "name": "@guuey/mcp-apps-host",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "description": "The MCP Apps (SEP-1865) Host role for guuey's chat surfaces — view-mount narrowing across UI channels, ui:// locator rehydration by resources/read, and the sandbox-trust channel contract. Vendor-neutral: any spec-following MCP App mounts through it.",
   "license": "MIT",
   "type": "module",
@@ -41,7 +41,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@ggui-ai/protocol": "0.10.0",
+    "@ggui-ai/protocol": "0.11.0",
     "@modelcontextprotocol/ext-apps": "^1.7.5",
     "@silverprotocol/core": "0.5.0"
   },

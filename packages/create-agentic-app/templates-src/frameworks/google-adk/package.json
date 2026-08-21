@@ -15,7 +15,7 @@
     "zod": "^4.2.1"
   },
   "devDependencies": {
-    "@ggui-ai/cli": "0.6.3",
+    "@ggui-ai/cli": "0.11.0",
     "@guuey/cli": "0.0.1",
     "@guuey/config": "0.0.1",
     "tsup": "^8.5.0",
