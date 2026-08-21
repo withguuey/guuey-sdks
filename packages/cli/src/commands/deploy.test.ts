@@ -131,6 +131,7 @@ describe('pollDeployStatus', () => {
         return new Response(JSON.stringify(body), { status: 200 });
       });
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       const result = await pollDeployStatus(
         { auth, config, appId: 'app-1', buildNumber: 4, timeoutMs: 60_000 },
@@ -138,7 +139,11 @@ describe('pollDeployStatus', () => {
       );
 
       expect(result.status).toBe('live');
-      expect(logSpy.mock.calls.flat()).toContain('  Building image...');
+      // Progress goes to STDERR (guuey#280 CI find): under `--json`,
+      // stdout must stay a single machine-clean JSON document — progress
+      // lines on stdout corrupted `agent apply --wait --json > file`.
+      expect(errSpy.mock.calls.flat()).toContain('  Building image...');
+      expect(logSpy.mock.calls.flat()).toEqual([]);
     },
     15_000,
   );

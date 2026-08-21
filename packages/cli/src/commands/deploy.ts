@@ -811,11 +811,17 @@ export async function pollDeployStatus(
 
     const data = (await statusRes.json()) as DeploymentStatusPoll;
 
+    // Progress is DIAGNOSTICS, not data — stderr, always (guuey#280 CI
+    // find, 2026-08-21): under `--json` these lines used to hit stdout and
+    // corrupt the one-JSON-document contract (`agent apply --wait --json >
+    // file` carried 'Queued...' beside the payload, killing the helper
+    // CI's jq step). stderr keeps interactive UX identical and json-mode
+    // stdout machine-clean, with no mode flag to thread.
     if (data.status === 'queued' && lastMessage !== 'Queued...') {
-      console.log('  Queued...');
+      console.error('  Queued...');
       lastMessage = 'Queued...';
     } else if (data.message && data.message !== lastMessage) {
-      console.log(`  ${data.message}`);
+      console.error(`  ${data.message}`);
       lastMessage = data.message;
     }
 
