@@ -13,11 +13,6 @@
         "kind": "colocated",
         "source": "./mcps/todo",
         "devPort": 6782
-      },
-      "ggui": {
-        "kind": "external",
-        "url": "https://mcp.ggui.ai",
-        "transport": "http"
       }
     }
   },

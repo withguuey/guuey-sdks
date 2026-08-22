@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import type { AgEvent } from "@silverprotocol/core";
 import { startDevServer, lowerForDev, writeLocalCredentials, type DevServerHandle } from "./dev-server.js";
+import { DEFAULT_AGENT_MCP_SERVERS } from "@guuey/config";
 
 const echoFixture = join(__dirname, "fixtures", "echo-worker.mjs");
 const errorFixture = join(__dirname, "fixtures", "error-worker.mjs");
@@ -361,13 +362,16 @@ describe("lowerForDev", () => {
     });
   });
 
-  it("does not override an explicitly declared ggui entry", () => {
+  it("does not override an explicitly declared CUSTOM ggui entry", () => {
+    // Re-pinned for guuey#368: the platform-DEFAULT url now lowers to the
+    // local dev endpoint (see the #368 block below) — what this pin
+    // protects is a builder pointing ggui at their OWN server.
     const lowered = lowerForDev({
-      mcpServers: { ggui: { kind: "external", url: "https://mcp.ggui.ai", transport: "http" } },
+      mcpServers: { ggui: { kind: "external", url: "https://ggui.own.example/mcp", transport: "http" } },
     });
     expect(lowered.agent.mcpServers?.ggui).toEqual({
       kind: "external",
-      url: "https://mcp.ggui.ai",
+      url: "https://ggui.own.example/mcp",
       transport: "http",
     });
   });
@@ -547,5 +551,51 @@ describe("GET /threads/:id/messages (guuey#110)", () => {
     expect(res.status).toBe(204);
     expect(res.headers.get("access-control-allow-methods")).toContain("GET");
     expect(res.headers.get("access-control-allow-headers")).toContain("Authorization");
+  });
+});
+
+describe("lowerForDev — platform-default ggui entry (guuey#368)", () => {
+  it("a ggui entry at EXACTLY the platform default lowers to the local ggui serve endpoint", () => {
+    // The 0.11.x scaffolds shipped the platform default verbatim in
+    // guuey.json — passed through un-dialable AND suppressing the default
+    // injection, so out-of-box dev agents silently lost generative UI.
+    const lowered = lowerForDev({
+      mcpServers: {
+        ggui: { kind: "external", url: "https://mcp.ggui.ai", transport: "http" },
+      },
+    });
+    expect(lowered.agent.mcpServers?.ggui).toEqual({
+      kind: "external",
+      url: "http://localhost:6781/mcp",
+      transport: "http",
+    });
+  });
+
+  it("a CUSTOM external ggui url stays untouched — the builder pointed at a real server", () => {
+    const lowered = lowerForDev({
+      mcpServers: {
+        ggui: { kind: "external", url: "https://ggui.mycorp.example/mcp", transport: "http" },
+      },
+    });
+    expect(lowered.agent.mcpServers?.ggui).toEqual({
+      kind: "external",
+      url: "https://ggui.mycorp.example/mcp",
+      transport: "http",
+    });
+  });
+
+  it("the mirrored platform-default url matches @guuey/config's real default (sync pin)", () => {
+    const defaultGgui = DEFAULT_AGENT_MCP_SERVERS["ggui"];
+    if (defaultGgui === undefined || defaultGgui.kind !== "external") {
+      throw new Error("config default ggui entry changed shape — update lowerForDev's mirror");
+    }
+    // The lowering must fire for exactly the config default: lower it and
+    // assert the rewrite happened (the mirror string matching is IMPLIED).
+    const lowered = lowerForDev({ mcpServers: { ggui: defaultGgui } });
+    expect(lowered.agent.mcpServers?.ggui).toEqual({
+      kind: "external",
+      url: "http://localhost:6781/mcp",
+      transport: "http",
+    });
   });
 });

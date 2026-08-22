@@ -32,6 +32,13 @@ import { makeNormalizer } from "./normalize.js";
  *  serve --mcp-only` (booted on :6781 by the scaffolded `pnpm dev`) mounts
  *  its MCP transport at `/mcp`, like every colocated dev MCP. */
 const DEFAULT_GGUI_DEV_URL = "http://localhost:6781/mcp";
+/**
+ * The platform-default ggui MCP url (`DEFAULT_AGENT_MCP_SERVERS.ggui` in
+ * @guuey/config) — mirrored as the string it compares against so the dev
+ * server does not couple to the config package's object shape; the
+ * lowerForDev test pins this mirror against the real default.
+ */
+const DEFAULT_GGUI_PLATFORM_URL = "https://mcp.ggui.ai";
 
 /** 256KB request-body cap — matches the pod's `readJsonBody` (`sse-server.ts`). */
 const MAX_BODY_BYTES = 256 * 1024;
@@ -194,6 +201,22 @@ export function lowerForDev(agent: GuueyAgent): LowerForDevResult {
         console.warn(
           `guuey dev: dropping MCP server "${name}" (credential: oauth) — third-party OAuth servers run through the hosted credential-broker gateway, which has no local-dev counterpart; run 'guuey deploy' to test it`,
         );
+        continue;
+      }
+      // guuey#368: a ggui entry at EXACTLY the platform-default URL lowers
+      // to the local `ggui serve` endpoint — early scaffolds shipped the
+      // default `https://mcp.ggui.ai` verbatim in guuey.json, which passed
+      // through here un-dialable (no local credentials) AND suppressed the
+      // default injection below, so the out-of-box agent silently lost
+      // generative UI. The platform default has a local-dev counterpart by
+      // definition; a CUSTOM external ggui url stays untouched (the builder
+      // pointed at a real server on purpose).
+      if (
+        name === "ggui" &&
+        entry.url === DEFAULT_GGUI_PLATFORM_URL &&
+        entry.credential === undefined
+      ) {
+        lowered.ggui = { kind: "external", url: DEFAULT_GGUI_DEV_URL, transport: "http" };
         continue;
       }
       lowered[name] = entry;
