@@ -1,6 +1,6 @@
 {
   "name": "@guuey/threads",
-  "version": "0.12.2",
+  "version": "0.13.0",
   "description": "Universal session/thread persistence for AgJSON agents — the ThreadStore contract (append-fold, history, snapshots), the fold↔row mapping, and an in-memory binding. Guuey's hosted runtime is one binding; implement the port against your own store and run the exported contract suite for the same guarantees.",
   "license": "MIT",
   "type": "module",
