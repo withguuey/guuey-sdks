@@ -185,12 +185,30 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
     out.error('--app-id needs a value (e.g. --app-id <uuid>).');
     process.exit(1);
   }
-  if (explicitAppId && config.appId && explicitAppId !== config.appId) {
+  // guuey#355: deploy resolves its identity SOURCE-AWARE, never through the
+  // merged config. Precedence: --app-id > GGUI_APP_ID (an explicit
+  // per-invocation choice) > the guuey.json binding. The machine-global
+  // default (~/.guuey/config.json) is used ONLY when the directory has no
+  // guuey.json at all (the explicitly-bound single-project flow) — a
+  // project that deliberately carries no appId must REFUSE, not silently
+  // deploy to whatever id a past ritual left in the operator's global
+  // config (the near-miss: a bare deploy from the trimly checkout resolved
+  // to the LIVE Helper's id).
+  const envAppId = process.env.GGUI_APP_ID?.trim() || undefined;
+  const projectBoundAppId = project?.appId;
+  const overridden = explicitAppId
+    ? projectBoundAppId && explicitAppId !== projectBoundAppId
+      ? { source: `the ${GUUEY_JSON_FILENAME} binding`, id: projectBoundAppId }
+      : !project && config.appId && explicitAppId !== config.appId
+        ? { source: 'the global default (~/.guuey/config.json)', id: config.appId }
+        : undefined
+    : undefined;
+  if (overridden) {
     console.log(
-      `  --app-id ${explicitAppId} overrides the ${GUUEY_JSON_FILENAME} binding (${config.appId}) for this deploy only.`,
+      `  --app-id ${explicitAppId} overrides ${overridden.source} (${overridden.id}) for this deploy only.`,
     );
   }
-  let appId = explicitAppId ?? config.appId;
+  let appId = explicitAppId ?? envAppId ?? projectBoundAppId ?? (project ? undefined : config.appId);
   if (!appId) {
     if (shouldOfferAppCreate(mode, process.stdin.isTTY, process.stdout.isTTY)) {
       appId = await ensureLinkedApp({ auth, config, project, guueyJsonPath: cwdGuueyJson });
@@ -199,7 +217,8 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
       project = loadProjectConfig();
     } else {
       out.error(
-        'No app linked. Set "appId" in guuey.json, run "guuey pull --app-id <id>" to bind an existing app, or run "guuey deploy" in an interactive terminal to create one.',
+        `No app linked${project ? ` (${GUUEY_JSON_FILENAME} carries no "appId"${config.appId ? '; the global default is deliberately NOT used for deploys' : ''})` : ''}. ` +
+          'Set "appId" in guuey.json, pass --app-id <id>, run "guuey pull --app-id <id>" to bind an existing app, or run "guuey deploy" in an interactive terminal to create one.',
       );
       process.exit(1);
     }
@@ -359,10 +378,19 @@ export async function createLinkedApp(opts: {
   if (project) {
     writeGuueyJsonFile(guueyJsonPath, { ...project, appId: app.id });
     console.log(`  Wrote appId back to ${GUUEY_JSON_FILENAME}`);
+  } else {
+    // No project file to bind — persist the id as the machine-global
+    // default so the next projectless run resolves. Said LOUDLY (guuey#355
+    // ask 3): a quietly-written global default is how a later deploy from
+    // an unrelated checkout nearly targeted the live Helper. Bound
+    // projects never touch the operator's global config.
+    const existing = loadConfig();
+    existing.appId = app.id;
+    saveConfig(existing);
+    console.log(
+      '  Wrote appId to ~/.guuey/config.json as the GLOBAL default (used only in directories with no guuey.json binding).',
+    );
   }
-  const existing = loadConfig();
-  existing.appId = app.id;
-  saveConfig(existing);
 
   return app.id;
 }

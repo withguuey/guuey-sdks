@@ -14,6 +14,7 @@ import {
   printPageLine,
 } from './deploy.js';
 import { resolveConfig, loadProjectConfig } from '../config.js';
+import { safeParseGuueyJson } from '@guuey/config';
 import type { apiRequest } from '../deploy-shared.js';
 
 /** Thrown by the process.exit mock so execution stops like the real thing. */
@@ -430,6 +431,38 @@ describe('deploy() — no app linked, no interactive offer (S4)', () => {
     const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
     expect(printed).toContain('guuey pull --app-id');
     expect(printed).not.toContain('guuey create');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  // ── guuey#355: the machine-global default must NOT reach a bound-less
+  // project's deploy. The near-miss: ~/.guuey/config.json carried the LIVE
+  // Helper's id from a provisioning ritual, and a bare deploy from the
+  // trimly checkout (guuey.json with deliberately NO appId) resolved to
+  // it — an explicit --app-id on the staged line was the only guard.
+  it('a project WITHOUT appId REFUSES even when the global config carries a default', async () => {
+    vi.mocked(resolveConfig).mockReturnValue({
+      host: 'https://platform.guuey.test',
+      apiUrl: 'https://api.guuey.test',
+      // The merged config carries a stale machine-global default — the id
+      // that must never silently become this deploy's target.
+      appId: '934f99ad-dead-beef-0000-000000000000',
+    });
+    // The overlay mirrors the on-disk guuey.json: present, deliberately
+    // UNBOUND (no appId) — the trimly-checkout shape from the near-miss.
+    const parsed = safeParseGuueyJson({
+      schema: '1',
+      agent: { model: 'claude-sonnet-5', systemPrompt: 'x' },
+    });
+    if (!parsed.success) throw new Error('test fixture is schema-invalid');
+    vi.mocked(loadProjectConfig).mockReturnValue(parsed.data);
+
+    await expect(deploy({})).rejects.toBeInstanceOf(ExitSignal);
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('carries no "appId"');
+    expect(printed).toContain('deliberately NOT used');
+    // And no deploy call ever left the machine.
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
