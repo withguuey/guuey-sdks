@@ -123,7 +123,30 @@ export interface ChatStrings {
 }
 
 /** Humanize a wire tool name: `render_weather-card` → `render weather card`. */
+/**
+ * The ggui generative-UI rail's tool vocabulary, in end-user words
+ * (guuey#307): raw wire names ("mcp ggui ggui handshake") read as
+ * internals on every card-bearing conversation — and the rail is the
+ * platform default (mcp.ggui.ai), so the kit owns its voice the same
+ * way it owns the card machinery.
+ */
+const GGUI_RAIL_TITLES: Record<string, string> = {
+  ggui_handshake: "Preparing interactive card",
+  ggui_render: "Rendering card",
+  ggui_consume: "Updating interactive card",
+  ggui_update: "Updating card",
+};
+
 export function humanizeToolName(wireName: string): string {
+  // MCP wire shape: `mcp__<server>__<tool>` (double-underscore separators).
+  const mcp = /^mcp__([^_].*?)__(.+)$/.exec(wireName);
+  if (mcp) {
+    const [, server, tool] = mcp;
+    if (server === "ggui" && GGUI_RAIL_TITLES[tool]) return GGUI_RAIL_TITLES[tool];
+    const prettyServer = server.charAt(0).toUpperCase() + server.slice(1).replace(/[_-]+/g, " ");
+    const prettyTool = tool.replace(/[_-]+/g, " ").trim();
+    return `${prettyServer} · ${prettyTool}`;
+  }
   return wireName.replace(/[_-]+/g, " ").trim();
 }
 
