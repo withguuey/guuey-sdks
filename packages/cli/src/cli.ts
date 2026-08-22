@@ -138,7 +138,7 @@ Agent Development:
     --code                       Force code mode (builds+deploys guuey.worker.js,
                                  or uses a root Dockerfile if present)
     --force                      Force deploy even if unchanged
-    --size <s>                   Runtime pod size: xs | sm | md | lg | xl (default: sm)
+    --size <s>                   Runtime pod size: xs | sm | md | lg | xl (default: xs)
     --build-size <s>             Build Job size: sm | md | lg | xl (default: md, code-mode only)
     --max-pods <n>               Replica count for the app (plan ceiling applies;
                                  omit to leave the current setting untouched)
@@ -200,7 +200,7 @@ Hosted MCP Servers:
   mcp deploy                     Deploy a hosted MCP server (code-mode, workspace-owned)
     --name <name>                Server name (workspace-unique; default: package.json name)
     --workspace <id>             Owning workspace (or $GUUEY_WORKSPACE)
-    --size <s>                   Pod size: xs | sm | md | lg | xl (default: sm)
+    --size <s>                   Pod size: xs | sm | md | lg | xl (default: xs)
     --label <tag>                Version label
   mcp list                       List the workspace's hosted MCP server registry
     --workspace <id>             Owning workspace (or $GUUEY_WORKSPACE)
@@ -717,7 +717,7 @@ async function main(): Promise<void> {
           await deploymentsLogs(rest[0], { json: jsonFlag }, flags);
           break;
         default:
-          console.error(`Unknown deployments command: ${action}. Use: list, logs (rollback: guuey agent rollback --to <n>)`);
+          console.error(`Unknown deployments command: ${action}. Use: list (rollback: guuey agent rollback --to <n>)`);
           process.exit(1);
       }
       break;

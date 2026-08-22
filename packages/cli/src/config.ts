@@ -30,6 +30,18 @@ export interface CliConfig {
 /** Default platform endpoint — used when no endpoint is configured */
 export const DEFAULT_ENDPOINT = 'https://platform.guuey.com';
 
+/**
+ * Baked production REST base (guuey#264): a fresh `npm i -g @guuey/cli`
+ * must reach the API with ZERO env setup — prod IS a public CLI's right
+ * default. Precedence unchanged above it: explicit `GUUEY_API_URL` wins,
+ * then a repo-local amplify_outputs.json (sandbox dev flows), then this.
+ * NOTE the failure-mode trade, made deliberately: a sandbox operator who
+ * forgets the env var now talks to PROD instead of erroring — which is
+ * why the ./guuey wrapper and every env runsheet export the URL
+ * explicitly (the 2026-08-08/-16 mismatch class receipts).
+ */
+export const DEFAULT_API_URL = 'https://api.us-east-1.guuey.com/v1';
+
 /** Default WebSocket URL for end-user session events (API Gateway WS). */
 export const DEFAULT_WS_URL = 'wss://ws.guuey.com/v1';
 
@@ -314,7 +326,7 @@ export function resolveConfig(): ResolvedConfig {
     renderUrl: process.env.GUUEY_RENDER_URL ?? amplify.renderUrl,
     appConfigUrl: process.env.GGUI_APP_CONFIG_URL ?? amplify.appConfigUrl,
     mcpUrl: process.env.GUUEY_MCP_URL ?? amplify.mcpUrl ?? DEFAULT_MCP_URL,
-    apiUrl: process.env.GUUEY_API_URL ?? amplify.apiUrl,
+    apiUrl: process.env.GUUEY_API_URL ?? amplify.apiUrl ?? DEFAULT_API_URL,
     platformUrl: process.env.GGUI_PLATFORM_URL ?? amplify.platformUrl,
     portalUrl: process.env.GGUI_PORTAL_URL ?? amplify.portalUrl,
     mcpProxyUrl: process.env.GGUI_MCP_PROXY_URL ?? amplify.mcpProxyUrl,
