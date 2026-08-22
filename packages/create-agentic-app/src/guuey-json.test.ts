@@ -11,12 +11,14 @@ describe('framework template guuey.json (guuey#24 §2c)', () => {
       readFileSync(join(__dirname, '..', 'templates-src', 'frameworks', fw, 'guuey.json'), 'utf8')
     );
 
-    it(`${fw}: declares the ggui entry beside todo`, () => {
-      expect(raw.agent.mcpServers.ggui).toEqual({
-        kind: 'external',
-        url: 'https://mcp.ggui.ai',
-        transport: 'http',
-      });
+    it(`${fw}: does NOT declare a ggui entry — injection owns it (guuey#368)`, () => {
+      // The old #24 §2c pin (declare the platform default verbatim) is
+      // INVERTED by #368: a declared platform-default entry suppressed
+      // lowerForDev's local injection and was un-dialable locally, so the
+      // out-of-box scaffold silently lost generative UI. The platform
+      // injects mcp.ggui.ai on deploy; guuey dev injects the local
+      // endpoint — the template stays silent and both environments work.
+      expect(raw.agent.mcpServers.ggui).toBeUndefined();
       expect(raw.agent.mcpServers.todo).toBeDefined();
     });
 
