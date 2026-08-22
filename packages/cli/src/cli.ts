@@ -330,6 +330,8 @@ Apps:
     --brand-og-image-file <path>  Same upload path, for the social-preview
                                  image. Not with --brand-og-image-url.
     --brand-accent <#rrggbb>    Accent colour for the send button and live dot.
+    --chat-theme-file <path>    Set the app's chat theme from a GuueyChatTheme JSON file.
+    --clear-chat-theme          Remove the app's chat theme (back to the guuey default).
                                  Must clear a 4.5:1 WCAG-AA contrast floor
                                  against the fixed #0e1014 foreground, or the
                                  server rejects it. Pass 'clear' to unset.
@@ -890,6 +892,11 @@ async function main(): Promise<void> {
             brandOgImageFile:
               flags['brand-og-image-file'] === true ? '' : str(flags['brand-og-image-file']),
             brandAccent: flags['brand-accent'] === true ? '' : str(flags['brand-accent']),
+            // Per-app chat theme (guuey#283). A bare --chat-theme-file maps
+            // to '' so appsUpdate refuses it with a usage line.
+            chatThemeFile:
+              flags['chat-theme-file'] === true ? '' : str(flags['chat-theme-file']),
+            clearChatTheme: flags['clear-chat-theme'] === true,
             // Standalone page policy (guuey#140) — same bare-flag-clears rule.
             page: flags.page === true ? '' : str(flags.page),
             welcomeCopy: flags['welcome-copy'] === true ? '' : str(flags['welcome-copy']),

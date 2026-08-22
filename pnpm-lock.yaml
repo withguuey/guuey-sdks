@@ -112,6 +112,9 @@ importers:
       '@ggui-ai/protocol':
         specifier: 0.11.0
         version: 0.11.0(@modelcontextprotocol/sdk@1.29.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@guuey/chat':
+        specifier: workspace:*
+        version: link:../chat
       '@guuey/config':
         specifier: workspace:*
         version: link:../config

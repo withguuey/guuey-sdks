@@ -662,6 +662,75 @@ describe('appsUpdate', () => {
       },
     });
   });
+
+  // ── guuey#283: --chat-theme-file / --clear-chat-theme ────────────────
+  const THEME_DOC = {
+    name: 'salon-editorial',
+    colors: {
+      light: {
+        accent: '#c9a227', onAccent: '#0e1014', ink: '#1a1d24', inkMuted: 'rgba(43,33,26,0.65)',
+        surface: '#fdfbf6', canvas: '#f6f1e7', canvasMuted: '#efe8d9', error: '#a33a24',
+      },
+      dark: {
+        accent: '#c9a227', onAccent: '#0e1014', ink: '#e7e8ec', inkMuted: '#9aa0ac',
+        surface: '#1a1d24', canvas: '#0e1014', canvasMuted: '#1a1d24', error: '#ff5b5b',
+      },
+    },
+    typography: {},
+    shape: { radius: 'soft', density: 'comfortable' },
+    futureKey: true, // unknown keys survive the lenient kit parse
+  };
+
+  it('a THEME-ONLY update PUTs the parsed document (no "no fields" refusal)', async () => {
+    const { writeFileSync, mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = mkdtempSync(join(tmpdir(), 'guuey-theme-'));
+    const file = join(dir, 'theme.json');
+    writeFileSync(file, JSON.stringify(THEME_DOC));
+    fetchSpy.mockResolvedValue(new Response(JSON.stringify({ app: {} }), { status: 200 }));
+
+    await appsUpdate('app-1', { chatThemeFile: file });
+
+    const req = lastRequest(fetchSpy);
+    expect(req.method).toBe('PUT');
+    expect(req.path).toBe('/apps/app-1');
+    expect(req.body).toEqual({ chatTheme: THEME_DOC });
+  });
+
+  it('--clear-chat-theme sends an explicit null', async () => {
+    fetchSpy.mockResolvedValue(new Response(JSON.stringify({ app: {} }), { status: 200 }));
+
+    await appsUpdate('app-1', { clearChatTheme: true });
+
+    expect(lastRequest(fetchSpy)).toEqual({
+      method: 'PUT',
+      path: '/apps/app-1',
+      body: { chatTheme: null },
+    });
+  });
+
+  it('refuses a non-theme JSON file with the failing path, before any request', async () => {
+    const { writeFileSync, mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const file = join(mkdtempSync(join(tmpdir(), 'guuey-theme-')), 'bad.json');
+    writeFileSync(file, JSON.stringify({ name: 'x', colors: { light: {} } }));
+
+    await expect(appsUpdate('app-1', { chatThemeFile: file })).rejects.toThrow(ExitSignal);
+    expect(errSpy.mock.calls.flat().join(' ')).toContain('GuueyChatTheme');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('refuses --chat-theme-file combined with --clear-chat-theme', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(
+      appsUpdate('app-1', { chatThemeFile: 'x.json', clearChatTheme: true }),
+    ).rejects.toThrow(ExitSignal);
+    expect(errSpy.mock.calls.flat().join(' ')).toContain('cannot be combined');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe('appsAccess', () => {

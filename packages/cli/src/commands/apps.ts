@@ -5,6 +5,7 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { GuueyChatTheme } from '@guuey/chat';
 import { extname } from 'node:path';
 import { resolveConfig, saveConfig, loadConfig } from '../config';
 import { isLoggedIn, requireAuth } from '../auth';
@@ -83,6 +84,12 @@ interface AppDetail extends AppSummary {
   brandIconUrl?: string | null;
   brandOgImageUrl?: string | null;
   brandAccent?: string | null;
+  /**
+   * The EFFECTIVE per-app chat theme (guuey#199/#283) — the wire echoes the
+   * projected document, not raw storage, so what prints here is what the
+   * widget/portal actually render.
+   */
+  chatTheme?: GuueyChatTheme | null;
   /**
    * The standalone page's policy object (guuey#140), echoed as stored with
    * defaults applied — so `guuey apps get` shows what `--page` / `--welcome-copy`
@@ -316,6 +323,14 @@ export async function appsGet(
   if (app.brandIconUrl) console.log(`  Brand Icon:   ${app.brandIconUrl}`);
   if (app.brandOgImageUrl) console.log(`  OG Image:     ${app.brandOgImageUrl}`);
   if (app.brandAccent) console.log(`  Brand Accent: ${app.brandAccent}`);
+  if (app.chatTheme) {
+    const t = app.chatTheme;
+    console.log(
+      `  Chat Theme:   ${t.name} (accent ${t.colors.light.accent}` +
+        `${t.mode !== undefined ? `, mode ${t.mode}` : ''}` +
+        `${t.ramps !== undefined ? ', stated ramps' : ''})`,
+    );
+  }
   const page = app.standalonePage;
   if (page) {
     console.log(`  Standalone page: ${page.enabled ? 'on' : 'off'}${page.noindex ? ' (noindex)' : ''}`);
@@ -415,6 +430,9 @@ export interface UpdateAppRequest {
   brandIconUrl?: string | null;
   brandOgImageUrl?: string | null;
   brandAccent?: string | null;
+  /** Whole-document chat theme replace (guuey#283); `null` clears — the
+   *  server's `validateChatTheme` owns every rule, same no-drift posture. */
+  chatTheme?: GuueyChatTheme | null;
   /**
    * The standalone page's policy PATCH (guuey#140) — `GuueyApp.standalonePage`.
    * Partial: each member `undefined` = leave, `null` = clear to default, a
@@ -733,7 +751,8 @@ const NO_UPDATE_FIELDS_MESSAGE =
   '--issuer-url + --audience, --clear-auth-config, --oidc-client-id, ' +
   '--oidc-client-secret, --clear-oidc-client, --widget-embed-identity, ' +
   '--brand-icon-url, --brand-og-image-url, --brand-icon-file, ' +
-  '--brand-og-image-file, --brand-accent, --page, --welcome-copy, ' +
+  '--brand-og-image-file, --brand-accent, --chat-theme-file, ' +
+  '--clear-chat-theme, --page, --welcome-copy, ' +
   '--cta-label, --cta-url, --identity-endpoint-url, or --noindex.';
 
 /**
@@ -777,6 +796,8 @@ export async function appsUpdate(
     brandIconFile?: string;
     brandOgImageFile?: string;
     brandAccent?: string;
+    chatThemeFile?: string;
+    clearChatTheme?: boolean;
     page?: string;
     welcomeCopy?: string;
     ctaLabel?: string;
@@ -819,10 +840,60 @@ export async function appsUpdate(
     uploads.push({ field: 'brandOgImageUrl', filePath: opts.brandOgImageFile });
   }
 
-  const body = buildUpdateAppBody(opts);
+  // Chat theme (guuey#283): a whole-document write from a JSON file, or an
+  // explicit clear. Kit-schema parse client-side (lenient — unknown keys
+  // survive, per the additive-evolution rule); the platform's grammar/floor
+  // rules stay server-side and surface verbatim with their field paths.
+  if (opts.chatThemeFile !== undefined && opts.clearChatTheme === true) {
+    out.error('--chat-theme-file cannot be combined with --clear-chat-theme.');
+    process.exit(1);
+  }
+  if (opts.chatThemeFile !== undefined && opts.chatThemeFile.trim() === '') {
+    out.error('--chat-theme-file requires a file path.');
+    process.exit(1);
+  }
+  let themeChange: { value: GuueyChatTheme | null } | undefined;
+  if (opts.clearChatTheme === true) {
+    themeChange = { value: null };
+  } else if (opts.chatThemeFile !== undefined) {
+    let raw: string;
+    try {
+      raw = readFileSync(opts.chatThemeFile, 'utf8');
+    } catch {
+      out.error(`Could not read ${opts.chatThemeFile}.`);
+      process.exit(1);
+    }
+    let parsedJson: unknown;
+    try {
+      parsedJson = JSON.parse(raw);
+    } catch {
+      out.error(`${opts.chatThemeFile} is not valid JSON.`);
+      process.exit(1);
+    }
+    const parsedTheme = GuueyChatTheme.safeParse(parsedJson);
+    if (!parsedTheme.success) {
+      const first = parsedTheme.error.issues[0];
+      const where = first && first.path.length > 0 ? ` at ${first.path.join('.')}` : '';
+      out.error(
+        `${opts.chatThemeFile} is not a GuueyChatTheme document${where}: ${first?.message ?? 'invalid'}`,
+      );
+      process.exit(1);
+    }
+    themeChange = { value: parsedTheme.data };
+  }
+
+  const built = buildUpdateAppBody(opts);
+  let body: UpdateAppRequest | string = built;
+  if (built === NO_UPDATE_FIELDS_MESSAGE && themeChange !== undefined) {
+    // The theme change alone is a real update — start from an empty PUT.
+    body = {};
+  }
   if (typeof body === 'string' && (body !== NO_UPDATE_FIELDS_MESSAGE || uploads.length === 0)) {
     out.error(body);
     process.exit(1);
+  }
+  if (typeof body !== 'string' && themeChange !== undefined) {
+    body.chatTheme = themeChange.value;
   }
 
   const uploaded: BrandAssetCommitResponse[] = [];
