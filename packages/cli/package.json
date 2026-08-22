@@ -40,7 +40,7 @@
     "@types/ws": "^8.5.0",
     "tsup": "^8.5.0",
     "typescript": "^5.8.0",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.7"
   },
   "dependencies": {
     "@ggui-ai/artifact-manifest": "0.11.0",

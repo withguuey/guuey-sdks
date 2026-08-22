@@ -49,7 +49,7 @@ importers:
         specifier: ^5.0.0
         version: 5.9.3
       vitest:
-        specifier: ^3.0.0
+        specifier: ^3.2.7
         version: 3.2.7(@types/node@24.13.2)(jsdom@25.0.1)(terser@5.50.0)(yaml@2.9.0)
 
   packages/chat:
@@ -101,7 +101,7 @@ importers:
         specifier: ^5.0.0
         version: 5.9.3
       vitest:
-        specifier: ^3.0.0
+        specifier: ^3.2.7
         version: 3.2.7(@types/node@24.12.4)(jsdom@25.0.1)(terser@5.50.0)(yaml@2.9.0)
 
   packages/cli:
@@ -177,7 +177,7 @@ importers:
         specifier: ^5.8.0
         version: 5.9.3
       vitest:
-        specifier: ^3.2.4
+        specifier: ^3.2.7
         version: 3.2.7(@types/node@24.13.2)(jsdom@25.0.1)(terser@5.50.0)(yaml@2.9.0)
 
   packages/config:
@@ -196,7 +196,7 @@ importers:
         specifier: ^5.0.0
         version: 5.9.3
       vitest:
-        specifier: ^3.0.0
+        specifier: ^3.2.7
         version: 3.2.7(@types/node@24.13.2)(jsdom@25.0.1)(terser@5.50.0)(yaml@2.9.0)
 
   packages/create-agentic-app:
@@ -221,7 +221,7 @@ importers:
         specifier: ^5.8.0
         version: 5.9.3
       vitest:
-        specifier: ^3.2.4
+        specifier: ^3.2.7
         version: 3.2.7(@types/node@24.13.2)(jsdom@25.0.1)(terser@5.50.0)(yaml@2.9.0)
 
   packages/fs:
@@ -233,7 +233,7 @@ importers:
         specifier: ^5.0.0
         version: 5.9.3
       vitest:
-        specifier: ^3.0.0
+        specifier: ^3.2.7
         version: 3.2.7(@types/node@24.13.2)(jsdom@25.0.1)(terser@5.50.0)(yaml@2.9.0)
 
   packages/host:
@@ -261,7 +261,7 @@ importers:
         specifier: ^5.0.0
         version: 5.9.3
       vitest:
-        specifier: ^3.0.0
+        specifier: ^3.2.7
         version: 3.2.7(@types/node@24.13.2)(jsdom@25.0.1)(terser@5.50.0)(yaml@2.9.0)
 
   packages/mcp-apps-host:
@@ -289,7 +289,7 @@ importers:
         specifier: ^5.0.0
         version: 5.9.3
       vitest:
-        specifier: ^3.0.0
+        specifier: ^3.2.7
         version: 3.2.7(@types/node@24.12.4)(jsdom@25.0.1)(terser@5.50.0)(yaml@2.9.0)
 
   packages/state:
@@ -301,7 +301,7 @@ importers:
         specifier: ^5.7.0
         version: 5.9.3
       vitest:
-        specifier: ^3.2.4
+        specifier: ^3.2.7
         version: 3.2.7(@types/node@22.20.0)(jsdom@25.0.1)(terser@5.50.0)(yaml@2.9.0)
 
   packages/threads:
@@ -320,7 +320,7 @@ importers:
         specifier: ^5.0.0
         version: 5.9.3
       vitest:
-        specifier: ^3.0.0
+        specifier: ^3.2.7
         version: 3.2.7(@types/node@24.12.4)(jsdom@25.0.1)(terser@5.50.0)(yaml@2.9.0)
 
   packages/widget-auth:
@@ -332,7 +332,7 @@ importers:
         specifier: ^5.0.0
         version: 5.9.3
       vitest:
-        specifier: ^3.0.0
+        specifier: ^3.2.7
         version: 3.2.7(@types/node@24.12.4)(jsdom@25.0.1)(terser@5.50.0)(yaml@2.9.0)
 
   packages/worker:
@@ -344,7 +344,7 @@ importers:
         specifier: ^5.0.0
         version: 5.9.3
       vitest:
-        specifier: ^3.0.0
+        specifier: ^3.2.7
         version: 3.2.7(@types/node@24.13.2)(jsdom@25.0.1)(terser@5.50.0)(yaml@2.9.0)
 
 packages:

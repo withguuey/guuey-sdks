@@ -39,7 +39,7 @@
   },
   "dependencies": {},
   "peerDependencies": {
-    "vitest": "^3.0.0"
+    "vitest": "^3.2.7"
   },
   "peerDependenciesMeta": {
     "vitest": {
@@ -49,7 +49,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.7"
   },
   "publishConfig": {
     "access": "public"

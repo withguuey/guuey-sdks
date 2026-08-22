@@ -73,7 +73,7 @@
     "react-dom": "^19.0.0",
     "react-native": "0.81.5",
     "typescript": "^5.0.0",
-    "vitest": "^3.0.0"
+    "vitest": "^3.2.7"
   },
   "publishConfig": {
     "access": "public"
