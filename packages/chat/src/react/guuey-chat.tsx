@@ -64,7 +64,7 @@ import {
 } from "@guuey/agent-client";
 import type { AgHitlAnswer, AgPausedAsk } from "@silverprotocol/core";
 import { useAgentInvoke } from "@guuey/agent-client/react";
-import { unavailableToolCallResult } from "@guuey/mcp-apps-host";
+import { unavailableToolCallResult, withActionStaging } from "@guuey/mcp-apps-host";
 import type { McpToolCallResult, UiActionRequest, UiResourceReader } from "@guuey/mcp-apps-host";
 import { calmPolicy, debugPolicy, type TranscriptPolicy } from "../policy.js";
 import { useStructuralIdentity } from "./structural-identity.js";
@@ -443,6 +443,26 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // `viewProps.hostContext` keys win; `theme` is only defaulted. Hosts
   // mounting views DIRECTLY (a canvas over the roster) announce on their
   // own <GuueyView hostContext> — this covers the kit's own mounts.
+  // ── Composer ─────────────────────────────────────────────────────────
+  const [input, setInput] = useState("");
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Browser form-field heuristics (a11y/autofill lints) flag a field with
+  // neither id nor name on every embedding site. useId keeps the id unique
+  // when several chats mount on one page — a static id would collide.
+  const composerId = useId();
+  const busy = invoke.status !== "ready";
+  const available = endpointUrl !== null;
+  const canSend = available && !busy && input.trim() !== "";
+
+  // ── The imperative seam (guuey#210) ──────────────────────────────────
+  // ONE stable handle for the component's whole life (hosts capture it in
+  // `onReady` and keep it), reading live truth through a ref so a call
+  // always sees the CURRENT gate — never a stale closure's.
+  const liveRef = useRef({ available, busy, invoke, onReady });
+  useEffect(() => {
+    liveRef.current = { available, busy, invoke, onReady };
+  });
+
   // The DEFAULT ACTION RELAY (guuey#335 — the founder-hit Confirm bug):
   // pod-then-persisted, built over the SAME identity as the reader, thread
   // read through the ref at CALL time. Without it, a kit-mounted render's
@@ -480,13 +500,32 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     });
   }, []);
 
+  // Post-turn action STAGING (guuey#356 — the widget's ratified #198/#215/
+  // #218 policy, ONE copy in the kit): with no live turn, an allowlisted
+  // semantic card action stages its human-readable projection into the
+  // composer (append, never clobber — the staged-composer semantic) and the
+  // view hears the queued acceptance; everything else rides the relay path
+  // untouched. Rides viewSlotProps too, so canvas hosts get it for free.
+  const stagedDefaultOnCallTool = useMemo<
+    ((request: UiActionRequest) => Promise<McpToolCallResult>) | undefined
+  >(() => {
+    if (defaultOnCallTool === undefined) return undefined;
+    return withActionStaging(defaultOnCallTool, {
+      isTurnLive: () => liveRef.current.busy,
+      stage: (text) => {
+        setInput((prev) => (prev.trim() === "" ? text : `${prev.trimEnd()} ${text}`));
+        inputRef.current?.focus();
+      },
+    });
+  }, [defaultOnCallTool]);
+
   const effectiveViewProps = useMemo<TranscriptItemContext["viewProps"]>(
     () =>
       viewPropsWithThemeAnnounce(viewProps, mode, {
-        ...(defaultOnCallTool !== undefined ? { onCallTool: defaultOnCallTool } : {}),
+        ...(stagedDefaultOnCallTool !== undefined ? { onCallTool: stagedDefaultOnCallTool } : {}),
         onUpdateModelContext: defaultOnUpdateModelContext,
       }),
-    [viewProps, mode, defaultOnCallTool, defaultOnUpdateModelContext],
+    [viewProps, mode, stagedDefaultOnCallTool, defaultOnUpdateModelContext],
   );
 
   // The canvas-host door (guuey#335): a host mounting views DIRECTLY from
@@ -499,31 +538,11 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   staticSlotPropsRef.current =
     typeof effectiveViewProps === "function"
       ? {
-          ...(defaultOnCallTool !== undefined ? { onCallTool: defaultOnCallTool } : {}),
+          ...(stagedDefaultOnCallTool !== undefined ? { onCallTool: stagedDefaultOnCallTool } : {}),
           onUpdateModelContext: defaultOnUpdateModelContext,
           hostContext: { theme: mode },
         }
       : (effectiveViewProps ?? {});
-
-  // ── Composer ─────────────────────────────────────────────────────────
-  const [input, setInput] = useState("");
-  const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  // Browser form-field heuristics (a11y/autofill lints) flag a field with
-  // neither id nor name on every embedding site. useId keeps the id unique
-  // when several chats mount on one page — a static id would collide.
-  const composerId = useId();
-  const busy = invoke.status !== "ready";
-  const available = endpointUrl !== null;
-  const canSend = available && !busy && input.trim() !== "";
-
-  // ── The imperative seam (guuey#210) ──────────────────────────────────
-  // ONE stable handle for the component's whole life (hosts capture it in
-  // `onReady` and keep it), reading live truth through a ref so a call
-  // always sees the CURRENT gate — never a stale closure's.
-  const liveRef = useRef({ available, busy, invoke, onReady });
-  useEffect(() => {
-    liveRef.current = { available, busy, invoke, onReady };
-  });
 
   const handle = useMemo<GuueyChatHandle>(
     () => ({

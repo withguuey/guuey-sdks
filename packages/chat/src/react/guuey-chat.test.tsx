@@ -719,3 +719,54 @@ describe("kit-default view-host wiring (guuey#335)", () => {
     });
   });
 });
+
+// ─── Post-turn action staging rides the kit defaults (guuey#356) ───────────
+describe("kit-default staging (guuey#356)", () => {
+  it("an idle semantic card action stages its projection into the composer and answers queued", async () => {
+    const { adapters } = scriptedAdapters();
+    let handle: GuueyChatHandle | null = null;
+    renderChat(adapters, {
+      apiBaseUrl: "https://api.example/v1",
+      onReady: (h) => {
+        handle = h;
+      },
+    });
+    await waitFor(() => expect(handle).not.toBeNull());
+    const onCallTool = handle!.viewSlotProps().onCallTool;
+    if (onCallTool === undefined) throw new Error("default relay expected");
+    const result = await onCallTool({
+      resourceUri: "ui://x/1",
+      name: "ggui_runtime_submit_action",
+      arguments: { actionId: "book_slot", day: "tuesday" },
+    });
+    expect(result).toEqual({
+      content: [{ type: "text", text: "Queued — press Send to continue." }],
+    });
+    const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    await waitFor(() => expect(input.value).toBe("Book slot: day tuesday"));
+  });
+
+  it("a non-semantic action does NOT stage — it rides the relay path (unavailable pre-thread)", async () => {
+    const { adapters } = scriptedAdapters();
+    let handle: GuueyChatHandle | null = null;
+    renderChat(adapters, {
+      apiBaseUrl: "https://api.example/v1",
+      onReady: (h) => {
+        handle = h;
+      },
+    });
+    await waitFor(() => expect(handle).not.toBeNull());
+    const onCallTool = handle!.viewSlotProps().onCallTool;
+    if (onCallTool === undefined) throw new Error("default relay expected");
+    // No thread yet → the relay's honest in-band unavailable; the composer
+    // stays untouched either way (the assertion that matters).
+    const result = await onCallTool({
+      resourceUri: "ui://x/1",
+      name: "ggui_runtime_pull",
+      arguments: { sessionId: "s" },
+    });
+    expect(result.isError).toBe(true);
+    const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    expect(input.value).toBe("");
+  });
+});

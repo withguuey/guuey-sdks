@@ -27,6 +27,13 @@ export {
   type ViewMountChannel,
 } from "./card-mount.js";
 export {
+  ACTION_STAGED_MSG,
+  isStageableAction,
+  stagedActionText,
+  withActionStaging,
+  type ActionStaging,
+} from "./action-staging.js";
+export {
   createMcpUiResourceReader,
   declaredResourceCsp,
   uiResourceChannel,
