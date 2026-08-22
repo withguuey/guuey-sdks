@@ -38,11 +38,77 @@ export const GuueyChatPalette = z
   .loose();
 export type GuueyChatPalette = z.infer<typeof GuueyChatPalette>;
 
+/**
+ * STATED ramp slots (theme-as-code, guuey#341 spec §3 — never derived).
+ * Closed per-family sets: `accent` carries the full ladder (the
+ * 500/600/700 floor is a WRITE/COMPILE rule, not a schema rule — the
+ * schema admits any stated subset so a stale stored document still parses);
+ * the status families carry their tone-500 slot. Ramps live BESIDE the
+ * palettes (`theme.ramps.{light,dark}`), never inside them — the flat
+ * palette record is a load-bearing invariant (token lists are DERIVED from
+ * its shape by every platform gate).
+ */
+export const GuueyChatAccentRamp = z
+  .object({
+    "100": z.string().optional(),
+    "300": z.string().optional(),
+    "500": z.string().optional(),
+    "600": z.string().optional(),
+    "700": z.string().optional(),
+    "800": z.string().optional(),
+    "900": z.string().optional(),
+  })
+  .loose();
+export type GuueyChatAccentRamp = z.infer<typeof GuueyChatAccentRamp>;
+
+export const GuueyChatErrorRamp = z
+  .object({
+    "500": z.string().optional(),
+    "600": z.string().optional(),
+    "700": z.string().optional(),
+  })
+  .loose();
+export type GuueyChatErrorRamp = z.infer<typeof GuueyChatErrorRamp>;
+
+export const GuueyChatToneRamp = z.object({ "500": z.string().optional() }).loose();
+export type GuueyChatToneRamp = z.infer<typeof GuueyChatToneRamp>;
+
+/** One mode's stated ramp families — every family optional. */
+export const GuueyChatRampSet = z
+  .object({
+    accent: GuueyChatAccentRamp.optional(),
+    error: GuueyChatErrorRamp.optional(),
+    success: GuueyChatToneRamp.optional(),
+    warning: GuueyChatToneRamp.optional(),
+    info: GuueyChatToneRamp.optional(),
+  })
+  .loose();
+export type GuueyChatRampSet = z.infer<typeof GuueyChatRampSet>;
+
+export const GuueyChatRamps = z
+  .object({
+    light: GuueyChatRampSet.optional(),
+    dark: GuueyChatRampSet.optional(),
+  })
+  .loose();
+export type GuueyChatRamps = z.infer<typeof GuueyChatRamps>;
+
 export const GuueyChatTheme = z
   .object({
     name: z.string(),
+    /**
+     * The app's CANONICAL presentation mode (theme-as-code §3) — what the
+     * ggui stamp pins its render slice to. OPTIONAL and default-less on
+     * purpose: absent = "not stated", and the platform's legacy polarity
+     * derivation stands. Distinct from the VIEWER's runtime light/dark
+     * choice, which stays a component prop — chat components never read
+     * this field.
+     */
+    mode: z.enum(["light", "dark"]).optional(),
     /** BOTH palettes always present — mode is the consumer's runtime choice. */
     colors: z.object({ light: GuueyChatPalette, dark: GuueyChatPalette }).loose(),
+    /** Stated ramp slots per mode — see {@link GuueyChatRamps}. */
+    ramps: GuueyChatRamps.optional(),
     typography: z
       .object({
         fontFamily: z.string().optional(),
@@ -133,10 +199,12 @@ const PartialPalette = GuueyChatPalette.partial();
 const PartialTheme = z
   .object({
     name: z.string().optional(),
+    mode: GuueyChatTheme.shape.mode.optional(),
     colors: z
       .object({ light: PartialPalette.optional(), dark: PartialPalette.optional() })
       .loose()
       .optional(),
+    ramps: GuueyChatRamps.optional(),
     typography: GuueyChatTheme.shape.typography.optional(),
     shape: GuueyChatTheme.shape.shape.partial().loose().optional(),
   })
@@ -180,16 +248,54 @@ export function resolveTheme(
   const parsed = PartialTheme.safeParse(candidate);
   if (!parsed.success) return { ...base, colors: { light: { ...base.colors.light }, dark: { ...base.colors.dark } } };
   const p = parsed.data;
+  const mode = p.mode ?? base.mode;
+  const ramps = mergeRamps(base.ramps, p.ramps);
   return {
     name: p.name ?? base.name,
+    // `mode`/`ramps` are default-less (the package themes state neither):
+    // they appear on the resolved theme only when SOME layer stated them —
+    // an absent statement must stay visibly absent, not become a default.
+    ...(mode !== undefined ? { mode } : {}),
     colors: {
       light: mergePalette(base.colors.light, p.colors?.light),
       dark: mergePalette(base.colors.dark, p.colors?.dark),
     },
+    ...(ramps !== undefined ? { ramps } : {}),
     typography: { ...base.typography, ...(p.typography ?? {}) },
     shape: {
       radius: p.shape?.radius ?? base.shape.radius,
       density: p.shape?.density ?? base.shape.density,
     },
+  };
+}
+
+/** Slot-level merge of two ramp statements (candidate slots win per slot). */
+function mergeRampSet(
+  base: GuueyChatRampSet | undefined,
+  over: GuueyChatRampSet | undefined,
+): GuueyChatRampSet | undefined {
+  if (base === undefined) return over;
+  if (over === undefined) return base;
+  const merged: GuueyChatRampSet = { ...base };
+  for (const family of ["accent", "error", "success", "warning", "info"] as const) {
+    const b = base[family];
+    const o = over[family];
+    if (o === undefined) continue;
+    merged[family] = b === undefined ? o : { ...b, ...o };
+  }
+  return merged;
+}
+
+function mergeRamps(
+  base: GuueyChatRamps | undefined,
+  over: GuueyChatRamps | undefined,
+): GuueyChatRamps | undefined {
+  if (base === undefined) return over;
+  if (over === undefined) return base;
+  const light = mergeRampSet(base.light, over.light);
+  const dark = mergeRampSet(base.dark, over.dark);
+  return {
+    ...(light !== undefined ? { light } : {}),
+    ...(dark !== undefined ? { dark } : {}),
   };
 }

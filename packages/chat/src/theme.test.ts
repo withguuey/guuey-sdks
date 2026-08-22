@@ -43,6 +43,33 @@ describe("GuueyChatTheme", () => {
     expect(parsed.success).toBe(true);
   });
 
+  it("mode + ramps (theme-as-code §3): stated values survive resolution, absence stays absent", () => {
+    const stored = {
+      mode: "dark",
+      colors: { light: { accent: "#c9a227" } },
+      ramps: { light: { accent: { "500": "#c9a227", "600": "#a9861c", "700": "#8a6d15" } } },
+    };
+    const resolved = resolveTheme(stored);
+    expect(resolved.mode).toBe("dark");
+    expect(resolved.ramps?.light?.accent?.["600"]).toBe("#a9861c");
+    // The package defaults state NEITHER — an unstated theme must not
+    // grow a mode or ramps out of resolution.
+    const bare = resolveTheme({ colors: {} });
+    expect("mode" in bare).toBe(false);
+    expect("ramps" in bare).toBe(false);
+  });
+
+  it("ramps merge slot-wise over a base statement; base mode stands when the candidate is silent", () => {
+    const base = resolveTheme({
+      mode: "light",
+      ramps: { light: { accent: { "500": "#111111", "600": "#222222" } } },
+    });
+    const over = resolveTheme({ ramps: { light: { accent: { "600": "#999999" } } } }, base);
+    expect(over.mode).toBe("light");
+    expect(over.ramps?.light?.accent?.["500"]).toBe("#111111");
+    expect(over.ramps?.light?.accent?.["600"]).toBe("#999999");
+  });
+
   it("never throws: garbage input resolves to the base theme untouched", () => {
     expect(resolveTheme(null)).toEqual(DEFAULT_CHAT_THEME);
     expect(resolveTheme("#not-a-theme")).toEqual(DEFAULT_CHAT_THEME);

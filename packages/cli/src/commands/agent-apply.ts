@@ -65,6 +65,8 @@ export interface AgentReconcileConfig {
   userAuthConfig?: { issuerUrl: string; audience: string } | null;
   allowedDomains?: string[];
   guestAccess?: boolean | null;
+  /** Full stored-form theme document; plans/status echo hashes, never the document. */
+  chatTheme?: unknown;
 }
 
 export interface AgentReconcileBody {
@@ -133,6 +135,7 @@ export interface AgentReconcileStatus {
     userAuthConfig: { issuerUrl: string; audience: string } | null;
     allowedDomains: string[];
     guestAccess: boolean | null;
+    chatThemeHash: string | null;
   };
 }
 
@@ -574,6 +577,7 @@ export async function agentStatus(flags?: Record<string, string | true>): Promis
   console.log(`    userAuthConfig: ${fmtValue(c.userAuthConfig)}`);
   console.log(`    allowedDomains: ${fmtValue(c.allowedDomains)}`);
   console.log(`    guestAccess:    ${fmtValue(c.guestAccess)}`);
+  console.log(`    chatTheme:      ${c.chatThemeHash ?? 'none'}`);
 
   if (parity) {
     console.log('');

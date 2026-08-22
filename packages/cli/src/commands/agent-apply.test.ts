@@ -416,6 +416,7 @@ describe('agentStatus', () => {
       rolledBackFrom: null,
     },
     config: {
+      chatThemeHash: null,
       userAuthMode: 'byo',
       userAuthConfig: { issuerUrl: 'https://iss.example', audience: 'aud' },
       allowedDomains: ['https://console.example.com'],

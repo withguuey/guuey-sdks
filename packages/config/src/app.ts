@@ -9,6 +9,7 @@
  * (agent or mcp-server) is what's deployable; this section is presentation.
  */
 import { z } from 'zod';
+import { AppThemeV1 } from './theme.js';
 
 /**
  * Slug used for the public URL and App Store listing. Forms part of the
@@ -103,6 +104,8 @@ export const AppSectionV1 = z.strictObject({
   customDomain: CustomDomainSchema.optional(),
   /** Access policy converged by `guuey agent apply` — see {@link AppAccessV1}. */
   access: AppAccessV1.optional(),
+  /** Chat theme AS CODE, converged by `guuey agent apply` — see {@link AppThemeV1}. */
+  theme: AppThemeV1.optional(),
 });
 
 /** Static TypeScript type for the app section. */

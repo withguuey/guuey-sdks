@@ -46,8 +46,13 @@ export {
 export {
   DEFAULT_CHAT_THEME,
   GUUEY_CHAT_THEME,
+  GuueyChatAccentRamp,
+  GuueyChatErrorRamp,
   GuueyChatPalette,
+  GuueyChatRamps,
+  GuueyChatRampSet,
   GuueyChatTheme,
+  GuueyChatToneRamp,
   resolveTheme,
 } from "./theme.js";
 export type {
