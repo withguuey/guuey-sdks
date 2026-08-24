@@ -1,6 +1,6 @@
 {
   "name": "@guuey/chat",
-  "version": "0.14.2",
+  "version": "0.15.0",
   "description": "The default end-user transcript UI for guuey agents — the headless view-model (planTranscript), calm/debug presets, the GuueyChatTheme token schema, the ChatStrings i18n seam, and (at ./react) the component kit that renders it: per-category components, <Transcript>, the live + history input assemblers, and stick-to-bottom/windowed/accessible transcript behavior; at ./native, the React Native renderer over the same view-model.",
   "license": "MIT",
   "type": "module",
