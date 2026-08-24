@@ -277,7 +277,7 @@ describe("createWebAdapters history install", () => {
     const history = createWebAdapters({ apiBaseUrl, getGuestSecret: () => SECRET }).history;
     if (!history) throw new Error("history adapter not installed in guest mode");
     const result = await withGlobalFetch(fetchImpl, () => history.load("t_1"));
-    expect(result).toEqual({ messages: [{ role: "user", text: "hi" }], cards: [] });
+    expect(result).toEqual({ messages: [{ role: "user", text: "hi", seq: 1 }], cards: [] });
   });
 });
 
@@ -304,7 +304,7 @@ describe("createWebAdapters history — 401 retry", () => {
     const history = createWebAdapters({ apiBaseUrl, getAccessToken }).history;
     if (!history) throw new Error("history adapter not installed");
     const result = await withGlobalFetch(fetchImpl, () => history.load("t_1"));
-    expect(result).toEqual({ messages: [{ role: "user", text: "hi" }], cards: [] });
+    expect(result).toEqual({ messages: [{ role: "user", text: "hi", seq: 1 }], cards: [] });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(headersOf(fetchImpl.mock.calls[0][1]).Authorization).toBe("Bearer stale-token");
     expect(headersOf(fetchImpl.mock.calls[1][1]).Authorization).toBe("Bearer fresh-token");

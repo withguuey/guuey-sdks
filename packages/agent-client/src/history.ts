@@ -67,7 +67,7 @@ export function threadHistoryRowsToMessages(rows: ThreadHistoryRow[]): AgentMess
   const messages: AgentMessage[] = [];
   for (const row of rows) {
     if (row.kind !== "text" || row.text == null) continue;
-    messages.push({ role: row.authorRole === "user" ? "user" : "assistant", text: row.text });
+    messages.push({ role: row.authorRole === "user" ? "user" : "assistant", text: row.text, seq: row.seq });
   }
   return messages;
 }

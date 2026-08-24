@@ -36,8 +36,8 @@ describe("threadHistoryRowsToMessages", () => {
       row({ authorRole: "assistant", text: "hi there" }),
     ]);
     expect(messages).toEqual([
-      { role: "user", text: "hello" },
-      { role: "assistant", text: "hi there" },
+      { role: "user", text: "hello", seq: 1 },
+      { role: "assistant", text: "hi there", seq: 1 },
     ]);
   });
 
@@ -47,12 +47,12 @@ describe("threadHistoryRowsToMessages", () => {
       row({ kind: "text", text: null }),
       row({ kind: "text", authorRole: "assistant", text: "kept" }),
     ]);
-    expect(messages).toEqual([{ role: "assistant", text: "kept" }]);
+    expect(messages).toEqual([{ role: "assistant", text: "kept", seq: 1 }]);
   });
 
   it("treats any non-user author as assistant", () => {
     const messages = threadHistoryRowsToMessages([row({ authorRole: "system", text: "x" })]);
-    expect(messages).toEqual([{ role: "assistant", text: "x" }]);
+    expect(messages).toEqual([{ role: "assistant", text: "x", seq: 1 }]);
   });
 
   it("ignores card rows entirely (text-only surface is unchanged)", () => {
@@ -62,8 +62,8 @@ describe("threadHistoryRowsToMessages", () => {
       row({ seq: 3, authorRole: "assistant", text: "there" }),
     ]);
     expect(messages).toEqual([
-      { role: "user", text: "hi" },
-      { role: "assistant", text: "there" },
+      { role: "user", text: "hi", seq: 1 },
+      { role: "assistant", text: "there", seq: 3 },
     ]);
   });
 });
@@ -98,7 +98,7 @@ describe("fetchThreadHistory", () => {
       threadId: "t_1",
       fetchImpl,
     });
-    expect(result).toEqual({ messages: [{ role: "user", text: "hey" }] });
+    expect(result).toEqual({ messages: [{ role: "user", text: "hey", seq: 1 }] });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(String(fetchImpl.mock.calls[0][0])).toContain("/threads/t_1/messages?limit=100");
   });
@@ -115,8 +115,8 @@ describe("fetchThreadHistory", () => {
     });
     expect(result).toEqual({
       messages: [
-        { role: "user", text: "first" },
-        { role: "assistant", text: "second" },
+        { role: "user", text: "first", seq: 1 },
+        { role: "assistant", text: "second", seq: 2 },
       ],
     });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
@@ -168,7 +168,7 @@ describe("fetchThreadHistory", () => {
       threadId: "t_1",
       fetchImpl,
     });
-    expect(result).toEqual({ messages: [{ role: "user", text: "hi" }] });
+    expect(result).toEqual({ messages: [{ role: "user", text: "hi", seq: 1 }] });
     expect(result).not.toHaveProperty("cards");
   });
 
@@ -189,7 +189,7 @@ describe("fetchThreadHistory", () => {
       fetchImpl,
     });
     expect(result).toEqual({
-      messages: [{ role: "user", text: "hi" }],
+      messages: [{ role: "user", text: "hi", seq: 1 }],
       cards: [{ seq: 2, at: "2026-07-15T00:00:02Z", cardSnapshot: CARD }],
     });
   });

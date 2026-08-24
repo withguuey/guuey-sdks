@@ -44,6 +44,12 @@ export interface TranscriptMessage {
   clientMessageId?: string;
   /** R16 provenance — meaningful only when `role === "notice"`. */
   noticeSource?: AgNoticeSource;
+  /**
+   * Read-plane transcript `seq` on history-rehydrated rows (guuey#423) —
+   * the interleave key that lets persisted cards render at their TRUE
+   * positions instead of the R13 tail. Live turns carry none.
+   */
+  seq?: number;
 }
 
 /**

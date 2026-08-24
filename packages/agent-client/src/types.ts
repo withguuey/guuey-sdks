@@ -26,6 +26,14 @@ export interface AgentMessage {
    * join key (`UseAgentInvokeReturn.sendStates`).
    */
   clientMessageId?: string;
+  /**
+   * The read plane's transcript `seq` for history-rehydrated entries
+   * (guuey#423) — server-allocated, gap-free per thread. Present ONLY on
+   * rows the history loader mapped; live turns carry none. The transcript
+   * planner uses it to interleave persisted cards at their true positions
+   * instead of the R13 tail.
+   */
+  seq?: number;
 }
 
 /**

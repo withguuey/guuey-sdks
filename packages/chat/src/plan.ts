@@ -840,9 +840,15 @@ export function planTranscript(
   }
   items.push(...groupTools(conversation, policy, overrides));
 
-  // R13 — persisted cards, seq order. (Position: after the settled
-  // conversation; true in-turn interleave needs read-plane seqs the flat
-  // surface lacks — the 3b assemblers own that refinement.)
+  // R13 — persisted cards, seq order. POSITION (guuey#423): interleaved at
+  // their TRUE transcript positions when the flat surface carries read-plane
+  // seqs (the assemblers thread `TranscriptMessage.seq` since #423 — the
+  // refinement the 3b-era note deferred): a card slots before the first
+  // HISTORY user turn whose seq exceeds it. Cards newer than every seq-
+  // bearing turn — and every card in a seq-less (live-only) session — keep
+  // the tail, byte-identical to the old behavior. The old tail-always
+  // placement + bottom-pin buried a returning visitor's conversation above
+  // a stale trailing card (the #423 founder face).
   //
   // Dedupe against LIVE mounts by actionScope (the persisted `ui://`
   // identity both sides carry): a session whose fold still holds a turn the
@@ -879,7 +885,20 @@ export function planTranscript(
       actionScope: scope,
     };
     view.label = viewLabel(view, policy);
-    items.push(view);
+    // The interleave: find the first seq-bearing user turn NEWER than the
+    // card; insert before its item. Cards processed in ascending seq order,
+    // so same-target cards keep their relative order (each splice lands
+    // after the previous card, before the user item).
+    const nextUserSlot = users.findIndex(
+      (u) => u.seq !== undefined && card.seq < u.seq,
+    );
+    const anchorIdx =
+      nextUserSlot === -1 ? -1 : items.findIndex((it) => it.key === `u${nextUserSlot}`);
+    if (anchorIdx === -1) {
+      items.push(view);
+    } else {
+      items.splice(anchorIdx, 0, view);
+    }
   }
 
   // R10 — prompts, in input order (narrow on `kind`: the guuey-wire
