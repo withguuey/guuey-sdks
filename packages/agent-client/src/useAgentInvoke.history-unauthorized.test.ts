@@ -71,7 +71,7 @@ describe("useAgentInvoke — unauthorized history on a resumed thread (guuey#413
 
 describe("useAgentInvoke — the gone arm is loud too (guuey#413 guard)", () => {
   it("a 403/404 gone resume clears + mints fresh AND surfaces the notice — never silent", async () => {
-    const store = { [THREAD_KEY]: "t-drifted" };
+    const store: Record<string, string> = { [THREAD_KEY]: "t-drifted" };
     const adapters: AgentInvokeAdapters = {
       storage: {
         load: (k) => (k in store ? store[k] : null),
