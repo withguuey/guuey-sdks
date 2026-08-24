@@ -27,6 +27,7 @@ import { invokeTurn, toInvokeUrl } from "./invoke-turn.js";
 import { AgentResponseError } from "./errors.js";
 import { withActivityObserver } from "./transport.js";
 import { CLIENT_ERROR_CODES } from "./error-codes.js";
+import { HistoryUnauthorizedError } from "./history.js";
 import type {
   AgentInvokeAdapters,
   AgentInvokeStatus,
@@ -256,8 +257,29 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
       let result: HistoryLoadResult;
       try {
         result = await history.load(tid);
-      } catch {
-        return; // best-effort: offline / transient — chat continues without history
+      } catch (err) {
+        // guuey#413 fail-LOUD carve-out from the best-effort rule: an
+        // UNAUTHORIZED read on a RESUMED threadId means a transcript the
+        // user expects exists and cannot be shown — silently booting a
+        // fresh-looking empty chat hid the identity-drift outage for
+        // exactly the accounts holding old threads. Auth refusal surfaces
+        // as an error item; every other failure (offline, transient)
+        // keeps the best-effort swallow — chat continues without history.
+        if (!cancelled && err instanceof HistoryUnauthorizedError) {
+          // Same guard as the `gone` arm below: clear + fresh (functional)
+          // + the notice (loud). Same concurrency guard — never clobber a
+          // threadId a mid-flight send just established.
+          if (threadIdRef.current === tid) {
+            threadIdRef.current = null;
+            setThreadId(null);
+            void adaptersRef.current.storage.save(threadStorageKey(appId), "");
+          }
+          setError(
+            "Couldn't restore your previous conversation — started a new one. (This session was not authorized to read the old thread.)",
+          );
+          setErrorCode(CLIENT_ERROR_CODES.THREAD_HISTORY_UNAVAILABLE);
+        }
+        return;
       }
       if (cancelled) return;
       if ("gone" in result) {
@@ -269,6 +291,16 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         threadIdRef.current = null;
         setThreadId(null);
         void adaptersRef.current.storage.save(threadStorageKey(appId), "");
+        // guuey#413: the hydration guard's LOUD half. `gone` covers 403 as
+        // well as 404 (history.ts) — an owner-mismatch refusal on a drifted
+        // identity flowed through THIS arm as a silent fresh-looking boot,
+        // which is the exact outage face this guard exists to kill. The
+        // fresh mint stays (functional); the notice makes it honest. Loud
+        // AND functional, never one without the other.
+        setError(
+          "Couldn't restore your previous conversation — started a new one.",
+        );
+        setErrorCode(CLIENT_ERROR_CODES.THREAD_HISTORY_UNAVAILABLE);
         return;
       }
       // Single decision authority: `applyHistoryResult` runs INSIDE the

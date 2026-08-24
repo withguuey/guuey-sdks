@@ -89,6 +89,17 @@ export const CLIENT_ERROR_CODES = {
    * the reply if the backend completes later.
    */
   STREAM_STALLED: "STREAM_STALLED",
+  /**
+   * A RESUMED thread's history read was refused (401 after the one
+   * forceRefresh retry) — the persisted threadId exists but the CURRENT
+   * identity cannot read it (guuey#413: the identity-drift face; an
+   * expired-and-unrefreshable session is the benign sibling). Surfaced
+   * LOUDLY instead of the silent fresh-looking boot: the transcript the
+   * user expects exists and cannot be shown, which is an ERROR, not an
+   * empty chat. Sends still work (the pod may fork a fresh thread) — the
+   * error names why the history is missing.
+   */
+  THREAD_HISTORY_UNAVAILABLE: "THREAD_HISTORY_UNAVAILABLE",
 } as const;
 
 /** One of this SDK's client-originated codes — see {@link CLIENT_ERROR_CODES}. */
