@@ -228,7 +228,13 @@ export function fetchStreamTransport(
     const bearer = getBearer ? await getBearer() : accessToken;
     yield* streamInvokeOnce(attempt, bearer, guestSecret);
   };
-  const saturated = withSaturationRetry(once, { sleep: options.sleep });
+  const saturated = withSaturationRetry(once, {
+    sleep: options.sleep,
+    ...(options.attempts !== undefined ? { attempts: options.attempts } : {}),
+    ...(options.onSaturationWait !== undefined
+      ? { onSaturationWait: options.onSaturationWait }
+      : {}),
+  });
   if (options.coldStartRetry === false) return saturated(req);
   return withColdStartRetry(saturated, {
     sleep: options.sleep,

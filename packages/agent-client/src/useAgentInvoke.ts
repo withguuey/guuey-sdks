@@ -76,15 +76,29 @@ export function applyHistoryResult(
 }
 
 /** The guuey#192 stall watchdog's resolved tuning (see {@link stallProbeDecision}). */
-export const STALL_RECOVERY_DEFAULTS = { windowMs: 25_000, probeAttempts: 4 } as const;
+export const STALL_RECOVERY_DEFAULTS = {
+  windowMs: 25_000,
+  probeAttempts: 4,
+  /**
+   * guuey#409: the PRE-first-byte watchdog window. The #192 clock arms only
+   * on the first chunk (so a silent cold start never trips it) — which left
+   * a turn that never receives ANY byte with no watchdog at all: the
+   * eternal-"Thinking…" face of the 2026-08-22 invoke-rail turn death.
+   * Deliberately much longer than `windowMs`: the transport's cold-start
+   * retries legitimately spend up to ~90s before the first byte.
+   */
+  preFirstByteWindowMs: 120_000,
+} as const;
 
 function resolveStallRecovery(
   option: false | StallRecoveryOptions | undefined,
-): { windowMs: number; probeAttempts: number } | null {
+): { windowMs: number; probeAttempts: number; preFirstByteWindowMs: number } | null {
   if (option === false) return null;
   return {
     windowMs: option?.windowMs ?? STALL_RECOVERY_DEFAULTS.windowMs,
     probeAttempts: option?.probeAttempts ?? STALL_RECOVERY_DEFAULTS.probeAttempts,
+    preFirstByteWindowMs:
+      option?.preFirstByteWindowMs ?? STALL_RECOVERY_DEFAULTS.preFirstByteWindowMs,
   };
 }
 
@@ -399,13 +413,20 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
           stallTimer = null;
         }
       };
-      const armStallTimer = (): void => {
+      const armStallTimer = (windowMs?: number): void => {
         if (!stall || turnEnded || controller.signal.aborted) return;
         clearStallTimer();
         stallTimer = setTimeout(() => {
           void onStallWindow();
-        }, stall.windowMs);
+        }, windowMs ?? stall.windowMs);
       };
+      // guuey#409: arm BEFORE the first byte — a turn that never receives
+      // any chunk (rail death upstream of the pod, or an in-pod pre-spawn
+      // hang) otherwise shows "Thinking…" forever with no error item. The
+      // long window keeps silent cold starts un-tripped; expiry runs the
+      // SAME probe-then-adopt-or-STREAM_STALLED machinery as mid-stream
+      // stalls — one face fix for both mechanisms.
+      armStallTimer(stall?.preFirstByteWindowMs);
       const endTurnWith = (apply: () => void): void => {
         turnEnded = true;
         clearStallTimer();

@@ -18,7 +18,9 @@ import {
 import type { AgHitlAnswer } from "@silverprotocol/core";
 import type { AgentInvokeAdapters, InvokeTransport, ThreadIdStore } from "./types.js";
 import { fetchThreadHistory, HistoryUnauthorizedError } from "./history.js";
-import { fetchStreamTransport, sendableGuestSecret, GUEST_HEADER } from "./transport.js";
+import {
+fetchStreamTransport, sendableGuestSecret, GUEST_HEADER } from "./transport.js";
+import type { SaturationRetryOptions } from "./saturation-retry.js";
 import { toInvokeUrl } from "./invoke-turn.js";
 
 /** Persists the threadId in `window.localStorage` (synchronously). */
@@ -55,6 +57,16 @@ export interface CreateWebAdaptersOptions {
    * omitted, no history adapter is installed and reloads start empty.
    */
   apiBaseUrl?: string;
+  /**
+   * Total send attempts on a saturated pod (guuey#406) — forwarded to
+   * {@link SaturationRetryOptions.attempts}. End-user surfaces facing
+   * capacity-1 pods (demo fixtures, xs plans) budget higher than the
+   * 2-attempt default and pair it with {@link onSaturationWait} so the
+   * wait is a visible busy state.
+   */
+  saturationAttempts?: number;
+  /** Forwarded to {@link SaturationRetryOptions.onSaturationWait}. */
+  onSaturationWait?: SaturationRetryOptions["onSaturationWait"];
   /**
    * Resolve the caller's Cognito access token (fresh), or `null` when signed
    * out. When a token is present the chat transport AND the history read
@@ -139,6 +151,10 @@ export function createWebAdapters(
     // resolves inside its generator).
     yield* fetchStreamTransport(req, null, getGuestSecret ? getGuestSecret() : null, {
       getBearer: getAccessToken,
+      ...(opts.saturationAttempts !== undefined ? { attempts: opts.saturationAttempts } : {}),
+      ...(opts.onSaturationWait !== undefined
+        ? { onSaturationWait: opts.onSaturationWait }
+        : {}),
     });
   };
 

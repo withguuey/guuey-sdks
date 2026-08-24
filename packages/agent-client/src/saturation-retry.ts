@@ -94,7 +94,26 @@ export interface SaturationRetryOptions {
    * real 15s timer; production uses an abort-aware `setTimeout`.
    */
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
+  /**
+   * Total send attempts on a saturated pod (guuey#406). Default 1 retry
+   * (2 attempts) — the historical behavior; capped at 5. A capacity-1 pod
+   * (demo fixtures, xs plans) refuses the SECOND simultaneous visitor, so
+   * end-user surfaces budget higher and pair it with `onSaturationWait` so
+   * the wait is a visible busy state, never a silent hang or a generic
+   * error boundary (the 2026-08-24 standalone incident).
+   */
+  attempts?: number;
+  /**
+   * Fired before each saturation wait — the surface's hook for an honest
+   * "the agent is helping someone else" state. Never fired for other error
+   * classes; the turn stays `connecting` throughout (the hook's state
+   * machine deliberately has no `retrying` status).
+   */
+  onSaturationWait?: (info: { attempt: number; totalAttempts: number; waitMs: number }) => void;
 }
+
+/** Hard ceiling on {@link SaturationRetryOptions.attempts} retries. */
+const MAX_SATURATION_RETRIES = 5;
 
 /**
  * Wrap an invoke transport with ONE automatic retry on a saturated pod.
@@ -136,25 +155,29 @@ export function withSaturationRetry(
   transport: InvokeTransport,
   options: SaturationRetryOptions = {},
 ): InvokeTransport {
+  const retries = Math.min(Math.max(options.attempts ?? 1, 1), MAX_SATURATION_RETRIES);
   return async function* retrying(req: InvokeRequest): AsyncGenerator<string> {
-    let yielded = false;
-    try {
-      for await (const chunk of transport(req)) {
-        yielded = true;
-        yield chunk;
+    for (let attempt = 1; ; attempt += 1) {
+      let yielded = false;
+      try {
+        for await (const chunk of transport(req)) {
+          yielded = true;
+          yield chunk;
+        }
+        return;
+      } catch (err) {
+        const saturated =
+          err instanceof AgentResponseError && err.code === AGENT_ERROR_CODES.POD_SATURATED;
+        if (!saturated || yielded || attempt > retries) throw err;
+        const waitMs = saturationDelayMs(err.retryAfterSeconds);
+        options.onSaturationWait?.({ attempt, totalAttempts: retries + 1, waitMs });
+        await (options.sleep ?? delay)(waitMs, req.signal);
+        // Aborted mid-wait: the user is done with this turn. Surface the
+        // refusal that caused the wait rather than spending a request that
+        // `fetch` would reject on the signal anyway.
+        if (req.signal.aborted) throw err;
       }
-      return;
-    } catch (err) {
-      const saturated =
-        err instanceof AgentResponseError && err.code === AGENT_ERROR_CODES.POD_SATURATED;
-      if (!saturated || yielded) throw err;
-      await (options.sleep ?? delay)(saturationDelayMs(err.retryAfterSeconds), req.signal);
-      // Aborted mid-wait: the user is done with this turn. Surface the refusal
-      // that caused the wait rather than spending a request that `fetch` would
-      // reject on the signal anyway.
-      if (req.signal.aborted) throw err;
     }
-    yield* transport(req);
   };
 }
 

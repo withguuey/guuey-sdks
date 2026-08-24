@@ -125,12 +125,20 @@ export interface AgentInvokeAdapters {
 /** Tuning for the guuey#192 stall watchdog — see {@link UseAgentInvokeOptions.stallRecovery}. */
 export interface StallRecoveryOptions {
   /**
-   * Byte-inactivity window (ms) before a history probe fires. Armed only
-   * AFTER the first byte of the turn — pre-first-byte silence is a legitimate
-   * cold start and never triggers. Every received chunk resets it.
-   * Default 25000.
+   * Byte-inactivity window (ms) before a history probe fires. Armed with
+   * {@link preFirstByteWindowMs} at turn start, re-armed with THIS window by
+   * every received chunk. Default 25000.
    */
   windowMs?: number;
+  /**
+   * The PRE-first-byte window (ms) — guuey#409: a turn that never receives
+   * ANY byte (an invoke-rail death upstream of the pod, or an in-pod
+   * pre-spawn hang) previously showed "Thinking…" forever with no error
+   * item; this window bounds it. Much longer than `windowMs` on purpose —
+   * the transport's cold-start retries legitimately spend up to ~90s before
+   * the first byte. Default 120000.
+   */
+  preFirstByteWindowMs?: number;
   /**
    * Fruitless probes (history shows the turn still in flight, or no probe is
    * possible) before the turn fails with `CLIENT_ERROR_CODES.STREAM_STALLED`.
