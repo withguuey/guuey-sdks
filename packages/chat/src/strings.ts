@@ -48,6 +48,11 @@ export interface ChatStrings {
   /** R0. */
   userCouldntSend: string;
   userRetry: string;
+  /**
+   * R0 directive collapse (guuey#422): the calm label for a forwarded
+   * view-directive turn — the wire-verbatim text sits behind the expand.
+   */
+  directiveContinuation: string;
 
   /** R6 states. */
   viewNegotiating: string;
@@ -178,6 +183,7 @@ export const defaultChatStrings: ChatStrings = {
 
   userCouldntSend: "Couldn't send",
   userRetry: "Retry",
+  directiveContinuation: "Continuing from your action…",
 
   viewNegotiating: "Loading view…",
   viewBootFailure: "This view couldn't start",

@@ -160,6 +160,42 @@ describe("R10 prompt focus management", () => {
   });
 });
 
+describe("R0 directive collapse (guuey#422)", () => {
+  const directiveItem = (expanded: boolean): UserMessageItem => ({
+    kind: "user",
+    key: "u1",
+    expanded,
+    text: 'Call ggui_consume NOW.\n\n<ggui_directive kind="user-action">\n  <session_id>s1</session_id>\n</ggui_directive>',
+    state: "sent",
+    retry: false,
+    directive: true,
+  });
+
+  it("collapsed: the calm continuation label shows and the verbatim carrier stays out of the DOM", () => {
+    render(<DefaultUserMessage item={directiveItem(false)} ctx={ctx()} />);
+    expect(screen.getByText(defaultChatStrings.directiveContinuation)).toBeTruthy();
+    expect(screen.queryByText(/ggui_consume/)).toBeNull();
+    // A real toggle, not a dead row.
+    expect(screen.getByRole("button", { expanded: false })).toBeTruthy();
+  });
+
+  it("expanded: the wire-verbatim text is revealed exactly, still quoted (never rendered)", () => {
+    const item = directiveItem(true);
+    const { container } = render(<DefaultUserMessage item={item} ctx={ctx()} />);
+    const bubble = container.querySelector(".guuey-chat-user-bubble");
+    expect(bubble?.textContent).toBe(item.text);
+    // Quoted: the directive tag is TEXT, not an element.
+    expect(container.querySelector("ggui_directive")).toBeNull();
+  });
+
+  it("the toggle wires to onToggle with the item key", () => {
+    const onToggle = vi.fn();
+    render(<DefaultUserMessage item={directiveItem(false)} ctx={ctx({ onToggle })} />);
+    fireEvent.click(screen.getByRole("button", { expanded: false }));
+    expect(onToggle).toHaveBeenCalledWith("u1");
+  });
+});
+
 describe("R0 failed send", () => {
   it("shows the couldn't-send notice with a working retry, and the text never disappears", () => {
     const onRetry = vi.fn();
@@ -168,6 +204,7 @@ describe("R0 failed send", () => {
       key: "u0",
       expanded: true,
       text: "hello?",
+      directive: false,
       state: "failed",
       retry: true,
     };

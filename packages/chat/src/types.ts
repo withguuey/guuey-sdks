@@ -197,6 +197,18 @@ export interface UserMessageItem extends BaseItem {
   state: "sending" | "sent" | "failed";
   /** The failed-state affordance (policy-gated); never silently disappears. */
   retry: boolean;
+  /**
+   * The turn is a forwarded view directive (guuey#422 — a `ui/message`
+   * doorbell's `<ggui_directive>` carrier, relayed through the composer's
+   * send gate). DISPLAY-ONLY: `text` stays wire-verbatim — the calm
+   * renderer collapses the bubble into a quiet
+   * `strings.directiveContinuation` row (expand reveals the verbatim
+   * text); nothing about the wire changes. Collapse is policy-gated
+   * (`userMessage.collapseDirectives`) — `false` here means "render as an
+   * ordinary bubble" whether because the text is ordinary or the policy
+   * says show it.
+   */
+  directive: boolean;
 }
 
 /** R1 — assistant text. */

@@ -4,6 +4,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
 {
   "items": [
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",
@@ -841,6 +842,7 @@ exports[`corpus > 2. midstream-tool-failure — failed inline; badge without unr
 {
   "items": [
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",
@@ -978,6 +980,7 @@ exports[`corpus > 3. cold-start — R12 escalation at 0 / 2.5 s / 15 s 1`] = `
 {
   "items": [
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",
@@ -1002,6 +1005,7 @@ exports[`corpus > 4. consent-gate — pending grant-mode card → answered one-l
 {
   "items": [
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",
@@ -1076,6 +1080,7 @@ exports[`corpus > 5. bypass-text-only — plan identical to a silver text-only s
 {
   "items": [
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",
@@ -1103,6 +1108,7 @@ exports[`corpus > 7. view-never-handshakes — channel-aware labels on both chan
 {
   "items": [
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",
@@ -1210,6 +1216,7 @@ exports[`corpus > 8. aborted-mid-stream — partial kept + Stopped.; no orphaned
 {
   "items": [
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",
@@ -1255,6 +1262,7 @@ exports[`corpus > 9. history-dead-locators — the expired path beside a healthy
 {
   "items": [
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",
@@ -1333,6 +1341,7 @@ exports[`corpus > 10. empty-turn — status resolves, no empty bubble 1`] = `
 {
   "items": [
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",
@@ -1351,6 +1360,7 @@ exports[`corpus > 11. unknown-block-storm — labeled rows; nothing blank, nothi
 {
   "items": [
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",
@@ -1396,6 +1406,7 @@ exports[`corpus > 12. interleaved-media-code-citations — ordering and aggregat
 {
   "items": [
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",
@@ -1461,6 +1472,7 @@ exports[`corpus > 13. saturated-then-served — only R12 waiting, then a normal 
 {
   "items": [
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",
@@ -1488,6 +1500,7 @@ exports[`corpus > 14. reasoning-heavy — calm collapses to one line; debug expa
 {
   "items": [
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",
@@ -1523,6 +1536,7 @@ exports[`corpus > 15. tools-around-a-view — the group SPLITS at the view's pos
 {
   "items": [
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",
@@ -1690,6 +1704,7 @@ exports[`corpus > 16. user-send-failure — R0 failed with retry; the message ne
 {
   "items": [
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",
@@ -1708,6 +1723,7 @@ exports[`corpus > 19. persisted-plus-live — the fold owns its trailing turns; 
 {
   "items": [
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",
@@ -1725,6 +1741,7 @@ exports[`corpus > 19. persisted-plus-live — the fold owns its trailing turns; 
       "text": "Here are some options.",
     },
     {
+      "directive": false,
       "expanded": true,
       "key": "u1",
       "kind": "user",
@@ -1770,6 +1787,7 @@ exports[`corpus > 19. persisted-plus-live — the fold owns its trailing turns; 
       "toolTitle": "ggui render",
     },
     {
+      "directive": false,
       "expanded": true,
       "key": "u2",
       "kind": "user",
@@ -1855,6 +1873,7 @@ exports[`corpus > 20. hitl-grant-modes — the persisted declaration renders; an
 {
   "items": [
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",
@@ -1940,6 +1959,7 @@ exports[`corpus > 21. notice-rows — both arrival paths render labeled, never a
       "text": "Model fell back to concise mode",
     },
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",
@@ -1967,6 +1987,7 @@ exports[`corpus > 22. promoted-view — the stage's mount chips (guuey#204); oth
 {
   "items": [
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",
@@ -2071,6 +2092,7 @@ exports[`corpus > 23. meta-less-locator — a \`_meta\`-withholding producer's r
 {
   "items": [
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",
@@ -2130,6 +2152,7 @@ exports[`corpus > 24. prod-wire-ggui-render — ggui's production posture: no _m
 {
   "items": [
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",
@@ -2198,6 +2221,7 @@ exports[`corpus > 25. chips-presentation — EVERY view chips; the promoted key 
 {
   "items": [
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",
@@ -2291,6 +2315,7 @@ exports[`corpus > 25. oauth-auth-ask — kind:auth + authConfig oauth2 plans as 
 {
   "items": [
     {
+      "directive": false,
       "expanded": true,
       "key": "u0",
       "kind": "user",

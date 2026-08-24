@@ -19,7 +19,17 @@ export interface TranscriptPolicy {
    */
   debugDetail: boolean;
   /** R0. */
-  userMessage: { retryAffordance: boolean };
+  userMessage: {
+    retryAffordance: boolean;
+    /**
+     * Collapse forwarded view-directive turns (guuey#422 `ui/message`
+     * relays carrying `<ggui_directive>`) into a calm
+     * `strings.directiveContinuation` row. Display-only — the sent/
+     * persisted text stays wire-verbatim, and expand reveals it. Debug
+     * preset shows the verbatim bubble (`false`).
+     */
+    collapseDirectives: boolean;
+  };
   /** R1 (markdown sanitization itself is the 3b renderer's security surface). */
   text: { markdown: boolean };
   /** R2. */
@@ -125,7 +135,7 @@ function calmBase(): TranscriptPolicy {
     strings: defaultChatStrings,
     locale: "en",
     debugDetail: false,
-    userMessage: { retryAffordance: true },
+    userMessage: { retryAffordance: true, collapseDirectives: true },
     text: { markdown: true },
     reasoning: { show: true, expandedByDefault: false },
     tool: { expandByDefault: false, argsVisible: false, humanizeTitle: humanizeToolName },
@@ -155,6 +165,7 @@ export function debugPolicy(overrides?: TranscriptPolicyOverrides): TranscriptPo
   const debug: TranscriptPolicy = {
     ...base,
     debugDetail: true,
+    userMessage: { ...base.userMessage, collapseDirectives: false },
     reasoning: { ...base.reasoning, expandedByDefault: true },
     tool: { ...base.tool, expandByDefault: true, argsVisible: true },
     toolGroup: { threshold: false },

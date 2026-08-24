@@ -783,4 +783,98 @@ describe("kit defaults — relay-through + the ui/message doorbell (guuey#422)",
     await new Promise((r) => setTimeout(r, 30));
     expect(calls).toHaveLength(0);
   });
+
+  // ── Queue-and-drain (guuey#422 close-condition 1, ggui review): the
+  // machine ACKs the doorbell BEFORE delivery, so a busy drop would be an
+  // ACKed-then-silently-dropped message. The sink queues instead and the
+  // idle transition drains — and the one genuinely undrainable case
+  // (unavailable chat) is LOUD, never silent.
+  it("a doorbell during a live turn QUEUES and drains on idle — never silently dropped", async () => {
+    const { adapters, calls } = scriptedAdapters({ holdOpen: true });
+    let handle: GuueyChatHandle | null = null;
+    renderChat(adapters, {
+      apiBaseUrl: "https://api.example/v1",
+      onReady: (h) => {
+        handle = h;
+      },
+    });
+    await waitFor(() => expect(handle).not.toBeNull());
+    const sink = handle!.viewSlotProps().onUserMessage;
+    if (sink === undefined) throw new Error("message sink expected");
+
+    act(() => {
+      expect(handle!.send("first")).toBe(true);
+    });
+    await screen.findByRole("button", { name: "Stop" });
+    sink({
+      role: "user",
+      content: [{ type: "text", text: "Your REQUIRED FIRST TOOL CALL is ggui_consume…" }],
+    });
+    // Queued, not sent, not dropped: still exactly the live turn's call.
+    expect(calls).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    // Idle transition drains the queued doorbell as a real send.
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(JSON.stringify(calls[1].body)).toContain("ggui_consume");
+  });
+
+  it("repeat doorbells while busy collapse to ONE drain (exact-text dedupe — the consume pipe holds the gestures)", async () => {
+    const { adapters, calls } = scriptedAdapters({ holdOpen: true });
+    let handle: GuueyChatHandle | null = null;
+    renderChat(adapters, {
+      apiBaseUrl: "https://api.example/v1",
+      onReady: (h) => {
+        handle = h;
+      },
+    });
+    await waitFor(() => expect(handle).not.toBeNull());
+    const sink = handle!.viewSlotProps().onUserMessage;
+    if (sink === undefined) throw new Error("message sink expected");
+
+    act(() => {
+      expect(handle!.send("first")).toBe(true);
+    });
+    await screen.findByRole("button", { name: "Stop" });
+    const doorbell = {
+      role: "user",
+      content: [{ type: "text", text: "Your REQUIRED FIRST TOOL CALL is ggui_consume…" }],
+    };
+    sink(doorbell);
+    sink(doorbell);
+    sink(doorbell);
+    expect(calls).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    await waitFor(() => expect(calls).toHaveLength(2));
+    // The drained send starts a fresh held turn; no further drain follows
+    // once THAT settles — the queue held one entry, not three.
+    fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls).toHaveLength(2);
+  });
+
+  it("an unavailable chat drops the doorbell LOUDLY (console.warn), never silently", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { adapters, calls } = scriptedAdapters();
+      let handle: GuueyChatHandle | null = null;
+      renderChat(adapters, {
+        endpointUrl: null,
+        apiBaseUrl: "https://api.example/v1",
+        onReady: (h) => {
+          handle = h;
+        },
+      });
+      await waitFor(() => expect(handle).not.toBeNull());
+      const sink = handle!.viewSlotProps().onUserMessage;
+      if (sink === undefined) throw new Error("message sink expected");
+      sink({ role: "user", content: [{ type: "text", text: "ggui_consume now" }] });
+      await new Promise((r) => setTimeout(r, 30));
+      expect(calls).toHaveLength(0);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("doorbell dropped"));
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });

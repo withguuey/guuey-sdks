@@ -520,6 +520,15 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // real turn starts, the agent calls ggui_consume, the card repaints.
   // Busy/unavailable ⇒ dropped (the doorbell fires post-turn by design;
   // mid-turn the consume pipe is live and no doorbell fires).
+  // guuey#422 close-condition 1 (ggui review): the machine ACKs the
+  // doorbell BEFORE delivery, so a busy-drop here would be an
+  // ACKed-then-silently-dropped message — the night's silence class in
+  // protocol clothes. Queue-and-drain instead: while a turn is live the
+  // directive queues (exact-text dedupe — a session's repeat doorbells
+  // collapse; the consume PIPE holds the gestures, the doorbell only
+  // wakes), and the idle transition drains one per turn. Unavailable chat
+  // cannot drain — that drop is LOUD (console.warn), never silent.
+  const pendingDoorbellsRef = useRef<string[]>([]);
   const defaultOnUserMessage = useCallback((params: { [key: string]: unknown }) => {
     const content = params["content"];
     if (!Array.isArray(content)) return;
@@ -533,11 +542,34 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       .join("\n");
     if (text.trim() === "") return;
     const live = liveRef.current;
-    if (!live.available || live.busy) return;
+    if (!live.available) {
+      console.warn(
+        "[GuueyChat] ui/message doorbell dropped — chat is unavailable (endpointUrl null); the view's gesture cannot start a turn here.",
+      );
+      return;
+    }
+    if (live.busy) {
+      if (!pendingDoorbellsRef.current.includes(text)) pendingDoorbellsRef.current.push(text);
+      return;
+    }
     void live.invoke.send(text).catch(() => {
       // The hook owns failure surfacing, same as every send path.
     });
   }, []);
+
+  // The drain: one queued doorbell per idle transition — its send flips
+  // busy again, and the NEXT idle drains the next (never a turn storm).
+  useEffect(() => {
+    if (busy || pendingDoorbellsRef.current.length === 0) return;
+    const next = pendingDoorbellsRef.current.shift();
+    if (next === undefined) return;
+    const live = liveRef.current;
+    if (!live.available) {
+      console.warn("[GuueyChat] queued ui/message doorbell dropped — chat became unavailable.");
+      return;
+    }
+    void live.invoke.send(next).catch(() => {});
+  }, [busy]);
 
   const effectiveViewProps = useMemo<TranscriptItemContext["viewProps"]>(
     () =>

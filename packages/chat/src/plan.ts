@@ -823,13 +823,23 @@ export function planTranscript(
         user.clientMessageId !== undefined
           ? (inputs.sendStates?.[user.clientMessageId] ?? "sent")
           : "sent";
+      // guuey#422 close-condition 3: a forwarded view directive (the
+      // `ui/message` doorbell's `<ggui_directive>` carrier, relayed through
+      // the composer's send gate) collapses into a calm continuation row.
+      // DISPLAY-ONLY — `text` stays wire-verbatim (expand reveals it); the
+      // wire itself was never touched. Marker matches ggui's runtime
+      // construction (`<ggui_directive kind="user-action">` inside the
+      // relayed prose).
+      const directive =
+        policy.userMessage.collapseDirectives && user.text.includes("<ggui_directive");
       conversation.push({
         kind: "user",
         key,
-        expanded: true,
+        expanded: resolveExpanded(key, !directive, overrides),
         text: user.text,
         state: sendState,
         retry: sendState === "failed" && policy.userMessage.retryAffordance,
+        directive,
       });
     }
     const assistant = assistants[slot];

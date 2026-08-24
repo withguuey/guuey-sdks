@@ -187,6 +187,33 @@ function CopyButton({ text, ctx }: { text: string; ctx: TranscriptItemContext })
 // ─── R0 ────────────────────────────────────────────────────────────────────
 
 export function DefaultUserMessage({ item, ctx }: ItemProps<UserMessageItem>): ReactNode {
+  // guuey#422: a forwarded view directive renders as a calm continuation
+  // row — the wire-verbatim text sits behind the expand, never rewritten.
+  if (item.directive) {
+    return (
+      <div className={`guuey-chat-user guuey-chat-user-directive guuey-chat-user-${item.state}`}>
+        <Collapsible
+          itemKey={item.key}
+          expanded={item.expanded}
+          header={<span className="guuey-chat-directive-label">{ctx.strings.directiveContinuation}</span>}
+          ctx={ctx}
+        >
+          {/* Verbatim quote — same never-rendered rule as the bubble. */}
+          <div className="guuey-chat-user-bubble">{item.text}</div>
+        </Collapsible>
+        {item.state === "failed" ? (
+          <p className="guuey-chat-send-failed" role="status">
+            {ctx.strings.userCouldntSend}
+            {item.retry ? (
+              <button type="button" className="guuey-chat-retry" onClick={() => ctx.onRetry?.(item)}>
+                {ctx.strings.userRetry}
+              </button>
+            ) : null}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
   return (
     <div className={`guuey-chat-user guuey-chat-user-${item.state}`}>
       {/* User text is QUOTED, never rendered — whitespace preserved. */}
