@@ -66,7 +66,7 @@ import type { AgHitlAnswer, AgPausedAsk } from "@silverprotocol/core";
 import { useAgentInvoke } from "@guuey/agent-client/react";
 import { unavailableToolCallResult, withActionStaging } from "@guuey/mcp-apps-host";
 import type { McpToolCallResult, UiActionRequest, UiResourceReader } from "@guuey/mcp-apps-host";
-import { calmPolicy, debugPolicy, type TranscriptPolicy } from "../policy.js";
+import { calmPolicy, debugPolicy, type TranscriptPolicyOverrides } from "../policy.js";
 import { useStructuralIdentity } from "./structural-identity.js";
 import { defaultChatStrings, type ChatStrings } from "../strings.js";
 import { DEFAULT_CHAT_THEME, type GuueyChatTheme } from "../theme.js";
@@ -192,8 +192,12 @@ export interface GuueyChatProps {
   adapters?: AgentInvokeAdapters;
   /** Policy preset (spec §5). Default `"calm"`. */
   preset?: "calm" | "debug";
-  /** Knob overrides applied on top of the preset (spec §3's columns). */
-  policy?: Partial<TranscriptPolicy>;
+  /**
+   * Knob overrides applied on top of the preset (spec §3's columns) —
+   * per-SECTION partials (`{ view: { presentation: "chips" } }` needs no
+   * other view fields; guuey#321 made the type tell the merge's truth).
+   */
+  policy?: TranscriptPolicyOverrides;
   /** Per-slot component overrides (spec §3's override column). */
   components?: Partial<TranscriptComponents>;
   /** String overrides — merged over the preset's `ChatStrings` (§4.2). */

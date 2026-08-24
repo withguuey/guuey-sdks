@@ -16,6 +16,7 @@ export {
 } from "./plan.js";
 export {
   calmPolicy,
+  type TranscriptPolicyOverrides,
   debugPolicy,
   type TranscriptPolicy,
 } from "./policy.js";
