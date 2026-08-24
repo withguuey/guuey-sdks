@@ -64,7 +64,7 @@ import {
 } from "@guuey/agent-client";
 import type { AgHitlAnswer, AgPausedAsk } from "@silverprotocol/core";
 import { useAgentInvoke } from "@guuey/agent-client/react";
-import { unavailableToolCallResult, withActionStaging } from "@guuey/mcp-apps-host";
+import { unavailableToolCallResult } from "@guuey/mcp-apps-host";
 import type { McpToolCallResult, UiActionRequest, UiResourceReader } from "@guuey/mcp-apps-host";
 import { calmPolicy, debugPolicy, type TranscriptPolicyOverrides } from "../policy.js";
 import { useStructuralIdentity } from "./structural-identity.js";
@@ -93,7 +93,7 @@ import { oauthPromptAction, useOAuthReturn } from "./oauth-return.js";
 export function viewPropsWithThemeAnnounce(
   viewProps: TranscriptItemContext["viewProps"],
   mode: ThemeMode,
-  defaults: Pick<ViewSlotProps, "onCallTool" | "onUpdateModelContext"> = {},
+  defaults: Pick<ViewSlotProps, "onCallTool" | "onUpdateModelContext" | "onUserMessage"> = {},
 ): TranscriptItemContext["viewProps"] {
   const themed = (base: ViewSlotProps | undefined): ViewSlotProps => ({
     // Kit-default host wires (guuey#335): the ACTION RELAY (Confirm inside
@@ -504,32 +504,49 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     });
   }, []);
 
-  // Post-turn action STAGING (guuey#356 — the widget's ratified #198/#215/
-  // #218 policy, ONE copy in the kit): with no live turn, an allowlisted
-  // semantic card action stages its human-readable projection into the
-  // composer (append, never clobber — the staged-composer semantic) and the
-  // view hears the queued acceptance; everything else rides the relay path
-  // untouched. Rides viewSlotProps too, so canvas hosts get it for free.
-  const stagedDefaultOnCallTool = useMemo<
-    ((request: UiActionRequest) => Promise<McpToolCallResult>) | undefined
-  >(() => {
-    if (defaultOnCallTool === undefined) return undefined;
-    return withActionStaging(defaultOnCallTool, {
-      isTurnLive: () => liveRef.current.busy,
-      stage: (text) => {
-        setInput((prev) => (prev.trim() === "" ? text : `${prev.trimEnd()} ${text}`));
-        inputRef.current?.focus();
-      },
+  // guuey#422: the kit default DOES NOT stage the ggui semantic carrier
+  // any more — post-turn actions RELAY (the #222 platform door serves
+  // persisted-card actions after the turn), so the runtime receives its
+  // REAL result envelope and its #440 classifier grades honestly; the
+  // post-turn agent turn then starts through the ui/message doorbell
+  // (the sink below). The #356 staging seam remains a PUBLIC export
+  // (withActionStaging) for hosts that choose the composer-staging UX —
+  // the widget's own mountCallTool still applies it by its own choice.
+  const stagedDefaultOnCallTool = defaultOnCallTool;
+
+  // The ui/message sink (guuey#422): the view hands the host role-user
+  // content (ggui's #440 doorbell — the model directive that drains a
+  // post-turn gesture). Forward through the SAME gate as handle.send: a
+  // real turn starts, the agent calls ggui_consume, the card repaints.
+  // Busy/unavailable ⇒ dropped (the doorbell fires post-turn by design;
+  // mid-turn the consume pipe is live and no doorbell fires).
+  const defaultOnUserMessage = useCallback((params: { [key: string]: unknown }) => {
+    const content = params["content"];
+    if (!Array.isArray(content)) return;
+    const text = content
+      .map((b) =>
+        typeof b === "object" && b !== null && "text" in b && typeof b.text === "string"
+          ? b.text
+          : "",
+      )
+      .filter((t) => t !== "")
+      .join("\n");
+    if (text.trim() === "") return;
+    const live = liveRef.current;
+    if (!live.available || live.busy) return;
+    void live.invoke.send(text).catch(() => {
+      // The hook owns failure surfacing, same as every send path.
     });
-  }, [defaultOnCallTool]);
+  }, []);
 
   const effectiveViewProps = useMemo<TranscriptItemContext["viewProps"]>(
     () =>
       viewPropsWithThemeAnnounce(viewProps, mode, {
         ...(stagedDefaultOnCallTool !== undefined ? { onCallTool: stagedDefaultOnCallTool } : {}),
         onUpdateModelContext: defaultOnUpdateModelContext,
+        onUserMessage: defaultOnUserMessage,
       }),
-    [viewProps, mode, stagedDefaultOnCallTool, defaultOnUpdateModelContext],
+    [viewProps, mode, stagedDefaultOnCallTool, defaultOnUpdateModelContext, defaultOnUserMessage],
   );
 
   // The canvas-host door (guuey#335): a host mounting views DIRECTLY from
@@ -544,6 +561,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       ? {
           ...(stagedDefaultOnCallTool !== undefined ? { onCallTool: stagedDefaultOnCallTool } : {}),
           onUpdateModelContext: defaultOnUpdateModelContext,
+          onUserMessage: defaultOnUserMessage,
           hostContext: { theme: mode },
         }
       : (effectiveViewProps ?? {});

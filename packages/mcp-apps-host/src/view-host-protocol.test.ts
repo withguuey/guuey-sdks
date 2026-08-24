@@ -25,6 +25,7 @@ function behavior(overrides: Partial<ViewHostBehavior> = {}): ViewHostBehavior {
     toolRelay: false,
     resourceRelay: false,
     modelContextSink: false,
+    messageSink: false,
     ...overrides,
   };
 }
@@ -469,5 +470,54 @@ describe("ui/update-model-context", () => {
       message: { jsonrpc: "2.0", id: 17, result: {} },
     });
     expect(effects[1]).toEqual({ kind: "model-context-update", params: {} });
+  });
+});
+
+
+// ─── ui/message (guuey#422) ────────────────────────────────────────────────
+describe("ui/message", () => {
+  it("with a sink wired: answers accepted AND emits the user-message effect", () => {
+    const { effects } = viewHostReceive(
+      initialViewHostState(),
+      behavior({ messageSink: true }),
+      {
+        jsonrpc: "2.0",
+        id: 31,
+        method: "ui/message",
+        params: { role: "user", content: [{ type: "text", text: "Call ggui_consume NOW…" }] },
+      },
+    );
+    expect(effects[0]).toEqual({
+      kind: "respond",
+      message: { jsonrpc: "2.0", id: 31, result: {} },
+    });
+    expect(effects[1]).toEqual({
+      kind: "user-message",
+      id: 31,
+      params: { role: "user", content: [{ type: "text", text: "Call ggui_consume NOW…" }] },
+    });
+  });
+
+  it("unwired: refuses in-band — never a silent drop", () => {
+    const { effects } = viewHostReceive(initialViewHostState(), behavior(), {
+      jsonrpc: "2.0",
+      id: 32,
+      method: "ui/message",
+      params: { role: "user", content: [] },
+    });
+    const only = effects[0];
+    if (only?.kind !== "respond") throw new Error("expected respond");
+    expect(JSON.stringify(only.message)).toContain("method_not_supported");
+  });
+
+  it("wired, the method joins the answered list in other refusals", () => {
+    const { effects } = viewHostReceive(
+      initialViewHostState(),
+      behavior({ messageSink: true }),
+      { jsonrpc: "2.0", id: 33, method: "ui/no-such", params: {} },
+    );
+    const only = effects[0];
+    if (only?.kind !== "respond") throw new Error("expected respond");
+    expect(JSON.stringify(only.message)).toContain("ui/message");
   });
 });

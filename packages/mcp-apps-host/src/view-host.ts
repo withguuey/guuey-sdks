@@ -130,6 +130,15 @@ export interface AttachViewHostConfig {
    */
   onUpdateModelContext?: (params: { [key: string]: unknown }) => void;
   /**
+   * Sink for `ui/message` (guuey#422): the view hands the host role-user
+   * content blocks to forward into the HOST's conversation (start a
+   * turn). ggui's #440 post-turn doorbell depends on this — without it,
+   * a successfully-relayed post-turn gesture dead-ends in their
+   * 'cannot relay actions' latch. Wiring it advertises `message`
+   * (text modality); the machine answers the view BEFORE delivery.
+   */
+  onUserMessage?: (params: { [key: string]: unknown }) => void;
+  /**
    * The mounted resource's `ui://` locator — the scope stamped on every
    * relayed {@link UiActionRequest}. Required for the relay to fire;
    * `<GuueyView>` fills it from the mount automatically.
@@ -220,6 +229,7 @@ function behaviorFor(frame: ViewFrameLike, config: AttachViewHostConfig): ViewHo
   const relayWired = config.onCallTool !== undefined && config.resourceUri !== undefined;
   const readWired = config.onReadResource !== undefined;
   const contextSinkWired = config.onUpdateModelContext !== undefined;
+  const messageSinkWired = config.onUserMessage !== undefined;
   return {
     hostInfo: config.hostInfo ?? DEFAULT_HOST_INFO,
     hostCapabilities: {
@@ -228,12 +238,14 @@ function behaviorFor(frame: ViewFrameLike, config: AttachViewHostConfig): ViewHo
       ...(relayWired ? { serverTools: {} } : {}),
       ...(readWired ? { serverResources: {} } : {}),
       ...(contextSinkWired ? { updateModelContext: { text: {} } } : {}),
+      ...(messageSinkWired ? { message: { text: {} } } : {}),
       ...config.hostCapabilities,
     },
     hostContext: hostContextFor(frame, config),
     toolRelay: relayWired,
     resourceRelay: readWired,
     modelContextSink: contextSinkWired,
+    messageSink: messageSinkWired,
   };
 }
 
@@ -310,7 +322,13 @@ export function attachViewHost(frame: ViewFrameLike, config: AttachViewHostConfi
       if (effect.kind === "respond") post(effect.message);
       else if (effect.kind === "relay-tool-call") relay(effect.id, effect.name, effect.arguments);
       else if (effect.kind === "relay-resource-read") relayRead(effect.id, effect.uri);
-      else if (effect.kind === "model-context-update") {
+      else if (effect.kind === "user-message") {
+        try {
+          config.onUserMessage?.(effect.params);
+        } catch {
+          // Observer failure is the embedder's bug; the view is answered.
+        }
+      } else if (effect.kind === "model-context-update") {
         // Delivery only — the machine already answered the view. Contained:
         // a throwing embedder sink must not unwind the message pump.
         try {

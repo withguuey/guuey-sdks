@@ -61,6 +61,7 @@ export interface GuueyViewProps
     | "hostContext"
     | "onCallTool"
     | "onUpdateModelContext"
+    | "onUserMessage"
     | "onReadResource"
     | "onSizeChanged"
     | "negotiationTimeoutMs"

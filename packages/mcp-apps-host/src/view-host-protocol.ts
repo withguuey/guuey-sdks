@@ -71,6 +71,16 @@ export const TOOLS_CALL_METHOD = "tools/call";
 export const UPDATE_MODEL_CONTEXT_METHOD = "ui/update-model-context";
 
 /**
+ * The spec method a view uses to hand the HOST a user-channel message
+ * (`McpUiMessageRequest` — role "user" + content blocks). ggui's #440
+ * post-turn doorbell rides this: when a gesture needs an agent turn and
+ * no consume long-poll is live, the runtime sends the model directive
+ * here and the host starts the turn (guuey#422). Local constant, same
+ * mirror rationale as the siblings.
+ */
+export const MESSAGE_METHOD_LOCAL = "ui/message";
+
+/**
  * The standard MCP method a view uses to read host-proxied resources —
  * `ReadResourceRequest` in the spec's App→Host request union
  * (`@modelcontextprotocol/ext-apps` `AppRequest`). A local constant, same
@@ -176,6 +186,19 @@ export type ViewHostEffect =
     }
   | {
       /**
+       * A `ui/message` the view handed the host (guuey#422): role-user
+       * content blocks the host forwards into ITS conversation loop (the
+       * composer's send gate — a real turn starts). ggui's #440 post-turn
+       * doorbell rides this. The machine already ANSWERED the view (`{}` —
+       * accepted); delivery is this effect. Only emitted when
+       * {@link ViewHostBehavior.messageSink} is true.
+       */
+      kind: "user-message";
+      id: ViewRequestId;
+      params: { [key: string]: unknown };
+    }
+  | {
+      /**
        * The view reported its content size (`ui/notifications/size-changed`
        * — spec notification, App → Host). At least one of the two fields is
        * a finite number; a notification carrying neither is consumed
@@ -210,6 +233,8 @@ export interface ViewHostBehavior {
   toolRelay: boolean;
   /** Whether a model-context sink is wired (see `view-host.ts`, guuey#335). */
   modelContextSink: boolean;
+  /** Whether a ui/message sink is wired (see `view-host.ts`, guuey#422). */
+  messageSink: boolean;
   /** Whether a `resources/read` relay hook is wired (see `view-host.ts`). */
   resourceRelay: boolean;
 }
@@ -399,6 +424,20 @@ export function viewHostReceive(
     };
   }
 
+  if (req.method === MESSAGE_METHOD_LOCAL && behavior.messageSink) {
+    // Answer accepted FIRST (spec result: rejected-flag absent = delivered)
+    // and deliver as an effect — the sink starting a turn must never make
+    // the view wait on the model.
+    const params = isPlainObject(req.params) ? req.params : {};
+    return {
+      state,
+      effects: [
+        { kind: "respond", message: { jsonrpc: "2.0", id: req.id, result: {} } },
+        { kind: "user-message", id: req.id, params },
+      ],
+    };
+  }
+
   if (req.method === RESOURCES_READ_METHOD && behavior.resourceRelay) {
     const uri = req.params?.["uri"];
     if (typeof uri === "string") {
@@ -412,6 +451,7 @@ export function viewHostReceive(
     ...(behavior.toolRelay ? [TOOLS_CALL_METHOD] : []),
     ...(behavior.resourceRelay ? [RESOURCES_READ_METHOD] : []),
     ...(behavior.modelContextSink ? [UPDATE_MODEL_CONTEXT_METHOD] : []),
+    ...(behavior.messageSink ? [MESSAGE_METHOD_LOCAL] : []),
   ];
   return {
     state,

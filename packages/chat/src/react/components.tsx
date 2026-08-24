@@ -107,6 +107,7 @@ export type ViewSlotProps = Pick<
   | "hostContext"
   | "onCallTool"
   | "onUpdateModelContext"
+  | "onUserMessage"
   | "onReadResource"
   | "onSizeChanged"
   | "negotiationTimeoutMs"

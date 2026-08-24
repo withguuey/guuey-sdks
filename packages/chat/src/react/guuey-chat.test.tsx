@@ -720,9 +720,9 @@ describe("kit-default view-host wiring (guuey#335)", () => {
   });
 });
 
-// ─── Post-turn action staging rides the kit defaults (guuey#356) ───────────
-describe("kit-default staging (guuey#356)", () => {
-  it("an idle semantic card action stages its projection into the composer and answers queued", async () => {
+// ─── Post-turn actions RELAY; ui/message starts the turn (guuey#422) ──────
+describe("kit defaults — relay-through + the ui/message doorbell (guuey#422)", () => {
+  it("an idle semantic card action RELAYS (no staging): pre-thread it answers the honest in-band unavailable, composer untouched", async () => {
     const { adapters } = scriptedAdapters();
     let handle: GuueyChatHandle | null = null;
     renderChat(adapters, {
@@ -737,17 +737,17 @@ describe("kit-default staging (guuey#356)", () => {
     const result = await onCallTool({
       resourceUri: "ui://x/1",
       name: "ggui_runtime_submit_action",
-      arguments: { actionId: "book_slot", day: "tuesday" },
+      arguments: { actionId: "selectSlot", slot: "9am" },
     });
-    expect(result).toEqual({
-      content: [{ type: "text", text: "Queued — press Send to continue." }],
-    });
+    // No thread yet ⇒ the relay's in-band unavailable — a RESULT envelope
+    // the #440 classifier can grade, never the staged text acceptance.
+    expect(result.isError).toBe(true);
     const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
-    await waitFor(() => expect(input.value).toBe("Book slot: day tuesday"));
+    expect(input.value).toBe("");
   });
 
-  it("a non-semantic action does NOT stage — it rides the relay path (unavailable pre-thread)", async () => {
-    const { adapters } = scriptedAdapters();
+  it("the ui/message sink sends the doorbell text through the composer gate — a real turn starts", async () => {
+    const { adapters, calls } = scriptedAdapters();
     let handle: GuueyChatHandle | null = null;
     renderChat(adapters, {
       apiBaseUrl: "https://api.example/v1",
@@ -756,17 +756,31 @@ describe("kit-default staging (guuey#356)", () => {
       },
     });
     await waitFor(() => expect(handle).not.toBeNull());
-    const onCallTool = handle!.viewSlotProps().onCallTool;
-    if (onCallTool === undefined) throw new Error("default relay expected");
-    // No thread yet → the relay's honest in-band unavailable; the composer
-    // stays untouched either way (the assertion that matters).
-    const result = await onCallTool({
-      resourceUri: "ui://x/1",
-      name: "ggui_runtime_pull",
-      arguments: { sessionId: "s" },
+    const sink = handle!.viewSlotProps().onUserMessage;
+    if (sink === undefined) throw new Error("message sink expected");
+    sink({
+      role: "user",
+      content: [{ type: "text", text: "Your REQUIRED FIRST TOOL CALL is ggui_consume…" }],
     });
-    expect(result.isError).toBe(true);
-    const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
-    expect(input.value).toBe("");
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(JSON.stringify(calls[0].body)).toContain("ggui_consume");
+  });
+
+  it("the doorbell is gate-respecting: empty content or unavailable chat sends nothing", async () => {
+    const { adapters, calls } = scriptedAdapters();
+    let handle: GuueyChatHandle | null = null;
+    renderChat(adapters, {
+      apiBaseUrl: "https://api.example/v1",
+      onReady: (h) => {
+        handle = h;
+      },
+    });
+    await waitFor(() => expect(handle).not.toBeNull());
+    const sink = handle!.viewSlotProps().onUserMessage;
+    if (sink === undefined) throw new Error("message sink expected");
+    sink({ role: "user", content: [] });
+    sink({ role: "user", content: "not-an-array" });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(calls).toHaveLength(0);
   });
 });
