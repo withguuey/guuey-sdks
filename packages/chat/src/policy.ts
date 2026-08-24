@@ -85,7 +85,17 @@ export interface TranscriptPolicy {
 }
 
 /** Deep-ish merge for the one level of nesting policies actually have. */
-function withOverrides(base: TranscriptPolicy, overrides?: Partial<TranscriptPolicy>): TranscriptPolicy {
+/**
+ * Per-section partial overrides — the shape `withOverrides` actually
+ * merges (each section spreads over its base), so the type tells the
+ * truth: `{ view: { presentation: 'chips' } }` is valid without
+ * restating the section's other fields (guuey#321 surfaced the lie).
+ */
+export type TranscriptPolicyOverrides = {
+  [K in keyof TranscriptPolicy]?: Partial<TranscriptPolicy[K]>;
+};
+
+function withOverrides(base: TranscriptPolicy, overrides?: TranscriptPolicyOverrides): TranscriptPolicy {
   if (!overrides) return base;
   return {
     ...base,
@@ -135,12 +145,12 @@ function calmBase(): TranscriptPolicy {
 }
 
 /** The `calm` preset — the end-user default (spec §5). */
-export function calmPolicy(overrides?: Partial<TranscriptPolicy>): TranscriptPolicy {
+export function calmPolicy(overrides?: TranscriptPolicyOverrides): TranscriptPolicy {
   return withOverrides(calmBase(), overrides);
 }
 
 /** The `debug` preset — the builder surface (Studio's test chat, spec §5). */
-export function debugPolicy(overrides?: Partial<TranscriptPolicy>): TranscriptPolicy {
+export function debugPolicy(overrides?: TranscriptPolicyOverrides): TranscriptPolicy {
   const base = calmBase();
   const debug: TranscriptPolicy = {
     ...base,
