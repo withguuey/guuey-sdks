@@ -1,8 +1,8 @@
 {
-  "@guuey/worker": "0.13.0",
-  "@guuey/config": "0.13.0",
-  "@guuey/cli": "0.13.0",
-  "@guuey/chat": "0.13.0",
-  "@guuey/mcp-apps-host": "0.13.0",
+  "@guuey/worker": "0.14.0",
+  "@guuey/config": "0.14.0",
+  "@guuey/cli": "0.14.0",
+  "@guuey/chat": "0.14.0",
+  "@guuey/mcp-apps-host": "0.14.0",
   "@silverprotocol/core": "0.5.0"
 }
