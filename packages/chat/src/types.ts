@@ -528,7 +528,19 @@ export type ChatDebugEvent =
    * COMPLEMENT — producers mirror it server-side — so the debug surface
    * carries the fact and the size, not the payload.
    */
-  | { type: "model-context-update"; byteSize: number };
+  | { type: "model-context-update"; byteSize: number }
+  /**
+   * A locator `resources/read` MISSED — the wired reader returned nothing
+   * or threw (guuey#408, the #401-class fail-loud lesson): a transport
+   * whose fallback never works is invisible when primary delivery
+   * succeeds and load-bearing exactly when it fails, so the miss must SAY
+   * SO somewhere observable. Carries the uri + lifecycle origin so a
+   * 100%-miss pattern is diagnosable from the builder surface; fires only
+   * when a reader was wired and failed (a reader-less host's placeholder
+   * is by construction, not a failure). Debug-only like every event here
+   * — calm end-user UX keeps deny == miss un-oracled.
+   */
+  | { type: "locator-read-miss"; key: ItemKey; resourceUri: string; origin: "live" | "history" };
 
 /**
  * One renderable view the plan saw, BEFORE any chips/promotion pass —

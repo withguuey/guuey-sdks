@@ -183,6 +183,80 @@ describe("useTranscript", () => {
     const view = result.current.plan.items.find((i) => i.kind === "view");
     expect(result.current.resolvedMounts.get(view!.key)).toBe("expired");
   });
+
+  // guuey#408 (the #401-class fail-loud lesson): a WIRED reader's miss
+  // names the uri + origin on the debug channel — a never-working
+  // transport must not vanish into placeholders. The reader-less arm
+  // above stays silent (no read happened, nothing failed).
+  it("a wired reader's locator miss emits locator-read-miss with the uri and origin (debug)", async () => {
+    const events: ChatDebugEvent[] = [];
+    const inputs = baseInputs({
+      historyCards: [
+        {
+          seq: 1,
+          at: "2026-08-15T00:00:00Z",
+          cardSnapshot: {
+            parts: [
+              {
+                type: "tool-result",
+                toolCallId: "c1",
+                content: [],
+                uiData: { resourceUri: "ui://app/1" },
+              },
+            ],
+          },
+        },
+      ],
+    });
+    const reader = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() =>
+      useTranscript({ inputs, policy: debugPolicy(), reader, onDebugEvent: (e) => events.push(e) }),
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const view = result.current.plan.items.find((i) => i.kind === "view");
+    expect(result.current.resolvedMounts.get(view!.key)).toBe("expired");
+    const misses = events.filter((e) => e.type === "locator-read-miss");
+    expect(misses).toHaveLength(1);
+    expect(misses[0]).toMatchObject({
+      key: view!.key,
+      resourceUri: "ui://app/1",
+      origin: "history",
+    });
+  });
+
+  it("a THROWING reader also emits the loud miss (transport failure == miss, still named)", async () => {
+    const events: ChatDebugEvent[] = [];
+    const inputs = baseInputs({
+      historyCards: [
+        {
+          seq: 1,
+          at: "2026-08-15T00:00:00Z",
+          cardSnapshot: {
+            parts: [
+              {
+                type: "tool-result",
+                toolCallId: "c1",
+                content: [],
+                uiData: { resourceUri: "ui://app/2" },
+              },
+            ],
+          },
+        },
+      ],
+    });
+    const reader = vi.fn().mockRejectedValue(new Error("gateway 404"));
+    const { result } = renderHook(() =>
+      useTranscript({ inputs, policy: debugPolicy(), reader, onDebugEvent: (e) => events.push(e) }),
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const view = result.current.plan.items.find((i) => i.kind === "view");
+    expect(result.current.resolvedMounts.get(view!.key)).toBe("expired");
+    expect(events.filter((e) => e.type === "locator-read-miss")).toHaveLength(1);
+  });
 });
 
 function invokeReturn(over: Partial<UseAgentInvokeReturn> = {}): UseAgentInvokeReturn {

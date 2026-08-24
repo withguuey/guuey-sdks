@@ -206,9 +206,27 @@ export function useTranscript({
       }
       // guuey#421: the roster knows a card's origin — a history card's
       // locator skips the pod door (it 404s by construction there).
+      // guuey#408: a WIRED reader's miss additionally says WHICH uri went
+      // unread (fail-loud on the debug channel — a never-working transport
+      // must not vanish into placeholders). The reader-less arm above
+      // stays silent: no read happened, nothing failed.
+      const loudMiss = (): void => {
+        debugSink.current?.({
+          type: "locator-read-miss",
+          key: item.key,
+          resourceUri: locator.resourceUri,
+          origin: item.origin,
+        });
+      };
       void resolveViewMount(locator, read, { origin: item.origin }).then(
-        (resolved) => settle(resolved ?? "expired"),
-        () => settle("expired"),
+        (resolved) => {
+          if (resolved === undefined) loudMiss();
+          settle(resolved ?? "expired");
+        },
+        () => {
+          loudMiss();
+          settle("expired");
+        },
       );
     }
   }, [plan, resolvedMounts]);
