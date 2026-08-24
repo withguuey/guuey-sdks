@@ -204,7 +204,9 @@ export function useTranscript({
         settle("expired");
         continue;
       }
-      void resolveViewMount(locator, read).then(
+      // guuey#421: the roster knows a card's origin — a history card's
+      // locator skips the pod door (it 404s by construction there).
+      void resolveViewMount(locator, read, { origin: item.origin }).then(
         (resolved) => settle(resolved ?? "expired"),
         () => settle("expired"),
       );

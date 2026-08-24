@@ -26,7 +26,7 @@
  */
 import { McpUiResourceCspSchema, type McpUiResourceCsp } from "@modelcontextprotocol/ext-apps";
 import type { McpUiResourcePayload } from "./block-ui.js";
-import type { ResolvedViewMount, ViewMountChannel } from "./card-mount.js";
+import type { ResolvedViewMount, UiResourceReadHints, ViewMountChannel } from "./card-mount.js";
 
 /**
  * One `resources/read` `contents[]` entry, structurally (SEP-1865). Kept a
@@ -96,7 +96,10 @@ export interface CreateMcpUiResourceReaderDeps {
    * equivalent authenticated proxy), returning the first `contents[]` entry —
    * or `undefined` when the read yields none. Throwing is treated as a miss.
    */
-  readResource: (uri: string) => Promise<McpResourceReadResult | undefined>;
+  readResource: (
+    uri: string,
+    hints?: UiResourceReadHints,
+  ) => Promise<McpResourceReadResult | undefined>;
 }
 
 /**
@@ -107,11 +110,14 @@ export interface CreateMcpUiResourceReaderDeps {
  */
 export function createMcpUiResourceReader(
   deps: CreateMcpUiResourceReaderDeps,
-): (resourceUri: string) => Promise<ResolvedViewMount | undefined> {
-  return async (resourceUri) => {
+): (
+  resourceUri: string,
+  hints?: UiResourceReadHints,
+) => Promise<ResolvedViewMount | undefined> {
+  return async (resourceUri, hints) => {
     let entry: McpResourceReadResult | undefined;
     try {
-      entry = await deps.readResource(resourceUri);
+      entry = await deps.readResource(resourceUri, hints);
     } catch {
       return undefined; // transport failure == deny == miss → placeholder
     }

@@ -77,7 +77,7 @@ describe("createMcpUiResourceReader", () => {
     });
     const read = createMcpUiResourceReader({ readResource });
     await expect(read("ui://weather/card-3")).resolves.toBeUndefined();
-    expect(readResource).toHaveBeenCalledWith("ui://weather/card-3");
+    expect(readResource).toHaveBeenCalledWith("ui://weather/card-3", undefined);
   });
 
   it("re-narrows at runtime: an entry with neither text nor blob is a miss", async () => {

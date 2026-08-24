@@ -109,7 +109,22 @@ export interface LocatorViewMount {
  * transport knows which sandbox trust the fetched HTML needs (a ggui shell
  * wants the ggui-CSP page; arbitrary tenant HTML wants the self-only page).
  */
-export type UiResourceReader = (resourceUri: string) => Promise<ViewMount | undefined>;
+export type UiResourceReader = (
+  resourceUri: string,
+  hints?: UiResourceReadHints,
+) => Promise<ViewMount | undefined>;
+
+/**
+ * Optional per-read hints (guuey#421). `origin: "history"` tells a
+ * two-door reader the locator came from a PERSISTED card — the pod door
+ * serves live turns only and 404s such reads by construction, so a
+ * history read may go straight to the platform door (kills the 2×404
+ * noise on every old-conversation load). Absent/`"live"` keeps pod-first.
+ * Purely advisory: a reader that ignores hints stays correct.
+ */
+export interface UiResourceReadHints {
+  origin?: "live" | "history";
+}
 
 /**
  * A live `tool-result` block → the card to mount: an inline resource, else the
@@ -172,10 +187,11 @@ export function snapshotViewMount(cardSnapshot: JsonValue): ViewMount | undefine
 export async function resolveViewMount(
   mount: ViewMount | undefined,
   reader?: UiResourceReader,
+  hints?: UiResourceReadHints,
 ): Promise<ResolvedViewMount | undefined> {
   if (mount === undefined || mount.channel !== "locator") return mount;
   if (reader === undefined) return undefined;
-  const read = await reader(mount.resourceUri);
+  const read = await reader(mount.resourceUri, hints);
   return read === undefined || read.channel === "locator" ? undefined : read;
 }
 

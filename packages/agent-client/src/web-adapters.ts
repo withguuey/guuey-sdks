@@ -305,7 +305,10 @@ export function __resetRelayEndpointWarning(): void {
  */
 export function createUiResourceReader(
   options: CreateUiResourceReaderOptions,
-): (resourceUri: string) => Promise<ResolvedViewMount | undefined> {
+): (
+  resourceUri: string,
+  hints?: { origin?: "live" | "history" },
+) => Promise<ResolvedViewMount | undefined> {
   const fetchImpl = options.fetchImpl ?? fetch;
   // A platform door without a pod door is almost always a live surface
   // that forgot `endpointUrl` — its cards would die silently for the whole
@@ -386,9 +389,16 @@ export function createUiResourceReader(
   };
 
   const podUrl = options.endpointUrl ? toUiResourceUrl(options.endpointUrl) : null;
-  const readResource = async (resourceUri: string): Promise<McpResourceReadResult | undefined> => {
+  const readResource = async (
+    resourceUri: string,
+    hints?: { origin?: "live" | "history" },
+  ): Promise<McpResourceReadResult | undefined> => {
     const query = `?uri=${encodeURIComponent(resourceUri)}`;
-    if (podUrl !== null) {
+    // guuey#421: a PERSISTED card's locator skips the pod door — pods serve
+    // live turns only and 404 such reads by construction; the old
+    // pod-first-always order fired a 404 pair on every old-conversation
+    // load (noise that read as breakage in every capture).
+    if (podUrl !== null && hints?.origin !== "history") {
       const live = await readDoor(`${podUrl}${query}`);
       if (live !== undefined) return live;
     }

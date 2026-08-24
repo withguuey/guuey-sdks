@@ -23,6 +23,7 @@ export {
   type LocatorViewMount,
   type ResolvedViewMount,
   type UiResourceReader,
+  type UiResourceReadHints,
   type ViewMount,
   type ViewMountChannel,
 } from "./card-mount.js";

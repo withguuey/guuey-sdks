@@ -972,3 +972,39 @@ describe("createUiResourceReader — per-resource declared CSP passthrough (guue
     });
   });
 });
+
+describe("createUiResourceReader — the origin hint (guuey#421)", () => {
+  it("origin:'history' skips the pod door — exactly ONE request, the platform door", async () => {
+    const fetchImpl = mockFetch([
+      jsonResponse({ uri: "ui://x/1", text: "<p>c</p>" }),
+    ]);
+    const read = createUiResourceReader({
+      apiBaseUrl: "https://api.example/v1",
+      threadId: "t-421",
+      endpointUrl: "https://pod.example", // pod door CONFIGURED — and skipped
+      fetchImpl,
+    });
+    await expect(read("ui://x/1", { origin: "history" })).resolves.toMatchObject({
+      channel: "inline",
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const url = String(fetchImpl.mock.calls[0]?.[0]);
+    expect(url).toContain("/threads/t-421/ui-resource");
+    expect(url).not.toContain("pod.example");
+  });
+
+  it("no hint (or live) keeps pod-first — the pre-#421 order byte-identically", async () => {
+    const fetchImpl = mockFetch([
+      jsonResponse({ uri: "ui://x/1", text: "<p>c</p>" }),
+    ]);
+    const read = createUiResourceReader({
+      apiBaseUrl: "https://api.example/v1",
+      threadId: "t-421",
+      endpointUrl: "https://pod.example",
+      fetchImpl,
+    });
+    await read("ui://x/1");
+    const url = String(fetchImpl.mock.calls[0]?.[0]);
+    expect(url).toContain("pod.example");
+  });
+});
