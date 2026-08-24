@@ -43,8 +43,8 @@
     "vitest": "^3.2.7"
   },
   "dependencies": {
-    "@ggui-ai/artifact-manifest": "0.11.0",
-    "@ggui-ai/protocol": "0.11.0",
+    "@ggui-ai/artifact-manifest": "0.12.0",
+    "@ggui-ai/protocol": "0.12.0",
     "@guuey/chat": "workspace:*",
     "@guuey/config": "workspace:*",
     "@guuey/create-agentic-app": "workspace:*",
