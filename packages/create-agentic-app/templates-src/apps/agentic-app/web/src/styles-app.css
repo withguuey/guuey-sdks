@@ -1,8 +1,12 @@
 /* agentic-app shell — split sidebar + fullscreen-swap canvas. Loaded after
    styles.css; only shell-specific rules live here. */
 
+/* guuey#429: the lib root is viewport-pinned (100dvh + overflow hidden) —
+   the shell fills IT; a min-height:100vh here would overflow the pinned
+   root and re-open the page-scroll hole the lib just closed. */
 .app-shell {
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }

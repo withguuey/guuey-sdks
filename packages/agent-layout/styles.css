@@ -11,9 +11,24 @@
  * set it.
  */
 
+/* guuey#429 (founder rule, requirement-grade): the shell is VIEWPORT-PINNED
+ * by default — "the sidebar's height should be fixed and the lower part
+ * should be stick on its bottom". `height: 100%` only pins when every
+ * ancestor carries a definite height, which no adopter's tree guarantees —
+ * against auto ancestors it computes to auto, tall pane content stretches
+ * the PAGE, and the agent rail scrolls below the fold (a scrollable-away
+ * agent panel defeats the category). So the ROOT establishes the chain
+ * itself: dynamic-viewport height (dvh; vh first as the older-browser
+ * fallback), `overflow: hidden` so content can only scroll inside the
+ * panels' own scroll contexts (the pane's overflow:auto; the chat's own
+ * scroller), never the page. An embedder that genuinely wants an in-flow
+ * layout sets `--guuey-layout-height` (e.g. `100%` inside its own pinned
+ * region) — a seam, not a fight. */
 .guuey-agent-layout {
-  height: 100%;
+  height: var(--guuey-layout-height, 100vh);
+  height: var(--guuey-layout-height, 100dvh);
   min-height: 0;
+  overflow: hidden;
 }
 
 .guuey-layout-shell {
@@ -36,6 +51,10 @@
   transition: background-color var(--guuey-layout-tone-transition) ease-out;
 }
 .guuey-layout-panel-app {
+  /* The app panel keeps its content height; the agent panel takes the
+   * remaining lower space (guuey#429 — stuck on its bottom, never
+   * crushed nor scrolled away). */
+  flex-shrink: 0;
   background: var(--guuey-layout-tone-upper);
   color: var(--guuey-layout-tone-upper-on);
 }
