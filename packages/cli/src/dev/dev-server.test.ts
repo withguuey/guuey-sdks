@@ -51,6 +51,11 @@ describe("startDevServer", () => {
     });
     const text = await res.text();
     expect(text).toMatch(/^event: session\n/);
+    // guuey#368: the session frame carries the thread identity (the same
+    // id the /threads/:id/messages route is keyed by).
+    const sess = /event: session\ndata: (\{[^\n]+\})/.exec(text);
+    const sessData = JSON.parse(sess![1]!) as { sessionId: string; threadId: string };
+    expect(sessData.threadId).toBe(sessData.sessionId);
     expect(text).toMatch(/event: message\ndata: \{"type":"native"/);
     expect(text).toMatch(/event: done\ndata: \{"stopReason":"end_turn"\}/);
   });
@@ -121,6 +126,11 @@ describe("startDevServer", () => {
     });
     const text = await res.text();
     expect(text).toMatch(/^event: session\n/);
+    // guuey#368: the session frame carries the thread identity (the same
+    // id the /threads/:id/messages route is keyed by).
+    const sess = /event: session\ndata: (\{[^\n]+\})/.exec(text);
+    const sessData = JSON.parse(sess![1]!) as { sessionId: string; threadId: string };
+    expect(sessData.threadId).toBe(sessData.sessionId);
     expect(text).toMatch(/event: done\ndata: \{"stopReason":"end_turn"\}/);
 
     const messageFrames = [...text.matchAll(/event: message\ndata: (\[.*?\])\n\n/g)].map((m) =>
@@ -159,6 +169,11 @@ describe("startDevServer", () => {
     });
     const text = await res.text();
     expect(text).toMatch(/^event: session\n/);
+    // guuey#368: the session frame carries the thread identity (the same
+    // id the /threads/:id/messages route is keyed by).
+    const sess = /event: session\ndata: (\{[^\n]+\})/.exec(text);
+    const sessData = JSON.parse(sess![1]!) as { sessionId: string; threadId: string };
+    expect(sessData.threadId).toBe(sessData.sessionId);
     expect(text).toMatch(/event: done\ndata: \{"stopReason":"end_turn"\}/);
 
     const events = [...text.matchAll(/event: message\ndata: (\[.*?\])\n\n/g)].flatMap(
@@ -215,6 +230,11 @@ describe("startDevServer", () => {
     });
     const text = await res.text();
     expect(text).toMatch(/^event: session\n/);
+    // guuey#368: the session frame carries the thread identity (the same
+    // id the /threads/:id/messages route is keyed by).
+    const sess = /event: session\ndata: (\{[^\n]+\})/.exec(text);
+    const sessData = JSON.parse(sess![1]!) as { sessionId: string; threadId: string };
+    expect(sessData.threadId).toBe(sessData.sessionId);
     expect(text).toMatch(
       /event: error\ndata: \{"code":"WORKER_ERROR","message":"AGJSON_NO_NORMALIZER:fixture"\}/,
     );

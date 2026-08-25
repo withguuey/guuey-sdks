@@ -1008,3 +1008,49 @@ describe("createUiResourceReader — the origin hint (guuey#421)", () => {
     expect(url).toContain("pod.example");
   });
 });
+
+describe("createUiResourceReader — pod-only assembly (guuey#368)", () => {
+  it("no threadId, no apiBaseUrl: the POD door still dials and resolves — the local-dev shape", async () => {
+    const calls: string[] = [];
+    const fetchImpl: typeof fetch = async (input) => {
+      calls.push(String(input));
+      return jsonResponse({ uri: "ui://fixt/1", mimeType: "text/html", text: "<p>x</p>" });
+    };
+    const read = createUiResourceReader({ endpointUrl: "https://pod.example", fetchImpl });
+    const mount = await read("ui://fixt/1");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain("https://pod.example/agent/ui-resource?uri=ui%3A%2F%2Ffixt%2F1");
+    expect(mount?.resource.text).toBe("<p>x</p>");
+  });
+
+  it("a pod MISS in a pod-only assembly is the honest placeholder — the platform door is never guessed at", async () => {
+    const calls: string[] = [];
+    const fetchImpl: typeof fetch = async (input) => {
+      calls.push(String(input));
+      return jsonResponse({ error: "not live" }, 404);
+    };
+    const read = createUiResourceReader({ endpointUrl: "https://pod.example", fetchImpl });
+    expect(await read("ui://fixt/1")).toBeUndefined();
+    expect(calls).toHaveLength(1); // exactly the pod door; no half-built platform URL
+  });
+
+  it("both platform halves present keeps the two-door fallthrough exactly as before", async () => {
+    const calls: string[] = [];
+    const fetchImpl: typeof fetch = async (input) => {
+      calls.push(String(input));
+      return calls.length === 1
+        ? jsonResponse({ error: "not live" }, 404)
+        : jsonResponse({ uri: "ui://fixt/1", text: "<p>y</p>" });
+    };
+    const read = createUiResourceReader({
+      apiBaseUrl: "https://api.example/v1",
+      threadId: "t1",
+      endpointUrl: "https://pod.example",
+      fetchImpl,
+    });
+    const mount = await read("ui://fixt/1");
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toContain("/threads/t1/ui-resource");
+    expect(mount?.resource.text).toBe("<p>y</p>");
+  });
+});

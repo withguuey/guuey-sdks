@@ -459,18 +459,24 @@ describe("<GuueyChat> default reader (guuey#221)", () => {
     }
   });
 
-  it("without apiBaseUrl nothing is read — behavior unchanged", async () => {
+  it("without apiBaseUrl the POD door still reads — the pod-only default (guuey#368)", async () => {
+    // The old pin here asserted zero reads ("behavior unchanged") — that
+    // WAS the docs-lab bug: an endpoint-only surface (the guuey dev
+    // scaffold) starved the pod door to zero requests and every live card
+    // expired. The default reader is now pod-only-legal.
     const { calls, impl } = mockReadFetch();
     const original = globalThis.fetch;
     globalThis.fetch = impl;
     try {
       render(<GuueyChat endpointUrl="https://pod.example/agent/invoke" adapters={locatorAdapters()} />);
       sendRender();
-      // Let the turn complete and any resolution effect run.
       await act(async () => {
         await new Promise((r) => setTimeout(r, 30));
       });
-      expect(calls).toHaveLength(0);
+      expect(calls.length).toBeGreaterThanOrEqual(1);
+      expect(calls[0]!.url).toContain("https://pod.example/agent/ui-resource?uri=");
+      // Pod-only: no half-built platform URL is ever guessed at.
+      for (const c of calls) expect(c.url).not.toContain("/threads/");
     } finally {
       globalThis.fetch = original;
     }

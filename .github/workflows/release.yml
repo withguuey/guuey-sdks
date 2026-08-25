@@ -184,6 +184,37 @@ jobs:
             (cd "packages/$pkg" && pnpm publish --provenance --no-git-checks)
           done
 
+      - name: Verify cohort on npm (guuey#439 — a partial cohort turns this run RED)
+        if: steps.mode.outputs.dry_run == 'false'
+        run: |
+          set -euo pipefail
+          # The lane's npm-verify law, moved INSIDE the workflow: every ORDER
+          # member must be readable at the cohort version before this run may
+          # go green. Poll per package (registry read-lag after a successful
+          # publish is real — the 0.15.1 worker stale-read); a member still
+          # missing after the window means the cohort is genuinely partial
+          # and the run FAILS LOUDLY — a green run can never again coexist
+          # with a half-published cohort. (The dist-tag verify-before-tag
+          # half of #439 — publishing on `next` and advancing `latest`
+          # leaf-first — stays open on the issue: it needs npm's OIDC
+          # trusted publishing to cover `dist-tag add`, unverified.)
+          ORDER=(config state fs agent-layout mcp-apps-host threads widget-auth worker agent-client chat host create-agentic-app cli)
+          for pkg in "${ORDER[@]}"; do
+            name=$(node -pe "require('./packages/$pkg/package.json').name")
+            ver=$(node -pe "require('./packages/$pkg/package.json').version")
+            ok=""
+            for i in $(seq 1 12); do
+              if [ -n "$(npm view "$name@$ver" version 2>/dev/null)" ]; then ok=1; break; fi
+              sleep 10
+            done
+            if [ -z "$ok" ]; then
+              echo "::error ::$name@$ver is NOT on npm after publish — the cohort is partial"
+              exit 1
+            fi
+            echo "• $name@$ver verified"
+          done
+          echo "cohort verified: ${#ORDER[@]}/${#ORDER[@]} on npm"
+
       - name: Post-publish consumer smoke
         if: steps.mode.outputs.dry_run == 'false'
         # NEVER fails the release: publish already happened (irreversible), so a

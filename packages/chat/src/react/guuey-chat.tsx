@@ -385,13 +385,17 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   const threadIdRef = useRef<string | null>(invoke.threadId);
   threadIdRef.current = invoke.threadId;
   const defaultReader = useMemo<UiResourceReader | undefined>(() => {
-    if (apiBaseUrl === undefined) return undefined;
+    // Batteries condition (guuey#368 widened): EITHER half builds the
+    // reader — apiBaseUrl alone is a platform-door (history) reader,
+    // endpointUrl alone is a POD-ONLY reader (live turns; the `guuey dev`
+    // scaffold's exact shape — its transport mints no threadId, and the
+    // old no-thread-no-read gate starved the pod door to ZERO requests
+    // while the tool layer reported success: the docs-lab repro).
+    if (apiBaseUrl === undefined && (endpointUrl === undefined || endpointUrl === null)) {
+      return undefined;
+    }
     return async (resourceUri: string) => {
       const threadId = threadIdRef.current;
-      // No thread yet ⇒ nothing persisted to scope a read to; a live-turn
-      // locator always arrives with the thread already admitted (the
-      // `session` frame precedes tool results).
-      if (threadId === null) return undefined;
       // Assembled per read: `createUiResourceReader` is a cheap closure, and
       // the guest secret is re-resolved each call so a rotation takes
       // effect immediately — the same per-request property
@@ -403,8 +407,11 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       const getToken = getAccessTokenRef.current;
       const getGuest = getGuestSecretRef.current;
       const read = createUiResourceReader({
-        apiBaseUrl,
-        threadId,
+        // Platform-door halves ride only when they exist — the reader is
+        // pod-only-legal since #368 (a null thread no longer blocks the
+        // pod door, which never needed one).
+        ...(apiBaseUrl !== undefined ? { apiBaseUrl } : {}),
+        ...(threadId !== null ? { threadId } : {}),
         endpointUrl,
         ...(getToken !== undefined ? { getAccessToken: getToken } : {}),
         guestSecret: getGuest !== undefined ? getGuest() : null,

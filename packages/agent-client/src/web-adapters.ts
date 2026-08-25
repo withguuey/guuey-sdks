@@ -224,10 +224,23 @@ export function createWebAdapters(
 
 /** Options for {@link createUiResourceReader} — same credential surface as the history adapter. */
 export interface CreateUiResourceReaderOptions {
-  /** The guuey public API base (`…/v1`). */
-  apiBaseUrl: string;
-  /** The thread whose persisted locators this reader may resolve. */
-  threadId: string;
+  /**
+   * The guuey public API base (`…/v1`) — the PLATFORM door's half.
+   * Optional since guuey#368's local-dev fix: a surface with only a pod
+   * (a `guuey dev` scaffold, any podful host pre-link) builds a POD-ONLY
+   * reader — live locators resolve; persisted-door reads are honest
+   * misses. The platform door needs BOTH this and `threadId`.
+   */
+  apiBaseUrl?: string;
+  /**
+   * The thread whose persisted locators this reader may resolve — the
+   * platform door's scope. Optional for the same pod-only case: before a
+   * thread exists (or where the transport never mints one — local dev),
+   * the pod door alone serves live turns, which is exactly the window
+   * where a threadId cannot exist yet. The OLD gate ("no thread ⇒ no
+   * read") starved that window to zero requests — the docs-lab repro.
+   */
+  threadId?: string;
   /**
    * The pod base (or full invoke URL — same normalization as the invoke
    * transport). When set, the reader tries the POD door first
@@ -402,6 +415,9 @@ export function createUiResourceReader(
       const live = await readDoor(`${podUrl}${query}`);
       if (live !== undefined) return live;
     }
+    // The platform door needs both its halves; a pod-only assembly stops
+    // here — the pod miss above IS the answer (honest placeholder).
+    if (options.apiBaseUrl === undefined || options.threadId === undefined) return undefined;
     return readDoor(
       `${options.apiBaseUrl}/threads/${encodeURIComponent(options.threadId)}/ui-resource${query}`,
     );

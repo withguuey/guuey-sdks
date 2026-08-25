@@ -424,7 +424,19 @@ async function handleInvoke(
     "X-Accel-Buffering": "no",
     ...CORS_HEADERS,
   });
-  sendEvent(res, "session", { sessionId, userId: "dev-user", authMode: "anonymous" });
+  // guuey#368: the frame TELLS the client its thread identity — the id is
+  // the same one this server already keys /threads/:id/messages by. The
+  // client's hook stores it, history rehydrates across page reloads (of a
+  // living server; a restart's in-memory loss surfaces through the kit's
+  // honest gone-notice), and the reader's platform arm gets its scope.
+  // Without it the hook's threadId stayed null for the scaffold's whole
+  // life — half of the zero-requests face the docs lab located.
+  sendEvent(res, "session", {
+    sessionId,
+    threadId: sessionId,
+    userId: "dev-user",
+    authMode: "anonymous",
+  });
 
   const abortController = new AbortController();
   req.on("close", () => {
