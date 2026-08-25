@@ -18,7 +18,16 @@ beforeEach(async () => {
   const repo = join(work, 'demos-main');
   for (const example of ['trimly', 'deskly']) {
     mkdirSync(join(repo, example, 'prompts'), { recursive: true });
-    writeFileSync(join(repo, example, 'guuey.json'), JSON.stringify({ schema: '1', example }));
+    writeFileSync(
+      join(repo, example, 'guuey.json'),
+      JSON.stringify({
+        schema: '1',
+        example,
+        // The public demos manifests carry the fleet's deploy economics
+        // post-#426-convergence; extraction must strip them (the rider).
+        agent: { framework: 'claude-agent-sdk', deploy: { size: 'md' } },
+      }),
+    );
     writeFileSync(join(repo, example, 'prompts', 'system.md'), `# ${example}\n`);
     writeFileSync(join(repo, example, '.env.example'), 'ANTHROPIC_API_KEY=\n');
   }
@@ -46,7 +55,13 @@ describe('scaffoldExample', () => {
       fetchTarball: fetchFixture,
     });
     expect(projectDir).toBe(target);
-    expect(JSON.parse(readFileSync(join(target, 'guuey.json'), 'utf8')).example).toBe('trimly');
+    const manifest = JSON.parse(readFileSync(join(target, 'guuey.json'), 'utf8'));
+    expect(manifest.example).toBe('trimly');
+    // guuey#426's extraction-strip rider: `agent.deploy` is a per-deployment
+    // fact — a fork must not inherit the demo fleet's paid size. The rest
+    // of the agent block passes through verbatim.
+    expect(manifest.agent.deploy).toBeUndefined();
+    expect(manifest.agent.framework).toBe('claude-agent-sdk');
     expect(existsSync(join(target, 'prompts', 'system.md'))).toBe(true);
     // Nothing from outside the example dir leaks in.
     expect(existsSync(join(target, 'README.md'))).toBe(false);

@@ -59,6 +59,33 @@ async function defaultFetchTarball(): Promise<NodeJS.ReadableStream> {
 }
 
 /** Save the tarball once so it can be listed AND extracted (streams are one-shot). */
+/**
+ * Fork economics (guuey#426's extraction-strip rider): `agent.deploy` is a
+ * PER-DEPLOYMENT fact — the demo fleet's paid size rides the public
+ * manifests so either deploy pipeline sends full truth (the #426
+ * convergence), but a fork scaffolded from an example must not inherit
+ * that bill. Same class as `appId` (which the public tree already omits):
+ * deployment identity and economics stay with the deployment, never the
+ * scaffold — the platform derives fresh defaults on the fork's own first
+ * deploy. Everything else in the manifest passes through verbatim.
+ */
+async function stripDeploymentFacts(projectDir: string): Promise<void> {
+  const manifestPath = join(projectDir, 'guuey.json');
+  const parsed: unknown = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+  if (typeof parsed !== 'object' || parsed === null || !('agent' in parsed)) return;
+  const agent: unknown = parsed.agent;
+  if (typeof agent !== 'object' || agent === null || !('deploy' in agent)) return;
+  // Rebuild rather than mutate: every key except `deploy` passes through
+  // verbatim, and no shape beyond the one path we know is asserted.
+  const strippedAgent = Object.fromEntries(
+    Object.entries(agent).filter(([key]) => key !== 'deploy'),
+  );
+  await fs.writeFile(
+    manifestPath,
+    JSON.stringify({ ...parsed, agent: strippedAgent }, null, 2) + '\n',
+  );
+}
+
 async function saveTarball(fetchTarball: () => Promise<NodeJS.ReadableStream>): Promise<string> {
   const file = join(await fs.mkdtemp(join(tmpdir(), 'guuey-example-')), 'demos.tar.gz');
   await pipeline(await fetchTarball(), createWriteStream(file));
@@ -112,6 +139,7 @@ export async function scaffoldExample(opts: ScaffoldExampleOptions): Promise<Sca
     );
   }
 
+  await stripDeploymentFacts(projectDir);
   await seedEnvLocal(projectDir);
   if (opts.git !== false) await initGit(projectDir);
   if (opts.install) await runInstall(projectDir);
