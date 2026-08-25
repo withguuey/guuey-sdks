@@ -61,3 +61,17 @@ describe("active-panel machine (§3)", () => {
     expect(s.activePanel).toBe("app");
   });
 });
+
+describe("guuey#427 — the neutral panel activation", () => {
+  it("agentPanelActivated flips the panel and NOTHING else — no working state, no streaming", () => {
+    const s = run("agentPanelActivated");
+    expect(s).toEqual({ activePanel: "agent", streaming: false, pending: false });
+  });
+
+  it("reopening the agent panel after a settled turn never re-arms the spinner (the first consumer's near-miss)", () => {
+    const s = run("agentSubmit", "agentViewMounted", "agentSettled", "menuInteraction", "agentPanelActivated");
+    expect(s.activePanel).toBe("agent");
+    expect(s.pending).toBe(false);
+    expect(s.streaming).toBe(false);
+  });
+});

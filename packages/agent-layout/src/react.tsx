@@ -142,7 +142,13 @@ export interface UseAgentModeResult {
   pending: boolean;
   /** The raw machine door — `bindGuueyChat(dispatch)` wires a kit surface. */
   dispatch: (input: AgentModeInput) => void;
-  /** Escape hatch for surfaces with custom needs (documented as rarely needed). */
+  /**
+   * The NEUTRAL panel setter (guuey#427): flips which panel has the room
+   * and nothing else — `"agent"` never claims a submit happened (no
+   * working state, no streaming). Submit intent goes through
+   * `dispatch({ type: "agentSubmit" })` / `bindGuueyChat`. Escape hatch,
+   * documented as rarely needed.
+   */
   setActivePanel: (panel: ActivePanel) => void;
   /** The <1024px overlay drawer (lib-owned state; Shell renders the toggle). */
   drawerOpen: boolean;
@@ -157,7 +163,11 @@ export function useAgentMode(): UseAgentModeResult {
   const { state, dispatch, drawerOpen, setDrawerOpen } = ctx;
   const setActivePanel = useCallback(
     (panel: ActivePanel) =>
-      dispatch(panel === "app" ? { type: "menuInteraction" } : { type: "agentSubmit" }),
+      // guuey#427: the name promises a neutral setter, so it IS one — the
+      // agent arm activates the panel WITHOUT arming the working state
+      // (the first consumer nearly shipped a permanent spinner on the
+      // agentSubmit sugar this used to be).
+      dispatch(panel === "app" ? { type: "menuInteraction" } : { type: "agentPanelActivated" }),
     [dispatch],
   );
   return {

@@ -40,7 +40,10 @@
   color: var(--guuey-layout-tone-upper-on);
 }
 .guuey-layout-panel-agent {
-  flex: 1;
+  /* Host-overridable default (guuey#427): a host that wants a fixed-height
+   * rail sets `--guuey-layout-agent-panel-flex` (e.g. `0 0 auto` + its own
+   * height) — a custom-property seam, never a specificity fight. */
+  flex: var(--guuey-layout-agent-panel-flex, 1);
   display: flex;
   flex-direction: column;
   background: var(--guuey-layout-tone-lower);

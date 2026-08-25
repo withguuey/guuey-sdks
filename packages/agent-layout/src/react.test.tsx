@@ -177,3 +177,39 @@ describe("the drawer toggle", () => {
     expect(screen.getByTestId("shell").dataset.drawerOpen).toBe("true");
   });
 });
+
+describe("guuey#427 — setActivePanel is the neutral setter its name promises", () => {
+  function SetterProbe(): ReactNode {
+    const { setActivePanel, pending } = useAgentMode();
+    return (
+      <>
+        <button type="button" onClick={() => setActivePanel("agent")}>
+          open-agent
+        </button>
+        <span data-testid="pending">{pending ? "pending" : "idle"}</span>
+      </>
+    );
+  }
+
+  it("setActivePanel('agent') flips the tone without arming the working state", () => {
+    render(
+      <AgentModeProvider>
+        <AgentModeShell>
+          <AgentModeSidebar>
+            <SidebarPanel section="agent">
+              <SetterProbe />
+            </SidebarPanel>
+          </AgentModeSidebar>
+          <ActivePane>
+            <p>page content</p>
+          </ActivePane>
+        </AgentModeShell>
+      </AgentModeProvider>,
+    );
+    fireEvent.click(screen.getByText("open-agent"));
+    expect(layoutRoot().dataset.activePanel).toBe("agent");
+    // The near-miss face: NO permanent spinner — content stays.
+    expect(screen.getByTestId("pending").textContent).toBe("idle");
+    expect(screen.getByText("page content")).toBeTruthy();
+  });
+});

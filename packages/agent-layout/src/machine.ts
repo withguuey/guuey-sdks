@@ -44,6 +44,14 @@ export type AgentModeInput =
   | { type: "menuInteraction" }
   /** The user sent a message — the agent bridge fired. */
   | { type: "agentSubmit" }
+  /**
+   * Give the agent panel the room WITHOUT claiming a submit happened
+   * (guuey#427, the first consumer's near-miss): a host reopening the
+   * agent surface (restoring a view, a deep link) wants the tone flip
+   * and NOTHING else — arming the working state here would leave a
+   * permanent spinner, since no turn will ever mount a view or settle.
+   */
+  | { type: "agentPanelActivated" }
   /** The turn reached `ready`. NO panel transition (platform-ruled: no bounce-back). */
   | { type: "agentSettled" }
   /** A live view mounted — the working state has been replaced by content. */
@@ -63,6 +71,9 @@ export function agentModeReduce(state: AgentModeState, input: AgentModeInput): A
       return { ...state, activePanel: "app", pending: false };
     case "agentSubmit":
       return { activePanel: "agent", streaming: true, pending: true };
+    case "agentPanelActivated":
+      // The neutral flip: panel only — streaming/pending untouched.
+      return { ...state, activePanel: "agent" };
     case "agentSettled":
       // Stream end changes nothing about the panel — the tone tracks the
       // user's locus of action, not the agent's state.
