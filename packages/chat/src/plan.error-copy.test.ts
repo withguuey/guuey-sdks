@@ -105,3 +105,36 @@ describe("R11 voice: defaults + debug formatting stay independent", () => {
     expect(item.verbatim).toBe("PLATFORM_ERROR: readable body");
   });
 });
+
+describe("R11 built-in code voices (guuey#417)", () => {
+  it("THREAD_HISTORY_UNAVAILABLE renders the guard's honest notice, never the failure banner", () => {
+    const item = errorItem(
+      inputsWithError(
+        "Couldn't restore your previous conversation — started a new one.",
+        "THREAD_HISTORY_UNAVAILABLE",
+      ),
+    );
+    expect(item.copy).toBe(calmPolicy().strings.errorHistoryUnavailable);
+    expect(item.copy).not.toBe(calmPolicy().strings.errorTransient);
+  });
+
+  it("the host's copyByCode still wins over the built-in voice", () => {
+    const policy = calmPolicy({
+      error: {
+        verbatim: false,
+        copyByCode: { THREAD_HISTORY_UNAVAILABLE: "Session refreshed." },
+        verbatimCodes: [],
+      },
+    });
+    const item = errorItem(inputsWithError("x", "THREAD_HISTORY_UNAVAILABLE"), policy);
+    expect(item.copy).toBe("Session refreshed.");
+  });
+
+  it("verbatimCodes beats the built-in too (explicit host intent)", () => {
+    const policy = calmPolicy({
+      error: { verbatim: false, copyByCode: {}, verbatimCodes: "all" },
+    });
+    const item = errorItem(inputsWithError("source words", "THREAD_HISTORY_UNAVAILABLE"), policy);
+    expect(item.copy).toBe("source words");
+  });
+});

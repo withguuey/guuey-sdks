@@ -25,6 +25,15 @@ export interface ChatStrings {
   errorQuota: string;
   errorTransient: string;
   errorInvalid: string;
+  /**
+   * R11, code THREAD_HISTORY_UNAVAILABLE (guuey#417): the hydration
+   * guard's honest face — the old conversation could not be restored
+   * (identity moved / thread gone) and a FRESH session is already
+   * composed. Calm and forward-looking, never the failure banner: the
+   * generic transient copy on this code made two distinct causes wear one
+   * scary face and mis-attributed incident triage.
+   */
+  errorHistoryUnavailable: string;
 
   /** R3/R4. */
   toolGroup: (count: number) => string;
@@ -166,6 +175,7 @@ export const defaultChatStrings: ChatStrings = {
   errorAuth: "Sign in to continue.",
   errorQuota: "This agent is over its usage limit.",
   errorTransient: "Something went wrong on our side — try again.",
+  errorHistoryUnavailable: "This conversation belonged to a previous session — starting fresh.",
   errorInvalid: "The app sent a request the agent couldn't read.",
 
   toolGroup: (count) => `Ran ${count} tools`,

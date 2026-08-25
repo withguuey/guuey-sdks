@@ -715,6 +715,18 @@ function deriveStatus(inputs: TranscriptInputs, policy: TranscriptPolicy): Statu
   }
 }
 
+/**
+ * Built-in per-code voices (guuey#417) — consulted AFTER the policy's own
+ * `copyByCode` (host override always wins) and before family copy. These
+ * are codes whose family styling fits but whose family COPY lies:
+ * THREAD_HISTORY_UNAVAILABLE is not "something went wrong — try again"
+ * (nothing is wrong and there is nothing to retry — a fresh session is
+ * already composed); the honest notice is the guard's own.
+ */
+const CODE_COPY: Record<string, (s: import("./strings.js").ChatStrings) => string> = {
+  THREAD_HISTORY_UNAVAILABLE: (s) => s.errorHistoryUnavailable,
+};
+
 const ERROR_FAMILIES: Record<string, "auth" | "quota" | "invalid"> = {
   UNAUTHORIZED: "auth",
   AUTH_REQUIRED: "auth",
@@ -978,8 +990,11 @@ export function planTranscript(
     const perCode = code !== null ? copyByCode[code] : undefined;
     const verbatimVoice =
       verbatimCodes === "all" || (code !== null && verbatimCodes.includes(code));
+    const builtIn = code !== null ? CODE_COPY[code] : undefined;
     const copy =
-      perCode ?? (verbatimVoice && inputs.error.message !== "" ? inputs.error.message : familyCopy);
+      perCode ??
+      (verbatimVoice && inputs.error.message !== "" ? inputs.error.message : undefined) ??
+      (builtIn !== undefined ? builtIn(policy.strings) : familyCopy);
     items.push({
       kind: "error",
       key: "error",
