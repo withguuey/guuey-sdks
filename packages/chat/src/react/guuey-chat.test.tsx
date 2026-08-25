@@ -854,6 +854,18 @@ describe("kit defaults — relay-through + the ui/message doorbell (guuey#422)",
     expect(calls).toHaveLength(2);
   });
 
+  it("onActivity fires the per-turn edges — submit on send, settled on turn end; never per token (guuey#403)", async () => {
+    const { adapters, calls } = scriptedAdapters();
+    const events: Array<"submit" | "settled"> = [];
+    renderChat(adapters, { onActivity: (e) => events.push(e.type) });
+    const input = screen.getByLabelText("Message");
+    fireEvent.change(input, { target: { value: "hi there" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(calls).toHaveLength(1));
+    await waitFor(() => expect(screen.getByText("Hello.")).toBeTruthy());
+    await waitFor(() => expect(events).toEqual(["submit", "settled"]));
+  });
+
   it("an unavailable chat drops the doorbell LOUDLY (console.warn), never silently", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {

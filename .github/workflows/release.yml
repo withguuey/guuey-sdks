@@ -141,11 +141,12 @@ jobs:
           DRY_RUN: ${{ steps.mode.outputs.dry_run }}
         run: |
           set -euo pipefail
-          # Fixed leaf-first order: config/state/fs/widget-auth/worker/
+          # Fixed leaf-first order: config/state/fs/agent-layout/widget-auth/
+          # worker are leaves (agent-layout: react peer only, guuey#403);
           # host needs config+worker, threads needs mcp-apps-host,
           # chat needs agent-client+mcp-apps-host,
           # create-agentic-app needs config, cli needs all.
-          ORDER=(config state fs mcp-apps-host threads widget-auth worker agent-client chat host create-agentic-app cli)
+          ORDER=(config state fs agent-layout mcp-apps-host threads widget-auth worker agent-client chat host create-agentic-app cli)
 
           TODO=()
           for pkg in "${ORDER[@]}"; do

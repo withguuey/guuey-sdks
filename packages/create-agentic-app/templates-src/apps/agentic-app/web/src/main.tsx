@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import "@guuey/chat/styles.css";
+import "@guuey/agent-layout/styles.css";
 import "./styles.css";
 import "./styles-app.css";
 import { appConfig } from "./config";

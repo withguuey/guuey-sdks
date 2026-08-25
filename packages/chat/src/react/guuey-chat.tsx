@@ -118,6 +118,16 @@ export function viewPropsWithThemeAnnounce(
  * being the filing use case). Reach it via `ref` or `onReady` — both
  * deliver the SAME stable object, valid for the component's whole life.
  */
+/**
+ * One turn-lifecycle edge (guuey#403): `submit` = a turn left `ready`;
+ * `settled` = the invoke returned to `ready`. Mirrored structurally by
+ * `@guuey/agent-layout`'s `GuueyChatActivityEventShape` — keep the two in
+ * sync (the fs-contract mirror discipline).
+ */
+export interface GuueyChatActivityEvent {
+  type: "submit" | "settled";
+}
+
 export interface GuueyChatHandle {
   /**
    * Send `text` through exactly the Send button's gate: returns `false`
@@ -248,6 +258,18 @@ export interface GuueyChatProps {
   /** R11 action slot (sign-in / retry affordances). */
   onErrorAction?: (item: ErrorItem) => void;
   /**
+   * Turn-lifecycle notifications (guuey#403 — the agent-layout bridge's
+   * seam, though any host may listen): `submit` fires when a turn this
+   * surface started leaves `ready` — composer, `handle.send`, and the
+   * `ui/message` doorbell paths alike (the busy transition IS the truth:
+   * gate-refused sends never fire) — and `settled` when the invoke
+   * returns to `ready` (success, error, and abort all settle). Discrete
+   * per-turn edges only, NEVER per-token — safe to wire into layout
+   * state. `@guuey/agent-layout` mirrors {@link GuueyChatActivityEvent}
+   * structurally (its `bind.ts` — sync comment there points here).
+   */
+  onActivity?: (event: GuueyChatActivityEvent) => void;
+  /**
    * Callback route to the {@link GuueyChatHandle} for hosts that prefer
    * wiring over refs. Fires ONCE per component instance, on mount, with
    * the same stable handle the ref receives.
@@ -313,6 +335,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     oauthReturnTo,
     onOAuthAuthorize,
     onErrorAction,
+    onActivity,
     onReady,
     onThread,
     className,
@@ -556,6 +579,19 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       // The hook owns failure surfacing, same as every send path.
     });
   }, []);
+
+  // guuey#403: the turn-lifecycle edges. The busy TRANSITION is the one
+  // truthful seam every send path crosses (composer, handle, doorbell,
+  // drain, retry) and gate-refused sends never do; status leaves `ready`
+  // only via a real send (hydration and history reads never touch it).
+  const onActivityRef = useRef(onActivity);
+  onActivityRef.current = onActivity;
+  const prevBusyRef = useRef(busy);
+  useEffect(() => {
+    if (prevBusyRef.current === busy) return;
+    prevBusyRef.current = busy;
+    onActivityRef.current?.({ type: busy ? "submit" : "settled" });
+  }, [busy]);
 
   // The drain: one queued doorbell per idle transition — its send flips
   // busy again, and the NEXT idle drains the next (never a turn storm).

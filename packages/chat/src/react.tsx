@@ -48,7 +48,12 @@ export {
   type UseTranscriptResult,
   type UseTranscriptInputsResult,
 } from "./react/use-transcript.js";
-export { GuueyChat, type GuueyChatProps, type GuueyChatHandle } from "./react/guuey-chat.js";
+export {
+  GuueyChat,
+  type GuueyChatActivityEvent,
+  type GuueyChatProps,
+  type GuueyChatHandle,
+} from "./react/guuey-chat.js";
 export {
   oauthPromptAction,
   oauthReturnToHere,

@@ -7,19 +7,26 @@
   flex-direction: column;
 }
 
+/* The lib's AgentModeShell grid carries this class; the app states its own
+   column width (app-tier override of the lib's minmax default). Display
+   comes from the lib sheet. */
 .app-body {
   flex: 1;
-  display: flex;
   min-height: 0;
+  grid-template-columns: 320px 1fr;
 }
 
+/* Tones come from @guuey/agent-layout (the two-panel pair — light AND
+   dark ride the lib's mode-aware tokens); the app keeps its structure. */
 .sidebar {
-  width: 320px;
-  flex-shrink: 0;
+  border-right: 1px solid var(--line);
+}
+
+.sidebar-top {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--line);
-  background: var(--bg-soft);
+  min-height: 0;
 }
 
 .sidebar-brand {
@@ -52,12 +59,12 @@
 }
 
 .agent-rail {
-  display: flex;
-  flex-direction: column;
+  /* Explicit: the app's fixed rail height wins over the lib's flex:1
+     default (deterministic, not load-order luck). */
+  flex: 0 0 auto;
   min-height: 0;
   height: 46vh;
   border-top: 1px solid var(--line);
-  background: var(--bg);
 }
 
 .rail-chat {

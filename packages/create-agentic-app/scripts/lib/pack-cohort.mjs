@@ -30,6 +30,7 @@ export const INTERNAL_COHORT = [
   "agent-client",
   "mcp-apps-host",
   "chat",
+  "agent-layout",
   "create-agentic-app",
   "cli",
 ].map((name) => join(PACKAGES_ROOT, name));

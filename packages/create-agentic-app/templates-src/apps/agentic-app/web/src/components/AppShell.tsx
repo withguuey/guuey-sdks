@@ -1,5 +1,7 @@
 /**
- * The CHAT-RAIL shell (guuey#303, founder-confirmed):
+ * The CHAT-RAIL shell (guuey#303, founder-confirmed), on
+ * `@guuey/agent-layout` (guuey#403 — this migration is the lib's
+ * acceptance test):
  *
  *   ┌──────────┬────────────────────────┐
  *   │ ☰ Menu 1 │                        │
@@ -18,20 +20,54 @@
  * re-selects its render onto the canvas ("just like a web browser's
  * history"); a new render navigates forward automatically; picking a
  * menu swaps the canvas back to your pages.
+ *
+ * The layout lib owns the AGENT-MODE physics — the two-tone sidebar, the
+ * pane's ground following the user's attention (submit → agent tone; any
+ * navigation → app tone, derived from the route change), the working
+ * state while the agent has the room, light/dark via the SAME mode you
+ * give the chat. The shell wires it once: `navigationKey` from the
+ * router, `bindGuueyChat` onto the rail, `agentViewClosed` on the back
+ * affordance. Zero per-link wiring.
  */
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { GuueyChatHandle } from "@guuey/chat/react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import type { PlanViewSummary, ViewRefItem } from "@guuey/chat";
 import { GuueyView } from "@guuey/mcp-apps-host/react";
+import {
+  ActivePane,
+  AgentModeProvider,
+  AgentModeShell,
+  AgentModeSidebar,
+  SidebarPanel,
+  bindGuueyChat,
+  useAgentMode,
+} from "@guuey/agent-layout/react";
 import { appConfig } from "../config";
 import { AgentChat } from "../components/AgentChat";
 import { currentIdentityMode, logOut } from "../lib/identity";
 import { oidcConfigured, signOutOidc } from "../lib/oidc";
 
 export function AppShell() {
+  const location = useLocation();
+  return (
+    <AgentModeProvider
+      mode={appConfig.theme.mode}
+      navigationKey={location.pathname}
+      identity={<span className="brand-mark">{appConfig.brand.logoText}</span>}
+    >
+      <ShellBody />
+    </AgentModeProvider>
+  );
+}
+
+function ShellBody() {
   const navigate = useNavigate();
   const mode = currentIdentityMode();
+  const { dispatch } = useAgentMode();
+  // The lib's chat bridge: submit/settle/view-mount flow into the
+  // active-panel machine; the shell composes its own roster handling on top.
+  const binding = useMemo(() => bindGuueyChat(dispatch), [dispatch]);
 
   // The rail↔canvas bridge: the kit's view roster (mount material lives
   // here, the rail shows only chips), the selected key, and whether the
@@ -45,30 +81,41 @@ export function AppShell() {
   const [canvasShowsView, setCanvasShowsView] = useState(false);
   const newestKeyRef = useRef<string | undefined>(undefined);
 
-  const onViewsChange = useCallback((next: PlanViewSummary[]) => {
-    setViews(next);
-    // Browser-history forward-navigation: a NEW live render takes the
-    // canvas. (Reversed find = newest mountable; live entries sit after
-    // history in the roster's transcript order.)
-    const newest = [...next].reverse().find((v) => v.mount !== null && v.phase !== "expired");
-    if (newest !== undefined && newest.key !== newestKeyRef.current) {
-      newestKeyRef.current = newest.key;
-      setSelectedKey(newest.key);
-      setCanvasShowsView(true);
-      // The demo-tour hook (guuey#303): step machines outside the app can
-      // key on "the agent just drew UI".
-      window.dispatchEvent(
-        new CustomEvent("demo:render-complete", {
-          detail: { key: newest.key, title: newest.title },
-        }),
-      );
-    }
-  }, []);
+  const onViewsChange = useCallback(
+    (next: PlanViewSummary[]) => {
+      binding.onViewsChange(next); // the (d) working state clears on a live mount
+      setViews(next);
+      // Browser-history forward-navigation: a NEW live render takes the
+      // canvas. (Reversed find = newest mountable; live entries sit after
+      // history in the roster's transcript order.)
+      const newest = [...next].reverse().find((v) => v.mount !== null && v.phase !== "expired");
+      if (newest !== undefined && newest.key !== newestKeyRef.current) {
+        newestKeyRef.current = newest.key;
+        setSelectedKey(newest.key);
+        setCanvasShowsView(true);
+        // The demo-tour hook (guuey#303): step machines outside the app can
+        // key on "the agent just drew UI".
+        window.dispatchEvent(
+          new CustomEvent("demo:render-complete", {
+            detail: { key: newest.key, title: newest.title },
+          }),
+        );
+      }
+    },
+    [binding],
+  );
 
   const onViewRef = useCallback((item: ViewRefItem) => {
     setSelectedKey(item.key);
     setCanvasShowsView(true);
   }, []);
+
+  const closeView = useCallback(() => {
+    setCanvasShowsView(false);
+    // The lib rule: closing an agent view returns the tone to the menu
+    // UNLESS a turn is still streaming.
+    dispatch({ type: "agentViewClosed" });
+  }, [dispatch]);
 
   const selected = views.find((v) => v.key === selectedKey && v.mount !== null);
 
@@ -80,44 +127,48 @@ export function AppShell() {
 
   return (
     <div className="app-shell">
-      <div className="app-body">
-        <aside className="sidebar">
-          <div className="sidebar-brand">
-            <span className="brand-mark">{appConfig.brand.logoText}</span>
-            <span>{appConfig.brand.name}</span>
-          </div>
-          <nav className="sidebar-menus">
-            {/* Picking a menu swaps the canvas back to your pages. */}
-            <NavLink to="/app" end onClick={() => setCanvasShowsView(false)}>
-              Dashboard
-            </NavLink>
-            <NavLink to="/app/reports" onClick={() => setCanvasShowsView(false)}>
-              Reports
-            </NavLink>
-            <NavLink to="/app/setup" onClick={() => setCanvasShowsView(false)}>
-              Setup
-            </NavLink>
-            <NavLink to="/app/mobile" onClick={() => setCanvasShowsView(false)}>
-              📱 Talk on mobile
-            </NavLink>
-            <button type="button" className="dock-logout" onClick={() => void handleLogOut()}>
-              Log out{mode === "guest" ? " (guest)" : ""}
-            </button>
-          </nav>
-          <div className="agent-rail" data-tour="agent-rail">
+      <AgentModeShell className="app-body">
+        <AgentModeSidebar className="sidebar">
+          <SidebarPanel section="app" className="sidebar-top">
+            <div className="sidebar-brand">
+              <span className="brand-mark">{appConfig.brand.logoText}</span>
+              <span>{appConfig.brand.name}</span>
+            </div>
+            <nav className="sidebar-menus">
+              {/* Picking a menu swaps the canvas back to your pages — the
+                  TONE follow is the lib's (route change + capture-phase). */}
+              <NavLink to="/app" end onClick={() => setCanvasShowsView(false)}>
+                Dashboard
+              </NavLink>
+              <NavLink to="/app/reports" onClick={() => setCanvasShowsView(false)}>
+                Reports
+              </NavLink>
+              <NavLink to="/app/setup" onClick={() => setCanvasShowsView(false)}>
+                Setup
+              </NavLink>
+              <NavLink to="/app/mobile" onClick={() => setCanvasShowsView(false)}>
+                📱 Talk on mobile
+              </NavLink>
+              <button type="button" className="dock-logout" onClick={() => void handleLogOut()}>
+                Log out{mode === "guest" ? " (guest)" : ""}
+              </button>
+            </nav>
+          </SidebarPanel>
+          <SidebarPanel section="agent" className="agent-rail" data-tour="agent-rail">
             <AgentChat
               className="rail-chat"
               viewsBridge={{ promotedViewKey: selectedKey, onViewRef, onViewsChange }}
               onReady={setChat}
+              onActivity={binding.onActivity}
             />
-          </div>
-        </aside>
-        <main className="canvas" data-tour="canvas">
+          </SidebarPanel>
+        </AgentModeSidebar>
+        <ActivePane className="canvas" data-tour="canvas">
           {canvasShowsView && selected !== undefined && selected.mount !== null ? (
             <div className="canvas-view">
               <header className="canvas-view-bar">
                 <span>{selected.title}</span>
-                <button type="button" className="btn" onClick={() => setCanvasShowsView(false)}>
+                <button type="button" className="btn" onClick={closeView}>
                   Back to {appConfig.brand.name}
                 </button>
               </header>
@@ -146,8 +197,8 @@ export function AppShell() {
           ) : (
             <Outlet />
           )}
-        </main>
-      </div>
+        </ActivePane>
+      </AgentModeShell>
     </div>
   );
 }

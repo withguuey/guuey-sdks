@@ -10,7 +10,7 @@
  */
 import { useEffect, useState, type CSSProperties } from "react";
 import { GuueyChat } from "@guuey/chat/react";
-import type { GuueyChatHandle } from "@guuey/chat/react";
+import type { GuueyChatActivityEvent, GuueyChatHandle } from "@guuey/chat/react";
 import type { PlanViewSummary, ViewRefItem } from "@guuey/chat";
 import { agentEndpointUrl, appConfig, historyBaseUrl } from "../config";
 import { currentIdentityMode, ensureGuestSecret } from "../lib/identity";
@@ -40,12 +40,15 @@ export function AgentChat({
   style,
   viewsBridge,
   onReady,
+  onActivity,
 }: {
   className?: string;
   style?: CSSProperties;
   viewsBridge?: ViewsBridge;
   /** Receives the chat handle — the AppShell mounts canvas views with `handle.viewSlotProps()`. */
   onReady?: (handle: GuueyChatHandle) => void;
+  /** Turn-lifecycle edges (guuey#403) — the agent-layout bridge's seam. */
+  onActivity?: (event: GuueyChatActivityEvent) => void;
 }) {
   // The user's CHOSEN mode wins: an explicit "Continue as guest" must never
   // be shadowed by a cached OIDC session. Only when no choice is recorded
@@ -76,6 +79,7 @@ export function AgentChat({
     className,
     style,
     ...(onReady !== undefined ? { onReady } : {}),
+    ...(onActivity !== undefined ? { onActivity } : {}),
     ...(viewsBridge !== undefined
       ? {
           policy: RAIL_POLICY,
