@@ -100,3 +100,35 @@ describe("guuey#428 — resumed render-bearing turn keeps its user bubble", () =
       "show me Thursday's open slots",
     ]);
   });
+
+  it("attempt-1 shape: trailing unanswered user, NO card yet (fold not persisted), chips policy", () => {
+    const plan = planTranscript(inputs(
+      [
+        { role: "user", text: "want to make a reservation", seq: 1 },
+        { role: "assistant", text: "Here's our menu", seq: 6 },
+        { role: "assistant", text: "Take a look above", seq: 8 },
+        { role: "user", text: "show me Thursday's open slots", seq: 10 },
+      ],
+      [],
+    ), calmPolicy({ view: { timeoutMs: 8000, presentation: 'chips' } }), {});
+    expect(userTexts(plan)).toEqual([
+      "want to make a reservation",
+      "show me Thursday's open slots",
+    ]);
+  });
+
+  it("attempt-1 shape WITH turn-1's card (menu persisted, turn-2 fold not yet)", () => {
+    const plan = planTranscript(inputs(
+      [
+        { role: "user", text: "want to make a reservation", seq: 1 },
+        { role: "assistant", text: "Here's our menu", seq: 6 },
+        { role: "assistant", text: "Take a look above", seq: 8 },
+        { role: "user", text: "show me Thursday's open slots", seq: 10 },
+      ],
+      [CARD(9)],
+    ), calmPolicy({ view: { timeoutMs: 8000, presentation: 'chips' } }), {});
+    expect(userTexts(plan)).toEqual([
+      "want to make a reservation",
+      "show me Thursday's open slots",
+    ]);
+  });
