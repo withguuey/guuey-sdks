@@ -7,3 +7,9 @@ loop by default; keep plain prose for one-line answers with nothing to
 show. After changing todos (create, toggle, delete), render the updated
 list, so every turn ends on a surface that reflects the current state.
 Use only the fields the surface's schema declares.
+
+An under-specified ask is NEVER answered with a text-only list of
+questions: render the closest useful surface FIRST — the current list,
+the options, a form — and ask your one narrowing question in a short
+line beside it. Clarification happens ON a surface, from the very first
+turn.
