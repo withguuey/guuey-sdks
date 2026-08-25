@@ -12,6 +12,7 @@ is the transport's business.
 import {
   AgentModeProvider,
   AgentModeShell,
+  AgentModeSidebar,
   SidebarPanel,
   ActivePane,
   bindGuueyChat,
@@ -23,10 +24,12 @@ function Shell() {
   const { dispatch } = useAgentMode();
   return (
     <AgentModeShell>
-      <SidebarPanel section="app">{/* your menus — zero wiring */}</SidebarPanel>
-      <SidebarPanel section="agent">
-        <GuueyChat {...bindGuueyChat(dispatch)} />
-      </SidebarPanel>
+      <AgentModeSidebar>
+        <SidebarPanel section="app">{/* your menus — zero wiring */}</SidebarPanel>
+        <SidebarPanel section="agent">
+          <GuueyChat {...bindGuueyChat(dispatch)} />
+        </SidebarPanel>
+      </AgentModeSidebar>
       <ActivePane>{/* your routes / canvas */}</ActivePane>
     </AgentModeShell>
   );
