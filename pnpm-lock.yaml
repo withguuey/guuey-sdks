@@ -160,6 +160,9 @@ importers:
       '@guuey/worker':
         specifier: workspace:*
         version: link:../worker
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.27.0
+        version: 1.29.0
       '@silverprotocol/claude-agent-sdk':
         specifier: 0.5.1
         version: 0.5.1(@anthropic-ai/claude-agent-sdk@0.3.235(@anthropic-ai/sdk@0.110.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0)(zod@4.4.3))

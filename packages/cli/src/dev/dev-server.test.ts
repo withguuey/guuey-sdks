@@ -3,6 +3,9 @@ import { join } from "node:path";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import type { AgEvent } from "@silverprotocol/core";
+import { createServer as createHttpServer } from "node:http";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { startDevServer, lowerForDev, writeLocalCredentials, type DevServerHandle } from "./dev-server.js";
 import { DEFAULT_AGENT_MCP_SERVERS } from "@guuey/config";
 
@@ -597,5 +600,105 @@ describe("lowerForDev — platform-default ggui entry (guuey#368)", () => {
       url: "http://localhost:6781/mcp",
       transport: "http",
     });
+  });
+});
+
+// ─── The local pod door (guuey#368 residual) ──────────────────────────────
+describe("GET /agent/ui-resource — the local pod door", () => {
+  /** A minimal streamable-HTTP MCP producer serving one ui:// resource. */
+  async function startFixtureMcp(): Promise<{ port: number; close: () => Promise<void> }> {
+    const httpServer = createHttpServer((req, res) => {
+      void (async () => {
+        const mcp = new McpServer({ name: "fixt", version: "0.0.0" });
+        mcp.registerResource("card", "ui://fixt/card/1", { mimeType: "text/html" }, async () => ({
+          contents: [
+            { uri: "ui://fixt/card/1", mimeType: "text/html", text: "<p>fixture card</p>" },
+          ],
+        }));
+        const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+        res.on("close", () => {
+          void transport.close().catch(() => undefined);
+          void mcp.close().catch(() => undefined);
+        });
+        await mcp.connect(transport);
+        await transport.handleRequest(req, res);
+      })().catch(() => {
+        if (!res.headersSent) res.writeHead(500).end();
+      });
+    });
+    await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+    const addr = httpServer.address();
+    const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+    return {
+      port,
+      close: () =>
+        new Promise((resolve) => {
+          // The dev server's cached client is closed by srv.close() in
+          // afterEach — but this fixture may outlive it in the failure
+          // path; destroy stragglers rather than wait on them.
+          httpServer.closeAllConnections();
+          httpServer.close(() => resolve());
+        }),
+    };
+  }
+
+  it("resolves a live locator through the producing server: authority segment → lowered entry → resources/read", { timeout: 20_000 }, async () => {
+    const fixt = await startFixtureMcp();
+    try {
+      srv = await startDevServer({
+        port: 0,
+        framework: "fixture",
+        protocol: "bypass",
+        workerCommand: process.execPath,
+        workerArgs: [echoFixture],
+        agentSnapshotJson: JSON.stringify({
+          mcpServers: {
+            fixt: { kind: "external", url: `http://localhost:${fixt.port}/mcp`, transport: "http" },
+          },
+        }),
+        projectRoot: freshProjectRoot(),
+      });
+      const res = await fetch(
+        `http://localhost:${srv.port}/agent/ui-resource?uri=${encodeURIComponent("ui://fixt/card/1")}`,
+      );
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toMatchObject({
+        uri: "ui://fixt/card/1",
+        mimeType: "text/html",
+        text: "<p>fixture card</p>",
+      });
+
+      // The client CACHES per server: a second read reuses the session.
+      const again = await fetch(
+        `http://localhost:${srv.port}/agent/ui-resource?uri=${encodeURIComponent("ui://fixt/card/1")}`,
+      );
+      expect(again.status).toBe(200);
+    } finally {
+      await fixt.close();
+    }
+  });
+
+  it("misses are 404, the reader's fall-through contract: unknown authority, non-ui uri, missing param", async () => {
+    srv = await startDevServer({
+      port: 0,
+      framework: "fixture",
+      protocol: "bypass",
+      workerCommand: process.execPath,
+      workerArgs: [echoFixture],
+      agentSnapshotJson: JSON.stringify({
+        mcpServers: {
+          fixt: { kind: "external", url: "http://localhost:1/mcp", transport: "http" },
+        },
+      }),
+      projectRoot: freshProjectRoot(),
+    });
+    const base = `http://localhost:${srv.port}/agent/ui-resource`;
+    expect((await fetch(`${base}?uri=${encodeURIComponent("ui://nobody/x")}`)).status).toBe(404);
+    expect((await fetch(`${base}?uri=https%3A%2F%2Fevil.example`)).status).toBe(404);
+    expect((await fetch(base)).status).toBe(404);
+    // A named server that cannot be reached is a MISS (and the next read
+    // reconnects fresh), never a hang or a 500.
+    expect((await fetch(`${base}?uri=${encodeURIComponent("ui://fixt/card/1")}`)).status).toBe(404);
   });
 });

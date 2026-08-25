@@ -50,6 +50,7 @@
     "@guuey/create-agentic-app": "workspace:*",
     "@guuey/host": "workspace:*",
     "@guuey/worker": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.27.0",
     "@silverprotocol/claude-agent-sdk": "0.5.1",
     "@silverprotocol/core": "0.5.1",
     "@silverprotocol/google-adk": "0.5.1",

@@ -18,6 +18,8 @@
  * is the same SSE parser on both legs.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -496,12 +498,132 @@ async function handleInvoke(
   }
 }
 
+/**
+ * The LOCAL pod door (guuey#368 residual, docs' re-capture find): the kit's
+ * default reader dials `GET <pod>/agent/ui-resource?uri=` on every live
+ * locator — in production the pod runtime answers it; locally NOTHING did,
+ * so every generative card rendered "This view expired" while the tool
+ * layer reported success. The dev server answers the same contract the
+ * production door speaks: resolve the producing MCP server from the
+ * locator's authority segment (`ui://<server>/…` — the producers' own
+ * convention; ggui's `ui://ggui/render/…` is the platform default), one
+ * fresh `resources/read` over the SAME lowered endpoint the agent talks
+ * to, first `contents[]` entry out as `{uri, mimeType?, text?|blob?,
+ * _meta?}`. Misses are 404 (the reader treats every non-OK as a miss and
+ * falls through). Loopback-only like every route here; identity headers
+ * are ignored — local dev has one user.
+ */
+function uiResourceServerMap(agentSnapshotJson: string): Map<string, string> {
+  const servers = new Map<string, string>();
+  let snapshot: unknown;
+  try {
+    snapshot = JSON.parse(agentSnapshotJson);
+  } catch {
+    return servers; // an unparseable snapshot already fails the invoke path loudly
+  }
+  if (typeof snapshot !== "object" || snapshot === null || !("mcpServers" in snapshot)) {
+    return servers;
+  }
+  const entries: unknown = snapshot.mcpServers;
+  if (typeof entries !== "object" || entries === null) return servers;
+  for (const [name, entry] of Object.entries(entries)) {
+    if (typeof entry !== "object" || entry === null) continue;
+    if (!("url" in entry) || typeof entry.url !== "string") continue;
+    servers.set(name, entry.url);
+  }
+  return servers;
+}
+
+/**
+ * One MCP client per lowered server url, connected lazily and kept for the
+ * dev server's life (a streamable-HTTP session per producer is the normal
+ * shape). A failed connect/read drops the cache entry so the NEXT read
+ * reconnects fresh — no retry loop, the miss surfaces immediately.
+ */
+type UiClientCache = Map<string, Promise<Client>>;
+
+async function uiClientFor(cache: UiClientCache, url: string): Promise<Client> {
+  const cached = cache.get(url);
+  if (cached !== undefined) return cached;
+  const connecting = (async () => {
+    const client = new Client({ name: "guuey-dev-ui-door", version: "0.0.0" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(url)));
+    return client;
+  })();
+  cache.set(url, connecting);
+  try {
+    return await connecting;
+  } catch (err) {
+    cache.delete(url);
+    throw err;
+  }
+}
+
+async function handleUiResource(
+  res: ServerResponse,
+  searchParams: URLSearchParams,
+  servers: Map<string, string>,
+  clients: UiClientCache,
+): Promise<void> {
+  const miss = (why: string): void => {
+    res.writeHead(404, { "Content-Type": "text/plain", ...CORS_HEADERS });
+    res.end(why);
+  };
+  const uri = searchParams.get("uri");
+  if (uri === null || !uri.startsWith("ui://")) {
+    miss("missing or non-ui:// uri");
+    return;
+  }
+  let authority: string;
+  try {
+    authority = new URL(uri).host;
+  } catch {
+    miss("unparseable uri");
+    return;
+  }
+  const serverUrl = servers.get(authority);
+  if (serverUrl === undefined) {
+    miss(`no local MCP server named "${authority}"`);
+    return;
+  }
+  let contents: Array<{ uri: string; mimeType?: string; text?: string; blob?: string; _meta?: unknown }>;
+  try {
+    const client = await uiClientFor(clients, serverUrl);
+    const read = await client.readResource({ uri });
+    contents = read.contents;
+  } catch (err) {
+    clients.delete(serverUrl); // next read reconnects fresh
+    console.warn(
+      `[guuey dev] ui-resource read failed for ${uri} via ${serverUrl}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    miss("read failed");
+    return;
+  }
+  const entry = contents[0];
+  if (entry === undefined || (typeof entry.text !== "string" && typeof entry.blob !== "string")) {
+    miss("no readable contents");
+    return;
+  }
+  res.writeHead(200, { "Content-Type": "application/json", ...CORS_HEADERS });
+  res.end(
+    JSON.stringify({
+      uri: entry.uri,
+      ...(typeof entry.mimeType === "string" ? { mimeType: entry.mimeType } : {}),
+      ...(typeof entry.text === "string" ? { text: entry.text } : {}),
+      ...(typeof entry.blob === "string" ? { blob: entry.blob } : {}),
+      ...(entry._meta !== undefined ? { _meta: entry._meta } : {}),
+    }),
+  );
+}
+
 async function handleRequest(
   req: IncomingMessage,
   res: ServerResponse,
   opts: DevServerOptions,
   driver: (input: LocalRunInput) => AsyncIterable<WorkerEvent>,
   sessions: Map<string, SessionState>,
+  uiServers: Map<string, string>,
+  uiClients: UiClientCache,
 ): Promise<void> {
   if (req.method === "GET" && req.url === "/healthz") {
     // CORS so a browser frontend (the scaffolded web app on another port)
@@ -512,7 +634,14 @@ async function handleRequest(
   }
   const url = new URL(req.url ?? "/", "http://localhost");
   const threadMatch = THREAD_MESSAGES_ROUTE.exec(url.pathname);
-  if (req.method === "OPTIONS" && (req.url === "/agent/invoke" || threadMatch !== null)) {
+  if (req.method === "GET" && url.pathname === "/agent/ui-resource") {
+    await handleUiResource(res, url.searchParams, uiServers, uiClients);
+    return;
+  }
+  if (
+    req.method === "OPTIONS" &&
+    (req.url === "/agent/invoke" || url.pathname === "/agent/ui-resource" || threadMatch !== null)
+  ) {
     res.writeHead(204, CORS_HEADERS);
     res.end();
     return;
@@ -535,9 +664,13 @@ async function handleRequest(
 export function startDevServer(opts: DevServerOptions): Promise<DevServerHandle> {
   const driver = createLocalDriver({ command: opts.workerCommand, args: opts.workerArgs });
   const sessions = new Map<string, SessionState>();
+  // The local pod door's routing table + per-producer client cache
+  // (guuey#368 residual — see handleUiResource).
+  const uiServers = uiResourceServerMap(opts.agentSnapshotJson);
+  const uiClients: UiClientCache = new Map();
 
   const server = createServer((req, res) => {
-    handleRequest(req, res, opts, driver, sessions).catch((err) => {
+    handleRequest(req, res, opts, driver, sessions, uiServers, uiClients).catch((err) => {
       console.error(
         `[guuey dev] request handler error: ${err instanceof Error ? err.message : String(err)}`,
       );
@@ -559,10 +692,23 @@ export function startDevServer(opts: DevServerOptions): Promise<DevServerHandle>
       const boundPort = typeof addr === "object" && addr !== null ? addr.port : opts.port;
       resolve({
         port: boundPort,
-        close: () =>
-          new Promise<void>((res2, rej2) => {
+        close: async () => {
+          // Close the door's cached MCP clients FIRST: each holds a
+          // standing streamable-HTTP session (an SSE GET) against its
+          // producer — left open, both this server's close and the
+          // producer's would wait on the socket forever (the test-suite
+          // hang that found this). Best-effort: a producer that already
+          // vanished must not fail shutdown.
+          await Promise.all(
+            [...uiClients.values()].map((p) =>
+              p.then((client) => client.close()).catch(() => undefined),
+            ),
+          );
+          uiClients.clear();
+          await new Promise<void>((res2, rej2) => {
             server.close((err) => (err ? rej2(err) : res2()));
-          }),
+          });
+        },
       });
     });
   });
