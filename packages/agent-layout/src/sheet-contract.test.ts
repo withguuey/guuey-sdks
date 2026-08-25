@@ -34,6 +34,10 @@ describe("guuey#429 — the shell is viewport-pinned by default", () => {
     expect(block(".guuey-agent-layout")).toContain("overflow: hidden");
   });
 
+  it("the shell's grid row is EXPLICIT minmax(0,1fr) — the implicit auto row sizes to content and defeats every bounded child (console's #429 adjudication)", () => {
+    expect(block(".guuey-layout-shell")).toContain("grid-template-rows: minmax(0, 1fr)");
+  });
+
   it("the pane owns its scroll context (the founder's rule: the right panel scrolls within itself)", () => {
     expect(block(".guuey-layout-pane")).toContain("overflow: auto");
   });

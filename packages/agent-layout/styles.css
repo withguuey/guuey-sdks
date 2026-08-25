@@ -34,6 +34,14 @@
 .guuey-layout-shell {
   display: grid;
   grid-template-columns: minmax(240px, 300px) 1fr;
+  /* guuey#429, the completing half (console's adjudication): without an
+   * explicit row the grid's IMPLICIT row is `auto` — it sizes to content,
+   * growing past any bounded container and rendering every child's
+   * min-height:0 + overflow:auto inert (clip-not-scroll). minmax(0, 1fr)
+   * makes the row exactly the container's height, so the root's viewport
+   * pin actually DISTRIBUTES: sidebar bound, pane scrolling within
+   * itself. */
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
   min-height: 0;
 }
