@@ -538,6 +538,12 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
           ...(threadIdRef.current ? { threadId: threadIdRef.current } : {}),
           clientMessageId,
           ...(capabilities !== undefined ? { capabilities } : {}),
+          // guuey#398: the embedding surface's context line — the pod
+          // composes it into the MODEL's input only; the persisted thread
+          // and this hook's optimistic user message stay clean.
+          ...(opts.surfaceContext !== undefined
+            ? { surfaceContext: opts.surfaceContext }
+            : {}),
         };
 
         // The wire walk lives in `invokeTurn` (the pure per-turn generator —

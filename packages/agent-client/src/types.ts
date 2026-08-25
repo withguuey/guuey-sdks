@@ -182,6 +182,15 @@ export interface UseAgentInvokeOptions {
    */
   capabilities?: AgClientCapabilities;
   /**
+   * Where the user IS (guuey#398) — a short context line the embedding
+   * surface owns ("The user is signed in to the guuey builder console…"),
+   * sent on every invoke. The pod composes it into the MODEL's input only:
+   * the persisted thread and this hook's optimistic user message never
+   * contain it. ≤500 chars (the pod refuses longer). The surface is the
+   * one place that knows this; the agent's static system prompt cannot.
+   */
+  surfaceContext?: string;
+  /**
    * Stall recovery for a half-dead stream (guuey#192). A connection that dies
    * WITHOUT erroring (TCP alive, zero bytes, no `done`) would otherwise leave
    * the turn suspended forever — a frozen cursor while the backend may have
