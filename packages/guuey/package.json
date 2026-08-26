@@ -1,6 +1,6 @@
 {
   "name": "guuey",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "The guuey CLI — this bare-name package forwards to @guuey/cli, so `npx guuey <command>` works anywhere (and the name can't be squatted).",
   "license": "MIT",
   "repository": {

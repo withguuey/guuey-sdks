@@ -184,6 +184,39 @@ jobs:
             (cd "packages/$pkg" && pnpm publish --provenance --no-git-checks)
           done
 
+      - name: Publish the bare-name forwarder if its version is new (guuey#449)
+        if: steps.mode.outputs.dry_run == 'false'
+        run: |
+          set -euo pipefail
+          # packages/guuey is NOT a lockstep member (guueyLockstep:false) —
+          # it versions independently and publishes here idempotently when
+          # its committed version is absent from npm. This workflow is the
+          # package's ONLY publish path BY DESIGN: pnpm publish rewrites
+          # its `workspace:^` dependency to the real caret at pack time —
+          # the 1.0.0 incident was a manual `npm publish`, which does NOT
+          # rewrite the protocol and shipped a tarball broken for every
+          # consumer. Publishing anywhere but here restages that class.
+          ver=$(node -pe "require('./packages/guuey/package.json').version")
+          if [ -n "$(npm view "guuey@$ver" version 2>/dev/null)" ]; then
+            echo "• guuey@$ver already on npm — skipping"
+          else
+            (cd packages/guuey && pnpm publish --provenance --no-git-checks)
+            # Verify the rewrite REACHED the registry: the published
+            # dependency must be a real semver range, never workspace:.
+            for i in $(seq 1 12); do
+              dep=$(npm view "guuey@$ver" dependencies.@guuey/cli 2>/dev/null || true)
+              [ -n "$dep" ] && break
+              sleep 10
+            done
+            case "$dep" in
+              workspace:*|"")
+                echo "::error ::guuey@$ver published with dependency '$dep' — the workspace rewrite FAILED"
+                exit 1
+                ;;
+              *) echo "• guuey@$ver verified: @guuey/cli -> $dep" ;;
+            esac
+          fi
+
       - name: Verify cohort on npm (guuey#439 — a partial cohort turns this run RED)
         if: steps.mode.outputs.dry_run == 'false'
         run: |
