@@ -636,10 +636,20 @@ describe("GET /agent/ui-resource — the local pod door", () => {
             { uri: "ui://fixt/card/1", mimeType: "text/html", text: "<p>fixture card</p>" },
           ],
         }));
+        // The shape is annotated at the WIDE constraint (ZodRawShape) so the
+        // SDK's registerTool generic instantiates at the base type — the
+        // narrow inference blows TS2589 when a zod-3 instance is hoisted
+        // beside the SDK's zod-4 types (cross-instance generics; build- and
+        // install-state sensitive, platform's #477 bisect). The cli's own
+        // zod ^4.3.6 devDep fixes the RESOLUTION; this keeps the fixture
+        // immune to any tree's hoist state.
+        const toggleShape: z.ZodRawShape = { id: z.string() };
         mcp.registerTool(
           "toggle",
-          { description: "toggle a todo", inputSchema: { id: z.string() } },
-          async ({ id }) => ({ content: [{ type: "text", text: JSON.stringify({ toggled: id }) }] }),
+          { description: "toggle a todo", inputSchema: toggleShape },
+          async (args) => ({
+            content: [{ type: "text", text: JSON.stringify({ toggled: args.id }) }],
+          }),
         );
         const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
         res.on("close", () => {
