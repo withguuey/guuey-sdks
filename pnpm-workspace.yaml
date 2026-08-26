@@ -52,11 +52,27 @@ minimumReleaseAgeExclude:
   - "@silverprotocol/richtext"
   - "@ggui-ai/protocol"
   - "@ggui-ai/artifact-manifest"
-  # The bare-name forwarder (packages/guuey, guuey#449) deps @guuey/cli by
-  # caret — registry-resolved on same-day cuts, so the family joins the
-  # first-party exclude UNVERSIONED (the block's own convention; pinned
-  # entries rot at every lockstep bump).
+  # Our OWN cohort (guuey#453): @guuey/* is FIRST-PARTY and consumed
+  # same-day by design (daily cut cadence) — a cli-only exception proved
+  # too narrow the day after it landed (fleet installs browned out on the
+  # age gate rejecting our own 0.16.4). The whole family rides the
+  # exclude UNVERSIONED, plus the bare-name forwarder (guuey#449), which
+  # deps @guuey/cli by caret and is itself same-day-consumed once
+  # published. Third-party deps keep the full gate.
+  - "@guuey/agent-client"
+  - "@guuey/agent-layout"
+  - "@guuey/chat"
   - "@guuey/cli"
+  - "@guuey/config"
+  - "@guuey/create-agentic-app"
+  - "@guuey/fs"
+  - "@guuey/host"
+  - "@guuey/mcp-apps-host"
+  - "@guuey/state"
+  - "@guuey/threads"
+  - "@guuey/widget-auth"
+  - "@guuey/worker"
+  - "guuey"
 
 # guuey#227: brace-expansion patched-line pins — see the root
 # pnpm-workspace.yaml `overrides:` comment (same family, this workspace has
