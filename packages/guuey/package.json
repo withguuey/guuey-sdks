@@ -23,7 +23,7 @@
     "test": "node bin-smoke.mjs"
   },
   "dependencies": {
-    "@guuey/cli": "^0.16.4"
+    "@guuey/cli": "workspace:^"
   },
   "guueyLockstep": false,
   "exports": {
