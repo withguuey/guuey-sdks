@@ -236,8 +236,15 @@ jobs:
             name=$(node -pe "require('./packages/$pkg/package.json').name")
             ver=$(node -pe "require('./packages/$pkg/package.json').version")
             ok=""
-            for i in $(seq 1 12); do
-              if [ -n "$(npm view "$name@$ver" version 2>/dev/null)" ]; then ok=1; break; fi
+            # The STRONG read: `versions --json` updates ahead of the
+            # packument summary a bare `npm view <pkg>@<ver> version` reads —
+            # the abbreviated-metadata replica lags minutes behind a
+            # successful publish (worker@0.16.5 false-partial, run
+            # 32981119374: red run, complete cohort). Poll the full
+            # versions array, wider window; a package missing THERE after
+            # 4 minutes is genuinely unpublished.
+            for i in $(seq 1 24); do
+              if npm view "$name" versions --json 2>/dev/null | grep -q "\"$ver\""; then ok=1; break; fi
               sleep 10
             done
             if [ -z "$ok" ]; then
