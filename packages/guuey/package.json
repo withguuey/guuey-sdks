@@ -1,0 +1,32 @@
+{
+  "name": "guuey",
+  "version": "1.0.0",
+  "description": "The guuey CLI — this bare-name package forwards to @guuey/cli, so `npx guuey <command>` works anywhere (and the name can't be squatted).",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/withguuey/guuey-sdks.git",
+    "directory": "packages/guuey"
+  },
+  "type": "module",
+  "bin": {
+    "guuey": "./bin.js"
+  },
+  "files": [
+    "bin.js",
+    "index.js",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "true",
+    "typecheck": "node --check bin.js",
+    "test": "node bin-smoke.mjs"
+  },
+  "dependencies": {
+    "@guuey/cli": "^0.16.4"
+  },
+  "guueyLockstep": false,
+  "exports": {
+    ".": "./index.js"
+  }
+}

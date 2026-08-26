@@ -210,7 +210,10 @@ async function main(): Promise<void> {
   if (!install) console.log('  pnpm install');
   console.log('  pnpm bootstrap        # brand, theme, copy — the web app is gated on this');
   console.log('  pnpm dev');
-  console.log('  guuey login && guuey deploy');
+  // npx-form (guuey#451): the scaffold pins @guuey/cli, so the in-dir
+  // resolution is version-matched and needs no global install — the bare
+  // form broke the founder's first-agent walk at exactly this moment.
+  console.log('  npx guuey login && npx guuey deploy');
   console.log('  pnpm bootstrap -- --link   # bind the deployed app into the frontend');
 }
 

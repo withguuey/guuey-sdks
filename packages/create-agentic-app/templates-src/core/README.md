@@ -48,7 +48,7 @@ cp .env.example .env.local   # done automatically on scaffold if .env.local is a
 pnpm dev
 ```
 
-When the agent is deployed (`guuey login && guuey deploy`), bind it into the
+When the agent is deployed (`npx guuey login && npx guuey deploy`), bind it into the
 frontend: `pnpm bootstrap -- --link` — that records the app id, endpoint,
 widget origin and portal link in `guuey.app.json` and pushes brand basics to
 the platform. `pnpm status` shows the live app state; `pnpm bootstrap -- --check`
@@ -118,8 +118,8 @@ yourself, or they're skipped with a warning.)
 ## Deploying
 
 ```bash
-guuey login    # device-flow auth; stores a token in ~/.guuey/auth.json
-guuey deploy   # ships everything
+npx guuey login    # device-flow auth; stores a token in ~/.guuey/auth.json
+npx guuey deploy   # ships everything
 ```
 
 `guuey deploy` runs four legs, in order, so a hard failure aborts before

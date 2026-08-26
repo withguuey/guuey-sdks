@@ -52,6 +52,11 @@ minimumReleaseAgeExclude:
   - "@silverprotocol/richtext"
   - "@ggui-ai/protocol"
   - "@ggui-ai/artifact-manifest"
+  # The bare-name forwarder (packages/guuey, guuey#449) deps @guuey/cli by
+  # caret — registry-resolved on same-day cuts, so the family joins the
+  # first-party exclude UNVERSIONED (the block's own convention; pinned
+  # entries rot at every lockstep bump).
+  - "@guuey/cli"
 
 # guuey#227: brace-expansion patched-line pins — see the root
 # pnpm-workspace.yaml `overrides:` comment (same family, this workspace has
