@@ -571,6 +571,80 @@ async function uiClientFor(cache: UiClientCache, url: string): Promise<Client> {
   }
 }
 
+/**
+ * The LOCAL action door (guuey#477) — the read door's twin (guuey#222's
+ * pod contract): `POST /agent/ui-action` with `{uri, name, arguments?}`
+ * relays the in-card click as a real `tools/call` to the PRODUCING MCP
+ * server (same authority-segment routing and client cache as the read
+ * door). 2xx = the tool result verbatim (an `isError` result is still a
+ * RESULT); 404 = miss (unknown authority, bad body — the relay's
+ * deny==miss contract); 502 = the call itself failed transport-side.
+ * Production pods additionally enforce the locator's session binding —
+ * local dev has one user, so the door skips auth like every route here
+ * (loopback-only).
+ */
+async function handleUiAction(
+  req: IncomingMessage,
+  res: ServerResponse,
+  servers: Map<string, string>,
+  clients: UiClientCache,
+): Promise<void> {
+  const miss = (why: string): void => {
+    res.writeHead(404, { "Content-Type": "text/plain", ...CORS_HEADERS });
+    res.end(why);
+  };
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(chunk as Buffer);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    miss("body is not JSON");
+    return;
+  }
+  if (typeof parsed !== "object" || parsed === null) {
+    miss("body is not an object");
+    return;
+  }
+  const uri = "uri" in parsed && typeof parsed.uri === "string" ? parsed.uri : null;
+  const name = "name" in parsed && typeof parsed.name === "string" ? parsed.name : null;
+  const args =
+    "arguments" in parsed && typeof parsed.arguments === "object" && parsed.arguments !== null
+      ? (parsed.arguments as Record<string, unknown>)
+      : undefined;
+  if (uri === null || !uri.startsWith("ui://") || name === null) {
+    miss("missing uri/name or non-ui:// uri");
+    return;
+  }
+  let authority: string;
+  try {
+    authority = new URL(uri).host;
+  } catch {
+    miss("unparseable uri");
+    return;
+  }
+  const serverUrl = servers.get(authority);
+  if (serverUrl === undefined) {
+    miss(`no local MCP server named "${authority}"`);
+    return;
+  }
+  let result: unknown;
+  try {
+    const client = await uiClientFor(clients, serverUrl);
+    result = await client.callTool({ name, arguments: args });
+  } catch (err) {
+    clients.delete(serverUrl); // next call reconnects fresh
+    console.warn(
+      `[guuey dev] ui-action ${name} failed via ${serverUrl}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    res.writeHead(502, { "Content-Type": "application/json", ...CORS_HEADERS });
+    res.end(JSON.stringify({ error: "tool call failed" }));
+    return;
+  }
+  res.writeHead(200, { "Content-Type": "application/json", ...CORS_HEADERS });
+  res.end(JSON.stringify(result));
+}
+
 async function handleUiResource(
   res: ServerResponse,
   searchParams: URLSearchParams,
@@ -650,9 +724,16 @@ async function handleRequest(
     await handleUiResource(res, url.searchParams, uiServers, uiClients);
     return;
   }
+  if (req.method === "POST" && url.pathname === "/agent/ui-action") {
+    await handleUiAction(req, res, uiServers, uiClients);
+    return;
+  }
   if (
     req.method === "OPTIONS" &&
-    (req.url === "/agent/invoke" || url.pathname === "/agent/ui-resource" || threadMatch !== null)
+    (req.url === "/agent/invoke" ||
+      url.pathname === "/agent/ui-resource" ||
+      url.pathname === "/agent/ui-action" ||
+      threadMatch !== null)
   ) {
     res.writeHead(204, CORS_HEADERS);
     res.end();

@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import type { AgEvent } from "@silverprotocol/core";
 import { createServer as createHttpServer } from "node:http";
+import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { startDevServer, lowerForDev, writeLocalCredentials, type DevServerHandle } from "./dev-server.js";
@@ -635,6 +636,11 @@ describe("GET /agent/ui-resource — the local pod door", () => {
             { uri: "ui://fixt/card/1", mimeType: "text/html", text: "<p>fixture card</p>" },
           ],
         }));
+        mcp.registerTool(
+          "toggle",
+          { description: "toggle a todo", inputSchema: { id: z.string() } },
+          async ({ id }) => ({ content: [{ type: "text", text: JSON.stringify({ toggled: id }) }] }),
+        );
         const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
         res.on("close", () => {
           void transport.close().catch(() => undefined);
@@ -694,6 +700,58 @@ describe("GET /agent/ui-resource — the local pod door", () => {
         `http://localhost:${srv.port}/agent/ui-resource?uri=${encodeURIComponent("ui://fixt/card/1")}`,
       );
       expect(again.status).toBe(200);
+    } finally {
+      await fixt.close();
+    }
+  });
+
+  it("POST /agent/ui-action relays the in-card click as a real tools/call (guuey#477 — the read door's twin)", { timeout: 20_000 }, async () => {
+    const fixt = await startFixtureMcp();
+    try {
+      srv = await startDevServer({
+        port: 0,
+        framework: "fixture",
+        protocol: "bypass",
+        workerCommand: process.execPath,
+        workerArgs: [echoFixture],
+        agentSnapshotJson: JSON.stringify({
+          mcpServers: {
+            fixt: { kind: "external", url: `http://localhost:${fixt.port}/mcp`, transport: "http" },
+          },
+        }),
+        projectRoot: freshProjectRoot(),
+      });
+      // The docs repro's exact first failure: the OPTIONS preflight 404'd,
+      // so the browser reported CORS. It must answer 204 with the headers.
+      const preflight = await fetch(`http://localhost:${srv.port}/agent/ui-action`, {
+        method: "OPTIONS",
+      });
+      expect(preflight.status).toBe(204);
+      expect(preflight.headers.get("access-control-allow-origin")).toBeTruthy();
+
+      const res = await fetch(`http://localhost:${srv.port}/agent/ui-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "ui://fixt/card/1", name: "toggle", arguments: { id: "t1" } }),
+      });
+      expect(res.status).toBe(200);
+      const result = (await res.json()) as { content: Array<{ type: string; text: string }> };
+      // The tool result comes back VERBATIM (the relay narrows it host-side).
+      expect(result.content[0]).toMatchObject({ type: "text", text: '{"toggled":"t1"}' });
+
+      // Misses stay the deny==miss contract: unknown authority + bad body.
+      const unknown = await fetch(`http://localhost:${srv.port}/agent/ui-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uri: "ui://nobody/x", name: "toggle" }),
+      });
+      expect(unknown.status).toBe(404);
+      const badBody = await fetch(`http://localhost:${srv.port}/agent/ui-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "not json",
+      });
+      expect(badBody.status).toBe(404);
     } finally {
       await fixt.close();
     }
