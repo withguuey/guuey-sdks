@@ -459,6 +459,54 @@ describe("<GuueyChat> default reader (guuey#221)", () => {
     }
   });
 
+  it("a HISTORY card through the DEFAULT reader never dials the pod door (guuey#421 — the dropped-hints hole)", async () => {
+    // The live-capture find: the default-reader WRAPPER took only
+    // `resourceUri`, silently dropping the hints param — so the inner
+    // reader never learned `origin: "history"` and pod-dialed every
+    // old-conversation load (the 404 pair, pod warm/cold dependent).
+    // This pin drives the REAL wrapper: a rehydrated card must resolve
+    // through the PLATFORM door alone.
+    const { calls, impl } = mockReadFetch();
+    const original = globalThis.fetch;
+    globalThis.fetch = impl;
+    const adapters = locatorAdapters();
+    // Seed a persisted thread + a history adapter returning one card.
+    await adapters.storage.save("guuey:thread:app-h", "t-hist");
+    adapters.history = {
+      load: async () => ({
+        messages: [{ role: "user", text: "earlier" }],
+        cards: [
+          {
+            seq: 1,
+            at: "2026-08-26T00:00:00Z",
+            cardSnapshot: {
+              parts: [
+                { type: "tool-result", toolCallId: "c1", content: [], uiData: { resourceUri: LOCATOR } },
+              ],
+            },
+          },
+        ],
+      }),
+    };
+    try {
+      render(
+        <GuueyChat
+          endpointUrl="https://pod.example/agent/invoke"
+          apiBaseUrl="https://api.example/v1"
+          appId="app-h"
+          adapters={adapters}
+        />,
+      );
+      await waitFor(() => expect(calls.length).toBeGreaterThanOrEqual(1));
+      for (const c of calls) {
+        expect(c.url).not.toContain("pod.example"); // NEVER the pod door
+        expect(c.url).toContain("/threads/t-hist/ui-resource"); // platform only
+      }
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
   it("without apiBaseUrl the POD door still reads — the pod-only default (guuey#368)", async () => {
     // The old pin here asserted zero reads ("behavior unchanged") — that
     // WAS the docs-lab bug: an endpoint-only surface (the guuey dev

@@ -394,7 +394,13 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     if (apiBaseUrl === undefined && (endpointUrl === undefined || endpointUrl === null)) {
       return undefined;
     }
-    return async (resourceUri: string) => {
+    // guuey#421 CLOSURE FIX (the live-capture find): this wrapper used to
+    // take only `resourceUri`, silently DROPPING the hints param — so the
+    // inner reader never learned `origin: "history"` and dialed the pod
+    // first on every old-conversation load (the 404 pair, warm/cold
+    // dependent). The #421 gate lived in agent-client all along; the
+    // kit-default wrapper starved it. Thread the hints through.
+    return async (resourceUri: string, hints?: Parameters<UiResourceReader>[1]) => {
       const threadId = threadIdRef.current;
       // Assembled per read: `createUiResourceReader` is a cheap closure, and
       // the guest secret is re-resolved each call so a rotation takes
@@ -416,7 +422,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         ...(getToken !== undefined ? { getAccessToken: getToken } : {}),
         guestSecret: getGuest !== undefined ? getGuest() : null,
       });
-      return read(resourceUri);
+      return read(resourceUri, hints);
     };
   }, [apiBaseUrl, endpointUrl]);
   const effectiveReader = reader ?? defaultReader;
