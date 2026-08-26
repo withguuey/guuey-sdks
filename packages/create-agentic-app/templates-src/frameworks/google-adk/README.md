@@ -24,7 +24,7 @@ export default (guuey: GuueyContext<MCPToolset>) =>
 pnpm install
 cp .env.example .env.local      # set GEMINI_API_KEY
 pnpm dev                        # local stack: your agent + the todo MCP + chat
-guuey deploy                    # same code, hosted
+npx guuey deploy                # same code, hosted
 ```
 
 ## The GuueyContext (everything the platform hands you)

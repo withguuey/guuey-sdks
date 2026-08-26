@@ -224,7 +224,7 @@ async function linkPhase(config, flags, yes) {
   const res = await guuey(["apps", "get", appId, "--json"]);
   if (!res.ok) {
     console.error(`Could not read app ${appId} via the guuey CLI:\n${res.error}`);
-    console.error("Log in first (`guuey login`) and check the id (`guuey apps list`).");
+    console.error("Log in first (`npx guuey login`) and check the id (`npx guuey apps list`).");
     process.exit(1);
   }
   let app;
@@ -305,12 +305,12 @@ async function linkPhase(config, flags, yes) {
 
   console.log("\nNext steps (each is one command — run when ready):");
   if (!domains) {
-    console.log(`  guuey apps update ${appId} --domains <https://your-site.example>   # allow this frontend's origin`);
+    console.log(`  npx guuey apps update ${appId} --domains <https://your-site.example>   # allow this frontend's origin`);
   }
-  if (!config.link.slug) console.log("  guuey slug claim <name>            # public short name → portal link + hosted page");
-  console.log("  guuey deploy                        # ship the agent definition in guuey.json");
+  if (!config.link.slug) console.log("  npx guuey slug claim <name>        # public short name → portal link + hosted page");
+  console.log("  npx guuey deploy                    # ship the agent definition in guuey.json");
   if (config.auth.oidc) {
-    console.log(`  guuey apps update ${appId} --auth-mode byo --issuer-url ${config.auth.oidc.issuer} --audience ${config.auth.oidc.clientId}`);
+    console.log(`  npx guuey apps update ${appId} --auth-mode byo --issuer-url ${config.auth.oidc.issuer} --audience ${config.auth.oidc.clientId}`);
   }
 }
 
