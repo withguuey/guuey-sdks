@@ -13,7 +13,12 @@ import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { GUUEY_DEFAULT_SYSTEM_PROMPT } from "@guuey/config";
 import type { Emitter, JsonValue, StopReason } from "@guuey/worker";
 import { assertGracefulSupport, loadRunner, type HostSnapshot, type HostTurn } from "../index.js";
-import { renderMemorySection, renderProfileSection, withContextPreamble } from "../preamble.js";
+import {
+  renderMemorySection,
+  renderProfileSection,
+  renderResourcesSection,
+  withContextPreamble,
+} from "../preamble.js";
 import { createRunner, importConditionEntry, loadAdk } from "./google-adk.js";
 
 function fakeEmitter() {
@@ -281,6 +286,51 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     });
     expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined));
     expect(resolved).not.toContain("`save_profile` tool");
+  });
+
+  // ── app-resources section (guuey#456 B4) — SIBLING of memory/profile, after profile ──
+
+  it("fsBound + resourceCount > 0 → the resources hint, byte-identical to the framework-blind renderer, naming the turn's fs.app", async () => {
+    const resolved = await resolveInstruction({ fsBound: true, resourceCount: 2 });
+    // The helper's turn fs.app is `base` (a real tmp path) — the section names
+    // THAT dir, never a hardcoded /app.
+    expect(resolved).toBe(
+      withContextPreamble("be terse", [], undefined, undefined) + renderResourcesSection(2, base),
+    );
+    expect(resolved).toContain("## App resources");
+    expect(resolved).toContain(`2 reference files at ${base}/resources`);
+  });
+
+  it("memory + profile + resources → appended in that order, byte-identical to the three renderers", async () => {
+    const resolved = await resolveInstruction({
+      identity: { userId: "u-mem", authMode: "authenticated" },
+      memoryAttached: true,
+      userMemory: "Ada",
+      profileAccess: "read-write",
+      profileSections: PROFILE_SECTIONS,
+      fsBound: true,
+      resourceCount: 1,
+    });
+    expect(resolved).toBe(
+      withContextPreamble("be terse", [], undefined, undefined) +
+        renderMemorySection("Ada") +
+        renderProfileSection(PROFILE_SECTIONS, "read-write") +
+        renderResourcesSection(1, base),
+    );
+  });
+
+  it("fsBound false/absent + resourceCount present → NO resources section (no file tools to read them)", async () => {
+    const boundOff = await resolveInstruction({ fsBound: false, resourceCount: 3 });
+    expect(boundOff).toBe(withContextPreamble("be terse", [], undefined, undefined));
+    const boundAbsent = await resolveInstruction({ resourceCount: 3 });
+    expect(boundAbsent).toBe(withContextPreamble("be terse", [], undefined, undefined));
+  });
+
+  it("resourceCount 0/absent → NO resources section", async () => {
+    const zero = await resolveInstruction({ fsBound: true, resourceCount: 0 });
+    expect(zero).toBe(withContextPreamble("be terse", [], undefined, undefined));
+    const absent = await resolveInstruction({ fsBound: true });
+    expect(absent).toBe(withContextPreamble("be terse", [], undefined, undefined));
   });
 
   it("an sse cred file fails the turn with the actionable transport error", async () => {

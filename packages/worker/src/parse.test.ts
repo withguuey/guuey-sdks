@@ -169,6 +169,41 @@ describe("parseControl", () => {
     expect("fsBound" in nonBool).toBe(false);
   });
 
+  it("round-trips resourceCount (positive integer) onto the typed Invoke (guuey#456 B4 app-resources hint)", () => {
+    const withCount = parseControl(
+      JSON.stringify({
+        type: "invoke",
+        input: "go",
+        identity: { userId: "u", authMode: "anonymous" },
+        fs: { app: "/app", home: "/home", session: "/session" },
+        history: [],
+        fsBound: true,
+        resourceCount: 3,
+      }),
+    );
+    if (!isInvoke(withCount)) throw new Error("expected invoke");
+    expect(withCount.resourceCount).toBe(3);
+  });
+
+  it("omits resourceCount when absent, zero, negative, fractional, or non-number — 'no resources' is always the ABSENT field", () => {
+    const bare = parseControl(INVOKE);
+    if (!isInvoke(bare)) throw new Error("expected invoke");
+    expect("resourceCount" in bare).toBe(false);
+    for (const bad of [0, -1, 1.5, "3", null, true]) {
+      const msg = parseControl(
+        JSON.stringify({
+          type: "invoke",
+          input: "go",
+          identity: { userId: "u", authMode: "anonymous" },
+          fs: { app: "/app", home: "/home", session: "/session" },
+          resourceCount: bad,
+        }),
+      );
+      if (!isInvoke(msg)) throw new Error("expected invoke");
+      expect("resourceCount" in msg).toBe(false);
+    }
+  });
+
   it("omits memoryAttached when absent or non-boolean (never lands as undefined)", () => {
     const bare = parseControl(INVOKE);
     if (!isInvoke(bare)) throw new Error("expected invoke");

@@ -12,7 +12,7 @@ import {
   type OpenaiRunResult,
 } from "./openai.js";
 import type { HostInvoke } from "./claude.js";
-import { renderMemorySection, renderProfileSection } from "../preamble.js";
+import { renderMemorySection, renderProfileSection, renderResourcesSection } from "../preamble.js";
 import { defaultModelFor, type GuueyAgent } from "@guuey/config";
 
 /** Collect every emitted WorkerEvent into an array (the fd-3 sink, in memory). */
@@ -368,6 +368,73 @@ describe("runInvokeOpenai — cross-app profile section (profile T7, gated on au
     });
     expect(instructions).not.toContain("`save_profile` tool");
     expect(instructions).not.toContain("Prefers short replies.");
+  });
+});
+
+describe("runInvokeOpenai — app-resources section (guuey#456 B4, gated on fsBound && resourceCount > 0)", () => {
+  function captureInstructions(over: Partial<HostInvoke>): Promise<string | undefined> {
+    const { sink } = collector();
+    const emit = createEmitter(sink);
+    let instructions: string | undefined;
+    const run: OpenaiRunFn = (agent) => {
+      instructions = typeof agent.instructions === "string" ? agent.instructions : undefined;
+      return Promise.resolve(fakeResult({ events: [], finalOutput: "ok" }));
+    };
+    return runInvokeOpenai(
+      { framework: "openai-agents-sdk", model: "gpt-4o-mini", systemPrompt: "SYS", mcpServers: {} },
+      invoke(over),
+      runtime,
+      emit,
+      run,
+    ).then(() => instructions);
+  }
+  const authed = { userId: "u1", authMode: "authenticated" as const };
+  const sections = [{ app: "Todoist", content: "Prefers short replies." }];
+
+  it("fsBound + resourceCount > 0 → byte-identical to renderResourcesSection, naming the invoke's fs.app", async () => {
+    const instructions = await captureInstructions({ fsBound: true, resourceCount: 3 });
+    // The invoke fixture's fs.app is "/fs/app" — the section names THAT path.
+    expect(instructions?.endsWith(renderResourcesSection(3, "/fs/app"))).toBe(true);
+    expect(instructions).toContain("3 reference files at /fs/app/resources");
+  });
+
+  it("renders AFTER the profile section (memory → profile → resources), byte-identical to the framework-blind renderers", async () => {
+    const instructions = await captureInstructions({
+      identity: authed,
+      fsBound: true,
+      resourceCount: 2,
+      memoryAttached: true,
+      userMemory: "Ada",
+      profileAccess: "read-write",
+      profileSections: sections,
+    });
+    expect(
+      instructions?.endsWith(
+        renderMemorySection("Ada") +
+          renderProfileSection(sections, "read-write") +
+          renderResourcesSection(2, "/fs/app"),
+      ),
+    ).toBe(true);
+  });
+
+  it("an ANONYMOUS caller still gets the section (app resources are shared, public-by-definition — NOT auth-gated)", async () => {
+    const instructions = await captureInstructions({ fsBound: true, resourceCount: 1 });
+    expect(instructions).toContain("## App resources");
+    expect(instructions).toContain("1 reference file at /fs/app/resources");
+  });
+
+  it("fsBound false/absent + resourceCount present → NO section (no file tools to read them)", async () => {
+    const boundOff = await captureInstructions({ fsBound: false, resourceCount: 3 });
+    expect(boundOff).not.toContain("## App resources");
+    const boundAbsent = await captureInstructions({ resourceCount: 3 });
+    expect(boundAbsent).not.toContain("## App resources");
+  });
+
+  it("resourceCount 0/absent → NO section", async () => {
+    const zero = await captureInstructions({ fsBound: true, resourceCount: 0 });
+    expect(zero).not.toContain("## App resources");
+    const absent = await captureInstructions({ fsBound: true });
+    expect(absent).not.toContain("## App resources");
   });
 });
 

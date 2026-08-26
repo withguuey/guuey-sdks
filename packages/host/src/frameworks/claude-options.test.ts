@@ -8,6 +8,7 @@ import {
   withContextPreamble,
   type BuildOptionsContext,
 } from "./claude-options.js";
+import { renderResourcesSection } from "../preamble.js";
 
 /** Minimal invoke context with no FS layers, no credentials, default env. */
 function ctx(over: Partial<BuildOptionsContext> = {}): BuildOptionsContext {
@@ -657,6 +658,64 @@ describe("buildOptions — cross-app profile system-prompt section (profile T7)"
     expect(sp).not.toContain(PROFILE_SAVE);
     expect(sp).not.toContain(PROFILE_RECALL);
     expect(sp).not.toContain("Prefers short replies.");
+  });
+});
+
+describe("buildOptions — app-resources section (guuey#456 B4, gated on fsBound && resourceCount > 0)", () => {
+  const fs = { app: "/fs/app", home: "/fs/home", session: "/fs/session" };
+  const authed = { userId: "u1", authMode: "authenticated" as const };
+  const anon = { userId: "g_1", authMode: "anonymous" as const };
+  const RESOURCES_HEADING = "## App resources";
+
+  it("fsBound + resourceCount > 0 → the byte-identical section, naming <fs.app>/resources", () => {
+    const opts = buildOptions({}, ctx({ fs, fsBound: true, resourceCount: 3 }));
+    const sp = opts.systemPrompt as string;
+    expect(sp).toContain(RESOURCES_HEADING);
+    // Byte-identity with the framework-blind renderer the openai/adk arms
+    // also call — the section is the LAST appended (after memory + profile).
+    expect(sp.endsWith(renderResourcesSection(3, "/fs/app"))).toBe(true);
+    expect(sp).toContain("3 reference files at /fs/app/resources");
+  });
+
+  it("renders AFTER the profile section (memory → profile → resources ordering)", () => {
+    const opts = buildOptions(
+      {},
+      ctx({
+        identity: authed,
+        fs,
+        fsBound: true,
+        resourceCount: 2,
+        memoryAttached: true,
+        userMemory: "Ada",
+        profileAccess: "read-write",
+        profileSections: [{ app: "Todoist", content: "Prefers short replies." }],
+      }),
+    );
+    const sp = opts.systemPrompt as string;
+    expect(sp.indexOf("`save_memory` tool")).toBeLessThan(sp.indexOf("`save_profile` tool"));
+    expect(sp.indexOf("`save_profile` tool")).toBeLessThan(sp.indexOf(RESOURCES_HEADING));
+    expect(sp.endsWith(renderResourcesSection(2, "/fs/app"))).toBe(true);
+  });
+
+  it("an ANONYMOUS caller still gets the section — app resources are shared, public-by-definition (NOT auth-gated)", () => {
+    const opts = buildOptions({}, ctx({ identity: anon, fs, fsBound: true, resourceCount: 1 }));
+    const sp = opts.systemPrompt as string;
+    expect(sp).toContain(RESOURCES_HEADING);
+    expect(sp).toContain("1 reference file at /fs/app/resources");
+  });
+
+  it("fsBound false/absent + resourceCount present → NO section (no file tools to read them — the #234 lesson)", () => {
+    const boundOff = buildOptions({}, ctx({ fs, fsBound: false, resourceCount: 3 }));
+    expect(boundOff.systemPrompt as string).not.toContain(RESOURCES_HEADING);
+    const boundAbsent = buildOptions({}, ctx({ fs, resourceCount: 3 }));
+    expect(boundAbsent.systemPrompt as string).not.toContain(RESOURCES_HEADING);
+  });
+
+  it("resourceCount 0/absent → NO section (the normal no-resources state renders nothing)", () => {
+    const zero = buildOptions({}, ctx({ fs, fsBound: true, resourceCount: 0 }));
+    expect(zero.systemPrompt as string).not.toContain(RESOURCES_HEADING);
+    const absent = buildOptions({}, ctx({ fs, fsBound: true }));
+    expect(absent.systemPrompt as string).not.toContain(RESOURCES_HEADING);
   });
 });
 

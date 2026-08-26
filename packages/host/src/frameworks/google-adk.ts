@@ -47,7 +47,12 @@ import {
   nativeLoad,
   resolveAgentEntry,
 } from "../agent-entry.js";
-import { renderMemorySection, renderProfileSection, withContextPreamble } from "../preamble.js";
+import {
+  renderMemorySection,
+  renderProfileSection,
+  renderResourcesSection,
+  withContextPreamble,
+} from "../preamble.js";
 import { resolveSdkVersion } from "../sdk-version.js";
 
 const ADK_FRAMEWORK = "google-adk";
@@ -350,6 +355,16 @@ export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
       // to a const so the truthy branch narrows it to the required `ProfileAccess`.
       const profileAccess = turn.profileAccess;
       const profileOn = turn.identity.authMode === "authenticated" && profileAccess !== undefined;
+      // guuey#456 B4: the app-resources hint is a SIBLING of the memory/
+      // profile sections, appended AFTER the profile section. Gated on
+      // `fsBound && resourceCount > 0` — `fsBound` is the REAL "file tools
+      // are armed" signal (guuey#234), so the hint never names files the
+      // model has no tools to read; deliberately NOT auth-gated (the app
+      // layer is shared, public-by-definition content). `resourceCount` is
+      // aliased to a const so the truthy branch narrows it.
+      const resourceCount = turn.resourceCount;
+      const resourcesOn =
+        turn.fsBound === true && resourceCount !== undefined && resourceCount > 0;
       const instruction =
         // Prompt-less snapshots run the platform default — same fallback as
         // the claude and openai arms (this arm used to fall back to "",
@@ -361,7 +376,8 @@ export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
           turn.priorState,
         ) +
         (memoryOn ? renderMemorySection(turn.userMemory) : "") +
-        (profileOn ? renderProfileSection(turn.profileSections, profileAccess) : "");
+        (profileOn ? renderProfileSection(turn.profileSections, profileAccess) : "") +
+        (resourcesOn ? renderResourcesSection(resourceCount, turn.fs.app) : "");
       let agent: AdkAgent;
       try {
         const toolsets = buildToolsets(adk, listCredentials(turn.fs)());

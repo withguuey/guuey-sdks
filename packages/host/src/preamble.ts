@@ -259,3 +259,34 @@ export function renderProfileSection(
   const recall = sections && sections.length > 0 ? renderProfileRecall(sections) : "";
   return `${save}${recall}`;
 }
+
+/**
+ * Render the app-resources system-prompt section (guuey#456 B4) — the hint
+ * that the builder-provided reference files exist. SIBLING of
+ * {@link renderMemorySection}/{@link renderProfileSection}: framework-BLIND,
+ * one string built once, appended AFTER the profile section by all three
+ * adapters (Claude `claude-options.ts`, OpenAI `openai.ts`, google-adk
+ * `google-adk.ts`) — byte-identical, pinned in `preamble.test.ts`.
+ *
+ * ONE gate, owned by the CALLER (all three adapters identically):
+ * `fsBound && resourceCount > 0` — the memory-mcp T5 lesson restated for
+ * files: `fsBound` is the REAL "file tools are armed" signal (guuey#234), so
+ * the hint can never name files the model has no tools to read, and a count
+ * of 0/absent (the normal no-resources state) renders nothing. Deliberately
+ * NOT auth-gated: the app layer is shared, public-by-definition content —
+ * guests read it too.
+ *
+ * `appDir` is the app mount AS THE WORKER SEES IT — the invoke's own
+ * `fs.app` (`/app` in the hosted sandbox; the real host path on a bare dev
+ * run) — so the hint always names a directory the file tools can actually
+ * open. Leading `\n\n` so it appends cleanly after the profile section
+ * (mirrors the sibling renderers).
+ */
+export function renderResourcesSection(count: number, appDir: string): string {
+  const files = count === 1 ? "1 reference file" : `${count} reference files`;
+  return (
+    `\n\n## App resources\n\n` +
+    `You have ${files} at ${appDir}/resources — the builder provided them for you. ` +
+    `Read them with your file tools when they're relevant to the question.`
+  );
+}

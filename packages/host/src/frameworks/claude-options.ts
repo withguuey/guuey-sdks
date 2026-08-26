@@ -129,6 +129,25 @@ function buildProfileSection(ctx: BuildOptionsContext): string {
   return renderProfileSection(ctx.profileSections, ctx.profileAccess);
 }
 
+/**
+ * Build the app-resources system-prompt section (guuey#456 B4) — the hint
+ * that builder-provided reference files exist at `<fs.app>/resources`. SIBLING
+ * of {@link buildMemorySection}/{@link buildProfileSection}, appended AFTER
+ * the profile section. Gated on {@link BuildOptionsContext.fsBound} — the
+ * REAL "file tools are armed" signal (guuey#234), never `fs` presence — AND a
+ * positive {@link BuildOptionsContext.resourceCount} (the Router only writes
+ * it when > 0; re-checked here fail-closed). Deliberately NOT auth-gated: the
+ * app layer is shared, public-by-definition content — guests read it too.
+ * Delegates to the framework-neutral {@link renderResourcesSection}
+ * (`../preamble.js`) so Claude, OpenAI, and ADK render the IDENTICAL section.
+ * Returns `""` (append-safe) when out of scope.
+ */
+function buildResourcesSection(ctx: BuildOptionsContext): string {
+  const count = ctx.resourceCount;
+  if (ctx.fsBound !== true || count === undefined || count <= 0 || ctx.fs === undefined) return "";
+  return renderResourcesSection(count, ctx.fs.app);
+}
+
 import type { CredentialFile } from "@guuey/worker";
 
 /**
@@ -244,6 +263,17 @@ export interface BuildOptionsContext {
    *  T7), read Router-side. Gated by {@link profileAccess}. */
   profileSections?: ProfileSection[];
   /**
+   * How many builder-provided reference files sit at `<fs.app>/resources` this
+   * turn (guuey#456 B4) — counted Router-side at invoke assembly and written
+   * onto the wire only when the layers are REAL and the count is positive.
+   * Gates the app-resources system-prompt section
+   * ({@link buildResourcesSection}) together with {@link fsBound}, so the hint
+   * never renders on a turn whose file tools are off (the memory-mcp T5
+   * lesson: gate on the real signal, never on `fs` presence). See
+   * `Invoke.resourceCount` in `@guuey/worker`.
+   */
+  resourceCount?: number;
+  /**
    * Returns every credential the Router broker wrote to
    * `<sessionDir>/.guuey/credentials/` this invoke — one `{name, cred}` per
    * usable MCP server. `name` is the filename stem (server name); `cred` is the
@@ -298,7 +328,11 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
     // cross-app-profile T7: the profile section is a SIBLING of the memory
     // section, appended AFTER it (memory first, then profile). Both are
     // framework-blind renderers from ../preamble.js.
-    buildProfileSection(ctx);
+    buildProfileSection(ctx) +
+    // guuey#456 B4: the app-resources hint, appended AFTER the profile
+    // section (memory → profile → resources) — same framework-blind renderer
+    // family from ../preamble.js, gated on fsBound && resourceCount > 0.
+    buildResourcesSection(ctx);
   const model = snapshot.model ?? DEFAULT_MODEL;
   const maxTurns = snapshot.runtime?.maxTurns ?? DEFAULT_MAX_TURNS;
   const fs = ctx.fs;
@@ -602,4 +636,9 @@ function dedupe(names: string[]): string[] {
 // `renderMemorySection` (the memory SAVE + RECALL block, memory-mcp T5) lives
 // there too — framework-blind, so openai/adk render the identical section.
 export { withContextPreamble } from "../preamble.js";
-import { renderMemorySection, renderProfileSection, withContextPreamble } from "../preamble.js";
+import {
+  renderMemorySection,
+  renderProfileSection,
+  renderResourcesSection,
+  withContextPreamble,
+} from "../preamble.js";

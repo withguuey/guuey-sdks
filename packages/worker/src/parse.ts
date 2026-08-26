@@ -149,6 +149,15 @@ export function parseControl(line: string): ControlMessage {
           ? { profileAccess: raw.profileAccess }
           : {}),
         ...(profileSections ? { profileSections } : {}),
+        // guuey#456 B4: the app-resources count — only a POSITIVE integer
+        // lands (0 / negative / fractional / non-number is dropped, matching
+        // the Router's only-when->0 write), so "no resources" is always the
+        // ABSENT field, never a 0 the renderers would have to re-gate.
+        ...(typeof raw.resourceCount === "number" &&
+        Number.isInteger(raw.resourceCount) &&
+        raw.resourceCount > 0
+          ? { resourceCount: raw.resourceCount }
+          : {}),
       };
     }
     case "shutdown":

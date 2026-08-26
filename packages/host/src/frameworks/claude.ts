@@ -71,6 +71,13 @@ export interface HostInvoke {
   /** The user's cross-app profile sections for the RECALL push (cross-app-profile
    *  T7). See `Invoke.profileSections` in `@guuey/worker`. */
   profileSections?: ProfileSection[];
+  /**
+   * How many builder-provided reference files sit at `<fs.app>/resources` this
+   * turn (guuey#456 B4) — present only when the layers are REAL and the count
+   * is positive. Gates the app-resources system-prompt section together with
+   * {@link fsBound}. See `Invoke.resourceCount` in `@guuey/worker`.
+   */
+  resourceCount?: number;
 }
 
 /** Per-process config the worker resolves once at boot. */
@@ -178,6 +185,7 @@ export async function runInvoke(
       ...(invoke.memoryAttached !== undefined ? { memoryAttached: invoke.memoryAttached } : {}),
       ...(invoke.profileAccess !== undefined ? { profileAccess: invoke.profileAccess } : {}),
       ...(invoke.profileSections !== undefined ? { profileSections: invoke.profileSections } : {}),
+      ...(invoke.resourceCount !== undefined ? { resourceCount: invoke.resourceCount } : {}),
     };
     options = buildOptions(snapshot, ctx);
   } catch (err) {

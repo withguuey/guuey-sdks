@@ -153,6 +153,21 @@ export interface Invoke {
    * ungranted app).
    */
   profileSections?: ProfileSection[];
+  /**
+   * How many builder-provided reference files sit in the app layer's
+   * `resources/` directory (`<fs.app>/resources`) this turn (guuey#456 B4).
+   * The Router counts the directory at invoke-assembly time and writes the
+   * field ONLY when the layers are REAL ({@link fsBound}) AND the count is
+   * positive — an absent or empty directory (the normal state until the
+   * builder uploads resources) rides NOTHING, mirroring {@link fsBound}'s
+   * only-when-true pattern. Gates the host's framework-blind app-resources
+   * system-prompt section (`@guuey/host`'s `renderResourcesSection`) on
+   * `fsBound && resourceCount > 0` — the memory-mcp T5 lesson restated for
+   * files: `fsBound` is the REAL "file tools are armed" signal, so the hint
+   * can never name files the model has no tools to read. NOT auth-gated:
+   * the app layer is shared, public-by-definition content.
+   */
+  resourceCount?: number;
 }
 /** Graceful termination (also signalled by stdin EOF). */
 export interface Shutdown {

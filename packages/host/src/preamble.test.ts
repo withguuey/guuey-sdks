@@ -3,6 +3,7 @@ import {
   renderMemorySection,
   renderProfileRecall,
   renderProfileSection,
+  renderResourcesSection,
   renderUserMemoryRecall,
 } from "./preamble.js";
 
@@ -234,5 +235,46 @@ describe("renderProfileRecall — provenance-name sanitization (SECURITY, profil
   it("passes the appId-fallback path through the SAME sanitizer (a safe appId is unchanged)", () => {
     const out = renderProfileRecall([{ app: "app_abc-123", content: "y" }]);
     expect(out).toContain("### From app_abc-123\ny");
+  });
+});
+
+describe("renderResourcesSection — the app-resources hint (guuey#456 B4)", () => {
+  it("plural: names the count and the <appDir>/resources path", () => {
+    const out = renderResourcesSection(3, "/app");
+    expect(out).toContain("## App resources");
+    expect(out).toContain("3 reference files");
+    expect(out).toContain("/app/resources");
+    expect(out).toContain("file tools");
+  });
+
+  it("singular: 1 reference file", () => {
+    const out = renderResourcesSection(1, "/app");
+    expect(out).toContain("1 reference file at /app/resources");
+    expect(out).not.toContain("reference files");
+  });
+
+  it("names the path off the WORKER-VISIBLE app dir (real host path on a bare dev run, not a hardcoded /app)", () => {
+    expect(renderResourcesSection(2, "/fs/app")).toContain("/fs/app/resources");
+    expect(renderResourcesSection(2, "/fs/app")).not.toContain(" /app/resources");
+  });
+
+  it("leads with \\n\\n so it appends cleanly after the profile section", () => {
+    expect(renderResourcesSection(1, "/app").startsWith("\n\n")).toBe(true);
+  });
+
+  // PIN: the FULL output, byte-for-byte — the guard that the three framework
+  // adapters (which each call this renderer) stay in lockstep, mirroring the
+  // memory/profile section pins above.
+  it("PIN: output is byte-identical", () => {
+    expect(renderResourcesSection(2, "/app")).toBe(
+      "\n\n## App resources\n\n" +
+        "You have 2 reference files at /app/resources — the builder provided them for you. " +
+        "Read them with your file tools when they're relevant to the question.",
+    );
+    expect(renderResourcesSection(1, "/app")).toBe(
+      "\n\n## App resources\n\n" +
+        "You have 1 reference file at /app/resources — the builder provided them for you. " +
+        "Read them with your file tools when they're relevant to the question.",
+    );
   });
 });

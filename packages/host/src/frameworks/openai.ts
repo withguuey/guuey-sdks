@@ -43,7 +43,7 @@ import {
   type BuildOptionsContext,
   type SdkMcpServer,
 } from "./claude-options.js";
-import { renderMemorySection, renderProfileSection } from "../preamble.js";
+import { renderMemorySection, renderProfileSection, renderResourcesSection } from "../preamble.js";
 import type { HostInvoke, HostRuntime } from "./claude.js";
 import { GUUEY_DEFAULT_SYSTEM_PROMPT, defaultModelFor, type GuueyAgent } from "@guuey/config";
 import { resolveSdkVersion } from "../sdk-version.js";
@@ -171,6 +171,16 @@ export async function runInvokeOpenai(
     // it to the non-undefined `ProfileAccess` the renderer requires.
     const profileAccess = invoke.profileAccess;
     const profileOn = invoke.identity.authMode === "authenticated" && profileAccess !== undefined;
+    // guuey#456 B4: the app-resources hint is a SIBLING of the memory/profile
+    // sections, appended AFTER the profile section. Gated on `fsBound &&
+    // resourceCount > 0` — `fsBound` is the REAL "file tools are armed"
+    // signal (guuey#234), so the hint never names files the model has no
+    // tools to read; deliberately NOT auth-gated (the app layer is shared,
+    // public-by-definition content). `resourceCount` is aliased to a const so
+    // the truthy branch narrows it to the `number` the renderer requires.
+    const resourceCount = invoke.resourceCount;
+    const resourcesOn =
+      invoke.fsBound === true && resourceCount !== undefined && resourceCount > 0;
     instructions =
       withContextPreamble(
         snapshot.systemPrompt ?? GUUEY_DEFAULT_SYSTEM_PROMPT,
@@ -179,7 +189,8 @@ export async function runInvokeOpenai(
         ctx.priorState,
       ) +
       (memoryOn ? renderMemorySection(invoke.userMemory) : "") +
-      (profileOn ? renderProfileSection(invoke.profileSections, profileAccess) : "");
+      (profileOn ? renderProfileSection(invoke.profileSections, profileAccess) : "") +
+      (resourcesOn ? renderResourcesSection(resourceCount, invoke.fs.app) : "");
     mcpServers = buildOpenaiMcpServers(ctx);
   } catch (err) {
     emit.error(err instanceof Error ? err.message : String(err));
