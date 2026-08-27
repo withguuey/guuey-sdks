@@ -411,6 +411,32 @@ describe('ThreadStore guuey#86 — UI-card projection, prompt-lane filter, previ
     expect(res.artifactSeqs).toHaveLength(1);
     const cardRow = db.messages.find((r) => r.kind === 'card');
     expect(cardRow?.cardSnapshot).toMatchObject({ artifactId: 'm1#ui#1' });
+    // guuey#402: the fold had the tool-call in hand — the card row carries
+    // the RAW producing tool name beside the snapshot (no humanization
+    // server-side; that's the kit's #307 voice layer).
+    expect(cardRow?.toolName).toBe('render');
+  });
+
+  it('appendFold persists NO toolName on a first-class artifact event with no tool-result part (guuey#402)', async () => {
+    const db = new FakePersistence();
+    const store = new ThreadStore(db);
+    await db.createThread(makeThreadRow('t1', 'g_abc'));
+    const eventArtifact = {
+      artifactId: 'a-event',
+      turnId: 'turn1',
+      threadId: 't1',
+      parts: [{ type: 'text' as const, text: 'artifact-event card' }],
+    };
+    await store.appendFold({
+      threadId: 't1',
+      userId: 'g_abc',
+      fold: foldWith({ messages: [], artifacts: [eventArtifact] }),
+      clientMessageIdBase: 'cmid',
+    });
+    const cardRow = db.messages.find((r) => r.kind === 'card');
+    expect(cardRow?.cardSnapshot).toMatchObject({ artifactId: 'a-event' });
+    // Absent, not invented — the reader's generic fallback stays honest.
+    expect(cardRow && 'toolName' in cardRow).toBe(false);
   });
 
   it('appendFold dedupes a projected card whose artifactId is already in fold.artifacts (reassemble→re-persist)', async () => {

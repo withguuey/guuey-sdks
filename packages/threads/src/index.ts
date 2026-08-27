@@ -46,9 +46,11 @@ export {
   agMessageToRow,
   cardRowToAgArtifact,
   messageText,
+  producingToolName,
   reassembleFold,
   rowToAgMessage,
   seedEventsForReducer,
+  toolNamesByCallId,
   uiCardArtifactsFromMessages,
   type RowCtx,
 } from "./fold-rows.js";

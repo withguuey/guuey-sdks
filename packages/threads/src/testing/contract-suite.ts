@@ -134,6 +134,27 @@ export function runThreadPersistenceContractSuite(
       });
     });
 
+    it("a card row round-trips cardSnapshot + toolName; absence stays absent (guuey#402)", async () => {
+      await withHarness(make, async (port) => {
+        await port.createThread(threadRow("t1"));
+        const base = {
+          threadId: "t1",
+          userId: "g_contract",
+          at: "2026-08-07T00:00:01.000Z",
+          kind: "card" as const,
+          authorRole: "agent" as const,
+          cardSnapshot: { artifactId: "a1", turnId: "turn1", parts: [] },
+        };
+        await port.putMessage({ ...base, seq: 1, clientMessageId: "c1", toolName: "render" });
+        await port.putMessage({ ...base, seq: 2, clientMessageId: "c2" });
+        const rows = await port.listRecentMessages("t1", 5);
+        expect(rows[0]?.toolName).toBe("render");
+        expect(rows[0]?.cardSnapshot).toEqual(base.cardSnapshot);
+        // A pre-#402 row must come back WITHOUT the key materialized.
+        expect(rows[1] && "toolName" in rows[1]).toBe(false);
+      });
+    });
+
     it("findByClientMessageId resolves the idempotency key within its thread only", async () => {
       await withHarness(make, async (port) => {
         await port.createThread(threadRow("t1"));

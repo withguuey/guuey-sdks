@@ -43,6 +43,15 @@ export interface ThreadMessageRow {
   content?: unknown;
   /** Verbatim `AgArtifact` stored on kind='card' rows. */
   cardSnapshot?: unknown;
+  /**
+   * The producing tool's RAW wire name on kind='card' rows (guuey#402) —
+   * resolved at fold time from the paired `tool-call` block, which is the
+   * only place the name rides (the tool-RESULT block carries just the
+   * `toolCallId`). Raw on purpose: humanization is the kit's #307 voice
+   * layer, one owner. Absent on pre-enabler rows and when the producing
+   * call is not in the fold — readers fall back, never invent.
+   */
+  toolName?: string;
   /** `AgTurnRecord` stored on agent-fold rows for context recovery. */
   aiContext?: unknown;
 }

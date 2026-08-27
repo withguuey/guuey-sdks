@@ -9,7 +9,13 @@
  */
 import { randomUUID } from "node:crypto";
 import type { AgReduceResult } from "@silverprotocol/core";
-import { agMessageToRow, agArtifactToCardRow, uiCardArtifactsFromMessages } from "./fold-rows.js";
+import {
+  agMessageToRow,
+  agArtifactToCardRow,
+  producingToolName,
+  toolNamesByCallId,
+  uiCardArtifactsFromMessages,
+} from "./fold-rows.js";
 import type {
   StoredHistoryMessage,
   ThreadMessageKind,
@@ -275,13 +281,24 @@ export class ThreadStore {
       (a) => !knownArtifactIds.has(a.artifactId),
     );
     const cardArtifacts = [...fold.artifacts, ...projected];
+    // guuey#402: the fold has the tool-CALL blocks in hand — the only place
+    // the producing tool's name rides — so resolve it here and persist it
+    // beside the snapshot. Unresolvable (a first-class artifact event with
+    // no tool-result part) persists no name; readers fall back.
+    const toolNames = toolNamesByCallId(fold.messages);
     for (let i = 0; i < cardArtifacts.length; i++) {
       const art = cardArtifacts[i]!;
       const clientMessageId = sentinelClaimed ? `${clientMessageIdBase}#card#${i}` : sentinelKey;
       sentinelClaimed = true;
       const now = new Date().toISOString();
       const seq = await this.db.incrementSeq(threadId, art.name ?? null, now);
-      await this.db.putMessage(agArtifactToCardRow(art, { threadId, userId, seq, at: now, clientMessageId }));
+      await this.db.putMessage(
+        agArtifactToCardRow(
+          art,
+          { threadId, userId, seq, at: now, clientMessageId },
+          producingToolName(art, toolNames),
+        ),
+      );
       artifactSeqs.push(seq);
     }
 

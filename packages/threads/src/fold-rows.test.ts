@@ -4,9 +4,11 @@ import { AgMessage as AgMessageSchema } from "@silverprotocol/core";
 import {
   agMessageToRow,
   agArtifactToCardRow,
+  producingToolName,
   rowToAgMessage,
   cardRowToAgArtifact,
   messageText,
+  toolNamesByCallId,
   uiCardArtifactsFromMessages,
 } from "./fold-rows.js";
 
@@ -62,6 +64,67 @@ describe("agArtifactToCardRow", () => {
     expect(row.cardSnapshot).toEqual(art);
     expect(row.authorRole).toBe("agent");
     expect(cardRowToAgArtifact(row)).toEqual(art);
+  });
+
+  it("stamps the producing toolName beside the snapshot when given; omits the key when not (guuey#402)", () => {
+    const named = agArtifactToCardRow(art, ctx, "render");
+    expect(named.toolName).toBe("render");
+    // The snapshot itself is untouched — the name rides the ROW, so the
+    // AgArtifact round-trip stays byte-identical.
+    expect(cardRowToAgArtifact(named)).toEqual(art);
+    const bare = agArtifactToCardRow(art, ctx);
+    expect("toolName" in bare).toBe(false);
+  });
+});
+
+describe("toolNamesByCallId + producingToolName (guuey#402)", () => {
+  const msg = (id: string, content: AgMessage["content"]): AgMessage => ({
+    id,
+    role: "assistant",
+    content,
+    turnId: "turn1",
+    threadId: "t1",
+  });
+
+  it("maps every tool-call block's id to its name across messages", () => {
+    const names = toolNamesByCallId([
+      msg("m1", [
+        { type: "tool-call", toolCallId: "c1", name: "render", input: {} },
+        { type: "tool-result", toolCallId: "c1", content: [] },
+      ]),
+      msg("m2", [{ type: "tool-call", toolCallId: "c2", name: "get_weather", input: {} }]),
+    ]);
+    expect(names.get("c1")).toBe("render");
+    expect(names.get("c2")).toBe("get_weather");
+  });
+
+  it("resolves an artifact's producing tool via its tool-result part's toolCallId", () => {
+    const names = new Map([["c1", "render"]]);
+    const art: AgArtifact = {
+      artifactId: "m1#ui#1",
+      turnId: "turn1",
+      threadId: "t1",
+      parts: [{ type: "tool-result", toolCallId: "c1", content: [] }],
+    };
+    expect(producingToolName(art, names)).toBe("render");
+  });
+
+  it("returns undefined for an unresolvable producer — no tool-result part, or a call outside the fold", () => {
+    const names = new Map([["c1", "render"]]);
+    const noToolResult: AgArtifact = {
+      artifactId: "a1",
+      turnId: "turn1",
+      threadId: "t1",
+      parts: [{ type: "text", text: "artifact-event card" }],
+    };
+    const unknownCall: AgArtifact = {
+      artifactId: "a2",
+      turnId: "turn1",
+      threadId: "t1",
+      parts: [{ type: "tool-result", toolCallId: "c-prior-turn", content: [] }],
+    };
+    expect(producingToolName(noToolResult, names)).toBeUndefined();
+    expect(producingToolName(unknownCall, names)).toBeUndefined();
   });
 });
 

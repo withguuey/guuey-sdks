@@ -163,7 +163,46 @@ export function uiCardArtifactsFromMessages(messages: AgMessage[]): AgArtifact[]
   return artifacts;
 }
 
-export function agArtifactToCardRow(art: AgArtifact, ctx: RowCtx): ThreadMessageRow {
+/**
+ * toolCallId → tool name, read off every `tool-call` block in the fold's
+ * messages (guuey#402). The name rides ONLY the tool-call block; results
+ * carry just the id, so this map is how a card row learns which tool
+ * produced it. First writer wins on a duplicate id (ids are unique per
+ * provider contract; a collision would be the provider's bug).
+ */
+export function toolNamesByCallId(messages: AgMessage[]): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const msg of messages) {
+    for (const block of msg.content) {
+      if (block.type === "tool-call" && !names.has(block.toolCallId)) {
+        names.set(block.toolCallId, block.name);
+      }
+    }
+  }
+  return names;
+}
+
+/**
+ * The producing tool's name for a card artifact: the first tool-result part
+ * whose `toolCallId` the fold's tool-call blocks named (guuey#402).
+ * `undefined` when unresolvable — a first-class `artifact.*` event with no
+ * tool-result part, or a call outside this fold. Callers persist absence,
+ * never a guess (humanization and fallbacks are the kit's, one owner).
+ */
+export function producingToolName(
+  art: AgArtifact,
+  toolNames: ReadonlyMap<string, string>,
+): string | undefined {
+  for (const part of art.parts) {
+    if (isJsonObjectLike(part) && part.type === "tool-result" && typeof part.toolCallId === "string") {
+      const name = toolNames.get(part.toolCallId);
+      if (name !== undefined) return name;
+    }
+  }
+  return undefined;
+}
+
+export function agArtifactToCardRow(art: AgArtifact, ctx: RowCtx, toolName?: string): ThreadMessageRow {
   // guuey#122: the projection lane strips tool-result _meta upstream, but
   // REAL artifact.* events land here verbatim — apply the same persistence
   // boundary to any tool-result-typed part (and the artifact-level _meta),
@@ -183,6 +222,10 @@ export function agArtifactToCardRow(art: AgArtifact, ctx: RowCtx): ThreadMessage
     authorRole: "agent",
     content: { producedInTurnId: art.turnId },
     cardSnapshot: snapshot,
+    // guuey#402: the RAW producing tool name, resolved by the caller from
+    // the fold's tool-call blocks. Absent stays absent — old rows and
+    // unresolvable producers keep the reader's fallback honest.
+    ...(toolName !== undefined ? { toolName } : {}),
   };
 }
 
