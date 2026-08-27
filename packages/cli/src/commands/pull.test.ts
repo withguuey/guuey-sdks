@@ -17,7 +17,9 @@ import type { MockInstance } from 'vitest';
 import type { GuueyJsonV1 } from '@guuey/config';
 
 vi.mock('node:fs', () => ({
+  existsSync: vi.fn(() => false),
   mkdirSync: vi.fn(),
+  readFileSync: vi.fn(),
   writeFileSync: vi.fn(),
 }));
 
@@ -47,16 +49,21 @@ vi.mock('../config.js', async (importOriginal) => {
   };
 });
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import {
   mapHostedStateToOverlay,
   pickSnapshotBuild,
   pull,
+  resolveDraftPromptAction,
   SYSTEM_PROMPT_FILE,
   type AppResponse,
   type DeploymentRow,
 } from './pull.js';
 import { loadProjectConfig, saveProjectConfig } from '../config.js';
+import {
+  GUUEY_DEFAULT_SYSTEM_PROMPT,
+  GUUEY_SCAFFOLD_SYSTEM_PROMPT,
+} from '@guuey/config';
 
 /** A scaffold-shaped local overlay (the fresh `guuey create` output). */
 function localScaffold(): GuueyJsonV1 {
@@ -228,6 +235,58 @@ describe('mapHostedStateToOverlay', () => {
   });
 });
 
+// ─── resolveDraftPromptAction (pure — the guuey#463 replace rule) ─────
+
+describe('resolveDraftPromptAction', () => {
+  const DRAFT = 'You are the console-drafted agent.';
+
+  it('writes when the local prompts/system.md is missing', () => {
+    expect(resolveDraftPromptAction(DRAFT, null)).toEqual({
+      kind: 'write',
+      content: DRAFT,
+    });
+  });
+
+  it('writes over a local file byte-identical to the SCAFFOLD default, as stamped (text + "\\n")', () => {
+    expect(
+      resolveDraftPromptAction(DRAFT, `${GUUEY_SCAFFOLD_SYSTEM_PROMPT}\n`),
+    ).toEqual({ kind: 'write', content: DRAFT });
+  });
+
+  it('writes over the RUNTIME default too — both shipped texts are known defaults', () => {
+    expect(
+      resolveDraftPromptAction(DRAFT, `${GUUEY_DEFAULT_SYSTEM_PROMPT}\n`),
+    ).toEqual({ kind: 'write', content: DRAFT });
+  });
+
+  it('still recognizes a default whose editor stripped the final newline', () => {
+    expect(
+      resolveDraftPromptAction(DRAFT, GUUEY_SCAFFOLD_SYSTEM_PROMPT),
+    ).toEqual({ kind: 'write', content: DRAFT });
+  });
+
+  it('never clobbers a diverged local prompt — one changed byte is builder-authored text', () => {
+    expect(
+      resolveDraftPromptAction(DRAFT, `${GUUEY_SCAFFOLD_SYSTEM_PROMPT}\nMy edit.\n`),
+    ).toEqual({ kind: 'diverged' });
+    expect(resolveDraftPromptAction(DRAFT, 'My own prompt.\n')).toEqual({
+      kind: 'diverged',
+    });
+  });
+
+  it('no-ops when the wire has no draft: absent field (older cliApi), null, or empty', () => {
+    // `undefined` is the degrade-gracefully case — an older cliApi that
+    // omits the field entirely must not turn pull into a clobber.
+    expect(resolveDraftPromptAction(undefined, null)).toEqual({ kind: 'none' });
+    expect(resolveDraftPromptAction(null, null)).toEqual({ kind: 'none' });
+    expect(resolveDraftPromptAction('', null)).toEqual({ kind: 'none' });
+    // Even when the local file is a replaceable known default.
+    expect(
+      resolveDraftPromptAction(undefined, `${GUUEY_SCAFFOLD_SYSTEM_PROMPT}\n`),
+    ).toEqual({ kind: 'none' });
+  });
+});
+
 // ─── pull() end-to-end ───────────────────────────────────────────────
 
 interface CapturedRequest {
@@ -268,6 +327,9 @@ describe('pull()', () => {
     vi.mocked(saveProjectConfig).mockReset();
     vi.mocked(mkdirSync).mockReset();
     vi.mocked(writeFileSync).mockReset();
+    vi.mocked(existsSync).mockReset();
+    vi.mocked(existsSync).mockReturnValue(false);
+    vi.mocked(readFileSync).mockReset();
   });
 
   afterEach(() => {
@@ -346,5 +408,111 @@ describe('pull()', () => {
     const written = vi.mocked(saveProjectConfig).mock.calls[0]![0] as GuueyJsonV1;
     expect(written.appId).toBe('app-1');
     expect(written.agent).toEqual(localScaffold().agent);
+  });
+
+  // ─── The create-time draft (guuey#463, the #455 rider) ─────────────
+
+  const DRAFT = 'You are the console-drafted agent.';
+
+  /** Stub the two-request no-snapshot exchange (app row + empty deployments). */
+  function stubNoSnapshotExchange(app: AppResponse): void {
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ app }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ deployments: [] }), { status: 200 }),
+      );
+  }
+
+  it('seeds prompts/system.md from the draft when the local file is the untouched scaffold default', async () => {
+    stubNoSnapshotExchange({ id: 'app-1', displayName: 'Todo', draftSystemPrompt: DRAFT });
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(`${GUUEY_SCAFFOLD_SYSTEM_PROMPT}\n`);
+
+    await pull({});
+
+    expect(writeFileSync).toHaveBeenCalledTimes(1);
+    const [path, body] = vi.mocked(writeFileSync).mock.calls[0]!;
+    expect(String(path)).toMatch(/prompts\/system\.md$/);
+    expect(body).toBe(DRAFT);
+    // The overlay write still happens (identity refresh), agent untouched.
+    expect(saveProjectConfig).toHaveBeenCalledTimes(1);
+    expect(
+      (vi.mocked(saveProjectConfig).mock.calls[0]![0] as GuueyJsonV1).agent,
+    ).toEqual(localScaffold().agent);
+  });
+
+  it('seeds prompts/system.md from the draft when the local file is missing entirely', async () => {
+    stubNoSnapshotExchange({ id: 'app-1', draftSystemPrompt: DRAFT });
+    vi.mocked(existsSync).mockReturnValue(false);
+
+    await pull({});
+
+    expect(readFileSync).not.toHaveBeenCalled();
+    expect(writeFileSync).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(writeFileSync).mock.calls[0]![1]).toBe(DRAFT);
+  });
+
+  it('leaves a diverged local prompt untouched and prints the notice', async () => {
+    stubNoSnapshotExchange({ id: 'app-1', draftSystemPrompt: DRAFT });
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue('My hand-edited prompt.\n');
+
+    await pull({});
+
+    expect(writeFileSync).not.toHaveBeenCalled();
+    const logged = vi
+      .mocked(console.log)
+      .mock.calls.map((c) => c.join(' '))
+      .join('\n');
+    expect(logged).toMatch(/left untouched/);
+  });
+
+  it('a live nocode snapshot takes precedence over the draft — the deployed prompt wins', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            app: { id: 'app-1', displayName: 'Todo', draftSystemPrompt: DRAFT },
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            deployments: [
+              { buildNumber: 3, status: 'live', agentMode: 'nocode', size: 'sm' },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ snapshot: nocodeSnapshot() }), { status: 200 }),
+      );
+    // Even a replaceable local default must NOT be re-written from the draft.
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(`${GUUEY_SCAFFOLD_SYSTEM_PROMPT}\n`);
+
+    await pull({});
+
+    // Exactly one prompt write: the snapshot's externalize — never the draft.
+    expect(writeFileSync).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(writeFileSync).mock.calls[0]![1]).toBe(
+      'You are the deployed studio agent.',
+    );
+  });
+
+  it('degrades to a no-op against an older cliApi that omits draftSystemPrompt', async () => {
+    stubNoSnapshotExchange({ id: 'app-1', displayName: 'Todo' });
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(`${GUUEY_SCAFFOLD_SYSTEM_PROMPT}\n`);
+
+    await pull({});
+
+    expect(writeFileSync).not.toHaveBeenCalled();
+    expect(saveProjectConfig).toHaveBeenCalledTimes(1);
   });
 });

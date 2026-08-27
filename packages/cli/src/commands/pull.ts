@@ -18,7 +18,13 @@
  *   5. When there is no live nocode snapshot (code-mode app, or nothing
  *      deployed yet), refresh identity (`appId`) only and leave the
  *      local agent section untouched — the code project's local source
- *      is authoritative.
+ *      is authoritative. The one exception is the console-authored
+ *      create-time prompt draft (`AppWire.draftSystemPrompt`, guuey#463):
+ *      it is written to `prompts/system.md` under the KNOWN-DEFAULT
+ *      replace rule (`resolveDraftPromptAction`) — only when the local
+ *      file is missing or byte-identical to a shipped default; a
+ *      builder-edited prompt is never clobbered, and a live nocode
+ *      snapshot always takes precedence over the draft.
  *   6. Write through `saveProjectConfig` (re-validates the overlay).
  *
  * URL overrides (GUUEY_HOST, GUUEY_BRIDGE_URL, etc.) stay in `.env` —
@@ -35,7 +41,7 @@
  *   guuey pull --app-id app_X   # Override with an explicit appId
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { requireAuth } from '../auth';
 import {
@@ -45,7 +51,13 @@ import {
   saveProjectConfig,
   type ResolvedConfig,
 } from '../config';
-import { declaredServerEntries, type GuueyAgent, type GuueyJsonV1 } from '@guuey/config';
+import {
+  declaredServerEntries,
+  GUUEY_DEFAULT_SYSTEM_PROMPT,
+  GUUEY_SCAFFOLD_SYSTEM_PROMPT,
+  type GuueyAgent,
+  type GuueyJsonV1,
+} from '@guuey/config';
 import * as out from '../output';
 
 /**
@@ -66,6 +78,12 @@ export const SYSTEM_PROMPT_FILE = 'prompts/system.md';
 export interface AppResponse {
   id: string;
   displayName?: string | null;
+  /**
+   * The console-authored create-time prompt draft (guuey#455/#463) —
+   * `AppWire.draftSystemPrompt`. Optional so `guuey pull` degrades to a
+   * no-op against an older cliApi that does not carry the field yet.
+   */
+  draftSystemPrompt?: string | null;
   // Other fields (status, guestAccess, etc.) are on the wire but `guuey
   // pull` does not map them onto `guuey.json`.
 }
@@ -228,6 +246,71 @@ export function mapHostedStateToOverlay(
   return { overlay, promptFile, agentReplaced: true };
 }
 
+// ─── The create-time draft (guuey#463, the #455 rider) ────────────────
+
+/**
+ * What `guuey pull` should do with the console-authored create-time
+ * prompt draft when there is NO live nocode snapshot (a snapshot always
+ * takes precedence — its prompt is the deployed truth, the draft is
+ * pre-deploy working text):
+ *
+ * - `write`  — put the draft into {@link SYSTEM_PROMPT_FILE}.
+ * - `diverged` — leave the local file untouched and say so: the builder
+ *   edited it, and pull never clobbers builder-authored text.
+ * - `none`   — nothing to do (no draft on the wire: older cliApi omits
+ *   the field, or none was authored / it is empty).
+ */
+export type DraftPromptAction =
+  | { kind: 'write'; content: string }
+  | { kind: 'diverged' }
+  | { kind: 'none' };
+
+/**
+ * The two texts `pull` may overwrite — the scaffold's shipped
+ * `prompts/system.md` and the runtime default — each in the exact
+ * newline-normalized form `build-templates.mjs` stamps (`text + '\n'`),
+ * plus the bare trimmed constant (an editor that strips the final
+ * newline does not turn an untouched default into "builder-authored").
+ * Anything else is the builder's own text and is never replaced.
+ */
+function isKnownDefaultPrompt(content: string): boolean {
+  for (const text of [GUUEY_SCAFFOLD_SYSTEM_PROMPT, GUUEY_DEFAULT_SYSTEM_PROMPT]) {
+    if (content === `${text}\n` || content === text) return true;
+  }
+  return false;
+}
+
+/**
+ * The known-default replace rule (guuey#463), as a pure decision:
+ *
+ * | draft on the wire      | local `prompts/system.md`      | action     |
+ * | ---------------------- | ------------------------------ | ---------- |
+ * | absent (old cliApi) /  | —                              | `none`     |
+ * |   `null` / empty       |                                |            |
+ * | present                | missing                        | `write`    |
+ * | present                | byte-identical known default   | `write`    |
+ * | present                | anything else (builder-edited) | `diverged` |
+ *
+ * Callers apply this ONLY in the no-snapshot branch — a live nocode
+ * snapshot's prompt always wins over the draft.
+ *
+ * Exported for unit tests.
+ *
+ * @param draft - `AppResponse.draftSystemPrompt` as fetched
+ * @param localPrompt - current content of {@link SYSTEM_PROMPT_FILE}, or
+ *   `null` when the file does not exist
+ */
+export function resolveDraftPromptAction(
+  draft: string | null | undefined,
+  localPrompt: string | null,
+): DraftPromptAction {
+  if (typeof draft !== 'string' || draft === '') return { kind: 'none' };
+  if (localPrompt === null || isKnownDefaultPrompt(localPrompt)) {
+    return { kind: 'write', content: draft };
+  }
+  return { kind: 'diverged' };
+}
+
 /**
  * Handle the `guuey pull` command. Fetches hosted state + writes
  * canonical `guuey.json` (ejecting the latest no-code agent definition).
@@ -320,6 +403,21 @@ export async function pull(
     writeFileSync(target, promptFile.content, 'utf-8');
   }
 
+  // guuey#463 — the console-authored create-time draft, under the
+  // known-default replace rule. Only in the no-snapshot branch: a live
+  // nocode snapshot's prompt (externalized above) always takes precedence
+  // over pre-deploy working text.
+  let draftAction: DraftPromptAction = { kind: 'none' };
+  if (!agentReplaced) {
+    const target = join(process.cwd(), SYSTEM_PROMPT_FILE);
+    const localPrompt = existsSync(target) ? readFileSync(target, 'utf-8') : null;
+    draftAction = resolveDraftPromptAction(app.draftSystemPrompt, localPrompt);
+    if (draftAction.kind === 'write') {
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, draftAction.content, 'utf-8');
+    }
+  }
+
   saveProjectConfig(overlay);
 
   // Human-readable summary.
@@ -355,7 +453,17 @@ export async function pull(
     out.success('App binding refreshed (appId only)');
     console.log('');
     console.log(`  App:          ${appLabel}`);
-    console.log('  No no-code snapshot to pull; refreshed app binding only.');
+    if (draftAction.kind === 'write') {
+      console.log(
+        `  systemPrompt: ${SYSTEM_PROMPT_FILE} seeded from the app's create-time draft (${draftAction.content.length} chars)`,
+      );
+    } else if (draftAction.kind === 'diverged') {
+      console.log(
+        `  systemPrompt: local ${SYSTEM_PROMPT_FILE} has your own edits — left untouched (the app's create-time draft was not applied)`,
+      );
+    } else {
+      console.log('  No no-code snapshot to pull; refreshed app binding only.');
+    }
   }
   console.log('');
 }

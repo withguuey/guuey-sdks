@@ -39,7 +39,7 @@
 import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defaultModelFor } from '@guuey/config';
+import { defaultModelFor, GUUEY_SCAFFOLD_SYSTEM_PROMPT } from '@guuey/config';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const packageRoot = join(here, '..');
@@ -176,6 +176,21 @@ function emitMcpBase() {
     if (file.endsWith('package.json')) stampVersions(file);
   }
 }
+
+/**
+ * Stamp the checked-in scaffold prompt from its single source (guuey#463):
+ * `@guuey/config`'s `GUUEY_SCAFFOLD_SYSTEM_PROMPT` owns the text so `guuey
+ * pull`'s known-default replace rule and the shipped template can never
+ * drift. Written as `text + '\n'` (the trimmed constant plus the POSIX
+ * trailing newline); `check-templates.mjs` asserts byte-equality on every
+ * assembled copy. Runs BEFORE assembly so the stamped file is what the
+ * core-layer copy picks up — if this rewrites the file, commit it.
+ */
+writeFileSync(
+  join(coreDir, 'prompts', 'system.md'),
+  `${GUUEY_SCAFFOLD_SYSTEM_PROMPT}\n`,
+  'utf8',
+);
 
 rmSync(distTemplatesDir, { recursive: true, force: true });
 mkdirSync(distTemplatesDir, { recursive: true });

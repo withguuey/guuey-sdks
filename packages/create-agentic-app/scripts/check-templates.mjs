@@ -37,6 +37,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { GUUEY_SCAFFOLD_SYSTEM_PROMPT } from '@guuey/config';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const packageRoot = join(here, '..');
@@ -139,6 +140,30 @@ function checkPackageJsonPins(file, relPath, content) {
   }
 }
 
+/**
+ * Scaffold-prompt single-source guard (guuey#463): every assembled
+ * `prompts/system.md` — and the checked-in `templates-src` original — must
+ * byte-equal `@guuey/config`'s `GUUEY_SCAFFOLD_SYSTEM_PROMPT` in the exact
+ * form `build-templates.mjs` stamps (`text + '\n'`). `guuey pull`'s
+ * known-default replace rule compares a builder's local file against that
+ * constant, so any drift here silently breaks pull's clobber-safety.
+ */
+function checkScaffoldPrompt(relPath, content) {
+  if (!relPath.endsWith(join('prompts', 'system.md'))) return;
+  if (content === `${GUUEY_SCAFFOLD_SYSTEM_PROMPT}\n`) return;
+  violations.push({
+    file: relPath,
+    line: 1,
+    message:
+      'prompts/system.md is not byte-identical to @guuey/config GUUEY_SCAFFOLD_SYSTEM_PROMPT + "\\n" — rerun build-templates.mjs (and commit the restamped file), or update the constant',
+  });
+}
+
+checkScaffoldPrompt(
+  relative(packageRoot, join(packageRoot, 'templates-src', 'core', 'prompts', 'system.md')),
+  readFileSync(join(packageRoot, 'templates-src', 'core', 'prompts', 'system.md'), 'utf8'),
+);
+
 for (const file of walkFiles(distTemplatesDir)) {
   const relPath = relative(packageRoot, file);
   const buf = readFileSync(file);
@@ -147,6 +172,7 @@ for (const file of walkFiles(distTemplatesDir)) {
   checkBannedSubstrings(file, relPath, content);
   checkPackageJsonPins(file, relPath, content);
   checkNamePlaceholder(relPath, content);
+  checkScaffoldPrompt(relPath, content);
 }
 
 if (!foundNamePlaceholderInMcpBase) {
