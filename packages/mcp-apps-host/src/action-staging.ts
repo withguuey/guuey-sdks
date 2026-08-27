@@ -15,6 +15,10 @@
  *
  * A staged answer is deliberately NOT `isError` (guuey#215): queueing is
  * an acceptance, and the error flag fed apps' legacy failure overlays.
+ *
+ * guuey#404 (the canvas wire ruling): the honest-projection refusal on a
+ * REFERENCE-shaped dispatch (`{actionId, intent}` — a correlation hash,
+ * params server-side in the consume pipe) is CORRECT behavior, not a gap.
  */
 import { UI_SEMANTIC_ACTION_TOOLS, type McpToolCallResult, type McpToolStructuredContent } from "./action.js";
 import type { UiActionRequest } from "./action.js";

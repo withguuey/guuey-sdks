@@ -546,8 +546,9 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // REAL result envelope and its #440 classifier grades honestly; the
   // post-turn agent turn then starts through the ui/message doorbell
   // (the sink below). The #356 staging seam remains a PUBLIC export
-  // (withActionStaging) for hosts that choose the composer-staging UX —
-  // the widget's own mountCallTool still applies it by its own choice.
+  // (withActionStaging) for hosts that choose the composer-staging UX;
+  // no first-party surface applies it any more (the widget converged on
+  // this relay+doorbell path in guuey#404).
   const stagedDefaultOnCallTool = defaultOnCallTool;
 
   // The ui/message sink (guuey#422): the view hands the host role-user
