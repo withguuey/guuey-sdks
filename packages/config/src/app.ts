@@ -9,7 +9,7 @@
  * (agent or mcp-server) is what's deployable; this section is presentation.
  */
 import { z } from 'zod';
-import { AppThemeV1 } from './theme.js';
+import { AppThemeV1, type GuueyAppTheme } from './theme.js';
 
 /**
  * Slug used for the public URL and App Store listing. Forms part of the
@@ -92,6 +92,27 @@ export const AppAccessV1 = z.strictObject({
 export type GuueyAppAccess = z.infer<typeof AppAccessV1>;
 
 /**
+ * `app.theme` as a file reference — `{ "file": "theme.json" }`, the same
+ * convention as `agent.systemPrompt` (guuey#400). The file's CONTENT is the
+ * same {@link AppThemeV1} vocabulary — no new grammar. Resolution is
+ * CLI-side (the loader reads the file relative to `guuey.json`); the server
+ * only ever sees the inline document and 400s an unresolved reference.
+ *
+ * Discrimination against the inline form is unambiguous: a `{file}`-only
+ * strict object can never collide with the theme vocabulary (which
+ * requires `mode`/`colors`).
+ */
+export const ThemeFileRefV1 = z.strictObject({ file: z.string().min(1) });
+export type ThemeFileRef = z.infer<typeof ThemeFileRefV1>;
+
+/** Narrow an `app.theme` value to the `{ file }` reference form. */
+export function isThemeFileRef(
+  theme: ThemeFileRef | GuueyAppTheme,
+): theme is ThemeFileRef {
+  return 'file' in theme;
+}
+
+/**
  * The app section schema. All fields optional in v1 — a project may carry
  * the bare minimum at first and grow the listing as it publishes.
  */
@@ -104,8 +125,12 @@ export const AppSectionV1 = z.strictObject({
   customDomain: CustomDomainSchema.optional(),
   /** Access policy converged by `guuey agent apply` — see {@link AppAccessV1}. */
   access: AppAccessV1.optional(),
-  /** Chat theme AS CODE, converged by `guuey agent apply` — see {@link AppThemeV1}. */
-  theme: AppThemeV1.optional(),
+  /**
+   * Chat theme AS CODE, converged by `guuey agent apply` — the inline
+   * document ({@link AppThemeV1}) or a `{ file }` reference the CLI
+   * resolves ({@link ThemeFileRefV1}).
+   */
+  theme: z.union([ThemeFileRefV1, AppThemeV1]).optional(),
 });
 
 /** Static TypeScript type for the app section. */

@@ -254,6 +254,54 @@ describe('loadLocalArtifacts', () => {
     writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '2', agent: {} }));
     expect(() => loadLocalArtifacts(dir)).toThrow(/^\[SCHEMA_TOO_NEW\] .*schema "2".*npm i -g @guuey\/cli@latest/);
   });
+
+  // ─── app.theme { file } reference (guuey#400) ──────────────────────────
+
+  const THEME_PALETTE = {
+    accent: '#c9a227', onAccent: '#0e1014', ink: '#1a1d24', inkMuted: '#6b7280',
+    surface: '#ffffff', canvas: '#faf7ef', canvasMuted: '#f1ecdd', error: '#b3261e',
+  };
+  const THEME_DOC = {
+    mode: 'light',
+    colors: { light: THEME_PALETTE, dark: { ...THEME_PALETTE, surface: '#1a1d24' } },
+  };
+
+  it('resolves an app.theme { file } reference and submits the RESOLVED document (guuey#400)', () => {
+    writeFileSync(join(dir, 'theme.json'), JSON.stringify(THEME_DOC));
+    writeFileSync(
+      join(dir, 'guuey.json'),
+      JSON.stringify({
+        schema: '1',
+        appId: 'app-1',
+        agent: { model: 'claude-sonnet-5', systemPrompt: { file: 'prompts/system.md' } },
+        app: { theme: { file: 'theme.json' } },
+      }),
+    );
+    const a = loadLocalArtifacts(dir);
+    const submitted = JSON.parse(a.guueyJson);
+    // The theme is inlined; the prompt ref stays a ref (the server inlines
+    // the prompt artifact's bytes — that contract is untouched).
+    expect(submitted.app.theme).toEqual(THEME_DOC);
+    expect(submitted.agent.systemPrompt).toEqual({ file: 'prompts/system.md' });
+    expect(a.systemPrompt).toBe(PROMPT);
+    // Serialized with the writeGuueyJsonFile convention: 2-space indent + trailing newline.
+    expect(a.guueyJson).toBe(JSON.stringify(submitted, null, 2) + '\n');
+  });
+
+  it('hash-stability regression (guuey#400): NO theme file-ref → guuey.json ships byte-exact, zero agentDef hash churn', () => {
+    // The fixture doc is the shape every pre-#400 project has (access block,
+    // prompt file-ref, no theme). Its bytes must reach the wire untouched.
+    expect(loadLocalArtifacts(dir).guueyJson).toBe(GUUEY_JSON);
+
+    // An INLINE theme is also not a file-ref — still byte-exact, including
+    // formatting the writeGuueyJsonFile convention would have rewritten.
+    const inlineThemed =
+      '{\n  "schema": "1",\n  "appId": "app-1",\n' +
+      '  "agent": {"model": "claude-sonnet-5", "systemPrompt": "inline"},\n' +
+      `  "app": {"theme": ${JSON.stringify(THEME_DOC)}}\n}`;
+    writeFileSync(join(dir, 'guuey.json'), inlineThemed);
+    expect(loadLocalArtifacts(dir).guueyJson).toBe(inlineThemed);
+  });
 });
 
 // ─── Commands ────────────────────────────────────────────────────────────
