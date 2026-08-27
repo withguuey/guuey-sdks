@@ -116,3 +116,49 @@ describe("guuey#423 — card interleave by seq", () => {
     expect(keys.indexOf("card.6")).toBeLessThan(keys.indexOf("u1"));
   });
 });
+
+describe("guuey#402 — history-card chip titles (kit half)", () => {
+  it("a card carrying toolName titles with the humanized voice; absent keeps the generic fallback", () => {
+    const inputs: TranscriptInputs = {
+      result: null,
+      assistantText: "",
+      status: "ready",
+      statusElapsedMs: 0,
+      activeTool: null,
+      error: null,
+      prompts: [],
+      messages: [],
+      sendStates: {},
+      aborted: false,
+      adopted: false,
+      historyCards: [
+        {
+          seq: 1,
+          at: "2026-08-27T00:00:00Z",
+          toolName: "mcp__ggui__ggui_render",
+          cardSnapshot: {
+            parts: [
+              { type: "tool-result", toolCallId: "c1", content: [], uiData: { resourceUri: "ui://ggui/render/a/1" } },
+            ],
+          },
+        },
+        {
+          seq: 2,
+          at: "2026-08-27T00:01:00Z",
+          cardSnapshot: {
+            parts: [
+              { type: "tool-result", toolCallId: "c2", content: [], uiData: { resourceUri: "ui://ggui/render/b/2" } },
+            ],
+          },
+        },
+      ],
+    };
+    const plan = planTranscript(inputs, calmPolicy(), {});
+    const named = plan.views.find((v) => v.key === "card.1");
+    const bare = plan.views.find((v) => v.key === "card.2");
+    // The #307 voice layer: ggui rail vocab → end-user words.
+    expect(named?.title).toBe("Rendering card");
+    // Pre-enabler rows keep the honest generic fallback, never invented.
+    expect(bare?.title).toBe(calmPolicy().strings.viewRefFallbackTitle);
+  });
+});

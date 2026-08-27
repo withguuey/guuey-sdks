@@ -903,7 +903,11 @@ export function planTranscript(
       label: null,
       diagnosis: mount === undefined ? null : (inputs.viewDiagnoses?.[key] ?? null),
       attribution: null,
-      toolTitle: null,
+      // guuey#402: the chip titles with the producing tool's humanized
+      // name once the read plane persists it (the platform half); absent
+      // keeps the generic fallback — pre-enabler rows are indistinguishable
+      // by construction, never by invention.
+      toolTitle: card.toolName !== undefined ? policy.tool.humanizeTitle(card.toolName) : null,
       actionScope: scope,
     };
     view.label = viewLabel(view, policy);

@@ -16,7 +16,7 @@ pnpm bootstrap -- --link   # bind the deployed app into the frontend
 
 ## What you get
 
-- **A code-mode agent worker** (Claude Agent SDK or OpenAI Agents SDK — pick
+- **A code-mode agent worker** (Claude Agent SDK, OpenAI Agents SDK, or Google ADK — pick
   with `--framework`) built on the open
   [`@guuey/worker`](https://www.npmjs.com/package/@guuey/worker) protocol.
   The same worker runs locally and on guuey's hosted runtime, sandboxed and

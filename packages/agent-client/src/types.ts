@@ -65,6 +65,13 @@ export interface HistoryCard {
   seq: number;
   at: string;
   cardSnapshot: JsonValue;
+  /**
+   * The producing tool's wire name, when the read plane persists it
+   * (guuey#402 — the platform half writes it at fold time; rows predating
+   * that carry none). The kit humanizes it into the chip title; absent →
+   * the generic fallback, exactly as before.
+   */
+  toolName?: string;
 }
 
 /**

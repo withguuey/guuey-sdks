@@ -26,6 +26,8 @@ export interface ThreadHistoryRow {
    * opaquely — never re-parsed into AgEvents.
    */
   cardSnapshot?: JsonValue | null;
+  /** guuey#402: the producing tool's wire name, when the row carries it. */
+  toolName?: string | null;
 }
 
 interface ThreadMessagesResponse {
@@ -82,7 +84,14 @@ export function threadHistoryRowsToCards(rows: ThreadHistoryRow[]): HistoryCard[
   const cards: HistoryCard[] = [];
   for (const row of rows) {
     if (row.kind !== "card" || row.cardSnapshot == null) continue;
-    cards.push({ seq: row.seq, at: row.at, cardSnapshot: row.cardSnapshot });
+    cards.push({
+      seq: row.seq,
+      at: row.at,
+      cardSnapshot: row.cardSnapshot,
+      // guuey#402: thread the producing tool's name when the read plane
+      // persists it (defensive — pre-enabler rows carry none).
+      ...(typeof row.toolName === "string" ? { toolName: row.toolName } : {}),
+    });
   }
   return cards;
 }

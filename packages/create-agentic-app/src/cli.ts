@@ -180,7 +180,18 @@ async function main(): Promise<void> {
   const frameworkFlag = flags.framework ?? flags.agent;
   let frameworkInput = typeof frameworkFlag === 'string' ? frameworkFlag : undefined;
   if (!frameworkInput) {
-    frameworkInput = await promptFor(`Framework (${FRAMEWORKS.join(' | ')}): `, '--framework <f>');
+    // guuey#324 rider 1: a NON-TTY run (CI, coding agents, piped stdin —
+    // the README's own quickstart line in any script) gets the platform
+    // default instead of a refusal; the print keeps the choice visible
+    // and names the override. Interactive runs still get the prompt.
+    if (stdin.isTTY !== true) {
+      frameworkInput = 'claude-agent-sdk';
+      console.log(
+        `Non-interactive run: defaulting to --framework claude-agent-sdk (pass --framework <${FRAMEWORKS.join(' | ')}> to choose).`,
+      );
+    } else {
+      frameworkInput = await promptFor(`Framework (${FRAMEWORKS.join(' | ')}): `, '--framework <f>');
+    }
   }
   if (!isFramework(frameworkInput)) {
     console.error(`Unknown framework "${frameworkInput}". Available: ${FRAMEWORKS.join(', ')}`);
