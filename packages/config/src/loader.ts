@@ -27,6 +27,8 @@ import {
   assertSupportedGuueyJsonSchema,
   parseGuueyJson,
 } from './schema.js';
+import { isThemeFileRef } from './app.js';
+import { AppThemeV1, type GuueyAppTheme } from './theme.js';
 
 /** How many parent directories `findGuueyJson` will walk by default. */
 export const DEFAULT_FIND_MAX_DEPTH = 8;
@@ -111,6 +113,12 @@ export interface ResolvedGuueyJson {
    * (caller falls back to `GUUEY_DEFAULT_SYSTEM_PROMPT`).
    */
   resolvedSystemPrompt: string | undefined;
+  /**
+   * The resolved app theme — the inline document from `app.theme`, or the
+   * file's parsed content when it was a `{ file: '...' }` reference
+   * (guuey#400), or `undefined` when no theme was set.
+   */
+  resolvedTheme: GuueyAppTheme | undefined;
   /** Absolute path the document was loaded from (for diagnostics). */
   sourcePath: string;
 }
@@ -124,13 +132,14 @@ export interface ResolvedGuueyJson {
  * shape; the pod runtime reads the resolved prompt directly.
  *
  * Throws if the file is missing, unreadable, malformed, fails schema
- * validation, OR the systemPrompt.file path resolves to a missing or
- * unreadable file.
+ * validation, OR the systemPrompt.file / app.theme.file path resolves to
+ * a missing or unreadable file.
  */
 export function loadGuueyJson(path: string): ResolvedGuueyJson {
   const doc = readGuueyJsonFile(path);
   const resolvedSystemPrompt = resolveSystemPrompt(doc, path);
-  return { doc, resolvedSystemPrompt, sourcePath: path };
+  const resolvedTheme = resolveAppTheme(doc, path);
+  return { doc, resolvedSystemPrompt, resolvedTheme, sourcePath: path };
 }
 
 /**
@@ -173,16 +182,85 @@ function resolveSystemPrompt(
 }
 
 /**
+ * Resolve `app.theme` to the inline document (or undefined).
+ *
+ * - Absent → undefined.
+ * - Inline document → returned as-is.
+ * - `{ file }` → resolved relative to `guueyJsonPath`'s directory, file
+ *   read + parsed against the STRICT {@link AppThemeV1} shape (guuey#400).
+ *   Shape only — colour VALUES stay with the server's one grammar
+ *   (`validateChatTheme`), so plan/apply surfaces its exact message.
+ *
+ * File paths must be relative + must not escape the project root (no
+ * `..` traversal). Absolute paths are rejected — keeps the snapshot
+ * portable across deploy environments.
+ */
+function resolveAppTheme(
+  doc: GuueyJsonV1,
+  guueyJsonPath: string,
+): GuueyAppTheme | undefined {
+  const theme = doc.app?.theme;
+  if (theme === undefined) return undefined;
+  if (!isThemeFileRef(theme)) return theme;
+  // theme = { file: '...' }
+  if (isAbsolute(theme.file)) {
+    throw new Error(
+      `app.theme.file must be a relative path (got absolute: ${theme.file})`,
+    );
+  }
+  if (theme.file.split('/').includes('..')) {
+    throw new Error(
+      `app.theme.file must not traverse parent directories (got: ${theme.file})`,
+    );
+  }
+  const baseDir = dirname(guueyJsonPath);
+  const resolved = resolve(baseDir, theme.file);
+  if (!existsSync(resolved)) {
+    throw new Error(
+      `app.theme.file references missing file: ${theme.file} (resolved to ${resolved})`,
+    );
+  }
+  const raw = readFileSync(resolved, 'utf-8');
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`app.theme.file ${theme.file} is not valid JSON: ${msg}`);
+  }
+  const parsed = AppThemeV1.safeParse(json);
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    const path = first?.path.join('.') || '(root)';
+    throw new Error(
+      `app.theme.file ${theme.file} failed theme validation at "${path}": ${first?.message ?? 'unknown error'}`,
+    );
+  }
+  return parsed.data;
+}
+
+/**
  * Build the snapshot the deploy upload + pod boot consume.
  *
  * Replaces `agent.systemPrompt = { file }` with `agent.systemPrompt = <inlined>`
- * so the snapshot is self-contained. Returns a deep-cloned document
+ * and `app.theme = { file }` with the file's parsed document so the
+ * snapshot is self-contained. Returns a deep-cloned document
  * (caller mutations don't leak back).
  */
 export function buildDeploySnapshot(loaded: ResolvedGuueyJson): GuueyJsonV1 {
   const cloned: GuueyJsonV1 = JSON.parse(JSON.stringify(loaded.doc));
   if (loaded.resolvedSystemPrompt !== undefined) {
     cloned.agent.systemPrompt = loaded.resolvedSystemPrompt;
+  }
+  const theme = cloned.app?.theme;
+  if (
+    cloned.app !== undefined &&
+    theme !== undefined &&
+    isThemeFileRef(theme) &&
+    loaded.resolvedTheme !== undefined
+  ) {
+    const themeClone: GuueyAppTheme = JSON.parse(JSON.stringify(loaded.resolvedTheme));
+    cloned.app.theme = themeClone;
   }
   return cloned;
 }

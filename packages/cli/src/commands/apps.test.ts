@@ -252,6 +252,37 @@ describe('appsGet endpoint discovery', () => {
     expect(output).toContain('Slug:         todo-k7q2');
   });
 
+  // guuey#361 — WHY trial pause / demotion won't fire: an admin override
+  // holds the tier. Boolean fact on the wire; a line here, nothing more.
+  it('prints the held-by-admin-override line when the wire carries the fact — and never otherwise', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ app: { ...APP, tierHeldByAdminOverride: true } }), {
+          status: 200,
+        }),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ deployments: [] }), { status: 200 }));
+
+    await appsGet('app-1', {});
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain('Tier:         held by admin override');
+
+    logSpy.mockClear();
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ app: { ...APP, tierHeldByAdminOverride: false } }), {
+          status: 200,
+        }),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ deployments: [] }), { status: 200 }));
+
+    await appsGet('app-1', {});
+
+    const held = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(held).not.toContain('held by admin override');
+  });
+
   it('prints NO page/slug lines for an unslugged app (never a guessed host)', async () => {
     fetchSpy
       .mockResolvedValueOnce(

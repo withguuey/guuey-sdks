@@ -59,6 +59,13 @@ interface AppSummary {
  */
 interface AppDetail extends AppSummary {
   /**
+   * The app's tier is being held by an admin-issued override (guuey#361) —
+   * the wire's boolean FACT (never the override's value, the admin identity,
+   * or a timestamp), printed so a builder — or the next operator — sees WHY
+   * trial pause / demotion will not fire on this app.
+   */
+  tierHeldByAdminOverride?: boolean;
+  /**
    * The app's slug — a builder's `guuey slug claim`, or the DEFAULT one the
    * platform claims at first Live (guuey#249) — and its standalone page
    * URL, SERVER-composed (`https://<slug>.<slug-agents-domain>/`; the CLI
@@ -305,6 +312,9 @@ export async function appsGet(
   // guuey#250 — printed whenever the app is on a trial, so a builder sees
   // the pause date (or the pause) without opening the console.
   if (app.trial) console.log(`  Trial:        ${trialLabel(app.trial)}`);
+  // guuey#361 — WHY trial pause / demotion won't fire: an admin override is
+  // holding the tier. The boolean is all the wire carries.
+  if (app.tierHeldByAdminOverride) console.log(`  Tier:         held by admin override`);
   if (app.userAuthMode) console.log(`  Auth Mode:    ${app.userAuthMode}`);
   if (app.userAuthConfig?.issuerUrl)
     console.log(`  Issuer:       ${app.userAuthConfig.issuerUrl}`);

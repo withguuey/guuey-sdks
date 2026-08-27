@@ -27,8 +27,11 @@
  * agentDef` is the file's own sha256) plus, when `agent.systemPrompt` is a
  * `{ file }` reference, that file's bytes as `artifacts.systemPrompt` (the
  * server inlines them byte-exact — a repo checkout's file ref cannot
- * resolve server-side). App policy is NOT re-derived here: the server reads
- * `guuey.json#app.access` itself (one derivation site).
+ * resolve server-side). ONE exception to verbatim (guuey#400): when
+ * `app.theme` is a `{ file }` reference, the CLI resolves it and submits
+ * the RESOLVED document — the server 400s an unresolved theme ref, and the
+ * hash contract stays over what serves. App policy is NOT re-derived here:
+ * the server reads `guuey.json#app.access` itself (one derivation site).
  *
  * Provenance (`auto`): `GITHUB_REPOSITORY`/`GITHUB_SHA` when set (any CI
  * that exports them), else `git remote get-url origin` + `git rev-parse
@@ -41,7 +44,13 @@
 import { readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { execSync } from 'node:child_process';
-import { GUUEY_JSON_FILENAME, GuueyJsonSchemaError, loadGuueyJson } from '@guuey/config';
+import {
+  GUUEY_JSON_FILENAME,
+  GuueyJsonSchemaError,
+  isThemeFileRef,
+  loadGuueyJson,
+  type GuueyJsonV1,
+} from '@guuey/config';
 import { requireAuth } from '../auth';
 import { resolveConfig } from '../config';
 import { resolveTargetAppId } from '../app-id';
@@ -299,6 +308,14 @@ export interface LocalArtifacts {
  * bytes. Validation + file resolution ride `loadGuueyJson` — the same
  * loader `guuey deploy` uses — so a schema error reads the same here.
  *
+ * ONE exception to verbatim (guuey#400): when `app.theme` is a `{ file }`
+ * reference, the submitted document is the RESOLVED one (the theme file's
+ * parsed content inlined, serialized with the `writeGuueyJsonFile`
+ * convention) — the server never reads project files and 400s an
+ * unresolved theme ref. A document whose theme is inline (or absent)
+ * still ships byte-exact — zero `agentDef` hash churn for existing
+ * projects (the regression test in `agent-apply.test.ts` pins this).
+ *
  * Schema-version stance (guuey#248 b2): the loader refuses a document whose
  * root `schema` is newer than this CLI's `@guuey/config` understands
  * (`SCHEMA_TOO_NEW` — upgrade `@guuey/cli`) or older with no migration
@@ -320,11 +337,17 @@ export function loadLocalArtifacts(cwd: string): LocalArtifacts {
     }
     throw err;
   }
+  let submitted = guueyJson;
+  const app = loaded.doc.app;
+  if (app?.theme !== undefined && isThemeFileRef(app.theme) && loaded.resolvedTheme !== undefined) {
+    const doc: GuueyJsonV1 = { ...loaded.doc, app: { ...app, theme: loaded.resolvedTheme } };
+    submitted = JSON.stringify(doc, null, 2) + '\n';
+  }
   const ref = loaded.doc.agent.systemPrompt;
   if (ref !== undefined && typeof ref !== 'string' && loaded.resolvedSystemPrompt !== undefined) {
-    return { guueyJson, systemPrompt: loaded.resolvedSystemPrompt };
+    return { guueyJson: submitted, systemPrompt: loaded.resolvedSystemPrompt };
   }
-  return { guueyJson };
+  return { guueyJson: submitted };
 }
 
 // ─── Rendering ───────────────────────────────────────────────────────────
