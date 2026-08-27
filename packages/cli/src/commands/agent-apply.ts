@@ -76,6 +76,22 @@ export interface AgentReconcileConfig {
   guestAccess?: boolean | null;
   /** Full stored-form theme document; plans/status echo hashes, never the document. */
   chatTheme?: unknown;
+  /** Standalone-page posture patch (guuey#286); plans/status echo the wire projection. */
+  standalonePage?: unknown;
+}
+
+/**
+ * The stored page posture on the owner wire, defaults applied — mirror of
+ * cli-wire's `standalone-page.ts` `StandalonePageWire` (pinned by the sync
+ * guard like the reconcile shapes).
+ */
+export interface StandalonePageWire {
+  enabled: boolean;
+  welcomeCopy: string | null;
+  ctaLabel: string | null;
+  ctaUrl: string | null;
+  identityEndpointUrl: string | null;
+  noindex: boolean;
 }
 
 export interface AgentReconcileBody {
@@ -99,6 +115,7 @@ export type ReconcileConfigValue =
   | boolean
   | string[]
   | { issuerUrl: string; audience: string }
+  | StandalonePageWire
   | null;
 
 export interface ReconcileConfigDiff {
@@ -145,6 +162,7 @@ export interface AgentReconcileStatus {
     allowedDomains: string[];
     guestAccess: boolean | null;
     chatThemeHash: string | null;
+    standalonePage: StandalonePageWire;
   };
 }
 
@@ -601,6 +619,7 @@ export async function agentStatus(flags?: Record<string, string | true>): Promis
   console.log(`    allowedDomains: ${fmtValue(c.allowedDomains)}`);
   console.log(`    guestAccess:    ${fmtValue(c.guestAccess)}`);
   console.log(`    chatTheme:      ${c.chatThemeHash ?? 'none'}`);
+  console.log(`    standalonePage: ${fmtValue(c.standalonePage)}`);
 
   if (parity) {
     console.log('');

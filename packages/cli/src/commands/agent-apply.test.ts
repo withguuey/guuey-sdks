@@ -469,6 +469,14 @@ describe('agentStatus', () => {
       userAuthConfig: { issuerUrl: 'https://iss.example', audience: 'aud' },
       allowedDomains: ['https://console.example.com'],
       guestAccess: false,
+      standalonePage: {
+        enabled: true,
+        welcomeCopy: null,
+        ctaLabel: null,
+        ctaUrl: null,
+        identityEndpointUrl: null,
+        noindex: true,
+      },
     },
   };
 
@@ -491,6 +499,8 @@ describe('agentStatus', () => {
     expect(output).toContain('managed from loqu-co/ggui@da49f6dcaabc (guuey-agents/helper)');
     expect(output).toContain('userAuthMode:   "byo"');
     expect(output).toContain('allowedDomains: ["https://console.example.com"]');
+    expect(output).toContain('standalonePage: {"enabled":true,');
+    expect(output).toContain('"noindex":true}');
   });
 
   it('no active build / no provenance render honestly', async () => {
@@ -636,6 +646,7 @@ function repoPath(relativeToThisFile: string): string {
 }
 
 const WIRE_RECONCILE = repoPath('../../../../../backend/libs/cli-wire/reconcile.ts');
+const WIRE_STANDALONE_PAGE = repoPath('../../../../../backend/libs/cli-wire/standalone-page.ts');
 const CLI_RECONCILE = repoPath('./agent-apply.ts');
 const haveWire = existsSync(WIRE_RECONCILE);
 
@@ -656,6 +667,12 @@ describe.skipIf(!haveWire)('reconcile wire mirrors — sync guard against @guuey
   ])('%s declares exactly the wire fields, with the same optionality', (name) => {
     expect(parseInterfaceFields(read(CLI_RECONCILE), name)).toEqual(
       parseInterfaceFields(read(WIRE_RECONCILE), name),
+    );
+  });
+
+  it('StandalonePageWire declares exactly the wire fields (mastered in standalone-page.ts, guuey#286)', () => {
+    expect(parseInterfaceFields(read(CLI_RECONCILE), 'StandalonePageWire')).toEqual(
+      parseInterfaceFields(read(WIRE_STANDALONE_PAGE), 'StandalonePageWire'),
     );
   });
 });

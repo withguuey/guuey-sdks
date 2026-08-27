@@ -99,6 +99,43 @@ describe('parseGuueyJson — app.access (agents-as-code, guuey#190)', () => {
   });
 });
 
+describe('parseGuueyJson — app.page (posture-as-code, guuey#286)', () => {
+  it('accepts all six patch fields with the API field names', () => {
+    const doc = parseGuueyJson({
+      ...base,
+      app: {
+        page: {
+          enabled: false,
+          welcomeCopy: 'Ask the helper anything.',
+          ctaLabel: 'Read the docs',
+          ctaUrl: 'https://docs.example.com',
+          identityEndpointUrl: 'https://id.example.com/me',
+          noindex: true,
+        },
+      },
+    });
+    expect(doc.app?.page).toEqual({
+      enabled: false,
+      welcomeCopy: 'Ask the helper anything.',
+      ctaLabel: 'Read the docs',
+      ctaUrl: 'https://docs.example.com',
+      identityEndpointUrl: 'https://id.example.com/me',
+      noindex: true,
+    });
+  });
+
+  it('every field is optional (PUT-per-field: absent = untouched) and null clears a member', () => {
+    const doc = parseGuueyJson({ ...base, app: { page: { welcomeCopy: null, enabled: null } } });
+    expect(doc.app?.page).toEqual({ welcomeCopy: null, enabled: null });
+  });
+
+  it('shape only — values are the platform validator\'s: wrong types and unknown keys reject (slug is NOT declarable here)', () => {
+    expect(() => parseGuueyJson({ ...base, app: { page: { enabled: 'off' } } })).toThrow();
+    expect(() => parseGuueyJson({ ...base, app: { page: { indexable: true } } })).toThrow();
+    expect(() => parseGuueyJson({ ...base, app: { page: { slug: 'my-agent' } } })).toThrow();
+  });
+});
+
 describe('schema-version stance (guuey#248 b2) — SUPPORTED_GUUEY_JSON_SCHEMA + the gate', () => {
   it('the zod literal and the exported constant are the same value (one source of truth)', () => {
     expect(SUPPORTED_GUUEY_JSON_SCHEMA).toBe('1');

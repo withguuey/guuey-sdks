@@ -92,6 +92,40 @@ export const AppAccessV1 = z.strictObject({
 export type GuueyAppAccess = z.infer<typeof AppAccessV1>;
 
 /**
+ * `guuey.json#app.page` — the STANDALONE PAGE's posture, declared in the
+ * manifest so `guuey agent apply` converges it (posture-as-code, guuey#286;
+ * requested by the first agents-as-code consumer, ggui#558). Field names ARE
+ * the platform's `standalonePage` patch vocabulary (`PUT /v1/apps/:id` /
+ * the reconcile `config` block, cli-wire `STANDALONE_PAGE_FIELDS`) — no
+ * translation; the backend pins the two lists equal
+ * (`handlers/reconcile.test.ts`, the APP_USER_AUTH_MODES pattern).
+ *
+ * Patch semantics, same as the PUT: an absent member is left untouched by a
+ * reconcile, `null` clears the member to its default (page on, indexable, no
+ * copy/CTA/endpoint). Values are shape-checked only — caps, the https rule
+ * and the CTA both-or-neither pairing are the platform validator's
+ * (`validateStandalonePagePatch`), so the CLI surfaces its exact message
+ * (the same split as `app.theme`'s colour grammar).
+ *
+ * `slug` stays OUT: claiming has uniqueness/release semantics (a ceremony,
+ * not a converged field). But the posture here REACHES the slug ceremony's
+ * automatic arm: the first-Live default-slug claim (guuey#249) consults it
+ * and skips when `enabled: false` — `--page off` in git means no auto-named
+ * public host, ever.
+ */
+export const AppPageV1 = z.strictObject({
+  enabled: z.boolean().nullable().optional(),
+  welcomeCopy: z.string().nullable().optional(),
+  ctaLabel: z.string().nullable().optional(),
+  ctaUrl: z.string().nullable().optional(),
+  identityEndpointUrl: z.string().nullable().optional(),
+  noindex: z.boolean().nullable().optional(),
+});
+
+/** Static TypeScript type for `app.page`. */
+export type GuueyAppPage = z.infer<typeof AppPageV1>;
+
+/**
  * `app.theme` as a file reference — `{ "file": "theme.json" }`, the same
  * convention as `agent.systemPrompt` (guuey#400). The file's CONTENT is the
  * same {@link AppThemeV1} vocabulary — no new grammar. Resolution is
@@ -131,6 +165,8 @@ export const AppSectionV1 = z.strictObject({
    * resolves ({@link ThemeFileRefV1}).
    */
   theme: z.union([ThemeFileRefV1, AppThemeV1]).optional(),
+  /** Standalone-page posture converged by `guuey agent apply` — see {@link AppPageV1}. */
+  page: AppPageV1.optional(),
 });
 
 /** Static TypeScript type for the app section. */
