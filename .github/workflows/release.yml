@@ -243,8 +243,17 @@ jobs:
             # 32981119374: red run, complete cohort). Poll the full
             # versions array, wider window; a package missing THERE after
             # 4 minutes is genuinely unpublished.
+            # Fallback inside the poll: the TARBALL itself. worker's
+            # packument replicas lag past even the versions-array window
+            # (second false partial, run of 2026-08-27) — but the tarball
+            # URL is what installs fetch, and it serves 200 the moment the
+            # publish lands. Either read confirms; a package missing from
+            # BOTH after the window is genuinely unpublished.
+            base="${name#*/}"
+            tarball="https://registry.npmjs.org/$name/-/$base-$ver.tgz"
             for i in $(seq 1 24); do
               if npm view "$name" versions --json 2>/dev/null | grep -q "\"$ver\""; then ok=1; break; fi
+              if [ "$(curl -s -o /dev/null -w '%{http_code}' -I "$tarball")" = "200" ]; then ok=1; break; fi
               sleep 10
             done
             if [ -z "$ok" ]; then
