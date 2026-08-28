@@ -142,6 +142,17 @@ export interface AgentReconcileResult {
   provenanceRecorded: boolean;
   statusPath: string;
   plan: ReconcilePlan;
+  /**
+   * The config fields the server diffed this call — every field the
+   * effective desired config mentioned, diff or not (guuey#506). Widened
+   * from the wire's literal union so a future field prints verbatim.
+   */
+  convergedFields: string[];
+  /**
+   * Doc-declared fields an explicit `config` override did not carry — the
+   * doc value was ignored for them (guuey#506). Omitted when empty.
+   */
+  shadowedDocFields?: string[];
 }
 
 export interface AgentReconcileStatus {
@@ -377,6 +388,15 @@ function fmtValue(v: ReconcileConfigValue | undefined): string {
 /** The plan lines shared by apply/dry-run/check output. */
 export function renderPlan(res: AgentReconcileResult): string[] {
   const lines: string[] = [];
+  // guuey#506 — the server names doc-declared fields an explicit config
+  // override suppressed. Warn-shaped there, warn-shaped here: the reconcile
+  // succeeded, but the guuey.json block did NOT reach the converge.
+  if (res.shadowedDocFields !== undefined && res.shadowedDocFields.length > 0) {
+    const one = res.shadowedDocFields.length === 1;
+    lines.push(
+      `  ! guuey.json declares ${res.shadowedDocFields.join(', ')} but the explicit config override does not carry ${one ? 'it' : 'them'} — the doc value${one ? ' was' : 's were'} ignored.`,
+    );
+  }
   lines.push(`  snapshot:  ${res.plan.snapshot}`);
   if (res.plan.config.length === 0) {
     lines.push('  config:    holds');
@@ -386,6 +406,12 @@ export function renderPlan(res: AgentReconcileResult): string[] {
       lines.push(`    ${d.field}: ${fmtValue(d.current)} → ${fmtValue(d.desired)}`);
     }
   }
+  // The converge echo (guuey#506): the fields the server actually diffed —
+  // assert your declared blocks appear (the --json output carries the same
+  // list as `convergedFields` for CI gates).
+  lines.push(
+    `  converged: ${res.convergedFields.length > 0 ? res.convergedFields.join(', ') : '(no config declared)'}`,
+  );
   const h = res.deployedContentHash;
   lines.push(`  sha256 agentDef:  ${h.agentDef}`);
   if (h.systemPrompt) lines.push(`  sha256 prompt:    ${h.systemPrompt}`);

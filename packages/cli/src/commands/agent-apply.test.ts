@@ -102,6 +102,7 @@ function reconcileResult(over: Partial<AgentReconcileResult> = {}): AgentReconci
     provenanceRecorded: true,
     statusPath: '/v1/apps/app-1/deployments/12/status',
     plan: { snapshot: 'changed', config: [{ field: 'guestAccess', current: null, desired: false }] },
+    convergedFields: ['guestAccess'],
     ...over,
   };
 }
@@ -327,7 +328,38 @@ describe('agentApply', () => {
     const output = logs.join('\n');
     expect(output).toContain('Applied — build #12 queued');
     expect(output).toContain('guestAccess: (unset) → false');
+    // the converge echo (guuey#506) — the fields the server actually diffed
+    expect(output).toContain('converged: guestAccess');
     expect(output).toContain('sha256 snapshot:  ' + 'c'.repeat(64));
+  });
+
+  it('renders the shadowedDocFields WARNING when the server names doc blocks an explicit config override suppressed (guuey#506)', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, reconcileResult({ shadowedDocFields: ['standalonePage'] })),
+    );
+    await agentApply({ provenance: 'none' });
+    expect(logs.join('\n')).toContain(
+      '! guuey.json declares standalonePage but the explicit config override does not carry it — the doc value was ignored.',
+    );
+
+    logs.length = 0;
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, reconcileResult({ shadowedDocFields: ['chatTheme', 'standalonePage'] })),
+    );
+    await agentApply({ provenance: 'none' });
+    expect(logs.join('\n')).toContain(
+      '! guuey.json declares chatTheme, standalonePage but the explicit config override does not carry them — the doc values were ignored.',
+    );
+  });
+
+  it('no config declared → the converged line says so honestly, and no shadow warning prints', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, reconcileResult({ convergedFields: [], plan: { snapshot: 'changed', config: [] } })),
+    );
+    await agentApply({ provenance: 'none' });
+    const output = logs.join('\n');
+    expect(output).toContain('converged: (no config declared)');
+    expect(output).not.toContain('guuey.json declares');
   });
 
   it('--provenance none sends no provenance block', async () => {
