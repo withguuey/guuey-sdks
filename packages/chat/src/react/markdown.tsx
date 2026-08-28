@@ -30,6 +30,11 @@ import {
   type RichTextBlock,
   type RichTextInline,
 } from "@silverprotocol/richtext";
+import {
+  isRichTextTable,
+  normalizeTableRow,
+  type RichTextTableBlockMirror,
+} from "../richtext-table.js";
 
 function Inline({ nodes }: { nodes: RichTextInline[] }): ReactNode {
   return nodes.map((node, i) => {
@@ -71,7 +76,50 @@ function Inline({ nodes }: { nodes: RichTextInline[] }): ReactNode {
   });
 }
 
+/**
+ * The table arm (guuey#370 — sdk#23's node), landed AHEAD of the richtext
+ * bump: both switches below have no default arm, so a bump without this
+ * would render tables as NOTHING. Dead code on 0.5.2 (the parser never
+ * emits the member); live the moment the bump lands. Cells render through
+ * the SAME `<Inline>` sanitizer path as every other run. Exported for
+ * tests (the pre-bump parser cannot produce a table to drive the full
+ * pipeline); not part of the package surface.
+ */
+export function TableBlock({ block }: { block: RichTextTableBlockMirror }): ReactNode {
+  const columnCount = block.header.cells.length;
+  return (
+    <div className="guuey-chat-table-wrap">
+      <table className="guuey-chat-table">
+        <thead>
+          <tr>
+            {normalizeTableRow(block.header, columnCount).map((cell, i) => (
+              <th key={i} {...(block.align[i] !== undefined ? { style: { textAlign: block.align[i] } } : {})}>
+                <Inline nodes={cell.children} />
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {block.rows.map((row, r) => (
+            <tr key={r}>
+              {normalizeTableRow(row, columnCount).map((cell, i) => (
+                <td key={i} {...(block.align[i] !== undefined ? { style: { textAlign: block.align[i] } } : {})}>
+                  <Inline nodes={cell.children} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function Block({ block }: { block: RichTextBlock }): ReactNode {
+  // guuey#370: the guard runs BEFORE the exhaustive switch — the switch's
+  // union has no table member until the richtext bump, and no default arm
+  // to catch one after it.
+  if (isRichTextTable(block)) return <TableBlock block={block} />;
   switch (block.type) {
     case "paragraph":
       return (

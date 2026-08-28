@@ -40,6 +40,25 @@
   margin-inline: auto;
 }
 
+/* ── R1 tables (guuey#370 — the sdk#23 node) ── */
+.guuey-chat-table-wrap {
+  overflow-x: auto; /* wide tables scroll inside the bubble, never the page */
+}
+.guuey-chat-table {
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+.guuey-chat-table th,
+.guuey-chat-table td {
+  border: 1px solid var(--guuey-chat-canvas-muted);
+  padding: 4px 8px;
+  text-align: left; /* per-column align from the AST overrides inline */
+}
+.guuey-chat-table th {
+  font-weight: 600;
+  background: var(--guuey-chat-canvas-muted);
+}
+
 /* ── R0 user ── */
 .guuey-chat-user {
   align-self: flex-end;

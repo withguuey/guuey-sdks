@@ -26,6 +26,11 @@ import {
   type RichTextInline,
 } from "@silverprotocol/richtext";
 import type { NativeChatTokens } from "./theme-native.js";
+import {
+  isRichTextTable,
+  normalizeTableRow,
+  type RichTextTableBlockMirror,
+} from "../richtext-table.js";
 
 function InlineRuns({
   nodes,
@@ -119,6 +124,11 @@ function BlockView({
   tokens: NativeChatTokens;
   trailing?: ReactNode;
 }): ReactNode {
+  // guuey#370: the table arm rides ahead of the richtext bump (see the
+  // react twin) — same guard-before-switch shape, same sanitizer path.
+  if (isRichTextTable(block)) {
+    return <NativeTableBlock block={block} color={color} tokens={tokens} trailing={trailing} />;
+  }
   switch (block.type) {
     case "paragraph":
       return (
@@ -173,6 +183,60 @@ function BlockView({
         </View>
       );
   }
+}
+
+/**
+ * The native table projection (guuey#370): header row bold with a
+ * separator, body rows as flex rows, per-column alignment mapped to RN
+ * textAlign. Exported for tests; not part of the package surface.
+ */
+export function NativeTableBlock({
+  block,
+  color,
+  tokens,
+  trailing,
+}: {
+  block: RichTextTableBlockMirror;
+  color: string;
+  tokens: NativeChatTokens;
+  trailing?: ReactNode;
+}): ReactNode {
+  const columnCount = block.header.cells.length;
+  const cellStyle = (i: number) => ({
+    flex: 1,
+    ...(block.align[i] !== undefined ? { textAlign: block.align[i] } : {}),
+  });
+  return (
+    <View style={{ gap: 2 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          borderBottomWidth: 1,
+          borderBottomColor: tokens.palette.canvasMuted,
+          paddingBottom: 2,
+        }}
+      >
+        {normalizeTableRow(block.header, columnCount).map((cell, i) => (
+          <Text
+            key={i}
+            style={{ ...cellStyle(i), color, fontSize: tokens.fontSize, fontWeight: "700" }}
+          >
+            <InlineRuns nodes={cell.children} color={color} tokens={tokens} bold />
+          </Text>
+        ))}
+      </View>
+      {block.rows.map((row, r) => (
+        <View key={r} style={{ flexDirection: "row" }}>
+          {normalizeTableRow(row, columnCount).map((cell, i) => (
+            <Text key={i} style={{ ...cellStyle(i), fontSize: tokens.fontSize }}>
+              <InlineRuns nodes={cell.children} color={color} tokens={tokens} />
+            </Text>
+          ))}
+        </View>
+      ))}
+      {trailing}
+    </View>
+  );
 }
 
 /** Sanitized markdown → themed RN elements (see the module docblock). */
