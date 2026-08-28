@@ -21,10 +21,10 @@
  * (`mcp-connections.ts`) and pinned by `wire-sync.test.ts` — see
  * `../wire-mirror-parse.ts` for why the CLI mirrors instead of importing.
  */
-import { execFile } from 'node:child_process';
 import { requireAuth, type AuthTokens } from '../auth';
 import { resolveConfig, type ResolvedConfig } from '../config';
 import { apiRequest, parseApiError } from '../deploy-shared';
+import { openUrl } from '../open-url';
 import * as out from '../output';
 
 // ─── Wire mirrors (SYNC: backend/libs/cli-wire/mcp-connections.ts) ────
@@ -91,18 +91,6 @@ export function defaultConnectReturnTo(consoleHost: string, appId: string): stri
   return `${consoleHost.replace(/\/+$/, '')}/apps/${encodeURIComponent(appId)}/tools`;
 }
 
-/** Open a URL in the default browser (best-effort; false when nothing opened). */
-function openBrowser(url: string): boolean {
-  try {
-    if (process.platform === 'darwin') execFile('open', [url], () => {});
-    else if (process.platform === 'win32') execFile('cmd', ['/c', 'start', '', url], () => {});
-    else execFile('xdg-open', [url], () => {});
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 // ─── Cores (testable; `deps.api` is the injection seam) ────────────────
 
 export async function mcpConnectionsListCore(
@@ -160,7 +148,9 @@ export async function mcpConnectCore(
   deps?: { api?: typeof apiRequest; open?: (url: string) => boolean },
 ): Promise<McpConnectStartWire> {
   const api = deps?.api ?? apiRequest;
-  const open = deps?.open ?? openBrowser;
+  // openUrl refuses (throws) a non-http(s) authorizeUrl — the broker value is
+  // remote, so an injection payload is surfaced by mcpConnect, never opened.
+  const open = deps?.open ?? openUrl;
   const res = await api(opts.auth.pat, opts.config, 'POST', '/me/mcp-connections/start', {
     appId: opts.appId,
     serverName: opts.serverName,

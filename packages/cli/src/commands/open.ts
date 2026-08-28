@@ -10,8 +10,8 @@
  *   guuey open sessions     # Opens sessions page
  */
 
-import { execFile } from 'node:child_process';
 import { resolveConfig } from '../config';
+import { openUrl } from '../open-url';
 import * as out from '../output';
 
 const PAGES: Record<string, string> = {
@@ -25,17 +25,6 @@ const PAGES: Record<string, string> = {
   design: '/design',
   analytics: '/analytics',
 };
-
-function openBrowser(url: string): void {
-  const platform = process.platform;
-  if (platform === 'darwin') {
-    execFile('open', [url]);
-  } else if (platform === 'win32') {
-    execFile('cmd', ['/c', 'start', '', url]);
-  } else {
-    execFile('xdg-open', [url]);
-  }
-}
 
 /**
  * Handle the `guuey open [page]` command.
@@ -70,5 +59,7 @@ export function open(page?: string): void {
   }
 
   console.log(`Opening ${url}`);
-  openBrowser(url);
+  // url is built from the resolved (local) host; the openUrl protocol guard is
+  // belt-and-braces here, and a throw is surfaced by cli.ts's top-level catch.
+  openUrl(url);
 }

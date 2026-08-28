@@ -9,36 +9,11 @@
 import * as http from 'node:http';
 import * as readline from 'node:readline';
 import { Writable } from 'node:stream';
-import { execFile, execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { resolveConfig } from '../config';
 import { CLI_CALLBACK_PORT, saveAuth, type AuthTokens } from '../auth';
+import { openUrl } from '../open-url';
 import * as out from '../output';
-
-/** Open a URL in the default browser (cross-platform). Returns false if no browser available. */
-function openBrowser(url: string): boolean {
-  const platform = process.platform;
-  try {
-    if (platform === 'darwin') {
-      execFile('open', [url], () => {});
-      return true;
-    }
-    if (platform === 'win32') {
-      execFile('cmd', ['/c', 'start', '', url], () => {});
-      return true;
-    }
-    // Linux: check if xdg-open exists
-    try {
-      execFileSync('which', ['xdg-open'], { stdio: 'ignore' });
-      execFile('xdg-open', [url], () => {});
-      return true;
-    } catch {
-      return false;
-    }
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Handle the `guuey login` command.
@@ -130,7 +105,15 @@ export async function login(flags: Record<string, string | true> = {}): Promise<
   if (canPaste) channels.push(waitForPastedToken(abort.signal));
 
   setTimeout(() => {
-    const opened = openBrowser(authUrl);
+    // authUrl is built from the resolved (local) host, so the openUrl protocol
+    // guard is belt-and-braces; surface a throw (a malformed GUUEY_HOST) here
+    // rather than crash the detached timer, and fall back to the printed URL.
+    let opened = false;
+    try {
+      opened = openUrl(authUrl);
+    } catch (err) {
+      out.error(err instanceof Error ? err.message : String(err));
+    }
     if (opened) {
       console.log('Opening browser for authentication...');
       console.log('If the browser doesn\'t open, copy this URL:\n');

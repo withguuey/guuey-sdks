@@ -151,6 +151,20 @@ describe('mcpConnectCore', () => {
     expect(JSON.parse(logSpy.mock.calls.map((c) => String(c[0])).join(''))).toEqual(start);
   });
 
+  it('refuses to open a non-http(s) authorizeUrl from the broker (guuey#500 injection guard) via the real default opener', async () => {
+    // No `open` injected → the real openUrl default runs; a metacharacter/JS
+    // payload throws at the protocol allowlist, BEFORE any opener is spawned,
+    // and the throw is surfaced by mcpConnect (never opened, never shelled).
+    const api = vi.fn(async () => jsonResponse(201, { authorizeUrl: 'javascript:alert(1)', expiresAt: '2026-08-17T10:10:00.000Z' }));
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await expect(
+      mcpConnectCore(
+        { appId: 'app-1', serverName: 'evil', mode: 'always', returnTo: 'https://x.example', openBrowser: true, json: false, auth, config },
+        { api },
+      ),
+    ).rejects.toThrow(/non-http\(s\)/);
+  });
+
   it("relays the API's refusal message (e.g. server_not_oauth)", async () => {
     await expect(
       mcpConnectCore(
