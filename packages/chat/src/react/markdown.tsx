@@ -30,11 +30,7 @@ import {
   type RichTextBlock,
   type RichTextInline,
 } from "@silverprotocol/richtext";
-import {
-  isRichTextTable,
-  normalizeTableRow,
-  type RichTextTableBlockMirror,
-} from "../richtext-table.js";
+import { normalizeTableRow, type RichTextTableBlock } from "../richtext-table.js";
 
 function Inline({ nodes }: { nodes: RichTextInline[] }): ReactNode {
   return nodes.map((node, i) => {
@@ -77,15 +73,11 @@ function Inline({ nodes }: { nodes: RichTextInline[] }): ReactNode {
 }
 
 /**
- * The table arm (guuey#370 — sdk#23's node), landed AHEAD of the richtext
- * bump: both switches below have no default arm, so a bump without this
- * would render tables as NOTHING. Dead code on 0.5.2 (the parser never
- * emits the member); live the moment the bump lands. Cells render through
- * the SAME `<Inline>` sanitizer path as every other run. Exported for
- * tests (the pre-bump parser cannot produce a table to drive the full
- * pipeline); not part of the package surface.
+ * The table arm (guuey#370 — sdk#23's node). Cells render through the
+ * SAME `<Inline>` sanitizer path as every other run. Exported for tests;
+ * not part of the package surface.
  */
-export function TableBlock({ block }: { block: RichTextTableBlockMirror }): ReactNode {
+export function TableBlock({ block }: { block: RichTextTableBlock }): ReactNode {
   const columnCount = block.header.cells.length;
   return (
     <div className="guuey-chat-table-wrap">
@@ -116,11 +108,9 @@ export function TableBlock({ block }: { block: RichTextTableBlockMirror }): Reac
 }
 
 function Block({ block }: { block: RichTextBlock }): ReactNode {
-  // guuey#370: the guard runs BEFORE the exhaustive switch — the switch's
-  // union has no table member until the richtext bump, and no default arm
-  // to catch one after it.
-  if (isRichTextTable(block)) return <TableBlock block={block} />;
   switch (block.type) {
+    case "table":
+      return <TableBlock block={block} />;
     case "paragraph":
       return (
         <p>

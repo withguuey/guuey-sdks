@@ -26,11 +26,7 @@ import {
   type RichTextInline,
 } from "@silverprotocol/richtext";
 import type { NativeChatTokens } from "./theme-native.js";
-import {
-  isRichTextTable,
-  normalizeTableRow,
-  type RichTextTableBlockMirror,
-} from "../richtext-table.js";
+import { normalizeTableRow, type RichTextTableBlock } from "../richtext-table.js";
 
 function InlineRuns({
   nodes,
@@ -124,12 +120,9 @@ function BlockView({
   tokens: NativeChatTokens;
   trailing?: ReactNode;
 }): ReactNode {
-  // guuey#370: the table arm rides ahead of the richtext bump (see the
-  // react twin) — same guard-before-switch shape, same sanitizer path.
-  if (isRichTextTable(block)) {
-    return <NativeTableBlock block={block} color={color} tokens={tokens} trailing={trailing} />;
-  }
   switch (block.type) {
+    case "table":
+      return <NativeTableBlock block={block} color={color} tokens={tokens} trailing={trailing} />;
     case "paragraph":
       return (
         <Text style={{ fontSize: tokens.fontSize, lineHeight: Math.round(tokens.fontSize * 1.45) }}>
@@ -196,7 +189,7 @@ export function NativeTableBlock({
   tokens,
   trailing,
 }: {
-  block: RichTextTableBlockMirror;
+  block: RichTextTableBlock;
   color: string;
   tokens: NativeChatTokens;
   trailing?: ReactNode;

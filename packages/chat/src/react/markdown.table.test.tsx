@@ -1,20 +1,19 @@
 // @vitest-environment jsdom
 /**
- * The table arm (guuey#370), driven DIRECTLY: the 0.5.2 parser cannot emit
- * a table block, so these pins exercise the exported arm with
- * contract-shaped fixtures — the exact shape the bumped parser will emit
- * (sdk#23's relayed contract). At bump time the full-pipeline pin joins
- * (parseRichText("|a|b|…") → <table>); these stay as the arm's own truth.
+ * The table arm (guuey#370, live since richtext 0.5.3): the arm's own
+ * pins (alignment, sanitizer boundary, GFM pad/drop) plus the
+ * FULL-PIPELINE pin — parseRichText over real GFM source → <table> —
+ * which became possible the moment the bumped parser shipped.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { TableBlock } from "./markdown.js";
-import { isRichTextTable, normalizeTableRow } from "../richtext-table.js";
-import type { RichTextTableBlockMirror } from "../richtext-table.js";
+import { Markdown, TableBlock } from "./markdown.js";
+import { normalizeTableRow } from "../richtext-table.js";
+import type { RichTextTableBlock } from "../richtext-table.js";
 
 afterEach(cleanup);
 
-const FIXTURE: RichTextTableBlockMirror = {
+const FIXTURE: RichTextTableBlock = {
   type: "table",
   align: ["left", "center", undefined],
   header: {
@@ -60,9 +59,18 @@ describe("guuey#370 — the react table arm", () => {
     ).toHaveLength(3); // excess dropped
   });
 
-  it("the guard admits the contract shape and refuses half-shaped blocks", () => {
-    expect(isRichTextTable(FIXTURE)).toBe(true);
-    expect(isRichTextTable({ type: "paragraph" })).toBe(false);
-    expect(isRichTextTable({ type: "table", align: [], header: {}, rows: [] })).toBe(false);
+  it("FULL PIPELINE: real GFM source parses and renders as a table — the bump landed into a ready arm", () => {
+    const { container } = render(
+      <Markdown text={"| Name | Qty |\n| :-- | :-: |\n| Widget | 2 |\n| Gadget | 5 |"} />,
+    );
+    const table = container.querySelector("table.guuey-chat-table");
+    expect(table).toBeTruthy();
+    expect(container.querySelectorAll("thead th")).toHaveLength(2);
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
+    expect(screen.getByText("Widget")).toBeTruthy();
+    // Per-column alignment from the delimiter row reaches the DOM.
+    expect((container.querySelectorAll("tbody td")[1] as HTMLElement).style.textAlign).toBe(
+      "center",
+    );
   });
 });
