@@ -99,7 +99,7 @@ export async function agentConfig(
   }
   if (autoUpdateFlag !== undefined) {
     if (autoUpdateFlag !== 'on' && autoUpdateFlag !== 'off') {
-      out.error('--runtime-auto-update takes "on" or "off" (e.g. --runtime-auto-update off pins the runtime at its last deploy).');
+      out.error('--runtime-auto-update takes "on" or "off" (e.g. --runtime-auto-update off pins the runtime image at its last deploy).');
       process.exit(1);
     }
     patch.runtimeAutoUpdate = autoUpdateFlag === 'on';
@@ -133,8 +133,8 @@ export async function agentConfig(
   if (patch.runtimeAutoUpdate !== undefined) {
     out.success(
       updated.runtimeAutoUpdate
-        ? 'Runtime updates: automatic — the platform keeps this agent on the current runtime.'
-        : 'Runtime updates: pinned — this agent stays on its deploy-time runtime until you deploy again or turn auto-update back on.',
+        ? 'Runtime image updates: automatic — the platform keeps this agent on the current image.'
+        : 'Runtime image updates: pinned — this agent stays on its deploy-time image until you deploy again or turn auto-update back on.',
     );
   }
   printConfig(updated);
@@ -179,13 +179,13 @@ async function showConfig(
  */
 function printConfig(wire: AgentConfig): void {
   const pods = wire.maxPods === null ? '1 (default)' : String(wire.maxPods);
-  console.log(`  Max Pods:        ${pods}`);
-  console.log(`  Ceiling:         ${wire.maxPodsCeiling}`);
-  console.log(`  Plan:            ${wire.tier}`);
+  console.log(`  Max Pods:      ${pods}`);
+  console.log(`  Ceiling:       ${wire.maxPodsCeiling}`);
+  console.log(`  Plan:          ${wire.tier}`);
   console.log(
-    `  Runtime updates: ${wire.runtimeAutoUpdate ? 'automatic (default)' : 'pinned to deploy'}`,
+    `  Image updates: ${wire.runtimeAutoUpdate ? 'automatic (default)' : 'pinned to deploy'}`,
   );
   if (wire.runtimeImageDigest) {
-    console.log(`  Runtime digest:  ${wire.runtimeImageDigest}`);
+    console.log(`  Image digest:  ${wire.runtimeImageDigest}`);
   }
 }

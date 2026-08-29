@@ -145,9 +145,9 @@ describe('guuey agent config', () => {
       await agentConfig({});
 
       const output = stdout();
-      expect(output).toContain('Max Pods:        3');
-      expect(output).toContain('Ceiling:         5');
-      expect(output).toContain('Plan:            pro');
+      expect(output).toContain('Max Pods:      3');
+      expect(output).toContain('Ceiling:       5');
+      expect(output).toContain('Plan:          pro');
     });
 
     it('prints an unset knob as "1 (default)" — never a bare 1 that reads as set', async () => {
@@ -155,7 +155,7 @@ describe('guuey agent config', () => {
 
       await agentConfig({});
 
-      expect(stdout()).toContain('Max Pods:        1 (default)');
+      expect(stdout()).toContain('Max Pods:      1 (default)');
     });
 
     it('--json emits the wire verbatim', async () => {
@@ -203,9 +203,9 @@ describe('guuey agent config', () => {
       await agentConfig({ 'max-pods': '3' });
 
       expect(stdout()).toContain('Max pods set to 1.');
-      expect(stdout()).toContain('Max Pods:        1');
+      expect(stdout()).toContain('Max Pods:      1');
       expect(stdout()).not.toContain('Max pods set to 3.');
-      expect(stdout()).not.toContain('Max Pods:        3');
+      expect(stdout()).not.toContain('Max Pods:      3');
     });
 
     it('prints that the change needs no redeploy', async () => {
@@ -317,7 +317,7 @@ describe('guuey agent config', () => {
         path: '/apps/app1/config',
         body: { runtimeAutoUpdate: true },
       });
-      expect(stdout()).toContain('Runtime updates: automatic');
+      expect(stdout()).toContain('Runtime image updates: automatic');
     });
 
     it("reports the server's readback for a pin — the pinned copy + the pinned config line", async () => {
@@ -325,9 +325,9 @@ describe('guuey agent config', () => {
 
       await agentConfig({ 'runtime-auto-update': 'off' });
 
-      expect(stdout()).toContain('Runtime updates: pinned');
+      expect(stdout()).toContain('Runtime image updates: pinned');
       expect(stdout()).toContain('pinned to deploy');
-      expect(stdout()).toContain('Runtime digest:  sha256:abc123');
+      expect(stdout()).toContain('Image digest:  sha256:abc123');
     });
 
     it.each(['true', 'false', '1', true])(
@@ -355,7 +355,7 @@ describe('guuey agent config', () => {
       });
       expect(fetchSpy).toHaveBeenCalledTimes(1);
       expect(stdout()).toContain('Max pods set to 3.');
-      expect(stdout()).toContain('Runtime updates: pinned');
+      expect(stdout()).toContain('Runtime image updates: pinned');
     });
   });
 

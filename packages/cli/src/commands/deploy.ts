@@ -28,7 +28,7 @@
  *   guuey deploy                 # Auto-detect mode
  *   guuey deploy --declarative   # Force declarative (uses guuey.json, no build)
  *   guuey deploy --code          # Force code mode
- *   guuey deploy --size sm       # Override runtime pod size
+ *   guuey deploy --size sm       # Override pod size
  *   guuey deploy --build-size lg # Override build Job size (code mode only)
  *   guuey deploy --max-pods 3    # Set the app's replica count (scaling S1)
  *   guuey deploy --app-id <id>   # Deploy to another app (binding untouched, guuey#232)

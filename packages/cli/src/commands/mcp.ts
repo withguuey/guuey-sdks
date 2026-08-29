@@ -16,7 +16,7 @@
  *   guuey mcp deploy                       # Deploy from the current directory
  *   guuey mcp deploy --name mcp-weather    # Override server name
  *   guuey mcp deploy --workspace ws-123    # Owning workspace (or $GUUEY_WORKSPACE)
- *   guuey mcp deploy --size md             # Override runtime pod size
+ *   guuey mcp deploy --size md             # Override pod size
  *   guuey mcp deploy --label v1.0          # Version label
  *
  * Flow (always code mode):
@@ -241,7 +241,7 @@ export async function deployMcpFromSource(
     /** Workspace-unique server name. */
     name: string;
     workspaceId: string;
-    /** Runtime pod size. Defaults to `'xs'` (matches `guuey mcp deploy`'s own default). */
+    /** Pod size. Defaults to `'xs'` (matches `guuey mcp deploy`'s own default). */
     size?: McpSize;
     auth: AuthTokens;
     config: ResolvedConfig;
