@@ -7,8 +7,8 @@
  * the architecture already guarantees, against regression by pipeline
  * swap.
  */
-import { describe, it, expect, afterEach } from "vitest";
-import { render , cleanup } from "@testing-library/react";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { render, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { Markdown } from "./markdown.js";
 
 afterEach(cleanup);
@@ -102,5 +102,52 @@ describe("bare-URL autolink (guuey#515)", () => {
     const { container } = render(<Markdown text="run `curl https://api.guuey.com/v1` locally" />);
     expect(container.querySelector("a")).toBeNull();
     expect(container.querySelector("code")?.textContent).toBe("curl https://api.guuey.com/v1");
+  });
+});
+
+describe("code-fence copy button (guuey#529)", () => {
+  it("every fence ships the button by default; the pre holds ONLY the code", () => {
+    const { container } = render(<Markdown text={"```json\n{ \"name\": \"my-agent\" }\n```"} />);
+    const button = container.querySelector("button.guuey-chat-code-copy");
+    expect(button?.textContent).toBe("Copy");
+    expect(container.querySelector("pre.guuey-chat-code-fence")?.textContent).toBe(
+      '{ "name": "my-agent" }',
+    );
+  });
+
+  it("click writes the code to the clipboard and flips to Copied", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    try {
+      const { container } = render(<Markdown text={"```\nnpm install @guuey/chat\n```"} />);
+      const button = container.querySelector("button.guuey-chat-code-copy");
+      if (!(button instanceof HTMLButtonElement)) throw new Error("no copy button");
+      fireEvent.click(button);
+      expect(writeText).toHaveBeenCalledWith("npm install @guuey/chat");
+      await waitFor(() => expect(button.textContent).toBe("Copied"));
+    } finally {
+      Reflect.deleteProperty(navigator, "clipboard");
+    }
+  });
+
+  it("a failed clipboard write truthfully stays on Copy", async () => {
+    const writeText = vi.fn(() => Promise.reject(new Error("denied")));
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    try {
+      const { container } = render(<Markdown text={"```\nsecret-adjacent\n```"} />);
+      const button = container.querySelector("button.guuey-chat-code-copy");
+      if (!(button instanceof HTMLButtonElement)) throw new Error("no copy button");
+      fireEvent.click(button);
+      expect(writeText).toHaveBeenCalled();
+      await waitFor(() => expect(button.textContent).toBe("Copy"));
+    } finally {
+      Reflect.deleteProperty(navigator, "clipboard");
+    }
   });
 });

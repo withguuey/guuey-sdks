@@ -160,6 +160,8 @@
 .guuey-chat-text p + p,
 .guuey-chat-text pre + p,
 .guuey-chat-text p + pre,
+.guuey-chat-text .guuey-chat-code-wrap + p,
+.guuey-chat-text p + .guuey-chat-code-wrap,
 .guuey-chat-text ul + p,
 .guuey-chat-text p + ul,
 .guuey-chat-text p + ol {
@@ -184,6 +186,39 @@
 .guuey-chat-code-fence {
   padding: 8px 10px;
   overflow-x: auto;
+}
+/* The fence's copy affordance (guuey#529): hover-reveal on pointer
+   devices, persistent on touch — the common grammar. Tokens ride the
+   composable channel like everything else. */
+.guuey-chat-code-wrap {
+  position: relative;
+}
+.guuey-chat-code-copy {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  padding: 2px 8px;
+  font: 600 11px/1.6 inherit;
+  border: 1px solid color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 15%, transparent);
+  border-radius: 6px;
+  background: var(--guuey-chat-surface, var(--_guuey-chat-surface));
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
+  cursor: pointer;
+  opacity: 0;
+}
+.guuey-chat-code-wrap:hover .guuey-chat-code-copy,
+.guuey-chat-code-copy:focus-visible {
+  opacity: 1;
+}
+@media (hover: none) {
+  .guuey-chat-code-copy {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .guuey-chat-code-copy {
+    transition: opacity 120ms ease-out;
+  }
 }
 .guuey-chat-verbatim {
   white-space: pre-wrap;

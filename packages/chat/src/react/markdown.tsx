@@ -24,6 +24,7 @@
  * Streaming-tolerant by upstream design: unclosed emphasis mid-delta
  * renders as formatted-so-far.
  */
+import { useState } from "react";
 import type { ReactNode } from "react";
 import {
   parseRichText,
@@ -188,7 +189,7 @@ function Block({ block }: { block: RichTextBlock }): ReactNode {
         </p>
       );
     case "code-fence":
-      return <pre className="guuey-chat-code-fence">{block.code}</pre>;
+      return <CodeFence code={block.code} />;
     case "list": {
       const Tag = block.ordered ? "ol" : "ul";
       return (
@@ -202,6 +203,43 @@ function Block({ block }: { block: RichTextBlock }): ReactNode {
       );
     }
   }
+}
+
+/**
+ * A fenced code block with its copy affordance (guuey#529 — the
+ * seamless-default family: every embedder's visitors get it with zero
+ * setup). The button lives in a wrapper DIV so the `<pre>` holds ONLY the
+ * code (select-all inside the fence never picks up UI text); the
+ * transcript's sibling-margin rules name the wrapper class alongside
+ * `pre`. Copy failure is shown truthfully: the label simply stays "Copy"
+ * (clipboard access needs a secure context + the iframe's
+ * clipboard-write grant — manual selection always still works).
+ */
+function CodeFence({ code }: { code: string }): ReactNode {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="guuey-chat-code-wrap">
+      <pre className="guuey-chat-code-fence">{code}</pre>
+      <button
+        type="button"
+        className="guuey-chat-code-copy"
+        aria-label={copied ? "Copied" : "Copy code"}
+        onClick={() => {
+          const clipboard = navigator.clipboard;
+          if (clipboard === undefined) return;
+          clipboard.writeText(code).then(
+            () => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1600);
+            },
+            () => setCopied(false),
+          );
+        }}
+      >
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
+  );
 }
 
 /** Sanitized markdown → React elements (see the module docblock). */
