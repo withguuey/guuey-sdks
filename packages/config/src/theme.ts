@@ -95,23 +95,66 @@ export type ThemeRampsV1 = z.infer<typeof ThemeRampsV1>;
  * pins its render slice to it, replacing the legacy surface-polarity
  * derivation. Ramps are STATED values, never derived (spec D7).
  */
+const ThemeTypographyV1 = z
+  .strictObject({
+    fontFamily: z.string().min(1).max(200).optional(),
+    monoFontFamily: z.string().min(1).max(200).optional(),
+    scale: z.number().min(0.75).max(1.5).optional(),
+  })
+  .optional();
+const ThemeShapeV1 = z
+  .strictObject({
+    radius: z.enum(['none', 'soft', 'round']),
+    density: z.enum(['compact', 'comfortable']),
+  })
+  .optional();
+
+/**
+ * Court keys — short machine identifiers (`"guuey"`, `"ggui"`, …).
+ * SYNC: mirrors `COURT_KEY_RE` in `backend/libs/cli-wire/chat-theme.ts`
+ * (the server's strict courts write gate) — the two ends of the apply
+ * pipe must agree on the key grammar.
+ */
+const CourtKeyV1 = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/);
+
+/**
+ * One court's override document (guuey#519 / the #536 grammar completion):
+ * a PARTIAL theme — every member optional (present members merge per-token
+ * over the base at resolution), palettes partial, and no nested `courts`
+ * (courts do not nest — the server gate enforces the same).
+ */
+export const AppCourtThemeV1 = z.strictObject({
+  name: z.string().min(1).max(64).optional(),
+  mode: z.enum(['light', 'dark']).optional(),
+  colors: z
+    .strictObject({
+      light: ThemePaletteV1.partial().optional(),
+      dark: ThemePaletteV1.partial().optional(),
+    })
+    .optional(),
+  ramps: ThemeRampsV1.optional(),
+  typography: ThemeTypographyV1,
+  shape: z
+    .strictObject({
+      radius: z.enum(['none', 'soft', 'round']).optional(),
+      density: z.enum(['compact', 'comfortable']).optional(),
+    })
+    .optional(),
+});
+export type AppCourtThemeV1 = z.infer<typeof AppCourtThemeV1>;
+
 export const AppThemeV1 = z.strictObject({
   name: z.string().min(1).max(64).optional(),
   mode: z.enum(['light', 'dark']),
   colors: z.strictObject({ light: ThemePaletteV1, dark: ThemePaletteV1 }),
   ramps: ThemeRampsV1.optional(),
-  typography: z
-    .strictObject({
-      fontFamily: z.string().min(1).max(200).optional(),
-      monoFontFamily: z.string().min(1).max(200).optional(),
-      scale: z.number().min(0.75).max(1.5).optional(),
-    })
-    .optional(),
-  shape: z
-    .strictObject({
-      radius: z.enum(['none', 'soft', 'round']),
-      density: z.enum(['compact', 'comfortable']),
-    })
-    .optional(),
+  typography: ThemeTypographyV1,
+  shape: ThemeShapeV1,
+  /**
+   * Per-court override documents (guuey#519 — brand is never a default:
+   * the base above stays court-neutral, a court's look exists only under
+   * its explicit key, and an undeclared court resolves to the base).
+   */
+  courts: z.record(CourtKeyV1, AppCourtThemeV1).optional(),
 });
 export type GuueyAppTheme = z.infer<typeof AppThemeV1>;

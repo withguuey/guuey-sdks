@@ -128,6 +128,14 @@ export const GuueyChatTheme = z
         density: z.enum(["compact", "comfortable"]),
       })
       .loose(),
+    /**
+     * Per-court override DOCUMENTS (guuey#519), keyed by serving court —
+     * declared vocabulary (guuey#536: the manifest grammar mirrors this
+     * schema key-for-key, so the member must be stated, not passthrough).
+     * Entries are partial theme documents; `resolveCourtTheme` owns the
+     * per-token layering and resolved themes are always court-free.
+     */
+    courts: z.record(z.string(), z.unknown()).optional(),
   })
   .loose();
 export type GuueyChatTheme = z.infer<typeof GuueyChatTheme>;
