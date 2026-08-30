@@ -130,12 +130,20 @@ export type GuueyChatTheme = z.infer<typeof GuueyChatTheme>;
  * The brand-neutral-but-polished package default — the theme a builder gets
  * before configuring anything, and the per-token fallback floor every other
  * theme resolves against.
+ *
+ * The accent is MONOCHROME (= ink) by founder ruling (guuey#521): an
+ * unthemed embed must never carry a foreign accent into a host's product —
+ * the old `#2f6bff` blue made every zero-config embed read "off-the-shelf
+ * chat vendor" inside someone else's brand (#414's lesson, mirrored). Ink
+ * as accent means the send button and user pill render as neutral
+ * ink-on-canvas and disappear into any host; a brand accent is a CHOICE
+ * (theme prop or one `--guuey-chat-accent` CSS variable), never a default.
  */
 export const DEFAULT_CHAT_THEME: GuueyChatTheme = {
   name: "default",
   colors: {
     light: {
-      accent: "#2f6bff",
+      accent: "#111318",
       onAccent: "#ffffff",
       ink: "#111318",
       inkMuted: "#5b6270",
@@ -145,7 +153,7 @@ export const DEFAULT_CHAT_THEME: GuueyChatTheme = {
       error: "#d64545",
     },
     dark: {
-      accent: "#5c8dff",
+      accent: "#e8e9ee",
       onAccent: "#0b0d12",
       ink: "#e8e9ee",
       inkMuted: "#9aa0ac",

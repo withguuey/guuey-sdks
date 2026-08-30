@@ -24,27 +24,35 @@ const DENSITY_GAP: Record<GuueyChatTheme["shape"]["density"], string> = {
  * One mode's tokens as inline custom properties for the transcript root.
  * Returned as a plain record so callers can spread it into `style` or emit
  * a stylesheet from it.
+ *
+ * Stamped under INTERNAL names (`--_guuey-chat-*`), never the documented
+ * `--guuey-chat-*` channel (guuey#521): the stylesheet reads every token
+ * as `var(--guuey-chat-<t>, var(--_guuey-chat-<t>))`, so a host CSS
+ * variable — set on any ancestor — wins per-token over the resolved
+ * theme, and the two theming channels COMPOSE instead of the inline
+ * stamp silently shadowing the documented one (the trap the landing
+ * home-hero embed hit four rounds of).
  */
 export function themeCssVars(theme: GuueyChatTheme, mode: ThemeMode): Record<string, string> {
   const palette = theme.colors[mode];
   const vars: Record<string, string> = {
-    "--guuey-chat-accent": palette.accent,
-    "--guuey-chat-on-accent": palette.onAccent,
-    "--guuey-chat-ink": palette.ink,
-    "--guuey-chat-ink-muted": palette.inkMuted,
-    "--guuey-chat-surface": palette.surface,
-    "--guuey-chat-canvas": palette.canvas,
-    "--guuey-chat-canvas-muted": palette.canvasMuted,
-    "--guuey-chat-error": palette.error,
-    "--guuey-chat-radius": RADIUS_PX[theme.shape.radius],
-    "--guuey-chat-gap": DENSITY_GAP[theme.shape.density],
-    "--guuey-chat-scale": String(theme.typography.scale ?? 1),
+    "--_guuey-chat-accent": palette.accent,
+    "--_guuey-chat-on-accent": palette.onAccent,
+    "--_guuey-chat-ink": palette.ink,
+    "--_guuey-chat-ink-muted": palette.inkMuted,
+    "--_guuey-chat-surface": palette.surface,
+    "--_guuey-chat-canvas": palette.canvas,
+    "--_guuey-chat-canvas-muted": palette.canvasMuted,
+    "--_guuey-chat-error": palette.error,
+    "--_guuey-chat-radius": RADIUS_PX[theme.shape.radius],
+    "--_guuey-chat-gap": DENSITY_GAP[theme.shape.density],
+    "--_guuey-chat-scale": String(theme.typography.scale ?? 1),
   };
   if (theme.typography.fontFamily !== undefined) {
-    vars["--guuey-chat-font"] = theme.typography.fontFamily;
+    vars["--_guuey-chat-font"] = theme.typography.fontFamily;
   }
   if (theme.typography.monoFontFamily !== undefined) {
-    vars["--guuey-chat-mono-font"] = theme.typography.monoFontFamily;
+    vars["--_guuey-chat-mono-font"] = theme.typography.monoFontFamily;
   }
   return vars;
 }

@@ -214,6 +214,19 @@ export interface GuueyChatProps {
   strings?: Partial<ChatStrings>;
   theme?: GuueyChatTheme;
   mode?: ThemeMode;
+  /**
+   * Message-surface presentation (guuey#521). `"card"` (default) keeps
+   * assistant text on its own card; `"bare"` sits the transcript directly
+   * on the host's background so the embed reads native to the page.
+   */
+  surface?: "card" | "bare";
+  /**
+   * Render the built-in composer (default `true`). `false` hides it for
+   * hosts that drive the conversation through the imperative handle
+   * (guuey#210 `ask`/`compose`) or their own input — pairs with the
+   * handle instead of forcing a CSS hide (guuey#521).
+   */
+  composer?: boolean;
   /** DOM windowing (§3.2). `false` renders everything. */
   window?: TranscriptWindowing | false;
   /**
@@ -323,6 +336,8 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     strings: stringOverrides,
     theme = DEFAULT_CHAT_THEME,
     mode = "light",
+    surface = "card",
+    composer = true,
     window: windowing,
     reader,
     onDebugEvent,
@@ -777,6 +792,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         strings={strings}
         theme={theme}
         mode={mode}
+        surface={surface}
         {...(windowing !== undefined ? { window: windowing } : {})}
         {...(components !== undefined ? { components } : {})}
         onToggle={toggle}
@@ -802,6 +818,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
           </button>
         </p>
       )}
+      {composer && (
       <form
         className="guuey-chat-composer"
         onSubmit={(e) => {
@@ -843,6 +860,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
           </button>
         )}
       </form>
+      )}
     </div>
   );
 });

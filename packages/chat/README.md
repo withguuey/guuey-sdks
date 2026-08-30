@@ -44,8 +44,29 @@ jump-to-latest release, windowed rendering for long transcripts,
 `aria-live`/keyboard/focus accessibility, sanitized markdown (typed AST —
 raw HTML is unrepresentable, links are scheme-allowlisted), generative-UI
 views mounting through `@guuey/mcp-apps-host`'s sandboxed host, and theming
-from the `GuueyChatTheme` token schema (`--guuey-chat-*` custom properties;
-`GUUEY_CHAT_THEME` ships beside the neutral default).
+from the `GuueyChatTheme` token schema (`GUUEY_CHAT_THEME` ships beside the
+neutral default).
+
+**Looking native is the default, not a theming project.** The unthemed kit
+is monochrome — ink, no vendor accent — so a zero-config embed disappears
+into your product. Two knobs cover most brand work before any theme
+exists:
+
+```tsx
+<GuueyChat surface="bare" … />    // no message cards — transcript sits on YOUR background
+<GuueyChat composer={false} … />  // bring your own input; drive sends via the ref handle
+```
+
+The two theming channels **compose** — set any `--guuey-chat-*` CSS custom
+property on an ancestor and it wins per-token over the resolved `theme`
+prop (the kit stamps its resolved tokens under internal `--_guuey-chat-*`
+names and reads `var(--guuey-chat-<t>, var(--_guuey-chat-<t>))`):
+
+```css
+.my-app-chat {
+  --guuey-chat-accent: var(--brand);
+}
+```
 
 Override one row without forfeiting the rest:
 

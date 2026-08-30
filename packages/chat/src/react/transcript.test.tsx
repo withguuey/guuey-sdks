@@ -42,14 +42,32 @@ const noopCtx = {
 };
 
 describe("Transcript", () => {
-  it("projects the theme as --guuey-chat-* custom properties on the root", () => {
+  it("projects the theme as INTERNAL --_guuey-chat-* stamps, leaving the documented channel to the host (guuey#521)", () => {
     const { container } = render(
       <Transcript plan={planOf(2)} theme={GUUEY_CHAT_THEME} mode="dark" {...noopCtx} />,
     );
     const root = container.querySelector(".guuey-chat");
-    expect(root?.getAttribute("style")).toContain("--guuey-chat-accent: #b8ff3a");
-    expect(root?.getAttribute("style")).toContain("--guuey-chat-canvas: #0e1014");
+    const style = root?.getAttribute("style") ?? "";
+    expect(style).toContain("--_guuey-chat-accent: #b8ff3a");
+    expect(style).toContain("--_guuey-chat-canvas: #0e1014");
+    // The documented `--guuey-chat-*` channel is NEVER stamped inline — a
+    // host CSS variable set on any ancestor must win per-token (the
+    // stylesheet reads `var(--guuey-chat-<t>, var(--_guuey-chat-<t>))`),
+    // so the two theming channels compose instead of shadowing.
+    expect(style).not.toMatch(/(?<!_)guuey-chat-accent/);
     expect(root?.getAttribute("data-guuey-chat-mode")).toBe("dark");
+  });
+
+  it("surface='bare' marks the root; default stays the card presentation (guuey#521)", () => {
+    const { container, unmount } = render(
+      <Transcript plan={planOf(2)} surface="bare" {...noopCtx} />,
+    );
+    expect(container.querySelector(".guuey-chat")?.className).toContain("guuey-chat--bare");
+    unmount();
+    const { container: cardContainer } = render(<Transcript plan={planOf(2)} {...noopCtx} />);
+    expect(cardContainer.querySelector(".guuey-chat")?.className).not.toContain(
+      "guuey-chat--bare",
+    );
   });
 
   it("windows long transcripts: tail rendered, earlier items behind the expander", () => {

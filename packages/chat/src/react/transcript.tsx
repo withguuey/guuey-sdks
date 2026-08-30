@@ -63,6 +63,14 @@ export interface TranscriptProps
   strings?: ChatStrings;
   theme?: GuueyChatTheme;
   mode?: ThemeMode;
+  /**
+   * Message-surface presentation (guuey#521). `"card"` (default) renders
+   * assistant text on its own surface-tinted, hairline-bordered card;
+   * `"bare"` sits the transcript directly on the host's background — the
+   * embed disappears into the page it lives on. The user pill stays a
+   * bubble in both.
+   */
+  surface?: "card" | "bare";
   /** DOM windowing (§3.2). `false` renders everything. Default tail 80. */
   window?: TranscriptWindowing | false;
   className?: string;
@@ -76,6 +84,7 @@ export function Transcript(props: TranscriptProps): ReactNode {
     strings = defaultChatStrings,
     theme = DEFAULT_CHAT_THEME,
     mode = "light",
+    surface = "card",
     window: windowing = { tail: 80 },
     className,
     style,
@@ -169,7 +178,7 @@ export function Transcript(props: TranscriptProps): ReactNode {
 
   return (
     <div
-      className={`guuey-chat${className !== undefined ? ` ${className}` : ""}`}
+      className={`guuey-chat${surface === "bare" ? " guuey-chat--bare" : ""}${className !== undefined ? ` ${className}` : ""}`}
       style={rootStyle}
       data-guuey-chat-mode={mode}
     >

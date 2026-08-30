@@ -154,6 +154,27 @@ function renderWithHandle(
   return { handle, view };
 }
 
+describe("<GuueyChat> zero-effort native look (guuey#521)", () => {
+  it("composer={false} renders no composer form — the imperative handle is the input", () => {
+    const { adapters } = scriptedAdapters();
+    const { container } = renderChat(adapters, { composer: false });
+    expect(container.querySelector(".guuey-chat-composer")).toBeNull();
+    expect(container.querySelector(".guuey-chat")).not.toBeNull();
+  });
+
+  it("the composer renders by default", () => {
+    const { adapters } = scriptedAdapters();
+    const { container } = renderChat(adapters);
+    expect(container.querySelector(".guuey-chat-composer")).not.toBeNull();
+  });
+
+  it("surface='bare' reaches the transcript root through <GuueyChat>", () => {
+    const { adapters } = scriptedAdapters();
+    const { container } = renderChat(adapters, { surface: "bare" });
+    expect(container.querySelector(".guuey-chat")?.className).toContain("guuey-chat--bare");
+  });
+});
+
 describe("<GuueyChat> imperative seam (guuey#210)", () => {
   it("handle.send sends through the composer gate and leaves the typed draft untouched", async () => {
     const { adapters, calls } = scriptedAdapters();
