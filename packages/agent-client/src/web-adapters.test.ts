@@ -5,6 +5,7 @@ import {
   createUiActionRelay,
   createUiResourceReader,
   createWebAdapters,
+  deleteThread,
 } from "./web-adapters.js";
 import { AGENT_ERROR_CODES } from "./error-codes.js";
 import type { InvokeRequest } from "./types.js";
@@ -1052,5 +1053,79 @@ describe("createUiResourceReader — pod-only assembly (guuey#368)", () => {
     expect(calls).toHaveLength(2);
     expect(calls[1]).toContain("/threads/t1/ui-resource");
     expect(mount?.resource.text).toBe("<p>y</p>");
+  });
+});
+
+describe("deleteThread — the guest-erasure door (guuey#526)", () => {
+  const BASE = "https://api.example/v1";
+  const fetchStub = (status: number) => {
+    const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
+    const impl = (async (url: unknown, init?: RequestInit) => {
+      calls.push({ url: String(url), init });
+      return new Response(status === 200 ? '{"deleted":true,"threadId":"t-1"}' : "{}", { status });
+    }) as typeof fetch;
+    return { impl, calls };
+  };
+
+  it("guest identity: exactly one carrier — the x-guuey-guest header, no credentials", async () => {
+    const { impl, calls } = fetchStub(200);
+    const secret = "a".repeat(64);
+    const out = await deleteThread({ apiBaseUrl: BASE, threadId: "t-1", guestSecret: secret, fetchImpl: impl });
+    expect(out).toBe("deleted");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe(`${BASE}/threads/t-1`);
+    expect(calls[0].init?.method).toBe("DELETE");
+    expect((calls[0].init?.headers as Record<string, string>)["x-guuey-guest"]).toBe(secret);
+    expect(calls[0].init?.credentials).toBeUndefined();
+  });
+
+  it("bearer wins over the guest secret; neither → cookie credentials (the transport's rule verbatim)", async () => {
+    const a = fetchStub(200);
+    await deleteThread({
+      apiBaseUrl: BASE,
+      threadId: "t-1",
+      getAccessToken: async () => "tok",
+      guestSecret: "b".repeat(64),
+      fetchImpl: a.impl,
+    });
+    const headers = a.calls[0].init?.headers as Record<string, string>;
+    expect(headers["authorization"]).toBe("Bearer tok");
+    expect(headers["x-guuey-guest"]).toBeUndefined();
+
+    const b = fetchStub(200);
+    await deleteThread({ apiBaseUrl: BASE, threadId: "t-1", fetchImpl: b.impl });
+    expect(b.calls[0].init?.credentials).toBe("include");
+  });
+
+  it("404 is SUCCESS by contract (the row is gone — repeat delete idempotency)", async () => {
+    const { impl } = fetchStub(404);
+    expect(await deleteThread({ apiBaseUrl: BASE, threadId: "t-1", guestSecret: "c".repeat(64), fetchImpl: impl })).toBe("deleted");
+  });
+
+  it("403 → denied; 500 → failed; a thrown fetch → failed — never a rejection", async () => {
+    expect(await deleteThread({ apiBaseUrl: BASE, threadId: "t-1", fetchImpl: fetchStub(403).impl })).toBe("denied");
+    expect(await deleteThread({ apiBaseUrl: BASE, threadId: "t-1", fetchImpl: fetchStub(500).impl })).toBe("failed");
+    const throwing = (async () => {
+      throw new TypeError("network down");
+    }) as unknown as typeof fetch;
+    expect(await deleteThread({ apiBaseUrl: BASE, threadId: "t-1", fetchImpl: throwing })).toBe("failed");
+  });
+
+  it("401 with a bearer in play → ONE forceRefresh retry carrying the fresh token", async () => {
+    const seen: Array<Record<string, string>> = [];
+    let n = 0;
+    const impl = (async (_url: unknown, init?: RequestInit) => {
+      seen.push({ ...(init?.headers as Record<string, string>) });
+      n += 1;
+      return new Response("{}", { status: n === 1 ? 401 : 200 });
+    }) as typeof fetch;
+    const getAccessToken = vi.fn(async (opts?: { forceRefresh?: boolean }) =>
+      opts?.forceRefresh === true ? "fresh" : "stale",
+    );
+    const out = await deleteThread({ apiBaseUrl: BASE, threadId: "t-1", getAccessToken, fetchImpl: impl });
+    expect(out).toBe("deleted");
+    expect(seen).toHaveLength(2);
+    expect(seen[0]["authorization"]).toBe("Bearer stale");
+    expect(seen[1]["authorization"]).toBe("Bearer fresh");
   });
 });

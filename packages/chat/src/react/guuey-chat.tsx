@@ -60,6 +60,7 @@ import {
   createUiActionRelay,
   createUiResourceReader,
   createWebAdapters,
+  deleteThread,
   type AgentInvokeAdapters,
 } from "@guuey/agent-client";
 import type { AgHitlAnswer, AgPausedAsk } from "@silverprotocol/core";
@@ -170,15 +171,25 @@ export interface GuueyChatHandle {
    */
   viewSlotProps(): ViewSlotProps;
   /**
-   * Forget this conversation ON THIS DEVICE (guuey#526 — the
-   * public-computer story): aborts any in-flight turn, drops the durable
-   * thread pointer AND its persisted storage key, wipes the visible
-   * transcript, clears the typed draft and any pending link ask — the
-   * next send mints a fresh thread. HONEST SCOPE: this makes the record
-   * unreachable FROM THIS BROWSER; the orphaned thread still exists
-   * server-side until the guest-authenticated deletion (the issue's ask
-   * 3) ships against platform's endpoint — that call folds in here when
-   * its contract lands, and guest-secret rotation with it.
+   * Forget this conversation (guuey#526 — the public-computer story).
+   *
+   * Local half, unconditional and immediate: aborts any in-flight turn
+   * FIRST (a completing turn can re-persist its own rows), drops the
+   * durable thread pointer AND its persisted storage key, wipes the
+   * visible transcript, clears the typed draft and any pending link ask —
+   * the next send mints a fresh thread.
+   *
+   * Server half, best-effort: when the surface has a platform door
+   * (`apiBaseUrl`) and a minted thread, fires
+   * `DELETE /v1/threads/:threadId` with the SAME identity the thread was
+   * created under (captured before any rotation) — real, child-first
+   * server-side erasure. A denied or failed delete still clears the
+   * device (the contract's unlinkability fallback) and surfaces nothing
+   * louder than the `thread-delete` debug event.
+   *
+   * Afterwards `onGuestSecretRotate` fires (when wired), so the identity
+   * owner mints a fresh guest secret — even an orphaned server row is
+   * unreachable from a rotated identity.
    */
   clearConversation(): void;
 }
@@ -259,6 +270,16 @@ export interface GuueyChatProps {
    * recourse), OFF otherwise; pass a boolean to override either way.
    */
   clearAffordance?: boolean;
+  /**
+   * Guest-secret rotation hook (guuey#526): called at the END of every
+   * {@link GuueyChatHandle.clearConversation} — after the server delete
+   * has been dispatched with the OLD identity — so the owner of the
+   * secret's storage (the kit never stores it; `getGuestSecret` is a
+   * getter) mints a fresh one. Rotation is what makes even an orphaned
+   * server row unreachable: the new identity is a stranger to it. Guest
+   * KV state is (user,mcp)-scoped and is orphaned by rotation, by design.
+   */
+  onGuestSecretRotate?: () => void;
   /** The debug sink (spec §5) — fires only under the debug policy. */
   onDebugEvent?: (event: ChatDebugEvent) => void;
   /** R6 pass-through (relay hook, sandbox page/flags, host context…). */
@@ -375,6 +396,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     onOAuthAuthorize,
     onErrorAction,
     clearAffordance,
+    onGuestSecretRotate,
     onActivity,
     onReady,
     onThread,
@@ -392,8 +414,14 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // host back → setState → re-render → "Maximum update depth exceeded".
   const getAccessTokenRef = useRef(getAccessToken);
   getAccessTokenRef.current = getAccessToken;
+  // The handle is created once ([] deps) but must read the LIVE base —
+  // same ref discipline as every other handle-read value in this file.
+  const apiBaseUrlRef = useRef(apiBaseUrl);
+  apiBaseUrlRef.current = apiBaseUrl;
   const getGuestSecretRef = useRef(getGuestSecret);
   getGuestSecretRef.current = getGuestSecret;
+  const onGuestSecretRotateRef = useRef(onGuestSecretRotate);
+  onGuestSecretRotateRef.current = onGuestSecretRotate;
   const hasAccessToken = getAccessToken !== undefined;
   const hasGuestSecret = getGuestSecret !== undefined;
 
@@ -742,16 +770,46 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         inputRef.current?.focus();
       },
       clearConversation: (): void => {
-        // The hook's reset owns the durable half (abort, pointer + storage
+        const live = liveRef.current;
+        // Contract ordering (guuey#526, platform's frozen comment): abort
+        // FIRST — a completing turn can re-persist its own rows after the
+        // delete. Capture the id + guest secret BEFORE anything clears or
+        // rotates them: the delete must authenticate as the identity that
+        // OWNS the thread.
+        live.invoke.abort();
+        const threadId = threadIdRef.current;
+        const getGuest = getGuestSecretRef.current;
+        const guestSecret = getGuest !== undefined ? getGuest() : null;
+        if (apiBaseUrlRef.current !== undefined && threadId !== null) {
+          // Best-effort server erasure — fire-and-forget, never blocks the
+          // local clear. 200 and 404 are both "deleted" (idempotent by
+          // contract); denied/failed still cleared locally below (the
+          // unlinkability fallback) and surface ONLY as a debug line.
+          void deleteThread({
+            apiBaseUrl: apiBaseUrlRef.current,
+            threadId,
+            ...(getAccessTokenRef.current !== undefined
+              ? { getAccessToken: getAccessTokenRef.current }
+              : {}),
+            guestSecret,
+          }).then((outcome) => {
+            onDebugEventRef.current?.({ type: "thread-delete", threadId, outcome });
+          });
+        } else {
+          onDebugEventRef.current?.({ type: "thread-delete", threadId, outcome: "skipped" });
+        }
+        // The hook's reset owns the durable local half (pointer + storage
         // key, transcript/fold/cards); the kit clears ITS OWN residue —
         // the typed draft, a pending link ask, queued doorbells — so the
-        // device holds nothing of the conversation (guuey#526's honest
-        // client scope; the server-side deletion folds in on platform's
-        // endpoint contract).
-        liveRef.current.invoke.reset();
+        // device holds nothing of the conversation.
+        live.invoke.reset();
         setInput("");
         setPendingLink(null);
         pendingDoorbellsRef.current = [];
+        // Rotation LAST: the delete above already captured the old
+        // identity, so the fresh secret is a stranger to even an orphaned
+        // server row.
+        onGuestSecretRotateRef.current?.();
       },
       // A getter, not a captured value: the handle is created once, but the
       // thread hydrates after mount and can change — reads go through the

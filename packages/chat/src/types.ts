@@ -540,7 +540,20 @@ export type ChatDebugEvent =
    * is by construction, not a failure). Debug-only like every event here
    * — calm end-user UX keeps deny == miss un-oracled.
    */
-  | { type: "locator-read-miss"; key: ItemKey; resourceUri: string; origin: "live" | "history" };
+  | { type: "locator-read-miss"; key: ItemKey; resourceUri: string; origin: "live" | "history" }
+  /**
+   * `clearConversation()`'s server-erasure outcome (guuey#526). The clear
+   * itself is ALWAYS local-first and never blocks on this — the contract's
+   * unlinkability fallback says a denied/failed delete still clears the
+   * device and surfaces "nothing louder than a debug line"; this event IS
+   * that line. `"skipped"` = no platform door to call (no `apiBaseUrl`,
+   * or no thread ever minted) — the local-only clear, by construction.
+   */
+  | {
+      type: "thread-delete";
+      threadId: string | null;
+      outcome: "deleted" | "denied" | "failed" | "skipped";
+    };
 
 /**
  * One renderable view the plan saw, BEFORE any chips/promotion pass —

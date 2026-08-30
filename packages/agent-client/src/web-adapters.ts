@@ -686,3 +686,84 @@ export function createHitlAnswerRelay(
     };
   };
 }
+
+/** Options for {@link deleteThread} — the same credential surface as the sibling platform doors. */
+export interface DeleteThreadOptions {
+  /** The guuey public API base (`…/v1`) — the same base the transcript reads use. */
+  apiBaseUrl: string;
+  /** The thread to erase. Must be the id the SAME identity created. */
+  threadId: string;
+  /** Signed-in bearer — wins over the guest secret (same rule as the transport). */
+  getAccessToken?: (opts?: { forceRefresh?: boolean }) => Promise<string | null>;
+  /**
+   * Caller-owned anonymous guest secret (widget / guest chat). Callers that
+   * rotate the secret as part of a clear MUST capture this value BEFORE
+   * rotating — the delete authenticates as the identity that OWNS the
+   * thread, and a post-rotation secret is a stranger to it (403).
+   */
+  guestSecret?: string | null;
+  /** Injectable for tests. */
+  fetchImpl?: typeof fetch;
+}
+
+/**
+ * The delete door's outcome, collapsed to what a caller can act on:
+ * `"deleted"` — the server no longer holds the thread (200, or the
+ * contract's 404-idempotent arm: the row is already gone); `"denied"` —
+ * the credential did not own the thread (401/403; guuey#526's
+ * unlinkability fallback applies: clear locally anyway, surface nothing
+ * louder than a debug line); `"failed"` — transport or server failure
+ * (the thread may still exist server-side).
+ */
+export type DeleteThreadResult = "deleted" | "denied" | "failed";
+
+/**
+ * `DELETE /v1/threads/:threadId` — the guest-erasure door (guuey#526).
+ *
+ * Real, child-first server-side deletion (messages → fold snapshot →
+ * thread row last; replayable on partial failure — the server half's
+ * contract, c6056b679). Identity is EXACTLY the transcript read's:
+ * one carrier per call, bearer → guest header → else cookie credentials,
+ * with the reader's single forceRefresh retry on a 401 bearer. Never
+ * throws — every failure collapses into the result union.
+ */
+export async function deleteThread(options: DeleteThreadOptions): Promise<DeleteThreadResult> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const requestUrl = `${options.apiBaseUrl}/threads/${encodeURIComponent(options.threadId)}`;
+  const headers: Record<string, string> = {};
+  const init: RequestInit = { method: "DELETE", headers };
+  const token = options.getAccessToken ? await options.getAccessToken().catch(() => null) : null;
+  const guest = sendableGuestSecret(options.guestSecret);
+  if (token) {
+    headers["authorization"] = `Bearer ${token}`;
+  } else if (guest) {
+    headers[GUEST_HEADER] = guest;
+  } else {
+    init.credentials = "include";
+  }
+  let res: Response;
+  try {
+    res = await fetchImpl(requestUrl, init);
+  } catch {
+    return "failed";
+  }
+  if (res.status === 401 && options.getAccessToken) {
+    const fresh = await options.getAccessToken({ forceRefresh: true }).catch(() => null);
+    if (fresh) {
+      try {
+        res = await fetchImpl(requestUrl, {
+          method: "DELETE",
+          headers: { authorization: `Bearer ${fresh}` },
+        });
+      } catch {
+        return "failed";
+      }
+    }
+  }
+  // 404 is SUCCESS by contract: the row is gone (a repeat delete, or a
+  // never-persisted thread). Treating it as failure would make the honest
+  // "already erased" case look like an error to every caller.
+  if (res.ok || res.status === 404) return "deleted";
+  if (res.status === 401 || res.status === 403) return "denied";
+  return "failed";
+}

@@ -1096,3 +1096,105 @@ describe("forget this device — clearConversation + the guest affordance (guuey
     expect(screen.getByRole("button", { name: "Clear conversation" })).toBeTruthy();
   });
 });
+
+describe("clearConversation server fold-in — DELETE + rotation (guuey#526 ask 3)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("fires DELETE /threads/:id with the PRE-rotation guest secret, then rotates — and the debug line says deleted", async () => {
+    const deletes: Array<{ url: string; init: RequestInit | undefined }> = [];
+    vi.stubGlobal(
+      "fetch",
+      (async (url: unknown, init?: RequestInit) => {
+        deletes.push({ url: String(url), init });
+        return new Response('{"deleted":true,"threadId":"t-3c"}', { status: 200 });
+      }) as typeof fetch,
+    );
+    const { adapters, calls } = scriptedAdapters();
+    let secret = "1".repeat(64);
+    const rotations: string[] = [];
+    const debugEvents: Array<{ type: string; outcome?: string }> = [];
+    const { handle } = renderWithHandle(adapters, {
+      apiBaseUrl: "https://api.example/v1",
+      getGuestSecret: () => secret,
+      onGuestSecretRotate: () => {
+        rotations.push(secret);
+        secret = "2".repeat(64); // the host mints fresh — synchronously, like the widget would
+      },
+      onDebugEvent: (e) => debugEvents.push(e as { type: string; outcome?: string }),
+    });
+    const input = screen.getByLabelText("Message");
+    fireEvent.change(input, { target: { value: "hello" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(calls).toHaveLength(1));
+    await waitFor(() => expect(handle.threadId).toBe("t-3c"));
+
+    act(() => handle.clearConversation());
+    // The delete was dispatched against the platform door, method DELETE,
+    // carrying the OLD identity — rotation already swapped the getter's
+    // value, so a post-rotation read here would be "2…" (the 403 bug the
+    // contract's capture-first rule exists to prevent).
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0].url).toBe("https://api.example/v1/threads/t-3c");
+    expect(deletes[0].init?.method).toBe("DELETE");
+    expect((deletes[0].init?.headers as Record<string, string>)["x-guuey-guest"]).toBe("1".repeat(64));
+    expect(rotations).toEqual(["1".repeat(64)]); // rotated exactly once, after dispatch
+    expect(handle.threadId).toBeNull(); // local clear never waited on the wire
+    await waitFor(() =>
+      expect(debugEvents).toContainEqual({ type: "thread-delete", threadId: "t-3c", outcome: "deleted" }),
+    );
+  });
+
+  it("no platform door (no apiBaseUrl) → no fetch, outcome 'skipped', local clear + rotation still run", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy as unknown as typeof fetch);
+    const { adapters, calls } = scriptedAdapters();
+    const rotations: number[] = [];
+    const debugEvents: Array<{ type: string; outcome?: string }> = [];
+    const { handle } = renderWithHandle(adapters, {
+      getGuestSecret: () => "3".repeat(64),
+      onGuestSecretRotate: () => rotations.push(1),
+      onDebugEvent: (e) => debugEvents.push(e as { type: string; outcome?: string }),
+    });
+    const input = screen.getByLabelText("Message");
+    fireEvent.change(input, { target: { value: "hi" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(calls).toHaveLength(1));
+    await waitFor(() => expect(handle.threadId).toBe("t-3c"));
+
+    act(() => handle.clearConversation());
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(handle.threadId).toBeNull();
+    expect(rotations).toHaveLength(1);
+    expect(debugEvents).toContainEqual({ type: "thread-delete", threadId: "t-3c", outcome: "skipped" });
+  });
+
+  it("a denied delete still clears the device (the unlinkability fallback) — nothing louder than the debug line", async () => {
+    vi.stubGlobal(
+      "fetch",
+      (async () => new Response("{}", { status: 403 })) as typeof fetch,
+    );
+    const { adapters, calls } = scriptedAdapters();
+    const debugEvents: Array<{ type: string; outcome?: string }> = [];
+    const { handle } = renderWithHandle(adapters, {
+      apiBaseUrl: "https://api.example/v1",
+      getGuestSecret: () => "4".repeat(64),
+      onDebugEvent: (e) => debugEvents.push(e as { type: string; outcome?: string }),
+    });
+    const input = screen.getByLabelText("Message");
+    fireEvent.change(input, { target: { value: "hello" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(calls).toHaveLength(1));
+    await waitFor(() => expect(screen.getByText("Hello.")).toBeTruthy());
+
+    act(() => handle.clearConversation());
+    expect(screen.queryByText("Hello.")).toBeNull(); // cleared regardless
+    expect(handle.threadId).toBeNull();
+    await waitFor(() =>
+      expect(debugEvents).toContainEqual({ type: "thread-delete", threadId: "t-3c", outcome: "denied" }),
+    );
+    // Nothing louder: no error row appeared for the failed erasure.
+    expect(screen.queryByText(/went wrong|couldn't|failed/i)).toBeNull();
+  });
+});
