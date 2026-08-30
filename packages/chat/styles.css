@@ -40,6 +40,29 @@
   margin-inline: auto;
 }
 
+/* ── suggestion chips (guuey#533) — empty-state only, one-tap-sends;
+      restyled ENTIRELY by the #521 composable tokens (surface/ink/radius
+      — no new tokens). ── */
+.guuey-chat-chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px calc(var(--guuey-chat-gap) * 1.5);
+}
+.guuey-chat-chip {
+  background: var(--guuey-chat-surface, var(--_guuey-chat-surface));
+  color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
+  border: 1px solid var(--guuey-chat-ink-muted);
+  border-radius: var(--guuey-chat-radius, var(--_guuey-chat-radius));
+  padding: 6px 12px;
+  font-size: 0.85em;
+  cursor: pointer;
+  text-align: start;
+}
+.guuey-chat-chip:hover {
+  border-color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
+}
+
 /* ── forget-this-device (guuey#526) — quiet, right-aligned, two-tap. ── */
 .guuey-chat-clear-row {
   display: flex;

@@ -280,6 +280,20 @@ export interface GuueyChatProps {
    * KV state is (user,mcp)-scoped and is orphaned by rotation, by design.
    */
   onGuestSecretRotate?: () => void;
+  /**
+   * Suggestion chips (guuey#533 — declared content, the one-truth design):
+   * rendered on the EMPTY transcript only (they retire the moment a
+   * message exists — live send or restored history both count), one tap
+   * SENDS the chip text verbatim through exactly the Send button's gate.
+   * Default-ON when content exists; `false` opts the surface out. The kit
+   * mirrors the card projection's caps render-side (4 shown, ≤80 chars
+   * each, blank-rejected) — a direct consumer bypassing the platform's
+   * emit gate gets the same bounds. Content is the host's (the widget
+   * passes the card's `suggestions`; a direct consumer passes its own);
+   * the kit never invents chips — an honest empty state beats invented
+   * questions in the builder's voice.
+   */
+  suggestions?: readonly string[] | false;
   /** The debug sink (spec §5) — fires only under the debug policy. */
   onDebugEvent?: (event: ChatDebugEvent) => void;
   /** R6 pass-through (relay hook, sandbox page/flags, host context…). */
@@ -397,6 +411,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     onErrorAction,
     clearAffordance,
     onGuestSecretRotate,
+    suggestions,
     onActivity,
     onReady,
     onThread,
@@ -706,6 +721,27 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     return () => clearTimeout(timer);
   }, [clearArmed]);
   const showClearAffordance = clearAffordance ?? getGuestSecret !== undefined;
+  // guuey#533: the render-side mirror of the card projection's emit caps
+  // (4 shown / <=80 chars / blank-rejected) — same defense posture as the
+  // table normalizer: the kit is public npm and cannot assume every host
+  // routed content through platform's write gate.
+  const chips = useMemo<readonly string[]>(() => {
+    if (suggestions === false || suggestions === undefined) return [];
+    return suggestions
+      .map((c) => c.trim())
+      .filter((c) => c.length > 0 && c.length <= 80)
+      .slice(0, 4);
+  }, [suggestions]);
+  const sendSuggestion = useCallback((text: string): void => {
+    const live = liveRef.current;
+    // Exactly the Send button's gate (the #210 rule): unavailable, busy,
+    // or blank -> the tap is a no-op, never a bypass. The typed draft is
+    // left untouched (a chip send must not eat a half-typed message).
+    if (!live.available || live.busy || text.trim() === "") return;
+    void live.invoke.send(text).catch(() => {
+      // Same contract as submit: the hook owns failure surfacing.
+    });
+  }, []);
   const defaultOnOpenLink = useCallback((url: string) => {
     setPendingLink(url);
   }, []);
@@ -930,6 +966,20 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         {...(onViewRef !== undefined ? { onViewRef } : {})}
         viewProps={effectiveViewProps}
       />
+      {chips.length > 0 && inputs.messages.length === 0 && (
+        <nav className="guuey-chat-chips-row" aria-label={strings.suggestionsLabel}>
+          {chips.map((chip) => (
+            <button
+              key={chip}
+              type="button"
+              className="guuey-chat-chip"
+              onClick={() => sendSuggestion(chip)}
+            >
+              {chip}
+            </button>
+          ))}
+        </nav>
+      )}
       {showClearAffordance && inputs.messages.length > 0 && (
         <div className="guuey-chat-clear-row">
           <button

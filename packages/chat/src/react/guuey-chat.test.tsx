@@ -1198,3 +1198,70 @@ describe("clearConversation server fold-in — DELETE + rotation (guuey#526 ask 
     expect(screen.queryByText(/went wrong|couldn't|failed/i)).toBeNull();
   });
 });
+
+describe("suggestion chips — empty-state, one-tap-sends (guuey#533)", () => {
+  it("renders on the empty transcript, a tap SENDS the chip text verbatim through the gate, and the row retires", async () => {
+    const { adapters, calls } = scriptedAdapters();
+    renderChat(adapters, { suggestions: ["What does this cost?", "Track my order"] });
+    const row = screen.getByRole("navigation", { name: "Suggestions" });
+    expect(row).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "What does this cost?" }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(JSON.stringify(calls[0].body)).toContain("What does this cost?");
+    // Retired: a message now exists (the optimistic push counts).
+    expect(screen.queryByRole("navigation", { name: "Suggestions" })).toBeNull();
+    // The turn completes; the row stays retired (history is non-empty).
+    await waitFor(() => expect(screen.getByText("Hello.")).toBeTruthy());
+    expect(screen.queryByRole("navigation", { name: "Suggestions" })).toBeNull();
+  });
+
+  it("a chip tap never eats the typed draft, and a busy surface ignores the tap (the #210 gate verbatim)", async () => {
+    const { adapters, calls, release } = scriptedAdapters({ holdOpen: true });
+    renderChat(adapters, { suggestions: ["Ask me"] });
+    const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "half-typed" } });
+    fireEvent.click(screen.getByRole("button", { name: "Ask me" }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(input.value).toBe("half-typed"); // draft untouched
+    release();
+    await waitFor(() => expect(screen.getByText("Hello.")).toBeTruthy());
+  });
+
+  it("mirrors the emit caps render-side: 4 shown, >80-char and blank chips dropped; suggestions={false} opts out", () => {
+    const { adapters } = scriptedAdapters();
+    const view = renderChat(adapters, {
+      suggestions: ["a", "b", "c", "d", "e", "  ", "x".repeat(81)],
+    });
+    const row = screen.getByRole("navigation", { name: "Suggestions" });
+    expect(row.querySelectorAll("button")).toHaveLength(4);
+    expect(screen.queryByRole("button", { name: "e" })).toBeNull();
+    view.rerender(
+      <GuueyChat
+        endpointUrl="https://pod.example/agent/invoke"
+        adapters={adapters}
+        suggestions={false}
+      />,
+    );
+    expect(screen.queryByRole("navigation", { name: "Suggestions" })).toBeNull();
+  });
+
+  it("no content → no row (the kit never invents chips); chips REAPPEAR after clearConversation empties the transcript", async () => {
+    const { adapters, calls } = scriptedAdapters();
+    renderChat(adapters);
+    expect(screen.queryByRole("navigation", { name: "Suggestions" })).toBeNull();
+
+    cleanup();
+    const second = scriptedAdapters();
+    const { handle } = renderWithHandle(second.adapters, { suggestions: ["Start over?"] });
+    const input = screen.getByLabelText("Message");
+    fireEvent.change(input, { target: { value: "hello" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(second.calls).toHaveLength(1));
+    await waitFor(() => expect(screen.getByText("Hello.")).toBeTruthy());
+    expect(screen.queryByRole("navigation", { name: "Suggestions" })).toBeNull();
+    act(() => handle.clearConversation());
+    // The transcript is empty again — the cold-start affordance returns.
+    expect(screen.getByRole("navigation", { name: "Suggestions" })).toBeTruthy();
+    expect(calls).toHaveLength(0); // and nothing ever sent on the first render's adapters
+  });
+});

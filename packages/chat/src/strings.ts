@@ -144,6 +144,12 @@ export interface ChatStrings {
   clearConversationLabel: string;
   clearConversationConfirm: string;
 
+  /**
+   * The suggestion-chip row's accessible name (guuey#533) — the chips
+   * themselves are declared content (the app's own words), never kit copy.
+   */
+  suggestionsLabel: string;
+
   /** The 3c composer (`<GuueyChat>`). */
   composerPlaceholder: string;
   composerUnavailable: string;
@@ -254,6 +260,7 @@ export const defaultChatStrings: ChatStrings = {
   linkDismiss: "Dismiss",
 
   clearConversationLabel: "Clear conversation",
+  suggestionsLabel: "Suggestions",
   clearConversationConfirm: "Tap again to clear this device",
 
   composerPlaceholder: "Message the agent…",
