@@ -48,6 +48,9 @@ export function themeCssVars(theme: GuueyChatTheme, mode: ThemeMode): Record<str
     "--_guuey-chat-gap": DENSITY_GAP[theme.shape.density],
     "--_guuey-chat-scale": String(theme.typography.scale ?? 1),
   };
+  if (palette.link !== undefined) {
+    vars["--_guuey-chat-link"] = palette.link;
+  }
   if (theme.typography.fontFamily !== undefined) {
     vars["--_guuey-chat-font"] = theme.typography.fontFamily;
   }

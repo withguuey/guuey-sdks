@@ -34,6 +34,12 @@ export const GuueyChatPalette = z
     canvas: z.string(),
     canvasMuted: z.string(),
     error: z.string(),
+    /**
+     * Anchor color (guuey#528) — OPTIONAL by the evolution rule (a stored
+     * pre-#528 theme must keep passing the strict write gate); the default
+     * theme states it, so RESOLVED themes always carry it.
+     */
+    link: z.string().optional(),
   })
   .loose();
 export type GuueyChatPalette = z.infer<typeof GuueyChatPalette>;
@@ -151,6 +157,7 @@ export const DEFAULT_CHAT_THEME: GuueyChatTheme = {
       canvas: "#f7f7f5",
       canvasMuted: "#eceded",
       error: "#d64545",
+      link: "#111318",
     },
     dark: {
       accent: "#e8e9ee",
@@ -161,6 +168,7 @@ export const DEFAULT_CHAT_THEME: GuueyChatTheme = {
       canvas: "#0f1116",
       canvasMuted: "#1b1e26",
       error: "#ff6b6b",
+      link: "#e8e9ee",
     },
   },
   typography: {},
@@ -186,6 +194,9 @@ export const GUUEY_CHAT_THEME: GuueyChatTheme = {
       canvas: "#f6f5ee",
       canvasMuted: "#ecebe0",
       error: "#ff5b5b",
+      // slime-4, the founder-minted brand link green (guuey#528, 08-30) —
+      // the ladder had no readable green at link weight on light.
+      link: "#4e7a0e",
     },
     dark: {
       accent: "#b8ff3a",
@@ -196,6 +207,9 @@ export const GUUEY_CHAT_THEME: GuueyChatTheme = {
       canvas: "#0e1014",
       canvasMuted: "#1a1d24",
       error: "#ff5b5b",
+      // On dark the ladder's own slime IS readable at link weight — the
+      // #528 ruling minted slime-4 for LIGHT, where #b8ff3a is not.
+      link: "#b8ff3a",
     },
   },
   typography: {},
@@ -229,6 +243,7 @@ const PALETTE_TOKENS = [
   "canvas",
   "canvasMuted",
   "error",
+  "link",
 ] as const;
 
 function mergePalette(

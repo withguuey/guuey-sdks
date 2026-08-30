@@ -110,3 +110,21 @@ describe("resolveCourtTheme (guuey#519)", () => {
     );
   });
 });
+
+describe("link token (guuey#528)", () => {
+  it("the neutral default's link equals ink — monochrome, underline distinguishes", () => {
+    expect(DEFAULT_CHAT_THEME.colors.light.link).toBe(DEFAULT_CHAT_THEME.colors.light.ink);
+    expect(DEFAULT_CHAT_THEME.colors.dark.link).toBe(DEFAULT_CHAT_THEME.colors.dark.ink);
+  });
+
+  it("the guuey identity carries the founder-minted slime-4 on light, the ladder's slime on dark", () => {
+    expect(GUUEY_CHAT_THEME.colors.light.link).toBe("#4e7a0e");
+    expect(GUUEY_CHAT_THEME.colors.dark.link).toBe("#b8ff3a");
+  });
+
+  it("a pre-#528 theme (no link) resolves with the default's link — additive evolution holds", () => {
+    const resolved = resolveTheme({ name: "old", colors: { light: { accent: "#123456" } } });
+    expect(resolved.colors.light.link).toBe(DEFAULT_CHAT_THEME.colors.light.link);
+    expect(resolved.colors.light.accent).toBe("#123456");
+  });
+});

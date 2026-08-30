@@ -123,6 +123,14 @@
   font-size: inherit;
 }
 
+/* Links (guuey#528): the one text class with its own token. The neutral
+   default equals ink (underline alone distinguishes — native), so an
+   unthemed embed stays monochrome; a brand states its link color once
+   (theme or the host CSS-var channel, composing per #521's model). */
+.guuey-chat a {
+  color: var(--guuey-chat-link, var(--_guuey-chat-link, inherit));
+}
+
 /* ── R1 assistant text ── */
 .guuey-chat-text {
   align-self: flex-start;
