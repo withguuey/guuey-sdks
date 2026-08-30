@@ -621,3 +621,31 @@ describe("agArtifactToCardRow strips tool-result _meta and artifact _meta (#122 
     expect(snap.parts[0]).toMatchObject({ uiData: { resourceUri: "ui://ggui/render/s/h" } });
   });
 });
+
+describe("the ggui#652 re-anchor stamp rides the existing locator lane (guuey#535)", () => {
+  it("an amend tool-result carrying {sessionId, resourceUri} in structuredContent persists a placeholder artifact", () => {
+    const message: AgMessage = {
+      id: "m-amend",
+      role: "assistant",
+      turnId: "turn-6",
+      threadId: "t1",
+      content: [
+        {
+          type: "tool-result",
+          toolCallId: "toolu_amend",
+          content: [],
+          // ggui SPEC §7.1.2.1's normative re-anchor reference, verbatim
+          // shape (ggui#652): the model channel, no _meta, no uiData —
+          // the #209 structuredContent locator read is what catches it.
+          structuredContent: {
+            sessionId: "render_f11bb7cb",
+            resourceUri: "ui://render/shared-1",
+          },
+        },
+      ],
+    };
+    const artifacts = uiCardArtifactsFromMessages([message]);
+    expect(artifacts).toHaveLength(1);
+    expect(artifacts[0]?.artifactId).toBe("m-amend#ui#0");
+  });
+});

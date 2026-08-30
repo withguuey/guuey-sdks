@@ -25,7 +25,7 @@ const CARD = (seq: number) => ({
   },
 });
 
-function inputs(messages: TranscriptInputs["messages"], cards: Array<ReturnType<typeof CARD>>): TranscriptInputs {
+function inputs(messages: TranscriptInputs["messages"], cards: NonNullable<TranscriptInputs["historyCards"]>): TranscriptInputs {
   return {
     result: null,
     assistantText: "",
@@ -160,5 +160,87 @@ describe("guuey#402 — history-card chip titles (kit half)", () => {
     expect(named?.title).toBe("Rendering card");
     // Pre-enabler rows keep the honest generic fallback, never invented.
     expect(bare?.title).toBe(calmPolicy().strings.viewRefFallbackTitle);
+  });
+});
+
+describe("shared-session re-anchoring (guuey#535 / ggui SPEC §7.1.2.1)", () => {
+  /** Two history cards referencing the SAME ui:// resource — the ggui#652
+   * amend stamp persisted as a later locator-only reference. */
+  const SNAPSHOT_CARD = {
+    seq: 2,
+    at: "2026-08-30T01:00:00Z",
+    cardSnapshot: {
+      artifactId: "a-first",
+      parts: [
+        {
+          type: "tool-result",
+          toolCallId: "toolu_first",
+          content: [],
+          uiData: {
+            resourceUri: "ui://render/shared-1",
+            uri: "ui://render/shared-1",
+            mimeType: "text/html",
+            text: "<p>frozen snapshot</p>",
+          },
+        },
+      ],
+    },
+  };
+  const LOCATOR_REANCHOR = {
+    seq: 6,
+    at: "2026-08-30T02:00:00Z",
+    cardSnapshot: {
+      artifactId: "a-later",
+      parts: [
+        {
+          type: "tool-result",
+          toolCallId: "toolu_amend",
+          content: [],
+          // The ggui#652 stamp shape: {sessionId, resourceUri} in the
+          // model channel — locator-only, no mount material.
+          structuredContent: { sessionId: "render_f11bb7cb", resourceUri: "ui://render/shared-1" },
+        },
+      ],
+    },
+  };
+
+  it("the LATEST reference anchors the surface; the earlier card emits nothing", () => {
+    const plan = planTranscript(inputs([], [SNAPSHOT_CARD, LOCATOR_REANCHOR]), calmPolicy());
+    const views = plan.items.filter((i) => i.kind === "view");
+    expect(views.map((v) => v.key)).toEqual(["card.6"]);
+  });
+
+  it("latest wins even when locator-only — the re-fetch restores CURRENT state over the frozen snapshot", () => {
+    const plan = planTranscript(inputs([], [SNAPSHOT_CARD, LOCATOR_REANCHOR]), calmPolicy());
+    const view = plan.items.find((i) => i.kind === "view");
+    if (view?.kind !== "view") throw new Error("no view planned");
+    expect(view.channel).toBe("locator");
+    expect(view.actionScope).toBe("ui://render/shared-1");
+  });
+
+  it("distinct sessions keep distinct cards — dedup is per-scope, never global", () => {
+    const other = {
+      ...SNAPSHOT_CARD,
+      seq: 4,
+      cardSnapshot: {
+        artifactId: "a-other",
+        parts: [
+          {
+            type: "tool-result",
+            toolCallId: "toolu_other",
+            content: [],
+            uiData: {
+              resourceUri: "ui://render/other-2",
+              uri: "ui://render/other-2",
+              mimeType: "text/html",
+              text: "<p>b</p>",
+            },
+          },
+        ],
+      },
+    };
+    const plan = planTranscript(inputs([], [SNAPSHOT_CARD, other, LOCATOR_REANCHOR]), calmPolicy());
+    const views = plan.items.filter((i) => i.kind === "view");
+    expect(views.map((v) => v.key).sort()).toEqual(["card.4", "card.6"]);
   });
 });

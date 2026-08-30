@@ -883,15 +883,34 @@ export function planTranscript(
     if (item.kind === "view" && item.actionScope !== null) liveViewScopes.add(item.actionScope);
   }
   const cards = [...(inputs.historyCards ?? [])].sort((a, b) => a.seq - b.seq);
-  for (const card of cards) {
-    const key = `card.${card.seq}`;
+  // guuey#535: ONE render session = ONE surface. Multiple history cards
+  // sharing an actionScope are the same surface referenced across turns
+  // (ggui SPEC §7.1.2.1 makes the amend result's {sessionId, resourceUri}
+  // the normative re-anchor reference — ggui#652; the stamp rides the
+  // existing locator persistence lane untouched). The LATEST reference
+  // anchors the surface; earlier references emit nothing — and latest
+  // wins even when it is locator-only, because the locator re-fetch
+  // restores CURRENT session state, better than an older frozen snapshot.
+  const scopes = cards.map((card) => {
     const mount = snapshotViewMount(card.cardSnapshot);
-    const scope =
-      mount === undefined
-        ? null
-        : mount.channel === "locator"
-          ? mount.resourceUri
-          : mount.resource.uri;
+    return {
+      card,
+      mount,
+      scope:
+        mount === undefined
+          ? null
+          : mount.channel === "locator"
+            ? mount.resourceUri
+            : mount.resource.uri,
+    };
+  });
+  const latestSeqByScope = new Map<string, number>();
+  for (const { card, scope } of scopes) {
+    if (scope !== null) latestSeqByScope.set(scope, card.seq);
+  }
+  for (const { card, mount, scope } of scopes) {
+    const key = `card.${card.seq}`;
+    if (scope !== null && latestSeqByScope.get(scope) !== card.seq) continue; // a later turn re-anchored it
     if (scope !== null && liveViewScopes.has(scope)) continue; // live mount owns it
     const view: ViewMountItem = {
       kind: "view",
