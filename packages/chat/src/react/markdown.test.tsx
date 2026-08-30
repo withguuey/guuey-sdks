@@ -58,3 +58,49 @@ describe("Markdown sanitizer boundary", () => {
     expect(container.querySelector("strong")?.textContent).toBe("bol");
   });
 });
+
+describe("bare-URL autolink (guuey#515)", () => {
+  it("linkifies a plain https URL in prose with the same rel/target policy as explicit links", () => {
+    const { container } = render(
+      <Markdown text="More: https://docs.guuey.com/hosting/ and https://docs.guuey.com/getting-started/" />,
+    );
+    const anchors = [...container.querySelectorAll("a")];
+    expect(anchors.map((a) => a.getAttribute("href"))).toEqual([
+      "https://docs.guuey.com/hosting/",
+      "https://docs.guuey.com/getting-started/",
+    ]);
+    for (const a of anchors) {
+      expect(a.getAttribute("rel")).toBe("noopener noreferrer");
+      expect(a.getAttribute("target")).toBe("_blank");
+    }
+  });
+
+  it("keeps trailing punctuation as prose — the sentence dot never enters the href", () => {
+    const { container } = render(<Markdown text="See https://guuey.com. Then decide." />);
+    const anchor = container.querySelector("a");
+    expect(anchor?.getAttribute("href")).toBe("https://guuey.com");
+    expect(container.textContent).toBe("See https://guuey.com. Then decide.");
+  });
+
+  it("keeps a balanced closing paren inside the URL (wiki-style paths)", () => {
+    const { container } = render(
+      <Markdown text="(see https://en.wikipedia.org/wiki/Agent_(economics)) for background" />,
+    );
+    expect(container.querySelector("a")?.getAttribute("href")).toBe(
+      "https://en.wikipedia.org/wiki/Agent_(economics)",
+    );
+  });
+
+  it("does NOT linkify schemeless hosts or non-http schemes — the scheme is the gate", () => {
+    const { container } = render(
+      <Markdown text="try www.guuey.com or javascript:alert(1) or ftp://files.test" />,
+    );
+    expect(container.querySelector("a")).toBeNull();
+  });
+
+  it("leaves code spans untouched — a URL in backticks stays literal", () => {
+    const { container } = render(<Markdown text="run `curl https://api.guuey.com/v1` locally" />);
+    expect(container.querySelector("a")).toBeNull();
+    expect(container.querySelector("code")?.textContent).toBe("curl https://api.guuey.com/v1");
+  });
+});

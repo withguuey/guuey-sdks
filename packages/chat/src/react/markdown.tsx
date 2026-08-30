@@ -32,11 +32,75 @@ import {
 } from "@silverprotocol/richtext";
 import { normalizeTableRow, type RichTextTableBlock } from "../richtext-table.js";
 
+/**
+ * Bare-URL autolink (guuey#515): richtext mints `link` nodes only from
+ * explicit `[text](url)` markdown, so a plain "https://…" in agent prose
+ * parses as a text node and rendered as untappable static text — on a
+ * phone that means retyping a URL out of a chat bubble. Linkify at the
+ * render boundary, conservatively:
+ *  - the scheme is part of the match (http/https only), so no
+ *    `javascript:`/`data:` target can ever qualify — the SAFE_HREF
+ *    property holds by construction;
+ *  - built as React elements (no HTML string exists to inject into),
+ *    same `rel`/`target` contract as explicit links;
+ *  - trailing punctuation stays prose ("see https://guuey.com." must not
+ *    link the dot), while a balanced closing paren/bracket stays in the
+ *    URL (wiki-style paths);
+ *  - schemeless "www.foo.com" is deliberately NOT linkified — guessing
+ *    schemes is how autolinkers start lying;
+ *  - code spans are untouched (they render `node.code`, not this path).
+ */
+const BARE_URL = /https?:\/\/[^\s<>]+/g;
+
+function trimTrailingPunctuation(url: string): string {
+  for (;;) {
+    const last = url[url.length - 1];
+    if (last === undefined) return url;
+    if (last === ")" || last === "]") {
+      const open = last === ")" ? "(" : "[";
+      const opens = url.split(open).length - 1;
+      const closes = url.split(last).length - 1;
+      if (closes > opens) {
+        url = url.slice(0, -1);
+        continue;
+      }
+      return url;
+    }
+    if (".,;:!?'\"»›".includes(last)) {
+      url = url.slice(0, -1);
+      continue;
+    }
+    return url;
+  }
+}
+
+function linkify(text: string): ReactNode {
+  if (!text.includes("http")) return text;
+  const out: ReactNode[] = [];
+  let consumed = 0;
+  for (const match of text.matchAll(BARE_URL)) {
+    const start = match.index;
+    if (start === undefined) continue;
+    const url = trimTrailingPunctuation(match[0]);
+    if (url.length === 0) continue;
+    if (start > consumed) out.push(text.slice(consumed, start));
+    out.push(
+      <a key={`url-${start}`} href={url} target="_blank" rel="noopener noreferrer">
+        {url}
+      </a>,
+    );
+    consumed = start + url.length;
+  }
+  if (out.length === 0) return text;
+  if (consumed < text.length) out.push(text.slice(consumed));
+  return out;
+}
+
 function Inline({ nodes }: { nodes: RichTextInline[] }): ReactNode {
   return nodes.map((node, i) => {
     switch (node.type) {
       case "text":
-        return <span key={i}>{node.text}</span>;
+        return <span key={i}>{linkify(node.text)}</span>;
       case "break":
         return <br key={i} />;
       case "strong":
