@@ -40,6 +40,25 @@
   margin-inline: auto;
 }
 
+/* ── forget-this-device (guuey#526) — quiet, right-aligned, two-tap. ── */
+.guuey-chat-clear-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 calc(var(--guuey-chat-gap) * 1.5);
+}
+.guuey-chat-clear {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  font-size: 0.8em;
+  color: var(--guuey-chat-ink-muted);
+  cursor: pointer;
+}
+.guuey-chat-clear-armed {
+  color: var(--guuey-chat-error);
+  font-weight: 600;
+}
+
 /* ── ui/open-link disclosure (guuey#522) — the URL is SHOWN before any
       navigation; Open is the human's own anchor click. ── */
 .guuey-chat-link-ask {

@@ -137,6 +137,13 @@ export interface ChatStrings {
   linkOpen: string;
   linkDismiss: string;
 
+  /**
+   * The forget-this-device affordance (guuey#526): the quiet clear
+   * control and its two-tap confirm face.
+   */
+  clearConversationLabel: string;
+  clearConversationConfirm: string;
+
   /** The 3c composer (`<GuueyChat>`). */
   composerPlaceholder: string;
   composerUnavailable: string;
@@ -245,6 +252,9 @@ export const defaultChatStrings: ChatStrings = {
   linkAskLabel: (host) => `This card wants to open ${host}`,
   linkOpen: "Open",
   linkDismiss: "Dismiss",
+
+  clearConversationLabel: "Clear conversation",
+  clearConversationConfirm: "Tap again to clear this device",
 
   composerPlaceholder: "Message the agent…",
   composerUnavailable: "Chat is unavailable.",

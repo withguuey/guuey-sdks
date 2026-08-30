@@ -1024,3 +1024,75 @@ describe("ui/open-link — the kit's disclosure affordance (guuey#522)", () => {
     expect(handle!.viewSlotProps().onOpenLink).toBe(custom);
   });
 });
+
+describe("forget this device — clearConversation + the guest affordance (guuey#526)", () => {
+  it("handle.clearConversation forgets everything on-device: transcript, pointer, storage key, draft; the next send mints fresh", async () => {
+    const { adapters, calls } = scriptedAdapters();
+    const { handle } = renderWithHandle(adapters);
+    const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "hello" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(calls).toHaveLength(1));
+    await waitFor(() => expect(screen.getByText("Hello.")).toBeTruthy());
+    expect(handle.threadId).toBe("t-3c");
+    fireEvent.change(input, { target: { value: "half-typed secret" } });
+
+    act(() => handle.clearConversation());
+    expect(handle.threadId).toBeNull();
+    expect(screen.queryByText("Hello.")).toBeNull();
+    expect(input.value).toBe(""); // the draft is part of the record
+    // The next send mints a FRESH thread: the request body carries no
+    // threadId (the durable pointer is gone, storage emptied).
+    fireEvent.change(input, { target: { value: "fresh start" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(JSON.stringify(calls[1].body)).not.toContain("t-3c");
+  });
+
+  it("the affordance is guest-gated by default, two-tap, and opt-out-able", async () => {
+    const { adapters, calls } = scriptedAdapters();
+    // Guest mode + a message on screen → the affordance renders.
+    const view = renderChat(adapters, { getGuestSecret: () => "0".repeat(64) });
+    const input = screen.getByLabelText("Message");
+    fireEvent.change(input, { target: { value: "hi" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(calls).toHaveLength(1));
+    await waitFor(() => expect(screen.getByText("Hello.")).toBeTruthy());
+    const clear = screen.getByRole("button", { name: "Clear conversation" });
+    // Tap 1 arms; tap 2 clears.
+    fireEvent.click(clear);
+    expect(screen.getByRole("button", { name: "Tap again to clear this device" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Tap again to clear this device" }));
+    expect(screen.queryByText("Hello.")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Clear conversation|Tap again/ })).toBeNull();
+
+    // Opt-out beats the guest default.
+    view.rerender(
+      <GuueyChat
+        endpointUrl="https://pod.example/agent/invoke"
+        adapters={adapters}
+        getGuestSecret={() => "0".repeat(64)}
+        clearAffordance={false}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Clear conversation/ })).toBeNull();
+  });
+
+  it("no guest secret (signed-in surface) → no affordance by default; clearAffordance={true} forces it on", async () => {
+    const { adapters, calls } = scriptedAdapters();
+    const view = renderChat(adapters);
+    const input = screen.getByLabelText("Message");
+    fireEvent.change(input, { target: { value: "hi" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(screen.queryByRole("button", { name: /Clear conversation/ })).toBeNull();
+    view.rerender(
+      <GuueyChat
+        endpointUrl="https://pod.example/agent/invoke"
+        adapters={adapters}
+        clearAffordance={true}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Clear conversation" })).toBeTruthy();
+  });
+});

@@ -169,6 +169,18 @@ export interface GuueyChatHandle {
    * to the transcript).
    */
   viewSlotProps(): ViewSlotProps;
+  /**
+   * Forget this conversation ON THIS DEVICE (guuey#526 — the
+   * public-computer story): aborts any in-flight turn, drops the durable
+   * thread pointer AND its persisted storage key, wipes the visible
+   * transcript, clears the typed draft and any pending link ask — the
+   * next send mints a fresh thread. HONEST SCOPE: this makes the record
+   * unreachable FROM THIS BROWSER; the orphaned thread still exists
+   * server-side until the guest-authenticated deletion (the issue's ask
+   * 3) ships against platform's endpoint — that call folds in here when
+   * its contract lands, and guest-secret rotation with it.
+   */
+  clearConversation(): void;
 }
 
 export interface GuueyChatProps {
@@ -238,6 +250,15 @@ export interface GuueyChatProps {
    * pod door) when omitted; an explicit reader always wins.
    */
   reader?: UiResourceReader;
+  /**
+   * The forget-this-device affordance (guuey#526 — the public-computer
+   * story): a quiet "Clear conversation" control with a two-tap confirm,
+   * wired to {@link GuueyChatHandle.clearConversation}. Default: ON when
+   * the surface runs GUEST identity (`getGuestSecret` present — the
+   * founder's seamless principle; a signed-in surface has account-level
+   * recourse), OFF otherwise; pass a boolean to override either way.
+   */
+  clearAffordance?: boolean;
   /** The debug sink (spec §5) — fires only under the debug policy. */
   onDebugEvent?: (event: ChatDebugEvent) => void;
   /** R6 pass-through (relay hook, sandbox page/flags, host context…). */
@@ -353,6 +374,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     oauthReturnTo,
     onOAuthAuthorize,
     onErrorAction,
+    clearAffordance,
     onActivity,
     onReady,
     onThread,
@@ -646,6 +668,16 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // by construction. ONE pending ask at a time, newest replaces (a
   // card spamming asks can never grow an unbounded stack).
   const [pendingLink, setPendingLink] = useState<string | null>(null);
+  // guuey#526: the two-tap confirm window for the clear affordance (an
+  // accidental tap must not nuke a conversation; a second tap within the
+  // window does — the state auto-expires).
+  const [clearArmed, setClearArmed] = useState(false);
+  useEffect(() => {
+    if (!clearArmed) return;
+    const timer = setTimeout(() => setClearArmed(false), 4000);
+    return () => clearTimeout(timer);
+  }, [clearArmed]);
+  const showClearAffordance = clearAffordance ?? getGuestSecret !== undefined;
   const defaultOnOpenLink = useCallback((url: string) => {
     setPendingLink(url);
   }, []);
@@ -708,6 +740,18 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       },
       focusComposer: (): void => {
         inputRef.current?.focus();
+      },
+      clearConversation: (): void => {
+        // The hook's reset owns the durable half (abort, pointer + storage
+        // key, transcript/fold/cards); the kit clears ITS OWN residue —
+        // the typed draft, a pending link ask, queued doorbells — so the
+        // device holds nothing of the conversation (guuey#526's honest
+        // client scope; the server-side deletion folds in on platform's
+        // endpoint contract).
+        liveRef.current.invoke.reset();
+        setInput("");
+        setPendingLink(null);
+        pendingDoorbellsRef.current = [];
       },
       // A getter, not a captured value: the handle is created once, but the
       // thread hydrates after mount and can change — reads go through the
@@ -828,6 +872,24 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         {...(onViewRef !== undefined ? { onViewRef } : {})}
         viewProps={effectiveViewProps}
       />
+      {showClearAffordance && inputs.messages.length > 0 && (
+        <div className="guuey-chat-clear-row">
+          <button
+            type="button"
+            className={`guuey-chat-clear${clearArmed ? " guuey-chat-clear-armed" : ""}`}
+            onClick={() => {
+              if (clearArmed) {
+                setClearArmed(false);
+                handle.clearConversation();
+              } else {
+                setClearArmed(true);
+              }
+            }}
+          >
+            {clearArmed ? strings.clearConversationConfirm : strings.clearConversationLabel}
+          </button>
+        </div>
+      )}
       {pendingLink !== null && (
         <div role="status" className="guuey-chat-link-ask">
           <span className="guuey-chat-link-ask-label">
