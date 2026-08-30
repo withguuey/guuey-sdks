@@ -36,6 +36,13 @@ export const ThemePaletteV1 = z.strictObject({
   canvas: ColorValue,
   canvasMuted: ColorValue,
   error: ColorValue,
+  /**
+   * Anchor colour (guuey#528) — OPTIONAL: the one palette slot a manifest
+   * may leave unstated (the kit's neutral default = ink covers it), unlike
+   * the eight required tokens above. Stated → validated + emitted;
+   * unstated → not emitted (the stated-vocabulary rule).
+   */
+  link: ColorValue.optional(),
 });
 export type ThemePaletteV1 = z.infer<typeof ThemePaletteV1>;
 
