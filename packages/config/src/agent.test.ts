@@ -825,3 +825,65 @@ describe("credential: 'oauth' (guuey#178 — the third-party OAuth broker arm)",
     expect(r.success).toBe(false);
   });
 });
+
+describe('agent.modes — multi-mode agent (guuey#527)', () => {
+  it('accepts the default rep/agent pair: append + a tool subset + audience', () => {
+    const r = AgentSectionV1.safeParse({
+      systemPrompt: 'You are the helper.',
+      tools: { allowlist: ['docs.*', 'platform.whoami', 'ggui.*'] },
+      defaultMode: 'agent',
+      modes: {
+        rep: {
+          systemPromptAppend: 'You are talking to a website visitor — be concise.',
+          tools: { allowlist: ['docs.*'] },
+          audience: ['guest'],
+        },
+        agent: { audience: ['authenticated', 'byo'] },
+      },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('REJECTS a mode whose tool is not permitted by the base allowlist (the subset rule)', () => {
+    const r = AgentSectionV1.safeParse({
+      tools: { allowlist: ['docs.*'] },
+      modes: { rep: { tools: { allowlist: ['docs.search', 'platform.deploy'] } } },
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues[0]?.message).toMatch(/base agent\.tools\.allowlist does not permit/);
+      expect(r.error.issues[0]?.path).toEqual(['modes', 'rep', 'tools', 'allowlist']);
+    }
+  });
+
+  it('a base wildcard covers a mode’s narrower tool (platform.* permits platform.whoami)', () => {
+    const r = AgentSectionV1.safeParse({
+      tools: { allowlist: ['platform.*'] },
+      modes: { rep: { tools: { allowlist: ['platform.whoami'] } } },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('REJECTS a mode declaring BOTH systemPromptAppend and systemPrompt', () => {
+    const r = AgentSectionV1.safeParse({
+      modes: { rep: { systemPromptAppend: 'a', systemPrompt: 'b' } },
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('REJECTS a defaultMode that is not a declared mode', () => {
+    const r = AgentSectionV1.safeParse({
+      defaultMode: 'ghost',
+      modes: { agent: {} },
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) expect(r.error.issues.some((i) => i.path[0] === 'defaultMode')).toBe(true);
+  });
+
+  it('no base allowlist ⇒ any mode tool is permitted (a mode still narrows "anything")', () => {
+    const r = AgentSectionV1.safeParse({
+      modes: { rep: { tools: { allowlist: ['docs.search'] } } },
+    });
+    expect(r.success).toBe(true);
+  });
+});

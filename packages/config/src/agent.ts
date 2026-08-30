@@ -307,6 +307,67 @@ const SystemPromptSchema = z.union([
 ]);
 
 /**
+ * One mode of a multi-mode agent (guuey#527). `systemPromptAppend` extends
+ * the base prompt (inline string or a `{ file }` the loader inlines);
+ * `systemPrompt` replaces it wholesale — exactly ONE of the two (the
+ * refine on {@link ModesSchema} enforces the xor). `tools.allowlist`, when
+ * present, must be a subset of the base allowlist — the WRITE GATE enforces
+ * that (the schema can't see the base), so a mode only ever narrows.
+ * `audience` is accepted for forward-compat but the SERVER hardcodes the
+ * binding for the recognized pair in tonight's slice.
+ */
+const ModeSchema = z.strictObject({
+  systemPromptAppend: SystemPromptSchema.optional(),
+  systemPrompt: SystemPromptSchema.optional(),
+  tools: ToolGatesSchema.optional(),
+  audience: z.array(z.enum(['guest', 'authenticated', 'byo'])).optional(),
+});
+
+/**
+ * The `agent.modes` map (guuey#527). Mode keys are short machine
+ * identifiers (`rep`, `agent`, …) — the court-key grammar, reused. Each
+ * value is a {@link ModeSchema}; a mode declares AT MOST one of
+ * `systemPromptAppend` / `systemPrompt` (both = a contradiction the
+ * manifest must not carry).
+ */
+const MODE_KEY_RE = /^[a-z][a-z0-9-]{0,31}$/;
+const ModesSchema = z
+  .record(z.string().regex(MODE_KEY_RE), ModeSchema)
+  .refine(
+    (modes) =>
+      Object.values(modes).every(
+        (m) => !(m.systemPromptAppend !== undefined && m.systemPrompt !== undefined),
+      ),
+    { message: 'a mode declares at most one of systemPromptAppend / systemPrompt, never both' },
+  );
+
+/**
+ * Does the BASE tool allowlist permit `entry`? (guuey#527 subset rule.)
+ * A base pattern covers `entry` when it is `*`, an exact match, or a
+ * `prefix.*` wildcard whose prefix `entry` falls under. This is the SAME
+ * coverage semantics the pod's gate applies at call time, so "the mode's
+ * allowlist is a subset" means exactly "every mode tool the base already
+ * permits" — a mode can only ever NARROW, never widen.
+ */
+export function baseAllowlistPermits(
+  baseAllowlist: readonly string[] | undefined,
+  entry: string,
+): boolean {
+  // No base allowlist = the model may call anything, so any mode entry is
+  // trivially permitted (the mode is still a real narrowing of "anything").
+  if (baseAllowlist === undefined) return true;
+  return baseAllowlist.some((b) => {
+    if (b === '*') return true;
+    if (b === entry) return true;
+    if (b.endsWith('.*')) {
+      const prefix = b.slice(0, -1); // keep the dot: "platform." covers "platform.whoami"
+      return entry.startsWith(prefix);
+    }
+    return false;
+  });
+}
+
+/**
  * Bedrock-style invocation endpoint config.
  *
  * `kind: 'invoke'` exposes `POST /agent/invoke` with multi-modal input and
@@ -458,6 +519,23 @@ export const AgentSectionV1 = z.strictObject({
     })
     .optional(),
   tools: ToolGatesSchema.optional(),
+  /**
+   * Multi-mode agent (guuey#527) — ONE agent, per-mode prompt overlays on
+   * the base `systemPrompt` + a per-mode tool SUBSET of the base allowlist.
+   * The pod SELECTS a mode from the caller's identity class at session start
+   * (server-derived, stamped, never client-trusted) and enforces the
+   * selected mode's tool set. Tonight's slice recognizes the default pair
+   * `rep` (guests) and `agent` (authenticated/byo); the audience binding is
+   * server-hardcoded, so the manifest declares content, not routing.
+   *
+   * Each mode: exactly one of `systemPromptAppend` (extend the base — the
+   * common case) or `systemPrompt` (full replace); an optional `tools`
+   * allowlist that must be a SUBSET of the base `agent.tools.allowlist`
+   * (the write gate enforces it — a mode can only ever NARROW).
+   */
+  modes: ModesSchema.optional(),
+  /** The mode a caller with no audience match resolves to (a declared mode key). */
+  defaultMode: z.string().min(1).optional(),
   runtime: RuntimeConfigSchema.optional(),
   /** Claude Agent SDK-specific knobs. Only read when `framework: 'claude-agent-sdk'`. */
   claude: ClaudeFrameworkConfigSchema.optional(),
@@ -483,6 +561,34 @@ export const AgentSectionV1 = z.strictObject({
 
   // ── Deploy ──
   deploy: DeploySchema.optional(),
+}).superRefine((agent, ctx) => {
+  // guuey#527 — the mode tool SUBSET rule, enforced at parse time (CLI
+  // loader AND server both run this): a mode's tool allowlist may only
+  // contain tools the BASE allowlist already permits. A mode narrows,
+  // never widens — the one privilege-adjacent axis, closed here.
+  if (agent.modes === undefined) return;
+  const base = agent.tools?.allowlist;
+  for (const [mode, def] of Object.entries(agent.modes)) {
+    const modeAllow = def.tools?.allowlist;
+    if (modeAllow === undefined) continue;
+    for (const entry of modeAllow) {
+      if (!baseAllowlistPermits(base, entry)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['modes', mode, 'tools', 'allowlist'],
+          message: `mode "${mode}" allows tool "${entry}" which the base agent.tools.allowlist does not permit — a mode can only narrow the base tools, never widen them`,
+        });
+      }
+    }
+  }
+  // A declared defaultMode must name a declared mode.
+  if (agent.defaultMode !== undefined && agent.modes[agent.defaultMode] === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['defaultMode'],
+      message: `defaultMode "${agent.defaultMode}" is not a declared mode (${Object.keys(agent.modes).join(', ') || 'none'})`,
+    });
+  }
 });
 
 /** Static TypeScript type derived from {@link AgentSectionV1}. */
