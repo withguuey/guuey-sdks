@@ -560,6 +560,19 @@
   color: var(--guuey-chat-ink);
   font: inherit;
 }
+/* iOS Safari auto-zooms the page when a focused control's font-size is
+   under its 16px no-zoom threshold. The kit root is 15px (× scale), and
+   this input is `font: inherit` — one px under, so focusing the composer
+   zoomed the whole page and the panel visually overflowed the viewport
+   (guuey#516, founder real-device report 2026-08-30; the widget loader's
+   own width clamp was correct). Floor the input at 16px on touch-primary
+   devices only — max() preserves host upscaling (--guuey-chat-scale >
+   16/15), and desktop keeps the 15px look untouched. */
+@media (hover: none) and (pointer: coarse) {
+  .guuey-chat-composer-input {
+    font-size: max(16px, calc(15px * var(--guuey-chat-scale, 1)));
+  }
+}
 .guuey-chat-composer-input:focus {
   outline: none;
   border-color: var(--guuey-chat-accent);
