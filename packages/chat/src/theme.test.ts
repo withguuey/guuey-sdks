@@ -4,6 +4,7 @@ import {
   GUUEY_CHAT_THEME,
   GuueyChatTheme,
   resolveTheme,
+  resolveCourtTheme,
 } from "./theme.js";
 
 describe("GuueyChatTheme", () => {
@@ -74,5 +75,38 @@ describe("GuueyChatTheme", () => {
     expect(resolveTheme(null)).toEqual(DEFAULT_CHAT_THEME);
     expect(resolveTheme("#not-a-theme")).toEqual(DEFAULT_CHAT_THEME);
     expect(resolveTheme(42, GUUEY_CHAT_THEME)).toEqual(GUUEY_CHAT_THEME);
+  });
+});
+
+describe("resolveCourtTheme (guuey#519)", () => {
+  const doc = {
+    name: "neutral-base",
+    colors: { light: { accent: "#2f6bff" } },
+    courts: {
+      guuey: { name: "brand", colors: { light: { accent: "#0e1014", onAccent: "#b8ff3a" } } },
+    },
+  };
+
+  it("resolves the declared court's override per-token over the base", () => {
+    const resolved = resolveCourtTheme(doc, "guuey");
+    expect(resolved.name).toBe("brand");
+    expect(resolved.colors.light.accent).toBe("#0e1014");
+    expect(resolved.colors.light.onAccent).toBe("#b8ff3a");
+    // Unstated tokens fall through: base doc, then the default theme.
+    expect(resolved.colors.light.ink).toBe(DEFAULT_CHAT_THEME.colors.light.ink);
+  });
+
+  it("an undeclared court gets the base alone — brand never leaks by default", () => {
+    const resolved = resolveCourtTheme(doc, "ggui");
+    expect(resolved.name).toBe("neutral-base");
+    expect(resolved.colors.light.accent).toBe("#2f6bff");
+  });
+
+  it("resolved themes are court-free and junk input degrades like resolveTheme", () => {
+    expect("courts" in resolveCourtTheme(doc, "guuey")).toBe(false);
+    expect(resolveCourtTheme(42, "guuey")).toEqual(resolveTheme(42));
+    expect(resolveCourtTheme({ courts: "not-an-object" }, "guuey").name).toBe(
+      DEFAULT_CHAT_THEME.name,
+    );
   });
 });

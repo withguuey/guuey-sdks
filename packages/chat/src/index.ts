@@ -55,6 +55,7 @@ export {
   GuueyChatTheme,
   GuueyChatToneRamp,
   resolveTheme,
+  resolveCourtTheme,
 } from "./theme.js";
 export type {
   ChatDebugEvent,

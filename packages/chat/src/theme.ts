@@ -277,6 +277,44 @@ export function resolveTheme(
   };
 }
 
+/**
+ * The court-override member a theme DOCUMENT may carry (guuey#519).
+ * Values are theme documents themselves (validated by `resolveTheme`'s own
+ * lenient parse at resolution time, so a partial or future-schema court
+ * entry degrades per-token like any stored theme).
+ */
+const CourtOverrides = z
+  .object({ courts: z.record(z.string(), z.unknown()).optional() })
+  .loose();
+
+/**
+ * Per-court theme resolution (guuey#519 — the #414 rule generalized).
+ *
+ * A theme document may carry `courts`: explicit per-court override
+ * documents keyed by serving court (`"guuey"`, `"ggui"`, …). A surface
+ * resolves ITS court: the court's override resolved per-token OVER the
+ * resolved base document when declared, else the base alone. **Brand is
+ * never a default** — an undeclared or unknown court gets the neutral
+ * base by construction, and readers that never heard of `courts`
+ * (lenient parsers projecting only known tokens) keep reading the base
+ * untouched, so no court can inherit another court's brand.
+ *
+ * Resolved themes are court-free: `courts` never survives resolution.
+ * NEVER throws; unparseable input degrades exactly as `resolveTheme`.
+ */
+export function resolveCourtTheme(
+  candidate: unknown,
+  court: string,
+  base: GuueyChatTheme = DEFAULT_CHAT_THEME,
+): GuueyChatTheme {
+  const resolvedBase = resolveTheme(candidate, base);
+  const parsed = CourtOverrides.safeParse(candidate);
+  if (!parsed.success) return resolvedBase;
+  const override = parsed.data.courts?.[court];
+  if (override === undefined) return resolvedBase;
+  return resolveTheme(override, resolvedBase);
+}
+
 /** Slot-level merge of two ramp statements (candidate slots win per slot). */
 function mergeRampSet(
   base: GuueyChatRampSet | undefined,
