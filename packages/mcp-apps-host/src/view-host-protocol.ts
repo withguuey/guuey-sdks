@@ -91,6 +91,18 @@ export const MESSAGE_METHOD_LOCAL = "ui/message";
 export const RESOURCES_READ_METHOD = "resources/read";
 
 /**
+ * `ui/open-link` (guuey#522) — a view asks the HOST to open a URL in a
+ * new browsing context. The machine owns the SECURITY wall: only
+ * absolute http/https URLs pass (the #515-family policy, platform-
+ * narrowed — mailto and every other scheme refuse in-band with -32602);
+ * a valid ask answers `{}` FIRST and surfaces an `open-link` effect. The
+ * kit's default executor never navigates sight-unseen: it SHOWS the URL
+ * to the human and opens only on their own click (a real gesture — the
+ * browser's activation gate and ours agree by construction).
+ */
+export const OPEN_LINK_METHOD_LOCAL = "ui/open-link";
+
+/**
  * MCP's `Resource not found` JSON-RPC code — the one answer for a miss, a
  * transport deny, AND a relay failure (deny == miss: the reader discipline,
  * `reader.ts` — the view gets no oracle for which locators resolve).
@@ -199,6 +211,17 @@ export type ViewHostEffect =
     }
   | {
       /**
+       * The view asked to open a URL (`ui/open-link`, guuey#522) and the
+       * machine's scheme wall passed it (absolute http/https only). Only
+       * ever emitted when {@link ViewHostBehavior.linkOpener} is true —
+       * the response was already sent; the executor SURFACES the URL to
+       * the human and opens on their own gesture, never sight-unseen.
+       */
+      kind: "open-link";
+      url: string;
+    }
+  | {
+      /**
        * The view reported its content size (`ui/notifications/size-changed`
        * — spec notification, App → Host). At least one of the two fields is
        * a finite number; a notification carrying neither is consumed
@@ -235,6 +258,11 @@ export interface ViewHostBehavior {
   modelContextSink: boolean;
   /** Whether a ui/message sink is wired (see `view-host.ts`, guuey#422). */
   messageSink: boolean;
+  /**
+   * `ui/open-link` wired (guuey#522). Unwired, the method refuses with
+   * the honest -32601 — the host chose today's no-links posture.
+   */
+  linkOpener: boolean;
   /** Whether a `resources/read` relay hook is wired (see `view-host.ts`). */
   resourceRelay: boolean;
 }
@@ -420,6 +448,52 @@ export function viewHostReceive(
       effects: [
         { kind: "respond", message: { jsonrpc: "2.0", id: req.id, result: {} } },
         { kind: "model-context-update", params },
+      ],
+    };
+  }
+
+  if (req.method === OPEN_LINK_METHOD_LOCAL && behavior.linkOpener) {
+    // The machine validates BEFORE anything reaches an executor: absolute
+    // http/https only. A refusal is in-band (-32602 naming the policy) and
+    // emits NO effect — no silent arbitrary-scheme opens, and the view
+    // learns honestly instead of wondering.
+    const params = isPlainObject(req.params) ? req.params : {};
+    const url = typeof params.url === "string" ? params.url : null;
+    let allowed = false;
+    if (url !== null) {
+      try {
+        const parsed = new URL(url);
+        allowed = parsed.protocol === "https:" || parsed.protocol === "http:";
+      } catch {
+        allowed = false;
+      }
+    }
+    if (url === null || !allowed) {
+      return {
+        state,
+        effects: [
+          {
+            kind: "respond",
+            message: {
+              jsonrpc: "2.0",
+              id: req.id,
+              error: {
+                code: -32602,
+                message:
+                  "ui/open-link: `url` must be an absolute http/https URL — other schemes are refused by host policy.",
+              },
+            },
+          },
+        ],
+      };
+    }
+    // Answer accepted FIRST (the spec result is empty) and surface the ask
+    // as an effect — the view never waits on the human's decision.
+    return {
+      state,
+      effects: [
+        { kind: "respond", message: { jsonrpc: "2.0", id: req.id, result: {} } },
+        { kind: "open-link", url },
       ],
     };
   }

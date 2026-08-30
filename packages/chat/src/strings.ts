@@ -128,6 +128,15 @@ export interface ChatStrings {
   /** R16 — the notice row's label (provenance shows only under debug). */
   noticeLabel: string;
 
+  /**
+   * The `ui/open-link` disclosure affordance (guuey#522): a card asked to
+   * open a URL — the kit shows WHERE before anything navigates, and the
+   * human's own click on `linkOpen` is the only door out.
+   */
+  linkAskLabel: (host: string) => string;
+  linkOpen: string;
+  linkDismiss: string;
+
   /** The 3c composer (`<GuueyChat>`). */
   composerPlaceholder: string;
   composerUnavailable: string;
@@ -232,6 +241,10 @@ export const defaultChatStrings: ChatStrings = {
   oauthFailed: (reason) => `Couldn't connect: ${reason}`,
 
   noticeLabel: "Note",
+
+  linkAskLabel: (host) => `This card wants to open ${host}`,
+  linkOpen: "Open",
+  linkDismiss: "Dismiss",
 
   composerPlaceholder: "Message the agent…",
   composerUnavailable: "Chat is unavailable.",

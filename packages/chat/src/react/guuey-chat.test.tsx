@@ -965,3 +965,62 @@ describe("kit defaults — relay-through + the ui/message doorbell (guuey#422)",
     }
   });
 });
+
+describe("ui/open-link — the kit's disclosure affordance (guuey#522)", () => {
+  it("the default sink SURFACES the URL — host label, full URL, a real anchor with the safety rel; nothing auto-opens", async () => {
+    const { adapters } = scriptedAdapters();
+    let handle: GuueyChatHandle | null = null;
+    renderChat(adapters, {
+      onReady: (h) => {
+        handle = h;
+      },
+    });
+    await waitFor(() => expect(handle).not.toBeNull());
+    const sink = handle!.viewSlotProps().onOpenLink;
+    if (typeof sink !== "function") throw new Error("default open-link sink expected");
+    act(() => sink("https://docs.guuey.com/hosting"));
+    expect(screen.getByText("This card wants to open docs.guuey.com")).toBeTruthy();
+    expect(screen.getByText("https://docs.guuey.com/hosting")).toBeTruthy();
+    const open = screen.getByRole("link", { name: "Open" });
+    expect(open.getAttribute("href")).toBe("https://docs.guuey.com/hosting");
+    expect(open.getAttribute("target")).toBe("_blank");
+    expect(open.getAttribute("rel")).toBe("noopener noreferrer");
+  });
+
+  it("Open and Dismiss both clear the ask; a newer ask REPLACES the pending one (anti-spam cap of one)", async () => {
+    const { adapters } = scriptedAdapters();
+    let handle: GuueyChatHandle | null = null;
+    renderChat(adapters, {
+      onReady: (h) => {
+        handle = h;
+      },
+    });
+    await waitFor(() => expect(handle).not.toBeNull());
+    const sink = handle!.viewSlotProps().onOpenLink;
+    if (typeof sink !== "function") throw new Error("default open-link sink expected");
+    act(() => sink("https://a.example/1"));
+    act(() => sink("https://b.example/2"));
+    // Newest replaces — only one ask ever pending.
+    expect(screen.queryByText("https://a.example/1")).toBeNull();
+    expect(screen.getByText("https://b.example/2")).toBeTruthy();
+    fireEvent.click(screen.getByText("Dismiss"));
+    expect(screen.queryByText("https://b.example/2")).toBeNull();
+    act(() => sink("https://c.example/3"));
+    fireEvent.click(screen.getByRole("link", { name: "Open" }));
+    expect(screen.queryByText("https://c.example/3")).toBeNull();
+  });
+
+  it("a host-declared onOpenLink wins over the kit default (the slot-prop precedence rule)", async () => {
+    const { adapters } = scriptedAdapters();
+    const custom = vi.fn();
+    let handle: GuueyChatHandle | null = null;
+    renderChat(adapters, {
+      viewProps: { onOpenLink: custom },
+      onReady: (h) => {
+        handle = h;
+      },
+    });
+    await waitFor(() => expect(handle).not.toBeNull());
+    expect(handle!.viewSlotProps().onOpenLink).toBe(custom);
+  });
+});

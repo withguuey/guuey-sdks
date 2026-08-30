@@ -93,7 +93,10 @@ import { oauthPromptAction, useOAuthReturn } from "./oauth-return.js";
 export function viewPropsWithThemeAnnounce(
   viewProps: TranscriptItemContext["viewProps"],
   mode: ThemeMode,
-  defaults: Pick<ViewSlotProps, "onCallTool" | "onUpdateModelContext" | "onUserMessage"> = {},
+  defaults: Pick<
+    ViewSlotProps,
+    "onCallTool" | "onUpdateModelContext" | "onUserMessage" | "onOpenLink"
+  > = {},
 ): TranscriptItemContext["viewProps"] {
   const themed = (base: ViewSlotProps | undefined): ViewSlotProps => ({
     // Kit-default host wires (guuey#335): the ACTION RELAY (Confirm inside
@@ -636,14 +639,33 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     void live.invoke.send(next).catch(() => {});
   }, [busy]);
 
+  // guuey#522: the kit default for `ui/open-link` NEVER navigates
+  // sight-unseen — the ask surfaces as a disclosure affordance (host +
+  // full URL + Open/Dismiss) and the OPEN is the human's own anchor
+  // click, so the browser's activation gate and the review posture agree
+  // by construction. ONE pending ask at a time, newest replaces (a
+  // card spamming asks can never grow an unbounded stack).
+  const [pendingLink, setPendingLink] = useState<string | null>(null);
+  const defaultOnOpenLink = useCallback((url: string) => {
+    setPendingLink(url);
+  }, []);
+
   const effectiveViewProps = useMemo<TranscriptItemContext["viewProps"]>(
     () =>
       viewPropsWithThemeAnnounce(viewProps, mode, {
         ...(stagedDefaultOnCallTool !== undefined ? { onCallTool: stagedDefaultOnCallTool } : {}),
         onUpdateModelContext: defaultOnUpdateModelContext,
         onUserMessage: defaultOnUserMessage,
+        onOpenLink: defaultOnOpenLink,
       }),
-    [viewProps, mode, stagedDefaultOnCallTool, defaultOnUpdateModelContext, defaultOnUserMessage],
+    [
+      viewProps,
+      mode,
+      stagedDefaultOnCallTool,
+      defaultOnUpdateModelContext,
+      defaultOnUserMessage,
+      defaultOnOpenLink,
+    ],
   );
 
   // The canvas-host door (guuey#335): a host mounting views DIRECTLY from
@@ -659,6 +681,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
           ...(stagedDefaultOnCallTool !== undefined ? { onCallTool: stagedDefaultOnCallTool } : {}),
           onUpdateModelContext: defaultOnUpdateModelContext,
           onUserMessage: defaultOnUserMessage,
+          onOpenLink: defaultOnOpenLink,
           hostContext: { theme: mode },
         }
       : (effectiveViewProps ?? {});
@@ -805,6 +828,30 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         {...(onViewRef !== undefined ? { onViewRef } : {})}
         viewProps={effectiveViewProps}
       />
+      {pendingLink !== null && (
+        <div role="status" className="guuey-chat-link-ask">
+          <span className="guuey-chat-link-ask-label">
+            {strings.linkAskLabel(new URL(pendingLink).host)}
+          </span>
+          <span className="guuey-chat-link-ask-url">{pendingLink}</span>
+          <a
+            className="guuey-chat-link-ask-open"
+            href={pendingLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setPendingLink(null)}
+          >
+            {strings.linkOpen}
+          </a>
+          <button
+            type="button"
+            className="guuey-chat-link-ask-dismiss"
+            onClick={() => setPendingLink(null)}
+          >
+            {strings.linkDismiss}
+          </button>
+        </div>
+      )}
       {oauthReturn.notice !== null && (
         <p
           role="status"

@@ -139,6 +139,15 @@ export interface AttachViewHostConfig {
    */
   onUserMessage?: (params: { [key: string]: unknown }) => void;
   /**
+   * `ui/open-link` executor (guuey#522) — receives a URL the machine's
+   * scheme wall already passed (absolute http/https only). The kit
+   * default SURFACES the URL to the human and opens on their own click;
+   * a custom executor should keep that posture (never navigate
+   * sight-unseen). `false` opts the host OUT: the capability is not
+   * advertised and the method refuses honestly.
+   */
+  onOpenLink?: ((url: string) => void) | false;
+  /**
    * The mounted resource's `ui://` locator — the scope stamped on every
    * relayed {@link UiActionRequest}. Required for the relay to fire;
    * `<GuueyView>` fills it from the mount automatically.
@@ -230,6 +239,9 @@ function behaviorFor(frame: ViewFrameLike, config: AttachViewHostConfig): ViewHo
   const readWired = config.onReadResource !== undefined;
   const contextSinkWired = config.onUpdateModelContext !== undefined;
   const messageSinkWired = config.onUserMessage !== undefined;
+  // guuey#522: `false` is the explicit opt-OUT (the founder's on-by-default
+  // ruling inverts the usual polarity — hosts choose to REMOVE links).
+  const linkOpenerWired = config.onOpenLink !== undefined && config.onOpenLink !== false;
   return {
     hostInfo: config.hostInfo ?? DEFAULT_HOST_INFO,
     hostCapabilities: {
@@ -239,10 +251,12 @@ function behaviorFor(frame: ViewFrameLike, config: AttachViewHostConfig): ViewHo
       ...(readWired ? { serverResources: {} } : {}),
       ...(contextSinkWired ? { updateModelContext: { text: {} } } : {}),
       ...(messageSinkWired ? { message: { text: {} } } : {}),
+      ...(linkOpenerWired ? { openLinks: {} } : {}),
       ...config.hostCapabilities,
     },
     hostContext: hostContextFor(frame, config),
     toolRelay: relayWired,
+    linkOpener: linkOpenerWired,
     resourceRelay: readWired,
     modelContextSink: contextSinkWired,
     messageSink: messageSinkWired,
@@ -325,6 +339,15 @@ export function attachViewHost(frame: ViewFrameLike, config: AttachViewHostConfi
       else if (effect.kind === "user-message") {
         try {
           config.onUserMessage?.(effect.params);
+        } catch {
+          // Observer failure is the embedder's bug; the view is answered.
+        }
+      } else if (effect.kind === "open-link") {
+        // The machine's scheme wall already passed this URL; the executor
+        // SURFACES it to the human (the kit default renders a disclosure
+        // affordance — navigation only ever happens on their own click).
+        try {
+          if (typeof config.onOpenLink === "function") config.onOpenLink(effect.url);
         } catch {
           // Observer failure is the embedder's bug; the view is answered.
         }

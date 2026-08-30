@@ -26,6 +26,7 @@ function behavior(overrides: Partial<ViewHostBehavior> = {}): ViewHostBehavior {
     resourceRelay: false,
     modelContextSink: false,
     messageSink: false,
+    linkOpener: false,
     ...overrides,
   };
 }
@@ -102,8 +103,47 @@ describe("viewHostReceive — the handshake", () => {
   });
 });
 
-describe("viewHostReceive — refusals and silence", () => {
-  it("refuses an unknown request honestly with the spec's method-not-found code", () => {
+describe("viewHostReceive — ui/open-link (guuey#522, the golden flip)", () => {
+  it("a wired opener: a valid https ask answers {} FIRST and surfaces the open-link effect", () => {
+    const { effects } = viewHostReceive(initialViewHostState(), behavior({ linkOpener: true }), {
+      jsonrpc: "2.0",
+      id: 9,
+      method: "ui/open-link",
+      params: { url: "https://docs.guuey.com/hosting" },
+    });
+    expect(effects).toHaveLength(2);
+    const [respond, open] = effects;
+    if (respond?.kind !== "respond") throw new Error("expected a response effect first");
+    expect(respond.message.id).toBe(9);
+    expect(respond.message.result).toEqual({});
+    if (open?.kind !== "open-link") throw new Error("expected the open-link effect");
+    expect(open.url).toBe("https://docs.guuey.com/hosting");
+  });
+
+  it("the scheme wall: javascript/data/mailto/relative/non-string refuse -32602 with ZERO effects beyond the answer", () => {
+    for (const url of [
+      "javascript:alert(1)",
+      "data:text/html,x",
+      "vbscript:x",
+      "mailto:a@b.c", // platform-narrowed: http/https ONLY (#515 family)
+      "/relative/path",
+      42,
+    ]) {
+      const { effects } = viewHostReceive(initialViewHostState(), behavior({ linkOpener: true }), {
+        jsonrpc: "2.0",
+        id: 10,
+        method: "ui/open-link",
+        params: { url },
+      });
+      expect(effects).toHaveLength(1);
+      const [effect] = effects;
+      if (effect?.kind !== "respond") throw new Error("expected a response effect");
+      expect(effect.message.error?.code).toBe(-32602);
+      expect(effect.message.error?.message).toContain("http");
+    }
+  });
+
+  it("an UNWIRED opener keeps today's honest refusal — opt-out is a choice, not an accident", () => {
     const { state, effects } = viewHostReceive(initialViewHostState(), behavior(), {
       jsonrpc: "2.0",
       id: 9,

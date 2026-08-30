@@ -108,6 +108,7 @@ export type ViewSlotProps = Pick<
   | "onCallTool"
   | "onUpdateModelContext"
   | "onUserMessage"
+  | "onOpenLink"
   | "onReadResource"
   | "onSizeChanged"
   | "negotiationTimeoutMs"

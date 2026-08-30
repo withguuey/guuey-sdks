@@ -40,6 +40,35 @@
   margin-inline: auto;
 }
 
+/* ── ui/open-link disclosure (guuey#522) — the URL is SHOWN before any
+      navigation; Open is the human's own anchor click. ── */
+.guuey-chat-link-ask {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 4px calc(var(--guuey-chat-gap) * 1.5);
+  padding: 6px 10px;
+  border: 1px solid var(--guuey-chat-canvas-muted);
+  border-radius: var(--guuey-chat-radius);
+  font-size: 0.9em;
+}
+.guuey-chat-link-ask-url {
+  color: var(--guuey-chat-ink-muted);
+  overflow-wrap: anywhere;
+  flex: 1 1 100%;
+}
+.guuey-chat-link-ask-open {
+  font-weight: 600;
+}
+.guuey-chat-link-ask-dismiss {
+  background: none;
+  border: none;
+  color: var(--guuey-chat-ink-muted);
+  cursor: pointer;
+  padding: 0;
+}
+
 /* ── R1 tables (guuey#370 — the sdk#23 node) ── */
 .guuey-chat-table-wrap {
   overflow-x: auto; /* wide tables scroll inside the bubble, never the page */
