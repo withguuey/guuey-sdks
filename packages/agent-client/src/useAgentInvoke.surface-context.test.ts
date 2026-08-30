@@ -1,14 +1,17 @@
 // @vitest-environment jsdom
 /**
- * guuey#398 — `surfaceContext` rides the invoke BODY (the pod composes it
- * into the model's input); the optimistic user message stays clean. The
- * surface that embeds the chat is the one place that knows where the user
- * is, so the option is per-hook, sent on every turn.
+ * guuey#524 (pass-3 correction 4) — the `surfaceContext` invoke-body field
+ * is RETIRED: first-party provenance is stamped CONFIG-SIDE by the pod,
+ * never body-carried, because a body field is client-CLAIMED — any embed
+ * could assert a trusted surface. These are the forward pins (the
+ * retired-wire guard, same posture as the cli wire-mirror sync tests):
+ * the body must never grow the field back, whatever a caller passes.
+ * History: the field shipped as guuey#398 and lived one launch runway.
  */
 import { describe, expect, it } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useAgentInvoke } from "./useAgentInvoke.js";
-import type { AgentInvokeAdapters, InvokeRequest } from "./types.js";
+import type { AgentInvokeAdapters, InvokeRequest, UseAgentInvokeOptions } from "./types.js";
 
 const APP_ID = "app-ctx";
 
@@ -25,41 +28,25 @@ function capturingAdapters() {
   return { adapters, bodies };
 }
 
-describe("useAgentInvoke — surfaceContext (guuey#398)", () => {
-  it("sends the context line on the body and keeps the optimistic message clean", async () => {
+describe("useAgentInvoke — surfaceContext is retired from the wire (guuey#524)", () => {
+  it("the invoke body never carries surfaceContext", async () => {
     const { adapters, bodies } = capturingAdapters();
-    const { result, unmount } = renderHook(() =>
-      useAgentInvoke({
-        endpointUrl: "https://pod.example.com",
-        appId: APP_ID,
-        adapters,
-        surfaceContext: "The user is signed in to the guuey builder console.",
-      }),
+    const { result } = renderHook(() =>
+      useAgentInvoke({ endpointUrl: "https://pod.example/agent/invoke", appId: APP_ID, adapters }),
     );
     await act(async () => {
-      await result.current.send("show my agents");
+      await result.current.send("hello");
     });
     expect(bodies).toHaveLength(1);
-    expect(bodies[0]).toMatchObject({
-      input: "show my agents",
-      surfaceContext: "The user is signed in to the guuey builder console.",
-    });
-    expect(result.current.messages[0]).toMatchObject({
-      role: "user",
-      text: "show my agents", // never the composed preamble
-    });
-    unmount();
+    expect(Object.keys(bodies[0] as Record<string, never>)).not.toContain("surfaceContext");
   });
 
-  it("omits the field entirely when the option is absent", async () => {
-    const { adapters, bodies } = capturingAdapters();
-    const { result, unmount } = renderHook(() =>
-      useAgentInvoke({ endpointUrl: "https://pod.example.com", appId: APP_ID, adapters }),
-    );
-    await act(async () => {
-      await result.current.send("hi");
-    });
-    expect(Object.keys(bodies[0] as Record<string, never>)).not.toContain("surfaceContext");
-    unmount();
+  it("the options type refuses the retired field — no caller can quietly resurrect it", () => {
+    // Compile-time pin: `surfaceContext` is not assignable to the options.
+    // A resurrection would make this a silent excess-property PASS in some
+    // spread positions, so pin the type relation itself.
+    type Retired = "surfaceContext" extends keyof UseAgentInvokeOptions ? true : false;
+    const retired: Retired = false;
+    expect(retired).toBe(false);
   });
 });

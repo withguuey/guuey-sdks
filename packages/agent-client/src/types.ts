@@ -200,14 +200,6 @@ export interface UseAgentInvokeOptions {
    */
   capabilities?: AgClientCapabilities;
   /**
-   * Where the user IS (guuey#398) — a short context line the embedding
-   * surface owns ("The user is signed in to the guuey builder console…"),
-   * sent on every invoke. The pod composes it into the MODEL's input only:
-   * the persisted thread and this hook's optimistic user message never
-   * contain it. ≤500 chars (the pod refuses longer). The surface is the
-   * one place that knows this; the agent's static system prompt cannot.
-   */
-  surfaceContext?: string;
   /**
    * The host PAGE the user is viewing (guuey#524 v1 — the page-aware
    * ephemeral turn): URL path + title, plus an optional short host-declared

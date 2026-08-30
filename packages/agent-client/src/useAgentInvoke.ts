@@ -546,12 +546,6 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
           ...(threadIdRef.current ? { threadId: threadIdRef.current } : {}),
           clientMessageId,
           ...(capabilities !== undefined ? { capabilities } : {}),
-          // guuey#398: the embedding surface's context line — the pod
-          // composes it into the MODEL's input only; the persisted thread
-          // and this hook's optimistic user message stay clean.
-          ...(opts.surfaceContext !== undefined
-            ? { surfaceContext: opts.surfaceContext }
-            : {}),
           // guuey#524: the page-aware turn's carriage — read at send time
           // (SPA route changes ride the NEXT turn). All trust semantics
           // are pod-side; see the option's docblock.
