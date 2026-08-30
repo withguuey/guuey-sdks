@@ -167,6 +167,15 @@ export const AppSectionV1 = z.strictObject({
   theme: z.union([ThemeFileRefV1, AppThemeV1]).optional(),
   /** Standalone-page posture converged by `guuey agent apply` — see {@link AppPageV1}. */
   page: AppPageV1.optional(),
+  /**
+   * Starter suggestion chips (guuey#533) — short prompts the widget/kit
+   * renders on the EMPTY transcript, one-tap-sends. Declared content on the
+   * theme/page precedent: converged by `guuey agent apply`, projected onto
+   * the public card, rendered by the kit's empty state. ≤24 stored (the
+   * kit shows the first 4); each ≤80 chars, control-chars rejected at the
+   * write gate. Absent = no chips (an honest empty state, never invented).
+   */
+  suggestions: z.array(z.string().min(1).max(80)).max(24).optional(),
 });
 
 /** Static TypeScript type for the app section. */

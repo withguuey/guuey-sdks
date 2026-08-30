@@ -176,3 +176,25 @@ describe('schema-version stance (guuey#248 b2) — SUPPORTED_GUUEY_JSON_SCHEMA +
     expect(() => parseGuueyJson({ schema: 'v1', agent: {} })).toThrow();
   });
 });
+
+describe('parseGuueyJson — app.suggestions (starter chips, guuey#533)', () => {
+  it('accepts a string array', () => {
+    const doc = parseGuueyJson({
+      ...base,
+      app: { suggestions: ['What does this cost?', 'How do I deploy?'] },
+    });
+    expect(doc.app?.suggestions).toEqual(['What does this cost?', 'How do I deploy?']);
+  });
+
+  it('rejects an over-long chip and too many chips', () => {
+    expect(() =>
+      parseGuueyJson({ ...base, app: { suggestions: ['x'.repeat(81)] } }),
+    ).toThrow();
+    expect(() =>
+      parseGuueyJson({
+        ...base,
+        app: { suggestions: Array.from({ length: 25 }, (_, i) => `q${i}`) },
+      }),
+    ).toThrow();
+  });
+});
