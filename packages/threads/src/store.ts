@@ -17,6 +17,7 @@ import {
   uiCardArtifactsFromMessages,
 } from "./fold-rows.js";
 import type {
+  ThreadMessageEvent,
   StoredHistoryMessage,
   ThreadMessageKind,
   ThreadMessageRole,
@@ -59,6 +60,12 @@ export interface AppendMessageInput {
    * trusted-origin write, never pass `false`.
    */
   untrustedOrigin?: boolean;
+  /**
+   * guuey#552: the typed event payload for `kind:'event'` rows — carried
+   * verbatim onto the row. The caller sets `kind:'event'` alongside; the
+   * store does not infer one from the other.
+   */
+  event?: ThreadMessageEvent;
 }
 
 export interface AppendMessageResult {
@@ -216,6 +223,7 @@ export class ThreadStore {
       ...(input.text !== undefined ? { text: input.text } : {}),
       content: input.content,
       ...(input.untrustedOrigin === true ? { untrustedOrigin: true } : {}),
+      ...(input.event !== undefined ? { event: input.event } : {}),
     };
     await this.db.putMessage(row);
     return { seq, deduped: false };

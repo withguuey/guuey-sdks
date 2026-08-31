@@ -31,6 +31,29 @@ export interface ThreadRow {
   updatedAt: string;
 }
 
+/**
+ * The human-handoff event payload (guuey#552 §3.2): the MACHINE half of a
+ * `kind:'event'` handoff row — the notify Lambda's stream filter reads
+ * `event.type === 'handoff'` and the fields below; the human half is the
+ * row's `text`. `question` is untrusted visitor content — consumers quote,
+ * truncate, and never interpolate it into anything executable.
+ */
+export interface HandoffEvent {
+  type: "handoff";
+  question: string;
+  contactEmail?: string;
+  contactName?: string;
+}
+
+/**
+ * The typed payload on a `kind:'event'` row (guuey#552) — a discriminated
+ * union on `type`, seeded with its one v1 member. Future event kinds
+ * EXTEND THIS UNION (never a loose `{type: string}` bag — the union IS the
+ * shared contract between the pod's fold-seam writer and every raw-DDB
+ * stream reader).
+ */
+export type ThreadMessageEvent = HandoffEvent;
+
 export interface ThreadMessageRow {
   threadId: string;
   seq: number;
@@ -64,6 +87,12 @@ export interface ThreadMessageRow {
    * every row written before the flag existed (absent == trusted-origin).
    */
   untrustedOrigin?: boolean;
+  /**
+   * guuey#552: the typed payload on `kind:'event'` rows (the DDB schema
+   * field existed — `backend/amplify/data/threads.ts` `event: a.json()` —
+   * the row types never carried it). Absent on every non-event row.
+   */
+  event?: ThreadMessageEvent;
 }
 
 /** Latest-replace fold snapshot for a thread. */

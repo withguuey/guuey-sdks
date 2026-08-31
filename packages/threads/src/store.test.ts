@@ -562,3 +562,33 @@ describe('ThreadStore — untrustedOrigin stamp path (guuey#524, sink 5 completi
     expect('untrustedOrigin' in m2!).toBe(false);
   });
 });
+
+describe('ThreadStore — the typed event payload rides appendMessage (guuey#552 leg B)', () => {
+  it('carries the handoff envelope verbatim onto the row; absent stays absent', async () => {
+    const db = new FakePersistence();
+    const store = new ThreadStore(db);
+    const threadId = await store.ensureThread({ userId: 'g_abc', appId: 'app_1', region: 'us-east-1' });
+    const handoff = await store.appendMessage({
+      threadId, userId: 'g_abc', role: 'system', kind: 'event',
+      content: 'handoff', text: 'Visitor asked for a human.\nAsk: pricing?\nContact: not provided',
+      clientMessageId: 'turn1#handoff#tc1',
+      event: { type: 'handoff', question: 'pricing?' },
+    });
+    const plain = await store.appendMessage({
+      threadId, userId: 'g_abc', role: 'user', content: 'hi', text: 'hi', clientMessageId: 'c9',
+    });
+    const rows = db.messages.filter((r) => r.threadId === threadId);
+    const bySeq = new Map(rows.map((r) => [r.seq, r]));
+    expect(bySeq.get(handoff.seq)!.event).toEqual({ type: 'handoff', question: 'pricing?' });
+    expect(bySeq.get(handoff.seq)!.kind).toBe('event');
+    expect('event' in bySeq.get(plain.seq)!).toBe(false);
+    // The spec's idempotency key shape dedups a retried handoff append.
+    const retry = await store.appendMessage({
+      threadId, userId: 'g_abc', role: 'system', kind: 'event',
+      content: 'handoff', text: 'x', clientMessageId: 'turn1#handoff#tc1',
+      event: { type: 'handoff', question: 'pricing?' },
+    });
+    expect(retry.deduped).toBe(true);
+    expect(retry.seq).toBe(handoff.seq);
+  });
+});

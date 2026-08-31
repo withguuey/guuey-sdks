@@ -18,7 +18,9 @@
  *     your binding for the same guarantees the hosted one carries.
  */
 export type {
+  HandoffEvent,
   StoredHistoryMessage,
+  ThreadMessageEvent,
   ThreadMessageKind,
   ThreadMessageRole,
   ThreadMessageRow,
