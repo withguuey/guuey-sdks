@@ -522,12 +522,16 @@ export const AgentSectionV1 = z.strictObject({
   /**
    * Multi-mode agent (guuey#527) — ONE agent, per-mode prompt overlays on
    * the base `systemPrompt` + a per-mode tool SUBSET of the base allowlist.
-   * SELECTION (founder-ruled 2026-08-31, superseding this block's original
-   * server-derived sketch): the CLIENT NAMES the mode (widget/SDK `mode`
-   * param) and the server validates via {@link applyAgentMode} — safe by
-   * construction because the write gate closed the privilege axis (subset-
-   * only tools; prompts are voice). `audience` is an optional RESTRICTION
-   * a mode may declare (ineligible callers fall back), not the selector.
+   * THE AXIS (founder-refined 2026-08-31, the final word): modes are the
+   * AUDIENCE'S AUTH STATE — v1 recognizes exactly `guest` (website
+   * visitors; the hire-a-rep mode) and `auth` (signed-in users; navigated
+   * separately in studio). SELECTION is SERVER-DERIVED from the caller's
+   * REAL auth state ({@link applyAgentMode}) — an anonymous caller
+   * structurally cannot claim auth mode; the widget/SDK `mode` param is a
+   * PIN within permission (authed may pin `guest` to preview-as-visitor;
+   * a guest pinning `auth` clamps). `defaultMode` and per-mode `audience`
+   * are v1-DEPRECATED (parseable, not consulted — derivation replaced
+   * both); the grammar stays key-agnostic for future axes.
    *
    * Each mode: exactly one of `systemPromptAppend` (extend the base — the
    * common case) or `systemPrompt` (full replace); an optional `tools`
@@ -613,8 +617,8 @@ export type GuueyAgentEndpoint = z.infer<typeof EndpointConfigSchema>;
 /** One declared mode's shape. */
 export type GuueyAgentMode = z.infer<typeof ModeSchema>;
 
-/** The caller's audience class, as `ModeSchema.audience` speaks it. */
-export type ModeAudienceClass = 'guest' | 'authenticated' | 'byo';
+/** The v1 mode axis — the caller's REAL auth state, server-derived. */
+export type ModeAudienceClass = 'guest' | 'auth';
 
 /** The result of {@link applyAgentMode} — the effective snapshot + provenance. */
 export interface AppliedAgentMode {
@@ -622,73 +626,77 @@ export interface AppliedAgentMode {
   agent: GuueyAgent;
   /** The mode key actually applied, or `null` when serving the bare base. */
   applied: string | null;
-  /** Present when the REQUESTED key could not apply and the fallback chain ran. */
-  fallback?: 'unknown-mode' | 'audience-mismatch';
+  /** Present when the resolution took a non-obvious branch (all fail-soft). */
+  fallback?: 'unknown-mode' | 'pin-clamped' | 'auth-undeclared';
 }
 
 /**
- * Resolve + apply one invoke's agent mode (guuey#527 serving semantics,
- * founder-ruled 2026-08-31 / guuey#566): the CLIENT NAMES the mode (widget
- * `mode` config / @guuey/chat `mode` option), the server validates.
+ * Resolve + apply one invoke's agent mode (guuey#527/#566 — the guest/auth
+ * axis, founder-refined 2026-08-31: "letting them use guest mode vs auth
+ * mode is the correct definition").
  *
- * NOTE this supersedes the `modes` docblock's original "server-derived,
- * never client-trusted" selection sketch: the ruling made naming explicit
- * ("the widget actually can specify its mode"), and client naming is safe
- * BY CONSTRUCTION — the write gate already closed the privilege axis (a
- * mode's tools may only SUBSET the base; prompts are voice, never
- * authority). `audience` survives as an optional RESTRICTION: a mode
- * declaring one refuses ineligible callers (fallback, never an error).
+ * SELECTION is SERVER-DERIVED: `audience` is the caller's REAL auth state
+ * (the pod maps anonymous → 'guest', authenticated → 'auth') — never a
+ * client claim. The `pin` (the widget/SDK `mode` param) may only choose
+ * WITHIN permission: an authed caller may pin 'guest' (preview-as-visitor);
+ * a guest pinning 'auth' is CLAMPED to guest ('pin-clamped'), and an
+ * unrecognized pin key is ignored ('unknown-mode') — fail-soft always, an
+ * embed never breaks.
  *
- * Resolution chain, fail-soft (an embed must never break on a renamed
- * mode): requested-if-eligible → `defaultMode`-if-eligible → base.
- * Application: `systemPrompt` REPLACES the base; `systemPromptAppend` =
- * base + `"\n\n"` + append; a mode declaring NEITHER (legal — "at most
- * one") serves the base verbatim; `tools` replaces the base gates (the
- * manifest write gate proved it a subset). Pure — never mutates inputs.
+ * Fallback chain: the selected key's def; an undeclared 'auth' falls to
+ * 'guest''s def ('auth-undeclared' — an app that only configures the
+ * visitor rep serves everyone that rep, which IS hire-a-rep); still
+ * nothing → base. `defaultMode` is deprecated and not consulted.
  *
- * String prompts only: a `{ file }` systemPrompt/append reaching here is
- * an unresolved manifest (the loader resolves base files; guuey#545 tracks
- * the mode-append gap) — treated as unusable, so the mode falls back to
- * base rather than serving a path as a prompt.
+ * Application (unchanged from the first cut, test-pinned): `systemPrompt`
+ * REPLACES the base; `systemPromptAppend` = base + "\n\n" + append; an
+ * EMPTY def serves the base by SAME REFERENCE (callers detect no-override
+ * by identity); `tools` replaces with the write-gate-proven subset; a
+ * `{ file }` prompt is unusable at serve time → base. Pure — never
+ * mutates inputs.
  */
 export function applyAgentMode(
   agent: GuueyAgent,
-  requested: string | undefined,
+  pin: string | undefined,
   audience: ModeAudienceClass,
 ): AppliedAgentMode {
   const modes = agent.modes;
   if (modes === undefined) return { agent, applied: null };
 
-  const eligible = (key: string | undefined): GuueyAgentMode | undefined => {
-    if (key === undefined) return undefined;
-    const def = modes[key];
-    if (def === undefined) return undefined;
-    if (def.audience !== undefined && !def.audience.includes(audience)) return undefined;
-    return def;
-  };
-
-  let applied = requested;
-  let def = eligible(requested);
+  // ── Selection: derived, then the pin within permission ──────────────
   let fallback: AppliedAgentMode['fallback'];
-  if (def === undefined && requested !== undefined) {
-    fallback = modes[requested] === undefined ? 'unknown-mode' : 'audience-mismatch';
+  let selected: ModeAudienceClass = audience;
+  if (pin !== undefined && pin !== audience) {
+    if (pin !== 'guest' && pin !== 'auth') {
+      fallback = 'unknown-mode'; // ignored; pure derivation stands
+    } else if (pin === 'auth' && audience === 'guest') {
+      fallback = 'pin-clamped'; // a guest cannot claim auth mode
+    } else {
+      selected = pin; // authed pinning 'guest' — preview-as-visitor
+    }
+  }
+
+  // ── Fallback chain: selected → guest → base ─────────────────────────
+  let applied: string = selected;
+  let def = modes[selected];
+  if (def === undefined && selected === 'auth') {
+    def = modes['guest'];
+    if (def !== undefined) {
+      applied = 'guest';
+      fallback = fallback ?? 'auth-undeclared';
+    }
   }
   if (def === undefined) {
-    applied = agent.defaultMode;
-    def = eligible(agent.defaultMode);
-  }
-  if (def === undefined || applied === undefined) {
     return { agent, applied: null, ...(fallback !== undefined ? { fallback } : {}) };
   }
 
+  // ── Application (unchanged) ─────────────────────────────────────────
   // An EMPTY def (legal — "at most one") IS the base: same reference out,
   // so callers can cheaply detect "nothing to override" by identity.
   if (def.systemPrompt === undefined && def.systemPromptAppend === undefined && def.tools === undefined) {
     return { agent, applied, ...(fallback !== undefined ? { fallback } : {}) };
   }
 
-  // Application — string prompts only (see the doc): a { file } shape is
-  // unusable here and the mode serves as base-equivalent.
   const basePrompt = typeof agent.systemPrompt === 'string' ? agent.systemPrompt : undefined;
   let systemPrompt = agent.systemPrompt;
   if (typeof def.systemPrompt === 'string') {

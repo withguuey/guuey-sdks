@@ -363,6 +363,11 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
   // as every live-read value in the kit layer.
   const pageContextRef = useRef(opts.pageContext);
   pageContextRef.current = opts.pageContext;
+  // guuey#566: same live-ref discipline — a surface's mode can change
+  // mid-session (a guest signs in and the host flips rep → agent); the
+  // NEXT turn carries the new mode.
+  const modeRef = useRef(opts.mode);
+  modeRef.current = opts.mode;
 
   const send = useCallback(
     async (input: string) => {
@@ -552,6 +557,10 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
           ...(pageContextRef.current !== undefined
             ? { pageContext: pageContextRef.current }
             : {}),
+          // guuey#566: the client-named agent mode — carriage only (live
+          // ref, read at send time); every semantic (validation, fallback,
+          // subset) is pod-side.
+          ...(modeRef.current !== undefined ? { mode: modeRef.current } : {}),
         };
 
         // The wire walk lives in `invokeTurn` (the pure per-turn generator —

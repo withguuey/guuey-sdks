@@ -905,73 +905,92 @@ describe('RESERVED_HANDOFF_SERVER_NAME (guuey#552 A1)', () => {
   });
 });
 
-describe('applyAgentMode (guuey#566 serving semantics — client-named, validated)', () => {
+describe('applyAgentMode (guuey#566 — the guest/auth axis, server-derived + pin-within-permission)', () => {
   const base: GuueyAgent = {
     systemPrompt: 'BASE',
     tools: { allowlist: ['mcp__ggui__*', 'Read'] },
-    defaultMode: 'rep',
     modes: {
-      rep: {},
-      agent: { systemPromptAppend: 'CONSOLE CONTEXT', tools: { allowlist: ['Read'] } },
-      internal: { systemPrompt: 'FULL REPLACE', audience: ['authenticated'] },
+      guest: {},
+      auth: { systemPromptAppend: 'CONSOLE CONTEXT', tools: { allowlist: ['Read'] } },
     },
   };
 
   it('no modes declared → same reference, applied null', () => {
     const bare: GuueyAgent = { systemPrompt: 'X' };
-    const r = applyAgentMode(bare, 'anything', 'guest');
+    const r = applyAgentMode(bare, undefined, 'guest');
     expect(r.agent).toBe(bare);
     expect(r.applied).toBeNull();
   });
 
-  it('requested append mode: base + "\\n\\n" + append, tools replaced with the subset', () => {
-    const r = applyAgentMode(base, 'agent', 'guest');
-    expect(r.applied).toBe('agent');
+  it('SERVER-DERIVED: an authed caller gets auth mode (base + append, subset applied) with NO pin', () => {
+    const r = applyAgentMode(base, undefined, 'auth');
+    expect(r.applied).toBe('auth');
     expect(r.agent.systemPrompt).toBe('BASE\n\nCONSOLE CONTEXT');
     expect(r.agent.tools).toEqual({ allowlist: ['Read'] });
     expect(base.systemPrompt).toBe('BASE'); // never mutates
   });
 
-  it('full-replace mode replaces the base prompt', () => {
-    const r = applyAgentMode(base, 'internal', 'authenticated');
-    expect(r.applied).toBe('internal');
-    expect(r.agent.systemPrompt).toBe('FULL REPLACE');
+  it('a guest derives guest — the EMPTY def serves the base by SAME REFERENCE', () => {
+    const r = applyAgentMode(base, undefined, 'guest');
+    expect(r.applied).toBe('guest');
+    expect(r.agent).toBe(base);
   });
 
-  it('an EMPTY mode def serves the base verbatim (legal — the mode IS the base)', () => {
-    const r = applyAgentMode(base, 'rep', 'guest');
-    expect(r.applied).toBe('rep');
-    expect(r.agent).toBe(base); // SAME reference — callers detect no-override by identity
-    expect(r.agent.systemPrompt).toBe('BASE');
+  it('PIN WITHIN PERMISSION: authed may pin guest (preview-as-visitor)', () => {
+    const r = applyAgentMode(base, 'guest', 'auth');
+    expect(r.applied).toBe('guest');
+    expect(r.agent).toBe(base);
+    expect(r.fallback).toBeUndefined();
   });
 
-  it('unknown requested key falls back to defaultMode with the fallback named', () => {
-    const r = applyAgentMode(base, 'renamed-away', 'guest');
-    expect(r.applied).toBe('rep');
+  it('a GUEST pinning auth is CLAMPED to guest — structurally cannot claim auth mode', () => {
+    const r = applyAgentMode(base, 'auth', 'guest');
+    expect(r.applied).toBe('guest');
+    expect(r.fallback).toBe('pin-clamped');
+    expect(r.agent).toBe(base); // guest def is empty → base
+  });
+
+  it('an unrecognized pin key is ignored — pure derivation stands, warned as unknown-mode', () => {
+    const r = applyAgentMode(base, 'rep', 'auth');
+    expect(r.applied).toBe('auth');
     expect(r.fallback).toBe('unknown-mode');
+    expect(r.agent.systemPrompt).toBe('BASE\n\nCONSOLE CONTEXT');
   });
 
-  it('audience restriction refuses ineligible callers into the fallback chain', () => {
-    const r = applyAgentMode(base, 'internal', 'guest');
-    expect(r.applied).toBe('rep'); // defaultMode caught it
-    expect(r.fallback).toBe('audience-mismatch');
+  it('FALLBACK CHAIN: an undeclared auth mode falls to the guest def (hire-a-rep by construction)', () => {
+    const guestOnly: GuueyAgent = {
+      systemPrompt: 'BASE',
+      modes: { guest: { systemPrompt: 'REP VOICE' } },
+    };
+    const r = applyAgentMode(guestOnly, undefined, 'auth');
+    expect(r.applied).toBe('guest');
+    expect(r.fallback).toBe('auth-undeclared');
+    expect(r.agent.systemPrompt).toBe('REP VOICE');
   });
 
-  it('absent request resolves defaultMode; no defaultMode → base', () => {
-    expect(applyAgentMode(base, undefined, 'guest').applied).toBe('rep');
-    const noDefault: GuueyAgent = { ...base };
-    delete (noDefault as { defaultMode?: string }).defaultMode;
-    const r = applyAgentMode(noDefault, undefined, 'guest');
+  it('nothing declared for the chain → base, applied null', () => {
+    const authOnly: GuueyAgent = { systemPrompt: 'BASE', modes: { auth: { systemPrompt: 'A' } } };
+    const r = applyAgentMode(authOnly, undefined, 'guest');
     expect(r.applied).toBeNull();
-    expect(r.agent).toBe(noDefault);
+    expect(r.agent).toBe(authOnly);
+  });
+
+  it('deprecated defaultMode is NOT consulted', () => {
+    const withDefault: GuueyAgent = {
+      systemPrompt: 'BASE',
+      defaultMode: 'auth',
+      modes: { guest: { systemPrompt: 'REP' }, auth: { systemPrompt: 'AUTH' } },
+    };
+    // A guest derives guest regardless of defaultMode.
+    expect(applyAgentMode(withDefault, undefined, 'guest').agent.systemPrompt).toBe('REP');
   });
 
   it('a { file } mode prompt is unusable at serve time → base, never a path-as-prompt', () => {
     const fileMode: GuueyAgent = {
       systemPrompt: 'BASE',
-      modes: { odd: { systemPrompt: { file: './p.md' } } },
+      modes: { guest: { systemPrompt: { file: './p.md' } } },
     };
-    const r = applyAgentMode(fileMode, 'odd', 'guest');
+    const r = applyAgentMode(fileMode, undefined, 'guest');
     expect(r.applied).toBeNull();
     expect(r.agent.systemPrompt).toBe('BASE');
   });

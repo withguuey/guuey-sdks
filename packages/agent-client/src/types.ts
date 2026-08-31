@@ -213,6 +213,16 @@ export interface UseAgentInvokeOptions {
    */
   pageContext?: PageContext;
   /**
+   * The agent-mode PIN for this surface (guuey#527/#566 — the guest/auth
+   * axis). Selection is SERVER-DERIVED from the caller's REAL auth state;
+   * this param only pins WITHIN permission: an authed caller may pin
+   * `"guest"` (preview-as-visitor), a guest pinning `"auth"` is clamped
+   * server-side, and an unrecognized key is ignored — all fail-soft, an
+   * embed never breaks. Absent = pure derivation. Modes are subset-only
+   * voice overlays, never added privilege.
+   */
+  mode?: string;
+  /**
    * Stall recovery for a half-dead stream (guuey#192). A connection that dies
    * WITHOUT erroring (TCP alive, zero bytes, no `done`) would otherwise leave
    * the turn suspended forever — a frozen cursor while the backend may have
