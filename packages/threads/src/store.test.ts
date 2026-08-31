@@ -505,3 +505,60 @@ describe('ThreadStore guuey#86 — UI-card projection, prompt-lane filter, previ
     expect(thread?.lastMessagePreview).toBe('show my checklist');
   });
 });
+
+describe('ThreadStore — untrustedOrigin stamp path (guuey#524, sink 5 completion)', () => {
+  it('appendMessage stamps rows when the pod passes true, omits otherwise (vocabulary {absent, true})', async () => {
+    const db = new FakePersistence();
+    const store = new ThreadStore(db);
+    const threadId = await store.ensureThread({ userId: 'g_abc', appId: 'app_1', region: 'us-east-1' });
+    const clean = await store.appendMessage({
+      threadId, userId: 'g_abc', role: 'user', content: 'hi', text: 'hi', clientMessageId: 'c1',
+    });
+    const stamped = await store.appendMessage({
+      threadId, userId: 'g_abc', role: 'user', content: 'page q', text: 'page q',
+      clientMessageId: 'c2', untrustedOrigin: true,
+    });
+    const explicitFalse = await store.appendMessage({
+      threadId, userId: 'g_abc', role: 'agent', content: 'a', text: 'a',
+      clientMessageId: 'c3', untrustedOrigin: false,
+    });
+    const rows = db.messages.filter((r) => r.threadId === threadId);
+    const bySeq = new Map(rows.map((r) => [r.seq, r]));
+    expect('untrustedOrigin' in bySeq.get(clean.seq)!).toBe(false);
+    expect(bySeq.get(stamped.seq)!.untrustedOrigin).toBe(true);
+    expect('untrustedOrigin' in bySeq.get(explicitFalse.seq)!).toBe(false);
+  });
+
+  it('appendFold stamps EVERY row of a page-aware turn — messages and cards alike', async () => {
+    const db = new FakePersistence();
+    const store = new ThreadStore(db);
+    await db.createThread(makeThreadRow('t1', 'g_abc'));
+    const fold: AgReduceResult = {
+      messages: [
+        { id: 'm1', role: 'assistant', content: [{ type: 'text', text: 'hi' }], turnId: 'turn1', threadId: 't1' },
+      ],
+      artifacts: [
+        { artifactId: 'a1', turnId: 'turn1', threadId: 't1', parts: [{ type: 'text', text: '{}' }] },
+      ],
+      memory: [],
+      turns: [{ turnId: 'turn1', threadId: 't1', finishReason: 'stop' }],
+      state: {},
+    };
+    await store.appendFold({
+      threadId: 't1', userId: 'g_abc', fold, clientMessageIdBase: 'cmid', untrustedOrigin: true,
+    });
+    const rows = db.messages.filter((r) => r.threadId === 't1');
+    expect(rows.length).toBe(2);
+    for (const row of rows) expect(row.untrustedOrigin).toBe(true);
+    // And a clean fold on the same shapes stays unstamped.
+    const foldB: AgReduceResult = { ...fold,
+      messages: [{ id: 'm2', role: 'assistant', content: [{ type: 'text', text: 'later' }], turnId: 'turn2', threadId: 't1' }],
+      artifacts: [], turns: [{ turnId: 'turn2', threadId: 't1', finishReason: 'stop' }],
+    };
+    await store.appendFold({ threadId: 't1', userId: 'g_abc', fold: foldB, clientMessageIdBase: 'cmid2' });
+    const after = db.messages.filter((r) => r.threadId === 't1');
+    const m2 = after.find((r) => r.seq > 2);
+    expect(m2).toBeDefined();
+    expect('untrustedOrigin' in m2!).toBe(false);
+  });
+});

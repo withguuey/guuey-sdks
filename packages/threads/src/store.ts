@@ -52,6 +52,13 @@ export interface AppendMessageInput {
   /** Idempotency key — a retried invoke with the same key won't double-write. */
   clientMessageId: string;
   kind?: ThreadMessageKind;
+  /**
+   * guuey#524: this write belongs to a PAGE-AWARE turn — the pod (the only
+   * honest caller; never client-claimed) passes `true` and the row is
+   * stamped `untrustedOrigin`. Vocabulary is {absent, true}: omit on every
+   * trusted-origin write, never pass `false`.
+   */
+  untrustedOrigin?: boolean;
 }
 
 export interface AppendMessageResult {
@@ -73,6 +80,12 @@ export interface AppendFoldInput {
    * snapshot. Default: write the snapshot.
    */
   skipSnapshot?: boolean;
+  /**
+   * guuey#524: the whole fold belongs to a PAGE-AWARE turn — every row it
+   * writes (messages AND cards) is stamped `untrustedOrigin`. Same
+   * {absent, true} vocabulary as {@link AppendMessageInput.untrustedOrigin}.
+   */
+  untrustedOrigin?: boolean;
 }
 
 export interface AppendFoldResult {
@@ -202,6 +215,7 @@ export class ThreadStore {
       authorRole: input.role,
       ...(input.text !== undefined ? { text: input.text } : {}),
       content: input.content,
+      ...(input.untrustedOrigin === true ? { untrustedOrigin: true } : {}),
     };
     await this.db.putMessage(row);
     return { seq, deduped: false };
@@ -264,6 +278,7 @@ export class ThreadStore {
           at: now,
           clientMessageId,
           ...(turnRecord ? { turnRecord } : {}),
+          ...(input.untrustedOrigin === true ? { untrustedOrigin: true } : {}),
         }),
       );
       messageSeqs.push(seq);
@@ -295,7 +310,14 @@ export class ThreadStore {
       await this.db.putMessage(
         agArtifactToCardRow(
           art,
-          { threadId, userId, seq, at: now, clientMessageId },
+          {
+            threadId,
+            userId,
+            seq,
+            at: now,
+            clientMessageId,
+            ...(input.untrustedOrigin === true ? { untrustedOrigin: true } : {}),
+          },
           producingToolName(art, toolNames),
         ),
       );
