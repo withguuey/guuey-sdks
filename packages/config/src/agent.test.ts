@@ -8,6 +8,7 @@ import {
   parseToolGateEntry,
   agentDeclaresVfs,
   RESERVED_MEMORY_SERVER_NAME,
+  RESERVED_HANDOFF_SERVER_NAME,
   RESERVED_MCP_SERVER_NAMES,
   DEFAULT_AGENT_MCP_SERVERS,
   effectiveMcpServers,
@@ -885,5 +886,20 @@ describe('agent.modes — multi-mode agent (guuey#527)', () => {
       modes: { rep: { tools: { allowlist: ['docs.search'] } } },
     });
     expect(r.success).toBe(true);
+  });
+});
+
+describe('RESERVED_HANDOFF_SERVER_NAME (guuey#552 A1)', () => {
+  it('is guuey-handoff, rides the reserved set, and a builder declaring it is refused at deploy', () => {
+    expect(RESERVED_HANDOFF_SERVER_NAME).toBe('guuey-handoff');
+    expect(RESERVED_MCP_SERVER_NAMES).toContain(RESERVED_HANDOFF_SERVER_NAME);
+    const violations = validateReservedServerNames({
+      mcpServers: {
+        [RESERVED_HANDOFF_SERVER_NAME]: { kind: 'colocated', source: './mcps/handoff' },
+      },
+    });
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toContain('guuey-handoff');
+    expect(violations[0]).toContain('reserved');
   });
 });

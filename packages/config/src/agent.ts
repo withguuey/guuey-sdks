@@ -801,6 +801,15 @@ export const RESERVED_MEMORY_SERVER_NAME = 'guuey-memory';
 export const RESERVED_PROFILE_SERVER_NAME = 'guuey-profile';
 
 /**
+ * The reserved colocated key the auto-injected human-handoff MCP is booted +
+ * spliced under (guuey#552, spec 2026-08-31-human-handoff-v1-design.md).
+ * NEVER builder-declarable — mirrors {@link RESERVED_MEMORY_SERVER_NAME}'s
+ * reservation for the same reason; the handoff child's own server advertises
+ * this name and its aud is `colocatedResourceUrl(appId, this)`.
+ */
+export const RESERVED_HANDOFF_SERVER_NAME = 'guuey-handoff';
+
+/**
  * Every `mcpServers` map key the platform reserves. Extensible — one entry
  * today ({@link RESERVED_MEMORY_SERVER_NAME}); future platform-injected
  * servers add their key here and inherit the deploy-time rejection for free.
@@ -808,6 +817,7 @@ export const RESERVED_PROFILE_SERVER_NAME = 'guuey-profile';
 export const RESERVED_MCP_SERVER_NAMES: readonly string[] = [
   RESERVED_MEMORY_SERVER_NAME,
   RESERVED_PROFILE_SERVER_NAME,
+  RESERVED_HANDOFF_SERVER_NAME,
 ];
 
 /**
