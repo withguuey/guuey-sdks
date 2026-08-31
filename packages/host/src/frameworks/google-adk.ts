@@ -48,6 +48,7 @@ import {
   resolveAgentEntry,
 } from "../agent-entry.js";
 import {
+  RESPONSE_NORMS_SECTION,
   renderMemorySection,
   renderProfileSection,
   renderResourcesSection,
@@ -377,7 +378,10 @@ export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
         ) +
         (memoryOn ? renderMemorySection(turn.userMemory) : "") +
         (profileOn ? renderProfileSection(turn.profileSections, profileAccess) : "") +
-        (resourcesOn ? renderResourcesSection(resourceCount, turn.fs.app) : "");
+        (resourcesOn ? renderResourcesSection(resourceCount, turn.fs.app) : "") +
+        // guuey#556: default response norms, LAST and unconditional (see the
+        // constant's doc for the confirm-gate carve-out).
+        RESPONSE_NORMS_SECTION;
       let agent: AdkAgent;
       try {
         const toolsets = buildToolsets(adk, listCredentials(turn.fs)());

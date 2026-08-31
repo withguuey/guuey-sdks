@@ -43,7 +43,8 @@ import {
   type BuildOptionsContext,
   type SdkMcpServer,
 } from "./claude-options.js";
-import { renderMemorySection, renderProfileSection, renderResourcesSection } from "../preamble.js";
+import {
+  RESPONSE_NORMS_SECTION, renderMemorySection, renderProfileSection, renderResourcesSection } from "../preamble.js";
 import type { HostInvoke, HostRuntime } from "./claude.js";
 import { GUUEY_DEFAULT_SYSTEM_PROMPT, defaultModelFor, type GuueyAgent } from "@guuey/config";
 import { resolveSdkVersion } from "../sdk-version.js";
@@ -190,7 +191,10 @@ export async function runInvokeOpenai(
       ) +
       (memoryOn ? renderMemorySection(invoke.userMemory) : "") +
       (profileOn ? renderProfileSection(invoke.profileSections, profileAccess) : "") +
-      (resourcesOn ? renderResourcesSection(resourceCount, invoke.fs.app) : "");
+      (resourcesOn ? renderResourcesSection(resourceCount, invoke.fs.app) : "") +
+      // guuey#556: default response norms, LAST and unconditional (see the
+      // constant's doc for the confirm-gate carve-out).
+      RESPONSE_NORMS_SECTION;
     mcpServers = buildOpenaiMcpServers(ctx);
   } catch (err) {
     emit.error(err instanceof Error ? err.message : String(err));

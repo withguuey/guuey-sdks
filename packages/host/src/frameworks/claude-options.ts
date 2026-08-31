@@ -332,7 +332,11 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
     // guuey#456 B4: the app-resources hint, appended AFTER the profile
     // section (memory → profile → resources) — same framework-blind renderer
     // family from ../preamble.js, gated on fsBound && resourceCount > 0.
-    buildResourcesSection(ctx);
+    buildResourcesSection(ctx) +
+    // guuey#556: the default response norms, LAST and unconditional —
+    // every hosted agent inherits them (see RESPONSE_NORMS_SECTION's doc
+    // for the confirm-gate carve-out + the per-court opt-out grammar).
+    RESPONSE_NORMS_SECTION;
   const model = snapshot.model ?? DEFAULT_MODEL;
   const maxTurns = snapshot.runtime?.maxTurns ?? DEFAULT_MAX_TURNS;
   const fs = ctx.fs;
@@ -637,6 +641,7 @@ function dedupe(names: string[]): string[] {
 // there too — framework-blind, so openai/adk render the identical section.
 export { withContextPreamble } from "../preamble.js";
 import {
+  RESPONSE_NORMS_SECTION,
   renderMemorySection,
   renderProfileSection,
   renderResourcesSection,

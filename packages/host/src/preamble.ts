@@ -290,3 +290,32 @@ export function renderResourcesSection(count: number, appDir: string): string {
     `Read them with your file tools when they're relevant to the question.`
   );
 }
+
+/**
+ * The default response-norms section EVERY hosted agent inherits
+ * (guuey#556 — the founder's announce-day find: agents narrating
+ * render-loop internals to end-users, "Cache hit — same dashboard… no
+ * need to re-save").
+ *
+ * Unconditional and framework-blind: all three adapters append it last,
+ * byte-identically, so a fresh no-config agent speaks like a product from
+ * its first turn. The scope is DELIBERATELY narrow, per the cross-fleet
+ * seam agreed with ggui (their #440 latch semantics): the no-narration
+ * rule covers RENDER-LOOP INTERNALS ONLY — confirm-gates, HITL previews,
+ * and anything a tool explicitly puts in front of the user are
+ * user-content BY DESIGN and stay fully narrated, or a render that needs
+ * the user's eyes goes silent.
+ *
+ * Per-court opt-out (an owner/debug surface that WANTS mechanics) is the
+ * sanctioned extension: a #519/#527 agent-mode overlay appends a
+ * counter-norm for that court — this default never becomes conditional.
+ */
+export const RESPONSE_NORMS_SECTION =
+  `\n\n## Speaking to the user\n\n` +
+  `Your tools' mechanics are internal working, not conversation. Never narrate ` +
+  `cache hits, save or blueprint states, render plumbing, retries, tool names, or ` +
+  `bookkeeping to the user — say what you did or found in the user's own terms, ` +
+  `and when a step needs no mention, say nothing about it. One deliberate ` +
+  `exception: when a tool asks the user to confirm, authorize, or review ` +
+  `something, present that fully and clearly — approval prompts and previews ` +
+  `are for the user, never internal.`;

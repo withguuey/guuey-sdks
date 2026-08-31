@@ -12,7 +12,8 @@ import {
   type OpenaiRunResult,
 } from "./openai.js";
 import type { HostInvoke } from "./claude.js";
-import { renderMemorySection, renderProfileSection, renderResourcesSection } from "../preamble.js";
+import {
+  RESPONSE_NORMS_SECTION, renderMemorySection, renderProfileSection, renderResourcesSection } from "../preamble.js";
 import { defaultModelFor, type GuueyAgent } from "@guuey/config";
 
 /** Collect every emitted WorkerEvent into an array (the fd-3 sink, in memory). */
@@ -272,7 +273,7 @@ describe("runInvokeOpenai — memory section (memory-mcp T5, gated on authentica
     // Identical block content to Claude/ADK, appended AFTER the context preamble.
     expect(instructions).toContain("SYS");
     expect(instructions).toContain("`save_memory` tool");
-    expect(instructions?.endsWith(renderMemorySection("User's name is Ada."))).toBe(true);
+    expect(instructions?.endsWith(renderMemorySection("User's name is Ada.") + RESPONSE_NORMS_SECTION)).toBe(true);
     expect((instructions ?? "").indexOf("SYS")).toBeLessThan(
       (instructions ?? "").indexOf("`save_memory` tool"),
     );
@@ -281,7 +282,7 @@ describe("runInvokeOpenai — memory section (memory-mcp T5, gated on authentica
   it("BOOTSTRAP: authenticated + attached + NO userMemory (brand-new user) → save-only section, NO recall block", async () => {
     const instructions = await captureInstructions({ identity: authed, memoryAttached: true });
     expect(instructions).toContain("`save_memory` tool");
-    expect(instructions?.endsWith(renderMemorySection(undefined))).toBe(true);
+    expect(instructions?.endsWith(renderMemorySection(undefined) + RESPONSE_NORMS_SECTION)).toBe(true);
     expect(instructions).not.toContain("## What you remember about this user");
   });
 
@@ -333,7 +334,9 @@ describe("runInvokeOpenai — cross-app profile section (profile T7, gated on au
     // The section content is byte-identical to Claude/ADK.
     expect(
       instructions?.endsWith(
-        renderMemorySection("Ada") + renderProfileSection(sections, "read-write"),
+        renderMemorySection("Ada") +
+          renderProfileSection(sections, "read-write") +
+          RESPONSE_NORMS_SECTION,
       ),
     ).toBe(true);
     expect(instructions).toContain("`save_profile` tool");
@@ -394,7 +397,7 @@ describe("runInvokeOpenai — app-resources section (guuey#456 B4, gated on fsBo
   it("fsBound + resourceCount > 0 → byte-identical to renderResourcesSection, naming the invoke's fs.app", async () => {
     const instructions = await captureInstructions({ fsBound: true, resourceCount: 3 });
     // The invoke fixture's fs.app is "/fs/app" — the section names THAT path.
-    expect(instructions?.endsWith(renderResourcesSection(3, "/fs/app"))).toBe(true);
+    expect(instructions?.endsWith(renderResourcesSection(3, "/fs/app") + RESPONSE_NORMS_SECTION)).toBe(true);
     expect(instructions).toContain("3 reference files at /fs/app/resources");
   });
 
@@ -412,7 +415,8 @@ describe("runInvokeOpenai — app-resources section (guuey#456 B4, gated on fsBo
       instructions?.endsWith(
         renderMemorySection("Ada") +
           renderProfileSection(sections, "read-write") +
-          renderResourcesSection(2, "/fs/app"),
+          renderResourcesSection(2, "/fs/app") +
+          RESPONSE_NORMS_SECTION,
       ),
     ).toBe(true);
   });

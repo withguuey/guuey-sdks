@@ -14,6 +14,7 @@ import { GUUEY_DEFAULT_SYSTEM_PROMPT } from "@guuey/config";
 import type { Emitter, JsonValue, StopReason } from "@guuey/worker";
 import { assertGracefulSupport, loadRunner, type HostSnapshot, type HostTurn } from "../index.js";
 import {
+  RESPONSE_NORMS_SECTION,
   renderMemorySection,
   renderProfileSection,
   renderResourcesSection,
@@ -110,12 +111,12 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     // `withContextPreamble` assembles — byte-identical to the old string form.
     expect(typeof agent.params.instruction).toBe("function");
     const resolvedInstruction = (agent.params.instruction as () => string)();
-    expect(resolvedInstruction).toBe(withContextPreamble("be terse", turn.history, turn.priorMemory, turn.priorState));
+    expect(resolvedInstruction).toBe(withContextPreamble("be terse", turn.history, turn.priorMemory, turn.priorState) + RESPONSE_NORMS_SECTION);
     // preamble AUTO-INJECTED (history + memory + state) even in no-code:
     expect(resolvedInstruction).toContain("<conversation_history>");
     expect(resolvedInstruction).toContain("<thread_memory>");
     expect(resolvedInstruction).toContain("<working_state>");
-    expect(resolvedInstruction.endsWith("be terse")).toBe(true);
+    expect(resolvedInstruction.endsWith(RESPONSE_NORMS_SECTION)).toBe(true);
     expect(agent.params.tools).toHaveLength(1);
     expect(captured.toolsets[0]).toEqual({
       type: "StreamableHTTPConnectionParams",
@@ -186,7 +187,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
 
   it("prompt-less snapshot → GUUEY_DEFAULT_SYSTEM_PROMPT rides the preamble (parity with the claude/openai arms)", async () => {
     const resolved = await resolveInstruction({}, { model: "gemini-3.5-pro" });
-    expect(resolved).toBe(withContextPreamble(GUUEY_DEFAULT_SYSTEM_PROMPT, [], undefined, undefined));
+    expect(resolved).toBe(withContextPreamble(GUUEY_DEFAULT_SYSTEM_PROMPT, [], undefined, undefined) + RESPONSE_NORMS_SECTION);
   });
 
   it("authenticated + attached + userMemory → save + byte-identical recall block after the preamble (memory-mcp T5)", async () => {
@@ -197,8 +198,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     });
     // Identical section content to Claude/OpenAI, appended after the preamble.
     expect(resolved).toBe(
-      withContextPreamble("be terse", [], undefined, undefined) + renderMemorySection("User's name is Ada."),
-    );
+      withContextPreamble("be terse", [], undefined, undefined) + renderMemorySection("User's name is Ada.") + RESPONSE_NORMS_SECTION);
     expect(resolved).toContain("`save_memory` tool");
     expect(resolved).toContain("<user_memory>\nUser's name is Ada.\n</user_memory>");
   });
@@ -208,7 +208,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
       identity: { userId: "u-mem", authMode: "authenticated" },
       memoryAttached: true,
     });
-    expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined) + renderMemorySection(undefined));
+    expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined) + renderMemorySection(undefined) + RESPONSE_NORMS_SECTION);
     expect(resolved).toContain("`save_memory` tool");
     expect(resolved).not.toContain("## What you remember about this user");
   });
@@ -219,7 +219,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
       memoryAttached: false,
       userMemory: "orphaned",
     });
-    expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined));
+    expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined) + RESPONSE_NORMS_SECTION);
     expect(resolved).not.toContain("`save_memory` tool");
     expect(resolved).not.toContain("orphaned");
   });
@@ -230,7 +230,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
       memoryAttached: true,
       userMemory: "guest",
     });
-    expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined));
+    expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined) + RESPONSE_NORMS_SECTION);
     expect(resolved).not.toContain("`save_memory` tool");
   });
 
@@ -248,8 +248,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     expect(resolved).toBe(
       withContextPreamble("be terse", [], undefined, undefined) +
         renderMemorySection("User's name is Ada.") +
-        renderProfileSection(PROFILE_SECTIONS, "read-write"),
-    );
+        renderProfileSection(PROFILE_SECTIONS, "read-write") + RESPONSE_NORMS_SECTION);
     expect(resolved).toContain("`save_profile` tool");
     expect(resolved).toContain("### From Todoist");
   });
@@ -262,8 +261,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     });
     expect(resolved).toBe(
       withContextPreamble("be terse", [], undefined, undefined) +
-        renderProfileSection(PROFILE_SECTIONS, "read"),
-    );
+        renderProfileSection(PROFILE_SECTIONS, "read") + RESPONSE_NORMS_SECTION);
     expect(resolved).not.toContain("`save_profile` tool");
     expect(resolved).toContain("## What you know about this user from other apps");
   });
@@ -273,7 +271,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
       identity: { userId: "u-mem", authMode: "authenticated" },
       profileSections: PROFILE_SECTIONS,
     });
-    expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined));
+    expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined) + RESPONSE_NORMS_SECTION);
     expect(resolved).not.toContain("`save_profile` tool");
     expect(resolved).not.toContain("Prefers short replies.");
   });
@@ -284,7 +282,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
       profileAccess: "read-write",
       profileSections: PROFILE_SECTIONS,
     });
-    expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined));
+    expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined) + RESPONSE_NORMS_SECTION);
     expect(resolved).not.toContain("`save_profile` tool");
   });
 
@@ -295,8 +293,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     // The helper's turn fs.app is `base` (a real tmp path) — the section names
     // THAT dir, never a hardcoded /app.
     expect(resolved).toBe(
-      withContextPreamble("be terse", [], undefined, undefined) + renderResourcesSection(2, base),
-    );
+      withContextPreamble("be terse", [], undefined, undefined) + renderResourcesSection(2, base) + RESPONSE_NORMS_SECTION);
     expect(resolved).toContain("## App resources");
     expect(resolved).toContain(`2 reference files at ${base}/resources`);
   });
@@ -315,22 +312,21 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
       withContextPreamble("be terse", [], undefined, undefined) +
         renderMemorySection("Ada") +
         renderProfileSection(PROFILE_SECTIONS, "read-write") +
-        renderResourcesSection(1, base),
-    );
+        renderResourcesSection(1, base) + RESPONSE_NORMS_SECTION);
   });
 
   it("fsBound false/absent + resourceCount present → NO resources section (no file tools to read them)", async () => {
     const boundOff = await resolveInstruction({ fsBound: false, resourceCount: 3 });
-    expect(boundOff).toBe(withContextPreamble("be terse", [], undefined, undefined));
+    expect(boundOff).toBe(withContextPreamble("be terse", [], undefined, undefined) + RESPONSE_NORMS_SECTION);
     const boundAbsent = await resolveInstruction({ resourceCount: 3 });
-    expect(boundAbsent).toBe(withContextPreamble("be terse", [], undefined, undefined));
+    expect(boundAbsent).toBe(withContextPreamble("be terse", [], undefined, undefined) + RESPONSE_NORMS_SECTION);
   });
 
   it("resourceCount 0/absent → NO resources section", async () => {
     const zero = await resolveInstruction({ fsBound: true, resourceCount: 0 });
-    expect(zero).toBe(withContextPreamble("be terse", [], undefined, undefined));
+    expect(zero).toBe(withContextPreamble("be terse", [], undefined, undefined) + RESPONSE_NORMS_SECTION);
     const absent = await resolveInstruction({ fsBound: true });
-    expect(absent).toBe(withContextPreamble("be terse", [], undefined, undefined));
+    expect(absent).toBe(withContextPreamble("be terse", [], undefined, undefined) + RESPONSE_NORMS_SECTION);
   });
 
   it("an sse cred file fails the turn with the actionable transport error", async () => {
