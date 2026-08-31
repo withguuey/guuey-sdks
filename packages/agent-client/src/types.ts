@@ -162,6 +162,17 @@ export interface StallRecoveryOptions {
   probeAttempts?: number;
 }
 
+
+/**
+ * Where the user is standing (guuey#524): the embedding page, as the host
+ * knows it. `path` + `title` only by design — nothing scraped; `context` is
+ * an optional short host-declared line (the pod caps it server-side).
+ */
+export interface PageContext {
+  path: string;
+  title: string;
+  context?: string;
+}
 export interface UseAgentInvokeOptions {
   /** Pod base URL (with or without a trailing `/agent/invoke`). Chat is disabled when null. */
   endpointUrl: string | null;
@@ -197,6 +208,18 @@ export interface UseAgentInvokeOptions {
    * one place that knows this; the agent's static system prompt cannot.
    */
   surfaceContext?: string;
+  /**
+   * The host PAGE the user is viewing (guuey#524 v1 — the page-aware
+   * ephemeral turn): URL path + title, plus an optional short host-declared
+   * context string. Sent on the invoke body per turn; read at send time, so
+   * an SPA host updates it on route change and the next turn carries the
+   * new page. TRUST LIVES POD-SIDE, none here: the pod frames this as
+   * UNTRUSTED page content into the model input for that turn only, flags
+   * the turn `pageContextPresent` (never client-claimed), and switches the
+   * durable sinks off for it (memory/profile/fold/home — the pass-3
+   * ephemeral-turn contract). The client's only job is carriage.
+   */
+  pageContext?: PageContext;
   /**
    * Stall recovery for a half-dead stream (guuey#192). A connection that dies
    * WITHOUT erroring (TCP alive, zero bytes, no `done`) would otherwise leave

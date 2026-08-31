@@ -356,6 +356,14 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     setProfileLinkRequest(null);
   }, []);
 
+  // guuey#524: `send` is memoized on [endpointUrl, appId, status, signal] —
+  // options read inside it are otherwise frozen at memo time. pageContext's
+  // whole contract is read-at-SEND-time freshness (SPA route changes must
+  // ride the next turn), so it goes through a live ref, the same discipline
+  // as every live-read value in the kit layer.
+  const pageContextRef = useRef(opts.pageContext);
+  pageContextRef.current = opts.pageContext;
+
   const send = useCallback(
     async (input: string) => {
       // An already-aborted external signal refuses the send outright —
@@ -543,6 +551,12 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
           // and this hook's optimistic user message stay clean.
           ...(opts.surfaceContext !== undefined
             ? { surfaceContext: opts.surfaceContext }
+            : {}),
+          // guuey#524: the page-aware turn's carriage — read at send time
+          // (SPA route changes ride the NEXT turn). All trust semantics
+          // are pod-side; see the option's docblock.
+          ...(pageContextRef.current !== undefined
+            ? { pageContext: pageContextRef.current }
             : {}),
         };
 

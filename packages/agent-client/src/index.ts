@@ -104,5 +104,6 @@ export type {
   HistoryLoadResult,
   StallRecoveryOptions,
   UseAgentInvokeOptions,
+  PageContext,
   UseAgentInvokeReturn,
 } from "./types.js";

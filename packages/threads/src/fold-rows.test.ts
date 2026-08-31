@@ -649,3 +649,26 @@ describe("the ggui#652 re-anchor stamp rides the existing locator lane (guuey#53
     expect(artifacts[0]?.artifactId).toBe("m-amend#ui#0");
   });
 });
+
+describe("untrustedOrigin threading — the page-aware turn's persist stamp (guuey#524)", () => {
+  const ctx = { threadId: "t-1", userId: "u-1", seq: 1, at: "2026-08-31T00:00:00Z", clientMessageId: "c-1" };
+  const msg: AgMessage = { id: "m-1", role: "user", content: [{ type: "text", text: "hi" }], threadId: "t-1" };
+
+  it("agMessageToRow stamps untrustedOrigin:true from ctx and OMITS it otherwise (absent == trusted)", () => {
+    const clean = agMessageToRow(msg, ctx);
+    expect("untrustedOrigin" in clean).toBe(false);
+    const stamped = agMessageToRow(msg, { ...ctx, untrustedOrigin: true });
+    expect(stamped.untrustedOrigin).toBe(true);
+    // false is NOT persisted — the row vocabulary is {absent, true}, one
+    // meaning per shape (no third "explicitly trusted" state to misread).
+    const explicit = agMessageToRow(msg, { ...ctx, untrustedOrigin: false });
+    expect("untrustedOrigin" in explicit).toBe(false);
+  });
+
+  it("card rows carry the same stamp — every row of a page-aware turn is marked", () => {
+    const art: AgArtifact = { artifactId: "a-1", turnId: "turn-1", threadId: "t-1", parts: [] };
+    const stamped = agArtifactToCardRow(art, { ...ctx, untrustedOrigin: true });
+    expect(stamped.untrustedOrigin).toBe(true);
+    expect("untrustedOrigin" in agArtifactToCardRow(art, ctx)).toBe(false);
+  });
+});

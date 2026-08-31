@@ -54,6 +54,16 @@ export interface ThreadMessageRow {
   toolName?: string;
   /** `AgTurnRecord` stored on agent-fold rows for context recovery. */
   aiContext?: unknown;
+  /**
+   * guuey#524 (pass-3 correction 3): the message persisted from a
+   * PAGE-AWARE turn — content that may derive from untrusted host-page
+   * context. Stamped by the pod's direct write at persist time, NEVER
+   * client-claimed. The one-hop history-carry residual is disclosed by
+   * design: these rows DO ride into later turns' conversation history;
+   * this flag is what lets read-side policy see them coming. Absent on
+   * every row written before the flag existed (absent == trusted-origin).
+   */
+  untrustedOrigin?: boolean;
 }
 
 /** Latest-replace fold snapshot for a thread. */

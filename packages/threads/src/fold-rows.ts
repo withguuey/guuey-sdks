@@ -24,6 +24,12 @@ export interface RowCtx {
   seq: number;
   at: string;
   clientMessageId: string;
+  /**
+   * guuey#524: set by the pod for a page-aware turn's writes — every row
+   * of that turn (message and card alike) carries the stamp. See
+   * `ThreadMessageRow.untrustedOrigin`.
+   */
+  untrustedOrigin?: boolean;
 }
 
 /** AgRole → the row's coarse authorRole projection (secondary; role of record lives in content). */
@@ -75,6 +81,7 @@ export function agMessageToRow(
     // reload, and the token authorizes the thread owner's OWN resume (not a
     // cross-trust credential like a render wsToken). Revisit on guuey#122.
     ...(ctx.turnRecord ? { aiContext: ctx.turnRecord } : {}),
+    ...(ctx.untrustedOrigin === true ? { untrustedOrigin: true } : {}),
   };
 }
 
@@ -226,6 +233,7 @@ export function agArtifactToCardRow(art: AgArtifact, ctx: RowCtx, toolName?: str
     // the fold's tool-call blocks. Absent stays absent — old rows and
     // unresolvable producers keep the reader's fallback honest.
     ...(toolName !== undefined ? { toolName } : {}),
+    ...(ctx.untrustedOrigin === true ? { untrustedOrigin: true } : {}),
   };
 }
 
