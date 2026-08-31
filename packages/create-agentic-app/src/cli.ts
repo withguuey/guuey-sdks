@@ -12,7 +12,7 @@ import { stdin, stdout } from 'node:process';
 import { scaffold, scaffoldExample, type Framework, type Template } from './index.js';
 
 const FRAMEWORKS: Framework[] = ['claude-agent-sdk', 'openai-agents-sdk', 'google-adk'];
-const TEMPLATES: Template[] = ['base', 'agentic-app'];
+const TEMPLATES: Template[] = ['base', 'agentic-app', 'agent'];
 
 function isFramework(value: string): value is Framework {
   return (FRAMEWORKS as string[]).includes(value);
@@ -66,15 +66,21 @@ Arguments:
 Options:
   --name <name>         Project name (default: derived from target)
   --scope <scope>       npm scope for @<scope>/* packages (default: name)
-  --template <t>        App template: ${TEMPLATES.join(' | ')} (default: base)
+  --template <t>        Template: ${TEMPLATES.join(' | ')} (default: base)
                         base = landing + login + home + chat;
                         agentic-app = base + split-sidebar product shell with
-                        a fullscreen agent canvas and "talk on mobile" QR
+                        a fullscreen agent canvas and "talk on mobile" QR;
+                        agent = MANAGE-ONLY (prompt + manifest, no web app —
+                        "I just want to run my agent"; guuey hosts the
+                        surfaces). Embed-SDK builders want base/agentic-app
   --framework <f>       Framework: ${FRAMEWORKS.join(' | ')}
   --agent <f>           Alias for --framework
   --example <vertical>  Extract a demo app from github.com/withguuey/demos
                         instead of a blank template (mutually exclusive with
                         --template/--framework; re-brand via pnpm bootstrap)
+  --app <appId>         Bind to an EXISTING guuey app: stamps the id into
+                        guuey.json so "pnpm bootstrap -- --link" runs
+                        promptless (the tada page's copy-paste line)
   --install             Run "pnpm install" after scaffolding
   --no-git              Skip "git init" + initial commit
   --force               Scaffold into a non-empty target directory
@@ -84,6 +90,7 @@ Options:
 Examples:
   create-agentic-app my-app --framework claude-agent-sdk
   create-agentic-app my-app --agent openai-agents-sdk --install
+  create-agentic-app my-agent --app app_abc123   # born bound to your live agent
 `);
 }
 
@@ -179,7 +186,15 @@ async function main(): Promise<void> {
 
   const frameworkFlag = flags.framework ?? flags.agent;
   let frameworkInput = typeof frameworkFlag === 'string' ? frameworkFlag : undefined;
-  if (!frameworkInput) {
+  // The manage-only template has no framework axis (declarative agent,
+  // stock runtime) — never prompt for one; a passed --framework is noted
+  // and ignored rather than erroring (the tada page composes commands).
+  if (template === 'agent') {
+    if (frameworkInput !== undefined) {
+      console.log('--template agent is framework-less (declarative) — ignoring --framework.');
+    }
+    frameworkInput = 'claude-agent-sdk';
+  } else if (!frameworkInput) {
     // guuey#324 rider 1: a NON-TTY run (CI, coding agents, piped stdin —
     // the README's own quickstart line in any script) gets the platform
     // default instead of a refusal; the print keeps the choice visible
@@ -203,6 +218,12 @@ async function main(): Promise<void> {
   const name = typeof flags.name === 'string' ? flags.name : deriveName(target);
   const scope = typeof flags.scope === 'string' ? flags.scope : undefined;
   const install = flags.install === true;
+  if (flags.app === true) {
+    console.error('--app needs a value, e.g. --app app_abc123');
+    process.exit(1);
+    return;
+  }
+  const appId = typeof flags.app === 'string' ? flags.app : undefined;
 
   const { projectDir } = await scaffold({
     targetDir: target,
@@ -211,6 +232,7 @@ async function main(): Promise<void> {
     template,
     scope,
     install,
+    ...(appId !== undefined ? { appId } : {}),
     git: flags['no-git'] !== true,
     force: flags.force === true,
   });

@@ -16,7 +16,7 @@ export type Framework = 'claude-agent-sdk' | 'openai-agents-sdk' | 'google-adk';
  * chat; `agentic-app` extends it with the split-sidebar product shell whose
  * agent dock swaps the main canvas to a fullscreen agent.
  */
-export type Template = 'base' | 'agentic-app';
+export type Template = 'base' | 'agentic-app' | 'agent';
 
 export interface ScaffoldOptions {
   /** Absolute or cwd-relative path to create/populate the new project in. */
@@ -32,6 +32,16 @@ export interface ScaffoldOptions {
   install?: boolean;
   /** Run `git init` + an initial commit in the new project. Default: true. */
   git?: boolean;
+  /**
+   * Bind the scaffold to an EXISTING guuey app (guuey#580 point 4 — the
+   * tada page's one-liner): stamps top-level `appId` into the scaffolded
+   * guuey.json, which is exactly where `scripts/bootstrap.mjs --link`
+   * reads its default from — so the link phase runs promptless and the
+   * repo is born bound to the just-created agent. No validation here
+   * beyond non-empty: the id's truth is the platform's to judge at link
+   * time (a wrong id fails loudly there, with auth in hand).
+   */
+  appId?: string;
   /** Scaffold into a non-empty targetDir anyway. Default: false. */
   force?: boolean;
   /** Root directory holding `<template>/<framework>` trees (+ `mcp-base/`). Default: dist/templates. */
@@ -62,6 +72,15 @@ async function resolveTemplateDir(
   template: string,
   framework: string,
 ): Promise<string> {
+  // The manage-only template (guuey#581 pt 5) has NO framework axis — a
+  // declarative definition is prompt + manifest on the stock runtime; its
+  // dist layout is flat (`templates/agent/`, a sibling family like
+  // mcp-base, not `templates/agent/<framework>/`).
+  if (template === 'agent') {
+    const flat = join(templatesDir, 'agent');
+    if (await pathExists(flat)) return flat;
+    throw new Error(`No "agent" template under ${templatesDir} — rebuild templates (pnpm build).`);
+  }
   const dir = join(templatesDir, template, framework);
   if (await pathExists(dir)) return dir;
   // `mcp-base` sits alongside the templates (the `guuey mcp new` starter) —
@@ -152,6 +171,21 @@ export async function runInstall(projectDir: string): Promise<void> {
 }
 
 /**
+ * Stamp the bound app id into the scaffolded guuey.json (guuey#580 pt 4).
+ * Top-level `appId` — the exact key `bootstrap.mjs --link` defaults from.
+ * Read-modify-write JSON (never string-splice a manifest); the template's
+ * guuey.json is always valid JSON by the publish guard.
+ */
+async function stampAppId(projectDir: string, appId: string): Promise<void> {
+  const guueyJsonPath = join(projectDir, 'guuey.json');
+  const parsed = JSON.parse(await fs.readFile(guueyJsonPath, 'utf8')) as Record<string, unknown> & {
+    appId?: string;
+  };
+  parsed.appId = appId;
+  await fs.writeFile(guueyJsonPath, `${JSON.stringify(parsed, null, 2)}\n`);
+}
+
+/**
  * Scaffold a new agentic-app project from a bundled template.
  *
  * Copies the template tree for `opts.framework`, rewrites the
@@ -172,6 +206,9 @@ export async function scaffold(opts: ScaffoldOptions): Promise<ScaffoldResult> {
 
   await copyTree(templateDir, projectDir, opts.name, scope);
   await seedEnvLocal(projectDir);
+  if (opts.appId !== undefined && opts.appId !== "") {
+    await stampAppId(projectDir, opts.appId);
+  }
 
   if (opts.git !== false) {
     await initGit(projectDir);

@@ -1,0 +1,16 @@
+{
+  "name": "agentic-app-template",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "login": "guuey login",
+    "apply": "guuey agent apply",
+    "dev": "guuey dev",
+    "status": "guuey status",
+    "open": "guuey open"
+  },
+  "devDependencies": {
+    "@guuey/cli": "0.0.0"
+  }
+}

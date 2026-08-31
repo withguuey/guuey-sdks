@@ -207,6 +207,32 @@ for (const template of templates) {
 }
 emitMcpBase();
 
+/**
+ * Emit `templates-src/agent/` — the MANAGE-ONLY template (guuey#581 pt 5:
+ * "who wants to manage agent only") — to `dist/templates/agent/`. A
+ * SIBLING family like mcp-base, deliberately outside the template x
+ * framework matrix: a declarative definition has no framework axis (the
+ * agent is prompt + manifest; the stock runtime pod runs it). The system
+ * prompt is the same single-source stamped copy core carries (the
+ * byte-equality guard covers it); MODEL_PLACEHOLDER resolves to the
+ * platform default provider's GA default; versions stamp as everywhere.
+ */
+function emitAgentTemplate() {
+  const srcDir = join(templatesSrcDir, 'agent');
+  const outDir = join(distTemplatesDir, 'agent');
+  rmSync(outDir, { recursive: true, force: true });
+  cpSync(srcDir, outDir, { recursive: true });
+  cpSync(join(coreDir, 'prompts', 'system.md'), join(outDir, 'prompts', 'system.md'));
+  stampVersions(join(outDir, 'package.json'));
+  const guueyJsonPath = join(outDir, 'guuey.json');
+  writeFileSync(
+    guueyJsonPath,
+    readFileSync(guueyJsonPath, 'utf8').replaceAll('MODEL_PLACEHOLDER', defaultModelFor('claude-agent-sdk')),
+    'utf8',
+  );
+}
+emitAgentTemplate();
+
 console.log(
-  `build-templates: assembled ${templates.map((t) => `${t}/{${frameworks.join(',')}}`).join(' + ')}, mcp-base -> ${distTemplatesDir}`,
+  `build-templates: assembled ${templates.map((t) => `${t}/{${frameworks.join(',')}}`).join(' + ')} + agent (manage-only), mcp-base -> ${distTemplatesDir}`,
 );

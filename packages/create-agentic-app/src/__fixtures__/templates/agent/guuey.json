@@ -1,0 +1,4 @@
+{
+  "schema": "1",
+  "agent": { "mode": "declarative", "systemPrompt": { "file": "prompts/system.md" } }
+}

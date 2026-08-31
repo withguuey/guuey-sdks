@@ -115,3 +115,55 @@ describe('scaffold', () => {
     }
   });
 });
+
+describe('scaffold --app binding (guuey#580 point 4)', () => {
+  it('stamps top-level appId into guuey.json — the key bootstrap --link defaults from', async () => {
+    const target = await fs.mkdtemp(join(tmpdir(), 'caa-app-'));
+    const { projectDir } = await scaffold({
+      targetDir: target,
+      name: 'bound',
+      framework: 'claude-agent-sdk',
+      git: false,
+      templatesDir: fixturesDir,
+      appId: 'app_tada123',
+    });
+    const guuey = JSON.parse(await fs.readFile(join(projectDir, 'guuey.json'), 'utf8'));
+    expect(guuey.appId).toBe('app_tada123');
+    // The rest of the manifest survives the read-modify-write untouched.
+    expect(guuey.agent.framework).toBe('claude-agent-sdk');
+  });
+
+  it('without --app the manifest carries NO appId key (absent, not empty)', async () => {
+    const target = await fs.mkdtemp(join(tmpdir(), 'caa-noapp-'));
+    const { projectDir } = await scaffold({
+      targetDir: target,
+      name: 'unbound',
+      framework: 'claude-agent-sdk',
+      git: false,
+      templatesDir: fixturesDir,
+    });
+    const guuey = JSON.parse(await fs.readFile(join(projectDir, 'guuey.json'), 'utf8'));
+    expect('appId' in guuey).toBe(false);
+  });
+});
+
+describe('manage-only template (guuey#581 point 5)', () => {
+  it('--template agent resolves the FLAT frameworkless layout and scaffolds prompt + manifest', async () => {
+    const target = await fs.mkdtemp(join(tmpdir(), 'caa-agent-'));
+    const { projectDir } = await scaffold({
+      targetDir: target,
+      name: 'my-agent',
+      framework: 'claude-agent-sdk', // irrelevant for agent — resolver never consults it
+      template: 'agent',
+      git: false,
+      templatesDir: fixturesDir,
+      appId: 'app_manage1',
+    });
+    const guuey = JSON.parse(await fs.readFile(join(projectDir, 'guuey.json'), 'utf8'));
+    expect(guuey.agent.mode).toBe('declarative');
+    expect(guuey.appId).toBe('app_manage1'); // --app composes with the persona split
+    const pkg = JSON.parse(await fs.readFile(join(projectDir, 'package.json'), 'utf8'));
+    expect(pkg.name).toBe('my-agent'); // the rename token resolves here too
+    await expect(fs.stat(join(projectDir, 'prompts', 'system.md'))).resolves.toBeTruthy();
+  });
+});

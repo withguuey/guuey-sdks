@@ -120,3 +120,19 @@ describe("assembled templates", () => {
       expect(server).not.toContain(tool);
   });
 });
+
+describe("assembled manage-only template (guuey#581 pt 5)", () => {
+  const agentDir = join(dist, "agent");
+  it("emits flat (no framework axis): declarative manifest, stamped model, pinned CLI, stamped prompt", () => {
+    const guuey = JSON.parse(readFileSync(join(agentDir, "guuey.json"), "utf8"));
+    expect(guuey.agent.mode).toBe("declarative");
+    expect(guuey.agent.model).not.toContain("PLACEHOLDER"); // resolved to the platform default
+    const pkg = JSON.parse(readFileSync(join(agentDir, "package.json"), "utf8"));
+    expect(pkg.devDependencies["@guuey/cli"]).not.toBe("0.0.0"); // versions.json stamped
+    // The single-source system prompt, byte-identical (the publish guard's rule).
+    const core = readFileSync(join(__dirname, "..", "templates-src", "core", "prompts", "system.md"), "utf8");
+    expect(readFileSync(join(agentDir, "prompts", "system.md"), "utf8")).toBe(core);
+    // NO web app in the manage-only repo — that's the persona split.
+    expect(existsSync(join(agentDir, "apps"))).toBe(false);
+  });
+});
