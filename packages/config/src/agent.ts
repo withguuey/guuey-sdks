@@ -541,6 +541,18 @@ export const AgentSectionV1 = z.strictObject({
   modes: ModesSchema.optional(),
   /** The mode a caller with no audience match resolves to (a declared mode key). */
   defaultMode: z.string().min(1).optional(),
+  /**
+   * The platform wrapper's SURFACE-FORMATTING section (guuey#531) —
+   * default ON, opt-out only: a few invoke-constant lines telling the
+   * model that guuey's chat surfaces render markdown (code fences +
+   * inline code, autolinked bare URLs, native tables), so every builder
+   * doesn't have to discover that independently. Set `false` for BYO
+   * surfaces (`@guuey/agent-client` custom clients — SMS/voice/
+   * plain-text) where markdown is not the contract. The exact text
+   * lives at `@guuey/host` `SURFACE_FORMATTING_SECTION` and is
+   * published verbatim in the docs — never tone/brand/behavior.
+   */
+  surfaceHints: z.boolean().optional(),
   runtime: RuntimeConfigSchema.optional(),
   /** Claude Agent SDK-specific knobs. Only read when `framework: 'claude-agent-sdk'`. */
   claude: ClaudeFrameworkConfigSchema.optional(),

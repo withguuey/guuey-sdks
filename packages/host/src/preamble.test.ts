@@ -5,6 +5,8 @@ import {
   renderProfileSection,
   renderResourcesSection,
   renderUserMemoryRecall,
+  renderSurfaceSection,
+  SURFACE_FORMATTING_SECTION,
 } from "./preamble.js";
 
 /**
@@ -276,5 +278,33 @@ describe("renderResourcesSection — the app-resources hint (guuey#456 B4)", () 
         "You have 1 reference file at /app/resources — the builder provided them for you. " +
         "Read them with your file tools when they're relevant to the question.",
     );
+  });
+});
+
+describe("renderSurfaceSection — surface-formatting hints, default ON (guuey#531)", () => {
+  it("absent knob (the default) and explicit true both render the section", () => {
+    expect(renderSurfaceSection(undefined)).toBe(SURFACE_FORMATTING_SECTION);
+    expect(renderSurfaceSection(true)).toBe(SURFACE_FORMATTING_SECTION);
+  });
+
+  it("only an explicit false suppresses it (BYO plain-text surfaces)", () => {
+    expect(renderSurfaceSection(false)).toBe("");
+  });
+
+  it("byte pin — this text is published verbatim in the docs; an edit here is a docs edit", () => {
+    expect(SURFACE_FORMATTING_SECTION).toBe(
+      `\n\n## Your rendering surface\n\n` +
+        `Your text renders in a markdown chat surface. Format code as code: ` +
+        `commands, flags, file names, env vars, and identifiers in backticks; ` +
+        `multi-line code in fenced blocks with a language tag. Bare URLs render ` +
+        `as tappable links. Tables render natively — use one when comparing ` +
+        `things.`,
+    );
+  });
+
+  it("scope guard: surface only — never tone/brand/behavior words", () => {
+    for (const banned of ["tone", "brand", "persona", "friendly", "polite"]) {
+      expect(SURFACE_FORMATTING_SECTION.toLowerCase()).not.toContain(banned);
+    }
   });
 });

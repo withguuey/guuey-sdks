@@ -310,6 +310,45 @@ export function renderResourcesSection(count: number, appDir: string): string {
  * sanctioned extension: a #519/#527 agent-mode overlay appends a
  * counter-norm for that court — this default never becomes conditional.
  */
+/**
+ * The platform wrapper's SURFACE-FORMATTING section (guuey#531) — the
+ * rendering-surface facts every guuey chat surface guarantees (styled
+ * code fences + inline code, autolinked bare URLs guuey#515, native
+ * tables guuey#370), told to the model ONCE by the platform instead of
+ * independently rediscovered by every builder (existence proof it bites:
+ * our own helper served a CLI quickstart as bare prose under a stale
+ * "no backticks" rule — dev thread 82a09002, 2026-08-30).
+ *
+ * DEFAULT ON, opt-out via `agent.surfaceHints: false` (the @guuey/config
+ * knob) — for BYO surfaces (custom `@guuey/agent-client` clients:
+ * SMS/voice/plain-text) where markdown is not the contract. Rationale
+ * for default-on: the #521 principle — defaults are the product; opt-in
+ * strands the median builder.
+ *
+ * Scope is SURFACE ONLY — never tone, brand, or behavior; those stay
+ * the builder's domain. This text is published VERBATIM in the docs
+ * ("what wraps your prompt") — trust + debuggability — so treat any
+ * edit here as a docs edit too.
+ */
+export const SURFACE_FORMATTING_SECTION =
+  `\n\n## Your rendering surface\n\n` +
+  `Your text renders in a markdown chat surface. Format code as code: ` +
+  `commands, flags, file names, env vars, and identifiers in backticks; ` +
+  `multi-line code in fenced blocks with a language tag. Bare URLs render ` +
+  `as tappable links. Tables render natively — use one when comparing ` +
+  `things.`;
+
+/**
+ * Render the surface section honoring the opt-out (guuey#531):
+ * `undefined` (the default — absent knob) and `true` render it; only an
+ * explicit `false` suppresses. Framework-blind like every sibling.
+ */
+export function renderSurfaceSection(
+  surfaceHints: boolean | undefined,
+): string {
+  return surfaceHints === false ? "" : SURFACE_FORMATTING_SECTION;
+}
+
 export const RESPONSE_NORMS_SECTION =
   `\n\n## Speaking to the user\n\n` +
   `Your tools' mechanics are internal working, not conversation. Never narrate ` +

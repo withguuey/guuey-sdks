@@ -995,3 +995,12 @@ describe('applyAgentMode (guuey#566 — the guest/auth axis, server-derived + pi
     expect(r.agent.systemPrompt).toBe('BASE');
   });
 });
+
+describe('agent.surfaceHints — the guuey#531 opt-out knob', () => {
+  it('parses false (BYO plain-text surfaces) and absent defaults to undefined (ON downstream)', () => {
+    const off = AgentSectionV1.parse({ surfaceHints: false });
+    expect(off.surfaceHints).toBe(false);
+    const def = AgentSectionV1.parse({});
+    expect(def.surfaceHints).toBeUndefined();
+  });
+});

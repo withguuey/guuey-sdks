@@ -333,6 +333,10 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
     // section (memory → profile → resources) — same framework-blind renderer
     // family from ../preamble.js, gated on fsBound && resourceCount > 0.
     buildResourcesSection(ctx) +
+    // guuey#531: the surface-formatting section — default ON, suppressed
+    // only by an explicit `agent.surfaceHints: false` (BYO plain-text
+    // surfaces). Before the norms, which stay LAST.
+    renderSurfaceSection(snapshot.surfaceHints) +
     // guuey#556: the default response norms, LAST and unconditional —
     // every hosted agent inherits them (see RESPONSE_NORMS_SECTION's doc
     // for the confirm-gate carve-out + the per-court opt-out grammar).
@@ -642,6 +646,7 @@ function dedupe(names: string[]): string[] {
 export { withContextPreamble } from "../preamble.js";
 import {
   RESPONSE_NORMS_SECTION,
+  renderSurfaceSection,
   renderMemorySection,
   renderProfileSection,
   renderResourcesSection,

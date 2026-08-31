@@ -49,6 +49,7 @@ import {
 } from "../agent-entry.js";
 import {
   RESPONSE_NORMS_SECTION,
+  renderSurfaceSection,
   renderMemorySection,
   renderProfileSection,
   renderResourcesSection,
@@ -379,6 +380,9 @@ export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
         (memoryOn ? renderMemorySection(turn.userMemory) : "") +
         (profileOn ? renderProfileSection(turn.profileSections, profileAccess) : "") +
         (resourcesOn ? renderResourcesSection(resourceCount, turn.fs.app) : "") +
+        // guuey#531: surface-formatting hints — default ON, only an explicit
+        // `agent.surfaceHints: false` suppresses. Before the norms (LAST).
+        renderSurfaceSection(snapshot.surfaceHints) +
         // guuey#556: default response norms, LAST and unconditional (see the
         // constant's doc for the confirm-gate carve-out).
         RESPONSE_NORMS_SECTION;
