@@ -264,6 +264,65 @@ jobs:
           done
           echo "cohort verified: ${#ORDER[@]}/${#ORDER[@]} on npm"
 
+      - name: Announce-line cold resolve (guuey#439 — the stranger's install, proven in-run)
+        if: steps.mode.outputs.dry_run == 'false'
+        run: |
+          set -euo pipefail
+          # The p1 half of #439 the zero-secret posture allows: the run may
+          # not go green until the EXACT command the announce advertises —
+          # a version-less install resolving `latest` — works cold. Two
+          # gates, both token-free:
+          #   1. `latest` COHERENCE: every ORDER member's dist-tags.latest
+          #      reads the cohort version (publish advances latest per
+          #      package immediately; a member stuck on the prior version
+          #      after the window = the mixed-cohort state #439 exists for).
+          #   2. COLD INSTALL: a fresh dir installs @guuey/cli@latest —
+          #      the full dependency closure resolved from the registry,
+          #      the ETARGET class surfaced HERE instead of on a stranger.
+          # The structural fix (publish on `next`, advance latest leaf-first
+          # after verify) stays HELD on the founder's zero-secret ruling:
+          # OIDC covers publish only (npm/cli#8547 open; `npm stage
+          # approve` is human-2FA proof-of-presence, not CI-automatable —
+          # both re-verified 2026-08-31).
+          VER=$(node -pe "require('./packages/config/package.json').version")
+          ORDER=(config state fs agent-layout mcp-apps-host threads widget-auth worker agent-client chat host create-agentic-app cli)
+          for pkg in "${ORDER[@]}"; do
+            name=$(node -pe "require('./packages/$pkg/package.json').name")
+            ok=""
+            for i in $(seq 1 24); do
+              tag=$(npm view "$name" dist-tags.latest 2>/dev/null || true)
+              if [ "$tag" = "$VER" ]; then ok=1; break; fi
+              sleep 10
+            done
+            if [ -z "$ok" ]; then
+              echo "::error ::$name dist-tags.latest reads '$tag', not $VER — latest is a MIXED cohort"
+              exit 1
+            fi
+            echo "• $name latest -> $VER"
+          done
+          # The stranger's line, cold. --prefer-online defeats any runner
+          # cache; retries absorb registry-edge lag inside the run instead
+          # of exporting it to announce-week installs.
+          COLD=$(mktemp -d)
+          cd "$COLD" && npm init -y > /dev/null
+          ok=""
+          for i in $(seq 1 12); do
+            if npm install "@guuey/cli@latest" --no-audit --no-fund --prefer-online > install.log 2>&1; then ok=1; break; fi
+            echo "cold install attempt $i failed (likely propagation) — retrying in 20s"
+            tail -3 install.log
+            sleep 20
+          done
+          if [ -z "$ok" ]; then
+            echo "::error ::cold 'npm install @guuey/cli@latest' NEVER resolved — the announce install line is broken"
+            exit 1
+          fi
+          GOT=$(node -pe "require('./node_modules/@guuey/cli/package.json').version")
+          if [ "$GOT" != "$VER" ]; then
+            echo "::error ::cold install resolved @guuey/cli@$GOT, expected $VER — latest is stale or mixed"
+            exit 1
+          fi
+          echo "announce line proven: cold @guuey/cli@latest == $VER, full closure installed"
+
       - name: Post-publish consumer smoke
         if: steps.mode.outputs.dry_run == 'false'
         # NEVER fails the release: publish already happened (irreversible), so a
