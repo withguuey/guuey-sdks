@@ -127,3 +127,105 @@ describe('loadGuueyJson — app.theme file reference (guuey#400)', () => {
     expect(loaded.resolvedTheme?.mode).toBe('light');
   });
 });
+
+// ── guuey#545 — mode prompt { file } references resolve like the base prompt ──
+
+describe('loadGuueyJson — mode prompt file references (guuey#545)', () => {
+  const docWithModes = (modes: Record<string, unknown>) =>
+    JSON.stringify({
+      schema: '1',
+      agent: { systemPrompt: 'Base brief.', modes },
+    });
+
+  it('a file-shaped systemPromptAppend resolves to the file contents and the snapshot is self-contained', () => {
+    mkdirSync(join(dir, 'prompts'));
+    writeFileSync(join(dir, 'prompts', 'auth.md'), 'Signed-in extras.');
+    writeFileSync(
+      guueyJsonPath,
+      docWithModes({ auth: { systemPromptAppend: { file: 'prompts/auth.md' } } }),
+    );
+
+    const loaded = loadGuueyJson(guueyJsonPath);
+    expect(loaded.resolvedModePrompts).toEqual({
+      auth: { systemPromptAppend: 'Signed-in extras.' },
+    });
+    // The document keeps the reference; the snapshot NEVER carries it —
+    // the pod has no repo filesystem (the footgun this issue closes).
+    expect(loaded.doc.agent.modes?.['auth']?.systemPromptAppend).toEqual({
+      file: 'prompts/auth.md',
+    });
+    const snapshot = buildDeploySnapshot(loaded);
+    expect(snapshot.agent.modes?.['auth']?.systemPromptAppend).toBe(
+      'Signed-in extras.',
+    );
+  });
+
+  it('a file-shaped mode systemPrompt resolves too, and inline strings pass through', () => {
+    writeFileSync(join(dir, 'guest.md'), 'Guest replacement.');
+    writeFileSync(
+      guueyJsonPath,
+      docWithModes({
+        guest: { systemPrompt: { file: 'guest.md' } },
+        auth: { systemPrompt: 'Inline auth brief.' },
+      }),
+    );
+    const snapshot = buildDeploySnapshot(loadGuueyJson(guueyJsonPath));
+    expect(snapshot.agent.modes?.['guest']?.systemPrompt).toBe(
+      'Guest replacement.',
+    );
+    expect(snapshot.agent.modes?.['auth']?.systemPrompt).toBe(
+      'Inline auth brief.',
+    );
+  });
+
+  it('a missing mode prompt file FAILS the load loudly — never a silent unresolved ride-through', () => {
+    writeFileSync(
+      guueyJsonPath,
+      docWithModes({ auth: { systemPromptAppend: { file: 'prompts/nope.md' } } }),
+    );
+    expect(() => loadGuueyJson(guueyJsonPath)).toThrow(
+      /agent\.modes\.auth\.systemPromptAppend\.file references missing file/,
+    );
+  });
+
+  it('rejects absolute + parent-traversal mode prompt paths (same portability guards as the base prompt)', () => {
+    writeFileSync(
+      guueyJsonPath,
+      docWithModes({ auth: { systemPrompt: { file: '/etc/passwd' } } }),
+    );
+    expect(() => loadGuueyJson(guueyJsonPath)).toThrow(
+      /agent\.modes\.auth\.systemPrompt\.file must be a relative path/,
+    );
+
+    writeFileSync(
+      guueyJsonPath,
+      docWithModes({ auth: { systemPrompt: { file: '../outside.md' } } }),
+    );
+    expect(() => loadGuueyJson(guueyJsonPath)).toThrow(
+      /must not traverse parent directories/,
+    );
+  });
+
+  it('mode tools/audience and non-prompt keys survive the inline verbatim', () => {
+    writeFileSync(join(dir, 'auth.md'), 'From file.');
+    writeFileSync(
+      guueyJsonPath,
+      docWithModes({
+        auth: {
+          systemPromptAppend: { file: 'auth.md' },
+          tools: { allowlist: ['weather.*'] },
+          audience: ['authenticated'],
+        },
+      }),
+    );
+    const snapshot = buildDeploySnapshot(loadGuueyJson(guueyJsonPath));
+    const auth = snapshot.agent.modes?.['auth'];
+    expect(auth?.tools).toEqual({ allowlist: ['weather.*'] });
+    expect(auth?.audience).toEqual(['authenticated']);
+  });
+
+  it('no modes → resolvedModePrompts undefined', () => {
+    writeFileSync(guueyJsonPath, JSON.stringify({ schema: '1', agent: {} }));
+    expect(loadGuueyJson(guueyJsonPath).resolvedModePrompts).toBeUndefined();
+  });
+});

@@ -4,8 +4,11 @@
  * Pure-parse helpers (`parseGuueyJson` / `safeParseGuueyJson`) live in
  * `./schema.ts` and are safe to import from non-Node contexts. This
  * module adds the file-resolution layer: reading `guuey.json` from disk,
- * inlining `agent.systemPrompt.file` references, and producing the
- * snapshot the deploy upload + pod boot both read.
+ * inlining `agent.systemPrompt.file` AND every
+ * `agent.modes[*].{systemPrompt,systemPromptAppend}.file` reference
+ * (guuey#545 — a file-shaped mode prompt used to ride into the snapshot
+ * unresolved), and producing the snapshot the deploy upload + pod boot
+ * both read.
  *
  * Intended callers:
  *
@@ -119,6 +122,18 @@ export interface ResolvedGuueyJson {
    * (guuey#400), or `undefined` when no theme was set.
    */
   resolvedTheme: GuueyAppTheme | undefined;
+  /**
+   * Resolved per-mode prompts (guuey#545): for every `agent.modes[key]`
+   * whose `systemPrompt` / `systemPromptAppend` is present, the FINAL
+   * string — the inline value as-is, or the file contents when it was a
+   * `{ file: '...' }` reference. Before this, a file-shaped mode prompt
+   * rode into the snapshot unresolved and reached the pod (which has no
+   * repo filesystem) — a silently broken deploy. `undefined` when the
+   * document declares no modes.
+   */
+  resolvedModePrompts:
+    | Record<string, { systemPrompt?: string; systemPromptAppend?: string }>
+    | undefined;
   /** Absolute path the document was loaded from (for diagnostics). */
   sourcePath: string;
 }
@@ -139,7 +154,87 @@ export function loadGuueyJson(path: string): ResolvedGuueyJson {
   const doc = readGuueyJsonFile(path);
   const resolvedSystemPrompt = resolveSystemPrompt(doc, path);
   const resolvedTheme = resolveAppTheme(doc, path);
-  return { doc, resolvedSystemPrompt, resolvedTheme, sourcePath: path };
+  const resolvedModePrompts = resolveModePrompts(doc, path);
+  return {
+    doc,
+    resolvedSystemPrompt,
+    resolvedTheme,
+    resolvedModePrompts,
+    sourcePath: path,
+  };
+}
+
+/**
+ * Shared relative-file guard + read for prompt `{ file }` references
+ * (guuey#545 extraction — the base prompt, and now every mode prompt,
+ * enforce the identical rules): the path must be relative, must not
+ * traverse parent directories, and must exist. `label` names the field
+ * in every error so the failure reads like the document, not the loader.
+ */
+function readPromptFileRef(
+  label: string,
+  file: string,
+  guueyJsonPath: string,
+): string {
+  if (isAbsolute(file)) {
+    throw new Error(`${label} must be a relative path (got absolute: ${file})`);
+  }
+  if (file.split('/').includes('..')) {
+    throw new Error(
+      `${label} must not traverse parent directories (got: ${file})`,
+    );
+  }
+  const resolved = resolve(dirname(guueyJsonPath), file);
+  if (!existsSync(resolved)) {
+    throw new Error(
+      `${label} references missing file: ${file} (resolved to ${resolved})`,
+    );
+  }
+  return readFileSync(resolved, 'utf-8');
+}
+
+/**
+ * Resolve every mode's `systemPrompt` / `systemPromptAppend` to final
+ * strings (guuey#545). Inline strings pass through; `{ file }` references
+ * resolve under {@link readPromptFileRef}'s guards — the SAME contract as
+ * the base prompt, which the ModeSchema doc always promised. Absent
+ * modes → undefined.
+ */
+function resolveModePrompts(
+  doc: GuueyJsonV1,
+  guueyJsonPath: string,
+): ResolvedGuueyJson['resolvedModePrompts'] {
+  const modes = doc.agent.modes;
+  if (modes === undefined) return undefined;
+  const out: Record<
+    string,
+    { systemPrompt?: string; systemPromptAppend?: string }
+  > = {};
+  for (const [key, mode] of Object.entries(modes)) {
+    const entry: { systemPrompt?: string; systemPromptAppend?: string } = {};
+    if (mode.systemPrompt !== undefined) {
+      entry.systemPrompt =
+        typeof mode.systemPrompt === 'string'
+          ? mode.systemPrompt
+          : readPromptFileRef(
+              `agent.modes.${key}.systemPrompt.file`,
+              mode.systemPrompt.file,
+              guueyJsonPath,
+            );
+    }
+    if (mode.systemPromptAppend !== undefined) {
+      entry.systemPromptAppend =
+        typeof mode.systemPromptAppend === 'string'
+          ? mode.systemPromptAppend
+          : readPromptFileRef(
+              `agent.modes.${key}.systemPromptAppend.file`,
+              mode.systemPromptAppend.file,
+              guueyJsonPath,
+            );
+    }
+    out[key] = entry;
+  }
+  return out;
 }
 
 /**
@@ -160,25 +255,8 @@ function resolveSystemPrompt(
   const sp = doc.agent.systemPrompt;
   if (sp === undefined) return undefined;
   if (typeof sp === 'string') return sp;
-  // sp = { file: '...' }
-  if (isAbsolute(sp.file)) {
-    throw new Error(
-      `agent.systemPrompt.file must be a relative path (got absolute: ${sp.file})`,
-    );
-  }
-  if (sp.file.split('/').includes('..')) {
-    throw new Error(
-      `agent.systemPrompt.file must not traverse parent directories (got: ${sp.file})`,
-    );
-  }
-  const baseDir = dirname(guueyJsonPath);
-  const resolved = resolve(baseDir, sp.file);
-  if (!existsSync(resolved)) {
-    throw new Error(
-      `agent.systemPrompt.file references missing file: ${sp.file} (resolved to ${resolved})`,
-    );
-  }
-  return readFileSync(resolved, 'utf-8');
+  // sp = { file: '...' } — shared guard+read (guuey#545 extraction).
+  return readPromptFileRef('agent.systemPrompt.file', sp.file, guueyJsonPath);
 }
 
 /**
@@ -251,6 +329,23 @@ export function buildDeploySnapshot(loaded: ResolvedGuueyJson): GuueyJsonV1 {
   const cloned: GuueyJsonV1 = JSON.parse(JSON.stringify(loaded.doc));
   if (loaded.resolvedSystemPrompt !== undefined) {
     cloned.agent.systemPrompt = loaded.resolvedSystemPrompt;
+  }
+  // guuey#545 — mode prompts inline the same way the base prompt does:
+  // a `{ file }` reference must never ride into the snapshot (the pod
+  // has no repo filesystem; an unresolved object was a silently broken
+  // deploy). Only prompt fields are touched — tools/audience and every
+  // unexposed mode key survive verbatim.
+  if (loaded.resolvedModePrompts !== undefined && cloned.agent.modes !== undefined) {
+    for (const [key, resolved] of Object.entries(loaded.resolvedModePrompts)) {
+      const mode = cloned.agent.modes[key];
+      if (mode === undefined) continue;
+      if (resolved.systemPrompt !== undefined) {
+        mode.systemPrompt = resolved.systemPrompt;
+      }
+      if (resolved.systemPromptAppend !== undefined) {
+        mode.systemPromptAppend = resolved.systemPromptAppend;
+      }
+    }
   }
   const theme = cloned.app?.theme;
   if (
