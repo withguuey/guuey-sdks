@@ -522,11 +522,12 @@ export const AgentSectionV1 = z.strictObject({
   /**
    * Multi-mode agent (guuey#527) — ONE agent, per-mode prompt overlays on
    * the base `systemPrompt` + a per-mode tool SUBSET of the base allowlist.
-   * The pod SELECTS a mode from the caller's identity class at session start
-   * (server-derived, stamped, never client-trusted) and enforces the
-   * selected mode's tool set. Tonight's slice recognizes the default pair
-   * `rep` (guests) and `agent` (authenticated/byo); the audience binding is
-   * server-hardcoded, so the manifest declares content, not routing.
+   * SELECTION (founder-ruled 2026-08-31, superseding this block's original
+   * server-derived sketch): the CLIENT NAMES the mode (widget/SDK `mode`
+   * param) and the server validates via {@link applyAgentMode} — safe by
+   * construction because the write gate closed the privilege axis (subset-
+   * only tools; prompts are voice). `audience` is an optional RESTRICTION
+   * a mode may declare (ineligible callers fall back), not the selector.
    *
    * Each mode: exactly one of `systemPromptAppend` (extend the base — the
    * common case) or `systemPrompt` (full replace); an optional `tools`
@@ -608,6 +609,108 @@ export type GuueyAgentSystemPrompt = z.infer<typeof SystemPromptSchema>;
 
 /** Endpoint config type. */
 export type GuueyAgentEndpoint = z.infer<typeof EndpointConfigSchema>;
+
+/** One declared mode's shape. */
+export type GuueyAgentMode = z.infer<typeof ModeSchema>;
+
+/** The caller's audience class, as `ModeSchema.audience` speaks it. */
+export type ModeAudienceClass = 'guest' | 'authenticated' | 'byo';
+
+/** The result of {@link applyAgentMode} — the effective snapshot + provenance. */
+export interface AppliedAgentMode {
+  /** The snapshot to SERVE this invoke (a new object when a mode applied; the same reference otherwise). */
+  agent: GuueyAgent;
+  /** The mode key actually applied, or `null` when serving the bare base. */
+  applied: string | null;
+  /** Present when the REQUESTED key could not apply and the fallback chain ran. */
+  fallback?: 'unknown-mode' | 'audience-mismatch';
+}
+
+/**
+ * Resolve + apply one invoke's agent mode (guuey#527 serving semantics,
+ * founder-ruled 2026-08-31 / guuey#566): the CLIENT NAMES the mode (widget
+ * `mode` config / @guuey/chat `mode` option), the server validates.
+ *
+ * NOTE this supersedes the `modes` docblock's original "server-derived,
+ * never client-trusted" selection sketch: the ruling made naming explicit
+ * ("the widget actually can specify its mode"), and client naming is safe
+ * BY CONSTRUCTION — the write gate already closed the privilege axis (a
+ * mode's tools may only SUBSET the base; prompts are voice, never
+ * authority). `audience` survives as an optional RESTRICTION: a mode
+ * declaring one refuses ineligible callers (fallback, never an error).
+ *
+ * Resolution chain, fail-soft (an embed must never break on a renamed
+ * mode): requested-if-eligible → `defaultMode`-if-eligible → base.
+ * Application: `systemPrompt` REPLACES the base; `systemPromptAppend` =
+ * base + `"\n\n"` + append; a mode declaring NEITHER (legal — "at most
+ * one") serves the base verbatim; `tools` replaces the base gates (the
+ * manifest write gate proved it a subset). Pure — never mutates inputs.
+ *
+ * String prompts only: a `{ file }` systemPrompt/append reaching here is
+ * an unresolved manifest (the loader resolves base files; guuey#545 tracks
+ * the mode-append gap) — treated as unusable, so the mode falls back to
+ * base rather than serving a path as a prompt.
+ */
+export function applyAgentMode(
+  agent: GuueyAgent,
+  requested: string | undefined,
+  audience: ModeAudienceClass,
+): AppliedAgentMode {
+  const modes = agent.modes;
+  if (modes === undefined) return { agent, applied: null };
+
+  const eligible = (key: string | undefined): GuueyAgentMode | undefined => {
+    if (key === undefined) return undefined;
+    const def = modes[key];
+    if (def === undefined) return undefined;
+    if (def.audience !== undefined && !def.audience.includes(audience)) return undefined;
+    return def;
+  };
+
+  let applied = requested;
+  let def = eligible(requested);
+  let fallback: AppliedAgentMode['fallback'];
+  if (def === undefined && requested !== undefined) {
+    fallback = modes[requested] === undefined ? 'unknown-mode' : 'audience-mismatch';
+  }
+  if (def === undefined) {
+    applied = agent.defaultMode;
+    def = eligible(agent.defaultMode);
+  }
+  if (def === undefined || applied === undefined) {
+    return { agent, applied: null, ...(fallback !== undefined ? { fallback } : {}) };
+  }
+
+  // An EMPTY def (legal — "at most one") IS the base: same reference out,
+  // so callers can cheaply detect "nothing to override" by identity.
+  if (def.systemPrompt === undefined && def.systemPromptAppend === undefined && def.tools === undefined) {
+    return { agent, applied, ...(fallback !== undefined ? { fallback } : {}) };
+  }
+
+  // Application — string prompts only (see the doc): a { file } shape is
+  // unusable here and the mode serves as base-equivalent.
+  const basePrompt = typeof agent.systemPrompt === 'string' ? agent.systemPrompt : undefined;
+  let systemPrompt = agent.systemPrompt;
+  if (typeof def.systemPrompt === 'string') {
+    systemPrompt = def.systemPrompt;
+  } else if (typeof def.systemPromptAppend === 'string') {
+    systemPrompt =
+      basePrompt !== undefined ? `${basePrompt}\n\n${def.systemPromptAppend}` : def.systemPromptAppend;
+  } else if (def.systemPrompt !== undefined || def.systemPromptAppend !== undefined) {
+    // { file } shape — unusable at serve time; base verbatim.
+    return { agent, applied: null, ...(fallback !== undefined ? { fallback } : {}) };
+  }
+
+  return {
+    agent: {
+      ...agent,
+      ...(systemPrompt !== undefined ? { systemPrompt } : {}),
+      ...(def.tools !== undefined ? { tools: def.tools } : {}),
+    },
+    applied,
+    ...(fallback !== undefined ? { fallback } : {}),
+  };
+}
 
 /** Deploy config type. */
 export type GuueyAgentDeploy = z.infer<typeof DeploySchema>;

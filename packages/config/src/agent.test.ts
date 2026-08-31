@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyAgentMode,
   AgentSectionV1,
   validateColocatedServerNames,
   validateNoLiteralSecrets,
@@ -901,5 +902,77 @@ describe('RESERVED_HANDOFF_SERVER_NAME (guuey#552 A1)', () => {
     expect(violations).toHaveLength(1);
     expect(violations[0]).toContain('guuey-handoff');
     expect(violations[0]).toContain('reserved');
+  });
+});
+
+describe('applyAgentMode (guuey#566 serving semantics — client-named, validated)', () => {
+  const base: GuueyAgent = {
+    systemPrompt: 'BASE',
+    tools: { allowlist: ['mcp__ggui__*', 'Read'] },
+    defaultMode: 'rep',
+    modes: {
+      rep: {},
+      agent: { systemPromptAppend: 'CONSOLE CONTEXT', tools: { allowlist: ['Read'] } },
+      internal: { systemPrompt: 'FULL REPLACE', audience: ['authenticated'] },
+    },
+  };
+
+  it('no modes declared → same reference, applied null', () => {
+    const bare: GuueyAgent = { systemPrompt: 'X' };
+    const r = applyAgentMode(bare, 'anything', 'guest');
+    expect(r.agent).toBe(bare);
+    expect(r.applied).toBeNull();
+  });
+
+  it('requested append mode: base + "\\n\\n" + append, tools replaced with the subset', () => {
+    const r = applyAgentMode(base, 'agent', 'guest');
+    expect(r.applied).toBe('agent');
+    expect(r.agent.systemPrompt).toBe('BASE\n\nCONSOLE CONTEXT');
+    expect(r.agent.tools).toEqual({ allowlist: ['Read'] });
+    expect(base.systemPrompt).toBe('BASE'); // never mutates
+  });
+
+  it('full-replace mode replaces the base prompt', () => {
+    const r = applyAgentMode(base, 'internal', 'authenticated');
+    expect(r.applied).toBe('internal');
+    expect(r.agent.systemPrompt).toBe('FULL REPLACE');
+  });
+
+  it('an EMPTY mode def serves the base verbatim (legal — the mode IS the base)', () => {
+    const r = applyAgentMode(base, 'rep', 'guest');
+    expect(r.applied).toBe('rep');
+    expect(r.agent).toBe(base); // SAME reference — callers detect no-override by identity
+    expect(r.agent.systemPrompt).toBe('BASE');
+  });
+
+  it('unknown requested key falls back to defaultMode with the fallback named', () => {
+    const r = applyAgentMode(base, 'renamed-away', 'guest');
+    expect(r.applied).toBe('rep');
+    expect(r.fallback).toBe('unknown-mode');
+  });
+
+  it('audience restriction refuses ineligible callers into the fallback chain', () => {
+    const r = applyAgentMode(base, 'internal', 'guest');
+    expect(r.applied).toBe('rep'); // defaultMode caught it
+    expect(r.fallback).toBe('audience-mismatch');
+  });
+
+  it('absent request resolves defaultMode; no defaultMode → base', () => {
+    expect(applyAgentMode(base, undefined, 'guest').applied).toBe('rep');
+    const noDefault: GuueyAgent = { ...base };
+    delete (noDefault as { defaultMode?: string }).defaultMode;
+    const r = applyAgentMode(noDefault, undefined, 'guest');
+    expect(r.applied).toBeNull();
+    expect(r.agent).toBe(noDefault);
+  });
+
+  it('a { file } mode prompt is unusable at serve time → base, never a path-as-prompt', () => {
+    const fileMode: GuueyAgent = {
+      systemPrompt: 'BASE',
+      modes: { odd: { systemPrompt: { file: './p.md' } } },
+    };
+    const r = applyAgentMode(fileMode, 'odd', 'guest');
+    expect(r.applied).toBeNull();
+    expect(r.agent.systemPrompt).toBe('BASE');
   });
 });
