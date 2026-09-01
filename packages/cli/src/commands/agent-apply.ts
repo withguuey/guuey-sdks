@@ -78,6 +78,8 @@ export interface AgentReconcileConfig {
   chatTheme?: unknown;
   /** Standalone-page posture patch (guuey#286); plans/status echo the wire projection. */
   standalonePage?: unknown;
+  /** Starter suggestion chips (guuey#533) — replace-in-full; validateSuggestions is the shape source of truth. */
+  suggestions?: unknown;
 }
 
 /**
@@ -456,6 +458,56 @@ async function postReconcile(ctx: Ctx, body: AgentReconcileBody): Promise<AgentR
   return (await res.json()) as AgentReconcileResult;
 }
 
+// ─── the first-apply modes guard (guuey#580 parity audit) ────────────────
+//
+// The tada page's born-bound flow: studio creates an app (often WITH
+// guest/auth modes drafted), the stranger pastes the npx line, and the
+// scaffold's template guuey.json carries NO modes. Apply is wholesale-
+// declarative BY CONTRACT (doc-is-desired-state — platform's ruling on
+// the #580 audit): an apply from that fresh doc would silently STRIP the
+// drafted modes. This guard makes the clobber impossible to hit blind:
+// when the local doc OMITS `agent.modes` and the app's live nocode
+// snapshot HAS them, apply REFUSES with the seed instruction (`guuey
+// pull` — the eject mechanic that writes the live definition into this
+// repo) unless `--replace` explicitly declares the stripping intended.
+// Stateless by design: an author who pulled has modes in the doc, so the
+// guard never fires again; no marker files. Fetch failures fail OPEN
+// with a loud warning (apply must not go unavailable on a listing
+// hiccup; the server-side drift warn is the belt behind this).
+
+interface DeploymentsListShape {
+  deployments?: Array<{ buildNumber: number; status: string; agentMode: string }>;
+}
+
+async function liveSnapshotModes(ctx: Ctx): Promise<'has-modes' | 'no-modes' | 'unknown'> {
+  try {
+    const listRes = await apiRequest(ctx.pat, ctx.config, 'GET', `/apps/${ctx.appId}/deployments`);
+    if (!listRes.ok) return 'unknown';
+    const list = (await listRes.json()) as DeploymentsListShape;
+    if (!Array.isArray(list.deployments)) return 'unknown';
+    let picked: number | null = null;
+    for (const d of list.deployments) {
+      if (d.agentMode !== 'nocode' || d.status !== 'live') continue;
+      if (picked === null || d.buildNumber > picked) picked = d.buildNumber;
+    }
+    if (picked === null) return 'no-modes'; // nothing live to clobber
+    const snapRes = await apiRequest(
+      ctx.pat,
+      ctx.config,
+      'GET',
+      `/apps/${ctx.appId}/deployments/${picked}`,
+    );
+    if (!snapRes.ok) return 'unknown';
+    const snap = (await snapRes.json()) as { snapshot?: { agent?: { modes?: unknown } } | null };
+    const modes = snap.snapshot?.agent?.modes;
+    return modes !== undefined && modes !== null && Object.keys(modes as object).length > 0
+      ? 'has-modes'
+      : 'no-modes';
+  } catch {
+    return 'unknown';
+  }
+}
+
 // ─── guuey agent apply ───────────────────────────────────────────────────
 
 export async function agentApply(flags?: Record<string, string | true>): Promise<void> {
@@ -477,6 +529,28 @@ export async function agentApply(flags?: Record<string, string | true>): Promise
   } catch (err) {
     out.error(`Failed to load ${GUUEY_JSON_FILENAME}: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
+  }
+
+  const localDoc = JSON.parse(artifacts.guueyJson) as { agent?: { modes?: unknown } };
+  const localHasModes =
+    localDoc.agent?.modes !== undefined &&
+    localDoc.agent.modes !== null &&
+    Object.keys(localDoc.agent.modes as object).length > 0;
+  if (!localHasModes && flags?.replace !== true) {
+    const live = await liveSnapshotModes(ctx);
+    if (live === 'has-modes') {
+      out.error(
+        `This repo's guuey.json declares NO agent.modes, but app ${ctx.appId}'s live agent HAS mode configuration (guest/auth prompts). Apply is doc-is-desired-state: proceeding would STRIP those modes.\n` +
+          `  Seed this repo from the live agent first:   guuey pull\n` +
+          `  Or declare the strip intended:              guuey agent apply --replace`,
+      );
+      process.exit(1);
+    }
+    if (live === 'unknown' && !jsonOut) {
+      console.log(
+        '  ! could not read the live deployment to check for agent.modes — if this app has guest/auth mode prompts, this apply will strip them (doc-is-desired-state). `guuey pull` seeds them into this repo.',
+      );
+    }
   }
 
   let provenance: DeployProvenance | undefined;

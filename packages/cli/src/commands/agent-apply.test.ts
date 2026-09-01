@@ -81,7 +81,14 @@ const GUUEY_JSON = JSON.stringify(
   {
     schema: '1',
     appId: 'app-1',
-    agent: { model: 'claude-sonnet-5', systemPrompt: { file: 'prompts/system.md' } },
+    agent: {
+      model: 'claude-sonnet-5',
+      systemPrompt: { file: 'prompts/system.md' },
+      // Declaring modes keeps the guuey#580 first-apply guard quiescent in
+      // these legacy pins (the guard only probes when the doc OMITS modes)
+      // — its own describe block covers the mode-less paths.
+      modes: { rep: { systemPromptAppend: 'Be brief.', audience: ['guest'] } },
+    },
     app: { access: { guestAccess: false, allowedDomains: ['https://console.example.com'] } },
   },
   null,
@@ -706,5 +713,67 @@ describe.skipIf(!haveWire)('reconcile wire mirrors — sync guard against @guuey
     expect(parseInterfaceFields(read(CLI_RECONCILE), 'StandalonePageWire')).toEqual(
       parseInterfaceFields(read(WIRE_STANDALONE_PAGE), 'StandalonePageWire'),
     );
+  });
+});
+
+describe('agentApply — the first-apply modes guard (guuey#580 parity audit)', () => {
+  const MODELESS_JSON = JSON.stringify(
+    {
+      schema: '1',
+      appId: 'app-1',
+      agent: { model: 'claude-sonnet-5', systemPrompt: { file: 'prompts/system.md' } },
+    },
+    null,
+    2,
+  );
+  const liveList = { deployments: [{ buildNumber: 3, status: 'live', agentMode: 'nocode' }] };
+  const snapWithModes = { snapshot: { schema: '1', agent: { modes: { rep: { systemPromptAppend: 'x' } } } } };
+  const snapNoModes = { snapshot: { schema: '1', agent: {} } };
+
+  it('REFUSES a mode-less apply when the live snapshot HAS modes — the tada clobber is unreachable blind', async () => {
+    writeFileSync(join(process.cwd(), 'guuey.json'), MODELESS_JSON);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(200, liveList))
+      .mockResolvedValueOnce(jsonResponse(200, snapWithModes));
+    await expect(agentApply({ provenance: 'none' })).rejects.toThrow(new ExitSignal(1).message);
+    const output = logs.join('\n');
+    expect(output).toContain('would STRIP those modes');
+    expect(output).toContain('guuey pull');
+    expect(output).toContain('--replace');
+    // The reconcile POST never fired — two GETs only.
+    expect(fetchMock.mock.calls).toHaveLength(2);
+    expect((fetchMock.mock.calls[0] as [string])[0]).toContain('/deployments');
+  });
+
+  it('--replace overrides: declared stripping proceeds straight to reconcile (no probe)', async () => {
+    writeFileSync(join(process.cwd(), 'guuey.json'), MODELESS_JSON);
+    fetchMock.mockResolvedValue(jsonResponse(200, reconcileResult()));
+    await agentApply({ provenance: 'none', replace: true });
+    expect((fetchMock.mock.calls[0] as [string])[0]).toContain('/reconcile');
+  });
+
+  it('live snapshot WITHOUT modes → apply proceeds (probe then reconcile); fetch failure fails OPEN with the loud warning', async () => {
+    writeFileSync(join(process.cwd(), 'guuey.json'), MODELESS_JSON);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(200, liveList))
+      .mockResolvedValueOnce(jsonResponse(200, snapNoModes))
+      .mockResolvedValue(jsonResponse(200, reconcileResult()));
+    await agentApply({ provenance: 'none' });
+    expect((fetchMock.mock.calls[2] as [string])[0]).toContain('/reconcile');
+
+    logs.length = 0;
+    fetchMock.mockReset();
+    fetchMock
+      .mockRejectedValueOnce(new Error('listing hiccup'))
+      .mockResolvedValue(jsonResponse(200, reconcileResult()));
+    await agentApply({ provenance: 'none' });
+    expect(logs.join('\n')).toContain('could not read the live deployment');
+  });
+
+  it('a doc that DECLARES modes never probes — zero extra requests', async () => {
+    // the moded fixture is already on disk from beforeEach
+    fetchMock.mockResolvedValue(jsonResponse(200, reconcileResult()));
+    await agentApply({ provenance: 'none' });
+    expect((fetchMock.mock.calls[0] as [string])[0]).toContain('/reconcile');
   });
 });

@@ -19,6 +19,24 @@ pnpm apply          # push the definition to your live agent
 from the console it is already set; otherwise `pnpm apply` will tell you
 what to do.
 
+## Guest & authenticated modes
+
+If your agent was drafted in the guuey console with guest/auth mode
+prompts, **run `guuey pull` before your first `pnpm apply`** — it writes
+the live definition (modes included) into this repo. Apply is
+doc-is-desired-state: a document without `agent.modes` declares an agent
+without modes, and the CLI will refuse a first apply that would strip
+live modes (pass `--replace` only if that is what you mean). To declare
+modes here directly:
+
+```jsonc
+// guuey.json → agent
+"modes": {
+  "rep":   { "systemPromptAppend": "prompts/rep.md",  "audience": ["guest"] },
+  "agent": { "systemPromptAppend": "prompts/full.md", "audience": ["authenticated"] }
+}
+```
+
 ## Wanting more?
 
 If you outgrow manage-only — you want your OWN site with the agent
