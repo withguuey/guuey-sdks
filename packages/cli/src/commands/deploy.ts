@@ -129,6 +129,24 @@ function printPodLifetime(maxPods: number | undefined): void {
  *
  * @param flags - CLI flags (e.g., `{ size: 'sm', target: 'ggui' }`)
  */
+/**
+ * guuey#580 belt adoption: the deploy trigger's 202 may carry an additive
+ * `warnings: string[]` (e.g. the server's MODES_DROPPED_ON_DEPLOY drift
+ * warn — a modeless snapshot atop a modeful prior). Print each entry
+ * verbatim, prefixed like every CLI warning; ignore anything not a
+ * non-empty string (the field is additive wire — junk-tolerant by
+ * design; old CLIs ignore it entirely, which is the belt's point).
+ * Exported for tests.
+ */
+export function printTriggerWarnings(body: unknown): void {
+  if (body === null || typeof body !== 'object') return;
+  const warnings = (body as { warnings?: unknown }).warnings;
+  if (!Array.isArray(warnings)) return;
+  for (const w of warnings) {
+    if (typeof w === 'string' && w.length > 0) console.log(`  ! ${w}`);
+  }
+}
+
 export async function deploy(flags?: Record<string, string | true>): Promise<void> {
   const auth = requireAuth();
   const config = resolveConfig();
@@ -687,6 +705,8 @@ async function deployCode(opts: {
     cleanup(tarballPath);
     process.exit(1);
   }
+
+  printTriggerWarnings(await deployRes.clone().json().catch(() => ({})));
 
   const streamAbort = new AbortController();
   void attachBuildLogStream(auth.pat, config, appId, buildNumber, streamAbort.signal).catch(

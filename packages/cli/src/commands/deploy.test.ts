@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 import {
+  printTriggerWarnings,
   awaitPageUrl,
   createLinkedApp,
   deploy,
@@ -764,5 +765,28 @@ describe('deploy() — --app-id overrides the guuey.json binding (guuey#232)', (
   it('a valueless --app-id (parsed as `true`) is rejected before any network call', async () => {
     await expect(deploy({ 'app-id': true })).rejects.toBeInstanceOf(ExitSignal);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('printTriggerWarnings (guuey#580 belt adoption)', () => {
+  it('prints each warnings[] string verbatim with the CLI warn prefix; tolerates junk and absence', () => {
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => {
+      lines.push(a.join(' '));
+    });
+    printTriggerWarnings({
+      warnings: [
+        'MODES_DROPPED_ON_DEPLOY: this snapshot drops agent.modes the live build carries — run guuey pull to seed.',
+        '',
+        42,
+      ],
+    });
+    printTriggerWarnings({});
+    printTriggerWarnings({ warnings: 'not-an-array' });
+    printTriggerWarnings(null);
+    expect(lines).toEqual([
+      '  ! MODES_DROPPED_ON_DEPLOY: this snapshot drops agent.modes the live build carries — run guuey pull to seed.',
+    ]);
+    spy.mockRestore();
   });
 });
