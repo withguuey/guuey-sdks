@@ -29,19 +29,22 @@ const WIRE_MCP = repoPath(`${CLI_WIRE_DIR}/mcp.ts`);
 const WIRE_WIDGET_KEYS = repoPath(`${CLI_WIRE_DIR}/widget-keys.ts`);
 const WIRE_DEPLOY = repoPath(`${CLI_WIRE_DIR}/deploy.ts`);
 const WIRE_MCP_CONNECTIONS = repoPath(`${CLI_WIRE_DIR}/mcp-connections.ts`);
+const WIRE_BILLING = repoPath(`${CLI_WIRE_DIR}/billing.ts`);
 
 const CLI_APPS = repoPath('./apps.ts');
 const CLI_MCP = repoPath('./mcp.ts');
 const CLI_WIDGET = repoPath('./widget.ts');
 const CLI_AGENT = repoPath('./agent.ts');
 const CLI_MCP_CONNECTIONS = repoPath('./mcp-connections.ts');
+const CLI_BILLING = repoPath('./billing.ts');
 
 const haveWire =
   existsSync(WIRE_APPS) &&
   existsSync(WIRE_MCP) &&
   existsSync(WIRE_WIDGET_KEYS) &&
   existsSync(WIRE_DEPLOY) &&
-  existsSync(WIRE_MCP_CONNECTIONS);
+  existsSync(WIRE_MCP_CONNECTIONS) &&
+  existsSync(WIRE_BILLING);
 const read = (path: string): string => readFileSync(path, 'utf8');
 
 /** Field names only — the shared assertion for "these two declare the same members". */
@@ -131,5 +134,26 @@ describe.skipIf(!haveWire)('CLI wire mirrors — sync guards against @guuey-priv
     for (const name of ['McpAttachmentWire', 'McpConnectionWire', 'McpConnectionsWire', 'McpConnectStartWire']) {
       expect(parseInterfaceFields(cli, name)).toEqual(parseInterfaceFields(wire, name));
     }
+  });
+
+  it('the billing mirrors declare exactly the wire fields (guuey#608)', () => {
+    // `guuey billing` renders every BillingAppWire/summary field;
+    // `guuey apps subscribe` branches on the result's status/url. Equality
+    // on all of them — a renamed field is a blank column or a lost
+    // checkout URL, silently.
+    const cli = read(CLI_BILLING);
+    const wire = read(WIRE_BILLING);
+    for (const name of [
+      'PaymentMethodOnFileWire',
+      'BillingAppWire',
+      'BillingSummaryWire',
+      'SubscribeAppResultWire',
+    ]) {
+      expect(parseInterfaceFields(cli, name)).toEqual(parseInterfaceFields(wire, name));
+    }
+    // The plan vocabulary the CLI offers is exactly the wire's.
+    expect(parseStringLiterals(cli, 'SUBSCRIBABLE_TIERS')).toEqual(
+      parseStringLiterals(wire, 'SUBSCRIBABLE_TIERS'),
+    );
   });
 });

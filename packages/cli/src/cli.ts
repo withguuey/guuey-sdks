@@ -71,6 +71,7 @@ import { agentConfig } from './commands/agent';
 import { agentApply, agentRollback, agentStatus } from './commands/agent-apply';
 import { domainsAdd, domainsList, domainsVerify, domainsRemove } from './commands/domains';
 import { tokensCreate, tokensList, tokensRevoke } from './commands/tokens';
+import { appsSubscribe, billing } from './commands/billing';
 import { slugClaim, slugRelease } from './commands/slug';
 import { ApiError } from './client';
 import { printWelcome, printQuickGuide } from './logo';
@@ -284,6 +285,8 @@ Authentication:
   login --token <pat>           Log in with a Personal Access Token (headless)
   logout                        Clear stored credentials
   whoami                        Show current authenticated user
+  billing                       Plan per app + the saved card on file
+                                 (personal account) + the billing console URL
 
 Apps:
   apps create                   Create a new app (auto-login if needed)
@@ -354,6 +357,12 @@ Apps:
                                  in on your custom domain — the "C"
                                  identified-auth path. Pass 'clear' to unset.
     --noindex <on|off>          Ask search engines not to index the page.
+  apps subscribe [appId]        Subscribe the app to a paid plan with your
+                                 saved card (one-click). Without a usable
+                                 card it prints + opens the browser checkout
+                                 page instead.
+    --plan <tier>               starter | pro | scale (required)
+    --no-browser                Print the checkout URL without opening it
   apps delete [appId]           Delete an app
   apps recover [appId]          Cancel a pending deletion inside the 30-day
                                  window. Brings the widget signing key back
@@ -821,6 +830,16 @@ async function main(): Promise<void> {
       whoami({ json: jsonFlag });
       break;
 
+    case 'billing':
+      // `guuey billing` — the account's plan-per-app + card-on-file summary
+      // (guuey#608). No subcommands.
+      if (action !== undefined) {
+        console.error(`Unknown billing command: ${action}. Use: guuey billing [--json]`);
+        process.exit(1);
+      }
+      await billing(flags);
+      break;
+
     case 'config':
       switch (action) {
         case 'show':
@@ -917,6 +936,11 @@ async function main(): Promise<void> {
         case 'recover':
           await appsRecover(rest[0], { json: jsonFlag });
           break;
+        case 'subscribe':
+          // One-click saved-card subscribe (guuey#608); the tier resolves
+          // to a price server-side against the environment allowlist.
+          await appsSubscribe(rest[0], flags);
+          break;
         case 'access':
           await appsAccess(rest[0], {
             guests: flags.guests as string | true | undefined,
@@ -954,7 +978,7 @@ async function main(): Promise<void> {
           break;
         default:
           console.error(
-            `Unknown apps command: ${action ?? '(none)'}. Use: list, get, create, update, delete, recover, access, publish, unpublish, byo-user`,
+            `Unknown apps command: ${action ?? '(none)'}. Use: list, get, create, update, delete, recover, subscribe, access, publish, unpublish, byo-user`,
           );
           process.exit(1);
       }
