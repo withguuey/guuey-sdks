@@ -69,10 +69,6 @@ on:
         description: "Must be exactly 'yes' to allow a live (non-dry-run) dispatch publish."
         required: false
         default: "no"
-      verify-latest-of:
-        description: "guuey#439: run ONLY the announce-line latest verification at this cohort version (the founder's post-promotion CI receipt — pure registry reads, no publish)."
-        required: false
-        default: ""
   release:
     types: [published]
 
@@ -80,50 +76,7 @@ permissions:
   contents: read
 
 jobs:
-  # guuey#439: the founder's post-promotion CI receipt — pure registry
-  # reads at the given cohort version (latest coherence x13 + the cold
-  # stranger install). Dispatched AFTER his leaf-first dist-tag walk;
-  # green here == the announce line is proven end to end, no credential
-  # anywhere. Runs alone: the publish jobs skip when this input is set.
-  verify-latest:
-    if: github.event_name == 'workflow_dispatch' && inputs.verify-latest-of != ''
-    runs-on: ubuntu-latest
-    steps:
-      - name: Announce-line latest verification (post-promotion receipt)
-        run: |
-          set -euo pipefail
-          VER="${{ inputs.verify-latest-of }}"
-          case "$VER" in
-            *[!0-9.]*|"") echo "::error ::verify-latest-of must be a bare cohort version like 0.16.12"; exit 1 ;;
-          esac
-          for pkg in config state fs agent-layout mcp-apps-host threads widget-auth worker agent-client chat host create-agentic-app cli; do
-            name="@guuey/$pkg"
-            ok=""
-            for i in $(seq 1 24); do
-              tag=$(npm view "$name" dist-tags.latest 2>/dev/null || true)
-              if [ "$tag" = "$VER" ]; then ok=1; break; fi
-              sleep 10
-            done
-            if [ -z "$ok" ]; then
-              echo "::error ::$name dist-tags.latest reads '$tag', not $VER — the promotion walk is incomplete or mixed"
-              exit 1
-            fi
-            echo "• $name latest -> $VER"
-          done
-          COLD=$(mktemp -d)
-          cd "$COLD" && npm init -y > /dev/null
-          ok=""
-          for i in $(seq 1 12); do
-            if npm install "@guuey/cli@latest" --no-audit --no-fund --prefer-online > install.log 2>&1; then ok=1; break; fi
-            echo "cold install attempt $i failed — retrying in 20s"; tail -3 install.log; sleep 20
-          done
-          [ -n "$ok" ] || { echo "::error ::cold 'npm install @guuey/cli@latest' never resolved"; exit 1; }
-          GOT=$(node -pe "require('./node_modules/@guuey/cli/package.json').version")
-          [ "$GOT" = "$VER" ] || { echo "::error ::cold install resolved $GOT, expected $VER"; exit 1; }
-          echo "PROMOTION VERIFIED: cold @guuey/cli@latest == $VER, full closure installed"
-
   gate:
-    if: github.event_name != 'workflow_dispatch' || inputs.verify-latest-of == ''
     name: Publish gate (cohort CI)
     runs-on: ubuntu-latest
     steps:
@@ -182,28 +135,12 @@ jobs:
           else
             echo "dry_run=true" >> "$GITHUB_OUTPUT"
           fi
-          # guuey#439 founder-in-the-loop channel: a PRERELEASE-marked
-          # GitHub release publishes the cohort on dist-tag `next` and
-          # leaves `latest` UNTOUCHED — strangers keep resolving the prior
-          # complete cohort while the founder promotes leaf-first from his
-          # own terminal (docs/operations/runbooks/npm-latest-promotion.md,
-          # guuey repo). `--tag` on publish IS OIDC-covered (it is a
-          # publish argument); promoting afterwards is not, which is
-          # exactly why the promotion is HIS walk, never a CI credential.
-          if [ "${{ github.event_name }}" = "release" ] && [ "${{ github.event.release.prerelease }}" = "true" ]; then
-            echo "channel=next" >> "$GITHUB_OUTPUT"
-          else
-            echo "channel=latest" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Publish (leaf-first, idempotent)
         env:
           DRY_RUN: ${{ steps.mode.outputs.dry_run }}
-          CHANNEL: ${{ steps.mode.outputs.channel }}
         run: |
           set -euo pipefail
-          TAGARG=""
-          if [ "$CHANNEL" = "next" ]; then TAGARG="--tag next"; fi
           # Fixed leaf-first order: config/state/fs/agent-layout/widget-auth/
           # worker are leaves (agent-layout: react peer only, guuey#403);
           # host needs config+worker, threads needs mcp-apps-host,
@@ -243,8 +180,8 @@ jobs:
           for pkg in "${TODO[@]}"; do
             name=$(node -pe "require('./packages/$pkg/package.json').name")
             ver=$(node -pe "require('./packages/$pkg/package.json').version")
-            echo "Publishing $name@$ver (channel: ${CHANNEL}) ..."
-            (cd "packages/$pkg" && pnpm publish --provenance --no-git-checks ${TAGARG})
+            echo "Publishing $name@$ver ..."
+            (cd "packages/$pkg" && pnpm publish --provenance --no-git-checks)
           done
 
       - name: Publish the bare-name forwarder if its version is new (guuey#449)
@@ -329,16 +266,9 @@ jobs:
 
       - name: Announce-line cold resolve (guuey#439 — the stranger's install, proven in-run)
         if: steps.mode.outputs.dry_run == 'false'
-        env:
-          CHANNEL: ${{ steps.mode.outputs.channel }}
         run: |
           set -euo pipefail
-          # On the founder-in-the-loop channel, `latest` is DELIBERATELY
-          # unmoved — gate the `next` tag's coherence + cold install
-          # instead; the latest-side gate runs post-promotion via the
-          # `verify-latest-of` dispatch (his walk's CI receipt).
           GATE_TAG="latest"
-          if [ "$CHANNEL" = "next" ]; then GATE_TAG="next"; fi
           # The p1 half of #439 the zero-secret posture allows: the run may
           # not go green until the EXACT command the announce advertises —
           # a version-less install resolving `latest` — works cold. Two
