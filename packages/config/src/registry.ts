@@ -69,6 +69,11 @@ export const FRAMEWORK_REGISTRY: readonly FrameworkEntry[] = [
   {
     framework: "claude-agent-sdk",
     sdkPackage: "@anthropic-ai/claude-agent-sdk",
+    // platformPinnedVersion = what the fat image ships. Guarded twice
+    // (guuey#648/#653): scripts/check-pin-coherence.mjs (CI + pre-push,
+    // the whole host-shared==registry==image==host==facet-peer chain) and
+    // registry.pins.test.ts (always-on vs @guuey/host — the publish-time
+    // belt that also runs where the root script does not exist).
     platformPinnedVersion: "0.3.247",
     facetSupportedRange: ">=0.2.76 <0.4",
     defaultProvider: "anthropic",
