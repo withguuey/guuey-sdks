@@ -89,7 +89,7 @@ export const FRAMEWORK_REGISTRY: readonly FrameworkEntry[] = [
     framework: "google-adk",
     sdkPackage: "@google/adk", // the OFFICIAL JS ADK (the Python lane retired with guuey_adk_host)
     platformPinnedVersion: "1.3.0", // pinned in @guuey-private/host-shared
-    facetSupportedRange: ">=1.0.0 <2", // @silverprotocol/google-adk peer range
+    facetSupportedRange: ">=1.0.0 <3", // @silverprotocol/google-adk@0.5.4 peer range (ADK 2.x admitted; the 1.3.0 image pin is a deliberate HOLD, guuey#657)
     defaultProvider: "google",
   },
   {
