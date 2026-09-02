@@ -218,7 +218,9 @@ describe('billingTopUpCore (guuey#611)', () => {
   });
 
   it('requires_console prints the console door; --no-browser only prints; --json emits raw', async () => {
-    const url = 'https://dev.platform.sandbox.guuey.com/apps/app-1/billing';
+    // Credits are wallet-level (guuey#611): the console door the API hands
+    // back is the wallet Billing page, not a per-app one.
+    const url = 'https://dev.platform.sandbox.guuey.com/billing';
     const api = vi.fn(async () => jsonResponse(200, { status: 'requires_console', url, ref: null }));
     const open = vi.fn(() => true);
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -300,7 +302,8 @@ describe('appsSubscribeCore', () => {
   });
 
   it('requires_checkout prints the URL and opens it via the injection-safe opener; --no-browser only prints', async () => {
-    const url = 'https://dev.platform.sandbox.guuey.com/apps/app-1/billing';
+    // What the API returns since guuey#651: the app's Plan & usage page.
+    const url = 'https://dev.platform.sandbox.guuey.com/apps/app-1/plan';
     const api = vi.fn(async () => jsonResponse(200, { status: 'requires_checkout', url }));
     const open = vi.fn(() => true);
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
