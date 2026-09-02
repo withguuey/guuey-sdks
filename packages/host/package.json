@@ -62,8 +62,9 @@
   "homepage": "https://guuey.com",
   "peerDependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.199",
-    "@google/adk": ">=1.0.0 <2",
-    "@openai/agents": ">=0.12.0 <0.18"
+    "@google/adk": ">=1.0.0 <3",
+    "@openai/agents": ">=0.12.0 <0.18",
+    "@modelcontextprotocol/sdk": "^1.26.0"
   },
   "peerDependenciesMeta": {
     "@anthropic-ai/claude-agent-sdk": {
@@ -73,6 +74,9 @@
       "optional": true
     },
     "@openai/agents": {
+      "optional": true
+    },
+    "@modelcontextprotocol/sdk": {
       "optional": true
     }
   }

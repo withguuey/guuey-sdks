@@ -281,3 +281,15 @@ describe("loadAdk — resolution order", () => {
     await expect(loadAdk(join(bare, "agent.js"))).rejects.toThrow(/optional peer.*Install @google\/adk/s);
   });
 });
+
+// ── the enum value the structural slice relies on ────────────────────────────
+
+describe("StreamingMode.SSE is the string the structural slice passes (guuey#657)", () => {
+  it('the installed @google/adk agrees: StreamingMode.SSE === "sse" (bites if a future ADK renames the value)', async () => {
+    // The runner's structural slice passes the literal "sse" and never
+    // imports the enum; this pin reads the REAL enum from the installed
+    // SDK so a renamed value turns red here instead of at the first turn.
+    const { StreamingMode } = await import("@google/adk");
+    expect(StreamingMode.SSE).toBe("sse");
+  });
+});

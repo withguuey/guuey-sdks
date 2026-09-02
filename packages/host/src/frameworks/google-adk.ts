@@ -17,6 +17,15 @@
  *  - **`role: "user"` pinned on `newMessage`.** Omitting it 400s on tool
  *    follow-ups (upstream adk-js#475); the pin is a mechanistically complete
  *    mitigation for arbitrary-depth tool loops.
+ *  - **ADK 2.0 peer trap (guuey#657).** From `@google/adk@2.0.0` the MCP
+ *    SDK (`@modelcontextprotocol/sdk`) is an OPTIONAL peer the ADK lazy-loads
+ *    at `MCPToolset` connect — on 1.x it arrived transitively. Any install
+ *    that runs this runner against ADK 2 must carry the SDK explicitly (the
+ *    pod image, a code-mode project, a scaffold); `@guuey/host` declares it
+ *    as an optional peer so package managers surface the gap. The adapter's
+ *    structural slice below compiles unchanged against 2.0.0's typings, and
+ *    `StreamingMode.SSE === "sse"` holds at runtime on both majors — the
+ *    string this runner passes stays correct (pinned in the test).
  *  - **MCP = Streamable-HTTP only.** The JS `MCPToolset` speaks stdio +
  *    Streamable-HTTP; a `transport: "sse"` credential is REJECTED with an
  *    actionable error (the Python-era SSE arm has no JS mapping). Auth
