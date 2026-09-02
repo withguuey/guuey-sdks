@@ -71,7 +71,7 @@ import { agentConfig } from './commands/agent';
 import { agentApply, agentRollback, agentStatus } from './commands/agent-apply';
 import { domainsAdd, domainsList, domainsVerify, domainsRemove } from './commands/domains';
 import { tokensCreate, tokensList, tokensRevoke } from './commands/tokens';
-import { appsSubscribe, billing } from './commands/billing';
+import { appsSubscribe, billing, billingTopUp } from './commands/billing';
 import { slugClaim, slugRelease } from './commands/slug';
 import { ApiError } from './client';
 import { printWelcome, printQuickGuide } from './logo';
@@ -285,8 +285,15 @@ Authentication:
   login --token <pat>           Log in with a Personal Access Token (headless)
   logout                        Clear stored credentials
   whoami                        Show current authenticated user
-  billing                       Plan per app + the saved card on file
-                                 (personal account) + the billing console URL
+  billing                       Plan per app + the saved card on file + the
+                                 credit balance (personal account) + the
+                                 billing console URL
+  billing topup                 Add credits that pre-pay your next invoices
+    --app <appId>               App whose account is topped up (default:
+                                 guuey.json)
+    --amount <usd>              Whole-dollar amount from the offered list
+                                 (the server names it); opens Checkout
+    --no-browser                Print the Checkout URL only
 
 Apps:
   apps create                   Create a new app (auto-login if needed)
@@ -831,10 +838,17 @@ async function main(): Promise<void> {
       break;
 
     case 'billing':
-      // `guuey billing` — the account's plan-per-app + card-on-file summary
-      // (guuey#608). No subcommands.
+      // `guuey billing` — the account's plan-per-app + card-on-file + credit
+      // balance summary (guuey#608, #611); `guuey billing topup` — the
+      // credit top-up door (guuey#611).
+      if (action === 'topup') {
+        await billingTopUp(flags);
+        break;
+      }
       if (action !== undefined) {
-        console.error(`Unknown billing command: ${action}. Use: guuey billing [--json]`);
+        console.error(
+          `Unknown billing command: ${action}. Use: guuey billing [--json] | guuey billing topup --app <appId> --amount <usd>`,
+        );
         process.exit(1);
       }
       await billing(flags);

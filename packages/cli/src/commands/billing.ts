@@ -3,8 +3,14 @@
  * payment-method-on-file one-click subscribe (guuey#608):
  *
  *   billing                              plan per app + the wallet's saved
- *                                        card (····last4) + the console
- *                                        billing door
+ *                                        card (····last4) + the credit
+ *                                        balance + the console billing door
+ *   billing topup --app <id> --amount <usd>
+ *                                        credit top-up (guuey#611): prints
+ *                                        the founder-signed terms and the
+ *                                        hosted Checkout URL for an
+ *                                        allowlisted amount; the webhook
+ *                                        credits the balance on completion
  *   apps subscribe <appId> --plan <tier> one-click subscribe against the
  *                                        saved card; falls back to a
  *                                        browser checkout URL when there is
@@ -57,6 +63,10 @@ export interface BillingSummaryWire {
   apps: BillingAppWire[];
   portalHint: boolean;
   consoleBillingUrl: string;
+  /** guuey#611 — the wallet's credit balance (USD); null = unknown. */
+  creditBalanceUsd: number | null;
+  /** guuey#611 — the env's top-up allowlist; empty = top-ups are dark here. */
+  topUpAmountsUsd: number[];
 }
 
 /** Mirror of `SubscribeAppResultWire`. */
@@ -64,6 +74,22 @@ export interface SubscribeAppResultWire {
   status: string;
   url: string | null;
 }
+
+/** Mirror of `CreditTopUpResultWire` (guuey#611; status widened to string). */
+export interface CreditTopUpResultWire {
+  status: string;
+  url: string;
+  ref: string | null;
+}
+
+// ─── Founder-signed top-up copy (guuey#611) — VERBATIM on every top-up surface ──
+
+/** The refund policy, word for word as ruled 2026-09-02. */
+export const CREDIT_TOPUP_REFUND_WORDING =
+  'Credits pre-pay your future guuey invoices and are applied automatically before your card is charged. They are non-refundable and non-transferable, do not expire while your account is open, and any unused balance is forfeited when the account is closed.';
+
+/** The separate belt line, word for word. */
+export const CREDIT_TOPUP_BUSINESS_USE_LINE = 'Business use only';
 
 /**
  * Mirror of `SUBSCRIBABLE_TIERS` — the plan NAMES only. The server maps a
@@ -82,6 +108,23 @@ export function cardLine(pm: PaymentMethodOnFileWire | null): string {
   return pm
     ? `Card on file: ${pm.brand} ····${pm.last4}`
     : 'No card on file — your first checkout (browser) saves one for one-click subscribes.';
+}
+
+/**
+ * The credit balance line (guuey#611), from the READ only. Null (unknown /
+ * never billed) prints nothing when top-ups are dark, and an honest "—" when
+ * they are lit — never a guessed zero.
+ */
+export function creditBalanceLine(summary: {
+  creditBalanceUsd: number | null;
+  topUpAmountsUsd: number[];
+}): string | null {
+  if (summary.creditBalanceUsd === null) {
+    return summary.topUpAmountsUsd.length > 0
+      ? 'Credit balance: — (applies to your next invoices)'
+      : null;
+  }
+  return `Credit balance: $${summary.creditBalanceUsd.toFixed(2)} — applies to your next invoices`;
 }
 
 /** One `guuey billing` table row. */
@@ -133,10 +176,77 @@ export async function billingSummaryCore(
   }
   console.log('');
   console.log(`  ${cardLine(data.paymentMethodOnFile)}`);
+  const credit = creditBalanceLine(data);
+  if (credit !== null) {
+    console.log(`  ${credit}`);
+    if (data.topUpAmountsUsd.length > 0) {
+      console.log(
+        `  Add credits: guuey billing topup --app <appId> --amount <${data.topUpAmountsUsd.join('|')}>`,
+      );
+    }
+  }
   // portalHint: the server mints no Stripe portal session on this wire —
   // the console Billing page (a real, env-correct link) is the door for
   // invoices, cards and cancellations.
   console.log(`  Manage invoices & payment methods: ${data.consoleBillingUrl}`);
+}
+
+export async function billingTopUpCore(
+  opts: {
+    appId: string;
+    amountUsd: number;
+    openBrowser: boolean;
+    json: boolean;
+    auth: AuthTokens;
+    config: ResolvedConfig;
+  },
+  deps?: { api?: typeof apiRequest; open?: (url: string) => boolean },
+): Promise<CreditTopUpResultWire> {
+  const api = deps?.api ?? apiRequest;
+  // openUrl refuses (throws) a non-http(s) url — the value is
+  // server-supplied, so anything malformed is surfaced, never opened
+  // (the guuey#500 injection guard).
+  const open = deps?.open ?? openUrl;
+  const res = await api(
+    opts.auth.pat,
+    opts.config,
+    'POST',
+    `/apps/${encodeURIComponent(opts.appId)}/billing/topup`,
+    { amountUsd: opts.amountUsd },
+  );
+  if (!res.ok) {
+    // The server's faces come through verbatim: the dark refusal ("not
+    // available in this environment"), the off-list amount naming the
+    // offered list, the ownership refusals.
+    const data: unknown = await res.json().catch(() => ({}));
+    throw new Error(parseApiError(data, `HTTP ${res.status}`));
+  }
+  const data = (await res.json()) as CreditTopUpResultWire;
+  if (opts.json) {
+    out.json(data);
+    return data;
+  }
+  // The top-up surface carries the founder-signed wording, verbatim, before
+  // the door — the customer reads the terms before they pay.
+  console.log(`  ${CREDIT_TOPUP_REFUND_WORDING}`);
+  console.log(`  ${CREDIT_TOPUP_BUSINESS_USE_LINE}`);
+  console.log('');
+  if (data.status === 'requires_console') {
+    console.log(
+      `This account has no billing history yet — start your first purchase from the console Billing page:`,
+    );
+  } else {
+    console.log(
+      `Pay $${opts.amountUsd} of credits in the browser (nothing is charged until you complete Checkout; ` +
+        'the balance updates once Stripe confirms):',
+    );
+  }
+  console.log(`  ${data.url}`);
+  if (opts.openBrowser) {
+    const opened = open(data.url);
+    console.log(opened ? 'Opening your browser…' : "Couldn't open a browser — copy the URL above.");
+  }
+  return data;
 }
 
 export async function appsSubscribeCore(
@@ -204,6 +314,43 @@ export async function billing(flags?: Record<string, string | true>): Promise<vo
   const config = resolveConfig();
   try {
     await billingSummaryCore({ json: flags?.json === true, auth, config });
+  } catch (err) {
+    out.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+}
+
+/** `guuey billing topup --app <appId> --amount <usd> [--no-browser] [--json]` (guuey#611) */
+export async function billingTopUp(flags?: Record<string, string | true>): Promise<void> {
+  const config = resolveConfig();
+  const appFlag = flags?.app;
+  const appId = typeof appFlag === 'string' && appFlag.length > 0 ? appFlag : config.appId;
+  if (!appId) {
+    out.error('Usage: guuey billing topup --app <appId> --amount <usd>');
+    process.exit(1);
+  }
+  const amountFlag = flags?.amount;
+  // A whole-dollar integer — the SERVER decides whether it is one of the
+  // offered amounts (its allowlist), and says which are, so the CLI carries
+  // no list of its own.
+  const amountUsd =
+    typeof amountFlag === 'string' && /^[1-9]\d*$/.test(amountFlag.trim())
+      ? Number(amountFlag.trim())
+      : null;
+  if (amountUsd === null) {
+    out.error('--amount is required — a whole-dollar amount, e.g. --amount 50');
+    process.exit(1);
+  }
+  const auth = requireAuth();
+  try {
+    await billingTopUpCore({
+      appId,
+      amountUsd,
+      openBrowser: flags?.['no-browser'] !== true,
+      json: flags?.json === true,
+      auth,
+      config,
+    });
   } catch (err) {
     out.error(err instanceof Error ? err.message : String(err));
     process.exit(1);

@@ -10,8 +10,12 @@ import {
   appsSubscribeCore,
   billingAppRow,
   billingSummaryCore,
+  billingTopUpCore,
   BILLING_COLUMNS,
   cardLine,
+  creditBalanceLine,
+  CREDIT_TOPUP_BUSINESS_USE_LINE,
+  CREDIT_TOPUP_REFUND_WORDING,
   type BillingAppWire,
   type BillingSummaryWire,
 } from './billing';
@@ -43,6 +47,8 @@ const SUMMARY: BillingSummaryWire = {
   apps: [APP],
   portalHint: true,
   consoleBillingUrl: 'https://dev.platform.sandbox.guuey.com/dashboard/billing',
+  creditBalanceUsd: 75,
+  topUpAmountsUsd: [25, 50, 100, 250],
 };
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -57,6 +63,21 @@ describe('cardLine', () => {
   it('renders brand ····last4, or the save-a-card hint', () => {
     expect(cardLine({ brand: 'visa', last4: '4242' })).toBe('Card on file: visa ····4242');
     expect(cardLine(null)).toMatch(/No card on file/);
+  });
+});
+
+describe('creditBalanceLine (guuey#611)', () => {
+  it('prints the balance from the read; unknown prints "—" when lit and NOTHING when dark — never a guessed zero', () => {
+    expect(creditBalanceLine({ creditBalanceUsd: 75, topUpAmountsUsd: [25] })).toBe(
+      'Credit balance: $75.00 — applies to your next invoices',
+    );
+    expect(creditBalanceLine({ creditBalanceUsd: 0, topUpAmountsUsd: [] })).toBe(
+      'Credit balance: $0.00 — applies to your next invoices',
+    );
+    expect(creditBalanceLine({ creditBalanceUsd: null, topUpAmountsUsd: [25] })).toBe(
+      'Credit balance: — (applies to your next invoices)',
+    );
+    expect(creditBalanceLine({ creditBalanceUsd: null, topUpAmountsUsd: [] })).toBeNull();
   });
 });
 
@@ -136,6 +157,119 @@ describe('billingSummaryCore', () => {
         { api: vi.fn(async () => jsonResponse(401, { error: { code: 'UNAUTHENTICATED', message: 'bad pat' } })) },
       ),
     ).rejects.toThrow(/bad pat/);
+  });
+});
+
+describe('billingSummaryCore — credits (guuey#611)', () => {
+  it('prints the balance line + the topup hint with the SERVER list when lit; neither when dark', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await billingSummaryCore(
+      { json: false, auth, config },
+      { api: vi.fn(async () => jsonResponse(200, SUMMARY)) },
+    );
+    let output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain('Credit balance: $75.00 — applies to your next invoices');
+    expect(output).toContain('--amount <25|50|100|250>');
+
+    logSpy.mockClear();
+    await billingSummaryCore(
+      { json: false, auth, config },
+      {
+        api: vi.fn(async () =>
+          jsonResponse(200, { ...SUMMARY, creditBalanceUsd: null, topUpAmountsUsd: [] }),
+        ),
+      },
+    );
+    output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).not.toMatch(/Credit balance/);
+    expect(output).not.toMatch(/billing topup/);
+  });
+});
+
+describe('billingTopUpCore (guuey#611)', () => {
+  it('POSTs /apps/:id/billing/topup with { amountUsd }, prints BOTH ruled lines verbatim, then the Checkout URL, and opens it via the injection-safe opener', async () => {
+    const api = vi.fn(async () =>
+      jsonResponse(200, { status: 'checkout', url: 'https://checkout.stripe.com/c/topup', ref: 'cs_1' }),
+    );
+    const open = vi.fn(() => true);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const result = await billingTopUpCore(
+      { appId: 'app-1', amountUsd: 50, openBrowser: true, json: false, auth, config },
+      { api, open },
+    );
+    expect(result).toEqual({ status: 'checkout', url: 'https://checkout.stripe.com/c/topup', ref: 'cs_1' });
+    expect(api).toHaveBeenCalledWith('guuey_user_test', config, 'POST', '/apps/app-1/billing/topup', {
+      amountUsd: 50,
+    });
+    const lines = logSpy.mock.calls.map((c) => String(c[0] ?? ''));
+    const output = lines.join('\n');
+    expect(output).toContain(CREDIT_TOPUP_REFUND_WORDING);
+    expect(output).toContain(CREDIT_TOPUP_BUSINESS_USE_LINE);
+    expect(CREDIT_TOPUP_REFUND_WORDING).toBe(
+      'Credits pre-pay your future guuey invoices and are applied automatically before your card is charged. They are non-refundable and non-transferable, do not expire while your account is open, and any unused balance is forfeited when the account is closed.',
+    );
+    expect(CREDIT_TOPUP_BUSINESS_USE_LINE).toBe('Business use only');
+    // Terms BEFORE the door.
+    expect(lines.findIndex((l) => l.includes('non-refundable'))).toBeLessThan(
+      lines.findIndex((l) => l.includes('https://checkout.stripe.com/c/topup')),
+    );
+    expect(output).toContain('$50');
+    expect(open).toHaveBeenCalledWith('https://checkout.stripe.com/c/topup');
+  });
+
+  it('requires_console prints the console door; --no-browser only prints; --json emits raw', async () => {
+    const url = 'https://dev.platform.sandbox.guuey.com/apps/app-1/billing';
+    const api = vi.fn(async () => jsonResponse(200, { status: 'requires_console', url, ref: null }));
+    const open = vi.fn(() => true);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await billingTopUpCore(
+      { appId: 'app-1', amountUsd: 25, openBrowser: false, json: false, auth, config },
+      { api, open },
+    );
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toMatch(/no billing history yet/i);
+    expect(output).toContain(url);
+    expect(open).not.toHaveBeenCalled();
+
+    logSpy.mockClear();
+    await billingTopUpCore(
+      { appId: 'app-1', amountUsd: 25, openBrowser: true, json: true, auth, config },
+      { api, open },
+    );
+    expect(open).not.toHaveBeenCalled();
+    expect(JSON.parse(logSpy.mock.calls.map((c) => String(c[0])).join(''))).toEqual({
+      status: 'requires_console',
+      url,
+      ref: null,
+    });
+  });
+
+  it("relays the server's faces verbatim — the DARK refusal and the off-list amount", async () => {
+    for (const message of [
+      'Credit top-ups are not available in this environment.',
+      'That amount is not offered — choose one of: $25, $50, $100, $250.',
+    ]) {
+      await expect(
+        billingTopUpCore(
+          { appId: 'app-1', amountUsd: 30, openBrowser: false, json: false, auth, config },
+          { api: vi.fn(async () => jsonResponse(400, { error: { code: 'VALIDATION', message } })) },
+        ),
+      ).rejects.toThrow(message);
+    }
+  });
+
+  it('refuses to open a non-http(s) URL from the server (guuey#500 guard) via the real default opener', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await expect(
+      billingTopUpCore(
+        { appId: 'app-1', amountUsd: 25, openBrowser: true, json: false, auth, config },
+        {
+          api: vi.fn(async () =>
+            jsonResponse(200, { status: 'checkout', url: 'javascript:alert(1)', ref: 'cs_x' }),
+          ),
+        },
+      ),
+    ).rejects.toThrow(/non-http\(s\)/);
   });
 });
 
