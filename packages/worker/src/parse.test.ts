@@ -138,6 +138,46 @@ describe("parseControl", () => {
     expect(msg.memoryAttached).toBe(true);
   });
 
+  it("round-trips gguiAttached (boolean) onto the typed Invoke — the generative-UI gate (guuey#630)", () => {
+    const withRail = JSON.stringify({
+      type: "invoke",
+      input: "go",
+      identity: { userId: "u", authMode: "anonymous" },
+      fs: { app: "/app", home: "/home", session: "/session" },
+      history: [],
+      gguiAttached: true,
+    });
+    const msg = parseControl(withRail);
+    if (!isInvoke(msg)) throw new Error("expected invoke");
+    expect(msg.gguiAttached).toBe(true);
+  });
+
+  it("omits gguiAttached when absent or non-boolean — fail-closed: no rail, no card promise", () => {
+    const bare = parseControl(
+      JSON.stringify({
+        type: "invoke",
+        input: "go",
+        identity: { userId: "u", authMode: "anonymous" },
+        fs: { app: "/app", home: "/home", session: "/session" },
+        history: [],
+      }),
+    );
+    if (!isInvoke(bare)) throw new Error("expected invoke");
+    expect("gguiAttached" in bare).toBe(false);
+    const nonBool = parseControl(
+      JSON.stringify({
+        type: "invoke",
+        input: "go",
+        identity: { userId: "u", authMode: "anonymous" },
+        fs: { app: "/app", home: "/home", session: "/session" },
+        history: [],
+        gguiAttached: "yes",
+      }),
+    );
+    if (!isInvoke(nonBool)) throw new Error("expected invoke");
+    expect("gguiAttached" in nonBool).toBe(false);
+  });
+
   it("round-trips fsBound (boolean) onto the typed Invoke — the host's built-in tool gate (guuey#234)", () => {
     const withBound = JSON.stringify({
       type: "invoke",

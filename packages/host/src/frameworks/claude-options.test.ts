@@ -10,7 +10,7 @@ import {
 } from "./claude-options.js";
 import {
   RESPONSE_NORMS_SECTION,
-  SURFACE_FORMATTING_SECTION, renderResourcesSection } from "../preamble.js";
+  SURFACE_FORMATTING_SECTION, GENERATIVE_UI_SECTION, renderResourcesSection } from "../preamble.js";
 
 /** Minimal invoke context with no FS layers, no credentials, default env. */
 function ctx(over: Partial<BuildOptionsContext> = {}): BuildOptionsContext {
@@ -396,6 +396,64 @@ describe("buildOptions — Anthropic second seam (loopback proxy)", () => {
     expect(opts.env?.ANTHROPIC_API_KEY).toBe("sk-local");
     expect(opts.env?.ANTHROPIC_BASE_URL).toBeUndefined();
     expect(opts.env?.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+  });
+});
+
+describe("buildOptions — generative-UI section (guuey#630)", () => {
+  /**
+   * The #630 gap: a BRIEFED agent's own systemPrompt REPLACES the platform
+   * default, so the only "show, don't tell" text guuey owned (the code-path
+   * scaffold) never reached a console/no-code agent — the ggui rail was
+   * attached but never invoked, and a menu-shaped ask came back a markdown
+   * table. These pin the fix at the one place every briefed agent flows
+   * through, whoever authored the brief.
+   */
+  it("a briefed agent on an armed rail gets the guidance", () => {
+    const opts = buildOptions({ systemPrompt: "You book salons." }, ctx({ gguiAttached: true }));
+    expect(opts.systemPrompt).toBe(
+      "You book salons." +
+        SURFACE_FORMATTING_SECTION +
+        GENERATIVE_UI_SECTION +
+        RESPONSE_NORMS_SECTION,
+    );
+  });
+
+  it("ORDER is load-bearing: the guidance sits AFTER the section it qualifies", () => {
+    // SURFACE_FORMATTING_SECTION ends with "Tables render natively — use one
+    // when comparing things" — true for a text answer, and exactly the nudge
+    // that loses a shaped answer to a table. A qualifier upstream of what it
+    // qualifies loses on recency, so this ordering IS the fix.
+    const sp = buildOptions({ systemPrompt: "S" }, ctx({ gguiAttached: true }))
+      .systemPrompt as string;
+    expect(sp.indexOf(GENERATIVE_UI_SECTION)).toBeGreaterThan(
+      sp.indexOf(SURFACE_FORMATTING_SECTION),
+    );
+    // The norms stay LAST (guuey#556) — #630 must not displace them.
+    expect(sp.endsWith(RESPONSE_NORMS_SECTION)).toBe(true);
+  });
+
+  it("no armed rail, no guidance — never name a tool the turn cannot dial", () => {
+    const bare = buildOptions({ systemPrompt: "S" }, ctx()).systemPrompt as string;
+    expect(bare).not.toContain(GENERATIVE_UI_SECTION);
+    expect(bare).toBe("S" + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION);
+  });
+
+  it("surfaceHints:false suppresses BOTH surface sections (BYO plain-text court)", () => {
+    const sp = buildOptions(
+      { systemPrompt: "S", surfaceHints: false },
+      ctx({ gguiAttached: true }),
+    ).systemPrompt as string;
+    expect(sp).toBe("S" + RESPONSE_NORMS_SECTION);
+  });
+
+  it("a prompt-less agent on an armed rail gets it too (the platform default is not a brief)", () => {
+    const opts = buildOptions({}, ctx({ gguiAttached: true }));
+    expect(opts.systemPrompt).toBe(
+      GUUEY_DEFAULT_SYSTEM_PROMPT +
+        SURFACE_FORMATTING_SECTION +
+        GENERATIVE_UI_SECTION +
+        RESPONSE_NORMS_SECTION,
+    );
   });
 });
 

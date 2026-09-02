@@ -349,6 +349,71 @@ export function renderSurfaceSection(
   return surfaceHints === false ? "" : SURFACE_FORMATTING_SECTION;
 }
 
+/**
+ * The generative-UI section (guuey#630) — WHEN a drawn card beats prose,
+ * for an agent whose ggui render rail is actually armed this turn.
+ *
+ * Why it exists: a briefed agent supplies its own `systemPrompt`, which
+ * REPLACES {@link GUUEY_DEFAULT_SYSTEM_PROMPT} wholesale, and the only
+ * "show, don't tell" text the platform owned lived in the CODE-path
+ * scaffold (`@guuey/config`'s `GUUEY_SCAFFOLD_SYSTEM_PROMPT` →
+ * `create-agentic-app`'s `prompts/system.md`), which a no-code /
+ * console-briefed agent never sees. So the ggui rail was attached to
+ * every default agent while nothing told the model to reach for it —
+ * "attached but never invoked". ir's #630 receipt: a briefed wizard agent
+ * answered a menu-shaped ask as a clean markdown table with zero cards,
+ * on the Playground AND the portal.
+ *
+ * It sits DIRECTLY AFTER {@link SURFACE_FORMATTING_SECTION} on purpose.
+ * That section ends with "Tables render natively — use one when comparing
+ * things", which is true for a text answer and is exactly the nudge that
+ * loses a shaped answer to a table; this section is the qualifier, and
+ * qualifiers only work downstream of what they qualify.
+ *
+ * TWO gates, both owned here so all three adapters stay byte-identical:
+ *  - `gguiAttached` — the memory-mcp T5 lesson, restated for renders: the
+ *    Router only sets it when the ggui credential was actually WRITTEN
+ *    this turn, so the section can never name a tool the model has no
+ *    rail to call. A `ggui: false` opt-out, a swapped-in non-ggui server,
+ *    a broker failure and a no-layers turn all render nothing.
+ *  - `surfaceHints === false` — the guuey#531 BYO-surface opt-out. A
+ *    plain-text court (SMS, voice) that has opted out of markdown cannot
+ *    show a card either, so it must not be told to draw one.
+ *
+ * The tool is named by its BARE name (`ggui_render`): the SDK namespaces
+ * MCP tools `mcp__<serverKey>__<tool>` and the ggui server key is the
+ * builder's to rename, so the bare name is the only spelling that is true
+ * under every key. The three-tool flow (`ggui_handshake` → `ggui_render`
+ * → `ggui_update` / `ggui_consume`) is deliberately NOT restated here —
+ * the tools' own descriptions own it, and duplicating protocol mechanics
+ * in a platform section is how they rot.
+ */
+export const GENERATIVE_UI_SECTION =
+  `\n\n## Drawing the answer\n\n` +
+  `You have the ggui generative-UI tools: \`ggui_render\` draws a real ` +
+  `interactive card on this surface. When an answer has a SHAPE — a menu, a ` +
+  `price list, a schedule, a set of options, a comparison, a form to fill in, ` +
+  `an order or booking to confirm — draw it with \`ggui_render\` rather than ` +
+  `writing a markdown table, and keep a line or two of plain text beside it. ` +
+  `Prose stays prose: one-line answers, a yes or no, a clarifying question, an ` +
+  `explanation. Follow the ggui tools' own descriptions for how to render and ` +
+  `update, and put only data you actually have on a card — never invent rows ` +
+  `to fill one out.`;
+
+/**
+ * Render the generative-UI section honoring both gates (guuey#630) — see
+ * {@link GENERATIVE_UI_SECTION}. Framework-blind like every sibling:
+ * Claude, OpenAI and ADK call this identically, so the section is
+ * byte-identical across frameworks (pinned in `preamble.test.ts`).
+ */
+export function renderGenerativeUiSection(
+  gguiAttached: boolean | undefined,
+  surfaceHints: boolean | undefined,
+): string {
+  if (gguiAttached !== true || surfaceHints === false) return "";
+  return GENERATIVE_UI_SECTION;
+}
+
 export const RESPONSE_NORMS_SECTION =
   `\n\n## Speaking to the user\n\n` +
   `Your tools' mechanics are internal working, not conversation. Never narrate ` +

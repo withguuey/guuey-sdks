@@ -6,7 +6,9 @@ import {
   renderResourcesSection,
   renderUserMemoryRecall,
   renderSurfaceSection,
+  renderGenerativeUiSection,
   SURFACE_FORMATTING_SECTION,
+  GENERATIVE_UI_SECTION,
 } from "./preamble.js";
 
 /**
@@ -306,5 +308,48 @@ describe("renderSurfaceSection — surface-formatting hints, default ON (guuey#5
     for (const banned of ["tone", "brand", "persona", "friendly", "polite"]) {
       expect(SURFACE_FORMATTING_SECTION.toLowerCase()).not.toContain(banned);
     }
+  });
+});
+
+describe("renderGenerativeUiSection — when a card beats prose (guuey#630)", () => {
+  it("renders only when the ggui rail is REALLY armed this turn", () => {
+    expect(renderGenerativeUiSection(true, undefined)).toBe(GENERATIVE_UI_SECTION);
+    expect(renderGenerativeUiSection(true, true)).toBe(GENERATIVE_UI_SECTION);
+  });
+
+  it("no rail, no section — a declared-but-unwritten ggui server never reaches here", () => {
+    // The memory-mcp T5 lesson: absent (the Router's only-when-true write, so
+    // `ggui: false` / a swapped server / a broker failure / a no-layers turn)
+    // and an explicit false both render nothing. Never name an undialable tool.
+    expect(renderGenerativeUiSection(undefined, undefined)).toBe("");
+    expect(renderGenerativeUiSection(false, undefined)).toBe("");
+  });
+
+  it("the guuey#531 BYO opt-out suppresses it too — a plain-text court cannot show a card", () => {
+    expect(renderGenerativeUiSection(true, false)).toBe("");
+  });
+
+  it("byte pin — the tool is named BARE (`ggui_render`), never SDK-namespaced", () => {
+    expect(GENERATIVE_UI_SECTION).toBe(
+      `\n\n## Drawing the answer\n\n` +
+        `You have the ggui generative-UI tools: \`ggui_render\` draws a real ` +
+        `interactive card on this surface. When an answer has a SHAPE — a menu, a ` +
+        `price list, a schedule, a set of options, a comparison, a form to fill in, ` +
+        `an order or booking to confirm — draw it with \`ggui_render\` rather than ` +
+        `writing a markdown table, and keep a line or two of plain text beside it. ` +
+        `Prose stays prose: one-line answers, a yes or no, a clarifying question, an ` +
+        `explanation. Follow the ggui tools' own descriptions for how to render and ` +
+        `update, and put only data you actually have on a card — never invent rows ` +
+        `to fill one out.`,
+    );
+    // The server KEY is the builder's to rename, so `mcp__ggui__…` would be a
+    // lie under any other key.
+    expect(GENERATIVE_UI_SECTION).not.toContain("mcp__");
+  });
+
+  it("carries the three things the gap needed: shaped→card, prose stays prose, no invention", () => {
+    expect(GENERATIVE_UI_SECTION).toContain("rather than writing a markdown table");
+    expect(GENERATIVE_UI_SECTION).toContain("Prose stays prose");
+    expect(GENERATIVE_UI_SECTION).toContain("never invent rows");
   });
 });

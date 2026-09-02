@@ -274,6 +274,13 @@ export interface BuildOptionsContext {
    */
   resourceCount?: number;
   /**
+   * Whether the ggui generative-UI rail is ARMED this turn (guuey#630) — the
+   * Router sets it only when the ggui credential was actually written, so the
+   * generative-UI section never names a tool this turn cannot call. See
+   * `Invoke.gguiAttached` in `@guuey/worker`.
+   */
+  gguiAttached?: boolean;
+  /**
    * Returns every credential the Router broker wrote to
    * `<sessionDir>/.guuey/credentials/` this invoke — one `{name, cred}` per
    * usable MCP server. `name` is the filename stem (server name); `cred` is the
@@ -337,6 +344,12 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
     // only by an explicit `agent.surfaceHints: false` (BYO plain-text
     // surfaces). Before the norms, which stay LAST.
     renderSurfaceSection(snapshot.surfaceHints) +
+    // guuey#630: the generative-UI section — DIRECTLY AFTER the surface
+    // section it qualifies ("use a table when comparing things" is right
+    // for a text answer, wrong for a shaped one). Gated inside the
+    // renderer on `gguiAttached` (the rail is really armed) AND the same
+    // `surfaceHints: false` BYO opt-out. Before the norms, which stay LAST.
+    renderGenerativeUiSection(ctx.gguiAttached, snapshot.surfaceHints) +
     // guuey#556: the default response norms, LAST and unconditional —
     // every hosted agent inherits them (see RESPONSE_NORMS_SECTION's doc
     // for the confirm-gate carve-out + the per-court opt-out grammar).
@@ -647,6 +660,7 @@ export { withContextPreamble } from "../preamble.js";
 import {
   RESPONSE_NORMS_SECTION,
   renderSurfaceSection,
+  renderGenerativeUiSection,
   renderMemorySection,
   renderProfileSection,
   renderResourcesSection,

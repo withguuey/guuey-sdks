@@ -59,6 +59,7 @@ import {
 import {
   RESPONSE_NORMS_SECTION,
   renderSurfaceSection,
+  renderGenerativeUiSection,
   renderMemorySection,
   renderProfileSection,
   renderResourcesSection,
@@ -392,6 +393,11 @@ export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
         // guuey#531: surface-formatting hints — default ON, only an explicit
         // `agent.surfaceHints: false` suppresses. Before the norms (LAST).
         renderSurfaceSection(snapshot.surfaceHints) +
+        // guuey#630: the generative-UI section — DIRECTLY AFTER the surface
+        // section it qualifies. Gated inside the renderer on `gguiAttached`
+        // (the rail is really armed this turn) AND the same `surfaceHints:
+        // false` BYO opt-out. Before the norms (LAST).
+        renderGenerativeUiSection(turn.gguiAttached, snapshot.surfaceHints) +
         // guuey#556: default response norms, LAST and unconditional (see the
         // constant's doc for the confirm-gate carve-out).
         RESPONSE_NORMS_SECTION;

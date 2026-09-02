@@ -168,6 +168,21 @@ export interface Invoke {
    * the app layer is shared, public-by-definition content.
    */
   resourceCount?: number;
+  /**
+   * Whether this turn's ggui generative-UI rail is actually ARMED (guuey#630)
+   * — the Router writes it only when the ggui server's credential was WRITTEN
+   * for this invoke (`run-seam`'s guuey#407 `gguiCredentialWritten`), not when
+   * the snapshot merely declares one. Gates the host's framework-blind
+   * generative-UI system-prompt section (`@guuey/host`'s
+   * `renderGenerativeUiSection`) — the memory-mcp T5 lesson restated for
+   * renders: gate on the REAL "the tool is dialable" signal, so the section
+   * can never tell the model to draw a card on a turn with no rail to draw it
+   * on. Absent for a `ggui: false` opt-out, a swapped-in non-ggui server, a
+   * broker failure, or a no-layers turn. NOT auth-gated: rendering is not a
+   * privileged surface — guests get cards too. Mirrors {@link memoryAttached}'s
+   * only-when-true shape, so "no rail" is always the ABSENT field on the wire.
+   */
+  gguiAttached?: boolean;
 }
 /** Graceful termination (also signalled by stdin EOF). */
 export interface Shutdown {

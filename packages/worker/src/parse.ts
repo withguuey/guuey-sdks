@@ -158,6 +158,11 @@ export function parseControl(line: string): ControlMessage {
         raw.resourceCount > 0
           ? { resourceCount: raw.resourceCount }
           : {}),
+        // guuey#630: the ggui-rail-armed signal — gates the generative-UI
+        // section (all three frameworks). Omitted unless a real boolean so it
+        // never lands as `undefined` (and a missing field reads as NO rail,
+        // fail-closed: never promise a card the turn cannot draw).
+        ...(typeof raw.gguiAttached === "boolean" ? { gguiAttached: raw.gguiAttached } : {}),
       };
     }
     case "shutdown":

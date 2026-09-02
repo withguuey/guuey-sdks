@@ -78,6 +78,13 @@ export interface HostInvoke {
    * {@link fsBound}. See `Invoke.resourceCount` in `@guuey/worker`.
    */
   resourceCount?: number;
+  /**
+   * Whether the ggui generative-UI rail is ARMED this turn (guuey#630) — set
+   * only when the ggui credential was actually written. Gates the
+   * generative-UI system-prompt section. See `Invoke.gguiAttached` in
+   * `@guuey/worker`.
+   */
+  gguiAttached?: boolean;
 }
 
 /** Per-process config the worker resolves once at boot. */
@@ -186,6 +193,7 @@ export async function runInvoke(
       ...(invoke.profileAccess !== undefined ? { profileAccess: invoke.profileAccess } : {}),
       ...(invoke.profileSections !== undefined ? { profileSections: invoke.profileSections } : {}),
       ...(invoke.resourceCount !== undefined ? { resourceCount: invoke.resourceCount } : {}),
+      ...(invoke.gguiAttached !== undefined ? { gguiAttached: invoke.gguiAttached } : {}),
     };
     options = buildOptions(snapshot, ctx);
   } catch (err) {
