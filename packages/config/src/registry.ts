@@ -61,15 +61,15 @@ export const FRAMEWORK_REGISTRY: readonly FrameworkEntry[] = [
   {
     framework: "claude-agent-sdk",
     sdkPackage: "@anthropic-ai/claude-agent-sdk",
-    platformPinnedVersion: "0.3.199",
+    platformPinnedVersion: "0.3.247",
     facetSupportedRange: ">=0.2.76 <0.4",
     defaultProvider: "anthropic",
   },
   {
     framework: "openai-agents-sdk",
     sdkPackage: "@openai/agents",
-    platformPinnedVersion: "0.12.0",
-    facetSupportedRange: ">=0.2.0 <0.13",
+    platformPinnedVersion: "0.17.0",
+    facetSupportedRange: ">=0.2.0 <0.18",
     defaultProvider: "openai",
   },
   {

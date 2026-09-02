@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@openai/agents": "^0.12.0",
+    "@openai/agents": "^0.17.0",
     "@guuey/config": "0.0.1",
     "@guuey/worker": "0.0.1"
   },
