@@ -31,6 +31,14 @@ export interface FrameworkEntry {
  */
 export const MODEL_REGISTRY: readonly ModelEntry[] = [
   { id: "claude-sonnet-5", provider: "anthropic", label: "Claude Sonnet 5", status: "ga", isDefault: true },
+  // guuey#635 (2026-09-02 wave): id verified against
+  // platform.claude.com/docs/en/models/overview — never hand-typed.
+  { id: "claude-fable-5-1", provider: "anthropic", label: "Claude Fable 5.1", status: "ga" },
+  // Stays `ga` on purpose: the deprecations page (read 2026-09-02) lists
+  // claude-fable-5 as Active, Deprecated: N/A, tentative retirement "Not
+  // sooner than June 9, 2027". `sunset` is an ISO date for DEPRECATED
+  // entries; a not-sooner-than floor is not one. Flip only on a real
+  // deprecation notice, quoting the page.
   { id: "claude-fable-5", provider: "anthropic", label: "Claude Fable 5", status: "ga" },
   { id: "claude-opus-5", provider: "anthropic", label: "Claude Opus 5", status: "ga" },
   { id: "claude-sonnet-4-6", provider: "anthropic", label: "Claude Sonnet 4.6", status: "ga" },

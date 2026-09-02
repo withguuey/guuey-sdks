@@ -58,6 +58,7 @@ describe('modelsForProvider', () => {
     const expected: Record<'anthropic' | 'openai' | 'google' | 'openrouter', string[]> = {
       anthropic: [
         'claude-sonnet-5',
+        'claude-fable-5-1',
         'claude-fable-5',
         'claude-opus-5',
         'claude-sonnet-4-6',
