@@ -33,7 +33,12 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
   { id: "claude-sonnet-5", provider: "anthropic", label: "Claude Sonnet 5", status: "ga", isDefault: true },
   // guuey#635 (2026-09-02 wave): id verified against
   // platform.claude.com/docs/en/models/overview — never hand-typed.
-  { id: "claude-fable-5-1", provider: "anthropic", label: "Claude Fable 5.1", status: "ga" },
+  // `announced` = known, NOT invocable on our runtime yet (the registry's own
+  // vocabulary): the model gate is the Claude Code binary — 2.1.247 in the
+  // fat image 400s ("version 2.1.251 or newer is required", infra's dev turn
+  // on guuey#638). Flips to `ga` in the cut after #659's image rolls to prod
+  // (SDK 0.3.258 → binary ≥ 2.1.251). Pickers exclude it until then.
+  { id: "claude-fable-5-1", provider: "anthropic", label: "Claude Fable 5.1", status: "announced" },
   // Stays `ga` on purpose: the deprecations page (read 2026-09-02) lists
   // claude-fable-5 as Active, Deprecated: N/A, tentative retirement "Not
   // sooner than June 9, 2027". `sunset` is an ISO date for DEPRECATED

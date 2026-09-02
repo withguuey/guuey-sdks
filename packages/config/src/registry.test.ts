@@ -40,6 +40,14 @@ describe('MODEL_REGISTRY invariants', () => {
   });
 });
 
+describe('modelsForProvider — the status filter, exercised (guuey#635: claude-fable-5-1 is announced)', () => {
+  it('an announced row is IN MODEL_REGISTRY but EXCLUDED from the picker until the runtime can invoke it', () => {
+    const row = MODEL_REGISTRY.find((m) => m.id === 'claude-fable-5-1');
+    expect(row?.status).toBe('announced');
+    expect(modelsForProvider('anthropic').map((m) => m.id)).not.toContain('claude-fable-5-1');
+  });
+});
+
 describe('modelsForProvider', () => {
   it('exposes exactly this literal id set per provider (a drop, rename or provider re-tag goes red)', () => {
     // LITERAL expectations on purpose. Re-deriving the expected side from
@@ -58,7 +66,6 @@ describe('modelsForProvider', () => {
     const expected: Record<'anthropic' | 'openai' | 'google' | 'openrouter', string[]> = {
       anthropic: [
         'claude-sonnet-5',
-        'claude-fable-5-1',
         'claude-fable-5',
         'claude-opus-5',
         'claude-sonnet-4-6',
