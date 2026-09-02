@@ -828,6 +828,98 @@ describe("credential: 'oauth' (guuey#178 — the third-party OAuth broker arm)",
   });
 });
 
+describe("authMode: 'upfront' (guuey#605 — require sign-in before use)", () => {
+  it("parses beside credential: 'oauth' and survives the round-trip", () => {
+    const r = AgentSectionV1.safeParse({
+      mcpServers: {
+        linear: {
+          kind: 'external',
+          url: 'https://mcp.linear.app/mcp',
+          credential: 'oauth',
+          authMode: 'upfront',
+        },
+      },
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.mcpServers?.linear).toEqual({
+        kind: 'external',
+        url: 'https://mcp.linear.app/mcp',
+        credential: 'oauth',
+        authMode: 'upfront',
+      });
+    }
+  });
+
+  it('parses on the INTERNAL lowered shape too (mcpResourceUrl present)', () => {
+    const r = AgentSectionV1.safeParse({
+      mcpServers: {
+        linear: {
+          kind: 'external',
+          url: 'https://mcp.linear.app/mcp',
+          credential: 'oauth',
+          authMode: 'upfront',
+          mcpResourceUrl: 'https://mcp.dev.sandbox.guuey.com/brokered/app_1/linear/',
+        },
+      },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("is schema-refused WITHOUT credential: 'oauth' (no credential declared)", () => {
+    const r = AgentSectionV1.safeParse({
+      mcpServers: {
+        linear: { kind: 'external', url: 'https://mcp.linear.app/mcp', authMode: 'upfront' },
+      },
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(JSON.stringify(r.error.issues)).toContain(
+        "authMode: 'upfront' is only valid beside credential: 'oauth'",
+      );
+    }
+  });
+
+  it("is schema-refused beside credential: 'caller' (only the oauth arm has a sign-in to front-load)", () => {
+    const r = AgentSectionV1.safeParse({
+      mcpServers: {
+        control: {
+          kind: 'external',
+          url: 'https://mcp.ggui.ai/control',
+          credential: 'caller',
+          authMode: 'upfront',
+        },
+      },
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(JSON.stringify(r.error.issues)).toContain(
+        "authMode: 'upfront' is only valid beside credential: 'oauth'",
+      );
+    }
+  });
+
+  it('rejects authMode on non-external kinds and any value other than upfront (strict objects)', () => {
+    expect(
+      AgentSectionV1.safeParse({
+        mcpServers: { reg: { kind: 'hosted', server: 'srv-1', authMode: 'upfront' } },
+      }).success,
+    ).toBe(false);
+    expect(
+      AgentSectionV1.safeParse({
+        mcpServers: {
+          linear: {
+            kind: 'external',
+            url: 'https://mcp.linear.app/mcp',
+            credential: 'oauth',
+            authMode: 'deferred',
+          },
+        },
+      }).success,
+    ).toBe(false);
+  });
+});
+
 describe('agent.modes — multi-mode agent (guuey#527)', () => {
   it('accepts the default rep/agent pair: append + a tool subset + audience', () => {
     const r = AgentSectionV1.safeParse({

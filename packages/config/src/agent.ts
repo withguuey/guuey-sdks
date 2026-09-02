@@ -130,6 +130,9 @@ const HostedMcp = z
  *   declaration — nothing is builder-registered; discovery does the rest.
  * - `credential: 'caller'` forwards the invoke's own byo-verified bearer as
  *   this server's per-turn credential (guuey#179) — see the field doc.
+ * - `authMode: 'upfront'` (only beside `credential: 'oauth'`, guuey#605)
+ *   fronts the sign-in: the consent card surfaces at session start instead
+ *   of on demand — see the field doc for the exact engagement contract.
  */
 const ExternalMcp = z
   .strictObject({
@@ -172,6 +175,37 @@ const ExternalMcp = z
      * injects the only Authorization this server ever sees).
      */
     credential: z.enum(['caller', 'oauth']).optional(),
+    /**
+     * `'upfront'` — require sign-in BEFORE use (guuey#605, the claude.ai
+     * "Always required" parity flavor). Valid ONLY beside
+     * `credential: 'oauth'` (schema-refused otherwise — no other credential
+     * mode has a sign-in to front-load).
+     *
+     * WHEN IT ENGAGES: at SESSION START of auth-mode (authenticated-caller)
+     * sessions, on an agent-runtime image carrying the guuey#605 pod half —
+     * an upfront server with no live connection surfaces the OAuth consent
+     * card as the turn's ONLY content (the pod holds the turn; no agent
+     * answer) until the user connects the account, instead of appending the
+     * card after the agent's first tool-less turn. Unchanged postures:
+     * guests (D6 — no card, no credential, tool-less), an explicit `denied`
+     * grant (no card, tool-less — a "no" never bricks the chat), a failed /
+     * slow preflight (fail-open tool-less turn, never held), and a client
+     * that cannot render the consent card (falls back to on-demand consent
+     * — an embed never dead-ends on a card it cannot show). Absent =
+     * today's on-demand behavior everywhere: connect anonymous-first, the
+     * consent card rides after the agent's turn.
+     *
+     * SERVING (the guuey#566 Settings-truth rule — this doc is the exact
+     * engagement contract): NO environment honors this field until infra
+     * rolls the agent-runtime image carrying the guuey#605 pod half — as of
+     * this schema's cut, dev, staging and release all serve pre-roll images
+     * that do not. A pod PREDATING the roll refuses a snapshot carrying the
+     * field at config parse (strict schema — not parse-and-ignore), so the
+     * platform must not accept it at the deploy door until the rolled image
+     * serves that environment. The oss cohort cut carries this schema bump;
+     * the image roll arms serving.
+     */
+    authMode: z.literal('upfront').optional(),
     /** Static headers forwarded on every request. Values may use `${env.NAME}` placeholders. */
     headers: HeadersSchema.optional(),
     /** Local dev-loop port (`guuey dev`) this MCP is served on for name→localhost URL resolution. */
@@ -207,7 +241,11 @@ const ExternalMcp = z
       message:
         "credential: 'oauth' cannot be combined with an `authorization` header — the credential broker injects the user's OAuth token as the only Authorization this server sees",
     },
-  );
+  )
+  .refine((v) => !(v.authMode === 'upfront' && v.credential !== 'oauth'), {
+    message:
+      "authMode: 'upfront' is only valid beside credential: 'oauth' — upfront sign-in fronts the OAuth broker's consent flow; no other credential mode has a sign-in to front-load",
+  });
 
 /**
  * A single MCP server entry inside `agent.mcpServers`.
