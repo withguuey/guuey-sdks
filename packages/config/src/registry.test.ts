@@ -3,6 +3,8 @@ import {
   MODEL_REGISTRY,
   FRAMEWORK_REGISTRY,
   modelsForProvider,
+  lineupForProvider,
+  legacyForProvider,
   defaultModelFor,
   modelEntry,
 } from './registry.js';
@@ -103,6 +105,55 @@ describe('modelsForProvider', () => {
     for (const model of openaiModels) {
       expect(['ga', 'preview']).toContain(model.status);
     }
+  });
+});
+
+/**
+ * `lineup` is the picker's front slice (guuey#637). These invariants are what
+ * let a picker render `lineupForProvider` up front and put
+ * `legacyForProvider` behind a "See all models" door WITHOUT risking that a
+ * model becomes unreachable — the failure mode a positional `.slice()` has and
+ * a partition does not.
+ */
+describe('lineupForProvider / legacyForProvider', () => {
+  const providers = ['anthropic', 'openai', 'google'] as const;
+
+  it('partitions modelsForProvider: disjoint, exhaustive, order-preserving', () => {
+    for (const p of providers) {
+      const all = modelsForProvider(p).map((m) => m.id);
+      const lineup = lineupForProvider(p).map((m) => m.id);
+      const legacy = legacyForProvider(p).map((m) => m.id);
+      expect(lineup.filter((id) => legacy.includes(id))).toEqual([]);
+      expect(new Set([...lineup, ...legacy])).toEqual(new Set(all));
+      expect(lineup.length + legacy.length).toBe(all.length);
+      // Each half keeps modelsForProvider's relative order.
+      expect(lineup).toEqual(all.filter((id) => lineup.includes(id)));
+      expect(legacy).toEqual(all.filter((id) => legacy.includes(id)));
+    }
+  });
+
+  it('every provider has a non-empty lineup whose first entry is its default', () => {
+    for (const p of providers) {
+      const lineup = lineupForProvider(p);
+      expect(lineup.length).toBeGreaterThan(0);
+      expect(lineup[0].isDefault).toBe(true);
+    }
+  });
+
+  it('a lineup entry is always invocable (ga|preview) — the door is curation, not lifecycle', () => {
+    for (const entry of MODEL_REGISTRY.filter((m) => m.lineup === true)) {
+      expect(['ga', 'preview']).toContain(entry.status);
+    }
+  });
+
+  it("anthropic's lineup is the 2026-09-02 generation; Fable 5 sits behind the door", () => {
+    expect(new Set(lineupForProvider('anthropic').map((m) => m.id))).toEqual(
+      new Set(['claude-sonnet-5', 'claude-fable-5-1', 'claude-opus-5', 'claude-haiku-4-5']),
+    );
+    // Behind the door, NOT deprecated: the deprecations page lists
+    // claude-fable-5 as Active with no deprecation date.
+    expect(legacyForProvider('anthropic').map((m) => m.id)).toContain('claude-fable-5');
+    expect(modelEntry('claude-fable-5')?.status).toBe('ga');
   });
 });
 
