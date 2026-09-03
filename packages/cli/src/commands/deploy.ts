@@ -571,7 +571,11 @@ async function deployCode(opts: {
     }
     try {
       const result = await pushGguiAssetsLeg({ appId, body, auth, config });
-      if (!result.pushed) {
+      if (result.pushed) {
+        // The 200 path was silent — a receipt had to be argued from the
+        // absence of errors (QA, batch52 positive control 2026-09-03).
+        console.log('  ✓ ggui assets pushed');
+      } else {
         console.log(
           '  ggui assets not pushed — the leg is not yet armed on this environment; deploy continues',
         );
