@@ -1,14 +1,31 @@
 /**
  * guuey test -- Send a test message to the agent and stream the response.
  *
- * POSTs `{ message, history }` to the agent's `/invoke` endpoint and
- * streams the SSE response to stdout. The agent URL is resolved in this
- * order:
- *   1. `--url <https://…>` flag
- *   2. `{appId}.{agentsDomain}` if `AGENTS_DOMAIN` or amplify_outputs
- *      carries an agents root
- *   3. The newest live deployment's `endpointUrl`, from
- *      `GET /apps/:id/deployments`
+ * Speaks the pod's `POST /agent/invoke` contract — the ONE invoke contract,
+ * documented in the header of `backend/services/nocode-runtime/src/
+ * sse-server.ts`: body `{ input, sessionId? }` in; an SSE stream of
+ * `session` / `message` (AgJSON events) / `done` / `error` frames out. The
+ * Guuey Runtime Router fronts EVERY deployment (no-code and code-mode
+ * alike), so there is exactly one request shape to speak (guuey#681: the
+ * previous `{ message, history }` body was a define-agent-era relic every
+ * pod 400s with `input: non-empty string required`, and the stream printer
+ * read Anthropic-native frames the pod never sends).
+ *
+ * The invoke URL is resolved in this order, every branch normalised by
+ * {@link toInvokeUrl}:
+ *   1. `--url <https://…>` flag — a pod base or the full invoke URL
+ *   2. `{appId}.{agentsDomain}` if `AGENTS_DOMAIN` or amplify_outputs carries
+ *      an agents root
+ *   3. The newest live deployment's `endpointUrl` from
+ *      `GET /apps/:id/deployments` — already `…/agent/invoke`, exactly as the
+ *      deploy-controller records it (`k8s/ingress.ts`)
+ *
+ * Identity: `guuey test` speaks as an anonymous visitor. The pod verifies a
+ * `Bearer` against the app's user pool (or BYO issuer) and answers 401 to
+ * anything else — never a guest fallback (`nocode-runtime/src/identity.ts`)
+ * — so the platform PAT is NEVER sent to the pod; it authenticates the
+ * deployments lookup only. An app that has closed guest access refuses the
+ * visitor, and the refusal is printed verbatim.
  *
  * Usage:
  *   guuey test "What's the weather in Tokyo?"
@@ -16,20 +33,46 @@
  *   guuey test "hi" --url https://my-app.agents.sandbox.guuey.com
  */
 
+import { AgEvent } from '@silverprotocol/core';
 import { resolveConfig, loadAmplifyOutputs } from '../config';
 import { requireAuth } from '../auth';
 import { apiRequest } from '../deploy-shared';
 import * as out from '../output';
 
-// Streamable invoke protocol version — distinct from the MCP wire-protocol
-// constant in @ggui-ai/protocol. Pinned to '1' per the invoke spec; server
-// (define-agent.ts) will reject anything else.
-const INVOKE_PROTOCOL_VERSION = '1';
+/**
+ * The invoke request body — the CLI's hand-written mirror of the pod's
+ * `InvokeRequest` (`sse-server.ts`), the subset this command sends: `input`
+ * required, `sessionId` optional (explicit wins; else the pod keys the
+ * session itself). A published package cannot import the private runtime,
+ * so the mirror is pinned by the sync guard in `test.test.ts` — the same
+ * discipline as `wire-mirror-parse.ts`.
+ */
+export interface InvokeBody {
+  input: string;
+  sessionId?: string;
+}
 
 /** SSE event parsed off the wire. */
 interface SseEvent {
   event: string;
   data: string;
+}
+
+/** The pod's `event: session` payload (sse-server.ts header). */
+interface SessionFrame {
+  sessionId: string;
+  threadId?: string;
+}
+
+/** The pod's `event: done` payload. */
+interface DoneFrame {
+  stopReason: string;
+}
+
+/** The pod's `event: error` payload. */
+interface ErrorFrame {
+  code: string;
+  message: string;
 }
 
 export async function test(
@@ -57,20 +100,8 @@ export async function test(
   console.log(`  Message:  ${message}`);
   console.log('');
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Accept: 'text/event-stream',
-    'X-Ggui-Protocol-Version': INVOKE_PROTOCOL_VERSION,
-    'X-Ggui-App-Id': config.appId,
-    'X-Ggui-Session-Id': sessionId,
-    Authorization: `Bearer ${pat}`,
-  };
-
-  const res = await fetch(`${endpoint}/invoke`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ message, history: [] }),
-  });
+  const { url, init } = buildInvokeRequest(endpoint, { input: message, sessionId });
+  const res = await fetch(url, init);
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');
@@ -82,62 +113,148 @@ export async function test(
     process.exit(1);
   }
 
-  await streamToStdout(res.body);
+  const { stopReason, errored } = await streamToStdout(res.body);
   console.log('');
+  if (stopReason !== undefined) console.log(`  [done] ${stopReason}`);
+  if (errored) process.exit(1);
 }
 
 /**
- * Pipe an SSE stream to stdout. Prints every text delta as it arrives;
- * tool use / tool result / message boundaries get marker lines so the
- * reader can tell what phase the agent is in.
+ * Normalise an agent endpoint to its invoke URL: accepts a pod base
+ * (`https://host`) or the full invoke URL the deploy-controller records
+ * (`https://host/agent/invoke`) and returns exactly one `/agent/invoke`,
+ * trailing slashes dropped. The twin of `@guuey/agent-client`'s
+ * `toInvokeUrl` (guuey#186 G3) — same rule, re-stated here because that
+ * package carries a React peer the CLI must not take.
  */
-async function streamToStdout(body: ReadableStream<Uint8Array>): Promise<void> {
-  let inAssistantBlock = false;
-  for await (const ev of parseSse(body)) {
-    let payload: Record<string, unknown>;
-    try {
-      payload = JSON.parse(ev.data) as Record<string, unknown>;
-    } catch {
-      continue;
-    }
-    const t = ev.event || (payload.type as string | undefined) || '';
+export function toInvokeUrl(endpointUrl: string): string {
+  const base = endpointUrl.replace(/\/+$/, '');
+  return base.endsWith('/agent/invoke') ? base : `${base}/agent/invoke`;
+}
 
-    switch (t) {
-      case 'message_start':
-        inAssistantBlock = true;
-        break;
-      case 'content_block_delta': {
-        const delta = (payload.delta as { type?: string; text?: string } | undefined) ?? {};
-        if (delta.type === 'text_delta' && typeof delta.text === 'string') {
-          process.stdout.write(delta.text);
+/**
+ * The invoke request: the normalised URL plus a fetch init carrying ONLY
+ * the content-type/accept pair and the JSON body. No identity header — see
+ * the file header for why the PAT never reaches the pod.
+ */
+export function buildInvokeRequest(
+  endpoint: string,
+  body: InvokeBody,
+): { url: string; init: RequestInit } {
+  return {
+    url: toInvokeUrl(endpoint),
+    init: {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+      },
+      body: JSON.stringify(body),
+    },
+  };
+}
+
+function parseJson(data: string): unknown {
+  try {
+    return JSON.parse(data);
+  } catch {
+    return undefined;
+  }
+}
+
+function isSessionFrame(v: unknown): v is SessionFrame {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    'sessionId' in v &&
+    typeof v.sessionId === 'string' &&
+    (!('threadId' in v) || typeof v.threadId === 'string')
+  );
+}
+
+function isDoneFrame(v: unknown): v is DoneFrame {
+  return (
+    typeof v === 'object' && v !== null && 'stopReason' in v && typeof v.stopReason === 'string'
+  );
+}
+
+function isErrorFrame(v: unknown): v is ErrorFrame {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    'code' in v &&
+    typeof v.code === 'string' &&
+    'message' in v &&
+    typeof v.message === 'string'
+  );
+}
+
+/**
+ * Pipe the pod's SSE stream to stdout. `message` frames carry AgJSON
+ * (silver mode, the default): text deltas print as they arrive, tool
+ * start/done get marker lines so the reader can tell what phase the agent
+ * is in; every other AgJSON event (folds, artifacts, ext.*) and a
+ * bypass-mode pod's raw native frames are skipped, never mis-rendered.
+ * Exported for unit test.
+ */
+export async function streamToStdout(
+  body: ReadableStream<Uint8Array>,
+): Promise<{ stopReason: string | undefined; errored: boolean }> {
+  let stopReason: string | undefined;
+  let errored = false;
+  for await (const ev of parseSse(body)) {
+    const payload = parseJson(ev.data);
+    if (payload === undefined) continue;
+    switch (ev.event) {
+      case 'session':
+        if (isSessionFrame(payload)) {
+          console.log(
+            `  [session] ${payload.sessionId}${payload.threadId ? ` · thread ${payload.threadId}` : ''}`,
+          );
         }
         break;
-      }
-      case 'content_block_stop':
-        if (inAssistantBlock) process.stdout.write('\n');
+      case 'message':
+        printAgEvent(payload);
         break;
-      case 'tool_use': {
-        const name = (payload.name as string | undefined) ?? 'tool';
-        console.log(`\n  [tool_use] ${name}`);
+      case 'done':
+        if (isDoneFrame(payload)) stopReason = payload.stopReason;
         break;
-      }
-      case 'tool_result': {
-        const isError = payload.is_error === true;
-        console.log(`  [tool_result]${isError ? ' error' : ''}`);
+      case 'error':
+        if (isErrorFrame(payload)) {
+          errored = true;
+          out.error(`\n[error] ${payload.code}: ${payload.message}`);
+        }
         break;
-      }
-      case 'message_stop':
-        inAssistantBlock = false;
-        break;
-      case 'error': {
-        const err = payload.error as { code?: string; message?: string } | undefined;
-        out.error(`\n[error] ${err?.code ?? 'unknown'}: ${err?.message ?? JSON.stringify(payload)}`);
-        break;
-      }
       default:
-        // quietly skip unknown event types — protocol may add more over time
+        // Informational frames (e.g. `profile-link-needed`) — nothing to print.
         break;
     }
+  }
+  return { stopReason, errored };
+}
+
+function printAgEvent(payload: unknown): void {
+  const parsed = AgEvent.safeParse(payload);
+  if (!parsed.success) return;
+  // AgEvent's last union member is the forward-compat catch-all (`type:
+  // string`), so a `case` narrows to "this variant OR the catch-all" — the
+  // `typeof` checks below finish the narrowing on the fields we print.
+  const e = parsed.data;
+  switch (e.type) {
+    case 'text.delta':
+      if (typeof e.delta === 'string') process.stdout.write(e.delta);
+      break;
+    case 'text.end':
+      process.stdout.write('\n');
+      break;
+    case 'tool.start':
+      if (typeof e.name === 'string') console.log(`\n  [tool.start] ${e.name}`);
+      break;
+    case 'tool.done':
+      console.log(`  [tool.done]${e.isError === true || e.outcome === 'error' ? ' error' : ''}`);
+      break;
+    default:
+      break;
   }
 }
 
@@ -179,17 +296,19 @@ function parseFrame(frame: string): SseEvent {
 }
 
 /**
- * Resolve the agent base URL. Priority:
- *   1. `--url <https://…>` flag
+ * Resolve the agent's INVOKE URL. Priority:
+ *   1. `--url <https://…>` flag (pod base or full invoke URL)
  *   2. `{appId}.{agentsDomain}` via amplify outputs / `$AGENTS_DOMAIN`
  *   3. The newest deployment with a live `endpointUrl`, read from
  *      `GET /apps/:id/deployments` (the same route `commands/deployments.ts`
- *      speaks — newest-first per the backend's GSI query).
+ *      speaks — newest-first per the backend's GSI query). That URL is the
+ *      full `…/agent/invoke` the deploy-controller wrote; it passes through
+ *      {@link toInvokeUrl} untouched.
  *
  * The old fallback here (`config.host` — the PLATFORM host, not an agent
- * pod) was S13: it silently POSTed `/invoke` at the platform origin and
- * got back a 404 HTML page. There is no safe URL to fall back to once the
- * deployments lookup comes up empty — this errors out instead of guessing.
+ * pod) was S13: it silently POSTed at the platform origin and got back a
+ * 404 HTML page. There is no safe URL to fall back to once the deployments
+ * lookup comes up empty — this errors out instead of guessing.
  */
 export async function resolveAgentEndpoint(
   config: ReturnType<typeof resolveConfig>,
@@ -197,12 +316,12 @@ export async function resolveAgentEndpoint(
   pat: string,
 ): Promise<string> {
   const override = flags?.url as string | undefined;
-  if (override) return override.replace(/\/$/, '');
+  if (override) return toInvokeUrl(override);
 
   const amplify = loadAmplifyOutputs() as Record<string, string | undefined>;
   const agentsDomain = amplify.agentsDomain ?? process.env.AGENTS_DOMAIN;
   if (agentsDomain && config.appId) {
-    return `https://${config.appId}.${agentsDomain}`;
+    return toInvokeUrl(`https://${config.appId}.${agentsDomain}`);
   }
 
   if (config.appId) {
@@ -212,7 +331,7 @@ export async function resolveAgentEndpoint(
         deployments: Array<{ endpointUrl: string | null }>;
       };
       const live = data.deployments.find((d) => d.endpointUrl);
-      if (live?.endpointUrl) return live.endpointUrl.replace(/\/$/, '');
+      if (live?.endpointUrl) return toInvokeUrl(live.endpointUrl);
     }
   }
 
