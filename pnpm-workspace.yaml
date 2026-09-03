@@ -103,3 +103,8 @@ overrides:
   "uuid@<11": ^11.1.1
   "@hono/node-server": ^1.19.15
   "@opentelemetry/core@2": ^2.8.0
+  # guuey#692 — see the root pnpm-workspace.yaml comment (own lockfile, same
+  # two chains here: fast-uri 3.1.5 under ajv@8 / fast-json-stringify, qs
+  # 6.15.3 under the express/body-parser chain of @guuey/cli + mcp-apps-host).
+  "fast-uri@3": ^3.1.6
+  "qs@6": ^6.16.0
