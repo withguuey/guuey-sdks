@@ -63,11 +63,14 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
   // vocabulary): the model gate is the Claude Code binary — 2.1.247 in the
   // fat image 400s ("version 2.1.251 or newer is required", infra's dev turn
   // on guuey#638). Flips to `ga` in the cut after #659's image rolls to prod
-  // (SDK 0.3.258 → binary ≥ 2.1.251). Pickers exclude it until then — the
-  // `lineup` marker is CURATION for the day it is invocable: `lineupForProvider`
-  // partitions `modelsForProvider` (ga|preview), so an announced row is in
-  // neither half until the status flip, and lands in the front slice on it.
-  { id: "claude-fable-5-1", provider: "anthropic", label: "Claude Fable 5.1", status: "announced", lineup: true },
+  // (SDK 0.3.258 → binary ≥ 2.1.251). Pickers exclude it until then: an
+  // announced row is in NEITHER picker half (`lineupForProvider` /
+  // `legacyForProvider` partition the ga|preview allowlist). THE GA FLIP IS
+  // TWO FIELDS: `status: "ga"` AND `lineup: true` — the marker is withheld
+  // here only because `lineup` ⇒ invocable is a pinned invariant
+  // (registry.test.ts), and it belongs to the front slice the moment the
+  // model is invocable (guuey#637 step 2).
+  { id: "claude-fable-5-1", provider: "anthropic", label: "Claude Fable 5.1", status: "announced" },
   // Stays `ga` on purpose: the deprecations page (read 2026-09-02) lists
   // claude-fable-5 as Active, Deprecated: N/A, tentative retirement "Not
   // sooner than June 9, 2027". `sunset` is an ISO date for DEPRECATED

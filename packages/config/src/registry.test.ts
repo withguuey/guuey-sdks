@@ -146,10 +146,16 @@ describe('lineupForProvider / legacyForProvider', () => {
     }
   });
 
-  it("anthropic's lineup is the 2026-09-02 generation; Fable 5 sits behind the door", () => {
+  it("anthropic's lineup is the 2026-09-02 generation minus the not-yet-invocable; Fable 5 sits behind the door", () => {
+    // Fable 5.1 is `announced` until #659's image rolls (the pod binary 400s
+    // it), so it is in NEITHER half today. Its ga flip is TWO fields on the
+    // row — `status: 'ga'` + `lineup: true` — and this set grows by it then.
     expect(new Set(lineupForProvider('anthropic').map((m) => m.id))).toEqual(
-      new Set(['claude-sonnet-5', 'claude-fable-5-1', 'claude-opus-5', 'claude-haiku-4-5']),
+      new Set(['claude-sonnet-5', 'claude-opus-5', 'claude-haiku-4-5']),
     );
+    expect(modelEntry('claude-fable-5-1')?.status).toBe('announced');
+    expect(lineupForProvider('anthropic').map((m) => m.id)).not.toContain('claude-fable-5-1');
+    expect(legacyForProvider('anthropic').map((m) => m.id)).not.toContain('claude-fable-5-1');
     // Behind the door, NOT deprecated: the deprecations page lists
     // claude-fable-5 as Active with no deprecation date.
     expect(legacyForProvider('anthropic').map((m) => m.id)).toContain('claude-fable-5');
