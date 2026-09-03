@@ -79,7 +79,7 @@ export const FRAMEWORK_REGISTRY: readonly FrameworkEntry[] = [
     // the whole host-shared==registry==image==host==facet-peer chain) and
     // registry.pins.test.ts (always-on vs @guuey/host — the publish-time
     // belt that also runs where the root script does not exist).
-    platformPinnedVersion: "0.3.247",
+    platformPinnedVersion: "0.3.258",
     facetSupportedRange: ">=0.2.76 <0.4",
     defaultProvider: "anthropic",
   },
