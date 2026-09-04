@@ -1,6 +1,6 @@
 {
   "name": "@guuey/agent-layout",
-  "version": "0.16.16",
+  "version": "0.16.17",
   "description": "Agent-mode layout: the two-tone shell where an app and its agent share one surface — the pane follows attention, the transport owns the stream.",
   "license": "MIT",
   "repository": {
