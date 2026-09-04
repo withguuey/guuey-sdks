@@ -18,6 +18,7 @@
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import * as net from "node:net";
 import { join } from "node:path";
 
 /** One colocated MCP server to auto-spawn — the fields `lowerForDev` needs
@@ -35,10 +36,82 @@ export interface ColocatedDevHandle {
    *  from `guuey dev`'s own shutdown handler and once from a test's
    *  cleanup). */
   stop(): void;
+  /**
+   * Resolves once EVERY spawned child has settled — `ready` (its `devPort`
+   * accepts a TCP connection) or `degraded` (it exited first, or missed the
+   * readiness deadline). Never rejects: a degraded child never blocks the
+   * dev loop, same as the pod's supervisor. `guuey dev` awaits this BEFORE
+   * binding its own server (guuey#770) — the order the hosted pod boots in
+   * (`bootColocated` settles before `startSseServer` binds), so a `/readyz`
+   * 200 means the colocated tools are dialable, not merely spawned.
+   * Resolves immediately when nothing was spawned.
+   */
+  settled: Promise<void>;
+  /**
+   * Names of the children that are `degraded` — read LIVE, the same signal
+   * the pod's `/readyz` reads from its supervisor (`colocatedDegraded`,
+   * `sse-server.ts`). A child degrades by exiting (before OR after it became
+   * ready — locally there is no restart budget: a crashed dev server is the
+   * builder's to fix and re-run) or by missing the readiness deadline.
+   * Children `stop()` tore down are never degraded — that is the state
+   * stop() asked for.
+   */
+  degraded(): string[];
 }
+
+export interface ColocatedDevOptions {
+  /**
+   * Readiness deadline per child, ms from spawn; missed → `degraded`.
+   * Default 30 000 — the pod supervisor's default
+   * (`colocated-supervisor.ts` `readinessTimeoutMs`).
+   */
+  readinessTimeoutMs?: number;
+}
+
+const DEFAULT_READINESS_TIMEOUT_MS = 30_000;
+/** Mirrors the pod supervisor's `READINESS_POLL_INTERVAL_MS`. */
+const READINESS_POLL_INTERVAL_MS = 200;
+/** Mirrors the pod supervisor's `TCP_PROBE_TIMEOUT_MS`. */
+const TCP_PROBE_TIMEOUT_MS = 1000;
 
 interface PackageJsonScripts {
   scripts?: Record<string, string>;
+}
+
+/**
+ * One TCP connect attempt against `127.0.0.1:<port>` — the same probe the
+ * pod supervisor readies a colocated child on (`colocated-supervisor.ts`
+ * `tcpProbe`): "accepts a connection" is the honest, protocol-blind signal
+ * that a dev server is listening (its `/mcp` answers non-200 to a bare GET,
+ * so an HTTP probe would have to special-case every server's wire).
+ */
+function tcpProbe(port: number): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const socket = net.connect({ port, host: "127.0.0.1" });
+    let done = false;
+    const finish = (ok: boolean): void => {
+      if (done) return;
+      done = true;
+      socket.destroy();
+      resolve(ok);
+    };
+    socket.setTimeout(TCP_PROBE_TIMEOUT_MS);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+  });
+}
+
+type ChildStatus = "starting" | "ready" | "degraded";
+
+interface ChildRecord {
+  name: string;
+  devPort: number;
+  child: ChildProcess;
+  status: ChildStatus;
+  /** Resolves the first time the child leaves `starting` (unblocks `settled`). */
+  settle: () => void;
+  pollTimer: NodeJS.Timeout | undefined;
 }
 
 /**
@@ -146,15 +219,63 @@ function resolveScript(packageJsonPath: string): "dev" | "start" | undefined {
  *
  * Returns a handle whose `stop()` SIGTERMs every spawned child's whole
  * process group (`terminateGroup` — the dev server is pnpm's child, not
- * ours, so signalling the direct child alone would leak it). Never
- * throws on a per-entry spawn/script-resolution problem — a broken
+ * ours, so signalling the direct child alone would leak it), whose
+ * `settled` resolves once every child is ready-or-degraded, and whose
+ * `degraded()` names the dead ones live (see {@link ColocatedDevHandle}).
+ * Never throws on a per-entry spawn/script-resolution problem — a broken
  * colocated MCP shouldn't take down the rest of `guuey dev`.
  */
 export function spawnColocatedDev(
   entries: ColocatedDevEntry[],
   projectRoot: string,
+  options: ColocatedDevOptions = {},
 ): ColocatedDevHandle {
-  const children: ChildProcess[] = [];
+  const readinessTimeoutMs = options.readinessTimeoutMs ?? DEFAULT_READINESS_TIMEOUT_MS;
+  const records: ChildRecord[] = [];
+  const settles: Promise<void>[] = [];
+  let stopped = false;
+
+  function markReady(rec: ChildRecord): void {
+    if (rec.status !== "starting") return;
+    rec.status = "ready";
+    rec.settle();
+  }
+
+  function markDegraded(rec: ChildRecord, why: string): void {
+    if (rec.status === "degraded") return;
+    const wasStarting = rec.status === "starting";
+    rec.status = "degraded";
+    if (rec.pollTimer !== undefined) {
+      clearTimeout(rec.pollTimer);
+      rec.pollTimer = undefined;
+    }
+    console.warn(
+      `guuey dev: colocated MCP "${rec.name}" is DEGRADED (${why}) — /readyz answers 503 until it is fixed and guuey dev restarted`,
+    );
+    if (wasStarting) rec.settle();
+  }
+
+  /** Poll `tcpProbe` until the child listens, exits, or the deadline passes. */
+  function startReadinessProbe(rec: ChildRecord): void {
+    const deadline = Date.now() + readinessTimeoutMs;
+    const attempt = (): void => {
+      rec.pollTimer = undefined;
+      if (stopped || rec.status !== "starting") return;
+      if (Date.now() >= deadline) {
+        markDegraded(rec, `not listening on :${rec.devPort} within ${readinessTimeoutMs}ms`);
+        return;
+      }
+      void tcpProbe(rec.devPort).then((ok) => {
+        if (stopped || rec.status !== "starting") return;
+        if (ok) {
+          markReady(rec);
+          return;
+        }
+        rec.pollTimer = setTimeout(attempt, READINESS_POLL_INTERVAL_MS);
+      });
+    };
+    attempt();
+  }
 
   for (const entry of entries) {
     const cwd = join(projectRoot, entry.source);
@@ -191,15 +312,53 @@ export function spawnColocatedDev(
       process.stderr.write(text.replace(/^/gm, prefix));
       scanForIgnoredBuilds(text);
     });
-    children.push(child);
+
+    let settle: () => void = () => undefined;
+    settles.push(
+      new Promise<void>((resolve) => {
+        settle = resolve;
+      }),
+    );
+    const rec: ChildRecord = {
+      name: entry.name,
+      devPort: entry.devPort,
+      child,
+      status: "starting",
+      settle,
+      pollTimer: undefined,
+    };
+    // An exit while we are still running it is terminal (locally there is no
+    // restart budget); an exit after stop() is the state stop() asked for.
+    child.once("exit", (code, signal) => {
+      if (stopped) return;
+      markDegraded(rec, `exited (${signal ?? `code ${code}`})`);
+    });
+    child.once("error", (err) => {
+      if (stopped) return;
+      markDegraded(rec, `spawn failed: ${err.message}`);
+    });
+    records.push(rec);
+    startReadinessProbe(rec);
   }
 
-  let stopped = false;
   return {
     stop(): void {
       if (stopped) return;
       stopped = true;
-      for (const child of children) terminateGroup(child);
+      for (const rec of records) {
+        if (rec.pollTimer !== undefined) {
+          clearTimeout(rec.pollTimer);
+          rec.pollTimer = undefined;
+        }
+        // A child still `starting` at stop() settles now, so a caller
+        // awaiting `settled` is never left hanging on a torn-down child.
+        if (rec.status === "starting") rec.settle();
+        terminateGroup(rec.child);
+      }
+    },
+    settled: Promise.all(settles).then(() => undefined),
+    degraded(): string[] {
+      return records.filter((rec) => rec.status === "degraded").map((rec) => rec.name);
     },
   };
 }

@@ -1,16 +1,23 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { join } from "node:path";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import type { AgEvent } from "@silverprotocol/core";
 import { createServer as createHttpServer } from "node:http";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { startDevServer, lowerForDev, writeLocalCredentials, type DevServerHandle } from "./dev-server.js";
+import {
+  startDevServer,
+  lowerForDev,
+  writeLocalCredentials,
+  type DevServerHandle,
+  type DevServerOptions,
+} from "./dev-server.js";
 import { DEFAULT_AGENT_MCP_SERVERS } from "@guuey/config";
 
 const echoFixture = join(__dirname, "fixtures", "echo-worker.mjs");
+const holdFixture = join(__dirname, "fixtures", "hold-worker.mjs");
 const errorFixture = join(__dirname, "fixtures", "error-worker.mjs");
 const claudeNativeFixture = join(__dirname, "fixtures", "claude-native-worker.mjs");
 const adkNativeFixture = join(__dirname, "fixtures", "adk-native-worker.mjs");
@@ -241,7 +248,7 @@ describe("startDevServer", () => {
     );
   });
 
-  it("returns 204 for OPTIONS preflight and 200 for /healthz", async () => {
+  it("returns 204 for OPTIONS preflight on /agent/invoke", async () => {
     srv = await startDevServer({
       port: 0,
       framework: "fixture",
@@ -251,14 +258,155 @@ describe("startDevServer", () => {
       agentSnapshotJson: "{}",
       projectRoot: freshProjectRoot(),
     });
-    const health = await fetch(`http://localhost:${srv.port}/healthz`);
-    expect(health.status).toBe(200);
-
     const preflight = await fetch(`http://localhost:${srv.port}/agent/invoke`, {
       method: "OPTIONS",
     });
     expect(preflight.status).toBe(204);
     expect(preflight.headers.get("access-control-allow-origin")).toBe("*");
+  });
+});
+
+// guuey#770: the local server serves the hosted pod's ONE probe-shaped route
+// with the pod's bodies (`sse-server.ts` `/readyz`; guuey#758 deleted the
+// pod's `/healthz`), so what a builder pokes locally is what the platform
+// serves and the SDK docs' "poll /readyz" snippet rehearses against
+// `guuey dev` unchanged.
+describe("startDevServer — GET /readyz (the hosted pod's probe route, guuey#770)", () => {
+  async function boot(extra: Partial<DevServerOptions> = {}): Promise<DevServerHandle> {
+    srv = await startDevServer({
+      port: 0,
+      framework: "fixture",
+      protocol: "bypass",
+      workerCommand: process.execPath,
+      workerArgs: [echoFixture],
+      agentSnapshotJson: "{}",
+      projectRoot: freshProjectRoot(),
+      ...extra,
+    });
+    return srv;
+  }
+
+  it("answers 200 `ok` once listening (query ignored, no CORS — as on the pod); the pod's deleted liveness route is 404 here too", async () => {
+    const h = await boot();
+    const ready = await fetch(`http://localhost:${h.port}/readyz`);
+    expect(ready.status).toBe(200);
+    expect(ready.headers.get("content-type")).toBe("text/plain");
+    expect(ready.headers.get("access-control-allow-origin")).toBeNull();
+    expect(await ready.text()).toBe("ok");
+
+    const withQuery = await fetch(`http://localhost:${h.port}/readyz?probe=1`);
+    expect(withQuery.status).toBe(200);
+
+    // No liveness route — the pod has none (guuey#758) and neither does this
+    // server. Same 404 body as the pod's fall-through. This is the one code
+    // line allowed to name the route (`probe-route-guard.test.ts`).
+    const health = await fetch(`http://localhost:${h.port}/healthz`); // probe-route-guard: allow — the 404 pin
+    expect(health.status).toBe(404);
+    expect(await health.text()).toBe("not found");
+  });
+
+  it("answers 503 {status:'degraded', colocatedDegraded} while the hook names a dead colocated child — read live", async () => {
+    let dead: string[] = [];
+    const h = await boot({ colocatedDegraded: () => dead });
+    expect((await fetch(`http://localhost:${h.port}/readyz`)).status).toBe(200);
+
+    dead = ["todo"];
+    const degraded = await fetch(`http://localhost:${h.port}/readyz`);
+    expect(degraded.status).toBe(503);
+    expect(degraded.headers.get("content-type")).toBe("application/json");
+    expect(await degraded.json()).toEqual({ status: "degraded", colocatedDegraded: ["todo"] });
+
+    dead = [];
+    expect((await fetch(`http://localhost:${h.port}/readyz`)).status).toBe(200);
+  });
+
+  it("drain() with nothing in flight resolves at once; /readyz then answers 503 {status:'draining'} and a new invoke is refused 503 DRAINING", async () => {
+    const h = await boot();
+    expect(h.inFlight()).toBe(0);
+    await h.drain();
+
+    const ready = await fetch(`http://localhost:${h.port}/readyz`);
+    expect(ready.status).toBe(503);
+    expect(await ready.json()).toEqual({ status: "draining" });
+
+    const refused = await fetch(`http://localhost:${h.port}/agent/invoke`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input: "too late" }),
+    });
+    expect(refused.status).toBe(503);
+    expect(refused.headers.get("retry-after")).toBe("15");
+    expect(refused.headers.get("access-control-allow-origin")).toBe("*");
+    const envelope = (await refused.json()) as { code: string; message: string };
+    expect(envelope.code).toBe("DRAINING");
+    expect(envelope.message).toContain("shutting down");
+
+    // Draining trumps degraded — a draining server is not ready whatever its
+    // children look like (the pod checks in the same order).
+    await h.drain(); // idempotent
+    expect((await fetch(`http://localhost:${h.port}/readyz`)).status).toBe(503);
+  });
+
+  it("drain() lets an in-flight turn run to its done frame, flips /readyz meanwhile, and resolves only once idle", async () => {
+    const holdDir = mkdtempSync(join(tmpdir(), "guuey-dev-server-hold-"));
+    const releaseMarker = join(holdDir, "release-the-turn");
+    // The dev server forwards its own env to the worker (`{...process.env}`).
+    process.env.HOLD_WORKER_RELEASE = releaseMarker;
+    try {
+      const h = await boot({ workerArgs: [holdFixture] });
+
+      const held = await fetch(`http://localhost:${h.port}/agent/invoke`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input: "hold me" }),
+      });
+      expect(held.status).toBe(200);
+      // Read up to the native echo frame — the worker is now parked on the
+      // release marker, so the turn is deterministically in flight.
+      const reader = held.body!.getReader();
+      const decoder = new TextDecoder();
+      let seen = "";
+      while (!seen.includes('"echo":"hold me"')) {
+        const { value, done } = await reader.read();
+        if (done) throw new Error(`stream ended before the echo frame: ${seen}`);
+        seen += decoder.decode(value, { stream: true });
+      }
+      expect(h.inFlight()).toBe(1);
+
+      let drained = false;
+      const draining = h.drain().then(() => {
+        drained = true;
+      });
+
+      // Mid-drain: NotReady, new turns refused, the held turn still open.
+      const ready = await fetch(`http://localhost:${h.port}/readyz`);
+      expect(ready.status).toBe(503);
+      expect(await ready.json()).toEqual({ status: "draining" });
+      const refused = await fetch(`http://localhost:${h.port}/agent/invoke`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input: "second" }),
+      });
+      expect(refused.status).toBe(503);
+      expect(((await refused.json()) as { code: string }).code).toBe("DRAINING");
+      expect(drained).toBe(false);
+      expect(h.inFlight()).toBe(1);
+
+      // Release the worker: the held turn ends with `done`, drain resolves.
+      writeFileSync(releaseMarker, "go");
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        seen += decoder.decode(value, { stream: true });
+      }
+      expect(seen).toMatch(/event: done\ndata: \{"stopReason":"end_turn"\}/);
+      await draining;
+      expect(drained).toBe(true);
+      expect(h.inFlight()).toBe(0);
+    } finally {
+      delete process.env.HOLD_WORKER_RELEASE;
+      rmSync(holdDir, { recursive: true, force: true });
+    }
   });
 });
 

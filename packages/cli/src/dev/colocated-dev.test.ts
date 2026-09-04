@@ -53,14 +53,20 @@ function waitForStoppedMarker(dir: string, timeoutMs = 5000): Promise<void> {
 
 afterEach(async () => {
   handle?.stop();
-  if (markerDir) {
-    await waitForStoppedMarker(markerDir);
-  }
-  handle = undefined;
-  if (markerDir) {
-    delete process.env.FIXTURE_MARKER_DIR;
-    rmSync(markerDir, { recursive: true, force: true });
-    markerDir = undefined;
+  try {
+    if (markerDir) {
+      await waitForStoppedMarker(markerDir);
+    }
+  } finally {
+    // Reset even when the wait above throws — otherwise one test's missing
+    // marker leaks its `markerDir` into every later hook and a single
+    // failure cascades through the rest of the file.
+    handle = undefined;
+    if (markerDir) {
+      delete process.env.FIXTURE_MARKER_DIR;
+      rmSync(markerDir, { recursive: true, force: true });
+      markerDir = undefined;
+    }
   }
 });
 
@@ -72,7 +78,7 @@ describe("spawnColocatedDev", () => {
   // whole process group rather than just the direct child. Keep the fixture
   // behind `pnpm run` for that reason; spawning it directly would still pass
   // while leaking every real dev server.
-  it("spawns the entry's dev script with PORT set in its env, and stop() SIGTERMs it", async () => {
+  it("spawns the entry's dev script with PORT set in its env, settles READY once it listens on devPort, and stop() SIGTERMs it", async () => {
     markerDir = mkdtempSync(join(tmpdir(), "guuey-colocated-dev-"));
     process.env.FIXTURE_MARKER_DIR = markerDir;
 
@@ -84,8 +90,94 @@ describe("spawnColocatedDev", () => {
     await waitFor(() => existsSync(join(markerDir!, "started")));
     expect(readFileSync(join(markerDir!, "started"), "utf8")).toBe("PORT=34567");
 
+    // guuey#770: `settled` resolves on the TCP door, the pod supervisor's
+    // readiness signal — and a listening child is not degraded.
+    await handle.settled;
+    expect(handle.degraded()).toEqual([]);
+
     handle.stop();
     await waitFor(() => existsSync(join(markerDir!, "stopped")));
+    // A child stop() tore down is the state stop() asked for — never degraded.
+    expect(handle.degraded()).toEqual([]);
+  });
+
+  // guuey#770: the local analogues of the pod supervisor's `degraded` arms —
+  // exit before ready, readiness deadline missed, exit after ready (no local
+  // restart budget) — all surface through `degraded()`, the hook `guuey dev`
+  // feeds the dev server's `/readyz` 503 {status:'degraded'} answer.
+  describe("settled / degraded() (guuey#770)", () => {
+    it("settles at once with nothing to spawn, degraded() empty", async () => {
+      handle = spawnColocatedDev([], projectRoot);
+      await handle.settled;
+      expect(handle.degraded()).toEqual([]);
+    });
+
+    it("a child that exits before it ever listens is degraded (and settles)", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      // The ignored-builds fixture dies with exit 1 without binding — the
+      // real shape of a colocated install failure.
+      handle = spawnColocatedDev(
+        [{ name: "my-mcp", source: "fixtures/ignored-builds-child", devPort: 34570 }],
+        projectRoot,
+      );
+      await handle.settled;
+      expect(handle.degraded()).toEqual(["my-mcp"]);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('colocated MCP "my-mcp" is DEGRADED (exited (code 1))'));
+      warn.mockRestore();
+    });
+
+    it("a child that never listens within readinessTimeoutMs is degraded (and settles)", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      markerDir = mkdtempSync(join(tmpdir(), "guuey-colocated-dev-nolisten-"));
+      process.env.FIXTURE_MARKER_DIR = markerDir;
+      process.env.FIXTURE_NO_LISTEN = "1";
+      try {
+        handle = spawnColocatedDev(
+          [{ name: "sleepy", source: "fixtures/colocated-child", devPort: 34571 }],
+          projectRoot,
+          { readinessTimeoutMs: 1500 },
+        );
+        await handle.settled;
+        expect(handle.degraded()).toEqual(["sleepy"]);
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('colocated MCP "sleepy" is DEGRADED (not listening on :34571 within 1500ms)'),
+        );
+        // The deadline can fire before `pnpm run` has even exec'd the fixture
+        // under load; `afterEach` needs the fixture ALIVE to receive stop()'s
+        // SIGTERM and write its `stopped` marker — so wait for it here.
+        await waitFor(() => existsSync(join(markerDir!, "started")), 10_000);
+      } finally {
+        delete process.env.FIXTURE_NO_LISTEN;
+        warn.mockRestore();
+      }
+    });
+
+    it("a child that crashes AFTER becoming ready degrades live — locally there is no restart budget", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      // Own marker dir, cleaned here: the fixture exits on its own, so
+      // `afterEach`'s wait for a `stopped` marker would never be satisfied.
+      const crashMarkerDir = mkdtempSync(join(tmpdir(), "guuey-colocated-dev-crash-"));
+      process.env.FIXTURE_MARKER_DIR = crashMarkerDir;
+      // Well past the 200 ms probe interval, so the child is observed READY
+      // before it dies even on a loaded box (a crash inside the first probe
+      // gap would read as exit-before-ready — a different arm).
+      process.env.FIXTURE_CRASH_AFTER_MS = "1200";
+      try {
+        handle = spawnColocatedDev(
+          [{ name: "flaky", source: "fixtures/colocated-child", devPort: 34572 }],
+          projectRoot,
+        );
+        await handle.settled;
+        expect(handle.degraded()).toEqual([]);
+        await waitFor(() => handle!.degraded().includes("flaky"), 10_000);
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('colocated MCP "flaky" is DEGRADED (exited (code 1))'));
+      } finally {
+        delete process.env.FIXTURE_CRASH_AFTER_MS;
+        delete process.env.FIXTURE_MARKER_DIR;
+        rmSync(crashMarkerDir, { recursive: true, force: true });
+        warn.mockRestore();
+      }
+    });
   });
 
   it("skips (with a warning naming the fix) an entry whose package.json has neither a dev nor a start script", () => {

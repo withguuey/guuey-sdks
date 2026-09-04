@@ -16,6 +16,16 @@
  * `sendEvent`'s two-line framing (`event: <name>\ndata: <JSON>\n\n`) MUST
  * byte-match the pod's `sendEvent` (`sse-server.ts:1166`) — the chat client
  * is the same SSE parser on both legs.
+ *
+ * Probe route (guuey#770): `GET /readyz` is the ONE probe-shaped route,
+ * exactly as on the hosted pod (guuey#758 deleted the pod's `/healthz`) —
+ * `200 ok` while serving, `503 {status:'draining'}` after {@link
+ * DevServerHandle.drain}, `503 {status:'degraded', colocatedDegraded:[…]}`
+ * while a colocated MCP dev child is dead. Same bodies, same status codes,
+ * no CORS (the pod's carries none), so the SDK docs' "poll `/readyz`"
+ * snippet rehearses against `guuey dev` unchanged. There is no `/healthz`
+ * here for the same reason there is none on the pod: what a builder pokes
+ * locally must be what the platform serves.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -77,6 +87,16 @@ export interface DevServerOptions {
    * bearer token.
    */
   devIdentity?: DevIdentity;
+  /**
+   * Names of colocated MCP dev children that are terminally dead — the same
+   * hook, same name, the pod's `startSseServer` takes from its supervisor.
+   * Non-empty → `GET /readyz` answers `503 {status:'degraded',
+   * colocatedDegraded:[…]}` so a poller stops green-lighting an agent whose
+   * tool serves a dead port. Read live per request. Omit (no colocated
+   * servers) → `/readyz` is always ready once serving. `commands/dev.ts`
+   * wires `spawnColocatedDev(…).degraded`.
+   */
+  colocatedDegraded?: () => string[];
 }
 
 /** See {@link DevServerOptions.devIdentity}. */
@@ -90,8 +110,39 @@ export interface DevIdentity {
 export interface DevServerHandle {
   /** The actual bound port (resolves `port: 0` to the OS-assigned port). */
   port: number;
+  /**
+   * Begin draining — the local counterpart of the pod's SIGTERM drain
+   * (`drain.ts`): from this call `GET /readyz` answers `503
+   * {status:'draining'}` and a NEW `POST /agent/invoke` is refused with the
+   * pod's structured `503 {code:'DRAINING'}` envelope, while turns already
+   * in flight run to their `done`/`error` frame. Resolves once no turn is
+   * in flight (immediately if none is). The listener stays open throughout
+   * — that is what makes the 503 observable; `close()` afterwards releases
+   * it. Idempotent.
+   */
+  drain(): Promise<void>;
+  /** Turns currently in flight (a `POST /agent/invoke` past its body parse
+   *  whose stream has not ended). */
+  inFlight(): number;
   close(): Promise<void>;
 }
+
+/** Mutable serving state shared by the request handler and the handle. */
+interface ServingState {
+  draining: boolean;
+  inFlight: number;
+  /** Resolvers parked by `drain()` until `inFlight` reaches 0. */
+  idleWaiters: Array<() => void>;
+}
+
+/**
+ * The pod's drain refusal envelope (`sse-server.ts`, `ERROR_CODES.DRAINING`
+ * + `GOVERNOR_RETRY_AFTER_SECONDS`), mirrored as literals like the other
+ * pod constants in this file — `@guuey/agent-client`'s `AGENT_ERROR_CODES.
+ * DRAINING` is the client-side twin the chat kit already handles.
+ */
+const DRAINING_CODE = "DRAINING";
+const DRAINING_RETRY_AFTER_SECONDS = 15;
 
 interface SessionState {
   /** `at` rides along for the history route's row shape; the worker driver's
@@ -403,7 +454,28 @@ async function handleInvoke(
   opts: DevServerOptions,
   driver: (input: LocalRunInput) => AsyncIterable<WorkerEvent>,
   sessions: Map<string, SessionState>,
+  serving: ServingState,
 ): Promise<void> {
+  // Draining refuses BEFORE the body read, the pod's own order (its governor
+  // gate sheds load at the cheapest point). Same envelope: structured 503 +
+  // Retry-After + CORS, never a hang, never a raw body. The pod's phase 1
+  // (keep serving while the endpoint is pulled) has no local meaning — no
+  // load balancer routes to `guuey dev` — so draining refuses at once.
+  if (serving.draining) {
+    res.writeHead(503, {
+      "Content-Type": "application/json",
+      "Retry-After": String(DRAINING_RETRY_AFTER_SECONDS),
+      ...CORS_HEADERS,
+    });
+    res.end(
+      JSON.stringify({
+        code: DRAINING_CODE,
+        message: "guuey dev is shutting down; in-flight turns are finishing — restart it and retry",
+      }),
+    );
+    return;
+  }
+
   let body: { input: string; sessionId: string | undefined };
   try {
     body = await readInvokeBody(req);
@@ -417,6 +489,28 @@ async function handleInvoke(
   const state = sessions.get(sessionId) ?? { history: [] };
   sessions.set(sessionId, state);
 
+  serving.inFlight += 1;
+  try {
+    await streamTurn(req, res, opts, driver, body.input, sessionId, state);
+  } finally {
+    serving.inFlight -= 1;
+    if (serving.inFlight === 0) {
+      const waiters = serving.idleWaiters.splice(0);
+      for (const wake of waiters) wake();
+    }
+  }
+}
+
+/** The turn itself — everything after the invoke was admitted and counted. */
+async function streamTurn(
+  req: IncomingMessage,
+  res: ServerResponse,
+  opts: DevServerOptions,
+  driver: (input: LocalRunInput) => AsyncIterable<WorkerEvent>,
+  input: string,
+  sessionId: string,
+  state: SessionState,
+): Promise<void> {
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
@@ -457,7 +551,7 @@ async function handleInvoke(
     const fs = sessionFs(opts.projectRoot, sessionId);
     if (opts.localCredentials) writeLocalCredentials(fs.session, opts.localCredentials, opts.devIdentity);
     for await (const ev of driver({
-      input: body.input,
+      input,
       history: state.history,
       fs,
       env: { ...process.env, GUUEY_AGENT_SNAPSHOT: opts.agentSnapshotJson },
@@ -495,7 +589,7 @@ async function handleInvoke(
       const flushed = normalizer.flush();
       if (flushed.length > 0) sendEvent(res, "message", flushed);
     }
-    state.history.push({ role: "user", text: body.input, at: new Date().toISOString() });
+    state.history.push({ role: "user", text: input, at: new Date().toISOString() });
     if (agentText) {
       state.history.push({ role: "agent", text: agentText, at: new Date().toISOString() });
     }
@@ -710,15 +804,35 @@ async function handleRequest(
   sessions: Map<string, SessionState>,
   uiServers: Map<string, string>,
   uiClients: UiClientCache,
+  serving: ServingState,
 ): Promise<void> {
-  if (req.method === "GET" && req.url === "/healthz") {
-    // CORS so a browser frontend (the scaffolded web app on another port)
-    // can probe liveness — every other route already carries these.
-    res.writeHead(200, { "Content-Type": "text/plain", ...CORS_HEADERS });
+  const url = new URL(req.url ?? "/", "http://localhost");
+  // Readiness — the ONE probe-shaped route, byte-for-byte the pod's
+  // (`sse-server.ts` `/readyz`, guuey#758/#770): routed on the PATH so
+  // `/readyz?probe=1` answers too; `503 {status:'draining'}` first (a
+  // draining server is not ready whatever its children look like), then
+  // `503 {status:'degraded', colocatedDegraded}` read live, else `200 ok`.
+  // No CORS on purpose — the pod's carries none, and a local answer the
+  // hosted route would not give is the mismatch this route exists to end
+  // (the scaffold's browser-side probe uses `OPTIONS /agent/invoke`, which
+  // both servers answer cross-origin — see its `lib/status.ts`). There is
+  // no `/healthz`: it falls through to the 404 below, like the pod's.
+  if (req.method === "GET" && url.pathname === "/readyz") {
+    if (serving.draining) {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ status: "draining" }));
+      return;
+    }
+    const degraded = opts.colocatedDegraded?.() ?? [];
+    if (degraded.length > 0) {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ status: "degraded", colocatedDegraded: degraded }));
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "text/plain" });
     res.end("ok");
     return;
   }
-  const url = new URL(req.url ?? "/", "http://localhost");
   const threadMatch = THREAD_MESSAGES_ROUTE.exec(url.pathname);
   if (req.method === "GET" && url.pathname === "/agent/ui-resource") {
     await handleUiResource(res, url.searchParams, uiServers, uiClients);
@@ -740,7 +854,7 @@ async function handleRequest(
     return;
   }
   if (req.method === "POST" && req.url === "/agent/invoke") {
-    await handleInvoke(req, res, opts, driver, sessions);
+    await handleInvoke(req, res, opts, driver, sessions, serving);
     return;
   }
   if (req.method === "GET" && threadMatch !== null) {
@@ -761,9 +875,10 @@ export function startDevServer(opts: DevServerOptions): Promise<DevServerHandle>
   // (guuey#368 residual — see handleUiResource).
   const uiServers = uiResourceServerMap(opts.agentSnapshotJson);
   const uiClients: UiClientCache = new Map();
+  const serving: ServingState = { draining: false, inFlight: 0, idleWaiters: [] };
 
   const server = createServer((req, res) => {
-    handleRequest(req, res, opts, driver, sessions, uiServers, uiClients).catch((err) => {
+    handleRequest(req, res, opts, driver, sessions, uiServers, uiClients, serving).catch((err) => {
       console.error(
         `[guuey dev] request handler error: ${err instanceof Error ? err.message : String(err)}`,
       );
@@ -785,6 +900,14 @@ export function startDevServer(opts: DevServerOptions): Promise<DevServerHandle>
       const boundPort = typeof addr === "object" && addr !== null ? addr.port : opts.port;
       resolve({
         port: boundPort,
+        inFlight: () => serving.inFlight,
+        drain: () => {
+          serving.draining = true;
+          if (serving.inFlight === 0) return Promise.resolve();
+          return new Promise<void>((idle) => {
+            serving.idleWaiters.push(idle);
+          });
+        },
         close: async () => {
           // Close the door's cached MCP clients FIRST: each holds a
           // standing streamable-HTTP session (an SSE GET) against its

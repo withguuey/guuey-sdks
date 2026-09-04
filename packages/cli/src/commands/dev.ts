@@ -208,8 +208,10 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
   // Auto-spawn colocated dev-loop parity (Task 7): the deploy-shaped
   // snapshot (pre-lowering) still carries every `colocated` entry's
   // `source`/`devPort` — spawn each one's own dev server BEFORE the dev
-  // server starts, so `lowerForDev`'s localhost URLs are dialable from the
-  // first invoke.
+  // server starts, and WAIT for them to settle (ready or degraded) before
+  // binding (guuey#770) — the pod's own boot order (`bootColocated` settles
+  // before `startSseServer` binds), so `lowerForDev`'s localhost URLs are
+  // dialable from the first invoke and a `/readyz` 200 means it.
   const snapshotAgent = buildDeploySnapshot(loaded).agent;
   const colocatedEntries: ColocatedDevEntry[] = [];
   // `declaredServerEntries` filters the `ggui: false` opt-out (guuey#24) — not a
@@ -220,6 +222,14 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
     }
   }
   const colocatedDev = spawnColocatedDev(colocatedEntries, projectRoot);
+  if (colocatedEntries.length > 0) {
+    console.log(
+      `\nWaiting for colocated MCP dev server(s) to listen: ${colocatedEntries
+        .map((e) => `${e.name} (:${e.devPort})`)
+        .join(', ')} …`,
+    );
+    await colocatedDev.settled;
+  }
 
   // Lowered snapshot: run through `lowerForDev` (hosted/external+devPort →
   // localhost, colocated+devPort → localhost + tracked in `colocatedNames`,
@@ -259,6 +269,12 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
     projectRoot,
     ...(localCredentials !== undefined ? { localCredentials } : {}),
     ...(devIdentity !== undefined ? { devIdentity } : {}),
+    // Colocated-child health → /readyz, read live (guuey#770) — the pod
+    // wires the same hook from its supervisor; absent (no colocated servers)
+    // → /readyz stays always-ready, as on the pod.
+    ...(colocatedEntries.length > 0
+      ? { colocatedDegraded: (): string[] => colocatedDev.degraded() }
+      : {}),
   });
 
   if (snapshotOnly) {
@@ -279,7 +295,7 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
   console.log(`\nguuey dev server listening on http://localhost:${srv.port}`);
   console.log(`  POST /agent/invoke              (SSE stream)`);
   console.log(`  GET  /threads/:id/messages      (in-memory history, read-plane shape)`);
-  console.log(`  GET  /healthz\n`);
+  console.log(`  GET  /readyz                    (200 serving · 503 draining / degraded — the hosted pod's probe)\n`);
   console.log('Example:');
   console.log(
     `  curl -N -X POST http://localhost:${srv.port}/agent/invoke \\\n` +
@@ -287,9 +303,32 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
       `    -d '{"input":"hello"}'\n`,
   );
 
+  // Shutdown in the pod's order (guuey#770, `drain.ts`): flip /readyz to 503
+  // and refuse new turns, let in-flight turns finish, THEN stop the colocated
+  // children (stopping them first raced the very turns still calling their
+  // tools — the pod's S1-F3 finding), then close the listener. A second
+  // signal is the builder wanting out NOW: stop the children (their process
+  // groups would otherwise outlive us and keep their devPorts) and exit.
+  let draining = false;
   const shutdown = (): void => {
-    colocatedDev.stop();
-    void srv.close().then(() => process.exit(0));
+    if (draining) {
+      colocatedDev.stop();
+      process.exit(0);
+    }
+    draining = true;
+    const inFlight = srv.inFlight();
+    if (inFlight > 0) {
+      console.log(
+        `\nDraining: waiting for ${inFlight} in-flight turn(s) to finish (/readyz → 503) — press Ctrl-C again to exit now.`,
+      );
+    }
+    void srv
+      .drain()
+      .then(() => {
+        colocatedDev.stop();
+        return srv.close();
+      })
+      .then(() => process.exit(0));
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);

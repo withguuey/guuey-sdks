@@ -4,11 +4,12 @@
  * Probes the agent's invoke route with a CORS preflight-shaped OPTIONS —
  * the ONE route both servers answer cross-origin: the pod's CORS covers
  * `/agent/invoke` for the app's allowed domains, and `guuey dev --serve`
- * answers OPTIONS 204 on it too. (A bare `/healthz` GET carries no CORS
- * headers on either server, so it is useless from a browser.) The
- * platform's richer status API is credentialed and guuey-origin-CORS'd, so
- * the CLI is the tool for detail: `pnpm status` runs `guuey apps get` +
- * `guuey agent status`.
+ * answers OPTIONS 204 on it too. (The probe route both servers serve,
+ * `GET /readyz` — 200 serving, 503 draining/degraded — carries no CORS
+ * headers on either, so it is for same-origin pollers and `curl`, not a
+ * browser page on another origin.) The platform's richer status API is
+ * credentialed and guuey-origin-CORS'd, so the CLI is the tool for detail:
+ * `pnpm status` runs `guuey apps get` + `guuey agent status`.
  */
 import { agentEndpointUrl, isLinked } from "../config";
 
