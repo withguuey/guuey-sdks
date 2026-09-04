@@ -80,7 +80,18 @@ function* walk(dir: string): Generator<string> {
   }
 }
 
-describe('probe route guard (guuey#770) — no /healthz under the local-dev trees', () => {
+/**
+ * Packaging seam (oss): `@guuey/cli` is PUBLISHED — the mirror's publish
+ * gate and any consumer's test run see an oss-only tree with no monorepo
+ * root and no `e2e/`. This guard is an in-repo drift tripwire, so it runs
+ * only where the trees it guards exist (the wire-mirror-guard pattern);
+ * outside the monorepo it skips rather than failing every release on a
+ * root it cannot see.
+ */
+const inMonorepo =
+  existsSync(join(REPO_ROOT, 'pnpm-workspace.yaml')) && existsSync(join(REPO_ROOT, 'e2e'));
+
+describe.skipIf(!inMonorepo)('probe route guard (guuey#770) — no /healthz under the local-dev trees', () => {
   it('is rooted at the monorepo root', () => {
     expect(existsSync(join(REPO_ROOT, 'pnpm-workspace.yaml'))).toBe(true);
     for (const tree of GUARDED_TREES) {
