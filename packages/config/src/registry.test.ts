@@ -3,6 +3,8 @@ import {
   MODEL_REGISTRY,
   FRAMEWORK_REGISTRY,
   modelsForProvider,
+  modelsForFramework,
+  isOfferedModel,
   lineupForProvider,
   legacyForProvider,
   defaultModelFor,
@@ -160,6 +162,46 @@ describe('lineupForProvider / legacyForProvider', () => {
     // claude-fable-5 as Active with no deprecation date.
     expect(legacyForProvider('anthropic').map((m) => m.id)).toContain('claude-fable-5');
     expect(modelEntry('claude-fable-5')?.status).toBe('ga');
+  });
+});
+
+/**
+ * THE offered / off-registry predicate (guuey#647). The console's rack and
+ * deploy snapshot and the backend's create validator all judge an
+ * `intendedModel` through these two, so a drift here is a drift everywhere
+ * — which is the point: one rule, no per-door copy.
+ */
+describe('modelsForFramework / isOfferedModel — the one model-axis rule every door shares (guuey#647)', () => {
+  it("a framework's axis IS its default provider's invocable list, default first", () => {
+    for (const fw of FRAMEWORK_REGISTRY) {
+      expect(modelsForFramework(fw.framework)).toEqual(modelsForProvider(fw.defaultProvider));
+    }
+    expect(modelsForFramework('claude-agent-sdk')[0].id).toBe(defaultModelFor('claude-agent-sdk'));
+    // vanilla rides the platform default (anthropic) like an absent framework does.
+    expect(modelsForFramework('vanilla')).toEqual(modelsForProvider('anthropic'));
+  });
+
+  it('offered: a ga id on its own framework, above or below the picker fold', () => {
+    expect(isOfferedModel('claude-agent-sdk', 'claude-sonnet-5')).toBe(true);
+    // Behind the "See all models" door, still offered — the door is curation.
+    expect(isOfferedModel('claude-agent-sdk', 'claude-fable-5')).toBe(true);
+    expect(isOfferedModel('openai-agents-sdk', 'gpt-5.6-terra')).toBe(true);
+    expect(isOfferedModel('google-adk', 'gemini-3.6-flash')).toBe(true);
+  });
+
+  it("refused: an `announced` row — in the registry, not invocable — fails closed (the registry's own state rule)", () => {
+    expect(modelEntry('claude-fable-5-1')?.status).toBe('announced');
+    expect(isOfferedModel('claude-agent-sdk', 'claude-fable-5-1')).toBe(false);
+  });
+
+  it("refused: another provider's model, an id the registry never heard of, the bare gpt-5.6 alias", () => {
+    expect(isOfferedModel('claude-agent-sdk', 'gpt-5.6-terra')).toBe(false);
+    expect(isOfferedModel('google-adk', 'claude-sonnet-5')).toBe(false);
+    expect(isOfferedModel('claude-agent-sdk', 'claude-test-off-registry-9')).toBe(false);
+    expect(isOfferedModel('openai-agents-sdk', 'gpt-5.6')).toBe(false);
+    // Exact match only — no trimming, no case folding, no prefix honor.
+    expect(isOfferedModel('claude-agent-sdk', 'Claude-Sonnet-5')).toBe(false);
+    expect(isOfferedModel('claude-agent-sdk', 'claude-sonnet')).toBe(false);
   });
 });
 

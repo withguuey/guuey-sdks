@@ -180,6 +180,30 @@ export function legacyForProvider(p: ModelEntry["provider"]): readonly ModelEntr
 }
 
 /**
+ * The model AXIS a framework's picker offers — its default provider's
+ * invocable (ga|preview) rows, default first: `modelsForProvider` keyed by
+ * framework. Every door that judges an `intendedModel` (the console's rack
+ * and deploy snapshot, the backend's create validator) derives THIS list, so
+ * no two of them can disagree about what "offered" means (guuey#647).
+ */
+export function modelsForFramework(framework: FrameworkEntry["framework"]): readonly ModelEntry[] {
+  const fw = FRAMEWORK_REGISTRY.find((f) => f.framework === framework);
+  if (!fw) throw new Error(`Unknown framework: ${framework}`);
+  return modelsForProvider(fw.defaultProvider);
+}
+
+/**
+ * Is `id` on `framework`'s model axis? THE offered / off-registry predicate
+ * (guuey#647), fail-closed: an `announced` row (known, not invocable), a
+ * `deprecated` row, another provider's model and an id the registry has
+ * never heard of all answer false. One rule for every door — a client that
+ * copied it would be the second source of truth this exists to prevent.
+ */
+export function isOfferedModel(framework: FrameworkEntry["framework"], id: string): boolean {
+  return modelsForFramework(framework).some((m) => m.id === id);
+}
+
+/**
  * Get the default model id for a framework's default provider.
  */
 export function defaultModelFor(framework: FrameworkEntry["framework"]): string {

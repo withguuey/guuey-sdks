@@ -436,6 +436,45 @@ describe('createLinkedApp (S9)', () => {
     expect(printed).toContain('displayName is required');
     expect(printed).not.toContain('[object Object]');
   });
+
+  it("an off-registry model refusal prints the server's typed reason — code and all — and exits 1 (guuey#647)", async () => {
+    // `POST /v1/apps` refuses an off-registry `intendedModel` with
+    // MODEL_NOT_IN_REGISTRY (backend `shared/create-intent.ts`). The CLI
+    // does not judge models itself — `guuey deploy`'s own `agent.model` is
+    // the honor-explicitly path the reason points at, and `reconcile` never
+    // validates it — so this door's job is to print the server's word
+    // WHOLE: the code, the id, the offered ids and the guuey.json pointer.
+    const reason =
+      'intendedModel "claude-test-off-registry-9" is not in the model registry. ' +
+      'Offered for claude-agent-sdk: claude-sonnet-5, claude-opus-5. ' +
+      'To run an unlisted model, set agent.model in guuey.json and run guuey deploy.';
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: 'MODEL_NOT_IN_REGISTRY', message: reason } }), {
+        status: 400,
+      }),
+    );
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+
+    await expect(
+      createLinkedApp({
+        auth: { pat: 'pat-test', expiresAt: '2099-01-01T00:00:00.000Z' },
+        config: { host: 'https://platform.guuey.test', apiUrl: 'https://api.guuey.test' },
+        project: null,
+        guueyJsonPath: '/does/not/matter/guuey.json',
+        appName: 'My Agent',
+      }),
+    ).rejects.toBeInstanceOf(ExitSignal);
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('[MODEL_NOT_IN_REGISTRY]');
+    expect(printed).toContain(reason);
+    expect(printed).not.toContain('[object Object]');
+  });
 });
 
 // Regression coverage for S4: the non-TTY "no app linked" error pointed at
