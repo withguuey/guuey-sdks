@@ -56,6 +56,7 @@ import { resolveConfig } from '../config';
 import { resolveTargetAppId } from '../app-id';
 import { apiRequest, parseApiError } from '../deploy-shared';
 import { awaitPageUrl, pollDeployStatus, printPageLine } from './deploy';
+import { DEPLOY_WAIT_MS, stillDeployingMessage } from './deploy-wait';
 import * as out from '../output';
 
 // ─── Wire mirrors of `backend/libs/cli-wire/reconcile.ts` ────────────────
@@ -589,15 +590,19 @@ export async function agentApply(flags?: Record<string, string | true>): Promise
     // under `--json` and CI went green on a still-queued build that
     // could later fail (found by the guuey#280 helper-agent review).
     if (wait && !result.unchanged) {
-      const { status, url, pageUrl } = await pollDeployStatus({
+      const { status, url, pageUrl, timedOut } = await pollDeployStatus({
         auth: { pat: ctx.pat },
         config: ctx.config,
         appId: ctx.appId,
         buildNumber: result.buildNumber,
-        timeoutMs: 7 * 60 * 1000,
+        timeoutMs: DEPLOY_WAIT_MS,
       });
-      out.json({ ...result, wait: { status, url, pageUrl } });
-      if (status !== 'live') process.exit(1);
+      // `timedOut` is not a failure (guuey#759): the platform keeps
+      // deploying after the client stops watching, so the document says so
+      // (the last status seen + `timedOut: true`) and the exit is 0 — only
+      // a terminal non-live status exits 1.
+      out.json({ ...result, wait: { status, url, pageUrl, timedOut } });
+      if (status !== 'live' && !timedOut) process.exit(1);
       return;
     }
     out.json(result);
@@ -636,13 +641,17 @@ export async function agentApply(flags?: Record<string, string | true>): Promise
   if (wait) {
     console.log('  Waiting for the build to go live...');
     const auth = { pat: ctx.pat };
-    const { status, url, pageUrl } = await pollDeployStatus({
+    const { status, url, pageUrl, timedOut } = await pollDeployStatus({
       auth,
       config: ctx.config,
       appId: ctx.appId,
       buildNumber: result.buildNumber,
-      timeoutMs: 7 * 60 * 1000,
+      timeoutMs: DEPLOY_WAIT_MS,
     });
+    if (timedOut) {
+      console.log(stillDeployingMessage(DEPLOY_WAIT_MS));
+      return;
+    }
     if (status === 'live') {
       out.success(`Live at ${url}`);
       // guuey#249 — the app's page (default slug claimed at first Live),
@@ -803,13 +812,17 @@ export async function agentRollback(flags?: Record<string, string | true>): Prom
 
   if (wait) {
     console.log('  Waiting for the build to go live...');
-    const { status, url } = await pollDeployStatus({
+    const { status, url, timedOut } = await pollDeployStatus({
       auth: { pat: ctx.pat },
       config: ctx.config,
       appId: ctx.appId,
       buildNumber: result.buildNumber,
-      timeoutMs: 7 * 60 * 1000,
+      timeoutMs: DEPLOY_WAIT_MS,
     });
+    if (timedOut) {
+      console.log(stillDeployingMessage(DEPLOY_WAIT_MS));
+      return;
+    }
     if (status === 'live') {
       out.success(`Live at ${url}`);
       return;

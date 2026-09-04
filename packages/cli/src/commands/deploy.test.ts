@@ -14,6 +14,7 @@ import {
   portalOriginForHost,
   printPageLine,
 } from './deploy.js';
+import { DEPLOY_WAIT_MS, NODE_PROVISION_BUDGET_MS, stillDeployingMessage } from './deploy-wait.js';
 import { resolveConfig, loadProjectConfig } from '../config.js';
 import { safeParseGuueyJson } from '@guuey/config';
 import type { apiRequest } from '../deploy-shared.js';
@@ -89,7 +90,12 @@ describe('pollDeployStatus', () => {
         { api },
       );
 
-      expect(result).toEqual({ status: 'live', url: 'https://app-1.guuey.app', pageUrl: null });
+      expect(result).toEqual({
+        status: 'live',
+        url: 'https://app-1.guuey.app',
+        pageUrl: null,
+        timedOut: false,
+      });
       expect(calls).toEqual([{ method: 'GET', path: '/apps/app-1/deployments/4/status' }]);
     },
     10_000,
@@ -186,6 +192,53 @@ describe('pollDeployStatus', () => {
     },
     10_000,
   );
+
+  it('when the wait runs out it RETURNS the last status with timedOut: true — never exits, never says "timed out" (guuey#759)', async () => {
+    // The row keeps saying `deploying` past the wait: a lg/xl deploy that
+    // needed a NEW node was Ready at 2 min 53 s and `live` ~18 min after
+    // start on dev while the old 7-minute wait had already exited 1 (QA,
+    // 2026-09-04). The caller says "still deploying" and exits 0.
+    const api: typeof apiRequest = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            appId: 'app-1',
+            buildNumber: 4,
+            status: 'deploying',
+            message: 'Provisioning pod...',
+            endpointUrl: null,
+            errorMessage: null,
+          }),
+          { status: 200 },
+        ),
+    );
+    let clock = 0;
+    const now = (): number => clock;
+    const sleep = async (ms: number): Promise<void> => {
+      clock += ms;
+    };
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('__process_exit__');
+    });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await pollDeployStatus(
+      { auth, config, appId: 'app-1', buildNumber: 4, timeoutMs: 10_000 },
+      { api, sleep, now },
+    );
+
+    expect(result).toEqual({ status: 'deploying', url: '', pageUrl: null, timedOut: true });
+    expect(exitSpy).not.toHaveBeenCalled();
+    expect(errorSpy.mock.calls.flat().join('\n')).not.toMatch(/timed out/i);
+    // The wait is measured on the injected clock: 10 s budget, 3 s per tick → 4 polls.
+    expect(vi.mocked(api)).toHaveBeenCalledTimes(4);
+  });
+
+  it('DEPLOY_WAIT_MS is never shorter than the controller node-provision budget (mirror; the controller sync test pins the value)', () => {
+    expect(DEPLOY_WAIT_MS).toBeGreaterThanOrEqual(NODE_PROVISION_BUDGET_MS + 5 * 60 * 1000);
+    expect(stillDeployingMessage(DEPLOY_WAIT_MS)).toContain('Still deploying after 22 minutes');
+    expect(stillDeployingMessage(DEPLOY_WAIT_MS)).not.toMatch(/timed out|failed/i);
+  });
 });
 
 // guuey#249 — the "Your agent's page" line. The default slug is claimed

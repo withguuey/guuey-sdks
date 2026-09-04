@@ -55,6 +55,7 @@ vi.mock('./deploy.js', () => ({
     status: 'live',
     url: 'https://app-1.agents.guuey.test',
     pageUrl: null,
+    timedOut: false,
   })),
   // guuey#249 — the page URL is read back from the status projection (the
   // default slug lands a beat after Live); stubbed to the settled answer.
@@ -443,8 +444,41 @@ describe('agentApply', () => {
         status: 'live',
         url: 'https://app-1.agents.guuey.test',
         pageUrl: null,
+        timedOut: false,
       },
     });
+  });
+
+  it('--wait --json on a build still deploying when the wait runs out emits wait.timedOut: true and exits 0 — the platform keeps going (guuey#759)', async () => {
+    const wire = reconcileResult();
+    fetchMock.mockResolvedValue(jsonResponse(200, wire));
+    const { pollDeployStatus } = await import('./deploy.js');
+    vi.mocked(pollDeployStatus).mockResolvedValueOnce({
+      status: 'deploying',
+      url: '',
+      pageUrl: null,
+      timedOut: true,
+    });
+    await agentApply({ wait: true, json: true, provenance: 'none' });
+    const emitted = JSON.parse(logs.join('\n'));
+    expect(emitted).toEqual({
+      ...wire,
+      wait: { status: 'deploying', url: '', pageUrl: null, timedOut: true },
+    });
+  });
+
+  it('--wait (human) on a build still deploying when the wait runs out says so and exits 0 (guuey#759)', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, reconcileResult()));
+    const { pollDeployStatus } = await import('./deploy.js');
+    vi.mocked(pollDeployStatus).mockResolvedValueOnce({
+      status: 'deploying',
+      url: '',
+      pageUrl: null,
+      timedOut: true,
+    });
+    await agentApply({ wait: true, provenance: 'none' });
+    expect(logs.join('\n')).toContain('Still deploying after 22 minutes');
+    expect(logs.join('\n')).not.toMatch(/timed out/i);
   });
 
   it('--wait --json exits 1 on a failed build, after emitting the JSON', async () => {
@@ -454,6 +488,7 @@ describe('agentApply', () => {
       status: 'failed',
       url: '',
       pageUrl: null,
+      timedOut: false,
     });
     await expect(agentApply({ wait: true, json: true, provenance: 'none' })).rejects.toThrow(
       new ExitSignal(1).message,

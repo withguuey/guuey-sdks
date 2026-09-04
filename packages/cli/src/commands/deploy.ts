@@ -73,6 +73,7 @@ import {
 } from '../deploy-plan';
 import { buildGguiAssetPush, pushGguiAssetsLeg, type GguiAssetPushBody } from '../ggui-assets';
 import * as out from '../output';
+import { DEPLOY_WAIT_MS, stillDeployingMessage } from './deploy-wait';
 
 /**
  * Map a platform host to its portal origin — mirrors the live-verified
@@ -719,16 +720,22 @@ async function deployCode(opts: {
     },
   );
 
-  const { status, url, pageUrl: polledPageUrl } = await pollDeployStatus({
+  const { status, url, pageUrl: polledPageUrl, timedOut } = await pollDeployStatus({
     auth,
     config,
     appId,
     buildNumber,
-    timeoutMs: 22 * 60 * 1000,
+    timeoutMs: DEPLOY_WAIT_MS,
     tarballPath,
   });
   streamAbort.abort();
   cleanup(tarballPath);
+
+  if (timedOut) {
+    console.log('');
+    console.log(stillDeployingMessage(DEPLOY_WAIT_MS));
+    return;
+  }
 
   if (status === 'superseded') {
     console.log('');
@@ -828,24 +835,28 @@ export async function pollDeployStatus(
     timeoutMs: number;
     tarballPath?: string;
   },
-  deps?: { api?: typeof apiRequest },
-): Promise<{ status: string; url: string; pageUrl: string | null }> {
+  deps?: { api?: typeof apiRequest; sleep?: (ms: number) => Promise<void>; now?: () => number },
+): Promise<DeployPollResult> {
   const api = deps?.api ?? apiRequest;
+  const sleep = deps?.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const now = deps?.now ?? Date.now;
   const { auth, config, appId, buildNumber, timeoutMs, tarballPath } = opts;
   let status = 'queued';
   let url = '';
   let pageUrl: string | null = null;
   let lastMessage = '';
-  const startTime = Date.now();
+  const startTime = now();
 
   while (status !== 'live' && status !== 'failed' && status !== 'superseded') {
-    if (Date.now() - startTime > timeoutMs) {
-      out.error(`Deploy timed out after ${Math.round(timeoutMs / 60000)} minutes.`);
-      if (tarballPath) cleanup(tarballPath);
-      process.exit(1);
+    if (now() - startTime > timeoutMs) {
+      // Not a failure (guuey#759): the platform keeps deploying after the
+      // client stops watching, so the caller says so and exits 0 — only a
+      // `failed` / `superseded` row is a failure exit. The caller owns the
+      // tarball cleanup on every return path.
+      return { status, url, pageUrl, timedOut: true };
     }
 
-    await new Promise((r) => setTimeout(r, 3000));
+    await sleep(3000);
 
     const statusRes = await api(
       auth.pat,
@@ -887,7 +898,20 @@ export async function pollDeployStatus(
     }
   }
 
-  return { status, url, pageUrl };
+  return { status, url, pageUrl, timedOut: false };
+}
+
+/**
+ * What {@link pollDeployStatus} hands back: the last status seen (a terminal
+ * one, or whatever the row said when {@link DEPLOY_WAIT_MS} ran out — then
+ * `timedOut` is true and the caller reports "still deploying", never a
+ * failure; guuey#759).
+ */
+export interface DeployPollResult {
+  status: string;
+  url: string;
+  pageUrl: string | null;
+  timedOut: boolean;
 }
 
 /**
@@ -1072,16 +1096,22 @@ async function deployLegacyDockerfile(opts: {
     },
   );
 
-  const { status, url, pageUrl: polledPageUrl } = await pollDeployStatus({
+  const { status, url, pageUrl: polledPageUrl, timedOut } = await pollDeployStatus({
     auth,
     config,
     appId,
     buildNumber,
-    timeoutMs: 22 * 60 * 1000,
+    timeoutMs: DEPLOY_WAIT_MS,
     tarballPath,
   });
   streamAbort.abort();
   cleanup(tarballPath);
+
+  if (timedOut) {
+    console.log('');
+    console.log(stillDeployingMessage(DEPLOY_WAIT_MS));
+    return;
+  }
 
   if (status === 'superseded') {
     console.log('');
@@ -1229,15 +1259,23 @@ async function deployDeclarative(opts: {
   // 3. Poll for live (no Kaniko log stream — declarative deploys skip the
   //    build; no tarball either, so `pollDeployStatus` gets no tarballPath).
   console.log('  Provisioning pod...');
-  // Declarative deploys skip the build entirely, so the deploy/readiness
-  // budget alone applies. 5 min readiness + slack ≈ 7 min ceiling.
-  const { status, url, pageUrl: polledPageUrl } = await pollDeployStatus({
+  // Declarative deploys skip the build, but a size that needs a NEW node
+  // still pays the controller's provisioning budget (10 min) before the pod
+  // even schedules — the old 7-minute ceiling reported green deploys as
+  // failed (guuey#759). One wait for every path.
+  const { status, url, pageUrl: polledPageUrl, timedOut } = await pollDeployStatus({
     auth,
     config,
     appId,
     buildNumber,
-    timeoutMs: 7 * 60 * 1000,
+    timeoutMs: DEPLOY_WAIT_MS,
   });
+
+  if (timedOut) {
+    console.log('');
+    console.log(stillDeployingMessage(DEPLOY_WAIT_MS));
+    return;
+  }
 
   if (status === 'superseded') {
     console.log('');
