@@ -125,6 +125,17 @@ export interface ChatStrings {
   oauthConnected: (serverName: string) => string;
   oauthFailed: (reason: string) => string;
 
+  /**
+   * The `authMode:'upfront'` connect-first framing (guuey#605): the agent
+   * cannot answer at all until these accounts are connected, so the card
+   * reads as a step and the composer says why it is holding.
+   * `authRequiredHeading` takes the servers' labels already joined for
+   * display; `composerAuthRequired` is the held composer's placeholder.
+   */
+  authRequiredHeading: (serverLabels: string) => string;
+  authRequiredHint: string;
+  composerAuthRequired: string;
+
   /** R16 — the notice row's label (provenance shows only under debug). */
   noticeLabel: string;
 
@@ -252,6 +263,10 @@ export const defaultChatStrings: ChatStrings = {
   promptOAuthSent: (modeLabel) => `Connecting — ${modeLabel}`,
   oauthConnected: (serverName) => `Connected ${serverName}. The agent can use it from your next message.`,
   oauthFailed: (reason) => `Couldn't connect: ${reason}`,
+
+  authRequiredHeading: (serverLabels) => `Connect ${serverLabels} to start`,
+  authRequiredHint: "This agent needs the account before it can answer.",
+  composerAuthRequired: "Connect the account above to start.",
 
   noticeLabel: "Note",
 

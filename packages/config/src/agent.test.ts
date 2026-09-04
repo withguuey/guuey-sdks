@@ -828,7 +828,7 @@ describe("credential: 'oauth' (guuey#178 — the third-party OAuth broker arm)",
   });
 });
 
-describe("authMode: 'upfront' (guuey#605 — require sign-in before use)", () => {
+describe("authMode — WHEN the oauth sign-in is demanded (guuey#605)", () => {
   it("parses beside credential: 'oauth' and survives the round-trip", () => {
     const r = AgentSectionV1.safeParse({
       mcpServers: {
@@ -875,7 +875,7 @@ describe("authMode: 'upfront' (guuey#605 — require sign-in before use)", () =>
     expect(r.success).toBe(false);
     if (!r.success) {
       expect(JSON.stringify(r.error.issues)).toContain(
-        "authMode: 'upfront' is only valid beside credential: 'oauth'",
+        "authMode is only valid beside credential: 'oauth'",
       );
     }
   });
@@ -894,12 +894,12 @@ describe("authMode: 'upfront' (guuey#605 — require sign-in before use)", () =>
     expect(r.success).toBe(false);
     if (!r.success) {
       expect(JSON.stringify(r.error.issues)).toContain(
-        "authMode: 'upfront' is only valid beside credential: 'oauth'",
+        "authMode is only valid beside credential: 'oauth'",
       );
     }
   });
 
-  it('rejects authMode on non-external kinds and any value other than upfront (strict objects)', () => {
+  it('rejects authMode on non-external kinds and any value outside the pair (strict objects)', () => {
     expect(
       AgentSectionV1.safeParse({
         mcpServers: { reg: { kind: 'hosted', server: 'srv-1', authMode: 'upfront' } },
@@ -917,6 +917,63 @@ describe("authMode: 'upfront' (guuey#605 — require sign-in before use)", () =>
         },
       }).success,
     ).toBe(false);
+  });
+
+  // The 'lazy' arm: the default said out loud. It must PARSE (a config that
+  // states which flavor it means is not an error) and it must mean exactly
+  // what omitting the key means — the deploy-controller normalizes it away,
+  // pinned in `resolve-mcp.test.ts`, so no pod ever sees the literal.
+  it("parses authMode: 'lazy' beside credential: 'oauth' and keeps it on the parsed entry", () => {
+    const r = AgentSectionV1.safeParse({
+      mcpServers: {
+        linear: {
+          kind: 'external',
+          url: 'https://mcp.linear.app/mcp',
+          credential: 'oauth',
+          authMode: 'lazy',
+        },
+      },
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.mcpServers?.linear).toEqual({
+        kind: 'external',
+        url: 'https://mcp.linear.app/mcp',
+        credential: 'oauth',
+        authMode: 'lazy',
+      });
+    }
+  });
+
+  it("refuses authMode: 'lazy' away from credential: 'oauth' too — the refusal is about the FIELD, not the value", () => {
+    const r = AgentSectionV1.safeParse({
+      mcpServers: {
+        control: {
+          kind: 'external',
+          url: 'https://mcp.ggui.ai/control',
+          credential: 'caller',
+          authMode: 'lazy',
+        },
+      },
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(JSON.stringify(r.error.issues)).toContain(
+        "authMode is only valid beside credential: 'oauth'",
+      );
+    }
+  });
+
+  it('omitting authMode entirely stays valid — absent is the default, and no value is invented for it', () => {
+    const r = AgentSectionV1.safeParse({
+      mcpServers: {
+        linear: { kind: 'external', url: 'https://mcp.linear.app/mcp', credential: 'oauth' },
+      },
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.mcpServers?.linear).not.toHaveProperty('authMode');
+    }
   });
 });
 

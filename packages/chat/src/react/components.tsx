@@ -569,8 +569,15 @@ export function DefaultPrompt({ item, ctx }: ItemProps<PromptItem>): ReactNode {
       );
     }
     const answerable = item.state === "pending" || (item.state === "cancelled" && item.expanded);
+    // guuey#605 — a REQUIRED connection is a step, not an aside: the runtime
+    // refused this turn on it and answers nothing until it is connected. The
+    // card says so above the ask, and carries a class a theme can lift.
+    const requiredConnection = item.oauth?.upfront === true;
     return (
-      <div className="guuey-chat-prompt" role="group">
+      <div
+        className={`guuey-chat-prompt${requiredConnection ? " guuey-chat-prompt-required" : ""}`}
+        role="group"
+      >
         {item.state === "cancelled" && (
           <button
             type="button"
@@ -583,6 +590,9 @@ export function DefaultPrompt({ item, ctx }: ItemProps<PromptItem>): ReactNode {
         )}
         {answerable && (
           <>
+            {requiredConnection && (
+              <p className="guuey-chat-prompt-required-hint">{s.authRequiredHint}</p>
+            )}
             {item.message !== null && <p className="guuey-chat-prompt-ask">{item.message}</p>}
             <div className="guuey-chat-prompt-actions">
               {item.grantModes.length === 0 ? (

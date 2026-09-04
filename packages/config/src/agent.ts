@@ -130,9 +130,12 @@ const HostedMcp = z
  *   declaration — nothing is builder-registered; discovery does the rest.
  * - `credential: 'caller'` forwards the invoke's own byo-verified bearer as
  *   this server's per-turn credential (guuey#179) — see the field doc.
- * - `authMode: 'upfront'` (only beside `credential: 'oauth'`, guuey#605)
- *   fronts the sign-in: the consent card surfaces at session start instead
- *   of on demand — see the field doc for the exact engagement contract.
+ * - `authMode: 'upfront' | 'lazy'` (only beside `credential: 'oauth'`,
+ *   guuey#605) picks WHEN the sign-in is demanded: `'upfront'` fronts it (the
+ *   consent card surfaces at session start and the agent's turn is refused
+ *   until the account is connected), `'lazy'` is today's on-demand behavior
+ *   spelled out loud and is exactly equal to omitting the key — see the field
+ *   doc for the exact engagement contract.
  */
 const ExternalMcp = z
   .strictObject({
@@ -176,36 +179,45 @@ const ExternalMcp = z
      */
     credential: z.enum(['caller', 'oauth']).optional(),
     /**
-     * `'upfront'` — require sign-in BEFORE use (guuey#605, the claude.ai
-     * "Always required" parity flavor). Valid ONLY beside
-     * `credential: 'oauth'` (schema-refused otherwise — no other credential
-     * mode has a sign-in to front-load).
+     * WHEN this server's OAuth sign-in is demanded (guuey#605 — the claude.ai
+     * "Always required" vs "Required when the server asks" parity pair).
+     * Valid ONLY beside `credential: 'oauth'` (schema-refused otherwise — no
+     * other credential mode has a sign-in to schedule).
      *
-     * WHEN IT ENGAGES: at SESSION START of auth-mode (authenticated-caller)
-     * sessions, on an agent-runtime image carrying the guuey#605 pod half —
-     * an upfront server with no live connection surfaces the OAuth consent
-     * card as the turn's ONLY content (the pod holds the turn; no agent
-     * answer) until the user connects the account, instead of appending the
-     * card after the agent's first tool-less turn. Unchanged postures:
-     * guests (D6 — no card, no credential, tool-less), an explicit `denied`
-     * grant (no card, tool-less — a "no" never bricks the chat), a failed /
-     * slow preflight (fail-open tool-less turn, never held), and a client
-     * that cannot render the consent card (falls back to on-demand consent
-     * — an embed never dead-ends on a card it cannot show). Absent =
-     * today's on-demand behavior everywhere: connect anonymous-first, the
-     * consent card rides after the agent's turn.
+     * `'upfront'` — REQUIRE SIGN-IN BEFORE USE. At every invoke of an
+     * auth-mode (authenticated-caller) session, on an agent-runtime image
+     * carrying the guuey#605 pod half, an upfront server with no live
+     * connection makes the pod REFUSE the turn before any model call: the
+     * OAuth consent card is the turn's ONLY content (no agent answer) until
+     * the user connects the account. The client reads that refusal off the
+     * paused ask's `metadata.authMode` and shows the connect step first.
+     * Unchanged postures: guests (D6 — no card, no credential, tool-less),
+     * an explicit `denied` grant (no card, tool-less — a "no" never bricks
+     * the chat), a failed / slow preflight (fail-open tool-less turn, never
+     * held), and a client that cannot render the consent card (falls back to
+     * on-demand consent — an embed never dead-ends on a card it cannot
+     * show).
+     *
+     * `'lazy'` — today's on-demand behavior, stated explicitly: connect
+     * anonymous-first, the consent card rides AFTER the agent's turn, at
+     * first tool use. EXACTLY equal to omitting the key, which stays the
+     * default; the value exists so a config can say which of the two flavors
+     * it means instead of leaving it to a reader's memory. Because it means
+     * the default, the deploy-controller NORMALIZES it away when it lowers
+     * the entry (`resolve-mcp.ts`) — the deployed snapshot carries `authMode`
+     * only when it is `'upfront'`, so writing the default out loud can never
+     * hand an older pod an enum value it does not know.
      *
      * SERVING (the guuey#566 Settings-truth rule — this doc is the exact
-     * engagement contract): NO environment honors this field until infra
-     * rolls the agent-runtime image carrying the guuey#605 pod half — as of
-     * this schema's cut, dev, staging and release all serve pre-roll images
-     * that do not. A pod PREDATING the roll refuses a snapshot carrying the
-     * field at config parse (strict schema — not parse-and-ignore), so the
-     * platform must not accept it at the deploy door until the rolled image
-     * serves that environment. The oss cohort cut carries this schema bump;
-     * the image roll arms serving.
+     * engagement contract): an environment honors `'upfront'` only once
+     * infra has rolled the agent-runtime image carrying the guuey#605 pod
+     * half. A pod PREDATING that roll refuses a snapshot carrying the field
+     * at config parse (strict schema — not parse-and-ignore), so the
+     * platform must not accept `'upfront'` at the deploy door until the
+     * rolled image serves that environment; the console renders its
+     * "Require sign-in before use" control only where it does.
      */
-    authMode: z.literal('upfront').optional(),
+    authMode: z.enum(['upfront', 'lazy']).optional(),
     /** Static headers forwarded on every request. Values may use `${env.NAME}` placeholders. */
     headers: HeadersSchema.optional(),
     /** Local dev-loop port (`guuey dev`) this MCP is served on for name→localhost URL resolution. */
@@ -242,9 +254,9 @@ const ExternalMcp = z
         "credential: 'oauth' cannot be combined with an `authorization` header — the credential broker injects the user's OAuth token as the only Authorization this server sees",
     },
   )
-  .refine((v) => !(v.authMode === 'upfront' && v.credential !== 'oauth'), {
+  .refine((v) => !(v.authMode !== undefined && v.credential !== 'oauth'), {
     message:
-      "authMode: 'upfront' is only valid beside credential: 'oauth' — upfront sign-in fronts the OAuth broker's consent flow; no other credential mode has a sign-in to front-load",
+      "authMode is only valid beside credential: 'oauth' — it schedules the OAuth broker's sign-in ('upfront' before any use, 'lazy' on demand); no other credential mode has a sign-in to schedule",
   });
 
 /**

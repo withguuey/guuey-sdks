@@ -410,7 +410,10 @@ describe("R10 hitl card (spec draft.2)", () => {
       message: authAsk.message,
       askKind: "auth",
       grantModes: authAsk.grantModes,
-      oauth: { authorizationUrl: authAsk.authConfig.authorizationUrl, scopes: [] },
+      // `upfront: false` is the ON-DEMAND flavor (guuey#605) — this fixture is
+      // the ordinary consent card, which must keep rendering exactly as it did
+      // before the required-connection arm existed.
+      oauth: { authorizationUrl: authAsk.authConfig.authorizationUrl, scopes: [], upfront: false },
       chosenModeId: state === "resolved" ? "always" : null,
       chosenModeLabel: state === "resolved" ? "Always allow" : null,
     });

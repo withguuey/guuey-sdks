@@ -17,6 +17,15 @@
  *     `?error=<reason>` on failure). The broker allowlists it; the client
  *     just says where it lives.
  *
+ * ## Required before use (guuey#605)
+ *
+ * An ask whose `metadata.authMode` is `"upfront"` is not an aside: the
+ * runtime REFUSED the turn on it (no model call, no agent answer) and will
+ * refuse every turn until the account is connected. {@link authRequiredFromAsks}
+ * lifts that off a turn's pending asks as {@link AuthRequired}, naming the
+ * servers, so a surface renders the connect step FIRST and stops inviting
+ * messages that cannot be answered.
+ *
  * On return the surface strips the two params, shows a one-line notice, and
  * does nothing else: the NEXT turn's pre-turn preflight on the pod resolves
  * `connected` (or asks again). No client-side state survives the redirect
@@ -37,10 +46,41 @@ export const OAUTH_LINK_PARAMS = { mode: "mode", returnTo: "returnTo" } as const
 /** The query params the broker's callback appends to `returnTo`. */
 export const OAUTH_RETURN_PARAMS = { connected: "connected", error: "error" } as const;
 
+/**
+ * The producer's ask-metadata contract for guuey#605 (`authMode:'upfront'` —
+ * require sign-in BEFORE use). SYNC with the runtime's
+ * `mcp-oauth-consent.ts#MCP_OAUTH_METADATA_AUTH_MODE`; the corpus fixture
+ * pins the pair. An ON-DEMAND ask carries none of these keys, so a lazy
+ * stream stays byte-identical to its pre-#605 shape.
+ */
+export const OAUTH_UPFRONT_METADATA = {
+  /** Carries `"upfront"`, and only that. */
+  authMode: "authMode",
+  /** The value the key ever carries. */
+  upfront: "upfront",
+  /** The server's human label, when the authorization server supplied one. */
+  displayName: "displayName",
+  /** The declared `mcpServers` key — the server's identity in every surface. */
+  serverName: "serverName",
+} as const;
+
 /** What an auth ask declares once narrowed to the OAuth arm. */
 export interface OAuthAuthorizeAsk {
   authorizationUrl: string;
   scopes: readonly string[];
+  /**
+   * guuey#605 — this connection is REQUIRED BEFORE USE: the runtime refused
+   * the turn (no model call, no agent answer) and will keep refusing until
+   * the account is connected. Surfaces frame the card as the connect step
+   * rather than an aside. `false` = today's on-demand ask.
+   */
+  upfront: boolean;
+}
+
+/** Read one string off an ask's metadata; `null` for absent or non-string. */
+function metadataString(ask: AgPausedAsk, key: string): string | null {
+  const value = ask.metadata?.[key];
+  return typeof value === "string" && value !== "" ? value : null;
 }
 
 /**
@@ -53,7 +93,60 @@ export function oauthAuthorizeAsk(ask: AgPausedAsk): OAuthAuthorizeAsk | null {
   if (ask.kind !== "auth" || ask.authConfig === undefined) return null;
   const { scheme, authorizationUrl, scopes } = ask.authConfig;
   if (scheme !== OAUTH_SCHEME || authorizationUrl === undefined || authorizationUrl === "") return null;
-  return { authorizationUrl, scopes: scopes ?? [] };
+  return {
+    authorizationUrl,
+    scopes: scopes ?? [],
+    upfront: metadataString(ask, OAUTH_UPFRONT_METADATA.authMode) === OAUTH_UPFRONT_METADATA.upfront,
+  };
+}
+
+/** One server the user must connect before the agent will answer. */
+export interface AuthRequiredServer {
+  /** The declared `mcpServers` key; the askId's own suffix when the ask carries no metadata. */
+  serverName: string;
+  /** What to call it in copy — the authorization server's label, else `serverName`. */
+  label: string;
+  /** The ask to render as the connect step (its `authorizationUrl` is the door). */
+  ask: AgPausedAsk;
+}
+
+/**
+ * The typed refusal (guuey#605): the runtime would not run this agent
+ * because one or more `authMode:'upfront'` OAuth servers have no live
+ * connection for this end user. Derived from the PENDING asks of the
+ * transcript — a settled or dismissed ask never gates a surface (a "no"
+ * must not brick the chat; the pod simply re-cards on the next turn).
+ */
+export interface AuthRequired {
+  servers: readonly AuthRequiredServer[];
+}
+
+/**
+ * Read {@link AuthRequired} off a turn's asks. `null` when nothing upfront
+ * is pending — the ONLY signal a surface should gate its composer on.
+ *
+ * Pass just the asks still awaiting an answer: a resolved / declined /
+ * dismissed record must not hold the door shut, because the client is not
+ * the enforcer here. The POD is: it refuses each turn while the connection
+ * is missing and re-emits the card. This derivation exists so a surface can
+ * say so before the user spends a turn finding out.
+ */
+export function authRequiredFromAsks(asks: readonly AgPausedAsk[]): AuthRequired | null {
+  const servers: AuthRequiredServer[] = [];
+  const seen = new Set<string>();
+  for (const ask of asks) {
+    const oauth = oauthAuthorizeAsk(ask);
+    if (oauth === null || !oauth.upfront) continue;
+    const serverName = metadataString(ask, OAUTH_UPFRONT_METADATA.serverName) ?? ask.askId;
+    if (seen.has(serverName)) continue;
+    seen.add(serverName);
+    servers.push({
+      serverName,
+      label: metadataString(ask, OAUTH_UPFRONT_METADATA.displayName) ?? serverName,
+      ask,
+    });
+  }
+  return servers.length === 0 ? null : { servers };
 }
 
 /**

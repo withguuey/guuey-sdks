@@ -26,6 +26,7 @@ import type {
   ViewMount,
   ViewMountChannel,
 } from "@guuey/mcp-apps-host";
+import type { AuthRequired, OAuthAuthorizeAsk } from "./oauth.js";
 
 /**
  * One settled entry of the flat conversation transcript — structurally
@@ -395,9 +396,11 @@ export interface HitlPromptItem extends BaseItem {
    * `authConfig.scheme:"oauth2"` + an `authorizationUrl`. There is no
    * answer door for this ask — a mode pick OPENS `authorizationUrl` with
    * `&mode=` + `&returnTo=` appended (`oauthAuthorizeHref`); "Not now" is a
-   * plain dismissal. `null` for every other ask.
+   * plain dismissal. `null` for every other ask. `upfront` (guuey#605) marks
+   * a connection REQUIRED BEFORE USE — the turn carrying this ask was
+   * refused, not answered.
    */
-  oauth: { authorizationUrl: string; scopes: readonly string[] } | null;
+  oauth: OAuthAuthorizeAsk | null;
   state: "pending" | "resolved" | "declined" | "cancelled";
   /** Echo of the chosen mode id (identity, never displayed as meaning). */
   chosenModeId: string | null;
@@ -598,4 +601,13 @@ export interface TranscriptPlan {
    * mount even when the transcript shows only chips.
    */
   views: PlanViewSummary[];
+  /**
+   * guuey#605 — the typed refusal: non-null while one or more
+   * `authMode:'upfront'` OAuth servers are PENDING connection, naming them.
+   * The runtime refuses every turn (no model call) until they are connected,
+   * so a surface renders the connect step first and holds its composer; a
+   * dismissed card releases the gate (the pod re-cards next turn — a "no"
+   * never bricks the chat). `null` on every ordinary plan.
+   */
+  authRequired: AuthRequired | null;
 }

@@ -381,9 +381,33 @@ describe("corpus", () => {
     expect(card.grantModes.map((m) => m.label)).toEqual(["Always allow", "Allow this chat"]);
     // The oauth arm is derived from the persisted declaration — the SAME
     // narrowing every surface uses (`oauthAuthorizeAsk`).
-    expect(card.oauth).toEqual({ authorizationUrl: OAUTH_ASK_AUTHORIZE_URL, scopes: [] });
+    expect(card.oauth).toEqual({ authorizationUrl: OAUTH_ASK_AUTHORIZE_URL, scopes: [], upfront: false });
     expect(oauthAuthorizeAsk(ask)).toEqual(card.oauth);
+    // This fixture is the ON-DEMAND flavor: nothing gates the surface.
+    expect(pendingPlan.authRequired).toBeNull();
     expect(pendingPlan).toMatchSnapshot();
+
+    // guuey#605 — the SAME ask stamped `metadata.authMode:"upfront"` is the
+    // producer's typed refusal (the pod held the turn on it). One stamp is
+    // the whole difference: same card, same door, plus a named gate the
+    // surface holds its composer on. This is the producer↔consumer pin —
+    // the runtime's `mcp-oauth-consent.ts` writes exactly these keys.
+    const upfrontAsk = {
+      ...ask,
+      metadata: { ...ask.metadata, serverName: "linear", displayName: "Linear", authMode: "upfront" },
+    };
+    const upfrontPlan = planTranscript(
+      { ...base, prompts: [{ id: askId, kind: "hitl" as const, ask: upfrontAsk, state: "pending" as const }] },
+      calm,
+    );
+    expect(upfrontPlan.authRequired).toEqual({
+      servers: [{ serverName: "linear", label: "Linear", ask: upfrontAsk }],
+    });
+    const upfrontCard = upfrontPlan.items.find((i) => i.kind === "prompt");
+    if (upfrontCard?.kind !== "prompt" || upfrontCard.promptKind !== "hitl") throw new Error("hitl card expected");
+    expect(upfrontCard.oauth?.upfront).toBe(true);
+    expect(upfrontCard.message).toBe(card.message);
+    expect(upfrontCard.grantModes).toEqual(card.grantModes);
 
     // A mode pick is a LINK: authorizationUrl + &mode=<id> + &returnTo=<here>.
     // (Nothing is posted anywhere — there is no answer door for this ask.)

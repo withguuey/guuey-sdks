@@ -24,6 +24,12 @@
  *   (partial text kept, "Stopped." marked — the hook's contract).
  * - Enter sends; Shift+Enter inserts a newline; an IME-composing Enter
  *   never sends (the candidate commit is not a submit).
+ * - `plan.authRequired !== null` (guuey#605 — an `authMode:'upfront'` OAuth
+ *   server is pending connection) → input disabled, `composerAuthRequired`
+ *   placeholder, Send gated, and a connect-first line above the composer.
+ *   The RUNTIME is the enforcer (it refuses every turn before any model
+ *   call); this only stops the user spending a message to learn that.
+ *   Dismissing the card releases the gate — no dead end.
  *
  * ## History
  *
@@ -574,8 +580,15 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // when several chats mount on one page — a static id would collide.
   const composerId = useId();
   const busy = invoke.status !== "ready";
+  // guuey#605 — the connect-first gate. While an `authMode:'upfront'` OAuth
+  // server is pending connection the RUNTIME refuses every turn before any
+  // model call, so inviting a message here would only spend one to be told
+  // the same thing. The gate is the plan's typed refusal, and it releases the
+  // moment the card is dismissed or answered (the pod re-cards next turn) —
+  // the client never claims more than the pod enforces, and no one dead-ends.
+  const authRequired = plan.authRequired;
   const available = endpointUrl !== null;
-  const canSend = available && !busy && input.trim() !== "";
+  const canSend = available && !busy && authRequired === null && input.trim() !== "";
 
   // ── The imperative seam (guuey#210) ──────────────────────────────────
   // ONE stable handle for the component's whole life (hosts capture it in
@@ -888,12 +901,14 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
 
   const submit = useCallback((): void => {
     const text = input.trim();
-    if (text === "" || !available || busy) return;
+    // guuey#605: the connect-first gate belongs on the SEND path too, not
+    // just the disabled attribute — an Enter keypress reaches here directly.
+    if (text === "" || !available || busy || authRequired !== null) return;
     setInput("");
     void invoke.send(text).catch(() => {
       // The hook surfaces the failure (`error` / R0 failed-send).
     });
-  }, [input, available, busy, invoke]);
+  }, [input, available, busy, authRequired, invoke]);
 
   const handleRetry = useCallback(
     (item: UserMessageItem) => {
@@ -1035,6 +1050,16 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
           </button>
         </p>
       )}
+      {authRequired !== null && (
+        <p role="status" className="guuey-chat-auth-required">
+          <strong className="guuey-chat-auth-required-heading">
+            {strings.authRequiredHeading(
+              authRequired.servers.map((s) => s.label).join(", "),
+            )}
+          </strong>
+          <span className="guuey-chat-auth-required-hint">{strings.authRequiredHint}</span>
+        </p>
+      )}
       {composer && (
       <form
         className="guuey-chat-composer"
@@ -1059,9 +1084,15 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
               submit();
             }
           }}
-          disabled={!available}
+          disabled={!available || authRequired !== null}
           aria-label={strings.composerLabel}
-          placeholder={available ? strings.composerPlaceholder : strings.composerUnavailable}
+          placeholder={
+            !available
+              ? strings.composerUnavailable
+              : authRequired !== null
+                ? strings.composerAuthRequired
+                : strings.composerPlaceholder
+          }
         />
         {busy ? (
           <button

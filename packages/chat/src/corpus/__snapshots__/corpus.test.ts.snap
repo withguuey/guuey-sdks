@@ -2,6 +2,7 @@
 
 exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups); keys stable 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "directive": false,
@@ -840,6 +841,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
 
 exports[`corpus > 2. midstream-tool-failure — failed inline; badge without unroll 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "directive": false,
@@ -978,6 +980,7 @@ exports[`corpus > 2. midstream-tool-failure — failed inline; badge without unr
 
 exports[`corpus > 3. cold-start — R12 escalation at 0 / 2.5 s / 15 s 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "directive": false,
@@ -1003,6 +1006,7 @@ exports[`corpus > 3. cold-start — R12 escalation at 0 / 2.5 s / 15 s 1`] = `
 
 exports[`corpus > 4. consent-gate — pending grant-mode card → answered one-line collapse (guuey#207 hitl arm) 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "directive": false,
@@ -1078,6 +1082,7 @@ exports[`corpus > 4. consent-gate — pending grant-mode card → answered one-l
 
 exports[`corpus > 5. bypass-text-only — plan identical to a silver text-only stream 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "directive": false,
@@ -1106,6 +1111,7 @@ exports[`corpus > 5. bypass-text-only — plan identical to a silver text-only s
 
 exports[`corpus > 7. view-never-handshakes — channel-aware labels on both channels 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "directive": false,
@@ -1214,6 +1220,7 @@ exports[`corpus > 7. view-never-handshakes — channel-aware labels on both chan
 
 exports[`corpus > 8. aborted-mid-stream — partial kept + Stopped.; no orphaned spinner 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "directive": false,
@@ -1260,6 +1267,7 @@ exports[`corpus > 8. aborted-mid-stream — partial kept + Stopped.; no orphaned
 
 exports[`corpus > 9. history-dead-locators — the expired path beside a healthy card 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "directive": false,
@@ -1339,6 +1347,7 @@ exports[`corpus > 9. history-dead-locators — the expired path beside a healthy
 
 exports[`corpus > 10. empty-turn — status resolves, no empty bubble 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "directive": false,
@@ -1358,6 +1367,7 @@ exports[`corpus > 10. empty-turn — status resolves, no empty bubble 1`] = `
 
 exports[`corpus > 11. unknown-block-storm — labeled rows; nothing blank, nothing raw in calm 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "directive": false,
@@ -1404,6 +1414,7 @@ exports[`corpus > 11. unknown-block-storm — labeled rows; nothing blank, nothi
 
 exports[`corpus > 12. interleaved-media-code-citations — ordering and aggregation 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "directive": false,
@@ -1470,6 +1481,7 @@ exports[`corpus > 12. interleaved-media-code-citations — ordering and aggregat
 
 exports[`corpus > 13. saturated-then-served — only R12 waiting, then a normal turn 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "directive": false,
@@ -1498,6 +1510,7 @@ exports[`corpus > 13. saturated-then-served — only R12 waiting, then a normal 
 
 exports[`corpus > 14. reasoning-heavy — calm collapses to one line; debug expands 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "directive": false,
@@ -1534,6 +1547,7 @@ exports[`corpus > 14. reasoning-heavy — calm collapses to one line; debug expa
 
 exports[`corpus > 15. tools-around-a-view — the group SPLITS at the view's position 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "directive": false,
@@ -1702,6 +1716,7 @@ exports[`corpus > 15. tools-around-a-view — the group SPLITS at the view's pos
 
 exports[`corpus > 16. user-send-failure — R0 failed with retry; the message never disappears 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "directive": false,
@@ -1721,6 +1736,7 @@ exports[`corpus > 16. user-send-failure — R0 failed with retry; the message ne
 
 exports[`corpus > 19. persisted-plus-live — the fold owns its trailing turns; the prefix stays flat; overlapping cards dedupe 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "directive": false,
@@ -1871,6 +1887,7 @@ exports[`corpus > 19. persisted-plus-live — the fold owns its trailing turns; 
 
 exports[`corpus > 20. hitl-grant-modes — the persisted declaration renders; answers echo; cancelled re-asks (draft.2) 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "directive": false,
@@ -1941,6 +1958,7 @@ exports[`corpus > 20. hitl-grant-modes — the persisted declaration renders; an
 
 exports[`corpus > 21. notice-rows — both arrival paths render labeled, never agent-voiced (draft.2) 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "expanded": true,
@@ -1985,6 +2003,7 @@ exports[`corpus > 21. notice-rows — both arrival paths render labeled, never a
 
 exports[`corpus > 22. promoted-view — the stage's mount chips (guuey#204); others stay; no/stale key = no-op 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "directive": false,
@@ -2090,6 +2109,7 @@ exports[`corpus > 22. promoted-view — the stage's mount chips (guuey#204); oth
 
 exports[`corpus > 23. meta-less-locator — a \`_meta\`-withholding producer's render still mounts (as a locator), never dark (guuey#209) 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "directive": false,
@@ -2150,6 +2170,7 @@ exports[`corpus > 23. meta-less-locator — a \`_meta\`-withholding producer's r
 
 exports[`corpus > 24. prod-wire-ggui-render — ggui's production posture: no _meta, no uiData, a structuredContent locator → mounts as a locator (guuey#209) 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "directive": false,
@@ -2219,6 +2240,7 @@ exports[`corpus > 24. prod-wire-ggui-render — ggui's production posture: no _m
 
 exports[`corpus > 25. chips-presentation — EVERY view chips; the promoted key marks the selection; views roster carries the mounts (guuey#301) 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "directive": false,
@@ -2313,6 +2335,7 @@ exports[`corpus > 25. chips-presentation — EVERY view chips; the promoted key 
 
 exports[`corpus > 25. oauth-auth-ask — kind:auth + authConfig oauth2 plans as the SAME hitl card with an oauth arm; a mode pick is a link, not an answer (guuey#178) 1`] = `
 {
+  "authRequired": null,
   "items": [
     {
       "directive": false,
@@ -2382,6 +2405,7 @@ exports[`corpus > 25. oauth-auth-ask — kind:auth + authConfig oauth2 plans as 
       "oauth": {
         "authorizationUrl": "https://mcp.dev.sandbox.guuey.com/oauth/start?state=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "scopes": [],
+        "upfront": false,
       },
       "promptId": "mcp-oauth:app_1:linear:thread-oauth",
       "promptKind": "hitl",

@@ -41,7 +41,7 @@ import {
 } from "@guuey/mcp-apps-host";
 import type { TranscriptPolicy } from "./policy.js";
 import { grantModeDisplay } from "./hitl.js";
-import { oauthAuthorizeAsk } from "./oauth.js";
+import { authRequiredFromAsks, oauthAuthorizeAsk } from "./oauth.js";
 import type {
   CitationsItem,
   DataResultItem,
@@ -1111,6 +1111,13 @@ export function planTranscript(
     recovery:
       inputs.adopted === true && policy.debugDetail ? policy.strings.recoveredFromHistory : null,
     views,
+    // guuey#605 — the typed refusal, derived from the PENDING hitl asks only.
+    // A settled or dismissed record never gates the surface: the pod is the
+    // enforcer (it refuses each turn and re-cards), and a "no" that locked the
+    // composer would dead-end a user who cannot un-dismiss.
+    authRequired: authRequiredFromAsks(
+      inputs.prompts.flatMap((p) => (p.kind === "hitl" && p.state === "pending" ? [p.ask] : [])),
+    ),
   };
 }
 

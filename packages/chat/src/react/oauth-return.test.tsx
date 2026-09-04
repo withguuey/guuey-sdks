@@ -40,7 +40,10 @@ const item = (ask: AgPausedAsk, oauth: HitlPromptItem["oauth"]): HitlPromptItem 
   chosenModeLabel: null,
   raw: null,
 });
-const OAUTH_ITEM = item(ASK, { authorizationUrl: START, scopes: [] });
+// The return-leg fixture is the ON-DEMAND card (`upfront: false`, guuey#605):
+// the redirect round-trip is identical for both flavors, and pinning the
+// default one keeps this suite about the return, not about the gate.
+const OAUTH_ITEM = item(ASK, { authorizationUrl: START, scopes: [], upfront: false });
 
 function ledger(): { answerHitlPrompt: (ask: AgPausedAsk, action: Parameters<typeof buildHitlAnswer>[1]) => AgHitlAnswer; answers: AgHitlAnswer[] } {
   const answers: AgHitlAnswer[] = [];

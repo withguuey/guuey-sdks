@@ -7,7 +7,14 @@
  */
 import { describe, expect, it } from "vitest";
 import type { AgPausedAsk } from "@silverprotocol/core";
-import { oauthAuthorizeAsk, oauthAuthorizeHref, parseOAuthReturn, stripOAuthReturn } from "./oauth.js";
+import {
+  authRequiredFromAsks,
+  OAUTH_UPFRONT_METADATA,
+  oauthAuthorizeAsk,
+  oauthAuthorizeHref,
+  parseOAuthReturn,
+  stripOAuthReturn,
+} from "./oauth.js";
 
 const START = "https://mcp.dev.sandbox.guuey.com/oauth/start?state=" + "a".repeat(64);
 const ASK: AgPausedAsk = {
@@ -21,12 +28,19 @@ const ASK: AgPausedAsk = {
   ],
 };
 
+/** The pod's stamp on an ask whose turn it REFUSED (guuey#605). */
+const UPFRONT_ASK: AgPausedAsk = {
+  ...ASK,
+  metadata: { appId: "app_1", serverName: "linear", displayName: "Linear", authMode: "upfront" },
+};
+
 describe("oauthAuthorizeAsk", () => {
   it("narrows kind:auth + scheme oauth2 + authorizationUrl; everything else is null", () => {
-    expect(oauthAuthorizeAsk(ASK)).toEqual({ authorizationUrl: START, scopes: ["read", "write"] });
+    expect(oauthAuthorizeAsk(ASK)).toEqual({ authorizationUrl: START, scopes: ["read", "write"], upfront: false });
     expect(oauthAuthorizeAsk({ ...ASK, authConfig: { scheme: "oauth2", authorizationUrl: START } })).toEqual({
       authorizationUrl: START,
       scopes: [],
+      upfront: false,
     });
     expect(oauthAuthorizeAsk({ ...ASK, kind: "approval" })).toBeNull();
     expect(oauthAuthorizeAsk({ ...ASK, authConfig: { scheme: "apiKey", authorizationUrl: START } })).toBeNull();
@@ -86,5 +100,51 @@ describe("stripOAuthReturn", () => {
     expect(stripOAuthReturn("https://app.example.com/chat")).toBe("https://app.example.com/chat");
     const once = stripOAuthReturn("https://x/?connected=a&error=b");
     expect(stripOAuthReturn(once)).toBe(once);
+  });
+});
+
+// ── guuey#605: the typed refusal ────────────────────────────────────────────
+describe("authRequiredFromAsks", () => {
+  it("names every upfront server once, labelled by displayName, with the ask to render", () => {
+    const notion: AgPausedAsk = {
+      ...UPFRONT_ASK,
+      askId: "mcp-oauth:app_1:notion:t1",
+      metadata: { appId: "app_1", serverName: "notion", authMode: "upfront" },
+    };
+    const required = authRequiredFromAsks([UPFRONT_ASK, notion]);
+    expect(required).toEqual({
+      servers: [
+        { serverName: "linear", label: "Linear", ask: UPFRONT_ASK },
+        // No displayName on the wire → the declared key IS the label.
+        { serverName: "notion", label: "notion", ask: notion },
+      ],
+    });
+  });
+
+  it("is null for an ON-DEMAND ask, a non-oauth ask, and an empty turn — only 'upfront' gates anything", () => {
+    expect(authRequiredFromAsks([ASK])).toBeNull();
+    expect(authRequiredFromAsks([{ ...ASK, metadata: { serverName: "linear" } }])).toBeNull();
+    expect(authRequiredFromAsks([{ askId: "a", kind: "approval", metadata: { authMode: "upfront" } }])).toBeNull();
+    expect(authRequiredFromAsks([])).toBeNull();
+  });
+
+  it("ignores any authMode value that is not the declared one (an unknown schedule gates nothing)", () => {
+    expect(
+      authRequiredFromAsks([{ ...ASK, metadata: { serverName: "linear", authMode: "lazy" } }]),
+    ).toBeNull();
+    expect(authRequiredFromAsks([{ ...ASK, metadata: { serverName: "linear", authMode: 7 } }])).toBeNull();
+  });
+
+  it("collapses a re-emitted ask for the same server (the card folds; the gate must not double-name it)", () => {
+    const required = authRequiredFromAsks([UPFRONT_ASK, { ...UPFRONT_ASK, askId: "mcp-oauth:app_1:linear" }]);
+    expect(required?.servers.map((s) => s.serverName)).toEqual(["linear"]);
+  });
+
+  it("falls back to the askId when the producer sent no serverName (never an unnamed server)", () => {
+    const nameless: AgPausedAsk = { ...ASK, metadata: { authMode: OAUTH_UPFRONT_METADATA.upfront } };
+    expect(authRequiredFromAsks([nameless])?.servers[0]).toMatchObject({
+      serverName: ASK.askId,
+      label: ASK.askId,
+    });
   });
 });

@@ -1265,3 +1265,125 @@ describe("suggestion chips — empty-state, one-tap-sends (guuey#533)", () => {
     expect(calls).toHaveLength(0); // and nothing ever sent on the first render's adapters
   });
 });
+
+// ── guuey#605: require sign-in before use ────────────────────────────────────
+//
+// The pod REFUSES the turn on an `authMode:'upfront'` OAuth server with no
+// live connection: no model call, no agent answer — the consent card is the
+// stream's only turn, stamped `metadata.authMode:"upfront"`. These pin the
+// composer's answer to that: it holds, says why, and releases on a dismissal
+// so nobody dead-ends on a card they said no to.
+describe("<GuueyChat> connect-first gate (guuey#605)", () => {
+  const AUTHORIZE = "https://mcp.dev.sandbox.guuey.com/oauth/start?state=" + "a".repeat(64);
+
+  /** The exact frames the held (card-only) stream carries. */
+  function heldFrames(authMode: "upfront" | null): string[] {
+    const ask = {
+      askId: "mcp-oauth:app_1:linear:t-3c",
+      kind: "auth",
+      message: "Trip Planner wants to use your Linear account",
+      authConfig: { scheme: "oauth2", authorizationUrl: AUTHORIZE },
+      grantModes: [{ id: "always", label: "Always allow" }],
+      metadata: {
+        appId: "app_1",
+        serverName: "linear",
+        displayName: "Linear",
+        ...(authMode !== null ? { authMode } : {}),
+      },
+    };
+    return [
+      SESSION_FRAME,
+      `event: message\ndata: ${JSON.stringify({ type: "turn.start", seq: 0, turnId: `${ask.askId}#turn`, threadId: "t-3c" })}\n\n`,
+      `event: message\ndata: ${JSON.stringify({ type: "hitl.ask", seq: 1, turnId: `${ask.askId}#turn`, continuation: "turn", ...ask })}\n\n`,
+      `event: message\ndata: ${JSON.stringify({ type: "turn.done", seq: 2, turnId: `${ask.askId}#turn`, finishReason: "paused", outcome: { type: "paused", asks: [ask] } })}\n\n`,
+      DONE_FRAME,
+    ];
+  }
+
+  function heldAdapters(authMode: "upfront" | null) {
+    const calls: InvokeRequest[] = [];
+    const store = new Map<string, string>();
+    const adapters: AgentInvokeAdapters = {
+      storage: {
+        load: (key) => store.get(key) ?? null,
+        save: (key, threadId) => {
+          store.set(key, threadId);
+        },
+      },
+      generateId: (() => {
+        let n = 0;
+        return () => `cmid-${n++}`;
+      })(),
+      transport: async function* (req) {
+        calls.push(req);
+        for (const frame of heldFrames(authMode)) yield frame;
+      },
+    };
+    return { adapters, calls };
+  }
+
+  async function sendOnce(calls: InvokeRequest[]): Promise<HTMLElement> {
+    const input = screen.getByLabelText("Message");
+    fireEvent.change(input, { target: { value: "hi" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(calls).toHaveLength(1));
+    return input;
+  }
+
+  it("an upfront refusal holds the composer, says why, and names the server as the step", async () => {
+    const { adapters, calls } = heldAdapters("upfront");
+    renderChat(adapters);
+    const input = await sendOnce(calls);
+
+    await waitFor(() => expect(screen.getByText("Connect Linear to start")).toBeTruthy());
+    await waitFor(() => expect((input as HTMLTextAreaElement).disabled).toBe(true));
+    expect((input as HTMLTextAreaElement).placeholder).toBe("Connect the account above to start.");
+    // The card is still the door — the authorize action is present.
+    expect(screen.getByText("Always allow")).toBeTruthy();
+    // Send is gated, and Enter cannot slip past the disabled attribute.
+    fireEvent.change(input, { target: { value: "please answer" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("an ON-DEMAND consent card leaves the composer exactly as it was (lazy is unchanged)", async () => {
+    const { adapters, calls } = heldAdapters(null);
+    renderChat(adapters);
+    const input = await sendOnce(calls);
+
+    await waitFor(() => expect(screen.getByText("Always allow")).toBeTruthy());
+    expect(screen.queryByText("Connect Linear to start")).toBeNull();
+    expect((input as HTMLTextAreaElement).disabled).toBe(false);
+    expect((input as HTMLTextAreaElement).placeholder).toBe("Message the agent…");
+    fireEvent.change(input, { target: { value: "carry on" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(calls).toHaveLength(2));
+  });
+
+  it("dismissing the card RELEASES the composer — the pod re-cards next turn, so a 'no' never bricks the chat", async () => {
+    const { adapters, calls } = heldAdapters("upfront");
+    renderChat(adapters);
+    const input = await sendOnce(calls);
+    await waitFor(() => expect((input as HTMLTextAreaElement).disabled).toBe(true));
+
+    fireEvent.click(screen.getByText("Not now"));
+    await waitFor(() => expect((input as HTMLTextAreaElement).disabled).toBe(false));
+    expect(screen.queryByText("Connect Linear to start")).toBeNull();
+    fireEvent.change(input, { target: { value: "try anyway" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(calls).toHaveLength(2));
+  });
+
+  it("the strings are overridable like every other surface string", async () => {
+    const { adapters, calls } = heldAdapters("upfront");
+    renderChat(adapters, {
+      strings: {
+        authRequiredHeading: (labels: string) => `Sign in to ${labels} first`,
+        composerAuthRequired: "Sign in above.",
+      },
+    });
+    await sendOnce(calls);
+    await waitFor(() => expect(screen.getByText("Sign in to Linear first")).toBeTruthy());
+    expect((screen.getByLabelText("Message") as HTMLTextAreaElement).placeholder).toBe("Sign in above.");
+  });
+});
