@@ -70,6 +70,10 @@ const UNSET: AgentConfig = {
   appId: 'app1',
   maxPods: null,
   maxPodsCeiling: 1,
+  // guuey#752: nothing pinned → the platform default. Free's budget is
+  // unlimited-shaped (its one-pod ceiling is the bound), so it travels null.
+  scaling: 'auto',
+  podBudgetUsd: null,
   tier: 'free',
   runtimeAutoUpdate: true,
   runtimeImageDigest: null,
@@ -79,6 +83,9 @@ const SCALED: AgentConfig = {
   appId: 'app1',
   maxPods: 3,
   maxPodsCeiling: 5,
+  // A hand-set count with no knob reads back `fixed` (guuey#752).
+  scaling: 'fixed',
+  podBudgetUsd: 130,
   tier: 'pro',
   runtimeAutoUpdate: true,
   runtimeImageDigest: 'sha256:abc123',
@@ -95,6 +102,8 @@ const NO_OP: AgentConfig = {
   appId: 'app1',
   maxPods: 1,
   maxPodsCeiling: 5,
+  scaling: 'fixed',
+  podBudgetUsd: 130,
   tier: 'pro',
   runtimeAutoUpdate: true,
   runtimeImageDigest: null,
@@ -145,7 +154,10 @@ describe('guuey agent config', () => {
       await agentConfig({});
 
       const output = stdout();
-      expect(output).toContain('Max Pods:      3');
+      // guuey#752: the knob's LABEL follows the mode — under `fixed` the
+      // number is the count that runs; under `auto` it is a ceiling.
+      expect(output).toContain('Scaling:       fixed');
+      expect(output).toContain('Pods:          3');
       expect(output).toContain('Ceiling:       5');
       expect(output).toContain('Plan:          pro');
     });
@@ -155,7 +167,8 @@ describe('guuey agent config', () => {
 
       await agentConfig({});
 
-      expect(stdout()).toContain('Max Pods:      1 (default)');
+      expect(stdout()).toContain('Scaling:       auto (default)');
+      expect(stdout()).toContain('Pod ceiling:   1 (default)');
     });
 
     it('--json emits the wire verbatim', async () => {
@@ -203,9 +216,9 @@ describe('guuey agent config', () => {
       await agentConfig({ 'max-pods': '3' });
 
       expect(stdout()).toContain('Max pods set to 1.');
-      expect(stdout()).toContain('Max Pods:      1');
+      expect(stdout()).toContain('Pods:          1');
       expect(stdout()).not.toContain('Max pods set to 3.');
-      expect(stdout()).not.toContain('Max Pods:      3');
+      expect(stdout()).not.toContain('Pods:          3');
     });
 
     it('prints that the change needs no redeploy', async () => {
@@ -284,12 +297,82 @@ describe('guuey agent config', () => {
     });
   });
 
+  describe('write mode (--scaling) — guuey#752', () => {
+    /** The readback after opting a counted app in to auto: the 3 is now a ceiling. */
+    const AUTO: AgentConfig = {
+      appId: 'app1',
+      maxPods: 3,
+      maxPodsCeiling: 5,
+      scaling: 'auto',
+      podBudgetUsd: 130,
+      tier: 'pro',
+      runtimeAutoUpdate: true,
+      runtimeImageDigest: null,
+    };
+
+    it.each(['auto', 'fixed'] as const)('PATCHes { scaling: "%s" }', async (mode) => {
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify(mode === 'auto' ? AUTO : SCALED), { status: 200 }));
+
+      await agentConfig({ scaling: mode });
+
+      expect(lastRequest(fetchSpy)).toEqual({
+        method: 'PATCH',
+        path: '/apps/app1/config',
+        body: { scaling: mode },
+      });
+    });
+
+    it('prints what auto will DO, using the readback\u2019s own numbers', async () => {
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify(AUTO), { status: 200 }));
+
+      await agentConfig({ scaling: 'auto' });
+
+      expect(stdout()).toContain('Scaling: auto — the platform adds a pod when every turn slot is busy, up to 3.');
+      // …and the config block relabels the same number as a ceiling.
+      expect(stdout()).toContain('Pod ceiling:   3');
+    });
+
+    it('prints the fixed copy as a COUNT, not a ceiling', async () => {
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify(SCALED), { status: 200 }));
+
+      await agentConfig({ scaling: 'fixed' });
+
+      expect(stdout()).toContain('Scaling: fixed — this agent runs exactly 3 pods.');
+      expect(stdout()).toContain('Pods:          3');
+    });
+
+    it.each(['on', 'off', 'AUTO', 'static', true] as const)(
+      'rejects --scaling %j locally — nothing is sent',
+      async (bad) => {
+        await expect(agentConfig({ scaling: bad })).rejects.toBeInstanceOf(ExitSignal);
+
+        expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
+        expect(fetchSpy).not.toHaveBeenCalled();
+        expect(stderr()).toContain('--scaling takes "auto" or "fixed"');
+      },
+    );
+
+    it('--scaling and --max-pods travel in ONE patch — the mode and the number it means are never two round trips', async () => {
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify(AUTO), { status: 200 }));
+
+      await agentConfig({ scaling: 'auto', 'max-pods': '3' });
+
+      expect(lastRequest(fetchSpy)).toEqual({
+        method: 'PATCH',
+        path: '/apps/app1/config',
+        body: { maxPods: 3, scaling: 'auto' },
+      });
+    });
+  });
+
   describe('write mode (--runtime-auto-update)', () => {
     /** The readback for a successful pin — `runtimeAutoUpdate: false`. */
     const PINNED: AgentConfig = {
       appId: 'app1',
       maxPods: 3,
       maxPodsCeiling: 5,
+      scaling: 'fixed',
+      podBudgetUsd: 130,
       tier: 'pro',
       runtimeAutoUpdate: false,
       runtimeImageDigest: 'sha256:abc123',

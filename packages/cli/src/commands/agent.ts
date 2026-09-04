@@ -3,13 +3,17 @@
  *
  * Subcommands:
  *   config                     Show the app's scaling config
- *   config --max-pods <n>      Set the app's replica count
+ *   config --max-pods <n>      Set the app's pod limit
+ *   config --scaling <mode>    Choose `auto` (the platform adds pods under
+ *                              load, up to the limit) or `fixed` (it runs
+ *                              exactly the limit, always)
  *
  * Usage:
- *   guuey agent config                 # Show maxPods + the ceiling it is gated at
- *   guuey agent config --max-pods 3    # Scale a LIVE app, no redeploy
- *   guuey agent config --json          # Machine-readable (either mode)
- *   guuey agent config --app-id <id>   # Target a specific app (overrides the binding)
+ *   guuey agent config                    # Show the mode, maxPods + the ceiling
+ *   guuey agent config --max-pods 3       # Scale a LIVE app, no redeploy
+ *   guuey agent config --scaling auto     # Let the platform scale to that limit
+ *   guuey agent config --json             # Machine-readable (either mode)
+ *   guuey agent config --app-id <id>      # Target a specific app (overrides the binding)
  *
  * Backed by `GET|PATCH /v1/apps/:id/config` (scaling S1-F4, guuey#162) —
  * the route this command was gated behind `notYetAvailable` waiting for. A
@@ -39,12 +43,27 @@ import * as out from '../output';
  * wire package is private, this one is published npm); pinned against the
  * wire source by `wire-sync.test.ts`. See `../wire-mirror-parse.ts`.
  */
+export type AgentScaling = 'auto' | 'fixed';
+
 export interface AgentConfig {
   appId: string;
   /** The persisted knob; `null` = unset, which the platform runs as 1 replica. */
   maxPods: number | null;
   /** The ceiling the next write is gated at (tier limit, or an admin raise). */
   maxPodsCeiling: number;
+  /**
+   * RESOLVED scaling mode — what the platform does, not the raw knob:
+   * `'auto'` adds a pod when every turn slot is busy, up to the limit (an
+   * unset `maxPods` means the ceiling); `'fixed'` runs `maxPods ?? 1` and
+   * never scales. An app that set a pod count before this knob existed reads
+   * `'fixed'` until it opts in; an app that touched neither reads `'auto'`.
+   */
+  scaling: AgentScaling;
+  /**
+   * The resolved monthly pod budget in USD that bounds `'auto'`, or `null`
+   * when the plan sets no budget. Read-only here.
+   */
+  podBudgetUsd: number | null;
   /** The effective tier the ceiling derives from (admin raise aside). */
   tier: string;
   /** Resolved runtime-update posture — absent knob reads back `true`
@@ -82,13 +101,14 @@ export async function agentConfig(
   const json = flags.json === true;
   const maxPodsFlag = flags['max-pods'];
   const autoUpdateFlag = flags['runtime-auto-update'];
+  const scalingFlag = flags['scaling'];
 
-  if (maxPodsFlag === undefined && autoUpdateFlag === undefined) {
+  if (maxPodsFlag === undefined && autoUpdateFlag === undefined && scalingFlag === undefined) {
     await showConfig(auth.pat, config, appId, json);
     return;
   }
 
-  const patch: { maxPods?: number; runtimeAutoUpdate?: boolean } = {};
+  const patch: { maxPods?: number; scaling?: AgentScaling; runtimeAutoUpdate?: boolean } = {};
   if (maxPodsFlag !== undefined) {
     const maxPods = maxPodsFlag === true ? NaN : Number(maxPodsFlag);
     if (!Number.isInteger(maxPods) || maxPods < 1) {
@@ -96,6 +116,13 @@ export async function agentConfig(
       process.exit(1);
     }
     patch.maxPods = maxPods;
+  }
+  if (scalingFlag !== undefined) {
+    if (scalingFlag !== 'auto' && scalingFlag !== 'fixed') {
+      out.error('--scaling takes "auto" or "fixed" (auto lets the platform add pods under load, up to your pod limit; fixed runs exactly that many).');
+      process.exit(1);
+    }
+    patch.scaling = scalingFlag;
   }
   if (autoUpdateFlag !== undefined) {
     if (autoUpdateFlag !== 'on' && autoUpdateFlag !== 'off') {
@@ -129,6 +156,13 @@ export async function agentConfig(
         '  Each pod beyond the first bills at $0.04/unit-hour on the invoice and does NOT count toward the spending cap — this limit is the control on that spend.',
       );
     }
+  }
+  if (patch.scaling !== undefined) {
+    out.success(
+      updated.scaling === 'auto'
+        ? `Scaling: auto — the platform adds a pod when every turn slot is busy, up to ${updated.maxPods ?? updated.maxPodsCeiling}.`
+        : `Scaling: fixed — this agent runs exactly ${updated.maxPods ?? 1} pod${(updated.maxPods ?? 1) === 1 ? '' : 's'}.`,
+    );
   }
   if (patch.runtimeAutoUpdate !== undefined) {
     out.success(
@@ -173,15 +207,23 @@ async function showConfig(
  * replica count for an unset knob — with `(default)` so the reader can tell
  * the two apart before running `--max-pods 1` and seeing nothing change.
  *
+ * The knob's LABEL follows the mode, because the same number means two
+ * different things: under `auto` it is the ceiling the platform may scale up
+ * to, under `fixed` it is the count it runs.
+ *
  * Ceiling and plan print on separate lines on purpose: the ceiling may come
  * from an admin per-app raise rather than the plan, and the wire does not
  * say which, so "3 (free plan)" would be a claim this command cannot make.
  */
 function printConfig(wire: AgentConfig): void {
   const pods = wire.maxPods === null ? '1 (default)' : String(wire.maxPods);
-  console.log(`  Max Pods:      ${pods}`);
+  console.log(`  Scaling:       ${wire.scaling}${wire.scaling === 'auto' ? ' (default)' : ''}`);
+  console.log(`  ${(wire.scaling === 'auto' ? 'Pod ceiling:' : 'Pods:').padEnd(13)}  ${pods}`);
   console.log(`  Ceiling:       ${wire.maxPodsCeiling}`);
   console.log(`  Plan:          ${wire.tier}`);
+  if (wire.podBudgetUsd !== null) {
+    console.log(`  Pod budget:    $${wire.podBudgetUsd}/month`);
+  }
   console.log(
     `  Image updates: ${wire.runtimeAutoUpdate ? 'automatic (default)' : 'pinned to deploy'}`,
   );
