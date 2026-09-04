@@ -1,9 +1,9 @@
 {
-  "@guuey/worker": "0.16.18",
-  "@guuey/config": "0.16.18",
-  "@guuey/cli": "0.16.18",
-  "@guuey/chat": "0.16.18",
-  "@guuey/mcp-apps-host": "0.16.18",
+  "@guuey/worker": "0.16.19",
+  "@guuey/config": "0.16.19",
+  "@guuey/cli": "0.16.19",
+  "@guuey/chat": "0.16.19",
+  "@guuey/mcp-apps-host": "0.16.19",
   "@silverprotocol/core": "0.5.3",
-  "@guuey/agent-layout": "0.16.18"
+  "@guuey/agent-layout": "0.16.19"
 }
