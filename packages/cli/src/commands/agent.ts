@@ -64,6 +64,22 @@ export interface AgentConfig {
    * when the plan sets no budget. Read-only here.
    */
   podBudgetUsd: number | null;
+  /**
+   * The STORED worker reservation in MiB (guuey#746 slice 2), or `null` when
+   * the app never set one — the platform default (256 MiB), not "no
+   * reservation". Stored-not-resolved on purpose: the number a running pod
+   * gets is the CLAMPED one, and the clamp needs the pod's memory row, a
+   * deploy-time fact this route does not hold — so this command prints the
+   * stored knob and says so.
+   */
+  workerReservationMib: number | null;
+  /**
+   * The ceiling the next `workerReservationMib` write is gated at, in MiB —
+   * the largest size this app's tier allows minus the host baseline. Sibling
+   * of `maxPodsCeiling`. The floor is the constant 128 MiB for every app, so
+   * it is not on the wire.
+   */
+  workerReservationCeilingMib: number;
   /** The effective tier the ceiling derives from (admin raise aside). */
   tier: string;
   /** Resolved runtime-update posture — absent knob reads back `true`
@@ -224,6 +240,14 @@ function printConfig(wire: AgentConfig): void {
   if (wire.podBudgetUsd !== null) {
     console.log(`  Pod budget:    $${wire.podBudgetUsd}/month`);
   }
+  // The worker reservation is the STORED knob (see the field docblock): an
+  // unset one prints the platform default and says so, the way `maxPods`
+  // does, and the ceiling prints beside it so the bound is visible before a
+  // write is refused by it.
+  const reservation =
+    wire.workerReservationMib === null ? '256 MiB (default)' : `${wire.workerReservationMib} MiB`;
+  console.log(`  Worker memory: ${reservation}`);
+  console.log(`  Memory ceiling: ${wire.workerReservationCeilingMib} MiB`);
   console.log(
     `  Image updates: ${wire.runtimeAutoUpdate ? 'automatic (default)' : 'pinned to deploy'}`,
   );

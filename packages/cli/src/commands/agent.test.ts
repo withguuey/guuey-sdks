@@ -76,6 +76,8 @@ const UNSET: AgentConfig = {
   podBudgetUsd: null,
   tier: 'free',
   runtimeAutoUpdate: true,
+  workerReservationMib: null,
+  workerReservationCeilingMib: 1792,
   runtimeImageDigest: null,
 };
 
@@ -88,6 +90,8 @@ const SCALED: AgentConfig = {
   podBudgetUsd: 130,
   tier: 'pro',
   runtimeAutoUpdate: true,
+  workerReservationMib: 512,
+  workerReservationCeilingMib: 1792,
   runtimeImageDigest: 'sha256:abc123',
 };
 
@@ -106,6 +110,8 @@ const NO_OP: AgentConfig = {
   podBudgetUsd: 130,
   tier: 'pro',
   runtimeAutoUpdate: true,
+  workerReservationMib: null,
+  workerReservationCeilingMib: 1792,
   runtimeImageDigest: null,
 };
 
@@ -160,6 +166,11 @@ describe('guuey agent config', () => {
       expect(output).toContain('Pods:          3');
       expect(output).toContain('Ceiling:       5');
       expect(output).toContain('Plan:          pro');
+      // guuey#746 slice 2: the STORED worker reservation and the bound the
+      // next write is gated at — a wire field the CLI never printed would be
+      // a knob it silently hides (wire-sync.test.ts is the mirror guard).
+      expect(output).toContain('Worker memory: 512 MiB');
+      expect(output).toContain('Memory ceiling: 1792 MiB');
     });
 
     it('prints an unset knob as "1 (default)" — never a bare 1 that reads as set', async () => {
@@ -169,6 +180,9 @@ describe('guuey agent config', () => {
 
       expect(stdout()).toContain('Scaling:       auto (default)');
       expect(stdout()).toContain('Pod ceiling:   1 (default)');
+      // An unset reservation is the platform default, said so — never a bare
+      // number that reads as set, the same rule as `maxPods`.
+      expect(stdout()).toContain('Worker memory: 256 MiB (default)');
     });
 
     it('--json emits the wire verbatim', async () => {
@@ -307,6 +321,8 @@ describe('guuey agent config', () => {
       podBudgetUsd: 130,
       tier: 'pro',
       runtimeAutoUpdate: true,
+      workerReservationMib: null,
+      workerReservationCeilingMib: 1792,
       runtimeImageDigest: null,
     };
 
@@ -375,6 +391,8 @@ describe('guuey agent config', () => {
       podBudgetUsd: 130,
       tier: 'pro',
       runtimeAutoUpdate: false,
+      workerReservationMib: null,
+      workerReservationCeilingMib: 1792,
       runtimeImageDigest: 'sha256:abc123',
     };
 
