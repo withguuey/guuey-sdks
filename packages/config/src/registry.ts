@@ -93,6 +93,13 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
   // workloads. The bare `gpt-5.6` alias is intentionally NOT a registry id
   // (never offered in a picker) — the rate card still rows it at Sol's price so
   // an alias call from BYO config can't under-meter.
+  // guuey#798 / #802 (2026-09-05 wave): id verified against
+  // developers.openai.com/api/docs/models/gpt-6-astra (fetched 2026-09-05
+  // 00:45Z — the only snapshot listed, no dated id). `announced` = known, NOT
+  // invocable on our runtime until #801's receipted call from a dev pod; the
+  // status alone keeps it out of BOTH picker halves. Flips to `ga` (+ lineup
+  // decision) in the first cut after its receipt (oss #806).
+  { id: "gpt-6-astra", provider: "openai", label: "GPT-6 Astra", status: "announced" },
   { id: "gpt-5.6-terra", provider: "openai", label: "GPT-5.6 Terra", status: "ga", isDefault: true, lineup: true },
   { id: "gpt-5.6-sol", provider: "openai", label: "GPT-5.6 Sol", status: "ga", lineup: true },
   { id: "gpt-5.6-luna", provider: "openai", label: "GPT-5.6 Luna", status: "ga" },
@@ -100,6 +107,13 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
   { id: "gpt-5.4", provider: "openai", label: "GPT-5.4", status: "ga" },
   { id: "gpt-4o", provider: "openai", label: "GPT-4o", status: "ga" },
   { id: "gpt-4o-mini", provider: "openai", label: "GPT-4o Mini", status: "ga" },
+  // guuey#798 / #802 (2026-09-05 wave): id verified against
+  // ai.google.dev/gemini-api/docs/models/gemini-3.8-flash (fetched 2026-09-05
+  // 00:45Z — "Versions: Stable: gemini-3.8-flash", no preview/dated variant).
+  // `announced` until #801's receipted call through the gemini egress arm
+  // (stream-only; the model page names no REST method — the live call is the
+  // proof). Flips to `ga` in the first cut after its receipt (oss #806).
+  { id: "gemini-3.8-flash", provider: "google", label: "Gemini 3.8 Flash", status: "announced" },
   { id: "gemini-3.6-flash", provider: "google", label: "Gemini 3.6 Flash", status: "ga", isDefault: true, lineup: true },
   { id: "gemini-3.5-flash-lite", provider: "google", label: "Gemini 3.5 Flash Lite", status: "ga", lineup: true },
   { id: "gemini-3.5-flash", provider: "google", label: "Gemini 3.5 Flash", status: "ga" },
