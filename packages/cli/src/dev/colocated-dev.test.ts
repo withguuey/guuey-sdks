@@ -9,7 +9,22 @@ const projectRoot = __dirname;
 let handle: ColocatedDevHandle | undefined;
 let markerDir: string | undefined;
 
-function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void> {
+/**
+ * guuey#838 — the budget for anything that waits on a CHILD PROCESS: a
+ * spawn through pnpm (`pnpm run dev` → the fixture) or its exit after
+ * SIGTERM. 5 s was sized for an idle machine; under a parallel package run
+ * the same spawn took 35 s once and the `waitFor` reported "timed out
+ * waiting for condition" (oss's pre-cut warm-up, 2026-09-05). Every wait on
+ * a child uses this one number, and each test that waits on a child carries
+ * it as its own vitest timeout too — otherwise vitest's 5 s default fails
+ * the test before the wait can, and reports nothing useful.
+ */
+const CHILD_BUDGET_MS = 60_000;
+// Every test and hook in this file waits on a child at some point — one
+// budget for all of them, set for the file rather than repeated per `it`.
+vi.setConfig({ testTimeout: CHILD_BUDGET_MS, hookTimeout: CHILD_BUDGET_MS });
+
+function waitFor(predicate: () => boolean, timeoutMs = CHILD_BUDGET_MS): Promise<void> {
   return new Promise((resolve, reject) => {
     const start = Date.now();
     const tick = (): void => {
@@ -47,7 +62,7 @@ function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void> {
  * it propagates and fails the test, same as every other `waitFor` call in
  * this file.
  */
-function waitForStoppedMarker(dir: string, timeoutMs = 5000): Promise<void> {
+function waitForStoppedMarker(dir: string, timeoutMs = CHILD_BUDGET_MS): Promise<void> {
   return waitFor(() => existsSync(join(dir, "stopped")), timeoutMs);
 }
 
@@ -145,7 +160,7 @@ describe("spawnColocatedDev", () => {
         // The deadline can fire before `pnpm run` has even exec'd the fixture
         // under load; `afterEach` needs the fixture ALIVE to receive stop()'s
         // SIGTERM and write its `stopped` marker — so wait for it here.
-        await waitFor(() => existsSync(join(markerDir!, "started")), 10_000);
+        await waitFor(() => existsSync(join(markerDir!, "started")));
       } finally {
         delete process.env.FIXTURE_NO_LISTEN;
         warn.mockRestore();
@@ -169,7 +184,7 @@ describe("spawnColocatedDev", () => {
         );
         await handle.settled;
         expect(handle.degraded()).toEqual([]);
-        await waitFor(() => handle!.degraded().includes("flaky"), 10_000);
+        await waitFor(() => handle!.degraded().includes("flaky"));
         expect(warn).toHaveBeenCalledWith(expect.stringContaining('colocated MCP "flaky" is DEGRADED (exited (code 1))'));
       } finally {
         delete process.env.FIXTURE_CRASH_AFTER_MS;
@@ -216,19 +231,37 @@ describe("spawnColocatedDev", () => {
     warn.mockRestore();
   });
 
-  it("stop() is idempotent (safe to call more than once)", async () => {
-    markerDir = mkdtempSync(join(tmpdir(), "guuey-colocated-dev-idempotent-"));
-    process.env.FIXTURE_MARKER_DIR = markerDir;
+  it(
+    "stop() is idempotent (safe to call more than once) — and the second call changes nothing the first did",
+    async () => {
+      markerDir = mkdtempSync(join(tmpdir(), "guuey-colocated-dev-idempotent-"));
+      process.env.FIXTURE_MARKER_DIR = markerDir;
 
-    handle = spawnColocatedDev(
-      [{ name: "notes", source: "fixtures/colocated-child", devPort: 34568 }],
-      projectRoot,
-    );
-    await waitFor(() => existsSync(join(markerDir!, "started")));
+      handle = spawnColocatedDev(
+        [{ name: "notes", source: "fixtures/colocated-child", devPort: 34568 }],
+        projectRoot,
+      );
+      await waitFor(() => existsSync(join(markerDir!, "started")));
 
-    expect(() => {
-      handle!.stop();
-      handle!.stop();
-    }).not.toThrow();
-  });
+      expect(() => {
+        handle!.stop();
+        handle!.stop();
+      }).not.toThrow();
+      // guuey#838 — the POSITIVE fact, not just "did not throw": a stopped
+      // child settles, is never degraded (that is the state stop() asked
+      // for), and really received the SIGTERM (its `stopped` marker lands).
+      // Asserted here, inside the child budget, rather than left to
+      // `afterEach`'s wait. Two causes made this the flakiest test in the
+      // file under load: a 5 s budget sized for an idle machine (the file
+      // budget above), and the fixture writing `started` BEFORE installing
+      // its SIGTERM handler — this test stops the child the instant it sees
+      // `started`, so the signal could land on a process that would die
+      // silently without the marker (the fixture now installs the handler
+      // first).
+      await handle.settled;
+      expect(handle.degraded()).toEqual([]);
+      await waitFor(() => existsSync(join(markerDir!, "stopped")));
+      expect(handle.degraded()).toEqual([]);
+    },
+  );
 });
