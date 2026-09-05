@@ -16,7 +16,7 @@
     "@guuey/worker": "0.0.1"
   },
   "devDependencies": {
-    "@ggui-ai/cli": "0.13.0",
+    "@ggui-ai/cli": "0.14.0",
     "@guuey/cli": "0.0.1",
     "tsup": "^8.5.0",
     "tsx": "^4.19.0",
