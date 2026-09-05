@@ -1,0 +1,2 @@
+# nodenext-probe.test.ts scratch dirs (a hard-killed run may leave one)
+.nodenext-probe-*/

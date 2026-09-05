@@ -19,10 +19,12 @@
  * ext-apps' broken re-export, so under strict lib-check they read as
  * "no exported member" (TS2305/TS2460) although protocol's own specifiers
  * are extension-correct. Such a diagnostic is tolerated ONLY when its text
- * names `@modelcontextprotocol/ext-apps`; the NodeNext resolution class
- * itself (TS2834/TS2835/TS2307) inside @ggui-ai is never tolerated, and
- * neither is any other @ggui-ai diagnostic. When ext-apps ships correct
- * declarations the tolerated set goes to zero on its own.
+ * names `@modelcontextprotocol/ext-apps` AND matches the bounded allowlist
+ * below (exact file + code + member, count-capped); the NodeNext
+ * resolution class itself (TS2834/TS2835/TS2307) inside @ggui-ai is never
+ * tolerated, and neither is any other @ggui-ai diagnostic. When ext-apps
+ * ships correct declarations the tolerated set goes to zero on its own and
+ * the allowlist is pruned.
  *
  * The second test proves the probe can go red (the detectors law): a
  * synthetic declaration with an extensionless re-export must surface as the
@@ -46,6 +48,30 @@ const PROTOCOL_ENTRIES = [
 
 /** The upstream whose root d.ts is extensionless today (ext-apps#704); named in every diagnostic it causes. */
 const EXT_APPS = "@modelcontextprotocol/ext-apps";
+
+/**
+ * The EXACT diagnostics ext-apps 1.7.5's root d.ts causes inside @ggui-ai
+ * today (ggui#847): protocol's `host-context.d.ts` importing three `McpUi*`
+ * names that reach it through the broken re-export. Bounded on purpose — a
+ * NEW line (another member, file or code) is red even when its text names
+ * ext-apps, so a protocol-side wrong-member import cannot hide under the
+ * same tolerance. Prune entries as ext-apps ships correct declarations; the
+ * count cap is the number of lines those entries produce today.
+ */
+const HOST_CONTEXT_DTS = /[\\/]@ggui-ai[\\/]protocol[\\/]dist[\\/]types[\\/]host-context\.d\.ts$/;
+const TOLERATED_VIA_EXT_APPS: readonly { file: RegExp; code: number; member: string }[] = [
+  { file: HOST_CONTEXT_DTS, code: 2305, member: "McpUiDisplayMode" },
+  { file: HOST_CONTEXT_DTS, code: 2460, member: "McpUiHostContext" },
+  { file: HOST_CONTEXT_DTS, code: 2460, member: "McpUiHostCapabilities" },
+];
+const TOLERATED_MAX_LINES = 4;
+
+function toleratedViaExtApps(d: ProbeDiagnostic): boolean {
+  return (
+    d.text.includes(EXT_APPS) &&
+    TOLERATED_VIA_EXT_APPS.some((t) => t.code === d.code && t.file.test(d.file) && d.text.includes(t.member))
+  );
+}
 
 /** NodeNext extension / resolution failures — the guuey#846 class. */
 const NODENEXT_RESOLUTION_CODES = new Set([2834, 2835, 2307]);
@@ -76,17 +102,24 @@ function compile(rootFile: string): ProbeDiagnostic[] {
   }));
 }
 
-/** A scratch dir INSIDE this package so bare specifiers resolve through its node_modules. */
+/**
+ * A scratch dir inside this PACKAGE (so bare specifiers resolve through its
+ * node_modules) but outside `src/` (so a hard-killed run can never leave a
+ * synthetic extensionless d.ts under the build's `include`). Gitignored.
+ */
 function scratch(): string {
-  return mkdtempSync(join(here, ".nodenext-probe-"));
+  return mkdtempSync(join(here, "..", ".nodenext-probe-"));
 }
 
 function render(diags: readonly ProbeDiagnostic[]): string {
   return diags.map((d) => `${d.file}: TS${d.code} ${d.text.split("\n")[0]}`).join("\n");
 }
 
+/** A full strict compile of the protocol's declarations — ~3 s warm, ~9 s on a cold cache (a 5 s default timeout flaked once). */
+const COMPILE_BUDGET_MS = 60_000;
+
 describe("NodeNext probe over @ggui-ai/protocol (guuey#846 class)", () => {
-  it("every entry we import typechecks strict under NodeNext with skipLibCheck: false", () => {
+  it("every entry we import typechecks strict under NodeNext with skipLibCheck: false", { timeout: COMPILE_BUDGET_MS }, () => {
     const dir = scratch();
     try {
       const probe = join(dir, "probe.mts");
@@ -108,18 +141,19 @@ describe("NodeNext probe over @ggui-ai/protocol (guuey#846 class)", () => {
       }
       const resolutionClass = ours.filter((d) => NODENEXT_RESOLUTION_CODES.has(d.code));
       expect(resolutionClass, `the guuey#846 class is back inside @ggui-ai/*:\n${render(resolutionClass)}`).toEqual([]);
-      const viaExtApps = ours.filter((d) => d.text.includes(EXT_APPS));
+      const viaExtApps = ours.filter(toleratedViaExtApps);
       if (viaExtApps.length > 0) {
-        console.info(`nodenext-probe: ${viaExtApps.length} diagnostic(s) inside @ggui-ai caused by ${EXT_APPS}' declarations (tolerated, ext-apps#704):\n${render(viaExtApps)}`);
+        console.info(`nodenext-probe: ${viaExtApps.length} diagnostic(s) inside @ggui-ai caused by ${EXT_APPS}' declarations (tolerated by the bounded allowlist, ext-apps#704):\n${render(viaExtApps)}`);
       }
+      expect(viaExtApps.length, "the tolerated set grew — a new ext-apps-shaped line inside @ggui-ai needs a human read, not a bigger cap").toBeLessThanOrEqual(TOLERATED_MAX_LINES);
       const unexplained = ours.filter((d) => !viaExtApps.includes(d));
-      expect(unexplained, `@ggui-ai/* declarations must be clean under NodeNext (only ${EXT_APPS}-caused diagnostics are tolerated):\n${render(unexplained)}`).toEqual([]);
+      expect(unexplained, `@ggui-ai/* declarations must be clean under NodeNext (only the allowlisted ${EXT_APPS}-caused lines are tolerated):\n${render(unexplained)}`).toEqual([]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it("goes RED on an extensionless relative re-export in a declaration (the harness can see the class)", () => {
+  it("goes RED on an extensionless relative re-export in a declaration (the harness can see the class)", { timeout: COMPILE_BUDGET_MS }, () => {
     const dir = scratch();
     try {
       mkdirSync(join(dir, "bad"));
