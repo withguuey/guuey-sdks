@@ -194,6 +194,27 @@ export function legacyForProvider(p: ModelEntry["provider"]): readonly ModelEntr
 }
 
 /**
+ * A provider's ANNOUNCED rows, in registry order — models the registry knows
+ * about that are NOT invocable on our runtime yet.
+ *
+ * This is a DISPLAY accessor and nothing more (guuey#805). It is deliberately
+ * OUTSIDE the `lineupForProvider` / `legacyForProvider` partition and outside
+ * every offer predicate: `modelsForProvider`, `modelsForFramework`,
+ * `isOfferedModel` and `defaultModelFor` keep failing closed on an announced
+ * id exactly as they did before this existed (guuey#647), and the server's
+ * create validator stays the backstop. Its only job is to let a console tell
+ * the truth about a model it can see but cannot run — rendered as a DISABLED
+ * entry with an honest face, so a builder can never create an app whose first
+ * turn dies on a model the runtime refuses.
+ *
+ * Only `status === 'announced'` comes back: a `deprecated` row is not
+ * announced and stays hidden here just as it is hidden from the pickers.
+ */
+export function announcedForProvider(p: ModelEntry["provider"]): readonly ModelEntry[] {
+  return MODEL_REGISTRY.filter((m) => m.provider === p && m.status === "announced");
+}
+
+/**
  * The model AXIS a framework's picker offers — its default provider's
  * invocable (ga|preview) rows, default first: `modelsForProvider` keyed by
  * framework. Every door that judges an `intendedModel` (the console's rack

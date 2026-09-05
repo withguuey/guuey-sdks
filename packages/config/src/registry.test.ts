@@ -7,6 +7,7 @@ import {
   isOfferedModel,
   lineupForProvider,
   legacyForProvider,
+  announcedForProvider,
   defaultModelFor,
   modelEntry,
 } from './registry.js';
@@ -227,6 +228,98 @@ describe('modelEntry', () => {
     expect(entry?.provider).toBe('anthropic');
     expect(entry?.label).toBe('Claude Sonnet 5');
     expect(entry?.isDefault).toBe(true);
+  });
+});
+
+/**
+ * `announcedForProvider` — the DISPLAY accessor for the console's honest face
+ * (guuey#805). The whole value of this function is that it changes NOTHING
+ * about what can be picked or submitted, so every assertion here comes in a
+ * pair: the row is returned by the display accessor AND still absent from
+ * every picker/offer predicate.
+ */
+describe('announcedForProvider — visible to a console, invocable by nothing', () => {
+  const providers = ['anthropic', 'openai', 'google', 'openrouter'] as const;
+
+  it('returns exactly the announced rows per provider (the 2026-09-05 three-vendor set)', () => {
+    // Literal, like the modelsForProvider pin above: these ids are what the
+    // console shows an investor as "known, not yet serving", and each one
+    // leaves this list by a deliberate ga flip, never by drift.
+    expect(announcedForProvider('anthropic').map((m) => m.id)).toEqual(['claude-fable-5-1']);
+    expect(announcedForProvider('openai').map((m) => m.id)).toEqual(['gpt-6-astra']);
+    expect(announcedForProvider('google').map((m) => m.id)).toEqual(['gemini-3.8-flash']);
+    expect(announcedForProvider('openrouter')).toEqual([]);
+  });
+
+  it('returns ONLY status === "announced" rows — a ga, preview or deprecated row can never appear', () => {
+    // The rule, not a data snapshot: MODEL_REGISTRY carries no `deprecated`
+    // row today, so "deprecated stays hidden" is pinned as the accessor's
+    // filter over EVERY non-announced row the registry does carry.
+    for (const p of providers) {
+      for (const row of announcedForProvider(p)) {
+        expect(row.status).toBe('announced');
+        expect(row.provider).toBe(p);
+      }
+      const announced = announcedForProvider(p).map((m) => m.id);
+      for (const other of MODEL_REGISTRY.filter((m) => m.provider === p && m.status !== 'announced')) {
+        expect(announced).not.toContain(other.id);
+      }
+    }
+  });
+
+  it('is DISJOINT from the picker halves — an announced row is in neither lineup nor legacy nor the offer list', () => {
+    for (const p of providers) {
+      const announced = announcedForProvider(p).map((m) => m.id);
+      const offered = modelsForProvider(p).map((m) => m.id);
+      const lineup = lineupForProvider(p).map((m) => m.id);
+      const legacy = legacyForProvider(p).map((m) => m.id);
+      expect(announced.filter((id) => offered.includes(id))).toEqual([]);
+      expect(announced.filter((id) => lineup.includes(id))).toEqual([]);
+      expect(announced.filter((id) => legacy.includes(id))).toEqual([]);
+    }
+  });
+
+  it('every announced id is still REFUSED by isOfferedModel and is never a framework default', () => {
+    const byFramework = {
+      'claude-agent-sdk': 'anthropic',
+      'openai-agents-sdk': 'openai',
+      'google-adk': 'google',
+      vanilla: 'anthropic',
+    } as const;
+    for (const [framework, provider] of Object.entries(byFramework) as [
+      keyof typeof byFramework,
+      (typeof byFramework)[keyof typeof byFramework],
+    ][]) {
+      for (const row of announcedForProvider(provider)) {
+        expect(isOfferedModel(framework, row.id)).toBe(false);
+        expect(modelsForFramework(framework).map((m) => m.id)).not.toContain(row.id);
+        expect(defaultModelFor(framework)).not.toBe(row.id);
+      }
+    }
+  });
+
+  it('is reachable from the package ROOT and from ./browser (the entry a Client Component may import)', async () => {
+    // The console renders this face from a `"use client"` file, and such a
+    // file may only import `@guuey/config/browser` or a leaf subpath — never
+    // the root, whose barrel re-exports loader.js and its `node:fs`
+    // (guuey#778, pinned by apps/platform's client-config-entry guard). Both
+    // barrels re-export registry.js today; this pin says a future barrel
+    // edit that drops it goes red here rather than at `next build`.
+    const root = await import('./index.js');
+    const browser = await import('./browser.js');
+    expect(typeof root.announcedForProvider).toBe('function');
+    expect(typeof browser.announcedForProvider).toBe('function');
+    expect(browser.announcedForProvider('openai').map((m) => m.id)).toEqual(
+      announcedForProvider('openai').map((m) => m.id),
+    );
+  });
+
+  it('the accessor and MODEL_REGISTRY agree — no announced row is unreachable through it', () => {
+    const viaAccessor = providers.flatMap((p) => announcedForProvider(p).map((m) => m.id)).sort();
+    const viaRegistry = MODEL_REGISTRY.filter((m) => m.status === 'announced')
+      .map((m) => m.id)
+      .sort();
+    expect(viaAccessor).toEqual(viaRegistry);
   });
 });
 
