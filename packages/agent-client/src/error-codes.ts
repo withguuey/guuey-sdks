@@ -61,6 +61,13 @@ export const AGENT_ERROR_CODES = {
   NOT_FOUND: "NOT_FOUND",
   /** The turn ran past the pod's wall-clock budget. */
   TIMEOUT: "TIMEOUT",
+  /**
+   * The turn's Worker was killed by its own per-turn memory bound (guuey#745):
+   * that turn failed alone, the agent and every other conversation are fine.
+   * Not retried — the same request would meet the same bound; the reader
+   * copy says what to change.
+   */
+  WORKER_MEMORY_LIMIT: "WORKER_MEMORY_LIMIT",
   /** A guuey-side dependency failed (not the agent's own code). */
   PLATFORM_ERROR: "PLATFORM_ERROR",
   /** Unclassified pod failure. */
