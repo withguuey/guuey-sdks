@@ -4,6 +4,8 @@
  * Subcommands:
  *   config                     Show the app's scaling config
  *   config --max-pods <n>      Set the app's pod limit
+ *   config --worker-reservation-mib <n>   Per-turn worker memory reservation (MiB)
+ *   config --clear-worker-reservation     Back to the platform default (256 MiB)
  *   config --scaling <mode>    Choose `auto` (the platform adds pods under
  *                              load, up to the limit) or `fixed` (it runs
  *                              exactly the limit, always)
@@ -118,13 +120,46 @@ export async function agentConfig(
   const maxPodsFlag = flags['max-pods'];
   const autoUpdateFlag = flags['runtime-auto-update'];
   const scalingFlag = flags['scaling'];
+  const reservationFlag = flags['worker-reservation-mib'];
+  const clearReservation = flags['clear-worker-reservation'] === true;
 
-  if (maxPodsFlag === undefined && autoUpdateFlag === undefined && scalingFlag === undefined) {
+  if (
+    maxPodsFlag === undefined &&
+    autoUpdateFlag === undefined &&
+    scalingFlag === undefined &&
+    reservationFlag === undefined &&
+    !clearReservation
+  ) {
     await showConfig(auth.pat, config, appId, json);
     return;
   }
 
-  const patch: { maxPods?: number; scaling?: AgentScaling; runtimeAutoUpdate?: boolean } = {};
+  const patch: {
+    maxPods?: number;
+    scaling?: AgentScaling;
+    runtimeAutoUpdate?: boolean;
+    /** guuey#826 — a number sets the per-turn reservation; `null` is an explicit clear (the wire's own rule), never an omission. */
+    workerReservationMib?: number | null;
+  } = {};
+  // guuey#826: the per-turn worker memory reservation (guuey#746 slice 2's
+  // knob). The CLI checks only "positive integer"; the RANGE — [128, the
+  // tier's ceiling] — is the server's to name, and its 400 is rendered
+  // verbatim below so the CLI never guesses a ceiling.
+  if (reservationFlag !== undefined && clearReservation) {
+    out.error('--worker-reservation-mib and --clear-worker-reservation are one knob — pass one of them.');
+    process.exit(1);
+  }
+  if (reservationFlag !== undefined) {
+    const mib = reservationFlag === true ? NaN : Number(reservationFlag);
+    if (!Number.isInteger(mib) || mib < 1) {
+      out.error('--worker-reservation-mib must be a positive integer of MiB (e.g. --worker-reservation-mib 512).');
+      process.exit(1);
+    }
+    patch.workerReservationMib = mib;
+  }
+  if (clearReservation) {
+    patch.workerReservationMib = null;
+  }
   if (maxPodsFlag !== undefined) {
     const maxPods = maxPodsFlag === true ? NaN : Number(maxPodsFlag);
     if (!Number.isInteger(maxPods) || maxPods < 1) {
@@ -185,6 +220,17 @@ export async function agentConfig(
       updated.runtimeAutoUpdate
         ? 'Runtime image updates: automatic — the platform keeps this agent on the current image.'
         : 'Runtime image updates: pinned — this agent stays on its deploy-time image until you deploy again or turn auto-update back on.',
+    );
+  }
+  if (patch.workerReservationMib !== undefined) {
+    // The readback, never the request: the server clamps and names its own
+    // ceiling. No derived "N conversations at once" line here — the derivation
+    // (`agentTurnCap`) is not a published helper, and a second formula would
+    // drift from the governor's; the stored knob + the ceiling are the truth.
+    out.success(
+      updated.workerReservationMib === null
+        ? `Worker memory: platform default (256 MiB) — ceiling ${updated.workerReservationCeilingMib} MiB on this plan.`
+        : `Worker memory: ${updated.workerReservationMib} MiB per turn — ceiling ${updated.workerReservationCeilingMib} MiB on this plan.`,
     );
   }
   printConfig(updated);

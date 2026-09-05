@@ -163,6 +163,10 @@ Agent Development:
                                  LIVE app, no redeploy (converges within ~5 minutes)
     --runtime-auto-update on|off Automatic runtime image updates (default on) or
                                  pinned to the image captured at the last deploy
+    --worker-reservation-mib <n> Per-turn worker memory reservation in MiB — the
+                                 memory each concurrent conversation is given
+                                 (default 256; the plan's ceiling is on the readout)
+    --clear-worker-reservation   Back to the platform default reservation
     --json                       Emit the config as JSON
 
 Agents as code (GitOps — CI-safe with a service token, or a workspace

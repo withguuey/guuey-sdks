@@ -208,6 +208,66 @@ describe('guuey agent config', () => {
     });
   });
 
+  describe('write mode (--worker-reservation-mib / --clear-worker-reservation, guuey#826)', () => {
+    const RESERVED: AgentConfig = { ...NO_OP, workerReservationMib: 512 };
+
+    it('PATCHes /apps/:id/config with { workerReservationMib: n } and reports the readback + the ceiling', async () => {
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify(RESERVED), { status: 200 }));
+
+      await agentConfig({ 'worker-reservation-mib': '512' });
+
+      expect(lastRequest(fetchSpy)).toEqual({
+        method: 'PATCH',
+        path: '/apps/app1/config',
+        body: { workerReservationMib: 512 },
+      });
+      expect(stdout()).toContain('Worker memory: 512 MiB per turn — ceiling 1792 MiB on this plan.');
+      expect(stdout()).toContain('without a redeploy');
+    });
+
+    it('--clear-worker-reservation PATCHes an EXPLICIT null (the wire\'s clear), never an omission', async () => {
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify(NO_OP), { status: 200 }));
+
+      await agentConfig({ 'clear-worker-reservation': true });
+
+      expect(lastRequest(fetchSpy)).toEqual({
+        method: 'PATCH',
+        path: '/apps/app1/config',
+        body: { workerReservationMib: null },
+      });
+      expect(stdout()).toContain('Worker memory: platform default (256 MiB) — ceiling 1792 MiB on this plan.');
+    });
+
+    it('rejects a non-integer and the two flags together before any request', async () => {
+      await expect(agentConfig({ 'worker-reservation-mib': '1.5' })).rejects.toBeInstanceOf(ExitSignal);
+      expect(stderr()).toContain('positive integer of MiB');
+      await expect(
+        agentConfig({ 'worker-reservation-mib': '512', 'clear-worker-reservation': true }),
+      ).rejects.toBeInstanceOf(ExitSignal);
+      expect(stderr()).toContain('one knob');
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it("renders the server's 400 verbatim — the range [128, ceiling] is the server's to name, never the CLI's", async () => {
+      fetchSpy.mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 'AGENT_WORKER_RESERVATION',
+              message: 'workerReservationMib 64 is outside [128, 1792] for this app (the Pro plan, xl pods).',
+            },
+          }),
+          { status: 400 },
+        ),
+      );
+
+      await expect(agentConfig({ 'worker-reservation-mib': '64' })).rejects.toBeInstanceOf(ExitSignal);
+
+      expect(stderr()).toContain('AGENT_WORKER_RESERVATION');
+      expect(stderr()).toContain('outside [128, 1792]');
+    });
+  });
+
   describe('write mode (--max-pods)', () => {
     it('PATCHes /apps/:id/config with { maxPods }', async () => {
       fetchSpy.mockResolvedValue(new Response(JSON.stringify(SCALED), { status: 200 }));
