@@ -347,6 +347,22 @@ function viewLabel(
   }
 }
 
+/**
+ * guuey#847 — true when a JSON value carries no information a reader could
+ * act on: `null`/`undefined`, the empty string, an empty array or object, or
+ * an array/object whose every member is itself informationless. Numbers and
+ * booleans are information (a `0` or `false` says something); a non-empty
+ * string is. Vendor-neutral by construction — the rule reads the payload's
+ * shape, never the vendor or a key name.
+ */
+function isInformationless(value: JsonValue | undefined): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value === "string") return value === "";
+  if (typeof value === "number" || typeof value === "boolean") return false;
+  if (Array.isArray(value)) return value.every((v) => isInformationless(v));
+  return Object.values(value).every((v) => isInformationless(v));
+}
+
 function unknownFromValue(
   key: ItemKey,
   typeName: string,
@@ -594,6 +610,14 @@ function planAssistantSource(
       }
       case "provider-raw": {
         if (!policy.unknown.show) break;
+        // guuey#847 — a lossless carry that carries NOTHING (the google-adk
+        // facet's empty-but-present `actions.artifactDelta` / `requestedAuth
+        // Configs` dicts ride as provider-raw on every ADK event) is not
+        // "unrecognized content": there is no content. Calm shows no row for
+        // it; debug keeps every carry visible. A carry WITH a payload — an
+        // unmapped genai part field, a non-text MCP content part, any vendor's
+        // real bytes — still renders as the labeled unknown row (R15).
+        if (!policy.debugDetail && isInformationless(block.raw)) break;
         items.push(
           unknownFromValue(`${prefix}.u${ordinals.u++}`, `provider-raw:${block.vendor}`, block.raw, policy, overrides),
         );
