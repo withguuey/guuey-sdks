@@ -198,9 +198,11 @@ describe("<GuueyChat> imperative seam (guuey#210)", () => {
     const { adapters, calls } = scriptedAdapters({ holdOpen: true });
     const { handle } = renderWithHandle(adapters);
 
-    act(() => {
-      expect(handle.send("first")).toBe(true);
-    });
+    // `send` reads the in-flight flag the component settles in an effect;
+    // under load (the 2-vCPU `Unit (oss)` runner, guuey#864 run 33969609440)
+    // a bare synchronous read raced it. `waitFor` retries the read until it
+    // holds — a refused send issues nothing, so the retry cannot double-send.
+    await waitFor(() => expect(handle.send("first")).toBe(true));
     await screen.findByRole("button", { name: "Stop" });
     act(() => {
       expect(handle.send("while busy")).toBe(false);
@@ -209,9 +211,7 @@ describe("<GuueyChat> imperative seam (guuey#210)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     await screen.findByRole("button", { name: "Send" });
-    act(() => {
-      expect(handle.send("after stop")).toBe(true);
-    });
+    await waitFor(() => expect(handle.send("after stop")).toBe(true));
     await waitFor(() => expect(calls).toHaveLength(2));
   });
 

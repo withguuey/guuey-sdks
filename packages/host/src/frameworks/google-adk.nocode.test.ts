@@ -370,13 +370,22 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
   });
 });
 
+/**
+ * These two construct the REAL @google/adk agent + runner (no spawn, no
+ * tsc — but a heavyweight module graph): ~1 s warm on a Mac, 8.3 s on the
+ * 2-vCPU `Unit (oss)` runner under turbo fan-out (guuey#864 run 33969609440),
+ * where vitest's 5 s default reported them as failures. The budget is the
+ * #867 rule applied to in-process construction, not just to spawns.
+ */
+const REAL_ADK_BUDGET_MS = 60_000;
+
 describe("armed-env (spec §2.1.6): the REAL @google/adk reads the pod's gemini pair", () => {
   afterEach(() => {
     delete process.env.GEMINI_API_KEY;
     delete process.env.GOOGLE_GENAI_API_KEY;
   });
 
-  it("Gemini picks GEMINI_API_KEY from env (the buildWorkerEnv keySlot)", async () => {
+  it("Gemini picks GEMINI_API_KEY from env (the buildWorkerEnv keySlot)", { timeout: REAL_ADK_BUDGET_MS }, async () => {
     process.env.GEMINI_API_KEY = "opaque-broker-token";
     const adk = (await import("@google/adk")) as { Gemini: new (p: { model: string }) => object };
     const llm = new adk.Gemini({ model: "gemini-3.5-flash" });
@@ -386,7 +395,7 @@ describe("armed-env (spec §2.1.6): the REAL @google/adk reads the pod's gemini 
     expect(shape.apiKey).toBe("opaque-broker-token");
   });
 
-  it("GOOGLE_GENAI_API_KEY takes precedence when both are set (the SDK's || order)", async () => {
+  it("GOOGLE_GENAI_API_KEY takes precedence when both are set (the SDK's || order)", { timeout: REAL_ADK_BUDGET_MS }, async () => {
     process.env.GOOGLE_GENAI_API_KEY = "genai-first";
     process.env.GEMINI_API_KEY = "gemini-second";
     const adk = (await import("@google/adk")) as { Gemini: new (p: { model: string }) => object };
