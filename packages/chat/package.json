@@ -46,8 +46,8 @@
   "dependencies": {
     "@guuey/agent-client": "workspace:*",
     "@guuey/mcp-apps-host": "workspace:*",
-    "@silverprotocol/core": "0.5.4",
-    "@silverprotocol/richtext": "0.5.4",
+    "@silverprotocol/core": "0.6.1",
+    "@silverprotocol/richtext": "0.6.1",
     "zod": "^4.3.6"
   },
   "peerDependencies": {
