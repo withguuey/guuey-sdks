@@ -77,7 +77,9 @@ describe('modelsForProvider', () => {
         'claude-haiku-4-5',
         'claude-opus-4-8',
       ],
-      openai: ['gpt-5.6-terra', 'gpt-5.6-sol', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-4o', 'gpt-4o-mini'],
+      // gpt-6-astra joined the offered set 2026-09-05 on #801's receipted pod
+      // call (guuey#798/#802); placed after Sol so Terra stays [0] (the default).
+      openai: ['gpt-5.6-terra', 'gpt-5.6-sol', 'gpt-6-astra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-4o', 'gpt-4o-mini'],
       google: [
         'gemini-3.6-flash',
         'gemini-3.5-flash-lite',
@@ -246,7 +248,9 @@ describe('announcedForProvider — visible to a console, invocable by nothing', 
     // console shows an investor as "known, not yet serving", and each one
     // leaves this list by a deliberate ga flip, never by drift.
     expect(announcedForProvider('anthropic').map((m) => m.id)).toEqual(['claude-fable-5-1']);
-    expect(announcedForProvider('openai').map((m) => m.id)).toEqual(['gpt-6-astra']);
+    // gpt-6-astra flipped to ga 2026-09-05 (#801 receipt) — openai has no
+    // announced row until the next vendor announcement.
+    expect(announcedForProvider('openai').map((m) => m.id)).toEqual([]);
     expect(announcedForProvider('google').map((m) => m.id)).toEqual(['gemini-3.8-flash']);
     expect(announcedForProvider('openrouter')).toEqual([]);
   });

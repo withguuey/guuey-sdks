@@ -99,9 +99,16 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
   // invocable on our runtime until #801's receipted call from a dev pod; the
   // status alone keeps it out of BOTH picker halves. Flips to `ga` (+ lineup
   // decision) in the first cut after its receipt (oss #806).
-  { id: "gpt-6-astra", provider: "openai", label: "GPT-6 Astra", status: "announced" },
   { id: "gpt-5.6-terra", provider: "openai", label: "GPT-5.6 Terra", status: "ga", isDefault: true, lineup: true },
   { id: "gpt-5.6-sol", provider: "openai", label: "GPT-5.6 Sol", status: "ga", lineup: true },
+  // FLIPPED to ga 2026-09-05 on #801's receipted pod call (dev, through the
+  // openai egress arm with the managed key: HTTP 200 on /v1/responses, the
+  // provider echoed "gpt-6-astra", usage in 11 / out 5). In the lineup as a
+  // non-default member beside Sol — Terra stays the default (founder's
+  // cost/balance call, 2026-07-25). Known metering gap stated on guuey#818:
+  // prompts above 272K input tokens are vendor-priced at 2× and the card has
+  // no context tier yet.
+  { id: "gpt-6-astra", provider: "openai", label: "GPT-6 Astra", status: "ga", lineup: true },
   { id: "gpt-5.6-luna", provider: "openai", label: "GPT-5.6 Luna", status: "ga" },
   { id: "gpt-5.5", provider: "openai", label: "GPT-5.5", status: "ga" },
   { id: "gpt-5.4", provider: "openai", label: "GPT-5.4", status: "ga" },
