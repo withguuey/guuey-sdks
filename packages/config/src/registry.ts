@@ -114,14 +114,15 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
   { id: "gpt-5.4", provider: "openai", label: "GPT-5.4", status: "ga" },
   { id: "gpt-4o", provider: "openai", label: "GPT-4o", status: "ga" },
   { id: "gpt-4o-mini", provider: "openai", label: "GPT-4o Mini", status: "ga" },
-  // guuey#798 / #802 (2026-09-05 wave): id verified against
-  // ai.google.dev/gemini-api/docs/models/gemini-3.8-flash (fetched 2026-09-05
-  // 00:45Z — "Versions: Stable: gemini-3.8-flash", no preview/dated variant).
-  // `announced` until #801's receipted call through the gemini egress arm
-  // (stream-only; the model page names no REST method — the live call is the
-  // proof). Flips to `ga` in the first cut after its receipt (oss #806).
-  { id: "gemini-3.8-flash", provider: "google", label: "Gemini 3.8 Flash", status: "announced" },
   { id: "gemini-3.6-flash", provider: "google", label: "Gemini 3.6 Flash", status: "ga", isDefault: true, lineup: true },
+  // FLIPPED to ga 2026-09-05 on #801's receipted pod call (dev, through the
+  // gemini egress arm with the managed key: HTTP 200 on
+  // :streamGenerateContent?alt=sse, the provider echoed modelVersion
+  // "gemini-3.8-flash", usageMetadata prompt 6 / candidates 1 / thoughts 42;
+  // #804 closed on that payload). In the lineup as a non-default member after
+  // 3.6 Flash — the default stays 3.6 (founder's 2026-07-25 price call; 3.8's
+  // intro price ends 2026-12-31 and the card bills its standard rate).
+  { id: "gemini-3.8-flash", provider: "google", label: "Gemini 3.8 Flash", status: "ga", lineup: true },
   { id: "gemini-3.5-flash-lite", provider: "google", label: "Gemini 3.5 Flash Lite", status: "ga", lineup: true },
   { id: "gemini-3.5-flash", provider: "google", label: "Gemini 3.5 Flash", status: "ga" },
   { id: "gemini-3.1-pro", provider: "google", label: "Gemini 3.1 Pro", status: "ga" },
