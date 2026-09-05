@@ -1,6 +1,6 @@
 {
   "name": "@guuey/widget-auth",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "description": "Mint end-user identity tokens for a guuey embeddable widget from your own backend. One call, zero runtime dependencies — your app secret stays on your server and the platform holds the signing key.",
   "license": "MIT",
   "type": "module",
