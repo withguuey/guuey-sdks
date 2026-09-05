@@ -71,7 +71,7 @@ import { agentConfig } from './commands/agent';
 import { agentApply, agentRollback, agentStatus } from './commands/agent-apply';
 import { domainsAdd, domainsList, domainsVerify, domainsRemove } from './commands/domains';
 import { tokensCreate, tokensList, tokensRevoke } from './commands/tokens';
-import { appsSubscribe, billing, billingTopUp } from './commands/billing';
+import { appsSubscribe, billing, billingInvoice, billingTopUp } from './commands/billing';
 import { slugClaim, slugRelease } from './commands/slug';
 import { ApiError } from './client';
 import { printWelcome, printQuickGuide } from './logo';
@@ -290,8 +290,11 @@ Authentication:
   logout                        Clear stored credentials
   whoami                        Show current authenticated user
   billing                       Plan per app + the saved card on file + the
-                                 credit balance (personal account) + the
+                                 credit balance (personal account) + the next
+                                 invoice, per agent + recent invoices + the
                                  billing console URL
+  billing invoice               The next invoice (total, issue date, per-agent
+                                 split) + recent invoices, alone (--json = the wire)
   billing topup                 Add credits that pre-pay your next invoices
     --app <appId>               App whose account is topped up (default:
                                  guuey.json)
@@ -849,9 +852,14 @@ async function main(): Promise<void> {
         await billingTopUp(flags);
         break;
       }
+      // guuey#831: the wallet's next invoice + issued history, alone.
+      if (action === 'invoice') {
+        await billingInvoice(flags);
+        break;
+      }
       if (action !== undefined) {
         console.error(
-          `Unknown billing command: ${action}. Use: guuey billing [--json] | guuey billing topup --app <appId> --amount <usd>`,
+          `Unknown billing command: ${action}. Use: guuey billing [--json] | guuey billing invoice [--json] | guuey billing topup --app <appId> --amount <usd>`,
         );
         process.exit(1);
       }

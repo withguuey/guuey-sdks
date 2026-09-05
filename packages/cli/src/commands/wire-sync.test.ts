@@ -30,6 +30,7 @@ const WIRE_WIDGET_KEYS = repoPath(`${CLI_WIRE_DIR}/widget-keys.ts`);
 const WIRE_DEPLOY = repoPath(`${CLI_WIRE_DIR}/deploy.ts`);
 const WIRE_MCP_CONNECTIONS = repoPath(`${CLI_WIRE_DIR}/mcp-connections.ts`);
 const WIRE_BILLING = repoPath(`${CLI_WIRE_DIR}/billing.ts`);
+const WIRE_BILLING_INVOICING = repoPath(`${CLI_WIRE_DIR}/billing-invoicing.ts`);
 
 const CLI_APPS = repoPath('./apps.ts');
 const CLI_MCP = repoPath('./mcp.ts');
@@ -157,5 +158,26 @@ describe.skipIf(!haveWire)('CLI wire mirrors — sync guards against @guuey-priv
     expect(parseStringLiterals(cli, 'SUBSCRIBABLE_TIERS')).toEqual(
       parseStringLiterals(wire, 'SUBSCRIBABLE_TIERS'),
     );
+  });
+
+  it('the invoicing mirrors declare exactly the wire fields (guuey#831)', () => {
+    // `guuey billing` renders the next invoice's total/date/split and the
+    // issued history from these — a renamed field is a blank column or a
+    // "$NaN" total, silently. The wire had NO CLI consumer before this row.
+    const cli = read(CLI_BILLING);
+    const wire = read(WIRE_BILLING_INVOICING);
+    for (const name of [
+      'NextInvoiceLineWire',
+      'NextInvoiceAppShareWire',
+      'NextInvoiceWire',
+      'InvoiceHistoryEntryWire',
+      'WalletCardWire',
+      'BillingInvoicingWire',
+    ]) {
+      expect(parseInterfaceFields(cli, name)).toEqual(parseInterfaceFields(wire, name));
+    }
+    for (const union of ['NextInvoiceLineKind', 'NextInvoiceStatus', 'InvoiceHistoryStatus']) {
+      expect(parseStringLiterals(cli, union)).toEqual(parseStringLiterals(wire, union));
+    }
   });
 });

@@ -18,6 +18,13 @@ import {
   CREDIT_TOPUP_REFUND_WORDING,
   type BillingAppWire,
   type BillingSummaryWire,
+  billingInvoicingCore,
+  renderInvoicing,
+  invoiceAppRow,
+  invoiceHistoryRow,
+  usd,
+  type BillingInvoicingWire,
+  type NextInvoiceWire,
 } from './billing';
 
 const auth: AuthTokens = { pat: 'guuey_user_test', expiresAt: '2099-01-01T00:00:00Z' };
@@ -372,5 +379,130 @@ describe('appsSubscribeCore', () => {
       status: 'requires_checkout',
       url: 'https://x.example/billing',
     });
+  });
+});
+
+describe('invoicing (guuey#831)', () => {
+  const NEXT: NextInvoiceWire = {
+    status: 'preview',
+    issuesAt: '2026-10-01T00:00:00.000Z',
+    lines: [
+      { description: '2 × Pro', quantity: 2, amountUsd: 98, kind: 'plan' },
+      { description: 'Managed LLM', quantity: null, amountUsd: 3.5, kind: 'metered' },
+    ],
+    apps: [
+      { appId: 'app-1', displayName: 'Trimly', billedTier: 'pro', planUsd: 49, usageUsd: 2.25, totalUsd: 51.25 },
+      { appId: 'app-2', displayName: null, billedTier: 'pro', planUsd: 49, usageUsd: 1.25, totalUsd: 50.25 },
+    ],
+    accountUsd: 0,
+    subtotalUsd: 101.5,
+    taxUsd: null,
+    totalUsd: 101.5,
+    card: { brand: 'visa', last4: '4242' },
+  };
+  const INVOICING: BillingInvoicingWire = {
+    ownerType: 'user',
+    ownerId: 'u1',
+    hasBillingCustomer: true,
+    nextInvoice: NEXT,
+    invoices: [
+      {
+        id: 'in_1',
+        number: 'GUUEY-0007',
+        createdAt: '2026-09-01T00:00:00.000Z',
+        status: 'paid',
+        totalUsd: 98,
+        amountDueUsd: 0,
+        amountPaidUsd: 98,
+        hostedInvoiceUrl: 'https://invoice.stripe.com/i/abc',
+        invoicePdfUrl: null,
+      },
+    ],
+    invoicesTruncated: true,
+    paymentMethods: null,
+  };
+  const output = (spy: ReturnType<typeof vi.spyOn>) =>
+    spy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+
+  it('row helpers: a purged app reads "(deleted app)", a numberless invoice falls back to its id, a linkless one to —', () => {
+    expect(invoiceAppRow(NEXT.apps[1]!)).toEqual({ App: '(deleted app) (app-2)', Plan: 'pro $49.00', Usage: '$1.25', Total: '$50.25' });
+    expect(invoiceHistoryRow({ ...INVOICING.invoices![0]!, number: null, hostedInvoiceUrl: null })).toEqual({
+      Invoice: 'in_1',
+      Date: '2026-09-01',
+      Total: '$98.00',
+      Due: '$0.00',
+      Status: 'paid',
+      Link: '—',
+    });
+  });
+
+  it('usd formats two decimals with the sign before the symbol', () => {
+    expect(usd(3.5)).toBe('$3.50');
+    expect(usd(-1)).toBe('-$1.00');
+    expect(usd(0)).toBe('$0.00');
+  });
+
+  it('renders the preview: total + issue date, one row per agent from the SERVER split, the credit note and the card', () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    renderInvoicing(INVOICING, 20);
+    const text = output(logSpy);
+    expect(text).toContain('Next invoice: $101.50 total on 2026-10-01');
+    expect(text).toContain('Trimly (app-1)');
+    expect(text).toContain('(deleted app) (app-2)');
+    expect(text).toContain('$51.25');
+    expect(text).toContain('Credit balance $20.00 applies when the invoice issues');
+    expect(text).toContain('Charges: visa ····4242');
+    expect(text).toContain('GUUEY-0007');
+    expect(text).toContain('https://invoice.stripe.com/i/abc');
+    expect(text).toContain('Older invoices: see the billing console.');
+    logSpy.mockRestore();
+  });
+
+  it('a $0-due month, "none" and "unreadable" each say their own words — never a guessed zero', () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    renderInvoicing({ ...INVOICING, nextInvoice: { ...NEXT, status: 'none', lines: [], apps: [], totalUsd: null } }, null);
+    expect(output(logSpy)).toContain('Next invoice: none — the subscription ends at the period end.');
+    logSpy.mockClear();
+    renderInvoicing(
+      { ...INVOICING, nextInvoice: { ...NEXT, status: 'unreadable', lines: [], apps: [], totalUsd: null, subtotalUsd: null }, invoices: null },
+      null,
+    );
+    const t = output(logSpy);
+    expect(t).toContain("Next invoice: couldn't be read from Stripe right now");
+    expect(t).toContain("Invoice history: couldn't be read from Stripe right now.");
+    expect(t).not.toContain('$0.00');
+    logSpy.mockClear();
+    renderInvoicing({ ...INVOICING, hasBillingCustomer: false, nextInvoice: null, invoices: [] }, 50);
+    expect(output(logSpy)).toBe('  Invoices: nothing billed on this account yet.');
+    logSpy.mockRestore();
+  });
+
+  it('billingInvoicingCore GETs /billing/invoicing; --json emits the wire verbatim; an API error surfaces its message', async () => {
+    const api = vi.fn(async () => jsonResponse(200, INVOICING));
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await billingInvoicingCore({ json: true, auth, config }, { api });
+    expect(api).toHaveBeenCalledWith('guuey_user_test', config, 'GET', '/billing/invoicing');
+    expect(JSON.parse(output(logSpy))).toEqual(INVOICING);
+    await expect(
+      billingInvoicingCore(
+        { json: false, auth, config },
+        { api: vi.fn(async () => jsonResponse(503, { error: { code: 'STRIPE_UNAVAILABLE', message: 'stripe down' } })) },
+      ),
+    ).rejects.toThrow(/stripe down/);
+    logSpy.mockRestore();
+  });
+
+  it('the summary reads /billing then /billing/invoicing; a failing second read is ONE honest line and the door still prints', async () => {
+    const api = vi.fn(async (_pat: string, _cfg: unknown, _m: string, path: string) =>
+      path === '/billing' ? jsonResponse(200, SUMMARY) : jsonResponse(500, { error: { code: 'INTERNAL', message: 'boom' } }),
+    );
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await billingSummaryCore({ json: false, auth, config }, { api });
+    const paths = api.mock.calls.map((c) => c[3]);
+    expect(paths).toEqual(['/billing', '/billing/invoicing']);
+    const text = output(logSpy);
+    expect(text).toContain("Invoices: couldn't be read right now (");
+    expect(text).toContain(SUMMARY.consoleBillingUrl);
+    logSpy.mockRestore();
   });
 });
