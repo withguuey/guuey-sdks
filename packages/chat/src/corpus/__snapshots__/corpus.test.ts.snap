@@ -28,6 +28,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t1",
           "kind": "tool",
           "name": "step_1",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -48,6 +49,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t2",
           "kind": "tool",
           "name": "step_2",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -68,6 +70,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t3",
           "kind": "tool",
           "name": "step_3",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -88,6 +91,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t4",
           "kind": "tool",
           "name": "step_4",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -108,6 +112,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t5",
           "kind": "tool",
           "name": "step_5",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -128,6 +133,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t6",
           "kind": "tool",
           "name": "step_6",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -148,6 +154,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t7",
           "kind": "tool",
           "name": "step_7",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -168,6 +175,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t8",
           "kind": "tool",
           "name": "step_8",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -188,6 +196,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t9",
           "kind": "tool",
           "name": "step_9",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -208,6 +217,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t10",
           "kind": "tool",
           "name": "step_10",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -228,6 +238,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t11",
           "kind": "tool",
           "name": "step_11",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -248,6 +259,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t12",
           "kind": "tool",
           "name": "step_12",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -268,6 +280,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t13",
           "kind": "tool",
           "name": "step_13",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -288,6 +301,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t14",
           "kind": "tool",
           "name": "step_14",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -308,6 +322,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t15",
           "kind": "tool",
           "name": "step_15",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -328,6 +343,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t16",
           "kind": "tool",
           "name": "step_16",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -348,6 +364,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t17",
           "kind": "tool",
           "name": "step_17",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -368,6 +385,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t18",
           "kind": "tool",
           "name": "step_18",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -388,6 +406,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t19",
           "kind": "tool",
           "name": "step_19",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -408,6 +427,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t20",
           "kind": "tool",
           "name": "step_20",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -428,6 +448,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t21",
           "kind": "tool",
           "name": "step_21",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -448,6 +469,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t22",
           "kind": "tool",
           "name": "step_22",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -468,6 +490,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t23",
           "kind": "tool",
           "name": "step_23",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -488,6 +511,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t24",
           "kind": "tool",
           "name": "step_24",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -508,6 +532,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t25",
           "kind": "tool",
           "name": "step_25",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -528,6 +553,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t26",
           "kind": "tool",
           "name": "step_26",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -548,6 +574,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t27",
           "kind": "tool",
           "name": "step_27",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -568,6 +595,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t28",
           "kind": "tool",
           "name": "step_28",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -588,6 +616,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t29",
           "kind": "tool",
           "name": "step_29",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -608,6 +637,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t30",
           "kind": "tool",
           "name": "step_30",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -628,6 +658,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t31",
           "kind": "tool",
           "name": "step_31",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -648,6 +679,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t32",
           "kind": "tool",
           "name": "step_32",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -668,6 +700,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t33",
           "kind": "tool",
           "name": "step_33",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -688,6 +721,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t34",
           "kind": "tool",
           "name": "step_34",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -708,6 +742,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t35",
           "kind": "tool",
           "name": "step_35",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -728,6 +763,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t36",
           "kind": "tool",
           "name": "step_36",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -748,6 +784,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t37",
           "kind": "tool",
           "name": "step_37",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -768,6 +805,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t38",
           "kind": "tool",
           "name": "step_38",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -788,6 +826,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t39",
           "kind": "tool",
           "name": "step_39",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -808,6 +847,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
           "key": "tool.t40",
           "kind": "tool",
           "name": "step_40",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -867,6 +907,7 @@ exports[`corpus > 2. midstream-tool-failure — failed inline; badge without unr
           "key": "tool.t1",
           "kind": "tool",
           "name": "step_1",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -887,6 +928,7 @@ exports[`corpus > 2. midstream-tool-failure — failed inline; badge without unr
           "key": "tool.t2",
           "kind": "tool",
           "name": "step_2",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -907,6 +949,7 @@ exports[`corpus > 2. midstream-tool-failure — failed inline; badge without unr
           "key": "tool.t3",
           "kind": "tool",
           "name": "step_3",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -927,6 +970,7 @@ exports[`corpus > 2. midstream-tool-failure — failed inline; badge without unr
           "key": "tool.t4",
           "kind": "tool",
           "name": "step_4",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -947,6 +991,7 @@ exports[`corpus > 2. midstream-tool-failure — failed inline; badge without unr
           "key": "tool.t5",
           "kind": "tool",
           "name": "step_5",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -1129,6 +1174,7 @@ exports[`corpus > 7. view-never-handshakes — channel-aware labels on both chan
       "key": "tool.tInline",
       "kind": "tool",
       "name": "render_form",
+      "refusal": null,
       "result": null,
       "state": "done",
       "title": "render form",
@@ -1161,6 +1207,7 @@ exports[`corpus > 7. view-never-handshakes — channel-aware labels on both chan
       "key": "tool.tGgui",
       "kind": "tool",
       "name": "ggui_render",
+      "refusal": null,
       "result": null,
       "state": "done",
       "title": "ggui render",
@@ -1247,6 +1294,7 @@ exports[`corpus > 8. aborted-mid-stream — partial kept + Stopped.; no orphaned
       "key": "tool.t9",
       "kind": "tool",
       "name": "slow_tool",
+      "refusal": null,
       "result": null,
       "state": "orphaned",
       "title": "slow tool",
@@ -1573,6 +1621,7 @@ exports[`corpus > 15. tools-around-a-view — the group SPLITS at the view's pos
           "key": "tool.t1",
           "kind": "tool",
           "name": "prep_t1",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -1593,6 +1642,7 @@ exports[`corpus > 15. tools-around-a-view — the group SPLITS at the view's pos
           "key": "tool.t2",
           "kind": "tool",
           "name": "prep_t2",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -1615,6 +1665,7 @@ exports[`corpus > 15. tools-around-a-view — the group SPLITS at the view's pos
       "key": "tool.t3",
       "kind": "tool",
       "name": "ggui_render",
+      "refusal": null,
       "result": null,
       "state": "done",
       "title": "ggui render",
@@ -1655,6 +1706,7 @@ exports[`corpus > 15. tools-around-a-view — the group SPLITS at the view's pos
           "key": "tool.t4",
           "kind": "tool",
           "name": "post_t4",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -1675,6 +1727,7 @@ exports[`corpus > 15. tools-around-a-view — the group SPLITS at the view's pos
           "key": "tool.t5",
           "kind": "tool",
           "name": "post_t5",
+          "refusal": null,
           "result": {
             "byteCount": 2,
             "expanded": true,
@@ -1781,6 +1834,7 @@ exports[`corpus > 19. persisted-plus-live — the fold owns its trailing turns; 
       "key": "tool.tA",
       "kind": "tool",
       "name": "ggui_render",
+      "refusal": null,
       "result": null,
       "state": "done",
       "title": "ggui render",
@@ -1818,6 +1872,7 @@ exports[`corpus > 19. persisted-plus-live — the fold owns its trailing turns; 
       "key": "tool.tB",
       "kind": "tool",
       "name": "load_booking",
+      "refusal": null,
       "result": {
         "byteCount": 6,
         "expanded": true,
@@ -2021,6 +2076,7 @@ exports[`corpus > 22. promoted-view — the stage's mount chips (guuey#204); oth
       "key": "tool.t1",
       "kind": "tool",
       "name": "ggui_render",
+      "refusal": null,
       "result": null,
       "state": "done",
       "title": "ggui render",
@@ -2053,6 +2109,7 @@ exports[`corpus > 22. promoted-view — the stage's mount chips (guuey#204); oth
       "key": "tool.t2",
       "kind": "tool",
       "name": "ggui_render",
+      "refusal": null,
       "result": null,
       "state": "done",
       "title": "ggui render",
@@ -2127,6 +2184,7 @@ exports[`corpus > 23. meta-less-locator — a \`_meta\`-withholding producer's r
       "key": "tool.t1",
       "kind": "tool",
       "name": "ggui_render",
+      "refusal": null,
       "result": null,
       "state": "done",
       "title": "ggui render",
@@ -2188,6 +2246,7 @@ exports[`corpus > 24. prod-wire-ggui-render — ggui's production posture: no _m
       "key": "tool.t1",
       "kind": "tool",
       "name": "ggui_render",
+      "refusal": null,
       "result": null,
       "state": "done",
       "title": "ggui render",
@@ -2258,6 +2317,7 @@ exports[`corpus > 25. chips-presentation — EVERY view chips; the promoted key 
       "key": "tool.t1",
       "kind": "tool",
       "name": "ggui_render",
+      "refusal": null,
       "result": null,
       "state": "done",
       "title": "ggui render",
@@ -2279,6 +2339,7 @@ exports[`corpus > 25. chips-presentation — EVERY view chips; the promoted key 
       "key": "tool.t2",
       "kind": "tool",
       "name": "ggui_render",
+      "refusal": null,
       "result": null,
       "state": "done",
       "title": "ggui render",
