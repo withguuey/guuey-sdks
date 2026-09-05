@@ -24,8 +24,7 @@ import type {
   ViewCspDiagnosis,
   ViewHostPhase,
   ViewMount,
-  ViewMountChannel,
-} from "@guuey/mcp-apps-host";
+  ViewMountChannel, PreGenerationRefusal } from "@guuey/mcp-apps-host";
 import type { AuthRequired, OAuthAuthorizeAsk } from "./oauth.js";
 
 /**
@@ -256,6 +255,16 @@ export interface ToolItem extends BaseItem {
   argsPreview: string | null;
   /** The result inside this row's expansion (R5); null while running. */
   result: DataResultItem | null;
+  /**
+   * guuey#836 — a ggui_render PRE-GENERATION refusal (`@ggui-ai/protocol`
+   * 0.14.0's third `outcome`): the deployment declined the render before
+   * doing any work, so there is no view row and no data result — the
+   * envelope's own words (message, fix, retry class) are the face. Read
+   * through `@guuey/mcp-apps-host`'s typed guard; null for every other
+   * result, including a §7.1 render FAILURE (that one still carries a
+   * data result). When set, `state` is `"failed"` and `result` is null.
+   */
+  refusal: PreGenerationRefusal | null;
   /**
    * True when this call's result renders as its own transcript row (an R6
    * view) and calm folds this line into that row's chrome as attribution

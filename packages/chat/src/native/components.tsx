@@ -27,7 +27,7 @@
  */
 import type { ComponentType, ReactNode } from "react";
 import { Image, Pressable, Text, View } from "react-native";
-import type { ResolvedViewMount, ViewHostPhase } from "@guuey/mcp-apps-host";
+import type { PreGenerationRefusal, ResolvedViewMount, ViewHostPhase } from "@guuey/mcp-apps-host";
 import type { ChatStrings } from "../strings.js";
 import type {
   CitationsItem,
@@ -288,7 +288,7 @@ export function NativeTool({ item, ctx }: ItemProps<ToolItem>): ReactNode {
       </Text>
     </>
   );
-  const expandable = item.argsPreview !== null || item.result !== null;
+  const expandable = item.argsPreview !== null || item.result !== null || item.refusal !== null;
   if (!expandable) {
     return <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: ctx.tokens.pad }}>{header}</View>;
   }
@@ -300,7 +300,33 @@ export function NativeTool({ item, ctx }: ItemProps<ToolItem>): ReactNode {
         </Text>
       ) : null}
       {item.result !== null ? <NativeDataResult item={item.result} ctx={ctx} /> : null}
+      {item.refusal !== null ? <NativeRenderRefusal refusal={item.refusal} ctx={ctx} /> : null}
     </Collapsible>
+  );
+}
+
+/** guuey#836 — the pre-generation refusal face (see the web twin `DefaultRenderRefusal`). */
+export function NativeRenderRefusal({
+  refusal,
+  ctx,
+}: {
+  refusal: PreGenerationRefusal;
+  ctx: ItemProps<ToolItem>["ctx"];
+}): ReactNode {
+  const { tokens } = ctx;
+  return (
+    <View accessibilityRole="text" style={{ gap: 4, paddingVertical: 4 }}>
+      <Text style={{ color: tokens.palette.error, fontSize: tokens.fontSize - 2, fontFamily: tokens.fontFamily }}>
+        {ctx.strings.renderRefused}
+        {"  "}
+        <Text style={{ fontFamily: tokens.monoFontFamily, fontSize: tokens.fontSize - 3 }}>{refusal.code}</Text>
+      </Text>
+      <Text style={{ color: tokens.palette.ink, fontSize: tokens.fontSize - 1, fontFamily: tokens.fontFamily }}>{refusal.message}</Text>
+      <Text style={{ color: tokens.palette.ink, fontSize: tokens.fontSize - 1, fontFamily: tokens.fontFamily }}>{refusal.fix}</Text>
+      <Text style={{ color: tokens.palette.inkMuted, fontSize: tokens.fontSize - 3, fontFamily: tokens.fontFamily }}>
+        {ctx.strings.renderRefusedRetry(refusal.retry)}
+      </Text>
+    </View>
   );
 }
 

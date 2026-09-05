@@ -138,6 +138,7 @@ describe("Transcript", () => {
       state: "done",
       argsPreview: "{}",
       result: null,
+      refusal: null,
       attribution: false,
     };
     render(

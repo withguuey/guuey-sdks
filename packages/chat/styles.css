@@ -330,6 +330,34 @@
   overflow: auto;
 }
 
+/* guuey#836 — a ggui_render pre-generation refusal, faced in the envelope's own words. */
+.guuey-chat-tool-refusal {
+  display: grid;
+  gap: 2px;
+  margin: 4px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--guuey-chat-error, var(--_guuey-chat-error)) 35%, transparent);
+  font-size: 0.9em;
+}
+.guuey-chat-tool-refusal-label {
+  color: var(--guuey-chat-error, var(--_guuey-chat-error));
+  font-weight: 600;
+}
+.guuey-chat-tool-refusal-code {
+  font-family: var(--guuey-chat-mono-font, var(--_guuey-chat-mono-font, ui-monospace, monospace));
+  font-size: 0.85em;
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
+}
+.guuey-chat-tool-refusal-message,
+.guuey-chat-tool-refusal-fix {
+  margin: 0;
+}
+.guuey-chat-tool-refusal-retry {
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
+  font-size: 0.85em;
+}
+
 /* ── R4 group ── */
 .guuey-chat-failure-badge {
   margin-inline-start: 8px;

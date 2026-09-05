@@ -10,6 +10,8 @@
  * (§4.2 + per-row labels; guuey#135 — F7 keeps them wordsmith-able until 3b
  * freezes the voice).
  */
+import type { PreGenerationRefusal } from "@guuey/mcp-apps-host";
+
 export interface ChatStrings {
   /** R12 escalation ladder (spec §4.2). */
   connecting: string;
@@ -41,6 +43,14 @@ export interface ChatStrings {
   toolDidntFinish: string;
   /** R4 calm attribution chrome on a display-bearing call ("via {tool}"). */
   viaTool: (toolTitle: string) => string;
+  /**
+   * guuey#836 — the face of a ggui_render PRE-GENERATION refusal. The
+   * envelope's own `message` and `fix` are shown verbatim (ggui authored
+   * them for exactly this reader); these two are the chrome around them:
+   * the row label, and the retry class as a short hint.
+   */
+  renderRefused: string;
+  renderRefusedRetry: (retry: PreGenerationRefusal["retry"]) => string;
 
   /** R2. */
   reasoningLabel: string;
@@ -215,6 +225,19 @@ export const defaultChatStrings: ChatStrings = {
   toolGroupFailures: (count) => (count === 1 ? "1 failed" : `${count} failed`),
   toolDidntFinish: "didn't finish",
   viaTool: (toolTitle) => `via ${toolTitle}`,
+  renderRefused: "Not rendered",
+  renderRefusedRetry: (retry) => {
+    switch (retry) {
+      case "after-fix":
+        return "Retry after the fix";
+      case "next-period":
+        return "Retry next period";
+      case "later":
+        return "Retry later";
+      case "never":
+        return "Not retryable";
+    }
+  },
 
   reasoningLabel: "Thought for a moment",
 

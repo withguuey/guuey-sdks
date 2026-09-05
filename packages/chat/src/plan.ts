@@ -35,6 +35,7 @@ import type { AgBlock, AgReduceResult, JsonValue } from "@silverprotocol/core";
 import {
   snapshotViewMount,
   toolResultLocator,
+  toolResultRenderRefusal,
   toolResultViewMount,
   uiResourceChannel,
   type ViewMount,
@@ -460,7 +461,11 @@ function planAssistantSource(
         const result = resultsById.get(block.toolCallId);
         if (result) consumedResults.add(block.toolCallId);
         const mount: ViewMount | undefined = result ? toolResultViewMount(result) : undefined;
-        const failed = result !== undefined && toolFailed(result);
+        // guuey#836 — a pre-generation refusal is named, not shown as an
+        // opaque tool error: no mount (nothing was rendered), no data-result
+        // dump (the envelope IS the message), the row faces the refusal.
+        const refusal = result ? (toolResultRenderRefusal(result) ?? null) : null;
+        const failed = result !== undefined && (refusal !== null || toolFailed(result));
         const state: ToolItem["state"] = result
           ? failed
             ? "failed"
@@ -480,9 +485,10 @@ function planAssistantSource(
             ? boundedPreview(block.input, policy.dataResult.previewChars)
             : null,
           result:
-            result && mount === undefined
+            result && mount === undefined && refusal === null
               ? dataResultFromToolResult(result, `${key}.result`, policy, overrides)
               : null,
+          refusal,
           // R4's display-bearing rule: in calm the call line folds into the
           // view row's chrome as attribution; debug keeps the explicit line.
           attribution: mount !== undefined && !policy.debugDetail,

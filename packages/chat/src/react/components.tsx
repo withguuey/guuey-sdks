@@ -26,7 +26,7 @@ import {
   type ReactNode,
 } from "react";
 import { GuueyView, type GuueyViewProps } from "@guuey/mcp-apps-host/react";
-import type { ResolvedViewMount, ViewCspDiagnosis, ViewHostPhase } from "@guuey/mcp-apps-host";
+import type { PreGenerationRefusal, ResolvedViewMount, ViewCspDiagnosis, ViewHostPhase } from "@guuey/mcp-apps-host";
 import type { ChatStrings } from "../strings.js";
 import type {
   CitationsItem,
@@ -308,7 +308,7 @@ export function DefaultTool({ item, ctx }: ItemProps<ToolItem>): ReactNode {
   // R4's display-bearing rule: in calm this call's line lives in its view
   // row's chrome ("via {tool}") — rendering it here too would double it.
   if (item.attribution) return null;
-  const expandable = item.argsPreview !== null || item.result !== null;
+  const expandable = item.argsPreview !== null || item.result !== null || item.refusal !== null;
   const header = (
     <span className={`guuey-chat-tool-line guuey-chat-tool-${item.state}`}>
       <span aria-hidden="true" className="guuey-chat-tool-glyph">
@@ -333,7 +333,34 @@ export function DefaultTool({ item, ctx }: ItemProps<ToolItem>): ReactNode {
         <pre className="guuey-chat-tool-args">{item.argsPreview}</pre>
       ) : null}
       {item.result !== null ? <DefaultDataResult item={item.result} ctx={ctx} /> : null}
+      {item.refusal !== null ? <DefaultRenderRefusal refusal={item.refusal} ctx={ctx} /> : null}
     </Collapsible>
+  );
+}
+
+/**
+ * guuey#836 — a ggui_render PRE-GENERATION refusal, faced in the
+ * envelope's own words. The deployment declined before doing any work, so
+ * there is no card and no data result: the message says what was checked,
+ * the fix says the one step (addressed to whoever can take it — often the
+ * app's owner, not the person chatting), the code is the registry name for
+ * the builder's logs, the retry class is the hint.
+ */
+export function DefaultRenderRefusal({
+  refusal,
+  ctx,
+}: {
+  refusal: PreGenerationRefusal;
+  ctx: TranscriptItemContext;
+}): ReactNode {
+  return (
+    <div className="guuey-chat-tool-refusal" role="status" data-refusal-code={refusal.code}>
+      <span className="guuey-chat-tool-refusal-label">{ctx.strings.renderRefused}</span>
+      <code className="guuey-chat-tool-refusal-code">{refusal.code}</code>
+      <p className="guuey-chat-tool-refusal-message">{refusal.message}</p>
+      <p className="guuey-chat-tool-refusal-fix">{refusal.fix}</p>
+      <span className="guuey-chat-tool-refusal-retry">{ctx.strings.renderRefusedRetry(refusal.retry)}</span>
+    </div>
   );
 }
 

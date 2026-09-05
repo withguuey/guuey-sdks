@@ -55,6 +55,7 @@ const tool = (over: Partial<ToolItem> = {}): ToolItem => ({
   state: "done",
   argsPreview: '{"to":"NRT"}',
   result: null,
+  refusal: null,
   attribution: false,
   ...over,
 });

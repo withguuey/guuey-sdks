@@ -96,3 +96,7 @@ export {
   SANDBOX_RESOURCE_READY_METHOD,
   type SandboxPageDeliveryConfig,
 } from "./sandbox-page.js";
+// guuey#836 — the typed read of a ggui_render PRE-GENERATION refusal
+// (`@ggui-ai/protocol` 0.14.0's third `outcome`). Hosts face it with words
+// instead of showing the envelope as an unexplained tool failure.
+export { toolResultRenderRefusal, type PreGenerationRefusal } from "./render-refusal.js";
