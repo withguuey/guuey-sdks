@@ -108,3 +108,8 @@ overrides:
   # 6.15.3 under the express/body-parser chain of @guuey/cli + mcp-apps-host).
   "fast-uri@3": ^3.1.6
   "qs@6": ^6.16.0
+  # guuey#687-rails — see the root pnpm-workspace.yaml comment: ONE MCP SDK
+  # per lockfile; the peer-resolved transitive dependents (claude-agent-sdk,
+  # ext-apps, the @ggui-ai/* trio) follow the tested line. Moves with each
+  # sdk bump, never a major.
+  "@modelcontextprotocol/sdk@1": ^1.30.0
