@@ -78,6 +78,13 @@ export interface TranscriptPolicy {
    * `copyByCode[code]` → verbatim source message (when matched and
    * non-empty) → family copy. `verbatim` stays the DEBUG formatting knob
    * (code-prefixed raw line under the notice), independent of voice.
+   *
+   * DEFAULT `verbatimCodes` = the pod's two refusal codes, `POD_SATURATED`
+   * and `DRAINING` (guuey#882 / #888): their envelopes carry the numbers
+   * chat cannot know — the concurrent-turn cap and the retry seconds —
+   * and a generic "transient" sentence hid them from the reader. A host's
+   * `copyByCode` still wins; a host that wants family copy back passes
+   * `verbatimCodes: []`.
    */
   error: {
     verbatim: boolean;
@@ -147,12 +154,20 @@ function calmBase(): TranscriptPolicy {
     citations: { style: "chips" },
     notice: { show: true },
     prompt: { placement: "inline", rawPayload: false },
-    error: { verbatim: false, copyByCode: {}, verbatimCodes: [] },
+    error: { verbatim: false, copyByCode: {}, verbatimCodes: DEFAULT_VERBATIM_CODES },
     status: { wakingMs: 2500, longStartMs: 15_000 },
     compaction: { show: true },
     unknown: { show: true, raw: false },
   };
 }
+
+/**
+ * The refusal codes whose SOURCE message is the copy by default (guuey#882 /
+ * #888) — the pod writes both for a reader and only the pod knows the cap
+ * and the retry seconds they carry. Exported so a host can spread it into
+ * its own list rather than retype it.
+ */
+export const DEFAULT_VERBATIM_CODES: readonly string[] = ["POD_SATURATED", "DRAINING"];
 
 /** The `calm` preset — the end-user default (spec §5). */
 export function calmPolicy(overrides?: TranscriptPolicyOverrides): TranscriptPolicy {

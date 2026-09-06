@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { planTranscript } from "./plan.js";
-import { calmPolicy, debugPolicy } from "./policy.js";
+import { DEFAULT_VERBATIM_CODES, calmPolicy, debugPolicy } from "./policy.js";
 import type { ErrorItem, TranscriptInputs } from "./types.js";
 
 function inputsWithError(message: string, code: string | null): TranscriptInputs {
@@ -94,6 +94,26 @@ describe("R11 voice: defaults + debug formatting stay independent", () => {
     const item = errorItem(inputsWithError("boom", "TIMEOUT"));
     expect(item.copy).toBe(calmPolicy().strings.errorTransient);
     expect(item.verbatim).toBeNull();
+  });
+
+  it("calm defaults render the pod's two refusal envelopes VERBATIM — they carry the cap and the retry seconds chat cannot know (guuey#882 / #888)", () => {
+    const saturatedCopy = "this conversation's agent is at capacity (7 concurrent turns); retry in 15s";
+    const saturated = errorItem(inputsWithError(saturatedCopy, "POD_SATURATED"));
+    expect(saturated.copy).toBe(saturatedCopy);
+    expect(saturated.verbatim).toBeNull(); // the DEBUG line stays off — voice, not formatting
+    const drainingCopy = "this pod is shutting down; retry shortly — traffic is re-routing to a healthy pod";
+    expect(errorItem(inputsWithError(drainingCopy, "DRAINING")).copy).toBe(drainingCopy);
+    // A host's per-code sentence still wins over the verbatim default…
+    const hosted = calmPolicy({
+      error: { verbatim: false, copyByCode: { POD_SATURATED: "Busy — one moment." }, verbatimCodes: DEFAULT_VERBATIM_CODES },
+    });
+    expect(errorItem(inputsWithError(saturatedCopy, "POD_SATURATED"), hosted).copy).toBe("Busy — one moment.");
+    // …a host that wants family copy back opts out explicitly…
+    const optedOut = calmPolicy({ error: { verbatim: false, copyByCode: {}, verbatimCodes: [] } });
+    expect(errorItem(inputsWithError(saturatedCopy, "POD_SATURATED"), optedOut).copy).toBe(calmPolicy().strings.errorTransient);
+    // …and an EMPTY envelope still falls back to family copy, never a blank notice.
+    expect(errorItem(inputsWithError("", "POD_SATURATED")).copy).toBe(calmPolicy().strings.errorTransient);
+    expect(DEFAULT_VERBATIM_CODES).toEqual(["POD_SATURATED", "DRAINING"]);
   });
 
   it("debug's verbatim raw line coexists with a verbatim VOICE", () => {
