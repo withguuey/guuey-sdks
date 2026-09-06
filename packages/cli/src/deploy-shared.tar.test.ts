@@ -1,10 +1,10 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { WORKING_TREE_TAR_EXCLUDE_ARGV, tarWorkingTree, workingTreeTarSourceArgs } from './deploy-shared.js';
+import { WORKING_TREE_TAR_EXCLUDE_ARGV, cleanup, packSource, tarWorkingTree, workingTreeTarSourceArgs } from './deploy-shared.js';
 
 // guuey#867: this file spawns the real tar — a 2-vCPU runner is not the 5 s
 // default; the budget is the file's own, from birth.
@@ -68,5 +68,58 @@ describe('tarWorkingTree (guuey#896)', () => {
     expect(listed).not.toContain('./a.tsbuildinfo');
     // the shell-injection shape did NOT execute: no `pwned` file appeared
     expect(workingTreeTarSourceArgs(cwd)).not.toContain('./pwned');
+  }, TAR_BUDGET_MS);
+});
+
+describe('packSource — the git-archive path is argv too (guuey#907)', () => {
+  let cwd: string;
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), 'guuey-907-'));
+    writeFileSync(join(cwd, 'index.js'), 'export {};\n');
+    writeFileSync(join(cwd, 'package.json'), JSON.stringify({ name: 'fixture-907', version: '0.0.1', private: true }));
+    // A hermetic repo: no global config (the machine's hooks path / identity
+    // must not reach a fixture), and HEAD asserted before any case runs.
+    const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', HOME: cwd };
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'core.hooksPath=/dev/null', ...args], { cwd, stdio: 'pipe', env });
+    git('init', '-q');
+    git('add', '.');
+    git('commit', '-q', '-m', 'init');
+    execFileSync('git', ['rev-parse', '--verify', 'HEAD'], { cwd, stdio: 'pipe', env });
+  });
+  afterEach(() => rmSync(cwd, { recursive: true, force: true }));
+
+  it('a buildId with a space and $(…) lands as the tarball\'s literal path — git archive received it as one argv, nothing ran', () => {
+    // The id is part of `tarballPath`; under a shell string this would have
+    // split on the space and expanded the substitution. `touch` never runs.
+    // Slash-free on purpose: the id is a path SEGMENT, and a shell would have
+    // run `touch pwned` in the child's cwd (the fixture repo).
+    const buildId = 'b 1$(touch pwned)';
+    const result = packSource({ buildId, cwd });
+    try {
+      expect(result.tarballPath).toContain(buildId);
+      expect(existsSync(result.tarballPath)).toBe(true);
+      expect(statSync(result.tarballPath).size).toBeGreaterThan(0);
+      expect(result.tarballSize).toBe(statSync(result.tarballPath).size);
+      expect(existsSync(join(cwd, 'pwned'))).toBe(false);
+      expect(existsSync(join(process.cwd(), 'pwned'))).toBe(false);
+      // The archive lists the committed file: it really is a git archive of HEAD.
+      const listing = execFileSync('tar', ['tzf', result.tarballPath], { encoding: 'utf-8' });
+      expect(listing).toContain('index.js');
+    } finally {
+      cleanup(result.tarballPath);
+    }
+  }, TAR_BUDGET_MS);
+
+  it('the working-tree path on the same repo: `.git` is excluded (never a source), the tarball is real', () => {
+    const result = packSource({ buildId: 'wt 2$(false)', cwd, includeWorkingTree: true });
+    try {
+      expect(existsSync(result.tarballPath)).toBe(true);
+      const listing = execFileSync('tar', ['tzf', result.tarballPath], { encoding: 'utf-8' });
+      expect(listing).toContain('index.js');
+      expect(listing).not.toMatch(/\.git\//);
+    } finally {
+      cleanup(result.tarballPath);
+    }
   }, TAR_BUDGET_MS);
 });

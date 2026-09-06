@@ -19,7 +19,7 @@ import {
   statSync,
 } from 'node:fs';
 import { join, basename, resolve } from 'node:path';
-import { execFileSync, execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 
@@ -84,7 +84,11 @@ export function workingTreeTarSourceArgs(cwd: string): string[] {
 }
 
 /**
- * The ONE working-tree tar invocation (guuey#896): `execFileSync` with a
+ * Every child process in this module is `execFileSync` with a bound argv
+ * (guuey#896 for the working-tree tar, guuey#907 for the rest — git status,
+ * pnpm pack, tar -xOzf, rsync, npm, tar czf, git archive): no shell on any
+ * platform, so a path or an entry name is a byte string the tool receives
+ * verbatim. The working-tree tar's own note follows — `execFileSync` with a
  * bound argv — no shell on any platform, so an entry name is a byte string
  * tar receives verbatim (CodeQL js/shell-command-injection-from-environment
  * #37/#38/#39 named the three `execSync('tar czf …')` strings this replaces;
@@ -148,7 +152,7 @@ export function packSource(opts: {
   // would state the opposite of reality there.
   if (!includeWorkingTree) {
     try {
-      const status = execSync('git status --porcelain', { encoding: 'utf-8', cwd });
+      const status = execFileSync('git', ['status', '--porcelain'], { encoding: 'utf-8', cwd });
       if (status.trim()) {
         console.log('  Warning: uncommitted changes detected — only committed files will be deployed.');
       }
@@ -204,7 +208,7 @@ export function packSource(opts: {
       continue;
     }
     try {
-      const packOutput = execSync(`pnpm pack --pack-destination "${stagingDir}"`, {
+      const packOutput = execFileSync('pnpm', ['pack', '--pack-destination', stagingDir], {
         encoding: 'utf-8',
         stdio: 'pipe',
         cwd: sourceDir,
@@ -216,7 +220,9 @@ export function packSource(opts: {
       hasWorkspaceDeps = true;
 
       const packedPkgJson = JSON.parse(
-        execSync(`tar -xOzf "${join(stagingDir, tgzBase)}" package/package.json`, {
+        // `tgzBase` is what `pnpm pack` printed — derived from the app's own
+        // package name/version, i.e. builder-controlled: argv, never a string.
+        execFileSync('tar', ['-xOzf', join(stagingDir, tgzBase), 'package/package.json'], {
           encoding: 'utf-8',
           stdio: 'pipe',
         }),
@@ -269,8 +275,24 @@ export function packSource(opts: {
       // verified empirically on rsync 3.2.7 (Linux) and openrsync (macOS).
       // A bare `--exclude=dist` matches at ANY depth on both, which would
       // silently strip a vendored dependency's `vendor/some-dep/dist/`.
-      execSync(
-        `rsync -a --exclude=node_modules --exclude=/dist --exclude=.git --exclude='.env*' --exclude=.guuey-dev --exclude='*.tsbuildinfo' --exclude=.ggui --exclude=.guuey . "${stagingDir}/"`,
+      // argv, no shell: the quotes the shell form carried around `.env*` and
+      // `*.tsbuildinfo` only stopped the SHELL from globbing them — rsync does
+      // its own pattern matching on the bare strings, so the semantics hold.
+      execFileSync(
+        'rsync',
+        [
+          '-a',
+          '--exclude=node_modules',
+          '--exclude=/dist',
+          '--exclude=.git',
+          '--exclude=.env*',
+          '--exclude=.guuey-dev',
+          '--exclude=*.tsbuildinfo',
+          '--exclude=.ggui',
+          '--exclude=.guuey',
+          '.',
+          `${stagingDir}/`,
+        ],
         { stdio: 'pipe', cwd },
       );
       // Move packed tarballs to .ggui-deps/ inside staging
@@ -286,7 +308,8 @@ export function packSource(opts: {
         // — must be after rsync so rsync doesn't overwrite it.
         writeFileSync(join(stagingDir, 'package.json'), JSON.stringify(pkgJson, null, 2));
         try {
-          execSync('npm install --package-lock-only --ignore-scripts --legacy-peer-deps 2>/dev/null', {
+          // stderr is piped (the shell form's `2>/dev/null`), no shell involved.
+          execFileSync('npm', ['install', '--package-lock-only', '--ignore-scripts', '--legacy-peer-deps'], {
             stdio: 'pipe',
             cwd: stagingDir,
           });
@@ -294,7 +317,7 @@ export function packSource(opts: {
           // lockfile gen may warn but still produce a valid file
         }
       }
-      execSync(`tar czf "${tarballPath}" -C "${stagingDir}" .`, { stdio: 'pipe' });
+      execFileSync('tar', ['czf', tarballPath, '-C', stagingDir, '.'], { stdio: 'pipe' });
     } else if (includeWorkingTree) {
       // Opt-in working-tree tar (see doc comment) — NOT git archive, so
       // uncommitted/gitignored files (e.g. the freshly built
@@ -312,8 +335,8 @@ export function packSource(opts: {
       // and repos with no HEAD — e.g. a freshly scaffolded `--no-git` app).
       let archived = false;
       try {
-        execSync(`git rev-parse --verify HEAD`, { stdio: 'pipe', cwd });
-        execSync(`git archive --format=tar.gz -o "${tarballPath}" HEAD`, {
+        execFileSync('git', ['rev-parse', '--verify', 'HEAD'], { stdio: 'pipe', cwd });
+        execFileSync('git', ['archive', '--format=tar.gz', '-o', tarballPath, 'HEAD'], {
           stdio: 'pipe',
           cwd,
         });
