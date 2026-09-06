@@ -19,24 +19,35 @@ import {
   statSync,
 } from 'node:fs';
 import { join, basename, resolve } from 'node:path';
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 
 /**
- * `tar --exclude` flags shared by every non-git-archive packing path
+ * `tar --exclude` argv shared by every non-git-archive packing path
  * (working-tree tar, and both tar fallbacks). `.env*` (glob, not the
  * previous exact-match `.env`) so `.env.local`/`.env.production` etc. never
  * land in a tarball; `.npmrc` is a registry-token carrier; `.guuey-dev` and
  * `*.tsbuildinfo` are dev/build artifacts that don't belong in a deploy
  * either.
  *
- * NOTE: deliberately no `--exclude=dist` here — see `workingTreeTarSources`
+ * NOTE: deliberately no `--exclude=dist` here — see `workingTreeTarSourceArgs`
  * below for why the project's OWN root `dist/` is stripped by omitting it
  * from the tar source arguments instead of via a pattern flag.
  */
-const WORKING_TREE_TAR_EXCLUDES =
-  "--exclude=node_modules --exclude=.git --exclude='.env*' --exclude=.npmrc --exclude=.guuey-dev --exclude='*.tsbuildinfo' --exclude=.ggui --exclude=.guuey";
+export const WORKING_TREE_TAR_EXCLUDE_ARGV: readonly string[] = [
+  // guuey#896 (CodeQL #37/#38/#39): argv, not a shell string — the patterns
+  // reach tar unquoted on every OS (`.env*` / `*.tsbuildinfo` are tar's own
+  // globs), and no interpreter ever sees a directory entry's name.
+  '--exclude=node_modules',
+  '--exclude=.git',
+  '--exclude=.env*',
+  '--exclude=.npmrc',
+  '--exclude=.guuey-dev',
+  '--exclude=*.tsbuildinfo',
+  '--exclude=.ggui',
+  '--exclude=.guuey',
+];
 
 /**
  * Build the tar source-argument list for a working-tree tar invocation,
@@ -66,11 +77,26 @@ const WORKING_TREE_TAR_EXCLUDES =
  * and `tar --exclude` still applies to these explicitly-named top-level
  * arguments, not just implicit recursion.
  */
-function workingTreeTarSources(cwd: string): string {
+export function workingTreeTarSourceArgs(cwd: string): string[] {
   return readdirSync(cwd)
     .filter((entry) => entry !== 'dist')
-    .map((entry) => `'./${entry.replace(/'/g, `'\\''`)}'`)
-    .join(' ');
+    .map((entry) => `./${entry}`);
+}
+
+/**
+ * The ONE working-tree tar invocation (guuey#896): `execFileSync` with a
+ * bound argv — no shell on any platform, so an entry name is a byte string
+ * tar receives verbatim (CodeQL js/shell-command-injection-from-environment
+ * #37/#38/#39 named the three `execSync('tar czf …')` strings this replaces;
+ * the single-quote escaping they carried was POSIX-only and passed literal
+ * quotes to tar on Windows).
+ */
+export function tarWorkingTree(tarballPath: string, cwd: string): void {
+  execFileSync(
+    'tar',
+    ['czf', tarballPath, ...WORKING_TREE_TAR_EXCLUDE_ARGV, ...workingTreeTarSourceArgs(cwd)],
+    { stdio: 'pipe', cwd },
+  );
 }
 
 /** Result of packing a project's source into an upload-ready tarball. */
@@ -275,10 +301,7 @@ export function packSource(opts: {
       // `guuey.worker.js`) are included. SECURITY-CRITICAL: exclude secrets
       // and build/dev artifacts explicitly, since this is the one packing
       // path that ships more than `git archive`'s committed-files snapshot.
-      execSync(`tar czf "${tarballPath}" ${WORKING_TREE_TAR_EXCLUDES} ${workingTreeTarSources(cwd)}`, {
-        stdio: 'pipe',
-        cwd,
-      });
+      tarWorkingTree(tarballPath, cwd);
     } else {
       // User has their own Dockerfile and no workspace deps — git archive
       // is fastest (only ships committed files). CRITICAL: run git archive
@@ -299,18 +322,12 @@ export function packSource(opts: {
         archived = false;
       }
       if (!archived) {
-        execSync(`tar czf "${tarballPath}" ${WORKING_TREE_TAR_EXCLUDES} ${workingTreeTarSources(cwd)}`, {
-          stdio: 'pipe',
-          cwd,
-        });
+        tarWorkingTree(tarballPath, cwd);
       }
     }
   } catch {
     // Fallback: use tar directly
-    execSync(`tar czf "${tarballPath}" ${WORKING_TREE_TAR_EXCLUDES} ${workingTreeTarSources(cwd)}`, {
-      stdio: 'pipe',
-      cwd,
-    });
+    tarWorkingTree(tarballPath, cwd);
   }
 
   const tarballBuffer = readFileSync(tarballPath);
