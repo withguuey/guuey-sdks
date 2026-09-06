@@ -142,7 +142,11 @@ Agent Development:
     --size <s>                   Pod size: xs | sm | md | lg | xl (default: xs)
     --build-size <s>             Build Job size: sm | md | lg | xl (default: md, code-mode only)
     --max-pods <n>               How many pods the app may run (plan ceiling
-                                 applies; omit to leave the current setting untouched)
+                                 applies; omit to leave the current setting untouched).
+                                 With no scaling mode chosen this is a fixed count —
+                                 the auto-scaler is off; "guuey agent config
+                                 --scaling auto" keeps it as the ceiling the
+                                 scaler may grow to
     --runtime-auto-update on|off Runtime image update channel: "on" (the default)
                                  keeps the agent on the platform's current runtime
                                  image; "off" pins it at each deploy's image
@@ -160,7 +164,14 @@ Agent Development:
   deployments [list]             List deployment builds
   agent config                   Show the app's hosting config (pods, runtime image updates)
     --max-pods <n>               Set how many pods the app runs — applies to the
-                                 LIVE app, no redeploy (converges within ~5 minutes)
+                                 LIVE app, no redeploy (converges within ~5 minutes).
+                                 With no scaling mode chosen this sets Scaling to
+                                 fixed — the auto-scaler is off; add --scaling auto
+                                 to keep <n> as the ceiling the scaler may grow to
+    --scaling auto|fixed         auto: the platform adds a pod when every turn slot
+                                 is busy, up to the pod limit (the default for an
+                                 app that never hand-set a count); fixed: runs
+                                 exactly the pod limit — the auto-scaler is off
     --runtime-auto-update on|off Automatic runtime image updates (default on) or
                                  pinned to the image captured at the last deploy
     --worker-reservation-mib <n> Per-turn worker memory reservation in MiB — the

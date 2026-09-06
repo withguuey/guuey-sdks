@@ -116,13 +116,22 @@ export function portalLine(host: string | undefined, appId: string): string | nu
  * and read as a billing promise (scaling S1, guuey#162). One helper so the
  * three deploy paths cannot drift back apart.
  */
-function printPodLifetime(maxPods: number | undefined): void {
+export function printPodLifetime(maxPods: number | undefined): void {
   console.log('  Pods run continuously — no scale-to-zero, no idle timeout.');
   console.log(
     maxPods === undefined
       ? '  Set the pod limit with --max-pods, or "guuey agent config --max-pods <n>".'
       : '  Change the limit with "guuey agent config --max-pods <n>" — no redeploy.',
   );
+  if (maxPods !== undefined) {
+    // guuey#933: a hand-set count with no scaling mode chosen runs as a FIXED
+    // count (the guuey#752 derivation) — the auto-scaler is off. Said here,
+    // where the number was just set; the knob that keeps it a ceiling stands
+    // on `guuey agent config` (deploy carries no --scaling).
+    console.log(
+      '  With no scaling mode chosen this is a fixed count — the auto-scaler is off; "guuey agent config --scaling auto" keeps it as the ceiling the scaler may grow to.',
+    );
+  }
 }
 
 /**

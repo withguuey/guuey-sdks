@@ -3,7 +3,8 @@
  *
  * Subcommands:
  *   config                     Show the app's scaling config
- *   config --max-pods <n>      Set the app's pod limit
+ *   config --max-pods <n>      Set the app's pod limit (with no scaling mode
+ *                              chosen: a FIXED count, the auto-scaler off — guuey#933)
  *   config --worker-reservation-mib <n>   Per-turn worker memory reservation (MiB)
  *   config --clear-worker-reservation     Back to the platform default (256 MiB)
  *   config --scaling <mode>    Choose `auto` (the platform adds pods under
@@ -208,12 +209,24 @@ export async function agentConfig(
       );
     }
   }
-  if (patch.scaling !== undefined) {
+  // guuey#933: the resulting REGIME rides every write that touches the count
+  // or the mode. A hand-set count with no scaling mode chosen reads back
+  // `fixed` (the guuey#752 derivation) — the auto-scaler is off — and a write
+  // that said only "Max pods set to 3." left the builder opted out of
+  // autoscaling without a word. The line comes from the readback, never the
+  // request; the opt-out hint names the knob that keeps the number a
+  // ceiling, and only when `fixed` was not the builder's own choice.
+  if (patch.maxPods !== undefined || patch.scaling !== undefined) {
     out.success(
       updated.scaling === 'auto'
         ? `Scaling: auto — the platform adds a pod when every turn slot is busy, up to ${updated.maxPods ?? updated.maxPodsCeiling}.`
         : `Scaling: fixed — this agent runs exactly ${updated.maxPods ?? 1} pod${(updated.maxPods ?? 1) === 1 ? '' : 's'}.`,
     );
+    if (updated.scaling === 'fixed' && patch.scaling === undefined) {
+      console.log(
+        '  Under fixed the auto-scaler is off. To keep this number as the ceiling the platform may scale up to instead, run "guuey agent config --scaling auto".',
+      );
+    }
   }
   if (patch.runtimeAutoUpdate !== undefined) {
     out.success(

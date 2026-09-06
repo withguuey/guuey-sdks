@@ -45,3 +45,30 @@ describe('cli.ts --help — widget keys revoke section', () => {
     expect(revokeHelp).toMatch(/keep(s)? their identity/i);
   });
 });
+
+// guuey#933: `--max-pods` on its own runs the app as a FIXED count (the
+// guuey#752 derivation — a hand-set count with no scaling mode chosen is
+// `fixed`, the auto-scaler off). The help is what a builder reads BEFORE the
+// write, so both entries say so and name the knob that keeps the number a
+// ceiling — and the `--scaling` knob itself is listed, which it was not.
+const deployMaxPodsHelp = section(
+  '--max-pods <n>               How many pods',
+  '--runtime-auto-update on|off Runtime image',
+);
+const agentConfigHelp = section(
+  'agent config                   Show',
+  '--runtime-auto-update on|off Automatic',
+);
+
+describe('cli.ts --help — --max-pods names the scaling regime it lands (guuey#933)', () => {
+  it('deploy --max-pods: a fixed count unless a scaling mode is chosen, and the way to keep it a ceiling', () => {
+    expect(deployMaxPodsHelp).toMatch(/fixed/);
+    expect(deployMaxPodsHelp).toMatch(/auto-scaler is off/);
+    expect(deployMaxPodsHelp).toMatch(/--scaling auto/);
+  });
+
+  it('agent config --max-pods: the same rule, with --scaling auto|fixed documented beside it', () => {
+    expect(agentConfigHelp).toMatch(/--max-pods[\s\S]*auto-scaler is off[\s\S]*--scaling auto/);
+    expect(agentConfigHelp).toMatch(/--scaling auto\|fixed/);
+  });
+});

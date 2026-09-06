@@ -12,7 +12,7 @@ import {
   pollDeployStatus,
   portalLine,
   portalOriginForHost,
-  printPageLine,
+  printPageLine, printPodLifetime,
 } from './deploy.js';
 import { DEPLOY_WAIT_MS, NODE_PROVISION_BUDGET_MS, stillDeployingMessage } from './deploy-wait.js';
 import { resolveConfig, loadProjectConfig } from '../config.js';
@@ -314,6 +314,21 @@ describe('awaitPageUrl / printPageLine (guuey#249)', () => {
     expect(logSpy.mock.calls.flat()).toEqual([
       "  Your agent's page: https://weather-bot-k7q2.agents.guuey.test/",
     ]);
+  });
+
+  // guuey#933: `deploy --max-pods N` with no scaling mode chosen lands a FIXED
+  // count (the auto-scaler off) — the line after the deploy says so and names
+  // the knob that keeps N a ceiling. Without a limit there is no regime claim.
+  it('printPodLifetime: a set limit names the regime it runs under and the knob that keeps it a ceiling (guuey#933)', () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    printPodLifetime(3);
+    const withLimit = logSpy.mock.calls.flat().join('\n');
+    expect(withLimit).toMatch(/fixed count/);
+    expect(withLimit).toMatch(/auto-scaler is off/);
+    expect(withLimit).toContain('guuey agent config --scaling auto');
+    logSpy.mockClear();
+    printPodLifetime(undefined);
+    expect(logSpy.mock.calls.flat().join('\n')).not.toMatch(/auto-scaler/);
   });
 });
 

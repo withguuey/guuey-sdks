@@ -311,6 +311,55 @@ describe('guuey agent config', () => {
       expect(JSON.parse(stdout())).toEqual(SCALED);
     });
 
+    // guuey#933: a hand-set count with NO scaling mode chosen reads back
+    // `fixed` (the guuey#752 derivation) — the auto-scaler is off — and until
+    // this test the write said only "Max pods set to 3." The regime line
+    // rides the READBACK, never the request; the opt-out hint names the knob
+    // that keeps the number a ceiling, and only when `fixed` was not the
+    // builder's own choice.
+    it('a count that reads back fixed says the auto-scaler is off and offers --scaling auto (guuey#933)', async () => {
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify(SCALED), { status: 200 }));
+
+      await agentConfig({ 'max-pods': '3' });
+
+      expect(stdout()).toContain('Scaling: fixed — this agent runs exactly 3 pods.');
+      expect(stdout()).toContain('auto-scaler is off');
+      expect(stdout()).toContain('guuey agent config --scaling auto');
+    });
+
+    it('a count under an explicit auto knob reads back auto — the ceiling line, no opt-out hint', async () => {
+      fetchSpy.mockResolvedValue(
+        new Response(JSON.stringify({ ...SCALED, scaling: 'auto' }), { status: 200 }),
+      );
+
+      await agentConfig({ 'max-pods': '3' });
+
+      expect(stdout()).toContain(
+        'Scaling: auto — the platform adds a pod when every turn slot is busy, up to 3.',
+      );
+      expect(stdout()).not.toContain('auto-scaler is off');
+      expect(stdout()).not.toContain('--scaling auto');
+    });
+
+    it('--max-pods with --scaling fixed: the builder chose fixed — the regime line once, no opt-out hint', async () => {
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify(SCALED), { status: 200 }));
+
+      await agentConfig({ 'max-pods': '3', scaling: 'fixed' });
+
+      expect((stdout().match(/Scaling: fixed — /g) ?? []).length).toBe(1);
+      expect(stdout()).not.toContain('--scaling auto');
+    });
+
+    it('--max-pods with --scaling auto: the ceiling line exactly once', async () => {
+      fetchSpy.mockResolvedValue(
+        new Response(JSON.stringify({ ...SCALED, scaling: 'auto' }), { status: 200 }),
+      );
+
+      await agentConfig({ 'max-pods': '3', scaling: 'auto' });
+
+      expect((stdout().match(/Scaling: auto — /g) ?? []).length).toBe(1);
+    });
+
     it('renders the AGENT_MAX_PODS 409 with its code and the real ceiling', async () => {
       // The server names the ceiling; the CLI does not guess one (the old
       // dormant body's hardcoded 1..10 matched no tier).
