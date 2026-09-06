@@ -1,6 +1,6 @@
 {
   "schema": "1",
-  "protocol": "draft-2026-06-12",
+  "protocol": "draft-2026-09-04",
   "app": {
     "slug": "agentic-app-template",
     "name": "agentic-app-template"
