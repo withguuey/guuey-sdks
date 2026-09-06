@@ -7,6 +7,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AuthTokens } from '../auth';
 import type { ResolvedConfig } from '../config';
 import {
+  billingAutoRechargeCore,
+  type AutoRechargeViewWire,
   appsSubscribeCore,
   billingAppRow,
   billingSummaryCore,
@@ -59,6 +61,7 @@ const SUMMARY: BillingSummaryWire = {
   topUpAmountsUsd: [25, 50, 100, 250],
   bonusBalanceUsd: null,
   activePromotion: null,
+  autoRecharge: null,
 };
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -535,5 +538,107 @@ describe('invoicing (guuey#831)', () => {
     expect(text).toContain("Invoices: couldn't be read right now (");
     expect(text).toContain(SUMMARY.consoleBillingUrl);
     logSpy.mockRestore();
+  });
+});
+
+describe('guuey billing auto-recharge (guuey#756 L2) — the CLI face of setAutoRecharge', () => {
+  const VIEW_ON: AutoRechargeViewWire = {
+    enabled: true,
+    thresholdUsd: 20,
+    amountUsd: 25,
+    monthlyCapUsd: 200,
+    consentAt: '2026-09-06T07:00:00.000Z',
+    consentLast4: '4242',
+    monthUsd: 50,
+    lastAttemptAt: null,
+    lastAttemptOutcome: null,
+    lastAttemptDeclineCode: null,
+    lastAttemptRef: null,
+    inFlightRef: null,
+    receiptEmails: true,
+    lastHold: null,
+    lastHoldSentence: null,
+  };
+  const CONSENT = {
+    textVersion: '2026-09-04-amendment-D2-v1',
+    creditOptIn: 'Prepaid credit is optional…',
+    autoRechargeOptIn: 'When your balance would fall under $20 we charge your Visa ····4242 $25…',
+    card: { brand: 'visa', last4: '4242' },
+  };
+  afterEach(() => vi.restoreAllMocks());
+
+  it('show: reads the summary and prints the off line with the how-to when nothing is set', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const api = vi.fn(async () => jsonResponse(200, SUMMARY));
+    await billingAutoRechargeCore({ action: { kind: 'show' }, workspaceId: null, yes: false, json: false, auth, config }, { api });
+    expect(api).toHaveBeenCalledWith(auth.pat, config, 'GET', '/billing');
+    expect(log.mock.calls.flat().join('\n')).toContain('Auto-recharge: off — guuey billing auto-recharge --on');
+  });
+
+  it('--on: shows BOTH consent paragraphs from the API, asks for a typed yes, then PUTs the settings with the version it showed', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const calls: Array<{ method: string; path: string; body?: unknown }> = [];
+    const api = vi.fn(async (_pat: string, _cfg: unknown, method: string, path: string, body?: unknown) => {
+      calls.push({ method, path, body });
+      if (method === 'GET') return jsonResponse(200, CONSENT);
+      return jsonResponse(200, { autoRecharge: VIEW_ON });
+    });
+    const confirm = vi.fn(async () => true);
+    await billingAutoRechargeCore(
+      { action: { kind: 'on', thresholdUsd: 20, amountUsd: 25, monthlyCapUsd: 200, receiptEmails: true }, workspaceId: null, yes: false, json: false, auth, config },
+      { api, confirm },
+    );
+    expect(calls[0]).toMatchObject({ method: 'GET', path: '/billing/auto-recharge/consent?thresholdUsd=20&amountUsd=25&monthlyCapUsd=200' });
+    const printed = log.mock.calls.flat().join('\n');
+    expect(printed).toContain(CONSENT.creditOptIn);
+    expect(printed).toContain(CONSENT.autoRechargeOptIn);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(calls[1]).toEqual({
+      method: 'PUT',
+      path: '/billing/auto-recharge',
+      body: { enabled: true, thresholdUsd: 20, amountUsd: 25, monthlyCapUsd: 200, receiptEmails: true, consentTextVersion: CONSENT.textVersion },
+    });
+    expect(printed).toContain('Auto-recharge: on — adds $25 of credit when the balance would fall under $20; cap $200/month ($50 used this month)');
+  });
+
+  it('--on without the typed yes writes NOTHING; --yes skips the prompt; --workspace rides the query on both calls', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const api = vi.fn(async (_p: string, _c: unknown, method: string, _path?: string, _body?: unknown) =>
+      method === 'GET' ? jsonResponse(200, CONSENT) : jsonResponse(200, { autoRecharge: VIEW_ON }),
+    );
+    await billingAutoRechargeCore(
+      { action: { kind: 'on', thresholdUsd: 20, amountUsd: 25, monthlyCapUsd: 200, receiptEmails: null }, workspaceId: null, yes: false, json: false, auth, config },
+      { api, confirm: async () => false },
+    );
+    expect(api.mock.calls.map((c) => c[2])).toEqual(['GET']);
+    api.mockClear();
+    await billingAutoRechargeCore(
+      { action: { kind: 'on', thresholdUsd: 20, amountUsd: 25, monthlyCapUsd: 200, receiptEmails: null }, workspaceId: 'ws-1', yes: true, json: true, auth, config },
+      {
+        api,
+        confirm: async () => {
+          throw new Error('prompt must not run with --yes');
+        },
+      },
+    );
+    expect(api.mock.calls.map((c) => [c[2], c[3]])).toEqual([
+      ['GET', '/billing/auto-recharge/consent?thresholdUsd=20&amountUsd=25&monthlyCapUsd=200&workspaceId=ws-1'],
+      ['PUT', '/billing/auto-recharge?workspaceId=ws-1'],
+    ]);
+    expect(api.mock.calls[1]?.[4]).not.toHaveProperty('receiptEmails');
+  });
+
+  it('--off PUTs { enabled: false } with no consent round-trip; an API refusal surfaces its sentence', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const api = vi.fn(async () => jsonResponse(200, { autoRecharge: { ...VIEW_ON, enabled: false } }));
+    await billingAutoRechargeCore({ action: { kind: 'off' }, workspaceId: null, yes: false, json: false, auth, config }, { api });
+    expect(api).toHaveBeenCalledTimes(1);
+    expect(api).toHaveBeenCalledWith(auth.pat, config, 'PUT', '/billing/auto-recharge', { enabled: false });
+    const refused = vi.fn(async () =>
+      jsonResponse(400, { error: { code: 'VALIDATION', message: 'Auto-recharge needs a saved card — add one in Billing, then turn it on.' } }),
+    );
+    await expect(
+      billingAutoRechargeCore({ action: { kind: 'off' }, workspaceId: null, yes: false, json: false, auth, config }, { api: refused }),
+    ).rejects.toThrow(/needs a saved card/);
   });
 });

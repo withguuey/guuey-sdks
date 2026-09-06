@@ -71,7 +71,7 @@ import { agentConfig } from './commands/agent';
 import { agentApply, agentRollback, agentStatus } from './commands/agent-apply';
 import { domainsAdd, domainsList, domainsVerify, domainsRemove } from './commands/domains';
 import { tokensCreate, tokensList, tokensRevoke } from './commands/tokens';
-import { appsSubscribe, billing, billingInvoice, billingTopUp } from './commands/billing';
+import { appsSubscribe, billing, billingAutoRecharge, billingInvoice, billingTopUp } from './commands/billing';
 import { slugClaim, slugRelease } from './commands/slug';
 import { ApiError } from './client';
 import { printWelcome, printQuickGuide } from './logo';
@@ -295,6 +295,11 @@ Authentication:
                                  billing console URL
   billing invoice               The next invoice (total, issue date, per-agent
                                  split) + recent invoices, alone (--json = the wire)
+  billing auto-recharge         Show, turn on (--on --amount <usd> --threshold <usd>
+                                 --cap <usd> [--receipts on|off] [--yes]) or turn off
+                                 (--off) automatic credit top-ups; --workspace <id>
+                                 for a workspace wallet (admin); the consent text
+                                 is shown and must be agreed before turning on
   billing topup                 Add credits that pre-pay your next invoices
     --app <appId>               App whose account is topped up (default:
                                  guuey.json)
@@ -850,6 +855,11 @@ async function main(): Promise<void> {
       // credit top-up door (guuey#611).
       if (action === 'topup') {
         await billingTopUp(flags);
+        break;
+      }
+      // guuey#756 L2: the wallet's automatic credit top-ups.
+      if (action === 'auto-recharge') {
+        await billingAutoRecharge(flags);
         break;
       }
       // guuey#831: the wallet's next invoice + issued history, alone.

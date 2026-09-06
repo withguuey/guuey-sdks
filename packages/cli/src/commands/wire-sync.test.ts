@@ -153,6 +153,12 @@ describe.skipIf(!haveWire)('CLI wire mirrors — sync guards against @guuey-priv
       'CreditTopUpResultWire',
       // guuey#756 L3 — the promotion the bonus lines print.
       'CreditPromotionWire',
+      // guuey#756 L2 — `guuey billing auto-recharge` renders the view, sends the body,
+      // shows the consent paragraphs and branches on the write result.
+      'AutoRechargeViewWire',
+      'AutoRechargeSettingsBody',
+      'AutoRechargeWriteResultWire',
+      'AutoRechargeConsentWire',
     ]) {
       expect(parseInterfaceFields(cli, name)).toEqual(parseInterfaceFields(wire, name));
     }

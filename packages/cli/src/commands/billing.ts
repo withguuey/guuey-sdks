@@ -30,6 +30,7 @@ import { requireAuth, type AuthTokens } from '../auth';
 import { resolveConfig, type ResolvedConfig } from '../config';
 import { apiRequest, parseApiError } from '../deploy-shared';
 import { openUrl } from '../open-url';
+import { createInterface } from 'node:readline';
 import * as out from '../output';
 
 // ─── Wire mirrors (SYNC: backend/libs/cli-wire/billing.ts) ────────────
@@ -80,6 +81,45 @@ export interface BillingSummaryWire {
   activePromotion: CreditPromotionWire | null;
   /** guuey#611 — the env's top-up allowlist; empty = top-ups are dark here. */
   topUpAmountsUsd: number[];
+  autoRecharge: AutoRechargeViewWire | null;
+}
+/** Mirror of `AutoRechargeViewWire` (guuey#756 L2). */
+export interface AutoRechargeViewWire {
+  enabled: boolean;
+  thresholdUsd: number | null;
+  amountUsd: number | null;
+  monthlyCapUsd: number | null;
+  consentAt: string | null;
+  consentLast4: string | null;
+  monthUsd: number;
+  lastAttemptAt: string | null;
+  lastAttemptOutcome: string | null;
+  lastAttemptDeclineCode: string | null;
+  lastAttemptRef: string | null;
+  inFlightRef: string | null;
+  receiptEmails: boolean;
+  lastHold: string | null;
+  lastHoldSentence: string | null;
+}
+/** Mirror of `AutoRechargeSettingsBody`. */
+export interface AutoRechargeSettingsBody {
+  enabled: boolean;
+  thresholdUsd?: number | null;
+  amountUsd?: number | null;
+  monthlyCapUsd?: number | null;
+  receiptEmails?: boolean | null;
+  consentTextVersion?: string | null;
+}
+/** Mirror of `AutoRechargeWriteResultWire`. */
+export interface AutoRechargeWriteResultWire {
+  autoRecharge: AutoRechargeViewWire;
+}
+/** Mirror of `AutoRechargeConsentWire`. */
+export interface AutoRechargeConsentWire {
+  textVersion: string;
+  creditOptIn: string;
+  autoRechargeOptIn: string;
+  card: PaymentMethodOnFileWire;
 }
 
 /** Mirror of `SubscribeAppResultWire`. */
@@ -468,6 +508,7 @@ export async function billingSummaryCore(
     }
   }
   for (const line of bonusCreditLines(data)) console.log(`  ${line}`);
+  for (const line of autoRechargeLines(data.autoRecharge)) console.log(`  ${line}`);
   // guuey#831: the wallet's next invoice + issued history — a SECOND read
   // that must never cost the reader the summary above: any failure is one
   // honest line, and the console door still prints.
@@ -694,6 +735,156 @@ export async function appsSubscribe(
       auth,
       config,
     });
+  } catch (err) {
+    out.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+}
+
+// ─── guuey billing auto-recharge (guuey#756 L2) ──────────────────────────────
+
+const usdShort = (n: number | null): string => (n === null ? '?' : `$${Number.isInteger(n) ? n.toFixed(0) : n.toFixed(2)}`);
+
+export function autoRechargeLines(a: AutoRechargeViewWire | null): string[] {
+  if (a === null || !a.enabled) {
+    return ['Auto-recharge: off — guuey billing auto-recharge --on --amount <usd> --threshold <usd> --cap <usd>'];
+  }
+  const lines = [
+    `Auto-recharge: on — adds ${usdShort(a.amountUsd)} of credit when the balance would fall under ${usdShort(a.thresholdUsd)}; cap ${usdShort(a.monthlyCapUsd)}/month (${usdShort(a.monthUsd)} used this month)`,
+  ];
+  if (a.lastHoldSentence !== null) lines.push(`  ${a.lastHoldSentence}`);
+  if (a.lastAttemptAt !== null) {
+    lines.push(
+      `  Last attempt: ${a.lastAttemptOutcome ?? '?'} at ${a.lastAttemptAt}${a.lastAttemptDeclineCode !== null ? ` (${a.lastAttemptDeclineCode})` : ''}`,
+    );
+  }
+  return lines;
+}
+
+async function confirmTypedYes(question: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await new Promise<string>((resolve) => rl.question(question, resolve));
+    return answer.trim().toLowerCase() === 'yes';
+  } finally {
+    rl.close();
+  }
+}
+
+export type AutoRechargeAction =
+  | { kind: 'show' }
+  | { kind: 'off' }
+  | { kind: 'on'; thresholdUsd: number; amountUsd: number; monthlyCapUsd: number; receiptEmails: boolean | null };
+
+function wsQuery(workspaceId: string | null): string {
+  return workspaceId === null ? '' : `?workspaceId=${encodeURIComponent(workspaceId)}`;
+}
+
+export async function billingAutoRechargeCore(
+  opts: { action: AutoRechargeAction; workspaceId: string | null; yes: boolean; json: boolean; auth: AuthTokens; config: ResolvedConfig },
+  deps?: { api?: typeof apiRequest; confirm?: (question: string) => Promise<boolean> },
+): Promise<void> {
+  const api = deps?.api ?? apiRequest;
+  const confirm = deps?.confirm ?? confirmTypedYes;
+  const fail = async (res: Response): Promise<never> => {
+    const data: unknown = await res.json().catch(() => ({}));
+    throw new Error(parseApiError(data, `HTTP ${res.status}`));
+  };
+  const show = (a: AutoRechargeViewWire | null): void => {
+    if (opts.json) {
+      out.json({ autoRecharge: a });
+      return;
+    }
+    for (const line of autoRechargeLines(a)) console.log(`  ${line}`);
+  };
+  if (opts.action.kind === 'show') {
+    if (opts.workspaceId !== null) {
+      throw new Error('The workspace view lives in the console (Billing → Credits); --workspace pairs with --on/--off here.');
+    }
+    const res = await api(opts.auth.pat, opts.config, 'GET', '/billing');
+    if (!res.ok) return fail(res);
+    const data = (await res.json()) as BillingSummaryWire;
+    show(data.autoRecharge);
+    return;
+  }
+  let body: AutoRechargeSettingsBody;
+  if (opts.action.kind === 'off') {
+    body = { enabled: false };
+  } else {
+    const { thresholdUsd, amountUsd, monthlyCapUsd, receiptEmails } = opts.action;
+    const q = new URLSearchParams({
+      thresholdUsd: String(thresholdUsd),
+      amountUsd: String(amountUsd),
+      monthlyCapUsd: String(monthlyCapUsd),
+      ...(opts.workspaceId !== null ? { workspaceId: opts.workspaceId } : {}),
+    });
+    const consentRes = await api(opts.auth.pat, opts.config, 'GET', `/billing/auto-recharge/consent?${q.toString()}`);
+    if (!consentRes.ok) return fail(consentRes);
+    const consent = (await consentRes.json()) as AutoRechargeConsentWire;
+    if (!opts.json) {
+      console.log('');
+      console.log(`  ${consent.creditOptIn}`);
+      console.log('');
+      console.log(`  ${consent.autoRechargeOptIn}`);
+      console.log('');
+    }
+    if (!opts.yes) {
+      const agreed = await confirm('  Type yes to turn auto-recharge on with these terms: ');
+      if (!agreed) {
+        console.log('  Not changed.');
+        return;
+      }
+    }
+    body = {
+      enabled: true,
+      thresholdUsd,
+      amountUsd,
+      monthlyCapUsd,
+      ...(receiptEmails !== null ? { receiptEmails } : {}),
+      consentTextVersion: consent.textVersion,
+    };
+  }
+  const res = await api(opts.auth.pat, opts.config, 'PUT', `/billing/auto-recharge${wsQuery(opts.workspaceId)}`, body);
+  if (!res.ok) return fail(res);
+  const data = (await res.json()) as AutoRechargeWriteResultWire;
+  show(data.autoRecharge);
+}
+
+function usdFlag(flags: Record<string, string | true> | undefined, name: string): number | null {
+  const raw = flags?.[name];
+  if (typeof raw !== 'string') return null;
+  const n = Number(raw.trim());
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * `guuey billing auto-recharge` — show · `--off` · `--on --amount <usd>
+ * --threshold <usd> --cap <usd> [--receipts on|off] [--workspace <id>] [--yes] [--json]`
+ */
+export async function billingAutoRecharge(flags?: Record<string, string | true>): Promise<void> {
+  const config = resolveConfig();
+  const ws = flags?.workspace;
+  const workspaceId = typeof ws === 'string' && ws.length > 0 ? ws : null;
+  let action: AutoRechargeAction;
+  if (flags?.on === true) {
+    const thresholdUsd = usdFlag(flags, 'threshold');
+    const amountUsd = usdFlag(flags, 'amount');
+    const monthlyCapUsd = usdFlag(flags, 'cap');
+    if (thresholdUsd === null || amountUsd === null || monthlyCapUsd === null) {
+      out.error('Usage: guuey billing auto-recharge --on --amount <usd> --threshold <usd> --cap <usd> [--receipts on|off] [--workspace <id>] [--yes]');
+      process.exit(1);
+    }
+    const receipts = flags?.receipts;
+    const receiptEmails = receipts === 'on' ? true : receipts === 'off' ? false : null;
+    action = { kind: 'on', thresholdUsd, amountUsd, monthlyCapUsd, receiptEmails };
+  } else if (flags?.off === true) {
+    action = { kind: 'off' };
+  } else {
+    action = { kind: 'show' };
+  }
+  const auth = requireAuth();
+  try {
+    await billingAutoRechargeCore({ action, workspaceId, yes: flags?.yes === true, json: flags?.json === true, auth, config });
   } catch (err) {
     out.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
