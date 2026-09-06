@@ -13,6 +13,7 @@ import {
   billingTopUpCore,
   BILLING_COLUMNS,
   cardLine,
+  bonusCreditLines,
   creditBalanceLine,
   CREDIT_TOPUP_BUSINESS_USE_LINE,
   CREDIT_TOPUP_REFUND_WORDING,
@@ -56,6 +57,8 @@ const SUMMARY: BillingSummaryWire = {
   consoleBillingUrl: 'https://dev.platform.sandbox.guuey.com/dashboard/billing',
   creditBalanceUsd: 75,
   topUpAmountsUsd: [25, 50, 100, 250],
+  bonusBalanceUsd: null,
+  activePromotion: null,
 };
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -164,6 +167,34 @@ describe('billingSummaryCore', () => {
         { api: vi.fn(async () => jsonResponse(401, { error: { code: 'UNAUTHENTICATED', message: 'bad pat' } })) },
       ),
     ).rejects.toThrow(/bad pat/);
+  });
+});
+
+describe('bonusCreditLines (guuey#756 L3)', () => {
+  it('prints nothing for a wallet with no bonus and no open promotion — never a bonus sentence to someone who never earned one', () => {
+    expect(bonusCreditLines({ bonusBalanceUsd: null, activePromotion: null })).toEqual([]);
+    expect(bonusCreditLines({ bonusBalanceUsd: 0, activePromotion: null })).toEqual([]);
+  });
+
+  it('prints the balance as usage-only credit, and the open promotion with its rate and end date', () => {
+    const promo = {
+      id: 'promo_launch',
+      rateBps: 1000,
+      startsAt: '2026-09-10T00:00:00.000Z',
+      endsAt: '2026-10-01T00:00:00.000Z',
+      headline: '10 % bonus credit on every top-up',
+    };
+    expect(bonusCreditLines({ bonusBalanceUsd: 12.5, activePromotion: null })).toEqual([
+      'Bonus credit: $12.50 — applied to usage lines on your next invoices, never the plan fee',
+    ]);
+    expect(bonusCreditLines({ bonusBalanceUsd: null, activePromotion: promo })).toEqual([
+      'Top-ups earn a 10% bonus until 2026-10-01 — 10 % bonus credit on every top-up',
+    ]);
+    // A fractional rate keeps one decimal; both lines print when both exist, balance first.
+    expect(bonusCreditLines({ bonusBalanceUsd: 3, activePromotion: { ...promo, rateBps: 1250 } })).toEqual([
+      'Bonus credit: $3.00 — applied to usage lines on your next invoices, never the plan fee',
+      'Top-ups earn a 12.5% bonus until 2026-10-01 — 10 % bonus credit on every top-up',
+    ]);
   });
 });
 

@@ -55,6 +55,15 @@ export interface BillingAppWire {
   trialStatus: string | null;
 }
 
+/** Mirror of `CreditPromotionWire` (guuey#756 L3). */
+export interface CreditPromotionWire {
+  id: string;
+  rateBps: number;
+  startsAt: string;
+  endsAt: string;
+  headline: string;
+}
+
 /** Mirror of `BillingSummaryWire`. */
 export interface BillingSummaryWire {
   ownerType: string;
@@ -65,6 +74,10 @@ export interface BillingSummaryWire {
   consoleBillingUrl: string;
   /** guuey#611 — the wallet's credit balance (USD); null = unknown. */
   creditBalanceUsd: number | null;
+  /** guuey#756 L3 — the wallet's BONUS credit (USD), drawn against usage only; 0 = none; null = no wallet yet. */
+  bonusBalanceUsd: number | null;
+  /** guuey#756 L3 — the promotion in force, or null (top-ups earn no bonus). */
+  activePromotion: CreditPromotionWire | null;
   /** guuey#611 — the env's top-up allowlist; empty = top-ups are dark here. */
   topUpAmountsUsd: number[];
 }
@@ -260,6 +273,30 @@ export function creditBalanceLine(summary: {
   return `Credit balance: $${summary.creditBalanceUsd.toFixed(2)} — applies to your next invoices`;
 }
 
+/**
+ * The bonus lines (guuey#756 L3, mechanism C), from the READ only: the
+ * balance when there is one, and the open promotion when there is one.
+ * Nothing prints when neither exists — a wallet that never earned a bonus
+ * is not told about bonuses.
+ */
+export function bonusCreditLines(summary: {
+  bonusBalanceUsd: number | null;
+  activePromotion: CreditPromotionWire | null;
+}): string[] {
+  const lines: string[] = [];
+  if (summary.bonusBalanceUsd !== null && summary.bonusBalanceUsd > 0) {
+    lines.push(
+      `Bonus credit: $${summary.bonusBalanceUsd.toFixed(2)} — applied to usage lines on your next invoices, never the plan fee`,
+    );
+  }
+  const promo = summary.activePromotion;
+  if (promo !== null) {
+    const pct = (promo.rateBps / 100).toFixed(promo.rateBps % 100 === 0 ? 0 : 1);
+    lines.push(`Top-ups earn a ${pct}% bonus until ${promo.endsAt.slice(0, 10)} — ${promo.headline}`);
+  }
+  return lines;
+}
+
 /** One `guuey billing` table row. */
 export function billingAppRow(app: BillingAppWire): Record<string, string> {
   const notes: string[] = [];
@@ -430,6 +467,7 @@ export async function billingSummaryCore(
       );
     }
   }
+  for (const line of bonusCreditLines(data)) console.log(`  ${line}`);
   // guuey#831: the wallet's next invoice + issued history — a SECOND read
   // that must never cost the reader the summary above: any failure is one
   // honest line, and the console door still prints.

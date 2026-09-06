@@ -151,6 +151,8 @@ describe.skipIf(!haveWire)('CLI wire mirrors — sync guards against @guuey-priv
       'SubscribeAppResultWire',
       // guuey#611 — `guuey billing topup` branches on status/url/ref.
       'CreditTopUpResultWire',
+      // guuey#756 L3 — the promotion the bonus lines print.
+      'CreditPromotionWire',
     ]) {
       expect(parseInterfaceFields(cli, name)).toEqual(parseInterfaceFields(wire, name));
     }
