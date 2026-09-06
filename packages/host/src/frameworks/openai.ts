@@ -45,7 +45,8 @@ import {
 } from "./claude-options.js";
 import {
   RESPONSE_NORMS_SECTION,
-  renderSurfaceSection, renderGenerativeUiSection, renderMemorySection, renderProfileSection, renderResourcesSection } from "../preamble.js";
+  renderSurfaceSection, renderGenerativeUiSection, renderMemorySection, renderProfileSection, renderResourcesSection,
+  renderMcpAvailabilitySection } from "../preamble.js";
 import type { HostInvoke, HostRuntime } from "./claude.js";
 import { GUUEY_DEFAULT_SYSTEM_PROMPT, defaultModelFor, type GuueyAgent } from "@guuey/config";
 import { resolveSdkVersion } from "../sdk-version.js";
@@ -195,6 +196,7 @@ export async function runInvokeOpenai(
       (resourcesOn ? renderResourcesSection(resourceCount, invoke.fs.app) : "") +
       // guuey#531: surface-formatting hints — default ON, only an explicit
       // `agent.surfaceHints: false` suppresses. Before the norms (LAST).
+      renderMcpAvailabilitySection(invoke.mcpAvailability) +
       renderSurfaceSection(snapshot.surfaceHints) +
       // guuey#630: the generative-UI section — DIRECTLY AFTER the surface
       // section it qualifies. Gated inside the renderer on `gguiAttached`

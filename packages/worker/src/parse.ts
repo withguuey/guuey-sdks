@@ -21,6 +21,8 @@ import type {
   TextEvent,
   WorkerEvent,
   WorkerHelloEvent,
+  McpAvailability,
+  McpAvailabilityState,
 } from "./protocol.js";
 
 export function isInvoke(m: ControlMessage): m is Invoke {
@@ -102,6 +104,35 @@ function parseProfileSections(v: JsonValue | undefined): ProfileSection[] | unde
   return out.length > 0 ? out : undefined;
 }
 
+const MCP_AVAILABILITY_STATES: ReadonlySet<string> = new Set([
+  "connected",
+  "needs_authorization",
+  "denied",
+  "unavailable",
+]);
+
+function isMcpAvailabilityState(v: unknown): v is McpAvailabilityState {
+  return typeof v === "string" && MCP_AVAILABILITY_STATES.has(v);
+}
+
+/**
+ * guuey#901 — `mcpAvailability`: an array of `{ server, state }`; a malformed
+ * entry (no string server, out-of-enum state) is DROPPED, not coerced, and an
+ * absent / non-array / empty field is `undefined` so it never lands on the
+ * typed Invoke as an empty list the renderers would have to re-gate.
+ */
+function parseMcpAvailability(v: JsonValue | undefined): McpAvailability[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: McpAvailability[] = [];
+  for (const entry of v) {
+    if (!isObject(entry)) continue;
+    if (typeof entry.server !== "string" || entry.server.length === 0) continue;
+    if (!isMcpAvailabilityState(entry.state)) continue;
+    out.push({ server: entry.server, state: entry.state });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
 export function parseControl(line: string): ControlMessage {
   let raw: JsonValue;
   try {
@@ -117,6 +148,7 @@ export function parseControl(line: string): ControlMessage {
       if (typeof raw.input !== "string") throw new Error("invoke missing string `input`");
       const priorMemory = parsePriorMemory(raw.priorMemory);
       const profileSections = parseProfileSections(raw.profileSections);
+      const mcpAvailability = parseMcpAvailability(raw.mcpAvailability);
       return {
         type: "invoke",
         input: raw.input,
@@ -149,6 +181,9 @@ export function parseControl(line: string): ControlMessage {
           ? { profileAccess: raw.profileAccess }
           : {}),
         ...(profileSections ? { profileSections } : {}),
+        // guuey#901: the OAuth servers' availability this turn — absent unless
+        // at least one well-formed entry arrived.
+        ...(mcpAvailability ? { mcpAvailability } : {}),
         // guuey#456 B4: the app-resources count — only a POSITIVE integer
         // lands (0 / negative / fractional / non-number is dropped, matching
         // the Router's only-when->0 write), so "no resources" is always the

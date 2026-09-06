@@ -12,6 +12,8 @@ export {
   type HistoryMessage,
   type PriorMemoryRecord,
   type ProfileSection,
+  type McpAvailability,
+  type McpAvailabilityState,
   type StopReason,
   type Invoke,
   type Shutdown,

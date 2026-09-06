@@ -20,7 +20,7 @@
  * `@guuey/worker`, `@guuey/config`, and Node built-ins.
  */
 import type { CanUseTool, Options, SDKMessage, Settings } from "@anthropic-ai/claude-agent-sdk";
-import type { Fs, HistoryMessage, JsonValue, ProfileSection } from "@guuey/worker";
+import type { Fs, HistoryMessage, JsonValue, McpAvailability, ProfileSection } from "@guuey/worker";
 import {
   GUUEY_DEFAULT_SYSTEM_PROMPT,
   defaultModelFor,
@@ -221,6 +221,8 @@ export interface BuildOptionsContext {
   fsBound?: boolean;
   /** Recent conversation window for the `<conversation_history>` preamble. */
   history?: HistoryMessage[];
+  /** guuey#901: the OAuth servers' availability this turn (the "Connected services" section); absent = no such server. */
+  mcpAvailability?: McpAvailability[];
   /** Thread-scoped memory for the `<thread_memory>` preamble (the §1.4 push). */
   priorMemory?: PriorMemoryRecord[];
   /** Prior working-state blob for the `<working_state>` preamble. */
@@ -340,6 +342,10 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
     // section (memory → profile → resources) — same framework-blind renderer
     // family from ../preamble.js, gated on fsBound && resourceCount > 0.
     buildResourcesSection(ctx) +
+    // guuey#901: the connected-services section — the pod's per-turn fact about
+    // each OAuth server, placed with the tool-shaped sections and before the
+    // surface/norms sections. Empty (byte-identical prompt) without OAuth servers.
+    renderMcpAvailabilitySection(ctx.mcpAvailability) +
     // guuey#531: the surface-formatting section — default ON, suppressed
     // only by an explicit `agent.surfaceHints: false` (BYO plain-text
     // surfaces). Before the norms, which stay LAST.
@@ -665,4 +671,5 @@ import {
   renderProfileSection,
   renderResourcesSection,
   withContextPreamble,
+  renderMcpAvailabilitySection,
 } from "../preamble.js";

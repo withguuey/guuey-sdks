@@ -59,6 +59,7 @@ import {
 import {
   RESPONSE_NORMS_SECTION,
   renderSurfaceSection,
+  renderMcpAvailabilitySection,
   renderGenerativeUiSection,
   renderMemorySection,
   renderProfileSection,
@@ -392,6 +393,7 @@ export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
         (resourcesOn ? renderResourcesSection(resourceCount, turn.fs.app) : "") +
         // guuey#531: surface-formatting hints — default ON, only an explicit
         // `agent.surfaceHints: false` suppresses. Before the norms (LAST).
+        renderMcpAvailabilitySection(turn.mcpAvailability) +
         renderSurfaceSection(snapshot.surfaceHints) +
         // guuey#630: the generative-UI section — DIRECTLY AFTER the surface
         // section it qualifies. Gated inside the renderer on `gguiAttached`

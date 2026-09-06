@@ -10,16 +10,14 @@
  * `query`.
  */
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import type {
-  CredentialFile,
+import type { CredentialFile,
   Emitter,
   Fs,
   HistoryMessage,
   Identity,
   JsonValue,
   ProfileSection,
-  StopReason,
-} from "@guuey/worker";
+  StopReason, McpAvailability } from "@guuey/worker";
 import {
   buildOptions,
   type BuildOptionsContext,
@@ -85,6 +83,8 @@ export interface HostInvoke {
    * `@guuey/worker`.
    */
   gguiAttached?: boolean;
+  /** guuey#901: per OAuth server, its availability this turn — the "Connected services" section. */
+  mcpAvailability?: McpAvailability[];
 }
 
 /** Per-process config the worker resolves once at boot. */
@@ -194,6 +194,7 @@ export async function runInvoke(
       ...(invoke.profileSections !== undefined ? { profileSections: invoke.profileSections } : {}),
       ...(invoke.resourceCount !== undefined ? { resourceCount: invoke.resourceCount } : {}),
       ...(invoke.gguiAttached !== undefined ? { gguiAttached: invoke.gguiAttached } : {}),
+      ...(invoke.mcpAvailability !== undefined ? { mcpAvailability: invoke.mcpAvailability } : {}),
     };
     options = buildOptions(snapshot, ctx);
   } catch (err) {

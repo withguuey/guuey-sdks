@@ -20,6 +20,7 @@ import {
   renderProfileSection,
   renderResourcesSection,
   withContextPreamble,
+  renderMcpAvailabilitySection,
 } from "../preamble.js";
 import { createRunner, importConditionEntry, loadAdk } from "./google-adk.js";
 
@@ -367,6 +368,17 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     }, emit);
     expect(got.error[0]).toMatch(/legacy.*sse.*Streamable-HTTP only/s);
     expect(got.done).toHaveLength(0);
+  });
+
+  it("connected-services section (guuey#901): present → between the base prompt and the surface section, identical renderer", async () => {
+    const availability = [{ server: "platform", state: "connected" as const }];
+    const resolved = await resolveInstruction({
+      identity: { userId: "u-oauth", authMode: "authenticated" },
+      mcpAvailability: availability,
+    });
+    const section = renderMcpAvailabilitySection(availability);
+    expect(resolved).toContain(section);
+    expect(resolved.indexOf(section)).toBeLessThan(resolved.indexOf(SURFACE_FORMATTING_SECTION));
   });
 });
 

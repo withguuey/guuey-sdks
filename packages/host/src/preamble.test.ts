@@ -9,6 +9,8 @@ import {
   renderGenerativeUiSection,
   SURFACE_FORMATTING_SECTION,
   GENERATIVE_UI_SECTION,
+  renderMcpAvailabilitySection,
+  MCP_AVAILABILITY_HEADING,
 } from "./preamble.js";
 
 /**
@@ -351,5 +353,48 @@ describe("renderGenerativeUiSection — when a card beats prose (guuey#630)", ()
     expect(GENERATIVE_UI_SECTION).toContain("rather than writing a markdown table");
     expect(GENERATIVE_UI_SECTION).toContain("Prose stays prose");
     expect(GENERATIVE_UI_SECTION).toContain("never invent rows");
+  });
+});
+
+describe("renderMcpAvailabilitySection — the pod's per-turn fact about each OAuth server (guuey#901)", () => {
+  it("renders NOTHING for undefined or empty — an app without OAuth servers keeps a byte-identical prompt", () => {
+    expect(renderMcpAvailabilitySection(undefined)).toBe("");
+    expect(renderMcpAvailabilitySection([])).toBe("");
+  });
+
+  it("leads with \\n\\n + the heading, one line per server, and closes with the never-contradict rule", () => {
+    const out = renderMcpAvailabilitySection([{ server: "platform", state: "connected" }]);
+    expect(out.startsWith(`\n\n${MCP_AVAILABILITY_HEADING}\n\n`)).toBe(true);
+    expect(out).toContain("- platform: connected — its tools are available now; use them when the request calls for them.");
+    expect(out).toContain("supersedes anything said about them earlier in the conversation");
+    expect(out.trimEnd().endsWith("never claim a service that is not connected.")).toBe(true);
+  });
+
+  it("says the honest thing for each non-connected state — asked, declined (no re-ask), unreachable", () => {
+    const out = renderMcpAvailabilitySection([
+      { server: "linear", state: "needs_authorization" },
+      { server: "github", state: "denied" },
+      { server: "jira", state: "unavailable" },
+    ]);
+    expect(out).toContain("- linear: not connected — the user has not authorized it yet and is being asked; its tools are not available this turn.");
+    expect(out).toContain("- github: not connected — the user declined to connect it for this agent; its tools are not available, and do not ask again.");
+    expect(out).toContain("- jira: not connected — it could not be reached this turn; its tools are not available right now.");
+    // No line may read as connected: "not connected —" contains "connected —", so anchor on the line shape.
+    expect(out).not.toMatch(/^- \S+: connected —/m);
+  });
+
+  it("PIN: byte-identical output for a connected + asked pair", () => {
+    expect(
+      renderMcpAvailabilitySection([
+        { server: "platform", state: "connected" },
+        { server: "linear", state: "needs_authorization" },
+      ]),
+    ).toBe(
+      "\n\n## Connected services\n\n" +
+        "The user's connected services for this agent, as they stand for THIS turn (this is the current state; it supersedes anything said about them earlier in the conversation):\n" +
+        "- platform: connected — its tools are available now; use them when the request calls for them.\n" +
+        "- linear: not connected — the user has not authorized it yet and is being asked; its tools are not available this turn.\n" +
+        "Answer from what is available now: never say a connected service is unavailable, and never claim a service that is not connected.\n",
+    );
   });
 });

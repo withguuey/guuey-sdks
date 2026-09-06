@@ -411,3 +411,56 @@ describe("parseEvent (Worker→Router fd-3 events)", () => {
     );
   });
 });
+
+describe("mcpAvailability (guuey#901) — each OAuth server's availability this turn", () => {
+  const base = {
+    type: "invoke",
+    input: "go",
+    identity: { userId: "u", authMode: "authenticated" },
+    fs: { app: "/app", home: "/home", session: "/session" },
+    history: [],
+  };
+
+  it("round-trips well-formed entries onto the typed Invoke, in order", () => {
+    const msg = parseControl(
+      JSON.stringify({
+        ...base,
+        mcpAvailability: [
+          { server: "platform", state: "connected" },
+          { server: "linear", state: "needs_authorization" },
+        ],
+      }),
+    );
+    if (!isInvoke(msg)) throw new Error("expected invoke");
+    expect(msg.mcpAvailability).toEqual([
+      { server: "platform", state: "connected" },
+      { server: "linear", state: "needs_authorization" },
+    ]);
+  });
+
+  it("drops a malformed entry (no server / empty server / out-of-enum state) and keeps the rest", () => {
+    const msg = parseControl(
+      JSON.stringify({
+        ...base,
+        mcpAvailability: [
+          { server: "platform", state: "connected" },
+          { state: "connected" },
+          { server: "", state: "denied" },
+          { server: "x", state: "ready" },
+          "platform",
+          null,
+        ],
+      }),
+    );
+    if (!isInvoke(msg)) throw new Error("expected invoke");
+    expect(msg.mcpAvailability).toEqual([{ server: "platform", state: "connected" }]);
+  });
+
+  it("is ABSENT when the field is missing, not an array, or has no well-formed entry — never an empty list", () => {
+    for (const bad of [undefined, [], {}, "connected", [{ server: "x", state: "nope" }]]) {
+      const msg = parseControl(JSON.stringify({ ...base, mcpAvailability: bad }));
+      if (!isInvoke(msg)) throw new Error("expected invoke");
+      expect("mcpAvailability" in msg).toBe(false);
+    }
+  });
+});

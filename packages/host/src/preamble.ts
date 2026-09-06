@@ -11,7 +11,13 @@
  * Empty sections are omitted; if all inputs are empty/undefined the original
  * system prompt is returned unchanged.
  */
-import type { HistoryMessage, JsonValue, PriorMemoryRecord, ProfileSection } from "@guuey/worker";
+import type {
+  HistoryMessage,
+  JsonValue,
+  McpAvailability,
+  PriorMemoryRecord,
+  ProfileSection,
+} from "@guuey/worker";
 import type { ProfileAccess } from "@guuey/config";
 
 export function withContextPreamble(
@@ -330,6 +336,41 @@ export function renderResourcesSection(count: number, appDir: string): string {
  * ("what wraps your prompt") — trust + debuggability — so treat any
  * edit here as a docs edit too.
  */
+/**
+ * guuey#901 — the "Connected services" section: one line per
+ * `credential: 'oauth'` server with its availability THIS turn, as the pod's
+ * preflight resolved it. Framework-blind (all three runners append it), and
+ * rendered ONLY when the invoke carries at least one entry — an app with no
+ * OAuth server gets byte-identical prompts to before.
+ *
+ * Why it exists: the history preamble carries the agent's own earlier lines,
+ * and an honest turn-1 "that service is not connected" was anchoring turn 2
+ * into saying it again with the server's tools in hand. The section states
+ * the pod's fact for this turn next to the tools, so the model reasons from
+ * the state, not from its last answer.
+ */
+export const MCP_AVAILABILITY_HEADING = "## Connected services";
+
+const MCP_AVAILABILITY_LINE: Record<McpAvailability["state"], string> = {
+  connected: "connected — its tools are available now; use them when the request calls for them.",
+  needs_authorization:
+    "not connected — the user has not authorized it yet and is being asked; its tools are not available this turn.",
+  denied:
+    "not connected — the user declined to connect it for this agent; its tools are not available, and do not ask again.",
+  unavailable: "not connected — it could not be reached this turn; its tools are not available right now.",
+};
+
+export function renderMcpAvailabilitySection(availability: McpAvailability[] | undefined): string {
+  if (availability === undefined || availability.length === 0) return "";
+  const lines = availability.map((a) => `- ${a.server}: ${MCP_AVAILABILITY_LINE[a.state]}`);
+  return (
+    `\n\n${MCP_AVAILABILITY_HEADING}\n\n` +
+    "The user's connected services for this agent, as they stand for THIS turn (this is the current state; it supersedes anything said about them earlier in the conversation):\n" +
+    lines.join("\n") +
+    "\nAnswer from what is available now: never say a connected service is unavailable, and never claim a service that is not connected.\n"
+  );
+}
+
 export const SURFACE_FORMATTING_SECTION =
   `\n\n## Your rendering surface\n\n` +
   `Your text renders in a markdown chat surface. Format code as code: ` +

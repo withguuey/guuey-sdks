@@ -10,7 +10,10 @@ import {
 } from "./claude-options.js";
 import {
   RESPONSE_NORMS_SECTION,
-  SURFACE_FORMATTING_SECTION, GENERATIVE_UI_SECTION, renderResourcesSection } from "../preamble.js";
+  SURFACE_FORMATTING_SECTION, GENERATIVE_UI_SECTION, renderResourcesSection,
+  renderMcpAvailabilitySection,
+  MCP_AVAILABILITY_HEADING,
+} from "../preamble.js";
 
 /** Minimal invoke context with no FS layers, no credentials, default env. */
 function ctx(over: Partial<BuildOptionsContext> = {}): BuildOptionsContext {
@@ -804,5 +807,22 @@ describe("withContextPreamble", () => {
     expect(out2).toContain("<thread_memory>");
     expect(out2).not.toContain("<working_state>");
     expect(out2).not.toContain("<conversation_history>");
+  });
+});
+
+describe("the connected-services section rides the invoke into the system prompt (guuey#901)", () => {
+  it("absent mcpAvailability → no heading (byte-identical to before for apps without OAuth servers)", () => {
+    const sp = buildOptions({ systemPrompt: "S" }, ctx()).systemPrompt as string;
+    expect(sp).not.toContain(MCP_AVAILABILITY_HEADING);
+  });
+
+  it("present → the section is in the prompt, verbatim from the renderer, BEFORE the surface section and after the base prompt", () => {
+    const availability = [{ server: "platform", state: "connected" as const }];
+    const sp = buildOptions({ systemPrompt: "S" }, ctx({ mcpAvailability: availability })).systemPrompt as string;
+    const section = renderMcpAvailabilitySection(availability);
+    expect(sp).toContain(section);
+    expect(sp.indexOf(section)).toBeGreaterThan(sp.indexOf("S"));
+    expect(sp.indexOf(section)).toBeLessThan(sp.indexOf(SURFACE_FORMATTING_SECTION));
+    expect(sp.endsWith(RESPONSE_NORMS_SECTION)).toBe(true);
   });
 });

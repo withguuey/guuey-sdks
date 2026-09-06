@@ -71,6 +71,21 @@ export type StopReason = "end_turn" | "max_turns" | "error";
  *  `priorMemory`/`priorState` are the §1.4 push-by-value context the worker
  *  renders into its system-prompt preamble (thread memory + working state).
  *  Both optional: an early-thread invoke carries neither. */
+/**
+ * guuey#901 — a `credential: 'oauth'` server's availability THIS turn, as the
+ * pod's pre-turn preflight resolved it. Pushed by value like the rest of the
+ * invoke context so the model's picture of what it can reach is the pod's,
+ * not an inference from its own earlier answers (the failure this fixes: a
+ * turn-1 "not connected" line in the history preamble anchored turn 2 into
+ * saying it again with the tools in hand).
+ */
+export type McpAvailabilityState = "connected" | "needs_authorization" | "denied" | "unavailable";
+export interface McpAvailability {
+  /** The declared `mcpServers` key. */
+  server: string;
+  state: McpAvailabilityState;
+}
+
 export interface Invoke {
   type: "invoke";
   input: string;
@@ -99,6 +114,13 @@ export interface Invoke {
   priorMemory?: PriorMemoryRecord[];
   /** Prior working-state blob carried from the previous turn (the `<working_state>` preamble). */
   priorState?: JsonValue;
+  /**
+   * guuey#901 — per `credential: 'oauth'` server, whether its tools are
+   * available this turn. Absent when the app declares no such server (the
+   * common case — nothing is rendered); present with one entry per declared
+   * OAuth server otherwise, `connected` ones included.
+   */
+  mcpAvailability?: McpAvailability[];
   /**
    * Content of the authenticated caller's persistent `MEMORY.md` file —
    * prompted memory's RECALL half (memory-mcp spec §4), read Router-side

@@ -29,7 +29,7 @@ The protocol is deliberately hand-implementable: read NDJSON control messages on
 ```python
 import sys, json, os
 for line in sys.stdin:
-    inv = json.loads(line)   # {type:"invoke", input, identity, fs, history, priorMemory?, priorState?}
+    inv = json.loads(line)   # {type:"invoke", input, identity, fs, history, priorMemory?, priorState?, mcpAvailability?}
     if inv.get("type") != "invoke": continue
     # emit framework-native SDK events (the Router normalizes them):
     os.write(3, (json.dumps({"type":"native","framework":"google-adk","event":{...}}) + "\n").encode())
@@ -41,6 +41,6 @@ for line in sys.stdin:
 - **fd 0 (stdin), Router→Worker:** `invoke` · `shutdown`
 - **fd 3, Worker→Router:** `text` · `native` · `done` · `error`
 - **stdout/stderr:** your logs — never the protocol.
-- Context is **pushed** in the invoke (`history` · `priorMemory` · `priorState`).
+- Context is **pushed** in the invoke (`history` · `priorMemory` · `priorState` · `mcpAvailability` — per OAuth-connected server, whether its tools are available this turn; guuey#901).
 
 See the design: `docs/superpowers/specs/2026-06-22-worker-platform-northstar-design.md`.
