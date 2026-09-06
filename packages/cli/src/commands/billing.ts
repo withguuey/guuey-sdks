@@ -123,6 +123,35 @@ export interface AutoRechargeConsentWire {
 }
 
 /** Mirror of `SubscribeAppResultWire`. */
+/** guuey#795 2c — where a credit movement lives. Mirror of cli-wire `CreditMovementSource`. */
+export type CreditMovementSource = 'paid' | 'bonus';
+/** guuey#795 2c — what happened. Mirror of cli-wire `CreditMovementKind`. */
+export type CreditMovementKind =
+  | 'top-up'
+  | 'applied-to-invoice'
+  | 'refund'
+  | 'adjustment'
+  | 'mint'
+  | 'draw';
+/** guuey#795 2c — whether the paid side was read. Mirror of cli-wire `CreditMovementsPaidSide`. */
+export type CreditMovementsPaidSide = 'read' | 'unreadable' | 'no-customer';
+/** guuey#795 2c — one credit movement. Mirror of cli-wire `CreditMovementWire`. */
+export interface CreditMovementWire {
+  at: string;
+  source: CreditMovementSource;
+  kind: CreditMovementKind;
+  amountUsd: number;
+  stripeObjectId: string;
+  invoiceId: string | null;
+  description: string | null;
+}
+/** guuey#795 2c — the page. Mirror of cli-wire `CreditMovementsWire`. */
+export interface CreditMovementsWire {
+  movements: CreditMovementWire[];
+  truncated: boolean;
+  paidSide: CreditMovementsPaidSide;
+}
+
 export interface SubscribeAppResultWire {
   status: string;
   url: string | null;
@@ -457,6 +486,65 @@ export function renderInvoicing(
   }
 }
 
+export const MOVEMENT_COLUMNS = ['Date', 'Source', 'What', 'Amount', 'Invoice'];
+
+/** One vocabulary with the console (`CreditMovementsCard.tsx` `CREDIT_MOVEMENT_LABELS`). */
+const MOVEMENT_WHAT: Record<CreditMovementKind, string> = {
+  'top-up': 'Credits purchased',
+  'applied-to-invoice': 'Applied to invoice',
+  refund: 'Refunded',
+  adjustment: 'Adjusted by Stripe',
+  mint: 'Bonus earned',
+  draw: 'Bonus applied to usage',
+};
+
+export function movementRow(m: CreditMovementWire): Record<string, string> {
+  return {
+    Date: m.at.slice(0, 10),
+    Source: m.source === 'paid' ? 'Paid' : 'Bonus',
+    What: m.kind === 'adjustment' && m.description ? `${MOVEMENT_WHAT[m.kind]} — ${m.description}` : MOVEMENT_WHAT[m.kind],
+    Amount: usd(m.amountUsd),
+    Invoice: m.invoiceId ?? '',
+  };
+}
+
+/**
+ * `guuey billing movements` (guuey#795 2c): paid vs bonus credit movements,
+ * newest first. An unreadable paid side is SAID beside the bonus rows; a cut
+ * page says so; nothing yet says so.
+ */
+export function renderMovements(data: CreditMovementsWire): void {
+  if (data.movements.length === 0 && data.paidSide !== 'unreadable') {
+    console.log('No credit movements yet.');
+    return;
+  }
+  console.log('Credit movements (newest first):');
+  if (data.movements.length > 0) out.table(data.movements.map(movementRow), MOVEMENT_COLUMNS);
+  if (data.paidSide === 'unreadable') {
+    console.log("  Paid credit movements couldn't be read right now — bonus movements shown; try again in a moment.");
+  }
+  if (data.truncated) console.log('  Showing the latest 50 movements.');
+}
+
+/** `guuey billing movements [--json]` — the credit-movements wire, rendered or raw. */
+export async function billingMovementsCore(
+  opts: { json: boolean; auth: AuthTokens; config: ResolvedConfig },
+  deps?: { api?: typeof apiRequest },
+): Promise<void> {
+  const api = deps?.api ?? apiRequest;
+  const res = await api(opts.auth.pat, opts.config, 'GET', '/billing/credit-movements');
+  if (!res.ok) {
+    const data: unknown = await res.json().catch(() => ({}));
+    throw new Error(parseApiError(data, `Credit movements read failed: HTTP ${res.status}`));
+  }
+  const data = (await res.json()) as CreditMovementsWire;
+  if (opts.json) {
+    out.json(data);
+    return;
+  }
+  renderMovements(data);
+}
+
 /** `guuey billing invoice [--json]` — the invoicing wire, rendered or raw. */
 export async function billingInvoicingCore(
   opts: { json: boolean; auth: AuthTokens; config: ResolvedConfig; creditBalanceUsd?: number | null },
@@ -662,6 +750,18 @@ export async function billingInvoice(flags?: Record<string, string | true>): Pro
   const config = resolveConfig();
   try {
     await billingInvoicingCore({ json: flags?.json === true, auth, config });
+  } catch (err) {
+    out.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+}
+
+/** `guuey billing movements [--json]` (guuey#795 2c) */
+export async function billingMovements(flags?: Record<string, string | true>): Promise<void> {
+  const auth = requireAuth();
+  const config = resolveConfig();
+  try {
+    await billingMovementsCore({ json: flags?.json === true, auth, config });
   } catch (err) {
     out.error(err instanceof Error ? err.message : String(err));
     process.exit(1);

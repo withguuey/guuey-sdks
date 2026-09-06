@@ -159,8 +159,14 @@ describe.skipIf(!haveWire)('CLI wire mirrors — sync guards against @guuey-priv
       'AutoRechargeSettingsBody',
       'AutoRechargeWriteResultWire',
       'AutoRechargeConsentWire',
+      // guuey#795 2c — the credit movements read (`guuey billing movements`).
+      'CreditMovementWire',
+      'CreditMovementsWire',
     ]) {
       expect(parseInterfaceFields(cli, name)).toEqual(parseInterfaceFields(wire, name));
+    }
+    for (const union of ['CreditMovementSource', 'CreditMovementKind', 'CreditMovementsPaidSide']) {
+      expect(parseStringLiterals(cli, union)).toEqual(parseStringLiterals(wire, union));
     }
     // The plan vocabulary the CLI offers is exactly the wire's.
     expect(parseStringLiterals(cli, 'SUBSCRIBABLE_TIERS')).toEqual(

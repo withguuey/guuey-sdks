@@ -71,7 +71,14 @@ import { agentConfig } from './commands/agent';
 import { agentApply, agentRollback, agentStatus } from './commands/agent-apply';
 import { domainsAdd, domainsList, domainsVerify, domainsRemove } from './commands/domains';
 import { tokensCreate, tokensList, tokensRevoke } from './commands/tokens';
-import { appsSubscribe, billing, billingAutoRecharge, billingInvoice, billingTopUp } from './commands/billing';
+import {
+  appsSubscribe,
+  billing,
+  billingAutoRecharge,
+  billingInvoice,
+  billingMovements,
+  billingTopUp,
+} from './commands/billing';
 import { slugClaim, slugRelease } from './commands/slug';
 import { ApiError } from './client';
 import { printWelcome, printQuickGuide } from './logo';
@@ -306,6 +313,9 @@ Authentication:
                                  billing console URL
   billing invoice               The next invoice (total, issue date, per-agent
                                  split) + recent invoices, alone (--json = the wire)
+  billing movements             Credit movements, newest first — paid (purchases,
+                                 applied to invoices) beside bonus (earned, applied
+                                 to usage) (--json = the wire)
   billing auto-recharge         Show, turn on (--on --amount <usd> --threshold <usd>
                                  --cap <usd> [--receipts on|off] [--yes]) or turn off
                                  (--off) automatic credit top-ups; --workspace <id>
@@ -878,9 +888,14 @@ async function main(): Promise<void> {
         await billingInvoice(flags);
         break;
       }
+      // guuey#795 2c: paid vs bonus credit movements, newest first.
+      if (action === 'movements') {
+        await billingMovements(flags);
+        break;
+      }
       if (action !== undefined) {
         console.error(
-          `Unknown billing command: ${action}. Use: guuey billing [--json] | guuey billing invoice [--json] | guuey billing topup --app <appId> --amount <usd>`,
+          `Unknown billing command: ${action}. Use: guuey billing [--json] | guuey billing invoice [--json] | guuey billing movements [--json] | guuey billing topup --app <appId> --amount <usd>`,
         );
         process.exit(1);
       }

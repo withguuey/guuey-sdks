@@ -28,6 +28,9 @@ import {
   usd,
   type BillingInvoicingWire,
   type NextInvoiceWire,
+  billingMovementsCore,
+  renderMovements,
+  type CreditMovementsWire,
 } from './billing';
 
 const auth: AuthTokens = { pat: 'guuey_user_test', expiresAt: '2099-01-01T00:00:00Z' };
@@ -640,5 +643,60 @@ describe('guuey billing auto-recharge (guuey#756 L2) — the CLI face of setAuto
     await expect(
       billingAutoRechargeCore({ action: { kind: 'off' }, workspaceId: null, yes: false, json: false, auth, config }, { api: refused }),
     ).rejects.toThrow(/needs a saved card/);
+  });
+});
+
+describe('guuey billing movements — paid vs bonus credit movements (guuey#795 2c)', () => {
+  // The file's `output` helper is scoped to an earlier describe — the same shape, locally.
+  const movementsOutput = (spy: { mock: { calls: unknown[][] } }): string =>
+    spy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+  const MOVEMENTS: CreditMovementsWire = {
+    paidSide: 'read',
+    truncated: false,
+    movements: [
+      { at: '2026-09-05T10:00:00.000Z', source: 'bonus', kind: 'draw', amountUsd: -3, stripeObjectId: 'in_2', invoiceId: 'in_2', description: 'Bonus credit applied to usage' },
+      { at: '2026-09-01T10:00:00.000Z', source: 'paid', kind: 'top-up', amountUsd: 25, stripeObjectId: 'cbtxn_1', invoiceId: null, description: 'guuey credits — $25 top-up (pre-pays future invoices)' },
+    ],
+  };
+
+  it('billingMovementsCore GETs /billing/credit-movements; --json emits the wire verbatim; an API error surfaces its message', async () => {
+    const api = vi.fn(async () => jsonResponse(200, MOVEMENTS));
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await billingMovementsCore({ json: true, auth, config }, { api });
+    expect(api).toHaveBeenCalledWith('guuey_user_test', config, 'GET', '/billing/credit-movements');
+    expect(JSON.parse(movementsOutput(logSpy))).toEqual(MOVEMENTS);
+    await expect(
+      billingMovementsCore(
+        { json: false, auth, config },
+        { api: vi.fn(async () => jsonResponse(503, { error: { code: 'STRIPE_UNAVAILABLE', message: 'stripe down' } })) },
+      ),
+    ).rejects.toThrow(/stripe down/);
+    logSpy.mockRestore();
+  });
+
+  it('renderMovements: one row per movement newest-first — date, Paid/Bonus, what, a signed amount, the invoice', () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    renderMovements(MOVEMENTS);
+    const t = movementsOutput(logSpy);
+    expect(t.indexOf('Bonus applied to usage')).toBeLessThan(t.indexOf('Credits purchased'));
+    expect(t).toContain('-$3.00');
+    expect(t).toContain('$25.00');
+    expect(t).toContain('in_2');
+    expect(t).toContain('2026-09-05');
+    expect(t).not.toMatch(/couldn't be read|latest 50/);
+    logSpy.mockRestore();
+  });
+
+  it('renderMovements: says when the paid side could not be read, when the page is cut, and when there is nothing yet', () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    renderMovements({ ...MOVEMENTS, paidSide: 'unreadable' });
+    expect(movementsOutput(logSpy)).toContain("couldn't be read");
+    logSpy.mockClear();
+    renderMovements({ ...MOVEMENTS, truncated: true });
+    expect(movementsOutput(logSpy)).toContain('latest 50');
+    logSpy.mockClear();
+    renderMovements({ movements: [], truncated: false, paidSide: 'no-customer' });
+    expect(movementsOutput(logSpy).trim()).toBe('No credit movements yet.');
+    logSpy.mockRestore();
   });
 });
