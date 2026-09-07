@@ -157,6 +157,69 @@ export function printTriggerWarnings(body: unknown): void {
   }
 }
 
+// ─── guuey#975: the deploy target, resolved SOURCE-AWARE ──────────────────
+export type DeployTargetSource = '--app-id' | 'GUUEY_APP_ID' | 'guuey.json' | 'global-config';
+export interface DeployTargetInput {
+  explicitAppId?: string;
+  envAppId?: string;
+  projectBoundAppId?: string;
+  /** A `guuey.json` governs this directory (bound or not). */
+  hasProject: boolean;
+  /** `~/.guuey/config.json`'s own `appId` — never the merged config. */
+  globalAppId?: string;
+}
+export type DeployTargetDecision =
+  | { kind: 'bound'; appId: string; source: DeployTargetSource; notes: string[] }
+  | { kind: 'unbound'; notes: string[] };
+
+/**
+ * Which app this deploy targets, and WHY — printed before anything acts.
+ *
+ * Precedence: `--app-id` > `GUUEY_APP_ID` > the guuey.json binding > the
+ * machine-global default (only when no guuey.json governs the directory).
+ * Two rules from the 2026-09-07 prod incident (guuey#975): the env var may
+ * RE-TARGET a project that has its own binding (an explicit per-invocation
+ * choice, guuey#355) but never stands in for a create on an UNBOUND project
+ * — it is ignored with a note and the create runs; and the global default
+ * is never consulted for a directory that carries a guuey.json.
+ */
+export function resolveDeployTarget(input: DeployTargetInput): DeployTargetDecision {
+  const { explicitAppId, envAppId, projectBoundAppId, hasProject, globalAppId } = input;
+  const notes: string[] = [];
+  if (explicitAppId) {
+    if (projectBoundAppId && explicitAppId !== projectBoundAppId) {
+      notes.push(
+        `--app-id ${explicitAppId} overrides the guuey.json binding (${projectBoundAppId}) for this deploy only.`,
+      );
+    } else if (!hasProject && globalAppId && explicitAppId !== globalAppId) {
+      notes.push(
+        `--app-id ${explicitAppId} overrides the global default (~/.guuey/config.json) (${globalAppId}) for this deploy only.`,
+      );
+    }
+    return { kind: 'bound', appId: explicitAppId, source: '--app-id', notes };
+  }
+  if (envAppId) {
+    if (projectBoundAppId) {
+      if (envAppId !== projectBoundAppId) {
+        notes.push(
+          `GUUEY_APP_ID overrides the guuey.json binding (${projectBoundAppId}) for this deploy only.`,
+        );
+      }
+      return { kind: 'bound', appId: envAppId, source: 'GUUEY_APP_ID', notes };
+    }
+    if (hasProject) {
+      notes.push(
+        `GUUEY_APP_ID=${envAppId} ignored: this project has no binding of its own — pass --app-id ${envAppId} to target it. Creating a new app instead.`,
+      );
+      return { kind: 'unbound', notes };
+    }
+    return { kind: 'bound', appId: envAppId, source: 'GUUEY_APP_ID', notes };
+  }
+  if (projectBoundAppId) return { kind: 'bound', appId: projectBoundAppId, source: 'guuey.json', notes };
+  if (!hasProject && globalAppId) return { kind: 'bound', appId: globalAppId, source: 'global-config', notes };
+  return { kind: 'unbound', notes };
+}
+
 export async function deploy(flags?: Record<string, string | true>): Promise<void> {
   const auth = requireAuth();
   const config = resolveConfig();
@@ -213,30 +276,26 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
     out.error('--app-id needs a value (e.g. --app-id <uuid>).');
     process.exit(1);
   }
-  // guuey#355: deploy resolves its identity SOURCE-AWARE, never through the
-  // merged config. Precedence: --app-id > GGUI_APP_ID (an explicit
-  // per-invocation choice) > the guuey.json binding. The machine-global
-  // default (~/.guuey/config.json) is used ONLY when the directory has no
-  // guuey.json at all (the explicitly-bound single-project flow) — a
-  // project that deliberately carries no appId must REFUSE, not silently
-  // deploy to whatever id a past ritual left in the operator's global
-  // config (the near-miss: a bare deploy from the trimly checkout resolved
-  // to the LIVE Helper's id).
-  const envAppId = process.env.GGUI_APP_ID?.trim() || undefined;
-  const projectBoundAppId = project?.appId;
-  const overridden = explicitAppId
-    ? projectBoundAppId && explicitAppId !== projectBoundAppId
-      ? { source: `the ${GUUEY_JSON_FILENAME} binding`, id: projectBoundAppId }
-      : !project && config.appId && explicitAppId !== config.appId
-        ? { source: 'the global default (~/.guuey/config.json)', id: config.appId }
-        : undefined
-    : undefined;
-  if (overridden) {
-    console.log(
-      `  --app-id ${explicitAppId} overrides ${overridden.source} (${overridden.id}) for this deploy only.`,
-    );
+  // guuey#355 / guuey#975: deploy resolves its identity SOURCE-AWARE, never
+  // through the merged config, and SAYS which source won before acting.
+  const envAppId = process.env.GUUEY_APP_ID?.trim() || undefined;
+  // The machine-global default matters only when no guuey.json governs the
+  // directory; there the merged config's appId is exactly `env ?? global`,
+  // and the resolver consumes the env first — so this IS the global default
+  // for that flow, without a second read of ~/.guuey/config.json.
+  const globalAppId = project ? undefined : config.appId;
+  const appTarget = resolveDeployTarget({
+    ...(explicitAppId !== undefined ? { explicitAppId } : {}),
+    ...(envAppId !== undefined ? { envAppId } : {}),
+    ...(project?.appId !== undefined ? { projectBoundAppId: project.appId } : {}),
+    hasProject: project !== null,
+    ...(globalAppId !== undefined ? { globalAppId } : {}),
+  });
+  for (const note of appTarget.notes) console.log(`  ${note}`);
+  if (appTarget.kind === 'bound') {
+    console.log(`  Deploying to app ${appTarget.appId} (from ${appTarget.source}).`);
   }
-  let appId = explicitAppId ?? envAppId ?? projectBoundAppId ?? (project ? undefined : config.appId);
+  let appId = appTarget.kind === 'bound' ? appTarget.appId : undefined;
   if (!appId) {
     if (shouldOfferAppCreate(mode, process.stdin.isTTY, process.stdout.isTTY)) {
       appId = await ensureLinkedApp({ auth, config, project, guueyJsonPath: cwdGuueyJson });
@@ -441,7 +500,9 @@ async function ensureLinkedApp(opts: {
   guueyJsonPath: string;
 }): Promise<string> {
   const { auth, config, project, guueyJsonPath } = opts;
-  if (config.appId) return config.appId;
+  // guuey#975: NEVER consult the merged config here — the caller's decision
+  // said "unbound"; the merged `appId` is exactly the machine-global binding
+  // that stood in for a create on the founder's first prod deploy.
 
   console.log('');
   console.log('  No app linked yet.');

@@ -555,7 +555,7 @@ Environment Variables:
   GUUEY_HOST                     Override platform host URL
   GUUEY_API_URL                  Override REST API base URL (keep the /v1 suffix)
   GUUEY_API_KEY                  Override configured API key
-  GGUI_APP_ID                   Override configured app ID
+  GUUEY_APP_ID                  Override configured app ID
   GUUEY_WORKSPACE                Default owning workspace for 'mcp deploy' / 'mcp list' /
                                  'mcp status' / 'mcp logs' / 'mcp delete'
   GUUEY_MCP_SERVER               Default hosted MCP server for 'mcp status' / 'mcp logs' /

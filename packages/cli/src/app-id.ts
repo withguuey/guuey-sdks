@@ -3,7 +3,7 @@
  *
  * `--app-id` is documented as a global option ("Target a specific app —
  * overrides config"), so an explicit flag must win over the project /
- * GGUI_APP_ID / global-config binding everywhere. Commands that read only
+ * GUUEY_APP_ID / global-config binding everywhere. Commands that read only
  * `config.appId` silently swallow the flag, which reads as broken auth or
  * binding (guuey#183).
  */

@@ -584,7 +584,7 @@ describe('guuey agent config', () => {
   describe('--app-id targeting (guuey#183)', () => {
     // The flag was silently swallowed: the command resolved only
     // `config.appId`, so `--app-id <id>` read as broken auth/binding
-    // (the staging multi-pod walk fell back to GGUI_APP_ID=<id>).
+    // (the staging multi-pod walk fell back to GUUEY_APP_ID=<id>).
     it('--app-id wins over the bound config.appId', async () => {
       fetchSpy.mockResolvedValue(new Response(JSON.stringify(SCALED), { status: 200 }));
 

@@ -328,7 +328,7 @@ export async function pull(
 
   if (!appId) {
     out.error(
-      'No app ID could be resolved. Run `guuey pull --app-id <id>`, or set GGUI_APP_ID, or run `guuey create` first.',
+      'No app ID could be resolved. Run `guuey pull --app-id <id>`, or set GUUEY_APP_ID, or run `guuey create` first.',
     );
     process.exit(1);
   }

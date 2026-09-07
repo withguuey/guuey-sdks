@@ -16,6 +16,7 @@ import {
 } from './deploy.js';
 import { DEPLOY_WAIT_MS, NODE_PROVISION_BUDGET_MS, stillDeployingMessage } from './deploy-wait.js';
 import { resolveConfig, loadProjectConfig } from '../config.js';
+import { resolveDeployTarget } from './deploy.js';
 import { safeParseGuueyJson } from '@guuey/config';
 import type { apiRequest } from '../deploy-shared.js';
 
@@ -895,5 +896,69 @@ describe('printTriggerWarnings (guuey#580 belt adoption)', () => {
       '  ! MODES_DROPPED_ON_DEPLOY: this snapshot drops agent.modes the live build carries — run guuey pull to seed.',
     ]);
     spy.mockRestore();
+  });
+});
+
+// ── guuey#975: the deploy target is resolved SOURCE-AWARE and printed ──────
+// The 2026-09-07 prod incident: a fresh scaffold (guuey.json, no appId)
+// inherited `GGUI_APP_ID` from the operator's shell, `deploy` skipped the
+// create and pushed assets at another env's app. The env var may re-target a
+// project that has its OWN binding (an explicit per-invocation choice, #355)
+// — it may never stand in for a create on an unbound project.
+
+describe('resolveDeployTarget (guuey#975)', () => {
+  it('--app-id wins over everything and names what it overrides', () => {
+    const d = resolveDeployTarget({
+      explicitAppId: 'app-flag',
+      envAppId: 'app-env',
+      projectBoundAppId: 'app-proj',
+      hasProject: true,
+      globalAppId: 'app-global',
+    });
+    expect(d).toMatchObject({ kind: 'bound', appId: 'app-flag', source: '--app-id' });
+    expect(d.notes.join('\n')).toContain('overrides the guuey.json binding (app-proj)');
+  });
+
+  it('GUUEY_APP_ID re-targets a project that has its OWN binding — and says so', () => {
+    const d = resolveDeployTarget({
+      envAppId: 'app-env',
+      projectBoundAppId: 'app-proj',
+      hasProject: true,
+    });
+    expect(d).toMatchObject({ kind: 'bound', appId: 'app-env', source: 'GUUEY_APP_ID' });
+    expect(d.notes.join('\n')).toContain('GUUEY_APP_ID overrides the guuey.json binding (app-proj)');
+  });
+
+  it('GUUEY_APP_ID is IGNORED for a project with no binding of its own — the create runs, with a note (the #798 incident shape)', () => {
+    const d = resolveDeployTarget({
+      envAppId: '5c8baf45-1c8f-4114-a82b-0ab938d47bd2',
+      hasProject: true,
+    });
+    expect(d.kind).toBe('unbound');
+    expect(d.notes.join('\n')).toContain('GUUEY_APP_ID=5c8baf45-1c8f-4114-a82b-0ab938d47bd2 ignored');
+    expect(d.notes.join('\n')).toContain('--app-id');
+  });
+
+  it('a project binding is used and named; the global default is never used when a guuey.json exists', () => {
+    expect(resolveDeployTarget({ projectBoundAppId: 'app-proj', hasProject: true, globalAppId: 'app-global' })).toMatchObject({
+      kind: 'bound',
+      appId: 'app-proj',
+      source: 'guuey.json',
+    });
+    expect(resolveDeployTarget({ hasProject: true, globalAppId: 'app-global' })).toMatchObject({ kind: 'unbound' });
+  });
+
+  it('with no guuey.json at all, the env var then the global default apply (the single-project flow), each named', () => {
+    expect(resolveDeployTarget({ envAppId: 'app-env', hasProject: false, globalAppId: 'app-global' })).toMatchObject({
+      kind: 'bound',
+      appId: 'app-env',
+      source: 'GUUEY_APP_ID',
+    });
+    expect(resolveDeployTarget({ hasProject: false, globalAppId: 'app-global' })).toMatchObject({
+      kind: 'bound',
+      appId: 'app-global',
+      source: 'global-config',
+    });
+    expect(resolveDeployTarget({ hasProject: false })).toMatchObject({ kind: 'unbound' });
   });
 });
