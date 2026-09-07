@@ -59,18 +59,21 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
   { id: "claude-sonnet-5", provider: "anthropic", label: "Claude Sonnet 5", status: "ga", isDefault: true, lineup: true },
   // guuey#635 (2026-09-02 wave): id verified against
   // platform.claude.com/docs/en/models/overview — never hand-typed.
-  // `announced` = known, NOT invocable on our runtime yet (the registry's own
-  // vocabulary): the model gate is the Claude Code binary — 2.1.247 in the
-  // fat image 400s ("version 2.1.251 or newer is required", infra's dev turn
-  // on guuey#638). Flips to `ga` in the cut after #659's image rolls to prod
-  // (SDK 0.3.258 → binary ≥ 2.1.251). Pickers exclude it until then: an
-  // announced row is in NEITHER picker half (`lineupForProvider` /
-  // `legacyForProvider` partition the ga|preview allowlist). THE GA FLIP IS
-  // TWO FIELDS: `status: "ga"` AND `lineup: true` — the marker is withheld
-  // here only because `lineup` ⇒ invocable is a pinned invariant
-  // (registry.test.ts), and it belongs to the front slice the moment the
-  // model is invocable (guuey#637 step 2).
-  { id: "claude-fable-5-1", provider: "anthropic", label: "Claude Fable 5.1", status: "announced" },
+  // `ga` + `lineup` since 2026-09-08 (guuey#634 / #659): the model gate is
+  // the Claude Code binary — 2.1.247 in the fat image 400'd the id ("version
+  // 2.1.251 or newer is required", infra's dev turn on guuey#638); the image
+  // now pins `@anthropic-ai/claude-agent-sdk` 0.3.258 exactly, whose bundled
+  // `claude-agent-sdk-linux-x64@0.3.258` carries VERSION 2.1.258 ≥ 2.1.251
+  // (infra's #659 read of the served image's build inputs, 2026-09-07) and
+  // the id answered on dev on 2.1.258 (guuey#638). The flip is the TWO
+  // fields at once — `status: "ga"` AND `lineup: true` — because `lineup`
+  // ⇒ invocable is a pinned invariant (registry.test.ts) and the current
+  // generation belongs to the picker's front slice (guuey#637 step 2). The
+  // `announced` state this row wore for a week is still exercised: the
+  // registry tests bind the same predicates over a synthetic announced row
+  // (`bindRegistry`, below), so the fail-closed rules cannot rot while no
+  // live row is announced.
+  { id: "claude-fable-5-1", provider: "anthropic", label: "Claude Fable 5.1", status: "ga", lineup: true },
   // Stays `ga` on purpose: the deprecations page (read 2026-09-02) lists
   // claude-fable-5 as Active, Deprecated: N/A, tentative retirement "Not
   // sooner than June 9, 2027". `sunset` is an ISO date for DEPRECATED
@@ -167,17 +170,93 @@ export const FRAMEWORK_REGISTRY: readonly FrameworkEntry[] = [
 ];
 
 /**
+ * The registry's ACCESSORS, bound to an explicit registry (guuey#634).
+ *
+ * Every predicate below closes over the models it judges. The live exports
+ * further down are `bindRegistry(MODEL_REGISTRY)` — the one registry this
+ * package ships — and that is what every product door imports. The seam
+ * exists for one reason: the fail-closed rules for a not-yet-invocable
+ * (`announced`) row must stay exercised in the weeks when NO live row is
+ * announced (the July 2026 wave left that branch untested once; the Fable
+ * 5.1 flip on 2026-09-08 would have again). A test binds the same code
+ * over `[...MODEL_REGISTRY, <synthetic announced row>]` and proves the
+ * exclusion — same predicates, never a re-implementation that could drift.
+ * It is NOT a runtime extension point: a consumer that bound its own
+ * registry would be the second source of truth the registry exists to
+ * prevent.
+ */
+export interface RegistryAccessors {
+  /** All invocable (ga|preview) models for a provider, default first. */
+  modelsForProvider(p: ModelEntry["provider"]): readonly ModelEntry[];
+  /** The picker's front slice — the `lineup` half of `modelsForProvider`. */
+  lineupForProvider(p: ModelEntry["provider"]): readonly ModelEntry[];
+  /** The other half — invocable models behind the "See all models" door. */
+  legacyForProvider(p: ModelEntry["provider"]): readonly ModelEntry[];
+  /** A provider's `announced` rows — display only, invocable by nothing. */
+  announcedForProvider(p: ModelEntry["provider"]): readonly ModelEntry[];
+  /** A framework's model axis — its default provider's invocable rows. */
+  modelsForFramework(framework: FrameworkEntry["framework"]): readonly ModelEntry[];
+  /** THE offered / off-registry predicate, fail-closed (guuey#647). */
+  isOfferedModel(framework: FrameworkEntry["framework"], id: string): boolean;
+  /** The default model id for a framework's default provider. */
+  defaultModelFor(framework: FrameworkEntry["framework"]): string;
+  /** Look up a model entry by id. */
+  modelEntry(id: string): ModelEntry | undefined;
+}
+
+export function bindRegistry(
+  models: readonly ModelEntry[],
+  frameworks: readonly FrameworkEntry[] = FRAMEWORK_REGISTRY,
+): RegistryAccessors {
+  const frameworkFor = (framework: FrameworkEntry["framework"]): FrameworkEntry => {
+    const fw = frameworks.find((f) => f.framework === framework);
+    if (!fw) throw new Error(`Unknown framework: ${framework}`);
+    return fw;
+  };
+  const modelsForProvider: RegistryAccessors["modelsForProvider"] = (p) =>
+    models
+      .filter((m) => m.provider === p && (m.status === "ga" || m.status === "preview"))
+      .sort((a, b) => {
+        if (a.isDefault) return -1;
+        if (b.isDefault) return 1;
+        return 0;
+      });
+  const lineupForProvider: RegistryAccessors["lineupForProvider"] = (p) =>
+    modelsForProvider(p).filter((m) => m.lineup === true);
+  const legacyForProvider: RegistryAccessors["legacyForProvider"] = (p) =>
+    modelsForProvider(p).filter((m) => m.lineup !== true);
+  const announcedForProvider: RegistryAccessors["announcedForProvider"] = (p) =>
+    models.filter((m) => m.provider === p && m.status === "announced");
+  const modelsForFramework: RegistryAccessors["modelsForFramework"] = (framework) =>
+    modelsForProvider(frameworkFor(framework).defaultProvider);
+  const isOfferedModel: RegistryAccessors["isOfferedModel"] = (framework, id) =>
+    modelsForFramework(framework).some((m) => m.id === id);
+  const defaultModelFor: RegistryAccessors["defaultModelFor"] = (framework) => {
+    const fw = frameworkFor(framework);
+    const model = models.find((m) => m.provider === fw.defaultProvider && m.isDefault && m.status === "ga");
+    if (!model) throw new Error(`No default ga model for provider: ${fw.defaultProvider}`);
+    return model.id;
+  };
+  const modelEntry: RegistryAccessors["modelEntry"] = (id) => models.find((m) => m.id === id);
+  return {
+    modelsForProvider,
+    lineupForProvider,
+    legacyForProvider,
+    announcedForProvider,
+    modelsForFramework,
+    isOfferedModel,
+    defaultModelFor,
+    modelEntry,
+  };
+}
+
+/** The live registry, bound once — every export below reads THIS. */
+const live = bindRegistry(MODEL_REGISTRY);
+
+/**
  * Get all models for a provider, filtered to ga|preview only, with default first.
  */
-export function modelsForProvider(p: ModelEntry["provider"]): readonly ModelEntry[] {
-  return MODEL_REGISTRY.filter((m) => m.provider === p && (m.status === "ga" || m.status === "preview")).sort(
-    (a, b) => {
-      if (a.isDefault) return -1;
-      if (b.isDefault) return 1;
-      return 0;
-    },
-  );
-}
+export const modelsForProvider: RegistryAccessors["modelsForProvider"] = live.modelsForProvider;
 
 /**
  * The picker's FRONT SLICE for a provider — the `lineup` half of
@@ -187,9 +266,7 @@ export function modelsForProvider(p: ModelEntry["provider"]): readonly ModelEntr
  * every invocable model appears in exactly one half, so a picker built from
  * both can never silently drop a model the way a positional `.slice()` could.
  */
-export function lineupForProvider(p: ModelEntry["provider"]): readonly ModelEntry[] {
-  return modelsForProvider(p).filter((m) => m.lineup === true);
-}
+export const lineupForProvider: RegistryAccessors["lineupForProvider"] = live.lineupForProvider;
 
 /**
  * The other half — invocable models NOT in the front slice, in registry order.
@@ -197,9 +274,7 @@ export function lineupForProvider(p: ModelEntry["provider"]): readonly ModelEntr
  * still selectable, just superseded (Claude Fable 5, Sonnet 4.6, Opus 4.8 and
  * the older Gemini/GPT rows as of the 2026-09-02 wave).
  */
-export function legacyForProvider(p: ModelEntry["provider"]): readonly ModelEntry[] {
-  return modelsForProvider(p).filter((m) => m.lineup !== true);
-}
+export const legacyForProvider: RegistryAccessors["legacyForProvider"] = live.legacyForProvider;
 
 /**
  * A provider's ANNOUNCED rows, in registry order — models the registry knows
@@ -217,10 +292,11 @@ export function legacyForProvider(p: ModelEntry["provider"]): readonly ModelEntr
  *
  * Only `status === 'announced'` comes back: a `deprecated` row is not
  * announced and stays hidden here just as it is hidden from the pickers.
+ * Empty for every provider since the 2026-09-08 Fable 5.1 flip — a real
+ * state the consoles render as "nothing announced", not a vacuous one: the
+ * registry tests keep the accessor honest over a synthetic announced row.
  */
-export function announcedForProvider(p: ModelEntry["provider"]): readonly ModelEntry[] {
-  return MODEL_REGISTRY.filter((m) => m.provider === p && m.status === "announced");
-}
+export const announcedForProvider: RegistryAccessors["announcedForProvider"] = live.announcedForProvider;
 
 /**
  * The model AXIS a framework's picker offers — its default provider's
@@ -229,11 +305,7 @@ export function announcedForProvider(p: ModelEntry["provider"]): readonly ModelE
  * and deploy snapshot, the backend's create validator) derives THIS list, so
  * no two of them can disagree about what "offered" means (guuey#647).
  */
-export function modelsForFramework(framework: FrameworkEntry["framework"]): readonly ModelEntry[] {
-  const fw = FRAMEWORK_REGISTRY.find((f) => f.framework === framework);
-  if (!fw) throw new Error(`Unknown framework: ${framework}`);
-  return modelsForProvider(fw.defaultProvider);
-}
+export const modelsForFramework: RegistryAccessors["modelsForFramework"] = live.modelsForFramework;
 
 /**
  * Is `id` on `framework`'s model axis? THE offered / off-registry predicate
@@ -242,24 +314,14 @@ export function modelsForFramework(framework: FrameworkEntry["framework"]): read
  * never heard of all answer false. One rule for every door — a client that
  * copied it would be the second source of truth this exists to prevent.
  */
-export function isOfferedModel(framework: FrameworkEntry["framework"], id: string): boolean {
-  return modelsForFramework(framework).some((m) => m.id === id);
-}
+export const isOfferedModel: RegistryAccessors["isOfferedModel"] = live.isOfferedModel;
 
 /**
  * Get the default model id for a framework's default provider.
  */
-export function defaultModelFor(framework: FrameworkEntry["framework"]): string {
-  const fw = FRAMEWORK_REGISTRY.find((f) => f.framework === framework);
-  if (!fw) throw new Error(`Unknown framework: ${framework}`);
-  const model = MODEL_REGISTRY.find((m) => m.provider === fw.defaultProvider && m.isDefault && m.status === "ga");
-  if (!model) throw new Error(`No default ga model for provider: ${fw.defaultProvider}`);
-  return model.id;
-}
+export const defaultModelFor: RegistryAccessors["defaultModelFor"] = live.defaultModelFor;
 
 /**
  * Look up a model entry by id.
  */
-export function modelEntry(id: string): ModelEntry | undefined {
-  return MODEL_REGISTRY.find((m) => m.id === id);
-}
+export const modelEntry: RegistryAccessors["modelEntry"] = live.modelEntry;
