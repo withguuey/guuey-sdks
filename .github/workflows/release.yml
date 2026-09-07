@@ -242,7 +242,9 @@ jobs:
             # successful publish (worker@0.16.5 false-partial, run
             # 32981119374: red run, complete cohort). Poll the full
             # versions array, wider window; a package missing THERE after
-            # 4 minutes is genuinely unpublished.
+            # 10 minutes is genuinely unpublished (guuey#968: fs@0.18.5 took
+            # ~5.5 min on BOTH reads — the 4-minute window turned a complete
+            # cohort red and skipped the consumer smoke).
             # Fallback inside the poll: the TARBALL itself. worker's
             # packument replicas lag past even the versions-array window
             # (second false partial, run of 2026-08-27) — but the tarball
@@ -251,11 +253,17 @@ jobs:
             # BOTH after the window is genuinely unpublished.
             base="${name#*/}"
             tarball="https://registry.npmjs.org/$name/-/$base-$ver.tgz"
-            for i in $(seq 1 24); do
-              if npm view "$name" versions --json 2>/dev/null | grep -q "\"$ver\""; then ok=1; break; fi
-              if [ "$(curl -s -o /dev/null -w '%{http_code}' -I "$tarball")" = "200" ]; then ok=1; break; fi
+            t0=$(date +%s)
+            for _ in $(seq 1 60); do
+              if npm view "$name" versions --json 2>/dev/null | grep -q "\"$ver\""; then ok=versions; break; fi
+              if [ "$(curl -s -o /dev/null -w '%{http_code}' -I "$tarball")" = "200" ]; then ok=tarball; break; fi
               sleep 10
             done
+            # The receipt line: WHICH read confirmed and how long after the
+            # step started — the lag itself is the fact the next widening
+            # (or narrowing) is argued from.
+            [ -n "$ok" ] && echo "  ↳ $name@$ver seen via $ok after $(( $(date +%s) - t0 ))s"
+
             if [ -z "$ok" ]; then
               echo "::error ::$name@$ver is NOT on npm after publish — the cohort is partial"
               exit 1
@@ -325,7 +333,10 @@ jobs:
           echo "announce line proven: cold @guuey/cli@$GATE_TAG == $VER, full closure installed"
 
       - name: Post-publish consumer smoke
-        if: steps.mode.outputs.dry_run == 'false'
+        # `always()`: a red verify (a lagging registry replica, guuey#968) must
+        # not SKIP the one step that proves installability; `continue-on-error`
+        # below still keeps this step from ever failing the release.
+        if: always() && steps.mode.outputs.dry_run == 'false'
         # NEVER fails the release: publish already happened (irreversible), so a
         # red job here would falsely brand a successful release as broken. npm
         # CDN propagation for `npx @latest` can lag minutes behind a successful
