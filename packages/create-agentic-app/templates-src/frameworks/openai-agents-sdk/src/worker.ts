@@ -16,7 +16,7 @@
  */
 import { Agent, MaxTurnsExceededError, MCPServerStreamableHttp, run } from "@openai/agents";
 import type { MCPServer } from "@openai/agents";
-import { serveNative } from "@guuey/worker";
+import { mcpToolCustomData, serveNative } from "@guuey/worker";
 import { loadAgent, systemPrompt, mcpEndpoints, withHistory } from "./agent-config.js";
 
 await serveNative(
@@ -29,6 +29,11 @@ await serveNative(
           url: ep.url,
           name,
           ...(Object.keys(ep.headers).length > 0 ? { requestInit: { headers: ep.headers } } : {}),
+          // The ONLY channel that carries an MCP result's structuredContent +
+          // _meta onto the wire (guuey#981): the card's ui:// locator and the
+          // ggui render-cache marker ride here. Without it a code-mode OpenAI
+          // app shows "✓ ggui render" and no card.
+          customDataExtractor: mcpToolCustomData,
         })
     );
 

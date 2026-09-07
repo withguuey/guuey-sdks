@@ -10,7 +10,8 @@ import {
   runInvokeOpenai,
   type OpenaiRunFn,
   type OpenaiRunResult,
-} from "./openai.js";
+} from './openai.js';
+import { mcpToolCustomData as mcpCustomData } from "@guuey/worker";
 import type { HostInvoke } from "./claude.js";
 import {
   RESPONSE_NORMS_SECTION,
@@ -465,5 +466,36 @@ describe("runInvokeOpenai — hello handshake (§8 item B)", () => {
     const firstOtherIdx = events.findIndex((e) => e.type !== "hello");
     expect(helloIdx).toBe(0);
     expect(firstOtherIdx).toBeGreaterThan(helloIdx);
+  });
+});
+
+// ── guuey#981: the MCP result side-channel carries `_meta` too ──────────────
+// `@openai/agents` exposes an MCP tool result to us ONLY through
+// `customDataExtractor` (context: structuredContent, resultMeta, isError,
+// toolOutput). The card's locator rides the MCP-Apps side-channel
+// (`_meta.ui` + surface `structuredContent`); forwarding structuredContent
+// alone (the cache-marker precedent) leaves the facet with no `_meta` to
+// route into `uiData`.
+describe("mcpCustomData (guuey#981)", () => {
+  it("carries structuredContent AND resultMeta (as `_meta`) when both are present", () => {
+    expect(
+      mcpCustomData({
+        structuredContent: { cache: { hit: false }, resourceUri: "ui://ggui/render/r1/abc" },
+        resultMeta: { ui: { resourceUri: "ui://ggui/render/r1/abc" } },
+      }),
+    ).toEqual({
+      structuredContent: { cache: { hit: false }, resourceUri: "ui://ggui/render/r1/abc" },
+      _meta: { ui: { resourceUri: "ui://ggui/render/r1/abc" } },
+    });
+  });
+
+  it("carries whichever is present alone, and returns undefined when neither is (no empty customData on the wire)", () => {
+    expect(mcpCustomData({ structuredContent: { cache: { hit: true } } })).toEqual({
+      structuredContent: { cache: { hit: true } },
+    });
+    expect(mcpCustomData({ resultMeta: { ui: { resourceUri: "ui://x" } } })).toEqual({
+      _meta: { ui: { resourceUri: "ui://x" } },
+    });
+    expect(mcpCustomData({})).toBeUndefined();
   });
 });

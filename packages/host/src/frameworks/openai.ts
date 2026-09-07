@@ -36,6 +36,7 @@ import {
   type MCPServer,
   type RunStreamEvent,
 } from "@openai/agents";
+import { mcpToolCustomData } from "@guuey/worker";
 import type { Emitter, JsonValue } from "@guuey/worker";
 import {
   resolveMcpServers,
@@ -322,15 +323,12 @@ function toOpenaiMcpServer(name: string, entry: SdkMcpServer): MCPServerStreamab
     name,
     ...(headers && Object.keys(headers).length > 0 ? { requestInit: { headers } } : {}),
     // `customDataExtractor` (agents 0.12+) is the ONLY channel that carries an
-    // MCP tool result's `structuredContent` onto the wire (`item.customData`)
-    // WITHOUT leaking it into model-visible text — without this, the ggui cache
-    // marker never reaches the normalizer and render metering goes blind.
-    // Mirrors the verified silverprotocol capture-agent wiring; the facet reads
-    // `item.customData.structuredContent`.
-    customDataExtractor: (context) =>
-      context.structuredContent !== undefined
-        ? { structuredContent: context.structuredContent }
-        : undefined,
+    // MCP tool result's `structuredContent` AND `_meta` onto the wire
+    // (`item.customData`) WITHOUT leaking them into model-visible text — the
+    // ggui render-cache marker and the card's MCP-Apps `ui://` locator both
+    // ride here. guuey#981: ONE shared extractor for every OpenAI worker — the
+    // code-mode template's `worker.ts` passes the same `@guuey/worker` export.
+    customDataExtractor: mcpToolCustomData,
   });
 }
 

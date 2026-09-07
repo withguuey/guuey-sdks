@@ -42,3 +42,4 @@ export { serve, serveOn, type ServeOptions } from "./serve.js";
 export { Turn, type WorkerHandler } from "./turn.js";
 export { serveNative, serveNativeOn } from "./serve-native.js";
 export type { NativeEmit, NativeHandler, NativeServeInfo } from "./serve-native.js";
+export { mcpToolCustomData, type McpToolCustomData, type McpToolCustomDataContext } from "./mcp-custom-data.js";
