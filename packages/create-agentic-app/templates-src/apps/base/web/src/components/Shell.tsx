@@ -34,9 +34,13 @@ export function Shell() {
           <NavLink to={CHAT_PATH}>Chat</NavLink>
           <NavLink to={HOME_PATH}>Home</NavLink>
           {mode === null ? (
-            <NavLink to="/login" className="btn btn-accent">
-              Sign in
-            </NavLink>
+            // No sign-in affordance until `auth.oidc` is configured: a
+            // guest-only deploy shows the guest door alone (guuey#930).
+            oidcConfigured() ? (
+              <NavLink to="/login" className="btn btn-accent">
+                Sign in
+              </NavLink>
+            ) : null
           ) : (
             <button type="button" className="btn" onClick={() => void handleLogOut()}>
               Log out{mode === "guest" ? " (guest)" : ""}

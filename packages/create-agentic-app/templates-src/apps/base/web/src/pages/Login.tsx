@@ -3,10 +3,13 @@
  *
  * - "Continue as guest": one click, no account. A per-browser secret is
  *   minted locally; the agent remembers this browser across visits.
- * - "Sign in": the BYO-OIDC seam. Active only when `auth.oidc` is
- *   configured in guuey.app.json (any spec-compliant IdP — this is where a
- *   "Sign in with Google" plugs in). The bound guuey app must be in BYO
- *   auth mode for the same issuer.
+ * - "Sign in": the BYO-OIDC seam. Rendered only when `auth.oidc` is
+ *   configured in guuey.app.json (or via `scripts/bootstrap.mjs`) — any
+ *   spec-compliant IdP; this is where a "Sign in with Google" plugs in. The
+ *   bound guuey app must be in BYO auth mode for the same issuer. Until it
+ *   is configured the page shows the guest door alone: a disabled
+ *   "not configured yet" control is a developer note, not a customer door
+ *   (guuey#930).
  */
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -65,11 +68,7 @@ export function Login() {
           <button type="button" className="btn btn-accent btn-wide" onClick={() => void signIn()}>
             Sign in
           </button>
-        ) : (
-          <button type="button" className="btn btn-wide" disabled title="Configure auth.oidc in guuey.app.json (or via bootstrap) to enable sign-in">
-            Sign in — not configured yet
-          </button>
-        )}
+        ) : null}
         <button type="button" className="btn btn-wide" onClick={guest}>
           Continue as guest
         </button>
