@@ -1135,6 +1135,30 @@ export const DEFAULT_AGENT_MCP_SERVERS: Record<string, GuueyAgentMcpServer> = {
 };
 
 /**
+ * "Is this host the ggui generative-UI server?" — the ONE owner of the rule
+ * (guuey#953). Every consumer resolves ggui by HOST, never by key (a
+ * declared map may key it anything — `mcp-ggui-protocol` on early-vintage
+ * apps): the runtime's federation injection and render meter (which
+ * re-export these), the deploy mirror that tells the console whether ggui is
+ * on for an app, and the seeding rule itself. Matches the canonical prod host
+ * `mcp.ggui.ai` and the per-environment sandbox hosts
+ * `<env>.mcp.sandbox.ggui.ai` (dev / staging run a per-env ggui MCP host that
+ * trusts the matching per-env guuey issuer).
+ */
+export function isGguiHost(host: string): boolean {
+  return host === 'mcp.ggui.ai' || host.endsWith('.mcp.sandbox.ggui.ai');
+}
+
+/** {@link isGguiHost} for a full URL; false on a malformed URL. */
+export function isGguiUrl(url: string): boolean {
+  try {
+    return isGguiHost(new URL(url).host);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The EFFECTIVE server map (guuey#24, option A): seed the platform default,
  * layer the declared map on top (explicit wins), drop `ggui: false`. This is
  * the ONE owner of default-application semantics — the resolution seams

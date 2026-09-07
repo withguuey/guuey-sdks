@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isGguiHost,
+  isGguiUrl,
   applyAgentMode,
   AgentSectionV1,
   validateColocatedServerNames,
@@ -1151,5 +1153,23 @@ describe('agent.surfaceHints — the guuey#531 opt-out knob', () => {
     expect(off.surfaceHints).toBe(false);
     const def = AgentSectionV1.parse({});
     expect(def.surfaceHints).toBeUndefined();
+  });
+});
+
+describe('isGguiHost / isGguiUrl — the ONE ggui-host rule (guuey#953)', () => {
+  it('matches the canonical prod host and the per-env sandbox hosts — by host, never by key', () => {
+    expect(isGguiHost('mcp.ggui.ai')).toBe(true);
+    expect(isGguiHost('dev.mcp.sandbox.ggui.ai')).toBe(true);
+    expect(isGguiHost('staging.mcp.sandbox.ggui.ai')).toBe(true);
+    expect(isGguiHost('mcp.ggui.ai.evil.example')).toBe(false);
+    expect(isGguiHost('ggui.ai')).toBe(false);
+    expect(isGguiUrl('https://mcp.ggui.ai/apps/app_x')).toBe(true);
+    expect(isGguiUrl('https://mcp.example.com')).toBe(false);
+    expect(isGguiUrl('not a url')).toBe(false);
+  });
+
+  it('the platform default is a ggui host by its own rule (the seam every consumer shares)', () => {
+    const d = DEFAULT_AGENT_MCP_SERVERS['ggui'];
+    expect(d !== undefined && d.kind === 'external' && isGguiUrl(d.url)).toBe(true);
   });
 });
