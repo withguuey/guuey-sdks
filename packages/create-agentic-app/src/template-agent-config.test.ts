@@ -155,3 +155,36 @@ describe('template mcpEndpoints (guuey#25 T4)', () => {
     expect(read('openai-agents-sdk')).toBe(read('claude-agent-sdk'));
   });
 });
+
+// guuey#978 (founder: "we also need to take care of those warnings"): pnpm ≥10
+// ignores `pnpm.onlyBuiltDependencies` in package.json (a WARN on every first
+// install) and prints the "Ignored build scripts … run pnpm approve-builds" box
+// for transitive build-script deps. The knobs live in pnpm-workspace.yaml —
+// once, in core (every scaffold gets it) and mirrored in the google-adk overlay
+// (overlay wins) — and no template package.json carries the ignored field.
+describe("scaffold first install is quiet (guuey#978)", () => {
+  const read = async (rel: string) => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
+  };
+  it("no template package.json carries the ignored `pnpm` field", async () => {
+    for (const rel of [
+      "../templates-src/frameworks/openai-agents-sdk/package.json",
+      "../templates-src/frameworks/claude-agent-sdk/package.json",
+      "../templates-src/frameworks/google-adk/package.json",
+      "../templates-src/mcp-base/package.json",
+    ]) {
+      const pkg = JSON.parse(await read(rel)) as { pnpm?: unknown };
+      expect(pkg.pnpm, rel).toBeUndefined();
+    }
+  });
+  it("core and the google-adk overlay pnpm-workspace.yaml allow esbuild's build and name the ignored transitive builds", async () => {
+    for (const rel of ["../templates-src/core/pnpm-workspace.yaml", "../templates-src/frameworks/google-adk/pnpm-workspace.yaml"]) {
+      const yaml = await read(rel);
+      expect(yaml, rel).toMatch(/onlyBuiltDependencies:\n(?:\s+- [^\n]+\n)*\s+- esbuild\n/);
+      expect(yaml, rel).toMatch(/ignoredBuiltDependencies:\n(?:\s+- [^\n]+\n)*\s+- sharp\n/);
+      expect(yaml, rel).toMatch(/strictDepBuilds: false/);
+    }
+  });
+});

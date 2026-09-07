@@ -22,3 +22,19 @@ verifyDepsBeforeRun: false
 # See above — same registry-lookback problem hits a plain `pnpm install`
 # too when minimumReleaseAge is nonzero; disable it for scaffolded apps.
 minimumReleaseAge: 0
+
+# pnpm ≥10 reads the build-script allow/deny lists HERE — package.json's
+# `pnpm.onlyBuiltDependencies` is ignored and WARNs on every first install
+# (guuey#978, the founder's first prod scaffold). esbuild's postinstall is
+# allowed (the binary fetch). The transitive build-script deps a scaffold
+# pulls — none run by the worker's own code — are ignored EXPLICITLY, which
+# is exactly what pnpm did silently before while printing the
+# "Ignored build scripts … run pnpm approve-builds" box; naming them keeps
+# a customer's first minute quiet without changing what gets built.
+onlyBuiltDependencies:
+  - esbuild
+ignoredBuiltDependencies:
+  - "@google/genai"
+  - onnxruntime-node
+  - protobufjs
+  - sharp
