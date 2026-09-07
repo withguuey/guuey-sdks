@@ -1159,6 +1159,25 @@ export function isGguiUrl(url: string): boolean {
 }
 
 /**
+ * Is this URL THE ggui render server — the entry the platform default stands
+ * for (guuey#955)? The ggui host at its ROOT (the broker appends
+ * `/apps/<gguiAppId>`), or an explicit per-app `/apps/<id>` address.
+ * Same-host SIBLINGS are other ggui services and never stand in for it: the
+ * helper app's `control` at `/control` (credential `caller`) must keep the
+ * seeded default beside it, or its renders lose the federate rail.
+ */
+export function isGguiRenderUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    if (!isGguiHost(u.host)) return false;
+    const path = u.pathname.replace(/\/+$/, '');
+    return path === '' || path.startsWith('/apps/');
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The EFFECTIVE server map (guuey#24, option A): seed the platform default,
  * layer the declared map on top (explicit wins), drop `ggui: false`. This is
  * the ONE owner of default-application semantics — the resolution seams
@@ -1168,7 +1187,20 @@ export function isGguiUrl(url: string): boolean {
 export function effectiveMcpServers(
   declared: DeclaredMcpServers | undefined
 ): Record<string, GuueyAgentMcpServer> {
-  const merged: DeclaredMcpServers = { ...DEFAULT_AGENT_MCP_SERVERS, ...declared };
+  // guuey#955: seed the default ONLY when no declared entry is already THE
+  // render server (`isGguiRenderUrl`: ggui host at its root, or a per-app
+  // `/apps/<id>` address) — "explicit wins" by what the entry IS, not by key,
+  // so an early-vintage `mcp-ggui-protocol` (or any renamed key) runs ONE ggui
+  // server, never the pair (two identical toolsets; the render meter follows
+  // one name). A same-host sibling (`/control`) is not the render server and
+  // keeps the default beside it. Two ggui entries declared explicitly are the
+  // builder's choice and stay.
+  const declaredHasGgui = declaredServerEntries(declared).some(
+    ([, entry]) => entry.kind === 'external' && isGguiRenderUrl(entry.url)
+  );
+  const merged: DeclaredMcpServers = declaredHasGgui
+    ? { ...declared }
+    : { ...DEFAULT_AGENT_MCP_SERVERS, ...declared };
   const out: Record<string, GuueyAgentMcpServer> = {};
   for (const [name, entry] of Object.entries(merged)) {
     if (entry !== false) out[name] = entry;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isGguiHost,
+  isGguiRenderUrl,
   isGguiUrl,
   applyAgentMode,
   AgentSectionV1,
@@ -635,6 +636,36 @@ describe("mcpServers ggui:false opt-out (guuey#24)", () => {
     });
   });
 
+  it("effectiveMcpServers: a ggui server declared under ANOTHER key suppresses the seeded default — one ggui entry, the builder's key (guuey#955)", () => {
+    const legacy = { kind: "external", url: "https://mcp.ggui.ai", transport: "http" } as const;
+    const out = effectiveMcpServers({ "mcp-ggui-protocol": legacy });
+    expect(Object.keys(out)).toEqual(["mcp-ggui-protocol"]);
+    expect(out["mcp-ggui-protocol"]).toEqual(legacy);
+  });
+
+  it("effectiveMcpServers: the per-env sandbox ggui host counts as ggui too — no second entry (guuey#955)", () => {
+    const sandbox = { kind: "external", url: "https://dev.mcp.sandbox.ggui.ai", transport: "http" } as const;
+    expect(Object.keys(effectiveMcpServers({ ui: sandbox, todo }))).toEqual(["ui", "todo"]);
+  });
+
+  it("effectiveMcpServers: a same-host SIBLING (the helper's /control, credential caller) is NOT the render server — the default still seeds beside it (guuey#955)", () => {
+    const control = { kind: "external", url: "https://mcp.ggui.ai/control", credential: "caller" } as const;
+    const out = effectiveMcpServers({ control });
+    expect(Object.keys(out).sort()).toEqual(["control", "ggui"]);
+    expect(out["ggui"]).toEqual(DEFAULT_AGENT_MCP_SERVERS["ggui"]);
+  });
+
+  it("effectiveMcpServers: an explicit per-app /apps/<id> address IS the render server — no second entry (guuey#955)", () => {
+    const perApp = { kind: "external", url: "https://mcp.ggui.ai/apps/App1", transport: "http" } as const;
+    expect(Object.keys(effectiveMcpServers({ ui: perApp }))).toEqual(["ui"]);
+  });
+
+  it("effectiveMcpServers: two ggui entries declared EXPLICITLY stay — the builder's choice is never silently dropped (guuey#955)", () => {
+    const legacy = { kind: "external", url: "https://mcp.ggui.ai", transport: "http" } as const;
+    const out = effectiveMcpServers({ "mcp-ggui-protocol": legacy, ggui: legacy });
+    expect(Object.keys(out).sort()).toEqual(["ggui", "mcp-ggui-protocol"]);
+  });
+
   it("effectiveMcpServers: a declared ggui entry wins over the default", () => {
     const mine = {
       kind: "external",
@@ -1171,5 +1202,20 @@ describe('isGguiHost / isGguiUrl — the ONE ggui-host rule (guuey#953)', () => 
   it('the platform default is a ggui host by its own rule (the seam every consumer shares)', () => {
     const d = DEFAULT_AGENT_MCP_SERVERS['ggui'];
     expect(d !== undefined && d.kind === 'external' && isGguiUrl(d.url)).toBe(true);
+  });
+});
+
+describe("isGguiRenderUrl — THE render server's shape, not merely the host (guuey#955)", () => {
+  it("root of the ggui host (prod + per-env sandbox) and an explicit /apps/<id> address", () => {
+    expect(isGguiRenderUrl("https://mcp.ggui.ai")).toBe(true);
+    expect(isGguiRenderUrl("https://mcp.ggui.ai/")).toBe(true);
+    expect(isGguiRenderUrl("https://staging.mcp.sandbox.ggui.ai")).toBe(true);
+    expect(isGguiRenderUrl("https://mcp.ggui.ai/apps/App1")).toBe(true);
+  });
+  it("same-host siblings and other hosts are not", () => {
+    expect(isGguiRenderUrl("https://mcp.ggui.ai/control")).toBe(false);
+    expect(isGguiRenderUrl("https://mcp.ggui.ai/dev")).toBe(false);
+    expect(isGguiRenderUrl("https://mcp.example.com")).toBe(false);
+    expect(isGguiRenderUrl("nope")).toBe(false);
   });
 });
