@@ -633,6 +633,23 @@ async function deployCode(opts: {
     process.exit(1);
   }
 
+  // ── Step 1b: the local project must be buildable BEFORE any leg leaves
+  //    the machine (guuey#989). Shipped by #979 at the top of Step 4, this
+  //    ran AFTER the ggui asset push — a full-state replace on the app —
+  //    for a deploy that then died on a missing node_modules (his 0.19.0
+  //    prod walk: "✓ ggui assets pushed" … "No node_modules in …"). ──
+  const installed = ensureInstalled({
+    root,
+    install: opts.install,
+    exists: existsSync,
+    run: (command) => execSync(command, { cwd: root, stdio: 'inherit' }),
+    log: (line) => console.log(line),
+  });
+  if (installed.kind === 'missing') {
+    out.error(installed.message);
+    process.exit(1);
+  }
+
   // ── Step 2: MCP legs ──
   // Re-deploys of an entry that already has `server` still run — the
   // backend reuse-or-creates by name, so this ships a new version of the
@@ -697,18 +714,8 @@ async function deployCode(opts: {
     }
   }
 
-  // ── Step 4: agent leg (last) — preflight, build, THEN pack ──
-  const installed = ensureInstalled({
-    root,
-    install: opts.install,
-    exists: existsSync,
-    run: (command) => execSync(command, { cwd: root, stdio: 'inherit' }),
-    log: (line) => console.log(line),
-  });
-  if (installed.kind === 'missing') {
-    out.error(installed.message);
-    process.exit(1);
-  }
+  // ── Step 4: agent leg (last) — build, THEN pack (the node_modules
+  //    preflight ran before Step 2 — guuey#989) ──
   console.log('  Building...');
   try {
     execSync('corepack pnpm build', { cwd: root, stdio: 'inherit' });

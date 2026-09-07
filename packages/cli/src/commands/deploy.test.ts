@@ -964,6 +964,71 @@ describe('resolveDeployTarget (guuey#975)', () => {
   });
 });
 
+// ── guuey#989: the node_modules preflight runs BEFORE any leg talks to the platform ──
+// The founder's 0.19.0 prod walk showed the order as shipped by #979:
+// "✓ ggui assets pushed" and only THEN "No node_modules in …" — the asset
+// leg had already mutated the app (full-state replace) for a deploy that
+// could not build. The local project must be buildable before any leg
+// leaves the machine.
+describe('deploy() --code — the node_modules preflight precedes every platform leg (guuey#989)', () => {
+  let dir: string;
+  let originalCwd: string;
+  let fetchSpy: MockInstance<typeof fetch>;
+  let errorSpy: MockInstance<typeof console.error>;
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    dir = mkdtempSync(join(tmpdir(), 'deploy-preflight-order-test-'));
+    writeFileSync(
+      join(dir, 'guuey.json'),
+      JSON.stringify({
+        schema: '1',
+        appId: 'app-bound',
+        agent: { framework: 'openai-agents-sdk' },
+        ggui: { configFile: 'ggui.json' },
+      }),
+    );
+    // A packable ggui.json, so the asset leg is LIVE — the point is that it
+    // must not run, not that it cannot.
+    writeFileSync(join(dir, 'ggui.json'), JSON.stringify({ gadgets: [] }));
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
+    // Deliberately NO node_modules.
+    process.chdir(dir);
+    vi.mocked(resolveConfig).mockReturnValue({
+      host: 'https://platform.guuey.test',
+      apiUrl: 'https://api.guuey.test',
+      appId: 'app-bound',
+    });
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/ggui-assets/push')) {
+        return new Response(JSON.stringify({ pushed: true }), { status: 200 });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it('★ a bound code project with NO node_modules refuses with the install line BEFORE any ggui asset push', async () => {
+    await expect(deploy({ code: true })).rejects.toBeInstanceOf(ExitSignal);
+    expect(errorSpy.mock.calls.flat().join('\n')).toMatch(/No node_modules in /);
+    // Nothing left the machine: no asset push (and no other leg) before the refusal.
+    expect(fetchSpy.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('/ggui-assets/push'))).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
 // ── guuey#979: code-mode deploy preflights node_modules ─────────────────────
 // The founder's first prod deploy (2026-09-07) ran `corepack pnpm build` in a
 // fresh scaffold with no node_modules and died inside the build ("sh: tsup:
