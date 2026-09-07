@@ -388,6 +388,7 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
     });
   } else if (mode === 'code-orchestrated') {
     await deployCode({
+      install: flags?.install === true,
       auth,
       config,
       appId,
@@ -519,6 +520,43 @@ async function ensureLinkedApp(opts: {
   return createLinkedApp({ auth, config, project, guueyJsonPath, appName });
 }
 
+// ─── guuey#979: node_modules preflight for the code-mode build ─────────────
+export type EnsureInstalledResult =
+  | { kind: 'not-applicable' }
+  | { kind: 'present' }
+  | { kind: 'installed' }
+  | { kind: 'missing'; message: string };
+
+/**
+ * `deploy --code` runs the project's build LOCALLY (`corepack pnpm build`),
+ * so a fresh scaffold with no `node_modules` used to die INSIDE the build
+ * ("sh: tsup: command not found") with pnpm's own WARN as the only
+ * instruction (the founder's first prod deploy, 2026-09-07). Say it in our
+ * voice before any build — or install on `--install`. Injected `exists`/`run`
+ * so the decision is unit-testable without a child process.
+ */
+export function ensureInstalled(opts: {
+  root: string;
+  install: boolean;
+  exists: (path: string) => boolean;
+  run: (command: string) => void;
+  log: (line: string) => void;
+}): EnsureInstalledResult {
+  const { root, install, exists, run, log } = opts;
+  if (!exists(join(root, 'package.json'))) return { kind: 'not-applicable' };
+  if (exists(join(root, 'node_modules'))) return { kind: 'present' };
+  if (!install) {
+    return {
+      kind: 'missing',
+      message:
+        `No node_modules in ${root} — run "corepack pnpm install" (or pass --install to let deploy do it) and re-run guuey deploy.`,
+    };
+  }
+  log('  Installing dependencies (corepack pnpm install)...');
+  run('corepack pnpm install');
+  return { kind: 'installed' };
+}
+
 // ─── Code mode: one-command orchestrator ──────────────────────────────────
 
 /**
@@ -535,6 +573,8 @@ async function deployCode(opts: {
   root: string;
   size: string;
   buildSize: string;
+  /** guuey#979: run the project's package-manager install when node_modules is missing. */
+  install: boolean;
   maxPods: number | undefined;
   runtimeAutoUpdate?: boolean | undefined;
   label: string | undefined;
@@ -657,7 +697,18 @@ async function deployCode(opts: {
     }
   }
 
-  // ── Step 4: agent leg (last) — build, THEN pack ──
+  // ── Step 4: agent leg (last) — preflight, build, THEN pack ──
+  const installed = ensureInstalled({
+    root,
+    install: opts.install,
+    exists: existsSync,
+    run: (command) => execSync(command, { cwd: root, stdio: 'inherit' }),
+    log: (line) => console.log(line),
+  });
+  if (installed.kind === 'missing') {
+    out.error(installed.message);
+    process.exit(1);
+  }
   console.log('  Building...');
   try {
     execSync('corepack pnpm build', { cwd: root, stdio: 'inherit' });

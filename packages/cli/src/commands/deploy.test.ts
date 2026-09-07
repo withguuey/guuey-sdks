@@ -13,6 +13,7 @@ import {
   portalLine,
   portalOriginForHost,
   printPageLine, printPodLifetime,
+  ensureInstalled,
 } from './deploy.js';
 import { DEPLOY_WAIT_MS, NODE_PROVISION_BUDGET_MS, stillDeployingMessage } from './deploy-wait.js';
 import { resolveConfig, loadProjectConfig } from '../config.js';
@@ -960,5 +961,61 @@ describe('resolveDeployTarget (guuey#975)', () => {
       source: 'global-config',
     });
     expect(resolveDeployTarget({ hasProject: false })).toMatchObject({ kind: 'unbound' });
+  });
+});
+
+// ── guuey#979: code-mode deploy preflights node_modules ─────────────────────
+// The founder's first prod deploy (2026-09-07) ran `corepack pnpm build` in a
+// fresh scaffold with no node_modules and died inside the build ("sh: tsup:
+// command not found"); the only install instruction on screen was pnpm's own
+// WARN. The preflight says it in our voice BEFORE any build, or installs on
+// `--install`.
+describe('ensureInstalled (guuey#979)', () => {
+  const calls: string[] = [];
+  const logs: string[] = [];
+  const io = (present: Set<string>) => ({
+    exists: (p: string) => present.has(p),
+    run: (cmd: string) => {
+      calls.push(cmd);
+    },
+    log: (line: string) => {
+      logs.push(line);
+    },
+  });
+  beforeEach(() => {
+    calls.length = 0;
+    logs.length = 0;
+  });
+
+  it('a project with package.json and NO node_modules refuses BEFORE any build, naming the install line and --install', () => {
+    const r = ensureInstalled({ root: '/p', install: false, ...io(new Set(['/p/package.json'])) });
+    expect(r).toMatchObject({ kind: 'missing' });
+    expect(r.kind === 'missing' ? r.message : '').toMatch(/No node_modules in \/p/);
+    expect(r.kind === 'missing' ? r.message : '').toMatch(/corepack pnpm install/);
+    expect(r.kind === 'missing' ? r.message : '').toMatch(/--install/);
+    expect(calls).toEqual([]);
+  });
+
+  it('with --install it runs the project package manager install in the project root, then proceeds', () => {
+    const r = ensureInstalled({ root: '/p', install: true, ...io(new Set(['/p/package.json'])) });
+    expect(r).toEqual({ kind: 'installed' });
+    expect(calls).toEqual(['corepack pnpm install']);
+    expect(logs.join('\n')).toMatch(/Installing dependencies/);
+  });
+
+  it('a project with node_modules present is untouched (no install, no message)', () => {
+    const r = ensureInstalled({
+      root: '/p',
+      install: true,
+      ...io(new Set(['/p/package.json', '/p/node_modules'])),
+    });
+    expect(r).toEqual({ kind: 'present' });
+    expect(calls).toEqual([]);
+  });
+
+  it('a project with no package.json has nothing to install (legacy Dockerfile code mode)', () => {
+    const r = ensureInstalled({ root: '/p', install: false, ...io(new Set()) });
+    expect(r).toEqual({ kind: 'not-applicable' });
+    expect(calls).toEqual([]);
   });
 });
