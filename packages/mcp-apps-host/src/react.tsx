@@ -35,6 +35,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { attachViewHost, viewDocumentHtml, type AttachViewHostConfig } from "./view-host.js";
 import { attachSandboxPageDelivery } from "./sandbox-page.js";
+import { decideAutoResize, initialAutoResizeState, type AutoResizeState } from "./auto-resize.js";
 import type { ViewCspDiagnosis, ViewHostPhase } from "./view-host-protocol.js";
 import type { ResolvedViewMount } from "./card-mount.js";
 
@@ -103,6 +104,15 @@ export interface GuueyViewProps
    * fires either way.
    */
   autoResize?: boolean;
+  /**
+   * The tallest frame `autoResize` may apply, in px (guuey#992). Default:
+   * the host window's `innerHeight` at the time of the report — a card
+   * taller than the viewport scrolls inside its frame. Reports are also
+   * judged by the echo detector in `auto-resize.ts`: a view whose body is
+   * viewport-bound measures the frame's own height back to the host, and a
+   * host that applied every report verbatim grew a frame to 86,816 px.
+   */
+  maxHeight?: number;
   /**
    * Sandbox flags appended to the safe default (`allow-scripts`). Every
    * entry widens what agent-generated HTML may do — `allow-same-origin`
@@ -185,6 +195,7 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
     mount,
     sandboxPageUrl,
     autoResize,
+    maxHeight,
     dangerouslyAddSandboxFlags,
     allow,
     title,
@@ -198,8 +209,10 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
   const [phase, setPhase] = useState<ViewHostPhase>("negotiating");
   // The CSP tripwire's verdict for THIS document, if any (guuey#235).
   const [diagnosis, setDiagnosis] = useState<ViewCspDiagnosis | undefined>(undefined);
-  // The view's own size report, applied only under `autoResize`.
+  // The view's own size report, applied only under `autoResize` — and only
+  // as the sizing policy allows (ceiling + echo detector, guuey#992).
   const [reportedHeight, setReportedHeight] = useState<number | undefined>(undefined);
+  const sizing = useRef<AutoResizeState>(initialAutoResizeState());
   const html = viewDocumentHtml(mount.resource);
 
   // Vet the sandbox page once per URL. Same-origin is REFUSED (the widget's
@@ -225,8 +238,8 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
   // The attachment is keyed to the mounted DOCUMENT, not to every render's
   // fresh callback identities — host config rides a ref so the effect's
   // dependency list is honestly just the document identity.
-  const latest = useRef({ hostConfig, onPhaseChange, dangerouslyAddSandboxFlags, autoResize });
-  latest.current = { hostConfig, onPhaseChange, dangerouslyAddSandboxFlags, autoResize };
+  const latest = useRef({ hostConfig, onPhaseChange, dangerouslyAddSandboxFlags, autoResize, maxHeight });
+  latest.current = { hostConfig, onPhaseChange, dangerouslyAddSandboxFlags, autoResize, maxHeight };
 
   useEffect(() => {
     // Keyed to the same identity the frame is (the resource uri): a new
@@ -235,6 +248,7 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
     setPhase("negotiating");
     setDiagnosis(undefined);
     setReportedHeight(undefined);
+    sizing.current = initialAutoResizeState();
     const frame = frameRef.current;
     if (frame === null || html === undefined) return;
     if (sandboxPageUrl !== undefined && page === undefined) return; // refused config — nothing mounts
@@ -259,7 +273,11 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
       },
       onSizeChanged: (size) => {
         if (latest.current.autoResize === true && size.height !== undefined) {
-          setReportedHeight(size.height);
+          const ceiling =
+            latest.current.maxHeight ?? (typeof window !== "undefined" ? window.innerHeight : undefined);
+          const decision = decideAutoResize(sizing.current, size.height, Date.now(), ceiling);
+          sizing.current = decision.state;
+          if (decision.apply !== undefined) setReportedHeight(decision.apply);
         }
         latest.current.hostConfig.onSizeChanged?.(size);
       },

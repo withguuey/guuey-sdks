@@ -116,6 +116,7 @@ export type ViewSlotProps = Pick<
   | "allow"
   | "sandboxPageUrl"
   | "autoResize"
+  | "maxHeight"
   | "cspOrigins"
 >;
 

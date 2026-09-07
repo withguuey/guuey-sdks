@@ -315,6 +315,53 @@ describe("DefaultView — per-mount viewProps + autoResize (guuey#135 kit-refine
     await vi.waitFor(() => expect(frame!.style.height).toBe("420px"));
   });
 
+  // guuey#992 — the founder's first prod card grew to 86,816 px: a view whose
+  // body is viewport-bound measures the frame's own height (+δ) back to the
+  // host on every resize. The host owns the loop's stability (the view is
+  // agent-generated HTML): a second same-δ growth inside the echo window
+  // holds the frame; a `maxHeight` (default: the window) caps it.
+  it("autoResize HOLDS the frame on the 100vh echo — the second same-δ growth never applies", async () => {
+    const { container } = render(
+      <DefaultView item={viewItem()} ctx={ctx({ viewProps: { autoResize: true } })} />,
+    );
+    const frame = container.querySelector("iframe")!;
+    const report = (height: number) =>
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { jsonrpc: "2.0", method: "ui/notifications/size-changed", params: { height } },
+          source: frame.contentWindow,
+        }),
+      );
+    report(420);
+    await vi.waitFor(() => expect(frame.style.height).toBe("420px"));
+    report(436); // the view re-measured the taller frame: +16
+    await vi.waitFor(() => expect(frame.style.height).toBe("436px"));
+    report(452); // +16 again — the echo
+    report(468);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(frame.style.height).toBe("436px");
+    // A shrink still applies — the hold is against growth only.
+    report(200);
+    await vi.waitFor(() => expect(frame.style.height).toBe("200px"));
+  });
+
+  it("autoResize never applies above maxHeight — a viewport-tall card scrolls inside its frame", async () => {
+    const { container } = render(
+      <DefaultView
+        item={viewItem()}
+        ctx={ctx({ viewProps: { autoResize: true, maxHeight: 600 } })}
+      />,
+    );
+    const frame = container.querySelector("iframe")!;
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: { jsonrpc: "2.0", method: "ui/notifications/size-changed", params: { height: 86_816 } },
+        source: frame.contentWindow,
+      }),
+    );
+    await vi.waitFor(() => expect(frame.style.height).toBe("600px"));
+  });
+
   it("without autoResize the reported height is NOT applied — additive by default", async () => {
     const { container } = render(<DefaultView item={viewItem()} ctx={ctx()} />);
     const frame = container.querySelector("iframe")!;
