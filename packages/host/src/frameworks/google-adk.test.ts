@@ -13,7 +13,13 @@ import type { BaseLlmConnection, LlmRequest, LlmResponse } from "@google/adk";
 import type { Emitter, JsonValue, StopReason } from "@guuey/worker";
 import type { HostTurn } from "../index.js";
 import { withContextPreamble } from "../preamble.js";
-import { buildToolsets, finalTextOf, loadAdk, runAdkTurn } from "./google-adk.js";
+import {
+  buildToolsets,
+  finalTextOf,
+  loadAdk,
+  runAdkTurn,
+  instrumentToolsets,
+} from './google-adk.js';
 
 // ── fakes ────────────────────────────────────────────────────────────────────
 
@@ -291,5 +297,53 @@ describe("StreamingMode.SSE is the string the structural slice passes (guuey#657
     // SDK so a renamed value turns red here instead of at the first turn.
     const { StreamingMode } = await import("@google/adk");
     expect(StreamingMode.SSE).toBe("sse");
+  });
+});
+
+// ── guuey#983: a POSITIVE "tools attached" fact per server per turn ─────────
+// The ADK logs its per-call MCP session close at ERROR ("MCP transport error:
+// … AbortError" ×N before every model round), so "the agent ran toolless" was
+// once inferred from noise on prod. The wrapper rides the ADK's own
+// `getTools()` (called per model round) — no extra listing round — and says,
+// once per server per turn, how many tools attached; a failing server is named.
+describe("instrumentToolsets (guuey#983)", () => {
+  it("logs one 'tools attached' line per server on the FIRST successful listing, not on later rounds", async () => {
+    const lines: string[] = [];
+    let calls = 0;
+    const toolset = {
+      getTools: async () => {
+        calls += 1;
+        return [{ name: "ggui_render" }, { name: "ggui_discover" }];
+      },
+    };
+    const [wrapped] = instrumentToolsets([{ name: "ggui", toolset }], (line) => lines.push(line)) as [
+      { getTools: () => Promise<unknown[]> },
+    ];
+    expect((await wrapped.getTools()).length).toBe(2);
+    expect((await wrapped.getTools()).length).toBe(2);
+    expect(calls).toBe(2);
+    expect(lines).toEqual(["[guuey] MCP tools attached: ggui (2)"]);
+  });
+
+  it("names a server whose listing FAILS and rethrows (the ADK's behaviour is unchanged)", async () => {
+    const lines: string[] = [];
+    const toolset = {
+      getTools: async () => {
+        throw new Error("ECONNREFUSED 10.0.0.1:443");
+      },
+    };
+    const [wrapped] = instrumentToolsets([{ name: "guuey-memory", toolset }], (line) => lines.push(line)) as [
+      { getTools: () => Promise<unknown[]> },
+    ];
+    await expect(wrapped.getTools()).rejects.toThrow(/ECONNREFUSED/);
+    expect(lines).toEqual(['[guuey] MCP toolset "guuey-memory" listTools FAILED: Error: ECONNREFUSED 10.0.0.1:443']);
+  });
+
+  it("passes a toolset without getTools through untouched", () => {
+    const lines: string[] = [];
+    const toolset = { params: { type: "StreamableHTTPConnectionParams", url: "https://x" } };
+    const [out] = instrumentToolsets([{ name: "todo", toolset }], (line) => lines.push(line));
+    expect(out).toBe(toolset);
+    expect(lines).toEqual([]);
   });
 });

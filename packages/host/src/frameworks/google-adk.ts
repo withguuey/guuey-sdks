@@ -217,6 +217,48 @@ export function buildToolsets(
 }
 
 /**
+ * guuey#983: a POSITIVE "tools attached" fact per server per turn.
+ *
+ * The ADK's `MCPToolset.getTools()` opens a session, lists tools and closes
+ * the session again — and the MCP SDK reports the closed GET notification
+ * stream through `onerror`, which the ADK logs at ERROR ("MCP transport
+ * error: … AbortError" ×N before every model round). On prod that noise was
+ * once read as "the agent ran toolless". This wrapper rides the ADK's own
+ * per-round `getTools()` (no extra listing round, no extra close-noise) and
+ * writes, once per server per turn, how many tools attached; a server whose
+ * listing throws is NAMED and the error rethrown — the ADK's behaviour is
+ * unchanged. Toolsets without `getTools` pass through untouched.
+ */
+export function instrumentToolsets(
+  entries: ReadonlyArray<{ name: string; toolset: unknown }>,
+  write: (line: string) => void,
+): unknown[] {
+  return entries.map(({ name, toolset }) => {
+    if (typeof toolset !== "object" || toolset === null) return toolset;
+    const original = (toolset as { getTools?: unknown }).getTools;
+    if (typeof original !== "function") return toolset;
+    const listTools = original as (this: unknown, ...args: unknown[]) => Promise<unknown>;
+    let announced = false;
+    const wrapped = async function (this: unknown, ...args: unknown[]): Promise<unknown> {
+      let tools: unknown;
+      try {
+        tools = await listTools.apply(toolset, args);
+      } catch (err) {
+        write(`[guuey] MCP toolset "${name}" listTools FAILED: ${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`);
+        throw err;
+      }
+      if (!announced) {
+        announced = true;
+        write(`[guuey] MCP tools attached: ${name} (${Array.isArray(tools) ? tools.length : "?"})`);
+      }
+      return tools;
+    };
+    Object.defineProperty(toolset, "getTools", { value: wrapped, configurable: true, writable: true });
+    return toolset;
+  });
+}
+
+/**
  * Extract a native event's last non-thought text part ("" when none).
  * Structural narrowing from `JsonValue` — the event stays untyped JSON on its
  * way to the normalizer; only this thin slice is inspected.
@@ -405,7 +447,11 @@ export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
         RESPONSE_NORMS_SECTION;
       let agent: AdkAgent;
       try {
-        const toolsets = buildToolsets(adk, listCredentials(turn.fs)());
+        const creds = listCredentials(turn.fs)();
+        const toolsets = instrumentToolsets(
+          buildToolsets(adk, creds).map((toolset, i) => ({ name: creds[i]?.name ?? `server-${i}`, toolset })),
+          (line) => process.stderr.write(`${line}\n`),
+        );
         if (exported !== undefined) {
           // Graceful: the dev's export (plain agent or factory(GuueyContext)).
           const ctx = buildGuueyContext(snapshot, turn, instruction, toolsets);
