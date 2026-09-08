@@ -19,7 +19,7 @@
   },
   "scripts": {
     "build": "tsup && node scripts/build-templates.mjs && node scripts/check-templates.mjs",
-    "pretest": "node scripts/build-templates.mjs",
+    "pretest": "node -e \"require('node:fs').existsSync('dist/templates') || (console.error('create-agentic-app: dist/templates is missing - run pnpm build first (turbo orders test after build, guuey#999)'), process.exit(1))\"",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint src --ext .ts",
