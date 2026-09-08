@@ -51,6 +51,7 @@ import {
   declaredServerEntries,
   type ResolvedGuueyJson,
   type GuueyJsonV1,
+  isOfferedModel,
 } from '@guuey/config';
 import { requireAuth, type AuthTokens } from '../auth';
 import {
@@ -437,6 +438,34 @@ function prompt(rl: ReturnType<typeof createInterface>, question: string): Promi
  *
  * Returns the resolved appId; exits the process on API failure.
  */
+/**
+ * The create-time INTENT a manifest carries onto `POST /apps` (guuey#1010).
+ * A CLI-created app used to land with `intendedFramework` / `intendedModel`
+ * NULL — the console's create-time faces then read "Not recorded on the
+ * app" for a framework the manifest declared. Two rules, both fail-open
+ * toward "carry less", never toward a refusal the deploy would not make:
+ *  - the framework rides when it is a MINT framework (the scaffold's
+ *    `--framework` vocabulary = the server's `INTENDED_FRAMEWORKS`);
+ *    `vanilla` has no create-time intent;
+ *  - the model rides ONLY when the registry offers it on that framework —
+ *    the server refuses an off-registry `intendedModel` (guuey#647), while
+ *    the deploy honors an unlisted `agent.model` verbatim (the documented
+ *    "set it in guuey.json and run guuey deploy" path), so an unlisted model
+ *    simply stays out of the create.
+ */
+export function createIntentFromProject(
+  project: ProjectConfig | null,
+): { intendedFramework?: 'claude-agent-sdk' | 'openai-agents-sdk' | 'google-adk'; intendedModel?: string } {
+  if (project === null) return {};
+  const framework = project.agent.framework;
+  if (framework === undefined || framework === 'vanilla') return {};
+  const model = project.agent.model;
+  return {
+    intendedFramework: framework,
+    ...(model !== undefined && model.length > 0 && isOfferedModel(framework, model) ? { intendedModel: model } : {}),
+  };
+}
+
 export async function createLinkedApp(opts: {
   auth: AuthTokens;
   config: ResolvedConfig;
@@ -449,6 +478,7 @@ export async function createLinkedApp(opts: {
   console.log('  Creating platform app...');
   const res = await apiRequest(auth.pat, config, 'POST', '/apps', {
     displayName: appName,
+    ...createIntentFromProject(project),
   });
   if (!res.ok) {
     const data: unknown = await res.json().catch(() => ({}));

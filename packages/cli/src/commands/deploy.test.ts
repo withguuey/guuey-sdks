@@ -34,7 +34,7 @@ vi.mock('node:child_process', async (importOriginal) => {
   };
 });
 import { resolveDeployTarget } from './deploy.js';
-import { safeParseGuueyJson } from '@guuey/config';
+import { defaultModelFor, isOfferedModel, safeParseGuueyJson } from '@guuey/config';
 import type { apiRequest } from '../deploy-shared.js';
 
 /** Thrown by the process.exit mock so execution stops like the real thing. */
@@ -419,6 +419,83 @@ describe('createLinkedApp (S9)', () => {
     expect(JSON.parse(String(init?.body))).toEqual({
       displayName: 'My Agent',
     });
+  });
+
+  // The create carries the manifest's own intent (his 2026-09-08 sweep — a
+  // CLI-created app used to land with intendedFramework/intendedModel NULL,
+  // so the console's create-time faces read "Not recorded on the app" for a
+  // framework the manifest declared). The rules: the framework rides when
+  // it is a mint framework (`vanilla` has no create-time intent); the model
+  // rides ONLY when the registry offers it on that framework — a manifest
+  // with an unlisted model must still create (the documented
+  // "set agent.model in guuey.json and run guuey deploy" path).
+  it("carries the manifest's framework AND its model when the registry offers the model", async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ app: { id: 'app-1', displayName: 'My Agent' } }), { status: 201 }),
+    );
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const model = defaultModelFor('openai-agents-sdk');
+    const parsed = safeParseGuueyJson({ schema: '1', agent: { framework: 'openai-agents-sdk', model } });
+    if (!parsed.success) throw new Error('fixture manifest must parse');
+
+    await createLinkedApp({
+      auth: { pat: 'pat-test', expiresAt: '2099-01-01T00:00:00.000Z' },
+      config: { host: 'https://platform.guuey.test', apiUrl: 'https://api.guuey.test' },
+      project: parsed.data,
+      guueyJsonPath: join(mkdtempSync(join(tmpdir(), 'create-intent-')), 'guuey.json'),
+      appName: 'My Agent',
+    });
+    const [, init] = fetchSpy.mock.calls.at(-1)!;
+    expect(JSON.parse(String(init?.body))).toEqual({
+      displayName: 'My Agent',
+      intendedFramework: 'openai-agents-sdk',
+      intendedModel: model,
+    });
+  });
+
+  it('carries the framework but NOT an unlisted model — the create must not refuse what the deploy honors', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ app: { id: 'app-1', displayName: 'My Agent' } }), { status: 201 }),
+    );
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const parsed = safeParseGuueyJson({
+      schema: '1',
+      agent: { framework: 'google-adk', model: 'gemini-test-unlisted-0' },
+    });
+    if (!parsed.success) throw new Error('fixture manifest must parse');
+    expect(isOfferedModel('google-adk', 'gemini-test-unlisted-0')).toBe(false);
+
+    await createLinkedApp({
+      auth: { pat: 'pat-test', expiresAt: '2099-01-01T00:00:00.000Z' },
+      config: { host: 'https://platform.guuey.test', apiUrl: 'https://api.guuey.test' },
+      project: parsed.data,
+      guueyJsonPath: join(mkdtempSync(join(tmpdir(), 'create-intent-')), 'guuey.json'),
+      appName: 'My Agent',
+    });
+    const [, init] = fetchSpy.mock.calls.at(-1)!;
+    expect(JSON.parse(String(init?.body))).toEqual({
+      displayName: 'My Agent',
+      intendedFramework: 'google-adk',
+    });
+  });
+
+  it('a vanilla manifest carries no intent at all — vanilla is not a mint framework', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ app: { id: 'app-1', displayName: 'My Agent' } }), { status: 201 }),
+    );
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const parsed = safeParseGuueyJson({ schema: '1', agent: { framework: 'vanilla' } });
+    if (!parsed.success) throw new Error('fixture manifest must parse');
+
+    await createLinkedApp({
+      auth: { pat: 'pat-test', expiresAt: '2099-01-01T00:00:00.000Z' },
+      config: { host: 'https://platform.guuey.test', apiUrl: 'https://api.guuey.test' },
+      project: parsed.data,
+      guueyJsonPath: join(mkdtempSync(join(tmpdir(), 'create-intent-')), 'guuey.json'),
+      appName: 'My Agent',
+    });
+    const [, init] = fetchSpy.mock.calls.at(-1)!;
+    expect(JSON.parse(String(init?.body))).toEqual({ displayName: 'My Agent' });
   });
 
   it('prints the created app\'s displayName and id (not undefined)', async () => {
