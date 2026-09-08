@@ -161,11 +161,15 @@ export async function initGit(projectDir: string): Promise<void> {
 }
 
 export async function runInstall(projectDir: string): Promise<void> {
+  // `corepack pnpm` (guuey#1000): the scaffold's package.json pins its
+  // packageManager, and corepack ships with Node — a first run on a machine
+  // with Node and nothing else still installs. Fail-soft on purpose: a
+  // failed install is a warning with the manual step, never a dead scaffold.
   try {
-    await execFileAsync('pnpm', ['install'], { cwd: projectDir });
+    await execFileAsync('corepack', ['pnpm', 'install'], { cwd: projectDir });
   } catch {
     console.error(
-      `Warning: "pnpm install" failed to run automatically. Run it manually:\n  cd ${projectDir}\n  pnpm install`
+      `Warning: "corepack pnpm install" failed to run automatically. Run it manually:\n  cd ${projectDir}\n  corepack pnpm install`
     );
   }
 }

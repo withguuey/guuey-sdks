@@ -17,6 +17,22 @@ import {
 } from './deploy.js';
 import { DEPLOY_WAIT_MS, NODE_PROVISION_BUDGET_MS, stillDeployingMessage } from './deploy-wait.js';
 import { resolveConfig, loadProjectConfig } from '../config.js';
+
+// guuey#1000 — the code-mode deploy runs `corepack pnpm install` / `corepack
+// pnpm build` through execSync. Recorded (never run) so the auto-install
+// case below can prove ORDER against the fetch spy: the install is the first
+// thing the deploy does, before any leg leaves the machine.
+const childProcessLog = vi.hoisted(() => ({ calls: [] as string[] }));
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  return {
+    ...actual,
+    execSync: vi.fn((command: string) => {
+      childProcessLog.calls.push(String(command));
+      return Buffer.from('');
+    }),
+  };
+});
 import { resolveDeployTarget } from './deploy.js';
 import { safeParseGuueyJson } from '@guuey/config';
 import type { apiRequest } from '../deploy-shared.js';
@@ -1020,12 +1036,28 @@ describe('deploy() --code — the node_modules preflight precedes every platform
     vi.restoreAllMocks();
   });
 
-  it('★ a bound code project with NO node_modules refuses with the install line BEFORE any ggui asset push', async () => {
-    await expect(deploy({ code: true })).rejects.toBeInstanceOf(ExitSignal);
+  it('★ --no-install: a bound code project with NO node_modules refuses with the install line BEFORE any ggui asset push', async () => {
+    await expect(deploy({ code: true, 'no-install': true })).rejects.toBeInstanceOf(ExitSignal);
     expect(errorSpy.mock.calls.flat().join('\n')).toMatch(/No node_modules in /);
     // Nothing left the machine: no asset push (and no other leg) before the refusal.
     expect(fetchSpy.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('/ggui-assets/push'))).toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
+    expect(childProcessLog.calls).toEqual([]);
+  });
+
+  // guuey#1000 — founder ruling, verbatim: "i prefer auto install". The
+  // default is no longer a refusal: a missing node_modules is installed,
+  // FIRST, before any leg talks to the platform.
+  it('★ by default a missing node_modules is INSTALLED first — before the ggui asset push or any other fetch', async () => {
+    // The tail of the deploy (pack, upload, trigger) is not under test here;
+    // whatever it does after the install, the order below is the claim.
+    await deploy({ code: true }).catch(() => undefined);
+    expect(childProcessLog.calls[0]).toBe('corepack pnpm install');
+    const firstFetchAt = fetchSpy.mock.invocationCallOrder[0];
+    const installAt = vi.mocked((await import('node:child_process')).execSync).mock.invocationCallOrder[0];
+    expect(installAt).toBeDefined();
+    if (firstFetchAt !== undefined) expect(installAt).toBeLessThan(firstFetchAt);
+    expect(errorSpy.mock.calls.flat().join('\n')).not.toMatch(/No node_modules in /);
   });
 });
 
@@ -1033,9 +1065,10 @@ describe('deploy() --code — the node_modules preflight precedes every platform
 // The founder's first prod deploy (2026-09-07) ran `corepack pnpm build` in a
 // fresh scaffold with no node_modules and died inside the build ("sh: tsup:
 // command not found"); the only install instruction on screen was pnpm's own
-// WARN. The preflight says it in our voice BEFORE any build, or installs on
-// `--install`.
-describe('ensureInstalled (guuey#979)', () => {
+// WARN. The preflight says it in our voice BEFORE any build. Since guuey#1000
+// (his word: "i prefer auto install") the default INSTALLS; `--no-install`
+// is the refusal — these pins cover the function's two arms as such.
+describe('ensureInstalled (guuey#979 / #1000)', () => {
   const calls: string[] = [];
   const logs: string[] = [];
   const io = (present: Set<string>) => ({
@@ -1052,20 +1085,23 @@ describe('ensureInstalled (guuey#979)', () => {
     logs.length = 0;
   });
 
-  it('a project with package.json and NO node_modules refuses BEFORE any build, naming the install line and --install', () => {
+  it('--no-install: a project with package.json and NO node_modules refuses BEFORE any build, naming the opt-out and the install line', () => {
     const r = ensureInstalled({ root: '/p', install: false, ...io(new Set(['/p/package.json'])) });
     expect(r).toMatchObject({ kind: 'missing' });
     expect(r.kind === 'missing' ? r.message : '').toMatch(/No node_modules in \/p/);
+    // guuey#1000: the refusal is the --no-install face now — it names the
+    // opt-out the caller chose, never a flag to add.
+    expect(r.kind === 'missing' ? r.message : '').toMatch(/--no-install/);
+    expect(r.kind === 'missing' ? r.message : '').not.toMatch(/pass --install/);
     expect(r.kind === 'missing' ? r.message : '').toMatch(/corepack pnpm install/);
-    expect(r.kind === 'missing' ? r.message : '').toMatch(/--install/);
     expect(calls).toEqual([]);
   });
 
-  it('with --install it runs the project package manager install in the project root, then proceeds', () => {
+  it('by default it runs the project package manager install in the project root, says so, then proceeds', () => {
     const r = ensureInstalled({ root: '/p', install: true, ...io(new Set(['/p/package.json'])) });
     expect(r).toEqual({ kind: 'installed' });
     expect(calls).toEqual(['corepack pnpm install']);
-    expect(logs.join('\n')).toMatch(/Installing dependencies/);
+    expect(logs.join('\n')).toMatch(/No node_modules yet — installing dependencies \(corepack pnpm install\)/);
   });
 
   it('a project with node_modules present is untouched (no install, no message)', () => {

@@ -10,6 +10,7 @@
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { scaffold, scaffoldExample, type Framework, type Template } from './index.js';
+import { installByDefault } from './shared.js';
 
 const FRAMEWORKS: Framework[] = ['claude-agent-sdk', 'openai-agents-sdk', 'google-adk'];
 const TEMPLATES: Template[] = ['base', 'agentic-app', 'agent'];
@@ -81,7 +82,7 @@ Options:
   --app <appId>         Bind to an EXISTING guuey app: stamps the id into
                         guuey.json so "pnpm bootstrap -- --link" runs
                         promptless (the tada page's copy-paste line)
-  --install             Run "pnpm install" after scaffolding
+  --no-install          Skip the install after scaffolding (the default installs — guuey#1000)
   --no-git              Skip "git init" + initial commit
   --force               Scaffold into a non-empty target directory
   --list-agents         List available frameworks and exit
@@ -89,7 +90,7 @@ Options:
 
 Examples:
   create-agentic-app my-app --framework claude-agent-sdk
-  create-agentic-app my-app --agent openai-agents-sdk --install
+  create-agentic-app my-app --agent openai-agents-sdk --no-install
   create-agentic-app my-agent --app app_abc123   # born bound to your live agent
 `);
 }
@@ -162,14 +163,14 @@ async function main(): Promise<void> {
     const { projectDir } = await scaffoldExample({
       targetDir: target,
       example: flags.example,
-      install: flags.install === true,
+      install: installByDefault(flags),
       git: flags['no-git'] !== true,
       force: flags.force === true,
     });
     console.log(`\nExtracted the "${flags.example}" example into ${projectDir}\n`);
     console.log('Next steps:');
     console.log(`  cd ${projectDir}`);
-    if (flags.install !== true) console.log('  pnpm install');
+    if (!installByDefault(flags)) console.log('  pnpm install');
     console.log('  pnpm bootstrap        # re-brand it as yours (also turns the demo chrome off)');
     console.log('  pnpm dev');
     return;
@@ -217,7 +218,7 @@ async function main(): Promise<void> {
 
   const name = typeof flags.name === 'string' ? flags.name : deriveName(target);
   const scope = typeof flags.scope === 'string' ? flags.scope : undefined;
-  const install = flags.install === true;
+  const install = installByDefault(flags);
   if (flags.app === true) {
     console.error('--app needs a value, e.g. --app app_abc123');
     process.exit(1);

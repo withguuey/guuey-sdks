@@ -29,7 +29,7 @@ pnpm bootstrap -- --link   # bind the deployed app into the frontend
 ## Options
 
 ```
-npx @guuey/create-agentic-app <dir> [--template base|agentic-app] [--framework claude-agent-sdk|openai-agents-sdk|google-adk] [--install]
+npx @guuey/create-agentic-app <dir> [--template base|agentic-app] [--framework claude-agent-sdk|openai-agents-sdk|google-adk] [--no-install]
 ```
 
 - `--template base` (default) — a three-page app: landing (with the guuey
@@ -41,7 +41,7 @@ npx @guuey/create-agentic-app <dir> [--template base|agentic-app] [--framework c
   dock; activating the dock swaps the main canvas to a fullscreen agent
   (generative-UI cards get the whole width), and "Talk on mobile" shows a
   QR to the same agent in the guuey portal.
-- `--install` — run `pnpm install` after scaffolding (off by default).
+- `--no-install` — skip the install after scaffolding (the scaffold runs `corepack pnpm install` by default).
 - `--example <vertical>` — instead of a blank template, extract one of the
   open-source demo apps from
   [`withguuey/demos`](https://github.com/withguuey/demos) (e.g.

@@ -53,3 +53,16 @@ export async function ensureTargetDir(targetDir: string, force: boolean | undefi
     );
   }
 }
+
+/**
+ * Does this scaffold run install itself? YES unless `--no-install`
+ * (guuey#1000 — founder ruling, verbatim: "i prefer auto install"). The
+ * install used to be opt-in (`--install`) and "Next steps" led with
+ * `pnpm install`, which a first-time builder skipped straight into
+ * `sh: tsup: not found` on deploy (#979). Both scaffold paths and the
+ * "Next steps" print read THIS, so they cannot disagree; the retired
+ * `--install` spelling is not a switch either way.
+ */
+export function installByDefault(flags: Record<string, string | true>): boolean {
+  return flags['no-install'] !== true;
+}

@@ -388,7 +388,7 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
     });
   } else if (mode === 'code-orchestrated') {
     await deployCode({
-      install: flags?.install === true,
+      install: flags?.['no-install'] !== true,
       auth,
       config,
       appId,
@@ -531,9 +531,11 @@ export type EnsureInstalledResult =
  * `deploy --code` runs the project's build LOCALLY (`corepack pnpm build`),
  * so a fresh scaffold with no `node_modules` used to die INSIDE the build
  * ("sh: tsup: command not found") with pnpm's own WARN as the only
- * instruction (the founder's first prod deploy, 2026-09-07). Say it in our
- * voice before any build — or install on `--install`. Injected `exists`/`run`
- * so the decision is unit-testable without a child process.
+ * instruction (the founder's first prod deploy, 2026-09-07). Since
+ * guuey#1000 (his word: "i prefer auto install") the default is to INSTALL
+ * (`corepack pnpm install`, before any leg leaves the machine); `--no-install`
+ * stops with the sentence instead. Injected `exists`/`run` so the decision is
+ * unit-testable without a child process.
  */
 export function ensureInstalled(opts: {
   root: string;
@@ -546,13 +548,14 @@ export function ensureInstalled(opts: {
   if (!exists(join(root, 'package.json'))) return { kind: 'not-applicable' };
   if (exists(join(root, 'node_modules'))) return { kind: 'present' };
   if (!install) {
+    // The --no-install face (guuey#1000): the caller chose to stop here.
     return {
       kind: 'missing',
       message:
-        `No node_modules in ${root} — run "corepack pnpm install" (or pass --install to let deploy do it) and re-run guuey deploy.`,
+        `No node_modules in ${root} — you passed --no-install; run "corepack pnpm install" and re-run guuey deploy.`,
     };
   }
-  log('  Installing dependencies (corepack pnpm install)...');
+  log('  No node_modules yet — installing dependencies (corepack pnpm install)...');
   run('corepack pnpm install');
   return { kind: 'installed' };
 }
@@ -573,7 +576,7 @@ async function deployCode(opts: {
   root: string;
   size: string;
   buildSize: string;
-  /** guuey#979: run the project's package-manager install when node_modules is missing. */
+  /** guuey#979/#1000: install when node_modules is missing — the default; `--no-install` refuses instead. */
   install: boolean;
   maxPods: number | undefined;
   runtimeAutoUpdate?: boolean | undefined;
