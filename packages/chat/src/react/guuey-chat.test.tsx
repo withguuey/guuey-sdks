@@ -154,6 +154,101 @@ function renderWithHandle(
   return { handle, view };
 }
 
+// guuey#1038 — his prod walk (2026-09-08): after the card rendered, the agent
+// called ggui's `ggui_consume` (the LISTEN: wait for the user to interact with
+// the card) and the composer stayed disabled until he stopped the tool call by
+// hand — "honestly this wasn't a good experience". A listen is a turn waiting
+// on the USER, and the user must be able to answer in either channel: the
+// card, or the composer. ggui's contract (their read on the row): the wait is
+// bounded and abort-aware; the host ends it by cancelling the in-flight call —
+// exactly what his manual Stop did. So a reply during a listen aborts the
+// listen and sends, in one gesture.
+const wireEvents = (events: object[]): string => `event: message\ndata: ${JSON.stringify(events)}\n\n`;
+const LISTEN_FRAMES = [
+  wireEvents([
+    { type: "turn.start", threadId: "t-3c", turnId: "turn-listen", seq: 1 },
+    { type: "message.start", id: "m-listen", role: "assistant", turnId: "turn-listen", threadId: "t-3c", seq: 2 },
+  ]),
+  // The STATUS derivation reads `type` off a single-object frame
+  // (`invoke-turn.ts`); the array form above feeds only the transcript reducer.
+  'event: message\ndata: {"type":"tool.start","toolCallId":"c-listen","name":"ggui_consume","seq":3}\n\n',
+];
+
+function listeningAdapters() {
+  const calls: InvokeRequest[] = [];
+  const store = new Map<string, string>();
+  const adapters: AgentInvokeAdapters = {
+    storage: { load: (key) => store.get(key) ?? null, save: (key, id) => void store.set(key, id) },
+    generateId: (() => {
+      let n = 0;
+      return () => `cmid-${n++}`;
+    })(),
+    transport: async function* (req) {
+      calls.push(req);
+      yield SESSION_FRAME;
+      if (calls.length === 1) {
+        // Turn 1: the agent starts listening on the card and stays there
+        // until the host cancels — as ggui's handler does on abort.
+        for (const f of LISTEN_FRAMES) yield f;
+        await new Promise<never>((_, reject) => {
+          const abort = (): void => reject(new DOMException("aborted", "AbortError"));
+          if (req.signal.aborted) abort();
+          else req.signal.addEventListener("abort", abort, { once: true });
+        });
+      }
+      yield TEXT_FRAME;
+      yield DONE_FRAME;
+    },
+  };
+  return { adapters, calls };
+}
+
+describe("<GuueyChat> composer during a ggui_consume listen (guuey#1038)", () => {
+  it("keeps Send ENABLED while the agent listens on a card, and a reply aborts the listen then sends — one gesture, no manual Stop", async () => {
+    const { adapters, calls } = listeningAdapters();
+    renderChat(adapters);
+    const input = screen.getByRole("textbox");
+
+    fireEvent.change(input, { target: { value: "render a card" } });
+    fireEvent.submit(input.closest("form")!);
+    await waitFor(() => expect(calls).toHaveLength(1));
+    // The listen reached the composer: the placeholder says the card is
+    // waiting for the user (the transport yielded the listen's `tool.start`
+    // before holding the stream open).
+    await waitFor(() =>
+      expect(input.getAttribute("placeholder")).toBe("The card is waiting for you — use it, or just reply."),
+    );
+    // Stop is NOT what a listen offers — Send is (disabled until text).
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    const idleSend = screen.getByRole("button", { name: "Send" }) as HTMLButtonElement;
+    expect(idleSend.disabled).toBe(true);
+
+    // The composer is OPEN: text typed during the listen enables Send.
+    fireEvent.change(input, { target: { value: "ack" } });
+    const send = screen.getByRole("button", { name: "Send" }) as HTMLButtonElement;
+    expect(send.disabled).toBe(false);
+
+    fireEvent.submit(input.closest("form")!);
+    await waitFor(() => expect(calls).toHaveLength(2));
+    // The listen was cancelled (abort on the in-flight call) and the reply went out as the next turn.
+    expect(calls[0]!.signal.aborted).toBe(true);
+    expect(JSON.stringify(calls[1]!.body)).toContain("ack");
+  });
+
+  it("an ordinary tool call still holds the composer — only a listen is a turn waiting on the user", async () => {
+    const { adapters, calls } = scriptedAdapters({ holdOpen: true });
+    renderChat(adapters);
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "go" } });
+    fireEvent.submit(input.closest("form")!);
+    await waitFor(() => expect(calls).toHaveLength(1));
+    fireEvent.change(input, { target: { value: "again" } });
+    // Held mid-turn by a normal response: Stop is offered, not Send.
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Stop" })).not.toBeNull();
+  });
+});
+
 describe("<GuueyChat> zero-effort native look (guuey#521)", () => {
   it("composer={false} renders no composer form — the imperative handle is the input", () => {
     const { adapters } = scriptedAdapters();

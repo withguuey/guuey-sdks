@@ -50,18 +50,7 @@
  * Web-only for now: the native tier ships `<NativeTranscript>` without a
  * native GuueyChat, so there is no native surface to put a handle on yet.
  */
-import {
-  forwardRef,
-  useCallback,
-  useEffect,
-  useId,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-} from "react";
+import { forwardRef, type CSSProperties, type ReactNode, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from "react";
 import {
   createUiActionRelay,
   createUiResourceReader,
@@ -90,6 +79,15 @@ import { Transcript, type TranscriptWindowing } from "./transcript.js";
 import type { TranscriptComponents, TranscriptItemContext, ViewSlotProps } from "./components.js";
 import { useTranscript, useTranscriptInputs } from "./use-transcript.js";
 import { oauthPromptAction, useOAuthReturn } from "./oauth-return.js";
+
+/**
+ * ggui's LISTEN tool, by wire name — bare (`ggui_consume`) or the MCP prefix
+ * shape (`mcp__<server>__ggui_consume`). The one tool whose pending state
+ * means "waiting on the user", not "the agent is working" (guuey#1038).
+ */
+function isGguiConsumeTool(name: string | null): boolean {
+  return name !== null && /(^|__)ggui_consume$/.test(name);
+}
 
 /**
  * The kit-tier theme announce (guuey#302): default `hostContext.theme`
@@ -580,6 +578,25 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // when several chats mount on one page — a static id would collide.
   const composerId = useId();
   const busy = invoke.status !== "ready";
+  // guuey#1038 — a LISTEN is a turn waiting on the USER. ggui's `ggui_consume`
+  // (wait for the user to act on a card; bounded and abort-aware on their
+  // side — cancelling the in-flight call ends it, which is what a manual
+  // Stop did) used to hold the composer shut until the founder stopped the
+  // tool call by hand: "honestly this wasn't a good experience". While the
+  // pending tool is the listen, the composer stays open and a reply ends the
+  // listen and sends — the user answers in either channel, card or text.
+  const waitingOnUser = invoke.status === "using-tool" && isGguiConsumeTool(invoke.activeTool);
+  /** A reply typed during a listen: sent once the aborted listen has unwound (the hook refuses `send` mid-turn by design). */
+  const replyAfterListenRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (invoke.status !== "ready") return;
+    const text = replyAfterListenRef.current;
+    if (text === null) return;
+    replyAfterListenRef.current = null;
+    void invoke.send(text).catch(() => {
+      // The hook surfaces the failure (`error` / R0 failed-send).
+    });
+  }, [invoke.status, invoke]);
   // guuey#605 — the connect-first gate. While an `authMode:'upfront'` OAuth
   // server is pending connection the RUNTIME refuses every turn before any
   // model call, so inviting a message here would only spend one to be told
@@ -588,7 +605,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // the client never claims more than the pod enforces, and no one dead-ends.
   const authRequired = plan.authRequired;
   const available = endpointUrl !== null;
-  const canSend = available && !busy && authRequired === null && input.trim() !== "";
+  const canSend = available && (!busy || waitingOnUser) && authRequired === null && input.trim() !== "";
 
   // ── The imperative seam (guuey#210) ──────────────────────────────────
   // ONE stable handle for the component's whole life (hosts capture it in
@@ -903,12 +920,22 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     const text = input.trim();
     // guuey#605: the connect-first gate belongs on the SEND path too, not
     // just the disabled attribute — an Enter keypress reaches here directly.
-    if (text === "" || !available || busy || authRequired !== null) return;
+    if (text === "" || !available || authRequired !== null) return;
+    if (busy) {
+      if (!waitingOnUser) return;
+      // guuey#1038: a reply during a listen ENDS the listen (abort = the
+      // cancel ggui's handler honours) and goes out as the next turn once
+      // the hook is ready again — one gesture, no manual Stop.
+      replyAfterListenRef.current = text;
+      setInput("");
+      invoke.abort();
+      return;
+    }
     setInput("");
     void invoke.send(text).catch(() => {
       // The hook surfaces the failure (`error` / R0 failed-send).
     });
-  }, [input, available, busy, authRequired, invoke]);
+  }, [input, available, busy, waitingOnUser, authRequired, invoke]);
 
   const handleRetry = useCallback(
     (item: UserMessageItem) => {
@@ -1091,10 +1118,12 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
               ? strings.composerUnavailable
               : authRequired !== null
                 ? strings.composerAuthRequired
-                : strings.composerPlaceholder
+                : waitingOnUser
+                  ? strings.composerWaitingOnYou
+                  : strings.composerPlaceholder
           }
         />
-        {busy ? (
+        {busy && !waitingOnUser ? (
           <button
             type="button"
             className="guuey-chat-composer-stop"

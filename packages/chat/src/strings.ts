@@ -175,6 +175,12 @@ export interface ChatStrings {
   composerPlaceholder: string;
   composerUnavailable: string;
   composerLabel: string;
+  /**
+   * guuey#1038 — the composer's placeholder while the agent LISTENS on a card
+   * (ggui's `ggui_consume`): a turn waiting on the user, so the composer stays
+   * open and says so. A reply ends the listen and sends.
+   */
+  composerWaitingOnYou: string;
   send: string;
   stop: string;
 }
@@ -304,6 +310,7 @@ export const defaultChatStrings: ChatStrings = {
   composerPlaceholder: "Message the agent…",
   composerUnavailable: "Chat is unavailable.",
   composerLabel: "Message",
+  composerWaitingOnYou: "The card is waiting for you — use it, or just reply.",
   send: "Send",
   stop: "Stop",
 };
