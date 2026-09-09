@@ -1541,3 +1541,107 @@ describe("theme scope — composer, chips, clear-row, link-ask resolve the theme
     expect(surface?.style.getPropertyValue("--_guuey-chat-gap")).toBe("10px");
   });
 });
+
+// ─── The header slot (guuey#1150) — one head row, the host's design ───────
+describe("header slot — the kit's one head row (guuey#1150)", () => {
+  /** `a` sits before `b` in document order (both must exist). */
+  const precedes = (a: Element | null | undefined, b: Element | null | undefined): boolean => {
+    if (!a || !b) throw new Error("precedes: both elements must exist");
+    return (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+  };
+
+  it("renders the header INSIDE the surface as its FIRST child, carrying the title", () => {
+    const { adapters } = scriptedAdapters();
+    const { container } = renderChat(adapters, {
+      header: { title: <span data-testid="brand">Guuey Rep.</span> },
+    });
+    const surface = container.querySelector<HTMLElement>(".guuey-chat-surface");
+    const header = container.querySelector<HTMLElement>(".guuey-chat-header");
+    expect(header).not.toBeNull();
+    // Inside the surface — so the #1126 theme stamp is an ancestor and the
+    // header's `var(--guuey-chat-X, var(--_guuey-chat-X))` reads resolve.
+    expect(surface?.firstElementChild).toBe(header);
+    expect(header?.tagName).toBe("HEADER");
+    const title = header?.querySelector(".guuey-chat-header-title");
+    expect(title).not.toBeNull();
+    expect(title?.querySelector('[data-testid="brand"]')?.textContent).toBe("Guuey Rep.");
+    // The transcript root follows the header, never precedes it.
+    expect(header?.nextElementSibling?.classList.contains("guuey-chat")).toBe(true);
+  });
+
+  it("onClose renders the close control with the kit's accessible name, and fires it", () => {
+    const { adapters } = scriptedAdapters();
+    const onClose = vi.fn();
+    const { container } = renderChat(adapters, {
+      header: { title: "Agent", onClose },
+    });
+    const close = screen.getByRole("button", { name: "Close" });
+    expect(close.classList.contains("guuey-chat-header-close")).toBe(true);
+    expect(close.closest(".guuey-chat-header")).toBe(container.querySelector(".guuey-chat-header"));
+    fireEvent.click(close);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("the close control's name comes from the strings seam (overridable like every other string)", () => {
+    const { adapters } = scriptedAdapters();
+    renderChat(adapters, {
+      header: { title: "Agent", onClose: () => {} },
+      strings: { headerClose: "Schließen" },
+    });
+    expect(screen.getByRole("button", { name: "Schließen" })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+  });
+
+  it("without onClose there is no close control", () => {
+    const { adapters } = scriptedAdapters();
+    const { container } = renderChat(adapters, { header: { title: "Agent" } });
+    expect(container.querySelector(".guuey-chat-header")).not.toBeNull();
+    expect(container.querySelector(".guuey-chat-header-close")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+  });
+
+  it("caller `actions` render in the actions slot, right of the title, before the close control", () => {
+    const { adapters } = scriptedAdapters();
+    const onStop = vi.fn();
+    const { container } = renderChat(adapters, {
+      header: {
+        title: "Agent",
+        actions: (
+          <button type="button" data-testid="host-stop" onClick={onStop}>
+            Stop
+          </button>
+        ),
+        onClose: () => {},
+      },
+    });
+    const header = container.querySelector<HTMLElement>(".guuey-chat-header");
+    const title = header?.querySelector(".guuey-chat-header-title");
+    const actions = header?.querySelector(".guuey-chat-header-actions");
+    expect(actions).not.toBeNull();
+    const hostStop = screen.getByTestId("host-stop");
+    expect(hostStop.closest(".guuey-chat-header-actions")).toBe(actions);
+    // Order: title → actions; inside actions the host's controls precede
+    // the kit's close (close is the rightmost, as on every head row today).
+    expect(precedes(title, actions)).toBe(true);
+    const close = actions?.querySelector(".guuey-chat-header-close");
+    expect(close).not.toBeNull();
+    expect(precedes(hostStop, close)).toBe(true);
+    fireEvent.click(hostStop);
+    expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it("no `header` ⇒ nothing is added: no .guuey-chat-header, and the surface's children are exactly today's", () => {
+    const { adapters } = scriptedAdapters();
+    const { container } = renderChat(adapters);
+    expect(container.querySelector(".guuey-chat-header")).toBeNull();
+    expect(container.querySelector("header")).toBeNull();
+    const surface = container.querySelector<HTMLElement>(".guuey-chat-surface");
+    // The pin: the slot contributes NO node when absent — no wrapper, no
+    // empty header, no placeholder. The default idle surface is the
+    // transcript root followed by the composer form, nothing else.
+    expect(
+      [...(surface?.children ?? [])].map((el) => `${el.tagName}.${el.className}`),
+    ).toEqual(["DIV.guuey-chat", "FORM.guuey-chat-composer"]);
+    expect(surface?.innerHTML).not.toContain("guuey-chat-header");
+  });
+});

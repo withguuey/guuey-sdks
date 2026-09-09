@@ -51,6 +51,7 @@ export {
 export {
   GuueyChat,
   type GuueyChatActivityEvent,
+  type GuueyChatHeader,
   type GuueyChatProps,
   type GuueyChatHandle,
 } from "./react/guuey-chat.js";

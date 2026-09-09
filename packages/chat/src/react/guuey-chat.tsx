@@ -190,9 +190,51 @@ export interface GuueyChatHandle {
   clearConversation(): void;
 }
 
+/**
+ * The header slot (guuey#1150): the ONE head row over a conversation —
+ * title, the host's own controls, and an optional close. See
+ * {@link GuueyChatProps.header}.
+ */
+export interface GuueyChatHeader {
+  /** The row's title — the agent's name, a brand mark, anything renderable. */
+  title: ReactNode;
+  /**
+   * Renders the kit's close control (rightmost in the row, accessible
+   * name `strings.headerClose`) and fires on its click. Absent → no close
+   * control at all: a docked or full-page surface has nothing to close.
+   */
+  onClose?: () => void;
+  /**
+   * The host's own controls, rendered right of the title and LEFT of the
+   * close (Stop, clear, expand — whatever the host's design calls for).
+   * The kit never invents controls here.
+   */
+  actions?: ReactNode;
+}
+
 export interface GuueyChatProps {
   /** Pod base URL (with or without `/agent/invoke`). `null` disables chat. */
   endpointUrl: string | null;
+  /**
+   * The head row over the conversation (guuey#1150, founder-ruled: builders
+   * bring their own design through ONE component, not two hand-rolled
+   * headers). Rendered as the FIRST child of `.guuey-chat-surface` — inside
+   * the theme stamp (#1126), so its `var(--guuey-chat-X, var(--_guuey-chat-X))`
+   * reads resolve like every other piece of chrome — as
+   * `<header class="guuey-chat-header">` with `guuey-chat-header-title`,
+   * `guuey-chat-header-actions` (present only when there is something to
+   * put in it) and `guuey-chat-header-close`. Absent → NOTHING is rendered
+   * (no wrapper, no placeholder — the default markup is byte-identical to a
+   * surface without the slot).
+   *
+   * Intended consumers, migrating in their own rows: guuey.com's home-hero
+   * chat (`apps/landing/src/components/HomeChat.tsx`, today's
+   * `.homechat-head` — "Guuey Rep." + clear + close) and the widget page
+   * (`apps/widget/src/components/WidgetChat.tsx`, today's `<header>` —
+   * agent name + Stop + the guest clear + expand). Each carries its own
+   * copy of the row now; this slot is where both end up.
+   */
+  header?: GuueyChatHeader;
   /** Owning app id — namespaces the persisted threadId. */
   appId?: string;
   /**
@@ -380,6 +422,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
 ): ReactNode {
   const {
     endpointUrl,
+    header,
     appId,
     apiBaseUrl,
     getAccessToken,
@@ -992,6 +1035,26 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       className={`guuey-chat-surface${className !== undefined ? ` ${className}` : ""}`}
       style={surfaceStyle}
     >
+      {header !== undefined && (
+        <header className="guuey-chat-header">
+          <div className="guuey-chat-header-title">{header.title}</div>
+          {(header.actions !== undefined || header.onClose !== undefined) && (
+            <div className="guuey-chat-header-actions">
+              {header.actions}
+              {header.onClose !== undefined && (
+                <button
+                  type="button"
+                  className="guuey-chat-header-close"
+                  aria-label={strings.headerClose}
+                  onClick={header.onClose}
+                >
+                  <span aria-hidden="true">×</span>
+                </button>
+              )}
+            </div>
+          )}
+        </header>
+      )}
       <Transcript
         plan={plan}
         strings={strings}

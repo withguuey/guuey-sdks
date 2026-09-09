@@ -171,6 +171,13 @@ export interface ChatStrings {
    */
   suggestionsLabel: string;
 
+  /**
+   * The header slot's close control (guuey#1150) — its accessible name;
+   * the visible face is a glyph. The title and any other controls in the
+   * row are the host's own content, never kit copy.
+   */
+  headerClose: string;
+
   /** The 3c composer (`<GuueyChat>`). */
   composerPlaceholder: string;
   composerUnavailable: string;
@@ -306,6 +313,7 @@ export const defaultChatStrings: ChatStrings = {
   clearConversationLabel: "Clear conversation",
   suggestionsLabel: "Suggestions",
   clearConversationConfirm: "Tap again to clear this device",
+  headerClose: "Close",
 
   composerPlaceholder: "Message the agent…",
   composerUnavailable: "Chat is unavailable.",

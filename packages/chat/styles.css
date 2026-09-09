@@ -701,6 +701,53 @@
   flex: 1;
   min-height: 0;
 }
+/* The header slot (guuey#1150) — the ONE head row, first child of the
+   surface: title left, the host's controls then the close right. Themed
+   through the same two-channel reads as the composer below; the host's
+   font is inherited (like every piece of chrome outside the transcript
+   root), so the row reads as the host's own design. */
+.guuey-chat-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 10px calc(var(--guuey-chat-gap, var(--_guuey-chat-gap)) * 1.5);
+  background: var(--guuey-chat-canvas, var(--_guuey-chat-canvas));
+  color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
+  border-bottom: 1px solid var(--guuey-chat-canvas-muted, var(--_guuey-chat-canvas-muted));
+}
+.guuey-chat-header-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.guuey-chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.guuey-chat-header-close {
+  background: none;
+  border: 0;
+  padding: 2px 6px;
+  font: inherit;
+  font-size: 1.15em;
+  line-height: 1;
+  border-radius: var(--guuey-chat-radius, var(--_guuey-chat-radius));
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
+  cursor: pointer;
+}
+.guuey-chat-header-close:hover {
+  color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
+}
+.guuey-chat-header-close:focus-visible {
+  outline: 2px solid var(--guuey-chat-accent, var(--_guuey-chat-accent));
+  outline-offset: 1px;
+}
 .guuey-chat-composer {
   display: flex;
   align-items: flex-end;

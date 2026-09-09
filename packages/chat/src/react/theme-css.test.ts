@@ -87,3 +87,11 @@ describe("styles.css reads every themed token through both channels (guuey#1126 
     expect(unread).toEqual([]);
   });
 });
+
+describe("the header slot's chrome is styled by the sheet (guuey#1150 — so the lint above covers it)", () => {
+  it("styles .guuey-chat-header, -title, -actions and -close", () => {
+    for (const cls of ["guuey-chat-header", "guuey-chat-header-title", "guuey-chat-header-actions", "guuey-chat-header-close"]) {
+      expect(STYLESHEET, `styles.css has no .${cls} rule`).toMatch(new RegExp(`^\\.${cls}\\s*\\{`, "m"));
+    }
+  });
+});
