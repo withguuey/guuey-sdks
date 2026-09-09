@@ -413,7 +413,7 @@ export async function appsGet(
     console.log(
       `  Chat Theme:   ${t.name} (accent ${t.colors.light.accent}` +
         `${t.mode !== undefined ? `, mode ${t.mode}` : ''}` +
-        `${t.ramps !== undefined ? ', stated ramps' : ''})`,
+        `${t.typography.faces !== undefined ? `, ${t.typography.faces.length} face(s)` : ''})`,
     );
   }
   const page = app.standalonePage;

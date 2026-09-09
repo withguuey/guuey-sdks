@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_CHAT_THEME,
   GUUEY_CHAT_THEME,
+  GuueyChatFace,
   GuueyChatTheme,
   resolveTheme,
   resolveCourtTheme,
@@ -44,31 +45,84 @@ describe("GuueyChatTheme", () => {
     expect(parsed.success).toBe(true);
   });
 
-  it("mode + ramps (theme-as-code §3): stated values survive resolution, absence stays absent", () => {
+  it("mode (theme-as-code §3): a stated value survives resolution, absence stays absent", () => {
+    const resolved = resolveTheme({ mode: "dark", colors: { light: { accent: "#c9a227" } } });
+    expect(resolved.mode).toBe("dark");
+    // The package defaults state no mode — an unstated theme must not grow
+    // one out of resolution; base mode stands when the candidate is silent.
+    const bare = resolveTheme({ colors: {} });
+    expect("mode" in bare).toBe(false);
+    expect(resolveTheme({ colors: {} }, resolved).mode).toBe("dark");
+  });
+
+  /**
+   * The theming revision (guuey#1128 §3, joint spec signed off 2026-09-10):
+   * the vocabulary gains the ANCHORS the card derivation reads — a second
+   * accent (ggui `tertiary`) and the tone anchors — and loses `ramps`:
+   * ladders are DERIVED by ggui's one producer from the anchors, never
+   * stated, so a stated ladder is dead vocabulary and leaves the schema
+   * (pre-launch, no shim).
+   */
+  it("v2 palette anchors resolve per-token and stay absent when no layer states them", () => {
+    const resolved = resolveTheme({
+      colors: {
+        light: { secondaryAccent: "#7c3aed", onSecondaryAccent: "#ffffff", success: "#15803d" },
+        dark: { warning: "#f59e0b", info: "#38bdf8" },
+      },
+    });
+    expect(resolved.colors.light.secondaryAccent).toBe("#7c3aed");
+    expect(resolved.colors.light.onSecondaryAccent).toBe("#ffffff");
+    expect(resolved.colors.light.success).toBe("#15803d");
+    expect(resolved.colors.dark.warning).toBe("#f59e0b");
+    expect(resolved.colors.dark.info).toBe("#38bdf8");
+    // Unstated anywhere (the package defaults state none of them) — absent,
+    // not defaulted: the card derivation treats absence as "derive".
+    expect("secondaryAccent" in resolved.colors.dark).toBe(false);
+    expect("success" in resolved.colors.dark).toBe(false);
+    expect("warning" in resolved.colors.light).toBe(false);
+    for (const token of ["secondaryAccent", "onSecondaryAccent", "success", "warning", "info"]) {
+      expect(token in DEFAULT_CHAT_THEME.colors.light).toBe(false);
+      expect(token in GUUEY_CHAT_THEME.colors.light).toBe(false);
+    }
+  });
+
+  it("typography gains headingFontFamily + faces; faces replace wholesale, never merge per element", () => {
+    const base = resolveTheme({
+      typography: {
+        headingFontFamily: "Fraunces, serif",
+        faces: [{ family: "Fraunces", src: "https://fonts.gstatic.com/s/fraunces/a.woff2", weight: "400 700" }],
+      },
+    });
+    expect(base.typography.headingFontFamily).toBe("Fraunces, serif");
+    expect(base.typography.faces).toHaveLength(1);
+    const over = resolveTheme(
+      { typography: { faces: [{ family: "Inter", src: "https://fonts.gstatic.com/s/inter/b.woff2" }] } },
+      base,
+    );
+    expect(over.typography.headingFontFamily).toBe("Fraunces, serif");
+    expect(over.typography.faces).toEqual([{ family: "Inter", src: "https://fonts.gstatic.com/s/inter/b.woff2" }]);
+    expect("faces" in DEFAULT_CHAT_THEME.typography).toBe(false);
+    expect(GuueyChatFace.safeParse({ family: "Inter", src: "https://x.test/a.woff2" }).success).toBe(true);
+    expect(GuueyChatFace.safeParse({ family: "Inter" }).success).toBe(false);
+  });
+
+  it("shape gains shadow (colour + intensity); absent stays absent, a candidate statement wins whole", () => {
+    const resolved = resolveTheme({ shape: { shadow: { color: "#00000080", intensity: 0.4 } } });
+    expect(resolved.shape.shadow).toEqual({ color: "#00000080", intensity: 0.4 });
+    expect("shadow" in resolveTheme({ colors: {} }).shape).toBe(false);
+    expect(resolveTheme({ shape: { shadow: { intensity: 0.1 } } }, resolved).shape.shadow).toEqual({ intensity: 0.1 });
+    expect(resolveTheme({ colors: {} }, resolved).shape.shadow).toEqual({ color: "#00000080", intensity: 0.4 });
+  });
+
+  it("`ramps` is no longer vocabulary: a stored ladder passes the lenient parse as an unknown key and is never projected", () => {
+    expect("ramps" in GuueyChatTheme.shape).toBe(false);
     const stored = {
-      mode: "dark",
+      mode: "light",
       colors: { light: { accent: "#c9a227" } },
       ramps: { light: { accent: { "500": "#c9a227", "600": "#a9861c", "700": "#8a6d15" } } },
     };
-    const resolved = resolveTheme(stored);
-    expect(resolved.mode).toBe("dark");
-    expect(resolved.ramps?.light?.accent?.["600"]).toBe("#a9861c");
-    // The package defaults state NEITHER — an unstated theme must not
-    // grow a mode or ramps out of resolution.
-    const bare = resolveTheme({ colors: {} });
-    expect("mode" in bare).toBe(false);
-    expect("ramps" in bare).toBe(false);
-  });
-
-  it("ramps merge slot-wise over a base statement; base mode stands when the candidate is silent", () => {
-    const base = resolveTheme({
-      mode: "light",
-      ramps: { light: { accent: { "500": "#111111", "600": "#222222" } } },
-    });
-    const over = resolveTheme({ ramps: { light: { accent: { "600": "#999999" } } } }, base);
-    expect(over.mode).toBe("light");
-    expect(over.ramps?.light?.accent?.["500"]).toBe("#111111");
-    expect(over.ramps?.light?.accent?.["600"]).toBe("#999999");
+    expect(GuueyChatTheme.safeParse({ ...DEFAULT_CHAT_THEME, ...stored, colors: DEFAULT_CHAT_THEME.colors }).success).toBe(true);
+    expect("ramps" in resolveTheme(stored)).toBe(false);
   });
 
   it("never throws: garbage input resolves to the base theme untouched", () => {

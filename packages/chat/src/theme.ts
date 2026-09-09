@@ -23,6 +23,17 @@ import { z } from "zod";
 /**
  * One mode's palette — grounded in the widget's shipped `--guuey-*`
  * custom-property precedent (`apps/widget/src/app/globals.css`).
+ *
+ * The theming revision (guuey#1128 §1/§3, the joint spec with ggui#987):
+ * the palette carries the ANCHORS a card's whole colour system derives
+ * from — ggui's `deriveThemeVariables` is the ONE producer of every ladder,
+ * container pair and on-colour (OKLCH, from these anchors), so the theme
+ * states anchors only. The nine below map onto ggui's roles: `canvas` →
+ * `ground`, `surface` → `container`, `canvasMuted` → `sunken`, `ink` →
+ * `onGround`/`onContainer`, `inkMuted` → `onSunken`, `accent` →
+ * `primary-500`, `error` → `error-500`. The optional five are the
+ * revision's additions; absent means "derive" (tertiary = primary) or
+ * "family absent" (the tones).
  */
 export const GuueyChatPalette = z
   .object({
@@ -37,95 +48,74 @@ export const GuueyChatPalette = z
     /**
      * Anchor color (guuey#528) — OPTIONAL by the evolution rule (a stored
      * pre-#528 theme must keep passing the strict write gate); the default
-     * theme states it, so RESOLVED themes always carry it.
+     * theme states it, so RESOLVED themes always carry it. Stated wins on
+     * the card side; unstated derives `primary-600`.
      */
     link: z.string().optional(),
+    /** The second accent (ggui `tertiary-500` / `onTertiary`) — the host evidence's "two accent roles". */
+    secondaryAccent: z.string().optional(),
+    onSecondaryAccent: z.string().optional(),
+    /** Tone anchors (ggui `{family}-500`); a family is absent on the card until its anchor is stated. */
+    success: z.string().optional(),
+    warning: z.string().optional(),
+    info: z.string().optional(),
   })
   .loose();
 export type GuueyChatPalette = z.infer<typeof GuueyChatPalette>;
 
 /**
- * STATED ramp slots (theme-as-code, guuey#341 spec §3 — never derived).
- * Closed per-family sets: `accent` carries the full ladder (the
- * 500/600/700 floor is a WRITE/COMPILE rule, not a schema rule — the
- * schema admits any stated subset so a stale stored document still parses);
- * the status families carry their tone-500 slot. Ramps live BESIDE the
- * palettes (`theme.ramps.{light,dark}`), never inside them — the flat
- * palette record is a load-bearing invariant (token lists are DERIVED from
- * its shape by every platform gate).
+ * One declared face (D3 — "theme declares faces; widget loads, hands to
+ * cards"). `src` MUST be an `https:` URL on an admitted host — the
+ * platform's write gate enforces the allow-list; this schema is shape only.
+ * The widget injects the `@font-face` rule and hands it to the card via
+ * `hostContext.styles.css.fonts`; the card never fetches on its own.
  */
-export const GuueyChatAccentRamp = z
+export const GuueyChatFace = z
   .object({
-    "100": z.string().optional(),
-    "300": z.string().optional(),
-    "500": z.string().optional(),
-    "600": z.string().optional(),
-    "700": z.string().optional(),
-    "800": z.string().optional(),
-    "900": z.string().optional(),
+    family: z.string(),
+    src: z.string(),
+    weight: z.string().optional(),
+    style: z.string().optional(),
+    display: z.string().optional(),
   })
   .loose();
-export type GuueyChatAccentRamp = z.infer<typeof GuueyChatAccentRamp>;
-
-export const GuueyChatErrorRamp = z
-  .object({
-    "500": z.string().optional(),
-    "600": z.string().optional(),
-    "700": z.string().optional(),
-  })
-  .loose();
-export type GuueyChatErrorRamp = z.infer<typeof GuueyChatErrorRamp>;
-
-export const GuueyChatToneRamp = z.object({ "500": z.string().optional() }).loose();
-export type GuueyChatToneRamp = z.infer<typeof GuueyChatToneRamp>;
-
-/** One mode's stated ramp families — every family optional. */
-export const GuueyChatRampSet = z
-  .object({
-    accent: GuueyChatAccentRamp.optional(),
-    error: GuueyChatErrorRamp.optional(),
-    success: GuueyChatToneRamp.optional(),
-    warning: GuueyChatToneRamp.optional(),
-    info: GuueyChatToneRamp.optional(),
-  })
-  .loose();
-export type GuueyChatRampSet = z.infer<typeof GuueyChatRampSet>;
-
-export const GuueyChatRamps = z
-  .object({
-    light: GuueyChatRampSet.optional(),
-    dark: GuueyChatRampSet.optional(),
-  })
-  .loose();
-export type GuueyChatRamps = z.infer<typeof GuueyChatRamps>;
+export type GuueyChatFace = z.infer<typeof GuueyChatFace>;
 
 export const GuueyChatTheme = z
   .object({
     name: z.string(),
     /**
-     * The app's CANONICAL presentation mode (theme-as-code §3) — what the
-     * ggui stamp pins its render slice to. OPTIONAL and default-less on
-     * purpose: absent = "not stated", and the platform's legacy polarity
-     * derivation stands. Distinct from the VIEWER's runtime light/dark
-     * choice, which stays a component prop — chat components never read
-     * this field.
+     * The app's DEFAULT APPEARANCE (theme-as-code §3, revised by D4): the
+     * mode the overlay pins when the host announces nothing. OPTIONAL and
+     * default-less on purpose: absent = "not stated". The VIEWER's runtime
+     * light/dark choice outranks it everywhere and stays a component prop —
+     * chat components never read this field.
      */
     mode: z.enum(["light", "dark"]).optional(),
     /** BOTH palettes always present — mode is the consumer's runtime choice. */
     colors: z.object({ light: GuueyChatPalette, dark: GuueyChatPalette }).loose(),
-    /** Stated ramp slots per mode — see {@link GuueyChatRamps}. */
-    ramps: GuueyChatRamps.optional(),
     typography: z
       .object({
         fontFamily: z.string().optional(),
         monoFontFamily: z.string().optional(),
+        /** Display face (ggui `font-family-heading`); falls back to the body family. */
+        headingFontFamily: z.string().optional(),
+        /** ONE size knob — ggui's `font.ramp.base` multiplier; the eight stops derive. */
         scale: z.number().optional(),
+        /** Declared faces — see {@link GuueyChatFace}. Replaces wholesale on resolution. */
+        faces: z.array(GuueyChatFace).optional(),
       })
       .loose(),
     shape: z
       .object({
         radius: z.enum(["none", "soft", "round"]),
+        /** The WIDGET's own knob (D7: density is a generator PROFILE — never projected to cards). */
         density: z.enum(["compact", "comfortable"]),
+        /** Shadow colour / intensity (0–1) — the per-app half of elevation; the ladder is ggui's. */
+        shadow: z
+          .object({ color: z.string().optional(), intensity: z.number().optional() })
+          .loose()
+          .optional(),
       })
       .loose(),
     /**
@@ -234,25 +224,17 @@ const PartialTheme = z
       .object({ light: PartialPalette.optional(), dark: PartialPalette.optional() })
       .loose()
       .optional(),
-    ramps: GuueyChatRamps.optional(),
     typography: GuueyChatTheme.shape.typography.optional(),
     shape: GuueyChatTheme.shape.shape.partial().loose().optional(),
   })
   .loose();
 
 /** The known token set — the per-token fallback iterates THIS, so unknown
- * (future-schema) keys are preserved by the parse but never projected. */
-const PALETTE_TOKENS = [
-  "accent",
-  "onAccent",
-  "ink",
-  "inkMuted",
-  "surface",
-  "canvas",
-  "canvasMuted",
-  "error",
-  "link",
-] as const;
+ * (future-schema) keys are preserved by the parse but never projected.
+ * DERIVED from the schema so a palette addition cannot be forgotten here. */
+const PALETTE_TOKENS = Object.keys(GuueyChatPalette.shape) as ReadonlyArray<
+  keyof typeof GuueyChatPalette.shape
+>;
 
 function mergePalette(
   base: GuueyChatPalette,
@@ -280,22 +262,25 @@ export function resolveTheme(
   if (!parsed.success) return { ...base, colors: { light: { ...base.colors.light }, dark: { ...base.colors.dark } } };
   const p = parsed.data;
   const mode = p.mode ?? base.mode;
-  const ramps = mergeRamps(base.ramps, p.ramps);
+  const shadow = p.shape?.shadow ?? base.shape.shadow;
   return {
     name: p.name ?? base.name,
-    // `mode`/`ramps` are default-less (the package themes state neither):
-    // they appear on the resolved theme only when SOME layer stated them —
-    // an absent statement must stay visibly absent, not become a default.
+    // `mode` is default-less (the package themes state none): it appears on
+    // the resolved theme only when SOME layer stated it — an absent
+    // statement must stay visibly absent, not become a default. The same
+    // holds for the optional palette anchors, `faces` and `shadow`.
     ...(mode !== undefined ? { mode } : {}),
     colors: {
       light: mergePalette(base.colors.light, p.colors?.light),
       dark: mergePalette(base.colors.dark, p.colors?.dark),
     },
-    ...(ramps !== undefined ? { ramps } : {}),
+    // Member-wise over the base; a stated `faces` list REPLACES the base's
+    // (a face list is one declaration, never merged per element).
     typography: { ...base.typography, ...(p.typography ?? {}) },
     shape: {
       radius: p.shape?.radius ?? base.shape.radius,
       density: p.shape?.density ?? base.shape.density,
+      ...(shadow !== undefined ? { shadow } : {}),
     },
   };
 }
@@ -336,35 +321,4 @@ export function resolveCourtTheme(
   const override = parsed.data.courts?.[court];
   if (override === undefined) return resolvedBase;
   return resolveTheme(override, resolvedBase);
-}
-
-/** Slot-level merge of two ramp statements (candidate slots win per slot). */
-function mergeRampSet(
-  base: GuueyChatRampSet | undefined,
-  over: GuueyChatRampSet | undefined,
-): GuueyChatRampSet | undefined {
-  if (base === undefined) return over;
-  if (over === undefined) return base;
-  const merged: GuueyChatRampSet = { ...base };
-  for (const family of ["accent", "error", "success", "warning", "info"] as const) {
-    const b = base[family];
-    const o = over[family];
-    if (o === undefined) continue;
-    merged[family] = b === undefined ? o : { ...b, ...o };
-  }
-  return merged;
-}
-
-function mergeRamps(
-  base: GuueyChatRamps | undefined,
-  over: GuueyChatRamps | undefined,
-): GuueyChatRamps | undefined {
-  if (base === undefined) return over;
-  if (over === undefined) return base;
-  const light = mergeRampSet(base.light, over.light);
-  const dark = mergeRampSet(base.dark, over.dark);
-  return {
-    ...(light !== undefined ? { light } : {}),
-    ...(dark !== undefined ? { dark } : {}),
-  };
 }

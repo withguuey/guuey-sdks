@@ -52,13 +52,9 @@ export {
 export {
   DEFAULT_CHAT_THEME,
   GUUEY_CHAT_THEME,
-  GuueyChatAccentRamp,
-  GuueyChatErrorRamp,
+  GuueyChatFace,
   GuueyChatPalette,
-  GuueyChatRamps,
-  GuueyChatRampSet,
   GuueyChatTheme,
-  GuueyChatToneRamp,
   resolveTheme,
   resolveCourtTheme,
 } from "./theme.js";

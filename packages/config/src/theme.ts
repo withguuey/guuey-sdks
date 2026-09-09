@@ -37,75 +37,62 @@ export const ThemePaletteV1 = z.strictObject({
   canvasMuted: ColorValue,
   error: ColorValue,
   /**
-   * Anchor colour (guuey#528) — OPTIONAL: the one palette slot a manifest
-   * may leave unstated (the kit's neutral default = ink covers it), unlike
-   * the eight required tokens above. Stated → validated + emitted;
-   * unstated → not emitted (the stated-vocabulary rule).
+   * Anchor colour (guuey#528) — OPTIONAL: a palette slot a manifest may
+   * leave unstated (the kit's neutral default = ink covers it), unlike the
+   * eight required tokens above. Stated → validated + emitted; unstated →
+   * not emitted (the stated-vocabulary rule).
    */
   link: ColorValue.optional(),
+  /**
+   * The theming revision's anchors (guuey#1128 §1/§3): the second accent
+   * (ggui `tertiary`) and the tone anchors. Every ladder, container pair
+   * and on-colour is DERIVED from anchors by ggui's one producer — a
+   * manifest states anchors only; `ramps` left the vocabulary with it.
+   */
+  secondaryAccent: ColorValue.optional(),
+  onSecondaryAccent: ColorValue.optional(),
+  success: ColorValue.optional(),
+  warning: ColorValue.optional(),
+  info: ColorValue.optional(),
 });
 export type ThemePaletteV1 = z.infer<typeof ThemePaletteV1>;
 
-/**
- * Stated accent ladder. The 500/600/700 floor (spec §3 / the gold record,
- * §7) is REQUIRED structurally here — the manifest is the write side, where
- * floor semantics are enforced.
- */
-export const ThemeAccentRampV1 = z.strictObject({
-  '100': ColorValue.optional(),
-  '300': ColorValue.optional(),
-  '500': ColorValue,
-  '600': ColorValue,
-  '700': ColorValue,
-  '800': ColorValue.optional(),
-  '900': ColorValue.optional(),
+/** One declared face (D3). `src` must be `https:` on an admitted host — the server's write gate decides. */
+export const ThemeFaceV1 = z.strictObject({
+  family: z.string().min(1).max(200),
+  src: z.string().min(1).max(2048),
+  weight: z.string().min(1).max(40).optional(),
+  style: z.string().min(1).max(40).optional(),
+  display: z.string().min(1).max(40).optional(),
 });
-export type ThemeAccentRampV1 = z.infer<typeof ThemeAccentRampV1>;
+export type ThemeFaceV1 = z.infer<typeof ThemeFaceV1>;
 
-export const ThemeErrorRampV1 = z.strictObject({
-  '500': ColorValue.optional(),
-  '600': ColorValue.optional(),
-  '700': ColorValue.optional(),
+/** Shadow colour / intensity — the per-app half of elevation. */
+export const ThemeShadowV1 = z.strictObject({
+  color: ColorValue.optional(),
+  intensity: z.number().min(0).max(1).optional(),
 });
-export type ThemeErrorRampV1 = z.infer<typeof ThemeErrorRampV1>;
-
-/** The status tone slot (rnd R1 — consumers exist today). */
-export const ThemeToneRampV1 = z.strictObject({ '500': ColorValue.optional() });
-export type ThemeToneRampV1 = z.infer<typeof ThemeToneRampV1>;
-
-/** One mode's stated ramps — stating ANY family requires the accent floor. */
-export const ThemeRampSetV1 = z.strictObject({
-  accent: ThemeAccentRampV1,
-  error: ThemeErrorRampV1.optional(),
-  success: ThemeToneRampV1.optional(),
-  warning: ThemeToneRampV1.optional(),
-  info: ThemeToneRampV1.optional(),
-});
-export type ThemeRampSetV1 = z.infer<typeof ThemeRampSetV1>;
-
-export const ThemeRampsV1 = z.strictObject({
-  light: ThemeRampSetV1.optional(),
-  dark: ThemeRampSetV1.optional(),
-});
-export type ThemeRampsV1 = z.infer<typeof ThemeRampsV1>;
+export type ThemeShadowV1 = z.infer<typeof ThemeShadowV1>;
 
 /**
  * The manifest theme block. `mode` is REQUIRED (spec §3): a theme managed
- * as code states its canonical presentation mode — the compiled ggui stamp
- * pins its render slice to it, replacing the legacy surface-polarity
- * derivation. Ramps are STATED values, never derived (spec D7).
+ * as code states its default appearance — the mode the overlay pins when
+ * the host announces nothing (the host's runtime mode outranks it, D4).
  */
 const ThemeTypographyV1 = z
   .strictObject({
     fontFamily: z.string().min(1).max(200).optional(),
     monoFontFamily: z.string().min(1).max(200).optional(),
+    headingFontFamily: z.string().min(1).max(200).optional(),
     scale: z.number().min(0.75).max(1.5).optional(),
+    faces: z.array(ThemeFaceV1).max(8).optional(),
   })
   .optional();
 const ThemeShapeV1 = z
   .strictObject({
     radius: z.enum(['none', 'soft', 'round']),
     density: z.enum(['compact', 'comfortable']),
+    shadow: ThemeShadowV1.optional(),
   })
   .optional();
 
@@ -132,12 +119,12 @@ export const AppCourtThemeV1 = z.strictObject({
       dark: ThemePaletteV1.partial().optional(),
     })
     .optional(),
-  ramps: ThemeRampsV1.optional(),
   typography: ThemeTypographyV1,
   shape: z
     .strictObject({
       radius: z.enum(['none', 'soft', 'round']).optional(),
       density: z.enum(['compact', 'comfortable']).optional(),
+      shadow: ThemeShadowV1.optional(),
     })
     .optional(),
 });
@@ -147,7 +134,6 @@ export const AppThemeV1 = z.strictObject({
   name: z.string().min(1).max(64).optional(),
   mode: z.enum(['light', 'dark']),
   colors: z.strictObject({ light: ThemePaletteV1, dark: ThemePaletteV1 }),
-  ramps: ThemeRampsV1.optional(),
   typography: ThemeTypographyV1,
   shape: ThemeShapeV1,
   /**
