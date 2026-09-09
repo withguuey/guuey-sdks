@@ -30,6 +30,13 @@ import * as out from '../output';
 interface AppSummary {
   id: string;
   /**
+   * The wire's `status` (guuey#994). `archived` rows used to list beside
+   * live ones with nothing marking them — a builder who had just deleted an
+   * app saw it still listed and could `deploy --app-id` into it. `apps list`
+   * hides `archived` unless `--all`, and every row shows its status.
+   */
+  status: 'active' | 'archived' | 'suspended' | 'pending_plan';
+  /**
    * The cliApi wire field is `displayName` (see
    * `backend/amplify/functions/cliApi/handlers/apps.ts#AppWire`) — NOT
    * `name`. Reading `.name` here silently rendered an empty column (S5).
@@ -201,6 +208,7 @@ export function appsListRow(a: AppSummary): Record<string, string> {
   return {
     ID: a.id,
     Name: a.displayName,
+    Status: a.status,
     Trial: trialLabel(a.trial),
     Created: a.createdAt?.slice(0, 10) ?? '-',
   };
@@ -224,18 +232,26 @@ export function trialLabel(trial: AppSummary['trial']): string {
 /**
  * Handle `guuey apps list`.
  */
-export async function appsList(opts: { json?: boolean }): Promise<void> {
+export async function appsList(opts: { json?: boolean; all?: boolean }): Promise<void> {
   const res = await apiRequest('GET', '/apps');
   if (!res.ok) return handleError(res);
 
   const data = (await res.json()) as { apps: AppSummary[] };
+  // guuey#994: an archived app is not a live one. Hidden by default (both
+  // the table and --json — one answer per invocation), shown with --all;
+  // the count of hidden rows is always said, so nothing vanishes silently.
+  const shown = opts.all ? data.apps : data.apps.filter((a) => a.status !== 'archived');
+  const hidden = data.apps.length - shown.length;
 
   if (opts.json) {
-    out.json(data.apps);
+    out.json(shown);
     return;
   }
 
-  out.table(data.apps.map(appsListRow));
+  out.table(shown.map(appsListRow));
+  if (hidden > 0) {
+    console.log(`  (${hidden} archived app${hidden === 1 ? '' : 's'} hidden — pass --all to include them)`);
+  }
 }
 
 /**

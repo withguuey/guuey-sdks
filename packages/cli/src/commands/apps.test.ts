@@ -111,19 +111,21 @@ describe('appsListRow', () => {
     expect(
       appsListRow({
         id: 'app-1',
+        status: 'active',
         displayName: 'Todo',
         createdAt: '2026-07-01T00:00:00.000Z',
       }),
     ).toEqual({
       ID: 'app-1',
       Name: 'Todo',
+        Status: 'active',
       Trial: '-',
       Created: '2026-07-01',
     });
   });
 
   it('prints the trial column (guuey#250): end date while active, EXPIRED + paused past it, `-` off-trial', () => {
-    const base = { id: 'app-1', displayName: 'Todo', createdAt: '2026-07-01T00:00:00.000Z' };
+    const base = { id: 'app-1', status: 'active' as const, displayName: 'Todo', createdAt: '2026-07-01T00:00:00.000Z' };
     expect(
       appsListRow({
         ...base,
@@ -1668,3 +1670,49 @@ describe.skipIf(!haveWire)(
     });
   },
 );
+
+// ─── guuey#994: archived apps are not "live" rows ────────────────────────────
+describe('apps list — archived rows (guuey#994)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const live = { id: 'app-live', displayName: 'qa-801-openai', status: 'active', createdAt: '2026-09-07T00:00:00.000Z', trial: { startedAt: null, endsAt: '2026-09-14T00:00:00.000Z', status: 'active' } };
+  const gone = { id: 'app-gone', displayName: 'qa-801-openai', status: 'archived', createdAt: '2026-09-05T00:00:00.000Z', trial: { startedAt: null, endsAt: '2026-09-12T00:00:00.000Z', status: 'active' } };
+
+  it('the row carries a Status column — an archived app is never shaped like a live one', () => {
+    expect(appsListRow(gone as unknown as Parameters<typeof appsListRow>[0]).Status).toBe('archived');
+    expect(Object.keys(appsListRow(live as unknown as Parameters<typeof appsListRow>[0]))).toEqual(['ID', 'Name', 'Status', 'Trial', 'Created']);
+  });
+
+  it('hides archived apps by default and says how many it hid — and how to see them', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ apps: [live, gone] }), { status: 200 }));
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => { logs.push(args.map(String).join(' ')); });
+    try {
+      await appsList({});
+    } finally {
+      spy.mockRestore();
+    }
+    const output = logs.join('\n');
+    expect(output).toContain('app-live');
+    expect(output).not.toContain('app-gone');
+    expect(output).toContain('1 archived app hidden');
+    expect(output).toContain('--all');
+  });
+
+  it('--all shows archived apps, marked by their Status', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ apps: [live, gone] }), { status: 200 }));
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => { logs.push(args.map(String).join(' ')); });
+    try {
+      await appsList({ all: true });
+    } finally {
+      spy.mockRestore();
+    }
+    const output = logs.join('\n');
+    expect(output).toContain('app-gone');
+    expect(output).toContain('archived');
+    expect(output).not.toContain('hidden');
+  });
+});

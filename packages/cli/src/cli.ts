@@ -332,7 +332,7 @@ Authentication:
 Apps:
   apps create                   Create a new app (auto-login if needed)
     --name <name>               App name (required)
-  apps list                     List your apps
+  apps list [--all]             List your apps (archived apps hidden unless --all)
   apps get [appId]              Show app details
   apps update [appId]           Update app configuration
     --name <name>               App name
@@ -934,7 +934,7 @@ async function main(): Promise<void> {
     case 'apps':
       switch (action) {
         case 'list':
-          await appsList({ json: jsonFlag });
+          await appsList({ json: jsonFlag, all: flags['all'] === true });
           break;
         case 'get':
           await appsGet(rest[0], { json: jsonFlag });
