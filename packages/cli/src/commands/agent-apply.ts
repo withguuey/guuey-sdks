@@ -57,6 +57,7 @@ import { resolveTargetAppId } from '../app-id';
 import { apiRequest, parseApiError } from '../deploy-shared';
 import { awaitPageUrl, pollDeployStatus, printPageLine } from './deploy';
 import { DEPLOY_WAIT_MS, stillDeployingMessage } from './deploy-wait';
+import { maybePrintThemeHint } from './theme-hint';
 import * as out from '../output';
 
 // ─── Wire mirrors of `backend/libs/cli-wire/reconcile.ts` ────────────────
@@ -665,6 +666,7 @@ export async function agentApply(flags?: Record<string, string | true>): Promise
           pageUrl,
         }),
       );
+      await maybePrintThemeHint(ctx.pat, ctx.config, ctx.appId);
       return;
     }
     out.error(
@@ -825,6 +827,7 @@ export async function agentRollback(flags?: Record<string, string | true>): Prom
     }
     if (status === 'live') {
       out.success(`Live at ${url}`);
+      await maybePrintThemeHint(ctx.pat, ctx.config, ctx.appId);
       return;
     }
     out.error(

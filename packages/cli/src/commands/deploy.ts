@@ -75,6 +75,7 @@ import {
 import { buildGguiAssetPush, pushGguiAssetsLeg, type GguiAssetPushBody } from '../ggui-assets';
 import * as out from '../output';
 import { DEPLOY_WAIT_MS, stillDeployingMessage } from './deploy-wait';
+import { maybePrintThemeHint } from './theme-hint';
 
 /**
  * Map a platform host to its portal origin — mirrors the live-verified
@@ -914,6 +915,7 @@ async function deployCode(opts: {
   out.success(`Live at ${url}`);
   printPageLine(await awaitPageUrl({ auth, config, appId, buildNumber, pageUrl: polledPageUrl }));
   await maybePrintRuntimePinNotice(auth.pat, config, appId, runtimePinBefore);
+  await maybePrintThemeHint(auth.pat, config, appId);
   console.log('');
   console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
   console.log(`  Size:   runtime=${size}, build=${buildSize}`);
@@ -1290,6 +1292,7 @@ async function deployLegacyDockerfile(opts: {
   out.success(`Live at ${url}`);
   printPageLine(await awaitPageUrl({ auth, config, appId, buildNumber, pageUrl: polledPageUrl }));
   await maybePrintRuntimePinNotice(auth.pat, config, appId, runtimePinBefore);
+  await maybePrintThemeHint(auth.pat, config, appId);
   console.log('');
   console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
   console.log(`  Size:   runtime=${size}, build=${buildSize}`);
@@ -1454,6 +1457,7 @@ async function deployDeclarative(opts: {
   out.success(`Live at ${url}`);
   printPageLine(await awaitPageUrl({ auth, config, appId, buildNumber, pageUrl: polledPageUrl }));
   await maybePrintRuntimePinNotice(auth.pat, config, appId, runtimePinBefore);
+  await maybePrintThemeHint(auth.pat, config, appId);
   console.log('');
   console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
   console.log(`  Size:   runtime=${size}`);
