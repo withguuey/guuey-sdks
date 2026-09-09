@@ -26,6 +26,7 @@ export {
   type ChatStrings,
 } from "./strings.js";
 export { transcriptInputsFromHistory } from "./history-inputs.js";
+export { isGguiConsumeTool, isWaitingOnUser } from "./listen.js";
 export {
   buildHitlAnswer,
   grantModeDisplay,

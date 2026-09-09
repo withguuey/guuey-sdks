@@ -63,6 +63,7 @@ import { useAgentInvoke } from "@guuey/agent-client/react";
 import { unavailableToolCallResult } from "@guuey/mcp-apps-host";
 import type { McpToolCallResult, UiActionRequest, UiResourceReader } from "@guuey/mcp-apps-host";
 import { calmPolicy, debugPolicy, type TranscriptPolicyOverrides } from "../policy.js";
+import { isWaitingOnUser } from "../listen.js";
 import { useStructuralIdentity } from "./structural-identity.js";
 import { defaultChatStrings, type ChatStrings } from "../strings.js";
 import { DEFAULT_CHAT_THEME, type GuueyChatTheme } from "../theme.js";
@@ -79,15 +80,6 @@ import { Transcript, type TranscriptWindowing } from "./transcript.js";
 import type { TranscriptComponents, TranscriptItemContext, ViewSlotProps } from "./components.js";
 import { useTranscript, useTranscriptInputs } from "./use-transcript.js";
 import { oauthPromptAction, useOAuthReturn } from "./oauth-return.js";
-
-/**
- * ggui's LISTEN tool, by wire name — bare (`ggui_consume`) or the MCP prefix
- * shape (`mcp__<server>__ggui_consume`). The one tool whose pending state
- * means "waiting on the user", not "the agent is working" (guuey#1038).
- */
-function isGguiConsumeTool(name: string | null): boolean {
-  return name !== null && /(^|__)ggui_consume$/.test(name);
-}
 
 /**
  * The kit-tier theme announce (guuey#302): default `hostContext.theme`
@@ -585,7 +577,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // tool call by hand: "honestly this wasn't a good experience". While the
   // pending tool is the listen, the composer stays open and a reply ends the
   // listen and sends — the user answers in either channel, card or text.
-  const waitingOnUser = invoke.status === "using-tool" && isGguiConsumeTool(invoke.activeTool);
+  const waitingOnUser = isWaitingOnUser(invoke.status, invoke.activeTool);
   /** A reply typed during a listen: sent once the aborted listen has unwound (the hook refuses `send` mid-turn by design). */
   const replyAfterListenRef = useRef<string | null>(null);
   useEffect(() => {
