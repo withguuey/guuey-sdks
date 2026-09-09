@@ -71,6 +71,7 @@ import {
   snapshotWithServerIds,
   resolveDeployMode,
   shouldOfferAppCreate,
+  noAppLinkedRemedy,
 } from '../deploy-plan';
 import { buildGguiAssetPush, pushGguiAssetsLeg, type GguiAssetPushBody } from '../ggui-assets';
 import * as out from '../output';
@@ -307,7 +308,8 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
     } else {
       out.error(
         `No app linked${project ? ` (${GUUEY_JSON_FILENAME} carries no "appId"${config.appId ? '; the global default is deliberately NOT used for deploys' : ''})` : ''}. ` +
-          'Set "appId" in guuey.json, pass --app-id <id>, run "guuey pull --app-id <id>" to bind an existing app, or run "guuey deploy" in an interactive terminal to create one.',
+          // guuey#1064: the remedy names only the doors THIS mode has.
+          noAppLinkedRemedy(mode),
       );
       process.exit(1);
     }

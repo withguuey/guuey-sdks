@@ -144,6 +144,22 @@ export function shouldOfferAppCreate(
 }
 
 /**
+ * The "no app linked" remedy `guuey deploy` prints when it will NOT open
+ * the create prompt (guuey#1064). The interactive-terminal sentence is
+ * true only where {@link shouldOfferAppCreate} can ever say yes — the
+ * code-orchestrated shape. A declarative (or legacy Dockerfile) project
+ * following it would loop: auto-create never offers there, so it is told
+ * the doors that exist for it instead. Pure, so the two sentences are
+ * pinned by `deploy-plan.test.ts` and never drift apart again.
+ */
+export function noAppLinkedRemedy(mode: DeployMode): string {
+  const bind = 'Set "appId" in guuey.json, pass --app-id <id>, run "guuey pull --app-id <id>" to bind an existing app';
+  return mode === 'code-orchestrated'
+    ? `${bind}, or run "guuey deploy" in an interactive terminal to create one.`
+    : `${bind}, or create one with "guuey apps create --name <name>" and put its id in guuey.json.`;
+}
+
+/**
  * One hosted MCP server that needs a `deployMcpFromSource` leg — an
  * `agent.mcpServers` entry with `kind: 'hosted'` and a `source` (build
  * recipe). Entries with only `server` (no `source`) are already fully

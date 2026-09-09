@@ -5,6 +5,7 @@ import {
   snapshotWithServerIds,
   resolveDeployMode,
   shouldOfferAppCreate,
+  noAppLinkedRemedy,
   type DeployModeSignals,
 } from './deploy-plan.js';
 import type { GuueyAgent, GuueyJsonV1 } from '@guuey/config';
@@ -319,5 +320,21 @@ describe('snapshotWithServerIds', () => {
       },
     };
     expect(() => snapshotWithServerIds(doc)).toThrow(/todo.*other|other.*todo/);
+  });
+});
+
+// ─── noAppLinkedRemedy (guuey#1064) ───────────────────────────────────────────
+describe('noAppLinkedRemedy', () => {
+  it('code-orchestrated: the interactive sentence is true — auto-create offers there', () => {
+    const r = noAppLinkedRemedy('code-orchestrated');
+    expect(r).toContain('run "guuey deploy" in an interactive terminal to create one');
+    expect(r).toContain('guuey pull --app-id <id>');
+  });
+
+  it.each(['declarative', 'code-legacy-dockerfile'] as const)('%s: never promises an interactive create (auto-create never offers) — names apps create instead', (mode) => {
+    const r = noAppLinkedRemedy(mode);
+    expect(r).not.toContain('interactive terminal');
+    expect(r).toContain('guuey apps create --name <name>');
+    expect(r).toContain('guuey pull --app-id <id>');
   });
 });
