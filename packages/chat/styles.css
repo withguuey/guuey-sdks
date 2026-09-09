@@ -2,10 +2,17 @@
  * @guuey/chat — the default stylesheet (wave 3b, guuey#135).
  *
  * One import: `import "@guuey/chat/styles.css"`. Every color/shape value
- * comes from the `--guuey-chat-*` custom properties `<Transcript>` sets
- * from the resolved `GuueyChatTheme` — restyle by theming (the schema is
- * platform data), or replace this sheet entirely (the class names are the
- * stable surface).
+ * comes from the `--guuey-chat-*` custom properties the kit stamps from
+ * the resolved `GuueyChatTheme` — on the `<Transcript>` root AND on the
+ * `<GuueyChat>` surface, so the chrome outside the transcript (chips,
+ * composer, clear-row, link-ask) resolves them too (guuey#1126). Restyle
+ * by theming (the schema is platform data), or replace this sheet
+ * entirely (the class names are the stable surface).
+ *
+ * Every themed token is read as `var(--guuey-chat-<t>, var(--_guuey-chat-<t>))`
+ * — the host channel first, the stamp as fallback. A bare public read
+ * resolves to nothing when the host sets no variable; `theme-css.test.ts`
+ * lints this sheet so the form cannot regress.
  *
  * Shimmer/pulse are CSS-only and disabled under prefers-reduced-motion
  * (spec §3.2).
@@ -47,12 +54,12 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 4px calc(var(--guuey-chat-gap) * 1.5);
+  padding: 4px calc(var(--guuey-chat-gap, var(--_guuey-chat-gap)) * 1.5);
 }
 .guuey-chat-chip {
   background: var(--guuey-chat-surface, var(--_guuey-chat-surface));
   color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
-  border: 1px solid var(--guuey-chat-ink-muted);
+  border: 1px solid var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
   border-radius: var(--guuey-chat-radius, var(--_guuey-chat-radius));
   padding: 6px 12px;
   font-size: 0.85em;
@@ -67,18 +74,18 @@
 .guuey-chat-clear-row {
   display: flex;
   justify-content: flex-end;
-  padding: 0 calc(var(--guuey-chat-gap) * 1.5);
+  padding: 0 calc(var(--guuey-chat-gap, var(--_guuey-chat-gap)) * 1.5);
 }
 .guuey-chat-clear {
   background: none;
   border: none;
   padding: 2px 4px;
   font-size: 0.8em;
-  color: var(--guuey-chat-ink-muted);
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
   cursor: pointer;
 }
 .guuey-chat-clear-armed {
-  color: var(--guuey-chat-error);
+  color: var(--guuey-chat-error, var(--_guuey-chat-error));
   font-weight: 600;
 }
 
@@ -89,14 +96,14 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  margin: 4px calc(var(--guuey-chat-gap) * 1.5);
+  margin: 4px calc(var(--guuey-chat-gap, var(--_guuey-chat-gap)) * 1.5);
   padding: 6px 10px;
-  border: 1px solid var(--guuey-chat-canvas-muted);
-  border-radius: var(--guuey-chat-radius);
+  border: 1px solid var(--guuey-chat-canvas-muted, var(--_guuey-chat-canvas-muted));
+  border-radius: var(--guuey-chat-radius, var(--_guuey-chat-radius));
   font-size: 0.9em;
 }
 .guuey-chat-link-ask-url {
-  color: var(--guuey-chat-ink-muted);
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
   overflow-wrap: anywhere;
   flex: 1 1 100%;
 }
@@ -106,7 +113,7 @@
 .guuey-chat-link-ask-dismiss {
   background: none;
   border: none;
-  color: var(--guuey-chat-ink-muted);
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
   cursor: pointer;
   padding: 0;
 }

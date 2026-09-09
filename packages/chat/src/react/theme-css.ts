@@ -21,7 +21,9 @@ const DENSITY_GAP: Record<GuueyChatTheme["shape"]["density"], string> = {
 };
 
 /**
- * One mode's tokens as inline custom properties for the transcript root.
+ * One mode's tokens as inline custom properties for the kit's roots — the
+ * `<Transcript>` root and the `<GuueyChat>` surface that wraps it plus the
+ * chrome outside it (chips, composer, clear-row, link-ask; guuey#1126).
  * Returned as a plain record so callers can spread it into `style` or emit
  * a stylesheet from it.
  *

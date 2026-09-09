@@ -75,7 +75,7 @@ import type {
   UserMessageItem,
   ViewRefItem,
 } from "../types.js";
-import type { ThemeMode } from "./theme-css.js";
+import { themeCssVars, type ThemeMode } from "./theme-css.js";
 import { Transcript, type TranscriptWindowing } from "./transcript.js";
 import type { TranscriptComponents, TranscriptItemContext, ViewSlotProps } from "./components.js";
 import { useTranscript, useTranscriptInputs } from "./use-transcript.js";
@@ -977,10 +977,20 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
 
   const strings = policy.strings;
 
+  // The resolved theme is stamped HERE, on the outer surface, not only on
+  // the transcript root (guuey#1126, audit G24): the chips row, clear-row,
+  // link-ask, OAuth notice and composer are SIBLINGS of `.guuey-chat`, and
+  // a `var(--guuey-chat-X, var(--_guuey-chat-X))` read resolves only from
+  // an ancestor — stamped on the root alone, none of that chrome ever took
+  // the app's theme. `<Transcript>` keeps its own stamp for standalone
+  // consumers (same values, so nesting never disagrees); the caller's
+  // `style` merges over, as it does on the root.
+  const surfaceStyle: CSSProperties = { ...themeCssVars(theme, mode), ...style };
+
   return (
     <div
       className={`guuey-chat-surface${className !== undefined ? ` ${className}` : ""}`}
-      style={style}
+      style={surfaceStyle}
     >
       <Transcript
         plan={plan}

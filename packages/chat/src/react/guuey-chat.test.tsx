@@ -11,6 +11,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import type { AgentInvokeAdapters, InvokeRequest } from "@guuey/agent-client";
 import { GuueyChat, viewPropsWithThemeAnnounce, type GuueyChatHandle } from "./guuey-chat.js";
 import type { PlanViewSummary, ViewMountItem } from "../types.js";
+import { GUUEY_CHAT_THEME } from "../theme.js";
 import type { ResolvedViewMount } from "@guuey/mcp-apps-host";
 
 afterEach(cleanup);
@@ -1480,5 +1481,63 @@ describe("<GuueyChat> connect-first gate (guuey#605)", () => {
     await sendOnce(calls);
     await waitFor(() => expect(screen.getByText("Sign in to Linear first")).toBeTruthy());
     expect((screen.getByLabelText("Message") as HTMLTextAreaElement).placeholder).toBe("Sign in above.");
+  });
+});
+
+// ─── Theme scope: the kit's chrome is themed too (guuey#1126, audit G24) ──
+describe("theme scope — composer, chips, clear-row, link-ask resolve the theme (guuey#1126)", () => {
+  /** The nearest ancestor carrying the kit's internal accent stamp. */
+  const stampedAncestorOf = (el: Element | null): Element | null =>
+    el?.closest('[style*="--_guuey-chat-accent"]') ?? null;
+
+  it("stamps the resolved theme on the OUTER surface, so chips + composer (siblings of the transcript root) resolve it", () => {
+    const { adapters } = scriptedAdapters();
+    const { container } = renderChat(adapters, {
+      theme: GUUEY_CHAT_THEME,
+      mode: "dark",
+      suggestions: ["Track my order"],
+    });
+    const surface = container.querySelector<HTMLElement>(".guuey-chat-surface");
+    expect(surface).not.toBeNull();
+    // The surface itself carries the stamp (internal names — the
+    // documented `--guuey-chat-*` channel stays the host's, guuey#521).
+    expect(surface?.style.getPropertyValue("--_guuey-chat-accent")).toBe("#b8ff3a");
+    expect(surface?.style.getPropertyValue("--_guuey-chat-canvas")).toBe("#0e1014");
+    expect(surface?.getAttribute("style") ?? "").not.toMatch(/(?<!_)guuey-chat-accent/);
+
+    // Every piece of chrome that sits OUTSIDE the transcript root reads
+    // `var(--guuey-chat-X, var(--_guuey-chat-X))` — it resolves only when
+    // a stamped element is an ANCESTOR. Before #1126 the stamp lived on
+    // the `.guuey-chat` root, a SIBLING of these, so they never themed.
+    const chips = container.querySelector(".guuey-chat-chips-row");
+    const composer = container.querySelector(".guuey-chat-composer");
+    expect(chips).not.toBeNull();
+    expect(composer).not.toBeNull();
+    expect(stampedAncestorOf(chips)).toBe(surface);
+    expect(stampedAncestorOf(composer)).toBe(surface);
+    // The transcript root keeps its own stamp for standalone <Transcript>
+    // consumers — same values, so nesting never disagrees.
+    const root = container.querySelector<HTMLElement>(".guuey-chat");
+    expect(root?.style.getPropertyValue("--_guuey-chat-accent")).toBe("#b8ff3a");
+  });
+
+  it("the caller's `style` still lands on the surface, merged over the stamp", () => {
+    const { adapters } = scriptedAdapters();
+    const { container } = renderChat(adapters, {
+      theme: GUUEY_CHAT_THEME,
+      style: { maxHeight: "400px" },
+    });
+    const surface = container.querySelector<HTMLElement>(".guuey-chat-surface");
+    expect(surface?.style.maxHeight).toBe("400px");
+    expect(surface?.style.getPropertyValue("--_guuey-chat-accent")).toBe("#b8ff3a");
+  });
+
+  it("the default theme + light mode stamp the surface too (zero-config embeds theme their chrome)", () => {
+    const { adapters } = scriptedAdapters();
+    const { container } = renderChat(adapters);
+    const surface = container.querySelector<HTMLElement>(".guuey-chat-surface");
+    // DEFAULT_CHAT_THEME light ink — the monochrome accent (guuey#521).
+    expect(surface?.style.getPropertyValue("--_guuey-chat-accent")).toBe("#111318");
+    expect(surface?.style.getPropertyValue("--_guuey-chat-gap")).toBe("10px");
   });
 });
