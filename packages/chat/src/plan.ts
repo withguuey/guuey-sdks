@@ -812,28 +812,38 @@ export function planTranscript(
     });
   }
   // Turn-scoped fold composition (guuey#135 kit refinement): the fold owns
-  // the TRAILING assistant turns it actually covers — its settled sources
-  // replace that many trailing flat assistant entries; any EARLIER flat
-  // entries (a rehydrated/persisted prefix the session's Reducer never saw)
-  // keep rendering as flat text slots in front. When the fold spans the
-  // whole conversation (a pure-live session — the corpus's world), the kept
-  // prefix is empty and the plan is byte-identical to the old wholesale
-  // replace. Alignment counts TURNS on
-  // both sides (guuey#306): fold sources group per turn (user boundary +
-  // turnId change), flat entries group by conversational order — the old
-  // per-message COUNT approximation (and its one-off seam drift on
-  // card-only turns) is gone.
+  // the TRAILING turns of the conversation — the ones this session saw
+  // live — and any EARLIER flat entries (a rehydrated/persisted prefix the
+  // session's Reducer never saw) keep rendering as flat text slots in
+  // front. When the fold spans the whole conversation (a pure-live session
+  // — the corpus's world), the kept prefix is empty and the plan is
+  // byte-identical to the old wholesale replace. Fold sources group per
+  // turn (user boundary + turnId change), flat entries group by
+  // conversational order (guuey#306).
+  //
+  // The seam is anchored on USER turns (guuey#982). The fold is always a
+  // suffix of the conversation, so the flat prefix is exactly the user
+  // turns in front of that suffix: `users - foldCovers`, where the
+  // in-flight turn counts as covered even before its first frame. The
+  // previous rule — flat groups minus SETTLED fold sources — assumed the
+  // flat side never holds the live turn's rows; when a history read lands
+  // after the pod persisted a turn but before the client saw its
+  // `turn.done`, that rule kept the flat copy of the previous turn AND
+  // appended the fold's copy: three assistant slots against two users,
+  // turn 1's answer rendered after the turn-2 bubble (the founder's
+  // Playground DOM; replayed from real dev shapes in
+  // plan.issue982.test.ts, phase P6).
   let assistants: AssistantSource[];
   if (inputs.result) {
     const fold = foldAssistantSources(inputs.result, inFlight, inputs.aborted === true);
     const foldSources = fold.sources;
-    const settledFoldCount = foldSources.filter((s) => !s.live).length;
-    // Both sides of the seam now count TURNS (guuey#306): fold sources are
-    // per-turn groups, and the flat prefix uses the SAME order-derived
-    // grouping — the old per-message counts were the documented
-    // approximation this replaces.
     const flatGroups = flatSettledGroups(inputs.messages);
-    const keep = Math.max(0, flatGroups.length - settledFoldCount);
+    // The turns the fold covers: its sources, plus the in-flight turn when
+    // no frame of it has arrived yet (a source appears with the first
+    // frame). `users` includes the optimistic row of that turn, so the
+    // subtraction lands on the same prefix in both states.
+    const foldCovers = foldSources.length + (inFlight && !foldSources.some((s) => s.live) ? 1 : 0);
+    const keep = Math.max(0, Math.min(flatGroups.length, users.length - foldCovers));
     assistants = [...flatGroups.slice(0, keep), ...foldSources];
     if (policy.notice.show) {
       // Fold-borne notices anchor to the fold source they followed, which

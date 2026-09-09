@@ -1,0 +1,137 @@
+{
+  "rows": [
+    {
+      "seq": 1,
+      "at": "2026-09-09T02:01:43.224Z",
+      "kind": "text",
+      "authorRole": "user",
+      "text": "Use ggui to render an interactive card with two buttons labeled Yes and No.",
+      "clientMessageId": "c5d39c29-7566-4e17-8191-c7d677eeca00"
+    },
+    {
+      "seq": 2,
+      "at": "2026-09-09T02:02:29.650Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": null,
+      "clientMessageId": "c5d39c29-7566-4e17-8191-c7d677eeca00#agentTurn"
+    },
+    {
+      "seq": 3,
+      "at": "2026-09-09T02:02:29.665Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": null,
+      "clientMessageId": "c5d39c29-7566-4e17-8191-c7d677eeca00#agent#1"
+    },
+    {
+      "seq": 4,
+      "at": "2026-09-09T02:02:29.681Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": null,
+      "clientMessageId": "c5d39c29-7566-4e17-8191-c7d677eeca00#agent#2"
+    },
+    {
+      "seq": 5,
+      "at": "2026-09-09T02:02:29.694Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": null,
+      "clientMessageId": "c5d39c29-7566-4e17-8191-c7d677eeca00#agent#3"
+    },
+    {
+      "seq": 6,
+      "at": "2026-09-09T02:02:29.712Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": "Rendered the card.",
+      "clientMessageId": "c5d39c29-7566-4e17-8191-c7d677eeca00#agent#4"
+    },
+    {
+      "seq": 7,
+      "at": "2026-09-09T02:02:29.726Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": null,
+      "clientMessageId": "c5d39c29-7566-4e17-8191-c7d677eeca00#agent#5"
+    },
+    {
+      "seq": 8,
+      "at": "2026-09-09T02:02:29.739Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": "A card with **Yes** and **No** buttons is now showing — go ahead and pick one.",
+      "clientMessageId": "c5d39c29-7566-4e17-8191-c7d677eeca00#agent#6"
+    },
+    {
+      "seq": 9,
+      "at": "2026-09-09T02:02:29.754Z",
+      "kind": "card",
+      "authorRole": "agent",
+      "text": null,
+      "clientMessageId": "c5d39c29-7566-4e17-8191-c7d677eeca00#card#0",
+      "cardSnapshot": {
+        "turnId": "turn_35015788-60aa-4af0-8aeb-9b712b1afcb4",
+        "parts": [
+          {
+            "isError": false,
+            "uiData": {
+              "contractHash": "d019a7e9e7b47a74",
+              "resourceUri": "ui://ggui/render/render_6728ca36-9fda-4204-bcb8-cc59c2f3f04f/d019a7e9e7b47a74",
+              "sessionId": "render_6728ca36-9fda-4204-bcb8-cc59c2f3f04f",
+              "outcome": "rendered",
+              "nextStep": {
+                "example": "ggui_consume({ sessionId: \"render_6728ca36-9fda-4204-bcb8-cc59c2f3f04f\", timeout: 25 })",
+                "description": "The UI has interactive actions. After this turn's other tool calls, you may long-poll once (waits up to 25s) to catch an immediate gesture; if `events` comes back empty, end your turn — later gestures arrive as new user messages carrying their own consume directive.",
+                "tool": "ggui_consume",
+                "args": {
+                  "sessionId": "render_6728ca36-9fda-4204-bcb8-cc59c2f3f04f",
+                  "timeout": 25
+                }
+              },
+              "action": "create",
+              "cache": {
+                "kind": "cold",
+                "hit": false,
+                "reason": "cold: generated fresh — no saved interface fit this render",
+                "llmCallsAvoided": 0
+              },
+              "blueprintId": "bp_69a7f744-a75a-46b4-9db6-d7cc24439a66",
+              "variantKey": "44136fa355b3678a"
+            },
+            "type": "tool-result",
+            "content": [
+              {
+                "text": "{\"outcome\":\"rendered\",\"sessionId\":\"render_6728ca36-9fda-4204-bcb8-cc59c2f3f04f\",\"resourceUri\":\"ui://ggui/render/render_6728ca36-9fda-4204-bcb8-cc59c2f3f04f/d019a7e9e7b47a74\",\"action\":\"create\",\"contractHash\":\"d019a7e9e7b47a74\",\"blueprintId\":\"bp_69a7f744-a75a-46b4-9db6-d7cc24439a66\",\"variantKey\":\"44136fa355b3678a\",\"cache\":{\"hit\":false,\"llmCallsAvoided\":0,\"kind\":\"cold\",\"reason\":\"cold: generated fresh — no saved interface fit this render\"},\"nextStep\":{\"tool\":\"ggui_consume\",\"description\":\"The UI has interactive actions. After this turn's other tool calls, you may long-poll once (waits up to 25s) to catch an immediate gesture; if `events` comes back empty, end your turn — later gestures arrive as new user messages carrying their own consume directive.\",\"example\":\"ggui_consume({ sessionId: \\\"render_6728ca36-9fda-4204-bcb8-cc59c2f3f04f\\\", timeout: 25 })\",\"args\":{\"sessionId\":\"render_6728ca36-9fda-4204-bcb8-cc59c2f3f04f\",\"timeout\":25}}}",
+                "type": "text"
+              }
+            ],
+            "toolCallId": "toolu_01EXJvzKW4SucXVE6bR3g643",
+            "outcome": "ok"
+          }
+        ],
+        "threadId": "4da2f0c1-6973-4b34-8a10-eb3ce2352d9c",
+        "artifactId": "toolu_01EXJvzKW4SucXVE6bR3g643:result#ui#0"
+      },
+      "toolName": "mcp__ggui__ggui_render"
+    },
+    {
+      "seq": 10,
+      "at": "2026-09-09T02:02:30.117Z",
+      "kind": "text",
+      "authorRole": "user",
+      "text": "Reply with exactly: ack",
+      "clientMessageId": "78241e9c-51b4-438d-ab43-67bc1cbcdd75"
+    },
+    {
+      "seq": 11,
+      "at": "2026-09-09T02:02:32.786Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": "ack",
+      "clientMessageId": "78241e9c-51b4-438d-ab43-67bc1cbcdd75#agentTurn"
+    }
+  ],
+  "nextToken": null
+}
