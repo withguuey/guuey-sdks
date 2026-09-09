@@ -28,6 +28,18 @@ function capturingAdapters() {
 }
 
 describe("useAgentInvoke — pageContext carriage (guuey#524)", () => {
+  it("carries hostOrigin verbatim when the page sets it (guuey#1068 leg 3) — the pod, not this hook, decides whether to believe it", async () => {
+    const page = { path: "/pricing", title: "Pricing", hostOrigin: "https://guuey.com" };
+    const { adapters, bodies } = capturingAdapters();
+    const { result } = renderHook(() =>
+      useAgentInvoke({ endpointUrl: "https://pod.example.com", appId: APP_ID, adapters, pageContext: page }),
+    );
+    await act(async () => {
+      await result.current.send("what does this cost?");
+    });
+    expect(bodies[0]).toMatchObject({ pageContext: page });
+  });
+
   it("sends the page block on the body verbatim; the optimistic message stays clean", async () => {
     const { adapters, bodies } = capturingAdapters();
     const page: PageContext = { path: "/pricing", title: "Pricing — Acme", context: "annual toggle visible" };

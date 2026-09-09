@@ -172,6 +172,15 @@ export interface PageContext {
   path: string;
   title: string;
   context?: string;
+  /**
+   * The host page's ORIGIN as the widget page saw it (guuey#1068 leg 3): the
+   * browser-stamped `event.origin` of the host's `page` message, forwarded by
+   * the widget page verbatim — never typed by the host. Session attribution
+   * only: the pod stamps the session's surface from it (believed only when
+   * the invoke itself comes from a first-party origin) and never frames it
+   * for the model. Additive; a host page without a widget never sets it.
+   */
+  hostOrigin?: string;
 }
 export interface UseAgentInvokeOptions {
   /** Pod base URL (with or without a trailing `/agent/invoke`). Chat is disabled when null. */
