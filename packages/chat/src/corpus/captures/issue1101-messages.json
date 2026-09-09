@@ -1,0 +1,123 @@
+{
+  "rows": [
+    {
+      "seq": 1,
+      "at": "2026-09-09T07:16:05.790Z",
+      "kind": "text",
+      "authorRole": "user",
+      "text": "Render a small card with one button labeled hi and wait for me to press it.",
+      "clientMessageId": "816d230f-e8ba-4c05-b991-47bcbdb446af"
+    },
+    {
+      "seq": 2,
+      "at": "2026-09-09T07:16:27.030Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": null,
+      "clientMessageId": "816d230f-e8ba-4c05-b991-47bcbdb446af#agentTurn"
+    },
+    {
+      "seq": 3,
+      "at": "2026-09-09T07:16:27.041Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": null,
+      "clientMessageId": "816d230f-e8ba-4c05-b991-47bcbdb446af#agent#1"
+    },
+    {
+      "seq": 4,
+      "at": "2026-09-09T07:16:27.054Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": null,
+      "clientMessageId": "816d230f-e8ba-4c05-b991-47bcbdb446af#agent#2"
+    },
+    {
+      "seq": 5,
+      "at": "2026-09-09T07:16:27.067Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": null,
+      "clientMessageId": "816d230f-e8ba-4c05-b991-47bcbdb446af#agent#3"
+    },
+    {
+      "seq": 6,
+      "at": "2026-09-09T07:16:27.078Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": null,
+      "clientMessageId": "816d230f-e8ba-4c05-b991-47bcbdb446af#agent#4"
+    },
+    {
+      "seq": 7,
+      "at": "2026-09-09T07:16:27.093Z",
+      "kind": "card",
+      "authorRole": "agent",
+      "text": null,
+      "clientMessageId": "816d230f-e8ba-4c05-b991-47bcbdb446af#card#0",
+      "cardSnapshot": {
+        "turnId": "turn_9d0e7847-37d6-4cec-9360-b0fce74fc44c",
+        "threadId": "1a0cfa3c-5da3-4a08-b35c-f80073674d1c",
+        "artifactId": "toolu_01DqVkFc8VjqviPqNQ7JcMXV:result#ui#0",
+        "parts": [
+          {
+            "toolCallId": "toolu_01DqVkFc8VjqviPqNQ7JcMXV",
+            "type": "tool-result",
+            "uiData": {
+              "blueprintId": "bp_1dcbe1e6-5593-4ec8-a9a8-8c3e98e583cd",
+              "cache": {
+                "reason": "full-template: reused a stored interface for this contract",
+                "hit": true,
+                "cachedBlueprintId": "bp_1dcbe1e6-5593-4ec8-a9a8-8c3e98e583cd",
+                "similarity": 0.7569050788879395,
+                "llmCallsAvoided": 1,
+                "kind": "full-template"
+              },
+              "outcome": "rendered",
+              "resourceUri": "ui://ggui/render/render_56ce6b3a-950c-4de1-ba03-7a17aebe592f/8d796d71f4c698dc",
+              "contractHash": "8d796d71f4c698dc",
+              "nextStep": {
+                "example": "ggui_consume({ sessionId: \"render_56ce6b3a-950c-4de1-ba03-7a17aebe592f\", timeout: 25 })",
+                "args": {
+                  "timeout": 25,
+                  "sessionId": "render_56ce6b3a-950c-4de1-ba03-7a17aebe592f"
+                },
+                "description": "The UI has interactive actions. After this turn's other tool calls, you may long-poll once (waits up to 25s) to catch an immediate gesture; if `events` comes back empty, end your turn — later gestures arrive as new user messages carrying their own consume directive.",
+                "tool": "ggui_consume"
+              },
+              "sessionId": "render_56ce6b3a-950c-4de1-ba03-7a17aebe592f",
+              "action": "create",
+              "variantKey": "44136fa355b3678a"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"outcome\":\"rendered\",\"sessionId\":\"render_56ce6b3a-950c-4de1-ba03-7a17aebe592f\",\"resourceUri\":\"ui://ggui/render/render_56ce6b3a-950c-4de1-ba03-7a17aebe592f/8d796d71f4c698dc\",\"action\":\"create\",\"contractHash\":\"8d796d71f4c698dc\",\"blueprintId\":\"bp_1dcbe1e6-5593-4ec8-a9a8-8c3e98e583cd\",\"variantKey\":\"44136fa355b3678a\",\"cache\":{\"hit\":true,\"similarity\":0.7569050788879395,\"cachedBlueprintId\":\"bp_1dcbe1e6-5593-4ec8-a9a8-8c3e98e583cd\",\"llmCallsAvoided\":1,\"kind\":\"full-template\",\"reason\":\"full-template: reused a stored interface for this contract\"},\"nextStep\":{\"tool\":\"ggui_consume\",\"description\":\"The UI has interactive actions. After this turn's other tool calls, you may long-poll once (waits up to 25s) to catch an immediate gesture; if `events` comes back empty, end your turn — later gestures arrive as new user messages carrying their own consume directive.\",\"example\":\"ggui_consume({ sessionId: \\\"render_56ce6b3a-950c-4de1-ba03-7a17aebe592f\\\", timeout: 25 })\",\"args\":{\"sessionId\":\"render_56ce6b3a-950c-4de1-ba03-7a17aebe592f\",\"timeout\":25}}}"
+              }
+            ],
+            "outcome": "ok",
+            "isError": false
+          }
+        ]
+      },
+      "toolName": "mcp__ggui__ggui_render"
+    },
+    {
+      "seq": 8,
+      "at": "2026-09-09T07:16:27.765Z",
+      "kind": "text",
+      "authorRole": "user",
+      "text": "done — just say bye",
+      "clientMessageId": "c335f5f9-468a-4d63-b649-91aaa5872c9f"
+    },
+    {
+      "seq": 9,
+      "at": "2026-09-09T07:16:30.225Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": "Bye!",
+      "clientMessageId": "c335f5f9-468a-4d63-b649-91aaa5872c9f#agentTurn"
+    }
+  ],
+  "nextToken": null
+}

@@ -1,0 +1,36 @@
+event: session
+data: {"sessionId":"1a0cfa3c-5da3-4a08-b35c-f80073674d1c","userId":"147804a8-e031-70e4-24c1-0c6626a28643","authMode":"authenticated","threadId":"1a0cfa3c-5da3-4a08-b35c-f80073674d1c"}
+
+event: message
+data: {"seq":0,"type":"ext.anthropic.frame","kind":"status","frame":{"type":"system","subtype":"status","status":"requesting","session_id":"ebd7d7c2-d047-4e07-926f-bee004a63bee","uuid":"cb5523ed-e718-4465-89ef-d8283e5bdbf6"}}
+
+event: message
+data: {"type":"turn.start","seq":1,"turnId":"turn_ebd7d7c2-d047-4e07-926f-bee004a63bee","threadId":"1a0cfa3c-5da3-4a08-b35c-f80073674d1c"}
+
+event: message
+data: {"type":"message.start","seq":2,"id":"msg_011CesTNUxy7Dctn76LoyRN7","turnId":"turn_ebd7d7c2-d047-4e07-926f-bee004a63bee","threadId":"1a0cfa3c-5da3-4a08-b35c-f80073674d1c","role":"assistant","model":"claude-sonnet-5"}
+
+event: message
+data: {"type":"message.metadata","messageId":"msg_011CesTNUxy7Dctn76LoyRN7","metadata":{"ttft_ms":845},"turnId":"turn_ebd7d7c2-d047-4e07-926f-bee004a63bee","seq":3}
+
+event: message
+data: {"type":"text.start","seq":4,"id":"msg_011CesTNUxy7Dctn76LoyRN7:text:0","messageId":"msg_011CesTNUxy7Dctn76LoyRN7","turnId":"turn_ebd7d7c2-d047-4e07-926f-bee004a63bee"}
+
+event: message
+data: {"type":"text.delta","seq":5,"id":"msg_011CesTNUxy7Dctn76LoyRN7:text:0","messageId":"msg_011CesTNUxy7Dctn76LoyRN7","delta":"Bye!","turnId":"turn_ebd7d7c2-d047-4e07-926f-bee004a63bee"}
+
+event: message
+data: {"type":"text.end","seq":6,"id":"msg_011CesTNUxy7Dctn76LoyRN7:text:0","messageId":"msg_011CesTNUxy7Dctn76LoyRN7","turnId":"turn_ebd7d7c2-d047-4e07-926f-bee004a63bee"}
+
+event: message
+data: {"type":"message.end","seq":7,"id":"msg_011CesTNUxy7Dctn76LoyRN7","usage":{"inputTokens":2,"outputTokens":6,"cacheReadTokens":24004,"cacheWriteTokens":992,"cumulative":true,"reasoningTokens":0}}
+
+event: message
+data: {"seq":8,"type":"ext.anthropic.result-meta","fastModeDisabledReason":"sdk_opt_in_required","queuedTurnCount":0,"subagentStats":{"spawned":0,"requested":{"background":0,"foreground":0,"unset":0},"started_in_background":0,"max_depth":0,"spawned_by_subagents":0,"completed":0,"failed":0,"killed":{"parent":0,"user":0,"system":0},"refused":{"depth_limit":0,"concurrency_limit":0,"budget":0},"by_type":{}},"modelUsage":{"claude-sonnet-5":{"canonicalModel":"claude-sonnet-5","provider":"firstParty","costBasis":"list"}}}
+
+event: message
+data: {"type":"turn.done","seq":9,"turnId":"turn_ebd7d7c2-d047-4e07-926f-bee004a63bee","outcome":{"type":"success","result":"Bye!"},"finishReason":"stop","usage":{"inputTokens":2,"outputTokens":6,"cacheReadTokens":24004,"cacheWriteTokens":992,"reasoningTokens":0,"serverToolRequests":0,"costUsd":0.0073448,"cumulative":true,"byModel":{"claude-sonnet-5":{"inputTokens":2,"outputTokens":6,"cacheReadTokens":24004,"cacheWriteTokens":992,"reasoningTokens":0,"costUsd":0.0073448,"serverToolRequests":0,"cumulative":true}}}}
+
+event: done
+data: {"stopReason":"end_turn","threadId":"1a0cfa3c-5da3-4a08-b35c-f80073674d1c","userSeq":8,"agentSeq":9}
+

@@ -216,15 +216,28 @@ function foldAssistantSources(
 function flatSettledGroups(messages: TranscriptInputs["messages"]): AssistantSource[] {
   const groups: AssistantSource[] = [];
   let current: AssistantSource | null = null;
+  // A user row seen with no assistant row after it yet.
+  let openUserTurn = false;
   for (const m of messages) {
     if (m.role === "user") {
+      // guuey#1101: a user turn CLOSED by the next user row with no assistant
+      // rows between is an EMPTY slot, never a vanished one. The history
+      // mapping drops text-less agent rows (an aborted turn persists five of
+      // them and a card), so without this the next turn's answer paired with
+      // THIS turn's bubble and the card spliced before the wrong user
+      // (`u0 → "Bye!" → card → u1`, QA's reloaded Playground). The trailing
+      // user turn is left open on purpose: its assistant is the in-flight or
+      // abort-kept partial that `flatAssistantSources` appends.
+      if (openUserTurn) groups.push({ blocks: [], live: false, stopped: false });
       current = null;
+      openUserTurn = true;
     } else if (m.role === "assistant") {
       if (current === null) {
         current = { blocks: [], live: false, stopped: false };
         groups.push(current);
       }
       current.blocks.push({ type: "text", text: m.text });
+      openUserTurn = false;
     }
   }
   return groups;

@@ -1,0 +1,290 @@
+event: session
+data: {"sessionId":"1a0cfa3c-5da3-4a08-b35c-f80073674d1c","userId":"147804a8-e031-70e4-24c1-0c6626a28643","authMode":"authenticated","threadId":"1a0cfa3c-5da3-4a08-b35c-f80073674d1c"}
+
+event: message
+data: {"seq":0,"type":"ext.anthropic.frame","kind":"status","frame":{"type":"system","subtype":"status","status":"requesting","session_id":"9d0e7847-37d6-4cec-9360-b0fce74fc44c","uuid":"690ddabe-0839-49f4-9b83-01c1b25d974b"}}
+
+event: message
+data: {"type":"turn.start","seq":1,"turnId":"turn_9d0e7847-37d6-4cec-9360-b0fce74fc44c","threadId":"1a0cfa3c-5da3-4a08-b35c-f80073674d1c"}
+
+event: message
+data: {"type":"message.start","seq":2,"id":"msg_011CesTLt3E6FdjCEK5uB7NE","turnId":"turn_9d0e7847-37d6-4cec-9360-b0fce74fc44c","threadId":"1a0cfa3c-5da3-4a08-b35c-f80073674d1c","role":"assistant","model":"claude-sonnet-5"}
+
+event: message
+data: {"type":"message.metadata","messageId":"msg_011CesTLt3E6FdjCEK5uB7NE","metadata":{"ttft_ms":829},"turnId":"turn_9d0e7847-37d6-4cec-9360-b0fce74fc44c","seq":3}
+
+event: message
+data: {"type":"reasoning.start","seq":4,"id":"msg_011CesTLt3E6FdjCEK5uB7NE:reasoning:0","messageId":"msg_011CesTLt3E6FdjCEK5uB7NE","turnId":"turn_9d0e7847-37d6-4cec-9360-b0fce74fc44c"}
+
+event: message
+data: {"seq":5,"type":"ext.anthropic.frame","kind":"thinking_tokens","frame":{"type":"system","subtype":"thinking_tokens","estimated_tokens":50,"estimated_tokens_delta":50,"session_id":"9d0e7847-37d6-4cec-9360-b0fce74fc44c","uuid":"48fdc9a5-9195-4ef2-afe6-9956b569d611"}}
+
+event: message
+data: {"type":"reasoning.delta","seq":6,"id":"msg_011CesTLt3E6FdjCEK5uB7NE:reasoning:0","messageId":"msg_011CesTLt3E6FdjCEK5uB7NE","delta":"","turnId":"turn_9d0e7847-37d6-4cec-9360-b0fce74fc44c","providerMetadata":{"estimated_tokens":50}}
+
+event: message
+data: {"type":"reasoning.delta","seq":7,"id":"msg_011CesTLt3E6FdjCEK5uB7NE:reasoning:0","messageId":"msg_011CesTLt3E6FdjCEK5uB7NE","delta":"","turnId":"turn_9d0e7847-37d6-4cec-9360-b0fce74fc44c","providerMetadata":{"estimated_tokens":null}}
+
+event: message
+data: {"seq":8,"type":"ext.anthropic.frame","kind":"thinking_tokens","frame":{"type":"system","subtype":"thinking_tokens","estimated_tokens":82,"estimated_tokens_delta":32,"session_id":"9d0e7847-37d6-4cec-9360-b0fce74fc44c","uuid":"dc86819a-e42e-4654-9f4b-850e87e20b6a"}}
+
+event: message
+data: {"type":"reasoning.end","seq":9,"id":"msg_011CesTLt3E6FdjCEK5uB7NE:reasoning:0","messageId":"msg_011CesTLt3E6FdjCEK5uB7NE","turnId":"turn_9d0e7847-37d6-4cec-9360-b0fce74fc44c"}
+
+event: message
+data: {"type":"reasoning.opaque","seq":10,"id":"msg_011CesTLt3E6FdjCEK5uB7NE:reasoning:0","messageId":"msg_011CesTLt3E6FdjCEK5uB7NE","kind":"signature","value":"EsICCqgBCBEYAipAUw37yyQSM+6Lyh2LgwcfMboWp0Lhya0Et3aLL7e6jwFfMLTdlq2dBCIseExL4ye/XY+AJH07JJF4dPnYuP7YvDIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ2NThiNDdmOS0wMWUyLTQ3OTgtYjViZS00NGUyYTM1ZDhjY2FyEFzCGQGhdZyKEQ1rsEIiR3SIAQGoAbiPhNUGsAECEgz8CTPOW35SP/UfcrkaDKNDY/sGEXWao99nECIwEmzbBMJRYh/8g1azs2T1hkmJuLbAE/z0/yEEGTwD2Ahe/sI+rdUJUGd3hLNdmhCcKkf/D/UxhvzYD46qQq/cV75i63bTQHwsOsPh0/SCsI6YYnLkHX6SqaNs9cQtLZW0t9+P14CUcjtU9lV/beewYpMuUwCAyosRnRgB","turnId":"turn_9d0e7847-37d6-4cec-9360-b0fce74fc44c","provider":"anthropic"}
+
+event: message
+data: {"type":"tool.start","seq":11,"turnId":"turn_9d0e7847-37d6-4cec-9360-b0fce74fc44c","toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","name":"mcp__ggui__ggui_handshake","index":1,"messageId":"msg_011CesTLt3E6FdjCEK5uB7NE","providerExecuted":false}
+
+event: message
+data: {"type":"tool.args.delta","seq":12,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":""}
+
+event: message
+data: {"type":"tool.args.delta","seq":13,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"{\"inte"}
+
+event: message
+data: {"type":"tool.args.delta","seq":14,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"nt\": \"Small "}
+
+event: message
+data: {"type":"tool.args.delta","seq":15,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"car"}
+
+event: message
+data: {"type":"tool.args.delta","seq":16,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"d wit"}
+
+event: message
+data: {"type":"tool.args.delta","seq":17,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"h a single h"}
+
+event: message
+data: {"type":"tool.args.delta","seq":18,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"i bu"}
+
+event: message
+data: {"type":"tool.args.delta","seq":19,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"tton\""}
+
+event: message
+data: {"type":"tool.args.delta","seq":20,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":", \"bluep"}
+
+event: message
+data: {"type":"tool.args.delta","seq":21,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"rintDr"}
+
+event: message
+data: {"type":"tool.args.delta","seq":22,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"aft\": {\"con"}
+
+event: message
+data: {"type":"tool.args.delta","seq":23,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"tra"}
+
+event: message
+data: {"type":"tool.args.delta","seq":24,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"ct\":{"}
+
+event: message
+data: {"type":"tool.args.delta","seq":25,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"\"pro"}
+
+event: message
+data: {"type":"tool.args.delta","seq":26,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"psSpec\""}
+
+event: message
+data: {"type":"tool.args.delta","seq":27,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":":{\"prope"}
+
+event: message
+data: {"type":"tool.args.delta","seq":28,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"rties\":{\"la"}
+
+event: message
+data: {"type":"tool.args.delta","seq":29,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"bel\":{\"sche"}
+
+event: message
+data: {"type":"tool.args.delta","seq":30,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"ma\":"}
+
+event: message
+data: {"type":"tool.args.delta","seq":31,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"{\""}
+
+event: message
+data: {"type":"tool.args.delta","seq":32,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"ty"}
+
+event: message
+data: {"type":"tool.args.delta","seq":33,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"pe"}
+
+event: message
+data: {"type":"tool.args.delta","seq":34,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"\":\"string\"}"}
+
+event: message
+data: {"type":"tool.args.delta","seq":35,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":",\"required\""}
+
+event: message
+data: {"type":"tool.args.delta","seq":36,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":":true,\"examp"}
+
+event: message
+data: {"type":"tool.args.delta","seq":37,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"le\":\""}
+
+event: message
+data: {"type":"tool.args.delta","seq":38,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"hi\"}}},\"act"}
+
+event: message
+data: {"type":"tool.args.delta","seq":39,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"ionSpe"}
+
+event: message
+data: {"type":"tool.args.delta","seq":40,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"c\":{\"p"}
+
+event: message
+data: {"type":"tool.args.delta","seq":41,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"re"}
+
+event: message
+data: {"type":"tool.args.delta","seq":42,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"ss\":{\"la"}
+
+event: message
+data: {"type":"tool.args.delta","seq":43,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"bel\":\"hi"}
+
+event: message
+data: {"type":"tool.args.delta","seq":44,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"\",\"s"}
+
+event: message
+data: {"type":"tool.args.delta","seq":45,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"chema\":{\"typ"}
+
+event: message
+data: {"type":"tool.args.delta","seq":46,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"e\":"}
+
+event: message
+data: {"type":"tool.args.delta","seq":47,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"\"object\","}
+
+event: message
+data: {"type":"tool.args.delta","seq":48,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"\"propert"}
+
+event: message
+data: {"type":"tool.args.delta","seq":49,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"ies\":{}}}}"}
+
+event: message
+data: {"type":"tool.args.delta","seq":50,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","delta":"}}}"}
+
+event: message
+data: {"type":"tool.args.assembled","seq":51,"toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","input":{"intent":"Small card with a single hi button","blueprintDraft":{"contract":{"propsSpec":{"properties":{"label":{"schema":{"type":"string"},"required":true,"example":"hi"}}},"actionSpec":{"press":{"label":"hi","schema":{"type":"object","properties":{}}}}}}}}
+
+event: message
+data: {"type":"message.end","seq":52,"id":"msg_011CesTLt3E6FdjCEK5uB7NE","usage":{"inputTokens":2,"outputTokens":202,"cacheReadTokens":24896,"cacheWriteTokens":0,"cumulative":true,"reasoningTokens":18}}
+
+event: message
+data: {"type":"tool.done","seq":53,"turnId":"turn_9d0e7847-37d6-4cec-9360-b0fce74fc44c","toolCallId":"toolu_0124LfHo17f5BJNS4xqEKHti","content":[{"type":"text","text":"{\"handshakeId\":\"978c1d9c-37fe-4e62-9c15-27a386cd1dfb\",\"action\":\"reuse\",\"suggestion\":{\"origin\":\"cache\",\"rationale\":\"match-semantic: a saved interface matches this intent — reusing it [coverage gap — the request declares surfaces this cached UI lacks (actions: press; props: label); agent override is the safety valve]\",\"blueprintMeta\":{\"blueprintId\":\"bp_1dcbe1e6-5593-4ec8-a9a8-8c3e98e583cd\",\"contractHash\":\"8d796d71f4c698dc\",\"codeHash\":\"8bec8d7219a36a60c1c37d145663174c12f8dd50fc6bef5a64a48fa8fb3c8fc5\",\"source\":{\"kind\":\"llm\",\"generator\":\"ui-gen-default\",\"model\":\"anthropic/claude-haiku-4-5\"},\"variance\":{},\"selectedReason\":\"match-semantic: a saved interface matches this intent — reusing it [coverage gap — the request declares surfaces this cached UI lacks (actions: press; props: label); agent override is the safety valve]\"},\"proposedContractSummary\":\"slots=∅; actions=pressHi; streams=∅; props=title:string\",\"validationFindings\":[{\"code\":\"COVERAGE_GAP\",\"severity\":\"warn\",\"path\":\"actionSpec.press\",\"message\":\"the proposed cached UI does not declare actions 'press' that your draft requests. Default to ACCEPT (reuse-and-refine) — override only if the user must directly see or act on this surface, since the cached UI cannot show it.\"},{\"code\":\"COVERAGE_GAP\",\"severity\":\"warn\",\"path\":\"propsSpec.properties.label\",\"message\":\"the proposed cached UI does not declare props 'label' (required in your draft) that your draft requests. Default to ACCEPT (reuse-and-refine) — override only if the user must directly see or act on this surface, since the cached UI cannot show it.\"}]},\"propsSchema\":{\"type\":\"object\",\"properties\":{\"title\":{\"type\":\"string\"}},\"required\":[],\"additionalProperties\":false},\"propsSchemaHash\":\"dcd4aa93bac8ab0dcbf93d59c0b04615b127afaa8061624425beb8ad1508207b\",\"propsSchemaProfile\":\"grammar-safe\",\"nextStep\":{\"tool\":\"ggui_render\",\"example\":\"ggui_render({\\\"handshakeId\\\":\\\"978c1d9c-37fe-4e62-9c15-27a386cd1dfb\\\",\\\"props\\\":{\\\"title\\\":\\\"Say hi\\\"}})\"}}"}],"outcome":"ok","isError":false,"messageId":"toolu_0124LfHo17f5BJNS4xqEKHti:result","structuredContent":{"handshakeId":"978c1d9c-37fe-4e62-9c15-27a386cd1dfb","action":"reuse","suggestion":{"origin":"cache","rationale":"match-semantic: a saved interface matches this intent — reusing it [coverage gap — the request declares surfaces this cached UI lacks (actions: press; props: label); agent override is the safety valve]","blueprintMeta":{"blueprintId":"bp_1dcbe1e6-5593-4ec8-a9a8-8c3e98e583cd","contractHash":"8d796d71f4c698dc","codeHash":"8bec8d7219a36a60c1c37d145663174c12f8dd50fc6bef5a64a48fa8fb3c8fc5","source":{"kind":"llm","generator":"ui-gen-default","model":"anthropic/claude-haiku-4-5"},"variance":{},"selectedReason":"match-semantic: a saved interface matches this intent — reusing it [coverage gap — the request declares surfaces this cached UI lacks (actions: press; props: label); agent override is the safety valve]"},"proposedContractSummary":"slots=∅; actions=pressHi; streams=∅; props=title:string","validationFindings":[{"code":"COVERAGE_GAP","severity":"warn","path":"actionSpec.press","message":"the proposed cached UI does not declare actions 'press' that your draft requests. Default to ACCEPT (reuse-and-refine) — override only if the user must directly see or act on this surface, since the cached UI cannot show it."},{"code":"COVERAGE_GAP","severity":"warn","path":"propsSpec.properties.label","message":"the proposed cached UI does not declare props 'label' (required in your draft) that your draft requests. Default to ACCEPT (reuse-and-refine) — override only if the user must directly see or act on this surface, since the cached UI cannot show it."}]},"propsSchema":{"type":"object","properties":{"title":{"type":"string"}},"required":[],"additionalProperties":false},"propsSchemaHash":"dcd4aa93bac8ab0dcbf93d59c0b04615b127afaa8061624425beb8ad1508207b","propsSchemaProfile":"grammar-safe","nextStep":{"tool":"ggui_render","example":"ggui_render({\"handshakeId\":\"978c1d9c-37fe-4e62-9c15-27a386cd1dfb\",\"props\":{\"title\":\"Say hi\"}})"}}}
+
+event: message
+data: {"seq":54,"type":"ext.anthropic.frame","kind":"status","frame":{"type":"system","subtype":"status","status":"requesting","session_id":"9d0e7847-37d6-4cec-9360-b0fce74fc44c","uuid":"f5540b89-69b2-4408-802f-75a3a69e18d1"}}
+
+event: message
+data: {"type":"message.start","seq":55,"id":"msg_011CesTMERaGkWbRSfhrSsTs","turnId":"turn_9d0e7847-37d6-4cec-9360-b0fce74fc44c","threadId":"1a0cfa3c-5da3-4a08-b35c-f80073674d1c","role":"assistant","model":"claude-sonnet-5"}
+
+event: message
+data: {"type":"message.metadata","messageId":"msg_011CesTMERaGkWbRSfhrSsTs","metadata":{"ttft_ms":1376},"turnId":"turn_9d0e7847-37d6-4cec-9360-b0fce74fc44c","seq":56}
+
+event: message
+data: {"type":"reasoning.start","seq":57,"id":"msg_011CesTMERaGkWbRSfhrSsTs:reasoning:0","messageId":"msg_011CesTMERaGkWbRSfhrSsTs","turnId":"turn_9d0e7847-37d6-4cec-9360-b0fce74fc44c"}
+
+event: message
+data: {"type":"reasoning.delta","seq":58,"id":"msg_011CesTMERaGkWbRSfhrSsTs:reasoning:0","messageId":"msg_011CesTMERaGkWbRSfhrSsTs","delta":"","turnId":"turn_9d0e7847-37d6-4cec-9360-b0fce74fc44c","providerMetadata":{"estimated_tokens":null}}
+
+event: message
+data: {"type":"reasoning.end","seq":59,"id":"msg_011CesTMERaGkWbRSfhrSsTs:reasoning:0","messageId":"msg_011CesTMERaGkWbRSfhrSsTs","turnId":"turn_9d0e7847-37d6-4cec-9360-b0fce74fc44c"}
+
+event: message
+data: {"type":"reasoning.opaque","seq":60,"id":"msg_011CesTMERaGkWbRSfhrSsTs:reasoning:0","messageId":"msg_011CesTMERaGkWbRSfhrSsTs","kind":"signature","value":"EvkCCqgBCBEYAipAGbmH5Um84WVKxdYy4trOI/jHYDNwC8Ls4IaT8y9WI8ZJVmBshj0H32FSOACNC81idZaGX5G7rbyeS4BKfSFNTTIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ2NThiNDdmOS0wMWUyLTQ3OTgtYjViZS00NGUyYTM1ZDhjY2FyEFzCGQGhdZyKEQ1rsEIiR3SIAQGoAb6PhNUGsAECEgx/wXA8NMi8OrMFUYoaDFKvMrkgSdHIA8C0tSIwMxhek9yykSl71PBMJJWxIm6OSYDcYxV0oKssCSoblfEt1S2wul7+rMX4J1KxwcrSKn4qxgqA2X2khfYSXOET0rGGa17cspt68ibS212GW2DVoX3e99NNuUMQ+KRKFlbzylZwGBBWPRid6wtZV7bpnjluNNPrH7OWxVS6AmhvGB6af5N0iyxqm5wPSkuSc+iytkbC3y+I5R+bIM8s6joEfRHLlJi7+DlcIE3PmnRwbVAYAQ==","turnId":"turn_9d0e7847-37d6-4cec-9360-b0fce74fc44c","provider":"anthropic"}
+
+event: message
+data: {"type":"tool.start","seq":61,"turnId":"turn_9d0e7847-37d6-4cec-9360-b0fce74fc44c","toolCallId":"toolu_01DqVkFc8VjqviPqNQ7JcMXV","name":"mcp__ggui__ggui_render","index":1,"messageId":"msg_011CesTMERaGkWbRSfhrSsTs","providerExecuted":false}
+
+event: message
+data: {"type":"tool.args.delta","seq":62,"toolCallId":"toolu_01DqVkFc8VjqviPqNQ7JcMXV","delta":""}
+
+event: message
+data: {"type":"tool.args.delta","seq":63,"toolCallId":"toolu_01DqVkFc8VjqviPqNQ7JcMXV","delta":"{\"hands"}
+
+event: message
+data: {"type":"tool.args.delta","seq":64,"toolCallId":"toolu_01DqVkFc8VjqviPqNQ7JcMXV","delta":"hakeId\""}
+
+event: message
+data: {"type":"tool.args.delta","seq":65,"toolCallId":"toolu_01DqVkFc8VjqviPqNQ7JcMXV","delta":": \"978c"}
+
+event: message
+data: {"type":"tool.args.delta","seq":66,"toolCallId":"toolu_01DqVkFc8VjqviPqNQ7JcMXV","delta":"1d9c-37"}
+
+event: message
+data: {"type":"tool.args.delta","seq":67,"toolCallId":"toolu_01DqVkFc8VjqviPqNQ7JcMXV","delta":"fe-4e62"}
+
+event: message
+data: {"type":"tool.args.delta","seq":68,"toolCallId":"toolu_01DqVkFc8VjqviPqNQ7JcMXV","delta":"-9c15-2"}
+
+event: message
+data: {"type":"tool.args.delta","seq":69,"toolCallId":"toolu_01DqVkFc8VjqviPqNQ7JcMXV","delta":"7a386cd"}
+
+event: message
+data: {"type":"tool.args.delta","seq":70,"toolCallId":"toolu_01DqVkFc8VjqviPqNQ7JcMXV","delta":"1dfb\""}
+
+event: message
+data: {"type":"tool.args.delta","seq":71,"toolCallId":"toolu_01DqVkFc8VjqviPqNQ7JcMXV","delta":", \"prop"}
+
+event: message
+data: {"type":"tool.args.delta","seq":72,"toolCallId":"toolu_01DqVkFc8VjqviPqNQ7JcMXV","delta":"s\": {\"t"}
+
+event: message
+data: {"type":"tool.args.delta","seq":73,"toolCallId":"toolu_01DqVkFc8VjqviPqNQ7JcMXV","delta":"itle\":\""}
+
+event: message
+data: {"type":"tool.args.delta","seq":74,"toolCallId":"toolu_01DqVkFc8VjqviPqNQ7JcMXV","delta":"hi\"}}"}
+
+event: message
+data: {"type":"tool.args.assembled","seq":75,"toolCallId":"toolu_01DqVkFc8VjqviPqNQ7JcMXV","input":{"handshakeId":"978c1d9c-37fe-4e62-9c15-27a386cd1dfb","props":{"title":"hi"}}}
+
+event: message
+data: {"type":"message.end","seq":76,"id":"msg_011CesTMERaGkWbRSfhrSsTs","usage":{"inputTokens":2,"outputTokens":159,"cacheReadTokens":24667,"cacheWriteTokens":1348,"cumulative":true,"reasoningTokens":40}}
+
+event: message
+data: {"type":"tool.done","seq":77,"turnId":"turn_9d0e7847-37d6-4cec-9360-b0fce74fc44c","toolCallId":"toolu_01DqVkFc8VjqviPqNQ7JcMXV","content":[{"type":"text","text":"{\"outcome\":\"rendered\",\"sessionId\":\"render_56ce6b3a-950c-4de1-ba03-7a17aebe592f\",\"resourceUri\":\"ui://ggui/render/render_56ce6b3a-950c-4de1-ba03-7a17aebe592f/8d796d71f4c698dc\",\"action\":\"create\",\"contractHash\":\"8d796d71f4c698dc\",\"blueprintId\":\"bp_1dcbe1e6-5593-4ec8-a9a8-8c3e98e583cd\",\"variantKey\":\"44136fa355b3678a\",\"cache\":{\"hit\":true,\"similarity\":0.7569050788879395,\"cachedBlueprintId\":\"bp_1dcbe1e6-5593-4ec8-a9a8-8c3e98e583cd\",\"llmCallsAvoided\":1,\"kind\":\"full-template\",\"reason\":\"full-template: reused a stored interface for this contract\"},\"nextStep\":{\"tool\":\"ggui_consume\",\"description\":\"The UI has interactive actions. After this turn's other tool calls, you may long-poll once (waits up to 25s) to catch an immediate gesture; if `events` comes back empty, end your turn — later gestures arrive as new user messages carrying their own consume directive.\",\"example\":\"ggui_consume({ sessionId: \\\"render_56ce6b3a-950c-4de1-ba03-7a17aebe592f\\\", timeout: 25 })\",\"args\":{\"sessionId\":\"render_56ce6b3a-950c-4de1-ba03-7a17aebe592f\",\"timeout\":25}}}"}],"outcome":"ok","isError":false,"messageId":"toolu_01DqVkFc8VjqviPqNQ7JcMXV:result","uiData":{"outcome":"rendered","sessionId":"render_56ce6b3a-950c-4de1-ba03-7a17aebe592f","resourceUri":"ui://ggui/render/render_56ce6b3a-950c-4de1-ba03-7a17aebe592f/8d796d71f4c698dc","action":"create","contractHash":"8d796d71f4c698dc","blueprintId":"bp_1dcbe1e6-5593-4ec8-a9a8-8c3e98e583cd","variantKey":"44136fa355b3678a","cache":{"hit":true,"similarity":0.7569050788879395,"cachedBlueprintId":"bp_1dcbe1e6-5593-4ec8-a9a8-8c3e98e583cd","llmCallsAvoided":1,"kind":"full-template","reason":"full-template: reused a stored interface for this contract"},"nextStep":{"tool":"ggui_consume","description":"The UI has interactive actions. After this turn's other tool calls, you may long-poll once (waits up to 25s) to catch an immediate gesture; if `events` comes back empty, end your turn — later gestures arrive as new user messages carrying their own consume directive.","example":"ggui_consume({ sessionId: \"render_56ce6b3a-950c-4de1-ba03-7a17aebe592f\", timeout: 25 })","args":{"sessionId":"render_56ce6b3a-950c-4de1-ba03-7a17aebe592f","timeout":25}}},"_meta":{"ui":{"resourceUri":"ui://ggui/render/render_56ce6b3a-950c-4de1-ba03-7a17aebe592f/8d796d71f4c698dc"},"ui/resourceUri":"ui://ggui/render/render_56ce6b3a-950c-4de1-ba03-7a17aebe592f/8d796d71f4c698dc"}}
+
+event: message
+data: {"seq":78,"type":"ext.anthropic.frame","kind":"status","frame":{"type":"system","subtype":"status","status":"requesting","session_id":"9d0e7847-37d6-4cec-9360-b0fce74fc44c","uuid":"29e6322e-b334-4b4a-bb11-fd01b580d937"}}
+
+event: message
+data: {"type":"message.start","seq":79,"id":"msg_011CesTMUnGe7YczdV32BbAo","turnId":"turn_9d0e7847-37d6-4cec-9360-b0fce74fc44c","threadId":"1a0cfa3c-5da3-4a08-b35c-f80073674d1c","role":"assistant","model":"claude-sonnet-5"}
+
+event: message
+data: {"type":"message.metadata","messageId":"msg_011CesTMUnGe7YczdV32BbAo","metadata":{"ttft_ms":1869},"turnId":"turn_9d0e7847-37d6-4cec-9360-b0fce74fc44c","seq":80}
+
+event: message
+data: {"type":"tool.start","seq":81,"turnId":"turn_9d0e7847-37d6-4cec-9360-b0fce74fc44c","toolCallId":"toolu_01C2GBige5Ez8wWLHYZ1qLdi","name":"mcp__ggui__ggui_consume","index":0,"messageId":"msg_011CesTMUnGe7YczdV32BbAo","providerExecuted":false}
+
+event: message
+data: {"type":"tool.args.delta","seq":82,"toolCallId":"toolu_01C2GBige5Ez8wWLHYZ1qLdi","delta":""}
+
+event: message
+data: {"type":"tool.args.delta","seq":83,"toolCallId":"toolu_01C2GBige5Ez8wWLHYZ1qLdi","delta":"{\"sessionId"}
+
+event: message
+data: {"type":"tool.args.delta","seq":84,"toolCallId":"toolu_01C2GBige5Ez8wWLHYZ1qLdi","delta":"\": \"r"}
+
+event: message
+data: {"type":"tool.args.delta","seq":85,"toolCallId":"toolu_01C2GBige5Ez8wWLHYZ1qLdi","delta":"end"}
+
+event: message
+data: {"type":"tool.args.delta","seq":86,"toolCallId":"toolu_01C2GBige5Ez8wWLHYZ1qLdi","delta":"er_56"}
+
+event: message
+data: {"type":"tool.args.delta","seq":87,"toolCallId":"toolu_01C2GBige5Ez8wWLHYZ1qLdi","delta":"ce6b3a-950"}
+
+event: message
+data: {"type":"tool.args.delta","seq":88,"toolCallId":"toolu_01C2GBige5Ez8wWLHYZ1qLdi","delta":"c-4d"}
+
+event: message
+data: {"type":"tool.args.delta","seq":89,"toolCallId":"toolu_01C2GBige5Ez8wWLHYZ1qLdi","delta":"e1-ba03-7a17"}
+
+event: message
+data: {"type":"tool.args.delta","seq":90,"toolCallId":"toolu_01C2GBige5Ez8wWLHYZ1qLdi","delta":"aebe592f\""}
+
+event: message
+data: {"type":"tool.args.delta","seq":91,"toolCallId":"toolu_01C2GBige5Ez8wWLHYZ1qLdi","delta":", "}
+
+event: message
+data: {"type":"tool.args.delta","seq":92,"toolCallId":"toolu_01C2GBige5Ez8wWLHYZ1qLdi","delta":"\"timeou"}
+
+event: message
+data: {"type":"tool.args.delta","seq":93,"toolCallId":"toolu_01C2GBige5Ez8wWLHYZ1qLdi","delta":"t\": 25}"}
+
+event: message
+data: {"type":"tool.args.assembled","seq":94,"toolCallId":"toolu_01C2GBige5Ez8wWLHYZ1qLdi","input":{"sessionId":"render_56ce6b3a-950c-4de1-ba03-7a17aebe592f","timeout":25}}
+
+: ping
+
