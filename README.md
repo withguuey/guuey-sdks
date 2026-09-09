@@ -43,4 +43,6 @@ pnpm build && pnpm test
 This repository is maintained as a mirror of the guuey platform monorepo;
 issues and PRs are welcome here and are synced upstream by the team.
 
+Questions and help: the guuey community on Discord — https://guuey.com/discord.
+
 MIT © Loqu, Inc.

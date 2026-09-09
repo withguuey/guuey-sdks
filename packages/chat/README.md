@@ -226,3 +226,8 @@ Consumes [`@guuey/agent-client`](https://www.npmjs.com/package/@guuey/agent-clie
 [`@guuey/mcp-apps-host`](https://www.npmjs.com/package/@guuey/mcp-apps-host)
 (the MCP-Apps host role that mounts generative views). Issues:
 [withguuey/guuey-sdks](https://github.com/withguuey/guuey-sdks/issues).
+
+## Support
+
+Questions and help: the guuey community on Discord — https://guuey.com/discord.
+Bugs and feature requests: https://github.com/withguuey/guuey-sdks/issues.

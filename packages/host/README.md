@@ -45,3 +45,8 @@ Scaffold one with `npm create @guuey/agentic-app`.
 ## License
 
 MIT © Loqu, Inc.
+
+## Support
+
+Questions and help: the guuey community on Discord — https://guuey.com/discord.
+Bugs and feature requests: https://github.com/withguuey/guuey-sdks/issues.

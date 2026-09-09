@@ -88,3 +88,7 @@ per turn, your own protocol), graduate to a full worker: add a
 `guuey.worker.js` build via `@guuey/worker`'s `serveNative()` — see the
 Guuey docs. `agent.entry` and a full worker are mutually exclusive; the
 worker wins if both exist.
+
+## Need help?
+
+The guuey community is on Discord — https://guuey.com/discord. Bugs in the scaffold or the SDKs: https://github.com/withguuey/guuey-sdks/issues.

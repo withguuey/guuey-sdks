@@ -56,3 +56,8 @@ package is guuey's OSS host-side support for the same spec.
 
 Conformance status and roadmap: `docs/development/mcp-apps-host-conformance.md`
 in the guuey monorepo (guuey#123).
+
+## Support
+
+Questions and help: the guuey community on Discord — https://guuey.com/discord.
+Bugs and feature requests: https://github.com/withguuey/guuey-sdks/issues.

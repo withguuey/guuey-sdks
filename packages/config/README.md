@@ -16,3 +16,8 @@ doc.agent.mcpServers; // { todo: { kind: "hosted", server: "mcp-..." }, ... }
 The schema is the contract shared by `guuey dev`, `guuey deploy`, and the
 hosted runtime — one file, validated the same way everywhere. Scaffold a
 project that uses it with `npx @guuey/create-agentic-app`.
+
+## Support
+
+Questions and help: the guuey community on Discord — https://guuey.com/discord.
+Bugs and feature requests: https://github.com/withguuey/guuey-sdks/issues.

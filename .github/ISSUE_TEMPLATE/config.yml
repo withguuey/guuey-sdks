@@ -1,0 +1,11 @@
+# Contact links shown above the "new issue" chooser on withguuey/guuey-sdks.
+# The Discord URL is the ONE canonical link (guuey#1029): https://guuey.com/discord
+# (a landing redirect, so the invite can rotate without touching any surface).
+blank_issues_enabled: true
+contact_links:
+  - name: Questions and help — guuey community on Discord
+    url: https://guuey.com/discord
+    about: Ask, share what you are building, get unblocked.
+  - name: Documentation
+    url: https://docs.guuey.com
+    about: Guides and reference for the CLI, SDKs and hosting.

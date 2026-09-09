@@ -283,3 +283,8 @@ whether the code exists.
 Until the hosted binding is live in your environment, state is
 per-pod and non-durable — design your MCP so that losing this state
 is an inconvenience (re-auth, cache miss), never data loss.
+
+## Support
+
+Questions and help: the guuey community on Discord — https://guuey.com/discord.
+Bugs and feature requests: https://github.com/withguuey/guuey-sdks/issues.

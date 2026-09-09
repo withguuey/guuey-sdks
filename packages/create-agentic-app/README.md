@@ -60,3 +60,8 @@ refreshes `guuey.json`'s `appId`, and for a Studio no-code app pulls the
 Studio-authored system prompt/model/MCP servers down into the scaffold too.
 There is no `guuey link` command — `guuey pull --app-id` is the only way
 to bind a project to an existing app.
+
+## Support
+
+Questions and help: the guuey community on Discord — https://guuey.com/discord.
+Bugs and feature requests: https://github.com/withguuey/guuey-sdks/issues.

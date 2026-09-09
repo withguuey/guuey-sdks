@@ -109,3 +109,8 @@ this reason — the standard RN package pattern). Metro resolves that condition
 by default and transpiles the source with your app's Babel config; Node and
 web bundlers ignore it and use the compiled ESM in `dist/`. No
 `transpilePackages`-style configuration is needed on either side.
+
+## Support
+
+Questions and help: the guuey community on Discord — https://guuey.com/discord.
+Bugs and feature requests: https://github.com/withguuey/guuey-sdks/issues.

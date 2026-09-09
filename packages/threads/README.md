@@ -78,3 +78,8 @@ Requires the app to run identified end-users (`userAuthMode: "byo"`); guests
 and Cognito sessions are served on-platform only. Errors surface as
 `HttpThreadStoreError` (`status`, `code`). Reads retry once on a network
 failure or 5xx; writes never do.
+
+## Support
+
+Questions and help: the guuey community on Discord — https://guuey.com/discord.
+Bugs and feature requests: https://github.com/withguuey/guuey-sdks/issues.

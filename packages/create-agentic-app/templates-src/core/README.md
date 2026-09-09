@@ -164,6 +164,10 @@ monorepo's `docs/quickstart.md`, or
 [`@guuey/fs`](https://www.npmjs.com/package/@guuey/fs)'s own README — an
 optional, three-helper sugar layer over the same paths.
 
+## Need help?
+
+The guuey community is on Discord — https://guuey.com/discord. Bugs in the scaffold or the SDKs: https://github.com/withguuey/guuey-sdks/issues.
+
 ## How people talk to your agent
 
 - **guuey Portal** — a Telegram-like agent App Store and universal chat

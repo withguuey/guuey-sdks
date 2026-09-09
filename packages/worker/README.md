@@ -44,3 +44,8 @@ for line in sys.stdin:
 - Context is **pushed** in the invoke (`history` · `priorMemory` · `priorState` · `mcpAvailability` — per OAuth-connected server, whether its tools are available this turn; guuey#901).
 
 See the design: `docs/superpowers/specs/2026-06-22-worker-platform-northstar-design.md`.
+
+## Support
+
+Questions and help: the guuey community on Discord — https://guuey.com/discord.
+Bugs and feature requests: https://github.com/withguuey/guuey-sdks/issues.

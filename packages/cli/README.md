@@ -41,3 +41,8 @@ This is a deliberate local-dev trade-off, stated here so it's a decision
 you read rather than one you discover. If your agent — or any MCP server
 it talks to — handles untrusted input, run `guuey dev` inside a throwaway
 container/shell with a minimal environment.
+
+## Support
+
+Questions and help: the guuey community on Discord — https://guuey.com/discord.
+Bugs and feature requests: https://github.com/withguuey/guuey-sdks/issues.

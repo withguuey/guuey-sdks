@@ -281,3 +281,8 @@ id, an editable email) silently orphans all of it and the user reappears as a st
 ## License
 
 MIT
+
+## Support
+
+Questions and help: the guuey community on Discord — https://guuey.com/discord.
+Bugs and feature requests: https://github.com/withguuey/guuey-sdks/issues.

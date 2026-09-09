@@ -176,6 +176,7 @@ async function main(): Promise<void> {
     if (!installByDefault(flags)) console.log('  pnpm install');
     console.log('  pnpm bootstrap        # re-brand it as yours (also turns the demo chrome off)');
     console.log('  pnpm dev');
+    console.log('  Need help? https://guuey.com/discord');
     return;
   }
 
@@ -259,6 +260,7 @@ async function main(): Promise<void> {
   // form broke the founder's first-agent walk at exactly this moment.
   console.log('  npx guuey login && npx guuey deploy');
   console.log('  pnpm bootstrap -- --link   # bind the deployed app into the frontend');
+  console.log('  Need help? https://guuey.com/discord');
 }
 
 main().catch((err: unknown) => {

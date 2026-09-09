@@ -5,6 +5,7 @@ Thanks for your interest in the guuey SDKs!
 **Issues and discussions are welcome right here.** Bug reports, feature
 requests, and questions about any `@guuey/*` package belong in this
 repository's issue tracker.
+For questions and help, the guuey community is on Discord: https://guuey.com/discord.
 
 **A note on pull requests:** this repository is developed inside a larger
 monorepo and published here automatically, so commits cannot land on this

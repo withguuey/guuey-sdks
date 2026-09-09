@@ -58,3 +58,8 @@ function Shell() {
   `useAgentMode()`.
 
 React DOM only, zero runtime dependencies, `react >= 18` peer.
+
+## Support
+
+Questions and help: the guuey community on Discord — https://guuey.com/discord.
+Bugs and feature requests: https://github.com/withguuey/guuey-sdks/issues.

@@ -130,3 +130,8 @@ This package is optional sugar — three one-line env-var reads. You can
 skip it entirely and read `process.env.GUUEY_HOME_DIR` /
 `process.env.GUUEY_APP_DIR` / `process.cwd()` yourself; nothing here is
 magic.
+
+## Support
+
+Questions and help: the guuey community on Discord — https://guuey.com/discord.
+Bugs and feature requests: https://github.com/withguuey/guuey-sdks/issues.
