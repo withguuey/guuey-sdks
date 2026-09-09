@@ -40,6 +40,18 @@ describe("useAgentInvoke — pageContext carriage (guuey#524)", () => {
     expect(bodies[0]).toMatchObject({ pageContext: page });
   });
 
+  it("carries a hostOrigin-only context verbatim (guuey#1105) — the widget's INIT origin before any page call", async () => {
+    const page = { hostOrigin: "https://guuey.com" };
+    const { adapters, bodies } = capturingAdapters();
+    const { result } = renderHook(() =>
+      useAgentInvoke({ endpointUrl: "https://pod.example.com", appId: APP_ID, adapters, pageContext: page }),
+    );
+    await act(async () => {
+      await result.current.send("hello");
+    });
+    expect(bodies[0]).toMatchObject({ pageContext: page });
+  });
+
   it("sends the page block on the body verbatim; the optimistic message stays clean", async () => {
     const { adapters, bodies } = capturingAdapters();
     const page: PageContext = { path: "/pricing", title: "Pricing — Acme", context: "annual toggle visible" };

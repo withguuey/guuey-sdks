@@ -169,8 +169,14 @@ export interface StallRecoveryOptions {
  * an optional short host-declared line (the pod caps it server-side).
  */
 export interface PageContext {
-  path: string;
-  title: string;
+  /**
+   * The visitor's page (guuey#524). Optional since guuey#1105: a context may
+   * carry only `hostOrigin` — the widget page sends the embedder's origin
+   * from the INIT message before (or without) any `page` call. The pod
+   * frames path/title/context for the model only when `path` is present.
+   */
+  path?: string;
+  title?: string;
   context?: string;
   /**
    * The host page's ORIGIN as the widget page saw it (guuey#1068 leg 3): the
