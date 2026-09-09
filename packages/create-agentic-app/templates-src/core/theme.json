@@ -1,0 +1,28 @@
+{
+  "name": "agentic-app-template",
+  "mode": "light",
+  "colors": {
+    "light": {
+      "accent": "#6c5ce7",
+      "onAccent": "#ffffff",
+      "ink": "#111318",
+      "inkMuted": "#5b6270",
+      "surface": "#ffffff",
+      "canvas": "#f7f7f5",
+      "canvasMuted": "#eceded",
+      "error": "#d64545"
+    },
+    "dark": {
+      "accent": "#6c5ce7",
+      "onAccent": "#ffffff",
+      "ink": "#e8e9ee",
+      "inkMuted": "#9aa0ac",
+      "surface": "#1b1e26",
+      "canvas": "#0f1116",
+      "canvasMuted": "#1b1e26",
+      "error": "#ff6b6b"
+    }
+  },
+  "typography": {},
+  "shape": { "radius": "soft", "density": "comfortable" }
+}

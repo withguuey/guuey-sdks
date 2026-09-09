@@ -7,7 +7,7 @@ MCP servers, and generative UI, in one workspace.
 npx @guuey/create-agentic-app my-agent
 cd my-agent
 pnpm install
-pnpm bootstrap      # brand, theme, copy → guuey.app.json + AGENTS.md (local, no account)
+pnpm bootstrap      # brand, theme, copy → guuey.app.json + theme.json + AGENTS.md (local, no account)
 pnpm dev            # local: your agent + MCP servers + the web app, hot reload
 guuey login
 guuey deploy        # hosted: agent + MCP servers live on guuey

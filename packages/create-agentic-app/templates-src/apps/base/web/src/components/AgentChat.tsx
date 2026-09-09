@@ -12,7 +12,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { GuueyChat } from "@guuey/chat/react";
 import type { GuueyChatActivityEvent, GuueyChatHandle } from "@guuey/chat/react";
 import type { PlanViewSummary, ViewRefItem } from "@guuey/chat";
-import { agentEndpointUrl, appConfig, historyBaseUrl } from "../config";
+import { agentEndpointUrl, appConfig, chatTheme, historyBaseUrl } from "../config";
 import { currentIdentityMode, ensureGuestSecret } from "../lib/identity";
 import { getBearerToken, currentUser, oidcConfigured } from "../lib/oidc";
 
@@ -75,6 +75,8 @@ export function AgentChat({
     endpointUrl: agentEndpointUrl(),
     appId: appConfig.link?.appId ?? "local",
     apiBaseUrl: historyBaseUrl(),
+    // theme.json — the document the hosted app renders too (pushed on --link).
+    theme: chatTheme,
     mode: appConfig.theme.mode,
     className,
     style,

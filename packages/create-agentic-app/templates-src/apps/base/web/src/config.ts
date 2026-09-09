@@ -1,11 +1,15 @@
 /**
- * Typed access to `guuey.app.json` — the ONE file `pnpm bootstrap` writes.
+ * Typed access to `guuey.app.json` (the file `pnpm bootstrap` writes) and
+ * `theme.json` (the chat theme document it keeps in step).
  *
- * The JSON is validated structurally here (not just cast) so a hand-edited
- * config fails with a named path instead of an undefined-deep-in-React
- * crash. The schema is documented in `../guuey.app.schema.json`.
+ * Both are validated structurally here (not just cast) so a hand-edited
+ * file fails with a named path instead of an undefined-deep-in-React
+ * crash. The config schema is documented in `../guuey.app.schema.json`;
+ * the theme is `@guuey/chat`'s own `GuueyChatTheme`.
  */
+import { GuueyChatTheme } from "@guuey/chat";
 import rawConfig from "../../guuey.app.json";
+import rawChatTheme from "../../theme.json";
 
 export interface OidcConfig {
   /** OIDC issuer URL (https). Discovery via /.well-known/openid-configuration. */
@@ -126,6 +130,24 @@ function validate(raw: unknown): AppConfig {
 }
 
 export const appConfig: AppConfig = validate(rawConfig);
+
+/**
+ * `theme.json` — the app's chat theme document. The SAME file
+ * `pnpm bootstrap -- --link` pushes to the hosted app (`guuey apps update
+ * --chat-theme-file`), so the chat paints identical tokens here and there.
+ * Parsed with the kit's own schema; a hand-edit fails with the path named.
+ */
+function validateChatTheme(raw: unknown): GuueyChatTheme {
+  const parsed = GuueyChatTheme.safeParse(raw);
+  if (parsed.success) return parsed.data;
+  const first = parsed.error.issues[0];
+  const where = first !== undefined && first.path.length > 0 ? first.path.join(".") : "$";
+  throw new Error(
+    `theme.json: ${where} — ${first?.message ?? "not a GuueyChatTheme document"}. Fix the file by hand (the grammar: https://docs.guuey.com/chat-theming/).`,
+  );
+}
+
+export const chatTheme: GuueyChatTheme = validateChatTheme(rawChatTheme);
 
 /** The local `guuey dev --serve` router (scripts/dev.mjs boots it). */
 export const DEV_AGENT_URL = "http://localhost:6790";

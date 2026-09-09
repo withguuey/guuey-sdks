@@ -25,6 +25,9 @@ locally with one command, and deployable to guuey with one more.
 │                         #   (status + distribution guide) · the chat surface
 ├── guuey.app.json       # frontend/brand config — written by `pnpm bootstrap`
 │                         #   (schema: guuey.app.schema.json; public-safe by design)
+├── theme.json           # the chat theme document (@guuey/chat tokens) — web/ renders it
+│                         #   locally and `pnpm bootstrap -- --link` pushes it to the hosted
+│                         #   app; `mode` + accent follow guuey.app.json, the rest is yours
 ├── AGENTS.md            # coding-agent steering; `pnpm bootstrap` maintains the
 │                         #   managed block with this project's real facts
 ├── scripts/dev.mjs      # `pnpm dev` orchestrator — boots the whole local stack
@@ -41,7 +44,7 @@ level rather than nested under a `servers/` or `apps/` folder.
 
 ```bash
 pnpm install
-pnpm bootstrap               # brand, theme, copy → guuey.app.json + AGENTS.md (no account needed;
+pnpm bootstrap               # brand, theme, copy → guuey.app.json + theme.json + AGENTS.md (no account needed;
                              #   every web page is gated on this, and production builds fail without it)
 cp .env.example .env.local   # done automatically on scaffold if .env.local is absent
 # set ANTHROPIC_API_KEY (or OPENAI_API_KEY, for the openai-agents-sdk template) in .env.local
@@ -50,8 +53,9 @@ pnpm dev
 
 When the agent is deployed (`npx guuey login && npx guuey deploy`), bind it into the
 frontend: `pnpm bootstrap -- --link` — that records the app id, endpoint,
-widget origin and portal link in `guuey.app.json` and pushes brand basics to
-the platform. `pnpm status` shows the live app state; `pnpm bootstrap -- --check`
+widget origin and portal link in `guuey.app.json` and pushes the brand accent
+and `theme.json` (the chat theme) to the platform. `pnpm status` shows the live
+app state; `pnpm bootstrap -- --check`
 prints machine-readable configuration state.
 
 `pnpm dev` (`scripts/dev.mjs`) boots four processes with prefixed, interleaved

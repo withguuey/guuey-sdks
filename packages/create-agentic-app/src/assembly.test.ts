@@ -10,6 +10,7 @@ const SHARED_LAYOUT = [
   "guuey.json",
   "guuey.app.json",
   "guuey.app.schema.json",
+  "theme.json",
   "src/worker.ts",
   "src/agent-config.ts",
   "prompts/system.md",

@@ -3,7 +3,8 @@
  * pnpm bootstrap — configure this app. Two phases, deliberately split:
  *
  *   pnpm bootstrap                 local only, no account: brand, theme,
- *                                  copy → guuey.app.json + AGENTS.md
+ *                                  copy → guuey.app.json + theme.json +
+ *                                  AGENTS.md
  *   pnpm bootstrap -- --link       bind an EXISTING guuey app (creation
  *                                  stays `guuey apps create` — the moment
  *                                  billing/trial starts remains explicit)
@@ -38,6 +39,7 @@ import { fileURLToPath } from "node:url";
 const execFileAsync = promisify(execFile);
 const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CONFIG_PATH = join(projectRoot, "guuey.app.json");
+const THEME_PATH = join(projectRoot, "theme.json");
 const AGENTS_PATH = join(projectRoot, "AGENTS.md");
 const CLAUDE_PATH = join(projectRoot, "CLAUDE.md");
 const GUUEY_JSON_PATH = join(projectRoot, "guuey.json");
@@ -121,6 +123,66 @@ async function guuey(args) {
   }
 }
 
+// ── theme.json sync (the chat theme document, guuey#1131) ───────────────────
+
+/** The two foregrounds a chat accent is painted under — dark ink or white. */
+const INK_ON_ACCENT = "#0e1014";
+const WHITE_ON_ACCENT = "#ffffff";
+
+/** WCAG 2.1 relative luminance of a `#rrggbb` string. */
+function relativeLuminance(hex) {
+  const channel = (offset) => {
+    const s = Number.parseInt(hex.slice(offset, offset + 2), 16) / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
+}
+
+/** WCAG 2.1 contrast ratio between two `#rrggbb` strings (≥ 1). */
+function contrastRatio(a, b) {
+  const [hi, lo] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/** The legible foreground ON an accent: whichever of ink / white contrasts more. */
+function onAccentFor(accent) {
+  return contrastRatio(accent, INK_ON_ACCENT) >= contrastRatio(accent, WHITE_ON_ACCENT)
+    ? INK_ON_ACCENT
+    : WHITE_ON_ACCENT;
+}
+
+/**
+ * `theme.json` is the app's chat theme DOCUMENT — `@guuey/chat`'s
+ * GuueyChatTheme, the one grammar every platform door writes (the console's
+ * Design → Chat theme editor, `guuey apps update --chat-theme-file`,
+ * `guuey.json#app.theme`). The local web app renders it (`web/src/config.ts`
+ * → the kit's `theme` prop) and `--link` pushes the same file to the hosted
+ * app, so local and hosted paint identical tokens. This sync keeps the two
+ * knobs guuey.app.json owns in step: `mode` (the canonical presentation the
+ * platform pins hosted renders to) and the accent (both palettes; `onAccent`
+ * is re-picked for legibility only when the accent actually changes). Every
+ * other token is the author's — edit theme.json directly.
+ */
+function syncChatTheme(config) {
+  if (!existsSync(THEME_PATH)) return;
+  const theme = JSON.parse(readFileSync(THEME_PATH, "utf8"));
+  const before = JSON.stringify(theme);
+  const accent = config.theme.accent.toLowerCase();
+  theme.mode = config.theme.mode;
+  theme.colors = theme.colors ?? {};
+  for (const mode of ["light", "dark"]) {
+    const palette = theme.colors[mode] ?? {};
+    if (palette.accent !== accent) {
+      palette.accent = accent;
+      palette.onAccent = onAccentFor(accent);
+    }
+    theme.colors[mode] = palette;
+  }
+  if (JSON.stringify(theme) === before) return;
+  writeFileSync(THEME_PATH, `${JSON.stringify(theme, null, 2)}\n`, "utf8");
+  console.log(`theme.json → mode ${config.theme.mode}, accent ${accent} (the chat theme, local and hosted).`);
+}
+
 // ── ggui.json theme sync (guuey#302 scaffold hygiene) ───────────────────────
 
 /**
@@ -129,8 +191,8 @@ async function guuey(args) {
  * the two contradicting each other: light site, dark ggui preview). Only
  * `mode` syncs — `preset` is ggui-side vocabulary and stays the author's
  * choice. NOTE: the deployed render's theme is platform data (`guuey
- * deploy` deliberately ignores this block; guuey#304 owns the production
- * side) — this sync is about local-preview honesty.
+ * deploy` deliberately ignores this block; the hosted theme is theme.json,
+ * pushed by `--link`) — this sync is about local-preview honesty.
  */
 function syncGguiTheme(config) {
   const gguiJsonPath = join(projectRoot, "ggui", "ggui.json");
@@ -168,6 +230,7 @@ function managedBlock(config) {
     link && link.pageUrl ? `- **Agent's own page**: ${link.pageUrl}` : null,
     "- **Commands**: `pnpm dev` (local stack) · `pnpm bootstrap` (reconfigure) · `pnpm status` (live app state) · `guuey deploy` (ship the agent)",
     "- **Config**: `guuey.app.json` (frontend/brand — schema in `guuey.app.schema.json`) and `guuey.json` (the agent definition). Secrets live in `.env.local`, never in either file.",
+    "- **Chat theme**: `theme.json` — the `@guuey/chat` theme document. The local web app renders it and `pnpm bootstrap -- --link` pushes it to the hosted app; `mode` + accent follow `guuey.app.json`, every other token is yours to edit.",
     "- **Frontend**: `web/` — Vite + React on `@guuey/chat`; identity is guest-secret or BYO-OIDC, never both on one surface.",
     END_MARK,
   ].filter((line) => line !== null);
@@ -293,10 +356,16 @@ async function linkPhase(config, flags, yes) {
     step: "brand-accent",
     result: await guuey(["apps", "update", appId, "--brand-accent", config.theme.accent]),
   });
-  // Theme-as-platform-data push rides `guuey apps update --chat-theme-file`
-  // (filed as a platform CLI ask). Until that flag exists this step is
-  // reported as skipped — never silently omitted, never worked around here.
-  pushes.push({ step: "chat-theme", result: { ok: false, error: "skipped: needs `guuey apps update --chat-theme-file` (guuey#283)" } });
+  // The chat theme: the whole of theme.json, through the same door the
+  // console editor writes (`--chat-theme-file`, guuey#283). A platform
+  // refusal names the offending token and the run keeps converging; a
+  // deleted document is reported, never silently omitted.
+  pushes.push({
+    step: "chat-theme",
+    result: existsSync(THEME_PATH)
+      ? await guuey(["apps", "update", appId, "--chat-theme-file", THEME_PATH])
+      : { ok: false, error: `skipped: ${THEME_PATH} not found (restore it from the template to push a chat theme)` },
+  });
 
   for (const { step, result } of pushes) {
     if (result.ok) console.log(`  ✓ ${step}`);
@@ -388,6 +457,7 @@ async function main() {
   // extraction (`--example`), the demo chrome turns off here.
   config.demoMode = false;
   writeConfig(config);
+  syncChatTheme(config);
   syncGguiTheme(config);
   regenerateAgentsMd(config);
 
