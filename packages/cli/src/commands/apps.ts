@@ -112,6 +112,13 @@ interface AppDetail extends AppSummary {
   } | null;
 }
 
+// Type-only export (guuey#1084): `theme-hint.ts` reads `GET /apps/:id` —
+// this projection — and derives its read from the mirror instead of
+// re-declaring the shape, so the wire-sync guard covers that read too. A
+// separate statement, not `export interface`, so the guard's
+// `interface AppDetail extends AppSummary {` anchor is untouched.
+export type { AppDetail };
+
 interface AppAccessState {
   guestAccess: boolean | null;
   guestDailyMessageLimit: number | null;

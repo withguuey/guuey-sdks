@@ -15,6 +15,7 @@
  * successful deploy and never prints on a guess.
  */
 import { apiRequest } from '../deploy-shared';
+import type { AppDetail } from './apps';
 
 export const THEME_HINT_LINES: readonly string[] = [
   '  Look:   the chat panel renders the Guuey theme. Make it yours in the console',
@@ -29,11 +30,14 @@ export async function maybePrintThemeHint(
 ): Promise<void> {
   const api = deps?.api ?? apiRequest;
   const log = deps?.log ?? ((line: string) => console.log(line));
-  let chatTheme: unknown;
+  // The read is typed off the CLI's own mirror of the `GET /apps/:id`
+  // projection (`AppDetail.chatTheme`, pinned to the server's `AppWire` by
+  // `wire-sync.test.ts`) — derived, never re-declared.
+  let chatTheme: AppDetail['chatTheme'];
   try {
     const res = await api(pat, config, 'GET', `/apps/${appId}`);
     if (!res.ok) return;
-    const wire = (await res.json()) as { chatTheme?: unknown };
+    const wire = (await res.json()) as Pick<AppDetail, 'chatTheme'>;
     chatTheme = wire.chatTheme;
   } catch {
     // The deploy already succeeded; an optional hint must not turn a
