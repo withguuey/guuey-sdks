@@ -12,3 +12,8 @@ It resolves `@guuey/cli`'s bin at run time and forwards every argument. Inside a
 scaffolded project (`npx @guuey/create-agentic-app`) the pinned local `@guuey/cli`
 already provides the `guuey` bin; this package covers every other directory — and
 keeps the name where it belongs.
+
+## Support
+
+Questions and help: the guuey community on Discord — https://guuey.com/discord.
+Bugs and feature requests: https://github.com/withguuey/guuey-sdks/issues.
