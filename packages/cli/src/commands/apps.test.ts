@@ -317,6 +317,40 @@ describe('appsGet endpoint discovery', () => {
     expect(parsed.id).toBe('app-1');
   });
 
+  // guuey#1130 G08 — `--theme-json` prints the STORED theme document from the
+  // raw read (`?raw=1`): `courts.*` and unknown keys included, tokens as
+  // written — the ONE reader of what a write actually put on the row, so
+  // `guuey apps get <id> --theme-json > theme.json` round-trips straight
+  // into `guuey apps update --chat-theme-file theme.json`.
+  it('--theme-json prints the stored chat-theme document from the raw read, and reads nothing else', async () => {
+    const stored = {
+      name: 'Acme',
+      colors: { light: { accent: '#B8FF3A' }, dark: {} },
+      courts: { guuey: { colors: { light: { accent: '#112233' } } } },
+    };
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ app: APP, stored: { chatTheme: stored } }), { status: 200 }),
+    );
+
+    await appsGet('app-1', { themeJson: true });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toContain('/apps/app-1?raw=1');
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(JSON.parse(output)).toEqual(stored);
+  });
+
+  it('--theme-json prints null when the app has no stored theme', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ app: APP, stored: { chatTheme: null } }), { status: 200 }),
+    );
+
+    await appsGet('app-1', { themeJson: true });
+
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(JSON.parse(output)).toBeNull();
+  });
+
   it('shows no Endpoint line for an app with no live deployment', async () => {
     mockAppThenDeployments(
       new Response(

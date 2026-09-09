@@ -334,6 +334,9 @@ Apps:
     --name <name>               App name (required)
   apps list [--all]             List your apps (archived apps hidden unless --all)
   apps get [appId]              Show app details
+    --theme-json                Print the STORED chat theme document as JSON
+                                (courts included; round-trips into
+                                'apps update --chat-theme-file')
   apps update [appId]           Update app configuration
     --name <name>               App name
     --description <text>        App description
@@ -937,7 +940,7 @@ async function main(): Promise<void> {
           await appsList({ json: jsonFlag, all: flags['all'] === true });
           break;
         case 'get':
-          await appsGet(rest[0], { json: jsonFlag });
+          await appsGet(rest[0], { json: jsonFlag, themeJson: flags['theme-json'] === true });
           break;
         case 'create':
           await appsCreate({

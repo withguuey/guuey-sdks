@@ -95,6 +95,12 @@ describe.skipIf(!haveWire)('CLI wire mirrors — sync guards against @guuey-priv
     }
   });
 
+  it('AppStoredDetail declares exactly AppStoredWire — the `--theme-json` raw read (guuey#1130 G08)', () => {
+    expect(parseInterfaceFields(read(CLI_APPS), 'AppStoredDetail')).toEqual(
+      parseInterfaceFields(read(WIRE_APPS), 'AppStoredWire'),
+    );
+  });
+
   it('UpdateAppRequest sends only fields UpdateAppBody accepts', () => {
     // Subset, not equality. The dangerous direction is a field the CLI SENDS
     // that the handler does not read — silently dropped, which is how every

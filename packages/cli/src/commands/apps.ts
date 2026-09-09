@@ -126,6 +126,33 @@ interface AppDetail extends AppSummary {
 // `interface AppDetail extends AppSummary {` anchor is untouched.
 export type { AppDetail };
 
+/**
+ * What a stored theme document MAY look like — every member untrusted
+ * (the row is owner-writable and may predate the schema), so the raw read
+ * is typed as the STORED shape, never as `GuueyChatTheme`. Mirrors
+ * `@guuey-private/cli-wire/chat-theme`'s `StoredChatThemeDocument`.
+ */
+interface StoredChatThemeDocument {
+  name?: unknown;
+  mode?: unknown;
+  ramps?: unknown;
+  colors?: unknown;
+  typography?: unknown;
+  shape?: unknown;
+  courts?: unknown;
+}
+
+/**
+ * `GET /v1/apps/:id?raw=1` → `stored` (guuey#1130 G08): the app's chat theme
+ * AS STORED — `courts.*` and any key the read projection drops, tokens as
+ * written. The ONE reader of what a write actually put on the row; what
+ * `guuey apps get --theme-json` prints. Mirrors cli-wire's `AppStoredWire`
+ * (the wire-sync guard pins the two).
+ */
+interface AppStoredDetail {
+  chatTheme: StoredChatThemeDocument | null;
+}
+
 interface AppAccessState {
   guestAccess: boolean | null;
   guestDailyMessageLimit: number | null;
@@ -306,12 +333,26 @@ async function liveEndpointUrl(appId: string): Promise<string | null> {
  */
 export async function appsGet(
   appId: string | undefined,
-  opts: { json?: boolean },
+  opts: { json?: boolean; themeJson?: boolean },
 ): Promise<void> {
   const resolved = appId ?? resolveConfig().appId;
   if (!resolved) {
     out.error('No app ID provided. Pass --app-id or set via: guuey config set app-id <id>');
     process.exit(1);
+  }
+
+  if (opts.themeJson) {
+    // guuey#1130 G08 — the raw read: the STORED chat-theme document, courts
+    // and all, exactly as the row holds it (the plain read and `--json` echo
+    // the PROJECTED theme — what renders — which drops `courts.*`). The
+    // output is the document ALONE (no endpoint discovery, no wrapper), so
+    // `guuey apps get <id> --theme-json > theme.json` round-trips straight
+    // into `guuey apps update <id> --chat-theme-file theme.json`.
+    const res = await apiRequest('GET', `/apps/${resolved}?raw=1`);
+    if (!res.ok) return handleError(res);
+    const data = (await res.json()) as { app: AppDetail; stored: AppStoredDetail };
+    out.json(data.stored.chatTheme);
+    return;
   }
 
   const res = await apiRequest('GET', `/apps/${resolved}`);
