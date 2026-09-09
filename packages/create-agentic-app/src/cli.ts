@@ -11,6 +11,7 @@ import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { scaffold, scaffoldExample, type Framework, type Template } from './index.js';
 import { installByDefault } from './shared.js';
+import { parseAnalyticsFlag } from './analytics.js';
 
 const FRAMEWORKS: Framework[] = ['claude-agent-sdk', 'openai-agents-sdk', 'google-adk'];
 const TEMPLATES: Template[] = ['base', 'agentic-app', 'agent'];
@@ -83,6 +84,8 @@ Options:
                         guuey.json so "pnpm bootstrap -- --link" runs
                         promptless (the tada page's copy-paste line)
   --no-install          Skip the install after scaffolding (the default installs — guuey#1000)
+  --analytics posthog   Opt in to the cookieless PostHog loader in web/index.html; the key
+                        comes from VITE_POSTHOG_KEY at build time (default: no analytics bytes — guuey#1062)
   --no-git              Skip "git init" + initial commit
   --force               Scaffold into a non-empty target directory
   --list-agents         List available frameworks and exit
@@ -219,6 +222,12 @@ async function main(): Promise<void> {
   const name = typeof flags.name === 'string' ? flags.name : deriveName(target);
   const scope = typeof flags.scope === 'string' ? flags.scope : undefined;
   const install = installByDefault(flags);
+  const analyticsFlag = parseAnalyticsFlag(flags);
+  if (analyticsFlag.kind === 'invalid') {
+    console.error(analyticsFlag.message);
+    process.exit(1);
+  }
+  const analytics = analyticsFlag.kind === 'provider' ? analyticsFlag.provider : undefined;
   if (flags.app === true) {
     console.error('--app needs a value, e.g. --app app_abc123');
     process.exit(1);
@@ -233,6 +242,7 @@ async function main(): Promise<void> {
     template,
     scope,
     install,
+    analytics,
     ...(appId !== undefined ? { appId } : {}),
     git: flags['no-git'] !== true,
     force: flags.force === true,

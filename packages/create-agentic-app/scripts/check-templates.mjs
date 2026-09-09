@@ -102,6 +102,21 @@ function checkNamePlaceholder(relPath, content) {
   }
 }
 
+/**
+ * guuey#1062 (the guuey#930 class: template bytes are the truth): the DEFAULT
+ * scaffold carries ZERO analytics bytes. The opt-in loader lives in
+ * src/analytics.ts and is injected only on `--analytics posthog`, so any
+ * "posthog" in dist/templates means a demo's emitted copy leaked back in.
+ */
+function checkNoAnalyticsBytes(relPath, content) {
+  const lines = content.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (/posthog/i.test(lines[i])) {
+      violations.push({ file: relPath, line: i + 1, message: 'template carries analytics bytes ("posthog") — the loader is opt-in via --analytics (guuey#1062)' });
+    }
+  }
+}
+
 function checkBannedSubstrings(file, relPath, content) {
   const lines = content.split('\n');
   for (let i = 0; i < lines.length; i++) {
@@ -170,6 +185,7 @@ for (const file of walkFiles(distTemplatesDir)) {
   if (!isProbablyText(buf)) continue;
   const content = buf.toString('utf8');
   checkBannedSubstrings(file, relPath, content);
+  checkNoAnalyticsBytes(relPath, content);
   checkPackageJsonPins(file, relPath, content);
   checkNamePlaceholder(relPath, content);
   checkScaffoldPrompt(relPath, content);

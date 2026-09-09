@@ -42,6 +42,7 @@ npx @guuey/create-agentic-app <dir> [--template base|agentic-app] [--framework c
   (generative-UI cards get the whole width), and "Talk on mobile" shows a
   QR to the same agent in the guuey portal.
 - `--no-install` — skip the install after scaffolding (the scaffold runs `corepack pnpm install` by default).
+- `--analytics posthog` — opt in to the cookieless PostHog loader in `web/index.html`; the project key is read from `VITE_POSTHOG_KEY` (and `VITE_POSTHOG_HOST`) at build time and the block renders nothing without it. The default scaffold carries no analytics bytes at all.
 - `--example <vertical>` — instead of a blank template, extract one of the
   open-source demo apps from
   [`withguuey/demos`](https://github.com/withguuey/demos) (e.g.

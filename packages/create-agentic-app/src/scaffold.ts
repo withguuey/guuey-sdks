@@ -18,6 +18,8 @@ export type Framework = 'claude-agent-sdk' | 'openai-agents-sdk' | 'google-adk';
  */
 export type Template = 'base' | 'agentic-app' | 'agent';
 
+import { injectAnalytics, type AnalyticsProvider } from './analytics.js';
+
 export interface ScaffoldOptions {
   /** Absolute or cwd-relative path to create/populate the new project in. */
   targetDir: string;
@@ -30,6 +32,8 @@ export interface ScaffoldOptions {
   scope?: string;
   /** Run `pnpm install` in the new project after scaffolding. Default: false. */
   install?: boolean;
+  /** Opt-in analytics loader in web/index.html (guuey#1062). Default: none — zero analytics bytes. */
+  analytics?: AnalyticsProvider;
   /** Run `git init` + an initial commit in the new project. Default: true. */
   git?: boolean;
   /**
@@ -198,6 +202,13 @@ async function stampAppId(projectDir: string, appId: string): Promise<void> {
  * seeds `.env.local` from `.env.example` when absent, and optionally runs
  * `git init` + an initial commit and/or `pnpm install` in the new project.
  */
+/** guuey#1062: the opt-in loader goes into the web shell's <head>; the template itself carries none. */
+async function injectAnalyticsLoader(projectDir: string, provider: AnalyticsProvider): Promise<void> {
+  const indexPath = join(projectDir, 'web', 'index.html');
+  const html = await fs.readFile(indexPath, 'utf8');
+  await fs.writeFile(indexPath, injectAnalytics(html, provider), 'utf8');
+}
+
 export async function scaffold(opts: ScaffoldOptions): Promise<ScaffoldResult> {
   assertNpmSafeName(opts.name, 'project');
 
@@ -210,6 +221,9 @@ export async function scaffold(opts: ScaffoldOptions): Promise<ScaffoldResult> {
 
   await copyTree(templateDir, projectDir, opts.name, scope);
   await seedEnvLocal(projectDir);
+  if (opts.analytics !== undefined) {
+    await injectAnalyticsLoader(projectDir, opts.analytics);
+  }
   if (opts.appId !== undefined && opts.appId !== "") {
     await stampAppId(projectDir, opts.appId);
   }
