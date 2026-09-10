@@ -114,3 +114,7 @@ overrides:
   # ext-apps, the @ggui-ai/* trio) follow the tested line. Moves with each
   # sdk bump, never a major.
   "@modelcontextprotocol/sdk@1": ^1.30.0
+  # guuey#1188 — 2026-09-08 advisory batch: major-scoped pins for transitives (js-yaml merge-key CPU DoS GHSA-2883-xcg3-v3hh; hono GHSA-gqvv-2mrq-wpjv/g6gw-c38x-mqfc/crvj-82cr-hjcx; svgo removeScripts bypass GHSA-w27v-7q3p-w38r). Same shape as the @modelcontextprotocol/sdk@1 pin: never dedupe, never a blanket override.
+  "js-yaml@3": 3.15.2
+  "js-yaml@4": 4.3.2
+  "hono@4": ^4.13.5
