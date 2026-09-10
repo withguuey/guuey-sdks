@@ -12,7 +12,14 @@
  * run still completes; a missing document is reported, never silently
  * omitted.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// guuey#867 / #1156: every case below runs the REAL bootstrap.mjs through a
+// fake `pnpm` on PATH (a `node:child_process` spawn per case) — seconds on a
+// laptop, more on a 2-vCPU runner. vitest's 5 s default reds there; the
+// budget guard (`@guuey/cli` test-budget-guard) requires the budget to be
+// explicit.
+vi.setConfig({ testTimeout: 60_000 });
 import { promises as fs, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
