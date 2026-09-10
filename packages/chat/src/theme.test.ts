@@ -114,6 +114,28 @@ describe("GuueyChatTheme", () => {
     expect(resolveTheme({ colors: {} }, resolved).shape.shadow).toEqual({ color: "#00000080", intensity: 0.4 });
   });
 
+  /**
+   * guuey#1151 — glass is ONE value in the theme document (the founder:
+   * "Glass becomes one value in door 1, not the design"): the widget
+   * CHROME's translucency + backdrop blur. Carried next to `shadow` in the
+   * v2 vocabulary so it is never a migration; chrome-only, never a card.
+   */
+  it("shape gains glass (opacity + blur) — chrome-only; absent stays absent, a candidate statement wins whole", () => {
+    const resolved = resolveTheme({ shape: { glass: { opacity: 0.72, blur: 20 } } });
+    expect(resolved.shape.glass).toEqual({ opacity: 0.72, blur: 20 });
+    expect("glass" in resolveTheme({ colors: {} }).shape).toBe(false);
+    expect(resolveTheme({ shape: { glass: { opacity: 0.9 } } }, resolved).shape.glass).toEqual({ opacity: 0.9 });
+    expect(resolveTheme({ colors: {} }, resolved).shape.glass).toEqual({ opacity: 0.72, blur: 20 });
+    // The package themes state none — glass is a builder's choice, never a default.
+    expect("glass" in DEFAULT_CHAT_THEME.shape).toBe(false);
+    expect("glass" in GUUEY_CHAT_THEME.shape).toBe(false);
+    // Shape only (the platform's write gate holds the bands): `opacity` is
+    // required — a glass statement without one is no statement — `blur` optional.
+    const Glass = GuueyChatTheme.shape.shape.shape.glass.unwrap();
+    expect(Glass.safeParse({ opacity: 0.5 }).success).toBe(true);
+    expect(Glass.safeParse({ blur: 8 }).success).toBe(false);
+  });
+
   it("`ramps` is no longer vocabulary: a stored ladder passes the lenient parse as an unknown key and is never projected", () => {
     expect("ramps" in GuueyChatTheme.shape).toBe(false);
     const stored = {

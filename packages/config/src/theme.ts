@@ -75,6 +75,19 @@ export const ThemeShadowV1 = z.strictObject({
 export type ThemeShadowV1 = z.infer<typeof ThemeShadowV1>;
 
 /**
+ * Glass (guuey#1151) — the widget CHROME's translucency: the fill alpha
+ * (`opacity`, 0–1; 1 = opaque = off) and the backdrop blur (`blur`, px,
+ * 0–64, optional — the loader applies 16px when unstated). Chrome only:
+ * the host-page panel, bar and shell and the frame's full-bleed strips —
+ * never generated cards or bubbles. One value next to `shadow`.
+ */
+export const ThemeGlassV1 = z.strictObject({
+  opacity: z.number().min(0).max(1),
+  blur: z.number().min(0).max(64).optional(),
+});
+export type ThemeGlassV1 = z.infer<typeof ThemeGlassV1>;
+
+/**
  * The manifest theme block. `mode` is REQUIRED (spec §3): a theme managed
  * as code states its default appearance — the mode the overlay pins when
  * the host announces nothing (the host's runtime mode outranks it, D4).
@@ -93,6 +106,7 @@ const ThemeShapeV1 = z
     radius: z.enum(['none', 'soft', 'round']),
     density: z.enum(['compact', 'comfortable']),
     shadow: ThemeShadowV1.optional(),
+    glass: ThemeGlassV1.optional(),
   })
   .optional();
 
@@ -125,6 +139,7 @@ export const AppCourtThemeV1 = z.strictObject({
       radius: z.enum(['none', 'soft', 'round']).optional(),
       density: z.enum(['compact', 'comfortable']).optional(),
       shadow: ThemeShadowV1.optional(),
+      glass: ThemeGlassV1.optional(),
     })
     .optional(),
 });

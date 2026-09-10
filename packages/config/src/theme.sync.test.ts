@@ -15,7 +15,14 @@
  */
 import { describe, expect, it } from 'vitest';
 import { GuueyChatFace, GuueyChatPalette, GuueyChatTheme } from '@guuey/chat';
-import { AppThemeV1, ThemeFaceV1, ThemePaletteV1, ThemeShadowV1 } from './theme.js';
+import {
+  AppCourtThemeV1,
+  AppThemeV1,
+  ThemeFaceV1,
+  ThemeGlassV1,
+  ThemePaletteV1,
+  ThemeShadowV1,
+} from './theme.js';
 
 const keys = (shape: object): string[] => Object.keys(shape).sort();
 
@@ -31,11 +38,24 @@ describe('manifest theme mirrors the kit vocabulary key-for-key', () => {
     expect(keys(ThemeFaceV1.shape)).toEqual(keys(GuueyChatFace.shape));
   });
 
-  it('shape members and the shadow record', () => {
+  it('shape members and the shadow + glass records — on the base AND the court document', () => {
     const kitShape = GuueyChatTheme.shape.shape.shape;
     const twinShape = AppThemeV1.shape.shape.unwrap().shape;
     expect(keys(twinShape)).toEqual(keys(kitShape));
     expect(keys(ThemeShadowV1.shape)).toEqual(keys(kitShape.shadow.unwrap().shape));
+    // guuey#1151: glass rides next to shadow — one value, chrome-only.
+    expect(keys(ThemeGlassV1.shape)).toEqual(keys(kitShape.glass.unwrap().shape));
+    // A court states a subset of the same shape vocabulary, nothing else.
+    expect(keys(AppCourtThemeV1.shape.shape.unwrap().shape)).toEqual(keys(kitShape));
+  });
+
+  it('glass holds the bands the write gate holds: opacity 0–1 required, blur px 0–64 optional', () => {
+    expect(ThemeGlassV1.safeParse({ opacity: 0.72, blur: 20 }).success).toBe(true);
+    expect(ThemeGlassV1.safeParse({ opacity: 1 }).success).toBe(true);
+    expect(ThemeGlassV1.safeParse({ opacity: 2 }).success).toBe(false);
+    expect(ThemeGlassV1.safeParse({ opacity: 0.5, blur: 99 }).success).toBe(false);
+    expect(ThemeGlassV1.safeParse({ blur: 8 }).success).toBe(false);
+    expect(ThemeGlassV1.safeParse({ opacity: 0.5, frost: true }).success).toBe(false);
   });
 
   it('theme members — the manifest states a subset of the kit document, plus nothing', () => {
@@ -65,7 +85,13 @@ describe('manifest theme mirrors the kit vocabulary key-for-key', () => {
         headingFontFamily: 'Fraunces, serif',
         faces: [{ family: 'Fraunces', src: 'https://fonts.gstatic.com/s/f.woff2', weight: '400 700' }],
       },
-      shape: { radius: 'none', density: 'comfortable', shadow: { color: '#00000080', intensity: 0.4 } },
+      shape: {
+        radius: 'none',
+        density: 'comfortable',
+        shadow: { color: '#00000080', intensity: 0.4 },
+        glass: { opacity: 0.72, blur: 20 },
+      },
+      courts: { ggui: { shape: { glass: { opacity: 0.9 } } } },
     };
     expect(AppThemeV1.safeParse(manifest).success).toBe(true);
     // The kit requires name the manifest may omit (server fills the kit

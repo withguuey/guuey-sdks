@@ -116,6 +116,22 @@ export const GuueyChatTheme = z
           .object({ color: z.string().optional(), intensity: z.number().optional() })
           .loose()
           .optional(),
+        /**
+         * Glass (guuey#1151) — the widget CHROME's translucency: `opacity`
+         * is the chrome fill's alpha in 0–1 (1 = opaque, i.e. glass off),
+         * `blur` the backdrop blur in px (0–64; the loader applies 16px when
+         * unstated). CHROME ONLY: the host-page panel, ask bar and cold-open
+         * shell, and inside the frame the full-bleed canvas strips (page
+         * root, header, composer strip, footer). It never reaches generated
+         * cards or bubbles — the (1b) coverage attestation lists it as
+         * uncovered BY DESIGN. Shape only here (the platform's write gate
+         * holds the bands); one value in the document, next to `shadow`, so
+         * it is never a migration.
+         */
+        glass: z
+          .object({ opacity: z.number(), blur: z.number().optional() })
+          .loose()
+          .optional(),
       })
       .loose(),
     /**
@@ -263,12 +279,13 @@ export function resolveTheme(
   const p = parsed.data;
   const mode = p.mode ?? base.mode;
   const shadow = p.shape?.shadow ?? base.shape.shadow;
+  const glass = p.shape?.glass ?? base.shape.glass;
   return {
     name: p.name ?? base.name,
     // `mode` is default-less (the package themes state none): it appears on
     // the resolved theme only when SOME layer stated it — an absent
     // statement must stay visibly absent, not become a default. The same
-    // holds for the optional palette anchors, `faces` and `shadow`.
+    // holds for the optional palette anchors, `faces`, `shadow` and `glass`.
     ...(mode !== undefined ? { mode } : {}),
     colors: {
       light: mergePalette(base.colors.light, p.colors?.light),
@@ -281,6 +298,7 @@ export function resolveTheme(
       radius: p.shape?.radius ?? base.shape.radius,
       density: p.shape?.density ?? base.shape.density,
       ...(shadow !== undefined ? { shadow } : {}),
+      ...(glass !== undefined ? { glass } : {}),
     },
   };
 }
