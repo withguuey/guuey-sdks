@@ -10,6 +10,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { packInternalCohort, applyPackOverrides } from "./lib/pack-cohort.mjs";
+import { installWithRetry } from "./lib/install-retry.mjs";
 
 // Layout-agnostic: everything resolves from THIS package's root — the tree
 // is oss/packages/* in the monorepo and packages/* in the guuey-sdks mirror.
@@ -50,7 +51,17 @@ for (const { framework, template } of MATRIX) {
   applyPackOverrides(appDir, tarballs);
 
   // 5. Install + typecheck + build (recursive: root worker, todo MCP, web).
-  sh("corepack", ["pnpm", "install", "--no-frozen-lockfile"], { cwd: appDir });
+  // guuey#1191: retries only a transient registry state (see scripts/lib/install-retry.mjs).
+  installWithRetry({
+    run: () =>
+      execFileSync("corepack", ["pnpm", "install", "--no-frozen-lockfile"], {
+        cwd: appDir,
+        stdio: ["inherit", "inherit", "pipe"],
+        encoding: "utf8",
+      }),
+    sleep: (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms),
+    log: (line) => console.log(line),
+  });
 
   // 6. Every bin `scripts/dev.mjs` execs must resolve from DECLARED deps —
   // the missing-bin class breaks `pnpm dev` on every fresh scaffold while
