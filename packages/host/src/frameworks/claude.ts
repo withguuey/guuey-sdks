@@ -17,7 +17,7 @@ import type { CredentialFile,
   Identity,
   JsonValue,
   ProfileSection,
-  StopReason, McpAvailability } from "@guuey/worker";
+  StopReason, McpAvailability, FirstImpressionPush } from "@guuey/worker";
 import {
   buildOptions,
   type BuildOptionsContext,
@@ -69,6 +69,8 @@ export interface HostInvoke {
   /** The user's cross-app profile sections for the RECALL push (cross-app-profile
    *  T7). See `Invoke.profileSections` in `@guuey/worker`. */
   profileSections?: ProfileSection[];
+  /** The first-impression push (guuey#1183) — see `Invoke.firstImpression` in `@guuey/worker`; rendered only with the ggui rail armed. */
+  firstImpression?: FirstImpressionPush;
   /**
    * How many builder-provided reference files sit at `<fs.app>/resources` this
    * turn (guuey#456 B4) — present only when the layers are REAL and the count

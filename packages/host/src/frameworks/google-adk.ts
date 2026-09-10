@@ -64,6 +64,7 @@ import {
   renderMemorySection,
   renderProfileSection,
   renderResourcesSection,
+  renderFirstImpressionSection,
   withContextPreamble,
 } from "../preamble.js";
 import { resolveSdkVersion } from "../sdk-version.js";
@@ -433,6 +434,8 @@ export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
         (memoryOn ? renderMemorySection(turn.userMemory) : "") +
         (profileOn ? renderProfileSection(turn.profileSections, profileAccess) : "") +
         (resourcesOn ? renderResourcesSection(resourceCount, turn.fs.app) : "") +
+        // guuey#1183: the bound first impression — only with the ggui rail armed.
+        (turn.gguiAttached === true ? renderFirstImpressionSection(turn.firstImpression) : "") +
         // guuey#531: surface-formatting hints — default ON, only an explicit
         // `agent.surfaceHints: false` suppresses. Before the norms (LAST).
         renderMcpAvailabilitySection(turn.mcpAvailability) +

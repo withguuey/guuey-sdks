@@ -20,7 +20,7 @@
  * `@guuey/worker`, `@guuey/config`, and Node built-ins.
  */
 import type { CanUseTool, Options, SDKMessage, Settings } from "@anthropic-ai/claude-agent-sdk";
-import type { Fs, HistoryMessage, JsonValue, McpAvailability, ProfileSection } from "@guuey/worker";
+import type { FirstImpressionPush, Fs, HistoryMessage, JsonValue, McpAvailability, ProfileSection } from "@guuey/worker";
 import {
   GUUEY_DEFAULT_SYSTEM_PROMPT,
   defaultModelFor,
@@ -142,6 +142,10 @@ function buildProfileSection(ctx: BuildOptionsContext): string {
  * (`../preamble.js`) so Claude, OpenAI, and ADK render the IDENTICAL section.
  * Returns `""` (append-safe) when out of scope.
  */
+function buildFirstImpressionSection(ctx: BuildOptionsContext): string {
+  if (ctx.gguiAttached !== true) return "";
+  return renderFirstImpressionSection(ctx.firstImpression);
+}
 function buildResourcesSection(ctx: BuildOptionsContext): string {
   const count = ctx.resourceCount;
   if (ctx.fsBound !== true || count === undefined || count <= 0 || ctx.fs === undefined) return "";
@@ -264,6 +268,8 @@ export interface BuildOptionsContext {
   /** The user's cross-app profile sections for the RECALL push (cross-app-profile
    *  T7), read Router-side. Gated by {@link profileAccess}. */
   profileSections?: ProfileSection[];
+  /** The first-impression push (guuey#1183) — mirrors `Invoke.firstImpression`; rendered only with the ggui rail armed. */
+  firstImpression?: FirstImpressionPush;
   /**
    * How many builder-provided reference files sit at `<fs.app>/resources` this
    * turn (guuey#456 B4) — counted Router-side at invoke assembly and written
@@ -342,6 +348,7 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
     // section (memory → profile → resources) — same framework-blind renderer
     // family from ../preamble.js, gated on fsBound && resourceCount > 0.
     buildResourcesSection(ctx) +
+    buildFirstImpressionSection(ctx) +
     // guuey#901: the connected-services section — the pod's per-turn fact about
     // each OAuth server, placed with the tool-shaped sections and before the
     // surface/norms sections. Empty (byte-identical prompt) without OAuth servers.
@@ -670,6 +677,7 @@ import {
   renderMemorySection,
   renderProfileSection,
   renderResourcesSection,
+  renderFirstImpressionSection,
   withContextPreamble,
   renderMcpAvailabilitySection,
 } from "../preamble.js";

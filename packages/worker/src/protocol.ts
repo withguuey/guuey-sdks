@@ -57,6 +57,14 @@ export interface PriorMemoryRecord {
  * whose `content` is the `[…omitted…]` note); `content` is the section body.
  * Minimal + dependency-free, mirroring {@link PriorMemoryRecord}.
  */
+/** See {@link Invoke.firstImpression}. `contract` is protocol's `DataContract` as ggui returned it — opaque here, forwarded verbatim. */
+export interface FirstImpressionPush {
+  chipKey: string;
+  intent: string;
+  contract: JsonValue;
+  blueprintId?: string;
+}
+
 export interface ProfileSection {
   app: string;
   content: string;
@@ -175,6 +183,18 @@ export interface Invoke {
    * ungranted app).
    */
   profileSections?: ProfileSection[];
+  /**
+   * The first-impression push (guuey#1183): a pre-minted ggui blueprint is
+   * BOUND for exactly this turn — the greeting on a thread's first turn, or a
+   * suggestion chip whose text the visitor just sent. The Router selects it
+   * from the app's binding (`GuueyApp.gguiBootstrap`, written by the platform's
+   * bootstrap door) and pushes it by value; the host renders ONE system-prompt
+   * section instructing the model to open the turn with `ggui_handshake`
+   * carrying exactly `intent` + `blueprintDraft.contract` (no variance), so
+   * ggui's exact-key match serves the bound row. Absent → nothing to render.
+   * Gated by {@link gguiAttached} in every renderer (no rail, no instruction).
+   */
+  firstImpression?: FirstImpressionPush;
   /**
    * How many builder-provided reference files sit in the app layer's
    * `resources/` directory (`<fs.app>/resources`) this turn (guuey#456 B4).

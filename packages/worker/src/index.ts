@@ -12,6 +12,7 @@ export {
   type HistoryMessage,
   type PriorMemoryRecord,
   type ProfileSection,
+  type FirstImpressionPush,
   type McpAvailability,
   type McpAvailabilityState,
   type StopReason,

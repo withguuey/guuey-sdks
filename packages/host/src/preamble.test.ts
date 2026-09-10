@@ -10,8 +10,7 @@ import {
   SURFACE_FORMATTING_SECTION,
   GENERATIVE_UI_SECTION,
   renderMcpAvailabilitySection,
-  MCP_AVAILABILITY_HEADING,
-} from "./preamble.js";
+  MCP_AVAILABILITY_HEADING, renderFirstImpressionSection, FIRST_IMPRESSION_HEADING } from "./preamble.js";
 
 /**
  * The memory RECALL block, captured VERBATIM from the pre-factor inline string
@@ -396,5 +395,28 @@ describe("renderMcpAvailabilitySection — the pod's per-turn fact about each OA
         "- linear: not connected — the user has not authorized it yet and is being asked; its tools are not available this turn.\n" +
         "Answer from what is available now: never say a connected service is unavailable, and never claim a service that is not connected.\n",
     );
+  });
+});
+
+describe("renderFirstImpressionSection (guuey#1183 — the bound blueprint's handshake, verbatim)", () => {
+  it("renders nothing without a push; with one, the heading, the verbatim instruction and the exact argument object inside its delimiter", () => {
+    expect(renderFirstImpressionSection(undefined)).toBe("");
+    const out = renderFirstImpressionSection({
+      chipKey: "hello",
+      intent: "welcome screen for Trimly",
+      contract: { intent: "welcome", propsSpec: { properties: {} } },
+      blueprintId: "bp_1",
+    });
+    expect(out.startsWith("\n\n" + FIRST_IMPRESSION_HEADING)).toBe(true);
+    expect(out).toContain("call the `ggui_handshake` tool with EXACTLY the argument object below");
+    expect(out).toContain("no added `variance`");
+    const m = /<first_impression_handshake>\n([\s\S]*?)\n<\/first_impression_handshake>/.exec(out);
+    expect(m).not.toBeNull();
+    expect(JSON.parse(m![1]!)).toEqual({
+      intent: "welcome screen for Trimly",
+      blueprintDraft: { contract: { intent: "welcome", propsSpec: { properties: {} } } },
+    });
+    // The blueprintId is a receipt for the Router, never part of the handshake args.
+    expect(out).not.toContain("bp_1");
   });
 });

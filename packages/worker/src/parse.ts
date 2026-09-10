@@ -16,6 +16,7 @@ import type {
   NativeEvent,
   PriorMemoryRecord,
   ProfileSection,
+  FirstImpressionPush,
   Shutdown,
   StopReason,
   TextEvent,
@@ -93,6 +94,20 @@ function parsePriorMemory(v: JsonValue | undefined): PriorMemoryRecord[] | undef
  * string `app`/`content`) is DROPPED, never throwing. Returns `undefined` when
  * absent or when no entry survives (so the field stays off the Invoke).
  */
+/** Parse the optional `firstImpression` push (guuey#1183): all three identity fields or nothing. */
+function parseFirstImpression(v: JsonValue | undefined): FirstImpressionPush | undefined {
+  if (!isObject(v)) return undefined;
+  if (typeof v.chipKey !== "string" || v.chipKey === "") return undefined;
+  if (typeof v.intent !== "string" || v.intent === "") return undefined;
+  if (!isObject(v.contract)) return undefined;
+  return {
+    chipKey: v.chipKey,
+    intent: v.intent,
+    contract: v.contract,
+    ...(typeof v.blueprintId === "string" && v.blueprintId !== "" ? { blueprintId: v.blueprintId } : {}),
+  };
+}
+
 function parseProfileSections(v: JsonValue | undefined): ProfileSection[] | undefined {
   if (!Array.isArray(v)) return undefined;
   const out: ProfileSection[] = [];
@@ -148,6 +163,7 @@ export function parseControl(line: string): ControlMessage {
       if (typeof raw.input !== "string") throw new Error("invoke missing string `input`");
       const priorMemory = parsePriorMemory(raw.priorMemory);
       const profileSections = parseProfileSections(raw.profileSections);
+      const firstImpression = parseFirstImpression(raw.firstImpression);
       const mcpAvailability = parseMcpAvailability(raw.mcpAvailability);
       return {
         type: "invoke",
@@ -181,6 +197,7 @@ export function parseControl(line: string): ControlMessage {
           ? { profileAccess: raw.profileAccess }
           : {}),
         ...(profileSections ? { profileSections } : {}),
+        ...(firstImpression ? { firstImpression } : {}),
         // guuey#901: the OAuth servers' availability this turn — absent unless
         // at least one well-formed entry arrived.
         ...(mcpAvailability ? { mcpAvailability } : {}),

@@ -12,6 +12,7 @@
  * system prompt is returned unchanged.
  */
 import type {
+  FirstImpressionPush,
   HistoryMessage,
   JsonValue,
   McpAvailability,
@@ -288,6 +289,34 @@ export function renderProfileSection(
  * open. Leading `\n\n` so it appends cleanly after the profile section
  * (mirrors the sibling renderers).
  */
+/** Heading of the first-impression section — matched by tests, one constant. */
+export const FIRST_IMPRESSION_HEADING = "## First impression (this turn)";
+
+/**
+ * The first-impression section (guuey#1183): a pre-minted ggui blueprint is
+ * bound for THIS turn, so the model opens with `ggui_handshake` carrying the
+ * bound `intent` + `blueprintDraft.contract` VERBATIM — ggui keys blueprints by
+ * the canonical contract (key order irrelevant, text not) and the bound row is
+ * served on the exact key; an edited word or an added `variance` is a miss
+ * that cold-generates instead. The argument object sits inside an XML
+ * delimiter like every other pushed block; it is an INSTRUCTION here (the
+ * platform composed it, not the user), stated as such. Rendered only when the
+ * ggui rail is armed (the callers gate on `gguiAttached`). Leading `\n\n`
+ * so it appends cleanly after the sibling sections.
+ */
+export function renderFirstImpressionSection(fi: FirstImpressionPush | undefined): string {
+  if (fi === undefined) return "";
+  const args = JSON.stringify({ intent: fi.intent, blueprintDraft: { contract: fi.contract } });
+  return (
+    `\n\n${FIRST_IMPRESSION_HEADING}\n\n` +
+    `A screen was prepared in advance for exactly this moment. Before anything else this turn, ` +
+    `call the \`ggui_handshake\` tool with EXACTLY the argument object below — verbatim, no edits, ` +
+    `no added \`variance\`. Then follow its result as usual (\`ggui_render\` with the props). ` +
+    `Do not describe the screen in text.\n\n` +
+    `<first_impression_handshake>\n${args}\n</first_impression_handshake>`
+  );
+}
+
 export function renderResourcesSection(count: number, appDir: string): string {
   const files = count === 1 ? "1 reference file" : `${count} reference files`;
   return (
