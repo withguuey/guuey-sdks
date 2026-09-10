@@ -80,6 +80,7 @@ import { Transcript, type TranscriptWindowing } from "./transcript.js";
 import type { TranscriptComponents, TranscriptItemContext, ViewSlotProps } from "./components.js";
 import { useTranscript, useTranscriptInputs } from "./use-transcript.js";
 import { oauthPromptAction, useOAuthReturn } from "./oauth-return.js";
+import { PARTS } from "./parts.js";
 
 /**
  * The kit-tier theme announce (guuey#302): default `hostContext.theme`
@@ -237,6 +238,16 @@ export interface GuueyChatProps {
   header?: GuueyChatHeader;
   /** Owning app id — namespaces the persisted threadId. */
   appId?: string;
+  /**
+   * The agent-mode PIN (guuey#566 — the guest/auth axis), carried on every
+   * turn's invoke body exactly as the widget page carries its `guuey:init`
+   * `mode`. Carriage only: the pod derives the real mode from the caller's
+   * auth state and this only pins WITHIN permission (fail-soft — an unknown
+   * key is ignored, never a refusal). Added for guuey#1152: the widget's
+   * inline transcript mounts THIS component in the host page, and an embed
+   * that pinned a mode must not silently lose it on the way in.
+   */
+  agentMode?: string;
   /**
    * The guuey public API base (`…/v1`). Enables the batteries-included
    * read paths without hand-wiring: when set and no `adapters` are given,
@@ -424,6 +435,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     endpointUrl,
     header,
     appId,
+    agentMode,
     apiBaseUrl,
     getAccessToken,
     getGuestSecret,
@@ -496,7 +508,13 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       }),
     [adaptersProp, apiBaseUrl, hasAccessToken, hasGuestSecret],
   );
-  const invoke = useAgentInvoke({ endpointUrl, ...(appId !== undefined ? { appId } : {}), adapters, preserveBlocks: true });
+  const invoke = useAgentInvoke({
+    endpointUrl,
+    ...(appId !== undefined ? { appId } : {}),
+    ...(agentMode !== undefined ? { mode: agentMode } : {}),
+    adapters,
+    preserveBlocks: true,
+  });
 
   // Default reader (guuey#221): built over the SAME identity as the
   // transport/history, targeting the pod door (live turns) then the
@@ -1033,6 +1051,10 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   return (
     <div
       className={`guuey-chat-surface${className !== undefined ? ` ${className}` : ""}`}
+      // guuey#1152: the `::part()` hooks (`parts.ts`) — a shadow-root host
+      // restyles the surface, chips and composer through these, never
+      // through the class names, which stay the light-DOM contract.
+      part={PARTS.surface}
       style={surfaceStyle}
     >
       {header !== undefined && (
@@ -1074,7 +1096,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         viewProps={effectiveViewProps}
       />
       {chips.length > 0 && inputs.messages.length === 0 && (
-        <nav className="guuey-chat-chips-row" aria-label={strings.suggestionsLabel}>
+        <nav className="guuey-chat-chips-row" part={PARTS.chips} aria-label={strings.suggestionsLabel}>
           {chips.map((chip) => (
             <button
               key={chip}
@@ -1155,6 +1177,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       {composer && (
       <form
         className="guuey-chat-composer"
+        part={PARTS.composer}
         onSubmit={(e) => {
           e.preventDefault();
           submit();

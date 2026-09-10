@@ -1645,3 +1645,24 @@ describe("header slot — the kit's one head row (guuey#1150)", () => {
     expect(surface?.innerHTML).not.toContain("guuey-chat-header");
   });
 });
+
+describe("agentMode (guuey#566 carriage, added for guuey#1152)", () => {
+  it("rides every turn's invoke body as `mode`; absent → the body carries none", async () => {
+    const pinned = scriptedAdapters();
+    render(
+      <GuueyChat endpointUrl="https://pod.example/agent/invoke" adapters={pinned.adapters} agentMode="guest" />,
+    );
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "hi" } });
+    fireEvent.keyDown(screen.getByLabelText("Message"), { key: "Enter" });
+    await waitFor(() => expect(pinned.calls).toHaveLength(1));
+    expect(pinned.calls[0].body).toMatchObject({ mode: "guest" });
+    cleanup();
+
+    const unpinned = scriptedAdapters();
+    render(<GuueyChat endpointUrl="https://pod.example/agent/invoke" adapters={unpinned.adapters} />);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "hi" } });
+    fireEvent.keyDown(screen.getByLabelText("Message"), { key: "Enter" });
+    await waitFor(() => expect(unpinned.calls).toHaveLength(1));
+    expect(unpinned.calls[0].body).not.toHaveProperty("mode");
+  });
+});

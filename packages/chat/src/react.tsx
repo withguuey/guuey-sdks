@@ -66,3 +66,4 @@ export {
 } from "./react/oauth-return.js";
 export { Markdown } from "./react/markdown.js";
 export { themeCssVars, type ThemeMode } from "./react/theme-css.js";
+export { PARTS, messagePart } from "./react/parts.js";

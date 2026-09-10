@@ -34,6 +34,7 @@ import {
   type TranscriptItemContext,
 } from "./components.js";
 import { themeCssVars, type ThemeMode } from "./theme-css.js";
+import { PARTS } from "./parts.js";
 
 /** How close to the bottom (px) still counts as pinned. */
 const PIN_THRESHOLD_PX = 48;
@@ -181,6 +182,7 @@ export function Transcript(props: TranscriptProps): ReactNode {
       className={`guuey-chat${surface === "bare" ? " guuey-chat--bare" : ""}${className !== undefined ? ` ${className}` : ""}`}
       style={rootStyle}
       data-guuey-chat-mode={mode}
+      part={PARTS.transcript}
     >
       <div ref={scroller} className="guuey-chat-scroller" onScroll={onScroll}>
         <div ref={column} className="guuey-chat-column">

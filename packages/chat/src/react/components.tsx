@@ -51,6 +51,7 @@ import type {
   ViewRefItem,
 } from "../types.js";
 import { Markdown } from "./markdown.js";
+import { messagePart } from "./parts.js";
 
 /** Everything a rendered item may need beyond itself. */
 export interface TranscriptItemContext {
@@ -193,7 +194,7 @@ export function DefaultUserMessage({ item, ctx }: ItemProps<UserMessageItem>): R
   // row — the wire-verbatim text sits behind the expand, never rewritten.
   if (item.directive) {
     return (
-      <div className={`guuey-chat-user guuey-chat-user-directive guuey-chat-user-${item.state}`}>
+      <div className={`guuey-chat-user guuey-chat-user-directive guuey-chat-user-${item.state}`} part={messagePart("user")}>
         <Collapsible
           itemKey={item.key}
           expanded={item.expanded}
@@ -217,7 +218,7 @@ export function DefaultUserMessage({ item, ctx }: ItemProps<UserMessageItem>): R
     );
   }
   return (
-    <div className={`guuey-chat-user guuey-chat-user-${item.state}`}>
+    <div className={`guuey-chat-user guuey-chat-user-${item.state}`} part={messagePart("user")}>
       {/* User text is QUOTED, never rendered — whitespace preserved. */}
       <div className="guuey-chat-user-bubble">{item.text}</div>
       {item.state === "failed" ? (
@@ -240,6 +241,7 @@ export function DefaultText({ item, ctx }: ItemProps<TextItem>): ReactNode {
   return (
     <div
       className="guuey-chat-text"
+      part={messagePart("agent")}
       {...(item.streaming ? { "aria-live": "polite" as const } : {})}
     >
       {item.markdown ? (
