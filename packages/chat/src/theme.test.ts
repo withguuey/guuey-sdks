@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_CHAT_GLASS,
+  DEFAULT_CHAT_SHADOW,
   DEFAULT_CHAT_THEME,
   GUUEY_CHAT_THEME,
   GuueyChatFace,
@@ -106,12 +108,14 @@ describe("GuueyChatTheme", () => {
     expect(GuueyChatFace.safeParse({ family: "Inter" }).success).toBe(false);
   });
 
-  it("shape gains shadow (colour + intensity); absent stays absent, a candidate statement wins whole", () => {
+  it("shape gains shadow (colour + intensity); a candidate statement wins whole, silence inherits the base's", () => {
     const resolved = resolveTheme({ shape: { shadow: { color: "#00000080", intensity: 0.4 } } });
     expect(resolved.shape.shadow).toEqual({ color: "#00000080", intensity: 0.4 });
-    expect("shadow" in resolveTheme({ colors: {} }).shape).toBe(false);
     expect(resolveTheme({ shape: { shadow: { intensity: 0.1 } } }, resolved).shape.shadow).toEqual({ intensity: 0.1 });
     expect(resolveTheme({ colors: {} }, resolved).shape.shadow).toEqual({ color: "#00000080", intensity: 0.4 });
+    // A base that states none leaves it absent (the member is default-less at the schema level).
+    const bare: GuueyChatTheme = { ...DEFAULT_CHAT_THEME, shape: { radius: "soft", density: "comfortable" } };
+    expect("shadow" in resolveTheme({ colors: {} }, bare).shape).toBe(false);
   });
 
   /**
@@ -120,20 +124,60 @@ describe("GuueyChatTheme", () => {
    * CHROME's translucency + backdrop blur. Carried next to `shadow` in the
    * v2 vocabulary so it is never a migration; chrome-only, never a card.
    */
-  it("shape gains glass (opacity + blur) — chrome-only; absent stays absent, a candidate statement wins whole", () => {
+  it("shape gains glass (opacity + blur) — chrome-only; a candidate statement wins whole, silence inherits the base's", () => {
     const resolved = resolveTheme({ shape: { glass: { opacity: 0.72, blur: 20 } } });
     expect(resolved.shape.glass).toEqual({ opacity: 0.72, blur: 20 });
-    expect("glass" in resolveTheme({ colors: {} }).shape).toBe(false);
     expect(resolveTheme({ shape: { glass: { opacity: 0.9 } } }, resolved).shape.glass).toEqual({ opacity: 0.9 });
     expect(resolveTheme({ colors: {} }, resolved).shape.glass).toEqual({ opacity: 0.72, blur: 20 });
-    // The package themes state none — glass is a builder's choice, never a default.
-    expect("glass" in DEFAULT_CHAT_THEME.shape).toBe(false);
-    expect("glass" in GUUEY_CHAT_THEME.shape).toBe(false);
+    const bare: GuueyChatTheme = { ...DEFAULT_CHAT_THEME, shape: { radius: "soft", density: "comfortable" } };
+    expect("glass" in resolveTheme({ colors: {} }, bare).shape).toBe(false);
     // Shape only (the platform's write gate holds the bands): `opacity` is
     // required — a glass statement without one is no statement — `blur` optional.
     const Glass = GuueyChatTheme.shape.shape.shape.glass.unwrap();
     expect(Glass.safeParse({ opacity: 0.5 }).success).toBe(true);
     expect(Glass.safeParse({ blur: 8 }).success).toBe(false);
+  });
+
+  /**
+   * guuey#1176 — the founder's hotfix: the widget's DEFAULT look is
+   * guuey.com's frosted glass. The numbers are the home hero's embedded
+   * chat verbatim (`apps/landing/src/components/HomeChat.css` `.homechat.on`:
+   * line 36 `rgba(246, 245, 238, 0.82)`, line 37 `blur(14px)`, line 39
+   * `0 24px 60px rgba(14, 16, 20, 0.22)`). Both shipped themes state them,
+   * so an unthemed app and a theme that states nothing about glass or
+   * shadow both inherit them; `glass: { opacity: 1 }` is the opt-out — a
+   * statement, which wins whole like any other.
+   */
+  describe("frosted glass is the default (guuey#1176)", () => {
+    it("the two values are guuey.com's, and both shipped themes state them", () => {
+      expect(DEFAULT_CHAT_GLASS).toEqual({ opacity: 0.82, blur: 14 });
+      expect(DEFAULT_CHAT_SHADOW).toEqual({ color: "#0e1014", intensity: 0.22 });
+      for (const theme of [DEFAULT_CHAT_THEME, GUUEY_CHAT_THEME]) {
+        expect(theme.shape.glass).toEqual(DEFAULT_CHAT_GLASS);
+        expect(theme.shape.shadow).toEqual(DEFAULT_CHAT_SHADOW);
+      }
+      // Values, not the shared object: a consumer mutating a resolved theme
+      // (the console's draft) must never reach the package constant.
+      expect(DEFAULT_CHAT_THEME.shape.glass).not.toBe(DEFAULT_CHAT_GLASS);
+      expect(GUUEY_CHAT_THEME.shape.shadow).not.toBe(DEFAULT_CHAT_SHADOW);
+    });
+
+    it("a theme that states no glass or shadow inherits the default's — the base fallback, not a special case", () => {
+      const themed = resolveTheme({ name: "acme", colors: { light: { accent: "#ff0000" } } });
+      expect(themed.shape.glass).toEqual(DEFAULT_CHAT_GLASS);
+      expect(themed.shape.shadow).toEqual(DEFAULT_CHAT_SHADOW);
+      // …and over the guuey identity too (portal's base).
+      expect(resolveTheme({ colors: {} }, GUUEY_CHAT_THEME).shape.glass).toEqual(DEFAULT_CHAT_GLASS);
+    });
+
+    it("`glass: { opacity: 1 }` opts out — the statement survives resolution whole (no blur rides along)", () => {
+      const opaque = resolveTheme({ shape: { glass: { opacity: 1 } } });
+      expect(opaque.shape.glass).toEqual({ opacity: 1 });
+      // The opt-out is a statement like any other: a further layer that is
+      // silent keeps it; one that states glass again wins whole.
+      expect(resolveTheme({ colors: {} }, opaque).shape.glass).toEqual({ opacity: 1 });
+      expect(resolveTheme({ shape: { glass: { opacity: 0.6 } } }, opaque).shape.glass).toEqual({ opacity: 0.6 });
+    });
   });
 
   it("`ramps` is no longer vocabulary: a stored ladder passes the lenient parse as an unknown key and is never projected", () => {

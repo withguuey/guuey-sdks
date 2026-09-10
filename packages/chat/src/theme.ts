@@ -111,7 +111,13 @@ export const GuueyChatTheme = z
         radius: z.enum(["none", "soft", "round"]),
         /** The WIDGET's own knob (D7: density is a generator PROFILE — never projected to cards). */
         density: z.enum(["compact", "comfortable"]),
-        /** Shadow colour / intensity (0–1) — the per-app half of elevation; the ladder is ggui's. */
+        /**
+         * Shadow colour / intensity (0–1) — the per-app half of elevation;
+         * the ladder is ggui's. Both shipped themes state guuey.com's
+         * ({@link DEFAULT_CHAT_SHADOW}, guuey#1176): the widget's host-page
+         * chrome (panel, bar, launcher) casts it, so a theme that states no
+         * shadow inherits that one; a stated shadow wins whole.
+         */
         shadow: z
           .object({ color: z.string().optional(), intensity: z.number().optional() })
           .loose()
@@ -119,14 +125,20 @@ export const GuueyChatTheme = z
         /**
          * Glass (guuey#1151) — the widget CHROME's translucency: `opacity`
          * is the chrome fill's alpha in 0–1 (1 = opaque, i.e. glass off),
-         * `blur` the backdrop blur in px (0–64; the loader applies 16px when
-         * unstated). CHROME ONLY: the host-page panel, ask bar and cold-open
-         * shell, and inside the frame the full-bleed canvas strips (page
-         * root, header, composer strip, footer). It never reaches generated
-         * cards or bubbles — the (1b) coverage attestation lists it as
-         * uncovered BY DESIGN. Shape only here (the platform's write gate
-         * holds the bands); one value in the document, next to `shadow`, so
-         * it is never a migration.
+         * `blur` the backdrop blur in px (0–64; the loader applies the
+         * default's 14px when unstated). CHROME ONLY: the host-page panel,
+         * ask bar and cold-open shell, and inside the frame the full-bleed
+         * canvas strips (page root, header, composer strip, footer). It
+         * never reaches generated cards or bubbles — the (1b) coverage
+         * attestation lists it as uncovered BY DESIGN. Shape only here (the
+         * platform's write gate holds the bands); one value in the document,
+         * next to `shadow`, so it is never a migration.
+         *
+         * FROSTED IS THE DEFAULT (guuey#1176, the founder's hotfix): both
+         * shipped themes state guuey.com's own glass
+         * ({@link DEFAULT_CHAT_GLASS}), so an unthemed app and a theme that
+         * states no glass both paint frosted; `{ opacity: 1 }` is the opt-out
+         * — a statement, which wins whole over the base like any other.
          */
         glass: z
           .object({ opacity: z.number(), blur: z.number().optional() })
@@ -145,6 +157,39 @@ export const GuueyChatTheme = z
   })
   .loose();
 export type GuueyChatTheme = z.infer<typeof GuueyChatTheme>;
+
+/**
+ * The DEFAULT look of the widget's chrome is guuey.com's frosted glass
+ * (guuey#1176 — the founder: "make the guuey widget's default theme just as
+ * like guuey.com's blurred frosted glass based them w/ shadow. it'll
+ * naturally fit to their background without customizing the theme too
+ * tightly"). The two values below are the home hero's embedded chat
+ * verbatim — `apps/landing/src/components/HomeChat.css`, `.homechat.on`:
+ *
+ *   line 36  `background: rgba(246, 245, 238, 0.82);`   → glass.opacity 0.82
+ *   line 37  `backdrop-filter: blur(14px);`             → glass.blur    14
+ *   line 39  `box-shadow: 0 24px 60px rgba(14, 16, 20, 0.22);`
+ *                                                       → shadow.color  #0e1014
+ *                                                         shadow.intensity 0.22
+ *
+ * The landing states ONE set of numbers (no dark-mode variant), so both
+ * modes carry the same values. Both shipped themes state them; every theme
+ * resolves over one of the two, so a theme that says nothing about glass or
+ * shadow inherits them (`resolveTheme`'s base fallback), and a theme that
+ * wants an opaque chrome states `glass: { opacity: 1 }`.
+ *
+ * The loader (`apps/widget/loader/v1.ts`) cannot import this package (its
+ * byte budget) and MIRRORS both values as constants — `v1.test.ts` pins the
+ * mirror against these exports, so a change here reds that test.
+ */
+export const DEFAULT_CHAT_GLASS: NonNullable<GuueyChatTheme["shape"]["glass"]> = {
+  opacity: 0.82,
+  blur: 14,
+};
+export const DEFAULT_CHAT_SHADOW: NonNullable<GuueyChatTheme["shape"]["shadow"]> = {
+  color: "#0e1014",
+  intensity: 0.22,
+};
 
 /**
  * The brand-neutral-but-polished package default — the theme a builder gets
@@ -186,7 +231,12 @@ export const DEFAULT_CHAT_THEME: GuueyChatTheme = {
     },
   },
   typography: {},
-  shape: { radius: "soft", density: "comfortable" },
+  shape: {
+    radius: "soft",
+    density: "comfortable",
+    shadow: { ...DEFAULT_CHAT_SHADOW },
+    glass: { ...DEFAULT_CHAT_GLASS },
+  },
 };
 
 /**
@@ -227,7 +277,12 @@ export const GUUEY_CHAT_THEME: GuueyChatTheme = {
     },
   },
   typography: {},
-  shape: { radius: "soft", density: "comfortable" },
+  shape: {
+    radius: "soft",
+    density: "comfortable",
+    shadow: { ...DEFAULT_CHAT_SHADOW },
+    glass: { ...DEFAULT_CHAT_GLASS },
+  },
 };
 
 /** The candidate shape `resolveTheme` accepts: anything partial, unknown, or stale. */

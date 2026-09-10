@@ -50,6 +50,8 @@ export {
   type OAuthReturn,
 } from "./oauth.js";
 export {
+  DEFAULT_CHAT_GLASS,
+  DEFAULT_CHAT_SHADOW,
   DEFAULT_CHAT_THEME,
   GUUEY_CHAT_THEME,
   GuueyChatFace,
