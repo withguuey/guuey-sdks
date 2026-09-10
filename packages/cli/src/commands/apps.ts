@@ -350,7 +350,18 @@ export async function appsGet(
     // into `guuey apps update <id> --chat-theme-file theme.json`.
     const res = await apiRequest('GET', `/apps/${resolved}?raw=1`);
     if (!res.ok) return handleError(res);
-    const data = (await res.json()) as { app: AppDetail; stored: AppStoredDetail };
+    // `stored` is OPTIONAL on the wire read here on purpose: the `?raw=1`
+    // door rides the release line, so a platform that does not serve it yet
+    // (production until the next release; dev serves it today) answers the
+    // plain detail with no `stored` member. Name that and exit 1 — before
+    // this guard the flag died on an uncaught TypeError there.
+    const data = (await res.json()) as { app: AppDetail; stored?: AppStoredDetail };
+    if (data.stored === undefined) {
+      out.error(
+        'This platform does not serve the stored chat theme yet (dev serves it now; production after the next release). The plain `guuey apps get` still shows the effective theme.',
+      );
+      process.exit(1);
+    }
     out.json(data.stored.chatTheme);
     return;
   }

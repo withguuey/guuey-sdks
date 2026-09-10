@@ -351,6 +351,22 @@ describe('appsGet endpoint discovery', () => {
     expect(JSON.parse(output)).toBeNull();
   });
 
+  // The `?raw=1` door rides the release line: a platform that does not serve
+  // it yet (production until the next release) answers the plain detail with
+  // no `stored` member — the flag names that and exits 1, instead of dying on
+  // an uncaught TypeError.
+  it('--theme-json on a platform without the raw read exits 1 with a named reason, never a TypeError', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ app: APP }), { status: 200 }));
+
+    await expect(appsGet('app-1', { themeJson: true })).rejects.toThrow(ExitSignal);
+
+    expect(logSpy).not.toHaveBeenCalled();
+    const err = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(err).toContain('does not serve the stored chat theme yet');
+    expect(err).not.toContain('TypeError');
+  });
+
   it('shows no Endpoint line for an app with no live deployment', async () => {
     mockAppThenDeployments(
       new Response(
