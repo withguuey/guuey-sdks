@@ -453,7 +453,10 @@ export async function appsCreate(opts: {
 
   if (!res.ok) return handleError(res, 'Failed to create app');
 
-  const data = (await res.json()) as { app: { id: string; displayName: string } };
+  const data = (await res.json()) as {
+    app: { id: string; displayName: string };
+    firstImpression?: FirstImpressionVerdict;
+  };
   const appId = data.app.id;
 
   // Auto-configure the CLI with the new app id.
@@ -462,7 +465,11 @@ export async function appsCreate(opts: {
   saveConfig(existing);
 
   if (opts.json) {
-    out.json({ appId, displayName: data.app.displayName });
+    out.json({
+      appId,
+      displayName: data.app.displayName,
+      ...(data.firstImpression !== undefined ? { firstImpression: data.firstImpression } : {}),
+    });
     return;
   }
 
@@ -471,7 +478,22 @@ export async function appsCreate(opts: {
   console.log(`  App ID:   ${appId}`);
   console.log('');
   console.log('  Auto-configured: app-id saved to ~/.guuey/config.json');
+  // guuey#1181: ONE legible line for a Free wallet — never a silent skip.
+  if (data.firstImpression !== undefined && data.firstImpression.entitled === false) {
+    console.log('');
+    console.log(`  ${data.firstImpression.message}`);
+  }
 }
+
+/**
+ * The first-impression entitlement verdict on the create response (guuey#1181).
+ * Mirrors `@guuey-private/cli-wire`'s `FirstImpressionVerdictWire` — duplicated
+ * here because the CLI is an OSS package and cannot depend on the closed
+ * backend. Printed verbatim; the CLI never re-derives it.
+ */
+export type FirstImpressionVerdict =
+  | { entitled: true; entitlement: 'paid' | 'internal' }
+  | { entitled: false; message: string; billingUrl: string };
 
 /**
  * Request body for `PUT /v1/apps/:id`. Mirrors the handler's

@@ -1675,8 +1675,42 @@ function repoPath(relativeToThisFile: string): string {
 }
 
 const WIRE_BRAND_ASSETS = repoPath('../../../../../backend/libs/cli-wire/brand-assets.ts');
+const WIRE_APPS = repoPath('../../../../../backend/libs/cli-wire/apps.ts');
 const CLI_APPS = repoPath('./apps.ts');
 const haveWire = existsSync(WIRE_BRAND_ASSETS);
+
+/**
+ * The body of a `type <name> = …;` union declaration, whitespace-collapsed —
+ * `parseInterfaceFields` reads `interface` blocks only, and the
+ * first-impression verdict (guuey#1181) is a discriminated union.
+ */
+function unionBodyOf(source: string, name: string): string {
+  // The declaration runs to the first blank line; doc comments on the wire
+  // side's members are prose, not shape, and are stripped before comparing.
+  const m = new RegExp(String.raw`export type ${name} =([\s\S]*?)\n\n`).exec(source);
+  if (!m) throw new Error(`type ${name} not found`);
+  return m[1]!
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/;\s*}/g, ' }')
+    .trim()
+    .replace(/;$/, '');
+}
+
+describe.skipIf(!haveWire)(
+  'first-impression verdict mirror — sync guard against @guuey-private/cli-wire (guuey#1181)',
+  () => {
+    it('FirstImpressionVerdict is exactly FirstImpressionVerdictWire, member for member', () => {
+      expect(unionBodyOf(readFileSync(CLI_APPS, 'utf8'), 'FirstImpressionVerdict')).toBe(
+        unionBodyOf(readFileSync(WIRE_APPS, 'utf8'), 'FirstImpressionVerdictWire'),
+      );
+    });
+    it('the guard is not a tautology — a drifted union fails', () => {
+      expect(() => unionBodyOf('export type Other = 1;\n\n', 'FirstImpressionVerdict')).toThrow(/not found/);
+      expect(unionBodyOf('export type A =\n  | { x: 1; }\n  /** doc */\n  | { y: 2 };\n\n', 'A')).toBe('| { x: 1 } | { y: 2 }');
+    });
+  },
+);
 
 describe.skipIf(!haveWire)(
   'brand-asset wire mirrors — sync guard against @guuey-private/cli-wire',
