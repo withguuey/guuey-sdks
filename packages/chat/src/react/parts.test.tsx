@@ -19,7 +19,10 @@ const SESSION_FRAME = 'event: session\ndata: {"threadId":"t-parts"}\n\n';
 const TEXT_FRAME = 'event: message\ndata: {"type":"text.delta","delta":"Hello."}\n\n';
 const DONE_FRAME = 'event: done\ndata: {"stopReason":"end"}\n\n';
 
-function scriptedAdapters(): { adapters: AgentInvokeAdapters; calls: InvokeRequest[] } {
+function scriptedAdapters(opts: { hold?: Promise<void> } = {}): {
+  adapters: AgentInvokeAdapters;
+  calls: InvokeRequest[];
+} {
   const calls: InvokeRequest[] = [];
   const store = new Map<string, string>();
   const adapters: AgentInvokeAdapters = {
@@ -36,6 +39,7 @@ function scriptedAdapters(): { adapters: AgentInvokeAdapters; calls: InvokeReque
     transport: async function* (req) {
       calls.push(req);
       yield SESSION_FRAME;
+      if (opts.hold !== undefined) await opts.hold;
       yield TEXT_FRAME;
       yield DONE_FRAME;
     },
@@ -49,20 +53,26 @@ function byPart(container: HTMLElement, name: string): Element | null {
 }
 
 describe("the ::part() contract (guuey#1152)", () => {
-  it("every PARTS name is present on a rendered <GuueyChat> with one turn and chips", async () => {
+  it("every PARTS name is present on a rendered <GuueyChat> with a header, one turn and chips", async () => {
     const { adapters, calls } = scriptedAdapters();
     const { container } = render(
       <GuueyChat
         endpointUrl="https://pod.example/agent/invoke"
         adapters={adapters}
-        suggestions={["What is Guuey?"]}
+        header={{ title: "Rep" }}
+        suggestions={["What is Guuey?", "Pricing?"]}
       />,
     );
-    // Empty transcript: surface, transcript, chips, composer are already there.
+    // Empty transcript: surface, header, transcript, chips, composer are already there.
     expect(byPart(container, PARTS.surface)?.className).toContain("guuey-chat-surface");
+    expect(byPart(container, PARTS.header)?.tagName).toBe("HEADER");
     expect(byPart(container, PARTS.transcript)?.className).toContain("guuey-chat");
     expect(byPart(container, PARTS.chips)?.tagName).toBe("NAV");
+    expect(container.querySelectorAll(`[part~="${PARTS.chip}"]`)).toHaveLength(2);
     expect(byPart(container, PARTS.composer)?.tagName).toBe("FORM");
+    expect(byPart(container, PARTS.composerInput)?.tagName).toBe("TEXTAREA");
+    expect(byPart(container, PARTS.composerSend)?.textContent).toBe("Send");
+    expect(byPart(container, PARTS.composerStop)).toBeNull();
     expect(byPart(container, PARTS.message)).toBeNull();
 
     const input = screen.getByLabelText("Message");
@@ -81,20 +91,58 @@ describe("the ::part() contract (guuey#1152)", () => {
     expect(byPart(container, PARTS.agent)?.textContent).toContain("Hello.");
   });
 
-  it("composer={false} drops the composer part; no chips → no chips part (absence is honest)", () => {
+  it("while a turn is in flight the Stop button carries composer-stop (Send's slot, its own name)", async () => {
+    let release: () => void = () => undefined;
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { adapters, calls } = scriptedAdapters({ hold });
+    const { container } = render(
+      <GuueyChat endpointUrl="https://pod.example/agent/invoke" adapters={adapters} />,
+    );
+    const input = screen.getByLabelText("Message");
+    fireEvent.change(input, { target: { value: "go" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(calls).toHaveLength(1));
+    await waitFor(() => expect(byPart(container, PARTS.composerStop)?.textContent).toBe("Stop"));
+    expect(byPart(container, PARTS.composerSend)).toBeNull();
+    release();
+    await waitFor(() => expect(byPart(container, PARTS.composerSend)).not.toBeNull());
+  });
+
+  it("composer={false} drops the composer parts; no chips / no header → no such parts (absence is honest)", () => {
     const { adapters } = scriptedAdapters();
     const { container } = render(
       <GuueyChat endpointUrl="https://pod.example/agent/invoke" adapters={adapters} composer={false} />,
     );
     expect(byPart(container, PARTS.composer)).toBeNull();
+    expect(byPart(container, PARTS.composerInput)).toBeNull();
+    expect(byPart(container, PARTS.composerSend)).toBeNull();
     expect(byPart(container, PARTS.chips)).toBeNull();
+    expect(byPart(container, PARTS.header)).toBeNull();
     expect(byPart(container, PARTS.surface)).not.toBeNull();
+    expect(byPart(container, PARTS.transcript)).not.toBeNull();
   });
 
-  it("the table is closed: exactly the seven names, and no header until guuey#1150 lands", () => {
+  it("the table is closed: exactly these names, each value a hyphenated lowercase token", () => {
     expect(Object.keys(PARTS).sort()).toEqual(
-      ["agent", "chips", "composer", "message", "surface", "transcript", "user"].sort(),
+      [
+        "agent",
+        "chip",
+        "chips",
+        "composer",
+        "composerInput",
+        "composerSend",
+        "composerStop",
+        "header",
+        "message",
+        "surface",
+        "transcript",
+        "user",
+      ].sort(),
     );
+    for (const value of Object.values(PARTS)) expect(value).toMatch(/^[a-z]+(-[a-z]+)*$/);
+    expect(new Set(Object.values(PARTS)).size).toBe(Object.values(PARTS).length);
     expect(messagePart("user")).toBe("message user");
     expect(messagePart("agent")).toBe("message agent");
   });

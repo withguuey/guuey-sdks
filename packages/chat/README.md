@@ -77,6 +77,41 @@ Override one row without forfeiting the rest:
 Server-side (no hook, no DOM): assemble inputs from a persisted thread read
 with `transcriptInputsFromHistory` and plan/render anywhere Node runs.
 
+## Restyling from outside a shadow root (`::part()`)
+
+When `<GuueyChat>` is mounted inside a **shadow root** — the guuey widget's
+`transcript: "inline"` mount does this in the host page's own DOM — the
+page's stylesheet cannot reach the kit's classes, by design. What it can
+reach is a closed set of **CSS Shadow Parts**, stamped as `part`
+attributes on the kit's structural elements and exported as `PARTS`:
+
+| Part                                                           | Element                                               |
+| -------------------------------------------------------------- | ----------------------------------------------------- |
+| `surface`                                                      | the outer surface (the theme is stamped here)         |
+| `header`                                                       | the header row — present only when `header` is given  |
+| `transcript`                                                   | the transcript root                                   |
+| `message`, `message user`, `message agent`                     | every message; the visitor's bubble; the agent's text |
+| `composer`, `composer-input`, `composer-send`, `composer-stop` | the built-in composer form, its textarea, Send, Stop  |
+| `chips`, `chip`                                                | the suggestion row and each chip                      |
+
+```css
+/* On the shadow host — the widget's panel carries `guuey-widget-transcript` */
+.guuey-widget-transcript::part(message user) {
+  background: #0b5cff;
+  color: #fff;
+}
+.guuey-widget-transcript::part(header) {
+  display: none;
+}
+```
+
+The table is closed and pinned by a test (`parts.test.tsx`): names are
+added, never renamed. Everything without a `part` is internal and may move.
+Light-DOM consumers keep styling by class name; `part` is a hook, never a
+selector the kit reads. Pair it with `surface="bare"` when the transcript
+should sit directly on the page's own background (no message cards, the
+user pill stays a bubble) — the same knob as above, no extra chrome.
+
 ## The headless view-model (the root subpath)
 
 The **headless** half — a pure function from agent state to an ordered

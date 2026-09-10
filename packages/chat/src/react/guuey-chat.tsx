@@ -1058,7 +1058,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       style={surfaceStyle}
     >
       {header !== undefined && (
-        <header className="guuey-chat-header">
+        <header className="guuey-chat-header" part={PARTS.header}>
           <div className="guuey-chat-header-title">{header.title}</div>
           {(header.actions !== undefined || header.onClose !== undefined) && (
             <div className="guuey-chat-header-actions">
@@ -1102,6 +1102,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
               key={chip}
               type="button"
               className="guuey-chat-chip"
+              part={PARTS.chip}
               onClick={() => sendSuggestion(chip)}
             >
               {chip}
@@ -1188,6 +1189,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
           id={composerId}
           name="message"
           className="guuey-chat-composer-input"
+          part={PARTS.composerInput}
           rows={1}
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -1215,12 +1217,13 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
           <button
             type="button"
             className="guuey-chat-composer-stop"
+            part={PARTS.composerStop}
             onClick={() => invoke.abort()}
           >
             {strings.stop}
           </button>
         ) : (
-          <button type="submit" className="guuey-chat-composer-send" disabled={!canSend}>
+          <button type="submit" className="guuey-chat-composer-send" part={PARTS.composerSend} disabled={!canSend}>
             {strings.send}
           </button>
         )}
