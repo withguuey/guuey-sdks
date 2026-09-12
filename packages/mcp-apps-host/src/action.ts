@@ -166,6 +166,15 @@ export interface CreateMcpUiActionRelayDeps {
     name: string,
     args: McpToolStructuredContent | undefined,
   ) => Promise<unknown>;
+  /**
+   * Fired ONCE when a card locator's `ggui_runtime_pull` circuit OPENS
+   * (guuey#1249 item 4) — the live session is unrestorable (N consecutive
+   * both-doors-gone pulls). The complement to leg 1's storm-break: the host
+   * surfaces a visible "this session ended — start a new chat" state and drops
+   * the stale thread, so a tripped circuit is never a silent frozen card.
+   * Optional: a host that only wants the storm bounded omits it.
+   */
+  onSessionUnrestorable?: (resourceUri: string) => void;
 }
 
 /** The request shape a mounted card's `onCallTool` bridge produces. */
@@ -233,6 +242,15 @@ export function createMcpUiActionRelay(
         resourceUri: uri,
         consecutiveUnavailable: next,
       });
+      // guuey#1249 item 4: tell the host the session is unrestorable so the
+      // bounded circuit isn't a silent freeze. A throw from the host callback
+      // must never break the relay's never-reject contract.
+      try {
+        deps.onSessionUnrestorable?.(uri);
+      } catch {
+        // A host-supplied callback that throws is the host's bug, not the
+        // relay's — the storm is already bounded either way.
+      }
     }
   };
 

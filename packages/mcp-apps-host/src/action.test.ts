@@ -209,3 +209,83 @@ describe("createMcpUiActionRelay — ggui_runtime_pull circuit break (guuey#1235
     }
   });
 });
+
+describe("createMcpUiActionRelay — onSessionUnrestorable (guuey#1249 item 4)", () => {
+  const PULL = "ggui_runtime_pull";
+
+  it("fires ONCE at the trip, with the locator, and never on later short-circuited polls", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const callTool = vi.fn(async () => undefined); // dead session
+      const seen: string[] = [];
+      const relay = createMcpUiActionRelay({ callTool, onSessionUnrestorable: (uri) => seen.push(uri) });
+      for (let i = 0; i < PULL_CIRCUIT_THRESHOLD + 5; i += 1) {
+        await relay({ resourceUri: URI, name: PULL, arguments: {} });
+      }
+      expect(seen).toEqual([URI]); // exactly once, carrying the locator
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("does NOT fire before the circuit trips (fewer than N unavailable pulls)", async () => {
+    const callTool = vi.fn(async () => undefined);
+    const seen: string[] = [];
+    const relay = createMcpUiActionRelay({ callTool, onSessionUnrestorable: (uri) => seen.push(uri) });
+    for (let i = 0; i < PULL_CIRCUIT_THRESHOLD - 1; i += 1) {
+      await relay({ resourceUri: URI, name: PULL, arguments: {} });
+    }
+    expect(seen).toEqual([]);
+  });
+
+  it("a throwing host callback never breaks the relay's never-reject contract", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const callTool = vi.fn(async () => undefined);
+      const relay = createMcpUiActionRelay({
+        callTool,
+        onSessionUnrestorable: () => {
+          throw new Error("host bug");
+        },
+      });
+      // The pull that trips the circuit must still resolve to an in-band error,
+      // not reject — even though the host callback throws at the trip.
+      let res: Awaited<ReturnType<typeof relay>> | undefined;
+      for (let i = 0; i < PULL_CIRCUIT_THRESHOLD; i += 1) {
+        res = await relay({ resourceUri: URI, name: PULL, arguments: {} });
+      }
+      expect(res?.isError).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("is terminal once open — a would-be-later-success is never attempted, so it fires once", async () => {
+    // The open circuit short-circuits every subsequent pull WITHOUT touching
+    // the door (action.ts trip check), so a session that came back to life is
+    // never observed: unrestorable is terminal for this mount. Recovery is a
+    // fresh thread/mount (the widget's "start a new chat"), never an in-place
+    // reopen — the callback stays a once-per-mount signal.
+    let dead = true;
+    const callTool = vi.fn(async () =>
+      dead ? undefined : { content: [{ type: "text", text: "live" }] },
+    );
+    const seen: string[] = [];
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const relay = createMcpUiActionRelay({ callTool, onSessionUnrestorable: (uri) => seen.push(uri) });
+      for (let i = 0; i < PULL_CIRCUIT_THRESHOLD; i += 1) {
+        await relay({ resourceUri: URI, name: PULL, arguments: {} }); // trips
+      }
+      callTool.mockClear();
+      dead = false; // the session "recovers" — but the open circuit never asks
+      for (let i = 0; i < 4; i += 1) {
+        await relay({ resourceUri: URI, name: PULL, arguments: {} });
+      }
+      expect(callTool).not.toHaveBeenCalled(); // door untouched while open
+      expect(seen).toEqual([URI]); // fired exactly once, at the trip
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});

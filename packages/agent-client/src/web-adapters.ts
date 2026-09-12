@@ -453,6 +453,14 @@ export interface CreateUiActionRelayOptions {
   getAccessToken?: (opts?: { forceRefresh?: boolean }) => Promise<string | null>;
   /** Caller-owned anonymous guest secret (widget / guest chat). */
   guestSecret?: string | null;
+  /**
+   * Fired ONCE when a card's `ggui_runtime_pull` circuit opens (guuey#1249
+   * item 4) — the live session is unrestorable. Threaded straight to
+   * {@link createMcpUiActionRelay}; the surface shows a visible "session
+   * ended" state + drops the stale thread so a bounded circuit isn't a
+   * silent frozen card.
+   */
+  onSessionUnrestorable?: (resourceUri: string) => void;
   /** Injectable for tests. */
   fetchImpl?: typeof fetch;
 }
@@ -573,7 +581,10 @@ export function createUiActionRelay(
     );
     return persisted === undefined || persisted === "miss" ? undefined : persisted.value;
   };
-  return createMcpUiActionRelay({ callTool });
+  return createMcpUiActionRelay({
+    callTool,
+    ...(options.onSessionUnrestorable ? { onSessionUnrestorable: options.onSessionUnrestorable } : {}),
+  });
 }
 
 /** `<pod base>/agent/hitl-answer` — the AgJSON HITL answer door (guuey#207). */
