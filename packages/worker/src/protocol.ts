@@ -63,6 +63,13 @@ export interface FirstImpressionPush {
   intent: string;
   contract: JsonValue;
   blueprintId?: string;
+  /**
+   * protocol `BlueprintVariance` (guuey#1256) — present only for a
+   * variance-named binding. ggui's exact-key match keys on `(contract,
+   * variance)`, so the host sends it in `blueprintDraft.variance` to reach
+   * the variance-named blueprint; absent = the default variant.
+   */
+  variance?: JsonValue;
 }
 
 export interface ProfileSection {
@@ -190,8 +197,9 @@ export interface Invoke {
    * from the app's binding (`GuueyApp.gguiBootstrap`, written by the platform's
    * bootstrap door) and pushes it by value; the host renders ONE system-prompt
    * section instructing the model to open the turn with `ggui_handshake`
-   * carrying exactly `intent` + `blueprintDraft.contract` (no variance), so
-   * ggui's exact-key match serves the bound row. Absent → nothing to render.
+   * carrying `intent` + `blueprintDraft.contract` (and `variance` when the
+   * binding is variance-named — guuey#1256), so ggui's exact-key match serves
+   * the bound row. Absent → nothing to render.
    * Gated by {@link gguiAttached} in every renderer (no rail, no instruction).
    */
   firstImpression?: FirstImpressionPush;

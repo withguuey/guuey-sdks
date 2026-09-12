@@ -295,10 +295,12 @@ export const FIRST_IMPRESSION_HEADING = "## First impression (this turn)";
 /**
  * The first-impression section (guuey#1183): a pre-minted ggui blueprint is
  * bound for THIS turn, so the model opens with `ggui_handshake` carrying the
- * bound `intent` + `blueprintDraft.contract` VERBATIM — ggui keys blueprints by
- * the canonical contract (key order irrelevant, text not) and the bound row is
- * served on the exact key; an edited word or an added `variance` is a miss
- * that cold-generates instead. The argument object sits inside an XML
+ * bound `intent` + `blueprintDraft.{contract, variance?}` VERBATIM — ggui keys
+ * blueprints by the canonical contract AND variance (key order irrelevant, text
+ * not); the bound row is served on the exact `(contract, variance)` key, so we
+ * send the `variance` the binding was made under (guuey#1256) and the model must
+ * not edit it. An edited word (or a changed variance) is a miss that
+ * cold-generates instead. The argument object sits inside an XML
  * delimiter like every other pushed block; it is an INSTRUCTION here (the
  * platform composed it, not the user), stated as such. Rendered only when the
  * ggui rail is armed (the callers gate on `gguiAttached`). Leading `\n\n`
@@ -306,12 +308,16 @@ export const FIRST_IMPRESSION_HEADING = "## First impression (this turn)";
  */
 export function renderFirstImpressionSection(fi: FirstImpressionPush | undefined): string {
   if (fi === undefined) return "";
-  const args = JSON.stringify({ intent: fi.intent, blueprintDraft: { contract: fi.contract } });
+  const args = JSON.stringify({
+    intent: fi.intent,
+    blueprintDraft: { contract: fi.contract, ...(fi.variance !== undefined ? { variance: fi.variance } : {}) },
+  });
   return (
     `\n\n${FIRST_IMPRESSION_HEADING}\n\n` +
     `A screen was prepared in advance for exactly this moment. Before anything else this turn, ` +
-    `call the \`ggui_handshake\` tool with EXACTLY the argument object below — verbatim, no edits, ` +
-    `no added \`variance\`. Then follow its result as usual (\`ggui_render\` with the props). ` +
+    `call the \`ggui_handshake\` tool with EXACTLY the argument object below — verbatim, no edits ` +
+    `(the \`variance\`, if present, is the one this screen was bound under; do not add, remove, or ` +
+    `change it). Then follow its result as usual (\`ggui_render\` with the props). ` +
     `Do not describe the screen in text.\n\n` +
     `<first_impression_handshake>\n${args}\n</first_impression_handshake>`
   );

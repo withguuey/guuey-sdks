@@ -409,7 +409,7 @@ describe("renderFirstImpressionSection (guuey#1183 — the bound blueprint's han
     });
     expect(out.startsWith("\n\n" + FIRST_IMPRESSION_HEADING)).toBe(true);
     expect(out).toContain("call the `ggui_handshake` tool with EXACTLY the argument object below");
-    expect(out).toContain("no added `variance`");
+    expect(out).toContain("do not add, remove, or change it");
     const m = /<first_impression_handshake>\n([\s\S]*?)\n<\/first_impression_handshake>/.exec(out);
     expect(m).not.toBeNull();
     expect(JSON.parse(m![1]!)).toEqual({
@@ -418,5 +418,20 @@ describe("renderFirstImpressionSection (guuey#1183 — the bound blueprint's han
     });
     // The blueprintId is a receipt for the Router, never part of the handshake args.
     expect(out).not.toContain("bp_1");
+  });
+
+  it("carries blueprintDraft.variance into the args when the binding is variance-named (guuey#1256)", () => {
+    const out = renderFirstImpressionSection({
+      chipKey: "hello",
+      intent: "welcome screen for Trimly",
+      contract: { intent: "welcome", propsSpec: { properties: {} } },
+      variance: { aesthetic: "hero-fill" },
+    });
+    const m = /<first_impression_handshake>\n([\s\S]*?)\n<\/first_impression_handshake>/.exec(out);
+    expect(m).not.toBeNull();
+    expect(JSON.parse(m![1]!)).toEqual({
+      intent: "welcome screen for Trimly",
+      blueprintDraft: { contract: { intent: "welcome", propsSpec: { properties: {} } }, variance: { aesthetic: "hero-fill" } },
+    });
   });
 });
