@@ -176,24 +176,85 @@ export interface UiActionRequest {
   arguments?: McpToolStructuredContent;
 }
 
+/** The host-relayed auto-poll rung (guuey#1235). A dead session's pull is the storm. */
+const PULL_TOOL = "ggui_runtime_pull";
+
+/**
+ * Consecutive `unavailable` pull results (per card locator) that OPEN the
+ * circuit (guuey#1235 leg 1). At the #1233 storm's ~12-18 pulls/min a 3-strike
+ * trip bounds the hammer in ~10-15s; a single good pull resets it, so a
+ * transient blip never trips.
+ */
+export const PULL_CIRCUIT_THRESHOLD = 3;
+
+/**
+ * Logged ONCE when a locator's pull circuit opens — the bounded-storm marker
+ * (sentry's readability ask; the #1233 next-incident is scopeable from it).
+ */
+export const UI_ACTION_PULL_CIRCUIT_OPEN = "UI_ACTION_PULL_CIRCUIT_OPEN";
+
 /**
  * Assemble the sandbox-facing action relay from a host transport. The
  * returned function is shaped for an `onCallTool` bridge: it always
  * resolves (never rejects), answering in-band.
+ *
+ * guuey#1235 leg 1 — the `ggui_runtime_pull` CIRCUIT BREAK. A card whose live
+ * session died keeps auto-polling on its own interval; each pull `tools/call`
+ * 404s at the pod door → `unavailable` → the sandbox polls again, hammering the
+ * door indefinitely (the #1233 prod storm: 57+ over 15 min). After
+ * {@link PULL_CIRCUIT_THRESHOLD} CONSECUTIVE `unavailable` pull results for a
+ * locator, the circuit OPENS: the relay stops calling the transport for that
+ * locator's pull (fail-fast, no network) — the server storm is bounded. A
+ * single non-`unavailable` pull result CLOSES it (the session recovered). Only
+ * the pull rung is counted — a failed user gesture (`submit_action`) or token
+ * refresh must never trip the auto-poll break, and never opens another rung.
+ *
+ * The complement — telling the USER the session is unrestorable so a tripped
+ * circuit is not a silent freeze — is the `onSessionUnrestorable` signal
+ * (guuey#1249 item 4); this leg only bounds the hammer.
  */
 export function createMcpUiActionRelay(
   deps: CreateMcpUiActionRelayDeps,
 ): (request: UiActionRequest) => Promise<McpToolCallResult> {
+  // Per-relay-instance (one card mount). A recovered/absent locator is deleted,
+  // so this stays as small as the mounted cards; the mount tears it down.
+  const pullFailures = new Map<string, number>();
+
+  const recordPull = (uri: string, unavailable: boolean): void => {
+    if (!unavailable) {
+      pullFailures.delete(uri); // the session answered → close the circuit
+      return;
+    }
+    const next = (pullFailures.get(uri) ?? 0) + 1;
+    pullFailures.set(uri, next);
+    if (next === PULL_CIRCUIT_THRESHOLD) {
+      // Once, at the trip — not per subsequent short-circuited poll.
+      console.warn(UI_ACTION_PULL_CIRCUIT_OPEN, {
+        resourceUri: uri,
+        consecutiveUnavailable: next,
+      });
+    }
+  };
+
   return async (request) => {
     if (!UI_ACTION_TOOLS.has(request.name)) return unavailableToolCallResult();
     if (!request.resourceUri.startsWith("ui://")) return unavailableToolCallResult();
+
+    const isPull = request.name === PULL_TOOL;
+    // Circuit OPEN for this locator's pull → fail-fast, never touch the door.
+    if (isPull && (pullFailures.get(request.resourceUri) ?? 0) >= PULL_CIRCUIT_THRESHOLD) {
+      return unavailableToolCallResult();
+    }
+
     let raw: unknown;
     try {
       raw = await deps.callTool(request.resourceUri, request.name, request.arguments);
     } catch {
-      return unavailableToolCallResult(); // transport failure == unavailable, in-band
+      if (isPull) recordPull(request.resourceUri, true); // transport failure == unavailable
+      return unavailableToolCallResult(); // in-band
     }
-    if (raw === undefined) return unavailableToolCallResult();
-    return asToolCallResult(raw) ?? unavailableToolCallResult();
+    const result = raw === undefined ? undefined : asToolCallResult(raw);
+    if (isPull) recordPull(request.resourceUri, result === undefined);
+    return result ?? unavailableToolCallResult();
   };
 }
