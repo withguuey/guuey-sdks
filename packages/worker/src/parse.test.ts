@@ -68,6 +68,42 @@ describe("parseControl", () => {
     expect(msg.priorState).toEqual({ step: 1, items: ["a", "b"] });
   });
 
+  it("carries a non-empty firstImpression.variance onto the Invoke (guuey#1256)", () => {
+    const msg = parseControl(
+      JSON.stringify({
+        type: "invoke",
+        input: "hi",
+        identity: { userId: "u", authMode: "anonymous" },
+        fs: { app: "/app", home: "/home", session: "/session" },
+        history: [],
+        firstImpression: { chipKey: "hello", intent: "welcome", contract: { propsSpec: { properties: {} } }, blueprintId: "bp_hero", variance: { aesthetic: "hero-fill" } },
+      }),
+    );
+    if (!isInvoke(msg)) throw new Error("expected invoke");
+    expect(msg.firstImpression).toEqual({
+      chipKey: "hello",
+      intent: "welcome",
+      contract: { propsSpec: { properties: {} } },
+      blueprintId: "bp_hero",
+      variance: { aesthetic: "hero-fill" },
+    });
+  });
+
+  it("drops an empty firstImpression.variance and ignores an unknown top-level key (N-1, #1213)", () => {
+    const msg = parseControl(
+      JSON.stringify({
+        type: "invoke",
+        input: "hi",
+        identity: { userId: "u", authMode: "anonymous" },
+        fs: { app: "/app", home: "/home", session: "/session" },
+        history: [],
+        firstImpression: { chipKey: "hello", intent: "welcome", contract: { propsSpec: { properties: {} } }, variance: {}, futureField: "ignored" },
+      }),
+    );
+    if (!isInvoke(msg)) throw new Error("expected invoke");
+    expect(msg.firstImpression).toEqual({ chipKey: "hello", intent: "welcome", contract: { propsSpec: { properties: {} } } });
+  });
+
   it("omits priorMemory/priorState when absent (no empty keys)", () => {
     const msg = parseControl(INVOKE);
     if (!isInvoke(msg)) throw new Error("expected invoke");

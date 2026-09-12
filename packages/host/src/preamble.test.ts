@@ -11,6 +11,7 @@ import {
   GENERATIVE_UI_SECTION,
   renderMcpAvailabilitySection,
   MCP_AVAILABILITY_HEADING, renderFirstImpressionSection, FIRST_IMPRESSION_HEADING } from "./preamble.js";
+import { parseControl, isInvoke } from "@guuey/worker";
 
 /**
  * The memory RECALL block, captured VERBATIM from the pre-factor inline string
@@ -432,6 +433,29 @@ describe("renderFirstImpressionSection (guuey#1183 — the bound blueprint's han
     expect(JSON.parse(m![1]!)).toEqual({
       intent: "welcome screen for Trimly",
       blueprintDraft: { contract: { intent: "welcome", propsSpec: { properties: {} } }, variance: { aesthetic: "hero-fill" } },
+    });
+  });
+
+  it("send -> parse -> emit round-trip: a wire firstImpression's variance survives @guuey/worker's parser into the args (guuey#1256 chunk C gate)", () => {
+    // The gate that closes the missed 4th hop: feed a WIRE fixture through the
+    // REAL parser (not fi.variance injected), then emit — if parseFirstImpression
+    // dropped variance (the chunk-B-inert bug), the args would lack it here.
+    const line = JSON.stringify({
+      type: "invoke",
+      input: "hi",
+      identity: { userId: "u", authMode: "anonymous" },
+      fs: { app: "/app", home: "/home", session: "/session" },
+      history: [],
+      firstImpression: { chipKey: "hello", intent: "welcome", contract: { propsSpec: { properties: {} } }, variance: { aesthetic: "hero-fill" } },
+    });
+    const msg = parseControl(line);
+    if (!isInvoke(msg)) throw new Error("expected invoke");
+    const out = renderFirstImpressionSection(msg.firstImpression);
+    const m = /<first_impression_handshake>\n([\s\S]*?)\n<\/first_impression_handshake>/.exec(out);
+    expect(m).not.toBeNull();
+    expect(JSON.parse(m![1]!)).toEqual({
+      intent: "welcome",
+      blueprintDraft: { contract: { propsSpec: { properties: {} } }, variance: { aesthetic: "hero-fill" } },
     });
   });
 });

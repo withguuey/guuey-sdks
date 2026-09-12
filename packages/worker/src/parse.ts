@@ -94,17 +94,26 @@ function parsePriorMemory(v: JsonValue | undefined): PriorMemoryRecord[] | undef
  * string `app`/`content`) is DROPPED, never throwing. Returns `undefined` when
  * absent or when no entry survives (so the field stays off the Invoke).
  */
-/** Parse the optional `firstImpression` push (guuey#1183): all three identity fields or nothing. */
+/** Parse the optional `firstImpression` push (guuey#1183): the identity fields
+ *  (+ `variance` when a non-empty object, guuey#1256) or nothing. */
 function parseFirstImpression(v: JsonValue | undefined): FirstImpressionPush | undefined {
   if (!isObject(v)) return undefined;
   if (typeof v.chipKey !== "string" || v.chipKey === "") return undefined;
   if (typeof v.intent !== "string" || v.intent === "") return undefined;
   if (!isObject(v.contract)) return undefined;
+  // guuey#1256: carry a non-empty `variance` through so the host can emit
+  // `blueprintDraft.variance` and ggui's exact `(contract, variance)` key
+  // reaches the variance-named binding. An empty/absent variance collapses to
+  // ggui's default variant → dropped so the field stays off the args.
+  // Forwarded verbatim (ggui validates the strict shape at its wire), parallel
+  // to `contract`; an unknown top-level key is ignored (N-1 tolerance, #1213).
+  const variance = isObject(v.variance) && Object.keys(v.variance).length > 0 ? v.variance : undefined;
   return {
     chipKey: v.chipKey,
     intent: v.intent,
     contract: v.contract,
     ...(typeof v.blueprintId === "string" && v.blueprintId !== "" ? { blueprintId: v.blueprintId } : {}),
+    ...(variance !== undefined ? { variance } : {}),
   };
 }
 
