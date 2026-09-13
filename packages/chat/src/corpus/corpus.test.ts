@@ -231,19 +231,23 @@ describe("corpus", () => {
   it("15. tools-around-a-view — the group SPLITS at the view's position", () => {
     const plan = planTranscript(toolsAroundAView(), calm);
     const kinds = plan.items.map((i) => i.kind);
-    // user · group(t1,t2) · attributed call line folds into · view · group(t4,t5)
-    expect(kinds).toEqual(["user", "tool-group", "tool", "view", "tool-group"]);
+    // guuey#1279: the view-producing ggui_render (t3) row is filtered from the
+    // default transcript (protocol chatter); the VIEW still splits the groups,
+    // and t3's call line remains folded as the view's attribution below.
+    // user · group(t1,t2) · view(t3, folded) · group(t4,t5)
+    expect(kinds).toEqual(["user", "tool-group", "view", "tool-group"]);
     const groups = plan.items.filter((i): i is ToolGroupItem => i.kind === "tool-group");
     expect(groups[0].key).toBe("g.tool.t1");
     expect(groups[0].tools.map((t) => t.toolCallId)).toEqual(["t1", "t2"]);
     expect(groups[1].key).toBe("g.tool.t4");
     expect(groups[1].tools.map((t) => t.toolCallId)).toEqual(["t4", "t5"]);
-    // The view is NEVER inside a collapse; its call line is attribution-folded.
+    // The view is NEVER inside a collapse; its call line is attribution-folded
+    // (the R4 fold — now the sole surface of the filtered ggui_render row).
     const view = plan.items.find((i): i is ViewMountItem => i.kind === "view");
     expect(view?.key).toBe("view.t3");
     expect(view?.attribution).toBe("via ggui render");
-    const breaking = plan.items.find((i) => i.kind === "tool");
-    expect(breaking?.kind === "tool" && breaking.attribution).toBe(true);
+    // No ggui tool row in the default (guuey#1279) — the R4 fold is the view's.
+    expect(plan.items.some((i) => i.kind === "tool")).toBe(false);
     expect(plan).toMatchSnapshot();
   });
 

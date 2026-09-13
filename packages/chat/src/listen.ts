@@ -15,6 +15,17 @@ export function isGguiConsumeTool(name: string | null): boolean {
   return name !== null && /(^|__)ggui_consume$/.test(name);
 }
 
+/**
+ * True for ANY ggui protocol/lifecycle tool by wire name — bare (`ggui_render`)
+ * or the MCP prefix shape (`mcp__ggui__ggui_render`). guuey#1279: the widget's
+ * transcript filters these OUT of the visible tool rows by construction (the
+ * protocol narration — handshake/render/consume — is machinery, not chrome);
+ * the render card MOUNT still shows. The kit's `showToolRows` policy gates it.
+ */
+export function isGguiProtocolTool(name: string | null): boolean {
+  return name !== null && /(^|__)ggui_[a-z]/.test(name);
+}
+
 /** True while the ONLY thing in flight is a listen — the state the composer must not lock on. */
 export function isWaitingOnUser(status: AgentInvokeStatus, activeTool: string | null): boolean {
   return status === "using-tool" && isGguiConsumeTool(activeTool);

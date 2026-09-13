@@ -39,6 +39,14 @@ export interface TranscriptPolicy {
     expandByDefault: boolean;
     argsVisible: boolean;
     humanizeTitle: (wireName: string) => string;
+    /**
+     * guuey#1279 — which tool rows render in the transcript. `"non-ggui"`
+     * (default) filters ggui protocol/lifecycle rows (handshake/render/consume)
+     * by construction while keeping the render card mount; `"all"` shows every
+     * tool row (debug); `"none"` shows no tool rows. The wire is unchanged —
+     * pods keep emitting tool events; this is render-side only.
+     */
+    showToolRows: "all" | "non-ggui" | "none";
   };
   /** R4 — `false` disables grouping entirely (debug's default). */
   toolGroup: { threshold: number | false };
@@ -145,7 +153,7 @@ function calmBase(): TranscriptPolicy {
     userMessage: { retryAffordance: true, collapseDirectives: true },
     text: { markdown: true },
     reasoning: { show: true, expandedByDefault: false },
-    tool: { expandByDefault: false, argsVisible: false, humanizeTitle: humanizeToolName },
+    tool: { expandByDefault: false, argsVisible: false, humanizeTitle: humanizeToolName, showToolRows: "non-ggui" },
     toolGroup: { threshold: 2 },
     dataResult: { capRem: 16, prettyPrint: true, alwaysShowBytes: false, previewChars: 2048 },
     view: { timeoutMs: 8000, presentation: "inline" },
@@ -182,7 +190,7 @@ export function debugPolicy(overrides?: TranscriptPolicyOverrides): TranscriptPo
     debugDetail: true,
     userMessage: { ...base.userMessage, collapseDirectives: false },
     reasoning: { ...base.reasoning, expandedByDefault: true },
-    tool: { ...base.tool, expandByDefault: true, argsVisible: true },
+    tool: { ...base.tool, expandByDefault: true, argsVisible: true, showToolRows: "all" },
     toolGroup: { threshold: false },
     dataResult: { ...base.dataResult, capRem: 32, alwaysShowBytes: true },
     prompt: { ...base.prompt, rawPayload: true },

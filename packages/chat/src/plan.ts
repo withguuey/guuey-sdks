@@ -43,6 +43,7 @@ import {
 import type { TranscriptPolicy } from "./policy.js";
 import { grantModeDisplay } from "./hitl.js";
 import { authRequiredFromAsks, oauthAuthorizeAsk } from "./oauth.js";
+import { isGguiProtocolTool } from "./listen.js";
 import type {
   CitationsItem,
   DataResultItem,
@@ -506,7 +507,20 @@ function planAssistantSource(
           // view row's chrome as attribution; debug keeps the explicit line.
           attribution: mount !== undefined && !policy.debugDetail,
         };
-        items.push(tool);
+        // guuey#1279: ggui protocol/lifecycle rows (handshake/render/consume)
+        // are machinery, not chrome — filtered from the transcript by
+        // construction under `showToolRows: "non-ggui"` (default). The wire is
+        // unchanged (the pod still emits the events); only the ROW is dropped —
+        // the render card MOUNT below still shows.
+        const isGguiProtocol = isGguiProtocolTool(block.name);
+        // A FAILED ggui row is a NAMED error the user needs (guuey#836's
+        // refusal), NOT chatter — keep it even under the ggui filter; only the
+        // done/running SUCCESS narration is machinery to drop.
+        const isFailedRow = state === "failed";
+        const showToolRow =
+          policy.tool.showToolRows === "all" ||
+          (policy.tool.showToolRows === "non-ggui" && (!isGguiProtocol || isFailedRow));
+        if (showToolRow) items.push(tool);
         if (mount !== undefined) {
           const viewKey = `view.${block.toolCallId}`;
           const view: ViewMountItem = {

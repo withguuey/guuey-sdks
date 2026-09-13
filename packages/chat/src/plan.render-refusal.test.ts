@@ -68,7 +68,9 @@ function plan(result: AgReduceResult): DisplayItem[] {
       prompts: [],
       messages: [{ role: "user", text: "render something" }],
     },
-    calmPolicy(),
+    // guuey#1279: the default filters done ggui rows; this reducer test
+    // observes the tool ROW output, so it opts into showToolRows:"all".
+    calmPolicy({ tool: { showToolRows: "all" } }),
   ).items;
 }
 

@@ -59,7 +59,8 @@ function plan() {
       prompts: [],
       messages: [{ role: "user", text: "render something" }],
     },
-    calmPolicy(),
+    // guuey#1279: reducer test on a ggui_render row — opt into showToolRows:"all".
+    calmPolicy({ tool: { showToolRows: "all" } }),
   );
 }
 

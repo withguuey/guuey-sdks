@@ -161,6 +161,26 @@ string (`ChatStrings`, the i18n seam) without forfeiting the rest:
 calmPolicy({ toolGroup: { threshold: 3 }, strings: { thinking: "Pondering…" } });
 ```
 
+## Protocol tool rows (`showToolRows`)
+
+`tool.showToolRows` controls which tool calls become transcript rows:
+
+- **`"non-ggui"` (calm default)** — ggui protocol/lifecycle rows are hidden:
+  anything in the `ggui_` namespace (`ggui_handshake` / `ggui_render` /
+  `ggui_consume`, bare or `mcp__ggui__*`). That narration is machinery, not
+  chrome. Two things always stay: the render **card mount** still shows, and a
+  **FAILED ggui row stays visible** (a refusal is a real error the visitor
+  needs, not chatter). Every non-ggui tool row is unaffected.
+- **`"all"` (debug default)** — every tool row shows, ggui included.
+- **`"none"`** — no tool rows at all.
+
+The wire is unchanged: the pod keeps emitting the tool events; this is
+render-side only. Override it like any knob:
+
+```ts
+calmPolicy({ tool: { showToolRows: "all" } }); // show the ggui protocol rows too
+```
+
 ## Strict-CSP hosts
 
 Generated views boot a runtime and open a live channel to their MCP host;
