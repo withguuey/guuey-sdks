@@ -532,7 +532,12 @@ function planAssistantSource(
             phase: inputs.viewPhases?.[viewKey] ?? "negotiating",
             label: null,
             diagnosis: inputs.viewDiagnoses?.[viewKey] ?? null,
-            attribution: policy.debugDetail ? null : policy.strings.viaTool(tool.title),
+            // R4 display-bearing: in calm the call line folds into the view's
+            // chrome as attribution. guuey#1288 (ggui#1077 ruled R4 is guuey's
+            // own rule, not ggui's contract): a ggui protocol mount shows the
+            // CARD only — no "via ggui render" strip (protocol chatter). Non-ggui
+            // tools keep their `via <tool>` fold.
+            attribution: policy.debugDetail || isGguiProtocol ? null : policy.strings.viaTool(tool.title),
             toolTitle: tool.title,
             // `result` is narrowed by `mount !== undefined` above; the scope
             // is the PERSISTED locator (`uiData.resourceUri`), never the

@@ -232,21 +232,24 @@ describe("corpus", () => {
     const plan = planTranscript(toolsAroundAView(), calm);
     const kinds = plan.items.map((i) => i.kind);
     // guuey#1279: the view-producing ggui_render (t3) row is filtered from the
-    // default transcript (protocol chatter); the VIEW still splits the groups,
-    // and t3's call line remains folded as the view's attribution below.
-    // user · group(t1,t2) · view(t3, folded) · group(t4,t5)
+    // default transcript (protocol chatter); the VIEW still splits the groups.
+    // guuey#1288: the ggui protocol mount carries no "via ggui render" strip
+    // either, so t3 leaves NO visible trace beyond the card it produced.
+    // user · group(t1,t2) · view(t3) · group(t4,t5)
     expect(kinds).toEqual(["user", "tool-group", "view", "tool-group"]);
     const groups = plan.items.filter((i): i is ToolGroupItem => i.kind === "tool-group");
     expect(groups[0].key).toBe("g.tool.t1");
     expect(groups[0].tools.map((t) => t.toolCallId)).toEqual(["t1", "t2"]);
     expect(groups[1].key).toBe("g.tool.t4");
     expect(groups[1].tools.map((t) => t.toolCallId)).toEqual(["t4", "t5"]);
-    // The view is NEVER inside a collapse; its call line is attribution-folded
-    // (the R4 fold — now the sole surface of the filtered ggui_render row).
+    // The view is NEVER inside a collapse. guuey#1288 (ggui#1077 ruled R4 is
+    // guuey's own rule, not ggui's contract): a ggui_render protocol mount
+    // shows the CARD only — no "via ggui render" strip. So the filtered
+    // ggui_render row leaves NO visible trace: no tool row, no attribution.
     const view = plan.items.find((i): i is ViewMountItem => i.kind === "view");
     expect(view?.key).toBe("view.t3");
-    expect(view?.attribution).toBe("via ggui render");
-    // No ggui tool row in the default (guuey#1279) — the R4 fold is the view's.
+    expect(view?.attribution).toBeNull();
+    // No ggui tool row in the default (guuey#1279); no R4 attribution either (guuey#1288).
     expect(plan.items.some((i) => i.kind === "tool")).toBe(false);
     expect(plan).toMatchSnapshot();
   });
@@ -542,8 +545,9 @@ describe("corpus", () => {
     expect(view?.mount).toEqual({ channel: "locator", resourceUri: PROD_WIRE_RENDER_URI });
     // #158's action scope binds to the same durable locator.
     expect(view?.actionScope).toBe(PROD_WIRE_RENDER_URI);
-    // The producing call folds into the card's chrome (R4 display-bearing).
-    expect(view?.attribution).not.toBeNull();
+    // guuey#1288 (ggui#1077): a ggui_render protocol mount drops the visible
+    // "via ggui render" strip — the prod-shaped card shows on its own.
+    expect(view?.attribution).toBeNull();
     // #204's promotion walk sees the prod-shaped card as the newest.
     expect(newestViewKey(inputs)?.key).toBe("view.t1");
     // Nothing hits R15 — this is a first-class mount, not unknown content.

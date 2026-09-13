@@ -170,7 +170,9 @@ calmPolicy({ toolGroup: { threshold: 3 }, strings: { thinking: "Pondering…" } 
   `ggui_consume`, bare or `mcp__ggui__*`). That narration is machinery, not
   chrome. Two things always stay: the render **card mount** still shows, and a
   **FAILED ggui row stays visible** (a refusal is a real error the visitor
-  needs, not chatter). Every non-ggui tool row is unaffected.
+  needs, not chatter). Every non-ggui tool row is unaffected. A ggui render
+  mount shows the **card alone**: no `via ggui render` attribution fold either
+  (non-ggui tools that mount a view keep theirs).
 - **`"all"` (debug default)** — every tool row shows, ggui included.
 - **`"none"`** — no tool rows at all.
 

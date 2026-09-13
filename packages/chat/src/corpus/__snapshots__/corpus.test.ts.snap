@@ -1202,7 +1202,7 @@ exports[`corpus > 7. view-never-handshakes — channel-aware labels on both chan
     },
     {
       "actionScope": "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee",
-      "attribution": "via ggui render",
+      "attribution": null,
       "channel": "locator",
       "diagnosis": null,
       "expanded": true,
@@ -1647,7 +1647,7 @@ exports[`corpus > 15. tools-around-a-view — the group SPLITS at the view's pos
     },
     {
       "actionScope": null,
-      "attribution": "via ggui render",
+      "attribution": null,
       "channel": "inline",
       "diagnosis": null,
       "expanded": true,
@@ -1803,7 +1803,7 @@ exports[`corpus > 19. persisted-plus-live — the fold owns its trailing turns; 
     },
     {
       "actionScope": "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee",
-      "attribution": "via ggui render",
+      "attribution": null,
       "channel": "locator",
       "diagnosis": null,
       "expanded": true,
@@ -2032,7 +2032,7 @@ exports[`corpus > 22. promoted-view — the stage's mount chips (guuey#204); oth
     },
     {
       "actionScope": null,
-      "attribution": "via ggui render",
+      "attribution": null,
       "channel": "inline",
       "diagnosis": null,
       "expanded": true,
@@ -2114,7 +2114,7 @@ exports[`corpus > 23. meta-less-locator — a \`_meta\`-withholding producer's r
     },
     {
       "actionScope": "ui://ggui/render/render_dark/h1",
-      "attribution": "via ggui render",
+      "attribution": null,
       "channel": "locator",
       "diagnosis": null,
       "expanded": true,
@@ -2163,7 +2163,7 @@ exports[`corpus > 24. prod-wire-ggui-render — ggui's production posture: no _m
     },
     {
       "actionScope": "ui://ggui/render/render_5d11b1b4-75ba-44e5-81bb-0b420b86bb8e/7328555b44e72bd7",
-      "attribution": "via ggui render",
+      "attribution": null,
       "channel": "locator",
       "diagnosis": null,
       "expanded": true,

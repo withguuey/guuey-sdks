@@ -3,7 +3,7 @@ import type { AgReduceResult, JsonValue } from "@silverprotocol/core";
 import { planTranscript } from "./plan.js";
 import { calmPolicy } from "./policy.js";
 import { isGguiProtocolTool } from "./listen.js";
-import type { DisplayItem, ToolItem } from "./types.js";
+import type { DisplayItem, ToolItem, ViewMountItem } from "./types.js";
 
 /** A one-tool fold with a configurable tool name + result envelope. */
 function fold(name: string, structuredContent: JsonValue, isError: boolean): AgReduceResult {
@@ -53,6 +53,11 @@ function plan(result: AgReduceResult, showToolRows?: "all" | "non-ggui" | "none"
 
 const toolRow = (items: DisplayItem[]): ToolItem | undefined => items.find((i): i is ToolItem => i.kind === "tool");
 const hasView = (items: DisplayItem[]): boolean => items.some((i) => i.kind === "view");
+const viewItem = (items: DisplayItem[]): ViewMountItem | undefined =>
+  items.find((i): i is ViewMountItem => i.kind === "view");
+
+/** A non-ggui tool whose result carries a `ui://` locator → a real view mount. */
+const MCP_APP_LOCATOR: JsonValue = { resourceUri: "ui://mcp-app/weather/card" };
 
 describe("isGguiProtocolTool (guuey#1279)", () => {
   it("matches the ggui protocol/lifecycle tools, bare and MCP-prefixed", () => {
@@ -103,5 +108,46 @@ describe("the transcript filters ggui protocol rows by construction (guuey#1279)
     const f = fold("ggui_consume", {}, false);
     expect(toolRow(plan(f, "all"))?.name).toBe("ggui_consume");
     expect(toolRow(plan(f))).toBeUndefined();
+  });
+});
+
+
+describe("R4 attribution — a ggui protocol mount shows no \"via ggui render\" strip (guuey#1288)", () => {
+  it("a ggui_render mount drops the attribution — the card shows on its own (ggui#1077 ruled R4 droppable)", () => {
+    const items = plan(fold("ggui_render", RENDERED, false));
+    expect(toolRow(items)).toBeUndefined(); // #1279: the protocol row is filtered
+    const view = viewItem(items);
+    expect(view).toBeDefined();
+    expect(view?.attribution).toBeNull(); // #1288: no "via ggui render" strip either
+  });
+
+  it("a NON-ggui tool that produces a view mount KEEPS its `via <tool>` fold", () => {
+    const items = plan(fold("weather_card", MCP_APP_LOCATOR, false));
+    const row = toolRow(items);
+    expect(row?.name).toBe("weather_card"); // a non-ggui row is not filtered
+    const view = viewItem(items);
+    expect(view).toBeDefined();
+    // R4 still folds the call line into the card's chrome for non-ggui tools.
+    expect(view?.attribution).toBe(`via ${row!.title}`);
+    expect(view?.attribution).not.toBeNull();
+  });
+
+  it("the debug door drops ALL attribution regardless of vendor (policy.debugDetail)", () => {
+    const dbg = (result: AgReduceResult): DisplayItem[] =>
+      planTranscript(
+        {
+          result,
+          assistantText: "",
+          status: "ready",
+          statusElapsedMs: 0,
+          activeTool: null,
+          error: null,
+          prompts: [],
+          messages: [{ role: "user", text: "go" }],
+        },
+        calmPolicy({ debugDetail: true, tool: { showToolRows: "all" } }),
+      ).items;
+    expect(viewItem(dbg(fold("ggui_render", RENDERED, false)))?.attribution).toBeNull();
+    expect(viewItem(dbg(fold("weather_card", MCP_APP_LOCATOR, false)))?.attribution).toBeNull();
   });
 });

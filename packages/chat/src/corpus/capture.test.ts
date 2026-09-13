@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import { createMcpUiResourceReader, resolveViewMount } from "@guuey/mcp-apps-host";
 import { planTranscript } from "../plan.js";
 import { calmPolicy, debugPolicy } from "../policy.js";
-import type { ToolItem, ViewMountItem } from "../types.js";
+import type { ViewMountItem } from "../types.js";
 import { CAPTURE_RENDER_URI, captureTurnEvents, productionGguiRenderCapture } from "./capture.js";
 import { gguiReadShell } from "./fixtures.js";
 
@@ -77,17 +77,19 @@ describe("corpus 18: production-capture-ggui-render", () => {
     expect(resolved?.resource.text).toContain("__GGUI_META__");
   });
 
-  it("the producing call folds into the card's chrome in calm (attribution)", async () => {
+  it("the ggui_render mount shows the card alone in calm — no row, no attribution strip (guuey#1279/#1288)", async () => {
     const inputs = await productionGguiRenderCapture();
     const plan = planTranscript(inputs, calmPolicy());
     const view = plan.items.find((i): i is ViewMountItem => i.kind === "view");
-    expect(view?.attribution).not.toBeNull();
-    // The attributed call line itself carries the attribution flag rather
-    // than rendering standalone.
-    const attributed = plan.items.filter(
-      (i): i is ToolItem => i.kind === "tool" && i.attribution,
-    );
-    expect(attributed.length).toBeLessThanOrEqual(1);
+    // guuey#1279: the ggui_render protocol ROW is filtered from the default
+    // transcript. guuey#1288 (ggui#1077 ruled R4 is guuey's own rule, not
+    // ggui's contract): the card carries no "via ggui render" attribution
+    // strip either — the production-captured render leaves NO visible trace
+    // beyond the card it produced.
+    expect(view?.attribution).toBeNull();
+    // The #1279 filter drops the ggui_render row specifically; this capture's
+    // non-ggui todo tool rows correctly survive.
+    expect(plan.items.some((i) => i.kind === "tool" && i.name === "ggui_render")).toBe(false);
   });
 
   it("chunk boundaries are irrelevant: 512-byte and 7-byte replays plan deeply equal", async () => {
