@@ -9,7 +9,7 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { GUUEY_DEFAULT_SYSTEM_PROMPT } from "@guuey/config";
 import type { Emitter, JsonValue, StopReason } from "@guuey/worker";
 import { assertGracefulSupport, loadRunner, type HostSnapshot, type HostTurn } from "../index.js";
@@ -392,9 +392,25 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
 const REAL_ADK_BUDGET_MS = 60_000;
 
 describe("armed-env (spec §2.1.6): the REAL @google/adk reads the pod's gemini pair", () => {
-  afterEach(() => {
-    delete process.env.GEMINI_API_KEY;
-    delete process.env.GOOGLE_GENAI_API_KEY;
+  // The ADK resolves `GOOGLE_GENAI_API_KEY || GOOGLE_API_KEY || GEMINI_API_KEY`
+  // (adk 2.0.0 dist). A developer shell carrying a real GOOGLE_API_KEY would
+  // otherwise win the slot, red the case, AND print the key in the assertion
+  // diff (guuey#1310) — so every case starts from a cleared trio and the
+  // shell's own values come back afterwards.
+  const ADK_KEY_VARS = ["GOOGLE_GENAI_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY"] as const;
+  const shellKeys = new Map<(typeof ADK_KEY_VARS)[number], string | undefined>();
+  beforeAll(() => {
+    for (const name of ADK_KEY_VARS) shellKeys.set(name, process.env[name]);
+  });
+  beforeEach(() => {
+    for (const name of ADK_KEY_VARS) delete process.env[name];
+  });
+  afterAll(() => {
+    for (const name of ADK_KEY_VARS) {
+      const shellValue = shellKeys.get(name);
+      if (shellValue === undefined) delete process.env[name];
+      else process.env[name] = shellValue;
+    }
   });
 
   it("Gemini picks GEMINI_API_KEY from env (the buildWorkerEnv keySlot)", { timeout: REAL_ADK_BUDGET_MS }, async () => {

@@ -33,7 +33,8 @@
  *    channel).
  *  - **Gemini arming is the documented env pair.** `@google/genai` reads
  *    `GOOGLE_GEMINI_BASE_URL` (verified: getBaseUrl in genai 1.52) and the
- *    ADK's GoogleLlm reads `GOOGLE_GENAI_API_KEY || GEMINI_API_KEY` — the
+ *    ADK's Gemini reads `GOOGLE_GENAI_API_KEY || GOOGLE_API_KEY || GEMINI_API_KEY`
+ *    (adk 2.0.0 dist; guuey#1310) — the
  *    Router's `buildWorkerEnv` gemini arm injects exactly `GEMINI_API_KEY` +
  *    `GOOGLE_GEMINI_BASE_URL`. ADK 1.3.0 exposes no programmatic
  *    httpOptions path, so env IS the sanctioned channel here.
