@@ -214,8 +214,20 @@ const BRACE_PREAMBLE = withContextPreamble(
   undefined,
 );
 
+/**
+ * Every case below constructs or imports the REAL `@google/adk` (an
+ * LlmAgent over a fake LLM, a copied SDK tree, the StreamingMode enum) — a
+ * heavyweight module graph: milliseconds once warm, but seconds on the FIRST
+ * construction of a run, and more on the 2-vCPU `Unit (oss)` runner under
+ * turbo fan-out or on a loaded developer machine, where vitest's 5 s default
+ * reported it as a failure (guuey#1320; the same #864/#867 budget the sibling
+ * `google-adk.nocode.test.ts` carries). The budget is not a retry: a case
+ * that genuinely hangs still fails, one minute later.
+ */
+const REAL_ADK_BUDGET_MS = 60_000;
+
 describe("F7 — instruction as function bypasses ADK's {var} substitution (real SDK)", () => {
-  it("STRING instruction throws Context-variable-not-found on {anything} user content (RED)", async () => {
+  it("STRING instruction throws Context-variable-not-found on {anything} user content (RED)", { timeout: REAL_ADK_BUDGET_MS }, async () => {
     const agent = await buildRealAgentWithInstruction(BRACE_PREAMBLE);
     const adk = await loadAdk();
     const { emit, got } = fakeEmitter();
@@ -225,7 +237,7 @@ describe("F7 — instruction as function bypasses ADK's {var} substitution (real
     expect(got.done).toHaveLength(0);
   });
 
-  it("FUNCTION instruction survives the same {anything} user content (GREEN)", async () => {
+  it("FUNCTION instruction survives the same {anything} user content (GREEN)", { timeout: REAL_ADK_BUDGET_MS }, async () => {
     const agent = await buildRealAgentWithInstruction(() => BRACE_PREAMBLE);
     const adk = await loadAdk();
     const { emit, got } = fakeEmitter();
@@ -255,7 +267,7 @@ describe("loadAdk — resolution order", () => {
   const base = mkdtempSync(join(tmpdir(), "adk-copy-test-"));
   afterAll(() => rmSync(base, { recursive: true, force: true }));
 
-  it("with an entryPath, resolves @google/adk from the ENTRY's own tree (the dev's copy wins)", async () => {
+  it("with an entryPath, resolves @google/adk from the ENTRY's own tree (the dev's copy wins)", { timeout: REAL_ADK_BUDGET_MS }, async () => {
     // A fake worker tree: /worker/agent.js + /worker/node_modules/@google/adk
     const worker = join(base, "worker");
     const adkDir = join(worker, "node_modules", "@google", "adk");
@@ -271,7 +283,7 @@ describe("loadAdk — resolution order", () => {
     expect(mod.COPY_MARKER).toBe("dev-tree-copy");
   });
 
-  it("with an entryPath whose tree cannot resolve the SDK, fails with the actionable missing-peer error", async () => {
+  it("with an entryPath whose tree cannot resolve the SDK, fails with the actionable missing-peer error", { timeout: REAL_ADK_BUDGET_MS }, async () => {
     // A deterministic unresolvable: the package EXISTS but its exports map
     // points at a missing file — a FINAL resolution error under plain node
     // AND under vitest (whose resolver adds an ambient workspace fallback for
@@ -291,7 +303,7 @@ describe("loadAdk — resolution order", () => {
 // ── the enum value the structural slice relies on ────────────────────────────
 
 describe("StreamingMode.SSE is the string the structural slice passes (guuey#657)", () => {
-  it('the installed @google/adk agrees: StreamingMode.SSE === "sse" (bites if a future ADK renames the value)', async () => {
+  it('the installed @google/adk agrees: StreamingMode.SSE === "sse" (bites if a future ADK renames the value)', { timeout: REAL_ADK_BUDGET_MS }, async () => {
     // The runner's structural slice passes the literal "sse" and never
     // imports the enum; this pin reads the REAL enum from the installed
     // SDK so a renamed value turns red here instead of at the first turn.
