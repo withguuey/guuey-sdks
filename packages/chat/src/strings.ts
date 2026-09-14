@@ -11,6 +11,7 @@
  * freezes the voice).
  */
 import type { PreGenerationRefusal } from "@guuey/mcp-apps-host";
+import { isGguiProtocolTool } from "./listen.js";
 
 export interface ChatStrings {
   /** R12 escalation ladder (spec §4.2). */
@@ -19,6 +20,14 @@ export interface ChatStrings {
   longStart: string;
   thinking: string;
   usingTool: (toolTitle: string) => string;
+  /**
+   * guuey#1279 — the status while a ggui PROTOCOL tool is in flight
+   * (handshake/render/consume). The status line never names a rail tool:
+   * `usingTool` would read "Using Rendering card…" at best and "Using ggui
+   * render…" at worst, so the protocol case gets its own product sentence
+   * instead of narrating the lifecycle.
+   */
+  preparingCard: string;
   /** R1 aborted-partial marker + §4.2 aborted line. */
   stopped: string;
 
@@ -207,12 +216,36 @@ const GGUI_RAIL_TITLES: Record<string, string> = {
   ggui_update: "Updating card",
 };
 
+/**
+ * guuey#1279 — the title a rail tool the kit has NOT learned yet renders as.
+ * The rail's vocabulary is machinery; a tool missing from
+ * {@link GGUI_RAIL_TITLES} still gets product words, never `ggui_<verb>`.
+ */
+const GGUI_UNNAMED_RAIL_TITLE = "Preparing interactive card";
+
+/** MCP wire shape: `mcp__<server>__<tool>` (double-underscore separators). */
+const MCP_WIRE_NAME = /^mcp__([^_].*?)__(.+)$/;
+
+/** The bare tool behind a wire name: `mcp__ggui__ggui_render` → `ggui_render`. */
+function bareToolName(wireName: string): string {
+  const mcp = MCP_WIRE_NAME.exec(wireName);
+  return mcp ? mcp[2] : wireName;
+}
+
 export function humanizeToolName(wireName: string): string {
-  // MCP wire shape: `mcp__<server>__<tool>` (double-underscore separators).
-  const mcp = /^mcp__([^_].*?)__(.+)$/.exec(wireName);
+  // guuey#1279 — protocol FIRST, and keyed on the BARE name, so the wire shape
+  // never decides whether chrome reads as product or as machinery. The old
+  // order only caught `mcp__ggui__`-prefixed names that were ALSO in the map:
+  // bare `ggui_render`, and any rail tool the map had not learned, fell
+  // through to the generic humanizer and reached chrome as "ggui render" —
+  // the status line said "Using ggui render…". An unmapped rail tool now
+  // resolves to product words instead of ever exposing its wire name.
+  if (isGguiProtocolTool(wireName)) {
+    return GGUI_RAIL_TITLES[bareToolName(wireName)] ?? GGUI_UNNAMED_RAIL_TITLE;
+  }
+  const mcp = MCP_WIRE_NAME.exec(wireName);
   if (mcp) {
     const [, server, tool] = mcp;
-    if (server === "ggui" && GGUI_RAIL_TITLES[tool]) return GGUI_RAIL_TITLES[tool];
     const prettyServer = server.charAt(0).toUpperCase() + server.slice(1).replace(/[_-]+/g, " ");
     const prettyTool = tool.replace(/[_-]+/g, " ").trim();
     return `${prettyServer} · ${prettyTool}`;
@@ -226,6 +259,7 @@ export const defaultChatStrings: ChatStrings = {
   longStart: "Starting your agent… first load can take a minute",
   thinking: "Thinking…",
   usingTool: (toolTitle) => `Using ${toolTitle}…`,
+  preparingCard: "Preparing interactive card…",
   stopped: "Stopped.",
 
   errorAuth: "Sign in to continue.",

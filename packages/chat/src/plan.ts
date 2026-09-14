@@ -771,6 +771,17 @@ function deriveStatus(inputs: TranscriptInputs, policy: TranscriptPolicy): Statu
     case "thinking":
       return { kind: "status", key: "status", state: "thinking", copy: s.thinking, detail };
     case "using-tool": {
+      // guuey#1279 — BY CONSTRUCTION, not by filter: a ggui protocol tool
+      // never reaches `policy.tool.humanizeTitle` here at all. That hook is
+      // HOST-OVERRIDABLE, so a host humanizer returning the wire name would
+      // otherwise put "ggui render" in the status line — the one piece of
+      // chrome `showToolRows` never covered (it filters tool ROWS; the status
+      // line is always visible). Routing the protocol case around the hook is
+      // what makes the rule structural: there is no humanizer, host-supplied
+      // or not, that can name a lifecycle step here.
+      if (isGguiProtocolTool(inputs.activeTool ?? null)) {
+        return { kind: "status", key: "status", state: "using-tool", copy: s.preparingCard, detail };
+      }
       const title = policy.tool.humanizeTitle(inputs.activeTool ?? "");
       return { kind: "status", key: "status", state: "using-tool", copy: s.usingTool(title), detail };
     }
