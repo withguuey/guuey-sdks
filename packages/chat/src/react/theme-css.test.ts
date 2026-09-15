@@ -22,7 +22,15 @@ const THEMED_TOKENS: ReadonlySet<string> = new Set(
     themeCssVars(
       {
         ...GUUEY_CHAT_THEME,
-        typography: { fontFamily: "Inter", monoFontFamily: "JetBrains Mono" },
+        typography: {
+          fontFamily: "Inter",
+          monoFontFamily: "JetBrains Mono",
+          // guuey#1280 — without this the display face is emitted but NOT
+          // linted: the token set below is built from what `themeCssVars`
+          // returns for THIS theme, so an optional token missing here is a
+          // token the two-channel rule never checks.
+          headingFontFamily: "Newsreader",
+        },
       },
       "light",
     ),
@@ -93,5 +101,41 @@ describe("the header slot's chrome is styled by the sheet (guuey#1150 — so the
     for (const cls of ["guuey-chat-header", "guuey-chat-header-title", "guuey-chat-header-actions", "guuey-chat-header-close"]) {
       expect(STYLESHEET, `styles.css has no .${cls} rule`).toMatch(new RegExp(`^\\.${cls}\\s*\\{`, "m"));
     }
+  });
+});
+
+describe("guuey#1280 — the display face reaches the web renderer", () => {
+  it("is projected when the theme states one", () => {
+    const vars = themeCssVars(
+      { ...GUUEY_CHAT_THEME, typography: { headingFontFamily: "Newsreader" } },
+      "light",
+    );
+    expect(vars["--_guuey-chat-heading-font"]).toBe("Newsreader");
+  });
+
+  it("is ABSENT when the theme states none — headings keep inheriting the body face", () => {
+    // The N-1 half: a theme with no heading family must stamp no token, so the
+    // rule falls through to `inherit` and renders byte-identically to before.
+    const vars = themeCssVars({ ...GUUEY_CHAT_THEME, typography: {} }, "light");
+    expect("--_guuey-chat-heading-font" in vars).toBe(false);
+  });
+
+  it("is independent of the body face — heading differs from body on 6 of 8 real hosts", () => {
+    const vars = themeCssVars(
+      {
+        ...GUUEY_CHAT_THEME,
+        typography: { fontFamily: "Archivo", headingFontFamily: "Newsreader" },
+      },
+      "light",
+    );
+    expect(vars["--_guuey-chat-font"]).toBe("Archivo");
+    expect(vars["--_guuey-chat-heading-font"]).toBe("Newsreader");
+  });
+
+  it("the heading rule reads BOTH channels, host override first", () => {
+    const css = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
+    expect(css).toContain(
+      "var(--guuey-chat-heading-font, var(--_guuey-chat-heading-font, inherit))",
+    );
   });
 });

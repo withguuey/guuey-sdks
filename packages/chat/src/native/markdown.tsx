@@ -136,7 +136,9 @@ function BlockView({
           style={{
             color,
             fontSize: tokens.fontSize + (block.level <= 3 ? 2 : 0),
-            fontFamily: tokens.fontFamily,
+            // guuey#1280: the display face when the theme states one; the body
+            // face otherwise, which is byte-identical to the previous render.
+            fontFamily: tokens.headingFontFamily ?? tokens.fontFamily,
             fontWeight: "700",
           }}
         >

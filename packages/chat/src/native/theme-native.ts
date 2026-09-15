@@ -21,6 +21,12 @@ export interface NativeChatTokens {
   /** typography — undefined means the platform default font. */
   fontFamily: string | undefined;
   monoFontFamily: string | undefined;
+  /**
+   * guuey#1280 — the DISPLAY face. `undefined` means "no distinct heading
+   * family stated", and a heading then renders in `fontFamily` exactly as
+   * before; the web fallback chain says the same thing with `inherit`.
+   */
+  headingFontFamily: string | undefined;
   /** Base body size in sp, typography.scale applied (default 15). */
   fontSize: number;
 }
@@ -43,6 +49,7 @@ export function resolveNativeTheme(theme: GuueyChatTheme, mode: NativeThemeMode)
     gap: comfortable ? 10 : 6,
     fontFamily: resolved.typography.fontFamily,
     monoFontFamily: resolved.typography.monoFontFamily,
+    headingFontFamily: resolved.typography.headingFontFamily,
     fontSize: Math.round(15 * (resolved.typography.scale ?? 1)),
   };
 }

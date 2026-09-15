@@ -59,5 +59,13 @@ export function themeCssVars(theme: GuueyChatTheme, mode: ThemeMode): Record<str
   if (theme.typography.monoFontFamily !== undefined) {
     vars["--_guuey-chat-mono-font"] = theme.typography.monoFontFamily;
   }
+  // guuey#1280: the DISPLAY face. Declared on the theme since the type roles
+  // landed and consumed nowhere on the web until now, so a theme stating a
+  // heading family had it silently dropped and headings inherited the body
+  // font. Heading and body differ on 6 of the 8 real host pages landing
+  // sampled for the harvest fixture, so this is the common case, not an edge.
+  if (theme.typography.headingFontFamily !== undefined) {
+    vars["--_guuey-chat-heading-font"] = theme.typography.headingFontFamily;
+  }
   return vars;
 }

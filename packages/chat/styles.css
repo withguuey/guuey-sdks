@@ -218,6 +218,10 @@
 }
 .guuey-chat-heading {
   font-weight: 600;
+  /* guuey#1280: the theme's display face. `inherit` as the final fallback so a
+     theme that states no heading family renders byte-identically to before —
+     headings keep inheriting the body font. */
+  font-family: var(--guuey-chat-heading-font, var(--_guuey-chat-heading-font, inherit));
 }
 .guuey-chat-heading-major {
   font-size: 1.1em;
