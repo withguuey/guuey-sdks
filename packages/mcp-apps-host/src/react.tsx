@@ -38,6 +38,7 @@ import { attachSandboxPageDelivery } from "./sandbox-page.js";
 import { decideAutoResize, initialAutoResizeState, type AutoResizeState } from "./auto-resize.js";
 import type { ViewCspDiagnosis, ViewHostPhase } from "./view-host-protocol.js";
 import type { ResolvedViewMount } from "./card-mount.js";
+import { defaultViewHostStrings, type ViewHostStrings } from "./view-strings.js";
 
 export { attachViewHost, viewDocumentHtml } from "./view-host.js";
 export type { AttachViewHostConfig, ViewCspEvents, ViewFrameLike, ViewHostEvents } from "./view-host.js";
@@ -50,6 +51,8 @@ export {
 } from "./sandbox-page.js";
 export type { ViewCspDiagnosis, ViewCspOrigins, ViewHostPhase } from "./view-host-protocol.js";
 export type { ResolvedViewMount, ViewMount, ViewMountChannel } from "./card-mount.js";
+export { defaultViewHostStrings } from "./view-strings.js";
+export type { ViewHostStrings } from "./view-strings.js";
 
 /** Accessible name for a mounted view when the caller has nothing better. */
 const DEFAULT_TITLE = "Generated view";
@@ -131,15 +134,23 @@ export interface GuueyViewProps
   onPhaseChange?: (phase: ViewHostPhase) => void;
   /**
    * Replace the default status/failure line for a phase. Return `null` for
-   * "render nothing". The default: a quiet "Negotiating with view…" line
-   * while `"negotiating"`; a labeled failure for `"no-handshake"` on the
+   * "render nothing". The default: a quiet loading line while
+   * `"negotiating"`; a labeled failure for `"no-handshake"` on the
    * `"ggui"` channel; nothing once `"connected"` (the view owns its
    * pixels) and nothing for a silent `"inline"` card. The second argument
    * is the CSP diagnosis when the tripwire caught one (see
    * {@link AttachViewHostConfig.cspOrigins}) — the default label folds it
    * in; a custom renderer decides how to show it.
+   *
+   * To change only the WORDS, prefer {@link GuueyViewProps.strings}: this
+   * hook makes a host reimplement the CSP/channel branching to do it.
    */
   renderStatus?: (phase: ViewHostPhase, diagnosis?: ViewCspDiagnosis) => ReactNode;
+  /**
+   * Override the default status line's copy (guuey#1325). Merged over
+   * {@link defaultViewHostStrings}, so a partial override is enough.
+   */
+  strings?: Partial<ViewHostStrings>;
 }
 
 const statusLineStyle: CSSProperties = {
@@ -158,9 +169,12 @@ function defaultStatus(
   phase: ViewHostPhase,
   channel: ResolvedViewMount["channel"],
   diagnosis: ViewCspDiagnosis | undefined,
+  strings: ViewHostStrings,
 ): ReactNode {
   if (phase === "negotiating") {
-    return <p style={statusLineStyle}>Negotiating with view…</p>;
+    // guuey#1279/#1325: the copy says what the PERSON is waiting for. The
+    // phase name is machinery and never reaches the frame.
+    return <p style={statusLineStyle}>{strings.viewLoading}</p>;
   }
   // A CSP diagnosis (guuey#235) is the WHY behind a silent frame — on any
   // channel: a blocked runtime bundle never gets to negotiate, so the
@@ -176,10 +190,11 @@ function defaultStatus(
   if (phase === "no-handshake" && channel === "ggui") {
     // A ggui shell negotiates unconditionally before painting, so silence
     // here is a boot failure with no other author — label it (role=alert
-    // so it is announced, not just drawn).
+    // so it is announced, not just drawn). The label states the OUTCOME the
+    // person sees; the handshake that did not happen is machinery.
     return (
       <p role="alert" style={{ ...statusLineStyle, opacity: 1, pointerEvents: "auto" }}>
-        This view did not start — it never negotiated with the host.
+        {strings.viewBootFailure}
       </p>
     );
   }
@@ -203,8 +218,12 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
     style,
     onPhaseChange,
     renderStatus,
+    strings: stringOverrides,
     ...hostConfig
   } = props;
+  // Read only during render (no effect depends on it), so a plain spread is
+  // correct — no identity churn to guard against.
+  const viewStrings: ViewHostStrings = { ...defaultViewHostStrings, ...stringOverrides };
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [phase, setPhase] = useState<ViewHostPhase>("negotiating");
   // The CSP tripwire's verdict for THIS document, if any (guuey#235).
@@ -365,7 +384,7 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
       />
       {renderStatus !== undefined
         ? renderStatus(phase, diagnosis)
-        : defaultStatus(phase, mount.channel, diagnosis)}
+        : defaultStatus(phase, mount.channel, diagnosis, viewStrings)}
     </div>
   );
 }

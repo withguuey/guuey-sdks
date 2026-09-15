@@ -14,6 +14,9 @@
  * is host-overridable, so the guard must hold even when a host supplies a
  * humanizer that returns the wire name verbatim.
  */
+import { readFileSync, readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { AgReduceResult } from "@silverprotocol/core";
 import { planTranscript } from "./plan.js";
@@ -117,5 +120,55 @@ describe("guuey#1279 — BY CONSTRUCTION: a leaky host humanizer cannot defeat i
   it("the leaky humanizer IS still honoured for non-rail tools", () => {
     // Proves the bypass is scoped to the rail, not a silent override of the hook.
     expect(statusCopy("get_weather", leaky)).toBe("Using get_weather…");
+  });
+});
+
+describe("guuey#1325 — no @guuey/chat source renders machinery as prose", () => {
+  // The TWIN of `view-chrome-vocabulary.test.ts` in `@guuey/mcp-apps-host`.
+  //
+  // #1279's guard asserted BEHAVIOUR (what the planner emits), which is the
+  // stronger check but only reaches code a test drives. The sibling package
+  // shipped a hardcoded literal in a component no test rendered, and the rule
+  // did not catch it (guuey#1325). Behaviour + source together are what make
+  // the rule hold; each package scans its own sources, so neither test
+  // reaches across a package boundary to do it.
+  //
+  // COVERAGE, stated so the next gap is visible: this walks `@guuey/chat/src`.
+  // `@guuey/mcp-apps-host` carries the same scan over its own sources. App
+  // chrome (`apps/*`) is covered by NEITHER and would need its own.
+  const SRC_DIR = dirname(fileURLToPath(import.meta.url));
+
+  function sourceFiles(dir: string): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const full = join(dir, e.name);
+      if (e.isDirectory()) return e.name === "corpus" ? [] : sourceFiles(full);
+      const isSource = (e.name.endsWith(".ts") || e.name.endsWith(".tsx")) && !e.name.includes(".test.");
+      return isSource ? [full] : [];
+    });
+  }
+
+  const stripComments = (src: string): string =>
+    src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+
+  /**
+   * A run of two or more natural WORDS — a sentence a person reads, not code.
+   * Every token must look like a word (`Negotiating`, `host.`) or be a dash;
+   * that is what rejects `const GGUI_RAIL_TITLES`, `return s.viewNegotiating`
+   * and the className `guuey-chat-view-negotiating`, which are all code that
+   * legitimately names the protocol.
+   */
+  const WORD = /^[A-Za-z][a-z'\u2019]*[.,!?\u2026]?$/;
+  const DASH = /^[\u2014\u2013-]$/;
+  const proseRuns = (src: string): string[] =>
+    (src.match(/[A-Za-z'\u2019]+(?: [A-Za-z'\u2019\u2026,.\u2014\u2013-]+)+/g) ?? []).filter((run) => {
+      const tokens = run.split(" ");
+      return tokens.length >= 2 && tokens.every((t) => WORD.test(t) || DASH.test(t));
+    });
+
+  it.each(sourceFiles(SRC_DIR))("%s", (file) => {
+    const offenders = proseRuns(stripComments(readFileSync(file, "utf8"))).filter((run) =>
+      PROTOCOL_VOCABULARY.test(run),
+    );
+    expect(offenders).toEqual([]);
   });
 });
