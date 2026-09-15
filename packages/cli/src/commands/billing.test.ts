@@ -4,6 +4,7 @@
  * guard for these mirrors lives in `wire-sync.test.ts` beside the others.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { MockInstance } from 'vitest';
 import type { AuthTokens } from '../auth';
 import type { ResolvedConfig } from '../config';
 import {
@@ -458,7 +459,8 @@ describe('invoicing (guuey#831)', () => {
     invoicesTruncated: true,
     paymentMethods: null,
   };
-  const output = (spy: ReturnType<typeof vi.spyOn>) =>
+  // `MockInstance<typeof console.log>`: vitest 4's `ReturnType<typeof vi.spyOn>` lost the call shape (guuey#1190).
+  const output = (spy: MockInstance<typeof console.log>) =>
     spy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
 
   it('row helpers: a purged app reads "(deleted app)", a numberless invoice falls back to its id, a linkless one to —', () => {
