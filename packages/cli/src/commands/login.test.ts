@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Mock } from 'vitest';
 import { PassThrough } from 'node:stream';
 import {
   maskToken,
@@ -149,9 +150,9 @@ describe('waitForPastedToken — echo mute + masked confirm + EOF (guuey#255)', 
   });
 
   /** A PassThrough dressed as a TTY so readline takes the terminal path. */
-  function fakeTty(): { input: PassThrough; setRawMode: ReturnType<typeof vi.fn> } {
+  function fakeTty(): { input: PassThrough; setRawMode: Mock<NodeJS.ReadStream['setRawMode']> } {
     const input = new PassThrough();
-    const setRawMode = vi.fn();
+    const setRawMode = vi.fn<NodeJS.ReadStream['setRawMode']>();
     Object.assign(input, { isTTY: true, setRawMode });
     return { input, setRawMode };
   }
