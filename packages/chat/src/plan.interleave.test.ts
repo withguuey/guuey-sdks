@@ -172,3 +172,41 @@ describe("guuey#1333 — the N-1 fallback: an assembler that stamps nothing", ()
     ]);
   });
 });
+
+describe("guuey#1333 — a REHYDRATED session containing a welcome card", () => {
+  // The question main raised, and it is the fallback arm's blind spot: a
+  // bound hello (#1183's bootstrap door) is a PLATFORM feature, so any app
+  // carrying one is count-mismatched from its first exchange. That same
+  // welcome card is in the HISTORY after a reload — and rehydrated rows carry
+  // no `precedingTurnCount`, so the planner takes the index-pairing fallback.
+  // If that fallback mis-pairs, the fix repairs the path he reported and
+  // leaves the path he hits next, while testing green.
+  //
+  // The rehydrated shape: `messages` carries BOTH roles (the read plane
+  // replays the whole conversation) and there is no live fold.
+  const rehydrated: TranscriptMessage[] = [
+    { role: "assistant", text: WELCOME, seq: 1 },
+    { role: "user", text: "hey", seq: 2 },
+    { role: "assistant", text: ANSWER, seq: 3 },
+  ];
+
+  function planFlat(messages: readonly TranscriptMessage[]): DisplayItem[] {
+    return planTranscript(
+      {
+        result: null,
+        assistantText: "",
+        status: "ready",
+        statusElapsedMs: 0,
+        activeTool: null,
+        error: null,
+        prompts: [],
+        messages: [...messages],
+      },
+      calmPolicy(),
+    ).items;
+  }
+
+  it("renders the reloaded transcript in the order it happened", () => {
+    expect(textOf(planFlat(rehydrated))).toEqual([WELCOME, "hey", ANSWER]);
+  });
+});

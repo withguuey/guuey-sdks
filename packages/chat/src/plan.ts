@@ -214,8 +214,26 @@ function foldAssistantSources(
  * later user bubble by one). Shared by the flat path and the fold-vs-flat
  * seam, so both count the same slots.
  */
-function flatSettledGroups(messages: TranscriptInputs["messages"]): AssistantSource[] {
+/**
+ * The settled flat groups AND, from the SAME walk, how many groups already
+ * existed when each user row was seen (guuey#1333). Deriving the order here
+ * rather than in a second pass is deliberate: a separate walk could drift
+ * from the grouping rules below (notably guuey#1101's empty slot), and a
+ * drifted order is a mis-pairing that tests green.
+ *
+ * This is the REHYDRATED path's interleave key. A reloaded session carries
+ * both roles in `messages` in order, so the chronology is already present —
+ * it needs no assembler stamp and no wire change. Without it a reloaded
+ * session containing a bound hello (#1183's bootstrap door — a platform
+ * feature, so ANY app carrying one is count-mismatched from its first
+ * exchange) rendered `hey / welcome card`, the same face as the live bug.
+ */
+function flatSettledGroups(messages: TranscriptInputs["messages"]): {
+  groups: AssistantSource[];
+  userOrder: number[];
+} {
   const groups: AssistantSource[] = [];
+  const userOrder: number[] = [];
   let current: AssistantSource | null = null;
   // A user row seen with no assistant row after it yet.
   let openUserTurn = false;
@@ -230,6 +248,7 @@ function flatSettledGroups(messages: TranscriptInputs["messages"]): AssistantSou
       // user turn is left open on purpose: its assistant is the in-flight or
       // abort-kept partial that `flatAssistantSources` appends.
       if (openUserTurn) groups.push({ blocks: [], live: false, stopped: false });
+      userOrder.push(groups.length);
       current = null;
       openUserTurn = true;
     } else if (m.role === "assistant") {
@@ -241,11 +260,11 @@ function flatSettledGroups(messages: TranscriptInputs["messages"]): AssistantSou
       openUserTurn = false;
     }
   }
-  return groups;
+  return { groups, userOrder };
 }
 
 function flatAssistantSources(inputs: TranscriptInputs, inFlight: boolean): AssistantSource[] {
-  const settled: AssistantSource[] = flatSettledGroups(inputs.messages);
+  const settled: AssistantSource[] = flatSettledGroups(inputs.messages).groups;
   // The in-flight (or abort-kept) partial is its own trailing slot — settled
   // turns live in `messages`; `assistantText` is ignored once `ready` again
   // UNLESS the turn ended by abort (R1 aborted-partial keeps it).
@@ -887,7 +906,7 @@ export function planTranscript(
   if (inputs.result) {
     const fold = foldAssistantSources(inputs.result, inFlight, inputs.aborted === true);
     const foldSources = fold.sources;
-    const flatGroups = flatSettledGroups(inputs.messages);
+    const flatGroups = flatSettledGroups(inputs.messages).groups;
     // The turns the fold covers: its sources, plus the in-flight turn when
     // no frame of it has arrived yet (a source appears with the first
     // frame). `users` includes the optimistic row of that turn, so the
@@ -921,9 +940,20 @@ export function planTranscript(
    * across the npm boundary), `order` is null and the loop below keeps the
    * previous index pairing byte-for-byte.
    */
-  const order: readonly number[] | null = users.some((u) => u.precedingTurnCount !== undefined)
-    ? users.map((u, i) => u.precedingTurnCount ?? i)
-    : null;
+  const flatUserOrder = flatSettledGroups(inputs.messages).userOrder;
+  const stamped = users.some((u) => u.precedingTurnCount !== undefined);
+  const order: readonly number[] | null =
+    stamped || flatUserOrder.length === users.length
+      ? users.map((u, i) =>
+          // A LIVE row's stamp counts FOLD turns, which sit after the settled
+          // prefix in `assistants` — so it is offset by the seam. A rehydrated
+          // row has no stamp and its position is already a count of flat
+          // groups, which ARE the prefix. Both land in one comparable space.
+          u.precedingTurnCount !== undefined
+            ? foldSeam + u.precedingTurnCount
+            : (flatUserOrder[i] ?? i),
+        )
+      : null;
   const conversation: DisplayItem[] = [];
   const noticeItem = (n: (typeof notices)[number]): NoticeItem => ({
     kind: "notice",
@@ -970,18 +1000,18 @@ export function planTranscript(
   // The prefix pairs positionally (its users are already beside their own
   // settled turns); the merge takes over at the seam and counts FOLD TURNS,
   // which is what the assembler counted when it stamped the field.
-  let nextUser = order === null ? 0 : foldSeam;
-  /** Every user row that preceded fold turn `turnIndex`, in order. */
-  const emitUsersBefore = (turnIndex: number): void => {
-    while (nextUser < users.length && (order?.[nextUser] ?? nextUser) <= turnIndex) {
+  let nextUser = 0;
+  /** Every user row that preceded the source at `slot`, in order. */
+  const emitUsersBefore = (slot: number): void => {
+    while (nextUser < users.length && (order?.[nextUser] ?? nextUser) <= slot) {
       pushUser(nextUser);
       nextUser++;
     }
   };
 
   for (let slot = 0; slot < slots; slot++) {
-    if (order === null || slot < foldSeam) pushUser(slot);
-    else emitUsersBefore(slot - foldSeam);
+    if (order === null) pushUser(slot);
+    else emitUsersBefore(slot);
     const assistant = assistants[slot];
     if (assistant) {
       conversation.push(...planAssistantSource(assistant, slot, inputs, policy, overrides));
