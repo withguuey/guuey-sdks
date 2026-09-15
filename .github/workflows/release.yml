@@ -92,6 +92,9 @@ jobs:
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm test
+      - name: "Declared node: types (guuey#1406 — the mirror installs oss/ standalone)"
+        run: pnpm check:node-types
+
       - name: Plain-Node ESM import smoke (guuey#153 — every exports arm under bare node)
         run: pnpm check:esm
       - name: Scaffold smoke (template x framework matrix scaffolds + builds clean)
