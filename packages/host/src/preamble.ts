@@ -456,6 +456,26 @@ export function renderSurfaceSection(
  *    plain-text court (SMS, voice) that has opted out of markdown cannot
  *    show a card either, so it must not be told to draw one.
  *
+ * The beside-text is BOUNDED, not removed (guuey#1328). The prose exists on
+ * purpose — the preamble's own reason is that some surfaces show only text —
+ * but "keep a line or two" is a FLOOR with no ceiling and no stated job, and
+ * on a rich answer the model wrote a full prose restatement of the card: QA
+ * measured 871 / 222 / 435 characters beside the card across three prod runs
+ * of the docs Helper, and the 871-char run pushed the card entirely above the
+ * fold, so a working card read as absent. One sentence gives the text a job
+ * (a lead-in) and a ceiling (two short sentences), and forbids the specific
+ * failure (restating the card's own rows in prose).
+ *
+ * MEASURED before shipping, not argued (the sentence below is the exact string
+ * that was measured): 15 paired runs per arm on `claude-sonnet-5` — the hosted
+ * default — same builder prompt, same wrapper, same `ggui_render` tool, same
+ * three shaped questions, differing ONLY in this sentence. Beside-text length
+ * median 313 -> 137 chars and max 615 -> 227; runs over 400 chars 5/15 -> 0/15;
+ * the fraction of the card's own content words repeated in the prose 0.30 ->
+ * 0.09. Both arms drew a card in 15/15 and NEITHER produced an empty prose
+ * turn, which is the guard that matters: a bound that silences the text would
+ * break the text-only surfaces the clause exists for.
+ *
  * The tool is named by its BARE name (`ggui_render`): the SDK namespaces
  * MCP tools `mcp__<serverKey>__<tool>` and the ggui server key is the
  * builder's to rename, so the bare name is the only spelling that is true
@@ -471,6 +491,9 @@ export const GENERATIVE_UI_SECTION =
   `price list, a schedule, a set of options, a comparison, a form to fill in, ` +
   `an order or booking to confirm — draw it with \`ggui_render\` rather than ` +
   `writing a markdown table, and keep a line or two of plain text beside it. ` +
+  `That text is a lead-in, not a second copy: at most two short sentences ` +
+  `saying what you drew and what to do next — never the card's own rows, ` +
+  `figures, or options restated in prose. ` +
   `Prose stays prose: one-line answers, a yes or no, a clarifying question, an ` +
   `explanation. Follow the ggui tools' own descriptions for how to render and ` +
   `update, and put only data you actually have on a card — never invent rows ` +

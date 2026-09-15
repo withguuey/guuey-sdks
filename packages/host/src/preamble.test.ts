@@ -339,6 +339,9 @@ describe("renderGenerativeUiSection — when a card beats prose (guuey#630)", ()
         `price list, a schedule, a set of options, a comparison, a form to fill in, ` +
         `an order or booking to confirm — draw it with \`ggui_render\` rather than ` +
         `writing a markdown table, and keep a line or two of plain text beside it. ` +
+        `That text is a lead-in, not a second copy: at most two short sentences ` +
+        `saying what you drew and what to do next — never the card's own rows, ` +
+        `figures, or options restated in prose. ` +
         `Prose stays prose: one-line answers, a yes or no, a clarifying question, an ` +
         `explanation. Follow the ggui tools' own descriptions for how to render and ` +
         `update, and put only data you actually have on a card — never invent rows ` +
@@ -353,6 +356,28 @@ describe("renderGenerativeUiSection — when a card beats prose (guuey#630)", ()
     expect(GENERATIVE_UI_SECTION).toContain("rather than writing a markdown table");
     expect(GENERATIVE_UI_SECTION).toContain("Prose stays prose");
     expect(GENERATIVE_UI_SECTION).toContain("never invent rows");
+  });
+
+  it("guuey#1328 — the beside-text is BOUNDED, and the bound sits next to what it bounds", () => {
+    // NOT a second copy of the byte pin above (that already fixes every
+    // character). This pins the DECISION, which is the thing a later edit can
+    // undo while still passing a re-pinned byte test:
+    //
+    //  1. BOUND, NOT REMOVED. The obvious "fix" for guuey#1328 is to stop
+    //     asking for prose at all. That would break the surfaces the clause
+    //     exists for — the preamble keeps text beside the card on purpose
+    //     because some clients show only text. The floor must survive.
+    //  2. ADJACENT. "That text" has no referent unless it follows the clause
+    //     that introduces the text. Reordering the sentences (a reflow, a
+    //     paragraph split) leaves both strings present and the instruction
+    //     meaningless, which no `toContain` on either alone would catch.
+    const floor = "keep a line or two of plain text beside it. ";
+    const bound = "That text is a lead-in, not a second copy:";
+    expect(GENERATIVE_UI_SECTION).toContain(floor);
+    expect(GENERATIVE_UI_SECTION).toContain(bound);
+    expect(GENERATIVE_UI_SECTION.indexOf(bound)).toBe(
+      GENERATIVE_UI_SECTION.indexOf(floor) + floor.length,
+    );
   });
 });
 
