@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { toPortableBlueprint } from '@ggui-ai/protocol/blueprint-key';
 import type { DataContract } from '@ggui-ai/protocol';
 import { compileBlueprintTsx, compileProjectBlueprints } from './ggui-blueprints.js';
@@ -68,7 +68,7 @@ describe('compileBlueprintTsx', () => {
 
 describe('compileProjectBlueprints', () => {
   let dir: string;
-  let warnSpy: ReturnType<typeof vi.spyOn>;
+  let warnSpy: MockInstance<typeof console.warn>;
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'ggui-blueprints-test-'));
