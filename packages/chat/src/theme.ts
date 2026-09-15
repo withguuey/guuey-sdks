@@ -100,7 +100,17 @@ export const GuueyChatTheme = z
         monoFontFamily: z.string().optional(),
         /** Display face (ggui `font-family-heading`); falls back to the body family. */
         headingFontFamily: z.string().optional(),
-        /** ONE size knob — ggui's `font.ramp.base` multiplier; the eight stops derive. */
+        /**
+         * ONE size knob, reaching BOTH surfaces — the half that used to go
+         * undocumented is the chrome:
+         *  - chat chrome: `react/theme-css.ts` emits `--_guuey-chat-scale`;
+         *    `native/theme-native.ts` scales the native body size.
+         *  - drawn cards: the platform boundary projects it to ggui's
+         *    `font.ramp.base` (`backend/.../ggui-app-theme.ts`), and ggui's
+         *    `derive-theme-variables.ts` derives every `--ggui-font-size-*`
+         *    stop from `font.ramp {base, ratio}` by the exponent ladder.
+         * A builder setting this moves the chrome AND the card type.
+         */
         scale: z.number().optional(),
         /** Declared faces — see {@link GuueyChatFace}. Replaces wholesale on resolution. */
         faces: z.array(GuueyChatFace).optional(),
