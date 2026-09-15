@@ -27,6 +27,20 @@ export interface AgentMessage {
    */
   clientMessageId?: string;
   /**
+   * How many AGENT TURNS had already arrived when this user row was
+   * appended (guuey#1333) — the live interleave key the transcript planner
+   * merges on. Stamped on `role: "user"` rows this client sent live.
+   *
+   * Live, the transcript is assembled from two DISJOINT lists: these
+   * messages hold the user rows, the fold holds the agent turns (the wire
+   * sends no user message into the fold). With no shared member the planner
+   * paired them by ARRAY INDEX, so an unprompted welcome card or a card
+   * chip click — both agent turns with no user row — shifted every
+   * subsequent pairing and an answer rendered under a question it did not
+   * answer. Omitting it is safe: the planner falls back to index pairing.
+   */
+  precedingTurnCount?: number;
+  /**
    * The read plane's transcript `seq` for history-rehydrated entries
    * (guuey#423) — server-allocated, gap-free per thread. Present ONLY on
    * rows the history loader mapped; live turns carry none. The transcript

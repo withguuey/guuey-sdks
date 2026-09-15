@@ -50,6 +50,41 @@ export interface TranscriptMessage {
    * positions instead of the R13 tail. Live turns carry none.
    */
   seq?: number;
+  /**
+   * How many AGENT TURNS had already arrived when this user row was
+   * appended — the live interleave key (guuey#1333). Assembler-stamped,
+   * `role: "user"` only.
+   *
+   * ## Why a new field was unavoidable
+   *
+   * In a fully LIVE session the transcript is assembled from two DISJOINT
+   * lists: `messages` holds the user rows, the fold (`result`) holds the
+   * agent turns — the wire sends no user message into the fold (three real
+   * captures: 3/0, 1/0, 6/0 assistant/user). With no shared member, the
+   * planner had nothing to interleave on and paired the two lists BY ARRAY
+   * INDEX, so any count mismatch mis-paired the whole transcript: an answer
+   * rendered under whichever question happened to share its index. Two
+   * ordinary things create that mismatch — an unprompted welcome card (a
+   * turn with no user row) and a card chip click (an action drained by
+   * `ggui_consume`, agent-facing by design, so no user row is ever sent).
+   *
+   * Four existing candidates were excluded from source before adding this:
+   * `seq` is history-only ("Live turns carry none", above); `clientMessageId`
+   * is an opaque `randomUUID()`/`generateId()` join key, not a sequence;
+   * `turnId` lives on the RESULT plane and orders the agent side only —
+   * and `@guuey/agent-client` tracks no turn id at all; and the fold's own
+   * user rows exist only on the rehydrated path.
+   *
+   * ## Contract
+   *
+   * OPTIONAL by design. An assembler that does not stamp it leaves the
+   * planner on its previous index pairing — identical output, no crash —
+   * which is what keeps a NEW `@guuey/chat` working against an OLD
+   * `@guuey/agent-client` across the npm boundary (the cohort is lockstep
+   * but an external host upgrades on its own schedule). `plan.interleave`
+   * covers that fallback as a named case, not an implicit else.
+   */
+  precedingTurnCount?: number;
 }
 
 /**

@@ -151,7 +151,8 @@ describe("useAgentInvoke status lifecycle", () => {
     // Only the first turn's user message (+ its placeholder) exists — carrying
     // the turn's clientMessageId (the R0 send-lifecycle join, guuey#135 3b).
     expect(result.current.messages.filter((m) => m.role === "user")).toEqual([
-      { role: "user", text: "first", clientMessageId: "cmid-status" },
+      // guuey#1333: the live interleave key — 0 agent turns had arrived.
+      { role: "user", text: "first", clientMessageId: "cmid-status", precedingTurnCount: 0 },
     ]);
     await feed(null);
     await act(async () => {

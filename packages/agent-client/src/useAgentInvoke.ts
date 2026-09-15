@@ -397,9 +397,16 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
       };
       markSend("sending");
       let admitted = false;
+      // guuey#1333: stamp how many agent turns had arrived before this row.
+      // Read from the reducer rather than counting our own appends — the
+      // fold is the same thing the planner groups its sources from, so the
+      // two sides count the same events. A turn with no user row of its own
+      // (a welcome card, or a chip click drained by `ggui_consume`) is
+      // counted here exactly as the planner will count it.
+      const precedingTurnCount = reducerRef.current?.result().turns.length ?? 0;
       setMessages((prev) => [
         ...prev,
-        { role: "user", text: input, clientMessageId },
+        { role: "user", text: input, clientMessageId, precedingTurnCount },
         { role: "assistant", text: "" },
       ]);
 

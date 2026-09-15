@@ -75,6 +75,8 @@ describe("useAgentInvoke transcript signals", () => {
       role: "user",
       text: "hello",
       clientMessageId: "cmid-1",
+      // guuey#1333: the live interleave key — 0 agent turns had arrived.
+      precedingTurnCount: 0,
     });
     expect(result.current.sendStates).toEqual({ "cmid-1": "sending" });
 
@@ -111,6 +113,8 @@ describe("useAgentInvoke transcript signals", () => {
       role: "user",
       text: "are you there?",
       clientMessageId: "cmid-fail",
+      // guuey#1333: the live interleave key — 0 agent turns had arrived.
+      precedingTurnCount: 0,
     });
     expect(result.current.error).not.toBeNull();
     expect(result.current.aborted).toBe(false);

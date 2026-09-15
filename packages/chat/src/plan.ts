@@ -877,6 +877,13 @@ export function planTranscript(
   // Playground DOM; replayed from real dev shapes in
   // plan.issue982.test.ts, phase P6).
   let assistants: AssistantSource[];
+  /**
+   * Index in `assistants` where the FOLD's sources begin. Everything before
+   * it is the settled flat prefix, whose slots (including the deliberate
+   * EMPTY ones guuey#1101 keeps for a user turn with no reply) are already
+   * positionally correct. guuey#1333's merge applies to the suffix only.
+   */
+  let foldSeam = 0;
   if (inputs.result) {
     const fold = foldAssistantSources(inputs.result, inFlight, inputs.aborted === true);
     const foldSources = fold.sources;
@@ -887,6 +894,7 @@ export function planTranscript(
     // subtraction lands on the same prefix in both states.
     const foldCovers = foldSources.length + (inFlight && !foldSources.some((s) => s.live) ? 1 : 0);
     const keep = Math.max(0, Math.min(flatGroups.length, users.length - foldCovers));
+    foldSeam = keep;
     assistants = [...flatGroups.slice(0, keep), ...foldSources];
     if (policy.notice.show) {
       // Fold-borne notices anchor to the fold source they followed, which
@@ -900,6 +908,22 @@ export function planTranscript(
   }
 
   const slots = Math.max(users.length, assistants.length);
+  /**
+   * guuey#1333 — the live interleave key. In a fully live session `users`
+   * and `assistants` are DISJOINT lists (the wire sends no user row into
+   * the fold), so index pairing was the only bridge and mis-paired the
+   * whole transcript whenever the counts diverged — a welcome card (turn
+   * with no user) or a chip click (user action with no user row).
+   *
+   * When the assembler stamps `precedingTurnCount`, a user row is placed
+   * before the agent turn it actually preceded instead of before whichever
+   * turn shares its index. When NO row carries it (an older assembler
+   * across the npm boundary), `order` is null and the loop below keeps the
+   * previous index pairing byte-for-byte.
+   */
+  const order: readonly number[] | null = users.some((u) => u.precedingTurnCount !== undefined)
+    ? users.map((u, i) => u.precedingTurnCount ?? i)
+    : null;
   const conversation: DisplayItem[] = [];
   const noticeItem = (n: (typeof notices)[number]): NoticeItem => ({
     kind: "notice",
@@ -910,39 +934,63 @@ export function planTranscript(
     sourceLabel: policy.debugDetail && n.source !== null ? n.source : null,
   });
   for (const n of notices) if (n.afterSlot < 0) conversation.push(noticeItem(n));
-  for (let slot = 0; slot < slots; slot++) {
-    const user = users[slot];
-    if (user) {
-      const key = `u${slot}`;
-      const sendState =
-        user.clientMessageId !== undefined
-          ? (inputs.sendStates?.[user.clientMessageId] ?? "sent")
-          : "sent";
-      // guuey#422 close-condition 3: a forwarded view directive (the
-      // `ui/message` doorbell's `<ggui_directive>` carrier, relayed through
-      // the composer's send gate) collapses into a calm continuation row.
-      // DISPLAY-ONLY — `text` stays wire-verbatim (expand reveals it); the
-      // wire itself was never touched. Marker matches ggui's runtime
-      // construction (`<ggui_directive kind="user-action">` inside the
-      // relayed prose).
-      const directive =
-        policy.userMessage.collapseDirectives && user.text.includes("<ggui_directive");
-      conversation.push({
-        kind: "user",
-        key,
-        expanded: resolveExpanded(key, !directive, overrides),
-        text: user.text,
-        state: sendState,
-        retry: sendState === "failed" && policy.userMessage.retryAffordance,
-        directive,
-      });
+  // ONE emission body for both modes, so the interleave decides only WHEN a
+  // row is emitted and never HOW. The key stays `u{index-in-users}` and an
+  // assistant source keeps its source ordinal — exactly the keys the
+  // index-paired loop assigned, so no key churns when a stamped assembler
+  // appears (the append-only key contract, spec §7).
+  const pushUser = (index: number): void => {
+    const user = users[index];
+    if (!user) return;
+    const key = `u${index}`;
+    const sendState =
+      user.clientMessageId !== undefined
+        ? (inputs.sendStates?.[user.clientMessageId] ?? "sent")
+        : "sent";
+    // guuey#422 close-condition 3: a forwarded view directive (the
+    // `ui/message` doorbell's `<ggui_directive>` carrier, relayed through
+    // the composer's send gate) collapses into a calm continuation row.
+    // DISPLAY-ONLY — `text` stays wire-verbatim (expand reveals it); the
+    // wire itself was never touched. Marker matches ggui's runtime
+    // construction (`<ggui_directive kind="user-action">` inside the
+    // relayed prose).
+    const directive =
+      policy.userMessage.collapseDirectives && user.text.includes("<ggui_directive");
+    conversation.push({
+      kind: "user",
+      key,
+      expanded: resolveExpanded(key, !directive, overrides),
+      text: user.text,
+      state: sendState,
+      retry: sendState === "failed" && policy.userMessage.retryAffordance,
+      directive,
+    });
+  };
+
+  // The prefix pairs positionally (its users are already beside their own
+  // settled turns); the merge takes over at the seam and counts FOLD TURNS,
+  // which is what the assembler counted when it stamped the field.
+  let nextUser = order === null ? 0 : foldSeam;
+  /** Every user row that preceded fold turn `turnIndex`, in order. */
+  const emitUsersBefore = (turnIndex: number): void => {
+    while (nextUser < users.length && (order?.[nextUser] ?? nextUser) <= turnIndex) {
+      pushUser(nextUser);
+      nextUser++;
     }
+  };
+
+  for (let slot = 0; slot < slots; slot++) {
+    if (order === null || slot < foldSeam) pushUser(slot);
+    else emitUsersBefore(slot - foldSeam);
     const assistant = assistants[slot];
     if (assistant) {
       conversation.push(...planAssistantSource(assistant, slot, inputs, policy, overrides));
     }
     for (const n of notices) if (n.afterSlot === slot) conversation.push(noticeItem(n));
   }
+  // Users stamped as following the LAST agent turn (or sent while it is
+  // still in flight) have no source to precede — they close the transcript.
+  if (order !== null) while (nextUser < users.length) pushUser(nextUser++);
   items.push(...groupTools(conversation, policy, overrides));
 
   // R13 — persisted cards, seq order. POSITION (guuey#423): interleaved at
