@@ -111,3 +111,14 @@ describe('manifest theme mirrors the kit vocabulary key-for-key', () => {
     ).toBe(false);
   });
 });
+
+describe('ggui#1093 R1 members (guuey#1364) — twin ↔ kit', () => {
+  it('the four members exist on both documents, with matching record keys', () => {
+    for (const m of ['typeScale', 'rhythm', 'motion', 'scrim'] as const) {
+      expect(keys(AppThemeV1.shape)).toContain(m);
+      expect(keys(AppCourtThemeV1.shape)).toContain(m);
+      expect(keys(GuueyChatTheme.shape)).toContain(m);
+      expect(keys(AppThemeV1.shape[m].unwrap().shape)).toEqual(keys(GuueyChatTheme.shape[m].unwrap().shape));
+    }
+  });
+});

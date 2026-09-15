@@ -101,6 +101,49 @@ const ThemeTypographyV1 = z
     faces: z.array(ThemeFaceV1).max(8).optional(),
   })
   .optional();
+/** ggui#1093 R1 members (guuey#1364) — twins of the kit's, with the write gate's bands. */
+const LENGTH_RE = /^-?\d+(\.\d+)?(px|rem|em)$/;
+const TIME_RE = /^\d+(\.\d+)?m?s$/;
+const EASING_RE = /^(linear|ease|ease-in|ease-out|ease-in-out|step-start|step-end|cubic-bezier\([^)]*\)|steps\([^)]*\))$/;
+const ThemeTypeRoleV1 = z.strictObject({
+  size: z.string().regex(LENGTH_RE).optional(),
+  weight: z.number().min(100).max(900).optional(),
+  tracking: z.string().regex(LENGTH_RE).optional(),
+  leading: z.number().min(0.8).max(2.5).optional(),
+});
+const ThemeTypeScaleV1 = z.strictObject({
+  display: ThemeTypeRoleV1.optional(),
+  h1: ThemeTypeRoleV1.optional(),
+  h2: ThemeTypeRoleV1.optional(),
+  body: ThemeTypeRoleV1.optional(),
+  label: ThemeTypeRoleV1.optional(),
+});
+const ThemeRhythmV1 = z.strictObject({
+  base: z.string().regex(LENGTH_RE),
+  section: z.string().regex(LENGTH_RE).optional(),
+  inset: z.string().regex(LENGTH_RE).optional(),
+});
+const ThemeMotionV1 = z.strictObject({
+  duration: z
+    .strictObject({
+      fast: z.string().regex(TIME_RE).optional(),
+      base: z.string().regex(TIME_RE).optional(),
+      slow: z.string().regex(TIME_RE).optional(),
+    })
+    .optional(),
+  easing: z
+    .strictObject({
+      standard: z.string().regex(EASING_RE).optional(),
+      emphasized: z.string().regex(EASING_RE).optional(),
+      exit: z.string().regex(EASING_RE).optional(),
+    })
+    .optional(),
+});
+const ThemeScrimV1 = z.strictObject({
+  tone: z.enum(['light', 'dark']),
+  opacity: z.number().min(0).max(1),
+  blur: z.number().min(0).max(64),
+});
 const ThemeShapeV1 = z
   .strictObject({
     radius: z.enum(['none', 'soft', 'round']),
@@ -142,6 +185,10 @@ export const AppCourtThemeV1 = z.strictObject({
       glass: ThemeGlassV1.optional(),
     })
     .optional(),
+  typeScale: ThemeTypeScaleV1.optional(),
+  rhythm: ThemeRhythmV1.optional(),
+  motion: ThemeMotionV1.optional(),
+  scrim: ThemeScrimV1.optional(),
 });
 export type AppCourtThemeV1 = z.infer<typeof AppCourtThemeV1>;
 
@@ -151,6 +198,10 @@ export const AppThemeV1 = z.strictObject({
   colors: z.strictObject({ light: ThemePaletteV1, dark: ThemePaletteV1 }),
   typography: ThemeTypographyV1,
   shape: ThemeShapeV1,
+  typeScale: ThemeTypeScaleV1.optional(),
+  rhythm: ThemeRhythmV1.optional(),
+  motion: ThemeMotionV1.optional(),
+  scrim: ThemeScrimV1.optional(),
   /**
    * Per-court override documents (guuey#519 — brand is never a default:
    * the base above stays court-neutral, a court's look exists only under

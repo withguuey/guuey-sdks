@@ -81,6 +81,22 @@ export const GuueyChatFace = z
   .loose();
 export type GuueyChatFace = z.infer<typeof GuueyChatFace>;
 
+/**
+ * One type role of the host's design language (ggui#1093 P1b): `size` and
+ * `tracking` are CSS lengths, `weight` numeric, `leading` a RATIO (never a
+ * length — the projection writes `line-height: <ratio>`). Every field
+ * optional; an unstated field is derived by ggui.
+ */
+export const GuueyChatTypeRole = z
+  .object({
+    size: z.string().optional(),
+    weight: z.number().optional(),
+    tracking: z.string().optional(),
+    leading: z.number().optional(),
+  })
+  .loose();
+export type GuueyChatTypeRole = z.infer<typeof GuueyChatTypeRole>;
+
 export const GuueyChatTheme = z
   .object({
     name: z.string(),
@@ -156,6 +172,56 @@ export const GuueyChatTheme = z
           .optional(),
       })
       .loose(),
+    /**
+     * ggui#1093 R1 — the four `ThemeDocumentV2` token members the platform's
+     * Design page WRITES (guuey#1364; #1365 folded in). Every one is optional
+     * and default-less: ABSENT ⇒ ggui derives it (INVARIANT 1, byte-identical
+     * to a document that never stated it), so a previous-release document
+     * loads and renders unchanged. Member blocks are `.loose()` like their
+     * siblings: unknown keys inside them survive the write and are stripped
+     * by the read gate, never fatal (rolling-release N−1).
+     *
+     * ONE WRITER FOR THE FONT BASE (the hazard documented in
+     * `shared/ggui-app-theme.ts`): `typography.scale` already feeds ggui's
+     * `font.ramp.base`, and R1's `typeScale.body.size` OVERWRITES the same
+     * stops. The wire gate refuses a document stating both; the projection
+     * DERIVES `typeScale.body.size` from `typography.scale` when only the
+     * scale is stated. They never diverge silently.
+     */
+    typeScale: z
+      .object({
+        display: GuueyChatTypeRole.optional(),
+        h1: GuueyChatTypeRole.optional(),
+        h2: GuueyChatTypeRole.optional(),
+        body: GuueyChatTypeRole.optional(),
+        label: GuueyChatTypeRole.optional(),
+      })
+      .loose()
+      .optional(),
+    /** Spacing rhythm: `base` re-derives ggui's spacing scale; `section` / `inset` are named steps. CSS lengths. */
+    rhythm: z
+      .object({ base: z.string(), section: z.string().optional(), inset: z.string().optional() })
+      .loose()
+      .optional(),
+    /** Motion TEMPO override (ggui#1093 P1c) — never the shipped scale. Durations are CSS times; easings CSS easing functions. */
+    motion: z
+      .object({
+        duration: z
+          .object({ fast: z.string().optional(), base: z.string().optional(), slow: z.string().optional() })
+          .loose()
+          .optional(),
+        easing: z
+          .object({ standard: z.string().optional(), emphasized: z.string().optional(), exit: z.string().optional() })
+          .loose()
+          .optional(),
+      })
+      .loose()
+      .optional(),
+    /** Scrim KNOBS (ggui#1083 / #1093): tone, opacity 0–1, blur px. All three when stated; the colours derive in ggui's completion. */
+    scrim: z
+      .object({ tone: z.enum(["light", "dark"]), opacity: z.number(), blur: z.number() })
+      .loose()
+      .optional(),
     /**
      * Per-court override DOCUMENTS (guuey#519), keyed by serving court —
      * declared vocabulary (guuey#536: the manifest grammar mirrors this
@@ -299,6 +365,10 @@ export const GUUEY_CHAT_THEME: GuueyChatTheme = {
 const PartialPalette = GuueyChatPalette.partial();
 const PartialTheme = z
   .object({
+    typeScale: GuueyChatTheme.shape.typeScale,
+    rhythm: GuueyChatTheme.shape.rhythm,
+    motion: GuueyChatTheme.shape.motion,
+    scrim: GuueyChatTheme.shape.scrim,
     name: z.string().optional(),
     mode: GuueyChatTheme.shape.mode.optional(),
     colors: z
@@ -365,6 +435,13 @@ export function resolveTheme(
       ...(shadow !== undefined ? { shadow } : {}),
       ...(glass !== undefined ? { glass } : {}),
     },
+    // ggui#1093 R1 members (guuey#1364): a stated member REPLACES the base's
+    // whole (one declaration, like `faces`); an unstated one stays visibly
+    // absent so ggui derives it — INVARIANT 1, never a default.
+    ...((p.typeScale ?? base.typeScale) !== undefined ? { typeScale: p.typeScale ?? base.typeScale } : {}),
+    ...((p.rhythm ?? base.rhythm) !== undefined ? { rhythm: p.rhythm ?? base.rhythm } : {}),
+    ...((p.motion ?? base.motion) !== undefined ? { motion: p.motion ?? base.motion } : {}),
+    ...((p.scrim ?? base.scrim) !== undefined ? { scrim: p.scrim ?? base.scrim } : {}),
   };
 }
 
