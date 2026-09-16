@@ -3,7 +3,8 @@
  *
  * One line after `Live at <url>` when the app renders the guuey theme (no
  * `chatTheme` of its own), naming the two write paths — the console's
- * Design → Chat theme and `app.theme` in guuey.json + `guuey agent apply`.
+ * Design → Chat theme and `app.theme` in guuey.json (applied by `guuey deploy`
+ * for code apps since guuey#1130 G59, and by `guuey agent apply`).
  * Nothing else on the post-deploy screens (console chip, CLI) reached the
  * theme before this; a builder who wanted the widget to look like their
  * product had to know the Design tab existed.
@@ -19,7 +20,7 @@ import type { AppDetail } from './apps';
 
 export const THEME_HINT_LINES: readonly string[] = [
   '  Look:   the chat panel renders the Guuey theme. Make it yours in the console',
-  '          (Design → Chat theme), or add app.theme to guuey.json and run `guuey agent apply`.',
+  '          (Design → Chat theme), or add app.theme to guuey.json — `guuey deploy` (code apps) and `guuey agent apply` both apply it.',
 ];
 
 export async function maybePrintThemeHint(

@@ -889,6 +889,120 @@ describe('deploy() — --max-pods rides the trigger body', () => {
 // trigger, which this suite has no harness for — so they are pinned at the
 // source level instead: every `/deploy/trigger` body literal in deploy.ts
 // must spread maxPods. A new deploy shape that forgets the field fails here.
+describe('deploy() — app.theme in guuey.json reaches a code app (guuey#1130 G59)', () => {
+  let dir: string;
+  let originalCwd: string;
+  let fetchSpy: MockInstance<typeof fetch>;
+  let logSpy: MockInstance<typeof console.log>;
+  let errSpy: MockInstance<typeof console.error>;
+  const THEME = {
+    name: 'acme',
+    mode: 'light',
+    colors: {
+      light: { accent: '#8b7cf6', onAccent: '#0e1014', ink: '#111318', inkMuted: '#5b6270', surface: '#ffffff', canvas: '#f7f7f5', canvasMuted: '#eceded', error: '#d64545' },
+      dark: { accent: '#8b7cf6', onAccent: '#0e1014', ink: '#e8e9ee', inkMuted: '#9aa0ac', surface: '#1b1e26', canvas: '#0f1116', canvasMuted: '#1b1e26', error: '#ff6b6b' },
+    },
+    typography: {},
+    shape: { radius: 'soft', density: 'comfortable' },
+  };
+
+  function themePut(): { index: number; body: Record<string, unknown> } | undefined {
+    const index = fetchSpy.mock.calls.findIndex(([u, init]) => String(u).endsWith('/apps/app-1') && init?.method === 'PUT');
+    if (index === -1) return undefined;
+    return { index, body: JSON.parse(String(fetchSpy.mock.calls[index]![1]?.body)) as Record<string, unknown> };
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    dir = mkdtempSync(join(tmpdir(), 'deploy-theme-test-'));
+    process.chdir(dir);
+    vi.mocked(resolveConfig).mockReturnValue({ host: 'https://platform.guuey.test', apiUrl: 'https://api.guuey.test', appId: 'app-1' });
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes('/deploy/trigger')) return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
+      if (url.includes('/deployments/1/status')) {
+        return new Response(JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null, pageUrl: 'https://app-k7q2.agents.guuey.test/' }), { status: 200 });
+      }
+      if (url.endsWith('/apps/app-1') && init?.method === 'PUT') return new Response(JSON.stringify({ id: 'app-1' }), { status: 200 });
+      // The app has no theme yet — the first-write-free case; the hint's GET after the PUT reads the same mock.
+      if (url.endsWith('/apps/app-1')) return new Response(JSON.stringify({ id: 'app-1', chatTheme: null }), { status: 200 });
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it('an inline app.theme is PUT as chatTheme after the deploy goes live, and the Theme: line prints', async () => {
+    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {}, app: { theme: THEME } }));
+    await deploy({});
+    const put = themePut();
+    expect(put).toBeDefined();
+    expect(put!.body).toEqual({ chatTheme: THEME });
+    const trigger = fetchSpy.mock.calls.findIndex(([u]) => String(u).includes('/deploy/trigger'));
+    expect(put!.index).toBeGreaterThan(trigger);
+    expect(logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n')).toContain('Theme:  app.theme applied');
+  });
+
+  it('a { file } reference writes the resolved document', async () => {
+    writeFileSync(join(dir, 'theme.json'), JSON.stringify(THEME));
+    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {}, app: { theme: { file: 'theme.json' } } }));
+    await deploy({});
+    expect(themePut()?.body).toEqual({ chatTheme: THEME });
+  });
+
+  it('an app that already has a chat theme is NEVER overwritten by a deploy — no PUT, the kept line names the doors', async () => {
+    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {}, app: { theme: THEME } }));
+    fetchSpy.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes('/deploy/trigger')) return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
+      if (url.includes('/deployments/1/status')) return new Response(JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null, pageUrl: 'https://app-k7q2.agents.guuey.test/' }), { status: 200 });
+      if (url.endsWith('/apps/app-1') && init?.method === 'PUT') throw new Error('a deploy must never PUT over an existing theme');
+      if (url.endsWith('/apps/app-1')) return new Response(JSON.stringify({ id: 'app-1', chatTheme: { ...THEME, name: 'console-set' } }), { status: 200 });
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    await deploy({});
+    expect(themePut()).toBeUndefined();
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('already has a chat theme');
+    expect(printed).toContain('--chat-theme-file');
+  });
+
+  it('no app.theme → no PUT (a redeploy never touches the theme)', async () => {
+    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {} }));
+    await deploy({});
+    expect(themePut()).toBeUndefined();
+  });
+
+  it("a validator refusal prints the server's path-naming message and the deploy still succeeds", async () => {
+    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {}, app: { theme: THEME } }));
+    fetchSpy.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes('/deploy/trigger')) return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
+      if (url.includes('/deployments/1/status')) return new Response(JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null, pageUrl: 'https://app-k7q2.agents.guuey.test/' }), { status: 200 });
+      if (url.endsWith('/apps/app-1') && init?.method === 'PUT') {
+        return new Response(JSON.stringify({ error: { code: 'CHAT_THEME_INVALID', message: 'chatTheme.colors.light.accent must be a hex colour like #2f6bff' } }), { status: 400 });
+      }
+      if (url.endsWith('/apps/app-1')) return new Response(JSON.stringify({ id: 'app-1', chatTheme: null }), { status: 200 });
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    await expect(deploy({})).resolves.toBeUndefined();
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('app.theme was NOT applied');
+    expect(printed).toContain('chatTheme.colors.light.accent');
+    expect(printed).toContain('--chat-theme-file');
+  });
+});
+
 describe('deploy.ts — every trigger POST site carries maxPods', () => {
   it('all three body literals spread the knob', () => {
     const source = readFileSync(

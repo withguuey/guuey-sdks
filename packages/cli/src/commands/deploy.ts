@@ -77,6 +77,7 @@ import { buildGguiAssetPush, pushGguiAssetsLeg, type GguiAssetPushBody } from '.
 import * as out from '../output';
 import { DEPLOY_WAIT_MS, stillDeployingMessage } from './deploy-wait';
 import { maybePrintThemeHint } from './theme-hint';
+import { maybeApplyThemeFromConfig } from './deploy-theme';
 
 /**
  * Map a platform host to its portal origin — mirrors the live-verified
@@ -917,6 +918,12 @@ async function deployCode(opts: {
   out.success(`Live at ${url}`);
   printPageLine(await awaitPageUrl({ auth, config, appId, buildNumber, pageUrl: polledPageUrl }));
   await maybePrintRuntimePinNotice(auth.pat, config, appId, runtimePinBefore);
+  // guuey#1130 G59: `app.theme` in guuey.json reaches the app through the
+  // same door as `apps update --chat-theme-file` — BEFORE the "Look:" hint,
+  // which then reads the state this write produced. Same line in the
+  // declarative path below (its trigger carries no theme either — only
+  // `agent apply` ever did); the legacy Dockerfile path loads no guuey.json.
+  await maybeApplyThemeFromConfig(auth.pat, config, appId, loaded);
   await maybePrintThemeHint(auth.pat, config, appId);
   console.log('');
   console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
@@ -1459,6 +1466,8 @@ async function deployDeclarative(opts: {
   out.success(`Live at ${url}`);
   printPageLine(await awaitPageUrl({ auth, config, appId, buildNumber, pageUrl: polledPageUrl }));
   await maybePrintRuntimePinNotice(auth.pat, config, appId, runtimePinBefore);
+  // guuey#1130 G59 — see the code path: the same write, the same door.
+  await maybeApplyThemeFromConfig(auth.pat, config, appId, resolved);
   await maybePrintThemeHint(auth.pat, config, appId);
   console.log('');
   console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
