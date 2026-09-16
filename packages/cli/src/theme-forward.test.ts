@@ -1,10 +1,18 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parseStringLiterals } from './wire-mirror-parse';
 import { readThemeForward, THEME_FORWARD_STATUSES, themeForwardLines, themeForwardOf } from './theme-forward';
 
 const WIRE_APPS = fileURLToPath(new URL('../../../../backend/libs/cli-wire/apps.ts', import.meta.url));
+/**
+ * The monorepo is the only place the two sides can drift, and the only place
+ * the wire source exists: the published mirror and a consumer's installed copy
+ * carry no `backend/`. The comparison skips there rather than failing on a file
+ * it cannot have — the rule `commands/wire-sync.test.ts` states in its header,
+ * missed here and caught by the mirror's own CI and the extract gate (guuey#1406).
+ */
+const haveWire = existsSync(WIRE_APPS);
 
 /**
  * guuey#1415 — the public CLI mirrors cli-wire's `ThemeForwardWire`; the
@@ -12,7 +20,7 @@ const WIRE_APPS = fileURLToPath(new URL('../../../../backend/libs/cli-wire/apps.
  * without the other fails here, not in a builder's terminal.
  */
 describe('theme-forward (guuey#1415) — the CLI mirror of cli-wire', () => {
-  it('THEME_FORWARD_STATUSES is exactly the wire union, in order', () => {
+  it.skipIf(!haveWire)('THEME_FORWARD_STATUSES is exactly the wire union, in order', () => {
     expect([...THEME_FORWARD_STATUSES]).toEqual(parseStringLiterals(readFileSync(WIRE_APPS, 'utf8'), 'THEME_FORWARD_STATUSES'));
   });
 
