@@ -66,4 +66,13 @@ export {
 } from "./react/oauth-return.js";
 export { Markdown } from "./react/markdown.js";
 export { themeCssVars, type ThemeMode } from "./react/theme-css.js";
+/**
+ * The kit's default theme, from the react arm too (guuey#1320): a bundle
+ * that carries ONLY this entry (guuey's widget `host/v1.js` — a second kit
+ * entry doubled it) needs the default as the base to merge a host page's
+ * design under when the app states no theme. Already inside this arm
+ * (`GuueyChat` resolves themes over it), so the re-export costs no bytes;
+ * the root subpath stays the canonical home.
+ */
+export { GUUEY_CHAT_THEME } from "./theme.js";
 export { PARTS, messagePart } from "./react/parts.js";
