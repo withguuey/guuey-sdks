@@ -18,7 +18,14 @@
  *   5. When there is no live nocode snapshot (code-mode app, or nothing
  *      deployed yet), refresh identity (`appId`) only and leave the
  *      local agent section untouched — the code project's local source
- *      is authoritative. The one exception is the console-authored
+ *      is authoritative. In an EMPTY directory (no `guuey.json` at all,
+ *      guuey#1287) a nocode snapshot SCAFFOLDS the file instead — a
+ *      declarative project with no `agent.mode` key, which `guuey deploy`
+ *      routes as no-code (a `guuey.json` alone is declarative) — so the
+ *      Behavior page's `guuey pull` → edit → `guuey deploy` path works
+ *      without a `guuey create` detour that would have defaulted the
+ *      project to code mode; with nothing to eject the command still
+ *      refuses, naming why. The one exception is the console-authored
  *      create-time prompt draft (`AppWire.draftSystemPrompt`, guuey#463):
  *      it is written to `prompts/system.md` under the KNOWN-DEFAULT
  *      replace rule (`resolveDraftPromptAction`) — only when the local
@@ -179,29 +186,33 @@ export interface PullMapping {
  * Every other top-level field (`workspaceId`, `app`, `ggui`, `worker`,
  * `protocol`, `runtime`) is preserved from the local overlay — pull only
  * replaces identity + the agent definition.
+ * - When there is NO local overlay (`existing === null`, guuey#1287): a
+ *   nocode snapshot becomes the whole file — the snapshot's own top-level
+ *   fields plus the refreshed identity, the prompt externalized, and NO
+ *   `agent.mode` key (a hand-authored declarative project; `guuey deploy`
+ *   routes a `guuey.json` alone as no-code, and the scaffold's `'code'`
+ *   is exactly the trap this branch removes). With no snapshot either
+ *   there is nothing to write, and the mapper throws — the command turns
+ *   that into the named refusal.
  *
  * Exported for unit tests — the command function below wraps it with I/O
  * + auth + error handling.
  *
  * @param app - `GET /apps/:appId` response payload
  * @param snapshot - nocode definition snapshot, or `null`
- * @param existing - Current local overlay (required — pull refreshes an
- *   existing file, it does not scaffold)
+ * @param existing - Current local overlay, or `null` for an empty
+ *   directory (then only a nocode snapshot can produce a file)
  */
 export function mapHostedStateToOverlay(
   app: AppResponse,
   snapshot: GuueyJsonV1 | null,
   existing: GuueyJsonV1 | null,
 ): PullMapping {
-  if (existing === null) {
-    throw new Error(
-      'mapHostedStateToOverlay requires an existing guuey.json (with at least an `agent` section). Run `guuey create` first to scaffold one.',
-    );
-  }
-
   // No nocode snapshot to eject → refresh identity only, preserve the
-  // local agent section (code projects own their local source).
+  // local agent section (code projects own their local source). With no
+  // local file either there is nothing to write (guuey#1287).
   if (snapshot === null) {
+    if (existing === null) throw new Error(NOTHING_TO_EJECT);
     const overlay: GuueyJsonV1 = { ...existing, schema: '1', appId: app.id };
     return { overlay, promptFile: null, agentReplaced: false };
   }
@@ -222,7 +233,9 @@ export function mapHostedStateToOverlay(
   // The local value always wins; when the local project has none (a
   // hand-authored declarative project), the key is omitted entirely
   // rather than importing the snapshot's `'declarative'` stamp.
-  const localMode = existing.agent.mode;
+  // An empty directory has no local mode — the same "omit the key" branch
+  // a hand-authored declarative project takes (guuey#1287).
+  const localMode = existing?.agent.mode;
   let agent: GuueyAgent = snapshot.agent;
   let promptFile: { path: string; content: string } | null = null;
   const sp = snapshot.agent.systemPrompt;
@@ -237,14 +250,26 @@ export function mapHostedStateToOverlay(
     agent = { ...agent, mode: localMode };
   }
 
+  // guuey#1287: with no local file the snapshot IS the file (its own
+  // top-level fields — `protocol`, `app`, `ggui`, … — are the deployed
+  // truth); with one, the local top-level fields are preserved as before.
   const overlay: GuueyJsonV1 = {
-    ...existing,
+    ...(existing ?? snapshot),
     schema: '1',
     appId: app.id,
     agent,
   };
   return { overlay, promptFile, agentReplaced: true };
 }
+
+/**
+ * The one refusal left for an empty directory (guuey#1287): the app has no
+ * deployed no-code definition to eject, so there is nothing to write.
+ */
+export const NOTHING_TO_EJECT =
+  'No guuey.json here, and this app has no deployed no-code definition to eject. ' +
+  'For a no-code app, deploy it once (the wizard, Studio, or `guuey agent apply`) and pull again; ' +
+  'for a code-mode app, run `guuey create` to scaffold the project first — `guuey pull` then refreshes it.';
 
 // ─── The create-time draft (guuey#463, the #455 rider) ────────────────
 
@@ -333,19 +358,15 @@ export async function pull(
     process.exit(1);
   }
 
-  // Load existing overlay — pull refreshes an existing file. `guuey
-  // create` scaffolds the initial file with the `agent` section.
+  // Load the local overlay when there is one. A file that exists but does
+  // not validate is refused (pull never guesses at a broken file); NO file
+  // is fine — a nocode snapshot scaffolds it (guuey#1287), and with nothing
+  // to eject the refusal below names why.
   const existing = loadProjectConfig();
-  if (existing === null) {
-    if (getProjectConfigPath() !== null) {
-      out.error(
-        'guuey.json exists but failed schema validation. Fix it and retry, or run `guuey create` to start fresh.',
-      );
-    } else {
-      out.error(
-        'No guuey.json found in this project. Run `guuey create` first to scaffold one — `guuey pull` refreshes an existing file.',
-      );
-    }
+  if (existing === null && getProjectConfigPath() !== null) {
+    out.error(
+      'guuey.json exists but failed schema validation. Fix it and retry, or run `guuey create` to start fresh.',
+    );
     process.exit(1);
   }
 
@@ -390,7 +411,13 @@ export async function pull(
     ({ snapshot } = (await snapRes.json()) as DeploymentSnapshotResponse);
   }
 
-  // Map + externalize the prompt + write.
+  // Map + externalize the prompt + write. An empty directory with nothing
+  // to eject is the one refusal left (guuey#1287).
+  if (existing === null && snapshot === null) {
+    out.error(NOTHING_TO_EJECT);
+    process.exit(1);
+  }
+  const scaffolded = existing === null;
   const { overlay, promptFile, agentReplaced } = mapHostedStateToOverlay(
     app,
     snapshot,
@@ -426,7 +453,11 @@ export async function pull(
     ? `${app.displayName} (${app.id})`
     : app.id;
   if (agentReplaced) {
-    out.success('guuey.json ejected from the latest no-code deployment');
+    out.success(
+      scaffolded
+        ? 'guuey.json created from the latest no-code deployment (declarative — `guuey deploy` routes it as no-code)'
+        : 'guuey.json ejected from the latest no-code deployment',
+    );
     console.log('');
     console.log(`  App:          ${appLabel}`);
     if (buildNumber !== null) console.log(`  Deployment:   build #${buildNumber} (nocode)`);

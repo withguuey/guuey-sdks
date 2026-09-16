@@ -52,6 +52,7 @@ vi.mock('../config.js', async (importOriginal) => {
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import {
   mapHostedStateToOverlay,
+  NOTHING_TO_EJECT,
   pickSnapshotBuild,
   pull,
   resolveDraftPromptAction,
@@ -59,7 +60,7 @@ import {
   type AppResponse,
   type DeploymentRow,
 } from './pull.js';
-import { loadProjectConfig, saveProjectConfig } from '../config.js';
+import { getProjectConfigPath, loadProjectConfig, saveProjectConfig } from '../config.js';
 import {
   GUUEY_DEFAULT_SYSTEM_PROMPT,
   GUUEY_SCAFFOLD_SYSTEM_PROMPT,
@@ -228,14 +229,47 @@ describe('mapHostedStateToOverlay', () => {
     expect(overlay.workspaceId).toBe('ws-1');
   });
 
-  it('throws when there is no existing guuey.json', () => {
-    expect(() =>
-      mapHostedStateToOverlay(APP, nocodeSnapshot(), null),
-    ).toThrow(/existing guuey\.json/);
+  it('guuey#1287: an empty directory no longer throws when there is a snapshot to eject — it scaffolds (the throw is reserved for nothing-to-eject, pinned below)', () => {
+    expect(() => mapHostedStateToOverlay(APP, nocodeSnapshot(), null)).not.toThrow();
+    expect(mapHostedStateToOverlay(APP, nocodeSnapshot(), null).agentReplaced).toBe(true);
   });
 });
 
 // ─── resolveDraftPromptAction (pure — the guuey#463 replace rule) ─────
+
+describe('mapHostedStateToOverlay — an empty directory (guuey#1287)', () => {
+  it('a nocode snapshot SCAFFOLDS the file: the snapshot is the overlay, identity refreshed, prompt externalized, NO agent.mode key', () => {
+    const { overlay, promptFile, agentReplaced } = mapHostedStateToOverlay(APP, nocodeSnapshot(), null);
+    expect(agentReplaced).toBe(true);
+    expect(overlay.schema).toBe('1');
+    expect(overlay.appId).toBe('app-1');
+    expect(overlay.protocol).toBe('silver'); // the snapshot's own top-level fields ride
+    // The deploy-routing key is OMITTED, never the snapshot's 'declarative'
+    // stamp and never the scaffold's 'code': a guuey.json alone routes
+    // declarative in resolveDeployMode — the #1287 trap is exactly a scaffold
+    // 'code' surviving into a no-code app's project.
+    expect('mode' in overlay.agent).toBe(false);
+    expect(overlay.agent.model).toBe('claude-opus-4-8');
+    expect(overlay.agent.systemPrompt).toEqual({ file: 'prompts/system.md' });
+    expect(promptFile).toEqual({ path: 'prompts/system.md', content: 'You are the deployed studio agent.' });
+  });
+
+  it('with no snapshot either there is nothing to write — the mapper throws the named refusal', () => {
+    expect(() => mapHostedStateToOverlay(APP, null, null)).toThrow(NOTHING_TO_EJECT);
+  });
+
+  it('a snapshot whose prompt is already a file ref scaffolds it verbatim (no prompt file to write)', () => {
+    const snap = nocodeSnapshot();
+    const { overlay, promptFile } = mapHostedStateToOverlay(
+      APP,
+      { ...snap, agent: { ...snap.agent, systemPrompt: { file: 'prompts/system.md' } } },
+      null,
+    );
+    expect(promptFile).toBeNull();
+    expect(overlay.agent.systemPrompt).toEqual({ file: 'prompts/system.md' });
+    expect('mode' in overlay.agent).toBe(false);
+  });
+});
 
 describe('resolveDraftPromptAction', () => {
   const DRAFT = 'You are the console-drafted agent.';
@@ -334,6 +368,57 @@ describe('pull()', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('guuey#1287 — an EMPTY directory + a live nocode build: creates guuey.json from the snapshot (declarative, no agent.mode) and writes the prompt', async () => {
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+    vi.mocked(getProjectConfigPath).mockReturnValue(null);
+    fetchSpy
+      .mockResolvedValueOnce(new Response(JSON.stringify({ app: { id: 'app-1', displayName: 'Todo' } }), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ deployments: [{ buildNumber: 3, status: 'live', agentMode: 'nocode', size: 'sm' }] }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ snapshot: nocodeSnapshot() }), { status: 200 }));
+
+    await pull({ 'app-id': 'app-1' });
+
+    expect(saveProjectConfig).toHaveBeenCalledTimes(1);
+    const [written] = vi.mocked(saveProjectConfig).mock.calls[0]!;
+    expect(written.appId).toBe('app-1');
+    expect(written.agent.model).toBe('claude-opus-4-8');
+    expect('mode' in written.agent).toBe(false);
+    expect(written.agent.systemPrompt).toEqual({ file: 'prompts/system.md' });
+    expect(writeFileSync).toHaveBeenCalledTimes(1);
+    expect(String(vi.mocked(writeFileSync).mock.calls[0]![1])).toBe('You are the deployed studio agent.');
+  });
+
+  it('guuey#1287 — an EMPTY directory with NOTHING to eject (no live nocode build): refuses once, names why, writes nothing', async () => {
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+    vi.mocked(getProjectConfigPath).mockReturnValue(null);
+    const errors = vi.mocked(console.error);
+    fetchSpy
+      .mockResolvedValueOnce(new Response(JSON.stringify({ app: { id: 'app-1' } }), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ deployments: [{ buildNumber: 1, status: 'live', agentMode: 'code', size: 'sm' }] }), {
+          status: 200,
+        }),
+      );
+
+    await expect(pull({ 'app-id': 'app-1' })).rejects.toBeInstanceOf(ExitSignal);
+    expect(saveProjectConfig).not.toHaveBeenCalled();
+    expect(writeFileSync).not.toHaveBeenCalled();
+    expect(errors.mock.calls.map((c) => String(c[0])).join('\n')).toContain('no deployed no-code definition to eject');
+  });
+
+  it('a guuey.json that exists but fails validation is still refused — pull never guesses at a broken file', async () => {
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+    vi.mocked(getProjectConfigPath).mockReturnValue('/proj/guuey.json');
+    await expect(pull({ 'app-id': 'app-1' })).rejects.toBeInstanceOf(ExitSignal);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(vi.mocked(console.error).mock.calls.map((c) => String(c[0])).join('\n')).toContain('failed schema validation');
   });
 
   it('ejects the latest live nocode snapshot: fetches build #3, externalizes the prompt, replaces the agent', async () => {
