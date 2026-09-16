@@ -88,6 +88,22 @@ describe('signUserToken — request shape', () => {
     expect(call.init.headers['content-type']).toBe('application/json');
   });
 
+  it('guuey#1285: normalizes a trailing /v1 on the base URL — the base a caller hands <GuueyChat apiBaseUrl> mints at the same route', async () => {
+    const fetchImpl = stubFetch({ status: 200 });
+    await signUserToken({ userId: 'u' }, config({ apiBaseUrl: `${BASE}/v1`, fetch: fetchImpl }));
+    expect(fetchImpl.calls[0]!.url).toBe(`${BASE}/v1/widget/token`);
+    const slashed = stubFetch({ status: 200 });
+    await signUserToken({ userId: 'u' }, config({ apiBaseUrl: `${BASE}/v1/`, fetch: slashed }));
+    expect(slashed.calls[0]!.url).toBe(`${BASE}/v1/widget/token`);
+  });
+
+  it('guuey#1285: a 401 names the mint URL it was sent to, so a wrong base no longer reads as a bad secret', async () => {
+    const fetchImpl = stubFetch({ status: 401 });
+    await expect(signUserToken({ userId: 'u' }, config({ apiBaseUrl: BASE, fetch: fetchImpl }))).rejects.toThrow(
+      `The mint was sent to ${BASE}/v1/widget/token`,
+    );
+  });
+
   it('normalizes a trailing slash on the base URL', async () => {
     const fetchImpl = stubFetch({ status: 200 });
     await signUserToken(

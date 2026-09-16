@@ -283,7 +283,7 @@ export async function signUserToken(
   }
 
   if (response.status !== 200) {
-    throw mapFailure(response.status, payload, appSecret);
+    throw mapFailure(response.status, payload, appSecret, `${baseUrl}${MINT_PATH}`);
   }
   return readToken(payload);
 }
@@ -353,7 +353,11 @@ function requireWithin(value: string, max: number, field: string): void {
 
 /**
  * Resolve the API base, trimming trailing slashes so callers can pass either
- * form without producing a `//v1/...` path.
+ * form without producing a `//v1/...` path — and trimming a trailing `/v1`
+ * (guuey#1285): the library appends `MINT_PATH` (`/v1/widget/token`) itself,
+ * and the base a caller hands `<GuueyChat apiBaseUrl>` (`…/v1`) is the one
+ * they reach for here; without this the mint went to `/v1/v1/widget/token`
+ * and the resulting 401 read as a bad secret for an hour.
  */
 function resolveBaseUrl(configured: string | undefined): string {
   const raw = configured ?? readEnv('GUUEY_API_URL');
@@ -363,7 +367,7 @@ function resolveBaseUrl(configured: string | undefined): string {
         '(for example https://api.guuey.com).',
     );
   }
-  return raw.replace(/\/+$/, '');
+  return raw.replace(/\/+$/, '').replace(/\/v1$/i, '');
 }
 
 /**
@@ -448,8 +452,8 @@ function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max)}…`;
 }
 
-/** Map a non-200 onto the taxonomy. */
-function mapFailure(status: number, payload: unknown, secret: string): WidgetAuthError {
+/** Map a non-200 onto the taxonomy. `url` is the mint the failure came from — named on a 401 (guuey#1285), because a wrong base reads exactly like a bad secret. */
+function mapFailure(status: number, payload: unknown, secret: string, url: string): WidgetAuthError {
   const detail = serviceMessage(payload, secret);
   const suffix = detail === undefined ? '' : ` ${detail}`;
 
@@ -457,7 +461,8 @@ function mapFailure(status: number, payload: unknown, secret: string): WidgetAut
     return new WidgetAuthCredentialError(
       'The widget app secret was not accepted. It may be wrong, revoked, or for a different app — ' +
         'these are deliberately indistinguishable, so that this route cannot be used to discover ' +
-        `which apps exist. Check the secret, then \`guuey widget keys\`.${suffix}`,
+        `which apps exist. Check the secret, then \`guuey widget keys\`. The mint was sent to ${url} — ` +
+        `if that is not \`<api origin>/v1/widget/token\`, the base URL is the problem, not the secret.${suffix}`,
       status,
     );
   }
