@@ -52,6 +52,17 @@ describe('maybeApplyThemeFromConfig (guuey#1130 G59)', () => {
     expect(warns).toEqual([]);
   });
 
+  it("guuey#1415: an applied write whose answer says the card side REFUSED prints the card lines — the write stood, so the outcome stays 'applied'", async () => {
+    const warns: string[] = [];
+    const refused = apiWith(200, { app: { id: 'app-1' }, themeForward: { status: 'refused', wouldDrop: ['fonts', 'imagery'] } });
+    expect(await maybeApplyThemeFromConfig('pat', CONFIG, 'app-1', loadedWith({ theme: THEME }), { api: refused, log: () => {}, warn: (l) => warns.push(l) })).toBe('applied');
+    expect(warns.join('\n')).toContain('the card side kept its stored theme: it holds fonts, imagery that guuey does not write');
+    const quiet: string[] = [];
+    const forwarded = apiWith(200, { app: { id: 'app-1' }, themeForward: { status: 'forwarded' } });
+    expect(await maybeApplyThemeFromConfig('pat', CONFIG, 'app-1', loadedWith({ theme: THEME }), { api: forwarded, log: () => {}, warn: (l) => quiet.push(l) })).toBe('applied');
+    expect(quiet).toEqual([]);
+  });
+
   it('a { file } reference writes the RESOLVED document', async () => {
     const api = apiWith(200);
     await maybeApplyThemeFromConfig('pat', CONFIG, 'app-1', loadedWith({ theme: { file: 'theme.json' } }, THEME), { api, log: () => {}, warn: () => {} });

@@ -78,6 +78,7 @@ import * as out from '../output';
 import { DEPLOY_WAIT_MS, stillDeployingMessage } from './deploy-wait';
 import { maybePrintThemeHint } from './theme-hint';
 import { maybeApplyThemeFromConfig } from './deploy-theme';
+import { themeForwardLines, themeForwardOf } from '../theme-forward';
 
 /**
  * Map a platform host to its portal origin — mirrors the live-verified
@@ -154,6 +155,10 @@ export function printPodLifetime(maxPods: number | undefined): void {
  */
 export function printTriggerWarnings(body: unknown): void {
   if (body === null || typeof body !== 'object') return;
+  // guuey#1415: the 202 also carries `themeForward` when the redeploy's
+  // theme overlay did NOT reach the card side (refused / failed) — same
+  // additive-wire posture as `warnings`; old CLIs ignore it.
+  for (const line of themeForwardLines(themeForwardOf(body))) console.log(line);
   const warnings = (body as { warnings?: unknown }).warnings;
   if (!Array.isArray(warnings)) return;
   for (const w of warnings) {

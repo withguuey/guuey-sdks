@@ -12,6 +12,7 @@ import { isLoggedIn, requireAuth } from '../auth';
 import { login } from './login';
 import { resolveTargetAppId } from '../app-id';
 import * as out from '../output';
+import { themeForwardLines, themeForwardOf } from '../theme-forward';
 
 /**
  * `GET /v1/apps`'s per-app projection — a strict subset of the server's
@@ -1008,9 +1009,19 @@ export async function appsUpdate(
     uploaded.push(await uploadBrandAssetFile(resolved, upload.field, upload.filePath));
   }
 
+  // guuey#1415: what the CARD side did on a theme-affecting update — said
+  // after the success line, never as a failure (the row write stood).
+  let cardLines: string[] = [];
   if (typeof body !== 'string') {
     const res = await apiRequest('PUT', `/apps/${resolved}`, body);
     if (!res.ok) return handleError(res);
+    let answer: unknown;
+    try {
+      answer = await res.json();
+    } catch {
+      answer = undefined;
+    }
+    cardLines = themeForwardLines(themeForwardOf(answer));
   }
 
   if (opts.json) {
@@ -1025,6 +1036,7 @@ export async function appsUpdate(
   }
   if (typeof body !== 'string') {
     out.success(`Updated app ${resolved}`);
+    for (const line of cardLines) console.error(line);
   }
 
   // Arming byo is the moment the embed-origin gap becomes real (guuey#186

@@ -30,6 +30,7 @@
  */
 import { isThemeFileRef, type GuueyAppTheme, type ResolvedGuueyJson } from '@guuey/config';
 import { apiRequest, parseApiError } from '../deploy-shared';
+import { themeForwardLines, themeForwardOf } from '../theme-forward';
 
 export const THEME_APPLIED_LINE =
   '  Theme:  app.theme applied — the same write as `guuey apps update --chat-theme-file`.';
@@ -91,6 +92,15 @@ export async function maybeApplyThemeFromConfig(
   }
   if (res.ok) {
     log(THEME_APPLIED_LINE);
+    // guuey#1415: the answer says what the CARD side did; when it did not
+    // follow, the builder hears it here, not in a CloudWatch line.
+    let answer: unknown;
+    try {
+      answer = await res.json();
+    } catch {
+      answer = undefined;
+    }
+    for (const line of themeForwardLines(themeForwardOf(answer))) warn(line);
     return 'applied';
   }
   let body: unknown;
