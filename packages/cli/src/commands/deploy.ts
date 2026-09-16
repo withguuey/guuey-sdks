@@ -9,7 +9,7 @@
  *      `@guuey/create-agentic-app` scaffolds). This is the one-command
  *      orchestrator (design doc `2026-07-03-guuey-create-agentic-app-design.md`
  *      §7): resolve/create the app, deploy each hosted-MCP `source` leg,
- *      push ggui assets, build the worker (`corepack pnpm build` →
+ *      push ggui assets, build the worker (`pnpm build` →
  *      `guuey.worker.js`), then pack + upload + trigger + poll like any
  *      code-mode deploy. The backend builds the runtime image `FROM` its
  *      own base image (Kaniko `Dockerfile.worker` template) — no
@@ -79,6 +79,7 @@ import { DEPLOY_WAIT_MS, stillDeployingMessage } from './deploy-wait';
 import { maybePrintThemeHint } from './theme-hint';
 import { maybeApplyThemeFromConfig } from './deploy-theme';
 import { themeForwardLines, themeForwardOf } from '../theme-forward';
+import { pnpmCommandLine, noPnpmMessage } from '@guuey/create-agentic-app';
 
 /**
  * Map a platform host to its portal origin — mirrors the live-verified
@@ -567,12 +568,12 @@ export type EnsureInstalledResult =
   | { kind: 'missing'; message: string };
 
 /**
- * `deploy --code` runs the project's build LOCALLY (`corepack pnpm build`),
+ * `deploy --code` runs the project's build LOCALLY (`pnpm build`),
  * so a fresh scaffold with no `node_modules` used to die INSIDE the build
  * ("sh: tsup: command not found") with pnpm's own WARN as the only
  * instruction (the founder's first prod deploy, 2026-09-07). Since
  * guuey#1000 (his word: "i prefer auto install") the default is to INSTALL
- * (`corepack pnpm install`, before any leg leaves the machine); `--no-install`
+ * (`pnpm install`, before any leg leaves the machine); `--no-install`
  * stops with the sentence instead. Injected `exists`/`run` so the decision is
  * unit-testable without a child process.
  */
@@ -591,11 +592,17 @@ export function ensureInstalled(opts: {
     return {
       kind: 'missing',
       message:
-        `No node_modules in ${root} — you passed --no-install; run "corepack pnpm install" and re-run guuey deploy.`,
+        `No node_modules in ${root} — you passed --no-install; run "pnpm install" and re-run guuey deploy.`,
     };
   }
-  log('  No node_modules yet — installing dependencies (corepack pnpm install)...');
-  run('corepack pnpm install');
+  // guuey#1441: whatever pnpm this machine can run — never corepack, which
+  // neither Node 25 nor Homebrew's node ships.
+  const installCmd = pnpmCommandLine(['install']);
+  if (installCmd === null) {
+    return { kind: 'missing', message: noPnpmMessage('Install the dependencies', root) };
+  }
+  log(`  No node_modules yet — installing dependencies (${installCmd})...`);
+  run(installCmd);
   return { kind: 'installed' };
 }
 
@@ -759,10 +766,15 @@ async function deployCode(opts: {
   // ── Step 4: agent leg (last) — build, THEN pack (the node_modules
   //    preflight ran before Step 2 — guuey#989) ──
   console.log('  Building...');
+  const buildCmd = pnpmCommandLine(['build']);
+  if (buildCmd === null) {
+    out.error(noPnpmMessage('Build the project', root));
+    process.exit(1);
+  }
   try {
-    execSync('corepack pnpm build', { cwd: root, stdio: 'inherit' });
+    execSync(buildCmd, { cwd: root, stdio: 'inherit' });
   } catch {
-    out.error('Build failed ("corepack pnpm build" exited non-zero). Fix the error above and retry.');
+    out.error(`Build failed ("${buildCmd}" exited non-zero). Fix the error above and retry.`);
     process.exit(1);
   }
 

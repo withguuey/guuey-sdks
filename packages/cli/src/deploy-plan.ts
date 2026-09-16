@@ -60,7 +60,7 @@ export type DeployModeDecision =
  *   (pre-existing behavior, even alongside a guuey.json); a guuey.json
  *   alone is declarative. `package.json` presence is NOT a routing signal.
  * - The orchestrated code path requires a root `package.json` (the CLI
- *   runs `corepack pnpm build` to produce `guuey.worker.js`) — checked
+ *   runs `pnpm build` to produce `guuey.worker.js`) — checked
  *   here so the failure is an early named error, not a confusing build
  *   crash.
  */
@@ -87,7 +87,7 @@ export function resolveDeployMode(s: DeployModeSignals): DeployModeDecision {
           kind: 'error',
           message:
             'Code-mode deploy requires a package.json in the project root — the CLI runs ' +
-            '"corepack pnpm build" to produce guuey.worker.js before packing. ' +
+            '"pnpm build" to produce guuey.worker.js before packing. ' +
             'Run "guuey create" to scaffold a worker project, or commit a root Dockerfile ' +
             'for the legacy image path.',
         };

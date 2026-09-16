@@ -15,7 +15,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, chmodSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runInstall, SCAFFOLD_PNPM } from './scaffold.js';
+import { runInstall } from './scaffold.js';
+import { SCAFFOLD_PNPM } from './pnpm.js';
 
 let work: string;
 let bin: string;

@@ -3,6 +3,7 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { pnpmInvocation, noPnpmMessage } from './pnpm.js';
 import { renameContent, isProbablyText } from './rename.js';
 import { assertNpmSafeName, ensureTargetDir, isErrnoException, pathExists } from './shared.js';
 
@@ -164,51 +165,26 @@ export async function initGit(projectDir: string): Promise<void> {
   }
 }
 
-/** The pnpm the scaffold installs with when it has to fetch one (guuey#1441). */
-export const SCAFFOLD_PNPM = 'pnpm@11.2.2';
-
 /**
- * Install the scaffolded project's dependencies with pnpm, however this machine
- * can reach one.
- *
- * guuey#1441 — the founder's own `npx @guuey/create-agentic-app@latest` could not
- * install, because the single path we shipped was `corepack pnpm install` and the
- * comment under it rested on two sentences that were not true: the templates carry
- * NO `packageManager` pin (measured: zero of them), and corepack does not ship
- * with Node 25 or with Homebrew's node. His words: "my env does not have corepack.
- * other people will have the same issue."
- *
- * The ladder, in order, each rung a thing the machine either has or can get:
- *   1. `pnpm` already on PATH — the common case for anyone who has used pnpm.
- *   2. `npx --yes pnpm@<pinned>` — npx is present BY CONSTRUCTION here: the user
- *      reached this code by running `npx @guuey/create-agentic-app`.
- *   3. neither — print the manual step and leave the scaffold intact.
- *
- * There is deliberately NO `npm install` rung. A scaffolded project is a pnpm
- * WORKSPACE (`pnpm-workspace.yaml`) and declares no npm `workspaces`, so npm would
- * link nothing and hand the user a tree that looks installed and is not. A missing
- * install the user can see beats a broken one they cannot.
- *
- * Fail-soft throughout, as before: a failed install is a warning with the manual
- * step, never a dead scaffold. The message never says `corepack` — a machine
- * without it is exactly the machine reading this.
+ * Install the scaffolded project's dependencies with whatever pnpm this machine
+ * can run (guuey#1441 — see `pnpm.ts` for the ladder and why there is no npm
+ * rung). Fail-soft as before: a failed install is a warning with the manual
+ * step, never a dead scaffold, and the message never says `corepack` — a machine
+ * without it is exactly the machine reading that line.
  */
 export async function runInstall(projectDir: string): Promise<void> {
-  const attempts: [string, string[]][] = [
-    ['pnpm', ['install']],
-    ['npx', ['--yes', SCAFFOLD_PNPM, 'install']],
-  ];
-  for (const [file, args] of attempts) {
-    try {
-      await execFileAsync(file, args, { cwd: projectDir });
-      return;
-    } catch {
-      // try the next rung
-    }
+  const inv = pnpmInvocation();
+  if (inv === null) {
+    console.error(noPnpmMessage('Install the dependencies', projectDir));
+    return;
   }
-  console.error(
-    `Warning: could not install dependencies automatically (no pnpm on PATH, and \`npx ${SCAFFOLD_PNPM}\` did not run). Install them manually:\n  cd ${projectDir}\n  pnpm install`,
-  );
+  try {
+    await execFileAsync(inv.file, [...inv.prefix, 'install'], { cwd: projectDir });
+  } catch {
+    console.error(
+      `Warning: "${[inv.file, ...inv.prefix, 'install'].join(' ')}" failed to run automatically. Run it manually:\n  cd ${projectDir}\n  pnpm install`,
+    );
+  }
 }
 
 /**

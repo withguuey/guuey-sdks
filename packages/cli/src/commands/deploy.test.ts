@@ -18,7 +18,7 @@ import {
 import { DEPLOY_WAIT_MS, NODE_PROVISION_BUDGET_MS, stillDeployingMessage } from './deploy-wait.js';
 import { resolveConfig, loadProjectConfig } from '../config.js';
 
-// guuey#1000 — the code-mode deploy runs `corepack pnpm install` / `corepack
+// guuey#1000 — the code-mode deploy runs `pnpm install` / `corepack
 // pnpm build` through execSync. Recorded (never run) so the auto-install
 // case below can prove ORDER against the fetch spy: the install is the first
 // thing the deploy does, before any leg leaves the machine.
@@ -31,6 +31,12 @@ vi.mock('node:child_process', async (importOriginal) => {
       childProcessLog.calls.push(String(command));
       return Buffer.from('');
     }),
+    // guuey#1441: the install/build command is chosen by probing this machine
+    // (`pnpm --version`, else `npx --version`). Pin the probe so these cases
+    // assert DEPLOY's use of the ladder, not the runner's PATH — the ladder
+    // itself is tested for real, through a stubbed PATH, in
+    // create-agentic-app's run-install.test.ts.
+    spawnSync: vi.fn((file: string) => ({ status: file === 'pnpm' ? 0 : 1 })),
   };
 });
 import { resolveDeployTarget } from './deploy.js';
@@ -1243,7 +1249,7 @@ describe('deploy() --code — the node_modules preflight precedes every platform
     // The tail of the deploy (pack, upload, trigger) is not under test here;
     // whatever it does after the install, the order below is the claim.
     await deploy({ code: true }).catch(() => undefined);
-    expect(childProcessLog.calls[0]).toBe('corepack pnpm install');
+    expect(childProcessLog.calls[0]).toBe('pnpm install');
     const firstFetchAt = fetchSpy.mock.invocationCallOrder[0];
     const installAt = vi.mocked((await import('node:child_process')).execSync).mock.invocationCallOrder[0];
     expect(installAt).toBeDefined();
@@ -1253,7 +1259,7 @@ describe('deploy() --code — the node_modules preflight precedes every platform
 });
 
 // ── guuey#979: code-mode deploy preflights node_modules ─────────────────────
-// The founder's first prod deploy (2026-09-07) ran `corepack pnpm build` in a
+// The founder's first prod deploy (2026-09-07) ran `pnpm build` in a
 // fresh scaffold with no node_modules and died inside the build ("sh: tsup:
 // command not found"); the only install instruction on screen was pnpm's own
 // WARN. The preflight says it in our voice BEFORE any build. Since guuey#1000
@@ -1284,15 +1290,15 @@ describe('ensureInstalled (guuey#979 / #1000)', () => {
     // opt-out the caller chose, never a flag to add.
     expect(r.kind === 'missing' ? r.message : '').toMatch(/--no-install/);
     expect(r.kind === 'missing' ? r.message : '').not.toMatch(/pass --install/);
-    expect(r.kind === 'missing' ? r.message : '').toMatch(/corepack pnpm install/);
+    expect(r.kind === 'missing' ? r.message : '').toMatch(/pnpm install/);
     expect(calls).toEqual([]);
   });
 
   it('by default it runs the project package manager install in the project root, says so, then proceeds', () => {
     const r = ensureInstalled({ root: '/p', install: true, ...io(new Set(['/p/package.json'])) });
     expect(r).toEqual({ kind: 'installed' });
-    expect(calls).toEqual(['corepack pnpm install']);
-    expect(logs.join('\n')).toMatch(/No node_modules yet — installing dependencies \(corepack pnpm install\)/);
+    expect(calls).toEqual(['pnpm install']);
+    expect(logs.join('\n')).toMatch(/No node_modules yet — installing dependencies \(pnpm install\)/);
   });
 
   it('a project with node_modules present is untouched (no install, no message)', () => {
