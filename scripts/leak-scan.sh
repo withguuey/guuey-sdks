@@ -33,6 +33,7 @@ RULES=(
   'internal amplify data table suffix|[A-Za-z]+-[a-z0-9]{26}-NONE\b'
   'internal amplify app host|\bd[0-9a-z]{13}\.amplifyapp\.com'
   'internal aws profile|guuey-prod-admin'
+  'internal aws profile|guuey-release-admin'
   'internal aws profile|\bguuey-sandbox\b'
   'internal aws profile|\bguuey-release\b'
   'internal cluster name|ggui-agents-'
