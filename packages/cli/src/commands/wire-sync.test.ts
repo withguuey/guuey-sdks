@@ -38,6 +38,7 @@ const CLI_WIDGET = repoPath('./widget.ts');
 const CLI_AGENT = repoPath('./agent.ts');
 const CLI_MCP_CONNECTIONS = repoPath('./mcp-connections.ts');
 const CLI_BILLING = repoPath('./billing.ts');
+const CLI_PULL = repoPath('./pull.ts');
 
 const haveWire =
   existsSync(WIRE_APPS) &&
@@ -123,6 +124,12 @@ describe.skipIf(!haveWire)('CLI wire mirrors — sync guards against @guuey-priv
     // server-side and not here is a knob the CLI silently never shows.
     expect(parseInterfaceFields(read(CLI_AGENT), 'AgentConfig')).toEqual(
       parseInterfaceFields(read(WIRE_DEPLOY), 'AgentConfigWire'),
+    );
+  });
+
+  it('PlatformTemplates (pull.ts) mirrors PlatformTemplatesWire — the deployment GET envelope field guuey pull writes back (guuey#1272)', () => {
+    expect(parseInterfaceFields(read(CLI_PULL), 'PlatformTemplates')).toEqual(
+      parseInterfaceFields(read(WIRE_DEPLOY), 'PlatformTemplatesWire'),
     );
   });
 

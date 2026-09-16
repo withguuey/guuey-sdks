@@ -12,6 +12,7 @@
  */
 export * from './schema.js';
 export * from './agent.js';
+export * from './platform-url.js';
 export * from './colocated.js';
 export * from './app.js';
 export * from './theme.js';

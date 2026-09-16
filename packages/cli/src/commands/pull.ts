@@ -123,6 +123,19 @@ export interface DeploymentsResponse {
  */
 export interface DeploymentSnapshotResponse {
   snapshot: GuueyJsonV1 | null;
+  /** guuey#1272 — the `${platform.*}` url templates the snapshot was authored with; absent from an older door. */
+  platformTemplates?: PlatformTemplates | null;
+}
+
+/**
+ * MIRROR of `@guuey-private/cli-wire` `PlatformTemplatesWire` (the CLI cannot
+ * import the private lib; `wire-sync.test.ts` pins the fields). The door
+ * stores the RESOLVED url in the snapshot (every pod reads a plain URL) and
+ * hands the authored template back here so `guuey pull` writes the template,
+ * not the environment's host, into the local manifest.
+ */
+export interface PlatformTemplates {
+  mcpServers: Record<string, { url?: string; mcpResourceUrl?: string }>;
 }
 
 /**
@@ -203,10 +216,33 @@ export interface PullMapping {
  * @param existing - Current local overlay, or `null` for an empty
  *   directory (then only a nocode snapshot can produce a file)
  */
+/**
+ * Put the authored `${platform.*}` templates back on the agent's external MCP
+ * entries (guuey#1272). Only entries the door reported are touched; a name
+ * that is no longer an external server is ignored.
+ */
+export function restorePlatformTemplates(agent: GuueyAgent, templates: PlatformTemplates | null): GuueyAgent {
+  if (templates === null || agent.mcpServers === undefined) return agent;
+  const servers = { ...agent.mcpServers };
+  let changed = false;
+  for (const [name, t] of Object.entries(templates.mcpServers)) {
+    const entry = servers[name];
+    if (entry === undefined || entry === false || entry.kind !== 'external') continue;
+    servers[name] = {
+      ...entry,
+      ...(t.url !== undefined ? { url: t.url } : {}),
+      ...(t.mcpResourceUrl !== undefined ? { mcpResourceUrl: t.mcpResourceUrl } : {}),
+    };
+    changed = true;
+  }
+  return changed ? { ...agent, mcpServers: servers } : agent;
+}
+
 export function mapHostedStateToOverlay(
   app: AppResponse,
   snapshot: GuueyJsonV1 | null,
   existing: GuueyJsonV1 | null,
+  platformTemplates: PlatformTemplates | null = null,
 ): PullMapping {
   // No nocode snapshot to eject → refresh identity only, preserve the
   // local agent section (code projects own their local source). With no
@@ -236,12 +272,14 @@ export function mapHostedStateToOverlay(
   // An empty directory has no local mode — the same "omit the key" branch
   // a hand-authored declarative project takes (guuey#1287).
   const localMode = existing?.agent.mode;
-  let agent: GuueyAgent = snapshot.agent;
+  // guuey#1272: the door resolved `${platform.*}` hosts into the snapshot; write the
+  // authored template back so the local manifest stays environment-agnostic.
+  let agent: GuueyAgent = restorePlatformTemplates(snapshot.agent, platformTemplates);
   let promptFile: { path: string; content: string } | null = null;
   const sp = snapshot.agent.systemPrompt;
   if (typeof sp === 'string') {
     promptFile = { path: SYSTEM_PROMPT_FILE, content: sp };
-    agent = { ...snapshot.agent, systemPrompt: { file: SYSTEM_PROMPT_FILE } };
+    agent = { ...agent, systemPrompt: { file: SYSTEM_PROMPT_FILE } };
   }
   if (localMode === undefined) {
     const { mode: _snapshotMode, ...rest } = agent;
@@ -394,6 +432,7 @@ export async function pull(
 
   // Fetch the definition snapshot for the picked build (nocode only).
   let snapshot: GuueyJsonV1 | null = null;
+  let platformTemplates: PlatformTemplates | null = null;
   if (buildNumber !== null) {
     console.log(`  Pulling no-code definition (build #${buildNumber})...`);
     const snapRes = await apiRequest(
@@ -408,7 +447,7 @@ export async function pull(
         `Failed to fetch deployment snapshot: build #${buildNumber}`,
       );
     }
-    ({ snapshot } = (await snapRes.json()) as DeploymentSnapshotResponse);
+    ({ snapshot, platformTemplates = null } = (await snapRes.json()) as DeploymentSnapshotResponse);
   }
 
   // Map + externalize the prompt + write. An empty directory with nothing
@@ -422,6 +461,7 @@ export async function pull(
     app,
     snapshot,
     existing,
+    platformTemplates,
   );
 
   if (promptFile) {

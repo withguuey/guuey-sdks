@@ -40,6 +40,7 @@
  *    `permissions`, OpenAI's `tools.functions`) belong on a `framework`-scoped sub-block.
  */
 import { z } from 'zod';
+import { PlatformUrl } from './platform-url.js';
 import { AGENT_SIZES } from './hosting.js';
 import { isValidColocatedServerName } from './colocated.js';
 
@@ -140,8 +141,13 @@ const HostedMcp = z
 const ExternalMcp = z
   .strictObject({
     kind: z.literal('external'),
-    /** Full HTTP/SSE base URL. */
-    url: z.url(),
+    /**
+     * Full HTTP/SSE base URL — or a platform-templated one whose whole host is
+     * `${platform.<fact>}` (guuey#1272; see `platform-url.ts` for the grammar
+     * and the sequencing trade). The door resolves it when it writes the
+     * deployment snapshot; a pod reads a plain URL.
+     */
+    url: PlatformUrl,
     /** Transport protocol. Defaults to `'http'` (StreamableHTTP). */
     transport: z.enum(['http', 'sse']).optional(),
     /**
@@ -226,7 +232,7 @@ const ExternalMcp = z
      * INTERNAL — set only by Router lowering; when present the federation mint
      * uses this as the RFC 8707 resource instead of `url`.
      */
-    mcpResourceUrl: z.url().optional(),
+    mcpResourceUrl: PlatformUrl.optional(),
     /**
      * INTERNAL — set only by Router lowering when this entry is the spliced
      * profile MCP; carries the agent's `profileAccess` posture onto the entry
