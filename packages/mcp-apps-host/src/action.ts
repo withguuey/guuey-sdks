@@ -199,8 +199,15 @@ export const PULL_CIRCUIT_THRESHOLD = 3;
 /**
  * Logged ONCE when a locator's pull circuit opens — the bounded-storm marker
  * (sentry's readability ask; the #1233 next-incident is scopeable from it).
+ * The SYMBOL is the handle code and tests grep; its VALUE is the sentence a
+ * builder reads in their own site's console (guuey#1375) — our one prefix,
+ * then what happened and what follows, never an internal token. It says
+ * exactly what the circuit does: the relay stops pulling for that locator,
+ * the host is told the session is unrestorable (`onSessionUnrestorable`),
+ * and nothing retries unattended.
  */
-export const UI_ACTION_PULL_CIRCUIT_OPEN = "UI_ACTION_PULL_CIRCUIT_OPEN";
+export const UI_ACTION_PULL_CIRCUIT_OPEN =
+  "[guuey] card updates stopped — the session behind this card could not be restored; the widget reports it, and a new conversation starts fresh";
 
 /**
  * Assemble the sandbox-facing action relay from a host transport. The

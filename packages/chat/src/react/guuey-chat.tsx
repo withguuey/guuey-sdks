@@ -751,7 +751,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     const live = liveRef.current;
     if (!live.available) {
       console.warn(
-        "[GuueyChat] ui/message doorbell dropped — chat is unavailable (endpointUrl null); the view's gesture cannot start a turn here.",
+        "[guuey] ui/message doorbell dropped — chat is unavailable (endpointUrl null); the view's gesture cannot start a turn here.",
       );
       return;
     }
@@ -785,7 +785,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     if (next === undefined) return;
     const live = liveRef.current;
     if (!live.available) {
-      console.warn("[GuueyChat] queued ui/message doorbell dropped — chat became unavailable.");
+      console.warn("[guuey] queued ui/message doorbell dropped — chat became unavailable.");
       return;
     }
     void live.invoke.send(next).catch(() => {});
