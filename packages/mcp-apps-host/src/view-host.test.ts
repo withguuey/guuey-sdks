@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MCP_APP_DISMISS_TYPE } from "@ggui-ai/protocol/integrations/mcp-apps";
 import {
   attachViewHost,
   viewDocumentHtml,
@@ -360,6 +361,54 @@ describe("attachViewHost — resources/read relay", () => {
     attachViewHost(unwired.frame, { events: unwiredEvents.events });
     unwiredEvents.emit(INITIALIZE, unwired.contentWindow);
     expect(unwired.posted[0]?.message.result?.["hostCapabilities"]).toEqual({});
+  });
+});
+
+describe("attachViewHost — the `ggui:dismiss` intent (guuey#1423)", () => {
+  const DISMISS = { type: MCP_APP_DISMISS_TYPE, reason: "escape" };
+
+  it("forwards the card's dismiss intent (with its reason) to onDismiss; nothing is posted back — an intent owes no reply", () => {
+    const { frame, posted, contentWindow } = fakeFrame();
+    const { events, emit } = fakeEvents();
+    const reasons: string[] = [];
+    attachViewHost(frame, { events, onDismiss: (reason) => reasons.push(reason) });
+    emit(DISMISS, contentWindow);
+    expect(reasons).toEqual(["escape"]);
+    expect(posted).toEqual([]);
+  });
+
+  it("only from the mounted frame — another window's identical message is not ours (the identity invariant)", () => {
+    const { frame, contentWindow } = fakeFrame();
+    const { events, emit } = fakeEvents();
+    const reasons: string[] = [];
+    attachViewHost(frame, { events, onDismiss: (reason) => reasons.push(reason) });
+    emit(DISMISS, { some: "other window" });
+    emit(DISMISS, null);
+    expect(reasons).toEqual([]);
+    emit(DISMISS, contentWindow);
+    expect(reasons).toEqual(["escape"]);
+  });
+
+  it("with no observer the intent is consumed silently — ignoring is conformant, and nothing changes for hosts that predate 0.18.0", () => {
+    const { frame, posted, contentWindow } = fakeFrame();
+    const { events, emit } = fakeEvents();
+    attachViewHost(frame, { events });
+    expect(() => emit(DISMISS, contentWindow)).not.toThrow();
+    expect(posted).toEqual([]);
+  });
+
+  it("a throwing observer is contained — the message pump keeps serving the view", () => {
+    const { frame, posted, contentWindow } = fakeFrame();
+    const { events, emit } = fakeEvents();
+    attachViewHost(frame, {
+      events,
+      onDismiss: () => {
+        throw new Error("embedder bug");
+      },
+    });
+    expect(() => emit(DISMISS, contentWindow)).not.toThrow();
+    emit(INITIALIZE, contentWindow);
+    expect(posted).toHaveLength(1); // the handshake still gets its answer
   });
 });
 

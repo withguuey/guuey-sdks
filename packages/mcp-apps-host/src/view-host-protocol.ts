@@ -41,6 +41,10 @@ import {
   type McpUiInitializeResult,
   type McpUiResourceCsp,
 } from "@modelcontextprotocol/ext-apps";
+// The ONE non-JSON-RPC message this host hears: protocol 0.18.0's dismiss
+// INTENT (ggui#1109 / guuey#1423). The guard proves the envelope's shape and,
+// by design, admits any non-empty `reason` — see the `dismiss` effect.
+import { isMcpAppDismissMessage, type McpAppDismissReason } from "@ggui-ai/protocol/integrations/mcp-apps";
 import type { McpToolStructuredContent } from "./action.js";
 import type { McpResourceReadResult } from "./reader.js";
 
@@ -233,6 +237,29 @@ export type ViewHostEffect =
       kind: "size-changed";
       width?: number;
       height?: number;
+    }
+  | {
+      /**
+       * The view asked to be dismissed (`ggui:dismiss`, protocol 0.18.0 —
+       * ggui#1109 / guuey#1423): the user made a dismiss gesture with focus
+       * INSIDE the card document, where the embedding page's own key
+       * handlers cannot hear it, and the card forwarded it. An INTENT, never
+       * a command — the embedder decides what dismiss means on its surface
+       * (close a takeover, return focus, collapse to a chip, nothing);
+       * ignoring it is conformant, so the glue only ever OBSERVES it
+       * ({@link AttachViewHostConfig.onDismiss} in `view-host.ts`).
+       *
+       * `reason` is the card's stated cause, forwarded verbatim. The set is
+       * EXTENSIBLY-closed on the wire: `MCP_APP_DISMISS_REASONS` documents
+       * the reasons this release NAMES, and `isMcpAppDismissMessage` admits
+       * any non-empty string on purpose — a reason a later card names that
+       * this host does not know is still a dismiss request, of unknown
+       * cause, never a message to drop (the N−1 failure the openness exists
+       * to prevent). So: NO reason whitelist here, no `reason === "escape"`
+       * branch; the effect fires for every shape the protocol guard accepts.
+       */
+      kind: "dismiss";
+      reason: McpAppDismissReason;
     };
 
 /**
@@ -366,7 +393,9 @@ export function teardownMessage(): ViewHostOutbound {
  * Feed one inbound postMessage payload to the machine.
  *
  * The contract, exactly:
- *  - non-RPC data → ignored (not ours);
+ *  - non-RPC data → ignored (not ours) — with ONE typed exception: protocol
+ *    0.18.0's `ggui:dismiss` intent (`isMcpAppDismissMessage`) → a `dismiss`
+ *    effect, state untouched (guuey#1423);
  *  - notifications (no id) → consumed silently, JSON-RPC-correctly; the
  *    `ui/notifications/initialized` ack is remembered on the state;
  *  - `ui/initialize` → answered spec-canonically; phase → `"connected"`
@@ -380,6 +409,10 @@ export function viewHostReceive(
   behavior: ViewHostBehavior,
   data: unknown,
 ): ViewHostTransition {
+  // Checked BEFORE the envelope narrowing, which would otherwise file this
+  // non-RPC intent under "not ours". Any accepted shape dismisses — the
+  // reason is classified by the embedder, never whitelisted here.
+  if (isMcpAppDismissMessage(data)) return { state, effects: [{ kind: "dismiss", reason: data.reason }] };
   const req = asInboundEnvelope(data);
   if (req === undefined) return { state, effects: [] };
 

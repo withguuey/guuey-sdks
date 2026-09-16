@@ -27,6 +27,7 @@
  * Seeded from ggui's console `surface-host.ts` (donated, guuey#186 audit);
  * re-derived here against the pure machine + our own tests.
  */
+import type { McpAppDismissReason } from "@ggui-ai/protocol/integrations/mcp-apps";
 import {
   diagnoseCspViolation,
   initialViewHostState,
@@ -172,6 +173,21 @@ export interface AttachViewHostConfig {
    * exactly this callback.
    */
   onSizeChanged?: (size: { width?: number; height?: number }) => void;
+  /**
+   * The view asked to be dismissed — protocol 0.18.0's `ggui:dismiss`
+   * INTENT (ggui#1109 / guuey#1423): a dismiss gesture made with focus
+   * INSIDE the card document, which the embedding page's own key handlers
+   * can never hear. The card forwards; the EMBEDDER decides what dismiss
+   * means on its surface (guuey's widget routes it to the same collapse its
+   * host-document Escape takes; a transcript card may do nothing). Ignoring
+   * is conformant, so this is an observer, not a capability: nothing is
+   * advertised, nothing is answered, and absent → the intent is consumed
+   * silently exactly as before 0.18.0. `reason` is the card's stated cause
+   * and the set is extensibly-closed: it fires for EVERY shape the protocol
+   * guard accepts, an unknown reason included — treat one as "dismiss
+   * requested, cause unknown", never as nothing.
+   */
+  onDismiss?: (reason: McpAppDismissReason) => void;
   /** Observe phase transitions (see {@link ViewHostPhase}). */
   onPhaseChange?: (phase: ViewHostPhase) => void;
   /**
@@ -361,7 +377,16 @@ export function attachViewHost(frame: ViewFrameLike, config: AttachViewHostConfi
           // logs; the view's contract is already satisfied.
         }
       }
-      else {
+      else if (effect.kind === "dismiss") {
+        // Observation only (guuey#1423): the machine answered nothing (an
+        // intent owes no reply) and the embedder's decision is its own —
+        // contained like every other observer.
+        try {
+          config.onDismiss?.(effect.reason);
+        } catch {
+          // Observer failure is the embedder's bug; the message pump stands.
+        }
+      } else {
         config.onSizeChanged?.({
           ...(effect.width !== undefined ? { width: effect.width } : {}),
           ...(effect.height !== undefined ? { height: effect.height } : {}),

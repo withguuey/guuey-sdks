@@ -69,6 +69,7 @@ export interface GuueyViewProps
     | "onOpenLink"
     | "onReadResource"
     | "onSizeChanged"
+    | "onDismiss"
     | "negotiationTimeoutMs"
     | "cspOrigins"
     | "onCspDiagnosis"

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MCP_APP_DISMISS_REASONS, MCP_APP_DISMISS_TYPE } from "@ggui-ai/protocol/integrations/mcp-apps";
 import {
   diagnoseCspViolation,
   initializeResult,
@@ -197,6 +198,48 @@ describe("viewHostReceive — ui/open-link (guuey#522, the golden flip)", () => 
     const { state, effects } = viewHostReceive(initialViewHostState(), behavior(), data);
     expect(effects).toEqual([]);
     expect(state).toEqual(initialViewHostState());
+  });
+});
+
+describe("viewHostReceive — the `ggui:dismiss` intent (protocol 0.18.0, guuey#1423)", () => {
+  it("a card's Escape becomes a `dismiss` effect carrying its reason; the state is untouched", () => {
+    const { state, effects } = viewHostReceive(initialViewHostState(), behavior(), {
+      type: MCP_APP_DISMISS_TYPE,
+      reason: "escape",
+    });
+    expect(effects).toEqual([{ kind: "dismiss", reason: "escape" }]);
+    expect(state).toEqual(initialViewHostState());
+  });
+
+  it("a reason this release does NOT name still dismisses — the set is extensibly-closed, never a whitelist (the row's decision, pinned)", () => {
+    // `MCP_APP_DISMISS_REASONS` documents today's names; a card on release
+    // N+1 may send one this host has never seen. Dropping it would be the
+    // N−1 failure the guard's openness exists to prevent.
+    expect(MCP_APP_DISMISS_REASONS).not.toContain("swipe-down");
+    const { effects } = viewHostReceive(initialViewHostState(), behavior(), {
+      type: MCP_APP_DISMISS_TYPE,
+      reason: "swipe-down",
+    });
+    expect(effects).toEqual([{ kind: "dismiss", reason: "swipe-down" }]);
+  });
+
+  it.each([
+    ["no reason", { type: MCP_APP_DISMISS_TYPE }],
+    ["an empty reason", { type: MCP_APP_DISMISS_TYPE, reason: "" }],
+    ["a non-string reason", { type: MCP_APP_DISMISS_TYPE, reason: 1 }],
+    ["a near-miss type", { type: "ggui:dismis", reason: "escape" }],
+  ])("ignores a malformed dismiss (%s) — shape is the guard's job, and it holds", (_label, data) => {
+    const { state, effects } = viewHostReceive(initialViewHostState(), behavior(), data);
+    expect(effects).toEqual([]);
+    expect(state).toEqual(initialViewHostState());
+  });
+
+  it("still ignores every other non-RPC typed message — the exception is exactly one type", () => {
+    const { effects } = viewHostReceive(initialViewHostState(), behavior(), {
+      type: "ggui:bootstrap-failed",
+      reason: "escape",
+    });
+    expect(effects).toEqual([]);
   });
 });
 
