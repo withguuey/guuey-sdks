@@ -66,6 +66,8 @@ export {
 } from "./react/oauth-return.js";
 export { Markdown } from "./react/markdown.js";
 export { themeCssVars, type ThemeMode } from "./react/theme-css.js";
+/** guuey#1195: the theme's declared faces as `@font-face` CSS — what the kit injects and what a host hands its cards (`hostContext.styles.css.fonts`). */
+export { facesCss } from "./react/faces.js";
 /**
  * The kit's default theme, from the react arm too (guuey#1320): a bundle
  * that carries ONLY this entry (guuey's widget `host/v1.js` — a second kit

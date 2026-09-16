@@ -76,6 +76,7 @@ import type {
   ViewRefItem,
 } from "../types.js";
 import { themeCssVars, type ThemeMode } from "./theme-css.js";
+import { facesCss, useHostFaces } from "./faces.js";
 import { Transcript, type TranscriptWindowing } from "./transcript.js";
 import type { TranscriptComponents, TranscriptItemContext, ViewSlotProps } from "./components.js";
 import { useTranscript, useTranscriptInputs } from "./use-transcript.js";
@@ -95,7 +96,10 @@ export function viewPropsWithThemeAnnounce(
     ViewSlotProps,
     "onCallTool" | "onUpdateModelContext" | "onUserMessage" | "onOpenLink"
   > = {},
+  /** guuey#1195: the theme's `@font-face` CSS — handed to every card as `hostContext.styles.css.fonts`; "" hands nothing. */
+  fontsCss = "",
 ): TranscriptItemContext["viewProps"] {
+  const fonts = fontsCss === "" ? {} : { styles: { css: { fonts: fontsCss } } };
   const themed = (base: ViewSlotProps | undefined): ViewSlotProps => ({
     // Kit-default host wires (guuey#335): the ACTION RELAY (Confirm inside
     // a rendered card is a tools/call — without a relay the initialize-only
@@ -105,7 +109,7 @@ export function viewPropsWithThemeAnnounce(
     // declared slot prop always wins.
     ...defaults,
     ...base,
-    hostContext: { theme: mode, ...base?.hostContext },
+    hostContext: { theme: mode, ...fonts, ...base?.hostContext },
   });
   if (typeof viewProps === "function") {
     return (item, mount) => themed(viewProps(item, mount));
@@ -829,14 +833,25 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     setPendingLink(url);
   }, []);
 
+  // guuey#1195: the theme's declared faces — injected into THIS document
+  // (the frame page, the standalone page, or the host page under an inline
+  // shadow mount) and handed to every card as `hostContext.styles.css.fonts`.
+  const fontsCss = useMemo(() => facesCss(theme.typography.faces), [theme.typography.faces]);
+  useHostFaces(fontsCss);
+
   const effectiveViewProps = useMemo<TranscriptItemContext["viewProps"]>(
     () =>
-      viewPropsWithThemeAnnounce(viewProps, mode, {
-        ...(stagedDefaultOnCallTool !== undefined ? { onCallTool: stagedDefaultOnCallTool } : {}),
-        onUpdateModelContext: defaultOnUpdateModelContext,
-        onUserMessage: defaultOnUserMessage,
-        onOpenLink: defaultOnOpenLink,
-      }),
+      viewPropsWithThemeAnnounce(
+        viewProps,
+        mode,
+        {
+          ...(stagedDefaultOnCallTool !== undefined ? { onCallTool: stagedDefaultOnCallTool } : {}),
+          onUpdateModelContext: defaultOnUpdateModelContext,
+          onUserMessage: defaultOnUserMessage,
+          onOpenLink: defaultOnOpenLink,
+        },
+        fontsCss,
+      ),
     [
       viewProps,
       mode,
@@ -844,6 +859,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       defaultOnUpdateModelContext,
       defaultOnUserMessage,
       defaultOnOpenLink,
+      fontsCss,
     ],
   );
 
@@ -861,7 +877,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
           onUpdateModelContext: defaultOnUpdateModelContext,
           onUserMessage: defaultOnUserMessage,
           onOpenLink: defaultOnOpenLink,
-          hostContext: { theme: mode },
+          hostContext: { theme: mode, ...(fontsCss === "" ? {} : { styles: { css: { fonts: fontsCss } } }) },
         }
       : (effectiveViewProps ?? {});
 

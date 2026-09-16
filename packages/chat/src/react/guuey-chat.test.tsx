@@ -769,6 +769,16 @@ describe("<GuueyChat> host-identity churn", () => {
 
 // ─── The kit-tier theme announce (guuey#302) ───────────────────────────────
 describe("viewPropsWithThemeAnnounce", () => {
+  it("guuey#1195: hands the theme's @font-face CSS to every slot as hostContext.styles.css.fonts; a caller's own styles win; nothing without faces", () => {
+    const css = '@font-face{font-family:"Archivo";src:url("https://fonts.gstatic.com/a.woff2");font-display:swap}';
+    const out = viewPropsWithThemeAnnounce(undefined, "light", {}, css);
+    expect(typeof out === "object" && out !== null ? out.hostContext : undefined).toEqual({ theme: "light", styles: { css: { fonts: css } } });
+    const own = viewPropsWithThemeAnnounce({ hostContext: { styles: { css: { fonts: "@font-face{}" } } } }, "light", {}, css);
+    expect(typeof own === "object" && own !== null ? own.hostContext?.styles?.css?.fonts : undefined).toBe("@font-face{}");
+    const none = viewPropsWithThemeAnnounce(undefined, "light", {}, "");
+    expect(typeof none === "object" && none !== null ? none.hostContext : undefined).toEqual({ theme: "light" });
+  });
+
   it("fills hostContext.theme from the mode when the host passes nothing", () => {
     const out = viewPropsWithThemeAnnounce(undefined, "dark");
     expect(out).toEqual({ hostContext: { theme: "dark" } });
@@ -1664,5 +1674,30 @@ describe("agentMode (guuey#566 carriage, added for guuey#1152)", () => {
     fireEvent.keyDown(screen.getByLabelText("Message"), { key: "Enter" });
     await waitFor(() => expect(unpinned.calls).toHaveLength(1));
     expect(unpinned.calls[0].body).not.toHaveProperty("mode");
+  });
+});
+
+/**
+ * guuey#1195 — a themed mount injects its declared faces into THIS document
+ * (jsdom has no constructed sheets, so the marked <style> path is what shows).
+ */
+describe("the face transport on a mount (guuey#1195)", () => {
+  it("a theme with faces → one <style data-guuey-faces> in <head> carrying the family; a theme without → none added", () => {
+    for (const el of Array.from(document.head.querySelectorAll("style[data-guuey-faces]"))) el.remove();
+    const { adapters } = scriptedAdapters();
+    render(
+      <GuueyChat
+        endpointUrl="https://pod.example/invoke"
+        adapters={adapters}
+        theme={{ ...GUUEY_CHAT_THEME, typography: { ...GUUEY_CHAT_THEME.typography, faces: [{ family: "Archivo", src: "https://fonts.gstatic.com/s/archivo/v1/a.woff2", weight: "400" }] } }}
+      />,
+    );
+    const styles = document.head.querySelectorAll("style[data-guuey-faces]");
+    expect(styles).toHaveLength(1);
+    expect(styles[0]!.textContent).toContain('font-family:"Archivo"');
+    expect(styles[0]!.textContent).toContain('src:url("https://fonts.gstatic.com/s/archivo/v1/a.woff2")');
+    cleanup();
+    render(<GuueyChat endpointUrl="https://pod.example/invoke" adapters={adapters} theme={GUUEY_CHAT_THEME} />);
+    expect(document.head.querySelectorAll("style[data-guuey-faces]")).toHaveLength(1);
   });
 });

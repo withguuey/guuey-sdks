@@ -34,6 +34,7 @@ import {
   type TranscriptItemContext,
 } from "./components.js";
 import { themeCssVars, type ThemeMode } from "./theme-css.js";
+import { facesCss, useHostFaces } from "./faces.js";
 import { PARTS } from "./parts.js";
 
 /** How close to the bottom (px) still counts as pinned. */
@@ -172,6 +173,9 @@ export function Transcript(props: TranscriptProps): ReactNode {
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  // guuey#1195: a standalone <Transcript> consumer gets the theme's faces too.
+  useHostFaces(facesCss(theme.typography.faces));
 
   const rootStyle: CSSProperties = { ...themeCssVars(theme, mode), ...style };
 
