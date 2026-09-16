@@ -25,6 +25,7 @@ import {
   appsDelete,
   appsRecover,
   appsAccess,
+  appsCheck,
   appsPublish,
   appsUnpublish,
   appsByoUserErase,
@@ -1014,6 +1015,11 @@ async function main(): Promise<void> {
             json: jsonFlag,
           });
           break;
+        case 'check':
+          // guuey#1301: implemented, tested and suggested by the error hints —
+          // and dispatched nowhere until now.
+          await appsCheck(rest[0], flags);
+          break;
         case 'publish':
           await appsPublish(rest[0], {
             name: flags.name as string | undefined,
@@ -1044,7 +1050,7 @@ async function main(): Promise<void> {
           break;
         default:
           console.error(
-            `Unknown apps command: ${action ?? '(none)'}. Use: list, get, create, update, delete, recover, subscribe, access, publish, unpublish, byo-user`,
+            `Unknown apps command: ${action ?? '(none)'}. Use: list, get, create, update, delete, recover, subscribe, access, check, publish, unpublish, byo-user`,
           );
           process.exit(1);
       }

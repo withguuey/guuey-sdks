@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 /**
  * `guuey apps check --origin` + the byo embed-origin warning (guuey#186
  * Gap 2).
@@ -308,5 +309,19 @@ describe('appsUpdate --auth-mode byo origin warning', () => {
 
     const output = errorSpy.mock.calls.flat().join('\n');
     expect(output).not.toContain('allowlist is EMPTY');
+  });
+});
+
+/**
+ * guuey#1301 — implemented, tested and suggested by the CLI's own error hints,
+ * `apps check` was dispatched nowhere: the `apps` switch in `cli.ts` had no
+ * `check` case. Pinned against the dispatcher's source so it cannot fall out
+ * again silently.
+ */
+describe('guuey apps check — wired in the dispatcher (guuey#1301)', () => {
+  it("cli.ts dispatches `apps check` to appsCheck and lists it among the apps commands", () => {
+    const cli = readFileSync(new URL('../cli.ts', import.meta.url), 'utf8');
+    expect(cli).toMatch(/case 'check':\s*[\s\S]{0,240}await appsCheck\(rest\[0\], flags\);/);
+    expect(cli).toContain('subscribe, access, check, publish, unpublish, byo-user');
   });
 });
