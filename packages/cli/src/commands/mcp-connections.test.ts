@@ -51,8 +51,15 @@ describe('mcpConnectionRow', () => {
       Apps: 'Trimly (always), app-2 (denied)',
       Granted: '2026-08-17 10:00:00',
       'Last error': '—',
+      'Held by': '—',
     });
     expect(Object.keys(mcpConnectionRow(CONN))).toEqual(MCP_CONNECTIONS_COLUMNS);
+  });
+
+  it('names the first-party agent that holds a grant as you (guuey#1291), — otherwise', () => {
+    const held = mcpConnectionRow({ ...CONN, heldBy: { firstPartyAppId: 'cde1a0f2-1111-4222-8333-444455556666', appName: 'Admin agent' } });
+    expect(held['Held by']).toBe('Admin agent (first-party agent)');
+    expect(mcpConnectionRow(CONN)['Held by']).toBe('—');
   });
 
   it('collapses a display name equal to the serverId, shows — for no apps, and formats lastError with its time', () => {

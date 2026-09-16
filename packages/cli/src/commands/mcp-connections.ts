@@ -51,6 +51,8 @@ export interface McpConnectionWire {
   lastError?: string;
   lastErrorAt?: string;
   attachments: McpAttachmentWire[];
+  /** guuey#1291 — held by a first-party app's widget identity of this same human (the admin agent); listed and revocable like your own. */
+  heldBy?: { firstPartyAppId: string; appName: string };
 }
 
 /** Mirror of `McpConnectionsWire`. */
@@ -66,7 +68,7 @@ export interface McpConnectStartWire {
 
 // ─── Rendering (pure, unit-pinned) ────────────────────────────────────
 
-export const MCP_CONNECTIONS_COLUMNS = ['ID', 'Server', 'Status', 'Apps', 'Granted', 'Last error'];
+export const MCP_CONNECTIONS_COLUMNS = ['ID', 'Server', 'Status', 'Apps', 'Granted', 'Last error', 'Held by'];
 
 /** One `guuey mcp connections` table row. */
 export function mcpConnectionRow(c: McpConnectionWire): Record<string, string> {
@@ -78,6 +80,8 @@ export function mcpConnectionRow(c: McpConnectionWire): Record<string, string> {
     Apps: apps.length > 0 ? apps : '—',
     Granted: c.grantedAt ? c.grantedAt.slice(0, 19).replace('T', ' ') : '—',
     'Last error': c.lastError ? `${c.lastError}${c.lastErrorAt ? ` @ ${c.lastErrorAt.slice(0, 19).replace('T', ' ')}` : ''}` : '—',
+    // guuey#1291: a grant a first-party agent holds as you (the admin agent's) — revoke it here like your own.
+    'Held by': c.heldBy ? `${c.heldBy.appName} (first-party agent)` : '—',
   };
 }
 
