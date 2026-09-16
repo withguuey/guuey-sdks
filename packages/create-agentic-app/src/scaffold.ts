@@ -164,18 +164,51 @@ export async function initGit(projectDir: string): Promise<void> {
   }
 }
 
+/** The pnpm the scaffold installs with when it has to fetch one (guuey#1441). */
+export const SCAFFOLD_PNPM = 'pnpm@11.2.2';
+
+/**
+ * Install the scaffolded project's dependencies with pnpm, however this machine
+ * can reach one.
+ *
+ * guuey#1441 — the founder's own `npx @guuey/create-agentic-app@latest` could not
+ * install, because the single path we shipped was `corepack pnpm install` and the
+ * comment under it rested on two sentences that were not true: the templates carry
+ * NO `packageManager` pin (measured: zero of them), and corepack does not ship
+ * with Node 25 or with Homebrew's node. His words: "my env does not have corepack.
+ * other people will have the same issue."
+ *
+ * The ladder, in order, each rung a thing the machine either has or can get:
+ *   1. `pnpm` already on PATH — the common case for anyone who has used pnpm.
+ *   2. `npx --yes pnpm@<pinned>` — npx is present BY CONSTRUCTION here: the user
+ *      reached this code by running `npx @guuey/create-agentic-app`.
+ *   3. neither — print the manual step and leave the scaffold intact.
+ *
+ * There is deliberately NO `npm install` rung. A scaffolded project is a pnpm
+ * WORKSPACE (`pnpm-workspace.yaml`) and declares no npm `workspaces`, so npm would
+ * link nothing and hand the user a tree that looks installed and is not. A missing
+ * install the user can see beats a broken one they cannot.
+ *
+ * Fail-soft throughout, as before: a failed install is a warning with the manual
+ * step, never a dead scaffold. The message never says `corepack` — a machine
+ * without it is exactly the machine reading this.
+ */
 export async function runInstall(projectDir: string): Promise<void> {
-  // `corepack pnpm` (guuey#1000): the scaffold's package.json pins its
-  // packageManager, and corepack ships with Node — a first run on a machine
-  // with Node and nothing else still installs. Fail-soft on purpose: a
-  // failed install is a warning with the manual step, never a dead scaffold.
-  try {
-    await execFileAsync('corepack', ['pnpm', 'install'], { cwd: projectDir });
-  } catch {
-    console.error(
-      `Warning: "corepack pnpm install" failed to run automatically. Run it manually:\n  cd ${projectDir}\n  corepack pnpm install`
-    );
+  const attempts: [string, string[]][] = [
+    ['pnpm', ['install']],
+    ['npx', ['--yes', SCAFFOLD_PNPM, 'install']],
+  ];
+  for (const [file, args] of attempts) {
+    try {
+      await execFileAsync(file, args, { cwd: projectDir });
+      return;
+    } catch {
+      // try the next rung
+    }
   }
+  console.error(
+    `Warning: could not install dependencies automatically (no pnpm on PATH, and \`npx ${SCAFFOLD_PNPM}\` did not run). Install them manually:\n  cd ${projectDir}\n  pnpm install`,
+  );
 }
 
 /**
