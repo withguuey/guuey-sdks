@@ -9,11 +9,16 @@
  * the mirror gate went red (guuey#1389) while the monorepo stayed green —
  * the root hoists the types for other packages.
  *
- * The isolated extract gate did NOT catch it: pnpm's hoisted fallback
- * directory on a developer machine exposes `@types/node` where a strict CI
- * install does not, and TypeScript's NodeNext resolution walks up into it.
- * That gate's verdict therefore depended on the machine it ran on rather
- * than the tree it judged.
+ * The isolated extract gate did NOT catch it, and the reason first recorded
+ * here was wrong: it was not pnpm's hoisted fallback directory. The gate
+ * extracted into `.tmp/` INSIDE the monorepo, and TypeScript's default
+ * `typeRoots` walk climbs out of an extract into the repo root's
+ * `node_modules/@types`. Measured with one file and one tsconfig importing
+ * `node:fs`: under `.tmp/` it resolves, and in a directory with no ancestor
+ * `node_modules` the same file gives exactly one diagnostic — TS2307, the
+ * mirror's own error. That gate's verdict therefore depended on the machine
+ * it ran on rather than the tree it judged; it now refuses to run anywhere
+ * that could be true (`scripts/oss-extract-gate.sh`).
  *
  * This check does not depend on resolution at all: it reads the source for
  * `node:` imports and the manifest for the declaration, so it returns the
@@ -72,7 +77,7 @@ for (const name of readdirSync(packagesDir)) {
   if (declared === null) {
     violations += 1;
     console.error(
-      `✗ ${manifest.name ?? name} imports node: builtins in ${hits.length} file(s) but declares no @types/node`,
+      `✗ ${manifest.name ?? name} imports node: builtins in ${hits.length} file(s) but declares no @types/node`
     );
     for (const f of hits.slice(0, 5)) console.error(`    ${f.slice(root.length + 1)}`);
   }
@@ -84,10 +89,10 @@ for (const i of importers.filter((i) => i.declared !== null)) {
 
 if (violations > 0) {
   console.error(
-    `\n${violations} package(s) import node: builtins without declaring @types/node. The mirror installs oss/ standalone, so an undeclared type is a red there even when the monorepo is green (guuey#1389, guuey#1406).`,
+    `\n${violations} package(s) import node: builtins without declaring @types/node. The mirror installs oss/ standalone, so an undeclared type is a red there even when the monorepo is green (guuey#1389, guuey#1406).`
   );
   process.exit(1);
 }
 console.log(
-  `\ncheck-node-types: ${importers.length} of ${scanned} packages import node: builtins; every one declares @types/node.`,
+  `\ncheck-node-types: ${importers.length} of ${scanned} packages import node: builtins; every one declares @types/node.`
 );
