@@ -123,6 +123,20 @@ const ThemeRhythmV1 = z.strictObject({
   section: z.string().regex(LENGTH_RE).optional(),
   inset: z.string().regex(LENGTH_RE).optional(),
 });
+/**
+ * The motion tempo a theme may state.
+ *
+ * CARRIED, NOT YET PAINTED (guuey#1419). A theme stating this validates here,
+ * survives `guuey deploy`, and changes nothing on screen: the published React
+ * kit ships no timed motion and never reads it, and ggui's projection has no
+ * branch for it either (measured at `@ggui-ai/design@0.18.0`). guuey's own
+ * widget is tracked to paint `duration.base` and `easing.standard` into its
+ * panel transition in guuey#1420; `fast`, `slow`, `emphasized` and `exit` have
+ * no painter on any surface even then.
+ *
+ * Each sentence leaves with the projection that paints the member it describes,
+ * in the same publication, and the seat landing that projection owns deleting it.
+ */
 const ThemeMotionV1 = z.strictObject({
   duration: z
     .strictObject({

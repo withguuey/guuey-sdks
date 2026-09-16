@@ -203,7 +203,21 @@ export const GuueyChatTheme = z
       .object({ base: z.string(), section: z.string().optional(), inset: z.string().optional() })
       .loose()
       .optional(),
-    /** Motion TEMPO override (ggui#1093 P1c) — never the shipped scale. Durations are CSS times; easings CSS easing functions. */
+    /**
+     * Motion TEMPO override (ggui#1093 P1c) — never the shipped scale. Durations
+     * are CSS times; easings CSS easing functions.
+     *
+     * CARRIED, NOT YET PAINTED (guuey#1419). No renderer reads this member: not
+     * this kit, which ships no timed motion at all, and not ggui's projection —
+     * measured at `@ggui-ai/design@0.18.0`, whose `derive-theme-variables` has no
+     * branch for it. A host's own shell may paint it around the kit; guuey's
+     * widget is tracked to do so for `duration.base` and `easing.standard` in
+     * guuey#1420. A theme stating it today validates, deploys, and changes
+     * nothing on screen — which is worth knowing here rather than after trying.
+     *
+     * This sentence leaves with the projection that paints the member, in the
+     * same publication, and the seat that lands that projection owns deleting it.
+     */
     motion: z
       .object({
         duration: z
