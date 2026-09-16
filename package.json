@@ -14,6 +14,7 @@
     "test": "pnpm -r test",
     "smoke": "pnpm --filter @guuey/create-agentic-app run smoke",
     "check:esm": "node scripts/check-esm-importable.mjs",
-    "check:node-types": "node scripts/check-node-types.mjs"
+    "check:node-types": "node scripts/check-node-types.mjs",
+    "check:publish-order": "node scripts/check-publish-order.mjs"
   }
 }
