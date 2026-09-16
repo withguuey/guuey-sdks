@@ -100,3 +100,13 @@ export {
 // (`@ggui-ai/protocol` 0.14.0's third `outcome`). Hosts face it with words
 // instead of showing the envelope as an unexplained tool failure.
 export { toolResultRenderRefusal, type PreGenerationRefusal } from "./render-refusal.js";
+// guuey#1128: the spec's complete `hostContext.styles.variables` record for a
+// partial host palette (the type is every key, values optional — by the
+// spec's own design; the wire is the partial).
+export {
+  EMPTY_HOST_STYLE_VARIABLES,
+  announcedHostStyleVariables,
+  hostStyleVariablesRecord,
+  type McpUiStyleVariableKey,
+  type McpUiStyles,
+} from "./host-style-variables.js";

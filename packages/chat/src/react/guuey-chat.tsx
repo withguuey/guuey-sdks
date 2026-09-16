@@ -77,6 +77,7 @@ import type {
 } from "../types.js";
 import { themeCssVars, type ThemeMode } from "./theme-css.js";
 import { facesCss, useHostFaces } from "./faces.js";
+import { hostContextStyles, hostStyleVariables, type HostStyleVariables } from "../host-style-variables.js";
 import { Transcript, type TranscriptWindowing } from "./transcript.js";
 import type { TranscriptComponents, TranscriptItemContext, ViewSlotProps } from "./components.js";
 import { useTranscript, useTranscriptInputs } from "./use-transcript.js";
@@ -98,8 +99,10 @@ export function viewPropsWithThemeAnnounce(
   > = {},
   /** guuey#1195: the theme's `@font-face` CSS — handed to every card as `hostContext.styles.css.fonts`; "" hands nothing. */
   fontsCss = "",
+  /** guuey#1128: the theme's palette as spec `--color-*` slots — `hostContext.styles.variables`, ggui's fallback layer beneath the app theme. */
+  variables: HostStyleVariables | undefined = undefined,
 ): TranscriptItemContext["viewProps"] {
-  const fonts = fontsCss === "" ? {} : { styles: { css: { fonts: fontsCss } } };
+  const styles = hostContextStyles(fontsCss, variables);
   const themed = (base: ViewSlotProps | undefined): ViewSlotProps => ({
     // Kit-default host wires (guuey#335): the ACTION RELAY (Confirm inside
     // a rendered card is a tools/call — without a relay the initialize-only
@@ -109,7 +112,7 @@ export function viewPropsWithThemeAnnounce(
     // declared slot prop always wins.
     ...defaults,
     ...base,
-    hostContext: { theme: mode, ...fonts, ...base?.hostContext },
+    hostContext: { theme: mode, ...styles, ...base?.hostContext },
   });
   if (typeof viewProps === "function") {
     return (item, mount) => themed(viewProps(item, mount));
@@ -838,6 +841,10 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // shadow mount) and handed to every card as `hostContext.styles.css.fonts`.
   const fontsCss = useMemo(() => facesCss(theme.typography.faces), [theme.typography.faces]);
   useHostFaces(fontsCss);
+  // guuey#1128: the theme's palette as the spec's `--color-*` slots — the
+  // fallback layer ggui merges beneath the app theme (ggui#572/#573), so a
+  // themed app's un-stated tokens take the theme's colours, not ggui's defaults.
+  const styleVariables = useMemo(() => hostStyleVariables(theme, mode), [theme, mode]);
 
   const effectiveViewProps = useMemo<TranscriptItemContext["viewProps"]>(
     () =>
@@ -851,6 +858,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
           onOpenLink: defaultOnOpenLink,
         },
         fontsCss,
+        styleVariables,
       ),
     [
       viewProps,
@@ -877,7 +885,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
           onUpdateModelContext: defaultOnUpdateModelContext,
           onUserMessage: defaultOnUserMessage,
           onOpenLink: defaultOnOpenLink,
-          hostContext: { theme: mode, ...(fontsCss === "" ? {} : { styles: { css: { fonts: fontsCss } } }) },
+          hostContext: { theme: mode, ...hostContextStyles(fontsCss, styleVariables) },
         }
       : (effectiveViewProps ?? {});
 

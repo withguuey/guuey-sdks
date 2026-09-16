@@ -11,8 +11,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import type { AgentInvokeAdapters, InvokeRequest } from "@guuey/agent-client";
 import { GuueyChat, viewPropsWithThemeAnnounce, type GuueyChatHandle } from "./guuey-chat.js";
 import type { PlanViewSummary, ViewMountItem } from "../types.js";
-import { GUUEY_CHAT_THEME } from "../theme.js";
-import type { ResolvedViewMount } from "@guuey/mcp-apps-host";
+import { GUUEY_CHAT_THEME,
+  DEFAULT_CHAT_THEME,
+} from "../theme.js";
+import { hostStyleVariablesRecord, type ResolvedViewMount } from "@guuey/mcp-apps-host";
+import { hostStyleVariables } from "../host-style-variables.js";
 
 afterEach(cleanup);
 
@@ -769,6 +772,25 @@ describe("<GuueyChat> host-identity churn", () => {
 
 // ─── The kit-tier theme announce (guuey#302) ───────────────────────────────
 describe("viewPropsWithThemeAnnounce", () => {
+  it("guuey#1128: announces the host palette beside the mode; a caller's own variables win", () => {
+    const css = "@font-face{font-family:x}";
+    const vars = hostStyleVariables(DEFAULT_CHAT_THEME, "light");
+    const out = viewPropsWithThemeAnnounce(undefined, "light", {}, css, vars);
+    const ctx = typeof out === "object" && out !== null ? out.hostContext : undefined;
+    expect(ctx?.theme).toBe("light");
+    expect(ctx?.styles?.css).toEqual({ fonts: css });
+    // the spec-typed record carries every key; the WIRE (JSON) carries exactly the announced slots
+    expect(JSON.parse(JSON.stringify(ctx?.styles?.variables))).toEqual(vars);
+    const noFonts = viewPropsWithThemeAnnounce(undefined, "dark", {}, "", vars);
+    const noFontsCtx = typeof noFonts === "object" && noFonts !== null ? noFonts.hostContext : undefined;
+    expect(noFontsCtx?.styles?.css).toBeUndefined();
+    expect(JSON.parse(JSON.stringify(noFontsCtx?.styles?.variables))).toEqual(vars);
+    const mine = hostStyleVariablesRecord({ "--color-text-primary": "#000000" });
+    const own = viewPropsWithThemeAnnounce({ hostContext: { styles: { variables: mine } } }, "light", {}, css, vars);
+    const ownCtx = typeof own === "object" && own !== null ? own.hostContext : undefined;
+    expect(JSON.parse(JSON.stringify(ownCtx?.styles?.variables))).toEqual({ "--color-text-primary": "#000000" });
+  });
+
   it("guuey#1195: hands the theme's @font-face CSS to every slot as hostContext.styles.css.fonts; a caller's own styles win; nothing without faces", () => {
     const css = '@font-face{font-family:"Archivo";src:url("https://fonts.gstatic.com/a.woff2");font-display:swap}';
     const out = viewPropsWithThemeAnnounce(undefined, "light", {}, css);
@@ -861,7 +883,11 @@ describe("kit-default view-host wiring (guuey#335)", () => {
     const slot = handle!.viewSlotProps();
     expect(typeof slot.onCallTool).toBe("function");
     expect(typeof slot.onUpdateModelContext).toBe("function");
-    expect(slot.hostContext).toEqual({ theme: "dark" });
+    // guuey#1128: the announce now carries the theme's palette as the spec's
+    // `--color-*` slots beside the mode (ggui's fallback layer); the default
+    // theme states every anchor, so the dark canvas rides as background-primary.
+    expect(slot.hostContext).toMatchObject({ theme: "dark" });
+    expect(slot.hostContext?.styles?.variables?.["--color-background-primary"]).toBe(DEFAULT_CHAT_THEME.colors.dark.canvas);
   });
 
   it("without apiBaseUrl there is no default relay — the slot stays honest", async () => {

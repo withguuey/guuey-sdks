@@ -60,6 +60,16 @@ export {
   resolveTheme,
   resolveCourtTheme,
 } from "./theme.js";
+// guuey#1128: the host palette a guuey surface announces to every card
+// (`hostContext.styles.variables`, the ggui#573 fallback layer) + the
+// `hostContext.styles` composer both the kit and the widget mount through.
+export {
+  HOST_STYLE_VARIABLE_KEYS,
+  hostContextStyles,
+  hostStyleVariables,
+  type HostStyleVariableKey,
+  type HostStyleVariables,
+} from "./host-style-variables.js";
 export type {
   ChatDebugEvent,
   CitationsItem,
