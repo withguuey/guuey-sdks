@@ -31,13 +31,22 @@
  *    actionable error (the Python-era SSE arm has no JS mapping). Auth
  *    headers ride `transportOptions.requestInit.headers` (the non-deprecated
  *    channel).
- *  - **Gemini arming is the documented env pair.** `@google/genai` reads
- *    `GOOGLE_GEMINI_BASE_URL` (verified: getBaseUrl in genai 1.52) and the
- *    ADK's Gemini reads `GOOGLE_GENAI_API_KEY || GOOGLE_API_KEY || GEMINI_API_KEY`
- *    (adk 2.0.0 dist; guuey#1310) — the
- *    Router's `buildWorkerEnv` gemini arm injects exactly `GEMINI_API_KEY` +
- *    `GOOGLE_GEMINI_BASE_URL`. ADK 1.3.0 exposes no programmatic
- *    httpOptions path, so env IS the sanctioned channel here.
+ *  - **Gemini arming: `GEMINI_API_KEY` is the sanctioned channel, and it
+ *    WINS (guuey#1342).** The Router's `buildWorkerEnv` gemini arm injects
+ *    exactly `GEMINI_API_KEY` + `GOOGLE_GEMINI_BASE_URL` (`@google/genai`
+ *    reads the base URL — verified: getBaseUrl in genai 1.52). Left to the
+ *    ADK's own resolution the key reads `GOOGLE_GENAI_API_KEY ||
+ *    GOOGLE_API_KEY || GEMINI_API_KEY` (adk 1.3.0 + 2.0.0 dist; guuey#1310)
+ *    — LAST of three — so on any host carrying an ambient Google variable
+ *    (a developer shell, a CI runner, a customer's server) a freshly
+ *    rotated `GEMINI_API_KEY` was silently ignored. The no-code path
+ *    therefore constructs the model itself, `new Gemini({ model, apiKey })`
+ *    with the channel's value (`GeminiParams.apiKey` — a root export on
+ *    both majors), and hands the INSTANCE to `LlmAgent`; the ADK's chain
+ *    applies only when the channel is unset (then the model rides as its
+ *    name, exactly as before). A graceful agent constructs its own model
+ *    and keeps its own rules. ADK 1.3.0 exposes no programmatic httpOptions
+ *    path, so env stays the channel for the base URL.
  *
  * NEVER rejects to the loop — every failure becomes a terminal `error` event
  * (the wire contract the Python host also kept).
@@ -121,7 +130,8 @@ const DEFAULT_MODEL = defaultModelFor("google-adk");
 interface AdkModule {
   LlmAgent: new (params: {
     name: string;
-    model: string;
+    /** The model's NAME (the SDK resolves + keys it from env) or a constructed model (guuey#1342: keyed here). */
+    model: string | AdkLlm;
     // `string | InstructionProvider` in the real SDK (verified against the
     // installed 1.3.0 typings, `agents/llm_agent.d.ts`); `() => string`
     // (the zero-arg slice we actually construct) is a valid InstructionProvider
@@ -135,6 +145,8 @@ interface AdkModule {
     instruction: string | (() => string);
     tools: unknown[];
   }) => AdkAgent;
+  /** The Gemini model class (root export on 1.x + 2.x): `apiKey` given here beats the SDK's env chain (guuey#1342). */
+  Gemini: new (params: { model: string; apiKey: string }) => AdkLlm;
   InMemoryRunner: new (params: { agent: AdkAgent }) => AdkRunner;
   MCPToolset: new (connectionParams: {
     type: "StreamableHTTPConnectionParams";
@@ -145,6 +157,8 @@ interface AdkModule {
 
 /** Opaque agent handle — constructed here (no-code) or by the dev (graceful). */
 export type AdkAgent = object;
+/** Opaque model handle — a `Gemini` constructed here with the sanctioned key (guuey#1342). */
+export type AdkLlm = object;
 
 interface AdkRunner {
   readonly appName: string;
@@ -466,9 +480,17 @@ export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
           // conversation content that may itself contain `{...}`, and a
           // string instruction would run it through ADK's session-state
           // substitution.
+          // guuey#1342: the sanctioned key channel WINS. Handing the key to
+          // the model explicitly ends the precedence question the SDK's env
+          // chain (`GOOGLE_GENAI_API_KEY || GOOGLE_API_KEY || GEMINI_API_KEY`)
+          // decided against a rotated `GEMINI_API_KEY` on any host carrying
+          // an ambient Google variable; unset (or empty), the model rides as
+          // its name and the SDK's chain applies — as before.
+          const modelName = snapshot.model ?? DEFAULT_MODEL;
+          const geminiKey = process.env.GEMINI_API_KEY;
           agent = new adk.LlmAgent({
             name: "guuey",
-            model: snapshot.model ?? DEFAULT_MODEL,
+            model: geminiKey === undefined || geminiKey === "" ? modelName : new adk.Gemini({ model: modelName, apiKey: geminiKey }),
             instruction: () => instruction,
             tools: toolsets,
           });

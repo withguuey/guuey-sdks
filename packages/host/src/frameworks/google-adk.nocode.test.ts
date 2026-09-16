@@ -41,11 +41,96 @@ function fakeEmitter() {
   return { emit, got };
 }
 
+/**
+ * The ADK resolves `GOOGLE_GENAI_API_KEY || GOOGLE_API_KEY || GEMINI_API_KEY`
+ * (adk 1.3.0 + 2.0.0 dist). A developer shell carrying a real Google key would
+ * otherwise win the slot, red a case, AND print the key in the assertion diff
+ * (guuey#1310) — so every case in a block that calls this starts from a
+ * cleared trio, and the shell's own values come back afterwards.
+ */
+const ADK_KEY_VARS = ["GOOGLE_GENAI_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY"] as const;
+function isolateAdkKeys(): void {
+  const shellKeys = new Map<(typeof ADK_KEY_VARS)[number], string | undefined>();
+  beforeAll(() => {
+    for (const name of ADK_KEY_VARS) shellKeys.set(name, process.env[name]);
+  });
+  beforeEach(() => {
+    for (const name of ADK_KEY_VARS) delete process.env[name];
+  });
+  afterAll(() => {
+    for (const name of ADK_KEY_VARS) {
+      const shellValue = shellKeys.get(name);
+      if (shellValue === undefined) delete process.env[name];
+      else process.env[name] = shellValue;
+    }
+  });
+}
+
+/** The ADK's `Gemini` as the fakes see it (guuey#1342): the runner constructs it with the sanctioned key. */
+class FakeGemini {
+  constructor(public readonly params: { model: string; apiKey: string }) {}
+}
+
 describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
   const base = mkdtempSync(join(tmpdir(), "adk-nocode-"));
   afterAll(() => rmSync(base, { recursive: true, force: true }));
   afterEach(() => {
     delete process.env.GUUEY_AGENT_ENTRY;
+  });
+  // guuey#1342: with the trio cleared the runner hands the model NAME through
+  // (the assertions below); the key-precedence case sets its own values.
+  isolateAdkKeys();
+
+  it("guuey#1342: the sanctioned GEMINI_API_KEY WINS over an ambient Google variable — the runner keys the model explicitly; unset or empty, the model rides as its name (the SDK's own chain)", async () => {
+    const session = join(base, "s-key");
+    mkdirSync(join(session, ".guuey", "credentials"), { recursive: true });
+    const captured: { model?: string | object } = {};
+    const fakeAdk = {
+      LlmAgent: class {
+        constructor(params: { name: string; model: string | object; instruction: string | (() => string); tools: unknown[] }) {
+          captured.model = params.model;
+        }
+      },
+      Gemini: FakeGemini,
+      MCPToolset: class {
+        constructor(_: unknown) {}
+      },
+      InMemoryRunner: class {
+        readonly appName = "fake";
+        readonly sessionService = {
+          createSession: ({ userId }: { appName: string; userId: string }) => Promise.resolve({ id: `s-${userId}` }),
+        };
+        constructor(_: { agent: object }) {}
+        async *runAsync(_: unknown): AsyncGenerator<JsonValue, void, undefined> {
+          yield { content: { parts: [{ text: "ok" }] } };
+        }
+      },
+    };
+    const runner = createRunner({ load: () => Promise.resolve(fakeAdk) });
+    const turn: HostTurn = {
+      input: "hi",
+      identity: { userId: "u-1", authMode: "anonymous" },
+      fs: { app: base, home: base, session },
+      history: [],
+    };
+
+    // Both ambient variables present — the ones the SDK's chain reads FIRST.
+    process.env.GOOGLE_GENAI_API_KEY = "ambient-genai";
+    process.env.GOOGLE_API_KEY = "ambient-google";
+    process.env.GEMINI_API_KEY = "rotated-gemini";
+    await runner.runTurn({ model: "gemini-3.5-pro", systemPrompt: "be terse" }, turn, fakeEmitter().emit);
+    if (!(captured.model instanceof FakeGemini)) throw new Error("expected the runner to construct the model with the sanctioned key");
+    expect(captured.model.params).toEqual({ model: "gemini-3.5-pro", apiKey: "rotated-gemini" });
+
+    // The channel unset → the name rides, the SDK's own chain decides (as before).
+    delete process.env.GEMINI_API_KEY;
+    await runner.runTurn({ model: "gemini-3.5-pro", systemPrompt: "be terse" }, turn, fakeEmitter().emit);
+    expect(captured.model).toBe("gemini-3.5-pro");
+
+    // An EMPTY channel is unset, never an empty key handed to the model.
+    process.env.GEMINI_API_KEY = "";
+    await runner.runTurn({ model: "gemini-3.5-pro", systemPrompt: "be terse" }, turn, fakeEmitter().emit);
+    expect(captured.model).toBe("gemini-3.5-pro");
   });
 
   it("constructs the LlmAgent from the snapshot (preambled instruction, cred toolsets, model), streams SSE, role-pinned", async () => {
@@ -63,7 +148,8 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
         constructor(
           public readonly params: {
             name: string;
-            model: string;
+            // guuey#1342: the runner may hand a constructed model, not only its name.
+            model: string | object;
             instruction: string | (() => string);
             tools: unknown[];
           },
@@ -71,6 +157,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
           captured.agent = this;
         }
       },
+      Gemini: FakeGemini,
       MCPToolset: class {
         constructor(public readonly params: unknown) {
           captured.toolsets.push(params);
@@ -102,7 +189,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
 
     expect(got.error).toEqual([]);
     const agent = captured.agent as {
-      params: { name: string; model: string; instruction: string | (() => string); tools: unknown[] };
+      params: { name: string; model: string | object; instruction: string | (() => string); tools: unknown[] };
     };
     expect(agent.params.model).toBe("gemini-3.5-pro");
     // F7: instruction rides as a FUNCTION, never a raw string — a string
@@ -150,11 +237,12 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     const fakeAdk = {
       LlmAgent: class {
         constructor(
-          public readonly params: { name: string; model: string; instruction: string | (() => string); tools: unknown[] },
+          public readonly params: { name: string; model: string | object; instruction: string | (() => string); tools: unknown[] },
         ) {
           captured.agent = this;
         }
       },
+      Gemini: FakeGemini,
       MCPToolset: class {
         constructor(_: unknown) {}
       },
@@ -340,8 +428,9 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     );
     const fakeAdk = {
       LlmAgent: class {
-        constructor(_: { name: string; model: string; instruction: string | (() => string); tools: unknown[] }) {}
+        constructor(_: { name: string; model: string | object; instruction: string | (() => string); tools: unknown[] }) {}
       },
+      Gemini: FakeGemini,
       MCPToolset: class {
         constructor(_: unknown) {}
       },
@@ -392,26 +481,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
 const REAL_ADK_BUDGET_MS = 60_000;
 
 describe("armed-env (spec §2.1.6): the REAL @google/adk reads the pod's gemini pair", () => {
-  // The ADK resolves `GOOGLE_GENAI_API_KEY || GOOGLE_API_KEY || GEMINI_API_KEY`
-  // (adk 2.0.0 dist). A developer shell carrying a real GOOGLE_API_KEY would
-  // otherwise win the slot, red the case, AND print the key in the assertion
-  // diff (guuey#1310) — so every case starts from a cleared trio and the
-  // shell's own values come back afterwards.
-  const ADK_KEY_VARS = ["GOOGLE_GENAI_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY"] as const;
-  const shellKeys = new Map<(typeof ADK_KEY_VARS)[number], string | undefined>();
-  beforeAll(() => {
-    for (const name of ADK_KEY_VARS) shellKeys.set(name, process.env[name]);
-  });
-  beforeEach(() => {
-    for (const name of ADK_KEY_VARS) delete process.env[name];
-  });
-  afterAll(() => {
-    for (const name of ADK_KEY_VARS) {
-      const shellValue = shellKeys.get(name);
-      if (shellValue === undefined) delete process.env[name];
-      else process.env[name] = shellValue;
-    }
-  });
+  isolateAdkKeys();
 
   it("Gemini picks GEMINI_API_KEY from env (the buildWorkerEnv keySlot)", { timeout: REAL_ADK_BUDGET_MS }, async () => {
     process.env.GEMINI_API_KEY = "opaque-broker-token";
@@ -429,6 +499,14 @@ describe("armed-env (spec §2.1.6): the REAL @google/adk reads the pod's gemini 
     const adk = (await import("@google/adk")) as { Gemini: new (p: { model: string }) => object };
     const shape = JSON.parse(JSON.stringify(new adk.Gemini({ model: "gemini-3.5-flash" }))) as { apiKey?: string };
     expect(shape.apiKey).toBe("genai-first");
+  });
+
+  it("an explicit `apiKey` beats the env chain — what the no-code runner now hands the model (guuey#1342)", { timeout: REAL_ADK_BUDGET_MS }, async () => {
+    process.env.GOOGLE_GENAI_API_KEY = "ambient-genai";
+    process.env.GOOGLE_API_KEY = "ambient-google";
+    const adk = (await import("@google/adk")) as { Gemini: new (p: { model: string; apiKey: string }) => object };
+    const shape = JSON.parse(JSON.stringify(new adk.Gemini({ model: "gemini-3.5-flash", apiKey: "rotated-gemini" }))) as { apiKey?: string };
+    expect(shape.apiKey).toBe("rotated-gemini");
   });
 });
 
