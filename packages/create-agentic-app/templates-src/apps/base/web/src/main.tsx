@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import "@guuey/chat/styles.css";
 import "./styles.css";
-import { appConfig } from "./config";
+import { appConfig, chatTheme } from "./config";
 import { BootstrapGate } from "./components/BootstrapGate";
 import { Shell } from "./components/Shell";
 import { Landing } from "./pages/Landing";
@@ -13,8 +13,16 @@ import { Home } from "./pages/Home";
 
 // Site theme: one accent + light/dark, applied as CSS variables. The chat
 // kit themes itself via its own tokens (see @guuey/chat theming docs).
+// The foreground painted ON the accent is the chat theme's `onAccent` for the
+// current mode — picked for legibility by `pnpm bootstrap` (guuey#1155) — so
+// the site's buttons and the hosted chat show one accent/on-accent pair;
+// styles.css carries the same values as pre-boot fallbacks.
 document.documentElement.dataset.mode = appConfig.theme.mode;
 document.documentElement.style.setProperty("--app-accent", appConfig.theme.accent);
+document.documentElement.style.setProperty(
+  "--app-on-accent",
+  chatTheme.colors[appConfig.theme.mode].onAccent,
+);
 document.title = appConfig.brand.name;
 
 // Optional external script (the analytics-snippet pattern): a build-time

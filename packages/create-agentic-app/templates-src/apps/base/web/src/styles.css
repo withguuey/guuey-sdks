@@ -1,7 +1,12 @@
 /* agentic-app-template site styles — one accent, light/dark, no framework. */
 
 :root {
-  --app-accent: #6c5ce7;
+  /* guuey#1155: the default pair is the chat theme's (theme.json) — main.tsx
+     sets both from it at boot; these are the pre-boot fallbacks and must equal
+     it (bootstrap.test.ts pins them). #8b7cf6 clears the platform's 4.5:1
+     brand-accent floor against #0e1014 (5.72:1); the old #6c5ce7 did not. */
+  --app-accent: #8b7cf6;
+  --app-on-accent: #0e1014;
   --bg: #ffffff;
   --bg-soft: #f6f7f9;
   --fg: #16181d;
@@ -79,7 +84,7 @@ a {
   height: 30px;
   border-radius: 8px;
   background: var(--app-accent);
-  color: #fff;
+  color: var(--app-on-accent);
   font-size: 13px;
 }
 
@@ -121,7 +126,7 @@ a {
 .btn-accent {
   background: var(--app-accent);
   border-color: var(--app-accent);
-  color: #fff;
+  color: var(--app-on-accent);
 }
 
 .btn-wide {

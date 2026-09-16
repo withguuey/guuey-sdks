@@ -171,7 +171,7 @@ describe('bootstrap.mjs — the chat theme document (guuey#1131)', () => {
     const themePath = join(project.projectDir, 'theme.json');
     expect(await cliCalls(project)).toEqual([
       ['exec', 'guuey', 'apps', 'get', 'app_test1', '--json'],
-      ['exec', 'guuey', 'apps', 'update', 'app_test1', '--brand-accent', '#6c5ce7'],
+      ['exec', 'guuey', 'apps', 'update', 'app_test1', '--brand-accent', '#8b7cf6'],
       ['exec', 'guuey', 'apps', 'update', 'app_test1', '--chat-theme-file', themePath],
     ]);
     expect(run.stdout).toContain('✓ brand-accent');
@@ -248,6 +248,54 @@ describe('templates-src/core/theme.json — the platform grammar (guuey#1131)', 
     expect(theme.mode).toBe(appConfig.theme.mode);
     expect(theme.colors.light.accent).toBe(appConfig.theme.accent);
     expect(theme.colors.dark.accent).toBe(appConfig.theme.accent);
+  });
+
+  // guuey#1155 — the default pair is legible on BOTH surfaces, and the site's
+  // own CSS follows the theme's on-accent instead of a hard-coded white.
+  const ON_ACCENT_HEX = '#0e1014'; // the platform's fixed brand on-accent (cli-wire/apps.ts)
+  const ACCENT_CONTRAST_FLOOR = 4.5; // WCAG AA, normal text — the floor validateBrandAccent holds
+  const luminance = (hex: string): number => {
+    const [r, g, b] = [1, 3, 5].map((i) => {
+      const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const contrast = (a: string, b: string): number => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  const webSrc = join(__dirname, '..', 'templates-src', 'apps', 'base', 'web', 'src');
+
+  it("the default accent clears the platform's brand-accent floor against the fixed on-accent (guuey#1155)", () => {
+    // #6c5ce7 sat at 3.92:1 and every default scaffold's --brand-accent push was refused since 08-10.
+    expect(contrast(appConfig.theme.accent, ON_ACCENT_HEX)).toBeGreaterThanOrEqual(ACCENT_CONTRAST_FLOOR);
+  });
+
+  it("each palette's onAccent is the legible choice for the default accent, and legible by the same floor", () => {
+    for (const mode of ['light', 'dark'] as const) {
+      const { accent, onAccent } = theme.colors[mode];
+      // The chooser bootstrap.mjs applies on every accent change: ink beats white when it contrasts more.
+      const expected = contrast(accent, '#0e1014') >= contrast(accent, '#ffffff') ? '#0e1014' : '#ffffff';
+      expect(onAccent, `colors.${mode}.onAccent`).toBe(expected);
+      expect(contrast(accent, onAccent), `colors.${mode} accent/onAccent`).toBeGreaterThanOrEqual(ACCENT_CONTRAST_FLOOR);
+    }
+  });
+
+  it("the site's stylesheet fallbacks equal the theme's pair, and nothing on the accent is painted a hard-coded white", () => {
+    const css = readFileSync(join(webSrc, 'styles.css'), 'utf8');
+    expect(css).toContain(`--app-accent: ${appConfig.theme.accent};`);
+    expect(css).toContain(`--app-on-accent: ${theme.colors.light.onAccent};`);
+    // Every `color: #fff` used to sit on an accent-painted element (the logo badge, .btn-accent).
+    expect(css).not.toMatch(/color:\s*(#fff\b|#ffffff\b|white\b)/);
+    expect(css.match(/color: var\(--app-on-accent\)/g)?.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('main.tsx sets --app-on-accent from the chat theme for the current mode, beside --app-accent', () => {
+    const main = readFileSync(join(webSrc, 'main.tsx'), 'utf8');
+    expect(main).toContain('setProperty("--app-accent", appConfig.theme.accent)');
+    expect(main).toContain('"--app-on-accent"');
+    expect(main).toContain('chatTheme.colors[appConfig.theme.mode].onAccent');
   });
 
   it('carries the scaffold name token, so create-agentic-app renames the theme after the project', () => {
