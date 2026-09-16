@@ -10,6 +10,7 @@
     "dist",
     "src",
     "!src/**/*.test.ts",
+    "!src/fixtures/**",
     "README.md",
     "LICENSE"
   ],
