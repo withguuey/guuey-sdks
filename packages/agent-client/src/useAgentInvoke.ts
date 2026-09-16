@@ -24,6 +24,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Reducer, type AgClientCapabilities, type AgReduceResult } from "@silverprotocol/core";
 import { invokeTurn, toInvokeUrl } from "./invoke-turn.js";
+import { buildInvokeBody } from "./invoke-body.js";
 import { AgentResponseError } from "./errors.js";
 import { withActivityObserver } from "./transport.js";
 import { CLIENT_ERROR_CODES } from "./error-codes.js";
@@ -553,22 +554,18 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         const capabilities =
           opts.capabilities ??
           (preserveBlocksRef.current ? DEFAULT_BLOCK_PRESERVING_CAPABILITIES : undefined);
-        const body = {
+        // The one wire shape, built by the pure builder so it has a name, a
+        // test and a fixture (guuey#1213 — the rolling-release rule). The
+        // live refs are read HERE, at send time: an SPA route change or a
+        // mode change rides the NEXT turn, never a stale memo.
+        const body = buildInvokeBody({
           input,
-          ...(threadIdRef.current ? { threadId: threadIdRef.current } : {}),
+          threadId: threadIdRef.current,
           clientMessageId,
           ...(capabilities !== undefined ? { capabilities } : {}),
-          // guuey#524: the page-aware turn's carriage — read at send time
-          // (SPA route changes ride the NEXT turn). All trust semantics
-          // are pod-side; see the option's docblock.
-          ...(pageContextRef.current !== undefined
-            ? { pageContext: pageContextRef.current }
-            : {}),
-          // guuey#566: the client-named agent mode — carriage only (live
-          // ref, read at send time); every semantic (validation, fallback,
-          // subset) is pod-side.
+          ...(pageContextRef.current !== undefined ? { pageContext: pageContextRef.current } : {}),
           ...(modeRef.current !== undefined ? { mode: modeRef.current } : {}),
-        };
+        });
 
         // The wire walk lives in `invokeTurn` (the pure per-turn generator —
         // its docblock owns the switch semantics); this hook only maps each

@@ -1,0 +1,90 @@
+{
+  "$schema": "guuey/widget-invoke-bodies@1",
+  "generatedBy": "oss/packages/agent-client/src/invoke-body.ts WIDGET_INVOKE_BODY_CASES",
+  "cases": [
+    {
+      "name": "session-open-init-origin",
+      "why": "first contact: no threadId; the INIT origin stands in as a hostOrigin-only block (guuey#1105); default block-preserving capabilities",
+      "body": {
+        "input": "Hello",
+        "clientMessageId": "cm_0001",
+        "capabilities": {
+          "hitl": {
+            "ask": true,
+            "grantModes": true
+          }
+        },
+        "pageContext": {
+          "hostOrigin": "https://customer.example"
+        }
+      }
+    },
+    {
+      "name": "turn-with-page",
+      "why": "a later turn after a guuey(\"page\", …) call: threadId replayed, full page block with context",
+      "body": {
+        "input": "What does this page say about pricing?",
+        "threadId": "thr_01J8ZK3Q9X",
+        "clientMessageId": "cm_0002",
+        "capabilities": {
+          "hitl": {
+            "ask": true,
+            "grantModes": true
+          }
+        },
+        "pageContext": {
+          "path": "/pricing",
+          "title": "Pricing — Acme",
+          "context": "Plans: Starter, Pro, Scale.",
+          "hostOrigin": "https://customer.example"
+        }
+      }
+    },
+    {
+      "name": "turn-with-page-no-context",
+      "why": "a page call without a host-declared context line (the common case)",
+      "body": {
+        "input": "Book a demo",
+        "threadId": "thr_01J8ZK3Q9X",
+        "clientMessageId": "cm_0003",
+        "capabilities": {
+          "hitl": {
+            "ask": true,
+            "grantModes": true
+          }
+        },
+        "pageContext": {
+          "path": "/",
+          "title": "Acme",
+          "hostOrigin": "https://customer.example"
+        }
+      }
+    },
+    {
+      "name": "guest-mode-pin",
+      "why": "the embed pinned agent mode 'guest' (guuey#566) — carried verbatim",
+      "body": {
+        "input": "Hi",
+        "clientMessageId": "cm_0004",
+        "capabilities": {
+          "hitl": {
+            "ask": true,
+            "grantModes": true
+          }
+        },
+        "pageContext": {
+          "hostOrigin": "https://customer.example"
+        },
+        "mode": "guest"
+      }
+    },
+    {
+      "name": "sdk-minimal",
+      "why": "an SDK consumer with preserveBlocks off and no page: input + clientMessageId only",
+      "body": {
+        "input": "ping",
+        "clientMessageId": "cm_0005"
+      }
+    }
+  ]
+}
