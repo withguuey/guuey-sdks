@@ -395,6 +395,61 @@ describe('pull()', () => {
     expect(String(vi.mocked(writeFileSync).mock.calls[0]![1])).toBe('You are the deployed studio agent.');
   });
 
+  it('guuey#1272 — unknown envelope fields stay ignored: the deployment GET may grow keys this CLI has never seen and pull still reads what it consumes (and writes the template back when platformTemplates is present)', async () => {
+    // This is the pin behind the N−1 safety of the envelope: the reader is a
+    // CAST, not a strict parse. Harden it into a strict parse and this test
+    // fails — that failure IS the rolling-release break #1272 avoided (an
+    // older CLI meeting a newer door). See `DeploymentSnapshotResponse`.
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+    vi.mocked(getProjectConfigPath).mockReturnValue(null);
+    const resolved = nocodeSnapshot();
+    resolved.agent.mcpServers = { ggui: { kind: 'external', url: 'https://mcp.dev.sandbox.guuey.com', transport: 'http' } };
+    fetchSpy
+      .mockResolvedValueOnce(new Response(JSON.stringify({ app: { id: 'app-1', displayName: 'Todo' }, aNewerDoorsField: { nested: true } }), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ deployments: [{ buildNumber: 3, status: 'live', agentMode: 'nocode', size: 'sm' }], page: { next: null } }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            snapshot: resolved,
+            platformTemplates: { mcpServers: { ggui: { url: 'https://${platform.mcpDomain}' } } },
+            aFutureField: { nested: [1, 2, 3] },
+            anotherFutureField: 'ignored',
+          }),
+          { status: 200 },
+        ),
+      );
+
+    await pull({ 'app-id': 'app-1' });
+
+    expect(saveProjectConfig).toHaveBeenCalledTimes(1);
+    const [written] = vi.mocked(saveProjectConfig).mock.calls[0]!;
+    expect(written.appId).toBe('app-1');
+    expect(written.agent.mcpServers?.ggui).toEqual({ kind: 'external', url: 'https://${platform.mcpDomain}', transport: 'http' });
+  });
+
+  it('guuey#1272 — an older door (no platformTemplates in the envelope): pull writes the resolved url, exactly as before', async () => {
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+    vi.mocked(getProjectConfigPath).mockReturnValue(null);
+    const resolved = nocodeSnapshot();
+    resolved.agent.mcpServers = { ggui: { kind: 'external', url: 'https://mcp.dev.sandbox.guuey.com', transport: 'http' } };
+    fetchSpy
+      .mockResolvedValueOnce(new Response(JSON.stringify({ app: { id: 'app-1', displayName: 'Todo' } }), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ deployments: [{ buildNumber: 3, status: 'live', agentMode: 'nocode', size: 'sm' }] }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ snapshot: resolved }), { status: 200 }));
+
+    await pull({ 'app-id': 'app-1' });
+
+    const [written] = vi.mocked(saveProjectConfig).mock.calls[0]!;
+    expect(written.agent.mcpServers?.ggui).toEqual({ kind: 'external', url: 'https://mcp.dev.sandbox.guuey.com', transport: 'http' });
+  });
+
   it('guuey#1287 — an EMPTY directory with NOTHING to eject (no live nocode build): refuses once, names why, writes nothing', async () => {
     vi.mocked(loadProjectConfig).mockReturnValue(null);
     vi.mocked(getProjectConfigPath).mockReturnValue(null);

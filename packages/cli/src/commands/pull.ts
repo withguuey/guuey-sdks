@@ -83,6 +83,10 @@ export const SYSTEM_PROMPT_FILE = 'prompts/system.md';
  * only; size/region/definition come from the snapshot (see below).
  */
 export interface AppResponse {
+  // N−1 NOTE (guuey#1272): the subset `guuey pull` consumes, read with a CAST —
+  // unknown fields on the app response stay ignored; a strict parse here would
+  // break an older CLI against a newer door (pin: `pull.test.ts` › "guuey#1272 —
+  // unknown envelope fields stay ignored").
   id: string;
   displayName?: string | null;
   /**
@@ -122,6 +126,11 @@ export interface DeploymentsResponse {
  * `null` for code rows (their source is a tarball, not a snapshot).
  */
 export interface DeploymentSnapshotResponse {
+  // N−1 NOTE (guuey#1272): this response is read with a CAST, never a strict
+  // parse — unknown envelope fields MUST stay ignored, or an older CLI meeting
+  // a newer door breaks on `pull`. The pin is `pull.test.ts` › "guuey#1272 —
+  // unknown envelope fields stay ignored"; it fails the moment the reader is
+  // hardened, which is the whole point of it.
   snapshot: GuueyJsonV1 | null;
   /** guuey#1272 — the `${platform.*}` url templates the snapshot was authored with; absent from an older door. */
   platformTemplates?: PlatformTemplates | null;
