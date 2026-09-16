@@ -41,7 +41,7 @@ import * as out from '../output';
 
 /**
  * The invoke request body — the CLI's hand-written mirror of the pod's
- * `InvokeRequest` (`sse-server.ts`), the subset this command sends: `input`
+ * `InvokeRequest` (`invoke-request.ts`), the subset this command sends: `input`
  * required, `sessionId` optional (explicit wins; else the pod keys the
  * session itself). A published package cannot import the private runtime,
  * so the mirror is pinned by the sync guard in `test.test.ts` — the same

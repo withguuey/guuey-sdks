@@ -4,8 +4,8 @@
  *
  * guuey#681: the command POSTed `{ message, history: [] }` at `<base>/invoke`
  * with the platform PAT as a Bearer — a define-agent-era relic. The pod's
- * ONE contract (`nocode-runtime/src/sse-server.ts`) is `{ input,
- * sessionId? }` at `/agent/invoke`, no PAT (the pod 401s any non-Cognito
+ * ONE contract (`nocode-runtime/src/invoke-request.ts`, served by
+ * `sse-server.ts`) is `{ input, sessionId? }` at `/agent/invoke`, no PAT (the pod 401s any non-Cognito
  * Bearer, never a guest fallback), and its stream is AgJSON, not
  * Anthropic-native frames. These assertions pin every one of those.
  *
@@ -93,16 +93,16 @@ describe('buildInvokeRequest — the pod contract, not the retired one', () => {
 // The pod's InvokeRequest lives in the private runtime; the CLI mirrors the
 // subset it sends. Read both off disk (same pattern as wire-sync.test.ts),
 // skip outside the monorepo.
-const POD_SSE_SERVER = fileURLToPath(
-  new URL('../../../../../backend/services/nocode-runtime/src/sse-server.ts', import.meta.url),
+const POD_INVOKE_REQUEST = fileURLToPath(
+  new URL('../../../../../backend/services/nocode-runtime/src/invoke-request.ts', import.meta.url),
 );
 const CLI_TEST_COMMAND = fileURLToPath(new URL('./test.ts', import.meta.url));
 
-describe.skipIf(!existsSync(POD_SSE_SERVER))(
+describe.skipIf(!existsSync(POD_INVOKE_REQUEST))(
   'InvokeBody sync guard — every CLI field is a pod InvokeRequest field with the same optionality',
   () => {
-    it('input (required) and sessionId (optional) match sse-server.ts', () => {
-      const pod = parseInterfaceFields(readFileSync(POD_SSE_SERVER, 'utf8'), 'InvokeRequest');
+    it('input (required) and sessionId (optional) match invoke-request.ts', () => {
+      const pod = parseInterfaceFields(readFileSync(POD_INVOKE_REQUEST, 'utf8'), 'InvokeRequest');
       const cli = parseInterfaceFields(readFileSync(CLI_TEST_COMMAND, 'utf8'), 'InvokeBody');
       expect(cli.map((f) => f.name)).toEqual(['input', 'sessionId']);
       for (const field of cli) {
