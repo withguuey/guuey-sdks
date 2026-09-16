@@ -97,6 +97,18 @@ export const GuueyChatTypeRole = z
   .loose();
 export type GuueyChatTypeRole = z.infer<typeof GuueyChatTypeRole>;
 
+/**
+ * The kit's theme document.
+ *
+ * CARRIED, NOT YET PAINTED (guuey#1419): `motion` validates here and this kit
+ * never reads it — it ships no timed motion — nor does ggui's projection at
+ * `@ggui-ai/design@0.18.0`. See the member's own comment. Repeated here because
+ * a comment on an inner member is dropped from the emitted `.d.ts` and this
+ * declaration's is not.
+ *
+ * Both copies leave with the projection that paints the member, in the same
+ * publication; `CARRIED, NOT YET PAINTED` finds every one of them.
+ */
 export const GuueyChatTheme = z
   .object({
     name: z.string(),

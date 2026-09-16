@@ -206,6 +206,18 @@ export const AppCourtThemeV1 = z.strictObject({
 });
 export type AppCourtThemeV1 = z.infer<typeof AppCourtThemeV1>;
 
+/**
+ * The app theme document `guuey.json` is validated against.
+ *
+ * CARRIED, NOT YET PAINTED (guuey#1419): `motion` validates here, survives
+ * `guuey deploy`, and no surface projects it — see the member's own comment for
+ * the measurement. Stated here as well because a comment on an inner schema is
+ * dropped from the emitted `.d.ts` and this declaration's is not: a sentence a
+ * consumer's editor never shows is a sentence that does not exist.
+ *
+ * Both copies leave with the projection that paints the member, in the same
+ * publication; `CARRIED, NOT YET PAINTED` finds every one of them.
+ */
 export const AppThemeV1 = z.strictObject({
   name: z.string().min(1).max(64).optional(),
   mode: z.enum(['light', 'dark']),
