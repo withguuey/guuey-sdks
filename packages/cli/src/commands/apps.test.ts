@@ -233,6 +233,36 @@ describe('appsGet endpoint discovery', () => {
     expect(deploymentsCall).toContain('/apps/app-1/deployments');
   });
 
+  // guuey#994 — `apps get` states the app's lifecycle status, so an
+  // archived app (still inspectable before restore) is no longer
+  // indistinguishable from a live one. The status is on the detail wire
+  // (`handleGetApp` → `toWire` sends `status`); the human read shows it,
+  // like every row on the `apps list` side.
+  it('states the app status — flags an archived app, and states it for a live one', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ app: { ...APP, status: 'archived' } }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ deployments: [] }), { status: 200 }));
+
+    await appsGet('app-1', {});
+
+    const archived = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(archived).toContain('Status:       archived');
+
+    logSpy.mockClear();
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ app: { ...APP, status: 'active' } }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ deployments: [] }), { status: 200 }));
+
+    await appsGet('app-1', {});
+
+    const active = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(active).toContain('Status:       active');
+  });
+
   // guuey#249 — every deployed agent has a page (default slug at first
   // Live); `apps get` prints the SERVER-composed URL + the slug verbatim.
   it('prints the app\'s page URL and slug when the wire carries them', async () => {

@@ -380,6 +380,11 @@ export async function appsGet(
 
   const app = data.app;
   console.log(`App: ${app.displayName} (${app.id})`);
+  // guuey#994 — state the lifecycle status, so an archived app (still
+  // inspectable before restore) is not indistinguishable from a live one,
+  // matching the Status column every `apps list` row now shows. Always
+  // printed: the status is a core fact of the app, like Created.
+  console.log(`  Status:       ${app.status}`);
   if (endpointUrl) console.log(`  Endpoint:     ${endpointUrl}`);
   // guuey#249 — the shareable page every deployed agent has (default slug
   // at first Live; `guuey slug claim` to change it).
