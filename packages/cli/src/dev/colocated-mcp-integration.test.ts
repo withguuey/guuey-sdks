@@ -40,10 +40,32 @@ import { describe, it, expect, afterEach } from "vitest";
 import { join } from "node:path";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { createServer } from "node:net";
 import { spawnColocatedDev, type ColocatedDevHandle } from "./colocated-dev.js";
 import { writeLocalCredentials } from "./dev-server.js";
 
 const projectRoot = __dirname;
+
+/**
+ * A currently-free loopback port for the spawned child's `devPort` (guuey#1489
+ * — a fixed devPort raced `EADDRINUSE` across parallel workers and re-runs,
+ * reddening a healthy child). Bind 0 → read the OS-assigned port → release it.
+ */
+async function freePort(): Promise<number> {
+  return await new Promise<number>((resolve, reject) => {
+    const srv = createServer();
+    srv.once("error", reject);
+    srv.listen(0, "127.0.0.1", () => {
+      const addr = srv.address();
+      if (addr === null || typeof addr === "string") {
+        srv.close(() => reject(new Error("freePort: server had no numeric address")));
+        return;
+      }
+      const { port } = addr;
+      srv.close(() => resolve(port));
+    });
+  });
+}
 
 let handle: ColocatedDevHandle | undefined;
 let credRoot: string | undefined;
@@ -105,7 +127,7 @@ describe("colocated MCP local dev loop (Task 8 integration)", () => {
     const { scopeFromAuthorization, mcpIdFromResourceUrl } = await import("@guuey/state");
     const { colocatedResourceUrl } = await import("@guuey/config");
 
-    const devPort = 34790;
+    const devPort = await freePort();
     handle = spawnColocatedDev(
       [{ name: "notes", source: "fixtures/colocated-state-mcp", devPort }],
       projectRoot,

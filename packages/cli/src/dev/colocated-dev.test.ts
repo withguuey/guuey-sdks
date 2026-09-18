@@ -2,9 +2,37 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { join } from "node:path";
 import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { createServer } from "node:net";
 import { spawnColocatedDev, type ColocatedDevHandle } from "./colocated-dev.js";
 
 const projectRoot = __dirname;
+
+/**
+ * A currently-free loopback port to hand a spawned child as its `devPort`
+ * (guuey#1489). A fixed port raced `EADDRINUSE` across parallel vitest
+ * workers and re-runs: the child's own `server.listen(PORT)` threw, the child
+ * exited 1, and `degraded()` reported the RUNNER's port pool rather than the
+ * child's behaviour (`colocated-dev.test.ts:186`, run 35316368813). It cuts
+ * the other direction too — a fixed port another process happens to be
+ * listening on would let the readiness probe read a never-listening child as
+ * READY. Bind 0 → read the OS-assigned port → release it → hand it on, so the
+ * probe of it and the child's bind of it exercise the child, not the pool.
+ */
+async function freePort(): Promise<number> {
+  return await new Promise<number>((resolve, reject) => {
+    const srv = createServer();
+    srv.once("error", reject);
+    srv.listen(0, "127.0.0.1", () => {
+      const addr = srv.address();
+      if (addr === null || typeof addr === "string") {
+        srv.close(() => reject(new Error("freePort: server had no numeric address")));
+        return;
+      }
+      const { port } = addr;
+      srv.close(() => resolve(port));
+    });
+  });
+}
 
 let handle: ColocatedDevHandle | undefined;
 let markerDir: string | undefined;
@@ -97,13 +125,14 @@ describe("spawnColocatedDev", () => {
     markerDir = mkdtempSync(join(tmpdir(), "guuey-colocated-dev-"));
     process.env.FIXTURE_MARKER_DIR = markerDir;
 
+    const devPort = await freePort();
     handle = spawnColocatedDev(
-      [{ name: "notes", source: "fixtures/colocated-child", devPort: 34567 }],
+      [{ name: "notes", source: "fixtures/colocated-child", devPort }],
       projectRoot,
     );
 
     await waitFor(() => existsSync(join(markerDir!, "started")));
-    expect(readFileSync(join(markerDir!, "started"), "utf8")).toBe("PORT=34567");
+    expect(readFileSync(join(markerDir!, "started"), "utf8")).toBe(`PORT=${devPort}`);
 
     // guuey#770: `settled` resolves on the TCP door, the pod supervisor's
     // readiness signal — and a listening child is not degraded.
@@ -132,7 +161,7 @@ describe("spawnColocatedDev", () => {
       // The ignored-builds fixture dies with exit 1 without binding — the
       // real shape of a colocated install failure.
       handle = spawnColocatedDev(
-        [{ name: "my-mcp", source: "fixtures/ignored-builds-child", devPort: 34570 }],
+        [{ name: "my-mcp", source: "fixtures/ignored-builds-child", devPort: await freePort() }],
         projectRoot,
       );
       await handle.settled;
@@ -147,15 +176,16 @@ describe("spawnColocatedDev", () => {
       process.env.FIXTURE_MARKER_DIR = markerDir;
       process.env.FIXTURE_NO_LISTEN = "1";
       try {
+        const devPort = await freePort();
         handle = spawnColocatedDev(
-          [{ name: "sleepy", source: "fixtures/colocated-child", devPort: 34571 }],
+          [{ name: "sleepy", source: "fixtures/colocated-child", devPort }],
           projectRoot,
           { readinessTimeoutMs: 1500 },
         );
         await handle.settled;
         expect(handle.degraded()).toEqual(["sleepy"]);
         expect(warn).toHaveBeenCalledWith(
-          expect.stringContaining('colocated MCP "sleepy" is DEGRADED (not listening on :34571 within 1500ms)'),
+          expect.stringContaining(`colocated MCP "sleepy" is DEGRADED (not listening on :${devPort} within 1500ms)`),
         );
         // The deadline can fire before `pnpm run` has even exec'd the fixture
         // under load; `afterEach` needs the fixture ALIVE to receive stop()'s
@@ -178,8 +208,9 @@ describe("spawnColocatedDev", () => {
       // gap would read as exit-before-ready — a different arm).
       process.env.FIXTURE_CRASH_AFTER_MS = "1200";
       try {
+        const devPort = await freePort();
         handle = spawnColocatedDev(
-          [{ name: "flaky", source: "fixtures/colocated-child", devPort: 34572 }],
+          [{ name: "flaky", source: "fixtures/colocated-child", devPort }],
           projectRoot,
         );
         await handle.settled;
@@ -213,7 +244,7 @@ describe("spawnColocatedDev", () => {
   it("prints one targeted onlyBuiltDependencies hint when a child hits ERR_PNPM_IGNORED_BUILDS", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     handle = spawnColocatedDev(
-      [{ name: "my-mcp", source: "fixtures/ignored-builds-child", devPort: 34569 }],
+      [{ name: "my-mcp", source: "fixtures/ignored-builds-child", devPort: await freePort() }],
       projectRoot,
     );
 
@@ -238,7 +269,7 @@ describe("spawnColocatedDev", () => {
       process.env.FIXTURE_MARKER_DIR = markerDir;
 
       handle = spawnColocatedDev(
-        [{ name: "notes", source: "fixtures/colocated-child", devPort: 34568 }],
+        [{ name: "notes", source: "fixtures/colocated-child", devPort: await freePort() }],
         projectRoot,
       );
       await waitFor(() => existsSync(join(markerDir!, "started")));
