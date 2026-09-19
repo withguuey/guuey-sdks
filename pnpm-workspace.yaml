@@ -66,6 +66,7 @@ minimumReleaseAgeExclude:
   - "@guuey/config"
   - "@guuey/create-agentic-app"
   - "@guuey/fs"
+  - "@guuey/hooks"
   - "@guuey/host"
   - "@guuey/mcp-apps-host"
   - "@guuey/state"

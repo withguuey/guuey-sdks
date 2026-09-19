@@ -235,6 +235,9 @@ importers:
 
   packages/config:
     dependencies:
+      '@guuey/hooks':
+        specifier: workspace:*
+        version: link:../hooks
       zod:
         specifier: ^4.3.6
         version: 4.4.3
@@ -294,6 +297,21 @@ importers:
       '@guuey/cli':
         specifier: workspace:^
         version: link:../cli
+
+  packages/hooks:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.12.4
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.11
+        version: 4.1.11(@opentelemetry/api@1.9.0)(@types/node@24.12.4)(jsdom@25.0.1)(terser@5.50.0)(yaml@2.9.0)
+      zod:
+        specifier: ^4.3.6
+        version: 4.4.3
 
   packages/host:
     dependencies:

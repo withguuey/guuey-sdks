@@ -40,6 +40,7 @@
  *    `permissions`, OpenAI's `tools.functions`) belong on a `framework`-scoped sub-block.
  */
 import { z } from 'zod';
+import { hooksSectionSchema } from '@guuey/hooks';
 import { PlatformUrl } from './platform-url.js';
 import { AGENT_SIZES } from './hosting.js';
 import { isValidColocatedServerName } from './colocated.js';
@@ -598,6 +599,18 @@ export const AgentSectionV1 = z.strictObject({
   /** The mode a caller with no audience match resolves to (a declared mode key). */
   defaultMode: z.string().min(1).optional(),
   /**
+   * Lifecycle hooks (guuey#1511 §8, `@guuey/hooks`) — moments the PLATFORM
+   * detects and dispatches, never code inside the agent: `session.ended`
+   * (the conversation went quiet) and `handoff.requested` (a visitor asked
+   * for a person) in v1. Each event lists handlers: a prebuilt hook by name
+   * (`{ use: 'email-reporter' }`), one MCP tool called directly
+   * (`{ kind: 'tool', server, tool }`), or a dev-defined agent hook by its
+   * `definitions` key. The platform app sets the email reporter on both
+   * events for no-code reps; omit the block to declare none. Optional both
+   * ways: a `guuey.json` without it behaves exactly as before.
+   */
+  hooks: hooksSectionSchema.optional(),
+  /**
    * The platform wrapper's SURFACE-FORMATTING section (guuey#531) —
    * default ON, opt-out only: a few invoke-constant lines telling the
    * model that guuey's chat surfaces render markdown (code fences +
@@ -684,6 +697,9 @@ export type GuueyAgentEndpoint = z.infer<typeof EndpointConfigSchema>;
 
 /** One declared mode's shape. */
 export type GuueyAgentMode = z.infer<typeof ModeSchema>;
+
+/** The agent's `hooks` block — `HooksSection` from `@guuey/hooks`. */
+export type GuueyAgentHooks = z.infer<typeof hooksSectionSchema>;
 
 /** The v1 mode axis — the caller's REAL auth state, server-derived. */
 export type ModeAudienceClass = 'guest' | 'auth';

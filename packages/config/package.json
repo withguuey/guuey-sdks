@@ -36,6 +36,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@guuey/hooks": "workspace:*",
     "zod": "^4.3.6"
   },
   "devDependencies": {

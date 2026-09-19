@@ -1,0 +1,56 @@
+{
+  "name": "@guuey/hooks",
+  "version": "0.25.0",
+  "description": "The guuey hook spec — lifecycle events a hosted agent's platform fires (session.ended, handoff.requested), the JSON envelope in / result out, the two handler kinds (agent | tool), and the hooks block of guuey.json. Types + zod schemas + the per-event class table; no runtime of its own.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "rm -rf dist && pnpm build",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^4.1.11",
+    "zod": "^4.3.6"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "guuey",
+    "hooks",
+    "lifecycle",
+    "webhooks",
+    "agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/withguuey/guuey-sdks.git",
+    "directory": "packages/hooks"
+  },
+  "bugs": {
+    "url": "https://github.com/withguuey/guuey-sdks/issues"
+  },
+  "homepage": "https://guuey.com"
+}

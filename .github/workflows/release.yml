@@ -5,7 +5,9 @@ name: npm Release
 # guuey-sdks mirror (withguuey/guuey-sdks) — the repo the npmjs
 # trusted-publisher config points at.
 #
-# Cohort (leaf-first, mirrors the ORDER array below): @guuey/config,
+# Cohort (leaf-first, mirrors the ORDER array below): @guuey/hooks (the
+# hook spec — types + zod schemas + the per-event table, guuey#1528; a leaf
+# @guuey/config composes), @guuey/config,
 # @guuey/state (KV developer preview — in-memory binding, contract locked),
 # @guuey/fs (GuueyFS dev-guidance helper — homeDir/appDir/sessionDir, zero
 # deps, a leaf), @guuey/mcp-apps-host (the MCP Apps SEP-1865 Host role —
@@ -155,7 +157,7 @@ jobs:
           # host needs config+worker, threads needs mcp-apps-host,
           # chat needs agent-client+mcp-apps-host,
           # create-agentic-app needs config, cli needs all.
-          ORDER=(config state fs agent-layout mcp-apps-host threads widget-auth worker agent-client chat host create-agentic-app cli)
+          ORDER=(hooks config state fs agent-layout mcp-apps-host threads widget-auth worker agent-client chat host create-agentic-app cli)
 
           TODO=()
           for pkg in "${ORDER[@]}"; do
@@ -240,7 +242,7 @@ jobs:
           # half of #439 — publishing on `next` and advancing `latest`
           # leaf-first — stays open on the issue: it needs npm's OIDC
           # trusted publishing to cover `dist-tag add`, unverified.)
-          ORDER=(config state fs agent-layout mcp-apps-host threads widget-auth worker agent-client chat host create-agentic-app cli)
+          ORDER=(hooks config state fs agent-layout mcp-apps-host threads widget-auth worker agent-client chat host create-agentic-app cli)
           for pkg in "${ORDER[@]}"; do
             name=$(node -pe "require('./packages/$pkg/package.json').name")
             ver=$(node -pe "require('./packages/$pkg/package.json').version")
@@ -303,7 +305,7 @@ jobs:
           # approve` is human-2FA proof-of-presence, not CI-automatable —
           # both re-verified 2026-08-31).
           VER=$(node -pe "require('./packages/config/package.json').version")
-          ORDER=(config state fs agent-layout mcp-apps-host threads widget-auth worker agent-client chat host create-agentic-app cli)
+          ORDER=(hooks config state fs agent-layout mcp-apps-host threads widget-auth worker agent-client chat host create-agentic-app cli)
           for pkg in "${ORDER[@]}"; do
             name=$(node -pe "require('./packages/$pkg/package.json').name")
             ok=""
