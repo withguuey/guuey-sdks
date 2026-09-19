@@ -29,6 +29,8 @@ jobs:
       - run: pnpm build
       - run: pnpm check:node-types
       - run: pnpm check:publish-order
+      - run: pnpm check:pack-reachability
+      - run: pnpm test:scripts
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm smoke
