@@ -19,6 +19,7 @@
  */
 export type {
   HandoffEvent,
+  ReportEvent,
   StoredHistoryMessage,
   ThreadMessageEvent,
   ThreadMessageKind,

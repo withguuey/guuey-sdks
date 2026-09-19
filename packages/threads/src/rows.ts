@@ -55,13 +55,33 @@ export interface HandoffEvent {
 }
 
 /**
- * The typed payload on a `kind:'event'` row (guuey#552) — a discriminated
- * union on `type`, seeded with its one v1 member. Future event kinds
- * EXTEND THIS UNION (never a loose `{type: string}` bag — the union IS the
- * shared contract between the pod's fold-seam writer and every raw-DDB
- * stream reader).
+ * A conversation report (guuey#1511 §8.8 / guuey#1532) — the MACHINE half of
+ * a `kind:'event'` report row, written by the platform's report door when
+ * the email reporter's `report_conversation` tool is called (by a hook run
+ * at the end of a conversation, or by the rep). `summary` is AGENT-WRITTEN
+ * text about untrusted visitor content, `contact*` visitor-typed —
+ * consumers quote, truncate, never interpolate. The notify Lambda mails the
+ * app's configured recipients from the stream on `event.type === 'report'`.
  */
-export type ThreadMessageEvent = HandoffEvent;
+export interface ReportEvent {
+  type: "report";
+  /** ≤ 1200 chars — what the visitor wanted, what was answered, what is open. */
+  summary: string;
+  wantedHuman?: boolean;
+  contactEmail?: string;
+  contactName?: string;
+  /** The principal that recorded it (`sub` of the caller's federation token: a hook principal `hook:<appId>` or an end-user id). */
+  reportedBy: string;
+}
+
+/**
+ * The typed payload on a `kind:'event'` row (guuey#552) — a discriminated
+ * union on `type`. Future event kinds EXTEND THIS UNION (never a loose
+ * `{type: string}` bag — the union IS the shared contract between the pod's
+ * fold-seam writer, the platform's report door and every raw-DDB stream
+ * reader). Readers treat an unknown `type` as "not mine" (N−1).
+ */
+export type ThreadMessageEvent = HandoffEvent | ReportEvent;
 
 export interface ThreadMessageRow {
   threadId: string;
