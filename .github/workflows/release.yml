@@ -54,10 +54,15 @@ name: npm Release
 #
 # npmjs.com one-time setup (org owner): for each package in the publish ORDER,
 # configure a Trusted Publisher — owner `withguuey`, repo `guuey-sdks`, workflow
-# `release.yml`, environment `npm-publish`. NOTE: npm requires a package
-# to exist before a trusted publisher can be attached — first-ever publishes
-# are manual (`pnpm publish` locally with 2FA), same bootstrap as the
-# @silverprotocol/* cohort.
+# `release.yml`, environment `npm-publish`. A NEW package gets its publisher
+# PRE-ATTACHED to the unpublished name before the cut that introduces it (the
+# 2026-08-15 precedent above); the older bootstrap — a manual `pnpm publish`
+# with 2FA from a clean clone of the mirror, then attach — remains a valid
+# fallback (no `workspace:` specifier survives `pnpm publish`; `npm publish`
+# would not rewrite one, guuey#449). Until one of the two has happened, the
+# cut's fire gate refuses on that member (leg 5): a first publish the workflow
+# cannot perform would leave the cohort partial. (This note once said npm
+# required the package to exist first; it does not — guuey#1528.)
 
 on:
   workflow_dispatch:
