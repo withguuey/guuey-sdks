@@ -156,16 +156,23 @@ function hookNameSchemaRef(): typeof hookNameSchema {
 
 // ── The envelope in (§8.2) ────────────────────────────────────────────
 
+/**
+ * Id caps: an event id is `<threadId>#<event>#<seq | ISO instant>` and a run
+ * id adds `#<hookName>` — with a 128-char threadId, a 24-char instant and a
+ * 64-char name that is ~231 chars, so 320 leaves room; 128 refused valid ids.
+ */
+const ID_MAX = 320;
+
 const hookRefSchema = z.strictObject({
   /** The hook the platform is dispatching (a prebuilt name or a `definitions` key). */
   name: z.string().min(1).max(64),
   /** The HookRun id — the idempotency key of this delivery. */
-  runId: z.string().min(1).max(128),
+  runId: z.string().min(1).max(ID_MAX),
 });
 
 const baseEvent = {
   /** The event id — dedupe on it; deliveries are at-least-once and unordered. */
-  id: z.string().min(1).max(128),
+  id: z.string().min(1).max(ID_MAX),
   at: z.iso.datetime({ offset: true }),
   appId: z.string().min(1).max(128),
   hook: hookRefSchema,
@@ -390,7 +397,7 @@ export const HOOK_DOOR_PATH = '/agent/hook';
  * definition's own.
  */
 export const hookInvokeRequestSchema = z.strictObject({
-  runId: z.string().min(1).max(128),
+  runId: z.string().min(1).max(ID_MAX),
   name: hookNameSchema,
   event: hookEventSchema,
   timeoutMs: z.number().int().min(1_000).max(300_000),
@@ -410,9 +417,14 @@ export type HookDoorEffect = z.infer<typeof hookDoorEffectSchema>;
  * `parked` and `skipped` are decided on its side. Other faces are HTTP: 503 +
  * `Retry-After` at capacity, 422 `UNKNOWN_HOOK` for a name the pod cannot
  * resolve, 401/403 for a principal that is not this app's hook.
+ *
+ * NOT strict on purpose (the rolling-release rule): the pod may add fields
+ * (`stopReason`, `timedOut`, …) the dispatcher does not read yet; a reader
+ * never refuses a key the other side started sending. The REQUEST stays
+ * strict — nothing on it may widen a hook's reach.
  */
-export const hookInvokeResultSchema = z.strictObject({
-  runId: z.string().min(1).max(128),
+export const hookInvokeResultSchema = z.object({
+  runId: z.string().min(1).max(ID_MAX),
   status: z.enum(['ok', 'failed']),
   output: jsonValueSchema.optional(),
   effects: z.array(hookDoorEffectSchema).default([]),

@@ -188,6 +188,12 @@ describe('the runtime door wire (§8.4)', () => {
     expect(hookInvokeResultSchema.safeParse({ runId: 'r-1', status: 'skipped' }).success).toBe(false);
     expect(hookInvokeResultSchema.safeParse({ runId: 'r-1', status: 'ok', effects: [{ tool: 'crm.log_lead', status: 'enforced' }] }).success).toBe(false);
     expect(hookInvokeResultSchema.safeParse({ status: 'ok' }).success).toBe(false);
+    // Additive pod-side fields pass through (a reader never refuses a key the other side started sending).
+    expect(hookInvokeResultSchema.safeParse({ runId: 'r-1', status: 'ok', stopReason: 'end_turn', timedOut: false }).success).toBe(true);
+    // Ids: a 128-char threadId, an instant and a 64-char hook name fit (the old 128 cap refused valid ids).
+    const longRun = `${'t'.repeat(128)}#session.ended#2026-09-19T11:40:00.000Z#${'h'.repeat(64)}`;
+    expect(longRun.length).toBeGreaterThan(128);
+    expect(hookInvokeRequestSchema.safeParse({ runId: longRun, name: 'email-reporter', event: { ...event, hook: { name: 'email-reporter', runId: longRun } }, timeoutMs: 90_000 }).success).toBe(true);
     expect(jsonObjectSchema.safeParse({ a: [1, 'b', null] }).success).toBe(true);
     expect(jsonObjectSchema.safeParse('s').success).toBe(false);
     expect(jsonObjectSchema.safeParse([]).success).toBe(false);
