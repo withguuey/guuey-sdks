@@ -155,6 +155,8 @@ jobs:
           fi
 
       - name: Publish (leaf-first, idempotent)
+        # `id`: the post-publish smoke keys on THIS step's outcome (guuey#1538).
+        id: publish
         env:
           DRY_RUN: ${{ steps.mode.outputs.dry_run }}
         run: |
@@ -354,7 +356,13 @@ jobs:
         # `always()`: a red verify (a lagging registry replica, guuey#968) must
         # not SKIP the one step that proves installability; `continue-on-error`
         # below still keeps this step from ever failing the release.
-        if: always() && steps.mode.outputs.dry_run == 'false'
+        # `steps.publish.outcome == 'success'`: but a FAILED publish step has
+        # nothing to smoke, and this step's warning used to assert "Publish
+        # SUCCEEDED" from its own assumption after exactly that (v0.26.0's first
+        # run, 2026-09-19: zero members on npm, the sentence printed anyway —
+        # guuey#1538). The publish step's outcome is the only thing this step
+        # may speak for; the registry read is the verify step's.
+        if: always() && steps.mode.outputs.dry_run == 'false' && steps.publish.outcome == 'success'
         # NEVER fails the release: publish already happened (irreversible), so a
         # red job here would falsely brand a successful release as broken. npm
         # CDN propagation for `npx @latest` can lag minutes behind a successful
@@ -386,5 +394,5 @@ jobs:
             && npx --yes "@guuey/cli@${VER}" --version; then
             echo "consumer smoke OK — scaffold + CLI resolve from the public registry"
           else
-            echo "::warning title=Consumer smoke did not complete::Publish SUCCEEDED (versions are on npm); the post-publish npx check did not resolve @${VER} in time — almost always CDN propagation lag. Verify manually: npx @guuey/create-agentic-app@${VER}"
+            echo "::warning title=Consumer smoke did not complete::The publish step exited 0 (this step runs only then); the post-publish npx check did not resolve @${VER} in time — almost always CDN propagation lag. Whether every member is on npm is the Verify step's line above, not this one's. Check by hand: npx @guuey/create-agentic-app@${VER}"
           fi
