@@ -43,6 +43,15 @@ export interface HandoffEvent {
   question: string;
   contactEmail?: string;
   contactName?: string;
+  /**
+   * The rep's conversation summary (guuey#1510) — what the visitor wanted,
+   * what was answered, what is still open — as the tool recorded it (≤ 1200
+   * chars). Optional both ways: rows written before it carry none, and every
+   * reader treats absence as "no summary" (the rolling-release rule).
+   * Agent-written text ABOUT untrusted visitor content — quote and
+   * truncate, never interpolate.
+   */
+  summary?: string;
 }
 
 /**
