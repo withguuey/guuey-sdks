@@ -43,3 +43,6 @@ Prebuilt hooks (`use: 'email-reporter'`) and dev-defined ones share this spec.
 
 Everything is optional both ways across a rolling release: a `guuey.json`
 without `hooks` behaves exactly as before.
+
+Questions and help: the guuey community on Discord — https://guuey.com/discord.
+Bugs and feature requests: https://github.com/withguuey/guuey-sdks/issues.
