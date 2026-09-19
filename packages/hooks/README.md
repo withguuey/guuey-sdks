@@ -40,6 +40,9 @@ Prebuilt hooks (`use: 'email-reporter'`) and dev-defined ones share this spec.
   `@guuey/config`.
 - `toWireToolName('server.tool')` → `mcp__server__tool` — the one function
   both config names and the runtime's tool extractor call.
+- An agent definition's `tools` is required and exact: `[]` mounts nothing
+  (a summariser that only writes its output); there is no "absent = every
+  declared server" default.
 - An agent definition's optional `output` is a JSON Schema for the run's
   structured output (the runtime hands it to the model's structured-output
   mode); a `required` tool the model skipped is called with that output.
@@ -47,7 +50,7 @@ Prebuilt hooks (`use: 'email-reporter'`) and dev-defined ones share this spec.
   catalog, ONE copy for the runtime and the dispatcher, keyed per event.
   `email-reporter`: on `handoff.requested` one tool call maps the envelope
   onto `report_conversation` (the rep already wrote the summary); on
-  `session.ended` a tool-less agent run writes the report as its `output`
+  `session.ended` an agent run with `tools: []` writes the report as its `output`
   and the platform makes the call — the pod never mounts a first-party
   server for a hook run.
 - `hookInvokeRequestSchema` / `hookInvokeResultSchema` / `HOOK_DOOR_PATH` —

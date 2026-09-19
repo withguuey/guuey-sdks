@@ -126,11 +126,19 @@ describe('the guuey.json block (§8.7)', () => {
     ).toBe(false);
   });
   it('actAs is the hook principal only; a required tool must be inside the allowlist', () => {
-    expect(hookDefinitionSchema.safeParse({ kind: 'agent', on: ['session.ended'], instruction: 'x', actAs: 'visitor' }).success).toBe(false);
-    expect(hookDefinitionSchema.safeParse({ kind: 'agent', on: ['session.ended'], instruction: 'x', actAs: 'hook' }).success).toBe(true);
+    expect(hookDefinitionSchema.safeParse({ kind: 'agent', on: ['session.ended'], instruction: 'x', tools: [], actAs: 'visitor' }).success).toBe(false);
+    expect(hookDefinitionSchema.safeParse({ kind: 'agent', on: ['session.ended'], instruction: 'x', tools: [], actAs: 'hook' }).success).toBe(true);
     const r = hookDefinitionSchema.safeParse({ kind: 'agent', on: ['session.ended'], instruction: 'x', tools: ['a.*'], required: ['b.c'] });
     expect(r.success).toBe(false);
   });
+  it('`tools` is REQUIRED on an agent definition — `[]` mounts nothing; absent is refused (never "every declared server")', () => {
+    expect(hookDefinitionSchema.safeParse({ kind: 'agent', on: ['session.ended'], instruction: 'x' }).success).toBe(false);
+    expect(hookDefinitionSchema.safeParse({ kind: 'agent', on: ['session.ended'], instruction: 'x', tools: [] }).success).toBe(true);
+    expect(hookDefinitionSchema.safeParse({ kind: 'agent', on: ['session.ended'], instruction: 'x', tools: ['crm.*'] }).success).toBe(true);
+    // A required tool outside an EMPTY allowlist is refused too.
+    expect(hookDefinitionSchema.safeParse({ kind: 'agent', on: ['session.ended'], instruction: 'x', tools: [], required: ['crm.log_lead'] }).success).toBe(false);
+  });
+
   it('a tool definition names exactly one tool', () => {
     expect(hookDefinitionSchema.safeParse({ kind: 'tool', on: ['handoff.requested'], tool: 'my-crm.create_lead' }).success).toBe(true);
     expect(hookDefinitionSchema.safeParse({ kind: 'tool', on: ['handoff.requested'] }).success).toBe(false);
@@ -156,7 +164,7 @@ describe('tool names', () => {
 
 describe('the agent definition\'s `output` (a JSON Schema for the structured output)', () => {
   it('parses as any JSON value and stays optional (a definition without it is free-form)', () => {
-    const base = { kind: 'agent', on: ['session.ended'], instruction: 'x' };
+    const base = { kind: 'agent', on: ['session.ended'], instruction: 'x', tools: [] };
     expect(hookDefinitionSchema.safeParse(base).success).toBe(true);
     expect(hookDefinitionSchema.safeParse({ ...base, output: CONVERSATION_REPORT_JSON_SCHEMA }).success).toBe(true);
     expect(hookDefinitionSchema.safeParse({ ...base, output: { type: 'object', properties: { when: new Date(0) } } }).success).toBe(false);
@@ -218,7 +226,7 @@ describe('the prebuilt catalog (§8.8, guuey#1537)', () => {
         if (binding?.kind === 'agent') {
           expect(hookDefinitionSchema.safeParse(binding.definition).success).toBe(true);
           expect(binding.definition.on).toContain(event);
-          expect(binding.definition.tools).toBeUndefined();
+          expect(binding.definition.tools).toEqual([]);
           expect(binding.definition.required).toBeUndefined();
           expect(binding.definition.output).toBeDefined();
           expect(binding.effects.length).toBeGreaterThan(0);
@@ -245,7 +253,7 @@ describe('the prebuilt catalog (§8.8, guuey#1537)', () => {
     const binding = prebuiltBinding('email-reporter', 'session.ended');
     expect(binding?.kind).toBe('agent');
     if (binding?.kind !== 'agent') return;
-    expect(binding.definition).toMatchObject({ kind: 'agent', on: ['session.ended'], model: 'small', maxTurns: 2, timeoutMs: 90_000, output: CONVERSATION_REPORT_JSON_SCHEMA });
+    expect(binding.definition).toMatchObject({ kind: 'agent', on: ['session.ended'], tools: [], model: 'small', maxTurns: 2, timeoutMs: 90_000, output: CONVERSATION_REPORT_JSON_SCHEMA });
     expect(binding.effects).toEqual([{ serverId: 'email-reporter', tool: 'report_conversation' }]);
     // The output schema and the tool's input agree on the required key.
     expect(CONVERSATION_REPORT_JSON_SCHEMA['required']).toEqual(['summary', 'wantedHuman']);

@@ -50,7 +50,7 @@ describe('guuey.json agent.hooks (guuey#1511 §8.7)', () => {
           ...minimal.agent,
           hooks: {
             'session.ended': [{ kind: 'agent', definition: 'x' }],
-            definitions: { x: { kind: 'agent', on: ['session.ended'], instruction: 'i', actAs: 'visitor' } },
+            definitions: { x: { kind: 'agent', on: ['session.ended'], instruction: 'i', tools: [], actAs: 'visitor' } },
           },
         },
       }).success,

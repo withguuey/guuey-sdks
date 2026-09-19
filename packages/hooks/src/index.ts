@@ -272,8 +272,15 @@ const agentDefinitionSchema = z
     on: z.array(hookEventNameSchema).min(1),
     /** The hook's system instruction — what to do with the conversation and the event. */
     instruction: z.string().min(1).max(8000),
-    /** Tools the run may call (`server.tool` | `server.*`); absent = the app's declared servers. */
-    tools: z.array(toolPatternSchema).max(64).optional(),
+    /**
+     * Tools the run may call (`server.tool` | `server.*`) — REQUIRED, and
+     * exactly what is declared: `[]` = the run mounts nothing (a summariser
+     * that only writes its `output`). There is no "absent = every declared
+     * server" default: that would hand a hook the colocated children too
+     * (`guuey-handoff`'s `request_human`, `guuey-memory`) without anyone
+     * meaning it (infra's #1529 seam review).
+     */
+    tools: z.array(toolPatternSchema).max(64),
     /** Effects that MUST happen; the Router calls them with the structured output if the model did not. */
     required: z.array(toolNameSchema).max(16).optional(),
     model: z.enum(['small', 'default']).optional(),
@@ -291,7 +298,7 @@ const agentDefinitionSchema = z
     actAs: z.literal('hook').optional(),
   })
   .superRefine((d, ctx) => {
-    if (!d.tools || !d.required) return;
+    if (!d.required) return;
     for (const [i, req] of d.required.entries()) {
       if (!d.tools.some((p) => toolPatternCovers(p, req))) {
         ctx.addIssue({
@@ -456,7 +463,7 @@ export interface PrebuiltEffect {
 
 /**
  * A prebuilt bound to an event as an agent run. "The model writes, the
- * platform calls": the definition is TOOL-LESS — its structured `output`
+ * platform calls": the definition mounts no tools (`tools: []`) — its structured `output`
  * (shaped by `definition.output`) is what the dispatcher hands to each
  * {@link PrebuiltEffect}. So the pod never mounts a first-party server for a
  * hook run, and the app's `mcpServers` need not declare guuey's own tools.
@@ -543,6 +550,8 @@ export const PREBUILT_DEFINITIONS: Readonly<Record<PrebuiltHookName, Partial<Rea
           'sentences on what the visitor wanted, what was answered, and what is still open, written from the whole ' +
           'conversation; `wantedHuman` — whether the visitor asked to talk to a person; `contactEmail` and `contactName` ' +
           'only if the visitor shared them. Report facts from the transcript; never invent contact details.',
+        // Mounts NOTHING: the report is the structured output; the dispatcher makes the one call below.
+        tools: [],
         output: CONVERSATION_REPORT_JSON_SCHEMA,
         model: 'small',
         maxTurns: 2,
