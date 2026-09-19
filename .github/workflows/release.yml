@@ -22,10 +22,12 @@ name: npm Release
 # GuueyChatTheme platform-data schema; deps agent-client + mcp-apps-host +
 # @silverprotocol/core), @guuey/host,
 # @guuey/create-agentic-app, @guuey/cli.
-# First-ever publishes ride OIDC too: npm now supports PRE-ATTACHING a
-# trusted publisher to an unpublished package name (proven 2026-08-15 —
-# @guuey/chat@0.4.0 was first-published by this workflow). Pre-attach the
-# publisher config on npmjs BEFORE the cut that introduces a new package.
+# First-ever publishes are MANUAL: a trusted publisher can only be attached
+# to a package that already exists on npm (the org owner's live read on
+# npmjs, 2026-09-19, and the registry agrees — @guuey/chat@0.4.0, the
+# package's first version, was published by hand on 2026-08-15 with no
+# attestation; OIDC provenance starts at 0.5.0. This header once claimed the
+# opposite, and the claim sent the next new package the wrong way, guuey#1528).
 #
 # COUPLED SET-MOVE — config + cli + create-agentic-app publish TOGETHER.
 # The colocated-MCP flip (slice B, 2026-07-21) made these three a single
@@ -54,15 +56,15 @@ name: npm Release
 #
 # npmjs.com one-time setup (org owner): for each package in the publish ORDER,
 # configure a Trusted Publisher — owner `withguuey`, repo `guuey-sdks`, workflow
-# `release.yml`, environment `npm-publish`. A NEW package gets its publisher
-# PRE-ATTACHED to the unpublished name before the cut that introduces it (the
-# 2026-08-15 precedent above); the older bootstrap — a manual `pnpm publish`
-# with 2FA from a clean clone of the mirror, then attach — remains a valid
-# fallback (no `workspace:` specifier survives `pnpm publish`; `npm publish`
-# would not rewrite one, guuey#449). Until one of the two has happened, the
-# cut's fire gate refuses on that member (leg 5): a first publish the workflow
-# cannot perform would leave the cohort partial. (This note once said npm
-# required the package to exist first; it does not — guuey#1528.)
+# `release.yml`, environment `npm-publish`. A NEW package is bootstrapped by
+# hand: from a clean checkout of the mirror at the synced commit, install
+# frozen, build, test, then `pnpm publish --no-git-checks` with 2FA from the
+# package dir (`pnpm publish`, never `npm publish`: only pnpm rewrites a
+# `workspace:` specifier, guuey#449), THEN attach the four values above. Both
+# are the org owner's steps. The next cut publishes that package via OIDC like
+# the rest; until both have happened the cut's fire gate refuses on that
+# member (leg 5) — a publish the workflow cannot perform leaves the cohort
+# partial.
 
 on:
   workflow_dispatch:
