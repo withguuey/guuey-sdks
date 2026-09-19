@@ -91,6 +91,10 @@ minimumReleaseAgeExclude:
 # pnpm-workspace.yaml `overrides:` comment (same family, this workspace has
 # its own lockfile so it needs its own block).
 overrides:
+  # GHSA-7q85-xj36-vmfc (Dependabot alerts 283/284, 2026-09-18, HIGH): adm-zip < 0.6.1 allocates the DECLARED uncompressed
+  # size before reading (DoS). Pulled only by @google/adk (^0.5.17, which excludes the fix); 0.5.18 → 0.6.1 removes no
+  # method adk calls (getEntries, readFile, the Buffer constructor). Lifts when adk's own range admits 0.6.1.
+  adm-zip: ">=0.6.1"
   "brace-expansion@1": ^1.1.18
   "brace-expansion@2": ^2.1.4
   "brace-expansion@5": ^5.0.9
