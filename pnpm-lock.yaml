@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  zod@^4: 4.4.3
   adm-zip: '>=0.6.1'
   brace-expansion@1: ^1.1.18
   brace-expansion@2: ^2.1.4
@@ -114,7 +115,7 @@ importers:
         specifier: 0.6.2
         version: 0.6.2
       zod:
-        specifier: ^4.3.6
+        specifier: 4.4.3
         version: 4.4.3
     devDependencies:
       '@testing-library/dom':
@@ -230,7 +231,7 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.0)(@types/node@24.13.2)(jsdom@25.0.1)(terser@5.50.0)(yaml@2.9.0)
       zod:
-        specifier: ^4.3.6
+        specifier: 4.4.3
         version: 4.4.3
 
   packages/config:
@@ -239,7 +240,7 @@ importers:
         specifier: workspace:*
         version: link:../hooks
       zod:
-        specifier: ^4.3.6
+        specifier: 4.4.3
         version: 4.4.3
     devDependencies:
       '@guuey/chat':
@@ -310,7 +311,7 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.0)(@types/node@24.12.4)(jsdom@25.0.1)(terser@5.50.0)(yaml@2.9.0)
       zod:
-        specifier: ^4.3.6
+        specifier: 4.4.3
         version: 4.4.3
 
   packages/host:
@@ -491,13 +492,13 @@ packages:
     peerDependencies:
       '@anthropic-ai/sdk': '>=0.93.0'
       '@modelcontextprotocol/sdk': ^1.30.0
-      zod: ^4.0.0
+      zod: 4.4.3
 
   '@anthropic-ai/sdk@0.125.0':
     resolution: {integrity: sha512-Hq5wYlXupzJ9M1Fzqjqa3hObcuigEXVZJqSYDgeZGM3wF4qrNERM5Z1OOAeoT9rlod8awJ3uYyJjbQXp1ckIGg==}
     hasBin: true
     peerDependencies:
-      zod: ^3.25.0 || ^4.0.0
+      zod: 4.4.3
     peerDependenciesMeta:
       zod:
         optional: true
@@ -1329,7 +1330,7 @@ packages:
       '@modelcontextprotocol/sdk': ^1.30.0
       react: ^17.0.0 || ^18.0.0 || ^19.0.0
       react-dom: ^17.0.0 || ^18.0.0 || ^19.0.0
-      zod: ^3.25.0 || ^4.0.0
+      zod: 4.4.3
     peerDependenciesMeta:
       react:
         optional: true
@@ -1341,7 +1342,7 @@ packages:
     engines: {node: '>=18'}
     peerDependencies:
       '@cfworker/json-schema': ^4.1.1
-      zod: ^3.25 || ^4.0
+      zod: 4.4.3
     peerDependenciesMeta:
       '@cfworker/json-schema':
         optional: true
@@ -1361,7 +1362,7 @@ packages:
   '@openai/agents-core@0.18.0':
     resolution: {integrity: sha512-EMhTxl1iHX+bH3gGUnkSxU8l+fw36/+mjsvZH7zP3MyPBZ/4Zqtjg9oILcbZCkcLvii/+M+4ckck3MMdrpcWRA==}
     peerDependencies:
-      zod: ^4.0.0
+      zod: 4.4.3
     peerDependenciesMeta:
       zod:
         optional: true
@@ -1369,17 +1370,17 @@ packages:
   '@openai/agents-openai@0.18.0':
     resolution: {integrity: sha512-dBE5NNVbkhEIsjZLUDjA8Gr8U1wGN6LTdP7Su4mY1djcxtIBaojQ/bjbpDd0EyqD5OkNTu0ziYyUyyrIfIGurQ==}
     peerDependencies:
-      zod: ^4.0.0
+      zod: 4.4.3
 
   '@openai/agents-realtime@0.18.0':
     resolution: {integrity: sha512-joIG5Vj1BKHxx9a+UwI+pPEuiGh0zhRecVb1yYMMKSW0Oho9ntPi1+LM7KpT2mwv6M9Y11XNtuoaseolFzxwBQ==}
     peerDependencies:
-      zod: ^4.0.0
+      zod: 4.4.3
 
   '@openai/agents@0.18.0':
     resolution: {integrity: sha512-i0dIeN8PsqLfEgfMLrmpcJPvgltY2fUxr2+CftBCvX6g1GgWdoiCKpbf+labmJJPqwidN7HfXkgBszM2CHg/IA==}
     peerDependencies:
-      zod: ^4.0.0
+      zod: 4.4.3
 
   '@opentelemetry/api-logs@0.205.0':
     resolution: {integrity: sha512-wBlPk1nFB37Hsm+3Qy73yQSobVn28F4isnWIBvKpd5IUH/eat8bwcL02H9yzmHyyPmukeccSl2mbN5sDQZYnPg==}
@@ -3098,7 +3099,7 @@ packages:
       '@smithy/signature-v4': '>=5.4.0 <6'
       undici: '>=5 <9'
       ws: ^8.18.0
-      zod: ^3.25 || ^4.0
+      zod: 4.4.3
     peerDependenciesMeta:
       '@aws-sdk/credential-provider-node':
         optional: true
@@ -3932,7 +3933,7 @@ packages:
   zod-to-json-schema@3.25.2:
     resolution: {integrity: sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==}
     peerDependencies:
-      zod: ^3.25.28 || ^4
+      zod: 4.4.3
 
   zod@4.4.3:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}

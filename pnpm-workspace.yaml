@@ -92,6 +92,15 @@ minimumReleaseAgeExclude:
 # pnpm-workspace.yaml `overrides:` comment (same family, this workspace has
 # its own lockfile so it needs its own block).
 overrides:
+  # guuey#1541: ONE zod per major. Every `^4.x` importer resolves the same 4.x — the cohort's 4.4.3 (the version the
+  # platform/portal/chat/cli/config importers and CI's widget byte budget were green on; every SDK peer range admits it:
+  # claude-agent-sdk / openai-agents ^4.0.0, mcp sdk ^3.25||^4.0). Two 4.x copies in one tree broke @guuey/config's
+  # declaration emit (TS2742). NOT the newest 4.x on purpose: zod 4.6.5 adds +126,462 B to the widget's inline bundle
+  # (zod 330,048 -> 456,510 B minified; budget 786,432, measured 771,120 at 958e3653d; guuey#1542) — a newer 4.x is a
+  # deliberate bump gated by that budget. pnpm deploy reads this override, so the agent image's zod follows it (the image
+  # had drifted to npm-latest 4.6.5 through deploy's caret re-resolution). check-lockfile-parity's SINGLETONS rule
+  # refuses a second 4.x. The mcp-servers' exact 3.25.76 (guuey#125) is a separate major, untouched.
+  "zod@^4": 4.4.3
   # GHSA-7q85-xj36-vmfc (Dependabot alerts 283/284, 2026-09-18, HIGH): adm-zip < 0.6.1 allocates the DECLARED uncompressed
   # size before reading (DoS). Pulled only by @google/adk (^0.5.17, which excludes the fix); 0.5.18 → 0.6.1 removes no
   # method adk calls (getEntries, readFile, the Buffer constructor). Lifts when adk's own range admits 0.6.1.
