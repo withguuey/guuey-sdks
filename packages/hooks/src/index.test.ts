@@ -10,6 +10,17 @@ import {
   hooksSectionSchema,
   toWireToolName,
   toolPatternCovers,
+  CONVERSATION_REPORT_JSON_SCHEMA,
+  HOOK_DOOR_PATH,
+  PREBUILT_DEFINITIONS,
+  conversationReportSchema,
+  hookInvokeRequestSchema,
+  hookInvokeResultSchema,
+  isPrebuiltHookName,
+  jsonObjectSchema,
+  prebuiltBinding,
+  type HookEvent,
+  type HookEventName,
 } from './index.js';
 
 const AT = '2026-09-19T09:00:00.000Z';
@@ -140,5 +151,100 @@ describe('tool names', () => {
     expect(toolPatternCovers('my-crm.create_lead', 'my-crm.create_lead')).toBe(true);
     expect(toolPatternCovers('my-crm.*', 'other.create_lead')).toBe(false);
     expect(toolPatternCovers('my-crm.x', 'my-crm.create_lead')).toBe(false);
+  });
+});
+
+describe('the agent definition\'s `output` (a JSON Schema for the structured output)', () => {
+  it('parses as any JSON value and stays optional (a definition without it is free-form)', () => {
+    const base = { kind: 'agent', on: ['session.ended'], instruction: 'x' };
+    expect(hookDefinitionSchema.safeParse(base).success).toBe(true);
+    expect(hookDefinitionSchema.safeParse({ ...base, output: CONVERSATION_REPORT_JSON_SCHEMA }).success).toBe(true);
+    expect(hookDefinitionSchema.safeParse({ ...base, output: { type: 'object', properties: { when: new Date(0) } } }).success).toBe(false);
+  });
+});
+
+describe('the runtime door wire (§8.4)', () => {
+  const event: HookEvent = {
+    id: 't-1#session.ended#2026-09-19T11:40:00.000Z',
+    at: '2026-09-19T12:00:00.000Z',
+    appId: 'app-1',
+    threadId: 't-1',
+    type: 'session.ended',
+    hook: { name: 'email-reporter', runId: 'r-1' },
+    data: { reason: 'idle', idleMinutes: 15, lastActivityAt: '2026-09-19T11:40:00.000Z', turns: 4 },
+  };
+  it('the request is exactly { runId, name, event, timeoutMs } — strict, timeoutMs a bounded number', () => {
+    expect(HOOK_DOOR_PATH).toBe('/agent/hook');
+    expect(hookInvokeRequestSchema.safeParse({ runId: 'r-1', name: 'email-reporter', event, timeoutMs: 90_000 }).success).toBe(true);
+    expect(hookInvokeRequestSchema.safeParse({ runId: 'r-1', name: 'email-reporter', event }).success).toBe(false);
+    expect(hookInvokeRequestSchema.safeParse({ runId: 'r-1', name: 'email-reporter', event, timeoutMs: 300_001 }).success).toBe(false);
+    expect(hookInvokeRequestSchema.safeParse({ runId: 'r-1', name: 'email-reporter', event, timeoutMs: 90_000, tools: ['a.b'] }).success).toBe(false);
+    expect(hookInvokeRequestSchema.safeParse({ runId: 'r-1', name: 'Not A Slug', event, timeoutMs: 90_000 }).success).toBe(false);
+  });
+  it('the result is ok|failed with effects called|failed|missing (default []), an optional JSON output and error — accepted/skipped/enforced are off the wire', () => {
+    expect(hookInvokeResultSchema.parse({ runId: 'r-1', status: 'ok', output: { summary: 's' } })).toEqual({ runId: 'r-1', status: 'ok', output: { summary: 's' }, effects: [] });
+    expect(hookInvokeResultSchema.safeParse({ runId: 'r-1', status: 'ok', effects: [{ tool: 'crm.log_lead', status: 'missing' }] }).success).toBe(true);
+    expect(hookInvokeResultSchema.safeParse({ runId: 'r-1', status: 'accepted' }).success).toBe(false);
+    expect(hookInvokeResultSchema.safeParse({ runId: 'r-1', status: 'skipped' }).success).toBe(false);
+    expect(hookInvokeResultSchema.safeParse({ runId: 'r-1', status: 'ok', effects: [{ tool: 'crm.log_lead', status: 'enforced' }] }).success).toBe(false);
+    expect(hookInvokeResultSchema.safeParse({ status: 'ok' }).success).toBe(false);
+    expect(jsonObjectSchema.safeParse({ a: [1, 'b', null] }).success).toBe(true);
+    expect(jsonObjectSchema.safeParse('s').success).toBe(false);
+    expect(jsonObjectSchema.safeParse([]).success).toBe(false);
+  });
+});
+
+describe('the prebuilt catalog (§8.8, guuey#1537)', () => {
+  const handoff: HookEvent = {
+    id: 't-1#handoff.requested#7',
+    at: '2026-09-19T12:00:00.000Z',
+    appId: 'app-1',
+    threadId: 't-1',
+    type: 'handoff.requested',
+    hook: { name: 'email-reporter', runId: 'r-1' },
+    data: { question: 'Do you ship to Iceland?', contactEmail: 'v@example.com', contactName: 'Ada', summary: 'Asked about Iceland.' },
+  };
+  it('every catalog name has bindings only on events v1 fires; each agent binding\'s definition validates and is tool-less with an output schema', () => {
+    for (const name of PREBUILT_HOOKS) {
+      expect(isPrebuiltHookName(name)).toBe(true);
+      for (const [event, binding] of Object.entries(PREBUILT_DEFINITIONS[name])) {
+        expect(HOOK_EVENTS[event as HookEventName].firedInV1).toBe(true);
+        if (binding?.kind === 'agent') {
+          expect(hookDefinitionSchema.safeParse(binding.definition).success).toBe(true);
+          expect(binding.definition.on).toContain(event);
+          expect(binding.definition.tools).toBeUndefined();
+          expect(binding.definition.required).toBeUndefined();
+          expect(binding.definition.output).toBeDefined();
+          expect(binding.effects.length).toBeGreaterThan(0);
+        }
+      }
+    }
+    expect(isPrebuiltHookName('nope')).toBe(false);
+  });
+  it('email-reporter on handoff.requested is ONE tool call that maps the envelope onto report_conversation\'s input (the rep\'s summary, else the question; wantedHuman true; the contact fields)', () => {
+    const binding = prebuiltBinding('email-reporter', 'handoff.requested');
+    expect(binding?.kind).toBe('tool');
+    if (binding?.kind !== 'tool') return;
+    expect(binding).toMatchObject({ serverId: 'email-reporter', tool: 'report_conversation' });
+    const args = binding.args(handoff);
+    expect(args).toEqual({ summary: 'Asked about Iceland.', wantedHuman: true, contactEmail: 'v@example.com', contactName: 'Ada' });
+    expect(conversationReportSchema.safeParse(args).success).toBe(true);
+    const noSummary: HookEvent = { ...handoff, data: { question: 'Do you ship to Iceland?' } };
+    expect(binding.args(noSummary)).toEqual({ summary: 'Do you ship to Iceland?', wantedHuman: true });
+    // Not this event's envelope → nothing to report.
+    const ended: HookEvent = { ...handoff, type: 'session.ended', data: { reason: 'idle', idleMinutes: 15, lastActivityAt: '2026-09-19T11:40:00.000Z', turns: 4 } };
+    expect(binding.args(ended)).toBeUndefined();
+  });
+  it('email-reporter on session.ended is a tool-less agent whose output IS the report, and one platform-made effect: report_conversation on the hosted reporter', () => {
+    const binding = prebuiltBinding('email-reporter', 'session.ended');
+    expect(binding?.kind).toBe('agent');
+    if (binding?.kind !== 'agent') return;
+    expect(binding.definition).toMatchObject({ kind: 'agent', on: ['session.ended'], model: 'small', maxTurns: 2, timeoutMs: 90_000, output: CONVERSATION_REPORT_JSON_SCHEMA });
+    expect(binding.effects).toEqual([{ serverId: 'email-reporter', tool: 'report_conversation' }]);
+    // The output schema and the tool's input agree on the required key.
+    expect(CONVERSATION_REPORT_JSON_SCHEMA['required']).toEqual(['summary', 'wantedHuman']);
+    expect(conversationReportSchema.safeParse({ summary: 's', wantedHuman: false }).success).toBe(true);
+    expect(conversationReportSchema.safeParse({ wantedHuman: false }).success).toBe(false);
+    expect(prebuiltBinding('email-reporter', 'turn.start')).toBeUndefined();
   });
 });

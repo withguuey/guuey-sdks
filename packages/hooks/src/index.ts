@@ -92,6 +92,10 @@ export const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
   ]),
 );
 
+/** A JSON object — a tool call's arguments, a hook's structured output when a tool must be called with it. */
+export type JsonObject = { [key: string]: JsonValue };
+export const jsonObjectSchema: z.ZodType<JsonObject> = z.record(z.string(), jsonValueSchema);
+
 // ── Tool names ────────────────────────────────────────────────────────
 
 /** `guuey.json` mcpServers keys: the same grammar `@guuey/config` accepts (non-empty, no dots — the dot separates server from tool). */
@@ -268,6 +272,14 @@ const agentDefinitionSchema = z
     model: z.enum(['small', 'default']).optional(),
     maxTurns: z.number().int().min(1).max(16).optional(),
     timeoutMs: z.number().int().min(1_000).max(300_000).optional(),
+    /**
+     * A JSON Schema the run's structured `output` must satisfy — the Router
+     * hands it to the adapter's structured-output mode (Claude
+     * `outputFormat: json_schema`, OpenAI `output_type`, ADK's parsed text).
+     * Absent = free-form output. What a `required` effect is called with when
+     * the model skipped it, and what a prebuilt's platform-made effect takes.
+     */
+    output: jsonValueSchema.optional(),
     /** v1: the hook principal only. The field exists so the enum can widen without a shape change. */
     actAs: z.literal('hook').optional(),
   })
@@ -292,6 +304,7 @@ const toolDefinitionSchema = z.strictObject({
 
 export const hookDefinitionSchema = z.union([agentDefinitionSchema, toolDefinitionSchema]);
 export type HookDefinition = z.infer<typeof hookDefinitionSchema>;
+export type AgentHookDefinition = z.infer<typeof agentDefinitionSchema>;
 
 const handlers = z.array(hookHandlerRefSchema).min(1).max(8);
 
@@ -362,3 +375,173 @@ export const hooksSectionSchema = z
   });
 
 export type HooksSection = z.infer<typeof hooksSectionSchema>;
+
+// ── The runtime's hook door (§8.4 — the wire between the dispatcher and the pod) ──
+
+/** Where a live pod answers hook runs: `POST <pod origin>/agent/hook`. */
+export const HOOK_DOOR_PATH = '/agent/hook';
+
+/**
+ * What the dispatcher POSTs. Minimal by design: the pod resolves the hook's
+ * definition (instruction, tools, required, output, timeout) BY NAME — from
+ * its own snapshot for a dev-defined hook, from {@link PREBUILT_DEFINITIONS}
+ * for a prebuilt — never from the wire, so nothing on the wire can widen a
+ * hook's reach. `timeoutMs` is the dispatcher's wait; the pod caps it by the
+ * definition's own.
+ */
+export const hookInvokeRequestSchema = z.strictObject({
+  runId: z.string().min(1).max(128),
+  name: hookNameSchema,
+  event: hookEventSchema,
+  timeoutMs: z.number().int().min(1_000).max(300_000),
+});
+export type HookInvokeRequest = z.infer<typeof hookInvokeRequestSchema>;
+
+/** One effect as the POD reports it — `missing` = a `required` tool the model never called (the dispatcher enforces it). */
+export const hookDoorEffectSchema = z.strictObject({
+  tool: toolNameSchema,
+  status: z.enum(['called', 'failed', 'missing']),
+});
+export type HookDoorEffect = z.infer<typeof hookDoorEffectSchema>;
+
+/**
+ * What the pod answers, synchronously, with a 200. `ok` / `failed` only — the
+ * run's terminal state is the dispatcher's to write (one writer); `deferred`,
+ * `parked` and `skipped` are decided on its side. Other faces are HTTP: 503 +
+ * `Retry-After` at capacity, 422 `UNKNOWN_HOOK` for a name the pod cannot
+ * resolve, 401/403 for a principal that is not this app's hook.
+ */
+export const hookInvokeResultSchema = z.strictObject({
+  runId: z.string().min(1).max(128),
+  status: z.enum(['ok', 'failed']),
+  output: jsonValueSchema.optional(),
+  effects: z.array(hookDoorEffectSchema).default([]),
+  error: z.string().max(2000).optional(),
+});
+export type HookInvokeResult = z.infer<typeof hookInvokeResultSchema>;
+
+// ── Prebuilt hooks (§8.8) — one copy for the pod and the dispatcher ──
+
+/**
+ * A prebuilt bound to an event as ONE tool call, no model: the dispatcher
+ * calls `tool` on the FIRST-PARTY hosted server `serverId` (a registry id —
+ * never the app's `mcpServers` map; the gateway still requires the app's
+ * grant) with `args(event)`. `undefined` from `args` = this event carries
+ * nothing for the tool → the run is `skipped`, not failed.
+ */
+export interface PrebuiltToolBinding {
+  readonly kind: 'tool';
+  readonly serverId: string;
+  readonly tool: string;
+  args(event: HookEvent): JsonObject | undefined;
+}
+
+/** An effect the DISPATCHER makes after a prebuilt agent run answers `ok`: `tool` on `serverId` with the run's `output` as the arguments. */
+export interface PrebuiltEffect {
+  readonly serverId: string;
+  readonly tool: string;
+}
+
+/**
+ * A prebuilt bound to an event as an agent run. "The model writes, the
+ * platform calls": the definition is TOOL-LESS — its structured `output`
+ * (shaped by `definition.output`) is what the dispatcher hands to each
+ * {@link PrebuiltEffect}. So the pod never mounts a first-party server for a
+ * hook run, and the app's `mcpServers` need not declare guuey's own tools.
+ */
+export interface PrebuiltAgentBinding {
+  readonly kind: 'agent';
+  readonly definition: AgentHookDefinition;
+  readonly effects: readonly PrebuiltEffect[];
+}
+
+export type PrebuiltBinding = PrebuiltToolBinding | PrebuiltAgentBinding;
+
+export function isPrebuiltHookName(name: string): name is PrebuiltHookName {
+  return (PREBUILT_HOOKS as readonly string[]).includes(name);
+}
+
+/** The report the email reporter's tool takes (`report_conversation`'s input): the shape both prebuilt bindings produce. */
+export const conversationReportSchema = z.strictObject({
+  summary: z.string().min(1).max(1200),
+  wantedHuman: z.boolean().optional(),
+  contactEmail: z.string().max(320).optional(),
+  contactName: z.string().max(200).optional(),
+});
+export type ConversationReport = z.infer<typeof conversationReportSchema>;
+
+/** `report_conversation`'s input as a JSON Schema — the reporter's `output` contract for the session-end run. */
+export const CONVERSATION_REPORT_JSON_SCHEMA: JsonObject = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['summary', 'wantedHuman'],
+  properties: {
+    summary: {
+      type: 'string',
+      minLength: 1,
+      maxLength: 1200,
+      description:
+        "Two to four sentences for the app's owner: what the visitor wanted, what was answered, and what is still open.",
+    },
+    wantedHuman: { type: 'boolean', description: 'Whether the visitor asked to talk to a person.' },
+    contactEmail: { type: 'string', maxLength: 320, description: "The visitor's email address for a follow-up, if they shared one." },
+    contactName: { type: 'string', maxLength: 200, description: "The visitor's name, if they shared one." },
+  },
+};
+
+const EMAIL_REPORTER_SERVER_ID = 'email-reporter';
+const EMAIL_REPORTER_TOOL = 'report_conversation';
+
+/**
+ * The prebuilt catalog, keyed per event (guuey#1537). A prebuilt with no
+ * binding for an event the app declared it on is `prebuilt-not-served` on
+ * the dispatcher's side and `UNKNOWN_HOOK` at the door — never a guess.
+ *
+ * `email-reporter` (guuey#1511): on `handoff.requested` the rep already
+ * wrote the summary (guuey#1510) — one tool call maps the envelope onto
+ * `report_conversation`; on `session.ended` nothing has summarised the
+ * conversation yet — a tool-less agent run writes the report as its
+ * structured output and the dispatcher makes the call.
+ */
+export const PREBUILT_DEFINITIONS: Readonly<Record<PrebuiltHookName, Partial<Readonly<Record<HookEventName, PrebuiltBinding>>>>> = {
+  'email-reporter': {
+    'handoff.requested': {
+      kind: 'tool',
+      serverId: EMAIL_REPORTER_SERVER_ID,
+      tool: EMAIL_REPORTER_TOOL,
+      args(event) {
+        if (event.type !== 'handoff.requested') return undefined;
+        const { data } = event;
+        const report: ConversationReport = {
+          summary: (data.summary ?? data.question).slice(0, 1200),
+          wantedHuman: true,
+          ...(data.contactEmail !== undefined ? { contactEmail: data.contactEmail } : {}),
+          ...(data.contactName !== undefined ? { contactName: data.contactName } : {}),
+        };
+        return report;
+      },
+    },
+    'session.ended': {
+      kind: 'agent',
+      definition: {
+        kind: 'agent',
+        on: ['session.ended'],
+        instruction:
+          "The conversation has ended. Write the app owner's report of it as the structured output: `summary` — two to four " +
+          'sentences on what the visitor wanted, what was answered, and what is still open, written from the whole ' +
+          'conversation; `wantedHuman` — whether the visitor asked to talk to a person; `contactEmail` and `contactName` ' +
+          'only if the visitor shared them. Report facts from the transcript; never invent contact details.',
+        output: CONVERSATION_REPORT_JSON_SCHEMA,
+        model: 'small',
+        maxTurns: 2,
+        timeoutMs: 90_000,
+      },
+      effects: [{ serverId: EMAIL_REPORTER_SERVER_ID, tool: EMAIL_REPORTER_TOOL }],
+    },
+  },
+};
+
+/** The binding a prebuilt has for an event, if any. */
+export function prebuiltBinding(name: PrebuiltHookName, event: HookEventName): PrebuiltBinding | undefined {
+  return PREBUILT_DEFINITIONS[name][event];
+}
