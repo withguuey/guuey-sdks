@@ -85,7 +85,7 @@ export async function resolveWorkspaceId(
 
 /**
  * Resolve the server name: `--name` flag wins, then the local package.json
- * `name` with any npm scope stripped (`@guuey/mcp-weather` → `mcp-weather` —
+ * `name` with any npm scope stripped (`@guuey/mcp-docs-search` → `mcp-docs-search` —
  * the segment after the last `/`). Returns `null` when neither yields a
  * non-empty string (the caller prints the error + exits).
  */

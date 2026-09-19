@@ -115,16 +115,16 @@ describe('resolveWorkspaceId', () => {
 
 describe('resolveServerName', () => {
   it('flag wins over package.json name', () => {
-    expect(resolveServerName({ name: 'from-flag' }, '@guuey/mcp-weather')).toBe('from-flag');
+    expect(resolveServerName({ name: 'from-flag' }, '@guuey/mcp-docs-search')).toBe('from-flag');
   });
 
   it('strips the npm scope from a scoped package.json name', () => {
-    expect(resolveServerName({}, '@guuey/mcp-weather')).toBe('mcp-weather');
+    expect(resolveServerName({}, '@guuey/mcp-docs-search')).toBe('mcp-docs-search');
     expect(resolveServerName(undefined, '@scope/sub/deep-name')).toBe('deep-name');
   });
 
   it('passes an unscoped package.json name through unchanged', () => {
-    expect(resolveServerName({}, 'mcp-weather')).toBe('mcp-weather');
+    expect(resolveServerName({}, 'mcp-docs-search')).toBe('mcp-docs-search');
   });
 
   it('returns null when neither flag nor package name is present', () => {
@@ -133,7 +133,7 @@ describe('resolveServerName', () => {
   });
 
   it('ignores a boolean (value-less) --name flag, falling back to package name', () => {
-    expect(resolveServerName({ name: true }, '@guuey/mcp-weather')).toBe('mcp-weather');
+    expect(resolveServerName({ name: true }, '@guuey/mcp-docs-search')).toBe('mcp-docs-search');
   });
 });
 
