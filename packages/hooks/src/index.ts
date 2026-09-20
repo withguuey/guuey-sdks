@@ -474,7 +474,21 @@ export interface PrebuiltAgentBinding {
   readonly effects: readonly PrebuiltEffect[];
 }
 
-export type PrebuiltBinding = PrebuiltToolBinding | PrebuiltAgentBinding;
+/**
+ * A prebuilt deliberately bound to NOTHING on an event, with the reason: the
+ * declaration stays legal in the block, the dispatcher records the run
+ * `skipped` (no claim, no call), the door never sees it. The email reporter
+ * on `handoff.requested` is the first: the platform's notifier already mails
+ * every hand-off whenever the reporter is on (guuey#1525), so a hook there
+ * would mail the owner twice (guuey#1561).
+ */
+export interface PrebuiltSkipBinding {
+  readonly kind: 'skip';
+  readonly reason: PrebuiltSkipReason;
+}
+export type PrebuiltSkipReason = 'notifier-mails-handoffs';
+
+export type PrebuiltBinding = PrebuiltToolBinding | PrebuiltAgentBinding | PrebuiltSkipBinding;
 
 export function isPrebuiltHookName(name: string): name is PrebuiltHookName {
   return (PREBUILT_HOOKS as readonly string[]).includes(name);
@@ -516,30 +530,17 @@ const EMAIL_REPORTER_TOOL = 'report_conversation';
  * binding for an event the app declared it on is `prebuilt-not-served` on
  * the dispatcher's side and `UNKNOWN_HOOK` at the door — never a guess.
  *
- * `email-reporter` (guuey#1511): on `handoff.requested` the rep already
- * wrote the summary (guuey#1510) — one tool call maps the envelope onto
- * `report_conversation`; on `session.ended` nothing has summarised the
- * conversation yet — a tool-less agent run writes the report as its
- * structured output and the dispatcher makes the call.
+ * `email-reporter` (guuey#1511): on `session.ended` nothing has summarised
+ * the conversation yet — a tool-less agent run writes the report as its
+ * structured output and the dispatcher makes the call. On
+ * `handoff.requested` it binds NOTHING, on purpose: the platform's notifier
+ * mails every hand-off (with the rep's summary, guuey#1510) whenever the
+ * reporter is on, no hook needed — a binding there mailed twice
+ * (guuey#1561); the declaration stays legal and is recorded `skipped`.
  */
 export const PREBUILT_DEFINITIONS: Readonly<Record<PrebuiltHookName, Partial<Readonly<Record<HookEventName, PrebuiltBinding>>>>> = {
   'email-reporter': {
-    'handoff.requested': {
-      kind: 'tool',
-      serverId: EMAIL_REPORTER_SERVER_ID,
-      tool: EMAIL_REPORTER_TOOL,
-      args(event) {
-        if (event.type !== 'handoff.requested') return undefined;
-        const { data } = event;
-        const report: ConversationReport = {
-          summary: (data.summary ?? data.question).slice(0, 1200),
-          wantedHuman: true,
-          ...(data.contactEmail !== undefined ? { contactEmail: data.contactEmail } : {}),
-          ...(data.contactName !== undefined ? { contactName: data.contactName } : {}),
-        };
-        return report;
-      },
-    },
+    'handoff.requested': { kind: 'skip', reason: 'notifier-mails-handoffs' },
     'session.ended': {
       kind: 'agent',
       definition: {

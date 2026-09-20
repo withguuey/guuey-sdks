@@ -235,19 +235,13 @@ describe('the prebuilt catalog (§8.8, guuey#1537)', () => {
     }
     expect(isPrebuiltHookName('nope')).toBe(false);
   });
-  it('email-reporter on handoff.requested is ONE tool call that maps the envelope onto report_conversation\'s input (the rep\'s summary, else the question; wantedHuman true; the contact fields)', () => {
-    const binding = prebuiltBinding('email-reporter', 'handoff.requested');
-    expect(binding?.kind).toBe('tool');
-    if (binding?.kind !== 'tool') return;
-    expect(binding).toMatchObject({ serverId: 'email-reporter', tool: 'report_conversation' });
-    const args = binding.args(handoff);
-    expect(args).toEqual({ summary: 'Asked about Iceland.', wantedHuman: true, contactEmail: 'v@example.com', contactName: 'Ada' });
-    expect(conversationReportSchema.safeParse(args).success).toBe(true);
-    const noSummary: HookEvent = { ...handoff, data: { question: 'Do you ship to Iceland?' } };
-    expect(binding.args(noSummary)).toEqual({ summary: 'Do you ship to Iceland?', wantedHuman: true });
-    // Not this event's envelope → nothing to report.
-    const ended: HookEvent = { ...handoff, type: 'session.ended', data: { reason: 'idle', idleMinutes: 15, lastActivityAt: '2026-09-19T11:40:00.000Z', turns: 4 } };
-    expect(binding.args(ended)).toBeUndefined();
+  it('email-reporter on handoff.requested binds NOTHING, with the reason — the notifier already mails every hand-off; a hook there mailed twice (guuey#1561)', () => {
+    expect(prebuiltBinding('email-reporter', 'handoff.requested')).toEqual({ kind: 'skip', reason: 'notifier-mails-handoffs' });
+    // The declaration itself stays legal in the block.
+    expect(hooksSectionSchema.safeParse({ 'handoff.requested': [{ use: 'email-reporter' }] }).success).toBe(true);
+    expect(handoff.type).toBe('handoff.requested');
+    // The report shape the session-end run produces is the tool's input.
+    expect(conversationReportSchema.safeParse({ summary: 'Asked about Iceland.', wantedHuman: true, contactEmail: 'v@example.com', contactName: 'Ada' }).success).toBe(true);
   });
   it('email-reporter on session.ended is a tool-less agent whose output IS the report, and one platform-made effect: report_conversation on the hosted reporter', () => {
     const binding = prebuiltBinding('email-reporter', 'session.ended');

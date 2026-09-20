@@ -48,11 +48,12 @@ Prebuilt hooks (`use: 'email-reporter'`) and dev-defined ones share this spec.
   mode); a `required` tool the model skipped is called with that output.
 - `PREBUILT_DEFINITIONS` / `prebuiltBinding(name, event)` — the prebuilt
   catalog, ONE copy for the runtime and the dispatcher, keyed per event.
-  `email-reporter`: on `handoff.requested` one tool call maps the envelope
-  onto `report_conversation` (the rep already wrote the summary); on
-  `session.ended` an agent run with `tools: []` writes the report as its `output`
-  and the platform makes the call — the pod never mounts a first-party
-  server for a hook run.
+  `email-reporter`: on `session.ended` an agent run with `tools: []` writes
+  the report as its `output` and the platform makes the call — the pod never
+  mounts a first-party server for a hook run. On `handoff.requested` it binds
+  nothing (`{ kind: 'skip' }`): the platform's notifier already mails every
+  hand-off whenever the reporter is on, so a declaration there is legal and
+  simply recorded `skipped`.
 - `hookInvokeRequestSchema` / `hookInvokeResultSchema` / `HOOK_DOOR_PATH` —
   the wire between the dispatcher and the runtime's hook door
   (`POST <pod origin>/agent/hook`): `{ runId, name, event, timeoutMs }` in,
