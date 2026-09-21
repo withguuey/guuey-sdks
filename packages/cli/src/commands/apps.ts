@@ -495,10 +495,12 @@ export async function appsCreate(opts: {
  * The first-impression entitlement verdict on the create response (guuey#1181).
  * Mirrors `@guuey-private/cli-wire`'s `FirstImpressionVerdictWire` — duplicated
  * here because the CLI is an OSS package and cannot depend on the closed
- * backend. Printed verbatim; the CLI never re-derives it.
+ * backend (`apps.test.ts` pins the two member for member). Printed verbatim;
+ * the CLI never re-derives it. `trial` = the Free wallet's one first-impression
+ * taste (guuey#1460); the CLI prints only the not-entitled arm.
  */
 export type FirstImpressionVerdict =
-  | { entitled: true; entitlement: 'paid' | 'internal' }
+  | { entitled: true; entitlement: 'paid' | 'internal' | 'trial' }
   | { entitled: false; message: string; billingUrl: string };
 
 /**
