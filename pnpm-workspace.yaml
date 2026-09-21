@@ -36,6 +36,14 @@ allowBuilds:
   onnxruntime-node: false
   protobufjs: false
   sharp: false
+  # guuey#1581: @google/adk 2.1.0 depends on dockerode → docker-modem → ssh2,
+  # whose optional cpu-features is a node-gyp build. Nothing in this workspace
+  # opens a Docker socket or an SSH session (InMemoryRunner only; the host
+  # devDep is a type/peer surface), so neither script runs here. pnpm 11 wrote
+  # the placeholders during the 2.1.0 re-resolve; a placeholder fails every
+  # frozen install (ERR_PNPM_IGNORED_BUILDS) until it is decided.
+  cpu-features: false
+  ssh2: false
 
 # pnpm 11's supply-chain age gate (minimumReleaseAge, default 1440 min in
 # fresh CI) blocks deps published <24h ago. @silverprotocol/* and @ggui-ai/*
