@@ -24,7 +24,7 @@ import { promises as fs, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -110,6 +110,35 @@ async function runBootstrap(project: Project, args: string[], extraEnv: Record<s
     if (isExecFailure(err)) return { code: err.code ?? 1, stdout: err.stdout, stderr: err.stderr };
     throw err;
   }
+}
+
+/**
+ * The headless shape (guuey#1546): stdin CLOSED, not piped. `execFile` keeps a
+ * pipe open, so an unanswered readline prompt would wait forever there; with
+ * stdin at EOF the interface closes at once, a pending `question()` stays
+ * unsettled, and Node exits 13 — the failure the fix is for. This helper is
+ * therefore the only one that can go red without the fix.
+ */
+function runHeadless(project: Project, args: string[]): Promise<RunResult> {
+  const script = join(project.projectDir, 'scripts', 'bootstrap.mjs');
+  const env = {
+    ...process.env,
+    PATH: `${project.bin}:${dirname(process.execPath)}:${process.env.PATH ?? ''}`,
+    BOOTSTRAP_TEST_LOG: project.log,
+  };
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [script, ...args], { cwd: project.projectDir, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', reject);
+    child.on('close', (code) => resolve({ code: code ?? 1, stdout, stderr }));
+  });
 }
 
 async function cliCalls(project: Project): Promise<string[][]> {
@@ -218,6 +247,28 @@ describe('bootstrap.mjs — the chat theme document (guuey#1131)', () => {
     expect(run.stdout).toContain('– chat-theme: skipped:');
     expect(run.stdout).toContain('theme.json not found');
     expect((await cliCalls(project)).some((call) => call.includes('--chat-theme-file'))).toBe(false);
+  });
+});
+
+describe('bootstrap.mjs — a headless run accepts defaults loudly (guuey#1546)', () => {
+  it('with stdin closed and no --yes: says so once, applies the defaults, honours an explicit flag, exits 0 (used to exit 13 on the first prompt)', async () => {
+    const project = await makeProject();
+    const shipped = await readJson(join(coreDir, 'theme.json'));
+    const run = await runHeadless(project, ['--mode', 'light']);
+    expect(run.code).toBe(0);
+    const lines = run.stdout.split('\n').filter((line) => line.startsWith('Non-interactive run: accepting defaults for every prompt'));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('same as --yes; pass explicit flags to override');
+    const theme = await readJson(join(project.projectDir, 'theme.json'));
+    expect(theme.mode).toBe('light'); // the explicit flag still wins
+    expect(theme.colors.light.accent).toBe(String(shipped.colors.light.accent).toLowerCase()); // the default, as Enter would have given
+  });
+
+  it('with --yes the line does not print — the negative control', async () => {
+    const project = await makeProject();
+    const run = await runHeadless(project, ['--yes']);
+    expect(run.code).toBe(0);
+    expect(run.stdout).not.toContain('Non-interactive run');
   });
 });
 

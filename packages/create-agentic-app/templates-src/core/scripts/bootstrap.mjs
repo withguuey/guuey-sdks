@@ -413,7 +413,16 @@ function check(config) {
 
 async function main() {
   const flags = parseArgs(process.argv.slice(2));
-  const yes = flags.yes === true;
+  let yes = flags.yes === true;
+  // guuey#1546: a headless run (CI, a coding agent, a closed or piped stdin)
+  // used to die exit 13 on an unanswerable prompt — readline never resolves
+  // and the top-level await stays unsettled. The scaffolder's own
+  // non-interactive posture applies here too: no TTY → accept every default,
+  // loudly, exactly as `--yes` does; explicit flags still override.
+  if (!yes && stdin.isTTY !== true) {
+    console.log("Non-interactive run: accepting defaults for every prompt (same as --yes; pass explicit flags to override).");
+    yes = true;
+  }
   const config = readConfig();
 
   if (flags.check === true) return check(config);
