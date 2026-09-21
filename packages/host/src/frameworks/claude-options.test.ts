@@ -402,6 +402,33 @@ describe("buildOptions — Anthropic second seam (loopback proxy)", () => {
   });
 });
 
+describe("buildOptions — a bound first impression turns extended thinking OFF for the invoke (guuey#1183)", () => {
+  const push = { chipKey: "opening-hours", intent: "show opening hours", contract: { kind: "hours" } };
+
+  it("rail armed + push present → thinking disabled (the model-egress force needs a thinking-free request)", () => {
+    const opts = buildOptions({ systemPrompt: "S" }, ctx({ gguiAttached: true, firstImpression: push }));
+    expect(opts.thinking).toEqual({ type: "disabled" });
+  });
+
+  it("no push → the SDK default stands (no `thinking` key at all)", () => {
+    const opts = buildOptions({ systemPrompt: "S" }, ctx({ gguiAttached: true }));
+    expect(opts).not.toHaveProperty("thinking");
+  });
+
+  it("push present but the rail is not armed → the SDK default stands (the same gate as the prompt section)", () => {
+    const opts = buildOptions({ systemPrompt: "S" }, ctx({ firstImpression: push }));
+    expect(opts).not.toHaveProperty("thinking");
+    expect(opts.systemPrompt as string).not.toContain("<first_impression_handshake>");
+  });
+
+  it("the knob rides beside the prompt section, never instead of it", () => {
+    const opts = buildOptions({ systemPrompt: "S" }, ctx({ gguiAttached: true, firstImpression: push }));
+    expect(opts.systemPrompt as string).toContain("<first_impression_handshake>");
+    expect(opts.systemPrompt as string).toContain('"intent":"show opening hours"');
+    expect(opts.thinking).toEqual({ type: "disabled" });
+  });
+});
+
 describe("buildOptions — generative-UI section (guuey#630)", () => {
   /**
    * The #630 gap: a BRIEFED agent's own systemPrompt REPLACES the platform

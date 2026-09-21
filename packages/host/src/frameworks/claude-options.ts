@@ -435,9 +435,27 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
   // hang this headless pod.
   const explicitMode = snapshot.claude?.permissions?.mode;
 
+  // guuey#1183 — a BOUND first impression is a forced handshake call (the
+  // Router's model-egress arm sets `tool_choice: { type: "tool" }` on the
+  // turn's first request, guuey#1237), and the Anthropic API refuses a forced
+  // `tool_choice` beside extended thinking. The SDK's default for Sonnet 5 /
+  // Opus 4.6+ is ADAPTIVE thinking, so without this knob every first-impression
+  // turn reached the arm with `thinking` on and the force was skipped
+  // (`FIRST_IMPRESSION_SKIPPED { reason: 'thinking' }` on every guest turn of
+  // QA's dev read, 5755395744) — the WOW turn was back to model discretion.
+  // Thinking is disabled for THIS invoke only (the handshake's arguments are
+  // verbatim from the prompt; the render step follows in the same turn) —
+  // and for the whole invoke, not the first request alone: toggling thinking
+  // back on mid-turn 400s ("a final assistant message must start with a
+  // thinking block") on the tool-result continuation, which the arm's
+  // retry-once cannot rescue. Same gate as the prompt section: the ggui rail
+  // armed AND a push present. Later turns on the thread keep the default.
+  const firstImpressionBound = ctx.gguiAttached === true && ctx.firstImpression !== undefined;
+
   const options: Options = {
     model,
     mcpServers,
+    ...(firstImpressionBound ? { thinking: { type: "disabled" as const } } : {}),
     allowedTools: gates.allowedTools,
     // Deny-listed tools (`tools.denylist`, translated) are removed from the
     // model's catalog outright — the SDK's own mechanism, not a callback.
