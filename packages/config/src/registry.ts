@@ -24,12 +24,19 @@ export interface ModelEntry {
    * page is the authority there (claude-fable-5 is Active with no deprecation
    * date, so it stays `ga` and merely moves behind the door).
    *
-   * Anthropic's lineup is the current generation as of the 2026-09-02 wave
-   * (Fable 5.1, Opus 5, Sonnet 5, Haiku 4.5 — the same four ggui pins, one
-   * vocabulary across both fleets). OpenAI's and Google's stay deliberately
-   * curated to their newest two, which is exactly the set those providers
-   * showed before the door existed — the door widened what is REACHABLE, it
-   * did not change what is shown up front.
+   * Each provider's lineup is the founder's pick, PER FLEET. guuey's today:
+   * Anthropic's current generation as of the 2026-09-02 wave (Sonnet 5,
+   * Fable 5.1, Opus 5, Haiku 4.5); OpenAI's his #1608 pick (d), guuey#1622
+   * (Terra · GPT-6 Sol · Astra · GPT-6 Luna); Google's its current Flash line
+   * (3.6 Flash, 3.8 Flash, 3.5 Flash Lite). The door widened what is
+   * REACHABLE; it did not change what is shown up front.
+   *
+   * ONE VOCABULARY across both fleets (guuey and ggui) means the same model
+   * NAMES and TIERS — an id names the same model, priced and classified the
+   * same way, on either side. It does NOT mean the same front page: each
+   * fleet's lineup is his per-fleet pick. The fleets differ on the OpenAI
+   * front page by his choice ("Keep ggui at GPT-6 Luna only", guuey#1622
+   * c.5786165228), and the Claude side converges after ggui#1266.
    */
   readonly lineup?: true;
 }
