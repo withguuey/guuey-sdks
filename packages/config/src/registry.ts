@@ -343,9 +343,21 @@ export const modelEntry: RegistryAccessors["modelEntry"] = live.modelEntry;
  *
  * Not keyed on MODEL_REGISTRY on purpose: a guuey.json can name an id the
  * registry does not offer yet (`claude-opus-5-5` today), and the host must
- * still never send it the refused shape. Add an id only with its receipt.
+ * still never send it the refused shape.
+ *
+ * Matched as a FAMILY, not an exact id (oss's review, 09-22): `agent.model`
+ * is a free string (`agent.ts` `z.string().min(1)`), so a manifest can carry
+ * `claude-fable-5-1[1m]`, a dated / `@`-suffixed form, or a bare Claude Code
+ * alias the binary resolves itself. The failure is asymmetric — over-matching
+ * only withdraws the forced handshake (the path these ids served on before
+ * guuey#1183b), under-matching fails the whole turn — so the families are
+ * matched with any `-` / `[` / `@` continuation, and the bare aliases `fable`
+ * and `opus` count too (`opus` may resolve to 5.5 once the SDK pin moves past
+ * 0.3.278). `claude-opus-5` and every Sonnet / Haiku id stay out: they
+ * answered 200.
  */
-const REJECTS_DISABLED_THINKING: ReadonlySet<string> = new Set(["claude-fable-5-1", "claude-fable-5", "claude-opus-5-5"]);
+const REJECTS_DISABLED_THINKING_FAMILIES: readonly string[] = ["claude-fable-5", "claude-opus-5-5"];
+const REJECTS_DISABLED_THINKING_ALIASES: ReadonlySet<string> = new Set(["fable", "opus"]);
 
 /**
  * True when the provider refuses `thinking: { type: "disabled" }` for this
@@ -355,6 +367,10 @@ const REJECTS_DISABLED_THINKING: ReadonlySet<string> = new Set(["claude-fable-5-
  * the model's default thinking instead of failing every request.
  */
 export function rejectsDisabledThinking(modelId: string): boolean {
-  const bare = modelId.startsWith("anthropic/") ? modelId.slice("anthropic/".length) : modelId;
-  return REJECTS_DISABLED_THINKING.has(bare);
+  const bare = (modelId.startsWith("anthropic/") ? modelId.slice("anthropic/".length) : modelId).toLowerCase();
+  if (REJECTS_DISABLED_THINKING_ALIASES.has(bare)) return true;
+  return REJECTS_DISABLED_THINKING_FAMILIES.some(
+    (family) =>
+      bare === family || bare.startsWith(`${family}-`) || bare.startsWith(`${family}[`) || bare.startsWith(`${family}@`),
+  );
 }

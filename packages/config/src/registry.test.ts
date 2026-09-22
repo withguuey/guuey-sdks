@@ -439,4 +439,25 @@ describe('rejectsDisabledThinking (guuey#1606) — only the ids with a receipted
     expect(rejectsDisabledThinking('gpt-6-sol')).toBe(false);
     expect(rejectsDisabledThinking('openai/claude-fable-5-1')).toBe(false);
   });
+
+  it('matches the FAMILY — hand-written variants a free-string agent.model can carry (oss review)', () => {
+    for (const id of [
+      'claude-fable-5-1[1m]',
+      'claude-fable-5-1-20260901',
+      'claude-fable-5-2',
+      'claude-opus-5-5@20260922',
+      'claude-opus-5-5[1m]',
+      'Claude-Fable-5-1',
+      'fable',
+      'opus',
+    ]) {
+      expect(rejectsDisabledThinking(id), id).toBe(true);
+    }
+  });
+
+  it('the family match never swallows a neighbour that answered 200', () => {
+    for (const id of ['claude-opus-5', 'claude-opus-5[1m]', 'claude-opus-5-1', 'claude-sonnet-5', 'sonnet', 'haiku', 'claude-fable']) {
+      expect(rejectsDisabledThinking(id), id).toBe(false);
+    }
+  });
 });
