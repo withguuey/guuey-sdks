@@ -102,7 +102,22 @@
   gap: 16px;
 }
 .guuey-layout-working-identity {
-  opacity: 0.75;
+  /* The identity breathes gently while the agent has the room (guuey#430
+   * default-design pass) — scale-only so any brand node survives it;
+   * reduced-motion snaps it static below. */
+  opacity: 0.85;
+  animation: guuey-layout-breathe 2.4s ease-in-out infinite;
+}
+@keyframes guuey-layout-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.04);
+    opacity: 0.95;
+  }
 }
 .guuey-layout-working-pulse {
   display: inline-flex;
@@ -205,6 +220,11 @@
   .guuey-layout-working-pulse span {
     animation: none;
     opacity: 0.6;
+    transform: none;
+  }
+  .guuey-layout-working-identity {
+    animation: none;
+    opacity: 0.85;
     transform: none;
   }
 }

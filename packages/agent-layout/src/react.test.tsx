@@ -213,3 +213,44 @@ describe("guuey#427 — setActivePanel is the neutral setter its name promises",
     expect(screen.getByText("page content")).toBeTruthy();
   });
 });
+
+describe("guuey#430 — the configurable standby slot", () => {
+  it("Provider standby replaces the built-in default; per-pane workingState wins over both", () => {
+    const view = render(
+      <AgentModeProvider standby={<span>BRAND SPLASH</span>} identity={<span>Mark</span>}>
+        <AgentModeShell>
+          <AgentModeSidebar>
+            <SidebarPanel section="agent">
+              <Bridge />
+            </SidebarPanel>
+          </AgentModeSidebar>
+          <ActivePane>
+            <p>page content</p>
+          </ActivePane>
+        </AgentModeShell>
+      </AgentModeProvider>,
+    );
+    fireEvent.click(screen.getByText("submit"));
+    // The configured standby shows; the built-in identity+pulse does not.
+    expect(screen.getByText("BRAND SPLASH")).toBeTruthy();
+    expect(screen.queryByText("Mark")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+
+    view.rerender(
+      <AgentModeProvider standby={<span>BRAND SPLASH</span>} identity={<span>Mark</span>}>
+        <AgentModeShell>
+          <AgentModeSidebar>
+            <SidebarPanel section="agent">
+              <Bridge />
+            </SidebarPanel>
+          </AgentModeSidebar>
+          <ActivePane workingState={<span>PANE-LOCAL</span>}>
+            <p>page content</p>
+          </ActivePane>
+        </AgentModeShell>
+      </AgentModeProvider>,
+    );
+    expect(screen.getByText("PANE-LOCAL")).toBeTruthy();
+    expect(screen.queryByText("BRAND SPLASH")).toBeNull();
+  });
+});

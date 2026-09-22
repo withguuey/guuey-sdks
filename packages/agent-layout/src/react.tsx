@@ -37,6 +37,7 @@ interface AgentModeContextValue {
   drawerOpen: boolean;
   setDrawerOpen: (open: boolean) => void;
   identity: ReactNode;
+  standby: ReactNode;
 }
 
 const AgentModeContext = createContext<AgentModeContextValue | null>(null);
@@ -62,10 +63,19 @@ export interface AgentModeProviderProps {
   transitionMs?: number;
   /**
    * The surface's identity mark (logo / brand node) for the working state
-   * (founder (d)): shown with the built-in spinner while the agent has the
+   * (founder (d)): shown with the built-in pulse while the agent has the
    * room but nothing is presented yet.
    */
   identity?: ReactNode;
+  /**
+   * The whole standby/splash treatment, configured ONCE at the Provider
+   * (guuey#430 — the founder's brand-configurable splash): replaces the
+   * built-in identity+pulse for every ActivePane under this provider.
+   * Per-pane `ActivePane.workingState` still wins over this. Consumers
+   * supply their brand's splash (ggui console: blinking glyphs; guuey
+   * surfaces: guuey's own design); absent → the built-in default.
+   */
+  standby?: ReactNode;
   /**
    * The route-derived follow signal (ggui#633's scar: hand-wiring
    * per-link missed 20+ surfaces — sub-nav tabs, in-content links,
@@ -82,6 +92,7 @@ export function AgentModeProvider({
   tones,
   transitionMs = DEFAULT_TONE_TRANSITION_MS,
   identity = null,
+  standby = null,
   navigationKey,
 }: AgentModeProviderProps): ReactNode {
   const [state, dispatch] = useReducer(agentModeReduce, INITIAL_AGENT_MODE_STATE);
@@ -109,8 +120,8 @@ export function AgentModeProvider({
   }, [tones, mode]);
 
   const value = useMemo<AgentModeContextValue>(
-    () => ({ state, dispatch, drawerOpen, setDrawerOpen, identity }),
-    [state, drawerOpen, identity],
+    () => ({ state, dispatch, drawerOpen, setDrawerOpen, identity, standby }),
+    [state, drawerOpen, identity, standby],
   );
 
   // Token application (§2): tones + transition as inline custom properties
@@ -283,22 +294,27 @@ export interface ActivePaneProps extends HTMLAttributes<HTMLDivElement> {
 export function ActivePane({ children, workingState, className, ...rest }: ActivePaneProps): ReactNode {
   const ctx = useContext(AgentModeContext);
   if (ctx === null) throw new Error("ActivePane: no <AgentModeProvider> above this component.");
-  const { state, identity } = ctx;
+  const { state, identity, standby } = ctx;
   const working = state.activePanel === "agent" && state.pending;
+  // Standby precedence (guuey#430): per-pane workingState > the Provider's
+  // configured standby > the built-in identity+pulse default.
   return (
     <main {...rest} className={joinClass("guuey-layout-pane", className)}>
       {working ? (
-        (workingState ?? (
-          <div className="guuey-layout-working" role="status">
-            {identity !== null ? <div className="guuey-layout-working-identity">{identity}</div> : null}
-            <span className="guuey-layout-working-pulse" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </span>
-            <span className="guuey-layout-sr-only">Working…</span>
-          </div>
-        ))
+        (workingState ??
+          standby ?? (
+            <div className="guuey-layout-working" role="status">
+              {identity !== null ? (
+                <div className="guuey-layout-working-identity">{identity}</div>
+              ) : null}
+              <span className="guuey-layout-working-pulse" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+              <span className="guuey-layout-sr-only">Working…</span>
+            </div>
+          ))
       ) : (
         children
       )}
