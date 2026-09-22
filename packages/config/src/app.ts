@@ -61,6 +61,20 @@ export const APP_USER_AUTH_MODES = ['anonymous', 'native_pool', 'byo'] as const;
 export type AppUserAuthMode = (typeof APP_USER_AUTH_MODES)[number];
 
 /**
+ * Who the agent is FOR (guuey#1597, his ruling 2026-09-23): `personal` — the
+ * builder's own assistant; `customers` — a rep on the builder's surface. Asked
+ * once at creation; the answer shapes the defaults the create flow offers
+ * (guest access, channels, hand-off, listing, the first-impression hello,
+ * memory). ABSENT reads as `customers` — today's behaviour — so every app
+ * created before the field existed is unchanged. Mirrored by the platform's
+ * `APP_BUILT_FOR_VALUES` (`@guuey-private/cli-wire`), which this published
+ * package cannot import; the backend pins the two lists equal
+ * (`handlers/reconcile.test.ts`).
+ */
+export const APP_BUILT_FOR = ['personal', 'customers'] as const;
+export type AppBuiltFor = (typeof APP_BUILT_FOR)[number];
+
+/**
  * `guuey.json#app.access` — the app record's ACCESS POLICY, declared in the
  * manifest so `guuey agent apply` (agents-as-code, guuey#190) converges it
  * alongside the agent definition. Field names ARE the platform API's
@@ -176,6 +190,15 @@ export const AppSectionV1 = z.strictObject({
    * write gate. Absent = no chips (an honest empty state, never invented).
    */
   suggestions: z.array(z.string().min(1).max(80)).max(24).optional(),
+  /**
+   * Who the agent is FOR — {@link APP_BUILT_FOR} (guuey#1597). Converged onto
+   * the app record by `guuey agent apply` like the rest of this section; absent
+   * leaves the record untouched (and a record with none reads as `customers`).
+   * It lives HERE, not on the agent section: it is app posture the reconcile
+   * carries onto the row, and `guuey pull` never rewrites `app.*` — an older
+   * CLI therefore never meets the key in a pulled `agent` section.
+   */
+  builtFor: z.enum(APP_BUILT_FOR).optional(),
 });
 
 /** Static TypeScript type for the app section. */

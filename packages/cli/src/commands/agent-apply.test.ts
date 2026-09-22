@@ -577,6 +577,17 @@ describe('agentStatus', () => {
     expect(output).toContain('"noindex":true}');
   });
 
+  it('guuey#1597: renders the builtFor; an older cliApi that omits it renders (unset), never throws', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { ...STATUS, config: { ...STATUS.config, builtFor: 'personal' } }));
+    await agentStatus({});
+    expect(logs.join('\n')).toContain('builtFor:       "personal"');
+
+    logs.length = 0;
+    fetchMock.mockResolvedValue(jsonResponse(200, STATUS));
+    await agentStatus({});
+    expect(logs.join('\n')).toContain('builtFor:       (unset)');
+  });
+
   it('no active build / no provenance render honestly', async () => {
     fetchMock.mockResolvedValue(
       jsonResponse(200, {

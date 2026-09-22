@@ -82,6 +82,8 @@ export interface AgentReconcileConfig {
   standalonePage?: unknown;
   /** Starter suggestion chips (guuey#533) — replace-in-full; validateSuggestions is the shape source of truth. */
   suggestions?: unknown;
+  /** guuey#1597 — who the agent is FOR (`personal` | `customers`); server-validated. */
+  builtFor?: string;
 }
 
 /**
@@ -178,6 +180,12 @@ export interface AgentReconcileStatus {
     guestAccess: boolean | null;
     chatThemeHash: string | null;
     standalonePage: StandalonePageWire;
+    /**
+     * guuey#1597. Optional HERE while the wire requires it: a cliApi from
+     * before the field existed omits it, and this CLI must still render that
+     * answer (N−1) — it prints "(unset)".
+     */
+    builtFor?: string;
   };
 }
 
@@ -731,6 +739,7 @@ export async function agentStatus(flags?: Record<string, string | true>): Promis
   console.log(`    guestAccess:    ${fmtValue(c.guestAccess)}`);
   console.log(`    chatTheme:      ${c.chatThemeHash ?? 'none'}`);
   console.log(`    standalonePage: ${fmtValue(c.standalonePage)}`);
+  console.log(`    builtFor:       ${fmtValue(c.builtFor)}`);
 
   if (parity) {
     console.log('');

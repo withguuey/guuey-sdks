@@ -198,3 +198,22 @@ describe('parseGuueyJson — app.suggestions (starter chips, guuey#533)', () => 
     ).toThrow();
   });
 });
+
+describe('parseGuueyJson — app.builtFor (who the agent is FOR, guuey#1597)', () => {
+  it('accepts `personal` and `customers`', () => {
+    expect(parseGuueyJson({ ...base, app: { builtFor: 'personal' } }).app?.builtFor).toBe('personal');
+    expect(parseGuueyJson({ ...base, app: { builtFor: 'customers' } }).app?.builtFor).toBe('customers');
+  });
+
+  it('N−1: a document without the key parses unchanged (absent reads customers on the platform side)', () => {
+    expect(parseGuueyJson({ ...base, app: { suggestions: ['hi'] } }).app).not.toHaveProperty('builtFor');
+  });
+
+  it('rejects any other value (strict enum — never coerced)', () => {
+    expect(() => parseGuueyJson({ ...base, app: { builtFor: 'everyone' } })).toThrow();
+  });
+
+  it('lives on the APP section, not the agent section — an agent-level key stays unknown (the pull-safety placement)', () => {
+    expect(() => parseGuueyJson({ ...base, agent: { builtFor: 'personal' } })).toThrow();
+  });
+});
