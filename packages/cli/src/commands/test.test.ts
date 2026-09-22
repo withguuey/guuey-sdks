@@ -455,14 +455,15 @@ describe('guuey test --thread / --app-id — the command end to end (guuey#1600)
     return { url, headers: new Headers(init.headers), body: JSON.parse(String(init.body)) as Record<string, unknown> };
   };
 
-  it('turn 1 (no --thread): a fresh visitor, today\'s test-* session, and the minted thread\'s secret is saved', async () => {
+  it('turn 1 (no --thread): a fresh visitor, NO sessionId (the pod keys the session to the thread it mints), and the thread\'s secret is saved', async () => {
     fetchSpy.mockResolvedValueOnce(podAnswer('t-new'));
     await testCommand('hello', { url: 'https://pod.example' });
     const req = sent();
     expect(req.url).toBe('https://pod.example/agent/invoke');
     expect(isGuestSecret(req.headers.get(GUEST_HEADER_NAME) ?? '')).toBe(true);
     expect(req.body['threadId']).toBeUndefined();
-    expect(String(req.body['sessionId'])).toMatch(/^test-\d+$/);
+    // Turn 1 and the --thread turns after it must share ONE session (one session.ended).
+    expect(req.body).not.toHaveProperty('sessionId');
     expect(loadThreadSecret('app-1', 't-new', threadsDir.current)).toBe(req.headers.get(GUEST_HEADER_NAME));
     expect(logs.join('\n')).toContain('--thread t-new');
   });
@@ -475,6 +476,16 @@ describe('guuey test --thread / --app-id — the command end to end (guuey#1600)
     expect(req.headers.get(GUEST_HEADER_NAME)).toBe(SECRET);
     expect(req.body).toEqual({ input: 'and again', threadId: 't-new' });
     expect(logs.join('\n')).not.toContain('NEW thread');
+  });
+
+  it('an explicit --session still wins, on turn 1 and on a --thread turn', async () => {
+    fetchSpy.mockResolvedValueOnce(podAnswer('t-s'));
+    await testCommand('hello', { url: 'https://pod.example', session: 'sess-explicit' });
+    expect(sent().body['sessionId']).toBe('sess-explicit');
+    saveThreadSecret('app-1', 't-s', SECRET, threadsDir.current);
+    fetchSpy.mockResolvedValueOnce(podAnswer('t-s'));
+    await testCommand('again', { url: 'https://pod.example', thread: 't-s', session: 'sess-explicit' });
+    expect(sent(1).body).toEqual({ input: 'again', sessionId: 'sess-explicit', threadId: 't-s' });
   });
 
   it('--thread with no saved visitor on this machine is refused BEFORE any network call', async () => {

@@ -189,15 +189,17 @@ export async function test(
   }
 
   const { pat } = requireAuth();
-  // With --thread the pod keys the session to the thread (sessionId = threadId),
-  // so a two-turn conversation is ONE session; an explicit --session still wins.
-  const sessionFlag = typeof flags?.session === 'string' ? flags.session : undefined;
-  const sessionId = sessionFlag ?? (threadFlag === undefined ? `test-${Date.now()}` : undefined);
+  // No default sessionId, on ANY turn (guuey#1600, QA's dev read): the pod keys
+  // the session to the thread (`sessionId = body.sessionId ?? threadId`), so turn
+  // 1 and every `--thread` turn after it are ONE session — one `session.ended`
+  // for the conversation. The old `test-<ts>` default made turn 1 a session of
+  // its own. An explicit --session still wins.
+  const sessionId = typeof flags?.session === 'string' ? flags.session : undefined;
   const endpoint = await resolveAgentEndpoint(config, flags, pat);
 
   console.log(`  App:      ${appId}`);
   console.log(`  Thread:   ${threadFlag ?? 'new'}`);
-  console.log(`  Session:  ${sessionId ?? '(the thread)'}`);
+  console.log(`  Session:  ${sessionId ?? '(keyed to the thread)'}`);
   console.log(`  Endpoint: ${endpoint}`);
   console.log(`  Message:  ${message}`);
   console.log('');
