@@ -48,6 +48,14 @@ export function getGlobalConfigFile(): string {
   return join(getConfigDir(), 'config.json');
 }
 
+/**
+ * Directory holding the visitor secret of every thread `guuey test` started
+ * (guuey#1600): `<dir>/<appId>/<threadId>`, one 64-hex secret per file.
+ */
+export function getTestThreadsDir(): string {
+  return join(getConfigDir(), 'test-threads');
+}
+
 /** Path to the update-check cache file inside the config dir. */
 export function getUpdateCacheFile(): string {
   return join(getConfigDir(), 'update-check.json');

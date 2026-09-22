@@ -137,6 +137,11 @@ Agent Development:
                                  Without --serve, prints the Expo-style
                                  bridge/QR "coming soon" note (slice 2+).
   test <message>                 Send a test message and print agent response
+                                 (as an anonymous visitor; prints the thread id)
+    --thread <id>                Continue a conversation this CLI started here
+                                 (the thread id the first turn printed)
+    --app-id <id>                Test this app instead of the guuey.json
+                                 binding (the binding is left untouched)
     --session <id>               Reuse existing session
   deploy                         Deploy agent to guuey hosting (auto-detects
                                  declarative vs code mode; code mode deploys
