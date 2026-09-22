@@ -70,6 +70,7 @@ import { byokSet, byokList, byokRemove } from './commands/byok';
 import { deploymentsList, deploymentsLogs } from './commands/deployments';
 import { agentConfig } from './commands/agent';
 import { agentApply, agentRollback, agentStatus } from './commands/agent-apply';
+import { usageExport } from './commands/usage';
 import { domainsAdd, domainsList, domainsVerify, domainsRemove } from './commands/domains';
 import { tokensCreate, tokensList, tokensRevoke } from './commands/tokens';
 import {
@@ -221,6 +222,14 @@ API key for workspace-owned apps, via GUUEY_API_KEY):
     --wait                       Poll the new build until live
     --json                       Emit the rollback response as JSON
     --app-id <id>                Target a specific app (all three subcommands)
+  usage export                   One month of the app's usage, as billed from:
+                                 LLM cost (provider list price, per model),
+                                 tokens, renders, sessions per surface, pod
+                                 and storage time — per app, never per end-user
+    --month <YYYY-MM>            The month (default: the current UTC month)
+    --format csv|json            Output format (default: csv)
+    --out <file>                 Write to a file instead of stdout
+    --app-id <id>                Target a specific app (overrides the binding)
   logs                           Fetch runtime logs for your deployed agent
     --since <duration>           Time window (default: 1h). Examples: 30s, 15m, 2h, 1d
     --tail <n>                   Only the last <n> lines
@@ -1115,6 +1124,17 @@ async function main(): Promise<void> {
 
     case 'open':
       open(action);
+      break;
+
+    case 'usage':
+      switch (action) {
+        case 'export':
+          await usageExport(flags);
+          break;
+        default:
+          console.error(`Unknown usage command: ${action ?? '(none)'}. Use: export`);
+          process.exit(1);
+      }
       break;
 
     case 'agent':

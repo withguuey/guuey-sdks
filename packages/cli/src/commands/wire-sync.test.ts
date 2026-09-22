@@ -31,6 +31,7 @@ const WIRE_DEPLOY = repoPath(`${CLI_WIRE_DIR}/deploy.ts`);
 const WIRE_MCP_CONNECTIONS = repoPath(`${CLI_WIRE_DIR}/mcp-connections.ts`);
 const WIRE_BILLING = repoPath(`${CLI_WIRE_DIR}/billing.ts`);
 const WIRE_BILLING_INVOICING = repoPath(`${CLI_WIRE_DIR}/billing-invoicing.ts`);
+const WIRE_USAGE_EXPORT = repoPath(`${CLI_WIRE_DIR}/usage-export.ts`);
 
 const CLI_APPS = repoPath('./apps.ts');
 const CLI_MCP = repoPath('./mcp.ts');
@@ -39,6 +40,7 @@ const CLI_AGENT = repoPath('./agent.ts');
 const CLI_MCP_CONNECTIONS = repoPath('./mcp-connections.ts');
 const CLI_BILLING = repoPath('./billing.ts');
 const CLI_PULL = repoPath('./pull.ts');
+const CLI_USAGE = repoPath('./usage.ts');
 
 const haveWire =
   existsSync(WIRE_APPS) &&
@@ -206,5 +208,15 @@ describe.skipIf(!haveWire)('CLI wire mirrors — sync guards against @guuey-priv
     for (const union of ['NextInvoiceLineKind', 'NextInvoiceStatus', 'InvoiceHistoryStatus']) {
       expect(parseStringLiterals(cli, union)).toEqual(parseStringLiterals(wire, union));
     }
+  });
+
+  it('the usage export mirror declares exactly the wire fields (guuey#1393 D1)', () => {
+    // `guuey usage export --format json` prints this object; a field renamed
+    // server-side and not here is a key the CLI's typing silently misses.
+    // (`UsageBreakdown` is an index signature, which the member parser
+    // deliberately refuses to read; its NAME is what the fields carry.)
+    expect(parseInterfaceFields(read(CLI_USAGE), 'UsageExportWire')).toEqual(
+      parseInterfaceFields(read(WIRE_USAGE_EXPORT), 'UsageExportWire'),
+    );
   });
 });
