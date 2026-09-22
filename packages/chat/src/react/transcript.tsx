@@ -5,8 +5,12 @@
  *    user scrolled up, in which case a "jump to latest" affordance appears
  *    instead; anchoring holds through content resize (a ResizeObserver on
  *    the item column re-pins — R6 cards growing on `connected` are the
- *    canonical breaker). `prefers-reduced-motion` downgrades smooth
- *    scrolling to instant.
+ *    canonical breaker). Following never carries the current turn's FIRST
+ *    CARD above the viewport (guuey#1328, `scroll-anchor.ts`): once the
+ *    turn outgrows the panel the card settles at its top, the rest waits
+ *    below behind "jump to latest", and reaching the tail yourself (or the
+ *    jump) releases the hold for that turn. `prefers-reduced-motion`
+ *    downgrades smooth scrolling to instant.
  *  - **Windowing:** long transcripts render the trailing `window.tail`
  *    items with a "show earlier" expander — the DOM is capped even though
  *    the plan (already O(groups)) carries everything; the plan's stable
@@ -36,6 +40,7 @@ import {
 import { themeCssVars, type ThemeMode } from "./theme-css.js";
 import { facesCss, useHostFaces } from "./faces.js";
 import { PARTS } from "./parts.js";
+import { followTarget, planTurnAnchor } from "./scroll-anchor.js";
 
 /** How close to the bottom (px) still counts as pinned. */
 const PIN_THRESHOLD_PX = 48;
@@ -133,6 +138,17 @@ export function Transcript(props: TranscriptProps): ReactNode {
   const column = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const [showJump, setShowJump] = useState(false);
+  // guuey#1328 — the current turn's card anchor, read off the rendered
+  // items; mirrored into a ref for the ResizeObserver, which runs between
+  // renders.
+  const turnAnchor = useMemo(() => planTurnAnchor(plan.items.slice(visibleFrom)), [plan.items, visibleFrom]);
+  const anchorPlan = useRef(turnAnchor);
+  /** True while the anchor, not the bottom, decides where following rests. */
+  const holding = useRef(false);
+  /** The turn whose hold the viewer released (reached the tail, or jumped). */
+  const releasedTurn = useRef<string | null>(null);
+  /** The scrollTop of our own last follow, so `onScroll` can tell it from the viewer's. */
+  const autoTop = useRef<number | null>(null);
 
   const reducedMotion = (): boolean =>
     typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -148,27 +164,86 @@ export function Transcript(props: TranscriptProps): ReactNode {
     }
   };
 
+  /**
+   * The anchor card's top in scroll-content coordinates, or null (no card
+   * this turn, the hold released, or the DOM disagrees with the plan). The
+   * kit's own `view` component renders one `.guuey-chat-view` per view item
+   * as a direct child of the column; a custom `view` component, or any
+   * other mismatch, keeps plain stick-to-bottom rather than guessing.
+   */
+  const anchorTop = (): number | null => {
+    const anchor = anchorPlan.current;
+    if (anchor.anchorOrdinal === null || releasedTurn.current === anchor.turnKey) return null;
+    const el = scroller.current;
+    const col = column.current;
+    if (el === null || col === null) return null;
+    const views = Array.from(col.children).filter((c) => c.classList.contains("guuey-chat-view"));
+    if (views.length !== anchor.viewCount) return null;
+    const card = views[anchor.anchorOrdinal];
+    if (card === undefined) return null;
+    return card.getBoundingClientRect().top - el.getBoundingClientRect().top - el.clientTop + el.scrollTop;
+  };
+
+  /** Follow: to the bottom, or to the turn's card when the bottom would carry it out of view. */
+  const follow = (): void => {
+    const el = scroller.current;
+    if (el === null) return;
+    const target = followTarget(
+      { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight },
+      anchorTop(),
+    );
+    holding.current = target.held;
+    // A held follow leaves content below: say so (the scroll event may not
+    // fire when the card is already where it rests).
+    setShowJump(target.held);
+    if (Math.abs(target.top - el.scrollTop) < 1) return;
+    autoTop.current = target.top;
+    if (typeof el.scrollTo === "function") {
+      el.scrollTo({ top: target.top, behavior: "auto" });
+    } else {
+      el.scrollTop = target.top;
+    }
+  };
+
   const onScroll = (): void => {
     const el = scroller.current;
     if (el === null) return;
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < PIN_THRESHOLD_PX;
+    const ours = autoTop.current !== null && Math.abs(el.scrollTop - autoTop.current) <= 1;
+    autoTop.current = null;
+    if (ours) {
+      // Our own follow (to the bottom or to the card): following continues.
+      setShowJump(!nearBottom);
+      return;
+    }
+    // The viewer reached the tail while the card held: they chose the tail,
+    // so this turn follows the bottom from here.
+    if (nearBottom && holding.current) releasedTurn.current = anchorPlan.current.turnKey;
     pinned.current = nearBottom;
     setShowJump(!nearBottom);
   };
 
-  // New content while pinned keeps the bottom in view (before paint, so
-  // per-frame streaming updates never visibly jump).
+  // Declared before the follow below: layout effects run in order, so the
+  // follow always reads this render's anchor.
   useLayoutEffect(() => {
-    if (pinned.current) scrollToBottom(false);
+    anchorPlan.current = turnAnchor;
+  }, [turnAnchor]);
+
+  // New content while pinned keeps following (before paint, so per-frame
+  // streaming updates never visibly jump).
+  useLayoutEffect(() => {
+    if (pinned.current) follow();
   }, [plan]);
 
   // Content RESIZE (an R6 card connecting and growing, an image loading)
-  // re-pins too — scrollHeight changes with no plan change.
+  // re-runs the follow too — scrollHeight changes with no plan change. A
+  // card growing past the panel no longer drives the viewport past itself:
+  // the follow clamps at its top.
   useEffect(() => {
     const el = column.current;
     if (el === null || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
-      if (pinned.current) scrollToBottom(false);
+      if (pinned.current) follow();
     });
     observer.observe(el);
     return () => observer.disconnect();
@@ -211,6 +286,8 @@ export function Transcript(props: TranscriptProps): ReactNode {
           className="guuey-chat-jump"
           onClick={() => {
             pinned.current = true;
+            releasedTurn.current = anchorPlan.current.turnKey;
+            holding.current = false;
             setShowJump(false);
             scrollToBottom(true);
           }}

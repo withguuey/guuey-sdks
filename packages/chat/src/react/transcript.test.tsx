@@ -13,6 +13,8 @@ import { calmPolicy } from "../policy.js";
 import { planTranscript } from "../plan.js";
 import type { TranscriptInputs, ToolItem, UserMessageItem } from "../types.js";
 import { Transcript } from "./transcript.js";
+import { viewNeverHandshakes } from "../corpus/fixtures.js";
+import { ANCHOR_GAP_PX } from "./scroll-anchor.js";
 import type { TranscriptItemContext } from "./components.js";
 
 afterEach(cleanup);
@@ -146,5 +148,127 @@ describe("Transcript", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /do a thing/ }));
     expect(onToggle).toHaveBeenCalledWith("tool.x");
+  });
+});
+
+/**
+ * guuey#1328 — the card anchor's WIRING, on mocked geometry (jsdom has no
+ * layout; the real-browser physics is `e2e/tests/sdk/chat-kit.spec.ts`). The
+ * panel is 560 px; the content is 2000 px; the turn's first card sits at
+ * content-y 1000 — QA's prod shape, where following the bottom (1440) left a
+ * quarter of the card on screen.
+ */
+describe("Transcript — the turn's card anchor (guuey#1328)", () => {
+  const PANEL = 560;
+  const CONTENT = 2000;
+  /** The live content height — a test grows it to prove what following does next. */
+  let content = CONTENT;
+  const CARD_TOPS = [1000, 1600];
+  const restore: Array<() => void> = [];
+
+  function mockLayout(): void {
+    const proto = HTMLElement.prototype;
+    const scrollHeight = Object.getOwnPropertyDescriptor(proto, "scrollHeight");
+    const clientHeight = Object.getOwnPropertyDescriptor(proto, "clientHeight");
+    const rect = Element.prototype.getBoundingClientRect;
+    const isScroller = (el: Element): boolean => el.classList.contains("guuey-chat-scroller");
+    Object.defineProperty(proto, "scrollHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return isScroller(this) ? content : 0;
+      },
+    });
+    Object.defineProperty(proto, "clientHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return isScroller(this) ? PANEL : 0;
+      },
+    });
+    Element.prototype.getBoundingClientRect = function (this: Element): DOMRect {
+      const scroller = this.closest(".guuey-chat-scroller");
+      const views = scroller === null ? [] : Array.from(scroller.querySelectorAll(".guuey-chat-view"));
+      const i = views.indexOf(this);
+      const scrolled = scroller instanceof HTMLElement ? scroller.scrollTop : 0;
+      const top = i >= 0 ? (CARD_TOPS[i] ?? 0) - scrolled : 0;
+      return new DOMRect(0, top, 300, 100);
+    };
+    restore.push(() => {
+      if (scrollHeight !== undefined) Object.defineProperty(proto, "scrollHeight", scrollHeight);
+      if (clientHeight !== undefined) Object.defineProperty(proto, "clientHeight", clientHeight);
+      Element.prototype.getBoundingClientRect = rect;
+    });
+  }
+
+  afterEach(() => {
+    while (restore.length > 0) restore.pop()?.();
+    content = CONTENT;
+  });
+
+  const cardPlan = () => planTranscript(viewNeverHandshakes(), calmPolicy());
+  const scrollerOf = (container: HTMLElement): HTMLElement => {
+    const el = container.querySelector(".guuey-chat-scroller");
+    if (!(el instanceof HTMLElement)) throw new Error("no scroller");
+    return el;
+  };
+
+  it("the fixture is the shape under test: a user turn whose items carry two top-level cards", () => {
+    const { container } = render(<Transcript plan={cardPlan()} {...noopCtx} />);
+    const column = container.querySelector(".guuey-chat-column");
+    const direct = Array.from(column?.children ?? []).filter((c) => c.classList.contains("guuey-chat-view"));
+    expect(direct).toHaveLength(2);
+  });
+
+  it("following rests at the card's top, not the bottom, and says there is more below", () => {
+    mockLayout();
+    const { container } = render(<Transcript plan={cardPlan()} {...noopCtx} />);
+    expect(scrollerOf(container).scrollTop).toBe(CARD_TOPS[0]! - ANCHOR_GAP_PX);
+    expect(screen.getByRole("button", { name: "Jump to latest" })).toBeTruthy();
+  });
+
+  it("negative control: a custom `view` component (no kit class) keeps plain stick-to-bottom", () => {
+    mockLayout();
+    const { container } = render(
+      <Transcript plan={cardPlan()} components={{ view: () => <div className="host-card" /> }} {...noopCtx} />,
+    );
+    // "At the bottom" (jsdom does not clamp scrollTop, so the old path writes scrollHeight itself).
+    expect(scrollerOf(container).scrollTop).toBeGreaterThanOrEqual(CONTENT - PANEL);
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+  });
+
+  it("the viewer reaching the tail releases the hold: later growth follows the new bottom", () => {
+    mockLayout();
+    const plan = cardPlan();
+    const { container, rerender } = render(<Transcript plan={plan} {...noopCtx} />);
+    const el = scrollerOf(container);
+    el.scrollTop = CONTENT - PANEL;
+    fireEvent.scroll(el);
+    // More prose streams in below: a released turn follows it (a held one would stay put).
+    content = CONTENT + 1000;
+    rerender(<Transcript plan={{ ...plan }} {...noopCtx} />);
+    expect(el.scrollTop).toBe(content - PANEL);
+  });
+
+  it("the viewer scrolling UP is never pulled back down by the next render", () => {
+    mockLayout();
+    const plan = cardPlan();
+    const { container, rerender } = render(<Transcript plan={plan} {...noopCtx} />);
+    const el = scrollerOf(container);
+    el.scrollTop = 200;
+    fireEvent.scroll(el);
+    rerender(<Transcript plan={{ ...plan }} {...noopCtx} />);
+    expect(el.scrollTop).toBe(200);
+  });
+
+  it("Jump to latest goes to the true bottom and releases the hold for the turn", () => {
+    mockLayout();
+    const plan = cardPlan();
+    const { container, rerender } = render(<Transcript plan={plan} {...noopCtx} />);
+    const el = scrollerOf(container);
+    fireEvent.click(screen.getByRole("button", { name: "Jump to latest" }));
+    // jsdom has no smooth scroll and no clamp: the jump writes scrollHeight.
+    expect(el.scrollTop).toBe(CONTENT);
+    content = CONTENT + 1000;
+    rerender(<Transcript plan={{ ...plan }} {...noopCtx} />);
+    expect(el.scrollTop).toBe(content - PANEL);
   });
 });

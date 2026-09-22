@@ -40,7 +40,9 @@ function Chat({ endpointUrl }: { endpointUrl: string }) {
 ```
 
 What the kit owns (so you don't): stick-to-bottom scroll with a
-jump-to-latest release, windowed rendering for long transcripts,
+jump-to-latest release (a card that grows past the panel settles at its top
+instead of being scrolled away by its own growth), windowed rendering for
+long transcripts,
 `aria-live`/keyboard/focus accessibility, sanitized markdown (typed AST —
 raw HTML is unrepresentable, links are scheme-allowlisted), generative-UI
 views mounting through `@guuey/mcp-apps-host`'s sandboxed host, and theming
