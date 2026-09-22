@@ -86,6 +86,16 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
   // than hiding it: apps already pinned to Fable 5 keep their edit flow,
   // because the door's expanded list carries their value.
   { id: "claude-fable-5", provider: "anthropic", label: "Claude Fable 5", status: "ga" },
+  // Opus 5.5 (guuey#1622 — his #1608 pick (a), verbatim "Staged: Sol+Luna now,
+  // Opus 5.5 announced (Recommended)"): `announced` = known and priced at list
+  // (#1621), NOT pickable — the status keeps it out of both picker halves. Its
+  // ga flip is its own leg (#1623): the model answers a plain call (QA, dev pod,
+  // 2026-09-22, HTTP 200, "claude-opus-5-5" echoed) but REFUSES a forced
+  // tool_choice ("tool_choice: type \"tool\" and \"any\" are not supported for
+  // this model.", req_011CfK595wXzVWNcN1A6Y9MV), which the #1183 first-impression
+  // arm sends. Opus 5 stays in the lineup until that flip ((d) puts it behind the
+  // door then, not before — an announced row is not a replacement).
+  { id: "claude-opus-5-5", provider: "anthropic", label: "Claude Opus 5.5", status: "announced" },
   { id: "claude-opus-5", provider: "anthropic", label: "Claude Opus 5", status: "ga", lineup: true },
   { id: "claude-sonnet-4-6", provider: "anthropic", label: "Claude Sonnet 4.6", status: "ga" },
   { id: "claude-haiku-4-5", provider: "anthropic", label: "Claude Haiku 4.5", status: "ga", lineup: true },
@@ -104,15 +114,28 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
   // status alone keeps it out of BOTH picker halves. Flips to `ga` (+ lineup
   // decision) in the first cut after its receipt (oss #806).
   { id: "gpt-5.6-terra", provider: "openai", label: "GPT-5.6 Terra", status: "ga", isDefault: true, lineup: true },
-  { id: "gpt-5.6-sol", provider: "openai", label: "GPT-5.6 Sol", status: "ga", lineup: true },
+  // GPT-6 Sol + GPT-6 Luna (guuey#1622 — his #1608 picks (a) "Staged: Sol+Luna
+  // now, Opus 5.5 announced (Recommended)" and (d) "Successors in; Opus 5 + 5.6
+  // Sol behind the door"): `ga` on QA's receipted in-pod calls (dev, 2026-09-22
+  // 20:00Z, through the openai egress arm with the managed key: HTTP 200 on
+  // /v1/responses, the provider echoed each id, usage in 11 / out 5 — #1606
+  // c.5783217245). Priced at list, 272K tier included (#1621). The OpenAI
+  // lineup is (d)'s order — Terra · GPT-6 Sol · Astra · GPT-6 Luna — and the
+  // picker shows lineup rows in registry order, so the ROW ORDER here is the
+  // ruling. Terra stays the default (#1624 is the gated default move).
+  { id: "gpt-6-sol", provider: "openai", label: "GPT-6 Sol", status: "ga", lineup: true },
   // FLIPPED to ga 2026-09-05 on #801's receipted pod call (dev, through the
   // openai egress arm with the managed key: HTTP 200 on /v1/responses, the
   // provider echoed "gpt-6-astra", usage in 11 / out 5). In the lineup as a
-  // non-default member beside Sol — Terra stays the default (founder's
+  // non-default member (beside 5.6 Sol then; GPT-6 Sol since #1622) — Terra stays the default (founder's
   // cost/balance call, 2026-07-25). Known metering gap stated on guuey#818:
   // prompts above 272K input tokens are vendor-priced at 2× and the card has
   // no context tier yet.
   { id: "gpt-6-astra", provider: "openai", label: "GPT-6 Astra", status: "ga", lineup: true },
+  { id: "gpt-6-luna", provider: "openai", label: "GPT-6 Luna", status: "ga", lineup: true },
+  // Superseded by GPT-6 Sol ((d) above): still ga, still served, still
+  // selectable — behind the "See all models" door, beside 5.6 Luna.
+  { id: "gpt-5.6-sol", provider: "openai", label: "GPT-5.6 Sol", status: "ga" },
   { id: "gpt-5.6-luna", provider: "openai", label: "GPT-5.6 Luna", status: "ga" },
   { id: "gpt-5.5", provider: "openai", label: "GPT-5.5", status: "ga" },
   { id: "gpt-5.4", provider: "openai", label: "GPT-5.4", status: "ga" },

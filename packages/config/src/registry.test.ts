@@ -71,10 +71,11 @@ describe('modelsForProvider — the status filter, exercised over the synthetic 
   it('an announced row is IN the bound registry but EXCLUDED from the picker until the runtime can invoke it', () => {
     expect(withAnnounced.modelEntry(ANNOUNCED_FIXTURE.id)?.status).toBe('announced');
     expect(withAnnounced.modelsForProvider('anthropic').map((m) => m.id)).not.toContain(ANNOUNCED_FIXTURE.id);
-    // The live registry carries no announced row today — asserted, so the
-    // fixture is known to be the ONLY thing exercising this branch (a real
-    // announced row returning here would be fine; a silent one would not).
-    expect(MODEL_REGISTRY.filter((m) => m.status === 'announced')).toEqual([]);
+    // The live registry's announced rows are asserted by id, so a silent one
+    // can never appear: Opus 5.5 since #1622 (his #1608 pick (a)). It too is
+    // IN the registry and OUT of the picker — the same rule, on a live row.
+    expect(MODEL_REGISTRY.filter((m) => m.status === 'announced').map((m) => m.id)).toEqual(['claude-opus-5-5']);
+    expect(modelsForProvider('anthropic').map((m) => m.id)).not.toContain('claude-opus-5-5');
   });
 
   it('bindRegistry(MODEL_REGISTRY) IS the live surface — the seam adds no second rule set', () => {
@@ -103,10 +104,10 @@ describe('modelsForProvider', () => {
     // adds or retires a model.
     //
     // The status half is exercised over the synthetic announced row above
-    // (`withAnnounced`), not here: the live registry has had no announced
-    // row since the 2026-09-08 Fable 5.1 flip. What the literal side buys is
-    // that a real announced stub admitted by a widened filter turns THIS red
-    // too; the re-derived version never would.
+    // (`withAnnounced`) AND the live announced Opus 5.5 row (#1622), which is
+    // why claude-opus-5-5 is absent below. What the literal side buys is that
+    // a real announced stub admitted by a widened filter turns THIS red too;
+    // the re-derived version never would.
     const expected: Record<'anthropic' | 'openai' | 'google' | 'openrouter', string[]> = {
       // claude-fable-5-1 joined the offered set 2026-09-08 on infra's #659
       // read of the served image (guuey#634); placed after Sonnet 5 so the
@@ -121,8 +122,21 @@ describe('modelsForProvider', () => {
         'claude-opus-4-8',
       ],
       // gpt-6-astra joined the offered set 2026-09-05 on #801's receipted pod
-      // call (guuey#798/#802); placed after Sol so Terra stays [0] (the default).
-      openai: ['gpt-5.6-terra', 'gpt-5.6-sol', 'gpt-6-astra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-4o', 'gpt-4o-mini'],
+      // call (guuey#798/#802); gpt-6-sol + gpt-6-luna joined 2026-09-23 on
+      // QA's receipted pod calls (#1606 c.5783217245, guuey#1622). Terra stays
+      // [0] (the default).
+      openai: [
+        'gpt-5.6-terra',
+        'gpt-6-sol',
+        'gpt-6-astra',
+        'gpt-6-luna',
+        'gpt-5.6-sol',
+        'gpt-5.6-luna',
+        'gpt-5.5',
+        'gpt-5.4',
+        'gpt-4o',
+        'gpt-4o-mini',
+      ],
       // gemini-3.8-flash joined the offered set 2026-09-05 on #801's receipted pod
       // call (guuey#798/#802); placed after 3.6 Flash so the default stays [0].
       google: [
@@ -215,6 +229,26 @@ describe('lineupForProvider / legacyForProvider', () => {
     expect(legacyForProvider('anthropic').map((m) => m.id)).toContain('claude-fable-5');
     expect(modelEntry('claude-fable-5')?.status).toBe('ga');
   });
+
+  it("openai's lineup is his #1608 pick (d), IN ORDER — Terra · GPT-6 Sol · Astra · GPT-6 Luna; 5.6 Sol behind the door (guuey#1622)", () => {
+    // Verbatim (d): "Successors in; Opus 5 + 5.6 Sol behind the door". The
+    // picker renders lineup rows in registry order, so the ORDER is the ruling.
+    expect(lineupForProvider('openai').map((m) => m.id)).toEqual(['gpt-5.6-terra', 'gpt-6-sol', 'gpt-6-astra', 'gpt-6-luna']);
+    expect(legacyForProvider('openai').map((m) => m.id)).toContain('gpt-5.6-sol');
+    // Behind the door is curation, not lifecycle: 5.6 Sol stays ga and selectable.
+    expect(modelEntry('gpt-5.6-sol')?.status).toBe('ga');
+    expect(modelEntry('gpt-6-sol')?.status).toBe('ga');
+    expect(modelEntry('gpt-6-luna')?.status).toBe('ga');
+    // The default is unchanged by this leg (#1624 is the gated default move).
+    expect(defaultModelFor('openai-agents-sdk')).toBe('gpt-5.6-terra');
+  });
+
+  it("anthropic's lineup is UNCHANGED by the Opus 5.5 arrival — an announced row replaces nothing until its ga flip (#1623)", () => {
+    expect(modelEntry('claude-opus-5-5')?.status).toBe('announced');
+    expect(lineupForProvider('anthropic').map((m) => m.id)).toContain('claude-opus-5');
+    expect(lineupForProvider('anthropic').map((m) => m.id)).not.toContain('claude-opus-5-5');
+    expect(legacyForProvider('anthropic').map((m) => m.id)).not.toContain('claude-opus-5-5');
+  });
 });
 
 /**
@@ -297,32 +331,36 @@ describe('modelEntry', () => {
 describe('announcedForProvider — visible to a console, invocable by nothing', () => {
   const providers = ['anthropic', 'openai', 'google', 'openrouter'] as const;
 
-  it('returns exactly the announced rows per provider — NONE live since the 2026-09-08 Fable 5.1 flip', () => {
+  it('returns exactly the announced rows per provider — Opus 5.5 since #1622', () => {
     // Literal, like the modelsForProvider pin above: these ids are what the
     // console shows as "known, not yet serving", and each one leaves this
     // list by a deliberate ga flip, never by drift — gpt-6-astra and
     // gemini-3.8-flash on 2026-09-05 (#801 receipt), claude-fable-5-1 on
-    // 2026-09-08 (infra's #659 image read, guuey#634). Empty everywhere until
-    // the next vendor announcement.
-    for (const p of providers) expect(announcedForProvider(p)).toEqual([]);
+    // 2026-09-08 (infra's #659 image read, guuey#634). claude-opus-5-5 joined
+    // 2026-09-23 on his #1608 pick (a); it leaves by its own flip (#1623).
+    expect(announcedForProvider('anthropic').map((m) => m.id)).toEqual(['claude-opus-5-5']);
+    for (const p of ['openai', 'google', 'openrouter'] as const) expect(announcedForProvider(p)).toEqual([]);
   });
 
   it('returns the synthetic announced row through the bound accessor — the display list is reachable when a row IS announced', () => {
-    expect(withAnnounced.announcedForProvider('anthropic').map((m) => m.id)).toEqual([ANNOUNCED_FIXTURE.id]);
-    expect(withAnnounced.announcedForProvider('anthropic')[0].label).toBe(ANNOUNCED_FIXTURE.label);
+    // The live Opus 5.5 row first (registry order), then the appended fixture.
+    expect(withAnnounced.announcedForProvider('anthropic').map((m) => m.id)).toEqual(['claude-opus-5-5', ANNOUNCED_FIXTURE.id]);
+    expect(withAnnounced.announcedForProvider('anthropic').find((m) => m.id === ANNOUNCED_FIXTURE.id)?.label).toBe(
+      ANNOUNCED_FIXTURE.label,
+    );
     for (const p of ['openai', 'google', 'openrouter'] as const) {
       expect(withAnnounced.announcedForProvider(p)).toEqual([]);
     }
   });
 
   /**
-   * The rules, run over BOTH surfaces: the live registry (no announced row
-   * today — these are vacuous there, and say so) and the synthetic binding
-   * (exactly one announced row — where each rule is actually exercised).
+   * The rules, run over BOTH surfaces: the live registry (one announced row
+   * since #1622, Opus 5.5) and the synthetic binding (that row plus the
+   * fixture) — each rule is exercised on both, and the counts are stated.
    */
   describe.each([
-    ['live registry', bindRegistry(MODEL_REGISTRY), 0],
-    ['synthetic announced row', withAnnounced, 1],
+    ['live registry', bindRegistry(MODEL_REGISTRY), 1],
+    ['synthetic announced row', withAnnounced, 2],
   ] as const)('over the %s', (_name, r, announcedCount) => {
     it(`carries exactly ${announcedCount} announced row(s) — non-vacuity stated, never assumed`, () => {
       expect(providers.flatMap((p) => r.announcedForProvider(p))).toHaveLength(announcedCount);
