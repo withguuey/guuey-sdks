@@ -196,6 +196,13 @@ export async function runInvoke(
       ...(invoke.profileSections !== undefined ? { profileSections: invoke.profileSections } : {}),
       ...(invoke.resourceCount !== undefined ? { resourceCount: invoke.resourceCount } : {}),
       ...(invoke.gguiAttached !== undefined ? { gguiAttached: invoke.gguiAttached } : {}),
+      // guuey#1183 — the first-impression push reaches buildOptions: it renders
+      // the verbatim handshake section AND turns extended thinking off for this
+      // invoke (the model-egress force is refused beside thinking). Dropped from
+      // this ctx since the push landed (30c0db0ad): the OpenAI and ADK paths
+      // read `invoke.firstImpression` directly, the Claude path only through
+      // here — so on claude-agent-sdk neither the section nor the knob ever ran.
+      ...(invoke.firstImpression !== undefined ? { firstImpression: invoke.firstImpression } : {}),
       ...(invoke.mcpAvailability !== undefined ? { mcpAvailability: invoke.mcpAvailability } : {}),
     };
     options = buildOptions(snapshot, ctx);

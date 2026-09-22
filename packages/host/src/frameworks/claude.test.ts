@@ -200,6 +200,44 @@ describe("runInvoke — native emission", () => {
     expect(seen.systemPrompt).toContain("Ada");
   });
 
+  describe("guuey#1183 — the first-impression push reaches buildOptions on the Claude path", () => {
+    const push = { chipKey: "opening-hours", intent: "show opening hours", contract: { kind: "hours" } };
+
+    async function optionsFor(over: Partial<HostInvoke>): Promise<{ systemPrompt?: string; thinking?: unknown }> {
+      const { sink } = collector();
+      const emit = createEmitter(sink);
+      let seen: { systemPrompt?: string; thinking?: unknown } = {};
+      const query: QueryFn = (args) => {
+        seen = {
+          ...(typeof args.options.systemPrompt === "string" ? { systemPrompt: args.options.systemPrompt } : {}),
+          ...("thinking" in args.options ? { thinking: args.options.thinking } : {}),
+        };
+        return streamOf();
+      };
+      await runInvoke({}, invoke(over), { apiKey: "sk-test", listCredentials: () => [] }, emit, query);
+      return seen;
+    }
+
+    it("rail armed + push → the verbatim handshake section renders AND extended thinking is off (the served red: neither ran)", async () => {
+      const seen = await optionsFor({ gguiAttached: true, firstImpression: push });
+      expect(seen.systemPrompt).toContain("<first_impression_handshake>");
+      expect(seen.systemPrompt).toContain('"intent":"show opening hours"');
+      expect(seen.thinking).toEqual({ type: "disabled" });
+    });
+
+    it("no push → no section, and the SDK default thinking stands (no `thinking` key)", async () => {
+      const seen = await optionsFor({ gguiAttached: true });
+      expect(seen.systemPrompt).not.toContain("<first_impression_handshake>");
+      expect(seen).not.toHaveProperty("thinking");
+    });
+
+    it("push without the ggui rail → neither the section nor the knob (the same gate)", async () => {
+      const seen = await optionsFor({ firstImpression: push });
+      expect(seen.systemPrompt).not.toContain("<first_impression_handshake>");
+      expect(seen).not.toHaveProperty("thinking");
+    });
+  });
+
   it("threads invoke.userMemory + memoryAttached into the buildOptions ctx → the recall block renders", async () => {
     const { sink } = collector();
     const emit = createEmitter(sink);
