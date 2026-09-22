@@ -326,3 +326,35 @@ export const defaultModelFor: RegistryAccessors["defaultModelFor"] = live.defaul
  * Look up a model entry by id.
  */
 export const modelEntry: RegistryAccessors["modelEntry"] = live.modelEntry;
+
+/**
+ * guuey#1606 — Claude ids the provider REFUSES `thinking: { type: "disabled" }`
+ * on (Anthropic lists their thinking as "Adaptive (always on)"). Each entry is
+ * a receipted 400 from a real call through the managed egress arm, never a
+ * guess — `"thinking.type.disabled" is not supported for this model. Use
+ * "thinking.type.adaptive" and "output_config.effort" to control thinking
+ * behavior.`:
+ *   - `claude-fable-5-1` — req_011CfKACj6c3sa8UJRH4Jx77 (QA, dev, 2026-09-22)
+ *   - `claude-fable-5` — req_011CfKANbRX8VrXKVxLVLijA (QA, dev, 2026-09-22)
+ *   - `claude-opus-5-5` — req_011CfK6KioUCDdzGcvmJHA1f (QA, dev, 2026-09-22)
+ * Every other ga Claude id answered 200 on the same call and is NOT here:
+ * `claude-sonnet-5` (the default), `claude-opus-5`, `claude-opus-4-8`,
+ * `claude-sonnet-4-6`, `claude-haiku-4-5` (guuey#1606, 5784181150 / 5784211571).
+ *
+ * Not keyed on MODEL_REGISTRY on purpose: a guuey.json can name an id the
+ * registry does not offer yet (`claude-opus-5-5` today), and the host must
+ * still never send it the refused shape. Add an id only with its receipt.
+ */
+const REJECTS_DISABLED_THINKING: ReadonlySet<string> = new Set(["claude-fable-5-1", "claude-fable-5", "claude-opus-5-5"]);
+
+/**
+ * True when the provider refuses `thinking: { type: "disabled" }` for this
+ * Claude model id (bare, or `anthropic/`-prefixed). The Claude host consults
+ * it before disabling thinking for a bound first-impression turn (guuey#1183):
+ * on these models the forced handshake is refused anyway, so the turn keeps
+ * the model's default thinking instead of failing every request.
+ */
+export function rejectsDisabledThinking(modelId: string): boolean {
+  const bare = modelId.startsWith("anthropic/") ? modelId.slice("anthropic/".length) : modelId;
+  return REJECTS_DISABLED_THINKING.has(bare);
+}

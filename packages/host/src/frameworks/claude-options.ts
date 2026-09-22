@@ -25,6 +25,7 @@ import {
   GUUEY_DEFAULT_SYSTEM_PROMPT,
   defaultModelFor,
   parseToolGateEntry,
+  rejectsDisabledThinking,
   type GuueyAgent,
   type ProfileAccess,
 } from "@guuey/config";
@@ -450,12 +451,22 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
   // thinking block") on the tool-result continuation, which the arm's
   // retry-once cannot rescue. Same gate as the prompt section: the ggui rail
   // armed AND a push present. Later turns on the thread keep the default.
+  //
+  // guuey#1606 — EXCEPT on a model the provider refuses `disabled` for
+  // (Fable 5.1, Fable 5, Opus 5.5 — `rejectsDisabledThinking`). There the whole bound turn
+  // would 400 on every request, and the arm's retry cannot rescue it (the
+  // retry drops only the force). Those models also refuse the forced
+  // `tool_choice` itself, so disabling thinking would buy nothing: the turn
+  // keeps the model's default (adaptive) thinking, the arm skips the force
+  // (`reason: 'thinking'`), and the prompt instruction stands — exactly the
+  // path those models serve on before this knob existed.
   const firstImpressionBound = ctx.gguiAttached === true && ctx.firstImpression !== undefined;
+  const disableThinkingForHandshake = firstImpressionBound && !rejectsDisabledThinking(model);
 
   const options: Options = {
     model,
     mcpServers,
-    ...(firstImpressionBound ? { thinking: { type: "disabled" as const } } : {}),
+    ...(disableThinkingForHandshake ? { thinking: { type: "disabled" as const } } : {}),
     allowedTools: gates.allowedTools,
     // Deny-listed tools (`tools.denylist`, translated) are removed from the
     // model's catalog outright — the SDK's own mechanism, not a callback.

@@ -10,6 +10,7 @@ import {
   announcedForProvider,
   defaultModelFor,
   modelEntry,
+  rejectsDisabledThinking,
   bindRegistry,
   type ModelEntry,
 } from './registry.js';
@@ -417,5 +418,25 @@ describe('FRAMEWORK_REGISTRY invariants', () => {
       const hasDefault = MODEL_REGISTRY.some((m) => m.provider === fw.defaultProvider && m.isDefault);
       expect(hasDefault).toBe(true);
     }
+  });
+});
+
+describe('rejectsDisabledThinking (guuey#1606) — only the ids with a receipted 400', () => {
+  it('names Fable 5.1, Fable 5 and Opus 5.5 (bare or anthropic/-prefixed)', () => {
+    for (const id of ['claude-fable-5-1', 'claude-fable-5', 'claude-opus-5-5', 'anthropic/claude-fable-5-1']) {
+      expect(rejectsDisabledThinking(id), id).toBe(true);
+    }
+  });
+
+  it('never names an id that answered 200 on the same call — the default included', () => {
+    for (const id of ['claude-sonnet-5', 'claude-opus-5', 'claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5']) {
+      expect(rejectsDisabledThinking(id), id).toBe(false);
+    }
+    expect(rejectsDisabledThinking(defaultModelFor('claude-agent-sdk'))).toBe(false);
+  });
+
+  it('an id from another provider or an unknown id is never named', () => {
+    expect(rejectsDisabledThinking('gpt-6-sol')).toBe(false);
+    expect(rejectsDisabledThinking('openai/claude-fable-5-1')).toBe(false);
   });
 });

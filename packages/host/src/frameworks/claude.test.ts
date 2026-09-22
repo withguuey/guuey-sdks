@@ -203,7 +203,10 @@ describe("runInvoke — native emission", () => {
   describe("guuey#1183 — the first-impression push reaches buildOptions on the Claude path", () => {
     const push = { chipKey: "opening-hours", intent: "show opening hours", contract: { kind: "hours" } };
 
-    async function optionsFor(over: Partial<HostInvoke>): Promise<{ systemPrompt?: string; thinking?: unknown }> {
+    async function optionsFor(
+      over: Partial<HostInvoke>,
+      snapshot: { model?: string } = {},
+    ): Promise<{ systemPrompt?: string; thinking?: unknown }> {
       const { sink } = collector();
       const emit = createEmitter(sink);
       let seen: { systemPrompt?: string; thinking?: unknown } = {};
@@ -214,7 +217,7 @@ describe("runInvoke — native emission", () => {
         };
         return streamOf();
       };
-      await runInvoke({}, invoke(over), { apiKey: "sk-test", listCredentials: () => [] }, emit, query);
+      await runInvoke(snapshot, invoke(over), { apiKey: "sk-test", listCredentials: () => [] }, emit, query);
       return seen;
     }
 
@@ -236,6 +239,25 @@ describe("runInvoke — native emission", () => {
       expect(seen.systemPrompt).not.toContain("<first_impression_handshake>");
       expect(seen).not.toHaveProperty("thinking");
     });
+
+    // guuey#1606 — the provider 400s `thinking: disabled` on these (QA's in-pod
+    // receipts on #1606); sending it would fail EVERY request of the bound turn.
+    it.each(["claude-fable-5-1", "claude-fable-5", "claude-opus-5-5", "anthropic/claude-fable-5-1"])(
+      "%s (refuses `disabled`) → the handshake section still renders, thinking is left at the SDK default",
+      async (model) => {
+        const seen = await optionsFor({ gguiAttached: true, firstImpression: push }, { model });
+        expect(seen.systemPrompt).toContain("<first_impression_handshake>");
+        expect(seen).not.toHaveProperty("thinking");
+      },
+    );
+
+    it.each(["claude-sonnet-5", "claude-opus-5", "claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"])(
+      "%s (answered 200 with `disabled`) → the #1183 recipe is unchanged: thinking disabled for the bound turn",
+      async (model) => {
+        const seen = await optionsFor({ gguiAttached: true, firstImpression: push }, { model });
+        expect(seen.thinking).toEqual({ type: "disabled" });
+      },
+    );
   });
 
   it("threads invoke.userMemory + memoryAttached into the buildOptions ctx → the recall block renders", async () => {
