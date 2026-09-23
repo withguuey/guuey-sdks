@@ -189,7 +189,7 @@ importers:
         version: 0.6.2(@google/adk@2.1.0(@grpc/grpc-js@1.14.5)(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(express@5.2.1))
       '@silverprotocol/openai-agents':
         specifier: 0.6.2
-        version: 0.6.2(@openai/agents@0.18.0(ws@8.21.0)(zod@4.4.3))
+        version: 0.6.2(@openai/agents@0.18.0(ws@8.21.3)(zod@4.4.3))
       esbuild:
         specifier: ^0.25.12
         version: 0.25.12
@@ -201,7 +201,7 @@ importers:
         version: 0.12.0
       ws:
         specifier: ^8.18.0
-        version: 8.21.0
+        version: 8.21.3
       yaml:
         specifier: ^2.8.2
         version: 2.9.0
@@ -331,7 +331,7 @@ importers:
         version: 2.1.0(@grpc/grpc-js@1.14.5)(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(express@5.2.1)
       '@openai/agents':
         specifier: 0.18.0
-        version: 0.18.0(ws@8.21.0)(zod@4.4.3)
+        version: 0.18.0(ws@8.21.3)(zod@4.4.3)
       '@types/node':
         specifier: ^24.0.0
         version: 24.12.4
@@ -3853,8 +3853,8 @@ packages:
       utf-8-validate:
         optional: true
 
-  ws@8.21.0:
-    resolution: {integrity: sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==}
+  ws@8.21.3:
+    resolution: {integrity: sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -4498,7 +4498,7 @@ snapshots:
       google-auth-library: 10.9.0
       p-retry: 4.6.2
       protobufjs: 7.6.5
-      ws: 8.21.0
+      ws: 8.21.3
     optionalDependencies:
       '@modelcontextprotocol/sdk': 1.30.0(zod@4.4.3)
     transitivePeerDependencies:
@@ -4511,7 +4511,7 @@ snapshots:
       google-auth-library: 10.9.0
       p-retry: 4.6.2
       protobufjs: 7.6.5
-      ws: 8.21.0
+      ws: 8.21.3
     optionalDependencies:
       '@modelcontextprotocol/sdk': 1.30.0(zod@4.4.3)
     transitivePeerDependencies:
@@ -4698,11 +4698,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@openai/agents-core@0.18.0(ws@8.21.0)(zod@4.4.3)':
+  '@openai/agents-core@0.18.0(ws@8.21.3)(zod@4.4.3)':
     dependencies:
       '@standard-schema/spec': 1.1.0
       debug: 4.4.3
-      openai: 7.7.0(ws@8.21.0)(zod@4.4.3)
+      openai: 7.7.0(ws@8.21.3)(zod@4.4.3)
     optionalDependencies:
       '@modelcontextprotocol/client': 2.0.0
       zod: 4.4.3
@@ -4714,11 +4714,11 @@ snapshots:
       - undici
       - ws
 
-  '@openai/agents-openai@0.18.0(ws@8.21.0)(zod@4.4.3)':
+  '@openai/agents-openai@0.18.0(ws@8.21.3)(zod@4.4.3)':
     dependencies:
-      '@openai/agents-core': 0.18.0(ws@8.21.0)(zod@4.4.3)
+      '@openai/agents-core': 0.18.0(ws@8.21.3)(zod@4.4.3)
       debug: 4.4.3
-      openai: 7.7.0(ws@8.21.0)(zod@4.4.3)
+      openai: 7.7.0(ws@8.21.3)(zod@4.4.3)
       zod: 4.4.3
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
@@ -4730,10 +4730,10 @@ snapshots:
 
   '@openai/agents-realtime@0.18.0(zod@4.4.3)':
     dependencies:
-      '@openai/agents-core': 0.18.0(ws@8.21.0)(zod@4.4.3)
+      '@openai/agents-core': 0.18.0(ws@8.21.3)(zod@4.4.3)
       '@types/ws': 8.18.1
       debug: 4.4.3
-      ws: 8.21.0
+      ws: 8.21.3
       zod: 4.4.3
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
@@ -4744,13 +4744,13 @@ snapshots:
       - undici
       - utf-8-validate
 
-  '@openai/agents@0.18.0(ws@8.21.0)(zod@4.4.3)':
+  '@openai/agents@0.18.0(ws@8.21.3)(zod@4.4.3)':
     dependencies:
-      '@openai/agents-core': 0.18.0(ws@8.21.0)(zod@4.4.3)
-      '@openai/agents-openai': 0.18.0(ws@8.21.0)(zod@4.4.3)
+      '@openai/agents-core': 0.18.0(ws@8.21.3)(zod@4.4.3)
+      '@openai/agents-openai': 0.18.0(ws@8.21.3)(zod@4.4.3)
       '@openai/agents-realtime': 0.18.0(zod@4.4.3)
       debug: 4.4.3
-      openai: 7.7.0(ws@8.21.0)(zod@4.4.3)
+      openai: 7.7.0(ws@8.21.3)(zod@4.4.3)
       zod: 4.4.3
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
@@ -5057,11 +5057,11 @@ snapshots:
     optionalDependencies:
       '@google/adk': 2.1.0(@grpc/grpc-js@1.14.5)(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(express@5.2.1)
 
-  '@silverprotocol/openai-agents@0.6.2(@openai/agents@0.18.0(ws@8.21.0)(zod@4.4.3))':
+  '@silverprotocol/openai-agents@0.6.2(@openai/agents@0.18.0(ws@8.21.3)(zod@4.4.3))':
     dependencies:
       '@silverprotocol/core': 0.6.2
     optionalDependencies:
-      '@openai/agents': 0.18.0(ws@8.21.0)(zod@4.4.3)
+      '@openai/agents': 0.18.0(ws@8.21.3)(zod@4.4.3)
 
   '@silverprotocol/richtext@0.6.2': {}
 
@@ -6294,7 +6294,7 @@ snapshots:
       whatwg-encoding: 3.1.1
       whatwg-mimetype: 4.0.0
       whatwg-url: 14.2.0
-      ws: 8.21.0
+      ws: 8.21.3
       xml-name-validator: 5.0.0
     transitivePeerDependencies:
       - bufferutil
@@ -6693,9 +6693,9 @@ snapshots:
       is-docker: 2.2.1
       is-wsl: 2.2.0
 
-  openai@7.7.0(ws@8.21.0)(zod@4.4.3):
+  openai@7.7.0(ws@8.21.3)(zod@4.4.3):
     optionalDependencies:
-      ws: 8.21.0
+      ws: 8.21.3
       zod: 4.4.3
 
   p-limit@2.3.0:
@@ -7530,7 +7530,7 @@ snapshots:
 
   ws@7.5.13: {}
 
-  ws@8.21.0: {}
+  ws@8.21.3: {}
 
   xml-name-validator@5.0.0: {}
 
