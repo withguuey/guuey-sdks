@@ -13,6 +13,7 @@ import { login } from './login';
 import { resolveTargetAppId } from '../app-id';
 import * as out from '../output';
 import { themeForwardLines, themeForwardOf } from '../theme-forward';
+import { BUILT_FOR_LABEL, isAppBuiltFor, parseBuiltForFlag } from '../built-for';
 
 /**
  * `GET /v1/apps`'s per-app projection — a strict subset of the server's
@@ -118,6 +119,12 @@ interface AppDetail extends AppSummary {
     identityEndpointUrl: string | null;
     noindex: boolean;
   } | null;
+  /**
+   * Who the agent is for (guuey#1597), resolved server-side: a row with none
+   * reads `customers`. Optional here because a server from before the field
+   * sends none (N−1), and then no line is printed.
+   */
+  builtFor?: string;
 }
 
 // Type-only export (guuey#1084): `theme-hint.ts` reads `GET /apps/:id` —
@@ -393,6 +400,10 @@ export async function appsGet(
   // guuey#250 — printed whenever the app is on a trial, so a builder sees
   // the pause date (or the pause) without opening the console.
   if (app.trial) console.log(`  Trial:        ${trialLabel(app.trial)}`);
+  // guuey#1670 — who the agent is for, in the console's words.
+  if (app.builtFor !== undefined && isAppBuiltFor(app.builtFor)) {
+    console.log(`  Built for:    ${BUILT_FOR_LABEL[app.builtFor]}`);
+  }
   // guuey#361 — WHY trial pause / demotion won't fire: an admin override is
   // holding the tier. The boolean is all the wire carries.
   if (app.tierHeldByAdminOverride) console.log(`  Tier:         held by admin override`);
@@ -433,14 +444,24 @@ export async function appsGet(
 }
 
 /**
- * Handle `guuey apps create`.
+ * Handle `guuey apps create`. `--for personal|customers` (guuey#1670) sends
+ * who the agent is for; absent sends no key and the server reads `customers`.
  */
 export async function appsCreate(opts: {
   name?: string;
   json?: boolean;
+  /** The raw `--for` flag; validated here, before login or any request. */
+  for?: string | true;
 }): Promise<void> {
   if (!opts.name) {
     out.error('App name is required. Use: guuey apps create --name "My App"');
+    process.exit(1);
+  }
+  let builtFor: ReturnType<typeof parseBuiltForFlag>;
+  try {
+    builtFor = parseBuiltForFlag(opts.for);
+  } catch (err) {
+    out.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
   }
 
@@ -455,12 +476,13 @@ export async function appsCreate(opts: {
   // key is minted anywhere in the CLI).
   const res = await apiRequest('POST', '/apps', {
     displayName: opts.name,
+    ...(builtFor !== undefined ? { builtFor } : {}),
   });
 
   if (!res.ok) return handleError(res, 'Failed to create app');
 
   const data = (await res.json()) as {
-    app: { id: string; displayName: string };
+    app: { id: string; displayName: string; builtFor?: string };
     firstImpression?: FirstImpressionVerdict;
   };
   const appId = data.app.id;
@@ -482,6 +504,11 @@ export async function appsCreate(opts: {
   out.success(`Created app "${opts.name}"`);
   console.log('');
   console.log(`  App ID:   ${appId}`);
+  // The server's echo, not the flag: this line states what the app stored.
+  const storedFor = data.app.builtFor;
+  if (storedFor !== undefined && isAppBuiltFor(storedFor)) {
+    console.log(`  Built for: ${BUILT_FOR_LABEL[storedFor]}`);
+  }
   console.log('');
   console.log('  Auto-configured: app-id saved to ~/.guuey/config.json');
   // guuey#1181: ONE legible line for a Free wallet — never a silent skip.

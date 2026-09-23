@@ -7,6 +7,7 @@
  */
 import * as out from '../output.js';
 import { scaffold, type Framework, type ScaffoldOptions, type Template } from '@guuey/create-agentic-app';
+import { BUILT_FOR_LABEL, parseBuiltForFlag } from '../built-for.js';
 
 const FRAMEWORKS: Framework[] = ['claude-agent-sdk', 'openai-agents-sdk'];
 const TEMPLATES: Template[] = ['base', 'agentic-app'];
@@ -61,6 +62,9 @@ export function buildScaffoldOptions(
   const name = typeof flags?.name === 'string' ? flags.name : deriveName(target);
   const scope = typeof flags?.scope === 'string' ? flags.scope : undefined;
   const install = flags?.install === true;
+  // guuey#1670 — who the agent is for, stamped as `app.builtFor`. Absent means
+  // no key: `guuey deploy` asks the question before it creates the app.
+  const builtFor = parseBuiltForFlag(flags?.for);
 
   return {
     targetDir: target,
@@ -71,6 +75,7 @@ export function buildScaffoldOptions(
     install,
     git: flags?.['no-git'] !== true,
     force: flags?.force === true,
+    ...(builtFor !== undefined ? { builtFor } : {}),
   };
 }
 
@@ -83,6 +88,9 @@ export async function create(
     const { projectDir } = await scaffold(opts);
 
     console.log(`\nScaffolded "${opts.name}" in ${projectDir}\n`);
+    if (opts.builtFor !== undefined) {
+      console.log(`Built for: ${BUILT_FOR_LABEL[opts.builtFor]} (app.builtFor in guuey.json; guuey deploy sends it when it creates the app)\n`);
+    }
     console.log('Next steps:');
     console.log(`  cd ${projectDir}`);
     if (!opts.install) console.log('  pnpm install');

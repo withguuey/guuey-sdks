@@ -7,6 +7,7 @@ import type { MockInstance } from 'vitest';
 import {
   printTriggerWarnings,
   awaitPageUrl,
+  createIntentFromProject,
   createLinkedApp,
   deploy,
   pollDeployStatus,
@@ -590,6 +591,97 @@ describe('createLinkedApp (S9)', () => {
     expect(printed).toContain('[MODEL_NOT_IN_REGISTRY]');
     expect(printed).toContain(reason);
     expect(printed).not.toContain('[object Object]');
+  });
+});
+
+// guuey#1670 — who the agent is for rides deploy's first-run create. The
+// manifest's `app.builtFor` (stamped by `guuey create --for`) rides whatever
+// the framework. The prompt's answer, asked only when the manifest carries
+// none, is sent AND written back beside `appId`.
+describe('createLinkedApp — builtFor (guuey#1670)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const auth = { pat: 'pat-test', expiresAt: '2099-01-01T00:00:00.000Z' };
+  const config = { host: 'https://platform.guuey.test', apiUrl: 'https://api.guuey.test' };
+
+  function manifestFile(doc: object): { path: string; project: NonNullable<Parameters<typeof createIntentFromProject>[0]> } {
+    const parsed = safeParseGuueyJson(doc);
+    if (!parsed.success) throw new Error('fixture manifest must parse');
+    const path = join(mkdtempSync(join(tmpdir(), 'built-for-')), 'guuey.json');
+    writeFileSync(path, JSON.stringify(doc));
+    return { path, project: parsed.data };
+  }
+
+  it("createIntentFromProject carries the manifest's app.builtFor on every framework, vanilla included", () => {
+    const vanilla = safeParseGuueyJson({ schema: '1', agent: { framework: 'vanilla' }, app: { builtFor: 'personal' } });
+    if (!vanilla.success) throw new Error('fixture manifest must parse');
+    expect(createIntentFromProject(vanilla.data)).toEqual({ builtFor: 'personal' });
+
+    const mint = safeParseGuueyJson({ schema: '1', agent: { framework: 'google-adk' }, app: { builtFor: 'customers' } });
+    if (!mint.success) throw new Error('fixture manifest must parse');
+    expect(createIntentFromProject(mint.data)).toEqual({ builtFor: 'customers', intendedFramework: 'google-adk' });
+
+    const none = safeParseGuueyJson({ schema: '1', agent: { framework: 'vanilla' } });
+    if (!none.success) throw new Error('fixture manifest must parse');
+    expect(createIntentFromProject(none.data)).toEqual({});
+  });
+
+  it('a manifest-declared builtFor rides the create with no answer asked', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ app: { id: 'app-m', displayName: 'Mine' } }), { status: 201 }),
+    );
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { path, project } = manifestFile({ schema: '1', agent: { framework: 'vanilla' }, app: { builtFor: 'personal' } });
+
+    await createLinkedApp({ auth, config, project, guueyJsonPath: path, appName: 'Mine' });
+
+    const [, init] = fetchSpy.mock.calls.at(-1)!;
+    expect(JSON.parse(String(init?.body))).toEqual({ displayName: 'Mine', builtFor: 'personal' });
+    const written = JSON.parse(readFileSync(path, 'utf8'));
+    expect(written.appId).toBe('app-m');
+    expect(written.app.builtFor).toBe('personal');
+  });
+
+  it("the prompt's answer is sent and written back beside appId, keeping the manifest's other app keys", async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ app: { id: 'app-a', displayName: 'Rep' } }), { status: 201 }),
+    );
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { path, project } = manifestFile({
+      schema: '1',
+      agent: { framework: 'vanilla' },
+      app: { suggestions: ['What can you do?'] },
+    });
+
+    await createLinkedApp({ auth, config, project, guueyJsonPath: path, appName: 'Rep', builtFor: 'customers' });
+
+    const [, init] = fetchSpy.mock.calls.at(-1)!;
+    expect(JSON.parse(String(init?.body))).toEqual({ displayName: 'Rep', builtFor: 'customers' });
+    const written = JSON.parse(readFileSync(path, 'utf8'));
+    expect(written.appId).toBe('app-a');
+    expect(written.app).toEqual({ suggestions: ['What can you do?'], builtFor: 'customers' });
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain('Wrote appId and app.builtFor back to guuey.json');
+  });
+
+  it('no manifest answer and no prompt answer: no builtFor key on the wire or in the file (N-1)', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ app: { id: 'app-n', displayName: 'Plain' } }), { status: 201 }),
+    );
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { path, project } = manifestFile({ schema: '1', agent: { framework: 'vanilla' } });
+
+    await createLinkedApp({ auth, config, project, guueyJsonPath: path, appName: 'Plain' });
+
+    const [, init] = fetchSpy.mock.calls.at(-1)!;
+    expect(JSON.parse(String(init?.body))).toEqual({ displayName: 'Plain' });
+    const written = JSON.parse(readFileSync(path, 'utf8'));
+    expect(written.appId).toBe('app-n');
+    expect('app' in written).toBe(false);
+    const output = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(output).toContain('Wrote appId back to guuey.json');
   });
 });
 

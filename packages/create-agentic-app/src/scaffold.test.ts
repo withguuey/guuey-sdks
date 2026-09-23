@@ -5,7 +5,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { scaffold } from './scaffold.js';
+import { APP_BUILT_FOR, safeParseGuueyJson, type AppBuiltFor } from '@guuey/config';
+import { scaffold, type ScaffoldBuiltFor } from './scaffold.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -144,6 +145,67 @@ describe('scaffold --app binding (guuey#580 point 4)', () => {
     });
     const guuey = JSON.parse(await fs.readFile(join(projectDir, 'guuey.json'), 'utf8'));
     expect('appId' in guuey).toBe(false);
+  });
+});
+
+describe('scaffold builtFor — who the agent is for (guuey#1670)', () => {
+  it('stamps app.builtFor into guuey.json and keeps the rest of the manifest', async () => {
+    const target = await fs.mkdtemp(join(tmpdir(), 'caa-for-'));
+    const { projectDir } = await scaffold({
+      targetDir: target,
+      name: 'mine',
+      framework: 'claude-agent-sdk',
+      git: false,
+      templatesDir: fixturesDir,
+      builtFor: 'personal',
+    });
+    const raw: unknown = JSON.parse(await fs.readFile(join(projectDir, 'guuey.json'), 'utf8'));
+    const parsed = safeParseGuueyJson(raw);
+    // The stamped manifest is one the CLI's own loader accepts.
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.app?.builtFor).toBe('personal');
+    expect(parsed.data.agent.framework).toBe('claude-agent-sdk');
+    expect(parsed.data.appId).toBeUndefined();
+  });
+
+  it('composes with --app: both stamps land in one write', async () => {
+    const target = await fs.mkdtemp(join(tmpdir(), 'caa-for-app-'));
+    const { projectDir } = await scaffold({
+      targetDir: target,
+      name: 'theirs',
+      framework: 'claude-agent-sdk',
+      template: 'agent',
+      git: false,
+      templatesDir: fixturesDir,
+      appId: 'app_for1',
+      builtFor: 'customers',
+    });
+    const guuey = JSON.parse(await fs.readFile(join(projectDir, 'guuey.json'), 'utf8'));
+    expect(guuey.appId).toBe('app_for1');
+    expect(guuey.app).toEqual({ builtFor: 'customers' });
+  });
+
+  it('without builtFor the manifest carries NO app key: absent, never a guessed default', async () => {
+    const target = await fs.mkdtemp(join(tmpdir(), 'caa-nofor-'));
+    const { projectDir } = await scaffold({
+      targetDir: target,
+      name: 'unasked',
+      framework: 'claude-agent-sdk',
+      git: false,
+      templatesDir: fixturesDir,
+    });
+    const guuey = JSON.parse(await fs.readFile(join(projectDir, 'guuey.json'), 'utf8'));
+    expect('app' in guuey).toBe(false);
+  });
+
+  it("ScaffoldBuiltFor is exactly @guuey/config's APP_BUILT_FOR (the restated list cannot drift)", () => {
+    const restated: readonly ScaffoldBuiltFor[] = ['personal', 'customers'];
+    expect([...restated].sort()).toEqual([...APP_BUILT_FOR].sort());
+    // And type-level, both directions: each list's members are assignable to the other.
+    const toConfig: readonly AppBuiltFor[] = restated;
+    const fromConfig: readonly ScaffoldBuiltFor[] = APP_BUILT_FOR;
+    expect(toConfig.length).toBe(fromConfig.length);
   });
 });
 

@@ -130,6 +130,10 @@ Agent Development:
     --template <t>               App template: base | agentic-app (default:
                                  base). agentic-app adds the split-sidebar
                                  product shell with a fullscreen agent canvas.
+    --for <who>                  Who the agent is for: personal (just for
+                                 you) | customers. Written to guuey.json as
+                                 app.builtFor. Without it, guuey deploy asks
+                                 before it creates the app.
   delete [appId]                 Delete a guuey app from the platform
     --force                      Skip confirmation prompt
   dev --serve                    Run a pod-parity local SSE server against
@@ -347,6 +351,9 @@ Authentication:
 Apps:
   apps create                   Create a new app (auto-login if needed)
     --name <name>               App name (required)
+    --for <who>                 Who the agent is for: personal (just for
+                                you) | customers. Without it, the app reads
+                                customers.
   apps list [--all]             List your apps (archived apps hidden unless --all)
   apps get [appId]              Show app details
     --theme-json                Print the STORED chat theme document as JSON
@@ -961,6 +968,7 @@ async function main(): Promise<void> {
           await appsCreate({
             name: flags.name as string | undefined,
             json: jsonFlag,
+            for: flags.for,
           });
           break;
         case 'update':

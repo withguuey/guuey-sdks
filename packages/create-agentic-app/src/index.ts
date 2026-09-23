@@ -1,4 +1,4 @@
-export type { ScaffoldOptions, ScaffoldResult, Framework, Template } from './scaffold.js';
+export type { ScaffoldOptions, ScaffoldResult, ScaffoldBuiltFor, Framework, Template } from './scaffold.js';
 export { scaffold } from './scaffold.js';
 export type { ScaffoldExampleOptions, ScaffoldExampleResult } from './scaffold-example.js';
 export { scaffoldExample } from './scaffold-example.js';

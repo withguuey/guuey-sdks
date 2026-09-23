@@ -51,6 +51,7 @@ import {
   declaredServerEntries,
   type ResolvedGuueyJson,
   type GuueyJsonV1,
+  type AppBuiltFor,
   isOfferedModel,
 } from '@guuey/config';
 import { requireAuth, type AuthTokens } from '../auth';
@@ -65,6 +66,7 @@ import {
 import { apiRequest, cleanup, packSource, parseApiError } from '../deploy-shared';
 import { deployMcpFromSource, resolveServerName, resolveWorkspaceId, readPackageName } from './mcp';
 import { fetchByoOriginGap, printByoOriginWarning } from './apps';
+import { BUILT_FOR_ASK, BUILT_FOR_CHOICES, BUILT_FOR_LABEL, BUILT_FOR_RETRY, parseBuiltForAnswer } from '../built-for';
 import {
   planMcpLegs,
   writeBackServerId,
@@ -462,15 +464,23 @@ function prompt(rl: ReturnType<typeof createInterface>, question: string): Promi
  *    the deploy honors an unlisted `agent.model` verbatim (the documented
  *    "set it in guuey.json and run guuey deploy" path), so an unlisted model
  *    simply stays out of the create.
+ *  - `app.builtFor` (guuey#1670, who the agent is for) rides whenever the
+ *    manifest declares it, whatever the framework. Absent sends no key, and
+ *    the server reads `customers`.
  */
-export function createIntentFromProject(
-  project: ProjectConfig | null,
-): { intendedFramework?: 'claude-agent-sdk' | 'openai-agents-sdk' | 'google-adk'; intendedModel?: string } {
+export function createIntentFromProject(project: ProjectConfig | null): {
+  intendedFramework?: 'claude-agent-sdk' | 'openai-agents-sdk' | 'google-adk';
+  intendedModel?: string;
+  builtFor?: AppBuiltFor;
+} {
   if (project === null) return {};
+  const builtFor = project.app?.builtFor;
+  const who = builtFor !== undefined ? { builtFor } : {};
   const framework = project.agent.framework;
-  if (framework === undefined || framework === 'vanilla') return {};
+  if (framework === undefined || framework === 'vanilla') return who;
   const model = project.agent.model;
   return {
+    ...who,
     intendedFramework: framework,
     ...(model !== undefined && model.length > 0 && isOfferedModel(framework, model) ? { intendedModel: model } : {}),
   };
@@ -482,13 +492,20 @@ export async function createLinkedApp(opts: {
   project: ProjectConfig | null;
   guueyJsonPath: string;
   appName: string;
+  /**
+   * The deploy prompt's answer to who the agent is for (guuey#1670). It is
+   * asked only when the manifest declares no `app.builtFor`; the answer is
+   * sent on the create and written back into guuey.json beside `appId`.
+   */
+  builtFor?: AppBuiltFor;
 }): Promise<string> {
-  const { auth, config, project, guueyJsonPath, appName } = opts;
+  const { auth, config, project, guueyJsonPath, appName, builtFor } = opts;
 
   console.log('  Creating platform app...');
   const res = await apiRequest(auth.pat, config, 'POST', '/apps', {
     displayName: appName,
     ...createIntentFromProject(project),
+    ...(builtFor !== undefined ? { builtFor } : {}),
   });
   if (!res.ok) {
     const data: unknown = await res.json().catch(() => ({}));
@@ -504,8 +521,17 @@ export async function createLinkedApp(opts: {
   // Write-back: project overlay (if one exists yet) + the global config,
   // so the appId resolves next run too.
   if (project) {
-    writeGuueyJsonFile(guueyJsonPath, { ...project, appId: app.id });
-    console.log(`  Wrote appId back to ${GUUEY_JSON_FILENAME}`);
+    // The prompt's answer lands in the manifest too, so the file keeps
+    // declaring what the app stores (`guuey agent apply` converges it).
+    const appSection = builtFor !== undefined ? { ...project.app, builtFor } : project.app;
+    writeGuueyJsonFile(guueyJsonPath, {
+      ...project,
+      appId: app.id,
+      ...(appSection !== undefined ? { app: appSection } : {}),
+    });
+    console.log(
+      `  Wrote appId${builtFor !== undefined ? ' and app.builtFor' : ''} back to ${GUUEY_JSON_FILENAME}`,
+    );
   } else {
     // No project file to bind — persist the id as the machine-global
     // default so the next projectless run resolves. Said LOUDLY (guuey#355
@@ -550,14 +576,45 @@ async function ensureLinkedApp(opts: {
   const defaultName = readPackageName(process.cwd()) ?? 'My Agent';
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   let appName: string;
+  let builtFor: AppBuiltFor | undefined;
   try {
+    // guuey#1670: the console's first question comes first here too. It is
+    // asked only when the manifest does not already answer it (`guuey create
+    // --for` stamps `app.builtFor`).
+    const declared = project?.app?.builtFor;
+    if (declared === undefined) {
+      builtFor = await askBuiltFor(rl);
+    } else {
+      console.log(`  Built for: ${BUILT_FOR_LABEL[declared]} (from ${GUUEY_JSON_FILENAME})`);
+    }
     const answer = await prompt(rl, `  App name [${defaultName}]: `);
     appName = answer.trim() || defaultName;
   } finally {
     rl.close();
   }
 
-  return createLinkedApp({ auth, config, project, guueyJsonPath, appName });
+  return createLinkedApp({
+    auth,
+    config,
+    project,
+    guueyJsonPath,
+    appName,
+    ...(builtFor !== undefined ? { builtFor } : {}),
+  });
+}
+
+/**
+ * Ask who the agent is for (guuey#1670) until the answer parses. There is no
+ * default: an empty line asks again, as the console's Continue waits for an
+ * answer.
+ */
+async function askBuiltFor(rl: ReturnType<typeof createInterface>): Promise<AppBuiltFor> {
+  console.log(BUILT_FOR_CHOICES);
+  for (;;) {
+    const parsed = parseBuiltForAnswer(await prompt(rl, BUILT_FOR_ASK));
+    if (parsed !== undefined) return parsed;
+    console.log(BUILT_FOR_RETRY);
+  }
 }
 
 // ─── guuey#979: node_modules preflight for the code-mode build ─────────────

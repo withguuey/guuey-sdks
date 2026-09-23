@@ -36,6 +36,24 @@ describe("buildScaffoldOptions", () => {
       buildScaffoldOptions("x", { framework: "claude-agent-sdk", template: "fancy" })
     ).toThrow(/template/);
   });
+  it("--for personal|customers stamps builtFor; absent carries no key (guuey#1670)", () => {
+    expect(buildScaffoldOptions("x", { framework: "claude-agent-sdk", for: "personal" }).builtFor).toBe(
+      "personal"
+    );
+    expect(buildScaffoldOptions("x", { framework: "claude-agent-sdk", for: "customers" }).builtFor).toBe(
+      "customers"
+    );
+    // Absent means absent, never a guessed default: guuey deploy asks instead.
+    expect("builtFor" in buildScaffoldOptions("x", { framework: "claude-agent-sdk" })).toBe(false);
+  });
+  it("--for refuses an unknown or valueless value, naming both answers", () => {
+    expect(() => buildScaffoldOptions("x", { framework: "claude-agent-sdk", for: "team" })).toThrow(
+      /Unknown --for "team".*--for personal.*--for customers/
+    );
+    expect(() => buildScaffoldOptions("x", { framework: "claude-agent-sdk", for: true })).toThrow(
+      /--for needs a value/
+    );
+  });
   it("--name overrides the target-derived name", () => {
     expect(
       buildScaffoldOptions("./apps/thing", { name: "thing", framework: "claude-agent-sdk" }).name

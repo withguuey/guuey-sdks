@@ -19,6 +19,16 @@ export type Framework = 'claude-agent-sdk' | 'openai-agents-sdk' | 'google-adk';
  */
 export type Template = 'base' | 'agentic-app' | 'agent';
 
+/**
+ * Who the agent is FOR (guuey#1597, stamped by guuey#1670): `personal` — the
+ * builder's own assistant; `customers` — an agent on the builder's surface.
+ * The same two values as `@guuey/config`'s `APP_BUILT_FOR`. That package is a
+ * devDependency here, never a runtime one, so the list is restated and
+ * `scaffold.test.ts` pins the two equal.
+ */
+export type ScaffoldBuiltFor = 'personal' | 'customers';
+
+import type { GuueyJsonV1Input } from '@guuey/config';
 import { injectAnalytics, type AnalyticsProvider } from './analytics.js';
 
 export interface ScaffoldOptions {
@@ -47,6 +57,14 @@ export interface ScaffoldOptions {
    * time (a wrong id fails loudly there, with auth in hand).
    */
   appId?: string;
+  /**
+   * Who the agent is FOR (guuey#1670, `guuey create --for`). Stamps
+   * `app.builtFor` into the scaffolded guuey.json. `guuey deploy` sends it
+   * when it creates the app, and `guuey agent apply` converges it. Absent
+   * writes no key, and `guuey deploy` asks the question before it creates
+   * the app.
+   */
+  builtFor?: ScaffoldBuiltFor;
   /** Scaffold into a non-empty targetDir anyway. Default: false. */
   force?: boolean;
   /** Root directory holding `<template>/<framework>` trees (+ `mcp-base/`). Default: dist/templates. */
@@ -188,17 +206,22 @@ export async function runInstall(projectDir: string): Promise<void> {
 }
 
 /**
- * Stamp the bound app id into the scaffolded guuey.json (guuey#580 pt 4).
- * Top-level `appId` — the exact key `bootstrap.mjs --link` defaults from.
+ * Stamp the scaffold's answers into its guuey.json:
+ *  - the bound app id (guuey#580 pt 4), as top-level `appId`, the exact key
+ *    `bootstrap.mjs --link` defaults from;
+ *  - who the agent is for (guuey#1670), as `app.builtFor`. Any other `app`
+ *    keys the template carries are kept.
  * Read-modify-write JSON (never string-splice a manifest); the template's
  * guuey.json is always valid JSON by the publish guard.
  */
-async function stampAppId(projectDir: string, appId: string): Promise<void> {
+async function stampManifest(
+  projectDir: string,
+  stamp: { appId?: string; builtFor?: ScaffoldBuiltFor },
+): Promise<void> {
   const guueyJsonPath = join(projectDir, 'guuey.json');
-  const parsed = JSON.parse(await fs.readFile(guueyJsonPath, 'utf8')) as Record<string, unknown> & {
-    appId?: string;
-  };
-  parsed.appId = appId;
+  const parsed = JSON.parse(await fs.readFile(guueyJsonPath, 'utf8')) as GuueyJsonV1Input;
+  if (stamp.appId !== undefined) parsed.appId = stamp.appId;
+  if (stamp.builtFor !== undefined) parsed.app = { ...parsed.app, builtFor: stamp.builtFor };
   await fs.writeFile(guueyJsonPath, `${JSON.stringify(parsed, null, 2)}\n`);
 }
 
@@ -233,8 +256,12 @@ export async function scaffold(opts: ScaffoldOptions): Promise<ScaffoldResult> {
   if (opts.analytics !== undefined) {
     await injectAnalyticsLoader(projectDir, opts.analytics);
   }
-  if (opts.appId !== undefined && opts.appId !== "") {
-    await stampAppId(projectDir, opts.appId);
+  const appId = opts.appId !== undefined && opts.appId !== '' ? opts.appId : undefined;
+  if (appId !== undefined || opts.builtFor !== undefined) {
+    await stampManifest(projectDir, {
+      ...(appId !== undefined ? { appId } : {}),
+      ...(opts.builtFor !== undefined ? { builtFor: opts.builtFor } : {}),
+    });
   }
 
   if (opts.git !== false) {
