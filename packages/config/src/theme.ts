@@ -126,13 +126,13 @@ const ThemeRhythmV1 = z.strictObject({
 /**
  * The motion tempo a theme may state.
  *
- * CARRIED, NOT YET PAINTED (guuey#1419). A theme stating this validates here,
- * survives `guuey deploy`, and changes nothing on screen: the published React
- * kit ships no timed motion and never reads it, and ggui's projection has no
- * branch for it either (measured at `@ggui-ai/design@0.18.0`). guuey's own
- * widget is tracked to paint `duration.base` and `easing.standard` into its
- * panel transition in guuey#1420; `fast`, `slow`, `emphasized` and `exit` have
- * no painter on any surface even then.
+ * CARRIED, NOT YET PAINTED (guuey#1419), in all but one place. A theme stating
+ * this validates here and survives `guuey deploy`. guuey's embeddable widget
+ * paints `duration.base` and `easing.standard` into its panel's open/close
+ * fades (guuey#1420). Nothing else reads it: the published React kit ships no
+ * timed motion, and ggui's projection has no branch for it (measured at
+ * `@ggui-ai/design@0.20.0`). `fast`, `slow`, `emphasized` and `exit` have no
+ * painter on any surface.
  *
  * Each sentence leaves with the projection that paints the member it describes,
  * in the same publication, and the seat landing that projection owns deleting it.
@@ -209,11 +209,13 @@ export type AppCourtThemeV1 = z.infer<typeof AppCourtThemeV1>;
 /**
  * The app theme document `guuey.json` is validated against.
  *
- * CARRIED, NOT YET PAINTED (guuey#1419): `motion` validates here, survives
- * `guuey deploy`, and no surface projects it — see the member's own comment for
- * the measurement. Stated here as well because a comment on an inner schema is
- * dropped from the emitted `.d.ts` and this declaration's is not: a sentence a
- * consumer's editor never shows is a sentence that does not exist.
+ * CARRIED, NOT YET PAINTED (guuey#1419): `motion` validates here and survives
+ * `guuey deploy`, and only guuey's embeddable widget paints any of it —
+ * `duration.base` and `easing.standard`, its panel fades (guuey#1420). See the
+ * member's own comment for the measurement. Stated here as well because a
+ * comment on an inner schema is dropped from the emitted `.d.ts` and this
+ * declaration's is not: a sentence a consumer's editor never shows is a
+ * sentence that does not exist.
  *
  * Both copies leave with the projection that paints the member, in the same
  * publication; `CARRIED, NOT YET PAINTED` finds every one of them.

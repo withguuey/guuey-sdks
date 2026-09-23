@@ -102,9 +102,10 @@ export type GuueyChatTypeRole = z.infer<typeof GuueyChatTypeRole>;
  *
  * CARRIED, NOT YET PAINTED (guuey#1419): `motion` validates here and this kit
  * never reads it — it ships no timed motion — nor does ggui's projection at
- * `@ggui-ai/design@0.18.0`. See the member's own comment. Repeated here because
- * a comment on an inner member is dropped from the emitted `.d.ts` and this
- * declaration's is not.
+ * `@ggui-ai/design@0.20.0`. The one painter is guuey's embeddable widget, in
+ * the shell around this kit, for two of its members (guuey#1420). See the
+ * member's own comment. Repeated here because a comment on an inner member is
+ * dropped from the emitted `.d.ts` and this declaration's is not.
  *
  * Both copies leave with the projection that paints the member, in the same
  * publication; `CARRIED, NOT YET PAINTED` finds every one of them.
@@ -219,13 +220,15 @@ export const GuueyChatTheme = z
      * Motion TEMPO override (ggui#1093 P1c) — never the shipped scale. Durations
      * are CSS times; easings CSS easing functions.
      *
-     * CARRIED, NOT YET PAINTED (guuey#1419). No renderer reads this member: not
-     * this kit, which ships no timed motion at all, and not ggui's projection —
-     * measured at `@ggui-ai/design@0.18.0`, whose `derive-theme-variables` has no
-     * branch for it. A host's own shell may paint it around the kit; guuey's
-     * widget is tracked to do so for `duration.base` and `easing.standard` in
-     * guuey#1420. A theme stating it today validates, deploys, and changes
-     * nothing on screen — which is worth knowing here rather than after trying.
+     * CARRIED, NOT YET PAINTED (guuey#1419). This kit ships no timed motion and
+     * never reads this member, and ggui's projection has no branch for it —
+     * measured at `@ggui-ai/design@0.20.0`, whose `derive-theme-variables` has
+     * none. One host shell paints part of it around the kit: guuey's embeddable
+     * widget fades its panel open and closed at `duration.base` with
+     * `easing.standard` (guuey#1420). `fast`, `slow`, `emphasized` and `exit`
+     * have no painter on any surface: stating them validates, deploys, and
+     * changes nothing on screen — which is worth knowing here rather than after
+     * trying.
      *
      * This sentence leaves with the projection that paints the member, in the
      * same publication, and the seat that lands that projection owns deleting it.
