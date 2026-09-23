@@ -158,3 +158,28 @@ describe("R11 built-in code voices (guuey#417)", () => {
     expect(item.copy).toBe("source words");
   });
 });
+
+describe("guuey#1652: the pod's one voice for a refused configuration (the #1213 pin of the new payload)", () => {
+  // The pod strips the CLI's fabricated error text and voices the failure as
+  // ONE in-band frame: code AGENT_UNAVAILABLE, a reader line that names no
+  // provider, key or fault. No assistant text rides the turn.
+  const LINE = "This assistant isn't available right now.";
+
+  it("plans exactly one error item and no text item", () => {
+    const plan = planTranscript(inputsWithError(LINE, "AGENT_UNAVAILABLE"), calmPolicy());
+    expect(plan.items.filter((i) => i.kind === "error")).toHaveLength(1);
+    expect(plan.items.filter((i) => i.kind === "text")).toHaveLength(0);
+  });
+
+  it("the widget's verbatim posture renders the pod's line as written", () => {
+    const policy = calmPolicy({ error: { verbatim: false, copyByCode: {}, verbatimCodes: "all" } });
+    expect(errorItem(inputsWithError(LINE, "AGENT_UNAVAILABLE"), policy).copy).toBe(LINE);
+  });
+
+  it("a client that does not know the code falls back to its transient family (N−1), never a blank notice", () => {
+    const item = errorItem(inputsWithError(LINE, "AGENT_UNAVAILABLE"), calmPolicy({ error: { verbatim: false, copyByCode: {}, verbatimCodes: [] } }));
+    expect(item.family).toBe("transient");
+    expect(item.copy).not.toBe("");
+    expect(item.message).toBe(LINE);
+  });
+});

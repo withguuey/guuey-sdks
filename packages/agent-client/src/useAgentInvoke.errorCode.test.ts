@@ -90,6 +90,22 @@ describe("useAgentInvoke errorCode", () => {
     expect(result.current.errorCode).toBe("PLATFORM_ERROR");
   });
 
+  it("guuey#1652: a refused configuration's one voice — the pod's AGENT_UNAVAILABLE frame — surfaces as errorCode (the pod strips the CLI's fabricated text; this frame is the failure)", async () => {
+    // The pod payload of the rework, pinned against this client (#1213): no
+    // assistant text for the failed turn, one in-band frame, then `done:error`.
+    const { result, send } = mountWith(
+      streaming(
+        frame("session", { threadId: "t1" }),
+        frame("error", { code: "AGENT_UNAVAILABLE", message: "This assistant isn't available right now." }),
+        frame("done", { stopReason: "error", threadId: "t1" }),
+      ),
+    );
+    await send();
+    expect(result.current.error).toBe("This assistant isn't available right now.");
+    expect(result.current.errorCode).toBe("AGENT_UNAVAILABLE");
+    expect(result.current.status).toBe("ready");
+  });
+
   it("stays null for a failure that carries no code", async () => {
     const { result, send } = mountWith(throwing(new Error("network down")));
     await send();

@@ -68,6 +68,14 @@ export const AGENT_ERROR_CODES = {
    * copy says what to change.
    */
   WORKER_MEMORY_LIMIT: "WORKER_MEMORY_LIMIT",
+  /**
+   * The model provider refused the agent's own configuration (guuey#1652):
+   * an invalid or revoked key, a billing or account hold, a verification
+   * gate, a model the key cannot reach. The agent's builder fixes it; not
+   * retried, since the same request meets the same refusal. The message is
+   * reader copy that names no provider, key or fault.
+   */
+  AGENT_UNAVAILABLE: "AGENT_UNAVAILABLE",
   /** A guuey-side dependency failed (not the agent's own code). */
   PLATFORM_ERROR: "PLATFORM_ERROR",
   /** Unclassified pod failure. */
