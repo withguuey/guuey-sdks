@@ -1727,3 +1727,49 @@ describe("the face transport on a mount (guuey#1195)", () => {
     expect(document.head.querySelectorAll("style[data-guuey-faces]")).toHaveLength(1);
   });
 });
+
+// guuey#1706 — the default ui/message sink REPORTS delivery, and the view host answers the view from it
+// (`{}` once the doorbell BECAME a turn, `{ isError: true }` when it could not).
+describe("kit default ui/message sink — delivery outcomes (guuey#1706)", () => {
+  async function readySink(options: { holdOpen?: boolean } = {}) {
+    const { adapters, calls } = scriptedAdapters(options);
+    let handle: GuueyChatHandle | null = null;
+    renderChat(adapters, {
+      apiBaseUrl: "https://api.example/v1",
+      onReady: (h) => {
+        handle = h;
+      },
+    });
+    await waitFor(() => expect(handle).not.toBeNull());
+    const sink = handle!.viewSlotProps().onUserMessage;
+    if (sink === undefined) throw new Error("message sink expected");
+    return { sink, calls, handle: handle! };
+  }
+  const doorbell = { role: "user", content: [{ type: "text", text: "Your REQUIRED FIRST TOOL CALL is ggui_consume…" }] };
+
+  it("idle: delivered — the send started the turn", async () => {
+    const { sink, calls } = await readySink();
+    expect(await sink(doorbell)).toEqual({ delivered: true });
+    await waitFor(() => expect(calls).toHaveLength(1));
+  });
+
+  it("no text content: NOT delivered (nothing could start a turn)", async () => {
+    const { sink } = await readySink();
+    expect(await sink({ role: "user", content: [] })).toMatchObject({ delivered: false });
+  });
+
+  it("busy: NOT resolved while the turn is live — delivered only when the idle transition sends it", async () => {
+    const { sink, calls, handle } = await readySink({ holdOpen: true });
+    act(() => {
+      expect(handle.send("first")).toBe(true);
+    });
+    await screen.findByRole("button", { name: "Stop" });
+    let outcome: unknown = "pending";
+    void Promise.resolve(sink(doorbell)).then((d) => (outcome = d));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(outcome).toBe("pending");
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    await waitFor(() => expect(calls).toHaveLength(2));
+    await waitFor(() => expect(outcome).toEqual({ delivered: true }));
+  });
+});

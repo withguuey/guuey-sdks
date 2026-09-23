@@ -581,6 +581,25 @@ describe("ui/message", () => {
     });
   });
 
+  // guuey#1706 — the machine is public (`viewHostReceive` is exported), so answering on DELIVERY is
+  // OPT-IN: absent, a direct embedder keeps the pre-answer above; "on-delivery" (what this package's
+  // own host sets) emits the effect ONLY and the host answers from the sink's outcome.
+  it('messageAnswer "on-delivery": NO pre-answer — the user-message effect alone, the host answers', () => {
+    const { effects } = viewHostReceive(
+      initialViewHostState(),
+      { ...behavior({ messageSink: true }), messageAnswer: "on-delivery" },
+      {
+        jsonrpc: "2.0",
+        id: 34,
+        method: "ui/message",
+        params: { role: "user", content: [{ type: "text", text: "next" }] },
+      },
+    );
+    expect(effects).toEqual([
+      { kind: "user-message", id: 34, params: { role: "user", content: [{ type: "text", text: "next" }] } },
+    ]);
+  });
+
   it("unwired: refuses in-band — never a silent drop", () => {
     const { effects } = viewHostReceive(initialViewHostState(), behavior(), {
       jsonrpc: "2.0",

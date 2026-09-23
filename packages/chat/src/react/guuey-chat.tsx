@@ -61,7 +61,7 @@ import {
 import type { AgHitlAnswer, AgPausedAsk } from "@silverprotocol/core";
 import { useAgentInvoke } from "@guuey/agent-client/react";
 import { unavailableToolCallResult } from "@guuey/mcp-apps-host";
-import type { McpToolCallResult, UiActionRequest, UiResourceReader } from "@guuey/mcp-apps-host";
+import type { McpToolCallResult, UiActionRequest, UiResourceReader, UserMessageDelivery } from "@guuey/mcp-apps-host";
 import { calmPolicy, debugPolicy, type TranscriptPolicyOverrides } from "../policy.js";
 import { isWaitingOnUser } from "../listen.js";
 import { useStructuralIdentity } from "./structural-identity.js";
@@ -730,18 +730,22 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // real turn starts, the agent calls ggui_consume, the card repaints.
   // Busy/unavailable ⇒ dropped (the doorbell fires post-turn by design;
   // mid-turn the consume pipe is live and no doorbell fires).
-  // guuey#422 close-condition 1 (ggui review): the machine ACKs the
-  // doorbell BEFORE delivery, so a busy-drop here would be an
-  // ACKed-then-silently-dropped message — the night's silence class in
-  // protocol clothes. Queue-and-drain instead: while a turn is live the
-  // directive queues (exact-text dedupe — a session's repeat doorbells
-  // collapse; the consume PIPE holds the gestures, the doorbell only
-  // wakes), and the idle transition drains one per turn. Unavailable chat
-  // cannot drain — that drop is LOUD (console.warn), never silent.
-  const pendingDoorbellsRef = useRef<string[]>([]);
-  const defaultOnUserMessage = useCallback((params: { [key: string]: unknown }) => {
+  // guuey#422 close-condition 1 (ggui review): queue-and-drain — while a
+  // turn is live the directive queues behind it (never cancelling it), and
+  // the idle transition drains one per turn.
+  // guuey#1706: the sink REPORTS delivery, and the view host answers the
+  // view's `ui/message` from it (`{}` once the message BECAME a turn,
+  // `{ isError: true }` when it could not; `{}` at the host's cap if it is
+  // still queued). So a queued doorbell resolves only when the drain SENDS
+  // it; an unavailable chat resolves `{ delivered: false }` and still logs
+  // LOUD. Dedupe is per QUEUE, never across time: identical texts posted
+  // during the same live turn collapse onto one send (a double-click) and
+  // all resolve with it — "delivered" for the second means "became the same
+  // turn".
+  const pendingDoorbellsRef = useRef<Array<{ text: string; waiters: Array<(delivery: UserMessageDelivery) => void> }>>([]);
+  const defaultOnUserMessage = useCallback((params: { [key: string]: unknown }): Promise<UserMessageDelivery> => {
     const content = params["content"];
-    if (!Array.isArray(content)) return;
+    if (!Array.isArray(content)) return Promise.resolve({ delivered: false, reason: "no text content" });
     const text = content
       .map((b) =>
         typeof b === "object" && b !== null && "text" in b && typeof b.text === "string"
@@ -750,21 +754,25 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       )
       .filter((t) => t !== "")
       .join("\n");
-    if (text.trim() === "") return;
+    if (text.trim() === "") return Promise.resolve({ delivered: false, reason: "no text content" });
     const live = liveRef.current;
     if (!live.available) {
       console.warn(
         "[guuey] ui/message doorbell dropped — chat is unavailable (endpointUrl null); the view's gesture cannot start a turn here.",
       );
-      return;
+      return Promise.resolve({ delivered: false, reason: "chat is unavailable" });
     }
     if (live.busy) {
-      if (!pendingDoorbellsRef.current.includes(text)) pendingDoorbellsRef.current.push(text);
-      return;
+      return new Promise<UserMessageDelivery>((resolve) => {
+        const same = pendingDoorbellsRef.current.find((entry) => entry.text === text);
+        if (same) same.waiters.push(resolve);
+        else pendingDoorbellsRef.current.push({ text, waiters: [resolve] });
+      });
     }
     void live.invoke.send(text).catch(() => {
       // The hook owns failure surfacing, same as every send path.
     });
+    return Promise.resolve({ delivered: true });
   }, []);
 
   // guuey#403: the turn-lifecycle edges. The busy TRANSITION is the one
@@ -789,9 +797,11 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     const live = liveRef.current;
     if (!live.available) {
       console.warn("[guuey] queued ui/message doorbell dropped — chat became unavailable.");
+      for (const waiter of next.waiters) waiter({ delivered: false, reason: "chat became unavailable" });
       return;
     }
-    void live.invoke.send(next).catch(() => {});
+    void live.invoke.send(next.text).catch(() => {});
+    for (const waiter of next.waiters) waiter({ delivered: true });
   }, [busy]);
 
   // guuey#522: the kit default for `ui/open-link` NEVER navigates

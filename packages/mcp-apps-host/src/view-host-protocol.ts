@@ -205,8 +205,11 @@ export type ViewHostEffect =
        * A `ui/message` the view handed the host (guuey#422): role-user
        * content blocks the host forwards into ITS conversation loop (the
        * composer's send gate — a real turn starts). ggui's #440 post-turn
-       * doorbell rides this. The machine already ANSWERED the view (`{}` —
-       * accepted); delivery is this effect. Only emitted when
+       * doorbell rides this. Under `messageAnswer: "on-accept"` (the default)
+       * the machine already ANSWERED the view (`{}` — accepted) and delivery is
+       * this effect; under `"on-delivery"` (guuey#1706) this effect is the ONLY
+       * output and the host owes the view its answer — `{}` delivered, `{
+       * isError: true }` not — keyed by `id`. Only emitted when
        * {@link ViewHostBehavior.messageSink} is true.
        */
       kind: "user-message";
@@ -285,6 +288,16 @@ export interface ViewHostBehavior {
   modelContextSink: boolean;
   /** Whether a ui/message sink is wired (see `view-host.ts`, guuey#422). */
   messageSink: boolean;
+  /**
+   * WHO answers a `ui/message`, and when (guuey#1706). Default `"on-accept"`:
+   * the machine answers `{}` BEFORE delivery and emits `user-message` — the
+   * pre-#1706 contract, kept for direct embedders of {@link viewHostReceive}.
+   * `"on-delivery"`: the machine emits `user-message` ONLY and the HOST answers
+   * from the sink's delivery outcome (`{}` delivered · `{ isError: true }` not),
+   * so a view learns whether its message actually became a turn. This
+   * package's own `attachViewHost` sets `"on-delivery"`.
+   */
+  messageAnswer?: "on-accept" | "on-delivery";
   /**
    * `ui/open-link` wired (guuey#522). Unwired, the method refuses with
    * the honest -32601 — the host chose today's no-links posture.
@@ -532,10 +545,15 @@ export function viewHostReceive(
   }
 
   if (req.method === MESSAGE_METHOD_LOCAL && behavior.messageSink) {
-    // Answer accepted FIRST (spec result: rejected-flag absent = delivered)
-    // and deliver as an effect — the sink starting a turn must never make
-    // the view wait on the model.
     const params = isPlainObject(req.params) ? req.params : {};
+    if (behavior.messageAnswer === "on-delivery") {
+      // guuey#1706: no pre-answer. The host posts the answer from the sink's
+      // delivery outcome — `{}` once the message became a turn, `{ isError: true }`
+      // when it could not (spec result: `isError` is the only rejection word).
+      return { state, effects: [{ kind: "user-message", id: req.id, params }] };
+    }
+    // "on-accept" (the default): answer accepted FIRST (spec result: the
+    // rejected flag absent = delivered) and deliver as an effect.
     return {
       state,
       effects: [

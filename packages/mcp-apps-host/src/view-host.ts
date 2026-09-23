@@ -43,6 +43,7 @@ import {
   type ViewHostOutbound,
   type ViewHostPhase,
   type ViewHostState,
+  type ViewRequestId,
 } from "./view-host-protocol.js";
 import type { McpResourceReadResult } from "./reader.js";
 import {
@@ -88,6 +89,33 @@ export interface ViewCspEvents {
   addEventListener(type: "securitypolicyviolation", listener: (event: CspViolationLike) => void): void;
   removeEventListener(type: "securitypolicyviolation", listener: (event: CspViolationLike) => void): void;
 }
+
+/**
+ * What a `ui/message` sink reports back so the host can answer the view
+ * truthfully (guuey#1706): `{ delivered: true }` once the message BECAME a
+ * turn — sent through the host's composer gate, now or after waiting behind an
+ * in-progress turn — or `{ delivered: false, reason }` when it could not (the
+ * chat is unavailable; it was dropped from the queue).
+ */
+export type UserMessageDelivery = { delivered: true } | { delivered: false; reason: string };
+
+/**
+ * The longest the host holds a view's `ui/message` answer (guuey#1706).
+ *
+ * A spec MCP App awaiting `app.sendMessage` times out at the MCP SDK's default
+ * request timeout (`DEFAULT_REQUEST_TIMEOUT_MSEC` = 60 s in
+ * `@modelcontextprotocol/sdk` 1.30.0), so a message still queued behind a long
+ * turn is answered `{}` at this cap rather than timing the view out on a message
+ * that WILL deliver. What that trades, exactly: a prior turn LONGER than 50 s
+ * AND the session ending while the message is still queued leaves the view
+ * holding `{}` for a message that never sends — visible to operators only (the
+ * sink's console trace). `{ isError: true }` at the cap would be the other lie
+ * (the view shows "failed", then the message sends when the turn ends). The
+ * spec's result carries only `isError`, so "queued" has no word of its own.
+ * ggui's views — today's only producer — post `ui/message` raw and never await
+ * the answer, so the cap has no consumer there.
+ */
+export const MESSAGE_ANSWER_CAP_MS = 50_000;
 
 export interface AttachViewHostConfig {
   /**
@@ -136,9 +164,15 @@ export interface AttachViewHostConfig {
    * turn). ggui's #440 post-turn doorbell depends on this — without it,
    * a successfully-relayed post-turn gesture dead-ends in their
    * 'cannot relay actions' latch. Wiring it advertises `message`
-   * (text modality); the machine answers the view BEFORE delivery.
+   * (text modality).
+   *
+   * The answer (guuey#1706): return a Promise of {@link UserMessageDelivery}
+   * and the host answers the view from it — `{}` delivered, `{ isError: true }`
+   * not, `{}` if still pending at {@link MESSAGE_ANSWER_CAP_MS}. A sink that
+   * returns nothing is answered `{}` at call time (the pre-#1706 answer, kept
+   * for existing embedders); a sink that throws is answered `{ isError: true }`.
    */
-  onUserMessage?: (params: { [key: string]: unknown }) => void;
+  onUserMessage?: (params: { [key: string]: unknown }) => void | Promise<UserMessageDelivery>;
   /**
    * `ui/open-link` executor (guuey#522) — receives a URL the machine's
    * scheme wall already passed (absolute http/https only). The kit
@@ -276,6 +310,8 @@ function behaviorFor(frame: ViewFrameLike, config: AttachViewHostConfig): ViewHo
     resourceRelay: readWired,
     modelContextSink: contextSinkWired,
     messageSink: messageSinkWired,
+    // guuey#1706: this host answers `ui/message` from the sink's delivery outcome.
+    messageAnswer: "on-delivery",
   };
 }
 
@@ -318,6 +354,50 @@ export function attachViewHost(frame: ViewFrameLike, config: AttachViewHostConfi
     frame.contentWindow?.postMessage(message, "*");
   };
 
+  // guuey#1706 — the machine emits `user-message` WITHOUT answering
+  // (`messageAnswer: "on-delivery"`); the view is answered here, from the
+  // sink's delivery outcome, exactly once, and never later than the cap.
+  const pendingAnswerCaps = new Set<ReturnType<typeof setTimeout>>();
+  const answerMessage = (id: ViewRequestId, params: { [key: string]: unknown }): void => {
+    const answer = (result: { isError?: true }): void => post({ jsonrpc: "2.0", id, result });
+    let outcome: void | Promise<UserMessageDelivery>;
+    try {
+      outcome = config.onUserMessage?.(params);
+    } catch {
+      // A throwing sink delivered nothing — the view hears so, never a hang.
+      answer({ isError: true });
+      return;
+    }
+    if (!(outcome instanceof Promise)) {
+      // A sink that returns nothing: accepted at call time (the pre-#1706 answer).
+      answer({});
+      return;
+    }
+    let answered = false;
+    const once = (result: { isError?: true }): void => {
+      if (answered) return;
+      answered = true;
+      answer(result);
+    };
+    const cap = setTimeout(() => {
+      pendingAnswerCaps.delete(cap);
+      once({}); // still queued at the cap: see MESSAGE_ANSWER_CAP_MS for what this trades
+    }, MESSAGE_ANSWER_CAP_MS);
+    pendingAnswerCaps.add(cap);
+    outcome.then(
+      (delivery) => {
+        clearTimeout(cap);
+        pendingAnswerCaps.delete(cap);
+        once(delivery.delivered ? {} : { isError: true });
+      },
+      () => {
+        clearTimeout(cap);
+        pendingAnswerCaps.delete(cap);
+        once({ isError: true });
+      },
+    );
+  };
+
   const relay = (id: number | string, name: string, args?: McpToolStructuredContent): void => {
     const { onCallTool, resourceUri } = config;
     // The machine only emits the effect when the relay is wired (behavior
@@ -352,13 +432,8 @@ export function attachViewHost(frame: ViewFrameLike, config: AttachViewHostConfi
       if (effect.kind === "respond") post(effect.message);
       else if (effect.kind === "relay-tool-call") relay(effect.id, effect.name, effect.arguments);
       else if (effect.kind === "relay-resource-read") relayRead(effect.id, effect.uri);
-      else if (effect.kind === "user-message") {
-        try {
-          config.onUserMessage?.(effect.params);
-        } catch {
-          // Observer failure is the embedder's bug; the view is answered.
-        }
-      } else if (effect.kind === "open-link") {
+      else if (effect.kind === "user-message") answerMessage(effect.id, effect.params);
+      else if (effect.kind === "open-link") {
         // The machine's scheme wall already passed this URL; the executor
         // SURFACES it to the human (the kit default renders a disclosure
         // affordance — navigation only ever happens on their own click).
@@ -443,6 +518,8 @@ export function attachViewHost(frame: ViewFrameLike, config: AttachViewHostConfi
 
   return () => {
     if (timer !== undefined) clearTimeout(timer);
+    for (const cap of pendingAnswerCaps) clearTimeout(cap);
+    pendingAnswerCaps.clear();
     unsubscribe();
     unsubscribeCsp();
     cachedWindow?.postMessage(teardownMessage(), "*");

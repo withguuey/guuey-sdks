@@ -3,6 +3,8 @@ import { MCP_APP_DISMISS_TYPE } from "@ggui-ai/protocol/integrations/mcp-apps";
 import {
   attachViewHost,
   viewDocumentHtml,
+  MESSAGE_ANSWER_CAP_MS,
+  type UserMessageDelivery,
   type ViewCspEvents,
   type ViewFrameLike,
   type ViewHostEvents,
@@ -538,5 +540,74 @@ describe("viewDocumentHtml", () => {
 
   it("treats malformed base64 as no-document, never a render-time throw", () => {
     expect(viewDocumentHtml({ uri: "ui://x", blob: "%%not-base64%%" })).toBeUndefined();
+  });
+});
+
+
+// ─── ui/message answered on DELIVERY (guuey#1706) ──────────────────────────
+describe("attachViewHost — ui/message is answered from the sink's delivery outcome (guuey#1706)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const MESSAGE = { jsonrpc: "2.0", id: 77, method: "ui/message", params: { role: "user", content: [{ type: "text", text: "go" }] } };
+  const answersTo = (posted: Posted[], id: number) => posted.filter((p) => p.message.id === id).map((p) => p.message);
+
+  function wired(onUserMessage: (params: { [key: string]: unknown }) => void | Promise<UserMessageDelivery>) {
+    const { frame, posted, contentWindow } = fakeFrame();
+    const { events, emit } = fakeEvents();
+    const detach = attachViewHost(frame, { events, onUserMessage });
+    emit(INITIALIZE, contentWindow);
+    emit(MESSAGE, contentWindow);
+    return { posted, detach };
+  }
+
+  it("delivered: NO answer until the sink resolves, then `{}` — never the pre-answer", async () => {
+    let resolve: (d: UserMessageDelivery) => void = () => undefined;
+    const { posted } = wired(() => new Promise((r) => (resolve = r)));
+    expect(answersTo(posted, 77)).toEqual([]);
+    resolve({ delivered: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(answersTo(posted, 77)).toEqual([{ jsonrpc: "2.0", id: 77, result: {} }]);
+  });
+
+  it("not delivered: `{ isError: true }` — the view hears its message did not become a turn", async () => {
+    const { posted } = wired(async () => ({ delivered: false, reason: "chat unavailable" }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(answersTo(posted, 77)).toEqual([{ jsonrpc: "2.0", id: 77, result: { isError: true } }]);
+  });
+
+  it("a sink that returns nothing is answered `{}` at call time (the pre-#1706 answer, kept for existing embedders)", () => {
+    const { posted } = wired(() => undefined);
+    expect(answersTo(posted, 77)).toEqual([{ jsonrpc: "2.0", id: 77, result: {} }]);
+  });
+
+  it("a sink that throws, or rejects, is answered `{ isError: true }` — never a hang", async () => {
+    const thrown = wired(() => {
+      throw new Error("sink bug");
+    });
+    expect(answersTo(thrown.posted, 77)).toEqual([{ jsonrpc: "2.0", id: 77, result: { isError: true } }]);
+    const rejected = wired(() => Promise.reject(new Error("sink bug")));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(answersTo(rejected.posted, 77)).toEqual([{ jsonrpc: "2.0", id: 77, result: { isError: true } }]);
+  });
+
+  it("still pending at the cap: `{}` exactly once (below the SDK's 60 s request timeout); a later outcome posts nothing more", async () => {
+    let resolve: (d: UserMessageDelivery) => void = () => undefined;
+    const { posted } = wired(() => new Promise((r) => (resolve = r)));
+    await vi.advanceTimersByTimeAsync(MESSAGE_ANSWER_CAP_MS - 1);
+    expect(answersTo(posted, 77)).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(answersTo(posted, 77)).toEqual([{ jsonrpc: "2.0", id: 77, result: {} }]);
+    resolve({ delivered: false, reason: "dropped after the cap" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(answersTo(posted, 77)).toHaveLength(1);
+    expect(MESSAGE_ANSWER_CAP_MS).toBeLessThan(60_000);
+  });
+
+  it("detach cancels a pending cap — nothing is answered into a torn-down frame", async () => {
+    const { posted, detach } = wired(() => new Promise(() => undefined));
+    detach();
+    await vi.advanceTimersByTimeAsync(MESSAGE_ANSWER_CAP_MS + 1);
+    expect(answersTo(posted, 77)).toEqual([]);
   });
 });

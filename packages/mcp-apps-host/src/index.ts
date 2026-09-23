@@ -84,7 +84,9 @@ export {
 export {
   attachViewHost,
   viewDocumentHtml,
+  MESSAGE_ANSWER_CAP_MS,
   type AttachViewHostConfig,
+  type UserMessageDelivery,
   type ViewCspEvents,
   type ViewFrameLike,
   type ViewHostEvents,

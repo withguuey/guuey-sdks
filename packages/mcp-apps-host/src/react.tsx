@@ -40,8 +40,8 @@ import type { ViewCspDiagnosis, ViewHostPhase } from "./view-host-protocol.js";
 import type { ResolvedViewMount } from "./card-mount.js";
 import { defaultViewHostStrings, type ViewHostStrings } from "./view-strings.js";
 
-export { attachViewHost, viewDocumentHtml } from "./view-host.js";
-export type { AttachViewHostConfig, ViewCspEvents, ViewFrameLike, ViewHostEvents } from "./view-host.js";
+export { attachViewHost, viewDocumentHtml, MESSAGE_ANSWER_CAP_MS } from "./view-host.js";
+export type { AttachViewHostConfig, UserMessageDelivery, ViewCspEvents, ViewFrameLike, ViewHostEvents } from "./view-host.js";
 export {
   attachSandboxPageDelivery,
   isSandboxProxyReady,
