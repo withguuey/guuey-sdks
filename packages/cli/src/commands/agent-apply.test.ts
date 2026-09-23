@@ -341,6 +341,27 @@ describe('agentApply', () => {
     expect(output).toContain('sha256 snapshot:  ' + 'c'.repeat(64));
   });
 
+  it('says when the card side did not follow the apply\'s theme (guuey#1415) — the same Cards line apps update and deploy print', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, reconcileResult({ themeForward: { status: 'refused', wouldDrop: ['cssVariables', 'keyframes'] } })),
+    );
+
+    await agentApply({ provenance: 'none' });
+
+    const output = logs.join('\n');
+    expect(output).toContain('Applied — build #12 queued');
+    expect(output).toContain('Cards:  saved here — the card side kept its stored theme: it holds cssVariables, keyframes that guuey does not write.');
+  });
+
+  it('prints no Cards line when the answer states none, or states a forward (guuey#1415)', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, reconcileResult()));
+    await agentApply({ provenance: 'none' });
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, reconcileResult({ themeForward: { status: 'forwarded' } })));
+    await agentApply({ provenance: 'none' });
+
+    expect(logs.join('\n')).not.toContain('Cards:');
+  });
+
   it('renders the shadowedDocFields WARNING when the server names doc blocks an explicit config override suppressed (guuey#506)', async () => {
     fetchMock.mockResolvedValue(
       jsonResponse(200, reconcileResult({ shadowedDocFields: ['standalonePage'] })),

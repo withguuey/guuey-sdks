@@ -58,6 +58,7 @@ import { apiRequest, parseApiError } from '../deploy-shared';
 import { awaitPageUrl, pollDeployStatus, printPageLine } from './deploy';
 import { DEPLOY_WAIT_MS, stillDeployingMessage } from './deploy-wait';
 import { maybePrintThemeHint } from './theme-hint';
+import { themeForwardLines, themeForwardOf, type ThemeForwardWire } from '../theme-forward';
 import * as out from '../output';
 
 // ─── Wire mirrors of `backend/libs/cli-wire/reconcile.ts` ────────────────
@@ -159,6 +160,11 @@ export interface AgentReconcileResult {
    * doc value was ignored for them (guuey#506). Omitted when empty.
    */
   shadowedDocFields?: string[];
+  /**
+   * guuey#1415: what the card side did with this apply's theme (the same field
+   * `apps update` and `deploy` read). Absent = nothing to say, or an older server.
+   */
+  themeForward?: ThemeForwardWire;
 }
 
 export interface AgentReconcileStatus {
@@ -645,6 +651,8 @@ export async function agentApply(flags?: Record<string, string | true>): Promise
   out.success(`Applied — build #${result.buildNumber} queued${result.provenanceRecorded ? ` (provenance ${provenance?.repo}@${provenance?.sha.slice(0, 12)})` : ''}.`);
   for (const line of renderPlan(result)) console.log(line);
   console.log(`  status:    guuey deployments  ·  ${result.statusPath}`);
+  // guuey#1415: say when the card side did not follow — the apply still stands.
+  for (const line of themeForwardLines(themeForwardOf(result))) console.log(line);
   console.log('');
 
   if (wait) {
