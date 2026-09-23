@@ -35,6 +35,9 @@ export interface UsageExportWire {
   llm: {
     managedCostUsd: number;
     costByModelUsd: UsageBreakdown;
+    /** Uncached input tokens only (guuey#1393). Absent from a previous-release server. */
+    inputTokensUncached?: number;
+    /** The previous release's name for `inputTokensUncached`; removed the release after. */
     inputTokens: number;
     outputTokens: number;
   };
@@ -42,6 +45,9 @@ export interface UsageExportWire {
   answers: number;
   sessions: { total: number; bySurface: UsageBreakdown };
   widgetOpens: number;
+  /** Billable pod unit-hours beyond the included pod (guuey#1393). Absent from a previous-release server. */
+  billablePodUnitHours?: number;
+  /** The previous release's name for `billablePodUnitHours`; removed the release after. */
   podUnitHours: number;
   storage: { fsGibHours: number; fsBytes: number };
   notAttributable: readonly string[];
