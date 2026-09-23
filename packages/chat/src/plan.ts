@@ -43,7 +43,7 @@ import {
 import type { TranscriptPolicy } from "./policy.js";
 import { grantModeDisplay } from "./hitl.js";
 import { authRequiredFromAsks, oauthAuthorizeAsk } from "./oauth.js";
-import { isGguiProtocolTool } from "./listen.js";
+import { isGguiConsumeTool, isGguiProtocolTool } from "./listen.js";
 import type {
   CitationsItem,
   DataResultItem,
@@ -790,6 +790,12 @@ function deriveStatus(inputs: TranscriptInputs, policy: TranscriptPolicy): Statu
     case "thinking":
       return { kind: "status", key: "status", state: "thinking", copy: s.thinking, detail };
     case "using-tool": {
+      // guuey#1658 — a `ggui_consume` LISTEN is not work in progress (guuey#1038):
+      // the card is live, the composer is open, and the agent is waiting on the
+      // reader's click or reply. There is no status line for it. The rail's
+      // "Preparing interactive card…" stood for the whole wait, up to 25 s after
+      // the card painted (QA's pin-11 re-time: 14 of 14 card turns).
+      if (isGguiConsumeTool(inputs.activeTool ?? null)) return null;
       // guuey#1279 — BY CONSTRUCTION, not by filter: a ggui protocol tool
       // never reaches `policy.tool.humanizeTitle` here at all. That hook is
       // HOST-OVERRIDABLE, so a host humanizer returning the wire name would

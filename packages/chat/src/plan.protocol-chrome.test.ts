@@ -49,7 +49,8 @@ const RAIL_TOOLS = [
 
 const EMPTY: AgReduceResult = { messages: [], artifacts: [], memory: [], turns: [] };
 
-function statusCopy(activeTool: string, policy: TranscriptPolicy): string {
+/** The status line's copy for a turn using `activeTool`, or null when the plan shows no line. */
+function statusCopy(activeTool: string, policy: TranscriptPolicy): string | null {
   const status = planTranscript(
     {
       result: EMPTY,
@@ -63,8 +64,7 @@ function statusCopy(activeTool: string, policy: TranscriptPolicy): string {
     },
     policy,
   ).status;
-  expect(status).not.toBeNull();
-  return status!.copy;
+  return status === null ? null : status.copy;
 }
 
 describe("guuey#1279 — humanizeToolName never yields a rail wire name", () => {
@@ -95,7 +95,15 @@ describe("guuey#1279 — humanizeToolName never yields a rail wire name", () => 
 
 describe("guuey#1279 — the status line never narrates the rail", () => {
   it.each(RAIL_TOOLS)("status for %s carries no protocol vocabulary", (activeTool) => {
-    expect(statusCopy(activeTool, calmPolicy())).not.toMatch(PROTOCOL_VOCABULARY);
+    expect(statusCopy(activeTool, calmPolicy()) ?? "").not.toMatch(PROTOCOL_VOCABULARY);
+  });
+
+  it("guuey#1658 — a ggui_consume LISTEN shows NO status line: the card is live and waiting on the reader", () => {
+    expect(statusCopy("ggui_consume", calmPolicy())).toBeNull();
+    expect(statusCopy("mcp__ggui__ggui_consume", calmPolicy())).toBeNull();
+    // The rest of the rail still reads as one product sentence while it works.
+    expect(statusCopy("ggui_handshake", calmPolicy())).toBe("Preparing interactive card…");
+    expect(statusCopy("mcp__ggui__ggui_render", calmPolicy())).toBe("Preparing interactive card…");
   });
 
   it("the rail collapses to ONE product sentence, not 'Using <machinery>…'", () => {
@@ -114,7 +122,7 @@ describe("guuey#1279 — BY CONSTRUCTION: a leaky host humanizer cannot defeat i
   const leaky = calmPolicy({ tool: { humanizeTitle: (wireName: string) => wireName } });
 
   it.each(RAIL_TOOLS)("status for %s stays clean despite a wire-name humanizer", (activeTool) => {
-    expect(statusCopy(activeTool, leaky)).not.toMatch(PROTOCOL_VOCABULARY);
+    expect(statusCopy(activeTool, leaky) ?? "").not.toMatch(PROTOCOL_VOCABULARY);
   });
 
   it("the leaky humanizer IS still honoured for non-rail tools", () => {
