@@ -552,7 +552,7 @@ describe("attachViewHost — ui/message is answered from the sink's delivery out
   const MESSAGE = { jsonrpc: "2.0", id: 77, method: "ui/message", params: { role: "user", content: [{ type: "text", text: "go" }] } };
   const answersTo = (posted: Posted[], id: number) => posted.filter((p) => p.message.id === id).map((p) => p.message);
 
-  function wired(onUserMessage: (params: { [key: string]: unknown }) => void | Promise<UserMessageDelivery>) {
+  function wired(onUserMessage: (params: { [key: string]: unknown }) => void | Promise<UserMessageDelivery | void>) {
     const { frame, posted, contentWindow } = fakeFrame();
     const { events, emit } = fakeEvents();
     const detach = attachViewHost(frame, { events, onUserMessage });
@@ -602,6 +602,30 @@ describe("attachViewHost — ui/message is answered from the sink's delivery out
     await vi.advanceTimersByTimeAsync(0);
     expect(answersTo(posted, 77)).toHaveLength(1);
     expect(MESSAGE_ANSWER_CAP_MS).toBeLessThan(60_000);
+  });
+
+  // The sink's seven shapes, each answered EXACTLY once, read past the cap + 1 s
+  // (guuey-oss's probe on 0.27.0: an `async` sink resolving to nothing got NO
+  // answer, then the SDK's 60 s timeout, where 0.26.0 answered `{}`).
+  const unreadable = (): UserMessageDelivery => ({
+    get delivered(): true {
+      throw new Error("a resolution the host cannot read");
+    },
+  });
+  const SHAPES: ReadonlyArray<readonly [string, (params: { [key: string]: unknown }) => void | Promise<UserMessageDelivery | void>, { isError?: true }]> = [
+    ["sync void", () => undefined, {}],
+    ["async void (an `async` sink that delivers itself and returns nothing)", async () => undefined, {}],
+    ["delivered", async () => ({ delivered: true }), {}],
+    ["not delivered", async () => ({ delivered: false, reason: "chat unavailable" }), { isError: true }],
+    ["throws", () => { throw new Error("sink bug"); }, { isError: true }],
+    ["rejects", () => Promise.reject(new Error("sink bug")), { isError: true }],
+    ["throw while handling the resolution", async () => unreadable(), { isError: true }],
+  ];
+  it.each(SHAPES)("%s: answered exactly once, with the right word, and nothing after the cap", async (_name, sink, result) => {
+    const { posted } = wired(sink);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(MESSAGE_ANSWER_CAP_MS + 1000);
+    expect(answersTo(posted, 77)).toEqual([{ jsonrpc: "2.0", id: 77, result }]);
   });
 
   it("detach cancels a pending cap — nothing is answered into a torn-down frame", async () => {

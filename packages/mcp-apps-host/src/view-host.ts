@@ -169,10 +169,13 @@ export interface AttachViewHostConfig {
    * The answer (guuey#1706): return a Promise of {@link UserMessageDelivery}
    * and the host answers the view from it — `{}` delivered, `{ isError: true }`
    * not, `{}` if still pending at {@link MESSAGE_ANSWER_CAP_MS}. A sink that
-   * returns nothing is answered `{}` at call time (the pre-#1706 answer, kept
-   * for existing embedders); a sink that throws is answered `{ isError: true }`.
+   * returns nothing, synchronously OR as a Promise that resolves to nothing
+   * (an `async` sink that delivers itself), is answered `{}`: the pre-#1706
+   * answer, kept for existing embedders. A sink that throws or rejects, or a
+   * resolution the host cannot read, is answered `{ isError: true }`. The view
+   * is answered exactly once on every path.
    */
-  onUserMessage?: (params: { [key: string]: unknown }) => void | Promise<UserMessageDelivery>;
+  onUserMessage?: (params: { [key: string]: unknown }) => void | Promise<UserMessageDelivery | void>;
   /**
    * `ui/open-link` executor (guuey#522) — receives a URL the machine's
    * scheme wall already passed (absolute http/https only). The kit
@@ -339,6 +342,17 @@ function narrowReadEntry(entry: McpResourceReadResult | undefined): McpResourceR
  * spec-mannered `ui/resource-teardown` farewell through the CACHED window
  * handle (post-removal, `frame.contentWindow` is already null).
  */
+/**
+ * The view's answer for a sink's resolved value (guuey#1706). Only an explicit
+ * `{ delivered: false }` is a refusal. A resolution to nothing — an `async`
+ * sink that delivers itself and returns nothing, legal TypeScript through
+ * void-return substitutability — is ACCEPTED, `{}`, exactly as a synchronous
+ * `void` is: the pre-#1706 contract, kept for every existing embedder.
+ */
+function answerForDelivery(delivery: UserMessageDelivery | void): { isError?: true } {
+  return typeof delivery === "object" && delivery !== null && delivery.delivered === false ? { isError: true } : {};
+}
+
 export function attachViewHost(frame: ViewFrameLike, config: AttachViewHostConfig = {}): () => void {
   const cachedWindow = frame.contentWindow;
 
@@ -359,43 +373,43 @@ export function attachViewHost(frame: ViewFrameLike, config: AttachViewHostConfi
   // sink's delivery outcome, exactly once, and never later than the cap.
   const pendingAnswerCaps = new Set<ReturnType<typeof setTimeout>>();
   const answerMessage = (id: ViewRequestId, params: { [key: string]: unknown }): void => {
-    const answer = (result: { isError?: true }): void => post({ jsonrpc: "2.0", id, result });
-    let outcome: void | Promise<UserMessageDelivery>;
+    // ONE exit (guuey-cto on 0.27.0): every path answers through `settle`,
+    // exactly once, and clears the cap on the way out. Nothing after the
+    // settle can reach the view, and no path can end without one.
+    let settled = false;
+    let cap: ReturnType<typeof setTimeout> | undefined = undefined;
+    const settle = (result: { isError?: true }): void => {
+      if (settled) return;
+      settled = true;
+      if (cap !== undefined) {
+        clearTimeout(cap);
+        pendingAnswerCaps.delete(cap);
+      }
+      post({ jsonrpc: "2.0", id, result });
+    };
+    let outcome: void | Promise<UserMessageDelivery | void>;
     try {
       outcome = config.onUserMessage?.(params);
     } catch {
       // A throwing sink delivered nothing — the view hears so, never a hang.
-      answer({ isError: true });
+      settle({ isError: true });
       return;
     }
     if (!(outcome instanceof Promise)) {
       // A sink that returns nothing: accepted at call time (the pre-#1706 answer).
-      answer({});
+      settle({});
       return;
     }
-    let answered = false;
-    const once = (result: { isError?: true }): void => {
-      if (answered) return;
-      answered = true;
-      answer(result);
-    };
-    const cap = setTimeout(() => {
-      pendingAnswerCaps.delete(cap);
-      once({}); // still queued at the cap: see MESSAGE_ANSWER_CAP_MS for what this trades
-    }, MESSAGE_ANSWER_CAP_MS);
+    cap = setTimeout(() => settle({}), MESSAGE_ANSWER_CAP_MS); // still queued: see MESSAGE_ANSWER_CAP_MS
     pendingAnswerCaps.add(cap);
-    outcome.then(
-      (delivery) => {
-        clearTimeout(cap);
-        pendingAnswerCaps.delete(cap);
-        once(delivery.delivered ? {} : { isError: true });
-      },
-      () => {
-        clearTimeout(cap);
-        pendingAnswerCaps.delete(cap);
-        once({ isError: true });
-      },
-    );
+    outcome
+      .then(
+        (delivery) => settle(answerForDelivery(delivery)),
+        () => settle({ isError: true }),
+      )
+      // A throw while handling the resolution (a `delivered` the host cannot
+      // read) is an answer the view still gets.
+      .catch(() => settle({ isError: true }));
   };
 
   const relay = (id: number | string, name: string, args?: McpToolStructuredContent): void => {
