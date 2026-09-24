@@ -126,16 +126,13 @@ const ThemeRhythmV1 = z.strictObject({
 /**
  * The motion tempo a theme may state.
  *
- * CARRIED, NOT YET PAINTED (guuey#1419), in all but one place. A theme stating
- * this validates here and survives `guuey deploy`. guuey's embeddable widget
- * paints `duration.base` and `easing.standard` into its panel's open/close
- * fades (guuey#1420). Nothing else reads it: the published React kit ships no
- * timed motion, and ggui's projection has no branch for it (measured at
- * `@ggui-ai/design@0.20.0`). `fast`, `slow`, `emphasized` and `exit` have no
- * painter on any surface.
- *
- * Each sentence leaves with the projection that paints the member it describes,
- * in the same publication, and the seat landing that projection owns deleting it.
+ * A theme stating this validates here and survives `guuey deploy`. Two
+ * surfaces paint it. ggui's projection, since `@ggui-ai/design@0.21.0`,
+ * derives every stated member into `--ggui-motion-*`, which ggui-rendered cards
+ * consume (ggui#1106; 0.20.0 had no branch for it, guuey#1419). guuey's
+ * embeddable widget paints `duration.base` and `easing.standard` into its
+ * panel's open/close fades (guuey#1420). The published React kit ships no timed
+ * motion.
  */
 const ThemeMotionV1 = z.strictObject({
   duration: z
@@ -209,16 +206,14 @@ export type AppCourtThemeV1 = z.infer<typeof AppCourtThemeV1>;
 /**
  * The app theme document `guuey.json` is validated against.
  *
- * CARRIED, NOT YET PAINTED (guuey#1419): `motion` validates here and survives
- * `guuey deploy`, and only guuey's embeddable widget paints any of it —
- * `duration.base` and `easing.standard`, its panel fades (guuey#1420). See the
- * member's own comment for the measurement. Stated here as well because a
+ * `motion` validates here and survives `guuey deploy`. ggui's projection
+ * paints every stated member on ggui-rendered cards since
+ * `@ggui-ai/design@0.21.0` (ggui#1106), and guuey's embeddable widget paints
+ * `duration.base` and `easing.standard` into its panel fades (guuey#1420). See
+ * the member's own comment for the measurement. Stated here as well because a
  * comment on an inner schema is dropped from the emitted `.d.ts` and this
  * declaration's is not: a sentence a consumer's editor never shows is a
  * sentence that does not exist.
- *
- * Both copies leave with the projection that paints the member, in the same
- * publication; `CARRIED, NOT YET PAINTED` finds every one of them.
  */
 export const AppThemeV1 = z.strictObject({
   name: z.string().min(1).max(64).optional(),
