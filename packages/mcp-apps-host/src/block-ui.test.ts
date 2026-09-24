@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgBlock, JsonValue } from "@silverprotocol/core";
+import type { AgBlock, AgEvent, JsonValue } from "@silverprotocol/core";
 import {
   asResourcePayload,
   asUiResource,
@@ -9,6 +9,7 @@ import {
   resourceHtml,
   scanProviderRawForUiResource,
       toolResultUiResource,
+  toolResultLocator,
 } from "./block-ui.js";
 
 describe("isJsonObject", () => {
@@ -230,3 +231,38 @@ describe("blockUiResource — tool-result provider-raw arm (guuey#86 snapshot pa
     expect(blockUiResource(block)).toBeUndefined();
   });
 });
+
+describe("toolResultLocator — _meta.ui first, so a folded card survives an omitting final (AgJSON draft.4)", () => {
+  const URI = "ui://ggui/render/r1";
+
+  it("reads _meta.ui.resourceUri when the payload channels are gone", () => {
+    expect(toolResultLocator({ _meta: { ui: { resourceUri: URI } } })).toBe(URI);
+  });
+
+  it("_meta.ui wins over the payload channels; without it the old order holds (uiData, then structuredContent)", () => {
+    expect(toolResultLocator({ _meta: { ui: { resourceUri: URI } }, uiData: { resourceUri: "ui://other/1" } })).toBe(URI);
+    expect(toolResultLocator({ uiData: { resourceUri: URI }, structuredContent: { resourceUri: "ui://other/1" } })).toBe(URI);
+    expect(toolResultLocator({ structuredContent: { resourceUri: URI } })).toBe(URI);
+    expect(toolResultLocator({ _meta: { ui: { resourceUri: "https://not-a-ui-uri" } } })).toBeUndefined();
+  });
+
+  it("ASSEMBLY on the real 0.7.0 reducer: a kept-open result then a final that omits uiData folds a block whose payload is cleared, and the locator is still found", async () => {
+    const { Reducer } = await import("@silverprotocol/core");
+    const r = new Reducer();
+    const events: AgEvent[] = [
+      { type: "turn.start", seq: 1, turnId: "t1" },
+      { type: "message.start", seq: 2, id: "m1", turnId: "t1", role: "assistant" },
+      { type: "tool.start", seq: 3, toolCallId: "c1", turnId: "t1", messageId: "m1", name: "render", input: {} },
+      { type: "tool.done", seq: 4, toolCallId: "c1", turnId: "t1", messageId: "m1", content: [], more: true, uiData: { resourceUri: URI }, _meta: { ui: { resourceUri: URI } } },
+      { type: "tool.done", seq: 5, toolCallId: "c1", turnId: "t1", messageId: "m1", content: [{ type: "text", text: "final" }] },
+    ];
+    for (const e of events) r.push(e);
+    const block = r.result().messages.flatMap((m) => m.content).find((b) => b.type === "tool-result");
+    if (block?.type !== "tool-result") throw new Error("no tool-result folded");
+    // The reducer's own rule: the omitting final cleared the payload channel…
+    expect(block.uiData).toBeUndefined();
+    // …and the descriptor survived, so the card keeps its identity.
+    expect(toolResultLocator(block)).toBe(URI);
+  });
+});
+

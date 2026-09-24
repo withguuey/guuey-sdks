@@ -176,8 +176,16 @@ export function uiLocator(uiData: JsonValue | undefined): string | undefined {
 }
 
 /**
- * The `ui://` locator a `tool-result` block carries, from EITHER channel it
+ * The `ui://` locator a `tool-result` block carries, from ANY channel it
  * can arrive on — the single seam every locator reader goes through.
+ *
+ * `_meta.ui.resourceUri` is read FIRST. Under AgJSON draft.4 (core 0.7.0) a
+ * kept-open result's later `tool.done` replaces the payload as a unit, so a
+ * final that omits `uiData` / `structuredContent` CLEARS them on the fold,
+ * while `_meta` (a descriptor) survives an omitting final. The view's
+ * identity lives there by the spec's own rule. Reading the payload channels
+ * alone would take a folded card dark. Under 0.6.x both channels were kept,
+ * so this order gives the same answer on either version.
  *
  * AgJSON §2.1 routes a tool result's `structuredContent` by its `_meta.ui`
  * sibling: WITH the sibling it is surface data and the normalizer stamps
@@ -186,14 +194,18 @@ export function uiLocator(uiData: JsonValue | undefined): string | undefined {
  * posture; any plain-locator MCP server) therefore delivers a locator that
  * is byte-identical in shape but lives one field over — reading `uiData`
  * alone renders NOTHING for it (dark, not "expired"), and the persistence
- * projector minted no placeholder row (the read plane 404s). `uiData` wins
- * when both carry one (guuey#209 route-A finding).
+ * projector minted no placeholder row (the read plane 404s). Between the
+ * payload channels `uiData` wins when both carry one (guuey#209 route-A
+ * finding). The pod's `blockLocator` (nocode-runtime live-cards.ts) and the
+ * persisted door's `snapshotCarriesLocator` (publicApi ui-resource.ts) apply
+ * the same order, so live and persisted guards recognize one locator set.
  */
 export function toolResultLocator(block: {
+  _meta?: { [key: string]: JsonValue };
   uiData?: JsonValue;
   structuredContent?: JsonValue;
 }): string | undefined {
-  return uiLocator(block.uiData) ?? uiLocator(block.structuredContent);
+  return uiLocator(block._meta?.ui) ?? uiLocator(block.uiData) ?? uiLocator(block.structuredContent);
 }
 
 export function snapshotUiResource(cardSnapshot: JsonValue): McpUiResourcePayload | undefined {
