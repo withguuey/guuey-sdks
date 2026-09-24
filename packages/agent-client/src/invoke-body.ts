@@ -79,7 +79,7 @@ export const WIDGET_INVOKE_BODY_CASES: ReadonlyArray<{ name: string; why: string
     input: {
       input: "Hello",
       clientMessageId: "cm_0001",
-      capabilities: { hitl: { ask: true, grantModes: true } },
+      capabilities: { hitl: { ask: true, grantModes: true }, uiResources: { viewMessageTurns: true } },
       pageContext: { hostOrigin: "https://customer.example" },
     },
   },
@@ -90,7 +90,7 @@ export const WIDGET_INVOKE_BODY_CASES: ReadonlyArray<{ name: string; why: string
       input: "What does this page say about pricing?",
       threadId: "thr_01J8ZK3Q9X",
       clientMessageId: "cm_0002",
-      capabilities: { hitl: { ask: true, grantModes: true } },
+      capabilities: { hitl: { ask: true, grantModes: true }, uiResources: { viewMessageTurns: true } },
       pageContext: {
         path: "/pricing",
         title: "Pricing — Acme",
@@ -106,7 +106,7 @@ export const WIDGET_INVOKE_BODY_CASES: ReadonlyArray<{ name: string; why: string
       input: "Book a demo",
       threadId: "thr_01J8ZK3Q9X",
       clientMessageId: "cm_0003",
-      capabilities: { hitl: { ask: true, grantModes: true } },
+      capabilities: { hitl: { ask: true, grantModes: true }, uiResources: { viewMessageTurns: true } },
       pageContext: { path: "/", title: "Acme", hostOrigin: "https://customer.example" },
     },
   },
@@ -116,7 +116,7 @@ export const WIDGET_INVOKE_BODY_CASES: ReadonlyArray<{ name: string; why: string
     input: {
       input: "Hi",
       clientMessageId: "cm_0004",
-      capabilities: { hitl: { ask: true, grantModes: true } },
+      capabilities: { hitl: { ask: true, grantModes: true }, uiResources: { viewMessageTurns: true } },
       pageContext: { hostOrigin: "https://customer.example" },
       mode: "guest",
     },

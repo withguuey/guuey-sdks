@@ -55,6 +55,22 @@ export const DEFAULT_BLOCK_PRESERVING_CAPABILITIES: AgClientCapabilities = {
   hitl: { ask: true, grantModes: true },
 };
 
+/**
+ * What an embedder advertises when it delivers EVERY `ui/message` a card's
+ * view posts as the next agent turn: sent immediately when idle, queued while
+ * a turn is live, and a drop surfaced by the host, never silent. The guuey
+ * widget's doorbell does exactly that. On this declaration the pod tells the
+ * generative-UI server the session can take a view's message as a turn, and
+ * the server lets a render turn end at paint instead of waiting on the view.
+ * Pass it as `UseAgentInvokeOptions.capabilities` ONLY when that delivery is
+ * really wired: a surface without it would be promising turns it never sends.
+ * A pod that predates the field strips it and serves the session unchanged.
+ */
+export const VIEW_MESSAGE_TURN_CAPABILITIES: AgClientCapabilities = {
+  ...DEFAULT_BLOCK_PRESERVING_CAPABILITIES,
+  uiResources: { viewMessageTurns: true },
+};
+
 /** The decision `applyHistoryResult` reaches for a loaded transcript. */
 export type HistoryApplication =
   | { kind: "seed"; messages: AgentMessage[] }

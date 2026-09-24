@@ -60,3 +60,14 @@ describe("the widget's canonical bodies are pinned as the fixture (guuey#1213)",
     }
   });
 });
+
+describe("the widget cases carry exactly what the widget sends", () => {
+  it("every widget case's capabilities equal VIEW_MESSAGE_TURN_CAPABILITIES (the default plus the view-message-turn declaration); the SDK-minimal case advertises nothing", async () => {
+    const { DEFAULT_BLOCK_PRESERVING_CAPABILITIES, VIEW_MESSAGE_TURN_CAPABILITIES } = await import("./useAgentInvoke.js");
+    expect(VIEW_MESSAGE_TURN_CAPABILITIES).toEqual({ ...DEFAULT_BLOCK_PRESERVING_CAPABILITIES, uiResources: { viewMessageTurns: true } });
+    for (const c of WIDGET_INVOKE_BODY_CASES) {
+      if (c.name === "sdk-minimal") expect(c.input.capabilities).toBeUndefined();
+      else expect(c.input.capabilities, c.name).toEqual(VIEW_MESSAGE_TURN_CAPABILITIES);
+    }
+  });
+});
