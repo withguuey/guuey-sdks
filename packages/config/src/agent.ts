@@ -706,9 +706,10 @@ export type GuueyAgentHooks = z.infer<typeof hooksSectionSchema>;
 /**
  * The hooks a NEW no-code rep starts with (guuey#1738): the email reporter's
  * end-of-conversation report, so a rep reports back what its visitors asked
- * from its first conversation on. Seeded into a rep's FIRST definition by
- * every path that creates one (the platform app's new-rep deploy, the
- * declarative scaffold) and never applied at runtime: an existing rep keeps
+ * from its first conversation on. Seeded into a rep's FIRST definition where
+ * the rep is created (the platform app's new-rep deploy, the declarative
+ * scaffold; a creating path that does not seed it yet is tracked, not
+ * implied) and never applied at runtime: an existing rep keeps
  * exactly what its owner chose, and a builder who turns the report off stays
  * off (an unset block and a cleared one look the same once stored, so only
  * creation can tell them apart). A fresh object per call — callers spread it
