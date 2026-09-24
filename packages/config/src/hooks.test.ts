@@ -5,6 +5,7 @@
  * from the strict parse rather than silently passing.
  */
 import { describe, expect, it } from 'vitest';
+import { newRepDefaultHooks } from './agent.js';
 import { parseGuueyJson, safeParseGuueyJson } from './schema.js';
 
 const minimal = {
@@ -55,5 +56,22 @@ describe('guuey.json agent.hooks (guuey#1511 §8.7)', () => {
         },
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('newRepDefaultHooks (guuey#1738): what a NEW no-code rep starts with', () => {
+  it('is exactly the email reporter on session.ended, nothing on handoff.requested (the notifier mails hand-offs)', () => {
+    expect(newRepDefaultHooks()).toEqual({ 'session.ended': [{ use: 'email-reporter' }] });
+  });
+
+  it('parses as a declarative rep\'s hooks block under the strict schema', () => {
+    const doc = parseGuueyJson({ schema: '1', agent: { mode: 'declarative', hooks: newRepDefaultHooks() } });
+    expect(doc.agent.hooks).toEqual(newRepDefaultHooks());
+  });
+
+  it('hands every caller a fresh object: one snapshot mutating its copy never changes the next rep\'s default', () => {
+    const first = newRepDefaultHooks();
+    first['session.ended']?.push({ kind: 'tool', server: 'my-crm', tool: 'create_lead' });
+    expect(newRepDefaultHooks()).toEqual({ 'session.ended': [{ use: 'email-reporter' }] });
   });
 });

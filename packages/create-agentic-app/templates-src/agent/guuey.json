@@ -3,6 +3,7 @@
   "agent": {
     "mode": "declarative",
     "model": "MODEL_PLACEHOLDER",
-    "systemPrompt": { "file": "prompts/system.md" }
+    "systemPrompt": { "file": "prompts/system.md" },
+    "hooks": { "session.ended": [{ "use": "email-reporter" }] }
   }
 }

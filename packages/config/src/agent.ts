@@ -605,9 +605,11 @@ export const AgentSectionV1 = z.strictObject({
    * for a person) in v1. Each event lists handlers: a prebuilt hook by name
    * (`{ use: 'email-reporter' }`), one MCP tool called directly
    * (`{ kind: 'tool', server, tool }`), or a dev-defined agent hook by its
-   * `definitions` key. The platform app sets the email reporter on both
-   * events for no-code reps; omit the block to declare none. Optional both
-   * ways: a `guuey.json` without it behaves exactly as before.
+   * `definitions` key. A NEW no-code rep starts with the email reporter's
+   * end-of-conversation report ({@link newRepDefaultHooks}); the hand-off
+   * mail needs no entry (the platform's notifier sends it whenever the
+   * reporter is on). Omit the block to declare none. Optional both ways: a
+   * `guuey.json` without it behaves exactly as before.
    */
   hooks: hooksSectionSchema.optional(),
   /**
@@ -700,6 +702,21 @@ export type GuueyAgentMode = z.infer<typeof ModeSchema>;
 
 /** The agent's `hooks` block — `HooksSection` from `@guuey/hooks`. */
 export type GuueyAgentHooks = z.infer<typeof hooksSectionSchema>;
+
+/**
+ * The hooks a NEW no-code rep starts with (guuey#1738): the email reporter's
+ * end-of-conversation report, so a rep reports back what its visitors asked
+ * from its first conversation on. Seeded into a rep's FIRST definition by
+ * every path that creates one (the platform app's new-rep deploy, the
+ * declarative scaffold) and never applied at runtime: an existing rep keeps
+ * exactly what its owner chose, and a builder who turns the report off stays
+ * off (an unset block and a cleared one look the same once stored, so only
+ * creation can tell them apart). A fresh object per call — callers spread it
+ * into the snapshot they build.
+ */
+export function newRepDefaultHooks(): GuueyAgentHooks {
+  return { 'session.ended': [{ use: 'email-reporter' }] };
+}
 
 /** The v1 mode axis — the caller's REAL auth state, server-derived. */
 export type ModeAudienceClass = 'guest' | 'auth';

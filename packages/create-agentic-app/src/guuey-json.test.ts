@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { GuueyJsonV1 } from '@guuey/config';
+import { GuueyJsonV1, newRepDefaultHooks } from '@guuey/config';
 
 const FRAMEWORKS = ['claude-agent-sdk', 'google-adk', 'openai-agents-sdk'];
 
@@ -30,4 +30,17 @@ describe('framework template guuey.json (guuey#24 §2c)', () => {
       expect(() => GuueyJsonV1.parse(parsed)).not.toThrow();
     });
   }
+});
+
+describe('the declarative agent template (guuey#1738)', () => {
+  const raw = JSON.parse(readFileSync(join(__dirname, '..', 'templates-src', 'agent', 'guuey.json'), 'utf8'));
+
+  it('starts a new rep with the platform default hooks, verbatim (a JSON twin of newRepDefaultHooks)', () => {
+    expect(raw.agent.hooks).toEqual(newRepDefaultHooks());
+  });
+
+  it('round-trips the config schema with the hooks block', () => {
+    const parsed = JSON.parse(JSON.stringify(raw).replace('MODEL_PLACEHOLDER', 'claude-sonnet-5'));
+    expect(GuueyJsonV1.parse(parsed).agent.hooks).toEqual(newRepDefaultHooks());
+  });
 });
