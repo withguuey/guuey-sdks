@@ -36,8 +36,8 @@ importers:
         specifier: workspace:*
         version: link:../mcp-apps-host
       '@silverprotocol/core':
-        specifier: 0.6.7
-        version: 0.6.7
+        specifier: 0.7.0
+        version: 0.7.0
     devDependencies:
       '@testing-library/dom':
         specifier: ^10.0.0
@@ -109,11 +109,11 @@ importers:
         specifier: workspace:*
         version: link:../mcp-apps-host
       '@silverprotocol/core':
-        specifier: 0.6.7
-        version: 0.6.7
+        specifier: 0.7.0
+        version: 0.7.0
       '@silverprotocol/richtext':
-        specifier: 0.6.7
-        version: 0.6.7
+        specifier: 0.7.0
+        version: 0.7.0
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -179,17 +179,17 @@ importers:
         specifier: ^1.30.0
         version: 1.30.0(zod@4.4.3)
       '@silverprotocol/claude-agent-sdk':
-        specifier: 0.6.7
-        version: 0.6.7(@anthropic-ai/claude-agent-sdk@0.3.280(@anthropic-ai/sdk@0.127.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(zod@4.4.3))
+        specifier: 0.7.0
+        version: 0.7.0(@anthropic-ai/claude-agent-sdk@0.3.280(@anthropic-ai/sdk@0.127.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(zod@4.4.3))
       '@silverprotocol/core':
-        specifier: 0.6.7
-        version: 0.6.7
+        specifier: 0.7.0
+        version: 0.7.0
       '@silverprotocol/google-adk':
-        specifier: 0.6.7
-        version: 0.6.7(@google/adk@2.1.0(@grpc/grpc-js@1.14.5)(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(express@5.2.1))
+        specifier: 0.7.0
+        version: 0.7.0(@google/adk@2.1.0(@grpc/grpc-js@1.14.5)(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(express@5.2.1))
       '@silverprotocol/openai-agents':
-        specifier: 0.6.7
-        version: 0.6.7(@openai/agents@0.18.0(ws@8.21.3)(zod@4.4.3))
+        specifier: 0.7.0
+        version: 0.7.0(@openai/agents@0.18.0(ws@8.21.3)(zod@4.4.3))
       esbuild:
         specifier: ^0.25.12
         version: 0.25.12
@@ -351,8 +351,8 @@ importers:
         specifier: ^1.7.5
         version: 1.7.5(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3)
       '@silverprotocol/core':
-        specifier: 0.6.7
-        version: 0.6.7
+        specifier: 0.7.0
+        version: 0.7.0
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -388,8 +388,8 @@ importers:
         specifier: workspace:*
         version: link:../mcp-apps-host
       '@silverprotocol/core':
-        specifier: 0.6.7
-        version: 0.6.7
+        specifier: 0.7.0
+        version: 0.7.0
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -1712,35 +1712,35 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@silverprotocol/claude-agent-sdk@0.6.7':
-    resolution: {integrity: sha512-Hb5IdQ9AJYGDdMdUfgoqmvm0yz4l+o2xYInV+JEnrHOnCf2MJ+VtJMaEogyAjfbqx2CJPkZywjYaD0hMzbW35w==}
+  '@silverprotocol/claude-agent-sdk@0.7.0':
+    resolution: {integrity: sha512-bGzvqughmKlvStQJcuHqeT+/z90taU7bHC0KsgYEQX77ApbQE5qU1eYOkzdo3pG67W8Byb+BkbOKvaRBS5c/QA==}
     peerDependencies:
       '@anthropic-ai/claude-agent-sdk': '>=0.2.76 <0.4'
     peerDependenciesMeta:
       '@anthropic-ai/claude-agent-sdk':
         optional: true
 
-  '@silverprotocol/core@0.6.7':
-    resolution: {integrity: sha512-aZUDmkRU3FFt9lEczHdegfZl6gC63vksGfa1EziAU90rmxHygaz5zjQRWp3oSdaXTnkkEq6lq7GJjwuYYBty9Q==}
+  '@silverprotocol/core@0.7.0':
+    resolution: {integrity: sha512-ffnNA8C1Tsk6x2ftHSPHeHKNMrHyi9PKzF8Z5fOT9arFRv9kvfDHjiIPqUH/B+NFuZapzZnIPyHIJMVKT2iVgg==}
 
-  '@silverprotocol/google-adk@0.6.7':
-    resolution: {integrity: sha512-DF3uS0nZ8wFxbvxotuhwBufCwVUzn7tLFEJZOuHml77fq2yjVR6CtXRjNQbUT3AmQV0cpS8X5Am2WwTe0RO/QA==}
+  '@silverprotocol/google-adk@0.7.0':
+    resolution: {integrity: sha512-k4685D9aXHqZlTeTOoxZY9Xcsn2cnC7RFxppO40jJFxhCmj+mIzA7lWxF6vuYjQPxdUP6MPQw9cRbcbhzfpUmQ==}
     peerDependencies:
       '@google/adk': '>=1.0.0 <3'
     peerDependenciesMeta:
       '@google/adk':
         optional: true
 
-  '@silverprotocol/openai-agents@0.6.7':
-    resolution: {integrity: sha512-O+isl4wOhgOIDiokM9DgdIs/fsFOHz6Xd9oj3XEC3egtXD9eaoeScciW8AJN0F0+ESo/rMsb6ZvEXAoX5X5MlQ==}
+  '@silverprotocol/openai-agents@0.7.0':
+    resolution: {integrity: sha512-khtuFnhP5Qc6eRXx5OSBhtGt4/R7GjuhKaQaCpBRjMmFqqABLKWq2jrXlzsr/Du6fgdYsSQJt/NP99OvlvZK/Q==}
     peerDependencies:
       '@openai/agents': '>=0.2.0 <0.19'
     peerDependenciesMeta:
       '@openai/agents':
         optional: true
 
-  '@silverprotocol/richtext@0.6.7':
-    resolution: {integrity: sha512-tk4p3lNfsmLYZgL+qAYecrb5pvzfZpA9vupItPSiXfgmkDjoiPNV04iIMRzoRWIkdiA17QCR1PrdNwYO9L9Z4w==}
+  '@silverprotocol/richtext@0.7.0':
+    resolution: {integrity: sha512-ky51H1BSW40N8ECNUpKymiefjIvvF5T+2X4SRHIzLCLTWf/iFSW0bf5sKuxmbSWNlPiwAAJwxpbN8vU0kfQyfQ==}
 
   '@sinclair/typebox@0.27.12':
     resolution: {integrity: sha512-hhyNJ+nbR6ZR7pToHvllEFun9TL0sbL+tk/ON75lo+Xas054uez98qRbsuNt7MBCyZKK4+8Yli/OAGZhmfBZ/g==}
@@ -5041,29 +5041,29 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.62.2':
     optional: true
 
-  '@silverprotocol/claude-agent-sdk@0.6.7(@anthropic-ai/claude-agent-sdk@0.3.280(@anthropic-ai/sdk@0.127.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(zod@4.4.3))':
+  '@silverprotocol/claude-agent-sdk@0.7.0(@anthropic-ai/claude-agent-sdk@0.3.280(@anthropic-ai/sdk@0.127.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(zod@4.4.3))':
     dependencies:
-      '@silverprotocol/core': 0.6.7
+      '@silverprotocol/core': 0.7.0
     optionalDependencies:
       '@anthropic-ai/claude-agent-sdk': 0.3.280(@anthropic-ai/sdk@0.127.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(zod@4.4.3)
 
-  '@silverprotocol/core@0.6.7':
+  '@silverprotocol/core@0.7.0':
     dependencies:
       zod: 4.4.3
 
-  '@silverprotocol/google-adk@0.6.7(@google/adk@2.1.0(@grpc/grpc-js@1.14.5)(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(express@5.2.1))':
+  '@silverprotocol/google-adk@0.7.0(@google/adk@2.1.0(@grpc/grpc-js@1.14.5)(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(express@5.2.1))':
     dependencies:
-      '@silverprotocol/core': 0.6.7
+      '@silverprotocol/core': 0.7.0
     optionalDependencies:
       '@google/adk': 2.1.0(@grpc/grpc-js@1.14.5)(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(express@5.2.1)
 
-  '@silverprotocol/openai-agents@0.6.7(@openai/agents@0.18.0(ws@8.21.3)(zod@4.4.3))':
+  '@silverprotocol/openai-agents@0.7.0(@openai/agents@0.18.0(ws@8.21.3)(zod@4.4.3))':
     dependencies:
-      '@silverprotocol/core': 0.6.7
+      '@silverprotocol/core': 0.7.0
     optionalDependencies:
       '@openai/agents': 0.18.0(ws@8.21.3)(zod@4.4.3)
 
-  '@silverprotocol/richtext@0.6.7': {}
+  '@silverprotocol/richtext@0.7.0': {}
 
   '@sinclair/typebox@0.27.12': {}
 
