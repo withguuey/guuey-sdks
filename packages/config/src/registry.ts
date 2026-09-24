@@ -94,17 +94,20 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
   // than hiding it: apps already pinned to Fable 5 keep their edit flow,
   // because the door's expanded list carries their value.
   { id: "claude-fable-5", provider: "anthropic", label: "Claude Fable 5", status: "ga" },
-  // Opus 5.5 (guuey#1622 — his #1608 pick (a), verbatim "Staged: Sol+Luna now,
-  // Opus 5.5 announced (Recommended)"): `announced` = known and priced at list
-  // (#1621), NOT pickable — the status keeps it out of both picker halves. Its
-  // ga flip is its own leg (#1623): the model answers a plain call (QA, dev pod,
-  // 2026-09-22, HTTP 200, "claude-opus-5-5" echoed) but REFUSES a forced
-  // tool_choice ("tool_choice: type \"tool\" and \"any\" are not supported for
-  // this model.", req_011CfK595wXzVWNcN1A6Y9MV), which the #1183 first-impression
-  // arm sends. Opus 5 stays in the lineup until that flip ((d) puts it behind the
-  // door then, not before — an announced row is not a replacement).
-  { id: "claude-opus-5-5", provider: "anthropic", label: "Claude Opus 5.5", status: "announced" },
-  { id: "claude-opus-5", provider: "anthropic", label: "Claude Opus 5", status: "ga", lineup: true },
+  // Opus 5.5 — GA (guuey#1623, the second stage of the staged Opus 5.5 arrival,
+  // guuey#1608). It was `announced` (known, priced at list by #1621, not
+  // pickable) until its preconditions served: claude-agent-sdk
+  // 0.3.280 (#1607; Claude Code 2.1.280+ is Anthropic's client floor for it), and
+  // the pin-8 guard that never sends `thinking: disabled` for it. That guard
+  // matters because the model REFUSES a forced tool_choice ("tool_choice: type
+  // \"tool\" and \"any\" are not supported for this model.",
+  // req_011CfK595wXzVWNcN1A6Y9MV), which the #1183 first-impression arm sends, so
+  // that arm SKIPS for it (`FIRST_IMPRESSION_SKIPPED {reason:'thinking'}`).
+  // The lineup decision (guuey#1608 (d)): Opus 5.5 joins the Claude lineup, and
+  // Opus 5 moves behind the "See all models" door (still ga, still selectable;
+  // apps pinned to it keep their edit flow). The default stays Sonnet 5 (#1608 (b)).
+  { id: "claude-opus-5-5", provider: "anthropic", label: "Claude Opus 5.5", status: "ga", lineup: true },
+  { id: "claude-opus-5", provider: "anthropic", label: "Claude Opus 5", status: "ga" },
   { id: "claude-sonnet-4-6", provider: "anthropic", label: "Claude Sonnet 4.6", status: "ga" },
   { id: "claude-haiku-4-5", provider: "anthropic", label: "Claude Haiku 4.5", status: "ga", lineup: true },
   // Superseded by Opus 5 at the same published price — behind the door.
