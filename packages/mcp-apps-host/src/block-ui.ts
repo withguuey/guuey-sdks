@@ -187,6 +187,15 @@ export function uiLocator(uiData: JsonValue | undefined): string | undefined {
  * alone would take a folded card dark. Under 0.6.x both channels were kept,
  * so this order gives the same answer on either version.
  *
+ * Producers differ in what they put on `_meta.ui`. A server that only MARKS
+ * a result as UI (`_meta.ui: {}`) and carries the locator in
+ * `structuredContent` names no locator here, so the payload order decides:
+ * the same answer as before. A server that states `_meta.ui.resourceUri`
+ * gets that one, even when its payload names another, because the spec makes
+ * `_meta.ui` the durable identity. Note that a kept-open result (`more:
+ * true`) is what exercises the clearing; a producer that never keeps results
+ * open never folds an omitting final.
+ *
  * AgJSON §2.1 routes a tool result's `structuredContent` by its `_meta.ui`
  * sibling: WITH the sibling it is surface data and the normalizer stamps
  * `uiData`; WITHOUT it, it is model-channel data and lands in
