@@ -19,6 +19,18 @@
  * and a string or comment that looks like an import is not an import. A text scan of
  * source misjudges all three; the fixture control below pins each.
  *
+ * Its reach, stated so the claim stays equal to it:
+ *   - STATIC only. A peer the root needs at runtime but loads only through `import()` would
+ *     read as unreached and be pushed to optional. No published package has one; if one
+ *     appears it needs a named exception here, not a looser walk.
+ *   - ESM only. It sees `import`, `export … from` and `import()`, never what `require()`
+ *     loads. So it REFUSES what it cannot read instead of passing it: a `require` condition
+ *     on the root export (a CJS root it does not walk), and a `require(…)` call or a
+ *     `createRequire` import anywhere in the root's static closure. Without that refusal an
+ *     optional peer loaded through `require()` would read as unreached — a false pass.
+ *     Require-capable code reached only behind `import()` (host's per-framework runners)
+ *     is outside the static rule and is not refused.
+ *
  * Runs after the build: `pnpm test:scripts`, a publish-gate leg in release.yml (build runs
  * before it), in the mirror's CI, and in the monorepo's extract gate.
  */
@@ -48,6 +60,7 @@ function specifiersOf(file) {
   );
   const statics = [];
   const dynamics = [];
+  const cjs = [];
   const visit = (node) => {
     if (
       (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
@@ -58,11 +71,30 @@ function specifiersOf(file) {
     } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
       const a = node.arguments[0];
       if (a && ts.isStringLiteralLike(a)) dynamics.push(a.text);
+    } else if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "require"
+    ) {
+      cjs.push(
+        `require(…) at line ${sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1}`
+      );
+    }
+    // A `createRequire` binding loads modules the walker cannot see, whatever it is named.
+    if (
+      ts.isImportDeclaration(node) &&
+      ts.isStringLiteral(node.moduleSpecifier) &&
+      /^(node:)?module$/.test(node.moduleSpecifier.text) &&
+      /\bcreateRequire\b/.test(node.importClause?.getText(sf) ?? "")
+    ) {
+      cjs.push(
+        `createRequire imported at line ${sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1}`
+      );
     }
     ts.forEachChild(node, visit);
   };
   visit(sf);
-  return { statics, dynamics };
+  return { statics, dynamics, cjs };
 }
 
 /**
@@ -74,6 +106,7 @@ export function reach(entry) {
   const dynamicBare = new Set();
   const seen = new Set();
   const unresolved = [];
+  const cjsHoles = [];
   const walk = (file, dynamic, from) => {
     const key = `${dynamic}:${file}`;
     if (seen.has(key)) return;
@@ -81,7 +114,8 @@ export function reach(entry) {
     // unread file could import anything (fail closed).
     if (!existsSync(file)) return void unresolved.push(`${from} → ${file}`);
     seen.add(key);
-    const { statics, dynamics } = specifiersOf(file);
+    const { statics, dynamics, cjs } = specifiersOf(file);
+    if (!dynamic) for (const c of cjs) cjsHoles.push(`${file}: ${c}`);
     for (const s of statics) {
       if (s.startsWith(".")) walk(resolve(dirname(file), s), dynamic, file);
       else (dynamic ? dynamicBare : staticBare).add(pkgOf(s));
@@ -98,6 +132,7 @@ export function reach(entry) {
     staticBare,
     dynamicBare,
     unresolved,
+    cjsHoles,
   };
 }
 
@@ -130,7 +165,17 @@ for (const { dir, pkg } of published) {
   test(`${pkg.name}: required peers are reached by the root entry; optional ones are not`, () => {
     const entry = rootEntry(dir, pkg);
     assert.ok(entry && existsSync(entry), `${pkg.name}: no built root entry (${entry})`);
-    const { files, staticBare, unresolved } = reach(entry);
+    const rootCond = pkg.exports?.["."];
+    assert.ok(
+      !(rootCond && typeof rootCond === "object" && "require" in rootCond),
+      `${pkg.name}: the root export has a \`require\` condition — a CJS entry this guard does not walk; walk it before adding one`
+    );
+    const { files, staticBare, unresolved, cjsHoles } = reach(entry);
+    assert.deepEqual(
+      cjsHoles,
+      [],
+      `${pkg.name}: the root's static closure loads through require — the walker cannot see what that reaches, so an optional peer there would read as unreached`
+    );
     assert.deepEqual(
       unresolved,
       [],
@@ -154,7 +199,7 @@ for (const { dir, pkg } of published) {
   });
 }
 
-// ── the walker's own controls — each misjudgment the regex version made ─────────────────────
+// ── the walker's own controls — each misjudgment a text scan makes, and each refusal ──────────
 test("walker: reads the AST, not text — comments, strings, dynamic boundaries, the JSX runtime", () => {
   const d = mkdtempSync(join(tmpdir(), "peer-optionality-"));
   try {
@@ -192,6 +237,40 @@ test("walker: reads the AST, not text — comments, strings, dynamic boundaries,
       reach(join(d, "holed.js")).unresolved.length,
       1,
       "an unopenable relative import must surface, not be skipped"
+    );
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test("walker: require() or createRequire in the static closure is refused; behind import() it is not", () => {
+  const d = mkdtempSync(join(tmpdir(), "peer-optionality-cjs-"));
+  try {
+    writeFileSync(
+      join(d, "index.js"),
+      'export * from "./cjs.js";\nexport const lazy = () => import("./lazy.js");\n'
+    );
+    writeFileSync(join(d, "cjs.js"), 'const r = require("react");\nexport { r };\n');
+    writeFileSync(
+      join(d, "lazy.js"),
+      'import { createRequire } from "node:module";\nconst req = createRequire(import.meta.url);\nexport const v = req("zod");\n'
+    );
+    const r = reach(join(d, "index.js"));
+    assert.equal(r.cjsHoles.length, 1, `one hole expected, got ${JSON.stringify(r.cjsHoles)}`);
+    assert.match(r.cjsHoles[0], /cjs\.js: require\(…\) at line 1$/);
+    assert.equal(
+      r.staticBare.has("react"),
+      false,
+      "the walker cannot see what require() loads — which is why it refuses it rather than passing it"
+    );
+    writeFileSync(
+      join(d, "aliased.js"),
+      'import { createRequire as cr } from "module";\nexport const x = cr;\n'
+    );
+    assert.equal(
+      reach(join(d, "aliased.js")).cjsHoles.length,
+      1,
+      'an aliased createRequire from "module" is refused too'
     );
   } finally {
     rmSync(d, { recursive: true, force: true });
