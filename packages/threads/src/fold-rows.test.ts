@@ -692,3 +692,133 @@ describe("untrustedOrigin threading — the page-aware turn's persist stamp (guu
     expect("untrustedOrigin" in agArtifactToCardRow(art, ctx)).toBe(false);
   });
 });
+
+// ── forward-compatible restore: the stored-record posture of AgJSON draft.4
+// §0.2 (`readStoredAgMessage`). An unreadable content element is omitted and
+// the rest of the stored message restores as stored; unknown fields pass
+// through; a record written under the previous vocabulary still loads.
+import { readFileSync } from "node:fs";
+
+const isObj = (v: unknown): v is { [k: string]: unknown } =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** The fixture's JSON narrowed to the row envelope the port stores, field by field. */
+function storedMessageRow(v: unknown): ThreadMessageRow {
+  if (!isObj(v)) throw new Error("fixture: row is not an object");
+  const { threadId, seq, userId, clientMessageId, at, kind, authorRole, text, content, aiContext } = v;
+  if (
+    typeof threadId !== "string" ||
+    typeof seq !== "number" ||
+    typeof userId !== "string" ||
+    typeof clientMessageId !== "string" ||
+    typeof at !== "string" ||
+    kind !== "text" ||
+    authorRole !== "agent" ||
+    typeof text !== "string"
+  ) {
+    throw new Error("fixture: row envelope is not a stored agent message row");
+  }
+  return { threadId, seq, userId, clientMessageId, at, kind, authorRole, text, content, aiContext };
+}
+
+describe("rowToAgMessage — forward-compatible restore", () => {
+  const agentRow = (content: unknown): ThreadMessageRow => ({
+    threadId: "t1",
+    seq: 5,
+    userId: "g_abc",
+    clientMessageId: "k#agent#0",
+    at: ctx.at,
+    kind: "text",
+    authorRole: "agent",
+    text: "Before.\n\nAfter.",
+    content,
+  });
+
+  it("omits a block of an undefined type and restores the rest of the stored message, in order", () => {
+    const back = rowToAgMessage(
+      agentRow({
+        id: "m1",
+        role: "assistant",
+        turnId: "turn1",
+        threadId: "t1",
+        content: [
+          { type: "text", text: "Before." },
+          { type: "hologram", frames: 3 },
+          { type: "tool-call", toolCallId: "c1", name: "get_weather", input: { city: "NYC" } },
+          { type: "text", text: "After." },
+        ],
+      })
+    );
+    expect(back).toEqual({
+      id: "m1",
+      role: "assistant",
+      turnId: "turn1",
+      threadId: "t1",
+      content: [
+        { type: "text", text: "Before." },
+        { type: "tool-call", toolCallId: "c1", name: "get_weather", input: { city: "NYC" } },
+        { type: "text", text: "After." },
+      ],
+    });
+  });
+
+  it("omits a known block whose closed-set value is undefined, whole, and restores the rest", () => {
+    const back = rowToAgMessage(
+      agentRow({
+        id: "m1",
+        role: "assistant",
+        threadId: "t1",
+        content: [
+          { type: "tool-call", toolCallId: "c1", name: "get_weather", input: {} },
+          { type: "tool-result", toolCallId: "c1", content: [], outcome: "deferred" },
+          { type: "text", text: "After." },
+        ],
+      })
+    );
+    expect(back.id).toBe("m1");
+    expect(back.content).toEqual([
+      { type: "tool-call", toolCallId: "c1", name: "get_weather", input: {} },
+      { type: "text", text: "After." },
+    ]);
+  });
+
+  it("passes unknown fields through, on the message and inside a restored block", () => {
+    const stored = {
+      id: "m1",
+      role: "assistant",
+      threadId: "t1",
+      content: [{ type: "text", text: "Hi.", tone: "warm" }],
+      futureField: { nested: [1, { deep: true }] },
+    };
+    expect(rowToAgMessage(agentRow(stored))).toEqual(stored);
+  });
+
+  it("a record it cannot materialize (an undefined role) still restores as the text projection", () => {
+    const back = rowToAgMessage(
+      agentRow({ id: "m1", role: "narrator", content: [{ type: "text", text: "Before." }] })
+    );
+    expect(back).toEqual({
+      id: "t1#5",
+      role: "assistant",
+      content: [{ type: "text", text: "Before.\n\nAfter." }],
+      threadId: "t1",
+    });
+  });
+
+  it("restores a row stored under the previous vocabulary (AgJSON draft.3, core 0.6.7) as stored", () => {
+    // Written by the 0.6.7 reducer: its text and reasoning blocks carry no
+    // `phase` and its turn record no `finishReasonRaw` (both draft.4 additions).
+    const row = storedMessageRow(
+      JSON.parse(
+        readFileSync(new URL("./fixtures/thread-message-row.agjson-draft3.json", import.meta.url), "utf8")
+      )
+    );
+    const back = rowToAgMessage(row);
+    expect(back).toEqual(row.content);
+    expect(back.id).toBe("m1");
+    expect(AgMessageSchema.safeParse(back).success).toBe(true);
+    const fold = reassembleFold([row], undefined);
+    expect(fold.messages).toEqual([row.content]);
+    expect(fold.turns).toEqual([row.aiContext]);
+  });
+});

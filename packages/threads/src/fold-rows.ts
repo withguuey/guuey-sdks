@@ -14,7 +14,7 @@ import type {
   AgMemoryRecord,
   JsonValue,
 } from "@silverprotocol/core";
-import { AgMessage as AgMessageSchema } from "@silverprotocol/core";
+import { readStoredAgMessage } from "@silverprotocol/core";
 import type { ThreadMessageRow, ThreadMessageRole, ThreadMessageKind, ThreadSnapshotRow } from "./rows.js";
 import { asUiResource, scanProviderRawForUiResource, toolResultLocator } from "@guuey/mcp-apps-host/narrowing";
 
@@ -261,10 +261,17 @@ function isJsonObjectLike(v: unknown): v is { type?: unknown; _meta?: unknown } 
  * AgMessage in `content`; user/system rows (persisted up-front) store plain
  * `{ kind, text }` — synthesize a single-text-block AgMessage for those so
  * the reassembled transcript is uniform.
+ *
+ * The stored AgMessage is read with the core's lenient stored-record reader
+ * (AgJSON draft.4 §0.2): a content element of an undefined type, or with an
+ * undefined value in a closed set, is omitted whole and the rest restores in
+ * order; unknown fields pass through untouched. Only a record the reader
+ * cannot materialize (no string `id`, an undefined `role`, no `content`
+ * array) falls to the text projection.
  */
 export function rowToAgMessage(row: ThreadMessageRow): AgMessage {
-  const parsed = AgMessageSchema.safeParse(row.content);
-  if (parsed.success) return parsed.data;
+  const stored = readStoredAgMessage(row.content);
+  if (stored.value !== undefined) return stored.value;
   const role: AgRole =
     row.authorRole === "user" ? "user" : row.authorRole === "system" ? "system" : "assistant";
   const text = row.text ?? "";

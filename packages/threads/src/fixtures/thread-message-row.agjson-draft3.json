@@ -1,0 +1,61 @@
+{
+  "threadId": "t-prev",
+  "seq": 1,
+  "userId": "g_prev",
+  "clientMessageId": "k-prev#agent#0",
+  "at": "2026-09-20T00:00:00.000Z",
+  "kind": "text",
+  "authorRole": "agent",
+  "text": "Checking the forecast.\n\nIt is sunny in NYC.",
+  "content": {
+    "id": "m1",
+    "role": "assistant",
+    "content": [
+      {
+        "type": "reasoning",
+        "text": "The user wants the forecast."
+      },
+      {
+        "type": "text",
+        "text": "Checking the forecast."
+      },
+      {
+        "type": "tool-call",
+        "toolCallId": "c1",
+        "name": "get_weather",
+        "input": {
+          "city": "NYC"
+        }
+      },
+      {
+        "type": "tool-result",
+        "toolCallId": "c1",
+        "content": [
+          {
+            "type": "text",
+            "text": "Sunny, 72F."
+          }
+        ],
+        "outcome": "ok"
+      },
+      {
+        "type": "text",
+        "text": "It is sunny in NYC."
+      }
+    ],
+    "turnId": "turn1",
+    "threadId": "t-prev",
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 7
+    }
+  },
+  "aiContext": {
+    "turnId": "turn1",
+    "threadId": "t-prev",
+    "finishReason": "stop",
+    "outcome": {
+      "type": "success"
+    }
+  }
+}
