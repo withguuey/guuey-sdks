@@ -570,3 +570,71 @@ describe("importConditionEntry — the single-INSTANCE rule (ESM/CJS dual-packag
     expect(importConditionEntry(join(plainDir, "index.js"))).toBeUndefined();
   });
 });
+
+describe("withheldTools — the Router's per-turn withholds reach the ADK toolsets", () => {
+  const base = mkdtempSync(join(tmpdir(), "adk-withheld-"));
+  afterAll(() => rmSync(base, { recursive: true, force: true }));
+  isolateAdkKeys();
+
+  async function toolsetsFor(over: Partial<HostTurn>): Promise<Array<{ url: string; toolFilter: unknown }>> {
+    const session = mkdtempSync(join(base, "s-"));
+    mkdirSync(join(session, ".guuey", "credentials"), { recursive: true });
+    writeFileSync(
+      join(session, ".guuey", "credentials", "ggui.json"),
+      JSON.stringify({ url: "https://mcp.example/apps/x", transport: "http", headers: {} }),
+    );
+    const built: Array<{ url: string; toolFilter: unknown }> = [];
+    const fakeAdk = {
+      LlmAgent: class {
+        constructor(_: { name: string; model: string | object; instruction: string | (() => string); tools: unknown[] }) {}
+      },
+      Gemini: FakeGemini,
+      MCPToolset: class {
+        constructor(params: { url: string }, toolFilter?: unknown) {
+          built.push({ url: params.url, toolFilter });
+        }
+      },
+      InMemoryRunner: class {
+        readonly appName = "fake";
+        readonly sessionService = {
+          createSession: ({ userId }: { appName: string; userId: string }) => Promise.resolve({ id: `s-${userId}` }),
+        };
+        constructor(_: { agent: object }) {}
+        async *runAsync(_: unknown): AsyncGenerator<JsonValue, void, undefined> {
+          yield { content: { parts: [{ text: "ok" }] } };
+        }
+      },
+    };
+    const runner = createRunner({ load: () => Promise.resolve(fakeAdk) });
+    const turn: HostTurn = {
+      input: "hi",
+      identity: { userId: "u-1", authMode: "anonymous" },
+      fs: { app: base, home: base, session },
+      history: [],
+      ...over,
+    };
+    const { emit, got } = fakeEmitter();
+    await runner.runTurn({ model: "gemini-3.5-pro", systemPrompt: "be terse" }, turn, emit);
+    expect(got.error).toEqual([]);
+    return built;
+  }
+
+  it("the named server's toolset gets a predicate that hides exactly the withheld tool", async () => {
+    const built = await toolsetsFor({ gguiAttached: true, withheldTools: [{ server: "ggui", tool: "ggui_consume" }] });
+    expect(built).toHaveLength(1);
+    const filter = built[0]!.toolFilter;
+    if (typeof filter !== "function") throw new Error(`expected a predicate, got ${typeof filter}`);
+    expect(Reflect.apply(filter, undefined, [{ name: "ggui_consume" }])).toBe(false);
+    expect(Reflect.apply(filter, undefined, [{ name: "ggui_render" }])).toBe(true);
+  });
+
+  it("no withheld tools → the toolset is built with no filter (today's catalog)", async () => {
+    const built = await toolsetsFor({ gguiAttached: true });
+    expect(built).toEqual([{ url: "https://mcp.example/apps/x", toolFilter: undefined }]);
+  });
+
+  it("a withhold naming another server leaves this toolset unfiltered", async () => {
+    const built = await toolsetsFor({ withheldTools: [{ server: "elsewhere", tool: "ggui_consume" }] });
+    expect(built).toEqual([{ url: "https://mcp.example/apps/x", toolFilter: undefined }]);
+  });
+});

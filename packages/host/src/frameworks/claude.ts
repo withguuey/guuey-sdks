@@ -17,7 +17,7 @@ import type { CredentialFile,
   Identity,
   JsonValue,
   ProfileSection,
-  StopReason, McpAvailability, FirstImpressionPush } from "@guuey/worker";
+  StopReason, McpAvailability, FirstImpressionPush, WithheldTool } from "@guuey/worker";
 import {
   buildOptions,
   type BuildOptionsContext,
@@ -71,6 +71,8 @@ export interface HostInvoke {
   profileSections?: ProfileSection[];
   /** The first-impression push (guuey#1183) — see `Invoke.firstImpression` in `@guuey/worker`; rendered only with the ggui rail armed. */
   firstImpression?: FirstImpressionPush;
+  /** The Router's per-turn tool withholds — see `Invoke.withheldTools` in `@guuey/worker`; removed from this turn's catalog. */
+  withheldTools?: WithheldTool[];
   /**
    * How many builder-provided reference files sit at `<fs.app>/resources` this
    * turn (guuey#456 B4) — present only when the layers are REAL and the count
@@ -204,6 +206,8 @@ export async function runInvoke(
       // here — so on claude-agent-sdk neither the section nor the knob ever ran.
       ...(invoke.firstImpression !== undefined ? { firstImpression: invoke.firstImpression } : {}),
       ...(invoke.mcpAvailability !== undefined ? { mcpAvailability: invoke.mcpAvailability } : {}),
+      // The Router's per-turn tool withholds → `disallowedTools` (servers attached this turn only).
+      ...(invoke.withheldTools !== undefined ? { withheldTools: invoke.withheldTools } : {}),
     };
     options = buildOptions(snapshot, ctx);
   } catch (err) {

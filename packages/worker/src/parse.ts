@@ -24,6 +24,7 @@ import type {
   WorkerHelloEvent,
   McpAvailability,
   McpAvailabilityState,
+  WithheldTool,
 } from "./protocol.js";
 
 export function isInvoke(m: ControlMessage): m is Invoke {
@@ -172,6 +173,7 @@ export function parseControl(line: string): ControlMessage {
       if (typeof raw.input !== "string") throw new Error("invoke missing string `input`");
       const priorMemory = parsePriorMemory(raw.priorMemory);
       const profileSections = parseProfileSections(raw.profileSections);
+      const withheldTools = parseWithheldTools(raw.withheldTools);
       const firstImpression = parseFirstImpression(raw.firstImpression);
       const mcpAvailability = parseMcpAvailability(raw.mcpAvailability);
       return {
@@ -224,6 +226,11 @@ export function parseControl(line: string): ControlMessage {
         // never lands as `undefined` (and a missing field reads as NO rail,
         // fail-closed: never promise a card the turn cannot draw).
         ...(typeof raw.gguiAttached === "boolean" ? { gguiAttached: raw.gguiAttached } : {}),
+        // The per-turn withheld tools: only well-formed `{server, tool}` entries
+        // (both non-empty strings) land, carrying those two fields alone; the
+        // field is omitted unless at least one survives, so an older Router's
+        // invoke and a malformed one both read as the full catalog.
+        ...(withheldTools.length > 0 ? { withheldTools } : {}),
       };
     }
     case "shutdown":
@@ -299,4 +306,19 @@ export function parseEvent(line: string): WorkerEvent {
     default:
       throw new Error(`unknown event type: ${String(raw.type)}`);
   }
+}
+
+/** The well-formed entries of an invoke's `withheldTools`, each reduced to `{server, tool}`; anything else is dropped. */
+function parseWithheldTools(raw: unknown): WithheldTool[] {
+  if (!Array.isArray(raw)) return [];
+  const out: WithheldTool[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const server: unknown = Reflect.get(entry, "server");
+    const tool: unknown = Reflect.get(entry, "tool");
+    if (typeof server === "string" && server.length > 0 && typeof tool === "string" && tool.length > 0) {
+      out.push({ server, tool });
+    }
+  }
+  return out;
 }

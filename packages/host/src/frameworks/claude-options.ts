@@ -20,7 +20,8 @@
  * `@guuey/worker`, `@guuey/config`, and Node built-ins.
  */
 import type { CanUseTool, Options, SDKMessage, Settings } from "@anthropic-ai/claude-agent-sdk";
-import type { FirstImpressionPush, Fs, HistoryMessage, JsonValue, McpAvailability, ProfileSection } from "@guuey/worker";
+import type { FirstImpressionPush, Fs, HistoryMessage, JsonValue, McpAvailability, ProfileSection, WithheldTool } from "@guuey/worker";
+import { withheldToolNamesFor } from "../withheld-tools.js";
 import {
   GUUEY_DEFAULT_SYSTEM_PROMPT,
   defaultModelFor,
@@ -271,6 +272,8 @@ export interface BuildOptionsContext {
   profileSections?: ProfileSection[];
   /** The first-impression push (guuey#1183) — mirrors `Invoke.firstImpression`; rendered only with the ggui rail armed. */
   firstImpression?: FirstImpressionPush;
+  /** The Router's per-turn tool withholds — mirrors `Invoke.withheldTools`; folded into `disallowedTools` for attached servers. */
+  withheldTools?: WithheldTool[];
   /**
    * How many builder-provided reference files sit at `<fs.app>/resources` this
    * turn (guuey#456 B4) — counted Router-side at invoke assembly and written
@@ -332,7 +335,7 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
 
   const mcpServers = resolveMcpServers(ctx);
   const fsBound = ctx.fsBound === true;
-  const gates = resolveToolGates(snapshot, Object.keys(mcpServers), fsBound);
+  const gates = resolveToolGates(snapshot, Object.keys(mcpServers), fsBound, ctx.withheldTools);
   const systemPrompt =
     withContextPreamble(
       snapshot.systemPrompt ?? GUUEY_DEFAULT_SYSTEM_PROMPT,
@@ -664,12 +667,14 @@ function toSdkToolNames(
  *   silently switched off by a builder's MCP-only allowlist; a builder who
  *   wants them gone deny-lists them (`"Bash"`).
  * - `disallowedTools`: the translated `tools.denylist` — the SDK removes those
- *   from the model's catalog outright.
+ *   from the model's catalog outright — plus this turn's `withheld` tools on
+ *   the servers attached this turn (`Invoke.withheldTools`).
  */
 export function resolveToolGates(
   snapshot: GuueyAgent,
   declaredServerNames: readonly string[],
   fsBound: boolean,
+  withheld?: readonly WithheldTool[],
 ): ResolvedToolGates {
   const explicit = snapshot.tools?.allowlist ?? [];
   const explicitAllowlist = explicit.length > 0;
@@ -678,9 +683,12 @@ export function resolveToolGates(
     ? explicit.flatMap((e) => toSdkToolNames(e, declaredServerNames, fsBound))
     : declaredServerNames.map((s) => `mcp__${s}`);
   const allowedTools = dedupe([...mcpAllowed, ...builtins]);
-  const disallowedTools = dedupe(
-    (snapshot.tools?.denylist ?? []).flatMap((e) => toSdkToolNames(e, declaredServerNames, fsBound)),
-  );
+  const disallowedTools = dedupe([
+    ...(snapshot.tools?.denylist ?? []).flatMap((e) => toSdkToolNames(e, declaredServerNames, fsBound)),
+    ...declaredServerNames.flatMap((server) =>
+      withheldToolNamesFor(server, withheld).map((tool) => `mcp__${server}__${tool}`),
+    ),
+  ]);
   return {
     tools: builtins,
     allowedTools,

@@ -37,6 +37,7 @@ import {
   type RunStreamEvent,
 } from "@openai/agents";
 import { mcpToolCustomData } from "@guuey/worker";
+import { withheldToolNamesFor } from "../withheld-tools.js";
 import type { Emitter, JsonValue } from "@guuey/worker";
 import {
   resolveMcpServers,
@@ -142,6 +143,8 @@ export async function runInvokeOpenai(
     ...(runtime.apiKey !== undefined ? { apiKey: runtime.apiKey } : {}),
     ...(invoke.priorMemory !== undefined ? { priorMemory: invoke.priorMemory } : {}),
     ...(invoke.priorState !== undefined ? { priorState: invoke.priorState } : {}),
+    // The Router's per-turn tool withholds → the named servers' `toolFilter`.
+    ...(invoke.withheldTools !== undefined ? { withheldTools: invoke.withheldTools } : {}),
   };
 
   // Build the Agent (+ connect its MCP servers). A build failure (e.g. an
@@ -302,7 +305,7 @@ function buildOpenaiMcpServers(ctx: BuildOptionsContext): MCPServerStreamableHtt
   const resolved = resolveMcpServers(ctx);
   const servers: MCPServerStreamableHttp[] = [];
   for (const [name, entry] of Object.entries(resolved)) {
-    servers.push(toOpenaiMcpServer(name, entry));
+    servers.push(toOpenaiMcpServer(name, entry, withheldToolNamesFor(name, ctx.withheldTools)));
   }
   return servers;
 }
@@ -314,7 +317,7 @@ function buildOpenaiMcpServers(ctx: BuildOptionsContext): MCPServerStreamableHtt
  * we get here) — handled with a loud throw so a future schema change can't
  * silently drop a server.
  */
-function toOpenaiMcpServer(name: string, entry: SdkMcpServer): MCPServerStreamableHttp {
+function toOpenaiMcpServer(name: string, entry: SdkMcpServer, withheld: readonly string[]): MCPServerStreamableHttp {
   if (entry.type === "stdio") {
     throw new Error(
       `mcpServers["${name}"]: stdio (colocated) MCP is not supported on the OpenAI host path.`,
@@ -332,6 +335,9 @@ function toOpenaiMcpServer(name: string, entry: SdkMcpServer): MCPServerStreamab
     // ride here. guuey#981: ONE shared extractor for every OpenAI worker — the
     // code-mode template's `worker.ts` passes the same `@guuey/worker` export.
     customDataExtractor: mcpToolCustomData,
+    // This turn's withheld tools on this server (`Invoke.withheldTools`): the
+    // SDK drops them when it lists the server's tools for the model.
+    ...(withheld.length > 0 ? { toolFilter: { blockedToolNames: [...withheld] } } : {}),
   });
 }
 

@@ -200,6 +200,41 @@ describe("runInvoke — native emission", () => {
     expect(seen.systemPrompt).toContain("Ada");
   });
 
+  describe("withheldTools — the Router's per-turn withholds reach the SDK catalog on the Claude path", () => {
+    const gguiCred = { name: "ggui", cred: { url: "https://mcp.example/apps/x", transport: "http" as const, headers: {} } };
+
+    async function gatesFor(over: Partial<HostInvoke>): Promise<{ allowedTools?: unknown; disallowedTools?: unknown }> {
+      const { sink } = collector();
+      const emit = createEmitter(sink);
+      let seen: { allowedTools?: unknown; disallowedTools?: unknown } = {};
+      const query: QueryFn = (args) => {
+        seen = {
+          allowedTools: args.options.allowedTools,
+          ...("disallowedTools" in args.options ? { disallowedTools: args.options.disallowedTools } : {}),
+        };
+        return streamOf();
+      };
+      await runInvoke({}, invoke(over), { apiKey: "sk-test", listCredentials: () => [gguiCred] }, emit, query);
+      return seen;
+    }
+
+    it("a withheld ggui tool is removed from the catalog (disallowedTools), the rest of the server stays allowed", async () => {
+      const seen = await gatesFor({ gguiAttached: true, withheldTools: [{ server: "ggui", tool: "ggui_consume" }] });
+      expect(seen.disallowedTools).toEqual(["mcp__ggui__ggui_consume"]);
+      expect(seen.allowedTools).toContain("mcp__ggui");
+    });
+
+    it("no withheld tools → no disallowedTools at all (today's catalog)", async () => {
+      const seen = await gatesFor({ gguiAttached: true });
+      expect(seen).not.toHaveProperty("disallowedTools");
+    });
+
+    it("a withhold naming a server that is not attached this turn adds nothing", async () => {
+      const seen = await gatesFor({ withheldTools: [{ server: "elsewhere", tool: "ggui_consume" }] });
+      expect(seen).not.toHaveProperty("disallowedTools");
+    });
+  });
+
   describe("guuey#1183 — the first-impression push reaches buildOptions on the Claude path", () => {
     const push = { chipKey: "opening-hours", intent: "show opening hours", contract: { kind: "hours" } };
 

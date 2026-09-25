@@ -13,6 +13,7 @@ export {
   type PriorMemoryRecord,
   type ProfileSection,
   type FirstImpressionPush,
+  type WithheldTool,
   type McpAvailability,
   type McpAvailabilityState,
   type StopReason,

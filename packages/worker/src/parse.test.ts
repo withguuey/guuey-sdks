@@ -174,6 +174,49 @@ describe("parseControl", () => {
     expect(msg.memoryAttached).toBe(true);
   });
 
+  describe("withheldTools — the tools the Router withholds from THIS turn's catalog", () => {
+    const base = {
+      type: "invoke",
+      input: "go",
+      identity: { userId: "u", authMode: "anonymous" },
+      fs: { app: "/app", home: "/home", session: "/session" },
+      history: [],
+    };
+    const parse = (extra: object) => {
+      const msg = parseControl(JSON.stringify({ ...base, ...extra }));
+      if (!isInvoke(msg)) throw new Error("expected invoke");
+      return msg;
+    };
+
+    it("round-trips well-formed {server, tool} entries onto the typed Invoke", () => {
+      expect(parse({ withheldTools: [{ server: "ggui", tool: "ggui_consume" }] }).withheldTools).toEqual([
+        { server: "ggui", tool: "ggui_consume" },
+      ]);
+    });
+
+    it("drops malformed entries and keeps the rest; an entry carries only server + tool", () => {
+      const msg = parse({
+        withheldTools: [
+          { server: "ggui", tool: "ggui_consume", extra: 1 },
+          { server: "", tool: "x" },
+          { server: "a" },
+          { tool: "b" },
+          { server: 3, tool: "c" },
+          "ggui.ggui_consume",
+          null,
+        ],
+      });
+      expect(msg.withheldTools).toEqual([{ server: "ggui", tool: "ggui_consume" }]);
+    });
+
+    it("omits the field when absent, not an array, or nothing well-formed remains — the full catalog", () => {
+      expect("withheldTools" in parse({})).toBe(false);
+      expect("withheldTools" in parse({ withheldTools: "ggui_consume" })).toBe(false);
+      expect("withheldTools" in parse({ withheldTools: [] })).toBe(false);
+      expect("withheldTools" in parse({ withheldTools: [{ server: "", tool: "" }] })).toBe(false);
+    });
+  });
+
   it("round-trips gguiAttached (boolean) onto the typed Invoke — the generative-UI gate (guuey#630)", () => {
     const withRail = JSON.stringify({
       type: "invoke",

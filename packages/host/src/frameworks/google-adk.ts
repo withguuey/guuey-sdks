@@ -56,7 +56,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { GUUEY_DEFAULT_SYSTEM_PROMPT, defaultModelFor, type GuueyContext } from "@guuey/config";
-import { listCredentials, type CredentialFile, type Emitter, type JsonValue } from "@guuey/worker";
+import { listCredentials, type CredentialFile, type Emitter, type JsonValue, type WithheldTool } from "@guuey/worker";
 import type { FrameworkRunner, HostSnapshot, HostTurn } from "../index.js";
 import {
   AGENT_ENTRY_ENV,
@@ -78,6 +78,7 @@ import {
   withContextPreamble,
 } from "../preamble.js";
 import { resolveSdkVersion } from "../sdk-version.js";
+import { withheldToolNamesFor } from "../withheld-tools.js";
 
 const ADK_FRAMEWORK = "google-adk";
 
@@ -148,11 +149,15 @@ interface AdkModule {
   /** The Gemini model class (root export on 1.x + 2.x): `apiKey` given here beats the SDK's env chain (guuey#1342). */
   Gemini: new (params: { model: string; apiKey: string }) => AdkLlm;
   InMemoryRunner: new (params: { agent: AdkAgent }) => AdkRunner;
-  MCPToolset: new (connectionParams: {
-    type: "StreamableHTTPConnectionParams";
-    url: string;
-    transportOptions?: { requestInit?: { headers?: Record<string, string> } };
-  }) => unknown;
+  MCPToolset: new (
+    connectionParams: {
+      type: "StreamableHTTPConnectionParams";
+      url: string;
+      transportOptions?: { requestInit?: { headers?: Record<string, string> } };
+    },
+    /** The ADK's `ToolPredicate` as this host uses it: true keeps the tool in the catalog. */
+    toolFilter?: (tool: { name: string }) => boolean,
+  ) => unknown;
 }
 
 /** Opaque agent handle — constructed here (no-code) or by the dev (graceful). */
@@ -216,6 +221,7 @@ export async function loadAdk(entryPath?: string): Promise<AdkModule> {
 export function buildToolsets(
   adk: Pick<AdkModule, "MCPToolset">,
   creds: Array<{ name: string; cred: CredentialFile }>,
+  withheld?: readonly WithheldTool[],
 ): unknown[] {
   return creds.map(({ name, cred }) => {
     if (cred.transport === "sse") {
@@ -224,11 +230,17 @@ export function buildToolsets(
           `(Streamable-HTTP only). Point the server at a Streamable-HTTP endpoint or use a different framework for this agent.`,
       );
     }
-    return new adk.MCPToolset({
-      type: "StreamableHTTPConnectionParams",
+    const params = {
+      type: "StreamableHTTPConnectionParams" as const,
       url: cred.url,
       transportOptions: { requestInit: { headers: cred.headers } },
-    });
+    };
+    // This turn's withheld tools on this server (`Invoke.withheldTools`): the
+    // toolset's predicate hides them from the model's catalog.
+    const hidden = withheldToolNamesFor(name, withheld);
+    return hidden.length > 0
+      ? new adk.MCPToolset(params, (tool) => !hidden.includes(tool.name))
+      : new adk.MCPToolset(params);
   });
 }
 
@@ -467,7 +479,7 @@ export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
       try {
         const creds = listCredentials(turn.fs)();
         const toolsets = instrumentToolsets(
-          buildToolsets(adk, creds).map((toolset, i) => ({ name: creds[i]?.name ?? `server-${i}`, toolset })),
+          buildToolsets(adk, creds, turn.withheldTools).map((toolset, i) => ({ name: creds[i]?.name ?? `server-${i}`, toolset })),
           (line) => process.stderr.write(`${line}\n`),
         );
         if (exported !== undefined) {

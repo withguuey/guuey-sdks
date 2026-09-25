@@ -233,6 +233,26 @@ export interface Invoke {
    * only-when-true shape, so "no rail" is always the ABSENT field on the wire.
    */
   gguiAttached?: boolean;
+  /**
+   * MCP tools the Router withholds from THIS turn's catalog, each named by its
+   * server's key (the credential file's name) and the tool's own name. Every
+   * framework removes them before the model sees the catalog: Claude through
+   * `disallowedTools`, OpenAI through the server's `toolFilter`, ADK through the
+   * toolset's predicate. Written only when non-empty, so "the full catalog" is
+   * always the ABSENT field.
+   *
+   * Today's one writer: when the client that opened the session turns every
+   * view message into the next turn itself (it declared `ui-message-turn`),
+   * the Router withholds ggui's `ggui_consume` long-poll. Nothing can arrive on
+   * it that the host will not deliver as a turn, so the wait only held the turn
+   * open. An older worker ignores the field and keeps the full catalog.
+   */
+  withheldTools?: WithheldTool[];
+}
+/** One tool withheld from a turn's catalog: `server` is the MCP server's key, `tool` the tool's name on that server. */
+export interface WithheldTool {
+  server: string;
+  tool: string;
 }
 /** Graceful termination (also signalled by stdin EOF). */
 export interface Shutdown {
