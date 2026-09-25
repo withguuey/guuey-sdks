@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { buildInvokeBody } from "./invoke-body.js";
@@ -79,15 +79,55 @@ describe("the widget cases carry exactly what the widget sends", () => {
 // bundle that imports the builder — its private notes reached a production
 // bundle's public JS that way. `src/fixtures/**` is excluded from the build and
 // the npm pack; this holds the other half: no runtime module imports from it.
+// Every way a module names another: `import … from` / `export … from`, a side-effect
+// `import "…"`, and a dynamic `import("…")` with a literal — the pack guard reads the same
+// forms. A specifier built at runtime cannot be read here; none exists in this package.
+const SPECIFIER = /(?:\bfrom\s+|\bimport\s*\(\s*|\bimport\s+)["']([^"']+)["']/g;
+
+/** The relative specifiers in `source` (a module at `file`) that resolve inside `fixtures`. */
+function specifiersIntoFixtures(file: string, source: string, fixtures: string): string[] {
+  return [...source.matchAll(SPECIFIER)]
+    .flatMap((m) => (m[1] === undefined ? [] : [m[1]]))
+    .filter((s) => s.startsWith("."))
+    .filter((s) => {
+      const target = resolve(dirname(file), s);
+      return target === fixtures || target.startsWith(fixtures + sep);
+    });
+}
+
 describe("the case corpus ships in no bundle and no tarball", () => {
-  it("no runtime module under src/ imports from fixtures/", () => {
+  it("no runtime module anywhere under src/ (any depth) reaches src/fixtures/", () => {
     const src = dirname(fileURLToPath(import.meta.url));
-    const runtime = readdirSync(src).filter((f) => /\.tsx?$/.test(f) && !/\.test\.tsx?$/.test(f));
+    const fixtures = join(src, "fixtures");
+    // any depth: a module in a subdirectory reaches the corpus as `../fixtures/…`, so the walk
+    // recurses and every relative specifier is RESOLVED against its own file, never pattern-matched
+    const runtime = readdirSync(src, { recursive: true, encoding: "utf8" })
+      .filter((f) => /\.tsx?$/.test(f) && !/\.test\.tsx?$/.test(f))
+      .filter((f) => !join(src, f).startsWith(fixtures + sep));
     expect(runtime.length).toBeGreaterThan(0);
-    // every way a module can reach another: `import … from` / `export … from`, a side-effect
-    // `import "…"`, and a dynamic `import("…")` — the pack guard reads the same forms
-    const reaches = /(?:\bfrom\s+|\bimport\s*\(\s*|\bimport\s+)["']\.\/fixtures\//;
-    const offenders = runtime.filter((f) => reaches.test(readFileSync(join(src, f), "utf8")));
+    const offenders = runtime.flatMap((f) =>
+      specifiersIntoFixtures(join(src, f), readFileSync(join(src, f), "utf8"), fixtures).map(
+        (s) => `${f} → ${s}`
+      )
+    );
     expect(offenders).toEqual([]);
+  });
+
+  it("the resolver: `../fixtures/` from a subdirectory is caught; a sibling `fixtures` dir elsewhere is not", () => {
+    const src = "/pkg/src";
+    const fixtures = "/pkg/src/fixtures";
+    const from = (file: string, source: string): string[] =>
+      specifiersIntoFixtures(file, source, fixtures);
+    expect(from("/pkg/src/a.ts", 'import { X } from "./fixtures/cases.js";')).toEqual([
+      "./fixtures/cases.js",
+    ]);
+    expect(from("/pkg/src/sub/b.ts", 'export * from "../fixtures/cases.js";')).toEqual([
+      "../fixtures/cases.js",
+    ]);
+    expect(from("/pkg/src/sub/deep/c.ts", 'const m = await import("../../fixtures/x.js");')).toEqual(
+      ["../../fixtures/x.js"]
+    );
+    expect(from("/pkg/src/sub/d.ts", 'import "./fixtures/own.js";')).toEqual([]);
+    expect(from(`${src}/e.ts`, 'import { y } from "@guuey/mcp-apps-host";')).toEqual([]);
   });
 });
