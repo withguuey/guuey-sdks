@@ -79,7 +79,7 @@ import {
   withContextPreamble,
 } from "../preamble.js";
 import { resolveSdkVersion } from "../sdk-version.js";
-import { withheldToolNamesFor } from "../withheld-tools.js";
+import { mcpToolPredicateFor, type ToolGates } from "../mcp-tool-gates.js";
 
 const ADK_FRAMEWORK = "google-adk";
 
@@ -223,6 +223,8 @@ export function buildToolsets(
   adk: Pick<AdkModule, "MCPToolset">,
   creds: Array<{ name: string; cred: CredentialFile }>,
   withheld?: readonly WithheldTool[],
+  /** The snapshot's `tools` block (the builder's allowlist / denylist). */
+  gates?: ToolGates,
 ): unknown[] {
   return creds.map(({ name, cred }) => {
     if (cred.transport === "sse") {
@@ -236,12 +238,11 @@ export function buildToolsets(
       url: cred.url,
       transportOptions: { requestInit: { headers: cred.headers } },
     };
-    // This turn's withheld tools on this server (`Invoke.withheldTools`): the
-    // toolset's predicate hides them from the model's catalog.
-    const hidden = withheldToolNamesFor(name, withheld);
-    return hidden.length > 0
-      ? new adk.MCPToolset(params, (tool) => !hidden.includes(tool.name))
-      : new adk.MCPToolset(params);
+    // The builder's tool gates (allowlist, then denylist) and this turn's
+    // withheld tools on this server (guuey#1768, `mcp-tool-gates.ts`): the
+    // toolset's predicate keeps only what they admit in the model's catalog.
+    const keep = mcpToolPredicateFor(name, gates, withheld);
+    return keep !== undefined ? new adk.MCPToolset(params, (tool) => keep(tool.name)) : new adk.MCPToolset(params);
   });
 }
 
@@ -482,7 +483,7 @@ export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
       try {
         const creds = listCredentials(turn.fs)();
         const toolsets = instrumentToolsets(
-          buildToolsets(adk, creds, turn.withheldTools).map((toolset, i) => ({ name: creds[i]?.name ?? `server-${i}`, toolset })),
+          buildToolsets(adk, creds, turn.withheldTools, snapshot.tools).map((toolset, i) => ({ name: creds[i]?.name ?? `server-${i}`, toolset })),
           (line) => process.stderr.write(`${line}\n`),
         );
         if (exported !== undefined) {

@@ -34,10 +34,11 @@ import {
   MaxTurnsExceededError,
   MCPServerStreamableHttp,
   type MCPServer,
+  type MCPToolFilterCallable,
   type RunStreamEvent,
 } from "@openai/agents";
 import { mcpToolCustomData } from "@guuey/worker";
-import { withheldToolNamesFor } from "../withheld-tools.js";
+import { mcpToolPredicateFor, type ToolGates } from "../mcp-tool-gates.js";
 import type { Emitter, JsonValue } from "@guuey/worker";
 import {
   resolveMcpServers,
@@ -143,7 +144,7 @@ export async function runInvokeOpenai(
     ...(runtime.apiKey !== undefined ? { apiKey: runtime.apiKey } : {}),
     ...(invoke.priorMemory !== undefined ? { priorMemory: invoke.priorMemory } : {}),
     ...(invoke.priorState !== undefined ? { priorState: invoke.priorState } : {}),
-    // The Router's per-turn tool withholds → the named servers' `toolFilter`.
+    // The Router's per-turn tool withholds → the named servers' `toolFilter` (with the snapshot's tool gates).
     ...(invoke.withheldTools !== undefined ? { withheldTools: invoke.withheldTools } : {}),
   };
 
@@ -215,7 +216,7 @@ export async function runInvokeOpenai(
       // guuey#556: default response norms, LAST and unconditional (see the
       // constant's doc for the confirm-gate carve-out).
       RESPONSE_NORMS_SECTION;
-    mcpServers = buildOpenaiMcpServers(ctx);
+    mcpServers = buildOpenaiMcpServers(ctx, snapshot.tools);
   } catch (err) {
     emit.error(err instanceof Error ? err.message : String(err));
     return;
@@ -303,11 +304,11 @@ function finalText(stream: OpenaiRunResult): string {
  * transport to one of those two); the `stdio` arm below is unreachable
  * defensive code — kept so a future schema change can't silently drop a server.
  */
-function buildOpenaiMcpServers(ctx: BuildOptionsContext): MCPServerStreamableHttp[] {
+function buildOpenaiMcpServers(ctx: BuildOptionsContext, gates: ToolGates): MCPServerStreamableHttp[] {
   const resolved = resolveMcpServers(ctx);
   const servers: MCPServerStreamableHttp[] = [];
   for (const [name, entry] of Object.entries(resolved)) {
-    servers.push(toOpenaiMcpServer(name, entry, withheldToolNamesFor(name, ctx.withheldTools)));
+    servers.push(toOpenaiMcpServer(name, entry, mcpToolPredicateFor(name, gates, ctx.withheldTools)));
   }
   return servers;
 }
@@ -319,7 +320,7 @@ function buildOpenaiMcpServers(ctx: BuildOptionsContext): MCPServerStreamableHtt
  * we get here) — handled with a loud throw so a future schema change can't
  * silently drop a server.
  */
-function toOpenaiMcpServer(name: string, entry: SdkMcpServer, withheld: readonly string[]): MCPServerStreamableHttp {
+function toOpenaiMcpServer(name: string, entry: SdkMcpServer, keep: ((tool: string) => boolean) | undefined): MCPServerStreamableHttp {
   if (entry.type === "stdio") {
     throw new Error(
       `mcpServers["${name}"]: stdio (colocated) MCP is not supported on the OpenAI host path.`,
@@ -337,10 +338,18 @@ function toOpenaiMcpServer(name: string, entry: SdkMcpServer, withheld: readonly
     // ride here. guuey#981: ONE shared extractor for every OpenAI worker — the
     // code-mode template's `worker.ts` passes the same `@guuey/worker` export.
     customDataExtractor: mcpToolCustomData,
-    // This turn's withheld tools on this server (`Invoke.withheldTools`): the
-    // SDK drops them when it lists the server's tools for the model.
-    ...(withheld.length > 0 ? { toolFilter: { blockedToolNames: [...withheld] } } : {}),
+    // The builder's tool gates (allowlist, then denylist) and this turn's
+    // withheld tools on this server (guuey#1768, `mcp-tool-gates.ts`): the SDK
+    // calls the filter as it lists the server's tools for the model. A
+    // callable, because a static filter cannot say "keep none" (an empty
+    // `allowedToolNames` filters nothing).
+    ...(keep !== undefined ? { toolFilter: toolFilterOf(keep) } : {}),
   });
+}
+
+/** The gate predicate as the SDK's callable filter (the SDK awaits it per listed tool). */
+function toolFilterOf(keep: (tool: string) => boolean): MCPToolFilterCallable {
+  return async (_context, tool) => keep(tool.name);
 }
 
 /** Best-effort close of every connected MCP server (release the transport). */

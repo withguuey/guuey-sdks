@@ -592,7 +592,10 @@ describe("withheldTools — the Router's per-turn withholds reach the ADK toolse
   afterAll(() => rmSync(base, { recursive: true, force: true }));
   isolateAdkKeys();
 
-  async function toolsetsFor(over: Partial<HostTurn>): Promise<Array<{ url: string; toolFilter: unknown }>> {
+  async function toolsetsFor(
+    over: Partial<HostTurn>,
+    tools?: { allowlist?: string[]; denylist?: string[] },
+  ): Promise<Array<{ url: string; toolFilter: unknown }>> {
     const session = mkdtempSync(join(base, "s-"));
     mkdirSync(join(session, ".guuey", "credentials"), { recursive: true });
     writeFileSync(
@@ -630,10 +633,34 @@ describe("withheldTools — the Router's per-turn withholds reach the ADK toolse
       ...over,
     };
     const { emit, got } = fakeEmitter();
-    await runner.runTurn({ model: "gemini-3.5-pro", systemPrompt: "be terse" }, turn, emit);
+    await runner.runTurn({ model: "gemini-3.5-pro", systemPrompt: "be terse", ...(tools !== undefined ? { tools } : {}) }, turn, emit);
     expect(got.error).toEqual([]);
     return built;
   }
+
+  /** The tool names of `candidates` the toolset's predicate keeps. */
+  function keptBy(toolFilter: unknown, candidates: readonly string[] = ["ggui_render", "ggui_consume", "ggui_handshake"]): string[] {
+    if (typeof toolFilter !== "function") throw new Error(`expected a predicate, got ${JSON.stringify(toolFilter)}`);
+    return candidates.filter((name) => Reflect.apply(toolFilter, undefined, [{ name }]) === true);
+  }
+
+  describe("the builder's tool gates reach the ADK toolsets too (guuey#1768)", () => {
+    it("allowlist <server>.<tool> keeps only that tool; an allowlist naming only another server keeps nothing here", async () => {
+      expect(keptBy((await toolsetsFor({}, { allowlist: ["ggui.ggui_render"] }))[0]!.toolFilter)).toEqual(["ggui_render"]);
+      expect(keptBy((await toolsetsFor({}, { allowlist: ["other.ggui_render"] }))[0]!.toolFilter)).toEqual([]);
+    });
+    it("allowlist <server>.* keeps the toolset whole (no predicate); a bare name keeps that tool", async () => {
+      expect((await toolsetsFor({}, { allowlist: ["ggui.*"] }))[0]!.toolFilter).toBeUndefined();
+      expect(keptBy((await toolsetsFor({}, { allowlist: ["ggui_consume"] }))[0]!.toolFilter)).toEqual(["ggui_consume"]);
+    });
+    it("denylist removes a tool (qualified or bare) or the whole server; the three compose with the withhold", async () => {
+      expect(keptBy((await toolsetsFor({}, { denylist: ["ggui.ggui_consume"] }))[0]!.toolFilter)).toEqual(["ggui_render", "ggui_handshake"]);
+      expect(keptBy((await toolsetsFor({}, { denylist: ["ggui_consume"] }))[0]!.toolFilter)).toEqual(["ggui_render", "ggui_handshake"]);
+      expect(keptBy((await toolsetsFor({}, { denylist: ["ggui.*"] }))[0]!.toolFilter)).toEqual([]);
+      const composed = await toolsetsFor({ withheldTools: [{ server: "ggui", tool: "ggui_handshake" }] }, { allowlist: ["ggui.*"], denylist: ["ggui.ggui_consume"] });
+      expect(keptBy(composed[0]!.toolFilter)).toEqual(["ggui_render"]);
+    });
+  });
 
   it("the named server's toolset gets a predicate that hides exactly the withheld tool", async () => {
     const built = await toolsetsFor({ gguiAttached: true, withheldTools: [{ server: "ggui", tool: "ggui_consume" }] });
