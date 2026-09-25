@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import type { AgHitlAnswer, AgPausedAsk } from "@silverprotocol/core";
 import { buildHitlAnswer } from "../hitl.js";
+import { oauthAuthorizeAsk } from "../oauth.js";
 import type { HitlPromptItem } from "../types.js";
 import { oauthPromptAction, oauthReturnToHere, openOAuthAuthorize, useOAuthReturn, type OAuthWindow } from "./oauth-return.js";
 
@@ -102,6 +103,25 @@ describe("oauthPromptAction", () => {
       expect(l.answers).toEqual([{ askId: ASK.askId, status: "cancelled" }]);
       expect(open).not.toHaveBeenCalled();
     }
+  });
+});
+
+describe("a relayed auth ask carrying a non-http(s) URL", () => {
+  it("is not handled as an OAuth ask (the host's ordinary branch runs) and opens nothing", () => {
+    const hostile: AgPausedAsk = {
+      askId: "adk-cred-1",
+      kind: "auth",
+      authConfig: { scheme: "oauth2", authorizationUrl: "javascript:alert(document.cookie)" },
+      metadata: { authConfig: { exchangedAuthCredential: { oauth2: { authUri: "javascript:alert(1)" } } } },
+      grantModes: [{ id: "once" }],
+    };
+    const real = item(hostile, oauthAuthorizeAsk(hostile));
+    expect(real.oauth).toBeNull();
+    const l = ledger();
+    const open = vi.fn();
+    expect(oauthPromptAction({ item: real, action: { grantModeId: "once" }, answerHitlPrompt: l.answerHitlPrompt, open })).toBe(false);
+    expect(open).not.toHaveBeenCalled();
+    expect(l.answers).toEqual([]);
   });
 });
 

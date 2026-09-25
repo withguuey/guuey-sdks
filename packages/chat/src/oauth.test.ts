@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import type { AgPausedAsk } from "@silverprotocol/core";
 import {
   authRequiredFromAsks,
+  isNavigableUrl,
   OAUTH_UPFRONT_METADATA,
   oauthAuthorizeAsk,
   oauthAuthorizeHref,
@@ -146,5 +147,60 @@ describe("authRequiredFromAsks", () => {
       serverName: ASK.askId,
       label: ASK.askId,
     });
+  });
+});
+
+/**
+ * A URL taken from the wire is opened only when it is an absolute http(s)
+ * URL, and an ask that carries its complete request URI (a relayed
+ * google-adk ask, beside its bare `authorizationUrl` view) opens that URI.
+ */
+describe("the URL an auth ask opens", () => {
+  const JS = "javascript:alert(document.cookie)";
+  const COMPLETE = "https://accounts.example/o/oauth2/auth?client_id=c1&state=s&code_challenge=x";
+  const relayed = (authorizationUrl: string, authUri: string, snake = false): AgPausedAsk => ({
+    askId: "adk-cred-1",
+    kind: "auth",
+    authConfig: { scheme: "oauth2", authorizationUrl, scopes: ["read"] },
+    metadata: {
+      authConfig: snake
+        ? { exchanged_auth_credential: { auth_type: "oauth2", oauth2: { client_id: "c1", auth_uri: authUri } } }
+        : { exchangedAuthCredential: { authType: "oauth2", oauth2: { clientId: "c1", authUri } } },
+    },
+  });
+
+  it("isNavigableUrl admits absolute http(s) only", () => {
+    expect(isNavigableUrl(START)).toBe(true);
+    expect(isNavigableUrl("http://localhost:3000/cb")).toBe(true);
+    for (const bad of [JS, "JavaScript:alert(1)", " https://x.example", "data:text/html,x", "vbscript:x", "//evil.example", "/relative", ""]) {
+      expect(isNavigableUrl(bad), bad).toBe(false);
+    }
+  });
+
+  it("an auth ask whose URL is not http(s) is not an OAuth ask: it renders as an ordinary card, and no link can be built", () => {
+    const js: AgPausedAsk = { ...ASK, authConfig: { scheme: "oauth2", authorizationUrl: JS } };
+    expect(oauthAuthorizeAsk(js)).toBeNull();
+    expect(() => oauthAuthorizeHref(js, "always", "https://app.example/chat")).toThrow(/not an oauth2 auth ask/);
+    expect(authRequiredFromAsks([{ ...js, metadata: { authMode: "upfront", serverName: "linear" } }])).toBeNull();
+  });
+
+  it("a relayed google-adk ask opens its COMPLETE request URI, not the bare endpoint (either key spelling)", () => {
+    for (const snake of [false, true]) {
+      const ask = relayed("https://accounts.example/o/oauth2/auth", COMPLETE, snake);
+      expect(oauthAuthorizeAsk(ask)?.authorizationUrl).toBe(COMPLETE);
+      expect(oauthAuthorizeHref(ask, null, "https://app.example/chat").startsWith(`${COMPLETE}&returnTo=`)).toBe(true);
+    }
+  });
+
+  it("the relayed google-adk fixture carrying javascript: renders as a card and opens nothing, on either carrier", () => {
+    expect(oauthAuthorizeAsk(relayed(JS, JS))).toBeNull();
+    // A benign bare endpoint beside a hostile complete URI is not a fallback.
+    expect(oauthAuthorizeAsk(relayed("https://accounts.example/o/oauth2/auth", JS))).toBeNull();
+    // A hostile view with no complete URI is refused too.
+    expect(oauthAuthorizeAsk({ ...relayed(JS, COMPLETE), metadata: {} })).toBeNull();
+  });
+
+  it("the hosted broker's ask (no complete URI) keeps opening its authorizationUrl, unchanged", () => {
+    expect(oauthAuthorizeAsk(UPFRONT_ASK)?.authorizationUrl).toBe(START);
   });
 });

@@ -40,6 +40,7 @@ export {
   OAUTH_SCHEME,
   OAUTH_UPFRONT_METADATA,
   authRequiredFromAsks,
+  isNavigableUrl,
   oauthAuthorizeAsk,
   oauthAuthorizeHref,
   parseOAuthReturn,

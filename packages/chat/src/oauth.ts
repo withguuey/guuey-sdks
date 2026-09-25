@@ -35,7 +35,7 @@
  * Everything here is string-level (no `URL`/`URLSearchParams`) so it runs
  * identically on React Native, whose URL polyfill is partial.
  */
-import type { AgPausedAsk } from "@silverprotocol/core";
+import type { AgPausedAsk, JsonValue } from "@silverprotocol/core";
 
 /** The `authConfig.scheme` this arm recognises (the spec's OAuth 2 vocabulary). */
 export const OAUTH_SCHEME = "oauth2";
@@ -66,6 +66,11 @@ export const OAUTH_UPFRONT_METADATA = {
 
 /** What an auth ask declares once narrowed to the OAuth arm. */
 export interface OAuthAuthorizeAsk {
+  /**
+   * The URL a mode pick opens: the ask's complete request URI when it carries
+   * one (`metadata.authConfig…oauth2.authUri`, as a relayed google-adk ask
+   * does), else `authConfig.authorizationUrl`. Always an absolute http(s) URL.
+   */
   authorizationUrl: string;
   scopes: readonly string[];
   /**
@@ -77,6 +82,44 @@ export interface OAuthAuthorizeAsk {
   upfront: boolean;
 }
 
+/**
+ * Whether a URL taken from the wire may be opened: an absolute http(s) URL,
+ * nothing else (AgJSON §13.4). Every other scheme, and anything that is not an
+ * absolute URL, is never navigated to.
+ */
+export function isNavigableUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url);
+}
+
+type JsonMember = JsonValue | undefined;
+
+function member(value: JsonMember, ...keys: readonly string[]): JsonMember {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  for (const key of keys) {
+    const found = value[key];
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+/**
+ * The complete request URI a relayed framework ask carries beside its
+ * `authConfig` view: google-adk's generated `authUri` (with client_id, state,
+ * PKCE), under `metadata.authConfig`'s exchanged (else raw) credential, in
+ * either key spelling. `undefined` when the ask carries none.
+ */
+function requestUriOf(ask: AgPausedAsk): string | undefined {
+  const native = ask.metadata?.["authConfig"];
+  for (const credential of [
+    member(native, "exchangedAuthCredential", "exchanged_auth_credential"),
+    member(native, "rawAuthCredential", "raw_auth_credential"),
+  ]) {
+    const uri = member(member(credential, "oauth2"), "authUri", "auth_uri");
+    if (typeof uri === "string" && uri !== "") return uri;
+  }
+  return undefined;
+}
+
 /** Read one string off an ask's metadata; `null` for absent or non-string. */
 function metadataString(ask: AgPausedAsk, key: string): string | null {
   const value = ask.metadata?.[key];
@@ -85,16 +128,20 @@ function metadataString(ask: AgPausedAsk, key: string): string | null {
 
 /**
  * Narrow an ask to the OAuth arm: `kind:"auth"` + `authConfig.scheme ===
- * "oauth2"` + an `authorizationUrl` to open. Anything else (a plain
- * approval, an auth ask with another scheme, a URL-less declaration) is
- * `null` and renders as an ordinary hitl card.
+ * "oauth2"` + a URL to open, which is the ask's complete request URI when it
+ * carries one, else its `authorizationUrl`. The URL opened must be an absolute
+ * http(s) URL ({@link isNavigableUrl}). Anything else (a plain approval, an
+ * auth ask with another scheme, a URL-less declaration, a URL that is not
+ * http(s)) is `null` and renders as an ordinary hitl card with nothing to open.
  */
 export function oauthAuthorizeAsk(ask: AgPausedAsk): OAuthAuthorizeAsk | null {
   if (ask.kind !== "auth" || ask.authConfig === undefined) return null;
   const { scheme, authorizationUrl, scopes } = ask.authConfig;
-  if (scheme !== OAUTH_SCHEME || authorizationUrl === undefined || authorizationUrl === "") return null;
+  if (scheme !== OAUTH_SCHEME) return null;
+  const toOpen = requestUriOf(ask) ?? authorizationUrl;
+  if (toOpen === undefined || toOpen === "" || !isNavigableUrl(toOpen)) return null;
   return {
-    authorizationUrl,
+    authorizationUrl: toOpen,
     scopes: scopes ?? [],
     upfront: metadataString(ask, OAUTH_UPFRONT_METADATA.authMode) === OAUTH_UPFRONT_METADATA.upfront,
   };
