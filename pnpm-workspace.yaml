@@ -82,19 +82,19 @@ minimumReleaseAgeExclude:
   - "@guuey/widget-auth"
   - "@guuey/worker"
   - "guuey"
-  # Versioned age-gate exclusions for the CURRENT image sdk pin (0.3.280 was
+  # Versioned age-gate exclusions for the CURRENT image sdk pin (0.3.282 was
   # ~24h old at bump time — outside the 24h gate, kept so a re-install inside
   # 24h of a future bump still resolves). These rot at every sdk bump: swap
-  # them WITH the pin (guuey#659 rails; windows guuey#949, guuey#1306, guuey#1580, guuey#1607), never append.
-  - "@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.280"
-  - "@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.280"
-  - "@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.280"
-  - "@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.280"
-  - "@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.280"
-  - "@anthropic-ai/claude-agent-sdk-linux-x64@0.3.280"
-  - "@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.280"
-  - "@anthropic-ai/claude-agent-sdk-win32-x64@0.3.280"
-  - "@anthropic-ai/claude-agent-sdk@0.3.280"
+  # them WITH the pin (guuey#659 rails; windows guuey#949, guuey#1306, guuey#1580, guuey#1607, guuey#1807), never append.
+  - "@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.282"
+  - "@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.282"
+  - "@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.282"
+  - "@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.282"
+  - "@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.282"
+  - "@anthropic-ai/claude-agent-sdk-linux-x64@0.3.282"
+  - "@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.282"
+  - "@anthropic-ai/claude-agent-sdk-win32-x64@0.3.282"
+  - "@anthropic-ai/claude-agent-sdk@0.3.282"
 
 # guuey#227: brace-expansion patched-line pins — see the root
 # pnpm-workspace.yaml `overrides:` comment (same family, this workspace has

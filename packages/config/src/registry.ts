@@ -69,10 +69,11 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
   // `ga` + `lineup` since 2026-09-08 (guuey#634 / #659): the model gate is
   // the Claude Code binary — 2.1.247 in the fat image 400'd the id ("version
   // 2.1.251 or newer is required", infra's dev turn on guuey#638); the image
-  // now pins `@anthropic-ai/claude-agent-sdk` 0.3.280 exactly, whose bundled
-  // `claude-agent-sdk-linux-x64@0.3.280` carries VERSION 2.1.280 ≥ 2.1.251
-  // (0.3.280's release notes: parity with Claude Code v2.1.280 — also the first
-  // build the API admits for claude-opus-5-5, whose server floor is 2.1.280; guuey#1607)
+  // now pins `@anthropic-ai/claude-agent-sdk` 0.3.282 exactly, whose bundled
+  // `claude-agent-sdk-linux-x64@0.3.282` carries VERSION 2.1.282 ≥ 2.1.251
+  // (read off the binary, guuey#1807). 0.3.280 (Claude Code v2.1.280) was the
+  // first build the API admits for claude-opus-5-5, whose server floor is
+  // 2.1.280; guuey#1607.
   // (infra's #659 read of the served image's build inputs, 2026-09-07) and
   // the id answered on dev on 2.1.258 (guuey#638). The flip is the TWO
   // fields at once — `status: "ga"` AND `lineup: true` — because `lineup`
@@ -177,7 +178,7 @@ export const FRAMEWORK_REGISTRY: readonly FrameworkEntry[] = [
     // the whole host-shared==registry==image==host==facet-peer chain) and
     // registry.pins.test.ts (always-on vs @guuey/host — the publish-time
     // belt that also runs where the root script does not exist).
-    platformPinnedVersion: "0.3.280",
+    platformPinnedVersion: "0.3.282",
     facetSupportedRange: ">=0.2.76 <0.4",
     defaultProvider: "anthropic",
   },
