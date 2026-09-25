@@ -14,7 +14,7 @@ import type {
   AgMemoryRecord,
   JsonValue,
 } from "@silverprotocol/core";
-import { readStoredAgMemoryRecords, readStoredAgMessage, type AgRecordReport } from "@silverprotocol/core";
+import { readStoredAgMessage } from "@silverprotocol/core";
 import type { ThreadMessageRow, ThreadMessageRole, ThreadMessageKind, ThreadSnapshotRow } from "./rows.js";
 import { asUiResource, scanProviderRawForUiResource, toolResultLocator } from "@guuey/mcp-apps-host/narrowing";
 
@@ -329,53 +329,10 @@ export function reassembleFold(
   return {
     messages,
     artifacts,
-    memory: readStoredThreadMemory(snapshot?.threadMemory ?? []).thread,
+    memory: snapshot?.threadMemory ?? [],
     turns: [...turnsById.values()],
     ...(snapshot?.workingState !== undefined ? { state: snapshot.workingState } : {}),
   };
-}
-
-/**
- * A snapshot's stored `threadMemory`, read for THIS runtime (AgJSON draft.4
- * §0.2's stored-record reader). The stored array is a wire across a rolling
- * release, so it is never taken as `AgMemoryRecord[]`:
- *  - `thread`: the records this runtime reads and owns (scope `thread`), the
- *    VIEW to seed a fold with and recall into a prompt. Never persisted in
- *    place of the stored records.
- *  - `carried`: every other stored element, verbatim and in stored order: a
- *    record the reader could not materialize (an undefined `scope`, a missing
- *    `value`, …) and a readable record of another scope. A writer re-appends
- *    them unchanged (`AppendFoldInput.carriedThreadMemory`), so a newer
- *    writer's records survive an older reader's turn byte for byte.
- *  - `omitted`: the reader's reports for the unreadable ones (`path`, the
- *    block type when it had one), for a log line; never log `raw`.
- */
-export interface StoredThreadMemoryRead {
-  thread: AgMemoryRecord[];
-  carried: JsonValue[];
-  omitted: AgRecordReport[];
-}
-
-export function readStoredThreadMemory(stored: readonly JsonValue[]): StoredThreadMemoryRead {
-  const read = readStoredAgMemoryRecords(stored);
-  const omittedIndex = new Set(
-    read.reports.flatMap((r) => (typeof r.path[0] === "number" ? [r.path[0]] : [])),
-  );
-  const thread: AgMemoryRecord[] = [];
-  const carried: JsonValue[] = [];
-  // The reader keeps readable records in stored order and omits the rest, so
-  // the k-th readable stored element is `read.value[k]`.
-  let k = 0;
-  stored.forEach((element, i) => {
-    if (omittedIndex.has(i)) {
-      carried.push(element);
-      return;
-    }
-    const rec = read.value[k++];
-    if (rec !== undefined && rec.scope === "thread") thread.push(rec);
-    else carried.push(element);
-  });
-  return { thread, carried, omitted: read.reports };
 }
 
 /**

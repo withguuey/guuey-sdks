@@ -9,7 +9,7 @@
  * (`@guuey/threads/testing`) so "works in-memory" and "works on the real
  * thing" are the same mechanical guarantee — the `@guuey/state` pattern.
  */
-import type { JsonValue } from "@silverprotocol/core";
+import type { AgMemoryRecord, JsonValue } from "@silverprotocol/core";
 
 export type ThreadMessageRole = "user" | "agent" | "system";
 export type ThreadMessageKind = "text" | "card" | "event";
@@ -130,14 +130,8 @@ export interface ThreadSnapshotRow {
   userId: string;
   /** AgReduceResult.state — opaque working blob. */
   workingState?: JsonValue;
-  /**
-   * The thread's memory records AS STORED: `AgReduceResult.memory` filtered to
-   * scope='thread', plus any stored record this runtime did not read (an
-   * unknown scope, a missing value, a record of another scope), carried
-   * verbatim. Stored data is a wire (N-1): read it with
-   * `readStoredThreadMemory`, never as `AgMemoryRecord[]` directly.
-   */
-  threadMemory: JsonValue[];
+  /** AgReduceResult.memory filtered to scope='thread'. */
+  threadMemory: AgMemoryRecord[];
   lastTurnId?: string;
   updatedAt: string;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { Reducer, type AgReduceResult } from '@silverprotocol/core';
-import { readStoredThreadMemory, seedEventsForReducer, ThreadStore, type ThreadRow, type ThreadSnapshotRow } from './index.js';
+import type { AgReduceResult } from '@silverprotocol/core';
+import { ThreadStore, type ThreadRow, type ThreadSnapshotRow } from './index.js';
 
 // The package ships the binding this suite runs against.
 import { InMemoryThreadPersistence as FakePersistence } from "./in-memory.js";
@@ -590,64 +590,5 @@ describe('ThreadStore — the typed event payload rides appendMessage (guuey#552
     });
     expect(retry.deduped).toBe(true);
     expect(retry.seq).toBe(handoff.seq);
-  });
-});
-
-/**
- * Stored thread memory is a wire across a rolling release: a record written by
- * a newer runtime (an unknown scope, a shape this reader cannot materialize) or
- * of another scope is never seeded as this thread's memory, and never dropped
- * at rest by this runtime's next snapshot write.
- */
-describe('stored thread memory survives a turn it could not read', () => {
-  const NEWER = { scope: 'team', key: 'plan', value: { tier: 'pro' }, addedBy: 'a newer writer' };
-  const NO_VALUE = { scope: 'thread', key: 'orphan' };
-  const OTHER_SCOPE = { scope: 'user', key: 'name', value: 'Ada' };
-  const MINE = { scope: 'thread', key: 'k', value: 'v1' };
-  const STORED = [NEWER, MINE, NO_VALUE, OTHER_SCOPE];
-
-  it('the reader seeds only this runtime\'s thread records, carries every other element verbatim in stored order, and reports only the unreadable ones', () => {
-    const read = readStoredThreadMemory(JSON.parse(JSON.stringify(STORED)));
-    expect(read.thread).toEqual([MINE]);
-    expect(JSON.stringify(read.carried)).toBe(JSON.stringify([NEWER, NO_VALUE, OTHER_SCOPE]));
-    expect(read.omitted.map((r) => r.path)).toEqual([[0], [2]]);
-  });
-
-  it('read → turn → write: the carried elements come back byte-equal after the fold\'s own thread records', async () => {
-    const db = new FakePersistence();
-    const store = new ThreadStore(db);
-    await db.createThread(makeThreadRow('t1', 'g_abc'));
-    await db.putSnapshot({ threadId: 't1', userId: 'g_abc', threadMemory: JSON.parse(JSON.stringify(STORED)), updatedAt: '2026-09-26T00:00:00.000Z' });
-
-    const snap = await store.getSnapshot('t1');
-    const read = readStoredThreadMemory(snap?.threadMemory ?? []);
-    const reducer = new Reducer();
-    for (const e of seedEventsForReducer(snap?.workingState, read.thread)) reducer.push(e);
-    reducer.push({ seq: 1, type: 'memory.write', scope: 'thread', key: 'k2', value: 'v2', turnId: 'turn1' });
-    const fold = reducer.result();
-    await store.appendFold({ threadId: 't1', userId: 'g_abc', fold, clientMessageIdBase: 'cmid', carriedThreadMemory: read.carried });
-
-    const after = await store.getSnapshot('t1');
-    const memory = after?.threadMemory ?? [];
-    expect(memory).toHaveLength(5);
-    expect(memory.slice(0, 2)).toEqual([
-      expect.objectContaining({ scope: 'thread', key: 'k', value: 'v1' }),
-      expect.objectContaining({ scope: 'thread', key: 'k2', value: 'v2' }),
-    ]);
-    expect(JSON.stringify(memory.slice(2))).toBe(JSON.stringify([NEWER, NO_VALUE, OTHER_SCOPE]));
-
-    // And again: a second turn reads and carries the same elements, unchanged.
-    const again = readStoredThreadMemory(memory);
-    expect(JSON.stringify(again.carried)).toBe(JSON.stringify([NEWER, NO_VALUE, OTHER_SCOPE]));
-  });
-
-  it('without carriedThreadMemory the write is the fold\'s thread records only (today\'s shape)', async () => {
-    const db = new FakePersistence();
-    const store = new ThreadStore(db);
-    await db.createThread(makeThreadRow('t1', 'g_abc'));
-    const reducer = new Reducer();
-    reducer.push({ seq: 0, type: 'memory.write', scope: 'thread', key: 'k', value: 'v', turnId: 'turn1' });
-    await store.appendFold({ threadId: 't1', userId: 'g_abc', fold: reducer.result(), clientMessageIdBase: 'cmid' });
-    expect((await store.getSnapshot('t1'))?.threadMemory).toEqual([expect.objectContaining({ scope: 'thread', key: 'k', value: 'v' })]);
   });
 });
