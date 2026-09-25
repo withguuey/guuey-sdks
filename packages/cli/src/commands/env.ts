@@ -12,6 +12,7 @@ import { requireAuth } from '../auth';
 import { resolveConfig } from '../config';
 import { resolveTargetAppId } from '../app-id';
 import * as out from '../output';
+import { cliApiAuthHeaders } from '../cli-api-headers';
 
 /** Make an authenticated JSON request to the CLI API. */
 async function apiRequest(
@@ -29,7 +30,7 @@ async function apiRequest(
     method,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${pat}`,
+      ...cliApiAuthHeaders(pat),
     },
     body: body ? JSON.stringify(body) : undefined,
   });

@@ -16,6 +16,7 @@
 import { requireAuth } from '../auth';
 import { resolveConfig } from '../config';
 import * as out from '../output';
+import { cliApiAuthHeaders } from '../cli-api-headers';
 
 const VALID_PROVIDERS = ['anthropic', 'openai', 'google', 'bedrock', 'openrouter'] as const;
 
@@ -47,7 +48,7 @@ async function apiRequest(
     method,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${auth.pat}`,
+      ...cliApiAuthHeaders(auth.pat),
     },
     body: body ? JSON.stringify(body) : undefined,
   });

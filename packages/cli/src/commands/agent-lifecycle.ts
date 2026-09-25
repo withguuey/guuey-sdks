@@ -17,6 +17,7 @@
 import { resolveConfig } from '../config';
 import { requireAuth } from '../auth';
 import * as out from '../output';
+import { cliApiAuthHeaders } from '../cli-api-headers';
 
 async function lifecycleRequest(
   action: 'stop' | 'start' | 'restart',
@@ -60,7 +61,7 @@ async function lifecycleRequest(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${auth.pat}`,
+      ...cliApiAuthHeaders(auth.pat),
     },
   });
 

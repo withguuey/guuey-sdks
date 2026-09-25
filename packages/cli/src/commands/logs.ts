@@ -16,6 +16,7 @@
 import { requireAuth } from '../auth';
 import { resolveConfig } from '../config';
 import * as out from '../output';
+import { cliApiAuthHeaders } from '../cli-api-headers';
 
 /** One log line of the `GET /apps/:id/logs` response. */
 export interface LogEntry {
@@ -117,7 +118,7 @@ export async function fetchLogs(
   const url = `${baseUrl}/apps/${appId}/logs?${qs.toString()}`;
 
   const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${pat}` },
+    headers: cliApiAuthHeaders(pat),
   });
 
   if (!res.ok) {

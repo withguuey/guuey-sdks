@@ -66,6 +66,7 @@ import {
   type GuueyJsonV1,
 } from '@guuey/config';
 import * as out from '../output';
+import { cliApiAuthHeaders } from '../cli-api-headers';
 
 /**
  * Canonical relative path the ejected systemPrompt is written to, so the
@@ -594,7 +595,7 @@ async function apiRequest(
     method,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${pat}`,
+      ...cliApiAuthHeaders(pat),
     },
     body: body ? JSON.stringify(body) : undefined,
   });

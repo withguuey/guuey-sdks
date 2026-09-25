@@ -22,6 +22,7 @@ import { join, basename, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
+import { cliApiAuthHeaders } from './cli-api-headers';
 
 /**
  * `tar --exclude` argv shared by every non-git-archive packing path
@@ -468,7 +469,7 @@ export async function apiRequest(
     method,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${pat}`,
+      ...cliApiAuthHeaders(pat),
     },
     body: body ? JSON.stringify(body) : undefined,
   });

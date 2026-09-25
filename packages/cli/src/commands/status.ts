@@ -1,6 +1,7 @@
 import { requireAuth } from '../auth';
 import { resolveConfig } from '../config';
 import * as out from '../output';
+import { cliApiAuthHeaders } from '../cli-api-headers';
 
 /**
  * Handle the `guuey status` command.
@@ -31,7 +32,7 @@ export async function status(): Promise<void> {
 
   try {
     const res = await fetch(`${baseUrl}/apps/${config.appId}`, {
-      headers: { Authorization: `Bearer ${auth.pat}` },
+      headers: cliApiAuthHeaders(auth.pat),
     });
 
     if (res.ok) {
@@ -74,7 +75,7 @@ async function showAgentStatus(
 ): Promise<void> {
   try {
     const res = await fetch(`${baseUrl}/apps/${appId}/status`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: cliApiAuthHeaders(token),
       signal: AbortSignal.timeout(10_000),
     });
 

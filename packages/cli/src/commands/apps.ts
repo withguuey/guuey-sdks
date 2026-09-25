@@ -14,6 +14,7 @@ import { resolveTargetAppId } from '../app-id';
 import * as out from '../output';
 import { themeForwardLines, themeForwardOf } from '../theme-forward';
 import { BUILT_FOR_LABEL, isAppBuiltFor, parseBuiltForFlag } from '../built-for';
+import { cliApiAuthHeaders } from '../cli-api-headers';
 
 /**
  * `GET /v1/apps`'s per-app projection — a strict subset of the server's
@@ -212,7 +213,7 @@ async function apiRequest(method: string, path: string, body?: unknown): Promise
     method,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${auth.pat}`,
+      ...cliApiAuthHeaders(auth.pat),
     },
     body: body ? JSON.stringify(body) : undefined,
   });

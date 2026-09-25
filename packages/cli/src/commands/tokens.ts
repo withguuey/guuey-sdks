@@ -25,6 +25,7 @@
 import { requireAuth } from '../auth';
 import { resolveConfig } from '../config';
 import * as out from '../output';
+import { cliApiAuthHeaders } from '../cli-api-headers';
 
 /**
  * Wire mirrors of `backend/libs/cli-wire/service-tokens.ts`. The CLI is a
@@ -72,7 +73,7 @@ async function apiRequest(
     method,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${pat}`,
+      ...cliApiAuthHeaders(pat),
     },
     body: body ? JSON.stringify(body) : undefined,
   });

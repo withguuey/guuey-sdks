@@ -12,6 +12,7 @@ import { resolveConfig } from '../config';
 import { resolveTargetAppId } from '../app-id';
 import { requireAuth } from '../auth';
 import * as out from '../output';
+import { cliApiAuthHeaders } from '../cli-api-headers';
 
 /**
  * Destructive-op confirmation gate for `guuey undeploy` (pure — no I/O).
@@ -87,7 +88,7 @@ export async function undeploy(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${auth.pat}`,
+      ...cliApiAuthHeaders(auth.pat),
     },
   });
 

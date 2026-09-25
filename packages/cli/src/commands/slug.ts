@@ -28,6 +28,7 @@
 import { requireAuth } from '../auth';
 import { resolveConfig } from '../config';
 import * as out from '../output';
+import { cliApiAuthHeaders } from '../cli-api-headers';
 
 /** Shortest claimable slug. */
 export const SLUG_MIN_LENGTH = 3;
@@ -199,7 +200,7 @@ export async function slugClaim(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${pat}`,
+      ...cliApiAuthHeaders(pat),
     },
     body: JSON.stringify({ slug: normalised }),
   });
@@ -225,7 +226,7 @@ export async function slugRelease(
 
   const res = await fetch(`${baseUrl}/apps/${appId}/slug`, {
     method: 'DELETE',
-    headers: { Authorization: `Bearer ${pat}` },
+    headers: cliApiAuthHeaders(pat),
   });
 
   if (!res.ok) await handleApiError(res);

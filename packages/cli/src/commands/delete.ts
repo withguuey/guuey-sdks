@@ -12,6 +12,7 @@ import { resolveConfig, loadConfig, saveConfig } from '../config';
 import { isLoggedIn, requireAuth } from '../auth';
 import { login } from './login';
 import * as out from '../output';
+import { cliApiAuthHeaders } from '../cli-api-headers';
 
 /**
  * Handle the `guuey delete [appId]` command.
@@ -68,7 +69,7 @@ export async function deleteApp(
   const res = await fetch(`${baseUrl}/apps/${appId}`, {
     method: 'DELETE',
     headers: {
-      Authorization: `Bearer ${auth.pat}`,
+      ...cliApiAuthHeaders(auth.pat),
     },
   });
 
