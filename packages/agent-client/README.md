@@ -23,9 +23,10 @@ npm install @guuey/agent-client
 | `@guuey/agent-client/react`     | The `useAgentInvoke` hook (+ `applyHistoryResult`).                                                  | Yes    |
 | `@guuey/agent-client/transport` | Only the invoke transport + guest-identity pieces — zero `@guuey/mcp-apps-host` in the import graph. | No     |
 
-The root subpath is React-free — importing it never pulls React in. React is a
-**required peer** (`react >=18`) because the `./react` subpath needs it; if you
-only consume the root subpath, that peer is inert at runtime.
+The root subpath is React-free — importing it never pulls React in. React
+(`react >=18`) is an **optional peer**: only the `./react` subpath needs it, so
+npm does not install it for you. If you import `@guuey/agent-client/react`, add
+`react` to your own dependencies.
 
 ## React example
 

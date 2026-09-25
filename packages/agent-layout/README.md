@@ -57,7 +57,10 @@ function Shell() {
   structurally; any agent surface can call the machine directly through
   `useAgentMode()`.
 
-React DOM only, zero runtime dependencies, `react >= 18` peer.
+React DOM only, zero runtime dependencies. `react >= 18` is an optional peer:
+the `./react` subpath needs it and the root (the attention machine and the tone
+helpers) does not, so npm does not install it for you — add `react` to your own
+dependencies when you import `@guuey/agent-layout/react`.
 
 ## Support
 
