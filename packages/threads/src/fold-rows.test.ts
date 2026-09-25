@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { AgMessage, AgArtifact } from "@silverprotocol/core";
+import type { AgMessage, AgArtifact, AgTurnRecord } from "@silverprotocol/core";
 import { AgMessage as AgMessageSchema } from "@silverprotocol/core";
 import {
   agMessageToRow,
@@ -40,6 +40,26 @@ describe("agMessageToRow", () => {
     expect(row.kind).toBe("text");
     expect(row.aiContext).toEqual({ turnId: "turn1", threadId: "t1" });
     expect(row.seq).toBe(5);
+  });
+
+  it("never persists a turn's displayRequired (provider display material is for the live turn); everything else stays verbatim", () => {
+    const turnRecord: AgTurnRecord = {
+      turnId: "turn1",
+      threadId: "t1",
+      taskState: "working",
+      displayRequired: [{ provider: "search", html: "<div>suggestions</div>" }],
+      asks: [{ askId: "a1", kind: "approval", token: "tok", expiresAt: "2026-06-23T00:10:00.000Z" }],
+    };
+    const row = agMessageToRow(assistantMsg, { ...ctx, turnRecord });
+    const { displayRequired: _gone, ...rest } = turnRecord;
+    void _gone;
+    expect(row.aiContext).toEqual(rest);
+    expect(JSON.stringify(row)).not.toContain("displayRequired");
+    // the caller's record is not mutated
+    expect(turnRecord.displayRequired).toHaveLength(1);
+    // a turn with none is stored as given (identity)
+    const plain: AgTurnRecord = { turnId: "turn1", threadId: "t1" };
+    expect(agMessageToRow(assistantMsg, { ...ctx, turnRecord: plain }).aiContext).toBe(plain);
   });
 
   it("round-trips the AgMessage byte-for-byte through rowToAgMessage", () => {

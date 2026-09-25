@@ -80,9 +80,23 @@ export function agMessageToRow(
     // reducer seed, so stripping could orphan a paused turn's resume after a
     // reload, and the token authorizes the thread owner's OWN resume (not a
     // cross-trust credential like a render wsToken). Revisit on guuey#122.
-    ...(ctx.turnRecord ? { aiContext: ctx.turnRecord } : {}),
+    // The one field it drops is `displayRequired` (turnRecordForStorage).
+    ...(ctx.turnRecord ? { aiContext: turnRecordForStorage(ctx.turnRecord) } : {}),
     ...(ctx.untrustedOrigin === true ? { untrustedOrigin: true } : {}),
   };
+}
+
+/**
+ * A turn's `displayRequired` is content a model provider requires the host to
+ * show to the person who asked, under that provider's terms, and those terms
+ * allow keeping it only as long as the law requires. It belongs to the LIVE
+ * turn, so it never persists: the stored turn record is the live one without
+ * it, and everything else stays verbatim. Identity when the turn carried none.
+ */
+function turnRecordForStorage(rec: AgTurnRecord): AgTurnRecord {
+  if (rec.displayRequired === undefined) return rec;
+  const { displayRequired: _dropped, ...rest } = rec;
+  return rest;
 }
 
 /** Strip every tool-result block's `_meta` (guuey#122); identity when none carried one. */
