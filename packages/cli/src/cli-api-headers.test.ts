@@ -15,11 +15,17 @@ describe('cliApiAuthHeaders — every cliApi request names the CLI', () => {
 });
 
 describe('findHandBuiltBearers — the source guard', () => {
-  it('finds a hand-built bearer header, in either quoting; the builder call is not one', () => {
+  it('finds a hand-built bearer header in every form (template, concatenation, set, assignment); the builder call and prose are not one', () => {
     expect(findHandBuiltBearers('headers: { Authorization: `Bearer ${pat}` },')).toEqual(['Authorization: `Bearer ${pat}`']);
     expect(findHandBuiltBearers("headers: { 'Authorization': `Bearer ${token}` }")).toEqual(["'Authorization': `Bearer ${token}`"]);
     expect(findHandBuiltBearers('headers: { authorization: `Bearer ${t}` }')).toEqual(['authorization: `Bearer ${t}`']);
+    expect(findHandBuiltBearers("headers: { Authorization: 'Bearer ' + pat }")).toEqual(["'Bearer ' +"]);
+    expect(findHandBuiltBearers('const h = "Bearer " + token;')).toEqual(['"Bearer " +']);
+    expect(findHandBuiltBearers("headers.set('Authorization', value);")).toEqual([".set('Authorization'"]);
+    expect(findHandBuiltBearers('init.headers["authorization"] = value;')).toEqual(['["authorization"] =']);
+    expect(findHandBuiltBearers('headers.Authorization = value;')).toEqual(['.Authorization =']);
     expect(findHandBuiltBearers('headers: { ...cliApiAuthHeaders(pat) },')).toEqual([]);
+    expect(findHandBuiltBearers("if (init.headers.Authorization === undefined || h['Authorization'] == null) return;")).toEqual([]);
     expect(findHandBuiltBearers(' * the raw `Authorization: Bearer` on direct curl calls.')).toEqual([]);
   });
 

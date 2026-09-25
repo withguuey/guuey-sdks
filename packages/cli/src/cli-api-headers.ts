@@ -22,8 +22,14 @@ export function cliApiAuthHeaders(bearer: string): { Authorization: string; [GUU
   return { Authorization: `Bearer ${bearer}`, [GUUEY_CLIENT_HEADER]: GUUEY_CLIENT_CLI };
 }
 
-/** A bearer header built by hand in source text (`Authorization: \`Bearer ${…}\``), for the source guard. */
-const HAND_BUILT_BEARER_RE = /['"]?[Aa]uthorization['"]?\s*:\s*`Bearer \$\{[^}]*\}`/g;
+/**
+ * A bearer header built by hand in source text, for the source guard, in
+ * every form: a template (`Authorization: \`Bearer ${…}\``), a concatenation
+ * (`'Bearer ' + …`), a `Headers#set('Authorization', …)`, and an assignment
+ * (`headers['Authorization'] = …`, `headers.Authorization = …`).
+ */
+const HAND_BUILT_BEARER_RE =
+  /['"]?[Aa]uthorization['"]?\s*:\s*`Bearer \$\{[^}]*\}`|['"]Bearer ['"]\s*\+|\.set\(\s*['"][Aa]uthorization['"]|\[\s*['"][Aa]uthorization['"]\s*\]\s*=(?!=)|\.[Aa]uthorization\s*=(?!=)/g;
 
 /** Every hand-built bearer header in `source` — what the guard refuses outside this file. */
 export function findHandBuiltBearers(source: string): string[] {
