@@ -17,7 +17,7 @@ import type { CredentialFile,
   Identity,
   JsonValue,
   ProfileSection,
-  StopReason, McpAvailability, FirstImpressionPush, WithheldTool } from "@guuey/worker";
+  StopReason, McpAvailability, FirstImpressionPush, FirstImpressionShown, WithheldTool } from "@guuey/worker";
 import {
   buildOptions,
   type BuildOptionsContext,
@@ -73,6 +73,8 @@ export interface HostInvoke {
   firstImpression?: FirstImpressionPush;
   /** The Router's per-turn tool withholds — see `Invoke.withheldTools` in `@guuey/worker`; removed from this turn's catalog. */
   withheldTools?: WithheldTool[];
+  /** The welcome card the Router already drew — see `Invoke.firstImpressionShown` in `@guuey/worker`. */
+  firstImpressionShown?: FirstImpressionShown;
   /**
    * How many builder-provided reference files sit at `<fs.app>/resources` this
    * turn (guuey#456 B4) — present only when the layers are REAL and the count
@@ -208,6 +210,8 @@ export async function runInvoke(
       ...(invoke.mcpAvailability !== undefined ? { mcpAvailability: invoke.mcpAvailability } : {}),
       // The Router's per-turn tool withholds → `disallowedTools` (servers attached this turn only).
       ...(invoke.withheldTools !== undefined ? { withheldTools: invoke.withheldTools } : {}),
+      // The welcome card the Router already drew → its section in the system prompt.
+      ...(invoke.firstImpressionShown !== undefined ? { firstImpressionShown: invoke.firstImpressionShown } : {}),
     };
     options = buildOptions(snapshot, ctx);
   } catch (err) {

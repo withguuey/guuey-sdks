@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createEmitter, type WorkerEvent } from "@guuey/worker";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { runInvoke, type HostInvoke, type QueryFn } from "./claude.js";
+import { FIRST_IMPRESSION_SHOWN_HEADING } from "../preamble.js";
 
 /** Collect every emitted WorkerEvent into an array (the fd-3 sink, in memory). */
 function collector(): { events: WorkerEvent[]; sink: { write(s: string): void } } {
@@ -431,5 +432,33 @@ describe("runInvoke — hello handshake (§8 item B)", () => {
 
     expect(events[0]?.type).toBe("hello");
     expect(events[1]).toMatchObject({ type: "error" });
+  });
+});
+
+describe("the welcome card the Router already drew reaches the Claude system prompt", () => {
+  const shown = { heading: "Welcome to Harbor Books", message: "Glad you're here.", options: ["Find a book", "Opening hours"] };
+
+  async function systemPromptFor(over: Partial<HostInvoke>): Promise<string | undefined> {
+    const { sink } = collector();
+    const emit = createEmitter(sink);
+    let prompt: string | undefined;
+    const query: QueryFn = (args) => {
+      prompt = typeof args.options.systemPrompt === "string" ? args.options.systemPrompt : undefined;
+      return streamOf();
+    };
+    await runInvoke({}, invoke(over), { apiKey: "sk-test", listCredentials: () => [] }, emit, query);
+    return prompt;
+  }
+
+  it("renders the section through runInvoke, with or without the ggui rail (the card is on screen either way)", async () => {
+    for (const gguiAttached of [true, false]) {
+      const prompt = await systemPromptFor({ firstImpressionShown: shown, gguiAttached });
+      expect(prompt).toContain(FIRST_IMPRESSION_SHOWN_HEADING);
+      expect(prompt).toContain('"heading":"Welcome to Harbor Books"');
+    }
+  });
+
+  it("no card drawn: no section", async () => {
+    expect(await systemPromptFor({ gguiAttached: true })).not.toContain(FIRST_IMPRESSION_SHOWN_HEADING);
   });
 });

@@ -248,11 +248,27 @@ export interface Invoke {
    * open. An older worker ignores the field and keeps the full catalog.
    */
   withheldTools?: WithheldTool[];
+  /**
+   * The welcome card the Router already drew for this visitor, before the
+   * worker was spawned: it called ggui itself with the app's bound greeting and
+   * streamed the card as a turn of its own. The host renders ONE system-prompt
+   * section telling the model the card is on screen (its heading, message and
+   * options) and not to render it again. Written only when that card was drawn,
+   * so "no card was drawn for you" is always the ABSENT field. An older worker
+   * ignores it: its model is not told, and may draw a second greeting.
+   */
+  firstImpressionShown?: FirstImpressionShown;
 }
 /** One tool withheld from a turn's catalog: `server` is the MCP server's key, `tool` the tool's name on that server. */
 export interface WithheldTool {
   server: string;
   tool: string;
+}
+/** What the Router's welcome card shows: its heading, its message, and the labels of its options. */
+export interface FirstImpressionShown {
+  heading: string;
+  message: string;
+  options: string[];
 }
 /** Graceful termination (also signalled by stdin EOF). */
 export interface Shutdown {

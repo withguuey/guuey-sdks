@@ -20,7 +20,7 @@
  * `@guuey/worker`, `@guuey/config`, and Node built-ins.
  */
 import type { CanUseTool, Options, SDKMessage, Settings } from "@anthropic-ai/claude-agent-sdk";
-import type { FirstImpressionPush, Fs, HistoryMessage, JsonValue, McpAvailability, ProfileSection, WithheldTool } from "@guuey/worker";
+import type { FirstImpressionPush, FirstImpressionShown, Fs, HistoryMessage, JsonValue, McpAvailability, ProfileSection, WithheldTool } from "@guuey/worker";
 import { withheldToolNamesFor } from "../withheld-tools.js";
 import {
   GUUEY_DEFAULT_SYSTEM_PROMPT,
@@ -274,6 +274,8 @@ export interface BuildOptionsContext {
   firstImpression?: FirstImpressionPush;
   /** The Router's per-turn tool withholds — mirrors `Invoke.withheldTools`; folded into `disallowedTools` for attached servers. */
   withheldTools?: WithheldTool[];
+  /** The welcome card the Router already drew — mirrors `Invoke.firstImpressionShown`; rendered whenever present. */
+  firstImpressionShown?: FirstImpressionShown;
   /**
    * How many builder-provided reference files sit at `<fs.app>/resources` this
    * turn (guuey#456 B4) — counted Router-side at invoke assembly and written
@@ -353,6 +355,8 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
     // family from ../preamble.js, gated on fsBound && resourceCount > 0.
     buildResourcesSection(ctx) +
     buildFirstImpressionSection(ctx) +
+    // The welcome card the Router already drew (never beside a first-impression push).
+    renderFirstImpressionShownSection(ctx.firstImpressionShown) +
     // guuey#901: the connected-services section — the pod's per-turn fact about
     // each OAuth server, placed with the tool-shaped sections and before the
     // surface/norms sections. Empty (byte-identical prompt) without OAuth servers.
@@ -715,6 +719,7 @@ import {
   renderProfileSection,
   renderResourcesSection,
   renderFirstImpressionSection,
+  renderFirstImpressionShownSection,
   withContextPreamble,
   renderMcpAvailabilitySection,
 } from "../preamble.js";

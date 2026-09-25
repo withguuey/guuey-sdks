@@ -21,6 +21,8 @@ import {
   renderResourcesSection,
   withContextPreamble,
   renderMcpAvailabilitySection,
+  renderFirstImpressionShownSection,
+  FIRST_IMPRESSION_SHOWN_HEADING,
 } from "../preamble.js";
 import { createRunner, importConditionEntry, loadAdk } from "./google-adk.js";
 
@@ -278,6 +280,20 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
   it("prompt-less snapshot → GUUEY_DEFAULT_SYSTEM_PROMPT rides the preamble (parity with the claude/openai arms)", async () => {
     const resolved = await resolveInstruction({}, { model: "gemini-3.5-pro" });
     expect(resolved).toBe(withContextPreamble(GUUEY_DEFAULT_SYSTEM_PROMPT, [], undefined, undefined) + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION);
+  });
+
+  it("the welcome card the Router already drew → its section, byte-identical to the shared renderer, rail or no rail", async () => {
+    const shown = { heading: "Welcome to Harbor Books", message: "Glad you're here.", options: ["Find a book", "Opening hours"] };
+    expect(await resolveInstruction({ firstImpressionShown: shown })).toBe(
+      withContextPreamble("be terse", [], undefined, undefined) +
+        renderFirstImpressionShownSection(shown) +
+        SURFACE_FORMATTING_SECTION +
+        RESPONSE_NORMS_SECTION,
+    );
+    expect(await resolveInstruction({ firstImpressionShown: shown, gguiAttached: true })).toContain(
+      renderFirstImpressionShownSection(shown),
+    );
+    expect(await resolveInstruction({})).not.toContain(FIRST_IMPRESSION_SHOWN_HEADING);
   });
 
   it("authenticated + attached + userMemory → save + byte-identical recall block after the preamble (memory-mcp T5)", async () => {

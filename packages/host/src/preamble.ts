@@ -13,6 +13,7 @@
  */
 import type {
   FirstImpressionPush,
+  FirstImpressionShown,
   HistoryMessage,
   JsonValue,
   McpAvailability,
@@ -320,6 +321,30 @@ export function renderFirstImpressionSection(fi: FirstImpressionPush | undefined
     `change it). Then follow its result as usual (\`ggui_render\` with the props). ` +
     `Do not describe the screen in text.\n\n` +
     `<first_impression_handshake>\n${args}\n</first_impression_handshake>`
+  );
+}
+
+/** Heading of the welcome-card-shown section — matched by tests, one constant. */
+export const FIRST_IMPRESSION_SHOWN_HEADING = "## Welcome card (already on screen)";
+
+/**
+ * The welcome card the Router already drew for this visitor, before the model's
+ * turn began (`Invoke.firstImpressionShown`). Tells the model what the card
+ * shows and not to draw it again. The card's words come from the app's own name,
+ * description and suggestions, so they sit inside an XML delimiter as data,
+ * like every other pushed block. Rendered whenever the field is present: the
+ * card is on screen whether or not this turn's ggui rail is armed. Leading
+ * `\n\n` so it appends cleanly after the sibling sections.
+ */
+export function renderFirstImpressionShownSection(shown: FirstImpressionShown | undefined): string {
+  if (shown === undefined) return "";
+  const card = JSON.stringify({ heading: shown.heading, message: shown.message, options: shown.options });
+  return (
+    `\n\n${FIRST_IMPRESSION_SHOWN_HEADING}\n\n` +
+    `This visitor already sees the welcome card below: it was drawn before your turn began. ` +
+    `Do not render it again and do not repeat its options as a list. Reply to the visitor's ` +
+    `message in text, and render a card only for new content.\n\n` +
+    `<welcome_card>\n${card}\n</welcome_card>`
   );
 }
 

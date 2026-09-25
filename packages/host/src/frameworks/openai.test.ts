@@ -15,7 +15,8 @@ import { mcpToolCustomData as mcpCustomData } from "@guuey/worker";
 import type { HostInvoke } from "./claude.js";
 import {
   RESPONSE_NORMS_SECTION,
-  SURFACE_FORMATTING_SECTION, renderMemorySection, renderProfileSection, renderResourcesSection } from "../preamble.js";
+  SURFACE_FORMATTING_SECTION, renderMemorySection, renderProfileSection, renderResourcesSection,
+  FIRST_IMPRESSION_SHOWN_HEADING } from "../preamble.js";
 import { defaultModelFor, type GuueyAgent } from "@guuey/config";
 
 /** Collect every emitted WorkerEvent into an array (the fd-3 sink, in memory). */
@@ -497,5 +498,36 @@ describe("mcpCustomData (guuey#981)", () => {
       _meta: { ui: { resourceUri: "ui://x" } },
     });
     expect(mcpCustomData({})).toBeUndefined();
+  });
+});
+
+describe("the welcome card the Router already drew reaches the OpenAI instructions", () => {
+  const shown = { heading: "Welcome to Harbor Books", message: "Glad you're here.", options: ["Find a book", "Opening hours"] };
+
+  async function instructionsFor(over: Partial<HostInvoke>): Promise<string | undefined> {
+    const { sink } = collector();
+    const emit = createEmitter(sink);
+    let instructions: string | undefined;
+    const run: OpenaiRunFn = (agent) => {
+      instructions = typeof agent.instructions === "string" ? agent.instructions : undefined;
+      return Promise.resolve(fakeResult({ events: [], finalOutput: "ok" }));
+    };
+    await runInvokeOpenai(
+      { framework: "openai-agents-sdk", model: "gpt-4o-mini", systemPrompt: "SYS", mcpServers: {} },
+      invoke(over),
+      runtime,
+      emit,
+      run,
+    );
+    return instructions;
+  }
+
+  it("renders the section with or without the ggui rail; none when no card was drawn", async () => {
+    for (const gguiAttached of [true, false]) {
+      const out = await instructionsFor({ firstImpressionShown: shown, gguiAttached });
+      expect(out).toContain(FIRST_IMPRESSION_SHOWN_HEADING);
+      expect(out).toContain('"options":["Find a book","Opening hours"]');
+    }
+    expect(await instructionsFor({ gguiAttached: true })).not.toContain(FIRST_IMPRESSION_SHOWN_HEADING);
   });
 });

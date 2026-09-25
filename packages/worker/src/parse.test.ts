@@ -217,6 +217,46 @@ describe("parseControl", () => {
     });
   });
 
+  describe("firstImpressionShown — the welcome card the Router already drew", () => {
+    const base = {
+      type: "invoke",
+      input: "Hi!",
+      identity: { userId: "u", authMode: "anonymous" },
+      fs: { app: "/app", home: "/home", session: "/session" },
+      history: [],
+    };
+    const parse = (extra: object) => {
+      const msg = parseControl(JSON.stringify({ ...base, ...extra }));
+      if (!isInvoke(msg)) throw new Error("expected invoke");
+      return msg;
+    };
+    const shown = { heading: "Welcome to Harbor Books", message: "Glad you're here.", options: ["Find a book", "Opening hours"] };
+
+    it("round-trips a well-formed card onto the typed Invoke, carrying only its three fields", () => {
+      expect(parse({ firstImpressionShown: { ...shown, extra: 1 } }).firstImpressionShown).toEqual(shown);
+      expect(parse({ firstImpressionShown: { ...shown, options: [] } }).firstImpressionShown).toEqual({ ...shown, options: [] });
+    });
+
+    it("drops the whole value when any field is malformed, never part of it", () => {
+      for (const bad of [
+        "Welcome",
+        null,
+        { ...shown, heading: "" },
+        { ...shown, heading: 3 },
+        { message: shown.message, options: shown.options },
+        { ...shown, message: undefined },
+        { ...shown, options: "Find a book" },
+        { ...shown, options: ["Find a book", 2] },
+      ]) {
+        expect("firstImpressionShown" in parse({ firstImpressionShown: bad })).toBe(false);
+      }
+    });
+
+    it("omits the field when absent: no card was drawn", () => {
+      expect("firstImpressionShown" in parse({})).toBe(false);
+    });
+  });
+
   it("round-trips gguiAttached (boolean) onto the typed Invoke — the generative-UI gate (guuey#630)", () => {
     const withRail = JSON.stringify({
       type: "invoke",

@@ -75,6 +75,7 @@ import {
   renderProfileSection,
   renderResourcesSection,
   renderFirstImpressionSection,
+  renderFirstImpressionShownSection,
   withContextPreamble,
 } from "../preamble.js";
 import { resolveSdkVersion } from "../sdk-version.js";
@@ -463,6 +464,8 @@ export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
         (resourcesOn ? renderResourcesSection(resourceCount, turn.fs.app) : "") +
         // guuey#1183: the bound first impression — only with the ggui rail armed.
         (turn.gguiAttached === true ? renderFirstImpressionSection(turn.firstImpression) : "") +
+        // The welcome card the Router already drew — whenever present.
+        renderFirstImpressionShownSection(turn.firstImpressionShown) +
         // guuey#531: surface-formatting hints — default ON, only an explicit
         // `agent.surfaceHints: false` suppresses. Before the norms (LAST).
         renderMcpAvailabilitySection(turn.mcpAvailability) +

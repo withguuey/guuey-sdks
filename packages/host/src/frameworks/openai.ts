@@ -48,7 +48,7 @@ import {
 import {
   RESPONSE_NORMS_SECTION,
   renderSurfaceSection, renderGenerativeUiSection, renderMemorySection, renderProfileSection, renderResourcesSection,
-  renderFirstImpressionSection,
+  renderFirstImpressionSection, renderFirstImpressionShownSection,
   renderMcpAvailabilitySection } from "../preamble.js";
 import type { HostInvoke, HostRuntime } from "./claude.js";
 import { GUUEY_DEFAULT_SYSTEM_PROMPT, defaultModelFor, type GuueyAgent } from "@guuey/config";
@@ -201,6 +201,8 @@ export async function runInvokeOpenai(
       (resourcesOn ? renderResourcesSection(resourceCount, invoke.fs.app) : "") +
       // guuey#1183: the bound first impression — only with the ggui rail armed.
       (invoke.gguiAttached === true ? renderFirstImpressionSection(invoke.firstImpression) : "") +
+      // The welcome card the Router already drew — whenever present.
+      renderFirstImpressionShownSection(invoke.firstImpressionShown) +
       // guuey#531: surface-formatting hints — default ON, only an explicit
       // `agent.surfaceHints: false` suppresses. Before the norms (LAST).
       renderMcpAvailabilitySection(invoke.mcpAvailability) +

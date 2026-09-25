@@ -14,6 +14,7 @@ export {
   type ProfileSection,
   type FirstImpressionPush,
   type WithheldTool,
+  type FirstImpressionShown,
   type McpAvailability,
   type McpAvailabilityState,
   type StopReason,

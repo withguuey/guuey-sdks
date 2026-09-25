@@ -25,6 +25,7 @@ import type {
   McpAvailability,
   McpAvailabilityState,
   WithheldTool,
+  FirstImpressionShown,
 } from "./protocol.js";
 
 export function isInvoke(m: ControlMessage): m is Invoke {
@@ -174,6 +175,7 @@ export function parseControl(line: string): ControlMessage {
       const priorMemory = parsePriorMemory(raw.priorMemory);
       const profileSections = parseProfileSections(raw.profileSections);
       const withheldTools = parseWithheldTools(raw.withheldTools);
+      const firstImpressionShown = parseFirstImpressionShown(raw.firstImpressionShown);
       const firstImpression = parseFirstImpression(raw.firstImpression);
       const mcpAvailability = parseMcpAvailability(raw.mcpAvailability);
       return {
@@ -231,6 +233,9 @@ export function parseControl(line: string): ControlMessage {
         // field is omitted unless at least one survives, so an older Router's
         // invoke and a malformed one both read as the full catalog.
         ...(withheldTools.length > 0 ? { withheldTools } : {}),
+        // The welcome card the Router already drew: kept only when every field
+        // is well-formed, so a malformed one reads as "no card was drawn".
+        ...(firstImpressionShown ? { firstImpressionShown } : {}),
       };
     }
     case "shutdown":
@@ -306,6 +311,28 @@ export function parseEvent(line: string): WorkerEvent {
     default:
       throw new Error(`unknown event type: ${String(raw.type)}`);
   }
+}
+
+/**
+ * An invoke's `firstImpressionShown`, reduced to its three fields: a non-empty
+ * `heading`, a string `message`, and `options` as an array of strings. Anything
+ * else (a missing field, a wrong type, a non-string option) drops the whole
+ * value, never part of it: the section must describe the card exactly or not
+ * at all.
+ */
+function parseFirstImpressionShown(raw: unknown): FirstImpressionShown | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const heading: unknown = Reflect.get(raw, "heading");
+  const message: unknown = Reflect.get(raw, "message");
+  const options: unknown = Reflect.get(raw, "options");
+  if (typeof heading !== "string" || heading.length === 0 || typeof message !== "string") return undefined;
+  if (!Array.isArray(options)) return undefined;
+  const labels: string[] = [];
+  for (const option of options) {
+    if (typeof option !== "string") return undefined;
+    labels.push(option);
+  }
+  return { heading, message, options: labels };
 }
 
 /** The well-formed entries of an invoke's `withheldTools`, each reduced to `{server, tool}`; anything else is dropped. */
