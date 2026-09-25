@@ -1,6 +1,6 @@
 {
   "$schema": "guuey/widget-invoke-bodies@1",
-  "generatedBy": "oss/packages/agent-client/src/invoke-body.ts WIDGET_INVOKE_BODY_CASES",
+  "generatedBy": "oss/packages/agent-client/src/fixtures/widget-invoke-body-cases.ts WIDGET_INVOKE_BODY_CASES",
   "cases": [
     {
       "name": "session-open-init-origin",

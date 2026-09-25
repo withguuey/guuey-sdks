@@ -1,6 +1,9 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { buildInvokeBody, WIDGET_INVOKE_BODY_CASES } from "./invoke-body.js";
+import { buildInvokeBody } from "./invoke-body.js";
+import { WIDGET_INVOKE_BODY_CASES } from "./fixtures/widget-invoke-body-cases.js";
 
 /**
  * guuey#1213 — the wire shape has a fixture, and the fixture is the code's
@@ -8,7 +11,7 @@ import { buildInvokeBody, WIDGET_INVOKE_BODY_CASES } from "./invoke-body.js";
  * `rolling-release.test.ts` (current bodies vs the PREVIOUS release's frozen
  * validator) and copied into the pod's `prev-release/<tag>/` set at each
  * release tag (previous bodies vs the CURRENT validator). Regenerate with
- * `pnpm --filter @guuey/agent-client exec tsx src/fixtures/write-widget-invoke-bodies.ts`
+ * `npx tsx src/fixtures/write-widget-invoke-bodies.ts` from this package (tsx is not one of its dependencies)
  * — never by hand.
  */
 const FIXTURE = new URL("./fixtures/widget-invoke-bodies.json", import.meta.url);
@@ -42,7 +45,7 @@ describe("the widget's canonical bodies are pinned as the fixture (guuey#1213)",
   it("fixtures/widget-invoke-bodies.json equals the builder's output for every canonical case, byte for byte", () => {
     const expected = {
       $schema: "guuey/widget-invoke-bodies@1",
-      generatedBy: "oss/packages/agent-client/src/invoke-body.ts WIDGET_INVOKE_BODY_CASES",
+      generatedBy: "oss/packages/agent-client/src/fixtures/widget-invoke-body-cases.ts WIDGET_INVOKE_BODY_CASES",
       cases: WIDGET_INVOKE_BODY_CASES.map((c) => ({ name: c.name, why: c.why, body: buildInvokeBody(c.input) })),
     };
     const onDisk = readFileSync(FIXTURE, "utf8");
@@ -69,5 +72,22 @@ describe("the widget cases carry exactly what the widget sends", () => {
       if (c.name === "sdk-minimal") expect(c.input.capabilities).toBeUndefined();
       else expect(c.input.capabilities, c.name).toEqual(VIEW_MESSAGE_TURN_CAPABILITIES);
     }
+  });
+});
+
+// The corpus is test-only. A test corpus in a runtime module rides into every
+// bundle that imports the builder — its private notes reached a production
+// bundle's public JS that way. `src/fixtures/**` is excluded from the build and
+// the npm pack; this holds the other half: no runtime module imports from it.
+describe("the case corpus ships in no bundle and no tarball", () => {
+  it("no runtime module under src/ imports from fixtures/", () => {
+    const src = dirname(fileURLToPath(import.meta.url));
+    const runtime = readdirSync(src).filter((f) => /\.tsx?$/.test(f) && !/\.test\.tsx?$/.test(f));
+    expect(runtime.length).toBeGreaterThan(0);
+    // every way a module can reach another: `import … from` / `export … from`, a side-effect
+    // `import "…"`, and a dynamic `import("…")` — the pack guard reads the same forms
+    const reaches = /(?:\bfrom\s+|\bimport\s*\(\s*|\bimport\s+)["']\.\/fixtures\//;
+    const offenders = runtime.filter((f) => reaches.test(readFileSync(join(src, f), "utf8")));
+    expect(offenders).toEqual([]);
   });
 });
