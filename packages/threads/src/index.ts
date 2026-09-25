@@ -51,9 +51,11 @@ export {
   messageText,
   producingToolName,
   reassembleFold,
+  readStoredThreadMemory,
   rowToAgMessage,
   seedEventsForReducer,
   toolNamesByCallId,
   uiCardArtifactsFromMessages,
   type RowCtx,
+  type StoredThreadMemoryRead,
 } from "./fold-rows.js";

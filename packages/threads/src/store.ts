@@ -8,7 +8,7 @@
  * DynamoDB).
  */
 import { randomUUID } from "node:crypto";
-import type { AgReduceResult } from "@silverprotocol/core";
+import type { AgReduceResult, JsonValue } from "@silverprotocol/core";
 import {
   agMessageToRow,
   agArtifactToCardRow,
@@ -93,6 +93,14 @@ export interface AppendFoldInput {
    * {absent, true} vocabulary as {@link AppendMessageInput.untrustedOrigin}.
    */
   untrustedOrigin?: boolean;
+  /**
+   * The prior snapshot's stored thread-memory elements this runtime did not
+   * seed (`readStoredThreadMemory(...).carried`): records it could not read,
+   * and records of another scope. Re-appended VERBATIM after the fold's own
+   * thread records, so a newer writer's records are never dropped at rest by
+   * this turn's snapshot write. Absent = none.
+   */
+  carriedThreadMemory?: readonly JsonValue[];
 }
 
 export interface AppendFoldResult {
@@ -332,8 +340,9 @@ export class ThreadStore {
       artifactSeqs.push(seq);
     }
 
-    const threadMemory = fold.memory.filter((m) => m.scope === 'thread');
-    const droppedDurableMemory = fold.memory.length - threadMemory.length;
+    const foldThreadMemory = fold.memory.filter((m) => m.scope === 'thread');
+    const droppedDurableMemory = fold.memory.length - foldThreadMemory.length;
+    const threadMemory: JsonValue[] = [...foldThreadMemory, ...(input.carriedThreadMemory ?? [])];
 
     if (skipSnapshot !== true) {
       const lastTurnId = fold.turns.length ? fold.turns[fold.turns.length - 1]!.turnId : undefined;
