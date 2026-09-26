@@ -130,8 +130,21 @@ export interface ThreadSnapshotRow {
   userId: string;
   /** AgReduceResult.state — opaque working blob. */
   workingState?: JsonValue;
-  /** AgReduceResult.memory filtered to scope='thread'. */
+  /**
+   * The thread's memory records this runtime reads: `AgReduceResult.memory`
+   * filtered to scope='thread'. A binding returns the readable view here, and
+   * stored elements it could not read travel in {@link carriedThreadMemory}.
+   */
   threadMemory: AgMemoryRecord[];
+  /**
+   * Stored thread-memory elements this runtime does not read or own: a record
+   * written in a newer vocabulary (an unknown scope, a missing value) or of
+   * another scope, verbatim and in stored order. A binding splits them off on
+   * read (`splitStoredThreadMemory`) and joins them back into the one stored
+   * array on write (`joinStoredThreadMemory`), so they are never dropped at
+   * rest by a runtime that cannot read them. Absent = none.
+   */
+  carriedThreadMemory?: JsonValue[];
   lastTurnId?: string;
   updatedAt: string;
 }

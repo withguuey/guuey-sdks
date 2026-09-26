@@ -8,7 +8,7 @@
  * DynamoDB).
  */
 import { randomUUID } from "node:crypto";
-import type { AgReduceResult } from "@silverprotocol/core";
+import type { AgReduceResult, JsonValue } from "@silverprotocol/core";
 import {
   agMessageToRow,
   agArtifactToCardRow,
@@ -93,6 +93,12 @@ export interface AppendFoldInput {
    * {absent, true} vocabulary as {@link AppendMessageInput.untrustedOrigin}.
    */
   untrustedOrigin?: boolean;
+  /**
+   * The prior snapshot's `carriedThreadMemory`: stored thread-memory elements
+   * this runtime did not read or own. Written back unchanged beside the fold's
+   * own thread records, so they are never dropped at rest. Absent = none.
+   */
+  carriedThreadMemory?: readonly JsonValue[];
 }
 
 export interface AppendFoldResult {
@@ -341,6 +347,9 @@ export class ThreadStore {
         threadId,
         userId,
         threadMemory,
+        ...(input.carriedThreadMemory !== undefined && input.carriedThreadMemory.length > 0
+          ? { carriedThreadMemory: [...input.carriedThreadMemory] }
+          : {}),
         updatedAt: new Date().toISOString(),
         ...(fold.state !== undefined ? { workingState: fold.state } : {}),
         ...(lastTurnId ? { lastTurnId } : {}),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { AgReduceResult } from '@silverprotocol/core';
-import { ThreadStore, type ThreadRow, type ThreadSnapshotRow } from './index.js';
+import { Reducer, type AgReduceResult } from '@silverprotocol/core';
+import { joinStoredThreadMemory, seedEventsForReducer, splitStoredThreadMemory, ThreadStore, type ThreadRow, type ThreadSnapshotRow } from './index.js';
 
 // The package ships the binding this suite runs against.
 import { InMemoryThreadPersistence as FakePersistence } from "./in-memory.js";
@@ -590,5 +590,79 @@ describe('ThreadStore — the typed event payload rides appendMessage (guuey#552
     });
     expect(retry.deduped).toBe(true);
     expect(retry.seq).toBe(handoff.seq);
+  });
+});
+
+/**
+ * Stored thread memory is a wire across a rolling release: a binding splits
+ * the stored array into this runtime's thread records and the elements it
+ * carries, and joins them back on write, carried FIRST.
+ */
+describe('splitStoredThreadMemory / joinStoredThreadMemory', () => {
+  const NEWER = { scope: 'team', key: 'plan', value: { tier: 'pro' }, addedBy: 'a newer writer' };
+  const NO_VALUE = { scope: 'thread', key: 'orphan' };
+  const OTHER_SCOPE = { scope: 'user', key: 'name', value: 'Ada' };
+  const MINE = { scope: 'thread', key: 'k', value: 'v1' };
+
+  it('splits: this runtime’s thread records are the view; every other element is carried verbatim, in stored order', () => {
+    const split = splitStoredThreadMemory(JSON.parse(JSON.stringify([NEWER, MINE, NO_VALUE, OTHER_SCOPE])));
+    expect(split.threadMemory).toEqual([MINE]);
+    expect(JSON.stringify(split.carriedThreadMemory)).toBe(JSON.stringify([NEWER, NO_VALUE, OTHER_SCOPE]));
+  });
+
+  it('joins carried FIRST: write order is time order, so a same-key record written this turn wins for a last-wins reader', () => {
+    const olderK = { scope: 'thread', key: 'k', value: 'older' };
+    const joined = joinStoredThreadMemory({ threadMemory: [{ scope: 'thread', key: 'k', value: 'fresh' }], carriedThreadMemory: [olderK] });
+    expect(joined).toEqual([olderK, { scope: 'thread', key: 'k', value: 'fresh' }]);
+    // A reader that seeds every stored record in order (the reducer keys memory by scope + key; last write wins).
+    const reducer = new Reducer();
+    const readable = splitStoredThreadMemory(joined).threadMemory;
+    for (const e of seedEventsForReducer(undefined, readable)) reducer.push(e);
+    expect(reducer.result().memory).toEqual([expect.objectContaining({ key: 'k', value: 'fresh' })]);
+  });
+
+  it('read, turn, write through the store: carried elements come back byte-equal, again on a second turn', async () => {
+    const db = new FakePersistence();
+    const store = new ThreadStore(db);
+    await db.createThread(makeThreadRow('t1', 'g_abc'));
+    const first = splitStoredThreadMemory(JSON.parse(JSON.stringify([NEWER, MINE, NO_VALUE, OTHER_SCOPE])));
+    await db.putSnapshot({ threadId: 't1', userId: 'g_abc', ...first, updatedAt: '2026-09-26T00:00:00.000Z' });
+
+    const snap = await store.getSnapshot('t1');
+    const reducer = new Reducer();
+    for (const e of seedEventsForReducer(snap?.workingState, snap?.threadMemory ?? [])) reducer.push(e);
+    reducer.push({ seq: 1, type: 'memory.write', scope: 'thread', key: 'k2', value: 'v2', turnId: 'turn1' });
+    await store.appendFold({ threadId: 't1', userId: 'g_abc', fold: reducer.result(), clientMessageIdBase: 'cmid', ...(snap?.carriedThreadMemory ? { carriedThreadMemory: snap.carriedThreadMemory } : {}) });
+
+    const after = await store.getSnapshot('t1');
+    expect(after?.threadMemory).toEqual([
+      expect.objectContaining({ key: 'k', value: 'v1' }),
+      expect.objectContaining({ key: 'k2', value: 'v2' }),
+    ]);
+    expect(JSON.stringify(after?.carriedThreadMemory)).toBe(JSON.stringify([NEWER, NO_VALUE, OTHER_SCOPE]));
+
+    // Second turn off the snapshot the first one wrote.
+    const reducer2 = new Reducer();
+    for (const e of seedEventsForReducer(after?.workingState, after?.threadMemory ?? [])) reducer2.push(e);
+    reducer2.push({ seq: 2, type: 'memory.write', scope: 'thread', key: 'k', value: 'v3', turnId: 'turn2' });
+    await store.appendFold({ threadId: 't1', userId: 'g_abc', fold: reducer2.result(), clientMessageIdBase: 'cmid2', ...(after?.carriedThreadMemory ? { carriedThreadMemory: after.carriedThreadMemory } : {}) });
+    const second = await store.getSnapshot('t1');
+    expect(second?.threadMemory).toEqual([
+      expect.objectContaining({ key: 'k', value: 'v3' }),
+      expect.objectContaining({ key: 'k2', value: 'v2' }),
+    ]);
+    expect(JSON.stringify(second?.carriedThreadMemory)).toBe(JSON.stringify([NEWER, NO_VALUE, OTHER_SCOPE]));
+  });
+
+  it('without carriedThreadMemory the write carries none (today’s shape)', async () => {
+    const db = new FakePersistence();
+    const store = new ThreadStore(db);
+    await db.createThread(makeThreadRow('t1', 'g_abc'));
+    const reducer = new Reducer();
+    reducer.push({ seq: 0, type: 'memory.write', scope: 'thread', key: 'k', value: 'v', turnId: 'turn1' });
+    await store.appendFold({ threadId: 't1', userId: 'g_abc', fold: reducer.result(), clientMessageIdBase: 'cmid' });
+    const snap = await store.getSnapshot('t1');
+    expect(snap?.threadMemory).toEqual([expect.objectContaining({ key: 'k', value: 'v' })]);
+    expect(snap).not.toHaveProperty('carriedThreadMemory');
   });
 });

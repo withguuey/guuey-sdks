@@ -14,7 +14,7 @@ import type {
   AgMemoryRecord,
   JsonValue,
 } from "@silverprotocol/core";
-import { readStoredAgMessage } from "@silverprotocol/core";
+import { readStoredAgMemoryRecords, readStoredAgMessage } from "@silverprotocol/core";
 import type { ThreadMessageRow, ThreadMessageRole, ThreadMessageKind, ThreadSnapshotRow } from "./rows.js";
 import { asUiResource, scanProviderRawForUiResource, toolResultLocator } from "@guuey/mcp-apps-host/narrowing";
 
@@ -333,6 +333,56 @@ export function reassembleFold(
     turns: [...turnsById.values()],
     ...(snapshot?.workingState !== undefined ? { state: snapshot.workingState } : {}),
   };
+}
+
+/**
+ * Split a snapshot's STORED thread-memory array (what a binding reads back)
+ * into the view this runtime reads and the elements it carries (AgJSON
+ * draft.4 §0.2's stored-record reader). Stored data is a wire across a rolling
+ * release, so it is never taken as `AgMemoryRecord[]`:
+ *  - `threadMemory`: the records the reader materializes with scope `thread`;
+ *    the view a fold is seeded with and a prompt recalls;
+ *  - `carriedThreadMemory`: every other stored element, verbatim and in stored
+ *    order: a record the reader cannot materialize (an undefined `scope`, a
+ *    missing `value`) and a readable record of another scope.
+ * The reader either materializes an element or reports it at `[i]`. If a core
+ * version ever did both for one element (a partial report), pairing the view
+ * back to the stored elements would desync, so then EVERY element is carried
+ * and nothing is seeded: safe at rest, and visible as a full carry.
+ */
+export function splitStoredThreadMemory(stored: readonly JsonValue[]): Pick<ThreadSnapshotRow, "threadMemory"> & {
+  carriedThreadMemory: JsonValue[];
+} {
+  const read = readStoredAgMemoryRecords(stored);
+  const omitted = new Set(read.reports.flatMap((r) => (r.path.length === 1 && typeof r.path[0] === "number" ? [r.path[0]] : [])));
+  if (omitted.size !== read.reports.length || read.value.length + omitted.size !== stored.length) {
+    return { threadMemory: [], carriedThreadMemory: [...stored] };
+  }
+  const threadMemory: AgMemoryRecord[] = [];
+  const carriedThreadMemory: JsonValue[] = [];
+  // Readable elements come back in stored order, so the k-th one not omitted is `read.value[k]`.
+  let k = 0;
+  stored.forEach((element, i) => {
+    if (omitted.has(i)) {
+      carriedThreadMemory.push(element);
+      return;
+    }
+    const rec = read.value[k++];
+    if (rec !== undefined && rec.scope === "thread") threadMemory.push(rec);
+    else carriedThreadMemory.push(element);
+  });
+  return { threadMemory, carriedThreadMemory };
+}
+
+/**
+ * The one stored thread-memory array a binding writes: the carried elements
+ * FIRST, then this runtime's thread records. Stored order is precedence for a
+ * reader that seeds every record (the reducer keys memory by scope and key, and
+ * the last write wins), and the carried elements were written before this
+ * turn, so write order stays time order.
+ */
+export function joinStoredThreadMemory(row: Pick<ThreadSnapshotRow, "threadMemory" | "carriedThreadMemory">): JsonValue[] {
+  return [...(row.carriedThreadMemory ?? []), ...row.threadMemory];
 }
 
 /**

@@ -6,6 +6,7 @@
  * contract-suite pattern (guuey#107).
  */
 import { describe, expect, it } from "vitest";
+import type { JsonValue } from "@silverprotocol/core";
 import type { ThreadPersistencePort, ThreadRow } from "../rows.js";
 
 export interface ThreadPersistenceHarness {
@@ -195,6 +196,29 @@ export function runThreadPersistenceContractSuite(
         const snap = await port.getSnapshot("t1");
         expect(snap?.threadMemory).toEqual([]);
         expect(snap?.workingState).toBeUndefined();
+      });
+    });
+
+    it("carried thread memory round-trips unchanged beside the readable records", async () => {
+      await withHarness(make, async (port) => {
+        await port.createThread(threadRow("t1"));
+        // Elements this runtime cannot read or does not own: an unknown scope,
+        // a record with no value, a readable record of another scope.
+        const carried: JsonValue[] = [
+          { scope: "team", key: "plan", value: { tier: "pro" } },
+          { scope: "thread", key: "orphan" },
+          { scope: "user", key: "name", value: "Ada" },
+        ];
+        await port.putSnapshot({
+          threadId: "t1",
+          userId: "g_contract",
+          threadMemory: [{ scope: "thread", key: "k", value: "v1" }],
+          carriedThreadMemory: carried,
+          updatedAt: "2026-08-07T00:00:03.000Z",
+        });
+        const snap = await port.getSnapshot("t1");
+        expect(snap?.threadMemory).toEqual([{ scope: "thread", key: "k", value: "v1" }]);
+        expect(JSON.stringify(snap?.carriedThreadMemory)).toBe(JSON.stringify(carried));
       });
     });
   });
