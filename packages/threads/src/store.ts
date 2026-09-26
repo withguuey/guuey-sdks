@@ -8,10 +8,11 @@
  * DynamoDB).
  */
 import { randomUUID } from "node:crypto";
-import type { AgReduceResult, JsonValue } from "@silverprotocol/core";
+import type { AgMemoryRecord, AgReduceResult, JsonValue } from "@silverprotocol/core";
 import {
   agMessageToRow,
   agArtifactToCardRow,
+  keepUnchangedThreadMemory,
   producingToolName,
   toolNamesByCallId,
   uiCardArtifactsFromMessages,
@@ -99,6 +100,13 @@ export interface AppendFoldInput {
    * own thread records, so they are never dropped at rest. Absent = none.
    */
   carriedThreadMemory?: readonly JsonValue[];
+  /**
+   * The prior snapshot's `threadMemory`: the view the reducer was seeded
+   * from. A record this turn did not change is persisted as this prior record,
+   * with the members it was stored with (`keepUnchangedThreadMemory`), never as
+   * the fold's rebuild of it. Absent = the fold's records as they are.
+   */
+  priorThreadMemory?: readonly AgMemoryRecord[];
 }
 
 export interface AppendFoldResult {
@@ -338,7 +346,7 @@ export class ThreadStore {
       artifactSeqs.push(seq);
     }
 
-    const threadMemory = fold.memory.filter((m) => m.scope === 'thread');
+    const threadMemory = keepUnchangedThreadMemory(input.priorThreadMemory ?? [], fold.memory.filter((m) => m.scope === 'thread'));
     const droppedDurableMemory = fold.memory.length - threadMemory.length;
 
     if (skipSnapshot !== true) {

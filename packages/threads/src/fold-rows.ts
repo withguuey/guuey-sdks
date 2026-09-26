@@ -385,6 +385,74 @@ export function joinStoredThreadMemory(row: Pick<ThreadSnapshotRow, "threadMemor
   return [...(row.carriedThreadMemory ?? []), ...row.threadMemory];
 }
 
+/** Structural equality over JSON values (object key order does not matter). */
+function jsonEqual(a: JsonValue | undefined, b: JsonValue | undefined): boolean {
+  if (a === b) return true;
+  if (a === undefined || b === undefined || a === null || b === null) return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((v, i) => jsonEqual(v, b[i]));
+  }
+  if (typeof a !== "object" || typeof b !== "object") return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((k) => Object.prototype.hasOwnProperty.call(b, k) && jsonEqual(a[k], b[k]));
+}
+
+/** The reducer's own memory identity (`${scope}${key ?? ""}`): a key-less record is its scope's singleton. */
+function memoryIdentity(rec: AgMemoryRecord): string {
+  return `${rec.scope}${rec.key ?? ""}`;
+}
+
+/**
+ * The thread records a turn persists: each record of the fold, except that a
+ * record the turn did NOT change is persisted as the PRIOR stored record
+ * instead of the fold's rebuild of it (guuey#1669).
+ *
+ * The prior view comes from the stored-record reader, whose elements are raw
+ * copies that keep members this runtime does not know. The fold cannot
+ * carry those: {@link seedEventsForReducer} rebuilds each record as a
+ * `memory.write` from its known fields, and the reducer keeps only those. So
+ * persisting the fold alone would drop a record's unknown members on the first
+ * turn that re-persists the thread, even though the turn never touched it. A
+ * record keeps what it was stored with until a turn changes it.
+ *
+ * - **Identity** is the reducer's: scope plus `key ?? ""`. A fold record meets
+ *   the LAST prior record of that identity, the one the seed left standing,
+ *   because the last write wins. Several key-less records of one scope were
+ *   already collapsed to that one by the reducer before this existed; that
+ *   limit predates the overlay and is not papered over here.
+ * - **Unchanged** means the known fields a turn can write are deep-equal:
+ *   `scope`, `key`, `value`, `reason`, `durable` and `turnId`. A live write
+ *   stamps the current turn's `turnId`, so a turn that rewrites the SAME value
+ *   still changes the record, and the fold's record wins (the unknown members
+ *   described the previous write). **`threadId` is deliberately left out:** a
+ *   `memory.write` has no `threadId` on its event arm, so no turn can set it and
+ *   the seed cannot carry it. Comparing it would mark every stored record that
+ *   has one as changed, which is exactly the loss this prevents.
+ * - Records the turn removed are absent from the fold and stay absent; a
+ *   record the turn added has no prior and is the fold's own.
+ */
+export function keepUnchangedThreadMemory(
+  priorView: readonly AgMemoryRecord[],
+  folded: readonly AgMemoryRecord[],
+): AgMemoryRecord[] {
+  const prior = new Map<string, AgMemoryRecord>();
+  for (const rec of priorView) prior.set(memoryIdentity(rec), rec);
+  return folded.map((rec) => {
+    const before = prior.get(memoryIdentity(rec));
+    if (before === undefined) return rec;
+    const unchanged =
+      before.scope === rec.scope &&
+      before.key === rec.key &&
+      jsonEqual(before.value, rec.value) &&
+      before.reason === rec.reason &&
+      before.durable === rec.durable &&
+      before.turnId === rec.turnId;
+    return unchanged ? before : rec;
+  });
+}
+
 /**
  * Synthetic events that seed a reducer with prior latest-replace state before
  * folding a turn (design §8.1). Seeds state + thread-memory ONLY — never
