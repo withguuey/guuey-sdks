@@ -546,7 +546,7 @@ async function streamTurn(
     // every invoke that emitted a `session` frame MUST end in `done`/`error`,
     // even for callers that bypass commands/dev.ts's framework gate.
     const normalizer: Normalizer | undefined =
-      opts.protocol === "silver" ? makeNormalizer(opts.framework) : undefined;
+      opts.protocol === "silver" ? makeNormalizer(opts.framework, { threadId: sessionId }) : undefined;
 
     const fs = sessionFs(opts.projectRoot, sessionId);
     if (opts.localCredentials) writeLocalCredentials(fs.session, opts.localCredentials, opts.devIdentity);

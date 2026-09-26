@@ -151,6 +151,15 @@ describe("startDevServer", () => {
       expect(e).toHaveProperty("type");
       expect(e).toHaveProperty("seq");
     }
+    // Every turn.start / message.start names the session's thread, not the SDK's own session id.
+    const claudeEvents = [...text.matchAll(/event: message\ndata: (\[.*?\])\n\n/g)].flatMap(
+      (m) => JSON.parse(m[1]!) as AgEvent[],
+    );
+    const stampedClaude = claudeEvents.filter(
+      (e): e is Extract<AgEvent, { type: "turn.start" | "message.start" }> => e.type === "turn.start" || e.type === "message.start",
+    );
+    expect(stampedClaude.length).toBeGreaterThan(0);
+    for (const e of stampedClaude) expect(e.threadId).toBe(sessData.threadId);
     // Never raw SDKMessage shapes on the wire in silver mode.
     expect(text).not.toMatch(/"type":"assistant"/);
     expect(text).not.toMatch(/"subtype":"success"/);
@@ -213,6 +222,12 @@ describe("startDevServer", () => {
       "The message 'conformance-probe' has been echoed back.",
     );
     expect(events.some((e) => e.type === "turn.done")).toBe(true);
+    // Every turn.start / message.start names the session's thread, never the facet's "google" label.
+    const stampedAdk = events.filter(
+      (e): e is Extract<AgEvent, { type: "turn.start" | "message.start" }> => e.type === "turn.start" || e.type === "message.start",
+    );
+    expect(stampedAdk.length).toBeGreaterThan(0);
+    for (const e of stampedAdk) expect(e.threadId).toBe(sessData.threadId);
     // Never raw ADK Event shapes on the wire in silver mode.
     expect(text).not.toMatch(/"invocationId"/);
     expect(text).not.toMatch(/"functionCall"/);

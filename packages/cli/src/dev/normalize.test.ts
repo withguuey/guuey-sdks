@@ -157,3 +157,23 @@ describe("makeNormalizer", () => {
     });
   });
 });
+
+describe("makeNormalizer — the thread id", () => {
+  const stamped = (events: AgEvent[]) =>
+    events
+      .filter(
+        (e): e is Extract<AgEvent, { type: "turn.start" | "message.start" }> => e.type === "turn.start" || e.type === "message.start",
+      )
+      .map((e) => e.threadId);
+
+  it.each([
+    ["openai-agents-sdk", openaiNativeEvents, "openai"],
+    ["google-adk", adkNativeEvents, "google"],
+  ] as const)("%s stamps the given thread id on every turn.start / message.start, else its placeholder", (framework, native, placeholder) => {
+    const withId = stamped(runThrough(makeNormalizer(framework, { threadId: "thread-dev-1" }), native));
+    expect(withId.length).toBeGreaterThan(0);
+    expect(new Set(withId)).toEqual(new Set(["thread-dev-1"]));
+    const withoutId = stamped(runThrough(makeNormalizer(framework), native));
+    expect(new Set(withoutId)).toEqual(new Set([placeholder]));
+  });
+});
