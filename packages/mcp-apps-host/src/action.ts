@@ -57,9 +57,12 @@ export type McpToolCallResult = {
  *    (the wsToken TTL is 180 s; without the relay a view on SSE/polling
  *    dies at that mark — guuey#220);
  *  - `ggui_runtime_pull` — the host-relayed polling rung where the
- *    sandbox's own transports are blocked (bridge-pull, terminal rung).
+ *    sandbox's own transports are blocked (bridge-pull, terminal rung);
+ *  - `ggui_runtime_telemetry` — the card's own health events, relayed only
+ *    as the closed kind set {@link UI_TELEMETRY_KINDS}, filtered here before
+ *    the relay calls the door.
  *
- * Two of these are transport plumbing whose arguments are opaque runtime
+ * Three of these are runtime plumbing whose arguments are opaque runtime
  * state — see {@link UI_SEMANTIC_ACTION_TOOLS} for the ONLY set a host may
  * treat as "the user did something".
  */
@@ -67,7 +70,135 @@ export const UI_ACTION_TOOLS: ReadonlySet<string> = new Set([
   "ggui_runtime_submit_action",
   "ggui_runtime_refresh_ws_token",
   "ggui_runtime_pull",
+  "ggui_runtime_telemetry",
 ]);
+
+/** The card-health telemetry tool. Never a user gesture. */
+export const UI_TELEMETRY_TOOL = "ggui_runtime_telemetry";
+
+/**
+ * What an admitted telemetry kind may carry as `detail`: nothing (`none`), or
+ * one exact, closed shape with no free text — three booleans (`boot-path`), a
+ * transport kind and a boolean (`subscribe`), or a render session id
+ * (`render-session-id`).
+ */
+export type UiTelemetryDetailRule = "none" | "boot-path" | "subscribe" | "render-session-id";
+
+/**
+ * The closed set of health-event kinds a card may report through the relay:
+ * event names and ggui's own ids only, no free text and no user identity.
+ * Exact strings, never a prefix. The server doors admit exactly the same set
+ * and refuse a whole call that carries anything else; this twin filters
+ * events before the door, so a conforming host never sends a refusable call.
+ */
+export const UI_TELEMETRY_KINDS: ReadonlyMap<string, UiTelemetryDetailRule> = new Map<
+  string,
+  UiTelemetryDetailRule
+>([
+  ["boot.path", "boot-path"],
+  ["boot.static_only_no_bridge", "none"],
+  ["status.connecting", "none"],
+  ["status.reconnecting", "none"],
+  ["status.connected", "none"],
+  ["status.disconnected", "none"],
+  ["subscribe.resolved", "subscribe"],
+  ["doorbell.ring", "render-session-id"],
+]);
+
+/** The per-call event cap the doors enforce. */
+export const MAX_UI_TELEMETRY_EVENTS = 40;
+
+const RENDER_SESSION_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+const SUBSCRIBE_TRANSPORT_KINDS: ReadonlySet<string> = new Set(["ws", "sse", "polling"]);
+
+function isPlainObject(value: unknown): value is { [key: string]: unknown } {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasExactlyKeys(value: { [key: string]: unknown }, keys: readonly string[]): boolean {
+  const own = Object.keys(value);
+  return own.length === keys.length && keys.every((k) => Object.prototype.hasOwnProperty.call(value, k));
+}
+
+/** The detail parsed as JSON, or `undefined` when it is not JSON (the event is then dropped). */
+function parsedJson(detail: string): unknown {
+  try {
+    return JSON.parse(detail);
+  } catch {
+    return undefined;
+  }
+}
+
+function telemetryDetailAdmitted(rule: UiTelemetryDetailRule, detail: unknown): boolean {
+  if (detail === undefined) return true;
+  if (typeof detail !== "string") return false;
+  switch (rule) {
+    case "none":
+      return false;
+    case "render-session-id":
+      return RENDER_SESSION_ID_RE.test(detail);
+    case "boot-path": {
+      const v = parsedJson(detail);
+      return (
+        isPlainObject(v) &&
+        hasExactlyKeys(v, ["hasStaticContent", "hasLiveTrio", "bridgeCapable"]) &&
+        typeof v["hasStaticContent"] === "boolean" &&
+        typeof v["hasLiveTrio"] === "boolean" &&
+        typeof v["bridgeCapable"] === "boolean"
+      );
+    }
+    case "subscribe": {
+      const v = parsedJson(detail);
+      return (
+        isPlainObject(v) &&
+        hasExactlyKeys(v, ["kind", "hasAck"]) &&
+        typeof v["kind"] === "string" &&
+        SUBSCRIBE_TRANSPORT_KINDS.has(v["kind"]) &&
+        typeof v["hasAck"] === "boolean"
+      );
+    }
+  }
+}
+
+/** One event the host will relay: its keys are exactly `at`, `kind` and an admitted `detail`. */
+function admittedTelemetryEvent(event: unknown): McpToolStructuredContent | undefined {
+  if (!isPlainObject(event)) return undefined;
+  if (Object.keys(event).some((k) => k !== "at" && k !== "kind" && k !== "detail")) return undefined;
+  const at = event["at"];
+  if (typeof at !== "number" || !Number.isFinite(at) || at < 0) return undefined;
+  const kind = event["kind"];
+  const rule = typeof kind === "string" ? UI_TELEMETRY_KINDS.get(kind) : undefined;
+  if (rule === undefined || !telemetryDetailAdmitted(rule, event["detail"])) return undefined;
+  return event;
+}
+
+/**
+ * The telemetry call the host relays: the card's `sessionId` (when it is a
+ * string) and only the admitted events, oldest first, at most
+ * {@link MAX_UI_TELEMETRY_EVENTS}. Whole events are dropped, never edited.
+ * `undefined` when nothing is left to relay.
+ */
+export function admittedTelemetryArguments(
+  args: McpToolStructuredContent | undefined,
+): McpToolStructuredContent | undefined {
+  if (args === undefined || !Array.isArray(args["events"])) return undefined;
+  const events: McpToolStructuredContent[] = [];
+  for (const event of args["events"]) {
+    const admitted = admittedTelemetryEvent(event);
+    if (admitted !== undefined) events.push(admitted);
+  }
+  if (events.length === 0) return undefined;
+  const sessionId = args["sessionId"];
+  return {
+    ...(typeof sessionId === "string" ? { sessionId } : {}),
+    events: events.slice(-MAX_UI_TELEMETRY_EVENTS),
+  };
+}
+
+/** The local answer when a telemetry call has nothing admitted to relay: ggui's own `{ok: true}` shape. */
+function telemetryNothingToRelayResult(): McpToolCallResult {
+  return { content: [], structuredContent: { ok: true } };
+}
 
 /**
  * The strict subset of {@link UI_ACTION_TOOLS} that carries a USER gesture —
@@ -265,6 +396,15 @@ export function createMcpUiActionRelay(
     if (!UI_ACTION_TOOLS.has(request.name)) return unavailableToolCallResult();
     if (!request.resourceUri.startsWith("ui://")) return unavailableToolCallResult();
 
+    // The card's health events: only the admitted kinds reach the door, and a
+    // door that refuses the tool (an older server) answers in-band like any
+    // other failure. Telemetry never touches the pull circuit.
+    let callArguments = request.arguments;
+    if (request.name === UI_TELEMETRY_TOOL) {
+      callArguments = admittedTelemetryArguments(request.arguments);
+      if (callArguments === undefined) return telemetryNothingToRelayResult();
+    }
+
     const isPull = request.name === PULL_TOOL;
     // Circuit OPEN for this locator's pull → fail-fast, never touch the door.
     if (isPull && (pullFailures.get(request.resourceUri) ?? 0) >= PULL_CIRCUIT_THRESHOLD) {
@@ -273,7 +413,7 @@ export function createMcpUiActionRelay(
 
     let raw: unknown;
     try {
-      raw = await deps.callTool(request.resourceUri, request.name, request.arguments);
+      raw = await deps.callTool(request.resourceUri, request.name, callArguments);
     } catch {
       if (isPull) recordPull(request.resourceUri, true); // transport failure == unavailable
       return unavailableToolCallResult(); // in-band

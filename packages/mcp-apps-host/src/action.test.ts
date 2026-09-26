@@ -4,13 +4,17 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import {
+  admittedTelemetryArguments,
   asToolCallResult,
   createMcpUiActionRelay,
+  MAX_UI_TELEMETRY_EVENTS,
   PULL_CIRCUIT_THRESHOLD,
   UI_ACTION_PULL_CIRCUIT_OPEN,
   UI_ACTION_TOOLS,
   UI_ACTION_UNAVAILABLE_TEXT,
   UI_SEMANTIC_ACTION_TOOLS,
+  UI_TELEMETRY_KINDS,
+  UI_TELEMETRY_TOOL,
 } from "./action.js";
 
 const URI = "ui://ggui/render/sess-1/hash-1";
@@ -91,8 +95,10 @@ describe("createMcpUiActionRelay", () => {
       "ggui_runtime_pull",
       "ggui_runtime_refresh_ws_token",
       "ggui_runtime_submit_action",
+      "ggui_runtime_telemetry",
     ]);
     expect([...UI_SEMANTIC_ACTION_TOOLS]).toEqual(["ggui_runtime_submit_action"]);
+    expect(UI_SEMANTIC_ACTION_TOOLS.has("ggui_runtime_telemetry")).toBe(false);
     // Structural: every semantic tool is relayable, never the reverse.
     for (const name of UI_SEMANTIC_ACTION_TOOLS) expect(UI_ACTION_TOOLS.has(name)).toBe(true);
     expect(UI_SEMANTIC_ACTION_TOOLS.has("ggui_runtime_pull")).toBe(false);
@@ -287,5 +293,93 @@ describe("createMcpUiActionRelay — onSessionUnrestorable (guuey#1249 item 4)",
     } finally {
       warn.mockRestore();
     }
+  });
+});
+
+describe("card-health telemetry: only the closed kind set reaches the door", () => {
+  const TURI = "ui://ggui/render/sess-1/h";
+  const BOOT = JSON.stringify({ hasStaticContent: true, hasLiveTrio: true, bridgeCapable: false });
+  const mixed = {
+    sessionId: "sess-1",
+    events: [
+      { at: 0, kind: "boot.path", detail: BOOT },
+      { at: 5, kind: "channel_failover_swap", detail: JSON.stringify({ from: "ws", to: "sse" }) },
+      { at: 9, kind: "gesture.dispatch", detail: JSON.stringify({ intent: "book a table", toolName: "reserve" }) },
+      { at: 12, kind: "status.connected", detail: "leaked text" },
+      { at: 40, kind: "status.connected" },
+      { at: 900, kind: "doorbell.ring", detail: "sess-1" },
+    ],
+  };
+
+  it("the kind set is exactly the eight kinds the server doors admit", () => {
+    expect(Object.fromEntries(UI_TELEMETRY_KINDS)).toEqual({
+      "boot.path": "boot-path",
+      "boot.static_only_no_bridge": "none",
+      "status.connecting": "none",
+      "status.reconnecting": "none",
+      "status.connected": "none",
+      "status.disconnected": "none",
+      "subscribe.resolved": "subscribe",
+      "doorbell.ring": "render-session-id",
+    });
+    expect(UI_TELEMETRY_TOOL).toBe("ggui_runtime_telemetry");
+  });
+
+  it("drops whole events outside the set or with a detail their kind does not admit, and keeps the rest in order", () => {
+    expect(admittedTelemetryArguments(mixed)).toEqual({
+      sessionId: "sess-1",
+      events: [
+        { at: 0, kind: "boot.path", detail: BOOT },
+        { at: 40, kind: "status.connected" },
+        { at: 900, kind: "doorbell.ring", detail: "sess-1" },
+      ],
+    });
+    expect(admittedTelemetryArguments({ events: [{ at: 1, kind: "epoch.frozen", detail: "2" }] })).toBeUndefined();
+    expect(admittedTelemetryArguments({ events: [{ at: 1, kind: "status.connected", note: "x" }] })).toBeUndefined();
+    expect(admittedTelemetryArguments({ sessionId: "s", events: "boot.path" })).toBeUndefined();
+    expect(admittedTelemetryArguments(undefined)).toBeUndefined();
+  });
+
+  it("keeps at most the per-call cap, the newest events", () => {
+    const events = Array.from({ length: MAX_UI_TELEMETRY_EVENTS + 5 }, (_, i) => ({ at: i, kind: "status.connected" }));
+    const out = admittedTelemetryArguments({ events });
+    expect(Array.isArray(out?.["events"]) && out["events"].length).toBe(MAX_UI_TELEMETRY_EVENTS);
+  });
+
+  it("the relay sends only the admitted events to the door", async () => {
+    const callTool = vi.fn(async () => ({ content: [], structuredContent: { ok: true } }));
+    const relay = createMcpUiActionRelay({ callTool });
+    const out = await relay({ resourceUri: TURI, name: "ggui_runtime_telemetry", arguments: mixed });
+    expect(out.isError).toBeUndefined();
+    expect(callTool).toHaveBeenCalledWith(TURI, "ggui_runtime_telemetry", admittedTelemetryArguments(mixed));
+  });
+
+  it("nothing admitted: the door is never called, and the card gets an ok acknowledgement", async () => {
+    const callTool = vi.fn();
+    const relay = createMcpUiActionRelay({ callTool });
+    const out = await relay({
+      resourceUri: TURI,
+      name: "ggui_runtime_telemetry",
+      arguments: { events: [{ at: 1, kind: "gesture.result", detail: "x" }] },
+    });
+    expect(callTool).not.toHaveBeenCalled();
+    expect(out).toEqual({ content: [], structuredContent: { ok: true } });
+  });
+
+  it("an older door that refuses the tool answers in-band, and never trips the pull circuit or the unrestorable signal", async () => {
+    const onSessionUnrestorable = vi.fn();
+    const callTool = vi.fn(async (_uri: string, name: string) => {
+      if (name === "ggui_runtime_telemetry") throw new Error("400 Unsupported action tool");
+      return { content: [{ type: "text", text: "ok" }] };
+    });
+    const relay = createMcpUiActionRelay({ callTool, onSessionUnrestorable });
+    for (let i = 0; i < PULL_CIRCUIT_THRESHOLD + 1; i++) {
+      const out = await relay({ resourceUri: TURI, name: "ggui_runtime_telemetry", arguments: mixed });
+      expect(out.isError).toBe(true);
+    }
+    expect(onSessionUnrestorable).not.toHaveBeenCalled();
+    const pull = await relay({ resourceUri: TURI, name: "ggui_runtime_pull", arguments: { sessionId: "sess-1" } });
+    expect(pull.isError).toBeUndefined();
+    expect(callTool).toHaveBeenLastCalledWith(TURI, "ggui_runtime_pull", { sessionId: "sess-1" });
   });
 });

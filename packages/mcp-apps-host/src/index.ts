@@ -46,13 +46,18 @@ export {
 // `ViewCspOrigins`, re-exported under its spec name for mount consumers.
 export type { McpUiResourceCsp } from "@modelcontextprotocol/ext-apps";
 export {
+  admittedTelemetryArguments,
   asToolCallResult,
   createMcpUiActionRelay,
+  MAX_UI_TELEMETRY_EVENTS,
   unavailableToolCallResult,
   UI_ACTION_TOOLS,
   UI_ACTION_UNAVAILABLE_TEXT,
   UI_SEMANTIC_ACTION_TOOLS,
+  UI_TELEMETRY_KINDS,
+  UI_TELEMETRY_TOOL,
   type CreateMcpUiActionRelayDeps,
+  type UiTelemetryDetailRule,
   type McpToolCallContent,
   type McpToolCallResult,
   type McpToolStructuredContent,
