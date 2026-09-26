@@ -9,7 +9,8 @@
  * Forwarding is by spawn, not import: `@guuey/cli` ships its entry as a
  * bin (`dist/cli.js`), not an export — resolving it through the package
  * manifest keeps this shim zero-maintenance across CLI releases (the
- * caret dependency tracks minors; the bin path is read at run time).
+ * dependency pins the @guuey/cli of its cut; the bin path is read at run
+ * time).
  */
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";

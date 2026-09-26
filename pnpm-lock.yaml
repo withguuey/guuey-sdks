@@ -296,7 +296,7 @@ importers:
   packages/guuey:
     dependencies:
       '@guuey/cli':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../cli
 
   packages/hooks:

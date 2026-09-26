@@ -65,7 +65,7 @@ minimumReleaseAgeExclude:
   # too narrow the day after it landed (fleet installs browned out on the
   # age gate rejecting our own 0.16.4). The whole family rides the
   # exclude UNVERSIONED, plus the bare-name forwarder (guuey#449), which
-  # deps @guuey/cli by caret and is itself same-day-consumed once
+  # deps @guuey/cli exactly (workspace:*) and is itself same-day-consumed once
   # published. Third-party deps keep the full gate.
   - "@guuey/agent-client"
   - "@guuey/agent-layout"

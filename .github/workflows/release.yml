@@ -105,6 +105,8 @@ jobs:
         run: pnpm check:node-types
       - name: "Publish ORDER covers packages/ (guuey#1383 — a package CI builds and npm never receives)"
         run: pnpm check:publish-order
+      - name: "The bare-name forwarder moves with the cut (guuey#1864 — guuey 1.<minor>.<patch> runs @guuey/cli 0.<minor>.<patch>)"
+        run: pnpm check:forwarder-pairing
       - name: "Pack reachability (guuey#1435 — every shipped file is reachable from an entry point, or declared)"
         run: pnpm check:pack-reachability
       - name: "The guard scripts' own tests"
@@ -203,39 +205,6 @@ jobs:
             echo "Publishing $name@$ver ..."
             (cd "packages/$pkg" && pnpm publish --provenance --no-git-checks)
           done
-
-      - name: Publish the bare-name forwarder if its version is new (guuey#449)
-        if: steps.mode.outputs.dry_run == 'false'
-        run: |
-          set -euo pipefail
-          # packages/guuey is NOT a lockstep member (guueyLockstep:false) —
-          # it versions independently and publishes here idempotently when
-          # its committed version is absent from npm. This workflow is the
-          # package's ONLY publish path BY DESIGN: pnpm publish rewrites
-          # its `workspace:^` dependency to the real caret at pack time —
-          # the 1.0.0 incident was a manual `npm publish`, which does NOT
-          # rewrite the protocol and shipped a tarball broken for every
-          # consumer. Publishing anywhere but here restages that class.
-          ver=$(node -pe "require('./packages/guuey/package.json').version")
-          if [ -n "$(npm view "guuey@$ver" version 2>/dev/null)" ]; then
-            echo "• guuey@$ver already on npm — skipping"
-          else
-            (cd packages/guuey && pnpm publish --provenance --no-git-checks)
-            # Verify the rewrite REACHED the registry: the published
-            # dependency must be a real semver range, never workspace:.
-            for i in $(seq 1 12); do
-              dep=$(npm view "guuey@$ver" dependencies.@guuey/cli 2>/dev/null || true)
-              [ -n "$dep" ] && break
-              sleep 10
-            done
-            case "$dep" in
-              workspace:*|"")
-                echo "::error ::guuey@$ver published with dependency '$dep' — the workspace rewrite FAILED"
-                exit 1
-                ;;
-              *) echo "• guuey@$ver verified: @guuey/cli -> $dep" ;;
-            esac
-          fi
 
       - name: Verify cohort on npm (guuey#439 — a partial cohort turns this run RED)
         if: steps.mode.outputs.dry_run == 'false'
@@ -351,6 +320,57 @@ jobs:
             exit 1
           fi
           echo "announce line proven: cold @guuey/cli@$GATE_TAG == $VER, full closure installed"
+
+      - name: Publish the bare-name forwarder if its version is new, and assert it is this cut's (guuey#449, guuey#1864)
+        if: steps.mode.outputs.dry_run == 'false'
+        run: |
+          set -euo pipefail
+          # packages/guuey is NOT a lockstep member (guueyLockstep:false):
+          # it publishes here when its committed version is absent from npm.
+          # Its version is 1.<cli minor>.<cli patch> (the gate job's
+          # check:forwarder-pairing), so every cut moves it. This step runs
+          # AFTER the cohort verify and the announce-line cold resolve: its
+          # dependency is the exact cli version, so it goes live only once
+          # that version resolves, and never while the cohort is unverified.
+          # This workflow is the package's ONLY publish path BY DESIGN:
+          # pnpm publish rewrites its `workspace:*` dependency to the exact
+          # @guuey/cli version at pack time. The 1.0.0 incident was a manual
+          # `npm publish`, which does NOT rewrite the protocol and shipped a
+          # tarball broken for every consumer.
+          ver=$(node -pe "require('./packages/guuey/package.json').version")
+          cli=$(node -pe "require('./packages/cli/package.json').version")
+          if [ -n "$(npm view "guuey@$ver" version 2>/dev/null)" ]; then
+            echo "• guuey@$ver already on npm — skipping the publish"
+          else
+            (cd packages/guuey && pnpm publish --provenance --no-git-checks)
+          fi
+          # guuey#1864 — the forwarder on npm must be THIS cut's, read the
+          # way an install reads it. The published tarball's own manifest
+          # depends on exactly this cut's @guuey/cli, and `latest` is this
+          # version, so a version-less `npx guuey` runs this cut's CLI.
+          # Polled on the cohort verify's window (60 x 10 s): the registry
+          # lags a publish, and the tarball is what serves first.
+          tarball="https://registry.npmjs.org/guuey/-/guuey-$ver.tgz"
+          dep=""; lat=""; t0=$(date +%s)
+          for _ in $(seq 1 60); do
+            dep=$(curl -sfL "$tarball" 2>/dev/null | tar -xzOf - package/package.json 2>/dev/null \
+              | node -e 'const m = JSON.parse(require("fs").readFileSync(0, "utf8")); process.stdout.write(String(m.dependencies?.["@guuey/cli"] ?? ""))' 2>/dev/null || true)
+            case "$dep" in workspace:*) break ;; esac   # a failed rewrite never heals: judge it now
+            lat=$(npm view guuey dist-tags.latest 2>/dev/null || true)
+            [ "$dep" = "$cli" ] && [ "$lat" = "$ver" ] && break
+            sleep 10
+          done
+          case "$dep" in
+            workspace:*)
+              echo "::error ::guuey@$ver was published with dependency '$dep' — the workspace rewrite FAILED"
+              exit 1
+              ;;
+          esac
+          if [ "$dep" != "$cli" ] || [ "$lat" != "$ver" ]; then
+            echo "::error ::the forwarder on npm is not this cut's after $(( $(date +%s) - t0 ))s: guuey@$ver runs @guuey/cli '$dep' (want $cli), guuey latest is '$lat' (want $ver)"
+            exit 1
+          fi
+          echo "• guuey@$ver verified after $(( $(date +%s) - t0 ))s: it is latest, and its published manifest runs @guuey/cli@$dep"
 
       - name: Post-publish consumer smoke
         # `always()`: a red verify (a lagging registry replica, guuey#968) must

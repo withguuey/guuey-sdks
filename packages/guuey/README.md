@@ -13,6 +13,10 @@ scaffolded project (`npx @guuey/create-agentic-app`) the pinned local `@guuey/cl
 already provides the `guuey` bin; this package covers every other directory — and
 keeps the name where it belongs.
 
+From 1.29.0, each `guuey` release runs exactly one `@guuey/cli` release, the one
+with the same minor and patch: `guuey` 1.29.0 runs `@guuey/cli` 0.29.0. Every
+`@guuey/cli` release comes with its `guuey` release.
+
 ## Support
 
 Questions and help: the guuey community on Discord — https://guuey.com/discord.
