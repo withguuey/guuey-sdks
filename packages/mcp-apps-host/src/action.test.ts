@@ -307,7 +307,7 @@ describe("card-health telemetry: only the closed kind set reaches the door", () 
       { at: 9, kind: "gesture.dispatch", detail: JSON.stringify({ intent: "book a table", toolName: "reserve" }) },
       { at: 12, kind: "status.connected", detail: "leaked text" },
       { at: 40, kind: "status.connected" },
-      { at: 900, kind: "doorbell.ring", detail: "sess-1" },
+      { at: 900, kind: "doorbell.ring", detail: "render_0f1e2d3c-4b5a-4978-8796-a5b4c3d2e1f0" },
     ],
   };
 
@@ -331,13 +331,19 @@ describe("card-health telemetry: only the closed kind set reaches the door", () 
       events: [
         { at: 0, kind: "boot.path", detail: BOOT },
         { at: 40, kind: "status.connected" },
-        { at: 900, kind: "doorbell.ring", detail: "sess-1" },
+        { at: 900, kind: "doorbell.ring", detail: "render_0f1e2d3c-4b5a-4978-8796-a5b4c3d2e1f0" },
       ],
     });
     expect(admittedTelemetryArguments({ events: [{ at: 1, kind: "epoch.frozen", detail: "2" }] })).toBeUndefined();
     expect(admittedTelemetryArguments({ events: [{ at: 1, kind: "status.connected", note: "x" }] })).toBeUndefined();
     expect(admittedTelemetryArguments({ sessionId: "s", events: "boot.path" })).toBeUndefined();
     expect(admittedTelemetryArguments(undefined)).toBeUndefined();
+  });
+
+  it("a doorbell detail that is not a render_<uuid> drops that event", () => {
+    for (const detail of ["sess-1", "RENDER_0F1E2D3C-4B5A-4978-8796-A5B4C3D2E1F0", "render_0f1e2d3c", "x".repeat(44)]) {
+      expect(admittedTelemetryArguments({ events: [{ at: 1, kind: "doorbell.ring", detail }] })).toBeUndefined();
+    }
   });
 
   it("keeps at most the per-call cap, the newest events", () => {

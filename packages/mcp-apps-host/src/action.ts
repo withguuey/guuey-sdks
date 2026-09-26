@@ -108,7 +108,8 @@ export const UI_TELEMETRY_KINDS: ReadonlyMap<string, UiTelemetryDetailRule> = ne
 /** The per-call event cap the doors enforce. */
 export const MAX_UI_TELEMETRY_EVENTS = 40;
 
-const RENDER_SESSION_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+/** A render session id as ggui's hosted service mints it: `render_<uuid>`. */
+const RENDER_SESSION_ID_RE = /^render_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const SUBSCRIBE_TRANSPORT_KINDS: ReadonlySet<string> = new Set(["ws", "sse", "polling"]);
 
 function isPlainObject(value: unknown): value is { [key: string]: unknown } {
