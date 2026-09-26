@@ -254,6 +254,16 @@ export interface TextItem extends BaseItem {
   streaming: boolean;
   /** Aborted-partial: kept, marked with `strings.stopped`. */
   stopped: boolean;
+  /**
+   * What this text IS in the turn. Absent = the answer. `"interim"` =
+   * narration: the producer marked the block `phase: "interim"` (AgJSON: an
+   * OpenAI `commentary` message, say "let me check the calendar"). Renderers
+   * draw interim text as a status line beside the answer, never inside the
+   * answer's bubble, and keep it in the transcript: restyled, not hidden.
+   * Optional on purpose: a renderer that ignores it shows the text as it
+   * always did, and a later tone is one more value, not another flag.
+   */
+  tone?: "interim";
 }
 
 /** R2 — reasoning. */

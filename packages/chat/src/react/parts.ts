@@ -33,6 +33,13 @@ export const PARTS = {
   user: "user",
   /** The agent's text: `part="message agent"`. */
   agent: "agent",
+  /**
+   * The agent's INTERIM narration (a text block marked `phase: "interim"`),
+   * drawn as a status line, not a message: `part="narration"`, never
+   * `message agent`, so a host's message styling does not turn it back into
+   * an answer bubble.
+   */
+  narration: "narration",
   /** The built-in composer form (absent when `composer={false}`). */
   composer: "composer",
   /** The composer's textarea. */

@@ -469,6 +469,8 @@ function planAssistantSource(
           markdown: policy.text.markdown,
           streaming: false, // the LAST text item of a live slot flips below
           stopped: false, // the abort marker lands on the last text item below
+          // AgJSON's open-string `phase`: only the one value this kit knows restyles.
+          ...(block.phase === "interim" ? { tone: "interim" as const } : {}),
         });
         break;
       }

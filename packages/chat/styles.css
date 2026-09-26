@@ -597,6 +597,18 @@
   white-space: pre-wrap;
 }
 
+/* ── R1 interim narration: a status line beside the answer, never its bubble ── */
+.guuey-chat-narration {
+  align-self: flex-start;
+  max-width: 92%;
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+.guuey-chat-narration p {
+  margin: 0;
+}
+
 /* ── R12 status ── */
 .guuey-chat-status {
   margin: 0;

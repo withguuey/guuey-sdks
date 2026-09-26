@@ -192,6 +192,25 @@ export function NativeText({ item, ctx }: ItemProps<TextItem>): ReactNode {
   const caret = item.streaming ? (
     <Text style={{ color: tokens.palette.accent }}>{" ▍"}</Text>
   ) : undefined;
+  if (item.tone === "interim") {
+    // Interim narration: the status line's voice (NativeStatus), outside the answer's bubble.
+    return (
+      <View
+        accessibilityLiveRegion={item.streaming ? "polite" : "none"}
+        style={{ alignSelf: "flex-start", maxWidth: "92%", paddingHorizontal: tokens.pad, paddingVertical: 2, gap: 4 }}
+      >
+        {item.markdown ? (
+          <NativeMarkdown text={item.text} color={tokens.palette.inkMuted} tokens={tokens} trailing={caret} />
+        ) : (
+          <MutedText ctx={ctx}>
+            {item.text}
+            {caret}
+          </MutedText>
+        )}
+        {item.stopped ? <MutedText ctx={ctx}>{ctx.strings.stopped}</MutedText> : null}
+      </View>
+    );
+  }
   return (
     <View
       accessibilityLiveRegion={item.streaming ? "polite" : "none"}

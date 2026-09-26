@@ -51,7 +51,7 @@ import type {
   ViewRefItem,
 } from "../types.js";
 import { Markdown } from "./markdown.js";
-import { messagePart } from "./parts.js";
+import { PARTS, messagePart } from "./parts.js";
 
 /** Everything a rendered item may need beyond itself. */
 export interface TranscriptItemContext {
@@ -238,6 +238,24 @@ export function DefaultUserMessage({ item, ctx }: ItemProps<UserMessageItem>): R
 // ─── R1 ────────────────────────────────────────────────────────────────────
 
 export function DefaultText({ item, ctx }: ItemProps<TextItem>): ReactNode {
+  if (item.tone === "interim") {
+    // Interim narration: the status line's voice, outside the answer's bubble.
+    return (
+      <div
+        className="guuey-chat-narration"
+        part={PARTS.narration}
+        {...(item.streaming ? { "aria-live": "polite" as const } : {})}
+      >
+        {item.markdown ? <Markdown text={item.text} /> : <p className="guuey-chat-verbatim">{item.text}</p>}
+        {item.streaming ? (
+          <span aria-hidden="true" className="guuey-chat-cursor">
+            {" ▍"}
+          </span>
+        ) : null}
+        {item.stopped ? <p className="guuey-chat-stopped">{ctx.strings.stopped}</p> : null}
+      </div>
+    );
+  }
   return (
     <div
       className="guuey-chat-text"

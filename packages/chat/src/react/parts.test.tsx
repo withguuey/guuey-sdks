@@ -124,6 +124,47 @@ describe("the ::part() contract (guuey#1152)", () => {
     expect(byPart(container, PARTS.transcript)).not.toBeNull();
   });
 
+  it("interim narration carries `narration`, never `message agent`: a host's message styling cannot turn it back into an answer bubble", async () => {
+    const wire = (events: object[]): string => `event: message\ndata: ${JSON.stringify(events)}\n\n`;
+    const calls: InvokeRequest[] = [];
+    const adapters: AgentInvokeAdapters = {
+      storage: { load: () => null, save: () => undefined },
+      generateId: () => "cmid-narration",
+      transport: async function* (req) {
+        calls.push(req);
+        yield SESSION_FRAME;
+        yield wire([
+          { type: "turn.start", threadId: "t-parts", turnId: "turn-n", seq: 1 },
+          { type: "message.start", id: "m-n", role: "assistant", turnId: "turn-n", threadId: "t-parts", seq: 2 },
+          { type: "text.start", id: "b-interim", messageId: "m-n", phase: "interim", seq: 3 },
+          { type: "text.delta", id: "b-interim", messageId: "m-n", delta: "Let me check the calendar.", seq: 4 },
+          { type: "text.end", id: "b-interim", messageId: "m-n", seq: 5 },
+          { type: "text.start", id: "b-answer", messageId: "m-n", seq: 6 },
+          { type: "text.delta", id: "b-answer", messageId: "m-n", delta: "You're free from 3 to 5.", seq: 7 },
+          { type: "text.end", id: "b-answer", messageId: "m-n", seq: 8 },
+          { type: "message.end", id: "m-n", seq: 9 },
+          { type: "turn.done", threadId: "t-parts", turnId: "turn-n", outcome: { type: "success" }, seq: 10 },
+        ]);
+        yield DONE_FRAME;
+      },
+    };
+    const { container } = render(<GuueyChat endpointUrl="https://pod.example/agent/invoke" adapters={adapters} />);
+    const input = screen.getByLabelText("Message");
+    fireEvent.change(input, { target: { value: "am I free?" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(calls).toHaveLength(1));
+    await waitFor(() => expect(screen.getByText("You're free from 3 to 5.")).toBeTruthy());
+
+    const narration = byPart(container, PARTS.narration);
+    expect(narration?.getAttribute("part")).toBe(PARTS.narration);
+    expect(narration?.className).toBe("guuey-chat-narration");
+    expect(narration?.textContent).toContain("Let me check the calendar.");
+    // The answer keeps its message part; the narration is not a message.
+    expect(byPart(container, PARTS.agent)?.textContent).toContain("You're free from 3 to 5.");
+    expect(byPart(container, PARTS.agent)?.textContent).not.toContain("Let me check the calendar.");
+    expect(container.querySelectorAll(`[part~="${PARTS.message}"]`)).toHaveLength(2);
+  });
+
   it("the table is closed: exactly these names, each value a hyphenated lowercase token", () => {
     expect(Object.keys(PARTS).sort()).toEqual(
       [
@@ -136,6 +177,7 @@ describe("the ::part() contract (guuey#1152)", () => {
         "composerStop",
         "header",
         "message",
+        "narration",
         "surface",
         "transcript",
         "user",
