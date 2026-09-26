@@ -125,7 +125,7 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
   // invocable on our runtime until #801's receipted call from a dev pod; the
   // status alone keeps it out of BOTH picker halves. Flips to `ga` (+ lineup
   // decision) in the first cut after its receipt (oss #806).
-  { id: "gpt-5.6-terra", provider: "openai", label: "GPT-5.6 Terra", status: "ga", isDefault: true, lineup: true },
+  { id: "gpt-5.6-terra", provider: "openai", label: "GPT-5.6 Terra", status: "ga", lineup: true },
   // GPT-6 Sol + GPT-6 Luna (guuey#1622 — his #1608 picks (a) "Staged: Sol+Luna
   // now, Opus 5.5 announced (Recommended)" and (d) "Successors in; Opus 5 + 5.6
   // Sol behind the door"): `ga` on QA's receipted in-pod calls (dev, 2026-09-22
@@ -144,7 +144,14 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
   // prompts above 272K input tokens are vendor-priced at 2× and the card has
   // no context tier yet.
   { id: "gpt-6-astra", provider: "openai", label: "GPT-6 Astra", status: "ga", lineup: true },
-  { id: "gpt-6-luna", provider: "openai", label: "GPT-6 Luna", status: "ga", lineup: true },
+  // The OpenAI default since guuey#1624 (his #1608 pick (c), "Move to GPT-6 Luna
+  // (after the gates)"). The gates were the chip drafts' max_completion_tokens
+  // (#1614) and a measured per-turn comparison against Terra on guuey's own
+  // workloads (U6: 60 sessions, dev pin 23, pre-registered rules; Luna was not
+  // worse on any criterion, and faster to the first card and cheaper per turn
+  // by non-overlapping intervals). Being the default floats it to the front of
+  // the lineup; the rest keep (d)'s order.
+  { id: "gpt-6-luna", provider: "openai", label: "GPT-6 Luna", status: "ga", isDefault: true, lineup: true },
   // Superseded by GPT-6 Sol ((d) above): still ga, still served, still
   // selectable — behind the "See all models" door, beside 5.6 Luna.
   { id: "gpt-5.6-sol", provider: "openai", label: "GPT-5.6 Sol", status: "ga" },

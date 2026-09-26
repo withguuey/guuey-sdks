@@ -56,10 +56,10 @@ describe('MODEL_REGISTRY invariants', () => {
   // Per-provider defaults are money-visible (they pick the rate a new agent
   // meters at) and product-visible (the picker's first item), so each one is
   // pinned by id, not just by "some default exists".
-  it('defaultModelFor("openai-agents-sdk") === "gpt-5.6-terra"', () => {
-    // Deliberate divergence from OpenAI's own `gpt-5.6` alias (which routes to
-    // Sol) — founder cost/balance call 2026-07-25; see MODEL_REGISTRY comment.
-    expect(defaultModelFor('openai-agents-sdk')).toBe('gpt-5.6-terra');
+  it('defaultModelFor("openai-agents-sdk") === "gpt-6-luna"', () => {
+    // guuey#1624 — his #1608 pick (c), executed on its gates (U6 measured on
+    // guuey's workloads); see the MODEL_REGISTRY comment on the Luna row.
+    expect(defaultModelFor('openai-agents-sdk')).toBe('gpt-6-luna');
   });
 
   it('defaultModelFor("google-adk") === "gemini-3.6-flash"', () => {
@@ -164,7 +164,7 @@ describe('modelsForProvider', () => {
   it('lists the default first', () => {
     const openaiModels = modelsForProvider('openai');
     expect(openaiModels[0].isDefault).toBe(true);
-    expect(openaiModels[0].id).toBe('gpt-5.6-terra');
+    expect(openaiModels[0].id).toBe('gpt-6-luna');
   });
 
   it('only includes ga and preview status', () => {
@@ -237,17 +237,18 @@ describe('lineupForProvider / legacyForProvider', () => {
     expect(modelEntry('claude-fable-5')?.status).toBe('ga');
   });
 
-  it("openai's lineup is his #1608 pick (d), IN ORDER — Terra · GPT-6 Sol · Astra · GPT-6 Luna; 5.6 Sol behind the door (guuey#1622)", () => {
+  it("openai's lineup is his #1608 pick (d), IN ORDER — Terra · GPT-6 Sol · Astra — with the default (GPT-6 Luna, #1624) floated to the front; 5.6 Sol behind the door (guuey#1622)", () => {
     // Verbatim (d): "Successors in; Opus 5 + 5.6 Sol behind the door". The
-    // picker renders lineup rows in registry order, so the ORDER is the ruling.
-    expect(lineupForProvider('openai').map((m) => m.id)).toEqual(['gpt-5.6-terra', 'gpt-6-sol', 'gpt-6-astra', 'gpt-6-luna']);
+    // picker renders lineup rows in registry order after the default floats to
+    // the front, so the ORDER is the ruling; (c) moved the default to Luna.
+    expect(lineupForProvider('openai').map((m) => m.id)).toEqual(['gpt-6-luna', 'gpt-5.6-terra', 'gpt-6-sol', 'gpt-6-astra']);
     expect(legacyForProvider('openai').map((m) => m.id)).toContain('gpt-5.6-sol');
     // Behind the door is curation, not lifecycle: 5.6 Sol stays ga and selectable.
     expect(modelEntry('gpt-5.6-sol')?.status).toBe('ga');
     expect(modelEntry('gpt-6-sol')?.status).toBe('ga');
     expect(modelEntry('gpt-6-luna')?.status).toBe('ga');
-    // The default is unchanged by this leg (#1624 is the gated default move).
-    expect(defaultModelFor('openai-agents-sdk')).toBe('gpt-5.6-terra');
+    // #1624 moved the default to Luna (his pick (c), on its gates).
+    expect(defaultModelFor('openai-agents-sdk')).toBe('gpt-6-luna');
   });
 
   it("Opus 5.5's ga flip (#1623): it joins the lineup and Opus 5 moves behind the door — still ga, still selectable; the default stays Sonnet 5", () => {
@@ -319,7 +320,8 @@ describe('modelEntry', () => {
     // under-meter against the bare `gpt-5` row.
     expect(modelEntry('gpt-5.6')).toBeUndefined();
     expect(modelEntry('gpt-5.6-sol')?.status).toBe('ga');
-    expect(modelEntry('gpt-5.6-terra')?.isDefault).toBe(true);
+    expect(modelEntry('gpt-5.6-terra')?.status).toBe('ga');
+    expect(modelEntry('gpt-5.6-terra')?.isDefault).toBeUndefined();
     expect(modelEntry('gpt-5.6-luna')?.status).toBe('ga');
   });
 
