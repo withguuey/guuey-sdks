@@ -188,7 +188,8 @@ describe("the URL an auth ask opens", () => {
     for (const snake of [false, true]) {
       const ask = relayed("https://accounts.example/o/oauth2/auth", COMPLETE, snake);
       expect(oauthAuthorizeAsk(ask)?.authorizationUrl).toBe(COMPLETE);
-      expect(oauthAuthorizeHref(ask, null, "https://app.example/chat").startsWith(`${COMPLETE}&returnTo=`)).toBe(true);
+      // Opened AS-IS: no broker vocabulary, and the chat page's URL never goes to an outside server.
+      expect(oauthAuthorizeHref(ask, null, "https://app.example/chat?thread=t1")).toBe(COMPLETE);
     }
   });
 
@@ -202,5 +203,15 @@ describe("the URL an auth ask opens", () => {
 
   it("the hosted broker's ask (no complete URI) keeps opening its authorizationUrl, unchanged", () => {
     expect(oauthAuthorizeAsk(UPFRONT_ASK)?.authorizationUrl).toBe(START);
+    // ...and still carries the broker's own link vocabulary.
+    expect(oauthAuthorizeHref(ASK, "once", "https://app.example/chat")).toBe(
+      `${START}&mode=once&returnTo=${encodeURIComponent("https://app.example/chat")}`,
+    );
+  });
+
+  it("a relayed ask with grant modes still validates the pick, and opens its complete URI unchanged", () => {
+    const withModes: AgPausedAsk = { ...relayed("https://accounts.example/o/oauth2/auth", COMPLETE), grantModes: [{ id: "once" }] };
+    expect(oauthAuthorizeHref(withModes, "once", "https://app.example/chat")).toBe(COMPLETE);
+    expect(() => oauthAuthorizeHref(withModes, "always", "https://app.example/chat")).toThrow(/not declared/);
   });
 });

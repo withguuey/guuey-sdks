@@ -197,7 +197,8 @@ export function authRequiredFromAsks(asks: readonly AgPausedAsk[]): AuthRequired
 }
 
 /**
- * The link to open for a mode pick: `authorizationUrl` + `&mode=<grantModeId>`
+ * The link to open for a mode pick. A relayed ask's complete request URI is
+ * returned unchanged; otherwise `authorizationUrl` + `&mode=<grantModeId>`
  * + `&returnTo=<returnTo>` (each value URI-encoded; `?` vs `&` chosen from
  * the URL as declared). `grantModeId` is required iff the ask declares
  * modes (`null` = a plain accept on a mode-less auth ask — no `mode` param).
@@ -216,6 +217,11 @@ export function oauthAuthorizeHref(ask: AgPausedAsk, grantModeId: string | null,
     throw new Error(`oauthAuthorizeHref: grant mode "${grantModeId}" is not declared on ${ask.askId}`);
   }
   if (returnTo === "") throw new Error("oauthAuthorizeHref: returnTo is required");
+  // A relayed ask's complete request URI is opened AS-IS. `mode` and `returnTo`
+  // are the hosted broker's link vocabulary: an outside authorization server
+  // ignores them (and never returns them on its redirect), and `returnTo` would
+  // hand it the chat page's URL for nothing.
+  if (requestUriOf(ask) !== undefined) return oauth.authorizationUrl;
   const sep = oauth.authorizationUrl.includes("?") ? "&" : "?";
   const mode = grantModeId === null ? "" : `${OAUTH_LINK_PARAMS.mode}=${encodeURIComponent(grantModeId)}&`;
   return `${oauth.authorizationUrl}${sep}${mode}${OAUTH_LINK_PARAMS.returnTo}=${encodeURIComponent(returnTo)}`;
