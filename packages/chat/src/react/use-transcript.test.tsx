@@ -284,6 +284,98 @@ function invokeReturn(over: Partial<UseAgentInvokeReturn> = {}): UseAgentInvokeR
   };
 }
 
+/**
+ * guuey#1837: a LIVE locator card read while its turn streams can miss on both doors by
+ * construction (no pod door on a pre-#209 router; the platform door's card row is written at turn
+ * end, before `done`). That miss is held, and the card is read once more when the turn settles.
+ */
+describe("useTranscript — a live card missed mid-turn is read once more at settle (guuey#1837)", () => {
+  const LIVE_URI = "ui://ggui/render/render_live/abc";
+  const LIVE_FOLD: AgReduceResult = {
+    messages: [
+      { id: "msg_1", role: "assistant", content: [{ type: "tool-call", toolCallId: "toolu_1", name: "ggui_render", input: {} }] },
+      {
+        id: "msg_1_result",
+        role: "tool",
+        content: [{ type: "tool-result", toolCallId: "toolu_1", content: [], uiData: { resourceUri: LIVE_URI } }],
+      },
+    ],
+    artifacts: [],
+    memory: [],
+    turns: [],
+  };
+  const HIT = { channel: "inline" as const, resource: { uri: LIVE_URI, mimeType: "text/html", text: "<p>card</p>" } };
+  const flush = async () => {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  };
+  const liveView = (plan: { views: readonly { key: string; origin: "live" | "history" }[] }) => {
+    const v = plan.views.find((x) => x.origin === "live");
+    if (v === undefined) throw new Error("no live view in the plan");
+    return v;
+  };
+
+  it("a mid-turn miss is not a verdict: nothing settles, and the settled turn's one re-read mounts the card", async () => {
+    const reader = vi.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce(HIT);
+    const { result, rerender } = renderHook(
+      ({ status }: { status: TranscriptInputs["status"] }) =>
+        useTranscript({ inputs: baseInputs({ result: LIVE_FOLD, status, messages: [{ role: "user", text: "show me" }] }), policy: calmPolicy(), reader }),
+      { initialProps: { status: "responding" as TranscriptInputs["status"] } },
+    );
+    await flush();
+    const key = liveView(result.current.plan).key;
+    expect(reader).toHaveBeenCalledTimes(1);
+    expect(result.current.resolvedMounts.has(key)).toBe(false);
+    // Still streaming: no second read however often the plan changes.
+    rerender({ status: "responding" });
+    await flush();
+    expect(reader).toHaveBeenCalledTimes(1);
+    rerender({ status: "ready" });
+    await flush();
+    expect(reader).toHaveBeenCalledTimes(2);
+    expect(result.current.resolvedMounts.get(key)).toEqual(HIT);
+  });
+
+  it("a miss on the re-read is expired, and the loud miss fires once, on the verdict", async () => {
+    const events: ChatDebugEvent[] = [];
+    const reader = vi.fn().mockResolvedValue(undefined);
+    const { result, rerender } = renderHook(
+      ({ status }: { status: TranscriptInputs["status"] }) =>
+        useTranscript({
+          inputs: baseInputs({ result: LIVE_FOLD, status, messages: [{ role: "user", text: "show me" }] }),
+          policy: debugPolicy(),
+          reader,
+          onDebugEvent: (e) => events.push(e),
+        }),
+      { initialProps: { status: "responding" as TranscriptInputs["status"] } },
+    );
+    await flush();
+    expect(events.filter((e) => e.type === "locator-read-miss")).toHaveLength(0);
+    rerender({ status: "ready" });
+    await flush();
+    const key = liveView(result.current.plan).key;
+    expect(reader).toHaveBeenCalledTimes(2);
+    expect(result.current.resolvedMounts.get(key)).toBe("expired");
+    expect(events.filter((e) => e.type === "locator-read-miss")).toHaveLength(1);
+    // Never a loop: later plans read nothing more.
+    rerender({ status: "ready" });
+    await flush();
+    expect(reader).toHaveBeenCalledTimes(2);
+  });
+
+  it("a miss read once the turn has settled is expired at once, exactly as before", async () => {
+    const reader = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() =>
+      useTranscript({ inputs: baseInputs({ result: LIVE_FOLD, status: "ready", messages: [{ role: "user", text: "show me" }] }), policy: calmPolicy(), reader }),
+    );
+    await flush();
+    expect(reader).toHaveBeenCalledTimes(1);
+    expect(result.current.resolvedMounts.get(liveView(result.current.plan).key)).toBe("expired");
+  });
+});
+
 describe("useTranscriptInputs (the live assembler)", () => {
   it("moves the trailing in-flight assistant entry to assistantText", () => {
     const { result } = renderHook(() => useTranscriptInputs(invokeReturn()));

@@ -181,12 +181,27 @@ export function useTranscript({
   const readerRef = useRef(reader);
   readerRef.current = reader;
   const inFlight = useRef(new Set<ItemKey>());
+  // guuey#1837: a LIVE card read while its turn still streams can miss on both doors by
+  // construction. The pod door is absent on routers older than guuey#209, and the platform door's
+  // card row is written at turn end, before the pod sends `done` (every router persists the fold
+  // first). So such a miss is not a verdict: the card stays unresolved, and it is read ONCE more
+  // when the turn settles (`status` back to "ready"). A miss on that read, or any miss once the
+  // turn has settled, is "expired" as before. One re-read, never a loop.
+  const turnSettled = merged.status === "ready";
+  const rereadAtSettle = useRef(new Set<ItemKey>());
+  const reread = useRef(new Set<ItemKey>());
   useEffect(() => {
     for (const item of plan.views) {
       if (item.mount === null || item.mount.channel !== "locator") continue;
       if (resolvedMounts.has(item.key) || inFlight.current.has(item.key)) continue;
+      if (rereadAtSettle.current.has(item.key)) {
+        if (!turnSettled) continue;
+        rereadAtSettle.current.delete(item.key);
+        reread.current.add(item.key);
+      }
       const read = readerRef.current;
       const locator = item.mount;
+      const readWhileStreaming = !turnSettled;
       inFlight.current.add(item.key);
       const settle = (value: ResolvedViewMount | "expired"): void => {
         inFlight.current.delete(item.key);
@@ -220,6 +235,12 @@ export function useTranscript({
       };
       void resolveViewMount(locator, read, { origin: item.origin }).then(
         (resolved) => {
+          if (resolved === undefined && item.origin === "live" && readWhileStreaming && !reread.current.has(item.key)) {
+            // Not yet a verdict (guuey#1837): hold it for the one re-read at settle.
+            inFlight.current.delete(item.key);
+            rereadAtSettle.current.add(item.key);
+            return;
+          }
           if (resolved === undefined) loudMiss();
           settle(resolved ?? "expired");
         },
@@ -229,7 +250,7 @@ export function useTranscript({
         },
       );
     }
-  }, [plan, resolvedMounts]);
+  }, [plan, resolvedMounts, turnSettled]);
 
   return { plan, toggle, overrides, onViewPhase, onViewDiagnosis, resolvedMounts };
 }
