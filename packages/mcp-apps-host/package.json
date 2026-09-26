@@ -43,7 +43,7 @@
   "dependencies": {
     "@ggui-ai/protocol": "0.23.0",
     "@modelcontextprotocol/ext-apps": "^1.7.5",
-    "@silverprotocol/core": "0.7.2"
+    "@silverprotocol/core": "0.9.0"
   },
   "peerDependencies": {
     "react": ">=18"
