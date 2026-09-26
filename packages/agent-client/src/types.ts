@@ -330,9 +330,12 @@ export interface UseAgentInvokeReturn {
    *
    * It is a `string`, not the `AgentErrorCode` union: the pod may ship a new
    * code before a consumer upgrades this SDK, and a narrowed type would make
-   * that unrepresentable rather than merely unhandled. ONE code is
-   * client-originated rather than a pod wire code: `STREAM_STALLED` (see
-   * `CLIENT_ERROR_CODES`), set when the guuey#192 stall watchdog gives up.
+   * that unrepresentable rather than merely unhandled. Some codes are
+   * client-originated rather than pod wire codes (see `CLIENT_ERROR_CODES`):
+   * `STREAM_STALLED` when the guuey#192 stall watchdog gives up,
+   * `STREAM_TRUNCATED` when the stream closed without `done` and history did
+   * not hold the reply, and `THREAD_HISTORY_UNAVAILABLE` for a refused
+   * history read.
    */
   errorCode: string | null;
   threadId: string | null;
@@ -391,9 +394,9 @@ export interface UseAgentInvokeReturn {
    */
   aborted: boolean;
   /**
-   * The LAST turn was ADOPTED from persisted history by the guuey#192 stall
-   * watchdog (the reply was already durably written; the dead stream was
-   * discarded). Presentation contract: calm surfaces render an adopted turn
+   * The LAST turn was ADOPTED from persisted history, by the guuey#192 stall
+   * watchdog or by the one probe after a stream that closed without `done`
+   * (the reply was already durably written; the dead stream was discarded). Presentation contract: calm surfaces render an adopted turn
    * identically to a streamed one; debug surfaces may mark it. Cleared by
    * the next `send()` and by `reset()`.
    */

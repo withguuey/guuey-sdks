@@ -105,6 +105,15 @@ export const CLIENT_ERROR_CODES = {
    */
   STREAM_STALLED: "STREAM_STALLED",
   /**
+   * The SSE stream CLOSED before the turn's `done` frame, and one history
+   * probe did not find the finished reply. The pod sends `done` on every
+   * path where the client is still connected (a success, a failure, the
+   * ceiling), so a close without one means the connection was cut: a proxy
+   * or a pod restart, say. The turn is over (`status` returns to `ready`);
+   * a retry or a reload may still find the reply if the backend completes it.
+   */
+  STREAM_TRUNCATED: "STREAM_TRUNCATED",
+  /**
    * A RESUMED thread's history read was refused (401 after the one
    * forceRefresh retry) — the persisted threadId exists but the CURRENT
    * identity cannot read it (guuey#413: the identity-drift face; an

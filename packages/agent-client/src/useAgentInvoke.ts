@@ -108,6 +108,25 @@ export const STALL_RECOVERY_DEFAULTS = {
   preFirstByteWindowMs: 120_000,
 } as const;
 
+/** Resolve after `ms`, or at once when `signal` aborts (the wait never outlives the turn). */
+function delayUnlessAborted(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 function resolveStallRecovery(
   option: false | StallRecoveryOptions | undefined,
 ): { windowMs: number; probeAttempts: number; preFirstByteWindowMs: number } | null {
@@ -473,6 +492,9 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
       const stall = resolveStallRecovery(stallRecoveryRef.current);
       let turnEnded = false;
       let probeInFlight = false;
+      // Whether THIS turn's stream carried its `done`, and an in-band error frame.
+      let sawDone = false;
+      let sawErrorFrame = false;
       let fruitlessProbes = 0;
       let activityCount = 0;
       let stallTimer: ReturnType<typeof setTimeout> | null = null;
@@ -504,6 +526,25 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         // silent, so whatever `apply` decided IS the turn's outcome.
         controller.abort();
       };
+      /** A history read that already holds THIS turn's finished reply (see {@link stallProbeDecision}). */
+      const holdsFinishedReply = (
+        result: HistoryLoadResult | null,
+      ): result is { messages: AgentMessage[]; cards?: HistoryCard[] } => {
+        if (!result || "gone" in result) return false;
+        let localUserCount = 0;
+        for (const m of messagesRef.current) if (m.role === "user") localUserCount += 1;
+        return stallProbeDecision(result.messages, localUserCount) === "adopt";
+      };
+      /** Adopt the persisted turn: the transcript IS history's, and the renderer is told. */
+      const adoptFrom = (adoptedResult: { messages: AgentMessage[]; cards?: HistoryCard[] }): void => {
+        setMessages(adoptedResult.messages);
+        if (adoptedResult.cards && adoptedResult.cards.length > 0) {
+          setHistoryCards(adoptedResult.cards);
+        }
+        // The renderer's signal: calm renders the adopted turn identically;
+        // debug may mark it (guuey#135 3b).
+        setAdopted(true);
+      };
       const onStallWindow = async (): Promise<void> => {
         if (!stall || turnEnded || controller.signal.aborted || probeInFlight) return;
         const tid = threadIdRef.current;
@@ -523,22 +564,10 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
           // — discard the now-stale read; the chunk observer already reset
           // the count and re-armed the clock.
           if (activityCount !== countAtProbe) return;
-          if (result && !("gone" in result)) {
-            let localUserCount = 0;
-            for (const m of messagesRef.current) if (m.role === "user") localUserCount += 1;
-            if (stallProbeDecision(result.messages, localUserCount) === "adopt") {
-              const adoptedResult = result;
-              endTurnWith(() => {
-                setMessages(adoptedResult.messages);
-                if ("cards" in adoptedResult && adoptedResult.cards && adoptedResult.cards.length > 0) {
-                  setHistoryCards(adoptedResult.cards);
-                }
-                // The renderer's #192 signal: calm renders the adopted turn
-                // identically; debug may mark it (guuey#135 3b).
-                setAdopted(true);
-              });
-              return;
-            }
+          if (holdsFinishedReply(result)) {
+            const adoptedResult = result;
+            endTurnWith(() => adoptFrom(adoptedResult));
+            return;
           }
         }
         // No probe possible (no threadId yet / no history adapter), a failed
@@ -620,12 +649,58 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
             // In-band failure frame — the code moves in lockstep with the
             // message (an event without one carries null rather than leaving
             // a previous turn's code standing).
+            sawErrorFrame = true;
             setError(ev.message);
             setErrorCode(ev.code);
           } else if (ev.kind === "profile-link") {
             setProfileLinkRequest(ev.request);
+          } else if (ev.kind === "done") {
+            // The spec'd end of the invoke (AgJSON §8.0): the stream closes after it.
+            sawDone = true;
           }
-          // `done` needs no handling here — the stream closes after it.
+        }
+        // ── A stream that CLOSED without `done` ─────────────────────────
+        // The pod sends `done` on every path where the client is still
+        // connected, so a clean close without it means the connection was
+        // cut (a proxy, a pod restart). Not a quiet end: the #192 machinery
+        // decides. History already holding the finished reply is adopted (the
+        // reply landed, the connection didn't). The pod may persist it only
+        // seconds after the cut, so a first read that misses gets ONE bounded
+        // re-read after the watchdog's window before the turn fails with
+        // STREAM_TRUNCATED; reporting a finished turn as cut would invite a
+        // duplicate ask. A failure the pod already voiced in-band keeps its
+        // own words and code, with no probe. `turnEnded` is set only when the
+        // verdict lands, so a user abort during the probe stays a user abort.
+        if (!sawDone && !sawErrorFrame && !turnEnded && !controller.signal.aborted) {
+          clearStallTimer();
+          probeInFlight = true;
+          const tid = threadIdRef.current;
+          const history = adaptersRef.current.history;
+          const readHistory = async (): Promise<HistoryLoadResult | null> => {
+            if (!tid || !history) return null;
+            try {
+              return await history.load(tid);
+            } catch {
+              return null; // a failed read finds no reply, like the stall probe's
+            }
+          };
+          let result = await readHistory();
+          if (!holdsFinishedReply(result) && tid && history && !controller.signal.aborted) {
+            await delayUnlessAborted(stall?.windowMs ?? STALL_RECOVERY_DEFAULTS.windowMs, controller.signal);
+            if (!controller.signal.aborted) result = await readHistory();
+          }
+          probeInFlight = false;
+          if (!controller.signal.aborted) {
+            if (holdsFinishedReply(result)) {
+              const adoptedResult = result;
+              endTurnWith(() => adoptFrom(adoptedResult));
+            } else {
+              endTurnWith(() => {
+                setError("The response stream ended before the reply finished, and the finished reply was not found in history.");
+                setErrorCode(CLIENT_ERROR_CODES.STREAM_TRUNCATED);
+              });
+            }
+          }
         }
       } catch (e) {
         if (!controller.signal.aborted) {
