@@ -1,8 +1,8 @@
 {
-  "@guuey/worker": "0.28.0",
-  "@guuey/config": "0.28.0",
-  "@guuey/cli": "0.28.0",
-  "@guuey/chat": "0.28.0",
-  "@guuey/mcp-apps-host": "0.28.0",
-  "@guuey/agent-layout": "0.28.0"
+  "@guuey/worker": "0.28.1",
+  "@guuey/config": "0.28.1",
+  "@guuey/cli": "0.28.1",
+  "@guuey/chat": "0.28.1",
+  "@guuey/mcp-apps-host": "0.28.1",
+  "@guuey/agent-layout": "0.28.1"
 }

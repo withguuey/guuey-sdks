@@ -1,6 +1,6 @@
 {
   "name": "@guuey/hooks",
-  "version": "0.28.0",
+  "version": "0.28.1",
   "description": "The guuey hook spec — lifecycle events a hosted agent's platform fires (session.ended, handoff.requested), the JSON envelope in / result out, the two handler kinds (agent | tool), and the hooks block of guuey.json. Types + zod schemas + the per-event class table; no runtime of its own.",
   "license": "MIT",
   "type": "module",
