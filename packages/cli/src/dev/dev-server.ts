@@ -37,7 +37,7 @@ import type { WorkerEvent } from "@guuey/worker";
 import { colocatedResourceUrl, type GuueyAgent, type GuueyAgentMcpServer } from "@guuey/config";
 import type { Normalizer } from "@silverprotocol/core";
 import { createLocalDriver, type LocalRunInput } from "./local-driver.js";
-import { makeNormalizer } from "./normalize.js";
+import { makeHelloGatedNormalizer } from "./normalize.js";
 
 /** Local dev-loop's default `ggui serve` MCP endpoint — mirrors the platform
  *  injecting `mcp.ggui.ai` for deployed agents (see `lowerForDev`). `ggui
@@ -545,8 +545,9 @@ async function streamTurn(
     // still terminates the stream with the standard `event: error` frame —
     // every invoke that emitted a `session` frame MUST end in `done`/`error`,
     // even for callers that bypass commands/dev.ts's framework gate.
-    const normalizer: Normalizer | undefined =
-      opts.protocol === "silver" ? makeNormalizer(opts.framework, { threadId: sessionId }) : undefined;
+    const gated =
+      opts.protocol === "silver" ? makeHelloGatedNormalizer(opts.framework, { threadId: sessionId }) : undefined;
+    const normalizer: Normalizer | undefined = gated?.normalizer;
 
     const fs = sessionFs(opts.projectRoot, sessionId);
     if (opts.localCredentials) writeLocalCredentials(fs.session, opts.localCredentials, opts.devIdentity);
@@ -558,7 +559,9 @@ async function streamTurn(
       abortSignal: abortController.signal,
     })) {
       if (ev.type === "hello") {
-        // Router-plane only — never forwarded to SSE, never fed to a normalizer.
+        // Router-plane only — never forwarded to SSE, never fed to a normalizer. It can
+        // still opt the ADK facet into host completion (makeHelloGatedNormalizer).
+        gated?.onHello(ev.capabilities);
         continue;
       }
       if (ev.type === "error") {

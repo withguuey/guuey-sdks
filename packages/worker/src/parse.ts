@@ -306,7 +306,17 @@ export function parseEvent(line: string): WorkerEvent {
       }
       const sdkName = typeof raw.sdkName === "string" ? raw.sdkName : null;
       const sdkVersion = typeof raw.sdkVersion === "string" ? raw.sdkVersion : null;
-      return { type: "hello", framework: raw.framework, sdkName, sdkVersion };
+      // Additive-optional: kept only as a list of strings; any other shape reads as none.
+      const caps = raw.capabilities;
+      const capabilities =
+        Array.isArray(caps) && caps.every((c): c is string => typeof c === "string") ? caps : undefined;
+      return {
+        type: "hello",
+        framework: raw.framework,
+        sdkName,
+        sdkVersion,
+        ...(capabilities !== undefined && capabilities.length > 0 ? { capabilities } : {}),
+      };
     }
     default:
       throw new Error(`unknown event type: ${String(raw.type)}`);

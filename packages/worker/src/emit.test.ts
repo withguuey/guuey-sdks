@@ -64,4 +64,17 @@ describe("createEmitter", () => {
     createEmitter(out).hello("vanilla", null, null);
     expect(lines()).toEqual([{ type: "hello", framework: "vanilla", sdkName: null, sdkVersion: null }]);
   });
+
+  it("hello carries capabilities when given, and writes no key for none or an empty list", () => {
+    const { out, lines } = capture();
+    const e = createEmitter(out);
+    e.hello("google-adk", "@google/adk", "2.1.0", ["adk.host-completion"]);
+    e.hello("google-adk", "@google/adk", "2.1.0", []);
+    e.hello("google-adk", "@google/adk", "2.1.0");
+    expect(lines()).toEqual([
+      { type: "hello", framework: "google-adk", sdkName: "@google/adk", sdkVersion: "2.1.0", capabilities: ["adk.host-completion"] },
+      { type: "hello", framework: "google-adk", sdkName: "@google/adk", sdkVersion: "2.1.0" },
+      { type: "hello", framework: "google-adk", sdkName: "@google/adk", sdkVersion: "2.1.0" },
+    ]);
+  });
 });

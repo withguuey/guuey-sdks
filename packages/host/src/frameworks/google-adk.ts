@@ -56,7 +56,14 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { GUUEY_DEFAULT_SYSTEM_PROMPT, defaultModelFor, type GuueyContext } from "@guuey/config";
-import { listCredentials, type CredentialFile, type Emitter, type JsonValue, type WithheldTool } from "@guuey/worker";
+import {
+  ADK_HOST_COMPLETION_CAPABILITY,
+  listCredentials,
+  type CredentialFile,
+  type Emitter,
+  type JsonValue,
+  type WithheldTool,
+} from "@guuey/worker";
 import type { FrameworkRunner, HostSnapshot, HostTurn } from "../index.js";
 import {
   AGENT_ENTRY_ENV,
@@ -309,8 +316,29 @@ export function finalTextOf(event: JsonValue): string {
 }
 
 /**
+ * The host→facet contract natives this runner feeds the google-adk normalizer
+ * (AgJSON §8.0 host obligations 1 and 4). Fresh object literals checked against
+ * these shapes, so each crosses fd-3 as the `native` event's `event` payload.
+ */
+type AdkHostCompleteSentinel = { type: "__host_complete__" };
+type AdkHostErrorSentinel = { type: "__host_error__"; code: string; message: string };
+
+/** A stable, identifier-shaped code for a caught throw: the Error's own name, else `host_error`. */
+function hostErrorCode(err: unknown): string {
+  return err instanceof Error && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(err.name) ? err.name : "host_error";
+}
+
+/**
  * One turn against a caller-supplied agent + module (the seam graceful mode
  * (T3) and the unit tests share). Emits hello → native* → done|error.
+ *
+ * The hello announces {@link ADK_HOST_COMPLETION_CAPABILITY}. After the run
+ * returns NORMALLY, the runner feeds `__host_complete__` before `done`, so an
+ * opted-in facet closes the turn only once the whole run is over (a
+ * SequentialAgent's next agent, after-agent callback content). On a throw it
+ * feeds `__host_error__ {code, message}` before `error`, so the open turn closes
+ * as `turn.error`, not as a truncated stream (obligation 1, the OpenAI runner's
+ * precedent). A router that did not opt in ignores the completion sentinel.
  */
 export async function runAdkTurn(
   adk: Pick<AdkModule, "InMemoryRunner">,
@@ -319,7 +347,7 @@ export async function runAdkTurn(
   emit: Emitter,
   sdkVersion: string | null,
 ): Promise<void> {
-  emit.hello(ADK_FRAMEWORK, ADK_PACKAGE, sdkVersion);
+  emit.hello(ADK_FRAMEWORK, ADK_PACKAGE, sdkVersion, [ADK_HOST_COMPLETION_CAPABILITY]);
   try {
     const runner = new adk.InMemoryRunner({ agent });
     const session = await runner.sessionService.createSession({
@@ -342,9 +370,16 @@ export async function runAdkTurn(
       emit.native(ADK_FRAMEWORK, event);
       finalText = finalTextOf(event) || finalText;
     }
+    emit.native(ADK_FRAMEWORK, { type: "__host_complete__" } satisfies AdkHostCompleteSentinel);
     emit.done(finalText, "end_turn");
   } catch (err) {
     // never propagate to the wire
+    const message = err instanceof Error ? err.message : String(err);
+    emit.native(ADK_FRAMEWORK, {
+      type: "__host_error__",
+      code: hostErrorCode(err),
+      message,
+    } satisfies AdkHostErrorSentinel);
     emit.error(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
   }
 }

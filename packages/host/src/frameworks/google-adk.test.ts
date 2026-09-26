@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { BaseLlmConnection, LlmRequest, LlmResponse } from "@google/adk";
-import type { Emitter, JsonValue, StopReason } from "@guuey/worker";
+import { ADK_HOST_COMPLETION_CAPABILITY, type Emitter, type JsonValue, type StopReason } from "@guuey/worker";
 import type { HostTurn } from "../index.js";
 import { withContextPreamble } from "../preamble.js";
 import {
@@ -24,7 +24,7 @@ import {
 // ── fakes ────────────────────────────────────────────────────────────────────
 
 interface Emitted {
-  hello: Array<{ framework: string; sdkName: string | null; sdkVersion: string | null }>;
+  hello: Array<{ framework: string; sdkName: string | null; sdkVersion: string | null; capabilities?: readonly string[] }>;
   native: Array<{ framework: string; event: JsonValue }>;
   done: Array<{ result: string; stopReason: StopReason | undefined }>;
   error: string[];
@@ -49,8 +49,8 @@ function fakeEmitter(): { emit: Emitter; got: Emitted } {
       got.native.push({ framework, event });
       got.order.push("native");
     },
-    hello: (framework, sdkName, sdkVersion) => {
-      got.hello.push({ framework, sdkName, sdkVersion });
+    hello: (framework, sdkName, sdkVersion, capabilities) => {
+      got.hello.push({ framework, sdkName, sdkVersion, ...(capabilities !== undefined ? { capabilities } : {}) });
       got.order.push("hello");
     },
   };
@@ -133,7 +133,7 @@ describe("runAdkTurn — the wire contract", () => {
     });
   });
 
-  it("emits hello FIRST, every native event untouched, then done with the last non-thought text", async () => {
+  it("emits hello FIRST (announcing host completion), every native event untouched, the completion sentinel, then done with the last non-thought text", async () => {
     const events: JsonValue[] = [
       { content: { parts: [{ thought: true, text: "thinking…" }] }, partial: true },
       { content: { parts: [{ functionCall: { name: "todo_create", args: { t: "x" } } }] } },
@@ -142,14 +142,21 @@ describe("runAdkTurn — the wire contract", () => {
     const adk = fakeAdk(events, {});
     const { emit, got } = fakeEmitter();
     await runAdkTurn(adk, {}, TURN, emit, "1.3.0");
-    expect(got.order).toEqual(["hello", "native", "native", "native", "done"]);
-    expect(got.hello[0]).toEqual({ framework: "google-adk", sdkName: "@google/adk", sdkVersion: "1.3.0" });
-    expect(got.native.map((n) => n.framework)).toEqual(["google-adk", "google-adk", "google-adk"]);
+    expect(got.order).toEqual(["hello", "native", "native", "native", "native", "done"]);
+    expect(got.hello[0]).toEqual({
+      framework: "google-adk",
+      sdkName: "@google/adk",
+      sdkVersion: "1.3.0",
+      capabilities: [ADK_HOST_COMPLETION_CAPABILITY],
+    });
+    expect(got.native.map((n) => n.framework)).toEqual(["google-adk", "google-adk", "google-adk", "google-adk"]);
     expect(got.native[1]?.event).toEqual(events[1]);
+    // AgJSON §8.0 host obligation 4: after the run returned normally, before done.
+    expect(got.native[3]?.event).toEqual({ type: "__host_complete__" });
     expect(got.done[0]).toEqual({ result: "All done!", stopReason: "end_turn" });
   });
 
-  it("a runner throw becomes a terminal error event (hello still first, no done)", async () => {
+  it("a runner throw feeds __host_error__ then a terminal error event (hello still first, no completion sentinel, no done)", async () => {
     const adk = {
       InMemoryRunner: class {
         readonly appName = "x";
@@ -165,9 +172,55 @@ describe("runAdkTurn — the wire contract", () => {
     };
     const { emit, got } = fakeEmitter();
     await runAdkTurn(adk, {}, TURN, emit, null);
-    expect(got.order).toEqual(["hello", "error"]);
+    expect(got.order).toEqual(["hello", "native", "error"]);
+    // AgJSON §8.0 host obligation 1: the open turn (or a synthetic one) closes as turn.error, never truncated.
+    expect(got.native[0]).toEqual({
+      framework: "google-adk",
+      event: { type: "__host_error__", code: "Error", message: "boom at session" },
+    });
+    expect(got.native.some((n) => JSON.stringify(n.event).includes("__host_complete__"))).toBe(false);
     expect(got.error[0]).toMatch(/boom at session/);
     expect(got.done).toHaveLength(0);
+  });
+});
+
+describe("runAdkTurn — the host→facet sentinels (guuey#1823)", () => {
+  it("a throw AFTER natives streamed: __host_error__ follows them, the completion sentinel never does", async () => {
+    const streamed: JsonValue[] = [{ content: { parts: [{ text: "partial" }] }, partial: true }];
+    const adk = {
+      InMemoryRunner: class {
+        readonly appName = "x";
+        readonly sessionService = { createSession: () => Promise.resolve({ id: "s-1" }) };
+        constructor(_: { agent: object }) {}
+        async *runAsync(): AsyncGenerator<JsonValue, void, undefined> {
+          yield streamed[0]!;
+          throw new RangeError("llm call limit reached");
+        }
+      },
+    };
+    const { emit, got } = fakeEmitter();
+    await runAdkTurn(adk, {}, TURN, emit, "2.1.0");
+    expect(got.order).toEqual(["hello", "native", "native", "error"]);
+    expect(got.native[1]?.event).toEqual({ type: "__host_error__", code: "RangeError", message: "llm call limit reached" });
+    expect(got.native.some((n) => JSON.stringify(n.event).includes("__host_complete__"))).toBe(false);
+  });
+
+  it("an error whose name is not identifier-shaped reads as host_error", async () => {
+    const odd = Object.assign(new Error("odd"), { name: "not an identifier!" });
+    const adk = {
+      InMemoryRunner: class {
+        readonly appName = "x";
+        readonly sessionService = { createSession: () => Promise.reject(odd) };
+        constructor(_: { agent: object }) {}
+        // eslint-disable-next-line require-yield
+        async *runAsync(): AsyncGenerator<JsonValue, void, undefined> {
+          throw new Error("unreachable");
+        }
+      },
+    };
+    const { emit, got } = fakeEmitter();
+    await runAdkTurn(adk, {}, TURN, emit, null);
+    expect(got.native[0]?.event).toEqual({ type: "__host_error__", code: "host_error", message: "odd" });
   });
 });
 

@@ -21,6 +21,7 @@ const holdFixture = join(__dirname, "fixtures", "hold-worker.mjs");
 const errorFixture = join(__dirname, "fixtures", "error-worker.mjs");
 const claudeNativeFixture = join(__dirname, "fixtures", "claude-native-worker.mjs");
 const adkNativeFixture = join(__dirname, "fixtures", "adk-native-worker.mjs");
+const adkCapableFixture = join(__dirname, "fixtures", "adk-capable-worker.mjs");
 
 let srv: DevServerHandle | undefined;
 let projectRoot: string | undefined;
@@ -231,6 +232,37 @@ describe("startDevServer", () => {
     // Never raw ADK Event shapes on the wire in silver mode.
     expect(text).not.toMatch(/"invocationId"/);
     expect(text).not.toMatch(/"functionCall"/);
+  });
+
+  // ADK host completion (AgJSON §8.0 host obligation 4), negotiated from the worker's hello: a worker that
+  // announces "adk.host-completion" opts the facet in, so a successful turn closes on the host's sentinel.
+  // Withholding the sentinel is the observable that proves the dev router opted in: the held turn then
+  // closes as turn.abort{stream-truncated} at the stream's end.
+  it.each([
+    ["feeds the sentinel", [], "turn.done"],
+    ["withholds the sentinel", ["--no-sentinel"], "turn.abort"],
+  ] as const)("google-adk: a worker announcing host completion that %s", async (_label, extraArgs, terminal) => {
+    srv = await startDevServer({
+      port: 0,
+      framework: "google-adk",
+      protocol: "silver",
+      workerCommand: process.execPath,
+      workerArgs: [adkCapableFixture, ...extraArgs],
+      agentSnapshotJson: "{}",
+      projectRoot: freshProjectRoot(),
+    });
+    const res = await fetch(`http://localhost:${srv.port}/agent/invoke`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input: "hi" }),
+    });
+    const text = await res.text();
+    const events = [...text.matchAll(/event: message\ndata: (\[.*?\])\n\n/g)].flatMap(
+      (m) => JSON.parse(m[1]!) as AgEvent[],
+    );
+    const terminals = events.filter((e) => e.type === "turn.done" || e.type === "turn.abort" || e.type === "turn.error");
+    expect(terminals.map((e) => e.type)).toEqual([terminal]);
+    if (terminal === "turn.abort") expect(terminals[0]).toMatchObject({ reason: "stream-truncated" });
   });
 
   it("terminates with an error frame when silver has no normalizer for the framework", async () => {

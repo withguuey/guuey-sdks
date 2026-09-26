@@ -4,6 +4,7 @@
  */
 export {
   PROTOCOL_VERSION,
+  ADK_HOST_COMPLETION_CAPABILITY,
   type ProtocolVersion,
   type JsonValue,
   type AuthMode,

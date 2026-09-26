@@ -17,8 +17,9 @@ export interface Emitter {
   error(message: string): void;
   native(framework: string, event: JsonValue): void;
   /** The SDK-version handshake (additive-optional, §8 item B). Emit at most
-   *  once, before any native/turn event. */
-  hello(framework: string, sdkName: string | null, sdkVersion: string | null): void;
+   *  once, before any native/turn event. `capabilities` names what this worker
+   *  does beyond protocol v1 (e.g. `ADK_HOST_COMPLETION_CAPABILITY`). */
+  hello(framework: string, sdkName: string | null, sdkVersion: string | null, capabilities?: readonly string[]): void;
 }
 
 export function createEmitter(out: WriteSink): Emitter {
@@ -30,6 +31,13 @@ export function createEmitter(out: WriteSink): Emitter {
     done: (result, stopReason = "end_turn") => write({ type: "done", stopReason, result }),
     error: (message) => write({ type: "error", message }),
     native: (framework, event) => write({ type: "native", framework, event }),
-    hello: (framework, sdkName, sdkVersion) => write({ type: "hello", framework, sdkName, sdkVersion }),
+    hello: (framework, sdkName, sdkVersion, capabilities) =>
+      write({
+        type: "hello",
+        framework,
+        sdkName,
+        sdkVersion,
+        ...(capabilities !== undefined && capabilities.length > 0 ? { capabilities } : {}),
+      }),
   };
 }

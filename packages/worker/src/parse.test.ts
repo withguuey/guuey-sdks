@@ -531,6 +531,28 @@ describe("parseEvent (Worker→Router fd-3 events)", () => {
   });
 });
 
+describe("parseEvent — hello capabilities (additive-optional)", () => {
+  const hello = (extra: object) =>
+    JSON.stringify({ type: "hello", framework: "google-adk", sdkName: "@google/adk", sdkVersion: "2.1.0", ...extra });
+
+  it("keeps a list of strings", () => {
+    expect(parseEvent(hello({ capabilities: ["adk.host-completion", "future.thing"] }))).toEqual({
+      type: "hello",
+      framework: "google-adk",
+      sdkName: "@google/adk",
+      sdkVersion: "2.1.0",
+      capabilities: ["adk.host-completion", "future.thing"],
+    });
+  });
+
+  it("reads any other shape, an empty list, or absence as none: no key, never a throw", () => {
+    const none = { type: "hello", framework: "google-adk", sdkName: "@google/adk", sdkVersion: "2.1.0" };
+    for (const extra of [{}, { capabilities: [] }, { capabilities: "adk.host-completion" }, { capabilities: ["ok", 7] }, { capabilities: null }]) {
+      expect(parseEvent(hello(extra))).toEqual(none);
+    }
+  });
+});
+
 describe("mcpAvailability (guuey#901) — each OAuth server's availability this turn", () => {
   const base = {
     type: "invoke",

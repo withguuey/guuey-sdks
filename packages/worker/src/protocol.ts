@@ -328,5 +328,19 @@ export interface WorkerHelloEvent {
   readonly sdkName: string | null;
   /** The SDK's installed version, resolved at RUNTIME (never a hardcoded literal); `null` when unresolvable. */
   readonly sdkVersion: string | null;
+  /**
+   * Additive-optional: behaviours beyond protocol v1 this worker performs, as capability names a Router
+   * may opt into. Unknown names are ignored, and absence means none. A Router honours a capability only
+   * from a hello that PRECEDES the invoke's first native event; a later hello changes nothing.
+   */
+  readonly capabilities?: readonly string[];
 }
+
+/**
+ * Capability: this worker feeds the google-adk normalizer the native `{ type: "__host_complete__" }`
+ * after the ADK run returned NORMALLY, never after a throw, an abort or a cancel, and before `done`
+ * (AgJSON §8.0 host obligation 4). A Router opts the facet into `hostCompletion` only on this word,
+ * because an opted-in facet holds every successful turn open until the sentinel arrives.
+ */
+export const ADK_HOST_COMPLETION_CAPABILITY = "adk.host-completion";
 export type WorkerEvent = TextEvent | DoneEvent | ErrorEvent | NativeEvent | WorkerHelloEvent;

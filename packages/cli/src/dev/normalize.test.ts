@@ -4,7 +4,8 @@ import { join } from "node:path";
 import type { AgEvent, Normalizer } from "@silverprotocol/core";
 import type { OpenAIStreamEvent } from "@silverprotocol/openai-agents";
 import type { AdkEvent } from "@silverprotocol/google-adk";
-import { makeNormalizer } from "./normalize.js";
+import { ADK_HOST_COMPLETION_CAPABILITY } from "@guuey/worker";
+import { makeHelloGatedNormalizer, makeNormalizer } from "./normalize.js";
 
 // Real captured wire events, copied verbatim from the silverprotocol e2e
 // cassette corpus (`packages/e2e/corpus/convergence-echo/openai.native.json`
@@ -175,5 +176,40 @@ describe("makeNormalizer — the thread id", () => {
     expect(new Set(withId)).toEqual(new Set(["thread-dev-1"]));
     const withoutId = stamped(runThrough(makeNormalizer(framework), native));
     expect(new Set(withoutId)).toEqual(new Set([placeholder]));
+  });
+});
+
+describe("makeHelloGatedNormalizer — ADK host completion, negotiated from the hello", () => {
+  const HOST_COMPLETE = { type: "__host_complete__" };
+  const run = (hello: "before" | "after" | "none", caps: readonly string[] | undefined, sentinel: boolean): string[] => {
+    const gated = makeHelloGatedNormalizer("google-adk", { threadId: "t" });
+    const out: AgEvent[] = [];
+    if (hello === "before") gated.onHello(caps);
+    adkNativeEvents.forEach((native, i) => {
+      out.push(...gated.normalizer.push(native));
+      if (i === 0 && hello === "after") gated.onHello(caps);
+    });
+    if (sentinel) out.push(...gated.normalizer.push(HOST_COMPLETE));
+    out.push(...gated.normalizer.flush());
+    return out.filter((e) => e.type === "turn.done" || e.type === "turn.abort" || e.type === "turn.error").map((e) => e.type);
+  };
+  const CAP = [ADK_HOST_COMPLETION_CAPABILITY];
+
+  it("a capable hello before the natives + the sentinel closes the turn on the sentinel", () => {
+    expect(run("before", CAP, true)).toEqual(["turn.done"]);
+  });
+  it("opted in with the sentinel withheld: the flush closes the held turn as an abort (why it opts in only on the worker's word)", () => {
+    expect(run("before", CAP, false)).toEqual(["turn.abort"]);
+  });
+  it("no hello, or one without the capability: not opted in, the turn closes on its final response", () => {
+    expect(run("none", undefined, false)).toEqual(["turn.done"]);
+    expect(run("before", ["other"], false)).toEqual(["turn.done"]);
+    expect(run("before", ["other"], true)).toEqual(["turn.done"]);
+  });
+  it("a capable hello after the first native never opts in", () => {
+    expect(run("after", CAP, false)).toEqual(["turn.done"]);
+  });
+  it("an unknown framework still throws, as makeNormalizer does", () => {
+    expect(() => makeHelloGatedNormalizer("fixture")).toThrow(/AGJSON_NO_NORMALIZER:fixture/);
   });
 });
