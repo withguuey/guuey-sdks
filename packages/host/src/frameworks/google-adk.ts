@@ -86,7 +86,7 @@ import {
   withContextPreamble,
 } from "../preamble.js";
 import { resolveSdkVersion } from "../sdk-version.js";
-import { mcpToolPredicateFor, type ToolGates } from "../mcp-tool-gates.js";
+import { modelToolFilterFor, type ToolGates } from "../mcp-tool-gates.js";
 
 const ADK_FRAMEWORK = "google-adk";
 
@@ -163,8 +163,12 @@ interface AdkModule {
       url: string;
       transportOptions?: { requestInit?: { headers?: Record<string, string> } };
     },
-    /** The ADK's `ToolPredicate` as this host uses it: true keeps the tool in the catalog. */
-    toolFilter?: (tool: { name: string }) => boolean,
+    /**
+     * The ADK's `ToolPredicate` as this host uses it: true keeps the tool in the catalog. The
+     * ADK passes its `MCPTool` wrapper, whose `mcpTool` member (private in the ADK's types) is
+     * its copy of the listed tool, `_meta` included: read structurally by {@link listedToolOf}.
+     */
+    toolFilter?: (tool: { readonly name: string }) => boolean,
   ) => unknown;
 }
 
@@ -222,6 +226,17 @@ export async function loadAdk(entryPath?: string): Promise<AdkModule> {
 }
 
 /**
+ * The listed MCP tool an ADK `MCPTool` wrapper carries (`mcpTool`, set by the ADK's
+ * constructor from the server's listing, `_meta` included), or `undefined` when the
+ * wrapper does not expose one. Pinned against the real `@google/adk` class by
+ * `mcp-visibility.test.ts`, so an SDK upgrade that moves it reds there.
+ */
+export function listedToolOf(tool: object): object | undefined {
+  const listed = "mcpTool" in tool ? tool.mcpTool : undefined;
+  return typeof listed === "object" && listed !== null ? listed : undefined;
+}
+
+/**
  * Map the broker's credential files to ADK MCP toolsets. Throws on an `sse`
  * credential — the JS toolset has no SSE transport (unlike the Python-era
  * host); the error names the server and the supported path.
@@ -245,11 +260,16 @@ export function buildToolsets(
       url: cred.url,
       transportOptions: { requestInit: { headers: cred.headers } },
     };
-    // The builder's tool gates (allowlist, then denylist) and this turn's
-    // withheld tools on this server (guuey#1768, `mcp-tool-gates.ts`): the
-    // toolset's predicate keeps only what they admit in the model's catalog.
-    const keep = mcpToolPredicateFor(name, gates, withheld);
-    return keep !== undefined ? new adk.MCPToolset(params, (tool) => keep(tool.name)) : new adk.MCPToolset(params);
+    // The toolset's predicate keeps, in the model's catalog, only a tool the
+    // model may call (MCP Apps visibility), then what the builder's tool gates
+    // and this turn's withholds admit (`mcp-tool-gates.ts`). Every toolset gets
+    // it. A listed tool the wrapper does not expose is read as one whose
+    // visibility cannot be read, so it is kept from the model.
+    const keep = modelToolFilterFor(name, gates, withheld);
+    return new adk.MCPToolset(params, (tool) => {
+      const listed = listedToolOf(tool);
+      return listed !== undefined && keep(tool.name, listed);
+    });
   });
 }
 

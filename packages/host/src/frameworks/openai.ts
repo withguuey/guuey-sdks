@@ -38,7 +38,7 @@ import {
   type RunStreamEvent,
 } from "@openai/agents";
 import { mcpToolCustomData } from "@guuey/worker";
-import { mcpToolPredicateFor, type ToolGates } from "../mcp-tool-gates.js";
+import { modelToolFilterFor, type ToolGates } from "../mcp-tool-gates.js";
 import type { Emitter, JsonValue } from "@guuey/worker";
 import {
   resolveMcpServers,
@@ -308,7 +308,7 @@ function buildOpenaiMcpServers(ctx: BuildOptionsContext, gates: ToolGates): MCPS
   const resolved = resolveMcpServers(ctx);
   const servers: MCPServerStreamableHttp[] = [];
   for (const [name, entry] of Object.entries(resolved)) {
-    servers.push(toOpenaiMcpServer(name, entry, mcpToolPredicateFor(name, gates, ctx.withheldTools)));
+    servers.push(toOpenaiMcpServer(name, entry, modelToolFilterFor(name, gates, ctx.withheldTools)));
   }
   return servers;
 }
@@ -320,7 +320,7 @@ function buildOpenaiMcpServers(ctx: BuildOptionsContext, gates: ToolGates): MCPS
  * we get here) — handled with a loud throw so a future schema change can't
  * silently drop a server.
  */
-function toOpenaiMcpServer(name: string, entry: SdkMcpServer, keep: ((tool: string) => boolean) | undefined): MCPServerStreamableHttp {
+function toOpenaiMcpServer(name: string, entry: SdkMcpServer, keep: (name: string, listed: object) => boolean): MCPServerStreamableHttp {
   if (entry.type === "stdio") {
     throw new Error(
       `mcpServers["${name}"]: stdio (colocated) MCP is not supported on the OpenAI host path.`,
@@ -338,18 +338,18 @@ function toOpenaiMcpServer(name: string, entry: SdkMcpServer, keep: ((tool: stri
     // ride here. guuey#981: ONE shared extractor for every OpenAI worker — the
     // code-mode template's `worker.ts` passes the same `@guuey/worker` export.
     customDataExtractor: mcpToolCustomData,
-    // The builder's tool gates (allowlist, then denylist) and this turn's
-    // withheld tools on this server (guuey#1768, `mcp-tool-gates.ts`): the SDK
-    // calls the filter as it lists the server's tools for the model. A
-    // callable, because a static filter cannot say "keep none" (an empty
-    // `allowedToolNames` filters nothing).
-    ...(keep !== undefined ? { toolFilter: toolFilterOf(keep) } : {}),
+    // The SDK calls the filter as it lists the server's tools for the model: a
+    // tool the model may call (MCP Apps visibility, read off the listed tool),
+    // then what the builder's tool gates and this turn's withholds admit
+    // (`mcp-tool-gates.ts`). Every server gets it. A callable, because a static
+    // filter can neither read `_meta` nor say "keep none".
+    toolFilter: toolFilterOf(keep),
   });
 }
 
-/** The gate predicate as the SDK's callable filter (the SDK awaits it per listed tool). */
-function toolFilterOf(keep: (tool: string) => boolean): MCPToolFilterCallable {
-  return async (_context, tool) => keep(tool.name);
+/** The model-facing filter as the SDK's callable (the SDK awaits it per listed tool, `_meta` included). */
+function toolFilterOf(keep: (name: string, listed: object) => boolean): MCPToolFilterCallable {
+  return async (_context, tool) => keep(tool.name, tool);
 }
 
 /** Best-effort close of every connected MCP server (release the transport). */

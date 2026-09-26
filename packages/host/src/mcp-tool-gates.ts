@@ -23,7 +23,7 @@
  * allowlist of built-ins alone narrows each server to tools of those names.
  */
 import { parseToolGateEntry, type GuueyAgent } from "@guuey/config";
-import type { WithheldTool } from "@guuey/worker";
+import { modelMayCallTool, type WithheldTool } from "@guuey/worker";
 import { withheldToolNamesFor } from "./withheld-tools.js";
 
 /** The snapshot's gate block. */
@@ -64,4 +64,20 @@ export function mcpToolPredicateFor(
     if (deny.whole || blocked.has(tool)) return false;
     return !narrowed || (allow !== undefined && allow.tools.has(tool));
   };
+}
+
+/**
+ * The model-facing filter for one server's listing: the tool must be one the
+ * model may call (`modelMayCallTool`, `@guuey/worker`: MCP Apps visibility;
+ * the Claude Agent SDK applies the same rule itself), and then pass the builder's gates
+ * and this turn's withholds ({@link mcpToolPredicateFor}). ALWAYS a filter,
+ * never `undefined`: visibility applies to every server, gated or not.
+ */
+export function modelToolFilterFor(
+  server: string,
+  gates: ToolGates,
+  withheld?: readonly WithheldTool[],
+): (name: string, listed: object) => boolean {
+  const keep = mcpToolPredicateFor(server, gates, withheld);
+  return (name, listed) => modelMayCallTool(listed) && (keep === undefined || keep(name));
 }

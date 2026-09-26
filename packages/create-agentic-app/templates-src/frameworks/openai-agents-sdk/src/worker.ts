@@ -16,7 +16,7 @@
  */
 import { Agent, MaxTurnsExceededError, MCPServerStreamableHttp, run } from "@openai/agents";
 import type { MCPServer } from "@openai/agents";
-import { mcpToolCustomData, serveNative } from "@guuey/worker";
+import { mcpToolCustomData, modelVisibleToolFilter, serveNative } from "@guuey/worker";
 import { loadAgent, systemPrompt, mcpEndpoints, withHistory } from "./agent-config.js";
 
 await serveNative(
@@ -34,6 +34,9 @@ await serveNative(
           // ggui render-cache marker ride here. Without it a code-mode OpenAI
           // app shows "✓ ggui render" and no card.
           customDataExtractor: mcpToolCustomData,
+          // MCP Apps visibility: a tool whose `_meta.ui.visibility` omits
+          // "model" (the rendered view's own calls) is not offered to the model.
+          toolFilter: modelVisibleToolFilter,
         })
     );
 

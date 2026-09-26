@@ -83,14 +83,15 @@ describe("withheldTools — the Router's per-turn withholds reach the OpenAI MCP
     expect(await keptBy(built[0]!.toolFilter)).toEqual(["ggui_render", "ggui_handshake"]);
   });
 
-  it("no withheld tools → the server is built with no filter (today's catalog)", async () => {
+  it("no withheld tools → the filter keeps every tool the model may call (today's catalog)", async () => {
     const built = await serversBuiltFor({ gguiAttached: true });
-    expect(built).toEqual([{ name: "ggui", toolFilter: undefined }]);
+    expect(built.map((b) => b.name)).toEqual(["ggui"]);
+    expect(await keptBy(built[0]!.toolFilter)).toEqual(["ggui_render", "ggui_consume", "ggui_handshake"]);
   });
 
-  it("a withhold naming another server leaves this one unfiltered", async () => {
+  it("a withhold naming another server removes nothing here", async () => {
     const built = await serversBuiltFor({ withheldTools: [{ server: "elsewhere", tool: "ggui_consume" }] });
-    expect(built).toEqual([{ name: "ggui", toolFilter: undefined }]);
+    expect(await keptBy(built[0]!.toolFilter)).toEqual(["ggui_render", "ggui_consume", "ggui_handshake"]);
   });
 });
 
@@ -105,8 +106,8 @@ describe("the builder's tool gates reach the OpenAI MCP servers (guuey#1768), al
     expect(await keptBy(built[0]!.toolFilter)).toEqual([]);
   });
 
-  it("allowlist <server>.* keeps the server whole (no filter); a bare name keeps that tool", async () => {
-    expect(await serversBuiltFor({}, { allowlist: ["ggui.*"] })).toEqual([{ name: "ggui", toolFilter: undefined }]);
+  it("allowlist <server>.* keeps the server whole; a bare name keeps that tool", async () => {
+    expect(await keptBy((await serversBuiltFor({}, { allowlist: ["ggui.*"] }))[0]!.toolFilter)).toEqual(["ggui_render", "ggui_consume", "ggui_handshake"]);
     expect(await keptBy((await serversBuiltFor({}, { allowlist: ["ggui_consume"] }))[0]!.toolFilter)).toEqual(["ggui_consume"]);
   });
 

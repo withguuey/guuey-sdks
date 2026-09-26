@@ -641,7 +641,8 @@ describe("withheldTools — the Router's per-turn withholds reach the ADK toolse
   /** The tool names of `candidates` the toolset's predicate keeps. */
   function keptBy(toolFilter: unknown, candidates: readonly string[] = ["ggui_render", "ggui_consume", "ggui_handshake"]): string[] {
     if (typeof toolFilter !== "function") throw new Error(`expected a predicate, got ${JSON.stringify(toolFilter)}`);
-    return candidates.filter((name) => Reflect.apply(toolFilter, undefined, [{ name }]) === true);
+    // The ADK hands the predicate its MCPTool wrapper: the name plus the listed tool.
+    return candidates.filter((name) => Reflect.apply(toolFilter, undefined, [{ name, mcpTool: { name } }]) === true);
   }
 
   describe("the builder's tool gates reach the ADK toolsets too (guuey#1768)", () => {
@@ -649,8 +650,8 @@ describe("withheldTools — the Router's per-turn withholds reach the ADK toolse
       expect(keptBy((await toolsetsFor({}, { allowlist: ["ggui.ggui_render"] }))[0]!.toolFilter)).toEqual(["ggui_render"]);
       expect(keptBy((await toolsetsFor({}, { allowlist: ["other.ggui_render"] }))[0]!.toolFilter)).toEqual([]);
     });
-    it("allowlist <server>.* keeps the toolset whole (no predicate); a bare name keeps that tool", async () => {
-      expect((await toolsetsFor({}, { allowlist: ["ggui.*"] }))[0]!.toolFilter).toBeUndefined();
+    it("allowlist <server>.* keeps the toolset whole; a bare name keeps that tool", async () => {
+      expect(keptBy((await toolsetsFor({}, { allowlist: ["ggui.*"] }))[0]!.toolFilter)).toEqual(["ggui_render", "ggui_consume", "ggui_handshake"]);
       expect(keptBy((await toolsetsFor({}, { allowlist: ["ggui_consume"] }))[0]!.toolFilter)).toEqual(["ggui_consume"]);
     });
     it("denylist removes a tool (qualified or bare) or the whole server; the three compose with the withhold", async () => {
@@ -667,17 +668,18 @@ describe("withheldTools — the Router's per-turn withholds reach the ADK toolse
     expect(built).toHaveLength(1);
     const filter = built[0]!.toolFilter;
     if (typeof filter !== "function") throw new Error(`expected a predicate, got ${typeof filter}`);
-    expect(Reflect.apply(filter, undefined, [{ name: "ggui_consume" }])).toBe(false);
-    expect(Reflect.apply(filter, undefined, [{ name: "ggui_render" }])).toBe(true);
+    expect(Reflect.apply(filter, undefined, [{ name: "ggui_consume", mcpTool: { name: "ggui_consume" } }])).toBe(false);
+    expect(Reflect.apply(filter, undefined, [{ name: "ggui_render", mcpTool: { name: "ggui_render" } }])).toBe(true);
   });
 
-  it("no withheld tools → the toolset is built with no filter (today's catalog)", async () => {
+  it("no withheld tools → the predicate keeps every tool the model may call (today's catalog)", async () => {
     const built = await toolsetsFor({ gguiAttached: true });
-    expect(built).toEqual([{ url: "https://mcp.example/apps/x", toolFilter: undefined }]);
+    expect(built.map((b) => b.url)).toEqual(["https://mcp.example/apps/x"]);
+    expect(keptBy(built[0]!.toolFilter)).toEqual(["ggui_render", "ggui_consume", "ggui_handshake"]);
   });
 
-  it("a withhold naming another server leaves this toolset unfiltered", async () => {
+  it("a withhold naming another server removes nothing from this toolset", async () => {
     const built = await toolsetsFor({ withheldTools: [{ server: "elsewhere", tool: "ggui_consume" }] });
-    expect(built).toEqual([{ url: "https://mcp.example/apps/x", toolFilter: undefined }]);
+    expect(keptBy(built[0]!.toolFilter)).toEqual(["ggui_render", "ggui_consume", "ggui_handshake"]);
   });
 });
