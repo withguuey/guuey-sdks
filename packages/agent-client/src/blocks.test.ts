@@ -35,6 +35,23 @@ describe("ingestMessageFrame", () => {
     expect(out.map((e) => e.type)).toEqual(["text.delta", "text.delta"]);
   });
 
+  // A newer producer's frames reach an older client: an event type this core
+  // does not know keeps its seq slot as core's `ext.agjson.ignored` stub (so a
+  // reducer never parks on the gap), and an unknown field on a known event is
+  // carried, not stripped. Neither is rejected, and neither drops its neighbours.
+  it("an unknown event type keeps its seq slot as core's ignored stub, and an unknown field on a known event passes through", () => {
+    const future = { type: "future.event", seq: 2, payload: { a: 1 } };
+    const withFutureField = { ...delta("x", 3), futureField: { deep: true } };
+    const out = ingestMessageFrame([delta("ok", 1), future, withFutureField]);
+    expect(out.map((e) => [e.type, e.seq])).toEqual([
+      ["text.delta", 1],
+      ["ext.agjson.ignored", 2],
+      ["text.delta", 3],
+    ]);
+    expect(out[1]).toMatchObject({ ignoredType: "future.event", raw: future });
+    expect(out[2]).toMatchObject({ delta: "x", futureField: { deep: true } });
+  });
+
   it("returns [] for non-JSON-value / malformed input", () => {
     expect(ingestMessageFrame(undefined)).toEqual([]);
     expect(ingestMessageFrame(() => 0)).toEqual([]);
