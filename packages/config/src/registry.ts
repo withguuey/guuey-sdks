@@ -63,6 +63,8 @@ export interface FrameworkEntry {
  * `apps/platform/.../ModelSection/ModelSection.test.ts`.
  */
 export const MODEL_REGISTRY: readonly ModelEntry[] = [
+  // The anthropic default is the model the guuey monorepo's preamble gate is measured on: changing
+  // it there needs a fresh gate receipt in the same commit.
   { id: "claude-sonnet-5", provider: "anthropic", label: "Claude Sonnet 5", status: "ga", isDefault: true, lineup: true },
   // guuey#635 (2026-09-02 wave): id verified against
   // platform.claude.com/docs/en/models/overview — never hand-typed.

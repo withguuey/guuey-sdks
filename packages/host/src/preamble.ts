@@ -10,6 +10,10 @@
  *
  * Empty sections are omitted; if all inputs are empty/undefined the original
  * system prompt is returned unchanged.
+ *
+ * The rendered text is measured by the guuey monorepo's preamble gate: a change
+ * to what the model reads needs a fresh gate receipt in the same commit. A
+ * comment-only edit renders nothing new and needs none.
  */
 import type {
   FirstImpressionPush,
