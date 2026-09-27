@@ -82,6 +82,14 @@ export const AGENT_ERROR_CODES = {
    * reason.
    */
   CONTENT_BLOCKED: "CONTENT_BLOCKED",
+  /**
+   * The turn stopped without writing a reply: the model closed on an abnormal
+   * finish (an output-token stop, an exceeded context window, a malformed tool
+   * call) before any answer content. Not a platform error. The message is
+   * reader copy that names no provider and no reason. The reader may retry;
+   * nothing is resent automatically.
+   */
+  NO_REPLY: "NO_REPLY",
   /** A guuey-side dependency failed (not the agent's own code). */
   PLATFORM_ERROR: "PLATFORM_ERROR",
   /** Unclassified pod failure. */
