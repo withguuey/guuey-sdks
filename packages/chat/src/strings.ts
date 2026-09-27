@@ -45,6 +45,12 @@ export interface ChatStrings {
    * scary face and mis-attributed incident triage.
    */
   errorHistoryUnavailable: string;
+  /**
+   * R11, code CONTENT_BLOCKED: the model's safety filter withheld the reply.
+   * Not the platform's fault and not the visitor's, so never the transient
+   * "our side" banner. Names no provider and no reason.
+   */
+  errorContentBlocked: string;
 
   /** R3/R4. */
   toolGroup: (count: number) => string;
@@ -266,6 +272,7 @@ export const defaultChatStrings: ChatStrings = {
   errorQuota: "This agent is over its usage limit.",
   errorTransient: "Something went wrong on our side — try again.",
   errorHistoryUnavailable: "This conversation belonged to a previous session — starting fresh.",
+  errorContentBlocked: "The model declined to write a reply to that. Try rephrasing your message.",
   errorInvalid: "The app sent a request the agent couldn't read.",
 
   toolGroup: (count) => `Ran ${count} tools`,

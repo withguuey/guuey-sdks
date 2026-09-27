@@ -76,6 +76,12 @@ export const AGENT_ERROR_CODES = {
    * reader copy that names no provider, key or fault.
    */
   AGENT_UNAVAILABLE: "AGENT_UNAVAILABLE",
+  /**
+   * The model's safety filter withheld the reply. Not a platform error;
+   * not retried. The message is reader copy that names no provider and no
+   * reason.
+   */
+  CONTENT_BLOCKED: "CONTENT_BLOCKED",
   /** A guuey-side dependency failed (not the agent's own code). */
   PLATFORM_ERROR: "PLATFORM_ERROR",
   /** Unclassified pod failure. */

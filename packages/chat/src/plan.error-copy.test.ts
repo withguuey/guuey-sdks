@@ -138,6 +138,13 @@ describe("R11 built-in code voices (guuey#417)", () => {
     expect(item.copy).not.toBe(calmPolicy().strings.errorTransient);
   });
 
+  it("CONTENT_BLOCKED renders the kit's own neutral sentence on a default-policy host, never the transient 'our side' banner", () => {
+    const item = errorItem(inputsWithError("whatever the pod said", "CONTENT_BLOCKED"));
+    expect(item.copy).toBe(calmPolicy().strings.errorContentBlocked);
+    expect(item.copy).not.toBe(calmPolicy().strings.errorTransient);
+    expect(item.copy).not.toMatch(/our side|safety|gemini/i);
+  });
+
   it("the host's copyByCode still wins over the built-in voice", () => {
     const policy = calmPolicy({
       error: {
