@@ -8,9 +8,11 @@ import { describe, expect, it } from "vitest";
 import { transcriptInputsFromHistory } from "./history-inputs.js";
 import { planTranscript } from "./plan.js";
 import { calmPolicy, debugPolicy } from "./policy.js";
-import type { DisplayItem, NoticeItem, TranscriptMessage } from "./types.js";
+import type { AgentMessage } from "@guuey/agent-client";
+import type { DisplayItem, NoticeItem } from "./types.js";
 
-const plan = (messages: TranscriptMessage[], policy = calmPolicy()) =>
+// A history read carries agent-client's rows, exactly what the loader maps.
+const plan = (messages: AgentMessage[], policy = calmPolicy()) =>
   planTranscript(transcriptInputsFromHistory({ messages }), policy).items;
 const kinds = (items: DisplayItem[]) => items.map((i) => (i.kind === "notice" ? `notice:${i.text}` : i.kind));
 const notices = (items: DisplayItem[]) => items.filter((i): i is NoticeItem => i.kind === "notice");
@@ -34,7 +36,7 @@ describe("reloaded failed turns and notices (guuey#1880 / guuey#1890)", () => {
 
   it("NO_REPLY gets its own line; a row stored before codes gets the family's; a host's per-code copy still wins", () => {
     const strings = calmPolicy().strings;
-    const turn = (failure: { code: string | null }): TranscriptMessage[] => [
+    const turn = (failure: { code: string | null }): AgentMessage[] => [
       { role: "user", text: "q", seq: 1 },
       { role: "notice", text: "Something went wrong on our side while writing this reply.", seq: 2, failure },
     ];
