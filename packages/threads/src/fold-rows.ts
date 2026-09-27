@@ -40,18 +40,83 @@ function roleToAuthor(role: AgRole): ThreadMessageRole {
 }
 
 /**
- * Plain-text projection of an AgMessage. Distinct text blocks are distinct
- * paragraphs, so they join with a paragraph break — the same block-boundary
- * contract as `@guuey/agent-client`'s live flat-text fold (guuey#98); raw
- * concatenation jammed "…instead.Here's your packing…". Empty blocks
- * contribute nothing (no stacked separators).
+ * A text block the producer marked as INTERIM narration (AgJSON's open-string
+ * `phase`; an OpenAI `commentary` message arrives this way), not the answer.
+ * Only the one value this package knows splits; any other phase is answer text.
  */
-export function messageText(msg: AgMessage): string {
+function isNarration(block: AgMessage["content"][number]): boolean {
+  return block.type === "text" && block.phase === "interim";
+}
+
+/** The non-empty text blocks, in order, that `keep` admits, joined as paragraphs. */
+function joinText(msg: AgMessage, keep: (block: AgMessage["content"][number]) => boolean): string {
   const parts: string[] = [];
   for (const block of msg.content) {
-    if (block.type === "text" && block.text) parts.push(block.text);
+    if (block.type === "text" && block.text && keep(block)) parts.push(block.text);
   }
   return parts.join("\n\n");
+}
+
+/**
+ * The ANSWER as plain text: the message's text blocks WITHOUT interim
+ * narration. Distinct text blocks are distinct paragraphs, so they join with
+ * a paragraph break, the same block-boundary contract as `@guuey/agent-client`'s
+ * live flat-text fold (guuey#98); raw concatenation jammed "…instead.Here's
+ * your packing…". Empty blocks contribute nothing (no stacked separators).
+ * This is the row's `text`: what a reloaded thread, a preview and a hook read.
+ */
+export function messageText(msg: AgMessage): string {
+  return joinText(msg, (block) => !isNarration(block));
+}
+
+/** The message's interim narration, one entry per non-empty narration block, in order. */
+export function messageNarration(msg: AgMessage): string[] {
+  const out: string[] = [];
+  for (const block of msg.content) {
+    if (isNarration(block) && block.type === "text" && block.text) out.push(block.text);
+  }
+  return out;
+}
+
+/**
+ * EVERY text block, narration included, joined as the answer text was joined
+ * before narration split out of it: the MODEL's view of a stored message.
+ * `loadHistory` replays this, so the model's conversation history is the same
+ * bytes whether a row was written before the split or after it.
+ */
+export function messageFullText(msg: AgMessage): string {
+  return joinText(msg, () => true);
+}
+
+/** A stored message's text, split: the answer, the narration, and everything (the model's view). */
+export interface StoredTextParts {
+  answer: string;
+  narration: string[];
+  all: string;
+}
+
+/**
+ * Split a stored row's `content` into answer, narration and the model's full
+ * text, when `content` is a stored `AgMessage` (an object, or the JSON string
+ * an AppSync writer stores). Anything else is null, and a reader falls back to
+ * the row's `text`. It is read through core's lenient stored-record reader, so
+ * an unknown block is omitted rather than failing the row.
+ */
+export function storedTextParts(content: unknown): StoredTextParts | null {
+  let raw: unknown = content;
+  if (typeof content === "string") {
+    try {
+      raw = JSON.parse(content);
+    } catch (err) {
+      if (err instanceof SyntaxError) return null; // not JSON: not a stored AgMessage
+      throw err;
+    }
+  }
+  if (raw === null || typeof raw !== "object") return null;
+  const read = readStoredAgMessage(raw);
+  if (read.value === undefined) return null;
+  const msg = read.value;
+  return { answer: messageText(msg), narration: messageNarration(msg), all: messageFullText(msg) };
 }
 
 export function agMessageToRow(

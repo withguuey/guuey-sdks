@@ -16,6 +16,7 @@ import {
   producingToolName,
   toolNamesByCallId,
   uiCardArtifactsFromMessages,
+  storedTextParts,
 } from "./fold-rows.js";
 import type {
   ThreadMessageEvent,
@@ -198,11 +199,17 @@ export class ThreadStore {
     // Known trade-off: cards still consume the DynamoDB Limit before this
     // filter, so card-heavy threads under-fill the window (bounded, most-
     // recent-first; revisit with an over-fetch if it bites).
+    // The model's text is EVERY text block from the stored message, narration
+    // included (`storedTextParts(...).all`): the row's `text` is the answer only
+    // since narration split out of it, so reading `text` here would change what
+    // the model is replayed. For rows written before the split, `all` is the same
+    // bytes their `text` holds. A row whose content is not a stored AgMessage
+    // (an event, a managed-adapter row) keeps its `text`.
     return rows.filter((r) => r.kind !== 'card').map((r) => ({
       seq: r.seq,
       authorRole: r.authorRole,
       kind: r.kind,
-      text: r.text ?? null,
+      text: storedTextParts(r.content)?.all || (r.text ?? null),
       content: r.content ?? null,
       at: r.at,
     }));
@@ -285,7 +292,8 @@ export class ThreadStore {
       const msg = fold.messages[i]!;
       const clientMessageId = sentinelClaimed ? `${clientMessageIdBase}#agent#${i}` : sentinelKey;
       sentinelClaimed = true;
-      const text = msg.content.reduce((acc, b) => (b.type === 'text' ? acc + b.text : acc), '');
+      // The preview is the ANSWER: interim narration (`phase: "interim"`) never becomes a thread's preview.
+      const text = msg.content.reduce((acc, b) => (b.type === 'text' && b.phase !== 'interim' ? acc + b.text : acc), '');
       const now = new Date().toISOString();
       // Text-less agent messages (tool-call + tool-result only — the canonical
       // card-producing turn) must not blank the preview: '' takes the SET

@@ -1,0 +1,253 @@
+{
+  "$source": "The OpenAI commentary capture published at github.com/silverprotocol/typescript-sdk, packages/e2e/corpus/commentary-gpt6sol/openai.agjson.json (mirror commit 4fd5a02a, the @silverprotocol 0.10.0 publish), folded through @silverprotocol/core 0.10.0's Reducer. Each assistant message is stored as a ThreadMessage row the way the writer stored it BEFORE interim narration split out of `text`: `text` joins every text block. Reasoning blocks (opaque provider blobs) are removed; every other block is as captured.",
+  "$license": "The capture is MIT-licensed. Copyright (c) 2026 Loqu, Inc.",
+  "rows": [
+    {
+      "threadId": "t-commentary",
+      "seq": 1,
+      "userId": "g_fixture",
+      "clientMessageId": "cmid-commentary#agent#0",
+      "at": "2026-09-24T00:00:00.000Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": "I’ll echo “alpha” first so I can use the returned text in step 2.",
+      "content": {
+        "id": "msg_turn_resp_0efe55287537ad4a006ab3a1075f3087d09153c1c2ed3835be",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I’ll echo “alpha” first so I can use the returned text in step 2.",
+            "phase": "interim",
+            "providerMetadata": {
+              "phase": "commentary"
+            }
+          },
+          {
+            "type": "tool-call",
+            "toolCallId": "call_iKN3vYLXN6P9uk9DDciO4NGE",
+            "name": "echo",
+            "input": {
+              "message": "alpha"
+            },
+            "itemId": "fc_0efe55287537ad4a006ab3a109a6f887d091c4d940d13202c3"
+          },
+          {
+            "type": "tool-result",
+            "toolCallId": "call_iKN3vYLXN6P9uk9DDciO4NGE",
+            "content": [
+              {
+                "type": "text",
+                "text": "alpha"
+              }
+            ],
+            "outcome": "ok",
+            "isError": false,
+            "providerMetadata": {
+              "executionStatus": "executed"
+            }
+          }
+        ],
+        "turnId": "turn_resp_0efe55287537ad4a006ab3a1075f3087d09153c1c2ed3835be",
+        "threadId": "openai",
+        "model": "gpt-6-sol"
+      },
+      "aiContext": {
+        "turnId": "turn_resp_0efe55287537ad4a006ab3a1075f3087d09153c1c2ed3835be",
+        "threadId": "openai",
+        "finishReason": "stop",
+        "usage": {
+          "cumulative": false,
+          "inputTokens": 187,
+          "outputTokens": 89,
+          "totalTokens": 276,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "reasoningTokens": 44
+        },
+        "outcome": {
+          "type": "success"
+        }
+      }
+    },
+    {
+      "threadId": "t-commentary",
+      "seq": 2,
+      "userId": "g_fixture",
+      "clientMessageId": "cmid-commentary#agent#1",
+      "at": "2026-09-24T00:00:00.000Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": "Step 1 returned “alpha”; I’ll append “-beta” and echo it.",
+      "content": {
+        "id": "msg_turn_resp_0efe55287537ad4a006ab3a10a5e3087d0880a626d585f9c82",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Step 1 returned “alpha”; I’ll append “-beta” and echo it.",
+            "phase": "interim",
+            "providerMetadata": {
+              "phase": "commentary"
+            }
+          },
+          {
+            "type": "tool-call",
+            "toolCallId": "call_da3i56knEI3Sr3jBM6mJrxEo",
+            "name": "echo",
+            "input": {
+              "message": "alpha-beta"
+            },
+            "itemId": "fc_0efe55287537ad4a006ab3a10c7ffc87d08f8347ad4756e3c9"
+          },
+          {
+            "type": "tool-result",
+            "toolCallId": "call_da3i56knEI3Sr3jBM6mJrxEo",
+            "content": [
+              {
+                "type": "text",
+                "text": "alpha-beta"
+              }
+            ],
+            "outcome": "ok",
+            "isError": false,
+            "providerMetadata": {
+              "executionStatus": "executed"
+            }
+          }
+        ],
+        "turnId": "turn_resp_0efe55287537ad4a006ab3a10a5e3087d0880a626d585f9c82",
+        "threadId": "openai",
+        "model": "gpt-6-sol"
+      },
+      "aiContext": {
+        "turnId": "turn_resp_0efe55287537ad4a006ab3a10a5e3087d0880a626d585f9c82",
+        "threadId": "openai",
+        "finishReason": "stop",
+        "usage": {
+          "cumulative": false,
+          "inputTokens": 287,
+          "outputTokens": 51,
+          "totalTokens": 338,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "reasoningTokens": 6
+        },
+        "outcome": {
+          "type": "success"
+        }
+      }
+    },
+    {
+      "threadId": "t-commentary",
+      "seq": 3,
+      "userId": "g_fixture",
+      "clientMessageId": "cmid-commentary#agent#2",
+      "at": "2026-09-24T00:00:00.000Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": "Step 2 returned “alpha-beta”; I’ll append “-gamma” and echo the final text.",
+      "content": {
+        "id": "msg_turn_resp_0efe55287537ad4a006ab3a10d5b6887d08bed93e26b57cc4b",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Step 2 returned “alpha-beta”; I’ll append “-gamma” and echo the final text.",
+            "phase": "interim",
+            "providerMetadata": {
+              "phase": "commentary"
+            }
+          },
+          {
+            "type": "tool-call",
+            "toolCallId": "call_UbnmWlyyVcX2iE7zBu6SeO7m",
+            "name": "echo",
+            "input": {
+              "message": "alpha-beta-gamma"
+            },
+            "itemId": "fc_0efe55287537ad4a006ab3a10e82b887d09ee034bce38b90cd"
+          },
+          {
+            "type": "tool-result",
+            "toolCallId": "call_UbnmWlyyVcX2iE7zBu6SeO7m",
+            "content": [
+              {
+                "type": "text",
+                "text": "alpha-beta-gamma"
+              }
+            ],
+            "outcome": "ok",
+            "isError": false,
+            "providerMetadata": {
+              "executionStatus": "executed"
+            }
+          }
+        ],
+        "turnId": "turn_resp_0efe55287537ad4a006ab3a10d5b6887d08bed93e26b57cc4b",
+        "threadId": "openai",
+        "model": "gpt-6-sol"
+      },
+      "aiContext": {
+        "turnId": "turn_resp_0efe55287537ad4a006ab3a10d5b6887d08bed93e26b57cc4b",
+        "threadId": "openai",
+        "finishReason": "stop",
+        "usage": {
+          "cumulative": false,
+          "inputTokens": 350,
+          "outputTokens": 48,
+          "totalTokens": 398,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "reasoningTokens": 0
+        },
+        "outcome": {
+          "type": "success"
+        }
+      }
+    },
+    {
+      "threadId": "t-commentary",
+      "seq": 4,
+      "userId": "g_fixture",
+      "clientMessageId": "cmid-commentary#agent#3",
+      "at": "2026-09-24T00:00:00.000Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": "Final result: `alpha-beta-gamma`",
+      "content": {
+        "id": "msg_turn_resp_0efe55287537ad4a006ab3a10f456487d09c1feea437fb3f9e",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Final result: `alpha-beta-gamma`",
+            "providerMetadata": {
+              "phase": "final_answer"
+            }
+          }
+        ],
+        "turnId": "turn_resp_0efe55287537ad4a006ab3a10f456487d09c1feea437fb3f9e",
+        "threadId": "openai",
+        "model": "gpt-6-sol"
+      },
+      "aiContext": {
+        "turnId": "turn_resp_0efe55287537ad4a006ab3a10f456487d09c1feea437fb3f9e",
+        "threadId": "openai",
+        "finishReason": "stop",
+        "usage": {
+          "cumulative": false,
+          "inputTokens": 412,
+          "outputTokens": 13,
+          "totalTokens": 425,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "reasoningTokens": 0
+        },
+        "outcome": {
+          "type": "success"
+        }
+      }
+    }
+  ]
+}
