@@ -45,6 +45,14 @@ export interface TranscriptMessage {
   /** R16 provenance — meaningful only when `role === "notice"`. */
   noticeSource?: AgNoticeSource;
   /**
+   * Present on the `role: "notice"` row that stands in a failed turn's place
+   * after a reload (the read plane's `failure`, carried by
+   * `@guuey/agent-client`): its code, or null on a row stored before codes were
+   * persisted. The planner words the notice with the live error's copy for
+   * that code and shows it whatever the notice policy. Absent on every other row.
+   */
+  failure?: { code: string | null };
+  /**
    * INTERIM narration beside a rehydrated assistant row's answer (the read
    * plane's split, `@guuey/agent-client` `AgentMessage.narration`). Planned
    * as `tone: "interim"` text before the answer, the status line the live
@@ -486,6 +494,12 @@ export interface NoticeItem extends BaseItem {
   source: AgNoticeSource | null;
   /** Resolved provenance display — the facet verbatim under debug, else null. */
   sourceLabel: string | null;
+  /**
+   * Present when the notice stands for a failed turn (a reload): its code, or
+   * null. The `text` is then the live error's copy for that code. No Retry is
+   * offered: the failure is past.
+   */
+  failure?: { code: string | null };
 }
 
 /** R11 — a coded, human-worded error notice. */

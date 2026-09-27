@@ -10,7 +10,7 @@
  * `credentials: "include"`). Consumed by {@link createWebAdapters}; Portal
  * has its own copy today and can migrate onto this later.
  */
-import type { AgMessage, JsonValue } from "@silverprotocol/core";
+import { AgNoticeSource, type AgMessage, type JsonValue } from "@silverprotocol/core";
 import type { AgentMessage, HistoryCard, HistoryLoadResult } from "./types.js";
 
 /** One row of `GET /v1/threads/:id/messages`. */
@@ -34,6 +34,10 @@ export interface ThreadHistoryRow {
    * a read plane that predates the split).
    */
   narration?: string[] | null;
+  /** A failed turn's reader-line row: its code (null before codes were persisted). Absent from an older read plane. */
+  failure?: { code?: string | null } | null;
+  /** A framework notice's row: its source when named. Absent from an older read plane. */
+  notice?: { source?: string | null } | null;
 }
 
 interface ThreadMessagesResponse {
@@ -76,11 +80,22 @@ const MAX_HISTORY_PAGES = 10;
  * (no answer text, which the read plane sends for a message that was only
  * commentary) is kept as an assistant message with empty `text`, so its
  * narration still shows after a reload.
+ *
+ * A row the read plane marks as a failed turn (`failure`) or a framework
+ * notice (`notice`) becomes a `role: "notice"` message, never the agent's
+ * words, as it was drawn live. A read plane that predates those fields sends
+ * neither, and the row stays an assistant message as before.
  */
 export function threadHistoryRowsToMessages(rows: ThreadHistoryRow[]): AgentMessage[] {
   const messages: AgentMessage[] = [];
   for (const row of rows) {
     if (row.kind !== "text") continue;
+    const notice = historyNotice(row);
+    if (notice !== null) {
+      if (row.text == null || row.text === "") continue;
+      messages.push({ role: "notice", text: row.text, seq: row.seq, ...notice });
+      continue;
+    }
     const role = row.authorRole === "user" ? "user" : "assistant";
     const narration =
       role === "assistant" && Array.isArray(row.narration)
@@ -90,6 +105,20 @@ export function threadHistoryRowsToMessages(rows: ThreadHistoryRow[]): AgentMess
     messages.push({ role, text: row.text ?? "", seq: row.seq, ...(narration.length > 0 ? { narration } : {}) });
   }
   return messages;
+}
+
+/** The notice facets of a row the read plane marked, or null for any other row (malformed marks read as absent). */
+function historyNotice(row: ThreadHistoryRow): Pick<AgentMessage, "failure" | "noticeSource"> | null {
+  if (row.authorRole === "user") return null;
+  if (row.failure != null && typeof row.failure === "object") {
+    const code = typeof row.failure.code === "string" && row.failure.code !== "" ? row.failure.code : null;
+    return { failure: { code } };
+  }
+  if (row.notice != null && typeof row.notice === "object") {
+    const source = AgNoticeSource.safeParse(row.notice.source);
+    return source.success ? { noticeSource: source.data } : {};
+  }
+  return null;
 }
 
 /**

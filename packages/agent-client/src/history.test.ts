@@ -237,3 +237,53 @@ describe("fetchThreadHistory", () => {
     expect(fetchImpl.mock.calls[0][1]).toEqual({ headers: { Authorization: "Bearer tok" } });
   });
 });
+
+// ── A read plane that marks a failed turn's or a notice's row ──────────────
+describe("threadHistoryRowsToMessages — marked rows reload as notices", () => {
+  it("a failed turn's row becomes a notice carrying its code; a row stored before codes carries null", () => {
+    expect(
+      threadHistoryRowsToMessages([
+        row({ seq: 1, authorRole: "user", text: "tell me" }),
+        row({ seq: 2, authorRole: "agent", text: "The reply was withheld.", failure: { code: "CONTENT_BLOCKED" } }),
+        row({ seq: 3, authorRole: "agent", text: "Something went wrong on our side while writing this reply.", failure: { code: null } }),
+      ]),
+    ).toEqual([
+      { role: "user", text: "tell me", seq: 1 },
+      { role: "notice", text: "The reply was withheld.", seq: 2, failure: { code: "CONTENT_BLOCKED" } },
+      { role: "notice", text: "Something went wrong on our side while writing this reply.", seq: 3, failure: { code: null } },
+    ]);
+  });
+
+  it("a notice's row becomes a notice with its source when it is a known one", () => {
+    expect(
+      threadHistoryRowsToMessages([
+        row({ seq: 1, authorRole: "agent", text: "safeguards stopped the response above", notice: { source: "framework" } }),
+        row({ seq: 2, authorRole: "agent", text: "an annotation", notice: { source: "a-future-layer" } }),
+        row({ seq: 3, authorRole: "agent", text: "unnamed", notice: { source: null } }),
+      ]),
+    ).toEqual([
+      { role: "notice", text: "safeguards stopped the response above", seq: 1, noticeSource: "framework" },
+      { role: "notice", text: "an annotation", seq: 2 },
+      { role: "notice", text: "unnamed", seq: 3 },
+    ]);
+  });
+
+  it("malformed or misplaced marks read as absent: a user row stays the user's; an empty-text mark is dropped", () => {
+    expect(
+      threadHistoryRowsToMessages([
+        row({ seq: 1, authorRole: "user", text: "q", failure: { code: "X" } }),
+        row({ seq: 2, authorRole: "agent", text: "", failure: { code: "NO_REPLY" } }),
+        row({ seq: 3, authorRole: "agent", text: "coded oddly", failure: { code: "" } }),
+      ]),
+    ).toEqual([
+      { role: "user", text: "q", seq: 1 },
+      { role: "notice", text: "coded oddly", seq: 3, failure: { code: null } },
+    ]);
+  });
+
+  it("N−1: an older read plane's rows (no marks) map exactly as before", () => {
+    expect(threadHistoryRowsToMessages([row({ seq: 2, authorRole: "agent", text: "The reply was withheld." })])).toEqual([
+      { role: "assistant", text: "The reply was withheld.", seq: 2 },
+    ]);
+  });
+});

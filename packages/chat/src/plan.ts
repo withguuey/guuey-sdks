@@ -672,9 +672,9 @@ function planAssistantSource(
       case "provider-raw": {
         if (!policy.unknown.show) break;
         // guuey#847 — a lossless carry that carries NOTHING (the google-adk
-        // facet's empty-but-present `actions.artifactDelta` / `requestedAuth
-        // Configs` dicts ride as provider-raw on every ADK event) is not
-        // "unrecognized content": there is no content. Calm shows no row for
+        // facet carries an ADK event's empty `artifactDelta` dict as a
+        // provider-raw block, `{ artifactDelta: {} }`) is not "unrecognized
+        // content": there is no content. Calm shows no row for
         // it; debug keeps every carry visible. A carry WITH a payload — an
         // unmapped genai part field, a non-text MCP content part, any vendor's
         // real bytes — still renders as the labeled unknown row (R15).
@@ -834,6 +834,39 @@ const CODE_COPY: Record<string, (s: import("./strings.js").ChatStrings) => strin
   NO_REPLY: (s) => s.errorNoReply,
 };
 
+/**
+ * R11's voice resolution, shared by the live error item and a reloaded failed
+ * turn's notice so one failure reads the same both ways: the host's exact
+ * per-code sentence wins; then a verbatim match renders the SOURCE message
+ * ("all" covers code-less client errors too — the widget's #162 posture); then
+ * the built-in per-code voice; then the family's copy. An empty source message
+ * falls back rather than rendering a blank notice.
+ */
+function codedErrorCopy(
+  code: string | null,
+  message: string,
+  policy: TranscriptPolicy,
+): { family: "auth" | "quota" | "transient" | "invalid"; copy: string } {
+  const family = (code !== null ? ERROR_FAMILIES[code] : undefined) ?? "transient";
+  const familyCopy =
+    family === "auth"
+      ? policy.strings.errorAuth
+      : family === "quota"
+        ? policy.strings.errorQuota
+        : family === "invalid"
+          ? policy.strings.errorInvalid
+          : policy.strings.errorTransient;
+  const { copyByCode, verbatimCodes } = policy.error;
+  const perCode = code !== null ? copyByCode[code] : undefined;
+  const verbatimVoice = verbatimCodes === "all" || (code !== null && verbatimCodes.includes(code));
+  const builtIn = code !== null ? CODE_COPY[code] : undefined;
+  const copy =
+    perCode ??
+    (verbatimVoice && message !== "" ? message : undefined) ??
+    (builtIn !== undefined ? builtIn(policy.strings) : familyCopy);
+  return { family, copy };
+}
+
 const ERROR_FAMILIES: Record<string, "auth" | "quota" | "invalid"> = {
   UNAUTHORIZED: "auth",
   AUTH_REQUIRED: "auth",
@@ -883,13 +916,27 @@ export function planTranscript(
   // followed (usersSeen-1; -1 = before the conversation). They are PEER
   // rows — excluded from both the user pairing and the assistant seam
   // count, so the fold alignment below never sees them.
-  const notices: Array<{ key: string; text: string; source: NoticeItem["source"]; afterSlot: number }> = [];
-  if (policy.notice.show) {
+  const notices: Array<{
+    key: string;
+    text: string;
+    source: NoticeItem["source"];
+    failure?: { code: string | null };
+    afterSlot: number;
+  }> = [];
+  {
     let usersSeen = 0;
     inputs.messages.forEach((m, i) => {
       if (m.role === "user") usersSeen += 1;
-      else if (m.role === "notice") {
-        notices.push({ key: `n${i}`, text: m.text, source: m.noticeSource ?? null, afterSlot: usersSeen - 1 });
+      // A failed turn's notice is shown whatever the notice policy, as the
+      // live error it stands for always is (R11).
+      else if (m.role === "notice" && (policy.notice.show || m.failure !== undefined)) {
+        notices.push({
+          key: `n${i}`,
+          text: m.text,
+          source: m.noticeSource ?? null,
+          ...(m.failure !== undefined ? { failure: m.failure } : {}),
+          afterSlot: usersSeen - 1,
+        });
       }
     });
   }
@@ -975,13 +1022,16 @@ export function planTranscript(
         )
       : null;
   const conversation: DisplayItem[] = [];
+  // A reloaded failed turn's notice speaks with the live error's voice for its
+  // code (and carries no Retry: the failure is past); a plain notice keeps its text.
   const noticeItem = (n: (typeof notices)[number]): NoticeItem => ({
     kind: "notice",
     key: n.key,
     expanded: true,
-    text: n.text,
+    text: n.failure !== undefined ? codedErrorCopy(n.failure.code, n.text, policy).copy : n.text,
     source: n.source,
     sourceLabel: policy.debugDetail && n.source !== null ? n.source : null,
+    ...(n.failure !== undefined ? { failure: n.failure } : {}),
   });
   for (const n of notices) if (n.afterSlot < 0) conversation.push(noticeItem(n));
   // ONE emission body for both modes, so the interleave decides only WHEN a
@@ -1177,28 +1227,7 @@ export function planTranscript(
   // R11 — the coded error notice, always last.
   if (inputs.error) {
     const code = inputs.error.code;
-    const family = (code !== null ? ERROR_FAMILIES[code] : undefined) ?? "transient";
-    const familyCopy =
-      family === "auth"
-        ? policy.strings.errorAuth
-        : family === "quota"
-          ? policy.strings.errorQuota
-          : family === "invalid"
-            ? policy.strings.errorInvalid
-            : policy.strings.errorTransient;
-    // Voice resolution (R11's per-code knob): an exact per-code sentence
-    // wins; then a verbatim match renders the SOURCE message ("all" covers
-    // code-less client errors too — the widget's #162 posture); an empty
-    // source message falls back to family copy rather than a blank notice.
-    const { copyByCode, verbatimCodes } = policy.error;
-    const perCode = code !== null ? copyByCode[code] : undefined;
-    const verbatimVoice =
-      verbatimCodes === "all" || (code !== null && verbatimCodes.includes(code));
-    const builtIn = code !== null ? CODE_COPY[code] : undefined;
-    const copy =
-      perCode ??
-      (verbatimVoice && inputs.error.message !== "" ? inputs.error.message : undefined) ??
-      (builtIn !== undefined ? builtIn(policy.strings) : familyCopy);
+    const { family, copy } = codedErrorCopy(code, inputs.error.message, policy);
     items.push({
       kind: "error",
       key: "error",

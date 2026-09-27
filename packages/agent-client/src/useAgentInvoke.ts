@@ -169,7 +169,9 @@ export function stallProbeDecision(
   for (const m of history) if (m.role === "user") historyUserCount += 1;
   if (historyUserCount < localUserCount) return "in-flight";
   const last = history[history.length - 1];
-  if (!last || last.role !== "assistant" || last.text.trim() === "") return "in-flight";
+  // A notice tail is a finished turn too: the runtime persists a turn's rows
+  // at completion, and a failed turn ends on its reader-line notice.
+  if (!last || last.role === "user" || last.text.trim() === "") return "in-flight";
   return "adopt";
 }
 

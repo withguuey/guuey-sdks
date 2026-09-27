@@ -722,7 +722,7 @@ export function DefaultPrompt({ item, ctx }: ItemProps<PromptItem>): ReactNode {
  */
 export function DefaultNotice({ item, ctx }: ItemProps<NoticeItem>): ReactNode {
   return (
-    <div className="guuey-chat-notice" role="note">
+    <div className={item.failure !== undefined ? "guuey-chat-notice guuey-chat-notice-failure" : "guuey-chat-notice"} role="note">
       <span className="guuey-chat-notice-label">
         {ctx.strings.noticeLabel}
         {item.sourceLabel !== null ? ` · ${item.sourceLabel}` : ""}

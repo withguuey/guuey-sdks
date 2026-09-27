@@ -13,11 +13,16 @@
  * `MessageStorageAdapter` injection pattern.
  */
 
-import type { AgClientCapabilities, AgReduceResult, JsonValue } from "@silverprotocol/core";
+import type { AgClientCapabilities, AgNoticeSource, AgReduceResult, JsonValue } from "@silverprotocol/core";
 
 /** A flat chat turn as rendered by the consumer UI. */
 export interface AgentMessage {
-  role: "user" | "assistant";
+  /**
+   * `notice` is a non-conversational row a reload rehydrates: a framework
+   * notice, or the row that stands in a failed turn's place (see `failure`).
+   * Never the agent's words. Live turns never carry it (the fold does).
+   */
+  role: "user" | "assistant" | "notice";
   text: string;
   /**
    * The invoke body's `clientMessageId`, present on user turns this client
@@ -57,6 +62,14 @@ export interface AgentMessage {
    * transcript kit draws each line as a status line, as it does live.
    */
   narration?: string[];
+  /** A rehydrated notice's provenance, when the read plane names a known one. */
+  noticeSource?: AgNoticeSource;
+  /**
+   * On a rehydrated `notice` that stands in a failed turn's place (the read
+   * plane's `failure`): its code, or null on a row stored before codes were
+   * persisted. `text` is the reader line the turn ended with.
+   */
+  failure?: { code: string | null };
 }
 
 /**
