@@ -471,7 +471,25 @@ async function main() {
   regenerateAgentsMd(config);
 
   console.log(`\nConfigured "${name}" — guuey.app.json written, AGENTS.md updated.`);
+  await modelKeyStep(yes);
   console.log("Next: pnpm dev (local stack) · pnpm bootstrap -- --link (bind a deployed app)");
+}
+
+// The model provider key, asked for here (hidden, skippable) so `dev` never
+// starts without it. Loaded lazily: it resolves the key through the project's
+// installed @guuey/config. A bootstrap never fails on this step; it says why
+// the key was not checked or not saved.
+async function modelKeyStep(yes) {
+  try {
+    const { ensureModelKey, isInteractiveTerminal } = await import("./lib/model-key.mjs");
+    const r = await ensureModelKey({ root: projectRoot, interactive: !yes && isInteractiveTerminal() });
+    if (r.status === "missing" || r.status === "skipped") console.log(`Model key: ${r.message} dev will ask for it.`);
+    else if (r.status === "refused") console.log(`Model key: ${r.message}`);
+  } catch (err) {
+    const why = err instanceof Error ? err.message.split("\n")[0] : String(err);
+    const hint = err instanceof Error && "code" in err && err.code === "ERR_MODULE_NOT_FOUND" ? " Install the project's dependencies, then dev will ask for it." : "";
+    console.log(`Model key: not checked (${why}).${hint}`);
+  }
 }
 
 await main();

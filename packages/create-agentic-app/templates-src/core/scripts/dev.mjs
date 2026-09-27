@@ -2,6 +2,23 @@
 // pnpm dev — boots the whole local stack. Ctrl-C tears everything down.
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { devPreflight, isInteractiveTerminal } from "./lib/model-key.mjs";
+
+// The model key is checked FIRST, before the first build and before any
+// service starts: without it the agent would exit and take every other
+// service down with it. At a terminal it is asked for (hidden) and saved to
+// .env.local; otherwise (no terminal, or CI) the run stops here with the
+// one-line fix.
+const preflight = await devPreflight({
+  root: join(dirname(fileURLToPath(import.meta.url)), ".."),
+  interactive: isInteractiveTerminal(),
+});
+if (!preflight.proceed) {
+  console.error(`✗ ${preflight.message}`);
+  process.exit(1);
+}
 
 const procs = [];
 function boot(name, command, args, opts = {}) {
@@ -24,9 +41,6 @@ function shutdown(reason, code = 0) {
 }
 process.on("SIGINT", () => shutdown("interrupted"));
 process.on("SIGTERM", () => shutdown("terminated"));
-
-if (!existsSync(".env.local"))
-  console.warn("hint: cp .env.example .env.local and set your LLM key");
 
 // FIRST-BOOT BARRIER (guuey#368): on a fresh scaffold the agent would race
 // tsup's first build — no guuey.worker.js yet ⇒ @guuey/host boots
