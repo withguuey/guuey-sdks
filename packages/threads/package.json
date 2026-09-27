@@ -31,7 +31,7 @@
   },
   "dependencies": {
     "@guuey/mcp-apps-host": "workspace:*",
-    "@silverprotocol/core": "0.10.0"
+    "@silverprotocol/core": "0.11.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
