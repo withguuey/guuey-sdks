@@ -316,7 +316,11 @@ export const DEFAULT_CHAT_THEME: GuueyChatTheme = {
       surface: "#ffffff",
       canvas: "#f7f7f5",
       canvasMuted: "#eceded",
-      error: "#d64545",
+      // Clears 4.5:1 (AA, normal text) on every light ground: 5.82 on the
+      // surface, 5.43 on the canvas, 4.96 on the muted canvas. The previous
+      // #d64545 failed all three (4.38 / 4.08 / 3.73). Pinned by
+      // theme.contrast.test.ts.
+      error: "#c02a2a",
       link: "#111318",
     },
     dark: {
