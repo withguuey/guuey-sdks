@@ -12,6 +12,9 @@
     "!src/**/*.test.ts",
     "README.md"
   ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "exports": {
     ".": {
       "react-native": "./src/index.ts",

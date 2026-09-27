@@ -107,6 +107,8 @@ jobs:
         run: pnpm check:publish-order
       - name: "The bare-name forwarder moves with the cut (guuey#1864 — guuey 1.<minor>.<patch> runs @guuey/cli 0.<minor>.<patch>)"
         run: pnpm check:forwarder-pairing
+      - name: "Each package states the Node floor its production dependencies impose (engines.node ≥ the closure's, as this lockfile resolves it)"
+        run: pnpm check:engines-floor
       - name: "Pack reachability (guuey#1435 — every shipped file is reachable from an entry point, or declared)"
         run: pnpm check:pack-reachability
       - name: "The guard scripts' own tests"

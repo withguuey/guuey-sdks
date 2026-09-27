@@ -17,6 +17,7 @@
     "check:node-types": "node scripts/check-node-types.mjs",
     "check:publish-order": "node scripts/check-publish-order.mjs",
     "check:forwarder-pairing": "node scripts/check-forwarder-pairing.mjs",
+    "check:engines-floor": "node scripts/check-engines-floor.mjs",
     "check:pack-reachability": "node scripts/check-pack-reachability.mjs",
     "test:scripts": "node --test 'scripts/*.test.mjs'"
   },

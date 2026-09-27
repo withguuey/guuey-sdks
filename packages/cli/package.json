@@ -24,6 +24,9 @@
     "README.md",
     "LICENSE"
   ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "build": "tsup",
     "prepack": "rm -rf dist && pnpm build",
