@@ -145,6 +145,14 @@ describe("R11 built-in code voices (guuey#417)", () => {
     expect(item.copy).not.toMatch(/our side|safety|gemini/i);
   });
 
+  it("CONTENT_BLOCKED is not the transient family, so no renderer offers a Retry that would re-send the refused message", () => {
+    const item = errorItem(inputsWithError("whatever the pod said", "CONTENT_BLOCKED"));
+    expect(item.family).toBe("invalid");
+    // The built-in sentence still wins over the invalid family's copy.
+    expect(item.copy).toBe(calmPolicy().strings.errorContentBlocked);
+    expect(item.copy).not.toBe(calmPolicy().strings.errorInvalid);
+  });
+
   it("the host's copyByCode still wins over the built-in voice", () => {
     const policy = calmPolicy({
       error: {

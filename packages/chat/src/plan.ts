@@ -838,6 +838,11 @@ const ERROR_FAMILIES: Record<string, "auth" | "quota" | "invalid"> = {
   QUOTA_EXCEEDED: "quota",
   MANAGED_SPEND_CAP: "quota",
   INVALID_REQUEST: "invalid",
+  // A reply the model's safety filter withheld: not a fault a retry can fix
+  // (the same message meets the same refusal), so never the transient family,
+  // whose renderers offer a Retry. "invalid" is the family whose reading is
+  // "change the request", which is what the reader line asks for.
+  CONTENT_BLOCKED: "invalid",
 };
 
 /** The one pure function (spec §7). */
