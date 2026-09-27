@@ -65,8 +65,15 @@ describe("modelToolFilterFor — visibility first, then the gates and withholds"
 });
 
 // ── ADK: the real MCPTool wrapper carries the listed tool the predicate reads ──
+/**
+ * The case imports the real `@google/adk` cold. That import alone can pass
+ * vitest's 5 s default on a loaded machine, so the case carries its own budget
+ * (the same one the real-ADK cases in `frameworks/google-adk.nocode.test.ts` use).
+ */
+const REAL_ADK_BUDGET_MS = 60_000;
+
 describe("ADK — the toolset predicate on real @google/adk MCPTool instances", () => {
-  it("hides the app-only tool and keeps the others, reading the wrapper the SDK builds", async () => {
+  it("hides the app-only tool and keeps the others, reading the wrapper the SDK builds", { timeout: REAL_ADK_BUDGET_MS }, async () => {
     const adk = await import("@google/adk");
     const { buildToolsets } = await import("./frameworks/google-adk.js");
     let predicate: ((tool: { readonly name: string }) => boolean) | undefined;
