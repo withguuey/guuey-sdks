@@ -83,7 +83,15 @@ afterEach(() => {
  *  answers — the child has no IPC/ready signal (bare `stdio: ['ignore',
  *  'pipe','pipe']` spawn, matching `spawnColocatedDev`'s production shape),
  *  so this is the only honest signal that the server is actually listening. */
-async function waitForMcpReady(url: string, timeoutMs = 5000): Promise<void> {
+/**
+ * The fixture's boot wait, and the test budget above it: a loaded machine
+ * boots the fixture well past vitest's 5 s default, and the test's own budget
+ * must outlast the wait inside it, or the wait never gets to report.
+ */
+const FIXTURE_BOOT_MS = 20_000;
+const TEST_BUDGET_MS = 30_000;
+
+async function waitForMcpReady(url: string, timeoutMs = FIXTURE_BOOT_MS): Promise<void> {
   const start = Date.now();
   for (;;) {
     try {
@@ -123,7 +131,7 @@ async function callWhoami(url: string, headers: Record<string, string>): Promise
 }
 
 describe("colocated MCP local dev loop (Task 8 integration)", () => {
-  it("auto-spawn + lowering's devPort URL + the real dev token + real scopeFromAuthorization compose end-to-end", async () => {
+  it("auto-spawn + lowering's devPort URL + the real dev token + real scopeFromAuthorization compose end-to-end", { timeout: TEST_BUDGET_MS }, async () => {
     const { scopeFromAuthorization, mcpIdFromResourceUrl } = await import("@guuey/state");
     const { colocatedResourceUrl } = await import("@guuey/config");
 
@@ -163,7 +171,7 @@ describe("colocated MCP local dev loop (Task 8 integration)", () => {
     expect(whoami.mcpId).toBe(directScope.mcpId);
   });
 
-  it("the fixture returns userId: null for a caller with no Authorization header (no token faked/hardcoded)", async () => {
+  it("the fixture returns userId: null for a caller with no Authorization header (no token faked/hardcoded)", { timeout: TEST_BUDGET_MS }, async () => {
     const devPort = 34791;
     handle = spawnColocatedDev(
       [{ name: "notes", source: "fixtures/colocated-state-mcp", devPort }],

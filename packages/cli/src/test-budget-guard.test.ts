@@ -13,7 +13,9 @@
  * `it`/`test` third argument (`{ timeout }` or a number / `*_MS` constant), a
  * `describe(..., { timeout })`, `vi.setConfig({ testTimeout })`, or a
  * `testTimeout:` key. A file that only MOCKS `node:child_process` is not in
- * the class (nothing real is spawned).
+ * the class (nothing real is spawned). A file that spawns through cli's
+ * `spawnColocatedDev(...)` is in it: the spawn is real, though the file never
+ * imports `child_process` itself.
  *
  * Packaging seam (oss): this walks the monorepo's oss/ tree as TEXT, so it
  * runs only where that tree exists (`describe.skipIf(!inMonorepo)`) — the
@@ -41,7 +43,7 @@ const KNOWN_UNBUDGETED: ReadonlySet<string> = new Set([
   'create-agentic-app/src/scaffold.test.ts', // execFile git log — guuey#867 follow-up
 ]);
 
-const IN_CLASS = /ts\.createProgram\(|(?:from|require\()\s*['"](?:node:)?child_process['"]/;
+const IN_CLASS = /ts\.createProgram\(|(?:from|require\()\s*['"](?:node:)?child_process['"]|spawnColocatedDev\(/;
 const MOCKS_CHILD_PROCESS = /vi\.mock\(\s*['"](?:node:)?child_process['"]/;
 const HAS_BUDGET =
   /(?:\bit|\btest)\([^)]*,\s*\{[^}]*\btimeout\b|,\s*[A-Z][A-Z0-9_]*_MS\s*\)|,\s*\d{4,}\s*\)|describe\([^,]+,\s*\{[^}]*\btimeout\b|vi\.setConfig\(\s*\{[^}]*testTimeout|\btestTimeout\s*:/;
@@ -74,6 +76,10 @@ describe('the classifier (guuey#867) — red on the class it guards', () => {
     expect(classify(`import { execSync } from "node:child_process";\nit("x", () => { execSync("git init"); });`)).toBe('UNBUDGETED');
     expect(classify(`import { execSync } from "node:child_process";\nconst BUDGET_MS = 30_000;\nit("x", () => { execSync("git init"); }, BUDGET_MS);`)).toBe('budgeted');
     expect(classify(`import { spawn } from "node:child_process";\nit("x", { timeout: 60_000 }, () => { spawn("pnpm"); });`)).toBe('budgeted');
+  });
+  it('flags a spawn through spawnColocatedDev without a budget (no child_process import in the file) and accepts one with', () => {
+    expect(classify(`import { spawnColocatedDev } from "./colocated-dev.js";\nit("x", async () => { spawnColocatedDev([], "/p"); });`)).toBe('UNBUDGETED');
+    expect(classify(`import { spawnColocatedDev } from "./colocated-dev.js";\nit("x", { timeout: 30_000 }, async () => { spawnColocatedDev([], "/p"); });`)).toBe('budgeted');
   });
   it('does not flag a file that only mocks child_process, nor one outside the class', () => {
     expect(classify(`vi.mock("node:child_process", () => ({ execFile: vi.fn() }));\nimport { execFile } from "node:child_process";`)).toBe('mocked');

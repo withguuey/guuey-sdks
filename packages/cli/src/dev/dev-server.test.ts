@@ -669,7 +669,8 @@ describe("the local credential broker (graceful mode)", () => {
   });
 });
 
-describe("GET /threads/:id/messages (guuey#110)", () => {
+// each case boots the dev server and runs turns through it: a budget above vitest's 5 s default
+describe("GET /threads/:id/messages (guuey#110)", { timeout: 20_000 }, () => {
   async function bootAndRunTwoTurns(): Promise<{ port: number; sessionId: string }> {
     srv = await startDevServer({
       port: 0,
