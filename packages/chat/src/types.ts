@@ -45,6 +45,14 @@ export interface TranscriptMessage {
   /** R16 provenance — meaningful only when `role === "notice"`. */
   noticeSource?: AgNoticeSource;
   /**
+   * INTERIM narration beside a rehydrated assistant row's answer (the read
+   * plane's split, `@guuey/agent-client` `AgentMessage.narration`). Planned
+   * as `tone: "interim"` text before the answer, the status line the live
+   * transcript draws. The stored order between narration and answer is not
+   * on this wire, so narration comes first. Absent on live rows.
+   */
+  narration?: readonly string[];
+  /**
    * Read-plane transcript `seq` on history-rehydrated rows (guuey#423) —
    * the interleave key that lets persisted cards render at their TRUE
    * positions instead of the R13 tail. Live turns carry none.

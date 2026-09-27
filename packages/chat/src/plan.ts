@@ -256,6 +256,8 @@ function flatSettledGroups(messages: TranscriptInputs["messages"]): {
         current = { blocks: [], live: false, stopped: false };
         groups.push(current);
       }
+      // A rehydrated row's narration plans as the interim text it was live, before its answer.
+      for (const line of m.narration ?? []) current.blocks.push({ type: "text", text: line, phase: "interim" });
       current.blocks.push({ type: "text", text: m.text });
       openUserTurn = false;
     }

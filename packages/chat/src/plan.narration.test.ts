@@ -70,3 +70,35 @@ describe("interim narration plans as a status-toned text item", () => {
     expect(narrating.map((t) => [t.tone, t.streaming])).toEqual([["interim", true]]);
   });
 });
+
+describe("a RELOADED thread draws its narration the way the live turn did (the flat, rehydrated path)", () => {
+  function flatTexts(messages: TranscriptInputs["messages"]): TextItem[] {
+    const items = planTranscript(
+      { result: null, assistantText: "", status: "ready", statusElapsedMs: 0, activeTool: null, error: null, prompts: [], messages },
+      calmPolicy(),
+    ).items;
+    return items.filter((i): i is TextItem => i.kind === "text");
+  }
+
+  it("a row's narration plans as interim text before its answer, and a narration-only row as narration alone (no empty answer bubble)", () => {
+    const texts = flatTexts([
+      { role: "user", text: "am I free this afternoon?", seq: 1 },
+      { role: "assistant", text: "", seq: 2, narration: ["Let me check the calendar."] },
+      { role: "assistant", text: "You're free from 3 to 5.", seq: 3, narration: ["Found it."] },
+    ]);
+    expect(texts.map((t) => [t.text, t.tone])).toEqual([
+      ["Let me check the calendar.", "interim"],
+      ["Found it.", "interim"],
+      ["You're free from 3 to 5.", undefined],
+    ]);
+  });
+
+  it("a row without narration plans exactly as it did before the field existed", () => {
+    const [only] = flatTexts([
+      { role: "user", text: "hi", seq: 1 },
+      { role: "assistant", text: "Hello.", seq: 2 },
+    ]);
+    expect(only?.text).toBe("Hello.");
+    expect(only).not.toHaveProperty("tone");
+  });
+});

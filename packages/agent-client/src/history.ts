@@ -28,6 +28,12 @@ export interface ThreadHistoryRow {
   cardSnapshot?: JsonValue | null;
   /** guuey#402: the producing tool's wire name, when the row carries it. */
   toolName?: string | null;
+  /**
+   * The row's interim narration, split out of `text` by the read plane (text
+   * rows whose stored content carried it; absent otherwise, and absent from
+   * a read plane that predates the split).
+   */
+  narration?: string[] | null;
 }
 
 interface ThreadMessagesResponse {
@@ -64,12 +70,24 @@ const HISTORY_PAGE_LIMIT = 100;
  */
 const MAX_HISTORY_PAGES = 10;
 
-/** Project raw rows to chat turns: text rows only, author → role. */
+/**
+ * Project raw rows to chat turns: text rows only, author → role. An
+ * assistant row's `narration` rides beside its answer. A narration-only row
+ * (no answer text, which the read plane sends for a message that was only
+ * commentary) is kept as an assistant message with empty `text`, so its
+ * narration still shows after a reload.
+ */
 export function threadHistoryRowsToMessages(rows: ThreadHistoryRow[]): AgentMessage[] {
   const messages: AgentMessage[] = [];
   for (const row of rows) {
-    if (row.kind !== "text" || row.text == null) continue;
-    messages.push({ role: row.authorRole === "user" ? "user" : "assistant", text: row.text, seq: row.seq });
+    if (row.kind !== "text") continue;
+    const role = row.authorRole === "user" ? "user" : "assistant";
+    const narration =
+      role === "assistant" && Array.isArray(row.narration)
+        ? row.narration.filter((line): line is string => typeof line === "string" && line !== "")
+        : [];
+    if (row.text == null && narration.length === 0) continue;
+    messages.push({ role, text: row.text ?? "", seq: row.seq, ...(narration.length > 0 ? { narration } : {}) });
   }
   return messages;
 }

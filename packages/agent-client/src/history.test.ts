@@ -68,6 +68,38 @@ describe("threadHistoryRowsToMessages", () => {
   });
 });
 
+describe("threadHistoryRowsToMessages — interim narration from the read plane", () => {
+  const row = (seq: number, extra: object) => ({ seq, at: "2026-09-24T00:00:00Z", kind: "text", authorRole: "agent", text: null, ...extra });
+
+  it("narration rides beside the answer; a narration-only row is kept with empty text, so a reload still shows it", () => {
+    expect(
+      threadHistoryRowsToMessages([
+        row(1, { narration: ["Let me check the calendar."] }),
+        row(2, { text: "You're free from 3 to 5." }),
+      ]),
+    ).toEqual([
+      { role: "assistant", text: "", seq: 1, narration: ["Let me check the calendar."] },
+      { role: "assistant", text: "You're free from 3 to 5.", seq: 2 },
+    ]);
+  });
+
+  it("a row with neither text nor narration is still dropped; a user row never carries narration; non-strings and empty lines are ignored", () => {
+    expect(
+      threadHistoryRowsToMessages([
+        row(1, {}),
+        row(2, { narration: [] }),
+        row(3, { authorRole: "user", text: "am I free?", narration: ["stray"] }),
+        row(4, { text: "Done.", narration: ["", 7, "Checking."] }),
+        row(5, { text: "Old read plane.", narration: null }),
+      ]),
+    ).toEqual([
+      { role: "user", text: "am I free?", seq: 3 },
+      { role: "assistant", text: "Done.", seq: 4, narration: ["Checking."] },
+      { role: "assistant", text: "Old read plane.", seq: 5 },
+    ]);
+  });
+});
+
 describe("threadHistoryRowsToCards", () => {
   it("keeps card rows with a snapshot, tagged by seq/at", () => {
     const cards = threadHistoryRowsToCards([

@@ -48,6 +48,15 @@ export interface AgentMessage {
    * instead of the R13 tail.
    */
   seq?: number;
+  /**
+   * The agent's INTERIM narration for this message ("let me check the
+   * calendar"), when the read plane split it out of the stored answer
+   * (`GET /v1/threads/:id/messages`' `narration`). History-rehydrated
+   * assistant rows only; live turns carry narration in the fold instead.
+   * `text` is the answer, and may be empty on a narration-only message. The
+   * transcript kit draws each line as a status line, as it does live.
+   */
+  narration?: string[];
 }
 
 /**
