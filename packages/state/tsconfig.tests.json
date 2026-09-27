@@ -1,0 +1,11 @@
+{
+  // guuey#1392: the tests' typecheck. tsconfig.json leaves *.test.ts out of the build, and vitest
+  // strips types, so without this config no gate type-checks the tests. `typecheck:tests` runs it,
+  // and the root `pnpm typecheck` (turbo typecheck typecheck:tests) picks it up.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

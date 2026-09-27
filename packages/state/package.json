@@ -34,6 +34,7 @@
     "prepack": "rm -rf dist && pnpm build",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.tests.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
   },
