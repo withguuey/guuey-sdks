@@ -9,7 +9,7 @@
  */
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-import { scaffold, scaffoldExample, type Framework, type Template } from './index.js';
+import { nextSteps, pnpmInvocation, pnpmRunner, scaffold, scaffoldExample, type Framework, type Template } from './index.js';
 import { installByDefault } from './shared.js';
 import { parseAnalyticsFlag } from './analytics.js';
 
@@ -58,6 +58,8 @@ function parseArgs(argv: string[]): {
 }
 
 function printHelp(): void {
+  // the same ladder the scaffold uses (guuey#1741): the help names the command this machine runs
+  const run = pnpmRunner(pnpmInvocation());
   console.log(`create-agentic-app -- scaffold a guuey agentic app
 
 Usage: create-agentic-app [target] [options]
@@ -79,9 +81,9 @@ Options:
   --agent <f>           Alias for --framework
   --example <vertical>  Extract a demo app from github.com/withguuey/demos
                         instead of a blank template (mutually exclusive with
-                        --template/--framework; re-brand via pnpm bootstrap)
+                        --template/--framework; re-brand via ${run} bootstrap)
   --app <appId>         Bind to an EXISTING guuey app: stamps the id into
-                        guuey.json so "pnpm bootstrap -- --link" runs
+                        guuey.json so "${run} bootstrap -- --link" runs
                         promptless (the tada page's copy-paste line)
   --no-install          Skip the install after scaffolding (the default installs — guuey#1000)
   --analytics posthog   Opt in to the cookieless PostHog loader in web/index.html; the key
@@ -163,19 +165,16 @@ async function main(): Promise<void> {
       process.exit(1);
       return;
     }
-    const { projectDir } = await scaffoldExample({
+    const installed = installByDefault(flags);
+    const { projectDir, pnpm } = await scaffoldExample({
       targetDir: target,
       example: flags.example,
-      install: installByDefault(flags),
+      install: installed,
       git: flags['no-git'] !== true,
       force: flags.force === true,
     });
     console.log(`\nExtracted the "${flags.example}" example into ${projectDir}\n`);
-    console.log('Next steps:');
-    console.log(`  cd ${projectDir}`);
-    if (!installByDefault(flags)) console.log('  pnpm install');
-    console.log('  pnpm bootstrap        # re-brand it as yours (also turns the demo chrome off)');
-    console.log('  pnpm dev');
+    for (const line of nextSteps({ projectDir, pnpm, installed, kind: 'example' })) console.log(line);
     console.log('  Need help? https://guuey.com/discord');
     return;
   }
@@ -236,7 +235,7 @@ async function main(): Promise<void> {
   }
   const appId = typeof flags.app === 'string' ? flags.app : undefined;
 
-  const { projectDir } = await scaffold({
+  const { projectDir, pnpm } = await scaffold({
     targetDir: target,
     name,
     framework,
@@ -250,16 +249,11 @@ async function main(): Promise<void> {
   });
 
   console.log(`\nScaffolded "${name}" in ${projectDir}\n`);
-  console.log('Next steps:');
-  console.log(`  cd ${projectDir}`);
-  if (!install) console.log('  pnpm install');
-  console.log('  pnpm bootstrap        # brand, theme, copy — the web app is gated on this');
-  console.log('  pnpm dev');
-  // npx-form (guuey#451): the scaffold pins @guuey/cli, so the in-dir
-  // resolution is version-matched and needs no global install — the bare
-  // form broke the founder's first-agent walk at exactly this moment.
-  console.log('  npx guuey login && npx guuey deploy');
-  console.log('  pnpm bootstrap -- --link   # bind the deployed app into the frontend');
+  // Every command starts with the pnpm the scaffold found (guuey#1741). The
+  // guuey commands keep the npx form (guuey#451): the scaffold pins @guuey/cli,
+  // so the in-dir resolution is version-matched and needs no global install.
+  const kind = template === 'agent' ? 'agent' : 'app';
+  for (const line of nextSteps({ projectDir, pnpm, installed: install, kind, guuey: 'npx guuey' })) console.log(line);
   console.log('  Need help? https://guuey.com/discord');
 }
 

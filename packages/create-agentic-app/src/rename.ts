@@ -1,3 +1,5 @@
+import { PNPM_PLACEHOLDER } from './pnpm.js';
+
 /**
  * Rewrites template placeholder tokens in a file's text content.
  *
@@ -12,6 +14,15 @@ export function renameContent(content: string, name: string, scope: string): str
   return content
     .replaceAll('@agentic-app-template/', `@${scope}/`)
     .replaceAll('agentic-app-template', name);
+}
+
+/**
+ * Fills the pnpm command token in a file's text content with `runner`, the
+ * words this machine runs pnpm with (`pnpm`, or `npx --yes pnpm@<pinned>`;
+ * see `pnpmRunner`). Text content only: no file or directory name carries it.
+ */
+export function fillPnpmRunner(content: string, runner: string): string {
+  return content.replaceAll(PNPM_PLACEHOLDER, runner);
 }
 
 /**

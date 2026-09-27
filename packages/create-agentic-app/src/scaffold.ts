@@ -3,8 +3,8 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { pnpmInvocation, noPnpmMessage } from './pnpm.js';
-import { renameContent, isProbablyText } from './rename.js';
+import { pnpmInvocation, pnpmRunner, noPnpmMessage, type PnpmInvocation } from './pnpm.js';
+import { renameContent, fillPnpmRunner, isProbablyText } from './rename.js';
 import { assertNpmSafeName, ensureTargetDir, isErrnoException, pathExists } from './shared.js';
 
 const execFileAsync = promisify(execFile);
@@ -67,12 +67,25 @@ export interface ScaffoldOptions {
   builtFor?: ScaffoldBuiltFor;
   /** Scaffold into a non-empty targetDir anyway. Default: false. */
   force?: boolean;
+  /**
+   * How this machine runs pnpm, when the caller already asked `pnpmInvocation()`
+   * (`null`: it runs none). Omitted, the scaffold asks it once itself. Either
+   * way there is one answer per scaffold (guuey#1741).
+   */
+  pnpm?: PnpmInvocation | null;
   /** Root directory holding `<template>/<framework>` trees (+ `mcp-base/`). Default: dist/templates. */
   templatesDir?: string;
 }
 
 export interface ScaffoldResult {
   projectDir: string;
+  /**
+   * How this machine runs pnpm, probed once for the whole scaffold
+   * (guuey#1741): the install used it, the templates' command lines were
+   * filled with it, and the caller prints its next steps with it
+   * (`nextSteps`). `null` when the machine can run no pnpm.
+   */
+  pnpm: PnpmInvocation | null;
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -118,7 +131,7 @@ async function resolveTemplateDir(
   throw new Error(`No template for framework "${framework}". Available frameworks: ${list}`);
 }
 
-async function copyTree(src: string, dest: string, name: string, scope: string): Promise<void> {
+async function copyTree(src: string, dest: string, name: string, scope: string, runner: string): Promise<void> {
   await fs.mkdir(dest, { recursive: true });
   const entries = await fs.readdir(src, { withFileTypes: true });
   for (const entry of entries) {
@@ -132,11 +145,11 @@ async function copyTree(src: string, dest: string, name: string, scope: string):
     const srcPath = join(src, entry.name);
     const destPath = join(dest, destName);
     if (entry.isDirectory()) {
-      await copyTree(srcPath, destPath, name, scope);
+      await copyTree(srcPath, destPath, name, scope, runner);
     } else {
       const buf = await fs.readFile(srcPath);
       if (isProbablyText(buf)) {
-        await fs.writeFile(destPath, renameContent(buf.toString('utf8'), name, scope), 'utf8');
+        await fs.writeFile(destPath, fillPnpmRunner(renameContent(buf.toString('utf8'), name, scope), runner), 'utf8');
       } else {
         await fs.writeFile(destPath, buf);
       }
@@ -184,14 +197,14 @@ export async function initGit(projectDir: string): Promise<void> {
 }
 
 /**
- * Install the scaffolded project's dependencies with whatever pnpm this machine
- * can run (guuey#1441 — see `pnpm.ts` for the ladder and why there is no npm
- * rung). Fail-soft as before: a failed install is a warning with the manual
- * step, never a dead scaffold, and the message never says `corepack` — a machine
+ * Install the scaffolded project's dependencies with the pnpm this machine can
+ * run (guuey#1441 — see `pnpm.ts` for the ladder and why there is no npm rung).
+ * `inv` is the caller's one probe of that ladder (guuey#1741), never a second
+ * one. Fail-soft as before: a failed install is a warning with the manual step,
+ * never a dead scaffold, and the message never says `corepack` — a machine
  * without it is exactly the machine reading that line.
  */
-export async function runInstall(projectDir: string): Promise<void> {
-  const inv = pnpmInvocation();
+export async function runInstall(projectDir: string, inv: PnpmInvocation | null): Promise<void> {
   if (inv === null) {
     console.error(noPnpmMessage('Install the dependencies', projectDir));
     return;
@@ -200,7 +213,7 @@ export async function runInstall(projectDir: string): Promise<void> {
     await execFileAsync(inv.file, [...inv.prefix, 'install'], { cwd: projectDir });
   } catch {
     console.error(
-      `Warning: "${[inv.file, ...inv.prefix, 'install'].join(' ')}" failed to run automatically. Run it manually:\n  cd ${projectDir}\n  pnpm install`,
+      `Warning: "${pnpmRunner(inv)} install" failed to run automatically. Run it manually:\n  cd ${projectDir}\n  ${pnpmRunner(inv)} install`,
     );
   }
 }
@@ -230,7 +243,8 @@ async function stampManifest(
  *
  * Copies the template tree for `opts.framework`, rewrites the
  * `agentic-app-template` / `@agentic-app-template` placeholder tokens to the
- * requested project name/scope (in file contents and in file/dir names),
+ * requested project name/scope (in file contents and in file/dir names) and
+ * the `PNPM_PLACEHOLDER` token to this machine's pnpm command (in contents),
  * seeds `.env.local` from `.env.example` when absent, and optionally runs
  * `git init` + an initial commit and/or `pnpm install` in the new project.
  */
@@ -251,7 +265,10 @@ export async function scaffold(opts: ScaffoldOptions): Promise<ScaffoldResult> {
   const projectDir = resolve(opts.targetDir);
   await ensureTargetDir(projectDir, opts.force);
 
-  await copyTree(templateDir, projectDir, opts.name, scope);
+  // ONE probe of the pnpm ladder for the whole scaffold (guuey#1741): the
+  // templates' command lines, the install and the caller's next steps all use it.
+  const pnpm = opts.pnpm !== undefined ? opts.pnpm : pnpmInvocation();
+  await copyTree(templateDir, projectDir, opts.name, scope, pnpmRunner(pnpm));
   await seedEnvLocal(projectDir);
   if (opts.analytics !== undefined) {
     await injectAnalyticsLoader(projectDir, opts.analytics);
@@ -269,8 +286,8 @@ export async function scaffold(opts: ScaffoldOptions): Promise<ScaffoldResult> {
   }
 
   if (opts.install) {
-    await runInstall(projectDir);
+    await runInstall(projectDir, pnpm);
   }
 
-  return { projectDir };
+  return { projectDir, pnpm };
 }

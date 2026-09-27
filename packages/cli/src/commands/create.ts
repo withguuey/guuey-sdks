@@ -6,7 +6,7 @@
  * Authentication not required for scaffolding.
  */
 import * as out from '../output.js';
-import { scaffold, type Framework, type ScaffoldOptions, type Template } from '@guuey/create-agentic-app';
+import { nextSteps, scaffold, type Framework, type ScaffoldOptions, type Template } from '@guuey/create-agentic-app';
 import { BUILT_FOR_LABEL, parseBuiltForFlag } from '../built-for.js';
 
 const FRAMEWORKS: Framework[] = ['claude-agent-sdk', 'openai-agents-sdk'];
@@ -85,19 +85,16 @@ export async function create(
 ): Promise<void> {
   try {
     const opts = buildScaffoldOptions(target, flags);
-    const { projectDir } = await scaffold(opts);
+    const { projectDir, pnpm } = await scaffold(opts);
 
     console.log(`\nScaffolded "${opts.name}" in ${projectDir}\n`);
     if (opts.builtFor !== undefined) {
       console.log(`Built for: ${BUILT_FOR_LABEL[opts.builtFor]} (app.builtFor in guuey.json; guuey deploy sends it when it creates the app)\n`);
     }
-    console.log('Next steps:');
-    console.log(`  cd ${projectDir}`);
-    if (!opts.install) console.log('  pnpm install');
-    console.log('  pnpm bootstrap        # brand, theme, copy — the web app is gated on this');
-    console.log('  pnpm dev');
-    console.log('  guuey login && guuey deploy');
-    console.log('  pnpm bootstrap -- --link   # bind the deployed app into the frontend');
+    // the scaffold's own next steps, every command starting with the pnpm it found (guuey#1741)
+    for (const line of nextSteps({ projectDir, pnpm, installed: opts.install === true, kind: 'app', guuey: 'guuey' })) {
+      console.log(line);
+    }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     out.error(message);

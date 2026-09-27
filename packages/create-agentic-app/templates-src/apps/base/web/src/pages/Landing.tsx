@@ -50,7 +50,7 @@ export function Landing() {
         {widget === "unlinked" ? (
           <p className="hint">
             The floating agent launcher appears here once the app is bound to a
-            deployed guuey agent — <code>pnpm bootstrap -- --link</code>.
+            deployed guuey agent — <code>PNPM_PLACEHOLDER bootstrap -- --link</code>.
           </p>
         ) : null}
         {widget === "offline" ? (

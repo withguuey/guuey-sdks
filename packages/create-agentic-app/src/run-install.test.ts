@@ -16,7 +16,7 @@ import { mkdtempSync, rmSync, writeFileSync, chmodSync, mkdirSync, existsSync, r
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runInstall } from './scaffold.js';
-import { SCAFFOLD_PNPM } from './pnpm.js';
+import { SCAFFOLD_PNPM, pnpmInvocation } from './pnpm.js';
 
 let work: string;
 let bin: string;
@@ -52,7 +52,7 @@ describe('runInstall (guuey#1441)', () => {
     const npxMarker = join(work, 'npx.args');
     stub('pnpm', pnpmMarker);
     stub('npx', npxMarker);
-    await runInstall(project);
+    await runInstall(project, pnpmInvocation());
     expect(existsSync(pnpmMarker)).toBe(true);
     expect(readFileSync(pnpmMarker, 'utf8').trim()).toBe('install');
     expect(existsSync(npxMarker)).toBe(false);
@@ -61,13 +61,25 @@ describe('runInstall (guuey#1441)', () => {
   it('falls back to npx pnpm@<pinned> when pnpm is absent — the founder’s machine', async () => {
     const npxMarker = join(work, 'npx.args');
     stub('npx', npxMarker);
-    await runInstall(project);
+    await runInstall(project, pnpmInvocation());
     expect(readFileSync(npxMarker, 'utf8').split('\n').filter(Boolean)).toEqual(['--yes', SCAFFOLD_PNPM, 'install']);
+  });
+
+  it('a failed install through npx gives the npx line as the manual step, never a bare pnpm (guuey#1741)', async () => {
+    const file = join(bin, 'npx');
+    // answers the ladder's probe, fails the install
+    writeFileSync(file, '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\nexit 1\n');
+    chmodSync(file, 0o755);
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await runInstall(project, pnpmInvocation());
+    const text = err.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(text).toContain(`  npx --yes ${SCAFFOLD_PNPM} install`);
+    expect(text).not.toMatch(/^\s*pnpm install$/m);
   });
 
   it('with neither, warns with the manual step and NEVER says corepack', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    await expect(runInstall(project)).resolves.toBeUndefined();
+    await expect(runInstall(project, pnpmInvocation())).resolves.toBeUndefined();
     const text = err.mock.calls.map((c) => String(c[0])).join('\n');
     expect(text).toContain('pnpm install');
     expect(text).toContain(project);

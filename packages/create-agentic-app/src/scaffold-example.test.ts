@@ -3,7 +3,10 @@ import { createReadStream, mkdirSync, mkdtempSync, rmSync, writeFileSync, exists
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { c } from 'tar';
-import { scaffoldExample } from './scaffold-example.js';
+import { scaffoldExample as scaffoldExampleAsking, type ScaffoldExampleOptions } from './scaffold-example.js';
+
+/** The ladder's answer passed in (guuey#1741): these cases are about extraction, not this machine's PATH. */
+const scaffoldExample = (opts: ScaffoldExampleOptions) => scaffoldExampleAsking({ pnpm: { file: 'pnpm', prefix: [] }, ...opts });
 
 /**
  * Builds a fixture tarball shaped exactly like codeload's

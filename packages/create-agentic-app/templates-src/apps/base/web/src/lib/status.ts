@@ -39,8 +39,8 @@ export async function probeAgent(): Promise<AgentProbe> {
     return {
       state: "unreachable",
       hint: isLinked
-        ? "agent unreachable from this origin — check the app's Allowed Domains include this site, and that a deployment is live (pnpm status)"
-        : "local dev router not running — start it with `pnpm dev` (or bind a deployed app with `pnpm bootstrap -- --link`)",
+        ? "agent unreachable from this origin — check the app's Allowed Domains include this site, and that a deployment is live (PNPM_PLACEHOLDER status)"
+        : "local dev router not running — start it with `PNPM_PLACEHOLDER dev` (or bind a deployed app with `PNPM_PLACEHOLDER bootstrap -- --link`)",
     };
   }
 }

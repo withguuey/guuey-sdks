@@ -66,3 +66,22 @@ export function pnpmCommandLine(args: readonly string[]): string | null {
 export function noPnpmMessage(what: string, cwd: string): string {
   return `Could not run pnpm (not on PATH, and \`npx ${SCAFFOLD_PNPM}\` did not run). ${what} manually:\n  cd ${cwd}\n  pnpm install`;
 }
+
+/**
+ * What a user types to run pnpm on this machine, as the words before a
+ * subcommand: `pnpm`, or `npx --yes pnpm@<pinned>` (guuey#1741). Every command
+ * the scaffold prints, and every command its templates show, starts with this,
+ * so a user without pnpm is never told to type `pnpm`. When the machine can run
+ * no pnpm at all it is `pnpm`: that user has to install pnpm first, and the
+ * next steps say so.
+ */
+export function pnpmRunner(inv: PnpmInvocation | null): string {
+  return inv === null ? 'pnpm' : [inv.file, ...inv.prefix].join(' ');
+}
+
+/**
+ * The token the templates carry wherever a line shows the user a pnpm command
+ * (`PNPM_PLACEHOLDER dev`). The scaffold replaces it with {@link pnpmRunner}'s
+ * answer for this machine, the same answer its printed next steps use.
+ */
+export const PNPM_PLACEHOLDER = 'PNPM_PLACEHOLDER';

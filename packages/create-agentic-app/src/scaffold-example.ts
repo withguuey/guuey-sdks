@@ -4,8 +4,8 @@
  * codeload tarball + subdir extraction, no git required).
  *
  * Examples are ALREADY-BRANDED apps: they are copied as-is — no
- * placeholder rename — and the user re-brands via `pnpm bootstrap`
- * (which also turns the demo chrome off: `demoMode: false`).
+ * placeholder rename — and the user re-brands with the project's `bootstrap`
+ * script (which also turns the demo chrome off: `demoMode: false`).
  */
 import { promises as fs, createWriteStream } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { x, t } from 'tar';
 import { ensureTargetDir, pathExists } from './shared.js';
 import { initGit, runInstall, seedEnvLocal } from './scaffold.js';
+import { pnpmInvocation, type PnpmInvocation } from './pnpm.js';
 
 const EXAMPLES_REPO = 'withguuey/demos';
 const EXAMPLES_REF = 'main';
@@ -31,6 +32,8 @@ export interface ScaffoldExampleOptions {
   git?: boolean;
   /** Extract into a non-empty targetDir anyway. Default: false. */
   force?: boolean;
+  /** How this machine runs pnpm, when the caller already asked `pnpmInvocation()`; omitted, asked once here (guuey#1741). */
+  pnpm?: PnpmInvocation | null;
   /**
    * Test seam: returns the repo tarball as a stream. Default fetches the
    * codeload URL. The tarball's first path segment (`demos-main/`) is
@@ -41,6 +44,8 @@ export interface ScaffoldExampleOptions {
 
 export interface ScaffoldExampleResult {
   projectDir: string;
+  /** How this machine runs pnpm, probed once (guuey#1741): the install used it and the next steps print it. */
+  pnpm: PnpmInvocation | null;
 }
 
 async function defaultFetchTarball(): Promise<NodeJS.ReadableStream> {
@@ -142,7 +147,8 @@ export async function scaffoldExample(opts: ScaffoldExampleOptions): Promise<Sca
   await stripDeploymentFacts(projectDir);
   await seedEnvLocal(projectDir);
   if (opts.git !== false) await initGit(projectDir);
-  if (opts.install) await runInstall(projectDir);
+  const pnpm = opts.pnpm !== undefined ? opts.pnpm : pnpmInvocation();
+  if (opts.install) await runInstall(projectDir, pnpm);
 
-  return { projectDir };
+  return { projectDir, pnpm };
 }

@@ -26,7 +26,7 @@ export function TalkOnMobile() {
       ) : (
         <p className="calm">
           Available once the app is bound to a deployed guuey agent —{" "}
-          <code>pnpm bootstrap -- --link</code>.
+          <code>PNPM_PLACEHOLDER bootstrap -- --link</code>.
         </p>
       )}
     </div>

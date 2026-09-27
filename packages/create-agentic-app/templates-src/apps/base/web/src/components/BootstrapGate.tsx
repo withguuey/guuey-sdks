@@ -16,13 +16,13 @@ export function BootstrapGate({ children }: { children: ReactNode }) {
           This project has not been configured yet. From the project root:
         </p>
         <pre>
-          <code>pnpm bootstrap</code>
+          <code>PNPM_PLACEHOLDER bootstrap</code>
         </pre>
         <p>
           That writes <code>guuey.app.json</code> (brand, theme, copy) and
           regenerates <code>AGENTS.md</code>. Then start the local stack with{" "}
-          <code>pnpm dev</code>. When you are ready to bind a deployed guuey
-          app: <code>pnpm bootstrap -- --link</code>.
+          <code>PNPM_PLACEHOLDER dev</code>. When you are ready to bind a deployed guuey
+          app: <code>PNPM_PLACEHOLDER bootstrap -- --link</code>.
         </p>
       </div>
     </main>

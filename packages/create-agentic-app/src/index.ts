@@ -5,4 +5,5 @@ export { scaffoldExample } from './scaffold-example.js';
 export type { ScaffoldMcpOptions, ScaffoldMcpResult } from './scaffold-mcp.js';
 export { scaffoldMcp } from './scaffold-mcp.js';
 export { isNpmSafeName } from './shared.js';
-export { pnpmInvocation, pnpmCommandLine, noPnpmMessage, SCAFFOLD_PNPM, type PnpmInvocation } from './pnpm.js';
+export { pnpmInvocation, pnpmCommandLine, pnpmRunner, noPnpmMessage, SCAFFOLD_PNPM, type PnpmInvocation } from './pnpm.js';
+export { nextSteps, type NextStepsInput, type NextStepsKind } from './next-steps.js';

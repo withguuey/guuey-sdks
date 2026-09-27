@@ -78,13 +78,13 @@ export function Home() {
             <>
               <dt>Deployment</dt>
               <dd className="calm">
-                not linked yet — <code>pnpm bootstrap -- --link</code> binds a deployed guuey app
+                not linked yet — <code>PNPM_PLACEHOLDER bootstrap -- --link</code> binds a deployed guuey app
               </dd>
             </>
           )}
         </dl>
         <p className="hint">
-          Full detail lives in the CLI: <code>pnpm status</code> (runs{" "}
+          Full detail lives in the CLI: <code>PNPM_PLACEHOLDER status</code> (runs{" "}
           <code>guuey apps get</code> + <code>guuey agent status</code>).
         </p>
       </section>

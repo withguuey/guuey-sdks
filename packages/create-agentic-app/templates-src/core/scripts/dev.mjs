@@ -51,7 +51,7 @@ if (!existsSync("guuey.worker.js")) {
   console.log("[worker] first build (guuey.worker.js missing)…");
   const first = spawnSync("pnpm", ["exec", "tsup"], { stdio: "inherit" });
   if (first.status !== 0) {
-    console.error("[worker] first build failed — fix the error above and re-run pnpm dev");
+    console.error("[worker] first build failed — fix the error above and re-run PNPM_PLACEHOLDER dev");
     process.exit(first.status ?? 1);
   }
 }

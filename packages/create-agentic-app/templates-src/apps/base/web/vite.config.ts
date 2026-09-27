@@ -25,13 +25,13 @@ function bootstrapGatePlugin(): Plugin {
       const app = JSON.parse(raw) as { bootstrapped?: boolean; link?: object | null };
       if (app.bootstrapped !== true) {
         throw new Error(
-          "guuey.app.json is not bootstrapped — run `pnpm bootstrap` at the project root first.",
+          "guuey.app.json is not bootstrapped — run `PNPM_PLACEHOLDER bootstrap` at the project root first.",
         );
       }
       if (!app.link) {
         console.warn(
           "[guuey-bootstrap-gate] building WITHOUT a bound guuey app — the deployed site will have " +
-            "no live agent until you run `pnpm bootstrap -- --link --app-id <appId>` and rebuild.",
+            "no live agent until you run `PNPM_PLACEHOLDER bootstrap -- --link --app-id <appId>` and rebuild.",
         );
       }
     },

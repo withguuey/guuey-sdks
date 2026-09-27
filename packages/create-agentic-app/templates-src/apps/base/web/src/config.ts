@@ -49,7 +49,7 @@ export interface AppConfig {
 
 class ConfigError extends Error {
   constructor(path: string, expected: string) {
-    super(`guuey.app.json: ${path} — expected ${expected}. Re-run \`pnpm bootstrap\` or fix the file by hand (schema: guuey.app.schema.json).`);
+    super(`guuey.app.json: ${path} — expected ${expected}. Re-run \`PNPM_PLACEHOLDER bootstrap\` or fix the file by hand (schema: guuey.app.schema.json).`);
   }
 }
 

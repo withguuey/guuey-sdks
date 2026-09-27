@@ -19,19 +19,19 @@ locally with one command, and deployable to guuey with one more.
 │                         #   `ggui serve` runs against this locally; `guuey deploy` pushes
 │                         #   generation config + blueprints (the deployed RENDER THEME is
 │                         #   platform data, not this dir — ggui.json#theme is local-preview
-│                         #   only, kept in step with guuey.app.json by `pnpm bootstrap`).
+│                         #   only, kept in step with guuey.app.json by `PNPM_PLACEHOLDER bootstrap`).
 ├── web/                 # the product frontend (Vite + React on @guuey/chat):
 │                         #   landing (widget) · login (guest + BYO-OIDC seam) · home
 │                         #   (status + distribution guide) · the chat surface
-├── guuey.app.json       # frontend/brand config — written by `pnpm bootstrap`
+├── guuey.app.json       # frontend/brand config — written by `PNPM_PLACEHOLDER bootstrap`
 │                         #   (schema: guuey.app.schema.json; public-safe by design)
 ├── theme.json           # the chat theme document (@guuey/chat tokens) — web/ renders it
-│                         #   locally and `pnpm bootstrap -- --link` pushes it to the hosted
+│                         #   locally and `PNPM_PLACEHOLDER bootstrap -- --link` pushes it to the hosted
 │                         #   app; `mode` + accent follow guuey.app.json, the rest is yours
-├── AGENTS.md            # coding-agent steering; `pnpm bootstrap` maintains the
+├── AGENTS.md            # coding-agent steering; `PNPM_PLACEHOLDER bootstrap` maintains the
 │                         #   managed block with this project's real facts
-├── scripts/dev.mjs      # `pnpm dev` orchestrator — boots the whole local stack
-├── scripts/bootstrap.mjs # `pnpm bootstrap` — configure, then `-- --link` to bind
+├── scripts/dev.mjs      # `PNPM_PLACEHOLDER dev` orchestrator — boots the whole local stack
+├── scripts/bootstrap.mjs # `PNPM_PLACEHOLDER bootstrap` — configure, then `-- --link` to bind
 ├── .env.example          # ANTHROPIC_API_KEY / OPENAI_API_KEY for local dev
 └── .mcp.json             # Claude Code convenience wiring (mcp.ggui.ai/dev)
 ```
@@ -43,22 +43,22 @@ level rather than nested under a `servers/` or `apps/` folder.
 ## Quick start
 
 ```bash
-pnpm install
-pnpm bootstrap               # brand, theme, copy → guuey.app.json + theme.json + AGENTS.md (no account needed;
+PNPM_PLACEHOLDER install
+PNPM_PLACEHOLDER bootstrap               # brand, theme, copy → guuey.app.json + theme.json + AGENTS.md (no account needed;
                              #   every web page is gated on this, and production builds fail without it)
 cp .env.example .env.local   # done automatically on scaffold if .env.local is absent
 # set ANTHROPIC_API_KEY (or OPENAI_API_KEY, for the openai-agents-sdk template) in .env.local
-pnpm dev
+PNPM_PLACEHOLDER dev
 ```
 
 When the agent is deployed (`npx guuey login && npx guuey deploy`), bind it into the
-frontend: `pnpm bootstrap -- --link` — that records the app id, endpoint,
+frontend: `PNPM_PLACEHOLDER bootstrap -- --link` — that records the app id, endpoint,
 widget origin and portal link in `guuey.app.json` and pushes the brand accent
-and `theme.json` (the chat theme) to the platform. `pnpm status` shows the live
-app state; `pnpm bootstrap -- --check`
+and `theme.json` (the chat theme) to the platform. `PNPM_PLACEHOLDER status` shows the live
+app state; `PNPM_PLACEHOLDER bootstrap -- --check`
 prints machine-readable configuration state.
 
-`pnpm dev` (`scripts/dev.mjs`) boots four processes with prefixed, interleaved
+`PNPM_PLACEHOLDER dev` (`scripts/dev.mjs`) boots four processes with prefixed, interleaved
 logs. Ctrl-C tears all of them down together.
 
 | process      | port  | what                                                                                                                                       |

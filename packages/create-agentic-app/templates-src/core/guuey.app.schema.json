@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "guuey.app.json",
-  "description": "App-level configuration for this guuey agentic app. Written by `pnpm bootstrap`; safe to hand-edit. Public-safe by construction: nothing in this file is a secret (the appId ships in page HTML by design).",
+  "description": "App-level configuration for this guuey agentic app. Written by `PNPM_PLACEHOLDER bootstrap`; safe to hand-edit. Public-safe by construction: nothing in this file is a secret (the appId ships in page HTML by design).",
   "type": "object",
   "required": ["schema", "bootstrapped", "brand", "theme", "copy", "auth", "link", "demoMode"],
   "additionalProperties": false,
@@ -10,7 +10,7 @@
     "schema": { "const": 1 },
     "bootstrapped": {
       "type": "boolean",
-      "description": "Flipped true by `pnpm bootstrap`. Dev renders a setup screen until then; production builds fail."
+      "description": "Flipped true by `PNPM_PLACEHOLDER bootstrap`. Dev renders a setup screen until then; production builds fail."
     },
     "brand": {
       "type": "object",
@@ -82,7 +82,7 @@
       }
     },
     "link": {
-      "description": "The bound guuey app. null until `pnpm bootstrap -- --link`. Every value here is read back from the platform, never derived by hand.",
+      "description": "The bound guuey app. null until `PNPM_PLACEHOLDER bootstrap -- --link`. Every value here is read back from the platform, never derived by hand.",
       "oneOf": [
         { "type": "null" },
         {

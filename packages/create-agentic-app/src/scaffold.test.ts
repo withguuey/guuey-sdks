@@ -6,7 +6,14 @@ import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { APP_BUILT_FOR, safeParseGuueyJson, type AppBuiltFor } from '@guuey/config';
-import { scaffold, type ScaffoldBuiltFor } from './scaffold.js';
+import { scaffold as scaffoldAsking, type ScaffoldBuiltFor, type ScaffoldOptions } from './scaffold.js';
+
+/**
+ * These cases are about the tree, not the pnpm ladder: each one passes the
+ * ladder's answer (guuey#1741) instead of probing this machine's PATH, so the
+ * result never depends on the machine running the tests.
+ */
+const scaffold = (opts: ScaffoldOptions) => scaffoldAsking({ pnpm: { file: 'pnpm', prefix: [] }, ...opts });
 
 const execFileAsync = promisify(execFile);
 
