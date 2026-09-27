@@ -828,6 +828,10 @@ function deriveStatus(inputs: TranscriptInputs, policy: TranscriptPolicy): Statu
 const CODE_COPY: Record<string, (s: import("./strings.js").ChatStrings) => string> = {
   THREAD_HISTORY_UNAVAILABLE: (s) => s.errorHistoryUnavailable,
   CONTENT_BLOCKED: (s) => s.errorContentBlocked,
+  // The model stopped before it wrote a reply: its own honest line, but the
+  // transient family's Retry stays (no ERROR_FAMILIES entry), since the stop
+  // is often intermittent.
+  NO_REPLY: (s) => s.errorNoReply,
 };
 
 const ERROR_FAMILIES: Record<string, "auth" | "quota" | "invalid"> = {

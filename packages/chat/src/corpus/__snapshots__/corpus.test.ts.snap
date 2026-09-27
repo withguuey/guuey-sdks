@@ -1039,7 +1039,7 @@ exports[`corpus > 3. cold-start — R12 escalation at 0 / 2.5 s / 15 s 1`] = `
   ],
   "recovery": null,
   "status": {
-    "copy": "Starting your agent…",
+    "copy": "Getting ready…",
     "detail": null,
     "key": "status",
     "kind": "status",

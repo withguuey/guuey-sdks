@@ -142,7 +142,7 @@ for (const item of plan.items) {
   //          | "code" | "citations" | "prompt" | "error" | "reasoning"
   //          | "data-result" | "history-boundary" | "compaction" | "unknown"
 }
-plan.status; // the derived status line ("Starting your agent…") or null
+plan.status; // the derived status line ("Getting ready…") or null
 ```
 
 Determinism contract: same inputs + policy + overrides ⇒ a deeply equal

@@ -87,9 +87,9 @@ describe("corpus", () => {
 
   it("3. cold-start — R12 escalation at 0 / 2.5 s / 15 s", () => {
     expect(planTranscript(coldStart(0), calm).status?.copy).toBe("Connecting…");
-    expect(planTranscript(coldStart(2500), calm).status?.copy).toBe("Starting your agent…");
+    expect(planTranscript(coldStart(2500), calm).status?.copy).toBe("Getting ready…");
     expect(planTranscript(coldStart(15_000), calm).status?.copy).toBe(
-      "Starting your agent… first load can take a minute",
+      "Still getting ready. The first reply can take a little longer.",
     );
     expect(planTranscript(coldStart(2500), calm)).toMatchSnapshot();
   });

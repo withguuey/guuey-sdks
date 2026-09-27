@@ -153,6 +153,14 @@ describe("R11 built-in code voices (guuey#417)", () => {
     expect(item.copy).not.toBe(calmPolicy().strings.errorInvalid);
   });
 
+  it("NO_REPLY renders the kit's own line, never the 'our side' banner, and keeps the transient family's Retry", () => {
+    const item = errorItem(inputsWithError("whatever the pod said", "NO_REPLY"));
+    expect(item.copy).toBe(calmPolicy().strings.errorNoReply);
+    expect(item.copy).not.toBe(calmPolicy().strings.errorTransient);
+    expect(item.copy).not.toMatch(/our side|gemini|claude|token|model/i);
+    expect(item.family).toBe("transient");
+  });
+
   it("the host's copyByCode still wins over the built-in voice", () => {
     const policy = calmPolicy({
       error: {

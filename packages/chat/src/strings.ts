@@ -51,6 +51,14 @@ export interface ChatStrings {
    * "our side" banner. Names no provider and no reason.
    */
   errorContentBlocked: string;
+  /**
+   * R11, code NO_REPLY: the model stopped before it wrote a reply (an
+   * output-token stop, a conversation past its context window, a malformed
+   * tool call). Not the platform's fault, so never the "our side" banner;
+   * names no provider and no reason. It keeps the transient family's Retry,
+   * and also points at a new conversation, for the case a retry cannot fix.
+   */
+  errorNoReply: string;
 
   /** R3/R4. */
   toolGroup: (count: number) => string;
@@ -261,8 +269,8 @@ export function humanizeToolName(wireName: string): string {
 
 export const defaultChatStrings: ChatStrings = {
   connecting: "Connecting…",
-  starting: "Starting your agent…",
-  longStart: "Starting your agent… first load can take a minute",
+  starting: "Getting ready…",
+  longStart: "Still getting ready. The first reply can take a little longer.",
   thinking: "Thinking…",
   usingTool: (toolTitle) => `Using ${toolTitle}…`,
   preparingCard: "Preparing interactive card…",
@@ -270,9 +278,10 @@ export const defaultChatStrings: ChatStrings = {
 
   errorAuth: "Sign in to continue.",
   errorQuota: "This agent is over its usage limit.",
-  errorTransient: "Something went wrong on our side — try again.",
-  errorHistoryUnavailable: "This conversation belonged to a previous session — starting fresh.",
-  errorContentBlocked: "The model declined to write a reply to that. Try rephrasing your message.",
+  errorTransient: "Something went wrong on our side. Please try again.",
+  errorHistoryUnavailable: "This conversation belonged to a previous session. Starting fresh.",
+  errorContentBlocked: "A content filter held back this reply. Try asking in a different way.",
+  errorNoReply: "The reply didn't come through. Try again, or start a new conversation.",
   errorInvalid: "The app sent a request the agent couldn't read.",
 
   toolGroup: (count) => `Ran ${count} tools`,
