@@ -312,6 +312,19 @@ describe("seedEventsForReducer", () => {
     expect(mem.find((m) => m.key === "city")?.value).toBe("NYC");
   });
 
+  it("carries a record's _meta onto its seed, so the reducer rebuilds the record with it (AgJSON draft.8)", () => {
+    const r = new Reducer();
+    const prior: AgMemoryRecord[] = [
+      { scope: "thread", key: "city", value: "Lisbon", turnId: "t1", _meta: { provenance: "import" } },
+      { scope: "thread", key: "tone", value: "brief", turnId: "t1" },
+    ];
+    const seeds = seedEventsForReducer(undefined, prior);
+    expect(seeds[0]).toMatchObject({ type: "memory.write", key: "city", _meta: { provenance: "import" } });
+    expect(seeds[1]).not.toHaveProperty("_meta");
+    for (const ev of seeds) r.push(ev);
+    expect(r.result().memory).toEqual(prior);
+  });
+
   it("emits nothing to seed when there is no prior state or memory", () => {
     expect(seedEventsForReducer(undefined, [])).toEqual([]);
   });

@@ -488,7 +488,10 @@ function memoryIdentity(rec: AgMemoryRecord): string {
  *   already collapsed to that one by the reducer before this existed; that
  *   limit predates the overlay and is not papered over here.
  * - **Unchanged** means the known fields a turn can write are deep-equal:
- *   `scope`, `key`, `value`, `reason`, `durable` and `turnId`. A live write
+ *   `scope`, `key`, `value`, `reason`, `durable`, `turnId` and `_meta`
+ *   (draft.8: a `memory.write` sets it, and a patch can replace it without
+ *   touching the value or the turnId, so a `_meta`-only change must count as
+ *   a change or the prior `_meta` would be persisted over it). A live write
  *   stamps the current turn's `turnId`, so a turn that rewrites the SAME value
  *   still changes the record, and the fold's record wins (the unknown members
  *   described the previous write). **`threadId` is deliberately left out:** a
@@ -513,7 +516,8 @@ export function keepUnchangedThreadMemory(
       jsonEqual(before.value, rec.value) &&
       before.reason === rec.reason &&
       before.durable === rec.durable &&
-      before.turnId === rec.turnId;
+      before.turnId === rec.turnId &&
+      jsonEqual(before._meta, rec._meta);
     return unchanged ? before : rec;
   });
 }
@@ -530,6 +534,10 @@ export function keepUnchangedThreadMemory(
  * Each synthetic `memory.write` carries `turnId` so the reducer's SET handler
  * lands it back onto the AgMemoryRecord — without it, a re-seeded thread-memory
  * record loses its turnId and memory byte-identity breaks from turn 2 on.
+ * It carries the record's `_meta` the same way: AgJSON draft.8 declares
+ * `_meta` on both the record and `memory.write`, and the reducer folds it
+ * onto the record (set on create, replaced on update), so a record's host
+ * side-channel (e.g. `_meta.provenance`) survives every re-seeded turn.
  * (`threadId` is NOT carried: `memory.write` has no threadId on its event arm,
  * so it cannot round-trip through a live write — that is expected.)
  */
@@ -552,6 +560,7 @@ export function seedEventsForReducer(
       ...(rec.reason !== undefined ? { reason: rec.reason } : {}),
       ...(rec.durable !== undefined ? { durable: rec.durable } : {}),
       ...(rec.turnId !== undefined ? { turnId: rec.turnId } : {}),
+      ...(rec._meta !== undefined ? { _meta: rec._meta } : {}),
     });
   }
   return events;

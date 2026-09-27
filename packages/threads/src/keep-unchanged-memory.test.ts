@@ -36,6 +36,16 @@ describe('keepUnchangedThreadMemory', () => {
     }
   });
 
+  it('a record whose _meta alone changed is the fold\'s record (a patch can replace _meta without touching value or turnId)', () => {
+    const prior: AgMemoryRecord = withUnknownMember({ ...city, _meta: { provenance: 'import' } }, { note: 'kept while unchanged' });
+    const same: AgMemoryRecord = { ...city, _meta: { provenance: 'import' } };
+    expect(keepUnchangedThreadMemory([prior], [same])[0]).toBe(prior);
+    const replaced: AgMemoryRecord = { ...city, _meta: { provenance: 'user-edit' } };
+    expect(keepUnchangedThreadMemory([prior], [replaced])[0]).toBe(replaced);
+    const dropped: AgMemoryRecord = { ...city };
+    expect(keepUnchangedThreadMemory([prior], [dropped])[0]).toBe(dropped);
+  });
+
   it('a turn that rewrites the SAME value stamps a new turnId: the record changed, the fold wins', () => {
     const prior = withUnknownMember(city, { provenance: 'import' });
     const rewritten: AgMemoryRecord = { ...city, turnId: 't2' };
@@ -106,6 +116,36 @@ describe('ThreadStore.appendFold keeps what a turn did not touch (the measured r
     const after = await db.getSnapshot('t1');
     expect(after?.threadMemory).toEqual([stored, { scope: 'thread', key: 'tone', value: 'brief', turnId: 't2' }]);
     expect(after?.threadMemory[0]).toHaveProperty('provenance', 'import');
+  });
+
+  it('a record\'s _meta survives a turn that did not touch it even with no prior view passed: the seed carries it (draft.8)', async () => {
+    const db = new InMemoryThreadPersistence();
+    await db.createThread(thread);
+    const stored: AgMemoryRecord = { scope: 'thread', key: 'city', value: 'Lisbon', turnId: 't1', _meta: { provenance: 'import' } };
+    await db.putSnapshot({ threadId: 't1', userId: 'u1', updatedAt: NOW, threadMemory: [stored] });
+
+    await oneTurn(db, [{ seq: 0, type: 'memory.write', scope: 'thread', key: 'tone', value: 'brief', turnId: 't2' }], false);
+
+    const after = await db.getSnapshot('t1');
+    expect(after?.threadMemory[0]).toEqual(stored);
+  });
+
+  it('a turn\'s memory.write _meta replaces the stored one on update, and lands on a record it creates', async () => {
+    const db = new InMemoryThreadPersistence();
+    await db.createThread(thread);
+    const stored: AgMemoryRecord = { scope: 'thread', key: 'city', value: 'Lisbon', turnId: 't1', _meta: { provenance: 'import' } };
+    await db.putSnapshot({ threadId: 't1', userId: 'u1', updatedAt: NOW, threadMemory: [stored] });
+
+    await oneTurn(db, [
+      { seq: 0, type: 'memory.write', scope: 'thread', key: 'city', value: 'Porto', turnId: 't2', _meta: { provenance: 'user-edit' } },
+      { seq: 1, type: 'memory.write', scope: 'thread', key: 'tone', value: 'brief', turnId: 't2', _meta: { provenance: 'agent' } },
+    ], true);
+
+    const after = await db.getSnapshot('t1');
+    expect(after?.threadMemory).toEqual([
+      { scope: 'thread', key: 'city', value: 'Porto', turnId: 't2', _meta: { provenance: 'user-edit' } },
+      { scope: 'thread', key: 'tone', value: 'brief', turnId: 't2', _meta: { provenance: 'agent' } },
+    ]);
   });
 
   it('a caller that passes no prior view gets today\'s fold as it is (the member is rebuilt away)', async () => {
