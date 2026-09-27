@@ -18,6 +18,7 @@ import {
   uiCardArtifactsFromMessages,
   storedTextParts,
 } from "./fold-rows.js";
+import { classifyStoredRow } from "./stored-row.js";
 import type {
   ThreadMessageEvent,
   StoredHistoryMessage,
@@ -205,14 +206,26 @@ export class ThreadStore {
     // the model is replayed. For rows written before the split, `all` is the same
     // bytes their `text` holds. A row whose content is not a stored AgMessage
     // (an event, a managed-adapter row) keeps its `text`.
-    return rows.filter((r) => r.kind !== 'card').map((r) => ({
-      seq: r.seq,
-      authorRole: r.authorRole,
-      kind: r.kind,
-      text: storedTextParts(r.content)?.all || (r.text ?? null),
-      content: r.content ?? null,
-      at: r.at,
-    }));
+    //
+    // Only CONVERSATION reaches this lane: a failed turn's reader line, a
+    // framework notice and a blank agent message are stored rows, never words
+    // the agent said, so replaying them made the model (and a hook's
+    // transcript) read them as its own ({@link classifyStoredRow}).
+    // Two user turns can now sit side by side (the agent row between them
+    // dropped). That is fine: every runner renders this history as TEXT lines
+    // into its system prompt (`@guuey/host` `withContextPreamble`), never as a
+    // role-alternating message list a provider could refuse.
+    const conversation = rows
+      .filter((r) => r.kind !== 'card' && classifyStoredRow(r).kind === 'conversation')
+      .map((r): StoredHistoryMessage => ({
+        seq: r.seq,
+        authorRole: r.authorRole,
+        kind: r.kind,
+        text: storedTextParts(r.content)?.all || (r.text ?? null),
+        content: r.content ?? null,
+        at: r.at,
+      }));
+    return conversation;
   }
 
   /**
@@ -292,8 +305,12 @@ export class ThreadStore {
       const msg = fold.messages[i]!;
       const clientMessageId = sentinelClaimed ? `${clientMessageIdBase}#agent#${i}` : sentinelKey;
       sentinelClaimed = true;
-      // The preview is the ANSWER: interim narration (`phase: "interim"`) never becomes a thread's preview.
-      const text = msg.content.reduce((acc, b) => (b.type === 'text' && b.phase !== 'interim' ? acc + b.text : acc), '');
+      // The preview is the ANSWER: interim narration (`phase: "interim"`) never becomes a thread's preview,
+      // and neither does a framework notice (a non-conversational row).
+      const text =
+        msg.role === 'notice'
+          ? ''
+          : msg.content.reduce((acc, b) => (b.type === 'text' && b.phase !== 'interim' ? acc + b.text : acc), '');
       const now = new Date().toISOString();
       // Text-less agent messages (tool-call + tool-result only — the canonical
       // card-producing turn) must not blank the preview: '' takes the SET

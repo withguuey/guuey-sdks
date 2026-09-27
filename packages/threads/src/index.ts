@@ -39,6 +39,13 @@ export {
 } from "./store.js";
 export { InMemoryThreadPersistence } from "./in-memory.js";
 export {
+  AGENT_ERROR_ROW_SUFFIX,
+  classifyStoredRow,
+  isBlankBlock,
+  isInformationless,
+  type StoredRowClass,
+} from "./stored-row.js";
+export {
   HttpThreadPersistence,
   HttpThreadStoreError,
   type HttpThreadPersistenceOptions,
