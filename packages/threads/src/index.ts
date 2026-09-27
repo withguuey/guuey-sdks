@@ -28,6 +28,8 @@ export type {
   ThreadPersistencePort,
   ThreadRow,
   ThreadSnapshotRow,
+  TurnOrigin,
+  ClientClass,
 } from "./rows.js";
 export {
   ThreadStore,

@@ -28,6 +28,8 @@ import type {
   ThreadPersistencePort,
   ThreadRow,
   ThreadSnapshotRow,
+  TurnOrigin,
+  ClientClass,
 } from "./rows.js";
 
 /** Max history messages fed back as context — bounds latency on long threads. */
@@ -69,6 +71,12 @@ export interface AppendMessageInput {
    * store does not infer one from the other.
    */
   event?: ThreadMessageEvent;
+  /** A user row's origin (see {@link ThreadMessageRow.turnOrigin}); carried verbatim. */
+  turnOrigin?: TurnOrigin;
+  /** A `card_action` user row's answered card session id; carried verbatim. */
+  answeredCardSessionId?: string;
+  /** A user row's client class (see {@link ThreadMessageRow.clientClass}); carried verbatim. */
+  clientClass?: ClientClass;
 }
 
 export interface AppendMessageResult {
@@ -258,6 +266,9 @@ export class ThreadStore {
       content: input.content,
       ...(input.untrustedOrigin === true ? { untrustedOrigin: true } : {}),
       ...(input.event !== undefined ? { event: input.event } : {}),
+      ...(input.turnOrigin !== undefined ? { turnOrigin: input.turnOrigin } : {}),
+      ...(input.answeredCardSessionId !== undefined ? { answeredCardSessionId: input.answeredCardSessionId } : {}),
+      ...(input.clientClass !== undefined ? { clientClass: input.clientClass } : {}),
     };
     await this.db.putMessage(row);
     return { seq, deduped: false };

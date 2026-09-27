@@ -13,6 +13,20 @@ import type { AgMemoryRecord, JsonValue } from "@silverprotocol/core";
 
 export type ThreadMessageRole = "user" | "agent" | "system";
 export type ThreadMessageKind = "text" | "card" | "event";
+/**
+ * How a user turn was started: a gesture on a card (`card_action`), a
+ * suggested-prompt chip (`chip`), or typed input (`typed`). Stamped by the
+ * runtime on user rows; absent on rows written before the stamp existed.
+ */
+export type TurnOrigin = "card_action" | "chip" | "typed";
+/**
+ * The kind of client that sent a user turn, from its User-Agent at request
+ * time (the agent string is never stored): the hosting operator's own
+ * automated clients, such as health checks and smoke tests (`operator`); a
+ * third-party crawler or automated client (`bot`); or anything else
+ * (`browser`).
+ */
+export type ClientClass = "operator" | "bot" | "browser";
 
 export interface ThreadRow {
   id: string;
@@ -122,6 +136,12 @@ export interface ThreadMessageRow {
    * the row types never carried it). Absent on every non-event row.
    */
   event?: ThreadMessageEvent;
+  /** On a user row: how the turn was started. Absent on older rows. */
+  turnOrigin?: TurnOrigin;
+  /** On a `card_action` user row: the render session id of the card the gesture answered. */
+  answeredCardSessionId?: string;
+  /** On a user row: the sending client's class. Absent on older rows. */
+  clientClass?: ClientClass;
 }
 
 /** Latest-replace fold snapshot for a thread. */

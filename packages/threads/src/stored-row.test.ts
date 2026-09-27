@@ -116,3 +116,22 @@ describe("a framework notice never becomes the thread preview", () => {
     expect((await db.getThread("t1"))?.lastMessagePreview).toBe("Here it is.");
   });
 });
+
+describe("a user row's origin and client class are carried verbatim", () => {
+  it("appendMessage writes turnOrigin, answeredCardSessionId and clientClass when given, and nothing when not", async () => {
+    const db = new InMemoryThreadPersistence();
+    await db.createThread(thread);
+    const store = new ThreadStore(db);
+    await store.appendMessage({
+      threadId: "t1", userId: "u1", role: "user", clientMessageId: "u1", content: "hi", text: "hi",
+      turnOrigin: "card_action", answeredCardSessionId: "render_abc", clientClass: "operator",
+    });
+    await store.appendMessage({ threadId: "t1", userId: "u1", role: "user", clientMessageId: "u2", content: "again", text: "again" });
+    const [stamped, plain] = await db.listRecentMessages("t1", 10);
+    expect(stamped).toMatchObject({ turnOrigin: "card_action", answeredCardSessionId: "render_abc", clientClass: "operator" });
+    // Absent, never undefined-valued: an older reader sees the row it always saw.
+    expect(Object.keys(plain!)).not.toContain("turnOrigin");
+    expect(Object.keys(plain!)).not.toContain("answeredCardSessionId");
+    expect(Object.keys(plain!)).not.toContain("clientClass");
+  });
+});
