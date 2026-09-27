@@ -46,10 +46,13 @@ Prebuilt hooks (`use: 'email-reporter'`) and dev-defined ones share this spec.
 - An agent definition's optional `output` is a JSON Schema for the run's
   structured output (the runtime hands it to the model's structured-output
   mode); a `required` tool the model skipped is called with that output.
-  Without one, the run's `output` is `{ text }`, the agent's last answer
-  text. Interim narration (text the model marked as commentary, such as an
-  OpenAI `commentary` message) is not the answer and never becomes the
-  output.
+  The run's `output` is read from the agent's last answer text, with or
+  without a schema: the text itself when it is a JSON object, else the last
+  fenced JSON block in it, else the last `{…}` object inside its prose. When
+  the text holds no object, `output` is `{ text }`, and a definition that
+  declares an `output` schema fails the run. Interim narration (text the
+  model marked as commentary, such as an OpenAI `commentary` message) is not
+  the answer and never becomes the output.
 - `PREBUILT_DEFINITIONS` / `prebuiltBinding(name, event)` — the prebuilt
   catalog, ONE copy for the runtime and the dispatcher, keyed per event.
   `email-reporter`: on `session.ended` an agent run with `tools: []` writes
