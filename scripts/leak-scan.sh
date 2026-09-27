@@ -93,7 +93,10 @@ main() {
 
   local f
   for f in "${FORBIDDEN_FILES[@]}"; do
-    if printf '%s\n' "$files" | grep -qE "(^|/)${f//./\\.}$"; then
+    # The list is read from a here-string, not a pipe: `grep -q` exits at its
+    # first match, and under pipefail a writer still writing a long list would
+    # end on SIGPIPE and turn that match into a miss.
+    if grep -qE "(^|/)${f//./\\.}$" <<<"$files"; then
       echo "LEAK [forbidden file] '$f' is tracked" >&2
       fail=1
     fi
