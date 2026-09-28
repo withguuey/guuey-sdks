@@ -23,8 +23,7 @@
  * allowlist of built-ins alone narrows each server to tools of those names.
  */
 import { parseToolGateEntry, type GuueyAgent } from "@guuey/config";
-import { modelMayCallTool, type WithheldTool } from "@guuey/worker";
-import { withheldToolNamesFor } from "./withheld-tools.js";
+import { modelMayCallTool, withheldToolNamesFor, type WithheldTool } from "@guuey/worker";
 
 /** The snapshot's gate block. */
 export type ToolGates = GuueyAgent["tools"];

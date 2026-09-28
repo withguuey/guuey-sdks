@@ -238,14 +238,22 @@ export interface Invoke {
    * server's key (the credential file's name) and the tool's own name. Every
    * framework removes them before the model sees the catalog: Claude through
    * `disallowedTools`, OpenAI through the server's `toolFilter`, ADK through the
-   * toolset's predicate. Written only when non-empty, so "the full catalog" is
-   * always the ABSENT field.
+   * toolset's predicate. `@guuey/host` applies it for the agents it runs; a
+   * code-mode worker that builds its own MCP connections applies it itself
+   * (`withheldToolNamesFor`, and `modelVisibleToolFilterFor` as an OpenAI
+   * server's `toolFilter`). Written only when non-empty, so "the full catalog"
+   * is always the ABSENT field.
    *
    * Today's one writer: when the client that opened the session turns every
    * view message into the next turn itself (it declared `ui-message-turn`),
-   * the Router withholds ggui's `ggui_consume` long-poll. Nothing can arrive on
-   * it that the host will not deliver as a turn, so the wait only held the turn
-   * open. An older worker ignores the field and keeps the full catalog.
+   * the Router reads the view's messages for the model and withholds ggui's
+   * `ggui_consume` long-poll. On an ordinary turn it is withheld, so a turn
+   * that renders a view ends when the view is drawn instead of waiting on the
+   * long-poll. On a turn a view message started, the Router first drains that
+   * view's messages itself and hands the model what it read; it withholds the
+   * tool only when that drain succeeded, since a second consume would wait on
+   * an empty pipe. An older worker ignores the field and keeps the full
+   * catalog.
    */
   withheldTools?: WithheldTool[];
   /**

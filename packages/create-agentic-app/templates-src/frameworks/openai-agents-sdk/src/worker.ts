@@ -16,7 +16,7 @@
  */
 import { Agent, MaxTurnsExceededError, MCPServerStreamableHttp, run } from "@openai/agents";
 import type { MCPServer } from "@openai/agents";
-import { mcpToolCustomData, modelVisibleToolFilter, serveNative } from "@guuey/worker";
+import { mcpToolCustomData, modelVisibleToolFilterFor, serveNative } from "@guuey/worker";
 import { loadAgent, systemPrompt, mcpEndpoints, withHistory } from "./agent-config.js";
 
 await serveNative(
@@ -36,7 +36,9 @@ await serveNative(
           customDataExtractor: mcpToolCustomData,
           // MCP Apps visibility: a tool whose `_meta.ui.visibility` omits
           // "model" (the rendered view's own calls) is not offered to the model.
-          toolFilter: modelVisibleToolFilter,
+          // Neither is a tool the platform withholds on this server for this
+          // turn (`invoke.withheldTools`).
+          toolFilter: modelVisibleToolFilterFor(name, invoke.withheldTools),
         })
     );
 

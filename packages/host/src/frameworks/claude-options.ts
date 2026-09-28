@@ -21,7 +21,7 @@
  */
 import type { CanUseTool, Options, SDKMessage, Settings } from "@anthropic-ai/claude-agent-sdk";
 import type { FirstImpressionPush, FirstImpressionShown, Fs, HistoryMessage, JsonValue, McpAvailability, ProfileSection, WithheldTool } from "@guuey/worker";
-import { withheldToolNamesFor } from "../withheld-tools.js";
+import { withheldToolNamesFor } from "@guuey/worker";
 import {
   GUUEY_DEFAULT_SYSTEM_PROMPT,
   defaultModelFor,
