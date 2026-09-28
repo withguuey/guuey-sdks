@@ -7,6 +7,7 @@
  * INSTANCE) resolution.
  */
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -524,6 +525,229 @@ describe("armed-env (spec §2.1.6): the REAL @google/adk reads the pod's gemini 
     const shape = JSON.parse(JSON.stringify(new adk.Gemini({ model: "gemini-3.5-flash", apiKey: "rotated-gemini" }))) as { apiKey?: string };
     expect(shape.apiKey).toBe("rotated-gemini");
   });
+});
+
+/**
+ * The Gemini API's answer to an invalid key on the streaming path, captured
+ * from generativelanguage.googleapis.com on 2026-09-28 with a deliberately
+ * invalid key: HTTP 400 (not a 401 or 403), `content-type: text/event-stream`,
+ * this JSON body byte for byte, and no `x-should-retry` / `retry-after` header.
+ */
+const GEMINI_INVALID_KEY_BODY = `${JSON.stringify(
+  {
+    error: {
+      code: 400,
+      message: "API key not valid. Please pass a valid API key.",
+      status: "INVALID_ARGUMENT",
+      details: [
+        {
+          "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+          reason: "API_KEY_INVALID",
+          domain: "googleapis.com",
+          metadata: { service: "generativelanguage.googleapis.com" },
+        },
+        {
+          "@type": "type.googleapis.com/google.rpc.LocalizedMessage",
+          locale: "en-US",
+          message: "API key not valid. Please pass a valid API key.",
+        },
+      ],
+    },
+  },
+  null,
+  2
+)}\n`;
+
+interface FakeGeminiAnswer {
+  status: number;
+  headers: Record<string, string>;
+  body: string;
+}
+
+/** A local stand-in for the Gemini endpoint: it records every request path and gives every request the same answer. */
+async function startFakeGeminiEndpoint(
+  answer: FakeGeminiAnswer
+): Promise<{ baseUrl: string; calls: string[]; close: () => Promise<void> }> {
+  const calls: string[] = [];
+  const server = createServer((req, res) => {
+    calls.push(req.url ?? "");
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(answer.status, answer.headers);
+      res.end(answer.body);
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string")
+    throw new Error("the fake Gemini endpoint has no TCP address");
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    calls,
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        server.closeAllConnections();
+        server.close((err) => (err === undefined ? resolve() : reject(err)));
+      }),
+  };
+}
+
+/**
+ * A refused key on the no-code Gemini path: how many times does the REAL
+ * model client call the provider in one turn? The client reads its endpoint
+ * from `GOOGLE_GEMINI_BASE_URL`, pointed here at a local endpoint, so nothing
+ * leaves the machine.
+ *
+ * Measured with `@google/adk` at its defaults: ONE call for every answer below.
+ * The ADK builds its `GoogleGenAI` client with headers only (no
+ * `retryOptions`), and `@google/genai` retries only when `retryOptions` are
+ * set. `@google/genai` also never reads `x-should-retry`: the control arm sets
+ * `retryOptions` on the same client, and a 503 marked do-not-retry is retried
+ * anyway. So a do-not-retry header added by a proxy in front of the worker
+ * has no effect on this client, and at the defaults none is needed: a bad key
+ * cannot multiply into a stream of provider calls here.
+ */
+describe("a refused Gemini key costs ONE provider call per turn at the ADK's default retry settings", () => {
+  isolateAdkKeys();
+  const ROUTING_VARS = ["GOOGLE_GEMINI_BASE_URL", "GOOGLE_GENAI_USE_VERTEXAI"] as const;
+  const shellRouting = new Map<(typeof ROUTING_VARS)[number], string | undefined>();
+  const base = mkdtempSync(join(tmpdir(), "adk-refusal-"));
+  const MODEL = "gemini-2.5-flash";
+  const STREAM_PATH = `/v1beta/models/${MODEL}:streamGenerateContent?alt=sse`;
+  const JSON_HEADERS = { "content-type": "application/json" };
+
+  beforeAll(() => {
+    for (const name of ROUTING_VARS) shellRouting.set(name, process.env[name]);
+  });
+  beforeEach(() => {
+    for (const name of ROUTING_VARS) delete process.env[name];
+  });
+  afterAll(() => {
+    for (const name of ROUTING_VARS) {
+      const shellValue = shellRouting.get(name);
+      if (shellValue === undefined) delete process.env[name];
+      else process.env[name] = shellValue;
+    }
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  /** One no-code turn through the real runner (real `@google/adk`), pointed at the fake endpoint. */
+  async function noCodeTurn(
+    answer: FakeGeminiAnswer
+  ): Promise<{ calls: string[]; got: ReturnType<typeof fakeEmitter>["got"] }> {
+    const endpoint = await startFakeGeminiEndpoint(answer);
+    try {
+      process.env.GEMINI_API_KEY = "local-endpoint-key";
+      process.env.GOOGLE_GEMINI_BASE_URL = endpoint.baseUrl;
+      const session = mkdtempSync(join(base, "s-"));
+      const { emit, got } = fakeEmitter();
+      await createRunner().runTurn(
+        { model: MODEL, systemPrompt: "be terse" },
+        {
+          input: "hi",
+          identity: { userId: "u-refused", authMode: "anonymous" },
+          fs: { app: session, home: session, session },
+          history: [],
+        },
+        emit
+      );
+      return { calls: endpoint.calls, got };
+    } finally {
+      await endpoint.close();
+    }
+  }
+
+  it(
+    "the Gemini API's own invalid-key answer (a 400) → one call, and the turn carries the provider's refusal",
+    { timeout: REAL_ADK_BUDGET_MS },
+    async () => {
+      const { calls, got } = await noCodeTurn({
+        status: 400,
+        headers: { "content-type": "text/event-stream" },
+        body: GEMINI_INVALID_KEY_BODY,
+      });
+      expect(calls).toEqual([STREAM_PATH]);
+      // The ADK ends the model call on its first answer: one error event, the provider's own body as its message.
+      const refusals = got.native.filter(
+        (event) =>
+          typeof event === "object" &&
+          event !== null &&
+          !Array.isArray(event) &&
+          "errorCode" in event
+      );
+      expect(refusals).toHaveLength(1);
+      expect(refusals[0]).toMatchObject({ errorCode: "400" });
+      expect(JSON.stringify(refusals[0])).toContain("API_KEY_INVALID");
+    }
+  );
+
+  it.each([401, 403])(
+    "a %i marked x-should-retry: false → one call",
+    { timeout: REAL_ADK_BUDGET_MS },
+    async (status) => {
+      const { calls } = await noCodeTurn({
+        status,
+        headers: { ...JSON_HEADERS, "x-should-retry": "false" },
+        body: `{"error":{"code":${status}}}`,
+      });
+      expect(calls).toEqual([STREAM_PATH]);
+    }
+  );
+
+  it.each([429, 503])(
+    "a %i, which @google/genai retries once retries are configured → still one call at the defaults",
+    { timeout: REAL_ADK_BUDGET_MS },
+    async (status) => {
+      const { calls } = await noCodeTurn({
+        status,
+        headers: JSON_HEADERS,
+        body: `{"error":{"code":${status}}}`,
+      });
+      expect(calls).toEqual([STREAM_PATH]);
+    }
+  );
+
+  it(
+    "control: the same client with retries configured DOES retry, and ignores x-should-retry: false",
+    { timeout: REAL_ADK_BUDGET_MS },
+    async () => {
+      const endpoint = await startFakeGeminiEndpoint({
+        status: 503,
+        headers: { ...JSON_HEADERS, "x-should-retry": "false" },
+        body: '{"error":{"code":503}}',
+      });
+      try {
+        process.env.GOOGLE_GEMINI_BASE_URL = endpoint.baseUrl;
+        const adk = await import("@google/adk");
+        const agent = new adk.LlmAgent({
+          name: "control",
+          model: new adk.Gemini({ model: MODEL, apiKey: "local-endpoint-key" }),
+          instruction: "be terse",
+          generateContentConfig: {
+            httpOptions: { retryOptions: { attempts: 3, initialDelay: 0.01, maxDelay: 0.02 } },
+          },
+        });
+        const runner = new adk.InMemoryRunner({ agent });
+        const session = await runner.sessionService.createSession({
+          appName: runner.appName,
+          userId: "u-control",
+        });
+        const errorCodes: Array<string | undefined> = [];
+        for await (const event of runner.runAsync({
+          userId: "u-control",
+          sessionId: session.id,
+          newMessage: { role: "user", parts: [{ text: "hi" }] },
+          runConfig: { streamingMode: adk.StreamingMode.SSE },
+        })) {
+          errorCodes.push(event.errorCode);
+        }
+        expect(errorCodes).toEqual(["503"]);
+        expect(endpoint.calls).toEqual([STREAM_PATH, STREAM_PATH, STREAM_PATH]);
+      } finally {
+        await endpoint.close();
+      }
+    }
+  );
 });
 
 describe("RUNNERS registry paths resolve for real (dist/module-name drift guard)", () => {
