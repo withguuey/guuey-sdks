@@ -103,7 +103,10 @@ export interface GuueyViewProps
    * Apply the view's own size reports (`ui/notifications/size-changed` —
    * spec surface) to the frame: a reported HEIGHT becomes the frame's
    * height; width stays the container's (a transcript column owns its
-   * width). Default OFF — the primitive changes nothing for existing
+   * width). An applied report also sets the frame's inline `min-height`
+   * to 0, so a stylesheet floor on the frame acts as a loading reservation
+   * only: it holds until the first applied report, then the card's own
+   * height stands. Default OFF — the primitive changes nothing for existing
    * hosts; a caller's {@link AttachViewHostConfig.onSizeChanged} observer
    * fires either way.
    */
@@ -375,11 +378,18 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
         allow={allow ?? "clipboard-write"}
         // Under `autoResize`, the view's own height report wins over the
         // fill-the-container default (width stays the container's — a
-        // transcript column owns its width).
+        // transcript column owns its width). Once a report is APPLIED it
+        // also wins over an embedder stylesheet's `min-height` floor on the
+        // frame: that floor is a loading reservation, and left standing it
+        // would hold a short card inside a taller empty box. Before the
+        // first applied report, and without `autoResize`, the frame carries
+        // no inline min-height, so the embedder's floor still holds.
         style={{
           display: "block",
           width: "100%",
-          height: autoResize === true && reportedHeight !== undefined ? reportedHeight : "100%",
+          ...(autoResize === true && reportedHeight !== undefined
+            ? { height: reportedHeight, minHeight: 0 }
+            : { height: "100%" }),
           border: 0,
         }}
       />

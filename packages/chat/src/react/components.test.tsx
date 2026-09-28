@@ -4,7 +4,9 @@
  * that only a DOM can verify (focus, aria plumbing, keyboard toggles).
  * Content decisions themselves are the plan's — asserted by the corpus.
  */
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { fireEvent, render, screen , cleanup } from "@testing-library/react";
 import type { ReactNode } from "react";
 import {
@@ -377,6 +379,61 @@ describe("DefaultView — per-mount viewProps + autoResize (guuey#135 kit-refine
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(frame.style.height).toBe("100%");
+  });
+
+  // The kit's `.guuey-chat-view iframe` min-height is a LOADING reservation
+  // (no jump while a card mounts) and the whole sizing story for a mount
+  // without autoResize (which would otherwise sit at the browser's default
+  // 150px). Once autoResize has applied a size report, the frame is the
+  // card's height: a short card no longer sits at the top of a 16rem box.
+  // Read through the real stylesheet, so the assertion is what a visitor gets.
+  describe("the kit's frame floor yields to an applied size report", () => {
+    const KIT_CSS = readFileSync(join(import.meta.dirname, "..", "..", "styles.css"), "utf8");
+    let sheet: HTMLStyleElement | undefined;
+    beforeEach(() => {
+      sheet = document.createElement("style");
+      sheet.textContent = KIT_CSS;
+      document.head.appendChild(sheet);
+    });
+    afterEach(() => {
+      sheet?.remove();
+      sheet = undefined;
+    });
+    const report = (frame: HTMLIFrameElement, height: number) =>
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { jsonrpc: "2.0", method: "ui/notifications/size-changed", params: { height } },
+          source: frame.contentWindow,
+        })
+      );
+
+    it("holds the floor until the first size report (the loading reservation)", () => {
+      const { container } = render(
+        <DefaultView item={viewItem()} ctx={ctx({ viewProps: { autoResize: true } })} />
+      );
+      const frame = container.querySelector("iframe")!;
+      expect(getComputedStyle(frame).minHeight).toBe("16rem");
+    });
+
+    it("releases the floor once autoResize applies a report — a 152px card gets a 152px frame", async () => {
+      const { container } = render(
+        <DefaultView item={viewItem()} ctx={ctx({ viewProps: { autoResize: true } })} />
+      );
+      const frame = container.querySelector("iframe")!;
+      report(frame, 152);
+      await vi.waitFor(() => expect(frame.style.height).toBe("152px"));
+      // jsdom reports the declared "0"; a browser resolves it to "0px".
+      expect(getComputedStyle(frame).minHeight).toMatch(/^0(px)?$/);
+    });
+
+    it("keeps the floor for a mount without autoResize, report or not", async () => {
+      const { container } = render(<DefaultView item={viewItem()} ctx={ctx()} />);
+      const frame = container.querySelector("iframe")!;
+      report(frame, 152);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(frame.style.height).toBe("100%");
+      expect(getComputedStyle(frame).minHeight).toBe("16rem");
+    });
   });
 
   it("sandboxPageUrl: null refuses with the labeled state — srcdoc is never a fallback", () => {

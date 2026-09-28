@@ -408,6 +408,11 @@
   background: var(--guuey-chat-surface, var(--_guuey-chat-surface));
   min-height: 3rem;
 }
+/* The frame floor is a loading reservation: it holds while a card mounts,
+   and it is the whole sizing for a mount without `autoResize`. Under
+   `autoResize`, <GuueyView> sets the frame's inline min-height to 0 once it
+   applies the card's first size report, so a short card is not held in a
+   16rem box. */
 .guuey-chat-view iframe {
   min-height: 16rem;
 }
