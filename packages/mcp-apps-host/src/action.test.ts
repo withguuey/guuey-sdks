@@ -9,6 +9,7 @@ import {
   createMcpUiActionRelay,
   MAX_UI_TELEMETRY_EVENTS,
   PULL_CIRCUIT_THRESHOLD,
+  UI_ACTION_HOST_CALLBACK_THREW,
   UI_ACTION_PULL_CIRCUIT_CLOSED,
   UI_ACTION_PULL_CIRCUIT_OPEN,
   UI_ACTION_TOOLS,
@@ -19,6 +20,11 @@ import {
 } from "./action.js";
 
 const URI = "ui://ggui/render/sess-1/hash-1";
+
+/** A host's own error: its name is logged, its text never is. */
+class HostBug extends Error {
+  override name = "HostBug";
+}
 const TOOL = "ggui_runtime_submit_action";
 
 describe("asToolCallResult", () => {
@@ -252,7 +258,7 @@ describe("createMcpUiActionRelay — onSessionUnrestorable (guuey#1249 item 4)",
       const relay = createMcpUiActionRelay({
         callTool,
         onSessionUnrestorable: () => {
-          throw new Error("host bug");
+          throw new HostBug("host detail alice@example.com");
         },
       });
       // The pull that trips the circuit must still resolve to an in-band error,
@@ -262,6 +268,11 @@ describe("createMcpUiActionRelay — onSessionUnrestorable (guuey#1249 item 4)",
         res = await relay({ resourceUri: URI, name: PULL, arguments: {} });
       }
       expect(res?.isError).toBe(true);
+      // Never silent: one line names the callback and the error's name, never its text.
+      const threw = warn.mock.calls.filter((c) => c[0] === UI_ACTION_HOST_CALLBACK_THREW);
+      expect(threw).toHaveLength(1);
+      expect(threw[0]?.[1]).toEqual({ callback: "onSessionUnrestorable", resourceUri: URI, name: "HostBug" });
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("alice@example.com");
     } finally {
       warn.mockRestore();
     }
@@ -515,13 +526,17 @@ describe("createMcpUiActionRelay — an open circuit recovers only through a pro
       const relay = createMcpUiActionRelay({
         callTool: d.callTool,
         onSessionRestored: () => {
-          throw new Error("host bug");
+          throw new HostBug("host detail alice@example.com");
         },
       });
       await trip(relay);
       await relay({ resourceUri: URI, name: REFRESH, arguments: {} });
       d.state.pull = LIVE;
       await expect(relay({ resourceUri: URI, name: PULL, arguments: {} })).resolves.toEqual(LIVE);
+      const threw = warn.mock.calls.filter((c) => c[0] === UI_ACTION_HOST_CALLBACK_THREW);
+      expect(threw).toHaveLength(1);
+      expect(threw[0]?.[1]).toEqual({ callback: "onSessionRestored", resourceUri: URI, name: "HostBug" });
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("alice@example.com");
     } finally {
       warn.mockRestore();
     }

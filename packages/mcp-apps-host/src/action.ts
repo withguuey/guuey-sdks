@@ -373,6 +373,33 @@ export const UI_ACTION_PULL_CIRCUIT_CLOSED =
   "[guuey] card updates resumed — the session behind this card answered again";
 
 /**
+ * Logged when a host's `onSessionUnrestorable` or `onSessionRestored`
+ * callback throws. The relay never rejects into the card, so it goes on; this
+ * line is the page's only trace that its own "session ended" state may now be
+ * out of step with the card. It names the callback and the error's `name`,
+ * never the error's text, which is the host's and can carry anything.
+ */
+export const UI_ACTION_HOST_CALLBACK_THREW =
+  "[guuey] the page's card-session handler threw — the card went on, but the page may not show its current state";
+
+/** Call a host's session callback; a throw is logged by name and never escapes the relay. */
+function callHostCallback(
+  callback: "onSessionUnrestorable" | "onSessionRestored",
+  fn: ((resourceUri: string) => void) | undefined,
+  resourceUri: string,
+): void {
+  try {
+    fn?.(resourceUri);
+  } catch (err) {
+    console.warn(UI_ACTION_HOST_CALLBACK_THREW, {
+      callback,
+      resourceUri,
+      name: err instanceof Error ? err.name : typeof err,
+    });
+  }
+}
+
+/**
  * Assemble the sandbox-facing action relay from a host transport. The
  * returned function is shaped for an `onCallTool` bridge: it always
  * resolves (never rejects), answering in-band.
@@ -415,12 +442,8 @@ export function createMcpUiActionRelay(
       pullFailures.delete(uri); // the session answered → close the circuit
       if (wasOpen) {
         console.warn(UI_ACTION_PULL_CIRCUIT_CLOSED, { resourceUri: uri });
-        try {
-          deps.onSessionRestored?.(uri);
-        } catch {
-          // A host-supplied callback that throws is the host's bug, not the
-          // relay's: the circuit is already closed either way.
-        }
+        // The circuit is closed either way: a throwing host callback is logged, never rethrown.
+        callHostCallback("onSessionRestored", deps.onSessionRestored, uri);
       }
       return;
     }
@@ -435,12 +458,8 @@ export function createMcpUiActionRelay(
       // guuey#1249 item 4: tell the host the session is unrestorable so the
       // bounded circuit isn't a silent freeze. A throw from the host callback
       // must never break the relay's never-reject contract.
-      try {
-        deps.onSessionUnrestorable?.(uri);
-      } catch {
-        // A host-supplied callback that throws is the host's bug, not the
-        // relay's — the storm is already bounded either way.
-      }
+      // The storm is bounded either way: a throwing host callback is logged, never rethrown.
+      callHostCallback("onSessionUnrestorable", deps.onSessionUnrestorable, uri);
     }
   };
 
