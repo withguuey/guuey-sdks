@@ -461,6 +461,15 @@ export interface CreateUiActionRelayOptions {
    * silent frozen card.
    */
   onSessionUnrestorable?: (resourceUri: string) => void;
+  /**
+   * Fired when a card whose `ggui_runtime_pull` circuit had opened is seen
+   * live again on the pull rung, after a successful token refresh let one
+   * probe pull through. Threaded straight to {@link createMcpUiActionRelay}.
+   * Wiring it is opt-in to in-place recovery: the surface withdraws the
+   * "session ended" state it showed for that card. Without it an open circuit
+   * stays open for the mount.
+   */
+  onSessionRestored?: (resourceUri: string) => void;
   /** Injectable for tests. */
   fetchImpl?: typeof fetch;
 }
@@ -584,6 +593,7 @@ export function createUiActionRelay(
   return createMcpUiActionRelay({
     callTool,
     ...(options.onSessionUnrestorable ? { onSessionUnrestorable: options.onSessionUnrestorable } : {}),
+    ...(options.onSessionRestored ? { onSessionRestored: options.onSessionRestored } : {}),
   });
 }
 

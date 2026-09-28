@@ -9,6 +9,7 @@ import {
   createMcpUiActionRelay,
   MAX_UI_TELEMETRY_EVENTS,
   PULL_CIRCUIT_THRESHOLD,
+  UI_ACTION_PULL_CIRCUIT_CLOSED,
   UI_ACTION_PULL_CIRCUIT_OPEN,
   UI_ACTION_TOOLS,
   UI_ACTION_UNAVAILABLE_TEXT,
@@ -290,6 +291,237 @@ describe("createMcpUiActionRelay — onSessionUnrestorable (guuey#1249 item 4)",
       }
       expect(callTool).not.toHaveBeenCalled(); // door untouched while open
       expect(seen).toEqual([URI]); // fired exactly once, at the trip
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe("createMcpUiActionRelay — an open circuit recovers only through a probe pull, for a host that can hear it", () => {
+  const PULL = "ggui_runtime_pull";
+  const REFRESH = "ggui_runtime_refresh_ws_token";
+  const LIVE = { content: [{ type: "text", text: "live" }] };
+  const REFUSED = { content: [{ type: "text", text: "not allowed" }], isError: true };
+
+  /** A door whose pull and refresh answers the test sets; every call is recorded. */
+  function door() {
+    const state = { pull: undefined as unknown, refresh: LIVE as unknown };
+    const callTool = vi.fn(async (_uri: string, name: string) => (name === PULL ? state.pull : state.refresh));
+    const pulls = () => callTool.mock.calls.filter((c) => c[1] === PULL).length;
+    return { state, callTool, pulls };
+  }
+  async function trip(relay: ReturnType<typeof createMcpUiActionRelay>, uri = URI) {
+    for (let i = 0; i < PULL_CIRCUIT_THRESHOLD; i += 1) await relay({ resourceUri: uri, name: PULL, arguments: {} });
+  }
+  function silenceWarn() {
+    return vi.spyOn(console, "warn").mockImplementation(() => {});
+  }
+
+  it("a successful refresh lets ONE probe pull through; a probe the session answers closes it and says so once", async () => {
+    const warn = silenceWarn();
+    try {
+      const d = door();
+      const restored: string[] = [];
+      const unrestorable: string[] = [];
+      const relay = createMcpUiActionRelay({
+        callTool: d.callTool,
+        onSessionUnrestorable: (uri) => unrestorable.push(uri),
+        onSessionRestored: (uri) => restored.push(uri),
+      });
+      await trip(relay);
+      expect(unrestorable).toEqual([URI]);
+      expect(d.pulls()).toBe(PULL_CIRCUIT_THRESHOLD);
+      await relay({ resourceUri: URI, name: REFRESH, arguments: {} });
+      d.state.pull = LIVE;
+      const probe = await relay({ resourceUri: URI, name: PULL, arguments: {} });
+      expect(probe).toEqual(LIVE);
+      expect(restored).toEqual([URI]);
+      expect(warn.mock.calls.filter((c) => c[0] === UI_ACTION_PULL_CIRCUIT_CLOSED)).toHaveLength(1);
+      // Closed: every later pull reaches the door again.
+      await relay({ resourceUri: URI, name: PULL, arguments: {} });
+      await relay({ resourceUri: URI, name: PULL, arguments: {} });
+      expect(d.pulls()).toBe(PULL_CIRCUIT_THRESHOLD + 3);
+      expect(restored).toEqual([URI]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("a failed probe leaves it open, and the host hears nothing new", async () => {
+    const warn = silenceWarn();
+    try {
+      const d = door();
+      const restored: string[] = [];
+      const unrestorable: string[] = [];
+      const relay = createMcpUiActionRelay({
+        callTool: d.callTool,
+        onSessionUnrestorable: (uri) => unrestorable.push(uri),
+        onSessionRestored: (uri) => restored.push(uri),
+      });
+      await trip(relay);
+      await relay({ resourceUri: URI, name: REFRESH, arguments: {} });
+      await relay({ resourceUri: URI, name: PULL, arguments: {} }); // the probe: still unavailable
+      expect(d.pulls()).toBe(PULL_CIRCUIT_THRESHOLD + 1);
+      for (let i = 0; i < 3; i += 1) await relay({ resourceUri: URI, name: PULL, arguments: {} });
+      expect(d.pulls()).toBe(PULL_CIRCUIT_THRESHOLD + 1); // open again: no pull reaches the door
+      expect(unrestorable).toEqual([URI]);
+      expect(restored).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("a probe that throws in transport leaves it open too", async () => {
+    const warn = silenceWarn();
+    try {
+      let throwing = false;
+      const callTool = vi.fn(async (_uri: string, name: string) => {
+        if (name === PULL && throwing) throw new Error("network");
+        return name === PULL ? undefined : LIVE;
+      });
+      const restored: string[] = [];
+      const unrestorable: string[] = [];
+      const relay = createMcpUiActionRelay({
+        callTool,
+        onSessionUnrestorable: (uri) => unrestorable.push(uri),
+        onSessionRestored: (uri) => restored.push(uri),
+      });
+      await trip(relay);
+      await relay({ resourceUri: URI, name: REFRESH, arguments: {} });
+      throwing = true;
+      const probe = await relay({ resourceUri: URI, name: PULL, arguments: {} });
+      expect(probe.isError).toBe(true);
+      callTool.mockClear();
+      await relay({ resourceUri: URI, name: PULL, arguments: {} });
+      expect(callTool).not.toHaveBeenCalled();
+      expect(unrestorable).toEqual([URI]);
+      expect(restored).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("a host that wires only onSessionUnrestorable keeps today's terminal contract, refresh or not", async () => {
+    const warn = silenceWarn();
+    try {
+      const d = door();
+      const unrestorable: string[] = [];
+      const relay = createMcpUiActionRelay({ callTool: d.callTool, onSessionUnrestorable: (uri) => unrestorable.push(uri) });
+      await trip(relay);
+      await relay({ resourceUri: URI, name: REFRESH, arguments: {} });
+      d.state.pull = LIVE;
+      for (let i = 0; i < 3; i += 1) await relay({ resourceUri: URI, name: PULL, arguments: {} });
+      expect(d.pulls()).toBe(PULL_CIRCUIT_THRESHOLD); // never another pull
+      expect(unrestorable).toEqual([URI]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("a refused or unavailable refresh arms no probe", async () => {
+    const warn = silenceWarn();
+    try {
+      const d = door();
+      const restored: string[] = [];
+      const relay = createMcpUiActionRelay({ callTool: d.callTool, onSessionRestored: (uri) => restored.push(uri) });
+      await trip(relay);
+      d.state.refresh = REFUSED;
+      await relay({ resourceUri: URI, name: REFRESH, arguments: {} });
+      d.state.refresh = undefined;
+      await relay({ resourceUri: URI, name: REFRESH, arguments: {} });
+      d.state.pull = LIVE;
+      await relay({ resourceUri: URI, name: PULL, arguments: {} });
+      expect(d.pulls()).toBe(PULL_CIRCUIT_THRESHOLD);
+      expect(restored).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("a refresh before the trip arms nothing: the circuit still opens at the threshold", async () => {
+    const warn = silenceWarn();
+    try {
+      const d = door();
+      const relay = createMcpUiActionRelay({ callTool: d.callTool, onSessionRestored: () => undefined });
+      await relay({ resourceUri: URI, name: PULL, arguments: {} });
+      await relay({ resourceUri: URI, name: REFRESH, arguments: {} });
+      await relay({ resourceUri: URI, name: PULL, arguments: {} });
+      await relay({ resourceUri: URI, name: PULL, arguments: {} }); // the trip
+      await relay({ resourceUri: URI, name: PULL, arguments: {} }); // short-circuited
+      expect(d.pulls()).toBe(PULL_CIRCUIT_THRESHOLD);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("one refresh buys exactly one probe, even with pulls in flight together", async () => {
+    const warn = silenceWarn();
+    try {
+      const d = door();
+      const relay = createMcpUiActionRelay({ callTool: d.callTool, onSessionRestored: () => undefined });
+      await trip(relay);
+      await relay({ resourceUri: URI, name: REFRESH, arguments: {} });
+      await Promise.all([1, 2, 3].map(() => relay({ resourceUri: URI, name: PULL, arguments: {} })));
+      expect(d.pulls()).toBe(PULL_CIRCUIT_THRESHOLD + 1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("the probe is per locator: one card's refresh never opens another's", async () => {
+    const warn = silenceWarn();
+    try {
+      const URI2 = "ui://ggui/render/sess-2/hash-2";
+      const d = door();
+      const relay = createMcpUiActionRelay({ callTool: d.callTool, onSessionRestored: () => undefined });
+      await trip(relay, URI);
+      await trip(relay, URI2);
+      await relay({ resourceUri: URI, name: REFRESH, arguments: {} });
+      d.callTool.mockClear();
+      await relay({ resourceUri: URI2, name: PULL, arguments: {} });
+      expect(d.callTool).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("after a restore, a new trip is a new verdict: unrestorable and restored alternate", async () => {
+    const warn = silenceWarn();
+    try {
+      const d = door();
+      const events: string[] = [];
+      const relay = createMcpUiActionRelay({
+        callTool: d.callTool,
+        onSessionUnrestorable: () => events.push("unrestorable"),
+        onSessionRestored: () => events.push("restored"),
+      });
+      for (let round = 0; round < 2; round += 1) {
+        d.state.pull = undefined;
+        await trip(relay);
+        await relay({ resourceUri: URI, name: REFRESH, arguments: {} });
+        d.state.pull = LIVE;
+        await relay({ resourceUri: URI, name: PULL, arguments: {} });
+      }
+      expect(events).toEqual(["unrestorable", "restored", "unrestorable", "restored"]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("a throwing onSessionRestored never breaks the never-reject contract", async () => {
+    const warn = silenceWarn();
+    try {
+      const d = door();
+      const relay = createMcpUiActionRelay({
+        callTool: d.callTool,
+        onSessionRestored: () => {
+          throw new Error("host bug");
+        },
+      });
+      await trip(relay);
+      await relay({ resourceUri: URI, name: REFRESH, arguments: {} });
+      d.state.pull = LIVE;
+      await expect(relay({ resourceUri: URI, name: PULL, arguments: {} })).resolves.toEqual(LIVE);
     } finally {
       warn.mockRestore();
     }

@@ -305,8 +305,28 @@ export interface CreateMcpUiActionRelayDeps {
    * surfaces a visible "this session ended — start a new chat" state and drops
    * the stale thread, so a tripped circuit is never a silent frozen card.
    * Optional: a host that only wants the storm bounded omits it.
+   *
+   * Once per trip: it fires again only after {@link onSessionRestored} has
+   * cleared an earlier verdict for the same locator and the circuit trips anew.
    */
   onSessionUnrestorable?: (resourceUri: string) => void;
+  /**
+   * Fired when a locator whose pull circuit OPENED is seen live again on the
+   * pull rung itself, so the host can withdraw the "session ended" state it
+   * showed. Wiring it is what lets an open circuit recover in place at all:
+   * without it the circuit stays open for the mount (recovery is a fresh
+   * mount), exactly as a host that wires only {@link onSessionUnrestorable}
+   * expects.
+   *
+   * The recovery is evidence on the channel that tripped: a successful
+   * `ggui_runtime_refresh_ws_token` for the locator HALF-OPENS the circuit,
+   * which lets the view's next pull through as a single probe. A probe that
+   * the session answers closes the circuit and fires this, once per close; a
+   * probe that fails leaves it open, and the host hears nothing new (it
+   * already holds the verdict). A token refresh alone never reverses it: the
+   * token channel can work while pulls still fail.
+   */
+  onSessionRestored?: (resourceUri: string) => void;
 }
 
 /** The request shape a mounted card's `onCallTool` bridge produces. */
@@ -319,6 +339,9 @@ export interface UiActionRequest {
 
 /** The host-relayed auto-poll rung (guuey#1235). A dead session's pull is the storm. */
 const PULL_TOOL = "ggui_runtime_pull";
+
+/** The live-channel token refresh: a success half-opens a tripped locator for a host that can hear a restore. */
+const REFRESH_WS_TOKEN_TOOL = "ggui_runtime_refresh_ws_token";
 
 /**
  * Consecutive `unavailable` pull results (per card locator) that OPEN the
@@ -342,6 +365,14 @@ export const UI_ACTION_PULL_CIRCUIT_OPEN =
   "[guuey] card updates stopped — the session behind this card could not be restored; the widget reports it, and a new conversation starts fresh";
 
 /**
+ * Logged when an open circuit closes again: the probe pull a successful token
+ * refresh let through was answered, and the host was told
+ * (`onSessionRestored`). It can only happen for a host that wires that signal.
+ */
+export const UI_ACTION_PULL_CIRCUIT_CLOSED =
+  "[guuey] card updates resumed — the session behind this card answered again";
+
+/**
  * Assemble the sandbox-facing action relay from a host transport. The
  * returned function is shaped for an `onCallTool` bridge: it always
  * resolves (never rejects), answering in-band.
@@ -360,6 +391,11 @@ export const UI_ACTION_PULL_CIRCUIT_OPEN =
  * The complement — telling the USER the session is unrestorable so a tripped
  * circuit is not a silent freeze — is the `onSessionUnrestorable` signal
  * (guuey#1249 item 4); this leg only bounds the hammer.
+ *
+ * An OPEN circuit is terminal for the mount unless the host wires
+ * `onSessionRestored`. Then a successful `ggui_runtime_refresh_ws_token` for
+ * the locator HALF-OPENS it: the next pull goes through as one probe, and only
+ * a probe the session answers closes it (see `onSessionRestored`).
  */
 export function createMcpUiActionRelay(
   deps: CreateMcpUiActionRelayDeps,
@@ -367,10 +403,25 @@ export function createMcpUiActionRelay(
   // Per-relay-instance (one card mount). A recovered/absent locator is deleted,
   // so this stays as small as the mounted cards; the mount tears it down.
   const pullFailures = new Map<string, number>();
+  // Open locators a successful token refresh has half-opened: the next pull is
+  // let through as the probe. Only ever filled when the host wires the restore.
+  const halfOpen = new Set<string>();
+
+  const isOpen = (uri: string): boolean => (pullFailures.get(uri) ?? 0) >= PULL_CIRCUIT_THRESHOLD;
 
   const recordPull = (uri: string, unavailable: boolean): void => {
     if (!unavailable) {
+      const wasOpen = isOpen(uri);
       pullFailures.delete(uri); // the session answered → close the circuit
+      if (wasOpen) {
+        console.warn(UI_ACTION_PULL_CIRCUIT_CLOSED, { resourceUri: uri });
+        try {
+          deps.onSessionRestored?.(uri);
+        } catch {
+          // A host-supplied callback that throws is the host's bug, not the
+          // relay's: the circuit is already closed either way.
+        }
+      }
       return;
     }
     const next = (pullFailures.get(uri) ?? 0) + 1;
@@ -407,9 +458,10 @@ export function createMcpUiActionRelay(
     }
 
     const isPull = request.name === PULL_TOOL;
-    // Circuit OPEN for this locator's pull → fail-fast, never touch the door.
-    if (isPull && (pullFailures.get(request.resourceUri) ?? 0) >= PULL_CIRCUIT_THRESHOLD) {
-      return unavailableToolCallResult();
+    // Circuit OPEN for this locator's pull → fail-fast, never touch the door,
+    // unless a token refresh half-opened it: then this one pull is the probe.
+    if (isPull && isOpen(request.resourceUri)) {
+      if (!halfOpen.delete(request.resourceUri)) return unavailableToolCallResult();
     }
 
     let raw: unknown;
@@ -421,6 +473,18 @@ export function createMcpUiActionRelay(
     }
     const result = raw === undefined ? undefined : asToolCallResult(raw);
     if (isPull) recordPull(request.resourceUri, result === undefined);
+    // A refresh the session granted is fresh evidence it is live, but on the
+    // token channel, not the pull channel that tripped: it half-opens, and the
+    // probe pull decides. Only for a host that can withdraw its verdict.
+    if (
+      request.name === REFRESH_WS_TOKEN_TOOL &&
+      deps.onSessionRestored !== undefined &&
+      result !== undefined &&
+      result.isError !== true &&
+      isOpen(request.resourceUri)
+    ) {
+      halfOpen.add(request.resourceUri);
+    }
     return result ?? unavailableToolCallResult();
   };
 }

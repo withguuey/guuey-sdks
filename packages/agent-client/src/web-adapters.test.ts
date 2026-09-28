@@ -718,6 +718,38 @@ describe("createUiActionRelay", () => {
     })) as unknown as typeof fetch;
   }
 
+  it("threads onSessionRestored to the relay: a tripped card recovers through a refresh and one probe pull", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      let pullLive = false;
+      const fetchImpl = vi.fn(async (_url: string, init: { body: string }) => {
+        const { name } = JSON.parse(init.body) as { name: string };
+        const ok = name === "ggui_runtime_refresh_ws_token" || pullLive;
+        return { ok, status: ok ? 200 : 404, json: async () => OK_BODY };
+      }) as unknown as typeof fetch;
+      const unrestorable: string[] = [];
+      const restored: string[] = [];
+      const relay = createUiActionRelay({
+        apiBaseUrl: "https://api.example/v1",
+        threadId: "t1",
+        endpointUrl: null, // persisted-door test — declared, not forgotten
+        guestSecret: "a".repeat(64),
+        onSessionUnrestorable: (uri) => unrestorable.push(uri),
+        onSessionRestored: (uri) => restored.push(uri),
+        fetchImpl,
+      });
+      const pull = { resourceUri: REQUEST.resourceUri, name: "ggui_runtime_pull", arguments: {} };
+      for (let i = 0; i < 3; i += 1) await relay(pull);
+      expect(unrestorable).toEqual([REQUEST.resourceUri]);
+      await relay({ resourceUri: REQUEST.resourceUri, name: "ggui_runtime_refresh_ws_token", arguments: {} });
+      pullLive = true;
+      expect(await relay(pull)).toEqual(OK_BODY);
+      expect(restored).toEqual([REQUEST.resourceUri]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("POSTs {uri, name, arguments} to the ui-action route and passes the result through", async () => {
     const fetchImpl = mkFetch(200, OK_BODY);
     const relay = createUiActionRelay({
