@@ -981,6 +981,105 @@ describe('deploy() — --max-pods rides the trigger body', () => {
   });
 });
 
+// `guuey deploy --force` is a no-op: every deploy rebuilds, and the upload
+// route never answers "unchanged". The flag is still ACCEPTED so a script
+// that passes it keeps working; it says once that it is no longer needed and
+// the deploy runs exactly as it would without it.
+describe('deploy() — --force is accepted as a no-op', () => {
+  let dir: string;
+  let originalCwd: string;
+  let logSpy: MockInstance<typeof console.log>;
+  let fetchSpy: MockInstance<typeof fetch>;
+  const NOTICE = '--force is no longer needed: every deploy rebuilds.';
+
+  function printed(): string {
+    return logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    dir = mkdtempSync(join(tmpdir(), 'deploy-force-noop-test-'));
+    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {} }));
+    process.chdir(dir);
+
+    vi.mocked(resolveConfig).mockReturnValue({
+      host: 'https://platform.guuey.test',
+      apiUrl: 'https://api.guuey.test',
+      appId: 'app-1',
+    });
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/deploy/trigger')) {
+        return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
+      }
+      if (url.includes('/deployments/1/status')) {
+        return new Response(
+          JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null, pageUrl: 'https://app-k7q2.agents.guuey.test/' }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  // Each full run waits one status-poll tick (3 s) before the deploy reads live.
+  const FULL_RUN_BUDGET_MS = 10_000;
+
+  it('accepts --force, prints the one-line notice, and still deploys', async () => {
+    await expect(deploy({ force: true })).resolves.toBeUndefined();
+
+    expect(printed()).toContain(NOTICE);
+    expect(printed().split(NOTICE)).toHaveLength(2);
+    expect(fetchSpy.mock.calls.some(([u]) => String(u).includes('/deploy/trigger'))).toBe(true);
+  }, FULL_RUN_BUDGET_MS);
+
+  it('prints the notice for a --force that swallowed a value, too', async () => {
+    await expect(deploy({ force: 'yes' })).resolves.toBeUndefined();
+
+    expect(printed()).toContain(NOTICE);
+  }, FULL_RUN_BUDGET_MS);
+
+  it('prints no notice when --force is not passed', async () => {
+    await deploy({});
+
+    expect(printed()).not.toContain('--force');
+  }, FULL_RUN_BUDGET_MS);
+});
+
+// Nothing on the upload route answers 304, so neither upload site keeps a
+// client-side "unchanged, nothing to deploy" exit that no server can reach.
+describe('deploy.ts — no upload site waits for a 304', () => {
+  it('both upload POST sites are found, and none branches on 304', () => {
+    const source = readFileSync(
+      fileURLToPath(new URL('./deploy.ts', import.meta.url)),
+      'utf8',
+    );
+    const uploadSites = source.split("'POST', `/apps/${appId}/deploy/upload`").slice(1);
+    expect(uploadSites).toHaveLength(2);
+    for (const site of uploadSites) {
+      const end = site.indexOf('await uploadRes.json()) as');
+      expect(end).toBeGreaterThan(0);
+      const handling = site.slice(0, end);
+      expect(handling).toContain('if (!uploadRes.ok)');
+      expect(handling).not.toMatch(/\b304\b/);
+      expect(handling).not.toContain('Nothing to deploy');
+    }
+  });
+});
+
 // The declarative test above proves ONE of the three trigger POST sites
 // carries the field. The other two (code-orchestrated, legacy Dockerfile)
 // each need a build + tarball + presigned-S3 round trip to reach their

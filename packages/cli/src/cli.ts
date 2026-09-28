@@ -156,7 +156,6 @@ Agent Development:
     --declarative                Force declarative mode (uses guuey.json, no build)
     --code                       Force code mode (builds+deploys guuey.worker.js,
                                  or uses a root Dockerfile if present)
-    --force                      Force deploy even if unchanged
     --no-install                 Stop instead of installing when node_modules is missing (code mode; the default installs)
     --size <s>                   Pod size: xs | sm | md | lg | xl (default: xs)
     --build-size <s>             Build Job size: sm | md | lg | xl (default: md, code-mode only)

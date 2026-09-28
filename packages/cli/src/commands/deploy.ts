@@ -32,7 +32,6 @@
  *   guuey deploy --build-size lg # Override build Job size (code mode only)
  *   guuey deploy --max-pods 3    # Set the app's replica count (scaling S1)
  *   guuey deploy --app-id <id>   # Deploy to another app (binding untouched, guuey#232)
- *   guuey deploy --force         # Force deploy even if no changes detected
  */
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -333,7 +332,14 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
   const buildSize = (flags?.['build-size'] as string) ?? 'md';
   const target = (flags?.target as string) ?? 'ggui';
   const label = flags?.label as string | undefined;
-  const force = flags?.force === true;
+
+  // `--force` once skipped a client-side "unchanged, nothing to deploy" exit.
+  // The upload route never answers that way — every deploy rebuilds — so the
+  // flag changes nothing. It is still ACCEPTED, so a script that passes it
+  // keeps working, and it says so once.
+  if (flags?.force !== undefined) {
+    console.log('  --force is no longer needed: every deploy rebuilds.');
+  }
 
   // `--max-pods` is FLAG-ONLY, unlike `--size`: `guuey.json#agent.deploy` is
   // a strictObject of `{size, region}` (`@guuey/config#DeploySchema`), so
@@ -412,11 +418,10 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
       maxPods,
       runtimeAutoUpdate,
       label,
-      force,
       flags,
     });
   } else {
-    await deployLegacyDockerfile({ auth, config, appId, size, buildSize, maxPods, runtimeAutoUpdate, label, force });
+    await deployLegacyDockerfile({ auth, config, appId, size, buildSize, maxPods, runtimeAutoUpdate, label });
   }
 
   // A deployed byo app with an empty origin allowlist is an embed browsers
@@ -684,10 +689,9 @@ async function deployCode(opts: {
   maxPods: number | undefined;
   runtimeAutoUpdate?: boolean | undefined;
   label: string | undefined;
-  force: boolean;
   flags?: Record<string, string | true>;
 }): Promise<void> {
-  const { auth, config, appId, guueyJsonPath, root, size, buildSize, maxPods, runtimeAutoUpdate, label, force, flags } =
+  const { auth, config, appId, guueyJsonPath, root, size, buildSize, maxPods, runtimeAutoUpdate, label, flags } =
     opts;
 
   console.log('');
@@ -869,13 +873,6 @@ async function deployCode(opts: {
     contentLength: tarballSize,
     sourceHash,
   });
-
-  if (!force && uploadRes.status === 304) {
-    console.log('');
-    out.success('Nothing to deploy. Agent is up to date.');
-    cleanup(tarballPath);
-    return;
-  }
 
   if (!uploadRes.ok) {
     const data: unknown = await uploadRes.json().catch(() => ({}));
@@ -1250,9 +1247,8 @@ async function deployLegacyDockerfile(opts: {
   maxPods: number | undefined;
   runtimeAutoUpdate?: boolean | undefined;
   label: string | undefined;
-  force: boolean;
 }): Promise<void> {
-  const { auth, config, appId, size, buildSize, maxPods, runtimeAutoUpdate, label, force } = opts;
+  const { auth, config, appId, size, buildSize, maxPods, runtimeAutoUpdate, label } = opts;
 
   console.log('');
   console.log('  Deploying agent to guuey cloud...');
@@ -1270,13 +1266,6 @@ async function deployLegacyDockerfile(opts: {
     contentLength: tarballSize,
     sourceHash,
   });
-
-  if (!force && uploadRes.status === 304) {
-    console.log('');
-    out.success('Nothing to deploy. Agent is up to date.');
-    cleanup(tarballPath);
-    return;
-  }
 
   if (!uploadRes.ok) {
     const data: unknown = await uploadRes.json().catch(() => ({}));

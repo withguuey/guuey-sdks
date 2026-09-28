@@ -60,6 +60,28 @@ const agentConfigHelp = section(
   '--runtime-auto-update on|off Automatic',
 );
 
+// `deploy --force` changes nothing: every deploy rebuilds, and the upload
+// route has no "unchanged" answer for the flag to override. The flag is still
+// accepted (a script that passes it keeps working), but the help no longer
+// offers it. `undeploy --force` is a different flag and stays listed.
+const deployHelp = section('deploy                         Deploy agent', '\n  pull ');
+const undeployHelp = section('undeploy                       Tear down', '\n  env set ');
+
+describe('cli.ts --help — deploy does not offer --force', () => {
+  it('the deploy section still lists its real flags', () => {
+    expect(deployHelp).toMatch(/--declarative/);
+    expect(deployHelp).toMatch(/--label <tag>/);
+  });
+
+  it('the deploy section does not list --force', () => {
+    expect(deployHelp).not.toMatch(/--force/);
+  });
+
+  it('undeploy keeps its own --force (skip the confirmation)', () => {
+    expect(undeployHelp).toMatch(/--force\s+Skip the \[y\/N\] confirmation/);
+  });
+});
+
 describe('cli.ts --help — --max-pods names the scaling regime it lands (guuey#933)', () => {
   it('deploy --max-pods: a fixed count unless a scaling mode is chosen, and the way to keep it a ceiling', () => {
     expect(deployMaxPodsHelp).toMatch(/fixed/);
