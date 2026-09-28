@@ -9,7 +9,9 @@ import { createRef, useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { AgentInvokeAdapters, InvokeRequest } from "@guuey/agent-client";
-import { GuueyChat, viewPropsWithThemeAnnounce, type GuueyChatHandle } from "./guuey-chat.js";
+import { GuueyChat, kitSinkInEffect, viewPropsWithThemeAnnounce, type GuueyChatHandle } from "./guuey-chat.js";
+import { VIEW_MESSAGE_TURN_CAPABILITIES } from "@guuey/agent-client/react";
+import { AgClientCapabilities } from "@silverprotocol/core";
 import type { PlanViewSummary, ViewMountItem } from "../types.js";
 import { GUUEY_CHAT_THEME,
   DEFAULT_CHAT_THEME,
@@ -72,6 +74,69 @@ function renderChat(
     <GuueyChat endpointUrl="https://pod.example/agent/invoke" adapters={adapters} {...extra} />,
   );
 }
+
+/**
+ * The view-message-turn declaration: a card's `ui/message` becomes the next
+ * turn only through the kit's own sink, so the kit declares it only where that
+ * sink is provably in effect. Without it the pod cannot draw a bound greeting
+ * itself, and the generative-UI server holds every render turn open until the
+ * view answers.
+ */
+describe("<GuueyChat> advertises the view-message-turn capability only where its own sink delivers", () => {
+  /** The first invoke's advertised capabilities, read through the protocol's own schema (as the pod reads them). */
+  async function firstBody(extra: Partial<Parameters<typeof GuueyChat>[0]> = {}) {
+    const { adapters, calls } = scriptedAdapters();
+    renderChat(adapters, extra);
+    const input = screen.getByLabelText("Message");
+    fireEvent.change(input, { target: { value: "hello" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(calls).toHaveLength(1));
+    const body = calls[0]!.body;
+    expect(typeof body === "object" && body !== null && "capabilities" in body).toBe(true);
+    const raw = typeof body === "object" && body !== null && "capabilities" in body ? body.capabilities : undefined;
+    return { capabilities: AgClientCapabilities.parse(raw) };
+  }
+
+  it("declares it with no viewProps (the kit's sink is every slot's)", async () => {
+    const body = await firstBody();
+    expect(body.capabilities.uiResources?.viewMessageTurns).toBe(true);
+    expect(body.capabilities.hitl).toEqual(VIEW_MESSAGE_TURN_CAPABILITIES.hitl);
+  });
+
+  it("declares it with an object viewProps that leaves onUserMessage to the kit", async () => {
+    const body = await firstBody({ viewProps: { autoResize: true } });
+    expect(body.capabilities.uiResources?.viewMessageTurns).toBe(true);
+  });
+
+  it("does NOT declare it when the host replaces onUserMessage (even with undefined, which leaves the slot no sink), or passes a function-form viewProps", async () => {
+    const replaced = await firstBody({ viewProps: { onUserMessage: async () => ({ delivered: false, reason: "host" }) } });
+    expect(replaced.capabilities.uiResources).toBeUndefined();
+    cleanup();
+    const blanked = await firstBody({ viewProps: { onUserMessage: undefined } });
+    expect(blanked.capabilities.uiResources).toBeUndefined();
+    cleanup();
+    const perItem = await firstBody({ viewProps: () => ({ autoResize: true }) });
+    expect(perItem.capabilities.uiResources).toBeUndefined();
+  });
+
+  it("a host-stated viewMessageTurns wins either way, and never drops the default hitl set", async () => {
+    const stated = await firstBody({ viewProps: () => ({ autoResize: true }), viewMessageTurns: true });
+    expect(stated.capabilities.uiResources?.viewMessageTurns).toBe(true);
+    expect(stated.capabilities.hitl).toEqual(VIEW_MESSAGE_TURN_CAPABILITIES.hitl);
+    cleanup();
+    const withheld = await firstBody({ viewMessageTurns: false });
+    expect(withheld.capabilities.uiResources).toBeUndefined();
+    expect(withheld.capabilities.hitl).toEqual(VIEW_MESSAGE_TURN_CAPABILITIES.hitl);
+  });
+
+  it("kitSinkInEffect: absent, or an object with no onUserMessage key, is the kit's sink; a function form or any onUserMessage key is not", () => {
+    expect(kitSinkInEffect(undefined)).toBe(true);
+    expect(kitSinkInEffect({ autoResize: true })).toBe(true);
+    expect(kitSinkInEffect({ onUserMessage: async () => ({ delivered: true }) })).toBe(false);
+    expect(kitSinkInEffect({ onUserMessage: undefined })).toBe(false);
+    expect(kitSinkInEffect(() => ({}))).toBe(false);
+  });
+});
 
 describe("<GuueyChat> composer", () => {
   it("sends on Enter, clears the input, and the turn round-trips", async () => {

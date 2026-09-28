@@ -59,7 +59,7 @@ import {
   type AgentInvokeAdapters,
 } from "@guuey/agent-client";
 import type { AgHitlAnswer, AgPausedAsk } from "@silverprotocol/core";
-import { useAgentInvoke } from "@guuey/agent-client/react";
+import { useAgentInvoke, VIEW_MESSAGE_TURN_CAPABILITIES } from "@guuey/agent-client/react";
 import { unavailableToolCallResult } from "@guuey/mcp-apps-host";
 import type { McpToolCallResult, UiActionRequest, UiResourceReader, UserMessageDelivery } from "@guuey/mcp-apps-host";
 import { calmPolicy, debugPolicy, type TranscriptPolicyOverrides } from "../policy.js";
@@ -256,6 +256,19 @@ export interface GuueyChatProps {
    */
   agentMode?: string;
   /**
+   * Whether this chat advertises that a card's `ui/message` becomes the next
+   * turn (the view-message-turn capability, beside the default `hitl` set,
+   * which it always keeps). Absent, the kit decides: it advertises it
+   * whenever it can PROVE its own `ui/message` sink is the one every view slot
+   * gets, i.e. `viewProps` is absent or an object that does not carry an
+   * `onUserMessage` key at all. That sink sends the message at once when
+   * idle, queues it while a turn is live, and answers an undeliverable one as
+   * not delivered (logging the drop when the chat is unavailable). A host that
+   * passes a function-form `viewProps`, or its own `onUserMessage`, sets this
+   * itself: `true` only when its delivery keeps the same promise.
+   */
+  viewMessageTurns?: boolean;
+  /**
    * The guuey public API base (`…/v1`). Enables the batteries-included
    * read paths without hand-wiring: when set and no `adapters` are given,
    * the default `createWebAdapters` gains transcript history; when set and
@@ -434,6 +447,21 @@ const PROMPT_STATE = {
   dismiss: "dismissed",
 } as const;
 
+/**
+ * True when the kit's own `ui/message` sink is the one every view slot gets:
+ * no `viewProps`, or an object form with no `onUserMessage` KEY. The slot
+ * props are the kit's defaults spread UNDER the caller's, so an own
+ * `onUserMessage` key replaces the kit's sink even when its value is
+ * `undefined` (which leaves the slot with none). A function form resolves
+ * per item, so the kit cannot know, and says no.
+ * Exported for tests; not part of the package surface.
+ */
+export function kitSinkInEffect(viewProps: TranscriptItemContext["viewProps"]): boolean {
+  if (viewProps === undefined) return true;
+  if (typeof viewProps === "function") return false;
+  return !Object.hasOwn(viewProps, "onUserMessage");
+}
+
 export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function GuueyChat(
   props: GuueyChatProps,
   ref,
@@ -443,6 +471,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     header,
     appId,
     agentMode,
+    viewMessageTurns: viewMessageTurnsProp,
     apiBaseUrl,
     getAccessToken,
     getGuestSecret,
@@ -515,10 +544,17 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       }),
     [adaptersProp, apiBaseUrl, hasAccessToken, hasGuestSecret],
   );
+  // A card's `ui/message` becomes the next turn only through the kit's own
+  // sink, so the kit declares it only where that sink is provably in effect
+  // (see `GuueyChatProps.viewMessageTurns`). Without the declaration a server
+  // cannot rely on a view's message becoming a turn, so it holds each render
+  // turn open until the view answers.
+  const advertiseViewMessageTurns = viewMessageTurnsProp ?? kitSinkInEffect(viewProps);
   const invoke = useAgentInvoke({
     endpointUrl,
     ...(appId !== undefined ? { appId } : {}),
     ...(agentMode !== undefined ? { mode: agentMode } : {}),
+    ...(advertiseViewMessageTurns ? { capabilities: VIEW_MESSAGE_TURN_CAPABILITIES } : {}),
     adapters,
     preserveBlocks: true,
   });
