@@ -129,7 +129,11 @@ overrides:
   # guuey#692 — see the root pnpm-workspace.yaml comment (own lockfile, same
   # two chains here: fast-uri 3.1.5 under ajv@8 / fast-json-stringify, qs
   # 6.15.3 under the express/body-parser chain of @guuey/cli + mcp-apps-host).
-  "fast-uri@3": ^3.1.6
+  # guuey#2023 — see the root pnpm-workspace.yaml comment (own lockfile: this
+  # lock held fast-uri 3.1.6 under ajv@8 and ip-address 10.5.0 under
+  # express-rate-limit, both through @modelcontextprotocol/sdk).
+  "fast-uri@3": ^3.1.7
+  "ip-address@10": ^10.5.1
   "qs@6": ^6.16.0
   # guuey#687-rails — see the root pnpm-workspace.yaml comment: ONE MCP SDK
   # per lockfile; the peer-resolved transitive dependents (claude-agent-sdk,
