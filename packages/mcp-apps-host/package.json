@@ -44,7 +44,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@ggui-ai/protocol": "0.24.0",
+    "@ggui-ai/protocol": "0.25.0",
     "@modelcontextprotocol/ext-apps": "^1.7.5",
     "@silverprotocol/core": "0.12.2"
   },
