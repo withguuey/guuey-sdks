@@ -22,9 +22,39 @@ export interface UsageBreakdown {
   [key: string]: number;
 }
 
+/** The export's LLM figures. */
+export interface UsageExportLlm {
+  managedCostUsd: number;
+  costByModelUsd: UsageBreakdown;
+  /**
+   * Uncached input tokens only: input read from or written to the prompt
+   * cache is priced in `managedCostUsd` but not counted here.
+   */
+  inputTokensUncached: number;
+  outputTokens: number;
+}
+
+export interface UsageExportRenders {
+  total: number;
+  cold: number;
+  cacheHit: number;
+  byokInfra: number;
+}
+
+export interface UsageExportSessions {
+  total: number;
+  bySurface: UsageBreakdown;
+}
+
+export interface UsageExportStorage {
+  fsGibHours: number;
+  fsBytes: number;
+}
+
 /**
- * MIRROR of cli-wire's `UsageExportWire` (`backend/libs/cli-wire/usage-export.ts`)
- * — pinned field-for-field by `wire-sync.test.ts`.
+ * MIRROR of cli-wire's `UsageExportWire` and its four nested interfaces.
+ * `wire-sync.test.ts` pins each one's field names and optionality, not field
+ * types.
  */
 export interface UsageExportWire {
   appId: string;
@@ -32,24 +62,19 @@ export interface UsageExportWire {
   month: string;
   generatedAt: string;
   hasUsage: boolean;
-  llm: {
-    managedCostUsd: number;
-    costByModelUsd: UsageBreakdown;
-    /** Uncached input tokens only (guuey#1393). Absent from a previous-release server. */
-    inputTokensUncached?: number;
-    /** The previous release's name for `inputTokensUncached`; removed the release after. */
-    inputTokens: number;
-    outputTokens: number;
-  };
-  renders: { total: number; cold: number; cacheHit: number; byokInfra: number };
+  llm: UsageExportLlm;
+  renders: UsageExportRenders;
   answers: number;
-  sessions: { total: number; bySurface: UsageBreakdown };
+  sessions: UsageExportSessions;
   widgetOpens: number;
-  /** Billable pod unit-hours beyond the included pod (guuey#1393). Absent from a previous-release server. */
-  billablePodUnitHours?: number;
-  /** The previous release's name for `billablePodUnitHours`; removed the release after. */
-  podUnitHours: number;
-  storage: { fsGibHours: number; fsBytes: number };
+  /**
+   * Burst agent pod time: unit-hours beyond the app's first pod, per app. It
+   * is counted before the plan's included burst unit-hours are subtracted at
+   * billing, so it can exceed the pod time invoiced. An app that ran on one
+   * pod reads 0.
+   */
+  billablePodUnitHours: number;
+  storage: UsageExportStorage;
   notAttributable: readonly string[];
 }
 

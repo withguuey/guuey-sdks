@@ -219,4 +219,15 @@ describe.skipIf(!haveWire)('CLI wire mirrors — sync guards against @guuey-priv
       parseInterfaceFields(read(WIRE_USAGE_EXPORT), 'UsageExportWire'),
     );
   });
+
+  it('the usage export mirror declares exactly the wire fields of each nested object', () => {
+    // The member parser reads top-level members only, so the four nested
+    // objects are named interfaces on both sides and compared one by one —
+    // a renamed `llm.*` key is as silent as a renamed top-level one.
+    const cli = read(CLI_USAGE);
+    const wire = read(WIRE_USAGE_EXPORT);
+    for (const name of ['UsageExportLlm', 'UsageExportRenders', 'UsageExportSessions', 'UsageExportStorage']) {
+      expect(parseInterfaceFields(cli, name)).toEqual(parseInterfaceFields(wire, name));
+    }
+  });
 });
