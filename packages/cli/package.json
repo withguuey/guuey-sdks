@@ -36,7 +36,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@anthropic-ai/sdk": "^0.127.0",
+    "@anthropic-ai/sdk": "^0.129.0",
     "@guuey/state": "workspace:*",
     "@types/node": "^24.0.0",
     "@types/qrcode": "^1.5.6",
