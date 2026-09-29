@@ -1,8 +1,8 @@
 /**
  * guuey#1101 — after an abort-then-send reply, the RELOADED transcript
  * rendered `u0 → "Bye!" → card → u1`: turn 2's answer before turn 1's card
- * and before its own bubble. Real shapes from dev PIN C (QA, thread
- * 1a0cfa3c…, app 90cd2971… whose brief mandates `ggui_consume`): turn 1
+ * and before its own bubble. Real shapes from dev PIN C (a QA app whose
+ * brief mandates `ggui_consume`; the captures carry synthetic ids): turn 1
  * streamed and CUT mid-`ggui_consume` (the client's abort), turn 2 sent on
  * ready, and the persisted rows read back through the REST history mapping.
  *

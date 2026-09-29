@@ -1,6 +1,6 @@
 /**
  * guuey#982 — the Playground's turn-1 answer rendered AFTER the turn-2 user
- * bubble. Real shapes from dev (QA, thread 4da2f0c1…, app qa-637-door):
+ * bubble. Real shapes from dev (QA; the captures carry synthetic ids):
  * both turns' SSE captures replayed through the REAL `invokeTurn` into ONE
  * `@silverprotocol/core` Reducer (session continuity), the flat side built
  * from the REAL persisted rows through the REST history mapping. Every
