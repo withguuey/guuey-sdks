@@ -11,8 +11,9 @@ import {
   GENERATIVE_UI_SECTION,
   renderMcpAvailabilitySection,
   MCP_AVAILABILITY_HEADING, renderFirstImpressionSection, FIRST_IMPRESSION_HEADING,
-  renderFirstImpressionShownSection, FIRST_IMPRESSION_SHOWN_HEADING } from "./preamble.js";
-import { parseControl, isInvoke } from "@guuey/worker";
+  renderFirstImpressionShownSection, FIRST_IMPRESSION_SHOWN_HEADING,
+  WELCOME_CARD_GREETING_RULE, FIRST_IMPRESSION_GREETING_CHIP_KEY } from "./preamble.js";
+import { parseControl, isInvoke, type FirstImpressionPush } from "@guuey/worker";
 
 /**
  * The memory RECALL block, captured VERBATIM from the pre-factor inline string
@@ -496,5 +497,86 @@ describe("renderFirstImpressionShownSection — the welcome card the Router alre
     const m = /<welcome_card>\n([\s\S]*?)\n<\/welcome_card>/.exec(renderFirstImpressionShownSection(msg.firstImpressionShown));
     expect(m).not.toBeNull();
     expect(JSON.parse(m![1]!)).toEqual(shown);
+  });
+});
+
+/**
+ * One greeting per hello: the welcome card IS the greeting. The model's text
+ * beside it neither greets nor introduces the agent again, and never narrates
+ * the card's controls; a greeting-only message earns at most one short line
+ * that adds something the card does not say. The same rule, in the same words,
+ * on both paths: the card already on screen, and the greeting the model draws
+ * itself this turn. The rule is pinned here VERBATIM (typed, not imported: a
+ * byte pin of what the model reads) and located in each rendered section by
+ * content, never by position.
+ */
+describe("one greeting per hello: the welcome card is the greeting", () => {
+  const RULE =
+    "The welcome card greets the visitor and introduces you, so do not greet the visitor or " +
+    "introduce yourself again, and do not describe the card or its controls or tell the visitor " +
+    "how to use them. If the visitor's message is only a greeting, reply with at most one short " +
+    "line that adds something the card does not say, or with no text at all.";
+  const shown = { heading: "Welcome to Harbor Books", message: "Glad you're here.", options: ["Find a book", "Opening hours"] };
+  const greeting: FirstImpressionPush = {
+    chipKey: "hello",
+    intent: "welcome screen for Trimly",
+    contract: { intent: "welcome", propsSpec: { properties: {} } },
+  };
+  const chip: FirstImpressionPush = { chipKey: "c5c73c61f370", intent: "Opening hours", contract: { propsSpec: { properties: {} } } };
+  const argsOf = (fi: FirstImpressionPush): string =>
+    JSON.stringify({ intent: fi.intent, blueprintDraft: { contract: fi.contract } });
+
+  /** How many times the pinned rule occurs in a rendered section: the one locator every assertion below reads. */
+  const ruleCount = (section: string): number => section.split(RULE).length - 1;
+
+  /** The armed section's text up to its handshake block, as it rendered before this rule existed (unchanged for a chip). */
+  const ARMED_LEAD =
+    "\n\n## First impression (this turn)\n\n" +
+    "A screen was prepared in advance for exactly this moment. Before anything else this turn, " +
+    "call the `ggui_handshake` tool with EXACTLY the argument object below — verbatim, no edits " +
+    "(the `variance`, if present, is the one this screen was bound under; do not add, remove, or " +
+    "change it). Then follow its result as usual (`ggui_render` with the props). " +
+    "Do not describe the screen in text.";
+  /** The welcome-card section's instruction, as it rendered before this rule existed. */
+  const SHOWN_LEAD =
+    "\n\n## Welcome card (already on screen)\n\n" +
+    "This visitor already sees the welcome card below: it was drawn before your turn began. " +
+    "Do not render it again and do not repeat its options as a list. Reply to the visitor's " +
+    "message in text, and render a card only for new content.";
+  const handshakeBlock = (fi: FirstImpressionPush): string =>
+    `\n\n<first_impression_handshake>\n${argsOf(fi)}\n</first_impression_handshake>`;
+  const cardBlock = `\n\n<welcome_card>\n${JSON.stringify(shown)}\n</welcome_card>`;
+
+  it("RED control: the locator reads 0 on both sections as they rendered before the rule, and 1 where the rule is", () => {
+    expect(ruleCount(SHOWN_LEAD + cardBlock)).toBe(0);
+    expect(ruleCount(ARMED_LEAD + handshakeBlock(greeting))).toBe(0);
+    expect(ruleCount(`${SHOWN_LEAD} ${RULE}${cardBlock}`)).toBe(1);
+  });
+
+  it("the exported rule is the pinned text, and it scripts no visitor-facing words (no quoted line to say)", () => {
+    expect(WELCOME_CARD_GREETING_RULE).toBe(RULE);
+    expect(RULE).not.toMatch(/["\u201c\u201d]/);
+  });
+
+  it("the card already on screen: the rule once, after the reply instruction and before the card's data", () => {
+    const out = renderFirstImpressionShownSection(shown);
+    expect(ruleCount(out)).toBe(1);
+    expect(out).toBe(`${SHOWN_LEAD} ${RULE}${cardBlock}`);
+  });
+
+  it("the greeting the model draws itself this turn (the armed path): the SAME rule, once, before the handshake block", () => {
+    const out = renderFirstImpressionSection(greeting);
+    expect(ruleCount(out)).toBe(1);
+    expect(out).toBe(`${ARMED_LEAD} This screen is the welcome card. ${RULE}${handshakeBlock(greeting)}`);
+  });
+
+  it("a chip's bound card answers the visitor's question, it is not the greeting: its section is unchanged and carries no rule", () => {
+    const out = renderFirstImpressionSection(chip);
+    expect(ruleCount(out)).toBe(0);
+    expect(out).toBe(ARMED_LEAD + handshakeBlock(chip));
+  });
+
+  it("the greeting is named by the wire's greeting key", () => {
+    expect(FIRST_IMPRESSION_GREETING_CHIP_KEY).toBe("hello");
   });
 });

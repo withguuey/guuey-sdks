@@ -298,6 +298,36 @@ export function renderProfileSection(
 export const FIRST_IMPRESSION_HEADING = "## First impression (this turn)";
 
 /**
+ * MIRROR of `@guuey-private/cli-wire`'s `BOOTSTRAP_GREETING_CHIP_KEY`: the
+ * `chipKey` of the app's greeting, the one first-impression push that IS the
+ * welcome card (every other push is a chip's card, the answer to the visitor's
+ * question). This package is published and cannot take the private dependency;
+ * the runtime's `first-impression.sync.test.ts` pins the two equal.
+ */
+export const FIRST_IMPRESSION_GREETING_CHIP_KEY = "hello";
+
+/**
+ * One greeting per hello (guuey#1991). The welcome card is the greeting: it
+ * greets the visitor and introduces the agent. Told only "do not render it
+ * again", a model answered a greeting-only message with a second introduction
+ * in text and narrated the card's controls. This rule forbids both, and bounds
+ * the reply to a greeting-only message to one short line that adds something
+ * the card does not say, or no text.
+ *
+ * ONE wording, rendered on both paths that put the welcome card in front of a
+ * visitor: the card the Router already drew
+ * ({@link renderFirstImpressionShownSection}) and the greeting the model draws
+ * itself from the bound handshake ({@link renderFirstImpressionSection}, for the
+ * greeting's push only). It constrains behaviour and supplies no words for the
+ * visitor: what the agent says stays the model's, within the builder's prompt.
+ */
+export const WELCOME_CARD_GREETING_RULE =
+  `The welcome card greets the visitor and introduces you, so do not greet the visitor or ` +
+  `introduce yourself again, and do not describe the card or its controls or tell the visitor ` +
+  `how to use them. If the visitor's message is only a greeting, reply with at most one short ` +
+  `line that adds something the card does not say, or with no text at all.`;
+
+/**
  * The first-impression section (guuey#1183): a pre-minted ggui blueprint is
  * bound for THIS turn, so the model opens with `ggui_handshake` carrying the
  * bound `intent` + `blueprintDraft.{contract, variance?}` VERBATIM — ggui keys
@@ -310,6 +340,11 @@ export const FIRST_IMPRESSION_HEADING = "## First impression (this turn)";
  * platform composed it, not the user), stated as such. Rendered only when the
  * ggui rail is armed (the callers gate on `gguiAttached`). Leading `\n\n`
  * so it appends cleanly after the sibling sections.
+ *
+ * The greeting's push (`chipKey` {@link FIRST_IMPRESSION_GREETING_CHIP_KEY})
+ * also carries {@link WELCOME_CARD_GREETING_RULE}: the screen the model draws
+ * is the welcome card, so its text must not greet again. A chip's push does
+ * not: its card answers the visitor's question and is not a greeting.
  */
 export function renderFirstImpressionSection(fi: FirstImpressionPush | undefined): string {
   if (fi === undefined) return "";
@@ -317,13 +352,17 @@ export function renderFirstImpressionSection(fi: FirstImpressionPush | undefined
     intent: fi.intent,
     blueprintDraft: { contract: fi.contract, ...(fi.variance !== undefined ? { variance: fi.variance } : {}) },
   });
+  const greeting =
+    fi.chipKey === FIRST_IMPRESSION_GREETING_CHIP_KEY
+      ? ` This screen is the welcome card. ${WELCOME_CARD_GREETING_RULE}`
+      : "";
   return (
     `\n\n${FIRST_IMPRESSION_HEADING}\n\n` +
     `A screen was prepared in advance for exactly this moment. Before anything else this turn, ` +
     `call the \`ggui_handshake\` tool with EXACTLY the argument object below — verbatim, no edits ` +
     `(the \`variance\`, if present, is the one this screen was bound under; do not add, remove, or ` +
     `change it). Then follow its result as usual (\`ggui_render\` with the props). ` +
-    `Do not describe the screen in text.\n\n` +
+    `Do not describe the screen in text.${greeting}\n\n` +
     `<first_impression_handshake>\n${args}\n</first_impression_handshake>`
   );
 }
@@ -334,7 +373,8 @@ export const FIRST_IMPRESSION_SHOWN_HEADING = "## Welcome card (already on scree
 /**
  * The welcome card the Router already drew for this visitor, before the model's
  * turn began (`Invoke.firstImpressionShown`). Tells the model what the card
- * shows and not to draw it again. The card's words come from the app's own name,
+ * shows, not to draw it again, and {@link WELCOME_CARD_GREETING_RULE} (the card
+ * is the greeting). The card's words come from the app's own name,
  * description and suggestions, so they sit inside an XML delimiter as data,
  * like every other pushed block. Rendered whenever the field is present: the
  * card is on screen whether or not this turn's ggui rail is armed. Leading
@@ -347,7 +387,7 @@ export function renderFirstImpressionShownSection(shown: FirstImpressionShown | 
     `\n\n${FIRST_IMPRESSION_SHOWN_HEADING}\n\n` +
     `This visitor already sees the welcome card below: it was drawn before your turn began. ` +
     `Do not render it again and do not repeat its options as a list. Reply to the visitor's ` +
-    `message in text, and render a card only for new content.\n\n` +
+    `message in text, and render a card only for new content. ${WELCOME_CARD_GREETING_RULE}\n\n` +
     `<welcome_card>\n${card}\n</welcome_card>`
   );
 }
