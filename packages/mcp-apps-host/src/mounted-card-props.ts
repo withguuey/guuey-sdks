@@ -9,6 +9,14 @@
  * tells the host what it shows: a tap on one of its quick replies resolves its
  * label from exactly the props the card painted.
  *
+ * Trust: the document speaks only for the session its own mount names. Only a
+ * `"ggui"` mount (a channel the host assigns from the locator it requested,
+ * never from the response) is read, and its slice's session must be the one
+ * the mount's own render locator names (the doors' rule,
+ * {@link gguiRenderSessionId}): an inline mount is tenant HTML, which may
+ * declare any slice it likes, and a slice naming another session describes a
+ * card this mount is not.
+ *
  * Narrow on purpose. It reads two fields with its own guard rather than the full
  * slice parser, which refuses a slice with any half-present field it validates:
  * the label needs the session and the props, nothing else. A missing or
@@ -20,6 +28,7 @@
  * the read shell as a stable host contract rides guuey#2031's ggui hand-off.
  */
 import { MCP_APP_AI_GGUI_RENDER_META_KEY, readGguiShellEnvelope } from "@ggui-ai/protocol/integrations/mcp-apps";
+import { gguiRenderSessionId } from "./action.js";
 import type { ResolvedViewMount } from "./card-mount.js";
 import type { MountedCardProps } from "./card-tap.js";
 import { viewDocumentHtml } from "./view-host.js";
@@ -30,19 +39,22 @@ function isObject(value: unknown): value is { readonly [key: string]: unknown } 
 
 /**
  * The render session and props a mounted card's shell declares, or `undefined`
- * when the mount's document is not a ggui shell, or its slice lacks either
- * field, or `propsJson` is not a JSON object.
+ * when the mount is not on the ggui channel, its own uri is not a ggui render
+ * locator, its document is not a ggui shell, its slice lacks either field or
+ * names another session than that locator, or `propsJson` is not a JSON object.
  */
 export function mountedCardProps(mount: ResolvedViewMount): MountedCardProps | undefined {
+  if (mount.channel !== "ggui") return undefined;
+  const ownSession = gguiRenderSessionId(mount.resource.uri);
+  if (ownSession === undefined) return undefined;
   const html = viewDocumentHtml(mount.resource);
   if (html === undefined) return undefined;
   const envelope: unknown = readGguiShellEnvelope(html);
   if (!isObject(envelope)) return undefined;
   const slice = envelope[MCP_APP_AI_GGUI_RENDER_META_KEY];
   if (!isObject(slice)) return undefined;
-  const sessionId = slice["sessionId"];
   const propsJson = slice["propsJson"];
-  if (typeof sessionId !== "string" || sessionId === "" || typeof propsJson !== "string") return undefined;
+  if (slice["sessionId"] !== ownSession || typeof propsJson !== "string") return undefined;
   let props: unknown;
   try {
     props = JSON.parse(propsJson);
@@ -50,5 +62,5 @@ export function mountedCardProps(mount: ResolvedViewMount): MountedCardProps | u
     // A slice whose propsJson does not parse names no props: no base, so the continuation copy.
     return undefined;
   }
-  return isObject(props) ? { sessionId, props } : undefined;
+  return isObject(props) ? { sessionId: ownSession, props } : undefined;
 }

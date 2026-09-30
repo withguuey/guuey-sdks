@@ -63,4 +63,16 @@ describe("mountedCardProps — the props a mounted ggui shell paints from", () =
     expect(mountedCardProps(mountOf("<!doctype html><p>tenant card</p>", "inline"))).toBeUndefined();
     expect(mountedCardProps({ channel: "inline", resource: { uri: "ui://x" } })).toBeUndefined();
   });
+
+  it("an inline (tenant HTML) mount that declares a render slice is never a ggui card's props", () => {
+    // The same bytes a ggui shell carries, served on the inline channel: the document speaks for itself only.
+    expect(mountedCardProps(mountOf(shell(SLICE), "inline"))).toBeUndefined();
+    expect(mountedCardProps({ channel: "inline", resource: { uri: SYNTHETIC_LOCATOR, text: shell(SLICE) } })).toBeUndefined();
+  });
+
+  it("a ggui mount whose slice names another session than its own locator: undefined", () => {
+    expect(mountedCardProps(mountOf(shell({ ...SLICE, sessionId: "render_elsewhere" })))).toBeUndefined();
+    // A mount whose own uri is not a ggui render locator names no session to tie the slice to.
+    expect(mountedCardProps({ channel: "ggui", resource: { uri: "ui://ggui/other/1", text: shell(SLICE) } })).toBeUndefined();
+  });
 });

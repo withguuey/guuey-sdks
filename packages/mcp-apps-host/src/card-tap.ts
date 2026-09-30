@@ -16,25 +16,29 @@
  *  - {@link resolveTapLabel} names the words: a quick reply's label from the
  *    props the host already holds, or `null` (the continuation copy).
  *
- * Trust: the card contributes only its session id and the tapped reply's id;
- * the words come from props the host holds (the paint the visitor sees), so a
- * card can at most select another on-screen chip label. The label is
- * display-only: it never reaches a model path.
+ * Trust: the host decides the session from its own locator (the mount's
+ * `resourceUri`, by the doors' own rule: {@link gguiRenderSessionId}), and a
+ * card whose arguments name another session reads as no tap. The card
+ * contributes only the tapped reply's id; the words come from props the host
+ * holds for THAT session (the paint the visitor sees), so a card can at most
+ * select another of its own on-screen chip labels. The label is display-only:
+ * it never reaches a model path.
  */
 import {
   isGguiSubmitActionInput,
   isGguiSubmitDispatchInput,
   type GguiUserActionMeta,
 } from "@ggui-ai/protocol/integrations/mcp-apps";
-import type { McpToolCallResult, UiActionRequest } from "./action.js";
+import { gguiRenderSessionId, type McpToolCallResult, type UiActionRequest } from "./action.js";
 import { latestPaintProps, quickReplyLabel, type CardProps, type PaintPart } from "./paint-props.js";
 import { tapText } from "./tap-labels.js";
 
 /** The one runtime tool that carries a user gesture. */
 const SUBMIT_ACTION_TOOL = "ggui_runtime_submit_action";
 
-/** What a relayed gesture says about itself: its render session, its action id, and the id of the reply it chose. */
+/** A relayed gesture: its render session, its action id, and the id of the reply it chose. */
 export interface SubmitActionTap {
+  /** The render session the host's own locator names (the arguments name the same one, or there is no tap). */
   renderSessionId: string;
   /** ggui mints one per gesture; the doorbell repeats it. The join key. */
   actionId: string;
@@ -49,15 +53,21 @@ function isObject(value: unknown): value is { readonly [key: string]: unknown } 
 /**
  * The tap inside a relayed `tools/call`, or `null` unless it is a
  * `ggui_runtime_submit_action` whose arguments ggui's own guard admits as a
- * `dispatch`.
+ * `dispatch`, relayed on a ggui render locator whose session the arguments
+ * also name. The session is the LOCATOR's: both doors bind the action to it
+ * whatever the arguments say, so arguments naming another one describe a
+ * gesture the doors never deliver there.
  */
 export function readSubmitActionTap(request: UiActionRequest): SubmitActionTap | null {
   if (request.name !== SUBMIT_ACTION_TOOL) return null;
+  const renderSessionId = gguiRenderSessionId(request.resourceUri);
+  if (renderSessionId === undefined) return null;
   const args = request.arguments;
   if (!isGguiSubmitActionInput(args) || !isGguiSubmitDispatchInput(args)) return null;
+  if (args.sessionId !== renderSessionId) return null;
   const data = args.payload.actionData;
   const dataId = isObject(data) && typeof data["id"] === "string" ? data["id"] : null;
-  return { renderSessionId: args.sessionId, actionId: args.actionId, dataId };
+  return { renderSessionId, actionId: args.actionId, dataId };
 }
 
 /**
@@ -127,7 +137,7 @@ function parsedJsonObject(text: string): { readonly [key: string]: unknown } | n
   return isObject(parsed) ? parsed : null;
 }
 
-/** A mounted card's own props, keyed by the render session its document names (see `mountedCardProps`). */
+/** A mounted card's own props, keyed by the render session its own locator names; its document names the same one (see `mountedCardProps`). */
 export interface MountedCardProps {
   sessionId: string;
   props: CardProps;
@@ -139,9 +149,10 @@ export interface ResolveTapLabelInput {
   /** The host's live fold, flattened to its parts in transcript order. */
   parts: readonly PaintPart[];
   /**
-   * The render session the HOST bound this mount to, when it owns one (the
-   * widget's persisted locator does). A tap naming another session resolves
-   * to `null`: the same session the runtime's action door binds.
+   * An extra check only: the render session the HOST bound this mount to, when
+   * it keeps one apart from the locator. A tap whose locator names another
+   * session resolves to `null`. The session itself is always the request's
+   * own locator's (see {@link readSubmitActionTap}).
    */
   boundSessionId?: string;
   /**
@@ -154,11 +165,12 @@ export interface ResolveTapLabelInput {
 
 /**
  * The words a tap shows as the visitor's turn: the tapped quick reply's label,
- * normalized by `tapText`, from the latest paint of the tap's session the host
- * holds — or `null` when it has none (not a quick reply, no paint in hand, a
- * session mismatch, or a label the normalizer refuses). The host-held props
- * label is the only source today; a card-reported visible text, when ggui
- * sends one, is used only where the props have no label.
+ * normalized by `tapText`, from the latest paint the host holds of the session
+ * its own locator names — or `null` when it has none (no tap on a ggui render
+ * locator, arguments naming another session, not a quick reply, no paint in
+ * hand, a bound-session mismatch, or a label the normalizer refuses). The
+ * host-held props label is the only source today; a card-reported visible
+ * text, when ggui sends one, is used only where the props have no label.
  */
 export function resolveTapLabel(input: ResolveTapLabelInput): string | null {
   const tap = readSubmitActionTap(input.request);

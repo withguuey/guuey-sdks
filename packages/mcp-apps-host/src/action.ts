@@ -422,6 +422,25 @@ export interface UiActionRequest {
   arguments?: McpToolStructuredContent;
 }
 
+/**
+ * The render session a `ui://ggui/render/<sessionId>/<hash>` locator names,
+ * or `undefined` for any other locator shape (guuey#2031).
+ *
+ * A MIRROR of the rule both action doors bind a card action's session with
+ * (the server's `gguiRenderSessionId`, held equal to this one by the server
+ * side's `ui-action-policy.sync.test.ts`). The locator is the host's own (the
+ * mount's persisted `resourceUri`), never the card's arguments, so a host that
+ * decides a tap's session with it decides exactly what the doors decide.
+ */
+export function gguiRenderSessionId(uri: string): string | undefined {
+  const prefix = "ui://ggui/render/";
+  if (!uri.startsWith(prefix)) return undefined;
+  const rest = uri.slice(prefix.length);
+  const slash = rest.indexOf("/");
+  if (slash <= 0) return undefined;
+  return rest.slice(0, slash);
+}
+
 /** The host-relayed auto-poll rung (guuey#1235). A dead session's pull is the storm. */
 const PULL_TOOL = "ggui_runtime_pull";
 

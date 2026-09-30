@@ -128,10 +128,10 @@ export function storedRowsOf(messages: readonly AgMessage[]): { seq: number; aut
 /** The `tools/call` a chip tap relays, arguments built as runtime.js 0.25 builds them for a `dispatch`. */
 export function chipTapRequest(
   replyId: string | null,
-  over: { sessionId?: string; actionId?: string; name?: string; kind?: string } = {},
+  over: { sessionId?: string; actionId?: string; name?: string; kind?: string; resourceUri?: string } = {},
 ): UiActionRequest {
   return {
-    resourceUri: SYNTHETIC_LOCATOR,
+    resourceUri: over.resourceUri ?? SYNTHETIC_LOCATOR,
     name: over.name ?? "ggui_runtime_submit_action",
     arguments: {
       kind: over.kind ?? "dispatch",

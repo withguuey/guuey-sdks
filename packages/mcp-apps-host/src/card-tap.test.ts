@@ -47,6 +47,18 @@ describe("readSubmitActionTap — the tap inside a relayed tools/call", () => {
     expect(readSubmitActionTap(chipTapRequest(CHIP_FIND.id, { actionId: "" }))).toBeNull();
     expect(readSubmitActionTap({ resourceUri: "ui://x", name: "ggui_runtime_submit_action" })).toBeNull();
   });
+
+  it("the session is the one the host's own locator names: arguments naming another session read as no tap", () => {
+    // The card's arguments name session B while the mount's locator (the host's own) names A.
+    expect(readSubmitActionTap(chipTapRequest(CHIP_FIND.id, { sessionId: "render_elsewhere" }))).toBeNull();
+    // A locator that is not a ggui render locator names no session at all.
+    expect(readSubmitActionTap(chipTapRequest(CHIP_FIND.id, { resourceUri: "ui://tenant/card/1" }))).toBeNull();
+    expect(readSubmitActionTap(chipTapRequest(CHIP_FIND.id, { resourceUri: `ui://ggui/render/${SYNTHETIC_SESSION}` }))).toBeNull();
+    // The doors' own rule: the segment after `ui://ggui/render/`, up to the next slash.
+    expect(readSubmitActionTap(chipTapRequest(CHIP_FIND.id, { resourceUri: `ui://ggui/render/${SYNTHETIC_SESSION}/h#3` }))?.renderSessionId).toBe(
+      SYNTHETIC_SESSION,
+    );
+  });
 });
 
 describe("readUserActionMeta — the doorbell's structured mirror", () => {
@@ -82,6 +94,18 @@ describe("resolveTapLabel — the words a tap shows, at tap time", () => {
   it("a tap whose id is not a quick reply (a card button): null — the continuation copy", () => {
     expect(resolveTapLabel({ request: chipTapRequest("book-now"), parts: parts(greetingFold()) })).toBeNull();
     expect(resolveTapLabel({ request: chipTapRequest(null), parts: parts(greetingFold()) })).toBeNull();
+  });
+
+  it("card A naming session B: no label, even where B's paint in the fold carries that reply", () => {
+    const elsewhere = "render_00000000-0000-4000-8000-00000000000b";
+    // Session B's own card carries the reply id, with words the tap on A must never show.
+    const foldB = parts(greetingFold({ ...GREETING_PROPS, quickReplies: [{ id: CHIP_FIND.id, label: "Words from B" }] })).map((part) =>
+      part.type === "tool-result" ? { ...part, uiData: { outcome: "rendered", sessionId: elsewhere } } : part,
+    );
+    const request = chipTapRequest(CHIP_FIND.id, { sessionId: elsewhere });
+    expect(resolveTapLabel({ request, parts: foldB })).toBeNull();
+    const mountedFor = (sessionId: string) => ({ sessionId, props: GREETING_PROPS });
+    expect(resolveTapLabel({ request, parts: [], mountedFor })).toBeNull();
   });
 
   it("a host-bound session that differs from the tap's own: null", () => {
