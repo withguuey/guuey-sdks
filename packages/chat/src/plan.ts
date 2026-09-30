@@ -33,6 +33,8 @@
  */
 import type { AgBlock, AgReduceResult, JsonValue } from "@silverprotocol/core";
 import {
+  isViewDirectiveText,
+  readTapLabels,
   snapshotViewMount,
   toolResultLocator,
   toolResultRenderRefusal,
@@ -1049,21 +1051,27 @@ export function planTranscript(
         : "sent";
     // guuey#422 close-condition 3: a forwarded view directive (the
     // `ui/message` doorbell's `<ggui_directive>` carrier, relayed through
-    // the composer's send gate) collapses into a calm continuation row.
-    // DISPLAY-ONLY — `text` stays wire-verbatim (expand reveals it); the
-    // wire itself was never touched. Marker matches ggui's runtime
-    // construction (`<ggui_directive kind="user-action">` inside the
-    // relayed prose).
-    const directive =
-      policy.userMessage.collapseDirectives && user.text.includes("<ggui_directive");
+    // the composer's send gate) is not typed speech. guuey#2031: it draws as
+    // an ACTION turn — the tapped controls' own words when the row carries
+    // them, else the continuation line. DISPLAY-ONLY — `text` stays
+    // wire-verbatim; the wire itself was never touched. The test is the ONE
+    // directive predicate the runtime shares (`isViewDirectiveText`), so a
+    // row draws the same live and after a reload whatever ggui's directive
+    // looks like inside.
+    const directive = policy.userMessage.collapseDirectives && isViewDirectiveText(user.text);
+    // The reader contract (shape only): typed text never shows a label.
+    const tapLabels = directive ? readTapLabels(user.tapLabels) : undefined;
     conversation.push({
       kind: "user",
       key,
+      // A directive row's `expanded` is its raw-directive toggle (debug only).
       expanded: resolveExpanded(key, !directive, overrides),
       text: user.text,
       state: sendState,
       retry: sendState === "failed" && policy.userMessage.retryAffordance,
       directive,
+      ...(tapLabels !== undefined ? { tapLabels } : {}),
+      ...(directive && policy.userMessage.rawDirective ? { rawDirective: true } : {}),
     });
   };
 
@@ -1114,6 +1122,9 @@ export function planTranscript(
     if (item.kind === "view" && item.actionScope !== null) liveViewScopes.add(item.actionScope);
   }
   const cards = [...(inputs.historyCards ?? [])].sort((a, b) => a.seq - b.seq);
+  // guuey#2031 §4.7: the first LIVE user row, on a surface whose rows carry read-plane seqs.
+  const surfaceCarriesSeqs = inputs.messages.some((m) => m.seq !== undefined);
+  const firstLiveUserSlot = surfaceCarriesSeqs ? users.findIndex((u) => u.seq === undefined) : -1;
   // guuey#535: ONE render session = ONE surface. Multiple history cards
   // sharing an actionScope are the same surface referenced across turns
   // (ggui SPEC §7.1.2.1 makes the amend result's {sessionId, resourceUri}
@@ -1165,15 +1176,43 @@ export function planTranscript(
     // card; insert before its item. Cards processed in ascending seq order,
     // so same-target cards keep their relative order (each splice lands
     // after the previous card, before the user item).
+    //
+    // guuey#2031 §4.7: a card NEWER than every seq-bearing user turn sits
+    // before the first LIVE user row when there is one — where it will sit
+    // after a reload, once that row's stored seq exceeds the card's. Without
+    // this, a tap on the trailing card (the greeting, most often) drew its
+    // row and answer ABOVE the card, and the card jumped below the new turn.
+    // A live row is a seq-less user row on a surface whose rows carry
+    // read-plane seqs; on a surface with no seqs at all, every row is
+    // seq-less and the tail stands, as before. History cards arrive with
+    // the history seed, which lands only on an untouched chat, so a history
+    // card predates every live row.
     const nextUserSlot = users.findIndex(
       (u) => u.seq !== undefined && card.seq < u.seq,
     );
+    const anchorSlot = nextUserSlot !== -1 ? nextUserSlot : firstLiveUserSlot;
     const anchorIdx =
-      nextUserSlot === -1 ? -1 : items.findIndex((it) => it.key === `u${nextUserSlot}`);
+      anchorSlot === -1 ? -1 : items.findIndex((it) => it.key === `u${anchorSlot}`);
     if (anchorIdx === -1) {
       items.push(view);
     } else {
       items.splice(anchorIdx, 0, view);
+    }
+  }
+
+  // R0b (guuey#2031) — card taps not yet sent as a turn, drawn at once in
+  // tap order after the history cards: a pending tap sits below the card it
+  // tapped, where its row will land. The plan that first shows a message
+  // carrying a tap's id (`clientMessageId`) drops the tap, so the swap is
+  // one plan: never both rows, never neither. Only where directive rows draw
+  // as action turns; a builder who chose the verbatim bubble sees the sent
+  // row alone.
+  if (policy.userMessage.collapseDirectives && inputs.pendingTaps !== undefined && inputs.pendingTaps.length > 0) {
+    const sentIds = new Set<string>();
+    for (const m of inputs.messages) if (m.clientMessageId !== undefined) sentIds.add(m.clientMessageId);
+    for (const tap of inputs.pendingTaps) {
+      if (sentIds.has(tap.id)) continue;
+      items.push({ kind: "tap", key: `tap.${tap.id}`, expanded: true, labels: tap.labels });
     }
   }
 

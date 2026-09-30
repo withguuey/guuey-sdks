@@ -42,6 +42,7 @@ import type {
   PromptItem,
   ReasoningItem,
   StatusLineItem,
+  TapItem,
   ToolGroupItem,
   ToolItem,
   UnknownItem,
@@ -189,31 +190,97 @@ function CopyButton({ text, ctx }: { text: string; ctx: TranscriptItemContext })
 
 // ─── R0 ────────────────────────────────────────────────────────────────────
 
+/** The couldn't-send line + Retry under a failed R0/R0b turn. */
+function SendFailed({ item, ctx }: ItemProps<UserMessageItem>): ReactNode {
+  if (item.state !== "failed") return null;
+  return (
+    <p className="guuey-chat-send-failed" role="status">
+      {ctx.strings.userCouldntSend}
+      {item.retry ? (
+        <button type="button" className="guuey-chat-retry" onClick={() => ctx.onRetry?.(item)}>
+          {ctx.strings.userRetry}
+        </button>
+      ) : null}
+    </p>
+  );
+}
+
+/** The tap mark (the brand's glyph, 16×16 viewBox) — decoration, hidden from assistive tech. */
+function TapMark(): ReactNode {
+  return (
+    <svg className="guuey-chat-action-mark" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path
+        d="M6.4 6.4 13.6 9.1 10.3 10.3 9.1 13.6Z"
+        fill="currentColor"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6.4 1.5v2.3M1.5 6.4h2.3M2.9 2.9l1.6 1.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/**
+ * The words of an action turn, one entry per tap (guuey#2031): a label is the
+ * quiet twin of the typed bubble (the ink tint, the tap mark, a hidden "you
+ * tapped" prefix); a `null` entry is the continuation line in its position.
+ * QUOTED, never rendered — whitespace preserved. Never a control.
+ */
+function ActionTurnWords({ labels, strings }: { labels: readonly (string | null)[]; strings: ChatStrings }): ReactNode {
+  return labels.map((label, i) =>
+    label === null ? (
+      <p key={i} className="guuey-chat-directive-label">
+        {strings.directiveContinuation}
+      </p>
+    ) : (
+      <div key={i} className="guuey-chat-action">
+        <span className="guuey-chat-action-bubble">
+          <TapMark />
+          <span className="guuey-chat-action-text">
+            <span className="guuey-chat-visually-hidden">{strings.tappedLabelPrefix}</span>{" "}
+            <span className="guuey-chat-action-label">{label}</span>
+          </span>
+        </span>
+      </div>
+    ),
+  );
+}
+
 export function DefaultUserMessage({ item, ctx }: ItemProps<UserMessageItem>): ReactNode {
-  // guuey#422: a forwarded view directive renders as a calm continuation
-  // row — the wire-verbatim text sits behind the expand, never rewritten.
+  // guuey#422 / guuey#2031: a forwarded view directive is an ACTION turn,
+  // never typed speech — the tapped words when the row carries them, else the
+  // continuation line. On a visitor surface nothing discloses the directive
+  // (machine text never reaches a visitor); the debug preset offers it in a
+  // quiet toggle BELOW the turn, and the turn itself never becomes a button.
   if (item.directive) {
     return (
-      <div className={`guuey-chat-user guuey-chat-user-directive guuey-chat-user-${item.state}`} part={messagePart("user")}>
-        <Collapsible
-          itemKey={item.key}
-          expanded={item.expanded}
-          header={<span className="guuey-chat-directive-label">{ctx.strings.directiveContinuation}</span>}
-          ctx={ctx}
-        >
-          {/* Verbatim quote — same never-rendered rule as the bubble. */}
-          <div className="guuey-chat-user-bubble">{item.text}</div>
-        </Collapsible>
-        {item.state === "failed" ? (
-          <p className="guuey-chat-send-failed" role="status">
-            {ctx.strings.userCouldntSend}
-            {item.retry ? (
-              <button type="button" className="guuey-chat-retry" onClick={() => ctx.onRetry?.(item)}>
-                {ctx.strings.userRetry}
-              </button>
-            ) : null}
-          </p>
+      <div
+        className={`guuey-chat-action-turn guuey-chat-user-directive guuey-chat-user-${item.state}${
+          item.state === "sending" ? " guuey-chat-action-sending" : ""
+        }`}
+        part={messagePart("user")}
+      >
+        <ActionTurnWords labels={item.tapLabels ?? [null]} strings={ctx.strings} />
+        {item.rawDirective === true ? (
+          <Collapsible
+            itemKey={item.key}
+            expanded={item.expanded}
+            header={<span>{ctx.strings.directiveRawToggle}</span>}
+            ctx={ctx}
+            className="guuey-chat-directive-raw"
+          >
+            {/* Verbatim quote — the same never-rendered rule as the bubble. */}
+            <div className="guuey-chat-directive-raw-text">{item.text}</div>
+          </Collapsible>
         ) : null}
+        <SendFailed item={item} ctx={ctx} />
       </div>
     );
   }
@@ -221,16 +288,21 @@ export function DefaultUserMessage({ item, ctx }: ItemProps<UserMessageItem>): R
     <div className={`guuey-chat-user guuey-chat-user-${item.state}`} part={messagePart("user")}>
       {/* User text is QUOTED, never rendered — whitespace preserved. */}
       <div className="guuey-chat-user-bubble">{item.text}</div>
-      {item.state === "failed" ? (
-        <p className="guuey-chat-send-failed" role="status">
-          {ctx.strings.userCouldntSend}
-          {item.retry ? (
-            <button type="button" className="guuey-chat-retry" onClick={() => ctx.onRetry?.(item)}>
-              {ctx.strings.userRetry}
-            </button>
-          ) : null}
-        </p>
-      ) : null}
+      <SendFailed item={item} ctx={ctx} />
+    </div>
+  );
+}
+
+// ─── R0b ───────────────────────────────────────────────────────────────────
+
+/**
+ * A card tap drawn before its turn is sent (guuey#2031): the same action turn
+ * in the sending look, with no disclosure — no directive text exists yet.
+ */
+export function DefaultTap({ item, ctx }: ItemProps<TapItem>): ReactNode {
+  return (
+    <div className="guuey-chat-action-turn guuey-chat-action-sending" part={messagePart("user")}>
+      <ActionTurnWords labels={item.labels} strings={ctx.strings} />
     </div>
   );
 }
@@ -807,6 +879,8 @@ export function DefaultStatus({ item }: ItemProps<StatusLineItem>): ReactNode {
 /** One component per §3 override slot. */
 export interface TranscriptComponents {
   userMessage: ComponentType<ItemProps<UserMessageItem>>;
+  /** R0b (guuey#2031): a card tap drawn before its turn is sent. */
+  tap: ComponentType<ItemProps<TapItem>>;
   text: ComponentType<ItemProps<TextItem>>;
   reasoning: ComponentType<ItemProps<ReasoningItem>>;
   tool: ComponentType<ItemProps<ToolItem>>;
@@ -828,6 +902,7 @@ export interface TranscriptComponents {
 
 export const defaultTranscriptComponents: TranscriptComponents = {
   userMessage: DefaultUserMessage,
+  tap: DefaultTap,
   text: DefaultText,
   reasoning: DefaultReasoning,
   tool: DefaultTool,
@@ -856,6 +931,10 @@ export function renderItem(
   switch (item.kind) {
     case "user": {
       const C = components.userMessage;
+      return <C key={item.key} item={item} ctx={ctx} />;
+    }
+    case "tap": {
+      const C = components.tap;
       return <C key={item.key} item={item} ctx={ctx} />;
     }
     case "text": {

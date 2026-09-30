@@ -22,13 +22,21 @@ export interface TranscriptPolicy {
   userMessage: {
     retryAffordance: boolean;
     /**
-     * Collapse forwarded view-directive turns (guuey#422 `ui/message`
-     * relays carrying `<ggui_directive>`) into a calm
-     * `strings.directiveContinuation` row. Display-only — the sent/
-     * persisted text stays wire-verbatim, and expand reveals it. Debug
-     * preset shows the verbatim bubble (`false`).
+     * Draw forwarded view-directive turns (guuey#422 `ui/message` relays
+     * carrying `<ggui_directive>`) as ACTION turns (guuey#2031): the tapped
+     * controls' words when the row carries them, else the calm
+     * `strings.directiveContinuation` line. Display-only — the sent/
+     * persisted text stays wire-verbatim. On in both presets; `false` is a
+     * builder's explicit opt-out that draws the verbatim bubble instead.
      */
     collapseDirectives: boolean;
+    /**
+     * Offer the wire-verbatim directive in a quiet toggle BELOW an action
+     * turn (guuey#2031). `false` in calm: machine text never reaches a
+     * visitor, so the action turn and the continuation line have no
+     * disclosure at all. `true` in debug (the builder surface).
+     */
+    rawDirective: boolean;
   };
   /** R1 (markdown sanitization itself is the 3b renderer's security surface). */
   text: { markdown: boolean };
@@ -150,7 +158,7 @@ function calmBase(): TranscriptPolicy {
     strings: defaultChatStrings,
     locale: "en",
     debugDetail: false,
-    userMessage: { retryAffordance: true, collapseDirectives: true },
+    userMessage: { retryAffordance: true, collapseDirectives: true, rawDirective: false },
     text: { markdown: true },
     reasoning: { show: true, expandedByDefault: false },
     tool: { expandByDefault: false, argsVisible: false, humanizeTitle: humanizeToolName, showToolRows: "non-ggui" },
@@ -188,7 +196,9 @@ export function debugPolicy(overrides?: TranscriptPolicyOverrides): TranscriptPo
   const debug: TranscriptPolicy = {
     ...base,
     debugDetail: true,
-    userMessage: { ...base.userMessage, collapseDirectives: false },
+    // guuey#2031: a tap is an action turn on every surface; the builder
+    // surface keeps the raw directive one toggle away below it.
+    userMessage: { ...base.userMessage, rawDirective: true },
     reasoning: { ...base.reasoning, expandedByDefault: true },
     tool: { ...base.tool, expandByDefault: true, argsVisible: true, showToolRows: "all" },
     toolGroup: { threshold: false },

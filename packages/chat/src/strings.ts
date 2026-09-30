@@ -92,9 +92,23 @@ export interface ChatStrings {
   userRetry: string;
   /**
    * R0 directive collapse (guuey#422): the calm label for a forwarded
-   * view-directive turn — the wire-verbatim text sits behind the expand.
+   * view-directive turn that carries no tapped words. Since guuey#2031 it is a
+   * static line on visitor surfaces (no expand); a merged row draws it in the
+   * position of each tap that had no words. The words are the copy owners' to change.
    */
   directiveContinuation: string;
+  /**
+   * R0b action turn (guuey#2031): the visually hidden prefix read before a
+   * tapped control's words, so a screen reader hears the turn was a tap, not
+   * typed speech. The words are the copy owners' to change.
+   */
+  tappedLabelPrefix: string;
+  /**
+   * The debug preset's toggle below an action turn (guuey#2031) that reveals
+   * the wire-verbatim directive. Builder surfaces only; never drawn for a
+   * visitor.
+   */
+  directiveRawToggle: string;
 
   /** R6 states. */
   viewNegotiating: string;
@@ -313,6 +327,8 @@ export const defaultChatStrings: ChatStrings = {
   userCouldntSend: "Couldn't send",
   userRetry: "Retry",
   directiveContinuation: "Continuing from your action…",
+  tappedLabelPrefix: "You tapped:",
+  directiveRawToggle: "Directive sent to the agent",
 
   viewNegotiating: "Loading view…",
   viewBootFailure: "This view couldn't start",

@@ -7,7 +7,9 @@
  * prose. The collapse is DISPLAY-ONLY: the plan keeps `text` byte-identical
  * (it is what was sent and what persists) and marks the item `directive` so
  * the renderer shows `strings.directiveContinuation` with the verbatim text
- * behind the expand. Debug preset shows the verbatim bubble.
+ * behind the expand. Since guuey#2031 the calm row is a static line (no
+ * expand) and the debug preset offers the verbatim text in a toggle below the
+ * row (`rawDirective`).
  */
 import { describe, expect, it } from "vitest";
 import type { AgReduceResult } from "@silverprotocol/core";
@@ -86,11 +88,22 @@ describe("guuey#422 — directive-turn collapse (display-only, wire-verbatim)", 
     expect(directive.text).toBe(DIRECTIVE_TEXT);
   });
 
-  it("debug preset shows the verbatim bubble — no collapse", () => {
+  it("debug preset draws the same action turn and offers the verbatim directive below it, collapsed (guuey#2031)", () => {
+    // Superseded: the debug preset used to show the verbatim bubble. A tap is
+    // never drawn as typed speech on any surface; the builder surface keeps the
+    // directive one toggle away instead.
     const plan = planTranscript(INPUTS, debugPolicy(), {});
     const directive = userItem(plan.items, "u1");
-    expect(directive.directive).toBe(false);
-    expect(directive.expanded).toBe(true);
+    expect(directive.directive).toBe(true);
+    expect(directive.rawDirective).toBe(true);
+    expect(directive.expanded).toBe(false);
     expect(directive.text).toBe(DIRECTIVE_TEXT);
+  });
+
+  it("calm offers no raw directive at all; a builder can turn the collapse off to get the verbatim bubble", () => {
+    expect(userItem(planTranscript(INPUTS, calmPolicy(), {}).items, "u1").rawDirective ?? false).toBe(false);
+    const raw = userItem(planTranscript(INPUTS, calmPolicy({ userMessage: { collapseDirectives: false } }), {}).items, "u1");
+    expect(raw.directive).toBe(false);
+    expect(raw.expanded).toBe(true);
   });
 });

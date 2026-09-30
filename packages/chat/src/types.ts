@@ -21,6 +21,7 @@ import type {
 } from "@silverprotocol/core";
 import type { AgentInvokeStatus, HistoryCard } from "@guuey/agent-client";
 import type {
+  TapLabels,
   ViewCspDiagnosis,
   ViewHostPhase,
   ViewMount,
@@ -101,6 +102,25 @@ export interface TranscriptMessage {
    * covers that fallback as a named case, not an implicit else.
    */
   precedingTurnCount?: number;
+  /**
+   * On a card-action user row (guuey#2031): the tapped controls' own words,
+   * one entry per tap the row stands for (`null` for a tap with none) —
+   * `@guuey/agent-client`'s `AgentMessage.tapLabels`, live or rehydrated. Read
+   * through the shape-only `readTapLabels` and honored only on a forwarded
+   * view-directive row, so typed text can never show a label. Optional by
+   * design: absent, the row draws its continuation line, as before.
+   */
+  tapLabels?: TapLabels;
+}
+
+/**
+ * A card tap drawn before its turn is sent (guuey#2031): the tap ledger's
+ * entry, keyed by the id its send will carry as `clientMessageId`. The
+ * planner draws it as a {@link TapItem} until a message with that id exists.
+ */
+export interface PendingTap {
+  id: string;
+  labels: TapLabels;
 }
 
 /**
@@ -191,6 +211,13 @@ export interface TranscriptInputs {
   historyState?: "loading" | "gone" | "loaded";
   /** R0: optimistic-send lifecycle, keyed by clientMessageId; absent = settled. */
   sendStates?: Readonly<Record<string, "sending" | "failed">>;
+  /**
+   * Card taps not yet sent as a turn (guuey#2031), in tap order — renderer-
+   * supplied state like `sendStates` (the tap ledger's `pendingTaps`). Each
+   * plans as a {@link TapItem} until a message carries its id as
+   * `clientMessageId`; the swap happens within one plan. Absent = none.
+   */
+  pendingTaps?: readonly PendingTap[];
   /** mountKey → live phase (R6 states). Keys match `ViewMountItem.key`. */
   viewPhases?: Readonly<Record<string, ViewHostPhase>>;
   /**
@@ -258,8 +285,36 @@ export interface UserMessageItem extends BaseItem {
    * (`userMessage.collapseDirectives`) — `false` here means "render as an
    * ordinary bubble" whether because the text is ordinary or the policy
    * says show it.
+   *
+   * guuey#2031: a directive row is an ACTION turn, never typed speech. With
+   * {@link tapLabels} it draws the tapped controls' words; without, the
+   * continuation line — a static line on visitor surfaces (no expand).
    */
   directive: boolean;
+  /**
+   * The tapped controls' own words (guuey#2031), one entry per tap; a `null`
+   * entry draws the continuation line in its position. Present only on a
+   * `directive` row whose message carried a well-formed list.
+   */
+  tapLabels?: TapLabels;
+  /**
+   * The renderer offers the wire-verbatim directive in a quiet toggle BELOW
+   * the action turn (guuey#2031) — the builder surface's debug preset only
+   * (`userMessage.rawDirective`). `expanded` is that toggle's state. Absent or
+   * `false`: the turn stands alone, and machine text never reaches a visitor.
+   */
+  rawDirective?: boolean;
+}
+
+/**
+ * R0b (guuey#2031) — a card tap drawn at once, before its turn is sent: the
+ * same action turn in the sending look, with no disclosure (no directive text
+ * exists yet). Its own kind, not a `user` item, so an older custom
+ * `userMessage` slot never draws an empty bubble for it.
+ */
+export interface TapItem extends BaseItem {
+  kind: "tap";
+  labels: TapLabels;
 }
 
 /** R1 — assistant text. */
@@ -544,6 +599,7 @@ export interface UnknownItem extends BaseItem {
 
 export type DisplayItem =
   | UserMessageItem
+  | TapItem
   | TextItem
   | ReasoningItem
   | ToolItem
@@ -576,6 +632,19 @@ export interface StatusLineItem {
   /** Literal state + elapsed, populated only under the debug policy. */
   detail: string | null;
 }
+
+/**
+ * Why a pending card tap closed without becoming a turn (guuey#2031):
+ *  - `not-enqueued` — the relay's answer tells the card's runtime the gesture
+ *    is not on any pipe; it rings no doorbell (it shows its own notice);
+ *  - `consumed-live` — a live consume drained it; no doorbell, no user row;
+ *  - `relay-failed` — the relay itself rejected;
+ *  - `no-doorbell` — enqueued, but no doorbell came within the grace;
+ *  - `refused` — the chat could not take the doorbell (unavailable);
+ *  - `not-sent` — sent, but no message with its id ever committed (the send
+ *    refused, or an agent client that ignores the send options).
+ */
+export type TapWithdrawReason = "not-enqueued" | "consumed-live" | "relay-failed" | "no-doorbell" | "refused" | "not-sent";
 
 /**
  * The debug sink's event union (spec §5's `onDebugEvent`, shipped as real
@@ -620,6 +689,12 @@ export type ChatDebugEvent =
    * — calm end-user UX keeps deny == miss un-oracled.
    */
   | { type: "locator-read-miss"; key: ItemKey; resourceUri: string; origin: "live" | "history" }
+  /**
+   * A pending card tap was withdrawn without becoming a turn (guuey#2031):
+   * counts-only — the reason, never the tap's words or ids. `no-doorbell` is
+   * the one a runtime change would show (it rang no doorbell within the grace).
+   */
+  | { type: "tap-withdrawn"; reason: TapWithdrawReason }
   /**
    * `clearConversation()`'s server-erasure outcome (guuey#526). The clear
    * itself is ALWAYS local-first and never blocks on this — the contract's

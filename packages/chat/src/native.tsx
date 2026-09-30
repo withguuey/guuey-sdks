@@ -27,6 +27,7 @@ export {
   nativeTranscriptComponents,
   renderNativeItem,
   NativeUserMessage,
+  NativeTap,
   NativeText,
   NativeReasoning,
   NativeTool,

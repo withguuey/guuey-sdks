@@ -164,8 +164,11 @@ describe("R10 prompt focus management", () => {
   });
 });
 
-describe("R0 directive collapse (guuey#422)", () => {
-  const directiveItem = (expanded: boolean): UserMessageItem => ({
+describe("R0 directive row (guuey#422; guuey#2031's action turn supersedes the calm expand)", () => {
+  // guuey#2031: machine text never reaches a visitor. Under the calm preset the
+  // continuation row is a STATIC line (no chevron, no expand); only the debug
+  // preset (`rawDirective`) offers the verbatim directive, in a toggle below.
+  const directiveItem = (expanded: boolean, rawDirective = false): UserMessageItem => ({
     kind: "user",
     key: "u1",
     expanded,
@@ -173,28 +176,35 @@ describe("R0 directive collapse (guuey#422)", () => {
     state: "sent",
     retry: false,
     directive: true,
+    ...(rawDirective ? { rawDirective } : {}),
   });
 
-  it("collapsed: the calm continuation label shows and the verbatim carrier stays out of the DOM", () => {
+  it("calm: the continuation label shows as a static line; the verbatim carrier is not in the DOM and nothing toggles", () => {
     render(<DefaultUserMessage item={directiveItem(false)} ctx={ctx()} />);
     expect(screen.getByText(defaultChatStrings.directiveContinuation)).toBeTruthy();
     expect(screen.queryByText(/ggui_consume/)).toBeNull();
-    // A real toggle, not a dead row.
-    expect(screen.getByRole("button", { expanded: false })).toBeTruthy();
+    // No disclosure on a visitor surface: not a button, no chevron.
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(document.querySelector(".guuey-chat-toggle-glyph")).toBeNull();
   });
 
-  it("expanded: the wire-verbatim text is revealed exactly, still quoted (never rendered)", () => {
-    const item = directiveItem(true);
+  it("calm stays static even when an override says expanded: the directive never renders for a visitor", () => {
+    const { container } = render(<DefaultUserMessage item={directiveItem(true)} ctx={ctx()} />);
+    expect(container.textContent).not.toContain("ggui_consume");
+  });
+
+  it("debug, expanded: the wire-verbatim text is revealed exactly below the row, still quoted (never rendered)", () => {
+    const item = directiveItem(true, true);
     const { container } = render(<DefaultUserMessage item={item} ctx={ctx()} />);
-    const bubble = container.querySelector(".guuey-chat-user-bubble");
-    expect(bubble?.textContent).toBe(item.text);
+    const raw = container.querySelector(".guuey-chat-directive-raw-text");
+    expect(raw?.textContent).toBe(item.text);
     // Quoted: the directive tag is TEXT, not an element.
     expect(container.querySelector("ggui_directive")).toBeNull();
   });
 
-  it("the toggle wires to onToggle with the item key", () => {
+  it("debug: the toggle wires to onToggle with the item key", () => {
     const onToggle = vi.fn();
-    render(<DefaultUserMessage item={directiveItem(false)} ctx={ctx({ onToggle })} />);
+    render(<DefaultUserMessage item={directiveItem(false, true)} ctx={ctx({ onToggle })} />);
     fireEvent.click(screen.getByRole("button", { expanded: false }));
     expect(onToggle).toHaveBeenCalledWith("u1");
   });

@@ -43,6 +43,7 @@ import type {
   PromptItem,
   ReasoningItem,
   StatusLineItem,
+  TapItem,
   ToolGroupItem,
   ToolItem,
   UnknownItem,
@@ -149,8 +150,78 @@ function MutedText({ ctx, children }: { ctx: NativeTranscriptItemContext; childr
 
 // ─── R0 ────────────────────────────────────────────────────────────────────
 
+/**
+ * The words of an action turn (guuey#2031), one entry per tap: a label in the
+ * typed bubble's quiet twin — the ink at 7% over the canvas, never the accent,
+ * never an outline, never a control — read with a "you tapped" prefix; a
+ * `null` entry is the continuation line in its position. The web kit's tap
+ * mark is an SVG, and this tier ships no SVG dependency, so the native bubble
+ * carries the label and its prefix without the mark.
+ */
+function NativeActionWords({ labels, ctx }: { labels: readonly (string | null)[]; ctx: NativeTranscriptItemContext }): ReactNode {
+  const { tokens } = ctx;
+  return labels.map((label, i) =>
+    label === null ? (
+      <Text key={i} style={{ color: tokens.palette.inkMuted, fontSize: tokens.fontSize - 2, fontFamily: tokens.fontFamily }}>
+        {ctx.strings.directiveContinuation}
+      </Text>
+    ) : (
+      <View
+        key={i}
+        accessible
+        accessibilityLabel={`${ctx.strings.tappedLabelPrefix} ${label}`}
+        style={{
+          maxWidth: "82%",
+          borderRadius: tokens.radius,
+          borderBottomRightRadius: 4,
+          paddingHorizontal: tokens.pad,
+          paddingVertical: tokens.pad - 2,
+          overflow: "hidden",
+        }}
+      >
+        {/* The tint: the ink at 7% laid over the canvas (RN has no color-mix). */}
+        <View
+          style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: tokens.palette.ink, opacity: 0.07 }}
+        />
+        {/* The label is QUOTED, never rendered — whitespace preserved. */}
+        <Text style={{ color: tokens.palette.ink, fontSize: tokens.fontSize, fontFamily: tokens.fontFamily, fontWeight: "500" }}>
+          {label}
+        </Text>
+      </View>
+    ),
+  );
+}
+
+function NativeSendFailed({ item, ctx }: ItemProps<UserMessageItem>): ReactNode {
+  const { tokens } = ctx;
+  if (item.state !== "failed") return null;
+  return (
+    <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <Text style={{ color: tokens.palette.error, fontSize: tokens.fontSize - 2 }}>{ctx.strings.userCouldntSend}</Text>
+      {item.retry ? (
+        <Pressable accessibilityRole="button" onPress={() => ctx.onRetry?.(item)}>
+          <Text style={{ color: tokens.palette.accent, fontSize: tokens.fontSize - 2, fontWeight: "600" }}>
+            {ctx.strings.userRetry}
+          </Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
 export function NativeUserMessage({ item, ctx }: ItemProps<UserMessageItem>): ReactNode {
   const { tokens } = ctx;
+  // guuey#2031: a labeled card-action row reads as what was tapped. An
+  // unlabeled directive row keeps this tier's pre-existing verbatim bubble:
+  // the native directive collapse is its own leg.
+  if (item.directive && item.tapLabels !== undefined) {
+    return (
+      <View style={{ alignItems: "flex-end", gap: 4, opacity: item.state === "sending" ? 0.6 : 1 }}>
+        <NativeActionWords labels={item.tapLabels} ctx={ctx} />
+        <NativeSendFailed item={item} ctx={ctx} />
+      </View>
+    );
+  }
   return (
     <View style={{ alignItems: "flex-end", gap: 4, opacity: item.state === "sending" ? 0.6 : 1 }}>
       <View
@@ -167,20 +238,18 @@ export function NativeUserMessage({ item, ctx }: ItemProps<UserMessageItem>): Re
           {item.text}
         </Text>
       </View>
-      {item.state === "failed" ? (
-        <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <Text style={{ color: tokens.palette.error, fontSize: tokens.fontSize - 2 }}>
-            {ctx.strings.userCouldntSend}
-          </Text>
-          {item.retry ? (
-            <Pressable accessibilityRole="button" onPress={() => ctx.onRetry?.(item)}>
-              <Text style={{ color: tokens.palette.accent, fontSize: tokens.fontSize - 2, fontWeight: "600" }}>
-                {ctx.strings.userRetry}
-              </Text>
-            </Pressable>
-          ) : null}
-        </View>
-      ) : null}
+      <NativeSendFailed item={item} ctx={ctx} />
+    </View>
+  );
+}
+
+// ─── R0b ───────────────────────────────────────────────────────────────────
+
+/** A card tap drawn before its turn is sent (guuey#2031): the action turn in the sending look. */
+export function NativeTap({ item, ctx }: ItemProps<TapItem>): ReactNode {
+  return (
+    <View style={{ alignItems: "flex-end", gap: 4, opacity: 0.6 }}>
+      <NativeActionWords labels={item.labels} ctx={ctx} />
     </View>
   );
 }
@@ -746,6 +815,8 @@ export function NativeStatus({ item, ctx }: ItemProps<StatusLineItem>): ReactNod
 /** One component per §3 override slot — the native mirror of the web map. */
 export interface NativeTranscriptComponents {
   userMessage: ComponentType<ItemProps<UserMessageItem>>;
+  /** R0b (guuey#2031): a card tap drawn before its turn is sent. */
+  tap: ComponentType<ItemProps<TapItem>>;
   text: ComponentType<ItemProps<TextItem>>;
   reasoning: ComponentType<ItemProps<ReasoningItem>>;
   tool: ComponentType<ItemProps<ToolItem>>;
@@ -767,6 +838,7 @@ export interface NativeTranscriptComponents {
 
 export const nativeTranscriptComponents: NativeTranscriptComponents = {
   userMessage: NativeUserMessage,
+  tap: NativeTap,
   text: NativeText,
   reasoning: NativeReasoning,
   tool: NativeTool,
@@ -795,6 +867,10 @@ export function renderNativeItem(
   switch (item.kind) {
     case "user": {
       const C = components.userMessage;
+      return <C key={item.key} item={item} ctx={ctx} />;
+    }
+    case "tap": {
+      const C = components.tap;
       return <C key={item.key} item={item} ctx={ctx} />;
     }
     case "text": {

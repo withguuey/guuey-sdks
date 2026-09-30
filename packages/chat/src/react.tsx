@@ -21,6 +21,7 @@ export {
   defaultTranscriptComponents,
   renderItem,
   DefaultUserMessage,
+  DefaultTap,
   DefaultText,
   DefaultReasoning,
   DefaultTool,
