@@ -41,6 +41,7 @@ describe("isStageableAction — the guuey#218 allowlist gate", () => {
   it("admits the semantic carrier and refuses plumbing/unlisted names alike", () => {
     expect(isStageableAction("ggui_runtime_submit_action")).toBe(true);
     expect(isStageableAction("ggui_runtime_pull")).toBe(false);
+    expect(isStageableAction("ggui_runtime_report_render_failure")).toBe(false);
     expect(isStageableAction("refresh_ws_token")).toBe(false);
     expect(isStageableAction("book_slot")).toBe(false);
   });
@@ -81,6 +82,17 @@ describe("withActionStaging — the composable seam (guuey#356)", () => {
     const stage = vi.fn();
     const wrapped = withActionStaging(inner, { isTurnLive: () => false, stage });
     await expect(wrapped(request("ggui_runtime_pull", { sessionId: "s" }))).resolves.toBe(RELAYED);
+    await expect(
+      wrapped(
+        request("ggui_runtime_report_render_failure", {
+          sessionId: "s",
+          appId: "a",
+          phase: "mount",
+          errorName: "TypeError",
+          catches: 1,
+        }),
+      ),
+    ).resolves.toBe(RELAYED);
     await expect(wrapped(request("acme_sync", { token: "t" }))).resolves.toBe(RELAYED);
     expect(stage).not.toHaveBeenCalled();
   });

@@ -60,17 +60,22 @@ export type McpToolCallResult = {
  *    sandbox's own transports are blocked (bridge-pull, terminal rung);
  *  - `ggui_runtime_telemetry` — the card's own health events, relayed only
  *    as the closed kind set {@link UI_TELEMETRY_KINDS}, filtered here before
- *    the relay calls the door.
+ *    the relay calls the door;
+ *  - `ggui_runtime_report_render_failure` — the card telling the server its
+ *    own render threw (ggui#1609), relayed only as exactly its five arguments,
+ *    each in its rule ({@link isAdmittedRenderFailureReport}), checked here
+ *    before the relay calls the door.
  *
- * Three of these are runtime plumbing whose arguments are opaque runtime
- * state — see {@link UI_SEMANTIC_ACTION_TOOLS} for the ONLY set a host may
- * treat as "the user did something".
+ * Every tool here but `ggui_runtime_submit_action` is runtime plumbing whose
+ * arguments are opaque runtime state — see {@link UI_SEMANTIC_ACTION_TOOLS}
+ * for the ONLY set a host may treat as "the user did something".
  */
 export const UI_ACTION_TOOLS: ReadonlySet<string> = new Set([
   "ggui_runtime_submit_action",
   "ggui_runtime_refresh_ws_token",
   "ggui_runtime_pull",
   "ggui_runtime_telemetry",
+  "ggui_runtime_report_render_failure",
 ]);
 
 /** The card-health telemetry tool. Never a user gesture. */
@@ -199,6 +204,86 @@ export function admittedTelemetryArguments(
 /** The local answer when a telemetry call has nothing admitted to relay: ggui's own `{ok: true}` shape. */
 function telemetryNothingToRelayResult(): McpToolCallResult {
   return { content: [], structuredContent: { ok: true } };
+}
+
+/**
+ * The render-failure report tool (ggui#1609): the card tells the server its own
+ * render threw. Relayed, never a user gesture: it is not in
+ * {@link UI_SEMANTIC_ACTION_TOOLS}.
+ */
+export const UI_RENDER_FAILURE_TOOL = "ggui_runtime_report_render_failure";
+
+/** The two render phases a report names. */
+export const UI_RENDER_FAILURE_PHASES = ["mount", "update"] as const;
+
+/** A render phase a report names: `mount` or `update`. */
+export type UiRenderFailurePhase = (typeof UI_RENDER_FAILURE_PHASES)[number];
+
+/** The longest `sessionId` or `appId` the doors admit in a report. */
+export const MAX_UI_RENDER_FAILURE_ID_CHARS = 256;
+
+/** The largest `catches` a report may carry: an integer, 0 to this, inclusive. */
+export const MAX_UI_RENDER_FAILURE_CATCHES = 100;
+
+/** A thrown error's name: a letter, then at most 63 of letters, digits, `_`, `$` and `.`. */
+const RENDER_FAILURE_ERROR_NAME_RE = /^[A-Za-z][A-Za-z0-9_$.]{0,63}$/;
+
+/**
+ * The arguments of a render-failure report: exactly these five. A type alias,
+ * not an interface: only an alias is assignable to the index-signature
+ * {@link McpToolStructuredContent} the relay's transport takes.
+ */
+export type UiRenderFailureReportArguments = {
+  readonly sessionId: string;
+  readonly appId: string;
+  readonly phase: UiRenderFailurePhase;
+  readonly errorName: string;
+  readonly catches: number;
+};
+
+function isRenderFailureId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= MAX_UI_RENDER_FAILURE_ID_CHARS;
+}
+
+function isRenderFailurePhase(value: unknown): value is UiRenderFailurePhase {
+  return UI_RENDER_FAILURE_PHASES.some((phase) => phase === value);
+}
+
+function isRenderFailureErrorName(value: unknown): value is string {
+  return typeof value === "string" && RENDER_FAILURE_ERROR_NAME_RE.test(value);
+}
+
+function isRenderFailureCatches(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= MAX_UI_RENDER_FAILURE_CATCHES;
+}
+
+/** Each argument's rule, keyed by the argument: exactly the five of {@link UiRenderFailureReportArguments}. */
+const RENDER_FAILURE_FIELDS: {
+  readonly [K in keyof UiRenderFailureReportArguments]-?: (value: unknown) => value is UiRenderFailureReportArguments[K];
+} = {
+  sessionId: isRenderFailureId,
+  appId: isRenderFailureId,
+  phase: isRenderFailurePhase,
+  errorName: isRenderFailureErrorName,
+  catches: isRenderFailureCatches,
+};
+
+/**
+ * Whether a render-failure report is one the server doors admit: exactly the
+ * five arguments, each in its rule. The doors refuse a whole call that carries
+ * an unknown key, lacks one, or holds a value outside its rule; this twin
+ * checks the same before the door, so a conforming host never sends a
+ * refusable report. Nothing is stripped or rewritten: an admitted report is
+ * relayed as the card sent it.
+ */
+export function isAdmittedRenderFailureReport(
+  args: McpToolStructuredContent | undefined,
+): args is UiRenderFailureReportArguments {
+  if (args === undefined) return false;
+  if (Object.keys(args).some((key) => !Object.prototype.hasOwnProperty.call(RENDER_FAILURE_FIELDS, key))) return false;
+  return Object.entries(RENDER_FAILURE_FIELDS).every(
+    ([key, admitted]) => Object.prototype.hasOwnProperty.call(args, key) && admitted(args[key]),
+  );
 }
 
 /**
@@ -474,6 +559,12 @@ export function createMcpUiActionRelay(
     if (request.name === UI_TELEMETRY_TOOL) {
       callArguments = admittedTelemetryArguments(request.arguments);
       if (callArguments === undefined) return telemetryNothingToRelayResult();
+    }
+    // A render-failure report the doors would refuse never reaches them: it is
+    // answered in-band like any other unavailable action. The card acts on no
+    // answer, and the report never touches the pull circuit.
+    if (request.name === UI_RENDER_FAILURE_TOOL && !isAdmittedRenderFailureReport(request.arguments)) {
+      return unavailableToolCallResult();
     }
 
     const isPull = request.name === PULL_TOOL;

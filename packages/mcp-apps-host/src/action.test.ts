@@ -7,6 +7,9 @@ import {
   admittedTelemetryArguments,
   asToolCallResult,
   createMcpUiActionRelay,
+  isAdmittedRenderFailureReport,
+  MAX_UI_RENDER_FAILURE_CATCHES,
+  MAX_UI_RENDER_FAILURE_ID_CHARS,
   MAX_UI_TELEMETRY_EVENTS,
   PULL_CIRCUIT_THRESHOLD,
   UI_ACTION_HOST_CALLBACK_THREW,
@@ -14,6 +17,8 @@ import {
   UI_ACTION_PULL_CIRCUIT_OPEN,
   UI_ACTION_TOOLS,
   UI_ACTION_UNAVAILABLE_TEXT,
+  UI_RENDER_FAILURE_PHASES,
+  UI_RENDER_FAILURE_TOOL,
   UI_SEMANTIC_ACTION_TOOLS,
   UI_TELEMETRY_KINDS,
   UI_TELEMETRY_TOOL,
@@ -101,11 +106,13 @@ describe("createMcpUiActionRelay", () => {
     expect([...UI_ACTION_TOOLS].sort()).toEqual([
       "ggui_runtime_pull",
       "ggui_runtime_refresh_ws_token",
+      "ggui_runtime_report_render_failure",
       "ggui_runtime_submit_action",
       "ggui_runtime_telemetry",
     ]);
     expect([...UI_SEMANTIC_ACTION_TOOLS]).toEqual(["ggui_runtime_submit_action"]);
     expect(UI_SEMANTIC_ACTION_TOOLS.has("ggui_runtime_telemetry")).toBe(false);
+    expect(UI_SEMANTIC_ACTION_TOOLS.has("ggui_runtime_report_render_failure")).toBe(false);
     // Structural: every semantic tool is relayable, never the reverse.
     for (const name of UI_SEMANTIC_ACTION_TOOLS) expect(UI_ACTION_TOOLS.has(name)).toBe(true);
     expect(UI_SEMANTIC_ACTION_TOOLS.has("ggui_runtime_pull")).toBe(false);
@@ -634,5 +641,100 @@ describe("card-health telemetry: only the closed kind set reaches the door", () 
     const pull = await relay({ resourceUri: TURI, name: "ggui_runtime_pull", arguments: { sessionId: "sess-1" } });
     expect(pull.isError).toBeUndefined();
     expect(callTool).toHaveBeenLastCalledWith(TURI, "ggui_runtime_pull", { sessionId: "sess-1" });
+  });
+});
+
+describe("the render-failure report: exactly five arguments, checked before the door (ggui#1609)", () => {
+  const RURI = "ui://ggui/render/sess-1/h";
+  const report = { sessionId: "sess-1", appId: "app_demo", phase: "mount", errorName: "TypeError", catches: 1 };
+
+  it("is relayable, never a user gesture", () => {
+    expect(UI_RENDER_FAILURE_TOOL).toBe("ggui_runtime_report_render_failure");
+    expect(UI_ACTION_TOOLS.has(UI_RENDER_FAILURE_TOOL)).toBe(true);
+    expect(UI_SEMANTIC_ACTION_TOOLS.has(UI_RENDER_FAILURE_TOOL)).toBe(false);
+    expect([...UI_RENDER_FAILURE_PHASES]).toEqual(["mount", "update"]);
+    expect(MAX_UI_RENDER_FAILURE_ID_CHARS).toBe(256);
+    expect(MAX_UI_RENDER_FAILURE_CATCHES).toBe(100);
+  });
+
+  it("admits the exact five: both phases, catches 0 and 100, a 64-character errorName, ids of 1 and 256 characters", () => {
+    for (const args of [
+      report,
+      { ...report, phase: "update" },
+      { ...report, catches: 0 },
+      { ...report, catches: 100 },
+      { ...report, errorName: `E${"r".repeat(63)}` },
+      { ...report, sessionId: "s", appId: "a" },
+      { ...report, sessionId: "x".repeat(256), appId: "x".repeat(256) },
+    ]) {
+      expect(isAdmittedRenderFailureReport(args), JSON.stringify(args).slice(0, 80)).toBe(true);
+    }
+  });
+
+  it("refuses an unknown key, a missing key, and every value outside its rule", () => {
+    const noSession: { [field: string]: unknown } = { ...report };
+    delete noSession["sessionId"];
+    for (const args of [
+      { ...report, message: "Cannot read properties of undefined" },
+      noSession,
+      {},
+      { ...report, catches: -1 },
+      { ...report, catches: 101 },
+      { ...report, catches: 1.5 },
+      { ...report, catches: "3" },
+      { ...report, phase: "render" },
+      { ...report, errorName: "1Error" },
+      { ...report, errorName: `E${"r".repeat(64)}` },
+      { ...report, errorName: "TypeError: x is undefined" },
+      { ...report, sessionId: "" },
+      { ...report, appId: "" },
+      { ...report, sessionId: "x".repeat(257) },
+      { ...report, appId: "x".repeat(257) },
+      undefined,
+    ]) {
+      expect(isAdmittedRenderFailureReport(args), JSON.stringify(args ?? null).slice(0, 80)).toBe(false);
+    }
+  });
+
+  it("the relay forwards an admitted report to the door unchanged, the same object the card sent", async () => {
+    const answer = { content: [], structuredContent: { ok: true } };
+    const callTool = vi.fn(async () => answer);
+    const relay = createMcpUiActionRelay({ callTool });
+    const out = await relay({ resourceUri: RURI, name: UI_RENDER_FAILURE_TOOL, arguments: report });
+    expect(out).toEqual(answer);
+    expect(callTool).toHaveBeenCalledTimes(1);
+    expect(callTool).toHaveBeenCalledWith(RURI, UI_RENDER_FAILURE_TOOL, report);
+  });
+
+  it("the server's {ok: false, code: SESSION_NOT_FOUND} passes through to the card as it came", async () => {
+    const answer = { content: [], structuredContent: { ok: false, code: "SESSION_NOT_FOUND" } };
+    const relay = createMcpUiActionRelay({ callTool: vi.fn(async () => answer) });
+    expect(await relay({ resourceUri: RURI, name: UI_RENDER_FAILURE_TOOL, arguments: report })).toEqual(answer);
+  });
+
+  it("a report the doors would refuse never reaches them: the card is answered in-band unavailable", async () => {
+    const callTool = vi.fn();
+    const relay = createMcpUiActionRelay({ callTool });
+    for (const args of [{ ...report, stack: "at render (card.js:1:1)" }, { ...report, catches: 101 }, undefined]) {
+      const out = await relay({ resourceUri: RURI, name: UI_RENDER_FAILURE_TOOL, ...(args === undefined ? {} : { arguments: args }) });
+      expect(out).toEqual({ content: [{ type: "text", text: UI_ACTION_UNAVAILABLE_TEXT }], isError: true });
+    }
+    expect(callTool).not.toHaveBeenCalled();
+  });
+
+  it("a failing report never trips the pull circuit or the unrestorable signal", async () => {
+    const onSessionUnrestorable = vi.fn();
+    const callTool = vi.fn(async (_uri: string, name: string) => {
+      if (name === UI_RENDER_FAILURE_TOOL) throw new Error("400 Unsupported action tool");
+      return { content: [{ type: "text", text: "ok" }] };
+    });
+    const relay = createMcpUiActionRelay({ callTool, onSessionUnrestorable });
+    for (let i = 0; i < PULL_CIRCUIT_THRESHOLD + 1; i++) {
+      const out = await relay({ resourceUri: RURI, name: UI_RENDER_FAILURE_TOOL, arguments: report });
+      expect(out.isError).toBe(true);
+    }
+    expect(onSessionUnrestorable).not.toHaveBeenCalled();
+    const pull = await relay({ resourceUri: RURI, name: "ggui_runtime_pull", arguments: { sessionId: "sess-1" } });
+    expect(pull.isError).toBeUndefined();
   });
 });
