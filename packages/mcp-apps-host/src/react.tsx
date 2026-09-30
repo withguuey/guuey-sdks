@@ -57,6 +57,16 @@ export type { ViewHostStrings } from "./view-strings.js";
 /** Accessible name for a mounted view when the caller has nothing better. */
 const DEFAULT_TITLE = "Generated view";
 
+/**
+ * Under `autoResize`, how long (ms) an applied height must stand unchanged
+ * before the frame lets go of an embedder's stylesheet `min-height` floor.
+ * A card's first size reports can be taken before it has mounted (an empty
+ * root measures a few px, or 0); releasing the floor on the first applied
+ * report would collapse the frame to that transient height. Each applied
+ * change restarts the window; a new document starts over with the floor.
+ */
+export const SETTLE_MS = 300;
+
 export interface GuueyViewProps
   extends Pick<
     AttachViewHostConfig,
@@ -103,12 +113,14 @@ export interface GuueyViewProps
    * Apply the view's own size reports (`ui/notifications/size-changed` —
    * spec surface) to the frame: a reported HEIGHT becomes the frame's
    * height; width stays the container's (a transcript column owns its
-   * width). An applied report also sets the frame's inline `min-height`
-   * to 0, so a stylesheet floor on the frame acts as a loading reservation
-   * only: it holds until the first applied report, then the card's own
-   * height stands. Default OFF — the primitive changes nothing for existing
-   * hosts; a caller's {@link AttachViewHostConfig.onSizeChanged} observer
-   * fires either way.
+   * width). Once an applied height has SETTLED (unchanged for
+   * {@link SETTLE_MS}), the frame's inline `min-height` is also set to 0, so
+   * a stylesheet floor on the frame acts as a loading reservation only: it
+   * holds while the card mounts and its first reports come in, then the
+   * card's own height stands. A report of 0 (or any height that is not a
+   * positive, finite number) is never applied. Default OFF — the primitive
+   * changes nothing for existing hosts; a caller's
+   * {@link AttachViewHostConfig.onSizeChanged} observer fires either way.
    */
   autoResize?: boolean;
   /**
@@ -235,6 +247,10 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
   // The view's own size report, applied only under `autoResize` — and only
   // as the sizing policy allows (ceiling + echo detector, guuey#992).
   const [reportedHeight, setReportedHeight] = useState<number | undefined>(undefined);
+  // True once the applied height has stood unchanged for SETTLE_MS — only
+  // then does the frame drop an embedder's stylesheet floor (see the
+  // `style` below). Reset with the document.
+  const [heightSettled, setHeightSettled] = useState(false);
   const sizing = useRef<AutoResizeState>(initialAutoResizeState());
   const html = viewDocumentHtml(mount.resource);
 
@@ -271,6 +287,7 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
     setPhase("negotiating");
     setDiagnosis(undefined);
     setReportedHeight(undefined);
+    setHeightSettled(false);
     sizing.current = initialAutoResizeState();
     const frame = frameRef.current;
     if (frame === null || html === undefined) return;
@@ -322,6 +339,17 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
       detachHost();
     };
   }, [mount.resource.uri, html, sandboxPageUrl, page]);
+
+  // The settle window: each applied height (re)starts it; when it runs out
+  // with the height unchanged, the floor is released for this document.
+  // Once released it stays released (a later change resizes the frame
+  // directly; putting the floor back would make the card jump up and
+  // down). Cleanup clears a pending window on every change and on unmount.
+  useEffect(() => {
+    if (autoResize !== true || reportedHeight === undefined || heightSettled) return;
+    const timer = setTimeout(() => setHeightSettled(true), SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [autoResize, reportedHeight, heightSettled]);
 
   if (html === undefined) {
     // A resolved mount with no document is producer-side breakage; an
@@ -378,17 +406,18 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
         allow={allow ?? "clipboard-write"}
         // Under `autoResize`, the view's own height report wins over the
         // fill-the-container default (width stays the container's — a
-        // transcript column owns its width). Once a report is APPLIED it
-        // also wins over an embedder stylesheet's `min-height` floor on the
-        // frame: that floor is a loading reservation, and left standing it
-        // would hold a short card inside a taller empty box. Before the
-        // first applied report, and without `autoResize`, the frame carries
-        // no inline min-height, so the embedder's floor still holds.
+        // transcript column owns its width). Once the applied height has
+        // SETTLED it also wins over an embedder stylesheet's `min-height`
+        // floor on the frame: that floor is a loading reservation, and left
+        // standing it would hold a short card inside a taller empty box.
+        // Until then (the card may still be mounting, and its first reports
+        // can be a few px), and always without `autoResize`, the frame
+        // carries no inline min-height, so the embedder's floor holds.
         style={{
           display: "block",
           width: "100%",
           ...(autoResize === true && reportedHeight !== undefined
-            ? { height: reportedHeight, minHeight: 0 }
+            ? { height: reportedHeight, ...(heightSettled ? { minHeight: 0 } : {}) }
             : { height: "100%" }),
           border: 0,
         }}

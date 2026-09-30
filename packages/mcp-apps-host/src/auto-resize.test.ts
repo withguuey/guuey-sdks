@@ -35,7 +35,7 @@ function run(reports: { height: number; at: number }[], ceiling?: number): { app
 }
 
 describe("decideAutoResize — the host owns the loop's stability (guuey#992)", () => {
-  it("applies the first report and any shrink verbatim", () => {
+  it("applies the first positive report and any shrink to a positive height verbatim", () => {
     expect(run([{ height: 420, at: 0 }]).applied).toEqual([420]);
     expect(run([{ height: 420, at: 0 }, { height: 300, at: 50 }]).applied).toEqual([420, 300]);
   });
@@ -82,6 +82,77 @@ describe("decideAutoResize — the host owns the loop's stability (guuey#992)", 
 
   it("with no ceiling and no echo, a tall report applies as-is (the ceiling is the host's to supply)", () => {
     expect(run([{ height: 5_000, at: 0 }]).applied).toEqual([5_000]);
+  });
+
+  // The view runtime can measure its document before the card mounts (an
+  // empty mount root, a fixed-position loading glyph, a zero-margin body)
+  // and report a height of 0. A frame sized to 0 has no area, and a browser
+  // may throttle a zero-area cross-origin frame, so the real height might
+  // never arrive. A height that is not a positive, finite number is never
+  // applied: the frame keeps the height it has (or the embedder's floor).
+  describe("a height that is not positive is never applied", () => {
+    it("a first report of 0 applies nothing", () => {
+      expect(run([{ height: 0, at: 0 }]).applied).toEqual([undefined]);
+    });
+
+    it("0 then 152 applies only 152", () => {
+      const { applied, state } = run([
+        { height: 0, at: 0 },
+        { height: 152, at: 20 },
+      ]);
+      expect(applied).toEqual([undefined, 152]);
+      expect(state.applied).toBe(152);
+    });
+
+    it("300 then 0 applies 300, then nothing — the 300 frame stands", () => {
+      const { applied, state } = run([
+        { height: 300, at: 0 },
+        { height: 0, at: 20 },
+      ]);
+      expect(applied).toEqual([300, undefined]);
+      expect(state.applied).toBe(300);
+    });
+
+    it("a negative height behaves like 0", () => {
+      expect(run([{ height: -40, at: 0 }]).applied).toEqual([undefined]);
+      expect(
+        run([
+          { height: -40, at: 0 },
+          { height: 152, at: 20 },
+        ]).applied,
+      ).toEqual([undefined, 152]);
+      const { applied, state } = run([
+        { height: 300, at: 0 },
+        { height: -40, at: 20 },
+      ]);
+      expect(applied).toEqual([300, undefined]);
+      expect(state.applied).toBe(300);
+    });
+
+    it("a non-finite height behaves like 0", () => {
+      for (const height of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+        expect(run([{ height, at: 0 }], 600).applied).toEqual([undefined]);
+        const { applied, state } = run([
+          { height: 300, at: 0 },
+          { height, at: 20 },
+        ]);
+        expect(applied).toEqual([300, undefined]);
+        expect(state.applied).toBe(300);
+      }
+    });
+
+    it("a ceiling of 0 or less never collapses the frame either", () => {
+      expect(run([{ height: 152, at: 0 }], 0).applied).toEqual([undefined]);
+      expect(run([{ height: 152, at: 0 }], -1).applied).toEqual([undefined]);
+    });
+
+    it("a report it does not apply is still recorded as the last report", () => {
+      const { state } = run([
+        { height: 300, at: 0 },
+        { height: 0, at: 20 },
+      ]);
+      expect(state).toEqual({ applied: 300, appliedAt: 0, lastReportAt: 20, held: false });
+    });
   });
 
   it("a shrink after a hold releases it — the next growth is judged fresh", () => {

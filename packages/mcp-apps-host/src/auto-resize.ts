@@ -20,6 +20,15 @@
  *      echoing the frame, not content: the frame is HELD. The runtime
  *      dedupes identical reports, so a held frame goes quiet.
  *
+ *   3. NO COLLAPSE — a height that is not a positive, finite number is
+ *      never applied (a zero or negative report, or a ceiling of zero or
+ *      less). The runtime can measure the document right after
+ *      `ui/initialize`, before the card mounts: an empty mount root and a
+ *      fixed-position loading glyph measure 0. A frame sized to 0 has no
+ *      area, a browser may throttle a zero-area cross-origin frame, and the
+ *      real height might then never arrive. The frame keeps the height it
+ *      has (or, before any apply, the embedder's floor).
+ *
  * Everything else applies: the first report, every shrink (which also
  * releases a hold), and a growth that is not an echo — real content growth
  * (a section opened) still sizes the frame.
@@ -53,6 +62,10 @@ export function initialAutoResizeState(): AutoResizeState {
   return { held: false };
 }
 
+function isPositiveFiniteHeight(height: number): boolean {
+  return Number.isFinite(height) && height > 0;
+}
+
 export function decideAutoResize(
   state: AutoResizeState,
   reportedHeight: number,
@@ -61,6 +74,12 @@ export function decideAutoResize(
 ): AutoResizeDecision {
   const target = ceiling !== undefined ? Math.min(reportedHeight, ceiling) : reportedHeight;
   const { applied } = state;
+
+  // Never collapse the frame: a report (or a ceiling) that is not a
+  // positive, finite height is recorded as a report and nothing more.
+  if (!isPositiveFiniteHeight(reportedHeight) || !isPositiveFiniteHeight(target)) {
+    return { apply: undefined, state: { ...state, lastReportAt: nowMs } };
+  }
 
   // First report, or nothing to change.
   if (applied === undefined) {

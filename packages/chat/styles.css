@@ -410,9 +410,10 @@
 }
 /* The frame floor is a loading reservation: it holds while a card mounts,
    and it is the whole sizing for a mount without `autoResize`. Under
-   `autoResize`, <GuueyView> sets the frame's inline min-height to 0 once it
-   applies the card's first size report, so a short card is not held in a
-   16rem box. */
+   `autoResize`, <GuueyView> sets the frame's inline min-height to 0 once the
+   card's applied height has settled (unchanged for its SETTLE_MS), so a
+   short card is not held in a 16rem box, and a card measured before it has
+   mounted is not collapsed to that first, transient height. */
 .guuey-chat-view iframe {
   min-height: 16rem;
 }

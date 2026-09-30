@@ -7,7 +7,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { fireEvent, render, screen , cleanup } from "@testing-library/react";
+import { act, fireEvent, render, screen , cleanup } from "@testing-library/react";
+import { SETTLE_MS } from "@guuey/mcp-apps-host/react";
 import type { ReactNode } from "react";
 import {
   DefaultError,
@@ -384,13 +385,22 @@ describe("DefaultView — per-mount viewProps + autoResize (guuey#135 kit-refine
   // The kit's `.guuey-chat-view iframe` min-height is a LOADING reservation
   // (no jump while a card mounts) and the whole sizing story for a mount
   // without autoResize (which would otherwise sit at the browser's default
-  // 150px). Once autoResize has applied a size report, the frame is the
-  // card's height: a short card no longer sits at the top of a 16rem box.
-  // Read through the real stylesheet, so the assertion is what a visitor gets.
-  describe("the kit's frame floor yields to an applied size report", () => {
+  // 150px). Once autoResize has applied a size report AND that height has
+  // settled (unchanged for SETTLE_MS), the frame is the card's height: a
+  // short card no longer sits at the top of a 16rem box. The floor holds
+  // through the card's first reports, which can be taken before the card
+  // has mounted (a 0 is never applied at all). Read through the real
+  // stylesheet, so the assertion is what a visitor gets. Fake timers drive
+  // the settle window; every report and tick runs inside act() so React
+  // commits before the assertion.
+  describe("the kit's frame floor yields to a settled size report", () => {
     const KIT_CSS = readFileSync(join(import.meta.dirname, "..", "..", "styles.css"), "utf8");
+    const FLOOR = "16rem";
+    // jsdom reports the declared "0"; a browser resolves it to "0px".
+    const RELEASED = /^0(px)?$/;
     let sheet: HTMLStyleElement | undefined;
     beforeEach(() => {
+      vi.useFakeTimers();
       sheet = document.createElement("style");
       sheet.textContent = KIT_CSS;
       document.head.appendChild(sheet);
@@ -398,41 +408,131 @@ describe("DefaultView — per-mount viewProps + autoResize (guuey#135 kit-refine
     afterEach(() => {
       sheet?.remove();
       sheet = undefined;
+      vi.useRealTimers();
     });
     const report = (frame: HTMLIFrameElement, height: number) =>
-      window.dispatchEvent(
-        new MessageEvent("message", {
-          data: { jsonrpc: "2.0", method: "ui/notifications/size-changed", params: { height } },
-          source: frame.contentWindow,
-        })
-      );
+      act(() => {
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            data: { jsonrpc: "2.0", method: "ui/notifications/size-changed", params: { height } },
+            source: frame.contentWindow,
+          })
+        );
+      });
+    const elapse = (ms: number) =>
+      act(() => {
+        vi.advanceTimersByTime(ms);
+      });
+    const floorOf = (frame: HTMLIFrameElement) => getComputedStyle(frame).minHeight;
+    const mountAutoResize = (item: ViewMountItem = viewItem()) =>
+      render(<DefaultView item={item} ctx={ctx({ viewProps: { autoResize: true } })} />);
 
     it("holds the floor until the first size report (the loading reservation)", () => {
-      const { container } = render(
-        <DefaultView item={viewItem()} ctx={ctx({ viewProps: { autoResize: true } })} />
-      );
+      const { container } = mountAutoResize();
       const frame = container.querySelector("iframe")!;
-      expect(getComputedStyle(frame).minHeight).toBe("16rem");
+      expect(floorOf(frame)).toBe(FLOOR);
+      expect(frame.style.minHeight).toBe("");
     });
 
-    it("releases the floor once autoResize applies a report — a 152px card gets a 152px frame", async () => {
-      const { container } = render(
-        <DefaultView item={viewItem()} ctx={ctx({ viewProps: { autoResize: true } })} />
-      );
+    it("a 0 report is never applied — the frame keeps its height and the floor", () => {
+      const { container } = mountAutoResize();
       const frame = container.querySelector("iframe")!;
+      report(frame, 0);
+      elapse(SETTLE_MS * 2);
+      expect(frame.style.height).toBe("100%");
+      expect(frame.style.minHeight).toBe("");
+      expect(floorOf(frame)).toBe(FLOOR);
+    });
+
+    it("a negative report is never applied either", () => {
+      const { container } = mountAutoResize();
+      const frame = container.querySelector("iframe")!;
+      report(frame, -24);
+      elapse(SETTLE_MS * 2);
+      expect(frame.style.height).toBe("100%");
+      expect(floorOf(frame)).toBe(FLOOR);
+    });
+
+    it("0 then 152: 152 applies, the floor holds until 152 has settled, then a 152px card gets a 152px frame", () => {
+      const { container } = mountAutoResize();
+      const frame = container.querySelector("iframe")!;
+      report(frame, 0);
       report(frame, 152);
-      await vi.waitFor(() => expect(frame.style.height).toBe("152px"));
-      // jsdom reports the declared "0"; a browser resolves it to "0px".
-      expect(getComputedStyle(frame).minHeight).toMatch(/^0(px)?$/);
+      expect(frame.style.height).toBe("152px");
+      expect(floorOf(frame)).toBe(FLOOR);
+      elapse(SETTLE_MS - 1);
+      expect(floorOf(frame)).toBe(FLOOR);
+      elapse(1);
+      expect(frame.style.height).toBe("152px");
+      expect(floorOf(frame)).toMatch(RELEASED);
     });
 
-    it("keeps the floor for a mount without autoResize, report or not", async () => {
+    it("16, then 152 100ms later: the floor holds through both and releases a full window after the LAST change", () => {
+      const { container } = mountAutoResize();
+      const frame = container.querySelector("iframe")!;
+      report(frame, 16);
+      expect(frame.style.height).toBe("16px");
+      expect(floorOf(frame)).toBe(FLOOR);
+      elapse(100);
+      report(frame, 152);
+      expect(frame.style.height).toBe("152px");
+      expect(floorOf(frame)).toBe(FLOOR);
+      // Past SETTLE_MS since the 16 — but the 152 restarted the window.
+      elapse(SETTLE_MS - 1);
+      expect(floorOf(frame)).toBe(FLOOR);
+      elapse(1);
+      expect(floorOf(frame)).toMatch(RELEASED);
+    });
+
+    it("a new document after a release puts the floor back, and its own height must settle again", () => {
+      const first = viewItem();
+      const { container, rerender } = mountAutoResize(first);
+      report(container.querySelector("iframe")!, 152);
+      elapse(SETTLE_MS);
+      expect(floorOf(container.querySelector("iframe")!)).toMatch(RELEASED);
+
+      const next: ViewMountItem = {
+        ...first,
+        mount: {
+          channel: "inline",
+          resource: { uri: "ui://tool/next-card", mimeType: "text/html", text: "<p>next</p>" },
+        },
+      };
+      rerender(<DefaultView item={next} ctx={ctx({ viewProps: { autoResize: true } })} />);
+      const frame = container.querySelector("iframe")!;
+      expect(frame.style.height).toBe("100%");
+      expect(frame.style.minHeight).toBe("");
+      expect(floorOf(frame)).toBe(FLOOR);
+
+      report(frame, 120);
+      expect(frame.style.height).toBe("120px");
+      expect(floorOf(frame)).toBe(FLOOR);
+      elapse(SETTLE_MS);
+      expect(floorOf(frame)).toMatch(RELEASED);
+    });
+
+    it("unmounting before the height settles leaves no settle timer behind", () => {
+      // Baseline: what an unmount leaves pending when no settle window was
+      // ever opened (the host's own teardown notice to the frame).
+      const idle = mountAutoResize();
+      idle.unmount();
+      const baseline = vi.getTimerCount();
+      vi.clearAllTimers();
+
+      const { container, unmount } = mountAutoResize();
+      report(container.querySelector("iframe")!, 152);
+      unmount();
+      expect(vi.getTimerCount()).toBe(baseline);
+    });
+
+    it("keeps the floor for a mount without autoResize, report or not", () => {
       const { container } = render(<DefaultView item={viewItem()} ctx={ctx()} />);
       const frame = container.querySelector("iframe")!;
       report(frame, 152);
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      elapse(SETTLE_MS * 2);
       expect(frame.style.height).toBe("100%");
-      expect(getComputedStyle(frame).minHeight).toBe("16rem");
+      expect(frame.style.minHeight).toBe("");
+      expect(floorOf(frame)).toBe(FLOOR);
     });
   });
 
