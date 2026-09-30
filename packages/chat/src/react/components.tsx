@@ -244,7 +244,10 @@ function ActionTurnWords({ labels, strings }: { labels: readonly (string | null)
         <span className="guuey-chat-action-bubble">
           <TapMark />
           <span className="guuey-chat-action-text">
-            <span className="guuey-chat-visually-hidden">{strings.tappedLabelPrefix}</span>{" "}
+            {/* The prefix's space rides INSIDE the hidden span: the bubble is
+                pre-wrap and the prefix is out of flow, so a space between the
+                two spans would be the first drawn character of the label. */}
+            <span className="guuey-chat-visually-hidden">{`${strings.tappedLabelPrefix} `}</span>
             <span className="guuey-chat-action-label">{label}</span>
           </span>
         </span>

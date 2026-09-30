@@ -42,7 +42,22 @@ describe("the labeled action turn (calm)", () => {
     expect(bubble?.querySelector(".guuey-chat-action-label")?.textContent).toBe("Find me a mystery novel");
     const mark = bubble?.querySelector("svg.guuey-chat-action-mark");
     expect(mark?.getAttribute("aria-hidden")).toBe("true");
-    expect(bubble?.querySelector(".guuey-chat-visually-hidden")?.textContent).toBe(defaultChatStrings.tappedLabelPrefix);
+    expect(bubble?.querySelector(".guuey-chat-visually-hidden")?.textContent).toBe(`${defaultChatStrings.tappedLabelPrefix} `);
+  });
+
+  it("the drawn words start with the label: the prefix's space rides inside the hidden prefix, never before the label", () => {
+    // The bubble is pre-wrap and the prefix is out of flow, so a space between
+    // the two would be the first drawn character of every label.
+    const { container } = render(<DefaultUserMessage item={turn()} ctx={ctx()} />);
+    const words = container.querySelector(".guuey-chat-action-text");
+    const hidden = words?.querySelector(".guuey-chat-visually-hidden");
+    const drawn = [...(words?.childNodes ?? [])]
+      .filter((node) => node !== hidden)
+      .map((node) => node.textContent)
+      .join("");
+    expect(drawn).toBe("Find me a mystery novel");
+    // What a screen reader hears: the prefix, one space, the label.
+    expect(words?.textContent).toBe(`${defaultChatStrings.tappedLabelPrefix} Find me a mystery novel`);
   });
 
   it("is never typed speech (no accent bubble) and never a control (no button, no toggle), and carries no directive", () => {
@@ -124,5 +139,9 @@ describe("the stylesheet carries the action turn's treatment", () => {
   it("the sending look is the typed bubble's (opacity 0.6), and the hidden prefix is visually hidden", () => {
     expect(css).toMatch(/\.guuey-chat-action-sending \.guuey-chat-action-bubble\s*\{\s*opacity: 0\.6;/);
     expect(css).toMatch(/\.guuey-chat-visually-hidden\s*\{[^}]*clip-path: inset\(50%\)/);
+  });
+
+  it("a continuation line inside a sending turn wears the same sending look (an unlabeled tap, or a null entry in a merged row)", () => {
+    expect(css).toMatch(/\.guuey-chat-action-sending \.guuey-chat-directive-label\s*\{\s*opacity: 0\.6;/);
   });
 });

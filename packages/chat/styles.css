@@ -212,6 +212,11 @@
 .guuey-chat-action-sending .guuey-chat-action-bubble {
   opacity: 0.6;
 }
+/* The continuation line in a sending turn (an unlabeled tap, or a null entry
+   in a merged row) wears the same sending look as the bubble beside it. */
+.guuey-chat-action-sending .guuey-chat-directive-label {
+  opacity: 0.6;
+}
 /* A tap with no usable words: the continuation line, static on visitor
    surfaces (no chevron, no expand). The words are the copy owners' to change. */
 .guuey-chat-directive-label {
