@@ -874,24 +874,30 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // guuey#2031: the doorbell's tap. A doorbell whose structured mirror names a
   // tap the echo drew claims it; its send carries the tap's id and words, and
   // merged doorbells send as ONE turn under the first tap's id with every
-  // tap's words in order. A refusal withdraws the drawn tap.
+  // tap's words in order. Every refusal withdraws the drawn tap in the
+  // doorbell's own task, a doorbell with no text included, so no refused tap
+  // stays drawn for the grace.
   const pendingDoorbellsRef = useRef<
     Array<{ text: string; waiters: Array<(delivery: UserMessageDelivery) => void>; taps: ClaimedTap[] }>
   >([]);
   const defaultOnUserMessage = useCallback((params: { [key: string]: unknown }): Promise<UserMessageDelivery> => {
-    const content = params["content"];
-    if (!Array.isArray(content)) return Promise.resolve({ delivered: false, reason: "no text content" });
-    const text = content
-      .map((b) =>
-        typeof b === "object" && b !== null && "text" in b && typeof b.text === "string"
-          ? b.text
-          : "",
-      )
-      .filter((t) => t !== "")
-      .join("\n");
-    if (text.trim() === "") return Promise.resolve({ delivered: false, reason: "no text content" });
     const echoNow = echoRef.current;
     const tap = echoNow.claimDoorbell(params);
+    const content = params["content"];
+    const text = Array.isArray(content)
+      ? content
+          .map((b) =>
+            typeof b === "object" && b !== null && "text" in b && typeof b.text === "string"
+              ? b.text
+              : "",
+          )
+          .filter((t) => t !== "")
+          .join("\n")
+      : "";
+    if (text.trim() === "") {
+      if (tap !== null) echoNow.withdraw(tap.id, "refused");
+      return Promise.resolve({ delivered: false, reason: "no text content" });
+    }
     const live = liveRef.current;
     if (!live.available) {
       if (tap !== null) echoNow.withdraw(tap.id, "refused");

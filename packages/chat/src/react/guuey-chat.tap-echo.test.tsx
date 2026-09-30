@@ -66,13 +66,13 @@ function tapRequest(actionId: string): UiActionRequest {
   };
 }
 
-function doorbell(actionId: string): { [key: string]: unknown } {
+function doorbell(actionId: string, text: string = DIRECTIVE): { [key: string]: unknown } {
   return {
     role: "user",
     content: [
       {
         type: "text",
-        text: DIRECTIVE,
+        text,
         _meta: {
           "ai.ggui/userAction": {
             kind: "user-action",
@@ -183,6 +183,26 @@ describe("the kit's tap echo, end to end (a chip on a card the live fold painted
     expect(labels).toEqual([CHIP.label]);
     expect(document.querySelector(".guuey-chat-directive-label")).toBeNull();
     expect(document.body.textContent).not.toContain("REQUIRED FIRST TOOL CALL");
+  });
+
+  it("a doorbell that names the tap but carries no text withdraws the drawn tap at once (no stale pending turn for the grace)", async () => {
+    const { handle, calls } = await paintedChat();
+    const onCallTool = handle.viewSlotProps().onCallTool;
+    const onUserMessage = handle.viewSlotProps().onUserMessage;
+    if (onCallTool === undefined || onUserMessage === undefined) throw new Error("kit wiring expected");
+    await act(async () => {
+      await onCallTool(tapRequest("9e9e9e9e"));
+    });
+    expect(document.querySelector(".guuey-chat-action-sending .guuey-chat-action-label")?.textContent).toBe(CHIP.label);
+
+    let delivery: unknown;
+    await act(async () => {
+      delivery = await onUserMessage(doorbell("9e9e9e9e", "  "));
+    });
+    expect(delivery).toEqual({ delivered: false, reason: "no text content" });
+    // Withdrawn in the doorbell's own task, well inside TAP_DOORBELL_GRACE_MS.
+    expect(document.querySelector(".guuey-chat-action-sending")).toBeNull();
+    expect(calls).toHaveLength(1);
   });
 
   it("a retry of a failed action turn re-sends the directive WITH its words", async () => {
