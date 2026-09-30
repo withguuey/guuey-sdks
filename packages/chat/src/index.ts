@@ -26,6 +26,17 @@ export {
   type ChatStrings,
 } from "./strings.js";
 export { transcriptInputsFromHistory } from "./history-inputs.js";
+// guuey#2031 — the headless tap ledger: one entry per card tap, drawn before
+// its turn is sent and closed by its sent row or a counts-only withdrawal.
+export {
+  createTapLedger,
+  TAP_DOORBELL_GRACE_MS,
+  TAP_SENT_GRACE_MS,
+  type ClaimedTap,
+  type TapLedger,
+  type TapLedgerMessage,
+  type TapLedgerOptions,
+} from "./tap-ledger.js";
 export { isGguiConsumeTool, isWaitingOnUser } from "./listen.js";
 export {
   buildHitlAnswer,

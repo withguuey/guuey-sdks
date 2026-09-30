@@ -49,6 +49,10 @@ export {
   type UseTranscriptResult,
   type UseTranscriptInputsResult,
 } from "./react/use-transcript.js";
+// guuey#2031 — a card tap drawn at once as the visitor's action turn, swapped in
+// place for the turn its doorbell sends: the React owner of the tap ledger, for
+// every host that sinks `ui/message` itself.
+export { useTapEcho, type TapEcho, type UseTapEchoArgs } from "./react/use-tap-echo.js";
 export {
   GuueyChat,
   type GuueyChatActivityEvent,

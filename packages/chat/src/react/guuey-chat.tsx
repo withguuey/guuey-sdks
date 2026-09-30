@@ -57,11 +57,18 @@ import {
   createWebAdapters,
   deleteThread,
   type AgentInvokeAdapters,
+  type SendOptions,
 } from "@guuey/agent-client";
 import type { AgHitlAnswer, AgPausedAsk } from "@silverprotocol/core";
 import { useAgentInvoke, VIEW_MESSAGE_TURN_CAPABILITIES } from "@guuey/agent-client/react";
-import { unavailableToolCallResult } from "@guuey/mcp-apps-host";
-import type { McpToolCallResult, UiActionRequest, UiResourceReader, UserMessageDelivery } from "@guuey/mcp-apps-host";
+import { mountedCardProps, unavailableToolCallResult } from "@guuey/mcp-apps-host";
+import type {
+  MountedCardProps,
+  McpToolCallResult,
+  UiActionRequest,
+  UiResourceReader,
+  UserMessageDelivery,
+} from "@guuey/mcp-apps-host";
 import { calmPolicy, debugPolicy, type TranscriptPolicyOverrides } from "../policy.js";
 import { isWaitingOnUser } from "../listen.js";
 import { useStructuralIdentity } from "./structural-identity.js";
@@ -72,6 +79,7 @@ import type {
   ErrorItem,
   PlanViewSummary,
   PromptItem,
+  TapWithdrawReason,
   UserMessageItem,
   ViewRefItem,
 } from "../types.js";
@@ -81,6 +89,8 @@ import { hostContextStyles, hostStyleVariables, type HostStyleVariables } from "
 import { Transcript, type TranscriptWindowing } from "./transcript.js";
 import type { TranscriptComponents, TranscriptItemContext, ViewSlotProps } from "./components.js";
 import { useTranscript, useTranscriptInputs } from "./use-transcript.js";
+import { useTapEcho } from "./use-tap-echo.js";
+import type { ClaimedTap } from "../tap-ledger.js";
 import { oauthPromptAction, useOAuthReturn } from "./oauth-return.js";
 import { PARTS } from "./parts.js";
 
@@ -101,19 +111,35 @@ export function viewPropsWithThemeAnnounce(
   fontsCss = "",
   /** guuey#1128: the theme's palette as spec `--color-*` slots — `hostContext.styles.variables`, ggui's fallback layer beneath the app theme. */
   variables: HostStyleVariables | undefined = undefined,
+  /**
+   * guuey#2031: the kit relay wrapped by the tap echo. It replaces
+   * `defaults.onCallTool` only on a slot that takes BOTH the kit's relay and
+   * the kit's `ui/message` sink (no own `onCallTool` key, no own
+   * `onUserMessage` key): a tap is drawn only where the kit's own sink will
+   * send its doorbell and swap the drawing for the sent row.
+   */
+  echoOnCallTool: ViewSlotProps["onCallTool"] = undefined,
 ): TranscriptItemContext["viewProps"] {
   const styles = hostContextStyles(fontsCss, variables);
-  const themed = (base: ViewSlotProps | undefined): ViewSlotProps => ({
-    // Kit-default host wires (guuey#335): the ACTION RELAY (Confirm inside
-    // a rendered card is a tools/call — without a relay the initialize-only
-    // host -32601s and the interaction visibly fails) and the
-    // model-context sink (a COMPLEMENT channel — producers mirror the
-    // snapshot server-side, so a recording sink is honest). A caller-
-    // declared slot prop always wins.
-    ...defaults,
-    ...base,
-    hostContext: { theme: mode, ...styles, ...base?.hostContext },
-  });
+  const themed = (base: ViewSlotProps | undefined): ViewSlotProps => {
+    const echo =
+      echoOnCallTool !== undefined &&
+      defaults.onCallTool !== undefined &&
+      defaults.onUserMessage !== undefined &&
+      (base === undefined || (!Object.hasOwn(base, "onCallTool") && !Object.hasOwn(base, "onUserMessage")));
+    return {
+      // Kit-default host wires (guuey#335): the ACTION RELAY (Confirm inside
+      // a rendered card is a tools/call — without a relay the initialize-only
+      // host -32601s and the interaction visibly fails) and the
+      // model-context sink (a COMPLEMENT channel — producers mirror the
+      // snapshot server-side, so a recording sink is honest). A caller-
+      // declared slot prop always wins.
+      ...defaults,
+      ...(echo ? { onCallTool: echoOnCallTool } : {}),
+      ...base,
+      hostContext: { theme: mode, ...styles, ...base?.hostContext },
+    };
+  };
   if (typeof viewProps === "function") {
     return (item, mount) => themed(viewProps(item, mount));
   }
@@ -462,6 +488,18 @@ export function kitSinkInEffect(viewProps: TranscriptItemContext["viewProps"]): 
   return !Object.hasOwn(viewProps, "onUserMessage");
 }
 
+/**
+ * The send options for a doorbell that stands for `taps` (guuey#2031): the
+ * first tap's id (the one the echo drew it under) and every tap's words in
+ * order; `undefined` for a doorbell that claimed no tap. The hook runs the
+ * writer contract on the words.
+ */
+function tapSendOptions(taps: readonly ClaimedTap[]): SendOptions | undefined {
+  const [first] = taps;
+  if (first === undefined) return undefined;
+  return { clientMessageId: first.id, tapLabels: taps.flatMap((t) => t.labels) };
+}
+
 export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function GuueyChat(
   props: GuueyChatProps,
   ref,
@@ -559,6 +597,22 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     preserveBlocks: true,
   });
 
+  // guuey#2031 — the tap echo: a card tap draws at once as the visitor's
+  // action turn (the chip's own words when this kit holds the card's props),
+  // and the doorbell's send replaces it in place. Mounted cards are looked up
+  // at TAP time through a ref the plan fills below (a card painted before a
+  // reload carries its props in its own document); counts-only withdrawals
+  // reach the debug sink under the debug policy only.
+  const mountedForRef = useRef<(renderSessionId: string) => MountedCardProps | undefined>(() => undefined);
+  const tapDebugRef = useRef<((reason: TapWithdrawReason) => void) | undefined>(undefined);
+  const echo = useTapEcho({
+    invoke,
+    mountedFor: (renderSessionId) => mountedForRef.current(renderSessionId),
+    onWithdraw: (reason) => tapDebugRef.current?.(reason),
+  });
+  const echoRef = useRef(echo);
+  echoRef.current = echo;
+
   // Default reader (guuey#221): built over the SAME identity as the
   // transport/history, targeting the pod door (live turns) then the
   // platform door (persisted). The threadId hydrates after mount and can
@@ -630,8 +684,16 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // is on the plan's identity path — a per-render fresh spread here was the
   // second leg of the render loop the template surfaced.
   const transcriptInputs = useMemo(
-    () => (promotedViewKey !== undefined ? { ...inputs, promotedViewKey } : inputs),
-    [inputs, promotedViewKey],
+    () =>
+      promotedViewKey === undefined && echo.pendingTaps.length === 0
+        ? inputs
+        : {
+            ...inputs,
+            ...(promotedViewKey !== undefined ? { promotedViewKey } : {}),
+            // guuey#2031: taps drawn before their turn is sent.
+            ...(echo.pendingTaps.length > 0 ? { pendingTaps: echo.pendingTaps } : {}),
+          },
+    [inputs, promotedViewKey, echo.pendingTaps],
   );
   const { plan, toggle, resolvedMounts, onViewPhase, onViewDiagnosis } = useTranscript({
     inputs: transcriptInputs,
@@ -639,6 +701,28 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     ...(effectiveReader !== undefined ? { reader: effectiveReader } : {}),
     ...(onDebugEvent !== undefined ? { onDebugEvent } : {}),
   });
+  // guuey#2031 (the history-card path): the props a mounted card's own
+  // document paints from, by render session — read off the plan's view roster
+  // and the locator resolutions at TAP time only (a shell parse per tap, never
+  // per render). The newest mount of a session wins.
+  mountedForRef.current = (renderSessionId: string): MountedCardProps | undefined => {
+    let found: MountedCardProps | undefined;
+    for (const view of plan.views) {
+      const resolved = resolvedMounts.get(view.key);
+      const mount =
+        resolved !== undefined && resolved !== "expired"
+          ? resolved
+          : view.mount !== null && view.mount.channel !== "locator"
+            ? view.mount
+            : undefined;
+      if (mount === undefined) continue;
+      const props = mountedCardProps(mount);
+      if (props !== undefined && props.sessionId === renderSessionId) found = props;
+    }
+    return found;
+  };
+  tapDebugRef.current =
+    policy.debugDetail && onDebugEvent !== undefined ? (reason) => onDebugEvent({ type: "tap-withdrawn", reason }) : undefined;
 
   // guuey#301: hand the host the plan's view roster whenever it changes —
   // the stage renders the selected mount from it. Locator entries carry
@@ -759,6 +843,14 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // no first-party surface applies it any more (the widget converged on
   // this relay+doorbell path in guuey#404).
   const stagedDefaultOnCallTool = defaultOnCallTool;
+  // guuey#2031: the kit relay, wrapped by the tap echo — substituted only on a
+  // slot that takes both the kit relay and the kit sink (see
+  // `viewPropsWithThemeAnnounce`). `wrapCallTool` is stable for the chat's life.
+  const echoWrapCallTool = echo.wrapCallTool;
+  const echoOnCallTool = useMemo(
+    () => (stagedDefaultOnCallTool === undefined ? undefined : echoWrapCallTool(stagedDefaultOnCallTool)),
+    [stagedDefaultOnCallTool, echoWrapCallTool],
+  );
 
   // The ui/message sink (guuey#422): the view hands the host role-user
   // content (ggui's #440 doorbell — the model directive that drains a
@@ -778,7 +870,14 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // during the same live turn collapse onto one send (a double-click) and
   // all resolve with it — "delivered" for the second means "became the same
   // turn".
-  const pendingDoorbellsRef = useRef<Array<{ text: string; waiters: Array<(delivery: UserMessageDelivery) => void> }>>([]);
+  //
+  // guuey#2031: the doorbell's tap. A doorbell whose structured mirror names a
+  // tap the echo drew claims it; its send carries the tap's id and words, and
+  // merged doorbells send as ONE turn under the first tap's id with every
+  // tap's words in order. A refusal withdraws the drawn tap.
+  const pendingDoorbellsRef = useRef<
+    Array<{ text: string; waiters: Array<(delivery: UserMessageDelivery) => void>; taps: ClaimedTap[] }>
+  >([]);
   const defaultOnUserMessage = useCallback((params: { [key: string]: unknown }): Promise<UserMessageDelivery> => {
     const content = params["content"];
     if (!Array.isArray(content)) return Promise.resolve({ delivered: false, reason: "no text content" });
@@ -791,8 +890,11 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       .filter((t) => t !== "")
       .join("\n");
     if (text.trim() === "") return Promise.resolve({ delivered: false, reason: "no text content" });
+    const echoNow = echoRef.current;
+    const tap = echoNow.claimDoorbell(params);
     const live = liveRef.current;
     if (!live.available) {
+      if (tap !== null) echoNow.withdraw(tap.id, "refused");
       console.warn(
         "[guuey] ui/message doorbell dropped — chat is unavailable (endpointUrl null); the view's gesture cannot start a turn here.",
       );
@@ -801,13 +903,16 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     if (live.busy) {
       return new Promise<UserMessageDelivery>((resolve) => {
         const same = pendingDoorbellsRef.current.find((entry) => entry.text === text);
-        if (same) same.waiters.push(resolve);
-        else pendingDoorbellsRef.current.push({ text, waiters: [resolve] });
+        if (same) {
+          same.waiters.push(resolve);
+          if (tap !== null) same.taps.push(tap);
+        } else pendingDoorbellsRef.current.push({ text, waiters: [resolve], taps: tap !== null ? [tap] : [] });
       });
     }
-    void live.invoke.send(text).catch(() => {
+    void live.invoke.send(text, tapSendOptions(tap !== null ? [tap] : [])).catch(() => {
       // The hook owns failure surfacing, same as every send path.
     });
+    if (tap !== null) echoNow.markSent([tap.id]);
     return Promise.resolve({ delivered: true });
   }, []);
 
@@ -833,10 +938,12 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     const live = liveRef.current;
     if (!live.available) {
       console.warn("[guuey] queued ui/message doorbell dropped — chat became unavailable.");
+      for (const tap of next.taps) echoRef.current.withdraw(tap.id, "refused");
       for (const waiter of next.waiters) waiter({ delivered: false, reason: "chat became unavailable" });
       return;
     }
-    void live.invoke.send(next.text).catch(() => {});
+    void live.invoke.send(next.text, tapSendOptions(next.taps)).catch(() => {});
+    if (next.taps.length > 0) echoRef.current.markSent(next.taps.map((t) => t.id));
     for (const waiter of next.waiters) waiter({ delivered: true });
   }, [busy]);
 
@@ -905,6 +1012,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         },
         fontsCss,
         styleVariables,
+        echoOnCallTool,
       ),
     [
       viewProps,
@@ -914,6 +1022,8 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       defaultOnUserMessage,
       defaultOnOpenLink,
       fontsCss,
+      styleVariables,
+      echoOnCallTool,
     ],
   );
 
@@ -927,7 +1037,8 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   staticSlotPropsRef.current =
     typeof effectiveViewProps === "function"
       ? {
-          ...(stagedDefaultOnCallTool !== undefined ? { onCallTool: stagedDefaultOnCallTool } : {}),
+          // Both kit defaults ride this branch, so the echo relay does too (guuey#2031).
+          ...(echoOnCallTool !== undefined ? { onCallTool: echoOnCallTool } : {}),
           onUpdateModelContext: defaultOnUpdateModelContext,
           onUserMessage: defaultOnUserMessage,
           onOpenLink: defaultOnOpenLink,
@@ -995,6 +1106,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         setInput("");
         setPendingLink(null);
         pendingDoorbellsRef.current = [];
+        echoRef.current.reset();
         // Rotation LAST: the delete above already captured the old
         // identity, so the fresh secret is a stranger to even an orphaned
         // server row.
@@ -1062,7 +1174,9 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
 
   const handleRetry = useCallback(
     (item: UserMessageItem) => {
-      void invoke.send(item.text).catch(() => {
+      // guuey#2031: an action turn's retry re-sends the directive WITH its
+      // words; `text` stays the directive, so a label never becomes input.
+      void invoke.send(item.text, item.tapLabels !== undefined ? { tapLabels: item.tapLabels } : undefined).catch(() => {
         // Same contract as submit: the hook owns failure surfacing.
       });
     },
