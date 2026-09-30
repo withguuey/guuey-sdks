@@ -416,7 +416,17 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     async (input: string, sendOpts?: SendOptions) => {
       // An already-aborted external signal refuses the send outright —
       // before the optimistic transcript push, so nothing is left to undo.
-      if (!endpointUrl || !input.trim() || status !== "ready" || opts.signal?.aborted) return;
+      if (!endpointUrl || !input.trim() || status !== "ready" || opts.signal?.aborted) {
+        // guuey#2031: a host that named this turn beforehand (a drawn card
+        // tap) must not read it as sent. The id never reached the agent: the
+        // R0 failed state, with no row pushed for it. A hook-minted id has no
+        // holder, so a plain refused send writes nothing.
+        const refusedId = sendOpts?.clientMessageId;
+        if (refusedId !== undefined && refusedId !== "") {
+          setSendStates((prev) => (prev[refusedId] === "failed" ? prev : { ...prev, [refusedId]: "failed" }));
+        }
+        return;
+      }
       setError(null);
       setErrorCode(null);
       setAborted(false);
@@ -471,17 +481,6 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
       const onExternalAbort = (): void => controller.abort();
       externalSignal?.addEventListener("abort", onExternalAbort, { once: true });
       const adapters = adaptersRef.current;
-      // Wait for the persisted threadId to load before deciding whether to
-      // replay it — otherwise a fast first send mints a new orphan thread and
-      // clobbers the stored id. `hydrationRef` never rejects (it self-catches).
-      if (hydrationRef.current) {
-        await hydrationRef.current;
-      }
-      if (controller.signal.aborted) {
-        setStatus("ready");
-        abortRef.current = null;
-        return;
-      }
       let assistantText = "";
       const renderAssistant = (text: string) => {
         assistantText = text;
@@ -526,13 +525,6 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
           void onStallWindow();
         }, windowMs ?? stall.windowMs);
       };
-      // guuey#409: arm BEFORE the first byte — a turn that never receives
-      // any chunk (rail death upstream of the pod, or an in-pod pre-spawn
-      // hang) otherwise shows "Thinking…" forever with no error item. The
-      // long window keeps silent cold starts un-tripped; expiry runs the
-      // SAME probe-then-adopt-or-STREAM_STALLED machinery as mid-stream
-      // stalls — one face fix for both mechanisms.
-      armStallTimer(stall?.preFirstByteWindowMs);
       const endTurnWith = (apply: () => void): void => {
         turnEnded = true;
         clearStallTimer();
@@ -607,6 +599,24 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         : adapters.transport;
 
       try {
+        // Wait for the persisted threadId to load before deciding whether to
+        // replay it — otherwise a fast first send mints a new orphan thread and
+        // clobbers the stored id. `hydrationRef` never rejects (it self-catches).
+        // Inside the try: an abort during this wait unwinds through `finally`
+        // like any pre-admission abort (the external listener comes off, the
+        // empty reply bubble goes, the "sending" entry clears, the abort is
+        // surfaced), never leaving the send half-written.
+        if (hydrationRef.current) {
+          await hydrationRef.current;
+        }
+        if (controller.signal.aborted) return;
+        // guuey#409: arm BEFORE the first byte — a turn that never receives
+        // any chunk (rail death upstream of the pod, or an in-pod pre-spawn
+        // hang) otherwise shows "Thinking…" forever with no error item. The
+        // long window keeps silent cold starts un-tripped; expiry runs the
+        // SAME probe-then-adopt-or-STREAM_STALLED machinery as mid-stream
+        // stalls — one face fix for both mechanisms.
+        armStallTimer(stall?.preFirstByteWindowMs);
         const invokeUrl = toInvokeUrl(endpointUrl);
         // The advertised AgJSON client capabilities (spec §3, guuey#207): an
         // explicit option wins; else a block-preserving consumer advertises
