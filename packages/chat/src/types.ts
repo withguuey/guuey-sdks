@@ -106,7 +106,7 @@ export interface TranscriptMessage {
    * On a card-action user row (guuey#2031): the tapped controls' own words,
    * one entry per tap the row stands for (`null` for a tap with none) —
    * `@guuey/agent-client`'s `AgentMessage.tapLabels`, live or rehydrated. Read
-   * through the shape-only `readTapLabels` and honored only on a forwarded
+   * through the reader contract (`readTapLabels`) and honored only on a forwarded
    * view-directive row, so typed text can never show a label. Optional by
    * design: absent, the row draws its continuation line, as before.
    */

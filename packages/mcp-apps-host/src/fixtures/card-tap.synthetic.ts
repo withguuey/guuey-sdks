@@ -2,13 +2,23 @@
  * guuey#2031 — SYNTHETIC card-tap wire shapes, test-only (`src/fixtures/**`
  * ships in no build and no tarball).
  *
- * Nothing here was captured live. Every shape is built the way
- * `@ggui-ai/iframe-runtime` 0.25.0 builds it, with invented ids and invented
- * words: the `ggui_runtime_submit_action` dispatch arguments and the
- * `ui/message` doorbell (runtime.js), the relay results its classifier reads
- * (the three unwrap tiers), and a greeting card's stored paint in the shape a
- * guuey thread row carries it. A real capture replaces a synthetic case when one
- * is taken; the shape each case copies is named beside it.
+ * Nothing in THIS file was captured live: a public package carries no capture
+ * (a live one holds real session ids, and a live shell a minted live-channel
+ * token). Every shape is built the way `@ggui-ai/iframe-runtime` 0.25.0 builds
+ * it, with invented ids and invented words: the `ggui_runtime_submit_action`
+ * dispatch arguments and the `ui/message` doorbell (runtime.js), the relay
+ * results its classifier reads (the three unwrap tiers), and a greeting card's
+ * stored paint in the shape a guuey thread row carries it.
+ *
+ * Live captures DO exist on the runtime side, and the runtime's paint-parity
+ * test runs this package's shared pieces over them: a staging doorbell
+ * directive (`ggui-user-action-directive.staging-2026-09-25.txt`) and a dev
+ * greeting thread with its doorbell row and the drained tap
+ * (`direct-render-gesture.dev-2026-09-26.json`), against the directive
+ * predicate, the paint reducer and the quick-reply intent. What no capture
+ * holds yet is a submit-action relay result or a doorbell's `_meta` mirror;
+ * those cases stay synthetic here, and the shape each copies is named beside
+ * it.
  */
 import type { AgMessage, JsonValue } from "@silverprotocol/core";
 import type { McpToolCallResult, UiActionRequest } from "../action.js";
@@ -128,14 +138,14 @@ export function storedRowsOf(messages: readonly AgMessage[]): { seq: number; aut
 /** The `tools/call` a chip tap relays, arguments built as runtime.js 0.25 builds them for a `dispatch`. */
 export function chipTapRequest(
   replyId: string | null,
-  over: { sessionId?: string; actionId?: string; name?: string; kind?: string; resourceUri?: string } = {},
+  over: { sessionId?: string; actionId?: string; name?: string; kind?: string; resourceUri?: string; intent?: string } = {},
 ): UiActionRequest {
   return {
     resourceUri: over.resourceUri ?? SYNTHETIC_LOCATOR,
     name: over.name ?? "ggui_runtime_submit_action",
     arguments: {
       kind: over.kind ?? "dispatch",
-      payload: { intent: "chooseReply", actionData: replyId === null ? null : { id: replyId }, uiContext: {} },
+      payload: { intent: over.intent ?? "chooseReply", actionData: replyId === null ? null : { id: replyId }, uiContext: {} },
       sessionId: over.sessionId ?? SYNTHETIC_SESSION,
       appId: SYNTHETIC_APP,
       actionId: over.actionId ?? "5a5a5a5a",
@@ -175,7 +185,8 @@ export function doorbellParams(actionId: string | null, sessionId = SYNTHETIC_SE
 /**
  * Relay results for the submit-action classifier, one per tier and outcome
  * (runtime.js 0.25 `classifySubmitActionResponse` + `extractConsumerPresent`
- * over `unwrapCallToolResult`). SYNTHETIC: no live submit result is on file.
+ * over `unwrapCallToolResult`). SYNTHETIC: no capture of a submit-action relay
+ * result exists yet, on either side.
  */
 export const SUBMIT_RESULTS: ReadonlyArray<{
   name: string;

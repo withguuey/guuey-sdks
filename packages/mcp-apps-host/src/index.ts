@@ -111,14 +111,17 @@ export {
   type SandboxPageDeliveryConfig,
 } from "./sandbox-page.js";
 // guuey#2031 — a card tap as the visitor's turn: the tap-label contract (the
-// producer normalizer, the writer's bounds, the reader's shape rule, the one
-// directive predicate), the ONE paint reducer the host and the runtime share,
-// the tap read at relay time, and a mounted ggui card's own props.
+// producer normalizer, the writer's bounds, the reader's rule, the one
+// directive predicate), the ONE paint reducer the host and the runtime share
+// and the quick-reply intent it labels under, the tap read at relay time (its
+// doorbell mirror and relay-outcome reads are @experimental), and a mounted
+// ggui card's own props.
 export {
   isViewDirectiveText,
   MAX_TAP_LABEL_UNITS,
   MAX_TAP_LABELS,
   MAX_TAP_LABELS_BYTES,
+  MAX_TAP_LABELS_READ,
   readTapLabels,
   tapText,
   writeTapLabels,
@@ -127,6 +130,7 @@ export {
 export {
   latestPaintProps,
   paintPartsOfStored,
+  QUICK_REPLY_INTENT,
   quickReplyLabel,
   type CardPaint,
   type CardProps,

@@ -42,7 +42,8 @@ export interface ThreadHistoryRow {
   /**
    * A card-action user row's tap labels (guuey#2031), one entry per tap. Absent
    * from an older read plane and from every row that has none; read through the
-   * shape-only `readTapLabels`, so a value no writer produced maps to nothing.
+   * reader contract (`readTapLabels`), so a value no writer produced maps to
+   * nothing.
    */
   tapLabels?: (string | null)[] | null;
 }

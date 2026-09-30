@@ -67,6 +67,48 @@ describe("latestPaintProps — parity: the fold path and the stored path are one
     expect(quickReplyLabel(paint?.props, CHIP_EVENTS.id)).toBe(CHIP_EVENTS.label);
   });
 
+  it("a merge amend is an RFC 7396 merge patch: a null member deletes its key, nested objects merge, arrays replace", () => {
+    const themed = { ...GREETING_PROPS, theme: { accent: "red", density: "compact" } };
+    const paint = both([
+      ...greetingFold(themed),
+      ...repaintFold("ggui_amend", "toolu_amend_7396", {
+        sessionId: SYNTHETIC_SESSION,
+        kind: "merge",
+        patch: { theme: { accent: "blue" }, message: null, quickReplies: [{ id: "x1", label: "X one" }] },
+      }),
+    ]);
+    expect(paint?.props).toEqual({
+      heading: GREETING_PROPS.heading,
+      theme: { accent: "blue", density: "compact" },
+      quickReplies: [{ id: "x1", label: "X one" }],
+    });
+    expect(paint?.props).not.toHaveProperty("message");
+    expect(quickReplyLabel(paint?.props, "x1")).toBe("X one");
+    expect(quickReplyLabel(paint?.props, CHIP_FIND.id)).toBeNull();
+  });
+
+  it("a merge that nulls quickReplies deletes the list: no reply resolves", () => {
+    const paint = both([
+      ...greetingFold(),
+      ...repaintFold("ggui_amend", "toolu_amend_null", { sessionId: SYNTHETIC_SESSION, kind: "merge", patch: { quickReplies: null } }),
+    ]);
+    expect(paint?.props).not.toHaveProperty("quickReplies");
+    expect(quickReplyLabel(paint?.props, CHIP_FIND.id)).toBeNull();
+  });
+
+  it("a merge patch's __proto__ member stays an own data member (never the props' prototype)", () => {
+    const patch: unknown = JSON.parse('{"__proto__":{"quickReplies":[{"id":"p","label":"Not on the card"}]}}');
+    const parts: PaintPart[] = [
+      ...foldParts(greetingFold({ heading: "No replies" })),
+      { type: "tool-call", toolCallId: "toolu_proto", name: "mcp__ggui__ggui_amend", input: { sessionId: SYNTHETIC_SESSION, kind: "merge", patch } },
+      { type: "tool-result", toolCallId: "toolu_proto", outcome: "ok" },
+    ];
+    const paint = latestPaintProps(parts, SYNTHETIC_SESSION);
+    expect(paint?.paint).toBe("amend");
+    expect(Object.getPrototypeOf(paint?.props)).toBe(Object.prototype);
+    expect(quickReplyLabel(paint?.props, "p")).toBeNull();
+  });
+
   it("a ggui_update of the same session repaints it", () => {
     const paint = both([
       ...greetingFold(),
@@ -130,6 +172,14 @@ describe("quickReplyLabel — the strict quickReplies[{id,label}] convention", (
     expect(quickReplyLabel(props, "c")).toBe("Chip C");
     // Not widened to any props object carrying an id and a label.
     expect(quickReplyLabel(props, "d")).toBeNull();
+  });
+
+  it("is null for an id two replies share: an ambiguous tap names no words", () => {
+    const props = { quickReplies: [{ id: "dup", label: "First" }, { id: "dup", label: "Second" }, { id: "one", label: "Only" }] };
+    expect(quickReplyLabel(props, "dup")).toBeNull();
+    expect(quickReplyLabel(props, "one")).toBe("Only");
+    // A malformed entry sharing the id still makes the id ambiguous.
+    expect(quickReplyLabel({ quickReplies: [{ id: "dup", label: "Only well-formed one" }, { id: "dup" }] }, "dup")).toBeNull();
   });
 
   it("is null without props, without the list, or with no match", () => {

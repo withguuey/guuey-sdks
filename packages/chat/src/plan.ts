@@ -1059,7 +1059,7 @@ export function planTranscript(
     // row draws the same live and after a reload whatever ggui's directive
     // looks like inside.
     const directive = policy.userMessage.collapseDirectives && isViewDirectiveText(user.text);
-    // The reader contract (shape only): typed text never shows a label.
+    // The reader contract (`readTapLabels`): typed text never shows a label.
     const tapLabels = directive ? readTapLabels(user.tapLabels) : undefined;
     conversation.push({
       kind: "user",

@@ -5,12 +5,13 @@
  * resolves to.
  *
  * Every wire value here is SYNTHETIC (`fixtures/card-tap.synthetic.ts` says
- * which runtime construction each copies): no live capture is on file.
+ * which runtime construction each copies, and which live captures the runtime
+ * side holds and runs the shared pieces over).
  */
 import { describe, expect, it } from "vitest";
 import type { AgMessage } from "@silverprotocol/core";
 import { readSubmitActionTap, readUserActionMeta, resolveTapLabel, submitActionOutcome } from "./card-tap.js";
-import type { PaintPart } from "./paint-props.js";
+import { QUICK_REPLY_INTENT, type PaintPart } from "./paint-props.js";
 import {
   CHIP_FIND,
   CHIP_HOURS,
@@ -33,12 +34,18 @@ describe("readSubmitActionTap — the tap inside a relayed tools/call", () => {
     expect(readSubmitActionTap(chipTapRequest(CHIP_FIND.id))).toEqual({
       renderSessionId: SYNTHETIC_SESSION,
       actionId: "5a5a5a5a",
+      intent: QUICK_REPLY_INTENT,
       dataId: CHIP_FIND.id,
     });
   });
 
   it("a bare-button dispatch (actionData null) is a tap with no reply id", () => {
-    expect(readSubmitActionTap(chipTapRequest(null))).toEqual({ renderSessionId: SYNTHETIC_SESSION, actionId: "5a5a5a5a", dataId: null });
+    expect(readSubmitActionTap(chipTapRequest(null))).toEqual({
+      renderSessionId: SYNTHETIC_SESSION,
+      actionId: "5a5a5a5a",
+      intent: QUICK_REPLY_INTENT,
+      dataId: null,
+    });
   });
 
   it("is null for every other runtime tool, for a non-dispatch kind, and for an envelope ggui's own guard refuses", () => {
@@ -94,6 +101,16 @@ describe("resolveTapLabel — the words a tap shows, at tap time", () => {
   it("a tap whose id is not a quick reply (a card button): null — the continuation copy", () => {
     expect(resolveTapLabel({ request: chipTapRequest("book-now"), parts: parts(greetingFold()) })).toBeNull();
     expect(resolveTapLabel({ request: chipTapRequest(null), parts: parts(greetingFold()) })).toBeNull();
+  });
+
+  it("a tap under another intent whose id matches a chip: null — only the quick-reply intent names a chip", () => {
+    expect(resolveTapLabel({ request: chipTapRequest(CHIP_FIND.id, { intent: "bookTable" }), parts: parts(greetingFold()) })).toBeNull();
+  });
+
+  it("a chip id two replies share: null — an ambiguous tap names no words", () => {
+    const props = { ...GREETING_PROPS, quickReplies: [CHIP_FIND, { id: CHIP_FIND.id, label: "Same id, other words" }, CHIP_HOURS] };
+    expect(resolveTapLabel({ request: chipTapRequest(CHIP_FIND.id), parts: parts(greetingFold(props)) })).toBeNull();
+    expect(resolveTapLabel({ request: chipTapRequest(CHIP_HOURS.id), parts: parts(greetingFold(props)) })).toBe(CHIP_HOURS.label);
   });
 
   it("card A naming session B: no label, even where B's paint in the fold carries that reply", () => {

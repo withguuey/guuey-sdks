@@ -28,6 +28,7 @@ export {
   MAX_TAP_LABEL_UNITS,
   MAX_TAP_LABELS,
   MAX_TAP_LABELS_BYTES,
+  MAX_TAP_LABELS_READ,
   readTapLabels,
   tapText,
   writeTapLabels,
@@ -36,6 +37,7 @@ export {
 export {
   latestPaintProps,
   paintPartsOfStored,
+  QUICK_REPLY_INTENT,
   quickReplyLabel,
   type CardPaint,
   type CardProps,

@@ -71,6 +71,33 @@ class LabelsIntoTextPersistence extends InMemoryThreadPersistence {
   }
 }
 
+describe("appendMessage re-judges a row's tap labels by the writer contract before it stores them", () => {
+  it("a list the writer contract refuses is not stored: the key is absent", async () => {
+    for (const refused of [
+      Array.from({ length: 9 }, (_, i) => `Chip ${i}`), // over the entry bound
+      ["  padded"], // not what tapText would produce
+      [null, null], // no words at all
+    ]) {
+      const db = new InMemoryThreadPersistence();
+      await storeWithTap(db, refused);
+      const [, tapRow] = await db.listRecentMessages("t1", 10);
+      expect(tapRow).toBeDefined();
+      expect(Object.keys(tapRow ?? {})).not.toContain("tapLabels");
+      // The row itself still lands, directive and all.
+      expect(tapRow?.text).toBe(DIRECTIVE);
+    }
+  });
+
+  it("a conforming list is stored as a fresh copy of what the writer admits", async () => {
+    const db = new InMemoryThreadPersistence();
+    const labels: (string | null)[] = ["Find me a mystery novel", null];
+    await storeWithTap(db, labels);
+    labels[0] = "changed after the call";
+    const [, tapRow] = await db.listRecentMessages("t1", 10);
+    expect(tapRow?.tapLabels).toEqual(["Find me a mystery novel", null]);
+  });
+});
+
 describe("the model's history is unchanged by tap labels", () => {
   // One clock for both stores: a row's `at` is part of the lane, and the comparison is of everything else.
   beforeEach(() => {

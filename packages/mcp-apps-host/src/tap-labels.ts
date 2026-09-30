@@ -17,8 +17,12 @@
  *  - {@link writeTapLabels} is the WRITER contract (the client before it sends,
  *    the runtime before it stores): bounded, all or nothing, never a throw.
  *  - {@link readTapLabels} is the READER contract (read planes, the history
- *    mapper, the planner): SHAPE ONLY. The bounds belong to the writer, so a
- *    later writer may loosen them without an older reader dropping stored rows.
+ *    mapper, the planner): the shape, a character check (a label holding a
+ *    control or bidi formatting character reads as no words), and a count cap
+ *    far above the writer's. The length and byte bounds belong to the writer,
+ *    so a later writer may loosen them without an older reader dropping stored
+ *    rows. A store that persists a list re-judges it with the WRITER contract
+ *    first; the reader is a display guard, never a store's check.
  *
  * Display-only by construction: the directive stays the turn's text and the
  * model's input; nothing here reaches a model path.
@@ -44,6 +48,14 @@ export const MAX_TAP_LABELS = 8;
 
 /** The longest one label may be, in UTF-16 code units (writer bound). */
 export const MAX_TAP_LABEL_UNITS = 200;
+
+/**
+ * The most taps a READER draws from one row: far above {@link MAX_TAP_LABELS},
+ * so a later writer may raise its bound without an older reader dropping the
+ * row, and still a cap, so a row no conforming writer wrote cannot draw an
+ * unbounded run of bubbles.
+ */
+export const MAX_TAP_LABELS_READ = 64;
 
 /**
  * The most the whole list may weigh, in UTF-8 bytes of its JSON encoding
@@ -127,12 +139,15 @@ export function writeTapLabels(raw: unknown): TapLabels | undefined {
 }
 
 /**
- * The READER contract. SHAPE ONLY: an array whose entries are each `null` or a
- * non-empty string, at least one of them a string. No count or length bounds
- * (those are the writer's). `undefined` for anything else. Returns a fresh copy.
+ * The READER contract: an array of at most {@link MAX_TAP_LABELS_READ} entries,
+ * each `null` or a non-empty string, at least one of them a string that holds
+ * no control or bidi formatting character. Such a string entry reads as `null`
+ * in its position (that tap draws the continuation copy; its words are never
+ * cleaned up into other words). No length or byte bounds (those are the
+ * writer's). `undefined` for anything else. Returns a fresh copy.
  */
 export function readTapLabels(raw: unknown): TapLabels | undefined {
-  if (!Array.isArray(raw)) return undefined;
+  if (!Array.isArray(raw) || raw.length > MAX_TAP_LABELS_READ) return undefined;
   const labels: (string | null)[] = [];
   let anyText = false;
   for (const entry of raw) {
@@ -141,19 +156,41 @@ export function readTapLabels(raw: unknown): TapLabels | undefined {
       continue;
     }
     if (typeof entry !== "string" || entry === "") return undefined;
+    if (holdsRefusedCharacter(entry)) {
+      labels.push(null);
+      continue;
+    }
     labels.push(entry);
     anyText = true;
   }
   return anyText ? labels : undefined;
 }
 
+/** The directive block's opening line as ggui's doorbell writes it: the tag, any attributes, alone on its line. */
+const DIRECTIVE_OPEN_LINE = /^<ggui_directive(?:\s[^<>]*)?>$/;
+
+/** The block's closing line. */
+const DIRECTIVE_CLOSE_LINE = "</ggui_directive>";
+
 /**
  * The ONE test for a forwarded view-directive turn, shared by the planner (what
- * draws as an action turn) and the runtime (which rows may carry labels): the
- * `<ggui_directive` carrier ggui's doorbell writes into its message text. A
- * substring, deliberately not a parse: if ggui changes the directive's inner
- * shape, the live draw and the stored row must still agree.
+ * draws as an action turn) and the runtime (which rows may carry labels),
+ * anchored to the carrier's own form: ggui's doorbell writes the block's
+ * opening tag alone on a line (`<ggui_directive kind="user-action">`) and its
+ * closing tag alone on a later line. Text that merely mentions the tag (inline,
+ * unclosed, or out of order) is not a directive.
+ *
+ * Deliberately not a parse of what is inside: if ggui changes the directive's
+ * kind or inner lines, the live draw and the stored row must still agree. One
+ * pass over the lines, no backtracking; a line's surrounding whitespace (a
+ * `\r` of a CRLF join included) is not part of the form.
  */
 export function isViewDirectiveText(text: string): boolean {
-  return text.includes("<ggui_directive");
+  let open = false;
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!open) open = DIRECTIVE_OPEN_LINE.test(line);
+    else if (line === DIRECTIVE_CLOSE_LINE) return true;
+  }
+  return false;
 }

@@ -19,7 +19,7 @@ import {
   storedTextParts,
 } from "./fold-rows.js";
 import { classifyStoredRow } from "./stored-row.js";
-import type { TapLabels } from "@guuey/mcp-apps-host/narrowing";
+import { writeTapLabels, type TapLabels } from "@guuey/mcp-apps-host/narrowing";
 import type {
   ThreadMessageEvent,
   StoredHistoryMessage,
@@ -79,9 +79,12 @@ export interface AppendMessageInput {
   /** A user row's client class (see {@link ThreadMessageRow.clientClass}); carried verbatim. */
   clientClass?: ClientClass;
   /**
-   * A card-action user row's tap labels (see {@link ThreadMessageRow.tapLabels});
-   * carried verbatim. The caller passes a value that already met the writer
-   * contract (`writeTapLabels`); the store does not re-judge it.
+   * A card-action user row's tap labels (see {@link ThreadMessageRow.tapLabels}).
+   * The store re-judges them by the writer contract (`writeTapLabels`) before
+   * it writes: a list the contract refuses is not stored (the row lands
+   * without the key, so it draws the continuation copy), and an admitted one is
+   * stored as the writer's fresh copy. The reader contract is a display guard,
+   * never a store's check.
    */
   tapLabels?: TapLabels;
 }
@@ -259,6 +262,8 @@ export class ThreadStore {
 
     const now = new Date().toISOString();
     const preview = input.text ? input.text.slice(0, PREVIEW_MAX_LEN) : '';
+    // guuey#2031: the store re-judges a row's tap labels; it never trusts its caller's check.
+    const tapLabels = input.tapLabels !== undefined ? writeTapLabels(input.tapLabels) : undefined;
     const seq = await this.db.incrementSeq(input.threadId, preview, now);
 
     const row: ThreadMessageRow = {
@@ -276,7 +281,7 @@ export class ThreadStore {
       ...(input.turnOrigin !== undefined ? { turnOrigin: input.turnOrigin } : {}),
       ...(input.answeredCardSessionId !== undefined ? { answeredCardSessionId: input.answeredCardSessionId } : {}),
       ...(input.clientClass !== undefined ? { clientClass: input.clientClass } : {}),
-      ...(input.tapLabels !== undefined ? { tapLabels: input.tapLabels } : {}),
+      ...(tapLabels !== undefined ? { tapLabels } : {}),
     };
     await this.db.putMessage(row);
     return { seq, deduped: false };

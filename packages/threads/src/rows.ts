@@ -149,7 +149,7 @@ export interface ThreadMessageRow {
    * sending client resolved them. DISPLAY-ONLY: `text` and `content` stay the
    * directive the doorbell sent, and no model path reads this. Absent on rows
    * written before it existed and on every row whose turn had no labels;
-   * readers read it through the shape-only `readTapLabels`.
+   * readers read it through the reader contract (`readTapLabels`).
    */
   tapLabels?: TapLabels;
 }

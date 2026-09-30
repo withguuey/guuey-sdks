@@ -10,19 +10,21 @@
  *
  *  - {@link readSubmitActionTap} reads the tap out of the relayed call, through
  *    ggui's own envelope guard;
- *  - {@link readUserActionMeta} reads the doorbell's structured mirror;
+ *  - {@link readUserActionMeta} reads the doorbell's structured mirror
+ *    (experimental);
  *  - {@link submitActionOutcome} predicts whether the runtime will ring at all
- *    (a MIRROR of the runtime's classifier — see its docblock);
+ *    (a MIRROR of the runtime's classifier — see its docblock; experimental);
  *  - {@link resolveTapLabel} names the words: a quick reply's label from the
  *    props the host already holds, or `null` (the continuation copy).
  *
  * Trust: the host decides the session from its own locator (the mount's
  * `resourceUri`, by the doors' own rule: {@link gguiRenderSessionId}), and a
  * card whose arguments name another session reads as no tap. The card
- * contributes only the tapped reply's id; the words come from props the host
- * holds for THAT session (the paint the visitor sees), so a card can at most
- * select another of its own on-screen chip labels. The label is display-only:
- * it never reaches a model path.
+ * contributes only the tapped reply's intent and id; the words come from props
+ * the host holds for THAT session (the paint the visitor sees), under the
+ * quick-reply intent only and for an id exactly one reply carries, so a card can
+ * at most select another of its own on-screen chip labels. The label is
+ * display-only: it never reaches a model path.
  */
 import {
   isGguiSubmitActionInput,
@@ -30,7 +32,7 @@ import {
   type GguiUserActionMeta,
 } from "@ggui-ai/protocol/integrations/mcp-apps";
 import { gguiRenderSessionId, type McpToolCallResult, type UiActionRequest } from "./action.js";
-import { latestPaintProps, quickReplyLabel, type CardProps, type PaintPart } from "./paint-props.js";
+import { latestPaintProps, QUICK_REPLY_INTENT, quickReplyLabel, type CardProps, type PaintPart } from "./paint-props.js";
 import { tapText } from "./tap-labels.js";
 
 /** The one runtime tool that carries a user gesture. */
@@ -42,6 +44,8 @@ export interface SubmitActionTap {
   renderSessionId: string;
   /** ggui mints one per gesture; the doorbell repeats it. The join key. */
   actionId: string;
+  /** The `actionSpec` key the gesture was dispatched against (a quick reply's is {@link QUICK_REPLY_INTENT}). */
+  intent: string;
   /** `actionData.id` when the dispatch carries a string one (a chip does); `null` for anything else. */
   dataId: string | null;
 }
@@ -67,7 +71,7 @@ export function readSubmitActionTap(request: UiActionRequest): SubmitActionTap |
   if (args.sessionId !== renderSessionId) return null;
   const data = args.payload.actionData;
   const dataId = isObject(data) && typeof data["id"] === "string" ? data["id"] : null;
-  return { renderSessionId, actionId: args.actionId, dataId };
+  return { renderSessionId, actionId: args.actionId, intent: args.payload.intent, dataId };
 }
 
 /**
@@ -75,6 +79,10 @@ export function readSubmitActionTap(request: UiActionRequest): SubmitActionTap |
  * on the `ui/message` params — reduced to the two ids the host joins on, or
  * `null` when the first content block carries none. ggui's runtime writes the
  * mirror on the FIRST block only; nothing else is searched.
+ *
+ * @experimental Not covered by semver: it reads where ggui's runtime places the
+ * mirror today (the first block's `_meta`, which ggui calls optional), and it
+ * may change or go in any minor when ggui states that placement as a contract.
  */
 export function readUserActionMeta(
   params: { readonly [key: string]: unknown },
@@ -109,6 +117,9 @@ export function readUserActionMeta(
  * `isError` and `structuredContent` before the card sees it (`action.ts`). The
  * mirror is a coupling to the runtime's internals; it goes when ggui exports the
  * classifier.
+ *
+ * @experimental Not covered by semver: a mirror of another package's internals
+ * may change or go in any minor, and goes when ggui exports the classifier.
  */
 export function submitActionOutcome(result: McpToolCallResult): "enqueued" | "consumed-live" | "not-enqueued" {
   const payload = submitResultPayload(result);
@@ -167,14 +178,16 @@ export interface ResolveTapLabelInput {
  * The words a tap shows as the visitor's turn: the tapped quick reply's label,
  * normalized by `tapText`, from the latest paint the host holds of the session
  * its own locator names — or `null` when it has none (no tap on a ggui render
- * locator, arguments naming another session, not a quick reply, no paint in
- * hand, a bound-session mismatch, or a label the normalizer refuses). The
+ * locator, arguments naming another session, a tap under any intent but
+ * {@link QUICK_REPLY_INTENT}, an id that is not exactly one of the paint's
+ * quick replies, no paint in hand, a bound-session mismatch, or a label the
+ * normalizer refuses). The
  * host-held props label is the only source today; a card-reported visible
  * text, when ggui sends one, is used only where the props have no label.
  */
 export function resolveTapLabel(input: ResolveTapLabelInput): string | null {
   const tap = readSubmitActionTap(input.request);
-  if (tap === null || tap.dataId === null) return null;
+  if (tap === null || tap.dataId === null || tap.intent !== QUICK_REPLY_INTENT) return null;
   if (input.boundSessionId !== undefined && input.boundSessionId !== tap.renderSessionId) return null;
   const mounted = input.mountedFor?.(tap.renderSessionId);
   const base = mounted !== undefined && mounted.sessionId === tap.renderSessionId ? mounted.props : undefined;

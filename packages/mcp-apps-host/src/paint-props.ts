@@ -15,15 +15,22 @@
  *  - a `*ggui_render` call whose OK result names the session (`uiData` or
  *    `structuredContent` `sessionId`) opens it with its input's `props`;
  *  - a `*ggui_amend` or `*ggui_update` call whose `input.sessionId` is the
- *    session repaints it: `kind:'replace'` sets `props`, `kind:'merge'` merges
- *    `patch` over the props so far (shallow; a patch without `quickReplies`
- *    keeps the earlier list);
+ *    session repaints it: `kind:'replace'` sets `props`, `kind:'merge'` applies
+ *    `patch` to the props so far as an RFC 7396 JSON Merge Patch, ggui's own
+ *    merge semantics (a `null` member deletes its key, nested objects merge,
+ *    arrays replace whole; a patch without `quickReplies` keeps the earlier
+ *    list);
  *  - a call whose result did not complete ok (an MCP `isError`, or any
  *    `outcome` other than `ok`) painted nothing and is skipped.
  *
  * With a `base` (the props a mounted card's own document carries — see
  * `mountedCardProps`), the base is the card and only the repaints layer on top:
  * the render's input is older than the document the card paints from.
+ *
+ * The runtime's own reader (`tappedCardFor`) still spreads a merge patch
+ * shallowly. The two agree on every quick-reply read (a top-level array is
+ * replaced whole either way, and a `null` list is no list either way); they
+ * can differ only inside a nested object, which no quick reply reads.
  *
  * Protocol-free: this module rides the `./narrowing` subpath.
  */
@@ -63,6 +70,37 @@ export interface LatestPaint {
 
 function isObject(value: unknown): value is { readonly [key: string]: unknown } {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function ownMember(object: CardProps, key: string): unknown {
+  return Object.prototype.hasOwnProperty.call(object, key) ? object[key] : undefined;
+}
+
+/**
+ * `patch` applied to `target` by RFC 7396 (JSON Merge Patch), for an object
+ * patch: a `null` member deletes its key, an object member merges into the
+ * target's object member (or into nothing), any other member replaces. Built
+ * with `Object.fromEntries`, so every key, `__proto__` included, lands as an
+ * own data member and never as the result's prototype. Never mutates either
+ * argument.
+ */
+function mergePatch(target: CardProps | undefined, patch: CardProps): CardProps {
+  const entries: [string, unknown][] = [];
+  if (target !== undefined) {
+    for (const [key, value] of Object.entries(target)) {
+      if (!Object.prototype.hasOwnProperty.call(patch, key)) entries.push([key, value]);
+    }
+  }
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) continue;
+    if (!isObject(value)) {
+      entries.push([key, value]);
+      continue;
+    }
+    const prior = target === undefined ? undefined : ownMember(target, key);
+    entries.push([key, mergePatch(isObject(prior) ? prior : undefined, value)]);
+  }
+  return Object.fromEntries(entries);
 }
 
 /**
@@ -122,7 +160,7 @@ export function latestPaintProps(
     const replaced = input["kind"] === "replace" ? input["props"] : undefined;
     const patch = input["kind"] === "merge" ? input["patch"] : undefined;
     if (isObject(replaced)) props = replaced;
-    else if (isObject(patch)) props = { ...props, ...patch };
+    else if (isObject(patch)) props = mergePatch(props, patch);
     else continue;
     paint = repaint;
   }
@@ -130,18 +168,33 @@ export function latestPaintProps(
 }
 
 /**
+ * The intent a quick-reply tap is dispatched under: the `actionSpec` key the
+ * `quickReplies[{id, label}]` convention declares (`chooseReply`, whose data is
+ * `{ id }`). A host labels a tap from `quickReplies` only under this intent; any
+ * other intent is some other control, whatever id it carries.
+ */
+export const QUICK_REPLY_INTENT = "chooseReply";
+
+/**
  * The label of quick reply `id` on a card's props: the strict
- * `quickReplies[{id, label}]` convention (a well-formed entry is two strings;
- * anything else is skipped), never widened to any object carrying an id.
- * `null` when there is no such reply.
+ * `quickReplies[{id, label}]` convention (a well-formed entry is two strings),
+ * never widened to any object carrying an id. `null` when there is no such
+ * reply, when its entry is malformed, or when more than one entry of the list
+ * carries that id (an ambiguous id names no words: the runtime's own reader
+ * names the first, and wrong words are worse than none).
  */
 export function quickReplyLabel(props: CardProps | undefined, id: string): string | null {
   const replies = props?.["quickReplies"];
   if (!Array.isArray(replies)) return null;
+  let label: string | null = null;
+  let matches = 0;
   for (const reply of replies) {
-    if (isObject(reply) && reply["id"] === id && typeof reply["label"] === "string") return reply["label"];
+    if (!isObject(reply) || reply["id"] !== id) continue;
+    matches += 1;
+    const text = reply["label"];
+    label = typeof text === "string" ? text : null;
   }
-  return null;
+  return matches === 1 ? label : null;
 }
 
 /** A stored message's parts (`{ content: [part, …] }` on a thread row), objects only. */

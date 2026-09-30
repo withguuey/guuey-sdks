@@ -9,6 +9,7 @@ import {
   MAX_TAP_LABEL_UNITS,
   MAX_TAP_LABELS,
   MAX_TAP_LABELS_BYTES,
+  MAX_TAP_LABELS_READ,
   readTapLabels,
   tapText,
   writeTapLabels,
@@ -120,6 +121,21 @@ describe("readTapLabels — the reader contract, shape only", () => {
     expect(readTapLabels([null, "Opening hours", null])).toEqual([null, "Opening hours", null]);
   });
 
+  it("reads a label holding a control or bidi formatting character as no words: null in its position", () => {
+    expect(readTapLabels([`Open ${RLO}me`, "Opening hours"])).toEqual([null, "Opening hours"]);
+    expect(readTapLabels(["Opening hours", "Ring \u0007 bell", `${LRI}isolate${PDI}`])).toEqual(["Opening hours", null, null]);
+    expect(readTapLabels(["two\nlines", "Opening hours"])).toEqual([null, "Opening hours"]);
+    // Every entry refused: nothing left to draw.
+    expect(readTapLabels([`${ALM}`, `${LRM}x`])).toBeUndefined();
+  });
+
+  it("caps the count well above the writer's bound: at the cap it reads, one over it is undefined", () => {
+    expect(MAX_TAP_LABELS_READ).toBeGreaterThan(MAX_TAP_LABELS);
+    const atCap = Array.from({ length: MAX_TAP_LABELS_READ }, (_, i) => `Chip ${i}`);
+    expect(readTapLabels(atCap)).toHaveLength(MAX_TAP_LABELS_READ);
+    expect(readTapLabels([...atCap, "one more"])).toBeUndefined();
+  });
+
   it("is undefined for a non-array, an empty list, an empty label, an all-null list, or a non-string entry", () => {
     expect(readTapLabels("Opening hours")).toBeUndefined();
     expect(readTapLabels([])).toBeUndefined();
@@ -135,8 +151,18 @@ describe("isViewDirectiveText — the one predicate", () => {
     expect(isViewDirectiveText(SYNTHETIC_DIRECTIVE)).toBe(true);
   });
 
-  it("is a substring test: a directive whose inner shape changed still counts", () => {
-    expect(isViewDirectiveText('<ggui_directive kind="something-new">x</ggui_directive>')).toBe(true);
+  it("is anchored to the doorbell's own form, never its inner shape: a block whose kind or inner lines changed still counts", () => {
+    expect(isViewDirectiveText(["Prose.", "", '<ggui_directive kind="something-new">', "  <anything/>", "</ggui_directive>", ""].join("\n"))).toBe(true);
+    expect(isViewDirectiveText(["<ggui_directive>", "</ggui_directive>"].join("\n"))).toBe(true);
+    expect(isViewDirectiveText(['<ggui_directive kind="user-action">', "x", "</ggui_directive>"].join("\r\n"))).toBe(true);
+  });
+
+  it("is false for text that only mentions the tag: inline, unclosed, or out of order", () => {
+    expect(isViewDirectiveText('<ggui_directive kind="user-action">x</ggui_directive>')).toBe(false);
+    expect(isViewDirectiveText("I saw <ggui_directive in the logs, what is it?")).toBe(false);
+    expect(isViewDirectiveText(['<ggui_directive kind="user-action">', "  <session_id>s</session_id>"].join("\n"))).toBe(false);
+    expect(isViewDirectiveText(["</ggui_directive>", '<ggui_directive kind="user-action">'].join("\n"))).toBe(false);
+    expect(isViewDirectiveText(['say <ggui_directive kind="user-action">', "</ggui_directive>"].join("\n"))).toBe(false);
   });
 
   it("is false for typed text", () => {

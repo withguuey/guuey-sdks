@@ -77,11 +77,12 @@ export {
 // server imports it from the package it already uses. The names live in
 // `@guuey/mcp-apps-host`'s protocol-free subpath: the writer and the reader of a
 // row's `tapLabels`, the one directive predicate, and the one paint reducer the
-// runtime reads a tapped card with.
+// runtime reads a tapped card with, with the quick-reply intent it labels under.
 export {
   isViewDirectiveText,
   latestPaintProps,
   paintPartsOfStored,
+  QUICK_REPLY_INTENT,
   quickReplyLabel,
   readTapLabels,
   writeTapLabels,
