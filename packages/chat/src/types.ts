@@ -639,12 +639,23 @@ export interface StatusLineItem {
  *    is not on any pipe; it rings no doorbell (it shows its own notice);
  *  - `consumed-live` — a live consume drained it; no doorbell, no user row;
  *  - `relay-failed` — the relay itself rejected;
+ *  - `relay-timeout` — the relay had not answered within the relay grace;
  *  - `no-doorbell` — enqueued, but no doorbell came within the grace;
  *  - `refused` — the chat could not take the doorbell (unavailable);
  *  - `not-sent` — sent, but no message with its id ever committed (the send
  *    refused, or an agent client that ignores the send options).
+ *
+ * A tap held undrawn while the host's turn was live (see the ledger's
+ * `deferDraw`) closes with the same reasons; it was never on screen.
  */
-export type TapWithdrawReason = "not-enqueued" | "consumed-live" | "relay-failed" | "no-doorbell" | "refused" | "not-sent";
+export type TapWithdrawReason =
+  | "not-enqueued"
+  | "consumed-live"
+  | "relay-failed"
+  | "relay-timeout"
+  | "no-doorbell"
+  | "refused"
+  | "not-sent";
 
 /**
  * The debug sink's event union (spec §5's `onDebugEvent`, shipped as real

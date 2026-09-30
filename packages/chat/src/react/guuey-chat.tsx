@@ -489,15 +489,14 @@ export function kitSinkInEffect(viewProps: TranscriptItemContext["viewProps"]): 
 }
 
 /**
- * The send options for a doorbell that stands for `taps` (guuey#2031): the
- * first tap's id (the one the echo drew it under) and every tap's words in
- * order; `undefined` for a doorbell that claimed no tap. The hook runs the
- * writer contract on the words.
+ * The send options for a doorbell's turn (guuey#2031), from the ONE entry the
+ * echo marked sent for it (`markSent`, called before the send): that entry's
+ * id (the one the echo draws it under) and its words, every merged tap's in
+ * order. `undefined` when no tap is waiting for it. The hook runs the writer
+ * contract on the words.
  */
-function tapSendOptions(taps: readonly ClaimedTap[]): SendOptions | undefined {
-  const [first] = taps;
-  if (first === undefined) return undefined;
-  return { clientMessageId: first.id, tapLabels: taps.flatMap((t) => t.labels) };
+function tapSendOptions(sent: ClaimedTap | null): SendOptions | undefined {
+  return sent === null ? undefined : { clientMessageId: sent.id, tapLabels: sent.labels };
 }
 
 export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function GuueyChat(
@@ -872,9 +871,10 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // turn".
   //
   // guuey#2031: the doorbell's tap. A doorbell whose structured mirror names a
-  // tap the echo drew claims it; its send carries the tap's id and words, and
-  // merged doorbells send as ONE turn under the first tap's id with every
-  // tap's words in order. Every refusal withdraws the drawn tap in the
+  // tap the echo holds claims it; its send carries the id and words of the one
+  // entry the echo marks sent for it (marked first, so the two never differ),
+  // and merged doorbells send as ONE turn under the first waiting tap's id with
+  // every tap's words in order. Every refusal withdraws the drawn tap in the
   // doorbell's own task, a doorbell with no text included, so no refused tap
   // stays drawn for the grace.
   const pendingDoorbellsRef = useRef<
@@ -915,10 +915,11 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         } else pendingDoorbellsRef.current.push({ text, waiters: [resolve], taps: tap !== null ? [tap] : [] });
       });
     }
-    void live.invoke.send(text, tapSendOptions(tap !== null ? [tap] : [])).catch(() => {
+    // One source: the send carries exactly the entry the echo marked sent.
+    const sent = tap !== null ? echoNow.markSent([tap.id]) : null;
+    void live.invoke.send(text, tapSendOptions(sent)).catch(() => {
       // The hook owns failure surfacing, same as every send path.
     });
-    if (tap !== null) echoNow.markSent([tap.id]);
     return Promise.resolve({ delivered: true });
   }, []);
 
@@ -948,8 +949,8 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       for (const waiter of next.waiters) waiter({ delivered: false, reason: "chat became unavailable" });
       return;
     }
-    void live.invoke.send(next.text, tapSendOptions(next.taps)).catch(() => {});
-    if (next.taps.length > 0) echoRef.current.markSent(next.taps.map((t) => t.id));
+    const sent = next.taps.length > 0 ? echoRef.current.markSent(next.taps.map((t) => t.id)) : null;
+    void live.invoke.send(next.text, tapSendOptions(sent)).catch(() => {});
     for (const waiter of next.waiters) waiter({ delivered: true });
   }, [busy]);
 

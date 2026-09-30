@@ -31,6 +31,7 @@ export { transcriptInputsFromHistory } from "./history-inputs.js";
 export {
   createTapLedger,
   TAP_DOORBELL_GRACE_MS,
+  TAP_RELAY_GRACE_MS,
   TAP_SENT_GRACE_MS,
   type ClaimedTap,
   type TapLedger,

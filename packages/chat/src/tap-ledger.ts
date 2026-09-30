@@ -7,12 +7,18 @@
  * The life of an entry:
  *
  *  1. **begun** in the task that receives the relayed `tools/call`
- *     ({@link TapLedger.wrapCallTool}): the tap is read, its words resolved,
- *     and the entry drawn before the relay's fetch settles;
+ *     ({@link TapLedger.wrapCallTool}): the tap is read and its words
+ *     resolved. An idle host draws it there, before the relay's fetch settles.
+ *     While the host's turn is live ({@link TapLedgerOptions.deferDraw}: a
+ *     listen that drains the tap, or no thread for the relay yet) the entry is
+ *     held undrawn, so a tap the runtime will not ring for never flashes for
+ *     one relay round trip. A relay that has not answered within
+ *     {@link TAP_RELAY_GRACE_MS} withdraws it;
  *  2. **enqueued** — the relay's answer is read with the runtime classifier's
  *     mirror (`submitActionOutcome`); an answer the runtime will not ring for
  *     withdraws the entry (the card shows its own notice), and an enqueued one
- *     waits for its doorbell, at most {@link TAP_DOORBELL_GRACE_MS};
+ *     is drawn if it was held and waits for its doorbell, at most
+ *     {@link TAP_DOORBELL_GRACE_MS};
  *  3. **claimed** by the doorbell that names its `actionId`
  *     ({@link TapLedger.claimDoorbell}); still drawn while it waits behind a
  *     live turn;
@@ -26,7 +32,8 @@
  *
  * Every other ending is a withdrawal with a counts-only reason. A reload
  * between the tap and the send loses the entry: the client writes no row of
- * its own, and the gesture stays on the runtime's pipe.
+ * its own, and the gesture stays on the runtime's pipe. {@link TapLedger.dispose}
+ * is terminal: nothing the ledger holds fires after it.
  */
 import {
   readSubmitActionTap,
@@ -54,6 +61,15 @@ export const TAP_DOORBELL_GRACE_MS = 5_000;
  */
 export const TAP_SENT_GRACE_MS = 5_000;
 
+/**
+ * How long a tap waits for its relay's answer. A healthy relay answers in a
+ * round trip to the action door; this bounds a hung one (the card's own
+ * request gives up far later), so no drawn tap outlives a relay that never
+ * answers. A later answer changes nothing: the entry is gone, and its
+ * doorbell, if one still rings, sends a plain continuation turn.
+ */
+export const TAP_RELAY_GRACE_MS = 10_000;
+
 /** A claimed or sent tap: the id its send carries, and its words in tap order. */
 export interface ClaimedTap {
   readonly id: string;
@@ -66,8 +82,12 @@ export interface TapLedgerMessage {
 }
 
 export interface TapLedgerOptions {
-  /** Mint the id a tap's send will carry (`useAgentInvoke`'s `newClientMessageId`). */
-  newId: () => string;
+  /**
+   * Mint the id a tap's send will carry (`useAgentInvoke`'s
+   * `newClientMessageId`). `undefined`: the host cannot name a turn before it
+   * sends it, so the tap is relayed untouched and nothing is drawn.
+   */
+  newId: () => string | undefined;
   /**
    * The tapped control's words, or `null` (the continuation copy) —
    * `resolveTapLabel` over the host's live state, read at call time.
@@ -75,6 +95,15 @@ export interface TapLedgerOptions {
    * it owns one.
    */
   resolveLabel: (request: UiActionRequest, boundSessionId: string | undefined) => string | null;
+  /**
+   * Read at tap time. `true` while the host's turn is live (a `ggui_consume`
+   * listen included) or it has no thread for the relay yet: then the relay's
+   * answer is likely not to ring (a live listen drains the tap; a relay with no
+   * thread answers unavailable), so the entry is drawn only once the answer
+   * classifies it enqueued, or its doorbell claims it. Absent: always drawn at
+   * once.
+   */
+  deferDraw?: () => boolean;
   /** The pending set changed: re-read {@link TapLedger.pendingTaps}. */
   onChange: () => void;
   /** An entry closed without becoming a turn (counts-only: the reason, never the words). */
@@ -112,7 +141,12 @@ export interface TapLedger {
   pendingTaps(): readonly PendingTap[];
   /** Drop every entry and timer (a cleared conversation holds nothing). */
   reset(): void;
-  /** Stop every timer without a change notice (the host is going away). */
+  /**
+   * Terminal (the host is going away): every timer stops, and no change
+   * notice, withdrawal or timer follows, whatever a relay answers later. A
+   * disposed ledger relays every call untouched, claims no doorbell and marks
+   * no send.
+   */
   dispose(): void;
 }
 
@@ -124,16 +158,28 @@ interface Entry {
   renderSessionId: string;
   labels: TapLabels;
   phase: Phase;
+  /** Whether the planner sees it. A held entry (see `deferDraw`) is drawn when its relay says the runtime will ring. */
+  drawn: boolean;
   timer: ReturnType<typeof setTimeout> | undefined;
   messagesAtSend: readonly TapLedgerMessage[] | undefined;
+}
+
+/** The same drawn set: the same ids with the same word lists, in the same order. */
+function samePending(a: readonly PendingTap[], b: readonly PendingTap[]): boolean {
+  return a.length === b.length && a.every((tap, i) => tap.id === b[i]?.id && tap.labels === b[i]?.labels);
 }
 
 export function createTapLedger(options: TapLedgerOptions): TapLedger {
   let entries: Entry[] = [];
   let pending: readonly PendingTap[] = [];
+  let disposed = false;
 
+  /** Recompute the drawn set; tell the host only when it changed. */
   const publish = (): void => {
-    pending = entries.map((e) => ({ id: e.id, labels: e.labels }));
+    if (disposed) return;
+    const next = entries.filter((e) => e.drawn).map((e) => ({ id: e.id, labels: e.labels }));
+    if (samePending(next, pending)) return;
+    pending = next;
     options.onChange();
   };
   const find = (id: string): Entry | undefined => entries.find((e) => e.id === id);
@@ -154,37 +200,46 @@ export function createTapLedger(options: TapLedgerOptions): TapLedger {
     stopTimer(entry);
     entry.timer = setTimeout(() => {
       entry.timer = undefined;
-      if (find(entry.id) === entry) withdrawEntry(entry, reason);
+      if (!disposed && find(entry.id) === entry) withdrawEntry(entry, reason);
     }, ms);
   };
+  /** Waiting in the relay's own phase: the one phase a relay's answer or rejection may close. */
+  const stillRelaying = (entry: Entry): boolean => !disposed && find(entry.id) === entry && entry.phase === "relaying";
 
   const settleRelay = (entry: Entry, result: McpToolCallResult): void => {
-    if (find(entry.id) !== entry || entry.phase !== "relaying") return; // withdrawn, reset, or already claimed
+    if (!stillRelaying(entry)) return; // withdrawn, reset, disposed, or already claimed
     const outcome = submitActionOutcome(result);
     if (outcome !== "enqueued") {
       withdrawEntry(entry, outcome);
       return;
     }
     entry.phase = "awaiting-doorbell";
+    entry.drawn = true;
     arm(entry, TAP_DOORBELL_GRACE_MS, "no-doorbell");
+    publish();
   };
 
   return {
     wrapCallTool(relay, wrapOptions) {
       const boundSessionId = wrapOptions?.boundSessionId;
       return (request) => {
+        if (disposed) return relay(request);
         const tap = readSubmitActionTap(request);
         if (tap === null) return relay(request);
+        const id = options.newId();
+        if (id === undefined) return relay(request);
         const entry: Entry = {
-          id: options.newId(),
+          id,
           actionId: tap.actionId,
           renderSessionId: tap.renderSessionId,
           labels: [options.resolveLabel(request, boundSessionId)],
           phase: "relaying",
+          drawn: options.deferDraw?.() !== true,
           timer: undefined,
           messagesAtSend: undefined,
         };
         entries = [...entries, entry];
+        arm(entry, TAP_RELAY_GRACE_MS, "relay-timeout");
         publish();
         return relay(request).then(
           (result) => {
@@ -192,7 +247,7 @@ export function createTapLedger(options: TapLedgerOptions): TapLedger {
             return result;
           },
           (error: unknown) => {
-            if (find(entry.id) === entry) withdrawEntry(entry, "relay-failed");
+            if (stillRelaying(entry)) withdrawEntry(entry, "relay-failed");
             return Promise.reject(error);
           },
         );
@@ -200,6 +255,7 @@ export function createTapLedger(options: TapLedgerOptions): TapLedger {
     },
 
     claimDoorbell(params) {
+      if (disposed) return null;
       const meta = readUserActionMeta(params);
       if (meta === null) return null;
       const entry = entries.find(
@@ -211,10 +267,14 @@ export function createTapLedger(options: TapLedgerOptions): TapLedger {
       if (entry === undefined) return null;
       stopTimer(entry);
       entry.phase = "claimed";
+      // A doorbell is the runtime ringing: a held entry is drawn now.
+      entry.drawn = true;
+      publish();
       return { id: entry.id, labels: entry.labels };
     },
 
     markSent(ids, messagesAtSend) {
+      if (disposed) return null;
       const group = ids.flatMap((id) => {
         const entry = find(id);
         return entry !== undefined && entry.phase === "claimed" ? [entry] : [];
@@ -231,6 +291,7 @@ export function createTapLedger(options: TapLedgerOptions): TapLedger {
     },
 
     reconcile(messages) {
+      if (disposed) return;
       const sent = entries.filter((e) => e.phase === "sent");
       if (sent.length === 0) return;
       const present = new Set<string>();
@@ -252,6 +313,7 @@ export function createTapLedger(options: TapLedgerOptions): TapLedger {
     },
 
     withdraw(id, reason) {
+      if (disposed) return;
       const entry = find(id);
       if (entry !== undefined) withdrawEntry(entry, reason);
     },
@@ -267,7 +329,9 @@ export function createTapLedger(options: TapLedgerOptions): TapLedger {
     },
 
     dispose() {
+      disposed = true;
       for (const entry of entries) stopTimer(entry);
+      entries = [];
     },
   };
 }

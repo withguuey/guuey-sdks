@@ -10,6 +10,7 @@
  * The transport and the action door are scripted (fetch is stubbed); every
  * wire value is SYNTHETIC.
  */
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { AgentInvokeAdapters, InvokeRequest } from "@guuey/agent-client";
@@ -122,10 +123,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function paintedChat(opts: { failSecond?: boolean } = {}) {
+async function paintedChat(opts: { failSecond?: boolean; strict?: boolean } = {}) {
   const { adapters, calls } = adaptersFor(opts);
   let handle: GuueyChatHandle | null = null;
-  render(
+  const chat = (
     <GuueyChat
       endpointUrl="https://pod.example/agent/invoke"
       apiBaseUrl="https://api.example/v1"
@@ -133,8 +134,9 @@ async function paintedChat(opts: { failSecond?: boolean } = {}) {
       onReady={(h) => {
         handle = h;
       }}
-    />,
+    />
   );
+  render(opts.strict === true ? <StrictMode>{chat}</StrictMode> : chat);
   await waitFor(() => expect(handle).not.toBeNull());
   act(() => {
     expect(handle!.send("hi")).toBe(true);
@@ -185,6 +187,22 @@ describe("the kit's tap echo, end to end (a chip on a card the live fold painted
     expect(document.body.textContent).not.toContain("REQUIRED FIRST TOOL CALL");
   });
 
+  it("under StrictMode's simulated remount the echo still draws: a disposed ledger is terminal, and the remount makes a fresh one", async () => {
+    const { handle, calls } = await paintedChat({ strict: true });
+    const onCallTool = handle.viewSlotProps().onCallTool;
+    const onUserMessage = handle.viewSlotProps().onUserMessage;
+    if (onCallTool === undefined || onUserMessage === undefined) throw new Error("kit wiring expected");
+    await act(async () => {
+      await onCallTool(tapRequest("3c3c3c3c"));
+    });
+    expect(document.querySelector(".guuey-chat-action-sending .guuey-chat-action-label")?.textContent).toBe(CHIP.label);
+    await act(async () => {
+      await onUserMessage(doorbell("3c3c3c3c"));
+    });
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(bodyOf(calls[1])["tapLabels"]).toEqual([CHIP.label]);
+  });
+
   it("a doorbell that names the tap but carries no text withdraws the drawn tap at once (no stale pending turn for the grace)", async () => {
     const { handle, calls } = await paintedChat();
     const onCallTool = handle.viewSlotProps().onCallTool;
@@ -220,6 +238,75 @@ describe("the kit's tap echo, end to end (a chip on a card the live fold painted
     const retried = bodyOf(calls[2]);
     expect(retried["input"]).toBe(DIRECTIVE);
     expect(retried["tapLabels"]).toEqual([CHIP.label]);
+  });
+});
+
+describe("a tap while a turn is live (the main card flow: a listen drains the tap)", () => {
+  it("a consumed-live relay never draws the bubble, not even for the relay's round trip", async () => {
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const calls: InvokeRequest[] = [];
+    let n = 0;
+    const adapters: AgentInvokeAdapters = {
+      storage: { load: () => null, save: () => {} },
+      generateId: () => `cmid-${n++}`,
+      transport: async function* (req) {
+        calls.push(req);
+        yield SESSION_FRAME;
+        if (calls.length === 1) yield RENDER_FRAME;
+        if (calls.length === 2) await held; // the second turn stays live until released
+        yield DONE_FRAME;
+      },
+    };
+    let handle: GuueyChatHandle | null = null;
+    render(
+      <GuueyChat
+        endpointUrl="https://pod.example/agent/invoke"
+        apiBaseUrl="https://api.example/v1"
+        adapters={adapters}
+        onReady={(h) => {
+          handle = h;
+        }}
+      />,
+    );
+    await waitFor(() => expect(handle).not.toBeNull());
+    act(() => {
+      expect(handle!.send("hi")).toBe(true);
+    });
+    await screen.findByRole("button", { name: "Send" });
+    await waitFor(() => expect(handle!.threadId).toBe("t-tap"));
+    act(() => {
+      expect(handle!.send("tell me more")).toBe(true);
+    });
+    await waitFor(() => expect(calls).toHaveLength(2));
+
+    // The action door answers only when told: the tap's relay is in flight across the first act.
+    let answerDoor: (response: Response) => void = () => {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init?: RequestInit) =>
+        init?.method === "POST" ? new Promise<Response>((resolve) => (answerDoor = resolve)) : Promise.resolve(new Response("", { status: 404 })),
+      ),
+    );
+    const onCallTool = handle!.viewSlotProps().onCallTool;
+    if (onCallTool === undefined) throw new Error("kit relay expected");
+    let relayed: Promise<McpToolCallResult> | undefined;
+    await act(async () => {
+      relayed = onCallTool(tapRequest("4d4d4d4d"));
+    });
+    // Mid-relay, while the turn is live: nothing drawn.
+    expect(document.querySelector(".guuey-chat-action-sending")).toBeNull();
+    await act(async () => {
+      answerDoor(new Response(JSON.stringify({ content: [], structuredContent: { ok: true, consumerPresent: true } }), { status: 200 }));
+      await relayed;
+    });
+    expect(document.querySelector(".guuey-chat-action-sending")).toBeNull();
+    await act(async () => {
+      release();
+    });
+    await screen.findByRole("button", { name: "Send" });
+    expect(document.querySelector(".guuey-chat-action-sending")).toBeNull();
+    expect(calls).toHaveLength(2);
   });
 });
 

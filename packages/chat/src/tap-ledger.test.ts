@@ -6,8 +6,8 @@
  * or the send never produced its row). Headless: no React, fake timers.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { McpToolCallResult, UiActionRequest } from "@guuey/mcp-apps-host";
-import { createTapLedger, TAP_DOORBELL_GRACE_MS, TAP_SENT_GRACE_MS, type TapWithdrawReason } from "./tap-ledger.js";
+import { unavailableToolCallResult, type McpToolCallResult, type UiActionRequest } from "@guuey/mcp-apps-host";
+import { createTapLedger, TAP_DOORBELL_GRACE_MS, TAP_RELAY_GRACE_MS, TAP_SENT_GRACE_MS, type TapWithdrawReason } from "./tap-ledger.js";
 
 const SESSION = "render_00000000-0000-4000-8000-000000002031";
 
@@ -45,12 +45,16 @@ const ENQUEUED: McpToolCallResult = { content: [], structuredContent: { ok: true
 const CONSUMED: McpToolCallResult = { content: [], structuredContent: { ok: true, consumerPresent: true } };
 const REFUSED: McpToolCallResult = { content: [], structuredContent: { ok: false, code: "PIPE_NOT_FOUND" } };
 
-function setup(labels: Record<string, string | null> = { hours: "Opening hours", events: "Author events" }) {
+function setup(
+  labels: Record<string, string | null> = { hours: "Opening hours", events: "Author events" },
+  extra: { deferDraw?: () => boolean; newId?: () => string | undefined } = {},
+) {
   let n = 0;
   const withdrawn: TapWithdrawReason[] = [];
   const onChange = vi.fn();
   const ledger = createTapLedger({
-    newId: () => `tap-${++n}`,
+    newId: extra.newId ?? (() => `tap-${++n}`),
+    ...(extra.deferDraw !== undefined ? { deferDraw: extra.deferDraw } : {}),
     resolveLabel: (request) => {
       const data = request.arguments?.["payload"];
       const id = typeof data === "object" && data !== null && !Array.isArray(data) ? Reflect.get(data, "actionData") : undefined;
@@ -226,7 +230,121 @@ describe("the doorbell join", () => {
   });
 });
 
+describe("a tap while the host's turn is live (a listen included): drawn only once the relay says the runtime will ring", () => {
+  it("a consumed-live relay never renders the bubble: no pending entry at any point, no change notice", async () => {
+    const { ledger, onChange, withdrawn } = setup(undefined, { deferDraw: () => true });
+    let answer: (r: McpToolCallResult) => void = () => {};
+    const pending = ledger.wrapCallTool(() => new Promise<McpToolCallResult>((resolve) => (answer = resolve)))(tapRequest("a1"));
+    // In the relay's own task: nothing drawn yet.
+    expect(ledger.pendingTaps()).toEqual([]);
+    answer(CONSUMED);
+    await pending;
+    expect(ledger.pendingTaps()).toEqual([]);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(withdrawn).toEqual(["consumed-live"]);
+  });
+
+  it("no thread yet (the relay answers unavailable): never drawn either", async () => {
+    const { ledger, onChange, withdrawn } = setup(undefined, { deferDraw: () => true });
+    await ledger.wrapCallTool(async () => unavailableToolCallResult())(tapRequest("a1"));
+    expect(ledger.pendingTaps()).toEqual([]);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(withdrawn).toEqual(["not-enqueued"]);
+  });
+
+  it("an enqueued answer draws it then, in the chip's words, and it waits for its doorbell as ever", async () => {
+    const { ledger, onChange } = setup(undefined, { deferDraw: () => true });
+    await ledger.wrapCallTool(async () => ENQUEUED)(tapRequest("a1"));
+    expect(ledger.pendingTaps()).toEqual([{ id: "tap-1", labels: ["Opening hours"] }]);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(ledger.claimDoorbell(doorbell("a1"))).toEqual({ id: "tap-1", labels: ["Opening hours"] });
+  });
+
+  it("a doorbell that claims it before the relay's answer is read draws it (the runtime rang)", () => {
+    const { ledger } = setup(undefined, { deferDraw: () => true });
+    void ledger.wrapCallTool(() => new Promise<McpToolCallResult>(() => {}))(tapRequest("a1"));
+    expect(ledger.pendingTaps()).toEqual([]);
+    expect(ledger.claimDoorbell(doorbell("a1"))).toEqual({ id: "tap-1", labels: ["Opening hours"] });
+    expect(ledger.pendingTaps()).toEqual([{ id: "tap-1", labels: ["Opening hours"] }]);
+  });
+
+  it("the predicate is read at tap time: an idle host draws at once", () => {
+    let live = true;
+    const { ledger } = setup(undefined, { deferDraw: () => live });
+    void ledger.wrapCallTool(async () => ENQUEUED)(tapRequest("a1"));
+    expect(ledger.pendingTaps()).toEqual([]);
+    live = false;
+    void ledger.wrapCallTool(async () => ENQUEUED)(tapRequest("a2", "events"));
+    expect(ledger.pendingTaps()).toEqual([{ id: "tap-2", labels: ["Author events"] }]);
+  });
+});
+
+describe("a relay that never answers", () => {
+  it("withdraws the entry at the relay grace (no ghost bubble), and a late answer changes nothing", async () => {
+    const { ledger, withdrawn } = setup();
+    let answer: (r: McpToolCallResult) => void = () => {};
+    const pending = ledger.wrapCallTool(() => new Promise<McpToolCallResult>((resolve) => (answer = resolve)))(tapRequest("a1"));
+    expect(ledger.pendingTaps()).toHaveLength(1);
+    vi.advanceTimersByTime(TAP_RELAY_GRACE_MS - 1);
+    expect(ledger.pendingTaps()).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(ledger.pendingTaps()).toEqual([]);
+    expect(withdrawn).toEqual(["relay-timeout"]);
+    answer(ENQUEUED);
+    expect(await pending).toBe(ENQUEUED); // the card still gets its answer
+    vi.advanceTimersByTime(TAP_DOORBELL_GRACE_MS * 2);
+    expect(withdrawn).toEqual(["relay-timeout"]);
+    expect(ledger.pendingTaps()).toEqual([]);
+  });
+
+  it("a rejection that arrives after the doorbell claimed the entry leaves the claim alone", async () => {
+    const { ledger, withdrawn } = setup();
+    let fail: (e: Error) => void = () => {};
+    const pending = ledger.wrapCallTool(() => new Promise<McpToolCallResult>((_resolve, reject) => (fail = reject)))(tapRequest("a1"));
+    expect(ledger.claimDoorbell(doorbell("a1"))).not.toBeNull();
+    const boom = new Error("late");
+    fail(boom);
+    await expect(pending).rejects.toBe(boom);
+    expect(withdrawn).toEqual([]);
+    expect(ledger.markSent(["tap-1"], [])).toEqual({ id: "tap-1", labels: ["Opening hours"] });
+  });
+});
+
+describe("a host that cannot mint the send's id", () => {
+  it("draws nothing and relays untouched", async () => {
+    const { ledger, onChange } = setup(undefined, { newId: () => undefined });
+    expect(await ledger.wrapCallTool(async () => ENQUEUED)(tapRequest("a1"))).toBe(ENQUEUED);
+    expect(ledger.pendingTaps()).toEqual([]);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
 describe("reset and dispose", () => {
+  it("dispose is terminal: no timer, change notice or withdrawal after it, and later taps pass straight through", async () => {
+    const { ledger, onChange, withdrawn } = setup();
+    let answer: (r: McpToolCallResult) => void = () => {};
+    const pending = ledger.wrapCallTool(() => new Promise<McpToolCallResult>((resolve) => (answer = resolve)))(tapRequest("a1"));
+    await ledger.wrapCallTool(async () => ENQUEUED)(tapRequest("a2", "events"));
+    onChange.mockClear();
+    ledger.dispose();
+    answer(REFUSED);
+    await pending;
+    vi.advanceTimersByTime(TAP_RELAY_GRACE_MS + TAP_DOORBELL_GRACE_MS + TAP_SENT_GRACE_MS);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(withdrawn).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
+    // After dispose: no entry begins, no doorbell claims, no send is marked.
+    const relay = vi.fn(async () => ENQUEUED);
+    expect(await ledger.wrapCallTool(relay)(tapRequest("a3"))).toBe(ENQUEUED);
+    expect(relay).toHaveBeenCalledTimes(1);
+    expect(ledger.claimDoorbell(doorbell("a2"))).toBeNull();
+    expect(ledger.markSent(["tap-2"], [])).toBeNull();
+    ledger.reconcile([{ clientMessageId: "tap-2" }]);
+    ledger.reset();
+    expect(onChange).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("reset drops every entry and every timer (a cleared conversation holds nothing)", async () => {
     const { ledger, withdrawn } = setup();
     await ledger.wrapCallTool(async () => ENQUEUED)(tapRequest("a1"));
