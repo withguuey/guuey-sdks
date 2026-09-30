@@ -19,6 +19,7 @@ import {
   storedTextParts,
 } from "./fold-rows.js";
 import { classifyStoredRow } from "./stored-row.js";
+import type { TapLabels } from "@guuey/mcp-apps-host/narrowing";
 import type {
   ThreadMessageEvent,
   StoredHistoryMessage,
@@ -77,6 +78,12 @@ export interface AppendMessageInput {
   answeredCardSessionId?: string;
   /** A user row's client class (see {@link ThreadMessageRow.clientClass}); carried verbatim. */
   clientClass?: ClientClass;
+  /**
+   * A card-action user row's tap labels (see {@link ThreadMessageRow.tapLabels});
+   * carried verbatim. The caller passes a value that already met the writer
+   * contract (`writeTapLabels`); the store does not re-judge it.
+   */
+  tapLabels?: TapLabels;
 }
 
 export interface AppendMessageResult {
@@ -269,6 +276,7 @@ export class ThreadStore {
       ...(input.turnOrigin !== undefined ? { turnOrigin: input.turnOrigin } : {}),
       ...(input.answeredCardSessionId !== undefined ? { answeredCardSessionId: input.answeredCardSessionId } : {}),
       ...(input.clientClass !== undefined ? { clientClass: input.clientClass } : {}),
+      ...(input.tapLabels !== undefined ? { tapLabels: input.tapLabels } : {}),
     };
     await this.db.putMessage(row);
     return { seq, deduped: false };

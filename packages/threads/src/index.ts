@@ -72,3 +72,22 @@ export {
   uiCardArtifactsFromMessages,
   type RowCtx,
 } from "./fold-rows.js";
+// guuey#2031 — the card-tap contract, re-exported for the persistence side (the
+// runtime stamps a user row's tap labels; the read plane forwards them) so a
+// server imports it from the package it already uses. The names live in
+// `@guuey/mcp-apps-host`'s protocol-free subpath: the writer and the reader of a
+// row's `tapLabels`, the one directive predicate, and the one paint reducer the
+// runtime reads a tapped card with.
+export {
+  isViewDirectiveText,
+  latestPaintProps,
+  paintPartsOfStored,
+  quickReplyLabel,
+  readTapLabels,
+  writeTapLabels,
+  type CardPaint,
+  type CardProps,
+  type LatestPaint,
+  type PaintPart,
+  type TapLabels,
+} from "@guuey/mcp-apps-host/narrowing";

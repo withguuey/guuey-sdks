@@ -10,6 +10,7 @@
  * thing" are the same mechanical guarantee — the `@guuey/state` pattern.
  */
 import type { AgMemoryRecord, JsonValue } from "@silverprotocol/core";
+import type { TapLabels } from "@guuey/mcp-apps-host/narrowing";
 
 export type ThreadMessageRole = "user" | "agent" | "system";
 export type ThreadMessageKind = "text" | "card" | "event";
@@ -142,6 +143,15 @@ export interface ThreadMessageRow {
   answeredCardSessionId?: string;
   /** On a user row: the sending client's class. Absent on older rows. */
   clientClass?: ClientClass;
+  /**
+   * On a card-action user row (guuey#2031): the tapped controls' own words,
+   * one entry per tap the row stands for (`null` for a tap with none), as the
+   * sending client resolved them. DISPLAY-ONLY: `text` and `content` stay the
+   * directive the doorbell sent, and no model path reads this. Absent on rows
+   * written before it existed and on every row whose turn had no labels;
+   * readers read it through the shape-only `readTapLabels`.
+   */
+  tapLabels?: TapLabels;
 }
 
 /** Latest-replace fold snapshot for a thread. */
