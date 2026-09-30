@@ -113,9 +113,12 @@ overrides:
   # size before reading (DoS). Pulled only by @google/adk (^0.5.17, which excludes the fix); 0.5.18 → 0.6.1 removes no
   # method adk calls (getEntries, readFile, the Buffer constructor). Lifts when adk's own range admits 0.6.1.
   adm-zip: ">=0.6.1"
-  "brace-expansion@1": ^1.1.18
-  "brace-expansion@2": ^2.1.4
-  "brace-expansion@5": ^5.0.9
+  # guuey#2083: each brace-expansion major floors at its last patched version
+  # for GHSA-6j4f-fj2g-mc7p, GHSA-qhr7-859c-m2p7 and GHSA-q2hr-2g5m-vwhr (see the
+  # root pnpm-workspace.yaml comment; this workspace has its own lockfile).
+  "brace-expansion@1": ^1.1.21
+  "brace-expansion@2": ^2.1.7
+  "brace-expansion@5": ^5.0.12
   # guuey#219 P2 — see the root pnpm-workspace.yaml comment (own lockfile).
   "body-parser@1": ^1.20.6
   "uuid@11": ^11.1.1
