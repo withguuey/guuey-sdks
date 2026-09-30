@@ -60,10 +60,24 @@ const DEFAULT_TITLE = "Generated view";
 /**
  * Under `autoResize`, how long (ms) an applied height must stand unchanged
  * before the frame lets go of an embedder's stylesheet `min-height` floor.
- * A card's first size reports can be taken before it has mounted (an empty
- * root measures a few px, or 0); releasing the floor on the first applied
- * report would collapse the frame to that transient height. Each applied
- * change restarts the window; a new document starts over with the floor.
+ * A card's first size reports can be taken before it has mounted. The
+ * default ggui shell measures 0 there (a zero-margin body, an empty mount
+ * root, a fixed-position loading glyph), and 0 is never applied (see
+ * `auto-resize.ts`), so its window opens at the card's first real height.
+ * Another runtime's empty document can measure a few px (a default body
+ * margin, say). Releasing the floor on the first applied report would
+ * shrink the frame to that transient height. Each applied change restarts
+ * the window; a new document starts over with the floor.
+ *
+ * Two limits of a fixed window, both known:
+ * - A runtime whose empty document measures a few px, and whose card takes
+ *   longer than SETTLE_MS to mount, gets a frame of those few px until the
+ *   card's real height is reported; a fixed-position loading indicator is
+ *   clipped meanwhile. The frame is never 0 px tall.
+ * - A card whose height follows its viewport (`min-height: 100vh`) has no
+ *   height of its own: during the window it measures the floor, and it ends
+ *   near the floor's height, where the echo detector holds it. A card sized
+ *   by its content ends at its own height.
  */
 export const SETTLE_MS = 300;
 

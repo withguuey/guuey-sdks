@@ -427,7 +427,7 @@ describe("DefaultView — per-mount viewProps + autoResize (guuey#135 kit-refine
     const mountAutoResize = (item: ViewMountItem = viewItem()) =>
       render(<DefaultView item={item} ctx={ctx({ viewProps: { autoResize: true } })} />);
 
-    it("holds the floor until the first size report (the loading reservation)", () => {
+    it("holds the floor before any size report (the loading reservation)", () => {
       const { container } = mountAutoResize();
       const frame = container.querySelector("iframe")!;
       expect(floorOf(frame)).toBe(FLOOR);
@@ -508,6 +508,37 @@ describe("DefaultView — per-mount viewProps + autoResize (guuey#135 kit-refine
       expect(frame.style.height).toBe("120px");
       expect(floorOf(frame)).toBe(FLOOR);
       elapse(SETTLE_MS);
+      expect(floorOf(frame)).toMatch(RELEASED);
+    });
+
+    it("a new document while the previous one's window is still open: the old window never releases the new frame's floor", () => {
+      const first = viewItem();
+      const { container, rerender } = mountAutoResize(first);
+      report(container.querySelector("iframe")!, 152);
+      elapse(SETTLE_MS / 2);
+
+      const next: ViewMountItem = {
+        ...first,
+        mount: {
+          channel: "inline",
+          resource: { uri: "ui://tool/next-card", mimeType: "text/html", text: "<p>next</p>" },
+        },
+      };
+      rerender(<DefaultView item={next} ctx={ctx({ viewProps: { autoResize: true } })} />);
+      const frame = container.querySelector("iframe")!;
+      // Past the point where the first document's window would have run out.
+      elapse(SETTLE_MS);
+      expect(frame.style.height).toBe("100%");
+      expect(frame.style.minHeight).toBe("");
+      expect(floorOf(frame)).toBe(FLOOR);
+
+      // The new document's first report opens its own full window.
+      report(frame, 120);
+      expect(frame.style.height).toBe("120px");
+      expect(floorOf(frame)).toBe(FLOOR);
+      elapse(SETTLE_MS - 1);
+      expect(floorOf(frame)).toBe(FLOOR);
+      elapse(1);
       expect(floorOf(frame)).toMatch(RELEASED);
     });
 
