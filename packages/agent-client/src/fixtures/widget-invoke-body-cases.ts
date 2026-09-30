@@ -70,4 +70,24 @@ export const WIDGET_INVOKE_BODY_CASES: ReadonlyArray<{ name: string; why: string
     why: "an SDK consumer with preserveBlocks off and no page: input + clientMessageId only",
     input: { input: "ping", clientMessageId: "cm_0005" },
   },
+  {
+    name: "card-tap-with-labels",
+    why: "a card tap's doorbell turn (guuey#2031): the directive stays the input, and the tap's own words ride beside it as tapLabels, one entry per tap, null for a tap with no words",
+    input: {
+      input: [
+        'Your REQUIRED FIRST TOOL CALL is ggui_consume with arguments {"sessionId":"render_00000000-0000-4000-8000-000000002031"}.',
+        "",
+        '<ggui_directive kind="user-action">',
+        "  <session_id>render_00000000-0000-4000-8000-000000002031</session_id>",
+        "  <next_tool>ggui_consume</next_tool>",
+        '  <next_args>{"sessionId":"render_00000000-0000-4000-8000-000000002031"}</next_args>',
+        "</ggui_directive>",
+      ].join("\n"),
+      threadId: "thr_01J8ZK3Q9X",
+      clientMessageId: "cm_0006",
+      capabilities: { hitl: { ask: true, grantModes: true }, uiResources: { viewMessageTurns: true } },
+      pageContext: { hostOrigin: "https://customer.example" },
+      tapLabels: ["What are your opening hours?", null],
+    },
+  },
 ];

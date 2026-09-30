@@ -26,6 +26,7 @@
  * module is carried into every bundle that imports the builder.
  */
 import type { AgClientCapabilities } from "@silverprotocol/core";
+import type { TapLabels } from "@guuey/mcp-apps-host/narrowing";
 import type { PageContext } from "./types.js";
 
 export interface InvokeBodyInput {
@@ -41,6 +42,12 @@ export interface InvokeBodyInput {
   pageContext?: PageContext;
   /** The client-named agent-mode pin (guuey#566) — carriage only. */
   mode?: string;
+  /**
+   * A card tap's own words beside its directive (guuey#2031), one entry per
+   * tap. The caller passes a list that met the writer contract; the runtime
+   * judges it again before it stores it, and an older runtime ignores the key.
+   */
+  tapLabels?: TapLabels;
 }
 
 /** The wire body, exactly as sent. */
@@ -51,6 +58,7 @@ export interface InvokeBody {
   capabilities?: AgClientCapabilities;
   pageContext?: PageContext;
   mode?: string;
+  tapLabels?: TapLabels;
 }
 
 export function buildInvokeBody(i: InvokeBodyInput): InvokeBody {
@@ -66,5 +74,8 @@ export function buildInvokeBody(i: InvokeBodyInput): InvokeBody {
     // guuey#566: the client-named agent mode — carriage only; every semantic
     // (validation, fallback, subset) is pod-side.
     ...(i.mode !== undefined ? { mode: i.mode } : {}),
+    // guuey#2031: a card tap's words — carriage only; the runtime judges them
+    // again, and a runtime that predates them ignores the key.
+    ...(i.tapLabels !== undefined ? { tapLabels: i.tapLabels } : {}),
   };
 }

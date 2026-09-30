@@ -5,7 +5,7 @@
  * ggui generative-UI protocol that `@ggui-ai/mcp-apps-react`'s useInvoke targets):
  *
  *   POST {endpointUrl}/agent/invoke
- *     body: { input, threadId?, clientMessageId, capabilities? }
+ *     body: the one shape `buildInvokeBody` builds (`./invoke-body`)
  *   ← SSE:
  *     event: session  { sessionId, userId, threadId? }
  *     event: message  <SDKMessage JSON>          (assistant turns + result)
@@ -29,6 +29,7 @@ import { AgentResponseError } from "./errors.js";
 import { withActivityObserver } from "./transport.js";
 import { CLIENT_ERROR_CODES } from "./error-codes.js";
 import { HistoryUnauthorizedError } from "./history.js";
+import { writeTapLabels } from "@guuey/mcp-apps-host/narrowing";
 import type {
   AgentInvokeAdapters,
   AgentInvokeStatus,
@@ -36,6 +37,7 @@ import type {
   HistoryCard,
   HistoryLoadResult,
   ProfileLinkRequest,
+  SendOptions,
   StallRecoveryOptions,
   UseAgentInvokeOptions,
   UseAgentInvokeReturn,
@@ -155,11 +157,14 @@ function resolveStallRecovery(
  *
  * KNOWN LIMIT (documented, accepted): the runtime persists a turn's rows at
  * completion — the guuey#192 evidence (a reload mid-stall renders the FULL
- * reply) is only possible under that model, and the read plane carries no
- * per-row clientMessageId to match against. If persistence ever becomes
- * progressive (partial assistant rows), this heuristic needs the read plane
- * to grow a turn-completion marker — do not "fix" it client-side by text
- * comparison, which cannot distinguish a partial row from a finished one.
+ * reply) is only possible under that model. The read plane DOES project each
+ * row's `clientMessageId` (the user row carries the invoke body's key, and the
+ * turn's agent and card rows carry keys derived from it), but this decision
+ * does not read it: a key says which turn a row belongs to, never whether that
+ * turn's reply is finished. If persistence ever becomes progressive (partial
+ * assistant rows), this heuristic needs the read plane to grow a
+ * turn-completion marker — do not "fix" it client-side by text comparison,
+ * which cannot distinguish a partial row from a finished one.
  */
 export function stallProbeDecision(
   history: AgentMessage[],
@@ -408,7 +413,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
   modeRef.current = opts.mode;
 
   const send = useCallback(
-    async (input: string) => {
+    async (input: string, sendOpts?: SendOptions) => {
       // An already-aborted external signal refuses the send outright —
       // before the optimistic transcript push, so nothing is left to undo.
       if (!endpointUrl || !input.trim() || status !== "ready" || opts.signal?.aborted) return;
@@ -418,8 +423,16 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
       setAdopted(false);
       setStatus("connecting");
       // ONE id for the whole turn: the optimistic user entry, the send-state
-      // ledger, and the invoke body all carry it — the R0 lifecycle join.
-      const clientMessageId = adaptersRef.current.generateId();
+      // ledger, and the invoke body all carry it — the R0 lifecycle join. A
+      // host that already draws the turn (a pending card tap, guuey#2031)
+      // hands in the id it minted with `newClientMessageId`.
+      const clientMessageId =
+        sendOpts?.clientMessageId !== undefined && sendOpts.clientMessageId !== ""
+          ? sendOpts.clientMessageId
+          : adaptersRef.current.generateId();
+      // guuey#2031: the writer contract runs HERE, the one send path, so the
+      // optimistic row and the body carry the same list or neither does.
+      const tapLabels = sendOpts?.tapLabels !== undefined ? writeTapLabels(sendOpts.tapLabels) : undefined;
       /** Move this turn's ledger entry; `null` removes it (absent = sent). */
       const markSend = (state: "sending" | "failed" | null): void => {
         setSendStates((prev) => {
@@ -444,7 +457,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
       const precedingTurnCount = reducerRef.current?.result().turns.length ?? 0;
       setMessages((prev) => [
         ...prev,
-        { role: "user", text: input, clientMessageId, precedingTurnCount },
+        { role: "user", text: input, clientMessageId, precedingTurnCount, ...(tapLabels !== undefined ? { tapLabels } : {}) },
         { role: "assistant", text: "" },
       ]);
 
@@ -612,6 +625,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
           ...(capabilities !== undefined ? { capabilities } : {}),
           ...(pageContextRef.current !== undefined ? { pageContext: pageContextRef.current } : {}),
           ...(modeRef.current !== undefined ? { mode: modeRef.current } : {}),
+          ...(tapLabels !== undefined ? { tapLabels } : {}),
         });
 
         // The wire walk lives in `invokeTurn` (the pure per-turn generator —
@@ -754,9 +768,12 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     [endpointUrl, appId, status, opts.signal],
   );
 
+  const newClientMessageId = useCallback((): string => adaptersRef.current.generateId(), []);
+
   return {
     messages,
     send,
+    newClientMessageId,
     status,
     activeTool,
     error,

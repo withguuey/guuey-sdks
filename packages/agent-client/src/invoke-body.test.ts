@@ -28,6 +28,13 @@ describe("buildInvokeBody — the one wire shape", () => {
     expect(buildInvokeBody({ input: "a", clientMessageId: "c", threadId: "thr_1" }).threadId).toBe("thr_1");
   });
 
+  it("carries a card tap's labels verbatim when given, as the last key; a plain turn carries no tapLabels key (guuey#2031)", () => {
+    const body = buildInvokeBody({ input: "<ggui_directive", clientMessageId: "c", tapLabels: ["Opening hours", null] });
+    expect(Object.keys(body)).toEqual(["input", "clientMessageId", "tapLabels"]);
+    expect(body.tapLabels).toEqual(["Opening hours", null]);
+    expect(buildInvokeBody({ input: "hi", clientMessageId: "c" })).not.toHaveProperty("tapLabels");
+  });
+
   it("carries capabilities, pageContext and mode verbatim, in the wire's key order", () => {
     const body = buildInvokeBody({
       input: "x",
@@ -52,9 +59,16 @@ describe("the widget's canonical bodies are pinned as the fixture (guuey#1213)",
     expect(onDisk).toBe(`${JSON.stringify(expected, null, 2)}\n`);
   });
 
-  it("the case list covers the shapes the widget actually sends: init-origin-only, a full page block, a page block without context, a mode pin, and the SDK minimum", () => {
+  it("the case list covers the shapes the widget actually sends: init-origin-only, a full page block, a page block without context, a mode pin, the SDK minimum, and a card tap with its labels", () => {
     const names = WIDGET_INVOKE_BODY_CASES.map((c) => c.name);
-    expect(names).toEqual(["session-open-init-origin", "turn-with-page", "turn-with-page-no-context", "guest-mode-pin", "sdk-minimal"]);
+    expect(names).toEqual([
+      "session-open-init-origin",
+      "turn-with-page",
+      "turn-with-page-no-context",
+      "guest-mode-pin",
+      "sdk-minimal",
+      "card-tap-with-labels",
+    ]);
     const withPath = WIDGET_INVOKE_BODY_CASES.filter((c) => c.input.pageContext?.path !== undefined);
     // Every path-bearing block the widget builds also carries title + hostOrigin (WidgetChat's onPage).
     for (const c of withPath) {

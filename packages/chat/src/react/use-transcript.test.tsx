@@ -266,6 +266,7 @@ function invokeReturn(over: Partial<UseAgentInvokeReturn> = {}): UseAgentInvokeR
       { role: "assistant", text: "partial answer" },
     ],
     send: vi.fn(async () => {}),
+    newClientMessageId: vi.fn(() => "cm-new"),
     status: "responding",
     activeTool: null,
     error: null,

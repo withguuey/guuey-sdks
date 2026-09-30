@@ -11,6 +11,7 @@
  * has its own copy today and can migrate onto this later.
  */
 import { AgNoticeSource, type AgMessage, type JsonValue } from "@silverprotocol/core";
+import { readTapLabels } from "@guuey/mcp-apps-host/narrowing";
 import type { AgentMessage, HistoryCard, HistoryLoadResult } from "./types.js";
 
 /** One row of `GET /v1/threads/:id/messages`. */
@@ -38,6 +39,12 @@ export interface ThreadHistoryRow {
   failure?: { code?: string | null } | null;
   /** A framework notice's row: its source when named. Absent from an older read plane. */
   notice?: { source?: string | null } | null;
+  /**
+   * A card-action user row's tap labels (guuey#2031), one entry per tap. Absent
+   * from an older read plane and from every row that has none; read through the
+   * shape-only `readTapLabels`, so a value no writer produced maps to nothing.
+   */
+  tapLabels?: (string | null)[] | null;
 }
 
 interface ThreadMessagesResponse {
@@ -102,7 +109,15 @@ export function threadHistoryRowsToMessages(rows: ThreadHistoryRow[]): AgentMess
         ? row.narration.filter((line): line is string => typeof line === "string" && line !== "")
         : [];
     if (row.text == null && narration.length === 0) continue;
-    messages.push({ role, text: row.text ?? "", seq: row.seq, ...(narration.length > 0 ? { narration } : {}) });
+    // guuey#2031: a user row's tap labels, shape-checked (the writer's bounds are not the reader's).
+    const tapLabels = role === "user" ? readTapLabels(row.tapLabels) : undefined;
+    messages.push({
+      role,
+      text: row.text ?? "",
+      seq: row.seq,
+      ...(narration.length > 0 ? { narration } : {}),
+      ...(tapLabels !== undefined ? { tapLabels } : {}),
+    });
   }
   return messages;
 }

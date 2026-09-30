@@ -1,0 +1,57 @@
+{
+  "$schema": "guuey/history-rows@1",
+  "source": "SYNTHETIC (guuey#2031): GET /v1/threads/:id/messages rows as the public read plane serves them, invented ids and words. The two card-action user rows are the same doorbell turn as an older read plane serves it (no tapLabels) and as a read plane that projects the stored labels serves it; the last two rows carry values a reader must ignore.",
+  "rows": [
+    {
+      "seq": 1,
+      "at": "2026-09-30T00:00:01.000Z",
+      "kind": "text",
+      "authorRole": "user",
+      "text": "Hi!",
+      "clientMessageId": "cm_hi"
+    },
+    {
+      "seq": 3,
+      "at": "2026-09-30T00:00:03.000Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": "Welcome! What can I help you with?",
+      "clientMessageId": "cm_hi#agent#1"
+    },
+    {
+      "seq": 5,
+      "at": "2026-09-30T00:00:05.000Z",
+      "kind": "text",
+      "authorRole": "user",
+      "text": "Your REQUIRED FIRST TOOL CALL is ggui_consume with arguments {\"sessionId\":\"render_00000000-0000-4000-8000-000000002031\"}.\n\n<ggui_directive kind=\"user-action\">\n  <session_id>render_00000000-0000-4000-8000-000000002031</session_id>\n  <next_tool>ggui_consume</next_tool>\n</ggui_directive>",
+      "clientMessageId": "cm_tap_old_plane"
+    },
+    {
+      "seq": 7,
+      "at": "2026-09-30T00:00:07.000Z",
+      "kind": "text",
+      "authorRole": "user",
+      "text": "Your REQUIRED FIRST TOOL CALL is ggui_consume with arguments {\"sessionId\":\"render_00000000-0000-4000-8000-000000002031\"}.\n\n<ggui_directive kind=\"user-action\">\n  <session_id>render_00000000-0000-4000-8000-000000002031</session_id>\n  <next_tool>ggui_consume</next_tool>\n</ggui_directive>",
+      "clientMessageId": "cm_tap_new_plane",
+      "tapLabels": ["What are your opening hours?", null]
+    },
+    {
+      "seq": 9,
+      "at": "2026-09-30T00:00:09.000Z",
+      "kind": "text",
+      "authorRole": "user",
+      "text": "typed after",
+      "clientMessageId": "cm_typed",
+      "tapLabels": [7]
+    },
+    {
+      "seq": 10,
+      "at": "2026-09-30T00:00:10.000Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": "An agent row never carries a visitor's tap.",
+      "clientMessageId": "cm_typed#agent#0",
+      "tapLabels": ["Not the visitor's"]
+    }
+  ]
+}

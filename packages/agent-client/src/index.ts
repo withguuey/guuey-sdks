@@ -105,5 +105,6 @@ export type {
   StallRecoveryOptions,
   UseAgentInvokeOptions,
   PageContext,
+  SendOptions,
   UseAgentInvokeReturn,
 } from "./types.js";

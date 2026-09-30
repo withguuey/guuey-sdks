@@ -70,6 +70,42 @@ export interface AgentMessage {
    * persisted. `text` is the reader line the turn ended with.
    */
   failure?: { code: string | null };
+  /**
+   * On a card-action user row (guuey#2031): the tapped controls' own words,
+   * one entry per tap the row stands for (`null` for a tap with none). Set on a
+   * live row by `send(input, { tapLabels })`, and on a rehydrated one when the
+   * read plane projects it. DISPLAY-ONLY: `text` stays the directive the view
+   * sent. Optional by design, like {@link precedingTurnCount}: absent, the
+   * transcript draws the turn's continuation row, exactly as before.
+   *
+   * Structurally `@guuey/mcp-apps-host`'s `TapLabels`, spelled out here because
+   * this module is in the transport's import closure, which carries no
+   * `@guuey/mcp-apps-host` (see `./transport`); `types.tap-labels.test.ts`
+   * holds the two spellings equal.
+   */
+  tapLabels?: readonly (string | null)[];
+}
+
+/**
+ * The optional second argument of {@link UseAgentInvokeReturn.send}
+ * (guuey#2031). Both members exist for a card tap's turn; an ordinary send
+ * passes neither.
+ */
+export interface SendOptions {
+  /**
+   * The turn's id, minted beforehand with
+   * {@link UseAgentInvokeReturn.newClientMessageId} when the host already
+   * draws the turn (a pending tap row) under that id. Absent, the hook mints
+   * one as always. It is the idempotency key on the body and the join key of
+   * the optimistic row and `sendStates`.
+   */
+  clientMessageId?: string;
+  /**
+   * The tap's own words, one entry per tap (see {@link AgentMessage.tapLabels}).
+   * Run through the writer contract (`writeTapLabels`) at send: a list that
+   * breaks it rides neither the optimistic row nor the body.
+   */
+  tapLabels?: readonly (string | null)[];
 }
 
 /**
@@ -329,7 +365,19 @@ export type AgentInvokeStatus = "ready" | "connecting" | "thinking" | "using-too
 
 export interface UseAgentInvokeReturn {
   messages: AgentMessage[];
-  send: (input: string) => Promise<void>;
+  /**
+   * Send one turn. `opts` is for a card tap's turn (guuey#2031): the id the
+   * host already draws the tap under, and the tap's own words. An ordinary
+   * send passes nothing.
+   */
+  send: (input: string, opts?: SendOptions) => Promise<void>;
+  /**
+   * A fresh client-message id from the host's own generator (the injected
+   * {@link AgentInvokeAdapters.generateId}), for a host that must name a turn
+   * before it sends it (a pending tap row, guuey#2031); pass it back as
+   * {@link SendOptions.clientMessageId}.
+   */
+  newClientMessageId: () => string;
   /** The per-turn lifecycle — see {@link AgentInvokeStatus}. Anything other
    *  than `ready` means a turn is in flight (the old `isStreaming === true`). */
   status: AgentInvokeStatus;
