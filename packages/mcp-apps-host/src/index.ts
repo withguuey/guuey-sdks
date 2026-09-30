@@ -110,6 +110,39 @@ export {
   SANDBOX_RESOURCE_READY_METHOD,
   type SandboxPageDeliveryConfig,
 } from "./sandbox-page.js";
+// guuey#2031 — a card tap as the visitor's turn: the tap-label contract (the
+// producer normalizer, the writer's bounds, the reader's shape rule, the one
+// directive predicate), the ONE paint reducer the host and the runtime share,
+// the tap read at relay time, and a mounted ggui card's own props.
+export {
+  isViewDirectiveText,
+  MAX_TAP_LABEL_UNITS,
+  MAX_TAP_LABELS,
+  MAX_TAP_LABELS_BYTES,
+  readTapLabels,
+  tapText,
+  writeTapLabels,
+  type TapLabels,
+} from "./tap-labels.js";
+export {
+  latestPaintProps,
+  paintPartsOfStored,
+  quickReplyLabel,
+  type CardPaint,
+  type CardProps,
+  type LatestPaint,
+  type PaintPart,
+} from "./paint-props.js";
+export {
+  readSubmitActionTap,
+  readUserActionMeta,
+  resolveTapLabel,
+  submitActionOutcome,
+  type MountedCardProps,
+  type ResolveTapLabelInput,
+  type SubmitActionTap,
+} from "./card-tap.js";
+export { mountedCardProps } from "./mounted-card-props.js";
 // guuey#836 — the typed read of a ggui_render PRE-GENERATION refusal
 // (`@ggui-ai/protocol` 0.14.0's third `outcome`). Hosts face it with words
 // instead of showing the envelope as an unexplained tool failure.
