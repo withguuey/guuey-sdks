@@ -185,6 +185,24 @@ describe("createMcpUiActionRelay — ggui_runtime_pull circuit break (guuey#1235
     expect(callTool).toHaveBeenCalledTimes(5);
   });
 
+  it("while closed, an in-band refusal is a door that answered: it ends the run of unavailable pulls (guuey#1978)", async () => {
+    let refused = false;
+    const callTool = vi.fn(async () =>
+      refused ? { content: [{ type: "text", text: "session_not_found: gone" }], isError: true } : undefined,
+    );
+    const unrestorable: string[] = [];
+    const relay = createMcpUiActionRelay({ callTool, onSessionUnrestorable: (uri) => unrestorable.push(uri) });
+    await relay({ resourceUri: URI, name: PULL, arguments: {} }); // 1 unavailable
+    await relay({ resourceUri: URI, name: PULL, arguments: {} }); // 2 unavailable
+    refused = true;
+    await relay({ resourceUri: URI, name: PULL, arguments: {} }); // refused → the run ends
+    refused = false;
+    await relay({ resourceUri: URI, name: PULL, arguments: {} }); // 1 unavailable
+    await relay({ resourceUri: URI, name: PULL, arguments: {} }); // 2 unavailable
+    expect(callTool).toHaveBeenCalledTimes(5);
+    expect(unrestorable).toEqual([]);
+  });
+
   it("only the pull rung is counted — a failed gesture/refresh never trips the pull", async () => {
     const callTool = vi.fn(async () => undefined);
     const relay = createMcpUiActionRelay({ callTool });
@@ -413,6 +431,79 @@ describe("createMcpUiActionRelay — an open circuit recovers only through a pro
       await relay({ resourceUri: URI, name: PULL, arguments: {} });
       expect(callTool).not.toHaveBeenCalled();
       expect(unrestorable).toEqual([URI]);
+      expect(restored).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("a probe answered with an in-band refusal leaves it open, whatever the refusal's code; a later probe the session answers still restores", async () => {
+    // guuey#1978: both doors relay ggui's refusal of an ended session's pull as
+    // a 200 carrying `isError`; that answer must not read as the session live.
+    const REFUSALS = [
+      { content: [{ type: "text", text: "session_not_found: no session render_x for this app" }], isError: true },
+      { content: [{ type: "text", text: "Something went wrong" }], isError: true },
+      { content: [], isError: true },
+    ];
+    for (const refusal of REFUSALS) {
+      const warn = silenceWarn();
+      try {
+        const d = door();
+        const restored: string[] = [];
+        const unrestorable: string[] = [];
+        const relay = createMcpUiActionRelay({
+          callTool: d.callTool,
+          onSessionUnrestorable: (uri) => unrestorable.push(uri),
+          onSessionRestored: (uri) => restored.push(uri),
+        });
+        await trip(relay);
+        await relay({ resourceUri: URI, name: REFRESH, arguments: {} });
+        d.state.pull = refusal;
+        const probe = await relay({ resourceUri: URI, name: PULL, arguments: {} });
+        expect(probe).toEqual(refusal); // the card still gets the door's answer
+        expect(restored).toEqual([]);
+        expect(warn.mock.calls.filter((c) => c[0] === UI_ACTION_PULL_CIRCUIT_CLOSED)).toHaveLength(0);
+        for (let i = 0; i < 3; i += 1) await relay({ resourceUri: URI, name: PULL, arguments: {} });
+        expect(d.pulls()).toBe(PULL_CIRCUIT_THRESHOLD + 1); // still open: no pull reaches the door
+        expect(unrestorable).toEqual([URI]); // no second verdict either
+        // The control: the next refresh arms a new probe, and a probe the session answers restores.
+        await relay({ resourceUri: URI, name: REFRESH, arguments: {} });
+        d.state.pull = LIVE;
+        expect(await relay({ resourceUri: URI, name: PULL, arguments: {} })).toEqual(LIVE);
+        expect(restored).toEqual([URI]);
+      } finally {
+        warn.mockRestore();
+      }
+    }
+  });
+
+  it("a pull in flight across the trip that comes back refused does not close the circuit", async () => {
+    const warn = silenceWarn();
+    try {
+      let answerInFlight: (value: unknown) => void = () => undefined;
+      const inFlight = new Promise<unknown>((resolve) => {
+        answerInFlight = resolve;
+      });
+      let calls = 0;
+      const callTool = vi.fn(async () => {
+        calls += 1;
+        return calls === 1 ? inFlight : undefined;
+      });
+      const restored: string[] = [];
+      const unrestorable: string[] = [];
+      const relay = createMcpUiActionRelay({
+        callTool,
+        onSessionUnrestorable: (uri) => unrestorable.push(uri),
+        onSessionRestored: (uri) => restored.push(uri),
+      });
+      const slow = relay({ resourceUri: URI, name: PULL, arguments: {} });
+      await trip(relay);
+      expect(unrestorable).toEqual([URI]);
+      answerInFlight(REFUSED);
+      await slow;
+      callTool.mockClear();
+      await relay({ resourceUri: URI, name: PULL, arguments: {} });
+      expect(callTool).not.toHaveBeenCalled(); // still open
       expect(restored).toEqual([]);
     } finally {
       warn.mockRestore();

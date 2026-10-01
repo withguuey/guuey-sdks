@@ -406,10 +406,13 @@ export interface CreateMcpUiActionRelayDeps {
    * The recovery is evidence on the channel that tripped: a successful
    * `ggui_runtime_refresh_ws_token` for the locator HALF-OPENS the circuit,
    * which lets the view's next pull through as a single probe. A probe that
-   * the session answers closes the circuit and fires this, once per close; a
-   * probe that fails leaves it open, and the host hears nothing new (it
-   * already holds the verdict). A token refresh alone never reverses it: the
-   * token channel can work while pulls still fail.
+   * the session answers with a result closes the circuit and fires this, once
+   * per close; a probe that fails, or that the door answers with an in-band
+   * `isError` refusal of any kind, leaves it open, and the host hears nothing
+   * new (it already holds the verdict). A refusal is a door that answered, not
+   * a session that did: an ended session's pull is answered exactly that way.
+   * A token refresh alone never reverses it: the token channel can work while
+   * pulls still fail.
    */
   onSessionRestored?: (resourceUri: string) => void;
 }
@@ -470,8 +473,9 @@ export const UI_ACTION_PULL_CIRCUIT_OPEN =
 
 /**
  * Logged when an open circuit closes again: the probe pull a successful token
- * refresh let through was answered, and the host was told
- * (`onSessionRestored`). It can only happen for a host that wires that signal.
+ * refresh let through was answered with a result, not a refusal, and the host
+ * was told (`onSessionRestored`). It can only happen for a host that wires
+ * that signal.
  */
 export const UI_ACTION_PULL_CIRCUIT_CLOSED =
   "[guuey] card updates resumed — the session behind this card answered again";
@@ -485,6 +489,23 @@ export const UI_ACTION_PULL_CIRCUIT_CLOSED =
  */
 export const UI_ACTION_HOST_CALLBACK_THREW =
   "[guuey] the page's card-session handler threw — the card went on, but the page may not show its current state";
+
+/**
+ * What one relayed pull tells the circuit:
+ *
+ *  - `unavailable` — no answer at all: the transport threw, the door denied or
+ *    lost the session, or the answer was not result-shaped;
+ *  - `refused` — the door answered with an in-band `isError` refusal (both
+ *    action doors relay ggui's refusals as a 200 with the result body, so an
+ *    ended session's pull lands here, not in `unavailable`);
+ *  - `live` — the session answered the pull with a result.
+ */
+type PullOutcome = "unavailable" | "refused" | "live";
+
+function pullOutcome(result: McpToolCallResult | undefined): PullOutcome {
+  if (result === undefined) return "unavailable";
+  return result.isError === true ? "refused" : "live";
+}
 
 /** Call a host's session callback; a throw is logged by name and never escapes the relay. */
 function callHostCallback(
@@ -514,8 +535,9 @@ function callHostCallback(
  * door indefinitely (the #1233 prod storm: 57+ over 15 min). After
  * {@link PULL_CIRCUIT_THRESHOLD} CONSECUTIVE `unavailable` pull results for a
  * locator, the circuit OPENS: the relay stops calling the transport for that
- * locator's pull (fail-fast, no network) — the server storm is bounded. A
- * single non-`unavailable` pull result CLOSES it (the session recovered). Only
+ * locator's pull (fail-fast, no network) — the server storm is bounded. While
+ * it is still closed, any answered pull (a result or an in-band refusal) ends
+ * the run of `unavailable` ones, so a transient blip never trips it. Only
  * the pull rung is counted — a failed user gesture (`submit_action`) or token
  * refresh must never trip the auto-poll break, and never opens another rung.
  *
@@ -526,7 +548,14 @@ function callHostCallback(
  * An OPEN circuit is terminal for the mount unless the host wires
  * `onSessionRestored`. Then a successful `ggui_runtime_refresh_ws_token` for
  * the locator HALF-OPENS it: the next pull goes through as one probe, and only
- * a probe the session answers closes it (see `onSessionRestored`).
+ * a probe the session answers with a result closes it (see
+ * `onSessionRestored`). Withdrawing a verdict the user can see takes more than
+ * not issuing one: an in-band refusal never closes an OPEN circuit, whatever
+ * its code (guuey#1978). Settled for every refusal rather than ggui's
+ * `session_not_found` alone because a refusal of any code is no evidence the
+ * session is live, the token refresh that arms the probe is held to the same
+ * bar, and a circuit wrongly kept open costs one more refresh-and-probe cycle,
+ * while one wrongly closed tells the user an ended session is back.
  */
 export function createMcpUiActionRelay(
   deps: CreateMcpUiActionRelayDeps,
@@ -540,8 +569,16 @@ export function createMcpUiActionRelay(
 
   const isOpen = (uri: string): boolean => (pullFailures.get(uri) ?? 0) >= PULL_CIRCUIT_THRESHOLD;
 
-  const recordPull = (uri: string, unavailable: boolean): void => {
-    if (!unavailable) {
+  const recordPull = (uri: string, outcome: PullOutcome): void => {
+    if (outcome === "refused") {
+      // A closed circuit: the door answered, so the run of unavailable pulls
+      // ends, as it always has. An OPEN one (the half-open probe, or a pull in
+      // flight across the trip): a refusal is not the session answering, so it
+      // stays open and the host hears nothing new (guuey#1978).
+      if (!isOpen(uri)) pullFailures.delete(uri);
+      return;
+    }
+    if (outcome === "live") {
       const wasOpen = isOpen(uri);
       pullFailures.delete(uri); // the session answered → close the circuit
       if (wasOpen) {
@@ -597,11 +634,11 @@ export function createMcpUiActionRelay(
     try {
       raw = await deps.callTool(request.resourceUri, request.name, callArguments);
     } catch {
-      if (isPull) recordPull(request.resourceUri, true); // transport failure == unavailable
+      if (isPull) recordPull(request.resourceUri, "unavailable"); // transport failure == unavailable
       return unavailableToolCallResult(); // in-band
     }
     const result = raw === undefined ? undefined : asToolCallResult(raw);
-    if (isPull) recordPull(request.resourceUri, result === undefined);
+    if (isPull) recordPull(request.resourceUri, pullOutcome(result));
     // A refresh the session granted is fresh evidence it is live, but on the
     // token channel, not the pull channel that tripped: it half-opens, and the
     // probe pull decides. Only for a host that can withdraw its verdict.
