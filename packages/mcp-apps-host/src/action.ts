@@ -411,8 +411,10 @@ export interface CreateMcpUiActionRelayDeps {
    * `isError` refusal of any kind, leaves it open, and the host hears nothing
    * new (it already holds the verdict). A refusal is a door that answered, not
    * a session that did: an ended session's pull is answered exactly that way.
-   * A token refresh alone never reverses it: the token channel can work while
-   * pulls still fail.
+   * Nothing else closes it: a pull already in flight when the circuit opened,
+   * or a probe let through for an earlier trip, is not evidence about this
+   * one. A token refresh alone never reverses it: the token channel can work
+   * while pulls still fail.
    */
   onSessionRestored?: (resourceUri: string) => void;
 }
@@ -475,7 +477,8 @@ export const UI_ACTION_PULL_CIRCUIT_OPEN =
  * Logged when an open circuit closes again: the probe pull a successful token
  * refresh let through was answered with a result, not a refusal, and the host
  * was told (`onSessionRestored`). It can only happen for a host that wires
- * that signal.
+ * that signal: only that probe closes a circuit, and the relay lets one
+ * through only for such a host.
  */
 export const UI_ACTION_PULL_CIRCUIT_CLOSED =
   "[guuey] card updates resumed — the session behind this card answered again";
@@ -535,11 +538,11 @@ function callHostCallback(
  * door indefinitely (the #1233 prod storm: 57+ over 15 min). After
  * {@link PULL_CIRCUIT_THRESHOLD} CONSECUTIVE `unavailable` pull results for a
  * locator, the circuit OPENS: the relay stops calling the transport for that
- * locator's pull (fail-fast, no network) — the server storm is bounded. While
- * it is still closed, any answered pull (a result or an in-band refusal) ends
- * the run of `unavailable` ones, so a transient blip never trips it. Only
- * the pull rung is counted — a failed user gesture (`submit_action`) or token
- * refresh must never trip the auto-poll break, and never opens another rung.
+ * locator's pull (fail-fast, no network) — the server storm is bounded. Before
+ * the trip, any answered pull (a result or an in-band refusal) ends the run of
+ * `unavailable` ones, so a transient blip never trips it. Only the pull rung
+ * is counted — a failed user gesture (`submit_action`) or token refresh must
+ * never trip the auto-poll break, and never opens another rung.
  *
  * The complement — telling the USER the session is unrestorable so a tripped
  * circuit is not a silent freeze — is the `onSessionUnrestorable` signal
@@ -548,10 +551,11 @@ function callHostCallback(
  * An OPEN circuit is terminal for the mount unless the host wires
  * `onSessionRestored`. Then a successful `ggui_runtime_refresh_ws_token` for
  * the locator HALF-OPENS it: the next pull goes through as one probe, and only
- * a probe the session answers with a result closes it (see
- * `onSessionRestored`). Withdrawing a verdict the user can see takes more than
- * not issuing one: an in-band refusal never closes an OPEN circuit, whatever
- * its code (guuey#1978). Settled for every refusal rather than ggui's
+ * a probe of this trip that the session answers with a result closes it (see
+ * `onSessionRestored`). A pull already in flight at the trip never does.
+ * Withdrawing a verdict the user can see takes more than not issuing one: an
+ * in-band refusal never closes an OPEN circuit, whatever its code
+ * (guuey#1978). Settled for every refusal rather than ggui's
  * `session_not_found` alone because a refusal of any code is no evidence the
  * session is live, the token refresh that arms the probe is held to the same
  * bar, and a circuit wrongly kept open costs one more refresh-and-probe cycle,
@@ -561,47 +565,62 @@ export function createMcpUiActionRelay(
   deps: CreateMcpUiActionRelayDeps,
 ): (request: UiActionRequest) => Promise<McpToolCallResult> {
   // Per-relay-instance (one card mount). A recovered/absent locator is deleted,
-  // so this stays as small as the mounted cards; the mount tears it down.
+  // so these stay as small as the mounted cards; the mount tears them down.
+  // Consecutive unavailable pulls of a CLOSED locator.
   const pullFailures = new Map<string, number>();
+  // OPEN locators → the trip that opened them. Each trip is a new number, so a
+  // probe carries the trip it was let through for and can close only that one.
+  const openTrips = new Map<string, number>();
+  let trips = 0;
   // Open locators a successful token refresh has half-opened: the next pull is
   // let through as the probe. Only ever filled when the host wires the restore.
   const halfOpen = new Set<string>();
 
-  const isOpen = (uri: string): boolean => (pullFailures.get(uri) ?? 0) >= PULL_CIRCUIT_THRESHOLD;
+  const isOpen = (uri: string): boolean => openTrips.has(uri);
 
-  const recordPull = (uri: string, outcome: PullOutcome): void => {
-    if (outcome === "refused") {
-      // A closed circuit: the door answered, so the run of unavailable pulls
-      // ends, as it always has. An OPEN one (the half-open probe, or a pull in
-      // flight across the trip): a refusal is not the session answering, so it
-      // stays open and the host hears nothing new (guuey#1978).
-      if (!isOpen(uri)) pullFailures.delete(uri);
+  /**
+   * Count a pull's answer. `probeOf` is the trip a probe was let through for,
+   * `undefined` for a pull that started while the circuit was closed.
+   */
+  const recordPull = (uri: string, probeOf: number | undefined, outcome: PullOutcome): void => {
+    const trip = openTrips.get(uri);
+    if (trip !== undefined) {
+      // OPEN: only a probe of THIS trip closes it, and only with a result the
+      // session gave. An in-band refusal is not the session answering (an ended
+      // session refuses in-band, guuey#1978), and a pull already in flight at
+      // the trip, or a probe of an earlier trip, is not evidence about this
+      // one: none of them changes anything, and the host hears nothing.
+      if (probeOf !== trip || outcome !== "live") return;
+      openTrips.delete(uri);
+      halfOpen.delete(uri); // a refresh during the probe must not arm the next trip
+      console.warn(UI_ACTION_PULL_CIRCUIT_CLOSED, { resourceUri: uri });
+      // The circuit is closed either way: a throwing host callback is logged, never rethrown.
+      callHostCallback("onSessionRestored", deps.onSessionRestored, uri);
       return;
     }
-    if (outcome === "live") {
-      const wasOpen = isOpen(uri);
-      pullFailures.delete(uri); // the session answered → close the circuit
-      if (wasOpen) {
-        console.warn(UI_ACTION_PULL_CIRCUIT_CLOSED, { resourceUri: uri });
-        // The circuit is closed either way: a throwing host callback is logged, never rethrown.
-        callHostCallback("onSessionRestored", deps.onSessionRestored, uri);
-      }
+    if (outcome !== "unavailable") {
+      // CLOSED: the door answered (a result or a refusal) → reset the count.
+      pullFailures.delete(uri);
       return;
     }
     const next = (pullFailures.get(uri) ?? 0) + 1;
-    pullFailures.set(uri, next);
-    if (next === PULL_CIRCUIT_THRESHOLD) {
-      // Once, at the trip — not per subsequent short-circuited poll.
-      console.warn(UI_ACTION_PULL_CIRCUIT_OPEN, {
-        resourceUri: uri,
-        consecutiveUnavailable: next,
-      });
-      // guuey#1249 item 4: tell the host the session is unrestorable so the
-      // bounded circuit isn't a silent freeze. A throw from the host callback
-      // must never break the relay's never-reject contract.
-      // The storm is bounded either way: a throwing host callback is logged, never rethrown.
-      callHostCallback("onSessionUnrestorable", deps.onSessionUnrestorable, uri);
+    if (next < PULL_CIRCUIT_THRESHOLD) {
+      pullFailures.set(uri, next);
+      return;
     }
+    pullFailures.delete(uri);
+    trips += 1;
+    openTrips.set(uri, trips);
+    // Once, at the trip — not per subsequent short-circuited poll.
+    console.warn(UI_ACTION_PULL_CIRCUIT_OPEN, {
+      resourceUri: uri,
+      consecutiveUnavailable: next,
+    });
+    // guuey#1249 item 4: tell the host the session is unrestorable so the
+    // bounded circuit isn't a silent freeze. A throw from the host callback
+    // must never break the relay's never-reject contract.
+    // The storm is bounded either way: a throwing host callback is logged, never rethrown.
+    callHostCallback("onSessionUnrestorable", deps.onSessionUnrestorable, uri);
   };
 
   return async (request) => {
@@ -625,20 +644,22 @@ export function createMcpUiActionRelay(
 
     const isPull = request.name === PULL_TOOL;
     // Circuit OPEN for this locator's pull → fail-fast, never touch the door,
-    // unless a token refresh half-opened it: then this one pull is the probe.
-    if (isPull && isOpen(request.resourceUri)) {
-      if (!halfOpen.delete(request.resourceUri)) return unavailableToolCallResult();
+    // unless a token refresh half-opened it: then this one pull is the probe,
+    // and it carries the trip it probes.
+    const probeOf = isPull ? openTrips.get(request.resourceUri) : undefined;
+    if (probeOf !== undefined && !halfOpen.delete(request.resourceUri)) {
+      return unavailableToolCallResult();
     }
 
     let raw: unknown;
     try {
       raw = await deps.callTool(request.resourceUri, request.name, callArguments);
     } catch {
-      if (isPull) recordPull(request.resourceUri, "unavailable"); // transport failure == unavailable
+      if (isPull) recordPull(request.resourceUri, probeOf, "unavailable"); // transport failure == unavailable
       return unavailableToolCallResult(); // in-band
     }
     const result = raw === undefined ? undefined : asToolCallResult(raw);
-    if (isPull) recordPull(request.resourceUri, pullOutcome(result));
+    if (isPull) recordPull(request.resourceUri, probeOf, pullOutcome(result));
     // A refresh the session granted is fresh evidence it is live, but on the
     // token channel, not the pull channel that tripped: it half-opens, and the
     // probe pull decides. Only for a host that can withdraw its verdict.

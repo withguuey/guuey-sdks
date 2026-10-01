@@ -639,6 +639,190 @@ describe("createMcpUiActionRelay — an open circuit recovers only through a pro
       warn.mockRestore();
     }
   });
+
+  // guuey#2012 + guuey#1978 — one close rule: only a probe that started after
+  // THIS trip, answered without isError, closes the circuit.
+
+  const PULL_REQUEST = { resourceUri: URI, name: PULL, arguments: {} };
+  const REFRESH_REQUEST = { resourceUri: URI, name: REFRESH, arguments: {} };
+
+  /** A door whose pulls wait until the test answers them, by arrival index; a refresh answers LIVE. */
+  function heldDoor() {
+    const held: Array<(answer: unknown) => void> = [];
+    const callTool = vi.fn(
+      (_uri: string, name: string): Promise<unknown> =>
+        name === PULL ? new Promise((resolve) => held.push(resolve)) : Promise.resolve(LIVE),
+    );
+    const answer = (index: number, value: unknown): void => {
+      const resolve = held[index];
+      if (resolve === undefined) throw new Error(`pull #${index} never reached the door`);
+      resolve(value);
+    };
+    return { callTool, answer, pulls: () => held.length };
+  }
+  type HeldDoor = ReturnType<typeof heldDoor>;
+  type Relay = ReturnType<typeof createMcpUiActionRelay>;
+
+  /** One pull that must reach the door, answered at once. */
+  async function answeredPull(relay: Relay, d: HeldDoor, value: unknown) {
+    const index = d.pulls();
+    const out = relay(PULL_REQUEST);
+    d.answer(index, value);
+    return out;
+  }
+  function closedLines(warn: ReturnType<typeof silenceWarn>) {
+    return warn.mock.calls.filter((c) => c[0] === UI_ACTION_PULL_CIRCUIT_CLOSED);
+  }
+
+  it("a pull already in flight at the trip never closes it: the card gets its answer, the host hears nothing, the circuit holds (guuey#2012)", async () => {
+    const warn = silenceWarn();
+    try {
+      const d = heldDoor();
+      const restored: string[] = [];
+      const unrestorable: string[] = [];
+      const relay = createMcpUiActionRelay({
+        callTool: d.callTool,
+        onSessionUnrestorable: (uri) => unrestorable.push(uri),
+        onSessionRestored: (uri) => restored.push(uri),
+      });
+      for (let i = 0; i < PULL_CIRCUIT_THRESHOLD - 1; i += 1) await answeredPull(relay, d, undefined);
+      // Two pulls in flight together; the first answer trips the circuit.
+      const tripping = relay(PULL_REQUEST);
+      const inFlight = relay(PULL_REQUEST);
+      d.answer(PULL_CIRCUIT_THRESHOLD - 1, undefined);
+      await tripping;
+      expect(unrestorable).toEqual([URI]);
+      d.answer(PULL_CIRCUIT_THRESHOLD, LIVE);
+      expect(await inFlight).toEqual(LIVE);
+      expect(restored).toEqual([]);
+      expect(closedLines(warn)).toHaveLength(0);
+      // Still open: the next pull never reaches the door.
+      const reached = d.pulls();
+      const shortCircuited = relay(PULL_REQUEST);
+      expect(d.pulls()).toBe(reached);
+      expect((await shortCircuited).isError).toBe(true);
+      // Control: the refresh-and-probe still restores it.
+      await relay(REFRESH_REQUEST);
+      expect(await answeredPull(relay, d, LIVE)).toEqual(LIVE);
+      expect(restored).toEqual([URI]);
+      expect(closedLines(warn)).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("a host that wires only onSessionUnrestorable never sees the resumed line, even when a pull in flight answers after the trip (guuey#2012)", async () => {
+    const warn = silenceWarn();
+    try {
+      const d = heldDoor();
+      const unrestorable: string[] = [];
+      const relay = createMcpUiActionRelay({ callTool: d.callTool, onSessionUnrestorable: (uri) => unrestorable.push(uri) });
+      for (let i = 0; i < PULL_CIRCUIT_THRESHOLD - 1; i += 1) await answeredPull(relay, d, undefined);
+      const tripping = relay(PULL_REQUEST);
+      const inFlight = relay(PULL_REQUEST);
+      d.answer(PULL_CIRCUIT_THRESHOLD - 1, undefined);
+      await tripping;
+      d.answer(PULL_CIRCUIT_THRESHOLD, LIVE);
+      await inFlight;
+      expect(unrestorable).toEqual([URI]);
+      expect(closedLines(warn)).toHaveLength(0);
+      const reached = d.pulls();
+      const shortCircuited = relay(PULL_REQUEST);
+      expect(d.pulls()).toBe(reached);
+      await shortCircuited;
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("a probe the session answers with isError leaves it open: an ended session's in-band refusal is no restore (guuey#1978)", async () => {
+    const warn = silenceWarn();
+    try {
+      const d = door();
+      const restored: string[] = [];
+      const unrestorable: string[] = [];
+      const relay = createMcpUiActionRelay({
+        callTool: d.callTool,
+        onSessionUnrestorable: (uri) => unrestorable.push(uri),
+        onSessionRestored: (uri) => restored.push(uri),
+      });
+      await trip(relay);
+      await relay(REFRESH_REQUEST);
+      d.state.pull = REFUSED;
+      expect(await relay(PULL_REQUEST)).toEqual(REFUSED); // the card still gets the session's own answer
+      expect(restored).toEqual([]);
+      expect(closedLines(warn)).toHaveLength(0);
+      for (let i = 0; i < 3; i += 1) await relay(PULL_REQUEST);
+      expect(d.pulls()).toBe(PULL_CIRCUIT_THRESHOLD + 1); // still open: only the probe reached the door
+      // Control: the next refresh's probe that the session answers restores it.
+      await relay(REFRESH_REQUEST);
+      d.state.pull = LIVE;
+      expect(await relay(PULL_REQUEST)).toEqual(LIVE);
+      expect(restored).toEqual([URI]);
+      expect(unrestorable).toEqual([URI]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("a probe of an earlier trip never closes a later one", async () => {
+    const warn = silenceWarn();
+    try {
+      const d = heldDoor();
+      const events: string[] = [];
+      const relay = createMcpUiActionRelay({
+        callTool: d.callTool,
+        onSessionUnrestorable: () => events.push("unrestorable"),
+        onSessionRestored: () => events.push("restored"),
+      });
+      for (let i = 0; i < PULL_CIRCUIT_THRESHOLD; i += 1) await answeredPull(relay, d, undefined);
+      // Two refreshes, two probes of the first trip in flight.
+      await relay(REFRESH_REQUEST);
+      const earlyProbe = relay(PULL_REQUEST);
+      await relay(REFRESH_REQUEST);
+      const lateProbe = relay(PULL_REQUEST);
+      d.answer(PULL_CIRCUIT_THRESHOLD + 1, LIVE);
+      await lateProbe; // closes the first trip
+      for (let i = 0; i < PULL_CIRCUIT_THRESHOLD; i += 1) await answeredPull(relay, d, undefined); // the second trip
+      d.answer(PULL_CIRCUIT_THRESHOLD, LIVE);
+      expect(await earlyProbe).toEqual(LIVE);
+      expect(events).toEqual(["unrestorable", "restored", "unrestorable"]);
+      const reached = d.pulls();
+      const shortCircuited = relay(PULL_REQUEST);
+      expect(d.pulls()).toBe(reached);
+      await shortCircuited;
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("a refresh while the probe is in flight arms nothing for the next trip", async () => {
+    const warn = silenceWarn();
+    try {
+      const d = heldDoor();
+      const events: string[] = [];
+      const relay = createMcpUiActionRelay({
+        callTool: d.callTool,
+        onSessionUnrestorable: () => events.push("unrestorable"),
+        onSessionRestored: () => events.push("restored"),
+      });
+      for (let i = 0; i < PULL_CIRCUIT_THRESHOLD; i += 1) await answeredPull(relay, d, undefined);
+      await relay(REFRESH_REQUEST);
+      const probe = relay(PULL_REQUEST);
+      await relay(REFRESH_REQUEST); // still open: this one arms
+      d.answer(PULL_CIRCUIT_THRESHOLD, LIVE);
+      await probe; // closes the trip
+      for (let i = 0; i < PULL_CIRCUIT_THRESHOLD; i += 1) await answeredPull(relay, d, undefined); // a new trip
+      expect(events).toEqual(["unrestorable", "restored", "unrestorable"]);
+      // No refresh since this trip: the next pull is short-circuited, not a probe.
+      const reached = d.pulls();
+      const shortCircuited = relay(PULL_REQUEST);
+      expect(d.pulls()).toBe(reached);
+      await shortCircuited;
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });
 
 describe("card-health telemetry: only the closed kind set reaches the door", () => {
