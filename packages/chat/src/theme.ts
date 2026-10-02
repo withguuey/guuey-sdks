@@ -362,10 +362,14 @@ export const GUUEY_CHAT_THEME: GuueyChatTheme = {
       surface: "#ffffff",
       canvas: "#f6f5ee",
       canvasMuted: "#ecebe0",
-      error: "#ff5b5b",
-      // slime-4, the founder-minted brand link green (guuey#528, 08-30) —
-      // the ladder had no readable green at link weight on light.
-      link: "#4e7a0e",
+      // Clears 4.5:1 (AA, normal text) on every light ground: 5.95 on the
+      // surface, 5.44 on the canvas, 4.96 on the muted canvas, and 5.35 on
+      // the error panel. Pinned by theme.contrast.test.ts.
+      error: "#b23a2a",
+      // The brand link green, one shade darker than the original slime-4 so
+      // it clears 4.5:1 on every light ground: 5.85 on the surface, 5.35 on
+      // the canvas, 4.88 on the muted canvas. Pinned by theme.contrast.test.ts.
+      link: "#47700d",
     },
     dark: {
       accent: "#b8ff3a",

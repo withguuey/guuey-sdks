@@ -237,9 +237,14 @@ describe("link token (guuey#528)", () => {
     expect(DEFAULT_CHAT_THEME.colors.dark.link).toBe(DEFAULT_CHAT_THEME.colors.dark.ink);
   });
 
-  it("the guuey identity carries the founder-minted slime-4 on light, the ladder's slime on dark", () => {
-    expect(GUUEY_CHAT_THEME.colors.light.link).toBe("#4e7a0e");
+  it("the guuey identity carries the AA-clearing brand green on light, the ladder's slime on dark", () => {
+    expect(GUUEY_CHAT_THEME.colors.light.link).toBe("#47700d");
     expect(GUUEY_CHAT_THEME.colors.dark.link).toBe("#b8ff3a");
+  });
+
+  it("the guuey identity's light error clears AA on every light ground; dark keeps its own", () => {
+    expect(GUUEY_CHAT_THEME.colors.light.error).toBe("#b23a2a");
+    expect(GUUEY_CHAT_THEME.colors.dark.error).toBe("#ff5b5b");
   });
 
   it("a pre-#528 theme (no link) resolves with the default's link — additive evolution holds", () => {
