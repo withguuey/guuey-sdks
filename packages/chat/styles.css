@@ -744,19 +744,44 @@
   padding: 3px 14px;
   cursor: pointer;
 }
+/*
+ * "Jump to latest" (guuey#2121). It sits ON THE SEAM between the transcript and
+ * whatever follows it (the composer strip): centred, half over each, so it never
+ * covers a control at the transcript's bottom-right the way an absolute chip in
+ * the corner did.
+ *
+ * Its label colour is derived to contrast with its own fill, never a theme token:
+ * a theme may set the canvas transparent (a guuey.com home rep does), and a label
+ * painted in the canvas colour then vanished into a solid ink pill. The fill is
+ * the theme's ink; the label is black or white by the fill's own lightness where
+ * the browser derives colours, and by the transcript's mode where it does not.
+ */
 .guuey-chat-jump {
   position: absolute;
-  inset-inline-end: 16px;
-  inset-block-end: 16px;
+  z-index: 2;
+  left: 50%;
+  bottom: 0;
+  transform: translate(-50%, 50%);
   font: inherit;
   font-size: 0.85em;
   border: 0;
   background: var(--guuey-chat-ink, var(--_guuey-chat-ink));
-  color: var(--guuey-chat-canvas, var(--_guuey-chat-canvas));
+  color: #fff;
   border-radius: 999px;
   padding: 6px 14px;
   cursor: pointer;
+  white-space: nowrap;
   box-shadow: 0 2px 8px rgb(0 0 0 / 0.25);
+}
+.guuey-chat[data-guuey-chat-mode="dark"] .guuey-chat-jump {
+  color: #111;
+}
+@supports (color: hsl(from red h s l)) {
+  .guuey-chat-jump,
+  .guuey-chat[data-guuey-chat-mode="dark"] .guuey-chat-jump {
+    /* Lightness above 50 → black, at or below → white. */
+    color: hsl(from var(--guuey-chat-ink, var(--_guuey-chat-ink)) h 0% clamp(0, (50 - l) * 1000, 100));
+  }
 }
 .guuey-chat-jump:focus-visible,
 .guuey-chat-show-earlier:focus-visible,
