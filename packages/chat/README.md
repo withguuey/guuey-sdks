@@ -76,6 +76,20 @@ Override one row without forfeiting the rest:
 <Transcript plan={plan} components={{ tool: MyToolChip }} … />
 ```
 
+The head row over a conversation is one component. `<GuueyChat header={{ title,
+actions, onClose }}>` draws it; a page that mounts `<Transcript>` with its own
+composer renders the same row itself, so both kinds of surface share one
+markup and the one `::part(header)` hook:
+
+```tsx
+<ChatHeader header={{ title: agentName, actions: <MyStopButton /> }} />
+<Transcript plan={plan} … />
+```
+
+Outside `<GuueyChat>` the theme is not stamped above the row, so style it
+through its class names (`.guuey-chat-header`, `-title`, `-actions`,
+`-close`) or set the `--guuey-chat-*` properties on an ancestor.
+
 Server-side (no hook, no DOM): assemble inputs from a persisted thread read
 with `transcriptInputsFromHistory` and plan/render anywhere Node runs.
 

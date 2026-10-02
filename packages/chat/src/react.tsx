@@ -56,10 +56,12 @@ export { useTapEcho, type TapEcho, type UseTapEchoArgs } from "./react/use-tap-e
 export {
   GuueyChat,
   type GuueyChatActivityEvent,
-  type GuueyChatHeader,
   type GuueyChatProps,
   type GuueyChatHandle,
 } from "./react/guuey-chat.js";
+// guuey#1169 — the head row `<GuueyChat header>` draws, for a host that mounts
+// `<Transcript>` with its own composer: the same one row, never a copy.
+export { ChatHeader, type ChatHeaderProps, type GuueyChatHeader } from "./react/chat-header.js";
 export {
   oauthPromptAction,
   oauthReturnToHere,

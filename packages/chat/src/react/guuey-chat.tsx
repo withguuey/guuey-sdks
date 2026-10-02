@@ -93,6 +93,7 @@ import { useTapEcho } from "./use-tap-echo.js";
 import type { ClaimedTap } from "../tap-ledger.js";
 import { oauthPromptAction, useOAuthReturn } from "./oauth-return.js";
 import { PARTS } from "./parts.js";
+import { ChatHeader, type GuueyChatHeader } from "./chat-header.js";
 
 /**
  * The kit-tier theme announce (guuey#302): default `hostContext.theme`
@@ -224,28 +225,6 @@ export interface GuueyChatHandle {
   clearConversation(): void;
 }
 
-/**
- * The header slot (guuey#1150): the ONE head row over a conversation —
- * title, the host's own controls, and an optional close. See
- * {@link GuueyChatProps.header}.
- */
-export interface GuueyChatHeader {
-  /** The row's title — the agent's name, a brand mark, anything renderable. */
-  title: ReactNode;
-  /**
-   * Renders the kit's close control (rightmost in the row, accessible
-   * name `strings.headerClose`) and fires on its click. Absent → no close
-   * control at all: a docked or full-page surface has nothing to close.
-   */
-  onClose?: () => void;
-  /**
-   * The host's own controls, rendered right of the title and LEFT of the
-   * close (Stop, clear, expand — whatever the host's design calls for).
-   * The kit never invents controls here.
-   */
-  actions?: ReactNode;
-}
-
 export interface GuueyChatProps {
   /** Pod base URL (with or without `/agent/invoke`). `null` disables chat. */
   endpointUrl: string | null;
@@ -261,12 +240,9 @@ export interface GuueyChatProps {
    * (no wrapper, no placeholder — the default markup is byte-identical to a
    * surface without the slot).
    *
-   * Intended consumers, migrating in their own rows: guuey.com's home-hero
-   * chat (`apps/landing/src/components/HomeChat.tsx`, today's
-   * `.homechat-head` — "Guuey Rep." + clear + close) and the widget page
-   * (`apps/widget/src/components/WidgetChat.tsx`, today's `<header>` —
-   * agent name + Stop + the guest clear + expand). Each carries its own
-   * copy of the row now; this slot is where both end up.
+   * The row is {@link ChatHeader}; a host that mounts `<Transcript>` with
+   * its own composer (it never mounts `<GuueyChat>`) renders that component
+   * directly, so both kinds of surface draw the one row (guuey#1169).
    */
   header?: GuueyChatHeader;
   /** Owning app id — namespaces the persisted threadId. */
@@ -1251,26 +1227,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       part={PARTS.surface}
       style={surfaceStyle}
     >
-      {header !== undefined && (
-        <header className="guuey-chat-header" part={PARTS.header}>
-          <div className="guuey-chat-header-title">{header.title}</div>
-          {(header.actions !== undefined || header.onClose !== undefined) && (
-            <div className="guuey-chat-header-actions">
-              {header.actions}
-              {header.onClose !== undefined && (
-                <button
-                  type="button"
-                  className="guuey-chat-header-close"
-                  aria-label={strings.headerClose}
-                  onClick={header.onClose}
-                >
-                  <span aria-hidden="true">×</span>
-                </button>
-              )}
-            </div>
-          )}
-        </header>
-      )}
+      {header !== undefined && <ChatHeader header={header} strings={strings} />}
       <Transcript
         plan={plan}
         strings={strings}
