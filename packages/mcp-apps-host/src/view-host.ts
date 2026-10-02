@@ -192,6 +192,13 @@ export interface AttachViewHostConfig {
    */
   resourceUri?: string;
   /**
+   * The `requestMeta` keys the card's read door admits (guuey#1849). A
+   * relayed `tools/call` carries, as {@link UiActionRequest.requestMeta},
+   * ONLY these keys from the view's `params._meta`; absent, it carries
+   * none. `<GuueyView>` fills it from the mount automatically.
+   */
+  admittedRequestMeta?: readonly string[];
+  /**
    * The `resources/read` relay — a PRIVILEGE boundary like
    * {@link onCallTool}, default off: with no hook, the machine refuses
    * `resources/read` in-band and advertises no `serverResources`. The hook
@@ -353,6 +360,23 @@ function answerForDelivery(delivery: UserMessageDelivery | void): { isError?: tr
   return typeof delivery === "object" && delivery !== null && delivery.delivered === false ? { isError: true } : {};
 }
 
+/**
+ * The view's `params._meta`, kept to the keys the card's door admits
+ * (guuey#1849). `undefined` when nothing admitted is present, so the action
+ * then carries no `requestMeta` at all.
+ */
+export function admittedMeta(
+  meta: McpToolStructuredContent | undefined,
+  admitted: readonly string[] | undefined,
+): McpToolStructuredContent | undefined {
+  if (meta === undefined || admitted === undefined) return undefined;
+  const kept: McpToolStructuredContent = {};
+  for (const key of admitted) {
+    if (Object.prototype.hasOwnProperty.call(meta, key)) kept[key] = meta[key];
+  }
+  return Object.keys(kept).length > 0 ? kept : undefined;
+}
+
 export function attachViewHost(frame: ViewFrameLike, config: AttachViewHostConfig = {}): () => void {
   const cachedWindow = frame.contentWindow;
 
@@ -412,13 +436,24 @@ export function attachViewHost(frame: ViewFrameLike, config: AttachViewHostConfi
       .catch(() => settle({ isError: true }));
   };
 
-  const relay = (id: number | string, name: string, args?: McpToolStructuredContent): void => {
+  const relay = (
+    id: number | string,
+    name: string,
+    args?: McpToolStructuredContent,
+    meta?: McpToolStructuredContent,
+  ): void => {
     const { onCallTool, resourceUri } = config;
     // The machine only emits the effect when the relay is wired (behavior
     // is derived from this same config), so these are invariants, not
     // runtime branches a view can steer.
     if (onCallTool === undefined || resourceUri === undefined) return;
-    onCallTool({ resourceUri, name, ...(args === undefined ? {} : { arguments: args }) }).then(
+    const requestMeta = admittedMeta(meta, config.admittedRequestMeta);
+    onCallTool({
+      resourceUri,
+      name,
+      ...(args === undefined ? {} : { arguments: args }),
+      ...(requestMeta === undefined ? {} : { requestMeta }),
+    }).then(
       (result) => post(toolCallResponse(id, result)),
       // A relay hook that rejects (createMcpUiActionRelay never does, but
       // the hook is embedder code) still owes the view an answer — the
@@ -444,7 +479,7 @@ export function attachViewHost(frame: ViewFrameLike, config: AttachViewHostConfi
     setState(next);
     for (const effect of effects) {
       if (effect.kind === "respond") post(effect.message);
-      else if (effect.kind === "relay-tool-call") relay(effect.id, effect.name, effect.arguments);
+      else if (effect.kind === "relay-tool-call") relay(effect.id, effect.name, effect.arguments, effect.meta);
       else if (effect.kind === "relay-resource-read") relayRead(effect.id, effect.uri);
       else if (effect.kind === "user-message") answerMessage(effect.id, effect.params);
       else if (effect.kind === "open-link") {

@@ -174,6 +174,11 @@ export type ViewHostEffect =
       id: ViewRequestId;
       name: string;
       arguments?: McpToolStructuredContent;
+      /**
+       * The call's `params._meta` as the view sent it (guuey#1849). VIEW-
+       * CONTROLLED: the glue keeps only the keys the card's door admits.
+       */
+      meta?: McpToolStructuredContent;
     }
   | {
       /**
@@ -468,6 +473,7 @@ export function viewHostReceive(
     const name = req.params?.["name"];
     if (typeof name === "string") {
       const args = req.params?.["arguments"];
+      const meta = req.params?.["_meta"];
       return {
         state,
         effects: [
@@ -476,6 +482,7 @@ export function viewHostReceive(
             id: req.id,
             name,
             ...(isPlainObject(args) ? { arguments: args } : {}),
+            ...(isPlainObject(meta) ? { meta } : {}),
           },
         ],
       };

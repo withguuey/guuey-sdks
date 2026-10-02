@@ -91,6 +91,13 @@ export interface ResolvedViewMount {
    * (`<GuueyView>` defaults its `cspOrigins` from here).
    */
   csp?: McpUiResourceCsp;
+  /**
+   * The `requestMeta` keys the door that answered this read admits on the
+   * card's actions (guuey#1849), when it advertised any. `<GuueyView>`
+   * hands it to the view host, which keeps only these keys from a
+   * `tools/call`'s `params._meta`. Absent: the actions carry none.
+   */
+  admittedRequestMeta?: readonly string[];
 }
 
 /** The durable-identity arm: no mount material, only the uri to re-fetch. */

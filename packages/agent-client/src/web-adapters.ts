@@ -7,8 +7,10 @@
  * (the functions guard on `typeof window`).
  */
 import {
+  admittedRequestMetaOf,
   createMcpUiActionRelay,
   createMcpUiResourceReader,
+  UI_REQUEST_META_UNKNOWN_KEY_REFUSAL,
   type McpResourceReadResult,
   type McpToolCallResult,
   type McpToolStructuredContent,
@@ -390,7 +392,14 @@ export function createUiResourceReader(
       }
     }
     if (!res.ok) return undefined;
-    let body: { uri?: unknown; mimeType?: unknown; text?: unknown; blob?: unknown; _meta?: unknown };
+    let body: {
+      uri?: unknown;
+      mimeType?: unknown;
+      text?: unknown;
+      blob?: unknown;
+      _meta?: unknown;
+      admittedRequestMeta?: unknown;
+    };
     try {
       body = (await res.json()) as typeof body;
     } catch {
@@ -411,6 +420,10 @@ export function createUiResourceReader(
       // that don't forward `_meta` yet simply leave it absent (undeclared —
       // the secure default); this client is ready the day they do.
       ...(body._meta !== undefined ? { _meta: body._meta } : {}),
+      // guuey#1849: the door's own advertisement of the request meta keys it
+      // admits on this card's actions. Absent (an older door, `guuey dev`):
+      // the card's actions carry none.
+      ...withAdvertisement(admittedRequestMetaOf(body)),
     };
   };
 
@@ -527,7 +540,7 @@ export function createUiActionRelay(
   const postDoor = async (
     requestUrl: string,
     body: string,
-  ): Promise<{ kind: "result"; value: unknown } | "miss" | undefined> => {
+  ): Promise<{ kind: "result"; value: unknown } | "miss" | "meta-key-refused" | undefined> => {
     // Exactly ONE identity carrier per call — the reader's rule verbatim:
     // bearer → guest header → else cookie credentials (the HttpOnly
     // `guuey_guest` cookie the pod mints for anonymous browser callers).
@@ -573,6 +586,9 @@ export function createUiActionRelay(
       }
     }
     if (res.status === 404) return "miss";
+    // guuey#1849: a door older than a request meta key refuses the key by
+    // name; the caller resends once without it.
+    if (res.status === 400) return (await isUnknownMetaKeyRefusal(res)) ? "meta-key-refused" : undefined;
     if (!res.ok) return undefined;
     try {
       return { kind: "result", value: (await res.json()) as unknown };
@@ -581,25 +597,51 @@ export function createUiActionRelay(
     }
   };
 
+  /**
+   * One door, with the request meta negotiation (guuey#1849): the body carries
+   * `requestMeta` when the card's read door advertised the keys, and on exactly
+   * the unknown-key refusal (a door older than the key) the SAME request goes
+   * again ONCE without it, nothing else changed. Per action, no latch: the next
+   * action negotiates afresh. Any other refusal, the value refusal included, is
+   * terminal like every other non-OK.
+   */
+  const postAction = async (
+    requestUrl: string,
+    action: { uri: string; name: string; arguments?: McpToolStructuredContent },
+    requestMeta: McpToolStructuredContent | undefined,
+  ): Promise<{ kind: "result"; value: unknown } | "miss" | undefined> => {
+    const bare = JSON.stringify(action);
+    if (requestMeta === undefined) {
+      const answer = await postDoor(requestUrl, bare);
+      return answer === "meta-key-refused" ? undefined : answer;
+    }
+    const answer = await postDoor(requestUrl, JSON.stringify({ ...action, requestMeta }));
+    if (answer !== "meta-key-refused") return answer;
+    const resent = await postDoor(requestUrl, bare);
+    return resent === "meta-key-refused" ? undefined : resent;
+  };
+
   const podUrl = options.endpointUrl ? toUiActionUrl(options.endpointUrl) : null;
   const callTool = async (
     uri: string,
     name: string,
     args: McpToolStructuredContent | undefined,
+    requestMeta?: McpToolStructuredContent,
   ): Promise<unknown> => {
     // The kit sends only what the click carries; the pod overwrites any
     // sessionId/appId from the authorized locator + its own binding.
-    const body = JSON.stringify({ uri, name, ...(args !== undefined ? { arguments: args } : {}) });
+    const action = { uri, name, ...(args !== undefined ? { arguments: args } : {}) };
     if (podUrl !== null) {
-      const live = await postDoor(podUrl, body);
+      const live = await postAction(podUrl, action, requestMeta);
       if (live === undefined) return undefined; // terminal on the pod — no fall-through
       if (live !== "miss") return live.value;
       // 404 → not live here (completed turn past grace, or never live):
       // the persisted door owns it.
     }
-    const persisted = await postDoor(
+    const persisted = await postAction(
       `${options.apiBaseUrl}/threads/${encodeURIComponent(options.threadId)}/ui-action`,
-      body,
+      action,
+      requestMeta,
     );
     return persisted === undefined || persisted === "miss" ? undefined : persisted.value;
   };
@@ -608,6 +650,35 @@ export function createUiActionRelay(
     ...(options.onSessionUnrestorable ? { onSessionUnrestorable: options.onSessionUnrestorable } : {}),
     ...(options.onSessionRestored ? { onSessionRestored: options.onSessionRestored } : {}),
   });
+}
+
+/** `{ admittedRequestMeta }` when the door advertised keys, else nothing. */
+function withAdvertisement(keys: readonly string[] | undefined): { admittedRequestMeta?: readonly string[] } {
+  return keys === undefined ? {} : { admittedRequestMeta: keys };
+}
+
+/** The refusal's `{ code, message }`: flat at the pod door, under `error` at the platform door. */
+interface DoorRefusal {
+  code?: unknown;
+  message?: unknown;
+  error?: { code?: unknown; message?: unknown };
+}
+
+/**
+ * Whether a 400 is the action door's unknown-key refusal (guuey#1849):
+ * code `BAD_REQUEST` and exactly {@link UI_REQUEST_META_UNKNOWN_KEY_REFUSAL},
+ * in either door's body shape. The value refusal never matches.
+ */
+async function isUnknownMetaKeyRefusal(res: Response): Promise<boolean> {
+  let body: DoorRefusal;
+  try {
+    body = (await res.json()) as DoorRefusal;
+  } catch {
+    return false;
+  }
+  if (body === null || typeof body !== "object") return false;
+  const refusal = body.error !== null && typeof body.error === "object" ? body.error : body;
+  return refusal.code === "BAD_REQUEST" && refusal.message === UI_REQUEST_META_UNKNOWN_KEY_REFUSAL;
 }
 
 /** `<pod base>/agent/hitl-answer` — the AgJSON HITL answer door (guuey#207). */

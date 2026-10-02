@@ -313,9 +313,13 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
     // work. An explicit `cspOrigins` prop always wins; both absent keeps
     // the tripwire inert exactly as before.
     const cspOrigins = latest.current.hostConfig.cspOrigins ?? mount.csp;
+    // guuey#1849: the read door's advertisement, as old as this read (a card
+    // mounted before its door rolled advertises what that door admitted).
+    const admittedRequestMeta = mount.admittedRequestMeta;
     const detachHost = attachViewHost(frame, {
       ...latest.current.hostConfig,
       ...(cspOrigins !== undefined ? { cspOrigins } : {}),
+      ...(admittedRequestMeta !== undefined ? { admittedRequestMeta } : {}),
       resourceUri,
       onPhaseChange: (next) => {
         setPhase(next);

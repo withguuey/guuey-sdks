@@ -623,3 +623,33 @@ describe("ui/message", () => {
     expect(JSON.stringify(only.message)).toContain("ui/message");
   });
 });
+
+describe("viewHostReceive — a tools/call's params._meta (guuey#1849)", () => {
+  it("rides the relay effect as meta, untouched (the glue filters it)", () => {
+    const { effects } = viewHostReceive(initialViewHostState(), behavior({ toolRelay: true }), {
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: { name: "ggui_runtime_submit_action", arguments: { a: 1 }, _meta: { "ai.ggui/view": "t", other: 2 } },
+    });
+    expect(effects).toEqual([
+      {
+        kind: "relay-tool-call",
+        id: 3,
+        name: "ggui_runtime_submit_action",
+        arguments: { a: 1 },
+        meta: { "ai.ggui/view": "t", other: 2 },
+      },
+    ]);
+  });
+
+  it("a _meta that is not an object is not relayed", () => {
+    const { effects } = viewHostReceive(initialViewHostState(), behavior({ toolRelay: true }), {
+      jsonrpc: "2.0",
+      id: 4,
+      method: "tools/call",
+      params: { name: "ggui_runtime_submit_action", _meta: ["ai.ggui/view"] },
+    });
+    expect(effects).toEqual([{ kind: "relay-tool-call", id: 4, name: "ggui_runtime_submit_action" }]);
+  });
+});

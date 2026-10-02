@@ -22,6 +22,7 @@ import {
   UI_SEMANTIC_ACTION_TOOLS,
   UI_TELEMETRY_KINDS,
   UI_TELEMETRY_TOOL,
+  UI_REQUEST_META_UNKNOWN_KEY_REFUSAL,
 } from "./action.js";
 
 const URI = "ui://ggui/render/sess-1/hash-1";
@@ -1011,5 +1012,25 @@ describe("the render-failure report: exactly five arguments, checked before the 
     expect(onSessionUnrestorable).not.toHaveBeenCalled();
     const pull = await relay({ resourceUri: RURI, name: "ggui_runtime_pull", arguments: { sessionId: "sess-1" } });
     expect(pull.isError).toBeUndefined();
+  });
+});
+
+describe("createMcpUiActionRelay — request meta (guuey#1849)", () => {
+  const META = { "ai.ggui/view": "view-token.1849" };
+
+  it("forwards the request's requestMeta to the transport as its fourth argument", async () => {
+    const callTool = vi.fn(async () => ({ content: [{ type: "text", text: "done" }] }));
+    await createMcpUiActionRelay({ callTool })({ resourceUri: URI, name: TOOL, arguments: { actionId: "t" }, requestMeta: META });
+    expect(callTool).toHaveBeenCalledWith(URI, TOOL, { actionId: "t" }, META);
+  });
+
+  it("a request without requestMeta reaches the transport with three arguments, as before", async () => {
+    const callTool = vi.fn(async () => ({ content: [{ type: "text", text: "done" }] }));
+    await createMcpUiActionRelay({ callTool })({ resourceUri: URI, name: TOOL, arguments: { actionId: "t" } });
+    expect(callTool.mock.calls[0]).toEqual([URI, TOOL, { actionId: "t" }]);
+  });
+
+  it("mirrors the door's frozen unknown-key refusal message", () => {
+    expect(UI_REQUEST_META_UNKNOWN_KEY_REFUSAL).toBe("requestMeta carries a key not admitted");
   });
 });

@@ -382,6 +382,13 @@ export interface CreateMcpUiActionRelayDeps {
     uri: string,
     name: string,
     args: McpToolStructuredContent | undefined,
+    /**
+     * The request's {@link UiActionRequest.requestMeta}, passed only when
+     * present (guuey#1849). A transport sends it as the action body's
+     * `requestMeta`, and resends once without it on
+     * {@link UI_REQUEST_META_UNKNOWN_KEY_REFUSAL}.
+     */
+    requestMeta?: McpToolStructuredContent,
   ) => Promise<unknown>;
   /**
    * Fired ONCE when a card locator's `ggui_runtime_pull` circuit OPENS
@@ -425,7 +432,24 @@ export interface UiActionRequest {
   resourceUri: string;
   name: string;
   arguments?: McpToolStructuredContent;
+  /**
+   * The view's `params._meta`, kept to the keys the card's read door
+   * advertised (guuey#1849); absent when it advertised none or the view sent
+   * none of them. The door judges each value; the relay forwards it as is.
+   */
+  requestMeta?: McpToolStructuredContent;
 }
+
+/**
+ * The message an action door refuses a `requestMeta` KEY it does not admit
+ * with (HTTP 400, code `BAD_REQUEST`), frozen in every shipped door: clients
+ * key on it (guuey#1849). A MIRROR of the server's
+ * `UI_REQUEST_META_UNKNOWN_KEY_REFUSAL`, held equal by the server side's
+ * `ui-action-policy.sync.test.ts`. On exactly this refusal a transport resends
+ * the action ONCE without `requestMeta` (a door older than the key). The
+ * VALUE refusal ("requestMeta value not admitted") never triggers it.
+ */
+export const UI_REQUEST_META_UNKNOWN_KEY_REFUSAL = "requestMeta carries a key not admitted";
 
 /**
  * The render session a `ui://ggui/render/<sessionId>/<hash>` locator names,
@@ -653,7 +677,10 @@ export function createMcpUiActionRelay(
 
     let raw: unknown;
     try {
-      raw = await deps.callTool(request.resourceUri, request.name, callArguments);
+      raw =
+        request.requestMeta === undefined
+          ? await deps.callTool(request.resourceUri, request.name, callArguments)
+          : await deps.callTool(request.resourceUri, request.name, callArguments, request.requestMeta);
     } catch {
       if (isPull) recordPull(request.resourceUri, probeOf, "unavailable"); // transport failure == unavailable
       return unavailableToolCallResult(); // in-band

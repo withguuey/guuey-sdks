@@ -35,6 +35,7 @@ export {
   type ActionStaging,
 } from "./action-staging.js";
 export {
+  admittedRequestMetaOf,
   createMcpUiResourceReader,
   declaredResourceCsp,
   uiResourceChannel,
@@ -55,6 +56,7 @@ export {
   MAX_UI_TELEMETRY_EVENTS,
   unavailableToolCallResult,
   UI_ACTION_TOOLS,
+  UI_REQUEST_META_UNKNOWN_KEY_REFUSAL,
   UI_ACTION_UNAVAILABLE_TEXT,
   UI_RENDER_FAILURE_PHASES,
   UI_RENDER_FAILURE_TOOL,
@@ -94,6 +96,7 @@ export {
   type ViewRequestId,
 } from "./view-host-protocol.js";
 export {
+  admittedMeta,
   attachViewHost,
   viewDocumentHtml,
   MESSAGE_ANSWER_CAP_MS,

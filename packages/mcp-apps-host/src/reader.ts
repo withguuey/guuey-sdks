@@ -50,6 +50,24 @@ export interface McpResourceReadResult {
    * narrow through {@link declaredResourceCsp}.
    */
   _meta?: unknown;
+  /**
+   * The `requestMeta` keys the read DOOR admits on this card's actions
+   * (guuey#1849): a field the door owns, beside the entry, never inside the
+   * MCP server's `_meta`. Absent means the door admits none (an older door,
+   * `guuey dev`), so the card's actions carry no `requestMeta`.
+   */
+  admittedRequestMeta?: readonly string[];
+}
+
+/**
+ * The door's advertisement from a read result, re-narrowed (transports are
+ * host-supplied and may be plain JS): an array of strings, else none.
+ */
+export function admittedRequestMetaOf(entry: { admittedRequestMeta?: unknown }): readonly string[] | undefined {
+  const keys = entry.admittedRequestMeta;
+  if (!Array.isArray(keys)) return undefined;
+  const admitted = keys.filter((key): key is string => typeof key === "string");
+  return admitted.length > 0 ? admitted : undefined;
 }
 
 /**
@@ -138,10 +156,14 @@ export function createMcpUiResourceReader(
     // DECLARATION, never from the uri prefix. Absent = undeclared (secure
     // default); never fabricated.
     const csp = declaredResourceCsp(entry);
+    // guuey#1849: the door's advertisement rides the mount, so the card's
+    // actions carry only the request meta THIS door admits.
+    const admittedRequestMeta = admittedRequestMetaOf(entry);
     return {
       channel: uiResourceChannel(resourceUri),
       resource,
       ...(csp !== undefined ? { csp } : {}),
+      ...(admittedRequestMeta !== undefined ? { admittedRequestMeta } : {}),
     };
   };
 }

@@ -1,0 +1,22 @@
+{
+  "about": "guuey#1849 leg 2: the unknown-key refusal as an action door OLDER than a request meta key really answers it, captured from a live door, not written from source. The client resends once, without requestMeta, on exactly this answer. Each *.body file is the response body byte for byte; web-adapters.meta.test.ts asserts its sha256 before using it.",
+  "source": "a live action door one release older than the request meta key it refuses: the guuey release 3.15 door, before the server half of guuey#1849 was promoted to it. The refusal fires before tenancy, any database read or any upstream call.",
+  "captures": {
+    "ui-action-meta-refusal.pod.body": {
+      "door": "pod POST /agent/ui-action",
+      "capturedAt": "2026-10-02T04:42:31Z",
+      "status": 400,
+      "contentType": "application/json",
+      "bytes": 73,
+      "sha256": "a5a99d7a034bca6f6aa30886ad9f1a5942c55b94de1477c67513cec1a44115a8"
+    },
+    "ui-action-meta-refusal.platform.body": {
+      "door": "platform POST /v1/threads/:id/ui-action",
+      "capturedAt": "2026-10-02T04:44:39Z",
+      "status": 400,
+      "contentType": "application/json",
+      "bytes": 83,
+      "sha256": "3f6b9ff154946747f7fd8964d1505e4c1df9e316e6828b0f157acec8cad9a1fd"
+    }
+  }
+}

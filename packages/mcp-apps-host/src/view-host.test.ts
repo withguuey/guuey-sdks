@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MCP_APP_DISMISS_TYPE } from "@ggui-ai/protocol/integrations/mcp-apps";
 import {
+  admittedMeta,
   attachViewHost,
   viewDocumentHtml,
   MESSAGE_ANSWER_CAP_MS,
@@ -633,5 +634,65 @@ describe("attachViewHost — ui/message is answered from the sink's delivery out
     detach();
     await vi.advanceTimersByTimeAsync(MESSAGE_ANSWER_CAP_MS + 1);
     expect(answersTo(posted, 77)).toEqual([]);
+  });
+});
+
+describe("attachViewHost — request meta (guuey#1849)", () => {
+  async function relayed(config: { admittedRequestMeta?: readonly string[] }, meta: object | undefined) {
+    const { frame, posted, contentWindow } = fakeFrame();
+    const { events, emit } = fakeEvents();
+    const calls: unknown[] = [];
+    attachViewHost(frame, {
+      events,
+      resourceUri: "ui://card/1",
+      ...config,
+      onCallTool: (request) => {
+        calls.push(request);
+        return Promise.resolve({ content: [] });
+      },
+    });
+    emit(
+      {
+        jsonrpc: "2.0",
+        id: 9,
+        method: "tools/call",
+        params: { name: "ggui_runtime_submit_action", ...(meta === undefined ? {} : { _meta: meta }) },
+      },
+      contentWindow,
+    );
+    await vi.waitFor(() => expect(posted).toHaveLength(1));
+    return calls;
+  }
+
+  it("keeps ONLY the advertised keys from the view's _meta", async () => {
+    expect(await relayed({ admittedRequestMeta: ["ai.ggui/view"] }, { "ai.ggui/view": "t", "x.other/key": "y" })).toEqual([
+      { resourceUri: "ui://card/1", name: "ggui_runtime_submit_action", requestMeta: { "ai.ggui/view": "t" } },
+    ]);
+  });
+
+  it("no advertisement → no requestMeta, whatever the view sent (an older door, guuey dev)", async () => {
+    expect(await relayed({}, { "ai.ggui/view": "t" })).toEqual([
+      { resourceUri: "ui://card/1", name: "ggui_runtime_submit_action" },
+    ]);
+  });
+
+  it("an advertised key the view did not send → no requestMeta", async () => {
+    expect(await relayed({ admittedRequestMeta: ["ai.ggui/view"] }, { "x.other/key": "y" })).toEqual([
+      { resourceUri: "ui://card/1", name: "ggui_runtime_submit_action" },
+    ]);
+  });
+});
+
+describe("admittedMeta (guuey#1849)", () => {
+  it("is the intersection of the view's keys and the advertised ones, values untouched", () => {
+    expect(admittedMeta({ a: 1, b: { c: 2 } }, ["b", "z"])).toEqual({ b: { c: 2 } });
+    expect(admittedMeta({ a: 1 }, ["z"])).toBeUndefined();
+    expect(admittedMeta(undefined, ["a"])).toBeUndefined();
+    expect(admittedMeta({ a: 1 }, undefined)).toBeUndefined();
+  });
+
+  it("never reads an inherited key", () => {
+    const meta: { [key: string]: unknown } = Object.create({ inherited: "x" });
+    expect(admittedMeta(meta, ["inherited", "toString"])).toBeUndefined();
   });
 });

@@ -235,3 +235,20 @@ describe("declaredResourceCsp (guuey#312)", () => {
     });
   });
 });
+
+describe("createMcpUiResourceReader — the door's request meta advertisement (guuey#1849)", () => {
+  const entry = { uri: "ui://ggui/render/s/h", mimeType: "text/html;profile=mcp-app", text: "<html></html>" };
+  const readerOf = (extra: object) => createMcpUiResourceReader({ readResource: async () => ({ ...entry, ...extra }) });
+
+  it("carries the advertised keys onto the mount", async () => {
+    expect(await readerOf({ admittedRequestMeta: ["ai.ggui/view"] })(entry.uri)).toMatchObject({
+      admittedRequestMeta: ["ai.ggui/view"],
+    });
+  });
+
+  it("no advertisement, an empty one, or a malformed one leaves the field off", async () => {
+    for (const extra of [{}, { admittedRequestMeta: [] }, { admittedRequestMeta: "ai.ggui/view" }, { admittedRequestMeta: [1] }]) {
+      expect(await readerOf(extra)(entry.uri)).not.toHaveProperty("admittedRequestMeta");
+    }
+  });
+});
