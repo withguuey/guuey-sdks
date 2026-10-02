@@ -372,7 +372,11 @@ export function admittedMeta(
   if (meta === undefined || admitted === undefined) return undefined;
   const kept: McpToolStructuredContent = {};
   for (const key of admitted) {
-    if (Object.prototype.hasOwnProperty.call(meta, key)) kept[key] = meta[key];
+    // defineProperty, never assignment: a key named "__proto__" stays an own
+    // property instead of setting the object's prototype.
+    if (Object.prototype.hasOwnProperty.call(meta, key)) {
+      Object.defineProperty(kept, key, { value: meta[key], enumerable: true, writable: true, configurable: true });
+    }
   }
   return Object.keys(kept).length > 0 ? kept : undefined;
 }

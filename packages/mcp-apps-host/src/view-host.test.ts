@@ -691,6 +691,16 @@ describe("admittedMeta (guuey#1849)", () => {
     expect(admittedMeta({ a: 1 }, undefined)).toBeUndefined();
   });
 
+  it('an advertised key named "__proto__" is kept as an own property; the prototype stays untouched', () => {
+    const meta: { [key: string]: unknown } = JSON.parse('{"__proto__": {"polluted": true}, "a": 1}');
+    const kept = admittedMeta(meta, ["__proto__"]);
+    expect(kept).toBeDefined();
+    expect(Object.getPrototypeOf(kept)).toBe(Object.prototype);
+    expect(Object.keys(kept ?? {})).toEqual(["__proto__"]);
+    expect(Object.getOwnPropertyDescriptor(kept, "__proto__")?.value).toEqual({ polluted: true });
+    expect(JSON.stringify(kept)).toBe('{"__proto__":{"polluted":true}}');
+  });
+
   it("never reads an inherited key", () => {
     const meta: { [key: string]: unknown } = Object.create({ inherited: "x" });
     expect(admittedMeta(meta, ["inherited", "toString"])).toBeUndefined();
