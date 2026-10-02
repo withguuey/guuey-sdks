@@ -981,16 +981,15 @@ describe('deploy() — --max-pods rides the trigger body', () => {
   });
 });
 
-// `guuey deploy --force` is a no-op: every deploy rebuilds, and the upload
-// route never answers "unchanged". The flag is still ACCEPTED so a script
-// that passes it keeps working; it says once that it is no longer needed and
-// the deploy runs exactly as it would without it.
-describe('deploy() — --force is accepted as a no-op', () => {
+// `guuey deploy` has no `--force`: every deploy rebuilds, and the upload route
+// never answers "unchanged". The one-release no-op window (which printed a
+// "no longer needed" notice) is over, so deploy reads `force` no differently
+// from any flag it does not define: no notice, and the same deploy.
+describe('deploy() — --force is not a deploy option', () => {
   let dir: string;
   let originalCwd: string;
   let logSpy: MockInstance<typeof console.log>;
   let fetchSpy: MockInstance<typeof fetch>;
-  const NOTICE = '--force is no longer needed: every deploy rebuilds.';
 
   function printed(): string {
     return logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
@@ -1038,25 +1037,32 @@ describe('deploy() — --force is accepted as a no-op', () => {
   // Each full run waits one status-poll tick (3 s) before the deploy reads live.
   const FULL_RUN_BUDGET_MS = 10_000;
 
-  it('accepts --force, prints the one-line notice, and still deploys', async () => {
+  // Each trigger body minus its per-run `deploymentId` (a fresh id every run).
+  function triggerBodies(): string[] {
+    return fetchSpy.mock.calls
+      .filter(([u]) => String(u).includes('/deploy/trigger'))
+      .map(([, init]) => String(init?.body ?? '').replace(/"deploymentId":"[^"]*",?/, ''));
+  }
+
+  it('a --force run prints nothing about --force', async () => {
     await expect(deploy({ force: true })).resolves.toBeUndefined();
 
-    expect(printed()).toContain(NOTICE);
-    expect(printed().split(NOTICE)).toHaveLength(2);
-    expect(fetchSpy.mock.calls.some(([u]) => String(u).includes('/deploy/trigger'))).toBe(true);
-  }, FULL_RUN_BUDGET_MS);
-
-  it('prints the notice for a --force that swallowed a value, too', async () => {
-    await expect(deploy({ force: 'yes' })).resolves.toBeUndefined();
-
-    expect(printed()).toContain(NOTICE);
-  }, FULL_RUN_BUDGET_MS);
-
-  it('prints no notice when --force is not passed', async () => {
-    await deploy({});
-
     expect(printed()).not.toContain('--force');
+    expect(printed()).not.toContain('no longer needed');
   }, FULL_RUN_BUDGET_MS);
+
+  it('a --force run sends the same trigger as a run without it', async () => {
+    await deploy({});
+    const without = triggerBodies();
+    expect(without).toHaveLength(1);
+
+    fetchSpy.mockClear();
+    logSpy.mockClear();
+    await deploy({ force: 'yes' });
+
+    expect(triggerBodies()).toEqual(without);
+    expect(printed()).not.toContain('--force');
+  }, 2 * FULL_RUN_BUDGET_MS);
 });
 
 // Nothing on the upload route answers 304, so neither upload site keeps a

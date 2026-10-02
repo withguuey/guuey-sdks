@@ -61,9 +61,9 @@ const agentConfigHelp = section(
 );
 
 // `deploy --force` changes nothing: every deploy rebuilds, and the upload
-// route has no "unchanged" answer for the flag to override. The flag is still
-// accepted (a script that passes it keeps working), but the help no longer
-// offers it. `undeploy --force` is a different flag and stays listed.
+// route has no "unchanged" answer for the flag to override, so deploy has no
+// --force and its help does not offer one. `undeploy --force` is a different
+// flag and stays listed.
 const deployHelp = section('deploy                         Deploy agent', '\n  pull ');
 const undeployHelp = section('undeploy                       Tear down', '\n  env set ');
 

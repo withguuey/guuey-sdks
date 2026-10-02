@@ -333,14 +333,6 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
   const target = (flags?.target as string) ?? 'ggui';
   const label = flags?.label as string | undefined;
 
-  // `--force` once skipped a client-side "unchanged, nothing to deploy" exit.
-  // The upload route never answers that way — every deploy rebuilds — so the
-  // flag changes nothing. It is still ACCEPTED, so a script that passes it
-  // keeps working, and it says so once.
-  if (flags?.force !== undefined) {
-    console.log('  --force is no longer needed: every deploy rebuilds.');
-  }
-
   // `--max-pods` is FLAG-ONLY, unlike `--size`: `guuey.json#agent.deploy` is
   // a strictObject of `{size, region}` (`@guuey/config#DeploySchema`), so
   // there is no overlay key to fall back to — adding one is a schema change,
