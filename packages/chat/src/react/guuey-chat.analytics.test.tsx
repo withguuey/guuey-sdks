@@ -84,6 +84,17 @@ describe("<GuueyChat analytics>", () => {
     expect(JSON.stringify(sink.mock.calls)).not.toMatch(/secret|private|email/);
   });
 
+  it("composer focus alone (no send) is the interaction: opened fires on it", () => {
+    const { adapters } = scriptedAdapters();
+    const sink = vi.fn<ChatAnalyticsSink>();
+    render(
+      <GuueyChat endpointUrl="https://pod.example/agent/invoke" appId="app_1" adapters={adapters} analytics={sink} />,
+    );
+    expect(sink).not.toHaveBeenCalled();
+    fireEvent.focus(screen.getByLabelText("Message"));
+    expect(sink.mock.calls).toEqual([["helper_opened", { app_id: "app_1", surface: "inline", gui: "on" }]]);
+  });
+
   it("a host-owned input (composer off): markOpened → opened, handle.send counts the turn, a refused send does not", async () => {
     const { adapters, calls } = scriptedAdapters();
     const sink = vi.fn<ChatAnalyticsSink>();
