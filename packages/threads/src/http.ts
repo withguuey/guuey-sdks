@@ -27,7 +27,9 @@
  * `incrementSeq` is not idempotent, and a blind retry after a server-side
  * apply would double-allocate a seq.
  */
+import { DYNAMODB_ROW_BUDGET } from "./item-size.js";
 import type {
+  RowBudget,
   ThreadMessageRow,
   ThreadPersistencePort,
   ThreadRow,
@@ -99,6 +101,12 @@ async function toError(res: Response): Promise<HttpThreadStoreError> {
 }
 
 export class HttpThreadPersistence implements ThreadPersistencePort {
+  /**
+   * guuey#1794: the server stores the rows this binding sends in DynamoDB, so
+   * the store sizes them by DynamoDB's own item rules before it sends any.
+   */
+  readonly rowBudget: RowBudget = DYNAMODB_ROW_BUDGET;
+
   private readonly baseUrl: string;
   private readonly appId: string;
   private readonly token: string;

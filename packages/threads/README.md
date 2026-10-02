@@ -79,6 +79,37 @@ and Cognito sessions are served on-platform only. Errors surface as
 `HttpThreadStoreError` (`status`, `code`). Reads retry once on a network
 failure or 5xx; writes never do.
 
+## Row size limits
+
+A store with an item-size limit declares it as the port's optional
+`rowBudget` (`{ maxBytes, bytesOf(row), numberFits?(n) }`). The DynamoDB-backed
+bindings, `HttpThreadPersistence` included, declare `DYNAMODB_ROW_BUDGET`:
+380,000 bytes measured by `dynamoItemBytes`, an upper bound under DynamoDB's
+own item-size rules, and `dynamoNumberFits`, which refuses a number DynamoDB
+cannot hold as written (outside the safe-integer range, NaN or an infinity, or
+a non-zero magnitude below 1e-130). A port without a budget stores rows exactly
+as mapped.
+
+`appendFold` checks every row of a turn against the budget before it writes any:
+
+- A tool-call value is stored as a marker in its place,
+  `{ "com.guuey/elided": { "bytes": <UTF-8 length of its JSON> } }`, when it
+  carries a number the store cannot hold (`reason: "number"`), and, for an
+  oversized row, a `providerMetadata.wireInput` copy first, then `input`, the
+  largest first, until the row fits (`reason: "size"`). The result lists each
+  one in `elidedToolInputs`.
+- A turn that still cannot be stored is never written in part. With
+  `unstorableNotice: { text }` the turn is stored as ONE agent row carrying that
+  text and `content.error.code` `"stored_turn_too_large"` or
+  `"stored_turn_unstorable_number"` (`classifyStoredRow` reads either as a
+  failure), and the result carries `unstorable`. Without it, `appendFold`
+  throws `StoredRowTooLargeError` or `StoredRowUnstorableNumberError` and
+  writes nothing.
+
+`appendMessage` refuses such a row the same way before it allocates a seq.
+`withItemSizeLimit(port)` from `@guuey/threads/testing` wraps any port to
+declare the budget and refuse what DynamoDB would, for tests.
+
 ## Support
 
 Questions and help: the guuey community on Discord — https://guuey.com/discord.

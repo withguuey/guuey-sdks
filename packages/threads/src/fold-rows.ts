@@ -14,8 +14,8 @@ import type {
   AgMemoryRecord,
   JsonValue,
 } from "@silverprotocol/core";
-import { readStoredAgMemoryRecords, readStoredAgMessage } from "@silverprotocol/core";
-import type { ThreadMessageRow, ThreadMessageRole, ThreadMessageKind, ThreadSnapshotRow } from "./rows.js";
+import { AgProviderMeta, readStoredAgMemoryRecords, readStoredAgMessage } from "@silverprotocol/core";
+import type { RowBudget, ThreadMessageRow, ThreadMessageRole, ThreadMessageKind, ThreadSnapshotRow } from "./rows.js";
 import { asUiResource, scanProviderRawForUiResource, toolResultLocator } from "@guuey/mcp-apps-host/narrowing";
 
 export interface RowCtx {
@@ -149,6 +149,209 @@ export function agMessageToRow(
     ...(ctx.turnRecord ? { aiContext: turnRecordForStorage(ctx.turnRecord) } : {}),
     ...(ctx.untrustedOrigin === true ? { untrustedOrigin: true } : {}),
   };
+}
+
+/**
+ * The key of the marker a stored tool-call value is replaced by when the row
+ * would not fit its store's {@link RowBudget}: `{ "com.guuey/elided": { bytes } }`,
+ * where `bytes` is the UTF-8 length of the elided value's JSON. It stands in
+ * for the value whole (a tool-call `input`, or its `providerMetadata.wireInput`),
+ * so the block keeps an object where an object was.
+ */
+export const ELIDED_VALUE_KEY = "com.guuey/elided";
+
+/** Which value of a tool-call block was elided. */
+export type ElidedField = "input" | "wireInput";
+
+/**
+ * Why a tool-call value was elided: the row did not fit the store's row
+ * budget (`size`), or the value carried a number the store cannot hold as
+ * written (`number`, see {@link RowBudget.numberFits}).
+ */
+export type ElisionReason = "size" | "number";
+
+/** One tool-call value replaced by the elided marker. */
+export interface StoredElision {
+  toolCallId: string;
+  name: string;
+  field: ElidedField;
+  reason: ElisionReason;
+  /** UTF-8 length of the elided value's JSON. */
+  bytes: number;
+}
+
+/** The kind of row a stored-row refusal was raised for. */
+export type RefusedRowKind = "message" | "card" | "append";
+
+/**
+ * A row cannot fit its store's {@link RowBudget}, even with every tool-call
+ * value it carries elided. Counts only, never row content.
+ */
+export class StoredRowTooLargeError extends Error {
+  override readonly name = "StoredRowTooLargeError";
+
+  constructor(
+    readonly bytes: number,
+    readonly maxBytes: number,
+    readonly rowKind: RefusedRowKind,
+    /** The row's index among the turn's message or card rows (0 for an append). */
+    readonly index: number,
+  ) {
+    super(`stored ${rowKind} row ${index} is ${bytes} bytes; the store's row budget is ${maxBytes}`);
+  }
+}
+
+/**
+ * A row carries a number its store cannot hold as written (see
+ * {@link RowBudget.numberFits}) outside any tool-call value that could be
+ * elided. Never names the number: it may be part of a tool's input or result.
+ */
+export class StoredRowUnstorableNumberError extends Error {
+  override readonly name = "StoredRowUnstorableNumberError";
+
+  constructor(
+    readonly rowKind: RefusedRowKind,
+    /** The row's index among the turn's message or card rows (0 for an append). */
+    readonly index: number,
+  ) {
+    super(`stored ${rowKind} row ${index} carries a number its store cannot hold`);
+  }
+}
+
+/** Either reason a row cannot be stored: too large, or carrying an unstorable number. */
+export type StoredRowRefusal = StoredRowTooLargeError | StoredRowUnstorableNumberError;
+
+export function isStoredRowRefusal(err: unknown): err is StoredRowRefusal {
+  return err instanceof StoredRowTooLargeError || err instanceof StoredRowUnstorableNumberError;
+}
+
+/** Whether `value` (any JSON-shaped data) holds a number `fits` refuses, at any depth. */
+function carriesUnfitNumber(value: unknown, fits: (n: number) => boolean): boolean {
+  if (typeof value === "number") return !fits(value);
+  if (value === null || typeof value !== "object") return false;
+  const children: unknown[] = Array.isArray(value) ? value : Object.values(value);
+  return children.some((child) => carriesUnfitNumber(child, fits));
+}
+
+/**
+ * Throw when `row` cannot be stored under `budget`: {@link StoredRowUnstorableNumberError}
+ * when it carries a number the store cannot hold, {@link StoredRowTooLargeError}
+ * when it measures over the budget. No-op without a budget.
+ */
+export function assertRowFits(
+  row: ThreadMessageRow,
+  budget: RowBudget | undefined,
+  rowKind: RefusedRowKind,
+  index: number,
+): void {
+  if (budget === undefined) return;
+  if (budget.numberFits !== undefined && carriesUnfitNumber(row, budget.numberFits)) {
+    throw new StoredRowUnstorableNumberError(rowKind, index);
+  }
+  const bytes = budget.bytesOf(row);
+  if (bytes > budget.maxBytes) throw new StoredRowTooLargeError(bytes, budget.maxBytes, rowKind, index);
+}
+
+type ToolCallBlock = Extract<AgMessage["content"][number], { type: "tool-call" }>;
+
+function jsonBytes(value: JsonValue): number {
+  return Buffer.byteLength(JSON.stringify(value), "utf8");
+}
+
+function elidedMarker(bytes: number): JsonValue {
+  return { [ELIDED_VALUE_KEY]: { bytes } };
+}
+
+function withElided(block: ToolCallBlock, field: ElidedField, bytes: number): ToolCallBlock {
+  if (field === "input") return { ...block, input: elidedMarker(bytes) };
+  return {
+    ...block,
+    providerMetadata: AgProviderMeta.parse({ ...block.providerMetadata, wireInput: elidedMarker(bytes) }),
+  };
+}
+
+/** The tool-call value `field` of `block`, when it has one. */
+function toolCallValue(block: ToolCallBlock, field: ElidedField): JsonValue | undefined {
+  return field === "input" ? block.input : block.providerMetadata?.["wireInput"];
+}
+
+function isElidedMarker(value: JsonValue | undefined): boolean {
+  return value !== null && typeof value === "object" && !Array.isArray(value) && ELIDED_VALUE_KEY in value;
+}
+
+/**
+ * {@link agMessageToRow}, bounded by the store's {@link RowBudget}. Under the
+ * budget (or with none) the row is exactly `agMessageToRow(msg, ctx)`.
+ *
+ * First, when the budget declares `numberFits`, every tool-call value that
+ * carries a number the store cannot hold is replaced by the
+ * {@link ELIDED_VALUE_KEY} marker (`reason: "number"`; after `JSON.parse` such
+ * a number has already lost its digits, so storing it would store a wrong
+ * one). A row that still carries one elsewhere throws
+ * {@link StoredRowUnstorableNumberError}.
+ *
+ * Then, over the size budget, tool-call values are replaced one at a time
+ * (`reason: "size"`) until the row fits: every `providerMetadata.wireInput`
+ * first (a second copy of the input, carried only when it differs), then
+ * every `input`; within each, the largest first, ties in block order. A row
+ * that still does not fit throws {@link StoredRowTooLargeError}.
+ */
+export function agMessageToBoundedRow(
+  msg: AgMessage,
+  ctx: RowCtx & { turnRecord?: AgTurnRecord },
+  budget: RowBudget | undefined,
+  index: number,
+): { row: ThreadMessageRow; elided: StoredElision[] } {
+  let row = agMessageToRow(msg, ctx);
+  if (budget === undefined) return { row, elided: [] };
+
+  const content = [...msg.content];
+  const elided: StoredElision[] = [];
+  const elide = (at: number, field: ElidedField, reason: ElisionReason): void => {
+    const block = content[at];
+    if (block === undefined || block.type !== "tool-call") return;
+    const value = toolCallValue(block, field);
+    if (value === undefined) return;
+    const bytes = jsonBytes(value);
+    content[at] = withElided(block, field, bytes);
+    elided.push({ toolCallId: block.toolCallId, name: block.name, field, reason, bytes });
+  };
+
+  const fits = budget.numberFits;
+  if (fits !== undefined && carriesUnfitNumber(row, fits)) {
+    msg.content.forEach((block, at) => {
+      if (block.type !== "tool-call") return;
+      for (const field of ["wireInput", "input"] as const) {
+        const current = content[at];
+        if (current === undefined || current.type !== "tool-call") continue;
+        if (carriesUnfitNumber(toolCallValue(current, field), fits)) elide(at, field, "number");
+      }
+    });
+    row = agMessageToRow({ ...msg, content }, ctx);
+    if (carriesUnfitNumber(row, fits)) throw new StoredRowUnstorableNumberError("message", index);
+  }
+
+  let bytes = budget.bytesOf(row);
+  if (bytes <= budget.maxBytes) return { row, elided };
+
+  const candidates: Array<{ at: number; field: ElidedField; bytes: number; tier: number }> = [];
+  content.forEach((block, at) => {
+    if (block.type !== "tool-call") return;
+    const wire = toolCallValue(block, "wireInput");
+    if (wire !== undefined && !isElidedMarker(wire)) {
+      candidates.push({ at, field: "wireInput", bytes: jsonBytes(wire), tier: 0 });
+    }
+    if (!isElidedMarker(block.input)) candidates.push({ at, field: "input", bytes: jsonBytes(block.input), tier: 1 });
+  });
+  candidates.sort((a, b) => a.tier - b.tier || b.bytes - a.bytes || a.at - b.at);
+
+  for (const c of candidates) {
+    elide(c.at, c.field, "size");
+    row = agMessageToRow({ ...msg, content }, ctx);
+    bytes = budget.bytesOf(row);
+    if (bytes <= budget.maxBytes) return { row, elided };
+  }
+  throw new StoredRowTooLargeError(bytes, budget.maxBytes, "message", index);
 }
 
 /**

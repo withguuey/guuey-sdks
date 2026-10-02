@@ -190,11 +190,33 @@ export interface StoredHistoryMessage {
 }
 
 /**
+ * A bound on the size of one stored `ThreadMessage` row, declared by a
+ * binding whose store has an item-size limit. `bytesOf` measures a row the
+ * way the store counts it; `maxBytes` is the most a row may measure.
+ * `numberFits`, when declared, says whether the store can hold a number as
+ * written; a row carrying one it cannot is refused like an oversized row.
+ * DynamoDB-backed bindings declare `DYNAMODB_ROW_BUDGET` (`item-size.ts`).
+ */
+export interface RowBudget {
+  readonly maxBytes: number;
+  bytesOf(row: ThreadMessageRow): number;
+  numberFits?(n: number): boolean;
+}
+
+/**
  * The only surface {@link ThreadStore} needs from a backing store. Keep
  * implementations honest with the contract suite in
  * `@guuey/threads/testing`.
  */
 export interface ThreadPersistencePort {
+  /**
+   * The store's bound on one message row, when it has one. {@link ThreadStore}
+   * sizes every row of a turn against it before it writes any: an oversized
+   * tool-call input is replaced by an explicit marker, and a turn that still
+   * cannot fit is stored as one failure row (or refused), never written in
+   * part. Absent: no bound, and rows are written exactly as mapped.
+   */
+  readonly rowBudget?: RowBudget;
   /** Point-read a Thread by id; `undefined` when the row does not exist. */
   getThread(threadId: string): Promise<ThreadRow | undefined>;
   /** Put a new Thread row (conditional create — must reject an existing id). */

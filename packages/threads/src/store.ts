@@ -10,8 +10,16 @@
 import { randomUUID } from "node:crypto";
 import type { AgMemoryRecord, AgReduceResult, JsonValue } from "@silverprotocol/core";
 import {
-  agMessageToRow,
+  agMessageToBoundedRow,
   agArtifactToCardRow,
+  assertRowFits,
+  isStoredRowRefusal,
+  StoredRowTooLargeError,
+  type ElidedField,
+  type ElisionReason,
+  type RefusedRowKind,
+  type StoredElision,
+  type StoredRowRefusal,
   keepUnchangedThreadMemory,
   producingToolName,
   toolNamesByCallId,
@@ -127,7 +135,49 @@ export interface AppendFoldInput {
    * the fold's rebuild of it. Absent = the fold's records as they are.
    */
   priorThreadMemory?: readonly AgMemoryRecord[];
+  /**
+   * guuey#1794: what to store when a row of this turn cannot be stored even
+   * with its tool-call values elided: it does not fit the store's row budget,
+   * or it carries a number the store cannot hold. Given, the turn is stored
+   * as ONE agent row carrying this text and the failure code
+   * `stored_turn_too_large` or `stored_turn_unstorable_number` (under the
+   * turn sentinel, so the turn is final), and the result reports
+   * `unstorable`. Absent, `appendFold` throws the refusal
+   * ({@link StoredRowTooLargeError} or `StoredRowUnstorableNumberError`).
+   * Either way no other row of the turn is written.
+   */
+  unstorableNotice?: { text: string };
 }
+
+/** One tool-call value stored as the elided marker (guuey#1794). */
+export interface ElidedToolInput {
+  /** The seq of the message row that carries the marker. */
+  seq: number;
+  toolCallId: string;
+  /** The tool's name. */
+  name: string;
+  field: ElidedField;
+  reason: ElisionReason;
+  /** UTF-8 length of the elided value's JSON. */
+  bytes: number;
+}
+
+/** The turn was stored as its one failure row (see {@link AppendFoldInput.unstorableNotice}). */
+export type AppendFoldUnstorable = {
+  /** The failure row's seq. */
+  seq: number;
+  /** The first row that could not be stored. */
+  rowKind: RefusedRowKind;
+  index: number;
+} & (
+  | {
+      reason: 'size';
+      /** That row as its store measured it. */
+      bytes: number;
+      maxBytes: number;
+    }
+  | { reason: 'number' }
+);
 
 export interface AppendFoldResult {
   messageSeqs: number[];
@@ -139,6 +189,34 @@ export interface AppendFoldResult {
    * WHOLE fold-persist was short-circuited (no rows written this call).
    */
   deduped: boolean;
+  /** Tool-call values stored as the elided marker so their rows fit; `[]` when none. */
+  elidedToolInputs: ElidedToolInput[];
+  /** Set when the turn was stored as its one failure row instead of its rows. */
+  unstorable?: AppendFoldUnstorable;
+}
+
+/** The failure code of a turn stored as one row because it could not fit (guuey#1794). */
+export const STORED_TURN_TOO_LARGE_CODE = 'stored_turn_too_large';
+
+/**
+ * The failure code of a turn stored as one row because a row of it carried a
+ * number its store cannot hold, outside any tool-call value (guuey#1794).
+ */
+export const STORED_TURN_UNSTORABLE_NUMBER_CODE = 'stored_turn_unstorable_number';
+
+/**
+ * The seq a planned row is measured with before its real seq is allocated:
+ * no real seq has more digits, so the real row is never larger.
+ */
+const PROVISIONAL_SEQ = Number.MAX_SAFE_INTEGER;
+
+/** One row of a fold, planned and measured before anything is written. */
+interface PlannedRow {
+  kind: 'message' | 'card';
+  /** The row with its provisional seq and timestamp. */
+  row: ThreadMessageRow;
+  preview: string | null;
+  elided: StoredElision[];
 }
 
 // ───────────────────────────────────────────────────────────────────────
@@ -264,11 +342,9 @@ export class ThreadStore {
     const preview = input.text ? input.text.slice(0, PREVIEW_MAX_LEN) : '';
     // guuey#2031: the store re-judges a row's tap labels; it never trusts its caller's check.
     const tapLabels = input.tapLabels !== undefined ? writeTapLabels(input.tapLabels) : undefined;
-    const seq = await this.db.incrementSeq(input.threadId, preview, now);
-
-    const row: ThreadMessageRow = {
+    const draft: ThreadMessageRow = {
       threadId: input.threadId,
-      seq,
+      seq: PROVISIONAL_SEQ,
       userId: input.userId,
       clientMessageId: input.clientMessageId,
       at: now,
@@ -283,7 +359,11 @@ export class ThreadStore {
       ...(input.clientClass !== undefined ? { clientClass: input.clientClass } : {}),
       ...(tapLabels !== undefined ? { tapLabels } : {}),
     };
-    await this.db.putMessage(row);
+    // guuey#1794: measured before the seq is allocated, so an oversized row
+    // spends no seq. The real seq is never longer than the provisional one.
+    assertRowFits(draft, this.db.rowBudget, 'append', 0);
+    const seq = await this.db.incrementSeq(input.threadId, preview, now);
+    await this.db.putMessage({ ...draft, seq });
     return { seq, deduped: false };
   }
 
@@ -311,17 +391,135 @@ export class ThreadStore {
    * a good snapshot.
    */
   async appendFold(input: AppendFoldInput): Promise<AppendFoldResult> {
-    const { threadId, userId, fold, clientMessageIdBase, skipSnapshot } = input;
+    const { threadId, fold, clientMessageIdBase, skipSnapshot } = input;
 
     // Turn-level idempotency gate: a committed agent turn is never re-merged.
     const sentinelKey = `${clientMessageIdBase}#agentTurn`;
     const existing = await this.db.findByClientMessageId(threadId, sentinelKey);
     if (existing) {
-      return { messageSeqs: [existing.seq], artifactSeqs: [], droppedDurableMemory: 0, deduped: true };
+      return { messageSeqs: [existing.seq], artifactSeqs: [], droppedDurableMemory: 0, deduped: true, elidedToolInputs: [] };
+    }
+
+    // guuey#1794 — plan every row of the turn, then write. Nothing is written
+    // (no seq spent, no sentinel claimed) until every row is known to fit the
+    // store's row budget: a row that failed mid-loop used to leave a partial
+    // turn whose sentinel short-circuited every retry. Planned rows carry a
+    // provisional seq and timestamp no smaller than the real ones, so the real
+    // values can only shrink a row that fit.
+    const provisionalAt = new Date().toISOString();
+    const planned: PlannedRow[] = [];
+    try {
+      this.planFoldRows(input, sentinelKey, provisionalAt, planned);
+    } catch (err) {
+      if (!isStoredRowRefusal(err) || input.unstorableNotice === undefined) throw err;
+      return this.writeUnstorableMarker(input, input.unstorableNotice, sentinelKey, err);
     }
 
     const messageSeqs: number[] = [];
     const artifactSeqs: number[] = [];
+    const elidedToolInputs: ElidedToolInput[] = [];
+    for (const p of planned) {
+      const now = new Date().toISOString();
+      const seq = await this.db.incrementSeq(threadId, p.preview, now);
+      await this.db.putMessage({ ...p.row, seq, at: now });
+      (p.kind === 'message' ? messageSeqs : artifactSeqs).push(seq);
+      for (const e of p.elided) {
+        elidedToolInputs.push({ seq, toolCallId: e.toolCallId, name: e.name, field: e.field, reason: e.reason, bytes: e.bytes });
+      }
+    }
+
+    const threadMemory = keepUnchangedThreadMemory(input.priorThreadMemory ?? [], fold.memory.filter((m) => m.scope === 'thread'));
+    const droppedDurableMemory = fold.memory.length - threadMemory.length;
+    if (skipSnapshot !== true) await this.db.putSnapshot(this.snapshotRow(input, threadMemory));
+
+    return { messageSeqs, artifactSeqs, droppedDurableMemory, deduped: false, elidedToolInputs };
+  }
+
+  /** The snapshot row a fold persists (working state + thread memory + last turn). */
+  private snapshotRow(input: AppendFoldInput, threadMemory: AgMemoryRecord[]): ThreadSnapshotRow {
+    const { fold } = input;
+    const lastTurnId = fold.turns.length ? fold.turns[fold.turns.length - 1]!.turnId : undefined;
+    return {
+      threadId: input.threadId,
+      userId: input.userId,
+      threadMemory,
+      ...(input.carriedThreadMemory !== undefined && input.carriedThreadMemory.length > 0
+        ? { carriedThreadMemory: [...input.carriedThreadMemory] }
+        : {}),
+      updatedAt: new Date().toISOString(),
+      ...(fold.state !== undefined ? { workingState: fold.state } : {}),
+      ...(lastTurnId ? { lastTurnId } : {}),
+    };
+  }
+
+  /**
+   * The turn's one row when a row of it cannot be stored: the caller's notice
+   * text, under the turn sentinel (so a retry short-circuits and the turn is
+   * final), carrying the failure code readers classify as a failed turn
+   * (`stored_turn_too_large` with the counts, or `stored_turn_unstorable_number`).
+   * No other row of the turn is written.
+   */
+  private async writeUnstorableMarker(
+    input: AppendFoldInput,
+    notice: { text: string },
+    sentinelKey: string,
+    err: StoredRowRefusal,
+  ): Promise<AppendFoldResult> {
+    const { text } = notice;
+    const error =
+      err instanceof StoredRowTooLargeError
+        ? { code: STORED_TURN_TOO_LARGE_CODE, bytes: err.bytes, maxBytes: err.maxBytes }
+        : { code: STORED_TURN_UNSTORABLE_NUMBER_CODE };
+    const now = new Date().toISOString();
+    const seq = await this.db.incrementSeq(input.threadId, text.slice(0, PREVIEW_MAX_LEN), now);
+    await this.db.putMessage({
+      threadId: input.threadId,
+      seq,
+      userId: input.userId,
+      clientMessageId: sentinelKey,
+      at: now,
+      kind: 'text',
+      authorRole: 'agent',
+      text,
+      content: {
+        kind: 'text',
+        text,
+        error,
+      },
+      ...(input.untrustedOrigin === true ? { untrustedOrigin: true } : {}),
+    });
+    const threadMemory = keepUnchangedThreadMemory(
+      input.priorThreadMemory ?? [],
+      input.fold.memory.filter((m) => m.scope === 'thread'),
+    );
+    if (input.skipSnapshot !== true) await this.db.putSnapshot(this.snapshotRow(input, threadMemory));
+    return {
+      messageSeqs: [],
+      artifactSeqs: [],
+      droppedDurableMemory: input.fold.memory.length - threadMemory.length,
+      deduped: false,
+      elidedToolInputs: [],
+      unstorable:
+        err instanceof StoredRowTooLargeError
+          ? { seq, rowKind: err.rowKind, index: err.index, reason: 'size', bytes: err.bytes, maxBytes: err.maxBytes }
+          : { seq, rowKind: err.rowKind, index: err.index, reason: 'number' },
+    };
+  }
+
+  /**
+   * Build every row a fold writes, in write order, with a provisional seq and
+   * timestamp, bounded by the store's row budget (throws a
+   * {@link StoredRowRefusal} when one cannot be stored). Writes nothing.
+   */
+  private planFoldRows(
+    input: AppendFoldInput,
+    sentinelKey: string,
+    provisionalAt: string,
+    planned: PlannedRow[],
+  ): void {
+    const { threadId, userId, fold, clientMessageIdBase } = input;
+    const budget = this.db.rowBudget;
+    const seq = PROVISIONAL_SEQ;
     // Whichever row is written first claims the sentinel key.
     let sentinelClaimed = false;
 
@@ -335,24 +533,25 @@ export class ThreadStore {
         msg.role === 'notice'
           ? ''
           : msg.content.reduce((acc, b) => (b.type === 'text' && b.phase !== 'interim' ? acc + b.text : acc), '');
-      const now = new Date().toISOString();
-      // Text-less agent messages (tool-call + tool-result only — the canonical
-      // card-producing turn) must not blank the preview: '' takes the SET
-      // branch, null leaves the prior preview standing.
-      const seq = await this.db.incrementSeq(threadId, text ? text.slice(0, PREVIEW_MAX_LEN) : null, now);
       const turnRecord = fold.turns.find((t) => t.turnId === msg.turnId);
-      await this.db.putMessage(
-        agMessageToRow(msg, {
+      const { row, elided } = agMessageToBoundedRow(
+        msg,
+        {
           threadId,
           userId,
           seq,
-          at: now,
+          at: provisionalAt,
           clientMessageId,
           ...(turnRecord ? { turnRecord } : {}),
           ...(input.untrustedOrigin === true ? { untrustedOrigin: true } : {}),
-        }),
+        },
+        budget,
+        i,
       );
-      messageSeqs.push(seq);
+      // Text-less agent messages (tool-call + tool-result only — the canonical
+      // card-producing turn) must not blank the preview: '' takes the SET
+      // branch, null leaves the prior preview standing.
+      planned.push({ kind: 'message', row, preview: text ? text.slice(0, PREVIEW_MAX_LEN) : null, elided });
     }
 
     // Cards can arrive two ways: first-class artifact events (fold.artifacts)
@@ -376,44 +575,21 @@ export class ThreadStore {
       const art = cardArtifacts[i]!;
       const clientMessageId = sentinelClaimed ? `${clientMessageIdBase}#card#${i}` : sentinelKey;
       sentinelClaimed = true;
-      const now = new Date().toISOString();
-      const seq = await this.db.incrementSeq(threadId, art.name ?? null, now);
-      await this.db.putMessage(
-        agArtifactToCardRow(
-          art,
-          {
-            threadId,
-            userId,
-            seq,
-            at: now,
-            clientMessageId,
-            ...(input.untrustedOrigin === true ? { untrustedOrigin: true } : {}),
-          },
-          producingToolName(art, toolNames),
-        ),
+      const row = agArtifactToCardRow(
+        art,
+        {
+          threadId,
+          userId,
+          seq,
+          at: provisionalAt,
+          clientMessageId,
+          ...(input.untrustedOrigin === true ? { untrustedOrigin: true } : {}),
+        },
+        producingToolName(art, toolNames),
       );
-      artifactSeqs.push(seq);
+      assertRowFits(row, budget, 'card', i);
+      planned.push({ kind: 'card', row, preview: art.name ?? null, elided: [] });
     }
-
-    const threadMemory = keepUnchangedThreadMemory(input.priorThreadMemory ?? [], fold.memory.filter((m) => m.scope === 'thread'));
-    const droppedDurableMemory = fold.memory.length - threadMemory.length;
-
-    if (skipSnapshot !== true) {
-      const lastTurnId = fold.turns.length ? fold.turns[fold.turns.length - 1]!.turnId : undefined;
-      await this.db.putSnapshot({
-        threadId,
-        userId,
-        threadMemory,
-        ...(input.carriedThreadMemory !== undefined && input.carriedThreadMemory.length > 0
-          ? { carriedThreadMemory: [...input.carriedThreadMemory] }
-          : {}),
-        updatedAt: new Date().toISOString(),
-        ...(fold.state !== undefined ? { workingState: fold.state } : {}),
-        ...(lastTurnId ? { lastTurnId } : {}),
-      });
-    }
-
-    return { messageSeqs, artifactSeqs, droppedDurableMemory, deduped: false };
   }
 }
 

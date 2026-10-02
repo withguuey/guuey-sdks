@@ -8,6 +8,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonValue } from "@silverprotocol/core";
 import type { ThreadPersistencePort, ThreadRow } from "../rows.js";
+import { DYNAMODB_ITEM_LIMIT_BYTES, DYNAMODB_ROW_BUDGET, dynamoItemBytes, dynamoNumberFits } from "../item-size.js";
 
 export interface ThreadPersistenceHarness {
   port: ThreadPersistencePort;
@@ -222,4 +223,65 @@ export function runThreadPersistenceContractSuite(
       });
     });
   });
+}
+
+/**
+ * The error {@link withItemSizeLimit} rejects an oversized row with: the shape
+ * DynamoDB answers a too-large `PutItem` with.
+ */
+export class ItemSizeExceededError extends Error {
+  override readonly name = "ValidationException";
+
+  constructor(readonly bytes: number) {
+    super("Item size has exceeded the maximum allowed size");
+  }
+}
+
+/**
+ * The error {@link withItemSizeLimit} rejects a row carrying a number DynamoDB
+ * cannot hold with: like the DocumentClient's own, its message names the number.
+ */
+export class UnstorableNumberError extends Error {
+  constructor(readonly value: number) {
+    super(`Number ${String(value)} cannot be stored as written`);
+  }
+}
+
+function firstUnfitNumber(value: unknown): number | undefined {
+  if (typeof value === "number") return dynamoNumberFits(value) ? undefined : value;
+  if (value === null || typeof value !== "object") return undefined;
+  for (const child of Array.isArray(value) ? value : Object.values(value)) {
+    const found = firstUnfitNumber(child);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+/**
+ * Wrap a port so it behaves like a DynamoDB-backed binding on what a row may
+ * hold (guuey#1794): it declares the DynamoDB row budget, and its
+ * `putMessage` rejects a row over DynamoDB's 400 KB item limit (measured by
+ * `dynamoItemBytes`) with {@link ItemSizeExceededError}, and a row carrying a
+ * number DynamoDB cannot hold with {@link UnstorableNumberError}, instead of
+ * storing it. Run a `ThreadStore` over it to test what happens at those
+ * limits without a real table.
+ */
+export function withItemSizeLimit(port: ThreadPersistencePort): ThreadPersistencePort {
+  return {
+    rowBudget: DYNAMODB_ROW_BUDGET,
+    getThread: (threadId) => port.getThread(threadId),
+    createThread: (row) => port.createThread(row),
+    incrementSeq: (threadId, preview, atIso) => port.incrementSeq(threadId, preview, atIso),
+    async putMessage(row) {
+      const unfit = firstUnfitNumber(row);
+      if (unfit !== undefined) throw new UnstorableNumberError(unfit);
+      const bytes = dynamoItemBytes(row);
+      if (bytes > DYNAMODB_ITEM_LIMIT_BYTES) throw new ItemSizeExceededError(bytes);
+      await port.putMessage(row);
+    },
+    listRecentMessages: (threadId, limit) => port.listRecentMessages(threadId, limit),
+    findByClientMessageId: (threadId, clientMessageId) => port.findByClientMessageId(threadId, clientMessageId),
+    getSnapshot: (threadId) => port.getSnapshot(threadId),
+    putSnapshot: (row) => port.putSnapshot(row),
+  };
 }

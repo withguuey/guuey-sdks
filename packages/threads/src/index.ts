@@ -24,6 +24,7 @@ export type {
   ThreadMessageEvent,
   ThreadMessageKind,
   ThreadMessageRole,
+  RowBudget,
   ThreadMessageRow,
   ThreadPersistencePort,
   ThreadRow,
@@ -32,9 +33,20 @@ export type {
   ClientClass,
 } from "./rows.js";
 export {
+  DYNAMODB_ITEM_LIMIT_BYTES,
+  DYNAMODB_ROW_BUDGET,
+  DYNAMODB_ROW_BUDGET_BYTES,
+  dynamoItemBytes,
+  dynamoNumberFits,
+} from "./item-size.js";
+export {
   ThreadStore,
+  STORED_TURN_TOO_LARGE_CODE,
+  STORED_TURN_UNSTORABLE_NUMBER_CODE,
   type AppendFoldInput,
+  type AppendFoldUnstorable,
   type AppendFoldResult,
+  type ElidedToolInput,
   type AppendMessageInput,
   type AppendMessageResult,
   type EnsureThreadInput,
@@ -55,7 +67,18 @@ export {
 } from "./http.js";
 export {
   agArtifactToCardRow,
+  agMessageToBoundedRow,
   agMessageToRow,
+  assertRowFits,
+  ELIDED_VALUE_KEY,
+  isStoredRowRefusal,
+  StoredRowTooLargeError,
+  StoredRowUnstorableNumberError,
+  type ElidedField,
+  type ElisionReason,
+  type RefusedRowKind,
+  type StoredElision,
+  type StoredRowRefusal,
   cardRowToAgArtifact,
   messageFullText,
   messageNarration,
