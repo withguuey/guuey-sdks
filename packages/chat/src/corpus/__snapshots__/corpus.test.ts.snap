@@ -1072,6 +1072,7 @@ exports[`corpus > 4. consent-gate — pending grant-mode card → answered one-l
       "text": "Booked your usual — I couldn't see your profile yet.",
     },
     {
+      "answer": "door",
       "ask": {
         "askId": "profile-consent:app-1:thread-corpus",
         "grantModes": [
@@ -1924,6 +1925,7 @@ exports[`corpus > 20. hitl-grant-modes — the persisted declaration renders; an
       "text": "I can remember this preference.",
     },
     {
+      "answer": "none",
       "ask": {
         "askId": "ask-remember-1",
         "grantModes": [
@@ -2300,6 +2302,7 @@ exports[`corpus > 25. oauth-auth-ask — kind:auth + authConfig oauth2 plans as 
       "text": "I can't reach Linear yet.",
     },
     {
+      "answer": "broker",
       "ask": {
         "askId": "mcp-oauth:app_1:linear:thread-oauth",
         "authConfig": {

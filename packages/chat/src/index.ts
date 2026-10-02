@@ -42,7 +42,11 @@ export { isGguiConsumeTool, isWaitingOnUser } from "./listen.js";
 export {
   buildHitlAnswer,
   grantModeDisplay,
+  hitlAnswerChannel,
   hitlPromptsFromFold,
+  MCP_OAUTH_ASK_PREFIX,
+  PROFILE_CONSENT_ASK_PREFIX,
+  type HitlAnswerChannel,
   type HitlAnswerRecord,
   type HitlPromptAction,
 } from "./hitl.js";

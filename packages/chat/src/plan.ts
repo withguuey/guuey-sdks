@@ -43,7 +43,7 @@ import {
   type ViewMount,
 } from "@guuey/mcp-apps-host";
 import type { TranscriptPolicy } from "./policy.js";
-import { grantModeDisplay } from "./hitl.js";
+import { grantModeDisplay, hitlAnswerChannel } from "./hitl.js";
 import { authRequiredFromAsks, oauthAuthorizeAsk } from "./oauth.js";
 import { isGguiConsumeTool, isGguiProtocolTool } from "./listen.js";
 import type {
@@ -1222,6 +1222,7 @@ export function planTranscript(
   for (const prompt of inputs.prompts) {
     const key = `p.${prompt.id}`;
     if (prompt.kind === "hitl") {
+      const answer = hitlAnswerChannel(prompt.ask);
       const chosen =
         prompt.grantModeId !== undefined
           ? (prompt.ask.grantModes ?? []).find((m) => m.id === prompt.grantModeId)
@@ -1238,7 +1239,11 @@ export function planTranscript(
         message: prompt.ask.message ?? null,
         askKind: prompt.ask.kind,
         grantModes: prompt.ask.grantModes ?? [],
-        oauth: oauthAuthorizeAsk(prompt.ask),
+        // guuey#1860: only an ask the broker answers carries the OAuth arm; an
+        // agent framework's own credential ask (an ADK authUri) has no answer
+        // channel here, so it is never offered as a connect button.
+        oauth: answer === "broker" ? oauthAuthorizeAsk(prompt.ask) : null,
+        answer,
         state: prompt.state,
         chosenModeId: prompt.grantModeId ?? null,
         chosenModeLabel: chosen !== undefined ? grantModeDisplay(chosen) : null,

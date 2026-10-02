@@ -183,6 +183,13 @@ export interface ChatStrings {
   authRequiredHint: string;
   composerAuthRequired: string;
 
+  /**
+   * An ask nothing in this chat can answer (guuey#1860): an agent framework's
+   * own approval or credential request, with no answer door yet. The card shows
+   * the ask and this line, and no actions.
+   */
+  promptNoAnswerChannel: string;
+
   /** R16 — the notice row's label (provenance shows only under debug). */
   noticeLabel: string;
 
@@ -369,6 +376,7 @@ export const defaultChatStrings: ChatStrings = {
   authRequiredHeading: (serverLabels) => `Connect ${serverLabels} to start`,
   authRequiredHint: "This agent needs the account before it can answer.",
   composerAuthRequired: "Connect the account above to start.",
+  promptNoAnswerChannel: "The agent is waiting on this. Reply in the chat to continue.",
 
   noticeLabel: "Note",
 

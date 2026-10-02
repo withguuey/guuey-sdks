@@ -35,6 +35,7 @@
  * Everything here is string-level (no `URL`/`URLSearchParams`) so it runs
  * identically on React Native, whose URL polyfill is partial.
  */
+import { hitlAnswerChannel } from "./hitl.js";
 import type { AgPausedAsk, JsonValue } from "@silverprotocol/core";
 
 /** The `authConfig.scheme` this arm recognises (the spec's OAuth 2 vocabulary). */
@@ -182,6 +183,9 @@ export function authRequiredFromAsks(asks: readonly AgPausedAsk[]): AuthRequired
   const servers: AuthRequiredServer[] = [];
   const seen = new Set<string>();
   for (const ask of asks) {
+    // guuey#1860: only the broker's own connect asks hold the composer; an
+    // agent framework's credential ask has no answer channel in this chat.
+    if (hitlAnswerChannel(ask) !== "broker") continue;
     const oauth = oauthAuthorizeAsk(ask);
     if (oauth === null || !oauth.upfront) continue;
     const serverName = metadataString(ask, OAUTH_UPFRONT_METADATA.serverName) ?? ask.askId;

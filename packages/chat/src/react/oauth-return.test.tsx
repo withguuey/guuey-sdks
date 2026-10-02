@@ -36,6 +36,7 @@ const item = (ask: AgPausedAsk, oauth: HitlPromptItem["oauth"]): HitlPromptItem 
   askKind: ask.kind,
   grantModes: ask.grantModes ?? [],
   oauth,
+  answer: "broker",
   state: "pending",
   chosenModeId: null,
   chosenModeLabel: null,

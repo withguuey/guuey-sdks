@@ -41,6 +41,43 @@ export interface HitlAnswerRecord {
   grantModeId?: string;
 }
 
+/**
+ * The askId prefix of the guuey runtime's profile consent (guuey#207): the one
+ * ask kind the `POST /agent/hitl-answer` door answers. A MIRROR of the pod's
+ * `PROFILE_CONSENT_ASK_PREFIX`, held equal by the pod's
+ * `hitl-answer-channel.sync.test.ts`.
+ */
+export const PROFILE_CONSENT_ASK_PREFIX = "profile-consent:";
+
+/**
+ * The askId prefix of the runtime's MCP OAuth consent (guuey#178): answered by
+ * opening the broker's authorization URL, never by a door. A MIRROR of the
+ * pod's `MCP_OAUTH_ASK_PREFIX`, held equal by the same sync test.
+ */
+export const MCP_OAUTH_ASK_PREFIX = "mcp-oauth:";
+
+/**
+ * How an ask can be answered from this chat (guuey#1860):
+ *  - `door`: the pod's answer door records the answer (profile consent);
+ *  - `broker`: a pick opens the broker's authorization URL (MCP OAuth);
+ *  - `none`: nothing in this chat can answer it. Every other ask a pod relays
+ *    (an agent framework's own approval, credential or input request) has no
+ *    answer door and no resumable run yet, so offering buttons would be a
+ *    dead end; the card shows the ask as information and the person replies
+ *    in chat.
+ *
+ * Keyed on the askId prefixes every pod has minted since guuey#207/#178, so it
+ * is right against every pod version. The doors still enforce: a wrong
+ * classification is cosmetic, never a bypass.
+ */
+export type HitlAnswerChannel = "door" | "broker" | "none";
+
+export function hitlAnswerChannel(ask: Pick<AgPausedAsk, "askId">): HitlAnswerChannel {
+  if (ask.askId.startsWith(PROFILE_CONSENT_ASK_PREFIX)) return "door";
+  if (ask.askId.startsWith(MCP_OAUTH_ASK_PREFIX)) return "broker";
+  return "none";
+}
+
 /** A user action on a HITL card: pick a declared mode, decline, or dismiss. */
 export type HitlPromptAction = { grantModeId: string } | "accept" | "decline" | "dismiss";
 

@@ -609,6 +609,8 @@ describe("R10 hitl card (spec draft.2)", () => {
     expanded,
     promptKind: "hitl",
     ask,
+    // An answerable ask (the door's): the card offers its modes.
+    answer: "door",
     message: ask.message,
     askKind: "approval",
     grantModes: ask.grantModes,
@@ -626,6 +628,17 @@ describe("R10 hitl card (spec draft.2)", () => {
     expect(onPromptAction).toHaveBeenCalledWith(hitl("pending"), { grantModeId: "m.durable" });
     fireEvent.click(screen.getByRole("button", { name: "Don't allow" }));
     expect(onPromptAction).toHaveBeenLastCalledWith(hitl("pending"), "decline");
+  });
+
+  // guuey#1860: an ask nothing in this chat can answer (an agent framework's
+  // own approval) is information: its message and one line, no controls.
+  it("an ask with no answer channel renders its message and the reply-in-chat line, and no button", () => {
+    const onPromptAction = vi.fn();
+    render(<DefaultPrompt item={{ ...hitl("pending"), answer: "none" }} ctx={ctx({ onPromptAction })} />);
+    expect(screen.getByText("Remember this?")).toBeTruthy();
+    expect(screen.getByText("The agent is waiting on this. Reply in the chat to continue.")).toBeTruthy();
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+    expect(screen.getByRole("note")).toBeTruthy();
   });
 
   it("resolved collapses to the CHOSEN MODE'S LABEL — ids never display as meaning", () => {

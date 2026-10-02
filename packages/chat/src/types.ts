@@ -11,6 +11,7 @@
  * events. A category this UI needs but AgJSON cannot express is an upstream
  * silverprotocol change, never a guuey-side extension.
  */
+import type { HitlAnswerChannel } from "./hitl.js";
 import type {
   AgGrantMode,
   AgNoticeSource,
@@ -526,6 +527,12 @@ export interface HitlPromptItem extends BaseItem {
    * refused, not answered.
    */
   oauth: OAuthAuthorizeAsk | null;
+  /**
+   * How this ask can be answered from the chat (guuey#1860, `hitlAnswerChannel`).
+   * `none` renders the ask as information with no actions, and every surface
+   * refuses to dispatch an answer for it; `oauth` is non-null only for `broker`.
+   */
+  answer: HitlAnswerChannel;
   state: "pending" | "resolved" | "declined" | "cancelled";
   /** Echo of the chosen mode id (identity, never displayed as meaning). */
   chosenModeId: string | null;

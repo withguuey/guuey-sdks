@@ -1197,6 +1197,9 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   const handlePromptAction = useCallback(
     (item: PromptItem, action: "accept" | "decline" | "dismiss" | { grantModeId: string }) => {
       if (item.promptKind === "hitl") {
+        // guuey#1860: no door or broker answers this ask; the card offers no
+        // action, and nothing is dispatched if one is called anyway.
+        if (item.answer === "none") return;
         // The OAuth arm: the answer is the redirect (no pod door, no
         // `onHitlAnswer`); the ledger records the pick and the link opens.
         if (

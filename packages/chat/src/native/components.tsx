@@ -601,6 +601,23 @@ export function NativePrompt({ item, ctx }: ItemProps<PromptItem>): ReactNode {
   const { tokens } = ctx;
   if (item.promptKind === "hitl") {
     const s = ctx.strings;
+    // guuey#1860: an ask nothing in this chat can answer is information, not a
+    // control: the ask and one line, no buttons, no dismissal.
+    if (item.answer === "none") {
+      return (
+        <View
+          accessible
+          style={{ backgroundColor: tokens.palette.surface, borderRadius: tokens.radius, padding: tokens.pad, gap: 8 }}
+        >
+          {item.message !== null && (
+            <Text style={{ color: tokens.palette.ink, fontSize: tokens.fontSize, fontFamily: tokens.fontFamily }}>
+              {item.message}
+            </Text>
+          )}
+          <MutedText ctx={ctx}>{s.promptNoAnswerChannel}</MutedText>
+        </View>
+      );
+    }
     if (item.state === "resolved" || item.state === "declined") {
       return (
         <MutedText ctx={ctx}>

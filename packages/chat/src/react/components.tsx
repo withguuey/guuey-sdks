@@ -672,6 +672,16 @@ export function DefaultPrompt({ item, ctx }: ItemProps<PromptItem>): ReactNode {
 
   if (item.promptKind === "hitl") {
     const s = ctx.strings;
+    // guuey#1860: an ask nothing in this chat can answer is information, not a
+    // control: the ask and one line, no buttons, no dismissal.
+    if (item.answer === "none") {
+      return (
+        <div className="guuey-chat-prompt guuey-chat-prompt-info" role="note">
+          {item.message !== null && <p className="guuey-chat-prompt-ask">{item.message}</p>}
+          <p className="guuey-chat-prompt-info-hint">{s.promptNoAnswerChannel}</p>
+        </div>
+      );
+    }
     // Settled records: resolved shows the CHOSEN MODE'S LABEL (ids are
     // echo-only identity — asker-scoped semantics, spec §7); declined is
     // the durable deny. `cancelled` is guuey's re-askable dismissal: it
