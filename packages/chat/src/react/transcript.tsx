@@ -284,6 +284,8 @@ export function Transcript(props: TranscriptProps): ReactNode {
         <button
           type="button"
           className="guuey-chat-jump"
+          aria-label={strings.jumpToLatest}
+          title={strings.jumpToLatest}
           onClick={() => {
             pinned.current = true;
             releasedTurn.current = anchorPlan.current.turnKey;
@@ -292,7 +294,29 @@ export function Transcript(props: TranscriptProps): ReactNode {
             scrollToBottom(true);
           }}
         >
-          {strings.jumpToLatest}
+          {/* guuey#2121 (cdo): the labelled chip where a composer follows (the seam);
+              an icon-only round chip, the down arrow, everywhere else, so the
+              chip's footprint over a composer-less transcript is the smallest it
+              can be. CSS picks which part shows; the accessible name is the words
+              either way. */}
+          <span className="guuey-chat-jump-label" aria-hidden="true">
+            {strings.jumpToLatest}
+          </span>
+          <svg
+            className="guuey-chat-jump-icon"
+            aria-hidden="true"
+            focusable="false"
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M8 3v10M3.5 8.5 8 13l4.5-4.5" />
+          </svg>
         </button>
       ) : null}
     </div>

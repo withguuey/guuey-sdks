@@ -225,6 +225,18 @@ describe("Transcript — the turn's card anchor (guuey#1328)", () => {
     expect(screen.getByRole("button", { name: "Jump to latest" })).toBeTruthy();
   });
 
+  // guuey#2121 (cdo): the chip has two faces (CSS picks one); its accessible name is
+  // the words either way, and neither the visible label nor the icon is read twice.
+  it("the jump chip is named by its words, with a title, and its label and icon hidden from assistive tech", () => {
+    mockLayout();
+    render(<Transcript plan={cardPlan()} {...noopCtx} />);
+    const chip = screen.getByRole("button", { name: "Jump to latest" });
+    expect(chip.getAttribute("aria-label")).toBe("Jump to latest");
+    expect(chip.getAttribute("title")).toBe("Jump to latest");
+    expect(chip.querySelector(".guuey-chat-jump-label")?.getAttribute("aria-hidden")).toBe("true");
+    expect(chip.querySelector("svg.guuey-chat-jump-icon")?.getAttribute("aria-hidden")).toBe("true");
+  });
+
   it("negative control: a custom `view` component (no kit class) keeps plain stick-to-bottom", () => {
     mockLayout();
     const { container } = render(

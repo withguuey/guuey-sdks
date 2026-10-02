@@ -54,4 +54,24 @@ describe("the jump chip (guuey#2121)", () => {
     const selectors = found.split(",").map((s) => s.trim());
     expect(selectors).toEqual([".guuey-chat-surface:has(> .guuey-chat-composer) .guuey-chat-jump", ".guuey-chat--seam .guuey-chat-jump"]);
   });
+
+  // cdo (guuey#2121): composer-less hosts get the smallest footprint, a 32px round
+  // icon-only chip; the seam keeps the labelled pill.
+  it("composer-less (the default): a 32px round chip showing the icon, never the label", () => {
+    const blocks = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ sel: (m[1] ?? "").trim(), body: m[2] ?? "" }));
+    const sized = blocks.filter((b) => b.sel === ".guuey-chat-jump" && /width:\s*32px/.test(b.body));
+    expect(sized.length).toBe(1);
+    expect(sized[0]?.body).toMatch(/height:\s*32px/);
+    expect(sized[0]?.body).toMatch(/padding:\s*0/);
+    expect(blocks.find((b) => b.sel === ".guuey-chat-jump .guuey-chat-jump-label")?.body).toMatch(/display:\s*none/);
+  });
+
+  it("on the seam: the labelled pill, never the icon", () => {
+    const blocks = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ sel: (m[1] ?? "").replace(/\s+/g, " ").trim(), body: m[2] ?? "" }));
+    const seamFaces = blocks.filter((b) => b.sel.includes(".guuey-chat--seam .guuey-chat-jump"));
+    expect(seamFaces.some((b) => /width:\s*auto/.test(b.body) && /padding:\s*6px 14px/.test(b.body))).toBe(true);
+    expect(seamFaces.some((b) => b.sel.includes("guuey-chat-jump-label") && /display:\s*inline/.test(b.body))).toBe(true);
+    expect(seamFaces.some((b) => b.sel.includes("guuey-chat-jump-icon") && /display:\s*none/.test(b.body))).toBe(true);
+  });
 });
+

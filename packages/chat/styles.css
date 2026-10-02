@@ -785,6 +785,44 @@
   bottom: 0;
   transform: translate(-50%, 50%);
 }
+/*
+ * The two faces (cdo, guuey#2121). Composer-less (the default, inside the
+ * transcript): a 32px round icon-only chip, the down arrow, the smallest footprint
+ * over content. On the seam: the labelled pill. The accessible name is the label
+ * text either way (aria-label on the button).
+ */
+.guuey-chat-jump {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.guuey-chat-jump .guuey-chat-jump-label {
+  display: none;
+}
+.guuey-chat-jump .guuey-chat-jump-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+.guuey-chat-jump {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+.guuey-chat-surface:has(> .guuey-chat-composer) .guuey-chat-jump,
+.guuey-chat--seam .guuey-chat-jump {
+  width: auto;
+  height: auto;
+  padding: 6px 14px;
+}
+.guuey-chat-surface:has(> .guuey-chat-composer) .guuey-chat-jump .guuey-chat-jump-label,
+.guuey-chat--seam .guuey-chat-jump .guuey-chat-jump-label {
+  display: inline;
+}
+.guuey-chat-surface:has(> .guuey-chat-composer) .guuey-chat-jump .guuey-chat-jump-icon,
+.guuey-chat--seam .guuey-chat-jump .guuey-chat-jump-icon {
+  display: none;
+}
 .guuey-chat[data-guuey-chat-mode="dark"] .guuey-chat-jump {
   color: #111;
 }
