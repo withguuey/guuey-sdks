@@ -123,3 +123,23 @@ export type {
   ViewMountItem,
   ViewRefItem,
 } from "./types.js";
+// The inline chat's usage events (`<GuueyChat analytics>`): the vocabulary,
+// the sink shapes, and the tracker a host composing its own surface reuses.
+export {
+  chatAnalyticsGui,
+  chatCtaIdFor,
+  createChatAnalytics,
+  hostPosthogSink,
+  resolveChatAnalytics,
+  type ChatAnalytics,
+  type ChatAnalyticsCtaClickedProps,
+  type ChatAnalyticsEventMap,
+  type ChatAnalyticsEventName,
+  type ChatAnalyticsGui,
+  type ChatAnalyticsMessageSentProps,
+  type ChatAnalyticsOpenedProps,
+  type ChatAnalyticsOptions,
+  type ChatAnalyticsProps,
+  type ChatAnalyticsSetting,
+  type ChatAnalyticsSink,
+} from "./analytics.js";

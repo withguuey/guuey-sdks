@@ -128,6 +128,33 @@ selector the kit reads. Pair it with `surface="bare"` when the transcript
 should sit directly on the page's own background (no message cards, the
 user pill stays a bubble) — the same knob as above, no extra chrome.
 
+## Usage events (`analytics`)
+
+Off by default. With `analytics` on, `<GuueyChat>` hands three usage events
+to **your** analytics client — the same vocabulary the guuey widget emits,
+stamped `surface: "inline"`:
+
+| Event                 | When                                                                                              | Properties                         |
+| --------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `helper_opened`       | the first visitor interaction per mount: composer focus, `handle.markOpened()`, or the first turn | `app_id`, `surface`, `gui`         |
+| `helper_message_sent` | each visitor turn (composer, `handle.send`, a chip, a card's message); a retry is not a new turn  | `app_id`, `turn`, `surface`, `gui` |
+| `helper_cta_clicked`  | a click on a link the chat renders                                                                | `app_id`, `cta`, `surface`, `gui`  |
+
+```tsx
+<GuueyChat appId="app_…" endpointUrl={url} analytics />                         // window.posthog, when the page has one
+<GuueyChat appId="app_…" endpointUrl={url} analytics={(e, p) => posthog.capture(e, p)} />
+<GuueyChat appId="app_…" endpointUrl={url} analytics={{ gguiEnabled: card.gguiEnabled }} />
+```
+
+`turn` is a number, never the text. `cta` is the link's `data-cta`, else its
+origin and path (never its query or hash; just the scheme for `mailto:` and
+`tel:`). `gui` is `"off"` only when you pass `gguiEnabled: false`. Nothing
+emits without `appId`. The kit initialises nothing and stores nothing, so your
+page's consent setup governs the events. Links inside a card's own sandbox are
+not observable from the page and are not counted. A page that feeds the chat
+from its own input (`composer={false}`) reports that input's focus with
+`handle.markOpened()`.
+
 ## The headless view-model (the root subpath)
 
 The **headless** half — a pure function from agent state to an ordered

@@ -94,6 +94,7 @@ import type { ClaimedTap } from "../tap-ledger.js";
 import { oauthPromptAction, useOAuthReturn } from "./oauth-return.js";
 import { PARTS } from "./parts.js";
 import { ChatHeader, type GuueyChatHeader } from "./chat-header.js";
+import { chatCtaIdFor, createChatAnalytics, type ChatAnalytics, type ChatAnalyticsSetting } from "../analytics.js";
 
 /**
  * The kit-tier theme announce (guuey#302): default `hostContext.theme`
@@ -223,6 +224,14 @@ export interface GuueyChatHandle {
    * unreachable from a rotated identity.
    */
   clearConversation(): void;
+  /**
+   * Report a visitor interaction with a host-owned input that feeds this
+   * chat (a page's own ask bar under `composer={false}`): emits
+   * `helper_opened` once per mount under the {@link GuueyChatProps.analytics}
+   * opt-in, and does nothing otherwise. The kit composer's own focus and the
+   * first visitor turn report themselves.
+   */
+  markOpened(): void;
 }
 
 export interface GuueyChatProps {
@@ -427,6 +436,24 @@ export interface GuueyChatProps {
    */
   onThread?: (threadId: string) => void;
   /**
+   * Usage events for the host's own analytics (default off): `helper_opened`
+   * (the first visitor interaction per mount: composer focus,
+   * {@link GuueyChatHandle.markOpened}, or the first turn),
+   * `helper_message_sent` (each visitor turn as its 1-based number, never its
+   * text) and `helper_cta_clicked` (a click on a link the chat renders, as the
+   * link's `data-cta`, else its origin + path). Each carries `app_id`,
+   * `surface: "inline"` and `gui`; nothing emits without `appId`.
+   *
+   * `true` captures on the host page's own `window.posthog` when the page has
+   * one (the kit initialises nothing and stores nothing, so the page's consent
+   * setup governs the events); a function `(event, properties) => void`
+   * receives the same calls; `{ capture?, gguiEnabled? }` adds the app's
+   * generative-UI switch as its public card reports it (`false` stamps
+   * `gui: "off"`, anything else `"on"`). Links inside a card's own sandbox are
+   * not observable here and are not counted.
+   */
+  analytics?: ChatAnalyticsSetting;
+  /**
    * guuey#301's host-stage trio (all optional; absent = today's inline
    * behavior). `promotedViewKey` = the mount key the host's stage/canvas
    * currently shows (chips it in the transcript — with
@@ -515,9 +542,19 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     onActivity,
     onReady,
     onThread,
+    analytics: analyticsSetting,
     className,
     style,
   } = props;
+
+  // The usage events (see `GuueyChatProps.analytics`): ONE tracker for the
+  // mount, so the opened flag and the turn count survive every re-render; the
+  // app id and the setting are read live at emit time.
+  const analyticsReadRef = useRef({ appId, setting: analyticsSetting });
+  analyticsReadRef.current = { appId, setting: analyticsSetting };
+  const analyticsRef = useRef<ChatAnalytics | null>(null);
+  if (analyticsRef.current === null) analyticsRef.current = createChatAnalytics(() => analyticsReadRef.current);
+  const analytics = analyticsRef.current;
 
   // Identity stabilization (guuey#303 QA — the template's own chat-rail
   // shipped the failure): hosts pass inline literals and arrows, so prop
@@ -748,10 +785,11 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     const text = replyAfterListenRef.current;
     if (text === null) return;
     replyAfterListenRef.current = null;
+    analytics.messageSent();
     void invoke.send(text).catch(() => {
       // The hook surfaces the failure (`error` / R0 failed-send).
     });
-  }, [invoke.status, invoke]);
+  }, [invoke.status, invoke, analytics]);
   // guuey#605 — the connect-first gate. While an `authMode:'upfront'` OAuth
   // server is pending connection the RUNTIME refuses every turn before any
   // model call, so inviting a message here would only spend one to be told
@@ -893,11 +931,12 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     }
     // One source: the send carries exactly the entry the echo marked sent.
     const sent = tap !== null ? echoNow.markSent([tap.id]) : null;
+    analytics.messageSent();
     void live.invoke.send(text, tapSendOptions(sent)).catch(() => {
       // The hook owns failure surfacing, same as every send path.
     });
     return Promise.resolve({ delivered: true });
-  }, []);
+  }, [analytics]);
 
   // guuey#403: the turn-lifecycle edges. The busy TRANSITION is the one
   // truthful seam every send path crosses (composer, handle, doorbell,
@@ -926,9 +965,10 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       return;
     }
     const sent = next.taps.length > 0 ? echoRef.current.markSent(next.taps.map((t) => t.id)) : null;
+    analytics.messageSent();
     void live.invoke.send(next.text, tapSendOptions(sent)).catch(() => {});
     for (const waiter of next.waiters) waiter({ delivered: true });
-  }, [busy]);
+  }, [busy, analytics]);
 
   // guuey#522: the kit default for `ui/open-link` NEVER navigates
   // sight-unseen — the ask surfaces as a disclosure affordance (host +
@@ -964,10 +1004,11 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     // or blank -> the tap is a no-op, never a bypass. The typed draft is
     // left untouched (a chip send must not eat a half-typed message).
     if (!live.available || live.busy || text.trim() === "") return;
+    analytics.messageSent();
     void live.invoke.send(text).catch(() => {
       // Same contract as submit: the hook owns failure surfacing.
     });
-  }, []);
+  }, [analytics]);
   const defaultOnOpenLink = useCallback((url: string) => {
     setPendingLink(url);
   }, []);
@@ -1036,6 +1077,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         const trimmed = text.trim();
         // Exactly the Send button's gate — a handle send never bypasses it.
         if (!live.available || live.busy || trimmed === "") return false;
+        analytics.messageSent();
         void live.invoke.send(trimmed).catch(() => {
           // Same contract as submit: the hook owns failure surfacing.
         });
@@ -1104,8 +1146,11 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       // Same live-read discipline as `threadId`: the ref always holds the
       // CURRENT kit wiring (guuey#335 — the canvas-host door).
       viewSlotProps: (): ViewSlotProps => staticSlotPropsRef.current,
+      markOpened: (): void => {
+        analytics.opened();
+      },
     }),
-    [],
+    [analytics],
   );
 
   useImperativeHandle(ref, () => handle, [handle]);
@@ -1150,10 +1195,11 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       return;
     }
     setInput("");
+    analytics.messageSent();
     void invoke.send(text).catch(() => {
       // The hook surfaces the failure (`error` / R0 failed-send).
     });
-  }, [input, available, busy, waitingOnUser, authRequired, invoke]);
+  }, [input, available, busy, waitingOnUser, authRequired, invoke, analytics]);
 
   const handleRetry = useCallback(
     (item: UserMessageItem) => {
@@ -1226,6 +1272,16 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       // through the class names, which stay the light-DOM contract.
       part={PARTS.surface}
       style={surfaceStyle}
+      // `helper_cta_clicked`: every link this chat renders (the transcript's
+      // markdown and media links, the link-ask's Open, a header's own links) —
+      // one capture-phase listener, so no renderer needs to know.
+      onClickCapture={(e) => {
+        if (!(e.target instanceof Element)) return;
+        const anchor = e.target.closest("a[href]");
+        if (!(anchor instanceof HTMLAnchorElement)) return;
+        const cta = chatCtaIdFor(anchor);
+        if (cta !== null) analytics.ctaClicked(cta);
+      }}
     >
       {header !== undefined && <ChatHeader header={header} strings={strings} />}
       <Transcript
@@ -1344,6 +1400,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
           rows={1}
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onFocus={() => analytics.opened()}
           onKeyDown={(e) => {
             // `isComposing` guards IME input: an Enter that commits a
             // candidate must not also send the message.
