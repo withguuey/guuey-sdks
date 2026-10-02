@@ -4,6 +4,7 @@
  * the suite in `@guuey/threads/testing` to prove yours), including the
  * two conditional-write guards and the null-preview no-touch semantics.
  */
+import { previewDigest } from "./seal.js";
 import type {
   ThreadMessageRow,
   ThreadPersistencePort,
@@ -35,7 +36,13 @@ export class InMemoryThreadPersistence implements ThreadPersistencePort {
     t.updatedAt = atIso;
     // null = allocate the seq WITHOUT touching the preview (card rows,
     // text-less agent turns) — mirror of the hosted binding's branch.
-    if (preview !== null) t.lastMessagePreview = preview;
+    if (preview !== null) {
+      t.lastMessagePreview = preview;
+      // The preview's source seq and digest ride the same update, so a reader
+      // can tell whether the message the preview came from is sealed (`seal.ts`).
+      t.lastMessagePreviewSeq = t.lastSeq;
+      t.lastMessagePreviewDigest = previewDigest(preview);
+    }
     return t.lastSeq;
   }
 

@@ -127,6 +127,34 @@ landed:
 The result's `refusedSnapshot` (`{ state?, memoryNumber, memorySize,
 notWritten }`) reports what was left out, as counts.
 
+## Sealed messages
+
+A thread row may carry `sealIntervals`: stretches of messages (`fromSeq` to
+`toSeq`, both inclusive; no `toSeq` = still open) that the app's operator may
+not read. A reader that shows conversation data to the operator checks them
+with the exported helpers, never by hand:
+
+```ts
+import { isSeqSealed, readableThreadPreview, readSealState } from "@guuey/threads";
+
+const seal = readSealState(row.sealIntervals); // absent = legacy, wholly readable
+if (isSeqSealed(seal, message.seq)) {
+  /* withhold this message */
+}
+const preview = readableThreadPreview(row); // '' when its source message is sealed
+```
+
+A seal record that is present but malformed reads as wholly sealed. Each
+preview records the seq it was taken from (`lastMessagePreviewSeq`) and a
+digest of its text (`lastMessagePreviewDigest`, `previewDigest(preview)`) in
+the same update. On a thread with any sealed part, a preview whose seq is
+missing, or whose digest is missing or does not match its text, is withheld. A
+binding that implements the port writes both with the preview.
+
+An event row (a hand-off, a report) leaves the preview as it was, like a card
+row: it is written from the whole conversation, so it never becomes the
+thread's preview.
+
 ## Support
 
 Questions and help: the guuey community on Discord — https://guuey.com/discord.

@@ -41,9 +41,38 @@ export interface ThreadRow {
   lastSeq: number;
   lastMessageAt: string;
   lastMessagePreview: string;
+  /**
+   * The seq of the message {@link lastMessagePreview} was taken from, written
+   * in the same atomic update. Optional: rows an older writer wrote carry
+   * none, and a reader treats that as "source unknown" (`readableThreadPreview`, `seal.ts`).
+   */
+  lastMessagePreviewSeq?: number;
+  /**
+   * `previewDigest(lastMessagePreview)` (`seal.ts`), written in the same update
+   * as the preview and its seq. It binds the seq to the text, so a preview an
+   * older writer replaced (leaving the previous seq) reads as "source unknown".
+   */
+  lastMessagePreviewDigest?: string;
+  /**
+   * The thread's seal intervals: the messages the app's operator may not
+   * read. Absent on every thread no seal was ever written for (a legacy,
+   * wholly readable thread). Read only through `readSealState` (`seal.ts`),
+   * never trusted as stored.
+   */
+  sealIntervals?: SealInterval[];
   threadMode: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * One sealed stretch of a thread: the messages from `fromSeq` to `toSeq`, both
+ * inclusive. No `toSeq` means the interval is still open, so it also covers
+ * every message written after `fromSeq`.
+ */
+export interface SealInterval {
+  fromSeq: number;
+  toSeq?: number;
 }
 
 /**

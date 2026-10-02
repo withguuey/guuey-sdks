@@ -20,6 +20,7 @@
 export type {
   HandoffEvent,
   ReportEvent,
+  SealInterval,
   StoredHistoryMessage,
   ThreadMessageEvent,
   ThreadMessageKind,
@@ -52,6 +53,16 @@ export {
   type EnsureThreadInput,
 } from "./store.js";
 export { InMemoryThreadPersistence } from "./in-memory.js";
+export {
+  hasSealedPart,
+  isSeqSealed,
+  previewDigest,
+  readableThreadPreview,
+  readSealState,
+  threadSealState,
+  type StoredPreviewSlice,
+  type ThreadSealState,
+} from "./seal.js";
 export {
   AGENT_ERROR_ROW_SUFFIX,
   classifyStoredRow,

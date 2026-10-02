@@ -361,7 +361,12 @@ export class ThreadStore {
     }
 
     const now = new Date().toISOString();
-    const preview = input.text ? input.text.slice(0, PREVIEW_MAX_LEN) : '';
+    // An event row (a hand-off, a report) is a record ABOUT the conversation,
+    // written from all of it (a model-written ask or summary), not a message in
+    // it: like a card row it leaves the prior preview standing (null), so the
+    // conversation list never shows a copy drawn from the whole thread.
+    const preview =
+      input.event !== undefined ? null : input.text ? input.text.slice(0, PREVIEW_MAX_LEN) : '';
     // guuey#2031: the store re-judges a row's tap labels; it never trusts its caller's check.
     const tapLabels = input.tapLabels !== undefined ? writeTapLabels(input.tapLabels) : undefined;
     const draft: ThreadMessageRow = {
