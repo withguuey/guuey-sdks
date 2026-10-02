@@ -4,7 +4,7 @@
  * from these). See the north-star design §1.
  *
  *   Router → Worker  (fd 0 / stdin):  ControlMessage  (invoke | shutdown)
- *   Worker → Router  (fd 3):          WorkerEvent      (text | done | error)
+ *   Worker → Router  (fd 3):          WorkerEvent      (text | done | error | native | hello | suspend)
  *   stdout (1) + stderr (2):          the builder's own logs — not the protocol.
  */
 
@@ -266,6 +266,65 @@ export interface Invoke {
    * ignores it: its model is not told, and may draw a second greeting.
    */
   firstImpressionShown?: FirstImpressionShown;
+  /**
+   * The Router's offer to store a pause for THIS turn, up to
+   * `maxEnvelopeBytes` of envelope. Present only when the Router can store one.
+   * A worker that honours it announces {@link HOST_SUSPEND_CAPABILITY} in this
+   * invoke's hello and may send one {@link SuspendEvent} before its terminal
+   * event. A worker emits `suspend` ONLY on an invoke that carried this field:
+   * an older Router has no `suspend` arm in its event parser and fails the turn
+   * on one. {@link createSuspendWriter} enforces that rule; it returns no
+   * writer without this field. An older worker ignores the field and never
+   * pauses.
+   */
+  suspend?: InvokeSuspendOffer;
+  /**
+   * Continue a paused run instead of starting a fresh one: the envelope the
+   * worker sent in its {@link SuspendEvent}, and one decision per pending ask.
+   * The Router sends it only to a worker whose hello announces
+   * {@link HOST_SUSPEND_CAPABILITY}, and refuses to continue a resume whose
+   * hello does not. An older worker ignores the field and runs `input` as an
+   * ordinary turn.
+   */
+  resume?: InvokeResume;
+}
+/**
+ * Capability (worker → Router, in the hello of the invoke it applies to): this
+ * worker honours {@link Invoke.suspend} and {@link Invoke.resume}. Announced
+ * only on an invoke that carried `suspend`, before the invoke's first native.
+ */
+export const HOST_SUSPEND_CAPABILITY = "host.suspend.v1";
+/**
+ * The largest envelope any worker may emit, measured in UTF-8 bytes on the
+ * envelope's JSON-string form (`JSON.stringify(envelope)`, quotes and escapes
+ * included). A Router's offer may only lower it.
+ */
+export const SUSPEND_ENVELOPE_MAX_BYTES = 2 * 1024 * 1024;
+/** Router → worker: "I can store a pause for this turn, up to this many bytes of envelope." */
+export interface InvokeSuspendOffer {
+  /** A positive integer; the effective cap is the smaller of this and {@link SUSPEND_ENVELOPE_MAX_BYTES}. */
+  maxEnvelopeBytes: number;
+}
+/** How a person decided one pending ask. */
+export type ResumeAnswerStatus = "resolved" | "declined";
+/**
+ * One decision on a pending ask. The worker maps it to its SDK's approve
+ * (`resolved`) or reject (`declined`). `askId` is the ask's AgJSON id;
+ * `toolCallId` is the call the framework paused on, as the Router stored it.
+ */
+export interface ResumeAnswer {
+  askId: string;
+  toolCallId: string;
+  status: ResumeAnswerStatus;
+}
+/** Router → worker: continue the paused run whose state is `envelope`, with these decisions. */
+export interface InvokeResume {
+  /** The opaque run state, exactly as the worker sent it in its {@link SuspendEvent}. */
+  envelope: string;
+  /** One decision per pending ask; never empty. */
+  answers: ResumeAnswer[];
+  /** The sequence number of the user message the paused turn answered, when the Router knows it. */
+  pausedUserSeq?: number;
 }
 /** One tool withheld from a turn's catalog: `server` is the MCP server's key, `tool` the tool's name on that server. */
 export interface WithheldTool {
@@ -351,4 +410,28 @@ export interface WorkerHelloEvent {
  * because an opted-in facet holds every successful turn open until the sentinel arrives.
  */
 export const ADK_HOST_COMPLETION_CAPABILITY = "adk.host-completion";
-export type WorkerEvent = TextEvent | DoneEvent | ErrorEvent | NativeEvent | WorkerHelloEvent;
+
+/**
+ * The worker paused on pending asks: `envelope` is its serialized run state and
+ * `askIds` the AgJSON ids of the asks it waits on. Router-plane only, like
+ * `hello`: never relayed to a client, never fed to a normalizer, never
+ * persisted. Rules:
+ *
+ * - Sent ONLY on an invoke that carried {@link Invoke.suspend}, from a worker
+ *   that announced {@link HOST_SUSPEND_CAPABILITY} in that invoke's hello. An
+ *   older Router fails the turn on this event, so the offer is the gate
+ *   ({@link createSuspendWriter} returns no writer without it).
+ * - Sent after the invoke's natives and BEFORE its terminal event. `done` keeps
+ *   `stopReason: "end_turn"`.
+ * - `askIds` are the ids the framework's AgJSON facet minted for the pending
+ *   approvals; the Router accepts the pause only when they equal the paused
+ *   turn's asks exactly.
+ * - The envelope's JSON-string form is at most the offer's
+ *   `maxEnvelopeBytes` and {@link SUSPEND_ENVELOPE_MAX_BYTES}.
+ */
+export interface SuspendEvent {
+  readonly type: "suspend";
+  readonly envelope: string;
+  readonly askIds: readonly string[];
+}
+export type WorkerEvent = TextEvent | DoneEvent | ErrorEvent | NativeEvent | WorkerHelloEvent | SuspendEvent;

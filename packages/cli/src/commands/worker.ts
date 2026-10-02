@@ -6,6 +6,7 @@
  */
 import { spawn } from "node:child_process";
 import { Readable } from "node:stream";
+import { StringDecoder } from "node:string_decoder";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseEvent, isDone, type WorkerEvent } from "@guuey/worker";
@@ -62,9 +63,12 @@ export async function verifyWorker(opts: {
   child.stdin.write(JSON.stringify(PROBE_INVOKE) + "\n");
 
   try {
+    // One UTF-8 decoder for the whole stream: a character split across two
+    // chunks arrives whole instead of as two U+FFFD.
+    const decoder = new StringDecoder("utf8");
     let buf = "";
     for await (const chunk of fd3) {
-      buf += typeof chunk === "string" ? chunk : (chunk as Buffer).toString("utf8");
+      buf += typeof chunk === "string" ? chunk : decoder.write(chunk as Buffer);
       let nl = buf.indexOf("\n");
       while (nl !== -1) {
         const line = buf.slice(0, nl).trim();

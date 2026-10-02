@@ -3,7 +3,7 @@
  * and shutdown handling exactly, but the per-invoke body emits opaque
  * framework-native events (`emit.native`) alongside text, instead of driving a
  * `Turn`. Lets a template worker emit `hello` → `native`* → `done` per invoke,
- * like `@guuey/host` does.
+ * like `@guuey/host` does (and, when it pauses, `suspend` before `done`).
  */
 import { createWriteStream, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -13,12 +13,22 @@ const require = createRequire(import.meta.url);
 import { createEmitter, type Emitter } from "./emit.js";
 import { lines } from "./lines.js";
 import { isInvoke, isShutdown, parseControl } from "./parse.js";
-import type { Invoke, JsonValue } from "./protocol.js";
+import { HOST_SUSPEND_CAPABILITY, type Invoke, type JsonValue } from "./protocol.js";
 import type { ServeOptions } from "./serve.js";
+import { createSuspendWriter, type SuspendWriteResult } from "./suspend-writer.js";
 
 export interface NativeEmit {
   native(event: JsonValue): void;
   text(chunk: string): void;
+  /**
+   * Pause the run: send its serialized state and the ids of the asks it waits
+   * on, after the natives and before returning. `not_offered` when this
+   * invoke cannot pause (the host did not opt in with
+   * {@link NativeServeInfo.suspend}, or the Router made no offer): nothing was
+   * written, and the turn should end as it does today. `over_cap`: the
+   * envelope is larger than the offer allows, and nothing was written.
+   */
+  suspend(envelope: string, askIds: readonly string[]): SuspendWriteResult | "not_offered";
 }
 export type NativeHandler = (
   invoke: Invoke,
@@ -32,6 +42,14 @@ export interface NativeServeInfo {
    *  package.json — works for unbundled workers with a real node_modules;
    *  degrades to null inside a self-contained bundle (nothing to resolve). */
   sdkVersion?: string | null;
+  /**
+   * This worker can pause and resume a run ({@link Invoke.suspend} /
+   * {@link Invoke.resume}). On an invoke that carries the Router's offer, the
+   * hello then announces {@link HOST_SUSPEND_CAPABILITY} and
+   * {@link NativeEmit.suspend} writes. Without this flag, or on an invoke with
+   * no offer, the fd-3 stream is exactly what it is without the flag.
+   */
+  suspend?: true;
 }
 
 /**
@@ -87,6 +105,10 @@ export async function serveNativeOn(
     if (isShutdown(msg)) break;
     if (!isInvoke(msg)) continue;
 
+    // The writer exists only when the host opted in AND the invoke carried the
+    // offer (createSuspendWriter's own gate); the capability rides the hello
+    // exactly when it does.
+    const suspendWriter = info.suspend === true ? createSuspendWriter(opts.output, msg) : undefined;
     emitter.hello(
       info.framework,
       info.sdkName ?? null,
@@ -95,11 +117,14 @@ export async function serveNativeOn(
         : info.sdkName
           ? resolveInstalledVersion(info.sdkName)
           : null,
+      suspendWriter !== undefined ? [HOST_SUSPEND_CAPABILITY] : undefined,
     );
     try {
       const scoped: NativeEmit = {
         native: (event) => emitter.native(info.framework, event),
         text: (chunk) => emitter.text(chunk),
+        suspend: (envelope, askIds) =>
+          suspendWriter !== undefined ? suspendWriter.suspend(envelope, askIds) : "not_offered",
       };
       const result = await handler(msg, scoped);
       emitter.done(typeof result === "string" ? result : "", "end_turn");

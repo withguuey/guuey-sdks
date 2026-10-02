@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseControl, isInvoke, isShutdown } from "./parse.js";
-import { parseEvent, isText, isDone, isError, isHello } from "./parse.js";
+import { parseEvent, isText, isDone, isError, isHello, isSuspend } from "./parse.js";
 
 const INVOKE = JSON.stringify({
   type: "invoke",
@@ -603,5 +603,104 @@ describe("mcpAvailability (guuey#901) — each OAuth server's availability this 
       if (!isInvoke(msg)) throw new Error("expected invoke");
       expect("mcpAvailability" in msg).toBe(false);
     }
+  });
+});
+
+describe("suspend / resume — the pause offer and the resume on the invoke", () => {
+  const base = {
+    type: "invoke",
+    input: "Approved: send_email",
+    identity: { userId: "u1", authMode: "authenticated" },
+    fs: { app: "/app", home: "/home", session: "/session" },
+    history: [],
+  };
+  const answer = { askId: "approval_call_1", toolCallId: "call_1", status: "resolved" };
+  const goodResume = { envelope: '{"state":"x"}', answers: [answer], pausedUserSeq: 4 };
+  const invokeOf = (extra: object) => {
+    const msg = parseControl(JSON.stringify({ ...base, ...extra }));
+    if (!isInvoke(msg)) throw new Error("expected invoke");
+    return msg;
+  };
+
+  it("round-trips a well-formed offer and resume onto the typed Invoke", () => {
+    const msg = invokeOf({ suspend: { maxEnvelopeBytes: 1024 }, resume: goodResume });
+    expect(msg.suspend).toEqual({ maxEnvelopeBytes: 1024 });
+    expect(msg.resume).toEqual(goodResume);
+  });
+
+  it("keeps a resume without pausedUserSeq, and carries only the known fields", () => {
+    const msg = invokeOf({
+      suspend: { maxEnvelopeBytes: 8, extra: true },
+      resume: { envelope: "e", answers: [{ ...answer, status: "declined", note: "x" }], other: 1 },
+    });
+    expect(msg.suspend).toEqual({ maxEnvelopeBytes: 8 });
+    expect(msg.resume).toEqual({
+      envelope: "e",
+      answers: [{ askId: "approval_call_1", toolCallId: "call_1", status: "declined" }],
+    });
+  });
+
+  it("omits both fields when absent: an ordinary turn", () => {
+    const msg = invokeOf({});
+    expect("suspend" in msg).toBe(false);
+    expect("resume" in msg).toBe(false);
+  });
+
+  it("drops a malformed offer, never throwing", () => {
+    for (const bad of [null, "yes", 5, [], {}, { maxEnvelopeBytes: 0 }, { maxEnvelopeBytes: -1 },
+      { maxEnvelopeBytes: 1.5 }, { maxEnvelopeBytes: "1024" }]) {
+      const msg = invokeOf({ suspend: bad });
+      expect("suspend" in msg).toBe(false);
+      expect(msg.input).toBe("Approved: send_email");
+    }
+  });
+
+  it("drops the WHOLE resume when any part is malformed, never throwing", () => {
+    const bads = [
+      null,
+      "resume",
+      { ...goodResume, envelope: 7 },
+      { ...goodResume, envelope: "" },
+      { ...goodResume, answers: [] },
+      { ...goodResume, answers: "all" },
+      { ...goodResume, answers: [answer, { ...answer, status: "approved" }] },
+      { ...goodResume, answers: [answer, { ...answer, askId: "" }] },
+      { ...goodResume, answers: [answer, { askId: "a", status: "resolved" }] },
+      { ...goodResume, answers: [answer, null] },
+      { ...goodResume, pausedUserSeq: -1 },
+      { ...goodResume, pausedUserSeq: 1.5 },
+      { ...goodResume, pausedUserSeq: "4" },
+    ];
+    for (const bad of bads) {
+      const msg = invokeOf({ suspend: { maxEnvelopeBytes: 64 }, resume: bad });
+      expect("resume" in msg).toBe(false);
+      // A bad resume never takes a good offer with it.
+      expect(msg.suspend).toEqual({ maxEnvelopeBytes: 64 });
+    }
+  });
+});
+
+describe("parseEvent — suspend (Router-plane, like hello)", () => {
+  it("round-trips a suspend event", () => {
+    const ev = parseEvent(
+      JSON.stringify({ type: "suspend", envelope: '{"s":1}', askIds: ["approval_a", "approval_b"] }),
+    );
+    expect(isSuspend(ev)).toBe(true);
+    expect(ev).toEqual({ type: "suspend", envelope: '{"s":1}', askIds: ["approval_a", "approval_b"] });
+  });
+
+  it("throws on a malformed suspend, like any malformed line", () => {
+    expect(() => parseEvent(JSON.stringify({ type: "suspend", askIds: [] }))).toThrow(
+      /suspend event missing string `envelope`/,
+    );
+    expect(() => parseEvent(JSON.stringify({ type: "suspend", envelope: 3, askIds: [] }))).toThrow(
+      /suspend event missing string `envelope`/,
+    );
+    expect(() => parseEvent(JSON.stringify({ type: "suspend", envelope: "e" }))).toThrow(
+      /suspend event `askIds` must be a list of strings/,
+    );
+    expect(() => parseEvent(JSON.stringify({ type: "suspend", envelope: "e", askIds: ["a", 1] }))).toThrow(
+      /suspend event `askIds` must be a list of strings/,
+    );
   });
 });

@@ -36,6 +36,7 @@ import {
   type Invoke,
 } from "@guuey/worker";
 import type { GuueyAgent } from "@guuey/config";
+import { lines } from "./stdin-lines.js";
 
 /** The snapshot shape the host boots from (`framework` selects the runner). */
 export type HostSnapshot = GuueyAgent & { framework?: string };
@@ -118,23 +119,6 @@ export async function loadRunner(framework: string): Promise<FrameworkRunner> {
     }
     throw err;
   }
-}
-
-/** Async-iterate NDJSON lines off stdin. */
-async function* lines(input: NodeJS.ReadableStream): AsyncIterable<string> {
-  let buf = "";
-  for await (const chunk of input) {
-    buf += typeof chunk === "string" ? chunk : (chunk as Buffer).toString("utf8");
-    let nl = buf.indexOf("\n");
-    while (nl !== -1) {
-      const line = buf.slice(0, nl).trim();
-      buf = buf.slice(nl + 1);
-      if (line.length > 0) yield line;
-      nl = buf.indexOf("\n");
-    }
-  }
-  const tail = buf.trim();
-  if (tail.length > 0) yield tail;
 }
 
 /** The worker loop: per `invoke` run the framework runner; on `shutdown`/EOF exit. */

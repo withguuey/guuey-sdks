@@ -26,6 +26,10 @@ import type {
   McpAvailabilityState,
   WithheldTool,
   FirstImpressionShown,
+  InvokeResume,
+  InvokeSuspendOffer,
+  ResumeAnswer,
+  SuspendEvent,
 } from "./protocol.js";
 
 export function isInvoke(m: ControlMessage): m is Invoke {
@@ -159,6 +163,55 @@ function parseMcpAvailability(v: JsonValue | undefined): McpAvailability[] | und
   return out.length > 0 ? out : undefined;
 }
 
+/**
+ * The Router's pause offer: kept only when `maxEnvelopeBytes` is a positive
+ * integer, reduced to that one field. Anything else is dropped (never thrown),
+ * so a malformed offer reads as "no offer" and the worker never pauses.
+ */
+function parseSuspendOffer(v: JsonValue | undefined): InvokeSuspendOffer | undefined {
+  if (!isObject(v)) return undefined;
+  const max = v.maxEnvelopeBytes;
+  if (typeof max !== "number" || !Number.isInteger(max) || max <= 0) return undefined;
+  return { maxEnvelopeBytes: max };
+}
+
+function parseResumeAnswer(v: JsonValue): ResumeAnswer | undefined {
+  if (!isObject(v)) return undefined;
+  const { askId, toolCallId, status } = v;
+  if (typeof askId !== "string" || askId.length === 0) return undefined;
+  if (typeof toolCallId !== "string" || toolCallId.length === 0) return undefined;
+  if (status !== "resolved" && status !== "declined") return undefined;
+  return { askId, toolCallId, status };
+}
+
+/**
+ * The Router's resume: kept only when EVERY part is well formed (a non-empty
+ * string `envelope`, a non-empty `answers` list whose every entry has a
+ * non-empty `askId` and `toolCallId` and a known `status`, and, when present, a
+ * non-negative integer `pausedUserSeq`). Anything else drops the whole value,
+ * never part of it: a resume missing one decision must not continue the run.
+ * Never throws, so a malformed resume reads as an ordinary turn.
+ */
+function parseResume(v: JsonValue | undefined): InvokeResume | undefined {
+  if (!isObject(v)) return undefined;
+  const { envelope, answers, pausedUserSeq } = v;
+  if (typeof envelope !== "string" || envelope.length === 0) return undefined;
+  if (!Array.isArray(answers) || answers.length === 0) return undefined;
+  const parsed: ResumeAnswer[] = [];
+  for (const entry of answers) {
+    const answer = parseResumeAnswer(entry);
+    if (answer === undefined) return undefined;
+    parsed.push(answer);
+  }
+  if (pausedUserSeq !== undefined) {
+    if (typeof pausedUserSeq !== "number" || !Number.isInteger(pausedUserSeq) || pausedUserSeq < 0) {
+      return undefined;
+    }
+    return { envelope, answers: parsed, pausedUserSeq };
+  }
+  return { envelope, answers: parsed };
+}
+
 export function parseControl(line: string): ControlMessage {
   let raw: JsonValue;
   try {
@@ -178,6 +231,8 @@ export function parseControl(line: string): ControlMessage {
       const firstImpressionShown = parseFirstImpressionShown(raw.firstImpressionShown);
       const firstImpression = parseFirstImpression(raw.firstImpression);
       const mcpAvailability = parseMcpAvailability(raw.mcpAvailability);
+      const suspend = parseSuspendOffer(raw.suspend);
+      const resume = parseResume(raw.resume);
       return {
         type: "invoke",
         input: raw.input,
@@ -236,6 +291,11 @@ export function parseControl(line: string): ControlMessage {
         // The welcome card the Router already drew: kept only when every field
         // is well-formed, so a malformed one reads as "no card was drawn".
         ...(firstImpressionShown ? { firstImpressionShown } : {}),
+        // The pause offer and the resume: each kept only when well formed,
+        // otherwise absent (never thrown), so a malformed one reads as an
+        // ordinary turn that cannot pause.
+        ...(suspend ? { suspend } : {}),
+        ...(resume ? { resume } : {}),
       };
     }
     case "shutdown":
@@ -259,6 +319,9 @@ export function isNative(e: WorkerEvent): e is NativeEvent {
 }
 export function isHello(e: WorkerEvent): e is WorkerHelloEvent {
   return e.type === "hello";
+}
+export function isSuspend(e: WorkerEvent): e is SuspendEvent {
+  return e.type === "suspend";
 }
 
 /**
@@ -317,6 +380,16 @@ export function parseEvent(line: string): WorkerEvent {
         sdkVersion,
         ...(capabilities !== undefined && capabilities.length > 0 ? { capabilities } : {}),
       };
+    }
+    case "suspend": {
+      if (typeof raw.envelope !== "string") {
+        throw new Error("suspend event missing string `envelope`");
+      }
+      const ids = raw.askIds;
+      if (!Array.isArray(ids) || !ids.every((id): id is string => typeof id === "string")) {
+        throw new Error("suspend event `askIds` must be a list of strings");
+      }
+      return { type: "suspend", envelope: raw.envelope, askIds: ids };
     }
     default:
       throw new Error(`unknown event type: ${String(raw.type)}`);

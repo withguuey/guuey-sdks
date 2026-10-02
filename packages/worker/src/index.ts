@@ -5,6 +5,8 @@
 export {
   PROTOCOL_VERSION,
   ADK_HOST_COMPLETION_CAPABILITY,
+  HOST_SUSPEND_CAPABILITY,
+  SUSPEND_ENVELOPE_MAX_BYTES,
   type ProtocolVersion,
   type JsonValue,
   type AuthMode,
@@ -20,6 +22,10 @@ export {
   type McpAvailabilityState,
   type StopReason,
   type Invoke,
+  type InvokeSuspendOffer,
+  type InvokeResume,
+  type ResumeAnswer,
+  type ResumeAnswerStatus,
   type Shutdown,
   type ControlMessage,
   type TextEvent,
@@ -27,6 +33,7 @@ export {
   type ErrorEvent,
   type NativeEvent,
   type WorkerHelloEvent,
+  type SuspendEvent,
   type WorkerEvent,
 } from "./protocol.js";
 export {
@@ -39,8 +46,10 @@ export {
   isError,
   isNative,
   isHello,
+  isSuspend,
 } from "./parse.js";
 export { createEmitter, type Emitter, type WriteSink } from "./emit.js";
+export { createSuspendWriter, type SuspendWriter, type SuspendWriteResult } from "./suspend-writer.js";
 export { listCredentials, type CredentialFile } from "./creds.js";
 export { serve, serveOn, type ServeOptions } from "./serve.js";
 export { Turn, type WorkerHandler } from "./turn.js";

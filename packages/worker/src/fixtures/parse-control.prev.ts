@@ -1,0 +1,270 @@
+/**
+ * FROZEN test fixture: `parseControl` exactly as it stood before the invoke
+ * carried `suspend` / `resume` (@guuey/worker 0.31.x). It stands in for an
+ * older worker reading a newer Router's invoke (the N−1 direction), so do not
+ * edit it to follow `../parse.ts`; a later protocol change gets a new frozen
+ * copy beside this one. Only the imports are adjusted to this directory, and
+ * the helpers it needs are kept with it.
+ */
+import type {
+  AuthMode,
+  ControlMessage,
+  Fs,
+  HistoryMessage,
+  Identity,
+  JsonValue,
+  PriorMemoryRecord,
+  ProfileSection,
+  FirstImpressionPush,
+  McpAvailability,
+  McpAvailabilityState,
+  WithheldTool,
+  FirstImpressionShown,
+} from "../protocol.js";
+
+function isObject(v: unknown): v is Record<string, JsonValue> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function parseIdentity(v: JsonValue | undefined): Identity {
+  if (!isObject(v) || typeof v.userId !== "string") {
+    throw new Error("invoke.identity missing string `userId`");
+  }
+  const authMode: AuthMode = v.authMode === "authenticated" ? "authenticated" : "anonymous";
+  return { userId: v.userId, authMode };
+}
+
+function parseFs(v: JsonValue | undefined): Fs {
+  if (
+    !isObject(v) ||
+    typeof v.app !== "string" ||
+    typeof v.home !== "string" ||
+    typeof v.session !== "string"
+  ) {
+    throw new Error("invoke.fs missing string `app`/`home`/`session`");
+  }
+  return { app: v.app, home: v.home, session: v.session };
+}
+
+function parseHistory(v: JsonValue | undefined): HistoryMessage[] {
+  if (v === undefined) return [];
+  if (!Array.isArray(v)) throw new Error("invoke.history must be an array");
+  return v.map((m) => {
+    if (!isObject(m) || typeof m.text !== "string") {
+      throw new Error("invoke.history entry missing string `text`");
+    }
+    return { role: m.role === "agent" ? "agent" : "user", text: m.text };
+  });
+}
+
+/**
+ * Parse the optional `priorMemory` push (§1.4). Lenient by design — a malformed
+ * entry (no `value`, or a non-object) is DROPPED rather than throwing, so a
+ * stray memory record never fails an otherwise-valid turn. Returns `undefined`
+ * when absent or when no entry survives (so the field stays off the Invoke).
+ */
+function parsePriorMemory(v: JsonValue | undefined): PriorMemoryRecord[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: PriorMemoryRecord[] = [];
+  for (const entry of v) {
+    if (isObject(entry) && "value" in entry) {
+      out.push({
+        value: entry.value,
+        ...(typeof entry.key === "string" ? { key: entry.key } : {}),
+      });
+    }
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+/**
+ * Parse the optional `profileSections` push (cross-app-profile T7). Lenient like
+ * {@link parsePriorMemory}: a non-conforming entry (not an object, or missing a
+ * string `app`/`content`) is DROPPED, never throwing. Returns `undefined` when
+ * absent or when no entry survives (so the field stays off the Invoke).
+ */
+/** Parse the optional `firstImpression` push (guuey#1183): the identity fields
+ *  (+ `variance` when a non-empty object, guuey#1256) or nothing. */
+function parseFirstImpression(v: JsonValue | undefined): FirstImpressionPush | undefined {
+  if (!isObject(v)) return undefined;
+  if (typeof v.chipKey !== "string" || v.chipKey === "") return undefined;
+  if (typeof v.intent !== "string" || v.intent === "") return undefined;
+  if (!isObject(v.contract)) return undefined;
+  // guuey#1256: carry a non-empty `variance` through so the host can emit
+  // `blueprintDraft.variance` and ggui's exact `(contract, variance)` key
+  // reaches the variance-named binding. An empty/absent variance collapses to
+  // ggui's default variant → dropped so the field stays off the args.
+  // Forwarded verbatim (ggui validates the strict shape at its wire), parallel
+  // to `contract`; an unknown top-level key is ignored (N-1 tolerance, #1213).
+  const variance = isObject(v.variance) && Object.keys(v.variance).length > 0 ? v.variance : undefined;
+  return {
+    chipKey: v.chipKey,
+    intent: v.intent,
+    contract: v.contract,
+    ...(typeof v.blueprintId === "string" && v.blueprintId !== "" ? { blueprintId: v.blueprintId } : {}),
+    ...(variance !== undefined ? { variance } : {}),
+  };
+}
+
+function parseProfileSections(v: JsonValue | undefined): ProfileSection[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: ProfileSection[] = [];
+  for (const entry of v) {
+    if (isObject(entry) && typeof entry.app === "string" && typeof entry.content === "string") {
+      out.push({ app: entry.app, content: entry.content });
+    }
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+const MCP_AVAILABILITY_STATES: ReadonlySet<string> = new Set([
+  "connected",
+  "needs_authorization",
+  "denied",
+  "unavailable",
+]);
+
+function isMcpAvailabilityState(v: unknown): v is McpAvailabilityState {
+  return typeof v === "string" && MCP_AVAILABILITY_STATES.has(v);
+}
+
+/**
+ * guuey#901 — `mcpAvailability`: an array of `{ server, state }`; a malformed
+ * entry (no string server, out-of-enum state) is DROPPED, not coerced, and an
+ * absent / non-array / empty field is `undefined` so it never lands on the
+ * typed Invoke as an empty list the renderers would have to re-gate.
+ */
+function parseMcpAvailability(v: JsonValue | undefined): McpAvailability[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: McpAvailability[] = [];
+  for (const entry of v) {
+    if (!isObject(entry)) continue;
+    if (typeof entry.server !== "string" || entry.server.length === 0) continue;
+    if (!isMcpAvailabilityState(entry.state)) continue;
+    out.push({ server: entry.server, state: entry.state });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+export function parseControl(line: string): ControlMessage {
+  let raw: JsonValue;
+  try {
+    raw = JSON.parse(line) as JsonValue;
+  } catch {
+    throw new Error(`non-JSON control line: ${line.slice(0, 200)}`);
+  }
+  if (!isObject(raw)) {
+    throw new Error(`control line is not an object: ${line.slice(0, 200)}`);
+  }
+  switch (raw.type) {
+    case "invoke": {
+      if (typeof raw.input !== "string") throw new Error("invoke missing string `input`");
+      const priorMemory = parsePriorMemory(raw.priorMemory);
+      const profileSections = parseProfileSections(raw.profileSections);
+      const withheldTools = parseWithheldTools(raw.withheldTools);
+      const firstImpressionShown = parseFirstImpressionShown(raw.firstImpressionShown);
+      const firstImpression = parseFirstImpression(raw.firstImpression);
+      const mcpAvailability = parseMcpAvailability(raw.mcpAvailability);
+      return {
+        type: "invoke",
+        input: raw.input,
+        identity: parseIdentity(raw.identity),
+        fs: parseFs(raw.fs),
+        // guuey#234: the "fs names REAL GuueyFS layers" signal — the host's
+        // built-in tool gate. Omitted unless a real boolean so it never lands
+        // as `undefined` (and a missing field reads as NOT bound, fail-closed).
+        ...(typeof raw.fsBound === "boolean" ? { fsBound: raw.fsBound } : {}),
+        history: parseHistory(raw.history),
+        // §1.4 push-by-value context — additive, both optional. `priorState` uses
+        // a `!== undefined` gate (not truthiness) so a falsy blob (null/0/"") is
+        // preserved; `priorMemory` is omitted when empty/absent.
+        ...(priorMemory ? { priorMemory } : {}),
+        ...(raw.priorState !== undefined ? { priorState: raw.priorState } : {}),
+        // memory-mcp prompted memory (spec §4) — DISTINCT from `priorMemory`
+        // above (see the `Invoke.userMemory` doc). Omitted when absent/non-string
+        // so it never lands on the typed Invoke as `undefined`.
+        ...(typeof raw.userMemory === "string" ? { userMemory: raw.userMemory } : {}),
+        // memory-mcp T5: the memory-child attachment signal — gates the SAVE
+        // instruction (all three frameworks) independent of `userMemory`.
+        // Omitted unless a real boolean so it never lands as `undefined`.
+        ...(typeof raw.memoryAttached === "boolean" ? { memoryAttached: raw.memoryAttached } : {}),
+        // cross-app-profile T7: the resolved profile access + recall sections.
+        // `profileAccess` is an explicit enum allowlist (an out-of-enum string —
+        // e.g. `'write'` — is dropped, not coerced), mirroring the fail-closed
+        // mint-claim check; `profileSections` drops malformed entries. Both
+        // omitted when absent so they never land as `undefined`.
+        ...(raw.profileAccess === "read" || raw.profileAccess === "read-write"
+          ? { profileAccess: raw.profileAccess }
+          : {}),
+        ...(profileSections ? { profileSections } : {}),
+        ...(firstImpression ? { firstImpression } : {}),
+        // guuey#901: the OAuth servers' availability this turn — absent unless
+        // at least one well-formed entry arrived.
+        ...(mcpAvailability ? { mcpAvailability } : {}),
+        // guuey#456 B4: the app-resources count — only a POSITIVE integer
+        // lands (0 / negative / fractional / non-number is dropped, matching
+        // the Router's only-when->0 write), so "no resources" is always the
+        // ABSENT field, never a 0 the renderers would have to re-gate.
+        ...(typeof raw.resourceCount === "number" &&
+        Number.isInteger(raw.resourceCount) &&
+        raw.resourceCount > 0
+          ? { resourceCount: raw.resourceCount }
+          : {}),
+        // guuey#630: the ggui-rail-armed signal — gates the generative-UI
+        // section (all three frameworks). Omitted unless a real boolean so it
+        // never lands as `undefined` (and a missing field reads as NO rail,
+        // fail-closed: never promise a card the turn cannot draw).
+        ...(typeof raw.gguiAttached === "boolean" ? { gguiAttached: raw.gguiAttached } : {}),
+        // The per-turn withheld tools: only well-formed `{server, tool}` entries
+        // (both non-empty strings) land, carrying those two fields alone; the
+        // field is omitted unless at least one survives, so an older Router's
+        // invoke and a malformed one both read as the full catalog.
+        ...(withheldTools.length > 0 ? { withheldTools } : {}),
+        // The welcome card the Router already drew: kept only when every field
+        // is well-formed, so a malformed one reads as "no card was drawn".
+        ...(firstImpressionShown ? { firstImpressionShown } : {}),
+      };
+    }
+    case "shutdown":
+      return { type: "shutdown" };
+    default:
+      throw new Error(`unknown control message type: ${String(raw.type)}`);
+  }
+}
+
+/**
+ * An invoke's `firstImpressionShown`, reduced to its three fields: a non-empty
+ * `heading`, a string `message`, and `options` as an array of strings. Anything
+ * else (a missing field, a wrong type, a non-string option) drops the whole
+ * value, never part of it: the section must describe the card exactly or not
+ * at all.
+ */
+function parseFirstImpressionShown(raw: unknown): FirstImpressionShown | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const heading: unknown = Reflect.get(raw, "heading");
+  const message: unknown = Reflect.get(raw, "message");
+  const options: unknown = Reflect.get(raw, "options");
+  if (typeof heading !== "string" || heading.length === 0 || typeof message !== "string") return undefined;
+  if (!Array.isArray(options)) return undefined;
+  const labels: string[] = [];
+  for (const option of options) {
+    if (typeof option !== "string") return undefined;
+    labels.push(option);
+  }
+  return { heading, message, options: labels };
+}
+
+/** The well-formed entries of an invoke's `withheldTools`, each reduced to `{server, tool}`; anything else is dropped. */
+function parseWithheldTools(raw: unknown): WithheldTool[] {
+  if (!Array.isArray(raw)) return [];
+  const out: WithheldTool[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const server: unknown = Reflect.get(entry, "server");
+    const tool: unknown = Reflect.get(entry, "tool");
+    if (typeof server === "string" && server.length > 0 && typeof tool === "string" && tool.length > 0) {
+      out.push({ server, tool });
+    }
+  }
+  return out;
+}
