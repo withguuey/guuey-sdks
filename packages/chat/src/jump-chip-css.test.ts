@@ -34,11 +34,24 @@ describe("the jump chip (guuey#2121)", () => {
     }
   });
 
-  it("sits on the seam, centred, never in the transcript's bottom-right corner", () => {
+  it("never sits in the transcript's bottom-right corner; by default it is centred fully inside", () => {
     const base = jumpBlocks()[0] ?? "";
     expect(base).toMatch(/left:\s*50%/);
-    expect(base).toMatch(/bottom:\s*0/);
-    expect(base).toMatch(/transform:\s*translate\(-50%,\s*50%\)/);
+    expect(base).toMatch(/bottom:\s*8px/);
+    expect(base).toMatch(/transform:\s*translateX\(-50%\)/);
     expect(base).not.toMatch(/inset-inline-end/);
+  });
+
+  // cto's read: a composer-less host (guuey.com's home rep, the inline embed) makes the
+  // surface its own clipping scroll box, so the seam placement applies only where a
+  // composer follows: the kit's own, or a host that opts in with guuey-chat--seam.
+  it("hangs half over the seam only where a composer follows", () => {
+    const seam = /([^{}]+)\{([^{}]*)\}/g;
+    let found = "";
+    for (let m = seam.exec(css); m !== null; m = seam.exec(css)) {
+      if ((m[2] ?? "").includes("translate(-50%, 50%)")) found = m[1] ?? "";
+    }
+    const selectors = found.split(",").map((s) => s.trim());
+    expect(selectors).toEqual([".guuey-chat-surface:has(> .guuey-chat-composer) .guuey-chat-jump", ".guuey-chat--seam .guuey-chat-jump"]);
   });
 });

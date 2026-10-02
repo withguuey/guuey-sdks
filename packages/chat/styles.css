@@ -745,23 +745,30 @@
   cursor: pointer;
 }
 /*
- * "Jump to latest" (guuey#2121). It sits ON THE SEAM between the transcript and
- * whatever follows it (the composer strip): centred, half over each, so it never
- * covers a control at the transcript's bottom-right the way an absolute chip in
- * the corner did.
+ * "Jump to latest" (guuey#2121). Never absolutely in the transcript's corner over
+ * content (it covered a drawn card's primary button there), and never with a label
+ * a theme can erase.
  *
- * Its label colour is derived to contrast with its own fill, never a theme token:
- * a theme may set the canvas transparent (a guuey.com home rep does), and a label
- * painted in the canvas colour then vanished into a solid ink pill. The fill is
- * the theme's ink; the label is black or white by the fill's own lightness where
- * the browser derives colours, and by the transcript's mode where it does not.
+ * Placement. By default it sits fully INSIDE the transcript, centred 8px above its
+ * bottom edge: a composer-less host (`composer={false}`, a bare inline embed) may
+ * make the kit's surface its own clipping scroll box, and anything hanging below
+ * the edge would be clipped and grow a second scroll. Where a composer FOLLOWS the
+ * transcript it sits ON THE SEAM instead, centred, half over each: the kit's own
+ * composer (detected), or a host that renders its own composer right after the
+ * transcript and opts in with the `guuey-chat--seam` class on `<Transcript>`.
+ *
+ * Label. Derived to contrast with the chip's own fill (the theme's ink), never a
+ * theme token: a theme may set the canvas transparent (a guuey.com home rep does),
+ * and a label painted in the canvas colour vanished into a solid ink pill. Black or
+ * white by the fill's own lightness where the browser derives colours, and by the
+ * transcript's mode where it does not.
  */
 .guuey-chat-jump {
   position: absolute;
   z-index: 2;
   left: 50%;
-  bottom: 0;
-  transform: translate(-50%, 50%);
+  bottom: 8px;
+  transform: translateX(-50%);
   font: inherit;
   font-size: 0.85em;
   border: 0;
@@ -773,13 +780,18 @@
   white-space: nowrap;
   box-shadow: 0 2px 8px rgb(0 0 0 / 0.25);
 }
+.guuey-chat-surface:has(> .guuey-chat-composer) .guuey-chat-jump,
+.guuey-chat--seam .guuey-chat-jump {
+  bottom: 0;
+  transform: translate(-50%, 50%);
+}
 .guuey-chat[data-guuey-chat-mode="dark"] .guuey-chat-jump {
   color: #111;
 }
 @supports (color: hsl(from red h s l)) {
   .guuey-chat-jump,
   .guuey-chat[data-guuey-chat-mode="dark"] .guuey-chat-jump {
-    /* Lightness above 50 → black, at or below → white. */
+    /* Lightness 50 or above → black, below → white. */
     color: hsl(from var(--guuey-chat-ink, var(--_guuey-chat-ink)) h 0% clamp(0, (50 - l) * 1000, 100));
   }
 }
