@@ -63,11 +63,11 @@ export function sendableGuestSecret(secret: string | null | undefined): string |
 }
 
 /**
- * Is this request a cross-origin call from a browser document? Only then can
- * a fetch `TypeError` be a CORS refusal worth hinting about. `location` is
- * read via `typeof` so Node and React Native (where CORS does not exist)
- * answer false; an unparseable URL answers false rather than throwing from
- * inside error handling.
+ * Is this request a cross-origin call from a browser document? Only then is
+ * a fetch `TypeError` worth a hint: the browser reports every way such a call
+ * can fail with the same bare error. `location` is read via `typeof` so Node
+ * and React Native (where CORS does not exist) answer false; an unparseable
+ * URL answers false rather than throwing from inside error handling.
  */
 function isCrossOriginBrowserCall(url: string): boolean {
   if (typeof location === "undefined") return false;
@@ -76,6 +76,30 @@ function isCrossOriginBrowserCall(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * The sentence a cross-origin network `TypeError` gains — what the client can
+ * actually know, and no more (guuey#1976). The web platform reports a CORS
+ * refusal, a host that is not serving yet, DNS, offline and CSP failures with
+ * the SAME bare error, so this names the causes a builder meets, in the order
+ * they meet them, and diagnoses none:
+ *
+ *  - **not serving yet** — right after a deploy, the agent's address can fail
+ *    for a few minutes (a TLS failure at the edge, or a status answered
+ *    before the route exists, which carries no CORS headers). Every surface
+ *    can hit this one, so it is always said.
+ *  - **allowedDomains** — a browser embed whose page origin is missing from
+ *    the app's CORS allowlist. Said only when `allowedDomains` is true: a
+ *    surface whose origin the agent always admits (a page the platform
+ *    itself serves) can never fail this way, and naming the setting there
+ *    sends the reader after the wrong cause.
+ */
+function networkFailureHint(allowedDomains: boolean): string {
+  const reach = "couldn't reach the agent. A new deploy can take a few minutes to start serving";
+  return allowedDomains
+    ? `${reach}; for a browser embed, also check that this page's origin is in the app's allowedDomains.`
+    : `${reach}.`;
 }
 
 /**
@@ -99,12 +123,16 @@ function isCrossOriginBrowserCall(url: string): boolean {
  * Never two at once: a bearer wins over a guest secret, and a request that
  * carries either header does NOT also send cookie credentials.
  *
+ * `allowedDomainsHint` is {@link FetchStreamTransportOptions.allowedDomainsHint},
+ * resolved to its default by the caller.
+ *
  * Reads the body via `ReadableStream.getReader()` (browser).
  */
 async function* streamInvokeOnce(
   req: InvokeRequest,
-  accessToken?: string | null,
-  guestSecret?: string | null,
+  accessToken: string | null | undefined,
+  guestSecret: string | null | undefined,
+  allowedDomainsHint: boolean,
 ): AsyncGenerator<string> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -128,20 +156,19 @@ async function* streamInvokeOnce(
   try {
     resp = await fetch(req.url, init);
   } catch (err) {
-    // A network-level TypeError on a CROSS-ORIGIN invoke from a browser is,
-    // in practice, very often a missing allowedDomains entry — the CORS
-    // preflight failed and the web platform deliberately reports nothing
-    // more specific (guuey#186 Gap 2: the console.ggui.ai embed lost real
-    // time to an unexplained "Failed to fetch"). The error stays a
+    // A network-level TypeError on a CROSS-ORIGIN invoke from a browser
+    // carries nothing more specific than "Failed to fetch" — the web
+    // platform withholds the cause on purpose (guuey#186 Gap 2: an embed
+    // lost real time to the unexplained bare message). The error stays a
     // TypeError with the original as `cause`; the added sentence is a HINT,
-    // not a diagnosis — offline, DNS and CSP failures throw the same shape.
-    // Same-origin calls and non-browser runtimes (no `location`) cannot be
-    // CORS refusals, so they pass through untouched.
+    // not a diagnosis (see `networkFailureHint` for what it can and cannot
+    // say — a fresh deploy's not-yet-serving host once read here as a CORS
+    // misconfiguration, guuey#1976). Same-origin calls and non-browser
+    // runtimes (no `location`) pass through untouched.
     if (err instanceof TypeError && isCrossOriginBrowserCall(req.url)) {
-      throw new TypeError(
-        `${err.message} — if this is a browser embed, check the app's allowedDomains (the CORS allowlist must include this page's origin)`,
-        { cause: err },
-      );
+      throw new TypeError(`${err.message} — ${networkFailureHint(allowedDomainsHint)}`, {
+        cause: err,
+      });
     }
     throw err;
   }
@@ -202,6 +229,17 @@ export interface FetchStreamTransportOptions extends SaturationRetryOptions {
    * caught, for the same reason as `getGuestSecret` there.
    */
   getBearer?: () => string | null | Promise<string | null>;
+  /**
+   * Whether a cross-origin network failure's message also names the app's
+   * `allowedDomains` (guuey#1976). ON by default: on a page you host, a
+   * missing allowlist entry is a real cause of a bare "Failed to fetch".
+   * Pass `false` on a surface whose origin the agent always admits — a page
+   * the platform itself serves — where that cause is impossible and naming
+   * the setting would send the reader after the wrong one. The rest of the
+   * hint (a new deploy can take a few minutes to start serving) stays either
+   * way; the error is still a `TypeError` with the original as `cause`.
+   */
+  allowedDomainsHint?: boolean;
 }
 
 /**
@@ -221,12 +259,12 @@ export function fetchStreamTransport(
   guestSecret?: string | null,
   options: FetchStreamTransportOptions = {},
 ): AsyncIterable<string> {
-  const { getBearer } = options;
+  const { getBearer, allowedDomainsHint = true } = options;
   const once = async function* (attempt: InvokeRequest): AsyncGenerator<string> {
     // Per-attempt resolution: each retry re-asks the provider (fresh token
     // after a backoff wait) instead of replaying a captured one.
     const bearer = getBearer ? await getBearer() : accessToken;
-    yield* streamInvokeOnce(attempt, bearer, guestSecret);
+    yield* streamInvokeOnce(attempt, bearer, guestSecret, allowedDomainsHint);
   };
   const saturated = withSaturationRetry(once, {
     sleep: options.sleep,

@@ -19,7 +19,11 @@ import type { AgHitlAnswer } from "@silverprotocol/core";
 import type { AgentInvokeAdapters, InvokeTransport, ThreadIdStore } from "./types.js";
 import { fetchThreadHistory, HistoryUnauthorizedError } from "./history.js";
 import {
-fetchStreamTransport, sendableGuestSecret, GUEST_HEADER } from "./transport.js";
+  fetchStreamTransport,
+  sendableGuestSecret,
+  GUEST_HEADER,
+  type FetchStreamTransportOptions,
+} from "./transport.js";
 import type { SaturationRetryOptions } from "./saturation-retry.js";
 import { toInvokeUrl } from "./invoke-turn.js";
 
@@ -127,6 +131,12 @@ export interface CreateWebAdaptersOptions {
    * downgrade — the same failure this docblock warns about above.
    */
   getGuestSecret?: () => string | null;
+  /**
+   * Forwarded to {@link FetchStreamTransportOptions.allowedDomainsHint}: pass
+   * `false` on a surface whose origin the agent always admits, so a failed
+   * send never points at the app's `allowedDomains`.
+   */
+  allowedDomainsHint?: FetchStreamTransportOptions["allowedDomainsHint"];
 }
 
 /**
@@ -154,6 +164,9 @@ export function createWebAdapters(
       ...(opts.saturationAttempts !== undefined ? { attempts: opts.saturationAttempts } : {}),
       ...(opts.onSaturationWait !== undefined
         ? { onSaturationWait: opts.onSaturationWait }
+        : {}),
+      ...(opts.allowedDomainsHint !== undefined
+        ? { allowedDomainsHint: opts.allowedDomainsHint }
         : {}),
     });
   };
