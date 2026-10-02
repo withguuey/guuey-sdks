@@ -303,9 +303,6 @@ export interface BillingInvoicingWire {
 export const CREDIT_TOPUP_REFUND_WORDING =
   'Credits pre-pay your future guuey invoices and are applied automatically before your card is charged. They are non-refundable and non-transferable, do not expire while your account is open, and any unused balance is forfeited when the account is closed.';
 
-/** The separate belt line, word for word. */
-export const CREDIT_TOPUP_BUSINESS_USE_LINE = 'Business use only';
-
 /**
  * Mirror of `SUBSCRIBABLE_TIERS` — the plan NAMES only. The server maps a
  * name to its Stripe price against the environment allowlist; an off-list
@@ -653,7 +650,6 @@ export async function billingTopUpCore(
   // The top-up surface carries the signed wording, verbatim, before
   // the door — the customer reads the terms before they pay.
   console.log(`  ${CREDIT_TOPUP_REFUND_WORDING}`);
-  console.log(`  ${CREDIT_TOPUP_BUSINESS_USE_LINE}`);
   console.log('');
   if (data.status === 'requires_console') {
     console.log(

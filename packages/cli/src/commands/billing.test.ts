@@ -18,7 +18,6 @@ import {
   cardLine,
   bonusCreditLines,
   creditBalanceLine,
-  CREDIT_TOPUP_BUSINESS_USE_LINE,
   CREDIT_TOPUP_REFUND_WORDING,
   type BillingAppWire,
   type BillingSummaryWire,
@@ -232,7 +231,7 @@ describe('billingSummaryCore — credits (guuey#611)', () => {
 });
 
 describe('billingTopUpCore (guuey#611)', () => {
-  it('POSTs /apps/:id/billing/topup with { amountUsd }, prints BOTH ruled lines verbatim, then the Checkout URL, and opens it via the injection-safe opener', async () => {
+  it('POSTs /apps/:id/billing/topup with { amountUsd }, prints the ruled refund wording verbatim (and no purchase-eligibility line), then the Checkout URL, and opens it via the injection-safe opener', async () => {
     const api = vi.fn(async () =>
       jsonResponse(200, { status: 'checkout', url: 'https://checkout.stripe.com/c/topup', ref: 'cs_1' }),
     );
@@ -249,11 +248,10 @@ describe('billingTopUpCore (guuey#611)', () => {
     const lines = logSpy.mock.calls.map((c) => String(c[0] ?? ''));
     const output = lines.join('\n');
     expect(output).toContain(CREDIT_TOPUP_REFUND_WORDING);
-    expect(output).toContain(CREDIT_TOPUP_BUSINESS_USE_LINE);
+    expect(output).not.toMatch(/business use/i);
     expect(CREDIT_TOPUP_REFUND_WORDING).toBe(
       'Credits pre-pay your future guuey invoices and are applied automatically before your card is charged. They are non-refundable and non-transferable, do not expire while your account is open, and any unused balance is forfeited when the account is closed.',
     );
-    expect(CREDIT_TOPUP_BUSINESS_USE_LINE).toBe('Business use only');
     // Terms BEFORE the door.
     expect(lines.findIndex((l) => l.includes('non-refundable'))).toBeLessThan(
       lines.findIndex((l) => l.includes('https://checkout.stripe.com/c/topup')),
