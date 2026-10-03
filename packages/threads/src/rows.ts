@@ -192,14 +192,18 @@ export interface StoredHistoryMessage {
 /**
  * A bound on the size of one stored `ThreadMessage` row, declared by a
  * binding whose store has an item-size limit. `bytesOf` measures a row the
- * way the store counts it; `maxBytes` is the most a row may measure.
+ * way the store counts it; `maxBytes` is the most a row may measure. The
+ * thread's snapshot row is planned against the same budget before a turn
+ * writes any row (guuey#2120), so `bytesOf` measures a {@link ThreadSnapshotRow}
+ * too (its stored form joins the two memory arrays into one, which is never
+ * larger).
  * `numberFits`, when declared, says whether the store can hold a number as
  * written; a row carrying one it cannot is refused like an oversized row.
  * DynamoDB-backed bindings declare `DYNAMODB_ROW_BUDGET` (`item-size.ts`).
  */
 export interface RowBudget {
   readonly maxBytes: number;
-  bytesOf(row: ThreadMessageRow): number;
+  bytesOf(row: ThreadMessageRow | ThreadSnapshotRow): number;
   numberFits?(n: number): boolean;
 }
 

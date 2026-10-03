@@ -108,7 +108,24 @@ as mapped.
 
 `appendMessage` refuses such a row the same way before it allocates a seq.
 `withItemSizeLimit(port)` from `@guuey/threads/testing` wraps any port to
-declare the budget and refuse what DynamoDB would, for tests.
+declare the budget and refuse what DynamoDB would (on `putMessage` and
+`putSnapshot`), for tests.
+
+The turn's snapshot is planned under the same budget, also before any row is
+written (`planSnapshot`), so the snapshot write never fails after the rows
+landed:
+
+- A `workingState` that carries a number the store cannot hold is not stored.
+  The snapshot keeps `priorWorkingState` (the state the turn was seeded with),
+  or no state when none is given.
+- A thread-memory element that carries such a number is left out.
+- Over the budget, the turn's state is refused first, then the memory records
+  this turn wrote are left out, the largest first. Records stored unchanged
+  from `priorThreadMemory`, and carried elements, stay.
+- A snapshot that still does not fit is not written, and the prior one stands.
+
+The result's `refusedSnapshot` (`{ state?, memoryNumber, memorySize,
+notWritten }`) reports what was left out, as counts.
 
 ## Support
 

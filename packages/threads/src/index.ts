@@ -66,6 +66,13 @@ export {
   type ThreadScope,
 } from "./http.js";
 export {
+  planSnapshot,
+  type PlanSnapshotInput,
+  type PlannedSnapshot,
+  type SnapshotRefusal,
+  type SnapshotRefusalReason,
+} from "./snapshot-plan.js";
+export {
   agArtifactToCardRow,
   agMessageToBoundedRow,
   agMessageToRow,

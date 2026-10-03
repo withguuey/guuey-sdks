@@ -27,6 +27,7 @@ import {
   storedTextParts,
 } from "./fold-rows.js";
 import { classifyStoredRow } from "./stored-row.js";
+import { planSnapshot, type SnapshotRefusal } from "./snapshot-plan.js";
 import { writeTapLabels, type TapLabels } from "@guuey/mcp-apps-host/narrowing";
 import type {
   ThreadMessageEvent,
@@ -136,6 +137,13 @@ export interface AppendFoldInput {
    */
   priorThreadMemory?: readonly AgMemoryRecord[];
   /**
+   * guuey#2120: the prior snapshot's `workingState`: the state the reducer was
+   * seeded with. When the turn's state cannot be stored (a number its store
+   * cannot hold, or a snapshot over the row budget), the snapshot keeps this
+   * one instead and the result reports `refusedSnapshot.state`. Absent = none.
+   */
+  priorWorkingState?: JsonValue;
+  /**
    * guuey#1794: what to store when a row of this turn cannot be stored even
    * with its tool-call values elided: it does not fit the store's row budget,
    * or it carries a number the store cannot hold. Given, the turn is stored
@@ -193,6 +201,11 @@ export interface AppendFoldResult {
   elidedToolInputs: ElidedToolInput[];
   /** Set when the turn was stored as its one failure row instead of its rows. */
   unstorable?: AppendFoldUnstorable;
+  /**
+   * guuey#2120: set when part of the turn's snapshot could not be stored and
+   * was left out (planned before any row was written; see `planSnapshot`).
+   */
+  refusedSnapshot?: SnapshotRefusal;
 }
 
 /** The failure code of a turn stored as one row because it could not fit (guuey#1794). */
@@ -209,6 +222,15 @@ export const STORED_TURN_UNSTORABLE_NUMBER_CODE = 'stored_turn_unstorable_number
  * no real seq has more digits, so the real row is never larger.
  */
 const PROVISIONAL_SEQ = Number.MAX_SAFE_INTEGER;
+
+/** A fold's snapshot, planned before anything is written (guuey#2120). */
+interface FoldSnapshotPlan {
+  /** The snapshot to write; undefined = write none (`skipSnapshot`, or it cannot be stored). */
+  row: ThreadSnapshotRow | undefined;
+  /** Count of non-thread (durable) memory records dropped in v1. */
+  droppedDurableMemory: number;
+  refusal?: SnapshotRefusal;
+}
 
 /** One row of a fold, planned and measured before anything is written. */
 interface PlannedRow {
@@ -389,9 +411,15 @@ export class ThreadStore {
    * Durable (non-thread) memory is logged-and-dropped in v1. `skipSnapshot`
    * suppresses the snapshot upsert so a degraded/parked fold never overwrites
    * a good snapshot.
+   *
+   * The snapshot is planned with the rows, before any row is written
+   * (guuey#2120): a working state its store cannot hold is refused (the
+   * snapshot keeps `priorWorkingState`), and a memory element that cannot be
+   * stored is left out, reported as `refusedSnapshot`. The snapshot write is
+   * never the write that fails after the turn's rows landed.
    */
   async appendFold(input: AppendFoldInput): Promise<AppendFoldResult> {
-    const { threadId, fold, clientMessageIdBase, skipSnapshot } = input;
+    const { threadId, clientMessageIdBase } = input;
 
     // Turn-level idempotency gate: a committed agent turn is never re-merged.
     const sentinelKey = `${clientMessageIdBase}#agentTurn`;
@@ -407,12 +435,16 @@ export class ThreadStore {
     // provisional seq and timestamp no smaller than the real ones, so the real
     // values can only shrink a row that fit.
     const provisionalAt = new Date().toISOString();
+    // guuey#2120 — the snapshot is planned with the rows: what its store
+    // cannot hold is left out here, before any row is written, so the
+    // snapshot write that follows the rows is never the one that fails.
+    const snapshot = this.planFoldSnapshot(input, provisionalAt);
     const planned: PlannedRow[] = [];
     try {
       this.planFoldRows(input, sentinelKey, provisionalAt, planned);
     } catch (err) {
       if (!isStoredRowRefusal(err) || input.unstorableNotice === undefined) throw err;
-      return this.writeUnstorableMarker(input, input.unstorableNotice, sentinelKey, err);
+      return this.writeUnstorableMarker(input, input.unstorableNotice, sentinelKey, err, snapshot);
     }
 
     const messageSeqs: number[] = [];
@@ -428,28 +460,58 @@ export class ThreadStore {
       }
     }
 
-    const threadMemory = keepUnchangedThreadMemory(input.priorThreadMemory ?? [], fold.memory.filter((m) => m.scope === 'thread'));
-    const droppedDurableMemory = fold.memory.length - threadMemory.length;
-    if (skipSnapshot !== true) await this.db.putSnapshot(this.snapshotRow(input, threadMemory));
-
-    return { messageSeqs, artifactSeqs, droppedDurableMemory, deduped: false, elidedToolInputs };
+    await this.writeSnapshot(snapshot);
+    return {
+      messageSeqs,
+      artifactSeqs,
+      droppedDurableMemory: snapshot.droppedDurableMemory,
+      deduped: false,
+      elidedToolInputs,
+      ...(snapshot.refusal !== undefined ? { refusedSnapshot: snapshot.refusal } : {}),
+    };
   }
 
-  /** The snapshot row a fold persists (working state + thread memory + last turn). */
-  private snapshotRow(input: AppendFoldInput, threadMemory: AgMemoryRecord[]): ThreadSnapshotRow {
+  /**
+   * The snapshot a fold persists (working state + thread memory + last turn),
+   * planned under the store's row budget (guuey#2120). Writes nothing.
+   * `row` is undefined when `skipSnapshot` is set or the snapshot cannot be
+   * stored at all.
+   */
+  private planFoldSnapshot(input: AppendFoldInput, provisionalAt: string): FoldSnapshotPlan {
     const { fold } = input;
+    const threadMemory = keepUnchangedThreadMemory(input.priorThreadMemory ?? [], fold.memory.filter((m) => m.scope === 'thread'));
+    const droppedDurableMemory = fold.memory.length - threadMemory.length;
+    if (input.skipSnapshot === true) return { row: undefined, droppedDurableMemory };
     const lastTurnId = fold.turns.length ? fold.turns[fold.turns.length - 1]!.turnId : undefined;
+    const planned = planSnapshot(
+      {
+        row: {
+          threadId: input.threadId,
+          userId: input.userId,
+          threadMemory,
+          ...(input.carriedThreadMemory !== undefined && input.carriedThreadMemory.length > 0
+            ? { carriedThreadMemory: [...input.carriedThreadMemory] }
+            : {}),
+          updatedAt: provisionalAt,
+          ...(fold.state !== undefined ? { workingState: fold.state } : {}),
+          ...(lastTurnId ? { lastTurnId } : {}),
+        },
+        ...(input.priorWorkingState !== undefined ? { priorWorkingState: input.priorWorkingState } : {}),
+        ...(input.priorThreadMemory !== undefined ? { priorThreadMemory: input.priorThreadMemory } : {}),
+      },
+      this.db.rowBudget,
+    );
     return {
-      threadId: input.threadId,
-      userId: input.userId,
-      threadMemory,
-      ...(input.carriedThreadMemory !== undefined && input.carriedThreadMemory.length > 0
-        ? { carriedThreadMemory: [...input.carriedThreadMemory] }
-        : {}),
-      updatedAt: new Date().toISOString(),
-      ...(fold.state !== undefined ? { workingState: fold.state } : {}),
-      ...(lastTurnId ? { lastTurnId } : {}),
+      row: planned.row,
+      droppedDurableMemory,
+      ...(planned.refusal !== undefined ? { refusal: planned.refusal } : {}),
     };
+  }
+
+  /** Write a planned snapshot, stamped now (the same length as the provisional stamp it was measured with). */
+  private async writeSnapshot(plan: FoldSnapshotPlan): Promise<void> {
+    if (plan.row === undefined) return;
+    await this.db.putSnapshot({ ...plan.row, updatedAt: new Date().toISOString() });
   }
 
   /**
@@ -464,6 +526,7 @@ export class ThreadStore {
     notice: { text: string },
     sentinelKey: string,
     err: StoredRowRefusal,
+    snapshot: FoldSnapshotPlan,
   ): Promise<AppendFoldResult> {
     const { text } = notice;
     const error =
@@ -488,17 +551,14 @@ export class ThreadStore {
       },
       ...(input.untrustedOrigin === true ? { untrustedOrigin: true } : {}),
     });
-    const threadMemory = keepUnchangedThreadMemory(
-      input.priorThreadMemory ?? [],
-      input.fold.memory.filter((m) => m.scope === 'thread'),
-    );
-    if (input.skipSnapshot !== true) await this.db.putSnapshot(this.snapshotRow(input, threadMemory));
+    await this.writeSnapshot(snapshot);
     return {
       messageSeqs: [],
       artifactSeqs: [],
-      droppedDurableMemory: input.fold.memory.length - threadMemory.length,
+      droppedDurableMemory: snapshot.droppedDurableMemory,
       deduped: false,
       elidedToolInputs: [],
+      ...(snapshot.refusal !== undefined ? { refusedSnapshot: snapshot.refusal } : {}),
       unstorable:
         err instanceof StoredRowTooLargeError
           ? { seq, rowKind: err.rowKind, index: err.index, reason: 'size', bytes: err.bytes, maxBytes: err.maxBytes }

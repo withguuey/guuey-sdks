@@ -260,7 +260,7 @@ function firstUnfitNumber(value: unknown): number | undefined {
 /**
  * Wrap a port so it behaves like a DynamoDB-backed binding on what a row may
  * hold (guuey#1794): it declares the DynamoDB row budget, and its
- * `putMessage` rejects a row over DynamoDB's 400 KB item limit (measured by
+ * `putMessage` (and, guuey#2120, its `putSnapshot`) rejects a row over DynamoDB's 400 KB item limit (measured by
  * `dynamoItemBytes`) with {@link ItemSizeExceededError}, and a row carrying a
  * number DynamoDB cannot hold with {@link UnstorableNumberError}, instead of
  * storing it. Run a `ThreadStore` over it to test what happens at those
@@ -282,6 +282,13 @@ export function withItemSizeLimit(port: ThreadPersistencePort): ThreadPersistenc
     listRecentMessages: (threadId, limit) => port.listRecentMessages(threadId, limit),
     findByClientMessageId: (threadId, clientMessageId) => port.findByClientMessageId(threadId, clientMessageId),
     getSnapshot: (threadId) => port.getSnapshot(threadId),
-    putSnapshot: (row) => port.putSnapshot(row),
+    // guuey#2120: the snapshot row is an item of the same store, refused the same way.
+    async putSnapshot(row) {
+      const unfit = firstUnfitNumber(row);
+      if (unfit !== undefined) throw new UnstorableNumberError(unfit);
+      const bytes = dynamoItemBytes(row);
+      if (bytes > DYNAMODB_ITEM_LIMIT_BYTES) throw new ItemSizeExceededError(bytes);
+      await port.putSnapshot(row);
+    },
   };
 }

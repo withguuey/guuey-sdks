@@ -226,7 +226,7 @@ export function isStoredRowRefusal(err: unknown): err is StoredRowRefusal {
 }
 
 /** Whether `value` (any JSON-shaped data) holds a number `fits` refuses, at any depth. */
-function carriesUnfitNumber(value: unknown, fits: (n: number) => boolean): boolean {
+export function carriesUnfitNumber(value: unknown, fits: (n: number) => boolean): boolean {
   if (typeof value === "number") return !fits(value);
   if (value === null || typeof value !== "object") return false;
   const children: unknown[] = Array.isArray(value) ? value : Object.values(value);
@@ -654,7 +654,7 @@ export function joinStoredThreadMemory(row: Pick<ThreadSnapshotRow, "threadMemor
 }
 
 /** Structural equality over JSON values (object key order does not matter). */
-function jsonEqual(a: JsonValue | undefined, b: JsonValue | undefined): boolean {
+export function jsonEqual(a: JsonValue | undefined, b: JsonValue | undefined): boolean {
   if (a === b) return true;
   if (a === undefined || b === undefined || a === null || b === null) return false;
   if (Array.isArray(a) || Array.isArray(b)) {
