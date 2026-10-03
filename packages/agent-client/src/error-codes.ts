@@ -90,6 +90,30 @@ export const AGENT_ERROR_CODES = {
    * nothing is resent automatically.
    */
   NO_REPLY: "NO_REPLY",
+  /**
+   * The conversation is still answering a message — this one, or another of
+   * the user's conversations with the same agent. A 409 carrying a
+   * `Retry-After` hint. Not retried by this SDK; the message names the case.
+   */
+  SESSION_BUSY: "SESSION_BUSY",
+  /**
+   * The conversation is briefly unavailable. A 503 carrying a `Retry-After`
+   * hint. Not retried by this SDK.
+   */
+  SESSION_UNAVAILABLE: "SESSION_UNAVAILABLE",
+  /**
+   * This message was already received (its request key already has a turn).
+   * A 409 whose body adds `state`. Not retried.
+   */
+  DUPLICATE_REQUEST: "DUPLICATE_REQUEST",
+  /** The supplied session belongs to a different conversation. A 409; not retried. */
+  SESSION_CONFLICT: "SESSION_CONFLICT",
+  /**
+   * The connection to the conversation broke after the message was sent, so
+   * whether it was answered is unknown. A 502, or an in-band failure. Never
+   * retried: check the conversation before sending the message again.
+   */
+  RELAY_INTERRUPTED: "RELAY_INTERRUPTED",
   /** A guuey-side dependency failed (not the agent's own code). */
   PLATFORM_ERROR: "PLATFORM_ERROR",
   /** Unclassified pod failure. */
