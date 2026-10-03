@@ -114,6 +114,14 @@ export const AGENT_ERROR_CODES = {
    * retried: check the conversation before sending the message again.
    */
   RELAY_INTERRUPTED: "RELAY_INTERRUPTED",
+  /**
+   * A resume (an invoke carrying `resume: { answers }`) could not run: the
+   * paused request it answers is gone, expired, superseded, already answered,
+   * or the agent could not continue it. Nothing the paused run would have
+   * done has run. A 409 before the stream, or the in-band `event: error`.
+   * Show the paused request as information and let the reader type instead.
+   */
+  RESUME_REFUSED: "RESUME_REFUSED",
   /** A guuey-side dependency failed (not the agent's own code). */
   PLATFORM_ERROR: "PLATFORM_ERROR",
   /** Unclassified pod failure. */
