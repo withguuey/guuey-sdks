@@ -95,17 +95,9 @@ export async function undeploy(
   const body: unknown = await res.json().catch(() => undefined);
 
   if (!res.ok) {
-    if (res.status === 404) {
-      // Older backends that predate the undeploy cliApi surface return 404 for
-      // this route. Keep an honest fallback so a stale control plane degrades
-      // gracefully rather than printing a raw HTTP error.
-      out.error(
-        'Undeploy is not available on this API yet — use "guuey delete" to archive the app ' +
-          '(tears down via the 30-day deletion cascade), or redeploy to replace the running agent.',
-      );
-    } else {
-      out.error(out.apiErrorMessage(body, `Undeploy failed: HTTP ${res.status}`));
-    }
+    out.error(
+      out.appApiErrorMessage(res.status, body, appId, 'undeploy', `Undeploy failed: HTTP ${res.status}`),
+    );
     process.exit(1);
   }
 

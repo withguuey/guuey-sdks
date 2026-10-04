@@ -42,7 +42,11 @@ export async function deleteApp(
   if (flags?.force !== true) {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
     const answer = await new Promise<string>((resolve) =>
-      rl.question(`Delete app ${appId}? This cannot be undone. (y/N): `, resolve),
+      rl.question(
+        `Delete app ${appId}? It is archived now and deleted for good after 30 days; ` +
+          `"guuey apps recover ${appId}" brings it back until then. (y/N): `,
+        resolve,
+      ),
     );
     rl.close();
     if (answer.toLowerCase() !== 'y') {
@@ -75,7 +79,9 @@ export async function deleteApp(
 
   if (!res.ok) {
     const body: unknown = await res.json().catch(() => undefined);
-    out.error(`Failed to delete app: ${out.apiErrorMessage(body, `HTTP ${res.status} ${res.statusText}`)}`);
+    out.error(
+      `Failed to delete app: ${out.appApiErrorMessage(res.status, body, appId, 'archive', `HTTP ${res.status} ${res.statusText}`)}`,
+    );
     process.exit(1);
   }
 

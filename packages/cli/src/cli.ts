@@ -435,8 +435,11 @@ Apps:
                                  changes); does NOT resume billing, so the app
                                  returns on free-tier limits until you
                                  resubscribe in the console.
-  apps access [appId]           Set guest-chat access policy (personal apps only;
-                                 workspace-owned apps 404 — use the platform UI)
+  apps access [appId]           Set guest-chat access policy. Allowed for a
+                                 personal app's creator, or an owner or admin of
+                                 the workspace that owns the app (a user login,
+                                 not a workspace key). "Not found" also means
+                                 this account is not allowed to change it.
     --guests <on|off>           Allow unauthenticated guest chat
     --guest-limit <n|off>       Per-guest daily message cap ('off' clears it)
                                  At least one of the two flags is required.

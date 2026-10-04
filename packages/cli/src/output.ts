@@ -89,3 +89,47 @@ export function apiErrorMessage(body: unknown, fallback: string): string {
   }
   return fallback;
 }
+
+/** The error code in cliApi's `{ error: { code, message } }` envelope, if the body carries one. */
+export function apiErrorCode(body: unknown): string | undefined {
+  if (typeof body !== "object" || body === null || !("error" in body)) return undefined;
+  const err = (body as { error?: unknown }).error;
+  if (typeof err !== "object" || err === null) return undefined;
+  const { code } = err as { code?: unknown };
+  return typeof code === "string" ? code : undefined;
+}
+
+/**
+ * A 404 `NOT_FOUND` from an app's door means ONE of two things, and the API
+ * deliberately never says which: the app does not exist, or this account is
+ * not allowed to do this to it. (Telling them apart would reveal that an app
+ * someone cannot use exists.) So the CLI never prints "not found" alone to a
+ * teammate who can see the app, and never guesses that a route is missing: it
+ * names both possibilities and what to check.
+ *
+ * `action` completes "not allowed to … it" (e.g. "undeploy", "archive").
+ */
+export function appNotFoundOrNotAllowed(appId: string, action: string): string {
+  return (
+    `App ${appId} was not found, or this account is not allowed to ${action} it. ` +
+    `Check the app id ("guuey apps list") and which account you are signed in as ("guuey whoami").`
+  );
+}
+
+/**
+ * Render a failed app-scoped call: the uniform 404 gets
+ * {@link appNotFoundOrNotAllowed}; every other failure keeps the API's own
+ * message ({@link apiErrorMessage}).
+ */
+export function appApiErrorMessage(
+  status: number,
+  body: unknown,
+  appId: string,
+  action: string,
+  fallback: string,
+): string {
+  if (status === 404 && apiErrorCode(body) === "NOT_FOUND") {
+    return appNotFoundOrNotAllowed(appId, action);
+  }
+  return apiErrorMessage(body, fallback);
+}

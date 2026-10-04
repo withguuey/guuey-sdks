@@ -25,10 +25,12 @@ import type { MockInstance } from 'vitest';
 import {
   appsAccess,
   appsByoUserErase,
+  appsDelete,
   appsGet,
   appsList,
   appsListRow,
   appsPublish,
+  appsRecover,
   appsUnpublish,
   appsUpdate,
   buildUpdateAppBody,
@@ -1006,7 +1008,10 @@ describe('appsAccess', () => {
 
     expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
     const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
-    expect(printed).toContain('App app1 not found');
+    // The uniform 404 is "no such app" OR "not allowed" — the CLI says both.
+    expect(printed).toContain(
+      'App app1 was not found, or this account is not allowed to change guest access for it.',
+    );
     expect(printed).not.toContain('[object Object]');
   });
 
@@ -1090,10 +1095,10 @@ describe('appsPublish', () => {
     expect(output.toLowerCase()).toContain('listed in the store');
   });
 
-  it('a workspace-app 404 prints the wire envelope message (not [object Object]) and exits 1', async () => {
-    // The documented primary failure: listing routes are personal-apps-only,
-    // so a workspace app 404s with the real cliApi envelope
-    // `{ error: { code, message } }` (shared/response.ts#httpError).
+  it('the uniform 404 reads "not found, or not allowed to publish" (never a flat "not found") and exits 1', async () => {
+    // cliApi answers a missing app and a caller without the admin ladder with
+    // the same 404 envelope `{ error: { code: 'NOT_FOUND', … } }`
+    // (shared/response.ts#httpError), so the CLI must name both.
     fetchSpy.mockResolvedValue(
       new Response(
         JSON.stringify({ error: { code: 'NOT_FOUND', message: 'App app1 not found' } }),
@@ -1106,8 +1111,9 @@ describe('appsPublish', () => {
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
-    expect(printed).toContain('Failed to publish app');
-    expect(printed).toContain('App app1 not found');
+    expect(printed).toContain(
+      'Failed to publish app: App app1 was not found, or this account is not allowed to publish it.',
+    );
     expect(printed).not.toContain('[object Object]');
   });
 
@@ -1184,6 +1190,72 @@ describe('appsUnpublish', () => {
 
     const printed = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
     expect(JSON.parse(printed)).toEqual({ unpublished: true, listing });
+  });
+
+  it('the uniform 404 reads "not found, or not allowed to unpublish" and exits 1', async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'App app1 not found' } }), {
+        status: 404,
+      }),
+    );
+
+    await expect(appsUnpublish('app1', {})).rejects.toBeInstanceOf(ExitSignal);
+
+    const printed = vi
+      .mocked(console.error)
+      .mock.calls.map((c) => String(c[0] ?? ''))
+      .join('\n');
+    expect(printed).toContain(
+      'Failed to unpublish app: App app1 was not found, or this account is not allowed to unpublish it.',
+    );
+    expect(printed).not.toMatch(/not available|API yet/);
+  });
+});
+
+describe('the uniform 404 on archive and recover (guuey#1997)', () => {
+  let fetchSpy: MockInstance<typeof fetch>;
+  let errSpy: MockInstance<typeof console.error>;
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, 'fetch');
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const notFound = (): Response =>
+    new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'App app1 not found' } }), {
+      status: 404,
+    });
+  const stderr = (): string => errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+
+  it('apps delete (archive): not found, or not allowed to archive', async () => {
+    fetchSpy.mockResolvedValue(notFound());
+    await expect(appsDelete('app1', { json: true })).rejects.toBeInstanceOf(ExitSignal);
+    expect(stderr()).toContain('App app1 was not found, or this account is not allowed to archive it.');
+  });
+
+  it('apps recover: not found, or not allowed to recover', async () => {
+    fetchSpy.mockResolvedValue(notFound());
+    await expect(appsRecover('app1', {})).rejects.toBeInstanceOf(ExitSignal);
+    expect(stderr()).toContain('App app1 was not found, or this account is not allowed to recover it.');
+  });
+
+  it('a non-404 failure keeps the API message (only the uniform 404 is reworded)', async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: 'CONFLICT', message: 'App app1 is suspended' } }), {
+        status: 409,
+      }),
+    );
+    await expect(appsRecover('app1', {})).rejects.toBeInstanceOf(ExitSignal);
+    expect(stderr()).toContain('CONFLICT: App app1 is suspended');
+    expect(stderr()).not.toContain('not allowed');
   });
 });
 

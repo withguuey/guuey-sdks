@@ -151,6 +151,26 @@ describe('tokensRevoke', () => {
     await expect(tokensRevoke(undefined, {})).rejects.toThrow(ExitSignal);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('the uniform 404 names all three cases it can be: no app, no token, or no write access (guuey#1997)', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(404, { error: { code: 'NOT_FOUND', message: 'App app-1 not found' } }));
+
+    await expect(tokensRevoke('st-1', {})).rejects.toThrow(ExitSignal);
+
+    const printed = logs.join('\n');
+    expect(printed).toContain(
+      'Service token st-1 was not found on app app-1, or this account is not allowed to revoke it.',
+    );
+    expect(printed).not.toContain('NOT_FOUND: App app-1 not found');
+  });
+
+  it('a non-404 failure keeps the API message', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(401, { error: { code: 'UNAUTHENTICATED', message: 'Token expired' } }));
+
+    await expect(tokensRevoke('st-1', {})).rejects.toThrow(ExitSignal);
+
+    expect(logs.join('\n')).toContain('UNAUTHENTICATED: Token expired');
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────

@@ -189,7 +189,18 @@ export async function tokensRevoke(
   const { pat, baseUrl, appId } = requestContext(flags);
 
   const res = await apiRequest(pat, baseUrl, 'DELETE', `/apps/${appId}/service-tokens/${tokenId}`);
-  if (!res.ok) await handleApiError(res);
+  if (!res.ok) {
+    // This door's 404 is the uniform one in three cases the API never tells
+    // apart: no such app, no such token on it, or no write access to the app.
+    const body: unknown = await res.json().catch(() => undefined);
+    out.error(
+      res.status === 404 && out.apiErrorCode(body) === 'NOT_FOUND'
+        ? `Service token ${tokenId} was not found on app ${appId}, or this account is not allowed to revoke it. ` +
+            'Check the token id ("guuey tokens list"), the app id, and which account you are signed in as ("guuey whoami").'
+        : out.apiErrorMessage(body, `HTTP ${res.status} ${res.statusText}`),
+    );
+    process.exit(1);
+  }
   const data = (await res.json()) as ServiceTokenRevokeResponse;
 
   out.success(`Service token ${data.id} revoked at ${data.revokedAt}. Auth stops within seconds.`);

@@ -158,6 +158,32 @@ describe('guuey undeploy', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it('the uniform 404 reads "not found, or not allowed to undeploy" — never "not available on this API yet" (guuey#1997)', async () => {
+    // Every guuey env has served this route since July; a 404 here is a
+    // missing app or a caller without write access, which cliApi answers alike.
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'App app-bound not found' } }), {
+        status: 404,
+      }),
+    );
+    await expect(undeploy({ force: true })).rejects.toThrow(ExitSignal);
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(stderr()).toContain(
+      'App app-bound was not found, or this account is not allowed to undeploy it.',
+    );
+    expect(stderr()).not.toMatch(/not available|API yet|guuey delete/);
+  });
+
+  it('a non-404 failure keeps the API message', async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: 'CONFLICT', message: 'Nothing is deployed' } }), {
+        status: 409,
+      }),
+    );
+    await expect(undeploy({ force: true })).rejects.toThrow(ExitSignal);
+    expect(stderr()).toContain('CONFLICT: Nothing is deployed');
+  });
+
   it('an affirmed prompt proceeds to the teardown POST', async () => {
     promptAnswer = 'y';
     fetchSpy.mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));

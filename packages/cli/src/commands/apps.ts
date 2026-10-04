@@ -219,15 +219,23 @@ async function apiRequest(method: string, path: string, body?: unknown): Promise
   });
 }
 
-async function handleError(res: Response, prefix?: string): Promise<never> {
+async function handleError(
+  res: Response,
+  prefix?: string,
+  app?: { id: string; action: string },
+): Promise<never> {
   let message: string;
   try {
     // cliApi's envelope is `{ error: { code, message } }` (see
     // backend/amplify/functions/shared/response.ts#httpError); older
     // surfaces used `{ error: string }`. `out.apiErrorMessage` renders
-    // both and never yields "[object Object]".
+    // both and never yields "[object Object]". An app-scoped call names
+    // its app and action, so the uniform 404 reads as "not found, or not
+    // allowed" rather than a flat "not found" (out.appApiErrorMessage).
     const body: unknown = await res.json();
-    message = out.apiErrorMessage(body, `HTTP ${res.status}`);
+    message = app
+      ? out.appApiErrorMessage(res.status, body, app.id, app.action, `HTTP ${res.status}`)
+      : out.apiErrorMessage(body, `HTTP ${res.status}`);
   } catch {
     message = `HTTP ${res.status} ${res.statusText}`;
   }
@@ -1105,7 +1113,11 @@ export async function appsDelete(
     const readline = await import('node:readline');
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     const answer = await new Promise<string>((resolve) => {
-      rl.question(`Delete app ${resolved}? This cannot be undone. (y/N) `, resolve);
+      rl.question(
+        `Delete app ${resolved}? It is archived now and deleted for good after 30 days; ` +
+          `"guuey apps recover ${resolved}" brings it back until then. (y/N) `,
+        resolve,
+      );
     });
     rl.close();
 
@@ -1116,7 +1128,7 @@ export async function appsDelete(
   }
 
   const res = await apiRequest('DELETE', `/apps/${resolved}`);
-  if (!res.ok) return handleError(res);
+  if (!res.ok) return handleError(res, undefined, { id: resolved, action: 'archive' });
 
   const data = (await res.json()) as {
     archived: boolean;
@@ -1172,7 +1184,7 @@ export async function appsRecover(
   }
 
   const res = await apiRequest('POST', `/apps/${appId}/recover`);
-  if (!res.ok) return handleError(res);
+  if (!res.ok) return handleError(res, undefined, { id: appId, action: 'recover' });
 
   const data = (await res.json()) as {
     recovered: boolean;
@@ -1211,8 +1223,10 @@ export async function appsRecover(
 /**
  * Handle `guuey apps access [appId]`.
  *
- * Personal-apps-only: `PUT /apps/:id` 404s for workspace-owned apps (see
- * `guuey apps access --help`).
+ * `PUT /apps/:id` admits a personal app's creator, or an owner or admin of
+ * the owning workspace (a user login, never a workspace key). Anyone else
+ * gets cliApi's uniform 404, the same face as a missing app, which the CLI
+ * renders as "not found, or not allowed" (see `guuey apps access --help`).
  */
 export async function appsAccess(
   appId: string | undefined,
@@ -1261,7 +1275,7 @@ export async function appsAccess(
   }
 
   const res = await apiRequest('PUT', `/apps/${resolved}`, body);
-  if (!res.ok) return handleError(res);
+  if (!res.ok) return handleError(res, undefined, { id: resolved, action: 'change guest access for' });
 
   const data = (await res.json()) as { app: AppAccessState };
 
@@ -1318,7 +1332,7 @@ export async function appsPublish(
   body.visibility = 'public';
 
   const res = await apiRequest('POST', `/apps/${resolved}/listing`, body);
-  if (!res.ok) return handleError(res, 'Failed to publish app');
+  if (!res.ok) return handleError(res, 'Failed to publish app', { id: resolved, action: 'publish' });
 
   const data = (await res.json()) as { listing: AppListing };
   const shareLink = `${PORTAL_ORIGIN}/agent/${resolved}`;
@@ -1353,7 +1367,7 @@ export async function appsUnpublish(
   }
 
   const res = await apiRequest('DELETE', `/apps/${resolved}/listing`);
-  if (!res.ok) return handleError(res, 'Failed to unpublish app');
+  if (!res.ok) return handleError(res, 'Failed to unpublish app', { id: resolved, action: 'unpublish' });
 
   const data = (await res.json()) as { listing: AppListing | null };
 
