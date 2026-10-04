@@ -443,8 +443,11 @@ Apps:
     --guests <on|off>           Allow unauthenticated guest chat
     --guest-limit <n|off>       Per-guest daily message cap ('off' clears it)
                                  At least one of the two flags is required.
-  apps publish [appId]          List the app in the store (personal apps only;
-                                 workspace-owned apps 404 — use the platform UI)
+  apps publish [appId]          List the app in the store. Allowed for a
+                                 personal app's creator, or an owner or admin of
+                                 the workspace that owns the app (a user login).
+                                 "Not found" also means this account is not
+                                 allowed to publish it.
     --name <name>               Listing name (defaults to the app's display name)
     --description <text>        Listing description
     --category <category>       Listing category
@@ -453,8 +456,9 @@ Apps:
                                  Prints the share link, https://app.guuey.com/agent/<appId>
                                  (production portal origin; sandbox/dev envs serve the
                                  same route at a different origin).
-  apps unpublish [appId]        Remove the app from the store (personal apps only;
-                                 workspace-owned apps 404 — use the platform UI)
+  apps unpublish [appId]        Remove the app from the store. Allowed for a
+                                 personal app's creator, or an owner or admin of
+                                 the workspace that owns the app (a user login).
                                  Idempotent; the share link keeps working after unpublish.
 
 App Admin (BYO-auth apps; workspace-admin only):

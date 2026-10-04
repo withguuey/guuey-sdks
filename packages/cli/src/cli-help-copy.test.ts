@@ -94,3 +94,24 @@ describe('cli.ts --help — --max-pods names the scaling regime it lands (guuey#
     expect(agentConfigHelp).toMatch(/--scaling auto\|fixed/);
   });
 });
+
+describe('cli.ts --help — who may run access, publish and unpublish (guuey#1997)', () => {
+  // A workspace's owners and admins may change guest access, publish and
+  // unpublish its apps through the API. The help once said "personal apps
+  // only; workspace-owned apps 404", which sent them to the console for
+  // something the CLI does. A 404 is the uniform "not found, or not allowed".
+  const appsHelp = section('apps access [appId]', 'apps unpublish [appId]') +
+    section('apps unpublish [appId]', '\n    ');
+
+  it('no longer claims these are personal-apps-only, or that a workspace app 404s', () => {
+    expect(appsHelp).not.toMatch(/personal apps only|workspace-owned apps 404/i);
+  });
+
+  it('names who may run them: the creator, or a workspace owner or admin', () => {
+    for (const label of ['apps access [appId]', 'apps publish [appId]', 'apps unpublish [appId]']) {
+      const start = CLI_SOURCE.indexOf(label);
+      const text = CLI_SOURCE.slice(start, start + 400);
+      expect(text, label).toMatch(/creator, or an owner or\s+admin of\s+the workspace that owns the app/);
+    }
+  });
+});

@@ -1297,8 +1297,10 @@ export async function appsAccess(
 /**
  * Handle `guuey apps publish [appId]`.
  *
- * Personal-apps-only: `POST /apps/:id/listing` 404s for workspace-owned
- * apps (see `guuey apps publish --help`). Always forces `status:
+ * `POST /apps/:id/listing` admits a personal app's creator, or an owner or
+ * admin of the owning workspace (a user login). Anyone else gets cliApi's
+ * uniform 404, the face of a missing app (see `guuey apps publish --help`).
+ * Always forces `status:
  * 'published'` and `visibility: 'public'` over whatever metadata flags
  * are passed — those flags only control the listing's display fields.
  *
@@ -1350,8 +1352,9 @@ export async function appsPublish(
 /**
  * Handle `guuey apps unpublish [appId]`.
  *
- * Personal-apps-only: `DELETE /apps/:id/listing` 404s for workspace-owned
- * apps (see `guuey apps unpublish --help`). Idempotent — unpublishing an
+ * `DELETE /apps/:id/listing` admits a personal app's creator, or an owner or
+ * admin of the owning workspace (a user login); anyone else gets the uniform
+ * 404 (see `guuey apps unpublish --help`). Idempotent — unpublishing an
  * app with no listing (or an already-archived one) still succeeds.
  * Deactivating the listing does not tear down the app itself, so the
  * direct share link keeps working; only store-browse discovery goes away.
