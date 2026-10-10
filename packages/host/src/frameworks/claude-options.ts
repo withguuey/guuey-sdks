@@ -460,7 +460,7 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
   // armed AND a push present. Later turns on the thread keep the default.
   //
   // guuey#1606 — EXCEPT on a model the provider refuses `disabled` for
-  // (Fable 5.1, Fable 5, Opus 5.5 — `rejectsDisabledThinking`). There the whole bound turn
+  // (Fable 5.1, Fable 5, Opus 5.5, Sonnet 5.5 — `rejectsDisabledThinking`). There the whole bound turn
   // would 400 on every request, and the arm's retry cannot rescue it (the
   // retry drops only the force). Those models also refuse the forced
   // `tool_choice` itself, so disabling thinking would buy nothing: the turn

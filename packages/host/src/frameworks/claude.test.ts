@@ -277,8 +277,9 @@ describe("runInvoke — native emission", () => {
     });
 
     // guuey#1606 — the provider 400s `thinking: disabled` on these (QA's in-pod
-    // receipts on #1606); sending it would fail EVERY request of the bound turn.
-    it.each(["claude-fable-5-1", "claude-fable-5", "claude-opus-5-5", "anthropic/claude-fable-5-1"])(
+    // receipts on #1606; Sonnet 5.5 from the vendor docs, guuey#2231); sending
+    // it would fail EVERY request of the bound turn.
+    it.each(["claude-fable-5-1", "claude-fable-5", "claude-opus-5-5", "claude-sonnet-5-5", "anthropic/claude-fable-5-1"])(
       "%s (refuses `disabled`) → the handshake section still renders, thinking is left at the SDK default",
       async (model) => {
         const seen = await optionsFor({ gguiAttached: true, firstImpression: push }, { model });

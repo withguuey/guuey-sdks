@@ -472,9 +472,21 @@ describe('FRAMEWORK_REGISTRY invariants', () => {
   });
 });
 
-describe('rejectsDisabledThinking (guuey#1606) — only the ids with a receipted 400', () => {
+describe('rejectsDisabledThinking (guuey#1606, guuey#2231) — only the ids with a receipted or documented 400', () => {
   it('names Fable 5.1, Fable 5 and Opus 5.5 (bare or anthropic/-prefixed)', () => {
     for (const id of ['claude-fable-5-1', 'claude-fable-5', 'claude-opus-5-5', 'anthropic/claude-fable-5-1']) {
+      expect(rejectsDisabledThinking(id), id).toBe(true);
+    }
+  });
+
+  it('names Sonnet 5.5 — the vendor documents a 400 for `disabled` (guuey#2231)', () => {
+    for (const id of [
+      'claude-sonnet-5-5',
+      'anthropic/claude-sonnet-5-5',
+      'claude-sonnet-5-5[1m]',
+      'claude-sonnet-5-5-20261001',
+      'claude-sonnet-5-5@20261001',
+    ]) {
       expect(rejectsDisabledThinking(id), id).toBe(true);
     }
   });
@@ -507,7 +519,18 @@ describe('rejectsDisabledThinking (guuey#1606) — only the ids with a receipted
   });
 
   it('the family match never swallows a neighbour that answered 200', () => {
-    for (const id of ['claude-opus-5', 'claude-opus-5[1m]', 'claude-opus-5-1', 'claude-sonnet-5', 'sonnet', 'haiku', 'claude-fable']) {
+    for (const id of [
+      'claude-opus-5',
+      'claude-opus-5[1m]',
+      'claude-opus-5-1',
+      'claude-sonnet-5',
+      'claude-sonnet-5[1m]',
+      'claude-sonnet-5-20260801',
+      'sonnet',
+      'haiku',
+      'claude-haiku-5-5',
+      'claude-fable',
+    ]) {
       expect(rejectsDisabledThinking(id), id).toBe(false);
     }
   });

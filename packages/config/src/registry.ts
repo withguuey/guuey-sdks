@@ -374,16 +374,29 @@ export const modelEntry: RegistryAccessors["modelEntry"] = live.modelEntry;
 /**
  * guuey#1606 — Claude ids the provider REFUSES `thinking: { type: "disabled" }`
  * on (Anthropic lists their thinking as "Adaptive (always on)"). Each entry is
- * a receipted 400 from a real call through the managed egress arm, never a
- * guess — `"thinking.type.disabled" is not supported for this model. Use
- * "thinking.type.adaptive" and "output_config.effort" to control thinking
- * behavior.`:
+ * evidenced, never a guess. The first three are a receipted 400 from a real
+ * call through the managed egress arm — `"thinking.type.disabled" is not
+ * supported for this model. Use "thinking.type.adaptive" and
+ * "output_config.effort" to control thinking behavior.`:
  *   - `claude-fable-5-1` — req_011CfKACj6c3sa8UJRH4Jx77 (QA, dev, 2026-09-22)
  *   - `claude-fable-5` — req_011CfKANbRX8VrXKVxLVLijA (QA, dev, 2026-09-22)
  *   - `claude-opus-5-5` — req_011CfK6KioUCDdzGcvmJHA1f (QA, dev, 2026-09-22)
+ * The fourth is evidenced by the vendor documentation alone; a receipted 400
+ * from a real call is still owed (guuey#2231):
+ *   - `claude-sonnet-5-5` — "On Claude Sonnet 5.5, a request that sends
+ *     `thinking: {"type": "disabled"}` returns a 400 `invalid_request_error`
+ *     whose message points to `between_tools`."
+ *     (https://platform.claude.com/docs/en/models/sonnet-5-5/whats-new-sonnet-5-5,
+ *     read 2026-10-11). The same page states that Sonnet 5.5 also refuses a
+ *     forced `tool_choice` (`any` / `tool`).
  * Every other ga Claude id answered 200 on the same call and is NOT here:
  * `claude-sonnet-5` (the default), `claude-opus-5`, `claude-opus-4-8`,
  * `claude-sonnet-4-6`, `claude-haiku-4-5` (guuey#1606, 5784181150 / 5784211571).
+ * `claude-haiku-5-5` is NOT here either: the vendor's Thinking page says it
+ * "accepts `thinking: {type: "disabled"}` at effort `high` or below"
+ * (https://platform.claude.com/docs/en/build-with-claude/thinking, read
+ * 2026-10-11) — the same condition the page states for `claude-opus-5`, which
+ * answered 200 above.
  *
  * Not keyed on MODEL_REGISTRY on purpose: a guuey.json can name an id the
  * registry does not offer yet (`claude-opus-5-5` today), and the host must
@@ -397,10 +410,11 @@ export const modelEntry: RegistryAccessors["modelEntry"] = live.modelEntry;
  * guuey#1183b), under-matching fails the whole turn — so the families are
  * matched with any `-` / `[` / `@` continuation, and the bare aliases `fable`
  * and `opus` count too (`opus` may resolve to 5.5 now that the SDK pin is past
- * 0.3.278, guuey#1607). `claude-opus-5` and every Sonnet / Haiku id stay out: they
- * answered 200.
+ * 0.3.278, guuey#1607). `claude-opus-5` and every other Sonnet / Haiku id stay
+ * out: they answered 200. The bare alias `sonnet` stays out too — it may still
+ * resolve to `claude-sonnet-5`, which accepts `disabled`.
  */
-const REJECTS_DISABLED_THINKING_FAMILIES: readonly string[] = ["claude-fable-5", "claude-opus-5-5"];
+const REJECTS_DISABLED_THINKING_FAMILIES: readonly string[] = ["claude-fable-5", "claude-opus-5-5", "claude-sonnet-5-5"];
 const REJECTS_DISABLED_THINKING_ALIASES: ReadonlySet<string> = new Set(["fable", "opus"]);
 
 /**
