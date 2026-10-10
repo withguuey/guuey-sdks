@@ -442,8 +442,11 @@ export function attachViewHost(frame: ViewFrameLike, config: AttachViewHostConfi
         },
       )
       // A throw while handling the resolution (a `delivered` the host cannot
-      // read) is an answer the view still gets.
-      .catch(() => settle({ isError: true }));
+      // read) is an answer the view still gets — and a line on the console.
+      .catch((error: unknown) => {
+        console.error("[guuey] view ui/message failed — the host's delivery outcome could not be read.", error);
+        settle({ isError: true });
+      });
   };
 
   const relay = (

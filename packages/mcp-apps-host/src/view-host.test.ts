@@ -592,7 +592,7 @@ describe("attachViewHost — ui/message is answered from the sink's delivery out
     expect(answersTo(rejected.posted, 77)).toEqual([{ jsonrpc: "2.0", id: 77, result: { isError: true } }]);
   });
 
-  it("a sink that throws, or rejects, logs ONE console.error line carrying the error before the unchanged `{ isError: true }` answer (guuey#2254)", async () => {
+  it("a sink that throws, rejects, or resolves an unreadable outcome logs ONE console.error line carrying the error before the unchanged `{ isError: true }` answer (guuey#2254)", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
       const thrownError = new Error("sink threw");
@@ -608,6 +608,21 @@ describe("attachViewHost — ui/message is answered from the sink's delivery out
       await vi.advanceTimersByTimeAsync(0);
       expect(logged.mock.calls).toEqual([["[guuey] view ui/message failed — the host's onUserMessage rejected.", rejectedError]]);
       expect(answersTo(rejected.posted, 77)).toEqual([{ jsonrpc: "2.0", id: 77, result: { isError: true } }]);
+
+      // A resolution whose `delivered` cannot be read is logged too.
+      logged.mockClear();
+      const unreadableError = new Error("a resolution the host cannot read");
+      const unreadableSink = async (): Promise<UserMessageDelivery> => ({
+        get delivered(): true {
+          throw unreadableError;
+        },
+      });
+      const unread = wired(unreadableSink);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(logged.mock.calls).toEqual([
+        ["[guuey] view ui/message failed — the host's delivery outcome could not be read.", unreadableError],
+      ]);
+      expect(answersTo(unread.posted, 77)).toEqual([{ jsonrpc: "2.0", id: 77, result: { isError: true } }]);
 
       // A delivered: false outcome is an answer, not a failure: nothing is logged.
       logged.mockClear();
