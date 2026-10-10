@@ -66,6 +66,19 @@ describe("createChatAnalytics", () => {
     expect(() => t.messageSent()).not.toThrow();
     expect(warn).toHaveBeenCalled();
   });
+
+  it("an options object whose read throws is contained: one warning, no throw", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const setting: ChatAnalyticsSetting = {
+      get capture(): ChatAnalyticsSink {
+        throw new Error("getter boom");
+      },
+    };
+    const t = tracker(setting);
+    expect(() => t.messageSent()).not.toThrow();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toBe("[guuey] analytics options could not be read");
+  });
 });
 
 describe("hostPosthogSink", () => {

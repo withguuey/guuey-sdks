@@ -10,14 +10,13 @@
  * The transport and the action door are scripted (fetch is stubbed); every
  * wire value is SYNTHETIC.
  */
-import { Component, StrictMode, type ReactNode } from "react";
+import { Component, StrictMode, useCallback, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { AgentInvokeAdapters, InvokeRequest } from "@guuey/agent-client";
 import type { McpToolCallResult, UiActionRequest } from "@guuey/mcp-apps-host";
 import { GuueyChat, viewPropsWithThemeAnnounce, type GuueyChatHandle } from "./guuey-chat.js";
 import type { ChatDebugEvent, ViewMountItem } from "../types.js";
-import type { ChatAnalyticsOptions, ChatAnalyticsSink } from "../analytics.js";
 
 afterEach(cleanup);
 
@@ -440,24 +439,38 @@ describe("the echo relay is substituted only where the kit's relay AND the kit's
 });
 
 // guuey#2254 — a doorbell send step that throws SYNCHRONOUSLY after the tap is
-// marked sent. The real source in this kit: the analytics count runs between
-// `markSent` and the send, and it resolves the host's `analytics` options
-// object outside the sink's containment, so an options object whose read
-// throws (here an armed getter, armed only after the paint) throws there.
-function armableAnalytics() {
-  let armed = false;
-  const failure = new Error("analytics options unreadable");
-  const setting: ChatAnalyticsOptions = {
-    get capture(): ChatAnalyticsSink {
-      if (armed) throw failure;
-      return () => undefined;
-    },
+// marked sent. No step in the kit throws there today (the hook's send is
+// async, and the analytics count contains a host options object it cannot
+// read), so the seam is the invoke hook itself: its `send` is wrapped to
+// throw synchronously once armed, armed only after the first paint. The
+// sink's withdraw-log-reject handling is defense in depth for any future
+// synchronous step between `markSent` and the turn.
+const sendThrow = vi.hoisted(() => ({ armed: false, failure: new Error("send threw synchronously") }));
+vi.mock(import("@guuey/agent-client/react"), async (importOriginal) => {
+  const actual = await importOriginal();
+  type Invoke = ReturnType<typeof actual.useAgentInvoke>;
+  const useAgentInvoke = (...args: Parameters<typeof actual.useAgentInvoke>): Invoke => {
+    const invoke = actual.useAgentInvoke(...args);
+    const realSend = invoke.send;
+    const send = useCallback<Invoke["send"]>(
+      (...sendArgs) => {
+        if (sendThrow.armed) throw sendThrow.failure;
+        return realSend(...sendArgs);
+      },
+      [realSend],
+    );
+    return { ...invoke, send };
   };
+  return { ...actual, useAgentInvoke };
+});
+afterEach(() => {
+  sendThrow.armed = false;
+});
+function armableSend() {
   return {
-    setting,
-    failure,
+    failure: sendThrow.failure,
     arm: () => {
-      armed = true;
+      sendThrow.armed = true;
     },
   };
 }
@@ -480,7 +493,7 @@ const QUEUED_SEND_THREW = "[guuey] queued ui/message doorbell send threw — tap
 
 describe("a doorbell whose send throws synchronously (guuey#2254)", () => {
   it("idle ring: the drawn tap is withdrawn at once (not-sent), one console.error line carries the error, and the sink rejects with it", async () => {
-    const analytics = armableAnalytics();
+    const sendSeam = armableSend();
     const debug = vi.fn<(event: ChatDebugEvent) => void>();
     const { adapters, calls } = adaptersFor();
     let handle: GuueyChatHandle | null = null;
@@ -489,7 +502,6 @@ describe("a doorbell whose send throws synchronously (guuey#2254)", () => {
         endpointUrl="https://pod.example/agent/invoke"
         apiBaseUrl="https://api.example/v1"
         appId="gapp_synthetic"
-        analytics={analytics.setting}
         policy={{ debugDetail: true }}
         onDebugEvent={debug}
         adapters={adapters}
@@ -513,7 +525,7 @@ describe("a doorbell whose send throws synchronously (guuey#2254)", () => {
     });
     expect(document.querySelector(".guuey-chat-action-sending .guuey-chat-action-label")?.textContent).toBe(CHIP.label);
 
-    analytics.arm();
+    sendSeam.arm();
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
       let outcome: unknown;
@@ -525,8 +537,8 @@ describe("a doorbell whose send throws synchronously (guuey#2254)", () => {
             (error: unknown) => error,
           );
       });
-      expect(outcome).toBe(analytics.failure);
-      expect(logged.mock.calls.filter((c) => c[0] === SEND_THREW)).toEqual([[SEND_THREW, analytics.failure]]);
+      expect(outcome).toBe(sendSeam.failure);
+      expect(logged.mock.calls.filter((c) => c[0] === SEND_THREW)).toEqual([[SEND_THREW, sendSeam.failure]]);
     } finally {
       logged.mockRestore();
     }
@@ -537,7 +549,7 @@ describe("a doorbell whose send throws synchronously (guuey#2254)", () => {
   });
 
   it("queued ring: the drain withdraws the tap (not-sent), logs one line, settles the waiter not-delivered, then the error propagates as before", async () => {
-    const analytics = armableAnalytics();
+    const sendSeam = armableSend();
     const debug = vi.fn<(event: ChatDebugEvent) => void>();
     const caught = vi.fn<(error: unknown) => void>();
     let release: () => void = () => {};
@@ -562,7 +574,6 @@ describe("a doorbell whose send throws synchronously (guuey#2254)", () => {
           endpointUrl="https://pod.example/agent/invoke"
           apiBaseUrl="https://api.example/v1"
           appId="gapp_synthetic"
-          analytics={analytics.setting}
           policy={{ debugDetail: true }}
           onDebugEvent={debug}
           adapters={adapters}
@@ -597,19 +608,19 @@ describe("a doorbell whose send throws synchronously (guuey#2254)", () => {
     });
     expect(delivery).toBe("pending"); // queued behind the live turn
 
-    analytics.arm();
+    sendSeam.arm();
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
       await act(async () => {
         release();
       });
       await waitFor(() => expect(delivery).toEqual({ delivered: false, reason: "the chat send threw" }));
-      expect(logged.mock.calls.filter((c) => c[0] === QUEUED_SEND_THREW)).toEqual([[QUEUED_SEND_THREW, analytics.failure]]);
+      expect(logged.mock.calls.filter((c) => c[0] === QUEUED_SEND_THREW)).toEqual([[QUEUED_SEND_THREW, sendSeam.failure]]);
     } finally {
       logged.mockRestore();
     }
     expect(debug.mock.calls.filter(([e]) => e.type === "tap-withdrawn")).toEqual([[{ type: "tap-withdrawn", reason: "not-sent" }]]);
-    expect(caught).toHaveBeenCalledWith(analytics.failure);
+    expect(caught).toHaveBeenCalledWith(sendSeam.failure);
     expect(calls).toHaveLength(2);
   });
 });

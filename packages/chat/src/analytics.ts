@@ -159,7 +159,16 @@ export function createChatAnalytics(
   const target = (): { appId: string; sink: ChatAnalyticsSink; gui: ChatAnalyticsGui } | null => {
     const { appId, setting } = read();
     if (appId === undefined || appId === "") return null;
-    const resolved = resolveChatAnalytics(setting);
+    // The host's options object is read here, outside `emit`'s containment of
+    // the sink itself. A host getter that throws must never break the chat's
+    // send: it counts nothing for this event and says why, like a failed sink.
+    let resolved: ReturnType<typeof resolveChatAnalytics>;
+    try {
+      resolved = resolveChatAnalytics(setting);
+    } catch (err) {
+      console.warn("[guuey] analytics options could not be read", { error: err instanceof Error ? err.message : String(err) });
+      return null;
+    }
     return resolved === null ? null : { appId, ...resolved };
   };
   const emit = <E extends ChatAnalyticsEventName>(
