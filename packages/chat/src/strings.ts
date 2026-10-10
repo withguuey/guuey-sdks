@@ -334,7 +334,7 @@ export const defaultChatStrings: ChatStrings = {
   userCouldntSend: "Couldn't send",
   userRetry: "Retry",
   directiveContinuation: "Continuing from your action…",
-  tappedLabelPrefix: "You tapped:",
+  tappedLabelPrefix: "You chose:",
   directiveRawToggle: "Directive sent to the agent",
 
   viewNegotiating: "Loading view…",
