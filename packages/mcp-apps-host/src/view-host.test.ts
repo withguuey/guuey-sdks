@@ -592,6 +592,33 @@ describe("attachViewHost — ui/message is answered from the sink's delivery out
     expect(answersTo(rejected.posted, 77)).toEqual([{ jsonrpc: "2.0", id: 77, result: { isError: true } }]);
   });
 
+  it("a sink that throws, or rejects, logs ONE console.error line carrying the error before the unchanged `{ isError: true }` answer (guuey#2254)", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const thrownError = new Error("sink threw");
+      const thrown = wired(() => {
+        throw thrownError;
+      });
+      expect(logged.mock.calls).toEqual([["[guuey] view ui/message failed — the host's onUserMessage threw.", thrownError]]);
+      expect(answersTo(thrown.posted, 77)).toEqual([{ jsonrpc: "2.0", id: 77, result: { isError: true } }]);
+
+      logged.mockClear();
+      const rejectedError = new Error("sink rejected");
+      const rejected = wired(() => Promise.reject(rejectedError));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(logged.mock.calls).toEqual([["[guuey] view ui/message failed — the host's onUserMessage rejected.", rejectedError]]);
+      expect(answersTo(rejected.posted, 77)).toEqual([{ jsonrpc: "2.0", id: 77, result: { isError: true } }]);
+
+      // A delivered: false outcome is an answer, not a failure: nothing is logged.
+      logged.mockClear();
+      wired(async () => ({ delivered: false, reason: "chat unavailable" }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(logged).not.toHaveBeenCalled();
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
   it("still pending at the cap: `{}` exactly once (below the SDK's 60 s request timeout); a later outcome posts nothing more", async () => {
     let resolve: (d: UserMessageDelivery) => void = () => undefined;
     const { posted } = wired(() => new Promise((r) => (resolve = r)));

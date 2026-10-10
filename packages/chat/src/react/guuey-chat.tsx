@@ -931,10 +931,21 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     }
     // One source: the send carries exactly the entry the echo marked sent.
     const sent = tap !== null ? echoNow.markSent([tap.id]) : null;
-    analytics.messageSent();
-    void live.invoke.send(text, tapSendOptions(sent)).catch(() => {
-      // The hook owns failure surfacing, same as every send path.
-    });
+    // A send step that throws SYNCHRONOUSLY leaves no turn behind the entry
+    // just marked sent: the tap is withdrawn at once (`not-sent`, instead of
+    // after the sent grace), the throw is logged (the view host answers the
+    // view `{ isError: true }` from the rejection but drops the error), and
+    // the sink rejects. An async failure stays the hook's failed-turn state.
+    try {
+      analytics.messageSent();
+      void live.invoke.send(text, tapSendOptions(sent)).catch(() => {
+        // The hook owns failure surfacing, same as every send path.
+      });
+    } catch (error) {
+      if (tap !== null) echoNow.withdraw(tap.id, "not-sent");
+      console.error("[guuey] ui/message doorbell send threw — taps withdrawn.", error);
+      return Promise.reject(error);
+    }
     return Promise.resolve({ delivered: true });
   }, [analytics]);
 
@@ -965,8 +976,20 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       return;
     }
     const sent = next.taps.length > 0 ? echoRef.current.markSent(next.taps.map((t) => t.id)) : null;
-    analytics.messageSent();
-    void live.invoke.send(next.text, tapSendOptions(sent)).catch(() => {});
+    // Same rule as the direct ring: a synchronous throw means no turn, so
+    // every merged tap is withdrawn and every waiter hears it before the
+    // error propagates out of the effect as it did before.
+    try {
+      analytics.messageSent();
+      void live.invoke.send(next.text, tapSendOptions(sent)).catch(() => {
+        // The hook owns failure surfacing, same as every send path.
+      });
+    } catch (error) {
+      for (const tap of next.taps) echoRef.current.withdraw(tap.id, "not-sent");
+      console.error("[guuey] queued ui/message doorbell send threw — taps withdrawn.", error);
+      for (const waiter of next.waiters) waiter({ delivered: false, reason: "the chat send threw" });
+      throw error;
+    }
     for (const waiter of next.waiters) waiter({ delivered: true });
   }, [busy, analytics]);
 

@@ -418,8 +418,11 @@ export function attachViewHost(frame: ViewFrameLike, config: AttachViewHostConfi
     let outcome: void | Promise<UserMessageDelivery | void>;
     try {
       outcome = config.onUserMessage?.(params);
-    } catch {
+    } catch (error) {
       // A throwing sink delivered nothing — the view hears so, never a hang.
+      // The answer carries no error, so the host page's console is the one
+      // place the failure is visible.
+      console.error("[guuey] view ui/message failed — the host's onUserMessage threw.", error);
       settle({ isError: true });
       return;
     }
@@ -433,7 +436,10 @@ export function attachViewHost(frame: ViewFrameLike, config: AttachViewHostConfi
     outcome
       .then(
         (delivery) => settle(answerForDelivery(delivery)),
-        () => settle({ isError: true }),
+        (error: unknown) => {
+          console.error("[guuey] view ui/message failed — the host's onUserMessage rejected.", error);
+          settle({ isError: true });
+        },
       )
       // A throw while handling the resolution (a `delivered` the host cannot
       // read) is an answer the view still gets.

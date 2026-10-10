@@ -10,13 +10,14 @@
  * The transport and the action door are scripted (fetch is stubbed); every
  * wire value is SYNTHETIC.
  */
-import { StrictMode } from "react";
+import { Component, StrictMode, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { AgentInvokeAdapters, InvokeRequest } from "@guuey/agent-client";
 import type { McpToolCallResult, UiActionRequest } from "@guuey/mcp-apps-host";
 import { GuueyChat, viewPropsWithThemeAnnounce, type GuueyChatHandle } from "./guuey-chat.js";
-import type { ViewMountItem } from "../types.js";
+import type { ChatDebugEvent, ViewMountItem } from "../types.js";
+import type { ChatAnalyticsOptions, ChatAnalyticsSink } from "../analytics.js";
 
 afterEach(cleanup);
 
@@ -435,5 +436,180 @@ describe("the echo relay is substituted only where the kit's relay AND the kit's
       await onCallTool(tapRequest("7c7c7c7c"));
     });
     expect(document.querySelector(".guuey-chat-action-sending .guuey-chat-action-label")?.textContent).toBe(CHIP.label);
+  });
+});
+
+// guuey#2254 — a doorbell send step that throws SYNCHRONOUSLY after the tap is
+// marked sent. The real source in this kit: the analytics count runs between
+// `markSent` and the send, and it resolves the host's `analytics` options
+// object outside the sink's containment, so an options object whose read
+// throws (here an armed getter, armed only after the paint) throws there.
+function armableAnalytics() {
+  let armed = false;
+  const failure = new Error("analytics options unreadable");
+  const setting: ChatAnalyticsOptions = {
+    get capture(): ChatAnalyticsSink {
+      if (armed) throw failure;
+      return () => undefined;
+    },
+  };
+  return {
+    setting,
+    failure,
+    arm: () => {
+      armed = true;
+    },
+  };
+}
+
+class Boundary extends Component<{ children: ReactNode; onError: (error: unknown) => void }, { failed: boolean }> {
+  override state = { failed: false };
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+  override componentDidCatch(error: unknown): void {
+    this.props.onError(error);
+  }
+  override render(): ReactNode {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
+const SEND_THREW = "[guuey] ui/message doorbell send threw — taps withdrawn.";
+const QUEUED_SEND_THREW = "[guuey] queued ui/message doorbell send threw — taps withdrawn.";
+
+describe("a doorbell whose send throws synchronously (guuey#2254)", () => {
+  it("idle ring: the drawn tap is withdrawn at once (not-sent), one console.error line carries the error, and the sink rejects with it", async () => {
+    const analytics = armableAnalytics();
+    const debug = vi.fn<(event: ChatDebugEvent) => void>();
+    const { adapters, calls } = adaptersFor();
+    let handle: GuueyChatHandle | null = null;
+    render(
+      <GuueyChat
+        endpointUrl="https://pod.example/agent/invoke"
+        apiBaseUrl="https://api.example/v1"
+        appId="gapp_synthetic"
+        analytics={analytics.setting}
+        policy={{ debugDetail: true }}
+        onDebugEvent={debug}
+        adapters={adapters}
+        onReady={(h) => {
+          handle = h;
+        }}
+      />,
+    );
+    await waitFor(() => expect(handle).not.toBeNull());
+    act(() => {
+      expect(handle!.send("hi")).toBe(true);
+    });
+    await waitFor(() => expect(calls).toHaveLength(1));
+    await screen.findByRole("button", { name: "Send" });
+    await waitFor(() => expect(handle!.threadId).toBe("t-tap"));
+    const onCallTool = handle!.viewSlotProps().onCallTool;
+    const onUserMessage = handle!.viewSlotProps().onUserMessage;
+    if (onCallTool === undefined || onUserMessage === undefined) throw new Error("kit wiring expected");
+    await act(async () => {
+      await onCallTool(tapRequest("7f7f7f7f"));
+    });
+    expect(document.querySelector(".guuey-chat-action-sending .guuey-chat-action-label")?.textContent).toBe(CHIP.label);
+
+    analytics.arm();
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      let outcome: unknown;
+      await act(async () => {
+        outcome = await Promise.resolve()
+          .then(() => onUserMessage(doorbell("7f7f7f7f")))
+          .then(
+            () => "resolved",
+            (error: unknown) => error,
+          );
+      });
+      expect(outcome).toBe(analytics.failure);
+      expect(logged.mock.calls.filter((c) => c[0] === SEND_THREW)).toEqual([[SEND_THREW, analytics.failure]]);
+    } finally {
+      logged.mockRestore();
+    }
+    // Withdrawn in the doorbell's own task, not after the sent grace.
+    expect(document.querySelector(".guuey-chat-action-sending")).toBeNull();
+    expect(debug.mock.calls.filter(([e]) => e.type === "tap-withdrawn")).toEqual([[{ type: "tap-withdrawn", reason: "not-sent" }]]);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("queued ring: the drain withdraws the tap (not-sent), logs one line, settles the waiter not-delivered, then the error propagates as before", async () => {
+    const analytics = armableAnalytics();
+    const debug = vi.fn<(event: ChatDebugEvent) => void>();
+    const caught = vi.fn<(error: unknown) => void>();
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const calls: InvokeRequest[] = [];
+    let n = 0;
+    const adapters: AgentInvokeAdapters = {
+      storage: { load: () => null, save: () => {} },
+      generateId: () => `cmid-${n++}`,
+      transport: async function* (req) {
+        calls.push(req);
+        yield SESSION_FRAME;
+        if (calls.length === 1) yield RENDER_FRAME;
+        if (calls.length === 2) await held; // the second turn stays live until released
+        yield DONE_FRAME;
+      },
+    };
+    let handle: GuueyChatHandle | null = null;
+    render(
+      <Boundary onError={caught}>
+        <GuueyChat
+          endpointUrl="https://pod.example/agent/invoke"
+          apiBaseUrl="https://api.example/v1"
+          appId="gapp_synthetic"
+          analytics={analytics.setting}
+          policy={{ debugDetail: true }}
+          onDebugEvent={debug}
+          adapters={adapters}
+          onReady={(h) => {
+            handle = h;
+          }}
+        />
+      </Boundary>,
+    );
+    await waitFor(() => expect(handle).not.toBeNull());
+    act(() => {
+      expect(handle!.send("hi")).toBe(true);
+    });
+    await screen.findByRole("button", { name: "Send" });
+    await waitFor(() => expect(handle!.threadId).toBe("t-tap"));
+    act(() => {
+      expect(handle!.send("tell me more")).toBe(true);
+    });
+    await waitFor(() => expect(calls).toHaveLength(2));
+
+    const onCallTool = handle!.viewSlotProps().onCallTool;
+    const onUserMessage = handle!.viewSlotProps().onUserMessage;
+    if (onCallTool === undefined || onUserMessage === undefined) throw new Error("kit wiring expected");
+    await act(async () => {
+      await onCallTool(tapRequest("8e8e8e8e"));
+    });
+    let delivery: unknown = "pending";
+    await act(async () => {
+      void Promise.resolve(onUserMessage(doorbell("8e8e8e8e"))).then((d) => {
+        delivery = d;
+      });
+    });
+    expect(delivery).toBe("pending"); // queued behind the live turn
+
+    analytics.arm();
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await act(async () => {
+        release();
+      });
+      await waitFor(() => expect(delivery).toEqual({ delivered: false, reason: "the chat send threw" }));
+      expect(logged.mock.calls.filter((c) => c[0] === QUEUED_SEND_THREW)).toEqual([[QUEUED_SEND_THREW, analytics.failure]]);
+    } finally {
+      logged.mockRestore();
+    }
+    expect(debug.mock.calls.filter(([e]) => e.type === "tap-withdrawn")).toEqual([[{ type: "tap-withdrawn", reason: "not-sent" }]]);
+    expect(caught).toHaveBeenCalledWith(analytics.failure);
+    expect(calls).toHaveLength(2);
   });
 });
