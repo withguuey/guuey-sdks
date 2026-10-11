@@ -56,6 +56,7 @@ export const RESERVED_SLUGS = [
   'blog',
   'cdn',
   'chat',
+  'connect',
   'console',
   'contact',
   'credentials',
