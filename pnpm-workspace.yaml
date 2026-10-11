@@ -138,6 +138,11 @@ overrides:
   "fast-uri@3": ^3.1.7
   "ip-address@10": ^10.5.1
   "qs@6": ^6.16.0
+  # 2026-10-11 security floors (see the root pnpm-workspace.yaml comment; this lock held shell-quote 1.10.0,
+  # source-map-js 1.2.1 and proxy-addr 2.0.7).
+  "shell-quote@1": ^1.11.0
+  "source-map-js@1": ^1.2.2
+  "proxy-addr@2": ^2.0.8
   # guuey#687-rails — see the root pnpm-workspace.yaml comment: ONE MCP SDK
   # per lockfile; the peer-resolved transitive dependents (claude-agent-sdk,
   # ext-apps, the @ggui-ai/* trio) follow the tested line. Moves with each
