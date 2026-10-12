@@ -1219,3 +1219,56 @@ describe("isGguiRenderUrl — THE render server's shape, not merely the host (gu
     expect(isGguiRenderUrl("nope")).toBe(false);
   });
 });
+
+describe('applyAgentMode — a mode tools block with no allowlist keeps the base allowlist (guuey#2268)', () => {
+  const narrowBase = (modeTools: GuueyAgent['tools']): GuueyAgent => ({
+    systemPrompt: 'BASE',
+    tools: { allowlist: ['docs.search_docs', 'docs.read_doc'], denylist: ['Bash'] },
+    modes: { guest: { tools: modeTools } },
+  });
+
+  it('a denylist-only mode subtracts from the base allowlist', () => {
+    const r = applyAgentMode(narrowBase({ denylist: ['docs.read_doc'] }), undefined, 'guest');
+    expect(r.applied).toBe('guest');
+    expect(r.agent.tools).toEqual({ allowlist: ['docs.search_docs', 'docs.read_doc'], denylist: ['Bash', 'docs.read_doc'] });
+  });
+
+  it('an empty mode tools block keeps the base allowlist and the base denylist', () => {
+    const r = applyAgentMode(narrowBase({}), undefined, 'guest');
+    expect(r.agent.tools).toEqual({ allowlist: ['docs.search_docs', 'docs.read_doc'], denylist: ['Bash'] });
+  });
+
+  it('a mode allowlist still replaces the base allowlist, as before', () => {
+    const r = applyAgentMode(narrowBase({ allowlist: ['docs.search_docs'] }), undefined, 'guest');
+    expect(r.agent.tools).toEqual({ allowlist: ['docs.search_docs'], denylist: ['Bash'] });
+  });
+
+  it('a mode cannot re-allow a tool the base denies: the served denylist is the union, deduplicated', () => {
+    const r = applyAgentMode(narrowBase({ denylist: ['Bash', 'docs.read_doc'] }), undefined, 'guest');
+    expect(r.agent.tools).toEqual({ allowlist: ['docs.search_docs', 'docs.read_doc'], denylist: ['Bash', 'docs.read_doc'] });
+  });
+
+  it('an empty mode allowlist inherits the base allowlist, so it never widens past a narrow base', () => {
+    const r = applyAgentMode(narrowBase({ allowlist: [] }), undefined, 'guest');
+    expect(r.agent.tools).toEqual({ allowlist: ['docs.search_docs', 'docs.read_doc'], denylist: ['Bash'] });
+  });
+
+  it('an empty mode allowlist over a base with no allowlist serves as written (nothing to inherit)', () => {
+    const agent: GuueyAgent = { systemPrompt: 'BASE', modes: { guest: { tools: { allowlist: [] } } } };
+    const r = applyAgentMode(agent, undefined, 'guest');
+    expect(r.agent.tools).toEqual({ allowlist: [] });
+  });
+
+  it('a base with no allowlist: the mode block serves as written (nothing to inherit)', () => {
+    const agent: GuueyAgent = { systemPrompt: 'BASE', modes: { guest: { tools: { denylist: ['Bash'] } } } };
+    const r = applyAgentMode(agent, undefined, 'guest');
+    expect(r.agent.tools).toEqual({ denylist: ['Bash'] });
+  });
+
+  it('the base agent object is not mutated', () => {
+    const agent = narrowBase({ denylist: ['docs.read_doc'] });
+    const before = JSON.stringify(agent);
+    applyAgentMode(agent, undefined, 'guest');
+    expect(JSON.stringify(agent)).toBe(before);
+  });
+});

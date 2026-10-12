@@ -815,10 +815,34 @@ export function applyAgentMode(
     agent: {
       ...agent,
       ...(systemPrompt !== undefined ? { systemPrompt } : {}),
-      ...(def.tools !== undefined ? { tools: def.tools } : {}),
+      ...(def.tools !== undefined ? { tools: modeToolGates(agent.tools, def.tools) } : {}),
     },
     applied,
     ...(fallback !== undefined ? { fallback } : {}),
+  };
+}
+
+/**
+ * A mode's tools block as served (guuey#2268). A mode narrows, never widens
+ * (the guuey#527 subset rule): a mode block that names no `allowlist` keeps
+ * the base's, so a mode that only adds a `denylist` (or is `tools: {}`)
+ * subtracts from the base's tools. A mode `allowlist` replaces the base's as
+ * before (the subset rule already holds it inside the base). An EMPTY mode
+ * `allowlist` inherits the base's as well when the base has one. The served
+ * `denylist` is the union of the base's and the mode's, so a mode cannot
+ * re-allow a tool the base denies.
+ */
+function modeToolGates(
+  base: GuueyAgentToolGates | undefined,
+  mode: GuueyAgentToolGates,
+): GuueyAgentToolGates {
+  const allowlist = mode.allowlist?.length ? mode.allowlist : (base?.allowlist ?? mode.allowlist);
+  const denied = [...(base?.denylist ?? []), ...(mode.denylist ?? [])];
+  const denylist = denied.length > 0 ? [...new Set(denied)] : undefined;
+  return {
+    ...mode,
+    ...(allowlist !== undefined ? { allowlist } : {}),
+    ...(denylist !== undefined ? { denylist } : {}),
   };
 }
 
