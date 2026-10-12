@@ -24,6 +24,8 @@ import type { FirstImpressionPush, FirstImpressionShown, Fs, HistoryMessage, Jso
 import { withheldToolNamesFor } from "@guuey/worker";
 import {
   GUUEY_DEFAULT_SYSTEM_PROMPT,
+  NO_TOOLS_ENTRY,
+  declaresNoTools,
   defaultModelFor,
   parseToolGateEntry,
   rejectsDisabledThinking,
@@ -106,13 +108,14 @@ const AUTO_MEMORY_DISABLED: Settings = { autoMemoryEnabled: false };
  * Gate change (memory-mcp T5 review): was `ctx.fs` (a proxy for attachment).
  * `memoryAttached` is the REAL signal — it no longer over-renders in the
  * transient fs-on-but-child-unattached window, and no longer under-renders when
- * the tool exists. Delegates to the framework-neutral {@link renderMemorySection}
+ * the tool exists. Delegates to the framework-neutral {@link renderMemorySectionForTurn}
  * (`../preamble.js`) so Claude, OpenAI, and ADK all render the IDENTICAL section;
  * its RECALL block is byte-identical to the pre-factor inline string (pinned).
  */
-function buildMemorySection(ctx: BuildOptionsContext): string {
+function buildMemorySection(ctx: BuildOptionsContext, noTools: boolean): string {
   if (ctx.identity.authMode !== "authenticated" || !ctx.memoryAttached) return "";
-  return renderMemorySection(ctx.userMemory);
+  // guuey#2262: with no tools declared, the RECALL block alone (no SAVE).
+  return renderMemorySectionForTurn(ctx.userMemory, noTools);
 }
 
 /**
@@ -126,9 +129,11 @@ function buildMemorySection(ctx: BuildOptionsContext): string {
  * renderer owns the two inner gates (SAVE on `read-write`, RECALL on sections
  * presence). Returns `""` (append-safe) when out of scope.
  */
-function buildProfileSection(ctx: BuildOptionsContext): string {
+function buildProfileSection(ctx: BuildOptionsContext, noTools: boolean): string {
   if (ctx.identity.authMode !== "authenticated" || ctx.profileAccess === undefined) return "";
-  return renderProfileSection(ctx.profileSections, ctx.profileAccess);
+  // guuey#2262: with no tools declared the model cannot call `save_profile`,
+  // so the section renders as for a read grant (RECALL only).
+  return renderProfileSection(ctx.profileSections, noTools ? "read" : ctx.profileAccess);
 }
 
 /**
@@ -144,8 +149,10 @@ function buildProfileSection(ctx: BuildOptionsContext): string {
  * (`../preamble.js`) so Claude, OpenAI, and ADK render the IDENTICAL section.
  * Returns `""` (append-safe) when out of scope.
  */
-function buildFirstImpressionSection(ctx: BuildOptionsContext): string {
-  if (ctx.gguiAttached !== true) return "";
+function buildFirstImpressionSection(ctx: BuildOptionsContext, noTools: boolean): string {
+  // guuey#2262: the first impression asks for a `ggui_handshake` call, which a
+  // turn that declares no tools cannot make.
+  if (ctx.gguiAttached !== true || noTools) return "";
   return renderFirstImpressionSection(ctx.firstImpression);
 }
 function buildResourcesSection(ctx: BuildOptionsContext): string {
@@ -338,6 +345,9 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
   const mcpServers = resolveMcpServers(ctx);
   const fsBound = ctx.fsBound === true;
   const gates = resolveToolGates(snapshot, Object.keys(mcpServers), fsBound, ctx.withheldTools);
+  // guuey#2262: `tools.allowlist: ["@none"]` — no MCP tool this turn, so the
+  // sections that tell the model about tools it cannot call are left out.
+  const noTools = declaresNoTools(snapshot.tools);
   const systemPrompt =
     withContextPreamble(
       snapshot.systemPrompt ?? GUUEY_DEFAULT_SYSTEM_PROMPT,
@@ -345,16 +355,16 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
       ctx.priorMemory,
       ctx.priorState,
     ) +
-    buildMemorySection(ctx) +
+    buildMemorySection(ctx, noTools) +
     // cross-app-profile T7: the profile section is a SIBLING of the memory
     // section, appended AFTER it (memory first, then profile). Both are
     // framework-blind renderers from ../preamble.js.
-    buildProfileSection(ctx) +
+    buildProfileSection(ctx, noTools) +
     // guuey#456 B4: the app-resources hint, appended AFTER the profile
     // section (memory → profile → resources) — same framework-blind renderer
     // family from ../preamble.js, gated on fsBound && resourceCount > 0.
     buildResourcesSection(ctx) +
-    buildFirstImpressionSection(ctx) +
+    buildFirstImpressionSection(ctx, noTools) +
     // The welcome card the Router already drew (never beside a first-impression push).
     renderFirstImpressionShownSection(ctx.firstImpressionShown) +
     // guuey#901: the connected-services section — the pod's per-turn fact about
@@ -370,7 +380,9 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
     // for a text answer, wrong for a shaped one). Gated inside the
     // renderer on `gguiAttached` (the rail is really armed) AND the same
     // `surfaceHints: false` BYO opt-out. Before the norms, which stay LAST.
-    renderGenerativeUiSection(ctx.gguiAttached, snapshot.surfaceHints) +
+    // Left out when the tools block declares no tools (guuey#2262): the
+    // model cannot draw a card.
+    (noTools ? "" : renderGenerativeUiSection(ctx.gguiAttached, snapshot.surfaceHints)) +
     // guuey#556: the default response norms, LAST and unconditional —
     // every hosted agent inherits them (see RESPONSE_NORMS_SECTION's doc
     // for the confirm-gate carve-out + the per-court opt-out grammar).
@@ -619,7 +631,7 @@ export interface ResolvedToolGates {
   allowedTools: string[];
   /** SDK `disallowedTools` — the translated `tools.denylist` (removed from the catalog). */
   disallowedTools: string[];
-  /** Whether the snapshot carried a non-empty `tools.allowlist` (→ deny-unlisted posture). */
+  /** Whether the snapshot carried a non-empty `tools.allowlist`, `["@none"]` included (→ deny-unlisted posture). */
   explicitAllowlist: boolean;
   /** `allowedTools` as a set, for the deny-unlisted callback. */
   allowedSet: ReadonlySet<string>;
@@ -673,6 +685,14 @@ function toSdkToolNames(
  * - `disallowedTools`: the translated `tools.denylist` — the SDK removes those
  *   from the model's catalog outright — plus this turn's `withheld` tools on
  *   the servers attached this turn (`Invoke.withheldTools`).
+ * - "No tools" (guuey#2262): `tools.allowlist: ["@none"]` (`NO_TOOLS_ENTRY`)
+ *   allows no MCP tool — no MCP allow rule, the deny-unlisted posture, and
+ *   `mcp__<server>` in `disallowedTools` for every server attached this turn,
+ *   so it holds under a pinned `claude.permissions.mode` too (no `canUseTool`
+ *   is installed there, and an allow rule only pre-approves). The entry is
+ *   never translated: no `mcp__<server>__@none` rule is emitted, and in a list
+ *   that mixes it with real entries only the real entries count. Built-ins
+ *   follow `fsBound` as always; only the denylist removes them.
  */
 export function resolveToolGates(
   snapshot: GuueyAgent,
@@ -680,15 +700,22 @@ export function resolveToolGates(
   fsBound: boolean,
   withheld?: readonly WithheldTool[],
 ): ResolvedToolGates {
-  const explicit = snapshot.tools?.allowlist ?? [];
-  const explicitAllowlist = explicit.length > 0;
+  const isEntry = (e: string): boolean => e.trim() !== NO_TOOLS_ENTRY;
+  const noTools = declaresNoTools(snapshot.tools);
+  const explicit = (snapshot.tools?.allowlist ?? []).filter(isEntry);
+  const explicitAllowlist = noTools || explicit.length > 0;
   const builtins = fsBound ? [...BUILTIN_TOOLS] : [];
-  const mcpAllowed = explicitAllowlist
-    ? explicit.flatMap((e) => toSdkToolNames(e, declaredServerNames, fsBound))
-    : declaredServerNames.map((s) => `mcp__${s}`);
+  const mcpAllowed = noTools
+    ? []
+    : explicitAllowlist
+      ? explicit.flatMap((e) => toSdkToolNames(e, declaredServerNames, fsBound))
+      : declaredServerNames.map((s) => `mcp__${s}`);
   const allowedTools = dedupe([...mcpAllowed, ...builtins]);
   const disallowedTools = dedupe([
-    ...(snapshot.tools?.denylist ?? []).flatMap((e) => toSdkToolNames(e, declaredServerNames, fsBound)),
+    ...(noTools ? declaredServerNames.map((s) => `mcp__${s}`) : []),
+    ...(snapshot.tools?.denylist ?? [])
+      .filter(isEntry)
+      .flatMap((e) => toSdkToolNames(e, declaredServerNames, fsBound)),
     ...declaredServerNames.flatMap((server) =>
       withheldToolNamesFor(server, withheld).map((tool) => `mcp__${server}__${tool}`),
     ),
@@ -715,7 +742,7 @@ import {
   RESPONSE_NORMS_SECTION,
   renderSurfaceSection,
   renderGenerativeUiSection,
-  renderMemorySection,
+  renderMemorySectionForTurn,
   renderProfileSection,
   renderResourcesSection,
   renderFirstImpressionSection,

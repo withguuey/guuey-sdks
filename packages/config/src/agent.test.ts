@@ -10,6 +10,9 @@ import {
   validateReservedServerNames,
   validateToolGates,
   validateToolAllowlistsNotEmpty,
+  validateNoToolsEntry,
+  declaresNoTools,
+  NO_TOOLS_ENTRY,
   parseToolGateEntry,
   agentDeclaresVfs,
   RESERVED_MEMORY_SERVER_NAME,
@@ -408,7 +411,8 @@ describe('validateToolAllowlistsNotEmpty — deploy-time refusal of an empty all
   it('refuses a present-but-empty base allowlist with the message', () => {
     expect(validateToolAllowlistsNotEmpty({ tools: { allowlist: [] } })).toEqual([
       'agent.tools.allowlist is empty, which allows every tool; omit it to allow every tool, ' +
-        'list the tools to allow, or deny-list servers with "<server>.*" in agent.tools.denylist',
+        'list the tools to allow, write ["@none"] to allow no tools, ' +
+        'or deny-list servers with "<server>.*" in agent.tools.denylist',
     ]);
   });
 
@@ -420,6 +424,13 @@ describe('validateToolAllowlistsNotEmpty — deploy-time refusal of an empty all
     expect(v).toHaveLength(1);
     expect(v[0]).toContain('agent.modes.guest.tools.allowlist is empty, and an empty allowlist never means "no tools" in mode "guest"');
     expect(v[0]).toContain('agent.modes.guest.tools.denylist');
+    expect(v[0]).toContain('write ["@none"] to allow no tools in this mode');
+  });
+
+  it('passes ["@none"] (one entry, so never empty) on the base and in a mode (guuey#2262)', () => {
+    expect(
+      validateToolAllowlistsNotEmpty({ tools: { allowlist: ['@none'] }, modes: { guest: { tools: { allowlist: ['@none'] } } } }),
+    ).toEqual([]);
   });
 
   it('passes an absent allowlist, a non-empty one, an empty denylist alone, and modes without an allowlist', () => {
@@ -446,6 +457,118 @@ describe('validateToolAllowlistsNotEmpty — deploy-time refusal of an empty all
     if (!r.success) return;
     expect(r.data.agent.tools?.allowlist).toEqual([]);
     expect(r.data.agent.modes?.['guest']?.tools?.allowlist).toEqual([]);
+  });
+});
+
+describe('the "no tools" declaration, ["@none"] (guuey#2262)', () => {
+  it('NO_TOOLS_ENTRY is "@none" and parses as a bare entry (no schema change, every shipped parser accepts it)', () => {
+    expect(NO_TOOLS_ENTRY).toBe('@none');
+    expect(parseToolGateEntry(NO_TOOLS_ENTRY)).toEqual({ kind: 'bare', tool: '@none' });
+    expect(validateToolGates({ tools: { allowlist: ['@none'] } })).toEqual([]);
+  });
+
+  describe('declaresNoTools', () => {
+    it('is true when every (trimmed) allowlist entry is "@none"', () => {
+      expect(declaresNoTools({ allowlist: ['@none'] })).toBe(true);
+      expect(declaresNoTools({ allowlist: [' @none '] })).toBe(true);
+      expect(declaresNoTools({ allowlist: ['@none', '@none'] })).toBe(true);
+      expect(declaresNoTools({ allowlist: ['@none'], denylist: ['Bash'] })).toBe(true);
+    });
+
+    it('is false for an absent block, an absent or empty allowlist, a mixed list, and a denylist-only "@none"', () => {
+      expect(declaresNoTools(undefined)).toBe(false);
+      expect(declaresNoTools({})).toBe(false);
+      expect(declaresNoTools({ allowlist: [] })).toBe(false);
+      expect(declaresNoTools({ allowlist: ['@none', 'ggui.render'] })).toBe(false);
+      expect(declaresNoTools({ allowlist: ['ggui.*'] })).toBe(false);
+      expect(declaresNoTools({ denylist: ['@none'] })).toBe(false);
+    });
+  });
+
+  describe('validateNoToolsEntry', () => {
+    it('allows a base ["@none"] (a prompt-only agent with no tools anywhere) and a mode ["@none"]', () => {
+      expect(validateNoToolsEntry({ tools: { allowlist: ['@none'] } })).toEqual([]);
+      expect(
+        validateNoToolsEntry({
+          modes: { connector: { tools: { allowlist: ['@none'], denylist: ['Read', 'Write', 'Bash'] } } },
+        }),
+      ).toEqual([]);
+    });
+
+    it('passes definitions that never write "@none"', () => {
+      expect(validateNoToolsEntry(undefined)).toEqual([]);
+      expect(validateNoToolsEntry({})).toEqual([]);
+      expect(validateNoToolsEntry({ tools: { allowlist: ['ggui.*'], denylist: ['Bash'] } })).toEqual([]);
+      expect(validateNoToolsEntry({ tools: { allowlist: [] } })).toEqual([]);
+    });
+
+    it('refuses "@none" mixed with other base allowlist entries', () => {
+      const v = validateNoToolsEntry({ tools: { allowlist: ['@none', 'ggui.render'] } });
+      expect(v).toHaveLength(1);
+      expect(v[0]).toContain('agent.tools.allowlist mixes "@none" with other entries');
+      expect(v[0]).toContain("must be the allowlist's only entry");
+    });
+
+    it('refuses "@none" in the base denylist', () => {
+      const v = validateNoToolsEntry({ tools: { denylist: ['@none'] } });
+      expect(v).toHaveLength(1);
+      expect(v[0]).toContain('agent.tools.denylist lists "@none"');
+      expect(v[0]).toContain('agent.tools.allowlist: ["@none"]');
+    });
+
+    it('refuses both shapes in a mode, naming the mode, and checks every mode', () => {
+      const v = validateNoToolsEntry({
+        modes: {
+          connector: { tools: { allowlist: ['x', ' @none'], denylist: ['@none'] } },
+          guest: { tools: { allowlist: ['@none'] } },
+        },
+      });
+      expect(v).toHaveLength(2);
+      expect(v[0]).toContain('agent.modes.connector.tools.allowlist mixes "@none" with other entries in mode "connector"');
+      expect(v[1]).toContain('agent.modes.connector.tools.denylist lists "@none" in mode "connector"');
+    });
+
+    it('is NOT a grammar or schema rule: validateToolGates and the load schema accept the mixed and denylist shapes', () => {
+      const agent = { tools: { allowlist: ['@none', 'search'], denylist: ['@none'] } };
+      expect(validateToolGates(agent)).toEqual([]);
+      expect(safeParseGuueyJson({ schema: '1', agent: { systemPrompt: 'x', ...agent } }).success).toBe(true);
+    });
+
+    it('each message depends on its path alone (the server gate compares messages to find what a stored snapshot already carried)', () => {
+      const a = validateNoToolsEntry({ tools: { allowlist: ['@none', 'a'] } });
+      const b = validateNoToolsEntry({ tools: { allowlist: ['b', '@none', 'c'] } });
+      expect(a).toEqual(b);
+    });
+  });
+
+  it('N−1: a stored "@none" base and mode load through safeParseGuueyJson unchanged', () => {
+    const r = safeParseGuueyJson({
+      schema: '1',
+      agent: {
+        systemPrompt: 'x',
+        tools: { allowlist: ['@none'] },
+        modes: { guest: { tools: { allowlist: ['@none'] } } },
+      },
+    });
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    expect(r.data.agent.tools?.allowlist).toEqual(['@none']);
+    expect(r.data.agent.modes?.['guest']?.tools?.allowlist).toEqual(['@none']);
+    expect(declaresNoTools(r.data.agent.tools)).toBe(true);
+  });
+
+  it('N−1: a stored "@none" mode under a base with no allowlist loads, and applyAgentMode serves it as no tools', () => {
+    const r = safeParseGuueyJson({
+      schema: '1',
+      agent: {
+        systemPrompt: 'x',
+        modes: { guest: { tools: { allowlist: ['@none'], denylist: ['Bash'] } } },
+      },
+    });
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    const served = applyAgentMode(r.data.agent, undefined, 'guest');
+    expect(declaresNoTools(served.agent.tools)).toBe(true);
   });
 });
 

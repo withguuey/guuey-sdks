@@ -17,7 +17,9 @@ import { assertGracefulSupport, loadRunner, type HostSnapshot, type HostTurn } f
 import {
   SURFACE_FORMATTING_SECTION,
   RESPONSE_NORMS_SECTION,
+  GENERATIVE_UI_SECTION,
   renderMemorySection,
+  renderUserMemoryRecall,
   renderProfileSection,
   renderResourcesSection,
   withContextPreamble,
@@ -339,6 +341,54 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     });
     expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined) + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION);
     expect(resolved).not.toContain("`save_memory` tool");
+  });
+
+  it('guuey#2262: tools.allowlist ["@none"] leaves out the SAVE instruction and the generative-UI section, keeps the recall', async () => {
+    const turn: Partial<HostTurn> = {
+      identity: { userId: "u-mem", authMode: "authenticated" },
+      memoryAttached: true,
+      userMemory: "Ada.",
+      gguiAttached: true,
+    };
+    const resolved = await resolveInstruction(turn, {
+      model: "gemini-3.5-pro",
+      systemPrompt: "be terse",
+      tools: { allowlist: ["@none"] },
+    });
+    expect(resolved).not.toContain("`save_memory` tool");
+    expect(resolved).not.toContain(GENERATIVE_UI_SECTION);
+    expect(resolved).toBe(
+      withContextPreamble("be terse", [], undefined, undefined) +
+        renderUserMemoryRecall("Ada.") +
+        SURFACE_FORMATTING_SECTION +
+        RESPONSE_NORMS_SECTION,
+    );
+    // Control: an allowlist that keeps a tool keeps both sections.
+    const control = await resolveInstruction(turn, {
+      model: "gemini-3.5-pro",
+      systemPrompt: "be terse",
+      tools: { allowlist: ["ggui.*"] },
+    });
+    expect(control).toContain("`save_memory` tool");
+    expect(control).toContain(GENERATIVE_UI_SECTION);
+    expect(control).toContain(renderUserMemoryRecall("Ada."));
+  });
+
+  it('guuey#2262: tools.allowlist ["@none"] leaves out the profile SAVE instruction and the first impression, keeps the profile recall', async () => {
+    const turn: Partial<HostTurn> = {
+      identity: { userId: "u-mem", authMode: "authenticated" },
+      gguiAttached: true,
+      profileAccess: "read-write",
+      profileSections: [{ app: "Todoist", content: "Prefers short replies." }],
+      firstImpression: { chipKey: "c5c73c61f370", intent: "Opening hours", contract: { propsSpec: { properties: {} } } },
+    };
+    const none = await resolveInstruction(turn, { model: "gemini-3.5-pro", systemPrompt: "be terse", tools: { allowlist: ["@none"] } });
+    expect(none).not.toContain("save_profile");
+    expect(none).toContain("Prefers short replies.");
+    expect(none).not.toContain("ggui_handshake");
+    const control = await resolveInstruction(turn, { model: "gemini-3.5-pro", systemPrompt: "be terse", tools: { allowlist: ["ggui.*"] } });
+    expect(control).toContain("save_profile");
+    expect(control).toContain("ggui_handshake");
   });
 
   // ── cross-app profile section (profile T7) — SIBLING of the memory section ──

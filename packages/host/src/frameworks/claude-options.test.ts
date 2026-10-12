@@ -861,3 +861,124 @@ describe("the connected-services section rides the invoke into the system prompt
     expect(sp.endsWith(RESPONSE_NORMS_SECTION)).toBe(true);
   });
 });
+
+describe('"no tools" — tools.allowlist: ["@none"] (guuey#2262)', () => {
+  const signal = new AbortController().signal;
+  const call = (opts: ReturnType<typeof buildOptions>, tool: string) =>
+    opts.canUseTool?.(tool, { k: "v" }, { signal, toolUseID: "t", requestId: "r" });
+  const servers = () => [
+    { name: "ggui", cred: { url: "https://mcp.ggui.ai/apps/a", transport: "http" as const, headers: {} } },
+    { name: "b", cred: { url: "https://b.example.com", transport: "http" as const, headers: {} } },
+  ];
+  const fs = { app: "/a", home: "/h", session: "/s" };
+  const BUILTINS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash"];
+
+  it("resolveToolGates: no MCP allow rule, every attached server disallowed whole, the deny-unlisted posture, and never an mcp__<s>__@none rule", () => {
+    const g = resolveToolGates({ tools: { allowlist: ["@none"] } }, ["ggui", "b"], false);
+    expect(g.allowedTools).toEqual([]);
+    expect(g.explicitAllowlist).toBe(true);
+    expect(g.disallowedTools).toEqual(["mcp__ggui", "mcp__b"]);
+    expect([...g.allowedTools, ...g.disallowedTools].some((n) => n.includes("@none"))).toBe(false);
+  });
+
+  it("default posture: denyUnlistedTool is installed and denies every MCP pick", async () => {
+    const opts = buildOptions({ tools: { allowlist: ["@none"] } }, ctx({ listCredentials: servers }));
+    expect("permissionMode" in opts).toBe(false);
+    expect(typeof opts.canUseTool).toBe("function");
+    expect(opts.allowedTools).toEqual([]);
+    expect(opts.disallowedTools).toEqual(["mcp__ggui", "mcp__b"]);
+    for (const tool of ["mcp__ggui__ggui_render", "mcp__b__anything", "mcp__b__@none"]) {
+      const r = await call(opts, tool);
+      expect(r?.behavior).toBe("deny");
+    }
+  });
+
+  it("a pinned claude.permissions.mode installs no canUseTool, so every server rides disallowedTools instead", () => {
+    const opts = buildOptions(
+      { tools: { allowlist: ["@none"] }, claude: { permissions: { mode: "acceptEdits" } } },
+      ctx({ listCredentials: servers }),
+    );
+    expect(opts.permissionMode).toBe("acceptEdits");
+    expect(opts.canUseTool).toBeUndefined();
+    expect(opts.allowedTools).toEqual([]);
+    expect(opts.disallowedTools).toEqual(["mcp__ggui", "mcp__b"]);
+  });
+
+  it("built-ins follow fsBound as always; only the denylist removes them", () => {
+    const kept = buildOptions({ tools: { allowlist: ["@none"] } }, ctx({ fs, fsBound: true, listCredentials: servers }));
+    expect(kept.tools).toEqual(BUILTINS);
+    expect(kept.allowedTools).toEqual(BUILTINS);
+    const denied = buildOptions(
+      { tools: { allowlist: ["@none"], denylist: BUILTINS } },
+      ctx({ fs, fsBound: true, listCredentials: servers }),
+    );
+    // A bare denylist entry also names that tool on every server; the built-ins are what matter here.
+    expect(denied.disallowedTools).toEqual(expect.arrayContaining(["mcp__ggui", "mcp__b", ...BUILTINS]));
+  });
+
+  it("a mixed list (refused at deploy; a stored one could carry it) allows only the real entries, the sentinel never translated", () => {
+    const g = resolveToolGates({ tools: { allowlist: ["@none", "b.search"], denylist: ["@none"] } }, ["ggui", "b"], false);
+    expect(g.allowedTools).toEqual(["mcp__b__search"]);
+    expect(g.explicitAllowlist).toBe(true);
+    expect(g.disallowedTools).toEqual([]);
+  });
+
+  describe("prompt sections", () => {
+    const authed = { userId: "u1", authMode: "authenticated" as const };
+    const SAVE_TEXT = "`save_memory` tool";
+    const RECALL_HEADING = "## What you remember about this user";
+
+    it("leaves out the memory SAVE instruction and the generative-UI section, keeps the recall and every other section", () => {
+      const sp = buildOptions(
+        { systemPrompt: "S", tools: { allowlist: ["@none"] } },
+        ctx({ identity: authed, fs, memoryAttached: true, userMemory: "Ada.", gguiAttached: true }),
+      ).systemPrompt as string;
+      expect(sp).not.toContain(SAVE_TEXT);
+      expect(sp).not.toContain(GENERATIVE_UI_SECTION);
+      expect(sp).toContain(RECALL_HEADING);
+      expect(sp).toContain("Ada.");
+      expect(sp).toContain(SURFACE_FORMATTING_SECTION);
+      expect(sp.endsWith(RESPONSE_NORMS_SECTION)).toBe(true);
+    });
+
+    it("with no recall content, the memory section renders nothing at all", () => {
+      const sp = buildOptions(
+        { systemPrompt: "S", tools: { allowlist: ["@none"] } },
+        ctx({ identity: authed, fs, memoryAttached: true, gguiAttached: true }),
+      ).systemPrompt as string;
+      expect(sp).toBe("S" + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION);
+    });
+
+    it("leaves out the profile SAVE instruction (RECALL kept) and the first impression's handshake call", () => {
+      const firstImpression = { chipKey: "c5c73c61f370", intent: "Opening hours", contract: { propsSpec: { properties: {} } } };
+      const turn = ctx({
+        identity: authed,
+        fs,
+        gguiAttached: true,
+        profileAccess: "read-write",
+        profileSections: [{ app: "Todoist", content: "Prefers short replies." }],
+        firstImpression,
+      });
+      const sp = buildOptions({ systemPrompt: "S", tools: { allowlist: ["@none"] } }, turn).systemPrompt as string;
+      expect(sp).not.toContain("save_profile");
+      expect(sp).toContain("Prefers short replies.");
+      expect(sp).not.toContain("## First impression (this turn)");
+      expect(sp).not.toContain("ggui_handshake");
+      // Control: a real allowlist keeps both.
+      const control = buildOptions({ systemPrompt: "S", tools: { allowlist: ["ggui.*"] } }, turn).systemPrompt as string;
+      expect(control).toContain("save_profile");
+      expect(control).toContain("## First impression (this turn)");
+    });
+
+    it("only a no-tools declaration skips them: a real allowlist and a mixed list keep both sections", () => {
+      for (const allowlist of [["ggui.*"], ["@none", "ggui.*"]]) {
+        const sp = buildOptions(
+          { systemPrompt: "S", tools: { allowlist } },
+          ctx({ identity: authed, fs, memoryAttached: true, gguiAttached: true }),
+        ).systemPrompt as string;
+        expect(sp).toContain(SAVE_TEXT);
+        expect(sp).toContain(GENERATIVE_UI_SECTION);
+      }
+    });
+  });
+});

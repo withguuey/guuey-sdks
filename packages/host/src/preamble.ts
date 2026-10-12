@@ -145,6 +145,19 @@ export function renderMemorySection(userMemory: string | undefined): string {
 }
 
 /**
+ * The memory section for a turn whose tools block may declare no tools
+ * (guuey#2262, `declaresNoTools` from `@guuey/config`). With tools it is
+ * exactly {@link renderMemorySection}. With none the model cannot call
+ * `save_memory`, so the SAVE instruction is left out; what the user's memory
+ * already holds is data, not a tool, and its RECALL block still renders.
+ * The caller keeps owning the `authenticated && memoryAttached` gate.
+ */
+export function renderMemorySectionForTurn(userMemory: string | undefined, noTools: boolean): string {
+  if (!noTools) return renderMemorySection(userMemory);
+  return userMemory ? renderUserMemoryRecall(userMemory) : "";
+}
+
+/**
  * SAVE half of the cross-app profile section (cross-app-profile spec §4). Points
  * the model at the auto-injected `save_profile` MCP tool (the reserved
  * `guuey-profile` server T4 splices when the app has a `read-write` grant). Sibling

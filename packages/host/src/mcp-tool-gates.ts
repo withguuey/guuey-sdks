@@ -17,12 +17,18 @@
  * malformed entry (the deploy gate rejects them; a stale snapshot could still
  * carry one) is dropped, never matched verbatim.
  *
+ * "No tools" (guuey#2262): an allowlist whose only entry is `"@none"`
+ * (`NO_TOOLS_ENTRY`, `@guuey/config`) keeps no tool on any server. The entry
+ * is never matched as a tool name: in a list that mixes it with real entries
+ * (the deploy gate refuses that; a stored snapshot could still carry one)
+ * only the real entries count, exactly as on a host that predates it.
+ *
  * Built-ins: OpenAI and ADK agents carry no built-in tools (the Claude host's
  * file tools and `Bash` exist only there), so a bare built-in name gates only
  * an MCP tool of that name. Denying `Bash` is a no-op for everything else; an
  * allowlist of built-ins alone narrows each server to tools of those names.
  */
-import { parseToolGateEntry, type GuueyAgent } from "@guuey/config";
+import { NO_TOOLS_ENTRY, declaresNoTools, parseToolGateEntry, type GuueyAgent } from "@guuey/config";
 import { modelMayCallTool, withheldToolNamesFor, type WithheldTool } from "@guuey/worker";
 
 /** The snapshot's gate block. */
@@ -33,6 +39,7 @@ function namesOn(server: string, entries: readonly string[]): { whole: boolean; 
   let whole = false;
   const tools = new Set<string>();
   for (const raw of entries) {
+    if (raw.trim() === NO_TOOLS_ENTRY) continue;
     const parsed = parseToolGateEntry(raw);
     if ("error" in parsed) continue;
     if (parsed.kind === "bare") tools.add(parsed.tool);
@@ -53,7 +60,9 @@ export function mcpToolPredicateFor(
   gates: ToolGates,
   withheld?: readonly WithheldTool[],
 ): ((tool: string) => boolean) | undefined {
-  const allowEntries = gates?.allowlist ?? [];
+  // guuey#2262: `["@none"]` declares no tools — nothing on this server is kept.
+  if (declaresNoTools(gates)) return () => false;
+  const allowEntries = (gates?.allowlist ?? []).filter((e) => e.trim() !== NO_TOOLS_ENTRY);
   const allow = allowEntries.length > 0 ? namesOn(server, allowEntries) : undefined;
   const deny = namesOn(server, gates?.denylist ?? []);
   const blocked = new Set([...deny.tools, ...withheldToolNamesFor(server, withheld)]);

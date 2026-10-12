@@ -48,11 +48,11 @@ import {
 } from "./claude-options.js";
 import {
   RESPONSE_NORMS_SECTION,
-  renderSurfaceSection, renderGenerativeUiSection, renderMemorySection, renderProfileSection, renderResourcesSection,
+  renderSurfaceSection, renderGenerativeUiSection, renderMemorySectionForTurn, renderProfileSection, renderResourcesSection,
   renderFirstImpressionSection, renderFirstImpressionShownSection,
   renderMcpAvailabilitySection } from "../preamble.js";
 import type { HostInvoke, HostRuntime } from "./claude.js";
-import { GUUEY_DEFAULT_SYSTEM_PROMPT, defaultModelFor, type GuueyAgent } from "@guuey/config";
+import { GUUEY_DEFAULT_SYSTEM_PROMPT, declaresNoTools, defaultModelFor, type GuueyAgent } from "@guuey/config";
 import { resolveSdkVersion } from "../sdk-version.js";
 
 /** The framework tag this arm runs — matches the `AgentFramework` enum value. */
@@ -190,6 +190,10 @@ export async function runInvokeOpenai(
     const resourceCount = invoke.resourceCount;
     const resourcesOn =
       invoke.fsBound === true && resourceCount !== undefined && resourceCount > 0;
+    // guuey#2262: `tools.allowlist: ["@none"]` keeps no tool on any server, so
+    // the memory and profile SAVE instructions, the first impression (a
+    // `ggui_handshake` call) and the generative-UI section are left out.
+    const noTools = declaresNoTools(snapshot.tools);
     instructions =
       withContextPreamble(
         snapshot.systemPrompt ?? GUUEY_DEFAULT_SYSTEM_PROMPT,
@@ -197,11 +201,11 @@ export async function runInvokeOpenai(
         ctx.priorMemory,
         ctx.priorState,
       ) +
-      (memoryOn ? renderMemorySection(invoke.userMemory) : "") +
-      (profileOn ? renderProfileSection(invoke.profileSections, profileAccess) : "") +
+      (memoryOn ? renderMemorySectionForTurn(invoke.userMemory, noTools) : "") +
+      (profileOn ? renderProfileSection(invoke.profileSections, noTools ? "read" : profileAccess) : "") +
       (resourcesOn ? renderResourcesSection(resourceCount, invoke.fs.app) : "") +
       // guuey#1183: the bound first impression — only with the ggui rail armed.
-      (invoke.gguiAttached === true ? renderFirstImpressionSection(invoke.firstImpression) : "") +
+      (invoke.gguiAttached === true && !noTools ? renderFirstImpressionSection(invoke.firstImpression) : "") +
       // The welcome card the Router already drew — whenever present.
       renderFirstImpressionShownSection(invoke.firstImpressionShown) +
       // guuey#531: surface-formatting hints — default ON, only an explicit
@@ -212,7 +216,7 @@ export async function runInvokeOpenai(
       // section it qualifies. Gated inside the renderer on `gguiAttached`
       // (the rail is really armed this turn) AND the same `surfaceHints:
       // false` BYO opt-out. Before the norms (LAST).
-      renderGenerativeUiSection(invoke.gguiAttached, snapshot.surfaceHints) +
+      (noTools ? "" : renderGenerativeUiSection(invoke.gguiAttached, snapshot.surfaceHints)) +
       // guuey#556: default response norms, LAST and unconditional (see the
       // constant's doc for the confirm-gate carve-out).
       RESPONSE_NORMS_SECTION;

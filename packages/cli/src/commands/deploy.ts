@@ -47,6 +47,7 @@ import {
   validateColocatedServerNames,
   validateToolGates,
   validateToolAllowlistsNotEmpty,
+  validateNoToolsEntry,
   writeGuueyJsonFile,
   declaredServerEntries,
   type ResolvedGuueyJson,
@@ -739,6 +740,12 @@ async function deployCode(opts: {
   const emptyAllowlistViolations = validateToolAllowlistsNotEmpty(doc.agent);
   if (emptyAllowlistViolations.length > 0) {
     out.error(emptyAllowlistViolations.map((v) => `  - ${v}`).join('\n'));
+    process.exit(1);
+  }
+  // guuey#2262: "@none" declares no tools only alone in an allowlist.
+  const noToolsViolations = validateNoToolsEntry(doc.agent);
+  if (noToolsViolations.length > 0) {
+    out.error(noToolsViolations.map((v) => `  - ${v}`).join('\n'));
     process.exit(1);
   }
 
@@ -1452,6 +1459,12 @@ async function deployDeclarative(opts: {
   const emptyAllowlistViolations = validateToolAllowlistsNotEmpty(agent);
   if (emptyAllowlistViolations.length > 0) {
     out.error(emptyAllowlistViolations.map((v) => `  - ${v}`).join('\n'));
+    process.exit(1);
+  }
+  // guuey#2262: "@none" declares no tools only alone in an allowlist.
+  const noToolsViolations = validateNoToolsEntry(agent);
+  if (noToolsViolations.length > 0) {
+    out.error(noToolsViolations.map((v) => `  - ${v}`).join('\n'));
     process.exit(1);
   }
 

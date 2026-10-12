@@ -16,7 +16,7 @@ import type { HostInvoke } from "./claude.js";
 import {
   RESPONSE_NORMS_SECTION,
   SURFACE_FORMATTING_SECTION, renderMemorySection, renderProfileSection, renderResourcesSection,
-  FIRST_IMPRESSION_SHOWN_HEADING } from "../preamble.js";
+  FIRST_IMPRESSION_SHOWN_HEADING, GENERATIVE_UI_SECTION, renderUserMemoryRecall } from "../preamble.js";
 import { defaultModelFor, type GuueyAgent } from "@guuey/config";
 
 /** Collect every emitted WorkerEvent into an array (the fd-3 sink, in memory). */
@@ -280,6 +280,57 @@ describe("runInvokeOpenai — memory section (memory-mcp T5, gated on authentica
     expect((instructions ?? "").indexOf("SYS")).toBeLessThan(
       (instructions ?? "").indexOf("`save_memory` tool"),
     );
+  });
+
+  it('guuey#2262: tools.allowlist ["@none"] leaves out the SAVE instruction and the generative-UI section, keeps the recall', async () => {
+    const { sink } = collector();
+    let instructions: string | undefined;
+    const run: OpenaiRunFn = (agent) => {
+      instructions = typeof agent.instructions === "string" ? agent.instructions : undefined;
+      return Promise.resolve(fakeResult({ events: [], finalOutput: "ok" }));
+    };
+    await runInvokeOpenai(
+      { framework: "openai-agents-sdk", model: "gpt-4o-mini", systemPrompt: "SYS", mcpServers: {}, tools: { allowlist: ["@none"] } },
+      invoke({ identity: authed, memoryAttached: true, userMemory: "Ada.", gguiAttached: true }),
+      runtime,
+      createEmitter(sink),
+      run,
+    );
+    expect(instructions).not.toContain("`save_memory` tool");
+    expect(instructions).not.toContain(GENERATIVE_UI_SECTION);
+    expect(instructions?.endsWith(renderUserMemoryRecall("Ada.") + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION)).toBe(true);
+  });
+
+  it('guuey#2262: tools.allowlist ["@none"] leaves out the profile SAVE instruction and the first impression, keeps the profile recall', async () => {
+    const capture = async (allowlist: string[]): Promise<string> => {
+      const { sink } = collector();
+      let instructions = "";
+      const run: OpenaiRunFn = (agent) => {
+        instructions = typeof agent.instructions === "string" ? agent.instructions : "";
+        return Promise.resolve(fakeResult({ events: [], finalOutput: "ok" }));
+      };
+      await runInvokeOpenai(
+        { framework: "openai-agents-sdk", model: "gpt-4o-mini", systemPrompt: "SYS", mcpServers: {}, tools: { allowlist } },
+        invoke({
+          identity: authed,
+          gguiAttached: true,
+          profileAccess: "read-write",
+          profileSections: [{ app: "Todoist", content: "Prefers short replies." }],
+          firstImpression: { chipKey: "c5c73c61f370", intent: "Opening hours", contract: { propsSpec: { properties: {} } } },
+        }),
+        runtime,
+        createEmitter(sink),
+        run,
+      );
+      return instructions;
+    };
+    const none = await capture(["@none"]);
+    expect(none).not.toContain("save_profile");
+    expect(none).toContain("Prefers short replies.");
+    expect(none).not.toContain("ggui_handshake");
+    const control = await capture(["ggui.*"]);
+    expect(control).toContain("save_profile");
+    expect(control).toContain("ggui_handshake");
   });
 
   it("BOOTSTRAP: authenticated + attached + NO userMemory (brand-new user) → save-only section, NO recall block", async () => {

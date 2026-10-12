@@ -55,7 +55,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { GUUEY_DEFAULT_SYSTEM_PROMPT, defaultModelFor, type GuueyContext } from "@guuey/config";
+import { GUUEY_DEFAULT_SYSTEM_PROMPT, declaresNoTools, defaultModelFor, type GuueyContext } from "@guuey/config";
 import {
   ADK_HOST_COMPLETION_CAPABILITY,
   listCredentials,
@@ -78,7 +78,7 @@ import {
   renderSurfaceSection,
   renderMcpAvailabilitySection,
   renderGenerativeUiSection,
-  renderMemorySection,
+  renderMemorySectionForTurn,
   renderProfileSection,
   renderResourcesSection,
   renderFirstImpressionSection,
@@ -505,6 +505,10 @@ export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
       const resourceCount = turn.resourceCount;
       const resourcesOn =
         turn.fsBound === true && resourceCount !== undefined && resourceCount > 0;
+      // guuey#2262: `tools.allowlist: ["@none"]` keeps no tool on any server, so
+      // the memory and profile SAVE instructions, the first impression (a
+      // `ggui_handshake` call) and the generative-UI section are left out.
+      const noTools = declaresNoTools(snapshot.tools);
       const instruction =
         // Prompt-less snapshots run the platform default — same fallback as
         // the claude and openai arms (this arm used to fall back to "",
@@ -515,11 +519,11 @@ export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
           turn.priorMemory,
           turn.priorState,
         ) +
-        (memoryOn ? renderMemorySection(turn.userMemory) : "") +
-        (profileOn ? renderProfileSection(turn.profileSections, profileAccess) : "") +
+        (memoryOn ? renderMemorySectionForTurn(turn.userMemory, noTools) : "") +
+        (profileOn ? renderProfileSection(turn.profileSections, noTools ? "read" : profileAccess) : "") +
         (resourcesOn ? renderResourcesSection(resourceCount, turn.fs.app) : "") +
         // guuey#1183: the bound first impression — only with the ggui rail armed.
-        (turn.gguiAttached === true ? renderFirstImpressionSection(turn.firstImpression) : "") +
+        (turn.gguiAttached === true && !noTools ? renderFirstImpressionSection(turn.firstImpression) : "") +
         // The welcome card the Router already drew — whenever present.
         renderFirstImpressionShownSection(turn.firstImpressionShown) +
         // guuey#531: surface-formatting hints — default ON, only an explicit
@@ -530,7 +534,7 @@ export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
         // section it qualifies. Gated inside the renderer on `gguiAttached`
         // (the rail is really armed this turn) AND the same `surfaceHints:
         // false` BYO opt-out. Before the norms (LAST).
-        renderGenerativeUiSection(turn.gguiAttached, snapshot.surfaceHints) +
+        (noTools ? "" : renderGenerativeUiSection(turn.gguiAttached, snapshot.surfaceHints)) +
         // guuey#556: default response norms, LAST and unconditional (see the
         // constant's doc for the confirm-gate carve-out).
         RESPONSE_NORMS_SECTION;

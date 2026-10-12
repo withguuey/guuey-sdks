@@ -51,3 +51,24 @@ describe("mcpToolPredicateFor — the config tool gates, per server, for the fra
     expect(keptOn("ggui", { allowlist: ["Bash"] })).toEqual([]);
   });
 });
+
+describe('mcpToolPredicateFor — "no tools", allowlist: ["@none"] (guuey#2262)', () => {
+  it('["@none"] keeps nothing on any server', () => {
+    expect(keptOn("ggui", { allowlist: ["@none"] })).toEqual([]);
+    expect(keptOn("other", { allowlist: [" @none "] })).toEqual([]);
+    const keep = mcpToolPredicateFor("ggui", { allowlist: ["@none"] });
+    expect(keep?.("@none")).toBe(false);
+  });
+
+  it("a mixed list keeps only the real entries; the sentinel is never matched as a tool name", () => {
+    expect(keptOn("ggui", { allowlist: ["@none", "ggui.render"] })).toEqual(["render"]);
+    expect(keptOn("ggui", { allowlist: ["@none", "ggui.*"] })).toBe("open");
+    const keep = mcpToolPredicateFor("ggui", { allowlist: ["@none", "search"] });
+    expect(keep?.("@none")).toBe(false);
+    expect(keep?.("search")).toBe(true);
+  });
+
+  it('"@none" in a denylist subtracts nothing', () => {
+    expect(keptOn("ggui", { denylist: ["@none"] })).toBe("open");
+  });
+});

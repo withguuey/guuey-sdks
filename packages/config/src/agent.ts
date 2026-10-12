@@ -317,13 +317,23 @@ export type DeclaredMcpServers = Record<string, GuueyAgentMcpServer | false>;
  * (`mcp__server__tool`) are NOT accepted — write the config grammar and
  * let the host translate.
  *
- * An empty `allowlist` (`[]`) reads exactly like an absent one — every tool
- * of every connected server, NOT "no tools". Because a builder writing `[]`
- * almost always means the opposite, a deploy that submits a definition with a
+ * An empty `allowlist` (`[]`) reads exactly like an absent one, NOT "no
+ * tools": on the base it allows every tool of every connected server, and in
+ * a mode it keeps the base agent's allowlist ({@link applyAgentMode}; every
+ * tool only when the base has none). Because a builder writing `[]` almost
+ * always means "no tools", a deploy that submits a definition with a
  * present-but-empty allowlist (base or mode) is refused by
  * {@link validateToolAllowlistsNotEmpty} (guuey#2258). The schema itself keeps
- * accepting `[]`, with that allow-all meaning, so a definition stored before
- * the refusal still loads and serves unchanged.
+ * accepting `[]`, with that meaning, so a definition stored before the
+ * refusal still loads and serves as described here.
+ *
+ * "No tools" is spelled `["@none"]` ({@link NO_TOOLS_ENTRY}, guuey#2262): an
+ * allowlist whose only entry is `"@none"` allows no MCP tool at all (no
+ * builder tools, no cards, no memory, no profile, no hand-off). Built-in file
+ * tools are removed only by the `denylist`. It may stand alone in any
+ * allowlist, base or mode; it is never mixed with other entries and never
+ * written in a denylist ({@link validateNoToolsEntry} refuses both at
+ * deploy). Test for it with {@link declaresNoTools}.
  *
  * Runtime posture (Claude): a tool the model picks that is NOT in an explicit
  * allowlist is DENIED with a message the model can read — never routed to an
@@ -380,7 +390,11 @@ const SystemPromptSchema = z.union([
  * that (the schema can't see the base), so a mode only ever narrows. An
  * empty allowlist never means "no tools", so a newly submitted empty mode
  * `tools.allowlist` is refused at deploy by
- * {@link validateToolAllowlistsNotEmpty} (guuey#2258); stored ones load.
+ * {@link validateToolAllowlistsNotEmpty} (guuey#2258); stored ones load and
+ * serve the base agent's allowlist. A mode declares "no tools" with
+ * `tools.allowlist: ["@none"]` ({@link NO_TOOLS_ENTRY}, guuey#2262), alone in
+ * the list; the subset rule still applies to it, so it is accepted under a
+ * base with no allowlist (or one that permits it).
  * `audience` is accepted for forward-compat but the SERVER hardcodes the
  * binding for the recognized pair in tonight's slice.
  */
@@ -1207,8 +1221,11 @@ export function validateToolGates(agent: GuueyAgent | undefined): string[] {
  *
  * Deliberately NOT part of {@link validateToolGates} and NOT a schema rule: a
  * stored definition written before this refusal still parses, loads and
- * redeploys with its allow-all meaning (a redeploy or a rollback re-serves
- * the stored definition). Callers apply it to a document submitted NOW: a
+ * redeploys (a redeploy or a rollback re-serves the stored definition). It
+ * serves a stored base `[]` as every tool, and a stored mode `[]` as the base
+ * agent's allowlist (every tool only when the base has none). The way to say
+ * "no tools" is `["@none"]` ({@link NO_TOOLS_ENTRY}), which both messages
+ * name. Callers apply it to a document submitted NOW: a
  * deploy tool on the builder's file, or a server gate that may let through an
  * empty allowlist the app's stored definition already carries at that path.
  * Returns human-readable violation messages (empty = clean).
@@ -1220,7 +1237,8 @@ export function validateToolAllowlistsNotEmpty(
   if (agent?.tools?.allowlist?.length === 0) {
     violations.push(
       'agent.tools.allowlist is empty, which allows every tool; omit it to allow every tool, ' +
-        'list the tools to allow, or deny-list servers with "<server>.*" in agent.tools.denylist',
+        `list the tools to allow, write ["${NO_TOOLS_ENTRY}"] to allow no tools, ` +
+        'or deny-list servers with "<server>.*" in agent.tools.denylist',
     );
   }
   for (const [mode, def] of Object.entries(agent?.modes ?? {})) {
@@ -1228,8 +1246,78 @@ export function validateToolAllowlistsNotEmpty(
     violations.push(
       `agent.modes.${mode}.tools.allowlist is empty, and an empty allowlist never means "no tools" ` +
         `in mode "${mode}"; omit the mode's allowlist to keep the base agent's tools, list the tools ` +
-        `this mode allows, or deny-list servers with "<server>.*" in agent.modes.${mode}.tools.denylist`,
+        `this mode allows, write ["${NO_TOOLS_ENTRY}"] to allow no tools in this mode, ` +
+        `or deny-list servers with "<server>.*" in agent.modes.${mode}.tools.denylist`,
     );
+  }
+  return violations;
+}
+
+/**
+ * The reserved tool-allowlist entry that declares "no tools" (guuey#2262).
+ * An allowlist whose only entry is `"@none"` allows no MCP tool of any
+ * server; built-in file tools are removed only by the denylist. `@` lies
+ * outside the MCP tool-name grammar (`[A-Za-z0-9_-]`), so no conforming
+ * server has a tool of that name, and it is inert inside shell quotes.
+ * The schema needs no change for it: it parses as a bare entry, so every
+ * shipped parser accepts it, and every shipped host already denies it.
+ */
+export const NO_TOOLS_ENTRY = '@none';
+
+/**
+ * Does this tools block declare "no tools" (guuey#2262)? True when the
+ * allowlist has at least one entry and every entry, trimmed, is
+ * {@link NO_TOOLS_ENTRY}. A list that mixes it with real entries is NOT a
+ * no-tools declaration: hosts allow only the real entries there, and
+ * {@link validateNoToolsEntry} refuses such a list at deploy.
+ */
+export function declaresNoTools(gates: GuueyAgentToolGates | undefined): boolean {
+  const allowlist = gates?.allowlist;
+  if (allowlist === undefined || allowlist.length === 0) return false;
+  return allowlist.every((entry) => entry.trim() === NO_TOOLS_ENTRY);
+}
+
+/**
+ * Refuse a misplaced {@link NO_TOOLS_ENTRY} at deploy time (guuey#2262), on the
+ * base `agent.tools` and on every `agent.modes.<mode>.tools`:
+ *
+ * - `"@none"` mixed with other allowlist entries (the list would allow the
+ *   other entries, never "no tools");
+ * - `"@none"` in a denylist (it only declares anything inside an allowlist).
+ *
+ * A base `["@none"]` is allowed: a prompt-only agent with no tools anywhere
+ * is a legitimate agent. Like {@link validateToolAllowlistsNotEmpty}, this is
+ * a write-path lint only, NOT part of {@link validateToolGates} and NOT a
+ * schema rule, so a stored definition always loads. Each message depends on
+ * its path alone, so a server gate can compare a submitted document's
+ * messages with a stored one's to let through what the stored one already
+ * carried. Returns human-readable violation messages (empty = clean).
+ */
+export function validateNoToolsEntry(
+  agent: Pick<GuueyAgent, 'tools' | 'modes'> | undefined,
+): string[] {
+  const violations: string[] = [];
+  const check = (gates: GuueyAgentToolGates | undefined, path: string, where: string): void => {
+    const allowlist = gates?.allowlist ?? [];
+    const isSentinel = (entry: string): boolean => entry.trim() === NO_TOOLS_ENTRY;
+    if (allowlist.some(isSentinel) && !allowlist.every(isSentinel)) {
+      violations.push(
+        `${path}.allowlist mixes "${NO_TOOLS_ENTRY}" with other entries${where}; "${NO_TOOLS_ENTRY}" ` +
+          `declares no tools and must be the allowlist's only entry: remove it to allow the listed ` +
+          `tools, or remove the other entries to allow no tools`,
+      );
+    }
+    if ((gates?.denylist ?? []).some(isSentinel)) {
+      violations.push(
+        `${path}.denylist lists "${NO_TOOLS_ENTRY}"${where}, which declares no tools only inside an ` +
+          `allowlist; remove it from the denylist and write ${path}.allowlist: ["${NO_TOOLS_ENTRY}"] ` +
+          `to allow no tools`,
+      );
+    }
+  };
+  check(agent?.tools, 'agent.tools', '');
+  for (const [mode, def] of Object.entries(agent?.modes ?? {})) {
+    check(def.tools, `agent.modes.${mode}.tools`, ` in mode "${mode}"`);
   }
   return violations;
 }

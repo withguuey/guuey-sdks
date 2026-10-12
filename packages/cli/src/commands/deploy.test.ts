@@ -41,7 +41,7 @@ vi.mock('node:child_process', async (importOriginal) => {
   };
 });
 import { resolveDeployTarget } from './deploy.js';
-import { defaultModelFor, isOfferedModel, safeParseGuueyJson } from '@guuey/config';
+import { defaultModelFor, isOfferedModel, safeParseGuueyJson, type GuueyAgent } from '@guuey/config';
 import type { apiRequest } from '../deploy-shared.js';
 
 /** Thrown by the process.exit mock so execution stops like the real thing. */
@@ -944,6 +944,85 @@ describe('deploy() — empty tool allowlist refusal (deploy-time gate)', () => {
     },
     10_000,
   );
+});
+
+// guuey#2262: "@none" declares no tools only ALONE in an allowlist. A list
+// that mixes it with other entries, or a denylist that names it, is refused
+// before upload on BOTH paths; a plain ["@none"] passes the gate.
+describe('deploy() — the "@none" (no tools) entry gate, declarative and code paths', () => {
+  let dir: string;
+  let originalCwd: string;
+  let errSpy: MockInstance<typeof console.error>;
+
+  function writeGuueyJson(agent: GuueyAgent, code: boolean): void {
+    writeFileSync(
+      join(dir, 'guuey.json'),
+      JSON.stringify({ schema: '1', ...(code ? { appId: 'app-1' } : {}), agent }),
+    );
+    if (code) writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    dir = mkdtempSync(join(tmpdir(), 'deploy-no-tools-entry-test-'));
+    process.chdir(dir);
+    vi.mocked(resolveConfig).mockReturnValue({
+      host: 'https://platform.guuey.test',
+      apiUrl: 'https://api.guuey.test',
+      appId: 'app-1',
+    });
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  for (const code of [false, true]) {
+    const path = code ? 'code' : 'declarative';
+    const run = (): Promise<void> => deploy(code ? { code: true, 'no-install': true } : {});
+
+    it(`${path}: refuses "@none" mixed with other allowlist entries, before any network call`, async () => {
+      writeGuueyJson({ framework: 'claude-agent-sdk', tools: { allowlist: ['@none', 'ggui.*'] } }, code);
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      await expect(run()).rejects.toBeInstanceOf(ExitSignal);
+      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+      expect(printed).toContain('agent.tools.allowlist mixes "@none" with other entries');
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(childProcessLog.calls).toEqual([]);
+    });
+
+    it(`${path}: refuses "@none" in a mode denylist, naming the mode, before any network call`, async () => {
+      writeGuueyJson(
+        { framework: 'claude-agent-sdk', modes: { guest: { tools: { denylist: ['@none'] } } } },
+        code,
+      );
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      await expect(run()).rejects.toBeInstanceOf(ExitSignal);
+      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+      expect(printed).toContain('agent.modes.guest.tools.denylist lists "@none" in mode "guest"');
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it(`${path}: a plain ["@none"] passes the gate`, async () => {
+      writeGuueyJson({ framework: 'claude-agent-sdk', tools: { allowlist: ['@none'] } }, code);
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        throw new Error(`stop after the gate: ${String(input)}`);
+      });
+      // Whatever the deploy does after the gate (the code path's
+      // node_modules preflight, the declarative trigger), the gate passed.
+      await run().catch(() => undefined);
+      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+      expect(printed).not.toContain('"@none"');
+    });
+  }
 });
 
 // `guuey deploy --max-pods N` (scaling S1-F4, guuey#162): the flag rides
