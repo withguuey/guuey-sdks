@@ -317,6 +317,14 @@ export type DeclaredMcpServers = Record<string, GuueyAgentMcpServer | false>;
  * (`mcp__server__tool`) are NOT accepted — write the config grammar and
  * let the host translate.
  *
+ * An empty `allowlist` (`[]`) reads exactly like an absent one — every tool
+ * of every connected server, NOT "no tools". Because a builder writing `[]`
+ * almost always means the opposite, a deploy that submits a definition with a
+ * present-but-empty allowlist (base or mode) is refused by
+ * {@link validateToolAllowlistsNotEmpty} (guuey#2258). The schema itself keeps
+ * accepting `[]`, with that allow-all meaning, so a definition stored before
+ * the refusal still loads and serves unchanged.
+ *
  * Runtime posture (Claude): a tool the model picks that is NOT in an explicit
  * allowlist is DENIED with a message the model can read — never routed to an
  * interactive prompt (a headless pod has no one to answer one). Deny-listed
@@ -369,7 +377,10 @@ const SystemPromptSchema = z.union([
  * `systemPrompt` replaces it wholesale — exactly ONE of the two (the
  * refine on {@link ModesSchema} enforces the xor). `tools.allowlist`, when
  * present, must be a subset of the base allowlist — the WRITE GATE enforces
- * that (the schema can't see the base), so a mode only ever narrows.
+ * that (the schema can't see the base), so a mode only ever narrows. An
+ * empty allowlist never means "no tools", so a newly submitted empty mode
+ * `tools.allowlist` is refused at deploy by
+ * {@link validateToolAllowlistsNotEmpty} (guuey#2258); stored ones load.
  * `audience` is accepted for forward-compat but the SERVER hardcodes the
  * binding for the recognized pair in tonight's slice.
  */
@@ -1180,6 +1191,45 @@ export function validateToolGates(agent: GuueyAgent | undefined): string[] {
         );
       }
     }
+  }
+  return violations;
+}
+
+/**
+ * Refuse a present-but-EMPTY tool allowlist at deploy time (guuey#2258), on
+ * the base `agent.tools.allowlist` and on every `agent.modes.<mode>.tools.allowlist`.
+ *
+ * An empty allowlist reads exactly like an absent one: every tool of every
+ * connected server (the host only narrows when the list has entries). An
+ * empty allowlist never means "no tools", on the base or in a mode. A builder
+ * writing `[]` to mean "no tools" would get the opposite, so a newly submitted
+ * definition carrying one (base or mode) is refused with a message that says so.
+ *
+ * Deliberately NOT part of {@link validateToolGates} and NOT a schema rule: a
+ * stored definition written before this refusal still parses, loads and
+ * redeploys with its allow-all meaning (a redeploy or a rollback re-serves
+ * the stored definition). Callers apply it to a document submitted NOW: a
+ * deploy tool on the builder's file, or a server gate that may let through an
+ * empty allowlist the app's stored definition already carries at that path.
+ * Returns human-readable violation messages (empty = clean).
+ */
+export function validateToolAllowlistsNotEmpty(
+  agent: Pick<GuueyAgent, 'tools' | 'modes'> | undefined,
+): string[] {
+  const violations: string[] = [];
+  if (agent?.tools?.allowlist?.length === 0) {
+    violations.push(
+      'agent.tools.allowlist is empty, which allows every tool; omit it to allow every tool, ' +
+        'list the tools to allow, or deny-list servers with "<server>.*" in agent.tools.denylist',
+    );
+  }
+  for (const [mode, def] of Object.entries(agent?.modes ?? {})) {
+    if (def.tools?.allowlist?.length !== 0) continue;
+    violations.push(
+      `agent.modes.${mode}.tools.allowlist is empty, and an empty allowlist never means "no tools" ` +
+        `in mode "${mode}"; omit the mode's allowlist to keep the base agent's tools, list the tools ` +
+        `this mode allows, or deny-list servers with "<server>.*" in agent.modes.${mode}.tools.denylist`,
+    );
   }
   return violations;
 }

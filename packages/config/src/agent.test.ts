@@ -9,6 +9,7 @@ import {
   validateNoLiteralSecrets,
   validateReservedServerNames,
   validateToolGates,
+  validateToolAllowlistsNotEmpty,
   parseToolGateEntry,
   agentDeclaresVfs,
   RESERVED_MEMORY_SERVER_NAME,
@@ -20,6 +21,7 @@ import {
   type GuueyAgent,
   type GuueyAgentMcpServer,
 } from './agent.js';
+import { safeParseGuueyJson } from './schema.js';
 
 /** Build a minimal agent with one mcpServer whose headers we control. */
 function withHeaders(headers: Record<string, string>): GuueyAgent {
@@ -399,6 +401,51 @@ describe('validateToolGates — deploy-time pre-flight (guuey#234)', () => {
 
   it('bare names are never server-checked (they resolve against whatever connects at turn time)', () => {
     expect(validateToolGates({ tools: { allowlist: ['anything_at_all'] } })).toEqual([]);
+  });
+});
+
+describe('validateToolAllowlistsNotEmpty — deploy-time refusal of an empty allowlist (guuey#2258)', () => {
+  it('refuses a present-but-empty base allowlist with the message', () => {
+    expect(validateToolAllowlistsNotEmpty({ tools: { allowlist: [] } })).toEqual([
+      'agent.tools.allowlist is empty, which allows every tool; omit it to allow every tool, ' +
+        'list the tools to allow, or deny-list servers with "<server>.*" in agent.tools.denylist',
+    ]);
+  });
+
+  it('refuses a present-but-empty mode allowlist, naming the mode', () => {
+    const v = validateToolAllowlistsNotEmpty({
+      tools: { allowlist: ['ggui.*'] },
+      modes: { guest: { tools: { allowlist: [] } }, auth: { tools: { allowlist: ['ggui.render'] } } },
+    });
+    expect(v).toHaveLength(1);
+    expect(v[0]).toContain('agent.modes.guest.tools.allowlist is empty, and an empty allowlist never means "no tools" in mode "guest"');
+    expect(v[0]).toContain('agent.modes.guest.tools.denylist');
+  });
+
+  it('passes an absent allowlist, a non-empty one, an empty denylist alone, and modes without an allowlist', () => {
+    expect(validateToolAllowlistsNotEmpty(undefined)).toEqual([]);
+    expect(validateToolAllowlistsNotEmpty({})).toEqual([]);
+    expect(validateToolAllowlistsNotEmpty({ tools: {} })).toEqual([]);
+    expect(validateToolAllowlistsNotEmpty({ tools: { allowlist: ['ggui.*'] } })).toEqual([]);
+    expect(validateToolAllowlistsNotEmpty({ tools: { denylist: [] } })).toEqual([]);
+    expect(
+      validateToolAllowlistsNotEmpty({ modes: { guest: { systemPromptAppend: 'x' }, auth: { tools: { denylist: ['Bash'] } } } }),
+    ).toEqual([]);
+  });
+
+  it('is NOT a grammar violation: validateToolGates (which also runs on re-served stored snapshots) stays clean on []', () => {
+    expect(validateToolGates({ tools: { allowlist: [] } })).toEqual([]);
+  });
+
+  it('N−1: a stored definition with allowlist: [] (base and mode) still parses through the load schema, [] kept as written', () => {
+    const r = safeParseGuueyJson({
+      schema: '1',
+      agent: { systemPrompt: 'x', tools: { allowlist: [] }, modes: { guest: { tools: { allowlist: [] } } } },
+    });
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    expect(r.data.agent.tools?.allowlist).toEqual([]);
+    expect(r.data.agent.modes?.['guest']?.tools?.allowlist).toEqual([]);
   });
 });
 

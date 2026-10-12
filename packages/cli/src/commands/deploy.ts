@@ -46,6 +46,7 @@ import {
   validateNoLiteralSecrets,
   validateColocatedServerNames,
   validateToolGates,
+  validateToolAllowlistsNotEmpty,
   writeGuueyJsonFile,
   declaredServerEntries,
   type ResolvedGuueyJson,
@@ -732,6 +733,12 @@ async function deployCode(opts: {
         toolGateViolations.map((v) => `  - ${v}`).join('\n') +
         '\nUse "<server>.<tool>", "<server>.*", or a bare tool name.',
     );
+    process.exit(1);
+  }
+  // guuey#2258: an empty allowlist reads as "every tool", never "no tools".
+  const emptyAllowlistViolations = validateToolAllowlistsNotEmpty(doc.agent);
+  if (emptyAllowlistViolations.length > 0) {
+    out.error(emptyAllowlistViolations.map((v) => `  - ${v}`).join('\n'));
     process.exit(1);
   }
 
@@ -1439,6 +1446,12 @@ async function deployDeclarative(opts: {
         toolGateViolations.map((v) => `  - ${v}`).join('\n') +
         '\nUse "<server>.<tool>", "<server>.*", or a bare tool name.',
     );
+    process.exit(1);
+  }
+  // guuey#2258: an empty allowlist reads as "every tool", never "no tools".
+  const emptyAllowlistViolations = validateToolAllowlistsNotEmpty(agent);
+  if (emptyAllowlistViolations.length > 0) {
+    out.error(emptyAllowlistViolations.map((v) => `  - ${v}`).join('\n'));
     process.exit(1);
   }
 

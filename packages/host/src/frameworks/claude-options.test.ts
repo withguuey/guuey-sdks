@@ -363,6 +363,14 @@ describe("INVARIANT — an explicit allowlist can never hang the pod (guuey#234)
       "mcp__zzz__nope",
     ]);
   });
+
+  it("resolveToolGates: a STORED allowlist: [] keeps its allow-all meaning (guuey#2258 refuses it only at deploy; stored snapshots are a wire)", () => {
+    const empty = resolveToolGates({ tools: { allowlist: [] } }, ["a", "b"], false);
+    const absent = resolveToolGates({}, ["a", "b"], false);
+    expect(empty.explicitAllowlist).toBe(false);
+    expect(empty.allowedTools).toEqual(["mcp__a", "mcp__b"]);
+    expect(empty.allowedTools).toEqual(absent.allowedTools);
+  });
 });
 
 describe("buildOptions — env composition + API key", () => {

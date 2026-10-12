@@ -867,6 +867,85 @@ describe('deploy() — colocated MCP server-name validation (deploy-time gate)',
   );
 });
 
+// guuey#2258: an empty `agent.tools.allowlist` reads as "every tool", so the
+// declarative deploy refuses it before upload; a non-empty list passes.
+describe('deploy() — empty tool allowlist refusal (deploy-time gate)', () => {
+  let dir: string;
+  let originalCwd: string;
+  let exitSpy: MockInstance<typeof process.exit>;
+  let errSpy: MockInstance<typeof console.error>;
+  let fetchSpy: MockInstance<typeof fetch>;
+
+  function writeGuueyJson(allowlist: string[]): void {
+    writeFileSync(
+      join(dir, 'guuey.json'),
+      JSON.stringify({ schema: '1', agent: { tools: { allowlist } } }),
+    );
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    dir = mkdtempSync(join(tmpdir(), 'deploy-empty-allowlist-test-'));
+    process.chdir(dir);
+    vi.mocked(resolveConfig).mockReturnValue({
+      host: 'https://platform.guuey.test',
+      apiUrl: 'https://api.guuey.test',
+      appId: 'app-1',
+    });
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it('refuses allowlist: [] with the message, before any network call', async () => {
+    writeGuueyJson([]);
+    fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    await expect(deploy({})).rejects.toBeInstanceOf(ExitSignal);
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('agent.tools.allowlist is empty, which allows every tool');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it(
+    'a non-empty allowlist passes the gate (deploy proceeds to the trigger call)',
+    async () => {
+      writeGuueyJson(['ggui.*']);
+      fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        const url = String(input);
+        if (url.includes('/deploy/trigger')) {
+          return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
+        }
+        if (url.includes('/deployments/1/status')) {
+          return new Response(
+            JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null, pageUrl: 'https://app-k7q2.agents.guuey.test/' }),
+            { status: 200 },
+          );
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      });
+
+      await deploy({});
+
+      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+      expect(printed).not.toContain('allowlist is empty');
+      expect(fetchSpy.mock.calls.some(([u]) => String(u).includes('/deploy/trigger'))).toBe(true);
+    },
+    10_000,
+  );
+});
+
 // `guuey deploy --max-pods N` (scaling S1-F4, guuey#162): the flag rides
 // `DeployTriggerBody.maxPods` at every trigger POST. Driven through the
 // declarative shape — it is the one that reaches the trigger with no
