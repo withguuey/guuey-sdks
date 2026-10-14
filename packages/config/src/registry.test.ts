@@ -10,6 +10,7 @@ import {
   announcedForProvider,
   defaultModelFor,
   modelEntry,
+  retirementNotice,
   rejectsDisabledThinking,
   bindRegistry,
   type ModelEntry,
@@ -136,8 +137,6 @@ describe('modelsForProvider', () => {
         'gpt-5.6-luna',
         'gpt-5.5',
         'gpt-5.4',
-        'gpt-4o',
-        'gpt-4o-mini',
       ],
       // gemini-3.8-flash joined the offered set 2026-09-05 on #801's receipted pod
       // call (guuey#798/#802); placed after 3.6 Flash so the default stays [0].
@@ -380,9 +379,9 @@ describe('announcedForProvider — visible to a console, invocable by nothing', 
     });
 
     it('returns ONLY status === "announced" rows — a ga, preview or deprecated row can never appear', () => {
-      // The rule, not a data snapshot: MODEL_REGISTRY carries no `deprecated`
-      // row today, so "deprecated stays hidden" is pinned as the accessor's
-      // filter over EVERY non-announced row the registry does carry.
+      // The rule, not a data snapshot: "deprecated stays hidden" is pinned as
+      // the accessor's filter over EVERY non-announced row the registry
+      // carries (gpt-4o and gpt-4o-mini are deprecated since guuey#2309).
       for (const p of providers) {
         for (const row of r.announcedForProvider(p)) {
           expect(row.status).toBe('announced');
@@ -533,5 +532,67 @@ describe('rejectsDisabledThinking (guuey#1606, guuey#2231) — only the ids with
     ]) {
       expect(rejectsDisabledThinking(id), id).toBe(false);
     }
+  });
+});
+
+describe('deprecated rows + retirementNotice (guuey#2309)', () => {
+  const deprecated = MODEL_REGISTRY.filter((m) => m.status === 'deprecated');
+
+  it('pins the deprecated set — a retirement is a deliberate, receipted change', () => {
+    expect(deprecated.map((m) => m.id).sort()).toEqual(['gpt-4o', 'gpt-4o-mini']);
+  });
+
+  it('every deprecated row carries an ISO sunset and a same-provider OFFERED replacement', () => {
+    for (const m of deprecated) {
+      expect(m.sunset, `${m.id} sunset`).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(Number.isNaN(Date.parse(m.sunset ?? '')), `${m.id} sunset parses`).toBe(false);
+      const to = m.replacedBy === undefined ? undefined : modelEntry(m.replacedBy);
+      expect(to, `${m.id} replacedBy names a registry row`).toBeDefined();
+      expect(to?.provider).toBe(m.provider);
+      expect(modelsForProvider(m.provider).map((x) => x.id)).toContain(to?.id);
+      expect(m.lineup, `${m.id} cannot be in the lineup`).toBeUndefined();
+      expect(m.isDefault, `${m.id} cannot be a default`).toBeUndefined();
+    }
+  });
+
+  it('only deprecated rows carry sunset or replacedBy', () => {
+    for (const m of MODEL_REGISTRY.filter((x) => x.status !== 'deprecated')) {
+      expect(m.sunset, m.id).toBeUndefined();
+      expect(m.replacedBy, m.id).toBeUndefined();
+    }
+  });
+
+  it('a deprecated row leaves both picker halves and every offer door', () => {
+    for (const m of deprecated) {
+      expect(lineupForProvider(m.provider).map((x) => x.id)).not.toContain(m.id);
+      expect(legacyForProvider(m.provider).map((x) => x.id)).not.toContain(m.id);
+      expect(isOfferedModel('openai-agents-sdk', m.id)).toBe(false);
+    }
+  });
+
+  it('names gpt-6-luna and 2027-01-14 for both GPT-4o rows', () => {
+    expect(retirementNotice('gpt-4o')).toEqual({
+      id: 'gpt-4o',
+      label: 'GPT-4o',
+      providerLabel: 'OpenAI',
+      sunset: '2027-01-14',
+      replacement: { id: 'gpt-6-luna', label: 'GPT-6 Luna' },
+    });
+    expect(retirementNotice('gpt-4o-mini')?.label).toBe('GPT-4o Mini');
+    expect(retirementNotice('gpt-4o-mini')?.replacement.id).toBe('gpt-6-luna');
+  });
+
+  it('is undefined for ga, unknown and announced ids', () => {
+    expect(retirementNotice('gpt-6-luna')).toBeUndefined();
+    expect(retirementNotice('claude-sonnet-5')).toBeUndefined();
+    expect(retirementNotice('not-a-model')).toBeUndefined();
+    const r = bindRegistry([
+      { id: 'x-old', provider: 'openai', label: 'X Old', status: 'deprecated' },
+      { id: 'x-new', provider: 'openai', label: 'X New', status: 'ga', isDefault: true },
+    ]);
+    // A deprecated row without its sunset/replacement pair gets no notice —
+    // the warning never renders half a sentence (the live rows are pinned
+    // complete above).
+    expect(r.retirementNotice('x-old')).toBeUndefined();
   });
 });

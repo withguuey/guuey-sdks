@@ -13,6 +13,14 @@ export interface ModelEntry {
   readonly isDefault?: true; // at most one per provider
   readonly sunset?: string; // ISO date, deprecated only
   /**
+   * The model a `deprecated` row's apps should move to — an id of an offered
+   * (ga|preview) row of the SAME provider. Deprecated rows only, and every
+   * deprecated row carries one together with `sunset` (pinned in
+   * registry.test.ts), so a shutdown warning always names a destination the
+   * picker can actually select.
+   */
+  readonly replacedBy?: string;
+  /**
    * The picker's FRONT SLICE. `lineup` entries are what a model picker shows
    * without asking; every other invocable entry is reachable only behind the
    * picker's "See all models" door (founder ruling 2026-09-02, guuey#635:
@@ -160,8 +168,16 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
   { id: "gpt-5.6-luna", provider: "openai", label: "GPT-5.6 Luna", status: "ga" },
   { id: "gpt-5.5", provider: "openai", label: "GPT-5.5", status: "ga" },
   { id: "gpt-5.4", provider: "openai", label: "GPT-5.4", status: "ga" },
-  { id: "gpt-4o", provider: "openai", label: "GPT-4o", status: "ga" },
-  { id: "gpt-4o-mini", provider: "openai", label: "GPT-4o Mini", status: "ga" },
+  // DEPRECATED (guuey#2309). OpenAI's deprecations page (read 2026-10-15)
+  // lists the gpt-4o-2024-08-06, gpt-4o-2024-11-20 and gpt-4o-mini-2024-07-18
+  // snapshots with a shutdown date of 2027-01-14 and gpt-6-luna as the
+  // replacement. The page names the snapshots, not these bare aliases, so the
+  // sunset below is that date applied to the family the aliases resolve to.
+  // Deprecated = no longer offered to NEW apps (it leaves both picker halves
+  // and every create door refuses it); an existing app on it keeps running and
+  // redeploying, and its console overview and Studio form warn before the date.
+  { id: "gpt-4o", provider: "openai", label: "GPT-4o", status: "deprecated", sunset: "2027-01-14", replacedBy: "gpt-6-luna" },
+  { id: "gpt-4o-mini", provider: "openai", label: "GPT-4o Mini", status: "deprecated", sunset: "2027-01-14", replacedBy: "gpt-6-luna" },
   { id: "gemini-3.6-flash", provider: "google", label: "Gemini 3.6 Flash", status: "ga", isDefault: true, lineup: true },
   // FLIPPED to ga 2026-09-05 on #801's receipted pod call (dev, through the
   // gemini egress arm with the managed key: HTTP 200 on
@@ -247,6 +263,32 @@ export interface RegistryAccessors {
   defaultModelFor(framework: FrameworkEntry["framework"]): string;
   /** Look up a model entry by id. */
   modelEntry(id: string): ModelEntry | undefined;
+  /** A deprecated model's shutdown notice — undefined for every other id. */
+  retirementNotice(id: string): RetirementNotice | undefined;
+}
+
+/** Provider display names, for copy that names who serves a model. */
+export const PROVIDER_LABELS: Readonly<Record<ModelEntry["provider"], string>> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  google: "Google",
+  openrouter: "OpenRouter",
+};
+
+/**
+ * What a shutdown warning says about one deprecated model (guuey#2309): the
+ * model, the date its provider stops serving it, and the offered model to move
+ * to. Built from the row alone, so the console and Studio warnings cannot
+ * disagree with the registry or with each other.
+ */
+export interface RetirementNotice {
+  readonly id: string;
+  readonly label: string;
+  /** The provider's display name ("OpenAI") — who stops serving it. */
+  readonly providerLabel: string;
+  /** ISO date (YYYY-MM-DD) the provider shuts the model down. */
+  readonly sunset: string;
+  readonly replacement: { readonly id: string; readonly label: string };
 }
 
 export function bindRegistry(
@@ -283,6 +325,20 @@ export function bindRegistry(
     return model.id;
   };
   const modelEntry: RegistryAccessors["modelEntry"] = (id) => models.find((m) => m.id === id);
+  const retirementNotice: RegistryAccessors["retirementNotice"] = (id) => {
+    const entry = modelEntry(id);
+    if (entry === undefined || entry.status !== "deprecated") return undefined;
+    if (entry.sunset === undefined || entry.replacedBy === undefined) return undefined;
+    const replacement = modelEntry(entry.replacedBy);
+    if (replacement === undefined) return undefined;
+    return {
+      id: entry.id,
+      label: entry.label,
+      providerLabel: PROVIDER_LABELS[entry.provider],
+      sunset: entry.sunset,
+      replacement: { id: replacement.id, label: replacement.label },
+    };
+  };
   return {
     modelsForProvider,
     lineupForProvider,
@@ -292,6 +348,7 @@ export function bindRegistry(
     isOfferedModel,
     defaultModelFor,
     modelEntry,
+    retirementNotice,
   };
 }
 
@@ -370,6 +427,14 @@ export const defaultModelFor: RegistryAccessors["defaultModelFor"] = live.defaul
  * Look up a model entry by id.
  */
 export const modelEntry: RegistryAccessors["modelEntry"] = live.modelEntry;
+
+/**
+ * The shutdown notice for a DEPRECATED model (guuey#2309) — its label, sunset
+ * date and the offered model to move to — or undefined for any other id
+ * (ga, preview, announced, unknown). The console overview and the Studio form
+ * both render their warning from this, never from their own copy of the date.
+ */
+export const retirementNotice: RegistryAccessors["retirementNotice"] = live.retirementNotice;
 
 /**
  * guuey#1606 — Claude ids the provider REFUSES `thinking: { type: "disabled" }`
