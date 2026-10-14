@@ -382,9 +382,26 @@
 .guuey-chat-toggle:hover {
   background: color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 6%, transparent);
 }
-.guuey-chat-toggle:focus-visible {
+/* guuey#2304 — the kit's ONE focus ring. The 2px accent outline stays the
+   brand; a 1px ink hairline under it keeps the indicator at or above 3:1
+   (WCAG 2.4.11) on any ground and with any builder accent (a light accent on
+   a light canvas measured 1.10:1 with the outline alone). */
+.guuey-chat-toggle:focus-visible,
+.guuey-chat-prompt-actions button:focus-visible,
+.guuey-chat-jump:focus-visible,
+.guuey-chat-show-earlier:focus-visible,
+.guuey-chat-copy:focus-visible,
+.guuey-chat-retry:focus-visible,
+.guuey-chat-header-close:focus-visible {
   outline: 2px solid var(--guuey-chat-accent, var(--_guuey-chat-accent));
   outline-offset: 1px;
+  box-shadow: 0 0 0 1px var(--guuey-chat-ink, var(--_guuey-chat-ink));
+}
+/* The jump chip floats on its own drop shadow; focus keeps it under the hairline. */
+.guuey-chat-jump:focus-visible {
+  box-shadow:
+    0 0 0 1px var(--guuey-chat-ink, var(--_guuey-chat-ink)),
+    0 2px 8px rgb(0 0 0 / 0.25);
 }
 .guuey-chat-body {
   margin-top: 4px;
@@ -640,10 +657,6 @@
   color: var(--guuey-chat-on-accent, var(--_guuey-chat-on-accent)) !important;
   border-color: transparent !important;
 }
-.guuey-chat-prompt-actions button:focus-visible {
-  outline: 2px solid var(--guuey-chat-accent, var(--_guuey-chat-accent));
-  outline-offset: 1px;
-}
 .guuey-chat-prompt-record {
   color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
   font-size: 0.85em;
@@ -855,13 +868,6 @@
     color: hsl(from var(--guuey-chat-ink, var(--_guuey-chat-ink)) h 0% clamp(0, (50 - l) * 1000, 100));
   }
 }
-.guuey-chat-jump:focus-visible,
-.guuey-chat-show-earlier:focus-visible,
-.guuey-chat-copy:focus-visible,
-.guuey-chat-retry:focus-visible {
-  outline: 2px solid var(--guuey-chat-accent, var(--_guuey-chat-accent));
-  outline-offset: 1px;
-}
 
 /* ── Motion (disabled under prefers-reduced-motion, §3.2) ── */
 @keyframes guuey-chat-spin {
@@ -949,10 +955,6 @@
 .guuey-chat-header-close:hover {
   color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
   background: color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 6%, transparent);
-}
-.guuey-chat-header-close:focus-visible {
-  outline: 2px solid var(--guuey-chat-accent, var(--_guuey-chat-accent));
-  outline-offset: 1px;
 }
 .guuey-chat-composer {
   display: flex;
