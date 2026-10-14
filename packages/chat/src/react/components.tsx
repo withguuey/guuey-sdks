@@ -673,12 +673,23 @@ export function DefaultPrompt({ item, ctx }: ItemProps<PromptItem>): ReactNode {
   if (item.promptKind === "hitl") {
     const s = ctx.strings;
     // guuey#1860: an ask nothing in this chat can answer is information, not a
-    // control: the ask and one line, no buttons, no dismissal.
+    // control: the ask and one line, no buttons, no dismissal. guuey#2302: it
+    // has its own quiet frame (not the answerable card's accent), lists the
+    // choices the agent offered as plain text, drops the waiting line once
+    // the ask is no longer pending, and is announced politely.
     if (item.answer === "none") {
+      const choices = item.ask.choices ?? [];
       return (
-        <div className="guuey-chat-prompt guuey-chat-prompt-info" role="note">
+        <div className="guuey-chat-prompt-info" role="note" aria-live="polite" data-state={item.state}>
           {item.message !== null && <p className="guuey-chat-prompt-ask">{item.message}</p>}
-          <p className="guuey-chat-prompt-info-hint">{s.promptNoAnswerChannel}</p>
+          {choices.length > 0 && (
+            <ul className="guuey-chat-prompt-info-choices">
+              {choices.map((choice) => (
+                <li key={choice.id}>{choice.label}</li>
+              ))}
+            </ul>
+          )}
+          {item.state === "pending" && <p className="guuey-chat-prompt-info-hint">{s.promptNoAnswerChannel}</p>}
         </div>
       );
     }

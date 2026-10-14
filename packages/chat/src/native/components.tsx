@@ -603,10 +603,14 @@ export function NativePrompt({ item, ctx }: ItemProps<PromptItem>): ReactNode {
     const s = ctx.strings;
     // guuey#1860: an ask nothing in this chat can answer is information, not a
     // control: the ask and one line, no buttons, no dismissal.
+    // guuey#2302: the choices as plain text, the waiting line only while
+    // pending, and the same polite live region as the answerable card.
     if (item.answer === "none") {
+      const choices = item.ask.choices ?? [];
       return (
         <View
           accessible
+          accessibilityLiveRegion="polite"
           style={{ backgroundColor: tokens.palette.surface, borderRadius: tokens.radius, padding: tokens.pad, gap: 8 }}
         >
           {item.message !== null && (
@@ -614,7 +618,15 @@ export function NativePrompt({ item, ctx }: ItemProps<PromptItem>): ReactNode {
               {item.message}
             </Text>
           )}
-          <MutedText ctx={ctx}>{s.promptNoAnswerChannel}</MutedText>
+          {choices.map((choice) => (
+            <Text
+              key={choice.id}
+              style={{ color: tokens.palette.ink, fontSize: tokens.fontSize, fontFamily: tokens.fontFamily }}
+            >
+              {`\u2022 ${choice.label}`}
+            </Text>
+          ))}
+          {item.state === "pending" && <MutedText ctx={ctx}>{s.promptNoAnswerChannel}</MutedText>}
         </View>
       );
     }

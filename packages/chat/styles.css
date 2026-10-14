@@ -600,6 +600,28 @@
 .guuey-chat-prompt-ask {
   margin: 0 0 8px;
 }
+/* guuey#2302 — an ask nothing in the chat can answer is information, not a
+   control: a quiet ground and no accent frame, so it never reads as a prompt
+   whose buttons were cut off. The ask in ink, its choices as a plain list,
+   the hint in ink-muted 2px smaller. */
+.guuey-chat-prompt-info {
+  border-radius: var(--guuey-chat-radius, var(--_guuey-chat-radius));
+  background: color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 5%, transparent);
+  color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
+  padding: 12px;
+}
+.guuey-chat-prompt-info-choices {
+  margin: 0 0 8px;
+  padding-left: 1.25em;
+}
+.guuey-chat-prompt-info-hint {
+  margin: 0;
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
+  font-size: calc(1em - 2px);
+}
+.guuey-chat-prompt-info > :last-child {
+  margin-bottom: 0;
+}
 .guuey-chat-prompt-actions {
   display: flex;
   gap: 8px;

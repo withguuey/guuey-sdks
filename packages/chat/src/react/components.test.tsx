@@ -641,6 +641,49 @@ describe("R10 hitl card (spec draft.2)", () => {
     expect(screen.getByRole("note")).toBeTruthy();
   });
 
+  // guuey#2302: information has its own frame, lists the agent's choices,
+  // stops saying "waiting" once settled, and is announced politely.
+  it("the info card is announced politely and is NOT the answerable card's frame", () => {
+    const { container } = render(<DefaultPrompt item={{ ...hitl("pending"), answer: "none" }} ctx={ctx()} />);
+    const card = screen.getByRole("note");
+    expect(card.getAttribute("aria-live")).toBe("polite");
+    expect(card.classList.contains("guuey-chat-prompt-info")).toBe(true);
+    expect(card.classList.contains("guuey-chat-prompt")).toBe(false);
+    expect(container.querySelector(".guuey-chat-prompt-info-hint")).toBeTruthy();
+  });
+
+  it("a choice ask with no answer channel lists its choices as plain text, with no button", () => {
+    const choiceAsk = {
+      askId: "adk-choice-1",
+      kind: "choice" as const,
+      message: "Which seat?",
+      choices: [
+        { id: "c.aisle", label: "Aisle" },
+        { id: "c.window", label: "Window" },
+      ],
+    };
+    render(
+      <DefaultPrompt
+        item={{ ...hitl("pending"), ask: choiceAsk, askKind: "choice", message: "Which seat?", grantModes: [], answer: "none" }}
+        ctx={ctx()}
+      />,
+    );
+    const items = screen.getAllByRole("listitem").map((li) => li.textContent);
+    expect(items).toEqual(["Aisle", "Window"]);
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+    expect(screen.queryByText(/c\.aisle/)).toBeNull();
+  });
+
+  it("a settled ask with no answer channel drops the waiting line", () => {
+    for (const state of ["resolved", "declined", "cancelled"] as const) {
+      const { container, unmount } = render(<DefaultPrompt item={{ ...hitl(state), answer: "none" }} ctx={ctx()} />);
+      expect(screen.getByText("Remember this?")).toBeTruthy();
+      expect(container.querySelector(".guuey-chat-prompt-info-hint"), state).toBeNull();
+      expect(screen.queryByText(/The agent is waiting on this/)).toBeNull();
+      unmount();
+    }
+  });
+
   it("resolved collapses to the CHOSEN MODE'S LABEL — ids never display as meaning", () => {
     render(<DefaultPrompt item={hitl("resolved")} ctx={ctx()} />);
     expect(screen.getByText("Allowed — Always")).toBeTruthy();
