@@ -611,8 +611,16 @@ export function NativePrompt({ item, ctx }: ItemProps<PromptItem>): ReactNode {
         <View
           accessible
           accessibilityLiveRegion="polite"
-          style={{ backgroundColor: tokens.palette.surface, borderRadius: tokens.radius, padding: tokens.pad, gap: 8 }}
+          style={{ borderRadius: tokens.radius, padding: tokens.pad, gap: 8, overflow: "hidden" }}
         >
+          {/* The web card's quiet ground (a 5% ink mix, guuey#2302): React Native
+              has no color-mix, so the ink lies under the content at 5%. Any
+              palette string works, and it is not the answerable card's surface. */}
+          <View
+            pointerEvents="none"
+            testID="prompt-info-ground"
+            style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: tokens.palette.ink, opacity: 0.05 }}
+          />
           {item.message !== null && (
             <Text style={{ color: tokens.palette.ink, fontSize: tokens.fontSize, fontFamily: tokens.fontFamily }}>
               {item.message}
