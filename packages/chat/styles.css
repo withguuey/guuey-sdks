@@ -392,7 +392,9 @@
 .guuey-chat-show-earlier:focus-visible,
 .guuey-chat-copy:focus-visible,
 .guuey-chat-retry:focus-visible,
-.guuey-chat-header-close:focus-visible {
+.guuey-chat-header-close:focus-visible,
+.guuey-chat-code-copy:focus-visible,
+.guuey-chat-composer-input:focus-visible {
   outline: 2px solid var(--guuey-chat-accent, var(--_guuey-chat-accent));
   outline-offset: 1px;
   box-shadow: 0 0 0 1px var(--guuey-chat-ink, var(--_guuey-chat-ink));
@@ -989,8 +991,10 @@
     font-size: max(16px, calc(15px * var(--guuey-chat-scale, var(--_guuey-chat-scale, 1))));
   }
 }
+/* The accent border is the field's brand signal on focus; the ring itself is
+   the kit's ONE focus rule above (guuey#2304), so a field and a button
+   announce focus the same way. No `outline: none` here: it would cancel it. */
 .guuey-chat-composer-input:focus {
-  outline: none;
   border-color: var(--guuey-chat-accent, var(--_guuey-chat-accent));
 }
 .guuey-chat-composer-input:disabled {

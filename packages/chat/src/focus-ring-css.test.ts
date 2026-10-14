@@ -27,6 +27,8 @@ const CONTROLS = [
   ".guuey-chat-copy",
   ".guuey-chat-retry",
   ".guuey-chat-header-close",
+  ".guuey-chat-code-copy",
+  ".guuey-chat-composer-input",
 ];
 
 describe("the kit's focus ring (guuey#2304)", () => {
@@ -44,6 +46,19 @@ describe("the kit's focus ring (guuey#2304)", () => {
       const hitsControl = sels.some((s) => CONTROLS.some((c) => s === `${c}:focus-visible`));
       if (hitsControl) expect(body).toMatch(/box-shadow:\s*0 0 0 1px/);
     }
+  });
+
+  it("nothing cancels the ring: no rule sets `outline: none` on a control's focus", () => {
+    for (const [sels, body] of rules()) {
+      const onFocus = sels.some((s) => CONTROLS.some((c) => s === `${c}:focus` || s === `${c}:focus-visible`));
+      if (onFocus) expect(body, sels.join(", ")).not.toMatch(/outline:\s*none/);
+    }
+  });
+
+  it("the composer keeps its accent border on focus beside the shared ring", () => {
+    const focus = rules().filter(([sels]) => sels.length === 1 && sels[0] === ".guuey-chat-composer-input:focus");
+    expect(focus).toHaveLength(1);
+    expect(focus[0]![1]).toMatch(/border-color:\s*var\(--guuey-chat-accent/);
   });
 
   it("the jump chip keeps its drop shadow under the hairline when focused", () => {
