@@ -906,19 +906,27 @@
   gap: 8px;
   flex-shrink: 0;
 }
+/* A fixed 32x32 target (WCAG 2.5.8 asks 24x24; the widget's own toggle is 32x32).
+   The negative margin keeps the header row's height and right inset as they were. */
 .guuey-chat-header-close {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin: -6px -8px -6px 0;
   background: none;
   border: 0;
-  padding: 2px 6px;
+  padding: 0;
   font: inherit;
   font-size: 1.15em;
   line-height: 1;
-  border-radius: var(--guuey-chat-radius, var(--_guuey-chat-radius));
+  border-radius: 50%;
   color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
   cursor: pointer;
 }
 .guuey-chat-header-close:hover {
   color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
+  background: color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 6%, transparent);
 }
 .guuey-chat-header-close:focus-visible {
   outline: 2px solid var(--guuey-chat-accent, var(--_guuey-chat-accent));
