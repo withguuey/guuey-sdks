@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Reducer, type AgReduceResult } from '@silverprotocol/core';
-import { joinStoredThreadMemory, seedEventsForReducer, splitStoredThreadMemory, ThreadStore, type ThreadRow, type ThreadSnapshotRow } from './index.js';
+import { cardRowToAgArtifact, joinStoredThreadMemory, seedEventsForReducer, splitStoredThreadMemory, ThreadStore, type ThreadRow, type ThreadSnapshotRow } from './index.js';
 
 // The package ships the binding this suite runs against.
 import { InMemoryThreadPersistence as FakePersistence } from "./in-memory.js";
@@ -503,6 +503,117 @@ describe('ThreadStore guuey#86 — UI-card projection, prompt-lane filter, previ
     });
     const thread = await db.getThread('t1');
     expect(thread?.lastMessagePreview).toBe('show my checklist');
+  });
+});
+
+describe('ThreadStore.appendFold — a card row takes its drawn position in the turn (guuey#2396)', () => {
+  const uiResource = { uri: 'ui://render/1', mimeType: 'text/html', text: '<html>card</html>' };
+  // The claude-agent-sdk facet's shape: the assistant message closes on its
+  // tool-call, the result is ADOPTED into its own role:"tool" message, and the
+  // closing text is a third message.
+  const callMsg = {
+    id: 'm-call',
+    role: 'assistant' as const,
+    content: [{ type: 'tool-call' as const, toolCallId: 'c1', name: 'mcp__ggui__ggui_render', input: {} }],
+    turnId: 'turn1',
+    threadId: 't1',
+  };
+  const resultMsg = {
+    id: 'c1:result',
+    role: 'tool' as const,
+    content: [{ type: 'tool-result' as const, toolCallId: 'c1', content: [], uiData: uiResource }],
+    turnId: 'turn1',
+    threadId: 't1',
+  };
+  const textMsg = (id: string, text: string) => ({
+    id,
+    role: 'assistant' as const,
+    content: [{ type: 'text' as const, text }],
+    turnId: 'turn1',
+    threadId: 't1',
+  });
+  const fold = (messages: AgReduceResult['messages'], artifacts: AgReduceResult['artifacts'] = []): AgReduceResult => ({
+    messages,
+    artifacts,
+    memory: [],
+    turns: [{ turnId: 'turn1', threadId: 't1', finishReason: 'stop' }],
+  });
+
+  async function persist(f: AgReduceResult) {
+    const db = new FakePersistence();
+    const store = new ThreadStore(db);
+    await db.createThread(makeThreadRow('t1', 'g_abc'));
+    const res = await store.appendFold({ threadId: 't1', userId: 'g_abc', fold: f, clientMessageIdBase: 'cmid' });
+    const rows = (await db.listRecentMessages('t1', 100)).slice().sort((a, b) => a.seq - b.seq);
+    const seqOfText = (text: string) => rows.find((r) => r.kind === 'text' && r.text === text)!.seq;
+    const cards = rows.filter((r) => r.kind === 'card');
+    return { db, res, rows, seqOfText, cards };
+  }
+
+  it('[tool-call, tool-result(ui), text]: the card row is stored BEFORE the closing text', async () => {
+    const { rows, seqOfText, cards } = await persist(
+      fold([callMsg, resultMsg, textMsg('m-text', "I've laid it out on the card")]),
+    );
+    expect(cards).toHaveLength(1);
+    expect(cards[0]!.toolName).toBe('mcp__ggui__ggui_render');
+    expect(cards[0]!.seq).toBeLessThan(seqOfText("I've laid it out on the card"));
+    // Exactly after the message that carries its tool-result, so the stored
+    // order is the drawn order: call, result, card, text.
+    expect(rows.map((r) => r.kind)).toEqual(['text', 'text', 'card', 'text']);
+    expect(rows.map((r) => r.seq)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('control: [text, tool-call, tool-result(ui)]: text drawn before the card stays before it', async () => {
+    const { rows, seqOfText, cards } = await persist(
+      fold([textMsg('m-text', 'Drawing it now'), callMsg, resultMsg]),
+    );
+    expect(cards).toHaveLength(1);
+    expect(seqOfText('Drawing it now')).toBeLessThan(cards[0]!.seq);
+    expect(rows.map((r) => r.kind)).toEqual(['text', 'text', 'text', 'card']);
+  });
+
+  it('text, card, text: each text keeps its side of the card', async () => {
+    const { seqOfText, cards } = await persist(
+      fold([textMsg('m-a', 'before'), callMsg, resultMsg, textMsg('m-b', 'after')]),
+    );
+    expect(seqOfText('before')).toBeLessThan(cards[0]!.seq);
+    expect(cards[0]!.seq).toBeLessThan(seqOfText('after'));
+  });
+
+  it('a first-class artifact naming a tool-result in the fold sits after that result; one naming none stays at the tail', async () => {
+    const anchored = {
+      artifactId: 'a-anchored',
+      turnId: 'turn1',
+      threadId: 't1',
+      parts: [{ type: 'tool-result' as const, toolCallId: 'c2', content: [] }],
+    };
+    const loose = {
+      artifactId: 'a-loose',
+      turnId: 'turn1',
+      threadId: 't1',
+      parts: [{ type: 'text' as const, text: 'no producer' }],
+    };
+    const call2 = {
+      id: 'm-call2',
+      role: 'assistant' as const,
+      content: [
+        { type: 'tool-call' as const, toolCallId: 'c2', name: 'make', input: {} },
+        { type: 'tool-result' as const, toolCallId: 'c2', content: [] },
+      ],
+      turnId: 'turn1',
+      threadId: 't1',
+    };
+    const { rows } = await persist(fold([call2, textMsg('m-text', 'done')], [loose, anchored]));
+    const order = rows.map((r) => (r.kind === 'card' ? `card:${cardRowToAgArtifact(r)?.artifactId}` : r.text ?? 'calls'));
+    expect(order).toEqual(['calls', 'card:a-anchored', 'done', 'card:a-loose']);
+  });
+
+  it('the turn sentinel and per-index keys are unchanged by the interleave', async () => {
+    const { rows, res } = await persist(fold([callMsg, resultMsg, textMsg('m-text', 'closing')]));
+    expect(rows[0]!.clientMessageId).toBe('cmid#agentTurn');
+    expect(rows.map((r) => r.clientMessageId)).toEqual(['cmid#agentTurn', 'cmid#agent#1', 'cmid#card#0', 'cmid#agent#2']);
+    expect(res.messageSeqs).toEqual([1, 2, 4]);
+    expect(res.artifactSeqs).toEqual([3]);
   });
 });
 

@@ -491,6 +491,44 @@ export function producingToolName(
   return undefined;
 }
 
+/**
+ * toolCallId → the index of the fold message that carries that call's
+ * `tool-result` block (guuey#2396). A card is drawn when its tool-result
+ * arrives, so this is where its card row belongs in the turn's stored order.
+ * First message wins on a duplicate id, as in {@link toolNamesByCallId}.
+ */
+export function toolResultMessageIndexByCallId(messages: AgMessage[]): Map<string, number> {
+  const indices = new Map<string, number>();
+  messages.forEach((msg, index) => {
+    for (const block of msg.content) {
+      if (block.type === "tool-result" && !indices.has(block.toolCallId)) {
+        indices.set(block.toolCallId, index);
+      }
+    }
+  });
+  return indices;
+}
+
+/**
+ * The index of the fold message a card artifact was drawn with: the message
+ * holding the tool-result its first tool-result part names (guuey#2396).
+ * `undefined` when unresolvable (a first-class `artifact.*` event with no
+ * tool-result part, or a call outside this fold): such a card keeps the
+ * turn's tail.
+ */
+export function producingMessageIndex(
+  art: AgArtifact,
+  resultIndices: ReadonlyMap<string, number>,
+): number | undefined {
+  for (const part of art.parts) {
+    if (isJsonObjectLike(part) && part.type === "tool-result" && typeof part.toolCallId === "string") {
+      const index = resultIndices.get(part.toolCallId);
+      if (index !== undefined) return index;
+    }
+  }
+  return undefined;
+}
+
 export function agArtifactToCardRow(art: AgArtifact, ctx: RowCtx, toolName?: string): ThreadMessageRow {
   // guuey#122: the projection lane strips tool-result _meta upstream, but
   // REAL artifact.* events land here verbatim — apply the same persistence

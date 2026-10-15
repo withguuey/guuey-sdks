@@ -21,8 +21,10 @@ import {
   type StoredElision,
   type StoredRowRefusal,
   keepUnchangedThreadMemory,
+  producingMessageIndex,
   producingToolName,
   toolNamesByCallId,
+  toolResultMessageIndexByCallId,
   uiCardArtifactsFromMessages,
   storedTextParts,
 } from "./fold-rows.js";
@@ -585,8 +587,15 @@ export class ThreadStore {
     const { threadId, userId, fold, clientMessageIdBase } = input;
     const budget = this.db.rowBudget;
     const seq = PROVISIONAL_SEQ;
-    // Whichever row is written first claims the sentinel key.
+    // Whichever row is written first claims the sentinel key. Keys are minted
+    // in planning order (messages, then cards); the WRITE order below
+    // interleaves the cards, and a card only ever follows a message, so the
+    // first row written is still the first row keyed.
     let sentinelClaimed = false;
+    const messageRows: PlannedRow[] = [];
+    /** Per message index, the card rows drawn with it (guuey#2396). */
+    const cardsAfterMessage = new Map<number, PlannedRow[]>();
+    const tailCards: PlannedRow[] = [];
 
     for (let i = 0; i < fold.messages.length; i++) {
       const msg = fold.messages[i]!;
@@ -616,7 +625,7 @@ export class ThreadStore {
       // Text-less agent messages (tool-call + tool-result only — the canonical
       // card-producing turn) must not blank the preview: '' takes the SET
       // branch, null leaves the prior preview standing.
-      planned.push({ kind: 'message', row, preview: text ? text.slice(0, PREVIEW_MAX_LEN) : null, elided });
+      messageRows.push({ kind: 'message', row, preview: text ? text.slice(0, PREVIEW_MAX_LEN) : null, elided });
     }
 
     // Cards can arrive two ways: first-class artifact events (fold.artifacts)
@@ -636,6 +645,7 @@ export class ThreadStore {
     // beside the snapshot. Unresolvable (a first-class artifact event with
     // no tool-result part) persists no name; readers fall back.
     const toolNames = toolNamesByCallId(fold.messages);
+    const resultIndices = toolResultMessageIndexByCallId(fold.messages);
     for (let i = 0; i < cardArtifacts.length; i++) {
       const art = cardArtifacts[i]!;
       const clientMessageId = sentinelClaimed ? `${clientMessageIdBase}#card#${i}` : sentinelKey;
@@ -653,8 +663,27 @@ export class ThreadStore {
         producingToolName(art, toolNames),
       );
       assertRowFits(row, budget, 'card', i);
-      planned.push({ kind: 'card', row, preview: art.name ?? null, elided: [] });
+      const card: PlannedRow = { kind: 'card', row, preview: art.name ?? null, elided: [] };
+      const anchor = producingMessageIndex(art, resultIndices);
+      if (anchor === undefined) {
+        tailCards.push(card);
+      } else {
+        const after = cardsAfterMessage.get(anchor);
+        if (after === undefined) cardsAfterMessage.set(anchor, [card]);
+        else after.push(card);
+      }
     }
+
+    // guuey#2396: the stored order is the drawn order. A card is drawn when
+    // its tool-result arrives, so its row follows the message carrying that
+    // result, BEFORE any text the turn writes after it. Writing every message
+    // first and every card after it put a turn's closing text above the card
+    // it describes on every reload. A card with no producing result in the
+    // fold keeps the turn's tail, as before.
+    messageRows.forEach((message, index) => {
+      planned.push(message, ...(cardsAfterMessage.get(index) ?? []));
+    });
+    planned.push(...tailCards);
   }
 }
 
