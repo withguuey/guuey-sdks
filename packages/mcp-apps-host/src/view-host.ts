@@ -53,6 +53,7 @@ import {
   type UiActionRequest,
 } from "./action.js";
 import type { McpUiResourcePayload } from "./block-ui.js";
+import type { ViewToolData } from "./tool-data.js";
 import type { McpUiHostCapabilities, McpUiHostContext } from "@modelcontextprotocol/ext-apps";
 import type { ViewHostInfo } from "./view-host-protocol.js";
 
@@ -232,6 +233,16 @@ export interface AttachViewHostConfig {
    * requested, cause unknown", never as nothing.
    */
   onDismiss?: (reason: McpAppDismissReason) => void;
+  /**
+   * The card's tool data — the producing call's arguments and the tool's
+   * result, as the transcript holds them (`viewToolData` /
+   * `snapshotViewToolData`). Sent to the view as the spec's
+   * `ui/notifications/tool-input` and `ui/notifications/tool-result` right
+   * after its `ui/notifications/initialized`, once per attachment (a
+   * remount attaches afresh and sends again). Absent: nothing is sent, as
+   * before. `<GuueyView toolData>` forwards it.
+   */
+  toolData?: ViewToolData;
   /** Observe phase transitions (see {@link ViewHostPhase}). */
   onPhaseChange?: (phase: ViewHostPhase) => void;
   /**
@@ -322,6 +333,7 @@ function behaviorFor(frame: ViewFrameLike, config: AttachViewHostConfig): ViewHo
     messageSink: messageSinkWired,
     // guuey#1706: this host answers `ui/message` from the sink's delivery outcome.
     messageAnswer: "on-delivery",
+    ...(config.toolData !== undefined ? { toolData: config.toolData } : {}),
   };
 }
 

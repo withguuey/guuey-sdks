@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MCP_APP_DISMISS_REASONS, MCP_APP_DISMISS_TYPE } from "@ggui-ai/protocol/integrations/mcp-apps";
+import { McpUiToolInputNotificationSchema, McpUiToolResultNotificationSchema } from "@modelcontextprotocol/ext-apps";
 import {
   diagnoseCspViolation,
   initializeResult,
@@ -10,6 +11,7 @@ import {
   viewHostElapsed,
   viewHostReceive,
   type ViewHostBehavior,
+  type ViewHostOutbound,
   type ViewHostState,
 } from "./view-host-protocol.js";
 
@@ -651,5 +653,73 @@ describe("viewHostReceive — a tools/call's params._meta (guuey#1849)", () => {
       params: { name: "ggui_runtime_submit_action", _meta: ["ai.ggui/view"] },
     });
     expect(effects).toEqual([{ kind: "relay-tool-call", id: 4, name: "ggui_runtime_submit_action" }]);
+  });
+});
+
+describe("viewHostReceive — tool-input / tool-result delivery (spec notifications, Host → View)", () => {
+  const INITIALIZED = { jsonrpc: "2.0", method: "ui/notifications/initialized" };
+  const toolData = {
+    input: { city: "Lisbon" },
+    result: { content: [{ type: "text" as const, text: "ok" }], structuredContent: { temps: [21, 23] } },
+  };
+
+  function posted(effects: ReturnType<typeof viewHostReceive>["effects"]): ViewHostOutbound[] {
+    return effects.flatMap((e) => (e.kind === "respond" ? [e.message] : []));
+  }
+
+  it("sends tool-input then tool-result once the view says initialized — spec method names and param shapes", () => {
+    const connected = viewHostReceive(initialViewHostState(), behavior({ toolData }), INITIALIZE).state;
+    const { state, effects } = viewHostReceive(connected, behavior({ toolData }), INITIALIZED);
+    expect(state.initializedSeen).toBe(true);
+    const messages = posted(effects);
+    expect(messages).toEqual([
+      { jsonrpc: "2.0", method: "ui/notifications/tool-input", params: { arguments: { city: "Lisbon" } } },
+      {
+        jsonrpc: "2.0",
+        method: "ui/notifications/tool-result",
+        params: { content: [{ type: "text", text: "ok" }], structuredContent: { temps: [21, 23] } },
+      },
+    ]);
+    // The spec's own schemas accept both notifications as sent.
+    expect(McpUiToolInputNotificationSchema.safeParse(messages[0]).success).toBe(true);
+    expect(McpUiToolResultNotificationSchema.safeParse(messages[1]).success).toBe(true);
+    // Notifications: no id, never answered.
+    expect(messages.every((m) => !("id" in m))).toBe(true);
+  });
+
+  it("sends nothing before initialized — the ui/initialize answer carries no tool data", () => {
+    const { effects } = viewHostReceive(initialViewHostState(), behavior({ toolData }), INITIALIZE);
+    const methods = posted(effects).map((m) => m.method);
+    expect(methods).not.toContain("ui/notifications/tool-input");
+    expect(methods).not.toContain("ui/notifications/tool-result");
+  });
+
+  it("sends each notification once — a repeated initialized sends nothing more", () => {
+    const first = viewHostReceive(initialViewHostState(), behavior({ toolData }), INITIALIZED);
+    const again = viewHostReceive(first.state, behavior({ toolData }), INITIALIZED);
+    expect(posted(first.effects)).toHaveLength(2);
+    expect(again.effects).toEqual([]);
+  });
+
+  it("a fresh attachment (a remount) sends again on its own initialized", () => {
+    const remount = viewHostReceive(initialViewHostState(), behavior({ toolData }), INITIALIZED);
+    expect(posted(remount.effects).map((m) => m.method)).toEqual([
+      "ui/notifications/tool-input",
+      "ui/notifications/tool-result",
+    ]);
+  });
+
+  it("no input held (elided or absent) → no tool-input; the result still goes", () => {
+    const { effects } = viewHostReceive(
+      initialViewHostState(),
+      behavior({ toolData: { result: toolData.result } }),
+      INITIALIZED,
+    );
+    expect(posted(effects).map((m) => m.method)).toEqual(["ui/notifications/tool-result"]);
+  });
+
+  it("no tool data at all → the initialized ack stays silent, as before", () => {
+    const { effects } = viewHostReceive(initialViewHostState(), behavior(), INITIALIZED);
+    expect(effects).toEqual([]);
   });
 });

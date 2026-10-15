@@ -36,10 +36,12 @@ import {
   isViewDirectiveText,
   readTapLabels,
   snapshotViewMount,
+  snapshotViewToolData,
   toolResultLocator,
   toolResultRenderRefusal,
   toolResultViewMount,
   uiResourceChannel,
+  viewToolData,
   type ViewMount,
 } from "@guuey/mcp-apps-host";
 import type { TranscriptPolicy } from "./policy.js";
@@ -568,6 +570,9 @@ function planAssistantSource(
             // is the PERSISTED locator (`uiData.resourceUri`), never the
             // mount payload's own uri (synthetic for a ggui shell).
             actionScope: result ? (toolResultLocator(result) ?? null) : null,
+            // What the view is sent after its `initialized` (spec tool-input +
+            // tool-result): this call's arguments and its result.
+            ...(result ? { toolData: viewToolData(block, result) } : {}),
           };
           view.label = viewLabel(view, policy);
           items.push(view);
@@ -1171,6 +1176,9 @@ export function planTranscript(
       toolTitle: card.toolName !== undefined ? policy.tool.humanizeTitle(card.toolName) : null,
       actionScope: scope,
     };
+    // The stored result (the projection stores no call, so no tool-input).
+    const toolData = mount === undefined ? undefined : snapshotViewToolData(card.cardSnapshot);
+    if (toolData !== undefined) view.toolData = toolData;
     view.label = viewLabel(view, policy);
     // The interleave: find the first seq-bearing user turn NEWER than the
     // card; insert before its item. Cards processed in ascending seq order,

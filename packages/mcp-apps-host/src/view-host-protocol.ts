@@ -33,9 +33,12 @@
  */
 import {
   INITIALIZE_METHOD,
+  INITIALIZED_METHOD,
   LATEST_PROTOCOL_VERSION,
   RESOURCE_TEARDOWN_METHOD,
   SIZE_CHANGED_METHOD,
+  TOOL_INPUT_METHOD,
+  TOOL_RESULT_METHOD,
   type McpUiHostCapabilities,
   type McpUiHostContext,
   type McpUiInitializeResult,
@@ -45,8 +48,9 @@ import {
 // INTENT (ggui#1109 / guuey#1423). The guard proves the envelope's shape and,
 // by design, admits any non-empty `reason` — see the `dismiss` effect.
 import { isMcpAppDismissMessage, type McpAppDismissReason } from "@ggui-ai/protocol/integrations/mcp-apps";
-import type { McpToolStructuredContent } from "./action.js";
+import type { McpToolCallResult, McpToolStructuredContent } from "./action.js";
 import type { McpResourceReadResult } from "./reader.js";
+import type { ViewToolData } from "./tool-data.js";
 
 /**
  * The host identity in the initialize result — structurally the spec's
@@ -161,6 +165,10 @@ export function initialViewHostState(): ViewHostState {
  * stays synchronous and Node-testable; the glue performs them.
  */
 export type ViewHostEffect =
+  /**
+   * Post `message` into the view: an answer to one of its requests, or a
+   * host notification (`tool-input` / `tool-result`, id-less).
+   */
   | { kind: "respond"; message: ViewHostOutbound }
   | {
       /**
@@ -310,6 +318,14 @@ export interface ViewHostBehavior {
   linkOpener: boolean;
   /** Whether a `resources/read` relay hook is wired (see `view-host.ts`). */
   resourceRelay: boolean;
+  /**
+   * The card's tool data (see `tool-data.ts`): sent as
+   * `ui/notifications/tool-input` then `ui/notifications/tool-result` when
+   * the view first says `ui/notifications/initialized` — never before (the
+   * spec forbids host-to-view messages ahead of it), once per attachment.
+   * Each half goes only when held; absent, the ack stays silent.
+   */
+  toolData?: ViewToolData;
 }
 
 /** The result of feeding one inbound frame (or the timeout) to the machine. */
@@ -397,6 +413,29 @@ export function resourceReadResponse(
   return { jsonrpc: "2.0", id, result: { contents: [entry] } };
 }
 
+/** `ui/notifications/tool-input` — the producing call's complete arguments (Host → View). */
+export function toolInputNotification(args: McpToolStructuredContent): ViewHostOutbound {
+  return { jsonrpc: "2.0", method: TOOL_INPUT_METHOD, params: { arguments: args } };
+}
+
+/** `ui/notifications/tool-result` — the tool's `CallToolResult` (Host → View). */
+export function toolResultNotification(result: McpToolCallResult): ViewHostOutbound {
+  return { jsonrpc: "2.0", method: TOOL_RESULT_METHOD, params: result };
+}
+
+/** The post-`initialized` deliveries for the held tool data, input first (spec order). */
+function toolDataEffects(toolData: ViewToolData | undefined): ViewHostEffect[] {
+  if (toolData === undefined) return [];
+  return [
+    ...(toolData.input !== undefined
+      ? [{ kind: "respond" as const, message: toolInputNotification(toolData.input) }]
+      : []),
+    ...(toolData.result !== undefined
+      ? [{ kind: "respond" as const, message: toolResultNotification(toolData.result) }]
+      : []),
+  ];
+}
+
 /**
  * The spec-mannered farewell a detaching host posts (`ui/resource-teardown`).
  * Sent WITHOUT an id — a host that is tearing the frame down cannot await a
@@ -415,7 +454,8 @@ export function teardownMessage(): ViewHostOutbound {
  *    0.18.0's `ggui:dismiss` intent (`isMcpAppDismissMessage`) → a `dismiss`
  *    effect, state untouched (guuey#1423);
  *  - notifications (no id) → consumed silently, JSON-RPC-correctly; the
- *    `ui/notifications/initialized` ack is remembered on the state;
+ *    FIRST `ui/notifications/initialized` ack is remembered on the state and
+ *    releases the held tool data (`tool-input`, then `tool-result`);
  *  - `ui/initialize` → answered spec-canonically; phase → `"connected"`
  *    (also from `"no-handshake"` — a late handshake still gets answered:
  *    the timeout labels a state, it does not close the door);
@@ -437,8 +477,8 @@ export function viewHostReceive(
   if (req.id === undefined) {
     // A notification. Track the one the handshake defines, surface the one
     // the embedder may act on; consume the rest.
-    if (req.method === "ui/notifications/initialized" && !state.initializedSeen) {
-      return { state: { ...state, initializedSeen: true }, effects: [] };
+    if (req.method === INITIALIZED_METHOD && !state.initializedSeen) {
+      return { state: { ...state, initializedSeen: true }, effects: toolDataEffects(behavior.toolData) };
     }
     if (req.method === SIZE_CHANGED_METHOD) {
       const width = req.params?.["width"];

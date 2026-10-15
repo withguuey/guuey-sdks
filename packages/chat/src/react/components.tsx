@@ -523,6 +523,7 @@ export function DefaultView({ item, ctx }: ItemProps<ViewMountItem>): ReactNode 
     <div className="guuey-chat-view">
       <GuueyView
         mount={mount}
+        {...(item.toolData !== undefined ? { toolData: item.toolData } : {})}
         {...viewProps}
         onPhaseChange={(phase) => ctx.onViewPhase(item.key, phase)}
         onCspDiagnosis={(diagnosis) => ctx.onViewDiagnosis?.(item.key, diagnosis)}

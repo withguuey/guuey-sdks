@@ -51,6 +51,7 @@ export {
 } from "./sandbox-page.js";
 export type { ViewCspDiagnosis, ViewCspOrigins, ViewHostPhase } from "./view-host-protocol.js";
 export type { ResolvedViewMount, ViewMount, ViewMountChannel } from "./card-mount.js";
+export type { ViewToolData } from "./tool-data.js";
 export { defaultViewHostStrings } from "./view-strings.js";
 export type { ViewHostStrings } from "./view-strings.js";
 
@@ -97,6 +98,7 @@ export interface GuueyViewProps
     | "negotiationTimeoutMs"
     | "cspOrigins"
     | "onCspDiagnosis"
+    | "toolData"
   > {
   /** The resolved card to mount (see `toolResultViewMount`/`resolveViewMount`). */
   mount: ResolvedViewMount;

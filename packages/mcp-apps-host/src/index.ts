@@ -79,6 +79,8 @@ export {
   RESOURCES_READ_METHOD,
   teardownMessage,
   toolCallResponse,
+  toolInputNotification,
+  toolResultNotification,
   TOOLS_CALL_METHOD,
   viewHostElapsed,
   viewHostReceive,
@@ -95,6 +97,16 @@ export {
   type ViewHostTransition,
   type ViewRequestId,
 } from "./view-host-protocol.js";
+// The card's tool data a mounted view is sent after `initialized` (spec
+// `ui/notifications/tool-input` + `ui/notifications/tool-result`).
+export {
+  ELIDED_VALUE_MARKER,
+  snapshotViewToolData,
+  toolCallViewInput,
+  toolResultViewResult,
+  viewToolData,
+  type ViewToolData,
+} from "./tool-data.js";
 export {
   admittedMeta,
   attachViewHost,

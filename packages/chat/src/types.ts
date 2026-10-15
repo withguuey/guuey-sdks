@@ -26,7 +26,9 @@ import type {
   ViewCspDiagnosis,
   ViewHostPhase,
   ViewMount,
-  ViewMountChannel, PreGenerationRefusal } from "@guuey/mcp-apps-host";
+  ViewMountChannel,
+  ViewToolData,
+  PreGenerationRefusal } from "@guuey/mcp-apps-host";
 import type { AuthRequired, OAuthAuthorizeAsk } from "./oauth.js";
 
 /**
@@ -428,6 +430,15 @@ export interface ViewMountItem extends BaseItem {
    * in-band "not available" stub.
    */
   actionScope: string | null;
+  /**
+   * The card's tool data — the producing call's arguments and the tool's
+   * result as the transcript holds them — which the view host sends the
+   * mounted view as the spec's `ui/notifications/tool-input` and
+   * `ui/notifications/tool-result` after its `initialized`. Live mounts read
+   * the fold's call + result; history cards the stored snapshot (result
+   * only). Absent when the transcript holds neither.
+   */
+  toolData?: ViewToolData;
 }
 
 /**

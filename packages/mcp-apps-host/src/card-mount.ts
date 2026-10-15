@@ -64,8 +64,9 @@ export type ViewMountChannel = "inline" | "ggui" | "locator";
  * from `structuredContent` (guuey#209): the host resolves it with a fresh, authenticated
  * `resources/read` of the uri ({@link UiResourceReader}) — the spec-consistent
  * template fetch, vendor-neutral. (The spec defers persistence/restoration
- * itself; a full remount additionally owes the View `ui/notifications/tool-input`
- * + its tool result — see the conformance map.) Until a reader is wired, the honest render
+ * itself; a remount additionally owes the View `ui/notifications/tool-input`
+ * + its tool result, which the view host sends from the card's tool data —
+ * `snapshotViewToolData` / `viewToolData`, `AttachViewHostConfig.toolData`.) Until a reader is wired, the honest render
  * is the host's own placeholder, never a stale mount.
  */
 export type ViewMount = ResolvedViewMount | LocatorViewMount;

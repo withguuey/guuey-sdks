@@ -1199,6 +1199,14 @@ exports[`corpus > 7. view-never-handshakes — channel-aware labels on both chan
         },
       },
       "phase": "no-handshake",
+      "toolData": {
+        "input": {
+          "q": "render_form",
+        },
+        "result": {
+          "content": [],
+        },
+      },
       "toolTitle": "render form",
     },
     {
@@ -1215,6 +1223,19 @@ exports[`corpus > 7. view-never-handshakes — channel-aware labels on both chan
         "resourceUri": "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee",
       },
       "phase": "no-handshake",
+      "toolData": {
+        "input": {
+          "q": "ggui_render",
+        },
+        "result": {
+          "content": [],
+          "structuredContent": {
+            "action": "create",
+            "resourceUri": "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee",
+            "sessionId": "render_00000000-0000-4000-8000-300000000001",
+          },
+        },
+      },
       "toolTitle": "Rendering card",
     },
   ],
@@ -1337,6 +1358,14 @@ exports[`corpus > 9. history-dead-locators — the expired path beside a healthy
         "resourceUri": "ui://ggui/render/old/1",
       },
       "phase": "negotiating",
+      "toolData": {
+        "result": {
+          "content": [],
+          "structuredContent": {
+            "resourceUri": "ui://ggui/render/old/1",
+          },
+        },
+      },
       "toolTitle": null,
     },
     {
@@ -1664,6 +1693,14 @@ exports[`corpus > 15. tools-around-a-view — the group SPLITS at the view's pos
         },
       },
       "phase": "negotiating",
+      "toolData": {
+        "input": {
+          "q": "ggui_render",
+        },
+        "result": {
+          "content": [],
+        },
+      },
       "toolTitle": "Rendering card",
     },
     {
@@ -1816,6 +1853,17 @@ exports[`corpus > 19. persisted-plus-live — the fold owns its trailing turns; 
         "resourceUri": "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee",
       },
       "phase": "negotiating",
+      "toolData": {
+        "input": {},
+        "result": {
+          "content": [],
+          "structuredContent": {
+            "action": "create",
+            "resourceUri": "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee",
+            "sessionId": "render_00000000-0000-4000-8000-300000000001",
+          },
+        },
+      },
       "toolTitle": "Rendering card",
     },
     {
@@ -1862,6 +1910,14 @@ exports[`corpus > 19. persisted-plus-live — the fold owns its trailing turns; 
         "resourceUri": "ui://ggui/render/old/1",
       },
       "phase": "negotiating",
+      "toolData": {
+        "result": {
+          "content": [],
+          "structuredContent": {
+            "resourceUri": "ui://ggui/render/old/1",
+          },
+        },
+      },
       "toolTitle": null,
     },
   ],
@@ -2050,6 +2106,14 @@ exports[`corpus > 22. promoted-view — the stage's mount chips (guuey#204); oth
         },
       },
       "phase": "negotiating",
+      "toolData": {
+        "input": {
+          "q": "ggui_render",
+        },
+        "result": {
+          "content": [],
+        },
+      },
       "toolTitle": "Rendering card",
     },
     {
@@ -2128,6 +2192,23 @@ exports[`corpus > 23. meta-less-locator — a \`_meta\`-withholding producer's r
         "resourceUri": "ui://ggui/render/render_dark/h1",
       },
       "phase": "negotiating",
+      "toolData": {
+        "input": {
+          "q": "ggui_render",
+        },
+        "result": {
+          "content": [
+            {
+              "text": "rendered",
+              "type": "text",
+            },
+          ],
+          "structuredContent": {
+            "resourceUri": "ui://ggui/render/render_dark/h1",
+            "sessionId": "render_dark",
+          },
+        },
+      },
       "toolTitle": "Rendering card",
     },
   ],
@@ -2177,6 +2258,23 @@ exports[`corpus > 24. prod-wire-ggui-render — ggui's production posture: no _m
         "resourceUri": "ui://ggui/render/render_5d11b1b4-75ba-44e5-81bb-0b420b86bb8e/7328555b44e72bd7",
       },
       "phase": "negotiating",
+      "toolData": {
+        "input": {
+          "q": "ggui_render",
+        },
+        "result": {
+          "content": [
+            {
+              "text": "ui://ggui/render/render_5d11b1b4-75ba-44e5-81bb-0b420b86bb8e/7328555b44e72bd7",
+              "type": "text",
+            },
+          ],
+          "structuredContent": {
+            "resourceUri": "ui://ggui/render/render_5d11b1b4-75ba-44e5-81bb-0b420b86bb8e/7328555b44e72bd7",
+            "sessionId": "render_5d11b1b4-75ba-44e5-81bb-0b420b86bb8e",
+          },
+        },
+      },
       "toolTitle": "Rendering card",
     },
     {

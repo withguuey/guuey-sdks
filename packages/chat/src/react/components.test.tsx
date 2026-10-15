@@ -288,6 +288,34 @@ describe("DefaultView — per-mount viewProps + autoResize (guuey#135 kit-refine
     actionScope: "ui://persisted/locator",
   });
 
+  it("delivers the item's tool data to the view after its initialized: tool-input, then one tool-result", () => {
+    const item: ViewMountItem = {
+      ...viewItem(),
+      toolData: {
+        input: { city: "Lisbon" },
+        result: { content: [{ type: "text", text: "ok" }], structuredContent: { temps: [21, 23] } },
+      },
+    };
+    const { container } = render(<DefaultView item={item} ctx={ctx()} />);
+    const frame = container.querySelector("iframe")!;
+    const source = frame.contentWindow!;
+    const sent: Array<{ method?: string; params?: unknown }> = [];
+    vi.spyOn(source, "postMessage").mockImplementation((message: { method?: string; params?: unknown }) => {
+      sent.push(message);
+    });
+    const fromView = (data: object) => window.dispatchEvent(new MessageEvent("message", { data, source }));
+    fromView({ jsonrpc: "2.0", id: 1, method: "ui/initialize", params: { protocolVersion: "2026-01-26" } });
+    expect(sent.map((m) => m.method)).toEqual([undefined]); // nothing before initialized
+    fromView({ jsonrpc: "2.0", method: "ui/notifications/initialized" });
+    expect(sent.map((m) => m.method)).toEqual([
+      undefined,
+      "ui/notifications/tool-input",
+      "ui/notifications/tool-result",
+    ]);
+    expect(sent[1]?.params).toEqual({ arguments: { city: "Lisbon" } });
+    expect(sent[2]?.params).toEqual({ content: [{ type: "text", text: "ok" }], structuredContent: { temps: [21, 23] } });
+  });
+
   it("the viewProps FUNCTION form resolves against the item and its resolved mount", () => {
     const seen: Array<{ key: string; uri: string }> = [];
     render(

@@ -748,3 +748,69 @@ describe("admittedMeta (guuey#1849)", () => {
     expect(admittedMeta(meta, ["inherited", "toString"])).toBeUndefined();
   });
 });
+
+describe("attachViewHost — the card's tool data reaches a view that waits for it", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const INITIALIZED = { jsonrpc: "2.0", method: "ui/notifications/initialized" };
+  const toolData = {
+    input: { city: "Lisbon" },
+    result: { content: [{ type: "text" as const, text: "Forecast ready." }], structuredContent: { temps: [21, 23] } },
+  };
+
+  it("posts exactly one tool-result with the card's structuredContent, after initialized, tool-input first", () => {
+    const { frame, posted, contentWindow } = fakeFrame();
+    const { events, emit } = fakeEvents();
+    attachViewHost(frame, { events, toolData });
+
+    emit(INITIALIZE, contentWindow);
+    // Answered, but no tool data yet: the view has not said initialized.
+    expect(posted.map((p) => p.message.method)).toEqual([undefined]);
+
+    emit(INITIALIZED, contentWindow);
+    emit(INITIALIZED, contentWindow); // a repeat sends nothing more
+    const results = posted.filter((p) => p.message.method === "ui/notifications/tool-result");
+    expect(results).toHaveLength(1);
+    expect(results[0]?.message.params).toEqual({
+      content: [{ type: "text", text: "Forecast ready." }],
+      structuredContent: { temps: [21, 23] },
+    });
+    expect(posted.map((p) => p.message.method)).toEqual([
+      undefined, // the ui/initialize answer
+      "ui/notifications/tool-input",
+      "ui/notifications/tool-result",
+    ]);
+    expect(posted[1]?.message.params).toEqual({ arguments: { city: "Lisbon" } });
+  });
+
+  it("a remount (a new attachment on a new frame) delivers again on its own initialized", () => {
+    for (let mount = 0; mount < 2; mount++) {
+      const { frame, posted, contentWindow } = fakeFrame();
+      const { events, emit } = fakeEvents();
+      const detach = attachViewHost(frame, { events, toolData });
+      emit(INITIALIZE, contentWindow);
+      emit(INITIALIZED, contentWindow);
+      expect(posted.filter((p) => p.message.method === "ui/notifications/tool-result")).toHaveLength(1);
+      detach();
+    }
+  });
+
+  it("control: a host with no tool data (a ggui card today) posts only the handshake answer", () => {
+    const { frame, posted, contentWindow } = fakeFrame();
+    const { events, emit } = fakeEvents();
+    attachViewHost(frame, { events });
+    emit(INITIALIZE, contentWindow);
+    emit(INITIALIZED, contentWindow);
+    expect(posted).toHaveLength(1);
+    expect(posted[0]?.message.id).toBe(1);
+  });
+
+  it("another window's initialized delivers nothing (the identity filter holds)", () => {
+    const { frame, posted } = fakeFrame();
+    const { events, emit } = fakeEvents();
+    attachViewHost(frame, { events, toolData });
+    emit(INITIALIZED, { other: true });
+    expect(posted).toEqual([]);
+  });
+});
