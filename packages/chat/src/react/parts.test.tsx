@@ -169,9 +169,11 @@ describe("the ::part() contract (guuey#1152)", () => {
     expect(Object.keys(PARTS).sort()).toEqual(
       [
         "agent",
+        "attachments",
         "chip",
         "chips",
         "composer",
+        "composerAttach",
         "composerInput",
         "composerSend",
         "composerStop",

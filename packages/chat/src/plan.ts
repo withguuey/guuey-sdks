@@ -855,6 +855,10 @@ const CODE_COPY: Record<string, (s: import("./strings.js").ChatStrings) => strin
   // transient family's Retry stays (no ERROR_FAMILIES entry), since the stop
   // is often intermittent.
   NO_REPLY: (s) => s.errorNoReply,
+  // guuey#2293: the turn's images — the runtime did not take them, or the
+  // send's list broke the rules. Both are "change the request" (no Retry).
+  ATTACHMENTS_UNSUPPORTED: (s) => s.errorAttachmentsUnsupported,
+  ATTACHMENTS_INVALID: (s) => s.errorAttachmentsInvalid,
 };
 
 /**
@@ -903,6 +907,9 @@ const ERROR_FAMILIES: Record<string, "auth" | "quota" | "invalid"> = {
   // whose renderers offer a Retry. "invalid" is the family whose reading is
   // "change the request", which is what the reader line asks for.
   CONTENT_BLOCKED: "invalid",
+  // guuey#2293: sending the same images again meets the same refusal.
+  ATTACHMENTS_UNSUPPORTED: "invalid",
+  ATTACHMENTS_INVALID: "invalid",
 };
 
 /** The one pure function (spec §7). */

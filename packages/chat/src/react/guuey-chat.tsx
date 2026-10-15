@@ -56,7 +56,10 @@ import {
   createUiResourceReader,
   createWebAdapters,
   deleteThread,
+  IMAGE_ATTACHMENTS_MAX_COUNT,
+  IMAGE_ATTACHMENTS_MAX_TOTAL_BASE64_CHARS,
   type AgentInvokeAdapters,
+  type ImageAttachment,
   type SendOptions,
 } from "@guuey/agent-client";
 import type { AgHitlAnswer, AgPausedAsk } from "@silverprotocol/core";
@@ -93,6 +96,7 @@ import { useTapEcho } from "./use-tap-echo.js";
 import type { ClaimedTap } from "../tap-ledger.js";
 import { oauthPromptAction, useOAuthReturn } from "./oauth-return.js";
 import { PARTS } from "./parts.js";
+import { ATTACHMENT_ACCEPT, readImageFile, type AttachmentRefusalReason } from "./composer-attachments.js";
 import { ChatHeader, type GuueyChatHeader } from "./chat-header.js";
 import { chatCtaIdFor, createChatAnalytics, type ChatAnalytics, type ChatAnalyticsSetting } from "../analytics.js";
 
@@ -333,6 +337,16 @@ export interface GuueyChatProps {
    * handle instead of forcing a CSS hide (guuey#521).
    */
   composer?: boolean;
+  /**
+   * The composer's image affordance (guuey#2293), default `false`. On, the
+   * built-in composer carries an attach button (JPEG, PNG, GIF, WebP), takes
+   * pasted images, shows each as a preview with its own Remove button, and
+   * sends them with the turn (`send(text, { attachments })`). A runtime that
+   * does not acknowledge the images ends the turn with
+   * `ATTACHMENTS_UNSUPPORTED`, read as `strings.errorAttachmentsUnsupported`.
+   * Off, the composer and every body it sends are exactly as before.
+   */
+  attachments?: boolean;
   /** DOM windowing (§3.2). `false` renders everything. */
   window?: TranscriptWindowing | false;
   /**
@@ -491,6 +505,19 @@ export function kitSinkInEffect(viewProps: TranscriptItemContext["viewProps"]): 
   return !Object.hasOwn(viewProps, "onUserMessage");
 }
 
+/** guuey#2293 — one image waiting in the composer: its wire shape, its preview and its file name. */
+interface PendingImage {
+  id: string;
+  name: string;
+  attachment: ImageAttachment;
+  previewUrl: string;
+}
+
+/** The send options for a composer turn's images; `undefined` for none (the body is then exactly as before). */
+function sendOptionsFor(images: readonly ImageAttachment[]): SendOptions | undefined {
+  return images.length > 0 ? { attachments: images } : undefined;
+}
+
 /**
  * The send options for a doorbell's turn (guuey#2031), from the ONE entry the
  * echo marked sent for it (`markSent`, called before the send): that entry's
@@ -524,6 +551,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     mode = "light",
     surface = "card",
     composer = true,
+    attachments: attachmentsEnabled = false,
     window: windowing,
     reader,
     onDebugEvent,
@@ -779,17 +807,30 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // listen and sends — the user answers in either channel, card or text.
   const waitingOnUser = isWaitingOnUser(invoke.status, invoke.activeTool);
   /** A reply typed during a listen: sent once the aborted listen has unwound (the hook refuses `send` mid-turn by design). */
-  const replyAfterListenRef = useRef<string | null>(null);
+  const replyAfterListenRef = useRef<{ text: string; attachments: readonly ImageAttachment[] } | null>(null);
   useEffect(() => {
     if (invoke.status !== "ready") return;
-    const text = replyAfterListenRef.current;
-    if (text === null) return;
+    const reply = replyAfterListenRef.current;
+    if (reply === null) return;
     replyAfterListenRef.current = null;
     analytics.messageSent();
-    void invoke.send(text).catch(() => {
+    void invoke.send(reply.text, sendOptionsFor(reply.attachments)).catch(() => {
       // The hook surfaces the failure (`error` / R0 failed-send).
     });
   }, [invoke.status, invoke, analytics]);
+  // guuey#2293 — the images waiting to go with the next send, and the status
+  // line naming a file the composer did not take. A ref mirrors the list so
+  // a pick judges the count and the turn's size against the CURRENT list,
+  // not a render-old closure (two quick picks must not both see room).
+  const [pendingImages, setPendingImagesState] = useState<readonly PendingImage[]>([]);
+  const pendingImagesRef = useRef<readonly PendingImage[]>([]);
+  const setPendingImages = useCallback((next: readonly PendingImage[]): void => {
+    pendingImagesRef.current = next;
+    setPendingImagesState(next);
+  }, []);
+  const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingImageIdRef = useRef(0);
   // guuey#605 — the connect-first gate. While an `authMode:'upfront'` OAuth
   // server is pending connection the RUNTIME refuses every turn before any
   // model call, so inviting a message here would only spend one to be told
@@ -802,7 +843,11 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // the person opens a new one (the banner's control).
   const threadClosed = plan.threadClosed !== null;
   const canSend =
-    available && (!busy || waitingOnUser) && authRequired === null && !threadClosed && input.trim() !== "";
+    available &&
+    (!busy || waitingOnUser) &&
+    authRequired === null &&
+    !threadClosed &&
+    (input.trim() !== "" || pendingImages.length > 0);
 
   // ── The imperative seam (guuey#210) ──────────────────────────────────
   // ONE stable handle for the component's whole life (hosts capture it in
@@ -1207,26 +1252,84 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   }, [handle]);
 
   const submit = useCallback((): void => {
-    const text = input.trim();
+    const typed = input.trim();
+    const images = pendingImagesRef.current.map((p) => p.attachment);
     // guuey#605: the connect-first gate belongs on the SEND path too, not
     // just the disabled attribute — an Enter keypress reaches here directly.
-    if (text === "" || !available || authRequired !== null || threadClosed) return;
+    if ((typed === "" && images.length === 0) || !available || authRequired !== null || threadClosed) return;
+    // guuey#2293: images with no words still need a non-empty input (every
+    // runtime refuses an empty one); the kit's neutral line stands in.
+    const text = typed !== "" ? typed : policy.strings.attachmentsOnlyInput;
     if (busy) {
       if (!waitingOnUser) return;
       // guuey#1038: a reply during a listen ENDS the listen (abort = the
       // cancel ggui's handler honours) and goes out as the next turn once
       // the hook is ready again — one gesture, no manual Stop.
-      replyAfterListenRef.current = text;
+      replyAfterListenRef.current = { text, attachments: images };
       setInput("");
+      setPendingImages([]);
+      setAttachmentNotice(null);
       invoke.abort();
       return;
     }
     setInput("");
+    setPendingImages([]);
+    setAttachmentNotice(null);
     analytics.messageSent();
-    void invoke.send(text).catch(() => {
+    void invoke.send(text, sendOptionsFor(images)).catch(() => {
       // The hook surfaces the failure (`error` / R0 failed-send).
     });
-  }, [input, available, busy, waitingOnUser, authRequired, threadClosed, invoke, analytics]);
+  }, [input, available, busy, waitingOnUser, authRequired, threadClosed, invoke, analytics, policy.strings, setPendingImages]);
+
+  // guuey#2293 — take picked or pasted files: the count and the turn's size
+  // are judged against the list as it stands, each file is read (and redrawn
+  // smaller where the browser can), and every file not taken is named.
+  const addImageFiles = useCallback(
+    async (files: readonly File[]): Promise<void> => {
+      if (files.length === 0) return;
+      const refusals: string[] = [];
+      const refuse = (name: string, reason: AttachmentRefusalReason): void => {
+        refusals.push(policy.strings.attachmentRefused(name, reason));
+      };
+      const room = IMAGE_ATTACHMENTS_MAX_COUNT - pendingImagesRef.current.length;
+      const taken = files.slice(0, Math.max(0, room));
+      for (const file of files.slice(taken.length)) refuse(file.name, "too_many");
+      const results = await Promise.all(taken.map((file) => readImageFile(file)));
+      let next = pendingImagesRef.current;
+      for (const result of results) {
+        if (!result.ok) {
+          refuse(result.name, result.reason);
+          continue;
+        }
+        if (next.length >= IMAGE_ATTACHMENTS_MAX_COUNT) {
+          refuse(result.name, "too_many");
+          continue;
+        }
+        const total = next.reduce((sum, p) => sum + p.attachment.data.length, 0);
+        if (total + result.attachment.data.length > IMAGE_ATTACHMENTS_MAX_TOTAL_BASE64_CHARS) {
+          refuse(result.name, "too_large");
+          continue;
+        }
+        pendingImageIdRef.current += 1;
+        next = [
+          ...next,
+          { id: `img-${pendingImageIdRef.current}`, name: result.name, attachment: result.attachment, previewUrl: result.previewUrl },
+        ];
+      }
+      setPendingImages(next);
+      setAttachmentNotice(refusals.length > 0 ? refusals.join(" ") : null);
+    },
+    [policy.strings, setPendingImages],
+  );
+
+  const removePendingImage = useCallback(
+    (id: string): void => {
+      setPendingImages(pendingImagesRef.current.filter((p) => p.id !== id));
+      setAttachmentNotice(null);
+      inputRef.current?.focus();
+    },
+    [setPendingImages],
+  );
 
   // guuey#2355: open a new conversation from the closed one. The hook's reset
   // drops the closed thread (pointer + storage, transcript, the closed state);
@@ -1235,10 +1338,12 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   const startNewConversation = useCallback((): void => {
     invoke.reset();
     setInput("");
+    setPendingImages([]);
+    setAttachmentNotice(null);
     setPendingLink(null);
     pendingDoorbellsRef.current = [];
     echoRef.current.reset();
-  }, [invoke]);
+  }, [invoke, setPendingImages]);
 
   const handleRetry = useCallback(
     (item: UserMessageItem) => {
@@ -1431,6 +1536,62 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
           submit();
         }}
       >
+        {attachmentsEnabled && attachmentNotice !== null && (
+          <p role="status" className="guuey-chat-attachment-notice">
+            {attachmentNotice}
+          </p>
+        )}
+        {attachmentsEnabled && pendingImages.length > 0 && (
+          <ul className="guuey-chat-attachments" part={PARTS.attachments} aria-label={strings.attachmentsLabel}>
+            {pendingImages.map((p) => (
+              <li key={p.id} className="guuey-chat-attachment">
+                <img className="guuey-chat-attachment-preview" src={p.previewUrl} alt={p.name} />
+                <button
+                  type="button"
+                  className="guuey-chat-attachment-remove"
+                  aria-label={strings.removeAttachment(p.name)}
+                  onClick={() => removePendingImage(p.id)}
+                >
+                  <span aria-hidden="true">×</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {attachmentsEnabled && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={ATTACHMENT_ACCEPT}
+              multiple
+              hidden
+              tabIndex={-1}
+              aria-hidden="true"
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? []);
+                // Cleared so picking the same file again fires a change.
+                e.target.value = "";
+                void addImageFiles(files);
+              }}
+            />
+            <button
+              type="button"
+              className="guuey-chat-composer-attach"
+              part={PARTS.composerAttach}
+              aria-label={strings.attachImage}
+              title={strings.attachImage}
+              disabled={!available || authRequired !== null || threadClosed || pendingImages.length >= IMAGE_ATTACHMENTS_MAX_COUNT}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <path d="m21 15-5-5L5 21" />
+              </svg>
+            </button>
+          </>
+        )}
         <textarea
           ref={inputRef}
           id={composerId}
@@ -1441,6 +1602,16 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onFocus={() => analytics.opened()}
+          onPaste={
+            attachmentsEnabled
+              ? (e) => {
+                  // guuey#2293: pasted images join the previews; pasted text
+                  // is left to the textarea (no preventDefault).
+                  const files = Array.from(e.clipboardData.files);
+                  if (files.length > 0) void addImageFiles(files);
+                }
+              : undefined
+          }
           onKeyDown={(e) => {
             // `isComposing` guards IME input: an Enter that commits a
             // candidate must not also send the message.

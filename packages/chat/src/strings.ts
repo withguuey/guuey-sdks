@@ -59,6 +59,19 @@ export interface ChatStrings {
    * and also points at a new conversation, for the case a retry cannot fix.
    */
   errorNoReply: string;
+  /**
+   * R11, code ATTACHMENTS_UNSUPPORTED (guuey#2293): the agent's runtime did
+   * not acknowledge the turn's images, so the turn was stopped before any
+   * reply. Says what to do instead; a retry with the image would meet the
+   * same runtime.
+   */
+  errorAttachmentsUnsupported: string;
+  /**
+   * R11, code ATTACHMENTS_INVALID (guuey#2293): the send's images broke the
+   * V1 rules and nothing was sent. The kit's own composer judges each file
+   * first, so this reads on a host that called `send` itself.
+   */
+  errorAttachmentsInvalid: string;
 
   /** R3/R4. */
   toolGroup: (count: number) => string;
@@ -242,6 +255,19 @@ export interface ChatStrings {
   composerThreadClosed: string;
   send: string;
   stop: string;
+  /**
+   * guuey#2293 — the composer's image affordance (`<GuueyChat attachments>`):
+   * the attach button's accessible name, the preview row's label, each
+   * preview's Remove button, the status line naming a file the composer did
+   * not take, and the turn's input when images are sent with no words (the
+   * runtime needs a non-empty input; this line is what the model reads beside
+   * the images).
+   */
+  attachImage: string;
+  attachmentsLabel: string;
+  removeAttachment: (name: string) => string;
+  attachmentRefused: (name: string, reason: "unsupported_type" | "too_large" | "too_many" | "unreadable") => string;
+  attachmentsOnlyInput: string;
 }
 
 /** Humanize a wire tool name: `render_weather-card` → `render weather card`. */
@@ -312,6 +338,8 @@ export const defaultChatStrings: ChatStrings = {
   errorContentBlocked: "A content filter held back this reply. Try asking in a different way.",
   errorNoReply: "The reply didn't come through. Try again, or start a new conversation.",
   errorInvalid: "The app sent a request the agent couldn't read.",
+  errorAttachmentsUnsupported: "This agent can't read images yet. Send your message without the image.",
+  errorAttachmentsInvalid: "That image can't be sent. Use a JPEG, PNG, GIF or WebP image, up to 4 at a time.",
 
   toolGroup: (count) => `Ran ${count} tools`,
   toolGroupFailures: (count) => (count === 1 ? "1 failed" : `${count} failed`),
@@ -406,4 +434,20 @@ export const defaultChatStrings: ChatStrings = {
   composerThreadClosed: "This conversation has ended. Start a new one to continue.",
   send: "Send",
   stop: "Stop",
+  attachImage: "Attach image",
+  attachmentsLabel: "Attached images",
+  removeAttachment: (name) => `Remove ${name}`,
+  attachmentRefused: (name, reason) => {
+    switch (reason) {
+      case "unsupported_type":
+        return `${name} wasn't added: only JPEG, PNG, GIF and WebP images can be sent.`;
+      case "too_large":
+        return `${name} wasn't added: it's too large to send.`;
+      case "too_many":
+        return `${name} wasn't added: a message can carry up to 4 images.`;
+      case "unreadable":
+        return `${name} wasn't added: it couldn't be read.`;
+    }
+  },
+  attachmentsOnlyInput: "See the attached image.",
 };

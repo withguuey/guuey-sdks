@@ -48,6 +48,10 @@ export const PARTS = {
   composerSend: "composer-send",
   /** The composer's Stop button — replaces Send while a turn is in flight. */
   composerStop: "composer-stop",
+  /** guuey#2293 — the composer's attach-image button (present only with `attachments`). */
+  composerAttach: "composer-attach",
+  /** guuey#2293 — the composer's row of image previews (present only while images are attached). */
+  attachments: "attachments",
   /** The suggestion-chips row (absent when there are no chips). */
   chips: "chips",
   /** One suggestion chip. */
