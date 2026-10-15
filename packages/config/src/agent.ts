@@ -164,8 +164,10 @@ const ExternalMcp = z
      * (`userAuthMode: 'byo'`): the forwarded value is the user's own IdP
      * bearer, valid for that token's own lifetime and never longer. Only a
      * bearer verified by the app's BYO IdP is ever forwarded — a guuey-native
-     * Cognito token is never forwarded, and a guest has no bearer to forward
-     * (fail-closed: no credential file, that server's calls fail loudly).
+     * Cognito token is never forwarded, and a guest has no bearer to forward.
+     * With no bearer to forward, the pod writes no credential for this server
+     * and leaves it out of that turn: its tools are absent, and the agent sees
+     * no error.
      * The `url` must be `https://` — enforced at deploy by
      * {@link validateCallerCredentialHttps} (a stored definition still loads).
      * Mutually exclusive with `federate: true`.
