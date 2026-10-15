@@ -1145,6 +1145,52 @@ export function validateCallerCredentialHttps(
   return violations;
 }
 
+// ── Federated resource URL (deploy-time contract enforcement) ───────────────
+//
+// A `federate: true` entry gets a per-invoke token minted for its resource
+// (`mcpResourceUrl` when set, else `url`), and the mint accepts only an
+// `https://` resource ending in `/`. Any other shape fails the mint at turn
+// time, so `validateFederateResourceUrl` refuses it at deploy instead (the
+// CLI before upload; the cliApi deploy door and reconcile on a newly
+// submitted document). A write-path lint only, NOT a schema rule: a stored
+// definition always loads.
+
+/**
+ * Whether a `federate: true` external entry can be minted for: a ggui render
+ * server always can (it mints for its own app address); any other needs its
+ * resource (`mcpResourceUrl`, else `url`) to be an `https://` url ending in
+ * `/`. The one predicate behind {@link validateFederateResourceUrl}, exported
+ * so a form can refuse the same shape before submit.
+ */
+export function isMintableFederateResource(entry: { url: string; mcpResourceUrl?: string }): boolean {
+  if (isGguiRenderUrl(entry.url)) return true;
+  return /^https:\/\/.+\/$/.test(entry.mcpResourceUrl ?? entry.url);
+}
+
+/**
+ * Validate that every `federate: true` external entry is
+ * {@link isMintableFederateResource}. Run it on the document AFTER
+ * `${env.NAME}` resolution. Returns one human-readable violation per
+ * offending entry, each naming the server key (empty = clean).
+ */
+export function validateFederateResourceUrl(
+  agent: Pick<GuueyAgent, 'mcpServers'> | undefined,
+): string[] {
+  const violations: string[] = [];
+  const servers = agent?.mcpServers;
+  if (!servers) return violations;
+
+  for (const [name, server] of declaredServerEntries(servers)) {
+    if (server.kind !== 'external' || server.federate !== true) continue;
+    if (!isMintableFederateResource(server)) {
+      violations.push(
+        `mcpServers.${name}: "federate": true needs an https:// url ending in "/" (for example "https://mcp.example.com/mcp/") — the token is minted for exactly that resource, and any other shape fails every turn`,
+      );
+    }
+  }
+  return violations;
+}
+
 // ── Tool-gate grammar (guuey#234) ────────────────────────────────────────────
 //
 // `agent.tools.{allowlist,denylist}` entries are schema-typed only

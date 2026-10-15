@@ -9,6 +9,7 @@ import {
   validateNoLiteralSecrets,
   validateReservedServerNames,
   validateCallerCredentialHttps,
+  validateFederateResourceUrl,
   validateToolGates,
   validateToolAllowlistsNotEmpty,
   validateNoToolsEntry,
@@ -1503,5 +1504,60 @@ describe('validateCallerCredentialHttps', () => {
     const parsed = safeParseGuueyJson(stored);
     expect(parsed.success).toBe(true);
     if (parsed.success) expect(validateCallerCredentialHttps(parsed.data.agent)).toHaveLength(1);
+  });
+});
+
+// ── validateFederateResourceUrl (deploy-time resource shape for federate: true) ──
+
+describe('validateFederateResourceUrl', () => {
+  const federated = (url: string, mcpResourceUrl?: string): GuueyAgent => ({
+    mcpServers: {
+      crm: { kind: 'external', url, federate: true, ...(mcpResourceUrl !== undefined ? { mcpResourceUrl } : {}) },
+    },
+  });
+
+  it('passes an https:// url ending in "/", an absent map and non-federated entries', () => {
+    expect(validateFederateResourceUrl(federated('https://crm.example.com/mcp/'))).toEqual([]);
+    expect(validateFederateResourceUrl(federated('https://${platform.mcpDomain}/crm/'))).toEqual([]);
+    expect(validateFederateResourceUrl(undefined)).toEqual([]);
+    expect(validateFederateResourceUrl({})).toEqual([]);
+    expect(
+      validateFederateResourceUrl({
+        mcpServers: {
+          plain: { kind: 'external', url: 'https://api.example.com/mcp' },
+          caller: { kind: 'external', url: 'https://crm.example.com/mcp', credential: 'caller' },
+          tool: { kind: 'colocated', source: './mcps/tool' },
+        },
+      }),
+    ).toEqual([]);
+  });
+
+  it('refuses a federated url without a trailing "/", naming the server key', () => {
+    const v = validateFederateResourceUrl(federated('https://crm.example.com/mcp'));
+    expect(v).toHaveLength(1);
+    expect(v[0]).toMatch(/^mcpServers\.crm: "federate": true needs an https:\/\/ url ending in "\/"/);
+  });
+
+  it('refuses a federated http:// url (the mint takes https:// only)', () => {
+    expect(validateFederateResourceUrl(federated('http://crm.example.com/mcp/'))).toHaveLength(1);
+  });
+
+  it('judges mcpResourceUrl when it is set, since that is the resource minted for', () => {
+    expect(validateFederateResourceUrl(federated('https://crm.example.com/mcp', 'https://crm.example.com/mcp/'))).toEqual([]);
+    expect(validateFederateResourceUrl(federated('https://crm.example.com/mcp/', 'https://crm.example.com/mcp'))).toHaveLength(1);
+  });
+
+  it('skips a ggui render server, which mints for its own app address', () => {
+    expect(validateFederateResourceUrl(federated('https://mcp.ggui.ai'))).toEqual([]);
+  });
+
+  it('is a write-path lint only: a stored definition with a slash-less federated url still loads', () => {
+    const stored = {
+      schema: '1',
+      agent: { mcpServers: { crm: { kind: 'external', url: 'https://crm.example.com/mcp', federate: true } } },
+    };
+    const parsed = safeParseGuueyJson(stored);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(validateFederateResourceUrl(parsed.data.agent)).toHaveLength(1);
   });
 });

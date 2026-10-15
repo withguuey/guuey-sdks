@@ -1111,6 +1111,81 @@ describe('deploy() — credential: "caller" requires an https:// url, declarativ
   }
 });
 
+// A `federate: true` entry's token is minted for its exact resource, which must
+// be an https:// url ending in "/". Any other shape fails the mint every turn,
+// so it is refused before upload on BOTH paths, after `${env.NAME}` resolution.
+describe('deploy() — federate: true requires an https:// url ending in "/", declarative and code paths', () => {
+  let dir: string;
+  let originalCwd: string;
+  let errSpy: MockInstance<typeof console.error>;
+  const SLASH_REFUSAL = 'mcpServers.crm: "federate": true needs an https:// url ending in "/"';
+
+  function writeGuueyJson(url: string, code: boolean): void {
+    writeFileSync(
+      join(dir, 'guuey.json'),
+      JSON.stringify({
+        schema: '1',
+        ...(code ? { appId: 'app-1' } : {}),
+        agent: {
+          framework: 'claude-agent-sdk',
+          mcpServers: { crm: { kind: 'external', url, federate: true } },
+        },
+      }),
+    );
+    if (code) writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    dir = mkdtempSync(join(tmpdir(), 'deploy-federate-slash-test-'));
+    process.chdir(dir);
+    vi.mocked(resolveConfig).mockReturnValue({
+      host: 'https://platform.guuey.test',
+      apiUrl: 'https://api.guuey.test',
+      appId: 'app-1',
+    });
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(dir, { recursive: true, force: true });
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  for (const code of [false, true]) {
+    const path = code ? 'code' : 'declarative';
+    const run = (): Promise<void> => deploy(code ? { code: true, 'no-install': true } : {});
+
+    it(`${path}: refuses a federated url without a trailing "/", naming the server, before any network call`, async () => {
+      writeGuueyJson('https://crm.example.com/mcp', code);
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      await expect(run()).rejects.toBeInstanceOf(ExitSignal);
+      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+      expect(printed).toContain(SLASH_REFUSAL);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(childProcessLog.calls).toEqual([]);
+    });
+
+    it(`${path}: a federated url ending in "/" (via \${env.NAME}) passes the gate`, async () => {
+      vi.stubEnv('CRM_URL', 'https://crm.example.com/mcp/');
+      writeGuueyJson('${env.CRM_URL}', code);
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        throw new Error(`stop after the gate: ${String(input)}`);
+      });
+      await run().catch(() => undefined);
+      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+      expect(printed).not.toContain('needs an https:// url ending in');
+    });
+  }
+});
+
 // `guuey deploy --max-pods N` (scaling S1-F4, guuey#162): the flag rides
 // `DeployTriggerBody.maxPods` at every trigger POST. Driven through the
 // declarative shape — it is the one that reaches the trigger with no

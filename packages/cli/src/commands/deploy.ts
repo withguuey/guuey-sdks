@@ -50,6 +50,7 @@ import {
   validateNoLiteralSecrets,
   validateColocatedServerNames,
   validateCallerCredentialHttps,
+  validateFederateResourceUrl,
   validateToolGates,
   validateToolAllowlistsNotEmpty,
   validateNoToolsEntry,
@@ -737,6 +738,7 @@ async function deployCode(opts: {
   // A `credential: "caller"` server receives the user's own bearer: its url
   // must be https://. Checked on the env-resolved document, the url that ships.
   exitOnCallerCredentialHttp(envResolvedDoc.doc.agent);
+  exitOnFederateResourceUrl(envResolvedDoc.doc.agent);
 
   const secretViolations = validateNoLiteralSecrets(doc.agent);
   if (secretViolations.length > 0) {
@@ -1477,6 +1479,7 @@ async function deployDeclarative(opts: {
   // A `credential: "caller"` server receives the user's own bearer: its url
   // must be https://. The backend re-checks a newly submitted snapshot.
   exitOnCallerCredentialHttp(agent);
+  exitOnFederateResourceUrl(agent);
 
   // Reject literal secrets in mcpServers[].headers before upload — they'd ride
   // into the pod's config as plaintext. The backend re-checks authoritatively;
@@ -1707,6 +1710,15 @@ function resolveEnvOrExit(doc: GuueyJsonV1, env: EnvSource): { doc: GuueyJsonV1;
 /** Refuse a `credential: "caller"` entry whose url is not https:// (both deploy paths). */
 function exitOnCallerCredentialHttp(agent: GuueyJsonV1['agent']): void {
   const violations = validateCallerCredentialHttps(agent);
+  if (violations.length > 0) {
+    out.error(violations.map((v) => `  - ${v}`).join('\n'));
+    process.exit(1);
+  }
+}
+
+/** Refuse a `federate: true` entry whose minted resource is not an https:// url ending in "/" (both deploy paths). */
+function exitOnFederateResourceUrl(agent: GuueyJsonV1['agent']): void {
+  const violations = validateFederateResourceUrl(agent);
   if (violations.length > 0) {
     out.error(violations.map((v) => `  - ${v}`).join('\n'));
     process.exit(1);
