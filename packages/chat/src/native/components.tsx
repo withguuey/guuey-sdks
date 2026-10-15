@@ -574,7 +574,7 @@ export function NativeMedia({ item, ctx }: ItemProps<MediaItem>): ReactNode {
       >
         <Text style={{ fontSize: tokens.fontSize - 2, fontFamily: tokens.fontFamily }}>
           <Text style={{ color: tokens.palette.inkMuted }}>{label} </Text>
-          <Text style={{ color: tokens.palette.accent, textDecorationLine: "underline" }}>
+          <Text style={{ color: tokens.palette.link ?? tokens.palette.ink, textDecorationLine: "underline" }}>
             {ctx.strings.mediaOpenLink}
           </Text>
         </Text>
