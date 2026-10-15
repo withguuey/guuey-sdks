@@ -1,3 +1,7 @@
+// FIRST, before anything that reaches @silverprotocol/core: give runtimes
+// without a global structuredClone (Hermes) the structured clone the core's
+// fold needs. Never replaces a native one. See ./structured-clone.ts.
+import "./structured-clone.js";
 export {
   parseSseEvents,
   extractAssistantText,

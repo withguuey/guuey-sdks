@@ -6,6 +6,10 @@
  * history reader, and the web adapters). Consumers that only need those never
  * import React at all; consumers that render chat import the hook from here.
  */
+// FIRST, before anything that reaches @silverprotocol/core: give runtimes
+// without a global structuredClone (Hermes) the structured clone the core's
+// fold needs. Never replaces a native one. See ./structured-clone.ts.
+import "./structured-clone.js";
 export {
   useAgentInvoke,
   applyHistoryResult,

@@ -18,6 +18,11 @@
  * `react` and `react-native` are OPTIONAL peers — the root subpath stays
  * importable everywhere; this arm loads only inside an RN runtime.
  */
+// FIRST: evaluating the agent client's root entry gives runtimes without a
+// global structuredClone (Hermes) the structured clone @silverprotocol/core's
+// fold needs, before any kit code can reach the core. It never replaces a
+// native implementation.
+import "@guuey/agent-client";
 export {
   NativeTranscript,
   type NativeTranscriptProps,
