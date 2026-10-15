@@ -18,6 +18,7 @@
  *  - shimmer/pulse is CSS-only and disabled under `prefers-reduced-motion`
  *    (see styles.css).
  */
+import { HighlightedCode } from "./highlighted-code.js";
 import {
   useEffect,
   useRef,
@@ -373,18 +374,33 @@ export function DefaultReasoning({ item, ctx }: ItemProps<ReasoningItem>): React
 
 export function DefaultDataResult({ item, ctx }: ItemProps<DataResultItem>): ReactNode {
   const bytes = ctx.strings.bytes(item.byteCount);
+  // guuey#2367: a cut, non-giant result opens to its whole text in place.
+  const [showAll, setShowAll] = useState(false);
+  const shown = showAll && item.full !== undefined ? item.full : item.preview;
   return (
     <div className={`guuey-chat-data guuey-chat-data-${item.state}`}>
       {item.state === "empty" ? (
         <p className="guuey-chat-data-empty">{ctx.strings.noOutput}</p>
-      ) : item.preview === null ? (
+      ) : shown === null ? (
         <p className="guuey-chat-data-binary">{bytes}</p>
       ) : (
         <>
-          <pre className="guuey-chat-data-preview">{item.preview}</pre>
+          <pre className="guuey-chat-data-preview">
+            <HighlightedCode code={shown} lang={item.lang} />
+          </pre>
           <div className="guuey-chat-data-meta">
             {item.showBytes ? <span>{bytes}</span> : null}
-            <CopyButton text={item.preview} ctx={ctx} />
+            {item.full !== undefined ? (
+              <button
+                type="button"
+                className="guuey-chat-data-more"
+                aria-expanded={showAll}
+                onClick={() => setShowAll((v) => !v)}
+              >
+                {showAll ? ctx.strings.showLess : ctx.strings.showAll}
+              </button>
+            ) : null}
+            <CopyButton text={item.full ?? shown} ctx={ctx} />
           </div>
         </>
       )}

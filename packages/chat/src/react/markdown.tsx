@@ -32,6 +32,7 @@ import {
   type RichTextInline,
 } from "@silverprotocol/richtext";
 import { normalizeTableRow, type RichTextTableBlock } from "../richtext-table.js";
+import { HighlightedCode } from "./highlighted-code.js";
 
 /**
  * Bare-URL autolink (guuey#515): richtext mints `link` nodes only from
@@ -189,7 +190,7 @@ function Block({ block }: { block: RichTextBlock }): ReactNode {
         </p>
       );
     case "code-fence":
-      return <CodeFence code={block.code} />;
+      return <CodeFence code={block.code} lang={block.lang} />;
     case "list": {
       const Tag = block.ordered ? "ol" : "ul";
       return (
@@ -215,11 +216,13 @@ function Block({ block }: { block: RichTextBlock }): ReactNode {
  * (clipboard access needs a secure context + the iframe's
  * clipboard-write grant — manual selection always still works).
  */
-function CodeFence({ code }: { code: string }): ReactNode {
+function CodeFence({ code, lang }: { code: string; lang: string | undefined }): ReactNode {
   const [copied, setCopied] = useState(false);
   return (
     <div className="guuey-chat-code-wrap">
-      <pre className="guuey-chat-code-fence">{code}</pre>
+      <pre className="guuey-chat-code-fence">
+        <HighlightedCode code={code} lang={lang} />
+      </pre>
       <button
         type="button"
         className="guuey-chat-code-copy"

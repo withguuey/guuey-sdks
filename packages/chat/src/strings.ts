@@ -172,6 +172,9 @@ export interface ChatStrings {
   showEarlier: (count: number) => string;
   copy: string;
   copied: string;
+  /** guuey#2367 — a tool result whose preview was cut opens to its whole text. */
+  showAll: string;
+  showLess: string;
 
   /** R10 hitl actions (spec draft.2) — mode buttons use the ASKER's labels. */
   promptAccept: string;
@@ -396,6 +399,8 @@ export const defaultChatStrings: ChatStrings = {
   recoveredFromHistory: "recovered from history",
 
   noOutput: "no output",
+  showAll: "Show all",
+  showLess: "Show less",
   bytes: (byteCount) =>
     byteCount >= 1024 ? `${Math.round(byteCount / 1024)} KB` : `${byteCount} B`,
 

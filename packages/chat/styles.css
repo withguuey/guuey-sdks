@@ -319,6 +319,25 @@
   padding: 8px 10px;
   overflow-x: auto;
 }
+/* guuey#2367 — code highlighting: only the tokens every theme guarantees as
+   TEXT (ink, inkMuted, link) plus weight and italics. Accent is never a text
+   colour in a fence (1.05:1 on the GUUEY light theme's fence). */
+.guuey-chat-tok-keyword,
+.guuey-chat-tok-key {
+  color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
+  font-weight: 600;
+}
+.guuey-chat-tok-string,
+.guuey-chat-tok-number {
+  color: var(--guuey-chat-link, var(--_guuey-chat-link, inherit));
+}
+.guuey-chat-tok-comment {
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
+  font-style: italic;
+}
+.guuey-chat-tok-punctuation {
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
+}
 /* The fence's copy affordance (guuey#529): hover-reveal on pointer
    devices, persistent on touch — the common grammar. Tokens ride the
    composable channel like everything else. */

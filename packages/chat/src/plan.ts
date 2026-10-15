@@ -45,6 +45,7 @@ import {
   type ViewMount,
 } from "@guuey/mcp-apps-host";
 import type { TranscriptPolicy } from "./policy.js";
+import { prettyJson } from "./highlight.js";
 import { grantModeDisplay, hitlAnswerChannel } from "./hitl.js";
 import { authRequiredFromAsks, oauthAuthorizeAsk } from "./oauth.js";
 import { isGguiConsumeTool, isGguiProtocolTool } from "./listen.js";
@@ -314,18 +315,31 @@ function dataResultFromToolResult(
   let state: DataResultItem["state"];
   let preview: string | null;
   let byteCount: number;
+  // guuey#2367: the readable whole (when it is not giant) and its language.
+  let whole: string | null = null;
+  let lang: "json" | undefined;
   if (payload !== undefined) {
     byteCount = jsonByteSize(payload);
     preview = boundedPreview(payload, policy.dataResult.previewChars, policy.dataResult.prettyPrint);
     state = byteCount > GIANT_RESULT_BYTES ? "giant" : "small";
+    lang = "json";
+    if (state === "small") {
+      const text = policy.dataResult.prettyPrint ? JSON.stringify(payload, null, 2) : JSON.stringify(payload);
+      whole = text === undefined ? null : text;
+    }
   } else if (textParts.length > 0) {
     const joined = textParts.join("\n");
     byteCount = joined.length;
-    preview =
-      joined.length > policy.dataResult.previewChars
-        ? joined.slice(0, policy.dataResult.previewChars)
-        : joined;
     state = byteCount > GIANT_RESULT_BYTES ? "giant" : "small";
+    // Text that IS JSON (most MCP tools return JSON as text) reads pretty-printed.
+    const pretty = state === "small" && policy.dataResult.prettyPrint ? prettyJson(joined) : null;
+    const readable = pretty ?? joined;
+    if (pretty !== null) lang = "json";
+    whole = state === "small" ? readable : null;
+    preview =
+      readable.length > policy.dataResult.previewChars
+        ? readable.slice(0, policy.dataResult.previewChars)
+        : readable;
   } else if (mediaParts.length > 0) {
     byteCount = jsonByteSize(mediaParts);
     preview = null;
@@ -348,6 +362,8 @@ function dataResultFromToolResult(
     byteCount,
     state,
     showBytes: policy.dataResult.alwaysShowBytes || state === "giant",
+    ...(whole !== null && preview !== null && whole.length > preview.length ? { full: whole } : {}),
+    ...(lang !== undefined && preview !== null ? { lang } : {}),
   };
 }
 

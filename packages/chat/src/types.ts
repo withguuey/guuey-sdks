@@ -366,6 +366,15 @@ export interface DataResultItem extends BaseItem {
   byteCount: number;
   state: "small" | "giant" | "binary" | "empty";
   showBytes: boolean;
+  /**
+   * guuey#2367: the COMPLETE text, present only when `preview` was cut AND the
+   * result is not giant (≤ the giant threshold), so the plan still never carries
+   * a giant payload (fixture 6). Additive and optional (N−1): a renderer that
+   * does not know it keeps showing `preview`.
+   */
+  full?: string;
+  /** guuey#2367: `"json"` when the text is JSON (pretty-printed), for highlighting; absent otherwise. */
+  lang?: "json";
 }
 
 /** R3 — one tool call lifecycle line. */
