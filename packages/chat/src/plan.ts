@@ -18,10 +18,10 @@
  *    same block walk, so a silver stream carrying only text plans
  *    byte-identically to a bypass stream (fixture 5).
  *  - Interleaving is conversational alternation (user[i] then assistant[i]) —
- *    the transcript invariant of a request/reply chat. Finer-grained
- *    interleaving (true seq-ordering of history cards inside turns) needs
- *    read-plane sequence numbers the flat surface does not carry; the 3b
- *    assemblers own that refinement.
+ *    the transcript invariant of a request/reply chat. History cards are
+ *    placed by read-plane seq: before the first seq-bearing user or
+ *    assistant text row newer than the card, so a card stored inside a turn
+ *    sits between that turn's text rows.
  *
  * Key scheme (stable across streaming updates): `u{slot}` user rows,
  * `a{slot}.t{n}`/`.r{n}`/`.m{n}`/`.c{n}`/`.d{n}`/`.s{n}`/`.k{n}`/`.u{n}`
@@ -109,6 +109,14 @@ interface AssistantSource {
   blocks: AgBlock[];
   live: boolean;
   stopped: boolean;
+  /**
+   * The read-plane seq of the flat row each block came from, index-aligned
+   * with `blocks` (guuey#2400). Only a rehydrated flat slot carries it; a
+   * fold source has no read-plane seqs. A history card anchors on the first
+   * seq-bearing row newer than it, so a card stored inside a turn lands
+   * between that turn's text rows, where it was drawn live.
+   */
+  blockSeqs?: Array<number | undefined>;
 }
 
 /** A fold-borne `role:"notice"` row, anchored to the source it followed. */
@@ -257,12 +265,16 @@ function flatSettledGroups(messages: TranscriptInputs["messages"]): {
       openUserTurn = true;
     } else if (m.role === "assistant") {
       if (current === null) {
-        current = { blocks: [], live: false, stopped: false };
+        current = { blocks: [], live: false, stopped: false, blockSeqs: [] };
         groups.push(current);
       }
       // A rehydrated row's narration plans as the interim text it was live, before its answer.
-      for (const line of m.narration ?? []) current.blocks.push({ type: "text", text: line, phase: "interim" });
+      for (const line of m.narration ?? []) {
+        current.blocks.push({ type: "text", text: line, phase: "interim" });
+        current.blockSeqs?.push(m.seq);
+      }
       current.blocks.push({ type: "text", text: m.text });
+      current.blockSeqs?.push(m.seq);
       openUserTurn = false;
     }
   }
@@ -428,6 +440,8 @@ function planAssistantSource(
   inputs: TranscriptInputs,
   policy: TranscriptPolicy,
   overrides: TranscriptOverrides,
+  /** Filled with the read-plane seq of each text item drawn from a seq-bearing flat row (guuey#2400). */
+  seqByKey: Map<ItemKey, number>,
 ): DisplayItem[] {
   const items: DisplayItem[] = [];
   const prefix = `a${slot}`;
@@ -458,7 +472,7 @@ function planAssistantSource(
   let lastTextKey: ItemKey | null = null;
   let lastReasoningKey: ItemKey | null = null;
 
-  for (const block of source.blocks) {
+  for (const [blockIndex, block] of source.blocks.entries()) {
     if (block.type !== "search-result" && block.type !== "resource" && block.type !== "resource-link") {
       flushCitations();
     }
@@ -467,6 +481,8 @@ function planAssistantSource(
         if (block.text === "") break; // R1 empty-turn: no empty bubble.
         const key = `${prefix}.t${ordinals.t++}`;
         lastTextKey = key;
+        const seq = source.blockSeqs?.[blockIndex];
+        if (seq !== undefined) seqByKey.set(key, seq);
         items.push({
           kind: "text",
           key,
@@ -1033,6 +1049,8 @@ export function planTranscript(
         )
       : null;
   const conversation: DisplayItem[] = [];
+  /** guuey#2400: the read-plane seq of each assistant text item drawn from a rehydrated row. */
+  const assistantSeqByKey = new Map<ItemKey, number>();
   // A reloaded failed turn's notice speaks with the live error's voice for its
   // code (and carries no Retry: the failure is past); a plain notice keeps its text.
   const noticeItem = (n: (typeof notices)[number]): NoticeItem => ({
@@ -1101,7 +1119,7 @@ export function planTranscript(
     else emitUsersBefore(slot);
     const assistant = assistants[slot];
     if (assistant) {
-      conversation.push(...planAssistantSource(assistant, slot, inputs, policy, overrides));
+      conversation.push(...planAssistantSource(assistant, slot, inputs, policy, overrides, assistantSeqByKey));
     }
     for (const n of notices) if (n.afterSlot === slot) conversation.push(noticeItem(n));
   }
@@ -1155,6 +1173,12 @@ export function planTranscript(
             : mount.resource.uri,
     };
   });
+  /** The read-plane seq an item was drawn from: a history user row or a rehydrated assistant text row. */
+  const userSeqByKey = new Map<ItemKey, number>();
+  users.forEach((u, i) => {
+    if (u.seq !== undefined) userSeqByKey.set(`u${i}`, u.seq);
+  });
+  const itemSeq = (key: ItemKey): number | undefined => userSeqByKey.get(key) ?? assistantSeqByKey.get(key);
   const latestSeqByScope = new Map<string, number>();
   for (const { card, scope } of scopes) {
     if (scope !== null) latestSeqByScope.set(scope, card.seq);
@@ -1199,12 +1223,22 @@ export function planTranscript(
     // seq-less and the tail stands, as before. History cards arrive with
     // the history seed, which lands only on an untouched chat, so a history
     // card predates every live row.
-    const nextUserSlot = users.findIndex(
-      (u) => u.seq !== undefined && card.seq < u.seq,
-    );
-    const anchorSlot = nextUserSlot !== -1 ? nextUserSlot : firstLiveUserSlot;
+    //
+    // guuey#2400: the anchor is the first seq-bearing ITEM newer than the
+    // card, an assistant text row as well as a user row. A rehydrated turn's
+    // assistant rows merge into one slot, so anchoring on users alone put a
+    // card stored inside a turn after the whole turn, below the closing text
+    // it was drawn above live.
+    const newerIdx = items.findIndex((it) => {
+      const seq = itemSeq(it.key);
+      return seq !== undefined && card.seq < seq;
+    });
     const anchorIdx =
-      anchorSlot === -1 ? -1 : items.findIndex((it) => it.key === `u${anchorSlot}`);
+      newerIdx !== -1
+        ? newerIdx
+        : firstLiveUserSlot === -1
+          ? -1
+          : items.findIndex((it) => it.key === `u${firstLiveUserSlot}`);
     if (anchorIdx === -1) {
       items.push(view);
     } else {
