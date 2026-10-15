@@ -30,7 +30,9 @@ import type {
   InvokeSuspendOffer,
   ResumeAnswer,
   SuspendEvent,
+  EndThread,
 } from "./protocol.js";
+import { endThreadProblem } from "./end-thread.js";
 
 export function isInvoke(m: ControlMessage): m is Invoke {
   return m.type === "invoke";
@@ -296,6 +298,9 @@ export function parseControl(line: string): ControlMessage {
         // ordinary turn that cannot pause.
         ...(suspend ? { suspend } : {}),
         ...(resume ? { resume } : {}),
+        // The offer to end the conversation: any object reads as the offer
+        // (reduced to `{}`, its only shape today); anything else is no offer.
+        ...(isObject(raw.threadClose) ? { threadClose: {} } : {}),
       };
     }
     case "shutdown":
@@ -348,7 +353,8 @@ export function parseEvent(line: string): WorkerEvent {
       const stopReason: StopReason =
         raw.stopReason === "max_turns" || raw.stopReason === "error" ? raw.stopReason : "end_turn";
       const result = typeof raw.result === "string" ? raw.result : "";
-      return { type: "done", stopReason, result };
+      const endThread = parseEndThread(raw.endThread);
+      return { type: "done", stopReason, result, ...(endThread ? { endThread } : {}) };
     }
     case "error": {
       const message = typeof raw.message === "string" ? raw.message : "unknown worker error";
@@ -431,4 +437,18 @@ function parseWithheldTools(raw: unknown): WithheldTool[] {
     }
   }
   return out;
+}
+
+/**
+ * A `done`'s request to end the conversation, reduced to its two fields: kept
+ * only when both are strings that pass {@link endThreadProblem}. Anything else
+ * is dropped (never thrown), so a malformed request ends the turn as an
+ * ordinary one.
+ */
+function parseEndThread(v: JsonValue | undefined): EndThread | undefined {
+  if (!isObject(v)) return undefined;
+  const { code, message } = v;
+  if (typeof code !== "string" || typeof message !== "string") return undefined;
+  const request: EndThread = { code, message };
+  return endThreadProblem(request) === undefined ? request : undefined;
 }

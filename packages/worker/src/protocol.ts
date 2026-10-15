@@ -287,7 +287,20 @@ export interface Invoke {
    * ordinary turn.
    */
   resume?: InvokeResume;
+  /**
+   * The Router's offer to end this conversation when the worker asks: present
+   * only when the turn runs on a stored conversation the Router can close. A
+   * worker may set {@link DoneEvent.endThread} only on an invoke that carried
+   * it (`NativeEmit.endThread` answers `not_offered` otherwise). An older
+   * worker ignores the field and never asks.
+   */
+  threadClose?: InvokeThreadCloseOffer;
 }
+/**
+ * Router → worker: "I can end this conversation for you on this turn." It has
+ * no fields today; its presence is the offer.
+ */
+export type InvokeThreadCloseOffer = Record<string, never>;
 /**
  * Capability (worker → Router, in the hello of the invoke it applies to): this
  * worker honours {@link Invoke.suspend} and {@link Invoke.resume}. Announced
@@ -355,6 +368,26 @@ export interface DoneEvent {
   type: "done";
   stopReason: StopReason;
   result: string;
+  /**
+   * The worker asks the Router to end this conversation after this turn, for
+   * the reason `code` names, and to tell the person `message`. Sent only on an
+   * invoke that carried {@link Invoke.threadClose}. The Router checks it again
+   * (`endThreadProblem`) and ignores one that breaks the rules. An older
+   * Router ignores the field, and the turn ends as an ordinary turn.
+   */
+  endThread?: EndThread;
+}
+/**
+ * A worker's request to end the conversation. `code` is the worker's own
+ * machine-readable reason, 1–40 characters: an upper-case letter, then
+ * upper-case letters, digits or `_` (e.g. `CHAT_FULL`); the Router hands it to
+ * the client prefixed `app:`, apart from the platform's own codes. `message`
+ * is what the person reads, verbatim: 1–500 characters, no control characters
+ * other than `\n`.
+ */
+export interface EndThread {
+  code: string;
+  message: string;
 }
 /** Terminal failure. */
 export interface ErrorEvent {

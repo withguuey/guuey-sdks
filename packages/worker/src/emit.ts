@@ -4,7 +4,7 @@
  * fd-3 stream; tests pass an in-memory stream. Each event is written immediately
  * (one `write` per line) so streaming never stalls behind a buffer.
  */
-import type { JsonValue, StopReason, WorkerEvent } from "./protocol.js";
+import type { DoneEvent, EndThread, JsonValue, StopReason, WorkerEvent } from "./protocol.js";
 
 /** Minimal write interface accepted by {@link createEmitter}. `NodeJS.WritableStream` satisfies this. */
 export interface WriteSink {
@@ -13,7 +13,8 @@ export interface WriteSink {
 
 export interface Emitter {
   text(text: string): void;
-  done(result: string, stopReason?: StopReason): void;
+  /** `endThread`: the turn asks the Router to end the conversation (see {@link DoneEvent.endThread}); omitted, today's `done`. */
+  done(result: string, stopReason?: StopReason, endThread?: EndThread): void;
   error(message: string): void;
   native(framework: string, event: JsonValue): void;
   /** The SDK-version handshake (additive-optional, §8 item B). Emit at most
@@ -28,7 +29,11 @@ export function createEmitter(out: WriteSink): Emitter {
   };
   return {
     text: (text) => write({ type: "text", text }),
-    done: (result, stopReason = "end_turn") => write({ type: "done", stopReason, result }),
+    done: (result, stopReason = "end_turn", endThread) => {
+      const event: DoneEvent = { type: "done", stopReason, result };
+      if (endThread !== undefined) event.endThread = { code: endThread.code, message: endThread.message };
+      write(event);
+    },
     error: (message) => write({ type: "error", message }),
     native: (framework, event) => write({ type: "native", framework, event }),
     hello: (framework, sdkName, sdkVersion, capabilities) =>

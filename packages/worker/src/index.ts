@@ -24,6 +24,8 @@ export {
   type Invoke,
   type InvokeSuspendOffer,
   type InvokeResume,
+  type InvokeThreadCloseOffer,
+  type EndThread,
   type ResumeAnswer,
   type ResumeAnswerStatus,
   type Shutdown,
@@ -49,6 +51,7 @@ export {
   isSuspend,
 } from "./parse.js";
 export { createEmitter, type Emitter, type WriteSink } from "./emit.js";
+export { endThreadProblem, END_THREAD_CODE_PATTERN, END_THREAD_MESSAGE_MAX_CHARS } from "./end-thread.js";
 export { createSuspendWriter, type SuspendWriter, type SuspendWriteResult } from "./suspend-writer.js";
 export { listCredentials, type CredentialFile } from "./creds.js";
 export { serve, serveOn, type ServeOptions } from "./serve.js";

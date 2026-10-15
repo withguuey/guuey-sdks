@@ -13,7 +13,8 @@ const require = createRequire(import.meta.url);
 import { createEmitter, type Emitter } from "./emit.js";
 import { lines } from "./lines.js";
 import { isInvoke, isShutdown, parseControl } from "./parse.js";
-import { HOST_SUSPEND_CAPABILITY, type Invoke, type JsonValue } from "./protocol.js";
+import { HOST_SUSPEND_CAPABILITY, type EndThread, type Invoke, type JsonValue } from "./protocol.js";
+import { endThreadProblem } from "./end-thread.js";
 import type { ServeOptions } from "./serve.js";
 import { createSuspendWriter, type SuspendWriteResult } from "./suspend-writer.js";
 
@@ -29,6 +30,22 @@ export interface NativeEmit {
    * envelope is larger than the offer allows, and nothing was written.
    */
   suspend(envelope: string, askIds: readonly string[]): SuspendWriteResult | "not_offered";
+  /**
+   * Ask the Router to end this conversation when the turn finishes: the
+   * person reads `message` verbatim, and the client receives `code` (as
+   * `app:<code>`) so it can show its own state, e.g. "this chat is full". Any
+   * later message from the person starts a new conversation.
+   *
+   * `code` must match `^[A-Z][A-Z0-9_]{0,39}$`; `message` must be 1–500
+   * characters with no control characters other than `\n`. Anything else
+   * throws a `TypeError`. Answers `ok` when the request will ride this turn's
+   * `done` (the last call of a turn wins), or `not_offered` when this invoke
+   * cannot end its conversation (it carried no {@link Invoke.threadClose}, e.g.
+   * a turn with no stored conversation, or an older Router): nothing is sent,
+   * and the turn should say what it needs to in its own text. A handler that
+   * throws afterwards ends the turn in error, and nothing is closed.
+   */
+  endThread(request: EndThread): "ok" | "not_offered";
 }
 export type NativeHandler = (
   invoke: Invoke,
@@ -119,15 +136,25 @@ export async function serveNativeOn(
           : null,
       suspendWriter !== undefined ? [HOST_SUSPEND_CAPABILITY] : undefined,
     );
+    // This turn's request to end the conversation, held until its `done`.
+    let endThread: EndThread | undefined;
+    const closeOffered = msg.threadClose !== undefined;
     try {
       const scoped: NativeEmit = {
         native: (event) => emitter.native(info.framework, event),
         text: (chunk) => emitter.text(chunk),
         suspend: (envelope, askIds) =>
           suspendWriter !== undefined ? suspendWriter.suspend(envelope, askIds) : "not_offered",
+        endThread: (request) => {
+          const problem = endThreadProblem(request);
+          if (problem !== undefined) throw new TypeError(`endThread: ${problem}`);
+          if (!closeOffered) return "not_offered";
+          endThread = { code: request.code, message: request.message };
+          return "ok";
+        },
       };
       const result = await handler(msg, scoped);
-      emitter.done(typeof result === "string" ? result : "", "end_turn");
+      emitter.done(typeof result === "string" ? result : "", "end_turn", endThread);
     } catch (e) {
       emitter.error(e instanceof Error ? e.message : String(e));
     }

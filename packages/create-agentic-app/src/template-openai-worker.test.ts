@@ -86,7 +86,7 @@ const appOnly: ListedTool = {
 };
 
 const dirs: string[] = [];
-const emit: NativeEmit = { native: () => {}, text: () => {}, suspend: () => "not_offered" };
+const emit: NativeEmit = { native: () => {}, text: () => {}, suspend: () => "not_offered", endThread: () => "not_offered" };
 
 beforeAll(async () => {
   vi.stubEnv("GUUEY_AGENT_SNAPSHOT", JSON.stringify(agent));
