@@ -57,6 +57,18 @@ describe("fetchThreadHistory: closed", () => {
     expect("closed" in result).toBe(false);
   });
 
+  it("thread: {} is the read plane saying OPEN, even when the last row is an app: failure row", async () => {
+    // A close that failed after its row was written leaves exactly this: the
+    // server holds the thread open, and the last-row reading would say closed.
+    const result = await load({
+      rows: [row({ seq: 1 }), row({ seq: 2, authorRole: "agent", text: CLOSED.message, failure: { code: CLOSED.code } })],
+      nextToken: null,
+      thread: {},
+    });
+    expect("gone" in result).toBe(false);
+    expect("closed" in result).toBe(false);
+  });
+
   it("drops a malformed thread.closed", async () => {
     const result = await load({ rows: [row({ seq: 1 })], nextToken: null, thread: { closed: { code: 7 } } });
     expect("closed" in result).toBe(false);

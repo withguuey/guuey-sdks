@@ -9,6 +9,9 @@
  *   message), so nothing is lost.
  * - The CURRENT client reads an OLDER read plane's body (no `thread` field):
  *   it reads the conversation as closed from that last `app:` failure row.
+ *   A newer read plane always sends `thread` (`{}` while open), and then the
+ *   field alone decides: an open thread whose last row is an `app:` failure
+ *   row reads open.
  */
 import { describe, it, expect, vi } from "vitest";
 import { fetchThreadHistory, type ThreadHistoryRow } from "./history.js";
@@ -21,6 +24,8 @@ const ROWS: ThreadHistoryRow[] = [
 ];
 const OLD_BODY = { rows: ROWS, nextToken: null };
 const NEW_BODY = { ...OLD_BODY, thread: { closed: { code: "app:CHAT_FULL", message: MESSAGE, closedAt: "2026-10-15T00:00:02.000Z" } } };
+/** A newer read plane's body for a thread that is still OPEN, though its last row is an app: failure row. */
+const NEW_OPEN_BODY = { ...OLD_BODY, thread: {} };
 
 function serving(body: object) {
   return vi.fn(async () => new Response(JSON.stringify(body), { status: 200 }));
@@ -35,6 +40,12 @@ describe("an older client × a newer read plane's closed-thread body", () => {
     expect(fromNew).toEqual(fromOld);
     expect("messages" in fromNew && fromNew.messages[1]).toEqual({ role: "notice", text: MESSAGE, seq: 2, failure: { code: "app:CHAT_FULL" } });
   });
+
+  it("reads a newer open body (thread: {}) exactly as the older body too", async () => {
+    const fromNewOpen = await fetchThreadHistoryPrev({ ...opts, fetchImpl: serving(NEW_OPEN_BODY) });
+    const fromOld = await fetchThreadHistoryPrev({ ...opts, fetchImpl: serving(OLD_BODY) });
+    expect(fromNewOpen).toEqual(fromOld);
+  });
 });
 
 describe("the current client × either body", () => {
@@ -47,5 +58,12 @@ describe("the current client × either body", () => {
     const now = await fetchThreadHistory({ ...opts, fetchImpl: serving(NEW_BODY) });
     const prev = await fetchThreadHistoryPrev({ ...opts, fetchImpl: serving(NEW_BODY) });
     expect(now).toEqual({ ...prev, closed: { code: "app:CHAT_FULL", message: MESSAGE, closedAt: "2026-10-15T00:00:02.000Z" } });
+  });
+
+  it("the newer open body (thread: {}) reads OPEN from the field, not closed from the last app: row", async () => {
+    const now = await fetchThreadHistory({ ...opts, fetchImpl: serving(NEW_OPEN_BODY) });
+    const prev = await fetchThreadHistoryPrev({ ...opts, fetchImpl: serving(NEW_OPEN_BODY) });
+    expect("closed" in now).toBe(false);
+    expect(now).toEqual(prev);
   });
 });

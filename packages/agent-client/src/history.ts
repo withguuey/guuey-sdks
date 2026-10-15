@@ -53,8 +53,8 @@ interface ThreadMessagesResponse {
   rows: ThreadHistoryRow[];
   nextToken: string | null;
   /**
-   * The thread's own state, sent only when there is some to say: today
-   * `closed` once its agent ended it. Absent from an older read plane.
+   * The thread's own state, on every page: `{}` while open, `closed` once its
+   * agent ended it. Absent from an older read plane.
    */
   thread?: { closed?: { code?: string | null; message?: string | null; closedAt?: string | null } | null } | null;
 }
@@ -222,10 +222,9 @@ export async function fetchThreadHistory({
     if (!nextToken) break;
   }
 
-  // A read plane that sends `thread` only when there is something to say
-  // cannot be told apart from an older one by an open thread's page, so the
-  // last-row reading runs whenever no page carried the field. On an open
-  // thread it finds nothing: the closing turn's `app:` row is always the last.
+  // A read plane that sends `thread` decides alone (`{}` = open, even when the
+  // last row is an `app:` failure row on a thread that stayed open). Only an
+  // older read plane, which sends no `thread`, is read from its last row.
   const threadClosed = closed ?? (threadFieldSeen ? undefined : closureFromLastRow(rows));
   return {
     messages: threadHistoryRowsToMessages(rows),
