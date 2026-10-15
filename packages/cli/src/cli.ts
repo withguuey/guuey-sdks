@@ -358,6 +358,11 @@ Apps:
     --for <who>                 Who the agent is for: personal (just for
                                 you) | customers. Without it, the app reads
                                 customers.
+    --workspace <id|slug>       Owning workspace (or $GUUEY_WORKSPACE); you
+                                must be allowed to create apps there.
+                                Without it, the app is yours (personal).
+    --personal                  Create in your personal workspace, even
+                                when $GUUEY_WORKSPACE is set
   apps list [--all]             List your apps (archived apps hidden unless --all)
   apps get [appId]              Show app details
     --theme-json                Print the STORED chat theme document as JSON
@@ -593,8 +598,8 @@ Environment Variables:
   GUUEY_API_URL                  Override REST API base URL (keep the /v1 suffix)
   GUUEY_API_KEY                  Override configured API key
   GUUEY_APP_ID                  Override configured app ID
-  GUUEY_WORKSPACE                Default owning workspace for 'mcp deploy' / 'mcp list' /
-                                 'mcp status' / 'mcp logs' / 'mcp delete'
+  GUUEY_WORKSPACE                Default owning workspace for 'apps create' / 'mcp deploy' /
+                                 'mcp list' / 'mcp status' / 'mcp logs' / 'mcp delete'
   GUUEY_MCP_SERVER               Default hosted MCP server for 'mcp status' / 'mcp logs' /
                                  'mcp delete' / 'mcp secrets'
                                  ('mcp state' resolves via --server / --colocated only, not
@@ -980,6 +985,8 @@ async function main(): Promise<void> {
             name: flags.name as string | undefined,
             json: jsonFlag,
             for: flags.for,
+            workspace: flags.workspace,
+            personal: flags.personal === true,
           });
           break;
         case 'update':

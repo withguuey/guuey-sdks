@@ -1807,6 +1807,11 @@ describe.skipIf(!haveWire)(
         unionBodyOf(readFileSync(WIRE_APPS, 'utf8'), 'FirstImpressionVerdictWire'),
       );
     });
+    it('CreatedAppOwner is exactly CreatedAppOwnerWire, member for member (guuey#2306)', () => {
+      expect(unionBodyOf(readFileSync(CLI_APPS, 'utf8'), 'CreatedAppOwner')).toBe(
+        unionBodyOf(readFileSync(WIRE_APPS, 'utf8'), 'CreatedAppOwnerWire'),
+      );
+    });
     it('the guard is not a tautology — a drifted union fails', () => {
       expect(() => unionBodyOf('export type Other = 1;\n\n', 'FirstImpressionVerdict')).toThrow(/not found/);
       expect(unionBodyOf('export type A =\n  | { x: 1; }\n  /** doc */\n  | { y: 2 };\n\n', 'A')).toBe('| { x: 1 } | { y: 2 }');

@@ -457,12 +457,24 @@ export async function appsGet(
 /**
  * Handle `guuey apps create`. `--for personal|customers` (guuey#1670) sends
  * who the agent is for; absent sends no key and the server reads `customers`.
+ *
+ * The OWNER (guuey#2306): `--workspace <id|slug>` (else `$GUUEY_WORKSPACE`)
+ * sends `workspace`, and the server mints the app there if the caller may
+ * create apps in it. `--personal` sends none, whatever the env says. With
+ * neither, the app is personal, as it always was. Every success names the
+ * owner the SERVER reports; a server too old to read `workspace` answers
+ * without `owner`, and a create that asked for one then exits 1, loudly,
+ * instead of reporting a success in the wrong place.
  */
 export async function appsCreate(opts: {
   name?: string;
   json?: boolean;
   /** The raw `--for` flag; validated here, before login or any request. */
   for?: string | true;
+  /** The raw `--workspace` flag (id or slug); validated before any request. */
+  workspace?: string | true;
+  /** `--personal`: the caller's personal workspace, overriding `$GUUEY_WORKSPACE`. */
+  personal?: boolean;
 }): Promise<void> {
   if (!opts.name) {
     out.error('App name is required. Use: guuey apps create --name "My App"');
@@ -473,6 +485,11 @@ export async function appsCreate(opts: {
     builtFor = parseBuiltForFlag(opts.for);
   } catch (err) {
     out.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+  const target = resolveCreateWorkspace(opts, process.env);
+  if ('error' in target) {
+    out.error(target.error);
     process.exit(1);
   }
 
@@ -488,15 +505,32 @@ export async function appsCreate(opts: {
   const res = await apiRequest('POST', '/apps', {
     displayName: opts.name,
     ...(builtFor !== undefined ? { builtFor } : {}),
+    ...(target.workspace !== undefined ? { workspace: target.workspace } : {}),
   });
 
   if (!res.ok) return handleError(res, 'Failed to create app');
 
   const data = (await res.json()) as {
     app: { id: string; displayName: string; builtFor?: string };
+    owner?: CreatedAppOwner;
     firstImpression?: FirstImpressionVerdict;
   };
   const appId = data.app.id;
+
+  // N-1: a server from before guuey#2306 ignores `workspace` and mints a
+  // PERSONAL app. Its answer has no `owner`; that absence is the signal.
+  if (target.workspace !== undefined && data.owner === undefined) {
+    out.error(
+      `The server did not apply the workspace "${target.workspace}" (it predates choosing a workspace on create). ` +
+        `App "${data.app.displayName}" (${appId}) was created in your PERSONAL workspace instead. ` +
+        `It was not saved as this project's app. Delete it with \`guuey apps delete ${appId}\` ` +
+        'and create the app from the console in that workspace, or retry once the server is updated.',
+    );
+    process.exit(1);
+  }
+  // An old server's plain create is personal — its app row says so too.
+  const owner: CreatedAppOwner | { kind: 'personal'; workspaceId: null } =
+    data.owner ?? { kind: 'personal', workspaceId: null };
 
   // Auto-configure the CLI with the new app id.
   const existing = loadConfig();
@@ -507,6 +541,7 @@ export async function appsCreate(opts: {
     out.json({
       appId,
       displayName: data.app.displayName,
+      owner,
       ...(data.firstImpression !== undefined ? { firstImpression: data.firstImpression } : {}),
     });
     return;
@@ -515,6 +550,7 @@ export async function appsCreate(opts: {
   out.success(`Created app "${opts.name}"`);
   console.log('');
   console.log(`  App ID:   ${appId}`);
+  console.log(`  ${ownerLine(owner, target.fromEnv)}`);
   // The server's echo, not the flag: this line states what the app stored.
   const storedFor = data.app.builtFor;
   if (storedFor !== undefined && isAppBuiltFor(storedFor)) {
@@ -527,6 +563,47 @@ export async function appsCreate(opts: {
     console.log('');
     console.log(`  ${data.firstImpression.message}`);
   }
+}
+
+/**
+ * Who owns an app `POST /v1/apps` just created (guuey#2306). Mirrors
+ * `@guuey-private/cli-wire`'s `CreatedAppOwnerWire` — duplicated because the
+ * CLI is an OSS package (`apps.test.ts` pins the two member for member).
+ */
+export type CreatedAppOwner =
+  | { kind: 'personal'; workspaceId: string }
+  | { kind: 'workspace'; workspaceId: string; name: string; slug: string };
+
+/**
+ * The workspace a create asks for (pure — no I/O): `--workspace` wins, then
+ * `$GUUEY_WORKSPACE`; `--personal` asks for none. Both flags together, or a
+ * valueless `--workspace`, is an error the caller prints before any request.
+ */
+export function resolveCreateWorkspace(
+  opts: { workspace?: string | true; personal?: boolean },
+  env: NodeJS.ProcessEnv,
+): { workspace: string | undefined; fromEnv: boolean } | { error: string } {
+  if (opts.workspace !== undefined && opts.personal === true) {
+    return { error: '--workspace and --personal cannot be combined: pass one of them.' };
+  }
+  if (opts.workspace === true || (typeof opts.workspace === 'string' && opts.workspace.trim() === '')) {
+    return { error: '--workspace needs a value: a workspace id or slug (e.g. --workspace my-team).' };
+  }
+  if (typeof opts.workspace === 'string') return { workspace: opts.workspace.trim(), fromEnv: false };
+  if (opts.personal === true) return { workspace: undefined, fromEnv: false };
+  const fromEnv = env.GUUEY_WORKSPACE?.trim();
+  if (fromEnv !== undefined && fromEnv !== '') return { workspace: fromEnv, fromEnv: true };
+  return { workspace: undefined, fromEnv: false };
+}
+
+/** The success line naming the owner (pure). */
+export function ownerLine(
+  owner: CreatedAppOwner | { kind: 'personal'; workspaceId: null },
+  fromEnv: boolean,
+): string {
+  const source = fromEnv ? ', from $GUUEY_WORKSPACE' : '';
+  if (owner.kind === 'workspace') return `Workspace: ${owner.name} (${owner.workspaceId})${source}`;
+  return owner.workspaceId === null ? 'Workspace: personal' : `Workspace: personal (${owner.workspaceId})${source}`;
 }
 
 /**

@@ -131,3 +131,111 @@ describe('guuey apps create --for (guuey#1670)', () => {
     expect(printed(errSpy)).toContain('--for needs a value');
   });
 });
+
+describe('guuey apps create --workspace / --personal (guuey#2306)', () => {
+  const team = { kind: 'workspace', workspaceId: 'ws-team', name: 'Team', slug: 'team' } as const;
+
+  function createdWith(body: object): Response {
+    return new Response(JSON.stringify(body), { status: 201 });
+  }
+
+  beforeEach(() => {
+    vi.stubEnv('GUUEY_WORKSPACE', '');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('--workspace sends `workspace` and prints the owning workspace by name and id', async () => {
+    fetchSpy.mockResolvedValue(
+      createdWith({ app: { id: 'app-w', displayName: 'team-dev', ownerKind: 'workspace', workspaceId: 'ws-team' }, owner: team }),
+    );
+
+    await appsCreate({ name: 'team-dev', workspace: 'team' });
+
+    expect(sentBody()).toEqual({ displayName: 'team-dev', workspace: 'team' });
+    expect(printed(logSpy)).toContain('Workspace: Team (ws-team)');
+    expect(saveConfig).toHaveBeenCalled();
+  });
+
+  it('$GUUEY_WORKSPACE is the default when no flag is given, and the line says where it came from', async () => {
+    vi.stubEnv('GUUEY_WORKSPACE', 'ws-team');
+    fetchSpy.mockResolvedValue(
+      createdWith({ app: { id: 'app-w', displayName: 'team-dev', ownerKind: 'workspace', workspaceId: 'ws-team' }, owner: team }),
+    );
+
+    await appsCreate({ name: 'team-dev' });
+
+    expect(sentBody()).toEqual({ displayName: 'team-dev', workspace: 'ws-team' });
+    expect(printed(logSpy)).toContain('Workspace: Team (ws-team), from $GUUEY_WORKSPACE');
+  });
+
+  it('--personal wins over $GUUEY_WORKSPACE and sends no workspace', async () => {
+    vi.stubEnv('GUUEY_WORKSPACE', 'ws-team');
+    fetchSpy.mockResolvedValue(
+      createdWith({ app: { id: 'app-p', displayName: 'Mine', ownerKind: 'user' }, owner: { kind: 'personal', workspaceId: 'pw-1' } }),
+    );
+
+    await appsCreate({ name: 'Mine', personal: true });
+
+    expect(sentBody()).toEqual({ displayName: 'Mine' });
+    expect(printed(logSpy)).toContain('Workspace: personal (pw-1)');
+  });
+
+  it('with neither, the success line still names the owner (personal)', async () => {
+    fetchSpy.mockResolvedValue(
+      createdWith({ app: { id: 'app-p', displayName: 'Mine', ownerKind: 'user' }, owner: { kind: 'personal', workspaceId: 'pw-1' } }),
+    );
+
+    await appsCreate({ name: 'Mine' });
+
+    expect(sentBody()).toEqual({ displayName: 'Mine' });
+    expect(printed(logSpy)).toContain('Workspace: personal (pw-1)');
+  });
+
+  it('--json carries the owner', async () => {
+    const outSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    fetchSpy.mockResolvedValue(
+      createdWith({ app: { id: 'app-w', displayName: 'team-dev', ownerKind: 'workspace', workspaceId: 'ws-team' }, owner: team }),
+    );
+
+    await appsCreate({ name: 'team-dev', workspace: 'ws-team', json: true });
+
+    const json = [...outSpy.mock.calls.map((c) => String(c[0])), ...logSpy.mock.calls.map((c) => String(c[0]))].join('');
+    expect(JSON.parse(json)).toMatchObject({ appId: 'app-w', owner: team });
+  });
+
+  it('N-1: a server that IGNORED --workspace (no `owner` in its answer) is a loud exit 1, never a success line, and the app id is not saved', async () => {
+    fetchSpy.mockResolvedValue(createdWith({ app: { id: 'app-x', displayName: 'team-dev', ownerKind: 'user' } }));
+
+    await expect(appsCreate({ name: 'team-dev', workspace: 'team' })).rejects.toBeInstanceOf(ExitSignal);
+
+    const err = printed(errSpy);
+    expect(err).toContain('app-x');
+    expect(err).toContain('PERSONAL');
+    expect(err).toContain('guuey apps delete app-x');
+    expect(printed(logSpy)).not.toContain('Created app');
+    expect(saveConfig).not.toHaveBeenCalled();
+  });
+
+  it('N-1: an old server answering a plain create with no `owner` still names the owner from the app (personal)', async () => {
+    fetchSpy.mockResolvedValue(createdWith({ app: { id: 'app-p', displayName: 'Mine', ownerKind: 'user' } }));
+
+    await appsCreate({ name: 'Mine' });
+
+    expect(printed(logSpy)).toContain('Workspace: personal');
+  });
+
+  it('--workspace with --personal exits 1 before any request', async () => {
+    await expect(appsCreate({ name: 'X', workspace: 'team', personal: true })).rejects.toBeInstanceOf(ExitSignal);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(printed(errSpy)).toContain('--workspace and --personal');
+  });
+
+  it('a valueless --workspace exits 1 before any request', async () => {
+    await expect(appsCreate({ name: 'X', workspace: true })).rejects.toBeInstanceOf(ExitSignal);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(printed(errSpy)).toContain('--workspace needs a value');
+  });
+});
