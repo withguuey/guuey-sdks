@@ -72,6 +72,12 @@ export interface ChatStrings {
    * first, so this reads on a host that called `send` itself.
    */
   errorAttachmentsInvalid: string;
+  /**
+   * R11, code WORKER_POD_RESOURCE_EXHAUSTED: the turn hit a temporary
+   * capacity limit and was stopped safely. Transient, so it keeps the
+   * transient family's Retry; names nothing internal.
+   */
+  errorResourceExhausted: string;
 
   /** R3/R4. */
   toolGroup: (count: number) => string;
@@ -337,6 +343,8 @@ export const defaultChatStrings: ChatStrings = {
   errorHistoryUnavailable: "This conversation belonged to a previous session. Starting fresh.",
   errorContentBlocked: "A content filter held back this reply. Try asking in a different way.",
   errorNoReply: "The reply didn't come through. Try again, or start a new conversation.",
+  errorResourceExhausted:
+    "This conversation hit a temporary capacity limit and was stopped safely. Please try again in a moment.",
   errorInvalid: "The app sent a request the agent couldn't read.",
   errorAttachmentsUnsupported: "This agent can't read images yet. Send your message without the image.",
   errorAttachmentsInvalid: "That image can't be sent. Use a JPEG, PNG, GIF or WebP image, up to 4 at a time.",

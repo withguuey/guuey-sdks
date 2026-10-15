@@ -69,6 +69,15 @@ export const AGENT_ERROR_CODES = {
    */
   WORKER_MEMORY_LIMIT: "WORKER_MEMORY_LIMIT",
   /**
+   * The turn hit a temporary capacity limit and was stopped safely; the agent
+   * and every other conversation are fine. Mid-turn it is the in-band
+   * `event: error`; before the stream it is a 503 carrying a `Retry-After`
+   * hint. Transient, but NOT retried by this SDK
+   * ({@link AGENT_ERROR_CODES.POD_SATURATED} stays the one auto-retry): the
+   * reader's own retry is the retry. The message is reader copy.
+   */
+  WORKER_POD_RESOURCE_EXHAUSTED: "WORKER_POD_RESOURCE_EXHAUSTED",
+  /**
    * The model provider refused the agent's own configuration (guuey#1652):
    * an invalid or revoked key, a billing or account hold, a verification
    * gate, a model the key cannot reach. The agent's builder fixes it; not

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { withSaturationRetry } from "./saturation-retry.js";
+import { withColdStartRetry, withSaturationRetry } from "./saturation-retry.js";
 import { AgentResponseError } from "./errors.js";
 import { AGENT_ERROR_CODES } from "./error-codes.js";
 import type { InvokeRequest } from "./types.js";
@@ -83,5 +83,50 @@ describe("withSaturationRetry — attempts budget (guuey#406)", () => {
     await expect(drain(wrapped(REQ))).rejects.toThrow("network down");
     expect(calls).toBe(1);
     expect(waits).toHaveLength(0);
+  });
+});
+
+describe("WORKER_POD_RESOURCE_EXHAUSTED is never retried by the client", () => {
+  it("is a published wire code", () => {
+    expect(AGENT_ERROR_CODES.WORKER_POD_RESOURCE_EXHAUSTED).toBe("WORKER_POD_RESOURCE_EXHAUSTED");
+  });
+
+  it("a 503 + Retry-After refusal carrying it propagates on the first attempt, with no wait", async () => {
+    let calls = 0;
+    const refused = async function* (_req: InvokeRequest): AsyncGenerator<string> {
+      calls += 1;
+      if (calls > 0) {
+        throw new AgentResponseError("capacity", 503, AGENT_ERROR_CODES.WORKER_POD_RESOURCE_EXHAUSTED, 5);
+      }
+      yield "unreachable"; // satisfies require-yield; the throw above always wins
+    };
+    const waits: unknown[] = [];
+    const wrapped = withSaturationRetry(refused, {
+      sleep: instantSleep,
+      attempts: 3,
+      onSaturationWait: (i) => waits.push(i),
+    });
+    await expect(drain(wrapped(REQ))).rejects.toMatchObject({
+      code: AGENT_ERROR_CODES.WORKER_POD_RESOURCE_EXHAUSTED,
+      status: 503,
+    });
+    expect(calls).toBe(1);
+    expect(waits).toHaveLength(0);
+  });
+
+  it("nor by the cold-start retry: it carries an envelope, so it is the pod refusing, not an empty ingress", async () => {
+    let calls = 0;
+    const refused = async function* (_req: InvokeRequest): AsyncGenerator<string> {
+      calls += 1;
+      if (calls > 0) {
+        throw new AgentResponseError("capacity", 503, AGENT_ERROR_CODES.WORKER_POD_RESOURCE_EXHAUSTED, 5);
+      }
+      yield "unreachable"; // satisfies require-yield; the throw above always wins
+    };
+    const wrapped = withColdStartRetry(refused, { sleep: instantSleep, attempts: 3 });
+    await expect(drain(wrapped(REQ))).rejects.toMatchObject({
+      code: AGENT_ERROR_CODES.WORKER_POD_RESOURCE_EXHAUSTED,
+    });
+    expect(calls).toBe(1);
   });
 });

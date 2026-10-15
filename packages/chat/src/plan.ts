@@ -859,6 +859,10 @@ const CODE_COPY: Record<string, (s: import("./strings.js").ChatStrings) => strin
   // send's list broke the rules. Both are "change the request" (no Retry).
   ATTACHMENTS_UNSUPPORTED: (s) => s.errorAttachmentsUnsupported,
   ATTACHMENTS_INVALID: (s) => s.errorAttachmentsInvalid,
+  // A temporary capacity limit stopped the turn: its own line, and the
+  // transient family's Retry stays (no ERROR_FAMILIES entry), since trying
+  // again shortly is exactly what the reader should do.
+  WORKER_POD_RESOURCE_EXHAUSTED: (s) => s.errorResourceExhausted,
 };
 
 /**
