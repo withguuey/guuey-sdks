@@ -90,4 +90,22 @@ export const WIDGET_INVOKE_BODY_CASES: ReadonlyArray<{ name: string; why: string
       tapLabels: ["What are your opening hours?", null],
     },
   },
+  {
+    name: "turn-with-image",
+    why: "a turn with a photo (guuey#2293): the image rides inline as base64 on the runtime's existing InvokeAttachment union, as the last key; a runtime that predates attachments parses it and ignores it, which is why the client waits for the session frame's acknowledgement",
+    input: {
+      input: "Make flashcards from this page.",
+      threadId: "thr_01J8ZK3Q9X",
+      clientMessageId: "cm_0007",
+      capabilities: { hitl: { ask: true, grantModes: true }, uiResources: { viewMessageTurns: true } },
+      pageContext: { hostOrigin: "https://customer.example" },
+      attachments: [
+        {
+          kind: "inline",
+          mimeType: "image/png",
+          data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+        },
+      ],
+    },
+  },
 ];

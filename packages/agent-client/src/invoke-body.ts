@@ -28,6 +28,7 @@
 import type { AgClientCapabilities } from "@silverprotocol/core";
 import type { TapLabels } from "@guuey/mcp-apps-host/narrowing";
 import type { PageContext } from "./types.js";
+import type { ImageAttachment } from "./attachments.js";
 
 export interface InvokeBodyInput {
   /** The user's text for this turn (non-empty; the pod refuses an empty one). */
@@ -48,6 +49,11 @@ export interface InvokeBodyInput {
    * judges it again before it stores it, and an older runtime ignores the key.
    */
   tapLabels?: TapLabels;
+  /**
+   * The turn's images (guuey#2293), already judged by
+   * `validateImageAttachments`. An empty list is the same as none: no key.
+   */
+  attachments?: readonly ImageAttachment[];
 }
 
 /** The wire body, exactly as sent. */
@@ -59,6 +65,7 @@ export interface InvokeBody {
   pageContext?: PageContext;
   mode?: string;
   tapLabels?: TapLabels;
+  attachments?: readonly ImageAttachment[];
 }
 
 export function buildInvokeBody(i: InvokeBodyInput): InvokeBody {
@@ -77,5 +84,9 @@ export function buildInvokeBody(i: InvokeBodyInput): InvokeBody {
     // guuey#2031: a card tap's words — carriage only; the runtime judges them
     // again, and a runtime that predates them ignores the key.
     ...(i.tapLabels !== undefined ? { tapLabels: i.tapLabels } : {}),
+    // guuey#2293: the turn's images, last. Every released runtime parses an
+    // inline attachment and ignores it, so the hook proceeds only on the
+    // runtime's acknowledgement (see `useAgentInvoke`).
+    ...(i.attachments !== undefined && i.attachments.length > 0 ? { attachments: i.attachments } : {}),
   };
 }

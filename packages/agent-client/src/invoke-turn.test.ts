@@ -100,6 +100,20 @@ describe("invokeTurn", () => {
     expect(events).toEqual([{ kind: "session", threadId: null }]);
   });
 
+  it("reads the pod's image acknowledgement off the session frame, and only a whole non-negative count (guuey#2293)", async () => {
+    expect(await collect(transportOf(sse("session", { threadId: "t1", attachments: { accepted: 2 } })))).toEqual([
+      { kind: "session", threadId: "t1", attachmentsAccepted: 2 },
+    ]);
+    expect(await collect(transportOf(sse("session", { threadId: "t1", attachments: { accepted: 0 } })))).toEqual([
+      { kind: "session", threadId: "t1", attachmentsAccepted: 0 },
+    ]);
+    // A pod that predates attachments sends no key: the event carries none either.
+    for (const attachments of [undefined, null, "2", { accepted: "2" }, { accepted: -1 }, { accepted: 1.5 }, [2]]) {
+      const events = await collect(transportOf(sse("session", { threadId: "t1", attachments })));
+      expect(events).toEqual([{ kind: "session", threadId: "t1" }]);
+    }
+  });
+
   it("leaves status AND activeTool absent for an unknown frame type", async () => {
     const events = await collect(transportOf(sse("message", { type: "telemetry" })));
     expect(events).toEqual([{ kind: "message", assistantText: "", agEvents: [] }]);

@@ -10,7 +10,8 @@
  * none — would drag the whole host-role graph into its build, and any
  * version skew between the two packages becomes that consumer's build
  * failure (guuey#186 G2). This module's import closure is
- * `types`/`errors`/`saturation-retry` only; `./web-adapters.ts` imports
+ * `types`/`errors`/`error-codes`/`saturation-retry`, plus `attachments`
+ * (types only, for `SendOptions`); `./web-adapters.ts` imports
  * from HERE, never the reverse, and `@guuey/agent-client/transport`
  * publishes exactly this graph.
  */

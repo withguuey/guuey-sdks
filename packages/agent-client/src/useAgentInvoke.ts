@@ -30,6 +30,7 @@ import { withActivityObserver } from "./transport.js";
 import { CLIENT_ERROR_CODES } from "./error-codes.js";
 import { HistoryUnauthorizedError } from "./history.js";
 import { writeTapLabels } from "@guuey/mcp-apps-host/narrowing";
+import { describeImageAttachmentRefusal, validateImageAttachments } from "./attachments.js";
 import type {
   AgentInvokeAdapters,
   AgentInvokeStatus,
@@ -432,17 +433,31 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     async (input: string, sendOpts?: SendOptions) => {
       // An already-aborted external signal refuses the send outright —
       // before the optimistic transcript push, so nothing is left to undo.
-      if (!endpointUrl || !input.trim() || status !== "ready" || opts.signal?.aborted) {
-        // guuey#2031: a host that named this turn beforehand (a drawn card
-        // tap) must not read it as sent. The id never reached the agent: the
-        // R0 failed state, with no row pushed for it. A hook-minted id has no
-        // holder, so a plain refused send writes nothing.
+      // guuey#2031: a host that named this turn beforehand (a drawn card
+      // tap) must not read a refused send as sent. The id never reached the
+      // agent: the R0 failed state, with no row pushed for it. A hook-minted
+      // id has no holder, so a plain refused send writes nothing.
+      const markRefused = (): void => {
         const refusedId = sendOpts?.clientMessageId;
         if (refusedId !== undefined && refusedId !== "") {
           setSendStates((prev) => (prev[refusedId] === "failed" ? prev : { ...prev, [refusedId]: "failed" }));
         }
+      };
+      if (!endpointUrl || !input.trim() || status !== "ready" || opts.signal?.aborted) {
+        markRefused();
         return;
       }
+      // guuey#2293: the turn's images are judged HERE, the one send path,
+      // before the optimistic row: a list the V1 rules refuse is never sent,
+      // and the reason is the turn's error.
+      const attachmentsVerdict = validateImageAttachments(sendOpts?.attachments ?? []);
+      if (!attachmentsVerdict.ok) {
+        setError(describeImageAttachmentRefusal(attachmentsVerdict.refusal));
+        setErrorCode(CLIENT_ERROR_CODES.ATTACHMENTS_INVALID);
+        markRefused();
+        return;
+      }
+      const attachments = attachmentsVerdict.attachments;
       setError(null);
       setErrorCode(null);
       setAborted(false);
@@ -661,6 +676,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
           ...(pageContextRef.current !== undefined ? { pageContext: pageContextRef.current } : {}),
           ...(modeRef.current !== undefined ? { mode: modeRef.current } : {}),
           ...(tapLabels !== undefined ? { tapLabels } : {}),
+          ...(attachments.length > 0 ? { attachments } : {}),
         });
 
         // The wire walk lives in `invokeTurn` (the pure per-turn generator —
@@ -680,6 +696,18 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
               threadIdRef.current = ev.threadId;
               setThreadId(ev.threadId);
               void adapters.storage.save(threadStorageKey(appId), ev.threadId);
+            }
+            // guuey#2293: a runtime that predates attachments parses the
+            // images and ignores them, and would answer the words alone. Only
+            // an acknowledgement of every image lets the turn run; without it
+            // the stream is cut here, before any reply, which also stops the
+            // run on the runtime side.
+            if (attachments.length > 0 && ev.attachmentsAccepted !== attachments.length) {
+              endTurnWith(() => {
+                setError("This agent's runtime did not accept the attached images, so the message was stopped before the agent answered.");
+                setErrorCode(CLIENT_ERROR_CODES.ATTACHMENTS_UNSUPPORTED);
+              });
+              break;
             }
           } else if (ev.kind === "message") {
             // Absent status/activeTool mean "no change" — never touched, so

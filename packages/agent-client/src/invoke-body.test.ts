@@ -35,6 +35,15 @@ describe("buildInvokeBody — the one wire shape", () => {
     expect(buildInvokeBody({ input: "hi", clientMessageId: "c" })).not.toHaveProperty("tapLabels");
   });
 
+  it("carries image attachments verbatim as the last key; a turn without them carries no attachments key (guuey#2293)", () => {
+    const image = { kind: "inline" as const, mimeType: "image/png" as const, data: "iVBORw0KGgo=" };
+    const body = buildInvokeBody({ input: "make flashcards", clientMessageId: "c", tapLabels: ["x"], attachments: [image] });
+    expect(Object.keys(body)).toEqual(["input", "clientMessageId", "tapLabels", "attachments"]);
+    expect(body.attachments).toEqual([image]);
+    expect(buildInvokeBody({ input: "hi", clientMessageId: "c" })).not.toHaveProperty("attachments");
+    expect(buildInvokeBody({ input: "hi", clientMessageId: "c", attachments: [] })).not.toHaveProperty("attachments");
+  });
+
   it("carries capabilities, pageContext and mode verbatim, in the wire's key order", () => {
     const body = buildInvokeBody({
       input: "x",
@@ -59,7 +68,7 @@ describe("the widget's canonical bodies are pinned as the fixture (guuey#1213)",
     expect(onDisk).toBe(`${JSON.stringify(expected, null, 2)}\n`);
   });
 
-  it("the case list covers the shapes the widget actually sends: init-origin-only, a full page block, a page block without context, a mode pin, the SDK minimum, and a card tap with its labels", () => {
+  it("the case list covers the shapes the widget actually sends: init-origin-only, a full page block, a page block without context, a mode pin, the SDK minimum, a card tap with its labels, and a turn with an image", () => {
     const names = WIDGET_INVOKE_BODY_CASES.map((c) => c.name);
     expect(names).toEqual([
       "session-open-init-origin",
@@ -68,6 +77,7 @@ describe("the widget's canonical bodies are pinned as the fixture (guuey#1213)",
       "guest-mode-pin",
       "sdk-minimal",
       "card-tap-with-labels",
+      "turn-with-image",
     ]);
     const withPath = WIDGET_INVOKE_BODY_CASES.filter((c) => c.input.pageContext?.path !== undefined);
     // Every path-bearing block the widget builds also carries title + hostOrigin (WidgetChat's onPage).

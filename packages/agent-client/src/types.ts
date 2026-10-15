@@ -14,6 +14,7 @@
  */
 
 import type { AgClientCapabilities, AgNoticeSource, AgReduceResult, JsonValue } from "@silverprotocol/core";
+import type { ImageAttachment } from "./attachments.js";
 
 /** A flat chat turn as rendered by the consumer UI. */
 export interface AgentMessage {
@@ -106,6 +107,15 @@ export interface SendOptions {
    * breaks it rides neither the optimistic row nor the body.
    */
   tapLabels?: readonly (string | null)[];
+  /**
+   * The turn's images (guuey#2293): inline base64, judged at send by
+   * `validateImageAttachments` (the allowlist, the count and the size caps in
+   * `./attachments`). A refused list is not sent at all: the send ends with
+   * `ATTACHMENTS_INVALID`. A runtime that does not acknowledge the images on
+   * its `session` frame ends the turn with `ATTACHMENTS_UNSUPPORTED` before
+   * any reply, since an older runtime would otherwise answer without them.
+   */
+  attachments?: readonly ImageAttachment[];
 }
 
 /**

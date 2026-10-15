@@ -170,6 +170,21 @@ export const CLIENT_ERROR_CODES = {
    * error names why the history is missing.
    */
   THREAD_HISTORY_UNAVAILABLE: "THREAD_HISTORY_UNAVAILABLE",
+  /**
+   * The send carried images the V1 rules refuse (guuey#2293: a type off the
+   * allowlist, too many, too large, not base64). Nothing was sent; `error`
+   * names the rule. The host should have judged the list before sending
+   * (`validateImageAttachments`).
+   */
+  ATTACHMENTS_INVALID: "ATTACHMENTS_INVALID",
+  /**
+   * The turn carried images and the agent's runtime did not acknowledge them
+   * on its `session` frame (guuey#2293). A runtime that predates attachments
+   * parses them and ignores them, so the turn is ended at once, before any
+   * reply, rather than answered without the images. Sending again without the
+   * images works.
+   */
+  ATTACHMENTS_UNSUPPORTED: "ATTACHMENTS_UNSUPPORTED",
 } as const;
 
 /** One of this SDK's client-originated codes — see {@link CLIENT_ERROR_CODES}. */

@@ -63,6 +63,22 @@ export {
   CLIENT_ERROR_CODES,
   type ClientErrorCode,
 } from "./error-codes.js";
+// guuey#2293: the image attachments a turn may carry — the V1 allowlist, the
+// caps and the judge `send` runs, for a host that checks a pick before sending.
+export {
+  IMAGE_ATTACHMENT_MIME_TYPES,
+  IMAGE_ATTACHMENTS_MAX_COUNT,
+  IMAGE_ATTACHMENT_MAX_BASE64_CHARS,
+  IMAGE_ATTACHMENTS_MAX_TOTAL_BASE64_CHARS,
+  isImageAttachmentMimeType,
+  validateImageAttachments,
+  describeImageAttachmentRefusal,
+  type ImageAttachment,
+  type ImageAttachmentCandidate,
+  type ImageAttachmentMimeType,
+  type ImageAttachmentRefusal,
+  type ImageAttachmentsVerdict,
+} from "./attachments.js";
 export {
   fetchThreadHistory,
   threadHistoryRowsToMessages,

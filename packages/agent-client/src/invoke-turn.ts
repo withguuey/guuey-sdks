@@ -43,7 +43,16 @@ import { readThreadClosed } from "./thread-closed.js";
  *   keep a block-preserving transcript, ignore them otherwise.
  */
 export type InvokeTurnEvent =
-  | { kind: "session"; threadId: string | null }
+  | {
+      kind: "session";
+      threadId: string | null;
+      /**
+       * How many of the turn's images the runtime accepted (guuey#2293), from
+       * the frame's `attachments.accepted`. Absent when the runtime sent no
+       * count, which is every runtime that predates attachments.
+       */
+      attachmentsAccepted?: number;
+    }
   | {
       kind: "message";
       status?: Extract<AgentInvokeStatus, "thinking" | "using-tool" | "responding">;
@@ -121,7 +130,12 @@ export async function* invokeTurn(
         // The pod is awake and the turn is admitted (this frame arrives
         // within ~1s of a warm pod; a cold scale-to-zero start is exactly
         // the long wait before it).
-        yield { kind: "session", threadId: stringField(ev.data, "threadId") ?? null };
+        const attachmentsAccepted = readAttachmentsAccepted(ev.data);
+        yield {
+          kind: "session",
+          threadId: stringField(ev.data, "threadId") ?? null,
+          ...(attachmentsAccepted !== undefined ? { attachmentsAccepted } : {}),
+        };
       } else if (ev.event === "message") {
         // Status derivation (guuey#91) — read the frame's `type` before the
         // text fold. Silver frames announce tools + text explicitly; bypass
@@ -192,4 +206,17 @@ export async function* invokeTurn(
 /** A frame's well-formed `threadClosed`, or undefined. */
 function closureOf(data: unknown): ThreadClosed | undefined {
   return typeof data === "object" && data !== null ? readThreadClosed(Reflect.get(data, "threadClosed")) : undefined;
+}
+
+/**
+ * The session frame's image acknowledgement (guuey#2293): `attachments.accepted`
+ * when it is a whole non-negative count, else absent. Anything else is read as
+ * no acknowledgement, never as a count.
+ */
+function readAttachmentsAccepted(data: unknown): number | undefined {
+  if (typeof data !== "object" || data === null || !("attachments" in data)) return undefined;
+  const block = data.attachments;
+  if (typeof block !== "object" || block === null || Array.isArray(block) || !("accepted" in block)) return undefined;
+  const accepted = block.accepted;
+  return typeof accepted === "number" && Number.isInteger(accepted) && accepted >= 0 ? accepted : undefined;
 }
