@@ -257,3 +257,14 @@ test('entry points: a string exports plus bin (the bare-name forwarder shape); a
   assert.deepEqual(entryPoints({ name: 'guuey', exports: './index.js', bin: { guuey: './bin.js' } }), ['index.js', 'bin.js']);
   assert.throws(() => entryPoints({ name: 'x', exports: { './*': './dist/*.js' } }), /pattern/);
 });
+
+test('entry points: publishConfig.exports replaces exports, as pnpm publish writes it (a workspace-only source condition is not an entry)', () => {
+  const manifest = {
+    name: 'x',
+    exports: { '.': { 'react-native': './src/index.ts', types: './dist/index.d.ts', import: './dist/index.js' } },
+    publishConfig: { access: 'public', exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' } } },
+  };
+  assert.deepEqual(entryPoints(manifest), ['dist/index.d.ts', 'dist/index.js']);
+  const { publishConfig: _, ...unpublished } = manifest;
+  assert.deepEqual(entryPoints(unpublished), ['src/index.ts', 'dist/index.d.ts', 'dist/index.js']);
+});

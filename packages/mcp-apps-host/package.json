@@ -65,7 +65,24 @@
     "vitest": "^4.1.11"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js",
+        "default": "./dist/index.js"
+      },
+      "./narrowing": {
+        "types": "./dist/narrowing.d.ts",
+        "import": "./dist/narrowing.js",
+        "default": "./dist/narrowing.js"
+      },
+      "./react": {
+        "types": "./dist/react.d.ts",
+        "import": "./dist/react.js",
+        "default": "./dist/react.js"
+      }
+    }
   },
   "keywords": [
     "guuey",

@@ -104,12 +104,9 @@ tune or disable via its `coldStartRetry` option.
 
 ## React Native / Metro
 
-Both entry points declare a `react-native` export condition that points at the
-**TypeScript source** (shipped in the npm tarball alongside `dist/` for exactly
-this reason — the standard RN package pattern). Metro resolves that condition
-by default and transpiles the source with your app's Babel config; Node and
-web bundlers ignore it and use the compiled ESM in `dist/`. No
-`transpilePackages`-style configuration is needed on either side.
+Every entry point resolves to the compiled ESM in `dist/`, for Metro as for
+Node and web bundlers. A stock Expo or React Native Metro config bundles it:
+no custom resolver and no `transpilePackages`-style configuration is needed.
 
 ## Support
 

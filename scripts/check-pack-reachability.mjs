@@ -31,8 +31,9 @@
  *     `x.cjs` → `x.d.cts`; `x.d.ts` → `x.d.ts.map` — the same sibling
  *     declaration TypeScript resolves for a consumer.
  *   - a source map reaches its `sources`. The declaration maps this cohort
- *     ships name `../src/<file>.ts`; that, and the `react-native` condition
- *     entering `src/` directly, is why a `src` tree is in a tarball at all.
+ *     ships name `../src/<file>.ts`; that is why a `src` tree is in a tarball
+ *     at all. Entry points are read from the PUBLISHED manifest
+ *     (`publishedManifest`), so a workspace-only condition never counts.
  *   - the pack listing is npm's own (`npm pack --dry-run --json`), never a
  *     re-implementation of `files`. Scripts are ignored: ten packages' `prepack`
  *     is `rm -rf dist && pnpm build`, which would wipe dist under this guard.
@@ -114,8 +115,24 @@ function stringLeaves(value, out = []) {
   return out;
 }
 
-/** Every file a consumer can name through the manifest, normalised to pack paths. */
-export function entryPoints(manifest) {
+/**
+ * The manifest as `pnpm publish` writes it: each entry-point field set under
+ * `publishConfig` replaces the top-level one in the packed package.json
+ * (guuey#2299 — a workspace-only `react-native` source condition stays out of
+ * the published `exports`). Reachability is judged on what a consumer receives.
+ */
+const PUBLISH_CONFIG_ENTRY_FIELDS = ['exports', 'main', 'module', 'types', 'typings', 'bin'];
+export function publishedManifest(manifest) {
+  const out = { ...manifest };
+  for (const key of PUBLISH_CONFIG_ENTRY_FIELDS) {
+    if (manifest.publishConfig && manifest.publishConfig[key] !== undefined) out[key] = manifest.publishConfig[key];
+  }
+  return out;
+}
+
+/** Every file a consumer can name through the published manifest, normalised to pack paths. */
+export function entryPoints(sourceManifest) {
+  const manifest = publishedManifest(sourceManifest);
   const raw = [];
   if (manifest.exports !== undefined) {
     const ex = manifest.exports;
