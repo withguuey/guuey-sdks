@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { GuueyAgent } from "@guuey/config";
+import type { GuueyAgent, RunSnapshot } from "@guuey/config";
 import { GUUEY_DEFAULT_SYSTEM_PROMPT } from "@guuey/config";
 import {
   buildOptions,
@@ -443,6 +443,24 @@ describe("buildOptions — a bound first impression turns extended thinking OFF 
     expect(opts.systemPrompt as string).toContain("<first_impression_handshake>");
     expect(opts.systemPrompt as string).toContain('"intent":"show opening hours"');
     expect(opts.thinking).toEqual({ type: "disabled" });
+  });
+});
+
+describe("buildOptions — a platform-set run snapshot can turn thinking OFF (guuey#2231)", () => {
+  it("snapshot `thinking: { type: 'disabled' }` on a model that takes it → thinking disabled for the invoke", () => {
+    const snapshot: RunSnapshot = { systemPrompt: "S", model: "claude-haiku-5-5", thinking: { type: "disabled" } };
+    const opts = buildOptions(snapshot, ctx());
+    expect(opts.model).toBe("claude-haiku-5-5");
+    expect(opts.thinking).toEqual({ type: "disabled" });
+  });
+
+  it("on a model the provider refuses `disabled` for, the directive is dropped and the model keeps its own thinking (never a 400)", () => {
+    const snapshot: RunSnapshot = { systemPrompt: "S", model: "claude-sonnet-5-5", thinking: { type: "disabled" } };
+    expect(buildOptions(snapshot, ctx())).not.toHaveProperty("thinking");
+  });
+
+  it("no directive → the SDK default stands", () => {
+    expect(buildOptions({ systemPrompt: "S", model: "claude-haiku-5-5" }, ctx())).not.toHaveProperty("thinking");
   });
 });
 

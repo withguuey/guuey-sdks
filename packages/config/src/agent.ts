@@ -710,6 +710,26 @@ export const AgentSectionV1 = z.strictObject({
 /** Static TypeScript type derived from {@link AgentSectionV1}. */
 export type GuueyAgent = z.infer<typeof AgentSectionV1>;
 
+/**
+ * A thinking directive the PLATFORM sets on one run. It is not a `guuey.json`
+ * field: {@link AgentSectionV1} is strict, so a config carrying `thinking` is
+ * refused at deploy. Only the runtime writes it, on a per-invoke snapshot.
+ */
+export interface RunThinking {
+  type: 'disabled';
+}
+
+/**
+ * The snapshot a worker runs one invoke on: the agent section plus the
+ * platform's per-run directives. The host reads the snapshot without a schema,
+ * so a host that predates a directive ignores it and the run keeps the model's
+ * own behaviour. The Claude host applies `thinking` only on a model that takes
+ * `thinking: disabled` (`rejectsDisabledThinking` in `./registry.ts`).
+ */
+export type RunSnapshot = GuueyAgent & {
+  thinking?: RunThinking;
+};
+
 /** Single mcpServers entry type. */
 export type GuueyAgentMcpServer = z.infer<typeof McpServerSchema>;
 

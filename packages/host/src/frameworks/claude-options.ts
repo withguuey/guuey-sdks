@@ -31,6 +31,7 @@ import {
   rejectsDisabledThinking,
   type GuueyAgent,
   type ProfileAccess,
+  type RunSnapshot,
 } from "@guuey/config";
 
 export type { SDKMessage };
@@ -317,7 +318,7 @@ export interface BuildOptionsContext {
  * is injected via {@link BuildOptionsContext}. Throws on an unresolved `{file}`
  * system prompt or a missing API key (the same loud failures the source had).
  */
-export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Options {
+export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): Options {
   const apiKey = ctx.apiKey;
   const baseUrl = ctx.baseUrl;
   const authToken = ctx.authToken;
@@ -480,12 +481,19 @@ export function buildOptions(snapshot: GuueyAgent, ctx: BuildOptionsContext): Op
   // (`reason: 'thinking'`), and the prompt instruction stands — exactly the
   // path those models serve on before this knob existed.
   const firstImpressionBound = ctx.gguiAttached === true && ctx.firstImpression !== undefined;
-  const disableThinkingForHandshake = firstImpressionBound && !rejectsDisabledThinking(model);
+  //
+  // guuey#2231 — the platform can also turn thinking off for a whole run
+  // through the snapshot (`thinking: { type: "disabled" }`; today the hook
+  // door's small-tier run, Haiku 5.5). The same refusing-model guard applies:
+  // on a model that refuses `disabled` the directive is dropped and the run
+  // keeps the model's own thinking, never a 400 on every request.
+  const thinkingOff = firstImpressionBound || snapshot.thinking?.type === "disabled";
+  const disableThinking = thinkingOff && !rejectsDisabledThinking(model);
 
   const options: Options = {
     model,
     mcpServers,
-    ...(disableThinkingForHandshake ? { thinking: { type: "disabled" as const } } : {}),
+    ...(disableThinking ? { thinking: { type: "disabled" as const } } : {}),
     allowedTools: gates.allowedTools,
     // Deny-listed tools (`tools.denylist`, translated) are removed from the
     // model's catalog outright — the SDK's own mechanism, not a callback.

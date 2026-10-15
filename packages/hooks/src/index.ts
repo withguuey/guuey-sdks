@@ -287,9 +287,10 @@ const agentDefinitionSchema = z
     maxTurns: z.number().int().min(1).max(16).optional(),
     timeoutMs: z.number().int().min(1_000).max(300_000).optional(),
     /**
-     * A JSON Schema the run's structured `output` must satisfy — the Router
-     * hands it to the adapter's structured-output mode (Claude
-     * `outputFormat: json_schema`, OpenAI `output_type`, ADK's parsed text).
+     * A JSON Schema the run's structured `output` must satisfy. The Router
+     * writes it into the hook run's system prompt (an "Answer shape" section)
+     * and reads the answer as the last JSON object in the run's final text,
+     * on every framework: no adapter structured-output mode is used.
      * Absent = free-form output. What a `required` effect is called with when
      * the model skipped it, and what a prebuilt's platform-made effect takes.
      */
