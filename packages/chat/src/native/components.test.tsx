@@ -5,7 +5,7 @@
  * overflow:"hidden" View that cut every preview past ~220pt with no way to
  * see the rest.
  */
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -17,6 +17,7 @@ interface MockProps {
   children?: ReactNode;
   style?: MockStyle;
   nestedScrollEnabled?: boolean;
+  onPress?: () => void;
 }
 
 vi.mock("react-native", () => {
@@ -31,7 +32,7 @@ vi.mock("react-native", () => {
   return {
     View: passthrough("div"),
     Text: passthrough("span"),
-    Pressable: passthrough("button"),
+    Pressable: ({ children, onPress }: MockProps) => createElement("button", { onClick: onPress }, children),
     Image: passthrough("img"),
     ScrollView: ({ children, style, nestedScrollEnabled }: MockProps) =>
       createElement(
@@ -97,5 +98,28 @@ describe("NativeDataResult (guuey#2368)", () => {
   it("keeps the empty and byte-only faces out of the scroll box", () => {
     render(createElement(NativeDataResult, { item: result({ state: "empty", preview: null }), ctx }));
     expect(screen.queryByTestId("scroll")).toBeNull();
+  });
+
+  it("opens a cut result to its full text with Show all, and back with Show less (guuey#2367)", () => {
+    const full = `${LONG}\nthe tail line`;
+    render(createElement(NativeDataResult, { item: result({ full }), ctx }));
+    expect(screen.getByTestId("scroll").textContent).not.toContain("the tail line");
+    fireEvent.click(screen.getByText(defaultChatStrings.showAll));
+    expect(screen.getByTestId("scroll").textContent).toBe(full);
+    fireEvent.click(screen.getByText(defaultChatStrings.showLess));
+    expect(screen.getByTestId("scroll").textContent).toBe(LONG);
+  });
+
+  it("shows no Show all when the result carries no full text (an N-1 plan)", () => {
+    render(createElement(NativeDataResult, { item: result(), ctx }));
+    expect(screen.queryByText(defaultChatStrings.showAll)).toBeNull();
+  });
+
+  it("highlights a JSON result and keeps its text exact", () => {
+    const json = '{\n  "a": 1\n}';
+    const { container } = render(createElement(NativeDataResult, { item: result({ preview: json, lang: "json" }), ctx }));
+    expect(screen.getByTestId("scroll").textContent).toBe(json);
+    const runs = Array.from(container.querySelectorAll("span span")).map((n) => n.textContent);
+    expect(runs).toContain('"a"');
   });
 });

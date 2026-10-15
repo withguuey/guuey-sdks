@@ -25,7 +25,7 @@
  * and a host app supplies its own WebView-based mount as the `view` slot
  * override (portal's card machinery is the reference consumer).
  */
-import type { ComponentType, ReactNode } from "react";
+import { useState, type ComponentType, type ReactNode } from "react";
 import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import type { PreGenerationRefusal, ResolvedViewMount, ViewHostPhase } from "@guuey/mcp-apps-host";
 import type { ChatStrings } from "../strings.js";
@@ -56,6 +56,7 @@ import type {
 } from "../types.js";
 import { Linking } from "react-native";
 import { NativeMarkdown } from "./markdown.js";
+import { NativeHighlightedCode } from "./highlight-native.js";
 import type { NativeChatTokens } from "./theme-native.js";
 
 /** Everything a rendered native item may need beyond itself. */
@@ -325,9 +326,14 @@ export function NativeReasoning({ item, ctx }: ItemProps<ReasoningItem>): ReactN
 
 export function NativeDataResult({ item, ctx }: ItemProps<DataResultItem>): ReactNode {
   const { tokens } = ctx;
+  // guuey#2367/#2368: a cut, non-giant result opens to its whole text in place
+  // (the web twin's Show all). `full` is additive and optional (N−1): absent,
+  // this renders `preview` exactly as before.
+  const [showAll, setShowAll] = useState(false);
   const bytes = ctx.strings.bytes(item.byteCount);
   if (item.state === "empty") return <MutedText ctx={ctx}>{ctx.strings.noOutput}</MutedText>;
-  if (item.preview === null) return <MutedText ctx={ctx}>{bytes}</MutedText>;
+  const shown = showAll && item.full !== undefined ? item.full : item.preview;
+  if (shown === null) return <MutedText ctx={ctx}>{bytes}</MutedText>;
   return (
     <View style={{ gap: 4 }}>
       {/* guuey#2368 — R5's scroll-cap projected to a fixed clamp (native has no
@@ -344,14 +350,38 @@ export function NativeDataResult({ item, ctx }: ItemProps<DataResultItem>): Reac
         }}
         contentContainerStyle={{ padding: tokens.pad - 4 }}
       >
-        <Text
-          selectable
-          style={{ color: tokens.palette.ink, fontSize: tokens.fontSize - 3, fontFamily: tokens.monoFontFamily }}
-        >
-          {item.preview}
-        </Text>
+        <NativeHighlightedCode
+          code={shown}
+          lang={item.lang}
+          color={tokens.palette.ink}
+          fontSize={tokens.fontSize - 3}
+          tokens={tokens}
+        />
       </ScrollView>
-      {item.showBytes ? <MutedText ctx={ctx}>{bytes}</MutedText> : null}
+      {item.showBytes || item.full !== undefined ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          {item.showBytes ? <MutedText ctx={ctx}>{bytes}</MutedText> : null}
+          {item.full !== undefined ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: showAll }}
+              onPress={() => setShowAll((v) => !v)}
+            >
+              {/* link, not accent: the text-safe token (accent reads 1.05:1 on the light GUUEY fence). */}
+              <Text
+                style={{
+                  color: tokens.palette.link ?? tokens.palette.ink,
+                  fontSize: tokens.fontSize - 2,
+                  fontFamily: tokens.fontFamily,
+                  fontWeight: "600",
+                }}
+              >
+                {showAll ? ctx.strings.showLess : ctx.strings.showAll}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }

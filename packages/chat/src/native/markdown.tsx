@@ -26,6 +26,7 @@ import {
   type RichTextInline,
 } from "@silverprotocol/richtext";
 import type { NativeChatTokens } from "./theme-native.js";
+import { NativeHighlightedCode } from "./highlight-native.js";
 import { normalizeTableRow, type RichTextTableBlock } from "../richtext-table.js";
 
 function InlineRuns({
@@ -155,9 +156,13 @@ function BlockView({
             padding: tokens.pad,
           }}
         >
-          <Text style={{ color, fontSize: tokens.fontSize - 2, fontFamily: tokens.monoFontFamily }}>
-            {block.code}
-          </Text>
+          <NativeHighlightedCode
+            code={block.code}
+            lang={block.lang}
+            color={color}
+            fontSize={tokens.fontSize - 2}
+            tokens={tokens}
+          />
           {trailing}
         </View>
       );
