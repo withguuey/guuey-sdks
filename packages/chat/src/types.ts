@@ -30,6 +30,7 @@ import type {
   ViewToolData,
   PreGenerationRefusal } from "@guuey/mcp-apps-host";
 import type { AuthRequired, OAuthAuthorizeAsk } from "./oauth.js";
+import type { MediaDisplay } from "./media.js";
 
 /**
  * One settled entry of the flat conversation transcript — structurally
@@ -388,7 +389,10 @@ export interface ToolItem extends BaseItem {
   state: "running" | "done" | "failed" | "orphaned";
   /** Bounded args preview (policy-gated); null when args are hidden. */
   argsPreview: string | null;
-  /** The result inside this row's expansion (R5); null while running. */
+  /**
+   * The result inside this row's expansion (R5); null while running, and
+   * null when the whole result renders as its own media rows (guuey#2369).
+   */
   result: DataResultItem | null;
   /**
    * guuey#836 — a ggui_render PRE-GENERATION refusal (`@ggui-ai/protocol`
@@ -494,6 +498,17 @@ export interface MediaItem extends BaseItem {
   source: AgSource;
   name: string | null;
   presentation: "inline" | "chip";
+  /**
+   * guuey#2369 — what the renderer loads, decided by the plan from
+   * `policy.media` (`mediaDisplay`): only `data:`, `blob:` and media-origin
+   * sources ever load; an off-origin https URL is a link chip.
+   */
+  display: MediaDisplay;
+  /**
+   * The call whose result carried this media (it renders in flow after that
+   * call's row); null for media the assistant emitted itself.
+   */
+  toolCallId: string | null;
 }
 
 /** R8 — code blocks. */

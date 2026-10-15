@@ -29,6 +29,7 @@ import type { ComponentType, ReactNode } from "react";
 import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import type { PreGenerationRefusal, ResolvedViewMount, ViewHostPhase } from "@guuey/mcp-apps-host";
 import type { ChatStrings } from "../strings.js";
+import type { MediaChipReason } from "../media.js";
 import type {
   CitationsItem,
   CodeItem,
@@ -518,44 +519,73 @@ export function NativeViewRef({ item, ctx }: ItemProps<ViewRefItem>): ReactNode 
 
 // ─── R7 ────────────────────────────────────────────────────────────────────
 
-/** Inline images allow https URLs and image/* base64 data — nothing else. */
-function imageSrc(item: MediaItem): string | null {
-  const source = item.source;
-  if (source.type === "url" && /^https:\/\//i.test(source.url)) return source.url;
-  if (source.type === "base64" && /^image\//.test(source.mediaType)) {
-    return `data:${source.mediaType};base64,${source.data}`;
+/** The note a chip carries for media the kit will not show inline (null for a plain attachment). */
+function chipNote(reason: MediaChipReason, strings: ChatStrings): string | null {
+  switch (reason) {
+    case "attachment":
+      return null;
+    case "oversized":
+      return strings.mediaOversized;
+    case "refused-type":
+    case "unsupported":
+      return strings.mediaRefused;
   }
-  return null;
 }
 
+/**
+ * R7. What loads was decided by the plan (`item.display`, guuey#2369): only
+ * `data:`, `blob:` and media-origin images reach `<Image>`; any other https
+ * URL is a chip whose action opens it — never fetched on render. Audio is a
+ * chip here (RN has no default audio element).
+ */
 export function NativeMedia({ item, ctx }: ItemProps<MediaItem>): ReactNode {
   const { tokens } = ctx;
-  if (item.presentation === "inline" && item.media === "image") {
-    const src = imageSrc(item);
-    if (src !== null) {
-      return (
-        <Image
-          accessibilityLabel={item.name ?? ""}
-          source={{ uri: src }}
-          resizeMode="contain"
-          style={{ width: "100%", height: 220, borderRadius: tokens.radius, backgroundColor: tokens.palette.canvasMuted }}
-        />
-      );
-    }
+  const display = item.display;
+  if (display.kind === "image") {
+    return (
+      <Image
+        accessibilityLabel={item.name ?? ""}
+        source={{ uri: display.src }}
+        resizeMode="contain"
+        style={{ width: "100%", height: 220, borderRadius: tokens.radius, backgroundColor: tokens.palette.canvasMuted }}
+      />
+    );
   }
-  // Attachment chip: files, documents, audio (RN has no default audio
-  // element — a chip is the honest default), unloadable/oversized media.
+  const label = item.name ?? item.media;
+  const chipStyle = {
+    alignSelf: "flex-start" as const,
+    backgroundColor: tokens.palette.canvasMuted,
+    borderRadius: tokens.radius,
+    paddingHorizontal: tokens.pad,
+    paddingVertical: 4,
+  };
+  if (display.kind === "link") {
+    const url = display.url;
+    return (
+      <Pressable
+        accessibilityRole="link"
+        accessibilityLabel={`${label} · ${ctx.strings.mediaOpenLink}`}
+        onPress={() => {
+          Linking.openURL(url).catch((cause: Error) => {
+            console.warn("guuey-chat: could not open the media link", cause);
+          });
+        }}
+        style={chipStyle}
+      >
+        <Text style={{ fontSize: tokens.fontSize - 2, fontFamily: tokens.fontFamily }}>
+          <Text style={{ color: tokens.palette.inkMuted }}>{label} </Text>
+          <Text style={{ color: tokens.palette.accent, textDecorationLine: "underline" }}>
+            {ctx.strings.mediaOpenLink}
+          </Text>
+        </Text>
+      </Pressable>
+    );
+  }
+  // A plain chip: files, documents, audio, and media refused inline.
+  const note = display.kind === "chip" ? chipNote(display.reason, ctx.strings) : null;
   return (
-    <View
-      style={{
-        alignSelf: "flex-start",
-        backgroundColor: tokens.palette.canvasMuted,
-        borderRadius: tokens.radius,
-        paddingHorizontal: tokens.pad,
-        paddingVertical: 4,
-      }}
-    >
-      <MutedText ctx={ctx}>{item.name ?? item.media}</MutedText>
+    <View style={chipStyle}>
+      <MutedText ctx={ctx}>{note !== null ? `${label} · ${note}` : label}</MutedText>
     </View>
   );
 }

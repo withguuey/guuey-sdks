@@ -29,6 +29,7 @@ import {
 import { GuueyView, type GuueyViewProps } from "@guuey/mcp-apps-host/react";
 import type { PreGenerationRefusal, ResolvedViewMount, ViewCspDiagnosis, ViewHostPhase } from "@guuey/mcp-apps-host";
 import type { ChatStrings } from "../strings.js";
+import type { MediaChipReason, MediaDisplay } from "../media.js";
 import type {
   CitationsItem,
   CodeItem,
@@ -583,35 +584,93 @@ export function DefaultViewRef({ item, ctx }: ItemProps<ViewRefItem>): ReactNode
 
 // ─── R7 ────────────────────────────────────────────────────────────────────
 
-/** Inline images allow https URLs and image/* base64 data — nothing else. */
-function imageSrc(item: MediaItem): string | null {
-  const source = item.source;
-  if (source.type === "url" && /^https:\/\//i.test(source.url)) return source.url;
-  if (source.type === "base64" && /^image\//.test(source.mediaType)) {
-    return `data:${source.mediaType};base64,${source.data}`;
+/** The note a chip carries for media the kit will not show inline (null for a plain attachment). */
+function chipNote(reason: MediaChipReason, strings: ChatStrings): string | null {
+  switch (reason) {
+    case "attachment":
+      return null;
+    case "oversized":
+      return strings.mediaOversized;
+    case "refused-type":
+    case "unsupported":
+      return strings.mediaRefused;
   }
-  return null;
 }
 
-export function DefaultMedia({ item }: ItemProps<MediaItem>): ReactNode {
+/**
+ * guuey#2369 — inline audio bytes as a `blob:` object URL, created after
+ * mount and revoked on unmount (or when the bytes change). Null until then,
+ * and for anything that is not inline audio.
+ */
+function useAudioObjectUrl(display: MediaDisplay): string | null {
+  const bytes = display.kind === "audio-bytes" ? display : null;
+  const mediaType = bytes?.mediaType ?? null;
+  const data = bytes?.data ?? null;
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (mediaType === null || data === null) return;
+    const binary = atob(data);
+    const buffer = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) buffer[i] = binary.charCodeAt(i);
+    const objectUrl = URL.createObjectURL(new Blob([buffer], { type: mediaType }));
+    setUrl(objectUrl);
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+      setUrl(null);
+    };
+  }, [mediaType, data]);
+  return url;
+}
+
+/**
+ * R7. What loads was decided by the plan (`item.display`, guuey#2369): only
+ * `data:`, `blob:` and media-origin sources reach an element; any other
+ * https URL is a chip whose action opens it in a new tab — never fetched on
+ * render.
+ */
+export function DefaultMedia({ item, ctx }: ItemProps<MediaItem>): ReactNode {
   const [failed, setFailed] = useState(false);
-  if (item.presentation === "inline" && item.media === "image" && !failed) {
-    const src = imageSrc(item);
-    if (src !== null) {
-      return (
-        <a className="guuey-chat-media-image" href={src} target="_blank" rel="noopener noreferrer">
-          <img src={src} alt={item.name ?? ""} onError={() => setFailed(true)} />
+  const display = item.display;
+  const audioUrl = useAudioObjectUrl(display);
+  if (display.kind === "image" && !failed) {
+    const img = <img src={display.src} alt={item.name ?? ""} onError={() => setFailed(true)} />;
+    // A data: URL cannot be opened as a top-level page; the image stands alone.
+    if (/^data:/i.test(display.src)) return <div className="guuey-chat-media-image">{img}</div>;
+    return (
+      <a className="guuey-chat-media-image" href={display.src} target="_blank" rel="noopener noreferrer">
+        {img}
+      </a>
+    );
+  }
+  if (display.kind === "audio") {
+    return <audio className="guuey-chat-media-audio" controls src={display.src} />;
+  }
+  if (display.kind === "audio-bytes") {
+    return <audio className="guuey-chat-media-audio" controls src={audioUrl ?? undefined} />;
+  }
+  const label = item.name ?? item.media;
+  if (display.kind === "link") {
+    return (
+      <span className={`guuey-chat-media-chip guuey-chat-media-${item.media} guuey-chat-media-link`}>
+        <span className="guuey-chat-media-label">{label}</span>{" "}
+        <a
+          className="guuey-chat-media-open"
+          href={display.url}
+          target="_blank"
+          rel="noopener noreferrer nofollow"
+          referrerPolicy="no-referrer"
+        >
+          {ctx.strings.mediaOpenLink}
         </a>
-      );
-    }
+      </span>
+    );
   }
-  if (item.media === "audio" && item.source.type === "url" && /^https:\/\//i.test(item.source.url)) {
-    return <audio className="guuey-chat-media-audio" controls src={item.source.url} />;
-  }
-  // Attachment chip: files, documents, unloadable/oversized media.
+  // A plain chip: files, documents, a failed load, or media refused inline.
+  const note = display.kind === "chip" ? chipNote(display.reason, ctx.strings) : null;
   return (
     <span className={`guuey-chat-media-chip guuey-chat-media-${item.media}`}>
-      {item.name ?? item.media}
+      {label}
+      {note !== null ? <span className="guuey-chat-media-note"> · {note}</span> : null}
     </span>
   );
 }

@@ -46,6 +46,7 @@ import {
 } from "@guuey/mcp-apps-host";
 import type { TranscriptPolicy } from "./policy.js";
 import { prettyJson } from "./highlight.js";
+import { mediaDisplay } from "./media.js";
 import { grantModeDisplay, hitlAnswerChannel } from "./hitl.js";
 import { authRequiredFromAsks, oauthAuthorizeAsk } from "./oauth.js";
 import { isGguiConsumeTool, isGguiProtocolTool } from "./listen.js";
@@ -54,6 +55,7 @@ import type {
   DataResultItem,
   DisplayItem,
   ItemKey,
+  MediaItem,
   NoticeItem,
   PlanViewSummary,
   StatusLineItem,
@@ -297,20 +299,72 @@ function flatAssistantSources(inputs: TranscriptInputs, inFlight: boolean): Assi
   return settled;
 }
 
+/** The parts of a tool result that render as their own R7 rows (guuey#2369). */
+type PromotedMediaBlock = Extract<AgBlock, { type: "image" | "audio" }>;
+
+function isPromotedMedia(b: AgBlock): b is PromotedMediaBlock {
+  return b.type === "image" || b.type === "audio";
+}
+
+/** An R7 row's planned presentation and load decision, shared by top-level and tool-born media. */
+function mediaItem(
+  key: ItemKey,
+  block: Extract<AgBlock, { type: "image" | "audio" | "file" | "document" }>,
+  toolCallId: string | null,
+  policy: TranscriptPolicy,
+  overrides: TranscriptOverrides,
+): MediaItem {
+  const name =
+    block.type === "file" ? (block.filename ?? null) : block.type === "document" ? (block.title ?? null) : null;
+  const presentation: MediaItem["presentation"] =
+    policy.media.chipOnly || block.type === "file" || block.type === "document" ? "chip" : "inline";
+  return {
+    kind: "media",
+    key,
+    expanded: resolveExpanded(key, true, overrides),
+    media: block.type,
+    source: block.source,
+    name,
+    presentation,
+    display: mediaDisplay(block.type, block.source, presentation === "inline", policy.media),
+    toolCallId,
+  };
+}
+
+/**
+ * guuey#2369 — a tool result's image and audio parts, as R7 rows that render
+ * in flow after the call's row (R4's display-bearing rule). They show even
+ * when the ggui filter hides the row itself, like a view mount.
+ */
+function toolResultMediaItems(
+  block: ToolResultBlock,
+  policy: TranscriptPolicy,
+  overrides: TranscriptOverrides,
+): MediaItem[] {
+  return block.content
+    .filter(isPromotedMedia)
+    .map((part, i) => mediaItem(`media.${block.toolCallId}.${i}`, part, block.toolCallId, policy, overrides));
+}
+
+/**
+ * R5 for a tool result. Image and audio parts are not part of it — they
+ * render as their own rows — so a result made only of them has no data row
+ * (null) instead of a byte count.
+ */
 function dataResultFromToolResult(
   block: ToolResultBlock,
   key: ItemKey,
   policy: TranscriptPolicy,
   overrides: TranscriptOverrides,
-): DataResultItem {
+): DataResultItem | null {
   const payload = block.structuredContent !== undefined ? block.structuredContent : undefined;
   const textParts = block.content
     .filter((b): b is Extract<AgBlock, { type: "text" }> => b.type === "text")
     .map((b) => b.text)
     .filter((t) => t !== "");
-  const mediaParts = block.content.filter(
-    (b) => b.type === "image" || b.type === "audio" || b.type === "file" || b.type === "document",
-  );
+  // Files and documents stay inside the row; image and audio are promoted.
+  const mediaParts = block.content.filter((b) => b.type === "file" || b.type === "document");
+  const promoted = block.content.some(isPromotedMedia);
 
   let state: DataResultItem["state"];
   let preview: string | null;
@@ -348,6 +402,8 @@ function dataResultFromToolResult(
     byteCount = block.errorText.length;
     preview = block.errorText;
     state = "small";
+  } else if (promoted) {
+    return null;
   } else {
     byteCount = 0;
     preview = null;
@@ -580,6 +636,11 @@ function planAssistantSource(
           policy.tool.showToolRows === "all" ||
           (policy.tool.showToolRows === "non-ggui" && (!isGguiProtocol || isFailedRow));
         if (showToolRow) items.push(tool);
+        // guuey#2369: the result's image/audio render in flow after the row —
+        // even when the filter dropped the row, like the view mount below.
+        if (result && mount === undefined && refusal === null) {
+          items.push(...toolResultMediaItems(result, policy, overrides));
+        }
         if (mount !== undefined) {
           const viewKey = `view.${block.toolCallId}`;
           const view: ViewMountItem = {
@@ -621,33 +682,19 @@ function planAssistantSource(
           (b) => b.type === "tool-call" && b.toolCallId === block.toolCallId,
         );
         if (hasCall) break; // its call renders it
-        const key = `${prefix}.d${ordinals.d++}`;
-        items.push(dataResultFromToolResult(block, key, policy, overrides));
+        const data = dataResultFromToolResult(block, `${prefix}.d${ordinals.d}`, policy, overrides);
+        if (data !== null) {
+          ordinals.d++;
+          items.push(data);
+        }
+        items.push(...toolResultMediaItems(block, policy, overrides));
         break;
       }
       case "image":
       case "audio":
       case "file":
       case "document": {
-        const key = `${prefix}.m${ordinals.m++}`;
-        const name =
-          block.type === "file"
-            ? (block.filename ?? null)
-            : block.type === "document"
-              ? (block.title ?? null)
-              : null;
-        items.push({
-          kind: "media",
-          key,
-          expanded: resolveExpanded(key, true, overrides),
-          media: block.type,
-          source: block.source,
-          name,
-          presentation:
-            policy.media.chipOnly || block.type === "file" || block.type === "document"
-              ? "chip"
-              : "inline",
-        });
+        items.push(mediaItem(`${prefix}.m${ordinals.m++}`, block, null, policy, overrides));
         break;
       }
       case "code": {
@@ -793,17 +840,26 @@ function groupTools(
     run = [];
   };
 
-  for (const item of items) {
+  items.forEach((item, i) => {
     // Silent = the row's entire output lives inside its own expansion (R5
     // data, however large). Display-bearing calls carry `attribution` and
-    // their ViewMountItem already sits between tool rows, breaking the run.
-    if (item.kind === "tool" && (item.state === "done" || item.state === "failed") && !item.attribution) {
+    // their ViewMountItem already sits between tool rows, breaking the run;
+    // a call whose media rows follow it (guuey#2369) is display-bearing too.
+    const next = items[i + 1];
+    const mediaBearing =
+      item.kind === "tool" && next !== undefined && next.kind === "media" && next.toolCallId === item.toolCallId;
+    if (
+      item.kind === "tool" &&
+      (item.state === "done" || item.state === "failed") &&
+      !item.attribution &&
+      !mediaBearing
+    ) {
       run.push(item);
     } else {
       flush();
       out.push(item);
     }
-  }
+  });
   flush();
   return out;
 }

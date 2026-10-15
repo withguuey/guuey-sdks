@@ -1501,6 +1501,10 @@ exports[`corpus > 12. interleaved-media-code-citations — ordering and aggregat
       "text": "chart + code + sources",
     },
     {
+      "display": {
+        "kind": "link",
+        "url": "https://cdn.example/chart.png",
+      },
       "expanded": true,
       "key": "a0.m0",
       "kind": "media",
@@ -1512,6 +1516,7 @@ exports[`corpus > 12. interleaved-media-code-citations — ordering and aggregat
         "type": "url",
         "url": "https://cdn.example/chart.png",
       },
+      "toolCallId": null,
     },
     {
       "code": "print('hi')",

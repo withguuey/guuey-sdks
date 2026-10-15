@@ -6,6 +6,7 @@
  * rest of the preset.
  */
 import { defaultChatStrings, humanizeToolName, type ChatStrings } from "./strings.js";
+import { DEFAULT_MAX_INLINE_MEDIA_BYTES, DEFAULT_MEDIA_ORIGINS } from "./media.js";
 
 export interface TranscriptPolicy {
   /** The i18n seam — override any string without forking components (§4.2). */
@@ -75,8 +76,21 @@ export interface TranscriptPolicy {
    * input `promotedViewKey`.
    */
   view: { timeoutMs: number; presentation: "inline" | "chips" };
-  /** R7. */
-  media: { inlineImageCapRem: number; chipOnly: boolean };
+  /**
+   * R7. `origins` and `maxInlineBytes` decide what the viewer's device may
+   * load (guuey#2369, see `mediaDisplay`): `data:` / base64 bytes under the
+   * cap, `blob:` URLs, and https URLs on `origins`; any other https URL is
+   * a chip with an "open link" action, never fetched. `origins` entries are
+   * exact https origins or `https://*.host` subdomain wildcards; the default
+   * is the guuey media origin, and a host passes its own list to replace or
+   * extend it (spread `DEFAULT_MEDIA_ORIGINS` to extend).
+   */
+  media: {
+    inlineImageCapRem: number;
+    chipOnly: boolean;
+    origins: readonly string[];
+    maxInlineBytes: number;
+  };
   /** R8. */
   code: { capRem: number; wrap: boolean };
   /** R9. */
@@ -165,7 +179,12 @@ function calmBase(): TranscriptPolicy {
     toolGroup: { threshold: 2 },
     dataResult: { capRem: 16, prettyPrint: true, alwaysShowBytes: false, previewChars: 2048 },
     view: { timeoutMs: 8000, presentation: "inline" },
-    media: { inlineImageCapRem: 20, chipOnly: false },
+    media: {
+      inlineImageCapRem: 20,
+      chipOnly: false,
+      origins: DEFAULT_MEDIA_ORIGINS,
+      maxInlineBytes: DEFAULT_MAX_INLINE_MEDIA_BYTES,
+    },
     code: { capRem: 16, wrap: false },
     citations: { style: "chips" },
     notice: { show: true },

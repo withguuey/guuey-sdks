@@ -163,6 +163,14 @@ export interface ChatStrings {
   /** R5/R15 byte-count note. */
   bytes: (byteCount: number) => string;
 
+  /**
+   * R7 chips (guuey#2369): the action that opens an https media URL the
+   * kit does not load, and the notes on media it will not show inline.
+   */
+  mediaOpenLink: string;
+  mediaOversized: string;
+  mediaRefused: string;
+
   /** R13 states. */
   historyLoading: string;
   threadGone: string;
@@ -403,6 +411,10 @@ export const defaultChatStrings: ChatStrings = {
   showLess: "Show less",
   bytes: (byteCount) =>
     byteCount >= 1024 ? `${Math.round(byteCount / 1024)} KB` : `${byteCount} B`,
+
+  mediaOpenLink: "Open link",
+  mediaOversized: "too large to show",
+  mediaRefused: "can't be shown here",
 
   historyLoading: "Loading conversation…",
   threadGone: "This conversation is no longer available.",

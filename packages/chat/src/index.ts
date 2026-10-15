@@ -27,6 +27,15 @@ export {
 } from "./strings.js";
 export { transcriptInputsFromHistory } from "./history-inputs.js";
 export {
+  DEFAULT_MAX_INLINE_MEDIA_BYTES,
+  DEFAULT_MEDIA_ORIGINS,
+  isMediaOrigin,
+  mediaDisplay,
+  type MediaChipReason,
+  type MediaDisplay,
+  type MediaLoadPolicy,
+} from "./media.js";
+export {
   HIGHLIGHT_MAX_CHARS,
   highlightCode,
   prettyJson,
