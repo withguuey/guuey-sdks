@@ -26,6 +26,7 @@ export type {
   ThreadMessageKind,
   ThreadMessageRole,
   RowBudget,
+  ThreadClosure,
   ThreadMessageRow,
   ThreadPersistencePort,
   ThreadRow,
@@ -53,6 +54,7 @@ export {
   type EnsureThreadInput,
 } from "./store.js";
 export { InMemoryThreadPersistence } from "./in-memory.js";
+export { ThreadClosedError, threadClosure } from "./closed.js";
 export {
   hasSealedPart,
   isSeqSealed,

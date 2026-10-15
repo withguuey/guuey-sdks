@@ -29,6 +29,7 @@ import {
   storedTextParts,
 } from "./fold-rows.js";
 import { classifyStoredRow } from "./stored-row.js";
+import { threadClosure } from "./closed.js";
 import { planSnapshot, type SnapshotRefusal } from "./snapshot-plan.js";
 import { writeTapLabels, type TapLabels } from "@guuey/mcp-apps-host/narrowing";
 import type {
@@ -37,6 +38,7 @@ import type {
   ThreadMessageKind,
   ThreadMessageRole,
   ThreadMessageRow,
+  ThreadClosure,
   ThreadPersistencePort,
   ThreadRow,
   ThreadSnapshotRow,
@@ -263,14 +265,17 @@ export class ThreadStore {
    * continues on a new conversation) AND safe — the caller never sees another
    * user's thread, and there's no existence oracle. The pod never honours a
    * client-chosen id, so squatting is impossible.
+   *
+   * A CLOSED thread ({@link ThreadRow.closedAt}) is answered the same way: it
+   * takes no new message, so a send on it starts a new conversation.
    */
   async ensureThread(input: EnsureThreadInput): Promise<string> {
     if (input.threadId) {
       const existing = await this.db.getThread(input.threadId);
-      if (existing && existing.userId === input.userId) {
+      if (existing && existing.userId === input.userId && threadClosure(existing) === undefined) {
         return existing.id;
       }
-      // Not found OR owned by a different identity → fall through, mint fresh.
+      // Not found, owned by a different identity, OR closed → fall through, mint fresh.
     }
     const now = new Date().toISOString();
     const row: ThreadRow = {
@@ -298,11 +303,25 @@ export class ThreadStore {
    * exposed for doors that must BIND a client-echoed thread to the verified
    * caller without minting anything (the pod's consent-answer door binds a
    * `once` grant to a thread this way — guuey#207). No existence oracle: a
-   * missing thread and another user's thread are the same `false`.
+   * missing thread and another user's thread are the same `false`, and so is
+   * a closed one: nothing binds to a conversation that has ended.
    */
   async ownsThread(threadId: string, userId: string): Promise<boolean> {
     const existing = await this.db.getThread(threadId);
-    return existing !== undefined && existing.userId === userId;
+    return existing !== undefined && existing.userId === userId && threadClosure(existing) === undefined;
+  }
+
+  /**
+   * End the conversation (see {@link ThreadRow.closedAt}): `closed` when this
+   * call closed it, `already_closed` when it was closed before (the first
+   * closure is kept), `unsupported` when the binding cannot close
+   * ({@link ThreadPersistencePort.closeThread} absent; nothing changes).
+   * Rejects for a missing thread or a store failure.
+   */
+  async closeThread(threadId: string, closure: ThreadClosure): Promise<"closed" | "already_closed" | "unsupported"> {
+    const close = this.db.closeThread;
+    if (close === undefined) return "unsupported";
+    return close.call(this.db, threadId, closure);
   }
 
   /** Prior messages for the thread (seq-ASC, capped to the most recent N). */

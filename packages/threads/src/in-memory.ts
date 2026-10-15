@@ -5,7 +5,9 @@
  * two conditional-write guards and the null-preview no-touch semantics.
  */
 import { previewDigest } from "./seal.js";
+import { ThreadClosedError, threadClosure } from "./closed.js";
 import type {
+  ThreadClosure,
   ThreadMessageRow,
   ThreadPersistencePort,
   ThreadRow,
@@ -31,6 +33,7 @@ export class InMemoryThreadPersistence implements ThreadPersistencePort {
   async incrementSeq(threadId: string, preview: string | null, atIso: string): Promise<number> {
     const t = this.threads.get(threadId);
     if (!t) throw new Error(`incrementSeq: thread ${threadId} does not exist`);
+    if (threadClosure(t) !== undefined) throw new ThreadClosedError(threadId);
     t.lastSeq += 1;
     t.lastMessageAt = atIso;
     t.updatedAt = atIso;
@@ -44,6 +47,16 @@ export class InMemoryThreadPersistence implements ThreadPersistencePort {
       t.lastMessagePreviewDigest = previewDigest(preview);
     }
     return t.lastSeq;
+  }
+
+  async closeThread(threadId: string, closure: ThreadClosure): Promise<"closed" | "already_closed"> {
+    const t = this.threads.get(threadId);
+    if (!t) throw new Error(`closeThread: thread ${threadId} does not exist`);
+    if (threadClosure(t) !== undefined) return "already_closed";
+    t.closedCode = closure.code;
+    t.closedMessage = closure.message;
+    t.closedAt = closure.at;
+    return "closed";
   }
 
   async putMessage(row: ThreadMessageRow): Promise<void> {

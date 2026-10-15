@@ -3,4 +3,4 @@ import { InMemoryThreadPersistence } from "./in-memory.js";
 
 runThreadPersistenceContractSuite("InMemoryThreadPersistence", async () => ({
   port: new InMemoryThreadPersistence(),
-}));
+}), { canClose: true });

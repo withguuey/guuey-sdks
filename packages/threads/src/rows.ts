@@ -60,9 +60,31 @@ export interface ThreadRow {
    * never trusted as stored.
    */
   sealIntervals?: SealInterval[];
+  /**
+   * The conversation was ended for a reason (a worker asked for it, e.g. a
+   * per-conversation limit): it takes no new message, and a client that sends
+   * on it starts a new conversation. All three are written together, once,
+   * and never cleared. `closedCode` is the machine-readable reason (a
+   * worker's code arrives prefixed `app:`), `closedMessage` what the person
+   * reads, `closedAt` when (ISO). Absent on every open thread and on every
+   * row written before closing existed. Read through `threadClosure`
+   * (`closed.ts`). Separate from {@link status}: an archived thread may also
+   * be closed.
+   */
+  closedCode?: string;
+  closedMessage?: string;
+  closedAt?: string;
   threadMode: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Why and when a conversation was ended (see {@link ThreadRow.closedAt}). */
+export interface ThreadClosure {
+  code: string;
+  message: string;
+  /** ISO timestamp. */
+  at: string;
 }
 
 /**
@@ -259,9 +281,20 @@ export interface ThreadPersistencePort {
    * EXISTING Thread and return the NEW `lastSeq`. `preview: null`
    * allocates the seq WITHOUT touching `lastMessagePreview` (card rows and
    * text-less agent turns must not clobber the last real preview);
-   * a string preview replaces it.
+   * a string preview replaces it. On a closed thread
+   * ({@link ThreadRow.closedAt}) it allocates nothing and rejects with
+   * `ThreadClosedError`.
    */
   incrementSeq(threadId: string, preview: string | null, atIso: string): Promise<number>;
+  /**
+   * Close an EXISTING thread: write the three closure fields
+   * ({@link ThreadRow.closedAt}) in one conditional update that holds only
+   * while the thread exists and is still open. `already_closed` when it was
+   * closed before (the first closure is kept); rejects for a missing thread.
+   * Optional: a binding without it cannot close a conversation
+   * (`ThreadStore.closeThread` answers `unsupported`).
+   */
+  closeThread?(threadId: string, closure: ThreadClosure): Promise<"closed" | "already_closed">;
   /** Put a ThreadMessage row (conditional — must reject a duplicate seq). */
   putMessage(row: ThreadMessageRow): Promise<void>;
   /** Up to `limit` most-recent messages for a thread, returned seq-ASCending. */

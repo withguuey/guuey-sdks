@@ -8,11 +8,22 @@
 import { describe, expect, it } from "vitest";
 import type { JsonValue } from "@silverprotocol/core";
 import type { ThreadPersistencePort, ThreadRow } from "../rows.js";
+import { ThreadClosedError, threadClosure } from "../closed.js";
 import { DYNAMODB_ITEM_LIMIT_BYTES, DYNAMODB_ROW_BUDGET, dynamoItemBytes, dynamoNumberFits } from "../item-size.js";
 
 export interface ThreadPersistenceHarness {
   port: ThreadPersistencePort;
   cleanup?: () => void | Promise<void>;
+}
+
+/** What the binding under test claims beyond the required port. */
+export interface ThreadPersistenceContractOptions {
+  /**
+   * The binding implements `closeThread`: the suite then requires it and
+   * holds it to the close contract (a closure is recorded once, and a closed
+   * thread allocates no seq).
+   */
+  canClose?: boolean;
 }
 
 function threadRow(id: string): ThreadRow {
@@ -53,8 +64,50 @@ async function withHarness(
 export function runThreadPersistenceContractSuite(
   name: string,
   make: () => Promise<ThreadPersistenceHarness>,
+  options: ThreadPersistenceContractOptions = {},
 ): void {
   describe(`ThreadPersistencePort contract — ${name}`, () => {
+    if (options.canClose === true) {
+      const closure = { code: "app:CHAT_FULL", message: "This chat is full.", at: "2026-08-07T00:00:05.000Z" };
+
+      it("closeThread records the closure once; a second close is already_closed; a missing thread rejects", async () => {
+        await withHarness(make, async (port) => {
+          expect(port.closeThread).toBeTypeOf("function");
+          if (port.closeThread === undefined) return;
+          await port.createThread(threadRow("t1"));
+          expect(await port.closeThread("t1", closure)).toBe("closed");
+          expect(await port.closeThread("t1", { ...closure, code: "app:OTHER" })).toBe("already_closed");
+          const t = await port.getThread("t1");
+          expect(t && threadClosure(t)).toEqual(closure);
+          // Closing is not archiving: the status the thread had is kept.
+          expect(t?.status).toBe("active");
+          await expect(port.closeThread("t-missing", closure)).rejects.toThrow();
+        });
+      });
+
+      it("incrementSeq on a closed thread rejects with ThreadClosedError and allocates no seq", async () => {
+        await withHarness(make, async (port) => {
+          if (port.closeThread === undefined) throw new Error("canClose binding has no closeThread");
+          await port.createThread(threadRow("t1"));
+          expect(await port.incrementSeq("t1", "before", "2026-08-07T00:00:01.000Z")).toBe(1);
+          await port.closeThread("t1", closure);
+          await expect(port.incrementSeq("t1", "after", "2026-08-07T00:00:06.000Z")).rejects.toBeInstanceOf(ThreadClosedError);
+          await expect(port.incrementSeq("t1", null, "2026-08-07T00:00:06.000Z")).rejects.toBeInstanceOf(ThreadClosedError);
+          const t = await port.getThread("t1");
+          expect(t?.lastSeq).toBe(1);
+          expect(t?.lastMessagePreview).toBe("before");
+        });
+      });
+
+      it("incrementSeq on a missing thread still rejects with something other than ThreadClosedError", async () => {
+        await withHarness(make, async (port) => {
+          const err = await port.incrementSeq("t-missing", "p", "2026-08-07T00:00:01.000Z").catch((e: unknown) => e);
+          expect(err).toBeInstanceOf(Error);
+          expect(err).not.toBeInstanceOf(ThreadClosedError);
+        });
+      });
+    }
+
     it("creates and point-reads a thread; unknown ids read undefined", async () => {
       await withHarness(make, async (port) => {
         await port.createThread(threadRow("t1"));
@@ -272,6 +325,7 @@ export function withItemSizeLimit(port: ThreadPersistencePort): ThreadPersistenc
     getThread: (threadId) => port.getThread(threadId),
     createThread: (row) => port.createThread(row),
     incrementSeq: (threadId, preview, atIso) => port.incrementSeq(threadId, preview, atIso),
+    ...closeThreadOf(port),
     async putMessage(row) {
       const unfit = firstUnfitNumber(row);
       if (unfit !== undefined) throw new UnstorableNumberError(unfit);
@@ -291,4 +345,10 @@ export function withItemSizeLimit(port: ThreadPersistencePort): ThreadPersistenc
       await port.putSnapshot(row);
     },
   };
+}
+
+/** `port`'s `closeThread`, forwarded, or nothing when it has none. */
+function closeThreadOf(port: ThreadPersistencePort): Pick<ThreadPersistencePort, "closeThread"> {
+  const close = port.closeThread;
+  return close === undefined ? {} : { closeThread: (threadId, closure) => close.call(port, threadId, closure) };
 }
