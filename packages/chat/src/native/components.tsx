@@ -83,10 +83,13 @@ export interface NativeTranscriptItemContext {
   onViewRef?: (item: ViewRefItem) => void;
 }
 
-interface ItemProps<T> {
+/** The props every native item component takes — type a slot override with it. */
+export interface NativeTranscriptItemProps<T> {
   item: T;
   ctx: NativeTranscriptItemContext;
 }
+
+type ItemProps<T> = NativeTranscriptItemProps<T>;
 
 /** A collapse toggle + body pair with the RN accessibility plumbing. */
 function Collapsible({

@@ -155,6 +155,53 @@ not observable from the page and are not counted. A page that feeds the chat
 from its own input (`composer={false}`) reports that input's focus with
 `handle.markOpened()`.
 
+## React Native adapters (`@guuey/chat/native-adapters`)
+
+`@guuey/chat/native` renders the transcript on React Native. This subpath
+supplies the three host pieces a native chat needs beside it, and adds no
+dependency: you inject each native module.
+
+- `createNativeAdapters` — the `useAgentInvoke` adapter bundle. The invoke
+  stream and the history read go through the `fetch` you pass. Pass a
+  streaming one (`expo/fetch`): the platform global buffers the body, so a
+  turn would show nothing until its last byte. The thread id persists in the
+  storage you pass (AsyncStorage). Identity options match
+  `createWebAdapters`; `getGuestSecret` may be async.
+- `asyncStorageThreadStore` — that thread-id store on its own.
+- `createNativeViewHost` — a `view` slot that mounts cards in the WebView host
+  you pass (`McpAppIframe` from `@ggui-ai/mcp-apps-react-native`). It mounts
+  inline HTML only, sizes the card from its size reports (clamped), reports
+  the view phase, and relays card actions through `onUiAction`, scoped to
+  the card.
+
+```tsx
+import { fetch } from "expo/fetch";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { McpAppIframe } from "@ggui-ai/mcp-apps-react-native";
+import { useAgentInvoke } from "@guuey/agent-client/react";
+import { createNativeAdapters, createNativeViewHost } from "@guuey/chat/native-adapters";
+
+const adapters = createNativeAdapters({
+  fetch,
+  storage: AsyncStorage,
+  apiBaseUrl: READ_PLANE_BASE_URL, // ends in /v1; enables history on reload
+  getGuestSecret: () => AsyncStorage.getItem("guest-secret"), // 64 lowercase hex
+});
+
+// Create once: a new component per render remounts every card.
+const view = createNativeViewHost({ McpAppIframe });
+
+function Chat({ endpointUrl, appId }: { endpointUrl: string; appId: string }) {
+  const chat = useAgentInvoke({ endpointUrl, appId, adapters });
+  // …plan the transcript, then:
+  // <NativeTranscript plan={plan} components={{ view }} … />
+}
+```
+
+Without `onUiAction`, a card's actions are answered in-band as "not
+available". Pass `createUiActionRelay(…)` from `@guuey/agent-client` to relay
+them.
+
 ## The headless view-model (the root subpath)
 
 The **headless** half — a pure function from agent state to an ordered

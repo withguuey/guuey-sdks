@@ -37,6 +37,12 @@
       "import": "./dist/native.js",
       "default": "./dist/native.js"
     },
+    "./native-adapters": {
+      "react-native": "./src/native-adapters.ts",
+      "types": "./dist/native-adapters.d.ts",
+      "import": "./dist/native-adapters.js",
+      "default": "./dist/native-adapters.js"
+    },
     "./styles.css": "./styles.css"
   },
   "scripts": {
@@ -96,6 +102,11 @@
         "types": "./dist/native.d.ts",
         "import": "./dist/native.js",
         "default": "./dist/native.js"
+      },
+      "./native-adapters": {
+        "types": "./dist/native-adapters.d.ts",
+        "import": "./dist/native-adapters.js",
+        "default": "./dist/native-adapters.js"
       },
       "./styles.css": "./styles.css"
     }

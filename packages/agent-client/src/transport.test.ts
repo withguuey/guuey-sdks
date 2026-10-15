@@ -584,3 +584,82 @@ describe("fetchStreamTransport — network TypeError outside a browser", () => {
     expect(err).toBe(original);
   });
 });
+
+/**
+ * `fetchImpl` — the one `fetch` every request of the transport goes through
+ * (a streaming native fetch on React Native). The global must stay untouched.
+ */
+describe("fetchStreamTransport — injectable fetchImpl", () => {
+  it("sends every attempt through the injected fetch and never the global one", async () => {
+    const injected = mockFetch([coldStart(), sseResponse("data: ok\n\n")]);
+    const global = mockFetch([]);
+    const { sleep } = fakeSleep();
+    const out = await withGlobalFetch(global, () =>
+      drain(fetchStreamTransport(invokeRequest(), null, null, { sleep, fetchImpl: injected })),
+    );
+    expect(out).toBe("data: ok\n\n");
+    expect(injected).toHaveBeenCalledTimes(2);
+    expect(global).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * `getGuestSecret` — the async-capable anonymous identity provider. It may
+ * resolve from async storage; the resolved value rides the same gate and the
+ * same one-carrier rule as the positional secret.
+ */
+describe("fetchStreamTransport — injectable getGuestSecret", () => {
+  it("awaits an async secret and sends it as the one identity carrier", async () => {
+    const fetchImpl = mockFetch([sseResponse()]);
+    await drain(
+      fetchStreamTransport(invokeRequest(), null, null, {
+        fetchImpl,
+        getGuestSecret: () => Promise.resolve(SECRET),
+      }),
+    );
+    const init = fetchImpl.mock.calls[0][1];
+    expect(headersOf(init)[GUEST_HEADER]).toBe(SECRET);
+    expect(headersOf(init).Authorization).toBeUndefined();
+    expect(init?.credentials).toBeUndefined();
+  });
+
+  it("wins over the positional secret", async () => {
+    const other = "fedcba9876543210".repeat(4);
+    const fetchImpl = mockFetch([sseResponse()]);
+    await drain(
+      fetchStreamTransport(invokeRequest(), null, other, {
+        fetchImpl,
+        getGuestSecret: () => Promise.resolve(SECRET),
+      }),
+    );
+    expect(headersOf(fetchImpl.mock.calls[0][1])[GUEST_HEADER]).toBe(SECRET);
+  });
+
+  it("still loses to a bearer — never two identities at once", async () => {
+    const fetchImpl = mockFetch([sseResponse()]);
+    await drain(
+      fetchStreamTransport(invokeRequest(), null, null, {
+        fetchImpl,
+        getBearer: () => "tok_abc",
+        getGuestSecret: () => Promise.resolve(SECRET),
+      }),
+    );
+    const init = fetchImpl.mock.calls[0][1];
+    expect(headersOf(init).Authorization).toBe("Bearer tok_abc");
+    expect(headersOf(init)[GUEST_HEADER]).toBeUndefined();
+    expect(init?.credentials).toBeUndefined();
+  });
+
+  it("falls back to cookie mode when the async secret is malformed", async () => {
+    const fetchImpl = mockFetch([sseResponse()]);
+    await drain(
+      fetchStreamTransport(invokeRequest(), null, null, {
+        fetchImpl,
+        getGuestSecret: () => Promise.resolve("not-a-secret"),
+      }),
+    );
+    const init = fetchImpl.mock.calls[0][1];
+    expect(headersOf(init)[GUEST_HEADER]).toBeUndefined();
+    expect(init?.credentials).toBe("include");
+  });
+});

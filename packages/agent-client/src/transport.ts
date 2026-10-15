@@ -124,15 +124,19 @@ function networkFailureHint(allowedDomains: boolean): string {
  * carries either header does NOT also send cookie credentials.
  *
  * `allowedDomainsHint` is {@link FetchStreamTransportOptions.allowedDomainsHint},
- * resolved to its default by the caller.
+ * resolved to its default by the caller. `fetchImpl` is
+ * {@link FetchStreamTransportOptions.fetchImpl}, resolved to the global `fetch`
+ * by the caller.
  *
- * Reads the body via `ReadableStream.getReader()` (browser).
+ * Reads the body via `ReadableStream.getReader()` (a browser fetch, or a
+ * streaming native fetch such as `expo/fetch`).
  */
 async function* streamInvokeOnce(
   req: InvokeRequest,
   accessToken: string | null | undefined,
   guestSecret: string | null | undefined,
   allowedDomainsHint: boolean,
+  fetchImpl: typeof fetch,
 ): AsyncGenerator<string> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -154,7 +158,7 @@ async function* streamInvokeOnce(
   }
   let resp: Response;
   try {
-    resp = await fetch(req.url, init);
+    resp = await fetchImpl(req.url, init);
   } catch (err) {
     // A network-level TypeError on a CROSS-ORIGIN invoke from a browser
     // carries nothing more specific than "Failed to fetch" — the web
@@ -230,6 +234,25 @@ export interface FetchStreamTransportOptions extends SaturationRetryOptions {
    */
   getBearer?: () => string | null | Promise<string | null>;
   /**
+   * Injectable guest-secret provider — the anonymous counterpart of
+   * {@link getBearer}. Resolved PER ATTEMPT, after the bearer; when present
+   * it takes precedence over the positional `guestSecret`. May be async, so a
+   * host whose secret lives in async storage (React Native's AsyncStorage, a
+   * keychain) can hand over its reader directly. The value passes through the
+   * same well-formedness gate as the positional one, and the one-carrier rule
+   * is unchanged: a bearer still wins, and a request that carries either
+   * header sends no cookie credentials. A throw (or rejection) propagates and
+   * fails the invoke.
+   */
+  getGuestSecret?: () => string | null | Promise<string | null>;
+  /**
+   * The `fetch` every request of this transport goes through. Defaults to
+   * the global `fetch`. Pass a streaming implementation where the global one
+   * buffers the whole body — on React Native, `expo/fetch` exposes the SSE
+   * body as a `ReadableStream`, so chunks reach the parser as they arrive.
+   */
+  fetchImpl?: typeof fetch;
+  /**
    * Whether a cross-origin network failure's message also names the app's
    * `allowedDomains` (guuey#1976). ON by default: on a page you host, a
    * missing allowlist entry is a real cause of a bare "Failed to fetch".
@@ -259,12 +282,15 @@ export function fetchStreamTransport(
   guestSecret?: string | null,
   options: FetchStreamTransportOptions = {},
 ): AsyncIterable<string> {
-  const { getBearer, allowedDomainsHint = true } = options;
+  const { getBearer, getGuestSecret, allowedDomainsHint = true } = options;
   const once = async function* (attempt: InvokeRequest): AsyncGenerator<string> {
-    // Per-attempt resolution: each retry re-asks the provider (fresh token
-    // after a backoff wait) instead of replaying a captured one.
+    // Per-attempt resolution: each retry re-asks the providers (fresh token
+    // after a backoff wait) instead of replaying captured values.
     const bearer = getBearer ? await getBearer() : accessToken;
-    yield* streamInvokeOnce(attempt, bearer, guestSecret, allowedDomainsHint);
+    const guest = getGuestSecret ? await getGuestSecret() : guestSecret;
+    // The global is read at request time, never captured at construction.
+    const fetchImpl = options.fetchImpl ?? fetch;
+    yield* streamInvokeOnce(attempt, bearer, guest, allowedDomainsHint, fetchImpl);
   };
   const saturated = withSaturationRetry(once, {
     sleep: options.sleep,

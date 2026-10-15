@@ -44,11 +44,13 @@ const TEST_RUNNER_ONLY = new Set(['@guuey/state/testing', '@guuey/threads/testin
  * that is a property of the platform, not a packaging bug. These arms are
  * EXISTENCE-CHECKED (the dist target must be on disk) but not imported;
  * their behavioral coverage lives in the consuming app's jest-expo suite
- * (portal, for `@guuey/chat/native`). Same rule as TEST_RUNNER_ONLY: a new
+ * (`@guuey/chat/native`) or in the package's own tests with the RN
+ * primitives stubbed (`@guuey/chat/native-adapters`, whose view host renders
+ * the kit's native placeholder). Same rule as TEST_RUNNER_ONLY: a new
  * arm that fails under bare node still fails this smoke until it is either
  * fixed or classified here with a reason.
  */
-const NATIVE_RUNTIME_ONLY = new Set(['@guuey/chat/native']);
+const NATIVE_RUNTIME_ONLY = new Set(['@guuey/chat/native', '@guuey/chat/native-adapters']);
 
 /**
  * An exports entry → its plain-Node ESM target, honoring the condition

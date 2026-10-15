@@ -46,6 +46,7 @@ export {
   NativeStatus,
   type NativeTranscriptComponents,
   type NativeTranscriptItemContext,
+  type NativeTranscriptItemProps,
 } from "./native/components.js";
 export { NativeMarkdown } from "./native/markdown.js";
 export {

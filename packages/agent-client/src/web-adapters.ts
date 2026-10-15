@@ -105,9 +105,11 @@ export interface CreateWebAdaptersOptions {
    * header (it cannot see the HttpOnly cookie, which is why a cookie-only
    * caller still gets no history).
    *
-   * Called once per request, so a rotated secret takes effect immediately.
-   * A value that isn't 64 lowercase hex is ignored (never sent) and the
-   * request falls through to cookie mode.
+   * Called once per request attempt, so a rotated secret takes effect
+   * immediately. May return a promise — a host whose secret lives in async
+   * storage (React Native's AsyncStorage, a keychain) passes its reader
+   * as is. A value that isn't 64 lowercase hex is ignored (never sent) and
+   * the request falls through to cookie mode.
    *
    * **Supply at most ONE identity resolver per mode.** Anonymous hosts pass
    * this one; identified hosts pass {@link getAccessToken} and surface a token
@@ -121,7 +123,7 @@ export interface CreateWebAdaptersOptions {
    * gets its own transcript back minus those turns on the next good load. A
    * 401-then-re-request-token retry loop is exactly this window.
    *
-   * MUST be synchronous and MUST NOT throw: a throw propagates and fails the
+   * MUST NOT throw (or reject): a throw propagates and fails the
    * invoke. This is a real hazard for the widget, not a formality —
    * `localStorage` access raises `SecurityError` in a third-party iframe with
    * storage blocked (Safari's default for embedded content), which is normal
@@ -132,7 +134,13 @@ export interface CreateWebAdaptersOptions {
    * callback would also swallow ordinary host bugs into a silent anonymous
    * downgrade — the same failure this docblock warns about above.
    */
-  getGuestSecret?: () => string | null;
+  getGuestSecret?: () => string | null | Promise<string | null>;
+  /**
+   * The `fetch` both the chat transport and the history read go through.
+   * Defaults to the global `fetch`. Forwarded to
+   * {@link FetchStreamTransportOptions.fetchImpl}.
+   */
+  fetchImpl?: typeof fetch;
   /**
    * Forwarded to {@link FetchStreamTransportOptions.allowedDomainsHint}: pass
    * `false` on a surface whose origin the agent always admits, so a failed
@@ -151,7 +159,7 @@ export interface CreateWebAdaptersOptions {
 export function createWebAdapters(
   opts: CreateWebAdaptersOptions = {},
 ): AgentInvokeAdapters {
-  const { apiBaseUrl, getAccessToken, getGuestSecret } = opts;
+  const { apiBaseUrl, getAccessToken, getGuestSecret, fetchImpl } = opts;
 
   const transport: InvokeTransport = async function* (req) {
     // Both candidates go to the transport; it owns the precedence (and the
@@ -161,8 +169,11 @@ export function createWebAdapters(
     // backoff wait re-reads a fresh token instead of replaying one that may
     // have expired during the wait (the same reason Portal's RN transport
     // resolves inside its generator).
-    yield* fetchStreamTransport(req, null, getGuestSecret ? getGuestSecret() : null, {
+    // The guest secret goes through as a provider too (it may be async).
+    yield* fetchStreamTransport(req, null, null, {
       getBearer: getAccessToken,
+      ...(getGuestSecret !== undefined ? { getGuestSecret } : {}),
+      ...(fetchImpl !== undefined ? { fetchImpl } : {}),
       ...(opts.saturationAttempts !== undefined ? { attempts: opts.saturationAttempts } : {}),
       ...(opts.onSaturationWait !== undefined
         ? { onSaturationWait: opts.onSaturationWait }
@@ -197,6 +208,7 @@ export function createWebAdapters(
                 threadId,
                 includeCards: true,
                 requestInit: { headers: { Authorization: `Bearer ${token}` } },
+                ...(fetchImpl !== undefined ? { fetchImpl } : {}),
               });
             } catch (err) {
               if (!(err instanceof HistoryUnauthorizedError)) throw err;
@@ -214,17 +226,19 @@ export function createWebAdapters(
                 threadId,
                 includeCards: true,
                 requestInit: { headers: { Authorization: `Bearer ${fresh}` } },
+                ...(fetchImpl !== undefined ? { fetchImpl } : {}),
               });
             }
           }
         }
-        const guest = sendableGuestSecret(getGuestSecret?.());
+        const guest = sendableGuestSecret(getGuestSecret ? await getGuestSecret() : null);
         if (guest) {
           return fetchThreadHistory({
             baseUrl: apiBaseUrl,
             threadId,
             includeCards: true,
             requestInit: { headers: { [GUEST_HEADER]: guest } },
+            ...(fetchImpl !== undefined ? { fetchImpl } : {}),
           });
         }
         // No readable identity → leave the chat empty (skip) rather than
