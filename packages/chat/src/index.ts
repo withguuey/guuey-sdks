@@ -26,6 +26,13 @@ export {
   type ChatStrings,
 } from "./strings.js";
 export { transcriptInputsFromHistory } from "./history-inputs.js";
+export {
+  HIGHLIGHT_MAX_CHARS,
+  highlightCode,
+  prettyJson,
+  type HighlightKind,
+  type HighlightToken,
+} from "./highlight.js";
 // guuey#2031 — the headless tap ledger: one entry per card tap, drawn before
 // its turn is sent and closed by its sent row or a counts-only withdrawal.
 export {
