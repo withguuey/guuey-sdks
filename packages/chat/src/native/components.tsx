@@ -26,7 +26,7 @@
  * override (portal's card machinery is the reference consumer).
  */
 import type { ComponentType, ReactNode } from "react";
-import { Image, Pressable, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import type { PreGenerationRefusal, ResolvedViewMount, ViewHostPhase } from "@guuey/mcp-apps-host";
 import type { ChatStrings } from "../strings.js";
 import type {
@@ -328,19 +328,27 @@ export function NativeDataResult({ item, ctx }: ItemProps<DataResultItem>): Reac
   if (item.preview === null) return <MutedText ctx={ctx}>{bytes}</MutedText>;
   return (
     <View style={{ gap: 4 }}>
-      <View
+      {/* guuey#2368 — R5's scroll-cap projected to a fixed clamp (native has no
+          rem). A SCROLL box, like the web twin's capped <pre>: the old
+          overflow:"hidden" View clipped every preview past ~220pt with no way
+          to read the rest. nestedScrollEnabled lets it scroll inside the
+          transcript's own list on Android. */}
+      <ScrollView
+        nestedScrollEnabled
         style={{
-          maxHeight: 220, // R5's scroll-cap projected to a fixed clamp (native has no rem)
-          overflow: "hidden",
+          maxHeight: 220,
           backgroundColor: tokens.palette.canvasMuted,
           borderRadius: tokens.radius,
-          padding: tokens.pad - 4,
         }}
+        contentContainerStyle={{ padding: tokens.pad - 4 }}
       >
-        <Text style={{ color: tokens.palette.ink, fontSize: tokens.fontSize - 3, fontFamily: tokens.monoFontFamily }}>
+        <Text
+          selectable
+          style={{ color: tokens.palette.ink, fontSize: tokens.fontSize - 3, fontFamily: tokens.monoFontFamily }}
+        >
           {item.preview}
         </Text>
-      </View>
+      </ScrollView>
       {item.showBytes ? <MutedText ctx={ctx}>{bytes}</MutedText> : null}
     </View>
   );
