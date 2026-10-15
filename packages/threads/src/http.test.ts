@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { HttpThreadPersistence, HttpThreadStoreError } from "./http.js";
+import { ThreadClosedError } from "./closed.js";
 import type { ThreadRow } from "./rows.js";
 
 interface Call {
@@ -133,5 +134,21 @@ describe("HttpThreadPersistence — retry budget", () => {
       message: "thread not found",
     });
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe("HttpThreadPersistence — a closed thread (guuey#2355)", () => {
+  it("answers incrementSeq's 409 THREAD_CLOSED with ThreadClosedError, the same typed refusal every binding gives", async () => {
+    const { fetch } = scripted([jsonResponse(409, { code: "THREAD_CLOSED", message: "thread t1 is closed" })]);
+    const err = await client(fetch).incrementSeq("t1", "p", "2026-10-15T00:00:00.000Z").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ThreadClosedError);
+    expect(err instanceof ThreadClosedError && err.threadId).toBe("t1");
+  });
+
+  it("keeps every other refusal an HttpThreadStoreError", async () => {
+    const { fetch } = scripted([jsonResponse(409, { code: "CONFLICT", message: "conditional write rejected" })]);
+    const err = await client(fetch).incrementSeq("t1", "p", "2026-10-15T00:00:00.000Z").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HttpThreadStoreError);
+    expect(err).not.toBeInstanceOf(ThreadClosedError);
   });
 });

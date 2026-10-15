@@ -28,6 +28,7 @@
  * apply would double-allocate a seq.
  */
 import { DYNAMODB_ROW_BUDGET } from "./item-size.js";
+import { ThreadClosedError } from "./closed.js";
 import type {
   RowBudget,
   ThreadMessageRow,
@@ -71,7 +72,8 @@ interface ResultEnvelope<R> {
  * Thrown for every non-2xx response and every exhausted network failure.
  * `code` is the server's flat error code (`UNAUTHORIZED`, `FORBIDDEN`,
  * `INVALID_ARGUMENT`, `INVALID_CONTEXT`, `THREAD_NOT_FOUND`, `CONFLICT`,
- * `NOT_FOUND`, `TRANSPORT`); `status` is the HTTP status (`0` for a network
+ * `NOT_FOUND`, `TRANSPORT`; `incrementSeq`'s `THREAD_CLOSED` is thrown as
+ * `ThreadClosedError` instead); `status` is the HTTP status (`0` for a network
  * failure that never produced a response).
  */
 export class HttpThreadStoreError extends Error {
@@ -133,7 +135,16 @@ export class HttpThreadPersistence implements ThreadPersistencePort {
   }
 
   async incrementSeq(threadId: string, preview: string | null, atIso: string): Promise<number> {
-    return this.call<number>("incrementSeq", { threadId, preview, atIso }, false);
+    try {
+      return await this.call<number>("incrementSeq", { threadId, preview, atIso }, false);
+    } catch (err) {
+      // The server's word for a closed thread (guuey#2355) becomes the typed
+      // refusal every binding gives, so a ThreadStore reads it the same way.
+      if (err instanceof HttpThreadStoreError && err.code === "THREAD_CLOSED") {
+        throw new ThreadClosedError(threadId);
+      }
+      throw err;
+    }
   }
 
   async putMessage(row: ThreadMessageRow): Promise<void> {
