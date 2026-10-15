@@ -75,10 +75,11 @@ entries in `guuey.json` are auto-spawned the same way).
 > **If a server's deps carry build scripts** (the classic: `tsx` → esbuild's
 > platform-binary fetch), pnpm ≥11 refuses to run them on a fresh install —
 > `ERR_PNPM_IGNORED_BUILDS` — and the server never boots. Approve the
-> specific packages declaratively in the workspace-root `package.json` (or
-> the server's own, for a standalone install):
-> `"pnpm": { "onlyBuiltDependencies": ["esbuild"] }`. This scaffold ships
-> the approval already; add to the list when a new dep needs its build step.
+> specific packages declaratively in the workspace-root `pnpm-workspace.yaml`
+> (pnpm ignores a `pnpm` field in `package.json` for this): under
+> `allowBuilds:` for pnpm 11 (`esbuild: true`), and under
+> `onlyBuiltDependencies:` for pnpm 10. This scaffold ships both already;
+> add to both when a new dep needs its build step.
 > Don't disable the gate wholesale — it's pnpm's supply-chain protection.
 
 Open http://localhost:6890 to chat with your agent locally.

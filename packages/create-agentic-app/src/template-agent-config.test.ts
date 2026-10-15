@@ -179,12 +179,26 @@ describe("scaffold first install is quiet (guuey#978)", () => {
       expect(pkg.pnpm, rel).toBeUndefined();
     }
   });
-  it("core and the google-adk overlay pnpm-workspace.yaml allow esbuild's build and name the ignored transitive builds", async () => {
+  it("core and the google-adk overlay pnpm-workspace.yaml allow esbuild's build and name the ignored transitive builds, for pnpm 10 and pnpm 11 alike", async () => {
     for (const rel of ["../templates-src/core/pnpm-workspace.yaml", "../templates-src/frameworks/google-adk/pnpm-workspace.yaml"]) {
       const yaml = await read(rel);
       expect(yaml, rel).toMatch(/onlyBuiltDependencies:\n(?:\s+- [^\n]+\n)*\s+- esbuild\n/);
       expect(yaml, rel).toMatch(/ignoredBuiltDependencies:\n(?:\s+- [^\n]+\n)*\s+- sharp\n/);
       expect(yaml, rel).toMatch(/strictDepBuilds: false/);
+      // pnpm 11 reads `allowBuilds`; the pnpm 10 lists above are kept beside it,
+      // and the two must say the same thing.
+      const allow = /allowBuilds:\n((?: {2}[^\n]+\n)+)/.exec(yaml);
+      expect(allow, rel).not.toBeNull();
+      const entries = (allow?.[1] ?? "").trim().split("\n").map((l) => {
+        const m = /^\s*"?([^":]+)"?: (true|false)$/.exec(l);
+        expect(m, `${rel}: ${l}`).not.toBeNull();
+        return [m?.[1] ?? "", m?.[2] === "true"] as const;
+      });
+      const list = (key: string) =>
+        (new RegExp(`${key}:\\n((?:\\s+- [^\\n]+\\n)+)`).exec(yaml)?.[1] ?? "")
+          .trim().split("\n").map((l) => l.replace(/^\s*- /, "").replace(/"/g, "")).sort();
+      expect(entries.filter(([, on]) => on).map(([n]) => n).sort(), rel).toEqual(list("onlyBuiltDependencies"));
+      expect(entries.filter(([, on]) => !on).map(([n]) => n).sort(), rel).toEqual(list("ignoredBuiltDependencies"));
     }
   });
 });
