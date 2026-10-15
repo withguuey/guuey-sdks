@@ -85,6 +85,8 @@ interface AppDetail extends AppSummary {
   urlSlug?: string | null;
   pageUrl?: string | null;
   allowedDomains?: string[];
+  /** Guest (signed-out) access as stored; `null` = the platform default. */
+  guestAccess?: boolean | null;
   userAuthMode?: string | null;
   userAuthConfig?: {
     issuerUrl: string | null;
@@ -554,6 +556,8 @@ export interface UpdateAppRequest {
   displayName?: string;
   description?: string;
   allowedDomains?: string[];
+  /** Guest (signed-out) access; `null` returns it to the platform default. */
+  guestAccess?: boolean | null;
   userAuthMode?: string;
   userAuthConfig?:
     | {

@@ -24,6 +24,10 @@
  *      POSTed directly to the control plane and the stock
  *      `nocode-runtime` pod boots off it.
  *
+ * Shapes 1 and 3 converge guuey.json's `app.access` onto the app BEFORE the
+ * trigger (`./deploy-access.ts`, guuey#2358) and apply `app.theme` after
+ * Live (`./deploy-theme.ts`); the legacy shape loads no guuey.json.
+ *
  * Usage:
  *   guuey deploy                 # Auto-detect mode
  *   guuey deploy --declarative   # Force declarative (uses guuey.json, no build)
@@ -81,6 +85,7 @@ import * as out from '../output';
 import { DEPLOY_WAIT_MS, stillDeployingMessage } from './deploy-wait';
 import { maybePrintThemeHint } from './theme-hint';
 import { maybeApplyThemeFromConfig } from './deploy-theme';
+import { convergeAccessFromConfig } from './deploy-access';
 import { themeForwardLines, themeForwardOf } from '../theme-forward';
 import { pnpmCommandLine, noPnpmMessage } from '@guuey/create-agentic-app';
 
@@ -924,6 +929,14 @@ async function deployCode(opts: {
   }
   const snapshotConfig = JSON.stringify(buildDeploySnapshot({ ...loaded, doc: resolvedDoc }));
 
+  // guuey#2358: `app.access` converges BEFORE the trigger, so the build never
+  // goes live under an access policy guuey.json does not declare; a refused
+  // write stops here (its lines are printed).
+  if ((await convergeAccessFromConfig(auth.pat, config, appId, resolvedDoc)).kind === 'refused') {
+    cleanup(tarballPath);
+    process.exit(1);
+  }
+
   console.log('  Building & deploying...');
   const runtimePinBefore = await captureRuntimePin(auth.pat, config, appId);
   const deployRes = await apiRequest(auth.pat, config, 'POST', `/apps/${appId}/deploy/trigger`, {
@@ -1480,6 +1493,11 @@ async function deployDeclarative(opts: {
   console.log(`  systemPrompt: ${systemPromptLen} chars`);
   console.log(`  mcpServers:   ${mcpServers}`);
   console.log('');
+
+  // guuey#2358 — the same converge as the code path, before the trigger.
+  if ((await convergeAccessFromConfig(auth.pat, config, appId, resolved.doc)).kind === 'refused') {
+    process.exit(1);
+  }
 
   // 2. POST the trigger directly. No tarball, no upload step.
   const deploymentId = randomUUID().slice(0, 12);

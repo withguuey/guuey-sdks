@@ -1364,6 +1364,89 @@ describe('deploy() — app.theme in guuey.json reaches a code app (guuey#1130 G5
   });
 });
 
+// guuey#2358 — the declarative path converges `app.access` the same way the
+// code path does (deploy-code-access.test.ts drives that one): before the
+// trigger, through `PUT /apps/:id`, with an `Access:` line.
+describe('deploy() — app.access in guuey.json converges on a declarative deploy (guuey#2358)', () => {
+  let dir: string;
+  let originalCwd: string;
+  let fetchSpy: MockInstance<typeof fetch>;
+  let logSpy: MockInstance<typeof console.log>;
+  let errSpy: MockInstance<typeof console.error>;
+  const ACCESS = {
+    userAuthMode: 'byo',
+    userAuthConfig: { issuerUrl: 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_Pool', audience: 'client-123' },
+    allowedDomains: ['https://app.example.com'],
+    guestAccess: false,
+  };
+
+  function mockPlatform(putStatus: number, putBody: unknown = { app: { id: 'app-1' } }): void {
+    fetchSpy.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes('/deploy/trigger')) return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
+      if (url.includes('/deployments/1/status')) {
+        return new Response(JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null, pageUrl: 'https://app-k7q2.agents.guuey.test/' }), { status: 200 });
+      }
+      if (url.endsWith('/apps/app-1') && init?.method === 'PUT') return new Response(JSON.stringify(putBody), { status: putStatus });
+      if (url.endsWith('/apps/app-1')) {
+        return new Response(JSON.stringify({ app: { id: 'app-1', chatTheme: null, userAuthMode: null, userAuthConfig: null, allowedDomains: [], guestAccess: null } }), { status: 200 });
+      }
+      if (url.endsWith('/apps/app-1/config')) return new Response('{}', { status: 404 });
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+  }
+  const accessPutAt = (): number => fetchSpy.mock.calls.findIndex(([u, init]) => String(u).endsWith('/apps/app-1') && init?.method === 'PUT');
+  const triggerAt = (): number => fetchSpy.mock.calls.findIndex(([u]) => String(u).includes('/deploy/trigger'));
+  const printed = (): string => [...logSpy.mock.calls, ...errSpy.mock.calls].map((c) => String(c[0] ?? '')).join('\n');
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    dir = mkdtempSync(join(tmpdir(), 'deploy-access-test-'));
+    process.chdir(dir);
+    vi.mocked(resolveConfig).mockReturnValue({ host: 'https://platform.guuey.test', apiUrl: 'https://api.guuey.test', appId: 'app-1' });
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    fetchSpy = vi.spyOn(globalThis, 'fetch');
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it('a byo app.access is PUT before the trigger and the Access: line names mode, issuer host and guest access', async () => {
+    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {}, app: { access: ACCESS } }));
+    mockPlatform(200);
+    await deploy({});
+    expect(accessPutAt()).toBeGreaterThanOrEqual(0);
+    expect(triggerAt()).toBeGreaterThan(accessPutAt());
+    expect(JSON.parse(String(fetchSpy.mock.calls[accessPutAt()]![1]?.body))).toEqual(ACCESS);
+    expect(printed()).toContain('Access: app.access applied (userAuthMode, userAuthConfig, allowedDomains, guestAccess) — mode byo · issuer cognito-idp.us-east-1.amazonaws.com · guest access off.');
+  });
+
+  it('a refused write stops the deploy: exit 1, no trigger', async () => {
+    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {}, app: { access: ACCESS } }));
+    mockPlatform(400, { error: { code: 'VALIDATION_ERROR', message: 'userAuthConfig.issuerUrl must be https' } });
+    await expect(deploy({})).rejects.toMatchObject({ code: 1 });
+    expect(triggerAt()).toBe(-1);
+    expect(printed()).toContain('app.access was NOT applied');
+  });
+
+  it('no app.access → no access write and no Access: line', async () => {
+    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {} }));
+    mockPlatform(200);
+    await deploy({});
+    expect(accessPutAt()).toBe(-1);
+    expect(triggerAt()).toBeGreaterThanOrEqual(0);
+    expect(printed()).not.toContain('Access:');
+  });
+});
+
 describe('deploy.ts — every trigger POST site carries maxPods', () => {
   it('all three body literals spread the knob', () => {
     const source = readFileSync(
