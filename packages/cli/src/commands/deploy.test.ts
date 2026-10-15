@@ -1025,6 +1025,92 @@ describe('deploy() — the "@none" (no tools) entry gate, declarative and code p
   }
 });
 
+// A `credential: "caller"` entry carries the user's own bearer, so its url must
+// be https://. Refused before upload on BOTH paths, checked on the document
+// after `${env.NAME}` resolution.
+describe('deploy() — credential: "caller" requires an https:// url, declarative and code paths', () => {
+  let dir: string;
+  let originalCwd: string;
+  let errSpy: MockInstance<typeof console.error>;
+  const HTTPS_REFUSAL =
+    'mcpServers.crm: credential: "caller" requires an https:// url — the user\'s bearer would travel in cleartext';
+
+  function writeGuueyJson(url: string, code: boolean): void {
+    writeFileSync(
+      join(dir, 'guuey.json'),
+      JSON.stringify({
+        schema: '1',
+        ...(code ? { appId: 'app-1' } : {}),
+        agent: {
+          framework: 'claude-agent-sdk',
+          mcpServers: { crm: { kind: 'external', url, credential: 'caller' } },
+        },
+      }),
+    );
+    if (code) writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    dir = mkdtempSync(join(tmpdir(), 'deploy-caller-https-test-'));
+    process.chdir(dir);
+    vi.mocked(resolveConfig).mockReturnValue({
+      host: 'https://platform.guuey.test',
+      apiUrl: 'https://api.guuey.test',
+      appId: 'app-1',
+    });
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(dir, { recursive: true, force: true });
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  for (const code of [false, true]) {
+    const path = code ? 'code' : 'declarative';
+    const run = (): Promise<void> => deploy(code ? { code: true, 'no-install': true } : {});
+
+    it(`${path}: refuses an http:// caller url, naming the server, before any network call`, async () => {
+      writeGuueyJson('http://crm.example.com/mcp', code);
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      await expect(run()).rejects.toBeInstanceOf(ExitSignal);
+      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+      expect(printed).toContain(HTTPS_REFUSAL);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(childProcessLog.calls).toEqual([]);
+    });
+
+    it(`${path}: refuses a caller url whose \${env.NAME} resolves to http://`, async () => {
+      vi.stubEnv('CRM_URL', 'http://crm.example.com/mcp');
+      writeGuueyJson('${env.CRM_URL}', code);
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      await expect(run()).rejects.toBeInstanceOf(ExitSignal);
+      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+      expect(printed).toContain(HTTPS_REFUSAL);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it(`${path}: an https:// caller url (direct or via \${env.NAME}) passes the gate`, async () => {
+      vi.stubEnv('CRM_URL', 'https://crm.example.com/mcp');
+      writeGuueyJson('${env.CRM_URL}', code);
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        throw new Error(`stop after the gate: ${String(input)}`);
+      });
+      await run().catch(() => undefined);
+      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+      expect(printed).not.toContain('requires an https:// url');
+    });
+  }
+});
+
 // `guuey deploy --max-pods N` (scaling S1-F4, guuey#162): the flag rides
 // `DeployTriggerBody.maxPods` at every trigger POST. Driven through the
 // declarative shape — it is the one that reaches the trigger with no

@@ -8,6 +8,7 @@ import {
   validateColocatedServerNames,
   validateNoLiteralSecrets,
   validateReservedServerNames,
+  validateCallerCredentialHttps,
   validateToolGates,
   validateToolAllowlistsNotEmpty,
   validateNoToolsEntry,
@@ -1440,5 +1441,67 @@ describe('applyAgentMode — a mode tools block with no allowlist keeps the base
     const before = JSON.stringify(agent);
     applyAgentMode(agent, undefined, 'guest');
     expect(JSON.stringify(agent)).toBe(before);
+  });
+});
+
+// ── validateCallerCredentialHttps (deploy-time https gate for credential: 'caller') ──
+
+describe('validateCallerCredentialHttps', () => {
+  const caller = (url: string): GuueyAgent => ({
+    mcpServers: { crm: { kind: 'external', url, credential: 'caller' } },
+  });
+
+  it('passes an https:// caller entry, an absent map and non-caller entries', () => {
+    expect(validateCallerCredentialHttps(caller('https://crm.example.com/mcp'))).toEqual([]);
+    expect(validateCallerCredentialHttps(caller('HTTPS://crm.example.com/mcp'))).toEqual([]);
+    expect(validateCallerCredentialHttps(undefined)).toEqual([]);
+    expect(validateCallerCredentialHttps({})).toEqual([]);
+    expect(
+      validateCallerCredentialHttps({
+        mcpServers: {
+          plain: { kind: 'external', url: 'http://localhost:7000/mcp' },
+          static: { kind: 'external', url: 'http://api.example.com/mcp', headers: { 'X-Tenant': 'a' } },
+          tool: { kind: 'colocated', source: './mcps/tool' },
+        },
+      }),
+    ).toEqual([]);
+  });
+
+  it('passes a caller entry whose host is a platform placeholder over https', () => {
+    expect(validateCallerCredentialHttps(caller('https://${platform.mcpDomain}/control'))).toEqual([]);
+  });
+
+  it('refuses a caller entry on http://, naming the server key', () => {
+    expect(validateCallerCredentialHttps(caller('http://crm.example.com/mcp'))).toEqual([
+      'mcpServers.crm: credential: "caller" requires an https:// url — the user\'s bearer would travel in cleartext',
+    ]);
+  });
+
+  it('refuses a caller entry whose url is not an https:// URL at all (an unresolved placeholder)', () => {
+    expect(validateCallerCredentialHttps(caller('${env.CRM_URL}'))).toHaveLength(1);
+  });
+
+  it('reports one violation per offending entry', () => {
+    const agent: GuueyAgent = {
+      mcpServers: {
+        a: { kind: 'external', url: 'http://a.example.com/mcp', credential: 'caller' },
+        b: { kind: 'external', url: 'https://b.example.com/mcp', credential: 'caller' },
+        c: { kind: 'external', url: 'http://c.example.com/mcp', credential: 'caller' },
+      },
+    };
+    const v = validateCallerCredentialHttps(agent);
+    expect(v).toHaveLength(2);
+    expect(v[0]).toContain('mcpServers.a:');
+    expect(v[1]).toContain('mcpServers.c:');
+  });
+
+  it('is a write-path lint only: a stored definition with an http:// caller entry still loads', () => {
+    const stored = {
+      schema: '1',
+      agent: { mcpServers: { crm: { kind: 'external', url: 'http://crm.example.com/mcp', credential: 'caller' } } },
+    };
+    const parsed = safeParseGuueyJson(stored);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(validateCallerCredentialHttps(parsed.data.agent)).toHaveLength(1);
   });
 });

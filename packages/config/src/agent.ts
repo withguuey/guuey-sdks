@@ -159,15 +159,16 @@ const ExternalMcp = z
     /**
      * `'caller'` — the third credential source (guuey#179, beside static
      * `headers` and `federate`): per invoke, the pod forwards the request's OWN
-     * VERIFIED `Authorization` bearer as this server's credential. Only a bearer
-     * verified by the app's BYO IdP (`userAuthMode: 'byo'`) is ever forwarded —
-     * a guuey-native Cognito token is never eligible, so a builder cannot use
-     * this mode to harvest platform tokens. Fail-closed: an invoke with no
-     * byo-verified bearer writes no credential file and that server's calls
-     * fail loudly. Caller-opt-in by construction (the embedding client chooses
-     * which app receives its token); FIRST-PARTY USE ONLY for now — gate this
-     * (URL allowlist or console warning) before opening it to arbitrary
-     * builders. Mutually exclusive with `federate: true`.
+     * VERIFIED `Authorization` bearer as this server's credential. Supported
+     * for apps that sign their users in with their own IdP
+     * (`userAuthMode: 'byo'`): the forwarded value is the user's own IdP
+     * bearer, valid for that token's own lifetime and never longer. Only a
+     * bearer verified by the app's BYO IdP is ever forwarded — a guuey-native
+     * Cognito token is never forwarded, and a guest has no bearer to forward
+     * (fail-closed: no credential file, that server's calls fail loudly).
+     * The `url` must be `https://` — enforced at deploy by
+     * {@link validateCallerCredentialHttps} (a stored definition still loads).
+     * Mutually exclusive with `federate: true`.
      *
      * `'oauth'` — the FOURTH mode (guuey#178): the server is a third-party
      * MCP whose end users must sign in with the server's own OAuth
@@ -1101,6 +1102,41 @@ export function validateReservedServerNames(
     if (RESERVED_MCP_SERVER_NAMES.includes(name)) {
       violations.push(
         `MCP server "${name}": that name is reserved by the platform (an auto-injected server uses it) — rename this server.`,
+      );
+    }
+  }
+  return violations;
+}
+
+// ── Caller-credential transport (deploy-time contract enforcement) ─────────
+//
+// A `credential: 'caller'` entry carries the end user's own IdP bearer to the
+// builder's server on every call, so its `url` must be `https://`.
+// `validateCallerCredentialHttps` refuses anything else at deploy (the CLI
+// before upload; the cliApi deploy door and reconcile on a newly submitted
+// document). It is a write-path lint only, NOT a schema rule, so a stored
+// definition always loads.
+
+/**
+ * Validate that every `credential: 'caller'` entry's `url` is `https://`
+ * (scheme compared case-insensitively; a `${platform.<fact>}` host is fine,
+ * the scheme stays literal). Run it on the document AFTER `${env.NAME}`
+ * resolution — an unresolved placeholder is not an `https://` URL and is
+ * refused. Returns a list of human-readable violation messages (empty =
+ * clean), one per offending entry, each naming the server key.
+ */
+export function validateCallerCredentialHttps(
+  agent: Pick<GuueyAgent, 'mcpServers'> | undefined,
+): string[] {
+  const violations: string[] = [];
+  const servers = agent?.mcpServers;
+  if (!servers) return violations;
+
+  for (const [name, server] of declaredServerEntries(servers)) {
+    if (server.kind !== 'external' || server.credential !== 'caller') continue;
+    if (!/^https:\/\//i.test(server.url)) {
+      violations.push(
+        `mcpServers.${name}: credential: "caller" requires an https:// url — the user's bearer would travel in cleartext`,
       );
     }
   }

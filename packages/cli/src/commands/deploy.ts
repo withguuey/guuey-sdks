@@ -49,6 +49,7 @@ import {
   buildDeploySnapshot,
   validateNoLiteralSecrets,
   validateColocatedServerNames,
+  validateCallerCredentialHttps,
   validateToolGates,
   validateToolAllowlistsNotEmpty,
   validateNoToolsEntry,
@@ -730,7 +731,12 @@ async function deployCode(opts: {
   // variable stops the deploy before any leg leaves the machine. `doc` stays
   // the authored form (MCP write-backs keep the placeholders in guuey.json);
   // the snapshot below is resolved again from the same environment.
-  printSubstituted(resolveEnvOrExit(doc, env).substituted);
+  const envResolvedDoc = resolveEnvOrExit(doc, env);
+  printSubstituted(envResolvedDoc.substituted);
+
+  // A `credential: "caller"` server receives the user's own bearer: its url
+  // must be https://. Checked on the env-resolved document, the url that ships.
+  exitOnCallerCredentialHttp(envResolvedDoc.doc.agent);
 
   const secretViolations = validateNoLiteralSecrets(doc.agent);
   if (secretViolations.length > 0) {
@@ -1468,6 +1474,10 @@ async function deployDeclarative(opts: {
   const snapshot = envResolved.doc;
   const agent = snapshot.agent;
 
+  // A `credential: "caller"` server receives the user's own bearer: its url
+  // must be https://. The backend re-checks a newly submitted snapshot.
+  exitOnCallerCredentialHttp(agent);
+
   // Reject literal secrets in mcpServers[].headers before upload — they'd ride
   // into the pod's config as plaintext. The backend re-checks authoritatively;
   // this is the fast, friendly client-side guard.
@@ -1690,6 +1700,15 @@ function resolveEnvOrExit(doc: GuueyJsonV1, env: EnvSource): { doc: GuueyJsonV1;
     return resolveEnvPlaceholders(doc, env);
   } catch (err) {
     out.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+}
+
+/** Refuse a `credential: "caller"` entry whose url is not https:// (both deploy paths). */
+function exitOnCallerCredentialHttp(agent: GuueyJsonV1['agent']): void {
+  const violations = validateCallerCredentialHttps(agent);
+  if (violations.length > 0) {
+    out.error(violations.map((v) => `  - ${v}`).join('\n'));
     process.exit(1);
   }
 }
