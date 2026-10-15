@@ -38,6 +38,8 @@ export {
   DefaultCompaction,
   DefaultUnknown,
   DefaultStatus,
+  ThreadClosedBanner,
+  type ThreadClosedBannerProps,
   type TranscriptComponents,
   type TranscriptItemContext,
   type ViewSlotProps,

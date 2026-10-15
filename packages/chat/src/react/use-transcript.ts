@@ -375,6 +375,9 @@ export function useTranscriptInputs(invoke: UseAgentInvokeReturn): UseTranscript
       statusElapsedMs: elapsedMs,
       activeTool: invoke.activeTool,
       error: invoke.error !== null ? { message: invoke.error, code: invoke.errorCode } : null,
+      ...(invoke.threadClosed !== null
+        ? { threadClosed: { code: invoke.threadClosed.code, message: invoke.threadClosed.message } }
+        : {}),
       prompts: [...prompts, ...hitlPromptsFromFold(invoke.reduceResult, hitlAnswers)],
       messages,
       ...(invoke.historyCards.length > 0 ? { historyCards: invoke.historyCards } : {}),
@@ -388,6 +391,7 @@ export function useTranscriptInputs(invoke: UseAgentInvokeReturn): UseTranscript
     invoke.activeTool,
     invoke.error,
     invoke.errorCode,
+    invoke.threadClosed,
     invoke.reduceResult,
     invoke.historyCards,
     invoke.sendStates,

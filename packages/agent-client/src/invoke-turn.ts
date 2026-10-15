@@ -25,7 +25,8 @@
 import type { AgEvent } from "@silverprotocol/core";
 import { parseLinkRequest, parseSseEvents, reduceAssistantText, stringField } from "./sse.js";
 import { ingestMessageFrame } from "./blocks.js";
-import type { AgentInvokeStatus, InvokeRequest, InvokeTransport, ProfileLinkRequest } from "./types.js";
+import type { AgentInvokeStatus, InvokeRequest, InvokeTransport, ProfileLinkRequest, ThreadClosed } from "./types.js";
+import { readThreadClosed } from "./thread-closed.js";
 
 /**
  * One semantic step of a turn. Field conventions:
@@ -50,9 +51,20 @@ export type InvokeTurnEvent =
       assistantText: string;
       agEvents: AgEvent[];
     }
-  | { kind: "error"; message: string; code: string | null }
+  | {
+      kind: "error";
+      message: string;
+      code: string | null;
+      /** Present when this failure is the agent ending the conversation (see `ThreadClosed`). */
+      threadClosed?: ThreadClosed;
+    }
   | { kind: "profile-link"; request: ProfileLinkRequest }
-  | { kind: "done"; stopReason: string | null };
+  | {
+      kind: "done";
+      stopReason: string | null;
+      /** Present when the turn ended the conversation (see `ThreadClosed`). */
+      threadClosed?: ThreadClosed;
+    };
 
 /**
  * Normalize an agent endpoint to its invoke URL (guuey#186 G3). Accepts BOTH
@@ -146,10 +158,12 @@ export async function* invokeTurn(
         // pod's wire code (the other is the pre-stream refusal thrown by the
         // transport). A frame without a `code` yields null rather than
         // leaving a previous turn's code standing beside a new message.
+        const threadClosed = closureOf(ev.data);
         yield {
           kind: "error",
           message: stringField(ev.data, "message") ?? "agent error",
           code: stringField(ev.data, "code") ?? null,
+          ...(threadClosed !== undefined ? { threadClosed } : {}),
         };
       } else if (ev.event === "profile-link-needed") {
         // Cross-app profile LINK invite (linkcoh T3) for an unlinked byo
@@ -162,10 +176,20 @@ export async function* invokeTurn(
       } else if (ev.event === "done") {
         // The stream closes after this frame; yielded so a host can read the
         // pod's stop reason without private wire knowledge.
-        yield { kind: "done", stopReason: stringField(ev.data, "stopReason") ?? null };
+        const threadClosed = closureOf(ev.data);
+        yield {
+          kind: "done",
+          stopReason: stringField(ev.data, "stopReason") ?? null,
+          ...(threadClosed !== undefined ? { threadClosed } : {}),
+        };
       }
       // Any other (unknown) event falls through silently — additive wire
       // events never disturb a consumer.
     }
   }
+}
+
+/** A frame's well-formed `threadClosed`, or undefined. */
+function closureOf(data: unknown): ThreadClosed | undefined {
+  return typeof data === "object" && data !== null ? readThreadClosed(Reflect.get(data, "threadClosed")) : undefined;
 }

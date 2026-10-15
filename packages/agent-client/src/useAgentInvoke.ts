@@ -39,6 +39,7 @@ import type {
   ProfileLinkRequest,
   SendOptions,
   StallRecoveryOptions,
+  ThreadClosed,
   UseAgentInvokeOptions,
   UseAgentInvokeReturn,
 } from "./types.js";
@@ -194,6 +195,14 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
   // `error` — every set/clear of one touches the other.
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
+  // The agent ended this conversation (see the return-type contract). The ref
+  // mirrors it for `send`, which must not depend on it (stable identity).
+  const [threadClosed, setThreadClosedState] = useState<ThreadClosed | null>(null);
+  const threadClosedRef = useRef<ThreadClosed | null>(null);
+  const setThreadClosed = useCallback((next: ThreadClosed | null) => {
+    threadClosedRef.current = next;
+    setThreadClosedState(next);
+  }, []);
   // Opt-in block-preserving transcript. `reduceResult` follows the
   // null-until-first-valid-AgEvent contract documented on the return type: it
   // starts null and only becomes non-null once the per-conversation reducer
@@ -255,6 +264,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     abortRef.current?.abort();
     threadIdRef.current = null;
     setThreadId(null);
+    setThreadClosed(null);
     setMessages([]);
     setError(null);
     setErrorCode(null);
@@ -360,6 +370,11 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
       if ("cards" in result && result.cards && result.cards.length > 0) {
         setHistoryCards(result.cards);
       }
+      // The agent ended this conversation before the reload: say so, unless a
+      // send since then has already moved this hook to another thread.
+      if (result.closed !== undefined && threadIdRef.current === tid) {
+        setThreadClosed(result.closed);
+      }
     });
     return () => {
       cancelled = true;
@@ -378,6 +393,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     // wipe the visible state.
     threadIdRef.current = null;
     setThreadId(null);
+    setThreadClosed(null);
     void adaptersRef.current.storage.save(threadStorageKey(appId), "");
     setMessages([]);
     setError(null);
@@ -610,6 +626,15 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
           await hydrationRef.current;
         }
         if (controller.signal.aborted) return;
+        // The agent ended the current conversation: this send starts a new
+        // one. The closed thread's id is dropped (here and in storage), so the
+        // pod mints a fresh thread and the `session` frame names it.
+        if (threadClosedRef.current !== null) {
+          threadIdRef.current = null;
+          setThreadId(null);
+          setThreadClosed(null);
+          void adapters.storage.save(threadStorageKey(appId), "");
+        }
         // guuey#409: arm BEFORE the first byte — a turn that never receives
         // any chunk (rail death upstream of the pod, or an in-pod pre-spawn
         // hang) otherwise shows "Thinking…" forever with no error item. The
@@ -678,11 +703,13 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
             sawErrorFrame = true;
             setError(ev.message);
             setErrorCode(ev.code);
+            if (ev.threadClosed !== undefined) setThreadClosed(ev.threadClosed);
           } else if (ev.kind === "profile-link") {
             setProfileLinkRequest(ev.request);
           } else if (ev.kind === "done") {
             // The spec'd end of the invoke (AgJSON §8.0): the stream closes after it.
             sawDone = true;
+            if (ev.threadClosed !== undefined) setThreadClosed(ev.threadClosed);
           }
         }
         // ── A stream that CLOSED without `done` ─────────────────────────
@@ -788,6 +815,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     activeTool,
     error,
     errorCode,
+    threadClosed,
     threadId,
     abort,
     reset,

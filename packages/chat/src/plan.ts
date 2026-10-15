@@ -932,8 +932,12 @@ export function planTranscript(
   }> = [];
   {
     let usersSeen = 0;
+    // guuey#2355: the closing turn's reloaded row is voiced by the plan's
+    // `threadClosed` instead, never twice.
+    const closedCode = inputs.threadClosed?.code;
     inputs.messages.forEach((m, i) => {
       if (m.role === "user") usersSeen += 1;
+      else if (m.role === "notice" && closedCode !== undefined && m.failure?.code === closedCode) return;
       // A failed turn's notice is shown whatever the notice policy, as the
       // live error it stands for always is (R11).
       else if (m.role === "notice" && (policy.notice.show || m.failure !== undefined)) {
@@ -1276,8 +1280,10 @@ export function planTranscript(
     });
   }
 
-  // R11 — the coded error notice, always last.
-  if (inputs.error) {
+  // R11 — the coded error notice, always last. guuey#2355: the agent ending
+  // the conversation is voiced by `threadClosed`, so its error is not drawn.
+  const closedVoice = inputs.threadClosed ?? null;
+  if (inputs.error && !(closedVoice !== null && inputs.error.code === closedVoice.code)) {
     const code = inputs.error.code;
     const { family, copy } = codedErrorCopy(code, inputs.error.message, policy);
     items.push({
@@ -1380,6 +1386,7 @@ export function planTranscript(
     authRequired: authRequiredFromAsks(
       inputs.prompts.flatMap((p) => (p.kind === "hitl" && p.state === "pending" ? [p.ask] : [])),
     ),
+    threadClosed: closedVoice !== null ? { code: closedVoice.code, message: closedVoice.message } : null,
   };
 }
 

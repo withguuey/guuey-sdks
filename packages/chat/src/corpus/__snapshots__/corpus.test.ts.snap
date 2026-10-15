@@ -875,6 +875,7 @@ exports[`corpus > 1. forty-tools — grouping caps the rows; plan stays O(groups
   ],
   "recovery": null,
   "status": null,
+  "threadClosed": null,
   "views": [],
 }
 `;
@@ -1019,6 +1020,7 @@ exports[`corpus > 2. midstream-tool-failure — failed inline; badge without unr
   ],
   "recovery": null,
   "status": null,
+  "threadClosed": null,
   "views": [],
 }
 `;
@@ -1045,6 +1047,7 @@ exports[`corpus > 3. cold-start — R12 escalation at 0 / 2.5 s / 15 s 1`] = `
     "kind": "status",
     "state": "starting",
   },
+  "threadClosed": null,
   "views": [],
 }
 `;
@@ -1122,6 +1125,7 @@ exports[`corpus > 4. consent-gate — pending grant-mode card → answered one-l
   ],
   "recovery": null,
   "status": null,
+  "threadClosed": null,
   "views": [],
 }
 `;
@@ -1151,6 +1155,7 @@ exports[`corpus > 5. bypass-text-only — plan identical to a silver text-only s
   ],
   "recovery": null,
   "status": null,
+  "threadClosed": null,
   "views": [],
 }
 `;
@@ -1241,6 +1246,7 @@ exports[`corpus > 7. view-never-handshakes — channel-aware labels on both chan
   ],
   "recovery": null,
   "status": null,
+  "threadClosed": null,
   "views": [
     {
       "actionScope": null,
@@ -1318,6 +1324,7 @@ exports[`corpus > 8. aborted-mid-stream — partial kept + Stopped.; no orphaned
     "kind": "status",
     "state": "aborted",
   },
+  "threadClosed": null,
   "views": [],
 }
 `;
@@ -1384,6 +1391,7 @@ exports[`corpus > 9. history-dead-locators — the expired path beside a healthy
   ],
   "recovery": null,
   "status": null,
+  "threadClosed": null,
   "views": [
     {
       "actionScope": "ui://ggui/render/old/1",
@@ -1426,6 +1434,7 @@ exports[`corpus > 10. empty-turn — status resolves, no empty bubble 1`] = `
   ],
   "recovery": null,
   "status": null,
+  "threadClosed": null,
   "views": [],
 }
 `;
@@ -1473,6 +1482,7 @@ exports[`corpus > 11. unknown-block-storm — labeled rows; nothing blank, nothi
   ],
   "recovery": null,
   "status": null,
+  "threadClosed": null,
   "views": [],
 }
 `;
@@ -1540,6 +1550,7 @@ exports[`corpus > 12. interleaved-media-code-citations — ordering and aggregat
   ],
   "recovery": null,
   "status": null,
+  "threadClosed": null,
   "views": [],
 }
 `;
@@ -1569,6 +1580,7 @@ exports[`corpus > 13. saturated-then-served — only R12 waiting, then a normal 
   ],
   "recovery": null,
   "status": null,
+  "threadClosed": null,
   "views": [],
 }
 `;
@@ -1606,6 +1618,7 @@ exports[`corpus > 14. reasoning-heavy — calm collapses to one line; debug expa
   ],
   "recovery": null,
   "status": null,
+  "threadClosed": null,
   "views": [],
 }
 `;
@@ -1758,6 +1771,7 @@ exports[`corpus > 15. tools-around-a-view — the group SPLITS at the view's pos
   ],
   "recovery": null,
   "status": null,
+  "threadClosed": null,
   "views": [
     {
       "actionScope": null,
@@ -1795,6 +1809,7 @@ exports[`corpus > 16. user-send-failure — R0 failed with retry; the message ne
   ],
   "recovery": null,
   "status": null,
+  "threadClosed": null,
   "views": [],
 }
 `;
@@ -1929,6 +1944,7 @@ exports[`corpus > 19. persisted-plus-live — the fold owns its trailing turns; 
     "kind": "status",
     "state": "using-tool",
   },
+  "threadClosed": null,
   "views": [
     {
       "actionScope": "ui://ggui/render/render_00000000-0000-4000-8000-300000000001/c0ffee",
@@ -2026,6 +2042,7 @@ exports[`corpus > 20. hitl-grant-modes — the persisted declaration renders; an
   ],
   "recovery": null,
   "status": null,
+  "threadClosed": null,
   "views": [],
 }
 `;
@@ -2071,6 +2088,7 @@ exports[`corpus > 21. notice-rows — both arrival paths render labeled, never a
   ],
   "recovery": null,
   "status": null,
+  "threadClosed": null,
   "views": [],
 }
 `;
@@ -2128,6 +2146,7 @@ exports[`corpus > 22. promoted-view — the stage's mount chips (guuey#204); oth
   ],
   "recovery": null,
   "status": null,
+  "threadClosed": null,
   "views": [
     {
       "actionScope": null,
@@ -2214,6 +2233,7 @@ exports[`corpus > 23. meta-less-locator — a \`_meta\`-withholding producer's r
   ],
   "recovery": null,
   "status": null,
+  "threadClosed": null,
   "views": [
     {
       "actionScope": "ui://ggui/render/render_dark/h1",
@@ -2289,6 +2309,7 @@ exports[`corpus > 24. prod-wire-ggui-render — ggui's production posture: no _m
   ],
   "recovery": null,
   "status": null,
+  "threadClosed": null,
   "views": [
     {
       "actionScope": "ui://ggui/render/render_5d11b1b4-75ba-44e5-81bb-0b420b86bb8e/7328555b44e72bd7",
@@ -2340,6 +2361,7 @@ exports[`corpus > 25. chips-presentation — EVERY view chips; the promoted key 
   ],
   "recovery": null,
   "status": null,
+  "threadClosed": null,
   "views": [
     {
       "actionScope": null,
@@ -2460,6 +2482,7 @@ exports[`corpus > 25. oauth-auth-ask — kind:auth + authConfig oauth2 plans as 
   ],
   "recovery": null,
   "status": null,
+  "threadClosed": null,
   "views": [],
 }
 `;

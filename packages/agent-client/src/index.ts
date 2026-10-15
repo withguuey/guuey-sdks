@@ -106,6 +106,7 @@ export type {
   AgentInvokeHistoryAdapter,
   AgentInvokeStatus,
   HistoryLoadResult,
+  ThreadClosed,
   StallRecoveryOptions,
   UseAgentInvokeOptions,
   PageContext,

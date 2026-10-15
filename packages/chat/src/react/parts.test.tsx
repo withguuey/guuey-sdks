@@ -179,6 +179,7 @@ describe("the ::part() contract (guuey#1152)", () => {
         "message",
         "narration",
         "surface",
+        "threadClosed",
         "transcript",
         "user",
       ].sort(),

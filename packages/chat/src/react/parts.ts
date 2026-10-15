@@ -52,6 +52,8 @@ export const PARTS = {
   chips: "chips",
   /** One suggestion chip. */
   chip: "chip",
+  /** guuey#2355 — the closed-conversation banner (present only once the agent ended it). */
+  threadClosed: "thread-closed",
 } as const;
 
 /** The `part` value for one message role — `"message user"` / `"message agent"`. */

@@ -200,6 +200,13 @@ export interface TranscriptInputs {
   statusElapsedMs: number;
   activeTool: string | null;
   error: { message: string; code: string | null } | null;
+  /**
+   * guuey#2355 — the agent ended this conversation (`useAgentInvoke`'s
+   * `threadClosed`, or a history read's `closed`). Absent or null while it is
+   * open. The plan carries it as {@link TranscriptPlan.threadClosed} and does
+   * not also draw the error item or reloaded notice row with its code.
+   */
+  threadClosed?: { code: string; message: string } | null;
   /** Pending/answered asks (R10): the link invite + AgJSON hitl asks (consent). */
   prompts: PromptItemInput[];
   /**
@@ -790,4 +797,19 @@ export interface TranscriptPlan {
    * never bricks the chat). `null` on every ordinary plan.
    */
   authRequired: AuthRequired | null;
+  /**
+   * guuey#2355 — the agent ended this conversation: its machine-readable
+   * `code` and the `message` the person reads, verbatim (plain text, never
+   * markdown). A surface draws its closed state from it (the kit's
+   * transcripts draw a banner; `<GuueyChat>` also holds its composer). The
+   * message is voiced here ONLY: the plan draws no error item and no
+   * reloaded notice row carrying the same code. `null` on every open plan.
+   */
+  threadClosed: ThreadClosedNotice | null;
+}
+
+/** See {@link TranscriptPlan.threadClosed}. */
+export interface ThreadClosedNotice {
+  code: string;
+  message: string;
 }

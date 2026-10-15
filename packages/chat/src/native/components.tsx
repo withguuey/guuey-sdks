@@ -49,6 +49,7 @@ import type {
   UnknownItem,
   UserMessageItem,
   TextItem,
+  ThreadClosedNotice,
   ViewMountItem,
   ViewRefItem,
 } from "../types.js";
@@ -798,6 +799,57 @@ export function NativeError({ item, ctx }: ItemProps<ErrorItem>): ReactNode {
         <Text style={{ color: tokens.palette.inkMuted, fontSize: tokens.fontSize - 3, fontFamily: tokens.monoFontFamily }}>
           {item.verbatim}
         </Text>
+      ) : null}
+    </View>
+  );
+}
+
+// ─── guuey#2355 ────────────────────────────────────────────────────────────
+
+export interface NativeThreadClosedBannerProps {
+  closed: ThreadClosedNotice;
+  strings: ChatStrings;
+  tokens: NativeChatTokens;
+  /** Opens a new conversation; the control is drawn only when given. */
+  onStartNewConversation?: () => void;
+}
+
+/**
+ * The agent ended this conversation: the banner with the agent's own message
+ * as plain text (never markdown) and, when the host wires it, the control
+ * that opens a new conversation. The host's own composer reads the same
+ * closure (`useAgentInvoke`'s `threadClosed`) to hold itself.
+ */
+export function NativeThreadClosedBanner({
+  closed,
+  strings,
+  tokens,
+  onStartNewConversation,
+}: NativeThreadClosedBannerProps): ReactNode {
+  return (
+    <View
+      accessible
+      accessibilityRole="summary"
+      accessibilityLiveRegion="polite"
+      style={{
+        backgroundColor: tokens.palette.surface,
+        borderRadius: tokens.radius,
+        padding: tokens.pad,
+        gap: 6,
+      }}
+    >
+      <Text style={{ color: tokens.palette.ink, fontSize: tokens.fontSize - 1, fontWeight: "600", fontFamily: tokens.fontFamily }}>
+        {strings.threadClosedTitle}
+      </Text>
+      <Text style={{ color: tokens.palette.ink, fontSize: tokens.fontSize - 1, fontFamily: tokens.fontFamily }}>
+        {closed.message}
+      </Text>
+      {onStartNewConversation !== undefined ? (
+        <Pressable accessibilityRole="button" onPress={onStartNewConversation}>
+          <Text style={{ color: tokens.palette.accent, fontSize: tokens.fontSize - 1, fontWeight: "600" }}>
+            {strings.threadClosedStartNew}
+          </Text>
+        </Pressable>
       ) : null}
     </View>
   );

@@ -232,6 +232,14 @@ export interface ChatStrings {
    * open and says so. A reply ends the listen and sends.
    */
   composerWaitingOnYou: string;
+  /**
+   * guuey#2355 — the agent ended this conversation. The banner's heading
+   * (the agent's own message is shown beneath it, verbatim), its control
+   * that opens a new conversation, and the held composer's placeholder.
+   */
+  threadClosedTitle: string;
+  threadClosedStartNew: string;
+  composerThreadClosed: string;
   send: string;
   stop: string;
 }
@@ -393,6 +401,9 @@ export const defaultChatStrings: ChatStrings = {
   composerUnavailable: "Chat is unavailable.",
   composerLabel: "Message",
   composerWaitingOnYou: "The card is waiting for you — use it, or just reply.",
+  threadClosedTitle: "This conversation has ended",
+  threadClosedStartNew: "Start a new conversation",
+  composerThreadClosed: "This conversation has ended. Start a new one to continue.",
   send: "Send",
   stop: "Stop",
 };

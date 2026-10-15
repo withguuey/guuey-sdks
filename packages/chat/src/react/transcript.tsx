@@ -34,6 +34,7 @@ import type { TranscriptPlan } from "../types.js";
 import {
   defaultTranscriptComponents,
   renderItem,
+  ThreadClosedBanner,
   type TranscriptComponents,
   type TranscriptItemContext,
 } from "./components.js";
@@ -78,6 +79,12 @@ export interface TranscriptProps
    * bubble in both.
    */
   surface?: "card" | "bare";
+  /**
+   * guuey#2355 — opens a new conversation from the closed-conversation
+   * banner (drawn whenever `plan.threadClosed` is set); without it the
+   * banner shows the message and no control.
+   */
+  onStartNewConversation?: () => void;
   /** DOM windowing (§3.2). `false` renders everything. Default tail 80. */
   window?: TranscriptWindowing | false;
   className?: string;
@@ -104,6 +111,7 @@ export function Transcript(props: TranscriptProps): ReactNode {
     onViewDiagnosis,
     onViewRef,
     viewProps,
+    onStartNewConversation,
   } = props;
 
   const resolvedComponents: TranscriptComponents = useMemo(
@@ -277,6 +285,13 @@ export function Transcript(props: TranscriptProps): ReactNode {
           {visible.map((item) => renderItem(item, resolvedComponents, ctx))}
           {plan.status !== null ? (
             <StatusComponent item={plan.status} ctx={ctx} />
+          ) : null}
+          {plan.threadClosed !== null ? (
+            <ThreadClosedBanner
+              closed={plan.threadClosed}
+              strings={strings}
+              {...(onStartNewConversation !== undefined ? { onStartNewConversation } : {})}
+            />
           ) : null}
         </div>
       </div>

@@ -12,7 +12,8 @@
  */
 import { AgNoticeSource, type AgMessage, type JsonValue } from "@silverprotocol/core";
 import { readTapLabels } from "@guuey/mcp-apps-host/narrowing";
-import type { AgentMessage, HistoryCard, HistoryLoadResult } from "./types.js";
+import type { AgentMessage, HistoryCard, HistoryLoadResult, ThreadClosed } from "./types.js";
+import { closureFromLastRow, readThreadClosed } from "./thread-closed.js";
 
 /** One row of `GET /v1/threads/:id/messages`. */
 export interface ThreadHistoryRow {
@@ -51,6 +52,11 @@ export interface ThreadHistoryRow {
 interface ThreadMessagesResponse {
   rows: ThreadHistoryRow[];
   nextToken: string | null;
+  /**
+   * The thread's own state, sent only when there is some to say: today
+   * `closed` once its agent ended it. Absent from an older read plane.
+   */
+  thread?: { closed?: { code?: string | null; message?: string | null; closedAt?: string | null } | null } | null;
 }
 
 /**
@@ -193,6 +199,10 @@ export async function fetchThreadHistory({
   const routeUrl = `${baseUrl}/threads/${encodeURIComponent(threadId)}/messages`;
   const rows: ThreadHistoryRow[] = [];
   let nextToken: string | null = null;
+  // The read plane's own word on a closed thread, from any page; and whether
+  // it spoke at all (an older read plane sends no `thread` field).
+  let closed: ThreadClosed | undefined;
+  let threadFieldSeen = false;
 
   for (let page = 0; page < MAX_HISTORY_PAGES; page++) {
     const url =
@@ -204,13 +214,23 @@ export async function fetchThreadHistory({
     if (!res.ok) throw new Error(`history load failed: ${res.status}`);
     const body: ThreadMessagesResponse = await res.json();
     rows.push(...body.rows);
+    if (body.thread != null && typeof body.thread === "object") {
+      threadFieldSeen = true;
+      closed = readThreadClosed(body.thread.closed) ?? closed;
+    }
     nextToken = body.nextToken;
     if (!nextToken) break;
   }
 
+  // A read plane that sends `thread` only when there is something to say
+  // cannot be told apart from an older one by an open thread's page, so the
+  // last-row reading runs whenever no page carried the field. On an open
+  // thread it finds nothing: the closing turn's `app:` row is always the last.
+  const threadClosed = closed ?? (threadFieldSeen ? undefined : closureFromLastRow(rows));
   return {
     messages: threadHistoryRowsToMessages(rows),
     ...(includeCards ? { cards: threadHistoryRowsToCards(rows) } : {}),
+    ...(threadClosed !== undefined ? { closed: threadClosed } : {}),
   };
 }
 

@@ -49,6 +49,8 @@ export {
   NativeCompaction,
   NativeUnknown,
   NativeStatus,
+  NativeThreadClosedBanner,
+  type NativeThreadClosedBannerProps,
   type NativeTranscriptComponents,
   type NativeTranscriptItemContext,
   type NativeTranscriptItemProps,

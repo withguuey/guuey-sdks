@@ -798,7 +798,11 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // the client never claims more than the pod enforces, and no one dead-ends.
   const authRequired = plan.authRequired;
   const available = endpointUrl !== null;
-  const canSend = available && (!busy || waitingOnUser) && authRequired === null && input.trim() !== "";
+  // guuey#2355: the agent ended this conversation; the composer holds until
+  // the person opens a new one (the banner's control).
+  const threadClosed = plan.threadClosed !== null;
+  const canSend =
+    available && (!busy || waitingOnUser) && authRequired === null && !threadClosed && input.trim() !== "";
 
   // ── The imperative seam (guuey#210) ──────────────────────────────────
   // ONE stable handle for the component's whole life (hosts capture it in
@@ -1206,7 +1210,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     const text = input.trim();
     // guuey#605: the connect-first gate belongs on the SEND path too, not
     // just the disabled attribute — an Enter keypress reaches here directly.
-    if (text === "" || !available || authRequired !== null) return;
+    if (text === "" || !available || authRequired !== null || threadClosed) return;
     if (busy) {
       if (!waitingOnUser) return;
       // guuey#1038: a reply during a listen ENDS the listen (abort = the
@@ -1222,7 +1226,19 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     void invoke.send(text).catch(() => {
       // The hook surfaces the failure (`error` / R0 failed-send).
     });
-  }, [input, available, busy, waitingOnUser, authRequired, invoke, analytics]);
+  }, [input, available, busy, waitingOnUser, authRequired, threadClosed, invoke, analytics]);
+
+  // guuey#2355: open a new conversation from the closed one. The hook's reset
+  // drops the closed thread (pointer + storage, transcript, the closed state);
+  // the kit clears its own residue. The closed thread is kept on the server:
+  // this is "start over", not the forget-this-device clear.
+  const startNewConversation = useCallback((): void => {
+    invoke.reset();
+    setInput("");
+    setPendingLink(null);
+    pendingDoorbellsRef.current = [];
+    echoRef.current.reset();
+  }, [invoke]);
 
   const handleRetry = useCallback(
     (item: UserMessageItem) => {
@@ -1324,6 +1340,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         onViewDiagnosis={onViewDiagnosis}
         {...(onViewRef !== undefined ? { onViewRef } : {})}
         viewProps={effectiveViewProps}
+        onStartNewConversation={startNewConversation}
       />
       {chips.length > 0 && inputs.messages.length === 0 && (
         <nav className="guuey-chat-chips-row" part={PARTS.chips} aria-label={strings.suggestionsLabel}>
@@ -1432,16 +1449,18 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
               submit();
             }
           }}
-          disabled={!available || authRequired !== null}
+          disabled={!available || authRequired !== null || threadClosed}
           aria-label={strings.composerLabel}
           placeholder={
             !available
               ? strings.composerUnavailable
               : authRequired !== null
                 ? strings.composerAuthRequired
-                : waitingOnUser
-                  ? strings.composerWaitingOnYou
-                  : strings.composerPlaceholder
+                : threadClosed
+                  ? strings.composerThreadClosed
+                  : waitingOnUser
+                    ? strings.composerWaitingOnYou
+                    : strings.composerPlaceholder
           }
         />
         {busy && !waitingOnUser ? (

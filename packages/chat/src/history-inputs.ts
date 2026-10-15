@@ -44,5 +44,6 @@ export function transcriptInputsFromHistory(load: HistoryLoadResult | null): Tra
     historyState: "loaded",
     messages: load.messages,
     ...(load.cards && load.cards.length > 0 ? { historyCards: load.cards } : {}),
+    ...(load.closed !== undefined ? { threadClosed: { code: load.closed.code, message: load.closed.message } } : {}),
   };
 }

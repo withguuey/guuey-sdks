@@ -117,6 +117,7 @@ export type {
   TranscriptMessage,
   TranscriptOverrides,
   TranscriptPlan,
+  ThreadClosedNotice,
   PlanViewSummary,
   UnknownItem,
   UserMessageItem,

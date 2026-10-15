@@ -48,6 +48,7 @@ import type {
   UnknownItem,
   UserMessageItem,
   TextItem,
+  ThreadClosedNotice,
   ViewMountItem,
   ViewRefItem,
 } from "../types.js";
@@ -841,6 +842,34 @@ export function DefaultError({ item, ctx }: ItemProps<ErrorItem>): ReactNode {
         </button>
       ) : null}
       {item.verbatim !== null ? <pre className="guuey-chat-error-verbatim">{item.verbatim}</pre> : null}
+    </div>
+  );
+}
+
+// ─── guuey#2355 ────────────────────────────────────────────────────────────
+
+export interface ThreadClosedBannerProps {
+  closed: ThreadClosedNotice;
+  strings: ChatStrings;
+  /** Opens a new conversation; the control is drawn only when given. */
+  onStartNewConversation?: () => void;
+}
+
+/**
+ * The agent ended this conversation: a status banner with the agent's own
+ * message as plain text (never markdown, never HTML) and, when the host
+ * wires it, the control that opens a new conversation.
+ */
+export function ThreadClosedBanner({ closed, strings, onStartNewConversation }: ThreadClosedBannerProps): ReactNode {
+  return (
+    <div className="guuey-chat-thread-closed" role="status" part={PARTS.threadClosed}>
+      <strong className="guuey-chat-thread-closed-title">{strings.threadClosedTitle}</strong>
+      <p className="guuey-chat-thread-closed-message">{closed.message}</p>
+      {onStartNewConversation !== undefined ? (
+        <button type="button" className="guuey-chat-thread-closed-start" onClick={onStartNewConversation}>
+          {strings.threadClosedStartNew}
+        </button>
+      ) : null}
     </div>
   );
 }

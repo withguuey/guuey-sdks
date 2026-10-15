@@ -186,8 +186,30 @@ export type InvokeTransport = (req: InvokeRequest) => AsyncIterable<string>;
  * block-preserving renderer to interleave by `seq`.
  */
 export type HistoryLoadResult =
-  | { messages: AgentMessage[]; cards?: HistoryCard[] }
+  | {
+      messages: AgentMessage[];
+      cards?: HistoryCard[];
+      /** The conversation was ended by its agent (see {@link ThreadClosed}); absent while it is open. */
+      closed?: ThreadClosed;
+    }
   | { gone: true };
+
+/**
+ * The agent ended this conversation: it takes no new message, and the next
+ * send starts a new one. Read live from the closing turn and, on reopen, from
+ * the transcript read.
+ */
+export interface ThreadClosed {
+  /**
+   * The machine-readable reason. A code-mode worker's own code arrives
+   * prefixed `app:` (e.g. `app:CHAT_FULL`), apart from the platform's codes.
+   */
+  code: string;
+  /** What the person reads, verbatim (the agent's own words). */
+  message: string;
+  /** When the conversation was ended (ISO), or null when the source did not say. */
+  closedAt: string | null;
+}
 
 /**
  * Optional seam for rehydrating a chat transcript from a server-side read
@@ -408,6 +430,17 @@ export interface UseAgentInvokeReturn {
    * history read.
    */
   errorCode: string | null;
+  /**
+   * The agent ended this conversation ({@link ThreadClosed}), or null while
+   * it is open. Set by the closing turn (its `event: error`, which also sets
+   * {@link error} to the agent's message and {@link errorCode} to the
+   * `app:<CODE>` code, and its `done`) and on reopen by the transcript read.
+   * A host shows its "this conversation has ended" state from it. The next
+   * `send()` starts a NEW conversation (no `threadId` is sent, and the field
+   * clears); the transcript on screen is kept, so a host that wants a clean
+   * slate calls `reset()`, which also clears it, as does an app switch.
+   */
+  threadClosed: ThreadClosed | null;
   threadId: string | null;
   /** Abort the in-flight turn (the stream stops; partial text is kept). */
   abort: () => void;

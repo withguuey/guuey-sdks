@@ -39,6 +39,7 @@ import { DEFAULT_CHAT_THEME, type GuueyChatTheme } from "../theme.js";
 import { defaultChatStrings, type ChatStrings } from "../strings.js";
 import type { DisplayItem, TranscriptPlan } from "../types.js";
 import {
+  NativeThreadClosedBanner,
   nativeTranscriptComponents,
   renderNativeItem,
   type NativeTranscriptComponents,
@@ -77,6 +78,12 @@ export interface NativeTranscriptProps
   mode?: NativeThemeMode;
   /** Host-owned FlatList behavior (keyboard/scroll chrome). */
   listProps?: NativeTranscriptListProps;
+  /**
+   * guuey#2355 — opens a new conversation from the closed-conversation
+   * banner (drawn whenever `plan.threadClosed` is set); without it the
+   * banner shows the message and no control.
+   */
+  onStartNewConversation?: () => void;
 }
 
 export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
@@ -94,6 +101,7 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
     resolvedMounts,
     onViewPhase,
     onViewRef,
+    onStartNewConversation,
   } = props;
 
   const tokens = useMemo(() => resolveNativeTheme(theme, mode), [theme, mode]);
@@ -157,8 +165,21 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
         )}
         // Inverted list: the header renders at the VISUAL BOTTOM — where
         // the live status line belongs.
+        // guuey#2355: the closed-conversation banner sits below the last turn.
         ListHeaderComponent={
-          plan.status !== null ? <StatusComponent item={plan.status} ctx={ctx} /> : null
+          plan.status !== null || plan.threadClosed !== null ? (
+            <View>
+              {plan.status !== null ? <StatusComponent item={plan.status} ctx={ctx} /> : null}
+              {plan.threadClosed !== null ? (
+                <NativeThreadClosedBanner
+                  closed={plan.threadClosed}
+                  strings={strings}
+                  tokens={tokens}
+                  {...(onStartNewConversation !== undefined ? { onStartNewConversation } : {})}
+                />
+              ) : null}
+            </View>
+          ) : null
         }
       />
       {showJump ? (
