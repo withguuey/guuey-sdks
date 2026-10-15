@@ -87,6 +87,13 @@ export {
   type ThreadHistoryRow,
   type ThreadHistoryFetchOptions,
 } from "./history.js";
+// After a guest signs in with the app's own sign-in: move the guest's
+// threads in this app to the signed-in user (the BYO guest merge door).
+export {
+  mergeGuestThreads,
+  type MergeGuestThreadsOptions,
+  type MergeGuestThreadsResult,
+} from "./guest-merge.js";
 export { ingestMessageFrame } from "./blocks.js";
 // Pure block-walk / resource-narrowing helpers for a block-preserving renderer
 // (shared by Studio's `AgentBlocks` and Portal-web's agent chat). React-free.
