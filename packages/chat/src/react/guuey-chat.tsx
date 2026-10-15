@@ -58,6 +58,7 @@ import {
   deleteThread,
   IMAGE_ATTACHMENTS_MAX_COUNT,
   IMAGE_ATTACHMENTS_MAX_TOTAL_BASE64_CHARS,
+  mergeGuestThreads,
   type AgentInvokeAdapters,
   type ImageAttachment,
   type SendOptions,
@@ -299,6 +300,13 @@ export interface GuueyChatProps {
    * resolvers `createWebAdapters` takes (bearer wins; guest secret next;
    * neither → cookie identity). Ignored when explicit `adapters` and
    * `reader` are both supplied.
+   *
+   * Guest → signed in: when a surface that ran as a guest gains
+   * `getAccessToken` (with `apiBaseUrl` and `appId` set), the kit moves the
+   * guest's threads in this app to the signed-in user (`mergeGuestThreads`,
+   * for apps whose sign-in is their own issuer), keeps the same thread, and
+   * then calls `onGuestSecretRotate`. A plane without the merge route leaves
+   * today's behaviour: the signed-in turn starts its own thread.
    */
   getAccessToken?: (opts?: { forceRefresh?: boolean }) => Promise<string | null>;
   getGuestSecret?: () => string | null;
@@ -604,6 +612,13 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   onGuestSecretRotateRef.current = onGuestSecretRotate;
   const hasAccessToken = getAccessToken !== undefined;
   const hasGuestSecret = getGuestSecret !== undefined;
+  // The guest → signed-in merge reads the LAST guest getter the host gave:
+  // a host that signs in usually drops `getGuestSecret` in the same render
+  // that adds `getAccessToken`, and the merge must still present the guest.
+  const lastGuestGetterRef = useRef(getGuestSecret);
+  if (getGuestSecret !== undefined) lastGuestGetterRef.current = getGuestSecret;
+  const appIdRef = useRef(appId);
+  appIdRef.current = appId;
 
   const adapters = useMemo(
     () =>
@@ -888,6 +903,52 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // kit default — and answering the method keeps strict producers green.
   const onDebugEventRef = useRef(onDebugEvent);
   onDebugEventRef.current = onDebugEvent;
+
+  // The guest → signed-in transition: the host now hands a bearer where the
+  // surface ran as a guest (a guest secret, or a cookie identity with neither
+  // getter). Move the guest's threads in this app to the signed-in user and
+  // keep the SAME thread — once it is theirs, the bearer's next turn carries
+  // on in it instead of starting a new one. The guest secret is read BEFORE
+  // rotation (the merge must present the identity that owns the threads), and
+  // rotated only after a merge that answered: threads created under it later
+  // stay unlinkable, and a failed or unsupported merge leaves the guest's
+  // history reachable. A run the guest left paused does not resume after the
+  // merge; the user sends again. Presence flips, not getter identity, trigger
+  // it (the same rule the adapters follow).
+  const signedInRef = useRef(hasAccessToken);
+  useEffect(() => {
+    const wasSignedIn = signedInRef.current;
+    signedInRef.current = hasAccessToken;
+    if (wasSignedIn || !hasAccessToken) return;
+    const threadId = threadIdRef.current;
+    const base = apiBaseUrlRef.current;
+    const mergeAppId = appIdRef.current;
+    const getToken = getAccessTokenRef.current;
+    if (base === undefined || mergeAppId === undefined || getToken === undefined) {
+      onDebugEventRef.current?.({ type: "guest-merge", threadId, outcome: "skipped" });
+      return;
+    }
+    const getGuest = lastGuestGetterRef.current;
+    const guestSecret = getGuest !== undefined ? getGuest() : null;
+    void mergeGuestThreads({
+      apiBaseUrl: base,
+      appId: mergeAppId,
+      getAccessToken: getToken,
+      getGuestSecret: () => guestSecret,
+      ...(threadId !== null ? { threadIds: [threadId] } : {}),
+    }).then((result) => {
+      if (!result.supported) {
+        onDebugEventRef.current?.({ type: "guest-merge", threadId, outcome: "unsupported" });
+        return;
+      }
+      if (!result.ok) {
+        onDebugEventRef.current?.({ type: "guest-merge", threadId, outcome: "failed" });
+        return;
+      }
+      onDebugEventRef.current?.({ type: "guest-merge", threadId, outcome: "merged", moved: result.moved });
+      onGuestSecretRotateRef.current?.();
+    });
+  }, [hasAccessToken]);
   const defaultOnUpdateModelContext = useCallback((params: { [key: string]: unknown }) => {
     onDebugEventRef.current?.({
       type: "model-context-update",

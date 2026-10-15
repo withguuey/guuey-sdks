@@ -743,6 +743,20 @@ export type ChatDebugEvent =
       type: "thread-delete";
       threadId: string | null;
       outcome: "deleted" | "denied" | "failed" | "skipped";
+    }
+  /**
+   * The guest → signed-in merge's outcome (`mergeGuestThreads`): the host
+   * handed the kit a bearer where it had only a guest identity. `"merged"`
+   * carries the count and is the only outcome that rotates the guest secret;
+   * `"unsupported"` = a plane without the merge route (the signed-in turn
+   * starts its own thread, as before); `"skipped"` = no `apiBaseUrl` or no
+   * `appId` to call with. Debug-only, like every event here.
+   */
+  | {
+      type: "guest-merge";
+      threadId: string | null;
+      outcome: "merged" | "unsupported" | "failed" | "skipped";
+      moved?: number;
     };
 
 /**
