@@ -93,6 +93,9 @@ describe("pnpm dev: the model key before anything starts", () => {
     expect(calls).toContain("exec tsup --watch");
     expect(calls.some((c) => c.startsWith("exec guuey dev --serve"))).toBe(true);
     expect(calls.some((c) => c.startsWith("exec ggui serve"))).toBe(true);
+    // guuey#1446: the local ggui runs headless; @ggui-ai/cli 0.28.0's --no-console mints no admin token
+    // and prints neither the console banner nor the ADMIN_TOKEN beacon
+    expect(calls.find((c) => c.startsWith("exec ggui serve"))?.split(" ")).toContain("--no-console");
     expect(calls.some((c) => c.startsWith("--filter") && c.endsWith(" dev"))).toBe(true);
   });
 
