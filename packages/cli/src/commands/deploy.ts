@@ -950,14 +950,16 @@ async function deployCode(opts: {
     cleanup(tarballPath);
     process.exit(1);
   }
-  const snapshotConfig = JSON.stringify(
-    resolveEnvOrExit(buildDeploySnapshot({ ...loaded, doc: resolvedDoc }), env).doc,
-  );
+  // The env-resolved snapshot is the one document both legs below read: the
+  // trigger carries it, and `app.access` converges from it, so the app's
+  // issuer / audience are the resolved values, never a `${env.NAME}` text.
+  const snapshot = resolveEnvOrExit(buildDeploySnapshot({ ...loaded, doc: resolvedDoc }), env).doc;
+  const snapshotConfig = JSON.stringify(snapshot);
 
   // guuey#2358: `app.access` converges BEFORE the trigger, so the build never
   // goes live under an access policy guuey.json does not declare; a refused
   // write stops here (its lines are printed).
-  if ((await convergeAccessFromConfig(auth.pat, config, appId, resolvedDoc)).kind === 'refused') {
+  if ((await convergeAccessFromConfig(auth.pat, config, appId, snapshot)).kind === 'refused') {
     cleanup(tarballPath);
     process.exit(1);
   }
@@ -1525,8 +1527,9 @@ async function deployDeclarative(opts: {
   console.log(`  mcpServers:   ${mcpServers}`);
   console.log('');
 
-  // guuey#2358 — the same converge as the code path, before the trigger.
-  if ((await convergeAccessFromConfig(auth.pat, config, appId, resolved.doc)).kind === 'refused') {
+  // guuey#2358 — the same converge as the code path, before the trigger,
+  // from the same env-resolved snapshot the trigger carries.
+  if ((await convergeAccessFromConfig(auth.pat, config, appId, snapshot)).kind === 'refused') {
     process.exit(1);
   }
 

@@ -1200,7 +1200,7 @@ describe('deploy() — deploy-time ${env.NAME} placeholders resolve before the t
     vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
       logs.push(args.join(' '));
     });
-    fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input);
       if (url.includes('/deploy/trigger')) return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
       if (url.includes('/deployments/1/status')) {
@@ -1209,6 +1209,17 @@ describe('deploy() — deploy-time ${env.NAME} placeholders resolve before the t
           { status: 200 },
         );
       }
+      // guuey#2358: `app.access` converges through the app's own read + write.
+      if (url.endsWith('/apps/app-1') && init?.method === 'PUT') {
+        return new Response(JSON.stringify({ app: { id: 'app-1' } }), { status: 200 });
+      }
+      if (url.endsWith('/apps/app-1')) {
+        return new Response(
+          JSON.stringify({ app: { id: 'app-1', chatTheme: null, userAuthMode: null, userAuthConfig: null, allowedDomains: [], guestAccess: null } }),
+          { status: 200 },
+        );
+      }
+      if (url.endsWith('/apps/app-1/config')) return new Response('{}', { status: 404 });
       throw new Error(`unexpected fetch: ${url}`);
     });
   });
@@ -1234,6 +1245,11 @@ describe('deploy() — deploy-time ${env.NAME} placeholders resolve before the t
     const snapshot = JSON.parse(wire!).snapshotConfig;
     expect(snapshot.agent.mcpServers.product.url).toBe(ENV.PRODUCT_MCP_URL);
     expect(snapshot.app.access.userAuthConfig).toEqual({ issuerUrl: ENV.PRODUCT_ISSUER_URL, audience: ENV.PRODUCT_AUDIENCE });
+    // The access converge writes the same resolved values the snapshot carries.
+    const put = fetchSpy.mock.calls.find(([u, init]) => String(u).endsWith('/apps/app-1') && init?.method === 'PUT');
+    expect(put).toBeDefined();
+    expect(String(put![1]?.body)).not.toContain('${');
+    expect(JSON.parse(String(put![1]?.body)).userAuthConfig).toEqual({ issuerUrl: ENV.PRODUCT_ISSUER_URL, audience: ENV.PRODUCT_AUDIENCE });
     const printed = logs.join('\n');
     expect(printed).toContain('resolved from the environment: PRODUCT_AUDIENCE, PRODUCT_ISSUER_URL, PRODUCT_MCP_URL');
     expect(printed).not.toContain(ENV.PRODUCT_AUDIENCE);
@@ -1557,6 +1573,51 @@ describe('deploy() — app.access in guuey.json converges on a declarative deplo
     await expect(deploy({})).rejects.toMatchObject({ code: 1 });
     expect(triggerAt()).toBe(-1);
     expect(printed()).toContain('app.access was NOT applied');
+  });
+
+  describe('deploy-time ${env.NAME} placeholders in app.access.userAuthConfig', () => {
+    const ENV = { ISSUER_HOST: 'id.staging.example.com', AUD: 'staging-client' };
+    const ENV_ACCESS = {
+      userAuthMode: 'byo',
+      userAuthConfig: { issuerUrl: 'https://${env.ISSUER_HOST}/pool', audience: '${env.AUD}' },
+    };
+    const saved = new Map<string, string | undefined>();
+    beforeEach(() => {
+      for (const name of Object.keys(ENV)) saved.set(name, process.env[name]);
+    });
+    afterEach(() => {
+      for (const [name, value] of saved) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    });
+
+    it('the PUT carries the env-resolved issuer and audience — no `${` reaches the app', async () => {
+      writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {}, app: { access: ENV_ACCESS } }));
+      Object.assign(process.env, ENV);
+      mockPlatform(200);
+      await deploy({});
+      expect(accessPutAt()).toBeGreaterThanOrEqual(0);
+      expect(triggerAt()).toBeGreaterThan(accessPutAt());
+      const wire = String(fetchSpy.mock.calls[accessPutAt()]![1]?.body);
+      expect(wire).not.toContain('${');
+      expect(JSON.parse(wire)).toEqual({
+        userAuthMode: 'byo',
+        userAuthConfig: { issuerUrl: 'https://id.staging.example.com/pool', audience: 'staging-client' },
+      });
+      expect(printed().split('resolved from the environment: AUD, ISSUER_HOST')).toHaveLength(2);
+    });
+
+    it('an unset variable stops the deploy: exit 1, no access PUT, no trigger', async () => {
+      writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {}, app: { access: ENV_ACCESS } }));
+      process.env.AUD = ENV.AUD;
+      delete process.env.ISSUER_HOST;
+      mockPlatform(200);
+      await expect(deploy({})).rejects.toMatchObject({ code: 1 });
+      expect(accessPutAt()).toBe(-1);
+      expect(triggerAt()).toBe(-1);
+      expect(printed()).toContain('ISSUER_HOST is not set');
+    });
   });
 
   it('no app.access → no access write and no Access: line', async () => {

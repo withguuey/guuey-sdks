@@ -189,6 +189,53 @@ describe('deploy() --code — app.access converges before the trigger (guuey#235
     expect(printed).toContain('The deploy stopped before going live');
   });
 
+  describe('deploy-time ${env.NAME} placeholders in app.access.userAuthConfig', () => {
+    const ENV = { ISSUER_HOST: 'id.staging.example.com', AUD: 'staging-client' };
+    const ENV_ACCESS = {
+      userAuthMode: 'byo',
+      userAuthConfig: { issuerUrl: 'https://${env.ISSUER_HOST}/pool', audience: '${env.AUD}' },
+    };
+    const saved = new Map<string, string | undefined>();
+    beforeEach(() => {
+      for (const name of Object.keys(ENV)) saved.set(name, process.env[name]);
+    });
+    afterEach(() => {
+      for (const [name, value] of saved) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    });
+
+    it('the PUT carries the env-resolved issuer and audience — no `${` reaches the app', async () => {
+      writeProject({ access: ENV_ACCESS });
+      Object.assign(process.env, ENV);
+      mockPlatform({ stored: STORED_DEFAULT });
+      await deploy({ code: true });
+      const put = callIndex(isAccessPut);
+      expect(put).toBeGreaterThanOrEqual(0);
+      expect(callIndex(isTrigger)).toBeGreaterThan(put);
+      const wire = String(fetchSpy.mock.calls[put]![1]?.body);
+      expect(wire).not.toContain('${');
+      expect(JSON.parse(wire)).toEqual({
+        userAuthMode: 'byo',
+        userAuthConfig: { issuerUrl: 'https://id.staging.example.com/pool', audience: 'staging-client' },
+      });
+      const printed = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+      expect(printed.split('resolved from the environment: AUD, ISSUER_HOST')).toHaveLength(2);
+    });
+
+    it('an unset variable stops the deploy: exit 1, no access PUT, no trigger', async () => {
+      writeProject({ access: ENV_ACCESS });
+      process.env.AUD = ENV.AUD;
+      delete process.env.ISSUER_HOST;
+      mockPlatform({ stored: STORED_DEFAULT });
+      await expect(deploy({ code: true })).rejects.toMatchObject({ code: 1 });
+      expect(callIndex(isAccessPut)).toBe(-1);
+      expect(callIndex(isTrigger)).toBe(-1);
+      expect(errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n')).toContain('ISSUER_HOST is not set');
+    });
+  });
+
   it('no app.access → the app access is never written, and nothing new is printed', async () => {
     writeProject(undefined);
     mockPlatform({ stored: STORED_DEFAULT });
