@@ -169,6 +169,9 @@ Agent Development:
                                  keeps the agent on the platform's current runtime
                                  image; "off" pins it at each deploy's image
     --label <tag>                Version label (e.g., v1.0, release-candidate)
+    --env-file <path>            NAME=value file for guuey.json's \${env.NAME}
+                                 placeholders (MCP url, app.access issuer and
+                                 audience), added to the shell environment
   pull                           Refresh guuey.json from hosted state
     --app-id <id>                Override the resolved appId
   undeploy                       Tear down deployed agent (keeps app)
@@ -212,6 +215,8 @@ API key for workspace-owned apps, via GUUEY_API_KEY):
                                  <org/repo>@<sha>[:<path>] — recorded on the
                                  build for "guuey agent status"
     --json                       Emit the reconcile response as JSON
+    --env-file <path>            NAME=value file for guuey.json's \${env.NAME}
+                                 placeholders (also for status --check)
   agent status                   What is live: build, provenance (repo@sha),
                                  persisted-snapshot hash, and the app's
                                  access config as stored

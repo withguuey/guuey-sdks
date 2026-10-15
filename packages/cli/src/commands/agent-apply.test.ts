@@ -241,7 +241,7 @@ describe('resolveProvenance', () => {
 
 describe('loadLocalArtifacts', () => {
   it('sends guuey.json VERBATIM and the prompt file bytes when systemPrompt is a file ref', () => {
-    const a = loadLocalArtifacts(dir);
+    const a = loadLocalArtifacts(dir).artifacts;
     expect(a.guueyJson).toBe(GUUEY_JSON);
     expect(a.systemPrompt).toBe(PROMPT);
   });
@@ -251,7 +251,7 @@ describe('loadLocalArtifacts', () => {
       join(dir, 'guuey.json'),
       JSON.stringify({ schema: '1', agent: { systemPrompt: 'inline prompt' } }),
     );
-    expect(loadLocalArtifacts(dir).systemPrompt).toBeUndefined();
+    expect(loadLocalArtifacts(dir).artifacts.systemPrompt).toBeUndefined();
   });
 
   it('a schema-invalid document throws the loader\'s error (same message as guuey deploy)', () => {
@@ -286,7 +286,7 @@ describe('loadLocalArtifacts', () => {
         app: { theme: { file: 'theme.json' } },
       }),
     );
-    const a = loadLocalArtifacts(dir);
+    const a = loadLocalArtifacts(dir).artifacts;
     const submitted = JSON.parse(a.guueyJson);
     // The theme is inlined; the prompt ref stays a ref (the server inlines
     // the prompt artifact's bytes — that contract is untouched).
@@ -300,7 +300,7 @@ describe('loadLocalArtifacts', () => {
   it('hash-stability regression (guuey#400): NO theme file-ref → guuey.json ships byte-exact, zero agentDef hash churn', () => {
     // The fixture doc is the shape every pre-#400 project has (access block,
     // prompt file-ref, no theme). Its bytes must reach the wire untouched.
-    expect(loadLocalArtifacts(dir).guueyJson).toBe(GUUEY_JSON);
+    expect(loadLocalArtifacts(dir).artifacts.guueyJson).toBe(GUUEY_JSON);
 
     // An INLINE theme is also not a file-ref — still byte-exact, including
     // formatting the writeGuueyJsonFile convention would have rewritten.
@@ -309,7 +309,71 @@ describe('loadLocalArtifacts', () => {
       '  "agent": {"model": "claude-sonnet-5", "systemPrompt": "inline"},\n' +
       `  "app": {"theme": ${JSON.stringify(THEME_DOC)}}\n}`;
     writeFileSync(join(dir, 'guuey.json'), inlineThemed);
-    expect(loadLocalArtifacts(dir).guueyJson).toBe(inlineThemed);
+    expect(loadLocalArtifacts(dir).artifacts.guueyJson).toBe(inlineThemed);
+  });
+});
+
+// ─── Deploy-time ${env.NAME} placeholders (one manifest, one app per environment) ──
+
+const PER_ENV_JSON = JSON.stringify(
+  {
+    schema: '1',
+    appId: 'app-1',
+    agent: {
+      model: 'claude-sonnet-5',
+      systemPrompt: { file: 'prompts/system.md' },
+      modes: { rep: { systemPromptAppend: 'Be brief.', audience: ['guest'] } },
+      mcpServers: {
+        product: {
+          kind: 'external',
+          url: '${env.PRODUCT_MCP_URL}',
+          headers: { Authorization: 'Bearer ${env.PRODUCT_TOKEN}' },
+        },
+      },
+      secrets: ['PRODUCT_TOKEN'],
+    },
+    app: {
+      access: {
+        userAuthMode: 'byo',
+        userAuthConfig: { issuerUrl: '${env.PRODUCT_ISSUER_URL}', audience: '${env.PRODUCT_AUDIENCE}' },
+      },
+    },
+  },
+  null,
+  2,
+);
+const STAGING_ENV = {
+  PRODUCT_MCP_URL: 'https://mcp.staging.example.com/mcp',
+  PRODUCT_ISSUER_URL: 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_staging',
+  PRODUCT_AUDIENCE: 'staging-client',
+};
+const ENV_NAMES = Object.keys(STAGING_ENV);
+
+describe('loadLocalArtifacts — ${env.NAME} in mcpServers url and app.access.userAuthConfig', () => {
+  beforeEach(() => {
+    writeFileSync(join(dir, 'guuey.json'), PER_ENV_JSON);
+  });
+
+  it('submits the RESOLVED document: no deploy-time placeholder reaches the server', () => {
+    const { artifacts, substituted } = loadLocalArtifacts(dir, STAGING_ENV);
+    expect(substituted).toEqual(['PRODUCT_AUDIENCE', 'PRODUCT_ISSUER_URL', 'PRODUCT_MCP_URL']);
+    const submitted = JSON.parse(artifacts.guueyJson);
+    expect(submitted.agent.mcpServers.product.url).toBe(STAGING_ENV.PRODUCT_MCP_URL);
+    expect(submitted.app.access.userAuthConfig).toEqual({
+      issuerUrl: STAGING_ENV.PRODUCT_ISSUER_URL,
+      audience: STAGING_ENV.PRODUCT_AUDIENCE,
+    });
+    // The header keeps its secret reference — the agent resolves that one.
+    expect(submitted.agent.mcpServers.product.headers).toEqual({ Authorization: 'Bearer ${env.PRODUCT_TOKEN}' });
+    expect(artifacts.guueyJson.replace('${env.PRODUCT_TOKEN}', '')).not.toContain('${');
+    // The prompt ref stays a ref, as for any apply.
+    expect(submitted.agent.systemPrompt).toEqual({ file: 'prompts/system.md' });
+    expect(artifacts.systemPrompt).toBe(PROMPT);
+  });
+
+  it('an unset variable throws before anything is sent, naming it', () => {
+    const { PRODUCT_AUDIENCE: _omitted, ...partial } = STAGING_ENV;
+    expect(() => loadLocalArtifacts(dir, partial)).toThrow(/PRODUCT_AUDIENCE is not set/);
   });
 });
 
@@ -542,6 +606,54 @@ describe('agentApply', () => {
     await agentApply({ 'app-id': 'app-2', provenance: 'none' });
     const [url] = fetchMock.mock.calls[0] as [string];
     expect(url).toBe('https://api.guuey.test/apps/app-2/reconcile');
+  });
+});
+
+describe('agentApply — one manifest, per-environment values from the shell', () => {
+  const saved = new Map<string, string | undefined>();
+  beforeEach(() => {
+    writeFileSync(join(dir, 'guuey.json'), PER_ENV_JSON);
+    for (const name of ENV_NAMES) saved.set(name, process.env[name]);
+  });
+  afterEach(() => {
+    for (const [name, value] of saved) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+
+  it('the reconcile body carries resolved values only and the run prints names, never values', async () => {
+    Object.assign(process.env, STAGING_ENV);
+    fetchMock.mockResolvedValue(jsonResponse(200, reconcileResult()));
+    await agentApply({ provenance: 'none' });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const wire = init.body as string;
+    const body = JSON.parse(wire);
+    expect(JSON.parse(body.artifacts.guueyJson).agent.mcpServers.product.url).toBe(STAGING_ENV.PRODUCT_MCP_URL);
+    expect(body.artifacts.guueyJson.replace('${env.PRODUCT_TOKEN}', '')).not.toContain('${');
+    const output = logs.join('\n');
+    expect(output).toContain('resolved from the environment: PRODUCT_AUDIENCE, PRODUCT_ISSUER_URL, PRODUCT_MCP_URL');
+    for (const value of Object.values(STAGING_ENV)) expect(output).not.toContain(value);
+  });
+
+  it('--env-file supplies the values', async () => {
+    for (const name of ENV_NAMES) delete process.env[name];
+    writeFileSync(
+      join(dir, '.env.staging'),
+      Object.entries(STAGING_ENV).map(([k, v]) => `${k}=${v}`).join('\n') + '\n',
+    );
+    fetchMock.mockResolvedValue(jsonResponse(200, reconcileResult()));
+    await agentApply({ provenance: 'none', 'env-file': '.env.staging' });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const doc = JSON.parse(JSON.parse(init.body as string).artifacts.guueyJson);
+    expect(doc.app.access.userAuthConfig.issuerUrl).toBe(STAGING_ENV.PRODUCT_ISSUER_URL);
+  });
+
+  it('an unset variable exits 1 and never reaches the API', async () => {
+    for (const name of ENV_NAMES) delete process.env[name];
+    await expect(agentApply({ provenance: 'none' })).rejects.toThrow(new ExitSignal(1).message);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(logs.join('\n')).toContain('PRODUCT_MCP_URL is not set');
   });
 });
 

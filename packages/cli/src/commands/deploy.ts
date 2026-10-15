@@ -54,12 +54,15 @@ import {
   validateNoToolsEntry,
   writeGuueyJsonFile,
   declaredServerEntries,
+  resolveEnvPlaceholders,
+  type EnvSource,
   type ResolvedGuueyJson,
   type GuueyJsonV1,
   type AppBuiltFor,
   isOfferedModel,
 } from '@guuey/config';
 import { requireAuth, type AuthTokens } from '../auth';
+import { deployEnv, substitutedLine } from '../deploy-env';
 import {
   resolveConfig,
   loadProjectConfig,
@@ -393,12 +396,23 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
     process.exit(1);
   }
 
+  // The environment guuey.json's deploy-time `${env.NAME}` placeholders read
+  // (the process env, plus `--env-file`); a bad file stops here, before any leg.
+  let env: EnvSource;
+  try {
+    env = deployEnv(flags, process.env);
+  } catch (err) {
+    out.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+
   if (mode === 'declarative') {
     await deployDeclarative({
       auth,
       config,
       appId,
       guueyJsonPath: cwdGuueyJson,
+      env,
       size,
       maxPods,
       runtimeAutoUpdate,
@@ -411,6 +425,7 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
       config,
       appId,
       guueyJsonPath: cwdGuueyJson,
+      env,
       root: cwd,
       size,
       buildSize,
@@ -680,6 +695,8 @@ async function deployCode(opts: {
   config: ResolvedConfig;
   appId: string;
   guueyJsonPath: string;
+  /** What deploy-time `${env.NAME}` placeholders resolve from. */
+  env: EnvSource;
   root: string;
   size: string;
   buildSize: string;
@@ -690,7 +707,7 @@ async function deployCode(opts: {
   label: string | undefined;
   flags?: Record<string, string | true>;
 }): Promise<void> {
-  const { auth, config, appId, guueyJsonPath, root, size, buildSize, maxPods, runtimeAutoUpdate, label, flags } =
+  const { auth, config, appId, guueyJsonPath, env, root, size, buildSize, maxPods, runtimeAutoUpdate, label, flags } =
     opts;
 
   console.log('');
@@ -708,6 +725,12 @@ async function deployCode(opts: {
     process.exit(1);
   }
   let doc: GuueyJsonV1 = loaded.doc;
+
+  // Deploy-time `${env.NAME}` placeholders: resolved up front so an unset
+  // variable stops the deploy before any leg leaves the machine. `doc` stays
+  // the authored form (MCP write-backs keep the placeholders in guuey.json);
+  // the snapshot below is resolved again from the same environment.
+  printSubstituted(resolveEnvOrExit(doc, env).substituted);
 
   const secretViolations = validateNoLiteralSecrets(doc.agent);
   if (secretViolations.length > 0) {
@@ -927,7 +950,9 @@ async function deployCode(opts: {
     cleanup(tarballPath);
     process.exit(1);
   }
-  const snapshotConfig = JSON.stringify(buildDeploySnapshot({ ...loaded, doc: resolvedDoc }));
+  const snapshotConfig = JSON.stringify(
+    resolveEnvOrExit(buildDeploySnapshot({ ...loaded, doc: resolvedDoc }), env).doc,
+  );
 
   // guuey#2358: `app.access` converges BEFORE the trigger, so the build never
   // goes live under an access policy guuey.json does not declare; a refused
@@ -1409,12 +1434,14 @@ async function deployDeclarative(opts: {
   config: { apiUrl?: string };
   appId: string;
   guueyJsonPath: string;
+  /** What deploy-time `${env.NAME}` placeholders resolve from. */
+  env: EnvSource;
   size: string;
   maxPods: number | undefined;
   runtimeAutoUpdate?: boolean | undefined;
   label: string | undefined;
 }): Promise<void> {
-  const { auth, config, appId, guueyJsonPath, size, maxPods, runtimeAutoUpdate, label } = opts;
+  const { auth, config, appId, guueyJsonPath, env, size, maxPods, runtimeAutoUpdate, label } = opts;
 
   console.log('');
   console.log('  Deploying declarative agent to guuey cloud...');
@@ -1432,7 +1459,11 @@ async function deployDeclarative(opts: {
     process.exit(1);
   }
 
-  const snapshot = buildDeploySnapshot(resolved);
+  // Deploy-time `${env.NAME}` placeholders resolve here: the snapshot the
+  // platform stores holds the resolved url / issuer / audience only.
+  const envResolved = resolveEnvOrExit(buildDeploySnapshot(resolved), env);
+  printSubstituted(envResolved.substituted);
+  const snapshot = envResolved.doc;
   const agent = snapshot.agent;
 
   // Reject literal secrets in mcpServers[].headers before upload — they'd ride
@@ -1645,4 +1676,21 @@ async function attachBuildLogStream(
     console.log('  ── end build logs ──');
     console.log('');
   }
+}
+
+/**
+ * Fill in guuey.json's deploy-time `${env.NAME}` placeholders, or exit 1
+ * naming every unset / refused variable (names only, never values).
+ */
+function resolveEnvOrExit(doc: GuueyJsonV1, env: EnvSource): { doc: GuueyJsonV1; substituted: string[] } {
+  try {
+    return resolveEnvPlaceholders(doc, env);
+  } catch (err) {
+    out.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+}
+
+function printSubstituted(names: readonly string[]): void {
+  if (names.length > 0) console.log(substitutedLine(names));
 }

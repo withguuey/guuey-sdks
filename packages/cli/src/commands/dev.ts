@@ -20,6 +20,7 @@ import {
   loadGuueyJson,
   buildDeploySnapshot,
   declaredServerEntries,
+  resolveEnvPlaceholders,
   resolveProviderKey,
   missingProviderKeyMessage,
 } from '@guuey/config';
@@ -27,6 +28,7 @@ import { findProjectConfig } from '../config.js';
 import { startDevServer, lowerForDev } from '../dev/dev-server.js';
 import { spawnColocatedDev, type ColocatedDevEntry } from '../dev/colocated-dev.js';
 import * as out from '../output.js';
+import { substitutedLine } from '../deploy-env.js';
 
 const DEFAULT_PORT = 6790;
 
@@ -177,7 +179,18 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
   // binding (guuey#770) — the pod's own boot order (`bootColocated` settles
   // before `startSseServer` binds), so `lowerForDev`'s localhost URLs are
   // dialable from the first invoke and a `/readyz` 200 means it.
-  const snapshotAgent = buildDeploySnapshot(loaded).agent;
+  // Deploy-time `${env.NAME}` placeholders (an external MCP url per
+  // environment) resolve from this shell, exactly as `guuey deploy` does.
+  let envResolved: ReturnType<typeof resolveEnvPlaceholders>;
+  try {
+    envResolved = resolveEnvPlaceholders(buildDeploySnapshot(loaded), process.env);
+  } catch (err) {
+    out.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+    return;
+  }
+  if (envResolved.substituted.length > 0) console.log(substitutedLine(envResolved.substituted));
+  const snapshotAgent = envResolved.doc.agent;
   const colocatedEntries: ColocatedDevEntry[] = [];
   // `declaredServerEntries` filters the `ggui: false` opt-out (guuey#24) — not a
   // server, so there is never a dev child to spawn for it.

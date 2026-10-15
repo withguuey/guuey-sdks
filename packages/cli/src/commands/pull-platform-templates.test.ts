@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import type { GuueyAgent, GuueyJsonV1 } from '@guuey/config';
+import { parseAuthoredGuueyJson, parseGuueyJson, type GuueyAgent, type GuueyJsonV1 } from '@guuey/config';
 import { mapHostedStateToOverlay, restorePlatformTemplates, type AppResponse, type PlatformTemplates } from './pull.js';
 
 const APP: AppResponse = { id: 'app-1', displayName: 'Admin' };
@@ -57,5 +57,38 @@ describe.skipIf(!existsSync(FIXTURE))('guuey pull round-trips the door\'s envelo
     const old = mapHostedStateToOverlay(APP, fixture.envelope.snapshot, null);
     expect(JSON.stringify(old.overlay.agent.mcpServers?.admin)).not.toContain('${platform.');
     expect(old.overlay.agent.mcpServers?.admin).toEqual(fixture.envelope.snapshot.agent.mcpServers?.admin);
+  });
+});
+
+describe('guuey pull keeps the local ${env.NAME} url the CLI resolved at deploy time', () => {
+  it('an external entry whose local url reads ${env.NAME} keeps it; other entries take the pulled value', () => {
+    // The authored local file, as guuey pull reads it.
+    const local: GuueyJsonV1 = parseAuthoredGuueyJson({
+      schema: '1',
+      appId: 'app-1',
+      agent: {
+        ...agent(),
+        mcpServers: {
+          ...agent().mcpServers,
+          linear: { kind: 'external', url: '${env.LINEAR_MCP_URL}', credential: 'oauth' },
+        },
+      },
+      app: { access: { userAuthConfig: { issuerUrl: '${env.ISSUER_URL}', audience: '${env.AUDIENCE}' } } },
+    });
+    const snapshot: GuueyJsonV1 = parseGuueyJson({
+      schema: '1',
+      agent: {
+        ...agent(),
+        mcpServers: {
+          ...agent().mcpServers,
+          linear: { kind: 'external', url: 'https://mcp.staging.example.com/mcp', credential: 'oauth' },
+        },
+      },
+    });
+    const { overlay } = mapHostedStateToOverlay(APP, snapshot, local);
+    expect(overlay.agent.mcpServers?.linear).toEqual({ kind: 'external', url: '${env.LINEAR_MCP_URL}', credential: 'oauth' });
+    expect(overlay.agent.mcpServers?.admin).toEqual(agent().mcpServers?.admin);
+    // app.access is the local block, as for every pull.
+    expect(overlay.app?.access?.userAuthConfig).toEqual({ issuerUrl: '${env.ISSUER_URL}', audience: '${env.AUDIENCE}' });
   });
 });

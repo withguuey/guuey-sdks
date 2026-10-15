@@ -1139,6 +1139,128 @@ describe('deploy() — --max-pods rides the trigger body', () => {
   });
 });
 
+// One guuey.json for every environment: the external MCP url and the BYO
+// issuer read deploy-time ${env.NAME} placeholders, which the CLI fills in
+// before the snapshot leaves the machine — the trigger body never carries one.
+describe('deploy() — deploy-time ${env.NAME} placeholders resolve before the trigger', () => {
+  let dir: string;
+  let originalCwd: string;
+  let errSpy: MockInstance<typeof console.error>;
+  let logs: string[];
+  let fetchSpy: MockInstance<typeof fetch>;
+  const ENV = {
+    PRODUCT_MCP_URL: 'https://mcp.staging.example.com/mcp',
+    PRODUCT_ISSUER_URL: 'https://id.staging.example.com',
+    PRODUCT_AUDIENCE: 'staging-client',
+  };
+  const saved = new Map<string, string | undefined>();
+
+  function writeManifest(code: boolean): void {
+    writeFileSync(
+      join(dir, 'guuey.json'),
+      JSON.stringify({
+        schema: '1',
+        ...(code ? { appId: 'app-1' } : {}),
+        agent: {
+          mcpServers: { product: { kind: 'external', url: '${env.PRODUCT_MCP_URL}' } },
+        },
+        app: {
+          access: {
+            userAuthMode: 'byo',
+            userAuthConfig: { issuerUrl: '${env.PRODUCT_ISSUER_URL}', audience: '${env.PRODUCT_AUDIENCE}' },
+          },
+        },
+      }),
+    );
+    if (code) writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
+  }
+
+  /** The trigger POST's raw body text (what goes on the wire), or `undefined` if it never fired. */
+  function triggerWire(): string | undefined {
+    const call = fetchSpy.mock.calls.find(([u]) => String(u).includes('/deploy/trigger'));
+    return call ? String(call[1]?.body) : undefined;
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    dir = mkdtempSync(join(tmpdir(), 'deploy-env-placeholders-test-'));
+    process.chdir(dir);
+    for (const name of Object.keys(ENV)) saved.set(name, process.env[name]);
+    vi.mocked(resolveConfig).mockReturnValue({
+      host: 'https://platform.guuey.test',
+      apiUrl: 'https://api.guuey.test',
+      appId: 'app-1',
+    });
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    logs = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.join(' '));
+    });
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/deploy/trigger')) return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
+      if (url.includes('/deployments/1/status')) {
+        return new Response(
+          JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null, pageUrl: 'https://app-k7q2.agents.guuey.test/' }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+  });
+
+  afterEach(() => {
+    for (const [name, value] of saved) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    process.chdir(originalCwd);
+    rmSync(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it('declarative: the snapshot carries the resolved url, issuer and audience — no `${` reaches the server', async () => {
+    writeManifest(false);
+    Object.assign(process.env, ENV);
+    await deploy({});
+    const wire = triggerWire();
+    expect(wire).toBeDefined();
+    expect(wire).not.toContain('${');
+    // The declarative trigger carries the snapshot as a JSON object.
+    const snapshot = JSON.parse(wire!).snapshotConfig;
+    expect(snapshot.agent.mcpServers.product.url).toBe(ENV.PRODUCT_MCP_URL);
+    expect(snapshot.app.access.userAuthConfig).toEqual({ issuerUrl: ENV.PRODUCT_ISSUER_URL, audience: ENV.PRODUCT_AUDIENCE });
+    const printed = logs.join('\n');
+    expect(printed).toContain('resolved from the environment: PRODUCT_AUDIENCE, PRODUCT_ISSUER_URL, PRODUCT_MCP_URL');
+    expect(printed).not.toContain(ENV.PRODUCT_AUDIENCE);
+  });
+
+  it('declarative: --env-file supplies the values', async () => {
+    writeManifest(false);
+    for (const name of Object.keys(ENV)) delete process.env[name];
+    writeFileSync(join(dir, '.env.staging'), Object.entries(ENV).map(([k, v]) => `${k}="${v}"`).join('\n'));
+    await deploy({ 'env-file': '.env.staging' });
+    expect(JSON.parse(triggerWire()!).snapshotConfig.agent.mcpServers.product.url).toBe(ENV.PRODUCT_MCP_URL);
+  });
+
+  for (const code of [false, true]) {
+    const path = code ? 'code' : 'declarative';
+    it(`${path}: an unset variable stops the deploy before any network call or build`, async () => {
+      writeManifest(code);
+      for (const name of Object.keys(ENV)) delete process.env[name];
+      await expect(deploy(code ? { code: true, 'no-install': true } : {})).rejects.toBeInstanceOf(ExitSignal);
+      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+      expect(printed).toContain('PRODUCT_MCP_URL is not set');
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(childProcessLog.calls).toEqual([]);
+    });
+  }
+});
+
 // `guuey deploy` has no `--force`: every deploy rebuilds, and the upload route
 // never answers "unchanged". The one-release no-op window (which printed a
 // "no longer needed" notice) is over, so deploy reads `force` no differently
@@ -1459,6 +1581,20 @@ describe('deploy.ts — every trigger POST site carries maxPods', () => {
       const body = site.slice(0, site.indexOf('});'));
       expect(body).toContain('...(maxPods !== undefined ? { maxPods } : {})');
     }
+  });
+});
+
+// The code path's trigger needs a build + tarball + S3 round trip this suite
+// has no harness for (see the maxPods pin above), so its ${env.NAME}
+// resolution is pinned at the source: every snapshot deploy.ts builds goes
+// through resolveEnvOrExit before it is sent.
+describe('deploy.ts — every snapshot sent is ${env.NAME}-resolved', () => {
+  it('each buildDeploySnapshot call is wrapped by resolveEnvOrExit', () => {
+    const source = readFileSync(fileURLToPath(new URL('./deploy.ts', import.meta.url)), 'utf8');
+    const built = source.match(/buildDeploySnapshot\(/g) ?? [];
+    const wrapped = source.match(/resolveEnvOrExit\(\s*buildDeploySnapshot\(/g) ?? [];
+    expect(built.length).toBe(2);
+    expect(wrapped.length).toBe(built.length);
   });
 });
 

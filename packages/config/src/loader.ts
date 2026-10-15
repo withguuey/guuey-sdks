@@ -28,8 +28,8 @@ import {
   GUUEY_JSON_FILENAME,
   GuueyJsonV1,
   assertSupportedGuueyJsonSchema,
-  parseGuueyJson,
 } from './schema.js';
+import { parseAuthoredGuueyJson } from './env-placeholders.js';
 import { isThemeFileRef } from './app.js';
 import { AppThemeV1, type GuueyAppTheme } from './theme.js';
 
@@ -68,6 +68,10 @@ export function findGuueyJson(
  *
  * Does NOT resolve `agent.systemPrompt.file` references. Use
  * {@link loadGuueyJson} for file resolution.
+ *
+ * The file is the AUTHORED form: deploy-time `${env.NAME}` placeholders
+ * (see `env-placeholders.ts`) are accepted and returned verbatim; the CLI
+ * resolves them with `resolveEnvPlaceholders` before anything is sent.
  */
 export function readGuueyJsonFile(path: string): GuueyJsonV1 {
   if (!existsSync(path)) {
@@ -84,18 +88,19 @@ export function readGuueyJsonFile(path: string): GuueyJsonV1 {
   // Version gate BEFORE the shape parse: a too-new document must say
   // "upgrade", not `at "schema": expected "1"` (guuey#248 b2).
   assertSupportedGuueyJsonSchema(json);
-  return parseGuueyJson(json);
+  return parseAuthoredGuueyJson(json);
 }
 
 /**
  * Write a `guuey.json` to disk at `path` with stable 2-space indentation
  * and a trailing newline.
  *
- * Validates the document against {@link GuueyJsonV1} before writing — bad
- * data never lands on disk.
+ * Validates the document against {@link GuueyJsonV1} (in its authored
+ * form — `${env.NAME}` placeholders are kept) before writing — bad data
+ * never lands on disk.
  */
 export function writeGuueyJsonFile(path: string, doc: GuueyJsonV1): void {
-  const validated = parseGuueyJson(doc);
+  const validated = parseAuthoredGuueyJson(doc);
   const serialized = JSON.stringify(validated, null, 2) + '\n';
   writeFileSync(path, serialized, 'utf-8');
 }

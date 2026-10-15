@@ -248,6 +248,27 @@ export function restorePlatformTemplates(agent: GuueyAgent, templates: PlatformT
   return changed ? { ...agent, mcpServers: servers } : agent;
 }
 
+/**
+ * Keep the local manifest's deploy-time `${env.NAME}` urls: the CLI resolved
+ * them from the deploying shell, so the snapshot holds one environment's
+ * value; pulling it back would pin the manifest to that environment. Only an
+ * external entry that is external on both sides is touched.
+ */
+export function restoreEnvPlaceholderUrls(agent: GuueyAgent, local: GuueyJsonV1 | null): GuueyAgent {
+  const localServers = local?.agent.mcpServers;
+  if (localServers === undefined || agent.mcpServers === undefined) return agent;
+  const servers = { ...agent.mcpServers };
+  let changed = false;
+  for (const [name, authored] of Object.entries(localServers)) {
+    const entry = servers[name];
+    if (authored === false || authored.kind !== 'external' || !authored.url.includes('${env.')) continue;
+    if (entry === undefined || entry === false || entry.kind !== 'external') continue;
+    servers[name] = { ...entry, url: authored.url };
+    changed = true;
+  }
+  return changed ? { ...agent, mcpServers: servers } : agent;
+}
+
 export function mapHostedStateToOverlay(
   app: AppResponse,
   snapshot: GuueyJsonV1 | null,
@@ -284,7 +305,10 @@ export function mapHostedStateToOverlay(
   const localMode = existing?.agent.mode;
   // guuey#1272: the door resolved `${platform.*}` hosts into the snapshot; write the
   // authored template back so the local manifest stays environment-agnostic.
-  let agent: GuueyAgent = restorePlatformTemplates(snapshot.agent, platformTemplates);
+  let agent: GuueyAgent = restoreEnvPlaceholderUrls(
+    restorePlatformTemplates(snapshot.agent, platformTemplates),
+    existing,
+  );
   let promptFile: { path: string; content: string } | null = null;
   const sp = snapshot.agent.systemPrompt;
   if (typeof sp === 'string') {

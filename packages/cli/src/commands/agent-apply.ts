@@ -49,12 +49,15 @@ import {
   GuueyJsonSchemaError,
   isThemeFileRef,
   loadGuueyJson,
+  resolveEnvPlaceholders,
+  type EnvSource,
   type GuueyJsonV1,
 } from '@guuey/config';
 import { requireAuth } from '../auth';
 import { resolveConfig } from '../config';
 import { resolveTargetAppId } from '../app-id';
 import { apiRequest, parseApiError } from '../deploy-shared';
+import { deployEnv, substitutedLine } from '../deploy-env';
 import { awaitPageUrl, pollDeployStatus, printPageLine } from './deploy';
 import { DEPLOY_WAIT_MS, stillDeployingMessage } from './deploy-wait';
 import { maybePrintThemeHint } from './theme-hint';
@@ -349,19 +352,32 @@ export interface LocalArtifacts {
   systemPrompt?: string;
 }
 
+/** What {@link loadLocalArtifacts} read: the artifacts, and the `${env.NAME}` variables it filled in (names only). */
+export interface LoadedLocalArtifacts {
+  artifacts: LocalArtifacts;
+  substituted: string[];
+}
+
 /**
  * Read `guuey.json` VERBATIM (its bytes are what `agentDef` hashes) and,
  * when `agent.systemPrompt` is a `{ file }` reference, the prompt file's
  * bytes. Validation + file resolution ride `loadGuueyJson` — the same
  * loader `guuey deploy` uses — so a schema error reads the same here.
  *
- * ONE exception to verbatim (guuey#400): when `app.theme` is a `{ file }`
- * reference, the submitted document is the RESOLVED one (the theme file's
- * parsed content inlined, serialized with the `writeGuueyJsonFile`
- * convention) — the server never reads project files and 400s an
- * unresolved theme ref. A document whose theme is inline (or absent)
- * still ships byte-exact — zero `agentDef` hash churn for existing
- * projects (the regression test in `agent-apply.test.ts` pins this).
+ * Two exceptions to verbatim, both resolving something the server cannot:
+ *
+ * - (guuey#400) when `app.theme` is a `{ file }` reference, the theme
+ *   file's parsed content is inlined — the server never reads project files
+ *   and 400s an unresolved theme ref.
+ * - when a deploy-time `${env.NAME}` placeholder sits in an external MCP
+ *   `url` or in `app.access.userAuthConfig` (one manifest, one app per
+ *   environment), each is filled in from `env`; an unset variable throws.
+ *   The platform only ever stores resolved values.
+ *
+ * Either way the submitted document is the RESOLVED one, serialized with the
+ * `writeGuueyJsonFile` convention. A document with neither still ships
+ * byte-exact — zero `agentDef` hash churn for existing projects (the
+ * regression test in `agent-apply.test.ts` pins this).
  *
  * Schema-version stance (guuey#248 b2): the loader refuses a document whose
  * root `schema` is newer than this CLI's `@guuey/config` understands
@@ -372,7 +388,7 @@ export interface LocalArtifacts {
  * of the platform. The error is re-thrown with its code prefixed so the
  * failure is greppable in CI logs.
  */
-export function loadLocalArtifacts(cwd: string): LocalArtifacts {
+export function loadLocalArtifacts(cwd: string, env: EnvSource = process.env): LoadedLocalArtifacts {
   const path = join(cwd, GUUEY_JSON_FILENAME);
   const guueyJson = readFileSync(path, 'utf8');
   let loaded: ReturnType<typeof loadGuueyJson>;
@@ -384,17 +400,40 @@ export function loadLocalArtifacts(cwd: string): LocalArtifacts {
     }
     throw err;
   }
-  let submitted = guueyJson;
-  const app = loaded.doc.app;
-  if (app?.theme !== undefined && isThemeFileRef(app.theme) && loaded.resolvedTheme !== undefined) {
-    const doc: GuueyJsonV1 = { ...loaded.doc, app: { ...app, theme: loaded.resolvedTheme } };
-    submitted = JSON.stringify(doc, null, 2) + '\n';
-  }
+  const { doc: envResolved, substituted } = resolveEnvPlaceholders(loaded.doc, env);
+  let doc: GuueyJsonV1 = envResolved;
+  const app = doc.app;
+  const inlineTheme = app?.theme !== undefined && isThemeFileRef(app.theme) && loaded.resolvedTheme !== undefined;
+  if (app !== undefined && inlineTheme) doc = { ...doc, app: { ...app, theme: loaded.resolvedTheme } };
+  const submitted = inlineTheme || substituted.length > 0 ? JSON.stringify(doc, null, 2) + '\n' : guueyJson;
   const ref = loaded.doc.agent.systemPrompt;
-  if (ref !== undefined && typeof ref !== 'string' && loaded.resolvedSystemPrompt !== undefined) {
-    return { guueyJson: submitted, systemPrompt: loaded.resolvedSystemPrompt };
+  const artifacts: LocalArtifacts =
+    ref !== undefined && typeof ref !== 'string' && loaded.resolvedSystemPrompt !== undefined
+      ? { guueyJson: submitted, systemPrompt: loaded.resolvedSystemPrompt }
+      : { guueyJson: submitted };
+  return { artifacts, substituted };
+}
+
+/**
+ * The command-side load: `--env-file` merged into the process environment,
+ * the artifacts read, and the substituted variable names printed (stderr
+ * under `--json`, so stdout stays one JSON document). Exits 1 on any
+ * failure, before a request is made.
+ */
+function loadForCommand(flags: Record<string, string | true> | undefined, jsonOut: boolean, failPrefix: string): LocalArtifacts {
+  let loaded: LoadedLocalArtifacts;
+  try {
+    loaded = loadLocalArtifacts(process.cwd(), deployEnv(flags, process.env));
+  } catch (err) {
+    out.error(`${failPrefix}: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
   }
-  return { guueyJson: submitted };
+  if (loaded.substituted.length > 0) {
+    const line = substitutedLine(loaded.substituted);
+    if (jsonOut) console.error(line);
+    else console.log(line);
+  }
+  return loaded.artifacts;
 }
 
 // ─── Rendering ───────────────────────────────────────────────────────────
@@ -539,13 +578,7 @@ export async function agentApply(flags?: Record<string, string | true>): Promise
   const ctx = context(flags);
   const cwd = process.cwd();
 
-  let artifacts: LocalArtifacts;
-  try {
-    artifacts = loadLocalArtifacts(cwd);
-  } catch (err) {
-    out.error(`Failed to load ${GUUEY_JSON_FILENAME}: ${err instanceof Error ? err.message : String(err)}`);
-    process.exit(1);
-  }
+  const artifacts = loadForCommand(flags, jsonOut, `Failed to load ${GUUEY_JSON_FILENAME}`);
 
   const localDoc = JSON.parse(artifacts.guueyJson) as { agent?: { modes?: unknown } };
   const localHasModes =
@@ -707,13 +740,7 @@ export async function agentStatus(flags?: Record<string, string | true>): Promis
 
   let parity: AgentReconcileResult | undefined;
   if (check) {
-    let artifacts: LocalArtifacts;
-    try {
-      artifacts = loadLocalArtifacts(process.cwd());
-    } catch (err) {
-      out.error(`--check needs a loadable ${GUUEY_JSON_FILENAME} in the current directory: ${err instanceof Error ? err.message : String(err)}`);
-      process.exit(1);
-    }
+    const artifacts = loadForCommand(flags, jsonOut, `--check needs a loadable ${GUUEY_JSON_FILENAME} in the current directory`);
     parity = await postReconcile(ctx, { artifacts, dryRun: true });
   }
 
