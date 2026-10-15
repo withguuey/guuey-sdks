@@ -312,6 +312,15 @@ export class ThreadStore {
   }
 
   /**
+   * Whether this binding can close a thread ({@link ThreadPersistencePort.closeThread}
+   * present). A caller that writes something before closing (a closing
+   * message) reads this first, so a binding that cannot close is left as it was.
+   */
+  canCloseThreads(): boolean {
+    return this.db.closeThread !== undefined;
+  }
+
+  /**
    * End the conversation (see {@link ThreadRow.closedAt}): `closed` when this
    * call closed it, `already_closed` when it was closed before (the first
    * closure is kept), `unsupported` when the binding cannot close

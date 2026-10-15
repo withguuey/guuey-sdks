@@ -49,6 +49,11 @@ describe('threadClosure', () => {
 });
 
 describe('ThreadStore.closeThread', () => {
+  it('canCloseThreads answers true over a binding that implements closeThread', async () => {
+    const { store } = await seeded();
+    expect(store.canCloseThreads()).toBe(true);
+  });
+
   it('records the closure on the thread and answers closed', async () => {
     const { db, store, threadId } = await seeded();
     expect(await store.closeThread(threadId, CLOSE)).toBe('closed');
@@ -86,6 +91,8 @@ describe('ThreadStore.closeThread', () => {
     };
     const store = new ThreadStore(port);
     const threadId = await store.ensureThread({ userId: 'g_owner', appId: 'app_1', region: 'us-east-1' });
+    // Known up front, so a caller can decide before it writes anything.
+    expect(store.canCloseThreads()).toBe(false);
     expect(await store.closeThread(threadId, CLOSE)).toBe('unsupported');
     const row = inner.threads.get(threadId);
     expect(row && threadClosure(row)).toBeUndefined();
