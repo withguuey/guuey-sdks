@@ -73,7 +73,13 @@ export interface FrameworkEntry {
 export const MODEL_REGISTRY: readonly ModelEntry[] = [
   // The anthropic default is the model the guuey monorepo's preamble gate is measured on: changing
   // it there needs a fresh gate receipt in the same commit.
-  { id: "claude-sonnet-5", provider: "anthropic", label: "Claude Sonnet 5", status: "ga", isDefault: true, lineup: true },
+  //
+  // Claude Sonnet 5.5 is the anthropic default and leads the lineup (guuey#2270). Ids are verified
+  // against platform.claude.com/docs/en/models/overview, never hand-typed.
+  { id: "claude-sonnet-5-5", provider: "anthropic", label: "Claude Sonnet 5.5", status: "ga", isDefault: true, lineup: true },
+  // Superseded by Sonnet 5.5 (#2270): still ga, still served, still selectable —
+  // behind the "See all models" door. Apps pinned to it keep loading and running (N−1).
+  { id: "claude-sonnet-5", provider: "anthropic", label: "Claude Sonnet 5", status: "ga" },
   // guuey#635 (2026-09-02 wave): id verified against
   // platform.claude.com/docs/en/models/overview — never hand-typed.
   // `ga` + `lineup` since 2026-09-08 (guuey#634 / #659): the model gate is
@@ -120,7 +126,11 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
   { id: "claude-opus-5-5", provider: "anthropic", label: "Claude Opus 5.5", status: "ga", lineup: true },
   { id: "claude-opus-5", provider: "anthropic", label: "Claude Opus 5", status: "ga" },
   { id: "claude-sonnet-4-6", provider: "anthropic", label: "Claude Sonnet 4.6", status: "ga" },
-  { id: "claude-haiku-4-5", provider: "anthropic", label: "Claude Haiku 4.5", status: "ga", lineup: true },
+  // Haiku 5.5 replaces Haiku 4.5 in the lineup (guuey#2270). Its rate row carries its >100K-token
+  // tier. Haiku 5.5 takes `thinking: disabled`.
+  { id: "claude-haiku-5-5", provider: "anthropic", label: "Claude Haiku 5.5", status: "ga", lineup: true },
+  // Superseded by Haiku 5.5 (#2270): still ga, still served, behind the door (N−1).
+  { id: "claude-haiku-4-5", provider: "anthropic", label: "Claude Haiku 4.5", status: "ga" },
   // Superseded by Opus 5 at the same published price — behind the door.
   { id: "claude-opus-4-8", provider: "anthropic", label: "Claude Opus 4.8", status: "ga" },
   // Terra — guuey's OpenAI default (founder call 2026-07-25). This DELIBERATELY

@@ -155,9 +155,9 @@ describe("buildOptions — allowedTools", () => {
 });
 
 describe("buildOptions — model + maxTurns + isolation flags", () => {
-  it("defaults model to claude-sonnet-5 and maxTurns to 25", () => {
+  it("defaults model to claude-sonnet-5-5 (the registry default since guuey#2270) and maxTurns to 25", () => {
     const opts = buildOptions({}, ctx());
-    expect(opts.model).toBe("claude-sonnet-5");
+    expect(opts.model).toBe("claude-sonnet-5-5");
     expect(opts.maxTurns).toBe(25);
   });
 
@@ -413,9 +413,18 @@ describe("buildOptions — Anthropic second seam (loopback proxy)", () => {
 describe("buildOptions — a bound first impression turns extended thinking OFF for the invoke (guuey#1183)", () => {
   const push = { chipKey: "opening-hours", intent: "show opening hours", contract: { kind: "hours" } };
 
+  // A model that TAKES `thinking: disabled` (Sonnet 5, pinned explicitly since #2270 made the
+  // default Sonnet 5.5, which refuses it — the case below).
   it("rail armed + push present → thinking disabled (the model-egress force needs a thinking-free request)", () => {
-    const opts = buildOptions({ systemPrompt: "S" }, ctx({ gguiAttached: true, firstImpression: push }));
+    const opts = buildOptions({ systemPrompt: "S", model: "claude-sonnet-5" }, ctx({ gguiAttached: true, firstImpression: push }));
     expect(opts.thinking).toEqual({ type: "disabled" });
+  });
+
+  it("guuey#2270: on the DEFAULT model (Sonnet 5.5, which refuses `disabled`) thinking is left at the SDK default — the first turn is prompt-only, by his 10-15 ruling", () => {
+    const opts = buildOptions({ systemPrompt: "S" }, ctx({ gguiAttached: true, firstImpression: push }));
+    expect(opts.model).toBe("claude-sonnet-5-5");
+    expect(opts).not.toHaveProperty("thinking");
+    expect(opts.systemPrompt as string).toContain("<first_impression_handshake>");
   });
 
   it("no push → the SDK default stands (no `thinking` key at all)", () => {
@@ -430,7 +439,7 @@ describe("buildOptions — a bound first impression turns extended thinking OFF 
   });
 
   it("the knob rides beside the prompt section, never instead of it", () => {
-    const opts = buildOptions({ systemPrompt: "S" }, ctx({ gguiAttached: true, firstImpression: push }));
+    const opts = buildOptions({ systemPrompt: "S", model: "claude-sonnet-5" }, ctx({ gguiAttached: true, firstImpression: push }));
     expect(opts.systemPrompt as string).toContain("<first_impression_handshake>");
     expect(opts.systemPrompt as string).toContain('"intent":"show opening hours"');
     expect(opts.thinking).toEqual({ type: "disabled" });

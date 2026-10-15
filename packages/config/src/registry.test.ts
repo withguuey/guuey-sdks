@@ -50,8 +50,8 @@ describe('MODEL_REGISTRY invariants', () => {
     expect(ids).toHaveLength(new Set(ids).size);
   });
 
-  it('defaultModelFor("claude-agent-sdk") === "claude-sonnet-5"', () => {
-    expect(defaultModelFor('claude-agent-sdk')).toBe('claude-sonnet-5');
+  it('defaultModelFor("claude-agent-sdk") === "claude-sonnet-5-5" (#2270, his 10-15 ruling)', () => {
+    expect(defaultModelFor('claude-agent-sdk')).toBe('claude-sonnet-5-5');
   });
 
   // Per-provider defaults are money-visible (they pick the rate a new agent
@@ -114,13 +114,19 @@ describe('modelsForProvider', () => {
       // claude-fable-5-1 joined the offered set 2026-09-08 on infra's #659
       // read of the served image (guuey#634); placed after Sonnet 5 so the
       // default stays [0].
+      // #2270 (his 10-15 ruling): Sonnet 5.5 is the default ([0]); Sonnet 5.5
+      // and Haiku 5.5 joined the offered set, offered only once their guards
+      // serve (promote-preconditions model-offer rows, #2269). Sonnet 5 and
+      // Haiku 4.5 stay offered behind the door (N−1).
       anthropic: [
+        'claude-sonnet-5-5',
         'claude-sonnet-5',
         'claude-fable-5-1',
         'claude-fable-5',
         'claude-opus-5-5',
         'claude-opus-5',
         'claude-sonnet-4-6',
+        'claude-haiku-5-5',
         'claude-haiku-4-5',
         'claude-opus-4-8',
       ],
@@ -212,23 +218,25 @@ describe('lineupForProvider / legacyForProvider', () => {
     }
   });
 
-  it("anthropic's lineup is his #1608 pick (d), IN ORDER — Sonnet 5 · Fable 5.1 · Opus 5.5 · Haiku 4.5; Fable 5 sits behind the door", () => {
+  it("anthropic's lineup is his 10-15 ruling (#2270), IN ORDER — Sonnet 5.5 · Fable 5.1 · Opus 5.5 · Haiku 5.5; Fable 5 sits behind the door", () => {
     // Fable 5.1 flipped `announced` → `ga` + `lineup` (TWO fields, one row)
     // on infra's #659 read of the served image: SDK 0.3.258 pinned exactly,
     // bundled Claude Code 2.1.258 ≥ the 2.1.251 the id requires (guuey#634).
     // The picker renders lineup rows in registry order, so the ORDER is the
     // ruling (Opus 5.5 took Opus 5's place on its ga flip, #1623).
+    // #2270, verbatim: "haiku5.5 replaces haiku 4.5 sonnet 5.5 replaces sonnet5,
+    // fable 5.1, opus 5.5 stay / sonnet 5.5 becomes the default".
     expect(lineupForProvider('anthropic').map((m) => m.id)).toEqual([
-      'claude-sonnet-5',
+      'claude-sonnet-5-5',
       'claude-fable-5-1',
       'claude-opus-5-5',
-      'claude-haiku-4-5',
+      'claude-haiku-5-5',
     ]);
     expect(modelEntry('claude-fable-5-1')?.status).toBe('ga');
     expect(modelEntry('claude-fable-5-1')?.lineup).toBe(true);
     expect(legacyForProvider('anthropic').map((m) => m.id)).not.toContain('claude-fable-5-1');
     // The default still leads the front slice; Fable 5.1 is not the default.
-    expect(lineupForProvider('anthropic')[0].id).toBe('claude-sonnet-5');
+    expect(lineupForProvider('anthropic')[0].id).toBe('claude-sonnet-5-5');
     expect(modelEntry('claude-fable-5-1')?.isDefault).toBeUndefined();
     // Behind the door, NOT deprecated: the deprecations page lists
     // claude-fable-5 as Active with no deprecation date.
@@ -250,7 +258,7 @@ describe('lineupForProvider / legacyForProvider', () => {
     expect(defaultModelFor('openai-agents-sdk')).toBe('gpt-6-luna');
   });
 
-  it("Opus 5.5's ga flip (#1623): it joins the lineup and Opus 5 moves behind the door — still ga, still selectable; the default stays Sonnet 5", () => {
+  it("Opus 5.5's ga flip (#1623): it joins the lineup and Opus 5 moves behind the door — still ga, still selectable", () => {
     expect(modelEntry('claude-opus-5-5')?.status).toBe('ga');
     expect(modelEntry('claude-opus-5-5')?.lineup).toBe(true);
     expect(lineupForProvider('anthropic').map((m) => m.id)).toContain('claude-opus-5-5');
@@ -258,7 +266,16 @@ describe('lineupForProvider / legacyForProvider', () => {
     expect(lineupForProvider('anthropic').map((m) => m.id)).not.toContain('claude-opus-5');
     expect(legacyForProvider('anthropic').map((m) => m.id)).toContain('claude-opus-5');
     expect(modelEntry('claude-opus-5')?.status).toBe('ga');
-    expect(defaultModelFor('claude-agent-sdk')).toBe('claude-sonnet-5');
+  });
+
+  it('N−1 (#2270): the models Sonnet 5.5 and Haiku 5.5 replace stay ga, offered and behind the door, so apps pinned to them keep loading and running', () => {
+    for (const id of ['claude-sonnet-5', 'claude-haiku-4-5']) {
+      expect(modelEntry(id)?.status, id).toBe('ga');
+      expect(modelEntry(id)?.lineup, id).toBeUndefined();
+      expect(modelEntry(id)?.isDefault, id).toBeUndefined();
+      expect(isOfferedModel('claude-agent-sdk', id), id).toBe(true);
+      expect(legacyForProvider('anthropic').map((m) => m.id), id).toContain(id);
+    }
   });
 });
 
@@ -325,10 +342,10 @@ describe('modelEntry', () => {
   });
 
   it('returns the correct model entry', () => {
-    const entry = modelEntry('claude-sonnet-5');
+    const entry = modelEntry('claude-sonnet-5-5');
     expect(entry).toBeDefined();
     expect(entry?.provider).toBe('anthropic');
-    expect(entry?.label).toBe('Claude Sonnet 5');
+    expect(entry?.label).toBe('Claude Sonnet 5.5');
     expect(entry?.isDefault).toBe(true);
   });
 });
@@ -490,11 +507,16 @@ describe('rejectsDisabledThinking (guuey#1606, guuey#2231) — only the ids with
     }
   });
 
-  it('never names an id that answered 200 on the same call — the default included', () => {
-    for (const id of ['claude-sonnet-5', 'claude-opus-5', 'claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5']) {
+  it('never names an id that answered 200 on the same call', () => {
+    for (const id of ['claude-sonnet-5', 'claude-opus-5', 'claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5', 'claude-haiku-5-5']) {
       expect(rejectsDisabledThinking(id), id).toBe(false);
     }
-    expect(rejectsDisabledThinking(defaultModelFor('claude-agent-sdk'))).toBe(false);
+  });
+
+  it('the anthropic DEFAULT refuses `disabled` since #2270 (Sonnet 5.5): its first, handshake-bound turn keeps the model\'s own thinking and the first-impression force skips (prompt-only), as on Fable 5.1 and Opus 5.5', () => {
+    // Before #2270 this pinned the opposite (the default never refused). His 10-15
+    // ruling made Sonnet 5.5 the default; the consequence is stated on #2270.
+    expect(rejectsDisabledThinking(defaultModelFor('claude-agent-sdk'))).toBe(true);
   });
 
   it('an id from another provider or an unknown id is never named', () => {

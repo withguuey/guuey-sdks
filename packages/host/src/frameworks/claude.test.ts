@@ -257,8 +257,9 @@ describe("runInvoke — native emission", () => {
       return seen;
     }
 
+    // On a model that takes `disabled` (Sonnet 5, explicit since #2270 made the default Sonnet 5.5).
     it("rail armed + push → the verbatim handshake section renders AND extended thinking is off (the served red: neither ran)", async () => {
-      const seen = await optionsFor({ gguiAttached: true, firstImpression: push });
+      const seen = await optionsFor({ gguiAttached: true, firstImpression: push }, { model: "claude-sonnet-5" });
       expect(seen.systemPrompt).toContain("<first_impression_handshake>");
       expect(seen.systemPrompt).toContain('"intent":"show opening hours"');
       expect(seen.thinking).toEqual({ type: "disabled" });
