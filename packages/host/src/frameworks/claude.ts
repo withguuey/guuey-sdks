@@ -386,6 +386,13 @@ export async function runInvoke(
 
   try {
     const problems = await awaitMcpReady(q, resolveMcpServers(ctx), timing);
+    // Reported on stderr only, NOT through the `mcpAvailability` / `error`
+    // path (guuey#2139): `mcpAvailability` is the Router's pre-turn input,
+    // already rendered into the system prompt the CLI was spawned with, so a
+    // server that fails here cannot reach it; and a new worker event for it
+    // would be a cross-surface wire change. This equals the pre-change CLI,
+    // which also went on without a server that failed to connect at its
+    // startup.
     for (const line of problems) process.stderr.write(`[guuey] ${line}\n`);
   } catch (err) {
     // Fail closed: no user message is sent, the CLI is closed (killed), and
