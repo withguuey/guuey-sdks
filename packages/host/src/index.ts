@@ -66,7 +66,7 @@ const RUNNERS: Record<string, { module: string; peer: string; agentEntry: boolea
 /**
  * Graceful mode (`GUUEY_AGENT_ENTRY`) is per-runner: a framework whose runner
  * ignores the entry env must FAIL LOUDLY, not silently run the no-code
- * snapshot instead of the dev's module (review finding — "non-goal" means
+ * snapshot instead of the dev's module ("non-goal" means
  * rejected, not ignored). Boot-time check, same posture as a missing peer.
  */
 export function assertGracefulSupport(framework: string, agentEntryEnv: string | undefined): void {

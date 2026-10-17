@@ -1,5 +1,5 @@
 /**
- * guuey#1062 — opt-in analytics, both directions (platform's ruling on the row):
+ * guuey#1062 — opt-in analytics, both directions:
  * the default scaffold carries ZERO analytics bytes; `--analytics posthog`
  * emits a loader keyed from the app's env, never a key literal.
  */

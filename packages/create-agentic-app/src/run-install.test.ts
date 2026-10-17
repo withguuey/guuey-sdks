@@ -1,11 +1,10 @@
 /**
  * guuey#1441 — `runInstall` must install on a machine WITHOUT corepack.
  *
- * The founder's own `npx @guuey/create-agentic-app@latest` printed
+ * `npx @guuey/create-agentic-app@latest` printed
  * `Warning: "corepack pnpm install" failed to run automatically`, because the
  * only path we shipped was `corepack pnpm` and corepack is absent on Node 25
- * and on Homebrew's node. His words: "my env does not have corepack. other
- * people will have the same issue."
+ * and on Homebrew's node, so many machines cannot run it.
  *
  * These cases drive the REAL `execFile` through a stubbed `PATH` rather than a
  * mocked module, so they test what the user's shell would actually resolve —
@@ -58,7 +57,7 @@ describe('runInstall (guuey#1441)', () => {
     expect(existsSync(npxMarker)).toBe(false);
   });
 
-  it('falls back to npx pnpm@<pinned> when pnpm is absent — the founder’s machine', async () => {
+  it('falls back to npx pnpm@<pinned> when pnpm is absent — a machine without corepack or pnpm', async () => {
     const npxMarker = join(work, 'npx.args');
     stub('npx', npxMarker);
     await runInstall(project, pnpmInvocation());

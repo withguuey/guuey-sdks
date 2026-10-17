@@ -590,7 +590,7 @@ async function ensureLinkedApp(opts: {
   const { auth, config, project, guueyJsonPath } = opts;
   // guuey#975: NEVER consult the merged config here — the caller's decision
   // said "unbound"; the merged `appId` is exactly the machine-global binding
-  // that stood in for a create on the founder's first prod deploy.
+  // that stood in for a create on a first production deploy.
 
   console.log('');
   console.log('  No app linked yet.');
@@ -649,8 +649,8 @@ export type EnsureInstalledResult =
  * `deploy --code` runs the project's build LOCALLY (`pnpm build`),
  * so a fresh scaffold with no `node_modules` used to die INSIDE the build
  * ("sh: tsup: command not found") with pnpm's own WARN as the only
- * instruction (the founder's first prod deploy, 2026-09-07). Since
- * guuey#1000 (his word: "i prefer auto install") the default is to INSTALL
+ * instruction. Since
+ * guuey#1000 the default is to INSTALL
  * (`pnpm install`, before any leg leaves the machine); `--no-install`
  * stops with the sentence instead. Injected `exists`/`run` so the decision is
  * unit-testable without a child process.
@@ -1086,8 +1086,8 @@ async function deployCode(opts: {
  */
 
 /**
- * The pinned-redeploy notice (runtime-update-channel §10.1, founder-
- * ratified): "redeploy refreshes the pin" stays one rule — AND the
+ * The pinned-redeploy notice (runtime-update-channel §10.1):
+ * "redeploy refreshes the pin" stays one rule — AND the
  * builder is told when their pinned app's runtime moved because of it.
  * Best-effort on both legs (a notice must never fail a deploy): capture
  * the pre-deploy state before the trigger, compare after live.

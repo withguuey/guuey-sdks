@@ -309,7 +309,7 @@ export function Transcript(props: TranscriptProps): ReactNode {
             scrollToBottom(true);
           }}
         >
-          {/* guuey#2121 (cdo): the labelled chip where a composer follows (the seam);
+          {/* guuey#2121: the labelled chip where a composer follows (the seam);
               an icon-only round chip, the down arrow, everywhere else, so the
               chip's footprint over a composer-less transcript is the smallest it
               can be. CSS picks which part shows; the accessible name is the words

@@ -61,7 +61,7 @@ export const APP_USER_AUTH_MODES = ['anonymous', 'native_pool', 'byo'] as const;
 export type AppUserAuthMode = (typeof APP_USER_AUTH_MODES)[number];
 
 /**
- * Who the agent is FOR (guuey#1597, his ruling 2026-09-23): `personal` — the
+ * Who the agent is FOR (guuey#1597): `personal` — the
  * builder's own assistant; `customers` — a rep on the builder's surface. Asked
  * once at creation; the answer shapes the defaults the create flow offers
  * (guest access, channels, hand-off, listing, the first-impression hello,

@@ -3,7 +3,7 @@
  *
  * One import: `import "@guuey/agent-layout/styles.css"`. The tone values
  * arrive as inline `--guuey-layout-*` custom properties from the Provider
- * (base defaults = the ggui#633 founder-certified pair; overrides ride the
+ * (base defaults = the ggui#633 calibrated pair; overrides ride the
  * §2 tier chain). This sheet carries structure, the follow transition, the
  * <1024px drawer collapse, and the working-state treatment.
  *
@@ -11,9 +11,9 @@
  * set it.
  */
 
-/* guuey#429 (founder rule, requirement-grade): the shell is VIEWPORT-PINNED
- * by default — "the sidebar's height should be fixed and the lower part
- * should be stick on its bottom". `height: 100%` only pins when every
+/* guuey#429 (requirement-grade): the shell is VIEWPORT-PINNED
+ * by default — the sidebar's height is fixed and its lower part sticks
+ * to its bottom. `height: 100%` only pins when every
  * ancestor carries a definite height, which no adopter's tree guarantees —
  * against auto ancestors it computes to auto, tall pane content stretches
  * the PAGE, and the agent rail scrolls below the fold (a scrollable-away
@@ -78,7 +78,7 @@
 }
 
 /* The follow: the pane's ground tracks the active panel (lib-written var),
- * arriving on the founder-certified eased fade. */
+ * arriving on the calibrated eased fade. */
 .guuey-layout-pane {
   min-width: 0;
   min-height: 0;
@@ -91,7 +91,7 @@
   color: var(--guuey-layout-tone-lower-on);
 }
 
-/* Founder (d): the working state — identity + pulse on the agent ground;
+/* Requirement (d): the working state — identity + pulse on the agent ground;
  * prior page content never holds the room. */
 .guuey-layout-working {
   height: 100%;

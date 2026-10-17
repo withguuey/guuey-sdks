@@ -280,7 +280,7 @@ jobs:
           #      the full dependency closure resolved from the registry,
           #      the ETARGET class surfaced HERE instead of on a stranger.
           # The structural fix (publish on `next`, advance latest leaf-first
-          # after verify) stays HELD on the founder's zero-secret ruling:
+          # after verify) stays HELD under the zero-secret release policy:
           # OIDC covers publish only (npm/cli#8547 open; `npm stage
           # approve` is human-2FA proof-of-presence, not CI-automatable —
           # both re-verified 2026-08-31).

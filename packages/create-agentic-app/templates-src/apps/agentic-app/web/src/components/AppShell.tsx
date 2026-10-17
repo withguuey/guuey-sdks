@@ -1,5 +1,5 @@
 /**
- * The CHAT-RAIL shell (guuey#303, founder-confirmed), on
+ * The CHAT-RAIL shell (guuey#303), on
  * `@guuey/agent-layout` (guuey#403 — this migration is the lib's
  * acceptance test):
  *

@@ -34,7 +34,7 @@ export {
 
 /**
  * The token vocabulary (§2) — one prefix, kebab-case, `-on` suffix keeps
- * each tone's pair adjacent in sorted listings (platform-ruled naming).
+ * each tone's pair adjacent in sorted listings (the platform's naming).
  * `--guuey-layout-pane-tone` is LIB-WRITTEN state: apps read it, never set
  * it — overriding it silently breaks the category's defining behavior.
  */
@@ -48,7 +48,7 @@ export const LAYOUT_TOKENS = {
 } as const;
 
 /**
- * The follow fade — founder-certified on the ggui#633 calibration: the
+ * The follow fade — settled on the ggui#633 calibration: the
  * eased ~150ms color fade ("arrives fast, lands soft" at panel scale).
  */
 export const DEFAULT_TONE_TRANSITION_MS = 150;

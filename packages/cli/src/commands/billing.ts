@@ -7,7 +7,7 @@
  *                                        balance + the console billing door
  *   billing topup --app <id> --amount <usd>
  *                                        credit top-up (guuey#611): prints
- *                                        the founder-signed terms and the
+ *                                        the signed terms and the
  *                                        hosted Checkout URL for an
  *                                        allowlisted amount; the webhook
  *                                        credits the balance on completion
@@ -164,9 +164,9 @@ export interface CreditTopUpResultWire {
   ref: string | null;
 }
 
-// ─── Founder-signed top-up copy (guuey#611) — VERBATIM on every top-up surface ──
+// ─── Signed top-up copy (guuey#611) — VERBATIM on every top-up surface ──
 
-/** The refund policy, word for word as ruled 2026-09-02. */
+/** The refund policy, word for word as signed. */
 
 // ─── Wire mirrors (SYNC: backend/libs/cli-wire/billing-invoicing.ts) ──────
 // `guuey billing` renders the wallet's next invoice + issued history from
@@ -650,7 +650,7 @@ export async function billingTopUpCore(
     out.json(data);
     return data;
   }
-  // The top-up surface carries the founder-signed wording, verbatim, before
+  // The top-up surface carries the signed wording, verbatim, before
   // the door — the customer reads the terms before they pay.
   console.log(`  ${CREDIT_TOPUP_REFUND_WORDING}`);
   console.log(`  ${CREDIT_TOPUP_BUSINESS_USE_LINE}`);

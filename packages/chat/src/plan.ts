@@ -997,7 +997,7 @@ export function planTranscript(
   // after the pod persisted a turn but before the client saw its
   // `turn.done`, that rule kept the flat copy of the previous turn AND
   // appended the fold's copy: three assistant slots against two users,
-  // turn 1's answer rendered after the turn-2 bubble (the founder's
+  // turn 1's answer rendered after the turn-2 bubble (the reported
   // Playground DOM; replayed from real dev shapes in
   // plan.issue982.test.ts, phase P6).
   let assistants: AssistantSource[];
@@ -1147,7 +1147,7 @@ export function planTranscript(
   // bearing turn — and every card in a seq-less (live-only) session — keep
   // the tail, byte-identical to the old behavior. The old tail-always
   // placement + bottom-pin buried a returning visitor's conversation above
-  // a stale trailing card (the #423 founder face).
+  // a stale trailing card (the #423 face).
   //
   // Dedupe against LIVE mounts by actionScope (the persisted `ui://`
   // identity both sides carry): a session whose fold still holds a turn the

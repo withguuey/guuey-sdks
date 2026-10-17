@@ -607,7 +607,7 @@ export const AgentSectionV1 = z.strictObject({
   /**
    * Multi-mode agent (guuey#527) — ONE agent, per-mode prompt overlays on
    * the base `systemPrompt` + a per-mode tool SUBSET of the base allowlist.
-   * THE AXIS (founder-refined 2026-08-31, the final word): modes are the
+   * THE AXIS: modes are the
    * AUDIENCE'S AUTH STATE — v1 recognizes exactly `guest` (website
    * visitors; the hire-a-rep mode) and `auth` (signed-in users; navigated
    * separately in studio). SELECTION is SERVER-DERIVED from the caller's
@@ -782,8 +782,7 @@ export interface AppliedAgentMode {
 
 /**
  * Resolve + apply one invoke's agent mode (guuey#527/#566 — the guest/auth
- * axis, founder-refined 2026-08-31: "letting them use guest mode vs auth
- * mode is the correct definition").
+ * axis: guest mode vs auth mode is the definition).
  *
  * SELECTION is SERVER-DERIVED: `audience` is the caller's REAL auth state
  * (the pod maps anonymous → 'guest', authenticated → 'auth') — never a

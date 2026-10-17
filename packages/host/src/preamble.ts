@@ -416,7 +416,7 @@ export function renderResourcesSection(count: number, appDir: string): string {
 
 /**
  * The default response-norms section EVERY hosted agent inherits
- * (guuey#556 — the founder's announce-day find: agents narrating
+ * (guuey#556 — agents were narrating
  * render-loop internals to end-users, "Cache hit — same dashboard… no
  * need to re-save").
  *

@@ -1,5 +1,5 @@
 /**
- * Who the agent is FOR (guuey#1597, his ruling 2026-09-23), on the CLI's
+ * Who the agent is FOR (guuey#1597), on the CLI's
  * entry paths (guuey#1670). This module holds the question, its two answers,
  * the `--for` flag parser and the prompt's answer parser.
  *
@@ -12,7 +12,7 @@
  */
 import { APP_BUILT_FOR, type AppBuiltFor } from '@guuey/config';
 
-/** The ruled copy (his 2026-09-23 word), the same title the console's first step carries. */
+/** The question's copy, the same title the console's first step carries. */
 export const BUILT_FOR_QUESTION = 'Is this agent for you, or for your customers?';
 
 /** The two answers, in the console's words and order. */

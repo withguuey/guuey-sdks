@@ -559,7 +559,7 @@ function callHostCallback(
  * guuey#1235 leg 1 — the `ggui_runtime_pull` CIRCUIT BREAK. A card whose live
  * session died keeps auto-polling on its own interval; each pull `tools/call`
  * 404s at the pod door → `unavailable` → the sandbox polls again, hammering the
- * door indefinitely (the #1233 prod storm: 57+ over 15 min). After
+ * door indefinitely without this cap (guuey#1233). After
  * {@link PULL_CIRCUIT_THRESHOLD} CONSECUTIVE `unavailable` pull results for a
  * locator, the circuit OPENS: the relay stops calling the transport for that
  * locator's pull (fail-fast, no network) — the server storm is bounded. Before

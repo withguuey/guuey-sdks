@@ -63,7 +63,7 @@ export async function deleteApp(
   const auth = requireAuth();
   // The cliApi owns app deletion (DELETE /v1/apps/:id → archive + 30-day TTL
   // cascade). The old platform-host route (/api/cli/apps) retired with the
-  // cliApi migration — targeting it 404'd every delete (review finding).
+  // cliApi migration — targeting it 404'd every delete.
   if (!config.apiUrl) {
     out.error('REST API URL not configured.');
     process.exit(1);

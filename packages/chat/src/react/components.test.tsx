@@ -356,7 +356,7 @@ describe("DefaultView — per-mount viewProps + autoResize (guuey#135 kit-refine
     await vi.waitFor(() => expect(frame!.style.height).toBe("420px"));
   });
 
-  // guuey#992 — the founder's first prod card grew to 86,816 px: a view whose
+  // guuey#992 — a production card grew to 86,816 px: a view whose
   // body is viewport-bound measures the frame's own height (+δ) back to the
   // host on every resize. The host owns the loop's stability (the view is
   // agent-generated HTML): a second same-δ growth inside the echo window

@@ -1974,7 +1974,7 @@ describe('resolveDeployTarget (guuey#975)', () => {
 });
 
 // ── guuey#989: the node_modules preflight runs BEFORE any leg talks to the platform ──
-// The founder's 0.19.0 prod walk showed the order as shipped by #979:
+// The 0.19.0 release showed the order as shipped by #979:
 // "✓ ggui assets pushed" and only THEN "No node_modules in …" — the asset
 // leg had already mutated the app (full-state replace) for a deploy that
 // could not build. The local project must be buildable before any leg
@@ -2038,7 +2038,7 @@ describe('deploy() --code — the node_modules preflight precedes every platform
     expect(childProcessLog.calls).toEqual([]);
   });
 
-  // guuey#1000 — founder ruling, verbatim: "i prefer auto install". The
+  // guuey#1000 — the deploy installs on first run. The
   // default is no longer a refusal: a missing node_modules is installed,
   // FIRST, before any leg talks to the platform.
   it('★ by default a missing node_modules is INSTALLED first — before the ggui asset push or any other fetch', async () => {
@@ -2055,11 +2055,11 @@ describe('deploy() --code — the node_modules preflight precedes every platform
 });
 
 // ── guuey#979: code-mode deploy preflights node_modules ─────────────────────
-// The founder's first prod deploy (2026-09-07) ran `pnpm build` in a
+// A first production deploy ran `pnpm build` in a
 // fresh scaffold with no node_modules and died inside the build ("sh: tsup:
 // command not found"); the only install instruction on screen was pnpm's own
 // WARN. The preflight says it in our voice BEFORE any build. Since guuey#1000
-// (his word: "i prefer auto install") the default INSTALLS; `--no-install`
+// the default INSTALLS; `--no-install`
 // is the refusal — these pins cover the function's two arms as such.
 describe('ensureInstalled (guuey#979 / #1000)', () => {
   const calls: string[] = [];

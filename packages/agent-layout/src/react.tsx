@@ -59,17 +59,17 @@ export interface AgentModeProviderProps {
    * (the ggui#633 shipped pair + its dark mirror) apply when absent.
    */
   tones?: TonePair;
-  /** The follow fade in ms — default the founder-certified eased 150. */
+  /** The follow fade in ms — default the calibrated eased 150. */
   transitionMs?: number;
   /**
    * The surface's identity mark (logo / brand node) for the working state
-   * (founder (d)): shown with the built-in pulse while the agent has the
+   * (requirement (d)): shown with the built-in pulse while the agent has the
    * room but nothing is presented yet.
    */
   identity?: ReactNode;
   /**
    * The whole standby/splash treatment, configured ONCE at the Provider
-   * (guuey#430 — the founder's brand-configurable splash): replaces the
+   * (guuey#430 — the brand-configurable splash): replaces the
    * built-in identity+pulse for every ActivePane under this provider.
    * Per-pane `ActivePane.workingState` still wins over this. Consumers
    * supply their brand's splash (ggui console: blinking glyphs; guuey
@@ -149,7 +149,7 @@ export interface UseAgentModeResult {
   activePanel: ActivePanel;
   /** A turn is in flight (submit → settled). */
   streaming: boolean;
-  /** The founder-(d) working-state window is open. */
+  /** The requirement-(d) working-state window is open. */
   pending: boolean;
   /** The raw machine door — `bindGuueyChat(dispatch)` wires a kit surface. */
   dispatch: (input: AgentModeInput) => void;
@@ -278,7 +278,7 @@ export function SidebarPanel({ section, children, className, ...rest }: SidebarP
 export interface ActivePaneProps extends HTMLAttributes<HTMLDivElement> {
   /**
    * Replaces the built-in working-state treatment (identity + pulse) shown
-   * while the agent has the room and nothing is presented yet (founder
+   * while the agent has the room and nothing is presented yet (requirement
    * (d): NEVER hold prior page content on the agent ground).
    */
   workingState?: ReactNode;
@@ -287,7 +287,7 @@ export interface ActivePaneProps extends HTMLAttributes<HTMLDivElement> {
 /**
  * The right pane: paints `--guuey-layout-pane-tone`, animates per the
  * transition token, honors `prefers-reduced-motion` (stylesheet: instant
- * snap). While the founder-(d) window is open the pane presents the
+ * snap). While the requirement-(d) window is open the pane presents the
  * working state INSTEAD of its children — prior page content never sits
  * on the agent ground.
  */

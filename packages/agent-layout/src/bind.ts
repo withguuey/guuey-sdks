@@ -52,7 +52,7 @@ export interface GuueyChatBindingProps {
  *  - `settled` → `agentSettled` (no tone transition; ends the working
  *    state and the streaming flag);
  *  - a roster change whose LIVE view count GREW → `agentViewMounted`
- *    (the founder's (d): content replaced the working state). Counting
+ *    (requirement (d): content replaced the working state). Counting
  *    growth — not presence — keeps earlier turns' lingering live views
  *    and rehydrated history views from clearing a fresh submit's pending
  *    window spuriously.

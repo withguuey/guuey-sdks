@@ -909,7 +909,7 @@ describe("viewPropsWithThemeAnnounce", () => {
   });
 });
 
-// ─── Kit-default host wiring (guuey#335 — the founder-hit Confirm bug) ─────
+// ─── Kit-default host wiring (guuey#335 — the Confirm bug) ─────
 describe("kit-default view-host wiring (guuey#335)", () => {
   it("viewPropsWithThemeAnnounce fills the default wires; caller-declared slots win", () => {
     const kitRelay = async () => ({ content: [] });

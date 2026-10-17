@@ -1491,7 +1491,7 @@ interface ByoUserEraseStatusResponse {
  * Lets a builder honor a BYO-auth end-user's GDPR erasure request without
  * deleting the builder's whole Guuey app — see the handler's module doc for
  * the full authz ladder + cross-tenant boundary. Folded into this plural
- * `apps` group (erasecomp polish, founder decision) from a short-lived
+ * `apps` group (erasecomp polish) from a short-lived
  * singular `app` group that was a near-homograph beside it — appId is now
  * a positional argument, mirroring `appsGet`/`appsAccess`/… above.
  */

@@ -9,7 +9,7 @@
  * generated card CSS, and agent-generated HTML is not ours to control)
  * measures the frame's OWN height plus a constant δ (margins, padding) and
  * reports it back; a host that applies every report verbatim grows the
- * frame by δ per tick without bound. The founder's first prod card sat at
+ * frame by δ per tick without bound; a production card reached
  * 86,816 px. The view cannot tell the two apart; the host can:
  *
  *   1. CEILING — a report is clamped to `ceiling` (the host viewport, or

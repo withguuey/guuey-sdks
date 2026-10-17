@@ -23,8 +23,8 @@ export interface ModelEntry {
   /**
    * The picker's FRONT SLICE. `lineup` entries are what a model picker shows
    * without asking; every other invocable entry is reachable only behind the
-   * picker's "See all models" door (founder ruling 2026-09-02, guuey#635:
-   * "let's provide there 'see all models' and put fable5 there").
+   * picker's "See all models" door (guuey#635: Fable 5 sits behind that
+   * door).
    *
    * This is a CURATION flag, not a claim about a model's provider lifecycle —
    * a non-`lineup` model is still Active, still served, still selectable. The
@@ -32,9 +32,9 @@ export interface ModelEntry {
    * page is the authority there (claude-fable-5 is Active with no deprecation
    * date, so it stays `ga` and merely moves behind the door).
    *
-   * Each provider's lineup is the founder's pick, PER FLEET. guuey's today:
+   * Each provider's lineup is a curated pick, PER FLEET. guuey's today:
    * Anthropic's current generation as of the 2026-09-02 wave (Sonnet 5,
-   * Fable 5.1, Opus 5, Haiku 4.5); OpenAI's his #1608 pick (d), guuey#1622
+   * Fable 5.1, Opus 5, Haiku 4.5); OpenAI's #1608 option (d), guuey#1622
    * (Terra · GPT-6 Sol · Astra · GPT-6 Luna); Google's its current Flash line
    * (3.6 Flash, 3.8 Flash, 3.5 Flash Lite). The door widened what is
    * REACHABLE; it did not change what is shown up front.
@@ -106,8 +106,8 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
   // entries; a not-sooner-than floor is not one. Flip only on a real
   // deprecation notice, quoting the page.
   //
-  // Superseded by Fable 5.1, so it is NOT in the lineup — the founder's
-  // 2026-09-02 ruling put it behind the picker's "See all models" door rather
+  // Superseded by Fable 5.1, so it is NOT in the lineup — guuey#635
+  // put it behind the picker's "See all models" door rather
   // than hiding it: apps already pinned to Fable 5 keep their edit flow,
   // because the door's expanded list carries their value.
   { id: "claude-fable-5", provider: "anthropic", label: "Claude Fable 5", status: "ga" },
@@ -133,7 +133,7 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
   { id: "claude-haiku-4-5", provider: "anthropic", label: "Claude Haiku 4.5", status: "ga" },
   // Superseded by Opus 5 at the same published price — behind the door.
   { id: "claude-opus-4-8", provider: "anthropic", label: "Claude Opus 4.8", status: "ga" },
-  // Terra — guuey's OpenAI default (founder call 2026-07-25). This DELIBERATELY
+  // Terra — guuey's OpenAI default (a cost/balance choice). This DELIBERATELY
   // diverges from OpenAI's own `gpt-5.6` alias, which routes to Sol: Terra is
   // half Sol's price and the better cost/balance pick for hosted agent
   // workloads. The bare `gpt-5.6` alias is intentionally NOT a registry id
@@ -146,26 +146,26 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
   // status alone keeps it out of BOTH picker halves. Flips to `ga` (+ lineup
   // decision) in the first cut after its receipt (oss #806).
   { id: "gpt-5.6-terra", provider: "openai", label: "GPT-5.6 Terra", status: "ga", lineup: true },
-  // GPT-6 Sol + GPT-6 Luna (guuey#1622 — his #1608 picks (a) "Staged: Sol+Luna
-  // now, Opus 5.5 announced (Recommended)" and (d) "Successors in; Opus 5 + 5.6
-  // Sol behind the door"): `ga` on QA's receipted in-pod calls (dev, 2026-09-22
+  // GPT-6 Sol + GPT-6 Luna (guuey#1622 — #1608 options (a), staged: Sol+Luna
+  // now with Opus 5.5 announced, and (d), successors in with Opus 5 and 5.6
+  // Sol behind the door): `ga` on QA's receipted in-pod calls (dev, 2026-09-22
   // 20:00Z, through the openai egress arm with the managed key: HTTP 200 on
   // /v1/responses, the provider echoed each id, usage in 11 / out 5 — #1606
   // c.5783217245). Priced at list, 272K tier included (#1621). The OpenAI
   // lineup is (d)'s order — Terra · GPT-6 Sol · Astra · GPT-6 Luna — and the
   // picker shows lineup rows in registry order, so the ROW ORDER here is the
-  // ruling. Terra stays the default (#1624 is the gated default move).
+  // contract. Terra stays the default (#1624 is the gated default move).
   { id: "gpt-6-sol", provider: "openai", label: "GPT-6 Sol", status: "ga", lineup: true },
   // FLIPPED to ga 2026-09-05 on #801's receipted pod call (dev, through the
   // openai egress arm with the managed key: HTTP 200 on /v1/responses, the
   // provider echoed "gpt-6-astra", usage in 11 / out 5). In the lineup as a
-  // non-default member (beside 5.6 Sol then; GPT-6 Sol since #1622) — Terra stays the default (founder's
-  // cost/balance call, 2026-07-25). Known metering gap stated on guuey#818:
+  // non-default member (beside 5.6 Sol then; GPT-6 Sol since #1622) — Terra stays the default (the
+  // cost/balance choice). Known metering gap stated on guuey#818:
   // prompts above 272K input tokens are vendor-priced at 2× and the card has
   // no context tier yet.
   { id: "gpt-6-astra", provider: "openai", label: "GPT-6 Astra", status: "ga", lineup: true },
-  // The OpenAI default since guuey#1624 (his #1608 pick (c), "Move to GPT-6 Luna
-  // (after the gates)"). The gates were the chip drafts' max_completion_tokens
+  // The OpenAI default since guuey#1624 (#1608 option (c): move to GPT-6 Luna
+  // after the gates). The gates were the chip drafts' max_completion_tokens
   // (#1614) and a measured per-turn comparison against Terra on guuey's own
   // workloads (U6: 60 sessions, dev pin 23, pre-registered rules; Luna was not
   // worse on any criterion, and faster to the first card and cheaper per turn
@@ -194,7 +194,7 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
   // :streamGenerateContent?alt=sse, the provider echoed modelVersion
   // "gemini-3.8-flash", usageMetadata prompt 6 / candidates 1 / thoughts 42;
   // #804 closed on that payload). In the lineup as a non-default member after
-  // 3.6 Flash — the default stays 3.6 (founder's 2026-07-25 price call; 3.8's
+  // 3.6 Flash — the default stays 3.6 (a price choice; 3.8's
   // intro price ends 2026-12-31 and the card bills its standard rate).
   { id: "gemini-3.8-flash", provider: "google", label: "Gemini 3.8 Flash", status: "ga", lineup: true },
   { id: "gemini-3.5-flash-lite", provider: "google", label: "Gemini 3.5 Flash Lite", status: "ga", lineup: true },

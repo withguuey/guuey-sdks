@@ -119,8 +119,8 @@ describe("GuueyChatTheme", () => {
   });
 
   /**
-   * guuey#1151 — glass is ONE value in the theme document (the founder:
-   * "Glass becomes one value in door 1, not the design"): the widget
+   * guuey#1151 — glass is ONE value in the theme document (one value
+   * in door 1, not the design): the widget
    * CHROME's translucency + backdrop blur. Carried next to `shadow` in the
    * v2 vocabulary so it is never a migration; chrome-only, never a card.
    */
@@ -139,7 +139,7 @@ describe("GuueyChatTheme", () => {
   });
 
   /**
-   * guuey#1176 — the founder's hotfix: the widget's DEFAULT look is
+   * guuey#1176 — the widget's DEFAULT look is
    * guuey.com's frosted glass. The numbers are the home hero's embedded
    * chat verbatim (`apps/landing/src/components/HomeChat.css` `.homechat.on`:
    * line 36 `rgba(246, 245, 238, 0.82)`, line 37 `blur(14px)`, line 39

@@ -982,7 +982,7 @@
    under its 16px no-zoom threshold. The kit root is 15px (× scale), and
    this input is `font: inherit` — one px under, so focusing the composer
    zoomed the whole page and the panel visually overflowed the viewport
-   (guuey#516, founder real-device report 2026-08-30; the widget loader's
+   (guuey#516, a real-device report; the widget loader's
    own width clamp was correct). Floor the input at 16px on touch-primary
    devices only — max() preserves host upscaling (--guuey-chat-scale >
    16/15), and desktop keeps the 15px look untouched. */

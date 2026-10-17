@@ -11,7 +11,7 @@
  * the same set. `@guuey/mcp-apps-host` renders its own chrome, was never
  * walked by that guard, and shipped `"Negotiating with view…"` (the
  * {@link ViewHostPhase} member `"negotiating"` shown to a person) captioning a
- * blank frame on a public page. The founder saw it.
+ * blank frame on a public page.
  *
  * **A by-construction guard is scoped to the packages its test walks.** So
  * this test states its coverage explicitly rather than leaving it implied:

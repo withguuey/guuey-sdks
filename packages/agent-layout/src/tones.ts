@@ -11,7 +11,7 @@
  *     ΔL* ≥ 6  —  OR  —  a hue-temperature step (Δab ≥ 2) with ΔL* ≥ 5
  *
  * Both arms reject the failed 3.5 cut; the strict arm alone would have
- * rejected the founder-certified shipped pair. The platform's theme-doc
+ * rejected the calibrated shipped pair. The platform's theme-doc
  * gate applies its own mirror of this rule server-side; this module is the
  * lib's own honesty (derived defaults satisfy the floor BY CONSTRUCTION —
  * pairs that land under it get the documented nudge apart, never a silent
@@ -33,8 +33,8 @@ export interface TonePair {
 /**
  * The lib base defaults — the ggui#633 SHIPPED pair for light, and its
  * temperature-step mirror for dark (warm umber menu vs neutral chrome,
- * ΔL* 6.5 — the strict arm). Founder-certified "two-toned and
- * well-distinguished" in light; the dark pair keeps the identical warm→
+ * ΔL* 6.5 — the strict arm). Calibrated as two-toned and
+ * well-distinguished in light; the dark pair keeps the identical warm→
  * neutral grammar so a mode flip changes brightness, not the layout's
  * character. Both pairs assert the floor in this package's tests.
  */

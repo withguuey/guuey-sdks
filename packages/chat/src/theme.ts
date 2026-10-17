@@ -1,5 +1,5 @@
 /**
- * Theme = platform data (wave-3a design §6, founder-ratified).
+ * Theme = platform data (wave-3a design §6).
  *
  * ONE serializable token schema, four consumers: this package's default
  * theme, the per-app theme configured on platform.guuey.com (console editor
@@ -172,7 +172,7 @@ export const GuueyChatTheme = z
          * platform's write gate holds the bands); one value in the document,
          * next to `shadow`, so it is never a migration.
          *
-         * FROSTED IS THE DEFAULT (guuey#1176, the founder's hotfix): both
+         * FROSTED IS THE DEFAULT (guuey#1176): both
          * shipped themes state guuey.com's own glass
          * ({@link DEFAULT_CHAT_GLASS}), so an unthemed app and a theme that
          * states no glass both paint frosted; `{ opacity: 1 }` is the opt-out
@@ -261,10 +261,8 @@ export type GuueyChatTheme = z.infer<typeof GuueyChatTheme>;
 
 /**
  * The DEFAULT look of the widget's chrome is guuey.com's frosted glass
- * (guuey#1176 — the founder: "make the guuey widget's default theme just as
- * like guuey.com's blurred frosted glass based them w/ shadow. it'll
- * naturally fit to their background without customizing the theme too
- * tightly"). The two values below are the home hero's embedded chat
+ * (guuey#1176 — blurred frosted glass with a shadow fits naturally over a
+ * host's background without the theme being customized). The two values below are the home hero's embedded chat
  * verbatim — `apps/landing/src/components/HomeChat.css`, `.homechat.on`:
  *
  *   line 36  `background: rgba(246, 245, 238, 0.82);`   → glass.opacity 0.82
@@ -297,7 +295,7 @@ export const DEFAULT_CHAT_SHADOW: NonNullable<GuueyChatTheme["shape"]["shadow"]>
  * before configuring anything, and the per-token fallback floor every other
  * theme resolves against.
  *
- * The accent is MONOCHROME (= ink) by founder ruling (guuey#521): an
+ * The accent is MONOCHROME (= ink) by design (guuey#521): an
  * unthemed embed must never carry a foreign accent into a host's product —
  * the old `#2f6bff` blue made every zero-config embed read "off-the-shelf
  * chat vendor" inside someone else's brand (#414's lesson, mirrored). Ink

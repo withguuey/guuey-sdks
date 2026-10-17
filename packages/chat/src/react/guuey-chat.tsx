@@ -1,7 +1,7 @@
 /**
  * `<GuueyChat>` — the batteries-included surface (guuey#135 wave 3c): the
  * whole tier stack wired end to end, PLUS the composer (which arrives here
- * per the founder ruling — earlier tiers are transcript-only).
+ * by design — earlier tiers are transcript-only).
  *
  *     useAgentInvoke → useTranscriptInputs → useTranscript → <Transcript>
  *                                                          + the composer
@@ -243,7 +243,7 @@ export interface GuueyChatProps {
   /** Pod base URL (with or without `/agent/invoke`). `null` disables chat. */
   endpointUrl: string | null;
   /**
-   * The head row over the conversation (guuey#1150, founder-ruled: builders
+   * The head row over the conversation (guuey#1150: builders
    * bring their own design through ONE component, not two hand-rolled
    * headers). Rendered as the FIRST child of `.guuey-chat-surface` — inside
    * the theme stamp (#1126), so its `var(--guuey-chat-X, var(--_guuey-chat-X))`
@@ -368,7 +368,7 @@ export interface GuueyChatProps {
    * story): a quiet "Clear conversation" control with a two-tap confirm,
    * wired to {@link GuueyChatHandle.clearConversation}. Default: ON when
    * the surface runs GUEST identity (`getGuestSecret` present — the
-   * founder's seamless principle; a signed-in surface has account-level
+   * seamless principle; a signed-in surface has account-level
    * recourse), OFF otherwise; pass a boolean to override either way.
    */
   clearAffordance?: boolean;
@@ -816,8 +816,8 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // guuey#1038 — a LISTEN is a turn waiting on the USER. ggui's `ggui_consume`
   // (wait for the user to act on a card; bounded and abort-aware on their
   // side — cancelling the in-flight call ends it, which is what a manual
-  // Stop did) used to hold the composer shut until the founder stopped the
-  // tool call by hand: "honestly this wasn't a good experience". While the
+  // Stop did) used to hold the composer shut until the user stopped the
+  // tool call by hand. While the
   // pending tool is the listen, the composer stays open and a reply ends the
   // listen and sends — the user answers in either channel, card or text.
   const waitingOnUser = isWaitingOnUser(invoke.status, invoke.activeTool);
@@ -873,7 +873,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     liveRef.current = { available, busy, invoke, onReady };
   });
 
-  // The DEFAULT ACTION RELAY (guuey#335 — the founder-hit Confirm bug):
+  // The DEFAULT ACTION RELAY (guuey#335 — the Confirm bug):
   // pod-then-persisted, built over the SAME identity as the reader, thread
   // read through the ref at CALL time. Without it, a kit-mounted render's
   // tools/call hits an initialize-only host and the card's interaction

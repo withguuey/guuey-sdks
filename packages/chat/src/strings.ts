@@ -6,7 +6,7 @@
  * package carries literal copy. Parameterized strings are functions so word
  * order stays translatable ("Ran 4 tools" vs "4 Werkzeuge ausgeführt").
  *
- * The en defaults below are the founder-review copy from the wave-3a design
+ * The en defaults below are the reviewed copy from the wave-3a design
  * (§4.2 + per-row labels; guuey#135 — F7 keeps them wordsmith-able until 3b
  * freezes the voice).
  */

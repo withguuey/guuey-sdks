@@ -6,7 +6,7 @@
  * from the REAL persisted rows through the REST history mapping. Every
  * phase the live hook can be in is planned and its slot layout asserted:
  * user bubbles and assistant slots must alternate 1:1 in conversational
- * order — a third assistant slot against two users IS the founder's DOM.
+ * order — a third assistant slot against two users IS the reported DOM.
  *
  * RED on the pre-#982 seam at phase P6 (persisted rows of the in-flight
  * turn already on the flat side while the fold still holds it live):

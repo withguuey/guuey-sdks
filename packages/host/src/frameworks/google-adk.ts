@@ -202,7 +202,7 @@ export async function loadAdk(entryPath?: string): Promise<AdkModule> {
     if (entryPath !== undefined) {
       const entryRequire = createRequire(pathToFileURL(entryPath).href);
       const resolved = entryRequire.resolve(ADK_PACKAGE);
-      // Dual-package hazard (review finding): `require.resolve` picks the
+      // Dual-package hazard: `require.resolve` picks the
       // exports REQUIRE condition (CJS build), but the dev's ESM agent module
       // `import`s the IMPORT condition (ESM build) — same version, two module
       // instances. Re-resolve the IMPORT-condition entry from the package
@@ -382,7 +382,7 @@ export async function runAdkTurn(
       newMessage: { role: "user", parts: [{ text: turn.input }] },
       // SSE streaming, matching the Python host's RunConfig(streaming_mode=SSE)
       // — the ADK default is NONE, which silently drops incremental text
-      // (review finding). "sse" is StreamingMode.SSE's literal value.
+      // "sse" is StreamingMode.SSE's literal value.
       runConfig: { streamingMode: "sse" },
     })) {
       // The full native event passes to the normalizer untouched; JS events

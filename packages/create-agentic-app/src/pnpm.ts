@@ -4,9 +4,9 @@
  * The scaffold and `guuey deploy` both used to hardcode `corepack pnpm`, on the
  * strength of two sentences that were not true: that our templates pin a
  * `packageManager` (none of them do) and that corepack ships with Node (not on
- * 25, not on Homebrew's). The founder's own machine has no corepack, and his
- * `npx @guuey/create-agentic-app@latest` could not install: "my env does not
- * have corepack. other people will have the same issue."
+ * 25, not on Homebrew's). On a machine without corepack,
+ * `npx @guuey/create-agentic-app@latest` could not install, and many machines
+ * have no corepack.
  *
  * So neither caller decides any more; they ask here. The ladder is things a
  * machine either HAS or CAN GET:

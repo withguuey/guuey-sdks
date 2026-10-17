@@ -4,8 +4,8 @@
  * fixture (guuey#1213, the rolling-release rule).
  *
  * Why this is a module and not four lines inside the hook: the pod on the
- * other side of this wire rolls independently of the widget, and the founder's
- * 2026-09-10 ruling makes N−1 tolerance a CI check rather than a review
+ * other side of this wire rolls independently of the widget, and the
+ * rolling-release rule makes N−1 tolerance a CI check rather than a review
  * question. The canonical bodies this builder produces — from the cases in
  * `fixtures/widget-invoke-body-cases.ts`, into `fixtures/widget-invoke-bodies.json`,
  * pinned by `invoke-body.test.ts` — are

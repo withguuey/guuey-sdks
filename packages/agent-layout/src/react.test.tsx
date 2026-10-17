@@ -147,7 +147,7 @@ describe("the follow (§3 wired)", () => {
   });
 });
 
-describe("founder (d): the working state", () => {
+describe("requirement (d): the working state", () => {
   it("on submit the pane presents the working state, never the prior page content", () => {
     shell({ identity: <span>BrandMark</span> });
     expect(screen.getByText("page content")).toBeTruthy();

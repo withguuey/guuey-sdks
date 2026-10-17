@@ -56,7 +56,7 @@ export async function ensureTargetDir(targetDir: string, force: boolean | undefi
 
 /**
  * Does this scaffold run install itself? YES unless `--no-install`
- * (guuey#1000 — founder ruling, verbatim: "i prefer auto install"). The
+ * (guuey#1000 — the scaffold installs on first run). The
  * install used to be opt-in (`--install`) and "Next steps" led with
  * `pnpm install`, which a first-time builder skipped straight into
  * `sh: tsup: not found` on deploy (#979). Both scaffold paths and the

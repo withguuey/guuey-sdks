@@ -1,6 +1,5 @@
 /**
- * Opt-in analytics for a scaffolded app (guuey#1062 — platform's ruling on
- * the row, 2026-09-09):
+ * Opt-in analytics for a scaffolded app (guuey#1062):
  *
  *   1. The DEFAULT scaffold carries ZERO analytics bytes — no loader, no
  *      import, no key placeholder. A customer's app never reports to Guuey's

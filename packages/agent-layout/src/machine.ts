@@ -11,7 +11,7 @@
  *  - `streaming` — a turn is in flight. Read by ONE rule only: closing an
  *    agent view returns to the menu UNLESS still streaming (the console's
  *    shipped behavior).
- *  - `pending` — the founder's (d) requirement: on flip to the agent tone
+ *  - `pending` — requirement (d): on flip to the agent tone
  *    with no view mounted yet, the pane must NEVER hold prior page content
  *    on the agent ground — it presents the working state immediately.
  *    `pending` arms on submit and clears on view-mount, on settle (the
@@ -28,7 +28,7 @@ export interface AgentModeState {
   activePanel: ActivePanel;
   /** A turn is in flight (submit → settled). */
   streaming: boolean;
-  /** Working-state window: submitted, nothing presented yet (founder (d)). */
+  /** Working-state window: submitted, nothing presented yet (requirement (d)). */
   pending: boolean;
 }
 
@@ -52,7 +52,7 @@ export type AgentModeInput =
    * permanent spinner, since no turn will ever mount a view or settle.
    */
   | { type: "agentPanelActivated" }
-  /** The turn reached `ready`. NO panel transition (platform-ruled: no bounce-back). */
+  /** The turn reached `ready`. NO panel transition (no bounce-back). */
   | { type: "agentSettled" }
   /** A live view mounted — the working state has been replaced by content. */
   | { type: "agentViewMounted" }

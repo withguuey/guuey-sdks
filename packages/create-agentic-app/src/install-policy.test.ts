@@ -1,6 +1,5 @@
 /**
- * The scaffold's first run installs by itself (guuey#1000 — founder ruling,
- * verbatim: "i prefer auto install"). Before this the install was opt-in
+ * The scaffold's first run installs by itself (guuey#1000). Before this the install was opt-in
  * (`--install`) and the printed "Next steps" led with `pnpm install`, which
  * a first-time builder skipped straight into `sh: tsup: not found` (#979).
  *

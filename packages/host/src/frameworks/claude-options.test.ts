@@ -420,7 +420,7 @@ describe("buildOptions — a bound first impression turns extended thinking OFF 
     expect(opts.thinking).toEqual({ type: "disabled" });
   });
 
-  it("guuey#2270: on the DEFAULT model (Sonnet 5.5, which refuses `disabled`) thinking is left at the SDK default — the first turn is prompt-only, by his 10-15 ruling", () => {
+  it("guuey#2270: on the DEFAULT model (Sonnet 5.5, which refuses `disabled`) thinking is left at the SDK default — the first turn is prompt-only", () => {
     const opts = buildOptions({ systemPrompt: "S" }, ctx({ gguiAttached: true, firstImpression: push }));
     expect(opts.model).toBe("claude-sonnet-5-5");
     expect(opts).not.toHaveProperty("thinking");

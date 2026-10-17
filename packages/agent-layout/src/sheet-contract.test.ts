@@ -38,7 +38,7 @@ describe("guuey#429 — the shell is viewport-pinned by default", () => {
     expect(block(".guuey-layout-shell")).toContain("grid-template-rows: minmax(0, 1fr)");
   });
 
-  it("the pane owns its scroll context (the founder's rule: the right panel scrolls within itself)", () => {
+  it("the pane owns its scroll context (the right panel scrolls within itself)", () => {
     expect(block(".guuey-layout-pane")).toContain("overflow: auto");
   });
 

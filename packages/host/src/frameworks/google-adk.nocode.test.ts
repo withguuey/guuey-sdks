@@ -1,6 +1,6 @@
 /**
  * No-code google-adk coverage (the production replacement for the deleted
- * Python host — review finding: previously only graceful mode was tested)
+ * Python host — previously only graceful mode was tested)
  * plus the review-driven regression pins: armed-env (the SDK actually reads
  * GEMINI_API_KEY), SSE streaming mode on runAsync, RUNNERS registry module
  * paths resolving, the graceful gate, and the import-condition (single-

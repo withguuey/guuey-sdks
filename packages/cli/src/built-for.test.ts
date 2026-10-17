@@ -1,5 +1,5 @@
 /**
- * The CLI's one home for "who is this agent for" (guuey#1670): the ruled
+ * The CLI's one home for "who is this agent for" (guuey#1670): the
  * question, the console's two answers, the `--for` flag and the deploy
  * prompt's answer parser.
  */
@@ -17,7 +17,7 @@ import {
 } from './built-for';
 
 describe('the question and its answers', () => {
-  it('asks the ruled question, word for word (his 2026-09-23 copy)', () => {
+  it('asks the question, word for word', () => {
     expect(BUILT_FOR_QUESTION).toBe('Is this agent for you, or for your customers?');
   });
 

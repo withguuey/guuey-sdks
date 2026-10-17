@@ -40,7 +40,7 @@ function Shell() {
 </AgentModeProvider>;
 ```
 
-- **Two tones, calibrated**: the default pair is the founder-certified
+- **Two tones, calibrated**: the default pair is the shipped
   warm-paper/neutral-chrome step, light and dark. Overrides are validated
   against a perceptibility floor (ΔL\* ≥ 6, or a hue-temperature step) —
   two tones that measure alike are rejected with an explanation.

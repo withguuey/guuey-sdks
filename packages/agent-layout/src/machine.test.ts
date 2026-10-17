@@ -1,6 +1,6 @@
 /**
  * The §3 transition table, pinned rule by rule — including the ggui#633
- * calibration additions (streaming-gated view close, the founder-(d)
+ * calibration additions (streaming-gated view close, the requirement-(d)
  * pending window).
  */
 import { describe, expect, it } from "vitest";

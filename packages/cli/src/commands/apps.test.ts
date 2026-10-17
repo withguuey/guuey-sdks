@@ -1267,7 +1267,7 @@ describe('the uniform 404 on archive and recover (guuey#1997)', () => {
  *   POST /v1/apps/{appId}/byo-users/erase           (default)
  *   GET  /v1/apps/{appId}/byo-users/erase-status?sub=…   (--status)
  *
- * Folded (erasecomp polish, founder decision) from a short-lived singular
+ * Folded (erasecomp polish) from a short-lived singular
  * `guuey app byo-user erase --app <appId> --sub <sub>` group into this
  * plural `apps` group, appId as a positional argument like its siblings
  * above — every behavioral assertion below carries over from the old

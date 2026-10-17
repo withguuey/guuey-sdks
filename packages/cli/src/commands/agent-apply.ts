@@ -518,7 +518,7 @@ async function postReconcile(ctx: Ctx, body: AgentReconcileBody): Promise<AgentR
 // The tada page's born-bound flow: studio creates an app (often WITH
 // guest/auth modes drafted), the stranger pastes the npx line, and the
 // scaffold's template guuey.json carries NO modes. Apply is wholesale-
-// declarative BY CONTRACT (doc-is-desired-state — platform's ruling on
+// declarative BY CONTRACT (doc-is-desired-state — settled on
 // the #580 audit): an apply from that fresh doc would silently STRIP the
 // drafted modes. This guard makes the clobber impossible to hit blind:
 // when the local doc OMITS `agent.modes` and the app's live nocode

@@ -12,12 +12,11 @@
  * GUESS. When the counts line up it looks ordered by coincidence; when they
  * do not, the lists concatenate: every user message, then every agent turn.
  *
- * Two ordinary things break the counts, and the founder hit both in one
- * session: an unprompted WELCOME CARD (an agent turn with no user row) and a
+ * Two ordinary things break the counts, and one real session hit both: an unprompted WELCOME CARD (an agent turn with no user row) and a
  * CARD CHIP CLICK (an action minted on the live channel and drained by
  * `ggui_consume` — agent-facing by design, so no user row is ever sent).
  *
- * The first `describe` replays his transcript literally. The second is the
+ * The first `describe` replays that transcript literally. The second is the
  * N-1 fallback arm, named rather than implied: an older assembler across the
  * npm boundary stamps nothing, and the planner must keep its previous
  * behaviour exactly.
@@ -73,7 +72,7 @@ const textOf = (items: DisplayItem[]): string[] =>
     .map((i) => (i.kind === "user" ? i.text : i.text));
 
 /**
- * The founder's session, verbatim (guuey#1333):
+ * The reported session, as it happened (guuey#1333):
  *   (me) hey / (agent) welcome card / (me) [chip click] / (agent) text /
  *   (me) i build something cool / (agent) answer
  * Two user ROWS exist — the chip click sends none — against three agent turns.
@@ -91,7 +90,7 @@ const FOUNDER_USERS: TranscriptMessage[] = [
 ];
 
 describe("guuey#1333 — a live session interleaves chronologically", () => {
-  it("renders the founder's transcript in the order it happened", () => {
+  it("renders the reported transcript in the order it happened", () => {
     expect(textOf(plan(FOUNDER_USERS, FOUNDER_FOLD))).toEqual([
       "hey",
       WELCOME,

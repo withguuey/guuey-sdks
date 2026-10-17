@@ -1,6 +1,6 @@
 /**
- * The `autoResize` sizing POLICY (guuey#992) — pure, so the loop the
- * founder hit on prod (a card's frame at 86,816 px) is pinned without a DOM.
+ * The `autoResize` sizing POLICY (guuey#992) — pure, so the loop seen
+ * in production (a card's frame at 86,816 px) is pinned without a DOM.
  *
  * The view runtime (`@ggui-ai/iframe-runtime`) measures `documentElement`
  * at `max-content` and posts `ui/notifications/size-changed`. A view whose

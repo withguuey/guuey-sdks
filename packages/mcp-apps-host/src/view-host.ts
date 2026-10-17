@@ -310,8 +310,8 @@ function behaviorFor(frame: ViewFrameLike, config: AttachViewHostConfig): ViewHo
   const readWired = config.onReadResource !== undefined;
   const contextSinkWired = config.onUpdateModelContext !== undefined;
   const messageSinkWired = config.onUserMessage !== undefined;
-  // guuey#522: `false` is the explicit opt-OUT (the founder's on-by-default
-  // ruling inverts the usual polarity — hosts choose to REMOVE links).
+  // guuey#522: `false` is the explicit opt-OUT (on by default, which
+  // inverts the usual polarity — hosts choose to REMOVE links).
   const linkOpenerWired = config.onOpenLink !== undefined && config.onOpenLink !== false;
   return {
     hostInfo: config.hostInfo ?? DEFAULT_HOST_INFO,

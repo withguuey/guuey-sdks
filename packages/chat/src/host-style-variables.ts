@@ -9,8 +9,8 @@
  * text primary/secondary/tertiary → `onGround`+`onContainer`/`onSunken`/
  * `neutral-500`, text danger/success/warning/info → the `{family}-500`
  * stops, border primary/secondary → `outline`/`outlineVariant`) and merges
- * them BENEATH the app's own theme — the founder's ggui#573 ruling, "slice
- * wins, host fallback". So this layer never overrides a stated theme; it
+ * them BENEATH the app's own theme — ggui#573: the slice
+ * wins, the host is the fallback. So this layer never overrides a stated theme; it
  * fills exactly the tokens the theme's overlay does not derive (container,
  * outline, the neutral ladder), which is where a themed app's card was still
  * showing ggui's defaults — the audit's "black outlined buttons on a violet

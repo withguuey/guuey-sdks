@@ -156,7 +156,7 @@ describe('template mcpEndpoints (guuey#25 T4)', () => {
   });
 });
 
-// guuey#978 (founder: "we also need to take care of those warnings"): pnpm ≥10
+// guuey#978 (a fresh scaffold installs without warnings): pnpm ≥10
 // ignores `pnpm.onlyBuiltDependencies` in package.json (a WARN on every first
 // install) and prints the "Ignored build scripts … run pnpm approve-builds" box
 // for transitive build-script deps. The knobs live in pnpm-workspace.yaml —
