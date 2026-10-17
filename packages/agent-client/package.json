@@ -47,7 +47,7 @@
   },
   "dependencies": {
     "@guuey/mcp-apps-host": "workspace:*",
-    "@silverprotocol/core": "0.12.3"
+    "@silverprotocol/core": "0.12.7"
   },
   "peerDependencies": {
     "react": ">=18"
