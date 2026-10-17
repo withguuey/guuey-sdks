@@ -80,7 +80,7 @@ vi.mock("@guuey/worker", async (importOriginal) => ({
 const WORKER_ENTRY = new URL("../templates-src/frameworks/claude-agent-sdk/src/worker.ts", import.meta.url).href;
 const agent: GuueyAgent = { mcpServers: {} };
 const dirs: string[] = [];
-const emit: NativeEmit = { native: () => {}, text: () => {} };
+const emit: NativeEmit = { native: () => {}, text: () => {}, suspend: () => "not_offered", endThread: () => "not_offered" };
 
 beforeAll(async () => {
   vi.stubEnv("GUUEY_AGENT_SNAPSHOT", JSON.stringify(agent));

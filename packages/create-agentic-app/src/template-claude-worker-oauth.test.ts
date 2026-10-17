@@ -53,7 +53,7 @@ const WORKER_ENTRY = new URL("../templates-src/frameworks/claude-agent-sdk/src/w
 const FAKE_CLI = fileURLToPath(new URL("../../worker/src/__fixtures__/fake-claude-cli.mjs", import.meta.url));
 const OAUTH_TOKEN = `SENTINEL-2139-${randomBytes(12).toString("hex")}`;
 const agent: GuueyAgent = { mcpServers: {} };
-const emit: NativeEmit = { native: () => {}, text: () => {} };
+const emit: NativeEmit = { native: () => {}, text: () => {}, suspend: () => "not_offered", endThread: () => "not_offered" };
 const root = mkdtempSync(join(tmpdir(), "caa-claude-oauth-"));
 
 interface FakeReport {
