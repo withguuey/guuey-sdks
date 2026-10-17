@@ -15,32 +15,53 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { GuueyAgent } from "@guuey/config";
-import type { Invoke, NativeEmit, NativeHandler } from "@guuey/worker";
+import type { ClaudeSpawnRequest, ClaudeSpawnedProcess, Invoke, NativeEmit, NativeHandler } from "@guuey/worker";
+
+/** The slice of the SDK's query options this test reads. */
+interface CapturedOptions {
+  env?: Record<string, string>;
+  mcpServers?: object;
+  spawnClaudeCodeProcess?: (request: ClaudeSpawnRequest) => ClaudeSpawnedProcess;
+}
 
 interface CapturedQuery {
-  options: { env?: Record<string, string>; mcpServers?: object; spawnClaudeCodeProcess?: unknown };
+  options: CapturedOptions;
   setMcpServers: Array<Record<string, { headers?: Record<string, string> }>>;
   promptPulledAfterSet: boolean;
+  messageSent: boolean;
+  closed: boolean;
 }
 
 const h = vi.hoisted(() => ({
   handler: undefined as NativeHandler | undefined,
   queries: [] as CapturedQuery[],
+  /** `hang`: the CLI never answers `setMcpServers` (a CLI that started but answers nothing). */
+  mode: "answer" as "answer" | "hang",
 }));
 
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
-  query: (params: { prompt: AsyncIterable<object>; options: CapturedQuery["options"] }) => {
-    const captured: CapturedQuery = { options: params.options, setMcpServers: [], promptPulledAfterSet: false };
+  query: (params: { prompt: AsyncIterable<object>; options: CapturedOptions }) => {
+    const captured: CapturedQuery = {
+      options: params.options,
+      setMcpServers: [],
+      promptPulledAfterSet: false,
+      messageSent: false,
+      closed: false,
+    };
     h.queries.push(captured);
     return {
-      setMcpServers: async (servers: Record<string, { headers?: Record<string, string> }>) => {
+      setMcpServers: (servers: Record<string, { headers?: Record<string, string> }>) => {
         captured.setMcpServers.push(servers);
-        return { added: Object.keys(servers), removed: [], errors: {} };
+        if (h.mode === "hang") return new Promise<never>(() => {});
+        return Promise.resolve({ added: Object.keys(servers), removed: [], errors: {} });
       },
       mcpServerStatus: async () => [],
-      close: () => undefined,
+      close: () => {
+        captured.closed = true;
+      },
       async *[Symbol.asyncIterator]() {
         for await (const _message of params.prompt) {
+          captured.messageSent = true;
           captured.promptPulledAfterSet = captured.setMcpServers.length === 1;
           yield { type: "result", subtype: "success", result: "ok" };
         }
@@ -108,5 +129,29 @@ describe("Claude template worker: private key and MCP delivery (guuey#2139)", ()
     expect(q.options.spawnClaudeCodeProcess).toBeTypeOf("function");
     expect(Object.keys(q.setMcpServers[0] ?? {})).toEqual(["todo"]);
     expect(q.promptPulledAfterSet).toBe(true);
+  });
+
+  it("a CLI that never answers setMcpServers fails the turn at the startup deadline: query closed, no user message", async () => {
+    if (h.handler === undefined) throw new Error("the worker entry never called serveNative");
+    vi.useFakeTimers();
+    h.mode = "hang";
+    try {
+      const turn = Promise.resolve(h.handler(invokeWithServer(), emit));
+      const outcome = turn.then(
+        () => "resolved",
+        (err: unknown) => (err instanceof Error ? err.message : String(err)),
+      );
+      await vi.advanceTimersByTimeAsync(59_999);
+      const q = h.queries.at(-1);
+      if (q === undefined) throw new Error("no query");
+      expect(q.closed).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await outcome).toContain("no answer to setMcpServers within 60000 ms");
+      expect(q.closed).toBe(true);
+      expect(q.messageSent).toBe(false);
+    } finally {
+      h.mode = "answer";
+      vi.useRealTimers();
+    }
   });
 });

@@ -9,7 +9,13 @@
  */
 import { createRequire } from "node:module";
 import { query, type McpServerConfig, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import { CLAUDE_FORBIDDEN_ENV, makeClaudeSpawner, readLaunchEnvelope, serveNative } from "@guuey/worker";
+import {
+  CLAUDE_FORBIDDEN_ENV,
+  makeClaudeSpawner,
+  readLaunchEnvelope,
+  serveNative,
+  type ClaudeKeyKind,
+} from "@guuey/worker";
 import { loadAgent, systemPrompt, mcpEndpoints, withHistory } from "./agent-config.js";
 
 /**
@@ -18,11 +24,20 @@ import { loadAgent, systemPrompt, mcpEndpoints, withHistory } from "./agent-conf
  * spawned); otherwise it comes from this process's environment, as before.
  * Either way the Claude CLI receives it only on its own private descriptor
  * (`makeClaudeSpawner`), never in its environment or argv, so the CLI's Bash
- * and tool children never inherit it.
+ * and tool children never inherit it. A local run with only a Claude OAuth
+ * token (`CLAUDE_CODE_OAUTH_TOKEN`, no API key) hands that token over the same
+ * way, on the CLI's OAuth descriptor input.
  */
 const envelope = await readLaunchEnvelope();
 const modelKey =
   envelope?.model?.token ?? (process.env.ANTHROPIC_AUTH_TOKEN || undefined) ?? (process.env.ANTHROPIC_API_KEY || undefined);
+const oauthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN || undefined;
+const credential: { key: string; keyKind: ClaudeKeyKind } | undefined =
+  modelKey !== undefined
+    ? { key: modelKey, keyKind: "api-key" }
+    : oauthToken !== undefined
+      ? { key: oauthToken, keyKind: "oauth-token" }
+      : undefined;
 
 /** This process's environment minus every credential, auth-path and inspector variable. */
 function cliEnv(): Record<string, string> {
@@ -35,6 +50,26 @@ function cliEnv(): Record<string, string> {
 
 /** How long the MCP servers may stay `pending` before the turn goes on without them. */
 const MCP_READY_DEADLINE_MS = 15_000;
+/**
+ * How long the CLI may take to answer a control request (`setMcpServers`,
+ * `mcpServerStatus`). A CLI that never answers fails the turn instead of
+ * hanging it. Same value as `@guuey/host`'s `CLAUDE_STARTUP_DEADLINE_MS`: the
+ * pinned CLI connects the servers before it answers `setMcpServers` and gives
+ * a hung server up to 30 s, so this outlasts that wait.
+ */
+const CLAUDE_STARTUP_DEADLINE_MS = 60_000;
+
+/** Resolve with `work`, or reject naming `what` once the startup deadline passes first. */
+function withStartupDeadline<T>(work: Promise<T>, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expiry = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`Claude CLI startup failed: no answer to ${what} within ${String(CLAUDE_STARTUP_DEADLINE_MS)} ms`)),
+      CLAUDE_STARTUP_DEADLINE_MS,
+    );
+  });
+  return Promise.race([work, expiry]).finally(() => clearTimeout(timer));
+}
 
 /**
  * This worker is tsup-bundled (`noExternal`), which breaks the SDK's own
@@ -87,8 +122,12 @@ await serveNative(
     const gate = new Promise<void>((resolve) => (openGate = resolve));
     let endInput!: () => void;
     const inputDone = new Promise<void>((resolve) => (endInput = resolve));
+    // The one user message goes out only once the MCP gate below decided; a
+    // failed startup opens the gate with `send` still false, so none is sent.
+    let send = false;
     async function* prompt(): AsyncGenerator<SDKUserMessage> {
       await gate;
+      if (!send) return;
       yield { type: "user", message: { role: "user", content: withHistory(invoke) }, parent_tool_use_id: null };
       await inputDone;
     }
@@ -113,7 +152,9 @@ await serveNative(
         settingSources: [],
         strictMcpConfig: true,
         env: cliEnv(),
-        ...(modelKey ? { spawnClaudeCodeProcess: makeClaudeSpawner({ key: modelKey, secrets: headerValues }) } : {}),
+        ...(credential !== undefined
+          ? { spawnClaudeCodeProcess: makeClaudeSpawner({ ...credential, secrets: headerValues }) }
+          : {}),
         ...(agent.runtime?.maxTurns ? { maxTurns: agent.runtime.maxTurns } : {}),
         ...(pathToClaudeCodeExecutable ? { pathToClaudeCodeExecutable } : {}),
       },
@@ -129,9 +170,12 @@ await serveNative(
       }
     })();
     try {
-      await q.setMcpServers(mcpServers);
+      await withStartupDeadline(q.setMcpServers(mcpServers), "setMcpServers");
       const readyBy = Date.now() + MCP_READY_DEADLINE_MS;
-      while (Date.now() < readyBy && (await q.mcpServerStatus()).some((s) => s.status === "pending")) {
+      while (
+        Date.now() < readyBy &&
+        (await withStartupDeadline(q.mcpServerStatus(), "mcpServerStatus")).some((s) => s.status === "pending")
+      ) {
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
     } catch (err) {
@@ -142,6 +186,7 @@ await serveNative(
       await Promise.allSettled([messages]);
       throw err;
     }
+    send = true;
     openGate();
     await messages;
     endInput();
