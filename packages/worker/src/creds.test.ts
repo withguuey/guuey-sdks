@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync, execFileSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { listCredentials, MCP_SERVERS_FILE_ENV, type McpServersFile } from "./creds.js";
@@ -201,5 +202,47 @@ describe("listCredentials: the servers file", () => {
       if (before === undefined) delete process.env[MCP_SERVERS_FILE_ENV];
       else process.env[MCP_SERVERS_FILE_ENV] = before;
     }
+  });
+});
+
+/** mkfifo exists on every macOS and Linux host; only a host without it (Windows) skips. */
+const hasMkfifo = process.platform !== "win32" && spawnSync("sh", ["-c", "command -v mkfifo"]).status === 0;
+
+describe("listCredentials: a servers file that is a descriptor (a pipe, read once)", () => {
+  it.skipIf(!hasMkfifo)(
+    "reads a non-seekable servers file (a FIFO written once) in a single read",
+    () => {
+      const fifo = join(mkdtempSync(join(root, "control-")), "mcp-servers.json");
+      execFileSync("mkfifo", [fifo]);
+      const payload = JSON.stringify({ version: 1, servers: [{ name: "ggui", credential: GOOD }] });
+      // The writer writes the payload once and closes. Two seconds later it opens
+      // the FIFO again and closes it with nothing written: a second read of the
+      // drained FIFO, which would otherwise block this thread for good, then gets
+      // an empty file, so a second read fails the assertion instead of hanging.
+      // A single read finishes long before that; the writer is killed below.
+      const writer = spawn("sh", ["-c", 'printf "%s" "$1" > "$0"; sleep 2; : > "$0"', fifo, payload], {
+        stdio: "ignore",
+      });
+      try {
+        const session = mkdtempSync(join(root, "session-"));
+        const got = listCredentials(fsFor(session), { [MCP_SERVERS_FILE_ENV]: fifo })();
+        expect(got).toEqual([{ name: "ggui", cred: { ...GOOD } }]);
+      } finally {
+        writer.kill("SIGKILL");
+      }
+    },
+    10_000
+  );
+
+  it("reads the servers file with one readFileSync and never stats, opens or seeks it", () => {
+    const source = readFileSync(new URL("./creds.ts", import.meta.url), "utf8");
+    // The only node:fs functions the module takes: no stat, open, read-at-offset or exists.
+    const fsImport = /import \{([^}]*)\} from "node:fs";/.exec(source);
+    expect(fsImport?.[1].split(",").map((n) => n.trim()).filter((n) => n !== "").sort()).toEqual(["readFileSync", "readdirSync"]);
+    expect(source).not.toMatch(/\b(?:f|l)?statSync\b|\bopenSync\b|\breadSync\b|\bexistsSync\b|\baccessSync\b/);
+    // readServersFile reads its path exactly once.
+    const body = /function readServersFile\([\s\S]*?\n\}\n/.exec(source)?.[0] ?? "";
+    expect(body).not.toBe("");
+    expect(body.match(/readFileSync\(/g)).toHaveLength(1);
   });
 });
