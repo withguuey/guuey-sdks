@@ -1,8 +1,8 @@
 /**
  * The native entry on a runtime without a global `structuredClone` (Hermes):
- * importing `./native` alone must leave the global installed before any kit
- * code reaches `@silverprotocol/core`, so a block-preserving fold runs. React
- * Native's primitives are inert stand-ins; nothing here renders.
+ * from @silverprotocol/core 0.12.7 the fold clones with its own routine, so
+ * importing `./native` installs nothing and a block-preserving fold still runs.
+ * React Native's primitives are inert stand-ins; nothing here renders.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgEvent } from "@silverprotocol/core";
@@ -52,11 +52,10 @@ describe("@guuey/chat/native without a global structuredClone", () => {
     vi.resetModules();
   });
 
-  it("importing the native entry installs the clone, and a fold materializes", async () => {
+  it("importing the native entry installs nothing, and a fold materializes without the global", async () => {
     expect(typeof Reflect.get(globalThis, "structuredClone")).toBe("undefined");
     await import("./native.js");
-    expect(typeof Reflect.get(globalThis, "structuredClone")).toBe("function");
-    expect(Reflect.get(globalThis, "structuredClone")).not.toBe(nativeClone);
+    expect(typeof Reflect.get(globalThis, "structuredClone")).toBe("undefined");
 
     const { Reducer } = await import("@silverprotocol/core");
     const reducer = new Reducer();

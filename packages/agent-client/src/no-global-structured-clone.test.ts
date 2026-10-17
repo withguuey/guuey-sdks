@@ -3,10 +3,10 @@
  * Runtimes without a global `structuredClone` (Hermes on React Native): the
  * block-preserving fold in `@silverprotocol/core` clones on the way in and out
  * of the Reducer, so every `preserveBlocks` turn failed there with
- * "Property 'structuredClone' doesn't exist". The package's entry points
- * install a structured clone before the core is first used. These tests
- * delete the global, re-evaluate the entries from scratch (so the install runs
- * against a runtime that lacks it) and drive a real fold.
+ * "Property 'structuredClone' doesn't exist". From @silverprotocol/core 0.12.7
+ * the fold clones with its own internal routine and never reads the global,
+ * so the package installs nothing. These tests delete the global, re-evaluate
+ * the entries from scratch and drive a real fold on a runtime that lacks it.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
@@ -71,15 +71,12 @@ describe("entries on a runtime without structuredClone", () => {
     expect(typeof Reflect.get(globalThis, "structuredClone")).toBe("undefined");
   });
 
-  it("evaluating either entry installs the clone before any caller can reach the core", async () => {
+  it("evaluating either entry installs nothing: the global stays absent", async () => {
     await import("./index.js");
-    const { structuredCloneSubset } = await import("./structured-clone.js");
-    expect(Reflect.get(globalThis, "structuredClone")).toBe(structuredCloneSubset);
+    expect(typeof Reflect.get(globalThis, "structuredClone")).toBe("undefined");
     vi.resetModules();
-    Reflect.deleteProperty(globalThis, "structuredClone");
     await import("./react.js");
-    const fresh = await import("./structured-clone.js");
-    expect(Reflect.get(globalThis, "structuredClone")).toBe(fresh.structuredCloneSubset);
+    expect(typeof Reflect.get(globalThis, "structuredClone")).toBe("undefined");
   });
 
   it("a preserveBlocks turn through the ./react entry folds without an error", async () => {
