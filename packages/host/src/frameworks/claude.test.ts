@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createEmitter, type WorkerEvent } from "@guuey/worker";
 import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import { runInvoke, type HostInvoke, type QueryFn, type QueryHandle } from "./claude.js";
+import { awaitMcpReady, runInvoke, type HostInvoke, type QueryFn, type QueryHandle } from "./claude.js";
 import { FIRST_IMPRESSION_SHOWN_HEADING } from "../preamble.js";
 
 /** Collect every emitted WorkerEvent into an array (the fd-3 sink, in memory). */
@@ -487,5 +487,49 @@ describe("the welcome card the Router already drew reaches the Claude system pro
 
   it("no card drawn: no section", async () => {
     expect(await systemPromptFor({ gguiAttached: true })).not.toContain(FIRST_IMPRESSION_SHOWN_HEADING);
+  });
+});
+
+describe("the MCP-ready gate and the startup deadline (guuey#2139)", () => {
+  const server = { fake: { type: "http" as const, url: "http://127.0.0.1:9/mcp" } };
+
+  it("a server still pending at the MCP-ready deadline is named and the gate opens", async () => {
+    const q: QueryHandle = {
+      setMcpServers: () => Promise.resolve({ added: ["fake"], removed: [], errors: {} }),
+      mcpServerStatus: () => Promise.resolve([{ name: "fake", status: "pending" as const }]),
+      close: () => undefined,
+      [Symbol.asyncIterator]: () => streamOf()[Symbol.asyncIterator](),
+    };
+    const started = Date.now();
+    const problems = await awaitMcpReady(q, server, { mcpReadyDeadlineMs: 300 });
+    expect(problems).toEqual(['MCP server "fake" not connected: still pending after 300 ms']);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
+  it("a CLI that never answers setMcpServers fails the turn closed: one error, the query closed, no user message sent", async () => {
+    let closed = 0;
+    let pulled = false;
+    const query: QueryFn = (params) => ({
+      setMcpServers: () => new Promise(() => undefined),
+      mcpServerStatus: () => Promise.resolve([]),
+      close: () => {
+        closed += 1;
+      },
+      async *[Symbol.asyncIterator]() {
+        for await (const _message of params.prompt) {
+          pulled = true;
+          yield resultMessage("success", "unexpected");
+        }
+      },
+    });
+    const events: WorkerEvent[] = [];
+    const emit = createEmitter({ write: (s: string) => { for (const line of s.split("\n")) if (line.trim()) events.push(JSON.parse(line) as WorkerEvent); } });
+    await runInvoke({}, invoke(), { apiKey: "sk-test", listCredentials: () => [] }, emit, query, { startupDeadlineMs: 200 });
+    const errors = events.filter((e) => e.type === "error");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ message: expect.stringContaining("Claude CLI startup failed: no answer to setMcpServers within 200 ms") });
+    expect(events.some((e) => e.type === "done")).toBe(false);
+    expect(closed).toBe(1);
+    expect(pulled).toBe(false);
   });
 });

@@ -150,8 +150,16 @@ export type QueryFn = (params: {
  * How long the CLI may take to start and answer the first control request
  * (`setMcpServers`). A CLI that never answers fails the turn closed: the query
  * is closed (the CLI killed) and no user message is ever sent.
+ *
+ * Longer than the CLI's own MCP connection timeout: the pinned CLI (2.1.282)
+ * connects the servers before it answers `setMcpServers`, and gives a server
+ * that never answers `initialize` up to `MCP_TIMEOUT` (default 30 s) before it
+ * reports it failed. Measured: ~30.7 s on this path, ~30.8 s on the old
+ * `--mcp-config` path before the first model request. So a hung MCP server
+ * still costs the same wait and the turn goes on without it, as before; only
+ * a CLI that answers nothing at all hits this deadline.
  */
-export const CLAUDE_STARTUP_DEADLINE_MS = 30_000;
+export const CLAUDE_STARTUP_DEADLINE_MS = 60_000;
 /**
  * How long the MCP servers may stay `pending` after `setMcpServers` before the
  * turn proceeds without them (each still-pending server is reported by name).

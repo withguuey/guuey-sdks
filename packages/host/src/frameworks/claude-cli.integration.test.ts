@@ -16,8 +16,11 @@
  *    (the credential directory excepted: that is the defined channel) or on
  *    the host's stderr.
  *  - an MCP server that never completes `initialize` — the turn goes on
- *    without it after the MCP-ready deadline, with exactly one CLI process,
- *    gone at the end, and no user message before the decision.
+ *    without it (the pinned CLI answers `setMcpServers` once its own 30 s MCP
+ *    timeout marks the server failed, the same wait the old `--mcp-config`
+ *    path had; the host's MCP-ready deadline, unit-tested in claude.test.ts,
+ *    bounds a CLI that connects after answering), with exactly one CLI
+ *    process, gone at the end, and no user message before the decision.
  *
  * Linux-only sub-assertions (procfs) are skipped elsewhere with that reason;
  * everything else runs on every platform the pinned CLI ships for.
@@ -451,7 +454,7 @@ describe("real Claude CLI: private key + MCP delivery (guuey#2139)", () => {
 
 describe("real Claude CLI: MCP-ready deadline (guuey#2139)", () => {
   it(
-    "an MCP server that never completes initialize: the turn proceeds without it after the deadline, one CLI process, gone at the end",
+    "an MCP server that never completes initialize: the turn proceeds without it, one CLI process, gone at the end",
     { timeout: TURN_BUDGET_MS },
     async () => {
       const key = sentinel();
