@@ -7,7 +7,7 @@
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   CLAUDE_FORBIDDEN_ENV,
   CLAUDE_KEY_FD_ENV,
@@ -19,6 +19,10 @@ import {
   type ClaudeKeyKind,
   type ClaudeSpawnRequest,
 } from "./claude-spawn.js";
+
+// These tests start real child processes: an explicit budget, so a slow runner fails by
+// timeout and not by the default 5 s (guuey#867).
+vi.setConfig({ testTimeout: 30_000 });
 
 const FAKE_CLI = fileURLToPath(new URL("./__fixtures__/fake-claude-cli.mjs", import.meta.url));
 const sentinel = (): string => `SENTINEL-2139-${randomBytes(12).toString("hex")}`;

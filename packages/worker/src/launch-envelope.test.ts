@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Writable, type Readable } from "node:stream";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import {
   LAUNCH_ENVELOPE_FD_ENV,
   LAUNCH_ENVELOPE_MAX_BYTES,
@@ -19,6 +19,10 @@ import {
   encodeLaunchEnvelope,
   parseLaunchEnvelope,
 } from "./launch-envelope.js";
+
+// These tests start real child processes: an explicit budget, so a slow runner fails by
+// timeout and not by the default 5 s (guuey#867).
+vi.setConfig({ testTimeout: 30_000 });
 
 const FIXTURE = fileURLToPath(new URL("./__fixtures__/read-envelope.mjs", import.meta.url));
 const LINUX = process.platform === "linux";
