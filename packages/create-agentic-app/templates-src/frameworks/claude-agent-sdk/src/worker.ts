@@ -8,9 +8,33 @@
  * `runInvoke`, the platform's own consumer of this exact snapshot shape).
  */
 import { createRequire } from "node:module";
-import { query } from "@anthropic-ai/claude-agent-sdk";
-import { serveNative } from "@guuey/worker";
+import { query, type McpServerConfig, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { CLAUDE_FORBIDDEN_ENV, makeClaudeSpawner, readLaunchEnvelope, serveNative } from "@guuey/worker";
 import { loadAgent, systemPrompt, mcpEndpoints, withHistory } from "./agent-config.js";
+
+/**
+ * The model credential (guuey#2139). A platform launch delivers it privately
+ * on a descriptor (`readLaunchEnvelope`, read once, here, before anything is
+ * spawned); otherwise it comes from this process's environment, as before.
+ * Either way the Claude CLI receives it only on its own private descriptor
+ * (`makeClaudeSpawner`), never in its environment or argv, so the CLI's Bash
+ * and tool children never inherit it.
+ */
+const envelope = await readLaunchEnvelope();
+const modelKey =
+  envelope?.model?.token ?? (process.env.ANTHROPIC_AUTH_TOKEN || undefined) ?? (process.env.ANTHROPIC_API_KEY || undefined);
+
+/** This process's environment minus every credential, auth-path and inspector variable. */
+function cliEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [name, value] of Object.entries(process.env)) {
+    if (value !== undefined && !CLAUDE_FORBIDDEN_ENV.includes(name)) env[name] = value;
+  }
+  return env;
+}
+
+/** How long the MCP servers may stay `pending` before the turn goes on without them. */
+const MCP_READY_DEADLINE_MS = 15_000;
 
 /**
  * This worker is tsup-bundled (`noExternal`), which breaks the SDK's own
@@ -44,8 +68,9 @@ const pathToClaudeCodeExecutable = claudeExecutable();
 await serveNative(
   async (invoke, emit) => {
     const agent = loadAgent(invoke);
-    const mcpServers = Object.fromEntries(
-      Object.entries(mcpEndpoints(invoke, agent)).map(([name, ep]) => [
+    const endpoints = mcpEndpoints(invoke, agent);
+    const mcpServers: Record<string, McpServerConfig> = Object.fromEntries(
+      Object.entries(endpoints).map(([name, ep]) => [
         name,
         // `alwaysLoad` — this agent's declared MCP servers ARE its tool
         // surface; without it the CLI defers MCP tools behind its ToolSearch
@@ -54,13 +79,24 @@ await serveNative(
         { type: ep.transport, url: ep.url, headers: ep.headers, alwaysLoad: true },
       ])
     );
-    let result = "";
-    for await (const message of query({
-      prompt: withHistory(invoke),
+    // guuey#2139: the servers (and their header values) reach the CLI over its
+    // stdin with `setMcpServers`, never as `--mcp-config` on its argv; the
+    // spawner refuses any argument or environment value that carries one.
+    const headerValues = Object.values(endpoints).flatMap((ep) => Object.values(ep.headers));
+    let openGate!: () => void;
+    const gate = new Promise<void>((resolve) => (openGate = resolve));
+    let endInput!: () => void;
+    const inputDone = new Promise<void>((resolve) => (endInput = resolve));
+    async function* prompt(): AsyncGenerator<SDKUserMessage> {
+      await gate;
+      yield { type: "user", message: { role: "user", content: withHistory(invoke) }, parent_tool_use_id: null };
+      await inputDone;
+    }
+    const q = query({
+      prompt: prompt(),
       options: {
         ...(agent.model ? { model: agent.model } : {}),
         ...(systemPrompt(invoke, agent) ? { systemPrompt: systemPrompt(invoke, agent) } : {}),
-        mcpServers,
         // Same posture as `@guuey/host`'s `buildOptions` (options.ts):
         // - allowedTools: the snapshot allowlist verbatim, else every tool
         //   from every declared server (`mcp__<server>` prefix match) — MCP
@@ -76,13 +112,39 @@ await serveNative(
         tools: [],
         settingSources: [],
         strictMcpConfig: true,
+        env: cliEnv(),
+        ...(modelKey ? { spawnClaudeCodeProcess: makeClaudeSpawner({ key: modelKey, secrets: headerValues }) } : {}),
         ...(agent.runtime?.maxTurns ? { maxTurns: agent.runtime.maxTurns } : {}),
         ...(pathToClaudeCodeExecutable ? { pathToClaudeCodeExecutable } : {}),
       },
-    })) {
-      emit.native(JSON.parse(JSON.stringify(message)));
-      if (message.type === "result" && message.subtype === "success") result = message.result;
+    });
+    let result = "";
+    const messages = (async () => {
+      for await (const message of q) {
+        emit.native(JSON.parse(JSON.stringify(message)));
+        if (message.type === "result") {
+          if (message.subtype === "success") result = message.result;
+          endInput();
+        }
+      }
+    })();
+    try {
+      await q.setMcpServers(mcpServers);
+      const readyBy = Date.now() + MCP_READY_DEADLINE_MS;
+      while (Date.now() < readyBy && (await q.mcpServerStatus()).some((s) => s.status === "pending")) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    } catch (err) {
+      endInput();
+      openGate();
+      q.close();
+      // The setup error is the turn's error; the stream's own end is awaited, not reported.
+      await Promise.allSettled([messages]);
+      throw err;
     }
+    openGate();
+    await messages;
+    endInput();
     return result;
   },
   { framework: "claude-agent-sdk", sdkName: "@anthropic-ai/claude-agent-sdk" }

@@ -14,10 +14,20 @@
  * hard `error` that would discard the partial text), so the cutoff is made
  * visible by appending a note to the returned result instead of rethrowing.
  */
-import { Agent, MaxTurnsExceededError, MCPServerStreamableHttp, run } from "@openai/agents";
+import { Agent, MaxTurnsExceededError, MCPServerStreamableHttp, run, setDefaultOpenAIKey } from "@openai/agents";
 import type { MCPServer } from "@openai/agents";
-import { mcpToolCustomData, modelVisibleToolFilterFor, serveNative } from "@guuey/worker";
+import { mcpToolCustomData, modelVisibleToolFilterFor, readLaunchEnvelope, serveNative } from "@guuey/worker";
 import { loadAgent, systemPrompt, mcpEndpoints, withHistory } from "./agent-config.js";
+
+/**
+ * The model credential (guuey#2139). A platform launch delivers it privately
+ * on a descriptor (`readLaunchEnvelope`, read once, here); otherwise it comes
+ * from `OPENAI_API_KEY`, as before. It is handed to the SDK in memory and
+ * never written to `process.env`, so nothing this worker spawns inherits it.
+ */
+const envelope = await readLaunchEnvelope();
+const modelKey = envelope?.model?.token ?? (process.env.OPENAI_API_KEY || undefined);
+if (modelKey) setDefaultOpenAIKey(modelKey);
 
 await serveNative(
   async (invoke, emit) => {

@@ -40,6 +40,7 @@ interface ServerOptions {
 const h = vi.hoisted(() => ({
   handler: undefined as NativeHandler | undefined,
   servers: [] as ServerOptions[],
+  defaultKeys: [] as string[],
 }));
 
 vi.mock("@openai/agents", () => ({
@@ -52,6 +53,9 @@ vi.mock("@openai/agents", () => ({
   },
   Agent: class {},
   MaxTurnsExceededError: class extends Error {},
+  setDefaultOpenAIKey: (key: string) => {
+    h.defaultKeys.push(key);
+  },
   run: async () => ({
     async *[Symbol.asyncIterator]() {},
     completed: Promise.resolve(),
@@ -90,6 +94,7 @@ const emit: NativeEmit = { native: () => {}, text: () => {}, suspend: () => "not
 
 beforeAll(async () => {
   vi.stubEnv("GUUEY_AGENT_SNAPSHOT", JSON.stringify(agent));
+  vi.stubEnv("OPENAI_API_KEY", "legacy-env-key");
   vi.spyOn(console, "log").mockImplementation(() => {});
   await import(WORKER_ENTRY);
 });
@@ -174,5 +179,11 @@ describe("OpenAI template worker: the turn's tool withholds", () => {
     const gguiWithheld = withheld.get("ggui");
     if (gguiWithheld === undefined) throw new Error("no ggui server");
     expect(await gguiWithheld({}, appOnly)).toBe(false);
+  });
+});
+
+describe("OpenAI template worker: the model key (guuey#2139)", () => {
+  it("applies the key in memory with setDefaultOpenAIKey (no launch envelope: the legacy env key)", () => {
+    expect(h.defaultKeys).toEqual(["legacy-env-key"]);
   });
 });
