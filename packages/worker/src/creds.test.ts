@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { listCredentials } from "./creds.js";
+import { join, relative } from "node:path";
+import { listCredentials, MCP_SERVERS_FILE_ENV, type McpServersFile } from "./creds.js";
 import type { Fs } from "./protocol.js";
 
 let root: string;
@@ -31,7 +31,7 @@ afterEach(() => {
 describe("listCredentials", () => {
   it("returns [] when the credential directory does not exist (no MCP this turn)", () => {
     const session = mkdtempSync(join(root, "session-"));
-    expect(listCredentials(fsFor(session))()).toEqual([]);
+    expect(listCredentials(fsFor(session), {})()).toEqual([]);
   });
 
   it("reads one entry per valid .json file, keyed by filename stem", () => {
@@ -48,7 +48,7 @@ describe("listCredentials", () => {
         expiresAt: "2026-07-29T00:00:00.000Z",
       }),
     });
-    const got = listCredentials(fs)().sort((a, b) => a.name.localeCompare(b.name));
+    const got = listCredentials(fs, {})().sort((a, b) => a.name.localeCompare(b.name));
     expect(got).toEqual([
       {
         name: "ggui",
@@ -76,7 +76,7 @@ describe("listCredentials", () => {
       "README.txt": "not a credential",
       ".keep": "",
     });
-    expect(listCredentials(fs)().map((c) => c.name)).toEqual(["ggui"]);
+    expect(listCredentials(fs, {})().map((c) => c.name)).toEqual(["ggui"]);
   });
 
   it("skips malformed files without crashing the turn", () => {
@@ -88,13 +88,13 @@ describe("listCredentials", () => {
       "no-url.json": JSON.stringify({ transport: "http", headers: {} }),
       "bad-transport.json": JSON.stringify({ url: "https://c", transport: "grpc", headers: {} }),
     });
-    expect(listCredentials(fs)().map((c) => c.name)).toEqual(["good"]);
+    expect(listCredentials(fs, {})().map((c) => c.name)).toEqual(["good"]);
   });
 
   it("is a thunk — each call re-reads the directory (per-invoke broker writes)", () => {
     const session = mkdtempSync(join(root, "session-"));
     const dir = join(session, ".guuey", "credentials");
-    const read = listCredentials(fsFor(session));
+    const read = listCredentials(fsFor(session), {});
     expect(read()).toEqual([]);
     mkdirSync(dir, { recursive: true });
     writeFileSync(
@@ -103,5 +103,103 @@ describe("listCredentials", () => {
       "utf8"
     );
     expect(read().map((c) => c.name)).toEqual(["ggui"]);
+  });
+});
+
+const GOOD = { url: "https://relay.example/_executor/mcp/abc", transport: "http", headers: { authorization: "Bearer cap" } } as const;
+
+/** Write a servers file outside the session tree and return its path. */
+function serversFile(content: string): string {
+  const dir = mkdtempSync(join(root, "control-"));
+  const path = join(dir, "mcp-servers.json");
+  writeFileSync(path, content, "utf8");
+  return path;
+}
+
+describe("listCredentials: the servers file", () => {
+  it("reads every entry of the file the platform names, keyed by the entry's name (names a file name could not carry)", () => {
+    const file: McpServersFile = {
+      version: 1,
+      servers: [
+        { name: "myMcp", credential: { ...GOOD } },
+        { name: "Linear Tools", credential: { url: "https://b", transport: "sse", headers: {}, expiresAt: "2026-01-01T00:00:00.000Z" } },
+      ],
+    };
+    const session = mkdtempSync(join(root, "session-"));
+    const got = listCredentials(fsFor(session), { [MCP_SERVERS_FILE_ENV]: serversFile(JSON.stringify(file)) })();
+    expect(got).toEqual([
+      { name: "myMcp", cred: { ...GOOD } },
+      { name: "Linear Tools", cred: { url: "https://b", transport: "sse", headers: {}, expiresAt: "2026-01-01T00:00:00.000Z" } },
+    ]);
+  });
+
+  it("never reads the session directory while the variable is set: an entry planted there by an earlier turn is not picked up", () => {
+    const planted = credDir({ "planted.json": JSON.stringify({ url: "https://attacker", transport: "http", headers: {} }) });
+    const file: McpServersFile = { version: 1, servers: [{ name: "ggui", credential: { ...GOOD } }] };
+    expect(listCredentials(planted, { [MCP_SERVERS_FILE_ENV]: serversFile(JSON.stringify(file)) })().map((c) => c.name)).toEqual(["ggui"]);
+  });
+
+  it("an EMPTY value is the platform's no-servers answer: nothing is read, the planted session directory included", () => {
+    const planted = credDir({ "planted.json": JSON.stringify({ url: "https://attacker", transport: "http", headers: {} }) });
+    expect(listCredentials(planted, { [MCP_SERVERS_FILE_ENV]: "" })()).toEqual([]);
+  });
+
+  it("a missing file is no servers, never a fall back to the session directory", () => {
+    const planted = credDir({ "planted.json": JSON.stringify({ url: "https://attacker", transport: "http", headers: {} }) });
+    expect(listCredentials(planted, { [MCP_SERVERS_FILE_ENV]: join(root, "absent", "mcp-servers.json") })()).toEqual([]);
+  });
+
+  it("a relative path is no servers (it resolves against the working directory, the session tree on a pod)", () => {
+    const session = mkdtempSync(join(root, "session-"));
+    const plantedFile = join(session, "planted-servers.json");
+    writeFileSync(plantedFile, JSON.stringify({ version: 1, servers: [{ name: "planted", credential: { url: "https://attacker", transport: "http", headers: {} } }] }), "utf8");
+    // Relative to this process's working directory, the path names the planted file exactly.
+    expect(listCredentials(fsFor(session), { [MCP_SERVERS_FILE_ENV]: relative(process.cwd(), plantedFile) })()).toEqual([]);
+  });
+
+  it("skips malformed and repeated entries, ignores unknown keys, and treats a malformed file as no servers", () => {
+    const session = mkdtempSync(join(root, "session-"));
+    const read = (content: string) => listCredentials(fsFor(session), { [MCP_SERVERS_FILE_ENV]: serversFile(content) })();
+    const mixed = JSON.stringify({
+      version: 2,
+      later: "field",
+      servers: [
+        { name: "good", credential: { ...GOOD, later: true }, extra: 1 },
+        { name: "good", credential: { url: "https://second", transport: "http", headers: {} } },
+        { name: "", credential: { ...GOOD } },
+        { name: 7, credential: { ...GOOD } },
+        { name: "no-url", credential: { transport: "http", headers: {} } },
+        { name: "bad-transport", credential: { url: "https://c", transport: "grpc", headers: {} } },
+        ["not", "an", "entry"],
+        null,
+      ],
+    });
+    expect(read(mixed).map((c) => [c.name, c.cred.url])).toEqual([["good", GOOD.url]]);
+    expect(read("{ not json")).toEqual([]);
+    expect(read("null")).toEqual([]);
+    expect(read(JSON.stringify([{ name: "a", credential: GOOD }]))).toEqual([]);
+    expect(read(JSON.stringify({ version: 1, servers: { a: GOOD } }))).toEqual([]);
+  });
+
+  it("reads the variable on every call (the env is read per invoke, like the directory)", () => {
+    const session = mkdtempSync(join(root, "session-"));
+    const env: Record<string, string | undefined> = {};
+    const read = listCredentials(fsFor(session), env);
+    expect(read()).toEqual([]);
+    env[MCP_SERVERS_FILE_ENV] = serversFile(JSON.stringify({ version: 1, servers: [{ name: "ggui", credential: GOOD }] }));
+    expect(read().map((c) => c.name)).toEqual(["ggui"]);
+  });
+
+  it("defaults to process.env", () => {
+    const session = mkdtempSync(join(root, "session-"));
+    const path = serversFile(JSON.stringify({ version: 1, servers: [{ name: "ggui", credential: GOOD }] }));
+    const before = process.env[MCP_SERVERS_FILE_ENV];
+    process.env[MCP_SERVERS_FILE_ENV] = path;
+    try {
+      expect(listCredentials(fsFor(session))().map((c) => c.name)).toEqual(["ggui"]);
+    } finally {
+      if (before === undefined) delete process.env[MCP_SERVERS_FILE_ENV];
+      else process.env[MCP_SERVERS_FILE_ENV] = before;
+    }
   });
 });

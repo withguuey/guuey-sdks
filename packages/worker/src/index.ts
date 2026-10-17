@@ -53,7 +53,7 @@ export {
 export { createEmitter, type Emitter, type WriteSink } from "./emit.js";
 export { endThreadProblem, END_THREAD_CODE_PATTERN, END_THREAD_MESSAGE_MAX_CHARS } from "./end-thread.js";
 export { createSuspendWriter, type SuspendWriter, type SuspendWriteResult } from "./suspend-writer.js";
-export { listCredentials, type CredentialFile } from "./creds.js";
+export { listCredentials, MCP_SERVERS_FILE_ENV, type CredentialFile, type McpServersFile } from "./creds.js";
 export { serve, serveOn, type ServeOptions } from "./serve.js";
 export { Turn, type WorkerHandler } from "./turn.js";
 export { serveNative, serveNativeOn } from "./serve-native.js";
