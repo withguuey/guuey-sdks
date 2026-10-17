@@ -65,3 +65,33 @@ export {
   modelVisibleToolFilterFor,
 } from "./mcp-visibility.js";
 export { withheldToolNamesFor } from "./withheld-tools.js";
+export {
+  LAUNCH_ENVELOPE_FD,
+  LAUNCH_ENVELOPE_FD_ENV,
+  LAUNCH_ENVELOPE_VERSION,
+  LAUNCH_ENVELOPE_MAX_BYTES,
+  LAUNCH_ENVELOPE_DEADLINE_MS,
+  LaunchEnvelopeError,
+  encodeLaunchEnvelope,
+  parseLaunchEnvelope,
+  readLaunchEnvelope,
+  type LaunchEnvelope,
+  type LaunchModelCapability,
+  type LaunchWire,
+  type ReadLaunchEnvelopeOptions,
+} from "./launch-envelope.js";
+export {
+  CLAUDE_AUTH_PATH_ENV,
+  CLAUDE_CREDENTIAL_ENV,
+  CLAUDE_FORBIDDEN_ENV,
+  CLAUDE_KEY_FD,
+  CLAUDE_KEY_FD_ENV,
+  ClaudeSpawnRefusedError,
+  INSPECTOR_ENV,
+  forbiddenClaudeEnvNames,
+  makeClaudeSpawner,
+  redactSecrets,
+  type ClaudeSpawnRequest,
+  type ClaudeSpawnedProcess,
+  type ClaudeSpawnerOptions,
+} from "./claude-spawn.js";
