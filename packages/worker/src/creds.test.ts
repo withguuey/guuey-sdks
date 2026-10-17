@@ -1,10 +1,13 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { listCredentials, MCP_SERVERS_FILE_ENV, type McpServersFile } from "./creds.js";
 import type { Fs } from "./protocol.js";
+
+// The FIFO case spawns a shell writer; vitest's 5 s default is too tight on a 2-vCPU runner.
+vi.setConfig({ testTimeout: 30_000 });
 
 let root: string;
 
