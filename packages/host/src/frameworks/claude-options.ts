@@ -11,7 +11,8 @@
  *
  * 1. **Snapshot → SDK options mapping.** Translates the agent.json shape
  *    (model, allowedTools, maxTurns, GuueyFS binding) and the cred-dir contents
- *    into the Claude Agent SDK's `mcpServers` + `allowedTools` + `maxTurns`.
+ *    into the Claude Agent SDK's `allowedTools` + `maxTurns` (the MCP servers go
+ *    to the CLI over stdin with `setMcpServers`, guuey#2139, never as options).
  * 2. **Cred-dir mapping.** `resolveMcpServers(ctx)` globs the cred dir via
  *    `ctx.listCredentials()` → one `SdkMcpServer` per file; ALL the old
  *    federation/default/isGguiUrl/env-sub logic is DELETED (Router-side now).
@@ -21,7 +22,7 @@
  */
 import type { CanUseTool, Options, SDKMessage, Settings } from "@anthropic-ai/claude-agent-sdk";
 import type { FirstImpressionPush, FirstImpressionShown, Fs, HistoryMessage, JsonValue, McpAvailability, ProfileSection, WithheldTool } from "@guuey/worker";
-import { withheldToolNamesFor } from "@guuey/worker";
+import { forbiddenClaudeEnvNames, makeClaudeSpawner, withheldToolNamesFor } from "@guuey/worker";
 import {
   GUUEY_DEFAULT_SYSTEM_PROMPT,
   NO_TOOLS_ENTRY,
@@ -314,6 +315,22 @@ export interface BuildOptionsContext {
 }
 
 /**
+ * A builder's `snapshot.env` named a variable the CLI's environment must not
+ * carry (guuey#2139): a credential, an auth-path switch or an inspector
+ * variable. The turn errors with this message; it names the variables, never
+ * their values.
+ */
+export class ClaudeBuilderEnvError extends Error {
+  constructor(names: readonly string[]) {
+    super(
+      `agent.env names ${names.join(", ")}, which the Claude CLI environment may not carry: ` +
+        "the platform delivers the model credential privately and owns the CLI's auth path. Remove them from agent.env.",
+    );
+    this.name = "BuilderConfigError";
+  }
+}
+
+/**
  * Build the Claude Agent SDK `Options` for one invoke. Pure: all disk/env access
  * is injected via {@link BuildOptionsContext}. Throws on an unresolved `{file}`
  * system prompt or a missing API key (the same loud failures the source had).
@@ -392,20 +409,23 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
   const maxTurns = snapshot.runtime?.maxTurns ?? DEFAULT_MAX_TURNS;
   const fs = ctx.fs;
 
-  // Build the subprocess env. Two mutually-exclusive paths:
+  // Build the subprocess env (guuey#2139). It carries NO credential on either
+  // path: the key reaches the CLI only on its private descriptor, through the
+  // spawner installed below, so neither the CLI's initial environment nor any
+  // Bash, tool or stdio-MCP child it starts holds it.
   //
   //  - Proxy path (baseUrl + authToken present): route the Claude CLI
-  //    subprocess through the managed-LLM broker. baseUrl + authToken are
-  //    spread LAST so a builder's snapshot.env cannot override them.
-  //    ANTHROPIC_API_KEY is intentionally absent — the proxy owns auth.
+  //    subprocess through the managed-LLM broker. baseUrl is spread LAST so a
+  //    builder's snapshot.env cannot override it. The key is the scoped token.
   //    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC suppresses telemetry pings
   //    that would bypass the proxy.
+  //  - Local-dev fallback (only apiKey present): the key is the real API key.
   //
-  //  - Local-dev fallback (only apiKey present): pass the real key directly.
-  //    The guard above guarantees apiKey is non-null on this branch.
-  // Explicit Record<string, string> annotation prevents TypeScript from widening
-  // the ternary to a union `{ K: string } | {}`, which would make spread targets
-  // produce optional-undefined keys that conflict with Record<string, string>.
+  // A builder's snapshot.env naming a credential, an auth-path switch or an
+  // inspector variable is REFUSED with a named error (never silently dropped):
+  // `CLAUDE_CODE_REMOTE` would make the CLI persist the key to disk and
+  // `CLAUDE_CODE_SIMPLE` would make it ignore the descriptor.
+  //
   // CLAUDE_CONFIG_DIR pins the CLI's own config/state root to the (ephemeral,
   // pod-local) session dir — spec §4 belt-and-braces, alongside the
   // unconditional `settings.autoMemoryEnabled:false` below — so CLI session
@@ -421,6 +441,9 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
   // CLI's own state is pinned away from the durable layer via
   // CLAUDE_CONFIG_DIR + XDG_CACHE_HOME below (the G5 leak this env once
   // avoided by omission).
+  const builderEnv = snapshot.env ?? {};
+  const refusedNames = forbiddenClaudeEnvNames(builderEnv);
+  if (refusedNames.length > 0) throw new ClaudeBuilderEnvError(refusedNames);
   const fsEnv: Record<string, string> = fs
     ? {
         HOME: fs.home,
@@ -431,23 +454,31 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
       }
     : {};
   let env: Record<string, string>;
+  let key: string;
   if (baseUrl !== undefined && authToken !== undefined) {
     env = {
-      ...(snapshot.env ?? {}),
+      ...builderEnv,
       ...fsEnv,
       ANTHROPIC_BASE_URL: baseUrl,
-      ANTHROPIC_AUTH_TOKEN: authToken,
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
     };
+    key = authToken;
   } else {
     // apiKey is guaranteed non-null by the guard; the if-check narrows the type.
     if (!apiKey) throw new Error("unreachable: apiKey guard should have prevented this path");
     env = {
-      ANTHROPIC_API_KEY: apiKey,
-      ...(snapshot.env ?? {}),
+      ...builderEnv,
       ...fsEnv,
     };
+    key = apiKey;
   }
+  // The MCP servers reach the CLI over its stdin (`setMcpServers`, see
+  // claude.ts), never as `--mcp-config` argv: their header values are
+  // registered with the spawner, which refuses any argument or environment
+  // value that carries one.
+  const mcpHeaderValues = Object.values(mcpServers).flatMap((server) =>
+    "headers" in server && server.headers !== undefined ? Object.values(server.headers) : [],
+  );
 
   // Whether the operator pinned a Claude permission mode in agent.json. When
   // set we forward it verbatim and let the SDK's mode govern the posture; when
@@ -492,7 +523,6 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
 
   const options: Options = {
     model,
-    mcpServers,
     ...(disableThinking ? { thinking: { type: "disabled" as const } } : {}),
     allowedTools: gates.allowedTools,
     // Deny-listed tools (`tools.denylist`, translated) are removed from the
@@ -527,6 +557,7 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
     strictMcpConfig: true,
     maxTurns,
     env,
+    spawnClaudeCodeProcess: makeClaudeSpawner({ key, secrets: mcpHeaderValues }),
     systemPrompt,
     // GuueyFS binding (opt-in): session dir as cwd, home+app as extra roots.
     ...(fs ? { cwd: fs.session, additionalDirectories: [fs.home, fs.app] } : {}),

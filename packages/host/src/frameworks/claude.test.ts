@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createEmitter, type WorkerEvent } from "@guuey/worker";
-import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import { runInvoke, type HostInvoke, type QueryFn } from "./claude.js";
+import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { runInvoke, type HostInvoke, type QueryFn, type QueryHandle } from "./claude.js";
 import { FIRST_IMPRESSION_SHOWN_HEADING } from "../preamble.js";
 
 /** Collect every emitted WorkerEvent into an array (the fd-3 sink, in memory). */
@@ -56,18 +56,27 @@ function resultMessage(subtype: string, result: string): SDKMessage {
   return msg as unknown as SDKMessage;
 }
 
-/** An async iterable over a fixed list of messages (no yield-less generator). */
-function streamOf(...messages: SDKMessage[]): AsyncIterable<SDKMessage> {
+/** The control half of a fake `Query`: no MCP servers, every call answered at once. */
+const idleControl = {
+  setMcpServers: () => Promise.resolve({ added: [], removed: [], errors: {} }),
+  mcpServerStatus: () => Promise.resolve([]),
+  close: () => undefined,
+};
+
+/** A fake `Query` over a fixed list of messages (no yield-less generator). */
+function streamOf(...messages: SDKMessage[]): QueryHandle {
   return {
+    ...idleControl,
     async *[Symbol.asyncIterator]() {
       for (const m of messages) yield m;
     },
   };
 }
 
-/** An async iterable that throws on first iteration. */
-function throwingStream(message: string): AsyncIterable<SDKMessage> {
+/** A fake `Query` whose message stream throws on first iteration. */
+function throwingStream(message: string): QueryHandle {
   return {
+    ...idleControl,
     [Symbol.asyncIterator]() {
       return {
         next(): Promise<IteratorResult<SDKMessage>> {
@@ -76,6 +85,17 @@ function throwingStream(message: string): AsyncIterable<SDKMessage> {
       };
     },
   };
+}
+
+/** The text of the first user message a streaming prompt yields. */
+async function firstPromptText(prompt: AsyncIterable<SDKUserMessage>): Promise<string | undefined> {
+  for await (const message of prompt) {
+    const content = message.message.content;
+    if (typeof content === "string") return content;
+    for (const block of content) if (block.type === "text") return block.text;
+    return undefined;
+  }
+  return undefined;
 }
 
 describe("runInvoke — native emission", () => {
@@ -177,10 +197,15 @@ describe("runInvoke — native emission", () => {
     const { sink } = collector();
     const emit = createEmitter(sink);
     const query: QueryFn = (args) => {
-      seen.prompt = args.prompt;
       const sp = args.options.systemPrompt;
       seen.systemPrompt = typeof sp === "string" ? sp : undefined;
-      return streamOf();
+      return {
+        ...idleControl,
+        async *[Symbol.asyncIterator]() {
+          seen.prompt = await firstPromptText(args.prompt);
+          yield resultMessage("success", "ok");
+        },
+      };
     };
 
     await runInvoke(
@@ -352,7 +377,7 @@ describe("runInvoke — native emission", () => {
     expect(seenSystemPrompt).not.toContain("$GUUEY_HOME_DIR/memories/MEMORY.md");
   });
 
-  it("broker path: baseUrl+authToken in runtime → options.env has ANTHROPIC_BASE_URL+ANTHROPIC_AUTH_TOKEN, no ANTHROPIC_API_KEY", async () => {
+  it("broker path: baseUrl+authToken in runtime → options.env has ANTHROPIC_BASE_URL and no credential (guuey#2139)", async () => {
     let capturedEnv: Record<string, string> | undefined;
     const { sink } = collector();
     const emit = createEmitter(sink);
@@ -370,11 +395,11 @@ describe("runInvoke — native emission", () => {
     );
 
     expect(capturedEnv?.ANTHROPIC_BASE_URL).toBe("http://127.0.0.1:9911");
-    expect(capturedEnv?.ANTHROPIC_AUTH_TOKEN).toBe("opaque-token");
+    expect(capturedEnv?.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
     expect(capturedEnv?.ANTHROPIC_API_KEY).toBeUndefined();
   });
 
-  it("local-dev path: apiKey in runtime → options.env has ANTHROPIC_API_KEY, no base-URL/token", async () => {
+  it("local-dev path: apiKey in runtime → options.env has no credential and no base URL (guuey#2139)", async () => {
     let capturedEnv: Record<string, string> | undefined;
     const { sink } = collector();
     const emit = createEmitter(sink);
@@ -391,7 +416,7 @@ describe("runInvoke — native emission", () => {
       query,
     );
 
-    expect(capturedEnv?.ANTHROPIC_API_KEY).toBe("sk-ant-local");
+    expect(capturedEnv?.ANTHROPIC_API_KEY).toBeUndefined();
     expect(capturedEnv?.ANTHROPIC_BASE_URL).toBeUndefined();
     expect(capturedEnv?.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
   });

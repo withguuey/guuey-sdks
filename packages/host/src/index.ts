@@ -26,17 +26,23 @@
  * Worker→Router events on fd 3. We use the raw emitter (NOT the text-only
  * `serve(handler)`) because the host emits `native`.
  */
-import { createWriteStream } from "node:fs";
+import { createWriteStream, existsSync, realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
+  LAUNCH_ENVELOPE_FD_ENV,
   createEmitter,
   isInvoke,
   isShutdown,
   parseControl,
+  readLaunchEnvelope,
   type Emitter,
   type Invoke,
+  type LaunchEnvelope,
 } from "@guuey/worker";
 import type { GuueyAgent } from "@guuey/config";
 import { lines } from "./stdin-lines.js";
+import type { HostBoot } from "./boot-context.js";
+import { assertHostInspectorGuard } from "./inspector-guard.js";
 
 /** The snapshot shape the host boots from (`framework` selects the runner). */
 export type HostSnapshot = GuueyAgent & { framework?: string };
@@ -46,6 +52,8 @@ export type HostSnapshot = GuueyAgent & { framework?: string };
  * minus the discriminator.
  */
 export type HostTurn = Omit<Invoke, "type">;
+
+export type { HostBoot } from "./boot-context.js";
 
 /** The uniform surface every framework runner module exposes. */
 export interface FrameworkRunner {
@@ -99,7 +107,7 @@ function readSnapshot(): HostSnapshot {
  * into the actionable missing-peer message (the runtimes are optional peers —
  * the host deliberately does not bundle them).
  */
-export async function loadRunner(framework: string): Promise<FrameworkRunner> {
+export async function loadRunner(framework: string, boot: HostBoot = {}): Promise<FrameworkRunner> {
   const entry = RUNNERS[framework];
   if (!entry) {
     throw new Error(
@@ -107,8 +115,8 @@ export async function loadRunner(framework: string): Promise<FrameworkRunner> {
     );
   }
   try {
-    const mod = (await import(entry.module)) as { createRunner: () => FrameworkRunner };
-    return mod.createRunner();
+    const mod = (await import(entry.module)) as { createRunner: (boot: HostBoot) => FrameworkRunner };
+    return mod.createRunner(boot);
   } catch (err) {
     const code = (err as { code?: string }).code;
     if (code === "ERR_MODULE_NOT_FOUND" || code === "MODULE_NOT_FOUND") {
@@ -121,17 +129,46 @@ export async function loadRunner(framework: string): Promise<FrameworkRunner> {
   }
 }
 
+/**
+ * Boot step one (guuey#2139): obtain the private launch envelope, before any
+ * runner module is imported and before anything is spawned.
+ *
+ * With the marker set this is a platform launch, so the inspector guard runs
+ * first and a refused startup never reads the descriptor. The read closes the
+ * descriptor and asserts it closed, so no child the host starts later can
+ * inherit it. With the marker absent (local `guuey dev`) the read only asserts
+ * that no descriptor sits at the envelope's number.
+ */
+export async function bootEnvelope(
+  env: NodeJS.ProcessEnv = process.env,
+  execArgv: readonly string[] = process.execArgv,
+): Promise<LaunchEnvelope | undefined> {
+  if (env[LAUNCH_ENVELOPE_FD_ENV] !== undefined) assertHostInspectorGuard({ execArgv, env });
+  return readLaunchEnvelope({ env });
+}
+
 /** The worker loop: per `invoke` run the framework runner; on `shutdown`/EOF exit. */
 async function main(): Promise<void> {
-  const snapshot = readSnapshot();
-  const framework = snapshot.framework ?? "claude-agent-sdk";
   // fd 3 is the write end of the pipe the Router created at spawn.
   const out = createWriteStream("", { fd: 3 });
   const emit: Emitter = createEmitter(out);
+  let envelope: LaunchEnvelope | undefined;
+  try {
+    envelope = await bootEnvelope();
+  } catch (err) {
+    // Fail closed: no runner is loaded and nothing is spawned. The message
+    // names the refusal, never a payload byte.
+    emit.error(err instanceof Error ? err.message : String(err));
+    process.exitCode = 1;
+    out.end();
+    return;
+  }
+  const snapshot = readSnapshot();
+  const framework = snapshot.framework ?? "claude-agent-sdk";
   // Load ONCE at boot — the pod runs one framework for its whole life, and a
   // missing peer must fail the first turn loudly, not lazily mid-session.
   assertGracefulSupport(framework, process.env.GUUEY_AGENT_ENTRY);
-  const runner = await loadRunner(framework);
+  const runner = await loadRunner(framework, envelope !== undefined ? { envelope } : {});
 
   for await (const line of lines(process.stdin)) {
     const msg = parseControl(line);
@@ -143,7 +180,20 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err: unknown) => {
-  process.stderr.write(`@guuey/host fatal: ${err instanceof Error ? err.stack ?? err.message : String(err)}\n`);
-  process.exit(1);
-});
+/**
+ * Whether this module is the process entry (`node <host>/dist/index.js`, the
+ * `guuey-host` bin, or `guuey dev`'s resolved entry). Importing the module
+ * (its tests, a runner lookup) never starts the worker loop.
+ */
+function isProcessEntry(): boolean {
+  const entry = process.argv[1];
+  if (entry === undefined || !existsSync(entry)) return false;
+  return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
+}
+
+if (isProcessEntry()) {
+  main().catch((err: unknown) => {
+    process.stderr.write(`@guuey/host fatal: ${err instanceof Error ? err.stack ?? err.message : String(err)}\n`);
+    process.exit(1);
+  });
+}

@@ -61,9 +61,11 @@ describe("resolveMcpServers — cred-dir mapper", () => {
   });
 });
 
-describe("buildOptions — MCP servers from cred dir", () => {
-  it("produces mcpServers keyed by cred-dir names when the broker wrote credentials", () => {
-    // The Router wrote ggui + ext to the cred dir; buildOptions surfaces them both.
+describe("buildOptions — MCP servers never ride the options (guuey#2139)", () => {
+  it("leaves mcpServers off the options when the broker wrote credentials (they go over stdin, not --mcp-config)", () => {
+    // The SDK serializes options.mcpServers, headers included, into
+    // `--mcp-config <json>` on the CLI's argv. The servers reach the CLI with
+    // setMcpServers instead (claude.ts); the options carry none.
     const opts = buildOptions(
       {},
       ctx({
@@ -79,19 +81,13 @@ describe("buildOptions — MCP servers from cred dir", () => {
         ],
       }),
     );
-    expect(opts.mcpServers).toEqual({
-      ggui: {
-        type: "http",
-        url: "https://mcp.ggui.ai/apps/app-default",
-        alwaysLoad: true,
-        headers: { authorization: "Bearer tok" },
-      },
-    });
+    expect(opts.mcpServers).toBeUndefined();
+    expect(opts.spawnClaudeCodeProcess).toBeTypeOf("function");
   });
 
-  it("produces an empty mcpServers map when the cred dir is empty (no MCP this turn)", () => {
+  it("leaves mcpServers off the options when the cred dir is empty (no MCP this turn)", () => {
     const opts = buildOptions({}, ctx());
-    expect(opts.mcpServers).toEqual({});
+    expect(opts.mcpServers).toBeUndefined();
   });
 });
 
@@ -373,40 +369,50 @@ describe("INVARIANT — an explicit allowlist can never hang the pod (guuey#234)
   });
 });
 
-describe("buildOptions — env composition + API key", () => {
-  it("injects ANTHROPIC_API_KEY and the snapshot env block", () => {
+describe("buildOptions — env composition + API key (guuey#2139: no credential in the CLI env)", () => {
+  it("carries the snapshot env block but never the API key, which rides the spawner's descriptor", () => {
     const snapshot: GuueyAgent = { env: { FOO: "bar" } };
     const opts = buildOptions(snapshot, ctx({ apiKey: "sk-xyz" }));
-    expect(opts.env?.ANTHROPIC_API_KEY).toBe("sk-xyz");
+    expect(opts.env?.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(Object.values(opts.env ?? {})).not.toContain("sk-xyz");
     expect(opts.env?.FOO).toBe("bar");
+    expect(opts.spawnClaudeCodeProcess).toBeTypeOf("function");
   });
+
+  for (const name of ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_REMOTE", "CLAUDE_CODE_SIMPLE", "CLAUDE_BG_AUTH_SNAPSHOT_PATH", "ANTHROPIC_UNIX_SOCKET", "CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR", "NODE_OPTIONS", "BUN_INSPECT"]) {
+    it(`refuses a builder snapshot.env naming ${name} with a named builder-config error`, () => {
+      const snapshot: GuueyAgent = { env: { [name]: "1" } };
+      expect(() => buildOptions(snapshot, ctx({ baseUrl: "http://127.0.0.1:9911", authToken: "opaque" }))).toThrow(
+        expect.objectContaining({ name: "BuilderConfigError", message: expect.stringContaining(name) }),
+      );
+    });
+  }
 });
 
 describe("buildOptions — Anthropic second seam (loopback proxy)", () => {
-  it("routes the CLI subprocess at the loopback proxy with an opaque token, never a real key", () => {
+  it("routes the CLI subprocess at the loopback proxy, with the opaque token in no env value", () => {
     const opts = buildOptions(
       {},
       ctx({ baseUrl: "http://127.0.0.1:9911", authToken: "opaque" }),
     );
     expect(opts.env?.ANTHROPIC_BASE_URL).toBe("http://127.0.0.1:9911");
-    expect(opts.env?.ANTHROPIC_AUTH_TOKEN).toBe("opaque");
+    expect(opts.env?.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
     expect(opts.env?.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(Object.values(opts.env ?? {})).not.toContain("opaque");
   });
 
-  it("a builder snapshot.env cannot override the base-URL or token", () => {
-    const s: GuueyAgent = {
-      env: { ANTHROPIC_BASE_URL: "http://evil", ANTHROPIC_AUTH_TOKEN: "attacker" },
-    };
+  it("a builder snapshot.env cannot override the base-URL", () => {
+    const s: GuueyAgent = { env: { ANTHROPIC_BASE_URL: "http://evil" } };
     const opts = buildOptions(s, ctx({ baseUrl: "http://127.0.0.1:9911", authToken: "opaque" }));
     expect(opts.env?.ANTHROPIC_BASE_URL).toBe("http://127.0.0.1:9911");
-    expect(opts.env?.ANTHROPIC_AUTH_TOKEN).toBe("opaque");
   });
 
-  it("falls back to ANTHROPIC_API_KEY when baseUrl/authToken are absent (local-dev path)", () => {
+  it("local-dev path (apiKey only): no base URL, and the key in no env value", () => {
     const opts = buildOptions({}, ctx({ apiKey: "sk-local" }));
-    expect(opts.env?.ANTHROPIC_API_KEY).toBe("sk-local");
+    expect(opts.env?.ANTHROPIC_API_KEY).toBeUndefined();
     expect(opts.env?.ANTHROPIC_BASE_URL).toBeUndefined();
     expect(opts.env?.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+    expect(Object.values(opts.env ?? {})).not.toContain("sk-local");
   });
 });
 

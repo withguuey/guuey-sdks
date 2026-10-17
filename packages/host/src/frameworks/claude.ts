@@ -9,7 +9,14 @@
  * worker entrypoint (`index.ts`) passes the real `@anthropic-ai/claude-agent-sdk`
  * `query`.
  */
-import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type {
+  McpServerConfig,
+  McpServerStatus,
+  McpSetServersResult,
+  Options,
+  SDKMessage,
+  SDKUserMessage,
+} from "@anthropic-ai/claude-agent-sdk";
 import type { CredentialFile,
   Emitter,
   Fs,
@@ -20,6 +27,7 @@ import type { CredentialFile,
   StopReason, McpAvailability, FirstImpressionPush, FirstImpressionShown, WithheldTool } from "@guuey/worker";
 import {
   buildOptions,
+  resolveMcpServers,
   type BuildOptionsContext,
   type PriorMemoryRecord,
 } from "./claude-options.js";
@@ -121,11 +129,112 @@ export interface HostRuntime {
   listCredentials: () => Array<{ name: string; cred: CredentialFile }>;
 }
 
-/** The `query` surface the loop needs — the real SDK `query` satisfies it. */
+/**
+ * The `Query` surface the loop needs — the real SDK `Query` satisfies it: the
+ * message stream plus the two control requests the MCP-ready gate uses
+ * (guuey#2139: servers ride the CLI's stdin, never `--mcp-config` argv).
+ */
+export interface QueryHandle extends AsyncIterable<SDKMessage> {
+  setMcpServers(servers: Record<string, McpServerConfig>): Promise<McpSetServersResult>;
+  mcpServerStatus(): Promise<McpServerStatus[]>;
+  close(): void;
+}
+
+/** The `query` surface the loop needs — the real SDK `query` satisfies it (streaming input). */
 export type QueryFn = (params: {
-  prompt: string;
+  prompt: AsyncIterable<SDKUserMessage>;
   options: Options;
-}) => AsyncIterable<SDKMessage>;
+}) => QueryHandle;
+
+/**
+ * How long the CLI may take to start and answer the first control request
+ * (`setMcpServers`). A CLI that never answers fails the turn closed: the query
+ * is closed (the CLI killed) and no user message is ever sent.
+ */
+export const CLAUDE_STARTUP_DEADLINE_MS = 30_000;
+/**
+ * How long the MCP servers may stay `pending` after `setMcpServers` before the
+ * turn proceeds without them (each still-pending server is reported by name).
+ * Bounds the wait whether the CLI connects them before answering or after.
+ */
+export const CLAUDE_MCP_READY_DEADLINE_MS = 15_000;
+const MCP_STATUS_POLL_MS = 100;
+
+/** Timing knobs; tests shorten them. */
+export interface ClaudeTurnTiming {
+  startupDeadlineMs?: number;
+  mcpReadyDeadlineMs?: number;
+}
+
+/** A refused or failed CLI startup. */
+export class ClaudeStartupError extends Error {
+  constructor(reason: string) {
+    super(`Claude CLI startup failed: ${reason}`);
+    this.name = "ClaudeStartupError";
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Resolve with `work`, or reject with `onTimeout()` once `ms` elapse first. */
+function withDeadline<T>(work: Promise<T>, ms: number, onTimeout: () => Error): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expiry = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(onTimeout()), ms);
+  });
+  return Promise.race([work, expiry]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Hand the turn's MCP servers to the CLI over stdin and wait until none is
+ * `pending`, within the deadlines. Returns one line per server that did not
+ * connect (failed, needs-auth, an error from the call, or still pending at the
+ * deadline): the turn proceeds without those, exactly as a server that fails
+ * to connect at CLI startup did before. Throws {@link ClaudeStartupError} when
+ * the CLI does not answer the control request in time.
+ */
+export async function awaitMcpReady(
+  q: QueryHandle,
+  servers: Record<string, McpServerConfig>,
+  timing: ClaudeTurnTiming = {},
+): Promise<string[]> {
+  const startupMs = timing.startupDeadlineMs ?? CLAUDE_STARTUP_DEADLINE_MS;
+  const readyMs = timing.mcpReadyDeadlineMs ?? CLAUDE_MCP_READY_DEADLINE_MS;
+  const result = await withDeadline(
+    q.setMcpServers(servers),
+    startupMs,
+    () => new ClaudeStartupError(`no answer to setMcpServers within ${String(startupMs)} ms`),
+  );
+  const names = Object.keys(servers);
+  const problems = new Map<string, string>();
+  for (const [name, message] of Object.entries(result.errors)) problems.set(name, `error: ${message}`);
+  if (names.length === 0) return [];
+  const readyBy = Date.now() + readyMs;
+  for (;;) {
+    const statuses = await withDeadline(
+      q.mcpServerStatus(),
+      startupMs,
+      () => new ClaudeStartupError(`no answer to mcpServerStatus within ${String(startupMs)} ms`),
+    );
+    const ours = statuses.filter((status) => names.includes(status.name));
+    const pending = ours.filter((status) => status.status === "pending").map((status) => status.name);
+    if (pending.length === 0 || Date.now() >= readyBy) {
+      for (const status of ours) {
+        if (status.status === "connected") continue;
+        if (!problems.has(status.name)) {
+          problems.set(status.name, status.status === "pending" ? `still pending after ${String(readyMs)} ms` : status.status);
+        }
+      }
+      for (const name of names) {
+        if (!ours.some((status) => status.name === name) && !problems.has(name)) problems.set(name, "not reported");
+      }
+      return [...problems.entries()].map(([name, why]) => `MCP server "${name}" not connected: ${why}`);
+    }
+    await sleep(MCP_STATUS_POLL_MS);
+  }
+}
 
 /** An SDK message is the terminal result when `type === 'result'`. */
 interface ResultMessage {
@@ -162,6 +271,7 @@ export async function runInvoke(
   runtime: HostRuntime,
   emit: Emitter,
   query: QueryFn,
+  timing: ClaudeTurnTiming = {},
 ): Promise<void> {
   // The SDK-version handshake (§8 item B, additive-optional) — ALWAYS the
   // first event of this invoke's fd-3 stream, before the framework gate or any
@@ -181,8 +291,9 @@ export async function runInvoke(
   }
 
   let options: Options;
+  let ctx: BuildOptionsContext;
   try {
-    const ctx: BuildOptionsContext = {
+    ctx = {
       input: invoke.input,
       identity: invoke.identity,
       fs: invoke.fs,
@@ -219,16 +330,74 @@ export async function runInvoke(
     return;
   }
 
+  // Streaming input (guuey#2139): the one user message is yielded only after
+  // the MCP-ready gate below decided, and the input ends once the result
+  // arrives, which closes the CLI's stdin as the string-prompt path did.
+  let openGate!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    openGate = resolve;
+  });
+  let endInput!: () => void;
+  const inputDone = new Promise<void>((resolve) => {
+    endInput = resolve;
+  });
+  let sendMessage = false;
+  async function* userMessages(): AsyncGenerator<SDKUserMessage> {
+    await gate;
+    if (!sendMessage) return;
+    yield {
+      type: "user",
+      message: { role: "user", content: [{ type: "text", text: invoke.input }] },
+      parent_tool_use_id: null,
+    };
+    await inputDone;
+  }
+
+  let q: QueryHandle;
   try {
-    let done: { stopReason: StopReason; result: string } | undefined;
-    for await (const msg of query({ prompt: invoke.input, options })) {
-      emit.native(CLAUDE_FRAMEWORK, toJson(msg));
-      if (isResultMessage(msg)) done = resultToDone(msg);
-    }
-    emit.done(done?.result ?? "", done?.stopReason ?? "end_turn");
+    q = query({ prompt: userMessages(), options });
   } catch (err) {
     emit.error(err instanceof Error ? err.message : String(err));
+    return;
   }
+  let done: { stopReason: StopReason; result: string } | undefined;
+  const messages = (async (): Promise<void> => {
+    for await (const msg of q) {
+      emit.native(CLAUDE_FRAMEWORK, toJson(msg));
+      if (isResultMessage(msg)) {
+        done = resultToDone(msg);
+        endInput();
+      }
+    }
+  })();
+  // Observe a stream failure now; it is reported below, after the gate.
+  const streamOutcome = messages.then(
+    () => undefined,
+    (err: unknown) => (err instanceof Error ? err : new Error(String(err))),
+  );
+
+  try {
+    const problems = await awaitMcpReady(q, resolveMcpServers(ctx), timing);
+    for (const line of problems) process.stderr.write(`[guuey] ${line}\n`);
+  } catch (err) {
+    // Fail closed: no user message is sent, the CLI is closed (killed), and
+    // the turn ends with one error.
+    endInput();
+    openGate();
+    q.close();
+    await streamOutcome;
+    emit.error(err instanceof Error ? err.message : String(err));
+    return;
+  }
+  sendMessage = true;
+  openGate();
+  const failure = await streamOutcome;
+  endInput();
+  if (failure !== undefined) {
+    emit.error(failure.message);
+    return;
+  }
+  emit.done(done?.result ?? "", done?.stopReason ?? "end_turn");
 }
 
 /**

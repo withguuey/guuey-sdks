@@ -4,12 +4,14 @@
  * level so the host's lazy `import()` of this file is what pulls the
  * optional peer.
  *
- * Credential posture (unchanged from the pre-restructure host):
- *  - hosted/broker: `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` injected by
- *    the Router's `buildWorkerEnv`; the real `ANTHROPIC_API_KEY` is
- *    intentionally absent so it cannot leak to agent code.
- *  - local-dev: only `ANTHROPIC_API_KEY` is set; `buildOptions` falls back to
- *    the direct-key path.
+ * Credential posture (guuey#2139):
+ *  - hosted/broker: `ANTHROPIC_BASE_URL` from the environment, the scoped
+ *    token from the private launch envelope the boot read. Neither the token
+ *    nor any other credential is in this process's environment.
+ *  - no envelope: the legacy variables (`ANTHROPIC_AUTH_TOKEN`, or
+ *    `ANTHROPIC_API_KEY` for local dev) are read once here.
+ *  Either way the CLI child receives the key only on its private descriptor
+ *  (`buildOptions` installs the spawner), never in its environment.
  *  A missing key is NOT fatal at boot — the run path emits a clear `error`
  *  per invoke if neither form is present.
  */
@@ -17,10 +19,10 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { listCredentials, type Emitter } from "@guuey/worker";
 import type { FrameworkRunner, HostSnapshot, HostTurn } from "../index.js";
 import { runInvoke, type HostRuntime } from "./claude.js";
-import { buildHostContext } from "../boot-context.js";
+import { buildHostContext, type HostBoot } from "../boot-context.js";
 
-export function createRunner(): FrameworkRunner {
-  const bootCtx = buildHostContext(process.env);
+export function createRunner(boot: HostBoot = {}): FrameworkRunner {
+  const bootCtx = buildHostContext(process.env, boot.envelope);
   return {
     async runTurn(snapshot: HostSnapshot, turn: HostTurn, emit: Emitter): Promise<void> {
       const runtime: HostRuntime = {

@@ -73,8 +73,13 @@ function isolateAdkKeys(): void {
 
 /** The ADK's `Gemini` as the fakes see it (guuey#1342): the runner constructs it with the sanctioned key. */
 class FakeGemini {
+  static readonly supportedModels: Array<string | RegExp> = [/gemini-.*/];
   constructor(public readonly params: { model: string; apiKey: string }) {}
 }
+
+/** The ADK's model registry and base model class as the fakes see them (guuey#2139). */
+const fakeRegistry = { register: (): void => undefined, resolve: (): object => FakeGemini };
+class FakeBaseLlm {}
 
 describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
   const base = mkdtempSync(join(tmpdir(), "adk-nocode-"));
@@ -97,6 +102,8 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
         }
       },
       Gemini: FakeGemini,
+      LLMRegistry: fakeRegistry,
+      BaseLlm: FakeBaseLlm,
       MCPToolset: class {
         constructor(_: unknown) {}
       },
@@ -111,7 +118,9 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
         }
       },
     };
-    const runner = createRunner({ load: () => Promise.resolve(fakeAdk) });
+    // The key is resolved once, at runner creation (guuey#2139: no envelope →
+    // the legacy GEMINI_API_KEY), so each channel state gets its own runner.
+    const newRunner = () => createRunner({}, { load: () => Promise.resolve(fakeAdk) });
     const turn: HostTurn = {
       input: "hi",
       identity: { userId: "u-1", authMode: "anonymous" },
@@ -123,19 +132,27 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     process.env.GOOGLE_GENAI_API_KEY = "ambient-genai";
     process.env.GOOGLE_API_KEY = "ambient-google";
     process.env.GEMINI_API_KEY = "rotated-gemini";
-    await runner.runTurn({ model: "gemini-3.5-pro", systemPrompt: "be terse" }, turn, fakeEmitter().emit);
+    await newRunner().runTurn({ model: "gemini-3.5-pro", systemPrompt: "be terse" }, turn, fakeEmitter().emit);
     if (!(captured.model instanceof FakeGemini)) throw new Error("expected the runner to construct the model with the sanctioned key");
     expect(captured.model.params).toEqual({ model: "gemini-3.5-pro", apiKey: "rotated-gemini" });
 
     // The channel unset → the name rides, the SDK's own chain decides (as before).
     delete process.env.GEMINI_API_KEY;
-    await runner.runTurn({ model: "gemini-3.5-pro", systemPrompt: "be terse" }, turn, fakeEmitter().emit);
+    await newRunner().runTurn({ model: "gemini-3.5-pro", systemPrompt: "be terse" }, turn, fakeEmitter().emit);
     expect(captured.model).toBe("gemini-3.5-pro");
 
     // An EMPTY channel is unset, never an empty key handed to the model.
     process.env.GEMINI_API_KEY = "";
-    await runner.runTurn({ model: "gemini-3.5-pro", systemPrompt: "be terse" }, turn, fakeEmitter().emit);
+    await newRunner().runTurn({ model: "gemini-3.5-pro", systemPrompt: "be terse" }, turn, fakeEmitter().emit);
     expect(captured.model).toBe("gemini-3.5-pro");
+
+    // guuey#2139: with a launch envelope the envelope's token keys the model and
+    // the environment's key-slot variables are never read.
+    process.env.GEMINI_API_KEY = "env-must-not-win";
+    await createRunner({ envelope: { v: 1, model: { wire: "gemini", token: "envelope-token" } } }, { load: () => Promise.resolve(fakeAdk) })
+      .runTurn({ model: "gemini-3.5-pro", systemPrompt: "be terse" }, turn, fakeEmitter().emit);
+    if (!(captured.model instanceof FakeGemini)) throw new Error("expected the envelope token to key the model");
+    expect(captured.model.params).toEqual({ model: "gemini-3.5-pro", apiKey: "envelope-token" });
   });
 
   it("constructs the LlmAgent from the snapshot (preambled instruction, cred toolsets, model), streams SSE, role-pinned", async () => {
@@ -163,6 +180,8 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
         }
       },
       Gemini: FakeGemini,
+      LLMRegistry: fakeRegistry,
+      BaseLlm: FakeBaseLlm,
       MCPToolset: class {
         constructor(public readonly params: unknown) {
           captured.toolsets.push(params);
@@ -180,7 +199,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
         }
       },
     };
-    const runner = createRunner({ load: () => Promise.resolve(fakeAdk) });
+    const runner = createRunner({}, { load: () => Promise.resolve(fakeAdk) });
     const { emit, got } = fakeEmitter();
     const turn: HostTurn = {
       input: "do the thing",
@@ -248,6 +267,8 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
         }
       },
       Gemini: FakeGemini,
+      LLMRegistry: fakeRegistry,
+      BaseLlm: FakeBaseLlm,
       MCPToolset: class {
         constructor(_: unknown) {}
       },
@@ -262,7 +283,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
         }
       },
     };
-    const runner = createRunner({ load: () => Promise.resolve(fakeAdk) });
+    const runner = createRunner({}, { load: () => Promise.resolve(fakeAdk) });
     const { emit, got } = fakeEmitter();
     const turn: HostTurn = {
       input: "hi",
@@ -498,6 +519,8 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
         constructor(_: { name: string; model: string | object; instruction: string | (() => string); tools: unknown[] }) {}
       },
       Gemini: FakeGemini,
+      LLMRegistry: fakeRegistry,
+      BaseLlm: FakeBaseLlm,
       MCPToolset: class {
         constructor(_: unknown) {}
       },
@@ -514,7 +537,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
         }
       },
     };
-    const runner = createRunner({ load: () => Promise.resolve(fakeAdk) });
+    const runner = createRunner({}, { load: () => Promise.resolve(fakeAdk) });
     const { emit, got } = fakeEmitter();
     await runner.runTurn({}, {
       input: "x",
@@ -882,6 +905,8 @@ describe("withheldTools — the Router's per-turn withholds reach the ADK toolse
         constructor(_: { name: string; model: string | object; instruction: string | (() => string); tools: unknown[] }) {}
       },
       Gemini: FakeGemini,
+      LLMRegistry: fakeRegistry,
+      BaseLlm: FakeBaseLlm,
       MCPToolset: class {
         constructor(params: { url: string }, toolFilter?: unknown) {
           built.push({ url: params.url, toolFilter });
@@ -898,7 +923,7 @@ describe("withheldTools — the Router's per-turn withholds reach the ADK toolse
         }
       },
     };
-    const runner = createRunner({ load: () => Promise.resolve(fakeAdk) });
+    const runner = createRunner({}, { load: () => Promise.resolve(fakeAdk) });
     const turn: HostTurn = {
       input: "hi",
       identity: { userId: "u-1", authMode: "anonymous" },

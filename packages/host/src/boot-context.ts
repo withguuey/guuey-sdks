@@ -1,58 +1,77 @@
 /**
  * Pure boot-context builder for `@guuey/host`.
  *
- * Extracted from `index.ts` so the env-reading logic is unit-testable without
- * importing the worker entrypoint (which calls `main()` as a top-level side
- * effect). `buildHostContext` is pure — no disk access, no I/O.
+ * Extracted from `index.ts` so the credential-resolution logic is unit-testable
+ * without importing the worker entrypoint (which calls `main()` as a top-level
+ * side effect). `buildHostContext` is pure — no disk access, no I/O.
  *
- * OSS-legal: no guuey-private imports — only Node built-ins.
+ * Credential sources (guuey#2139):
+ *  - Platform launch: the model capability arrives in the private launch
+ *    envelope (`@guuey/worker`'s `readLaunchEnvelope`), never in the
+ *    environment. When an envelope is present, no key-slot variable is read.
+ *  - No envelope (local `guuey dev`, or a launcher that predates the
+ *    envelope): the key-slot variables are read as before.
+ * Base URLs are public and always come from the environment.
+ *
+ * OSS-legal: no guuey-private imports.
  */
+import type { LaunchEnvelope } from "@guuey/worker";
 
 /**
- * Parts of the worker boot context derived from the process environment.
- * Resolved once at worker startup by the entrypoint (`index.ts`); per-invoke
- * context lives on `HostInvoke` + `HostRuntime` in `run.ts`.
+ * Parts of the worker boot context: the model credential and the provider base
+ * URLs. Resolved once at worker startup; per-invoke context lives on the turn.
  */
 export interface HostBootContext {
-  /**
-   * OpenAI API key — or the opaque broker token in hosted mode (the Task 8
-   * `buildWorkerEnv` injects it as `OPENAI_API_KEY`). Applied globally to the
-   * SDK via `setDefaultOpenAIKey` before the first invoke. `undefined` means
-   * no OpenAI credentials are available.
-   */
+  /** OpenAI key, or the opaque scoped token in hosted mode. Applied with `setDefaultOpenAIKey`. */
   openaiKey?: string;
-  /**
-   * Anthropic API key — the local-dev fallback when the managed-LLM broker is
-   * NOT configured. Absent in hosted (broker) mode; present for `guuey dev`
-   * and local testing.
-   */
+  /** Anthropic API key: the local-dev path, with no base URL. */
   anthropicApiKey?: string;
-  /**
-   * Loopback proxy base URL — hosted/broker mode. Task 8 injects this as
-   * `ANTHROPIC_BASE_URL` into the worker's env via `buildWorkerEnv`. When
-   * present together with `anthropicAuthToken`, the Claude CLI subprocess is
-   * routed through the managed-LLM broker; the real API key is intentionally
-   * absent so it cannot leak to agent code.
-   */
+  /** The model-egress base URL in hosted mode (`ANTHROPIC_BASE_URL`). */
   anthropicBaseUrl?: string;
-  /**
-   * Opaque session token for the loopback proxy — hosted/broker mode. Task 8
-   * injects this as `ANTHROPIC_AUTH_TOKEN`. Required when `anthropicBaseUrl`
-   * is set; ignored when only `anthropicApiKey` is present.
-   */
+  /** The opaque scoped token for {@link anthropicBaseUrl}. */
   anthropicAuthToken?: string;
+  /** The Gemini key, or the opaque scoped token in hosted mode. */
+  geminiKey?: string;
+}
+
+/** What the boot hands every runner: the envelope it read, if any. */
+export interface HostBoot {
+  envelope?: LaunchEnvelope;
+}
+
+function nonEmpty(value: string | undefined): string | undefined {
+  return value === undefined || value === "" ? undefined : value;
 }
 
 /**
- * Build the host boot context from the process environment. Pure — no side
- * effects, no disk access. Takes `env` as a parameter (rather than reading
- * `process.env` directly) so the function is straightforward to unit-test.
+ * Build the host boot context. With an envelope, the credential is the
+ * envelope's model token for its wire and the environment supplies only base
+ * URLs; without one, the legacy key-slot variables apply. Pure.
  */
-export function buildHostContext(env: NodeJS.ProcessEnv): HostBootContext {
+export function buildHostContext(env: NodeJS.ProcessEnv, envelope?: LaunchEnvelope): HostBootContext {
+  const anthropicBaseUrl = nonEmpty(env.ANTHROPIC_BASE_URL);
+  if (envelope !== undefined) {
+    const model = envelope.model;
+    if (model === undefined) return anthropicBaseUrl !== undefined ? { anthropicBaseUrl } : {};
+    switch (model.wire) {
+      case "anthropic":
+        return { ...(anthropicBaseUrl !== undefined ? { anthropicBaseUrl } : {}), anthropicAuthToken: model.token };
+      case "openai":
+        return { openaiKey: model.token };
+      case "gemini":
+        return { geminiKey: model.token };
+    }
+  }
+  const openaiKey = nonEmpty(env.OPENAI_API_KEY);
+  const anthropicApiKey = nonEmpty(env.ANTHROPIC_API_KEY);
+  const anthropicAuthToken = nonEmpty(env.ANTHROPIC_AUTH_TOKEN);
+  const geminiKey = nonEmpty(env.GEMINI_API_KEY);
   return {
-    openaiKey: env.OPENAI_API_KEY,
-    anthropicApiKey: env.ANTHROPIC_API_KEY,
-    anthropicBaseUrl: env.ANTHROPIC_BASE_URL,
-    anthropicAuthToken: env.ANTHROPIC_AUTH_TOKEN,
+    ...(openaiKey !== undefined ? { openaiKey } : {}),
+    ...(anthropicApiKey !== undefined ? { anthropicApiKey } : {}),
+    ...(anthropicBaseUrl !== undefined ? { anthropicBaseUrl } : {}),
+    ...(anthropicAuthToken !== undefined ? { anthropicAuthToken } : {}),
+    ...(geminiKey !== undefined ? { geminiKey } : {}),
   };
 }
+

@@ -31,10 +31,15 @@
  *    actionable error (the Python-era SSE arm has no JS mapping). Auth
  *    headers ride `transportOptions.requestInit.headers` (the non-deprecated
  *    channel).
- *  - **Gemini arming: `GEMINI_API_KEY` is the sanctioned channel, and it
- *    WINS (guuey#1342).** The Router's `buildWorkerEnv` gemini arm injects
- *    exactly `GEMINI_API_KEY` + `GOOGLE_GEMINI_BASE_URL` (`@google/genai`
- *    reads the base URL — verified: getBaseUrl in genai 1.52). Left to the
+ *  - **Gemini arming: the platform key is handed to the model in memory,
+ *    never through the environment (guuey#2139; guuey#1342 before it).** On a
+ *    platform launch the scoped token arrives in the private launch envelope
+ *    and only `GOOGLE_GEMINI_BASE_URL` is in the environment (`@google/genai`
+ *    reads the base URL — verified: getBaseUrl in genai 1.52); without an
+ *    envelope (local dev, an older launcher) `GEMINI_API_KEY` is read once at
+ *    runner creation. No-code constructs `new Gemini({ model, apiKey })`; a
+ *    graceful agent's STRING models are bound to the key through the ADK's
+ *    public model registry (`adk-model-key.ts`). Left to the
  *    ADK's own resolution the key reads `GOOGLE_GENAI_API_KEY ||
  *    GOOGLE_API_KEY || GEMINI_API_KEY` (adk 1.3.0 + 2.0.0 dist; guuey#1310)
  *    — LAST of three — so on any host carrying an ambient Google variable
@@ -87,6 +92,13 @@ import {
 } from "../preamble.js";
 import { resolveSdkVersion } from "../sdk-version.js";
 import { modelToolFilterFor, type ToolGates } from "../mcp-tool-gates.js";
+import { buildHostContext, type HostBoot } from "../boot-context.js";
+import {
+  bindAdkModelKey,
+  countBuilderModels,
+  type AdkGeminiClass,
+  type AdkModelRegistry,
+} from "./adk-model-key.js";
 
 const ADK_FRAMEWORK = "google-adk";
 
@@ -155,7 +167,11 @@ interface AdkModule {
     tools: unknown[];
   }) => AdkAgent;
   /** The Gemini model class (root export on 1.x + 2.x): `apiKey` given here beats the SDK's env chain (guuey#1342). */
-  Gemini: new (params: { model: string; apiKey: string }) => AdkLlm;
+  Gemini: AdkGeminiClass;
+  /** The ADK's public model registry: graceful string models resolve through it (guuey#2139). */
+  LLMRegistry: AdkModelRegistry;
+  /** The base model class: a builder-constructed model is an instance of it (counted, guuey#2139). */
+  BaseLlm: abstract new (...args: never[]) => AdkLlm;
   InMemoryRunner: new (params: { agent: AdkAgent }) => AdkRunner;
   MCPToolset: new (
     connectionParams: {
@@ -433,8 +449,11 @@ export interface AdkRunnerDeps {
   load?: typeof loadAdk;
 }
 
-export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
+export function createRunner(hostBoot: HostBoot = {}, deps: AdkRunnerDeps = {}): FrameworkRunner {
   const load = deps.load ?? loadAdk;
+  // The platform key, resolved once (guuey#2139): the envelope's token, else
+  // the legacy GEMINI_API_KEY. Held in memory; never written to process.env.
+  const geminiKey = buildHostContext(process.env, hostBoot.envelope).geminiKey;
   // Graceful mode: guuey.json#agent.entry → GUUEY_AGENT_ENTRY (relative),
   // resolved strictly under the worker root. Read once at runner creation —
   // the pod runs one agent module for its whole life.
@@ -548,7 +567,14 @@ export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
         if (exported !== undefined) {
           // Graceful: the dev's export (plain agent or factory(GuueyContext)).
           const ctx = buildGuueyContext(snapshot, turn, instruction, toolsets);
+          // guuey#2139: bind the platform key to every STRING model in the
+          // tree before the agent exists, through the ADK's own registry on
+          // the agent's own ADK instance. Refused (no model call) when the
+          // turn's model would not resolve to the keyed client.
+          if (geminiKey !== undefined) bindAdkModelKey(adk, geminiKey, ctx.model);
           agent = await materializeAgent(exported, ctx, (message) => process.stderr.write(`${message}\n`));
+          const builderModels = countBuilderModels(agent, (value) => value instanceof adk.BaseLlm);
+          if (builderModels > 0) process.stderr.write(`[guuey] adkBuilderLlm: ${String(builderModels)}\n`);
         } else {
           // No-code: construct from the snapshot. `instruction` rides as a
           // function (F7, see AdkModule) — the preamble embeds user-authored
@@ -562,10 +588,9 @@ export function createRunner(deps: AdkRunnerDeps = {}): FrameworkRunner {
           // an ambient Google variable; unset (or empty), the model rides as
           // its name and the SDK's chain applies — as before.
           const modelName = snapshot.model ?? DEFAULT_MODEL;
-          const geminiKey = process.env.GEMINI_API_KEY;
           agent = new adk.LlmAgent({
             name: "guuey",
-            model: geminiKey === undefined || geminiKey === "" ? modelName : new adk.Gemini({ model: modelName, apiKey: geminiKey }),
+            model: geminiKey === undefined ? modelName : new adk.Gemini({ model: modelName, apiKey: geminiKey }),
             instruction: () => instruction,
             tools: toolsets,
           });
