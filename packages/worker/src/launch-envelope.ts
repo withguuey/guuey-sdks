@@ -14,11 +14,16 @@
  * text never carries payload bytes. With the marker absent the worker runs
  * without an envelope.
  *
- * Not checked: whether a descriptor sits at the envelope's number when the
- * marker is absent. A Node process opens its own internal descriptors at the
- * low numbers (fds 3 to 10 on a bare `node` start, measured on macOS), so an
- * open fd 5 there proves nothing about inheritance, and Node exposes no
- * close-on-exec flag to tell the two apart (guuey#2139).
+ * Not checked, and replaced by nothing: what sits at the envelope's number
+ * when the marker is absent. A plain "fd 5 is not open" check does not work,
+ * because a Node process opens its own internal descriptors at the low
+ * numbers (fds 3 to 10 on a bare `node` start; on macOS, Node 25.6.1, they
+ * measured as FIFOs and kqueue descriptors, none a socket), and Node exposes
+ * no close-on-exec flag. A narrower variant is feasible and NOT adopted here:
+ * refuse when the marker is absent and fd 5 is a SOCKET, since an inherited
+ * envelope is a socketpair end and Node's own startup descriptors are not
+ * sockets. It needs a Linux test first (Linux kinds are unmeasured)
+ * (guuey#2139).
  */
 import { closeSync, fstatSync } from "node:fs";
 import { Socket } from "node:net";

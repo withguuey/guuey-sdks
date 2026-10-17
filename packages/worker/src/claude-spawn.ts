@@ -12,13 +12,19 @@
  *    key or another registered secret (an MCP header value, say), and an
  *    argument list that already carries `--mcp-config`;
  *  - spawns with plain pipes only (no `'ipc'` channel, so the CLI's
- *    `process.send` is undefined) and `CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR=3`;
+ *    `process.send` is undefined) and `CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR=3`
+ *    (or `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=3` for an OAuth token);
  *  - writes `key\n` to fd 3 (a socketpair end) and closes its own end. On that
  *    branch the pinned CLI reads to the newline, closes the descriptor and
  *    removes the variable from its own environment, and never writes the key
- *    to disk;
+ *    to disk (both variables go through the CLI's one descriptor reader);
  *  - drains stderr through a redactor: the key and every registered secret are
  *    replaced before a line reaches the sink.
+ *
+ * A registered secret that is an HTTP `Bearer <x>` or `Basic <x>` header value
+ * is also registered as its bare credential `<x>`, so a refusal or redaction
+ * still matches when the scheme prefix is not attached (an error line that
+ * echoes just the token, say).
  *
  * Each spawn gets a fresh socketpair, so a retry or resume never reuses a
  * consumed descriptor.
@@ -30,6 +36,11 @@ import { Writable, type Readable } from "node:stream";
 export const CLAUDE_KEY_FD = 3;
 /** The CLI's descriptor-input variable for an API key. */
 export const CLAUDE_KEY_FD_ENV = "CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR";
+/** The CLI's descriptor-input variable for an OAuth token (same reader as the API key's). */
+export const CLAUDE_OAUTH_FD_ENV = "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR";
+
+/** Which credential the descriptor carries: an API key (the platform's) or an OAuth token (local dev). */
+export type ClaudeKeyKind = "api-key" | "oauth-token";
 
 /** Credential variables: a credential is never an environment value of the CLI. */
 export const CLAUDE_CREDENTIAL_ENV: readonly string[] = [
@@ -100,6 +111,8 @@ export class ClaudeSpawnRefusedError extends Error {
 export interface ClaudeSpawnerOptions {
   /** The model credential, delivered on fd 3 only. */
   key: string;
+  /** What `key` is; selects the descriptor variable. Defaults to `"api-key"`. */
+  keyKind?: ClaudeKeyKind;
   /** Further values that must appear in no argument and no environment value (MCP header values). */
   secrets?: readonly string[];
   /** Receives each redacted stderr line. Defaults to the host's stderr. */
@@ -110,10 +123,25 @@ export interface ClaudeSpawnerOptions {
   onSpawn?: (child: ChildProcess) => void;
 }
 
-/** Replace every occurrence of each secret in `line`. */
+/** An HTTP authorization value with a scheme the credential follows. */
+const SCHEME_CREDENTIAL = /^(?:Bearer|Basic)[ \t]+(\S+)[ \t]*$/i;
+
+/**
+ * The forms of one secret that must match: the value itself and, for a
+ * `Bearer <x>` / `Basic <x>` header value, the bare credential `<x>`.
+ */
+export function secretForms(value: string): string[] {
+  const credential = SCHEME_CREDENTIAL.exec(value)?.[1];
+  return credential !== undefined && credential !== value ? [value, credential] : [value];
+}
+
+/**
+ * Replace every occurrence of each secret in `line`. Longer secrets go first,
+ * so a full header value is replaced whole before its bare credential is.
+ */
 export function redactSecrets(line: string, secrets: readonly string[]): string {
   let out = line;
-  for (const secret of secrets) {
+  for (const secret of [...secrets].sort((a, b) => b.length - a.length)) {
     if (secret.length > 0) out = out.split(secret).join("[redacted]");
   }
   return out;
@@ -124,7 +152,10 @@ export function makeClaudeSpawner(options: ClaudeSpawnerOptions): (request: Clau
   if (options.key.length === 0 || /[\r\n]/.test(options.key)) {
     throw new ClaudeSpawnRefusedError("the key is empty or contains a line break");
   }
-  const secrets = [options.key, ...(options.secrets ?? []).filter((s) => s.length > 0)];
+  const secrets = [
+    ...new Set([options.key, ...(options.secrets ?? []).flatMap(secretForms)].filter((s) => s.length > 0)),
+  ];
+  const keyFdEnv = options.keyKind === "oauth-token" ? CLAUDE_OAUTH_FD_ENV : CLAUDE_KEY_FD_ENV;
   const sink = options.stderr ?? ((line: string) => process.stderr.write(`${line}\n`));
   const spawnImpl = options.spawnFn ?? ((command: string, args: readonly string[], spawnOptions: SpawnOptions) => spawn(command, args, spawnOptions));
 
@@ -146,7 +177,7 @@ export function makeClaudeSpawner(options: ClaudeSpawnerOptions): (request: Clau
     for (const [name, value] of Object.entries(request.env)) {
       if (value !== undefined) env[name] = value;
     }
-    env[CLAUDE_KEY_FD_ENV] = String(CLAUDE_KEY_FD);
+    env[keyFdEnv] = String(CLAUDE_KEY_FD);
 
     const child = spawnImpl(request.command, request.args, {
       ...(request.cwd !== undefined ? { cwd: request.cwd } : {}),
