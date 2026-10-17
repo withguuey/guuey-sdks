@@ -34,6 +34,21 @@ export interface HostBootContext {
   geminiKey?: string;
 }
 
+/**
+ * The graceful-legacy lane marker (guuey#2139). The
+ * platform launcher sets it, with the value {@link BUILDER_KEY_LANE_LEGACY_ENV},
+ * only for a graceful module on an image the platform stamped at deploy time
+ * for the temporary legacy env lane; the token itself still arrives in the
+ * launch envelope. The google-adk runner then lets a model client the
+ * builder's own module constructs read the key from this process's
+ * environment (see `frameworks/google-adk.ts`). Never decided by the host.
+ */
+export const BUILDER_KEY_LANE_ENV = "GUUEY_BUILDER_KEY_LANE";
+/** The one marker value that selects the graceful-legacy lane. */
+export const BUILDER_KEY_LANE_LEGACY_ENV = "legacy-env";
+/** The variable a builder-constructed ADK model reads its key from on that lane (the Gemini key slot). */
+export const LEGACY_GEMINI_KEY_ENV = "GEMINI_API_KEY";
+
 /** What the boot hands every runner: the envelope it read, if any. */
 export interface HostBoot {
   envelope?: LaunchEnvelope;

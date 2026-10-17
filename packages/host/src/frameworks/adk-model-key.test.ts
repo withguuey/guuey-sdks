@@ -21,7 +21,7 @@ const FIXTURES = dirname(fileURLToPath(new URL("./__fixtures__/adk-graceful-agen
 const CHILD_ENV = join(FIXTURES, "adk-spawn-child-env.mjs");
 const MODEL = "gemini-2.5-flash";
 const REAL_ADK_BUDGET_MS = 30_000;
-const KEY_VARS = ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENAI_API_KEY", "OPENAI_API_KEY", "GOOGLE_GENAI_USE_VERTEXAI", "GOOGLE_GEMINI_BASE_URL", "GUUEY_AGENT_ENTRY", "GUUEY_WORKER_ROOT"] as const;
+const KEY_VARS = ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENAI_API_KEY", "OPENAI_API_KEY", "GOOGLE_GENAI_USE_VERTEXAI", "GOOGLE_GEMINI_BASE_URL", "GUUEY_AGENT_ENTRY", "GUUEY_WORKER_ROOT", "GUUEY_BUILDER_KEY_LANE"] as const;
 const sentinel = (): string => `SENTINEL-2139-${randomBytes(12).toString("hex")}`;
 
 /** What a child of THIS process inherits: provider key variable names and a sentinel count. */
@@ -151,6 +151,126 @@ describe("graceful google-adk through the host runner, envelope-keyed", () => {
       expect(events.filter((e) => e.type === "done")).toHaveLength(1);
       expect(requests).toBeGreaterThan(0);
       expect(keyMatches).toBe(true);
+      expect(childEnvReport()).toEqual({ keyNames: [], sentinelCount: 0 });
+    },
+  );
+});
+
+/** One graceful turn of `entry` through the real host runner against a fake Gemini endpoint; the key compared, never printed. */
+async function gracefulTurn(
+  entry: string,
+  token: string,
+  boot: { envelope?: { v: 1; model: { wire: "gemini"; token: string } } } = { envelope: { v: 1, model: { wire: "gemini", token } } },
+): Promise<{ errors: number; done: number; requests: number; keyMatches: boolean }> {
+  let keyMatches = false;
+  let requests = 0;
+  const server = createServer((req, res) => {
+    requests += 1;
+    if (req.headers["x-goog-api-key"] === token) keyMatches = true;
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end(`data: ${JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: "ok" }] }, finishReason: "STOP" }] })}\n\n`);
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("no TCP address");
+  process.env.GOOGLE_GEMINI_BASE_URL = `http://127.0.0.1:${String(address.port)}`;
+  process.env.GUUEY_WORKER_ROOT = FIXTURES;
+  process.env.GUUEY_AGENT_ENTRY = entry;
+  const session = mkdtempSync(join(tmpdir(), "adk-graceful-"));
+  roots.push(session);
+  const events: WorkerEvent[] = [];
+  const emit = createEmitter({
+    write(s: string) {
+      for (const line of s.split("\n")) if (line.trim().length > 0) events.push(JSON.parse(line) as WorkerEvent);
+    },
+  });
+  try {
+    await createAdkRunner(boot).runTurn(
+      { model: MODEL, systemPrompt: "be terse" },
+      { input: "hi", identity: { userId: "u-2139", authMode: "anonymous" }, fs: { app: session, home: session, session }, history: [] },
+      emit,
+    );
+  } finally {
+    await new Promise<void>((resolve) => {
+      server.closeAllConnections();
+      server.close(() => resolve());
+    });
+  }
+  return {
+    errors: events.filter((e) => e.type === "error").length,
+    done: events.filter((e) => e.type === "done").length,
+    requests,
+    keyMatches,
+  };
+}
+
+describe("graceful google-adk on the graceful-legacy lane (the launcher's GUUEY_BUILDER_KEY_LANE marker)", () => {
+  it(
+    "a module that constructs its own Gemini at import time runs keyed with the envelope token; the key stays in this process's env for it",
+    { timeout: REAL_ADK_BUDGET_MS },
+    async () => {
+      const token = sentinel();
+      process.env.GUUEY_BUILDER_KEY_LANE = "legacy-env";
+      expect(await gracefulTurn("adk-builder-llm-agent.mjs", token)).toEqual({ errors: 0, done: 1, requests: 1, keyMatches: true });
+      expect(childEnvReport()).toEqual({ keyNames: ["GEMINI_API_KEY"], sentinelCount: 1 });
+    },
+  );
+
+  it(
+    "a module whose factory constructs its own Gemini each turn runs keyed on the lane, and the key stays for it",
+    { timeout: REAL_ADK_BUDGET_MS },
+    async () => {
+      const token = sentinel();
+      process.env.GUUEY_BUILDER_KEY_LANE = "legacy-env";
+      expect(await gracefulTurn("adk-builder-llm-factory-agent.mjs", token)).toEqual({ errors: 0, done: 1, requests: 1, keyMatches: true });
+      expect(childEnvReport()).toEqual({ keyNames: ["GEMINI_API_KEY"], sentinelCount: 1 });
+    },
+  );
+
+  it(
+    "a string-model module on the same lane: the key is withdrawn from the env once the agent holds no builder model",
+    { timeout: REAL_ADK_BUDGET_MS },
+    async () => {
+      const token = sentinel();
+      process.env.GUUEY_BUILDER_KEY_LANE = "legacy-env";
+      const turn = await gracefulTurn("adk-graceful-agent.mjs", token);
+      expect(turn).toMatchObject({ errors: 0, done: 1, keyMatches: true });
+      expect(childEnvReport()).toEqual({ keyNames: [], sentinelCount: 0 });
+    },
+  );
+
+  it(
+    "without the marker (strict lane) an own-Gemini module finds no key: the turn fails before any model call, and nothing is in the env",
+    { timeout: REAL_ADK_BUDGET_MS },
+    async () => {
+      const token = sentinel();
+      expect(await gracefulTurn("adk-builder-llm-factory-agent.mjs", token)).toEqual({ errors: 1, done: 0, requests: 0, keyMatches: false });
+      expect(childEnvReport()).toEqual({ keyNames: [], sentinelCount: 0 });
+    },
+  );
+
+  it(
+    "the marker without a launch envelope (a local run whose key is already in its env) never withdraws that key",
+    { timeout: REAL_ADK_BUDGET_MS },
+    async () => {
+      const token = sentinel();
+      process.env.GUUEY_BUILDER_KEY_LANE = "legacy-env";
+      process.env.GEMINI_API_KEY = token;
+      const turn = await gracefulTurn("adk-graceful-agent.mjs", token, {});
+      expect(turn).toMatchObject({ errors: 0, done: 1, keyMatches: true });
+      expect(childEnvReport()).toEqual({ keyNames: ["GEMINI_API_KEY"], sentinelCount: 1 });
+    },
+  );
+
+  it(
+    "a marker value other than legacy-env is the strict lane",
+    { timeout: REAL_ADK_BUDGET_MS },
+    async () => {
+      process.env.GUUEY_BUILDER_KEY_LANE = "legacy";
+      expect(await gracefulTurn("adk-builder-llm-factory-agent.mjs", sentinel())).toEqual({ errors: 1, done: 0, requests: 0, keyMatches: false });
       expect(childEnvReport()).toEqual({ keyNames: [], sentinelCount: 0 });
     },
   );

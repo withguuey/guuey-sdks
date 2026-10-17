@@ -92,7 +92,13 @@ import {
 } from "../preamble.js";
 import { resolveSdkVersion } from "../sdk-version.js";
 import { modelToolFilterFor, type ToolGates } from "../mcp-tool-gates.js";
-import { buildHostContext, type HostBoot } from "../boot-context.js";
+import {
+  BUILDER_KEY_LANE_ENV,
+  BUILDER_KEY_LANE_LEGACY_ENV,
+  LEGACY_GEMINI_KEY_ENV,
+  buildHostContext,
+  type HostBoot,
+} from "../boot-context.js";
 import {
   bindAdkModelKey,
   countBuilderModels,
@@ -459,6 +465,22 @@ export function createRunner(hostBoot: HostBoot = {}, deps: AdkRunnerDeps = {}):
   // the pod runs one agent module for its whole life.
   const entryRel = process.env[AGENT_ENTRY_ENV];
   const workerRoot = process.env[WORKER_ROOT_ENV];
+  // guuey#2139, the graceful-legacy lane: a graceful module that constructs
+  // its own model client (`new Gemini({...})` reads GEMINI_API_KEY when it is
+  // built) keeps working on a pod the platform stamped at deploy time for the
+  // temporary legacy env lane. Only the launcher's marker (set from that
+  // stamp, never from builder data) and a platform launch (an envelope)
+  // select it. The key then goes into THIS process's environment before the
+  // module is imported, never into the initial environment or argv, and is
+  // withdrawn again once the materialized agent holds no builder-constructed
+  // model (a string model is keyed through the registry binding below).
+  const legacyEnvKey =
+    hostBoot.envelope !== undefined &&
+    process.env[BUILDER_KEY_LANE_ENV] === BUILDER_KEY_LANE_LEGACY_ENV &&
+    entryRel !== undefined &&
+    entryRel !== ""
+      ? geminiKey
+      : undefined;
   let boot: Promise<{ adk: AdkModule; exported: unknown; entryPath?: string }> | undefined;
 
   return {
@@ -466,6 +488,7 @@ export function createRunner(hostBoot: HostBoot = {}, deps: AdkRunnerDeps = {}):
       boot ??= (async () => {
         if (entryRel !== undefined && entryRel !== "") {
           const entryPath = resolveAgentEntry(entryRel, workerRoot);
+          if (legacyEnvKey !== undefined) process.env[LEGACY_GEMINI_KEY_ENV] = legacyEnvKey;
           // Single-copy rule: the SDK comes from the AGENT's own tree.
           const adk = await load(entryPath);
           const exported = await loadAgentEntry(entryPath);
@@ -575,6 +598,9 @@ export function createRunner(hostBoot: HostBoot = {}, deps: AdkRunnerDeps = {}):
           agent = await materializeAgent(exported, ctx, (message) => process.stderr.write(`${message}\n`));
           const builderModels = countBuilderModels(agent, (value) => value instanceof adk.BaseLlm);
           if (builderModels > 0) process.stderr.write(`[guuey] adkBuilderLlm: ${String(builderModels)}\n`);
+          if (legacyEnvKey !== undefined && builderModels === 0 && process.env[LEGACY_GEMINI_KEY_ENV] === legacyEnvKey) {
+            delete process.env[LEGACY_GEMINI_KEY_ENV];
+          }
         } else {
           // No-code: construct from the snapshot. `instruction` rides as a
           // function (F7, see AdkModule) — the preamble embeds user-authored
