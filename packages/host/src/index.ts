@@ -136,10 +136,11 @@ export async function loadRunner(framework: string, boot: HostBoot = {}): Promis
  * With the marker set this is a platform launch, so the inspector guard runs
  * first and a refused startup never reads the descriptor. The read closes the
  * descriptor and asserts it closed, so no child the host starts later can
- * inherit it. With the marker absent (local `guuey dev`) there is no envelope
- * and nothing is checked at the envelope's number (see `launch-envelope.ts`
- * in `@guuey/worker`: a plain "fd 5 is not open" check does not work on a
- * Node process, and the socket-kind variant is not adopted).
+ * inherit it. With the marker absent (local `guuey dev`) no envelope is read
+ * and no descriptor check is made: an open fd 5 is not refused, because Node
+ * opens its own descriptors at the low numbers and an open fd 5 there proves
+ * nothing about inheritance (see the header of `@guuey/worker`'s
+ * launch-envelope.ts).
  */
 export async function bootEnvelope(
   env: NodeJS.ProcessEnv = process.env,
