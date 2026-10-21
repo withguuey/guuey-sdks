@@ -3,8 +3,9 @@
  *
  * Renders the cliApi runtime-log route
  * (`GET /v1/apps/:id/logs?sinceSeconds=<int>&tailLines=<int>`, which returns
- * `{ logs: [{ timestamp, pod, message }] }` oldest-first), useful for
- * debugging production issues.
+ * `{ logs: [{ timestamp, pod, message }] }` oldest-first, plus
+ * `truncated: true` when the server's read stopped at its time limit),
+ * useful for debugging production issues.
  *
  * Usage:
  *   guuey logs                     # Fetch last 1h of logs
@@ -24,6 +25,21 @@ export interface LogEntry {
   pod?: string;
   message: string;
 }
+
+/**
+ * One read of the route. `truncated` is true only when the server said its
+ * read stopped at its time limit (guuey#2552): lines may then be missing
+ * anywhere in the window. A server that predates the field never sends
+ * it, which reads as false.
+ */
+export interface LogsRead {
+  entries: LogEntry[];
+  truncated: boolean;
+}
+
+/** The one stderr line for a partial read. */
+export const TRUNCATED_NOTICE =
+  'Some lines may be missing: the log search hit its time limit before it covered this whole range. Try a shorter --since.';
 
 /** Query parameters of the `GET /apps/:id/logs` route. */
 export interface LogsQuery {
@@ -110,7 +126,7 @@ export async function fetchLogs(
   appId: string,
   pat: string,
   params: LogsQuery,
-): Promise<LogEntry[]> {
+): Promise<LogsRead> {
   const qs = new URLSearchParams({ sinceSeconds: String(params.sinceSeconds) });
   if (params.tailLines !== undefined) {
     qs.set('tailLines', String(params.tailLines));
@@ -128,8 +144,8 @@ export async function fetchLogs(
     );
   }
 
-  const data = (await res.json()) as { logs: LogEntry[] };
-  return data.logs ?? [];
+  const data = (await res.json()) as { logs?: LogEntry[]; truncated?: boolean };
+  return { entries: data.logs ?? [], truncated: data.truncated === true };
 }
 
 /**
@@ -170,9 +186,9 @@ export async function logs(
   console.log('');
 
   try {
-    const entries = await fetchLogs(baseUrl, appId, auth.pat, query.params);
+    const { entries, truncated } = await fetchLogs(baseUrl, appId, auth.pat, query.params);
 
-    if (entries.length === 0 && !follow) {
+    if (entries.length === 0 && !follow && !truncated) {
       console.log('No logs found.');
       return;
     }
@@ -180,6 +196,8 @@ export async function logs(
     for (const entry of entries) {
       console.log(formatLogEntry(entry));
     }
+    // stderr, so a piped `guuey logs > file` keeps only log lines.
+    if (truncated) console.error(`! ${TRUNCATED_NOTICE}`);
 
     if (!follow) return;
 
@@ -208,7 +226,7 @@ export async function logs(
 
       try {
         // Fetch last 10 seconds of logs (overlapping window for dedup)
-        const newEntries = await fetchLogs(baseUrl, appId, auth.pat, {
+        const { entries: newEntries } = await fetchLogs(baseUrl, appId, auth.pat, {
           sinceSeconds: 10,
         });
 

@@ -112,12 +112,32 @@ describe('fetchLogs', () => {
       { sinceSeconds: 1800, tailLines: 200 },
     );
 
-    expect(result).toEqual(entries);
+    expect(result).toEqual({ entries, truncated: false });
     const [url, init] = fetchSpy.mock.calls[0]!;
     expect(String(url)).toBe(
       'https://api.guuey.test/v1/apps/app-1/logs?sinceSeconds=1800&tailLines=200',
     );
     expect(init?.headers).toEqual({ Authorization: 'Bearer guuey_user_pat', 'x-guuey-client': 'cli' });
+  });
+
+  it("carries the server's truncated flag (guuey#2552)", async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ logs: entries, truncated: true }), { status: 200 }),
+    );
+    const result = await fetchLogs('https://api.guuey.test/v1', 'app-1', 'guuey_user_pat', {
+      sinceSeconds: 3600,
+    });
+    expect(result).toEqual({ entries, truncated: true });
+  });
+
+  it('reads a server that predates the field (no truncated) as complete', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ logs: entries }), { status: 200 }),
+    );
+    const result = await fetchLogs('https://api.guuey.test/v1', 'app-1', 'guuey_user_pat', {
+      sinceSeconds: 3600,
+    });
+    expect(result).toEqual({ entries, truncated: false });
   });
 
   it('omits tailLines from the query when not requested', async () => {
