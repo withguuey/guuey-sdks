@@ -33,6 +33,7 @@ import type {
   EndThread,
 } from "./protocol.js";
 import { endThreadProblem } from "./end-thread.js";
+import { isInputKind } from "./protocol.js";
 
 export function isInvoke(m: ControlMessage): m is Invoke {
   return m.type === "invoke";
@@ -72,7 +73,12 @@ function parseHistory(v: JsonValue | undefined): HistoryMessage[] {
     if (!isObject(m) || typeof m.text !== "string") {
       throw new Error("invoke.history entry missing string `text`");
     }
-    return { role: m.role === "agent" ? "agent" : "user", text: m.text };
+    return {
+      role: m.role === "agent" ? "agent" : "user",
+      text: m.text,
+      // guuey#2549: an unknown kind reads as none (additive, never fatal).
+      ...(isInputKind(m.inputKind) ? { inputKind: m.inputKind } : {}),
+    };
   });
 }
 
@@ -238,6 +244,8 @@ export function parseControl(line: string): ControlMessage {
       return {
         type: "invoke",
         input: raw.input,
+        // guuey#2549: an unknown kind reads as none (a Router sends only a kind this worker declared).
+        ...(isInputKind(raw.inputKind) ? { inputKind: raw.inputKind } : {}),
         identity: parseIdentity(raw.identity),
         fs: parseFs(raw.fs),
         // guuey#234: the "fs names REAL GuueyFS layers" signal — the host's

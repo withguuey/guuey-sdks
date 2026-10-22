@@ -34,9 +34,33 @@ export interface Fs {
   home: string;
   session: string;
 }
+/**
+ * guuey#2549: what a user turn's content rides on when its text is empty. `context-only`: the
+ * turn's content is the page context the app sent (a photo the app named there, say), and the
+ * user typed nothing. More kinds are added additively (`attachment-only` when attachments reach a
+ * model, guuey#2293).
+ */
+export const INPUT_KINDS = ["context-only"] as const;
+export type InputKind = (typeof INPUT_KINDS)[number];
+
+export function isInputKind(value: unknown): value is InputKind {
+  return typeof value === "string" && (INPUT_KINDS as readonly string[]).includes(value);
+}
+
+/**
+ * The hello capability name a worker declares when it handles turns of this kind (an empty
+ * `input` plus `inputKind`). A Router sends such a turn ONLY to a worker whose hello for that
+ * same invoke declared it.
+ */
+export function inputKindCapability(kind: InputKind): string {
+  return `input-kind:${kind}`;
+}
+
 export interface HistoryMessage {
   role: "user" | "agent";
   text: string;
+  /** guuey#2549: set on a user turn whose text is empty because its content rode on {@link InputKind}. */
+  inputKind?: InputKind;
 }
 /**
  * One prior-memory record pushed by value on the invoke (§1.4). A minimal,
@@ -104,6 +128,11 @@ export interface McpAvailability {
 export interface Invoke {
   type: "invoke";
   input: string;
+  /**
+   * guuey#2549: present only when `input` is empty because the turn's content rides elsewhere
+   * ({@link InputKind}). Sent only to a worker whose hello declared {@link inputKindCapability}.
+   */
+  inputKind?: InputKind;
   identity: Identity;
   /**
    * The three layer mounts. NON-NULL on every turn (§1.4): real GuueyFS layers

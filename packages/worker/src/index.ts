@@ -50,6 +50,7 @@ export {
   isHello,
   isSuspend,
 } from "./parse.js";
+export { INPUT_KINDS, type InputKind, isInputKind, inputKindCapability } from "./protocol.js";
 export { createEmitter, type Emitter, type WriteSink } from "./emit.js";
 export { endThreadProblem, END_THREAD_CODE_PATTERN, END_THREAD_MESSAGE_MAX_CHARS } from "./end-thread.js";
 export { createSuspendWriter, type SuspendWriter, type SuspendWriteResult } from "./suspend-writer.js";
