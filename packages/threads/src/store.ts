@@ -45,6 +45,7 @@ import type {
   ThreadSnapshotRow,
   TurnOrigin,
   ClientClass,
+  ThreadInputKind,
 } from "./rows.js";
 
 /** Max history messages fed back as context — bounds latency on long threads. */
@@ -88,6 +89,8 @@ export interface AppendMessageInput {
   event?: ThreadMessageEvent;
   /** A user row's origin (see {@link ThreadMessageRow.turnOrigin}); carried verbatim. */
   turnOrigin?: TurnOrigin;
+  /** guuey#2549: a user row whose empty text means its content rode on the page context; carried verbatim. */
+  inputKind?: ThreadInputKind;
   /** A `card_action` user row's answered card session id; carried verbatim. */
   answeredCardSessionId?: string;
   /** A user row's client class (see {@link ThreadMessageRow.clientClass}); carried verbatim. */
@@ -378,6 +381,7 @@ export class ThreadStore {
         text: storedTextParts(r.content, r.text)?.all || (r.text ?? null),
         content: r.content ?? null,
         at: r.at,
+        ...(r.inputKind !== undefined ? { inputKind: r.inputKind } : {}),
       }));
     return conversation;
   }
@@ -418,6 +422,7 @@ export class ThreadStore {
       ...(input.untrustedOrigin === true ? { untrustedOrigin: true } : {}),
       ...(input.event !== undefined ? { event: input.event } : {}),
       ...(input.turnOrigin !== undefined ? { turnOrigin: input.turnOrigin } : {}),
+      ...(input.inputKind !== undefined ? { inputKind: input.inputKind } : {}),
       ...(input.answeredCardSessionId !== undefined ? { answeredCardSessionId: input.answeredCardSessionId } : {}),
       ...(input.clientClass !== undefined ? { clientClass: input.clientClass } : {}),
       ...(tapLabels !== undefined ? { tapLabels } : {}),

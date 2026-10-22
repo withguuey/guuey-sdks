@@ -33,7 +33,9 @@ export type {
   ThreadSnapshotRow,
   TurnOrigin,
   ClientClass,
+  ThreadInputKind,
 } from "./rows.js";
+export { THREAD_INPUT_KINDS } from "./rows.js";
 export {
   DYNAMODB_ITEM_LIMIT_BYTES,
   DYNAMODB_ROW_BUDGET,

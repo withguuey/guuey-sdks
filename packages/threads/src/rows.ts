@@ -12,6 +12,13 @@
 import type { AgMemoryRecord, JsonValue } from "@silverprotocol/core";
 import type { TapLabels } from "@guuey/mcp-apps-host/narrowing";
 
+/**
+ * guuey#2549: what a user turn's content rides on when its text is empty. Mirrors `@guuey/worker`'s
+ * `INPUT_KINDS` (this package does not depend on it); nocode-runtime's sync test pins them equal.
+ */
+export const THREAD_INPUT_KINDS = ['context-only'] as const;
+export type ThreadInputKind = (typeof THREAD_INPUT_KINDS)[number];
+
 export type ThreadMessageRole = "user" | "agent" | "system";
 export type ThreadMessageKind = "text" | "card" | "event";
 /**
@@ -190,6 +197,12 @@ export interface ThreadMessageRow {
   event?: ThreadMessageEvent;
   /** On a user row: how the turn was started. Absent on older rows. */
   turnOrigin?: TurnOrigin;
+  /**
+   * guuey#2549: set on a user row whose `text` is empty because the turn's content rode on the
+   * page context (`'context-only'`). The history replays it through the worker's one substitution,
+   * so the model sees the same words on every later turn. Absent on every other row.
+   */
+  inputKind?: ThreadInputKind;
   /** On a `card_action` user row: the render session id of the card the gesture answered. */
   answeredCardSessionId?: string;
   /** On a user row: the sending client's class. Absent on older rows. */
@@ -238,6 +251,8 @@ export interface StoredHistoryMessage {
   text: string | null;
   content: unknown;
   at: string;
+  /** guuey#2549: carried from the row (see {@link ThreadMessageRow.inputKind}). */
+  inputKind?: ThreadInputKind;
 }
 
 /**
