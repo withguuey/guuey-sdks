@@ -56,3 +56,50 @@ describe("the current parseControl × an old Router's invoke", () => {
     expect(now).toEqual({ ...prev, suspend: NEW_INVOKE.suspend, resume: NEW_INVOKE.resume });
   });
 });
+
+/**
+ * guuey#2549 — `inputKind` on the invoke and on a history entry. A Router sends it only to a worker
+ * whose hello declared the kind, so an older worker never receives it in practice; the frozen
+ * parser must still read such an invoke without throwing, and the current parser must read an older
+ * Router's invoke exactly as before.
+ */
+const KIND_INVOKE = {
+  ...OLD_INVOKE,
+  input: "",
+  inputKind: "context-only",
+  history: [{ role: "user", text: "", inputKind: "context-only" }, { role: "agent", text: "A nice photo." }],
+};
+
+describe("inputKind across a rolling release (guuey#2549)", () => {
+  it("the previous parser reads a kind invoke without throwing and sees no kind, on the invoke or in history", () => {
+    const prev = parseControlPrev(JSON.stringify(KIND_INVOKE));
+    expect("inputKind" in prev).toBe(false);
+    expect(prev.type === "invoke" ? prev.history : []).toEqual([
+      { role: "user", text: "" },
+      { role: "agent", text: "A nice photo." },
+    ]);
+  });
+
+  it("the current parser reads an older Router's invoke exactly as the previous one does: no kind anywhere", () => {
+    const now = parseControl(JSON.stringify(OLD_INVOKE));
+    expect(now).toEqual(parseControlPrev(JSON.stringify(OLD_INVOKE)));
+    expect("inputKind" in now).toBe(false);
+  });
+
+  it("the current parser keeps a known kind on the invoke and on the history entry, and only there", () => {
+    const now = parseControl(JSON.stringify(KIND_INVOKE));
+    const prev = parseControlPrev(JSON.stringify(KIND_INVOKE));
+    expect(now).toEqual({
+      ...prev,
+      inputKind: "context-only",
+      history: [{ role: "user", text: "", inputKind: "context-only" }, { role: "agent", text: "A nice photo." }],
+    });
+  });
+
+  it("an unknown kind reads as none on both, never a throw", () => {
+    const odd = { ...KIND_INVOKE, inputKind: "telepathy", history: [{ role: "user", text: "", inputKind: 7 }] };
+    const now = parseControl(JSON.stringify(odd));
+    expect("inputKind" in now).toBe(false);
+    expect(now.type === "invoke" ? now.history : []).toEqual([{ role: "user", text: "" }]);
+  });
+});

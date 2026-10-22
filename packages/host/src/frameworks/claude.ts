@@ -22,6 +22,7 @@ import type { CredentialFile,
   Fs,
   HistoryMessage,
   Identity,
+  InputKind,
   JsonValue,
   ProfileSection,
   StopReason, McpAvailability, FirstImpressionPush, FirstImpressionShown, WithheldTool } from "@guuey/worker";
@@ -50,6 +51,11 @@ const CLAUDE_SDK_PACKAGE = "@anthropic-ai/claude-agent-sdk";
  */
 export interface HostInvoke {
   input: string;
+  /**
+   * guuey#2549: set when the user typed nothing and the turn's content rode on the page context;
+   * the arm's model text goes through `modelInputOf` (`../model-text.ts`). See `Invoke.inputKind`.
+   */
+  inputKind?: InputKind;
   identity: Identity;
   fs: Fs;
   /**
