@@ -251,6 +251,20 @@ describe("onAtEndChange and jumpToLatest (guuey#2554)", () => {
     expect(seen).toEqual([false, true, false]);
   });
 
+  it("fires on a content resize with no render (an image loading), not only on a new plan", () => {
+    const seen: boolean[] = [];
+    const { container } = render(
+      <Transcript plan={planOf(4)} follow="off" onAtEndChange={(v) => seen.push(v)} {...noopCtx} />,
+    );
+    const el = scrollerOf(container);
+    el.scrollTop = content - PANEL;
+    fireEvent.scroll(el);
+    expect(seen).toEqual([false, true]);
+    content = 2600;
+    resize();
+    expect(seen).toEqual([false, true, false]);
+  });
+
   it('fires under the default "tail" policy too', () => {
     const seen: boolean[] = [];
     const { container } = render(<Transcript plan={planOf(4)} onAtEndChange={(v) => seen.push(v)} {...noopCtx} />);
