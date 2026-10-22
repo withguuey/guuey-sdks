@@ -16,10 +16,15 @@ export const CONTEXT_ONLY_TURN_TEXT =
 /** The input kinds this host handles, declared on its hello as capability names. */
 export const HOST_INPUT_KIND_CAPABILITIES: readonly string[] = [inputKindCapability("context-only")];
 
-/** The words the model reads for a turn: its text, or the fixed sentence for a context-only turn. */
+/**
+ * The words the model reads for a turn. A Router sends `inputKind` only when the user typed
+ * nothing, so for a context-only turn the user's words ARE the fixed sentence: it stands alone in
+ * the history (a stored row's text is empty), and on the current turn it follows whatever the
+ * Router framed ahead of the empty input (the page context), never replacing it.
+ */
 export function modelTextOf(turn: { text: string; inputKind?: InputKind }): string {
-  if (turn.inputKind === "context-only" && turn.text.trim() === "") return CONTEXT_ONLY_TURN_TEXT;
-  return turn.text;
+  if (turn.inputKind !== "context-only") return turn.text;
+  return turn.text.trim() === "" ? CONTEXT_ONLY_TURN_TEXT : `${turn.text}\n\n${CONTEXT_ONLY_TURN_TEXT}`;
 }
 
 /**

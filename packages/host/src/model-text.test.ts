@@ -10,10 +10,13 @@ import { withContextPreamble } from "./preamble.js";
 afterEach(() => vi.restoreAllMocks());
 
 describe("modelTextOf / modelInputOf", () => {
-  it("an ordinary turn's text is untouched, kind or not", () => {
+  it("an ordinary turn's text is untouched", () => {
     expect(modelTextOf({ text: "hello" })).toBe("hello");
-    // The kind is a hint, not a constraint: text that is present wins.
-    expect(modelTextOf({ text: "what is this?", inputKind: "context-only" })).toBe("what is this?");
+  });
+
+  it("a context-only turn keeps the Router's page-context frame and adds the sentence after it", () => {
+    const framed = "<page_context nonce=x>a photo</page_context>\n\n";
+    expect(modelTextOf({ text: framed, inputKind: "context-only" })).toBe(`${framed}\n\n${CONTEXT_ONLY_TURN_TEXT}`);
   });
 
   it("an empty context-only turn reads the one fixed sentence, never an empty string", () => {
@@ -45,9 +48,11 @@ describe("modelTextOf / modelInputOf", () => {
 describe("replay parity (cto RED)", () => {
   it("the current turn's model text equals what the history preamble replays for that stored turn", () => {
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    const now = modelInputOf({ input: "", inputKind: "context-only" });
+    // The user's words for the turn are the same sentence now (after the frame) and on replay (alone).
+    const now = modelInputOf({ input: "<page_context>…</page_context>\n\n", inputKind: "context-only" });
+    expect(now.endsWith(CONTEXT_ONLY_TURN_TEXT)).toBe(true);
     const later = withContextPreamble("SYSTEM", [{ role: "user", text: "", inputKind: "context-only" }], undefined, undefined);
-    expect(later).toContain(`: ${now}`);
+    expect(later).toContain(`: ${CONTEXT_ONLY_TURN_TEXT}`);
     // And no empty user line is ever replayed for it.
     expect(later).not.toMatch(/: \n/);
   });
