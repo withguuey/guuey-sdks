@@ -151,6 +151,12 @@ await serveNative(
         tools: [],
         settingSources: [],
         strictMcpConfig: true,
+        // - persistSession: false — the worker never resumes a CLI session
+        //   (each turn's thread arrives in `invoke.history`), and a persisted
+        //   transcript lands under $HOME/.claude/projects/. Hosted, $HOME is
+        //   the end user's DURABLE home, so the default would keep every
+        //   turn's text there across sessions and pods.
+        persistSession: false,
         env: cliEnv(),
         ...(credential !== undefined
           ? { spawnClaudeCodeProcess: makeClaudeSpawner({ ...credential, secrets: headerValues }) }

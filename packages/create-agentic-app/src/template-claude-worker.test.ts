@@ -21,6 +21,7 @@ import type { ClaudeSpawnRequest, ClaudeSpawnedProcess, Invoke, NativeEmit, Nati
 interface CapturedOptions {
   env?: Record<string, string>;
   mcpServers?: object;
+  persistSession?: boolean;
   spawnClaudeCodeProcess?: (request: ClaudeSpawnRequest) => ClaudeSpawnedProcess;
 }
 
@@ -129,6 +130,14 @@ describe("Claude template worker: private key and MCP delivery (guuey#2139)", ()
     expect(q.options.spawnClaudeCodeProcess).toBeTypeOf("function");
     expect(Object.keys(q.setMcpServers[0] ?? {})).toEqual(["todo"]);
     expect(q.promptPulledAfterSet).toBe(true);
+  });
+
+  it("turns off CLI session persistence, so no transcript lands in the end user's durable home", async () => {
+    if (h.handler === undefined) throw new Error("the worker entry never called serveNative");
+    expect(await h.handler(invokeWithServer(), emit)).toBe("ok");
+    const q = h.queries.at(-1);
+    if (q === undefined) throw new Error("no query");
+    expect(q.options.persistSession).toBe(false);
   });
 
   it("a CLI that never answers setMcpServers fails the turn at the startup deadline: query closed, no user message", async () => {
