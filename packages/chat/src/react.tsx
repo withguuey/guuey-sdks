@@ -16,6 +16,10 @@ export {
   Transcript,
   type TranscriptProps,
   type TranscriptWindowing,
+  type TranscriptFollow,
+  type TranscriptHandle,
+  type TranscriptScrollOptions,
+  type TranscriptScrollToItemOptions,
 } from "./react/transcript.js";
 export {
   defaultTranscriptComponents,

@@ -21,12 +21,14 @@
  */
 import {
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
   type ReactNode,
+  type Ref,
 } from "react";
 import { DEFAULT_CHAT_THEME, type GuueyChatTheme } from "../theme.js";
 import { defaultChatStrings, type ChatStrings } from "../strings.js";
@@ -45,6 +47,41 @@ import { followTarget, planTurnAnchor } from "./scroll-anchor.js";
 
 /** How close to the bottom (px) still counts as pinned. */
 const PIN_THRESHOLD_PX = 48;
+
+/**
+ * guuey#2554: what content growth does to the viewport. `"tail"` (the default, and today's
+ * behaviour) follows the stream while the reader is at the bottom. `"off"` never moves the
+ * viewport on growth: the reader's position is theirs, and following starts only when the host
+ * calls {@link TranscriptHandle.scrollToEnd} (until the reader scrolls away from the bottom).
+ */
+export type TranscriptFollow = "tail" | "off";
+
+export interface TranscriptScrollOptions {
+  /** `"smooth"` is downgraded to instant under `prefers-reduced-motion`. Default `"auto"`. */
+  behavior?: "smooth" | "auto";
+}
+
+export interface TranscriptScrollToItemOptions extends TranscriptScrollOptions {
+  /** Where the item lands: its top at the viewport's top, or its bottom at the viewport's bottom. Default `"top"`. */
+  align?: "top" | "end";
+  /** Pixels kept between the item and the aligned edge (room for a fixed header). Default 0. */
+  offset?: number;
+}
+
+/** guuey#2554: the host's handle on the transcript's scrolling, through `handleRef`. */
+export interface TranscriptHandle {
+  /**
+   * Scroll the item with this plan key into place. Returns `false`, without scrolling, when the
+   * item is not rendered (unknown key, or behind the "show earlier" window) or when the DOM does
+   * not line up with the plan (a custom component that renders more or fewer than one element per
+   * item): the kit never guesses which element is the item.
+   */
+  scrollToItem(key: string, opts?: TranscriptScrollToItemOptions): boolean;
+  /** Go to the end and follow the stream from there, until the reader scrolls away from the bottom. */
+  scrollToEnd(opts?: TranscriptScrollOptions): void;
+  /** The scroll element, for anything the handle does not cover. */
+  readonly element: HTMLDivElement | null;
+}
 
 export interface TranscriptWindowing {
   /** Trailing items rendered; earlier ones sit behind the expander. */
@@ -87,6 +124,17 @@ export interface TranscriptProps
   onStartNewConversation?: () => void;
   /** DOM windowing (§3.2). `false` renders everything. Default tail 80. */
   window?: TranscriptWindowing | false;
+  /** guuey#2554: the scroll policy. Default `"tail"`, today's behaviour. */
+  follow?: TranscriptFollow;
+  /**
+   * guuey#2554: called with `true`/`false` as the tail enters and leaves the viewport, under either
+   * follow policy, so a host can draw its own "↓". Called once on mount with the starting state.
+   */
+  onAtEndChange?: (atEnd: boolean) => void;
+  /** guuey#2554: `false` hides the built-in "jump to latest" chip (a host drawing its own). Default `true`. */
+  jumpToLatest?: boolean;
+  /** guuey#2554: the scroll handle ({@link TranscriptHandle}). */
+  handleRef?: Ref<TranscriptHandle>;
   className?: string;
   style?: CSSProperties;
 }
@@ -112,6 +160,10 @@ export function Transcript(props: TranscriptProps): ReactNode {
     onViewRef,
     viewProps,
     onStartNewConversation,
+    follow: followPolicy = "tail",
+    onAtEndChange,
+    jumpToLatest = true,
+    handleRef,
   } = props;
 
   const resolvedComponents: TranscriptComponents = useMemo(
@@ -144,7 +196,14 @@ export function Transcript(props: TranscriptProps): ReactNode {
   // ── Scroll contract ──────────────────────────────────────────────────
   const scroller = useRef<HTMLDivElement>(null);
   const column = useRef<HTMLDivElement>(null);
-  const pinned = useRef(true);
+  // guuey#2554: the policy, read by the observer and the scroll handler between renders.
+  const followRef = useRef<TranscriptFollow>(followPolicy);
+  followRef.current = followPolicy;
+  const pinned = useRef(followPolicy === "tail");
+  const onAtEndRef = useRef(onAtEndChange);
+  onAtEndRef.current = onAtEndChange;
+  /** The last at-end state reported, so `onAtEndChange` fires only on a change. */
+  const lastAtEnd = useRef<boolean | null>(null);
   const [showJump, setShowJump] = useState(false);
   // guuey#1328 — the current turn's card anchor, read off the rendered
   // items; mirrored into a ref for the ResizeObserver, which runs between
@@ -213,10 +272,25 @@ export function Transcript(props: TranscriptProps): ReactNode {
     }
   };
 
+  const isAtEnd = (el: HTMLDivElement): boolean =>
+    el.scrollHeight - el.scrollTop - el.clientHeight < PIN_THRESHOLD_PX;
+
+  /** guuey#2554: report the tail entering or leaving the viewport, once per change. */
+  const reportAtEnd = (): void => {
+    const el = scroller.current;
+    const cb = onAtEndRef.current;
+    if (el === null || cb === undefined) return;
+    const atEnd = isAtEnd(el);
+    if (lastAtEnd.current === atEnd) return;
+    lastAtEnd.current = atEnd;
+    cb(atEnd);
+  };
+
   const onScroll = (): void => {
     const el = scroller.current;
     if (el === null) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < PIN_THRESHOLD_PX;
+    const nearBottom = isAtEnd(el);
+    reportAtEnd();
     const ours = autoTop.current !== null && Math.abs(el.scrollTop - autoTop.current) <= 1;
     autoTop.current = null;
     if (ours) {
@@ -227,7 +301,9 @@ export function Transcript(props: TranscriptProps): ReactNode {
     // The viewer reached the tail while the card held: they chose the tail,
     // so this turn follows the bottom from here.
     if (nearBottom && holding.current) releasedTurn.current = anchorPlan.current.turnKey;
-    pinned.current = nearBottom;
+    // guuey#2554: under `"off"`, reaching the bottom by hand never starts following (only the
+    // host's `scrollToEnd` does); scrolling away still stops it.
+    pinned.current = followRef.current === "tail" ? nearBottom : pinned.current && nearBottom;
     setShowJump(!nearBottom);
   };
 
@@ -241,6 +317,7 @@ export function Transcript(props: TranscriptProps): ReactNode {
   // streaming updates never visibly jump).
   useLayoutEffect(() => {
     if (pinned.current) follow();
+    reportAtEnd();
   }, [plan]);
 
   // Content RESIZE (an R6 card connecting and growing, an image loading)
@@ -252,10 +329,69 @@ export function Transcript(props: TranscriptProps): ReactNode {
     if (el === null || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
       if (pinned.current) follow();
+      reportAtEnd();
     });
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  const goToEnd = (smooth: boolean): void => {
+    pinned.current = true;
+    releasedTurn.current = anchorPlan.current.turnKey;
+    holding.current = false;
+    setShowJump(false);
+    scrollToBottom(smooth);
+  };
+
+  /**
+   * The rendered element of a visible item, or null. The column's children are, in order: the
+   * "show earlier" button (when items are hidden), one element per visible item, then the status
+   * and closed-thread rows. The count must line up exactly, or this answers null (never a guess).
+   */
+  const itemElement = (key: string): Element | null => {
+    const col = column.current;
+    if (col === null) return null;
+    const index = visible.findIndex((item) => item.key === key);
+    if (index < 0) return null;
+    const lead = hidden > 0 ? 1 : 0;
+    const trail = (plan.status !== null ? 1 : 0) + (plan.threadClosed !== null ? 1 : 0);
+    if (col.children.length !== lead + visible.length + trail) return null;
+    return col.children[lead + index] ?? null;
+  };
+
+  useImperativeHandle(
+    handleRef,
+    (): TranscriptHandle => ({
+      scrollToItem(key, opts = {}) {
+        const el = scroller.current;
+        const target = itemElement(key);
+        if (el === null || target === null) return false;
+        const box = target.getBoundingClientRect();
+        const view = el.getBoundingClientRect();
+        const itemTop = box.top - view.top - el.clientTop + el.scrollTop;
+        const offset = opts.offset ?? 0;
+        const top =
+          (opts.align ?? "top") === "top"
+            ? itemTop - offset
+            : itemTop + box.height - el.clientHeight + offset;
+        // The host placed the view: following stops until it asks for the end again.
+        pinned.current = false;
+        const smooth = opts.behavior === "smooth" && !reducedMotion();
+        if (typeof el.scrollTo === "function") {
+          el.scrollTo({ top: Math.max(0, top), behavior: smooth ? "smooth" : "auto" });
+        } else {
+          el.scrollTop = Math.max(0, top);
+        }
+        return true;
+      },
+      scrollToEnd(opts = {}) {
+        goToEnd(opts.behavior === "smooth");
+      },
+      get element() {
+        return scroller.current;
+      },
+    }),
+  );
 
   // guuey#1195: a standalone <Transcript> consumer gets the theme's faces too.
   useHostFaces(facesCss(theme.typography.faces));
@@ -295,19 +431,13 @@ export function Transcript(props: TranscriptProps): ReactNode {
           ) : null}
         </div>
       </div>
-      {showJump ? (
+      {showJump && jumpToLatest ? (
         <button
           type="button"
           className="guuey-chat-jump"
           aria-label={strings.jumpToLatest}
           title={strings.jumpToLatest}
-          onClick={() => {
-            pinned.current = true;
-            releasedTurn.current = anchorPlan.current.turnKey;
-            holding.current = false;
-            setShowJump(false);
-            scrollToBottom(true);
-          }}
+          onClick={() => goToEnd(true)}
         >
           {/* guuey#2121: the labelled chip where a composer follows (the seam);
               an icon-only round chip, the down arrow, everywhere else, so the
