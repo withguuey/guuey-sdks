@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { calmPolicy } from "../policy.js";
 import { planTranscript } from "../plan.js";
 import type { TranscriptInputs } from "../types.js";
+import { viewNeverHandshakes } from "../corpus/fixtures.js";
 import { Transcript, type TranscriptHandle } from "./transcript.js";
 
 const PANEL = 500;
@@ -287,3 +288,130 @@ describe("onAtEndChange and jumpToLatest (guuey#2554)", () => {
     expect(screen.getByRole("button", { name: "Jump to latest" })).toBeTruthy();
   });
 });
+
+describe("cto read fixes (guuey#2554)", () => {
+  it("STOP-1: scrollToItem finds the user row and both cards on the kit's own calm transcript with a view", () => {
+    const plan = planTranscript(viewNeverHandshakes(), calmPolicy());
+    // The fixture is the shape under test: an attributed tool item the default slot renders as nothing.
+    expect(plan.items.some((i) => i.kind === "tool" && i.attribution)).toBe(true);
+    const handle = createRef<TranscriptHandle>();
+    render(<Transcript plan={plan} follow="off" handleRef={handle} {...noopCtx} />);
+    const keys = plan.items.filter((i) => i.kind !== "tool").map((i) => i.key);
+    expect(keys.length).toBeGreaterThanOrEqual(3);
+    for (const key of keys) {
+      let ok = false;
+      act(() => {
+        ok = handle.current?.scrollToItem(key) ?? false;
+      });
+      expect(ok, key).toBe(true);
+    }
+  });
+
+  it("STOP-1: a host's own tool component is counted as one element", () => {
+    const plan = planTranscript(viewNeverHandshakes(), calmPolicy());
+    const handle = createRef<TranscriptHandle>();
+    render(
+      <Transcript plan={plan} follow="off" handleRef={handle} components={{ tool: () => <div className="host-tool" /> }} {...noopCtx} />,
+    );
+    let ok = false;
+    act(() => {
+      ok = handle.current?.scrollToItem(plan.items[plan.items.length - 1]!.key) ?? false;
+    });
+    expect(ok).toBe(true);
+  });
+
+  it('STOP-2: a SMOOTH scrollToEnd under "off" keeps following through its intermediate frames', () => {
+    const plan = planOf(4);
+    const handle = createRef<TranscriptHandle>();
+    const { container, rerender } = render(<Transcript plan={plan} follow="off" handleRef={handle} {...noopCtx} />);
+    const el = scrollerOf(container);
+    act(() => handle.current?.scrollToEnd({ behavior: "smooth" }));
+    // The browser's smooth scroll emits frames on its way down, far from the end.
+    for (const top of [300, 800, 1200, 2000 - PANEL]) {
+      el.scrollTop = top;
+      fireEvent.scroll(el);
+    }
+    content = 2600;
+    rerender(<Transcript plan={{ ...plan }} follow="off" handleRef={handle} {...noopCtx} />);
+    expect(el.scrollTop).toBe(2600 - PANEL);
+  });
+
+  it("STOP-2: the reader scrolling back up during that smooth scroll takes over", () => {
+    const plan = planOf(4);
+    const handle = createRef<TranscriptHandle>();
+    const { container, rerender } = render(<Transcript plan={plan} follow="off" handleRef={handle} {...noopCtx} />);
+    const el = scrollerOf(container);
+    act(() => handle.current?.scrollToEnd({ behavior: "smooth" }));
+    for (const top of [300, 800, 400]) {
+      el.scrollTop = top;
+      fireEvent.scroll(el);
+    }
+    content = 2600;
+    rerender(<Transcript plan={{ ...plan }} follow="off" handleRef={handle} {...noopCtx} />);
+    resize();
+    expect(el.scrollTop).toBe(400);
+  });
+
+  it("MED-1: a callback handleRef is called once, not on every render", () => {
+    const plan = planOf(4);
+    const calls: Array<TranscriptHandle | null> = [];
+    const cb = (h: TranscriptHandle | null): void => {
+      calls.push(h);
+    };
+    const { rerender } = render(<Transcript plan={plan} handleRef={cb} {...noopCtx} />);
+    rerender(<Transcript plan={{ ...plan }} handleRef={cb} {...noopCtx} />);
+    rerender(<Transcript plan={{ ...plan }} handleRef={cb} {...noopCtx} />);
+    expect(calls.filter((h) => h !== null)).toHaveLength(1);
+    expect(calls.filter((h) => h === null)).toHaveLength(0);
+  });
+
+  it('MED-2: switching follow from "tail" to "off" at runtime stops following at once', () => {
+    const plan = planOf(4);
+    const { container, rerender } = render(<Transcript plan={plan} {...noopCtx} />);
+    const el = scrollerOf(container);
+    const followed = el.scrollTop;
+    rerender(<Transcript plan={{ ...plan }} follow="off" {...noopCtx} />);
+    content = 3000;
+    rerender(<Transcript plan={{ ...plan }} follow="off" {...noopCtx} />);
+    resize();
+    expect(el.scrollTop).toBe(followed);
+  });
+});
+
+describe("the recipe (transcript-scroll.ts header, guuey#2554)", () => {
+  it('follow="off": the new user item goes to the top, the reply streams in place, the host\'s "↓" follows from the end', () => {
+    const handle = createRef<TranscriptHandle>();
+    const atEnd: boolean[] = [];
+    let plan = planOf(4);
+    const view = (p: typeof plan) => (
+      <Transcript plan={p} follow="off" jumpToLatest={false} handleRef={handle} onAtEndChange={(v) => atEnd.push(v)} {...noopCtx} />
+    );
+    const { container, rerender } = render(view(plan));
+    const el = scrollerOf(container);
+    // A new user turn: the host scrolls it to the top once, with room for a 40px header.
+    plan = planOf(5);
+    rerender(view(plan));
+    const userKey = plan.items[plan.items.length - 1]!.key;
+    act(() => {
+      handle.current?.scrollToItem(userKey, { align: "top", offset: 40 });
+    });
+    const placed = el.scrollTop;
+    expect(placed).toBe(4 * ITEM_H - 40);
+    // The reply streams in: the view never moves, and the tail leaves the viewport.
+    for (const grown of [2600, 3200, 4000]) {
+      content = grown;
+      plan = planOf(6);
+      rerender(view(plan));
+      resize();
+      expect(el.scrollTop).toBe(placed);
+    }
+    expect(atEnd[atEnd.length - 1]).toBe(false);
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+    // The host's own "↓": go to the end, and follow from there.
+    act(() => handle.current?.scrollToEnd());
+    content = 4600;
+    rerender(view({ ...plan }));
+    expect(el.scrollTop).toBe(4600 - PANEL);
+  });
+});
+

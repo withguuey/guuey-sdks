@@ -93,6 +93,40 @@ through its class names (`.guuey-chat-header`, `-title`, `-actions`,
 Server-side (no hook, no DOM): assemble inputs from a persisted thread read
 with `transcriptInputsFromHistory` and plan/render anywhere Node runs.
 
+## Owning the scroll (`follow`, `handleRef`, `onAtEndChange`, `jumpToLatest`)
+
+By default `<Transcript>` follows the stream while the reader is at the end. A host that wants
+the reader to read an answer while it streams, with the page never moving under their eye,
+takes over the scroll. Every prop is optional, and without them nothing changes:
+
+- `follow="off"`: content growth never moves the viewport, and reaching the end by hand does
+  not start following.
+- `handleRef`: `scrollToItem(key, { align, offset, behavior })`, `scrollToEnd({ behavior })`
+  and the scroll `element`. `scrollToItem` returns `false` instead of guessing when the item is
+  not rendered.
+- `onAtEndChange(atEnd)`: fires as the tail enters and leaves the viewport.
+- `jumpToLatest={false}`: hides the built-in chip, for a host that draws its own.
+
+The recipe, which `src/react/transcript-scroll.test.tsx` runs end to end:
+
+```tsx
+const handle = useRef<TranscriptHandle>(null);
+const [atEnd, setAtEnd] = useState(true);
+const lastUserKey = [...plan.items].reverse().find((i) => i.kind === "user")?.key;
+useEffect(() => {
+  // A new user turn: put it at the top once (offset = your fixed header), then leave the view alone.
+  if (lastUserKey !== undefined) handle.current?.scrollToItem(lastUserKey, { align: "top", offset: 56 });
+}, [lastUserKey]);
+
+<Transcript plan={plan} follow="off" jumpToLatest={false} handleRef={handle} onAtEndChange={setAtEnd} … />
+{!atEnd && <button onClick={() => handle.current?.scrollToEnd({ behavior: "smooth" })}>↓</button>}
+```
+
+After the "↓", the transcript follows the stream from the end until the reader scrolls up again.
+The handle's core (`scrollToItem`, `scrollToEnd`) is the framework-neutral
+`TranscriptScrollHandle` exported from `@guuey/chat`, so other transcript components can
+implement the same API.
+
 ## Restyling from outside a shadow root (`::part()`)
 
 When `<GuueyChat>` is mounted inside a **shadow root** — the guuey widget's

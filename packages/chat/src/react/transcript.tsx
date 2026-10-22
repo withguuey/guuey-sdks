@@ -28,7 +28,6 @@ import {
   useState,
   type CSSProperties,
   type ReactNode,
-  type Ref,
 } from "react";
 import { DEFAULT_CHAT_THEME, type GuueyChatTheme } from "../theme.js";
 import { defaultChatStrings, type ChatStrings } from "../strings.js";
@@ -44,41 +43,24 @@ import { themeCssVars, type ThemeMode } from "./theme-css.js";
 import { facesCss, useHostFaces } from "./faces.js";
 import { PARTS } from "./parts.js";
 import { followTarget, planTurnAnchor } from "./scroll-anchor.js";
+import type { TranscriptFollow, TranscriptScrollHandle, TranscriptScrollProps } from "../transcript-scroll.js";
+import type { DisplayItem } from "../types.js";
 
 /** How close to the bottom (px) still counts as pinned. */
 const PIN_THRESHOLD_PX = 48;
 
-/**
- * guuey#2554: what content growth does to the viewport. `"tail"` (the default, and today's
- * behaviour) follows the stream while the reader is at the bottom. `"off"` never moves the
- * viewport on growth: the reader's position is theirs, and following starts only when the host
- * calls {@link TranscriptHandle.scrollToEnd} (until the reader scrolls away from the bottom).
- */
-export type TranscriptFollow = "tail" | "off";
+// guuey#2554: the scroll API's types live in ONE shared module every transcript component
+// implements (NativeTranscript next, guuey#2569); re-exported here for `@guuey/chat/react`.
+export type {
+  TranscriptFollow,
+  TranscriptScrollHandle,
+  TranscriptScrollOptions,
+  TranscriptScrollProps,
+  TranscriptScrollToItemOptions,
+} from "../transcript-scroll.js";
 
-export interface TranscriptScrollOptions {
-  /** `"smooth"` is downgraded to instant under `prefers-reduced-motion`. Default `"auto"`. */
-  behavior?: "smooth" | "auto";
-}
-
-export interface TranscriptScrollToItemOptions extends TranscriptScrollOptions {
-  /** Where the item lands: its top at the viewport's top, or its bottom at the viewport's bottom. Default `"top"`. */
-  align?: "top" | "end";
-  /** Pixels kept between the item and the aligned edge (room for a fixed header). Default 0. */
-  offset?: number;
-}
-
-/** guuey#2554: the host's handle on the transcript's scrolling, through `handleRef`. */
-export interface TranscriptHandle {
-  /**
-   * Scroll the item with this plan key into place. Returns `false`, without scrolling, when the
-   * item is not rendered (unknown key, or behind the "show earlier" window) or when the DOM does
-   * not line up with the plan (a custom component that renders more or fewer than one element per
-   * item): the kit never guesses which element is the item.
-   */
-  scrollToItem(key: string, opts?: TranscriptScrollToItemOptions): boolean;
-  /** Go to the end and follow the stream from there, until the reader scrolls away from the bottom. */
-  scrollToEnd(opts?: TranscriptScrollOptions): void;
+/** guuey#2554: the web transcript's handle — the shared core plus the scroll element. */
+export interface TranscriptHandle extends TranscriptScrollHandle {
   /** The scroll element, for anything the handle does not cover. */
   readonly element: HTMLDivElement | null;
 }
@@ -89,7 +71,8 @@ export interface TranscriptWindowing {
 }
 
 export interface TranscriptProps
-  extends Pick<
+  extends TranscriptScrollProps<TranscriptHandle>,
+    Pick<
     TranscriptItemContext,
     | "onToggle"
     | "onRetry"
@@ -124,17 +107,6 @@ export interface TranscriptProps
   onStartNewConversation?: () => void;
   /** DOM windowing (§3.2). `false` renders everything. Default tail 80. */
   window?: TranscriptWindowing | false;
-  /** guuey#2554: the scroll policy. Default `"tail"`, today's behaviour. */
-  follow?: TranscriptFollow;
-  /**
-   * guuey#2554: called with `true`/`false` as the tail enters and leaves the viewport, under either
-   * follow policy, so a host can draw its own "↓". Called once on mount with the starting state.
-   */
-  onAtEndChange?: (atEnd: boolean) => void;
-  /** guuey#2554: `false` hides the built-in "jump to latest" chip (a host drawing its own). Default `true`. */
-  jumpToLatest?: boolean;
-  /** guuey#2554: the scroll handle ({@link TranscriptHandle}). */
-  handleRef?: Ref<TranscriptHandle>;
   className?: string;
   style?: CSSProperties;
 }
@@ -200,6 +172,15 @@ export function Transcript(props: TranscriptProps): ReactNode {
   const followRef = useRef<TranscriptFollow>(followPolicy);
   followRef.current = followPolicy;
   const pinned = useRef(followPolicy === "tail");
+  /**
+   * guuey#2554 (cto STOP-2): set by a go-to-end and held until the first frame at the end, so the
+   * frames a SMOOTH scroll emits on its way down are not read as the reader scrolling away. The
+   * reader scrolling back up mid-way cancels it (`lastSeekTop`).
+   */
+  const seekingEnd = useRef(false);
+  const lastSeekTop = useRef<number | null>(null);
+  /** The policy last applied, so a runtime change (not the mount) re-decides following (cto MED-2). */
+  const appliedPolicy = useRef<TranscriptFollow>(followPolicy);
   const onAtEndRef = useRef(onAtEndChange);
   onAtEndRef.current = onAtEndChange;
   /** The last at-end state reported, so `onAtEndChange` fires only on a change. */
@@ -291,6 +272,23 @@ export function Transcript(props: TranscriptProps): ReactNode {
     if (el === null) return;
     const nearBottom = isAtEnd(el);
     reportAtEnd();
+    if (seekingEnd.current) {
+      const backUp = lastSeekTop.current !== null && el.scrollTop < lastSeekTop.current - 1;
+      lastSeekTop.current = el.scrollTop;
+      if (!backUp) {
+        // A frame of our own go-to-end: following holds; the seek ends at the end.
+        if (nearBottom) {
+          seekingEnd.current = false;
+          lastSeekTop.current = null;
+        }
+        autoTop.current = null;
+        setShowJump(!nearBottom);
+        return;
+      }
+      // The reader scrolled back up mid-way: they took over.
+      seekingEnd.current = false;
+      lastSeekTop.current = null;
+    }
     const ours = autoTop.current !== null && Math.abs(el.scrollTop - autoTop.current) <= 1;
     autoTop.current = null;
     if (ours) {
@@ -306,6 +304,20 @@ export function Transcript(props: TranscriptProps): ReactNode {
     pinned.current = followRef.current === "tail" ? nearBottom : pinned.current && nearBottom;
     setShowJump(!nearBottom);
   };
+
+  // guuey#2554 (cto MED-2): `follow` may change at runtime. To `"off"`: following stops at once.
+  // To `"tail"`: following resumes if the reader is at the end. The mount is not a change.
+  useLayoutEffect(() => {
+    if (appliedPolicy.current === followPolicy) return;
+    appliedPolicy.current = followPolicy;
+    if (followPolicy === "off") {
+      pinned.current = false;
+      seekingEnd.current = false;
+      return;
+    }
+    const el = scroller.current;
+    if (el !== null && isAtEnd(el)) pinned.current = true;
+  }, [followPolicy]);
 
   // Declared before the follow below: layout effects run in order, so the
   // follow always reads this render's anchor.
@@ -337,25 +349,43 @@ export function Transcript(props: TranscriptProps): ReactNode {
 
   const goToEnd = (smooth: boolean): void => {
     pinned.current = true;
+    // Only a smooth scroll emits frames on its way to the end; an instant one lands at once.
+    seekingEnd.current = smooth && !reducedMotion();
+    lastSeekTop.current = scroller.current?.scrollTop ?? null;
     releasedTurn.current = anchorPlan.current.turnKey;
     holding.current = false;
     setShowJump(false);
     scrollToBottom(smooth);
   };
 
+  // guuey#2554 (cto MED-1): the handle is built ONCE (stable for a callback ref), so it reads the
+  // render's values through refs, as the observer and the scroll handler do.
+  const renderRef = useRef({ visible, hidden, plan, components: resolvedComponents });
+  renderRef.current = { visible, hidden, plan, components: resolvedComponents };
+
+  /**
+   * guuey#2554 (cto STOP-1): items the kit's OWN default slot renders as no element. The default
+   * `tool` slot draws nothing for an attributed call (calm folds it into its view row's chrome,
+   * `components.tsx` `DefaultTool`). A host's own `tool` component is counted as one element.
+   */
+  const rendersNothing = (item: DisplayItem, components: TranscriptComponents): boolean =>
+    item.kind === "tool" && item.attribution && components.tool === defaultTranscriptComponents.tool;
+
   /**
    * The rendered element of a visible item, or null. The column's children are, in order: the
-   * "show earlier" button (when items are hidden), one element per visible item, then the status
-   * and closed-thread rows. The count must line up exactly, or this answers null (never a guess).
+   * "show earlier" button (when items are hidden), one element per rendered visible item, then the
+   * status and closed-thread rows. The count must line up exactly, or this answers null (never a guess).
    */
   const itemElement = (key: string): Element | null => {
     const col = column.current;
     if (col === null) return null;
-    const index = visible.findIndex((item) => item.key === key);
+    const { visible: shown, hidden: behind, plan: current, components } = renderRef.current;
+    const rendered = shown.filter((item) => !rendersNothing(item, components));
+    const index = rendered.findIndex((item) => item.key === key);
     if (index < 0) return null;
-    const lead = hidden > 0 ? 1 : 0;
-    const trail = (plan.status !== null ? 1 : 0) + (plan.threadClosed !== null ? 1 : 0);
-    if (col.children.length !== lead + visible.length + trail) return null;
+    const lead = behind > 0 ? 1 : 0;
+    const trail = (current.status !== null ? 1 : 0) + (current.threadClosed !== null ? 1 : 0);
+    if (col.children.length !== lead + rendered.length + trail) return null;
     return col.children[lead + index] ?? null;
   };
 
@@ -391,6 +421,7 @@ export function Transcript(props: TranscriptProps): ReactNode {
         return scroller.current;
       },
     }),
+    [],
   );
 
   // guuey#1195: a standalone <Transcript> consumer gets the theme's faces too.

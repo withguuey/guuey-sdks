@@ -161,3 +161,12 @@ export {
   type ChatAnalyticsSetting,
   type ChatAnalyticsSink,
 } from "./analytics.js";
+
+// guuey#2554: the transcript scroll API, one definition for every transcript component (web now, native next, guuey#2569).
+export type {
+  TranscriptFollow,
+  TranscriptScrollHandle,
+  TranscriptScrollOptions,
+  TranscriptScrollProps,
+  TranscriptScrollToItemOptions,
+} from "./transcript-scroll.js";
