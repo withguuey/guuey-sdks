@@ -149,6 +149,11 @@ export const AGENT_ERROR_CODES = {
    * Show the paused request as information and let the reader type instead.
    */
   RESUME_REFUSED: "RESUME_REFUSED",
+  /**
+   * A turn sent with no text (`kind: "context-only"`) reached an agent that no longer accepts it
+   * (it was redeployed without it). Nothing was answered. Send the turn again with text.
+   */
+  INPUT_KIND_NOT_DECLARED: "INPUT_KIND_NOT_DECLARED",
   /** A guuey-side dependency failed (not the agent's own code). */
   PLATFORM_ERROR: "PLATFORM_ERROR",
   /** Unclassified pod failure. */
