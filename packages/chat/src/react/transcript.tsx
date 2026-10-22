@@ -404,8 +404,13 @@ export function Transcript(props: TranscriptProps): ReactNode {
           (opts.align ?? "top") === "top"
             ? itemTop - offset
             : itemTop + box.height - el.clientHeight + offset;
-        // The host placed the view: following stops until it asks for the end again.
+        // The host placed the view: following stops until it asks for the end again, and any
+        // go-to-end still gliding is over (its seek must not swallow the reader's next move).
         pinned.current = false;
+        seekingEnd.current = false;
+        lastSeekTop.current = null;
+        // Nor is any earlier follow's marker still ours: the next scroll event is this move or the reader's.
+        autoTop.current = null;
         const smooth = opts.behavior === "smooth" && !reducedMotion();
         if (typeof el.scrollTo === "function") {
           el.scrollTo({ top: Math.max(0, top), behavior: smooth ? "smooth" : "auto" });

@@ -165,6 +165,7 @@ export {
 // guuey#2554: the transcript scroll API, one definition for every transcript component (web now, native next, guuey#2569).
 export type {
   TranscriptFollow,
+  TranscriptHandleRef,
   TranscriptScrollHandle,
   TranscriptScrollOptions,
   TranscriptScrollProps,

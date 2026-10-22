@@ -415,3 +415,63 @@ describe("the recipe (transcript-scroll.ts header, guuey#2554)", () => {
   });
 });
 
+describe("cto delta read (guuey#2554)", () => {
+  it("MED-3 (declared default-path change): a chip click whose glide meets growth follows to the grown end, chip hidden", () => {
+    const plan = planOf(4);
+    const { container, rerender } = render(<Transcript plan={plan} {...noopCtx} />);
+    const el = scrollerOf(container);
+    el.scrollTop = 0;
+    fireEvent.scroll(el);
+    fireEvent.click(screen.getByRole("button", { name: "Jump to latest" }));
+    // A mid-glide frame, far from the end, then the stream grows.
+    el.scrollTop = 600;
+    fireEvent.scroll(el);
+    content = 2500;
+    rerender(<Transcript plan={{ ...plan }} {...noopCtx} />);
+    expect(el.scrollTop).toBe(2500 - PANEL);
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+  });
+
+  it("FOLLOW-UP: an INSTANT go-to-end, then an immediate scroll-up, stops following", () => {
+    const plan = planOf(4);
+    const handle = createRef<TranscriptHandle>();
+    const { container, rerender } = render(<Transcript plan={plan} follow="off" handleRef={handle} {...noopCtx} />);
+    const el = scrollerOf(container);
+    act(() => handle.current?.scrollToEnd());
+    el.scrollTop = 100;
+    fireEvent.scroll(el);
+    content = 3000;
+    rerender(<Transcript plan={{ ...plan }} follow="off" handleRef={handle} {...noopCtx} />);
+    resize();
+    expect(el.scrollTop).toBe(100);
+  });
+
+  it("LOW: a React ref object and a callback both satisfy the structural handle ref", () => {
+    const obj = createRef<TranscriptHandle>();
+    const seen: Array<TranscriptHandle | null> = [];
+    render(<Transcript plan={planOf(2)} handleRef={obj} {...noopCtx} />);
+    cleanup();
+    render(<Transcript plan={planOf(2)} handleRef={(h) => seen.push(h)} {...noopCtx} />);
+    expect(obj.current).not.toBeUndefined();
+    expect(seen.some((h) => h !== null)).toBe(true);
+  });
+});
+
+describe("cto LOW (guuey#2554): scrollToItem ends a gliding go-to-end", () => {
+  it('under "tail": smooth go-to-end, then scrollToItem, then the reader reaches the end by hand, then growth → follows', () => {
+    const plan = planOf(6);
+    const handle = createRef<TranscriptHandle>();
+    const { container, rerender } = render(<Transcript plan={plan} handleRef={handle} {...noopCtx} />);
+    const el = scrollerOf(container);
+    act(() => handle.current?.scrollToEnd({ behavior: "smooth" }));
+    act(() => {
+      handle.current?.scrollToItem(plan.items[1]!.key, { align: "top" });
+    });
+    el.scrollTop = content - PANEL;
+    fireEvent.scroll(el);
+    content = 3000;
+    rerender(<Transcript plan={{ ...plan }} handleRef={handle} {...noopCtx} />);
+    expect(el.scrollTop).toBe(3000 - PANEL);
+  });
+});
+

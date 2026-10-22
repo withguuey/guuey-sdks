@@ -10,7 +10,12 @@
  * `jumpToLatest={false}`, and call `handle.scrollToEnd()` when it is tapped — the transcript then
  * follows the stream until the reader scrolls away. `transcript-scroll.test.tsx` runs this recipe.
  */
-import type { Ref } from "react";
+/**
+ * A ref the handle is written to: an object ref or a callback ref. Structural, so this root module
+ * imports nothing from `react` (an optional peer): a headless consumer typechecks without it, and
+ * React's own `Ref<H>` is assignable to it.
+ */
+export type TranscriptHandleRef<H> = { current: H | null } | ((handle: H | null) => void) | null;
 
 /**
  * What content growth does to the viewport. `"tail"` (the default, and the behaviour before this
@@ -64,5 +69,5 @@ export interface TranscriptScrollProps<H extends TranscriptScrollHandle = Transc
   /** `false` hides the built-in "jump to latest" chip (a host drawing its own). Default `true`. */
   jumpToLatest?: boolean;
   /** The scroll handle ({@link TranscriptScrollHandle}). Stable for the component's lifetime. */
-  handleRef?: Ref<H>;
+  handleRef?: TranscriptHandleRef<H>;
 }
