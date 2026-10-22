@@ -147,7 +147,8 @@ describe("runAdkTurn — the wire contract", () => {
       framework: "google-adk",
       sdkName: "@google/adk",
       sdkVersion: "1.3.0",
-      capabilities: [ADK_HOST_COMPLETION_CAPABILITY],
+      // guuey#2549: the host also declares the input kinds it handles.
+      capabilities: [ADK_HOST_COMPLETION_CAPABILITY, "input-kind:context-only"],
     });
     expect(got.native.map((n) => n.framework)).toEqual(["google-adk", "google-adk", "google-adk", "google-adk"]);
     expect(got.native[1]?.event).toEqual(events[1]);

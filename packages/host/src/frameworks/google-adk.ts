@@ -105,6 +105,7 @@ import {
   type AdkGeminiClass,
   type AdkModelRegistry,
 } from "./adk-model-key.js";
+import { HOST_INPUT_KIND_CAPABILITIES, modelInputOf } from "../model-text.js";
 
 const ADK_FRAMEWORK = "google-adk";
 
@@ -389,7 +390,7 @@ export async function runAdkTurn(
   emit: Emitter,
   sdkVersion: string | null,
 ): Promise<void> {
-  emit.hello(ADK_FRAMEWORK, ADK_PACKAGE, sdkVersion, [ADK_HOST_COMPLETION_CAPABILITY]);
+  emit.hello(ADK_FRAMEWORK, ADK_PACKAGE, sdkVersion, [ADK_HOST_COMPLETION_CAPABILITY, ...HOST_INPUT_KIND_CAPABILITIES]);
   try {
     const runner = new adk.InMemoryRunner({ agent });
     const session = await runner.sessionService.createSession({
@@ -401,7 +402,7 @@ export async function runAdkTurn(
       userId: turn.identity.userId,
       sessionId: session.id,
       // `role` pinned — see the module header (adk-js#475).
-      newMessage: { role: "user", parts: [{ text: turn.input }] },
+      newMessage: { role: "user", parts: [{ text: modelInputOf(turn) }] },
       // SSE streaming, matching the Python host's RunConfig(streaming_mode=SSE)
       // — the ADK default is NONE, which silently drops incremental text
       // "sse" is StreamingMode.SSE's literal value.
@@ -502,7 +503,7 @@ export function createRunner(hostBoot: HostBoot = {}, deps: AdkRunnerDeps = {}):
       try {
         ({ adk, exported, entryPath } = await boot);
       } catch (err) {
-        emit.hello(ADK_FRAMEWORK, ADK_PACKAGE, null);
+        emit.hello(ADK_FRAMEWORK, ADK_PACKAGE, null, HOST_INPUT_KIND_CAPABILITIES);
         emit.error(err instanceof Error ? err.message : String(err));
         return;
       }
@@ -511,7 +512,7 @@ export function createRunner(hostBoot: HostBoot = {}, deps: AdkRunnerDeps = {}):
       // here means an un-resolved snapshot hit the API directly; reject loudly
       // (same posture as the claude path).
       if (snapshot.systemPrompt !== undefined && typeof snapshot.systemPrompt !== "string") {
-        emit.hello(ADK_FRAMEWORK, ADK_PACKAGE, sdkVersion);
+        emit.hello(ADK_FRAMEWORK, ADK_PACKAGE, sdkVersion, HOST_INPUT_KIND_CAPABILITIES);
         emit.error(
           `@guuey/host: snapshot.systemPrompt must be a resolved string (got ${JSON.stringify(snapshot.systemPrompt)}).`,
         );
@@ -623,7 +624,7 @@ export function createRunner(hostBoot: HostBoot = {}, deps: AdkRunnerDeps = {}):
           });
         }
       } catch (err) {
-        emit.hello(ADK_FRAMEWORK, ADK_PACKAGE, sdkVersion);
+        emit.hello(ADK_FRAMEWORK, ADK_PACKAGE, sdkVersion, HOST_INPUT_KIND_CAPABILITIES);
         emit.error(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
         return;
       }

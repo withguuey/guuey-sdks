@@ -25,6 +25,7 @@ import type {
   ProfileSection,
 } from "@guuey/worker";
 import type { ProfileAccess } from "@guuey/config";
+import { modelTextOf } from "./model-text.js";
 
 export function withContextPreamble(
   systemPrompt: string,
@@ -40,7 +41,7 @@ export function withContextPreamble(
         "Prior conversation with this user, for context. Continue naturally;",
         "do not repeat it back verbatim.",
         "<conversation_history>",
-        ...history.map((m) => `${roleLabel(m.role)}: ${m.text}`),
+        ...history.map((m) => `${roleLabel(m.role)}: ${modelTextOf(m)}`),
         "</conversation_history>",
       ].join("\n"),
     );

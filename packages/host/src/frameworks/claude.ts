@@ -33,6 +33,7 @@ import {
   type PriorMemoryRecord,
 } from "./claude-options.js";
 import { resolveSdkVersion } from "../sdk-version.js";
+import { HOST_INPUT_KIND_CAPABILITIES, modelInputOf } from "../model-text.js";
 import { reportToolGateErrors } from "../mcp-tool-gates.js";
 
 /** The framework THIS run path runs. OpenAI has its own path (`run-openai.ts`). */
@@ -287,7 +288,7 @@ export async function runInvoke(
   // first event of this invoke's fd-3 stream, before the framework gate or any
   // native/turn event. `sdkVersion` is resolved at runtime, never hardcoded;
   // `null` (SDK not resolvable) is tolerated by the Router.
-  emit.hello(CLAUDE_FRAMEWORK, CLAUDE_SDK_PACKAGE, resolveSdkVersion(CLAUDE_SDK_PACKAGE));
+  emit.hello(CLAUDE_FRAMEWORK, CLAUDE_SDK_PACKAGE, resolveSdkVersion(CLAUDE_SDK_PACKAGE), HOST_INPUT_KIND_CAPABILITIES);
 
   // Framework gate: this run path is the Claude SDK. OpenAI agents route to
   // `runInvokeOpenai` (selected in `index.ts` by `snapshot.framework`) and never
@@ -367,7 +368,7 @@ export async function runInvoke(
     if (!sendMessage) return;
     yield {
       type: "user",
-      message: { role: "user", content: [{ type: "text", text: invoke.input }] },
+      message: { role: "user", content: [{ type: "text", text: modelInputOf(invoke) }] },
       parent_tool_use_id: null,
     };
     await inputDone;
