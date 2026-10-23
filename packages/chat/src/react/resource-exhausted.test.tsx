@@ -5,10 +5,10 @@
  * `event: error` / `{code, message}` mid-turn, or a 503 + `Retry-After`
  * refusal before the stream. Either way it is transient: it carries its own
  * reader line, stays in the transient family, and so keeps the Retry button.
- * Before the stream agent-client's capacity retry re-sends it once the
- * `Retry-After` wait passes (guuey#2605); what reaches this view is the
- * refusal that outlived that budget, or the mid-turn stop, which is never
- * re-sent.
+ * Before the stream agent-client's capacity retry re-sends it after each
+ * `Retry-After` wait, up to its `attempts` budget (guuey#2605); what reaches
+ * this view is the refusal that outlived that budget, or the mid-turn stop,
+ * which is never re-sent.
  *
  * The N−1 half: a client that predates the code knows neither the built-in
  * line nor a family for it. The code path such a client runs for it is the

@@ -28,7 +28,7 @@ import { AgentResponseError } from "./errors.js";
 import type { InvokeRequest, InvokeTransport } from "./types.js";
 
 /**
- * Fallback wait before the saturation retry when the pod sent no usable
+ * Fallback wait before a capacity retry when the pod sent no usable
  * `Retry-After` — the same 15s the pod's governor hints today
  * (`GOVERNOR_RETRY_AFTER_SECONDS`), so a stripped header behaves like the
  * normal case rather than hammering.
@@ -75,7 +75,7 @@ const CAPACITY_RETRY_CODES: ReadonlySet<string> = new Set([
   AGENT_ERROR_CODES.WORKER_POD_RESOURCE_EXHAUSTED,
 ]);
 
-/** How long to wait before the single saturation retry, in milliseconds. */
+/** How long to wait before each capacity retry, in milliseconds. */
 function saturationDelayMs(retryAfterSeconds: number | undefined): number {
   const hinted = retryAfterSeconds ?? SATURATION_FALLBACK_DELAY_SECONDS;
   return Math.min(hinted, SATURATION_MAX_DELAY_SECONDS) * 1000;
@@ -109,8 +109,9 @@ export interface SaturationRetryOptions {
    */
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   /**
-   * Total send attempts on a saturated pod (guuey#406). Default 1 retry
-   * (2 attempts) — the historical behavior; capped at 5. A capacity-1 pod
+   * Retries on a capacity refusal (guuey#406): the turn is sent at most
+   * `attempts + 1` times. Default 1 retry (2 sends), the historical
+   * behavior; capped at 5 retries. A capacity-1 pod
    * (demo fixtures, xs plans) refuses the SECOND simultaneous visitor, so
    * end-user surfaces budget higher and pair it with `onSaturationWait` so
    * the wait is a visible busy state, never a silent hang or a generic
@@ -130,20 +131,22 @@ export interface SaturationRetryOptions {
 const MAX_SATURATION_RETRIES = 5;
 
 /**
- * Wrap an invoke transport with ONE automatic retry on a saturated pod.
+ * Wrap an invoke transport with a bounded automatic retry on a capacity
+ * refusal: up to `attempts` retries (default 1, capped at 5).
  *
  * ## What retries, and what deliberately does not
  *
  * `POD_SATURATED` (503) means the pod is at its concurrent-turn cap right now
- * — a transient queue state that clears as in-flight turns finish, so a single
- * delayed re-send usually just works. The wait is the pod's own `Retry-After`
+ * — a transient queue state that clears as in-flight turns finish, so a delayed
+ * re-send usually just works. The wait is the pod's own `Retry-After`
  * hint (via {@link AgentResponseError.retryAfterSeconds}), defaulting to 15s
  * when it sent none and capped at 30s.
  *
  * `WORKER_POD_RESOURCE_EXHAUSTED` refused BEFORE the stream (503 +
  * `Retry-After`, the same shape) means the app's worker pods have no free
  * slot for the turn right now: the reservation was refused, nothing ran, and
- * the worker set scales out on exactly that pressure. It is the same
+ * a slot frees as in-flight turns finish (the refusal itself never scales
+ * the worker set out). It is the same
  * transient capacity answer, so it takes the same wait rule and SHARES the
  * same attempts budget (a mix of the two codes never retries more than
  * `attempts` times). The same code arriving mid-turn (the in-band
@@ -158,12 +161,13 @@ const MAX_SATURATION_RETRIES = 5;
  * one by luck), which is not a guarantee worth building on. When the retry can
  * be made routing-aware, this is the code to revisit.
  *
- * Exactly ONE retry: a second saturation propagates as
- * {@link AgentResponseError}, so a genuinely overloaded agent surfaces instead
- * of looping. Nothing is retried once a chunk has been yielded — replaying
- * mid-stream would duplicate a partial assistant turn (the same `yielded`
- * guard the widget's `withIdentifiedToken` 401-retry uses). An abort during
- * the wait skips the retry and surfaces the original refusal.
+ * At most `attempts` retries, one budget across both capacity codes: the
+ * refusal after the last retry propagates as {@link AgentResponseError}, so a
+ * genuinely overloaded agent surfaces instead of looping. Nothing is
+ * retried once a chunk has been yielded — replaying mid-stream would
+ * duplicate a partial assistant turn (the same `yielded` guard the widget's
+ * `withIdentifiedToken` 401-retry uses). An abort during the wait skips the
+ * retry and surfaces the original refusal.
  *
  * The retry is INVISIBLE to `useAgentInvoke`: no frames were yielded, so the
  * turn simply stays in `connecting` for the duration of the wait. There is no
