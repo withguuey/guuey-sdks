@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mcpToolPredicateFor } from "./mcp-tool-gates.js";
+import { mcpToolPredicateFor, reportToolGateErrors } from "./mcp-tool-gates.js";
 
 /** The kept tools of `candidates` on `server`, or "open" when the gate filters nothing. */
 function keptOn(server: string, gates: Parameters<typeof mcpToolPredicateFor>[1], withheld?: Parameters<typeof mcpToolPredicateFor>[2]) {
@@ -39,8 +39,8 @@ describe("mcpToolPredicateFor — the config tool gates, per server, for the fra
     expect(keptOn("ggui", undefined, [{ server: "other", tool: "consume" }])).toBe("open");
   });
 
-  it("a malformed entry a stale snapshot slipped through is dropped, never matched verbatim (the Claude path's posture)", () => {
-    expect(keptOn("ggui", { denylist: ["mcp__ggui__consume"] })).toBe("open");
+  it("a malformed entry a stale snapshot slipped through is never matched verbatim: dropped from an allowlist, and in a denylist the server keeps nothing", () => {
+    expect(keptOn("ggui", { denylist: ["mcp__ggui__consume"] })).toEqual([]);
     expect(keptOn("ggui", { allowlist: ["mcp__ggui__consume", "ggui.render"] })).toEqual(["render"]);
   });
 
@@ -70,5 +70,16 @@ describe('mcpToolPredicateFor — "no tools", allowlist: ["@none"] (guuey#2262)'
 
   it('"@none" in a denylist subtracts nothing', () => {
     expect(keptOn("ggui", { denylist: ["@none"] })).toBe("open");
+  });
+});
+
+describe("reportToolGateErrors — an unreadable denylist entry is named on stderr", () => {
+  it("writes one [guuey] line per unreadable denylist entry, and nothing for readable gates", () => {
+    const lines: string[] = [];
+    reportToolGateErrors({ denylist: ["mcp__ggui__consume", "ggui.render"] }, (line) => lines.push(line));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^\[guuey\] tools\.denylist entry "mcp__ggui__consume" cannot be read/);
+    reportToolGateErrors({ allowlist: ["mcp__ggui__consume"], denylist: ["ggui.render"] }, (line) => lines.push(line));
+    expect(lines).toHaveLength(1);
   });
 });

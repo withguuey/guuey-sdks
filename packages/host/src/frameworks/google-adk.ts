@@ -91,7 +91,7 @@ import {
   withContextPreamble,
 } from "../preamble.js";
 import { resolveSdkVersion } from "../sdk-version.js";
-import { modelToolFilterFor, type ToolGates } from "../mcp-tool-gates.js";
+import { modelToolFilterFor, reportToolGateErrors, type ToolGates } from "../mcp-tool-gates.js";
 import {
   BUILDER_KEY_LANE_ENV,
   BUILDER_KEY_LANE_LEGACY_ENV,
@@ -583,6 +583,7 @@ export function createRunner(hostBoot: HostBoot = {}, deps: AdkRunnerDeps = {}):
       let agent: AdkAgent;
       try {
         const creds = listCredentials(turn.fs)();
+        reportToolGateErrors(snapshot.tools);
         const toolsets = instrumentToolsets(
           buildToolsets(adk, creds, turn.withheldTools, snapshot.tools).map((toolset, i) => ({ name: creds[i]?.name ?? `server-${i}`, toolset })),
           (line) => process.stderr.write(`${line}\n`),

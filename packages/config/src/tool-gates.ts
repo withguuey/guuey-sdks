@@ -24,7 +24,14 @@
  *      says nothing about S, so under an allowlist that never names S (and has
  *      no bare entry), S keeps nothing.
  *   5. A malformed entry (the deploy gate rejects them; a stale snapshot could
- *      still carry one) is dropped, never matched verbatim.
+ *      still carry one) is never matched verbatim. Its effect depends on the
+ *      list, so that it always fails closed:
+ *        - in an allowlist it is dropped (an allowlist only grants, so a
+ *          dropped entry grants less);
+ *        - in a denylist it makes the gate keep NO MCP tool for that
+ *          snapshot (dropping it would grant what the builder meant to
+ *          deny), and {@link toolGateErrors} names the entry so the worker
+ *          can report it.
  *   6. `"@none"` mixed with real entries counts for nothing; only the real
  *      entries count. In a denylist it subtracts nothing.
  *   7. A stored `"*"` (the deploy gate does not accept it as a wildcard;
@@ -35,22 +42,22 @@
  * The same rules as a table (the contract suite in `tool-gates.test.ts` runs
  * every row against both shapes):
  *
- * | allowlist          | denylist      | tools kept on server S                         |
- * | ------------------ | ------------- | ---------------------------------------------- |
- * | absent or `[]`     | absent or `[]`| every tool (no filter)                         |
- * | `["S.a"]`          |               | `a`                                            |
- * | `["S.*"]`          |               | every tool                                     |
- * | `["a"]` (bare)     |               | `a`, on every server                           |
- * | `["T.a"]`          |               | nothing (the list never names S)               |
- * |                    | `["S.a"]`     | every tool but `a`                             |
- * |                    | `["a"]`       | every tool but `a`, on every server            |
- * |                    | `["S.*"]`     | nothing                                        |
- * | `["S.*"]`          | `["S.a"]`     | every tool but `a` (deny wins)                 |
- * | `["@none"]`        | any           | nothing                                        |
- * | `["*"]`            |               | every tool                                     |
- * |                    | `["*"]`       | nothing                                        |
- * | `["mcp__S__a"]`    |               | nothing (malformed entry dropped)              |
- * | any                | `["mcp__S__a"]`| as if the entry were absent                   |
+ * | allowlist        | denylist         | tools kept on server S                     |
+ * | ---------------- | ---------------- | ------------------------------------------ |
+ * | absent or `[]`   | absent or `[]`   | every tool (no filter)                     |
+ * | `["S.a"]`        |                  | `a`                                        |
+ * | `["S.*"]`        |                  | every tool                                 |
+ * | `["a"]` (bare)   |                  | `a`, on every server                       |
+ * | `["T.a"]`        |                  | nothing (the list never names S)           |
+ * |                  | `["S.a"]`        | every tool but `a`                         |
+ * |                  | `["a"]`          | every tool but `a`, on every server        |
+ * |                  | `["S.*"]`        | nothing                                    |
+ * | `["S.*"]`        | `["S.a"]`        | every tool but `a` (deny wins)             |
+ * | `["@none"]`      | any              | nothing                                    |
+ * | `["*"]`          |                  | every tool                                 |
+ * | any              | `["*"]`          | nothing                                    |
+ * | `["mcp__S__a"]`  |                  | nothing (malformed entry dropped)          |
+ * | any              | `["mcp__S__a"]`  | nothing, plus an error naming the entry    |
  *
  * This turn's withholds then subtract from whatever the table keeps.
  *
@@ -97,12 +104,41 @@ function isEverything(entry: string): boolean {
   return entry.trim() === EVERYTHING_ENTRY;
 }
 
+/** The denylist entries that cannot be read (rule 5), with the parser's reason. */
+function unreadableDenyEntries(gates: ToolGates): { entry: string; reason: string }[] {
+  const out: { entry: string; reason: string }[] = [];
+  for (const raw of gates?.denylist ?? []) {
+    if (!isRealEntry(raw) || isEverything(raw)) continue;
+    const parsed = parseToolGateEntry(raw);
+    if ('error' in parsed) out.push({ entry: raw, reason: parsed.error });
+  }
+  return out;
+}
+
 /**
- * Does this gate block keep no MCP tool at all? `["@none"]`, or a denylist
- * carrying a stored `"*"` (rule 7).
+ * Why this gate block keeps no MCP tool this snapshot, one message per
+ * denylist entry that cannot be read (rule 5); empty when every entry reads.
+ * A worker reports these (a log line, a denial the model reads) so the
+ * builder can fix the entry; the gates themselves already fail closed.
+ */
+export function toolGateErrors(gates: ToolGates): string[] {
+  return unreadableDenyEntries(gates).map(
+    ({ entry, reason }) =>
+      `tools.denylist entry ${JSON.stringify(entry)} cannot be read (${reason}), so this agent is offered no MCP tool until it is fixed`,
+  );
+}
+
+/**
+ * Does this gate block keep no MCP tool at all? `["@none"]`, a denylist
+ * carrying a stored `"*"` (rule 7), or a denylist entry that cannot be read
+ * (rule 5).
  */
 function keepsNoTools(gates: ToolGates): boolean {
-  return declaresNoTools(gates) || (gates?.denylist ?? []).some(isEverything);
+  return (
+    declaresNoTools(gates) ||
+    (gates?.denylist ?? []).some(isEverything) ||
+    unreadableDenyEntries(gates).length > 0
+  );
 }
 
 /**
@@ -191,6 +227,20 @@ export function denyUnlistedTools(allowedSet: ReadonlySet<string>): ToolPermissi
     );
 }
 
+/**
+ * Denies every tool not in `allowedSet` because the gates cannot be read,
+ * naming each unreadable entry ({@link toolGateErrors}) in the message the
+ * model reads.
+ */
+function denyForGateErrors(allowedSet: ReadonlySet<string>, errors: readonly string[]): ToolPermissionCheck {
+  return (toolName, input) =>
+    Promise.resolve(
+      allowedSet.has(toolName)
+        ? { behavior: 'allow', updatedInput: input }
+        : { behavior: 'deny', message: `Tool "${toolName}" is not available: ${errors.join('; ')}.` },
+    );
+}
+
 /** Options for {@link claudeToolRules}. */
 export interface ClaudeToolRulesOptions {
   /**
@@ -214,6 +264,8 @@ export interface ClaudeToolRules {
   explicitAllowlist: boolean;
   /** `allowedTools` as a set. */
   allowedSet: ReadonlySet<string>;
+  /** {@link toolGateErrors}: why no MCP tool is kept, when a denylist entry cannot be read. */
+  errors: string[];
   /** The ask-stage check: deny-unlisted under an explicit allowlist, else allow every tool. */
   canUseTool: ToolPermissionCheck;
 }
@@ -254,7 +306,8 @@ function dedupe(names: string[]): string[] {
  *   denylist removes them.
  * - `disallowedTools`: the translated denylist, plus this turn's withholds.
  *   An allow rule only pre-approves, so subtraction rides here.
- * - `["@none"]` (and a stored denylist `"*"`): no MCP allow rule, the
+ * - `["@none"]` (and a stored denylist `"*"`, or a denylist entry that
+ *   cannot be read, rule 5): no MCP allow rule, the
  *   deny-unlisted posture, and `mcp__<server>` disallowed for every server,
  *   so it holds even where no `canUseTool` is installed. The built-ins stay;
  *   only a denylist entry naming one removes it.
@@ -282,11 +335,18 @@ export function claudeToolRules(
     ...servers.flatMap((server) => withheldOn(server, withheld).map((tool) => `mcp__${server}__${tool}`)),
   ]);
   const allowedSet = new Set(allowedTools);
+  const errors = toolGateErrors(gates);
   return {
     allowedTools,
     disallowedTools,
     explicitAllowlist,
     allowedSet,
-    canUseTool: explicitAllowlist ? denyUnlistedTools(allowedSet) : allowEveryTool,
+    errors,
+    canUseTool:
+      errors.length > 0
+        ? denyForGateErrors(allowedSet, errors)
+        : explicitAllowlist
+          ? denyUnlistedTools(allowedSet)
+          : allowEveryTool,
   };
 }

@@ -221,6 +221,24 @@ describe("Claude template worker: the agent's tool gates reach query() (guuey#25
     expect(options.disallowedTools).toEqual(["mcp__todo__clear", "mcp__todo__export"]);
   });
 
+  it("an unreadable denylist entry: no MCP tool, a denial naming the entry, and one [guuey] line on stderr", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const options = await optionsFor({ denylist: ["mcp__todo__clear"] });
+      expect(options.allowedTools).toEqual([]);
+      expect(options.disallowedTools).toEqual(["mcp__ggui", "mcp__todo"]);
+      if (options.canUseTool === undefined) throw new Error("no canUseTool");
+      const denied = await options.canUseTool("mcp__todo__add", { k: "v" });
+      expect(denied.behavior).toBe("deny");
+      expect(denied.message).toContain('"mcp__todo__clear"');
+      expect(errors.mock.calls.map((c) => String(c[0]))).toEqual([
+        expect.stringMatching(/^\[guuey\] tools\.denylist entry "mcp__todo__clear" cannot be read/),
+      ]);
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
   it('["@none"]: no MCP allow rule, every server disallowed, every pick denied', async () => {
     const options = await optionsFor({ allowlist: ["@none"] });
     expect(options.allowedTools).toEqual([]);

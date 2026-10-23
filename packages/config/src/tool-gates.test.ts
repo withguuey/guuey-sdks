@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   claudeToolRules,
+  toolGateErrors,
   toolGatePredicate,
   type ToolGateWithhold,
   type ToolGates,
@@ -62,6 +63,12 @@ const ROWS: Row[] = [
     label: 'unparseable allow entry is dropped',
     gates: { allowlist: ['mcp__a__read', 'a.write'] },
     kept: ['a.write'],
+  },
+  { label: 'unparseable deny entry keeps no MCP tool', gates: { denylist: ['mcp__a__write'] }, kept: [] },
+  {
+    label: 'unparseable deny entry beside readable ones keeps no MCP tool',
+    gates: { allowlist: ['a.*'], denylist: ['b.read', 'a.wr*te'] },
+    kept: [],
   },
   { label: 'stored allowlist "*" = every tool', gates: { allowlist: ['*'] }, kept: EVERY },
   { label: 'stored allowlist "*" beside entries = every tool', gates: { allowlist: ['a.read', ' * '] }, kept: EVERY },
@@ -173,5 +180,38 @@ describe('claudeToolRules', () => {
   it('withholds on a server not attached this turn change nothing', () => {
     const rules = claudeToolRules(undefined, SERVERS, { builtins: [], withheld: [{ server: 'c', tool: 'read' }] });
     expect(rules.disallowedTools).toEqual([]);
+  });
+});
+
+describe('toolGateErrors: an unparseable denylist entry fails closed and is named', () => {
+  it('names each unreadable denylist entry with the parser reason', () => {
+    const errors = toolGateErrors({ allowlist: ['mcp__a__read'], denylist: ['a.read', 'mcp__a__write', '.x'] });
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toContain('tools.denylist entry "mcp__a__write" cannot be read');
+    expect(errors[0]).toContain('framework-internal spelling');
+    expect(errors[1]).toContain('tools.denylist entry ".x" cannot be read');
+    expect(errors[1]).toContain('no MCP tool');
+  });
+
+  it('reports nothing for readable lists, "@none", a stored "*", or an unreadable ALLOWLIST entry (dropped instead)', () => {
+    expect(toolGateErrors(undefined)).toEqual([]);
+    expect(toolGateErrors({ allowlist: ['mcp__a__read'], denylist: ['a.read', 'search', 'b.*', '@none', '*'] })).toEqual([]);
+  });
+
+  it('the predicate keeps nothing on every server', () => {
+    for (const server of SERVERS) {
+      expect(toolGatePredicate({ denylist: ['mcp__a__write'] }, server)?.('read')).toBe(false);
+    }
+  });
+
+  it('the Claude rules carry the errors, disallow every server, and deny an MCP pick with a message naming the entry', async () => {
+    const rules = claudeToolRules({ denylist: ['mcp__a__write'] }, SERVERS, { builtins: ['Bash'] });
+    expect(rules.errors).toEqual(toolGateErrors({ denylist: ['mcp__a__write'] }));
+    expect(rules.allowedTools).toEqual(['Bash']);
+    expect(rules.disallowedTools).toEqual(['mcp__a', 'mcp__b']);
+    const verdict = await rules.canUseTool('mcp__b__read', {});
+    expect(verdict.behavior).toBe('deny');
+    expect(verdict.behavior === 'deny' && verdict.message).toContain('"mcp__a__write"');
+    expect((await rules.canUseTool('Bash', {})).behavior).toBe('allow');
   });
 });

@@ -38,7 +38,7 @@ import {
   type RunStreamEvent,
 } from "@openai/agents";
 import { mcpToolCustomData } from "@guuey/worker";
-import { modelToolFilterFor, type ToolGates } from "../mcp-tool-gates.js";
+import { modelToolFilterFor, reportToolGateErrors, type ToolGates } from "../mcp-tool-gates.js";
 import type { Emitter, JsonValue } from "@guuey/worker";
 import {
   resolveMcpServers,
@@ -221,6 +221,7 @@ export async function runInvokeOpenai(
       // constant's doc for the confirm-gate carve-out).
       RESPONSE_NORMS_SECTION;
     mcpServers = buildOpenaiMcpServers(ctx, snapshot.tools);
+    reportToolGateErrors(snapshot.tools);
   } catch (err) {
     emit.error(err instanceof Error ? err.message : String(err));
     return;

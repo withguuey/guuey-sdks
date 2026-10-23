@@ -33,6 +33,7 @@ import {
   type PriorMemoryRecord,
 } from "./claude-options.js";
 import { resolveSdkVersion } from "../sdk-version.js";
+import { reportToolGateErrors } from "../mcp-tool-gates.js";
 
 /** The framework THIS run path runs. OpenAI has its own path (`run-openai.ts`). */
 const CLAUDE_FRAMEWORK = "claude-agent-sdk";
@@ -334,6 +335,7 @@ export async function runInvoke(
       ...(invoke.firstImpressionShown !== undefined ? { firstImpressionShown: invoke.firstImpressionShown } : {}),
     };
     options = buildOptions(snapshot, ctx);
+    reportToolGateErrors(snapshot.tools);
   } catch (err) {
     emit.error(err instanceof Error ? err.message : String(err));
     return;

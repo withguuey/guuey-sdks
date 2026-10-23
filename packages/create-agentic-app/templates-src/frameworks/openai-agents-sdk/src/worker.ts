@@ -16,7 +16,7 @@
  */
 import { Agent, MaxTurnsExceededError, MCPServerStreamableHttp, run, setDefaultOpenAIKey } from "@openai/agents";
 import type { MCPServer } from "@openai/agents";
-import { toolGatePredicate } from "@guuey/config";
+import { toolGateErrors, toolGatePredicate } from "@guuey/config";
 import { mcpToolCustomData, modelVisibleToolFilterWith, readLaunchEnvelope, serveNative } from "@guuey/worker";
 import { loadAgent, systemPrompt, mcpEndpoints, withHistory } from "./agent-config.js";
 
@@ -34,6 +34,9 @@ await serveNative(
   async (invoke, emit) => {
     const agent = loadAgent(invoke);
     const endpoints = mcpEndpoints(invoke, agent);
+    // A denylist entry that cannot be read makes the gates keep no MCP tool
+    // this turn (they fail closed); name it so it can be fixed.
+    for (const error of toolGateErrors(agent.tools)) console.error(`[guuey] ${error}`);
     const mcpServers: MCPServerStreamableHttp[] = Object.entries(endpoints).map(
       ([name, ep]) =>
         new MCPServerStreamableHttp({

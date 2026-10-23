@@ -238,6 +238,18 @@ describe("OpenAI template worker: the agent's tool gates (guuey#2585)", () => {
     });
   });
 
+  it("an unreadable denylist entry offers nothing on any server and names the entry on stderr", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(await offeredWith({ denylist: ["mcp__ggui__ggui_consume"] })).toEqual({ ggui: [], todo: [] });
+      expect(errors.mock.calls.map((c) => String(c[0]))).toEqual([
+        expect.stringMatching(/^\[guuey\] tools\.denylist entry "mcp__ggui__ggui_consume" cannot be read/),
+      ]);
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
   it("MCP Apps visibility still applies under an allowlist that names the app-only tool", async () => {
     expect(await offeredWith({ allowlist: ["ggui.ggui_runtime_submit_action"] })).toEqual({ ggui: [], todo: [] });
   });

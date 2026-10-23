@@ -6,10 +6,22 @@
  * implementation the host and the code-mode scaffolds share (its module doc
  * carries the contract); this file adds only the host's MCP Apps visibility.
  */
-import { toolGatePredicate, type ToolGates } from "@guuey/config";
+import { toolGateErrors, toolGatePredicate, type ToolGates } from "@guuey/config";
 import { modelMayCallTool, type WithheldTool } from "@guuey/worker";
 
 export type { ToolGates };
+
+/**
+ * Report, one `[guuey]` line each on stderr, why the gates keep no MCP tool
+ * this turn: a denylist entry that cannot be read (`toolGateErrors`). The
+ * gates already fail closed; this names the entry so the builder can fix it.
+ */
+export function reportToolGateErrors(
+  gates: ToolGates,
+  write: (line: string) => void = (line) => process.stderr.write(`${line}\n`),
+): void {
+  for (const error of toolGateErrors(gates)) write(`[guuey] ${error}`);
+}
 
 /**
  * The predicate that keeps a tool on `server` this turn, or `undefined` when

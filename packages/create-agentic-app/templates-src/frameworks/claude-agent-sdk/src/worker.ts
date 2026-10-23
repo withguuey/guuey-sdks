@@ -128,6 +128,9 @@ await serveNative(
       builtins: [],
       withheld: invoke.withheldTools,
     });
+    // A denylist entry that cannot be read makes the rules keep no MCP tool
+    // this turn (they fail closed); name it so it can be fixed.
+    for (const error of toolRules.errors) console.error(`[guuey] ${error}`);
     let openGate!: () => void;
     const gate = new Promise<void>((resolve) => (openGate = resolve));
     let endInput!: () => void;
