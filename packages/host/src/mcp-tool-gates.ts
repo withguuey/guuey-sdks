@@ -1,54 +1,15 @@
 /**
- * The builder's tool gates (`agent.tools.allowlist` / `agent.tools.denylist`,
- * the `@guuey/config` grammar) as a per-server predicate, for the frameworks
- * that filter an MCP server's tools one server at a time: OpenAI (the
- * server's `toolFilter`) and ADK (the toolset's predicate). The Claude host
- * translates the same grammar into its SDK's allow and deny rules
- * (`frameworks/claude-options.ts`, `resolveToolGates`). Both follow one
- * contract: the allowlist first (the model may call ONLY these), then the
- * denylist subtracts, then this turn's withholds (`Invoke.withheldTools`).
- *
- * The grammar, per server S:
- *   - `S.tool`: that tool on S;
- *   - `S.*`: every tool on S;
- *   - a bare `tool`: that tool on EVERY server.
- * An entry naming another server says nothing about S; so under an allowlist
- * that never names S (and has no bare entry it matches), S keeps nothing. A
- * malformed entry (the deploy gate rejects them; a stale snapshot could still
- * carry one) is dropped, never matched verbatim.
- *
- * "No tools" (guuey#2262): an allowlist whose only entry is `"@none"`
- * (`NO_TOOLS_ENTRY`, `@guuey/config`) keeps no tool on any server. The entry
- * is never matched as a tool name: in a list that mixes it with real entries
- * (the deploy gate refuses that; a stored snapshot could still carry one)
- * only the real entries count, exactly as on a host that predates it.
- *
- * Built-ins: OpenAI and ADK agents carry no built-in tools (the Claude host's
- * file tools and `Bash` exist only there), so a bare built-in name gates only
- * an MCP tool of that name. Denying `Bash` is a no-op for everything else; an
- * allowlist of built-ins alone narrows each server to tools of those names.
+ * The builder's tool gates (`agent.tools.allowlist` / `agent.tools.denylist`)
+ * for the frameworks that filter an MCP server's tools one server at a time:
+ * OpenAI (the server's `toolFilter`) and ADK (the toolset's predicate). The
+ * gate itself is `@guuey/config`'s `toolGatePredicate`, the one
+ * implementation the host and the code-mode scaffolds share (its module doc
+ * carries the contract); this file adds only the host's MCP Apps visibility.
  */
-import { NO_TOOLS_ENTRY, declaresNoTools, parseToolGateEntry, type GuueyAgent } from "@guuey/config";
-import { modelMayCallTool, withheldToolNamesFor, type WithheldTool } from "@guuey/worker";
+import { toolGatePredicate, type ToolGates } from "@guuey/config";
+import { modelMayCallTool, type WithheldTool } from "@guuey/worker";
 
-/** The snapshot's gate block. */
-export type ToolGates = GuueyAgent["tools"];
-
-/** One gate list read for one server: whether it names the server whole, and the tool names it names there. */
-function namesOn(server: string, entries: readonly string[]): { whole: boolean; tools: Set<string> } {
-  let whole = false;
-  const tools = new Set<string>();
-  for (const raw of entries) {
-    if (raw.trim() === NO_TOOLS_ENTRY) continue;
-    const parsed = parseToolGateEntry(raw);
-    if ("error" in parsed) continue;
-    if (parsed.kind === "bare") tools.add(parsed.tool);
-    else if (parsed.server !== server) continue;
-    else if (parsed.kind === "server-all") whole = true;
-    else tools.add(parsed.tool);
-  }
-  return { whole, tools };
-}
+export type { ToolGates };
 
 /**
  * The predicate that keeps a tool on `server` this turn, or `undefined` when
@@ -60,18 +21,7 @@ export function mcpToolPredicateFor(
   gates: ToolGates,
   withheld?: readonly WithheldTool[],
 ): ((tool: string) => boolean) | undefined {
-  // guuey#2262: `["@none"]` declares no tools — nothing on this server is kept.
-  if (declaresNoTools(gates)) return () => false;
-  const allowEntries = (gates?.allowlist ?? []).filter((e) => e.trim() !== NO_TOOLS_ENTRY);
-  const allow = allowEntries.length > 0 ? namesOn(server, allowEntries) : undefined;
-  const deny = namesOn(server, gates?.denylist ?? []);
-  const blocked = new Set([...deny.tools, ...withheldToolNamesFor(server, withheld)]);
-  const narrowed = allow !== undefined && !allow.whole;
-  if (!narrowed && !deny.whole && blocked.size === 0) return undefined;
-  return (tool) => {
-    if (deny.whole || blocked.has(tool)) return false;
-    return !narrowed || (allow !== undefined && allow.tools.has(tool));
-  };
+  return toolGatePredicate(gates, server, withheld);
 }
 
 /**

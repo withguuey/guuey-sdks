@@ -22,13 +22,14 @@
  */
 import type { CanUseTool, Options, SDKMessage, Settings } from "@anthropic-ai/claude-agent-sdk";
 import type { FirstImpressionPush, FirstImpressionShown, Fs, HistoryMessage, JsonValue, McpAvailability, ProfileSection, WithheldTool } from "@guuey/worker";
-import { forbiddenClaudeEnvNames, makeClaudeSpawner, withheldToolNamesFor } from "@guuey/worker";
+import { forbiddenClaudeEnvNames, makeClaudeSpawner } from "@guuey/worker";
 import {
   GUUEY_DEFAULT_SYSTEM_PROMPT,
-  NO_TOOLS_ENTRY,
+  allowEveryTool,
+  claudeToolRules,
   declaresNoTools,
   defaultModelFor,
-  parseToolGateEntry,
+  denyUnlistedTools,
   rejectsDisabledThinking,
   type GuueyAgent,
   type ProfileAccess,
@@ -621,33 +622,20 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
  * `strictMcpConfig` pins the MCP catalog — and the real OS isolation is the
  * Router's bubblewrap jail this whole process runs inside. The callback only
  * collapses the SDK's final interactive "ask" stage (which would otherwise
- * hang a headless pod); the earlier hook/deny-rule stages still run.
+ * hang a headless pod); the earlier hook/deny-rule stages still run. The
+ * check itself is `@guuey/config`'s `allowEveryTool`.
  */
-export const autoAllowTool: CanUseTool = (_toolName, input) =>
-  Promise.resolve({ behavior: "allow", updatedInput: input });
+export const autoAllowTool: CanUseTool = allowEveryTool;
 
 /**
  * Deny-unlisted permission callback (guuey#234). Installed instead of
  * {@link autoAllowTool} when the snapshot carries an explicit `tools.allowlist`
- * (and no pinned mode). Tools that ARE listed never reach any callback — they
- * are SDK allow rules (`allowedTools`) and are auto-allowed upstream. So every
- * tool that DOES arrive here is, by construction, one the builder did not
- * list: it is denied with a message the model can act on. Never `null`, never
- * an ask — the invariant "an explicit allowlist can never hang the pod".
- *
- * `allowedSet` is consulted anyway (belt-and-braces against an SDK that
- * routes an allow-listed name here after all): a listed name is allowed.
+ * (and no pinned mode): every unlisted pick is denied with a message the model
+ * can act on, never an ask — the invariant "an explicit allowlist can never
+ * hang the pod". The check itself is `@guuey/config`'s `denyUnlistedTools`.
  */
 export function denyUnlistedTool(allowedSet: ReadonlySet<string>): CanUseTool {
-  return (toolName, input) =>
-    Promise.resolve(
-      allowedSet.has(toolName)
-        ? { behavior: "allow", updatedInput: input }
-        : {
-            behavior: "deny",
-            message: `Tool "${toolName}" is not in this agent's tools.allowlist. Allowed: ${[...allowedSet].join(", ") || "(none)"}.`,
-          },
-    );
+  return denyUnlistedTools(allowedSet);
 }
 
 /**
@@ -692,61 +680,15 @@ export interface ResolvedToolGates {
 }
 
 /**
- * Translate one parsed tool-gate entry (the `@guuey/config` grammar) into the
- * SDK's tool-name spelling(s). MCP tools are auto-namespaced by the SDK as
- * `mcp__<server>__<tool>`, and `mcp__<server>` is the SDK's own "every tool of
- * that server" rule. A bare name fans out to EVERY declared server (we cannot
- * enumerate a server's tools ahead of connecting) and, when it names one of the
- * host's built-ins, to that built-in — but only while fs is bound, since an
- * unbound turn has no built-in catalog for it to match.
- */
-function toSdkToolNames(
-  raw: string,
-  declaredServerNames: readonly string[],
-  fsBound: boolean,
-): string[] {
-  const parsed = parseToolGateEntry(raw);
-  // Deploy-time validation (`validateToolGates`) rejects malformed entries
-  // before a snapshot ever ships; a stale snapshot that slips one through is
-  // dropped here (NOT passed verbatim — an unknown allow rule is inert, and an
-  // unknown name reaching the ask stage is the hang this fix exists to close).
-  if ("error" in parsed) return [];
-  switch (parsed.kind) {
-    case "server-tool":
-      return [`mcp__${parsed.server}__${parsed.tool}`];
-    case "server-all":
-      return [`mcp__${parsed.server}`];
-    case "bare":
-      return [
-        ...declaredServerNames.map((s) => `mcp__${s}__${parsed.tool}`),
-        ...(fsBound && BUILTIN_TOOLS.includes(parsed.tool) ? [parsed.tool] : []),
-      ];
-  }
-}
-
-/**
- * Resolve the invoke's tool surface (guuey#234). Pure.
- *
- * - `tools` (the built-in catalog) is keyed ONLY on `fsBound` — the real
- *   "GuueyFS layers are bound this turn" signal from the runtime.
- * - `allowedTools`: an explicit `tools.allowlist` is TRANSLATED from the config
- *   grammar (`<server>.<tool>` / `<server>.*` / bare) into SDK names — never
- *   passed verbatim; absent → every tool of every declared server
- *   (`mcp__<server>`). When fs is bound the built-ins join as allow rules so
- *   the platform's memory feature (file tools + `Bash` in the jail) is never
- *   silently switched off by a builder's MCP-only allowlist; a builder who
- *   wants them gone deny-lists them (`"Bash"`).
- * - `disallowedTools`: the translated `tools.denylist` — the SDK removes those
- *   from the model's catalog outright — plus this turn's `withheld` tools on
- *   the servers attached this turn (`Invoke.withheldTools`).
- * - "No tools" (guuey#2262): `tools.allowlist: ["@none"]` (`NO_TOOLS_ENTRY`)
- *   allows no MCP tool — no MCP allow rule, the deny-unlisted posture, and
- *   `mcp__<server>` in `disallowedTools` for every server attached this turn,
- *   so it holds under a pinned `claude.permissions.mode` too (no `canUseTool`
- *   is installed there, and an allow rule only pre-approves). The entry is
- *   never translated: no `mcp__<server>__@none` rule is emitted, and in a list
- *   that mixes it with real entries only the real entries count. Built-ins
- *   follow `fsBound` as always; only the denylist removes them.
+ * Resolve the invoke's tool surface (guuey#234). Pure. The translation from
+ * the config grammar into the SDK's rules is `@guuey/config`'s
+ * `claudeToolRules` (the one implementation the code-mode scaffold shares;
+ * its doc carries the contract); this host adds only its built-in catalog,
+ * keyed ONLY on `fsBound` — the real "GuueyFS layers are bound this turn"
+ * signal from the runtime. When fs is bound the built-ins join the allow
+ * rules, so the platform's memory feature is never silently switched off by a
+ * builder's MCP-only allowlist; a builder who wants them gone deny-lists them
+ * (`"Bash"`).
  */
 export function resolveToolGates(
   snapshot: GuueyAgent,
@@ -754,37 +696,15 @@ export function resolveToolGates(
   fsBound: boolean,
   withheld?: readonly WithheldTool[],
 ): ResolvedToolGates {
-  const isEntry = (e: string): boolean => e.trim() !== NO_TOOLS_ENTRY;
-  const noTools = declaresNoTools(snapshot.tools);
-  const explicit = (snapshot.tools?.allowlist ?? []).filter(isEntry);
-  const explicitAllowlist = noTools || explicit.length > 0;
   const builtins = fsBound ? [...BUILTIN_TOOLS] : [];
-  const mcpAllowed = noTools
-    ? []
-    : explicitAllowlist
-      ? explicit.flatMap((e) => toSdkToolNames(e, declaredServerNames, fsBound))
-      : declaredServerNames.map((s) => `mcp__${s}`);
-  const allowedTools = dedupe([...mcpAllowed, ...builtins]);
-  const disallowedTools = dedupe([
-    ...(noTools ? declaredServerNames.map((s) => `mcp__${s}`) : []),
-    ...(snapshot.tools?.denylist ?? [])
-      .filter(isEntry)
-      .flatMap((e) => toSdkToolNames(e, declaredServerNames, fsBound)),
-    ...declaredServerNames.flatMap((server) =>
-      withheldToolNamesFor(server, withheld).map((tool) => `mcp__${server}__${tool}`),
-    ),
-  ]);
+  const rules = claudeToolRules(snapshot.tools, declaredServerNames, { builtins, withheld });
   return {
     tools: builtins,
-    allowedTools,
-    disallowedTools,
-    explicitAllowlist,
-    allowedSet: new Set(allowedTools),
+    allowedTools: rules.allowedTools,
+    disallowedTools: rules.disallowedTools,
+    explicitAllowlist: rules.explicitAllowlist,
+    allowedSet: rules.allowedSet,
   };
-}
-
-function dedupe(names: string[]): string[] {
-  return [...new Set(names)];
 }
 
 // withContextPreamble now lives in ../preamble.js (framework-neutral — the

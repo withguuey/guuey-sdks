@@ -12,6 +12,7 @@
  */
 export * from './schema.js';
 export * from './agent.js';
+export * from './tool-gates.js';
 export * from './platform-url.js';
 export * from './env-placeholders.js';
 export * from './colocated.js';
