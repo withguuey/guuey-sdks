@@ -40,8 +40,10 @@ export const AGENT_ERROR_CODES = {
   MANAGED_SPEND_CAP: "MANAGED_SPEND_CAP",
   /**
    * The pod is at its concurrent-turn cap (scaling S1-F3). A 503 carrying a
-   * `Retry-After` hint, and the ONE code {@link fetchStreamTransport} retries
-   * by itself — see its docblock for the single-attempt rule.
+   * `Retry-After` hint, and one of the two capacity codes
+   * {@link fetchStreamTransport} retries by itself (with a pre-stream
+   * {@link AGENT_ERROR_CODES.WORKER_POD_RESOURCE_EXHAUSTED}) — see
+   * `withSaturationRetry` for the shared wait rule and budget.
    */
   POD_SATURATED: "POD_SATURATED",
   /**
@@ -72,9 +74,10 @@ export const AGENT_ERROR_CODES = {
    * The turn hit a temporary capacity limit and was stopped safely; the agent
    * and every other conversation are fine. Mid-turn it is the in-band
    * `event: error`; before the stream it is a 503 carrying a `Retry-After`
-   * hint. Transient, but NOT retried by this SDK
-   * ({@link AGENT_ERROR_CODES.POD_SATURATED} stays the one auto-retry): the
-   * reader's own retry is the retry. The message is reader copy.
+   * hint. Transient: before the stream it is retried by this SDK exactly like
+   * {@link AGENT_ERROR_CODES.POD_SATURATED} (the `Retry-After` wait, the same
+   * shared budget; guuey#2605); mid-turn it is never re-sent, the reader's own
+   * retry is the retry. The message is reader copy.
    */
   WORKER_POD_RESOURCE_EXHAUSTED: "WORKER_POD_RESOURCE_EXHAUSTED",
   /**

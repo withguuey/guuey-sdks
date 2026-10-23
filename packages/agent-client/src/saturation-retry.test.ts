@@ -86,35 +86,131 @@ describe("withSaturationRetry — attempts budget (guuey#406)", () => {
   });
 });
 
-describe("WORKER_POD_RESOURCE_EXHAUSTED is never retried by the client", () => {
+describe("WORKER_POD_RESOURCE_EXHAUSTED before the stream is a capacity retry (guuey#2605)", () => {
+  function exhausted(retryAfterSeconds?: number): AgentResponseError {
+    return new AgentResponseError("capacity", 503, AGENT_ERROR_CODES.WORKER_POD_RESOURCE_EXHAUSTED, retryAfterSeconds);
+  }
+
   it("is a published wire code", () => {
     expect(AGENT_ERROR_CODES.WORKER_POD_RESOURCE_EXHAUSTED).toBe("WORKER_POD_RESOURCE_EXHAUSTED");
   });
 
-  it("a 503 + Retry-After refusal carrying it propagates on the first attempt, with no wait", async () => {
+  it("a 503 + Retry-After refusal carrying it is re-sent after the hinted wait", async () => {
+    let calls = 0;
+    const once = async function* (_req: InvokeRequest): AsyncGenerator<string> {
+      calls += 1;
+      if (calls === 1) throw exhausted(5);
+      yield "ok";
+    };
+    const slept: number[] = [];
+    const waits: Array<{ attempt: number; totalAttempts: number; waitMs: number }> = [];
+    const wrapped = withSaturationRetry(once, {
+      sleep: async (ms) => {
+        slept.push(ms);
+      },
+      onSaturationWait: (i) => waits.push(i),
+    });
+    expect(await drain(wrapped(REQ))).toEqual(["ok"]);
+    expect(calls).toBe(2);
+    expect(slept).toEqual([5_000]);
+    expect(waits).toEqual([{ attempt: 1, totalAttempts: 2, waitMs: 5_000 }]);
+  });
+
+  it("with no Retry-After it takes the same fallback wait as POD_SATURATED, capped the same way", async () => {
+    for (const [hint, expectedMs] of [
+      [undefined, 15_000],
+      [120, 30_000],
+    ] as const) {
+      let calls = 0;
+      const once = async function* (_req: InvokeRequest): AsyncGenerator<string> {
+        calls += 1;
+        if (calls === 1) throw exhausted(hint);
+        yield "ok";
+      };
+      const slept: number[] = [];
+      const wrapped = withSaturationRetry(once, {
+        sleep: async (ms) => {
+          slept.push(ms);
+        },
+      });
+      expect(await drain(wrapped(REQ))).toEqual(["ok"]);
+      expect(slept).toEqual([expectedMs]);
+    }
+  });
+
+  it("shares ONE budget with POD_SATURATED: a mix never retries past `attempts`", async () => {
+    const sequence = [saturated(), exhausted(1), saturated(), exhausted(1)];
+    let calls = 0;
+    const mixed = async function* (_req: InvokeRequest): AsyncGenerator<string> {
+      const refusal = sequence[calls];
+      calls += 1;
+      if (refusal !== undefined) throw refusal;
+      yield "ok";
+    };
+    const waits: unknown[] = [];
+    const wrapped = withSaturationRetry(mixed, {
+      sleep: instantSleep,
+      attempts: 2,
+      onSaturationWait: (i) => waits.push(i),
+    });
+    // attempts:2 = the first send + 2 retries; the third refusal propagates.
+    await expect(drain(wrapped(REQ))).rejects.toMatchObject({ code: AGENT_ERROR_CODES.POD_SATURATED });
+    expect(calls).toBe(3);
+    expect(waits).toHaveLength(2);
+  });
+
+  it("exhaustion at the budget throws the last WORKER_POD_RESOURCE_EXHAUSTED refusal", async () => {
     let calls = 0;
     const refused = async function* (_req: InvokeRequest): AsyncGenerator<string> {
       calls += 1;
-      if (calls > 0) {
-        throw new AgentResponseError("capacity", 503, AGENT_ERROR_CODES.WORKER_POD_RESOURCE_EXHAUSTED, 5);
-      }
+      if (calls > 0) throw exhausted(1);
       yield "unreachable"; // satisfies require-yield; the throw above always wins
     };
-    const waits: unknown[] = [];
-    const wrapped = withSaturationRetry(refused, {
-      sleep: instantSleep,
-      attempts: 3,
-      onSaturationWait: (i) => waits.push(i),
-    });
+    const wrapped = withSaturationRetry(refused, { sleep: instantSleep });
     await expect(drain(wrapped(REQ))).rejects.toMatchObject({
       code: AGENT_ERROR_CODES.WORKER_POD_RESOURCE_EXHAUSTED,
       status: 503,
     });
+    expect(calls).toBe(2); // default budget: one retry
+  });
+
+  it("mid-turn (after a frame was yielded) it is never re-sent", async () => {
+    let calls = 0;
+    const midTurn = async function* (_req: InvokeRequest): AsyncGenerator<string> {
+      calls += 1;
+      yield "partial";
+      throw exhausted(1);
+    };
+    const wrapped = withSaturationRetry(midTurn, { sleep: instantSleep, attempts: 3 });
+    const seen: string[] = [];
+    await expect(
+      (async () => {
+        for await (const c of wrapped(REQ)) seen.push(c);
+      })(),
+    ).rejects.toMatchObject({ code: AGENT_ERROR_CODES.WORKER_POD_RESOURCE_EXHAUSTED });
+    expect(seen).toEqual(["partial"]);
+    expect(calls).toBe(1);
+  });
+
+  it("a non-capacity 503 + Retry-After code (DRAINING) is still never retried", async () => {
+    let calls = 0;
+    const draining = async function* (_req: InvokeRequest): AsyncGenerator<string> {
+      calls += 1;
+      if (calls > 0) throw new AgentResponseError("draining", 503, AGENT_ERROR_CODES.DRAINING, 1);
+      yield "unreachable"; // satisfies require-yield; the throw above always wins
+    };
+    const waits: unknown[] = [];
+    const wrapped = withSaturationRetry(draining, {
+      sleep: instantSleep,
+      attempts: 3,
+      onSaturationWait: (i) => waits.push(i),
+    });
+    await expect(drain(wrapped(REQ))).rejects.toMatchObject({ code: AGENT_ERROR_CODES.DRAINING });
     expect(calls).toBe(1);
     expect(waits).toHaveLength(0);
   });
 
-  it("nor by the cold-start retry: it carries an envelope, so it is the pod refusing, not an empty ingress", async () => {
+  it("the cold-start retry never takes it: it carries an envelope, so it is the pod refusing, not an empty ingress", async () => {
     let calls = 0;
     const refused = async function* (_req: InvokeRequest): AsyncGenerator<string> {
       calls += 1;

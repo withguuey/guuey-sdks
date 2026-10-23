@@ -388,7 +388,7 @@ export interface UseAgentInvokeOptions {
  * composer re-enables.
  *
  * There is likewise no `retrying` state. `fetchStreamTransport` retries a
- * `POD_SATURATED` refusal once by itself, but that happens before any frame is
+ * capacity refusal (`POD_SATURATED`, `WORKER_POD_RESOURCE_EXHAUSTED`) by itself, but that happens before any frame is
  * yielded, so the turn stays in `connecting` for the backoff and the hook never
  * learns it happened. This union describes the POD's turn lifecycle; transport
  * plumbing does not belong in it.

@@ -1,7 +1,8 @@
 /**
- * The invoke-refusal retry wrappers, transport-agnostic: the single
- * `POD_SATURATED` auto-retry ({@link withSaturationRetry}) and the bounded
- * cold-start 503 retry ({@link withColdStartRetry}).
+ * The invoke-refusal retry wrappers, transport-agnostic: the capacity
+ * auto-retry for `POD_SATURATED` and a pre-stream
+ * `WORKER_POD_RESOURCE_EXHAUSTED` ({@link withSaturationRetry}) and the
+ * bounded cold-start 503 retry ({@link withColdStartRetry}).
  *
  * Their own module — rather than living inside `./web-adapters.ts`, where the
  * first was born — because the behaviour is a property of the platform's
@@ -13,7 +14,7 @@
  * that drift.
  *
  * The two wrappers are DELIBERATELY distinct code paths: saturation retry is
- * driven by the pod's structured refusal envelope (`code: POD_SATURATED`),
+ * driven by the pod's structured refusal envelope (a capacity code),
  * while the cold-start retry matches only an envelope-LESS 503 — the raw
  * infra answer (ingress with no ready pod) during the post-redeploy window,
  * which by definition carries no wire code. They share the backoff machinery,
@@ -60,6 +61,19 @@ export function parseRetryAfterSeconds(header: string | null): number | undefine
   const seconds = Number(trimmed);
   return Number.isSafeInteger(seconds) ? seconds : undefined;
 }
+
+/**
+ * The refusal codes {@link withSaturationRetry} re-sends: the transient
+ * "no room for this turn right now" answers. `POD_SATURATED` is the pod's
+ * concurrent-turn cap; `WORKER_POD_RESOURCE_EXHAUSTED` before the stream is
+ * the app's worker pods having no free slot for the turn (guuey#2605). Both
+ * are refused before the turn is admitted, so nothing ran and a re-send is a
+ * fresh admission, never a replay. One wait rule, one budget.
+ */
+const CAPACITY_RETRY_CODES: ReadonlySet<string> = new Set([
+  AGENT_ERROR_CODES.POD_SATURATED,
+  AGENT_ERROR_CODES.WORKER_POD_RESOURCE_EXHAUSTED,
+]);
 
 /** How long to wait before the single saturation retry, in milliseconds. */
 function saturationDelayMs(retryAfterSeconds: number | undefined): number {
@@ -126,6 +140,16 @@ const MAX_SATURATION_RETRIES = 5;
  * hint (via {@link AgentResponseError.retryAfterSeconds}), defaulting to 15s
  * when it sent none and capped at 30s.
  *
+ * `WORKER_POD_RESOURCE_EXHAUSTED` refused BEFORE the stream (503 +
+ * `Retry-After`, the same shape) means the app's worker pods have no free
+ * slot for the turn right now: the reservation was refused, nothing ran, and
+ * the worker set scales out on exactly that pressure. It is the same
+ * transient capacity answer, so it takes the same wait rule and SHARES the
+ * same attempts budget (a mix of the two codes never retries more than
+ * `attempts` times). The same code arriving mid-turn (the in-band
+ * `event: error` after frames were yielded) is never re-sent: the
+ * nothing-yielded guard below holds for every code (guuey#2605).
+ *
  * `DRAINING` (also 503 + `Retry-After`) is NOT retried in v1. The refusing pod
  * is shutting down: its readiness probe is already failing and the endpoint
  * pull is in flight, so the useful retry is the one that reaches a DIFFERENT
@@ -167,7 +191,7 @@ export function withSaturationRetry(
         return;
       } catch (err) {
         const saturated =
-          err instanceof AgentResponseError && err.code === AGENT_ERROR_CODES.POD_SATURATED;
+          err instanceof AgentResponseError && err.code !== undefined && CAPACITY_RETRY_CODES.has(err.code);
         if (!saturated || yielded || attempt > retries) throw err;
         const waitMs = saturationDelayMs(err.retryAfterSeconds);
         options.onSaturationWait?.({ attempt, totalAttempts: retries + 1, waitMs });
@@ -210,7 +234,8 @@ const COLD_START_MAX_DELAY_MS = 10_000;
  * Is this failure the cold-start refusal shape? An envelope-less 503: the
  * status came from infra (no ready pod behind the route — the ~30–60s window
  * after a redeploy), so there is no wire `code`. A 503 that DOES carry a code
- * is the pod itself refusing (`POD_SATURATED`, `DRAINING`) and belongs to
+ * is the pod itself refusing (`POD_SATURATED`, `WORKER_POD_RESOURCE_EXHAUSTED`,
+ * `DRAINING`) and belongs to
  * {@link withSaturationRetry}'s policy — including its deliberate decision NOT
  * to retry `DRAINING` — never to this wrapper.
  */

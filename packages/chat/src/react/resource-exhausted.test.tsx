@@ -5,7 +5,10 @@
  * `event: error` / `{code, message}` mid-turn, or a 503 + `Retry-After`
  * refusal before the stream. Either way it is transient: it carries its own
  * reader line, stays in the transient family, and so keeps the Retry button.
- * Nothing is resent automatically (see agent-client's saturation retry).
+ * Before the stream agent-client's capacity retry re-sends it once the
+ * `Retry-After` wait passes (guuey#2605); what reaches this view is the
+ * refusal that outlived that budget, or the mid-turn stop, which is never
+ * re-sent.
  *
  * The N−1 half: a client that predates the code knows neither the built-in
  * line nor a family for it. The code path such a client runs for it is the
@@ -18,7 +21,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { AGENT_ERROR_CODES } from "@guuey/agent-client";
 import { DefaultError, type TranscriptItemContext } from "./components.js";
 import { planTranscript } from "../plan.js";
-import { calmPolicy } from "../policy.js";
+import { calmPolicy, DEFAULT_VERBATIM_CODES } from "../policy.js";
 import { defaultChatStrings } from "../strings.js";
 import type { ErrorItem, TranscriptInputs } from "../types.js";
 
@@ -79,6 +82,12 @@ describe("WORKER_POD_RESOURCE_EXHAUSTED on a client that knows it", () => {
     render(<DefaultError item={item} ctx={ctx({ onErrorAction: vi.fn() })} />);
     expect(screen.getByRole("alert").textContent).toContain(defaultChatStrings.errorResourceExhausted);
     expect(screen.getByRole("button", { name: defaultChatStrings.userRetry })).toBeTruthy();
+  });
+
+  it("is not a default verbatim code: a host on the default posture shows the built-in line, never the pod's text", () => {
+    expect(DEFAULT_VERBATIM_CODES).not.toContain(CODE);
+    const item = errorItem(inputsWithError("worker pods have no free slot for this turn", CODE));
+    expect(item.copy).toBe(defaultChatStrings.errorResourceExhausted);
   });
 
   it("a host's own per-code sentence still wins", () => {

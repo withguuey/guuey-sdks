@@ -99,7 +99,8 @@ for await (const ev of invokeTurn(req, transport)) {
 ```
 
 The transport retries cold-start 503s (the post-redeploy window) and
-`POD_SATURATED` refusals by itself, never after the first streamed byte;
+capacity refusals (`POD_SATURATED`, `WORKER_POD_RESOURCE_EXHAUSTED`) by itself,
+never after the first streamed byte;
 tune or disable via its `coldStartRetry` option.
 
 ## React Native / Metro

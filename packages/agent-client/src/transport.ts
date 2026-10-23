@@ -270,7 +270,8 @@ export interface FetchStreamTransportOptions extends SaturationRetryOptions {
  * The web SSE transport: {@link streamInvokeOnce} under the shared
  * {@link withSaturationRetry} wrapper, itself under {@link withColdStartRetry}.
  * Every consumer of this transport (Studio, the widget, anything built on
- * `createWebAdapters`) therefore inherits the single `POD_SATURATED` retry AND
+ * `createWebAdapters`) therefore inherits the capacity retry (`POD_SATURATED`,
+ * pre-stream `WORKER_POD_RESOURCE_EXHAUSTED`) AND
  * the bounded cold-start 503 retry, the same pair Portal's React-Native
  * transport wears — see the wrappers' docblocks for which refusals retry,
  * which deliberately do not, and why both retries are invisible to the hook.
