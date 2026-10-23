@@ -947,7 +947,7 @@ describe('"no tools" — tools.allowlist: ["@none"] (guuey#2262)', () => {
     expect([...g.allowedTools, ...g.disallowedTools].some((n) => n.includes("@none"))).toBe(false);
   });
 
-  it("default posture: denyUnlistedTool is installed and denies every MCP pick", async () => {
+  it("default posture: the deny-unlisted check is installed and denies every MCP pick", async () => {
     const opts = buildOptions({ tools: { allowlist: ["@none"] } }, ctx({ listCredentials: servers }));
     expect("permissionMode" in opts).toBe(false);
     expect(typeof opts.canUseTool).toBe("function");
@@ -957,6 +957,20 @@ describe('"no tools" — tools.allowlist: ["@none"] (guuey#2262)', () => {
       const r = await call(opts, tool);
       expect(r?.behavior).toBe("deny");
     }
+  });
+
+  it("a denylist cause is named in the denial, never the allowlist (an unreadable entry, a stored \"*\")", async () => {
+    const unreadable = buildOptions({ tools: { denylist: ["mcp__b__write"] } }, ctx({ listCredentials: servers }));
+    const r = await call(unreadable, "mcp__b__read");
+    expect(r?.behavior).toBe("deny");
+    const message = r?.behavior === "deny" ? r.message : "";
+    expect(message).toContain('tools.denylist entry "mcp__b__write" cannot be read');
+    expect(message).not.toContain("tools.allowlist");
+    const star = await call(buildOptions({ tools: { denylist: ["*"] } }, ctx({ listCredentials: servers })), "mcp__ggui__ggui_render");
+    expect(star).toEqual({
+      behavior: "deny",
+      message: 'Tool "mcp__ggui__ggui_render" is not available: tools.denylist entry "*" denies every MCP tool.',
+    });
   });
 
   it("a pinned claude.permissions.mode installs no canUseTool, so every server rides disallowedTools instead", () => {

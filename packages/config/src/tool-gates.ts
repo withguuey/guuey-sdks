@@ -34,10 +34,21 @@
  *          can report it.
  *   6. `"@none"` mixed with real entries counts for nothing; only the real
  *      entries count. In a denylist it subtracts nothing.
- *   7. A stored `"*"` (the deploy gate does not accept it as a wildcard;
- *      an older definition could still carry one): in an allowlist it means
- *      every tool, the same as an absent list; in a denylist it denies
- *      everything, the same as `["@none"]`.
+ *   7. A `"*"` entry is not grammar (the parser would read a tool named
+ *      `*`). The deploy gate (`validateToolGates`) accepts it today as a
+ *      bare entry; refusing NEW `"*"` writes is a separate write-gate
+ *      change. A stored `"*"` is read by this rule, never as a tool name: in
+ *      an allowlist it means every tool, the same as an absent list; in a
+ *      denylist it denies everything, the same as `["@none"]`.
+ *   8. A stored denylist `"*.*"` (the deploy gate refuses it: no server is
+ *      named `*`) is read like a denylist `"*"`: it keeps no MCP tool. An
+ *      allowlist `"*.*"` is read by the grammar (every tool on a server
+ *      named `*`), so it grants nothing.
+ *
+ * When the gates keep no MCP tool, the Claude permission check's denial
+ * names the actual cause: the allowlist (`["@none"]`, or a pick outside an
+ * explicit allowlist), a denylist `"*"` / `"*.*"`, or an unreadable denylist
+ * entry.
  *
  * The same rules as a table (the contract suite in `tool-gates.test.ts` runs
  * every row against both shapes):
@@ -56,6 +67,7 @@
  * | `["@none"]`      | any              | nothing                                    |
  * | `["*"]`          |                  | every tool                                 |
  * | any              | `["*"]`          | nothing                                    |
+ * | any              | `["*.*"]`        | nothing (read like `"*"`)                  |
  * | `["mcp__S__a"]`  |                  | nothing (malformed entry dropped)          |
  * | any              | `["mcp__S__a"]`  | nothing, plus an error naming the entry    |
  *
@@ -100,15 +112,30 @@ function isRealEntry(entry: string): boolean {
 /** A stored `"*"` entry: not grammar (the parser would read a tool named `*`), read by rule 7. */
 const EVERYTHING_ENTRY = '*';
 
+/** A stored denylist `"*.*"`: read like a denylist `"*"` (rule 8). */
+const EVERY_SERVER_ENTRY = '*.*';
+
+/** An allowlist entry that allows every tool (rule 7). */
 function isEverything(entry: string): boolean {
   return entry.trim() === EVERYTHING_ENTRY;
+}
+
+/** A denylist entry that denies every MCP tool (rules 7 and 8). */
+function deniesEverything(entry: string): boolean {
+  const trimmed = entry.trim();
+  return trimmed === EVERYTHING_ENTRY || trimmed === EVERY_SERVER_ENTRY;
+}
+
+/** The denylist entries that deny every MCP tool (rules 7 and 8), as written. */
+function denyEverythingEntries(gates: ToolGates): string[] {
+  return (gates?.denylist ?? []).filter(deniesEverything);
 }
 
 /** The denylist entries that cannot be read (rule 5), with the parser's reason. */
 function unreadableDenyEntries(gates: ToolGates): { entry: string; reason: string }[] {
   const out: { entry: string; reason: string }[] = [];
   for (const raw of gates?.denylist ?? []) {
-    if (!isRealEntry(raw) || isEverything(raw)) continue;
+    if (!isRealEntry(raw) || deniesEverything(raw)) continue;
     const parsed = parseToolGateEntry(raw);
     if ('error' in parsed) out.push({ entry: raw, reason: parsed.error });
   }
@@ -130,15 +157,27 @@ export function toolGateErrors(gates: ToolGates): string[] {
 
 /**
  * Does this gate block keep no MCP tool at all? `["@none"]`, a denylist
- * carrying a stored `"*"` (rule 7), or a denylist entry that cannot be read
- * (rule 5).
+ * carrying a stored `"*"` or `"*.*"` (rules 7 and 8), or a denylist entry
+ * that cannot be read (rule 5).
  */
 function keepsNoTools(gates: ToolGates): boolean {
   return (
     declaresNoTools(gates) ||
-    (gates?.denylist ?? []).some(isEverything) ||
+    denyEverythingEntries(gates).length > 0 ||
     unreadableDenyEntries(gates).length > 0
   );
+}
+
+/**
+ * Why the denylist keeps no MCP tool, one message per cause: each
+ * deny-everything entry (rules 7 and 8), then each unreadable entry
+ * ({@link toolGateErrors}). Empty when the denylist keeps something.
+ */
+function denylistNoToolReasons(gates: ToolGates): string[] {
+  const everything = denyEverythingEntries(gates).map(
+    (entry) => `tools.denylist entry ${JSON.stringify(entry)} denies every MCP tool`,
+  );
+  return [...everything, ...toolGateErrors(gates)];
 }
 
 /**
@@ -228,16 +267,16 @@ export function denyUnlistedTools(allowedSet: ReadonlySet<string>): ToolPermissi
 }
 
 /**
- * Denies every tool not in `allowedSet` because the gates cannot be read,
- * naming each unreadable entry ({@link toolGateErrors}) in the message the
- * model reads.
+ * Denies every tool not in `allowedSet` because the denylist keeps no MCP
+ * tool, naming each cause (a deny-everything entry, an unreadable entry) in
+ * the message the model reads.
  */
-function denyForGateErrors(allowedSet: ReadonlySet<string>, errors: readonly string[]): ToolPermissionCheck {
+function denyForDenylist(allowedSet: ReadonlySet<string>, reasons: readonly string[]): ToolPermissionCheck {
   return (toolName, input) =>
     Promise.resolve(
       allowedSet.has(toolName)
         ? { behavior: 'allow', updatedInput: input }
-        : { behavior: 'deny', message: `Tool "${toolName}" is not available: ${errors.join('; ')}.` },
+        : { behavior: 'deny', message: `Tool "${toolName}" is not available: ${reasons.join('; ')}.` },
     );
 }
 
@@ -266,7 +305,10 @@ export interface ClaudeToolRules {
   allowedSet: ReadonlySet<string>;
   /** {@link toolGateErrors}: why no MCP tool is kept, when a denylist entry cannot be read. */
   errors: string[];
-  /** The ask-stage check: deny-unlisted under an explicit allowlist, else allow every tool. */
+  /**
+   * The ask-stage check: when the denylist keeps no MCP tool, deny naming its
+   * cause; else deny-unlisted under an explicit allowlist; else allow every tool.
+   */
   canUseTool: ToolPermissionCheck;
 }
 
@@ -306,8 +348,8 @@ function dedupe(names: string[]): string[] {
  *   denylist removes them.
  * - `disallowedTools`: the translated denylist, plus this turn's withholds.
  *   An allow rule only pre-approves, so subtraction rides here.
- * - `["@none"]` (and a stored denylist `"*"`, or a denylist entry that
- *   cannot be read, rule 5): no MCP allow rule, the
+ * - `["@none"]` (and a stored denylist `"*"` or `"*.*"`, or a denylist entry
+ *   that cannot be read, rule 5): no MCP allow rule, the
  *   deny-unlisted posture, and `mcp__<server>` disallowed for every server,
  *   so it holds even where no `canUseTool` is installed. The built-ins stay;
  *   only a denylist entry naming one removes it.
@@ -330,12 +372,13 @@ export function claudeToolRules(
   const disallowedTools = dedupe([
     ...(noTools ? servers.map((s) => `mcp__${s}`) : []),
     ...(gates?.denylist ?? [])
-      .filter((e) => isRealEntry(e) && !isEverything(e))
+      .filter((e) => isRealEntry(e) && !deniesEverything(e))
       .flatMap((e) => toSdkToolNames(e, servers, builtins)),
     ...servers.flatMap((server) => withheldOn(server, withheld).map((tool) => `mcp__${server}__${tool}`)),
   ]);
   const allowedSet = new Set(allowedTools);
   const errors = toolGateErrors(gates);
+  const denylistReasons = denylistNoToolReasons(gates);
   return {
     allowedTools,
     disallowedTools,
@@ -343,8 +386,8 @@ export function claudeToolRules(
     allowedSet,
     errors,
     canUseTool:
-      errors.length > 0
-        ? denyForGateErrors(allowedSet, errors)
+      denylistReasons.length > 0
+        ? denyForDenylist(allowedSet, denylistReasons)
         : explicitAllowlist
           ? denyUnlistedTools(allowedSet)
           : allowEveryTool,

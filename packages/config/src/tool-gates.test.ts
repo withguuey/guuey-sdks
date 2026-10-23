@@ -74,6 +74,9 @@ const ROWS: Row[] = [
   { label: 'stored allowlist "*" beside entries = every tool', gates: { allowlist: ['a.read', ' * '] }, kept: EVERY },
   { label: 'stored denylist "*" = @none', gates: { denylist: ['*'] }, kept: [] },
   { label: 'stored denylist "*" beats an allowlist', gates: { allowlist: ['a.*'], denylist: ['*'] }, kept: [] },
+  { label: 'stored denylist "*.*" reads like "*"', gates: { denylist: [' *.* '] }, kept: [] },
+  { label: 'stored denylist "*.*" beats an allowlist', gates: { allowlist: ['a.*'], denylist: ['*.*'] }, kept: [] },
+  { label: 'stored allowlist "*.*" grants nothing (no server is named *)', gates: { allowlist: ['*.*'] }, kept: [] },
 ];
 
 /** The kept set through the per-server predicate. */
@@ -169,6 +172,19 @@ describe('claudeToolRules', () => {
     expect(star.disallowedTools).toEqual(['mcp__a', 'mcp__b']);
     expect(star.explicitAllowlist).toBe(true);
     expect({ ...star, canUseTool: undefined }).toEqual({ ...none, canUseTool: undefined });
+  });
+
+  it('a stored denylist "*" or "*.*" denies with a message naming that entry, never the allowlist', async () => {
+    for (const entry of ['*', '*.*']) {
+      const rules = claudeToolRules({ denylist: [entry] }, SERVERS, { builtins: ['Bash'] });
+      expect(rules.errors).toEqual([]);
+      expect(rules.disallowedTools).toEqual(['mcp__a', 'mcp__b']);
+      expect(await rules.canUseTool('mcp__a__read', {})).toEqual({
+        behavior: 'deny',
+        message: `Tool "mcp__a__read" is not available: tools.denylist entry ${JSON.stringify(entry)} denies every MCP tool.`,
+      });
+      expect((await rules.canUseTool('Bash', {})).behavior).toBe('allow');
+    }
   });
 
   it('built-ins join the allow rules, and a bare entry naming one names that built-in too', () => {

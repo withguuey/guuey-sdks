@@ -25,11 +25,9 @@ import type { FirstImpressionPush, FirstImpressionShown, Fs, HistoryMessage, Jso
 import { forbiddenClaudeEnvNames, makeClaudeSpawner } from "@guuey/worker";
 import {
   GUUEY_DEFAULT_SYSTEM_PROMPT,
-  allowEveryTool,
   claudeToolRules,
   declaresNoTools,
   defaultModelFor,
-  denyUnlistedTools,
   rejectsDisabledThinking,
   type GuueyAgent,
   type ProfileAccess,
@@ -596,46 +594,20 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
     //    intentionally absent to avoid a nested bwrap); with an explicit
     //    allowlist an UNLISTED pick is DENIED with a message the model can read
     //    — that is what makes the allowlist a real narrowing, and it can never
-    //    hang. We do NOT use `bypassPermissions`: it requires
+    //    hang. The callback is `@guuey/config`'s own check (`claudeToolRules`,
+    //    the one the code-mode scaffold installs too), so a denial names the
+    //    actual cause: the allowlist, a denylist "*" / "*.*", or an unreadable
+    //    denylist entry. We do NOT use `bypassPermissions`: it requires
     //    `allowDangerouslySkipPermissions` and globally disables hooks/deny-rule
     //    evaluation, whereas the callback keeps those stages intact while only
     //    collapsing the final ask stage.
     ...(explicitMode
       ? { permissionMode: explicitMode }
-      : { canUseTool: gates.explicitAllowlist ? denyUnlistedTool(gates.allowedSet) : autoAllowTool }),
+      : { canUseTool: gates.canUseTool }),
     ...(ctx.abortController ? { abortController: ctx.abortController } : {}),
   };
 
   return options;
-}
-
-/**
- * Auto-allow permission callback. Installed when the operator did NOT pin
- * `claude.permissions.mode` and the snapshot has NO explicit `tools.allowlist`,
- * so the default no-code agent's MCP tools (and, on a GuueyFS-armed pod, its
- * `Bash` + file tools) run prompt-free. Returns `{ behavior: 'allow' }` for
- * every request, passing the input through unchanged.
- *
- * Safe because the model's tool surface is already locked down BEFORE the
- * callback ever fires — `tools`/`allowedTools`/`disallowedTools` cap which
- * tools exist, `settingSources:[]` blocks filesystem-loaded settings,
- * `strictMcpConfig` pins the MCP catalog — and the real OS isolation is the
- * Router's bubblewrap jail this whole process runs inside. The callback only
- * collapses the SDK's final interactive "ask" stage (which would otherwise
- * hang a headless pod); the earlier hook/deny-rule stages still run. The
- * check itself is `@guuey/config`'s `allowEveryTool`.
- */
-export const autoAllowTool: CanUseTool = allowEveryTool;
-
-/**
- * Deny-unlisted permission callback (guuey#234). Installed instead of
- * {@link autoAllowTool} when the snapshot carries an explicit `tools.allowlist`
- * (and no pinned mode): every unlisted pick is denied with a message the model
- * can act on, never an ask — the invariant "an explicit allowlist can never
- * hang the pod". The check itself is `@guuey/config`'s `denyUnlistedTools`.
- */
-export function denyUnlistedTool(allowedSet: ReadonlySet<string>): CanUseTool {
-  return denyUnlistedTools(allowedSet);
 }
 
 /**
@@ -675,8 +647,19 @@ export interface ResolvedToolGates {
   disallowedTools: string[];
   /** Whether the snapshot carried a non-empty `tools.allowlist`, `["@none"]` included (→ deny-unlisted posture). */
   explicitAllowlist: boolean;
-  /** `allowedTools` as a set, for the deny-unlisted callback. */
+  /** `allowedTools` as a set. */
   allowedSet: ReadonlySet<string>;
+  /**
+   * The ask-stage permission check, installed when no
+   * `claude.permissions.mode` is pinned: `@guuey/config`'s
+   * `claudeToolRules(...).canUseTool`. With no explicit allowlist it allows
+   * every pick (the surface is already capped by `tools` / `allowedTools` /
+   * `disallowedTools`, `settingSources: []` and `strictMcpConfig`; the
+   * Router's bubblewrap jail is the isolation). Otherwise it DENIES every
+   * pick outside `allowedSet` with a message naming the cause, never an ask
+   * (guuey#234: an explicit allowlist can never hang the pod).
+   */
+  canUseTool: CanUseTool;
 }
 
 /**
@@ -704,6 +687,7 @@ export function resolveToolGates(
     disallowedTools: rules.disallowedTools,
     explicitAllowlist: rules.explicitAllowlist,
     allowedSet: rules.allowedSet,
+    canUseTool: rules.canUseTool,
   };
 }
 
