@@ -35,9 +35,10 @@
  *   6. `"@none"` mixed with real entries counts for nothing; only the real
  *      entries count. In a denylist it subtracts nothing.
  *   7. A `"*"` entry is not grammar (the parser would read a tool named
- *      `*`). The deploy gate (`validateToolGates`) accepts it today as a
- *      bare entry; refusing NEW `"*"` writes is a separate write-gate
- *      change. A stored `"*"` is read by this rule, never as a tool name: in
+ *      `*`). The deploy gate accepted it as a bare entry before the write
+ *      gate's `"*"` refusal; new `"*"` writes are refused after it, while
+ *      stored values keep loading. A stored `"*"` is read by this rule, never
+ *      as a tool name: in
  *      an allowlist it means every tool, the same as an absent list; in a
  *      denylist it denies everything, the same as `["@none"]`.
  *   8. A stored denylist `"*.*"` is read like a denylist `"*"`: it keeps no
