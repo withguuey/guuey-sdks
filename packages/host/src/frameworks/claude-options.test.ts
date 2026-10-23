@@ -3,6 +3,7 @@ import type { GuueyAgent, RunSnapshot } from "@guuey/config";
 import { GUUEY_DEFAULT_SYSTEM_PROMPT } from "@guuey/config";
 import {
   buildOptions,
+  reservedEnvNamesDropped,
   resolveMcpServers,
   resolveToolGates,
   withContextPreamble,
@@ -387,6 +388,38 @@ describe("buildOptions — env composition + API key (guuey#2139: no credential 
       );
     });
   }
+});
+
+describe("buildOptions — runtime-owned names in a stored agent.env are left out of the CLI env", () => {
+  const stored: GuueyAgent = {
+    env: { KEEP: "1", LD_PRELOAD: "/x.so", GLIBC_TUNABLES: "glibc.x=1", LD_SDK_KEY: "k", NODE_PATH: "/p" },
+  };
+
+  for (const [label, over] of [
+    ["proxy path", { baseUrl: "http://127.0.0.1:9911", authToken: "opaque" }],
+    ["local-dev path", { apiKey: "sk-local" }],
+  ] as const) {
+    it(`${label}: the turn builds, the reserved names are absent and every other name is kept`, () => {
+      const opts = buildOptions(stored, ctx(over));
+      expect(opts.env?.LD_PRELOAD).toBeUndefined();
+      expect(opts.env?.GLIBC_TUNABLES).toBeUndefined();
+      expect(opts.env?.NODE_PATH).toBeUndefined();
+      expect(opts.env?.KEEP).toBe("1");
+      expect(opts.env?.LD_SDK_KEY).toBe("k");
+    });
+  }
+
+  it("names the dropped variables in map order, never their values", () => {
+    expect(reservedEnvNamesDropped(stored)).toEqual(["LD_PRELOAD", "GLIBC_TUNABLES", "NODE_PATH"]);
+    expect(reservedEnvNamesDropped({ env: { KEEP: "1" } })).toEqual([]);
+    expect(reservedEnvNamesDropped({})).toEqual([]);
+  });
+
+  it("a name the CLI env refuses outright (NODE_OPTIONS) is still refused, not dropped", () => {
+    expect(() => buildOptions({ env: { NODE_OPTIONS: "--x" } }, ctx({ apiKey: "sk-local" }))).toThrow(
+      expect.objectContaining({ name: "BuilderConfigError", message: expect.stringContaining("NODE_OPTIONS") }),
+    );
+  });
 });
 
 describe("buildOptions — Anthropic second seam (loopback proxy)", () => {

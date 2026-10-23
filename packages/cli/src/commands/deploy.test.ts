@@ -1186,6 +1186,78 @@ describe('deploy() — federate: true requires an https:// url ending in "/", de
   }
 });
 
+// An agent.env name the platform runtime owns is refused before upload on BOTH
+// paths, naming the name and never its value. Other names, including an LD_
+// name outside the list, pass.
+describe('deploy() — agent.env may not set a runtime-reserved name, declarative and code paths', () => {
+  let dir: string;
+  let originalCwd: string;
+  let errSpy: MockInstance<typeof console.error>;
+
+  function writeGuueyJson(env: Record<string, string>, code: boolean): void {
+    writeFileSync(
+      join(dir, 'guuey.json'),
+      JSON.stringify({
+        schema: '1',
+        ...(code ? { appId: 'app-1' } : {}),
+        agent: { framework: 'claude-agent-sdk', env },
+      }),
+    );
+    if (code) writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    dir = mkdtempSync(join(tmpdir(), 'deploy-reserved-env-test-'));
+    process.chdir(dir);
+    vi.mocked(resolveConfig).mockReturnValue({
+      host: 'https://platform.guuey.test',
+      apiUrl: 'https://api.guuey.test',
+      appId: 'app-1',
+    });
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  for (const code of [false, true]) {
+    const path = code ? 'code' : 'declarative';
+    const run = (): Promise<void> => deploy(code ? { code: true, 'no-install': true } : {});
+
+    it(`${path}: refuses LD_PRELOAD and GLIBC_TUNABLES, naming each and no value, before any network call`, async () => {
+      writeGuueyJson({ KEEP: '1', LD_PRELOAD: '/preload.so', GLIBC_TUNABLES: 'glibc.x=1' }, code);
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      await expect(run()).rejects.toBeInstanceOf(ExitSignal);
+      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+      expect(printed).toContain('agent.env.LD_PRELOAD');
+      expect(printed).toContain('agent.env.GLIBC_TUNABLES');
+      expect(printed).not.toContain('/preload.so');
+      expect(printed).not.toContain('glibc.x=1');
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(childProcessLog.calls).toEqual([]);
+    });
+
+    it(`${path}: an LD_ name outside the list (LD_SDK_KEY) passes the gate`, async () => {
+      writeGuueyJson({ LD_SDK_KEY: 'k' }, code);
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        throw new Error(`stop after the gate: ${String(input)}`);
+      });
+      await run().catch(() => undefined);
+      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+      expect(printed).not.toContain('reserved by the platform runtime');
+    });
+  }
+});
+
 // `guuey deploy --max-pods N` (scaling S1-F4, guuey#162): the flag rides
 // `DeployTriggerBody.maxPods` at every trigger POST. Driven through the
 // declarative shape — it is the one that reaches the trigger with no

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createEmitter, type WorkerEvent } from "@guuey/worker";
 import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { awaitMcpReady, runInvoke, type HostInvoke, type QueryFn, type QueryHandle } from "./claude.js";
@@ -531,5 +531,43 @@ describe("the MCP-ready gate and the startup deadline (guuey#2139)", () => {
     expect(events.some((e) => e.type === "done")).toBe(false);
     expect(closed).toBe(1);
     expect(pulled).toBe(false);
+  });
+});
+
+describe("runInvoke — a runtime-owned name in agent.env is reported on stderr when it is left out", () => {
+  async function stderrFor(env: Record<string, string>): Promise<{ lines: string[]; queried: boolean }> {
+    const { sink } = collector();
+    const emit = createEmitter(sink);
+    let queried = false;
+    const query: QueryFn = () => {
+      queried = true;
+      return streamOf(resultMessage("success", "ok"));
+    };
+    const lines: string[] = [];
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+      lines.push(String(chunk));
+      return true;
+    });
+    try {
+      await runInvoke({ env }, invoke(), { apiKey: "sk-test", listCredentials: () => [] }, emit, query);
+    } finally {
+      spy.mockRestore();
+    }
+    return { lines, queried };
+  }
+
+  it("one line naming each dropped name, never a value, and the turn still runs", async () => {
+    const { lines, queried } = await stderrFor({ KEEP: "1", LD_AUDIT: "/audit.so", GLIBC_TUNABLES: "glibc.x=1" });
+    expect(queried).toBe(true);
+    const reported = lines.filter((l) => l.includes("agent.env"));
+    expect(reported).toHaveLength(1);
+    expect(reported[0]).toContain("LD_AUDIT, GLIBC_TUNABLES");
+    expect(reported[0]).not.toContain("/audit.so");
+    expect(reported[0]).not.toContain("glibc.x=1");
+  });
+
+  it("no line when agent.env carries no reserved name", async () => {
+    const { lines } = await stderrFor({ KEEP: "1", LD_SDK_KEY: "k" });
+    expect(lines.filter((l) => l.includes("agent.env"))).toEqual([]);
   });
 });

@@ -33,6 +33,7 @@ import {
   type GuueyAgent,
   type ProfileAccess,
   type RunSnapshot,
+  withoutReservedEnvNames,
 } from "@guuey/config";
 
 export type { SDKMessage };
@@ -331,6 +332,15 @@ export class ClaudeBuilderEnvError extends Error {
 }
 
 /**
+ * The `snapshot.env` names {@link buildOptions} leaves out of the CLI's
+ * environment because the platform runtime owns them, in the map's order.
+ * Names only, never values.
+ */
+export function reservedEnvNamesDropped(snapshot: Pick<RunSnapshot, "env">): string[] {
+  return withoutReservedEnvNames(snapshot.env).dropped;
+}
+
+/**
  * Build the Claude Agent SDK `Options` for one invoke. Pure: all disk/env access
  * is injected via {@link BuildOptionsContext}. Throws on an unresolved `{file}`
  * system prompt or a missing API key (the same loud failures the source had).
@@ -441,9 +451,14 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
   // CLI's own state is pinned away from the durable layer via
   // CLAUDE_CONFIG_DIR + XDG_CACHE_HOME below (the G5 leak this env once
   // avoided by omission).
-  const builderEnv = snapshot.env ?? {};
-  const refusedNames = forbiddenClaudeEnvNames(builderEnv);
+  //
+  // The names the platform runtime owns (`RUNTIME_RESERVED_ENV_NAMES`,
+  // `@guuey/config`) are then left out of the builder's env. A new document
+  // that sets one is refused at deploy; a stored one keeps running without
+  // them, and the caller reports each dropped name ({@link reservedEnvNamesDropped}).
+  const refusedNames = forbiddenClaudeEnvNames(snapshot.env ?? {});
   if (refusedNames.length > 0) throw new ClaudeBuilderEnvError(refusedNames);
+  const builderEnv = withoutReservedEnvNames(snapshot.env).env;
   const fsEnv: Record<string, string> = fs
     ? {
         HOME: fs.home,

@@ -27,6 +27,7 @@ import type { CredentialFile,
   StopReason, McpAvailability, FirstImpressionPush, FirstImpressionShown, WithheldTool } from "@guuey/worker";
 import {
   buildOptions,
+  reservedEnvNamesDropped,
   resolveMcpServers,
   type BuildOptionsContext,
   type PriorMemoryRecord,
@@ -336,6 +337,15 @@ export async function runInvoke(
   } catch (err) {
     emit.error(err instanceof Error ? err.message : String(err));
     return;
+  }
+  // The runtime-owned names buildOptions left out of the agent's environment,
+  // reported on stderr (names only) so the drop is never silent.
+  const droppedEnv = reservedEnvNamesDropped(snapshot);
+  if (droppedEnv.length > 0) {
+    process.stderr.write(
+      `[guuey] agent.env: ${droppedEnv.join(", ")} left out of the agent's environment: ` +
+        "reserved by the platform runtime. Remove them from agent.env.\n",
+    );
   }
 
   // Streaming input (guuey#2139): the one user message is yielded only after

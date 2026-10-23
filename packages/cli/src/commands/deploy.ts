@@ -51,6 +51,7 @@ import {
   validateColocatedServerNames,
   validateCallerCredentialHttps,
   validateFederateResourceUrl,
+  validateAgentEnvNotReserved,
   validateToolGates,
   validateToolAllowlistsNotEmpty,
   validateNoToolsEntry,
@@ -739,6 +740,7 @@ async function deployCode(opts: {
   // must be https://. Checked on the env-resolved document, the url that ships.
   exitOnCallerCredentialHttp(envResolvedDoc.doc.agent);
   exitOnFederateResourceUrl(envResolvedDoc.doc.agent);
+  exitOnReservedEnvName(envResolvedDoc.doc.agent);
 
   const secretViolations = validateNoLiteralSecrets(doc.agent);
   if (secretViolations.length > 0) {
@@ -1480,6 +1482,7 @@ async function deployDeclarative(opts: {
   // must be https://. The backend re-checks a newly submitted snapshot.
   exitOnCallerCredentialHttp(agent);
   exitOnFederateResourceUrl(agent);
+  exitOnReservedEnvName(agent);
 
   // Reject literal secrets in mcpServers[].headers before upload — they'd ride
   // into the pod's config as plaintext. The backend re-checks authoritatively;
@@ -1719,6 +1722,15 @@ function exitOnCallerCredentialHttp(agent: GuueyJsonV1['agent']): void {
 /** Refuse a `federate: true` entry whose minted resource is not an https:// url ending in "/" (both deploy paths). */
 function exitOnFederateResourceUrl(agent: GuueyJsonV1['agent']): void {
   const violations = validateFederateResourceUrl(agent);
+  if (violations.length > 0) {
+    out.error(violations.map((v) => `  - ${v}`).join('\n'));
+    process.exit(1);
+  }
+}
+
+/** Refuse an agent.env name the platform runtime owns (both deploy paths); names only, never values. */
+function exitOnReservedEnvName(agent: GuueyJsonV1['agent']): void {
+  const violations = validateAgentEnvNotReserved(agent);
   if (violations.length > 0) {
     out.error(violations.map((v) => `  - ${v}`).join('\n'));
     process.exit(1);

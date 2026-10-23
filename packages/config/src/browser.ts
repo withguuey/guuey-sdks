@@ -18,3 +18,4 @@ export * from './hosting.js';
 export * from './system-prompt.js';
 export * from './registry.js';
 export * from './guuey-context.js';
+export * from './reserved-env.js';
