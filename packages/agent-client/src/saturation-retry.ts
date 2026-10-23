@@ -111,7 +111,7 @@ export interface SaturationRetryOptions {
   /**
    * Retries on a capacity refusal (guuey#406): the turn is sent at most
    * `attempts + 1` times. Default 1 retry (2 sends), the historical
-   * behavior; capped at 5 retries. A capacity-1 pod
+   * behavior; floored at 1 and capped at 5 retries. A capacity-1 pod
    * (demo fixtures, xs plans) refuses the SECOND simultaneous visitor, so
    * end-user surfaces budget higher and pair it with `onSaturationWait` so
    * the wait is a visible busy state, never a silent hang or a generic
