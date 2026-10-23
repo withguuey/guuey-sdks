@@ -131,6 +131,23 @@ describe("the busy error once the retries run out", () => {
     expect(screen.queryByText(/Busy right now/)).toBeNull();
   });
 
+  it("a wait left over from the spent retries never shows on the next turn", async () => {
+    const invoke = stubInvoke(["saturated", "saturated", "saturated", "saturated", "hold"]);
+    send();
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(BUSY_LINE));
+    expect(invoke.calls()).toBe(4);
+
+    const input = screen.getByLabelText("Message");
+    fireEvent.change(input, { target: { value: "again" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(invoke.calls()).toBe(5));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(screen.queryByText(/Busy right now/)).toBeNull();
+
+    invoke.release();
+    await waitFor(() => expect(screen.queryByText(/Busy right now/)).toBeNull());
+  });
+
   it("a builder's policy.error.copyByCode wins", async () => {
     stubInvoke([]);
     send({ policy: { error: { copyByCode: { POD_SATURATED: "Our helper is busy." } } } });
