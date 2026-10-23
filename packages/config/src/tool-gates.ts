@@ -40,8 +40,10 @@
  *      change. A stored `"*"` is read by this rule, never as a tool name: in
  *      an allowlist it means every tool, the same as an absent list; in a
  *      denylist it denies everything, the same as `["@none"]`.
- *   8. A stored denylist `"*.*"` (the deploy gate refuses it: no server is
- *      named `*`) is read like a denylist `"*"`: it keeps no MCP tool. An
+ *   8. A stored denylist `"*.*"` is read like a denylist `"*"`: it keeps no
+ *      MCP tool. The deploy gate refuses it as an unknown server unless the
+ *      agent declares a server literally named `*`; even then this rule
+ *      reads it as deny-everything (deny wins), never as that one server. An
  *      allowlist `"*.*"` is read by the grammar (every tool on a server
  *      named `*`), so it grants nothing.
  *
