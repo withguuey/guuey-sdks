@@ -39,5 +39,10 @@ export default (guuey: GuueyContext<MCPToolset>) =>
     instruction: () => guuey.instruction,
     // Your own tools compose with the MCP servers from guuey.json. Drop
     // `...guuey.mcpToolsets` if you want a fully self-contained agent.
+    // The platform applies guuey.json's `tools.allowlist` / `tools.denylist`
+    // (and a mode's narrowing) to `guuey.mcpToolsets` only. Your own
+    // `FunctionTool`s (like `rollDice`) and any `MCPToolset` you build
+    // yourself sit outside those gates; filter them here, or gate calls with
+    // the agent's `beforeToolCallback`.
     tools: [rollDice, ...guuey.mcpToolsets],
   });

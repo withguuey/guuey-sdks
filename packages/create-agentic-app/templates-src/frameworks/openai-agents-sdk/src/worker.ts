@@ -16,7 +16,8 @@
  */
 import { Agent, MaxTurnsExceededError, MCPServerStreamableHttp, run, setDefaultOpenAIKey } from "@openai/agents";
 import type { MCPServer } from "@openai/agents";
-import { mcpToolCustomData, modelVisibleToolFilterFor, readLaunchEnvelope, serveNative } from "@guuey/worker";
+import { toolGatePredicate } from "@guuey/config";
+import { mcpToolCustomData, modelVisibleToolFilterWith, readLaunchEnvelope, serveNative } from "@guuey/worker";
 import { loadAgent, systemPrompt, mcpEndpoints, withHistory } from "./agent-config.js";
 
 /**
@@ -44,11 +45,14 @@ await serveNative(
           // ggui render-cache marker ride here. Without it a code-mode OpenAI
           // app shows "✓ ggui render" and no card.
           customDataExtractor: mcpToolCustomData,
-          // MCP Apps visibility: a tool whose `_meta.ui.visibility` omits
-          // "model" (the rendered view's own calls) is not offered to the model.
-          // Neither is a tool the platform withholds on this server for this
-          // turn (`invoke.withheldTools`).
-          toolFilter: modelVisibleToolFilterFor(name, invoke.withheldTools),
+          // The model is offered a tool only when both hold:
+          // - MCP Apps visibility: a tool whose `_meta.ui.visibility` omits
+          //   "model" (the rendered view's own calls) is not offered.
+          // - The agent's tool gates (`tools.allowlist` / `tools.denylist` in
+          //   guuey.json, as narrowed by the turn's mode) keep it on this
+          //   server, and the platform does not withhold it this turn
+          //   (`invoke.withheldTools`). Deny wins; `["@none"]` keeps nothing.
+          toolFilter: modelVisibleToolFilterWith(toolGatePredicate(agent.tools, name, invoke.withheldTools)),
         })
     );
 

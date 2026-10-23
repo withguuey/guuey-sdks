@@ -28,8 +28,9 @@ export function modelMayCallTool(listed: object): boolean {
  * builds its own `MCPServerStreamableHttp`:
  * `new MCPServerStreamableHttp({ url, name, toolFilter: modelVisibleToolFilter })`.
  * The SDK awaits it for each listed tool, `_meta` included. It does not read the
- * turn's withholds; {@link modelVisibleToolFilterFor} does, and the code-mode
- * template uses that one.
+ * turn's withholds; {@link modelVisibleToolFilterFor} does, and
+ * {@link modelVisibleToolFilterWith} also applies the agent's tool gates (the
+ * code-mode template uses that one).
  */
 export async function modelVisibleToolFilter(_context: object, tool: object): Promise<boolean> {
   return modelMayCallTool(tool);
@@ -49,4 +50,20 @@ export function modelVisibleToolFilterFor(
 ): (context: object, tool: { readonly name: string }) => Promise<boolean> {
   const blocked = new Set(withheldToolNamesFor(server, withheld));
   return async (_context, tool) => modelMayCallTool(tool) && !blocked.has(tool.name);
+}
+
+/**
+ * {@link modelVisibleToolFilter} AND a gate predicate, as one OpenAI Agents SDK
+ * `toolFilter` callable: a tool is offered only when the model may call it
+ * (MCP Apps visibility) and `keep` keeps it. `keep` is the agent's tool gates
+ * for this server and turn, typically `@guuey/config`'s
+ * `toolGatePredicate(agent.tools, server, invoke.withheldTools)` (which also
+ * subtracts the turn's withholds); `undefined` keeps every visible tool. The
+ * predicate is an argument so this package takes no dependency:
+ * `new MCPServerStreamableHttp({ url, name, toolFilter: modelVisibleToolFilterWith(toolGatePredicate(agent.tools, name, invoke.withheldTools)) })`.
+ */
+export function modelVisibleToolFilterWith(
+  keep: ((tool: string) => boolean) | undefined
+): (context: object, tool: { readonly name: string }) => Promise<boolean> {
+  return async (_context, tool) => modelMayCallTool(tool) && (keep === undefined || keep(tool.name));
 }

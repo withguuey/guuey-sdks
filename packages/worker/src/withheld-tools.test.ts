@@ -5,7 +5,7 @@
  * visibility. Imported from the package entry, so the public surface is tested.
  */
 import { describe, expect, it } from "vitest";
-import { modelVisibleToolFilterFor, withheldToolNamesFor, type WithheldTool } from "./index.js";
+import { modelVisibleToolFilterFor, modelVisibleToolFilterWith, withheldToolNamesFor, type WithheldTool } from "./index.js";
 
 const consumeOnGgui: WithheldTool[] = [{ server: "ggui", tool: "ggui_consume" }];
 
@@ -59,5 +59,27 @@ describe("modelVisibleToolFilterFor", () => {
     const filter = modelVisibleToolFilterFor("ggui", undefined);
     expect(await filter({}, consume)).toBe(true);
     expect(await filter({}, render)).toBe(true);
+  });
+});
+
+describe("modelVisibleToolFilterWith", () => {
+  it("offers a tool only when it is model-visible AND the gate predicate keeps it", async () => {
+    const filter = modelVisibleToolFilterWith((tool) => tool !== "ggui_consume");
+    expect(await filter({}, consume)).toBe(false);
+    expect(await filter({}, render)).toBe(true);
+    expect(await filter({}, appOnly)).toBe(false);
+  });
+
+  it("an undefined predicate keeps every model-visible tool", async () => {
+    const filter = modelVisibleToolFilterWith(undefined);
+    expect(await filter({}, consume)).toBe(true);
+    expect(await filter({}, render)).toBe(true);
+    expect(await filter({}, appOnly)).toBe(false);
+  });
+
+  it("a predicate that keeps nothing offers nothing, visible or not", async () => {
+    const filter = modelVisibleToolFilterWith(() => false);
+    expect(await filter({}, consume)).toBe(false);
+    expect(await filter({}, render)).toBe(false);
   });
 });

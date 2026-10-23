@@ -63,6 +63,7 @@ export {
   modelMayCallTool,
   modelVisibleToolFilter,
   modelVisibleToolFilterFor,
+  modelVisibleToolFilterWith,
 } from "./mcp-visibility.js";
 export { withheldToolNamesFor } from "./withheld-tools.js";
 export {

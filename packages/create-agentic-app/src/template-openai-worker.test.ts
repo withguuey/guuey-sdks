@@ -182,6 +182,67 @@ describe("OpenAI template worker: the turn's tool withholds", () => {
   });
 });
 
+describe("OpenAI template worker: the agent's tool gates (guuey#2585)", () => {
+  const search: ListedTool = { name: "search", inputSchema: { type: "object" } };
+
+  /** Runs one invoke with `tools` as the agent's gate block; returns the tools each server offers the model. */
+  async function offeredWith(
+    tools: GuueyAgent["tools"],
+    withheldTools?: WithheldTool[]
+  ): Promise<Record<string, string[]>> {
+    vi.stubEnv("GUUEY_AGENT_SNAPSHOT", JSON.stringify({ ...agent, ...(tools !== undefined ? { tools } : {}) }));
+    try {
+      const filters = await builtFilters(invokeWith(withheldTools));
+      const out: Record<string, string[]> = {};
+      for (const [server, filter] of filters) {
+        out[server] = [];
+        for (const tool of [consume, render, appOnly, search]) {
+          if (await filter({}, tool)) out[server].push(tool.name);
+        }
+      }
+      return out;
+    } finally {
+      vi.stubEnv("GUUEY_AGENT_SNAPSHOT", JSON.stringify(agent));
+    }
+  }
+
+  it("no gates: every model-visible tool on every server", async () => {
+    expect(await offeredWith(undefined)).toEqual({
+      ggui: ["ggui_consume", "ggui_render", "search"],
+      todo: ["ggui_consume", "ggui_render", "search"],
+    });
+  });
+
+  it("an allowlist narrows each server; a server the list never names keeps nothing", async () => {
+    expect(await offeredWith({ allowlist: ["ggui.ggui_render", "search"] })).toEqual({
+      ggui: ["ggui_render", "search"],
+      todo: ["search"],
+    });
+  });
+
+  it("the denylist subtracts and wins over the allowlist; withholds subtract too", async () => {
+    expect(
+      await offeredWith({ allowlist: ["ggui.*"], denylist: ["ggui.ggui_consume"] }, [{ server: "ggui", tool: "search" }])
+    ).toEqual({ ggui: ["ggui_render"], todo: [] });
+    expect(await offeredWith({ denylist: ["search", "todo.*"] })).toEqual({
+      ggui: ["ggui_consume", "ggui_render"],
+      todo: [],
+    });
+  });
+
+  it('["@none"] offers nothing; a stored [] offers everything', async () => {
+    expect(await offeredWith({ allowlist: ["@none"] })).toEqual({ ggui: [], todo: [] });
+    expect(await offeredWith({ allowlist: [] })).toEqual({
+      ggui: ["ggui_consume", "ggui_render", "search"],
+      todo: ["ggui_consume", "ggui_render", "search"],
+    });
+  });
+
+  it("MCP Apps visibility still applies under an allowlist that names the app-only tool", async () => {
+    expect(await offeredWith({ allowlist: ["ggui.ggui_runtime_submit_action"] })).toEqual({ ggui: [], todo: [] });
+  });
+});
+
 describe("OpenAI template worker: the model key (guuey#2139)", () => {
   it("applies the key in memory with setDefaultOpenAIKey (no launch envelope: the legacy env key)", () => {
     expect(h.defaultKeys).toEqual(["legacy-env-key"]);

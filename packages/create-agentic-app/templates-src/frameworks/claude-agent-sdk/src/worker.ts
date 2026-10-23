@@ -3,7 +3,8 @@
  * resolved agent snapshot + MCP endpoints via `./agent-config.js`, drives one
  * `query()` per invoke, and streams every native SDK message to the Router
  * via `emit.native` (the field spellings below — `mcpServers`/`systemPrompt`/
- * `allowedTools`/`maxTurns`, and the `type === "result" && subtype ===
+ * `allowedTools`/`disallowedTools`/`canUseTool`/`maxTurns`, and the
+ * `type === "result" && subtype ===
  * "success"` result-detection — mirror `@guuey/host`'s `buildOptions` /
  * `runInvoke`, the platform's own consumer of this exact snapshot shape).
  */
@@ -16,6 +17,7 @@ import {
   serveNative,
   type ClaudeKeyKind,
 } from "@guuey/worker";
+import { claudeToolRules } from "@guuey/config";
 import { loadAgent, systemPrompt, mcpEndpoints, withHistory } from "./agent-config.js";
 
 /**
@@ -118,6 +120,14 @@ await serveNative(
     // stdin with `setMcpServers`, never as `--mcp-config` on its argv; the
     // spawner refuses any argument or environment value that carries one.
     const headerValues = Object.values(endpoints).flatMap((ep) => Object.values(ep.headers));
+    // The agent's tool gates (`tools.allowlist` / `tools.denylist` in
+    // guuey.json, as narrowed by the turn's mode) and this turn's withholds
+    // (`invoke.withheldTools`), in the SDK's own rule spelling
+    // (`mcp__<server>[__<tool>]`). `builtins: []` matches `tools: []` below.
+    const toolRules = claudeToolRules(agent.tools, Object.keys(mcpServers), {
+      builtins: [],
+      withheld: invoke.withheldTools,
+    });
     let openGate!: () => void;
     const gate = new Promise<void>((resolve) => (openGate = resolve));
     let endInput!: () => void;
@@ -137,17 +147,24 @@ await serveNative(
         ...(agent.model ? { model: agent.model } : {}),
         ...(systemPrompt(invoke, agent) ? { systemPrompt: systemPrompt(invoke, agent) } : {}),
         // Same posture as `@guuey/host`'s `buildOptions` (options.ts):
-        // - allowedTools: the snapshot allowlist verbatim, else every tool
-        //   from every declared server (`mcp__<server>` prefix match) — MCP
-        //   calls would otherwise hit the SDK's interactive ask stage, which
-        //   nothing answers headless, so they'd be silently denied.
+        // - allowedTools: the allowlist translated into SDK rules, else every
+        //   tool of every server (`mcp__<server>`); an allow rule only
+        //   pre-approves.
+        // - disallowedTools: the denylist and this turn's withholds, removed
+        //   from the model's catalog outright (deny wins).
+        // - canUseTool: under an explicit allowlist an unlisted pick is
+        //   DENIED with a message the model can read; otherwise every pick is
+        //   allowed. Either way the SDK's interactive ask stage, which
+        //   nothing answers headless, is never reached.
         // - tools: [] — purely MCP-driven; no Bash/file/search built-ins.
         // - settingSources: [] — never load the machine's ~/.claude or
         //   project settings into this worker (a dev box's logged-in Claude
         //   Code MCPs/plugins would leak into the tool catalog).
         // - strictMcpConfig: true — the snapshot's servers only; ignore
         //   .mcp.json / user settings / plugins.
-        allowedTools: agent.tools?.allowlist ?? Object.keys(mcpServers).map((s) => `mcp__${s}`),
+        allowedTools: toolRules.allowedTools,
+        ...(toolRules.disallowedTools.length > 0 ? { disallowedTools: toolRules.disallowedTools } : {}),
+        canUseTool: toolRules.canUseTool,
         tools: [],
         settingSources: [],
         strictMcpConfig: true,

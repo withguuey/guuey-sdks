@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { GuueyAgent } from "@guuey/config";
-import type { ClaudeSpawnRequest, ClaudeSpawnedProcess, Invoke, NativeEmit, NativeHandler } from "@guuey/worker";
+import type { ClaudeSpawnRequest, ClaudeSpawnedProcess, Invoke, NativeEmit, NativeHandler, WithheldTool } from "@guuey/worker";
 
 /** The slice of the SDK's query options this test reads. */
 interface CapturedOptions {
@@ -23,6 +23,10 @@ interface CapturedOptions {
   mcpServers?: object;
   persistSession?: boolean;
   spawnClaudeCodeProcess?: (request: ClaudeSpawnRequest) => ClaudeSpawnedProcess;
+  allowedTools?: string[];
+  disallowedTools?: string[];
+  permissionMode?: string;
+  canUseTool?: (toolName: string, input: { k: string }) => Promise<{ behavior: string; message?: string }>;
 }
 
 interface CapturedQuery {
@@ -97,22 +101,25 @@ afterAll(() => {
   vi.restoreAllMocks();
 });
 
-function invokeWithServer(): Invoke {
+function invokeWithServer(servers: readonly string[] = ["todo"], withheldTools?: WithheldTool[]): Invoke {
   const root = mkdtempSync(join(tmpdir(), "caa-claude-worker-"));
   dirs.push(root);
   const session = join(root, "session");
   const credentials = join(session, ".guuey", "credentials");
   mkdirSync(credentials, { recursive: true });
-  writeFileSync(
-    join(credentials, "todo.json"),
-    JSON.stringify({ url: "http://127.0.0.1:6782/mcp", transport: "http", headers: { authorization: "Bearer mcp-header" } }),
-  );
+  for (const name of servers) {
+    writeFileSync(
+      join(credentials, `${name}.json`),
+      JSON.stringify({ url: "http://127.0.0.1:6782/mcp", transport: "http", headers: { authorization: "Bearer mcp-header" } }),
+    );
+  }
   return {
     type: "invoke",
     input: "hello",
     identity: { userId: "u_1", authMode: "anonymous" },
     fs: { app: join(root, "app"), home: join(root, "home"), session },
     history: [],
+    ...(withheldTools !== undefined ? { withheldTools } : {}),
   };
 }
 
@@ -162,5 +169,62 @@ describe("Claude template worker: private key and MCP delivery (guuey#2139)", ()
       h.mode = "answer";
       vi.useRealTimers();
     }
+  });
+});
+
+describe("Claude template worker: the agent's tool gates reach query() (guuey#2585)", () => {
+  /** Runs one invoke with `tools` as the agent's gate block and returns the options handed to query(). */
+  async function optionsFor(tools: GuueyAgent["tools"], withheldTools?: WithheldTool[]): Promise<CapturedOptions> {
+    if (h.handler === undefined) throw new Error("the worker entry never called serveNative");
+    vi.stubEnv("GUUEY_AGENT_SNAPSHOT", JSON.stringify({ ...agent, ...(tools !== undefined ? { tools } : {}) }));
+    try {
+      expect(await h.handler(invokeWithServer(["ggui", "todo"], withheldTools), emit)).toBe("ok");
+    } finally {
+      vi.stubEnv("GUUEY_AGENT_SNAPSHOT", JSON.stringify(agent));
+    }
+    const q = h.queries.at(-1);
+    if (q === undefined) throw new Error("no query");
+    return q.options;
+  }
+
+  async function verdict(options: CapturedOptions, tool: string): Promise<string | undefined> {
+    if (options.canUseTool === undefined) throw new Error("no canUseTool");
+    return (await options.canUseTool(tool, { k: "v" })).behavior;
+  }
+
+  it("no gates: every server allowed whole, nothing disallowed, every pick allowed (never the ask stage)", async () => {
+    const options = await optionsFor(undefined);
+    expect(options.allowedTools).toEqual(["mcp__ggui", "mcp__todo"]);
+    expect(options.disallowedTools).toBeUndefined();
+    expect(options.permissionMode).toBeUndefined();
+    expect(await verdict(options, "mcp__todo__add")).toBe("allow");
+  });
+
+  it("an allowlist is translated into SDK rules (never passed verbatim), and an unlisted pick is denied", async () => {
+    const options = await optionsFor({ allowlist: ["todo.add", "ggui.*"] });
+    expect(options.allowedTools).toEqual(["mcp__todo__add", "mcp__ggui"]);
+    expect(await verdict(options, "mcp__todo__clear")).toBe("deny");
+  });
+
+  it("a stored allowlist: [] keeps its every-tool meaning", async () => {
+    const options = await optionsFor({ allowlist: [] });
+    expect(options.allowedTools).toEqual(["mcp__ggui", "mcp__todo"]);
+    expect(await verdict(options, "mcp__todo__clear")).toBe("allow");
+  });
+
+  it("the denylist and the turn's withholds ride disallowedTools: deny wins over the allowlist", async () => {
+    const options = await optionsFor(
+      { allowlist: ["todo.*"], denylist: ["todo.clear"] },
+      [{ server: "todo", tool: "export" }],
+    );
+    expect(options.allowedTools).toEqual(["mcp__todo"]);
+    expect(options.disallowedTools).toEqual(["mcp__todo__clear", "mcp__todo__export"]);
+  });
+
+  it('["@none"]: no MCP allow rule, every server disallowed, every pick denied', async () => {
+    const options = await optionsFor({ allowlist: ["@none"] });
+    expect(options.allowedTools).toEqual([]);
+    expect(options.disallowedTools).toEqual(["mcp__ggui", "mcp__todo"]);
+    expect(await verdict(options, "mcp__todo__add")).toBe("deny");
   });
 });
