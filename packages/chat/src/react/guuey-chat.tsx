@@ -83,6 +83,7 @@ import type {
   ErrorItem,
   PlanViewSummary,
   PromptItem,
+  SaturationWait,
   TapWithdrawReason,
   UserMessageItem,
   ViewRefItem,
@@ -315,7 +316,10 @@ export interface GuueyChatProps {
    * `createWebAdapters({ apiBaseUrl, getAccessToken, getGuestSecret })` —
    * localStorage thread persistence + the web SSE transport (cookie/guest
    * identity, saturation + cold-start retries), plus history when
-   * `apiBaseUrl` is set.
+   * `apiBaseUrl` is set. The default's saturation retries show as the
+   * `busy` status line (`strings.saturationRetrying`); a host's own
+   * adapters own their retry and pass `saturationWait` to the plan
+   * themselves if they want the same line.
    */
   adapters?: AgentInvokeAdapters;
   /** Policy preset (spec §5). Default `"calm"`. */
@@ -492,6 +496,13 @@ export interface GuueyChatProps {
   style?: CSSProperties;
 }
 
+/**
+ * Saturation retries the default adapters make after the first refused send
+ * (guuey#2604): the widget's end-user budget (guuey#406), so a reader sees
+ * "Retrying (1/4)" through "(3/4)" before the busy error.
+ */
+const SATURATION_RETRIES = 3;
+
 const PROMPT_STATE = {
   accept: "answered",
   decline: "declined",
@@ -620,10 +631,21 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   const appIdRef = useRef(appId);
   appIdRef.current = appId;
 
+  // guuey#2604 — the busy notice: the default transport retries a turn the
+  // agent refused at its concurrent-turn ceiling (POD_SATURATED) and reports
+  // each wait here. The turn stays `connecting` throughout, so the plan reads
+  // this beside the status to say "busy, retrying" instead of climbing the
+  // connecting ladder. A host's own `adapters` own their transport and their
+  // retry, so the notice is the default adapters' only.
+  const [saturationWait, setSaturationWait] = useState<SaturationWait | null>(null);
   const adapters = useMemo(
     () =>
       adaptersProp ??
       createWebAdapters({
+        // The widget's end-user budget (guuey#406): three retries, each one
+        // shown, before the refusal surfaces as the plain busy error.
+        saturationAttempts: SATURATION_RETRIES,
+        onSaturationWait: ({ attempt, totalAttempts }) => setSaturationWait({ attempt, totalAttempts }),
         ...(apiBaseUrl !== undefined ? { apiBaseUrl } : {}),
         ...(hasAccessToken
           ? {
@@ -735,20 +757,26 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   }, [preset, stablePolicyOverrides, stableStringOverrides]);
 
   const { inputs, resolvePrompt, answerHitlPrompt } = useTranscriptInputs(invoke);
+  // A wait belongs to the turn's `connecting` phase: any status change (the
+  // retry got through, the refusal surfaced, a stop, the next turn) ends it.
+  useEffect(() => {
+    setSaturationWait(null);
+  }, [invoke.status]);
   // Memoized: once a chip is selected (`promotedViewKey` set) this object
   // is on the plan's identity path — a per-render fresh spread here was the
   // second leg of the render loop the template surfaced.
   const transcriptInputs = useMemo(
     () =>
-      promotedViewKey === undefined && echo.pendingTaps.length === 0
+      promotedViewKey === undefined && echo.pendingTaps.length === 0 && saturationWait === null
         ? inputs
         : {
             ...inputs,
             ...(promotedViewKey !== undefined ? { promotedViewKey } : {}),
             // guuey#2031: taps drawn before their turn is sent.
             ...(echo.pendingTaps.length > 0 ? { pendingTaps: echo.pendingTaps } : {}),
+            ...(saturationWait !== null ? { saturationWait } : {}),
           },
-    [inputs, promotedViewKey, echo.pendingTaps],
+    [inputs, promotedViewKey, echo.pendingTaps, saturationWait],
   );
   const { plan, toggle, resolvedMounts, onViewPhase, onViewDiagnosis } = useTranscript({
     inputs: transcriptInputs,

@@ -96,24 +96,36 @@ describe("R11 voice: defaults + debug formatting stay independent", () => {
     expect(item.verbatim).toBeNull();
   });
 
-  it("calm defaults render the pod's two refusal envelopes VERBATIM — they carry the cap and the retry seconds chat cannot know (guuey#882 / #888)", () => {
+  it("calm defaults render DRAINING's envelope VERBATIM: it carries the retry timing chat cannot know (guuey#888)", () => {
+    const drainingCopy = "this pod is shutting down; retry shortly, traffic is re-routing to a healthy pod";
+    const draining = errorItem(inputsWithError(drainingCopy, "DRAINING"));
+    expect(draining.copy).toBe(drainingCopy);
+    expect(draining.verbatim).toBeNull(); // the DEBUG line stays off: voice, not formatting
+    expect(DEFAULT_VERBATIM_CODES).toEqual(["DRAINING"]);
+    expect(DEFAULT_VERBATIM_CODES).not.toContain("POD_SATURATED");
+  });
+
+  it("POD_SATURATED reads the plain busy line by default, never the pod's envelope with its turn cap (guuey#2604)", () => {
     const saturatedCopy = "this conversation's agent is at capacity (7 concurrent turns); retry in 15s";
     const saturated = errorItem(inputsWithError(saturatedCopy, "POD_SATURATED"));
-    expect(saturated.copy).toBe(saturatedCopy);
-    expect(saturated.verbatim).toBeNull(); // the DEBUG line stays off — voice, not formatting
-    const drainingCopy = "this pod is shutting down; retry shortly — traffic is re-routing to a healthy pod";
-    expect(errorItem(inputsWithError(drainingCopy, "DRAINING")).copy).toBe(drainingCopy);
-    // A host's per-code sentence still wins over the verbatim default…
-    const hosted = calmPolicy({
-      error: { verbatim: false, copyByCode: { POD_SATURATED: "Busy — one moment." }, verbatimCodes: DEFAULT_VERBATIM_CODES },
-    });
-    expect(errorItem(inputsWithError(saturatedCopy, "POD_SATURATED"), hosted).copy).toBe("Busy — one moment.");
-    // …a host that wants family copy back opts out explicitly…
-    const optedOut = calmPolicy({ error: { verbatim: false, copyByCode: {}, verbatimCodes: [] } });
-    expect(errorItem(inputsWithError(saturatedCopy, "POD_SATURATED"), optedOut).copy).toBe(calmPolicy().strings.errorTransient);
-    // …and an EMPTY envelope still falls back to family copy, never a blank notice.
-    expect(errorItem(inputsWithError("", "POD_SATURATED")).copy).toBe(calmPolicy().strings.errorTransient);
-    expect(DEFAULT_VERBATIM_CODES).toEqual(["POD_SATURATED", "DRAINING"]);
+    // Byte-equal to the widget's and the landing's sentence.
+    expect(saturated.copy).toBe("High demand right now. Please try again in a moment.");
+    expect(saturated.copy).toBe(calmPolicy().strings.errorPodSaturated);
+    // Transient family: the Retry stays.
+    expect(saturated.family).toBe("transient");
+    // An empty envelope reads the same line, never a blank notice.
+    expect(errorItem(inputsWithError("", "POD_SATURATED")).copy).toBe(calmPolicy().strings.errorPodSaturated);
+  });
+
+  it("POD_SATURATED overrides still win: copyByCode, strings, and a verbatim opt-in", () => {
+    const saturatedCopy = "this conversation's agent is at capacity (7 concurrent turns); retry in 15s";
+    const hosted = calmPolicy({ error: { copyByCode: { POD_SATURATED: "Busy, one moment." } } });
+    expect(errorItem(inputsWithError(saturatedCopy, "POD_SATURATED"), hosted).copy).toBe("Busy, one moment.");
+    const worded = calmPolicy({ strings: { ...calmPolicy().strings, errorPodSaturated: "Lots of people here." } });
+    expect(errorItem(inputsWithError(saturatedCopy, "POD_SATURATED"), worded).copy).toBe("Lots of people here.");
+    // A host that wants the pod's own sentence back lists the code.
+    const verbatim = calmPolicy({ error: { verbatimCodes: [...DEFAULT_VERBATIM_CODES, "POD_SATURATED"] } });
+    expect(errorItem(inputsWithError(saturatedCopy, "POD_SATURATED"), verbatim).copy).toBe(saturatedCopy);
   });
 
   it("debug's verbatim raw line coexists with a verbatim VOICE", () => {

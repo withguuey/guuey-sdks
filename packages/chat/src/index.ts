@@ -123,6 +123,7 @@ export type {
   PromptItem,
   PromptItemInput,
   ReasoningItem,
+  SaturationWait,
   StatusLineItem,
   TapItem,
   TapWithdrawReason,

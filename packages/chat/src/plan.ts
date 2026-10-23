@@ -876,6 +876,14 @@ function deriveStatus(inputs: TranscriptInputs, policy: TranscriptPolicy): Statu
     case "responding":
       return null; // streaming text is its own indicator; idle copy is 3c's composer.
     case "connecting": {
+      // guuey#2604: the transport is waiting to send again because the agent
+      // is at its concurrent-turn ceiling. Say so, rather than letting the
+      // connecting ladder climb to "Still getting ready…" over the wait.
+      const wait = inputs.saturationWait;
+      if (wait !== undefined && wait !== null) {
+        const copy = s.saturationRetrying(wait.attempt, wait.totalAttempts);
+        return { kind: "status", key: "status", state: "busy", copy, detail };
+      }
       const state =
         inputs.statusElapsedMs >= policy.status.longStartMs
           ? "long-start"
@@ -935,6 +943,10 @@ const CODE_COPY: Record<string, (s: import("./strings.js").ChatStrings) => strin
   // transient family's Retry stays (no ERROR_FAMILIES entry), since trying
   // again shortly is exactly what the reader should do.
   WORKER_POD_RESOURCE_EXHAUSTED: (s) => s.errorResourceExhausted,
+  // guuey#2604: every concurrent-turn slot was still taken after the retries.
+  // A plain "try again" line in place of the pod's envelope (which names the
+  // turn cap); the transient family's Retry stays.
+  POD_SATURATED: (s) => s.errorPodSaturated,
 };
 
 /**

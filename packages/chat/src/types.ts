@@ -199,6 +199,13 @@ export interface TranscriptInputs {
   status: AgentInvokeStatus;
   /** Renderer-supplied elapsed ms in the current status; drives R12 escalation. */
   statusElapsedMs: number;
+  /**
+   * guuey#2604: renderer-supplied, set while the transport waits to resend a
+   * turn the agent refused at its concurrent-turn ceiling (the saturation
+   * retry's `onSaturationWait`). While `status` is `connecting` it plans the
+   * `busy` status line. Absent or null when no such wait is under way.
+   */
+  saturationWait?: SaturationWait | null;
   activeTool: string | null;
   error: { message: string; code: string | null } | null;
   /**
@@ -666,6 +673,15 @@ export type DisplayItem =
   | CompactionItem
   | UnknownItem;
 
+/**
+ * guuey#2604: one saturation-retry wait, as `@guuey/agent-client`'s
+ * `onSaturationWait` reports it: the refused try (1-based) and the budget.
+ */
+export interface SaturationWait {
+  attempt: number;
+  totalAttempts: number;
+}
+
 /** R12/§4 — the derived status line with its resolved copy. */
 export interface StatusLineItem {
   kind: "status";
@@ -674,6 +690,7 @@ export interface StatusLineItem {
     | "connecting"
     | "starting"
     | "long-start"
+    | "busy"
     | "thinking"
     | "using-tool"
     | "aborted";

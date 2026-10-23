@@ -28,6 +28,14 @@ export interface ChatStrings {
    * instead of narrating the lifecycle.
    */
   preparingCard: string;
+  /**
+   * guuey#2604: the status while the transport waits to send the turn again
+   * because every concurrent-turn slot on the agent is taken (`POD_SATURATED`,
+   * the saturation retry). `attempt` is the try that was refused (1-based) and
+   * `totalAttempts` the whole budget. Replaces the connecting ladder for the
+   * wait, so the reader sees why nothing is happening yet.
+   */
+  saturationRetrying: (attempt: number, totalAttempts: number) => string;
   /** R1 aborted-partial marker + §4.2 aborted line. */
   stopped: string;
 
@@ -78,6 +86,14 @@ export interface ChatStrings {
    * transient family's Retry; names nothing internal.
    */
   errorResourceExhausted: string;
+  /**
+   * R11, code POD_SATURATED (guuey#2604): every concurrent-turn slot on the
+   * agent was still taken after the retries. A plain "try again" line, the
+   * same sentence guuey's own widget shows; it keeps the transient family's
+   * Retry. Never the pod's own envelope, which names a turn cap and a retry
+   * delay the reader has no use for.
+   */
+  errorPodSaturated: string;
 
   /** R3/R4. */
   toolGroup: (count: number) => string;
@@ -346,6 +362,7 @@ export const defaultChatStrings: ChatStrings = {
   thinking: "Thinking…",
   usingTool: (toolTitle) => `Using ${toolTitle}…`,
   preparingCard: "Preparing interactive card…",
+  saturationRetrying: (attempt, totalAttempts) => `Busy right now. Retrying (${attempt}/${totalAttempts})…`,
   stopped: "Stopped.",
 
   errorAuth: "Sign in to continue.",
@@ -356,6 +373,7 @@ export const defaultChatStrings: ChatStrings = {
   errorNoReply: "The reply didn't come through. Try again, or start a new conversation.",
   errorResourceExhausted:
     "This conversation hit a temporary capacity limit and was stopped safely. Please try again in a moment.",
+  errorPodSaturated: "High demand right now. Please try again in a moment.",
   errorInvalid: "The app sent a request the agent couldn't read.",
   errorAttachmentsUnsupported: "This agent can't read images yet. Send your message without the image.",
   errorAttachmentsInvalid: "That image can't be sent. Use a JPEG, PNG, GIF or WebP image, up to 4 at a time.",
