@@ -40,6 +40,8 @@ describe('RUNTIME_RESERVED_ENV_NAMES', () => {
         'NODE_PATH',
         'NODE_TLS_REJECT_UNAUTHORIZED',
         'OPENSSL_CONF',
+        'OPENSSL_ENGINES',
+        'OPENSSL_MODULES',
       ],
     );
     expect(new Set(RUNTIME_RESERVED_ENV_NAMES).size).toBe(RUNTIME_RESERVED_ENV_NAMES.length);
