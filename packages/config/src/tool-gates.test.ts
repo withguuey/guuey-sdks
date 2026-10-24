@@ -74,9 +74,14 @@ const ROWS: Row[] = [
   { label: 'stored allowlist "*" beside entries = every tool', gates: { allowlist: ['a.read', ' * '] }, kept: EVERY },
   { label: 'stored denylist "*" = @none', gates: { denylist: ['*'] }, kept: [] },
   { label: 'stored denylist "*" beats an allowlist', gates: { allowlist: ['a.*'], denylist: ['*'] }, kept: [] },
-  { label: 'stored denylist "*.*" reads like "*"', gates: { denylist: [' *.* '] }, kept: [] },
+  { label: 'stored denylist "*.*" is unreadable: keeps no MCP tool', gates: { denylist: [' *.* '] }, kept: [] },
   { label: 'stored denylist "*.*" beats an allowlist', gates: { allowlist: ['a.*'], denylist: ['*.*'] }, kept: [] },
-  { label: 'stored allowlist "*.*" grants nothing (no server is named *)', gates: { allowlist: ['*.*'] }, kept: [] },
+  { label: 'stored allowlist "*.*" is dropped: grants nothing', gates: { allowlist: ['*.*'] }, kept: [] },
+  { label: 'stored allowlist "*.*" beside a real entry: only the real entry counts', gates: { allowlist: ['*.*', 'a.read'] }, kept: ['a.read'] },
+  { label: 'stored bare glob in an allowlist is dropped', gates: { allowlist: ['wr*', 'a.read'] }, kept: ['a.read'] },
+  { label: 'stored bare glob in a denylist keeps no MCP tool', gates: { denylist: ['wr*'] }, kept: [] },
+  { label: 'a "*" in the server name, in a denylist, keeps no MCP tool', gates: { denylist: ['b*.read'] }, kept: [] },
+  { label: 'a "*" in the server name, in an allowlist, is dropped', gates: { allowlist: ['*.read', 'b.write'] }, kept: ['b.write'] },
 ];
 
 /** The kept set through the per-server predicate. */
@@ -88,15 +93,30 @@ function keptByPredicate(row: Row): Kept[] {
 }
 
 /**
+ * Does one SDK rule name `tool` on `server`, read the way the Claude Agent SDK
+ * documents its MCP rule forms (`sdk.d.ts`, `disallowedTools`): `mcp__*` is
+ * every MCP tool, `mcp__<s>` and `mcp__<s>__*` are every tool on `<s>`, and
+ * `mcp__<s>__<t>` is that one tool. Both allow and disallow rules are read
+ * this way, so a rule that would glob more than the gates keep shows up here.
+ */
+function sdkRuleNames(rule: string, server: string, tool: string): boolean {
+  return (
+    rule === 'mcp__*' ||
+    rule === `mcp__${server}` ||
+    rule === `mcp__${server}__*` ||
+    rule === `mcp__${server}__${tool}`
+  );
+}
+
+/**
  * The kept set through the Claude rules, read the way the SDK does: a tool is
- * offered unless a disallow rule names it (`mcp__<s>` or `mcp__<s>__<t>`), and
- * a call to it then passes when an allow rule names it or the permission check
+ * offered unless a disallow rule names it ({@link sdkRuleNames}), and a call
+ * to it then passes when an allow rule names it or the permission check
  * allows it.
  */
 async function keptByClaudeRules(row: Row): Promise<Kept[]> {
   const rules = claudeToolRules(row.gates, SERVERS, { builtins: [], withheld: row.withheld });
-  const names = (rule: string, server: string, tool: string): boolean =>
-    rule === `mcp__${server}` || rule === `mcp__${server}__${tool}`;
+  const names = sdkRuleNames;
   const kept: Kept[] = [];
   for (const server of SERVERS) {
     for (const tool of TOOLS) {
@@ -174,16 +194,33 @@ describe('claudeToolRules', () => {
     expect({ ...star, canUseTool: undefined }).toEqual({ ...none, canUseTool: undefined });
   });
 
-  it('a stored denylist "*" or "*.*" denies with a message naming that entry, never the allowlist', async () => {
-    for (const entry of ['*', '*.*']) {
-      const rules = claudeToolRules({ denylist: [entry] }, SERVERS, { builtins: ['Bash'] });
-      expect(rules.errors).toEqual([]);
-      expect(rules.disallowedTools).toEqual(['mcp__a', 'mcp__b']);
-      expect(await rules.canUseTool('mcp__a__read', {})).toEqual({
-        behavior: 'deny',
-        message: `Tool "mcp__a__read" is not available: tools.denylist entry ${JSON.stringify(entry)} denies every MCP tool.`,
-      });
-      expect((await rules.canUseTool('Bash', {})).behavior).toBe('allow');
+  it('a stored denylist "*" denies with a message naming that entry, never the allowlist', async () => {
+    const rules = claudeToolRules({ denylist: ['*'] }, SERVERS, { builtins: ['Bash'] });
+    expect(rules.errors).toEqual([]);
+    expect(rules.disallowedTools).toEqual(['mcp__a', 'mcp__b']);
+    expect(await rules.canUseTool('mcp__a__read', {})).toEqual({
+      behavior: 'deny',
+      message: 'Tool "mcp__a__read" is not available: tools.denylist entry "*" denies every MCP tool.',
+    });
+    expect((await rules.canUseTool('Bash', {})).behavior).toBe('allow');
+  });
+
+  it('a stored denylist "*.*" is unreadable: an error naming it, every server disallowed, a denial naming it', async () => {
+    const rules = claudeToolRules({ denylist: ['*.*'] }, SERVERS, { builtins: ['Bash'] });
+    expect(rules.errors).toEqual(toolGateErrors({ denylist: ['*.*'] }));
+    expect(rules.errors).toHaveLength(1);
+    expect(rules.disallowedTools).toEqual(['mcp__a', 'mcp__b']);
+    const verdict = await rules.canUseTool('mcp__a__read', {});
+    expect(verdict.behavior === 'deny' && verdict.message).toContain('tools.denylist entry "*.*" cannot be read');
+  });
+
+  it('never builds an SDK rule carrying "*" from a stored entry, in either list (the SDK reads mcp__* and mcp__<s>__* as globs)', () => {
+    const starred = ['*', '*.*', '*.read', 'a*.read', 'wr*', '*search', 'a.re*d'];
+    for (const entry of starred) {
+      for (const gates of [{ allowlist: [entry] }, { denylist: [entry] }, { allowlist: [entry, 'a.read'], denylist: ['b.write'] }]) {
+        const rules = claudeToolRules(gates, SERVERS, { builtins: ['Bash'] });
+        expect([...rules.allowedTools, ...rules.disallowedTools].filter((r) => r.includes('*')), `${entry} ${JSON.stringify(gates)}`).toEqual([]);
+      }
     }
   });
 
@@ -211,7 +248,15 @@ describe('toolGateErrors: an unparseable denylist entry fails closed and is name
 
   it('reports nothing for readable lists, "@none", a stored "*", or an unreadable ALLOWLIST entry (dropped instead)', () => {
     expect(toolGateErrors(undefined)).toEqual([]);
-    expect(toolGateErrors({ allowlist: ['mcp__a__read'], denylist: ['a.read', 'search', 'b.*', '@none', '*'] })).toEqual([]);
+    expect(toolGateErrors({ allowlist: ['mcp__a__read', '*.*', 'wr*'], denylist: ['a.read', 'search', 'b.*', '@none', '*'] })).toEqual([]);
+  });
+
+  it('names every denylist entry carrying a "*" outside "S.*" and the whole entry "*"', () => {
+    const errors = toolGateErrors({ denylist: ['*.*', 'wr*', 'b*.read', 'a.*', '*'] });
+    expect(errors).toHaveLength(3);
+    expect(errors[0]).toContain('tools.denylist entry "*.*" cannot be read');
+    expect(errors[1]).toContain('tools.denylist entry "wr*" cannot be read');
+    expect(errors[2]).toContain('tools.denylist entry "b*.read" cannot be read');
   });
 
   it('the predicate keeps nothing on every server', () => {

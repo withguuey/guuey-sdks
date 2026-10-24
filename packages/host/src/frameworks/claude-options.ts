@@ -596,8 +596,9 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
     //    — that is what makes the allowlist a real narrowing, and it can never
     //    hang. The callback is `@guuey/config`'s own check (`claudeToolRules`,
     //    the one the code-mode scaffold installs too), so a denial names the
-    //    actual cause: the allowlist, a denylist "*" / "*.*", or an unreadable
-    //    denylist entry. We do NOT use `bypassPermissions`: it requires
+    //    actual cause: the allowlist, a denylist "*", or an unreadable
+    //    denylist entry (a stored "*.*" is one). We do NOT use
+    //    `bypassPermissions`: it requires
     //    `allowDangerouslySkipPermissions` and globally disables hooks/deny-rule
     //    evaluation, whereas the callback keeps those stages intact while only
     //    collapsing the final ask stage.

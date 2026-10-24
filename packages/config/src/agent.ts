@@ -1241,9 +1241,25 @@ export type ToolGateEntry =
 const SDK_INTERNAL_TOOL_PREFIX = /^mcp__/;
 
 /**
+ * The whole entry `"*"`. The deploy gate accepts it today, so stored
+ * definitions carry it. The parser returns it as a bare entry named `*`, and
+ * the tool gate (`tool-gates.ts`, rule 7) reads it by its own rule, never as
+ * a tool name: in an allowlist every tool, in a denylist no MCP tool.
+ */
+export const EVERY_TOOL_ENTRY = '*';
+
+/**
  * Parse one tool-gate entry per the {@link ToolGatesSchema} grammar. Returns
  * the parsed shape, or a human-readable reason string when the entry is
  * malformed (never throws — callers decide whether to reject or report).
+ *
+ * `*` is valid in exactly two places: as the whole tool part (`"<server>.*"`)
+ * and as the whole entry ({@link EVERY_TOOL_ENTRY}). Anywhere else it is
+ * refused. A framework can read `*` as a glob (the Claude Agent SDK reads
+ * `mcp__*` and `mcp__<server>__*` as wildcards), so `"*.*"` or `"delete_*"`
+ * would mean "every tool" or "every tool starting with delete_" on one
+ * framework and a literal name on another. The deploy gate refuses them, and
+ * the tool gate reads a stored one as unreadable.
  */
 export function parseToolGateEntry(raw: string): ToolGateEntry | { error: string } {
   const entry = raw.trim();
@@ -1253,12 +1269,21 @@ export function parseToolGateEntry(raw: string): ToolGateEntry | { error: string
       error: `"${entry}" uses the framework-internal spelling — write "<server>.<tool>" (or "<server>.*", or a bare tool name) instead`,
     };
   }
+  if (entry === EVERY_TOOL_ENTRY) return { kind: 'bare', tool: entry };
   const dot = entry.indexOf('.');
-  if (dot === -1) return { kind: 'bare', tool: entry };
+  if (dot === -1) {
+    if (entry.includes('*')) {
+      return { error: `"${entry}": "*" is only valid as the whole tool part ("<server>.*"), never inside a bare tool name` };
+    }
+    return { kind: 'bare', tool: entry };
+  }
   const server = entry.slice(0, dot);
   const tool = entry.slice(dot + 1);
   if (server.length === 0) return { error: `"${entry}" has an empty server name before the dot` };
   if (tool.length === 0) return { error: `"${entry}" has an empty tool name after the dot` };
+  if (server.includes('*')) {
+    return { error: `"${entry}": "*" is only valid as the whole tool part ("<server>.*"), never in the server name` };
+  }
   if (tool === '*') return { kind: 'server-all', server };
   if (tool.includes('*')) {
     return { error: `"${entry}": wildcards are only valid as the whole tool part ("${server}.*")` };

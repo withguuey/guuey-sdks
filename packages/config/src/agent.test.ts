@@ -15,6 +15,7 @@ import {
   validateNoToolsEntry,
   declaresNoTools,
   NO_TOOLS_ENTRY,
+  EVERY_TOOL_ENTRY,
   parseToolGateEntry,
   agentDeclaresVfs,
   RESERVED_MEMORY_SERVER_NAME,
@@ -351,6 +352,22 @@ describe('parseToolGateEntry — the ONE tool-gate grammar (guuey#234)', () => {
     expect('error' in parseToolGateEntry('server.')).toBe(true);
     expect('error' in parseToolGateEntry('server.cre*')).toBe(true);
     expect('error' in parseToolGateEntry('   ')).toBe(true);
+  });
+
+  it('"*" is valid only as the whole tool part and as the whole entry; anywhere else it is refused (guuey#2585)', () => {
+    expect(parseToolGateEntry(' * ')).toEqual({ kind: 'bare', tool: EVERY_TOOL_ENTRY });
+    expect(parseToolGateEntry('svc.*')).toEqual({ kind: 'server-all', server: 'svc' });
+    for (const entry of ['*.*', '*.tool', 'sv*.tool', 's*.*', 'delete_*', '*search', 'a*b', '**']) {
+      const r = parseToolGateEntry(entry);
+      expect('error' in r && r.error, entry).toContain('"*" is only valid as the whole tool part');
+    }
+  });
+
+  it('the deploy gate follows the parser: "*" and "<server>.*" pass, every other "*" is refused (guuey#2585)', () => {
+    expect(validateToolGates({ tools: { allowlist: ['*', 'ggui.*'], denylist: ['*'] } })).toEqual([]);
+    const v = validateToolGates({ tools: { allowlist: ['*.*', 'delete_*'], denylist: ['*.*', 'gg*.render'] } });
+    expect(v).toHaveLength(4);
+    expect(v.every((m) => m.includes('"*" is only valid as the whole tool part'))).toBe(true);
   });
 });
 

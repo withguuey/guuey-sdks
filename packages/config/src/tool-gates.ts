@@ -24,8 +24,12 @@
  *      says nothing about S, so under an allowlist that never names S (and has
  *      no bare entry), S keeps nothing.
  *   5. A malformed entry (the deploy gate rejects them; a stale snapshot could
- *      still carry one) is never matched verbatim. Its effect depends on the
- *      list, so that it always fails closed:
+ *      still carry one) is never matched verbatim. A `*` anywhere but the
+ *      whole tool part (`S.*`) or the whole entry (`"*"`, rule 7) makes the
+ *      entry malformed: `"*.*"`, `"S*.a"`, a bare `"delete_*"`. A framework
+ *      could read such a `*` as a glob (the Claude Agent SDK reads `mcp__*`
+ *      and `mcp__S__*` as wildcards), so no rule is ever built from one. Its
+ *      effect depends on the list, so that it always fails closed:
  *        - in an allowlist it is dropped (an allowlist only grants, so a
  *          dropped entry grants less);
  *        - in a denylist it makes the gate keep NO MCP tool for that
@@ -34,24 +38,15 @@
  *          can report it.
  *   6. `"@none"` mixed with real entries counts for nothing; only the real
  *      entries count. In a denylist it subtracts nothing.
- *   7. A `"*"` entry is not grammar (the parser would read a tool named
- *      `*`). The deploy gate accepted it as a bare entry before the write
- *      gate's `"*"` refusal; new `"*"` writes are refused after it, while
- *      stored values keep loading. A stored `"*"` is read by this rule, never
- *      as a tool name: in
- *      an allowlist it means every tool, the same as an absent list; in a
- *      denylist it denies everything, the same as `["@none"]`.
- *   8. A stored denylist `"*.*"` is read like a denylist `"*"`: it keeps no
- *      MCP tool. The deploy gate refuses it as an unknown server unless the
- *      agent declares a server literally named `*`; even then this rule
- *      reads it as deny-everything (deny wins), never as that one server. An
- *      allowlist `"*.*"` is read by the grammar (every tool on a server
- *      named `*`), so it grants nothing.
+ *   7. The whole entry `"*"` ({@link EVERY_TOOL_ENTRY}): the deploy gate
+ *      accepts it today, and the parser returns it as a bare entry named
+ *      `*`. This module reads it by this rule, never as a tool name: in an
+ *      allowlist it means every tool, the same as an absent list; in a
+ *      denylist it denies every MCP tool, the same as `["@none"]`.
  *
  * When the gates keep no MCP tool, the Claude permission check's denial
  * names the actual cause: the allowlist (`["@none"]`, or a pick outside an
- * explicit allowlist), a denylist `"*"` / `"*.*"`, or an unreadable denylist
- * entry.
+ * explicit allowlist), a denylist `"*"`, or an unreadable denylist entry.
  *
  * The same rules as a table (the contract suite in `tool-gates.test.ts` runs
  * every row against both shapes):
@@ -70,9 +65,11 @@
  * | `["@none"]`      | any              | nothing                                    |
  * | `["*"]`          |                  | every tool                                 |
  * | any              | `["*"]`          | nothing                                    |
- * | any              | `["*.*"]`        | nothing (read like `"*"`)                  |
  * | `["mcp__S__a"]`  |                  | nothing (malformed entry dropped)          |
+ * | `["*.*"]`        |                  | nothing (malformed entry dropped)          |
  * | any              | `["mcp__S__a"]`  | nothing, plus an error naming the entry    |
+ * | any              | `["*.*"]`        | nothing, plus an error naming the entry    |
+ * | any              | `["a*"]`         | nothing, plus an error naming the entry    |
  *
  * This turn's withholds then subtract from whatever the table keeps.
  *
@@ -81,6 +78,7 @@
  * built-in name there gates only an MCP tool of that name.
  */
 import {
+  EVERY_TOOL_ENTRY,
   NO_TOOLS_ENTRY,
   declaresNoTools,
   parseToolGateEntry,
@@ -101,7 +99,12 @@ export interface ToolGateWithhold {
   readonly tool: string;
 }
 
-/** The tool names withheld on `server` this turn. */
+/**
+ * The tool names withheld on `server` this turn. The twin of `@guuey/worker`'s
+ * `withheldToolNamesFor` (`withheld-tools.ts`), restated so this package
+ * stays free of that dependency; `@guuey/host`'s `mcp-tool-gates.test.ts`
+ * holds the two to the same answers.
+ */
 function withheldOn(server: string, withheld: readonly ToolGateWithhold[] | undefined): string[] {
   if (withheld === undefined) return [];
   return [...new Set(withheld.filter((w) => w.server === server).map((w) => w.tool))];
@@ -112,33 +115,20 @@ function isRealEntry(entry: string): boolean {
   return entry.trim() !== NO_TOOLS_ENTRY;
 }
 
-/** A stored `"*"` entry: not grammar (the parser would read a tool named `*`), read by rule 7. */
-const EVERYTHING_ENTRY = '*';
-
-/** A stored denylist `"*.*"`: read like a denylist `"*"` (rule 8). */
-const EVERY_SERVER_ENTRY = '*.*';
-
-/** An allowlist entry that allows every tool (rule 7). */
+/** A `"*"` entry (rule 7): in an allowlist every tool, in a denylist no MCP tool. */
 function isEverything(entry: string): boolean {
-  return entry.trim() === EVERYTHING_ENTRY;
+  return entry.trim() === EVERY_TOOL_ENTRY;
 }
 
-/** A denylist entry that denies every MCP tool (rules 7 and 8). */
-function deniesEverything(entry: string): boolean {
-  const trimmed = entry.trim();
-  return trimmed === EVERYTHING_ENTRY || trimmed === EVERY_SERVER_ENTRY;
-}
-
-/** The denylist entries that deny every MCP tool (rules 7 and 8), as written. */
+/** The denylist entries that deny every MCP tool (rule 7), as written. */
 function denyEverythingEntries(gates: ToolGates): string[] {
-  return (gates?.denylist ?? []).filter(deniesEverything);
+  return (gates?.denylist ?? []).filter(isEverything);
 }
 
 /** The denylist entries that cannot be read (rule 5), with the parser's reason. */
 function unreadableDenyEntries(gates: ToolGates): { entry: string; reason: string }[] {
   const out: { entry: string; reason: string }[] = [];
   for (const raw of gates?.denylist ?? []) {
-    if (!isRealEntry(raw) || deniesEverything(raw)) continue;
     const parsed = parseToolGateEntry(raw);
     if ('error' in parsed) out.push({ entry: raw, reason: parsed.error });
   }
@@ -160,8 +150,7 @@ export function toolGateErrors(gates: ToolGates): string[] {
 
 /**
  * Does this gate block keep no MCP tool at all? `["@none"]`, a denylist
- * carrying a stored `"*"` or `"*.*"` (rules 7 and 8), or a denylist entry
- * that cannot be read (rule 5).
+ * carrying a `"*"` (rule 7), or a denylist entry that cannot be read (rule 5).
  */
 function keepsNoTools(gates: ToolGates): boolean {
   return (
@@ -173,7 +162,7 @@ function keepsNoTools(gates: ToolGates): boolean {
 
 /**
  * Why the denylist keeps no MCP tool, one message per cause: each
- * deny-everything entry (rules 7 and 8), then each unreadable entry
+ * deny-everything entry (rule 7), then each unreadable entry
  * ({@link toolGateErrors}). Empty when the denylist keeps something.
  */
 function denylistNoToolReasons(gates: ToolGates): string[] {
@@ -185,7 +174,7 @@ function denylistNoToolReasons(gates: ToolGates): string[] {
 
 /**
  * The allowlist's real entries, or `[]` when it allows every tool: absent,
- * empty, or carrying a stored `"*"` (rule 7).
+ * empty, or carrying a `"*"` (rule 7).
  */
 function narrowingAllowEntries(gates: ToolGates): string[] {
   const entries = (gates?.allowlist ?? []).filter(isRealEntry);
@@ -351,8 +340,8 @@ function dedupe(names: string[]): string[] {
  *   denylist removes them.
  * - `disallowedTools`: the translated denylist, plus this turn's withholds.
  *   An allow rule only pre-approves, so subtraction rides here.
- * - `["@none"]` (and a stored denylist `"*"` or `"*.*"`, or a denylist entry
- *   that cannot be read, rule 5): no MCP allow rule, the
+ * - `["@none"]` (and a denylist `"*"`, rule 7, or a denylist entry that
+ *   cannot be read, rule 5): no MCP allow rule, the
  *   deny-unlisted posture, and `mcp__<server>` disallowed for every server,
  *   so it holds even where no `canUseTool` is installed. The built-ins stay;
  *   only a denylist entry naming one removes it.
@@ -375,7 +364,7 @@ export function claudeToolRules(
   const disallowedTools = dedupe([
     ...(noTools ? servers.map((s) => `mcp__${s}`) : []),
     ...(gates?.denylist ?? [])
-      .filter((e) => isRealEntry(e) && !deniesEverything(e))
+      .filter((e) => isRealEntry(e) && !isEverything(e))
       .flatMap((e) => toSdkToolNames(e, servers, builtins)),
     ...servers.flatMap((server) => withheldOn(server, withheld).map((tool) => `mcp__${server}__${tool}`)),
   ]);
