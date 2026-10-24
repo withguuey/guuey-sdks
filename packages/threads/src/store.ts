@@ -13,6 +13,7 @@ import {
   agMessageToBoundedRow,
   agArtifactToCardRow,
   assertRowFits,
+  cardUiDataByCallId,
   isStoredRowRefusal,
   StoredRowTooLargeError,
   type ElidedField,
@@ -161,12 +162,12 @@ export interface AppendFoldInput {
   unstorableNotice?: { text: string };
 }
 
-/** One tool-call value stored as the elided marker (guuey#1794). */
+/** One value stored as the elided marker (guuey#1794); see {@link ElidedField}. */
 export interface ElidedToolInput {
   /** The seq of the message row that carries the marker. */
   seq: number;
   toolCallId: string;
-  /** The tool's name. */
+  /** The tool's name (for a `uiData` elision, the name its card row stores). */
   name: string;
   field: ElidedField;
   reason: ElisionReason;
@@ -201,7 +202,10 @@ export interface AppendFoldResult {
    * WHOLE fold-persist was short-circuited (no rows written this call).
    */
   deduped: boolean;
-  /** Tool-call values stored as the elided marker so their rows fit; `[]` when none. */
+  /**
+   * Values stored as the elided marker so their rows fit (tool-call inputs, and
+   * tool-result UI resources a card row of the turn carries); `[]` when none.
+   */
   elidedToolInputs: ElidedToolInput[];
   /** Set when the turn was stored as its one failure row instead of its rows. */
   unstorable?: AppendFoldUnstorable;
@@ -615,20 +619,54 @@ export class ThreadStore {
     const { threadId, userId, fold, clientMessageIdBase } = input;
     const budget = this.db.rowBudget;
     const seq = PROVISIONAL_SEQ;
-    // Whichever row is written first claims the sentinel key. Keys are minted
-    // in planning order (messages, then cards); the WRITE order below
-    // interleaves the cards, and a card only ever follows a message, so the
-    // first row written is still the first row keyed.
-    let sentinelClaimed = false;
+    // Whichever row is written first claims the sentinel key: the first
+    // message, or the first card when the fold has no message. The WRITE
+    // order below interleaves the cards, and a card only ever follows a
+    // message, so the first row written is still the first row keyed.
     const messageRows: PlannedRow[] = [];
     /** Per message index, the card rows drawn with it (guuey#2396). */
     const cardsAfterMessage = new Map<number, PlannedRow[]>();
     const tailCards: PlannedRow[] = [];
 
+    // Cards can arrive two ways: first-class artifact events (fold.artifacts)
+    // or UI-carrying tool-result blocks inside messages (the Claude facet's
+    // only channel — see uiCardArtifactsFromMessages). Persist both through
+    // the same card-row lane so history rehydrates them (guuey#86). The
+    // artifactId dedupe makes re-persisting a reassembled fold (whose
+    // artifacts already CONTAIN prior projections, deterministic
+    // `<msgId>#ui#<idx>` ids) a no-op instead of a double-write.
+    const knownArtifactIds = new Set(fold.artifacts.map((a) => a.artifactId));
+    const projected = uiCardArtifactsFromMessages(fold.messages).filter(
+      (a) => !knownArtifactIds.has(a.artifactId),
+    );
+    const cardArtifacts = [...fold.artifacts, ...projected];
+    // guuey#402: the fold has the tool-CALL blocks in hand — the only place
+    // the producing tool's name rides — so resolve it here and persist it
+    // beside the snapshot. Unresolvable (a first-class artifact event with
+    // no tool-result part) persists no name; readers fall back.
+    const toolNames = toolNamesByCallId(fold.messages);
+    const cardRows = cardArtifacts.map((art, i) =>
+      agArtifactToCardRow(
+        art,
+        {
+          threadId,
+          userId,
+          seq,
+          at: provisionalAt,
+          clientMessageId: fold.messages.length > 0 || i > 0 ? `${clientMessageIdBase}#card#${i}` : sentinelKey,
+          ...(input.untrustedOrigin === true ? { untrustedOrigin: true } : {}),
+        },
+        producingToolName(art, toolNames),
+      ),
+    );
+    // The card rows are built before the message rows, so a message row over
+    // its budget can leave out a UI resource a card row of this turn carries
+    // whole (agMessageToBoundedRow).
+    const cards = cardUiDataByCallId(cardRows);
+
     for (let i = 0; i < fold.messages.length; i++) {
       const msg = fold.messages[i]!;
-      const clientMessageId = sentinelClaimed ? `${clientMessageIdBase}#agent#${i}` : sentinelKey;
-      sentinelClaimed = true;
+      const clientMessageId = i > 0 ? `${clientMessageIdBase}#agent#${i}` : sentinelKey;
       // The preview is the ANSWER: interim narration (`phase: "interim"`) never becomes a thread's preview,
       // and neither does a framework notice (a non-conversational row).
       const text =
@@ -649,6 +687,7 @@ export class ThreadStore {
         },
         budget,
         i,
+        cards,
       );
       // Text-less agent messages (tool-call + tool-result only — the canonical
       // card-producing turn) must not blank the preview: '' takes the SET
@@ -656,40 +695,10 @@ export class ThreadStore {
       messageRows.push({ kind: 'message', row, preview: text ? text.slice(0, PREVIEW_MAX_LEN) : null, elided });
     }
 
-    // Cards can arrive two ways: first-class artifact events (fold.artifacts)
-    // or UI-carrying tool-result blocks inside messages (the Claude facet's
-    // only channel — see uiCardArtifactsFromMessages). Persist both through
-    // the same card-row lane so history rehydrates them (guuey#86). The
-    // artifactId dedupe makes re-persisting a reassembled fold (whose
-    // artifacts already CONTAIN prior projections, deterministic
-    // `<msgId>#ui#<idx>` ids) a no-op instead of a double-write.
-    const knownArtifactIds = new Set(fold.artifacts.map((a) => a.artifactId));
-    const projected = uiCardArtifactsFromMessages(fold.messages).filter(
-      (a) => !knownArtifactIds.has(a.artifactId),
-    );
-    const cardArtifacts = [...fold.artifacts, ...projected];
-    // guuey#402: the fold has the tool-CALL blocks in hand — the only place
-    // the producing tool's name rides — so resolve it here and persist it
-    // beside the snapshot. Unresolvable (a first-class artifact event with
-    // no tool-result part) persists no name; readers fall back.
-    const toolNames = toolNamesByCallId(fold.messages);
     const resultIndices = toolResultMessageIndexByCallId(fold.messages);
     for (let i = 0; i < cardArtifacts.length; i++) {
       const art = cardArtifacts[i]!;
-      const clientMessageId = sentinelClaimed ? `${clientMessageIdBase}#card#${i}` : sentinelKey;
-      sentinelClaimed = true;
-      const row = agArtifactToCardRow(
-        art,
-        {
-          threadId,
-          userId,
-          seq,
-          at: provisionalAt,
-          clientMessageId,
-          ...(input.untrustedOrigin === true ? { untrustedOrigin: true } : {}),
-        },
-        producingToolName(art, toolNames),
-      );
+      const row = cardRows[i]!;
       assertRowFits(row, budget, 'card', i);
       const card: PlannedRow = { kind: 'card', row, preview: art.name ?? null, elided: [] };
       const anchor = producingMessageIndex(art, resultIndices);

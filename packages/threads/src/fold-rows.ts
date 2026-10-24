@@ -152,16 +152,21 @@ export function agMessageToRow(
 }
 
 /**
- * The key of the marker a stored tool-call value is replaced by when the row
- * would not fit its store's {@link RowBudget}: `{ "com.guuey/elided": { bytes } }`,
- * where `bytes` is the UTF-8 length of the elided value's JSON. It stands in
- * for the value whole (a tool-call `input`, or its `providerMetadata.wireInput`),
- * so the block keeps an object where an object was.
+ * The key of the marker a stored value is replaced by when the row would not
+ * fit its store's {@link RowBudget}: `{ "com.guuey/elided": { bytes } }`, where
+ * `bytes` is the UTF-8 length of the elided value's JSON. It stands in for the
+ * value whole (a tool-call `input`, its `providerMetadata.wireInput`, or a
+ * tool-result `uiData` the turn's card row also carries), so the block keeps
+ * an object where an object was.
  */
 export const ELIDED_VALUE_KEY = "com.guuey/elided";
 
-/** Which value of a tool-call block was elided. */
-export type ElidedField = "input" | "wireInput";
+/**
+ * Which value of a block was elided: a tool-call's `input` or
+ * `providerMetadata.wireInput`, or a tool-result's `uiData` (an inline UI
+ * resource the turn's card row carries whole).
+ */
+export type ElidedField = "input" | "wireInput" | "uiData";
 
 /**
  * Why a tool-call value was elided: the row did not fit the store's row
@@ -170,9 +175,10 @@ export type ElidedField = "input" | "wireInput";
  */
 export type ElisionReason = "size" | "number";
 
-/** One tool-call value replaced by the elided marker. */
+/** One stored value replaced by the elided marker. */
 export interface StoredElision {
   toolCallId: string;
+  /** The tool's name (for a `uiData` elision, the name its card row stores). */
   name: string;
   field: ElidedField;
   reason: ElisionReason;
@@ -184,8 +190,8 @@ export interface StoredElision {
 export type RefusedRowKind = "message" | "card" | "append";
 
 /**
- * A row cannot fit its store's {@link RowBudget}, even with every tool-call
- * value it carries elided. Counts only, never row content.
+ * A row cannot fit its store's {@link RowBudget}, even with every value it
+ * carries that may be elided elided. Counts only, never row content.
  */
 export class StoredRowTooLargeError extends Error {
   override readonly name = "StoredRowTooLargeError";
@@ -279,6 +285,52 @@ function isElidedMarker(value: JsonValue | undefined): boolean {
   return value !== null && typeof value === "object" && !Array.isArray(value) && ELIDED_VALUE_KEY in value;
 }
 
+/** One tool-result `uiData` a card row of the turn carries, with the tool name that row stores. */
+export interface CardUiData {
+  name: string;
+  uiData: JsonValue;
+}
+
+/**
+ * What a turn's card rows carry, by tool call: for each `toolCallId`, the
+ * `uiData` of every tool-result part of a card row that names its producing
+ * tool. A message row's tool-result `uiData` equal to one of these is a second
+ * copy of what that card row stores.
+ */
+export type CardUiDataByCallId = ReadonlyMap<string, readonly CardUiData[]>;
+
+/** {@link CardUiDataByCallId} over a turn's card rows (rows of another kind are skipped). */
+export function cardUiDataByCallId(cardRows: readonly ThreadMessageRow[]): CardUiDataByCallId {
+  const byCallId = new Map<string, CardUiData[]>();
+  for (const row of cardRows) {
+    if (row.kind !== "card" || row.toolName === undefined) continue;
+    const art = cardRowToAgArtifact(row);
+    if (art === undefined) continue;
+    for (const part of art.parts) {
+      if (part.type !== "tool-result" || part.uiData === undefined) continue;
+      const entry: CardUiData = { name: row.toolName, uiData: part.uiData };
+      const known = byCallId.get(part.toolCallId);
+      if (known === undefined) byCallId.set(part.toolCallId, [entry]);
+      else known.push(entry);
+    }
+  }
+  return byCallId;
+}
+
+type ToolResultBlock = Extract<AgMessage["content"][number], { type: "tool-result" }>;
+
+/**
+ * The card row's copy of a tool-result block's `uiData`, when the block's
+ * `uiData` is an inline UI resource with text (`{ uri, text }`, bare or as
+ * `{ resource: {...} }`) and a card row of the turn carries the same value for
+ * the same call. Only then is the message row's copy a pure duplicate.
+ */
+function cardCopyOf(block: ToolResultBlock, cards: CardUiDataByCallId): CardUiData | undefined {
+  const uiData = block.uiData;
+  if (uiData === undefined || isElidedMarker(uiData) || asUiResource(uiData)?.text === undefined) return undefined;
+  return cards.get(block.toolCallId)?.find((card) => jsonEqual(card.uiData, uiData));
+}
+
 /**
  * {@link agMessageToRow}, bounded by the store's {@link RowBudget}. Under the
  * budget (or with none) the row is exactly `agMessageToRow(msg, ctx)`.
@@ -290,17 +342,21 @@ function isElidedMarker(value: JsonValue | undefined): boolean {
  * one). A row that still carries one elsewhere throws
  * {@link StoredRowUnstorableNumberError}.
  *
- * Then, over the size budget, tool-call values are replaced one at a time
- * (`reason: "size"`) until the row fits: every `providerMetadata.wireInput`
- * first (a second copy of the input, carried only when it differs), then
- * every `input`; within each, the largest first, ties in block order. A row
- * that still does not fit throws {@link StoredRowTooLargeError}.
+ * Then, over the size budget, values are replaced one at a time
+ * (`reason: "size"`) until the row fits. Pure duplicates go first: a
+ * tool-result's `uiData` that is an inline UI resource with text, when a card
+ * row of the turn (`cards`, see {@link cardUiDataByCallId}) carries the same
+ * value for the same call. Then every `providerMetadata.wireInput` (a second
+ * copy of the input, carried only when it differs), then every `input`.
+ * Within each tier the largest goes first, ties in block order. A row that
+ * still does not fit throws {@link StoredRowTooLargeError}.
  */
 export function agMessageToBoundedRow(
   msg: AgMessage,
   ctx: RowCtx & { turnRecord?: AgTurnRecord },
   budget: RowBudget | undefined,
   index: number,
+  cards: CardUiDataByCallId = new Map(),
 ): { row: ThreadMessageRow; elided: StoredElision[] } {
   let row = agMessageToRow(msg, ctx);
   if (budget === undefined) return { row, elided: [] };
@@ -309,7 +365,16 @@ export function agMessageToBoundedRow(
   const elided: StoredElision[] = [];
   const elide = (at: number, field: ElidedField, reason: ElisionReason): void => {
     const block = content[at];
-    if (block === undefined || block.type !== "tool-call") return;
+    if (block === undefined) return;
+    if (block.type === "tool-result") {
+      const card = field === "uiData" ? cardCopyOf(block, cards) : undefined;
+      if (card === undefined) return;
+      const bytes = jsonBytes(card.uiData);
+      content[at] = { ...block, uiData: elidedMarker(bytes) };
+      elided.push({ toolCallId: block.toolCallId, name: card.name, field, reason, bytes });
+      return;
+    }
+    if (block.type !== "tool-call" || field === "uiData") return;
     const value = toolCallValue(block, field);
     if (value === undefined) return;
     const bytes = jsonBytes(value);
@@ -336,12 +401,17 @@ export function agMessageToBoundedRow(
 
   const candidates: Array<{ at: number; field: ElidedField; bytes: number; tier: number }> = [];
   content.forEach((block, at) => {
+    if (block.type === "tool-result") {
+      const card = cardCopyOf(block, cards);
+      if (card !== undefined) candidates.push({ at, field: "uiData", bytes: jsonBytes(card.uiData), tier: 0 });
+      return;
+    }
     if (block.type !== "tool-call") return;
     const wire = toolCallValue(block, "wireInput");
     if (wire !== undefined && !isElidedMarker(wire)) {
-      candidates.push({ at, field: "wireInput", bytes: jsonBytes(wire), tier: 0 });
+      candidates.push({ at, field: "wireInput", bytes: jsonBytes(wire), tier: 1 });
     }
-    if (!isElidedMarker(block.input)) candidates.push({ at, field: "input", bytes: jsonBytes(block.input), tier: 1 });
+    if (!isElidedMarker(block.input)) candidates.push({ at, field: "input", bytes: jsonBytes(block.input), tier: 2 });
   });
   candidates.sort((a, b) => a.tier - b.tier || b.bytes - a.bytes || a.at - b.at);
 

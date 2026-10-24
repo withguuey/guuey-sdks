@@ -92,12 +92,17 @@ as mapped.
 
 `appendFold` checks every row of a turn against the budget before it writes any:
 
-- A tool-call value is stored as a marker in its place,
-  `{ "com.guuey/elided": { "bytes": <UTF-8 length of its JSON> } }`, when it
-  carries a number the store cannot hold (`reason: "number"`), and, for an
-  oversized row, a `providerMetadata.wireInput` copy first, then `input`, the
-  largest first, until the row fits (`reason: "size"`). The result lists each
-  one in `elidedToolInputs`.
+- A value is stored as a marker in its place,
+  `{ "com.guuey/elided": { "bytes": <UTF-8 length of its JSON> } }`. A
+  tool-call value is, when it carries a number the store cannot hold
+  (`reason: "number"`). An oversized row leaves values out until it fits
+  (`reason: "size"`), the largest first within each step: first a
+  tool-result's `uiData` that is an inline UI resource with text
+  (`{ uri, text }`) when a card row of the same turn carries the same value
+  for the same call (`field: "uiData"`; the card row holds the resource, and
+  the thread's readers draw the card from it), then each
+  `providerMetadata.wireInput` copy, then each `input`. Text blocks are never
+  elided. The result lists each one in `elidedToolInputs`.
 - A turn that still cannot be stored is never written in part. With
   `unstorableNotice: { text }` the turn is stored as ONE agent row carrying that
   text and `content.error.code` `"stored_turn_too_large"` or
