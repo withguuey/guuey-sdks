@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { withheldToolNamesFor, type WithheldTool } from "@guuey/worker";
 import { mcpToolPredicateFor, reportToolGateErrors } from "./mcp-tool-gates.js";
 
 /** The kept tools of `candidates` on `server`, or "open" when the gate filters nothing. */
@@ -82,4 +83,33 @@ describe("reportToolGateErrors — an unreadable denylist entry is named on stde
     reportToolGateErrors({ allowlist: ["mcp__ggui__consume"], denylist: ["ggui.render"] }, (line) => lines.push(line));
     expect(lines).toHaveLength(1);
   });
+});
+
+/**
+ * guuey#2585: `@guuey/config`'s tool gate restates `@guuey/worker`'s
+ * `withheldToolNamesFor` (its private `withheldOn`, so config takes no
+ * dependency on worker). This package depends on both, so it holds the twins
+ * to the same answers: under no gates, the gate removes exactly the tools
+ * `withheldToolNamesFor` names on that server.
+ */
+describe("the withhold twins agree: @guuey/config's gate and @guuey/worker's withheldToolNamesFor", () => {
+  const TOOLS = ["render", "consume", "search", "export"];
+  const CASES: Array<WithheldTool[] | undefined> = [
+    undefined,
+    [],
+    [{ server: "ggui", tool: "consume" }],
+    [{ server: "ggui", tool: "consume" }, { server: "ggui", tool: "consume" }, { server: "ggui", tool: "search" }],
+    [{ server: "other", tool: "render" }, { server: "ggui", tool: "export" }],
+    [{ server: "other", tool: "render" }],
+  ];
+
+  for (const [i, withheld] of CASES.entries()) {
+    it(`case ${String(i)}: the same tools are withheld on every server`, () => {
+      for (const server of ["ggui", "other", "absent"]) {
+        const keep = mcpToolPredicateFor(server, undefined, withheld);
+        const removed = keep === undefined ? [] : TOOLS.filter((t) => !keep(t));
+        expect(removed, server).toEqual(TOOLS.filter((t) => withheldToolNamesFor(server, withheld).includes(t)));
+      }
+    });
+  }
 });

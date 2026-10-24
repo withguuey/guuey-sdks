@@ -10,7 +10,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { GUUEY_DEFAULT_SYSTEM_PROMPT } from "@guuey/config";
 import type { Emitter, JsonValue, StopReason } from "@guuey/worker";
 import { assertGracefulSupport, loadRunner, type HostSnapshot, type HostTurn } from "../index.js";
@@ -980,5 +980,62 @@ describe("withheldTools — the Router's per-turn withholds reach the ADK toolse
   it("a withhold naming another server removes nothing from this toolset", async () => {
     const built = await toolsetsFor({ withheldTools: [{ server: "elsewhere", tool: "ggui_consume" }] });
     expect(keptBy(built[0]!.toolFilter)).toEqual(["ggui_render", "ggui_consume", "ggui_handshake"]);
+  });
+});
+
+describe("an unreadable denylist entry is named on stderr (guuey#2585)", () => {
+  const base = mkdtempSync(join(tmpdir(), "adk-gate-errors-"));
+  afterAll(() => rmSync(base, { recursive: true, force: true }));
+  isolateAdkKeys();
+
+  it('{denylist:["mcp__x__y"]} writes one [guuey] line naming the entry', async () => {
+    const session = join(base, "session");
+    mkdirSync(join(session, ".guuey", "credentials"), { recursive: true });
+    const fakeAdk = {
+      LlmAgent: class {
+        constructor(_: { name: string; model: string | object; instruction: string | (() => string); tools: unknown[] }) {}
+      },
+      Gemini: FakeGemini,
+      LLMRegistry: fakeRegistry,
+      BaseLlm: FakeBaseLlm,
+      MCPToolset: class {
+        constructor(_: unknown) {}
+      },
+      InMemoryRunner: class {
+        readonly appName = "fake";
+        readonly sessionService = {
+          createSession: ({ userId }: { appName: string; userId: string }) => Promise.resolve({ id: `s-${userId}` }),
+        };
+        constructor(_: { agent: object }) {}
+        async *runAsync(_: unknown): AsyncGenerator<JsonValue, void, undefined> {
+          yield { content: { parts: [{ text: "ok" }] } };
+        }
+      },
+    };
+    const turn: HostTurn = {
+      input: "hi",
+      identity: { userId: "u-1", authMode: "anonymous" },
+      fs: { app: base, home: base, session },
+      history: [],
+    };
+    const lines: string[] = [];
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+      lines.push(String(chunk));
+      return true;
+    });
+    const { emit, got } = fakeEmitter();
+    try {
+      await createRunner({}, { load: () => Promise.resolve(fakeAdk) }).runTurn(
+        { model: "gemini-3.5-pro", systemPrompt: "be terse", tools: { denylist: ["mcp__x__y"] } },
+        turn,
+        emit,
+      );
+    } finally {
+      spy.mockRestore();
+    }
+    expect(got.error).toEqual([]);
+    const gateLines = lines.filter((line) => line.startsWith("[guuey] tools."));
+    expect(gateLines).toHaveLength(1);
+    expect(gateLines[0]).toMatch(/^\[guuey\] tools\.denylist entry "mcp__x__y" cannot be read/);
   });
 });

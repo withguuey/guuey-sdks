@@ -11,7 +11,12 @@
  */
 import type { WithheldTool } from "./protocol.js";
 
-/** The tool names withheld on `server` this turn (empty when none). */
+/**
+ * The tool names withheld on `server` this turn (empty when none). Its twin is
+ * `@guuey/config`'s `withheldOn` (`tool-gates.ts`, the shared tool gate),
+ * restated there so config takes no dependency on this package;
+ * `@guuey/host`'s `mcp-tool-gates.test.ts` holds the two to the same answers.
+ */
 export function withheldToolNamesFor(
   server: string,
   withheld: readonly WithheldTool[] | undefined

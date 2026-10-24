@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createEmitter, type WorkerEvent } from "@guuey/worker";
 import {
   MaxTurnsExceededError,
@@ -580,5 +580,26 @@ describe("the welcome card the Router already drew reaches the OpenAI instructio
       expect(out).toContain('"options":["Find a book","Opening hours"]');
     }
     expect(await instructionsFor({ gguiAttached: true })).not.toContain(FIRST_IMPRESSION_SHOWN_HEADING);
+  });
+});
+
+describe("an unreadable denylist entry is named on stderr (guuey#2585)", () => {
+  it('{denylist:["mcp__x__y"]} writes one [guuey] line naming the entry', async () => {
+    const { sink } = collector();
+    const emit = createEmitter(sink);
+    const run: OpenaiRunFn = () => Promise.resolve(fakeResult({ events: [], finalOutput: "ok" }));
+    const lines: string[] = [];
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+      lines.push(String(chunk));
+      return true;
+    });
+    try {
+      await runInvokeOpenai({ ...snapshot, tools: { denylist: ["mcp__x__y"] } }, invoke(), runtime, emit, run);
+    } finally {
+      spy.mockRestore();
+    }
+    const gateLines = lines.filter((line) => line.startsWith("[guuey] tools."));
+    expect(gateLines).toHaveLength(1);
+    expect(gateLines[0]).toMatch(/^\[guuey\] tools\.denylist entry "mcp__x__y" cannot be read/);
   });
 });

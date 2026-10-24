@@ -571,3 +571,30 @@ describe("runInvoke — a runtime-owned name in agent.env is reported on stderr 
     expect(lines.filter((l) => l.includes("agent.env"))).toEqual([]);
   });
 });
+
+/** The `[guuey]` lines a run writes to stderr, captured without printing them. */
+async function stderrLinesOf(run: () => Promise<void>): Promise<string[]> {
+  const lines: string[] = [];
+  const spy = vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+    lines.push(String(chunk));
+    return true;
+  });
+  try {
+    await run();
+  } finally {
+    spy.mockRestore();
+  }
+  return lines.filter((line) => line.startsWith("[guuey] tools."));
+}
+
+describe("an unreadable denylist entry is named on stderr (guuey#2585)", () => {
+  it('{denylist:["mcp__x__y"]} writes one [guuey] line naming the entry', async () => {
+    const { sink } = collector();
+    const emit = createEmitter(sink);
+    const lines = await stderrLinesOf(() =>
+      runInvoke({ tools: { denylist: ["mcp__x__y"] } }, invoke(), { apiKey: "sk-test", listCredentials: () => [] }, emit, () => streamOf()),
+    );
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^\[guuey\] tools\.denylist entry "mcp__x__y" cannot be read/);
+  });
+});
