@@ -11,6 +11,7 @@ import {
   validateCallerCredentialHttps,
   validateFederateResourceUrl,
   validateToolGates,
+  validateSubmittedToolGates,
   validateToolAllowlistsNotEmpty,
   validateNoToolsEntry,
   declaresNoTools,
@@ -354,20 +355,102 @@ describe('parseToolGateEntry — the ONE tool-gate grammar (guuey#234)', () => {
     expect('error' in parseToolGateEntry('   ')).toBe(true);
   });
 
-  it('"*" is valid only as the whole tool part and as the whole entry; anywhere else it is refused (guuey#2585)', () => {
+  it('"*" is valid only as the whole tool part and as the whole entry; anywhere else the entry is malformed (guuey#2585)', () => {
     expect(parseToolGateEntry(' * ')).toEqual({ kind: 'bare', tool: EVERY_TOOL_ENTRY });
     expect(parseToolGateEntry('svc.*')).toEqual({ kind: 'server-all', server: 'svc' });
     for (const entry of ['*.*', '*.tool', 'sv*.tool', 's*.*', 'delete_*', '*search', 'a*b', '**']) {
       const r = parseToolGateEntry(entry);
-      expect('error' in r && r.error, entry).toContain('"*" is only valid as the whole tool part');
+      expect('error' in r && r.error, entry).toContain(
+        '"*" is only valid as the whole entry ("*") or as the whole tool part ("<server>.*")',
+      );
+    }
+    // A "*" inside a dotted entry's tool part keeps the refusal it always had.
+    for (const entry of ['svc.cre*', 'sv*.cre*']) {
+      const r = parseToolGateEntry(entry);
+      expect('error' in r && r.error, entry).toContain('wildcards are only valid as the whole tool part');
     }
   });
 
-  it('the deploy gate follows the parser: "*" and "<server>.*" pass, every other "*" is refused (guuey#2585)', () => {
+  it('validateToolGates (every snapshot, stored ones too) lets a misplaced "*" through, as it did before guuey#2585', () => {
     expect(validateToolGates({ tools: { allowlist: ['*', 'ggui.*'], denylist: ['*'] } })).toEqual([]);
-    const v = validateToolGates({ tools: { allowlist: ['*.*', 'delete_*'], denylist: ['*.*', 'gg*.render'] } });
-    expect(v).toHaveLength(4);
-    expect(v.every((m) => m.includes('"*" is only valid as the whole tool part'))).toBe(true);
+    expect(validateToolGates({ tools: { allowlist: ['delete_*', '**'], denylist: ['a*b'] } })).toEqual([]);
+    const declared: GuueyAgent = {
+      mcpServers: { 'S*': { kind: 'external', url: 'https://mcp.example.com' } },
+      tools: { allowlist: ['S*.a', 'S*.*'] },
+    };
+    expect(validateToolGates(declared)).toEqual([]);
+  });
+
+  it('validateToolGates still refuses a misplaced-"*" entry whose server is not connected, and a "*" inside the tool part', () => {
+    const v = validateToolGates({ tools: { allowlist: ['*.*', 'gg*.render'], denylist: ['ggui.ren*'] } });
+    expect(v).toEqual([
+      expect.stringMatching(/^tools\.allowlist: "\*\.\*" names MCP server "\*", which this agent does not connect/),
+      expect.stringMatching(/^tools\.allowlist: "gg\*\.render" names MCP server "gg\*"/),
+      expect.stringMatching(/^tools\.denylist: .*wildcards are only valid as the whole tool part/),
+    ]);
+  });
+});
+
+describe('validateSubmittedToolGates — the refusals for a document submitted now (guuey#2585)', () => {
+  const PLACES = '"*" is only valid as the whole entry ("*") or as the whole tool part ("<server>.*")';
+
+  it('a clean document, and the two valid "*" places, → clean', () => {
+    expect(validateSubmittedToolGates(undefined)).toEqual([]);
+    expect(validateSubmittedToolGates({})).toEqual([]);
+    expect(
+      validateSubmittedToolGates({
+        tools: { allowlist: ['*', 'ggui.*', 'search'], denylist: ['*'] },
+        modes: { guest: { tools: { allowlist: ['@none'], denylist: ['ggui.render', 'Bash', '*'] } } },
+      }),
+    ).toEqual([]);
+  });
+
+  it('refuses a misplaced "*" on the base, one message per entry, naming the path', () => {
+    expect(
+      validateSubmittedToolGates({ tools: { allowlist: ['delete_*', '*.*'], denylist: ['S*.a'] } }),
+    ).toEqual([
+      `agent.tools.allowlist: "delete_*": ${PLACES}, never inside a bare tool name`,
+      `agent.tools.allowlist: "*.*": ${PLACES}, never in the server name`,
+      `agent.tools.denylist: "S*.a": ${PLACES}, never in the server name`,
+    ]);
+  });
+
+  it('leaves the rest of the base grammar to validateToolGates (no double message)', () => {
+    expect(
+      validateSubmittedToolGates({ tools: { allowlist: ['mcp__ggui__render', 'linear.x', 'ggui.'] } }),
+    ).toEqual([]);
+  });
+
+  it("checks a mode's lists by the whole grammar: a misplaced \"*\", a malformed entry, an unconnected server", () => {
+    const agent: GuueyAgent = {
+      mcpServers: { todoist: { kind: 'external', url: 'https://mcp.example.com' } },
+      modes: {
+        guest: { tools: { allowlist: ['todoist.add', 'delete_*'], denylist: ['mcp__todoist__x'] } },
+        admin: { tools: { allowlist: ['linear.create_issue', `${RESERVED_MEMORY_SERVER_NAME}.save_memory`] } },
+      },
+    };
+    expect(validateSubmittedToolGates(agent)).toEqual([
+      `agent.modes.guest.tools.allowlist: "delete_*": ${PLACES}, never inside a bare tool name`,
+      expect.stringMatching(/^agent\.modes\.guest\.tools\.denylist: "mcp__todoist__x" uses the framework-internal spelling/),
+      'agent.modes.admin.tools.allowlist: "linear.create_issue" names MCP server "linear", which this agent does not connect — declare it under mcpServers',
+    ]);
+  });
+
+  it('each message depends only on its path and entry: the server list never appears in it', () => {
+    const one = validateSubmittedToolGates({ modes: { m: { tools: { allowlist: ['x.a'] } } } });
+    const two = validateSubmittedToolGates({
+      mcpServers: { todoist: { kind: 'external', url: 'https://mcp.example.com' } },
+      modes: { m: { tools: { allowlist: ['x.a'] } } },
+    });
+    expect(one).toEqual(two);
+    expect(one).toHaveLength(1);
+  });
+
+  it('a mode entry naming ggui (the platform default) is clean; ggui: false makes it unknown', () => {
+    expect(validateSubmittedToolGates({ modes: { m: { tools: { allowlist: ['ggui.render'] } } } })).toEqual([]);
+    expect(
+      validateSubmittedToolGates({ mcpServers: { ggui: false }, modes: { m: { tools: { allowlist: ['ggui.render'] } } } }),
+    ).toHaveLength(1);
   });
 });
 

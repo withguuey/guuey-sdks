@@ -23,8 +23,8 @@
  *      `tool` is that tool on EVERY server. An entry naming another server
  *      says nothing about S, so under an allowlist that never names S (and has
  *      no bare entry), S keeps nothing.
- *   5. A malformed entry (the deploy gate rejects them; a stale snapshot could
- *      still carry one) is never matched verbatim. A `*` anywhere but the
+ *   5. A malformed entry (the deploy gate refuses one a submitted document
+ *      adds; a stored snapshot can still carry one) is never matched verbatim. A `*` anywhere but the
  *      whole tool part (`S.*`) or the whole entry (`"*"`, rule 7) makes the
  *      entry malformed: `"*.*"`, `"S*.a"`, a bare `"delete_*"`. A framework
  *      could read such a `*` as a glob (the Claude Agent SDK reads `mcp__*`

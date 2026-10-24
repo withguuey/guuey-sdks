@@ -1248,18 +1248,49 @@ const SDK_INTERNAL_TOOL_PREFIX = /^mcp__/;
  */
 export const EVERY_TOOL_ENTRY = '*';
 
+/** The two places a `*` is valid, as every refusal of a misplaced one words them. */
+const WILDCARD_PLACES = `"*" is only valid as the whole entry ("${EVERY_TOOL_ENTRY}") or as the whole tool part ("<server>.*")`;
+
+/**
+ * A `*` outside its two valid places: the whole entry ({@link EVERY_TOOL_ENTRY})
+ * and the whole tool part (`"<server>.*"`). Covers a bare entry with a `*`
+ * (`"delete_*"`, `"**"`) and a dotted entry with a `*` in its server name and
+ * none inside its tool part (`"*.*"`, `"S*.a"`). Returns the reason, plus the
+ * server part of a dotted entry, or `undefined` for an entry with no such `*`.
+ *
+ * The deploy gate accepted these until guuey#2585, so a stored definition may
+ * carry one. {@link parseToolGateEntry} reads one as malformed, so the tool
+ * gate never matches it; {@link validateToolGates}, which also runs on stored
+ * snapshots, lets one through; {@link validateSubmittedToolGates} refuses one
+ * a submitted document adds. A `*` inside a dotted entry's tool part
+ * (`"S.cre*"`) is not one of these: the deploy gate has always refused it.
+ */
+function misplacedWildcard(entry: string): { reason: string; server: string | undefined } | undefined {
+  if (entry === EVERY_TOOL_ENTRY || !entry.includes('*')) return undefined;
+  const dot = entry.indexOf('.');
+  if (dot === -1) {
+    return { reason: `"${entry}": ${WILDCARD_PLACES}, never inside a bare tool name`, server: undefined };
+  }
+  const server = entry.slice(0, dot);
+  const tool = entry.slice(dot + 1);
+  if (server.length === 0 || tool.length === 0 || !server.includes('*')) return undefined;
+  if (tool !== '*' && tool.includes('*')) return undefined;
+  return { reason: `"${entry}": ${WILDCARD_PLACES}, never in the server name`, server };
+}
+
 /**
  * Parse one tool-gate entry per the {@link ToolGatesSchema} grammar. Returns
  * the parsed shape, or a human-readable reason string when the entry is
  * malformed (never throws — callers decide whether to reject or report).
  *
  * `*` is valid in exactly two places: as the whole tool part (`"<server>.*"`)
- * and as the whole entry ({@link EVERY_TOOL_ENTRY}). Anywhere else it is
- * refused. A framework can read `*` as a glob (the Claude Agent SDK reads
+ * and as the whole entry ({@link EVERY_TOOL_ENTRY}). Anywhere else the entry
+ * is malformed. A framework can read `*` as a glob (the Claude Agent SDK reads
  * `mcp__*` and `mcp__<server>__*` as wildcards), so `"*.*"` or `"delete_*"`
  * would mean "every tool" or "every tool starting with delete_" on one
- * framework and a literal name on another. The deploy gate refuses them, and
- * the tool gate reads a stored one as unreadable.
+ * framework and a literal name on another. The tool gate reads one as
+ * unreadable; the deploy gate refuses one a submitted document adds
+ * ({@link misplacedWildcard}).
  */
 export function parseToolGateEntry(raw: string): ToolGateEntry | { error: string } {
   const entry = raw.trim();
@@ -1270,20 +1301,14 @@ export function parseToolGateEntry(raw: string): ToolGateEntry | { error: string
     };
   }
   if (entry === EVERY_TOOL_ENTRY) return { kind: 'bare', tool: entry };
+  const misplaced = misplacedWildcard(entry);
+  if (misplaced !== undefined) return { error: misplaced.reason };
   const dot = entry.indexOf('.');
-  if (dot === -1) {
-    if (entry.includes('*')) {
-      return { error: `"${entry}": "*" is only valid as the whole tool part ("<server>.*"), never inside a bare tool name` };
-    }
-    return { kind: 'bare', tool: entry };
-  }
+  if (dot === -1) return { kind: 'bare', tool: entry };
   const server = entry.slice(0, dot);
   const tool = entry.slice(dot + 1);
   if (server.length === 0) return { error: `"${entry}" has an empty server name before the dot` };
   if (tool.length === 0) return { error: `"${entry}" has an empty tool name after the dot` };
-  if (server.includes('*')) {
-    return { error: `"${entry}": "*" is only valid as the whole tool part ("<server>.*"), never in the server name` };
-  }
   if (tool === '*') return { kind: 'server-all', server };
   if (tool.includes('*')) {
     return { error: `"${entry}": wildcards are only valid as the whole tool part ("${server}.*")` };
@@ -1298,7 +1323,7 @@ export function parseToolGateEntry(raw: string): ToolGateEntry | { error: string
  * ({@link RESERVED_MCP_SERVER_NAMES}: memory / profile, spliced at invoke time
  * for authenticated callers).
  */
-export function toolGateServerNames(agent: GuueyAgent | undefined): string[] {
+export function toolGateServerNames(agent: Pick<GuueyAgent, 'mcpServers'> | undefined): string[] {
   return [
     ...Object.keys(effectiveMcpServers(agent?.mcpServers)),
     ...RESERVED_MCP_SERVER_NAMES,
@@ -1314,6 +1339,12 @@ export function toolGateServerNames(agent: GuueyAgent | undefined): string[] {
  * manifest is NOT checked here (a hosted server's tool set is only known once
  * it is connected) — that is why the host DENIES an unlisted pick at turn time
  * instead of prompting.
+ *
+ * It runs on every snapshot, stored ones included (a redeploy or a rollback
+ * re-serves the stored definition), so it refuses only what the deploy gate
+ * has always refused. A misplaced `*` ({@link misplacedWildcard}) is let
+ * through here, its server still checked as before;
+ * {@link validateSubmittedToolGates} refuses one a submitted document adds.
  */
 export function validateToolGates(agent: GuueyAgent | undefined): string[] {
   const violations: string[] = [];
@@ -1322,17 +1353,79 @@ export function validateToolGates(agent: GuueyAgent | undefined): string[] {
   const known = new Set(toolGateServerNames(agent));
   for (const list of ['allowlist', 'denylist'] as const) {
     for (const raw of gates[list] ?? []) {
+      const misplaced = misplacedWildcard(raw.trim());
+      if (misplaced !== undefined) {
+        if (misplaced.server !== undefined && !known.has(misplaced.server)) {
+          violations.push(`tools.${list}: ${unknownServer(raw, misplaced.server)} or use one of: ${[...known].join(', ')}`);
+        }
+        continue;
+      }
       const parsed = parseToolGateEntry(raw);
       if ('error' in parsed) {
         violations.push(`tools.${list}: ${parsed.error}`);
         continue;
       }
       if (parsed.kind !== 'bare' && !known.has(parsed.server)) {
-        violations.push(
-          `tools.${list}: "${raw}" names MCP server "${parsed.server}", which this agent does not connect — declare it under mcpServers or use one of: ${[...known].join(', ')}`,
-        );
+        violations.push(`tools.${list}: ${unknownServer(raw, parsed.server)} or use one of: ${[...known].join(', ')}`);
       }
     }
+  }
+  return violations;
+}
+
+/** An entry naming a server the agent does not connect, worded the same everywhere. */
+function unknownServer(raw: string, server: string): string {
+  return `"${raw}" names MCP server "${server}", which this agent does not connect — declare it under mcpServers`;
+}
+
+/**
+ * The tool-gate entry refusals that apply only to a document submitted NOW
+ * (guuey#2585), on the base `agent.tools` and on every `agent.modes.<mode>.tools`:
+ *
+ * - a misplaced `*` ({@link misplacedWildcard}: `"delete_*"`, `"*.*"`,
+ *   `"S*.a"`) on the base or in a mode;
+ * - in a mode's lists, every entry {@link validateToolGates} would refuse on
+ *   the base: a malformed entry, or a server-qualified entry naming a server
+ *   this agent does not connect.
+ *
+ * Deliberately NOT part of {@link validateToolGates} and NOT a schema rule:
+ * the deploy gate accepted a misplaced `*` until guuey#2585 and never read a
+ * mode's lists at all, so a stored definition may carry either, and it still
+ * loads and redeploys. The tool gate reads such an entry as unreadable: in
+ * an allowlist it is dropped, and in a denylist the gate keeps no MCP tool
+ * (`tool-gates.ts`, rule 5). Each message depends only on its path and its
+ * entry (the unknown-server message names no list of servers), so a server
+ * gate can compare a submitted document's messages with a stored one's and
+ * let through what the stored one already carried. Returns human-readable
+ * violation messages (empty = clean).
+ */
+export function validateSubmittedToolGates(
+  agent: Pick<GuueyAgent, 'tools' | 'modes' | 'mcpServers'> | undefined,
+): string[] {
+  const violations: string[] = [];
+  const known = new Set(toolGateServerNames(agent));
+  const check = (gates: GuueyAgentToolGates | undefined, path: string, wholeGrammar: boolean): void => {
+    for (const list of ['allowlist', 'denylist'] as const) {
+      for (const raw of gates?.[list] ?? []) {
+        const misplaced = misplacedWildcard(raw.trim());
+        if (misplaced !== undefined) {
+          violations.push(`${path}.${list}: ${misplaced.reason}`);
+          continue;
+        }
+        if (!wholeGrammar) continue;
+        const parsed = parseToolGateEntry(raw);
+        if ('error' in parsed) {
+          violations.push(`${path}.${list}: ${parsed.error}`);
+        } else if (parsed.kind !== 'bare' && !known.has(parsed.server)) {
+          violations.push(`${path}.${list}: ${unknownServer(raw, parsed.server)}`);
+        }
+      }
+    }
+  };
+  // The base's grammar and servers are validateToolGates' (every snapshot).
+  check(agent?.tools, 'agent.tools', false);
+  for (const [mode, def] of Object.entries(agent?.modes ?? {})) {
+    check(def.tools, `agent.modes.${mode}.tools`, true);
   }
   return violations;
 }
