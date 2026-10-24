@@ -20,7 +20,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { GuueyAgent } from "@guuey/config";
+import { applyAgentMode, type GuueyAgent } from "@guuey/config";
 import type { Invoke, NativeEmit, NativeHandler, WithheldTool } from "@guuey/worker";
 
 /** A listed MCP tool, as the Agents SDK hands it to a `toolFilter`. */
@@ -252,6 +252,38 @@ describe("OpenAI template worker: the agent's tool gates (guuey#2585)", () => {
 
   it("MCP Apps visibility still applies under an allowlist that names the app-only tool", async () => {
     expect(await offeredWith({ allowlist: ["ggui.ggui_runtime_submit_action"] })).toEqual({ ggui: [], todo: [] });
+  });
+});
+
+describe("OpenAI template worker: a mode-narrowed GUUEY_AGENT_SNAPSHOT (guuey#2585)", () => {
+  it("applies the gates the platform's mode application wrote into the snapshot, not the base agent's", async () => {
+    const search: ListedTool = { name: "search", inputSchema: { type: "object" } };
+    // The base keeps both servers whole; the guest mode narrows to one tool
+    // and adds a denial. The platform writes applyAgentMode's agent into
+    // GUUEY_AGENT_SNAPSHOT, so this is the exact shape a guest turn sees.
+    const base: GuueyAgent = {
+      ...agent,
+      tools: { allowlist: ["ggui.*", "todo.*"], denylist: ["ggui.ggui_consume"] },
+      modes: { guest: { tools: { allowlist: ["ggui.ggui_render", "ggui.ggui_consume", "search"], denylist: ["todo.search"] } } },
+    };
+    const applied = applyAgentMode(base, undefined, "guest");
+    expect(applied.applied).toBe("guest");
+    vi.stubEnv("GUUEY_AGENT_SNAPSHOT", JSON.stringify(applied.agent));
+    try {
+      const filters = await builtFilters(invokeWith(undefined));
+      const offered: Record<string, string[]> = {};
+      for (const [server, filter] of filters) {
+        offered[server] = [];
+        for (const tool of [consume, render, appOnly, search]) {
+          if (await filter({}, tool)) offered[server].push(tool.name);
+        }
+      }
+      // The mode's allowlist replaced the base's; the base's denial still
+      // applies (a mode never re-allows it), and so does the mode's.
+      expect(offered).toEqual({ ggui: ["ggui_render", "search"], todo: [] });
+    } finally {
+      vi.stubEnv("GUUEY_AGENT_SNAPSHOT", JSON.stringify(agent));
+    }
   });
 });
 

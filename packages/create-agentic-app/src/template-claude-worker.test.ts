@@ -14,7 +14,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import type { GuueyAgent } from "@guuey/config";
+import { applyAgentMode, type GuueyAgent } from "@guuey/config";
 import type { ClaudeSpawnRequest, ClaudeSpawnedProcess, Invoke, NativeEmit, NativeHandler, WithheldTool } from "@guuey/worker";
 
 /** The slice of the SDK's query options this test reads. */
@@ -244,5 +244,34 @@ describe("Claude template worker: the agent's tool gates reach query() (guuey#25
     expect(options.allowedTools).toEqual([]);
     expect(options.disallowedTools).toEqual(["mcp__ggui", "mcp__todo"]);
     expect(await verdict(options, "mcp__todo__add")).toBe("deny");
+  });
+});
+
+describe("Claude template worker: a mode-narrowed GUUEY_AGENT_SNAPSHOT (guuey#2585)", () => {
+  it("applies the gates the platform's mode application wrote into the snapshot, not the base agent's", async () => {
+    if (h.handler === undefined) throw new Error("the worker entry never called serveNative");
+    // The base keeps both servers whole; the guest mode narrows to one tool
+    // and adds a denial. The platform writes applyAgentMode's agent into
+    // GUUEY_AGENT_SNAPSHOT, so this is the exact shape a guest turn sees.
+    const base: GuueyAgent = {
+      ...agent,
+      tools: { allowlist: ["ggui.*", "todo.*"], denylist: ["todo.clear"] },
+      modes: { guest: { tools: { allowlist: ["todo.add", "todo.clear"], denylist: ["todo.export"] } } },
+    };
+    const applied = applyAgentMode(base, undefined, "guest");
+    expect(applied.applied).toBe("guest");
+    vi.stubEnv("GUUEY_AGENT_SNAPSHOT", JSON.stringify(applied.agent));
+    try {
+      expect(await h.handler(invokeWithServer(["ggui", "todo"]), emit)).toBe("ok");
+    } finally {
+      vi.stubEnv("GUUEY_AGENT_SNAPSHOT", JSON.stringify(agent));
+    }
+    const options = h.queries.at(-1)?.options;
+    if (options?.canUseTool === undefined) throw new Error("no query, or no canUseTool");
+    // The mode's allowlist replaced the base's; the base's denial still
+    // applies (a mode never re-allows it), and so does the mode's.
+    expect(options.allowedTools).toEqual(["mcp__todo__add", "mcp__todo__clear"]);
+    expect(options.disallowedTools).toEqual(["mcp__todo__clear", "mcp__todo__export"]);
+    expect((await options.canUseTool("mcp__ggui__ggui_render", { k: "v" })).behavior).toBe("deny");
   });
 });
