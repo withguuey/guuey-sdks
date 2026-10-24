@@ -12,6 +12,7 @@
  */
 export * from './schema.js';
 export * from './agent.js';
+export * from './tool-gates.js';
 export * from './app.js';
 export * from './ggui.js';
 export * from './hosting.js';
