@@ -53,6 +53,7 @@ import {
   validateFederateResourceUrl,
   validateAgentEnvNotReserved,
   validateToolGates,
+  validateSubmittedToolGates,
   validateToolAllowlistsNotEmpty,
   validateNoToolsEntry,
   writeGuueyJsonFile,
@@ -784,6 +785,12 @@ async function deployCode(opts: {
   const noToolsViolations = validateNoToolsEntry(doc.agent);
   if (noToolsViolations.length > 0) {
     out.error(noToolsViolations.map((v) => `  - ${v}`).join('\n'));
+    process.exit(1);
+  }
+  // guuey#2585: a "*" outside "*" and "<server>.*", and a mode's tool entries.
+  const submittedToolGateViolations = validateSubmittedToolGates(doc.agent);
+  if (submittedToolGateViolations.length > 0) {
+    out.error(submittedToolGateViolations.map((v) => `  - ${v}`).join('\n'));
     process.exit(1);
   }
 
@@ -1527,6 +1534,12 @@ async function deployDeclarative(opts: {
   const noToolsViolations = validateNoToolsEntry(agent);
   if (noToolsViolations.length > 0) {
     out.error(noToolsViolations.map((v) => `  - ${v}`).join('\n'));
+    process.exit(1);
+  }
+  // guuey#2585: a "*" outside "*" and "<server>.*", and a mode's tool entries.
+  const submittedToolGateViolations = validateSubmittedToolGates(agent);
+  if (submittedToolGateViolations.length > 0) {
+    out.error(submittedToolGateViolations.map((v) => `  - ${v}`).join('\n'));
     process.exit(1);
   }
 

@@ -1025,6 +1025,91 @@ describe('deploy() — the "@none" (no tools) entry gate, declarative and code p
   }
 });
 
+// guuey#2585: a "*" is valid only as the whole entry or as "<server>.*", and a
+// mode's tool lists follow the same grammar as the base. The builder's file is
+// a document submitted now, so both are refused before upload on BOTH paths.
+describe('deploy() — the misplaced "*" and mode tool-entry gate, declarative and code paths', () => {
+  let dir: string;
+  let originalCwd: string;
+  let errSpy: MockInstance<typeof console.error>;
+
+  function writeGuueyJson(agent: GuueyAgent, code: boolean): void {
+    writeFileSync(
+      join(dir, 'guuey.json'),
+      JSON.stringify({ schema: '1', ...(code ? { appId: 'app-1' } : {}), agent }),
+    );
+    if (code) writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    dir = mkdtempSync(join(tmpdir(), 'deploy-tool-wildcard-test-'));
+    process.chdir(dir);
+    vi.mocked(resolveConfig).mockReturnValue({
+      host: 'https://platform.guuey.test',
+      apiUrl: 'https://api.guuey.test',
+      appId: 'app-1',
+    });
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  for (const code of [false, true]) {
+    const path = code ? 'code' : 'declarative';
+    const run = (): Promise<void> => deploy(code ? { code: true, 'no-install': true } : {});
+
+    it(`${path}: refuses a bare "delete_*" on the base, before any network call`, async () => {
+      writeGuueyJson({ framework: 'claude-agent-sdk', tools: { denylist: ['delete_*'] } }, code);
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      await expect(run()).rejects.toBeInstanceOf(ExitSignal);
+      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+      expect(printed).toContain('agent.tools.denylist: "delete_*": "*" is only valid as the whole entry ("*")');
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(childProcessLog.calls).toEqual([]);
+    });
+
+    it(`${path}: refuses a mode entry naming a server the agent does not connect, before any network call`, async () => {
+      writeGuueyJson(
+        { framework: 'claude-agent-sdk', modes: { guest: { tools: { allowlist: ['linear.create_issue'] } } } },
+        code,
+      );
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      await expect(run()).rejects.toBeInstanceOf(ExitSignal);
+      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+      expect(printed).toContain('agent.modes.guest.tools.allowlist: "linear.create_issue" names MCP server "linear"');
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it(`${path}: "*" and "<server>.*", on the base and in a mode, pass the gate`, async () => {
+      writeGuueyJson(
+        {
+          framework: 'claude-agent-sdk',
+          tools: { allowlist: ['*'], denylist: ['ggui.*'] },
+          modes: { guest: { tools: { allowlist: ['ggui.*'] } } },
+        },
+        code,
+      );
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        throw new Error(`stop after the gate: ${String(input)}`);
+      });
+      await run().catch(() => undefined);
+      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+      expect(printed).not.toContain('is only valid as the whole entry');
+      expect(printed).not.toContain('which this agent does not connect');
+    });
+  }
+});
+
 // A `credential: "caller"` entry carries the user's own bearer, so its url must
 // be https://. Refused before upload on BOTH paths, checked on the document
 // after `${env.NAME}` resolution.
