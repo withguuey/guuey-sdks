@@ -14,7 +14,7 @@ import type {
   AgMemoryRecord,
   JsonValue,
 } from "@silverprotocol/core";
-import { AgProviderMeta, readStoredAgMemoryRecords, readStoredAgMessage } from "@silverprotocol/core";
+import { AgProviderMeta, readStoredAgMemoryRecords, readStoredAgMessage, type AgRecordReport } from "@silverprotocol/core";
 import type { RowBudget, ThreadMessageRow, ThreadMessageRole, ThreadMessageKind, ThreadSnapshotRow } from "./rows.js";
 import { asUiResource, scanProviderRawForUiResource, toolResultLocator } from "@guuey/mcp-apps-host/narrowing";
 
@@ -101,8 +101,16 @@ export interface StoredTextParts {
  * an AppSync writer stores). Anything else is null, and a reader falls back to
  * the row's `text`. It is read through core's lenient stored-record reader, so
  * an unknown block is omitted rather than failing the row.
+ *
+ * Pass the row's `text` too. A stored message may leave its answer out of
+ * `content` because the row's `text` carries the same words: an answer block
+ * whose `text` is the {@link ELIDED_VALUE_KEY} marker (see
+ * {@link isElidedAnswerBlock}). Then the answer is the row's `text`, and the
+ * model's full text carries it where the first answer block stood. Only that
+ * marker does this: a message with no answer blocks reads as it always has,
+ * with an empty answer, whatever the row's `text` says.
  */
-export function storedTextParts(content: unknown): StoredTextParts | null {
+export function storedTextParts(content: unknown, text?: string): StoredTextParts | null {
   let raw: unknown = content;
   if (typeof content === "string") {
     try {
@@ -116,7 +124,59 @@ export function storedTextParts(content: unknown): StoredTextParts | null {
   const read = readStoredAgMessage(raw);
   if (read.value === undefined) return null;
   const msg = read.value;
-  return { answer: messageText(msg), narration: messageNarration(msg), all: messageFullText(msg) };
+  const narration = messageNarration(msg);
+  const blocks: readonly unknown[] = "content" in raw && Array.isArray(raw.content) ? raw.content : [];
+  if (!blocks.some(isElidedAnswerBlock)) {
+    return { answer: messageText(msg), narration, all: messageFullText(msg) };
+  }
+  const answer = text ?? "";
+  return { answer, narration, all: fullTextWithElidedAnswer(blocks, msg, unreadBlockIndexes(read.reports), answer) };
+}
+
+/** The `content[]` indexes core's lenient reader left out of a stored message. */
+function unreadBlockIndexes(reports: readonly AgRecordReport[]): ReadonlySet<number> {
+  const out = new Set<number>();
+  for (const r of reports) {
+    if (r.path.length === 2 && r.path[0] === "content" && typeof r.path[1] === "number") out.add(r.path[1]);
+  }
+  return out;
+}
+
+/**
+ * {@link messageFullText} for a stored message whose answer is elided: every
+ * text block in stored order, narration included, with `answer` (the row's
+ * `text`, which is every answer block joined) where the first answer block
+ * stood, elided or not, and every later answer block left out because `answer`
+ * already holds it. When the answer blocks stand together, as a reply's do,
+ * these are the bytes the unelided message gives.
+ *
+ * `stored` is the raw `content[]`; `msg` is core's lenient read of it, which
+ * keeps every readable block in order and leaves out the indexes in `unread`
+ * (an elided answer block is one of them: its `text` is not a string).
+ */
+function fullTextWithElidedAnswer(
+  stored: readonly unknown[],
+  msg: AgMessage,
+  unread: ReadonlySet<number>,
+  answer: string,
+): string {
+  const parts: string[] = [];
+  let answerPlaced = false;
+  const placeAnswer = (): void => {
+    if (answerPlaced) return;
+    answerPlaced = true;
+    if (answer) parts.push(answer);
+  };
+  let next = 0;
+  stored.forEach((element, at) => {
+    if (isElidedAnswerBlock(element)) return placeAnswer();
+    if (unread.has(at)) return;
+    const block = msg.content[next++];
+    if (block === undefined || block.type !== "text" || !block.text) return;
+    if (isNarration(block)) parts.push(block.text);
+    else placeAnswer();
+  });
+  return parts.join("\n\n");
 }
 
 export function agMessageToRow(
@@ -281,7 +341,7 @@ function toolCallValue(block: ToolCallBlock, field: ElidedField): JsonValue | un
   return field === "input" ? block.input : block.providerMetadata?.["wireInput"];
 }
 
-function isElidedMarker(value: JsonValue | undefined): boolean {
+function isElidedMarker(value: unknown): boolean {
   return value !== null && typeof value === "object" && !Array.isArray(value) && ELIDED_VALUE_KEY in value;
 }
 
@@ -329,6 +389,29 @@ function cardCopyOf(block: ToolResultBlock, cards: CardUiDataByCallId): CardUiDa
   const uiData = block.uiData;
   if (uiData === undefined || isElidedMarker(uiData) || asUiResource(uiData)?.text === undefined) return undefined;
   return cards.get(block.toolCallId)?.find((card) => jsonEqual(card.uiData, uiData));
+}
+
+/**
+ * A stored ANSWER block left out because the row's `text` carries the same
+ * words: a `text` block whose `text` is the {@link ELIDED_VALUE_KEY} marker
+ * (`{ "com.guuey/elided": { bytes } }`, `bytes` the UTF-8 length of the
+ * elided string's JSON) in place of the string. A narration block
+ * (`phase: "interim"`) is never one: the row's `text` is the answer only, so
+ * it holds no narration to read back. Read on the raw stored element, since
+ * core's lenient reader leaves such a block out (its `text` is not a string).
+ */
+export function isElidedAnswerBlock(element: unknown): boolean {
+  if (element === null || typeof element !== "object" || Array.isArray(element)) return false;
+  if (!("type" in element) || element.type !== "text" || !("text" in element)) return false;
+  if ("phase" in element && element.phase === "interim") return false;
+  return isElidedMarker(element.text);
+}
+
+/** Whether a row's stored `content` (a stored `AgMessage` object) carries an {@link isElidedAnswerBlock}. */
+export function storedAnswerElided(content: unknown): boolean {
+  if (content === null || typeof content !== "object" || !("content" in content)) return false;
+  const blocks: unknown = content.content;
+  return Array.isArray(blocks) && blocks.some(isElidedAnswerBlock);
 }
 
 /**

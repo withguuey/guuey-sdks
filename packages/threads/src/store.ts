@@ -357,7 +357,9 @@ export class ThreadStore {
     // since narration split out of it, so reading `text` here would change what
     // the model is replayed. For rows written before the split, `all` is the same
     // bytes their `text` holds. A row whose content is not a stored AgMessage
-    // (an event, a managed-adapter row) keeps its `text`.
+    // (an event, a managed-adapter row) keeps its `text`. A stored message whose
+    // answer block is elided (its `text` the elided marker) replays
+    // the row's `text` as that answer, in place.
     //
     // Only CONVERSATION reaches this lane: a failed turn's reader line, a
     // framework notice and a blank agent message are stored rows, never words
@@ -373,7 +375,7 @@ export class ThreadStore {
         seq: r.seq,
         authorRole: r.authorRole,
         kind: r.kind,
-        text: storedTextParts(r.content)?.all || (r.text ?? null),
+        text: storedTextParts(r.content, r.text)?.all || (r.text ?? null),
         content: r.content ?? null,
         at: r.at,
       }));

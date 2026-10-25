@@ -11,7 +11,10 @@
  *  - a NOTICE row: a stored message with `role: "notice"` (a framework notice
  *    the agent facet emits), a non-conversational, user-facing row;
  *  - a BLANK row: an agent message whose every block shows the reader nothing
- *    (an empty text part, or a provider carry with nothing in it).
+ *    (an empty text part, or a provider carry with nothing in it). A message
+ *    whose answer block is elided because the row's `text` carries it
+ *    (`isElidedAnswerBlock`, fold-rows.ts) is never blank: its answer is that
+ *    `text`.
  *
  * The reader is lenient: it reads the stored `content` through the core's
  * stored-record reader, so a row written before any of this is classified the
@@ -19,6 +22,7 @@
  */
 import { readStoredAgMessage, type AgBlock, type JsonValue } from "@silverprotocol/core";
 import type { ThreadMessageRow } from "./rows.js";
+import { storedAnswerElided } from "./fold-rows.js";
 
 /** The clientMessageId suffix the runtime gives a failed turn's reader-line row. */
 export const AGENT_ERROR_ROW_SUFFIX = "#agentError";
@@ -79,6 +83,6 @@ export function classifyStoredRow(
   const stored = readStoredAgMessage(row.content).value;
   if (stored === undefined) return { kind: "conversation" };
   if (stored.role === "notice") return { kind: "notice", source: stored.noticeSource ?? null };
-  if (stored.content.every(isBlankBlock)) return { kind: "blank" };
+  if (stored.content.every(isBlankBlock) && !storedAnswerElided(row.content)) return { kind: "blank" };
   return { kind: "conversation" };
 }
