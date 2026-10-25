@@ -23,7 +23,7 @@
  */
 import type { AgBlock, JsonValue } from "@silverprotocol/core";
 import type { ThreadMessageRow } from "./rows.js";
-import { readStoredRowMessage } from "./fold-rows.js";
+import { readStoredRowMessage, type StoredRowText } from "./fold-rows.js";
 
 /** The clientMessageId suffix the runtime gives a failed turn's reader-line row. */
 export const AGENT_ERROR_ROW_SUFFIX = "#agentError";
@@ -74,13 +74,13 @@ function failureCodeOf(content: unknown): string | undefined {
 
 /**
  * What {@link classifyStoredRow} reads of a row: a whole stored row, or the
- * fields it reads. In the second shape `text` is required (`undefined` when
- * the row has none): an elided answer reads from it, so a caller that picks
+ * fields it reads. In the second shape `text` is required (`undefined` or null
+ * when the row has none): an elided answer reads from it, so a caller that picks
  * the fields out of a row passes the row's `text` on purpose.
  */
 export type ClassifiedRowInput =
   | ThreadMessageRow
-  | (Pick<ThreadMessageRow, "clientMessageId" | "authorRole" | "content"> & { text: string | undefined });
+  | (Pick<ThreadMessageRow, "clientMessageId" | "authorRole" | "content"> & { text: StoredRowText });
 
 /** Classify one stored row (see the module doc). */
 export function classifyStoredRow(row: ClassifiedRowInput): StoredRowClass {

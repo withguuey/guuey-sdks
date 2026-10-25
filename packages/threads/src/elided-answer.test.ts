@@ -106,7 +106,8 @@ describe("storedTextParts reads an elided answer from the row's text", () => {
       threadId: "t1",
       content: [{ type: "text", text: "First part." }, { type: "text", text: marker("Second part.") }],
     };
-    for (const text of [undefined, ""]) {
+    // null: a raw DynamoDB read carries a NULL text attribute as null, whatever the row type says.
+    for (const text of [undefined, "", null]) {
       expect(storedTextParts(mixed, text)).toEqual({ answer: "First part.", narration: [], all: "First part." });
     }
   });
@@ -239,6 +240,9 @@ describe("classifyStoredRow reads an elided answer as the row's text", () => {
     };
     expect(classifyStoredRow(row(mixed))).toEqual({ kind: "conversation" });
     expect(classifyStoredRow(row(mixed, ""))).toEqual({ kind: "conversation" });
+    expect(classifyStoredRow({ clientMessageId: "c1", authorRole: "agent", content: mixed, text: null })).toEqual({
+      kind: "conversation",
+    });
   });
 });
 

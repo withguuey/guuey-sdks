@@ -68,6 +68,7 @@ export {
 export {
   AGENT_ERROR_ROW_SUFFIX,
   classifyStoredRow,
+  type ClassifiedRowInput,
   isBlankBlock,
   isInformationless,
   type StoredRowClass,
@@ -108,6 +109,7 @@ export {
   messageText,
   producingToolName,
   storedTextParts,
+  type StoredRowText,
   type StoredTextParts,
   joinStoredThreadMemory,
   reassembleFold,

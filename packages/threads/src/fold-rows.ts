@@ -88,6 +88,13 @@ export function messageFullText(msg: AgMessage): string {
   return joinText(msg, () => true);
 }
 
+/**
+ * A stored row's `text` as storage can hand it to a reader: a string, absent, or NULL. The row type
+ * says `string | undefined`, but a raw DynamoDB read cast to it can carry a NULL attribute, so the
+ * readers that take the row's text accept null and read it as no text.
+ */
+export type StoredRowText = string | null | undefined;
+
 /** A stored message's text, split: the answer, the narration, and everything (the model's view). */
 export interface StoredTextParts {
   answer: string;
@@ -102,9 +109,9 @@ export interface StoredTextParts {
  * the row's `text`. The message is read by {@link readStoredRowMessage}, so an
  * unknown block is omitted rather than failing the row, and an elided answer
  * reads from the row's `text`. `text` is required so that every caller passes
- * the row's `text` on purpose (`undefined` when the row has none).
+ * the row's `text` on purpose (`undefined` or null when the row has none).
  */
-export function storedTextParts(content: unknown, text: string | undefined): StoredTextParts | null {
+export function storedTextParts(content: unknown, text: StoredRowText): StoredTextParts | null {
   let raw: unknown = content;
   if (typeof content === "string") {
     try {
@@ -139,17 +146,18 @@ export function storedTextParts(content: unknown, text: string | undefined): Sto
  *
  * Only the marker reads the row's `text`: a message with no answer blocks reads
  * as it always has, with an empty answer, whatever the row's `text` says. On a
- * row with no `text`, or an empty one, there is nothing to restore: only the
- * elided blocks are left out and every other block reads as stored, so a
+ * row with no `text` (absent, NULL or empty) there is nothing to restore: only
+ * the elided blocks are left out and every other block reads as stored, so a
  * stored word is never erased. An elided answer alone then reads as an empty
- * answer, as its unelided twin with an empty answer would.
+ * answer in {@link storedTextParts} and `classifyStoredRow`, as its unelided
+ * twin with an empty answer would; the rebuilt message leaves the block out.
  */
-export function readStoredRowMessage(content: unknown, text: string | undefined): AgMessage | undefined {
+export function readStoredRowMessage(content: unknown, text: StoredRowText): AgMessage | undefined {
   if (!isStoredMessageObject(content) || !content.content.some(isElidedAnswerBlock)) {
     return readStoredAgMessage(content).value;
   }
   const stored = content.content;
-  if (text === undefined || text === "") {
+  if (!text) {
     return readStoredAgMessage({ ...content, content: stored.filter((element) => !isElidedAnswerBlock(element)) }).value;
   }
   // Each elided answer opened to an empty string first, so core judges every other field of it.
