@@ -127,6 +127,20 @@ describe("storedTextParts reads an elided answer from the row's text", () => {
     expect(storedTextParts(halfFirst, row.text)).toEqual({ answer: row.text, narration: [], all: row.text });
   });
 
+  it("with narration between two answer blocks, the answer stands at the FIRST one, and the narration after it", () => {
+    const text = "A\n\nB";
+    const split = (first: JsonValue, second: JsonValue): JsonValue => ({
+      id: "m1",
+      role: "assistant",
+      threadId: "t1",
+      content: [{ type: "text", text: first }, { type: "text", text: "N", phase: "interim" }, { type: "text", text: second }],
+    });
+    // Both answer blocks elided: the answer goes to the first, not the last.
+    expect(storedTextParts(split(marker("A"), marker("B")), text)).toEqual({ answer: text, narration: ["N"], all: "A\n\nB\n\nN" });
+    // A plain answer block before an elided one is the first answer block, not the first ELIDED one.
+    expect(storedTextParts(split("A", marker("B")), text)).toEqual({ answer: text, narration: ["N"], all: "A\n\nB\n\nN" });
+  });
+
   it("a block this reader cannot read, stored before an elided answer, leaves the answer in its place", () => {
     // A newer writer's block type: core's lenient reader leaves it out.
     const stored = (answer: JsonValue): JsonValue => ({
@@ -212,6 +226,28 @@ describe("rowToAgMessage and reassembleFold read an elided answer from the row's
       expect(rowToAgMessage({ ...plain, content: elided(msg) })).toEqual(rowToAgMessage(plain));
       expect(rowToAgMessage(plain)).toEqual(msg);
     }
+  });
+
+  it("an elided answer block keeps its own fields: provider metadata and a field this reader does not know", () => {
+    const stored = (answer: JsonValue): JsonValue => ({
+      id: "m1",
+      role: "assistant",
+      threadId: "t1",
+      content: [
+        { type: "text", text: NARRATION, phase: "interim" },
+        { type: "text", text: answer, providerMetadata: { anthropic: { citations: ["c1"] } }, "x-future": { kept: true } },
+      ],
+    });
+    const plain: ThreadMessageRow = { ...ctx, kind: "text", authorRole: "agent", text: ANSWER, content: stored(ANSWER) };
+    const read = rowToAgMessage({ ...plain, content: stored(marker(ANSWER)) });
+    expect(read).toEqual(rowToAgMessage(plain));
+    // The twin really carries both fields, so the equality above is about them.
+    expect(read.content[1]).toEqual({
+      type: "text",
+      text: ANSWER,
+      providerMetadata: { anthropic: { citations: ["c1"] } },
+      "x-future": { kept: true },
+    });
   });
 
   it("the reassembled fold of elided rows is the fold of their unelided twins", () => {
