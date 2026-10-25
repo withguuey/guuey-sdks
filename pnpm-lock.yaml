@@ -160,11 +160,11 @@ importers:
   packages/cli:
     dependencies:
       '@ggui-ai/artifact-manifest':
-        specifier: 0.28.0
-        version: 0.28.0(@modelcontextprotocol/sdk@1.31.0(zod@4.4.3))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        specifier: 0.29.0
+        version: 0.29.0
       '@ggui-ai/protocol':
-        specifier: 0.28.0
-        version: 0.28.0(@modelcontextprotocol/sdk@1.31.0(zod@4.4.3))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        specifier: 0.29.0
+        version: 0.29.0
       '@guuey/chat':
         specifier: workspace:*
         version: link:../chat
@@ -350,8 +350,8 @@ importers:
   packages/mcp-apps-host:
     dependencies:
       '@ggui-ai/protocol':
-        specifier: 0.28.0
-        version: 0.28.0(@modelcontextprotocol/sdk@1.31.0(zod@4.4.3))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        specifier: 0.29.0
+        version: 0.29.0
       '@modelcontextprotocol/ext-apps':
         specifier: ^1.7.5
         version: 1.7.5(@modelcontextprotocol/sdk@1.31.0(zod@4.4.3))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3)
@@ -1171,12 +1171,12 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@ggui-ai/artifact-manifest@0.28.0':
-    resolution: {integrity: sha512-Env8jPHTY2FtFRH6SyGNy3FuCyE8aehc+pPVSPNr4IWhfbhiNTaM4zzjaovXDWLfvyYVR63uz2TB7+OrE0Q79A==}
+  '@ggui-ai/artifact-manifest@0.29.0':
+    resolution: {integrity: sha512-AaerP70xdONap8zWm8YpaP+OSkUK1h0I6O8mDHXtSvlj8zIDIUYDqLdsaVzGZ6HYxQ/nCq3nnsK9aHlrZid5NA==}
     engines: {node: '>=22.0.0'}
 
-  '@ggui-ai/protocol@0.28.0':
-    resolution: {integrity: sha512-0Wx5WVJV/Pfw98ke7Fu3bMfJhHUnYDSlo8cro6UxX7eZC9EpK/jF/ky8jcRCGCewbLcIIgDTrctwmBWtFQfADQ==}
+  '@ggui-ai/protocol@0.29.0':
+    resolution: {integrity: sha512-apCER3RTYmYlRTGRFI1slJQoYwbPfBNzwJExgV1BKbfPfZhhTRW61C2msWFTEGT3JPjSIGKMVZauO7JfOdvzNw==}
     engines: {node: '>=22.0.0'}
 
   '@google-cloud/vertexai@1.12.0':
@@ -4419,26 +4419,17 @@ snapshots:
   '@esbuild/win32-x64@0.28.1':
     optional: true
 
-  '@ggui-ai/artifact-manifest@0.28.0(@modelcontextprotocol/sdk@1.31.0(zod@4.4.3))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
+  '@ggui-ai/artifact-manifest@0.29.0':
     dependencies:
-      '@ggui-ai/protocol': 0.28.0(@modelcontextprotocol/sdk@1.31.0(zod@4.4.3))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@ggui-ai/protocol': 0.29.0
       zod: 4.4.3
-    transitivePeerDependencies:
-      - '@modelcontextprotocol/sdk'
-      - react
-      - react-dom
 
-  '@ggui-ai/protocol@0.28.0(@modelcontextprotocol/sdk@1.31.0(zod@4.4.3))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
+  '@ggui-ai/protocol@0.29.0':
     dependencies:
-      '@modelcontextprotocol/ext-apps': 1.7.5(@modelcontextprotocol/sdk@1.31.0(zod@4.4.3))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3)
       ajv: 8.20.0
       ajv-formats: 3.0.1
       canonicalize: 2.1.0
       zod: 4.4.3
-    transitivePeerDependencies:
-      - '@modelcontextprotocol/sdk'
-      - react
-      - react-dom
 
   '@google-cloud/vertexai@1.12.0(@modelcontextprotocol/sdk@1.31.0(zod@4.4.3))':
     dependencies:
