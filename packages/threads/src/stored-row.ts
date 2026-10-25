@@ -14,7 +14,8 @@
  *    (an empty text part, or a provider carry with nothing in it). The
  *    message is read as every row reader reads it (`readStoredRowMessage`,
  *    fold-rows.ts): an answer block elided because the row's `text` carries
- *    it reads as that `text`, so it is blank only when that `text` is empty.
+ *    it reads as that `text`, and on a row with no `text` it is left out
+ *    (every other block still counts).
  *
  * The reader is lenient: it reads the stored `content` through the core's
  * stored-record reader, so a row written before any of this is classified the

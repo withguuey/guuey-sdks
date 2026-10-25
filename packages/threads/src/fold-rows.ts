@@ -137,15 +137,20 @@ export function storedTextParts(content: unknown, text?: string): StoredTextPart
  * unelided one.
  *
  * Only the marker reads the row's `text`: a message with no answer blocks reads
- * as it always has, with an empty answer, whatever the row's `text` says. An
- * elided answer on a row with no `text` reads as an empty answer, as its
- * unelided twin with an empty answer would.
+ * as it always has, with an empty answer, whatever the row's `text` says. On a
+ * row with no `text`, or an empty one, there is nothing to restore: only the
+ * elided blocks are left out and every other block reads as stored, so a
+ * stored word is never erased. An elided answer alone then reads as an empty
+ * answer, as its unelided twin with an empty answer would.
  */
 export function readStoredRowMessage(content: unknown, text?: string): AgMessage | undefined {
   if (!isStoredMessageObject(content) || !content.content.some(isElidedAnswerBlock)) {
     return readStoredAgMessage(content).value;
   }
   const stored = content.content;
+  if (text === undefined || text === "") {
+    return readStoredAgMessage({ ...content, content: stored.filter((element) => !isElidedAnswerBlock(element)) }).value;
+  }
   // Each elided answer opened to an empty string first, so core judges every other field of it.
   const opened = stored.map((element) => (isElidedAnswerBlock(element) ? { ...element, text: "" } : element));
   const read = readStoredAgMessage({ ...content, content: opened });
@@ -155,7 +160,7 @@ export function readStoredRowMessage(content: unknown, text?: string): AgMessage
     !unread.has(at) && isAnswerTextElement(element) && (element.text !== "" || isElidedAnswerBlock(stored[at]));
   const first = opened.findIndex(isAnswer);
   const rebuilt = opened.flatMap((element, at) => {
-    if (at === first && isAnswerTextElement(element)) return [{ ...element, text: text ?? "" }];
+    if (at === first && isAnswerTextElement(element)) return [{ ...element, text }];
     return isAnswer(element, at) ? [] : [element];
   });
   return readStoredAgMessage({ ...content, content: rebuilt }).value;

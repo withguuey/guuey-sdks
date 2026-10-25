@@ -99,6 +99,18 @@ describe("storedTextParts reads an elided answer from the row's text", () => {
     expect(storedTextParts(elided(withNarration), undefined)).toEqual({ answer: "", narration: [NARRATION], all: NARRATION });
   });
 
+  it("on a row with no text, only the elided blocks are left out: a stored answer block beside one keeps its words", () => {
+    const mixed: JsonValue = {
+      id: "m1",
+      role: "assistant",
+      threadId: "t1",
+      content: [{ type: "text", text: "First part." }, { type: "text", text: marker("Second part.") }],
+    };
+    for (const text of [undefined, ""]) {
+      expect(storedTextParts(mixed, text)).toEqual({ answer: "First part.", narration: [], all: "First part." });
+    }
+  });
+
   it("the answer stands where the first answer block stood, once, around the narration", () => {
     const between = message([
       { type: "text", text: NARRATION, phase: "interim" },
@@ -216,6 +228,17 @@ describe("classifyStoredRow reads an elided answer as the row's text", () => {
     expect(classifyStoredRow(row(elided(answerOnly)))).toEqual({ kind: "blank" });
     expect(classifyStoredRow(row(elided(answerOnly), ""))).toEqual({ kind: "blank" });
     expect(classifyStoredRow(row(elided(withNarration)))).toEqual({ kind: "conversation" });
+  });
+
+  it("on a row with no text, a stored answer block beside an elided one keeps the row conversation", () => {
+    const mixed: JsonValue = {
+      id: "m1",
+      role: "assistant",
+      threadId: "t1",
+      content: [{ type: "text", text: "First part." }, { type: "text", text: marker("Second part.") }],
+    };
+    expect(classifyStoredRow(row(mixed))).toEqual({ kind: "conversation" });
+    expect(classifyStoredRow(row(mixed, ""))).toEqual({ kind: "conversation" });
   });
 });
 
