@@ -72,10 +72,18 @@ function failureCodeOf(content: unknown): string | undefined {
   return typeof error.code === "string" && error.code !== "" ? error.code : undefined;
 }
 
+/**
+ * What {@link classifyStoredRow} reads of a row: a whole stored row, or the
+ * fields it reads. In the second shape `text` is required (`undefined` when
+ * the row has none): an elided answer reads from it, so a caller that picks
+ * the fields out of a row passes the row's `text` on purpose.
+ */
+export type ClassifiedRowInput =
+  | ThreadMessageRow
+  | (Pick<ThreadMessageRow, "clientMessageId" | "authorRole" | "content"> & { text: string | undefined });
+
 /** Classify one stored row (see the module doc). */
-export function classifyStoredRow(
-  row: Pick<ThreadMessageRow, "clientMessageId" | "authorRole" | "content" | "text">,
-): StoredRowClass {
+export function classifyStoredRow(row: ClassifiedRowInput): StoredRowClass {
   const code = failureCodeOf(row.content);
   if (row.clientMessageId.endsWith(AGENT_ERROR_ROW_SUFFIX) || code !== undefined) {
     return { kind: "failure", code: code ?? null };

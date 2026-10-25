@@ -101,9 +101,10 @@ export interface StoredTextParts {
  * an AppSync writer stores). Anything else is null, and a reader falls back to
  * the row's `text`. The message is read by {@link readStoredRowMessage}, so an
  * unknown block is omitted rather than failing the row, and an elided answer
- * reads from the row's `text`: pass the row's `text` too.
+ * reads from the row's `text`. `text` is required so that every caller passes
+ * the row's `text` on purpose (`undefined` when the row has none).
  */
-export function storedTextParts(content: unknown, text?: string): StoredTextParts | null {
+export function storedTextParts(content: unknown, text: string | undefined): StoredTextParts | null {
   let raw: unknown = content;
   if (typeof content === "string") {
     try {
@@ -143,7 +144,7 @@ export function storedTextParts(content: unknown, text?: string): StoredTextPart
  * stored word is never erased. An elided answer alone then reads as an empty
  * answer, as its unelided twin with an empty answer would.
  */
-export function readStoredRowMessage(content: unknown, text?: string): AgMessage | undefined {
+export function readStoredRowMessage(content: unknown, text: string | undefined): AgMessage | undefined {
   if (!isStoredMessageObject(content) || !content.content.some(isElidedAnswerBlock)) {
     return readStoredAgMessage(content).value;
   }

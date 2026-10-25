@@ -32,27 +32,27 @@ const storedAnswer = { id: "a1", role: "assistant", threadId: "t1", content: [{ 
 
 describe("classifyStoredRow", () => {
   it("a failure row of EITHER vintage is a failure: keyed on the #agentError suffix, the code read when stored", () => {
-    expect(classifyStoredRow({ clientMessageId: `c1${AGENT_ERROR_ROW_SUFFIX}`, authorRole: "agent", content: failureWithCode })).toEqual({
+    expect(classifyStoredRow({ clientMessageId: `c1${AGENT_ERROR_ROW_SUFFIX}`, authorRole: "agent", content: failureWithCode, text: undefined })).toEqual({
       kind: "failure",
       code: "NO_REPLY",
     });
-    expect(classifyStoredRow({ clientMessageId: `c1${AGENT_ERROR_ROW_SUFFIX}`, authorRole: "agent", content: failureBeforeCodes })).toEqual({
+    expect(classifyStoredRow({ clientMessageId: `c1${AGENT_ERROR_ROW_SUFFIX}`, authorRole: "agent", content: failureBeforeCodes, text: undefined })).toEqual({
       kind: "failure",
       code: null,
     });
     // A content-carried code classifies even under another key.
-    expect(classifyStoredRow({ clientMessageId: "c1#agent#0", authorRole: "agent", content: failureWithCode })).toEqual({ kind: "failure", code: "NO_REPLY" });
+    expect(classifyStoredRow({ clientMessageId: "c1#agent#0", authorRole: "agent", content: failureWithCode, text: undefined })).toEqual({ kind: "failure", code: "NO_REPLY" });
   });
 
   it("a stored notice is a notice with its source; a blank agent message is blank", () => {
-    expect(classifyStoredRow({ clientMessageId: "c1#agentTurn", authorRole: "agent", content: storedNotice })).toEqual({ kind: "notice", source: "framework" });
-    expect(classifyStoredRow({ clientMessageId: "c1#agentTurn", authorRole: "agent", content: storedBlank })).toEqual({ kind: "blank" });
+    expect(classifyStoredRow({ clientMessageId: "c1#agentTurn", authorRole: "agent", content: storedNotice, text: undefined })).toEqual({ kind: "notice", source: "framework" });
+    expect(classifyStoredRow({ clientMessageId: "c1#agentTurn", authorRole: "agent", content: storedBlank, text: undefined })).toEqual({ kind: "blank" });
   });
 
   it("everything else is conversation: an answer, a user row, a legacy row whose content is not a stored message", () => {
-    expect(classifyStoredRow({ clientMessageId: "c1#agentTurn", authorRole: "agent", content: storedAnswer })).toEqual({ kind: "conversation" });
-    expect(classifyStoredRow({ clientMessageId: "u1", authorRole: "user", content: "hello" })).toEqual({ kind: "conversation" });
-    expect(classifyStoredRow({ clientMessageId: "m1", authorRole: "agent", content: "plain text" })).toEqual({ kind: "conversation" });
+    expect(classifyStoredRow({ clientMessageId: "c1#agentTurn", authorRole: "agent", content: storedAnswer, text: undefined })).toEqual({ kind: "conversation" });
+    expect(classifyStoredRow({ clientMessageId: "u1", authorRole: "user", content: "hello", text: undefined })).toEqual({ kind: "conversation" });
+    expect(classifyStoredRow({ clientMessageId: "m1", authorRole: "agent", content: "plain text", text: undefined })).toEqual({ kind: "conversation" });
   });
 });
 

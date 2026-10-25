@@ -62,15 +62,15 @@ describe("storedTextParts reads an elided answer from the row's text", () => {
   it("a stored message with every block in place reads exactly as without the row's text, even when the text says otherwise", () => {
     for (const msg of [withNarration, answerOnly]) {
       const row = agMessageToRow(msg, ctx);
-      expect(storedTextParts(row.content, row.text)).toEqual(storedTextParts(row.content));
-      expect(storedTextParts(row.content, "Some other words.")).toEqual(storedTextParts(row.content));
+      expect(storedTextParts(row.content, row.text)).toEqual(storedTextParts(row.content, undefined));
+      expect(storedTextParts(row.content, "Some other words.")).toEqual(storedTextParts(row.content, undefined));
     }
   });
 
   it("an elided answer reads as its unelided twin: the same answer, narration and model bytes", () => {
     for (const msg of [withNarration, answerOnly]) {
       const row = agMessageToRow(msg, ctx);
-      expect(storedTextParts(elided(msg), row.text)).toEqual(storedTextParts(row.content));
+      expect(storedTextParts(elided(msg), row.text)).toEqual(storedTextParts(row.content, row.text));
     }
     expect(storedTextParts(elided(withNarration), ANSWER)).toEqual({
       answer: ANSWER,
@@ -120,7 +120,7 @@ describe("storedTextParts reads an elided answer from the row's text", () => {
     ]);
     const row = agMessageToRow(between, ctx);
     expect(row.text).toBe("First part.\n\nSecond part.");
-    expect(storedTextParts(elided(between), row.text)).toEqual(storedTextParts(row.content));
+    expect(storedTextParts(elided(between), row.text)).toEqual(storedTextParts(row.content, row.text));
     // An answer block left in place beside an elided one is not read twice: the row's text holds both.
     const half: JsonValue = {
       id: "m1",
@@ -161,7 +161,7 @@ describe("storedTextParts reads an elided answer from the row's text", () => {
       threadId: "t1",
       content: [{ type: "future-block" }, { type: "text", text: answer }, { type: "text", text: NARRATION, phase: "interim" }],
     });
-    expect(storedTextParts(stored(marker(ANSWER)), ANSWER)).toEqual(storedTextParts(stored(ANSWER)));
+    expect(storedTextParts(stored(marker(ANSWER)), ANSWER)).toEqual(storedTextParts(stored(ANSWER), ANSWER));
     expect(storedTextParts(stored(marker(ANSWER)), ANSWER)).toEqual({
       answer: ANSWER,
       narration: [NARRATION],
@@ -177,7 +177,7 @@ describe("storedTextParts reads an elided answer from the row's text", () => {
       threadId: "t1",
       content: [{ type: "text", text: "Unreadable.", phase: 5 }, { type: "text", text: answer }, { type: "text", text: NARRATION, phase: "interim" }],
     });
-    expect(storedTextParts(stored(marker(ANSWER)), ANSWER)).toEqual(storedTextParts(stored(ANSWER)));
+    expect(storedTextParts(stored(marker(ANSWER)), ANSWER)).toEqual(storedTextParts(stored(ANSWER), ANSWER));
     expect(storedTextParts(stored(marker(ANSWER)), ANSWER)).toEqual({
       answer: ANSWER,
       narration: [NARRATION],
@@ -192,7 +192,7 @@ describe("storedTextParts reads an elided answer from the row's text", () => {
       threadId: "t1",
       content: [{ type: "text", text: "" }, { type: "text", text: NARRATION, phase: "interim" }, { type: "text", text: answer }],
     });
-    expect(storedTextParts(stored(marker(ANSWER)), ANSWER)).toEqual(storedTextParts(stored(ANSWER)));
+    expect(storedTextParts(stored(marker(ANSWER)), ANSWER)).toEqual(storedTextParts(stored(ANSWER), ANSWER));
     expect(storedTextParts(stored(marker(ANSWER)), ANSWER)?.all).toBe(`${NARRATION}\n\n${ANSWER}`);
   });
 

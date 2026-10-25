@@ -63,13 +63,13 @@ describe("the split, on real stored rows", () => {
 
   it("the model's view is byte-identical to what the writer stored before the split, for every row (legacy included)", () => {
     for (const row of [LEGACY, ...COMMENTARY]) {
-      expect(storedTextParts(row.content)?.all).toBe(row.text ?? "");
+      expect(storedTextParts(row.content, row.text)?.all).toBe(row.text ?? "");
       expect(messageFullText(row.content)).toBe(row.text ?? "");
     }
   });
 
   it("a legacy row without phases splits into itself: the answer is its text, no narration", () => {
-    expect(storedTextParts(LEGACY.content)).toEqual({ answer: LEGACY.text, narration: [], all: LEGACY.text });
+    expect(storedTextParts(LEGACY.content, LEGACY.text)).toEqual({ answer: LEGACY.text, narration: [], all: LEGACY.text });
   });
 
   it("the writer now stores the ANSWER as `text`: a narration-only message stores no text; the answer row stores its answer", () => {
@@ -83,9 +83,9 @@ describe("the split, on real stored rows", () => {
 
   it("content stored as a JSON string (an AppSync writer) splits the same way; anything that is not a stored AgMessage is null", () => {
     const row = COMMENTARY[0]!;
-    expect(storedTextParts(JSON.stringify(row.content))).toEqual(storedTextParts(row.content));
+    expect(storedTextParts(JSON.stringify(row.content), row.text)).toEqual(storedTextParts(row.content, row.text));
     for (const notAMessage of ["answer", "{not json", JSON.stringify({ kind: "text", text: "x" }), null, 5, { blocks: [] }, undefined]) {
-      expect(storedTextParts(notAMessage)).toBeNull();
+      expect(storedTextParts(notAMessage, undefined)).toBeNull();
     }
   });
 });
