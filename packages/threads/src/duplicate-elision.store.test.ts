@@ -139,12 +139,12 @@ describe("ThreadStore.appendFold: a UI resource its card row carries is left out
     const unelided = agMessageToRow(msg, { threadId: "t1", userId: "g_abc", seq: 1, at: AT, clientMessageId: messageRow.clientMessageId });
 
     expect(messageRow.text).toBe(unelided.text);
-    expect(storedTextParts(messageRow.content)).toEqual(storedTextParts(unelided.content));
-    expect(storedTextParts(JSON.stringify(messageRow.content))).toEqual(storedTextParts(unelided.content));
+    expect(storedTextParts(messageRow.content, messageRow.text)).toEqual(storedTextParts(unelided.content, unelided.text));
+    expect(storedTextParts(JSON.stringify(messageRow.content), messageRow.text)).toEqual(storedTextParts(unelided.content, unelided.text));
     expect(classifyStoredRow(messageRow)).toEqual(classifyStoredRow(unelided));
     expect(readStoredAgMessage(messageRow.content).reports).toEqual([]);
     const history = await store.loadHistory("t1");
-    expect(history.map((h) => h.text)).toEqual([storedTextParts(unelided.content)?.all]);
+    expect(history.map((h) => h.text)).toEqual([storedTextParts(unelided.content, unelided.text)?.all]);
   });
 
   it("elides the tool input instead when the card row's resource differs from the message row's", async () => {
@@ -230,6 +230,7 @@ describe("agMessageToBoundedRow with the turn's card rows", () => {
     expect(elided.map((e) => e.field)).toEqual(["input"]);
     const stored = storedMessage(row.content);
     expect([stored.content[0], stored.content[2]]).toEqual([msg.content[0], msg.content[2]]);
-    expect(storedTextParts(row.content)).toEqual(storedTextParts(agMessageToRow(msg, ctx).content));
+    const unbounded = agMessageToRow(msg, ctx);
+    expect(storedTextParts(row.content, row.text)).toEqual(storedTextParts(unbounded.content, unbounded.text));
   });
 });
