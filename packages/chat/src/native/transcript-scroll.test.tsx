@@ -388,6 +388,71 @@ describe("a runtime policy change", () => {
   });
 });
 
+describe("the flip invariant: every orientation change carries the distance from the end", () => {
+  const CONTENT = 2000;
+  /** The distance from the end the list shows, in the orientation it renders. */
+  const distanceAfter = (offset: number): number => (props().inverted === true ? offset : CONTENT - offset - PANEL);
+  const lastReanchor = (): number => {
+    const call = calls.scrollToOffset.mock.lastCall as [{ offset: number; animated: boolean }] | undefined;
+    if (call === undefined) throw new Error("no re-anchor");
+    expect(call[0].animated).toBe(false);
+    return call[0].offset;
+  };
+
+  for (const distance of [0, 100, 750, CONTENT - PANEL]) {
+    it(`a distance of ${distance}px survives tail → off → tail, one explicit re-anchor per flip`, () => {
+      const plan = planOf(4);
+      const { rerender } = render(<NativeTranscript plan={plan} {...noopCtx} />);
+      layout(CONTENT);
+      scroll(distance, CONTENT, true);
+      expect(distanceAfter(distance)).toBe(distance);
+
+      rerender(<NativeTranscript plan={plan} follow="off" {...noopCtx} />);
+      expect(props().inverted).toBe(false);
+      expect(calls.scrollToOffset).toHaveBeenCalledTimes(1);
+      const topDown = lastReanchor();
+      // Never left at the inverted offset, never reset to 0 (unless 0 IS the same distance).
+      expect(distanceAfter(topDown)).toBe(distance);
+
+      // The list reports where the re-anchor landed; flip back from there.
+      scroll(topDown, CONTENT);
+      rerender(<NativeTranscript plan={plan} {...noopCtx} />);
+      expect(props().inverted).toBe(true);
+      expect(calls.scrollToOffset).toHaveBeenCalledTimes(2);
+      expect(distanceAfter(lastReanchor())).toBe(distance);
+    });
+  }
+
+  it("a flip before the list is measured waits for the measure, then re-anchors (no silent offset 0)", () => {
+    const plan = planOf(4);
+    const { rerender } = render(<NativeTranscript plan={plan} {...noopCtx} />);
+    // The inverted list starts at its end; flip before any layout.
+    rerender(<NativeTranscript plan={plan} follow="off" {...noopCtx} />);
+    expect(calls.scrollToOffset).not.toHaveBeenCalled();
+    layout(CONTENT);
+    expect(calls.scrollToOffset).toHaveBeenCalledTimes(1);
+    expect(distanceAfter(lastReanchor())).toBe(0);
+  });
+
+  it("two flips before the measure cancel out: no re-anchor at all", () => {
+    const plan = planOf(4);
+    const { rerender } = render(<NativeTranscript plan={plan} {...noopCtx} />);
+    rerender(<NativeTranscript plan={plan} follow="off" {...noopCtx} />);
+    rerender(<NativeTranscript plan={plan} {...noopCtx} />);
+    layout(CONTENT);
+    expect(calls.scrollToOffset).not.toHaveBeenCalled();
+  });
+
+  it("the first item arriving under tail inverts the list as before, with no re-anchor (not a policy change)", () => {
+    const { rerender } = render(<NativeTranscript plan={planOf(0)} {...noopCtx} />);
+    expect(props().inverted).toBe(false);
+    layout(300);
+    rerender(<NativeTranscript plan={planOf(2)} {...noopCtx} />);
+    expect(props().inverted).toBe(true);
+    expect(scrollCallCount()).toBe(0);
+  });
+});
+
 describe("the recipe: off, place the question at the top, read the reply as it streams", () => {
   it("places the new user item once, then the stream never moves the list until the host's own ↓", () => {
     const handle = createRef<NativeTranscriptHandle>();

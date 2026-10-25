@@ -191,6 +191,8 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
   onAtEndRef.current = onAtEndChange;
   /** The last at-end state reported, so `onAtEndChange` fires only on a change. */
   const lastAtEnd = useRef<boolean | null>(null);
+  /** An orientation flip made before the list was measured: it re-anchors once the list is. */
+  const pendingFlip = useRef<{ wasInverted: boolean } | null>(null);
 
   /** Pixels between the viewport and the end, or null while the list is unmeasured. */
   const distanceFromEnd = (): number | null => {
@@ -214,10 +216,36 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
     cb(atEnd);
   };
 
+  /**
+   * Carry the viewport across an orientation flip as its distance from the end — the same
+   * content, seen the same way, whichever edge the offset counts from. The list keeps its numeric
+   * offset through the flip, so the re-anchor is always an explicit scroll, never left to it.
+   * Unmeasured, the flip waits for the measure (until then the offset is the first one, 0).
+   */
+  const reanchor = (wasInverted: boolean): void => {
+    const isInverted = renderRef.current.inverted;
+    const { offset, content, viewport } = geometry.current;
+    if (content === null || viewport === null) {
+      pendingFlip.current = { wasInverted };
+      return;
+    }
+    pendingFlip.current = null;
+    if (wasInverted === isInverted) return;
+    const distance = wasInverted ? offset : content - offset - viewport;
+    const next = Math.max(0, isInverted ? distance : content - viewport - distance);
+    geometry.current = { ...geometry.current, offset: next };
+    listRef.current?.scrollToOffset({ offset: next, animated: false });
+  };
+  const settleFlip = (): void => {
+    const pending = pendingFlip.current;
+    if (pending !== null) reanchor(pending.wasInverted);
+  };
+
   const hostOnScroll = listProps?.onScroll;
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>): void => {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
     geometry.current = { offset: contentOffset.y, content: contentSize.height, viewport: layoutMeasurement.height };
+    settleFlip();
     const distance = distanceFromEnd();
     // Under "off", reaching the end by hand never starts following (only a go-to-end does);
     // dragging away from it stops following.
@@ -228,6 +256,7 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
 
   const onContentSizeChange = (_width: number, height: number): void => {
     geometry.current = { ...geometry.current, content: height };
+    settleFlip();
     // Under "off", content growth moves the list only while following a go-to-end.
     if (renderRef.current.followPolicy === "off" && pinned.current) {
       listRef.current?.scrollToEnd({ animated: false });
@@ -237,6 +266,7 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
 
   const onLayout = (e: LayoutChangeEvent): void => {
     geometry.current = { ...geometry.current, viewport: e.nativeEvent.layout.height };
+    settleFlip();
     refresh();
   };
 
@@ -262,13 +292,8 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
     appliedPolicy.current = followPolicy;
     pinned.current = false;
     dragging.current = false;
-    if (wasInverted === inverted) return;
-    const { offset, content, viewport } = geometry.current;
-    if (content === null || viewport === null) return;
-    const distance = wasInverted ? offset : content - offset - viewport;
-    const next = Math.max(0, inverted ? distance : content - viewport - distance);
-    geometry.current = { ...geometry.current, offset: next };
-    listRef.current?.scrollToOffset({ offset: next, animated: false });
+    // A flip still waiting for the measure keeps the orientation it started from.
+    reanchor(pendingFlip.current?.wasInverted ?? wasInverted);
   }, [followPolicy, inverted]);
 
   // The starting at-end state (an inverted list starts at its end; a top-down one reports
