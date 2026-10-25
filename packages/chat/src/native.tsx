@@ -22,6 +22,7 @@ export {
   NativeTranscript,
   type NativeTranscriptProps,
   type NativeTranscriptListProps,
+  type NativeTranscriptHandle,
 } from "./native/transcript.js";
 export {
   nativeTranscriptComponents,
