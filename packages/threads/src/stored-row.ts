@@ -11,18 +11,18 @@
  *  - a NOTICE row: a stored message with `role: "notice"` (a framework notice
  *    the agent facet emits), a non-conversational, user-facing row;
  *  - a BLANK row: an agent message whose every block shows the reader nothing
- *    (an empty text part, or a provider carry with nothing in it). A message
- *    whose answer block is elided because the row's `text` carries it
- *    (`isElidedAnswerBlock`, fold-rows.ts) is never blank: its answer is that
- *    `text`.
+ *    (an empty text part, or a provider carry with nothing in it). The
+ *    message is read as every row reader reads it (`readStoredRowMessage`,
+ *    fold-rows.ts): an answer block elided because the row's `text` carries
+ *    it reads as that `text`, so it is blank only when that `text` is empty.
  *
  * The reader is lenient: it reads the stored `content` through the core's
  * stored-record reader, so a row written before any of this is classified the
  * same way, with no migration.
  */
-import { readStoredAgMessage, type AgBlock, type JsonValue } from "@silverprotocol/core";
+import type { AgBlock, JsonValue } from "@silverprotocol/core";
 import type { ThreadMessageRow } from "./rows.js";
-import { storedAnswerElided } from "./fold-rows.js";
+import { readStoredRowMessage } from "./fold-rows.js";
 
 /** The clientMessageId suffix the runtime gives a failed turn's reader-line row. */
 export const AGENT_ERROR_ROW_SUFFIX = "#agentError";
@@ -73,16 +73,16 @@ function failureCodeOf(content: unknown): string | undefined {
 
 /** Classify one stored row (see the module doc). */
 export function classifyStoredRow(
-  row: Pick<ThreadMessageRow, "clientMessageId" | "authorRole" | "content">,
+  row: Pick<ThreadMessageRow, "clientMessageId" | "authorRole" | "content" | "text">,
 ): StoredRowClass {
   const code = failureCodeOf(row.content);
   if (row.clientMessageId.endsWith(AGENT_ERROR_ROW_SUFFIX) || code !== undefined) {
     return { kind: "failure", code: code ?? null };
   }
   if (row.authorRole === "user") return { kind: "conversation" };
-  const stored = readStoredAgMessage(row.content).value;
+  const stored = readStoredRowMessage(row.content, row.text);
   if (stored === undefined) return { kind: "conversation" };
   if (stored.role === "notice") return { kind: "notice", source: stored.noticeSource ?? null };
-  if (stored.content.every(isBlankBlock) && !storedAnswerElided(row.content)) return { kind: "blank" };
+  if (stored.content.every(isBlankBlock)) return { kind: "blank" };
   return { kind: "conversation" };
 }

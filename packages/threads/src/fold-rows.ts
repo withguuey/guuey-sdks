@@ -14,7 +14,7 @@ import type {
   AgMemoryRecord,
   JsonValue,
 } from "@silverprotocol/core";
-import { AgProviderMeta, readStoredAgMemoryRecords, readStoredAgMessage, type AgRecordReport } from "@silverprotocol/core";
+import { AgProviderMeta, readStoredAgMemoryRecords, readStoredAgMessage } from "@silverprotocol/core";
 import type { RowBudget, ThreadMessageRow, ThreadMessageRole, ThreadMessageKind, ThreadSnapshotRow } from "./rows.js";
 import { asUiResource, scanProviderRawForUiResource, toolResultLocator } from "@guuey/mcp-apps-host/narrowing";
 
@@ -99,16 +99,9 @@ export interface StoredTextParts {
  * Split a stored row's `content` into answer, narration and the model's full
  * text, when `content` is a stored `AgMessage` (an object, or the JSON string
  * an AppSync writer stores). Anything else is null, and a reader falls back to
- * the row's `text`. It is read through core's lenient stored-record reader, so
- * an unknown block is omitted rather than failing the row.
- *
- * Pass the row's `text` too. A stored message may leave its answer out of
- * `content` because the row's `text` carries the same words: an answer block
- * whose `text` is the {@link ELIDED_VALUE_KEY} marker (see
- * {@link isElidedAnswerBlock}). Then the answer is the row's `text`, and the
- * model's full text carries it where the first answer block stood. Only that
- * marker does this: a message with no answer blocks reads as it always has,
- * with an empty answer, whatever the row's `text` says.
+ * the row's `text`. The message is read by {@link readStoredRowMessage}, so an
+ * unknown block is omitted rather than failing the row, and an elided answer
+ * reads from the row's `text`: pass the row's `text` too.
  */
 export function storedTextParts(content: unknown, text?: string): StoredTextParts | null {
   let raw: unknown = content;
@@ -120,63 +113,75 @@ export function storedTextParts(content: unknown, text?: string): StoredTextPart
       throw err;
     }
   }
-  if (raw === null || typeof raw !== "object") return null;
-  const read = readStoredAgMessage(raw);
-  if (read.value === undefined) return null;
-  const msg = read.value;
-  const narration = messageNarration(msg);
-  const blocks: readonly unknown[] = "content" in raw && Array.isArray(raw.content) ? raw.content : [];
-  if (!blocks.some(isElidedAnswerBlock)) {
-    return { answer: messageText(msg), narration, all: messageFullText(msg) };
-  }
-  const answer = text ?? "";
-  return { answer, narration, all: fullTextWithElidedAnswer(blocks, msg, unreadBlockIndexes(read.reports), answer) };
-}
-
-/** The `content[]` indexes core's lenient reader left out of a stored message. */
-function unreadBlockIndexes(reports: readonly AgRecordReport[]): ReadonlySet<number> {
-  const out = new Set<number>();
-  for (const r of reports) {
-    if (r.path.length === 2 && r.path[0] === "content" && typeof r.path[1] === "number") out.add(r.path[1]);
-  }
-  return out;
+  const msg = readStoredRowMessage(raw, text);
+  if (msg === undefined) return null;
+  return { answer: messageText(msg), narration: messageNarration(msg), all: messageFullText(msg) };
 }
 
 /**
- * {@link messageFullText} for a stored message whose answer is elided: every
- * text block in stored order, narration included, with `answer` (the row's
- * `text`, which is every answer block joined) where the first answer block
- * stood, elided or not, and every later answer block left out because `answer`
- * already holds it. When the answer blocks stand together, as a reply's do,
- * these are the bytes the unelided message gives.
+ * A row's stored message as every reader of a row reads it ({@link storedTextParts},
+ * {@link rowToAgMessage}, `classifyStoredRow`): `content` (a stored `AgMessage`
+ * object) through core's lenient stored-record reader, with an ELIDED ANSWER
+ * restored from the row's `text`. `undefined` when core cannot materialize the
+ * message. Like core's reader, it returns a view, never a record to persist.
  *
- * `stored` is the raw `content[]`; `msg` is core's lenient read of it, which
- * keeps every readable block in order and leaves out the indexes in `unread`
- * (an elided answer block is one of them: its `text` is not a string).
+ * A stored message may leave its answer out of `content` because the row's
+ * `text` carries the same words: an answer block whose `text` is the
+ * {@link ELIDED_VALUE_KEY} marker ({@link isElidedAnswerBlock}). Such a message
+ * is rebuilt once, before it is read: the row's `text` (every answer block,
+ * joined) becomes the text of the first answer block, and every later answer
+ * block is left out, since that `text` already holds it. An answer block here
+ * is a block core can read as a text block, not narration, that is elided or
+ * non-empty. Every other block stays as stored. When the answer blocks stand
+ * together, as a reply's do, the rebuilt message reads the same text as the
+ * unelided one.
+ *
+ * Only the marker reads the row's `text`: a message with no answer blocks reads
+ * as it always has, with an empty answer, whatever the row's `text` says. An
+ * elided answer on a row with no `text` reads as an empty answer, as its
+ * unelided twin with an empty answer would.
  */
-function fullTextWithElidedAnswer(
-  stored: readonly unknown[],
-  msg: AgMessage,
-  unread: ReadonlySet<number>,
-  answer: string,
-): string {
-  const parts: string[] = [];
-  let answerPlaced = false;
-  const placeAnswer = (): void => {
-    if (answerPlaced) return;
-    answerPlaced = true;
-    if (answer) parts.push(answer);
-  };
-  let next = 0;
-  stored.forEach((element, at) => {
-    if (isElidedAnswerBlock(element)) return placeAnswer();
-    if (unread.has(at)) return;
-    const block = msg.content[next++];
-    if (block === undefined || block.type !== "text" || !block.text) return;
-    if (isNarration(block)) parts.push(block.text);
-    else placeAnswer();
+export function readStoredRowMessage(content: unknown, text?: string): AgMessage | undefined {
+  if (!isStoredMessageObject(content) || !content.content.some(isElidedAnswerBlock)) {
+    return readStoredAgMessage(content).value;
+  }
+  const stored = content.content;
+  // Each elided answer opened to an empty string first, so core judges every other field of it.
+  const opened = stored.map((element) => (isElidedAnswerBlock(element) ? { ...element, text: "" } : element));
+  const read = readStoredAgMessage({ ...content, content: opened });
+  if (read.value === undefined) return undefined;
+  const unread = new Set(read.reports.flatMap((r) => (r.path[0] === "content" && typeof r.path[1] === "number" ? [r.path[1]] : [])));
+  const isAnswer = (element: unknown, at: number): boolean =>
+    !unread.has(at) && isAnswerTextElement(element) && (element.text !== "" || isElidedAnswerBlock(stored[at]));
+  const first = opened.findIndex(isAnswer);
+  const rebuilt = opened.flatMap((element, at) => {
+    if (at === first && isAnswerTextElement(element)) return [{ ...element, text: text ?? "" }];
+    return isAnswer(element, at) ? [] : [element];
   });
-  return parts.join("\n\n");
+  return readStoredAgMessage({ ...content, content: rebuilt }).value;
+}
+
+/** A stored value with a `content` array: the shape a stored `AgMessage` has, before core reads it. */
+function isStoredMessageObject(value: unknown): value is { content: unknown[] } {
+  return value !== null && typeof value === "object" && "content" in value && Array.isArray(value.content);
+}
+
+/** A stored text element as a stored message carries it, before core reads it. */
+interface StoredTextElement {
+  type: "text";
+  text: unknown;
+}
+
+/** A stored element shaped as a text block that is not interim narration. */
+function isNonNarrationTextElement(element: unknown): element is StoredTextElement {
+  if (element === null || typeof element !== "object" || Array.isArray(element)) return false;
+  if (!("type" in element) || element.type !== "text" || !("text" in element)) return false;
+  return !("phase" in element && element.phase === "interim");
+}
+
+/** A stored answer block that carries its words: a non-narration text element whose `text` is a string. */
+function isAnswerTextElement(element: unknown): element is StoredTextElement & { text: string } {
+  return isNonNarrationTextElement(element) && typeof element.text === "string";
 }
 
 export function agMessageToRow(
@@ -400,18 +405,8 @@ function cardCopyOf(block: ToolResultBlock, cards: CardUiDataByCallId): CardUiDa
  * it holds no narration to read back. Read on the raw stored element, since
  * core's lenient reader leaves such a block out (its `text` is not a string).
  */
-export function isElidedAnswerBlock(element: unknown): boolean {
-  if (element === null || typeof element !== "object" || Array.isArray(element)) return false;
-  if (!("type" in element) || element.type !== "text" || !("text" in element)) return false;
-  if ("phase" in element && element.phase === "interim") return false;
-  return isElidedMarker(element.text);
-}
-
-/** Whether a row's stored `content` (a stored `AgMessage` object) carries an {@link isElidedAnswerBlock}. */
-export function storedAnswerElided(content: unknown): boolean {
-  if (content === null || typeof content !== "object" || !("content" in content)) return false;
-  const blocks: unknown = content.content;
-  return Array.isArray(blocks) && blocks.some(isElidedAnswerBlock);
+export function isElidedAnswerBlock(element: unknown): element is StoredTextElement {
+  return isNonNarrationTextElement(element) && isElidedMarker(element.text);
 }
 
 /**
@@ -726,11 +721,12 @@ function isJsonObjectLike(v: unknown): v is { type?: unknown; _meta?: unknown } 
  * undefined value in a closed set, is omitted whole and the rest restores in
  * order; unknown fields pass through untouched. Only a record the reader
  * cannot materialize (no string `id`, an undefined `role`, no `content`
- * array) falls to the text projection.
+ * array) falls to the text projection. A stored message whose answer block is
+ * elided reads its answer from the row's `text` ({@link readStoredRowMessage}).
  */
 export function rowToAgMessage(row: ThreadMessageRow): AgMessage {
-  const stored = readStoredAgMessage(row.content);
-  if (stored.value !== undefined) return stored.value;
+  const stored = readStoredRowMessage(row.content, row.text);
+  if (stored !== undefined) return stored;
   const role: AgRole =
     row.authorRole === "user" ? "user" : row.authorRole === "system" ? "system" : "assistant";
   const text = row.text ?? "";

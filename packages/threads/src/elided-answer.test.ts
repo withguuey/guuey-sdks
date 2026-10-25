@@ -9,7 +9,14 @@
  */
 import { describe, expect, it } from "vitest";
 import type { AgMessage, JsonValue } from "@silverprotocol/core";
-import { ELIDED_VALUE_KEY, agMessageToRow, isElidedAnswerBlock, storedTextParts } from "./fold-rows.js";
+import {
+  ELIDED_VALUE_KEY,
+  agMessageToRow,
+  isElidedAnswerBlock,
+  reassembleFold,
+  rowToAgMessage,
+  storedTextParts,
+} from "./fold-rows.js";
 import { InMemoryThreadPersistence } from "./in-memory.js";
 import type { ThreadMessageRow } from "./rows.js";
 import { ThreadStore } from "./store.js";
@@ -110,6 +117,57 @@ describe("storedTextParts reads an elided answer from the row's text", () => {
       content: [{ type: "text", text: "First part." }, { type: "text", text: marker("Second part.") }],
     };
     expect(storedTextParts(half, row.text)).toEqual({ answer: row.text, narration: [], all: row.text });
+    // The same with the elided block first: the answer block after it is left out, never read twice.
+    const halfFirst: JsonValue = {
+      id: "m1",
+      role: "assistant",
+      threadId: "t1",
+      content: [{ type: "text", text: marker("First part.") }, { type: "text", text: "Second part." }],
+    };
+    expect(storedTextParts(halfFirst, row.text)).toEqual({ answer: row.text, narration: [], all: row.text });
+  });
+
+  it("a block this reader cannot read, stored before an elided answer, leaves the answer in its place", () => {
+    // A newer writer's block type: core's lenient reader leaves it out.
+    const stored = (answer: JsonValue): JsonValue => ({
+      id: "m1",
+      role: "assistant",
+      threadId: "t1",
+      content: [{ type: "future-block" }, { type: "text", text: answer }, { type: "text", text: NARRATION, phase: "interim" }],
+    });
+    expect(storedTextParts(stored(marker(ANSWER)), ANSWER)).toEqual(storedTextParts(stored(ANSWER)));
+    expect(storedTextParts(stored(marker(ANSWER)), ANSWER)).toEqual({
+      answer: ANSWER,
+      narration: [NARRATION],
+      all: `${ANSWER}\n\n${NARRATION}`,
+    });
+  });
+
+  it("an answer block core cannot read is not where the answer goes: the answer stays where the elided block stood", () => {
+    // `phase` must be a string, so core's reader leaves the first block out, as it does in the unelided twin.
+    const stored = (answer: JsonValue): JsonValue => ({
+      id: "m1",
+      role: "assistant",
+      threadId: "t1",
+      content: [{ type: "text", text: "Unreadable.", phase: 5 }, { type: "text", text: answer }, { type: "text", text: NARRATION, phase: "interim" }],
+    });
+    expect(storedTextParts(stored(marker(ANSWER)), ANSWER)).toEqual(storedTextParts(stored(ANSWER)));
+    expect(storedTextParts(stored(marker(ANSWER)), ANSWER)).toEqual({
+      answer: ANSWER,
+      narration: [NARRATION],
+      all: `${ANSWER}\n\n${NARRATION}`,
+    });
+  });
+
+  it("an empty answer block before the narration is not where the answer goes", () => {
+    const stored = (answer: JsonValue): JsonValue => ({
+      id: "m1",
+      role: "assistant",
+      threadId: "t1",
+      content: [{ type: "text", text: "" }, { type: "text", text: NARRATION, phase: "interim" }, { type: "text", text: answer }],
+    });
+    expect(storedTextParts(stored(marker(ANSWER)), ANSWER)).toEqual(storedTextParts(stored(ANSWER)));
+    expect(storedTextParts(stored(marker(ANSWER)), ANSWER)?.all).toBe(`${NARRATION}\n\n${ANSWER}`);
   });
 
   it("a narration block is never an elided answer: the row's text holds no narration", () => {
@@ -122,7 +180,7 @@ describe("storedTextParts reads an elided answer from the row's text", () => {
   });
 });
 
-describe("classifyStoredRow: an elided answer is conversation, never blank", () => {
+describe("classifyStoredRow reads an elided answer as the row's text", () => {
   const row = (content: ThreadMessageRow["content"], text?: string): ThreadMessageRow => ({
     ...ctx,
     kind: "text",
@@ -138,6 +196,34 @@ describe("classifyStoredRow: an elided answer is conversation, never blank", () 
   it("a message with no answer blocks, or an empty one, stays blank", () => {
     expect(classifyStoredRow(row(message([]), ANSWER))).toEqual({ kind: "blank" });
     expect(classifyStoredRow(row(message([{ type: "text", text: "" }]), ANSWER))).toEqual({ kind: "blank" });
+  });
+
+  it("an elided answer on a row with no text reads as an empty answer: blank alone, conversation beside narration", () => {
+    expect(classifyStoredRow(row(elided(answerOnly)))).toEqual({ kind: "blank" });
+    expect(classifyStoredRow(row(elided(answerOnly), ""))).toEqual({ kind: "blank" });
+    expect(classifyStoredRow(row(elided(withNarration)))).toEqual({ kind: "conversation" });
+  });
+});
+
+describe("rowToAgMessage and reassembleFold read an elided answer from the row's text", () => {
+  it("an elided row reads back as its unelided twin's message", () => {
+    for (const msg of [withNarration, answerOnly]) {
+      const plain = agMessageToRow(msg, ctx);
+      expect(rowToAgMessage({ ...plain, content: elided(msg) })).toEqual(rowToAgMessage(plain));
+      expect(rowToAgMessage(plain)).toEqual(msg);
+    }
+  });
+
+  it("the reassembled fold of elided rows is the fold of their unelided twins", () => {
+    const plainRows = [withNarration, answerOnly].map((msg, i) =>
+      agMessageToRow({ ...msg, id: `m${i + 1}` }, { ...ctx, seq: i + 1, clientMessageId: `c${i + 1}` }),
+    );
+    const elidedRows = plainRows.map((r) => {
+      const msg = rowToAgMessage(r);
+      return { ...r, content: elided(msg) };
+    });
+    expect(reassembleFold(elidedRows, undefined)).toEqual(reassembleFold(plainRows, undefined));
+    expect(reassembleFold(plainRows, undefined).messages.map((m) => m.content)).toEqual([withNarration.content, answerOnly.content]);
   });
 });
 
