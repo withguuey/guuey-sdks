@@ -8,6 +8,7 @@
  *   guuey env unset KEY [KEY2]              # Remove env vars
  */
 
+import { isRuntimeReservedEnvName } from '@guuey/config';
 import { requireAuth } from '../auth';
 import { resolveConfig } from '../config';
 import { resolveTargetAppId } from '../app-id';
@@ -69,6 +70,17 @@ export async function envSet(args: string[], flags?: Record<string, string | tru
 
   if (Object.keys(pairs).length === 0) {
     out.error('No environment variables provided. Usage: guuey env set KEY=VALUE [KEY2=VALUE2]');
+    process.exit(1);
+  }
+
+  // The runtime-reserved names (`@guuey/config`, the one list `guuey deploy`
+  // and the host apply). The API refuses them either way; this only saves the
+  // round trip.
+  const reserved = Object.keys(pairs).filter(isRuntimeReservedEnvName);
+  if (reserved.length > 0) {
+    for (const key of reserved) {
+      out.error(`"${key}" is reserved by the platform and cannot be set`);
+    }
     process.exit(1);
   }
 
