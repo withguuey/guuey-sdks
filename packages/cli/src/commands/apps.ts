@@ -13,6 +13,7 @@ import { login } from './login';
 import { resolveTargetAppId } from '../app-id';
 import * as out from '../output';
 import { themeForwardLines, themeForwardOf } from '../theme-forward';
+import { type AppUpdateWarningWire, updateWarningsOf } from '../update-warnings';
 import { BUILT_FOR_LABEL, isAppBuiltFor, parseBuiltForFlag } from '../built-for';
 import { cliApiAuthHeaders } from '../cli-api-headers';
 
@@ -1164,6 +1165,10 @@ export async function appsUpdate(
   // guuey#1415: what the CARD side did on a theme-affecting update — said
   // after the success line, never as a failure (the row write stood).
   let cardLines: string[] = [];
+  // guuey#2515: what the server says about the row the write left (e.g. byo
+  // with a binding that does not serve) — printed after the success line,
+  // never as a failure.
+  let warnings: AppUpdateWarningWire[] = [];
   if (typeof body !== 'string') {
     const res = await apiRequest('PUT', `/apps/${resolved}`, body);
     if (!res.ok) return handleError(res);
@@ -1174,12 +1179,14 @@ export async function appsUpdate(
       answer = undefined;
     }
     cardLines = themeForwardLines(themeForwardOf(answer));
+    warnings = updateWarningsOf(answer);
   }
 
   if (opts.json) {
     out.json({
       success: true,
       ...Object.fromEntries(uploaded.map((commit) => [commit.field, commit.url])),
+      ...(warnings.length > 0 ? { warnings } : {}),
     });
     return;
   }
@@ -1189,6 +1196,7 @@ export async function appsUpdate(
   if (typeof body !== 'string') {
     out.success(`Updated app ${resolved}`);
     for (const line of cardLines) console.error(line);
+    out.printWarnings(warnings);
   }
 
   // Arming byo is the moment the embed-origin gap becomes real (guuey#186

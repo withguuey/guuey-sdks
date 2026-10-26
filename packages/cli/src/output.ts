@@ -56,6 +56,18 @@ export function error(msg: string): void {
 }
 
 /**
+ * Print a server answer's warnings to stderr, one line per entry, each
+ * prefixed with a warning mark. The message is printed as the server wrote
+ * it: the CLI keeps no wording of its own per code. Nothing is printed for an
+ * empty list.
+ */
+export function printWarnings(warnings: readonly { message: string }[]): void {
+  for (const warning of warnings) {
+    console.error(`⚠ ${warning.message}`);
+  }
+}
+
+/**
  * Fail fast for a command whose cliApi routes are still deferred (see the
  * "Deferred to follow-up slices" block in cliApi handler.ts). The command
  * stays registered (no unknown-command noise) but is de-advertised from

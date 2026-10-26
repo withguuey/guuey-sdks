@@ -496,3 +496,72 @@ describe('guuey apps check — wired in the dispatcher (guuey#1301)', () => {
     expect(cli).toContain('subscribe, access, check, publish, unpublish, byo-user');
   });
 });
+
+describe('appsUpdate — the answer warnings (guuey#2515)', () => {
+  let fetchSpy: MockInstance<typeof fetch>;
+  let errorSpy: MockInstance<typeof console.error>;
+  let logSpy: MockInstance<typeof console.log>;
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, 'fetch');
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // A byo update that carries its binding sends one PUT and reads nothing.
+  const bound = {
+    authMode: 'byo',
+    issuerUrl: 'https://issuer.example.com',
+    audience: 'my-app',
+    domains: 'https://console.example.com',
+  };
+  const answer = (body: object): Response => new Response(JSON.stringify(body), { status: 200 });
+  const printed = (): string => errorSpy.mock.calls.flat().join('\n');
+
+  it("prints each warning's message verbatim after the success line", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      answer({ app: {}, warnings: [{ code: 'BYO_ISSUER_MISSING', message: 'The server said this.' }] }),
+    );
+
+    await appsUpdate('app-1', bound);
+
+    expect(printed()).toContain('⚠ The server said this.');
+    expect(logSpy.mock.calls.flat().join('\n')).toContain('Updated app app-1');
+  });
+
+  it('prints a warning whose code this CLI does not know', async () => {
+    fetchSpy.mockResolvedValueOnce(answer({ app: {}, warnings: [{ code: 'SOME_NEWER_CODE', message: 'A newer server says this.' }] }));
+
+    await appsUpdate('app-1', bound);
+
+    expect(printed()).toContain('⚠ A newer server says this.');
+  });
+
+  it('prints nothing when the answer carries no warnings', async () => {
+    fetchSpy.mockResolvedValueOnce(answer({ app: {} }));
+
+    await appsUpdate('app-1', bound);
+
+    expect(printed()).not.toContain('⚠');
+  });
+
+  it('carries the warnings in --json output only when there are some', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(answer({ app: {}, warnings: [{ code: 'BYO_ISSUER_MISSING', message: 'm' }] }))
+      .mockResolvedValueOnce(answer({ app: {} }));
+
+    await appsUpdate('app-1', { ...bound, json: true });
+    await appsUpdate('app-1', { ...bound, json: true });
+
+    const [first, second] = logSpy.mock.calls.map(([line]) => JSON.parse(String(line)) as { warnings?: unknown });
+    expect(first?.warnings).toEqual([{ code: 'BYO_ISSUER_MISSING', message: 'm' }]);
+    expect(second).not.toHaveProperty('warnings');
+  });
+});
