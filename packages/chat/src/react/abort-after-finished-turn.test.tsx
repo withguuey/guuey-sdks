@@ -15,11 +15,11 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
-import { type AgentInvokeAdapters, type InvokeRequest } from "@guuey/agent-client";
+import { type AgentInvokeAdapters, type AgentMessage, type InvokeRequest } from "@guuey/agent-client";
 import { useAgentInvoke } from "@guuey/agent-client/react";
 import { calmPolicy } from "../policy.js";
 import { planTranscript } from "../plan.js";
-import type { TranscriptPlan } from "../types.js";
+import type { TranscriptInputs, TranscriptPlan } from "../types.js";
 import { useTranscriptInputs } from "./use-transcript.js";
 
 afterEach(cleanup);
@@ -52,7 +52,15 @@ function stalledTurn(turnId: string, opened: boolean): string[] {
   return opened ? [session, frame({ type: "turn.start", seq: 0, turnId, threadId: THREAD })] : [session];
 }
 
-function adapters(turns: string[][]): { adapters: AgentInvokeAdapters; delivered: () => Promise<void> } {
+/**
+ * `history`: a persisted transcript the hook rehydrates before the first
+ * send (a reload, then keep chatting), so the plan has a flat prefix in
+ * front of the fold.
+ */
+function adapters(
+  turns: string[][],
+  history?: AgentMessage[],
+): { adapters: AgentInvokeAdapters; delivered: () => Promise<void> } {
   let call = 0;
   let markDelivered: () => void = () => {};
   let delivered = new Promise<void>((resolve) => {
@@ -64,12 +72,13 @@ function adapters(turns: string[][]): { adapters: AgentInvokeAdapters; delivered
     delivered: () => delivered,
     adapters: {
       storage: {
-        load: (k) => store[k] ?? null,
+        load: (k) => store[k] ?? (history !== undefined ? THREAD : null),
         save: (k, v) => {
           store[k] = v;
         },
       },
       generateId: () => `cm-${++ids}`,
+      ...(history !== undefined ? { history: { load: async () => ({ messages: history }) } } : {}),
       transport: async function* (req: InvokeRequest): AsyncGenerator<string> {
         const chunks = turns[call++] ?? [];
         for (const c of chunks) yield c;
@@ -100,8 +109,8 @@ function drawn(plan: TranscriptPlan): string[] {
   return out;
 }
 
-function mount(turns: string[][]) {
-  const a = adapters(turns);
+function mount(turns: string[][], history?: AgentMessage[]) {
+  const a = adapters(turns, history);
   const hook = renderHook(() => {
     const invoke = useAgentInvoke({
       endpointUrl: "https://pod.example.com",
@@ -170,5 +179,167 @@ describe("guuey#2445 — abort right after a finished turn", () => {
       "agent:half [Stopped.]",
       "status:Stopped.",
     ]);
+  });
+});
+
+/**
+ * The seam must count the stopped turn as covered ONLY when that send got no
+ * turn with a source. A stop that lands after the turn's last frame (its
+ * `turn.done` folded, the stream's `done` not yet sent, so Stop is still on
+ * screen) already has its source. Counting it again cut one group too many
+ * from the rehydrated prefix and deleted the last reloaded answer.
+ */
+describe("guuey#2445 — abort with a rehydrated history prefix in front of the fold", () => {
+  const HISTORY: AgentMessage[] = [
+    { role: "user", text: "H0", seq: 1 },
+    { role: "assistant", text: "HA0", seq: 2 },
+  ];
+
+  async function sendQ1ThenQ2(
+    result: { current: ReturnType<typeof mount>["result"]["current"] },
+    delivered: () => Promise<void>,
+  ): Promise<{ second: Promise<void> }> {
+    await waitFor(() => expect(result.current.invoke.messages.map((m) => m.text)).toEqual(["H0", "HA0"]));
+    await act(async () => {
+      await result.current.invoke.send("Q1");
+    });
+    expect(result.current.invoke.status).toBe("ready");
+    let second: Promise<void> = Promise.resolve();
+    await act(async () => {
+      second = result.current.invoke.send("Q2");
+      await delivered();
+    });
+    // Wrapped: an async function returning the bare promise would adopt it
+    // and wait for Q2's stream, which ends only on the abort below.
+    return { second };
+  }
+
+  it.each([
+    { name: "admitted only (no AgEvent of Q2 yet)", opened: false },
+    { name: "admitted and opened (turn.start of Q2 folded)", opened: true },
+  ])("keeps HA0 when Q2 is stopped before its first token — $name", async ({ opened }) => {
+    const { result, delivered } = mount([finishedTurn("turn_1", "A1"), stalledTurn("turn_2", opened)], HISTORY);
+    const { second } = await sendQ1ThenQ2(result, delivered);
+    await waitFor(() => expect(result.current.invoke.status).toBe("thinking"));
+    await act(async () => {
+      result.current.invoke.abort();
+      await second;
+    });
+    expect(result.current.invoke.aborted).toBe(true);
+
+    const plan = planTranscript(result.current.inputs, calmPolicy());
+    expect(drawn(plan)).toEqual([
+      "user:H0",
+      "agent:HA0",
+      "user:Q1",
+      "agent:A1",
+      "user:Q2",
+      "status:Stopped.",
+    ]);
+  });
+
+  it("keeps HA0 when Q2 is stopped after its turn.done but before the stream's done", async () => {
+    const answered = finishedTurn("turn_2", "A2").filter((c) => !c.startsWith("event: done"));
+    const { result, delivered } = mount([finishedTurn("turn_1", "A1"), answered], HISTORY);
+    const { second } = await sendQ1ThenQ2(result, delivered);
+    await waitFor(() => expect(result.current.invoke.status).toBe("responding"));
+    await act(async () => {
+      result.current.invoke.abort();
+      await second;
+    });
+    expect(result.current.invoke.aborted).toBe(true);
+
+    const plan = planTranscript(result.current.inputs, calmPolicy());
+    expect(drawn(plan)).toEqual([
+      "user:H0",
+      "agent:HA0",
+      "user:Q1",
+      "agent:A1",
+      "user:Q2",
+      "agent:A2",
+      "status:Stopped.",
+    ]);
+  });
+
+  it("keeps HA0 while Q2 is answered (its turn.done folded) and the stream's done has not come", async () => {
+    const answered = finishedTurn("turn_2", "A2").filter((c) => !c.startsWith("event: done"));
+    const { result, delivered } = mount([finishedTurn("turn_1", "A1"), answered], HISTORY);
+    const { second } = await sendQ1ThenQ2(result, delivered);
+    await waitFor(() => expect(result.current.invoke.status).toBe("responding"));
+
+    const plan = planTranscript(result.current.inputs, calmPolicy());
+    expect(drawn(plan)).toEqual(["user:H0", "agent:HA0", "user:Q1", "agent:A1", "user:Q2", "agent:A2"]);
+    await act(async () => {
+      result.current.invoke.abort();
+      await second;
+    });
+  });
+
+  it("draws the answered Q2 once in a pure-live session stopped after its turn.done", async () => {
+    const answered = finishedTurn("turn_2", "A2").filter((c) => !c.startsWith("event: done"));
+    const { result, delivered } = mount([finishedTurn("turn_1", "A1"), answered]);
+    await act(async () => {
+      await result.current.invoke.send("Q1");
+    });
+    let second: Promise<void> = Promise.resolve();
+    await act(async () => {
+      second = result.current.invoke.send("Q2");
+      await delivered();
+    });
+    await waitFor(() => expect(result.current.invoke.status).toBe("responding"));
+    await act(async () => {
+      result.current.invoke.abort();
+      await second;
+    });
+
+    const plan = planTranscript(result.current.inputs, calmPolicy());
+    expect(drawn(plan)).toEqual(["user:Q1", "agent:A1", "user:Q2", "agent:A2", "status:Stopped."]);
+  });
+});
+
+/**
+ * The same seam when the send produced a SECOND turn after its answer: a
+ * paused hitl turn appended behind it, which has no source of its own. The
+ * send's answer is its source, so nothing is pending and HA0 stays. Hand-built
+ * from the inputs the real assembler produced in the cases above.
+ */
+describe("guuey#2445 — a paused hitl turn appended after the send's own answer", () => {
+  const text = (t: string) => [{ type: "text" as const, text: t }];
+  const inputs = (aborted: boolean): TranscriptInputs => ({
+    messages: [
+      { role: "user", text: "H0", seq: 1 },
+      { role: "assistant", text: "HA0", seq: 2 },
+      { role: "user", text: "Q1", clientMessageId: "cm-1", precedingTurnCount: 0 },
+      { role: "assistant", text: "A1" },
+      { role: "user", text: "Q2", clientMessageId: "cm-2", precedingTurnCount: 1 },
+    ],
+    result: {
+      messages: [
+        { id: "m1", role: "assistant", turnId: "turn_1", content: text("A1") },
+        { id: "m2", role: "assistant", turnId: "turn_2", content: text("A2") },
+      ],
+      artifacts: [],
+      memory: [],
+      turns: [
+        { turnId: "turn_1", threadId: THREAD, outcome: { type: "success" } },
+        { turnId: "turn_2", threadId: THREAD, outcome: { type: "success" } },
+        { turnId: "turn_3", threadId: THREAD, outcome: { type: "paused", asks: [] } },
+      ],
+    },
+    assistantText: "",
+    status: aborted ? "ready" : "responding",
+    statusElapsedMs: 0,
+    activeTool: null,
+    error: null,
+    prompts: [],
+    aborted,
+  });
+
+  it.each([
+    { name: "still responding", aborted: false },
+    { name: "stopped", aborted: true },
+  ])("keeps HA0 — $name", ({ aborted }) => {
+    const rows = drawn(planTranscript(inputs(aborted), calmPolicy())).filter((r) => !r.startsWith("status:"));
+    expect(rows).toEqual(["user:H0", "agent:HA0", "user:Q1", "agent:A1", "user:Q2", "agent:A2"]);
   });
 });

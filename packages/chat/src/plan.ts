@@ -138,10 +138,16 @@ function noticeText(content: readonly AgBlock[]): string {
     .join("\n");
 }
 
+/**
+ * `sendTurnStart`: the latest user row's `precedingTurnCount`, the fold's
+ * `turns.length` when that row was sent (undefined when the row carries no
+ * stamp). The turns from that index on are the ones that send produced.
+ */
 function foldAssistantSources(
   result: AgReduceResult,
   inFlight: boolean,
   aborted: boolean,
+  sendTurnStart: number | undefined,
 ): { sources: AssistantSource[]; notices: FoldNotice[]; pendingTurn: boolean } {
   // Real pod folds carry `tool-result` blocks in separate `role: "tool"`
   // messages between assistant turns (the production ggui-render capture is
@@ -180,6 +186,11 @@ function foldAssistantSources(
   const notices: FoldNotice[] = [];
   /** Sources holding a message of a turn the fold has not seen end (no `outcome`). */
   const openSources = new Set<AssistantSource>();
+  /** The turns the latest send produced, when its row is stamped. */
+  const sendTurns =
+    sendTurnStart !== undefined ? new Set(result.turns.slice(sendTurnStart).map((t) => t.turnId)) : null;
+  /** Whether any of those turns already has a source (a frame of it was folded). */
+  let sendHasSource = false;
   let current: AssistantSource | null = null;
   let currentTurnId: string | undefined;
   for (const m of result.messages) {
@@ -201,6 +212,7 @@ function foldAssistantSources(
         openSources.add(current!);
         if (inFlight) current!.live = true;
       }
+      if (m.turnId !== undefined && sendTurns?.has(m.turnId) === true) sendHasSource = true;
     } else if (m.role === "tool" && sources.length > 0) {
       // Tool results belong to the turn in progress — or, when they trail a
       // user boundary before the next assistant segment, to the PRECEDING
@@ -225,14 +237,26 @@ function foldAssistantSources(
     // the settled answer in front of it is not the one that stopped.
     last.stopped = aborted && (!hasTurnIdentity || openSources.has(last));
   }
-  // The session's current turn (in flight, or just stopped by the user) that
-  // no frame has given a source yet. It still owns its user row, so the seam
-  // counts it as covered. guuey#2445: a turn stopped before its first frame
-  // is that turn too; without it the seam kept the fold's previous answer
-  // again as a flat prefix, drawn above its own question.
-  const pendingTurn = hasTurnIdentity
-    ? (inFlight || aborted) && openSources.size === 0
-    : inFlight && !sources.some((s) => s.live);
+  // The latest send (in flight, or just stopped by the user) when it has no
+  // source yet: no frame of any turn it produced has been folded. It still
+  // owns its user row, so the seam counts it as covered. guuey#2445: a send
+  // stopped before its first frame is that send too; without it the seam
+  // kept the fold's previous answer again as a flat prefix, drawn above its
+  // own question.
+  //
+  // The test is "the send produced no turn with a source", read from the
+  // row's stamp, and NOT "no source is open": a send whose turn already
+  // ended (its `turn.done` folded, the stream's `done` still to come, or a
+  // paused hitl turn appended after it) has its source, and counting it a
+  // second time cut the last group of a rehydrated prefix.
+  //
+  // Without a stamp (an older assembler) or without turn identity, the rule
+  // is the one before guuey#2445: only an in-flight turn with no live source.
+  const pendingTurn = !hasTurnIdentity
+    ? inFlight && !sources.some((s) => s.live)
+    : sendTurns !== null
+      ? (inFlight || aborted) && !sendHasSource
+      : inFlight && openSources.size === 0;
   return { sources, notices, pendingTurn };
 }
 
@@ -1126,12 +1150,17 @@ export function planTranscript(
    */
   let foldSeam = 0;
   if (inputs.result) {
-    const fold = foldAssistantSources(inputs.result, inFlight, inputs.aborted === true);
+    const fold = foldAssistantSources(
+      inputs.result,
+      inFlight,
+      inputs.aborted === true,
+      lastUser?.precedingTurnCount,
+    );
     const foldSources = fold.sources;
     const flatGroups = flatSettledGroups(inputs.messages).groups;
-    // The turns the fold covers: its sources, plus the in-flight (or
-    // just-stopped) turn when no frame of it has arrived yet (a source
-    // appears with the first frame). `users` includes the optimistic row of
+    // The turns the fold covers: its sources, plus the latest send (in
+    // flight or just stopped) when no frame of a turn it produced has
+    // arrived yet (a source appears with the first frame). `users` includes the optimistic row of
     // that turn, so the subtraction lands on the same prefix in both states.
     const foldCovers = foldSources.length + (fold.pendingTurn ? 1 : 0);
     const keep = Math.max(0, Math.min(flatGroups.length, users.length - foldCovers));
