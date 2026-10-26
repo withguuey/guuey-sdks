@@ -30,6 +30,24 @@ export {
   humanizeToolName,
   type ChatStrings,
 } from "./strings.js";
+// guuey#2446 — composer dictation, the headless core: the engine contract an
+// injected recognizer meets, its events, and the pure session reducer that
+// `useSpeechInput` (at `./react` and `./native`) runs.
+export {
+  INITIAL_SPEECH_INPUT_STATE,
+  joinSpeechText,
+  speechInputReducer,
+  speechSessionLive,
+  speechSessionText,
+  type SpeechErrorCode,
+  type SpeechInputAction,
+  type SpeechInputErrorCode,
+  type SpeechInputState,
+  type SpeechRecognizer,
+  type SpeechRecognizerEvent,
+  type SpeechSession,
+  type SpeechStartOptions,
+} from "./speech-input.js";
 export { transcriptInputsFromHistory } from "./history-inputs.js";
 export {
   DEFAULT_MAX_INLINE_MEDIA_BYTES,
