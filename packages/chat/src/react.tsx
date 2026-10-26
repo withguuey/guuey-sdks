@@ -78,6 +78,15 @@ export {
   type UseSpeechInputOptions,
   type UseSpeechInputResult,
 } from "./react/use-speech-input.js";
+// guuey#2446 — the web engine for it: the browser's Web Speech API, injected.
+export {
+  webSpeechRecognizer,
+  type WebSpeechRecognitionConstructor,
+  type WebSpeechRecognitionLike,
+  type WebSpeechResultLike,
+  type WebSpeechResultListLike,
+  type WebSpeechWindow,
+} from "./react/web-speech.js";
 export {
   GuueyChat,
   type GuueyChatActivityEvent,
