@@ -86,6 +86,11 @@ const COMPLETED: AgentMessage[] = [
   { role: "user", text: "hi" },
   { role: "assistant", text: "the full persisted answer" },
 ];
+/** The adopted transcript: history's rows, the live send keeping its turn stamp (guuey#2445). */
+const ADOPTED: AgentMessage[] = [
+  { role: "user", text: "hi", precedingTurnCount: 0 },
+  { role: "assistant", text: "the full persisted answer" },
+];
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -117,9 +122,10 @@ describe("useAgentInvoke stall recovery (guuey#192)", () => {
       await sendDone;
     });
 
-    // Seamless: the transcript IS the persisted one, no error surfaced, the
-    // dead stream was aborted, and the probe queried the session's thread.
-    expect(result.current.messages).toEqual(COMPLETED);
+    // Seamless: the transcript IS the persisted one (the live send keeping
+    // its turn stamp), no error surfaced, the dead stream was aborted, and
+    // the probe queried the session's thread.
+    expect(result.current.messages).toEqual(ADOPTED);
     expect(result.current.historyCards).toHaveLength(1);
     expect(result.current.error).toBeNull();
     expect(result.current.errorCode).toBeNull();

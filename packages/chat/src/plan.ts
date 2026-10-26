@@ -319,6 +319,65 @@ function flatSettledGroups(messages: TranscriptInputs["messages"]): {
   return { groups, userOrder };
 }
 
+/** The seam clamped into the flat groups: never negative, never past the last group. */
+function clampSeam(keep: number, flatGroups: number): number {
+  return Math.max(0, Math.min(flatGroups, keep));
+}
+
+/** Whether a flat group holds anything to draw (guuey#1101's empty slot and an empty placeholder do not). */
+function hasDrawableText(group: AssistantSource): boolean {
+  return group.blocks.some((b) => b.type !== "text" || b.text.trim() !== "");
+}
+
+/**
+ * guuey#2445 — the conversation from the first stamped user row on, one live
+ * send at a time. The fold owns a send's reply when it holds a source for
+ * that send: a source whose turn came at or after the send's stamp and before
+ * the next stamped send's. A send the fold holds NO source for keeps its own
+ * flat group instead, when that group has text: the fold never saw any of its
+ * reply, so the rows hold the only copy. That is a turn adopted from history
+ * whose stream carried no assistant frame (closed after `session` or
+ * `turn.start`, or adopted by the stall watchdog on zero bytes), and a send
+ * stopped before its first frame whose answer the pod stored anyway, once a
+ * history read has replaced the rows. A send stopped, failed or cut live has
+ * no text in its flat group (guuey#1101's empty slot, or the empty
+ * placeholder an error leaves), so it still takes no slot.
+ *
+ * Returns the suffix's sources in order, the slot each stamped user row
+ * precedes, and the slot of each fold source, all offset by `keep` (the flat
+ * prefix in front).
+ */
+function liveSuffix(
+  users: readonly TranscriptInputs["messages"][number][],
+  flat: { groups: readonly AssistantSource[]; userOrder: readonly number[] },
+  foldSources: readonly AssistantSource[],
+  sourcesBefore: (turnCount: number) => number,
+  keep: number,
+): { sources: AssistantSource[]; userSlots: Map<number, number>; foldSlots: number[] } {
+  const live: Array<{ index: number; from: number }> = [];
+  users.forEach((u, index) => {
+    if (u.precedingTurnCount !== undefined) live.push({ index, from: sourcesBefore(u.precedingTurnCount) });
+  });
+  const sources: AssistantSource[] = [];
+  const userSlots = new Map<number, number>();
+  const foldSlots: number[] = [];
+  const placeFoldSourcesBefore = (end: number): void => {
+    for (const source of foldSources.slice(foldSlots.length, end)) {
+      foldSlots.push(keep + sources.length);
+      sources.push(source);
+    }
+  };
+  live.forEach(({ index, from }, k) => {
+    placeFoldSourcesBefore(from);
+    userSlots.set(index, keep + sources.length);
+    const to = live[k + 1]?.from ?? foldSources.length;
+    const own = flat.groups[flat.userOrder[index] ?? flat.groups.length];
+    if (to <= from && own !== undefined && hasDrawableText(own)) sources.push(own);
+  });
+  placeFoldSourcesBefore(foldSources.length);
+  return { sources, userSlots, foldSlots };
+}
+
 function flatAssistantSources(inputs: TranscriptInputs, inFlight: boolean): AssistantSource[] {
   const settled: AssistantSource[] = flatSettledGroups(inputs.messages).groups;
   // The in-flight (or abort-kept) partial is its own trailing slot — settled
@@ -1133,24 +1192,25 @@ export function planTranscript(
   // suffix begins at the FIRST stamped user row: every stamped row was sent
   // live, and the fold holds what those sends produced. The prefix is the
   // flat groups before that row, less any fold source of a turn that came
-  // before it. A history read that replaces the rows (the hook adopting a
-  // cut turn) keeps each live row's stamp when the read serves the row's
-  // `clientMessageId` (guuey#2445), so the anchor stays on the first live
-  // send; a read without those keys leaves the adopted turn on both sides,
-  // its frames in the fold and its rows among the unstamped ones, which the
-  // subtraction covers when every send before the anchor has a source.
-  // A stamp counts fold TURNS, and a turn can have no source (a send
-  // stopped, failed or cut before its first assistant frame, or a paused
-  // hitl turn), so each stamp is mapped to the number of fold sources whose
-  // turn came before it.
+  // before it. A stamp counts fold TURNS, and a turn can have no source (a
+  // send stopped, failed or cut before its first assistant frame, or a
+  // paused hitl turn), so each stamp is mapped to the number of fold sources
+  // whose turn came before it. From the anchor on, each live send's reply is
+  // read where it is held (`liveSuffix`): the fold's sources between its
+  // stamp and the next send's, or, when the fold holds none for it, its own
+  // flat group if that has text (a reply the fold never saw, which a history
+  // read brought in). A history read that replaces the rows (the hook
+  // adopting a cut turn) keeps each live row's stamp (guuey#2445), matched by
+  // the row's `clientMessageId` or, for a read that serves no keys, by
+  // position, so the anchor stays on the first live send.
   // guuey#2445: the earlier count-based rule assumed one source per live
   // send, so such a send, once it was no longer the latest, kept the fold's
   // previous answer again as a flat prefix, drawn above its own question,
   // and every later question was placed one slot too far.
   //
   // Without stamps (an older assembler, or rows replaced by a history read
-  // that serves no row keys) or without turn identity the seam keeps the
-  // count-based rule:
+  // the hook could not match to its live rows) or without turn identity the
+  // seam keeps the count-based rule:
   // `users - foldCovers`, where an in-flight turn counts as covered even
   // before its first frame. The rule before it — flat groups minus SETTLED
   // fold sources — assumed the flat side never holds the live turn's rows;
@@ -1168,6 +1228,12 @@ export function planTranscript(
    * positionally correct. guuey#1333's merge applies to the suffix only.
    */
   let foldSeam = 0;
+  /**
+   * guuey#2445: the slot each stamped user row precedes, when the seam is
+   * anchored on stamps. Null on the count-based rule, where a stamp maps to
+   * `foldSeam + sourcesBefore(stamp)`.
+   */
+  let liveUserSlots: ReadonlyMap<number, number> | null = null;
   /** Each fold source's turn index, when stamps are mapped into source space. */
   let stampedSourceTurns: readonly number[] | null = null;
   /** A live row's stamp (fold turns before it) as fold SOURCES before it. */
@@ -1179,23 +1245,30 @@ export function planTranscript(
     const foldSources = fold.sources;
     const firstLive = users.findIndex((u) => u.precedingTurnCount !== undefined);
     const anchor = users[firstLive]?.precedingTurnCount;
-    let keep: number;
+    /** The global slot of each fold source, index-aligned with `foldSources`. */
+    let foldSlots: readonly number[];
     if (anchor !== undefined && fold.sourceTurns !== null) {
       stampedSourceTurns = fold.sourceTurns;
-      keep = (flat.userOrder[firstLive] ?? 0) - sourcesBefore(anchor);
+      const keep = clampSeam((flat.userOrder[firstLive] ?? 0) - sourcesBefore(anchor), flat.groups.length);
+      const suffix = liveSuffix(users, flat, foldSources, sourcesBefore, keep);
+      foldSeam = keep;
+      liveUserSlots = suffix.userSlots;
+      foldSlots = suffix.foldSlots;
+      assistants = [...flat.groups.slice(0, keep), ...suffix.sources];
     } else {
       // `users` includes the optimistic row of an in-flight turn, so the
       // subtraction lands on the same prefix before and after its first frame.
-      keep = users.length - (foldSources.length + (fold.pendingTurn ? 1 : 0));
+      const keep = clampSeam(users.length - (foldSources.length + (fold.pendingTurn ? 1 : 0)), flat.groups.length);
+      foldSeam = keep;
+      foldSlots = foldSources.map((_, i) => keep + i);
+      assistants = [...flat.groups.slice(0, keep), ...foldSources];
     }
-    keep = Math.max(0, Math.min(flat.groups.length, keep));
-    foldSeam = keep;
-    assistants = [...flat.groups.slice(0, keep), ...foldSources];
     if (policy.notice.show) {
-      // Fold-borne notices anchor to the fold source they followed, which
-      // sits at global slot `keep + afterSourceIndex` after the seam.
+      // Fold-borne notices anchor to the slot of the fold source they followed
+      // (-1 = before any: the slot in front of the seam).
       fold.notices.forEach((n, i) => {
-        notices.push({ key: `nf${i}`, text: n.text, source: n.source, afterSlot: keep + n.afterSourceIndex });
+        const afterSlot = foldSlots[n.afterSourceIndex] ?? foldSeam + n.afterSourceIndex;
+        notices.push({ key: `nf${i}`, text: n.text, source: n.source, afterSlot });
       });
     }
   } else {
@@ -1227,7 +1300,7 @@ export function planTranscript(
           // and its position is already a count of flat groups, which ARE the
           // prefix. Both land in one comparable space.
           u.precedingTurnCount !== undefined
-            ? foldSeam + sourcesBefore(u.precedingTurnCount)
+            ? (liveUserSlots?.get(i) ?? foldSeam + sourcesBefore(u.precedingTurnCount))
             : (flatUserOrder[i] ?? i),
         )
       : null;

@@ -37,7 +37,9 @@ export interface AgentMessage {
   /**
    * How many AGENT TURNS had already arrived when this user row was
    * appended (guuey#1333) — the live interleave key the transcript planner
-   * merges on. Stamped on `role: "user"` rows this client sent live.
+   * merges on. Stamped on `role: "user"` rows this client sent live, and
+   * kept on history's copy of those rows when the hook adopts a turn from
+   * history (`adoptedTranscript`, guuey#2445).
    *
    * Live, the transcript is assembled from two DISJOINT lists: these
    * messages hold the user rows, the fold holds the agent turns (the wire

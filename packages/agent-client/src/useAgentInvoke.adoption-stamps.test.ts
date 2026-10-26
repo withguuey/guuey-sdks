@@ -1,8 +1,9 @@
 /**
  * guuey#2445 — an adoption replaces the rows with history's, and each user
  * row this session sent live keeps its `precedingTurnCount` (matched by the
- * send's `clientMessageId`), so the transcript planner can still tell where
- * the live fold begins.
+ * send's `clientMessageId`, or by position when history serves no keys and
+ * its user rows are exactly the local ones), so the transcript planner can
+ * still tell where the live fold begins.
  */
 import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "./types.js";
@@ -40,11 +41,60 @@ describe("adoptedTranscript", () => {
     ]);
   });
 
-  it("returns history unchanged when its rows carry no key (a read plane that does not serve it)", () => {
+  it("stamps by position when history serves no keys and its user rows are exactly the local ones", () => {
     const history: AgentMessage[] = [
-      { role: "user", text: "Q1", seq: 1 },
-      { role: "assistant", text: "A1", seq: 2 },
+      { role: "user", text: "H0", seq: 1 },
+      { role: "assistant", text: "HA0", seq: 2 },
+      { role: "user", text: "Q1", seq: 3 },
+      { role: "assistant", text: "A1", seq: 4 },
+      { role: "user", text: "Q2", seq: 5 },
+      { role: "user", text: "Q3", seq: 6 },
+      { role: "assistant", text: "A3", seq: 7 },
     ];
-    expect(adoptedTranscript(history, local)).toEqual(history);
+    expect(adoptedTranscript(history, local)).toEqual([
+      { role: "user", text: "H0", seq: 1 },
+      { role: "assistant", text: "HA0", seq: 2 },
+      { role: "user", text: "Q1", seq: 3, precedingTurnCount: 0 },
+      { role: "assistant", text: "A1", seq: 4 },
+      { role: "user", text: "Q2", seq: 5, precedingTurnCount: 1 },
+      { role: "user", text: "Q3", seq: 6, precedingTurnCount: 2 },
+      { role: "assistant", text: "A3", seq: 7 },
+    ]);
   });
+
+  it.each([
+    {
+      name: "it holds fewer user rows",
+      history: [
+        { role: "user", text: "Q1", seq: 1 },
+        { role: "assistant", text: "A1", seq: 2 },
+      ],
+    },
+    {
+      name: "it holds a user row sent elsewhere",
+      history: [
+        { role: "user", text: "H0", seq: 1 },
+        { role: "user", text: "Q1", seq: 2 },
+        { role: "user", text: "from another tab", seq: 3 },
+        { role: "user", text: "Q2", seq: 4 },
+        { role: "user", text: "Q3", seq: 5 },
+        { role: "assistant", text: "A3", seq: 6 },
+      ],
+    },
+    {
+      name: "a user row's words differ",
+      history: [
+        { role: "user", text: "H0", seq: 1 },
+        { role: "user", text: "Q1", seq: 2 },
+        { role: "user", text: "Q2, edited", seq: 3 },
+        { role: "user", text: "Q3", seq: 4 },
+        { role: "assistant", text: "A3", seq: 5 },
+      ],
+    },
+  ] satisfies Array<{ name: string; history: AgentMessage[] }>)(
+    "returns history without keys unchanged when $name",
+    ({ history }) => {
+      expect(adoptedTranscript(history, local)).toEqual(history);
+    },
+  );
 });

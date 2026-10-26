@@ -104,29 +104,47 @@ export function applyHistoryResult(
  * Adopting replaces the rows but keeps the fold, which still holds every turn
  * the session saw live (so the adopted turn draws as it streamed). The stamp
  * is what ties a user row to its place among those fold turns, and only this
- * client knows it: history does not. Rows that lost it left the planner to
- * guess where the fold begins by counting, and a send with no answer (stopped,
- * failed or cut before its first frame) is a user row history keeps with no
- * reply but the fold holds no source for, so the guess was one short and the
- * previous answer was drawn again under that send.
+ * client knows it: history does not. With every live row stamped, the planner
+ * reads the seam from the stamps for the rest of the session, and a send the
+ * fold holds nothing for draws history's row for its reply (or no reply), in
+ * its own place. Rows that lost the stamp left the planner to guess where the
+ * fold begins by counting, and a send with no source in the fold (stopped,
+ * failed or cut before its first frame, or adopted with no frame at all)
+ * made that guess wrong: the previous answer was drawn again under that send.
  *
  * A row is matched by its `clientMessageId`, which the read plane serves on
  * every row it stores (the pod writes the invoke body's key on the user row).
- * A history row without one (an older read plane, or an adapter that does not
- * carry it) stays unstamped, and the planner keeps its count-based rule for
- * it, as before.
+ * A history that serves no keys at all (the `guuey dev` server, an older read
+ * plane, or an adapter that does not carry them) is matched by position, but
+ * only when its user rows are exactly the local ones, in order and word for
+ * word. Otherwise its rows stay unstamped, and the planner keeps its
+ * count-based rule for them, as before.
  */
 export function adoptedTranscript(history: AgentMessage[], local: readonly AgentMessage[]): AgentMessage[] {
+  const localUsers = local.filter((m) => m.role === "user");
   const stamps = new Map<string, number>();
-  for (const m of local) {
-    if (m.role === "user" && m.clientMessageId !== undefined && m.precedingTurnCount !== undefined) {
+  for (const m of localUsers) {
+    if (m.clientMessageId !== undefined && m.precedingTurnCount !== undefined) {
       stamps.set(m.clientMessageId, m.precedingTurnCount);
     }
   }
-  if (stamps.size === 0) return history;
+  if (!localUsers.some((m) => m.precedingTurnCount !== undefined)) return history;
+  const historyUsers = history.filter((m) => m.role === "user");
+  const byPosition =
+    historyUsers.every((m) => m.clientMessageId === undefined) &&
+    historyUsers.length === localUsers.length &&
+    historyUsers.every((m, i) => m.text === localUsers[i]?.text);
+  let userIndex = 0;
   return history.map((m) => {
-    if (m.role !== "user" || m.clientMessageId === undefined || m.precedingTurnCount !== undefined) return m;
-    const precedingTurnCount = stamps.get(m.clientMessageId);
+    if (m.role !== "user") return m;
+    const sent = localUsers[userIndex++];
+    if (m.precedingTurnCount !== undefined) return m;
+    const precedingTurnCount =
+      m.clientMessageId !== undefined
+        ? stamps.get(m.clientMessageId)
+        : byPosition
+          ? sent?.precedingTurnCount
+          : undefined;
     return precedingTurnCount === undefined ? m : { ...m, precedingTurnCount };
   });
 }
@@ -614,6 +632,9 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
        */
       const adoptFrom = (adoptedResult: { messages: AgentMessage[]; cards?: HistoryCard[] }): void => {
         setMessages((prev) => adoptedTranscript(adoptedResult.messages, prev));
+        // History holds this send, so it is sent (absent = sent), even when the
+        // stall watchdog adopts it before its first byte.
+        markSend(null);
         if (adoptedResult.cards && adoptedResult.cards.length > 0) {
           setHistoryCards(adoptedResult.cards);
         }

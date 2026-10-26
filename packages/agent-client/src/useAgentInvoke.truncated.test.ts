@@ -53,6 +53,11 @@ const COMPLETED: AgentMessage[] = [
   { role: "user", text: "hi" },
   { role: "assistant", text: "the full persisted answer" },
 ];
+/** The adopted transcript: history's rows, the live send keeping its turn stamp (guuey#2445). */
+const ADOPTED: AgentMessage[] = [
+  { role: "user", text: "hi", precedingTurnCount: 0 },
+  { role: "assistant", text: "the full persisted answer" },
+];
 const NOT_YET: AgentMessage[] = [{ role: "user", text: "hi" }];
 
 beforeEach(() => {
@@ -69,7 +74,7 @@ describe("useAgentInvoke — a stream that closes without `done`", () => {
     await act(async () => {
       await result.current.send("hi");
     });
-    expect(result.current.messages).toEqual(COMPLETED);
+    expect(result.current.messages).toEqual(ADOPTED);
     expect(result.current.adopted).toBe(true);
     expect(result.current.error).toBeNull();
     expect(result.current.errorCode).toBeNull();
@@ -99,7 +104,7 @@ describe("useAgentInvoke — a stream that closes without `done`", () => {
       await sending;
     });
     expect(load).toHaveBeenCalledTimes(2);
-    expect(result.current.messages).toEqual(COMPLETED);
+    expect(result.current.messages).toEqual(ADOPTED);
     expect(result.current.adopted).toBe(true);
     expect(result.current.errorCode).toBeNull();
     unmount();
