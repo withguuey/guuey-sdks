@@ -72,7 +72,7 @@ export const GuueyChatPalette = z
 export type GuueyChatPalette = z.infer<typeof GuueyChatPalette>;
 
 /** One opaque sRGB colour, 8 bits a channel. */
-interface Rgb {
+export interface OpaqueRgb {
   r: number;
   g: number;
   b: number;
@@ -83,7 +83,7 @@ interface Rgb {
  * more. Anything else (named, translucent, another colour space) is null,
  * and a caller that needs a measurement takes its safe answer instead.
  */
-function parseOpaqueColor(input: string): Rgb | null {
+export function parseOpaqueColor(input: string): OpaqueRgb | null {
   const s = input.trim().toLowerCase();
   let m = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/.exec(s);
   if (m !== null) {
@@ -112,8 +112,8 @@ function parseOpaqueColor(input: string): Rgb | null {
 }
 
 /** WCAG 2.x contrast ratio between two opaque colours. */
-function contrastRatio(a: Rgb, b: Rgb): number {
-  const luminance = (c: Rgb): number => {
+export function contrastRatio(a: OpaqueRgb, b: OpaqueRgb): number {
+  const luminance = (c: OpaqueRgb): number => {
     const [r, g, bl] = [c.r, c.g, c.b].map((v) => {
       const x = v / 255;
       return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;

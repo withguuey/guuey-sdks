@@ -100,10 +100,13 @@ export {
   GuueyChatFace,
   GuueyChatPalette,
   GuueyChatTheme,
+  contrastRatio,
   paletteCue,
+  parseOpaqueColor,
   resolveTheme,
   resolveCourtTheme,
 } from "./theme.js";
+export type { OpaqueRgb } from "./theme.js";
 // guuey#1128: the host palette a guuey surface announces to every card
 // (`hostContext.styles.variables`, the ggui#573 fallback layer) + the
 // `hostContext.styles` composer both the kit and the widget mount through.

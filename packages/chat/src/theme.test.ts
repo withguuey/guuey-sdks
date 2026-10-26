@@ -6,7 +6,9 @@ import {
   GUUEY_CHAT_THEME,
   GuueyChatFace,
   GuueyChatTheme,
+  contrastRatio,
   paletteCue,
+  parseOpaqueColor,
   resolveTheme,
   resolveCourtTheme,
 } from "./theme.js";
@@ -296,6 +298,17 @@ describe("cue token: the one-bit strokes and the focus ring", () => {
     expect(paletteCue(resolved.colors.light)).toBe("#0055ff");
   });
 
+  it("a layer that restates only the canvas over a base that states a cue drops that cue and derives against the new canvas", () => {
+    expect(GUUEY_CHAT_THEME.colors.light.cue).toBe("#4e740d");
+    const light = resolveTheme({ colors: { light: { canvas: "#ffffff" } } }, GUUEY_CHAT_THEME).colors.light;
+    expect(light.accent).toBe(GUUEY_CHAT_THEME.colors.light.accent);
+    expect(light.cue).toBeUndefined();
+    expect(paletteCue(light)).toBe(GUUEY_CHAT_THEME.colors.light.inkMuted);
+    const dark = resolveTheme({ colors: { dark: { canvas: "#000000" } } }, GUUEY_CHAT_THEME).colors.dark;
+    expect(dark.cue).toBeUndefined();
+    expect(paletteCue(dark)).toBe(GUUEY_CHAT_THEME.colors.dark.accent);
+  });
+
   it("a layer that states its own cue keeps it, and one that leaves accent and canvas alone inherits the base's", () => {
     expect(
       resolveTheme({ colors: { light: { accent: "#ff5500", cue: "#aa3300" } } }, GUUEY_CHAT_THEME).colors.light.cue,
@@ -306,5 +319,29 @@ describe("cue token: the one-bit strokes and the focus ring", () => {
   it("a stored theme from before the cue resolves and derives one (additive evolution)", () => {
     const old = { name: "acme", colors: { light: { accent: "#0055ff" }, dark: { accent: "#88aaff" } } };
     expect(paletteCue(resolveTheme(old).colors.light)).toBe("#0055ff");
+  });
+});
+
+describe("the opaque colour measure the cue uses, exported for every surface that measures", () => {
+  it("parses #rgb, #rrggbb and opaque rgb()/rgba(), case- and space-insensitive", () => {
+    expect(parseOpaqueColor("#0F0")).toEqual({ r: 0, g: 255, b: 0 });
+    expect(parseOpaqueColor(" #4e740d ")).toEqual({ r: 0x4e, g: 0x74, b: 0x0d });
+    expect(parseOpaqueColor("rgb(1, 2, 3)")).toEqual({ r: 1, g: 2, b: 3 });
+    expect(parseOpaqueColor("RGBA(1 2 3 / 100%)")).toEqual({ r: 1, g: 2, b: 3 });
+    expect(parseOpaqueColor("rgba(1, 2, 3, 0.995)")).toEqual({ r: 1, g: 2, b: 3 });
+  });
+
+  it("answers null for anything it cannot measure as opaque", () => {
+    for (const input of ["rgba(1, 2, 3, 0.5)", "transparent", "slime", "hsl(90 100% 50%)", "#12345", "#1234567"]) {
+      expect(parseOpaqueColor(input)).toBeNull();
+    }
+  });
+
+  it("measures WCAG 2.x contrast: 21:1 black on white, symmetric", () => {
+    const black = parseOpaqueColor("#000");
+    const white = parseOpaqueColor("#fff");
+    if (black === null || white === null) throw new Error("the fixtures parse");
+    expect(contrastRatio(black, white)).toBeCloseTo(21, 5);
+    expect(contrastRatio(white, black)).toBeCloseTo(21, 5);
   });
 });
