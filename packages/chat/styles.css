@@ -415,6 +415,8 @@
 .guuey-chat-code-copy:focus-visible,
 .guuey-chat-data-more:focus-visible,
 .guuey-chat-media-open:focus-visible,
+.guuey-chat-composer-attach:focus-visible,
+.guuey-chat-attachment-remove:focus-visible,
 .guuey-chat-composer-input:focus-visible {
   outline: 2px solid var(--guuey-chat-accent, var(--_guuey-chat-accent));
   outline-offset: 1px;
@@ -528,6 +530,14 @@
   cursor: pointer;
   text-decoration: underline;
 }
+/* In a data result's meta row, "Show all" and Copy are one kind of action: the
+   row's size, one decoration, no padding of their own (the row's gap spaces them). */
+.guuey-chat-data-meta .guuey-chat-data-more,
+.guuey-chat-data-meta .guuey-chat-copy {
+  padding: 0;
+  font-size: inherit;
+  text-decoration: underline;
+}
 
 /* ── R6 views ── */
 .guuey-chat-view {
@@ -593,6 +603,13 @@
 }
 
 /* ── R7 media ── */
+/* An image and a media chip hug their content in the item's column (a flex item
+   stretches by default), and a long label wraps inside the chip. */
+.guuey-chat-media-image,
+.guuey-chat-media-chip {
+  align-self: flex-start;
+  max-width: 100%;
+}
 .guuey-chat-media-image img {
   max-width: 100%;
   max-height: var(--guuey-chat-image-cap, 20rem);
@@ -606,6 +623,7 @@
   padding: 2px 10px;
   font-size: 0.85em;
   color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
+  overflow-wrap: anywhere;
 }
 /* An https URL the kit does not load: the chip's one action opens it in a new tab. */
 .guuey-chat-media-open {

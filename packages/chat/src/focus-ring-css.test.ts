@@ -28,6 +28,10 @@ const CONTROLS = [
   ".guuey-chat-retry",
   ".guuey-chat-header-close",
   ".guuey-chat-code-copy",
+  ".guuey-chat-data-more",
+  ".guuey-chat-media-open",
+  ".guuey-chat-composer-attach",
+  ".guuey-chat-attachment-remove",
   ".guuey-chat-composer-input",
 ];
 
