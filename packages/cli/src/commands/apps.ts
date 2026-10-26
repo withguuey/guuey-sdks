@@ -888,6 +888,9 @@ export function buildUpdateAppBody(opts: {
   if (opts.clearOidcClient && (opts.oidcClientId !== undefined || opts.oidcClientSecret !== undefined)) {
     return '--clear-oidc-client cannot be combined with --oidc-client-id / --oidc-client-secret.';
   }
+  if (opts.clearAuthConfig && opts.authMode === 'byo') {
+    return byoNoBindingMessage();
+  }
   if (opts.clearAuthConfig) {
     body.userAuthConfig = null;
   } else if (hasIssuerPair || hasOidcClient) {
@@ -1128,6 +1131,31 @@ export async function appsUpdate(
     body.chatTheme = themeChange.value;
   }
 
+  // Two writes would leave an app in byo with no issuer binding, and so
+  // refusing sign-ins from its own identity provider: `--auth-mode byo` without the issuer
+  // pair on an app that stores none, and `--clear-auth-config` on an app
+  // stored in byo without a mode switch on the same call. Both are decided by
+  // one read of the app, before any upload or PUT, so a refusal leaves the
+  // app untouched. The read is kept for the embed-origin check below.
+  let storedApp: AppDetail | undefined;
+  if (typeof body !== 'string') {
+    const armsByoUnbound = body.userAuthMode === 'byo' && body.userAuthConfig === undefined;
+    const clearsWithoutModeSwitch = body.userAuthConfig === null && body.userAuthMode === undefined;
+    if (armsByoUnbound || clearsWithoutModeSwitch) {
+      const res = await apiRequest('GET', `/apps/${resolved}`);
+      if (!res.ok) return handleError(res);
+      storedApp = ((await res.json()) as { app: AppDetail }).app;
+      if (armsByoUnbound && !hasStoredIssuerBinding(storedApp)) {
+        out.error(byoNoBindingMessage(resolved));
+        process.exit(1);
+      }
+      if (clearsWithoutModeSwitch && storedApp.userAuthMode === 'byo') {
+        out.error(byoClearBindingMessage(resolved));
+        process.exit(1);
+      }
+    }
+  }
+
   const uploaded: BrandAssetCommitResponse[] = [];
   for (const upload of uploads) {
     uploaded.push(await uploadBrandAssetFile(resolved, upload.field, upload.filePath));
@@ -1170,9 +1198,11 @@ export async function appsUpdate(
   // suppresses the warning.
   if (opts.authMode === 'byo') {
     const gap =
-      opts.domains === undefined
-        ? await fetchByoOriginGap(resolved)
-        : opts.domains.trim() === '';
+      opts.domains !== undefined
+        ? opts.domains.trim() === ''
+        : storedApp !== undefined
+          ? byoEmbedOriginGap({ userAuthMode: 'byo', allowedDomains: storedApp.allowedDomains })
+          : await fetchByoOriginGap(resolved);
     if (gap) printByoOriginWarning(resolved);
   }
 }
@@ -1799,6 +1829,53 @@ export async function appsCheck(
       process.exitCode = 1;
       break;
   }
+}
+
+// ─── byo issuer binding ─────────────────────────────────────────────────────
+//
+// An app in `byo` verifies a token from its own identity provider against
+// its stored issuer and audience. With either one missing no such token can
+// match, so those sign-ins are refused; Guuey accounts are unaffected,
+// since they never go through the binding. `apps update` sets
+// `--auth-mode byo` only together with the binding, or on an app that
+// already stores one.
+
+/** True when the app stores both halves of the issuer binding. */
+export function hasStoredIssuerBinding(app: {
+  userAuthConfig?: { issuerUrl: string | null; audience: string | null } | null;
+}): boolean {
+  return Boolean(app.userAuthConfig?.issuerUrl) && Boolean(app.userAuthConfig?.audience);
+}
+
+/** The refusal printed when `--auth-mode byo` would leave the app unbound. */
+export function byoNoBindingMessage(appId?: string): string {
+  const target = appId ?? '<appId>';
+  return [
+    appId === undefined
+      ? '--auth-mode byo cannot be combined with --clear-auth-config.'
+      : `--auth-mode byo needs an issuer binding, and app ${appId} has none stored.`,
+    '  An app in byo with no issuer and audience refuses sign-ins from your own',
+    '  identity provider (Guuey accounts are unaffected).',
+    '  Set the mode and the binding in one call:',
+    `    guuey apps update ${target} --auth-mode byo --issuer-url <https://issuer> --audience <audience>`,
+  ].join('\n');
+}
+
+/**
+ * The refusal printed when `--clear-auth-config` would leave an app stored in
+ * byo with no binding. `--clear-auth-config` cannot ride with `--issuer-url` /
+ * `--audience`, so replacing the binding is its own call without the clear.
+ */
+export function byoClearBindingMessage(appId: string): string {
+  return [
+    `--clear-auth-config would leave app ${appId} in byo with no issuer binding.`,
+    '  An app in byo with no issuer and audience refuses sign-ins from your own',
+    '  identity provider (Guuey accounts are unaffected).',
+    '  Either switch the mode in the same call:',
+    `    guuey apps update ${appId} --auth-mode <anonymous|native_pool> --clear-auth-config`,
+    '  or set a new issuer and audience instead of clearing:',
+    `    guuey apps update ${appId} --issuer-url <https://issuer> --audience <audience>`,
+  ].join('\n');
 }
 
 // ─── byo embed-origin warning (guuey#186 Gap 2) ───────────────────────────

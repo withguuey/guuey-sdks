@@ -282,6 +282,7 @@ describe('appsUpdate --auth-mode byo origin warning', () => {
           displayName: 'App',
           createdAt: '2026-08-15T00:00:00.000Z',
           userAuthMode: 'byo',
+          userAuthConfig: { issuerUrl: 'https://issuer.example.com', audience: 'my-app' },
           allowedDomains,
         },
       }),
@@ -290,8 +291,8 @@ describe('appsUpdate --auth-mode byo origin warning', () => {
 
   it('warns when byo is armed with an empty allowlist', async () => {
     fetchSpy
-      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })) // PUT
-      .mockResolvedValueOnce(appResponse([])); // re-read
+      .mockResolvedValueOnce(appResponse([])) // stored read
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })); // PUT
 
     await appsUpdate('app-1', { authMode: 'byo' });
 
@@ -302,13 +303,179 @@ describe('appsUpdate --auth-mode byo origin warning', () => {
 
   it('stays quiet when the allowlist is populated', async () => {
     fetchSpy
-      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })) // PUT
-      .mockResolvedValueOnce(appResponse(['https://console.example.com'])); // re-read
+      .mockResolvedValueOnce(appResponse(['https://console.example.com'])) // stored read
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })); // PUT
 
     await appsUpdate('app-1', { authMode: 'byo' });
 
     const output = errorSpy.mock.calls.flat().join('\n');
     expect(output).not.toContain('allowlist is EMPTY');
+  });
+});
+
+describe('appsUpdate --auth-mode byo issuer binding', () => {
+  let fetchSpy: MockInstance<typeof fetch>;
+  let errorSpy: MockInstance<typeof console.error>;
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, 'fetch');
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  type StoredConfig = { issuerUrl: string | null; audience: string | null } | null;
+  const storedApp = (userAuthConfig: StoredConfig, userAuthMode: string | null = null): Response =>
+    new Response(
+      JSON.stringify({
+        app: {
+          id: 'app-1',
+          displayName: 'App',
+          createdAt: '2026-08-15T00:00:00.000Z',
+          userAuthMode,
+          userAuthConfig,
+          allowedDomains: ['https://console.example.com'],
+        },
+      }),
+      { status: 200 },
+    );
+  const methods = (): string[] => fetchSpy.mock.calls.map(([, init]) => String(init?.method ?? 'GET'));
+  const printed = (): string => errorSpy.mock.calls.flat().join('\n');
+
+  it.each<[string, StoredConfig]>([
+    ['no binding', null],
+    ['an issuer without an audience', { issuerUrl: 'https://issuer.example.com', audience: null }],
+    ['an audience without an issuer', { issuerUrl: null, audience: 'my-app' }],
+  ])('refuses byo alone on an app with %s, and sends no PUT', async (_label, stored) => {
+    fetchSpy.mockResolvedValueOnce(storedApp(stored));
+
+    await expect(appsUpdate('app-1', { authMode: 'byo' })).rejects.toThrow(ExitSignal);
+
+    expect(process.exit).toHaveBeenCalledWith(1);
+    expect(methods()).toEqual(['GET']);
+    expect(printed()).toContain('--auth-mode byo needs an issuer binding, and app app-1 has none stored.');
+    expect(printed()).toContain('refuses sign-ins from your own');
+    expect(printed()).toContain(
+      'guuey apps update app-1 --auth-mode byo --issuer-url <https://issuer> --audience <audience>',
+    );
+  });
+
+  it('accepts byo alone when the app already stores issuer and audience', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(storedApp({ issuerUrl: 'https://issuer.example.com', audience: 'my-app' }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })); // PUT
+
+    await appsUpdate('app-1', { authMode: 'byo' });
+
+    expect(methods()).toEqual(['GET', 'PUT']);
+    expect(JSON.parse(String(fetchSpy.mock.calls[1]?.[1]?.body))).toEqual({ userAuthMode: 'byo' });
+    expect(printed()).not.toContain('needs an issuer binding');
+  });
+
+  it('sends byo with the binding on the same call without reading the stored one', async () => {
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })); // PUT
+
+    await appsUpdate('app-1', {
+      authMode: 'byo',
+      issuerUrl: 'https://issuer.example.com',
+      audience: 'my-app',
+      domains: 'https://console.example.com',
+    });
+
+    expect(methods()).toEqual(['PUT']);
+    expect(printed()).not.toContain('needs an issuer binding');
+  });
+
+  it('refuses byo with --clear-auth-config before any request', async () => {
+    await expect(appsUpdate('app-1', { authMode: 'byo', clearAuthConfig: true })).rejects.toThrow(
+      ExitSignal,
+    );
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(printed()).toContain('--auth-mode byo cannot be combined with --clear-auth-config.');
+  });
+
+  it('exits non-zero with no PUT when the stored binding cannot be read', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'App not found' } }), {
+        status: 404,
+      }),
+    );
+
+    await expect(appsUpdate('app-1', { authMode: 'byo' })).rejects.toThrow(ExitSignal);
+
+    expect(methods()).toEqual(['GET']);
+  });
+
+  const BOUND = { issuerUrl: 'https://issuer.example.com', audience: 'my-app' };
+
+  it('refuses --clear-auth-config on an app stored in byo, and sends no PUT', async () => {
+    fetchSpy.mockResolvedValueOnce(storedApp(BOUND, 'byo'));
+
+    await expect(appsUpdate('app-1', { clearAuthConfig: true })).rejects.toThrow(ExitSignal);
+
+    expect(process.exit).toHaveBeenCalledWith(1);
+    expect(methods()).toEqual(['GET']);
+    expect(printed()).toContain('--clear-auth-config would leave app app-1 in byo with no issuer binding.');
+    expect(printed()).toContain(
+      'guuey apps update app-1 --auth-mode <anonymous|native_pool> --clear-auth-config',
+    );
+    expect(printed()).toContain(
+      'guuey apps update app-1 --issuer-url <https://issuer> --audience <audience>',
+    );
+  });
+
+  it('clears the binding when the same call switches the mode away from byo', async () => {
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })); // PUT
+
+    await appsUpdate('app-1', { authMode: 'native_pool', clearAuthConfig: true });
+
+    expect(methods()).toEqual(['PUT']);
+    expect(JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body))).toEqual({
+      userAuthMode: 'native_pool',
+      userAuthConfig: null,
+    });
+  });
+
+  it.each<[string, string | null]>([
+    ['native_pool', 'native_pool'],
+    ['anonymous', 'anonymous'],
+    ['no mode', null],
+  ])('clears the binding on an app stored in %s', async (_label, mode) => {
+    fetchSpy
+      .mockResolvedValueOnce(storedApp(BOUND, mode))
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })); // PUT
+
+    await appsUpdate('app-1', { clearAuthConfig: true });
+
+    expect(methods()).toEqual(['GET', 'PUT']);
+    expect(JSON.parse(String(fetchSpy.mock.calls[1]?.[1]?.body))).toEqual({ userAuthConfig: null });
+  });
+
+  it('exits non-zero with no PUT when the stored mode cannot be read for a clear', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'App not found' } }), {
+        status: 404,
+      }),
+    );
+
+    await expect(appsUpdate('app-1', { clearAuthConfig: true })).rejects.toThrow(ExitSignal);
+
+    expect(methods()).toEqual(['GET']);
+  });
+
+  it('leaves other modes alone', async () => {
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 })); // PUT
+
+    await appsUpdate('app-1', { authMode: 'native_pool' });
+
+    expect(methods()).toEqual(['PUT']);
   });
 });
 
