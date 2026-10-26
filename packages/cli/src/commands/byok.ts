@@ -13,12 +13,11 @@
  * re-activates by removing the `notYetAvailable` gates when the routes ship.
  */
 
+import { BYOK_PROVIDER_IDS, isByokProviderId } from '@guuey/config';
 import { requireAuth } from '../auth';
 import { resolveConfig } from '../config';
 import * as out from '../output';
 import { cliApiAuthHeaders } from '../cli-api-headers';
-
-const VALID_PROVIDERS = ['anthropic', 'openai', 'google', 'bedrock', 'openrouter'] as const;
 
 interface KeyInfo {
   provider: string;
@@ -89,8 +88,8 @@ export async function byokSet(flags: Record<string, string | true>): Promise<voi
     out.error('No app ID. Run: guuey config set app-id <id>');
     process.exit(1);
   }
-  if (!VALID_PROVIDERS.includes(provider as (typeof VALID_PROVIDERS)[number])) {
-    out.error(`Invalid provider "${provider}". Must be one of: ${VALID_PROVIDERS.join(', ')}`);
+  if (!isByokProviderId(provider)) {
+    out.error(`Invalid provider "${provider}". Must be one of: ${BYOK_PROVIDER_IDS.join(', ')}`);
     process.exit(1);
   }
 
