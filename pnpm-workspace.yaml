@@ -152,9 +152,11 @@ overrides:
   # sdk bump, never a major.
   # guuey#1807 (W40 row 2): 1.30.0 → 1.30.1 (mirror of the root override).
   # GHSA-6qxp-vccf-f47h: ~1.31.0. See the root pnpm-workspace.yaml comment.
-  "@modelcontextprotocol/sdk@1": ~1.31.0
-  # GHSA-6qxp-vccf-f47h: the v2 client package, ~2.2.0. See the root pnpm-workspace.yaml comment.
-  "@modelcontextprotocol/client@2": ~2.2.0
+  # 2026-10-27: ~1.32.0 for GHSA-46jr-4wx8-v453, GHSA-22jm-h49p-29qw, GHSA-rvq5-wwqv-78pq and
+  # GHSA-6prh-2h8m-c8cw. See the root pnpm-workspace.yaml comment.
+  "@modelcontextprotocol/sdk@1": ~1.32.0
+  # The v2 client package: ~2.3.0 for GHSA-6prh-2h8m-c8cw. See the root pnpm-workspace.yaml comment.
+  "@modelcontextprotocol/client@2": ~2.3.0
   # guuey#1188 — 2026-09-08 advisory batch: major-scoped pins for transitives (js-yaml merge-key CPU DoS GHSA-2883-xcg3-v3hh; hono GHSA-gqvv-2mrq-wpjv/g6gw-c38x-mqfc/crvj-82cr-hjcx; svgo removeScripts bypass GHSA-w27v-7q3p-w38r). Same shape as the @modelcontextprotocol/sdk@1 pin: never dedupe, never a blanket override.
   "js-yaml@3": 3.15.2
   "js-yaml@4": 4.3.2
