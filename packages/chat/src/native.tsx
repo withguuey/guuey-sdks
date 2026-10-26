@@ -74,3 +74,12 @@ export {
   type ConnectWaitState,
   type SaturationWaitReport,
 } from "./react/use-connect-wait.js";
+// guuey#2446 — composer dictation: the same React-generic session hook the web
+// kit uses; the engine is injected (`expoSpeechRecognizer` from
+// `@guuey/chat/native-adapters`) and `subscribeBackground` is fed from AppState.
+export {
+  useSpeechInput,
+  type SpeechTranscript,
+  type UseSpeechInputOptions,
+  type UseSpeechInputResult,
+} from "./react/use-speech-input.js";

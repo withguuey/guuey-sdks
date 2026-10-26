@@ -70,6 +70,14 @@ export {
   type ConnectWaitState,
   type SaturationWaitReport,
 } from "./react/use-connect-wait.js";
+// guuey#2446 — composer dictation for a host that draws its own composer: the
+// headless session hook (React-generic, shared with `./native`).
+export {
+  useSpeechInput,
+  type SpeechTranscript,
+  type UseSpeechInputOptions,
+  type UseSpeechInputResult,
+} from "./react/use-speech-input.js";
 export {
   GuueyChat,
   type GuueyChatActivityEvent,
