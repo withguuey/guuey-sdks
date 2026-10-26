@@ -139,16 +139,25 @@ function noticeText(content: readonly AgBlock[]): string {
 }
 
 /**
- * `sendTurnStart`: the latest user row's `precedingTurnCount`, the fold's
- * `turns.length` when that row was sent (undefined when the row carries no
- * stamp). The turns from that index on are the ones that send produced.
+ * The fold's sources, its notices, and the two facts the seam reads from it:
+ *
+ *  - `sourceTurns`: for each source, the index in `result.turns` of the turn
+ *    it belongs to, which is the space a user row's `precedingTurnCount`
+ *    counts in. Null when a source cannot be tied to a turn record (a fold
+ *    without turn identity), and then the seam keeps its count-based rule.
+ *  - `pendingTurn`: that count-based rule's covered-but-sourceless turn: an
+ *    in-flight turn with no frame folded yet.
  */
 function foldAssistantSources(
   result: AgReduceResult,
   inFlight: boolean,
   aborted: boolean,
-  sendTurnStart: number | undefined,
-): { sources: AssistantSource[]; notices: FoldNotice[]; pendingTurn: boolean } {
+): {
+  sources: AssistantSource[];
+  notices: FoldNotice[];
+  sourceTurns: number[] | null;
+  pendingTurn: boolean;
+} {
   // Real pod folds carry `tool-result` blocks in separate `role: "tool"`
   // messages between assistant turns (the production ggui-render capture is
   // the receipt — guuey#135 3b widget convergence found this): an
@@ -186,11 +195,9 @@ function foldAssistantSources(
   const notices: FoldNotice[] = [];
   /** Sources holding a message of a turn the fold has not seen end (no `outcome`). */
   const openSources = new Set<AssistantSource>();
-  /** The turns the latest send produced, when its row is stamped. */
-  const sendTurns =
-    sendTurnStart !== undefined ? new Set(result.turns.slice(sendTurnStart).map((t) => t.turnId)) : null;
-  /** Whether any of those turns already has a source (a frame of it was folded). */
-  let sendHasSource = false;
+  const turnIndexById = new Map(result.turns.map((t, i) => [t.turnId, i]));
+  /** Index-aligned with `sources`: the turn record each one belongs to (its first known turnId). */
+  const sourceTurnIndex: Array<number | undefined> = [];
   let current: AssistantSource | null = null;
   let currentTurnId: string | undefined;
   for (const m of result.messages) {
@@ -204,15 +211,17 @@ function foldAssistantSources(
       if (startsNewTurn) {
         current = { blocks: [], live: false, stopped: false };
         sources.push(current);
+        sourceTurnIndex.push(undefined);
         currentTurnId = undefined;
       }
       if (m.turnId !== undefined) currentTurnId = m.turnId;
+      const at = sources.length - 1;
+      if (sourceTurnIndex[at] === undefined && m.turnId !== undefined) sourceTurnIndex[at] = turnIndexById.get(m.turnId);
       current!.blocks.push(...m.content);
       if (hasTurnIdentity && m.turnId !== undefined && openTurns.has(m.turnId)) {
         openSources.add(current!);
         if (inFlight) current!.live = true;
       }
-      if (m.turnId !== undefined && sendTurns?.has(m.turnId) === true) sendHasSource = true;
     } else if (m.role === "tool" && sources.length > 0) {
       // Tool results belong to the turn in progress — or, when they trail a
       // user boundary before the next assistant segment, to the PRECEDING
@@ -237,27 +246,14 @@ function foldAssistantSources(
     // the settled answer in front of it is not the one that stopped.
     last.stopped = aborted && (!hasTurnIdentity || openSources.has(last));
   }
-  // The latest send (in flight, or just stopped by the user) when it has no
-  // source yet: no frame of any turn it produced has been folded. It still
-  // owns its user row, so the seam counts it as covered. guuey#2445: a send
-  // stopped before its first frame is that send too; without it the seam
-  // kept the fold's previous answer again as a flat prefix, drawn above its
-  // own question.
-  //
-  // The test is "the send produced no turn with a source", read from the
-  // row's stamp, and NOT "no source is open": a send whose turn already
-  // ended (its `turn.done` folded, the stream's `done` still to come, or a
-  // paused hitl turn appended after it) has its source, and counting it a
-  // second time cut the last group of a rehydrated prefix.
-  //
-  // Without a stamp (an older assembler) or without turn identity, the rule
-  // is the one before guuey#2445: only an in-flight turn with no live source.
+  const sourceTurns = sourceTurnIndex.every((t): t is number => t !== undefined) ? sourceTurnIndex : null;
+  // The count-based seam's turn that is covered but has no source yet: in
+  // flight, before its first frame. The stamp-anchored seam (planTranscript)
+  // needs no such guess and does not read it.
   const pendingTurn = !hasTurnIdentity
     ? inFlight && !sources.some((s) => s.live)
-    : sendTurns !== null
-      ? (inFlight || aborted) && !sendHasSource
-      : inFlight && openSources.size === 0;
-  return { sources, notices, pendingTurn };
+    : inFlight && openSources.size === 0;
+  return { sources, notices, sourceTurns, pendingTurn };
 }
 
 /**
@@ -1130,17 +1126,34 @@ export function planTranscript(
   // conversational order (guuey#306).
   //
   // The seam is anchored on USER turns (guuey#982). The fold is always a
-  // suffix of the conversation, so the flat prefix is exactly the user
-  // turns in front of that suffix: `users - foldCovers`, where the
-  // in-flight turn counts as covered even before its first frame. The
-  // previous rule — flat groups minus SETTLED fold sources — assumed the
-  // flat side never holds the live turn's rows; when a history read lands
-  // after the pod persisted a turn but before the client saw its
-  // `turn.done`, that rule kept the flat copy of the previous turn AND
-  // appended the fold's copy: three assistant slots against two users,
-  // turn 1's answer rendered after the turn-2 bubble (the reported
-  // Playground DOM; replayed from real dev shapes in
-  // plan.issue982.test.ts, phase P6).
+  // suffix of the conversation, so the flat prefix is exactly the flat
+  // groups in front of that suffix.
+  //
+  // When the assembler stamps its live rows (`precedingTurnCount`), the
+  // suffix begins at the FIRST stamped user row: every stamped row was sent
+  // live, and the fold holds what those sends produced. The prefix is the
+  // flat groups before that row, less any fold source of a turn that came
+  // before it (a turn adopted from history sits on both sides: its frames in
+  // the fold, its rows among the unstamped ones). A stamp counts fold
+  // TURNS, and a turn can have no source (a send stopped, failed or cut
+  // before its first assistant frame, or a paused hitl turn), so each stamp
+  // is mapped to the number of fold sources whose turn came before it.
+  // guuey#2445: the earlier count-based rule assumed one source per live
+  // send, so such a send, once it was no longer the latest, kept the fold's
+  // previous answer again as a flat prefix, drawn above its own question,
+  // and every later question was placed one slot too far.
+  //
+  // Without stamps (an older assembler, or rows replaced by a history read)
+  // or without turn identity the seam keeps the count-based rule:
+  // `users - foldCovers`, where an in-flight turn counts as covered even
+  // before its first frame. The rule before it — flat groups minus SETTLED
+  // fold sources — assumed the flat side never holds the live turn's rows;
+  // when a history read lands after the pod persisted a turn but before the
+  // client saw its `turn.done`, that rule kept the flat copy of the previous
+  // turn AND appended the fold's copy: three assistant slots against two
+  // users, turn 1's answer rendered after the turn-2 bubble (the reported
+  // Playground DOM; replayed from real dev shapes in plan.issue982.test.ts,
+  // phase P6).
   let assistants: AssistantSource[];
   /**
    * Index in `assistants` where the FOLD's sources begin. Everything before
@@ -1149,23 +1162,29 @@ export function planTranscript(
    * positionally correct. guuey#1333's merge applies to the suffix only.
    */
   let foldSeam = 0;
+  /** Each fold source's turn index, when stamps are mapped into source space. */
+  let stampedSourceTurns: readonly number[] | null = null;
+  /** A live row's stamp (fold turns before it) as fold SOURCES before it. */
+  const sourcesBefore = (turnCount: number): number =>
+    stampedSourceTurns === null ? turnCount : stampedSourceTurns.filter((t) => t < turnCount).length;
+  const flat = flatSettledGroups(inputs.messages);
   if (inputs.result) {
-    const fold = foldAssistantSources(
-      inputs.result,
-      inFlight,
-      inputs.aborted === true,
-      lastUser?.precedingTurnCount,
-    );
+    const fold = foldAssistantSources(inputs.result, inFlight, inputs.aborted === true);
     const foldSources = fold.sources;
-    const flatGroups = flatSettledGroups(inputs.messages).groups;
-    // The turns the fold covers: its sources, plus the latest send (in
-    // flight or just stopped) when no frame of a turn it produced has
-    // arrived yet (a source appears with the first frame). `users` includes the optimistic row of
-    // that turn, so the subtraction lands on the same prefix in both states.
-    const foldCovers = foldSources.length + (fold.pendingTurn ? 1 : 0);
-    const keep = Math.max(0, Math.min(flatGroups.length, users.length - foldCovers));
+    const firstLive = users.findIndex((u) => u.precedingTurnCount !== undefined);
+    const anchor = users[firstLive]?.precedingTurnCount;
+    let keep: number;
+    if (anchor !== undefined && fold.sourceTurns !== null) {
+      stampedSourceTurns = fold.sourceTurns;
+      keep = (flat.userOrder[firstLive] ?? 0) - sourcesBefore(anchor);
+    } else {
+      // `users` includes the optimistic row of an in-flight turn, so the
+      // subtraction lands on the same prefix before and after its first frame.
+      keep = users.length - (foldSources.length + (fold.pendingTurn ? 1 : 0));
+    }
+    keep = Math.max(0, Math.min(flat.groups.length, keep));
     foldSeam = keep;
-    assistants = [...flatGroups.slice(0, keep), ...foldSources];
+    assistants = [...flat.groups.slice(0, keep), ...foldSources];
     if (policy.notice.show) {
       // Fold-borne notices anchor to the fold source they followed, which
       // sits at global slot `keep + afterSourceIndex` after the seam.
@@ -1191,17 +1210,18 @@ export function planTranscript(
    * across the npm boundary), `order` is null and the loop below keeps the
    * previous index pairing byte-for-byte.
    */
-  const flatUserOrder = flatSettledGroups(inputs.messages).userOrder;
+  const flatUserOrder = flat.userOrder;
   const stamped = users.some((u) => u.precedingTurnCount !== undefined);
   const order: readonly number[] | null =
     stamped || flatUserOrder.length === users.length
       ? users.map((u, i) =>
-          // A LIVE row's stamp counts FOLD turns, which sit after the settled
-          // prefix in `assistants` — so it is offset by the seam. A rehydrated
-          // row has no stamp and its position is already a count of flat
-          // groups, which ARE the prefix. Both land in one comparable space.
+          // A LIVE row's stamp counts FOLD turns; mapped to the fold sources
+          // before it, it is offset by the seam, since those sources sit after
+          // the settled prefix in `assistants`. A rehydrated row has no stamp
+          // and its position is already a count of flat groups, which ARE the
+          // prefix. Both land in one comparable space.
           u.precedingTurnCount !== undefined
-            ? foldSeam + u.precedingTurnCount
+            ? foldSeam + sourcesBefore(u.precedingTurnCount)
             : (flatUserOrder[i] ?? i),
         )
       : null;
