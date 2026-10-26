@@ -16,6 +16,7 @@ import { themeForwardLines, themeForwardOf } from '../theme-forward';
 import { type AppUpdateWarningWire, updateWarningsOf } from '../update-warnings';
 import { BUILT_FOR_LABEL, isAppBuiltFor, parseBuiltForFlag } from '../built-for';
 import { cliApiAuthHeaders } from '../cli-api-headers';
+import type { AppProviderKeysWire } from './byok';
 
 /**
  * `GET /v1/apps`'s per-app projection — a strict subset of the server's
@@ -27,9 +28,10 @@ import { cliApiAuthHeaders } from '../cli-api-headers';
  * NEVER sent it — the field lives on the `GuueyApp` model and is reachable
  * over AppSync, not over this REST surface — so both readings were
  * permanently `undefined` and both surfaces permanently printed `no`. The
- * sync guard is what surfaced it (guuey#33); `guuey byok list` is the
- * command that actually knows. Same bug class as the `displayName` note
- * below, found the same way.
+ * sync guard is what surfaced it (guuey#33); `guuey byok status` is the
+ * command that actually knows, and `apps get` prints its one-line summary
+ * (`Keys:`) from the same read (guuey#2412). Same bug class as the
+ * `displayName` note below, found the same way.
  */
 interface AppSummary {
   id: string;
@@ -389,6 +391,32 @@ async function liveEndpointUrl(appId: string): Promise<string | null> {
 }
 
 /**
+ * The `Keys:` line of `guuey apps get` (guuey#2412): per provider the next deploy does not run on the
+ * platform's managed key, its source and last 4, then the rest as managed. Pure, from the provider-keys
+ * read `guuey byok status` prints in full.
+ */
+export function providerKeysLine(wire: AppProviderKeysWire): string {
+  const stored = wire.providers
+    .filter((entry) => entry.configured.source !== 'managed')
+    .map(({ provider, configured }) =>
+      `${provider} ${configured.source} ${configured.keyLast4 === null ? '(last 4 not recorded)' : `••••${configured.keyLast4}`}`,
+    );
+  if (stored.length === 0) return 'all managed';
+  return stored.length < wire.providers.length ? `${stored.join(' · ')} · others managed` : stored.join(' · ');
+}
+
+/**
+ * The provider-keys read for the `Keys:` line, or `null` when it is not drawn: a server older than the
+ * read (404), a credential the read refuses, any failed answer. The line is a summary; `guuey byok status`
+ * is the command that reports why a read failed.
+ */
+async function providerKeysSummary(appId: string): Promise<string | null> {
+  const res = await apiRequest('GET', `/apps/${encodeURIComponent(appId)}/keys/providers`);
+  if (!res.ok) return null;
+  return providerKeysLine((await res.json()) as AppProviderKeysWire);
+}
+
+/**
  * Handle `guuey apps get [appId]`.
  */
 export async function appsGet(
@@ -438,6 +466,7 @@ export async function appsGet(
   }
 
   const app = data.app;
+  const keys = await providerKeysSummary(resolved);
   console.log(`App: ${app.displayName} (${app.id})`);
   // guuey#994 — state the lifecycle status, so an archived app (still
   // inspectable before restore) is not indistinguishable from a live one,
@@ -461,6 +490,7 @@ export async function appsGet(
   // guuey#361 — WHY trial pause / demotion won't fire: an admin override is
   // holding the tier. The boolean is all the wire carries.
   if (app.tierHeldByAdminOverride) console.log(`  Tier:         held by admin override`);
+  if (keys !== null) console.log(`  Keys:         ${keys}`);
   if (app.userAuthMode) console.log(`  Auth Mode:    ${app.userAuthMode}`);
   if (app.userAuthConfig?.issuerUrl)
     console.log(`  Issuer:       ${app.userAuthConfig.issuerUrl}`);

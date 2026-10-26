@@ -204,7 +204,13 @@ describe('appsGet endpoint discovery', () => {
   }
 
   beforeEach(() => {
-    fetchSpy = vi.spyOn(globalThis, 'fetch');
+    // Any call a case does not answer itself (the provider-keys read, guuey#2412) gets an old server's
+    // unknown-route 404, so the Keys line is not drawn and the case reads only what it set up.
+    fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(
+        async () => new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'Not found' } }), { status: 404 }),
+      );
     vi.spyOn(process, 'exit').mockImplementation((code) => {
       throw new ExitSignal(typeof code === 'number' ? code : undefined);
     });
@@ -213,6 +219,81 @@ describe('appsGet endpoint discovery', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  // guuey#2412 — one line from the provider-keys read (`GET /apps/:id/keys/providers`): the key the next
+  // deploy uses, per provider that is not on the platform's managed key.
+  describe('the Keys line', () => {
+    const managed = { source: 'managed', keyLast4: null };
+    function keysWire(configured: Array<{ source: string; keyLast4: string | null }>): Response {
+      const providers = ['anthropic', 'openai', 'google', 'openrouter'].map((provider, i) => ({
+        provider,
+        configured: configured[i] ?? managed,
+        app: null,
+        workspace: null,
+      }));
+      return new Response(
+        JSON.stringify({ appId: 'app-1', owner: { kind: 'personal' }, providers, unsupported: [], appliesOn: 'next-deploy' }),
+        { status: 200 },
+      );
+    }
+    function mockAppDeploymentsKeys(keys: Response): void {
+      mockAppThenDeployments(new Response(JSON.stringify({ deployments: [] }), { status: 200 }));
+      fetchSpy.mockResolvedValueOnce(keys);
+    }
+    const output = (): string => logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+
+    it('names each provider on a stored key, then the rest as managed, from the provider-keys read', async () => {
+      mockAppDeploymentsKeys(keysWire([{ source: 'app', keyLast4: 'abcd' }]));
+
+      await appsGet('app-1', {});
+
+      expect(output()).toContain('Keys:         anthropic app ••••abcd · others managed');
+      expect(requestAt(fetchSpy, 2)).toEqual({ method: 'GET', path: '/apps/app-1/keys/providers', body: undefined });
+    });
+
+    it('a workspace key set before last-4 tracking says so, and no "others" when none are managed', async () => {
+      mockAppDeploymentsKeys(
+        keysWire([
+          { source: 'workspace', keyLast4: null },
+          { source: 'app', keyLast4: '1234' },
+          { source: 'app', keyLast4: '5678' },
+          { source: 'workspace', keyLast4: '9abc' },
+        ]),
+      );
+
+      await appsGet('app-1', {});
+
+      expect(output()).toContain(
+        'Keys:         anthropic workspace (last 4 not recorded) · openai app ••••1234 · google app ••••5678 · openrouter workspace ••••9abc',
+      );
+    });
+
+    it('every provider on the managed key reads "all managed"', async () => {
+      mockAppDeploymentsKeys(keysWire([]));
+
+      await appsGet('app-1', {});
+
+      expect(output()).toContain('Keys:         all managed');
+    });
+
+    it('a server without the read (404 NOT_FOUND) draws no Keys line, and apps get still succeeds', async () => {
+      mockAppThenDeployments(new Response(JSON.stringify({ deployments: [] }), { status: 200 }));
+
+      await appsGet('app-1', {});
+
+      expect(fetchSpy).toHaveBeenCalledTimes(3);
+      expect(output()).not.toContain('Keys:');
+      expect(output()).toContain('App: Todo (app-1)');
+    });
+
+    it('--json makes no provider-keys read', async () => {
+      mockAppThenDeployments(new Response(JSON.stringify({ deployments: [] }), { status: 200 }));
+
+      await appsGet('app-1', { json: true });
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('prints the live deployment endpoint', async () => {
