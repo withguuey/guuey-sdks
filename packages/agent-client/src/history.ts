@@ -47,6 +47,12 @@ export interface ThreadHistoryRow {
    * nothing.
    */
   tapLabels?: (string | null)[] | null;
+  /**
+   * The row's idempotency key. On a user row it is the invoke body's
+   * `clientMessageId` (the pod stores the key the client sent). Absent from a
+   * read plane that does not project it.
+   */
+  clientMessageId?: string | null;
 }
 
 interface ThreadMessagesResponse {
@@ -118,10 +124,17 @@ export function threadHistoryRowsToMessages(rows: ThreadHistoryRow[]): AgentMess
     if (row.text == null && narration.length === 0) continue;
     // guuey#2031: a user row's tap labels, shape-checked (the writer's bounds are not the reader's).
     const tapLabels = role === "user" ? readTapLabels(row.tapLabels) : undefined;
+    // guuey#2445: a user row keeps the key its send carried, so a history read
+    // that replaces the rows can be matched to the rows this client sent live.
+    const clientMessageId =
+      role === "user" && typeof row.clientMessageId === "string" && row.clientMessageId !== ""
+        ? row.clientMessageId
+        : undefined;
     messages.push({
       role,
       text: row.text ?? "",
       seq: row.seq,
+      ...(clientMessageId !== undefined ? { clientMessageId } : {}),
       ...(narration.length > 0 ? { narration } : {}),
       ...(tapLabels !== undefined ? { tapLabels } : {}),
     });

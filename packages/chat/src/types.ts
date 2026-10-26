@@ -36,7 +36,8 @@ import type { MediaDisplay } from "./media.js";
  * One settled entry of the flat conversation transcript — structurally
  * compatible with the hook's `AgentMessage`, plus the optional
  * `clientMessageId` the R0 send-lifecycle join needs (the 3b live assembler
- * threads it through; history entries and older callers simply omit it).
+ * threads it through; a history user row carries it when the read plane
+ * serves it, and older callers simply omit it).
  *
  * `role: "notice"` (spec draft.2, silverprotocol#16) is a host/adapter/
  * framework-injected session annotation — a PEER of user/assistant rows,
@@ -45,7 +46,7 @@ import type { MediaDisplay } from "./media.js";
 export interface TranscriptMessage {
   role: "user" | "assistant" | "notice";
   text: string;
-  /** Present on live-sent user turns — the `sendStates` join key (R0). */
+  /** Present on live-sent user turns, and on history user rows whose read served it — the `sendStates` join key (R0). */
   clientMessageId?: string;
   /** R16 provenance — meaningful only when `role === "notice"`. */
   noticeSource?: AgNoticeSource;

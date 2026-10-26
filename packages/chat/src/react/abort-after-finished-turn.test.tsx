@@ -15,7 +15,12 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
-import { type AgentInvokeAdapters, type AgentMessage, type InvokeRequest } from "@guuey/agent-client";
+import {
+  threadHistoryRowsToMessages,
+  type AgentInvokeAdapters,
+  type AgentMessage,
+  type InvokeRequest,
+} from "@guuey/agent-client";
 import { useAgentInvoke } from "@guuey/agent-client/react";
 import { calmPolicy } from "../policy.js";
 import { planTranscript } from "../plan.js";
@@ -573,5 +578,120 @@ describe("guuey#2445 — sending after a turn adopted from history", () => {
       "user:Q2",
       "agent:A2",
     ]);
+  });
+});
+
+/**
+ * A history read that REPLACES the rows (the hook adopting a cut turn's
+ * finished reply) after a send that has no answer: Q1 answered, Q2 stopped
+ * before its first token, Q3's stream cut after its answer and adopted. The
+ * adopted history holds Q2 as a user row with no reply, and the fold holds
+ * no source for Q2 (and, admitted only, no turn record either). The read
+ * plane serves each user row's `clientMessageId`, as here.
+ */
+describe("guuey#2445 — a turn adopted from history after a send stopped before its first token", () => {
+  const PREFIX: AgentMessage[] = [
+    { role: "user", text: "H0", seq: 1 },
+    { role: "assistant", text: "HA0", seq: 2 },
+  ];
+  /** The adopted read, mapped from read-plane rows by the real history mapper. */
+  const adoptedHistory = (prefix: boolean): AgentMessage[] => {
+    const head: Array<[string, string, string]> = [
+      ["user", "H0", "cm-h0"],
+      ["agent", "HA0", "cm-h0#agent"],
+    ];
+    const rows: Array<[string, string, string]> = [
+      ...(prefix ? head : []),
+      ["user", "Q1", "cm-1"],
+      ["agent", "A1", "cm-1#agent"],
+      ["user", "Q2", "cm-2"],
+      ["user", "Q3", "cm-3"],
+      ["agent", "A3", "cm-3#agent"],
+    ];
+    return threadHistoryRowsToMessages(
+      rows.map(([authorRole, text, clientMessageId], i) => ({
+        seq: i + 1,
+        at: "2026-10-27T00:00:00Z",
+        kind: "text",
+        authorRole,
+        text,
+        clientMessageId,
+      })),
+    );
+  };
+
+  it.each([
+    { name: "admitted only", opened: false, prefix: true },
+    { name: "opened (turn.start of Q2 folded)", opened: true, prefix: true },
+    { name: "admitted only, pure live", opened: false, prefix: false },
+    { name: "opened, pure live", opened: true, prefix: false },
+  ])("draws A1 once, right after the adoption and after Q4 — Q2 $name", async ({ opened, prefix }) => {
+    const cut = finishedTurn("turn_3", "A3").filter((c) => !c.startsWith("event: done"));
+    const turns = [
+      finishedTurn("turn_1", "A1"),
+      stalledTurn("turn_2", opened),
+      closing(cut),
+      finishedTurn("turn_4", "A4"),
+    ];
+    const { result, delivered } = mount(turns, prefix ? PREFIX : [], adoptedHistory(prefix));
+    if (prefix) {
+      await waitFor(() => expect(result.current.invoke.messages.map((m) => m.text)).toEqual(["H0", "HA0"]));
+    }
+    await act(async () => {
+      await result.current.invoke.send("Q1");
+    });
+    let second: Promise<void> = Promise.resolve();
+    await act(async () => {
+      second = result.current.invoke.send("Q2");
+      await delivered();
+    });
+    await waitFor(() => expect(result.current.invoke.status).toBe("thinking"));
+    await act(async () => {
+      result.current.invoke.abort();
+      await second;
+    });
+    expect(result.current.invoke.aborted).toBe(true);
+    await act(async () => {
+      await result.current.invoke.send("Q3");
+    });
+    expect(result.current.invoke.adopted).toBe(true);
+    expect(result.current.invoke.status).toBe("ready");
+
+    const head = prefix ? ["user:H0", "agent:HA0"] : [];
+    const answered = [...head, "user:Q1", "agent:A1", "user:Q2", "user:Q3", "agent:A3"];
+    expect(drawn(planTranscript(result.current.inputs, calmPolicy()))).toEqual(answered);
+
+    await act(async () => {
+      await result.current.invoke.send("Q4");
+    });
+    expect(drawn(planTranscript(result.current.inputs, calmPolicy()))).toEqual([...answered, "user:Q4", "agent:A4"]);
+  });
+
+  it("keeps the earlier rule when the adopted history names no row (a read plane without ids)", async () => {
+    const cut = finishedTurn("turn_3", "A3").filter((c) => !c.startsWith("event: done"));
+    const turns = [finishedTurn("turn_1", "A1"), finishedTurn("turn_2", "A2"), closing(cut), finishedTurn("turn_4", "A4")];
+    const unnamed = [
+      ...PREFIX,
+      { role: "user" as const, text: "Q1", seq: 3 },
+      { role: "assistant" as const, text: "A1", seq: 4 },
+      { role: "user" as const, text: "Q2", seq: 5 },
+      { role: "assistant" as const, text: "A2", seq: 6 },
+      { role: "user" as const, text: "Q3", seq: 7 },
+      { role: "assistant" as const, text: "A3", seq: 8 },
+    ];
+    const { result } = mount(turns, PREFIX, unnamed);
+    await waitFor(() => expect(result.current.invoke.messages.map((m) => m.text)).toEqual(["H0", "HA0"]));
+    for (const q of ["Q1", "Q2", "Q3"]) {
+      await act(async () => {
+        await result.current.invoke.send(q);
+      });
+    }
+    expect(result.current.invoke.adopted).toBe(true);
+    const answered = ["user:H0", "agent:HA0", "user:Q1", "agent:A1", "user:Q2", "agent:A2", "user:Q3", "agent:A3"];
+    expect(drawn(planTranscript(result.current.inputs, calmPolicy()))).toEqual(answered);
+    await act(async () => {
+      await result.current.invoke.send("Q4");
+    });
+    expect(drawn(planTranscript(result.current.inputs, calmPolicy()))).toEqual([...answered, "user:Q4", "agent:A4"]);
   });
 });

@@ -1133,18 +1133,24 @@ export function planTranscript(
   // suffix begins at the FIRST stamped user row: every stamped row was sent
   // live, and the fold holds what those sends produced. The prefix is the
   // flat groups before that row, less any fold source of a turn that came
-  // before it (a turn adopted from history sits on both sides: its frames in
-  // the fold, its rows among the unstamped ones). A stamp counts fold
-  // TURNS, and a turn can have no source (a send stopped, failed or cut
-  // before its first assistant frame, or a paused hitl turn), so each stamp
-  // is mapped to the number of fold sources whose turn came before it.
+  // before it. A history read that replaces the rows (the hook adopting a
+  // cut turn) keeps each live row's stamp when the read serves the row's
+  // `clientMessageId` (guuey#2445), so the anchor stays on the first live
+  // send; a read without those keys leaves the adopted turn on both sides,
+  // its frames in the fold and its rows among the unstamped ones, which the
+  // subtraction covers when every send before the anchor has a source.
+  // A stamp counts fold TURNS, and a turn can have no source (a send
+  // stopped, failed or cut before its first assistant frame, or a paused
+  // hitl turn), so each stamp is mapped to the number of fold sources whose
+  // turn came before it.
   // guuey#2445: the earlier count-based rule assumed one source per live
   // send, so such a send, once it was no longer the latest, kept the fold's
   // previous answer again as a flat prefix, drawn above its own question,
   // and every later question was placed one slot too far.
   //
-  // Without stamps (an older assembler, or rows replaced by a history read)
-  // or without turn identity the seam keeps the count-based rule:
+  // Without stamps (an older assembler, or rows replaced by a history read
+  // that serves no row keys) or without turn identity the seam keeps the
+  // count-based rule:
   // `users - foldCovers`, where an in-flight turn counts as covered even
   // before its first frame. The rule before it — flat groups minus SETTLED
   // fold sources — assumed the flat side never holds the live turn's rows;

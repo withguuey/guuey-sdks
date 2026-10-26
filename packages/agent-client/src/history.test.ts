@@ -287,3 +287,23 @@ describe("threadHistoryRowsToMessages — marked rows reload as notices", () => 
     ]);
   });
 });
+
+describe("threadHistoryRowsToMessages — the send's key on user rows (guuey#2445)", () => {
+  it("a user row keeps the clientMessageId its send carried; an agent row and an absent or empty key carry none", () => {
+    expect(
+      threadHistoryRowsToMessages([
+        row({ seq: 1, authorRole: "user", text: "Q1", clientMessageId: "cm-1" }),
+        row({ seq: 2, authorRole: "agent", text: "A1", clientMessageId: "cm-1#agent" }),
+        row({ seq: 3, authorRole: "user", text: "Q2" }),
+        row({ seq: 4, authorRole: "user", text: "Q3", clientMessageId: "" }),
+        row({ seq: 5, authorRole: "user", text: "Q4", clientMessageId: null }),
+      ]),
+    ).toEqual([
+      { role: "user", text: "Q1", seq: 1, clientMessageId: "cm-1" },
+      { role: "assistant", text: "A1", seq: 2 },
+      { role: "user", text: "Q2", seq: 3 },
+      { role: "user", text: "Q3", seq: 4 },
+      { role: "user", text: "Q4", seq: 5 },
+    ]);
+  });
+});

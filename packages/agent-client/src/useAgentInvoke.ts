@@ -97,6 +97,40 @@ export function applyHistoryResult(
   return { kind: "seed", messages: result.messages };
 }
 
+/**
+ * guuey#2445 — the transcript an adoption sets: history's rows, with each
+ * user row this session sent live keeping its `precedingTurnCount`.
+ *
+ * Adopting replaces the rows but keeps the fold, which still holds every turn
+ * the session saw live (so the adopted turn draws as it streamed). The stamp
+ * is what ties a user row to its place among those fold turns, and only this
+ * client knows it: history does not. Rows that lost it left the planner to
+ * guess where the fold begins by counting, and a send with no answer (stopped,
+ * failed or cut before its first frame) is a user row history keeps with no
+ * reply but the fold holds no source for, so the guess was one short and the
+ * previous answer was drawn again under that send.
+ *
+ * A row is matched by its `clientMessageId`, which the read plane serves on
+ * every row it stores (the pod writes the invoke body's key on the user row).
+ * A history row without one (an older read plane, or an adapter that does not
+ * carry it) stays unstamped, and the planner keeps its count-based rule for
+ * it, as before.
+ */
+export function adoptedTranscript(history: AgentMessage[], local: readonly AgentMessage[]): AgentMessage[] {
+  const stamps = new Map<string, number>();
+  for (const m of local) {
+    if (m.role === "user" && m.clientMessageId !== undefined && m.precedingTurnCount !== undefined) {
+      stamps.set(m.clientMessageId, m.precedingTurnCount);
+    }
+  }
+  if (stamps.size === 0) return history;
+  return history.map((m) => {
+    if (m.role !== "user" || m.clientMessageId === undefined || m.precedingTurnCount !== undefined) return m;
+    const precedingTurnCount = stamps.get(m.clientMessageId);
+    return precedingTurnCount === undefined ? m : { ...m, precedingTurnCount };
+  });
+}
+
 /** The guuey#192 stall watchdog's resolved tuning (see {@link stallProbeDecision}). */
 export const STALL_RECOVERY_DEFAULTS = {
   windowMs: 25_000,
@@ -573,9 +607,13 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         for (const m of messagesRef.current) if (m.role === "user") localUserCount += 1;
         return stallProbeDecision(result.messages, localUserCount) === "adopt";
       };
-      /** Adopt the persisted turn: the transcript IS history's, and the renderer is told. */
+      /**
+       * Adopt the persisted turn: the transcript IS history's (each live
+       * send keeping its turn stamp, see {@link adoptedTranscript}), and the
+       * renderer is told.
+       */
       const adoptFrom = (adoptedResult: { messages: AgentMessage[]; cards?: HistoryCard[] }): void => {
-        setMessages(adoptedResult.messages);
+        setMessages((prev) => adoptedTranscript(adoptedResult.messages, prev));
         if (adoptedResult.cards && adoptedResult.cards.length > 0) {
           setHistoryCards(adoptedResult.cards);
         }

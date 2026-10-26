@@ -27,9 +27,11 @@ export interface AgentMessage {
   text: string;
   /**
    * The invoke body's `clientMessageId`, present on user turns this client
-   * sent live (the optimistic push tags it). History-rehydrated entries and
-   * assistant turns omit it. The transcript renderer's R0 send-lifecycle
-   * join key (`UseAgentInvokeReturn.sendStates`).
+   * sent live (the optimistic push tags it), and on history-rehydrated user
+   * turns when the read plane serves the key the send carried. Assistant turns
+   * omit it. The transcript renderer's R0 send-lifecycle join key
+   * (`UseAgentInvokeReturn.sendStates`), and how an adoption keeps a live
+   * row's `precedingTurnCount`.
    */
   clientMessageId?: string;
   /**
