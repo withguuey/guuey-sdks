@@ -94,6 +94,12 @@ export interface ChatStrings {
    * delay the reader has no use for.
    */
   errorPodSaturated: string;
+  /**
+   * R11, code DRAINING: the agent's pod is restarting and the turn was refused
+   * before it began. A plain "try again" line, the landing chat's sentence.
+   * Never the pod's own envelope, which names a pod and its re-routing.
+   */
+  errorDraining: string;
 
   /** R3/R4. */
   toolGroup: (count: number) => string;
@@ -122,7 +128,11 @@ export interface ChatStrings {
   /** R14. */
   compaction: string;
 
-  /** R0. */
+  /**
+   * R0. `userCouldntSend` is the failed bubble's line when the refusal has no
+   * sentence of its own (a code-less failure, or a code with only the generic
+   * transient voice); a coded refusal's line is the plan's `failureLine`.
+   */
   userCouldntSend: string;
   userRetry: string;
   /**
@@ -374,6 +384,7 @@ export const defaultChatStrings: ChatStrings = {
   errorResourceExhausted:
     "This conversation hit a temporary capacity limit and was stopped safely. Please try again in a moment.",
   errorPodSaturated: "High demand right now. Please try again in a moment.",
+  errorDraining: "This agent is restarting. Please try again in a moment.",
   errorInvalid: "The app sent a request the agent couldn't read.",
   errorAttachmentsUnsupported: "This agent can't read images yet. Send your message without the image.",
   errorAttachmentsInvalid: "That image can't be sent. Use a JPEG, PNG, GIF or WebP image, up to 4 at a time.",

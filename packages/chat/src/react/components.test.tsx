@@ -228,6 +228,23 @@ describe("R0 failed send", () => {
     fireEvent.click(screen.getByText(defaultChatStrings.userRetry));
     expect(onRetry).toHaveBeenCalled();
   });
+
+  it("draws the refusal's own line in place of the couldn't-send line, and no Retry when the plan offers none (guuey#2604)", () => {
+    const item: UserMessageItem = {
+      kind: "user",
+      key: "u0",
+      expanded: true,
+      text: "hello?",
+      directive: false,
+      state: "failed",
+      retry: false,
+      failureLine: defaultChatStrings.errorQuota,
+    };
+    render(<DefaultUserMessage item={item} ctx={ctx()} />);
+    expect(screen.getByText(defaultChatStrings.errorQuota)).toBeTruthy();
+    expect(screen.queryByText(defaultChatStrings.userCouldntSend)).toBeNull();
+    expect(screen.queryByText(defaultChatStrings.userRetry)).toBeNull();
+  });
 });
 
 describe("status + error live semantics", () => {

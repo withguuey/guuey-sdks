@@ -947,6 +947,9 @@ const CODE_COPY: Record<string, (s: import("./strings.js").ChatStrings) => strin
   // A plain "try again" line in place of the pod's envelope (which names the
   // turn cap); the transient family's Retry stays.
   POD_SATURATED: (s) => s.errorPodSaturated,
+  // The pod is restarting: a plain "try again" line in place of the pod's
+  // envelope, which names a pod and its re-routing; the transient Retry stays.
+  DRAINING: (s) => s.errorDraining,
 };
 
 /**
@@ -961,7 +964,12 @@ function codedErrorCopy(
   code: string | null,
   message: string,
   policy: TranscriptPolicy,
-): { family: "auth" | "quota" | "transient" | "invalid"; copy: string } {
+): {
+  family: "auth" | "quota" | "transient" | "invalid";
+  copy: string;
+  /** The copy is this code's own sentence (host, verbatim or built-in), not the family's fallback. */
+  specific: boolean;
+} {
   const family = (code !== null ? ERROR_FAMILIES[code] : undefined) ?? "transient";
   const familyCopy =
     family === "auth"
@@ -975,11 +983,9 @@ function codedErrorCopy(
   const perCode = code !== null ? copyByCode[code] : undefined;
   const verbatimVoice = verbatimCodes === "all" || (code !== null && verbatimCodes.includes(code));
   const builtIn = code !== null ? CODE_COPY[code] : undefined;
-  const copy =
-    perCode ??
-    (verbatimVoice && message !== "" ? message : undefined) ??
-    (builtIn !== undefined ? builtIn(policy.strings) : familyCopy);
-  return { family, copy };
+  const specificCopy =
+    perCode ?? (verbatimVoice && message !== "" ? message : undefined) ?? builtIn?.(policy.strings);
+  return { family, copy: specificCopy ?? familyCopy, specific: specificCopy !== undefined };
 }
 
 const ERROR_FAMILIES: Record<string, "auth" | "quota" | "invalid"> = {
@@ -1029,6 +1035,18 @@ export function planTranscript(
 
   const inFlight = inputs.status !== "ready";
   const users = inputs.messages.filter((m) => m.role === "user");
+  // guuey#2604: the turn's error, when its latest send was refused before
+  // admission. Read here so the user row and R11 decide from one fact. The
+  // debug formatting knob keeps the separate notice: its code-prefixed raw
+  // line is the builder's diagnostic, and a bubble line cannot carry it.
+  const lastUser = users[users.length - 1];
+  const refusedSend =
+    inputs.error &&
+    !policy.error.verbatim &&
+    lastUser?.clientMessageId !== undefined &&
+    inputs.sendStates?.[lastUser.clientMessageId] === "failed"
+      ? codedErrorCopy(inputs.error.code, inputs.error.message, policy)
+      : null;
   // R16 — notice rows are session annotations anchored between turns: a
   // flat notice renders after the conversation slot of the user turn it
   // followed (usersSeen-1; -1 = before the conversation). They are PEER
@@ -1171,6 +1189,10 @@ export function planTranscript(
       user.clientMessageId !== undefined
         ? (inputs.sendStates?.[user.clientMessageId] ?? "sent")
         : "sent";
+    // guuey#2604: the LATEST send refused before admission carries the turn's
+    // error as its own state line, and R11 draws no second box for it. One
+    // turn, one state.
+    const refusal = sendState === "failed" && index === users.length - 1 ? refusedSend : null;
     // guuey#422 close-condition 3: a forwarded view directive (the
     // `ui/message` doorbell's `<ggui_directive>` carrier, relayed through
     // the composer's send gate) is not typed speech. guuey#2031: it draws as
@@ -1190,7 +1212,13 @@ export function planTranscript(
       expanded: resolveExpanded(key, !directive, overrides),
       text: user.text,
       state: sendState,
-      retry: sendState === "failed" && policy.userMessage.retryAffordance,
+      retry:
+        sendState === "failed" &&
+        policy.userMessage.retryAffordance &&
+        (refusal === null || refusal.family === "transient"),
+      ...(refusal !== null && (refusal.specific || refusal.family !== "transient")
+        ? { failureLine: refusal.copy }
+        : {}),
       directive,
       ...(tapLabels !== undefined ? { tapLabels } : {}),
       ...(directive && policy.userMessage.rawDirective ? { rawDirective: true } : {}),
@@ -1412,7 +1440,9 @@ export function planTranscript(
   // R11 — the coded error notice, always last. guuey#2355: the agent ending
   // the conversation is voiced by `threadClosed`, so its error is not drawn.
   const closedVoice = inputs.threadClosed ?? null;
-  if (inputs.error && !(closedVoice !== null && inputs.error.code === closedVoice.code)) {
+  // guuey#2604: a send refused before admission is voiced by its own failed
+  // bubble (R0's `failureLine`), so its error is not drawn twice.
+  if (inputs.error && refusedSend === null && !(closedVoice !== null && inputs.error.code === closedVoice.code)) {
     const code = inputs.error.code;
     const { family, copy } = codedErrorCopy(code, inputs.error.message, policy);
     items.push({

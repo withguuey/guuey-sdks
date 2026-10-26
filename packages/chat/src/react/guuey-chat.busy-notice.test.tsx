@@ -4,9 +4,10 @@
  * default adapters retry a `POD_SATURATED` refusal; while they wait, the
  * status line says the agent is busy and which retry it is on (never the
  * connecting ladder's "Still getting ready…"). When the retries run out the
- * error reads the plain busy line, never the pod's envelope with its turn
- * cap. Builder overrides (`strings`, `policy.error.copyByCode`, `components`)
- * still win.
+ * refused send is ONE state: its failed bubble reads the plain busy line with
+ * Retry, never the pod's envelope with its turn cap, and no separate error box
+ * is drawn. Builder overrides (`strings`, `policy.error.copyByCode`,
+ * `components`) still win.
  */
 import type { ComponentProps, ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -62,6 +63,11 @@ function stubInvoke(script: readonly ("saturated" | "hold")[]) {
     }),
   );
   return { calls: () => calls, release: () => release() };
+}
+
+/** The failed bubble's state line (R0), the one place a refused send speaks. */
+function failedLine(): string | null {
+  return document.querySelector(".guuey-chat-send-failed")?.textContent ?? null;
 }
 
 function send(props: Partial<GuueyChatProps> = {}): void {
@@ -121,12 +127,15 @@ describe("the busy notice while the saturation retry waits", () => {
 });
 
 describe("the busy error once the retries run out", () => {
-  it("reads the plain busy line, never the pod's envelope, and the notice is gone", async () => {
+  it("the failed bubble reads the plain busy line with Retry, never the pod's envelope; no error box, no notice", async () => {
     const invoke = stubInvoke([]);
     send();
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(BUSY_LINE));
+    await waitFor(() => expect(failedLine()).toContain(BUSY_LINE));
     expect(invoke.calls()).toBe(4);
     expect(defaultChatStrings.errorPodSaturated).toBe(BUSY_LINE);
+    expect(screen.getByRole("button", { name: defaultChatStrings.userRetry })).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(defaultChatStrings.userCouldntSend)).toBeNull();
     expect(screen.queryByText(/at capacity|concurrent turns/)).toBeNull();
     expect(screen.queryByText(/Busy right now/)).toBeNull();
   });
@@ -134,7 +143,7 @@ describe("the busy error once the retries run out", () => {
   it("a wait left over from the spent retries never shows on the next turn", async () => {
     const invoke = stubInvoke(["saturated", "saturated", "saturated", "saturated", "hold"]);
     send();
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(BUSY_LINE));
+    await waitFor(() => expect(failedLine()).toContain(BUSY_LINE));
     expect(invoke.calls()).toBe(4);
 
     const input = screen.getByLabelText("Message");
@@ -151,13 +160,13 @@ describe("the busy error once the retries run out", () => {
   it("a builder's policy.error.copyByCode wins", async () => {
     stubInvoke([]);
     send({ policy: { error: { copyByCode: { POD_SATURATED: "Our helper is busy." } } } });
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Our helper is busy."));
+    await waitFor(() => expect(failedLine()).toContain("Our helper is busy."));
     expect(screen.queryByText(BUSY_LINE)).toBeNull();
   });
 
   it("a builder's strings.errorPodSaturated wins", async () => {
     stubInvoke([]);
     send({ strings: { errorPodSaturated: "Too busy, try soon." } });
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Too busy, try soon."));
+    await waitFor(() => expect(failedLine()).toContain("Too busy, try soon."));
   });
 });

@@ -198,7 +198,7 @@ function SendFailed({ item, ctx }: ItemProps<UserMessageItem>): ReactNode {
   if (item.state !== "failed") return null;
   return (
     <p className="guuey-chat-send-failed" role="status">
-      {ctx.strings.userCouldntSend}
+      {item.failureLine ?? ctx.strings.userCouldntSend}
       {item.retry ? (
         <button type="button" className="guuey-chat-retry" onClick={() => ctx.onRetry?.(item)}>
           {ctx.strings.userRetry}

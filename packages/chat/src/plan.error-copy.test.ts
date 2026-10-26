@@ -96,13 +96,17 @@ describe("R11 voice: defaults + debug formatting stay independent", () => {
     expect(item.verbatim).toBeNull();
   });
 
-  it("calm defaults render DRAINING's envelope VERBATIM: it carries the retry timing chat cannot know (guuey#888)", () => {
+  it("DRAINING reads the plain restarting line by default, never the pod's envelope (guuey#2604)", () => {
     const drainingCopy = "this pod is shutting down; retry shortly, traffic is re-routing to a healthy pod";
     const draining = errorItem(inputsWithError(drainingCopy, "DRAINING"));
-    expect(draining.copy).toBe(drainingCopy);
+    expect(draining.copy).toBe("This agent is restarting. Please try again in a moment.");
+    expect(draining.copy).toBe(calmPolicy().strings.errorDraining);
+    expect(draining.family).toBe("transient");
     expect(draining.verbatim).toBeNull(); // the DEBUG line stays off: voice, not formatting
-    expect(DEFAULT_VERBATIM_CODES).toEqual(["DRAINING"]);
-    expect(DEFAULT_VERBATIM_CODES).not.toContain("POD_SATURATED");
+    expect(DEFAULT_VERBATIM_CODES).toEqual([]);
+    // A host that wants the pod's own sentence back lists the code.
+    const verbatim = calmPolicy({ error: { verbatimCodes: ["DRAINING"] } });
+    expect(errorItem(inputsWithError(drainingCopy, "DRAINING"), verbatim).copy).toBe(drainingCopy);
   });
 
   it("POD_SATURATED reads the plain busy line by default, never the pod's envelope with its turn cap (guuey#2604)", () => {

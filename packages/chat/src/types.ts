@@ -291,8 +291,21 @@ export interface UserMessageItem extends BaseItem {
   kind: "user";
   text: string;
   state: "sending" | "sent" | "failed";
-  /** The failed-state affordance (policy-gated); never silently disappears. */
+  /**
+   * The failed-state affordance (policy-gated). Offered when trying the same
+   * send again can work: a transient or code-less refusal. A refusal the same
+   * send meets again (auth, quota, invalid) carries no Retry.
+   */
   retry: boolean;
+  /**
+   * The failed bubble's one state line when the latest send was refused with
+   * a cause the reader can use (guuey#2604): the R11 voice for the turn's code
+   * (a host's `copyByCode` first, then a verbatim match, then the built-in
+   * per-code line, then a non-transient family's sentence). The turn then
+   * draws no separate error item: one turn, one state. Absent: the renderer
+   * draws `strings.userCouldntSend`.
+   */
+  failureLine?: string;
   /**
    * The turn is a forwarded view directive (guuey#422 — a `ui/message`
    * doorbell's `<ggui_directive>` carrier, relayed through the composer's

@@ -48,12 +48,12 @@ vi.mock("react-native", () => {
   };
 });
 
-const { NativeDataResult } = await import("./components.js");
+const { NativeDataResult, NativeUserMessage } = await import("./components.js");
 const { resolveNativeTheme } = await import("./theme-native.js");
 const { defaultChatStrings } = await import("../strings.js");
 const { DEFAULT_CHAT_THEME } = await import("../theme.js");
 
-import type { DataResultItem } from "../types.js";
+import type { DataResultItem, UserMessageItem } from "../types.js";
 import type { NativeTranscriptItemContext } from "./components.js";
 
 afterEach(cleanup);
@@ -121,5 +121,37 @@ describe("NativeDataResult (guuey#2368)", () => {
     expect(screen.getByTestId("scroll").textContent).toBe(json);
     const runs = Array.from(container.querySelectorAll("span span")).map((n) => n.textContent);
     expect(runs).toContain('"a"');
+  });
+});
+
+describe("NativeUserMessage failed send (guuey#2604)", () => {
+  const failed = (over: Partial<UserMessageItem> = {}): UserMessageItem => ({
+    kind: "user",
+    key: "u0",
+    expanded: true,
+    text: "hello?",
+    directive: false,
+    state: "failed",
+    retry: true,
+    ...over,
+  });
+
+  it("draws the refusal's own line with Retry when the plan carries one", () => {
+    const onRetry = vi.fn();
+    render(
+      createElement(NativeUserMessage, {
+        item: failed({ failureLine: defaultChatStrings.errorPodSaturated }),
+        ctx: { ...ctx, onRetry },
+      }),
+    );
+    expect(screen.getByText(defaultChatStrings.errorPodSaturated)).toBeTruthy();
+    expect(screen.queryByText(defaultChatStrings.userCouldntSend)).toBeNull();
+    fireEvent.click(screen.getByText(defaultChatStrings.userRetry));
+    expect(onRetry).toHaveBeenCalled();
+  });
+
+  it("falls back to the couldn't-send line when the plan carries none", () => {
+    render(createElement(NativeUserMessage, { item: failed(), ctx }));
+    expect(screen.getByText(defaultChatStrings.userCouldntSend)).toBeTruthy();
   });
 });

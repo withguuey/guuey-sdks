@@ -109,14 +109,13 @@ export interface TranscriptPolicy {
    * non-empty) → family copy. `verbatim` stays the DEBUG formatting knob
    * (code-prefixed raw line under the notice), independent of voice.
    *
-   * DEFAULT `verbatimCodes` = `DRAINING` (guuey#888): its envelope carries
-   * the retry timing chat cannot know. `POD_SATURATED` left the list
-   * (guuey#2604): its envelope names the agent's concurrent-turn cap, which
-   * means nothing to a visitor, so the default is the plain
-   * `strings.errorPodSaturated` line. A host's `copyByCode` still wins; a
-   * host that wants the pod's sentence back passes
-   * `verbatimCodes: [...DEFAULT_VERBATIM_CODES, "POD_SATURATED"]`, and one
-   * that wants family copy passes `verbatimCodes: []`.
+   * DEFAULT `verbatimCodes` is empty. `POD_SATURATED` (guuey#2604) and
+   * `DRAINING` left it: both envelopes name internals (a turn cap, a pod
+   * re-routing) and carry no timing a reader can use, so the defaults are the
+   * plain `strings.errorPodSaturated` and `strings.errorDraining` lines. A
+   * host's `copyByCode` still wins; a host that wants a pod's sentence back
+   * lists the code (`verbatimCodes: ["DRAINING"]`), and `"all"` keeps every
+   * source message (the widget's #162 posture).
    */
   error: {
     verbatim: boolean;
@@ -199,13 +198,13 @@ function calmBase(): TranscriptPolicy {
 }
 
 /**
- * The refusal codes whose SOURCE message is the copy by default (guuey#888):
- * the pod writes it for a reader and only the pod knows the retry timing it
- * carries. `POD_SATURATED` is not here (guuey#2604): it reads
- * `strings.errorPodSaturated`. Exported so a host can spread it into its own
- * list rather than retype it.
+ * The refusal codes whose SOURCE message is the copy by default: none
+ * (guuey#2604). `POD_SATURATED` reads `strings.errorPodSaturated` and
+ * `DRAINING` reads `strings.errorDraining`, since neither pod envelope is
+ * written for a visitor. Exported so a host can spread it into its own list
+ * rather than retype it.
  */
-export const DEFAULT_VERBATIM_CODES: readonly string[] = ["DRAINING"];
+export const DEFAULT_VERBATIM_CODES: readonly string[] = [];
 
 /** The `calm` preset — the end-user default (spec §5). */
 export function calmPolicy(overrides?: TranscriptPolicyOverrides): TranscriptPolicy {
