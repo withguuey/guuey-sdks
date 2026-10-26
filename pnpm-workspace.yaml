@@ -120,7 +120,10 @@ overrides:
   "brace-expansion@2": ^2.1.7
   "brace-expansion@5": ^5.0.12
   # guuey#219 P2 — see the root pnpm-workspace.yaml comment (own lockfile).
-  "body-parser@1": ^1.20.6
+  "body-parser@1": ^1.20.9
+  # 2026-10-27 security floors: see the root pnpm-workspace.yaml comment (this lock held body-parser 2.x below 2.4.0
+  # under express 5).
+  "body-parser@2": ^2.4.0
   "uuid@11": ^11.1.1
   # guuey#289 (#219's leftover major): GHSA-w5hq-g745-h8pq patches only
   # 11.1.1 — uuid@9 rides the googleapis chain under @guuey/host's
@@ -135,8 +138,8 @@ overrides:
   # guuey#2023 — see the root pnpm-workspace.yaml comment (own lockfile: this
   # lock held fast-uri 3.1.6 under ajv@8 and ip-address 10.5.0 under
   # express-rate-limit, both through @modelcontextprotocol/sdk).
-  "fast-uri@3": ^3.1.7
-  "ip-address@10": ^10.5.1
+  "fast-uri@3": ^3.1.9
+  "ip-address@10": ^10.7.4
   "qs@6": ^6.16.0
   # 2026-10-11 security floors (see the root pnpm-workspace.yaml comment; this lock held shell-quote 1.10.0,
   # source-map-js 1.2.1 and proxy-addr 2.0.7).
@@ -155,4 +158,9 @@ overrides:
   # guuey#1188 — 2026-09-08 advisory batch: major-scoped pins for transitives (js-yaml merge-key CPU DoS GHSA-2883-xcg3-v3hh; hono GHSA-gqvv-2mrq-wpjv/g6gw-c38x-mqfc/crvj-82cr-hjcx; svgo removeScripts bypass GHSA-w27v-7q3p-w38r). Same shape as the @modelcontextprotocol/sdk@1 pin: never dedupe, never a blanket override.
   "js-yaml@3": 3.15.2
   "js-yaml@4": 4.3.2
-  "hono@4": ^4.13.5
+  "hono@4": ^4.13.11
+  # 2026-10-27 security floors (see the root pnpm-workspace.yaml comment). vite 7.3.7 (GHSA-587h-7wmj-h5pm and four
+  # more) is the dev server under this workspace's vitest; while this floor stands, oss vitest stays on vite 7.
+  # vitest 4.1.12 lifts @vitest/mocker; the @vitest/* family moves with it.
+  "vite@7": ^7.3.7
+  "vitest@4": ^4.1.12
