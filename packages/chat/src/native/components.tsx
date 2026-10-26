@@ -621,6 +621,39 @@ function chipNote(reason: MediaChipReason, strings: ChatStrings): string | null 
   }
 }
 
+/** The tallest an inline image draws, in pt: the web's 20rem cap. */
+const IMAGE_CAP = 320;
+/** The placeholder's height while the image's own size is not yet known. */
+const IMAGE_PLACEHOLDER = 220;
+
+/**
+ * An inline image sized to the image, as on the web: never wider than the
+ * column or than the image itself, never taller than the cap, at the
+ * image's own aspect, so nothing is letterboxed. Until the image reports its
+ * size it holds a muted placeholder box.
+ */
+function NativeMediaImage({ src, label, tokens }: { src: string; label: string; tokens: NativeChatTokens }): ReactNode {
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  const known = size !== null && size.width > 0 && size.height > 0 ? size : null;
+  const sized =
+    known === null
+      ? { width: "100%" as const, height: IMAGE_PLACEHOLDER, backgroundColor: tokens.palette.canvasMuted }
+      : known.height >= known.width
+        ? // Tall: the height leads, so the cap holds and the width follows the aspect.
+          { height: Math.min(IMAGE_CAP, known.height), aspectRatio: known.width / known.height, maxWidth: "100%" as const }
+        : // Wide: the width leads, up to the column and the image's own width.
+          { width: "100%" as const, maxWidth: known.width, aspectRatio: known.width / known.height, maxHeight: IMAGE_CAP };
+  return (
+    <Image
+      accessibilityLabel={label}
+      source={{ uri: src }}
+      resizeMode="contain"
+      onLoad={(e) => setSize({ width: e.nativeEvent.source.width, height: e.nativeEvent.source.height })}
+      style={{ alignSelf: "flex-start", borderRadius: tokens.radius, ...sized }}
+    />
+  );
+}
+
 /**
  * R7. What loads was decided by the plan (`item.display`, guuey#2369): only
  * `data:`, `blob:` and media-origin images reach `<Image>`; any other https
@@ -631,14 +664,7 @@ export function NativeMedia({ item, ctx }: ItemProps<MediaItem>): ReactNode {
   const { tokens } = ctx;
   const display = item.display;
   if (display.kind === "image") {
-    return (
-      <Image
-        accessibilityLabel={item.name ?? ""}
-        source={{ uri: display.src }}
-        resizeMode="contain"
-        style={{ width: "100%", height: 220, borderRadius: tokens.radius, backgroundColor: tokens.palette.canvasMuted }}
-      />
-    );
+    return <NativeMediaImage src={display.src} label={item.name ?? ""} tokens={tokens} />;
   }
   const label = item.name ?? item.media;
   const chipStyle = {

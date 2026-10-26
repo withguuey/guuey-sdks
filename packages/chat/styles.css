@@ -181,6 +181,18 @@
   font: inherit;
   font-size: inherit;
 }
+/* The chip answers the pointer the way the native chip answers a press. */
+.guuey-chat-retry:hover {
+  opacity: 0.92;
+}
+.guuey-chat-retry:active {
+  opacity: 0.85;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .guuey-chat-retry {
+    transition: opacity 120ms ease-out;
+  }
+}
 
 /* ── R0b action turn (guuey#2031): the typed bubble's quiet twin ──
    A tapped chip or card button reads as what was tapped — the visitor's side,
@@ -1156,6 +1168,13 @@
   font: inherit;
   line-height: 24px;
   cursor: pointer;
+}
+/* The mark stays 24px; its hit area is 44px, the touch minimum. */
+.guuey-chat-attachment-remove::before {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  border-radius: 50%;
 }
 .guuey-chat-attachment-notice {
   font-size: 0.875em;
