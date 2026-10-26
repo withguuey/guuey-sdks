@@ -206,6 +206,16 @@ export const AppSectionV1 = z.strictObject({
    * CLI therefore never meets the key in a pulled `agent` section.
    */
   builtFor: z.enum(APP_BUILT_FOR).optional(),
+  /**
+   * Conversation titles (guuey#2612): when `true`, each conversation of the
+   * app gets a short title written after a turn finishes — one small-model
+   * call per checkpoint, bounded per conversation. The setting is stored now
+   * and takes effect when automatic titles ship. Converged onto the app
+   * record by `guuey agent apply`; absent leaves the record untouched (and a
+   * record with none is off); declare `false` to turn it off. It lives HERE
+   * for the same reason as `builtFor`: `guuey pull` never rewrites `app.*`.
+   */
+  autoThreadTitles: z.boolean().optional(),
 });
 
 /** Static TypeScript type for the app section. */

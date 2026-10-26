@@ -447,3 +447,24 @@ describe('guueyJsonUnknownKeys — the keys a strict parse refused as unknown', 
     expect(guueyJsonUnknownKeys(new Error('x'))).toEqual([]);
   });
 });
+
+describe('parseGuueyJson — app.autoThreadTitles (the conversation-titles switch, guuey#2612)', () => {
+  it('accepts true and false', () => {
+    expect(parseGuueyJson({ ...base, app: { autoThreadTitles: true } }).app?.autoThreadTitles).toBe(true);
+    expect(parseGuueyJson({ ...base, app: { autoThreadTitles: false } }).app?.autoThreadTitles).toBe(false);
+  });
+
+  it('N−1: a document without the key parses unchanged (absent leaves the app record untouched)', () => {
+    expect(parseGuueyJson({ ...base, app: { suggestions: ['hi'] } }).app).not.toHaveProperty('autoThreadTitles');
+  });
+
+  it('rejects anything but a boolean (strict — never coerced; no null, declare false to turn titles off)', () => {
+    expect(() => parseGuueyJson({ ...base, app: { autoThreadTitles: 'true' } })).toThrow();
+    expect(() => parseGuueyJson({ ...base, app: { autoThreadTitles: 1 } })).toThrow();
+    expect(() => parseGuueyJson({ ...base, app: { autoThreadTitles: null } })).toThrow();
+  });
+
+  it('lives on the APP section, not the agent section — an agent-level key stays unknown (the pull-safety placement)', () => {
+    expect(() => parseGuueyJson({ ...base, agent: { ...minimalAgent, autoThreadTitles: true } })).toThrow();
+  });
+});

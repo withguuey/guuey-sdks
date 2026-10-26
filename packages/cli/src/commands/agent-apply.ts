@@ -91,6 +91,8 @@ export interface AgentReconcileConfig {
   suggestions?: unknown;
   /** guuey#1597 — who the agent is FOR (`personal` | `customers`); server-validated. */
   builtFor?: string;
+  /** guuey#2612 — titles this app's threads after a turn (`true`) or leaves them to the app; server-validated boolean. Takes effect when automatic titles ship. */
+  autoThreadTitles?: boolean;
 }
 
 /**
@@ -211,6 +213,11 @@ export interface AgentReconcileStatus {
      * answer (N−1) — it prints "(unset)".
      */
     builtFor?: string;
+    /**
+     * guuey#2612. Optional HERE for the same reason as `builtFor`: a cliApi
+     * from before the field existed omits it, and this CLI prints "(unset)".
+     */
+    autoThreadTitles?: boolean;
   };
 }
 
@@ -800,6 +807,7 @@ export async function agentStatus(flags?: Record<string, string | true>): Promis
   console.log(`    chatTheme:      ${c.chatThemeHash ?? 'none'}`);
   console.log(`    standalonePage: ${fmtValue(c.standalonePage)}`);
   console.log(`    builtFor:       ${fmtValue(c.builtFor)}`);
+  console.log(`    autoThreadTitles: ${fmtValue(c.autoThreadTitles)}`);
 
   if (parity) {
     console.log('');

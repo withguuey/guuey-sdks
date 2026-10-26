@@ -822,9 +822,9 @@ describe('agentStatus', () => {
     const output = logs.join('\n');
     expect(output).toContain('Live: build #11 (live) · xs · deployed 2026-08-16T20:00:00.000Z');
     expect(output).toContain('managed from loqu-co/ggui@da49f6dcaabc (guuey-agents/helper)');
-    expect(output).toContain('userAuthMode:   "byo"');
-    expect(output).toContain('allowedDomains: ["https://console.example.com"]');
-    expect(output).toContain('standalonePage: {"enabled":true,');
+    expect(output).toContain('userAuthMode:     "byo"');
+    expect(output).toContain('allowedDomains:   ["https://console.example.com"]');
+    expect(output).toContain('standalonePage:   {"enabled":true,');
     expect(output).toContain('"noindex":true}');
   });
 
@@ -842,12 +842,44 @@ describe('agentStatus', () => {
   it('guuey#1597: renders the builtFor; an older cliApi that omits it renders (unset), never throws', async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { ...STATUS, config: { ...STATUS.config, builtFor: 'personal' } }));
     await agentStatus({});
-    expect(logs.join('\n')).toContain('builtFor:       "personal"');
+    expect(logs.join('\n')).toContain('builtFor:         "personal"');
 
     logs.length = 0;
     fetchMock.mockResolvedValue(jsonResponse(200, STATUS));
     await agentStatus({});
-    expect(logs.join('\n')).toContain('builtFor:       (unset)');
+    expect(logs.join('\n')).toContain('builtFor:         (unset)');
+  });
+
+  it('guuey#2612: renders autoThreadTitles; an older cliApi that omits it renders (unset), never throws', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { ...STATUS, config: { ...STATUS.config, autoThreadTitles: true } }));
+    await agentStatus({});
+    expect(logs.join('\n')).toContain('autoThreadTitles: true');
+
+    logs.length = 0;
+    fetchMock.mockResolvedValue(jsonResponse(200, STATUS));
+    await agentStatus({});
+    expect(logs.join('\n')).toContain('autoThreadTitles: (unset)');
+  });
+
+  it('every Config row starts its value at one column, the longest label included', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { ...STATUS, config: { ...STATUS.config, autoThreadTitles: true } }));
+    await agentStatus({});
+    const lines = logs.join('\n').split('\n');
+    const start = lines.indexOf('  Config:');
+    expect(start).toBeGreaterThan(-1);
+    const rows = lines.slice(start + 1).filter((l) => /^ {4}[A-Za-z]+: /.test(l));
+    expect(rows.map((l) => l.trim().split(':')[0])).toEqual([
+      'userAuthMode',
+      'userAuthConfig',
+      'allowedDomains',
+      'guestAccess',
+      'chatTheme',
+      'standalonePage',
+      'builtFor',
+      'autoThreadTitles',
+    ]);
+    const valueColumns = new Set(rows.map((l) => l.search(/(?<=: +)\S/)));
+    expect(valueColumns.size).toBe(1);
   });
 
   it('no active build / no provenance render honestly', async () => {
