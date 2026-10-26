@@ -13,6 +13,7 @@ interface MockStyle {
   maxHeight?: number;
   overflow?: string;
   flexShrink?: number;
+  alignItems?: string;
 }
 interface MockProps {
   children?: ReactNode;
@@ -27,7 +28,7 @@ vi.mock("react-native", () => {
     ({ children, style }: MockProps) =>
       createElement(
         tag,
-        { "data-max-height": style?.maxHeight, "data-overflow": style?.overflow, "data-flex-shrink": style?.flexShrink },
+        { "data-max-height": style?.maxHeight, "data-overflow": style?.overflow, "data-flex-shrink": style?.flexShrink, "data-align-items": style?.alignItems },
         children,
       );
   return {
@@ -157,6 +158,8 @@ describe("NativeUserMessage failed send (guuey#2604)", () => {
     render(createElement(NativeUserMessage, { item: failed({ failureLine: line }), ctx }));
     expect(screen.getByText(line).getAttribute("data-flex-shrink")).toBe("1");
     expect(screen.getByText(defaultChatStrings.userRetry).closest("button")?.getAttribute("data-flex-shrink")).toBe("0");
+    // Retry sits on the first line of a wrapped reason, not centred against the whole paragraph.
+    expect(screen.getByText(line).parentElement?.getAttribute("data-align-items")).toBe("flex-start");
   });
 
   it("falls back to the couldn't-send line when the plan carries none", () => {

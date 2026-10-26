@@ -202,13 +202,14 @@ function NativeSendFailed({ item, ctx }: ItemProps<UserMessageItem>): ReactNode 
   const { tokens } = ctx;
   if (item.state !== "failed") return null;
   return (
-    <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-      {/* The line shrinks and wraps; Retry keeps its size at the row's end, so a long reason never pushes it off a narrow screen. */}
+    <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+      {/* The line shrinks and wraps; Retry keeps its size at the row's end, so a long reason never pushes it off a narrow screen.
+          The row aligns to the top, so Retry sits on the line's first line rather than mid-paragraph. */}
       <Text style={{ flexShrink: 1, color: tokens.palette.error, fontSize: tokens.fontSize - 2 }}>
         {item.failureLine ?? ctx.strings.userCouldntSend}
       </Text>
       {item.retry ? (
-        <Pressable accessibilityRole="button" style={{ flexShrink: 0 }} onPress={() => ctx.onRetry?.(item)}>
+        <Pressable accessibilityRole="button" style={{ flexShrink: 0, marginTop: 1 }} onPress={() => ctx.onRetry?.(item)}>
           <Text style={{ color: tokens.palette.accent, fontSize: tokens.fontSize - 2, fontWeight: "600" }}>
             {ctx.strings.userRetry}
           </Text>
