@@ -9,6 +9,9 @@
  *  - {@link asyncStorageThreadStore} — that thread-id store on its own;
  *  - {@link createNativeViewHost} — a `view` slot that mounts cards in an
  *    injected MCP App WebView host (`McpAppIframe`).
+ *  - {@link expoSpeechRecognizer} — composer dictation's engine for
+ *    `useSpeechInput`, over an injected expo-speech-recognition module
+ *    (guuey#2446).
  *
  * Every native module is INJECTED by the caller: this subpath adds no
  * dependency and no peer beyond `@guuey/chat/native`'s own. It loads only
@@ -27,6 +30,13 @@ export {
   type NativeMcpAppFrameProps,
   type NativeViewHost,
 } from "./native/view-host.js";
+export {
+  expoSpeechRecognizer,
+  type ExpoSpeechEventMap,
+  type ExpoSpeechRecognitionLike,
+  type ExpoSpeechStartOptions,
+  type ExpoSpeechSubscription,
+} from "./native/speech.js";
 export type {
   NativeMcpAppFrameResource,
   NativeUiActionRelay,
