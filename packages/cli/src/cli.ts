@@ -68,7 +68,7 @@ import { pull } from './commands/pull';
 import { undeploy } from './commands/undeploy';
 import { stop, start, restart } from './commands/agent-lifecycle';
 import { envSet, envList, envUnset } from './commands/env';
-import { byokSet, byokList, byokRemove } from './commands/byok';
+import { byokSet, byokStatus, byokRemove } from './commands/byok';
 import { deploymentsList, deploymentsLogs } from './commands/deployments';
 import { agentConfig } from './commands/agent';
 import { agentApply, agentRollback, agentStatus } from './commands/agent-apply';
@@ -536,6 +536,27 @@ App Admin (BYO-auth apps; owner or admin of the app's workspace, or a personal a
     --thread <threadId>          Print one thread's messages instead
     --all                        Follow every page and write JSON lines to
                                  stdout: each thread, then its messages
+
+BYOK (Bring Your Own Key):
+  byok set --provider <id>      Store a provider API key, read from stdin (never
+                                 from the command line): pipe it,
+                                 guuey byok set --provider anthropic --app-id <id> < key.txt,
+                                 or paste it at the hidden prompt. Takes effect
+                                 on the next deploy.
+    --provider <id>             anthropic | openai | google | openrouter
+                                 (required)
+    --app-id <id>               The app's own key (default: the bound app)
+    --workspace <id|slug>       The workspace's key, used by each of its apps
+                                 that sets none of its own (workspace admin)
+  byok status                   Per provider: the key the next deploy uses
+                                 (app, workspace or managed), each stored key's
+                                 last 4 and when it was set, and plain env vars
+                                 named like a provider key
+    --app-id <id> | --workspace <id|slug>
+    --json                      Emit the server's answer as JSON
+  byok list                     Same as byok status
+  byok remove --provider <id>   Remove a provider key (any stored provider id)
+    --app-id <id> | --workspace <id|slug>
 
 Domains:
   domains add <domain>          Register a custom domain for the app and
@@ -1204,16 +1225,18 @@ async function main(): Promise<void> {
     case 'byok':
       switch (action) {
         case 'set':
-          await byokSet(flags);
+          // The leftover positionals go along so a key typed there is refused, not ignored.
+          await byokSet(flags, rest);
           break;
+        case 'status':
         case 'list':
-          await byokList(flags);
+          await byokStatus(flags);
           break;
         case 'remove':
           await byokRemove(flags);
           break;
         default:
-          console.error(`Unknown byok command: ${action ?? '(none)'}. Use: set, list, remove`);
+          console.error(`Unknown byok command: ${action ?? '(none)'}. Use: set, status, list, remove`);
           process.exit(1);
       }
       break;

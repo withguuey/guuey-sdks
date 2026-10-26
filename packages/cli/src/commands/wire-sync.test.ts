@@ -17,7 +17,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { parseInterfaceFields, parseStringLiterals } from '../wire-mirror-parse';
+import { parseInterfaceFields, parseStringConstant, parseStringLiterals } from '../wire-mirror-parse';
 
 function repoPath(relativeToThisFile: string): string {
   return fileURLToPath(new URL(relativeToThisFile, import.meta.url));
@@ -33,6 +33,9 @@ const WIRE_BILLING = repoPath(`${CLI_WIRE_DIR}/billing.ts`);
 const WIRE_BILLING_INVOICING = repoPath(`${CLI_WIRE_DIR}/billing-invoicing.ts`);
 const WIRE_USAGE_EXPORT = repoPath(`${CLI_WIRE_DIR}/usage-export.ts`);
 const WIRE_TEST_TOKEN = repoPath(`${CLI_WIRE_DIR}/test-token.ts`);
+const WIRE_PROVIDER_KEYS = repoPath(`${CLI_WIRE_DIR}/provider-keys.ts`);
+// The provider-key source rule's own unions, which cli-wire's KeySource / KeyTier alias.
+const TYPES_PROVIDER_KEY_SOURCE = repoPath('../../../../../backend/libs/types/src/provider-key-source.ts');
 
 const CLI_APPS = repoPath('./apps.ts');
 const CLI_MCP = repoPath('./mcp.ts');
@@ -44,6 +47,7 @@ const CLI_PULL = repoPath('./pull.ts');
 const CLI_USAGE = repoPath('./usage.ts');
 const CLI_DEPLOY = repoPath('./deploy.ts');
 const CLI_TEST = repoPath('./test.ts');
+const CLI_BYOK = repoPath('./byok.ts');
 
 const haveWire =
   existsSync(WIRE_APPS) &&
@@ -235,6 +239,46 @@ describe.skipIf(!haveWire)('CLI wire mirrors — sync guards against @guuey-priv
     }
     for (const union of ['NextInvoiceLineKind', 'NextInvoiceStatus', 'InvoiceHistoryStatus']) {
       expect(parseStringLiterals(cli, union)).toEqual(parseStringLiterals(wire, union));
+    }
+  });
+
+  it('the provider-key mirrors declare exactly the wire fields (guuey#2412)', () => {
+    // `guuey byok status` renders every one of these; `set` and `remove` print from their results. The
+    // nested shapes are named interfaces on both sides, because the member parser reads top-level
+    // members only. A renamed field is a blank line or a lost "In use" stamp, silently.
+    const cli = read(CLI_BYOK);
+    const wire = read(WIRE_PROVIDER_KEYS);
+    for (const name of [
+      'StoredKeyFace',
+      'ConfiguredProviderKey',
+      'ProviderKeyInUse',
+      'AppProviderKeyEntry',
+      'PersonalAppOwner',
+      'WorkspaceAppOwner',
+      'UnsupportedAppProviderKey',
+      'AppProviderKeysWire',
+      'WorkspaceProviderKeyEntry',
+      'UnsupportedWorkspaceProviderKey',
+      'WorkspaceProviderKeysWire',
+      'SetProviderKeyBody',
+      'SetProviderKeyResult',
+      'ProviderKeyFallback',
+      'RemoveProviderKeyResult',
+    ]) {
+      expect(parseInterfaceFields(cli, name)).toEqual(parseInterfaceFields(wire, name));
+    }
+    expect(parseStringLiterals(cli, 'StoredKeyStatus')).toEqual(parseStringLiterals(wire, 'StoredKeyStatus'));
+    // KeySource and KeyTier are the rule's own unions on the wire (aliases); the CLI's literal copies pin to the
+    // rule, so a new source value fails here instead of compiling and falling into a non-managed branch.
+    const rule = read(TYPES_PROVIDER_KEY_SOURCE);
+    expect(wire).toMatch(/export type KeySource = ProviderKeySource;/);
+    expect(wire).toMatch(/export type KeyTier = ProviderKeyTier;/);
+    expect(parseStringLiterals(cli, 'KeySource')).toEqual(parseStringLiterals(rule, 'ProviderKeySource'));
+    expect(parseStringLiterals(cli, 'KeyTier')).toEqual(parseStringLiterals(rule, 'ProviderKeyTier'));
+    expect(parseStringLiterals(cli, 'KeySource')).toHaveLength(3);
+    // The CLI branches on these codes: the not-found line, and the personal-workspace pointer.
+    for (const code of ['PROVIDER_KEYS_NOT_FOUND', 'PERSONAL_WORKSPACE_PROVIDER_KEY']) {
+      expect(parseStringConstant(cli, code)).toBe(parseStringConstant(wire, code));
     }
   });
 

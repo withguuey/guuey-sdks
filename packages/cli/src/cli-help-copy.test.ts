@@ -179,3 +179,29 @@ describe('guuey test --as-me help (guuey#3211)', () => {
     );
   });
 });
+
+// guuey#2412: `guuey byok` is advertised again now that its routes exist, in
+// the stdin form: --provider required, --app-id or --workspace, and no
+// --key flag anywhere (a key on the command line lands in shell history).
+describe('cli.ts --help — byok section (guuey#2412)', () => {
+  const byokHelp = section('BYOK (Bring Your Own Key):', '\n\nDomains:');
+
+  it('advertises set, status (with its list alias) and remove', () => {
+    expect(byokHelp).toMatch(/byok set\s+--provider <id>/);
+    expect(byokHelp).toMatch(/byok status/);
+    expect(byokHelp).toMatch(/byok list/);
+    expect(byokHelp).toMatch(/byok remove\s+--provider <id>/);
+  });
+
+  it('reads the key from stdin and never offers a --key flag or bedrock', () => {
+    expect(byokHelp).toMatch(/stdin/);
+    expect(byokHelp).not.toMatch(/--key\b/);
+    expect(byokHelp).not.toMatch(/bedrock/);
+  });
+
+  it('names both targets and says when a key takes effect', () => {
+    expect(byokHelp).toMatch(/--app-id <id>/);
+    expect(byokHelp).toMatch(/--workspace <id\|slug>/);
+    expect(byokHelp).toMatch(/next deploy/);
+  });
+});

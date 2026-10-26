@@ -11,7 +11,6 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
-import { byokSet, byokList, byokRemove } from './byok.js';
 import { stop, start, restart } from './agent-lifecycle.js';
 import { deploymentsLogs } from './deployments.js';
 
@@ -23,9 +22,6 @@ class ExitSignal extends Error {
 }
 
 const gatedCommands: Array<{ name: string; run: () => Promise<void> }> = [
-  { name: 'guuey byok set', run: () => byokSet({}) },
-  { name: 'guuey byok list', run: () => byokList({}) },
-  { name: 'guuey byok remove', run: () => byokRemove({}) },
   { name: 'guuey stop', run: () => stop() },
   { name: 'guuey start', run: () => start() },
   { name: 'guuey restart', run: () => restart() },
@@ -41,6 +37,9 @@ const gatedCommands: Array<{ name: string; run: () => Promise<void> }> = [
   // matching case when a route ships" instruction above: its cliApi route
   // (`POST /v1/apps/:id/recover`) now exists, so the command reaches the
   // network like any other. Its coverage moved to `apps.recover.test.ts`.
+  // `guuey byok set|status|list|remove` left the same way in guuey#2412: the
+  // `/v1/apps/:id/keys/providers*` and `/v1/workspaces/:ref/keys/providers*`
+  // routes now exist. Coverage lives in `byok.test.ts`.
   // `guuey domains add|list|verify|remove` left the same way in guuey#132
   // slice 1: the `/v1/apps/:id/domains*` routes now exist. Coverage lives
   // in `domains.test.ts`.
