@@ -203,9 +203,12 @@ function NativeSendFailed({ item, ctx }: ItemProps<UserMessageItem>): ReactNode 
   if (item.state !== "failed") return null;
   return (
     <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-      <Text style={{ color: tokens.palette.error, fontSize: tokens.fontSize - 2 }}>{item.failureLine ?? ctx.strings.userCouldntSend}</Text>
+      {/* The line shrinks and wraps; Retry keeps its size at the row's end, so a long reason never pushes it off a narrow screen. */}
+      <Text style={{ flexShrink: 1, color: tokens.palette.error, fontSize: tokens.fontSize - 2 }}>
+        {item.failureLine ?? ctx.strings.userCouldntSend}
+      </Text>
       {item.retry ? (
-        <Pressable accessibilityRole="button" onPress={() => ctx.onRetry?.(item)}>
+        <Pressable accessibilityRole="button" style={{ flexShrink: 0 }} onPress={() => ctx.onRetry?.(item)}>
           <Text style={{ color: tokens.palette.accent, fontSize: tokens.fontSize - 2, fontWeight: "600" }}>
             {ctx.strings.userRetry}
           </Text>

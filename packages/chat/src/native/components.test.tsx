@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 interface MockStyle {
   maxHeight?: number;
   overflow?: string;
+  flexShrink?: number;
 }
 interface MockProps {
   children?: ReactNode;
@@ -26,13 +27,14 @@ vi.mock("react-native", () => {
     ({ children, style }: MockProps) =>
       createElement(
         tag,
-        { "data-max-height": style?.maxHeight, "data-overflow": style?.overflow },
+        { "data-max-height": style?.maxHeight, "data-overflow": style?.overflow, "data-flex-shrink": style?.flexShrink },
         children,
       );
   return {
     View: passthrough("div"),
     Text: passthrough("span"),
-    Pressable: ({ children, onPress }: MockProps) => createElement("button", { onClick: onPress }, children),
+    Pressable: ({ children, style, onPress }: MockProps) =>
+      createElement("button", { onClick: onPress, "data-flex-shrink": style?.flexShrink }, children),
     Image: passthrough("img"),
     ScrollView: ({ children, style, nestedScrollEnabled }: MockProps) =>
       createElement(
@@ -148,6 +150,13 @@ describe("NativeUserMessage failed send (guuey#2604)", () => {
     expect(screen.queryByText(defaultChatStrings.userCouldntSend)).toBeNull();
     fireEvent.click(screen.getByText(defaultChatStrings.userRetry));
     expect(onRetry).toHaveBeenCalled();
+  });
+
+  it("a long reason wraps and Retry keeps its size: the line shrinks, the Retry button never does", () => {
+    const line = "High demand right now. Please try again in a moment, or come back a little later today.";
+    render(createElement(NativeUserMessage, { item: failed({ failureLine: line }), ctx }));
+    expect(screen.getByText(line).getAttribute("data-flex-shrink")).toBe("1");
+    expect(screen.getByText(defaultChatStrings.userRetry).closest("button")?.getAttribute("data-flex-shrink")).toBe("0");
   });
 
   it("falls back to the couldn't-send line when the plan carries none", () => {
