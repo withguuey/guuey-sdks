@@ -100,6 +100,7 @@ export {
   GuueyChatFace,
   GuueyChatPalette,
   GuueyChatTheme,
+  paletteCue,
   resolveTheme,
   resolveCourtTheme,
 } from "./theme.js";

@@ -5,7 +5,7 @@
  * schema resolved into a flat token object RN components read as style
  * values. No new vocabulary: every field here derives from the schema.
  */
-import { resolveTheme, type GuueyChatPalette, type GuueyChatTheme } from "../theme.js";
+import { paletteCue, resolveTheme, type GuueyChatPalette, type GuueyChatTheme } from "../theme.js";
 
 export type NativeThemeMode = "light" | "dark";
 
@@ -13,6 +13,8 @@ export type NativeThemeMode = "light" | "dark";
 export interface NativeChatTokens {
   /** The mode-resolved palette (per-token fallback already applied). */
   palette: GuueyChatPalette;
+  /** The palette's cue (`paletteCue`): the streaming caret and other one-bit strokes. */
+  cue: string;
   /** shape.radius → px: none 0, soft 10, round 18. */
   radius: number;
   /** shape.density → the bubble padding / row gap pair. */
@@ -44,6 +46,7 @@ export function resolveNativeTheme(theme: GuueyChatTheme, mode: NativeThemeMode)
   const comfortable = resolved.shape.density === "comfortable";
   return {
     palette,
+    cue: paletteCue(palette),
     radius: RADIUS[resolved.shape.radius],
     pad: comfortable ? 12 : 8,
     gap: comfortable ? 10 : 6,

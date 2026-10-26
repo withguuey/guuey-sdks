@@ -1,7 +1,8 @@
 /**
- * guuey#2304 — the kit has ONE focus ring for its controls: the 2px accent
- * outline plus a 1px ink hairline, so the indicator clears 3:1 on any ground
- * and with any builder accent. Read from the shipped stylesheet.
+ * guuey#2304 — the kit has ONE focus ring for its controls: a 2px cue ring
+ * 2px off the control plus a 1px ink hairline at its edge, so the indicator
+ * clears 3:1 on any ground and with any builder accent. Read from the shipped
+ * stylesheet.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -36,15 +37,16 @@ const CONTROLS = [
 ];
 
 describe("the kit's focus ring (guuey#2304)", () => {
-  it("every control's :focus-visible is the ONE shared rule: accent outline + ink hairline", () => {
+  it("every control's :focus-visible is the ONE shared rule: cue ring 2px off + ink hairline", () => {
     const shared = rules().filter(([sels]) => CONTROLS.every((c) => sels.includes(`${c}:focus-visible`)));
     expect(shared).toHaveLength(1);
     const body = shared[0]![1];
-    expect(body).toMatch(/outline:\s*2px solid var\(--guuey-chat-accent/);
+    expect(body).toMatch(/outline:\s*2px solid var\(--guuey-chat-cue, var\(--_guuey-chat-cue\)\)/);
+    expect(body).toMatch(/outline-offset:\s*2px/);
     expect(body).toMatch(/box-shadow:\s*0 0 0 1px var\(--guuey-chat-ink/);
   });
 
-  it("no other rule paints an accent-only outline on those controls", () => {
+  it("no other rule paints a hairline-less outline on those controls", () => {
     for (const [sels, body] of rules()) {
       if (!/outline:\s*2px solid/.test(body)) continue;
       const hitsControl = sels.some((s) => CONTROLS.some((c) => s === `${c}:focus-visible`));

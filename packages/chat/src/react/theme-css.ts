@@ -5,7 +5,7 @@
  * (3c) maps the same object to style values instead — no CSS here is
  * load-bearing for the view-model.
  */
-import type { GuueyChatTheme } from "../theme.js";
+import { paletteCue, type GuueyChatTheme } from "../theme.js";
 
 export type ThemeMode = "light" | "dark";
 
@@ -46,6 +46,8 @@ export function themeCssVars(theme: GuueyChatTheme, mode: ThemeMode): Record<str
     "--_guuey-chat-canvas": palette.canvas,
     "--_guuey-chat-canvas-muted": palette.canvasMuted,
     "--_guuey-chat-error": palette.error,
+    // Always stamped: an unstated cue derives from the accent and canvas.
+    "--_guuey-chat-cue": paletteCue(palette),
     "--_guuey-chat-radius": RADIUS_PX[theme.shape.radius],
     "--_guuey-chat-gap": DENSITY_GAP[theme.shape.density],
     "--_guuey-chat-scale": String(theme.typography.scale ?? 1),

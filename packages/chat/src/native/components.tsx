@@ -304,7 +304,7 @@ export function NativeTap({ item, ctx }: ItemProps<TapItem>): ReactNode {
 export function NativeText({ item, ctx }: ItemProps<TextItem>): ReactNode {
   const { tokens } = ctx;
   const caret = item.streaming ? (
-    <Text style={{ color: tokens.palette.accent }}>{" ▍"}</Text>
+    <Text style={{ color: tokens.cue }}>{" ▍"}</Text>
   ) : undefined;
   if (item.tone === "interim") {
     // Interim narration: the status line's voice (NativeStatus), outside the answer's bubble.

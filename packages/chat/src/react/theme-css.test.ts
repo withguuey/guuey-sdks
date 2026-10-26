@@ -10,7 +10,7 @@
  */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { GUUEY_CHAT_THEME } from "../theme.js";
+import { DEFAULT_CHAT_THEME, GUUEY_CHAT_THEME } from "../theme.js";
 import { themeCssVars } from "./theme-css.js";
 
 const INTERNAL_PREFIX = "--_guuey-chat-";
@@ -137,5 +137,19 @@ describe("guuey#1280 — the display face reaches the web renderer", () => {
     expect(css).toContain(
       "var(--guuey-chat-heading-font, var(--_guuey-chat-heading-font, inherit))",
     );
+  });
+});
+
+describe("the cue reaches the web renderer", () => {
+  it("is stamped in both modes, stated or derived", () => {
+    expect(themeCssVars(GUUEY_CHAT_THEME, "light")["--_guuey-chat-cue"]).toBe("#4e740d");
+    expect(themeCssVars(GUUEY_CHAT_THEME, "dark")["--_guuey-chat-cue"]).toBe("#b8ff3a");
+    expect(themeCssVars(DEFAULT_CHAT_THEME, "light")["--_guuey-chat-cue"]).toBe(DEFAULT_CHAT_THEME.colors.light.accent);
+  });
+
+  it("the streaming caret reads the cue, never the accent", () => {
+    const rule = /\.guuey-chat-cursor\s*\{([^}]*)\}/.exec(STYLESHEET)?.[1] ?? "";
+    expect(rule).toMatch(/color:\s*var\(--guuey-chat-cue, var\(--_guuey-chat-cue\)\)/);
+    expect(rule).not.toMatch(/accent/);
   });
 });

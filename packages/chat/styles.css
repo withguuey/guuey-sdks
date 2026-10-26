@@ -385,8 +385,10 @@
   white-space: pre-wrap;
   margin: 0;
 }
+/* The caret is a cue, never the raw accent: a light accent on a light canvas
+   measured 1.10:1. */
 .guuey-chat-cursor {
-  color: var(--guuey-chat-accent, var(--_guuey-chat-accent));
+  color: var(--guuey-chat-cue, var(--_guuey-chat-cue));
 }
 .guuey-chat-stopped {
   margin: 6px 0 0;
@@ -411,10 +413,11 @@
 .guuey-chat-toggle:hover {
   background: color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 6%, transparent);
 }
-/* guuey#2304 — the kit's ONE focus ring. The 2px accent outline stays the
-   brand; a 1px ink hairline under it keeps the indicator at or above 3:1
-   (WCAG 2.4.11) on any ground and with any builder accent (a light accent on
-   a light canvas measured 1.10:1 with the outline alone). */
+/* guuey#2304 — the kit's ONE focus ring: a 2px cue ring 2px off the control.
+   The cue clears 3:1 against the canvas (it derives that way when a theme
+   states none), and a 1px ink hairline at the control's edge keeps the
+   indicator at or above 3:1 (WCAG 2.4.11) on any other ground and when a
+   host sets the cue itself. */
 .guuey-chat-toggle:focus-visible,
 .guuey-chat-prompt-actions button:focus-visible,
 .guuey-chat-jump:focus-visible,
@@ -428,8 +431,8 @@
 .guuey-chat-composer-attach:focus-visible,
 .guuey-chat-attachment-remove:focus-visible,
 .guuey-chat-composer-input:focus-visible {
-  outline: 2px solid var(--guuey-chat-accent, var(--_guuey-chat-accent));
-  outline-offset: 1px;
+  outline: 2px solid var(--guuey-chat-cue, var(--_guuey-chat-cue));
+  outline-offset: 2px;
   box-shadow: 0 0 0 1px var(--guuey-chat-ink, var(--_guuey-chat-ink));
 }
 /* The jump chip floats on its own drop shadow; focus keeps it under the hairline. */

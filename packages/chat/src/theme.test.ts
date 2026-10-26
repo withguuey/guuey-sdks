@@ -6,6 +6,7 @@ import {
   GUUEY_CHAT_THEME,
   GuueyChatFace,
   GuueyChatTheme,
+  paletteCue,
   resolveTheme,
   resolveCourtTheme,
 } from "./theme.js";
@@ -251,5 +252,59 @@ describe("link token (guuey#528)", () => {
     const resolved = resolveTheme({ name: "old", colors: { light: { accent: "#123456" } } });
     expect(resolved.colors.light.link).toBe(DEFAULT_CHAT_THEME.colors.light.link);
     expect(resolved.colors.light.accent).toBe("#123456");
+  });
+});
+
+describe("cue token: the one-bit strokes and the focus ring", () => {
+  it("the guuey identity states its stroke green on light and the slime on dark", () => {
+    expect(GUUEY_CHAT_THEME.colors.light.cue).toBe("#4e740d");
+    expect(GUUEY_CHAT_THEME.colors.dark.cue).toBe("#b8ff3a");
+  });
+
+  it("the neutral default states none, so it derives: its accent clears 3:1 on its canvas", () => {
+    expect(DEFAULT_CHAT_THEME.colors.light.cue).toBeUndefined();
+    expect(paletteCue(DEFAULT_CHAT_THEME.colors.light)).toBe(DEFAULT_CHAT_THEME.colors.light.accent);
+    expect(paletteCue(DEFAULT_CHAT_THEME.colors.dark)).toBe(DEFAULT_CHAT_THEME.colors.dark.accent);
+  });
+
+  it("a stated cue wins over the derivation", () => {
+    expect(paletteCue({ ...DEFAULT_CHAT_THEME.colors.light, cue: "#123456" })).toBe("#123456");
+  });
+
+  it("an accent under 3:1 on the canvas derives the muted ink, never the invisible accent", () => {
+    const light = { ...DEFAULT_CHAT_THEME.colors.light, accent: "#b8ff3a", canvas: "#f6f5ee" };
+    expect(paletteCue(light)).toBe(light.inkMuted);
+  });
+
+  it("an accent or canvas it cannot measure derives the muted ink", () => {
+    for (const accent of ["oklch(0.7 0.2 140)", "rgba(10, 20, 30, 0.5)", "slime"]) {
+      expect(paletteCue({ ...DEFAULT_CHAT_THEME.colors.light, accent })).toBe(DEFAULT_CHAT_THEME.colors.light.inkMuted);
+    }
+    expect(paletteCue({ ...DEFAULT_CHAT_THEME.colors.light, canvas: "transparent" })).toBe(
+      DEFAULT_CHAT_THEME.colors.light.inkMuted,
+    );
+  });
+
+  it("measures #rgb and rgb() the same as #rrggbb", () => {
+    expect(paletteCue({ ...DEFAULT_CHAT_THEME.colors.light, accent: "#111", canvas: "rgb(247, 247, 245)" })).toBe("#111");
+  });
+
+  it("a layer that restates the accent without a cue drops the inherited guuey cue, so it derives", () => {
+    const resolved = resolveTheme({ colors: { light: { accent: "#0055ff" }, dark: { canvas: "#000000" } } }, GUUEY_CHAT_THEME);
+    expect(resolved.colors.light.cue).toBeUndefined();
+    expect(resolved.colors.dark.cue).toBeUndefined();
+    expect(paletteCue(resolved.colors.light)).toBe("#0055ff");
+  });
+
+  it("a layer that states its own cue keeps it, and one that leaves accent and canvas alone inherits the base's", () => {
+    expect(
+      resolveTheme({ colors: { light: { accent: "#ff5500", cue: "#aa3300" } } }, GUUEY_CHAT_THEME).colors.light.cue,
+    ).toBe("#aa3300");
+    expect(resolveTheme({ colors: { light: { ink: "#000000" } } }, GUUEY_CHAT_THEME).colors.light.cue).toBe("#4e740d");
+  });
+
+  it("a stored theme from before the cue resolves and derives one (additive evolution)", () => {
+    const old = { name: "acme", colors: { light: { accent: "#0055ff" }, dark: { accent: "#88aaff" } } };
+    expect(paletteCue(resolveTheme(old).colors.light)).toBe("#0055ff");
   });
 });

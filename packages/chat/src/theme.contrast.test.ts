@@ -5,7 +5,7 @@
  * regresses regresses every such app at once.
  */
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CHAT_THEME, GUUEY_CHAT_THEME, type GuueyChatPalette } from "./theme.js";
+import { DEFAULT_CHAT_THEME, GUUEY_CHAT_THEME, paletteCue, type GuueyChatPalette } from "./theme.js";
 
 /** WCAG 2.x relative luminance of a `#rrggbb` colour. */
 function luminance(hex: string): number {
@@ -60,6 +60,12 @@ describe("the shipped palettes clear AA for normal text on every ground, both mo
             expect(contrast(colour(palette, text), colour(palette, ground))).toBeGreaterThanOrEqual(AA_NORMAL);
           });
         }
+      }
+      // A cue is a non-text indicator: WCAG 2.x non-text contrast, 3:1, on every ground it can sit on.
+      for (const ground of GROUNDS) {
+        it(`${theme.name} ${mode}: the cue on ${ground}`, () => {
+          expect(contrast(paletteCue(palette), colour(palette, ground))).toBeGreaterThanOrEqual(3);
+        });
       }
       it(`${theme.name} ${mode}: onAccent on accent (the send button)`, () => {
         expect(contrast(colour(palette, "onAccent"), colour(palette, "accent"))).toBeGreaterThanOrEqual(AA_NORMAL);

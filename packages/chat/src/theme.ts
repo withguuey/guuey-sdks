@@ -59,9 +59,90 @@ export const GuueyChatPalette = z
     success: z.string().optional(),
     warning: z.string().optional(),
     info: z.string().optional(),
+    /**
+     * The cue: the one-bit strokes that say "something is live" (the
+     * streaming caret, a status dot, a spinner arc, a pulse) and the focus
+     * ring. OPTIONAL by the evolution rule. A cue is chosen against an accent
+     * and a canvas, so an unstated one derives from them (`paletteCue`), and
+     * a layer that restates either drops the cue it would inherit.
+     */
+    cue: z.string().optional(),
   })
   .loose();
 export type GuueyChatPalette = z.infer<typeof GuueyChatPalette>;
+
+/** One opaque sRGB colour, 8 bits a channel. */
+interface Rgb {
+  r: number;
+  g: number;
+  b: number;
+}
+
+/**
+ * Parse `#rgb`, `#rrggbb`, `rgb(r, g, b)` or `rgba(...)` at alpha 0.99 or
+ * more. Anything else (named, translucent, another colour space) is null,
+ * and a caller that needs a measurement takes its safe answer instead.
+ */
+function parseOpaqueColor(input: string): Rgb | null {
+  const s = input.trim().toLowerCase();
+  let m = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/.exec(s);
+  if (m !== null) {
+    const [r, g, b] = [m[1], m[2], m[3]].map((c) => Number.parseInt(`${c ?? "0"}${c ?? "0"}`, 16));
+    return { r: r ?? 0, g: g ?? 0, b: b ?? 0 };
+  }
+  m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/.exec(s);
+  if (m !== null) {
+    const [r, g, b] = [m[1], m[2], m[3]].map((c) => Number.parseInt(c ?? "0", 16));
+    return { r: r ?? 0, g: g ?? 0, b: b ?? 0 };
+  }
+  m = /^rgba?\(\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*(?:[,/]\s*([\d.]+%?)\s*)?\)$/.exec(s);
+  if (m !== null) {
+    const alphaText = m[4];
+    const alpha =
+      alphaText === undefined
+        ? 1
+        : alphaText.endsWith("%")
+          ? Number.parseFloat(alphaText) / 100
+          : Number.parseFloat(alphaText);
+    if (!(alpha >= 0.99)) return null;
+    const [r, g, b] = [m[1], m[2], m[3]].map((c) => Math.min(255, Number.parseInt(c ?? "0", 10)));
+    return { r: r ?? 0, g: g ?? 0, b: b ?? 0 };
+  }
+  return null;
+}
+
+/** WCAG 2.x contrast ratio between two opaque colours. */
+function contrastRatio(a: Rgb, b: Rgb): number {
+  const luminance = (c: Rgb): number => {
+    const [r, g, bl] = [c.r, c.g, c.b].map((v) => {
+      const x = v / 255;
+      return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (bl ?? 0);
+  };
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return ((hi ?? 0) + 0.05) / ((lo ?? 0) + 0.05);
+}
+
+/** A cue must be seen: WCAG 2.x non-text contrast, 3:1 against the canvas. */
+export const CUE_CONTRAST_FLOOR = 3;
+
+/**
+ * The palette's cue colour. A stated `cue` wins. Unstated, the cue is the
+ * accent when the accent clears 3:1 against the canvas, and the muted ink
+ * otherwise, which also covers an accent or canvas this cannot measure.
+ * Painting the stroke in the accent alone would leave a light accent
+ * invisible on a light canvas.
+ */
+export function paletteCue(palette: GuueyChatPalette): string {
+  if (palette.cue !== undefined) return palette.cue;
+  const accent = parseOpaqueColor(palette.accent);
+  const canvas = parseOpaqueColor(palette.canvas);
+  if (accent !== null && canvas !== null && contrastRatio(accent, canvas) >= CUE_CONTRAST_FLOOR) {
+    return palette.accent;
+  }
+  return palette.inkMuted;
+}
 
 /**
  * One declared face (D3 — "theme declares faces; widget loads, hands to
@@ -368,6 +449,10 @@ export const GUUEY_CHAT_THEME: GuueyChatTheme = {
       // it clears 4.5:1 on every light ground: 5.85 on the surface, 5.35 on
       // the canvas, 4.88 on the muted canvas. Pinned by theme.contrast.test.ts.
       link: "#47700d",
+      // The slime is a fill on light, never a stroke: on fog it measures
+      // 1.10:1. The cue takes the brand's stroke green, 5.02:1 on the canvas.
+      // Pinned by theme.contrast.test.ts.
+      cue: "#4e740d",
     },
     dark: {
       accent: "#b8ff3a",
@@ -381,6 +466,7 @@ export const GUUEY_CHAT_THEME: GuueyChatTheme = {
       // On dark the ladder's own slime IS readable at link weight — the
       // #528 ruling minted slime-4 for LIGHT, where #b8ff3a is not.
       link: "#b8ff3a",
+      cue: "#b8ff3a",
     },
   },
   typography: {},
@@ -424,6 +510,13 @@ function mergePalette(
 ): GuueyChatPalette {
   if (!over) return { ...base };
   const merged: GuueyChatPalette = { ...base };
+  // A cue was chosen against its layer's accent and canvas. A layer that
+  // restates either, and states no cue of its own, drops the inherited cue
+  // so it derives (`paletteCue`): the guuey green never rides under a
+  // builder's or a host's accent.
+  if (over.cue === undefined && (typeof over.accent === "string" || typeof over.canvas === "string")) {
+    delete merged.cue;
+  }
   for (const token of PALETTE_TOKENS) {
     const value = over[token];
     if (typeof value === "string") merged[token] = value;
