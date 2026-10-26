@@ -159,7 +159,9 @@ export function adoptedTranscript(
     return { ...m, precedingTurnCount };
   });
   const keepsFold = live.every((m) => m.clientMessageId !== undefined && tied.has(m.clientMessageId));
-  return { messages, keepsFold };
+  // A dropped fold leaves no stamps: they point into the turn space of the
+  // fold being dropped, and the next send's stamp counts from 0 in a new one.
+  return { messages: keepsFold ? messages : history, keepsFold };
 }
 
 /** The guuey#192 stall watchdog's resolved tuning (see {@link stallProbeDecision}). */

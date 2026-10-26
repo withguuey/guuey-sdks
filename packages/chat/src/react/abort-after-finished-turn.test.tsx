@@ -1181,3 +1181,110 @@ describe("guuey#2445 — a second adoption", () => {
     expect(drawnWithNotices(planTranscript(result.current.inputs, calmPolicy()))).toEqual([...afterSecond, "user:Q5", "agent:A5"]);
   });
 });
+
+/**
+ * Like `mount`, but the transport for each send index in `throwOn` throws
+ * before admission (a 503 before the pod stores the send).
+ */
+function mountThrowing(turns: Array<string[] | ClosingTurn>, throwOn: Set<number>, history: AgentMessage[], reloads: Reloads) {
+  const a = adapters(turns, history, reloads);
+  const inner = a.adapters.transport;
+  let n = 0;
+  const wrapped: AgentInvokeAdapters = {
+    ...a.adapters,
+    transport: (req: InvokeRequest) => {
+      if (throwOn.has(n++)) {
+        // eslint-disable-next-line require-yield -- a refusal happens before the first chunk
+        return (async function* (): AsyncGenerator<string> {
+          throw new Error("503 before admission");
+        })();
+      }
+      return inner(req);
+    },
+  };
+  return renderHook(() => {
+    const invoke = useAgentInvoke({
+      endpointUrl: "https://pod.example.com",
+      appId: "app-2445",
+      adapters: wrapped,
+      preserveBlocks: true,
+      stallRecovery: false,
+    });
+    const { inputs } = useTranscriptInputs(invoke);
+    return { invoke, inputs };
+  });
+}
+
+describe("guuey#2445 — an adoption that drops the fold, then the next send", () => {
+  const show = (r: { current: { inputs: TranscriptInputs } }) => drawnWithNotices(planTranscript(r.current.inputs, calmPolicy()));
+  const cutAfter = (turnId: string, text: string): ClosingTurn =>
+    closing(finishedTurn(turnId, text).filter((c) => !c.startsWith("event: done")));
+
+  it.each([true, false])(
+    "prefix=%s: keyed history without an unstored send (and with another tab's turn) draws each answer once in its own place, now and after the next sends",
+    async (prefix) => {
+      const adopted = historyRows(true, [
+        ...(prefix ? PREFIX_ROWS : []),
+        ["user", "Q1", "cm-1"],
+        ["agent", "A1", "cm-1#agent"],
+        ["user", "QX", "cm-other"],
+        ["agent", "AX", "cm-other#agent"],
+        ["user", "Q3", "cm-3"],
+        ["agent", "A3", "cm-3#agent"],
+      ]);
+      const turns = [finishedTurn("turn_1", "A1"), cutAfter("turn_3", "A3"), finishedTurn("turn_4", "A4"), finishedTurn("turn_5", "A5")];
+      const { result } = mountThrowing(turns, new Set([1]), prefix ? PREFIX : [], adopted);
+      if (prefix) await waitFor(() => expect(result.current.invoke.messages.map((m) => m.text)).toEqual(["H0", "HA0"]));
+      await act(async () => {
+        await result.current.invoke.send("Q1");
+      });
+      await act(async () => {
+        await result.current.invoke.send("Q2");
+      });
+      await act(async () => {
+        await result.current.invoke.send("Q3");
+      });
+      expect(result.current.invoke.adopted).toBe(true);
+      const lead = prefix ? ["user:H0", "agent:HA0"] : [];
+      const conversation = [...lead, "user:Q1", "agent:A1", "user:QX", "agent:AX", "user:Q3", "agent:A3"];
+      expect(show(result)).toEqual(conversation);
+      await act(async () => {
+        await result.current.invoke.send("Q4");
+      });
+      expect(show(result)).toEqual([...conversation, "user:Q4", "agent:A4"]);
+      await act(async () => {
+        await result.current.invoke.send("Q5");
+      });
+      expect(show(result)).toEqual([...conversation, "user:Q4", "agent:A4", "user:Q5", "agent:A5"]);
+    },
+  );
+
+  it("a kept-fold adoption, then a keyed adoption that drops it, then the next send", async () => {
+    const first: HistoryRowSpec[] = [
+      ["user", "Q1", "cm-1"],
+      ["agent", "A1", "cm-1#agent"],
+      ["user", "Q2", "cm-2"],
+      ["agent", "A2", "cm-2#agent"],
+    ];
+    const second: HistoryRowSpec[] = [
+      ...first,
+      ["user", "QX", "cm-other"],
+      ["agent", "AX", "cm-other#agent"],
+      ["user", "Q4", "cm-4"],
+      ["agent", "A4", "cm-4#agent"],
+    ];
+    const turns = [finishedTurn("turn_1", "A1"), cutAfter("turn_2", "A2"), cutAfter("turn_4", "A4"), finishedTurn("turn_5", "A5")];
+    const { result } = mountThrowing(turns, new Set([2]), [], { reads: [historyRows(true, first), historyRows(true, second)] });
+    for (const q of ["Q1", "Q2", "Q3", "Q4"]) {
+      await act(async () => {
+        await result.current.invoke.send(q);
+      });
+    }
+    const conversation = ["user:Q1", "agent:A1", "user:Q2", "agent:A2", "user:QX", "agent:AX", "user:Q4", "agent:A4"];
+    expect(show(result)).toEqual(conversation);
+    await act(async () => {
+      await result.current.invoke.send("Q5");
+    });
+    expect(show(result)).toEqual([...conversation, "user:Q5", "agent:A5"]);
+  });
+});

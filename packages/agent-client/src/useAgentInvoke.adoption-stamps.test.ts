@@ -113,12 +113,8 @@ describe("adoptedTranscript", () => {
     ];
     const adoption = adoptedTranscript(history, local);
     expect(adoption.keepsFold).toBe(false);
-    expect(adoption.messages.filter((m) => m.role === "user").map((m) => m.precedingTurnCount)).toEqual([
-      undefined,
-      0,
-      undefined,
-      2,
-    ]);
+    // A dropped fold leaves history's rows as they are: no stamp points into it.
+    expect(adoption.messages).toEqual(history);
   });
 
   it("keeps the fold, and history as it is, when no local row was sent live", () => {
