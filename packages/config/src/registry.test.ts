@@ -150,7 +150,6 @@ describe('modelsForProvider', () => {
         'gemini-3.6-flash',
         'gemini-3.8-flash',
         'gemini-3.5-flash-lite',
-        'gemini-3.5-flash',
         'gemini-3.1-pro',
         'gemini-2.5-flash',
         'gemini-2.5-pro',
@@ -398,7 +397,8 @@ describe('announcedForProvider — visible to a console, invocable by nothing', 
     it('returns ONLY status === "announced" rows — a ga, preview or deprecated row can never appear', () => {
       // The rule, not a data snapshot: "deprecated stays hidden" is pinned as
       // the accessor's filter over EVERY non-announced row the registry
-      // carries (gpt-4o and gpt-4o-mini are deprecated since guuey#2309).
+      // carries (gpt-4o and gpt-4o-mini since guuey#2309, gemini-3.5-flash since
+      // guuey#2310).
       for (const p of providers) {
         for (const row of r.announcedForProvider(p)) {
           expect(row.status).toBe('announced');
@@ -557,23 +557,32 @@ describe('rejectsDisabledThinking (guuey#1606, guuey#2231) — only the ids with
   });
 });
 
-describe('deprecated rows + retirementNotice (guuey#2309)', () => {
+describe('deprecated rows + retirementNotice (guuey#2309, guuey#2310)', () => {
   const deprecated = MODEL_REGISTRY.filter((m) => m.status === 'deprecated');
+  const frameworkFor = (p: ModelEntry['provider']) => FRAMEWORK_REGISTRY.find((f) => f.defaultProvider === p)?.framework;
 
   it('pins the deprecated set — a retirement is a deliberate, receipted change', () => {
-    expect(deprecated.map((m) => m.id).sort()).toEqual(['gpt-4o', 'gpt-4o-mini']);
+    expect(deprecated.map((m) => m.id).sort()).toEqual(['gemini-3.5-flash', 'gpt-4o', 'gpt-4o-mini']);
   });
 
-  it('every deprecated row carries an ISO sunset and a same-provider OFFERED replacement', () => {
+  it('a deprecated row carries its sunset as an ISO date when the provider has published one', () => {
     for (const m of deprecated) {
+      if (m.sunset === undefined) continue;
       expect(m.sunset, `${m.id} sunset`).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      expect(Number.isNaN(Date.parse(m.sunset ?? '')), `${m.id} sunset parses`).toBe(false);
+      expect(Number.isNaN(Date.parse(m.sunset)), `${m.id} sunset parses`).toBe(false);
+    }
+  });
+
+  it('every deprecated row carries a same-provider OFFERED replacement, dated or not', () => {
+    for (const m of deprecated) {
       const to = m.replacedBy === undefined ? undefined : modelEntry(m.replacedBy);
       expect(to, `${m.id} replacedBy names a registry row`).toBeDefined();
       expect(to?.provider).toBe(m.provider);
       expect(modelsForProvider(m.provider).map((x) => x.id)).toContain(to?.id);
       expect(m.lineup, `${m.id} cannot be in the lineup`).toBeUndefined();
       expect(m.isDefault, `${m.id} cannot be a default`).toBeUndefined();
+      // So every deprecated row has a notice — none is dropped for a missing date.
+      expect(retirementNotice(m.id), `${m.id} notice`).toBeDefined();
     }
   });
 
@@ -584,11 +593,13 @@ describe('deprecated rows + retirementNotice (guuey#2309)', () => {
     }
   });
 
-  it('a deprecated row leaves both picker halves and every offer door', () => {
+  it('a deprecated row leaves both picker halves and the offer door of the framework that runs it', () => {
     for (const m of deprecated) {
       expect(lineupForProvider(m.provider).map((x) => x.id)).not.toContain(m.id);
       expect(legacyForProvider(m.provider).map((x) => x.id)).not.toContain(m.id);
-      expect(isOfferedModel('openai-agents-sdk', m.id)).toBe(false);
+      const framework = frameworkFor(m.provider);
+      expect(framework, `${m.provider} has a framework`).toBeDefined();
+      if (framework !== undefined) expect(isOfferedModel(framework, m.id), m.id).toBe(false);
     }
   });
 
@@ -604,17 +615,45 @@ describe('deprecated rows + retirementNotice (guuey#2309)', () => {
     expect(retirementNotice('gpt-4o-mini')?.replacement.id).toBe('gpt-6-luna');
   });
 
-  it('is undefined for ga, unknown and announced ids', () => {
+  it('gemini-3.5-flash gets a DATELESS notice naming gemini-3.6-flash (Google has published no shutdown date)', () => {
+    const notice = retirementNotice('gemini-3.5-flash');
+    expect(notice).toEqual({
+      id: 'gemini-3.5-flash',
+      label: 'Gemini 3.5 Flash',
+      providerLabel: 'Google',
+      replacement: { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash' },
+    });
+    // Absent, never an empty or invented date.
+    expect(notice !== undefined && 'sunset' in notice).toBe(false);
+    // Still loadable for an app pinned to it: the row is there, just not offered.
+    expect(modelEntry('gemini-3.5-flash')?.status).toBe('deprecated');
+    expect(isOfferedModel('google-adk', 'gemini-3.5-flash')).toBe(false);
+  });
+
+  it('is undefined for ga, unknown and announced ids, and for a deprecated row with no replacement', () => {
     expect(retirementNotice('gpt-6-luna')).toBeUndefined();
+    expect(retirementNotice('gemini-3.6-flash')).toBeUndefined();
     expect(retirementNotice('claude-sonnet-5')).toBeUndefined();
     expect(retirementNotice('not-a-model')).toBeUndefined();
     const r = bindRegistry([
       { id: 'x-old', provider: 'openai', label: 'X Old', status: 'deprecated' },
+      { id: 'x-dated', provider: 'openai', label: 'X Dated', status: 'deprecated', sunset: '2027-02-01' },
+      { id: 'x-dangling', provider: 'openai', label: 'X Dangling', status: 'deprecated', replacedBy: 'x-gone' },
+      { id: 'x-dateless', provider: 'openai', label: 'X Dateless', status: 'deprecated', replacedBy: 'x-new' },
       { id: 'x-new', provider: 'openai', label: 'X New', status: 'ga', isDefault: true },
     ]);
-    // A deprecated row without its sunset/replacement pair gets no notice —
-    // the warning never renders half a sentence (the live rows are pinned
-    // complete above).
+    // A deprecated row without a replacement (or naming a row that is not
+    // there) gets no notice: the warning never renders half a sentence. The
+    // live rows are pinned complete above.
     expect(r.retirementNotice('x-old')).toBeUndefined();
+    expect(r.retirementNotice('x-dated')).toBeUndefined();
+    expect(r.retirementNotice('x-dangling')).toBeUndefined();
+    // The replacement alone is enough: the date is added only when there is one.
+    expect(r.retirementNotice('x-dateless')).toEqual({
+      id: 'x-dateless',
+      label: 'X Dateless',
+      providerLabel: 'OpenAI',
+      replacement: { id: 'x-new', label: 'X New' },
+    });
   });
 });

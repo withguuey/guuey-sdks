@@ -11,13 +11,19 @@ export interface ModelEntry {
   readonly label: string; // picker label ("Claude Sonnet 5")
   readonly status: ModelStatus; // 'announced' = known, NOT invocable on our org yet
   readonly isDefault?: true; // at most one per provider
-  readonly sunset?: string; // ISO date, deprecated only
+  /**
+   * The ISO date (YYYY-MM-DD) the provider shuts the model down. Deprecated
+   * rows only, and only once the provider has PUBLISHED one: a deprecated row
+   * whose provider names no shutdown date carries none (gemini-3.5-flash,
+   * guuey#2310), so the registry never invents a date.
+   */
+  readonly sunset?: string;
   /**
    * The model a `deprecated` row's apps should move to — an id of an offered
-   * (ga|preview) row of the SAME provider. Deprecated rows only, and every
-   * deprecated row carries one together with `sunset` (pinned in
-   * registry.test.ts), so a shutdown warning always names a destination the
-   * picker can actually select.
+   * (ga|preview) row of the SAME provider. Deprecated rows only, and EVERY
+   * deprecated row carries one, dated or not (pinned in registry.test.ts), so
+   * a retirement warning always names a destination the picker can actually
+   * select.
    */
   readonly replacedBy?: string;
   /**
@@ -198,7 +204,14 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
   // intro price ends 2026-12-31 and the card bills its standard rate).
   { id: "gemini-3.8-flash", provider: "google", label: "Gemini 3.8 Flash", status: "ga", lineup: true },
   { id: "gemini-3.5-flash-lite", provider: "google", label: "Gemini 3.5 Flash Lite", status: "ga", lineup: true },
-  { id: "gemini-3.5-flash", provider: "google", label: "Gemini 3.5 Flash", status: "ga" },
+  // DEPRECATED (guuey#2310), with NO sunset. Google's model page lists
+  // gemini-3.5-flash at stage "Deprecated", automatically routed to
+  // gemini-3.6-flash, and its deprecations page gives the shutdown as "N/A"
+  // (both read 2026-10-15). A call to this id is served, and metered, as
+  // gemini-3.6-flash. Same N-1 rule as GPT-4o above: it leaves the pickers and
+  // every create door, an app pinned to it keeps loading and redeploying, and
+  // its warning names the replacement without a date until Google publishes one.
+  { id: "gemini-3.5-flash", provider: "google", label: "Gemini 3.5 Flash", status: "deprecated", replacedBy: "gemini-3.6-flash" },
   { id: "gemini-3.1-pro", provider: "google", label: "Gemini 3.1 Pro", status: "ga" },
   { id: "gemini-2.5-flash", provider: "google", label: "Gemini 2.5 Flash", status: "ga" },
   { id: "gemini-2.5-pro", provider: "google", label: "Gemini 2.5 Pro", status: "ga" },
@@ -273,7 +286,7 @@ export interface RegistryAccessors {
   defaultModelFor(framework: FrameworkEntry["framework"]): string;
   /** Look up a model entry by id. */
   modelEntry(id: string): ModelEntry | undefined;
-  /** A deprecated model's shutdown notice — undefined for every other id. */
+  /** A deprecated model's retirement notice — undefined for every other id. */
   retirementNotice(id: string): RetirementNotice | undefined;
 }
 
@@ -286,18 +299,23 @@ export const PROVIDER_LABELS: Readonly<Record<ModelEntry["provider"], string>> =
 };
 
 /**
- * What a shutdown warning says about one deprecated model (guuey#2309): the
- * model, the date its provider stops serving it, and the offered model to move
- * to. Built from the row alone, so the console and Studio warnings cannot
- * disagree with the registry or with each other.
+ * What a retirement warning says about one deprecated model (guuey#2309): the
+ * model, the date its provider stops serving it when one is published, and the
+ * offered model to move to. Built from the row alone, so the console and
+ * Studio warnings cannot disagree with the registry or with each other.
  */
 export interface RetirementNotice {
   readonly id: string;
   readonly label: string;
   /** The provider's display name ("OpenAI") — who stops serving it. */
   readonly providerLabel: string;
-  /** ISO date (YYYY-MM-DD) the provider shuts the model down. */
-  readonly sunset: string;
+  /**
+   * ISO date (YYYY-MM-DD) the provider shuts the model down. ABSENT when the
+   * provider has deprecated the model without publishing a date (guuey#2310):
+   * a warning then says "deprecated" and names the replacement, with no date
+   * and no before/after copy.
+   */
+  readonly sunset?: string;
   readonly replacement: { readonly id: string; readonly label: string };
 }
 
@@ -338,14 +356,16 @@ export function bindRegistry(
   const retirementNotice: RegistryAccessors["retirementNotice"] = (id) => {
     const entry = modelEntry(id);
     if (entry === undefined || entry.status !== "deprecated") return undefined;
-    if (entry.sunset === undefined || entry.replacedBy === undefined) return undefined;
+    // No replacement, no notice: a warning never renders half a sentence.
+    if (entry.replacedBy === undefined) return undefined;
     const replacement = modelEntry(entry.replacedBy);
     if (replacement === undefined) return undefined;
     return {
       id: entry.id,
       label: entry.label,
       providerLabel: PROVIDER_LABELS[entry.provider],
-      sunset: entry.sunset,
+      // A date only when the provider published one (guuey#2310).
+      ...(entry.sunset === undefined ? {} : { sunset: entry.sunset }),
       replacement: { id: replacement.id, label: replacement.label },
     };
   };
@@ -439,10 +459,11 @@ export const defaultModelFor: RegistryAccessors["defaultModelFor"] = live.defaul
 export const modelEntry: RegistryAccessors["modelEntry"] = live.modelEntry;
 
 /**
- * The shutdown notice for a DEPRECATED model (guuey#2309) — its label, sunset
- * date and the offered model to move to — or undefined for any other id
- * (ga, preview, announced, unknown). The console overview and the Studio form
- * both render their warning from this, never from their own copy of the date.
+ * The retirement notice for a DEPRECATED model (guuey#2309) — its label, the
+ * sunset date when the provider has published one (guuey#2310), and the
+ * offered model to move to — or undefined for any other id (ga, preview,
+ * announced, unknown). The console overview and the Studio form both render
+ * their warning from this, never from their own copy of the date.
  */
 export const retirementNotice: RegistryAccessors["retirementNotice"] = live.retirementNotice;
 
