@@ -11,6 +11,7 @@
  */
 import type { AgMemoryRecord, JsonValue } from "@silverprotocol/core";
 import type { TapLabels } from "@guuey/mcp-apps-host/narrowing";
+import type { TitleWrite, TitleWriteResult } from "./title.js";
 
 /**
  * guuey#2549: what a user turn's content rides on when its text is empty. Mirrors `@guuey/worker`'s
@@ -96,6 +97,46 @@ export interface ThreadRow {
   closedCode?: string;
   closedMessage?: string;
   closedAt?: string;
+  /**
+   * An erase of the thread is under way (ISO, stamped by the platform's
+   * eraser before it deletes anything). No write extends or titles a thread
+   * that carries it. Absent on every thread not being erased.
+   */
+  erasingAt?: string;
+  /**
+   * Where {@link title} came from (guuey#2612): `default` (the minted
+   * constant), `generated` (the titler) or `set` (the app or its person).
+   * Stored as a plain string and read only through `readThreadTitleSource` /
+   * `readThreadTitle` (`title.ts`): absent or unknown reads as `default`.
+   */
+  titleSource?: string;
+  /** When {@link title} last changed (ISO): the field a list compares to notice a new title. */
+  titleUpdatedAt?: string;
+  /**
+   * The last title checkpoint CLAIMED: the claim writes it before any model
+   * call, so while it stands a checkpoint gets at most one call. Removed by an
+   * unpin that finds no generated title, so the next turn may generate again;
+   * that reopens the checkpoint for one more claim (each spends an attempt).
+   */
+  titleCheckedSeq?: number;
+  /** Model calls claimed in the thread's lifetime, whatever their outcome (`TITLE_MAX_ATTEMPTS`). */
+  titleAttempts?: number;
+  /** Titles generated in the thread's lifetime (`TITLE_MAX_GENERATIONS`). */
+  titleGenerations?: number;
+  /** The highest message seq the current generated title was built from. */
+  titleSourceSeq?: number;
+  /**
+   * The checkpoint whose claim the last record consumed: a record lands only
+   * while it differs from the claimed checkpoint, so one claim yields at most
+   * one generation (a retried write never counts twice). A record names its
+   * checkpoint, not its claimant: after an unpin reopens a checkpoint, the
+   * first record for it to land consumes the new claim, whichever call wrote it.
+   */
+  titleRecordedSeq?: number;
+  /** The last generated title, kept so an unpin can restore it. */
+  generatedTitle?: string;
+  /** The locale hint the last generated title was written for. */
+  titleLanguage?: string;
   threadMode: string;
   createdAt: string;
   updatedAt: string;
@@ -325,6 +366,33 @@ export interface ThreadPersistencePort {
    * (`ThreadStore.closeThread` answers `unsupported`).
    */
   closeThread?(threadId: string, closure: ThreadClosure): Promise<"closed" | "already_closed">;
+  /**
+   * Apply one title write (guuey#2612, {@link TitleWrite} in `title.ts`) as ONE
+   * conditional update of the title attributes and `updatedAt` — never
+   * `lastMessageAt`. `written` when its condition held, `refused` when it did
+   * not (nothing changed; a missing thread refuses too). The conditions:
+   *
+   * - `claim`: the thread exists and is not being erased ({@link ThreadRow.erasingAt});
+   *   its source is absent, `default` or `generated`; `titleCheckedSeq` is
+   *   absent or below the checkpoint; `titleAttempts` and `titleGenerations`
+   *   are below their caps; and it has no seal (no `sealIntervals`, or an
+   *   empty list). It sets `titleCheckedSeq` to the checkpoint and adds one
+   *   attempt, so a second claim at the same checkpoint refuses.
+   * - `record`: `titleCheckedSeq` equals the checkpoint and `titleRecordedSeq`
+   *   does not (the claim is not yet consumed), plus the claim's existence,
+   *   erasing, source, generations and seal conditions. It sets the title,
+   *   `generatedTitle`, source `generated`, `titleUpdatedAt`, `titleSourceSeq`,
+   *   `titleRecordedSeq` (the checkpoint), `titleLanguage` (when given) and
+   *   adds one generation, so a second record for one claim refuses.
+   * - `set`: the thread exists, is not being erased, and `userId` is its owner. A string sets the
+   *   title with source `set`; `null` restores `generatedTitle` with source
+   *   `generated`, or, when there is none, the default title with source
+   *   `default` and no `titleCheckedSeq`.
+   *
+   * Closed threads are titled like open ones. Optional: a binding without it
+   * cannot title (`ThreadStore.writeTitle` answers `unsupported`).
+   */
+  writeTitle?(threadId: string, write: TitleWrite): Promise<TitleWriteResult>;
   /** Put a ThreadMessage row (conditional — must reject a duplicate seq). */
   putMessage(row: ThreadMessageRow): Promise<void>;
   /** Up to `limit` most-recent messages for a thread, returned seq-ASCending. */

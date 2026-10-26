@@ -58,6 +58,21 @@ export {
 export { InMemoryThreadPersistence } from "./in-memory.js";
 export { ThreadClosedError, threadClosure } from "./closed.js";
 export {
+  DEFAULT_THREAD_TITLE,
+  readThreadTitle,
+  readThreadTitleSource,
+  THREAD_TITLE_USAGE_REASON,
+  TITLE_CHECKPOINTS,
+  TITLE_MAX_ATTEMPTS,
+  TITLE_MAX_GENERATIONS,
+  type ThreadTitleAudience,
+  type ThreadTitleSource,
+  type ThreadTitleView,
+  type TitleSlice,
+  type TitleWrite,
+  type TitleWriteResult,
+} from "./title.js";
+export {
   hasSealedPart,
   isSeqSealed,
   previewDigest,

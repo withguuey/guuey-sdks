@@ -32,6 +32,7 @@ import {
 import { classifyStoredRow } from "./stored-row.js";
 import { threadClosure } from "./closed.js";
 import { planSnapshot, type SnapshotRefusal } from "./snapshot-plan.js";
+import { DEFAULT_THREAD_TITLE, type TitleWrite, type TitleWriteResult } from "./title.js";
 import { writeTapLabels, type TapLabels } from "@guuey/mcp-apps-host/narrowing";
 import type {
   ThreadMessageEvent,
@@ -290,7 +291,7 @@ export class ThreadStore {
       userId: input.userId,
       appId: input.appId,
       servingRegion: input.region,
-      title: 'New thread',
+      title: DEFAULT_THREAD_TITLE,
       status: 'active',
       pinned: false,
       lastSeq: 0,
@@ -338,6 +339,19 @@ export class ThreadStore {
     const close = this.db.closeThread;
     if (close === undefined) return "unsupported";
     return close.call(this.db, threadId, closure);
+  }
+
+  /**
+   * Write a thread's title (guuey#2612): one {@link TitleWrite}, applied by the
+   * binding as one conditional update (`ThreadPersistencePort.writeTitle`).
+   * The ONE place `unsupported` is answered: a binding without `writeTitle`
+   * (the HTTP binding, a self-hosted store) changes nothing, for every kind of
+   * write. Rejects only on a store failure.
+   */
+  async writeTitle(threadId: string, write: TitleWrite): Promise<TitleWriteResult | "unsupported"> {
+    const writeTitle = this.db.writeTitle;
+    if (writeTitle === undefined) return "unsupported";
+    return writeTitle.call(this.db, threadId, write);
   }
 
   /** Prior messages for the thread (seq-ASC, capped to the most recent N). */
