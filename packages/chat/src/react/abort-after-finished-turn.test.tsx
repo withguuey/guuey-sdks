@@ -1532,3 +1532,36 @@ describe("guuey#2445 — an adoption that drops the fold, then a send with no Ag
     },
   );
 });
+
+/**
+ * A send the client marked failed (its transport threw before admission),
+ * which keyed history later shows was stored and answered. History is the
+ * authority that a send was stored: once an adoption sets history's rows, the
+ * send reads as sent and offers no Retry, which would send it twice.
+ */
+describe("guuey#2445 — a send marked failed that history shows was stored", () => {
+  it.each([true, false])("draws Q2 as sent with no Retry once history holds it — keyed=%s", async (keyed) => {
+    const adopted = historyRows(keyed, [
+      ["user", "Q1", "cm-1"],
+      ["agent", "A1", "cm-1#agent"],
+      ["user", "Q2", "cm-2"],
+      ["agent", "A2", "cm-2#agent"],
+      ["user", "Q3", "cm-3"],
+      ["agent", "A3", "cm-3#agent"],
+    ]);
+    const turns = [finishedTurn("turn_1", "A1"), cutAfterItsAnswer("turn_3", "A3"), finishedTurn("turn_4", "A4")];
+    const { result } = mountThrowing(turns, new Set([1]), [], adopted);
+
+    await sendOne(result, "Q1");
+    await sendOne(result, "Q2");
+    expect(showAll(result)).toEqual(["user:Q1", "agent:A1", "user:Q2 (failed) [Retry]"]);
+
+    await sendOne(result, "Q3");
+    expect(result.current.invoke.adopted).toBe(true);
+    const conversation = ["user:Q1", "agent:A1", "user:Q2", "agent:A2", "user:Q3", "agent:A3"];
+    expect(showAll(result)).toEqual(conversation);
+
+    await sendOne(result, "Q4");
+    expect(showAll(result)).toEqual([...conversation, "user:Q4", "agent:A4"]);
+  });
+});

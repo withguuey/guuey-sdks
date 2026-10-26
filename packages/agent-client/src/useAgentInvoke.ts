@@ -670,6 +670,21 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         // History holds this send, so it is sent (absent = sent), even when the
         // stall watchdog adopts it before its first byte.
         markSend(null);
+        // History is the authority that a send was stored: every send whose
+        // key its rows hold is sent too, including one marked failed because
+        // its transport threw before admission although the pod stored it
+        // (left failed, its Retry would send it twice).
+        const stored = new Set<string>();
+        for (const m of adoption.messages) {
+          if (m.role === "user" && m.clientMessageId !== undefined) stored.add(m.clientMessageId);
+        }
+        setSendStates((prev) => {
+          const held = Object.keys(prev).filter((key) => stored.has(key));
+          if (held.length === 0) return prev;
+          const next: Record<string, "sending" | "failed"> = { ...prev };
+          for (const key of held) delete next[key];
+          return next;
+        });
         if (adoptedResult.cards && adoptedResult.cards.length > 0) {
           setHistoryCards(adoptedResult.cards);
         }
