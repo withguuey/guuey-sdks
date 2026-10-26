@@ -1345,8 +1345,12 @@ export function planTranscript(
           // and its position is already a count of flat groups, which ARE the
           // prefix. Both land in one comparable space.
           // From the stamp anchor on, every row's slot is read from the suffix.
+          // With NO fold (none yet, or an adoption dropped it) a stamp counts
+          // the turns of a fold that does not exist, so it says nothing about
+          // where the row sits: every row takes its flat position, after the
+          // flat groups above it (a reloaded answer stays under its question).
           (liveUserSlots?.get(i) ??
-            (u.precedingTurnCount !== undefined
+            (u.precedingTurnCount !== undefined && inputs.result
               ? foldSeam + sourcesBefore(u.precedingTurnCount)
               : (flatUserOrder[i] ?? i))),
         )

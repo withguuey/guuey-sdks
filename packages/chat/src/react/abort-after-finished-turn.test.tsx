@@ -1186,7 +1186,13 @@ describe("guuey#2445 — a second adoption", () => {
  * Like `mount`, but the transport for each send index in `throwOn` throws
  * before admission (a 503 before the pod stores the send).
  */
-function mountThrowing(turns: Array<string[] | ClosingTurn>, throwOn: Set<number>, history: AgentMessage[], reloads: Reloads) {
+function mountThrowing(
+  turns: Array<string[] | ClosingTurn>,
+  throwOn: Set<number>,
+  history: AgentMessage[],
+  reloads: Reloads,
+  stallRecovery: false | StallRecoveryOptions = false,
+) {
   const a = adapters(turns, history, reloads);
   const inner = a.adapters.transport;
   let n = 0;
@@ -1202,17 +1208,18 @@ function mountThrowing(turns: Array<string[] | ClosingTurn>, throwOn: Set<number
       return inner(req);
     },
   };
-  return renderHook(() => {
+  const hook = renderHook(() => {
     const invoke = useAgentInvoke({
       endpointUrl: "https://pod.example.com",
       appId: "app-2445",
       adapters: wrapped,
       preserveBlocks: true,
-      stallRecovery: false,
+      stallRecovery,
     });
     const { inputs } = useTranscriptInputs(invoke);
     return { invoke, inputs };
   });
+  return { ...hook, delivered: a.delivered };
 }
 
 describe("guuey#2445 — an adoption that drops the fold, then the next send", () => {
@@ -1287,4 +1294,241 @@ describe("guuey#2445 — an adoption that drops the fold, then the next send", (
     });
     expect(show(result)).toEqual([...conversation, "user:Q5", "agent:A5"]);
   });
+});
+
+/** Every drawn row, top to bottom: a failed send and its Retry, notices, the error box, then the status line. */
+function drawnAll(plan: TranscriptPlan): string[] {
+  const out: string[] = [];
+  for (const it of plan.items) {
+    if (it.kind === "user") {
+      out.push(`user:${it.text}${it.state === "failed" ? " (failed)" : ""}${it.retry ? " [Retry]" : ""}`);
+    } else if (it.kind === "text") out.push(`agent:${it.text}${it.stopped ? " [Stopped.]" : ""}`);
+    else if (it.kind === "notice") out.push(`notice:${it.failure !== undefined ? "failure" : it.text}`);
+    else if (it.kind === "error") out.push(`error:${it.code ?? "none"}`);
+  }
+  if (plan.status !== null) out.push(`status:${plan.status.copy}`);
+  return out;
+}
+
+type Mounted = { current: ReturnType<typeof mountThrowing>["result"]["current"] };
+const showAll = (r: Mounted): string[] => drawnAll(planTranscript(r.current.inputs, calmPolicy()));
+/** The drawn rows without the status line (a live send's "Thinking…" face). */
+const rowsOnly = (r: Mounted): string[] => {
+  const plan = planTranscript(r.current.inputs, calmPolicy());
+  return drawnAll({ ...plan, status: null });
+};
+async function sendOne(r: Mounted, text: string): Promise<void> {
+  await act(async () => {
+    await r.current.invoke.send(text);
+  });
+}
+/** Send `text`, read the plan while the send is admitted only (`thinking`), then press Stop. */
+async function stopOne(r: Mounted, delivered: () => Promise<void>, text: string, whileThinking: string[]): Promise<void> {
+  let pending: Promise<void> = Promise.resolve();
+  await act(async () => {
+    pending = r.current.invoke.send(text);
+    await delivered();
+  });
+  await waitFor(() => expect(r.current.invoke.status).toBe("thinking"));
+  expect(rowsOnly(r)).toEqual(whileThinking);
+  await act(async () => {
+    r.current.invoke.abort();
+    await pending;
+  });
+  expect(r.current.invoke.aborted).toBe(true);
+}
+const errorBeforeTurnStart = [
+  session,
+  `event: error\ndata: ${JSON.stringify({ code: "INTERNAL", message: "boom" })}\n\n`,
+  "event: done\ndata: {}\n\n",
+];
+const cutAfterItsAnswer = (turnId: string, text: string): ClosingTurn =>
+  closing(finishedTurn(turnId, text).filter((c) => !c.startsWith("event: done")));
+
+/** What the session holds before its first live send: a reloaded turn, or a reloaded greeting alone. */
+const LEADS: Array<{ lead: string; rows: HistoryRowSpec[]; drawn: string[] }> = [
+  { lead: "a reloaded turn", rows: PREFIX_ROWS, drawn: ["user:H0", "agent:HA0"] },
+  { lead: "a reloaded greeting", rows: [["agent", "HG", "cm-hg#agent"]], drawn: ["agent:HG"] },
+];
+
+/**
+ * A turn adopted from history while no fold exists yet: the send's stream
+ * carried no AgEvent (it closed after its session frame, or got zero bytes
+ * and the stall watchdog adopted it). The adopted rows keep the send's turn
+ * stamp, which counts the turns of a fold that does not exist, so it says
+ * nothing about where the row sits: history's own order places every row.
+ */
+describe("guuey#2445 — a turn adopted from history before any fold exists", () => {
+  const paths: Array<{ path: string; turn: () => string[] | ClosingTurn; stall: false | StallRecoveryOptions }> = [
+    { path: "the stream closes after its session frame", turn: () => closing([session]), stall: false },
+    { path: "the stall watchdog fires on zero bytes", turn: () => [], stall: { preFirstByteWindowMs: 20 } },
+  ];
+  const keys = [true, false];
+
+  it.each(paths.flatMap((p) => LEADS.flatMap((l) => keys.map((keyed) => ({ ...p, ...l, keyed, rowsName: keyed ? "keyed rows" : "rows without keys" })))))(
+    "after $lead, draws the reloaded rows above Q1 and A1 under Q1 when $path — $rowsName",
+    async ({ turn, stall, rows, drawn: lead, keyed }) => {
+      const adopted = historyRows(keyed, [...rows, ["user", "Q1", "cm-1"], ["agent", "A1", "cm-1#agent"]]);
+      const { result } = mount([turn(), finishedTurn("turn_2", "A2")], historyRows(keyed, rows), adopted, stall);
+      await waitFor(() => expect(result.current.invoke.messages.length).toBe(rows.length));
+      expect(showAll(result)).toEqual(lead);
+
+      await sendOne(result, "Q1");
+      expect(result.current.invoke.adopted).toBe(true);
+      expect(result.current.invoke.status).toBe("ready");
+      expect(result.current.invoke.error).toBeNull();
+      const adoptedRows = [...lead, "user:Q1", "agent:A1"];
+      expect(showAll(result)).toEqual(adoptedRows);
+
+      await sendOne(result, "Q2");
+      expect(showAll(result)).toEqual([...adoptedRows, "user:Q2", "agent:A2"]);
+    },
+  );
+
+  it.each(paths.flatMap((p) => keys.map((keyed) => ({ ...p, keyed, rowsName: keyed ? "keyed rows" : "rows without keys" }))))(
+    "pure live, two such adoptions in a row draw each answer under its own question when $path — $rowsName",
+    async ({ turn, stall, keyed }) => {
+      const first: HistoryRowSpec[] = [
+        ["user", "Q1", "cm-1"],
+        ["agent", "A1", "cm-1#agent"],
+      ];
+      const second: HistoryRowSpec[] = [...first, ["user", "Q2", "cm-2"], ["agent", "A2", "cm-2#agent"]];
+      const reads = { reads: [historyRows(keyed, first), historyRows(keyed, second)] };
+      const { result } = mount([turn(), turn(), finishedTurn("turn_3", "A3")], [], reads, stall);
+
+      await sendOne(result, "Q1");
+      expect(result.current.invoke.adopted).toBe(true);
+      expect(showAll(result)).toEqual(["user:Q1", "agent:A1"]);
+
+      await sendOne(result, "Q2");
+      expect(result.current.invoke.adopted).toBe(true);
+      expect(showAll(result)).toEqual(["user:Q1", "agent:A1", "user:Q2", "agent:A2"]);
+
+      await sendOne(result, "Q3");
+      expect(showAll(result)).toEqual(["user:Q1", "agent:A1", "user:Q2", "agent:A2", "user:Q3", "agent:A3"]);
+    },
+  );
+});
+
+/**
+ * The first send after a reload ends before its first AgEvent: no fold
+ * exists, so the reloaded rows keep their own order, and the send is drawn
+ * after them, never between a reloaded question and its answer.
+ */
+describe("guuey#2445 — the first send after a reload ends before its first AgEvent", () => {
+  const ends = [
+    { end: "is stopped before its first token", how: "stop" as const },
+    { end: "is refused before admission", how: "throw" as const },
+    { end: "gets an error frame before turn.start", how: "error" as const },
+  ];
+
+  it.each(LEADS.flatMap((l) => ends.flatMap((e) => [true, false].map((keyed) => ({ ...l, ...e, keyed, rowsName: keyed ? "keyed rows" : "rows without keys" })))))(
+    "after $lead, Q1 $end — $rowsName",
+    async ({ rows, drawn: lead, how, keyed }) => {
+      const reloaded = historyRows(keyed, rows);
+      const turns =
+        how === "stop"
+          ? [stalledTurn("turn_1", false), finishedTurn("turn_2", "A2")]
+          : how === "error"
+            ? [errorBeforeTurnStart, finishedTurn("turn_2", "A2")]
+            : [finishedTurn("turn_2", "A2")];
+      const { result, delivered } = mountThrowing(turns, new Set(how === "throw" ? [0] : []), reloaded, reloaded);
+      await waitFor(() => expect(result.current.invoke.messages.length).toBe(rows.length));
+
+      if (how === "stop") await stopOne(result, delivered, "Q1", [...lead, "user:Q1"]);
+      else await sendOne(result, "Q1");
+      const q1 = how === "throw" ? "user:Q1 (failed) [Retry]" : "user:Q1";
+      const marker = how === "stop" ? ["status:Stopped."] : how === "error" ? ["error:INTERNAL"] : [];
+      expect(showAll(result)).toEqual([...lead, q1, ...marker]);
+
+      await sendOne(result, "Q2");
+      expect(showAll(result)).toEqual([...lead, q1, "user:Q2", "agent:A2"]);
+    },
+  );
+});
+
+/**
+ * An adoption that drops the fold (history holds a turn from another tab the
+ * local rows cannot be tied to), then a send that ends before its first
+ * AgEvent. With the fold dropped the next send's stamp counts the turns of a
+ * fold that does not exist yet, so history's order places the rows: the
+ * adopted answer stays under its own question, never under the new one.
+ */
+describe("guuey#2445 — an adoption that drops the fold, then a send with no AgEvent", () => {
+  const drops = [
+    {
+      rowsName: "rows without keys",
+      keyed: false,
+      // Q1 answered, Q2 cut after its answer and adopted: the other tab's QX1 breaks the keyless tie.
+      prelude: { sends: ["Q1", "Q2"], turns: [finishedTurn("turn_1", "A1"), cutAfterItsAnswer("turn_2", "A2")], throws: [] as number[] },
+      history: [
+        ["user", "Q1", "cm-1"],
+        ["agent", "A1", "cm-1#agent"],
+        ["user", "QX1", "cm-other"],
+        ["agent", "AX1", "cm-other#agent"],
+        ["user", "Q2", "cm-2"],
+        ["agent", "A2", "cm-2#agent"],
+      ] satisfies HistoryRowSpec[],
+      conversation: ["user:Q1", "agent:A1", "user:QX1", "agent:AX1", "user:Q2", "agent:A2"],
+      next: 3,
+    },
+    {
+      rowsName: "keyed rows",
+      keyed: true,
+      // Q1 answered, Q2 refused before admission (never stored), Q3 cut after its answer and adopted.
+      prelude: { sends: ["Q1", "Q2", "Q3"], turns: [finishedTurn("turn_1", "A1"), cutAfterItsAnswer("turn_3", "A3")], throws: [1] },
+      history: [
+        ["user", "Q1", "cm-1"],
+        ["agent", "A1", "cm-1#agent"],
+        ["user", "QX1", "cm-other"],
+        ["agent", "AX1", "cm-other#agent"],
+        ["user", "Q3", "cm-3"],
+        ["agent", "A3", "cm-3#agent"],
+      ] satisfies HistoryRowSpec[],
+      conversation: ["user:Q1", "agent:A1", "user:QX1", "agent:AX1", "user:Q3", "agent:A3"],
+      next: 4,
+    },
+  ];
+  type End = "stop" | "throw" | "error";
+  const sequences: Array<{ seq: string; ends: End[] }> = [
+    { seq: "stopped before its first token", ends: ["stop"] },
+    { seq: "refused before admission", ends: ["throw"] },
+    { seq: "given an error frame before turn.start", ends: ["error"] },
+    { seq: "stopped before its first token, twice in a row", ends: ["stop", "stop"] },
+  ];
+
+  it.each(drops.flatMap((d) => sequences.map((s) => ({ ...d, ...s }))))(
+    "the next send $seq draws the adopted answer under its own question — $rowsName",
+    async ({ keyed, prelude, history, conversation, next, ends }) => {
+      const turns: Array<string[] | ClosingTurn> = [...prelude.turns];
+      const throws = new Set(prelude.throws);
+      ends.forEach((end, i) => {
+        if (end === "stop") turns.push(stalledTurn(`turn_${next + i}`, false));
+        else if (end === "error") turns.push(errorBeforeTurnStart);
+        else throws.add(prelude.sends.length + i);
+      });
+      const answeredN = next + ends.length;
+      turns.push(finishedTurn(`turn_${answeredN}`, `A${answeredN}`));
+      const { result, delivered } = mountThrowing(turns, throws, [], historyRows(keyed, history));
+
+      for (const q of prelude.sends) await sendOne(result, q);
+      expect(result.current.invoke.adopted).toBe(true);
+      expect(result.current.invoke.reduceResult).toBeNull();
+      expect(showAll(result)).toEqual(conversation);
+
+      const settled: string[] = [];
+      for (const [i, end] of ends.entries()) {
+        const q = `Q${next + i}`;
+        if (end === "stop") await stopOne(result, delivered, q, [...conversation, ...settled, `user:${q}`]);
+        else await sendOne(result, q);
+        const row = end === "throw" ? `user:${q} (failed) [Retry]` : `user:${q}`;
+        const marker = end === "stop" ? ["status:Stopped."] : end === "error" ? ["error:INTERNAL"] : [];
+        expect(showAll(result)).toEqual([...conversation, ...settled, row, ...marker]);
+        settled.push(row);
+      }
+
+      await sendOne(result, `Q${answeredN}`);
+      expect(showAll(result)).toEqual([...conversation, ...settled, `user:Q${answeredN}`, `agent:A${answeredN}`]);
+    },
+  );
 });
