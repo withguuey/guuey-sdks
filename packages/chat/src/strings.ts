@@ -370,6 +370,18 @@ export interface ChatStrings {
   removeAttachment: (name: string) => string;
   attachmentRefused: (name: string, reason: "unsupported_type" | "too_large" | "too_many" | "unreadable") => string;
   attachmentsOnlyInput: string;
+  /**
+   * guuey#2446 — composer dictation (`<GuueyChat voice>`, and any host's own
+   * composer over `useSpeechInput`): the mic button's accessible name, and
+   * the status line while a session listens, when it heard nothing, when the
+   * microphone is blocked, and when the engine stopped on an error. Neutral
+   * copy: the strings are shared with the native hook's consumers.
+   */
+  voiceInput: string;
+  voiceListening: string;
+  voiceNoMatch: string;
+  voiceDenied: string;
+  voiceError: string;
 }
 
 /** Humanize a wire tool name: `render_weather-card` → `render weather card`. */
@@ -575,4 +587,9 @@ export const defaultChatStrings: ChatStrings = {
     }
   },
   attachmentsOnlyInput: "See the attached image.",
+  voiceInput: "Voice input",
+  voiceListening: "Listening…",
+  voiceNoMatch: "Didn't catch that.",
+  voiceDenied: "Microphone access is blocked. Allow it in your settings to dictate.",
+  voiceError: "Voice input stopped.",
 };

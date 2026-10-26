@@ -30,6 +30,12 @@
  *   The RUNTIME is the enforcer (it refuses every turn before any model
  *   call); this only stops the user spending a message to learn that.
  *   Dismissing the card releases the gate — no dead end.
+ * - `voice` (guuey#2446, default off) → a mic button beside the field, once
+ *   the browser's speech API is found after mount. Dictated words land IN
+ *   THE FIELD (after the draft and one space) and never send: the person
+ *   edits, then presses Send. Send, an edit to the field, a prefill, a
+ *   clear, and the gate above closing all abort the session first, so no
+ *   late result lands after them.
  *
  * ## History
  *
@@ -50,7 +56,19 @@
  * Web-only for now: the native tier ships `<NativeTranscript>` without a
  * native GuueyChat, so there is no native surface to put a handle on yet.
  */
-import { forwardRef, type CSSProperties, type ReactNode, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  type CSSProperties,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   createUiActionRelay,
   createUiResourceReader,
@@ -103,6 +121,9 @@ import { oauthReturnNoticeLine, oauthReturnTone } from "../oauth.js";
 import { PARTS } from "./parts.js";
 import { ATTACHMENT_ACCEPT, readImageFile, type AttachmentRefusalReason } from "./composer-attachments.js";
 import { ChatHeader, type GuueyChatHeader } from "./chat-header.js";
+import { joinSpeechText, type SpeechInputState } from "../speech-input.js";
+import { useSpeechInput } from "./use-speech-input.js";
+import { webSpeechRecognizer } from "./web-speech.js";
 import { chatCtaIdFor, createChatAnalytics, type ChatAnalytics, type ChatAnalyticsSetting } from "../analytics.js";
 
 /**
@@ -376,6 +397,24 @@ export interface GuueyChatProps {
    * Off, the composer and every body it sends are exactly as before.
    */
   attachments?: boolean;
+  /**
+   * guuey#2446 — composer dictation over the browser's Web Speech API,
+   * default `false`. The audio goes to the browser's own speech service
+   * (Chrome's is Google's, Edge's Microsoft's, Safari's may be Apple's), so
+   * the app's privacy policy must name that vendor before turning this on.
+   *
+   * On, the built-in composer carries a mic button (`part="composer-voice"`,
+   * `aria-pressed` while a session is live) once the API is found after
+   * mount: none where it is missing (Firefox), and none in server-rendered
+   * markup, so SSR and hydration agree. The words land in the text field
+   * after the draft and NEVER send on their own; only text reaches the
+   * agent. Off, the kit reads no speech API at all.
+   */
+  voice?: boolean;
+  /** Recognition language (BCP 47), separate from the UI locale. Unset = the engine's default (the page's `html lang`). */
+  voiceLang?: string;
+  /** A dictation session's cap in ms, default 60 000: the session stops and keeps its words. */
+  voiceMaxDurationMs?: number;
   /** DOM windowing (§3.2). `false` renders everything. */
   window?: TranscriptWindowing | false;
   /**
@@ -513,6 +552,34 @@ export interface GuueyChatProps {
   style?: CSSProperties;
 }
 
+/** A store that never changes after mount: speech availability is read once per render, client-side only. */
+const subscribeNever = (): (() => void) => () => undefined;
+
+/** The field during dictation: the draft, one space when both are non-empty, then the session's text. */
+function withDictation(base: string, text: string): string {
+  if (text === "") return base;
+  return base.trim() === "" ? text : `${base.trimEnd()} ${text}`;
+}
+
+/** The composer's dictation status line for a session state, or null when there is nothing to say. */
+function voiceStatusLine(state: SpeechInputState, strings: ChatStrings): string | null {
+  switch (state.phase) {
+    case "starting":
+    case "listening":
+    case "stopping":
+      return strings.voiceListening;
+    case "no-match":
+      return strings.voiceNoMatch;
+    case "denied":
+      return strings.voiceDenied;
+    case "error":
+      return strings.voiceError;
+    case "idle":
+    case "unsupported":
+      return null;
+  }
+}
+
 /**
  * Saturation retries the default adapters make after the first refused send
  * (guuey#2604): the widget's end-user budget (guuey#406), so a reader sees
@@ -588,6 +655,9 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     surface = "card",
     composer = true,
     attachments: attachmentsEnabled = false,
+    voice: voiceEnabled = false,
+    voiceLang,
+    voiceMaxDurationMs,
     window: windowing,
     reader,
     onDebugEvent,
@@ -917,6 +987,46 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     authRequired === null &&
     !threadClosed &&
     (input.trim() !== "" || pendingImages.length > 0);
+
+  // ── Dictation (guuey#2446) ───────────────────────────────────────────
+  // The engine exists only when voice is on, so an off chat reads no speech
+  // API. Availability resolves through useSyncExternalStore with a `false`
+  // server snapshot: the server renders no mic and hydration agrees, and
+  // the mic appears once the client has looked.
+  const recognizer = useMemo(() => (voiceEnabled ? webSpeechRecognizer() : null), [voiceEnabled]);
+  const voiceAvailable = useSyncExternalStore(
+    subscribeNever,
+    () => recognizer !== null && recognizer.isAvailable(),
+    () => false,
+  );
+  // The draft when the session started: every result redraws the field as
+  // this base plus the session's whole text, never appended to the last one.
+  const voiceBaseRef = useRef("");
+  const speech = useSpeechInput({
+    recognizer: voiceAvailable ? recognizer : null,
+    ...(voiceLang !== undefined ? { lang: voiceLang } : {}),
+    ...(voiceMaxDurationMs !== undefined ? { maxDurationMs: voiceMaxDurationMs } : {}),
+    onTranscript: ({ finalText, interim }) => {
+      setInput(withDictation(voiceBaseRef.current, joinSpeechText(finalText, interim)));
+    },
+  });
+  const { abort: abortSpeech, start: startSpeech, stop: stopSpeech, listening: speechListening } = speech;
+  // The textarea's own gate. Closing it mid-session aborts the session.
+  const voiceGateClosed = !available || authRequired !== null || threadClosed;
+  useEffect(() => {
+    if (voiceGateClosed) abortSpeech();
+  }, [voiceGateClosed, abortSpeech]);
+  const toggleVoice = useCallback((): void => {
+    // Pressing the mic while live STOPS: the field stays live until the
+    // engine's end, so the last sentence still lands.
+    if (speechListening) {
+      stopSpeech();
+      return;
+    }
+    voiceBaseRef.current = input;
+    analytics.opened();
+    startSpeech();
+  }, [speechListening, stopSpeech, startSpeech, input, analytics]);
 
   // ── The imperative seam (guuey#210) ──────────────────────────────────
   // ONE stable handle for the component's whole life (hosts capture it in
@@ -1273,6 +1383,8 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         return true;
       },
       prefill: (text: string, opts?: { focus?: boolean; append?: boolean }): void => {
+        // A host's edit to the field ends a dictation, as the person's does.
+        abortSpeech();
         setInput((prev) =>
           // The widget's staged-composer semantic: append joins with a
           // space onto a non-empty draft, never clobbers it.
@@ -1291,6 +1403,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         // rotates them: the delete must authenticate as the identity that
         // OWNS the thread.
         live.invoke.abort();
+        abortSpeech();
         const threadId = threadIdRef.current;
         const getGuest = getGuestSecretRef.current;
         const guestSecret = getGuest !== undefined ? getGuest() : null;
@@ -1343,7 +1456,8 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         analytics.opened();
       },
     }),
-    [analytics],
+    // `abortSpeech` is stable for the component's life, so the handle stays ONE object.
+    [analytics, abortSpeech],
   );
 
   useImperativeHandle(ref, () => handle, [handle]);
@@ -1381,8 +1495,13 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     // guuey#2293: images with no words still need a non-empty input (every
     // runtime refuses an empty one); the kit's neutral line stands in.
     const text = typed !== "" ? typed : policy.strings.attachmentsOnlyInput;
+    // An Enter while the agent streams sends nothing, so it leaves a live
+    // dictation alone too.
+    if (busy && !waitingOnUser) return;
+    // guuey#2446: a send ends a dictation FIRST, so no late result lands in
+    // the cleared field; what goes out is exactly what the field shows.
+    abortSpeech();
     if (busy) {
-      if (!waitingOnUser) return;
       // guuey#1038: a reply during a listen ENDS the listen (abort = the
       // cancel ggui's handler honours) and goes out as the next turn once
       // the hook is ready again — one gesture, no manual Stop.
@@ -1400,7 +1519,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     void invoke.send(text, sendOptionsFor(images)).catch(() => {
       // The hook surfaces the failure (`error` / R0 failed-send).
     });
-  }, [input, available, busy, waitingOnUser, authRequired, threadClosed, invoke, analytics, policy.strings, setPendingImages]);
+  }, [input, available, busy, waitingOnUser, authRequired, threadClosed, invoke, analytics, policy.strings, setPendingImages, abortSpeech]);
 
   // guuey#2293 — take picked or pasted files: the count and the turn's size
   // are judged against the list as it stands, each file is read (and redrawn
@@ -1457,6 +1576,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // the kit clears its own residue. The closed thread is kept on the server:
   // this is "start over", not the forget-this-device clear.
   const startNewConversation = useCallback((): void => {
+    abortSpeech();
     invoke.reset();
     setInput("");
     setPendingImages([]);
@@ -1464,7 +1584,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     setPendingLink(null);
     pendingDoorbellsRef.current = [];
     echoRef.current.reset();
-  }, [invoke, setPendingImages]);
+  }, [invoke, setPendingImages, abortSpeech]);
 
   const handleRetry = useCallback(
     (item: UserMessageItem) => {
@@ -1521,6 +1641,8 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   );
 
   const strings = policy.strings;
+  // The status line under the field, read once per render.
+  const voiceStatus = voiceEnabled && voiceAvailable ? voiceStatusLine(speech.state, strings) : null;
 
   // The resolved theme is stamped HERE, on the outer surface, not only on
   // the transcript root (guuey#1126, audit G24): the chips row, clear-row,
@@ -1663,6 +1785,11 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
             {attachmentNotice}
           </p>
         )}
+        {voiceStatus !== null && (
+          <p role="status" className="guuey-chat-voice-status">
+            {voiceStatus}
+          </p>
+        )}
         {attachmentsEnabled && pendingImages.length > 0 && (
           <ul className="guuey-chat-attachments" part={PARTS.attachments} aria-label={strings.attachmentsLabel}>
             {pendingImages.map((p) => (
@@ -1714,6 +1841,24 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
             </button>
           </>
         )}
+        {voiceEnabled && voiceAvailable && (
+          <button
+            type="button"
+            className="guuey-chat-composer-voice"
+            part={PARTS.composerVoice}
+            aria-pressed={speechListening}
+            aria-label={strings.voiceInput}
+            title={strings.voiceInput}
+            disabled={voiceGateClosed}
+            onClick={toggleVoice}
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <path d="M12 19v3" />
+            </svg>
+          </button>
+        )}
         <textarea
           ref={inputRef}
           id={composerId}
@@ -1722,7 +1867,11 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
           part={PARTS.composerInput}
           rows={1}
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            // guuey#2446: the person's edit ends a dictation and stands as typed.
+            abortSpeech();
+            setInput(e.target.value);
+          }}
           onFocus={() => analytics.opened()}
           onPaste={
             attachmentsEnabled

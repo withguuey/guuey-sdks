@@ -50,6 +50,8 @@ export const PARTS = {
   composerStop: "composer-stop",
   /** guuey#2293 — the composer's attach-image button (present only with `attachments`). */
   composerAttach: "composer-attach",
+  /** guuey#2446 — the composer's mic button (present only with `voice`, once the browser's speech API is found). */
+  composerVoice: "composer-voice",
   /** guuey#2293 — the composer's row of image previews (present only while images are attached). */
   attachments: "attachments",
   /** The suggestion-chips row (absent when there are no chips). */

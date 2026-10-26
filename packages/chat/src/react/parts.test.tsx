@@ -177,6 +177,7 @@ describe("the ::part() contract (guuey#1152)", () => {
         "composerInput",
         "composerSend",
         "composerStop",
+        "composerVoice",
         "header",
         "message",
         "narration",

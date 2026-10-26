@@ -446,6 +446,7 @@
 .guuey-chat-data-more:focus-visible,
 .guuey-chat-media-open:focus-visible,
 .guuey-chat-composer-attach:focus-visible,
+.guuey-chat-composer-voice:focus-visible,
 .guuey-chat-attachment-remove:focus-visible,
 .guuey-chat-composer-input:focus-visible {
   outline: 2px solid var(--guuey-chat-cue, var(--_guuey-chat-cue));
@@ -1136,11 +1137,13 @@
    (flex-basis 100% inside the wrapping composer row); the attach button sits
    beside the input like Send, as a quiet icon button. */
 .guuey-chat-composer:has(> .guuey-chat-attachments),
-.guuey-chat-composer:has(> .guuey-chat-attachment-notice) {
+.guuey-chat-composer:has(> .guuey-chat-attachment-notice),
+.guuey-chat-composer:has(> .guuey-chat-voice-status) {
   flex-wrap: wrap;
 }
 .guuey-chat-attachments,
-.guuey-chat-attachment-notice {
+.guuey-chat-attachment-notice,
+.guuey-chat-voice-status {
   flex-basis: 100%;
   margin: 0;
 }
@@ -1206,4 +1209,37 @@
 .guuey-chat-composer-attach:disabled {
   cursor: not-allowed;
   opacity: 0.4;
+}
+/* guuey#2446 — the composer's mic: the attach button's shape, and while a
+   dictation session is live (aria-pressed) an accent tint behind a glyph that
+   takes the cue, never the raw accent: the glyph is a one-bit stroke, like the
+   caret and the focus ring. Its status line sits
+   where the attachment notice does, on a row of its own above the input
+   (flex-basis 100%, above). */
+.guuey-chat-composer-voice {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  border: 0;
+  border-radius: var(--guuey-chat-radius, var(--_guuey-chat-radius));
+  background: transparent;
+  color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
+  cursor: pointer;
+}
+.guuey-chat-composer-voice:hover {
+  background: color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 6%, transparent);
+}
+.guuey-chat-composer-voice[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--guuey-chat-accent, var(--_guuey-chat-accent)) 14%, transparent);
+  color: var(--guuey-chat-cue, var(--_guuey-chat-cue));
+}
+.guuey-chat-composer-voice:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.guuey-chat-voice-status {
+  font-size: 0.875em;
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
 }

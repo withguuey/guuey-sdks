@@ -33,6 +33,7 @@ const CONTROLS = [
   ".guuey-chat-data-more",
   ".guuey-chat-media-open",
   ".guuey-chat-composer-attach",
+  ".guuey-chat-composer-voice",
   ".guuey-chat-attachment-remove",
   ".guuey-chat-composer-input",
 ];
@@ -68,5 +69,17 @@ describe("the kit's focus ring (guuey#2304)", () => {
     );
     expect(input).toHaveLength(1);
     expect(input[0]![1]).toMatch(/caret-color:\s*var\(--guuey-chat-cue, var\(--_guuey-chat-cue\)\)/);
+  });
+
+  it("the pressed mic's glyph is a cue stroke on an accent tint (guuey#2446)", () => {
+    const pressed = rules().filter(
+      ([sels]) => sels.length === 1 && sels[0] === '.guuey-chat-composer-voice[aria-pressed="true"]',
+    );
+    expect(pressed).toHaveLength(1);
+    const body = pressed[0]![1];
+    expect(body).toMatch(/(?:^|;)\s*color:\s*var\(--guuey-chat-cue, var\(--_guuey-chat-cue\)\)/);
+    expect(body).toMatch(
+      /background:\s*color-mix\(in srgb, var\(--guuey-chat-accent, var\(--_guuey-chat-accent\)\) 14%, transparent\)/,
+    );
   });
 });
