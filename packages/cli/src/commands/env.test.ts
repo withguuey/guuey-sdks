@@ -5,10 +5,15 @@
  * list itself is pinned to the platform's by `@guuey/config`'s own
  * `reserved-env.test.ts`.
  *
+ * The four provider key names (`@guuey/config` BYOK_PROVIDER_SLOT_ENV, guuey#2412)
+ * are refused the same way, before any request, with the door-neutral line the
+ * server answers and the CLI's own pointer at `guuey byok set`. Every server
+ * error prints through `out.apiErrorMessage`.
+ *
  * Same harness as `agent.test.ts`: mock `../auth` and `../config`, spy on
  * `globalThis.fetch`.
  */
-import { RUNTIME_RESERVED_ENV_NAMES } from '@guuey/config';
+import { BYOK_PROVIDER_IDS, BYOK_PROVIDER_SLOT_ENV, RUNTIME_RESERVED_ENV_NAMES } from '@guuey/config';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 import { envList, envSet, envUnset } from './env.js';
@@ -114,5 +119,64 @@ describe('a refused env call prints the API message, never an object (the cliApi
     await expect(envList({})).rejects.toThrow(ExitSignal);
 
     expect(errorSpy).toHaveBeenCalledWith('✗ Failed: HTTP 502');
+  });
+});
+
+/** A cliApi error answer in its `{ error: { code, message } }` envelope. */
+function apiError(status: number, code: string, message: string): Response {
+  return new Response(JSON.stringify({ error: { code, message } }), { status });
+}
+
+/** Every line written to stderr, in order. */
+function stderrLines(): string[] {
+  return errorSpy.mock.calls.map((call) => String(call[0]));
+}
+
+describe('guuey env set — provider key names (guuey#2412)', () => {
+  it.each(BYOK_PROVIDER_IDS.map((provider) => [BYOK_PROVIDER_SLOT_ENV[provider], provider]))(
+    'refuses %s before any request and points at guuey byok set --provider %s',
+    async (name, provider) => {
+      await expect(envSet([`${name}=sk-test`, 'FEATURE_FLAG=on'])).rejects.toThrow(ExitSignal);
+
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(stderrLines()).toEqual([
+        `✗ "${name}" is a provider key name. A plain variable doesn't switch the app to your key. ` +
+          `Set it as the app's ${provider} provider key instead.`,
+        `Use: guuey byok set --provider ${provider} --app-id app1`,
+      ]);
+    },
+  );
+
+  it('the refusal lists every provider key name in one run, each with its own pointer', async () => {
+    await expect(envSet(['OPENAI_API_KEY=a', 'GEMINI_API_KEY=b'])).rejects.toThrow(ExitSignal);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(stderrLines().filter((line) => line.startsWith('Use: '))).toEqual([
+      'Use: guuey byok set --provider openai --app-id app1',
+      'Use: guuey byok set --provider google --app-id app1',
+    ]);
+  });
+
+  it('the refusal names the --app-id target the command was given', async () => {
+    await expect(envSet(['ANTHROPIC_API_KEY=x'], { 'app-id': 'other-app' })).rejects.toThrow(ExitSignal);
+
+    expect(stderrLines()).toContain('Use: guuey byok set --provider anthropic --app-id other-app');
+  });
+
+  it("a server's 400 PROVIDER_KEY_ENV_NAME prints the server's line and the guuey byok set pointer", async () => {
+    // A name the server knows as a provider key slot and this CLI does not (a newer server), so the
+    // request is made; the CLI renders the server's code and message and adds the door's pointer.
+    const message =
+      '"MISTRAL_API_KEY" is a provider key name. A plain variable doesn\'t switch the app to your key. ' +
+      "Set it as the app's mistral provider key instead.";
+    fetchSpy.mockResolvedValueOnce(apiError(400, 'PROVIDER_KEY_ENV_NAME', message));
+
+    await expect(envSet(['MISTRAL_API_KEY=x'])).rejects.toThrow(ExitSignal);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(stderrLines()).toEqual([
+      `✗ PROVIDER_KEY_ENV_NAME: ${message}`,
+      'Use: guuey byok set --provider <provider> --app-id app1',
+    ]);
   });
 });

@@ -33,6 +33,7 @@ const WIRE_BILLING = repoPath(`${CLI_WIRE_DIR}/billing.ts`);
 const WIRE_BILLING_INVOICING = repoPath(`${CLI_WIRE_DIR}/billing-invoicing.ts`);
 const WIRE_USAGE_EXPORT = repoPath(`${CLI_WIRE_DIR}/usage-export.ts`);
 const WIRE_TEST_TOKEN = repoPath(`${CLI_WIRE_DIR}/test-token.ts`);
+const WIRE_ENV = repoPath(`${CLI_WIRE_DIR}/env.ts`);
 const WIRE_PROVIDER_KEYS = repoPath(`${CLI_WIRE_DIR}/provider-keys.ts`);
 // The provider-key source rule's own unions, which cli-wire's KeySource / KeyTier alias.
 const TYPES_PROVIDER_KEY_SOURCE = repoPath('../../../../../backend/libs/types/src/provider-key-source.ts');
@@ -47,6 +48,7 @@ const CLI_PULL = repoPath('./pull.ts');
 const CLI_USAGE = repoPath('./usage.ts');
 const CLI_DEPLOY = repoPath('./deploy.ts');
 const CLI_TEST = repoPath('./test.ts');
+const CLI_ENV = repoPath('./env.ts');
 const CLI_BYOK = repoPath('./byok.ts');
 
 const haveWire =
@@ -240,6 +242,14 @@ describe.skipIf(!haveWire)('CLI wire mirrors — sync guards against @guuey-priv
     for (const union of ['NextInvoiceLineKind', 'NextInvoiceStatus', 'InvoiceHistoryStatus']) {
       expect(parseStringLiterals(cli, union)).toEqual(parseStringLiterals(wire, union));
     }
+  });
+
+  it("the env door's provider-key-name code is the wire's (guuey#2412)", () => {
+    // `guuey env set` adds its `guuey byok set` pointer on exactly this code. A renamed code server-side
+    // would print the server's line with no pointer, silently.
+    expect(parseStringConstant(read(CLI_ENV), 'PROVIDER_KEY_ENV_NAME')).toBe(
+      parseStringConstant(read(WIRE_ENV), 'PROVIDER_KEY_ENV_NAME'),
+    );
   });
 
   it('the provider-key mirrors declare exactly the wire fields (guuey#2412)', () => {
