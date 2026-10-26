@@ -361,6 +361,8 @@ describe('appsUpdate --auth-mode byo issuer binding', () => {
     expect(methods()).toEqual(['GET']);
     expect(printed()).toContain('--auth-mode byo needs an issuer binding, and app app-1 has none stored.');
     expect(printed()).toContain('refuses sign-ins from your own');
+    expect(printed()).toContain('pauses its standalone page and widget embed');
+    expect(printed()).not.toContain('unaffected');
     expect(printed()).toContain(
       'guuey apps update app-1 --auth-mode byo --issuer-url <https://issuer> --audience <audience>',
     );
@@ -423,6 +425,8 @@ describe('appsUpdate --auth-mode byo issuer binding', () => {
     expect(process.exit).toHaveBeenCalledWith(1);
     expect(methods()).toEqual(['GET']);
     expect(printed()).toContain('--clear-auth-config would leave app app-1 in byo with no issuer binding.');
+    expect(printed()).toContain('pauses its standalone page and widget embed');
+    expect(printed()).not.toContain('unaffected');
     expect(printed()).toContain(
       'guuey apps update app-1 --auth-mode <anonymous|native_pool> --clear-auth-config',
     );

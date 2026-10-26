@@ -1835,8 +1835,10 @@ export async function appsCheck(
 //
 // An app in `byo` verifies a token from its own identity provider against
 // its stored issuer and audience. With either one missing no such token can
-// match, so those sign-ins are refused; Guuey accounts are unaffected,
-// since they never go through the binding. `apps update` sets
+// match, so those sign-ins are refused, and unless the app's widget embed
+// identity is `anonymous` its standalone page and widget embed are paused for
+// everyone (cli-wire's `byoNotServingMessage` words the full set of cases for
+// the server's warning). `apps update` sets
 // `--auth-mode byo` only together with the binding, or on an app that
 // already stores one.
 
@@ -1855,7 +1857,7 @@ export function byoNoBindingMessage(appId?: string): string {
       ? '--auth-mode byo cannot be combined with --clear-auth-config.'
       : `--auth-mode byo needs an issuer binding, and app ${appId} has none stored.`,
     '  An app in byo with no issuer and audience refuses sign-ins from your own',
-    '  identity provider (Guuey accounts are unaffected).',
+    '  identity provider and, by default, pauses its standalone page and widget embed.',
     '  Set the mode and the binding in one call:',
     `    guuey apps update ${target} --auth-mode byo --issuer-url <https://issuer> --audience <audience>`,
   ].join('\n');
@@ -1870,7 +1872,7 @@ export function byoClearBindingMessage(appId: string): string {
   return [
     `--clear-auth-config would leave app ${appId} in byo with no issuer binding.`,
     '  An app in byo with no issuer and audience refuses sign-ins from your own',
-    '  identity provider (Guuey accounts are unaffected).',
+    '  identity provider and, by default, pauses its standalone page and widget embed.',
     '  Either switch the mode in the same call:',
     `    guuey apps update ${appId} --auth-mode <anonymous|native_pool> --clear-auth-config`,
     '  or set a new issuer and audience instead of clearing:',
