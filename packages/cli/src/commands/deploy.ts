@@ -748,7 +748,7 @@ async function deployCode(opts: {
     out.error(
       'Found literal secrets in mcpServers[].headers:\n' +
         secretViolations.map((s) => `  - ${s}`).join('\n') +
-        '\nDeclare the secret name in agent.secrets and reference it as ${env.NAME}.',
+        '\nMove the value out of guuey.json: reference it as ${env.NAME}, declare NAME in agent.secrets, and add the value under Secrets in the Guuey console (Settings → Deployment & scaling). Which processes in your agent receive it, and when, is listed at https://docs.guuey.com/concepts-byok/#the-custody-table. The CLI has no command for app secrets yet (`guuey mcp secrets` is for hosted MCP servers); `guuey env set` stores plain app configuration. A secret is sealed at rest and kept out of the stored deploy snapshot, but once it reaches your agent, code running there may be able to read it as an environment variable.',
     );
     process.exit(1);
   }
@@ -1499,7 +1499,7 @@ async function deployDeclarative(opts: {
     out.error(
       'Found literal secrets in mcpServers[].headers:\n' +
         secretViolations.map((s) => `  - ${s}`).join('\n') +
-        '\nDeclare the secret name in agent.secrets and reference it as ${env.NAME}.',
+        '\nMove the value out of guuey.json: reference it as ${env.NAME}, declare NAME in agent.secrets, and add the value under Secrets in the Guuey console (Settings → Deployment & scaling). The CLI has no command for app secrets yet (`guuey mcp secrets` is for hosted MCP servers); `guuey env set` stores plain app configuration. A secret is sealed at rest and kept out of the stored deploy snapshot, but code running in your agent may still be able to read it as an environment variable.',
     );
     process.exit(1);
   }

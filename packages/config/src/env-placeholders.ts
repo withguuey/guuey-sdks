@@ -17,9 +17,13 @@
  *   resolved value: the stored snapshot, the reconcile body and the pod
  *   config hold a plain URL / issuer / audience, so no server or pod reads
  *   this grammar.
- * - `agent.mcpServers.<name>.headers.*` — the pod, at call time, from the
- *   app's declared `agent.secrets`. The CLI never touches these, so a secret
- *   value never passes through a builder's shell or a deploy log.
+ * - `agent.mcpServers.<name>.headers.*` — the hosted agent, at call time,
+ *   from the environment the platform gives it (`agent.env`, plus the app's
+ *   variables and secrets: which processes in the agent receive those, and
+ *   when, is listed at
+ *   https://docs.guuey.com/concepts-byok/#the-custody-table; a secret's
+ *   name is declared in `agent.secrets`). The CLI never touches these, so a
+ *   secret value never passes through a builder's shell or a deploy log.
  * - Anywhere else in `app.access`, `app.page` or `mcpResourceUrl` a
  *   placeholder is refused: nothing would resolve it.
  *
@@ -202,7 +206,7 @@ export function resolveEnvPlaceholders(
     const value = env[name];
     if (secrets.has(name)) {
       problems.push(
-        `${name} is declared in agent.secrets — a secret is resolved inside the agent and only in mcpServers headers; give the deploy-time value its own variable name`,
+        `${name} is declared in agent.secrets — a secret is filled in by the hosted agent in mcpServers headers, never by the CLI at deploy time; give the deploy-time value its own variable name`,
       );
     } else if (value === undefined || value === '') {
       problems.push(`${name} is not set in the environment (an empty value counts as unset)`);

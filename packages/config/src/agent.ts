@@ -63,7 +63,12 @@ export type AgentFramework = (typeof AGENT_FRAMEWORKS)[number];
 /**
  * Static header map — forwarded on every request. Values may use `${env.NAME}`
  * placeholders; the pod's env-substitution pass fills them at call time.
- * Secrets MUST be referenced via `${env.NAME}` and declared in `agent.secrets`.
+ * Secrets MUST be referenced via `${env.NAME}`, declared in `agent.secrets`,
+ * and set as an app secret in the Guuey console. Which processes in the
+ * agent receive it, and when, is listed at
+ * https://docs.guuey.com/concepts-byok/#the-custody-table.
+ * Once a secret reaches the agent, like any environment variable, its value
+ * may be readable by code running there.
  */
 const HeadersSchema = z.record(z.string().min(1), z.string());
 
@@ -666,9 +671,17 @@ export const AgentSectionV1 = z.strictObject({
   /** Literal non-sensitive env vars baked into the pod at boot. */
   env: z.record(z.string().min(1), z.string()).optional(),
   /**
-   * Names (not values) of secrets the pod needs. Values are set via
-   * `guuey secrets set NAME=...`, stored KMS-encrypted in DDB. Deploy-controller
-   * resolves to values and injects as env vars at pod boot.
+   * Names of the app secrets this agent's `mcpServers` headers reference as
+   * `${env.NAME}`. A declared name is refused as a deploy-time placeholder;
+   * declaring it does not choose which secrets the agent receives. Set a
+   * secret's value under Secrets in the Guuey console (Settings → Deployment &
+   * scaling): the CLI has no command for app secrets yet (`guuey mcp secrets`
+   * is for hosted MCP servers), and `guuey env set` stores plain app
+   * configuration. Which processes in the agent receive a secret, and when,
+   * is listed at https://docs.guuey.com/concepts-byok/#the-custody-table.
+   * Values are sealed at rest and every API returns names only, but once a
+   * secret reaches the agent it may be readable by code and tools running
+   * there, like any environment variable.
    */
   secrets: z.array(z.string().min(1)).optional(),
 
@@ -998,7 +1011,7 @@ export function validateNoLiteralSecrets(
       // (1) secret-shaped literal anywhere in the non-ref text.
       if (SECRET_SHAPE_PATTERNS.some((re) => re.test(literalRemainder))) {
         violations.push(
-          `mcpServers.${serverName}.headers.${headerName}: contains a literal secret — reference it as \${env.NAME} and declare the name in agent.secrets`,
+          `mcpServers.${serverName}.headers.${headerName}: contains a literal secret — reference it as \${env.NAME}, declare the name in agent.secrets and set the value as an app secret in the Guuey console`,
         );
         continue;
       }
@@ -1008,7 +1021,7 @@ export function validateNoLiteralSecrets(
         const bare = literalRemainder.replace(AUTH_SCHEME_WORDS, '').trim();
         if (bare.length > 0) {
           violations.push(
-            `mcpServers.${serverName}.headers.${headerName}: sensitive header must reference a secret as \${env.NAME} (declared in agent.secrets), not a literal value`,
+            `mcpServers.${serverName}.headers.${headerName}: sensitive header must reference a secret as \${env.NAME} (declared in agent.secrets, its value set as an app secret in the Guuey console), not a literal value`,
           );
         }
       }
