@@ -330,52 +330,81 @@ function hasDrawableText(group: AssistantSource): boolean {
 }
 
 /**
- * guuey#2445 — the conversation from the first stamped user row on, one live
- * send at a time. The fold owns a send's reply when it holds a source for
- * that send: a source whose turn came at or after the send's stamp and before
- * the next stamped send's. A send the fold holds NO source for keeps its own
- * flat group instead, when that group has text: the fold never saw any of its
- * reply, so the rows hold the only copy. That is a turn adopted from history
- * whose stream carried no assistant frame (closed after `session` or
- * `turn.start`, or adopted by the stall watchdog on zero bytes), and a send
- * stopped before its first frame whose answer the pod stored anyway, once a
- * history read has replaced the rows. A send stopped, failed or cut live has
- * no text in its flat group (guuey#1101's empty slot, or the empty
- * placeholder an error leaves), so it still takes no slot.
+ * guuey#2445 — the conversation from the first stamped user row on, one user
+ * row at a time, in the rows' own order. The rows are the authority for which
+ * user rows there are and where each sits: after a history read replaced them
+ * (the hook adopting a cut turn), they hold every send, including one this
+ * client never made (another tab on the same thread) and the reader line of a
+ * failed turn. The fold is the authority for the replies it streamed, and it
+ * is tied to the rows by the stamps alone:
  *
- * Returns the suffix's sources in order, the slot each stamped user row
- * precedes, and the slot of each fold source, all offset by `keep` (the flat
- * prefix in front).
+ *  - A stamped row owns the fold's sources from its stamp up to the next
+ *    stamped row's (a send answered in two turns owns both). Every fold source
+ *    from the anchor on falls in exactly one such range.
+ *  - A row that owns no fold source draws its own flat group when that has
+ *    text: an unstamped row (a send the fold never saw), or a stamped send
+ *    whose reply the fold never saw (a turn adopted with no assistant frame,
+ *    or a stopped send whose answer the pod stored anyway).
+ *  - Otherwise the row owns one EMPTY slot, as guuey#1101 gives a flat user row
+ *    with no reply: a send stopped, failed or cut before its first frame. It
+ *    draws nothing, and it gives the row a place of its own for what follows
+ *    it (a failed turn's notice), so the next row never shares it.
+ *
+ * Every row from the anchor on therefore owns at least one slot, in order,
+ * with nothing counted: no fold source is dropped or drawn twice, and no flat
+ * group is drawn where the fold holds its reply.
+ *
+ * Returns the suffix's sources in order, the slot each row from the anchor on
+ * precedes, the last slot each one owns, and the slot of each fold source, all
+ * offset by `keep` (the flat prefix in front).
  */
 function liveSuffix(
   users: readonly TranscriptInputs["messages"][number][],
+  firstLive: number,
   flat: { groups: readonly AssistantSource[]; userOrder: readonly number[] },
   foldSources: readonly AssistantSource[],
   sourcesBefore: (turnCount: number) => number,
   keep: number,
-): { sources: AssistantSource[]; userSlots: Map<number, number>; foldSlots: number[] } {
-  const live: Array<{ index: number; from: number }> = [];
-  users.forEach((u, index) => {
-    if (u.precedingTurnCount !== undefined) live.push({ index, from: sourcesBefore(u.precedingTurnCount) });
-  });
+): {
+  sources: AssistantSource[];
+  userSlots: Map<number, number>;
+  userEnds: Map<number, number>;
+  foldSlots: number[];
+} {
+  /** Each row's stamp as fold sources before it; undefined on an unstamped row. */
+  const from = users.map((u) => (u.precedingTurnCount !== undefined ? sourcesBefore(u.precedingTurnCount) : undefined));
   const sources: AssistantSource[] = [];
   const userSlots = new Map<number, number>();
+  const userEnds = new Map<number, number>();
   const foldSlots: number[] = [];
+  /** Place the fold's sources up to (not including) `end`, each once, in fold order. */
   const placeFoldSourcesBefore = (end: number): void => {
     for (const source of foldSources.slice(foldSlots.length, end)) {
       foldSlots.push(keep + sources.length);
       sources.push(source);
     }
   };
-  live.forEach(({ index, from }, k) => {
-    placeFoldSourcesBefore(from);
-    userSlots.set(index, keep + sources.length);
-    const to = live[k + 1]?.from ?? foldSources.length;
-    const own = flat.groups[flat.userOrder[index] ?? flat.groups.length];
-    if (to <= from && own !== undefined && hasDrawableText(own)) sources.push(own);
-  });
+  // Fold sources of turns before the first live send (an unprompted greeting)
+  // stand in for the flat groups `keep` left out in front of the anchor.
+  placeFoldSourcesBefore(from[firstLive] ?? 0);
+  for (let i = firstLive; i < users.length; i++) {
+    userSlots.set(i, keep + sources.length);
+    const placedBefore = sources.length;
+    const start = from[i];
+    if (start !== undefined) {
+      const next = from.slice(i + 1).find((f): f is number => f !== undefined);
+      placeFoldSourcesBefore(next ?? foldSources.length);
+    }
+    if (sources.length === placedBefore) {
+      const at = flat.userOrder[i] ?? flat.groups.length;
+      const ownsGroup = at < (flat.userOrder[i + 1] ?? flat.groups.length);
+      const own = ownsGroup ? flat.groups[at] : undefined;
+      sources.push(own !== undefined && hasDrawableText(own) ? own : { blocks: [], live: false, stopped: false });
+    }
+    userEnds.set(i, keep + sources.length - 1);
+  }
   placeFoldSourcesBefore(foldSources.length);
-  return { sources, userSlots, foldSlots };
+  return { sources, userSlots, userEnds, foldSlots };
 }
 
 function flatAssistantSources(inputs: TranscriptInputs, inFlight: boolean): AssistantSource[] {
@@ -1145,13 +1174,17 @@ export function planTranscript(
   // flat notice renders after the conversation slot of the user turn it
   // followed (usersSeen-1; -1 = before the conversation). They are PEER
   // rows — excluded from both the user pairing and the assistant seam
-  // count, so the fold alignment below never sees them.
+  // count, so the fold alignment below never sees them. guuey#2445: from the
+  // stamp anchor on, a row's slots are no longer its index, so a flat notice
+  // there moves to the last slot of the user row it followed (`afterUser`).
   const notices: Array<{
     key: string;
     text: string;
     source: NoticeItem["source"];
     failure?: { code: string | null };
     afterSlot: number;
+    /** A flat notice's user row (index in `users`; -1 = before the conversation). */
+    afterUser?: number;
   }> = [];
   {
     let usersSeen = 0;
@@ -1170,6 +1203,7 @@ export function planTranscript(
           source: m.noticeSource ?? null,
           ...(m.failure !== undefined ? { failure: m.failure } : {}),
           afterSlot: usersSeen - 1,
+          afterUser: usersSeen - 1,
         });
       }
     });
@@ -1195,22 +1229,25 @@ export function planTranscript(
   // before it. A stamp counts fold TURNS, and a turn can have no source (a
   // send stopped, failed or cut before its first assistant frame, or a
   // paused hitl turn), so each stamp is mapped to the number of fold sources
-  // whose turn came before it. From the anchor on, each live send's reply is
-  // read where it is held (`liveSuffix`): the fold's sources between its
-  // stamp and the next send's, or, when the fold holds none for it, its own
-  // flat group if that has text (a reply the fold never saw, which a history
-  // read brought in). A history read that replaces the rows (the hook
-  // adopting a cut turn) keeps each live row's stamp (guuey#2445), matched by
-  // the row's `clientMessageId` or, for a read that serves no keys, by
-  // position, so the anchor stays on the first live send.
+  // whose turn came before it. From the anchor on, the rows place every user
+  // row in their own order, each owning at least one slot (`liveSuffix`): a
+  // stamped row owns the fold's sources between its stamp and the next
+  // stamped row's; a row that owns none draws its own flat group if that has
+  // text (a send the fold never saw, or a reply the fold never saw, which a
+  // history read brought in), else an empty slot. A flat notice there sits
+  // after the last slot of the row it followed. A history read that replaces
+  // the rows (the hook adopting a cut turn) keeps each live row's stamp
+  // (guuey#2445), matched by the row's `clientMessageId` or, for a read that
+  // serves no keys, by position; when it cannot tie every live send, the hook
+  // drops the fold instead, and the rows plan flat.
   // guuey#2445: the earlier count-based rule assumed one source per live
   // send, so such a send, once it was no longer the latest, kept the fold's
   // previous answer again as a flat prefix, drawn above its own question,
   // and every later question was placed one slot too far.
   //
-  // Without stamps (an older assembler, or rows replaced by a history read
-  // the hook could not match to its live rows) or without turn identity the
-  // seam keeps the count-based rule:
+  // Without stamps (an older assembler, or another assembler that sets
+  // history's rows beside a fold) or without turn identity the seam keeps
+  // the count-based rule:
   // `users - foldCovers`, where an in-flight turn counts as covered even
   // before its first frame. The rule before it — flat groups minus SETTLED
   // fold sources — assumed the flat side never holds the live turn's rows;
@@ -1229,11 +1266,12 @@ export function planTranscript(
    */
   let foldSeam = 0;
   /**
-   * guuey#2445: the slot each stamped user row precedes, when the seam is
-   * anchored on stamps. Null on the count-based rule, where a stamp maps to
-   * `foldSeam + sourcesBefore(stamp)`.
+   * guuey#2445: the slot each user row from the stamp anchor on precedes, and
+   * the last slot it owns, when the seam is anchored on stamps. Null on the
+   * count-based rule, where a stamp maps to `foldSeam + sourcesBefore(stamp)`.
    */
   let liveUserSlots: ReadonlyMap<number, number> | null = null;
+  let liveUserEnds: ReadonlyMap<number, number> | null = null;
   /** Each fold source's turn index, when stamps are mapped into source space. */
   let stampedSourceTurns: readonly number[] | null = null;
   /** A live row's stamp (fold turns before it) as fold SOURCES before it. */
@@ -1250,9 +1288,10 @@ export function planTranscript(
     if (anchor !== undefined && fold.sourceTurns !== null) {
       stampedSourceTurns = fold.sourceTurns;
       const keep = clampSeam((flat.userOrder[firstLive] ?? 0) - sourcesBefore(anchor), flat.groups.length);
-      const suffix = liveSuffix(users, flat, foldSources, sourcesBefore, keep);
+      const suffix = liveSuffix(users, firstLive, flat, foldSources, sourcesBefore, keep);
       foldSeam = keep;
       liveUserSlots = suffix.userSlots;
+      liveUserEnds = suffix.userEnds;
       foldSlots = suffix.foldSlots;
       assistants = [...flat.groups.slice(0, keep), ...suffix.sources];
     } else {
@@ -1273,6 +1312,12 @@ export function planTranscript(
     }
   } else {
     assistants = flatAssistantSources(inputs, inFlight);
+  }
+  if (liveUserEnds !== null) {
+    for (const n of notices) {
+      const end = n.afterUser !== undefined ? liveUserEnds.get(n.afterUser) : undefined;
+      if (end !== undefined) n.afterSlot = end;
+    }
   }
 
   const slots = Math.max(users.length, assistants.length);
@@ -1299,9 +1344,11 @@ export function planTranscript(
           // the settled prefix in `assistants`. A rehydrated row has no stamp
           // and its position is already a count of flat groups, which ARE the
           // prefix. Both land in one comparable space.
-          u.precedingTurnCount !== undefined
-            ? (liveUserSlots?.get(i) ?? foldSeam + sourcesBefore(u.precedingTurnCount))
-            : (flatUserOrder[i] ?? i),
+          // From the stamp anchor on, every row's slot is read from the suffix.
+          (liveUserSlots?.get(i) ??
+            (u.precedingTurnCount !== undefined
+              ? foldSeam + sourcesBefore(u.precedingTurnCount)
+              : (flatUserOrder[i] ?? i))),
         )
       : null;
   const conversation: DisplayItem[] = [];

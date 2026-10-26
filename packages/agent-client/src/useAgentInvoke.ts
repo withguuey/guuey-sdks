@@ -98,55 +98,68 @@ export function applyHistoryResult(
 }
 
 /**
- * guuey#2445 — the transcript an adoption sets: history's rows, with each
- * user row this session sent live keeping its `precedingTurnCount`.
+ * guuey#2445 — what an adoption sets: history's rows, and whether the fold
+ * stays beside them.
  *
- * Adopting replaces the rows but keeps the fold, which still holds every turn
- * the session saw live (so the adopted turn draws as it streamed). The stamp
- * is what ties a user row to its place among those fold turns, and only this
- * client knows it: history does not. With every live row stamped, the planner
- * reads the seam from the stamps for the rest of the session, and a send the
- * fold holds nothing for draws history's row for its reply (or no reply), in
- * its own place. Rows that lost the stamp left the planner to guess where the
- * fold begins by counting, and a send with no source in the fold (stopped,
- * failed or cut before its first frame, or adopted with no frame at all)
- * made that guess wrong: the previous answer was drawn again under that send.
+ * History holds every row of the conversation, so it is the authority for
+ * which rows there are and where each sits. The fold holds the turns this
+ * session saw live, and it stays only when each of them can be tied to its
+ * row in history: then the adopted turn and every earlier live turn keep
+ * drawing as they streamed. The tie is the stamp (`precedingTurnCount`) each
+ * live send carries, which only this client knows: it is carried onto
+ * history's copy of that send's row.
  *
- * A row is matched by its `clientMessageId`, which the read plane serves on
- * every row it stores (the pod writes the invoke body's key on the user row).
- * A history that serves no keys at all (the `guuey dev` server, an older read
- * plane, or an adapter that does not carry them) is matched by position, but
+ * A row is tied by its `clientMessageId`, which the read plane serves on every
+ * row it stores (the pod writes the invoke body's key on the user row). A
+ * history that serves no keys at all (the `guuey dev` server, an older read
+ * plane, or an adapter that does not carry them) is tied by position, but
  * only when its user rows are exactly the local ones, in order and word for
- * word. Otherwise its rows stay unstamped, and the planner keeps its
- * count-based rule for them, as before.
+ * word.
+ *
+ * When a live send cannot be tied (history holds no row for it, as for a send
+ * the `guuey dev` server did not store, or a keyless history whose rows differ
+ * from the local ones), `keepsFold` is false: the hook drops the fold, and
+ * history's rows draw the whole conversation, as a reload draws it. Keeping
+ * the fold there would leave the planner to guess which history rows the fold
+ * covers, and a wrong guess draws an answer twice or under the wrong question.
  */
-export function adoptedTranscript(history: AgentMessage[], local: readonly AgentMessage[]): AgentMessage[] {
+export function adoptedTranscript(
+  history: AgentMessage[],
+  local: readonly AgentMessage[],
+): { messages: AgentMessage[]; keepsFold: boolean } {
   const localUsers = local.filter((m) => m.role === "user");
+  const live = localUsers.filter((m) => m.precedingTurnCount !== undefined);
+  if (live.length === 0) return { messages: history, keepsFold: true };
+  const historyUsers = history.filter((m) => m.role === "user");
+  const keyless = historyUsers.every((m) => m.clientMessageId === undefined);
+  if (keyless) {
+    const samePositions =
+      historyUsers.length === localUsers.length && historyUsers.every((m, i) => m.text === localUsers[i]?.text);
+    if (!samePositions) return { messages: history, keepsFold: false };
+    let userIndex = 0;
+    const messages = history.map((m) => {
+      if (m.role !== "user") return m;
+      const sent = localUsers[userIndex++];
+      return sent?.precedingTurnCount === undefined ? m : { ...m, precedingTurnCount: sent.precedingTurnCount };
+    });
+    return { messages, keepsFold: true };
+  }
   const stamps = new Map<string, number>();
-  for (const m of localUsers) {
+  for (const m of live) {
     if (m.clientMessageId !== undefined && m.precedingTurnCount !== undefined) {
       stamps.set(m.clientMessageId, m.precedingTurnCount);
     }
   }
-  if (!localUsers.some((m) => m.precedingTurnCount !== undefined)) return history;
-  const historyUsers = history.filter((m) => m.role === "user");
-  const byPosition =
-    historyUsers.every((m) => m.clientMessageId === undefined) &&
-    historyUsers.length === localUsers.length &&
-    historyUsers.every((m, i) => m.text === localUsers[i]?.text);
-  let userIndex = 0;
-  return history.map((m) => {
-    if (m.role !== "user") return m;
-    const sent = localUsers[userIndex++];
-    if (m.precedingTurnCount !== undefined) return m;
-    const precedingTurnCount =
-      m.clientMessageId !== undefined
-        ? stamps.get(m.clientMessageId)
-        : byPosition
-          ? sent?.precedingTurnCount
-          : undefined;
-    return precedingTurnCount === undefined ? m : { ...m, precedingTurnCount };
+  const tied = new Set<string>();
+  const messages = history.map((m) => {
+    if (m.role !== "user" || m.clientMessageId === undefined) return m;
+    const precedingTurnCount = stamps.get(m.clientMessageId);
+    if (precedingTurnCount === undefined) return m;
+    tied.add(m.clientMessageId);
+    return { ...m, precedingTurnCount };
   });
+  const keepsFold = live.every((m) => m.clientMessageId !== undefined && tied.has(m.clientMessageId));
+  return { messages, keepsFold };
 }
 
 /** The guuey#192 stall watchdog's resolved tuning (see {@link stallProbeDecision}). */
@@ -548,11 +561,23 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
       // (a welcome card, or a chip click drained by `ggui_consume`) is
       // counted here exactly as the planner will count it.
       const precedingTurnCount = reducerRef.current?.result().turns.length ?? 0;
-      setMessages((prev) => [
-        ...prev,
-        { role: "user", text: input, clientMessageId, precedingTurnCount, ...(tapLabels !== undefined ? { tapLabels } : {}) },
-        { role: "assistant", text: "" },
-      ]);
+      const ownRow: AgentMessage = {
+        role: "user",
+        text: input,
+        clientMessageId,
+        precedingTurnCount,
+        ...(tapLabels !== undefined ? { tapLabels } : {}),
+      };
+      setMessages((prev) => [...prev, ownRow, { role: "assistant", text: "" }]);
+      /**
+       * The rows this send's history decisions compare against: the last
+       * render's, with this send's own row even when no render has drawn it
+       * yet (React does not promise one before the stream ends).
+       */
+      const localRows = (): readonly AgentMessage[] => {
+        const rows = messagesRef.current;
+        return rows.some((m) => m.role === "user" && m.clientMessageId === clientMessageId) ? rows : [...rows, ownRow];
+      };
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -622,16 +647,24 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
       ): result is { messages: AgentMessage[]; cards?: HistoryCard[] } => {
         if (!result || "gone" in result) return false;
         let localUserCount = 0;
-        for (const m of messagesRef.current) if (m.role === "user") localUserCount += 1;
+        for (const m of localRows()) if (m.role === "user") localUserCount += 1;
         return stallProbeDecision(result.messages, localUserCount) === "adopt";
       };
       /**
        * Adopt the persisted turn: the transcript IS history's (each live
-       * send keeping its turn stamp, see {@link adoptedTranscript}), and the
+       * send keeping its turn stamp, or the fold dropped when history cannot
+       * be tied to every live send, see {@link adoptedTranscript}), and the
        * renderer is told.
        */
       const adoptFrom = (adoptedResult: { messages: AgentMessage[]; cards?: HistoryCard[] }): void => {
-        setMessages((prev) => adoptedTranscript(adoptedResult.messages, prev));
+        const adoption = adoptedTranscript(adoptedResult.messages, localRows());
+        if (!adoption.keepsFold) {
+          // The next valid AgEvent starts a new fold, and the next send's
+          // stamp counts from it.
+          reducerRef.current = null;
+          setReduceResult(null);
+        }
+        setMessages(adoption.messages);
         // History holds this send, so it is sent (absent = sent), even when the
         // stall watchdog adopts it before its first byte.
         markSend(null);

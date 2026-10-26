@@ -474,7 +474,10 @@ export interface UseAgentInvokeReturn {
    * In **bypass mode** the `message` frames are SDKMessage shapes that never
    * validate as AgEvents, so nothing folds and `reduceResult` stays `null` for
    * the whole conversation — the reducer only makes sense for silver AgJSON
-   * frames. `reset()` returns it to `null`. History rehydrate does NOT populate
+   * frames. `reset()` returns it to `null`, and so does an adoption whose
+   * history cannot be tied to every live send (guuey#2445: history's rows then
+   * draw the whole conversation, and the next valid AgEvent starts a new
+   * fold). History rehydrate does NOT populate
    * it — persisted cards surface via {@link historyCards} instead (Task 4), so
    * a snapshot never has to be lied back into the live reducer.
    */

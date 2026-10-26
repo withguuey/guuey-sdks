@@ -3,7 +3,8 @@
  * row this session sent live keeps its `precedingTurnCount` (matched by the
  * send's `clientMessageId`, or by position when history serves no keys and
  * its user rows are exactly the local ones), so the transcript planner can
- * still tell where the live fold begins.
+ * still tie the live fold to its rows. When a live send cannot be tied, the
+ * fold is dropped and history's rows draw the whole conversation.
  */
 import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "./types.js";
@@ -30,7 +31,8 @@ describe("adoptedTranscript", () => {
       { role: "user", text: "Q3", seq: 6, clientMessageId: "cm-3" },
       { role: "assistant", text: "A3", seq: 7 },
     ];
-    expect(adoptedTranscript(history, local)).toEqual([
+    expect(adoptedTranscript(history, local).keepsFold).toBe(true);
+    expect(adoptedTranscript(history, local).messages).toEqual([
       { role: "user", text: "H0", seq: 1, clientMessageId: "cm-old" },
       { role: "assistant", text: "HA0", seq: 2 },
       { role: "user", text: "Q1", seq: 3, clientMessageId: "cm-1", precedingTurnCount: 0 },
@@ -51,7 +53,8 @@ describe("adoptedTranscript", () => {
       { role: "user", text: "Q3", seq: 6 },
       { role: "assistant", text: "A3", seq: 7 },
     ];
-    expect(adoptedTranscript(history, local)).toEqual([
+    expect(adoptedTranscript(history, local).keepsFold).toBe(true);
+    expect(adoptedTranscript(history, local).messages).toEqual([
       { role: "user", text: "H0", seq: 1 },
       { role: "assistant", text: "HA0", seq: 2 },
       { role: "user", text: "Q1", seq: 3, precedingTurnCount: 0 },
@@ -92,9 +95,38 @@ describe("adoptedTranscript", () => {
       ],
     },
   ] satisfies Array<{ name: string; history: AgentMessage[] }>)(
-    "returns history without keys unchanged when $name",
+    "returns history without keys unchanged, and drops the fold, when $name",
     ({ history }) => {
-      expect(adoptedTranscript(history, local)).toEqual(history);
+      expect(adoptedTranscript(history, local)).toEqual({ messages: history, keepsFold: false });
     },
   );
+
+  it("drops the fold when keyed history holds no row for one of the live sends", () => {
+    const history: AgentMessage[] = [
+      { role: "user", text: "H0", seq: 1, clientMessageId: "cm-old" },
+      { role: "assistant", text: "HA0", seq: 2 },
+      { role: "user", text: "Q1", seq: 3, clientMessageId: "cm-1" },
+      { role: "assistant", text: "A1", seq: 4 },
+      { role: "user", text: "from another tab", seq: 5, clientMessageId: "cm-other" },
+      { role: "user", text: "Q3", seq: 6, clientMessageId: "cm-3" },
+      { role: "assistant", text: "A3", seq: 7 },
+    ];
+    const adoption = adoptedTranscript(history, local);
+    expect(adoption.keepsFold).toBe(false);
+    expect(adoption.messages.filter((m) => m.role === "user").map((m) => m.precedingTurnCount)).toEqual([
+      undefined,
+      0,
+      undefined,
+      2,
+    ]);
+  });
+
+  it("keeps the fold, and history as it is, when no local row was sent live", () => {
+    const reloaded: AgentMessage[] = [
+      { role: "user", text: "H0", seq: 1 },
+      { role: "assistant", text: "HA0", seq: 2 },
+    ];
+    const history: AgentMessage[] = [...reloaded, { role: "user", text: "elsewhere", seq: 3 }];
+    expect(adoptedTranscript(history, reloaded)).toEqual({ messages: history, keepsFold: true });
+  });
 });

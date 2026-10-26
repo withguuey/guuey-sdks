@@ -68,16 +68,21 @@ interface ClosingTurn {
 }
 const closing = (frames: string[]): ClosingTurn => ({ frames, closes: true });
 
+/** What later history reads return: one read for all, or a sequence. */
+type Reloads = AgentMessage[] | { reads: AgentMessage[][] };
+
 /**
  * `history`: a persisted transcript the hook rehydrates before the first
  * send (a reload, then keep chatting), so the plan has a flat prefix in
  * front of the fold. `reloads`: what every later history read returns (the
- * truncation probe), when it differs from `history`.
+ * truncation probe), when it differs from `history`; `{ reads }` returns one
+ * per read, in order, the last one standing.
  */
+
 function adapters(
   turns: Array<string[] | ClosingTurn>,
   history?: AgentMessage[],
-  reloads?: AgentMessage[],
+  reloads?: Reloads,
 ): { adapters: AgentInvokeAdapters; delivered: () => Promise<void> } {
   let call = 0;
   let loads = 0;
@@ -87,6 +92,10 @@ function adapters(
   });
   let ids = 0;
   const store: Record<string, string> = {};
+  const reads: AgentMessage[][] | undefined =
+    reloads === undefined ? undefined : Array.isArray(reloads) ? [reloads] : reloads.reads;
+  const read = (load: number): AgentMessage[] =>
+    (load === 0 || reads === undefined ? undefined : reads[Math.min(load - 1, reads.length - 1)]) ?? history ?? [];
   return {
     delivered: () => delivered,
     adapters: {
@@ -98,7 +107,7 @@ function adapters(
       },
       generateId: () => `cm-${++ids}`,
       ...(history !== undefined
-        ? { history: { load: async () => ({ messages: loads++ === 0 || reloads === undefined ? history : reloads }) } }
+        ? { history: { load: async () => ({ messages: read(loads++) }) } }
         : {}),
       transport: async function* (req: InvokeRequest): AsyncGenerator<string> {
         const turn = turns[call++] ?? [];
@@ -135,21 +144,25 @@ function drawn(plan: TranscriptPlan): string[] {
 function mount(
   turns: Array<string[] | ClosingTurn>,
   history?: AgentMessage[],
-  reloads?: AgentMessage[],
+  reloads?: Reloads,
   stallRecovery: false | StallRecoveryOptions = false,
 ) {
   const a = adapters(turns, history, reloads);
-  const hook = renderHook(() => {
-    const invoke = useAgentInvoke({
-      endpointUrl: "https://pod.example.com",
-      appId: "app-2445",
-      adapters: a.adapters,
-      preserveBlocks: true,
-      stallRecovery,
-    });
-    const { inputs } = useTranscriptInputs(invoke);
-    return { invoke, inputs };
-  });
+  // `stallRecovery` is a prop, so a test can change it between sends (`rerender`).
+  const hook = renderHook(
+    (props: { stallRecovery: false | StallRecoveryOptions }) => {
+      const invoke = useAgentInvoke({
+        endpointUrl: "https://pod.example.com",
+        appId: "app-2445",
+        adapters: a.adapters,
+        preserveBlocks: true,
+        stallRecovery: props.stallRecovery,
+      });
+      const { inputs } = useTranscriptInputs(invoke);
+      return { invoke, inputs };
+    },
+    { initialProps: { stallRecovery } },
+  );
   return { ...hook, delivered: a.delivered };
 }
 
@@ -823,5 +836,348 @@ describe("guuey#2445 — a turn adopted from history whose stream carried no ass
       "user:Q3",
       "agent:A3",
     ]);
+  });
+});
+
+/** A turn's AgEvent frames alone (no session, no done), its seq starting at `base`: several turns in one invoke. */
+function answerFrames(turnId: string, text: string, base: number): string[] {
+  const msg = `msg_${turnId}`;
+  return [
+    frame({ type: "turn.start", seq: base, turnId, threadId: THREAD }),
+    frame({ type: "message.start", seq: base + 1, id: msg, turnId, threadId: THREAD, role: "assistant" }),
+    frame({ type: "text.start", seq: base + 2, id: `${msg}:text:0`, messageId: msg, turnId }),
+    frame({ type: "text.delta", seq: base + 3, id: `${msg}:text:0`, messageId: msg, delta: text, turnId }),
+    frame({ type: "text.end", seq: base + 4, id: `${msg}:text:0`, messageId: msg, turnId }),
+    frame({ type: "message.end", seq: base + 5, id: msg }),
+    frame({ type: "turn.done", seq: base + 6, turnId, outcome: { type: "success", result: text }, finishReason: "stop" }),
+  ];
+}
+
+/** The drawn rows with each notice in its place: `drawn`, plus `notice:<text>` rows. */
+function drawnWithNotices(plan: TranscriptPlan): string[] {
+  const out: string[] = [];
+  for (const it of plan.items) {
+    if (it.kind === "user") out.push(`user:${it.text}`);
+    else if (it.kind === "text") out.push(`agent:${it.text}${it.stopped ? " [Stopped.]" : ""}`);
+    else if (it.kind === "notice") out.push(`notice:${it.failure !== undefined ? "failure" : it.text}`);
+  }
+  return out;
+}
+
+type HistoryRow = Parameters<typeof threadHistoryRowsToMessages>[0][number];
+/** Read-plane rows for a history read: `[role, text, key]`, or a failed turn's reader line. */
+function readPlane(keyed: boolean, rows: Array<HistoryRowSpec | "failure">): AgentMessage[] {
+  return threadHistoryRowsToMessages(
+    rows.map((row, i): HistoryRow => {
+      const base = { seq: i + 1, at: "2026-10-27T00:00:00Z", kind: "text" };
+      if (row === "failure") {
+        return { ...base, authorRole: "agent", text: "Something went wrong.", failure: { code: "INTERNAL" } };
+      }
+      const [authorRole, text, clientMessageId] = row;
+      return { ...base, authorRole, text, ...(keyed ? { clientMessageId } : {}) };
+    }),
+  );
+}
+
+/**
+ * Once an adoption has replaced the rows, history holds every row of the
+ * conversation, and it is the authority for each one: its own place, a
+ * failed turn's notice under that turn, a send this client never made with
+ * its own reply. The fold still draws the replies it streamed for the sends
+ * it can be tied to. Every case runs with keyed rows and with rows without
+ * keys, and checks the transcript right after the adoption and after one
+ * more answered send.
+ */
+describe("guuey#2445 — the adopted history places every row it holds", () => {
+  const errorFrame = `event: error\ndata: ${JSON.stringify({ code: "INTERNAL", message: "boom" })}\n\n`;
+  const failed = (turnId: string, opened: boolean): string[] => [
+    ...stalledTurn(turnId, opened),
+    errorFrame,
+    "event: done\ndata: {}\n\n",
+  ];
+  const cutAfterAnswer = (turnId: string, text: string): ClosingTurn =>
+    closing(finishedTurn(turnId, text).filter((c) => !c.startsWith("event: done")));
+
+  async function sendAll(
+    result: { current: ReturnType<typeof mount>["result"]["current"] },
+    delivered: () => Promise<void>,
+    sends: Array<{ text: string; stop?: true }>,
+  ): Promise<void> {
+    for (const { text, stop } of sends) {
+      if (stop === true) {
+        let pending: Promise<void> = Promise.resolve();
+        await act(async () => {
+          pending = result.current.invoke.send(text);
+          await delivered();
+        });
+        await waitFor(() => expect(result.current.invoke.status).toBe("thinking"));
+        await act(async () => {
+          result.current.invoke.abort();
+          await pending;
+        });
+      } else {
+        await act(async () => {
+          await result.current.invoke.send(text);
+        });
+      }
+    }
+  }
+  const both = <T extends object>(cases: T[]) =>
+    [true, false].flatMap((keyed) => cases.map((c) => ({ ...c, keyed, rows: keyed ? "keyed rows" : "rows without keys" })));
+
+  it.each(both([{ name: "admitted only", opened: false }, { name: "opened", opened: true }]))(
+    "draws a failed send's notice under that send — Q2 $name, $rows",
+    async ({ opened, keyed }) => {
+      const adopted = readPlane(keyed, [
+        ["user", "Q1", "cm-1"],
+        ["agent", "A1", "cm-1#agent"],
+        ["user", "Q2", "cm-2"],
+        "failure",
+        ["user", "Q3", "cm-3"],
+        ["agent", "A3", "cm-3#agent"],
+      ]);
+      const turns = [finishedTurn("turn_1", "A1"), failed("turn_2", opened), cutAfterAnswer("turn_3", "A3"), finishedTurn("turn_4", "A4")];
+      const { result, delivered } = mount(turns, [], adopted);
+      await sendAll(result, delivered, [{ text: "Q1" }, { text: "Q2" }, { text: "Q3" }]);
+      expect(result.current.invoke.adopted).toBe(true);
+
+      const answered = ["user:Q1", "agent:A1", "user:Q2", "notice:failure", "user:Q3", "agent:A3"];
+      expect(drawnWithNotices(planTranscript(result.current.inputs, calmPolicy()))).toEqual(answered);
+      await sendAll(result, delivered, [{ text: "Q4" }]);
+      expect(drawnWithNotices(planTranscript(result.current.inputs, calmPolicy()))).toEqual([...answered, "user:Q4", "agent:A4"]);
+    },
+  );
+
+  it.each(both([{ name: "a send answered in two turns" }]))(
+    "draws a failed send's notice under that send after $name — $rows",
+    async ({ keyed }) => {
+      const adopted = readPlane(keyed, [
+        ["user", "Q1", "cm-1"],
+        ["agent", "A1", "cm-1#agent"],
+        ["user", "Q2", "cm-2"],
+        ["agent", "A2", "cm-2#agent"],
+        ["agent", "A2b", "cm-2#agent-b"],
+        ["user", "Q3", "cm-3"],
+        "failure",
+        ["user", "Q4", "cm-4"],
+        ["agent", "A4", "cm-4#agent"],
+      ]);
+      const twoTurns = [session, ...answerFrames("turn_2", "A2", 0), ...answerFrames("turn_2b", "A2b", 7), "event: done\ndata: {}\n\n"];
+      const turns = [
+        finishedTurn("turn_1", "A1"),
+        twoTurns,
+        failed("turn_3", false),
+        cutAfterAnswer("turn_4", "A4"),
+        finishedTurn("turn_5", "A5"),
+      ];
+      const { result, delivered } = mount(turns, [], adopted);
+      await sendAll(result, delivered, [{ text: "Q1" }, { text: "Q2" }, { text: "Q3" }, { text: "Q4" }]);
+      expect(result.current.invoke.adopted).toBe(true);
+
+      const answered = ["user:Q1", "agent:A1", "user:Q2", "agent:A2", "agent:A2b", "user:Q3", "notice:failure", "user:Q4", "agent:A4"];
+      expect(drawnWithNotices(planTranscript(result.current.inputs, calmPolicy()))).toEqual(answered);
+      await sendAll(result, delivered, [{ text: "Q5" }]);
+      expect(drawnWithNotices(planTranscript(result.current.inputs, calmPolicy()))).toEqual([...answered, "user:Q5", "agent:A5"]);
+    },
+  );
+
+  it.each(both([{ name: "sent from another tab on the same thread" }]))(
+    "draws a send this client never made with its own reply — $name, $rows",
+    async ({ keyed }) => {
+      const adopted = readPlane(keyed, [
+        ["user", "Q1", "cm-1"],
+        ["agent", "A1", "cm-1#agent"],
+        ["user", "QX", "cm-other-tab"],
+        ["agent", "AX", "cm-other-tab#agent"],
+        ["user", "Q2", "cm-2"],
+        ["agent", "A2", "cm-2#agent"],
+      ]);
+      const turns = [finishedTurn("turn_1", "A1"), cutAfterAnswer("turn_2", "A2"), finishedTurn("turn_3", "A3")];
+      const { result, delivered } = mount(turns, [], adopted);
+      await sendAll(result, delivered, [{ text: "Q1" }, { text: "Q2" }]);
+      expect(result.current.invoke.adopted).toBe(true);
+
+      const answered = ["user:Q1", "agent:A1", "user:QX", "agent:AX", "user:Q2", "agent:A2"];
+      expect(drawnWithNotices(planTranscript(result.current.inputs, calmPolicy()))).toEqual(answered);
+      await sendAll(result, delivered, [{ text: "Q3" }]);
+      expect(drawnWithNotices(planTranscript(result.current.inputs, calmPolicy()))).toEqual([...answered, "user:Q3", "agent:A3"]);
+    },
+  );
+
+  /**
+   * The `guuey dev` server stores a send's row only once its worker run
+   * succeeds, and it stored the stopped Q2 with the answer its worker went on
+   * to write. Q3's worker failed, so history holds no Q3 at all. History then
+   * holds fewer user rows than the local transcript, so Q4's cut stream is not
+   * adopted: it fails as cut, and the transcript keeps the rows this client
+   * drew live, each answer once.
+   */
+  it.each(both([{ name: "admitted only", opened: false }, { name: "opened", opened: true }]))(
+    "draws each answer once when history holds no row for a failed send — Q2 stopped $name, $rows",
+    async ({ opened, keyed }) => {
+      const later = readPlane(keyed, [
+        ["user", "Q1", "cm-1"],
+        ["agent", "A1", "cm-1#agent"],
+        ["user", "Q2", "cm-2"],
+        ["agent", "A2", "cm-2#agent"],
+        ["user", "Q4", "cm-4"],
+        ["agent", "A4", "cm-4#agent"],
+      ]);
+      const turns = [
+        finishedTurn("turn_1", "A1"),
+        stalledTurn("turn_2", opened),
+        failed("turn_3", false),
+        cutAfterAnswer("turn_4", "A4"),
+        finishedTurn("turn_5", "A5"),
+      ];
+      const { result, delivered, rerender } = mount(turns, [], later);
+      await sendAll(result, delivered, [{ text: "Q1" }, { text: "Q2", stop: true }, { text: "Q3" }]);
+      // A short re-read window, so the cut Q4 is decided at once.
+      rerender({ stallRecovery: { windowMs: 20 } });
+      await sendAll(result, delivered, [{ text: "Q4" }]);
+      expect(result.current.invoke.adopted).toBe(false);
+      expect(result.current.invoke.errorCode).toBe("STREAM_TRUNCATED");
+
+      const drawnLive = ["user:Q1", "agent:A1", "user:Q2", "user:Q3", "user:Q4", "agent:A4"];
+      expect(drawnWithNotices(planTranscript(result.current.inputs, calmPolicy()))).toEqual(drawnLive);
+      rerender({ stallRecovery: false });
+      await sendAll(result, delivered, [{ text: "Q5" }]);
+      expect(drawnWithNotices(planTranscript(result.current.inputs, calmPolicy()))).toEqual([...drawnLive, "user:Q5", "agent:A5"]);
+    },
+  );
+});
+
+/**
+ * More than one adoption in a session. Each adoption sets history's rows; the
+ * fold stays when every live send is tied to its row, and otherwise it is
+ * dropped and the next send starts a new one. Either way the transcript draws
+ * each answer once, under its own question, after every adoption.
+ */
+describe("guuey#2445 — a second adoption", () => {
+  const cutAfterAnswer = (turnId: string, text: string): ClosingTurn =>
+    closing(finishedTurn(turnId, text).filter((c) => !c.startsWith("event: done")));
+
+  async function send(result: { current: ReturnType<typeof mount>["result"]["current"] }, text: string): Promise<void> {
+    await act(async () => {
+      await result.current.invoke.send(text);
+    });
+  }
+  async function stop(
+    result: { current: ReturnType<typeof mount>["result"]["current"] },
+    delivered: () => Promise<void>,
+    text: string,
+  ): Promise<void> {
+    let pending: Promise<void> = Promise.resolve();
+    await act(async () => {
+      pending = result.current.invoke.send(text);
+      await delivered();
+    });
+    await waitFor(() => expect(result.current.invoke.status).toBe("thinking"));
+    await act(async () => {
+      result.current.invoke.abort();
+      await pending;
+    });
+  }
+  const cases = [true, false].flatMap((keyed) =>
+    [true, false].map((prefix) => ({
+      keyed,
+      prefix,
+      name: `${prefix ? "after a reload" : "pure live"}, ${keyed ? "keyed rows" : "rows without keys"}`,
+    })),
+  );
+
+  it.each(cases)("draws each answer once after two adoptions, each after a stop — $name", async ({ keyed, prefix }) => {
+    const head: HistoryRowSpec[] = prefix ? PREFIX_ROWS : [];
+    const first: HistoryRowSpec[] = [
+      ...head,
+      ["user", "Q1", "cm-1"],
+      ["agent", "A1", "cm-1#agent"],
+      ["user", "Q2", "cm-2"],
+      ["user", "Q3", "cm-3"],
+      ["agent", "A3", "cm-3#agent"],
+    ];
+    const second: HistoryRowSpec[] = [
+      ...first,
+      ["user", "Q4", "cm-4"],
+      ["user", "Q5", "cm-5"],
+      ["agent", "A5", "cm-5#agent"],
+    ];
+    const turns = [
+      finishedTurn("turn_1", "A1"),
+      stalledTurn("turn_2", true),
+      cutAfterAnswer("turn_3", "A3"),
+      stalledTurn("turn_4", false),
+      cutAfterAnswer("turn_5", "A5"),
+      finishedTurn("turn_6", "A6"),
+    ];
+    const reads = { reads: [historyRows(keyed, first), historyRows(keyed, second)] };
+    const { result, delivered } = mount(turns, prefix ? PREFIX : [], reads);
+    if (prefix) {
+      await waitFor(() => expect(result.current.invoke.messages.map((m) => m.text)).toEqual(["H0", "HA0"]));
+    }
+    await send(result, "Q1");
+    await stop(result, delivered, "Q2");
+    await send(result, "Q3");
+    expect(result.current.invoke.adopted).toBe(true);
+    const lead = prefix ? ["user:H0", "agent:HA0"] : [];
+    const afterFirst = [...lead, "user:Q1", "agent:A1", "user:Q2", "user:Q3", "agent:A3"];
+    expect(drawnWithNotices(planTranscript(result.current.inputs, calmPolicy()))).toEqual(afterFirst);
+
+    await stop(result, delivered, "Q4");
+    await send(result, "Q5");
+    expect(result.current.invoke.adopted).toBe(true);
+    const afterSecond = [...afterFirst, "user:Q4", "user:Q5", "agent:A5"];
+    expect(drawnWithNotices(planTranscript(result.current.inputs, calmPolicy()))).toEqual(afterSecond);
+
+    await send(result, "Q6");
+    expect(drawnWithNotices(planTranscript(result.current.inputs, calmPolicy()))).toEqual([...afterSecond, "user:Q6", "agent:A6"]);
+  });
+
+  /**
+   * The first adoption holds a send from another tab. Without keys it cannot
+   * be tied to the local rows, so the fold is dropped and history draws the
+   * conversation. The next sends start a new fold, and a second adoption,
+   * after a stop, ties them to their rows again.
+   */
+  it.each(cases.filter((c) => !c.prefix))("draws each answer once when an adoption drops the fold and a later one keeps it — $name", async ({ keyed }) => {
+    const first: HistoryRowSpec[] = [
+      ["user", "Q1", "cm-1"],
+      ["agent", "A1", "cm-1#agent"],
+      ["user", "QX", "cm-other-tab"],
+      ["agent", "AX", "cm-other-tab#agent"],
+      ["user", "Q2", "cm-2"],
+      ["agent", "A2", "cm-2#agent"],
+    ];
+    const second: HistoryRowSpec[] = [
+      ...first,
+      ["user", "Q3", "cm-3"],
+      ["user", "Q4", "cm-4"],
+      ["agent", "A4", "cm-4#agent"],
+    ];
+    const turns = [
+      finishedTurn("turn_1", "A1"),
+      cutAfterAnswer("turn_2", "A2"),
+      stalledTurn("turn_3", true),
+      cutAfterAnswer("turn_4", "A4"),
+      finishedTurn("turn_5", "A5"),
+    ];
+    const { result, delivered } = mount(turns, [], { reads: [historyRows(keyed, first), historyRows(keyed, second)] });
+    await send(result, "Q1");
+    await send(result, "Q2");
+    expect(result.current.invoke.adopted).toBe(true);
+    // Keyed rows tie every live send, so the fold stays; without keys the
+    // other tab's row breaks the tie, and history draws every row.
+    expect(result.current.invoke.reduceResult === null).toBe(!keyed);
+    const afterFirst = ["user:Q1", "agent:A1", "user:QX", "agent:AX", "user:Q2", "agent:A2"];
+    expect(drawnWithNotices(planTranscript(result.current.inputs, calmPolicy()))).toEqual(afterFirst);
+
+    await stop(result, delivered, "Q3");
+    await send(result, "Q4");
+    expect(result.current.invoke.reduceResult).not.toBeNull();
+    const afterSecond = [...afterFirst, "user:Q3", "user:Q4", "agent:A4"];
+    expect(drawnWithNotices(planTranscript(result.current.inputs, calmPolicy()))).toEqual(afterSecond);
+
+    await send(result, "Q5");
+    expect(drawnWithNotices(planTranscript(result.current.inputs, calmPolicy()))).toEqual([...afterSecond, "user:Q5", "agent:A5"]);
   });
 });
