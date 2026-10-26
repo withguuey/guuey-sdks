@@ -13,8 +13,9 @@
  * exactly as `agent apply` resolves it.
  *
  * THE RULE — first write for free, a rewrite is explicit: `deploy` applies
- * `app.theme` only when the app has NO chat theme yet (`chatTheme: null` on
- * the app projection, the same read the "Look:" hint makes). An existing
+ * `app.theme` only when the app has NO chat theme yet (`app.chatTheme: null`
+ * in the `GET /apps/:id` body, the same read the "Look:" hint makes —
+ * `appChatThemeState`, guuey#2401). An existing
  * theme — the console's, or a previous write — is NEVER overwritten by a
  * deploy: shipping code is not the moment to replace a look someone set,
  * and a stale block in guuey.json must not win over the console on an
@@ -31,6 +32,7 @@
 import { isThemeFileRef, type GuueyAppTheme, type ResolvedGuueyJson } from '@guuey/config';
 import { apiRequest, parseApiError } from '../deploy-shared';
 import { themeForwardLines, themeForwardOf } from '../theme-forward';
+import { appChatThemeState, type AppChatThemeState } from './theme-hint';
 
 export const THEME_APPLIED_LINE =
   '  Theme:  app.theme applied — the same write as `guuey apps update --chat-theme-file`.';
@@ -62,22 +64,21 @@ export async function maybeApplyThemeFromConfig(
   const api = deps?.api ?? apiRequest;
   const log = deps?.log ?? ((line: string) => console.log(line));
   const warn = deps?.warn ?? ((line: string) => console.error(line));
-  // Read the app's current theme first — the same projection the "Look:"
-  // hint reads (`chatTheme` is present ONLY when the app configured one;
+  // Read the app's current theme first — the same projection and the same
+  // reader as the "Look:" hint (`app.chatTheme` in the `{ app }` body:
   // `null` is the wire's positive "none"; absent means "not that shape").
-  let current: unknown;
+  let current: AppChatThemeState;
   try {
     const read = await api(pat, config, 'GET', `/apps/${appId}`);
     if (!read.ok) throw new Error(`HTTP ${read.status} reading the app`);
-    current = (await read.json()) as unknown;
+    current = appChatThemeState(await read.json());
   } catch (err) {
     warn(`  Theme:  app.theme was NOT applied — could not read the app's current theme (${err instanceof Error ? err.message : String(err)}); nothing written.`);
     warn(THEME_DOOR_LINE);
     return 'failed';
   }
-  const stored = current !== null && typeof current === 'object' && 'chatTheme' in current ? (current as { chatTheme: unknown }).chatTheme : undefined;
-  if (stored !== null) {
-    // undefined = not the app projection — unknown, so no blind write either.
+  if (current !== 'none') {
+    // 'unknown' = not the app projection — so no blind write either.
     warn(THEME_KEPT_LINE);
     warn(THEME_KEPT_DOOR_LINE);
     return 'kept';

@@ -1747,8 +1747,8 @@ describe('deploy() — app.theme in guuey.json reaches a code app (guuey#1130 G5
         return new Response(JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null, pageUrl: 'https://app-k7q2.agents.guuey.test/' }), { status: 200 });
       }
       if (url.endsWith('/apps/app-1') && init?.method === 'PUT') return new Response(JSON.stringify({ id: 'app-1' }), { status: 200 });
-      // The app has no theme yet — the first-write-free case; the hint's GET after the PUT reads the same mock.
-      if (url.endsWith('/apps/app-1')) return new Response(JSON.stringify({ id: 'app-1', chatTheme: null }), { status: 200 });
+      // The app has no theme yet — the first-write-free case, in the real `{ app }` body (guuey#2401); the hint's GET after the PUT reads the same mock.
+      if (url.endsWith('/apps/app-1')) return new Response(JSON.stringify({ app: { id: 'app-1', chatTheme: null } }), { status: 200 });
       throw new Error(`unexpected fetch: ${url}`);
     });
   });
@@ -1784,7 +1784,7 @@ describe('deploy() — app.theme in guuey.json reaches a code app (guuey#1130 G5
       if (url.includes('/deploy/trigger')) return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
       if (url.includes('/deployments/1/status')) return new Response(JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null, pageUrl: 'https://app-k7q2.agents.guuey.test/' }), { status: 200 });
       if (url.endsWith('/apps/app-1') && init?.method === 'PUT') throw new Error('a deploy must never PUT over an existing theme');
-      if (url.endsWith('/apps/app-1')) return new Response(JSON.stringify({ id: 'app-1', chatTheme: { ...THEME, name: 'console-set' } }), { status: 200 });
+      if (url.endsWith('/apps/app-1')) return new Response(JSON.stringify({ app: { id: 'app-1', chatTheme: { ...THEME, name: 'console-set' } } }), { status: 200 });
       throw new Error(`unexpected fetch: ${url}`);
     });
     await deploy({});
@@ -1809,7 +1809,7 @@ describe('deploy() — app.theme in guuey.json reaches a code app (guuey#1130 G5
       if (url.endsWith('/apps/app-1') && init?.method === 'PUT') {
         return new Response(JSON.stringify({ error: { code: 'CHAT_THEME_INVALID', message: 'chatTheme.colors.light.accent must be a hex colour like #2f6bff' } }), { status: 400 });
       }
-      if (url.endsWith('/apps/app-1')) return new Response(JSON.stringify({ id: 'app-1', chatTheme: null }), { status: 200 });
+      if (url.endsWith('/apps/app-1')) return new Response(JSON.stringify({ app: { id: 'app-1', chatTheme: null } }), { status: 200 });
       throw new Error(`unexpected fetch: ${url}`);
     });
     await expect(deploy({})).resolves.toBeUndefined();

@@ -20,11 +20,14 @@ function loadedWith(app: Record<string, unknown> | undefined, resolvedTheme?: ty
     resolvedTheme,
   };
 }
-/** An api whose GET answers `{ chatTheme: <stored> }` and whose PUT answers `status` / `body`. */
+/**
+ * An api whose GET answers the REAL `GET /apps/:id` shape — `{ app: { id, chatTheme } }`
+ * (cliApi `handleGetApp`, guuey#2401) — and whose PUT answers `status` / `body`.
+ */
 function apiWith(status: number, body: unknown = {}, stored: unknown = null) {
   return vi.fn(async (_pat: string, _cfg: { apiUrl?: string }, method: string) =>
     method === 'GET'
-      ? new Response(JSON.stringify({ id: 'app-1', chatTheme: stored }), { status: 200 })
+      ? new Response(JSON.stringify({ app: { id: 'app-1', chatTheme: stored } }), { status: 200 })
       : new Response(typeof body === 'string' ? body : JSON.stringify(body), { status }),
   );
 }
@@ -88,6 +91,18 @@ describe('maybeApplyThemeFromConfig (guuey#1130 G59)', () => {
     expect(warns.join('\n')).toContain('--chat-theme-file');
   });
 
+  it('guuey#2401: a GET body that is not the app projection keeps the theme unwritten — a top-level chatTheme or a missing one is unknown, never a blind write', async () => {
+    for (const read of [{ id: 'app-1', chatTheme: null }, { app: { id: 'app-1' } }, { app: null }, [], 'app']) {
+      const api = vi.fn(async (_p: string, _c: { apiUrl?: string }, method: string) =>
+        method === 'GET' ? new Response(JSON.stringify(read), { status: 200 }) : new Response('{}', { status: 200 }),
+      );
+      const warns: string[] = [];
+      expect(await maybeApplyThemeFromConfig('pat', CONFIG, 'app-1', loadedWith({ theme: THEME }), { api, log: () => {}, warn: (l) => warns.push(l) })).toBe('kept');
+      expect(api.mock.calls.some((c) => c[2] === 'PUT')).toBe(false);
+      expect(warns).toEqual([THEME_KEPT_LINE, THEME_KEPT_DOOR_LINE]);
+    }
+  });
+
   it('when the current theme cannot be read, nothing is written (a blind write could be the overwrite)', async () => {
     const api = vi.fn(async (_p: string, _c: { apiUrl?: string }, method: string) =>
       method === 'GET' ? new Response('nope', { status: 503 }) : new Response('{}', { status: 200 }),
@@ -111,7 +126,7 @@ describe('maybeApplyThemeFromConfig (guuey#1130 G59)', () => {
   it('a transport failure or a 5xx is reported the same way and never fails the deploy', async () => {
     const warns: string[] = [];
     const thrown = vi.fn(async (_p: string, _c: { apiUrl?: string }, method: string) => {
-      if (method === 'GET') return new Response(JSON.stringify({ id: 'app-1', chatTheme: null }), { status: 200 });
+      if (method === 'GET') return new Response(JSON.stringify({ app: { id: 'app-1', chatTheme: null } }), { status: 200 });
       throw new Error('ECONNRESET');
     });
     expect(await maybeApplyThemeFromConfig('pat', CONFIG, 'app-1', loadedWith({ theme: THEME }), { api: thrown, log: () => {}, warn: (l) => warns.push(l) })).toBe('failed');
