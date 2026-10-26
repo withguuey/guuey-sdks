@@ -26,3 +26,4 @@ export * from './registry.js';
 export * from './guuey-context.js';
 export * from './provider-key.js';
 export * from './reserved-env.js';
+export * from './byok-slots.js';
