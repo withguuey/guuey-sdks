@@ -5,7 +5,7 @@
  * schema resolved into a flat token object RN components read as style
  * values. No new vocabulary: every field here derives from the schema.
  */
-import { paletteChipFace, paletteCue, resolveTheme, type GuueyChatPalette, type GuueyChatTheme } from "../theme.js";
+import { CHIP_FACES, paletteChipFace, paletteCue, resolveTheme, type GuueyChatPalette, type GuueyChatTheme } from "../theme.js";
 
 export type NativeThemeMode = "light" | "dark";
 
@@ -46,6 +46,12 @@ const RADIUS: Record<GuueyChatTheme["shape"]["radius"], number> = {
   round: 18,
 };
 
+/** The palette's chip face (`CHIP_FACES`) as native colours. */
+function nativeChip(palette: GuueyChatPalette): NativeChatTokens["chip"] {
+  const face = CHIP_FACES[paletteChipFace(palette)];
+  return { fill: palette[face.fill], ink: palette[face.ink], edge: face.edge === undefined ? undefined : palette[face.edge] };
+}
+
 /** Resolve a (possibly partial/stale) theme + mode into native tokens. */
 export function resolveNativeTheme(theme: GuueyChatTheme, mode: NativeThemeMode): NativeChatTokens {
   const resolved = resolveTheme(theme);
@@ -54,10 +60,7 @@ export function resolveNativeTheme(theme: GuueyChatTheme, mode: NativeThemeMode)
   return {
     palette,
     cue: paletteCue(palette),
-    chip:
-      paletteChipFace(palette) === "accent"
-        ? { fill: palette.accent, ink: palette.onAccent, edge: undefined }
-        : { fill: palette.surface, ink: palette.ink, edge: palette.ink },
+    chip: nativeChip(palette),
     radius: RADIUS[resolved.shape.radius],
     pad: comfortable ? 12 : 8,
     gap: comfortable ? 10 : 6,

@@ -5,7 +5,7 @@
  * (3c) maps the same object to style values instead — no CSS here is
  * load-bearing for the view-model.
  */
-import { paletteChipFace, paletteCue, type ChipFace, type GuueyChatTheme } from "../theme.js";
+import { CHIP_FACES, paletteChipFace, paletteCue, type ChipFaceTokens, type GuueyChatPalette, type GuueyChatTheme } from "../theme.js";
 
 export type ThemeMode = "light" | "dark";
 
@@ -35,21 +35,20 @@ const DENSITY_GAP: Record<GuueyChatTheme["shape"]["density"], string> = {
  * stamp silently shadowing the documented one (the trap the landing
  * home-hero embed hit four rounds of).
  */
-const tokenRef = (token: string): string => `var(--guuey-chat-${token}, var(--_guuey-chat-${token}))`;
+/** A palette token read through both channels: `onAccent` → `var(--guuey-chat-on-accent, var(--_guuey-chat-on-accent))`. */
+function tokenRef(token: keyof GuueyChatPalette): string {
+  const name = token.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+  return `var(--guuey-chat-${name}, var(--_guuey-chat-${name}))`;
+}
 
-/** Each chip face as the three internal properties the stylesheet's chip reads. */
-const CHIP_FACE_VARS: Record<ChipFace, Record<string, string>> = {
-  accent: {
-    "--_guuey-chat-chip-fill": tokenRef("accent"),
-    "--_guuey-chat-chip-ink": tokenRef("on-accent"),
-    "--_guuey-chat-chip-edge": "transparent",
-  },
-  hollow: {
-    "--_guuey-chat-chip-fill": tokenRef("surface"),
-    "--_guuey-chat-chip-ink": tokenRef("ink"),
-    "--_guuey-chat-chip-edge": tokenRef("ink"),
-  },
-};
+/** A chip face (`CHIP_FACES`) as the three internal properties the stylesheet's chip reads. */
+function chipFaceVars(face: ChipFaceTokens): Record<string, string> {
+  return {
+    "--_guuey-chat-chip-fill": tokenRef(face.fill),
+    "--_guuey-chat-chip-ink": tokenRef(face.ink),
+    "--_guuey-chat-chip-edge": face.edge === undefined ? "transparent" : tokenRef(face.edge),
+  };
+}
 
 export function themeCssVars(theme: GuueyChatTheme, mode: ThemeMode): Record<string, string> {
   const palette = theme.colors[mode];
@@ -67,7 +66,7 @@ export function themeCssVars(theme: GuueyChatTheme, mode: ThemeMode): Record<str
     // The Retry chip's face (`paletteChipFace`), stamped as references to the
     // token channels so a host's accent, ink or surface variable still
     // reaches the chip; a host can also set --guuey-chat-chip-* itself.
-    ...CHIP_FACE_VARS[paletteChipFace(palette)],
+    ...chipFaceVars(CHIP_FACES[paletteChipFace(palette)]),
     "--_guuey-chat-radius": RADIUS_PX[theme.shape.radius],
     "--_guuey-chat-gap": DENSITY_GAP[theme.shape.density],
     "--_guuey-chat-scale": String(theme.typography.scale ?? 1),

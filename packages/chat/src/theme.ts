@@ -163,6 +163,19 @@ export function paletteChipFace(palette: GuueyChatPalette): ChipFace {
   return accentStandsOut(palette) ? "accent" : "hollow";
 }
 
+/** The palette colours a chip face draws with; no edge means the face has none. */
+export interface ChipFaceTokens {
+  fill: "accent" | "surface";
+  ink: "onAccent" | "ink";
+  edge: "ink" | undefined;
+}
+
+/** The one table of chip faces: each renderer maps these token names to its own form. */
+export const CHIP_FACES: Readonly<Record<ChipFace, ChipFaceTokens>> = {
+  accent: { fill: "accent", ink: "onAccent", edge: undefined },
+  hollow: { fill: "surface", ink: "ink", edge: "ink" },
+};
+
 /**
  * One declared face (D3 — "theme declares faces; widget loads, hands to
  * cards"). `src` MUST be an `https:` URL on an admitted host — the
