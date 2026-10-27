@@ -986,3 +986,116 @@ describe("GET /agent/ui-resource — the local pod door", () => {
     expect((await fetch(`${base}?uri=${encodeURIComponent("ui://fixt/card/1")}`)).status).toBe(404);
   });
 });
+
+// guuey#2409: `guuey dev` offers the close and honours it like the pod (thread-close.ts).
+describe("a worker ends its conversation (guuey#2409)", { timeout: 20_000 }, () => {
+  const endThreadFixture = join(__dirname, "fixtures", "end-thread-worker.mjs");
+  const CLOSE_MESSAGE = "This chat is full. Start a new one to keep going.";
+
+  /** The stream's frames in order, each `data` parsed. */
+  function frames(text: string): Array<{ event: string; data: unknown }> {
+    const out: Array<{ event: string; data: unknown }> = [];
+    for (const block of text.split("\n\n")) {
+      const m = /^event: ([^\n]+)\ndata: ([^\n]+)$/.exec(block);
+      if (m) out.push({ event: m[1]!, data: JSON.parse(m[2]!) });
+    }
+    return out;
+  }
+
+  async function bootAndClose(): Promise<{ port: number; sessionId: string; text: string }> {
+    srv = await startDevServer({
+      port: 0,
+      framework: "fixture",
+      protocol: "bypass",
+      workerCommand: process.execPath,
+      workerArgs: [endThreadFixture],
+      agentSnapshotJson: "{}",
+      projectRoot: freshProjectRoot(),
+    });
+    const res = await fetch(`http://localhost:${srv.port}/agent/invoke`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input: "one more" }),
+    });
+    const text = await res.text();
+    const sessionId = /"sessionId":"([^"]+)"/.exec(text)?.[1];
+    if (!sessionId) throw new Error("no sessionId in the closing turn");
+    return { port: srv.port, sessionId, text };
+  }
+
+  it("offers the close, so the worker's endThread answers ok", async () => {
+    const { text } = await bootAndClose();
+    const native = frames(text).find((f) => f.event === "message");
+    expect(native?.data).toMatchObject({ type: "native", event: { offered: true, answer: "ok" } });
+  });
+
+  it("ends the turn with the pod's error frame and a done carrying threadClosed", async () => {
+    const { text } = await bootAndClose();
+    const tail = frames(text).filter((f) => f.event === "error" || f.event === "done");
+    expect(tail.map((f) => f.event)).toEqual(["error", "done"]);
+    const threadClosed = z.object({ code: z.string(), message: z.string(), closedAt: z.string() });
+    const errorFrame = z
+      .object({ code: z.string(), message: z.string(), threadClosed })
+      .parse(tail[0]?.data);
+    expect(errorFrame).toMatchObject({
+      code: "app:CHAT_FULL",
+      message: CLOSE_MESSAGE,
+      threadClosed: { code: "app:CHAT_FULL", message: CLOSE_MESSAGE },
+    });
+    expect(Number.isNaN(Date.parse(errorFrame.threadClosed.closedAt))).toBe(false);
+    expect(tail[1]?.data).toEqual({ stopReason: "end_turn", threadClosed: errorFrame.threadClosed });
+  });
+
+  it("refuses a later turn on the closed thread with THREAD_CLOSED", async () => {
+    const { port, sessionId } = await bootAndClose();
+    const res = await fetch(`http://localhost:${port}/agent/invoke`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input: "are you there?", sessionId }),
+    });
+    expect(res.status).toBe(409);
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(await res.json()).toEqual({ code: "THREAD_CLOSED", message: `thread ${sessionId} is closed` });
+  });
+
+  it("serves the closure and the message row on the history route, like the read plane", async () => {
+    const { port, sessionId, text } = await bootAndClose();
+    const done = z.object({ threadClosed: z.object({ code: z.string() }).passthrough() }).parse(
+      frames(text).find((f) => f.event === "done")?.data,
+    );
+    const res = await fetch(`http://localhost:${port}/threads/${sessionId}/messages`);
+    const body = (await res.json()) as {
+      rows: Array<{ seq: number; authorRole: string; text: string; failure?: { code: string } }>;
+      thread: { closed?: unknown };
+    };
+    expect(body.thread).toEqual({ closed: done.threadClosed });
+    expect(body.rows.map((r) => [r.seq, r.authorRole, r.text, r.failure])).toEqual([
+      [1, "user", "one more", undefined],
+      [2, "agent", "closing:one more", undefined],
+      [3, "agent", CLOSE_MESSAGE, { code: "app:CHAT_FULL" }],
+    ]);
+  });
+
+  it("an open thread's history says so (thread {}), so a reader never guesses from the last row", async () => {
+    srv = await startDevServer({
+      port: 0,
+      framework: "fixture",
+      protocol: "bypass",
+      workerCommand: process.execPath,
+      workerArgs: [echoFixture],
+      agentSnapshotJson: "{}",
+      projectRoot: freshProjectRoot(),
+    });
+    await (
+      await fetch(`http://localhost:${srv.port}/agent/invoke`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input: "hi", sessionId: "open-sess" }),
+      })
+    ).text();
+    const body = (await (await fetch(`http://localhost:${srv.port}/threads/open-sess/messages`)).json()) as {
+      thread: unknown;
+    };
+    expect(body.thread).toEqual({});
+  });
+});

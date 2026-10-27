@@ -15,7 +15,7 @@
  */
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { Readable } from "node:stream";
-import { isDone, isError, type WorkerEvent } from "@guuey/worker";
+import { isDone, isError, type InvokeThreadCloseOffer, type WorkerEvent } from "@guuey/worker";
 import { readNdjson } from "./ndjson.js";
 
 /**
@@ -36,6 +36,14 @@ export interface LocalRunInput {
    */
   env: NodeJS.ProcessEnv;
   abortSignal: AbortSignal;
+  /**
+   * guuey#2409 — the offer to end the conversation, projected onto
+   * `Invoke.threadClose` exactly as the pod's driver does. The dev server
+   * makes it on every turn of a session it stores (its in-memory stand-in for
+   * the pod's stored thread); omitted, the worker's `endThread` answers
+   * `not_offered`.
+   */
+  threadClose?: InvokeThreadCloseOffer;
 }
 
 /**
@@ -129,6 +137,7 @@ export function createLocalDriver(opts: {
       identity: { userId: "dev-user", authMode: "anonymous" as const },
       fs: input.fs,
       history: input.history,
+      ...(input.threadClose !== undefined ? { threadClose: input.threadClose } : {}),
     };
     child.stdin.write(JSON.stringify(invoke) + "\n");
     child.stdin.end();

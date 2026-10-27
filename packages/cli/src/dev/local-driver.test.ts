@@ -37,3 +37,26 @@ describe("createLocalDriver", () => {
     }).rejects.toThrow(/failed to start/);
   });
 });
+
+// guuey#2409: the invoke carries the close offer only when the caller makes it.
+describe("createLocalDriver — threadClose offer", () => {
+  const endThreadFixture = join(__dirname, "fixtures", "end-thread-worker.mjs");
+
+  it("projects threadClose onto the invoke, so the worker's endThread rides done", async () => {
+    const run = createLocalDriver({ command: process.execPath, args: [endThreadFixture] });
+    const events: WorkerEvent[] = [];
+    for await (const ev of run({ ...input("x"), threadClose: {} })) events.push(ev);
+    expect(events.find((e) => e.type === "native")).toMatchObject({ event: { offered: true, answer: "ok" } });
+    expect(events.at(-1)).toMatchObject({ type: "done", endThread: { code: "CHAT_FULL" } });
+  });
+
+  it("without the offer the worker is told not_offered and done carries no endThread", async () => {
+    const run = createLocalDriver({ command: process.execPath, args: [endThreadFixture] });
+    const events: WorkerEvent[] = [];
+    for await (const ev of run(input("x"))) events.push(ev);
+    expect(events.find((e) => e.type === "native")).toMatchObject({ event: { offered: false, answer: "not_offered" } });
+    const done = events.at(-1);
+    expect(done?.type).toBe("done");
+    expect(done !== undefined && "endThread" in done).toBe(false);
+  });
+});

@@ -33,7 +33,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { WorkerEvent } from "@guuey/worker";
+import { endThreadProblem, type EndThread, type WorkerEvent } from "@guuey/worker";
 import { colocatedResourceUrl, type GuueyAgent, type GuueyAgentMcpServer } from "@guuey/config";
 import type { Normalizer } from "@silverprotocol/core";
 import { createLocalDriver, type LocalRunInput } from "./local-driver.js";
@@ -144,10 +144,36 @@ interface ServingState {
 const DRAINING_CODE = "DRAINING";
 const DRAINING_RETRY_AFTER_SECONDS = 15;
 
+/**
+ * guuey#2409 — the pod's closed-thread wire (`thread-close.ts`
+ * `ThreadClosedWire`, agent-client's `ThreadClosed`), mirrored as a local
+ * shape like the other pod contracts in this file.
+ */
+interface ThreadClosedWire {
+  code: string;
+  message: string;
+  closedAt: string;
+}
+
+/** The prefix a worker's own close code reaches the client under (the pod's `WORKER_CODE_PREFIX`). */
+const WORKER_CODE_PREFIX = "app:";
+
+/**
+ * The refusal of a turn on a closed thread: the thread store's
+ * `ThreadClosedError` (`@guuey/threads`, code `THREAD_CLOSED`, message
+ * `thread <id> is closed`) in the read plane's 409 envelope (threadsApi's
+ * `errorToEnvelope`).
+ */
+const THREAD_CLOSED_CODE = "THREAD_CLOSED";
+
 interface SessionState {
   /** `at` rides along for the history route's row shape; the worker driver's
-   *  `LocalRunInput['history']` only reads `role`/`text` (structural). */
-  history: Array<{ role: "user" | "agent"; text: string; at: string }>;
+   *  `LocalRunInput['history']` only reads `role`/`text` (structural).
+   *  `failureCode` marks the row a closing worker's message is voiced on
+   *  (the pod's `#agentError` row, read back as `failure.code`). */
+  history: Array<{ role: "user" | "agent"; text: string; at: string; failureCode?: string }>;
+  /** guuey#2409 — set once a worker ended this conversation; it then takes no new turn. */
+  closed?: ThreadClosedWire;
 }
 
 function sendEvent(res: ServerResponse, event: string, data: unknown): void {
@@ -441,11 +467,15 @@ function handleThreadMessages(
     kind: "text",
     authorRole: entry.role,
     text: entry.text,
+    ...(entry.failureCode !== undefined ? { failure: { code: entry.failureCode } } : {}),
   }));
   const consumed = offset + rows.length;
   const nextToken = consumed < state.history.length ? String(consumed) : null;
+  // guuey#2409: the read plane's own word on the thread (`{}` open, `{closed}`
+  // closed), so a reload reads the closure the way it does hosted.
+  const thread = state.closed !== undefined ? { closed: state.closed } : {};
   res.writeHead(200, { "Content-Type": "application/json", ...CORS_HEADERS });
-  res.end(JSON.stringify({ rows, nextToken }));
+  res.end(JSON.stringify({ rows, nextToken, thread }));
 }
 
 async function handleInvoke(
@@ -488,6 +518,14 @@ async function handleInvoke(
   const sessionId = body.sessionId ?? randomUUID();
   const state = sessions.get(sessionId) ?? { history: [] };
   sessions.set(sessionId, state);
+  // guuey#2409: a closed conversation takes no new message — the store's
+  // `ThreadClosedError`, in the read plane's 409 envelope. The chat client
+  // never sends here (it drops a closed thread's id and starts a new one).
+  if (state.closed !== undefined) {
+    res.writeHead(409, { "Content-Type": "application/json", ...CORS_HEADERS });
+    res.end(JSON.stringify({ code: THREAD_CLOSED_CODE, message: `thread ${sessionId} is closed` }));
+    return;
+  }
 
   serving.inFlight += 1;
   try {
@@ -539,6 +577,7 @@ async function streamTurn(
 
   let stopReason: "end_turn" | "max_turns" | "error" = "end_turn";
   let agentText = "";
+  let workerEndThread: EndThread | undefined;
 
   try {
     // Inside the try so an unknown-framework throw (`AGJSON_NO_NORMALIZER:*`)
@@ -557,6 +596,10 @@ async function streamTurn(
       fs,
       env: { ...process.env, GUUEY_AGENT_SNAPSHOT: opts.agentSnapshotJson },
       abortSignal: abortController.signal,
+      // guuey#2409: every turn here runs on a session this server stores (its
+      // in-memory stand-in for the pod's stored thread), so the close is
+      // always offered — the pod's `persistence && threadId` gate.
+      threadClose: {},
     })) {
       if (ev.type === "hello") {
         // Router-plane only — never forwarded to SSE, never fed to a normalizer. It can
@@ -570,6 +613,7 @@ async function streamTurn(
       if (ev.type === "done") {
         stopReason = ev.stopReason;
         agentText = ev.result;
+        workerEndThread = ev.endThread;
         break;
       }
       if (ev.type === "native" && normalizer) {
@@ -596,7 +640,8 @@ async function streamTurn(
     if (agentText) {
       state.history.push({ role: "agent", text: agentText, at: new Date().toISOString() });
     }
-    sendEvent(res, "done", { stopReason });
+    const closed = closeThreadForWorker(res, state, sessionId, workerEndThread, !abortController.signal.aborted);
+    sendEvent(res, "done", { stopReason, ...(closed !== undefined ? { threadClosed: closed } : {}) });
   } catch (err) {
     sendEvent(res, "error", {
       code: "WORKER_ERROR",
@@ -605,6 +650,48 @@ async function streamTurn(
   } finally {
     res.end();
   }
+}
+
+/**
+ * guuey#2409 — honour a worker's request to end the conversation, the local
+ * twin of the pod's `closeThreadForWorker` (`thread-close.ts`), in its order:
+ * the request is checked again with the worker package's own rules (the
+ * worker is the builder's code), honoured only on a turn that ended cleanly
+ * (an aborted turn's client is gone), the message is voiced once as the
+ * turn's failure row (`app:<CODE>`), the thread is closed, and `event: error
+ * { code, message, threadClosed }` goes on the stream. The caller then sends
+ * `done { stopReason, threadClosed }`. Returns the closure, or `undefined`
+ * when nothing was closed. The offer is always made here (see `streamTurn`),
+ * so the pod's `not_offered` and `unsupported` refusals have no local case.
+ */
+function closeThreadForWorker(
+  res: ServerResponse,
+  state: SessionState,
+  sessionId: string,
+  request: EndThread | undefined,
+  turnEndedCleanly: boolean,
+): ThreadClosedWire | undefined {
+  if (request === undefined) return undefined;
+  const problem = endThreadProblem(request);
+  if (problem !== undefined) {
+    console.warn(`[guuey dev] worker endThread refused on thread ${sessionId}: ${problem}`);
+    return undefined;
+  }
+  if (!turnEndedCleanly) {
+    console.warn(`[guuey dev] worker endThread refused on thread ${sessionId}: the turn did not end cleanly`);
+    return undefined;
+  }
+  // A concurrent turn on the same session may have closed it first: the
+  // thread stays closed with its first closure, and that is what is told.
+  if (state.closed === undefined) {
+    const code = `${WORKER_CODE_PREFIX}${request.code}`;
+    const closedAt = new Date().toISOString();
+    state.history.push({ role: "agent", text: request.message, at: closedAt, failureCode: code });
+    state.closed = { code, message: request.message, closedAt };
+  }
+  const threadClosed = state.closed;
+  sendEvent(res, "error", { code: threadClosed.code, message: threadClosed.message, threadClosed });
+  return threadClosed;
 }
 
 /**
