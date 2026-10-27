@@ -975,9 +975,17 @@
     transform: rotate(360deg);
   }
 }
+/* A pulse breathes the text's COLOUR, never its opacity (a mute is a
+   colour): every pulsed element is text, and the trough is the opaque
+   midpoint of the ink and the muted ink, so it never reads under the muted
+   ink's own contrast on any ground. */
 @keyframes guuey-chat-pulse {
   50% {
-    opacity: 0.55;
+    color: color-mix(
+      in srgb,
+      var(--guuey-chat-ink, var(--_guuey-chat-ink)) 50%,
+      var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted))
+    );
   }
 }
 .guuey-chat-pulse {

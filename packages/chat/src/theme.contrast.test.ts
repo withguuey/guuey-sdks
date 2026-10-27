@@ -80,6 +80,13 @@ describe("the shipped palettes clear AA for normal text on every ground, both mo
           expect(contrast(boundary, colour(palette, ground))).toBeGreaterThanOrEqual(3);
         }
       });
+      // The pulse's trough (styles.css @keyframes guuey-chat-pulse) is the ink / muted-ink midpoint.
+      for (const ground of GROUNDS) {
+        it(`${theme.name} ${mode}: the pulse trough on ${ground}`, () => {
+          const trough = mix(colour(palette, "ink"), 0.5, colour(palette, "inkMuted"));
+          expect(contrast(trough, colour(palette, ground))).toBeGreaterThanOrEqual(AA_NORMAL);
+        });
+      }
       it(`${theme.name} ${mode}: onAccent on accent (the send button)`, () => {
         expect(contrast(colour(palette, "onAccent"), colour(palette, "accent"))).toBeGreaterThanOrEqual(AA_NORMAL);
       });

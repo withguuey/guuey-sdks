@@ -546,8 +546,10 @@ export function DefaultView({ item, ctx }: ItemProps<ViewMountItem>): ReactNode 
     // A locator still resolving (or a plan-level expired mount) — labeled,
     // never blank.
     return (
-      <div className="guuey-chat-view guuey-chat-view-negotiating guuey-chat-shimmer">
-        <p role="status">{item.label ?? ctx.strings.viewNegotiating}</p>
+      <div className="guuey-chat-view guuey-chat-view-negotiating">
+        <p className="guuey-chat-shimmer" role="status">
+          {item.label ?? ctx.strings.viewNegotiating}
+        </p>
       </div>
     );
   }
