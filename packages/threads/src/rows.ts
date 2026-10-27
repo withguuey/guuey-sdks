@@ -19,6 +19,15 @@ import type { TapLabels } from "@guuey/mcp-apps-host/narrowing";
 export const THREAD_INPUT_KINDS = ['context-only'] as const;
 export type ThreadInputKind = (typeof THREAD_INPUT_KINDS)[number];
 
+/**
+ * The reader contract for a stored row's `inputKind`: a known kind, or
+ * undefined for anything else (absent, malformed, a kind this release does not
+ * know). Never throws: a stored row is read across a rolling release.
+ */
+export function readThreadInputKind(raw: unknown): ThreadInputKind | undefined {
+  return THREAD_INPUT_KINDS.find((kind) => kind === raw);
+}
+
 export type ThreadMessageRole = "user" | "agent" | "system";
 export type ThreadMessageKind = "text" | "card" | "event";
 /**

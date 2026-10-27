@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { InMemoryThreadPersistence } from "./in-memory.js";
-import { THREAD_INPUT_KINDS, ThreadStore, type ThreadRow } from "./index.js";
+import { THREAD_INPUT_KINDS, ThreadStore, readThreadInputKind, type ThreadRow } from "./index.js";
 
 const NOW = "2026-10-22T00:00:00.000Z";
 const thread: ThreadRow = {
@@ -35,6 +35,18 @@ describe("a context-only user row (guuey#2549)", () => {
     expect(photo?.inputKind).toBe("context-only");
     expect(photo?.text).toBe("");
     expect(Object.keys(plain ?? {})).not.toContain("inputKind");
+  });
+
+  it("leaves the thread's preview standing: a turn without words has no words to preview", async () => {
+    const { db } = await seeded();
+    expect((await db.getThread("t1"))?.lastMessagePreview).toBe("Hi");
+  });
+
+  it("reads a stored kind through the reader contract: a known kind, else nothing, never a throw", () => {
+    expect(readThreadInputKind("context-only")).toBe("context-only");
+    expect(readThreadInputKind("telepathy")).toBeUndefined();
+    expect(readThreadInputKind(["context-only"])).toBeUndefined();
+    expect(readThreadInputKind(undefined)).toBeUndefined();
   });
 
   it("carries inputKind into the history lane, and only on that row", async () => {
