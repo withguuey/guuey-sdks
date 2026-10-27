@@ -72,11 +72,23 @@
   background: var(--guuey-layout-tone-upper);
   color: var(--guuey-layout-tone-upper-on);
 }
-/* The overflow affordance: a 24px bottom-edge fade in the panel's own tone,
- * shown only while content is hidden below the edge. CSS cannot know that,
- * so the lib writes `data-overflow="true"` from a ResizeObserver (+ scroll)
- * on the panel. Sticky to the scrollport's bottom; the negative margin keeps
+/* The overflow affordance: a 24px edge fade in the panel's own tone on each
+ * edge that hides content — below while content is hidden under the bottom
+ * edge, above once it has scrolled under the top one. CSS cannot know either,
+ * so the lib writes `data-overflow="true"` (below) and
+ * `data-overflow-above="true"` from a ResizeObserver (+ scroll) on the panel.
+ * Each is sticky to its own edge of the scrollport; the negative margin keeps
  * it from adding layout height. */
+.guuey-layout-panel-app[data-overflow-above="true"]::before {
+  content: "";
+  position: sticky;
+  inset-block-start: 0;
+  display: block;
+  block-size: 24px;
+  margin-block-end: -24px;
+  background: linear-gradient(to bottom, var(--guuey-layout-tone-upper), transparent);
+  pointer-events: none;
+}
 .guuey-layout-panel-app[data-overflow="true"]::after {
   content: "";
   position: sticky;
@@ -212,6 +224,13 @@
     bottom: 0;
     left: 0;
     width: min(85vw, 320px);
+    /* guuey#2450: the toggle's band is OUTSIDE the scroller. The drawer
+     * reserves it (10 + 44 + 10, plus the device inset) in the app panel's
+     * tone, so the scroller's box starts below the toggle and no link ever
+     * passes under it. The plain 64px first is the no-env fallback. */
+    padding-top: 64px;
+    padding-top: calc(64px + env(safe-area-inset-top));
+    background: var(--guuey-layout-tone-upper);
     z-index: 20;
     transform: translateX(-100%);
     /* guuey#2450: a closed drawer holds no focus — translated is not

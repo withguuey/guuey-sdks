@@ -263,7 +263,7 @@ export interface SidebarPanelProps extends HTMLAttributes<HTMLDivElement> {
 export function SidebarPanel({ section, children, className, ...rest }: SidebarPanelProps): ReactNode {
   const { dispatch } = useAgentMode();
   const panelRef = useRef<HTMLDivElement>(null);
-  const contentHidden = useContentHiddenBelow(panelRef, section === "app");
+  const hidden = useContentHidden(panelRef, section === "app");
   const onMenuInteraction =
     section === "app" ? () => dispatch({ type: "menuInteraction" }) : undefined;
   return (
@@ -271,7 +271,8 @@ export function SidebarPanel({ section, children, className, ...rest }: SidebarP
       {...rest}
       ref={panelRef}
       className={joinClass(`guuey-layout-panel guuey-layout-panel-${section}`, className)}
-      data-overflow={contentHidden ? "true" : undefined}
+      data-overflow={hidden.below ? "true" : undefined}
+      data-overflow-above={hidden.above ? "true" : undefined}
       onPointerDownCapture={onMenuInteraction}
       onFocusCapture={onMenuInteraction}
     >
@@ -280,22 +281,35 @@ export function SidebarPanel({ section, children, className, ...rest }: SidebarP
   );
 }
 
+/** Which edges of the app panel hide content (the stylesheet's two fades). */
+interface HiddenEdges {
+  above: boolean;
+  below: boolean;
+}
+
+const NOTHING_HIDDEN: HiddenEdges = { above: false, below: false };
+
 /**
  * guuey#2450 — whether the app panel (the sidebar's scroller) has content
- * hidden below its bottom edge: the flag behind the stylesheet's fade. CSS
- * cannot know it, so a ResizeObserver watches the panel AND its element
- * children (a nav that grows inside an already-bounded panel resizes only
- * the child), re-subscribed as children come and go; scrolling re-measures
- * too, so the fade leaves once the end is reached. No ResizeObserver (old
- * engines, SSR) → never flagged: no fade, the scroll itself still works.
+ * hidden past its top or bottom edge: the flags behind the stylesheet's
+ * fades. CSS cannot know them, so a ResizeObserver watches the panel AND its
+ * element children (a nav that grows inside an already-bounded panel resizes
+ * only the child), re-subscribed as children come and go; scrolling
+ * re-measures too, so each fade leaves once its end is reached. No
+ * ResizeObserver (old engines, SSR) → never flagged: no fade, the scroll
+ * itself still works.
  */
-function useContentHiddenBelow(ref: RefObject<HTMLDivElement | null>, enabled: boolean): boolean {
-  const [hidden, setHidden] = useState(false);
+function useContentHidden(ref: RefObject<HTMLDivElement | null>, enabled: boolean): HiddenEdges {
+  const [hidden, setHidden] = useState<HiddenEdges>(NOTHING_HIDDEN);
   useEffect(() => {
     const panel = ref.current;
     if (!enabled || panel === null || typeof ResizeObserver === "undefined") return;
-    const measure = (): void =>
-      setHidden(panel.scrollTop + panel.clientHeight < panel.scrollHeight - 1);
+    const measure = (): void => {
+      const above = panel.scrollTop > 1;
+      const below = panel.scrollTop + panel.clientHeight < panel.scrollHeight - 1;
+      // Same edges, same object: a scroll inside the middle re-renders nothing.
+      setHidden((prev) => (prev.above === above && prev.below === below ? prev : { above, below }));
+    };
     const sizes = new ResizeObserver(measure);
     const observeAll = (): void => {
       sizes.disconnect();

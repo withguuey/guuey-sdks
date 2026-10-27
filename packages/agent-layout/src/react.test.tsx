@@ -318,9 +318,45 @@ describe("guuey#2450 — the app panel says when its content is hidden (the fade
     expect(screen.getByTestId("agent-panel").dataset.overflow).toBeUndefined();
   });
 
+  it("flags data-overflow-above once content has scrolled under the top edge, and drops it back at the top", () => {
+    vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+    shell();
+    const app = screen.getByTestId("app-panel");
+    setBox(app, { scrollHeight: 600, clientHeight: 300, scrollTop: 0 });
+    resize();
+    expect(app.dataset.overflowAbove).toBeUndefined();
+    expect(app.dataset.overflow).toBe("true");
+
+    // Mid-scroll: hidden on both edges, both fades.
+    setBox(app, { scrollHeight: 600, clientHeight: 300, scrollTop: 150 });
+    act(() => {
+      fireEvent.scroll(app);
+    });
+    expect(app.dataset.overflowAbove).toBe("true");
+    expect(app.dataset.overflow).toBe("true");
+
+    // At the end: only the top fade.
+    setBox(app, { scrollHeight: 600, clientHeight: 300, scrollTop: 300 });
+    act(() => {
+      fireEvent.scroll(app);
+    });
+    expect(app.dataset.overflowAbove).toBe("true");
+    expect(app.dataset.overflow).toBeUndefined();
+
+    // Back at the top: only the bottom fade.
+    setBox(app, { scrollHeight: 600, clientHeight: 300, scrollTop: 0 });
+    act(() => {
+      fireEvent.scroll(app);
+    });
+    expect(app.dataset.overflowAbove).toBeUndefined();
+    expect(app.dataset.overflow).toBe("true");
+    expect(screen.getByTestId("agent-panel").dataset.overflowAbove).toBeUndefined();
+  });
+
   it("without ResizeObserver the panel renders unflagged (no fade, never a throw)", () => {
     vi.stubGlobal("ResizeObserver", undefined);
     shell();
     expect(screen.getByTestId("app-panel").dataset.overflow).toBeUndefined();
+    expect(screen.getByTestId("app-panel").dataset.overflowAbove).toBeUndefined();
   });
 });

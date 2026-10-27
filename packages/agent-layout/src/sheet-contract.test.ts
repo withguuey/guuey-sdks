@@ -103,6 +103,33 @@ describe("guuey#2450 — a tall nav scrolls; the agent panel is never crushed", 
     // No unconditional fade: the pseudo-element exists only under the flag.
     expect(sheet).not.toMatch(/\.guuey-layout-panel-app::after/);
   });
+
+  it("the mirrored top fade: 24px at the top edge, same tone, only while the lib says content is hidden above", () => {
+    const fade = block('.guuey-layout-panel-app[data-overflow-above="true"]::before');
+    expect(fade).toContain("position: sticky");
+    expect(fade).toContain("inset-block-start: 0");
+    expect(fade).toContain("block-size: 24px");
+    // Paints over the first 24px of content; never adds layout height.
+    expect(fade).toContain("margin-block-end: -24px");
+    expect(fade).toContain("linear-gradient(to bottom, var(--guuey-layout-tone-upper), transparent)");
+    expect(fade).toContain("pointer-events: none");
+    expect(sheet).not.toMatch(/\.guuey-layout-panel-app::before/);
+  });
+});
+
+describe("guuey#2450 — the drawer toggle's band is outside the scroller", () => {
+  it("the drawer reserves the 64px band plus the device inset in the app panel's tone, so nothing scrolls under the toggle", () => {
+    const closed = block(".guuey-layout-sidebar", media(DRAWER));
+    expect(closed.indexOf("padding-top: 64px;")).toBeGreaterThan(-1);
+    expect(closed.indexOf("padding-top: calc(64px + env(safe-area-inset-top))")).toBeGreaterThan(
+      closed.indexOf("padding-top: 64px;"),
+    );
+    expect(closed).toContain("background: var(--guuey-layout-tone-upper)");
+  });
+
+  it("the desktop sidebar reserves no band (there is no toggle there)", () => {
+    expect(block(".guuey-layout-sidebar")).not.toContain("padding");
+  });
 });
 
 describe("guuey#2450 — a closed drawer casts no shadow", () => {
