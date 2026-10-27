@@ -225,7 +225,7 @@ async function apiRequest(method: string, path: string, body?: unknown): Promise
 async function handleError(
   res: Response,
   prefix?: string,
-  app?: { id: string; action: string },
+  app?: { id: string; action: string; threadId?: string },
 ): Promise<never> {
   let message: string;
   try {
@@ -236,14 +236,31 @@ async function handleError(
     // its app and action, so the uniform 404 reads as "not found, or not
     // allowed" rather than a flat "not found" (out.appApiErrorMessage).
     const body: unknown = await res.json();
-    message = app
-      ? out.appApiErrorMessage(res.status, body, app.id, app.action, `HTTP ${res.status}`)
-      : out.apiErrorMessage(body, `HTTP ${res.status}`);
+    message =
+      app?.threadId !== undefined && isThreadNotFound(res.status, body, app.threadId)
+        ? `Thread ${app.threadId} was not found for this end user in app ${app.id}`
+        : app
+          ? out.appApiErrorMessage(res.status, body, app.id, app.action, `HTTP ${res.status}`)
+          : out.apiErrorMessage(body, `HTTP ${res.status}`);
   } catch {
     message = `HTTP ${res.status} ${res.statusText}`;
   }
   out.error(prefix ? `${prefix}: ${message}` : message);
   process.exit(1);
+}
+
+/**
+ * True when a 404 names the THREAD, not the app: the export's transcript read
+ * passes the app gate first, then answers `Thread <id> not found` for a thread
+ * that is not this end user's in this app. The app-level 404 keeps the
+ * "not found, or not allowed" face.
+ */
+function isThreadNotFound(status: number, body: unknown, threadId: string): boolean {
+  if (status !== 404 || out.apiErrorCode(body) !== 'NOT_FOUND') return false;
+  if (typeof body !== 'object' || body === null || !('error' in body)) return false;
+  const err = body.error;
+  if (typeof err !== 'object' || err === null || !('message' in err)) return false;
+  return err.message === `Thread ${threadId} not found`;
 }
 
 /**
@@ -1554,7 +1571,7 @@ export async function appsByoUserErase(
   }
 
   const res = await apiRequest('POST', `/apps/${resolved}/byo-users/erase`, { sub });
-  if (!res.ok) return handleError(res, 'Failed to erase byo-user');
+  if (!res.ok) return handleError(res, 'Failed to erase byo-user', { id: resolved, action: 'erase end users of' });
 
   const data = (await res.json()) as ByoUserEraseResponse;
 
@@ -1591,7 +1608,7 @@ async function appsByoUserEraseStatus(
     'GET',
     `/apps/${appId}/byo-users/erase-status?sub=${encodeURIComponent(sub)}`,
   );
-  if (!res.ok) return handleError(res, 'Failed to fetch erase status');
+  if (!res.ok) return handleError(res, 'Failed to fetch erase status', { id: appId, action: 'read erase status of' });
 
   const data = (await res.json()) as ByoUserEraseStatusResponse;
 
@@ -1670,8 +1687,8 @@ export function byoUserExportPath(
 ): string {
   const base =
     threadId === undefined
-      ? `/apps/${appId}/byo-users/threads`
-      : `/apps/${appId}/byo-users/threads/${encodeURIComponent(threadId)}/messages`;
+      ? `/apps/${encodeURIComponent(appId)}/byo-users/threads`
+      : `/apps/${encodeURIComponent(appId)}/byo-users/threads/${encodeURIComponent(threadId)}/messages`;
   const cursorPart = cursor !== undefined ? `&cursor=${encodeURIComponent(cursor)}` : '';
   return `${base}?sub=${encodeURIComponent(sub)}${cursorPart}`;
 }
@@ -1689,7 +1706,7 @@ async function fetchMessagesPage(
   cursor: string | undefined,
 ): Promise<ByoUserThreadMessagesPageWire> {
   const res = await apiRequest('GET', byoUserExportPath(appId, sub, threadId, cursor));
-  if (!res.ok) return handleError(res, 'Failed to export byo-user messages', { id: appId, action: 'export' });
+  if (!res.ok) return handleError(res, 'Failed to export byo-user messages', { id: appId, action: 'export', threadId });
   return (await res.json()) as ByoUserThreadMessagesPageWire;
 }
 
@@ -1705,7 +1722,7 @@ async function exportThreadMessages(
   do {
     const page = await fetchMessagesPage(appId, sub, threadId, cursor);
     for (const message of page.messages) {
-      console.log(JSON.stringify({ type: 'message', appId, threadId, ...message }));
+      console.log(JSON.stringify({ ...message, type: 'message', appId, threadId }));
     }
     messages += page.messages.length;
     sealedWithheld += page.sealedWithheld;
@@ -1761,7 +1778,7 @@ export async function appsByoUserExport(
       do {
         const page = await fetchThreadsPage(resolved, sub, cursor);
         for (const thread of page.threads) {
-          console.log(JSON.stringify({ type: 'thread', appId: resolved, ...thread }));
+          console.log(JSON.stringify({ ...thread, type: 'thread', appId: resolved }));
           const counts = await exportThreadMessages(resolved, sub, thread.threadId);
           threads += 1;
           messages += counts.messages;

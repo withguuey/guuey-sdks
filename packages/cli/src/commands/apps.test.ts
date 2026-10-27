@@ -1450,7 +1450,7 @@ describe('appsByoUserErase', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('a non-2xx status response prints the server message and exits 1', async () => {
+  it('the uniform 404 on --status prints "not found, or not allowed" and exits 1', async () => {
     fetchSpy.mockResolvedValue(
       new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'App app1 not found' } }), {
         status: 404,
@@ -1463,7 +1463,21 @@ describe('appsByoUserErase', () => {
 
     expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
     const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
-    expect(printed).toContain('App app1 not found');
+    expect(printed).toContain('App app1 was not found, or this account is not allowed to read erase status of it');
+  });
+
+  it('the uniform 404 on erase (e.g. a member below admin) prints "not found, or not allowed" and exits 1', async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'App app1 not found' } }), {
+        status: 404,
+      }),
+    );
+
+    await expect(appsByoUserErase('app1', { sub: 'sub1' })).rejects.toBeInstanceOf(ExitSignal);
+
+    expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('App app1 was not found, or this account is not allowed to erase end users of it');
   });
 
   it('missing --sub errors without calling the API', async () => {
@@ -1551,6 +1565,49 @@ describe('appsByoUserExport (guuey#2447)', () => {
   it('the request path URL-encodes the sub, the thread id and the cursor', () => {
     expect(byoUserExportPath('app1', 'auth0|a b', undefined, undefined)).toBe('/apps/app1/byo-users/threads?sub=auth0%7Ca%20b');
     expect(byoUserExportPath('app1', 's', 't/1', 'c+=')).toBe('/apps/app1/byo-users/threads/t%2F1/messages?sub=s&cursor=c%2B%3D');
+  });
+
+  it('the request path URL-encodes the app id too', () => {
+    expect(byoUserExportPath('a/b?c', 's', undefined, undefined)).toBe('/apps/a%2Fb%3Fc/byo-users/threads?sub=s');
+    expect(byoUserExportPath('a/b', 's', 't', undefined)).toBe('/apps/a%2Fb/byo-users/threads/t/messages?sub=s');
+  });
+
+  it("a THREAD 404 prints the thread's own message, not the app-level one", async () => {
+    fetchSpy.mockResolvedValue(json({ error: { code: 'NOT_FOUND', message: 'Thread t-9 not found' } }, 404));
+    await expect(appsByoUserExport('app1', { sub: 's', thread: 't-9' })).rejects.toBeInstanceOf(ExitSignal);
+    expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('Thread t-9 was not found for this end user in app app1');
+    expect(printed).not.toContain('not allowed');
+  });
+
+  it('an APP 404 on a thread read keeps the "not found, or not allowed" message', async () => {
+    fetchSpy.mockResolvedValue(json({ error: { code: 'NOT_FOUND', message: 'App app1 not found' } }, 404));
+    await expect(appsByoUserExport('app1', { sub: 's', thread: 't-9' })).rejects.toBeInstanceOf(ExitSignal);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('App app1 was not found, or this account is not allowed to export it');
+  });
+
+  it('--all JSON lines: the server fields come first, so type/appId/threadId are always the CLI\'s own', async () => {
+    fetchSpy.mockImplementation(async (url) => {
+      const u = new URL(String(url));
+      if (u.pathname === '/apps/app1/byo-users/threads') {
+        return json({ appId: 'app1', byoUserId: 'byo_h', threads: [{ ...summary('t-1'), type: 'x', appId: 'other' }], nextCursor: null });
+      }
+      return json({
+        appId: 'app1',
+        threadId: 't-1',
+        messages: [{ ...msg(1, 'a'), type: 'x', appId: 'other', threadId: 'other' }],
+        sealedWithheld: 0,
+        nextCursor: null,
+      });
+    });
+    await appsByoUserExport('app1', { sub: 's', all: true });
+    const lines = printed().map((l) => JSON.parse(l) as { type: string; appId: string; threadId: string });
+    expect(lines.map((l) => [l.type, l.appId, l.threadId])).toEqual([
+      ['thread', 'app1', 't-1'],
+      ['message', 'app1', 't-1'],
+    ]);
   });
 
   it('default: GETs ONE page of the thread list and prints it', async () => {
