@@ -14,6 +14,7 @@
  * a divergence can be introduced in the first place.
  */
 import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
@@ -59,6 +60,33 @@ const haveWire =
   existsSync(WIRE_MCP_CONNECTIONS) &&
   existsSync(WIRE_BILLING);
 const read = (path: string): string => readFileSync(path, 'utf8');
+
+// The monorepo test, the same predicate as `src/test-budget-guard.test.ts`: the workspace manifest and the oss
+// packages tree. Inside the monorepo every wire file a guard below reads must exist; `haveWire` checks only six
+// of them, so a moved or renamed one would otherwise surface as a read error inside one guard, or not at all.
+const REPO_ROOT = repoPath('../../../../../');
+const inMonorepo = existsSync(join(REPO_ROOT, 'pnpm-workspace.yaml')) && existsSync(join(REPO_ROOT, 'oss', 'packages'));
+const GUARDED_WIRE_FILES: Readonly<Record<string, string>> = {
+  WIRE_APPS,
+  WIRE_MCP,
+  WIRE_WIDGET_KEYS,
+  WIRE_DEPLOY,
+  WIRE_MCP_CONNECTIONS,
+  WIRE_BILLING,
+  WIRE_BILLING_INVOICING,
+  WIRE_USAGE_EXPORT,
+  WIRE_ENV,
+  WIRE_PROVIDER_KEYS,
+  TYPES_PROVIDER_KEY_SOURCE,
+};
+
+describe('CLI wire mirrors — the wire files the guards read', () => {
+  it.runIf(inMonorepo)('each one exists in the monorepo', () => {
+    for (const [name, file] of Object.entries(GUARDED_WIRE_FILES)) {
+      expect(existsSync(file), `${name} (${file}) is missing`).toBe(true);
+    }
+  });
+});
 
 /** Field names only — the shared assertion for "these two declare the same members". */
 function fieldNames(source: string, name: string): string[] {
