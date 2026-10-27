@@ -115,3 +115,19 @@ describe('cli.ts --help — who may run access, publish and unpublish (guuey#199
     }
   });
 });
+
+// guuey#2455: the app's daily guest total sits beside the per-guest cap in
+// `apps access --help`, and the dispatch hands its flag to `appsAccess`.
+describe('cli.ts --help — apps access section', () => {
+  const accessHelp = section('apps access [appId]', '  apps publish [appId]');
+
+  it('documents --guest-app-daily-limit next to --guest-limit', () => {
+    expect(accessHelp).toContain('--guest-limit <n|off>');
+    expect(accessHelp).toContain('--guest-app-daily-limit <n|off>');
+    expect(accessHelp).toContain('At least one of the three flags is required.');
+  });
+
+  it('the dispatch forwards --guest-app-daily-limit to appsAccess', () => {
+    expect(CLI_SOURCE).toContain("guestAppDailyLimit: flags['guest-app-daily-limit']");
+  });
+});

@@ -453,7 +453,12 @@ Apps:
                                  this account is not allowed to change it.
     --guests <on|off>           Allow unauthenticated guest chat
     --guest-limit <n|off>       Per-guest daily message cap ('off' clears it)
-                                 At least one of the two flags is required.
+    --guest-app-daily-limit <n|off>
+                                 The app's daily total of guest messages, across
+                                 every guest (UTC day; 'off' clears it). Once
+                                 reached, guests are refused until the next UTC
+                                 day; signed-in users are not counted.
+                                 At least one of the three flags is required.
   apps publish [appId]          List the app in the store. Allowed for a
                                  personal app's creator, or an owner or admin of
                                  the workspace that owns the app (a user login).
@@ -1061,6 +1066,7 @@ async function main(): Promise<void> {
           await appsAccess(rest[0], {
             guests: flags.guests as string | true | undefined,
             guestLimit: flags['guest-limit'] as string | true | undefined,
+            guestAppDailyLimit: flags['guest-app-daily-limit'] as string | true | undefined,
             json: jsonFlag,
           });
           break;

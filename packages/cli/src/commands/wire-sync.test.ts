@@ -111,9 +111,9 @@ describe.skipIf(!haveWire)('CLI wire mirrors — sync guards against @guuey-priv
     // provided" (see `UpdateAppRequest`'s docblock). This catches that.
     //
     // The other direction is a capability gap, not drift: the handler also
-    // accepts `guestAccess` / `guestDailyMessageLimit`, for which the CLI has
-    // no flags — those are Console-managed today. Asserting equality would
-    // make that gap a red test with no bug behind it.
+    // accepts Console-managed members the CLI has no flags for (the console
+    // Settings vocabulary, guuey#1995 A1). Asserting equality would make that
+    // gap a red test with no bug behind it.
     const accepted = new Set(fieldNames(read(WIRE_APPS), 'UpdateAppBody'));
     for (const field of fieldNames(read(CLI_APPS), 'UpdateAppRequest')) {
       expect(accepted).toContain(field);

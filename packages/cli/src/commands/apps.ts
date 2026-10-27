@@ -168,6 +168,13 @@ interface AppStoredDetail {
 interface AppAccessState {
   guestAccess: boolean | null;
   guestDailyMessageLimit: number | null;
+  /**
+   * guuey#2455: the app's daily guest total. `null` = no app limit. Optional
+   * because a server that predates it echoes NO member, and absent is not
+   * `null`: that server never applied the key, so the CLI reports it as not
+   * reported, never as unlimited.
+   */
+  guestAppDailyMessageLimit?: number | null;
 }
 
 interface AppListing {
@@ -649,6 +656,10 @@ export interface UpdateAppRequest {
   allowedDomains?: string[];
   /** Guest (signed-out) access; `null` returns it to the platform default. */
   guestAccess?: boolean | null;
+  /** Per-guest daily message cap (`apps access --guest-limit`); `null` clears it. */
+  guestDailyMessageLimit?: number | null;
+  /** The app's daily guest total (`apps access --guest-app-daily-limit`, guuey#2455); `null` clears it. */
+  guestAppDailyMessageLimit?: number | null;
   userAuthMode?: string;
   userAuthConfig?:
     | {
@@ -1365,6 +1376,8 @@ export async function appsAccess(
   opts: {
     guests?: string | true;
     guestLimit?: string | true;
+    /** `--guest-app-daily-limit` (guuey#2455): the app's daily guest total. */
+    guestAppDailyLimit?: string | true;
     json?: boolean;
   },
 ): Promise<void> {
@@ -1374,14 +1387,14 @@ export async function appsAccess(
     process.exit(1);
   }
 
-  if (opts.guests === undefined && opts.guestLimit === undefined) {
+  if (opts.guests === undefined && opts.guestLimit === undefined && opts.guestAppDailyLimit === undefined) {
     out.error(
-      'No flags provided. Use --guests on|off and/or --guest-limit N|off. See: guuey apps access --help',
+      'No flags provided. Use --guests on|off, --guest-limit N|off and/or --guest-app-daily-limit N|off. See: guuey apps access --help',
     );
     process.exit(1);
   }
 
-  const body: Record<string, unknown> = {};
+  const body: UpdateAppRequest = {};
 
   if (opts.guests !== undefined) {
     if (opts.guests !== 'on' && opts.guests !== 'off') {
@@ -1392,38 +1405,60 @@ export async function appsAccess(
   }
 
   if (opts.guestLimit !== undefined) {
-    if (opts.guestLimit === 'off') {
-      body.guestDailyMessageLimit = null;
-    } else {
-      const raw = typeof opts.guestLimit === 'string' ? opts.guestLimit.trim() : '';
-      // Digits-only pre-check: Number() alone would admit '1e2', '0x10', etc.
-      const n = /^[0-9]+$/.test(raw) ? Number(raw) : NaN;
-      if (!Number.isInteger(n) || n < 1) {
-        out.error("Invalid --guest-limit value. Use a positive integer, or 'off' to clear.");
-        process.exit(1);
-      }
-      body.guestDailyMessageLimit = n;
-    }
+    body.guestDailyMessageLimit = parseDailyLimitFlag(opts.guestLimit, '--guest-limit');
+  }
+  if (opts.guestAppDailyLimit !== undefined) {
+    body.guestAppDailyMessageLimit = parseDailyLimitFlag(opts.guestAppDailyLimit, '--guest-app-daily-limit');
   }
 
   const res = await apiRequest('PUT', `/apps/${resolved}`, body);
   if (!res.ok) return handleError(res, undefined, { id: resolved, action: 'change guest access for' });
 
   const data = (await res.json()) as { app: AppAccessState };
+  // An echo with no app-total member is a server that predates guuey#2455: it
+  // never applied the key, so asking it to set one is a failure, not a success.
+  const appTotalReported = data.app.guestAppDailyMessageLimit !== undefined;
 
   if (opts.json) {
     out.json(data.app);
-    return;
+  } else {
+    const limit = (n: number | null | undefined): string | number => (n == null ? 'unlimited' : n);
+    out.success(`Updated access for app ${resolved}`);
+    console.log('');
+    console.log(`  Guests:                ${data.app.guestAccess === false ? 'off' : 'on'}`);
+    console.log(`  Guest daily limit:     ${limit(data.app.guestDailyMessageLimit)}`);
+    console.log(
+      `  App daily guest total: ${
+        appTotalReported
+          ? limit(data.app.guestAppDailyMessageLimit)
+          : 'not reported by this server (it may not support this setting yet)'
+      }`,
+    );
   }
 
-  out.success(`Updated access for app ${resolved}`);
-  console.log('');
-  console.log(`  Guests:            ${data.app.guestAccess === false ? 'off' : 'on'}`);
-  console.log(
-    `  Guest daily limit: ${
-      data.app.guestDailyMessageLimit == null ? 'unlimited' : data.app.guestDailyMessageLimit
-    }`,
-  );
+  if (opts.guestAppDailyLimit !== undefined && !appTotalReported) {
+    out.error(
+      'This server did not apply --guest-app-daily-limit (it may not support this setting yet). Any other access change was saved.',
+    );
+    process.exit(1);
+  }
+}
+
+/**
+ * The ONE parse for both guest daily-limit flags (`--guest-limit` and
+ * `--guest-app-daily-limit`): `off` clears (`null`); otherwise a positive
+ * integer, digits only — `Number()` alone would admit '1e2', '0x10', etc.
+ * Anything else exits 1 before any API call, naming the flag.
+ */
+function parseDailyLimitFlag(value: string | true, flag: '--guest-limit' | '--guest-app-daily-limit'): number | null {
+  if (value === 'off') return null;
+  const raw = typeof value === 'string' ? value.trim() : '';
+  const n = /^[0-9]+$/.test(raw) ? Number(raw) : NaN;
+  if (!Number.isInteger(n) || n < 1) {
+    out.error(`Invalid ${flag} value. Use a positive integer, or 'off' to clear.`);
+    process.exit(1);
+  }
+  return n;
 }
 
 /**

@@ -1017,6 +1017,137 @@ describe('appsAccess', () => {
     expect(printed).not.toContain('[object Object]');
   });
 
+  it('maps --guest-app-daily-limit 500 onto guestAppDailyMessageLimit, beside the per-guest flag', async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          app: { guestAccess: true, guestDailyMessageLimit: 20, guestAppDailyMessageLimit: 500 },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await appsAccess('app1', { guestLimit: '20', guestAppDailyLimit: '500' });
+
+    expect(lastRequest(fetchSpy)).toEqual({
+      method: 'PUT',
+      path: '/apps/app1',
+      body: { guestDailyMessageLimit: 20, guestAppDailyMessageLimit: 500 },
+    });
+  });
+
+  it('maps --guest-app-daily-limit off to guestAppDailyMessageLimit: null, alone', async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          app: { guestAccess: null, guestDailyMessageLimit: null, guestAppDailyMessageLimit: null },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await appsAccess('app1', { guestAppDailyLimit: 'off' });
+
+    expect(lastRequest(fetchSpy)).toEqual({
+      method: 'PUT',
+      path: '/apps/app1',
+      body: { guestAppDailyMessageLimit: null },
+    });
+  });
+
+  it.each(['0', '-5', '1.5', 'abc', '1e2', '0x10', ''])(
+    'rejects an invalid --guest-app-daily-limit value %p before any API call',
+    async (bad) => {
+      await expect(appsAccess('app1', { guestAppDailyLimit: bad })).rejects.toBeInstanceOf(ExitSignal);
+
+      expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(String(errSpy.mock.calls[0]?.[0])).toContain('Invalid --guest-app-daily-limit value');
+    },
+  );
+
+  it('rejects a value-less (boolean true) --guest-app-daily-limit flag before any API call', async () => {
+    await expect(appsAccess('app1', { guestAppDailyLimit: true })).rejects.toBeInstanceOf(ExitSignal);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('the no-flags error names the app-total flag too', async () => {
+    await expect(appsAccess('app1', {})).rejects.toBeInstanceOf(ExitSignal);
+
+    expect(String(errSpy.mock.calls[0]?.[0])).toContain('--guest-app-daily-limit N|off');
+  });
+
+  interface AccessEcho {
+    guestAccess: boolean | null;
+    guestDailyMessageLimit: number | null;
+    guestAppDailyMessageLimit?: number | null;
+  }
+  function echo(app: AccessEcho): Response {
+    return new Response(JSON.stringify({ app }), { status: 200 });
+  }
+  function printed(): string {
+    return logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+  }
+
+  it('prints the app daily guest total, and "unlimited" when the server reports null', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      echo({ guestAccess: true, guestDailyMessageLimit: 20, guestAppDailyMessageLimit: 500 }),
+    );
+    await appsAccess('app1', { guestAppDailyLimit: '500' });
+    expect(printed()).toContain('App daily guest total: 500');
+
+    logSpy.mockClear();
+    fetchSpy.mockResolvedValueOnce(
+      echo({ guestAccess: true, guestDailyMessageLimit: 20, guestAppDailyMessageLimit: null }),
+    );
+    await appsAccess('app1', { guestAppDailyLimit: 'off' });
+    expect(printed()).toContain('App daily guest total: unlimited');
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  // A server that predates guuey#2455 echoes NO member: absent is not null.
+  it('an echo with no app-total member prints "not reported", never "unlimited", and exits 0 when the flag was not sent', async () => {
+    fetchSpy.mockResolvedValueOnce(echo({ guestAccess: true, guestDailyMessageLimit: 20 }));
+
+    await appsAccess('app1', { guests: 'on' });
+
+    const out = printed();
+    expect(out).toContain(
+      'App daily guest total: not reported by this server (it may not support this setting yet)',
+    );
+    expect(out).not.toContain('App daily guest total: unlimited');
+    expect(exitSpy).not.toHaveBeenCalled();
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it.each([['500'], ['off']])(
+    'setting --guest-app-daily-limit %s against a server that echoes no member exits 1 after printing the state',
+    async (value) => {
+      fetchSpy.mockResolvedValueOnce(echo({ guestAccess: true, guestDailyMessageLimit: 20 }));
+
+      await expect(appsAccess('app1', { guestAppDailyLimit: value })).rejects.toBeInstanceOf(ExitSignal);
+
+      expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
+      expect(printed()).toContain('App daily guest total: not reported by this server');
+      expect(printed()).not.toContain('App daily guest total: unlimited');
+      expect(String(errSpy.mock.calls[0]?.[0])).toContain(
+        'This server did not apply --guest-app-daily-limit',
+      );
+    },
+  );
+
+  it('--json against a server that echoes no member still prints the echo, then exits 1 when the flag was sent', async () => {
+    fetchSpy.mockResolvedValueOnce(echo({ guestAccess: true, guestDailyMessageLimit: 20 }));
+
+    await expect(appsAccess('app1', { guestAppDailyLimit: '500', json: true })).rejects.toBeInstanceOf(
+      ExitSignal,
+    );
+
+    expect(JSON.parse(printed())).toEqual({ guestAccess: true, guestDailyMessageLimit: 20 });
+    expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
+  });
+
   it('--json emits the resulting access state as JSON', async () => {
     fetchSpy.mockResolvedValue(
       new Response(
