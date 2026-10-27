@@ -309,6 +309,10 @@ export function parseControl(line: string): ControlMessage {
         // The offer to end the conversation: any object reads as the offer
         // (reduced to `{}`, its only shape today); anything else is no offer.
         ...(isObject(raw.threadClose) ? { threadClose: {} } : {}),
+        // The turn's durable thread, as data: kept only when a non-empty
+        // string, otherwise absent (never thrown), so a stateless invoke and an
+        // older Router's invoke both read with no thread id.
+        ...(typeof raw.threadId === "string" && raw.threadId.length > 0 ? { threadId: raw.threadId } : {}),
       };
     }
     case "shutdown":

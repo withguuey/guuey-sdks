@@ -324,6 +324,14 @@ export interface Invoke {
    * worker ignores the field and never asks.
    */
   threadClose?: InvokeThreadCloseOffer;
+  /**
+   * The durable thread the Router resolved for this turn: the same id the
+   * client receives in its `session` event. Present on a thread's first turn
+   * too; absent on a stateless invoke. It is DATA, never authority: grants
+   * scoped to a thread come only from signed claims the Router mints, so
+   * knowing this id grants nothing. An older worker ignores the field.
+   */
+  threadId?: string;
 }
 /**
  * Router → worker: "I can end this conversation for you on this turn." It has
