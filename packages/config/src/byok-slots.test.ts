@@ -18,6 +18,10 @@ describe('BYOK_PROVIDER_SLOT_ENV', () => {
       openrouter: 'OPENROUTER_API_KEY',
     });
   });
+
+  it('names every slot NAME_API_KEY, the suffix a consumer strips to name its companion values', () => {
+    for (const name of Object.values(BYOK_PROVIDER_SLOT_ENV)) expect(name, name).toMatch(/^[A-Z0-9]+_API_KEY$/);
+  });
 });
 
 describe('the lists derived from the map', () => {

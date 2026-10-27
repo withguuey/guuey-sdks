@@ -10,13 +10,16 @@
  * The ids are the STORED ids (`google`, not the Gemini wire name). A stored
  * key for any other provider (for example an old `bedrock` row) is not in
  * this map: no runtime slot reads it, so it never takes effect.
+ *
+ * Every slot name ends in `_API_KEY`: a consumer names each slot's companion
+ * values by stripping that suffix, so the type refuses a slot without it.
  */
 export const BYOK_PROVIDER_SLOT_ENV = {
   anthropic: 'ANTHROPIC_API_KEY',
   openai: 'OPENAI_API_KEY',
   google: 'GEMINI_API_KEY',
   openrouter: 'OPENROUTER_API_KEY',
-} as const;
+} as const satisfies Record<string, `${string}_API_KEY`>;
 
 /** A provider id a BYOK key can be set for: a key of {@link BYOK_PROVIDER_SLOT_ENV}. */
 export type ByokProviderId = keyof typeof BYOK_PROVIDER_SLOT_ENV;
