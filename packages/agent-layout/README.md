@@ -54,8 +54,10 @@ function Shell() {
 - **A tall nav scrolls, the agent stays**: the app panel is the sidebar's
   scroller (a bottom-edge fade shows while items are hidden below it), and
   the agent panel never shrinks under its floor, so the composer is always
-  reachable. Set `--guuey-layout-agent-panel-min` (default `72px`, one line
-  of `@guuey/chat`'s composer) when your agent surface needs more. A host
+  reachable. The floor is `--guuey-layout-agent-panel-min` (default `112px`:
+  `@guuey/chat`'s header row plus its one-line composer, so nothing is
+  clipped by default). A host that renders the composer alone may lower it;
+  raise it when your agent surface needs more. A host
   that gives the agent panel a fixed height (`--guuey-layout-agent-panel-flex:
 0 0 auto`) sets `--guuey-layout-app-panel-flex: 1 1 auto` (default
   `0 1 auto`) so the app panel takes the free space and the rail stays at the

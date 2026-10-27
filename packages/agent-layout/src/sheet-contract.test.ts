@@ -79,7 +79,7 @@ describe("guuey#2450 — a tall nav scrolls; the agent panel is never crushed", 
 
   it("the agent panel keeps a floor behind the --guuey-layout-agent-panel-min seam, at the shipped default", () => {
     expect(block(".guuey-layout-panel-agent")).toContain(
-      "min-height: var(--guuey-layout-agent-panel-min, 72px)",
+      "min-height: var(--guuey-layout-agent-panel-min, 112px)",
     );
   });
 

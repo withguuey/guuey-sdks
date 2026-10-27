@@ -94,10 +94,12 @@
    * height) — a custom-property seam, never a specificity fight. */
   flex: var(--guuey-layout-agent-panel-flex, 1);
   /* guuey#2450: the floor — however tall the nav, the agent panel never
-   * shrinks below this, so the composer stays reachable. The default fits
-   * `@guuey/chat`'s one-line composer (≈63px); a host with a header row or
-   * a taller composer sets `--guuey-layout-agent-panel-min`. */
-  min-height: var(--guuey-layout-agent-panel-min, 72px);
+   * shrinks below this, so the composer stays reachable. Nothing the lib
+   * ships clips by default: the default fits `@guuey/chat`'s header row on
+   * top of its one-line composer (≈104px) with a little air. A host that
+   * renders the composer alone may lower `--guuey-layout-agent-panel-min`;
+   * one with a taller agent surface raises it. */
+  min-height: var(--guuey-layout-agent-panel-min, 112px);
   display: flex;
   flex-direction: column;
   background: var(--guuey-layout-tone-lower);
