@@ -50,8 +50,8 @@ export type KeySource = 'app' | 'workspace' | 'managed';
 /** The tier a stored provider-key row lives on. */
 export type KeyTier = 'app' | 'workspace';
 
-/** The status a stored row shows. */
-export type StoredKeyStatus = 'active' | 'revoked' | 'unsupported';
+/** The status a stored row shows: its own status column. A row no runtime reads is listed apart, under `unsupported`. */
+export type StoredKeyStatus = 'active' | 'revoked';
 
 /** One stored provider-key row, as display columns only. */
 export interface StoredKeyFace {
