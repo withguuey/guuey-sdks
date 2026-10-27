@@ -17,6 +17,7 @@ import { parseControl, parseEvent } from "./parse.js";
 import { serveNativeOn } from "./serve-native.js";
 import type { WorkerEvent } from "./protocol.js";
 import { parseControl as parseControlPrev } from "./fixtures/parse-control.pre-thread-id.prev.js";
+import { drained } from "./fixtures/drained.js";
 
 /** The previous release's invoke shape: no `threadId`. */
 const OLD_INVOKE = {
@@ -81,7 +82,7 @@ describe("the current worker serves both invoke shapes", () => {
     );
     input.end(JSON.stringify(invoke) + "\n");
     await done;
-    const raw: string = output.read()?.toString("utf8") ?? "";
+    const raw = drained(output);
     const events = raw
       .trim()
       .split("\n")
