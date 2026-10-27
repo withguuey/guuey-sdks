@@ -100,6 +100,22 @@ describe("threadHistoryRowsToMessages — interim narration from the read plane"
   });
 });
 
+describe("threadHistoryRowsToMessages — a turn sent without words (guuey#2549)", () => {
+  it("a user row keeps its kind with empty text; a row the read plane nulled is kept by its kind", () => {
+    expect(threadHistoryRowsToMessages([row({ text: "", inputKind: "context-only" })])).toEqual([
+      { role: "user", text: "", seq: 1, inputKind: "context-only" },
+    ]);
+    expect(threadHistoryRowsToMessages([row({ text: null, inputKind: "context-only" })])).toEqual([
+      { role: "user", text: "", seq: 1, inputKind: "context-only" },
+    ]);
+  });
+  it("an unknown kind, a kind on an agent row, and an older read plane's row map to no kind", () => {
+    expect(threadHistoryRowsToMessages([row({ text: "", inputKind: "telepathy" })])[0]).not.toHaveProperty("inputKind");
+    expect(threadHistoryRowsToMessages([row({ authorRole: "agent", text: "hi", inputKind: "context-only" })])[0]).not.toHaveProperty("inputKind");
+    expect(threadHistoryRowsToMessages([row({ text: "hi" })])[0]).not.toHaveProperty("inputKind");
+  });
+});
+
 describe("threadHistoryRowsToCards", () => {
   it("keeps card rows with a snapshot, tagged by seq/at", () => {
     const cards = threadHistoryRowsToCards([

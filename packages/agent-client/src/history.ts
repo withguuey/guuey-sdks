@@ -14,6 +14,7 @@ import { AgNoticeSource, type AgMessage, type JsonValue } from "@silverprotocol/
 import { readTapLabels } from "@guuey/mcp-apps-host/narrowing";
 import type { AgentMessage, HistoryCard, HistoryLoadResult, ThreadClosed } from "./types.js";
 import { closureFromLastRow, readThreadClosed } from "./thread-closed.js";
+import { isInputKind } from "./input-kinds.js";
 
 /** One row of `GET /v1/threads/:id/messages`. */
 export interface ThreadHistoryRow {
@@ -53,6 +54,12 @@ export interface ThreadHistoryRow {
    * read plane that does not project it.
    */
   clientMessageId?: string | null;
+  /**
+   * A user row sent without words (guuey#2549): where its content rode
+   * (`text` is `""`). Absent from an older read plane and from every other
+   * row; a kind this release does not know maps to nothing.
+   */
+  inputKind?: string | null;
 }
 
 interface ThreadMessagesResponse {
@@ -121,7 +128,10 @@ export function threadHistoryRowsToMessages(rows: ThreadHistoryRow[]): AgentMess
       role === "assistant" && Array.isArray(row.narration)
         ? row.narration.filter((line): line is string => typeof line === "string" && line !== "")
         : [];
-    if (row.text == null && narration.length === 0) continue;
+    // guuey#2549: a user row sent without words keeps its kind, so a reload
+    // draws the line the live session drew (and the row is never dropped).
+    const inputKind = role === "user" && isInputKind(row.inputKind) ? row.inputKind : undefined;
+    if (row.text == null && narration.length === 0 && inputKind === undefined) continue;
     // guuey#2031: a user row's tap labels, shape-checked (the writer's bounds are not the reader's).
     const tapLabels = role === "user" ? readTapLabels(row.tapLabels) : undefined;
     // guuey#2445: a user row keeps the key its send carried, so a history read
@@ -137,6 +147,7 @@ export function threadHistoryRowsToMessages(rows: ThreadHistoryRow[]): AgentMess
       ...(clientMessageId !== undefined ? { clientMessageId } : {}),
       ...(narration.length > 0 ? { narration } : {}),
       ...(tapLabels !== undefined ? { tapLabels } : {}),
+      ...(inputKind !== undefined ? { inputKind } : {}),
     });
   }
   return messages;
