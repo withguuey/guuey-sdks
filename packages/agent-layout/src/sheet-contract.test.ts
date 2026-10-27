@@ -77,10 +77,18 @@ describe("guuey#2450 — a tall nav scrolls; the agent panel is never crushed", 
     expect(app).not.toContain("flex-shrink: 0");
   });
 
-  it("the agent panel keeps a floor behind the --guuey-layout-agent-panel-min seam", () => {
-    expect(block(".guuey-layout-panel-agent")).toMatch(
-      /min-height: var\(--guuey-layout-agent-panel-min, \d+px\)/,
+  it("the agent panel keeps a floor behind the --guuey-layout-agent-panel-min seam, at the shipped default", () => {
+    expect(block(".guuey-layout-panel-agent")).toContain(
+      "min-height: var(--guuey-layout-agent-panel-min, 72px)",
     );
+  });
+
+  it("the floor wins by source order: the agent block's min-height comes after the shared panel rule's min-height: 0", () => {
+    const shared = sheet.indexOf(".guuey-layout-panel {");
+    const agent = sheet.indexOf(".guuey-layout-panel-agent {");
+    expect(block(".guuey-layout-panel")).toContain("min-height: 0");
+    expect(shared).toBeGreaterThan(-1);
+    expect(agent).toBeGreaterThan(shared);
   });
 
   it("the overflow affordance: a 24px bottom-edge fade in the panel's own tone, only while the lib says content is hidden", () => {
