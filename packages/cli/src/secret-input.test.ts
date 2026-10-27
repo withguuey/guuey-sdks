@@ -114,3 +114,17 @@ describe('readSecretFromStdin — a TTY', () => {
     await expect(result).resolves.toEqual({ ok: false, reason: 'empty' });
   });
 });
+
+describe('one module owns the TTY mute', () => {
+  it('secret-input.ts is the only source that builds a terminal-mode readline (guuey login reads through it)', async () => {
+    const { readdirSync, readFileSync } = await import('node:fs');
+    const { dirname, join, relative } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const src = dirname(fileURLToPath(import.meta.url));
+    const files = (readdirSync(src, { recursive: true }) as string[])
+      .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts') && !f.endsWith('.d.ts'))
+      .map((f) => join(src, f));
+    const owners = files.filter((f) => /terminal:\s*true/.test(readFileSync(f, 'utf8'))).map((f) => relative(src, f));
+    expect(owners).toEqual(['secret-input.ts']);
+  });
+});

@@ -7,11 +7,14 @@
  *   trailing `\n` or `\r\n` is stripped (the newline a file or `echo` adds);
  *   empty input and input spanning more than one line are refused, so a file
  *   holding two keys is never sent as one.
- * - **A TTY** gets one muted prompt on stderr, the pattern `guuey login`'s
- *   paste uses (`commands/login.ts` `waitForPastedToken`): readline runs in
- *   terminal mode (raw mode, so the TTY driver does not echo) with an output
- *   stream that discards everything, so the key is never written back to the
+ * - **A TTY** gets one muted prompt on stderr: readline runs in terminal
+ *   mode (raw mode, so the TTY driver does not echo) with an output stream
+ *   that discards everything, so the key is never written back to the
  *   terminal. Ctrl-C re-raises SIGINT, as login does.
+ *
+ * This module owns that mute: {@link createMutedLineInterface} is the one
+ * place the CLI builds it, and `guuey login`'s paste
+ * (`commands/login.ts` `waitForPastedToken`) reads through it too.
  *
  * Pure of the network and of `process.exit`: the caller turns a refusal into
  * its own message.
@@ -45,22 +48,39 @@ async function readPipe(input: NodeJS.ReadableStream): Promise<SecretInputResult
   return { ok: true, secret };
 }
 
+/** A readline interface on a TTY that never echoes, and the way to let go of the stream. */
+export interface MutedLineInterface {
+  readonly rl: readline.Interface;
+  /** Close the interface and pause the stream (readline leaves a resumed stream flowing, which keeps the loop alive). */
+  release(): void;
+}
+
+/**
+ * The CLI's one TTY mute: readline in terminal mode (raw mode, so the TTY driver does not echo) writing to an output
+ * stream that discards everything, so neither the driver nor readline writes a secret back to the terminal. The
+ * muted output also swallows the Enter keypress, so a caller ends its prompt line itself.
+ */
+export function createMutedLineInterface(input: NodeJS.ReadableStream): MutedLineInterface {
+  const muted = new Writable({
+    write(_chunk, _encoding, callback) {
+      callback();
+    },
+  });
+  const rl = readline.createInterface({ input, output: muted, terminal: true });
+  return {
+    rl,
+    release: () => {
+      rl.close();
+      input.pause();
+    },
+  };
+}
+
 function readMutedLine(input: NodeJS.ReadableStream, prompt: string): Promise<SecretInputResult> {
   return new Promise((resolve) => {
-    // The echo target that discards everything: the mute half (see the header).
-    const muted = new Writable({
-      write(_chunk, _encoding, callback) {
-        callback();
-      },
-    });
-    const rl = readline.createInterface({ input, output: muted, terminal: true });
+    const { rl, release } = createMutedLineInterface(input);
     // Set before a deliberate close, so the trailing 'close' event can tell it from EOF (Ctrl-D).
     let done = false;
-    const release = (): void => {
-      rl.close();
-      // readline leaves a resumed stream flowing, which keeps the event loop alive: release it.
-      input.pause();
-    };
     process.stderr.write(prompt);
     rl.on('line', (line) => {
       done = true;

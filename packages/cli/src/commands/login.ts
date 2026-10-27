@@ -8,12 +8,12 @@
 
 import * as http from 'node:http';
 import * as readline from 'node:readline';
-import { Writable } from 'node:stream';
 import { randomBytes } from 'node:crypto';
 import { resolveConfig } from '../config';
 import { CLI_CALLBACK_PORT, saveAuth, type AuthTokens } from '../auth';
 import { openUrl } from '../open-url';
 import * as out from '../output';
+import { createMutedLineInterface, type MutedLineInterface } from '../secret-input';
 
 /**
  * Handle the `guuey login` command.
@@ -164,6 +164,20 @@ export function maskToken(pat: string): string {
   return `${pat.slice(0, 11)}…${pat.slice(-4)}`;
 }
 
+/** A non-terminal readline over a pipe (nothing echoes there), released the way the muted one is. */
+function plainLineInterface(input: NodeJS.ReadableStream): MutedLineInterface {
+  const rl = readline.createInterface({ input, terminal: false });
+  return {
+    rl,
+    release: () => {
+      rl.close();
+      // readline leaves a resumed stream flowing, which keeps the event
+      // loop alive after login returns — release it explicitly.
+      input.pause();
+    },
+  };
+}
+
 /** Options for {@link waitForPastedToken}. */
 export interface PasteWaitOptions {
   /**
@@ -206,26 +220,13 @@ export function waitForPastedToken(
 ): Promise<AuthTokens> {
   return new Promise((resolve, reject) => {
     const isTTY = (input as NodeJS.ReadStream).isTTY === true;
-    // Terminal-mode echo target that discards everything — the mute half
-    // of the #255 fix. Only constructed for TTYs; plain streams read in
-    // non-terminal mode where readline never echoes anyway.
-    const muted = new Writable({
-      write(_chunk, _encoding, callback) {
-        callback();
-      },
-    });
-    const rl = isTTY
-      ? readline.createInterface({ input, output: muted, terminal: true })
-      : readline.createInterface({ input, terminal: false });
+    // The mute half of the #255 fix is secret-input.ts's, the CLI's one TTY
+    // mute (guuey byok set's prompt reads through it too). Plain streams read
+    // in non-terminal mode, where readline never echoes anyway.
+    const { rl, release } = isTTY ? createMutedLineInterface(input) : plainLineInterface(input);
     // Set before any deliberate teardown (resolve / reject / abort) so the
     // trailing 'close' event can tell deliberate teardown from EOF.
     let done = false;
-    const release = () => {
-      rl.close();
-      // readline leaves a resumed stream flowing, which keeps the event
-      // loop alive after login returns — release it explicitly.
-      input.pause();
-    };
     const onAbort = () => {
       done = true;
       release();
