@@ -397,6 +397,11 @@ Apps:
                                  Embed identity-mode policy (widget wave 2).
                                  Read only when --auth-mode is byo; 'clear'
                                  restores the default (identified).
+    --home <durable|ephemeral|default>
+                                 Where each end user's home lives: durable
+                                 keeps it between sessions, ephemeral starts
+                                 each session fresh. 'default' clears the
+                                 setting (durable).
     --brand-icon-url <url>      Icon shown on the agent's page and in Discover
                                  (https://…). Pass 'clear' to unset.
     --brand-og-image-url <url>  Social-preview image for share links
@@ -1020,6 +1025,9 @@ async function main(): Promise<void> {
               flags['oidc-client-secret'] === true ? '' : str(flags['oidc-client-secret']),
             clearOidcClient: flags['clear-oidc-client'] === true,
             widgetEmbedIdentity: str(flags['widget-embed-identity']),
+            // guuey#2871. A bare --home maps to '' so appsUpdate refuses it
+            // with the three choices.
+            home: flags.home === true ? '' : str(flags.home),
             // Standalone-page branding (guuey#137 slice 3). A bare flag
             // (`--brand-accent` with no value) reads as an explicit clear,
             // same convention as `--domains`.

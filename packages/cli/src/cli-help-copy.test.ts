@@ -131,3 +131,12 @@ describe('cli.ts --help — apps access section', () => {
     expect(CLI_SOURCE).toContain("guestAppDailyLimit: flags['guest-app-daily-limit']");
   });
 });
+
+describe('cli.ts --help — apps update --home (guuey#2871)', () => {
+  const updateHelp = section('apps update [appId]', 'apps subscribe [appId]');
+
+  it('lists the three choices and says what durable and ephemeral do', () => {
+    expect(updateHelp).toContain('--home <durable|ephemeral|default>');
+    expect(updateHelp).toMatch(/durable\s+keeps it between sessions, ephemeral starts\s+each session fresh/);
+  });
+});

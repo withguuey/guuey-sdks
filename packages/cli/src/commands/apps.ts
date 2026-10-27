@@ -129,6 +129,13 @@ interface AppDetail extends AppSummary {
    * sends none (N−1), and then no line is printed.
    */
   builtFor?: string;
+  /**
+   * Where the app's end users' `home` lives (guuey#2871): a mode, or `null`
+   * when the app has none set (read as durable). Optional because a server
+   * from before the field sends none (N−1), and then no line is printed. A
+   * string, not the mode union, so a mode this CLI does not know still prints.
+   */
+  homeMode?: string | null;
 }
 
 // Type-only export (guuey#1084): `theme-hint.ts` reads `GET /apps/:id` —
@@ -436,6 +443,8 @@ export async function appsGet(
   if (app.builtFor !== undefined && isAppBuiltFor(app.builtFor)) {
     console.log(`  Built for:    ${BUILT_FOR_LABEL[app.builtFor]}`);
   }
+  // guuey#2871 — durable or ephemeral home; no line from a server without it.
+  if (app.homeMode !== undefined) console.log(`  Home mode:    ${homeModeLabel(app.homeMode)}`);
   // guuey#361 — WHY trial pause / demotion won't fire: an admin override is
   // holding the tier. The boolean is all the wire carries.
   if (app.tierHeldByAdminOverride) console.log(`  Tier:         held by admin override`);
@@ -640,6 +649,15 @@ export type FirstImpressionVerdict =
   | { entitled: false; message: string; billingUrl: string };
 
 /**
+ * Where an app's end users' `home` lives (guuey#2871). `durable` — also what
+ * an app that never set it reads as — keeps each user's home between
+ * sessions; `ephemeral` starts every session with a fresh one. Mirrors the
+ * wire's `APP_HOME_MODES` (the wire-sync guard pins the two).
+ */
+export const APP_HOME_MODES = ['durable', 'ephemeral'] as const;
+export type AppHomeMode = (typeof APP_HOME_MODES)[number];
+
+/**
  * Request body for `PUT /v1/apps/:id`. Mirrors the handler's
  * `UpdateAppBody` (`backend/amplify/functions/cliApi/handlers/apps.ts`) —
  * one contract, both sides.
@@ -652,6 +670,8 @@ export type FirstImpressionVerdict =
  */
 export interface UpdateAppRequest {
   displayName?: string;
+  /** `apps update --home` (guuey#2871); `null` (`--home default`) removes it, which reads as `durable`. */
+  homeMode?: AppHomeMode | null;
   description?: string;
   allowedDomains?: string[];
   /** Guest (signed-out) access; `null` returns it to the platform default. */
@@ -874,6 +894,7 @@ export function buildUpdateAppBody(opts: {
   oidcClientSecret?: string;
   clearOidcClient?: boolean;
   widgetEmbedIdentity?: string;
+  home?: string;
   brandIconUrl?: string;
   brandOgImageUrl?: string;
   brandAccent?: string;
@@ -958,6 +979,19 @@ export function buildUpdateAppBody(opts: {
     }
   }
 
+  // guuey#2871: `default` sends null, which removes the field (read as durable).
+  if (opts.home !== undefined) {
+    if (opts.home === 'default') {
+      body.homeMode = null;
+    } else {
+      const mode = APP_HOME_MODES.find((m) => m === opts.home);
+      if (mode === undefined) {
+        return `--home must be one of: durable, ephemeral, default (got "${opts.home}").`;
+      }
+      body.homeMode = mode;
+    }
+  }
+
   // Standalone-page branding. Sent verbatim (or as an explicit `null` clear);
   // the server owns every rule and returns a field-named 400.
   if (opts.brandIconUrl !== undefined) {
@@ -1009,7 +1043,7 @@ export function buildUpdateAppBody(opts: {
 const NO_UPDATE_FIELDS_MESSAGE =
   'No fields to update. Use --name, --description, --domains, --auth-mode, ' +
   '--issuer-url + --audience, --clear-auth-config, --oidc-client-id, ' +
-  '--oidc-client-secret, --clear-oidc-client, --widget-embed-identity, ' +
+  '--oidc-client-secret, --clear-oidc-client, --widget-embed-identity, --home, ' +
   '--brand-icon-url, --brand-og-image-url, --brand-icon-file, ' +
   '--brand-og-image-file, --brand-accent, --chat-theme-file, ' +
   '--clear-chat-theme, --page, --welcome-copy, ' +
@@ -1051,6 +1085,7 @@ export async function appsUpdate(
     oidcClientSecret?: string;
     clearOidcClient?: boolean;
     widgetEmbedIdentity?: string;
+    home?: string;
     brandIconUrl?: string;
     brandOgImageUrl?: string;
     brandIconFile?: string;
@@ -1193,6 +1228,8 @@ export async function appsUpdate(
   // with a binding that does not serve) — printed after the success line,
   // never as a failure.
   let warnings: AppUpdateWarningWire[] = [];
+  // guuey#2871: the home mode the server echoes; `undefined` = no member.
+  let homeMode: string | null | undefined;
   if (typeof body !== 'string') {
     const res = await apiRequest('PUT', `/apps/${resolved}`, body);
     if (!res.ok) return handleError(res);
@@ -1204,13 +1241,16 @@ export async function appsUpdate(
     }
     cardLines = themeForwardLines(themeForwardOf(answer));
     warnings = updateWarningsOf(answer);
+    homeMode = homeModeOf(answer);
   }
+  const sentHome = typeof body !== 'string' && body.homeMode !== undefined;
 
   if (opts.json) {
     out.json({
       success: true,
       ...Object.fromEntries(uploaded.map((commit) => [commit.field, commit.url])),
       ...(warnings.length > 0 ? { warnings } : {}),
+      ...(sentHome && homeMode !== undefined ? { homeMode } : {}),
     });
     return;
   }
@@ -1219,6 +1259,7 @@ export async function appsUpdate(
   }
   if (typeof body !== 'string') {
     out.success(`Updated app ${resolved}`);
+    if (sentHome) console.log(`  Home mode: ${homeModeLabel(homeMode)}`);
     for (const line of cardLines) console.error(line);
     out.printWarnings(warnings);
   }
@@ -1237,6 +1278,28 @@ export async function appsUpdate(
           : await fetchByoOriginGap(resolved);
     if (gap) printByoOriginWarning(resolved);
   }
+}
+
+/**
+ * The app's home mode from a `PUT /apps/:id` answer (guuey#2871): the
+ * echoed `app.homeMode` — `null` when the app has none (read as durable), a
+ * string kept verbatim so a mode this CLI does not know still prints, or
+ * `undefined` when the answer carries no such member (a server that predates
+ * the setting). Absent is not `null`: the CLI never reports a mode for it.
+ */
+export function homeModeOf(answer: unknown): string | null | undefined {
+  if (answer === null || typeof answer !== 'object') return undefined;
+  const app = (answer as { app?: unknown }).app;
+  if (app === null || typeof app !== 'object' || !('homeMode' in app)) return undefined;
+  const mode = (app as { homeMode?: unknown }).homeMode;
+  if (mode === null) return null;
+  return typeof mode === 'string' ? mode : undefined;
+}
+
+/** "durable" | "ephemeral" | "default (durable)" | not reported — see {@link homeModeOf}. */
+function homeModeLabel(mode: string | null | undefined): string {
+  if (mode === undefined) return 'not reported by this server (it may not support this setting yet)';
+  return mode === null ? 'default (durable)' : mode;
 }
 
 /**

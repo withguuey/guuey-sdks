@@ -120,6 +120,12 @@ describe.skipIf(!haveWire)('CLI wire mirrors — sync guards against @guuey-priv
     }
   });
 
+  it('APP_HOME_MODES is exactly the wire APP_HOME_MODES — what `apps update --home` sends (guuey#2871)', () => {
+    expect(parseStringLiterals(read(CLI_APPS), 'APP_HOME_MODES')).toEqual(
+      parseStringLiterals(read(WIRE_APPS), 'APP_HOME_MODES'),
+    );
+  });
+
   it('AgentConfig declares exactly the AgentConfigWire fields, with the same optionality', () => {
     // `guuey agent config` renders every one of these. Equality, not subset:
     // the wire is four fields the command exists to print, so a field added

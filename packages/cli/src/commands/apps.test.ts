@@ -36,6 +36,7 @@ import {
   appsUnpublish,
   appsUpdate,
   buildUpdateAppBody,
+  homeModeOf,
   oidcRelayRedirectUri,
   type UpdateAppRequest,
 } from './apps.js';
@@ -235,6 +236,29 @@ describe('appsGet endpoint discovery', () => {
     expect(output).not.toContain('stale.example');
     const deploymentsCall = String(fetchSpy.mock.calls[1]?.[0]);
     expect(deploymentsCall).toContain('/apps/app-1/deployments');
+  });
+
+  // guuey#2871 — the home mode the GET wire echoes; no line from an older server.
+  it.each([
+    [{ homeMode: 'ephemeral' }, 'Home mode:    ephemeral'],
+    [{ homeMode: 'durable' }, 'Home mode:    durable'],
+    [{ homeMode: null }, 'Home mode:    default (durable)'],
+  ])('prints the home mode %j', async (fields, line) => {
+    fetchSpy
+      .mockResolvedValueOnce(new Response(JSON.stringify({ app: { ...APP, ...fields } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ deployments: [] }), { status: 200 }));
+
+    await appsGet('app-1', {});
+
+    expect(logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n')).toContain(line);
+  });
+
+  it('prints no home mode line when the server sends no homeMode member', async () => {
+    mockAppThenDeployments(new Response(JSON.stringify({ deployments: [] }), { status: 200 }));
+
+    await appsGet('app-1', {});
+
+    expect(logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n')).not.toContain('Home mode');
   });
 
   // guuey#994 — `apps get` states the app's lifecycle status, so an
@@ -482,6 +506,27 @@ describe('buildUpdateAppBody', () => {
     if (typeof body !== 'string') throw new Error('expected a rejection');
     return body;
   }
+
+  // guuey#2871: --home <durable|ephemeral|default>.
+  it.each([
+    ['durable', 'durable'],
+    ['ephemeral', 'ephemeral'],
+  ] as const)('--home %s sends homeMode: %s', (flag, mode) => {
+    expect(built({ home: flag })).toEqual({ homeMode: mode });
+  });
+
+  it('--home default sends homeMode: null, which removes the field (read as durable)', () => {
+    expect(built({ home: 'default' })).toEqual({ homeMode: null });
+  });
+
+  it.each([[''], ['Durable'], ['persistent'], [' durable']])(
+    'refuses --home %p, naming the three choices',
+    (bad) => {
+      expect(refused({ home: bad })).toBe(
+        `--home must be one of: durable, ephemeral, default (got "${bad}").`,
+      );
+    },
+  );
 
   it('sends displayName — NOT `name`, the field that never matched', () => {
     expect(built({ name: 'Renamed' })).toEqual({ displayName: 'Renamed' });
@@ -780,6 +825,82 @@ describe('appsUpdate', () => {
     });
   });
 
+  // ── guuey#2871: --home ───────────────────────────────────────────────
+  describe('--home', () => {
+    let logSpy: MockInstance<typeof console.log>;
+    let errSpy: MockInstance<typeof console.error>;
+
+    beforeEach(() => {
+      logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    function printed(): string {
+      return logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    }
+    function answer(app: { homeMode?: string | null }): Response {
+      return new Response(JSON.stringify({ app }), { status: 200 });
+    }
+
+    it.each([
+      ['durable', 'durable', 'Home mode: durable'],
+      ['ephemeral', 'ephemeral', 'Home mode: ephemeral'],
+      ['default', null, 'Home mode: default (durable)'],
+    ] as const)('--home %s PUTs homeMode: %s and prints the echo', async (flag, mode, line) => {
+      fetchSpy.mockResolvedValue(answer({ homeMode: mode }));
+
+      await appsUpdate('app-1', { home: flag });
+
+      expect(lastRequest(fetchSpy)).toEqual({
+        method: 'PUT',
+        path: '/apps/app-1',
+        body: { homeMode: mode },
+      });
+      expect(printed()).toContain(line);
+    });
+
+    it('an invalid --home exits 1 before any request, naming the three choices', async () => {
+      await expect(appsUpdate('app-1', { home: 'forever' })).rejects.toThrow(ExitSignal);
+
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(errSpy.mock.calls.flat().join(' ')).toContain(
+        '--home must be one of: durable, ephemeral, default (got "forever").',
+      );
+    });
+
+    it('an echo without homeMode (an older server) prints "not reported" and still exits 0', async () => {
+      fetchSpy.mockResolvedValue(answer({}));
+
+      await appsUpdate('app-1', { home: 'ephemeral' });
+
+      expect(printed()).toContain(
+        'Home mode: not reported by this server (it may not support this setting yet)',
+      );
+      expect(printed()).not.toContain('Home mode: durable');
+      expect(process.exit).not.toHaveBeenCalled();
+    });
+
+    it('prints no home line when --home was not sent', async () => {
+      fetchSpy.mockResolvedValue(answer({ homeMode: 'ephemeral' }));
+
+      await appsUpdate('app-1', { name: 'Renamed' });
+
+      expect(printed()).not.toContain('Home mode');
+    });
+
+    it('--json carries the echoed homeMode, and no homeMode key when the echo lacks it', async () => {
+      fetchSpy.mockResolvedValueOnce(answer({ homeMode: null }));
+      await appsUpdate('app-1', { home: 'default', json: true });
+      expect(JSON.parse(printed())).toEqual({ success: true, homeMode: null });
+
+      logSpy.mockClear();
+      fetchSpy.mockResolvedValueOnce(answer({}));
+      await appsUpdate('app-1', { home: 'durable', json: true });
+      expect(JSON.parse(printed())).toEqual({ success: true });
+      expect(process.exit).not.toHaveBeenCalled();
+    });
+  });
+
   // ── guuey#283: --chat-theme-file / --clear-chat-theme ────────────────
   const THEME_DOC = {
     name: 'salon-editorial',
@@ -847,6 +968,24 @@ describe('appsUpdate', () => {
     ).rejects.toThrow(ExitSignal);
     expect(errSpy.mock.calls.flat().join(' ')).toContain('cannot be combined');
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('homeModeOf (guuey#2871)', () => {
+  it('reads the echoed app.homeMode: a mode, or null when the app has none', () => {
+    expect(homeModeOf({ app: { homeMode: 'ephemeral' } })).toBe('ephemeral');
+    expect(homeModeOf({ app: { homeMode: null } })).toBeNull();
+  });
+
+  it('keeps a mode this CLI does not know verbatim', () => {
+    expect(homeModeOf({ app: { homeMode: 'shared' } })).toBe('shared');
+  });
+
+  it('is undefined — never null — when the answer has no such member', () => {
+    expect(homeModeOf({ app: {} })).toBeUndefined();
+    expect(homeModeOf({})).toBeUndefined();
+    expect(homeModeOf(undefined)).toBeUndefined();
+    expect(homeModeOf({ app: { homeMode: 3 } })).toBeUndefined();
   });
 });
 
