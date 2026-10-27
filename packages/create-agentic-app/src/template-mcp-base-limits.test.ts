@@ -49,6 +49,13 @@ interface RpcResponse {
   error?: { code: number; message: string };
 }
 
+/**
+ * Each test spawns the template's server, or talks to it, over real HTTP. That
+ * runs past vitest's 5 s default on a 2-vCPU runner (guuey#867), so the start
+ * and every test carry this budget.
+ */
+const SERVER_BUDGET_MS = 30_000;
+
 let child: ChildProcess;
 let baseUrl: string;
 let nextId = 1;
@@ -123,13 +130,13 @@ beforeAll(async () => {
     });
     child.once('exit', (code) => reject(new Error(`mcp-base server exited (${code}) before listening: ${stderr}`)));
   });
-}, 30_000);
+}, SERVER_BUDGET_MS);
 
 afterAll(() => {
   child.kill('SIGKILL');
 });
 
-describe('mcp-base template input limits', () => {
+describe('mcp-base template input limits', { timeout: SERVER_BUDGET_MS }, () => {
   it('declares limits sized to its largest real input', () => {
     expect(MAX_TOOL_INPUT_ELEMENTS).toBe(16);
     expect(MAX_REQUEST_BODY_BYTES).toBe(256 * 1024);
