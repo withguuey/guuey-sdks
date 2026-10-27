@@ -44,6 +44,14 @@ describe("buildInvokeBody — the one wire shape", () => {
     expect(buildInvokeBody({ input: "hi", clientMessageId: "c", attachments: [] })).not.toHaveProperty("attachments");
   });
 
+  it("carries an input kind only beside an empty input, as the last key; beside text the text is the turn (guuey#2549)", () => {
+    const body = buildInvokeBody({ input: "", clientMessageId: "c", tapLabels: ["x"], inputKind: "context-only" });
+    expect(Object.keys(body)).toEqual(["input", "clientMessageId", "tapLabels", "inputKind"]);
+    expect(body.inputKind).toBe("context-only");
+    expect(buildInvokeBody({ input: "hi", clientMessageId: "c", inputKind: "context-only" })).not.toHaveProperty("inputKind");
+    expect(buildInvokeBody({ input: "hi", clientMessageId: "c" })).not.toHaveProperty("inputKind");
+  });
+
   it("carries capabilities, pageContext and mode verbatim, in the wire's key order", () => {
     const body = buildInvokeBody({
       input: "x",
@@ -68,7 +76,7 @@ describe("the widget's canonical bodies are pinned as the fixture (guuey#1213)",
     expect(onDisk).toBe(`${JSON.stringify(expected, null, 2)}\n`);
   });
 
-  it("the case list covers the shapes the widget actually sends: init-origin-only, a full page block, a page block without context, a mode pin, the SDK minimum, a card tap with its labels, and a turn with an image", () => {
+  it("the case list covers the shapes the widget actually sends: init-origin-only, a full page block, a page block without context, a mode pin, the SDK minimum, a card tap with its labels, a turn with an image, and a turn without words", () => {
     const names = WIDGET_INVOKE_BODY_CASES.map((c) => c.name);
     expect(names).toEqual([
       "session-open-init-origin",
@@ -78,6 +86,7 @@ describe("the widget's canonical bodies are pinned as the fixture (guuey#1213)",
       "sdk-minimal",
       "card-tap-with-labels",
       "turn-with-image",
+      "turn-context-only",
     ]);
     const withPath = WIDGET_INVOKE_BODY_CASES.filter((c) => c.input.pageContext?.path !== undefined);
     // Every path-bearing block the widget builds also carries title + hostOrigin (WidgetChat's onPage).

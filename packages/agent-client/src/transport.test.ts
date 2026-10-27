@@ -135,11 +135,13 @@ describe("transport module import closure", () => {
     // The closure the docblock promises — a new module joining it is a
     // deliberate decision, not drift. `attachments.ts` joined for guuey#2293:
     // `types.ts` names its `ImageAttachment` on `SendOptions`, and the module
-    // imports nothing.
+    // imports nothing. `input-kinds.ts` joined for guuey#2549 the same way:
+    // `types.ts` names its `InputKind` on `SendOptions`, and it imports nothing.
     expect([...seen].sort()).toEqual([
       "attachments.ts",
       "error-codes.ts",
       "errors.ts",
+      "input-kinds.ts",
       "saturation-retry.ts",
       "transport.ts",
       "types.ts",

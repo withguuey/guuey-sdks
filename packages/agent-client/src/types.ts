@@ -15,6 +15,7 @@
 
 import type { AgClientCapabilities, AgNoticeSource, AgReduceResult, JsonValue } from "@silverprotocol/core";
 import type { ImageAttachment } from "./attachments.js";
+import type { InputKind } from "./input-kinds.js";
 
 /** A flat chat turn as rendered by the consumer UI. */
 export interface AgentMessage {
@@ -89,6 +90,13 @@ export interface AgentMessage {
    * holds the two spellings equal.
    */
   tapLabels?: readonly (string | null)[];
+  /**
+   * On a user row sent without words (guuey#2549): where its content rode
+   * (`text` is `""`). Set on a live row by `send("", { inputKind })`.
+   * DISPLAY-ONLY: a transcript draws its own line for the turn in place of an
+   * empty bubble.
+   */
+  inputKind?: InputKind;
 }
 
 /**
@@ -120,6 +128,20 @@ export interface SendOptions {
    * any reply, since an older runtime would otherwise answer without them.
    */
   attachments?: readonly ImageAttachment[];
+  /**
+   * A turn without words (guuey#2549): pass `input` as `""` (blank text reads
+   * as `""`) and name where the content rides. `"context-only"`: it rode on
+   * the page context the app sends with every turn (a photo the app
+   * uploaded, say). Ignored beside text, where the text is the turn.
+   *
+   * The agent's runtime judges it: an agent that does not take such a turn
+   * (or not yet: one with its own code takes it only once it has declared the
+   * kind, and an older runtime never does) refuses it before it starts, the
+   * row reads failed, and `errorCode` is `INPUT_KIND_NOT_ADVERTISED`; send the
+   * turn with a few words instead. {@link UseAgentInvokeReturn.acceptedInputKinds}
+   * says what the agent last offered, as a hint for the UI.
+   */
+  inputKind?: InputKind;
 }
 
 /**
@@ -176,7 +198,7 @@ export type GenerateId = () => string;
 export interface InvokeRequest {
   /** Fully-resolved POST target (already normalised to end in `/agent/invoke`). */
   url: string;
-  /** JSON request body: `{ input, threadId?, clientMessageId, capabilities? }`. */
+  /** JSON request body, built by `buildInvokeBody` (see `InvokeBody` for its keys). */
   body: unknown;
   /** Aborts the in-flight stream. */
   signal: AbortSignal;
@@ -530,4 +552,15 @@ export interface UseAgentInvokeReturn {
    * for admitted turns are removed (absent = sent). `reset()` clears it.
    */
   sendStates: Readonly<Record<string, "sending" | "failed">>;
+  /**
+   * The input kinds (guuey#2549) the agent offered on the latest turn's
+   * `session` frame, or `null` before any turn of this app was admitted. A
+   * HINT for a host's UI (whether to offer a send without words): the offer
+   * can change between turns (a restart, another replica, an agent that has
+   * not yet declared it), so the runtime still judges every turn and
+   * {@link SendOptions.inputKind} is never refused locally. Cleared by an app
+   * switch; kept by `reset()`, which starts a new conversation with the same
+   * agent.
+   */
+  acceptedInputKinds: readonly InputKind[] | null;
 }

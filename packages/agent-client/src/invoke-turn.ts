@@ -27,6 +27,7 @@ import { parseLinkRequest, parseSseEvents, reduceAssistantText, stringField } fr
 import { ingestMessageFrame } from "./blocks.js";
 import type { AgentInvokeStatus, InvokeRequest, InvokeTransport, ProfileLinkRequest, ThreadClosed } from "./types.js";
 import { readThreadClosed } from "./thread-closed.js";
+import { type InputKind, readAcceptedInputKinds } from "./input-kinds.js";
 
 /**
  * One semantic step of a turn. Field conventions:
@@ -52,6 +53,13 @@ export type InvokeTurnEvent =
        * count, which is every runtime that predates attachments.
        */
       attachmentsAccepted?: number;
+      /**
+       * The input kinds the agent accepts on its NEXT turn (guuey#2549), from
+       * the frame's `accepts.inputKinds`: `[]` when the frame lists none, which
+       * is every runtime that predates input kinds. A hint for a host's UI;
+       * the runtime still judges each turn.
+       */
+      acceptedInputKinds: readonly InputKind[];
     }
   | {
       kind: "message";
@@ -135,6 +143,7 @@ export async function* invokeTurn(
           kind: "session",
           threadId: stringField(ev.data, "threadId") ?? null,
           ...(attachmentsAccepted !== undefined ? { attachmentsAccepted } : {}),
+          acceptedInputKinds: readAcceptedInputKinds(ev.data),
         };
       } else if (ev.event === "message") {
         // Status derivation (guuey#91) — read the frame's `type` before the

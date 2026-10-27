@@ -31,6 +31,7 @@ import { CLIENT_ERROR_CODES } from "./error-codes.js";
 import { HistoryUnauthorizedError } from "./history.js";
 import { writeTapLabels } from "@guuey/mcp-apps-host/narrowing";
 import { describeImageAttachmentRefusal, validateImageAttachments } from "./attachments.js";
+import { type InputKind, isInputKindRefusal } from "./input-kinds.js";
 import type {
   AgentInvokeAdapters,
   AgentInvokeStatus,
@@ -293,6 +294,16 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
   const [aborted, setAborted] = useState(false);
   const [adopted, setAdopted] = useState(false);
   const [sendStates, setSendStates] = useState<Readonly<Record<string, "sending" | "failed">>>({});
+  // guuey#2549: the input kinds the latest session frame offered (null before
+  // any admitted turn of this app). A hint only; the runtime judges each turn.
+  const [acceptedInputKinds, setAcceptedInputKindsState] = useState<readonly InputKind[] | null>(null);
+  const setAcceptedInputKinds = useCallback((next: readonly InputKind[] | null): void => {
+    // Keep the array identity while the offer is unchanged, so a host effect
+    // keyed on it runs only when the offer moves.
+    setAcceptedInputKindsState((prev) =>
+      prev !== null && next !== null && prev.length === next.length && prev.every((k, i) => k === next[i]) ? prev : next,
+    );
+  }, []);
 
   const abortRef = useRef<AbortController | null>(null);
   // Mirror the latest threadId + adapters into refs so `send` reads fresh
@@ -348,6 +359,8 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     setAborted(false);
     setAdopted(false);
     setSendStates({});
+    // Another app is another agent: its offer is unknown until its first turn.
+    setAcceptedInputKinds(null);
 
     let cancelled = false;
     const key = threadStorageKey(appId);
@@ -510,7 +523,12 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
           setSendStates((prev) => (prev[refusedId] === "failed" ? prev : { ...prev, [refusedId]: "failed" }));
         }
       };
-      if (!endpointUrl || !input.trim() || status !== "ready" || opts.signal?.aborted) {
+      // guuey#2549: a turn without words names where its content rides; blank
+      // text beside a kind is sent as "" (the runtime's own rule is exactly an
+      // empty input). The runtime judges whether its agent takes the turn.
+      const inputKind = sendOpts?.inputKind !== undefined && !input.trim() ? sendOpts.inputKind : undefined;
+      const turnInput = inputKind !== undefined ? "" : input;
+      if (!endpointUrl || (inputKind === undefined && !input.trim()) || status !== "ready" || opts.signal?.aborted) {
         markRefused();
         return;
       }
@@ -565,10 +583,11 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
       const precedingTurnCount = reducerRef.current?.result().turns.length ?? 0;
       const ownRow: AgentMessage = {
         role: "user",
-        text: input,
+        text: turnInput,
         clientMessageId,
         precedingTurnCount,
         ...(tapLabels !== undefined ? { tapLabels } : {}),
+        ...(inputKind !== undefined ? { inputKind } : {}),
       };
       setMessages((prev) => [...prev, ownRow, { role: "assistant", text: "" }]);
       /**
@@ -778,7 +797,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         // live refs are read HERE, at send time: an SPA route change or a
         // mode change rides the NEXT turn, never a stale memo.
         const body = buildInvokeBody({
-          input,
+          input: turnInput,
           threadId: threadIdRef.current,
           clientMessageId,
           ...(capabilities !== undefined ? { capabilities } : {}),
@@ -786,6 +805,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
           ...(modeRef.current !== undefined ? { mode: modeRef.current } : {}),
           ...(tapLabels !== undefined ? { tapLabels } : {}),
           ...(attachments.length > 0 ? { attachments } : {}),
+          ...(inputKind !== undefined ? { inputKind } : {}),
         });
 
         // The wire walk lives in `invokeTurn` (the pure per-turn generator —
@@ -801,6 +821,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
             admitted = true;
             markSend(null);
             setStatus("thinking");
+            setAcceptedInputKinds(ev.acceptedInputKinds);
             if (ev.threadId) {
               threadIdRef.current = ev.threadId;
               setThreadId(ev.threadId);
@@ -900,7 +921,21 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
           // already happened and failed by the time one surfaces here). Any
           // other throw — a network drop, a host-adapter failure — has no wire
           // code, so the field stays null beside the message.
-          setErrorCode(e instanceof AgentResponseError ? (e.code ?? null) : null);
+          // guuey#2549: a runtime that does not take this turn without words
+          // refuses it here, before anything is stored. It is read as its own
+          // code (the reader is told to add words) and the offer is cleared; a
+          // refusal of anything else keeps the runtime's code.
+          const inputKindRefused =
+            inputKind !== undefined &&
+            e instanceof AgentResponseError &&
+            e.status === 400 &&
+            isInputKindRefusal(e.message);
+          if (inputKindRefused) {
+            setErrorCode(CLIENT_ERROR_CODES.INPUT_KIND_NOT_ADVERTISED);
+            setAcceptedInputKinds([]);
+          } else {
+            setErrorCode(e instanceof AgentResponseError ? (e.code ?? null) : null);
+          }
           // A failure BEFORE admission means the message never reached the
           // agent — the R0 failed-to-send state. Post-admission failures
           // leave the entry removed (the send itself succeeded).
@@ -963,5 +998,6 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     aborted,
     adopted,
     sendStates,
+    acceptedInputKinds,
   };
 }

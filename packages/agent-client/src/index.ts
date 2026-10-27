@@ -59,6 +59,15 @@ export {
   CLIENT_ERROR_CODES,
   type ClientErrorCode,
 } from "./error-codes.js";
+// guuey#2549: a turn without words (`SendOptions.inputKind`): the kinds, the
+// session frame's offer and the refusal reader the hook uses.
+export {
+  INPUT_KINDS,
+  isInputKind,
+  isInputKindRefusal,
+  readAcceptedInputKinds,
+  type InputKind,
+} from "./input-kinds.js";
 // guuey#2293: the image attachments a turn may carry — the V1 allowlist, the
 // caps and the judge `send` runs, for a host that checks a pick before sending.
 export {

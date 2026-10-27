@@ -59,7 +59,7 @@ describe("invokeTurn", () => {
       ),
     );
     expect(events).toEqual([
-      { kind: "session", threadId: "t1" },
+      { kind: "session", threadId: "t1", acceptedInputKinds: [] },
       {
         kind: "message",
         status: "using-tool",
@@ -97,20 +97,20 @@ describe("invokeTurn", () => {
 
   it("yields a session with a null threadId when the pod sent none", async () => {
     const events = await collect(transportOf(sse("session", { sessionId: "s1", userId: "u1" })));
-    expect(events).toEqual([{ kind: "session", threadId: null }]);
+    expect(events).toEqual([{ kind: "session", threadId: null, acceptedInputKinds: [] }]);
   });
 
   it("reads the pod's image acknowledgement off the session frame, and only a whole non-negative count (guuey#2293)", async () => {
     expect(await collect(transportOf(sse("session", { threadId: "t1", attachments: { accepted: 2 } })))).toEqual([
-      { kind: "session", threadId: "t1", attachmentsAccepted: 2 },
+      { kind: "session", threadId: "t1", attachmentsAccepted: 2, acceptedInputKinds: [] },
     ]);
     expect(await collect(transportOf(sse("session", { threadId: "t1", attachments: { accepted: 0 } })))).toEqual([
-      { kind: "session", threadId: "t1", attachmentsAccepted: 0 },
+      { kind: "session", threadId: "t1", attachmentsAccepted: 0, acceptedInputKinds: [] },
     ]);
     // A pod that predates attachments sends no key: the event carries none either.
     for (const attachments of [undefined, null, "2", { accepted: "2" }, { accepted: -1 }, { accepted: 1.5 }, [2]]) {
       const events = await collect(transportOf(sse("session", { threadId: "t1", attachments })));
-      expect(events).toEqual([{ kind: "session", threadId: "t1" }]);
+      expect(events).toEqual([{ kind: "session", threadId: "t1", acceptedInputKinds: [] }]);
     }
   });
 
@@ -191,7 +191,7 @@ describe("invokeTurn", () => {
         for await (const ev of invokeTurn(request(), failing)) seen.push(ev);
       })(),
     ).rejects.toThrow("pod unreachable");
-    expect(seen).toEqual([{ kind: "session", threadId: "t1" }]);
+    expect(seen).toEqual([{ kind: "session", threadId: "t1", acceptedInputKinds: [] }]);
   });
 
   it("surfaces validated AgEvents from a silver frame for the caller's reducer", async () => {

@@ -217,6 +217,15 @@ export const CLIENT_ERROR_CODES = {
    * images works.
    */
   ATTACHMENTS_UNSUPPORTED: "ATTACHMENTS_UNSUPPORTED",
+  /**
+   * A turn without text (guuey#2549, `SendOptions.inputKind`) was refused by
+   * the agent's runtime before it started: the agent does not take such a turn
+   * here, or not yet (an agent with its own code takes one only after it has
+   * declared the kind, and a runtime that predates input kinds never does).
+   * Nothing was stored or answered; sending the turn with a few words works.
+   * `error` keeps the runtime's own message.
+   */
+  INPUT_KIND_NOT_ADVERTISED: "INPUT_KIND_NOT_ADVERTISED",
 } as const;
 
 /** One of this SDK's client-originated codes — see {@link CLIENT_ERROR_CODES}. */

@@ -29,9 +29,13 @@ import type { AgClientCapabilities } from "@silverprotocol/core";
 import type { TapLabels } from "@guuey/mcp-apps-host/narrowing";
 import type { PageContext } from "./types.js";
 import type { ImageAttachment } from "./attachments.js";
+import type { InputKind } from "./input-kinds.js";
 
 export interface InvokeBodyInput {
-  /** The user's text for this turn (non-empty; the pod refuses an empty one). */
+  /**
+   * The user's text for this turn. Empty only beside {@link inputKind}: the
+   * runtime refuses an empty input on its own.
+   */
   input: string;
   /** The durable conversation id, once the pod has minted one (absent on first contact). */
   threadId?: string | null;
@@ -54,6 +58,12 @@ export interface InvokeBodyInput {
    * `validateImageAttachments`. An empty list is the same as none: no key.
    */
   attachments?: readonly ImageAttachment[];
+  /**
+   * Where a turn without text has its content (guuey#2549): put on the wire
+   * only beside an empty input, which is the runtime's own rule (beside text
+   * the text is the turn).
+   */
+  inputKind?: InputKind;
 }
 
 /** The wire body, exactly as sent. */
@@ -66,6 +76,7 @@ export interface InvokeBody {
   mode?: string;
   tapLabels?: TapLabels;
   attachments?: readonly ImageAttachment[];
+  inputKind?: InputKind;
 }
 
 export function buildInvokeBody(i: InvokeBodyInput): InvokeBody {
@@ -88,5 +99,9 @@ export function buildInvokeBody(i: InvokeBodyInput): InvokeBody {
     // inline attachment and ignores it, so the hook proceeds only on the
     // runtime's acknowledgement (see `useAgentInvoke`).
     ...(i.attachments !== undefined && i.attachments.length > 0 ? { attachments: i.attachments } : {}),
+    // guuey#2549: a turn without text, last. A runtime that predates input
+    // kinds refuses an empty input before the stream; the hook reads that
+    // refusal (see `isInputKindRefusal`).
+    ...(i.inputKind !== undefined && i.input === "" ? { inputKind: i.inputKind } : {}),
   };
 }

@@ -108,4 +108,21 @@ export const WIDGET_INVOKE_BODY_CASES: ReadonlyArray<{ name: string; why: string
       ],
     },
   },
+  {
+    name: "turn-context-only",
+    why: "a turn without words (guuey#2549): an empty input beside inputKind 'context-only', as the last key; the content rode on the page context. A runtime that predates input kinds refuses it before the stream by design, and the client reads that refusal as INPUT_KIND_NOT_ADVERTISED",
+    input: {
+      input: "",
+      threadId: "thr_01J8ZK3Q9X",
+      clientMessageId: "cm_0008",
+      capabilities: { hitl: { ask: true, grantModes: true }, uiResources: { viewMessageTurns: true } },
+      pageContext: {
+        path: "/ask",
+        title: "Ask",
+        context: "Photo: lesson-7.jpg",
+        hostOrigin: "https://customer.example",
+      },
+      inputKind: "context-only",
+    },
+  },
 ];
