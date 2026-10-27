@@ -596,6 +596,29 @@ describe('agentApply', () => {
     expect(logs.join('\n')).toContain('[SCHEMA_TOO_NEW]');
   });
 
+  it('a typo in guuey.json is still refused locally (strict), and the refusal adds the newer-guuey.json hint (guuey#2851)', async () => {
+    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {}, app: { acess: {} } }));
+    await expect(agentApply({ provenance: 'none' })).rejects.toThrow(new ExitSignal(1).message);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(logs.join('\n')).toContain(
+      'Unknown key in guuey.json: app.acess. If it is a typo, fix it; if it comes from a newer guuey.json, upgrade @guuey/cli (npm i -g @guuey/cli@latest).',
+    );
+  });
+
+  it('a refusal that names no unknown key carries no hint', async () => {
+    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {}, protocol: 'ag-ui' }));
+    await expect(agentApply({ provenance: 'none' })).rejects.toThrow(new ExitSignal(1).message);
+    expect(logs.join('\n')).not.toContain('Unknown key');
+  });
+
+  it("renders each key the server ignored (a server older than this CLI, guuey#2851)", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, reconcileResult({ warnings: ['app.autoThreadTitles ignored by this server'] })),
+    );
+    await agentApply({ provenance: 'none' });
+    expect(logs.join('\n')).toContain('! app.autoThreadTitles ignored by this server');
+  });
+
   it('a bad --provenance value is a usage error before any network call', async () => {
     await expect(agentApply({ provenance: 'org/repo@main' })).rejects.toThrow(ExitSignal);
     expect(fetchMock).not.toHaveBeenCalled();

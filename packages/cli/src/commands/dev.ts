@@ -25,6 +25,7 @@ import {
   missingProviderKeyMessage,
 } from '@guuey/config';
 import { findProjectConfig } from '../config.js';
+import { guueyJsonLoadErrorMessage } from '../guuey-json-load-error.js';
 import { startDevServer, lowerForDev } from '../dev/dev-server.js';
 import { spawnColocatedDev, type ColocatedDevEntry } from '../dev/colocated-dev.js';
 import * as out from '../output.js';
@@ -104,7 +105,7 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
   try {
     loaded = loadGuueyJson(configPath);
   } catch (err) {
-    out.error(err instanceof Error ? err.message : String(err));
+    out.error(guueyJsonLoadErrorMessage(err));
     process.exit(1);
     return;
   }

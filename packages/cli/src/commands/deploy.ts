@@ -76,6 +76,7 @@ import {
   type ProjectConfig,
 } from '../config';
 import { apiRequest, cleanup, packSource, parseApiError } from '../deploy-shared';
+import { guueyJsonLoadErrorMessage } from '../guuey-json-load-error';
 import { deployMcpFromSource, resolveServerName, resolveWorkspaceId, readPackageName } from './mcp';
 import { fetchByoOriginGap, printByoOriginWarning } from './apps';
 import { BUILT_FOR_ASK, BUILT_FOR_CHOICES, BUILT_FOR_LABEL, BUILT_FOR_RETRY, parseBuiltForAnswer } from '../built-for';
@@ -723,9 +724,7 @@ async function deployCode(opts: {
   try {
     loaded = loadGuueyJson(guueyJsonPath);
   } catch (err) {
-    out.error(
-      `Failed to load ${GUUEY_JSON_FILENAME}: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    out.error(`Failed to load ${GUUEY_JSON_FILENAME}: ${guueyJsonLoadErrorMessage(err)}`);
     process.exit(1);
   }
   let doc: GuueyJsonV1 = loaded.doc;
@@ -1472,9 +1471,7 @@ async function deployDeclarative(opts: {
   try {
     resolved = loadGuueyJson(guueyJsonPath);
   } catch (err) {
-    out.error(
-      `Failed to load ${GUUEY_JSON_FILENAME}: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    out.error(`Failed to load ${GUUEY_JSON_FILENAME}: ${guueyJsonLoadErrorMessage(err)}`);
     process.exit(1);
   }
 

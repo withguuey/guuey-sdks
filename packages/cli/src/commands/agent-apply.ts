@@ -58,6 +58,7 @@ import { resolveConfig } from '../config';
 import { resolveTargetAppId } from '../app-id';
 import { apiRequest, parseApiError } from '../deploy-shared';
 import { deployEnv, substitutedLine } from '../deploy-env';
+import { guueyJsonLoadErrorMessage } from '../guuey-json-load-error';
 import { awaitPageUrl, pollDeployStatus, printPageLine } from './deploy';
 import { DEPLOY_WAIT_MS, stillDeployingMessage } from './deploy-wait';
 import { maybePrintThemeHint } from './theme-hint';
@@ -163,6 +164,12 @@ export interface AgentReconcileResult {
    * doc value was ignored for them (guuey#506). Omitted when empty.
    */
   shadowedDocFields?: string[];
+  /**
+   * guuey#2851: one line per key under `app` the server does not know and
+   * ignored (this CLI is newer than the server). Absent from an older server
+   * and when empty.
+   */
+  warnings?: string[];
   /**
    * guuey#1415: what the card side did with this apply's theme (the same field
    * `apps update` and `deploy` read). Absent = nothing to say, or an older server.
@@ -425,7 +432,7 @@ function loadForCommand(flags: Record<string, string | true> | undefined, jsonOu
   try {
     loaded = loadLocalArtifacts(process.cwd(), deployEnv(flags, process.env));
   } catch (err) {
-    out.error(`${failPrefix}: ${err instanceof Error ? err.message : String(err)}`);
+    out.error(`${failPrefix}: ${guueyJsonLoadErrorMessage(err)}`);
     process.exit(1);
   }
   if (loaded.substituted.length > 0) {
@@ -454,6 +461,9 @@ export function renderPlan(res: AgentReconcileResult): string[] {
       `  ! guuey.json declares ${res.shadowedDocFields.join(', ')} but the explicit config override does not carry ${one ? 'it' : 'them'} — the doc value${one ? ' was' : 's were'} ignored.`,
     );
   }
+  // guuey#2851 — the server ignored a guuey.json key it does not know yet
+  // (this CLI is ahead of it): the apply succeeded without that setting.
+  for (const warning of res.warnings ?? []) lines.push(`  ! ${warning}`);
   lines.push(`  snapshot:  ${res.plan.snapshot}`);
   if (res.plan.config.length === 0) {
     lines.push('  config:    holds');
