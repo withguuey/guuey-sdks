@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 import {
   printTriggerWarnings,
+  printRedeploySource,
+  readRedeploySource,
   awaitPageUrl,
   createIntentFromProject,
   createLinkedApp,
@@ -2063,6 +2065,84 @@ describe('printTriggerWarnings (guuey#580 belt adoption)', () => {
       '  ! MODES_DROPPED_ON_DEPLOY: this snapshot drops agent.modes the live build carries — run guuey pull to seed.',
     ]);
     spy.mockRestore();
+  });
+});
+
+// guuey#2349: a trigger without a guuey.json snapshot (the root-Dockerfile
+// deploy) re-serves a stored build's definition; the 202's additive
+// `redeployedFrom` names that build, and the CLI says which. An older server
+// sends no field and the CLI prints nothing extra.
+describe('printRedeploySource (guuey#2349)', () => {
+  function printedBy(body: unknown): string[] {
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => {
+      lines.push(a.join(' '));
+    });
+    printRedeploySource(body);
+    spy.mockRestore();
+    return lines;
+  }
+
+  it('the live build: names its number and created time', () => {
+    expect(
+      printedBy({ redeployedFrom: { kind: 'live', buildNumber: 4, status: 'live', createdAt: '2026-10-04T12:00:00.000Z' } }),
+    ).toEqual(["  Config: reused build #4's guuey.json (the live build, created 2026-10-04T12:00:00.000Z); this deploy sends none."]);
+  });
+
+  it('nothing live: names the newest build with one', () => {
+    expect(
+      printedBy({ redeployedFrom: { kind: 'newest', buildNumber: 5, status: 'failed', createdAt: '2026-10-05T12:00:00.000Z' } }),
+    ).toEqual([
+      "  Config: reused build #5's guuey.json (nothing is live, so the newest build with one, created 2026-10-05T12:00:00.000Z); this deploy sends none.",
+    ]);
+  });
+
+  // A 'newest' build under a teardown still reads status 'live' and is not
+  // serving: live or not is the kind's word, never the row's status.
+  it("newest whose status reads live (under a teardown): never called live", () => {
+    expect(
+      printedBy({ redeployedFrom: { kind: 'newest', buildNumber: 2, status: 'live', createdAt: '2026-10-02T12:00:00.000Z' } }),
+    ).toEqual([
+      "  Config: reused build #2's guuey.json (nothing is live, so the newest build with one, created 2026-10-02T12:00:00.000Z); this deploy sends none.",
+    ]);
+  });
+
+  it('the archive tombstone: says so, with no build number', () => {
+    expect(printedBy({ redeployedFrom: { kind: 'archive', buildNumber: null, status: null, createdAt: null } })).toEqual([
+      '  Config: reused the guuey.json saved when this app was archived; this deploy sends none.',
+    ]);
+  });
+
+  it('an older server (no field) or junk: prints nothing', () => {
+    expect(printedBy({ appId: 'app-1', buildNumber: 7, status: 'queued' })).toEqual([]);
+    expect(printedBy({ redeployedFrom: { kind: 'oldest', buildNumber: 1 } })).toEqual([]);
+    expect(printedBy({ redeployedFrom: 'live' })).toEqual([]);
+    expect(printedBy(null)).toEqual([]);
+  });
+
+  it('readRedeploySource reads a malformed member as null and still names what it can', () => {
+    expect(readRedeploySource({ kind: 'live', buildNumber: '4', status: '', createdAt: 7 })).toEqual({
+      kind: 'live',
+      buildNumber: null,
+      status: null,
+      createdAt: null,
+    });
+    expect(printedBy({ redeployedFrom: { kind: 'live', buildNumber: null, status: null, createdAt: null } })).toEqual([
+      "  Config: reused a stored build's guuey.json (the live build); this deploy sends none.",
+    ]);
+  });
+
+  // The legacy Dockerfile trigger is the one CLI site that sends no snapshot,
+  // and it needs a tarball + S3 round trip this suite has no harness for (see
+  // the maxPods pin), so its printing is pinned at the source.
+  it('the snapshot-less trigger site prints the source and the trigger warnings', () => {
+    const source = readFileSync(fileURLToPath(new URL('./deploy.ts', import.meta.url)), 'utf8');
+    const sites = source.split("'POST', `/apps/${appId}/deploy/trigger`").slice(1);
+    const bare = sites.filter((site) => !site.slice(0, site.indexOf('});')).includes('snapshotConfig'));
+    expect(bare).toHaveLength(1);
+    const handling = bare[0]!.slice(0, bare[0]!.indexOf('attachBuildLogStream'));
+    expect(handling).toContain('printRedeploySource(');
+    expect(handling).toContain('printTriggerWarnings(');
   });
 });
 

@@ -183,6 +183,55 @@ export function printTriggerWarnings(body: unknown): void {
   }
 }
 
+/**
+ * guuey#2349: a trigger that sends no guuey.json snapshot (the root-Dockerfile
+ * deploy below) re-serves a stored build's definition, and the 202 names that
+ * build in the additive `redeployedFrom`. MIRROR of `@guuey-private/cli-wire`'s
+ * `RedeploySourceWire` / `REDEPLOY_SOURCE_KINDS` / `readRedeploySource`
+ * (`backend/libs/cli-wire/deploy.ts`; the CLI cannot take the private dep),
+ * pinned by `wire-sync.test.ts`. An older server sends no field: nothing prints.
+ */
+export const REDEPLOY_SOURCE_KINDS = ['live', 'newest', 'archive'] as const;
+export type RedeploySourceKind = (typeof REDEPLOY_SOURCE_KINDS)[number];
+
+export interface RedeploySourceWire {
+  kind: RedeploySourceKind;
+  buildNumber: number | null;
+  status: string | null;
+  createdAt: string | null;
+}
+
+/** MIRROR of cli-wire's `readRedeploySource`: narrow an untrusted field; anything else is "not stated". */
+export function readRedeploySource(value: unknown): RedeploySourceWire | undefined {
+  if (value === null || typeof value !== 'object') return undefined;
+  const v = value as { kind?: unknown; buildNumber?: unknown; status?: unknown; createdAt?: unknown };
+  const kind = REDEPLOY_SOURCE_KINDS.find((k) => k === v.kind);
+  if (kind === undefined) return undefined;
+  return {
+    kind,
+    buildNumber: typeof v.buildNumber === 'number' && Number.isInteger(v.buildNumber) ? v.buildNumber : null,
+    status: typeof v.status === 'string' && v.status !== '' ? v.status : null,
+    createdAt: typeof v.createdAt === 'string' && v.createdAt !== '' ? v.createdAt : null,
+  };
+}
+
+/** Print which build's guuey.json the trigger re-served, when the 202 says. Exported for tests. */
+export function printRedeploySource(body: unknown): void {
+  if (body === null || typeof body !== 'object') return;
+  const from = readRedeploySource((body as { redeployedFrom?: unknown }).redeployedFrom);
+  if (from === undefined) return;
+  if (from.kind === 'archive') {
+    console.log('  Config: reused the guuey.json saved when this app was archived; this deploy sends none.');
+    return;
+  }
+  const build = from.buildNumber === null ? "a stored build's" : `build #${from.buildNumber}'s`;
+  // Live or not is the kind's word, never the build's status: a 'newest' build
+  // under a teardown still reads 'live' and is not serving.
+  const why = from.kind === 'live' ? 'the live build' : 'nothing is live, so the newest build with one';
+  const created = from.createdAt === null ? '' : `, created ${from.createdAt}`;
+  console.log(`  Config: reused ${build} guuey.json (${why}${created}); this deploy sends none.`);
+}
+
 // ─── guuey#975: the deploy target, resolved SOURCE-AWARE ──────────────────
 export type DeployTargetSource = '--app-id' | 'GUUEY_APP_ID' | 'guuey.json' | 'global-config';
 export interface DeployTargetInput {
@@ -1298,7 +1347,8 @@ export function printPageLine(pageUrl: string | null): void {
 // no framework worker to build. `agentMode: 'code'` is now sent explicitly
 // (previously implicit via the backend's own default) for parity with
 // `deployCode`; `snapshotConfig` is omitted since there is nothing to
-// snapshot.
+// snapshot, so the server re-serves a stored build's guuey.json (the live
+// build's, else the newest one's) and the 202 names it (guuey#2349).
 
 async function deployLegacyDockerfile(opts: {
   auth: AuthTokens;
@@ -1385,6 +1435,12 @@ async function deployLegacyDockerfile(opts: {
     cleanup(tarballPath);
     process.exit(1);
   }
+
+  // guuey#2349: no snapshot was sent, so the server re-served a stored
+  // build's guuey.json; say which (an older server does not, and nothing prints).
+  const triggerBody: unknown = await deployRes.json().catch(() => ({}));
+  printRedeploySource(triggerBody);
+  printTriggerWarnings(triggerBody);
 
   const streamAbort = new AbortController();
   void attachBuildLogStream(auth.pat, config, appId, buildNumber, streamAbort.signal).catch(

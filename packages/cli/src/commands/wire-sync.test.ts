@@ -41,6 +41,7 @@ const CLI_MCP_CONNECTIONS = repoPath('./mcp-connections.ts');
 const CLI_BILLING = repoPath('./billing.ts');
 const CLI_PULL = repoPath('./pull.ts');
 const CLI_USAGE = repoPath('./usage.ts');
+const CLI_DEPLOY = repoPath('./deploy.ts');
 
 const haveWire =
   existsSync(WIRE_APPS) &&
@@ -138,6 +139,15 @@ describe.skipIf(!haveWire)('CLI wire mirrors — sync guards against @guuey-priv
   it('PlatformTemplates (pull.ts) mirrors PlatformTemplatesWire — the deployment GET envelope field guuey pull writes back (guuey#1272)', () => {
     expect(parseInterfaceFields(read(CLI_PULL), 'PlatformTemplates')).toEqual(
       parseInterfaceFields(read(WIRE_DEPLOY), 'PlatformTemplatesWire'),
+    );
+  });
+
+  it('RedeploySourceWire (deploy.ts) mirrors the trigger 202\'s `redeployedFrom` — fields and kinds (guuey#2349)', () => {
+    expect(parseInterfaceFields(read(CLI_DEPLOY), 'RedeploySourceWire')).toEqual(
+      parseInterfaceFields(read(WIRE_DEPLOY), 'RedeploySourceWire'),
+    );
+    expect(parseStringLiterals(read(CLI_DEPLOY), 'REDEPLOY_SOURCE_KINDS')).toEqual(
+      parseStringLiterals(read(WIRE_DEPLOY), 'REDEPLOY_SOURCE_KINDS'),
     );
   });
 
