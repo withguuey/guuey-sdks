@@ -615,13 +615,14 @@ async function streamTurn(
       }
       // bypass mode (any event type), OR a `text` event in silver mode (no
       // native SDKMessage to push — relay verbatim rather than drop it).
-      // PARITY GAP (tracked): the pod's F3 path instead SYNTHESIZES an
-      // assistant SDKMessage from a `text` event and runs it through the full
-      // normalize path so the turn folds (`backend/services/nocode-runtime/
-      // src/sse-server.ts` ~299-320, `assistantMessage()` + the `text` arm).
-      // Revisit if hand-authored `serve()`-based workers (text-only, no
-      // native events) are supported in local dev — until then verbatim
-      // relay is the honest minimal behavior.
+      // PARITY GAP (not tracked by a row): the pod's F3 path instead
+      // SYNTHESIZES an assistant SDKMessage from a `text` event and runs it
+      // through the full normalize path so the turn folds
+      // (`backend/services/nocode-runtime/src/sse-server.ts` ~299-320,
+      // `assistantMessage()` + the `text` arm). Doing the same synthesis here
+      // would close it; that matters once hand-authored `serve()`-based
+      // workers (text-only, no native events) are supported in local dev —
+      // until then verbatim relay is the honest minimal behavior.
       sendEvent(res, "message", ev);
     }
     if (normalizer) {
@@ -656,15 +657,16 @@ async function streamTurn(
  * when nothing was closed. The offer is always made here (see `streamTurn`),
  * so the pod's `not_offered` and `unsupported` refusals have no local case.
  *
- * PARITY GAP (tracked): the pod's clean-turn test is `!turnFailedInBand() &&
- * !aborted`, so it also refuses the close (`turn_failed`) when the turn failed
- * in band: the facet closed the top turn as `turn.error` (other than
- * max_turns), the provider withheld the reply, the turn stopped with no reply,
- * or a fabricated error frame was stripped (`TopTurnErrorWatch` and
+ * PARITY GAP (not tracked by a row): the pod's clean-turn test is
+ * `!turnFailedInBand() && !aborted`, so it also refuses the close
+ * (`turn_failed`) when the turn failed in band: the facet closed the top turn
+ * as `turn.error` (other than max_turns), the provider withheld the reply, the
+ * turn stopped with no reply, or a fabricated error frame was stripped (`TopTurnErrorWatch` and
  * `fabricatedSeen` in nocode-runtime's sse-server.ts). The dev server runs no
  * such watch, so here only an aborted turn counts as unclean: a worker that
  * fails in band and also asks to end the thread closes it locally but not
- * hosted. Revisit if the watch moves to a package the CLI can share.
+ * hosted. Moving that watch into a package the CLI can share, and running it
+ * here, would close the gap.
  */
 function closeThreadForWorker(
   res: ServerResponse,
@@ -685,6 +687,10 @@ function closeThreadForWorker(
   }
   // A concurrent turn on the same session may have closed it first: the
   // thread stays closed with its first closure, and that is what is told.
+  // Dev-only edge: if turn A closes session S while turn B on S is still
+  // running, B still appends its rows after the closure and (unless B asks to
+  // end too) its `done` omits `threadClosed`, where the pod refuses that
+  // append with ThreadClosedError.
   if (state.closed === undefined) {
     const code = `${WORKER_CODE_PREFIX}${request.code}`;
     const closedAt = new Date().toISOString();
