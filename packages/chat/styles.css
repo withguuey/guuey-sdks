@@ -988,7 +988,11 @@
     );
   }
 }
-.guuey-chat-pulse {
+/* A pulsed row's header toggle sets its own colour, so it would not inherit
+   the breath: it carries the animation itself, and a streaming reasoning
+   row still breathes while collapsed. */
+.guuey-chat-pulse,
+.guuey-chat-pulse > .guuey-chat-toggle {
   animation: guuey-chat-pulse 1.6s ease-in-out infinite;
 }
 .guuey-chat-shimmer {
@@ -996,6 +1000,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .guuey-chat-pulse,
+  .guuey-chat-pulse > .guuey-chat-toggle,
   .guuey-chat-shimmer,
   .guuey-chat-tool-running .guuey-chat-tool-glyph {
     animation: none;

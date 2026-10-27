@@ -42,7 +42,26 @@ describe("the pulse is a colour breath, never an opacity fade", () => {
 // ── every frame of the breath, as a browser may interpolate it ─────────────
 
 /** Selectors that carry the pulse or the shimmer, each a text element. */
-const PULSED = [".guuey-chat-pulse", ".guuey-chat-shimmer"];
+const PULSED = [".guuey-chat-pulse", ".guuey-chat-pulse > .guuey-chat-toggle", ".guuey-chat-shimmer"];
+
+/** Every top-level [selectors, body] rule in the sheet. */
+function topLevelRules(): Array<[string[], string]> {
+  const out: Array<[string[], string]> = [];
+  const re = /([^{}]+)\{([^{}]*)\}/g;
+  for (let m = re.exec(raw); m !== null; m = re.exec(raw)) {
+    out.push([(m[1] ?? "").split(",").map((s) => s.trim()), m[2] ?? ""]);
+  }
+  return out;
+}
+
+describe("a pulsed element whose child sets its own colour still breathes", () => {
+  it("the header toggle of a pulsed row (streaming reasoning) carries the pulse itself", () => {
+    const carrying = topLevelRules().filter(
+      ([sels, body]) => sels.includes(".guuey-chat-pulse > .guuey-chat-toggle") && /animation:\s*guuey-chat-pulse\b/.test(body),
+    );
+    expect(carrying).toHaveLength(1);
+  });
+});
 
 describe("reduced motion stops every pulsed element", () => {
   it("each pulsed class is set to `animation: none` under prefers-reduced-motion: reduce", () => {
@@ -127,6 +146,15 @@ describe("every frame of the breath clears AA for normal text on every shipped g
             expect(worst).toBeGreaterThanOrEqual(4.5);
           });
         }
+      }
+      // The pulsed toggle can be hovered: its ground is then the ink at 6% over the row's ground
+      // (styles.css .guuey-chat-toggle:hover), and it rests on the muted ink.
+      for (const ground of ["surface", "canvas"] as const) {
+        it(`${theme.name} ${mode}: the hovered toggle, inkMuted → trough on ink 6% over ${ground}`, () => {
+          const g = mixRgb(rgb(palette, ground), rgb(palette, "ink"), 0.06);
+          const worst = Math.min(...frames(rgb(palette, "inkMuted"), trough).map((f) => contrastRatio(f, g)));
+          expect(worst).toBeGreaterThanOrEqual(4.5);
+        });
       }
     }
   }
