@@ -365,3 +365,12 @@ describe("the chip face: an accent chip only where the accent stands out", () =>
     expect(paletteChipFace({ ...GUUEY_CHAT_THEME.colors.light, cue: "#000000" })).toBe("hollow");
   });
 });
+
+describe("the package entry exports the measure a consumer needs to agree with the cue", () => {
+  it("re-exports the 3:1 floor, the parser and the ratio from the theme module", async () => {
+    const entry = await import("./index.js");
+    expect(entry.CUE_CONTRAST_FLOOR).toBe(3);
+    expect(entry.parseOpaqueColor).toBe(parseOpaqueColor);
+    expect(entry.contrastRatio).toBe(contrastRatio);
+  });
+});

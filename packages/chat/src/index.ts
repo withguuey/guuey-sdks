@@ -102,6 +102,7 @@ export {
   GuueyChatTheme,
   contrastRatio,
   CHIP_FACES,
+  CUE_CONTRAST_FLOOR,
   paletteChipFace,
   paletteCue,
   parseOpaqueColor,
