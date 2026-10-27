@@ -36,6 +36,7 @@ function media(prelude: string): string {
 }
 
 const DRAWER = "(max-width: 1023.98px)";
+const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
 const OPEN_SIDEBAR = '.guuey-layout-shell[data-drawer-open="true"] .guuey-layout-sidebar';
 
 describe("guuey#429 — the shell is viewport-pinned by default", () => {
@@ -103,5 +104,33 @@ describe("guuey#2450 — a closed drawer casts no shadow", () => {
 
   it("the shadow belongs to the open state only", () => {
     expect(block(OPEN_SIDEBAR, media(DRAWER))).toContain("box-shadow: 0 0 24px rgba(0, 0, 0, 0.25)");
+  });
+});
+
+describe("guuey#2450 — a closed drawer holds no focus", () => {
+  it("the parked drawer is visibility:hidden — its links leave the tab order — after the slide-out plays", () => {
+    const closed = block(".guuey-layout-sidebar", media(DRAWER));
+    expect(closed).toContain("visibility: hidden");
+    expect(closed).toContain(
+      "transition:\n      transform var(--guuey-layout-tone-transition) ease-out,\n      visibility 0s linear var(--guuey-layout-tone-transition)",
+    );
+  });
+
+  it("the open drawer is visible at once (visibility delay 0s), without restating the shorthand", () => {
+    const open = block(OPEN_SIDEBAR, media(DRAWER));
+    expect(open).toContain("visibility: visible");
+    expect(open).toContain("transition-delay: 0s");
+    // A `transition:` shorthand here (higher specificity) would revive the
+    // slide under reduced motion; only the delay may change.
+    expect(open).not.toMatch(/transition:/);
+  });
+
+  it("reduced motion still zeroes the drawer's transition (later in the sheet, same specificity), so it snaps", () => {
+    expect(block(".guuey-layout-sidebar", media(REDUCED_MOTION))).toContain("transition: none");
+    expect(sheet.indexOf(`@media ${REDUCED_MOTION}`)).toBeGreaterThan(sheet.indexOf(`@media ${DRAWER}`));
+  });
+
+  it("the desktop sidebar is never hidden: the rule lives only in the drawer block", () => {
+    expect(block(".guuey-layout-sidebar")).not.toContain("visibility");
   });
 });
