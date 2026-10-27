@@ -27,6 +27,21 @@ export const AGENT_ERROR_CODES = {
   INVALID_REQUEST: "INVALID_REQUEST",
   /** The builder turned anonymous access off for this agent. */
   GUEST_ACCESS_DISABLED: "GUEST_ACCESS_DISABLED",
+  /** A guest is over the agent's per-guest daily message limit. A 429; sign in or try tomorrow. */
+  GUEST_RATE_LIMITED: "GUEST_RATE_LIMITED",
+  /**
+   * The agent's daily total of guest messages, across all its guests, is spent.
+   * A 429; sign in or try tomorrow. Not retried — the same request meets the
+   * same refusal until the day turns.
+   */
+  GUEST_APP_RATE_LIMITED: "GUEST_APP_RATE_LIMITED",
+  /**
+   * Guest chat is briefly unavailable: the agent could not yet read its own
+   * access settings. A 503 carrying a `Retry-After` hint, guests only (a
+   * signed-in caller is unaffected). Not retried by this SDK; the reader's own
+   * retry is the retry.
+   */
+  GUEST_POLICY_UNAVAILABLE: "GUEST_POLICY_UNAVAILABLE",
   /**
    * The agent's own definition declares `auth: 'required'` and the caller is
    * anonymous — sign in and retry with a bearer. The snapshot-declared twin of
