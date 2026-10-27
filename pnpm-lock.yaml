@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  zod@^4: 4.4.3
+  zod@^4: 4.6.7
   adm-zip: '>=0.6.1'
   brace-expansion@1: ^1.1.21
   brace-expansion@2: ^2.1.7
@@ -123,8 +123,8 @@ importers:
         specifier: 0.12.7
         version: 0.12.7
       zod:
-        specifier: 4.4.3
-        version: 4.4.3
+        specifier: 4.6.7
+        version: 4.6.7
     devDependencies:
       '@testing-library/dom':
         specifier: ^10.0.0
@@ -185,19 +185,19 @@ importers:
         version: link:../worker
       '@modelcontextprotocol/sdk':
         specifier: ~1.32.0
-        version: 1.32.2(zod@4.4.3)
+        version: 1.32.2(zod@4.6.7)
       '@silverprotocol/claude-agent-sdk':
         specifier: 0.12.7
-        version: 0.12.7(@anthropic-ai/claude-agent-sdk@0.3.282(@anthropic-ai/sdk@0.129.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3))(zod@4.4.3))
+        version: 0.12.7(@anthropic-ai/claude-agent-sdk@0.3.282(@anthropic-ai/sdk@0.129.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(zod@4.6.7))
       '@silverprotocol/core':
         specifier: 0.12.7
         version: 0.12.7
       '@silverprotocol/google-adk':
         specifier: 0.12.7
-        version: 0.12.7(@google/adk@2.1.0(@grpc/grpc-js@1.14.5)(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3))(express@5.2.1))
+        version: 0.12.7(@google/adk@2.1.0(@grpc/grpc-js@1.14.5)(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(express@5.2.1))
       '@silverprotocol/openai-agents':
         specifier: 0.12.7
-        version: 0.12.7(@openai/agents@0.18.0(ws@8.21.3)(zod@4.4.3))
+        version: 0.12.7(@openai/agents@0.18.0(ws@8.21.3)(zod@4.6.7))
       esbuild:
         specifier: ^0.25.12
         version: 0.25.12
@@ -216,7 +216,7 @@ importers:
     devDependencies:
       '@anthropic-ai/sdk':
         specifier: ^0.129.0
-        version: 0.129.0(zod@4.4.3)
+        version: 0.129.0(zod@4.6.7)
       '@guuey/state':
         specifier: workspace:*
         version: link:../state
@@ -239,8 +239,8 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@opentelemetry/api@1.9.0)(@types/node@24.12.4)(jsdom@25.0.1)(terser@5.50.0)(yaml@2.9.0)
       zod:
-        specifier: 4.4.3
-        version: 4.4.3
+        specifier: 4.6.7
+        version: 4.6.7
 
   packages/config:
     dependencies:
@@ -248,8 +248,8 @@ importers:
         specifier: workspace:*
         version: link:../hooks
       zod:
-        specifier: 4.4.3
-        version: 4.4.3
+        specifier: 4.6.7
+        version: 4.6.7
     devDependencies:
       '@guuey/chat':
         specifier: workspace:*
@@ -319,8 +319,8 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@opentelemetry/api@1.9.0)(@types/node@24.12.4)(jsdom@25.0.1)(terser@5.50.0)(yaml@2.9.0)
       zod:
-        specifier: 4.4.3
-        version: 4.4.3
+        specifier: 4.6.7
+        version: 4.6.7
 
   packages/host:
     dependencies:
@@ -333,13 +333,13 @@ importers:
     devDependencies:
       '@anthropic-ai/claude-agent-sdk':
         specifier: 0.3.282
-        version: 0.3.282(@anthropic-ai/sdk@0.129.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3))(zod@4.4.3)
+        version: 0.3.282(@anthropic-ai/sdk@0.129.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(zod@4.6.7)
       '@google/adk':
         specifier: 2.1.0
-        version: 2.1.0(@grpc/grpc-js@1.14.5)(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3))(express@5.2.1)
+        version: 2.1.0(@grpc/grpc-js@1.14.5)(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(express@5.2.1)
       '@openai/agents':
         specifier: 0.18.0
-        version: 0.18.0(ws@8.21.3)(zod@4.4.3)
+        version: 0.18.0(ws@8.21.3)(zod@4.6.7)
       '@types/node':
         specifier: ^24.0.0
         version: 24.12.4
@@ -357,7 +357,7 @@ importers:
         version: 0.29.0
       '@modelcontextprotocol/ext-apps':
         specifier: ^1.7.5
-        version: 1.7.5(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3)
+        version: 1.7.5(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.6.7)
       '@silverprotocol/core':
         specifier: 0.12.7
         version: 0.12.7
@@ -500,13 +500,13 @@ packages:
     peerDependencies:
       '@anthropic-ai/sdk': '>=0.93.0'
       '@modelcontextprotocol/sdk': ~1.32.0
-      zod: 4.4.3
+      zod: 4.6.7
 
   '@anthropic-ai/sdk@0.129.0':
     resolution: {integrity: sha512-MH7LB20kNpGLUpPTe2OG5XvL/KhX8HUO9XyBaFjgFk6TLS4Xjt0VPIuMKywe7POKKPslX+QxSlVok9e+8kG5Nw==}
     hasBin: true
     peerDependencies:
-      zod: 4.4.3
+      zod: 4.6.7
     peerDependenciesMeta:
       zod:
         optional: true
@@ -1357,7 +1357,7 @@ packages:
       '@modelcontextprotocol/sdk': ~1.32.0
       react: ^17.0.0 || ^18.0.0 || ^19.0.0
       react-dom: ^17.0.0 || ^18.0.0 || ^19.0.0
-      zod: 4.4.3
+      zod: 4.6.7
     peerDependenciesMeta:
       react:
         optional: true
@@ -1369,7 +1369,7 @@ packages:
     engines: {node: '>=18'}
     peerDependencies:
       '@cfworker/json-schema': ^4.1.1
-      zod: 4.4.3
+      zod: 4.6.7
     peerDependenciesMeta:
       '@cfworker/json-schema':
         optional: true
@@ -1377,7 +1377,7 @@ packages:
   '@openai/agents-core@0.18.0':
     resolution: {integrity: sha512-EMhTxl1iHX+bH3gGUnkSxU8l+fw36/+mjsvZH7zP3MyPBZ/4Zqtjg9oILcbZCkcLvii/+M+4ckck3MMdrpcWRA==}
     peerDependencies:
-      zod: 4.4.3
+      zod: 4.6.7
     peerDependenciesMeta:
       zod:
         optional: true
@@ -1385,17 +1385,17 @@ packages:
   '@openai/agents-openai@0.18.0':
     resolution: {integrity: sha512-dBE5NNVbkhEIsjZLUDjA8Gr8U1wGN6LTdP7Su4mY1djcxtIBaojQ/bjbpDd0EyqD5OkNTu0ziYyUyyrIfIGurQ==}
     peerDependencies:
-      zod: 4.4.3
+      zod: 4.6.7
 
   '@openai/agents-realtime@0.18.0':
     resolution: {integrity: sha512-joIG5Vj1BKHxx9a+UwI+pPEuiGh0zhRecVb1yYMMKSW0Oho9ntPi1+LM7KpT2mwv6M9Y11XNtuoaseolFzxwBQ==}
     peerDependencies:
-      zod: 4.4.3
+      zod: 4.6.7
 
   '@openai/agents@0.18.0':
     resolution: {integrity: sha512-i0dIeN8PsqLfEgfMLrmpcJPvgltY2fUxr2+CftBCvX6g1GgWdoiCKpbf+labmJJPqwidN7HfXkgBszM2CHg/IA==}
     peerDependencies:
-      zod: 4.4.3
+      zod: 4.6.7
 
   '@opentelemetry/api-logs@0.222.0':
     resolution: {integrity: sha512-9mb1If+IF6u0ZVXkHQ6ogEae5HwA6ajIVUgpSDQyRASxft6BSXHvBvPooRle3yFN/fKnCdSOnuu0OC3PLcF6+g==}
@@ -3102,7 +3102,7 @@ packages:
       '@smithy/signature-v4': '>=5.4.0 <6'
       undici: '>=5 <9'
       ws: ^8.18.0
-      zod: 4.4.3
+      zod: 4.6.7
     peerDependenciesMeta:
       '@aws-sdk/credential-provider-node':
         optional: true
@@ -3912,10 +3912,10 @@ packages:
   zod-to-json-schema@3.25.2:
     resolution: {integrity: sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==}
     peerDependencies:
-      zod: 4.4.3
+      zod: 4.6.7
 
-  zod@4.4.3:
-    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
 snapshots:
 
@@ -3950,11 +3950,11 @@ snapshots:
   '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.282':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk@0.3.282(@anthropic-ai/sdk@0.129.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3))(zod@4.4.3)':
+  '@anthropic-ai/claude-agent-sdk@0.3.282(@anthropic-ai/sdk@0.129.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(zod@4.6.7)':
     dependencies:
-      '@anthropic-ai/sdk': 0.129.0(zod@4.4.3)
-      '@modelcontextprotocol/sdk': 1.32.2(zod@4.4.3)
-      zod: 4.4.3
+      '@anthropic-ai/sdk': 0.129.0(zod@4.6.7)
+      '@modelcontextprotocol/sdk': 1.32.2(zod@4.6.7)
+      zod: 4.6.7
     optionalDependencies:
       '@anthropic-ai/claude-agent-sdk-darwin-arm64': 0.3.282
       '@anthropic-ai/claude-agent-sdk-darwin-x64': 0.3.282
@@ -3965,12 +3965,12 @@ snapshots:
       '@anthropic-ai/claude-agent-sdk-win32-arm64': 0.3.282
       '@anthropic-ai/claude-agent-sdk-win32-x64': 0.3.282
 
-  '@anthropic-ai/sdk@0.129.0(zod@4.4.3)':
+  '@anthropic-ai/sdk@0.129.0(zod@4.6.7)':
     dependencies:
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.0.0
     optionalDependencies:
-      zod: 4.4.3
+      zod: 4.6.7
 
   '@asamuzakjp/css-color@3.2.0':
     dependencies:
@@ -4427,18 +4427,18 @@ snapshots:
   '@ggui-ai/artifact-manifest@0.29.0':
     dependencies:
       '@ggui-ai/protocol': 0.29.0
-      zod: 4.4.3
+      zod: 4.6.7
 
   '@ggui-ai/protocol@0.29.0':
     dependencies:
       ajv: 8.20.0
       ajv-formats: 3.0.1
       canonicalize: 2.1.0
-      zod: 4.4.3
+      zod: 4.6.7
 
-  '@google-cloud/vertexai@1.12.0(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3))':
+  '@google-cloud/vertexai@1.12.0(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))':
     dependencies:
-      '@google/genai': 1.52.0(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3))
+      '@google/genai': 1.52.0(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))
       google-auth-library: 9.15.1
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
@@ -4447,11 +4447,11 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@google/adk@2.1.0(@grpc/grpc-js@1.14.5)(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3))(express@5.2.1)':
+  '@google/adk@2.1.0(@grpc/grpc-js@1.14.5)(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(express@5.2.1)':
     dependencies:
       '@a2a-js/sdk': 0.3.13(@grpc/grpc-js@1.14.5)(express@5.2.1)
-      '@google-cloud/vertexai': 1.12.0(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3))
-      '@google/genai': 2.20.0(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3))
+      '@google-cloud/vertexai': 1.12.0(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))
+      '@google/genai': 2.20.0(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))
       '@mikro-orm/core': 7.2.1
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/api-logs': 0.222.0
@@ -4471,10 +4471,10 @@ snapshots:
       jsonpath-plus: 10.4.0
       lodash-es: 4.18.1
       winston: 3.19.0
-      zod: 4.4.3
-      zod-to-json-schema: 3.25.2(zod@4.4.3)
+      zod: 4.6.7
+      zod-to-json-schema: 3.25.2(zod@4.6.7)
     optionalDependencies:
-      '@modelcontextprotocol/sdk': 1.32.2(zod@4.4.3)
+      '@modelcontextprotocol/sdk': 1.32.2(zod@4.6.7)
       dockerode: 5.0.1
       express: 5.2.1
     transitivePeerDependencies:
@@ -4486,27 +4486,27 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@google/genai@1.52.0(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3))':
+  '@google/genai@1.52.0(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))':
     dependencies:
       google-auth-library: 10.9.0
       p-retry: 4.6.2
       protobufjs: 7.6.5
       ws: 8.21.3
     optionalDependencies:
-      '@modelcontextprotocol/sdk': 1.32.2(zod@4.4.3)
+      '@modelcontextprotocol/sdk': 1.32.2(zod@4.6.7)
     transitivePeerDependencies:
       - bufferutil
       - supports-color
       - utf-8-validate
 
-  '@google/genai@2.20.0(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3))':
+  '@google/genai@2.20.0(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))':
     dependencies:
       google-auth-library: 10.9.0
       p-retry: 4.6.2
       protobufjs: 7.6.5
       ws: 8.21.3
     optionalDependencies:
-      '@modelcontextprotocol/sdk': 1.32.2(zod@4.4.3)
+      '@modelcontextprotocol/sdk': 1.32.2(zod@4.6.7)
     transitivePeerDependencies:
       - bufferutil
       - supports-color
@@ -4652,24 +4652,24 @@ snapshots:
       eventsource-parser: 3.1.0
       jose: 6.2.3
       pkce-challenge: 5.0.1
-      zod: 4.4.3
+      zod: 4.6.7
     optional: true
 
   '@modelcontextprotocol/core@2.3.1':
     dependencies:
-      zod: 4.4.3
+      zod: 4.6.7
     optional: true
 
-  '@modelcontextprotocol/ext-apps@1.7.5(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3)':
+  '@modelcontextprotocol/ext-apps@1.7.5(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.6.7)':
     dependencies:
-      '@modelcontextprotocol/sdk': 1.32.2(zod@4.4.3)
+      '@modelcontextprotocol/sdk': 1.32.2(zod@4.6.7)
       '@standard-schema/spec': 1.1.0
-      zod: 4.4.3
+      zod: 4.6.7
     optionalDependencies:
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
 
-  '@modelcontextprotocol/sdk@1.32.2(zod@4.4.3)':
+  '@modelcontextprotocol/sdk@1.32.2(zod@4.6.7)':
     dependencies:
       '@hono/node-server': 1.19.17(hono@4.13.14)
       ajv: 8.20.0
@@ -4686,19 +4686,19 @@ snapshots:
       json-schema-typed: 8.0.2
       pkce-challenge: 5.0.1
       raw-body: 3.0.2
-      zod: 4.4.3
-      zod-to-json-schema: 3.25.2(zod@4.4.3)
+      zod: 4.6.7
+      zod-to-json-schema: 3.25.2(zod@4.6.7)
     transitivePeerDependencies:
       - supports-color
 
-  '@openai/agents-core@0.18.0(ws@8.21.3)(zod@4.4.3)':
+  '@openai/agents-core@0.18.0(ws@8.21.3)(zod@4.6.7)':
     dependencies:
       '@standard-schema/spec': 1.1.0
       debug: 4.4.3
-      openai: 7.7.0(ws@8.21.3)(zod@4.4.3)
+      openai: 7.7.0(ws@8.21.3)(zod@4.6.7)
     optionalDependencies:
       '@modelcontextprotocol/client': 2.3.1
-      zod: 4.4.3
+      zod: 4.6.7
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
       - '@smithy/hash-node'
@@ -4707,12 +4707,12 @@ snapshots:
       - undici
       - ws
 
-  '@openai/agents-openai@0.18.0(ws@8.21.3)(zod@4.4.3)':
+  '@openai/agents-openai@0.18.0(ws@8.21.3)(zod@4.6.7)':
     dependencies:
-      '@openai/agents-core': 0.18.0(ws@8.21.3)(zod@4.4.3)
+      '@openai/agents-core': 0.18.0(ws@8.21.3)(zod@4.6.7)
       debug: 4.4.3
-      openai: 7.7.0(ws@8.21.3)(zod@4.4.3)
-      zod: 4.4.3
+      openai: 7.7.0(ws@8.21.3)(zod@4.6.7)
+      zod: 4.6.7
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
       - '@smithy/hash-node'
@@ -4721,13 +4721,13 @@ snapshots:
       - undici
       - ws
 
-  '@openai/agents-realtime@0.18.0(zod@4.4.3)':
+  '@openai/agents-realtime@0.18.0(zod@4.6.7)':
     dependencies:
-      '@openai/agents-core': 0.18.0(ws@8.21.3)(zod@4.4.3)
+      '@openai/agents-core': 0.18.0(ws@8.21.3)(zod@4.6.7)
       '@types/ws': 8.18.1
       debug: 4.4.3
       ws: 8.21.3
-      zod: 4.4.3
+      zod: 4.6.7
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
       - '@smithy/hash-node'
@@ -4737,14 +4737,14 @@ snapshots:
       - undici
       - utf-8-validate
 
-  '@openai/agents@0.18.0(ws@8.21.3)(zod@4.4.3)':
+  '@openai/agents@0.18.0(ws@8.21.3)(zod@4.6.7)':
     dependencies:
-      '@openai/agents-core': 0.18.0(ws@8.21.3)(zod@4.4.3)
-      '@openai/agents-openai': 0.18.0(ws@8.21.3)(zod@4.4.3)
-      '@openai/agents-realtime': 0.18.0(zod@4.4.3)
+      '@openai/agents-core': 0.18.0(ws@8.21.3)(zod@4.6.7)
+      '@openai/agents-openai': 0.18.0(ws@8.21.3)(zod@4.6.7)
+      '@openai/agents-realtime': 0.18.0(zod@4.6.7)
       debug: 4.4.3
-      openai: 7.7.0(ws@8.21.3)(zod@4.4.3)
-      zod: 4.4.3
+      openai: 7.7.0(ws@8.21.3)(zod@4.6.7)
+      zod: 4.6.7
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
       - '@smithy/hash-node'
@@ -5040,27 +5040,27 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.62.2':
     optional: true
 
-  '@silverprotocol/claude-agent-sdk@0.12.7(@anthropic-ai/claude-agent-sdk@0.3.282(@anthropic-ai/sdk@0.129.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3))(zod@4.4.3))':
+  '@silverprotocol/claude-agent-sdk@0.12.7(@anthropic-ai/claude-agent-sdk@0.3.282(@anthropic-ai/sdk@0.129.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(zod@4.6.7))':
     dependencies:
       '@silverprotocol/core': 0.12.7
     optionalDependencies:
-      '@anthropic-ai/claude-agent-sdk': 0.3.282(@anthropic-ai/sdk@0.129.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3))(zod@4.4.3)
+      '@anthropic-ai/claude-agent-sdk': 0.3.282(@anthropic-ai/sdk@0.129.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(zod@4.6.7)
 
   '@silverprotocol/core@0.12.7':
     dependencies:
-      zod: 4.4.3
+      zod: 4.6.7
 
-  '@silverprotocol/google-adk@0.12.7(@google/adk@2.1.0(@grpc/grpc-js@1.14.5)(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3))(express@5.2.1))':
+  '@silverprotocol/google-adk@0.12.7(@google/adk@2.1.0(@grpc/grpc-js@1.14.5)(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(express@5.2.1))':
     dependencies:
       '@silverprotocol/core': 0.12.7
     optionalDependencies:
-      '@google/adk': 2.1.0(@grpc/grpc-js@1.14.5)(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3))(express@5.2.1)
+      '@google/adk': 2.1.0(@grpc/grpc-js@1.14.5)(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(express@5.2.1)
 
-  '@silverprotocol/openai-agents@0.12.7(@openai/agents@0.18.0(ws@8.21.3)(zod@4.4.3))':
+  '@silverprotocol/openai-agents@0.12.7(@openai/agents@0.18.0(ws@8.21.3)(zod@4.6.7))':
     dependencies:
       '@silverprotocol/core': 0.12.7
     optionalDependencies:
-      '@openai/agents': 0.18.0(ws@8.21.3)(zod@4.4.3)
+      '@openai/agents': 0.18.0(ws@8.21.3)(zod@4.6.7)
 
   '@silverprotocol/richtext@0.12.7': {}
 
@@ -6689,10 +6689,10 @@ snapshots:
       is-docker: 2.2.1
       is-wsl: 2.2.0
 
-  openai@7.7.0(ws@8.21.3)(zod@4.4.3):
+  openai@7.7.0(ws@8.21.3)(zod@4.6.7):
     optionalDependencies:
       ws: 8.21.3
-      zod: 4.4.3
+      zod: 4.6.7
 
   p-limit@2.3.0:
     dependencies:
@@ -7564,8 +7564,8 @@ snapshots:
       y18n: 5.0.8
       yargs-parser: 21.1.1
 
-  zod-to-json-schema@3.25.2(zod@4.4.3):
+  zod-to-json-schema@3.25.2(zod@4.6.7):
     dependencies:
-      zod: 4.4.3
+      zod: 4.6.7
 
-  zod@4.4.3: {}
+  zod@4.6.7: {}

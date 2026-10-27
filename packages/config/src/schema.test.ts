@@ -281,16 +281,17 @@ describe('safeParseGuueyJson — the READER mode (guuey#2851: a newer app.* key 
     expect(result.success && result.warnings).toEqual(['app.futureSetting']);
   });
 
-  it('an own "__proto__" key under app never reaches a prototype: zod skips it (no warning, not in the output), and the copy keeps it an own key', () => {
-    // zod's object parse skips a "__proto__" key on purpose (zod v4 core
-    // schemas.js), so it is neither reported nor emitted. The read still
-    // copies the app block (futureSetting forces the copy), and that copy must
-    // not turn the own key into a prototype.
+  it('an own "__proto__" key under app never reaches a prototype: the strict parse names it unknown, the reader strips it from its copy, and the copy keeps it an own key until then', () => {
+    // zod never copies an undeclared "__proto__" key into its output (zod v4
+    // core schemas.js), and in strict mode it reports it as an unrecognized
+    // key. So the reader names it and deletes it from its copy like any other
+    // unknown app key. That copy must hold it as an own key, never as a
+    // prototype.
     const input: unknown = JSON.parse(
       '{"schema":"1","agent":{},"app":{"name":"A","futureSetting":true,"__proto__":{"x":1}}}',
     );
     const result = safeParseGuueyJson(input, { stripUnknownKeys: 'app' });
-    expect(result.success && result.warnings).toEqual(['app.futureSetting']);
+    expect(result.success && result.warnings).toEqual(['app.futureSetting', 'app.__proto__']);
     expect(result.success && result.data.app).toEqual({ name: 'A' });
     expect(result.success && Object.getPrototypeOf(result.data.app)).toBe(Object.prototype);
     expect(Reflect.get({}, 'x')).toBeUndefined();

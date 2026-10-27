@@ -100,15 +100,16 @@ minimumReleaseAgeExclude:
 # pnpm-workspace.yaml `overrides:` comment (same family, this workspace has
 # its own lockfile so it needs its own block).
 overrides:
-  # guuey#1541: ONE zod per major. Every `^4.x` importer resolves the same 4.x — the cohort's 4.4.3 (the version the
-  # platform/portal/chat/cli/config importers and CI's widget byte budget were green on; every SDK peer range admits it:
-  # claude-agent-sdk / openai-agents ^4.0.0, mcp sdk ^3.25||^4.0). Two 4.x copies in one tree broke @guuey/config's
-  # declaration emit (TS2742). NOT the newest 4.x on purpose: zod 4.6.5 adds +126,462 B to the widget's inline bundle
-  # (zod 330,048 -> 456,510 B minified; budget 786,432, measured 771,120 at 958e3653d; guuey#1542) — a newer 4.x is a
-  # deliberate bump gated by that budget. pnpm deploy reads this override, so the agent image's zod follows it (the image
-  # had drifted to npm-latest 4.6.5 through deploy's caret re-resolution). check-lockfile-parity's SINGLETONS rule
-  # refuses a second 4.x. The mcp-servers' exact 3.25.76 (guuey#125) is a separate major, untouched.
-  "zod@^4": 4.4.3
+  # guuey#1541: ONE zod per major. Every `^4.x` importer resolves the same 4.x. Two 4.x copies in one tree broke
+  # @guuey/config's declaration emit (TS2742), and check-lockfile-parity's SINGLETONS rule refuses a second 4.x.
+  # 4.6.7 since guuey#2714 (2026-10-27; 4.4.3 before): it meets the @ggui-ai family's own floor (^4.6.6) and fixes
+  # GHSA-mrhx-c7xc-m3w5 (high, patched 4.6.6). Every SDK peer range admits it (claude-agent-sdk / openai-agents
+  # ^4.0.0, mcp sdk ^3.25||^4.0). A newer 4.x stays a deliberate bump gated by the widget's inline byte budget
+  # (786,432 B, guuey#1542): measured 718,134 B on 4.6.7 vs 656,144 B on 4.4.3. pnpm deploy reads this override, so
+  # every image's zod follows it, and deploy-controller's exact pin moves with it. The root and oss copies of this
+  # block move together (the parity check's runtime-edge rule reds a mismatch through @guuey/config's zod edge).
+  # zod 3.x is a separate major, present in the root lock only (Amplify, Expo and mcp-ui tooling), untouched.
+  "zod@^4": 4.6.7
   # GHSA-7q85-xj36-vmfc (Dependabot alerts 283/284, 2026-09-18, HIGH): adm-zip < 0.6.1 allocates the DECLARED uncompressed
   # size before reading (DoS). Pulled only by @google/adk (^0.5.17, which excludes the fix); 0.5.18 → 0.6.1 removes no
   # method adk calls (getEntries, readFile, the Buffer constructor). Lifts when adk's own range admits 0.6.1.
