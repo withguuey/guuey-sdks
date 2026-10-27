@@ -1118,6 +1118,16 @@ export const RESERVED_MCP_SERVER_NAMES: readonly string[] = [
 ];
 
 /**
+ * Names the platform uses itself, with no server spliced under them
+ * (`guuey-media`). A newly written document may not declare a server under one
+ * ({@link validateReservedPlatformNames}). Kept apart from
+ * {@link RESERVED_MCP_SERVER_NAMES} because there is no server behind it: the
+ * tool-gate grammar ({@link toolGateServerNames}) never names it, and nothing
+ * is spliced.
+ */
+export const RESERVED_PLATFORM_NAMES = ['guuey-media'] as const;
+
+/**
  * Validate that no `agent.mcpServers` entry uses a platform-RESERVED name
  * ({@link RESERVED_MCP_SERVER_NAMES}) — regardless of `kind` (the key is
  * reserved, not just one hosting mode; a builder must not shadow it as
@@ -1140,6 +1150,22 @@ export function validateReservedServerNames(
     }
   }
   return violations;
+}
+
+/**
+ * Validate that no `agent.mcpServers` entry uses a reserved platform name
+ * ({@link RESERVED_PLATFORM_NAMES}), regardless of `kind`. Same issue shape as
+ * {@link validateReservedServerNames}. Apply it to a NEWLY written document
+ * only: a stored one that already declares such a key must keep loading (a
+ * reader drops the key instead of refusing the document).
+ */
+export function validateReservedPlatformNames(
+  agent: GuueyAgent | undefined,
+): string[] {
+  const reserved: readonly string[] = RESERVED_PLATFORM_NAMES;
+  return Object.keys(agent?.mcpServers ?? {})
+    .filter((name) => reserved.includes(name))
+    .map((name) => `MCP server "${name}": that name is reserved by the platform — rename this server.`);
 }
 
 // ── Caller-credential transport (deploy-time contract enforcement) ─────────

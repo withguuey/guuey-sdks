@@ -8,6 +8,7 @@ import {
   validateColocatedServerNames,
   validateNoLiteralSecrets,
   validateReservedServerNames,
+  validateReservedPlatformNames,
   validateCallerCredentialHttps,
   validateFederateResourceUrl,
   validateToolGates,
@@ -22,6 +23,8 @@ import {
   RESERVED_MEMORY_SERVER_NAME,
   RESERVED_HANDOFF_SERVER_NAME,
   RESERVED_MCP_SERVER_NAMES,
+  RESERVED_PLATFORM_NAMES,
+  toolGateServerNames,
   DEFAULT_AGENT_MCP_SERVERS,
   effectiveMcpServers,
   declaredServerEntries,
@@ -300,6 +303,44 @@ describe('validateReservedServerNames', () => {
     const v = validateReservedServerNames(agent);
     expect(v).toHaveLength(1);
     expect(v.some((m) => m.includes('"guuey-memory"'))).toBe(true);
+  });
+});
+
+// ── Reserved platform names (guuey#2393) ─────────────────────────────────────
+//
+// `guuey-media` is a name the platform uses itself, with no server spliced
+// under it. A newly written document declaring the key is refused whatever its
+// kind; a stored one keeps loading (validateReservedServerNames,
+// which every stored snapshot passes through, does not name it), and the
+// tool-gate grammar never names it (there is no platform server behind it to
+// gate).
+
+describe('RESERVED_PLATFORM_NAMES — the guuey-media name (guuey#2393)', () => {
+  it('a guuey.json declaring a guuey-media server is refused, whatever its kind', () => {
+    for (const entry of [
+      { kind: 'colocated', source: './mcps/media' },
+      { kind: 'external', url: 'https://mcp.example.com' },
+    ] satisfies GuueyAgentMcpServer[]) {
+      const v = validateReservedPlatformNames({ mcpServers: { 'guuey-media': entry, fine: entry } });
+      expect(v).toEqual(['MCP server "guuey-media": that name is reserved by the platform — rename this server.']);
+    }
+    expect(validateReservedPlatformNames(undefined)).toEqual([]);
+    expect(validateReservedPlatformNames({ mcpServers: { [RESERVED_MEMORY_SERVER_NAME]: { kind: 'colocated', source: './a' } } })).toEqual([]);
+  });
+
+  it('validateReservedServerNames does not refuse guuey-media, so a stored snapshot declaring it still passes the lints every deploy runs', () => {
+    expect(
+      validateReservedServerNames({ mcpServers: { 'guuey-media': { kind: 'external', url: 'https://mcp.example.com' } } }),
+    ).toEqual([]);
+  });
+
+  it('is a reserved name, not a platform server: the tool-gate grammar does not name it', () => {
+    expect(RESERVED_PLATFORM_NAMES).toEqual(['guuey-media']);
+    expect(RESERVED_MCP_SERVER_NAMES).not.toContain('guuey-media');
+    expect(toolGateServerNames({})).not.toContain('guuey-media');
+    const v = validateToolGates({ tools: { allowlist: ['guuey-media.sign'] } });
+    expect(v).toHaveLength(1);
+    expect(v[0]).toContain('"guuey-media"');
   });
 });
 
