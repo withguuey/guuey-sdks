@@ -45,6 +45,36 @@ import { z } from "zod";
 
 const SERVER_NAME = "NAME_PLACEHOLDER-mcp";
 
+/**
+ * Largest number of array elements plus object members one `tools/call`
+ * `arguments` payload may carry. The SDK counts them before any tool input
+ * is parsed and answers a call over the cap with an `isError: true` result
+ * naming this maximum, so a hostile payload never reaches zod or a handler
+ * (GHSA-46jr-4wx8-v453).
+ *
+ * Derived from the largest real input: `echo` takes `{ message }`, which is
+ * 1 element, and the commented `remember` example takes `{ key, value }`,
+ * which is 2. 16 sits just above both with room for a few more scalar
+ * fields. When you add a tool, re-derive this from your largest real
+ * `arguments`: every array element and every object member counts, at any
+ * depth, so a tool that takes a list of 50 items needs at least 51.
+ */
+export const MAX_TOOL_INPUT_ELEMENTS = 16;
+
+/**
+ * Largest HTTP request body, in bytes, the MCP transport reads. The SDK
+ * transport parses the body itself, so this is passed as its
+ * `maxRequestBodySize` option; a larger body is answered with 413 before it
+ * is parsed.
+ *
+ * Derived from the largest real request: the commented `remember` example
+ * stores a key of at most 1 KiB and a JSON-encoded value of at most 64 KiB
+ * (the `@guuey/state` caps), so one `tools/call` is about 66 KiB with the
+ * JSON-RPC envelope. 256 KiB covers it with headroom and is a sixteenth of
+ * the SDK's 4 MiB default. Raise it if your own tools take larger payloads.
+ */
+export const MAX_REQUEST_BODY_BYTES = 256 * 1024;
+
 /** Wrap a structured result as both `structuredContent` and a text block. */
 function toolResult(data: Record<string, unknown>) {
   return {
@@ -57,11 +87,14 @@ function toolResult(data: Record<string, unknown>) {
 // `buildMcpServer(authHeader: string | undefined)` and pass
 // `req.headers.authorization` at the one call site further down.
 function buildMcpServer(): McpServer {
-  const server = new McpServer({
-    name: SERVER_NAME,
-    version: "0.0.0",
-    description: "Example MCP server — replace the echo tool with your own.",
-  });
+  const server = new McpServer(
+    {
+      name: SERVER_NAME,
+      version: "0.0.0",
+      description: "Example MCP server — replace the echo tool with your own.",
+    },
+    { maxToolInputElements: MAX_TOOL_INPUT_ELEMENTS },
+  );
 
   server.registerTool(
     "echo",
@@ -82,8 +115,8 @@ function buildMcpServer(): McpServer {
   //     title: "Remember",
   //     description: "Store a value under a key, scoped to the calling user.",
   //     inputSchema: {
-  //       key: z.string().min(1),
-  //       value: z.string(),
+  //       key: z.string().min(1).max(1024),
+  //       value: z.string().max(64 * 1024),
   //     },
   //     outputSchema: { stored: z.boolean() },
   //   },
@@ -123,7 +156,10 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
   // (`buildMcpServer(req.headers.authorization)` once the `@guuey/state`
   // example above is uncommented.)
   const mcp = buildMcpServer();
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+    maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
+  });
 
   res.on("close", () => {
     transport.close().catch(() => undefined);

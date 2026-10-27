@@ -32,6 +32,29 @@ interface Todo {
 
 const todos = new Map<string, Todo>();
 
+/**
+ * Largest number of array elements plus object members one `tools/call`
+ * `arguments` payload may carry. The SDK counts them before zod parses the
+ * input and answers a bigger payload with an `isError` result, so the tool
+ * handler never runs. The largest real input here is one field
+ * (`todo_create.title`, `todo_toggle.id` or `todo_delete.id`); 16 leaves room
+ * for a client that sends a few extra keys, which zod strips. Re-derive this
+ * number when you add a tool that takes lists or nested objects, and give
+ * every `z.array()` in an input schema a `.max()` (zod walks every element of
+ * an unbounded array).
+ */
+export const MAX_TOOL_INPUT_ELEMENTS = 16;
+
+/**
+ * Largest HTTP request body `/mcp` accepts, in bytes. A bigger body gets HTTP
+ * 413 from the transport before any JSON is parsed. The largest real request
+ * is a `todo_create` call: a ~300-byte JSON-RPC envelope around a one-line
+ * title (even 1,000 characters written as `\uXXXX` escapes is ~6 KB), and
+ * `initialize` is 1-3 KB. 64 KiB is ten times that, and far below the SDK's
+ * 4 MiB default. Raise it only when a tool really takes a larger input.
+ */
+export const MAX_REQUEST_BODY_BYTES = 64 * 1024;
+
 const todoShape = {
   id: z.string(),
   title: z.string(),
@@ -47,11 +70,14 @@ function toolResult(data: Record<string, unknown>) {
 }
 
 function buildMcpServer(): McpServer {
-  const server = new McpServer({
-    name: "todo-mcp",
-    version: "0.0.0",
-    description: "Create, list, toggle, and delete todos.",
-  });
+  const server = new McpServer(
+    {
+      name: "todo-mcp",
+      version: "0.0.0",
+      description: "Create, list, toggle, and delete todos.",
+    },
+    { maxToolInputElements: MAX_TOOL_INPUT_ELEMENTS },
+  );
 
   server.registerTool(
     "todo_list",
@@ -134,7 +160,10 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
 
   // Fresh server + transport per request (stateless mode) — see module doc.
   const mcp = buildMcpServer();
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+    maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
+  });
 
   res.on("close", () => {
     transport.close().catch(() => undefined);
