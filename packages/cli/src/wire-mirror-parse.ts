@@ -127,3 +127,18 @@ export function parseStringLiterals(source: string, name: string): string[] {
   }
   return [...declaration.matchAll(/'([^']*)'/g)].map((match) => match[1]);
 }
+
+/**
+ * The value of a `const X = '…';` string constant (an error code, a route
+ * name). Throws when there is none, so a guard never compares `undefined`
+ * with `undefined`.
+ */
+export function parseStringConstant(source: string, name: string): string {
+  const match = new RegExp(`(?:export\\s+)?const\\s+${name}\\s*(?::\\s*string\\s*)?=\\s*'([^']*)'\\s*;`).exec(
+    stripComments(source),
+  );
+  if (match === null) {
+    throw new Error(`no string constant named ${name} in source`);
+  }
+  return match[1];
+}

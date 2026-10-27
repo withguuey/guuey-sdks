@@ -40,7 +40,7 @@ import {
   type UpdateAppRequest,
 } from './apps.js';
 import { resolveConfig } from '../config.js';
-import { parseInterfaceFields, parseStringLiterals } from '../wire-mirror-parse';
+import { parseInterfaceFields, parseStringConstant, parseStringLiterals } from '../wire-mirror-parse';
 
 vi.mock('../auth.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../auth.js')>();
@@ -1573,12 +1573,20 @@ describe('appsByoUserExport (guuey#2447)', () => {
   });
 
   it("a THREAD 404 prints the thread's own message, not the app-level one", async () => {
-    fetchSpy.mockResolvedValue(json({ error: { code: 'NOT_FOUND', message: 'Thread t-9 not found' } }, 404));
+    fetchSpy.mockResolvedValue(json({ error: { code: 'THREAD_NOT_FOUND', message: 'Thread t-9 not found' } }, 404));
     await expect(appsByoUserExport('app1', { sub: 's', thread: 't-9' })).rejects.toBeInstanceOf(ExitSignal);
     expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
     const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
     expect(printed).toContain('Thread t-9 was not found for this end user in app app1');
     expect(printed).not.toContain('not allowed');
+  });
+
+  it('a plain NOT_FOUND naming the thread is read by its code, so it keeps the app-level message', async () => {
+    fetchSpy.mockResolvedValue(json({ error: { code: 'NOT_FOUND', message: 'Thread t-9 not found' } }, 404));
+    await expect(appsByoUserExport('app1', { sub: 's', thread: 't-9' })).rejects.toBeInstanceOf(ExitSignal);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('App app1 was not found, or this account is not allowed to export it');
+    expect(printed).not.toContain('was not found for this end user');
   });
 
   it('an APP 404 on a thread read keeps the "not found, or not allowed" message', async () => {
@@ -2109,6 +2117,14 @@ describe.skipIf(!haveWire)(
       ['AppThreadMessageWire', WIRE_THREADS],
     ])('%s declares exactly the wire fields, with the same optionality', (name, wirePath) => {
       expect(parseInterfaceFields(read(CLI_APPS), name)).toEqual(parseInterfaceFields(read(wirePath), name));
+    });
+
+    it('THREAD_NOT_FOUND is the wire code the transcript read answers', () => {
+      // `guuey apps byo-user export --thread` prints its thread-level line on exactly this code. A renamed code
+      // server-side would print the app-level "not found, or not allowed" line instead, silently.
+      expect(parseStringConstant(read(CLI_APPS), 'THREAD_NOT_FOUND')).toBe(
+        parseStringConstant(read(WIRE_BYO_USERS), 'THREAD_NOT_FOUND'),
+      );
     });
 
     it('the guard is not a tautology — a dropped field compares unequal', () => {

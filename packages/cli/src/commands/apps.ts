@@ -237,7 +237,7 @@ async function handleError(
     // allowed" rather than a flat "not found" (out.appApiErrorMessage).
     const body: unknown = await res.json();
     message =
-      app?.threadId !== undefined && isThreadNotFound(res.status, body, app.threadId)
+      app?.threadId !== undefined && isThreadNotFound(res.status, body)
         ? `Thread ${app.threadId} was not found for this end user in app ${app.id}`
         : app
           ? out.appApiErrorMessage(res.status, body, app.id, app.action, `HTTP ${res.status}`)
@@ -251,16 +251,12 @@ async function handleError(
 
 /**
  * True when a 404 names the THREAD, not the app: the export's transcript read
- * passes the app gate first, then answers `Thread <id> not found` for a thread
- * that is not this end user's in this app. The app-level 404 keeps the
- * "not found, or not allowed" face.
+ * passes the app gate first, then answers {@link THREAD_NOT_FOUND} for a
+ * thread that is not this end user's in this app. The app-level 404 keeps the
+ * "not found, or not allowed" face. Matched on the code, never the message.
  */
-function isThreadNotFound(status: number, body: unknown, threadId: string): boolean {
-  if (status !== 404 || out.apiErrorCode(body) !== 'NOT_FOUND') return false;
-  if (typeof body !== 'object' || body === null || !('error' in body)) return false;
-  const err = body.error;
-  if (typeof err !== 'object' || err === null || !('message' in err)) return false;
-  return err.message === `Thread ${threadId} not found`;
+function isThreadNotFound(status: number, body: unknown): boolean {
+  return status === 404 && out.apiErrorCode(body) === THREAD_NOT_FOUND;
 }
 
 /**
@@ -1668,6 +1664,12 @@ export interface ByoUserThreadsPageWire {
   threads: AppThreadSummaryWire[];
   nextCursor: string | null;
 }
+
+/**
+ * The 404 code the transcript read answers for a thread that is not this end
+ * user's in this app (mirror of cli-wire `THREAD_NOT_FOUND`).
+ */
+export const THREAD_NOT_FOUND = 'THREAD_NOT_FOUND';
 
 /** `GET /v1/apps/:id/byo-users/threads/:threadId/messages` (mirror of cli-wire `ByoUserThreadMessagesPageWire`). */
 export interface ByoUserThreadMessagesPageWire {
