@@ -134,3 +134,19 @@ describe("guuey#2450 — a closed drawer holds no focus", () => {
     expect(block(".guuey-layout-sidebar")).not.toContain("visibility");
   });
 });
+
+describe("guuey#2430 — the drawer toggle meets the 44px phone tap floor", () => {
+  const toggle = (): string => block(".guuey-layout-drawer-toggle", media(DRAWER));
+
+  it("a 44x44 hit area; the mark stays quiet (radius 8, no glyph growth)", () => {
+    expect(toggle()).toContain("min-width: 44px");
+    expect(toggle()).toContain("min-height: 44px");
+    expect(toggle()).toContain("border-radius: 8px");
+    expect(toggle()).not.toMatch(/font-size/);
+  });
+
+  it("inset 10px plus the device's safe area, so the band under it stays 64px (10 + 44 + 10)", () => {
+    expect(toggle()).toContain("inset-block-start: calc(10px + env(safe-area-inset-top))");
+    expect(toggle()).toContain("inset-inline-start: calc(10px + env(safe-area-inset-left))");
+  });
+});

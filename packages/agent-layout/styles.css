@@ -173,8 +173,8 @@
   }
 }
 
-/* The drawer toggle exists only at drawer widths (≥24px target — the
- * ggui#633 a11y floor). */
+/* The drawer toggle exists only at drawer widths (a 44px hit area — the
+ * phone tap floor, guuey#2430; WCAG 2.5.8's 24px is the hard minimum). */
 .guuey-layout-drawer-toggle {
   display: none;
 }
@@ -228,11 +228,17 @@
     align-items: center;
     justify-content: center;
     position: fixed;
-    inset-block-start: 12px;
-    inset-inline-start: 12px;
+    /* guuey#2430: 10 + 44 + 10 keeps the 64px band under the toggle; the
+     * device inset keeps it clear of a notch or status bar. The extra hit
+     * area is room around the glyph, which does not grow. The plain 10px
+     * pair first is the fallback for an engine without env(). */
+    inset-block-start: 10px;
+    inset-inline-start: 10px;
+    inset-block-start: calc(10px + env(safe-area-inset-top));
+    inset-inline-start: calc(10px + env(safe-area-inset-left));
     z-index: 21;
-    min-width: 40px;
-    min-height: 40px;
+    min-width: 44px;
+    min-height: 44px;
     border: none;
     border-radius: 8px;
     background: var(--guuey-layout-tone-upper);
