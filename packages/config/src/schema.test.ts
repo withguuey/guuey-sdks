@@ -4,7 +4,9 @@ import {
   SUPPORTED_GUUEY_JSON_SCHEMA,
   assertSupportedGuueyJsonSchema,
   classifyGuueyJsonSchema,
+  guueyJsonUnknownKeys,
   parseGuueyJson,
+  safeParseGuueyJson,
 } from './schema.js';
 
 /**
@@ -215,5 +217,199 @@ describe('parseGuueyJson — app.builtFor (who the agent is FOR, guuey#1597)', (
 
   it('lives on the APP section, not the agent section — an agent-level key stays unknown (the pull-safety placement)', () => {
     expect(() => parseGuueyJson({ ...base, agent: { builtFor: 'personal' } })).toThrow();
+  });
+});
+
+describe('safeParseGuueyJson — the READER mode (guuey#2851: a newer app.* key never breaks an older reader)', () => {
+  /** A document from a newer vocabulary: one unknown key in app, app.access, app.page and app.theme. */
+  const newer = {
+    ...base,
+    app: {
+      name: 'Helper',
+      futureSetting: true,
+      access: { guestAccess: true, futureAccessKey: 'x' },
+      page: { enabled: false, futurePageKey: 1 },
+      theme: { file: 'theme.json', futureThemeKey: 'x' },
+    },
+  };
+
+  it('strips every unknown key under app, at any depth and through the theme union, and names each one', () => {
+    const result = safeParseGuueyJson(newer, { stripUnknownKeys: 'app' });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect([...result.warnings].sort()).toEqual([
+      'app.access.futureAccessKey',
+      'app.futureSetting',
+      'app.page.futurePageKey',
+      'app.theme.futureThemeKey',
+    ]);
+    expect(result.data.app).toEqual({
+      name: 'Helper',
+      access: { guestAccess: true },
+      page: { enabled: false },
+      theme: { file: 'theme.json' },
+    });
+  });
+
+  it('needs no structuredClone (React Native\'s Hermes has none): an unknown app key is still stripped and named', () => {
+    const original = globalThis.structuredClone;
+    Reflect.deleteProperty(globalThis, 'structuredClone');
+    try {
+      expect(typeof globalThis.structuredClone).toBe('undefined');
+      const result = safeParseGuueyJson({ ...base, app: { futureSetting: true } }, { stripUnknownKeys: 'app' });
+      expect(result.success && result.warnings).toEqual(['app.futureSetting']);
+    } finally {
+      globalThis.structuredClone = original;
+    }
+  });
+
+  it('a BigInt never throws: as an unknown key\'s value it is stripped and named; under a known field it is a failure', () => {
+    const unknownValue = safeParseGuueyJson({ ...base, app: { futureLimit: 10n } }, { stripUnknownKeys: 'app' });
+    expect(unknownValue.success && unknownValue.warnings).toEqual(['app.futureLimit']);
+    const knownField = safeParseGuueyJson(
+      { ...base, app: { name: 10n, futureSetting: true } },
+      { stripUnknownKeys: 'app' },
+    );
+    expect(knownField.success).toBe(false);
+  });
+
+  it('an undefined-valued optional key next to an unknown app key parses', () => {
+    const result = safeParseGuueyJson(
+      { ...base, app: { name: undefined, futureSetting: true } },
+      { stripUnknownKeys: 'app' },
+    );
+    expect(result.success && result.warnings).toEqual(['app.futureSetting']);
+  });
+
+  it('an own "__proto__" key under app never reaches a prototype: zod skips it (no warning, not in the output), and the copy keeps it an own key', () => {
+    // zod's object parse skips a "__proto__" key on purpose (zod v4 core
+    // schemas.js), so it is neither reported nor emitted. The read still
+    // copies the app block (futureSetting forces the copy), and that copy must
+    // not turn the own key into a prototype.
+    const input: unknown = JSON.parse(
+      '{"schema":"1","agent":{},"app":{"name":"A","futureSetting":true,"__proto__":{"x":1}}}',
+    );
+    const result = safeParseGuueyJson(input, { stripUnknownKeys: 'app' });
+    expect(result.success && result.warnings).toEqual(['app.futureSetting']);
+    expect(result.success && result.data.app).toEqual({ name: 'A' });
+    expect(result.success && Object.getPrototypeOf(result.data.app)).toBe(Object.prototype);
+    expect(Reflect.get({}, 'x')).toBeUndefined();
+  });
+
+  it('a non-plain app object is never stripped (it is the caller\'s, not a copy): the strict failure comes back and the input keeps its key', () => {
+    const app: object = Object.assign(Object.create({}), { unknownKey: 1 });
+    const result = safeParseGuueyJson({ ...base, app }, { stripUnknownKeys: 'app' });
+    expect(result.success).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(app, 'unknownKey')).toBe(true);
+  });
+
+  it('a cycle under an unknown key ends instead of recursing forever', () => {
+    const app: { futureSelf?: object } = {};
+    app.futureSelf = app;
+    const result = safeParseGuueyJson({ ...base, app }, { stripUnknownKeys: 'app' });
+    expect(result.success && result.warnings).toEqual(['app.futureSelf']);
+    expect(app.futureSelf).toBe(app);
+  });
+
+  it('never mutates the input', () => {
+    const input = structuredClone(newer);
+    safeParseGuueyJson(input, { stripUnknownKeys: 'app' });
+    expect(input).toEqual(newer);
+  });
+
+  it('the strict parse (no options, the author\'s) still refuses the same document', () => {
+    const result = safeParseGuueyJson(newer);
+    expect(result.success).toBe(false);
+    expect(() => parseGuueyJson(newer)).toThrow();
+  });
+
+  it('a document with no unknown key parses with empty warnings in both modes', () => {
+    const ok = { ...base, app: { access: { guestAccess: true } } };
+    const strict = safeParseGuueyJson(ok);
+    const reader = safeParseGuueyJson(ok, { stripUnknownKeys: 'app' });
+    expect(strict.success && strict.warnings).toEqual([]);
+    expect(reader.success && reader.warnings).toEqual([]);
+  });
+
+  it("'app' leaves an unknown key OUTSIDE app refused", () => {
+    const result = safeParseGuueyJson(
+      { ...base, agent: { futureAgentKey: 1 }, app: { futureSetting: true } },
+      { stripUnknownKeys: 'app' },
+    );
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues.map((i) => i.path.join('.'))).toEqual(['agent']);
+  });
+
+  it("'all' strips an unknown key anywhere in the document", () => {
+    const result = safeParseGuueyJson(
+      { ...base, agent: { futureAgentKey: 1 }, app: { futureSetting: true } },
+      { stripUnknownKeys: 'all' },
+    );
+    expect(result.success && [...result.warnings].sort()).toEqual(['agent.futureAgentKey', 'app.futureSetting']);
+  });
+
+  it('a real error under app still fails, and reports the real error, not the stripped key', () => {
+    const result = safeParseGuueyJson(
+      { ...base, app: { futureSetting: true, access: { userAuthMode: 'magic' } } },
+      { stripUnknownKeys: 'app' },
+    );
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues.map((i) => i.path.join('.'))).toEqual(['app.access.userAuthMode']);
+  });
+
+  it('an ambiguous union is left alone: a theme that reads as both a file reference and an inline theme is refused', () => {
+    const palette = {
+      accent: '#000000',
+      onAccent: '#ffffff',
+      ink: '#111111',
+      inkMuted: '#666666',
+      surface: '#ffffff',
+      canvas: '#fafafa',
+      canvasMuted: '#eeeeee',
+      error: '#b3261e',
+    };
+    const inline = { mode: 'light', colors: { light: palette, dark: palette } };
+    expect(safeParseGuueyJson({ ...base, app: { theme: inline } }).success).toBe(true);
+    const result = safeParseGuueyJson(
+      { ...base, app: { theme: { file: 'theme.json', ...inline } } },
+      { stripUnknownKeys: 'app' },
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('a wrong-typed theme file reference is refused, not read as an inline theme with its keys stripped', () => {
+    // No member is pure-unknown-keys: the { file } member fails on the type of
+    // file, and the inline member fails on its missing required keys.
+    const input = { ...base, app: { theme: { file: 123 } } };
+    const result = safeParseGuueyJson(input, { stripUnknownKeys: 'app' });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues.map((i) => i.path.slice(0, 2).join('.'))).toEqual(['app.theme']);
+    expect(input.app.theme).toEqual({ file: 123 });
+  });
+});
+
+describe('guueyJsonUnknownKeys — the keys a strict parse refused as unknown', () => {
+  it('names them as dotted paths from a thrown ZodError, union members included', () => {
+    let caught: unknown;
+    try {
+      parseGuueyJson({ ...base, app: { acess: {}, theme: { file: 't.json', extra: 1 } } });
+    } catch (err) {
+      caught = err;
+    }
+    expect(guueyJsonUnknownKeys(caught).sort()).toEqual(['app.acess', 'app.theme.extra']);
+  });
+
+  it('is empty for any other error', () => {
+    let caught: unknown;
+    try {
+      parseGuueyJson({ ...base, protocol: 'ag-ui' });
+    } catch (err) {
+      caught = err;
+    }
+    expect(guueyJsonUnknownKeys(caught)).toEqual([]);
+    expect(guueyJsonUnknownKeys(new Error('x'))).toEqual([]);
   });
 });

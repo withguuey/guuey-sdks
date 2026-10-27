@@ -251,12 +251,184 @@ export function parseGuueyJson(raw: unknown): GuueyJsonV1 {
 }
 
 /**
+ * How a READER of a stored or received `guuey.json` treats a key this schema
+ * does not know. The schema itself stays strict: the author of the file (the
+ * CLI, editing it) must keep refusing an unknown key, because there it is
+ * usually a typo. A reader is in a different place: it rolls on its own
+ * schedule, so a document written under a NEWER vocabulary reaches it, and
+ * "a strict validator never rejects a field the previous release did not
+ * send" (the rolling-release rule).
+ *
+ * - absent: strict everywhere, the author's parse.
+ * - `'app'`: an unknown key anywhere under `app` (the presentation and
+ *   posture block, where new optional settings land) is stripped and named in
+ *   `warnings`; an unknown key anywhere else still refuses.
+ * - `'all'`: an unknown key anywhere in the document is stripped and named,
+ *   for a reader that must never refuse a stored document over vocabulary
+ *   alone (the no-code pod's boot).
+ *
+ * Only keys are ever stripped. A wrong type, a missing required field or a
+ * bad value still fails, so a stripped document is never a guessed one.
+ */
+export interface GuueyJsonReadOptions {
+  stripUnknownKeys?: 'app' | 'all';
+}
+
+/**
+ * The result of {@link safeParseGuueyJson}: zod's own safe-parse result, and
+ * on success the dotted path of every key the read stripped (`app.access.x`),
+ * in the order zod reported them. Always empty for a strict parse.
+ */
+export type GuueyJsonParseResult =
+  | (z.ZodSafeParseSuccess<GuueyJsonV1> & { warnings: string[] })
+  | z.ZodSafeParseError<GuueyJsonV1>;
+
+/**
  * Safe-parse variant — returns a discriminated `z.safeParse` result.
  * Prefer this inside CLI tooling where you want to render the issue
  * list without try/catch.
+ *
+ * With `options.stripUnknownKeys` it is the READER's parse (see
+ * {@link GuueyJsonReadOptions}): the strict parse runs first; when it fails,
+ * exactly the keys it refused as unknown (within the chosen scope) are
+ * removed from a copy of `raw` and the copy is parsed again, strictly. A
+ * failure then reports the copy's issues, so an unknown key the reader
+ * tolerates is never the error it shows. `raw` is never mutated.
  */
 export function safeParseGuueyJson(
   raw: unknown,
-): ReturnType<typeof GuueyJsonV1.safeParse> {
-  return GuueyJsonV1.safeParse(raw);
+  options: GuueyJsonReadOptions = {},
+): GuueyJsonParseResult {
+  const first = GuueyJsonV1.safeParse(raw);
+  if (first.success) return { success: true, data: first.data, warnings: [] };
+  const scope = options.stripUnknownKeys;
+  if (scope === undefined) return first;
+  const targets = unknownKeyTargets(first.error.issues, []).filter(
+    (target) => scope === 'all' || target.path[0] === 'app',
+  );
+  if (targets.length === 0) return first;
+  const { value, stripped } = stripKeys(raw, targets);
+  if (stripped.length === 0) return first;
+  const second = GuueyJsonV1.safeParse(value);
+  return second.success ? { success: true, data: second.data, warnings: stripped } : second;
+}
+
+/**
+ * The dotted path of every key a strict `guuey.json` parse refused as
+ * unknown (`app.access.futureKey`), read off `error` when it is a zod error,
+ * else `[]`. The CLI uses it to add the "a newer guuey.json?" hint to its
+ * own strict refusal.
+ */
+export function guueyJsonUnknownKeys(error: unknown): string[] {
+  if (!(error instanceof z.ZodError)) return [];
+  return unknownKeyTargets(error.issues, []).flatMap(({ path, keys }) =>
+    keys.map((key) => [...path.map(String), key].join('.')),
+  );
+}
+
+/** Where an unknown key sits: the absolute path of its object, and the keys. */
+interface UnknownKeyTarget {
+  path: readonly PropertyKey[];
+  keys: readonly string[];
+}
+
+/**
+ * Collect the unknown-key targets from a zod issue tree. Only
+ * `unrecognized_keys` issues contribute. Inside an `invalid_union` the
+ * document matched no member exactly, but a member whose issues are ALL
+ * `unrecognized_keys` is one it matched apart from extra keys, so that
+ * member's keys are the unknown ones. Exactly one such member is required:
+ * none means a real mismatch, and two or more means the input is ambiguous
+ * between members (an `app.theme` that reads as both a `{ file }` reference
+ * and an inline theme). Either way nothing in that union is called unknown,
+ * so a key a member requires is never stripped. This relies on an
+ * invariant: every object member of a guuey.json union carries at least one
+ * required key, so a member is pure-unknown-keys only when the input satisfies
+ * all its required keys. Making every key of a member optional would let a
+ * wrong-typed sibling member's keys be stripped.
+ */
+function unknownKeyTargets(
+  issues: readonly z.core.$ZodIssue[],
+  basePath: readonly PropertyKey[],
+): UnknownKeyTarget[] {
+  const targets: UnknownKeyTarget[] = [];
+  for (const issue of issues) {
+    const here = [...basePath, ...issue.path];
+    if (issue.code === 'unrecognized_keys') {
+      if (issue.keys.length > 0) targets.push({ path: here, keys: issue.keys });
+    } else if (issue.code === 'invalid_union') {
+      const [pureMember, ...rest] = issue.errors.filter(
+        (member) => member.length > 0 && member.every((mi) => mi.code === 'unrecognized_keys'),
+      );
+      if (pureMember !== undefined && rest.length === 0) {
+        targets.push(...unknownKeyTargets(pureMember, here));
+      }
+    }
+  }
+  return targets;
+}
+
+/**
+ * Remove `targets` from a copy of `raw` (see {@link clonePlain}). Returns the
+ * copy and the dotted path of each key actually removed. A target whose node
+ * is not an object this read copied (a non-plain object the caller owns, or
+ * not an object at all) is left alone, so `raw` is never mutated.
+ */
+function stripKeys(
+  raw: unknown,
+  targets: readonly UnknownKeyTarget[],
+): { value: unknown; stripped: string[] } {
+  // No structuredClone (Hermes has none) and no JSON round-trip (it throws on
+  // BigInt and drops undefined): only plain data is copied, and keys are
+  // deleted only from copies.
+  const copies = new WeakSet<object>();
+  const value = clonePlain(raw, copies);
+  const stripped: string[] = [];
+  for (const { path, keys } of targets) {
+    let node: unknown = value;
+    for (const seg of path) {
+      node = node !== null && typeof node === 'object' ? Reflect.get(node, seg) : undefined;
+    }
+    if (node === null || typeof node !== 'object' || !copies.has(node)) continue;
+    for (const key of keys) {
+      if (Object.prototype.hasOwnProperty.call(node, key)) {
+        Reflect.deleteProperty(node, key);
+        stripped.push([...path.map(String), key].join('.'));
+      }
+    }
+  }
+  return { value, stripped };
+}
+
+/**
+ * Deep-copy arrays and PLAIN objects (prototype `Object.prototype` or `null`),
+ * adding every copy to `copies`; every other value (a BigInt, a Date, a Map, a
+ * class instance, an `Object.create(proto)` object) is returned BY REFERENCE.
+ * `Object.fromEntries` defines each key as an own data property, so an own
+ * `"__proto__"` key stays an own key. A cycle ends on a reference to the
+ * caller's object (outside `copies`, so never stripped) instead of recursing.
+ */
+function clonePlain(value: unknown, copies: WeakSet<object>): unknown {
+  // Each original maps to its copy; while an object's copy is still being
+  // built it maps to the original itself, which is what a back-edge gets.
+  const seen = new Map<object, unknown>();
+  const copy = (node: unknown): unknown => {
+    if (node === null || typeof node !== 'object') return node;
+    if (seen.has(node)) return seen.get(node);
+    if (Array.isArray(node)) {
+      const items: unknown[] = [];
+      seen.set(node, items);
+      copies.add(items);
+      for (const item of node) items.push(copy(item));
+      return items;
+    }
+    const proto: unknown = Object.getPrototypeOf(node);
+    if (proto !== Object.prototype && proto !== null) return node;
+    seen.set(node, node);
+    const fields = Object.fromEntries(Object.entries(node).map(([key, item]) => [key, copy(item)]));
+    seen.set(node, fields);
+    copies.add(fields);
+    return fields;
+  };
+  return copy(value);
 }
