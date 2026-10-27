@@ -29,6 +29,7 @@ import {
   appsPublish,
   appsUnpublish,
   appsByoUserErase,
+  appsByoUserExport,
 } from './commands/apps';
 import { status } from './commands/status';
 import { login } from './commands/login';
@@ -471,7 +472,7 @@ Apps:
                                  the workspace that owns the app (a user login).
                                  Idempotent; the share link keeps working after unpublish.
 
-App Admin (BYO-auth apps; workspace-admin only):
+App Admin (BYO-auth apps; owner or admin of the app's workspace, or a personal app's owner):
   apps byo-user erase [appId]   Erase one BYO end-user's app data (GDPR):
                                  enqueues the durable-home memory wipe (done
                                  within ~15 min) and synchronously deletes
@@ -483,6 +484,14 @@ App Admin (BYO-auth apps; workspace-admin only):
                                  queued | done | none. stuck: true means
                                  the wipe hasn't drained — contact support.
     --sub <sub>                  The end-user's raw issuer sub (required)
+  apps byo-user export [appId]  Export one BYO end-user's conversations in
+                                 the app (data-access requests). Lists their
+                                 threads; needs a user login or a personal
+                                 access token (a workspace key is refused).
+    --sub <sub>                  The end-user's raw issuer sub (required)
+    --thread <threadId>          Print one thread's messages instead
+    --all                        Follow every page and write JSON lines to
+                                 stdout: each thread, then its messages
 
 Domains:
   domains add <domain>          Register a custom domain for the app and
@@ -1083,8 +1092,16 @@ async function main(): Promise<void> {
                 json: jsonFlag,
               });
               break;
+            case 'export':
+              await appsByoUserExport(rest[1], {
+                sub: typeof flags.sub === 'string' ? flags.sub : undefined,
+                thread: flags.thread,
+                all: flags.all,
+                json: jsonFlag,
+              });
+              break;
             default:
-              console.error(`Unknown apps byo-user command: ${rest[0] ?? '(none)'}. Use: erase`);
+              console.error(`Unknown apps byo-user command: ${rest[0] ?? '(none)'}. Use: erase, export`);
               process.exit(1);
           }
           break;

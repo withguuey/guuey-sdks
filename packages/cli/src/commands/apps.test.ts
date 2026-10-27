@@ -25,6 +25,8 @@ import type { MockInstance } from 'vitest';
 import {
   appsAccess,
   appsByoUserErase,
+  appsByoUserExport,
+  byoUserExportPath,
   appsDelete,
   appsGet,
   appsList,
@@ -1496,6 +1498,180 @@ describe('appsByoUserErase', () => {
 });
 
 /**
+ * `guuey apps byo-user export [appId] --sub <sub> [--thread <id>] [--all]`
+ * (guuey#2447) over cliApi's export pair:
+ *
+ *   GET /v1/apps/{appId}/byo-users/threads?sub=…
+ *   GET /v1/apps/{appId}/byo-users/threads/{threadId}/messages?sub=…
+ *
+ * One page by default; `--all` follows every cursor and writes JSON lines.
+ */
+describe('appsByoUserExport (guuey#2447)', () => {
+  let fetchSpy: MockInstance<typeof fetch>;
+  let exitSpy: MockInstance<typeof process.exit>;
+  let errSpy: MockInstance<typeof console.error>;
+  let logSpy: MockInstance<typeof console.log>;
+
+  const summary = (threadId: string) => ({
+    threadId,
+    userId: 'byo_h',
+    userKind: 'byo',
+    title: `title ${threadId}`,
+    status: 'active',
+    lastMessageAt: '2026-10-01T00:00:00.000Z',
+    lastMessagePreview: '',
+    createdAt: null,
+  });
+  const msg = (seq: number, text: string) => ({
+    seq,
+    at: `2026-10-01T00:00:0${seq}.000Z`,
+    kind: 'text',
+    authorRole: seq % 2 === 1 ? 'user' : 'agent',
+    text,
+    toolName: null,
+    untrustedOrigin: false,
+  });
+  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, 'fetch');
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const printed = (): string[] => logSpy.mock.calls.map((c) => String(c[0] ?? ''));
+
+  it('the request path URL-encodes the sub, the thread id and the cursor', () => {
+    expect(byoUserExportPath('app1', 'auth0|a b', undefined, undefined)).toBe('/apps/app1/byo-users/threads?sub=auth0%7Ca%20b');
+    expect(byoUserExportPath('app1', 's', 't/1', 'c+=')).toBe('/apps/app1/byo-users/threads/t%2F1/messages?sub=s&cursor=c%2B%3D');
+  });
+
+  it('default: GETs ONE page of the thread list and prints it', async () => {
+    fetchSpy.mockResolvedValue(json({ appId: 'app1', byoUserId: 'byo_h', threads: [summary('t-1')], nextCursor: null }));
+    await appsByoUserExport('app1', { sub: 'raw sub' });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(lastRequest(fetchSpy)).toEqual({ method: 'GET', path: '/apps/app1/byo-users/threads?sub=raw%20sub', body: undefined });
+    expect(printed().join('\n')).toContain('t-1');
+  });
+
+  it('--thread GETs one page of that thread and prints its messages', async () => {
+    fetchSpy.mockResolvedValue(
+      json({ appId: 'app1', threadId: 't-1', messages: [msg(1, 'hello'), msg(2, 'hi there')], sealedWithheld: 1, nextCursor: 'c2' }),
+    );
+    await appsByoUserExport('app1', { sub: 's', thread: 't-1' });
+    expect(lastRequest(fetchSpy).path).toBe('/apps/app1/byo-users/threads/t-1/messages?sub=s');
+    const out = printed().join('\n');
+    expect(out).toContain('[1]');
+    expect(out).toContain('hello');
+    expect(out).toContain('hi there');
+    expect(out).toContain('1 sealed messages withheld');
+    expect(out).toContain('--all');
+  });
+
+  it('--json prints the raw page', async () => {
+    const page = { appId: 'app1', byoUserId: 'byo_h', threads: [summary('t-1')], nextCursor: null };
+    fetchSpy.mockResolvedValue(json(page));
+    await appsByoUserExport('app1', { sub: 's', json: true });
+    expect(JSON.parse(printed().join('\n'))).toEqual(page);
+  });
+
+  it('--all follows every cursor and writes JSON lines: each thread, then its messages', async () => {
+    fetchSpy.mockImplementation(async (url) => {
+      const u = new URL(String(url));
+      const cursor = u.searchParams.get('cursor');
+      if (u.pathname === '/apps/app1/byo-users/threads') {
+        return cursor === null
+          ? json({ appId: 'app1', byoUserId: 'byo_h', threads: [summary('t-1')], nextCursor: 'L2' })
+          : cursor === 'L2'
+            ? json({ appId: 'app1', byoUserId: 'byo_h', threads: [], nextCursor: 'L3' })
+            : json({ appId: 'app1', byoUserId: 'byo_h', threads: [summary('t-2')], nextCursor: null });
+      }
+      if (u.pathname === '/apps/app1/byo-users/threads/t-1/messages') {
+        return cursor === null
+          ? json({ appId: 'app1', threadId: 't-1', messages: [msg(1, 'a')], sealedWithheld: 0, nextCursor: 'M2' })
+          : json({ appId: 'app1', threadId: 't-1', messages: [msg(2, 'b')], sealedWithheld: 2, nextCursor: null });
+      }
+      if (u.pathname === '/apps/app1/byo-users/threads/t-2/messages') {
+        return json({ appId: 'app1', threadId: 't-2', messages: [msg(1, 'c')], sealedWithheld: 0, nextCursor: null });
+      }
+      return json({ error: { code: 'NOT_FOUND', message: 'nope' } }, 404);
+    });
+
+    await appsByoUserExport('app1', { sub: 's', all: true });
+
+    const lines = printed().map((l) => JSON.parse(l) as { type: string; threadId: string; seq?: number; text?: string });
+    expect(lines.map((l) => [l.type, l.threadId, l.seq ?? null])).toEqual([
+      ['thread', 't-1', null],
+      ['message', 't-1', 1],
+      ['message', 't-1', 2],
+      ['thread', 't-2', null],
+      ['message', 't-2', 1],
+    ]);
+    // Every page was requested with the cursor the previous page returned.
+    const paths = fetchSpy.mock.calls.map((c) => {
+      const u = new URL(String(c[0]));
+      return u.pathname + u.search;
+    });
+    expect(paths).toContain('/apps/app1/byo-users/threads?sub=s&cursor=L2');
+    expect(paths).toContain('/apps/app1/byo-users/threads?sub=s&cursor=L3');
+    expect(paths).toContain('/apps/app1/byo-users/threads/t-1/messages?sub=s&cursor=M2');
+    expect(fetchSpy).toHaveBeenCalledTimes(6);
+    const summaryLine = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(summaryLine).toContain('2 threads and 3 messages');
+    expect(summaryLine).toContain('2 sealed messages withheld');
+  });
+
+  it('--all --thread follows only that thread', async () => {
+    fetchSpy.mockImplementation(async (url) => {
+      const cursor = new URL(String(url)).searchParams.get('cursor');
+      return cursor === null
+        ? json({ appId: 'app1', threadId: 't-1', messages: [msg(1, 'a')], sealedWithheld: 0, nextCursor: 'M2' })
+        : json({ appId: 'app1', threadId: 't-1', messages: [msg(2, 'b')], sealedWithheld: 0, nextCursor: null });
+    });
+    await appsByoUserExport('app1', { sub: 's', thread: 't-1', all: true });
+    expect(printed().map((l) => (JSON.parse(l) as { type: string; seq: number }).seq)).toEqual([1, 2]);
+    for (const call of fetchSpy.mock.calls) {
+      expect(new URL(String(call[0])).pathname).toBe('/apps/app1/byo-users/threads/t-1/messages');
+    }
+  });
+
+  it('a refusal (e.g. a workspace key, 403) prints the server message and exits 1, mid-walk too', async () => {
+    fetchSpy.mockResolvedValue(
+      json({ error: { code: 'FORBIDDEN', message: 'This route is user-scoped and cannot be called with a workspace API key' } }, 403),
+    );
+    await expect(appsByoUserExport('app1', { sub: 's', all: true })).rejects.toBeInstanceOf(ExitSignal);
+    expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
+    expect(errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n')).toContain('user-scoped');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('missing --sub, or a valueless --thread, errors without calling the API', async () => {
+    await expect(appsByoUserExport('app1', {})).rejects.toBeInstanceOf(ExitSignal);
+    await expect(appsByoUserExport('app1', { sub: 's', thread: true })).rejects.toBeInstanceOf(ExitSignal);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(String(errSpy.mock.calls[0]?.[0])).toContain('--sub');
+  });
+
+  it('missing positional appId falls back to resolveConfig().appId', async () => {
+    vi.mocked(resolveConfig).mockReturnValueOnce({
+      host: 'https://guuey.test',
+      apiUrl: 'https://api.guuey.test',
+      appId: 'app-from-config',
+    });
+    fetchSpy.mockResolvedValue(json({ appId: 'app-from-config', byoUserId: 'b', threads: [], nextCursor: null }));
+    await appsByoUserExport(undefined, { sub: 's' });
+    expect(lastRequest(fetchSpy).path).toBe('/apps/app-from-config/byo-users/threads?sub=s');
+  });
+});
+
+/**
  * `guuey apps update --brand-icon-file / --brand-og-image-file` (guuey#138) —
  * the presign → PUT → commit pipeline. The commit writes the app row itself
  * (an immediate single-field save, spec D9), so a file-only invocation must
@@ -1858,6 +2034,30 @@ describe.skipIf(!haveWire)(
           'BrandAssetCommitBody',
         ),
       ).not.toEqual(parseInterfaceFields(read(WIRE_BRAND_ASSETS), 'BrandAssetCommitBody'));
+    });
+  },
+);
+
+describe.skipIf(!haveWire)(
+  'end-user export wire mirrors — sync guard against @guuey-private/cli-wire (guuey#2447)',
+  () => {
+    const read = (path: string): string => readFileSync(path, 'utf8');
+    const WIRE_BYO_USERS = repoPath('../../../../../backend/libs/cli-wire/byo-users.ts');
+    const WIRE_THREADS = repoPath('../../../../../backend/libs/cli-wire/threads.ts');
+
+    it.each([
+      ['ByoUserThreadsPageWire', WIRE_BYO_USERS],
+      ['ByoUserThreadMessagesPageWire', WIRE_BYO_USERS],
+      ['AppThreadSummaryWire', WIRE_THREADS],
+      ['AppThreadMessageWire', WIRE_THREADS],
+    ])('%s declares exactly the wire fields, with the same optionality', (name, wirePath) => {
+      expect(parseInterfaceFields(read(CLI_APPS), name)).toEqual(parseInterfaceFields(read(wirePath), name));
+    });
+
+    it('the guard is not a tautology — a dropped field compares unequal', () => {
+      expect(
+        parseInterfaceFields('interface ByoUserThreadsPageWire { appId: string; threads: string[]; nextCursor: string | null; }', 'ByoUserThreadsPageWire'),
+      ).not.toEqual(parseInterfaceFields(read(WIRE_BYO_USERS), 'ByoUserThreadsPageWire'));
     });
   },
 );

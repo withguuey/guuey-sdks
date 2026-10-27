@@ -1608,6 +1608,202 @@ async function appsByoUserEraseStatus(
   }
 }
 
+// ─── End-user export — `guuey apps byo-user export` (guuey#2447) ──────────────
+//
+// Hand-written mirrors of cliApi's export wire (`backend/libs/cli-wire/
+// byo-users.ts` and `threads.ts`); a sync guard in `apps.test.ts` pins their
+// field names and optionality. Field TYPES are widened where a newer server may
+// send a value this CLI does not know (see `../wire-mirror-parse.ts`).
+
+/** One thread of the export list (mirror of cli-wire `AppThreadSummaryWire`). */
+export interface AppThreadSummaryWire {
+  threadId: string;
+  userId: string;
+  userKind: string;
+  title: string;
+  status: string;
+  lastMessageAt: string;
+  lastMessagePreview: string;
+  createdAt: string | null;
+}
+
+/** One transcript row (mirror of cli-wire `AppThreadMessageWire`). */
+export interface AppThreadMessageWire {
+  seq: number;
+  at: string;
+  kind: string;
+  authorRole: string;
+  text: string | null;
+  toolName: string | null;
+  untrustedOrigin: boolean;
+  narration?: string[];
+  toolCallNames?: string[];
+  toolResultOutcomes?: { name?: string; outcome: string }[];
+  elided?: string;
+  failure?: { code: string | null; detail?: string };
+  notice?: { source: string | null };
+}
+
+/** `GET /v1/apps/:id/byo-users/threads` (mirror of cli-wire `ByoUserThreadsPageWire`). */
+export interface ByoUserThreadsPageWire {
+  appId: string;
+  byoUserId: string;
+  threads: AppThreadSummaryWire[];
+  nextCursor: string | null;
+}
+
+/** `GET /v1/apps/:id/byo-users/threads/:threadId/messages` (mirror of cli-wire `ByoUserThreadMessagesPageWire`). */
+export interface ByoUserThreadMessagesPageWire {
+  appId: string;
+  threadId: string;
+  messages: AppThreadMessageWire[];
+  sealedWithheld: number;
+  nextCursor: string | null;
+}
+
+/** The request path of one export page; every caller-given part is URL-encoded. */
+export function byoUserExportPath(
+  appId: string,
+  sub: string,
+  threadId: string | undefined,
+  cursor: string | undefined,
+): string {
+  const base =
+    threadId === undefined
+      ? `/apps/${appId}/byo-users/threads`
+      : `/apps/${appId}/byo-users/threads/${encodeURIComponent(threadId)}/messages`;
+  const cursorPart = cursor !== undefined ? `&cursor=${encodeURIComponent(cursor)}` : '';
+  return `${base}?sub=${encodeURIComponent(sub)}${cursorPart}`;
+}
+
+async function fetchThreadsPage(appId: string, sub: string, cursor: string | undefined): Promise<ByoUserThreadsPageWire> {
+  const res = await apiRequest('GET', byoUserExportPath(appId, sub, undefined, cursor));
+  if (!res.ok) return handleError(res, 'Failed to export byo-user threads', { id: appId, action: 'export' });
+  return (await res.json()) as ByoUserThreadsPageWire;
+}
+
+async function fetchMessagesPage(
+  appId: string,
+  sub: string,
+  threadId: string,
+  cursor: string | undefined,
+): Promise<ByoUserThreadMessagesPageWire> {
+  const res = await apiRequest('GET', byoUserExportPath(appId, sub, threadId, cursor));
+  if (!res.ok) return handleError(res, 'Failed to export byo-user messages', { id: appId, action: 'export' });
+  return (await res.json()) as ByoUserThreadMessagesPageWire;
+}
+
+/** Follow every message page of one thread, writing one JSON line per message. Returns the counts. */
+async function exportThreadMessages(
+  appId: string,
+  sub: string,
+  threadId: string,
+): Promise<{ messages: number; sealedWithheld: number }> {
+  let cursor: string | undefined;
+  let messages = 0;
+  let sealedWithheld = 0;
+  do {
+    const page = await fetchMessagesPage(appId, sub, threadId, cursor);
+    for (const message of page.messages) {
+      console.log(JSON.stringify({ type: 'message', appId, threadId, ...message }));
+    }
+    messages += page.messages.length;
+    sealedWithheld += page.sealedWithheld;
+    cursor = page.nextCursor ?? undefined;
+  } while (cursor !== undefined);
+  return { messages, sealedWithheld };
+}
+
+/**
+ * Handle `guuey apps byo-user export [appId] --sub <sub> [--thread <id>] [--all]`
+ * — a thin wrapper over cliApi's export pair (guuey#2447):
+ *
+ *   GET /v1/apps/{appId}/byo-users/threads?sub=…                     (default)
+ *   GET /v1/apps/{appId}/byo-users/threads/{threadId}/messages?sub=…  (--thread)
+ *
+ * Without `--all` it reads ONE page and prints it (`--json` prints the raw
+ * page). With `--all` it follows every cursor and writes JSON lines to stdout:
+ * one `{"type":"thread",…}` line per thread, each followed by one
+ * `{"type":"message",…}` line per message of that thread (with `--thread`, only
+ * that thread's messages); a one-line summary goes to stderr.
+ *
+ * The server takes a person's credential only (a `guuey login` session or a
+ * `guuey_user_*` token in `GUUEY_API_KEY`): a workspace API key is refused.
+ */
+export async function appsByoUserExport(
+  appId: string | undefined,
+  opts: { sub?: string; thread?: string | true; all?: string | true; json?: boolean },
+): Promise<void> {
+  const resolved = appId ?? resolveConfig().appId;
+  if (!resolved) {
+    out.error('No app ID provided. Pass an app ID or set via: guuey config set app-id <id>');
+    process.exit(1);
+  }
+  const sub = opts.sub;
+  if (!sub || opts.thread === true) {
+    out.error('Usage: guuey apps byo-user export [appId] --sub <sub> [--thread <threadId>] [--all]');
+    process.exit(1);
+  }
+  const threadId = opts.thread;
+  const all = opts.all !== undefined;
+
+  if (all) {
+    let threads = 0;
+    let messages = 0;
+    let sealedWithheld = 0;
+    if (threadId !== undefined) {
+      const counts = await exportThreadMessages(resolved, sub, threadId);
+      threads = 1;
+      messages = counts.messages;
+      sealedWithheld = counts.sealedWithheld;
+    } else {
+      let cursor: string | undefined;
+      do {
+        const page = await fetchThreadsPage(resolved, sub, cursor);
+        for (const thread of page.threads) {
+          console.log(JSON.stringify({ type: 'thread', appId: resolved, ...thread }));
+          const counts = await exportThreadMessages(resolved, sub, thread.threadId);
+          threads += 1;
+          messages += counts.messages;
+          sealedWithheld += counts.sealedWithheld;
+        }
+        cursor = page.nextCursor ?? undefined;
+      } while (cursor !== undefined);
+    }
+    const withheld = sealedWithheld > 0 ? `, ${sealedWithheld} sealed messages withheld` : '';
+    console.error(`Exported ${threads} threads and ${messages} messages${withheld}.`);
+    return;
+  }
+
+  if (threadId !== undefined) {
+    const page = await fetchMessagesPage(resolved, sub, threadId, undefined);
+    if (opts.json) {
+      out.json(page);
+      return;
+    }
+    for (const m of page.messages) {
+      console.log(`  [${m.seq}] ${m.at} ${m.authorRole}: ${m.text ?? (m.toolName !== null ? `(${m.toolName})` : '')}`);
+    }
+    if (page.sealedWithheld > 0) console.log(`  ${page.sealedWithheld} sealed messages withheld`);
+    if (page.nextCursor !== null) console.log('  More messages: re-run with --all to export every page.');
+    return;
+  }
+
+  const page = await fetchThreadsPage(resolved, sub, undefined);
+  if (opts.json) {
+    out.json(page);
+    return;
+  }
+  if (page.threads.length === 0) {
+    console.log(page.nextCursor !== null ? '  No threads on this page; re-run with --all.' : '  No threads.');
+    return;
+  }
+  out.table(
+    page.threads.map((t) => ({ Thread: t.threadId, 'Last message': t.lastMessageAt, Title: t.title })),
+  );
+  if (page.nextCursor !== null) console.log('  More threads: re-run with --all to export every page.');
+}
+
 // ─── Origin preflight probe — `guuey apps check --origin` (guuey#186 Gap 2) ──
 //
 // A browser embed's first request to the agent is a CORS preflight, and when
