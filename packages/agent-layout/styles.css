@@ -197,15 +197,20 @@
 
 /* ── <1024px: the sidebar leaves the grid and becomes an overlay drawer;
  *    the follow is SUSPENDED — the pane holds the lower (agent) tone (a
- *    tone flip referencing a panel the user cannot see is noise, §4). ── */
+ *    tone flip referencing a panel the user cannot see is noise, §4).
+ *    The drawer lives on the physical left; RTL mirroring is a later token.
+ *    Every rule here is physical (left/top, translateX), never half logical:
+ *    a logical inset beside a physical slide parks the closed drawer on the
+ *    pane under dir=rtl. ── */
 @media (max-width: 1023.98px) {
   .guuey-layout-shell {
     grid-template-columns: 1fr;
   }
   .guuey-layout-sidebar {
     position: fixed;
-    inset-block: 0;
-    inset-inline-start: 0;
+    top: 0;
+    bottom: 0;
+    left: 0;
     width: min(85vw, 320px);
     z-index: 20;
     transform: translateX(-100%);
@@ -237,10 +242,10 @@
      * device inset keeps it clear of a notch or status bar. The extra hit
      * area is room around the glyph, which does not grow. The plain 10px
      * pair first is the fallback for an engine without env(). */
-    inset-block-start: 10px;
-    inset-inline-start: 10px;
-    inset-block-start: calc(10px + env(safe-area-inset-top));
-    inset-inline-start: calc(10px + env(safe-area-inset-left));
+    top: 10px;
+    left: 10px;
+    top: calc(10px + env(safe-area-inset-top));
+    left: calc(10px + env(safe-area-inset-left));
     z-index: 21;
     min-width: 44px;
     min-height: 44px;

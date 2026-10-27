@@ -153,8 +153,27 @@ describe("guuey#2430 — the drawer toggle meets the 44px phone tap floor", () =
     expect(toggle()).not.toMatch(/font-size/);
   });
 
-  it("inset 10px plus the device's safe area, so the band under it stays 64px (10 + 44 + 10)", () => {
-    expect(toggle()).toContain("inset-block-start: calc(10px + env(safe-area-inset-top))");
-    expect(toggle()).toContain("inset-inline-start: calc(10px + env(safe-area-inset-left))");
+  it("inset 10px plus the device's safe area, so the band under it stays 64px (10 + 44 + 10); the plain pair first is the no-env fallback", () => {
+    const t = toggle();
+    expect(t.indexOf("top: 10px;")).toBeGreaterThan(-1);
+    expect(t.indexOf("top: calc(10px + env(safe-area-inset-top))")).toBeGreaterThan(t.indexOf("top: 10px;"));
+    expect(t.indexOf("left: 10px;")).toBeGreaterThan(-1);
+    expect(t.indexOf("left: calc(10px + env(safe-area-inset-left))")).toBeGreaterThan(t.indexOf("left: 10px;"));
+  });
+});
+
+describe("guuey#2450 — the drawer is physical: it lives on the left in every writing direction", () => {
+  it("the parked drawer is pinned left and slid left (a logical inset beside a physical slide parks it on the pane under rtl)", () => {
+    const closed = block(".guuey-layout-sidebar", media(DRAWER));
+    expect(closed).toContain("left: 0;");
+    expect(closed).toContain("transform: translateX(-100%)");
+  });
+
+  it("no rule in the drawer block is logical", () => {
+    expect(media(DRAWER)).not.toMatch(/inset-inline|inset-block|-inline-start|-inline-end/);
+  });
+
+  it("the sheet says so in one sentence", () => {
+    expect(sheet).toContain("The drawer lives on the physical left; RTL mirroring is a later token.");
   });
 });
