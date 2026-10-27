@@ -145,3 +145,30 @@ describe("the stylesheet carries the action turn's treatment", () => {
     expect(css).toMatch(/\.guuey-chat-action-sending \.guuey-chat-directive-label\s*\{\s*opacity: 0\.6;/);
   });
 });
+
+describe("a turn sent without words (guuey#2549)", () => {
+  const noWords = (over: Partial<UserMessageItem> = {}): UserMessageItem =>
+    turn({ text: "", directive: false, tapLabels: undefined, inputKind: "context-only", ...over });
+
+  it("draws its own quiet line, never an empty bubble", () => {
+    const { container } = render(<DefaultUserMessage item={noWords()} ctx={ctx()} />);
+    expect(container.querySelector(".guuey-chat-user-bubble")).toBeNull();
+    expect(container.querySelector(".guuey-chat-user-context-only")).not.toBeNull();
+    expect(screen.getByText(defaultChatStrings.contextOnlyTurn)).toBeTruthy();
+  });
+
+  it("a host's own line replaces the default", () => {
+    render(<DefaultUserMessage item={noWords()} ctx={ctx({ strings: { ...defaultChatStrings, contextOnlyTurn: "Sent a photo" } })} />);
+    expect(screen.getByText("Sent a photo")).toBeTruthy();
+  });
+
+  it("a failed one keeps the failed affordance and its line", () => {
+    render(
+      <DefaultUserMessage
+        item={noWords({ state: "failed", failureLine: defaultChatStrings.errorInputKindNotAdvertised })}
+        ctx={ctx()}
+      />,
+    );
+    expect(screen.getByText(defaultChatStrings.errorInputKindNotAdvertised)).toBeTruthy();
+  });
+});

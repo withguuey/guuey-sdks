@@ -290,6 +290,21 @@ export function DefaultUserMessage({ item, ctx }: ItemProps<UserMessageItem>): R
       </div>
     );
   }
+  // guuey#2549: a turn sent without words is an action turn too: its own quiet
+  // line, never an empty bubble.
+  if (item.inputKind !== undefined) {
+    return (
+      <div
+        className={`guuey-chat-action-turn guuey-chat-user-context-only guuey-chat-user-${item.state}${
+          item.state === "sending" ? " guuey-chat-action-sending" : ""
+        }`}
+        part={messagePart("user")}
+      >
+        <p className="guuey-chat-directive-label guuey-chat-context-only-label">{ctx.strings.contextOnlyTurn}</p>
+        <SendFailed item={item} ctx={ctx} />
+      </div>
+    );
+  }
   return (
     <div className={`guuey-chat-user guuey-chat-user-${item.state}`} part={messagePart("user")}>
       {/* User text is QUOTED, never rendered — whitespace preserved. */}

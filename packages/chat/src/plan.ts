@@ -1062,6 +1062,11 @@ const CODE_COPY: Record<string, (s: import("./strings.js").ChatStrings) => strin
   // send's list broke the rules. Both are "change the request" (no Retry).
   ATTACHMENTS_UNSUPPORTED: (s) => s.errorAttachmentsUnsupported,
   ATTACHMENTS_INVALID: (s) => s.errorAttachmentsInvalid,
+  // guuey#2549: a turn without words the agent does not take (its worker
+  // turned it down, or its runtime refused it before it started). Both are
+  // "add a few words" (no Retry: the same turn meets the same refusal).
+  INPUT_KIND_NOT_DECLARED: (s) => s.errorInputKindNotDeclared,
+  INPUT_KIND_NOT_ADVERTISED: (s) => s.errorInputKindNotAdvertised,
   // A temporary capacity limit stopped the turn: its own line, and the
   // transient family's Retry stays (no ERROR_FAMILIES entry), since trying
   // again shortly is exactly what the reader should do.
@@ -1127,6 +1132,9 @@ const ERROR_FAMILIES: Record<string, "auth" | "quota" | "invalid"> = {
   // guuey#2293: sending the same images again meets the same refusal.
   ATTACHMENTS_UNSUPPORTED: "invalid",
   ATTACHMENTS_INVALID: "invalid",
+  // guuey#2549: the same turn without words meets the same refusal.
+  INPUT_KIND_NOT_DECLARED: "invalid",
+  INPUT_KIND_NOT_ADVERTISED: "invalid",
 };
 
 /** The one pure function (spec §7). */
@@ -1399,6 +1407,11 @@ export function planTranscript(
     const directive = policy.userMessage.collapseDirectives && isViewDirectiveText(user.text);
     // The reader contract (`readTapLabels`): typed text never shows a label.
     const tapLabels = directive ? readTapLabels(user.tapLabels) : undefined;
+    // guuey#2549: a turn sent without words draws its own line, never an empty
+    // bubble: only a row whose text is empty (typed text, and a relayed
+    // directive, never take it). The kind arrives already read: the live send
+    // stamps a known one, and the history reader keeps only a known one.
+    const inputKind = user.text === "" ? user.inputKind : undefined;
     conversation.push({
       kind: "user",
       key,
@@ -1415,6 +1428,7 @@ export function planTranscript(
         : {}),
       directive,
       ...(tapLabels !== undefined ? { tapLabels } : {}),
+      ...(inputKind !== undefined ? { inputKind } : {}),
       ...(directive && policy.userMessage.rawDirective ? { rawDirective: true } : {}),
     });
   };

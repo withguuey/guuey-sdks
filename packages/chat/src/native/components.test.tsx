@@ -167,3 +167,32 @@ describe("NativeUserMessage failed send (guuey#2604)", () => {
     expect(screen.getByText(defaultChatStrings.userCouldntSend)).toBeTruthy();
   });
 });
+
+describe("NativeUserMessage, a turn sent without words (guuey#2549)", () => {
+  const noWords = (over: Partial<UserMessageItem> = {}): UserMessageItem => ({
+    kind: "user",
+    key: "u0",
+    expanded: true,
+    text: "",
+    directive: false,
+    state: "sent",
+    retry: false,
+    inputKind: "context-only",
+    ...over,
+  });
+
+  it("draws its own quiet line in place of an empty bubble", () => {
+    render(createElement(NativeUserMessage, { item: noWords(), ctx }));
+    expect(screen.getByText(defaultChatStrings.contextOnlyTurn)).toBeTruthy();
+  });
+
+  it("a failed one keeps its refusal's line", () => {
+    render(
+      createElement(NativeUserMessage, {
+        item: noWords({ state: "failed", failureLine: defaultChatStrings.errorInputKindNotDeclared }),
+        ctx,
+      }),
+    );
+    expect(screen.getByText(defaultChatStrings.errorInputKindNotDeclared)).toBeTruthy();
+  });
+});

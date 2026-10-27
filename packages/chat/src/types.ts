@@ -20,7 +20,7 @@ import type {
   AgSource,
   JsonValue,
 } from "@silverprotocol/core";
-import type { AgentInvokeStatus, HistoryCard } from "@guuey/agent-client";
+import type { AgentInvokeStatus, HistoryCard, InputKind } from "@guuey/agent-client";
 import type {
   TapLabels,
   ViewCspDiagnosis,
@@ -116,6 +116,12 @@ export interface TranscriptMessage {
    * design: absent, the row draws its continuation line, as before.
    */
   tapLabels?: TapLabels;
+  /**
+   * On a user row sent without words (guuey#2549): where its content rode,
+   * with `text` `""` (`@guuey/agent-client`'s `AgentMessage.inputKind`, live
+   * or rehydrated). Optional by design: absent, the row draws as before.
+   */
+  inputKind?: InputKind;
 }
 
 /**
@@ -329,6 +335,13 @@ export interface UserMessageItem extends BaseItem {
    * `directive` row whose message carried a well-formed list.
    */
   tapLabels?: TapLabels;
+  /**
+   * The turn was sent without words (guuey#2549): its content rode where the
+   * kind says (`"context-only"`: on the page context). Present only on a row
+   * whose `text` is empty and whose kind this release knows. The renderer
+   * draws `strings.contextOnlyTurn` in place of an empty bubble.
+   */
+  inputKind?: InputKind;
   /**
    * The renderer offers the wire-verbatim directive in a quiet toggle BELOW
    * the action turn (guuey#2031) — the builder surface's debug preset only

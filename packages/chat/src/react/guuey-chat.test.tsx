@@ -1838,3 +1838,37 @@ describe("kit default ui/message sink — delivery outcomes (guuey#1706)", () =>
     await waitFor(() => expect(outcome).toEqual({ delivered: true }));
   });
 });
+
+describe("<GuueyChat> handle: a turn without words (guuey#2549)", () => {
+  it("send('', { inputKind }) sends the turn without words; the offer reads null, then the latest frame's", async () => {
+    const { adapters, calls } = scriptedAdapters();
+    const { handle } = renderWithHandle(adapters);
+    expect(handle.acceptedInputKinds).toBeNull();
+    let ok = false;
+    act(() => {
+      ok = handle.send("  ", { inputKind: "context-only" });
+    });
+    expect(ok).toBe(true);
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]?.body).toMatchObject({ input: "", inputKind: "context-only" });
+    await waitFor(() => expect(screen.getByText("Hello.")).toBeTruthy());
+    // The scripted frame offers no kinds.
+    await waitFor(() => expect(handle.acceptedInputKinds).toEqual([]));
+    // The turn draws its own line, never an empty bubble.
+    expect(screen.getByText("Sent from the page")).toBeTruthy();
+  });
+
+  it("beside words the kind is ignored, and a blank send without one is still refused", async () => {
+    const { adapters, calls } = scriptedAdapters();
+    const { handle } = renderWithHandle(adapters);
+    act(() => {
+      expect(handle.send("  ")).toBe(false);
+    });
+    expect(calls).toHaveLength(0);
+    act(() => {
+      expect(handle.send("what is this?", { inputKind: "context-only" })).toBe(true);
+    });
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]?.body).not.toHaveProperty("inputKind");
+  });
+});

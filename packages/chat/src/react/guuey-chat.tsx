@@ -61,6 +61,7 @@ import {
   mergeGuestThreads,
   type AgentInvokeAdapters,
   type ImageAttachment,
+  type InputKind,
   type SendOptions,
 } from "@guuey/agent-client";
 import type { AgHitlAnswer, AgPausedAsk } from "@silverprotocol/core";
@@ -75,6 +76,7 @@ import type {
 } from "@guuey/mcp-apps-host";
 import { calmPolicy, debugPolicy, type TranscriptPolicyOverrides } from "../policy.js";
 import { isWaitingOnUser } from "../listen.js";
+import { retrySendArgs } from "../retry.js";
 import { useStructuralIdentity } from "./structural-identity.js";
 import { defaultChatStrings, type ChatStrings } from "../strings.js";
 import { DEFAULT_CHAT_THEME, type GuueyChatTheme } from "../theme.js";
@@ -178,8 +180,14 @@ export interface GuueyChatHandle {
    * composer's rules. The typed draft is left untouched (a programmatic
    * send must not eat a half-typed message). Failures surface the same
    * way a composer send's do (the hook's `error` / R0 failed-send).
+   *
+   * guuey#2549: with `opts.inputKind` and blank `text`, it sends a turn
+   * WITHOUT words (its content rides on the page context): only the
+   * availability and in-flight gates apply, and the agent's runtime judges
+   * the turn (a refusal draws as that turn's failed state). Beside non-blank
+   * text the kind is ignored.
    */
-  send(text: string): boolean;
+  send(text: string, opts?: { inputKind?: InputKind }): boolean;
   /**
    * Put `text` into the composer draft. `append: true` joins onto a
    * non-empty draft with a single space (the widget's staged-composer
@@ -198,6 +206,13 @@ export interface GuueyChatHandle {
    * {@link GuueyChatProps.onThread}.
    */
   readonly threadId: string | null;
+  /**
+   * The input kinds (guuey#2549) the agent offered on its latest turn, or
+   * `null` before any turn was admitted: a HINT for whether to offer a send
+   * without words (`send("", { inputKind })`). Read on demand, like
+   * {@link threadId}; the runtime still judges every turn.
+   */
+  readonly acceptedInputKinds: readonly InputKind[] | null;
   /**
    * The slot props the kit's OWN inline mounts run with — theme announce,
    * default action relay, model-context sink (guuey#335). A host mounting
@@ -1233,13 +1248,15 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
 
   const handle = useMemo<GuueyChatHandle>(
     () => ({
-      send: (text: string): boolean => {
+      send: (text: string, opts?: { inputKind?: InputKind }): boolean => {
         const live = liveRef.current;
         const trimmed = text.trim();
+        // guuey#2549: a turn without words; the agent's runtime judges it.
+        const inputKind = trimmed === "" ? opts?.inputKind : undefined;
         // Exactly the Send button's gate — a handle send never bypasses it.
-        if (!live.available || live.busy || trimmed === "") return false;
+        if (!live.available || live.busy || (trimmed === "" && inputKind === undefined)) return false;
         analytics.messageSent();
-        void live.invoke.send(trimmed).catch(() => {
+        void live.invoke.send(trimmed, inputKind !== undefined ? { inputKind } : undefined).catch(() => {
           // Same contract as submit: the hook owns failure surfacing.
         });
         return true;
@@ -1303,6 +1320,10 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       // same ref the default reader uses, so it is always the live id.
       get threadId(): string | null {
         return threadIdRef.current;
+      },
+      // Live-read like `threadId`: the latest offer the hook holds.
+      get acceptedInputKinds(): readonly InputKind[] | null {
+        return liveRef.current.invoke.acceptedInputKinds;
       },
       // Same live-read discipline as `threadId`: the ref always holds the
       // CURRENT kit wiring (guuey#335 — the canvas-host door).
@@ -1436,9 +1457,10 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
 
   const handleRetry = useCallback(
     (item: UserMessageItem) => {
-      // guuey#2031: an action turn's retry re-sends the directive WITH its
-      // words; `text` stays the directive, so a label never becomes input.
-      void invoke.send(item.text, item.tapLabels !== undefined ? { tapLabels: item.tapLabels } : undefined).catch(() => {
+      // The one retry rule (`retrySendArgs`): an action turn goes again with
+      // its words beside the directive (guuey#2031), a turn without words
+      // goes again without words (guuey#2549).
+      void invoke.send(...retrySendArgs(item)).catch(() => {
         // Same contract as submit: the hook owns failure surfacing.
       });
     },

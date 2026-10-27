@@ -232,6 +232,18 @@ export function NativeUserMessage({ item, ctx }: ItemProps<UserMessageItem>): Re
       </View>
     );
   }
+  // guuey#2549: a turn sent without words draws its own quiet line, never an
+  // empty bubble.
+  if (item.inputKind !== undefined) {
+    return (
+      <View style={{ alignItems: "flex-end", gap: 4, opacity: item.state === "sending" ? 0.6 : 1 }}>
+        <Text style={{ color: tokens.palette.inkMuted, fontSize: tokens.fontSize - 2, fontFamily: tokens.fontFamily }}>
+          {ctx.strings.contextOnlyTurn}
+        </Text>
+        <NativeSendFailed item={item} ctx={ctx} />
+      </View>
+    );
+  }
   return (
     <View style={{ alignItems: "flex-end", gap: 4, opacity: item.state === "sending" ? 0.6 : 1 }}>
       <View

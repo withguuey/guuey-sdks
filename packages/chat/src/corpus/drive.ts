@@ -211,5 +211,5 @@ export function consentTurn(next: () => number, ask: AgPausedAsk = CONSENT_ASK):
   ];
 }
 
-export const session: InvokeTurnEvent = { kind: "session", threadId: THREAD };
+export const session: InvokeTurnEvent = { kind: "session", threadId: THREAD, acceptedInputKinds: [] };
 export const doneEvent: InvokeTurnEvent = { kind: "done", stopReason: "end_turn" };

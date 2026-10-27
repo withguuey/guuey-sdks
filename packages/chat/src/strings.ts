@@ -81,6 +81,19 @@ export interface ChatStrings {
    */
   errorAttachmentsInvalid: string;
   /**
+   * R11, code INPUT_KIND_NOT_DECLARED (guuey#2549): a turn without words
+   * reached an agent that no longer takes one. Nothing was answered; the same
+   * turn with a few words works. Equal to the runtime's own reader line.
+   */
+  errorInputKindNotDeclared: string;
+  /**
+   * R11, code INPUT_KIND_NOT_ADVERTISED (guuey#2549): the agent's runtime
+   * refused a turn without words before it started (the agent does not take
+   * one here, or not yet). Nothing was stored; the same turn with a few words
+   * works.
+   */
+  errorInputKindNotAdvertised: string;
+  /**
    * R11, code WORKER_POD_RESOURCE_EXHAUSTED: the turn hit a temporary
    * capacity limit and was stopped safely. Transient, so it keeps the
    * transient family's Retry; names nothing internal.
@@ -148,6 +161,13 @@ export interface ChatStrings {
    * typed speech. The words are the copy owners' to change.
    */
   tappedLabelPrefix: string;
+  /**
+   * R0 (guuey#2549): the line a user turn sent WITHOUT words draws in place of
+   * an empty bubble; its content rode on the page the app sent with it (a
+   * photo the app uploaded, say). A host whose page carries one thing names it
+   * ("Sent a photo"). The words are the copy owners' to change.
+   */
+  contextOnlyTurn: string;
   /**
    * The debug preset's toggle below an action turn (guuey#2031) that reveals
    * the wire-verbatim directive. Builder surfaces only; never drawn for a
@@ -388,6 +408,8 @@ export const defaultChatStrings: ChatStrings = {
   errorInvalid: "The app sent a request the agent couldn't read.",
   errorAttachmentsUnsupported: "This agent can't read images yet. Send your message without the image.",
   errorAttachmentsInvalid: "That image can't be sent. Use a JPEG, PNG, GIF or WebP image, up to 4 at a time.",
+  errorInputKindNotDeclared: "This agent no longer accepts a turn without text. Send your message with a few words.",
+  errorInputKindNotAdvertised: "This agent can't take a turn without words right now. Send it with a few words.",
 
   toolGroup: (count) => `Ran ${count} tools`,
   toolGroupFailures: (count) => (count === 1 ? "1 failed" : `${count} failed`),
@@ -419,6 +441,7 @@ export const defaultChatStrings: ChatStrings = {
   userRetry: "Retry",
   directiveContinuation: "Continuing from your action…",
   tappedLabelPrefix: "You chose:",
+  contextOnlyTurn: "Sent from the page",
   directiveRawToggle: "Directive sent to the agent",
 
   viewNegotiating: "Loading view…",

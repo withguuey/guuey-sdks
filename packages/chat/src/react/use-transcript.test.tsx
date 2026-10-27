@@ -282,6 +282,7 @@ function invokeReturn(over: Partial<UseAgentInvokeReturn> = {}): UseAgentInvokeR
     aborted: false,
     adopted: false,
     sendStates: {},
+    acceptedInputKinds: null,
     ...over,
   };
 }
