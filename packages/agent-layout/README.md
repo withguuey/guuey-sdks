@@ -57,11 +57,15 @@ function Shell() {
   reachable. The floor is `--guuey-layout-agent-panel-min` (default `112px`:
   `@guuey/chat`'s header row plus its one-line composer, so nothing is
   clipped by default). A host that renders the composer alone may lower it;
-  raise it when your agent surface needs more. A host
-  that gives the agent panel a fixed height (`--guuey-layout-agent-panel-flex:
-0 0 auto`) sets `--guuey-layout-app-panel-flex: 1 1 auto` (default
-  `0 1 auto`) so the app panel takes the free space and the rail stays at the
-  bottom.
+  raise it when your agent surface needs more. A host that gives the agent
+  panel a fixed height (`--guuey-layout-agent-panel-flex: 0 0 auto`) sets
+  `--guuey-layout-app-panel-flex: 1 1 auto` (default `0 1 auto`) so the app
+  panel takes the free space and the rail stays at the bottom.
+- **A drawer at phone widths**: under 1024px the sidebar becomes an overlay
+  drawer behind a ☰ toggle. At drawer widths, give the shell the viewport
+  (`100dvh`): the drawer and its toggle are fixed to the viewport, and the
+  toggle sits at its top-left, over anything the host puts above the layout.
+  Escape closes the open drawer, and focus returns to the toggle.
 - **Mode-aware**: pass the same `mode` you give your chat surface — the lib
   rides your existing light/dark machinery and adds none of its own.
 - **Not a chat dependency**: `bindGuueyChat` pairs with `@guuey/chat`
