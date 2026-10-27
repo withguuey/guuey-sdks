@@ -277,6 +277,14 @@
     color: var(--guuey-layout-tone-upper-on);
     cursor: pointer;
   }
+  /* guuey#2881: the toggle's own focus ring is the tone's on-colour, which
+   * contrasts with the tone by construction — never a brand colour, never
+   * the browser's blue (2.34:1 on a dark drawer). Toggle only: the nav's
+   * links are host content and keep the host's focus idiom. */
+  .guuey-layout-drawer-toggle:focus-visible {
+    outline: 2px solid var(--guuey-layout-tone-upper-on);
+    outline-offset: 2px;
+  }
   /* Follow suspended: fixed conversation tone, not a broken animation. */
   .guuey-layout-pane {
     background: var(--guuey-layout-tone-lower);

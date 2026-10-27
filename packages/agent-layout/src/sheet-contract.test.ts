@@ -189,6 +189,14 @@ describe("guuey#2430 — the drawer toggle meets the 44px phone tap floor", () =
     expect(t.indexOf("left: 10px;")).toBeGreaterThan(-1);
     expect(t.indexOf("left: calc(10px + env(safe-area-inset-left))")).toBeGreaterThan(t.indexOf("left: 10px;"));
   });
+
+  it("guuey#2881: its focus ring is the tone's on-colour, 2px out by 2px, in the drawer block, and only the toggle's", () => {
+    const ring = block(".guuey-layout-drawer-toggle:focus-visible", media(DRAWER));
+    expect(ring).toContain("outline: 2px solid var(--guuey-layout-tone-upper-on);");
+    expect(ring).toContain("outline-offset: 2px;");
+    // The nav's links are host content: the lib draws no ring on them.
+    expect(sheet).not.toMatch(/\.guuey-layout-(sidebar|panel)[^{]*:focus/);
+  });
 });
 
 describe("guuey#2450 — the drawer is physical: it lives on the left in every writing direction", () => {

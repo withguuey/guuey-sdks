@@ -209,6 +209,8 @@ export function useAgentMode(): UseAgentModeResult {
  * inside it (a route change, a link click), focus moves to the toggle that
  * reopens it, instead of dropping to the document body once the drawer is
  * hidden.
+ *
+ * guuey#2881: Escape closes the open drawer, through the same close effect.
  */
 export function AgentModeShell({
   children,
@@ -227,6 +229,17 @@ export function AgentModeShell({
     const focused = document.activeElement;
     if (drawer && focused !== null && drawer.contains(focused)) toggleRef.current?.focus();
   }, [drawerOpen]);
+  // guuey#2881: an open drawer closes on Escape. Focus inside it comes back to
+  // the toggle through the close effect above; the listener lives only while
+  // the drawer is open, so a closed drawer leaves Escape to the page.
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") setDrawerOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [drawerOpen, setDrawerOpen]);
   return (
     <div
       {...rest}

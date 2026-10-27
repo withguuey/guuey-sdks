@@ -213,6 +213,41 @@ describe("the drawer toggle", () => {
     expect(screen.getByTestId("shell").dataset.drawerOpen).toBeUndefined();
     expect(document.activeElement).toBe(inPage);
   });
+
+  it("guuey#2881: Escape closes the open drawer and focus inside it lands on the toggle; a closed drawer leaves Escape alone", () => {
+    render(
+      <AgentModeProvider>
+        <AgentModeShell data-testid="shell">
+          <AgentModeSidebar>
+            <SidebarPanel section="app">
+              <a href="#x">Dashboard</a>
+            </SidebarPanel>
+          </AgentModeSidebar>
+          <ActivePane>page</ActivePane>
+        </AgentModeShell>
+      </AgentModeProvider>,
+    );
+    const shellEl = screen.getByTestId("shell");
+    const toggle = screen.getByRole("button", { name: "Menu" });
+    fireEvent.click(toggle);
+    const link = screen.getByText("Dashboard");
+    act(() => link.focus());
+    fireEvent.keyDown(link, { key: "Escape" });
+    expect(shellEl.dataset.drawerOpen).toBeUndefined();
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(toggle);
+
+    // Another key leaves the open drawer open.
+    fireEvent.click(toggle);
+    fireEvent.keyDown(document, { key: "Enter" });
+    expect(shellEl.dataset.drawerOpen).toBe("true");
+
+    // Closed, Escape changes nothing (the listener is gone).
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(shellEl.dataset.drawerOpen).toBeUndefined();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(shellEl.dataset.drawerOpen).toBeUndefined();
+  });
 });
 
 describe("guuey#427 — setActivePanel is the neutral setter its name promises", () => {
