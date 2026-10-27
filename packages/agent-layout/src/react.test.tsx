@@ -176,6 +176,43 @@ describe("the drawer toggle", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByTestId("shell").dataset.drawerOpen).toBe("true");
   });
+
+  it("guuey#2450: closing with focus inside the drawer moves focus to the toggle; focus elsewhere is left alone", () => {
+    function view(navigationKey: string): ReactNode {
+      return (
+        <AgentModeProvider navigationKey={navigationKey}>
+          <AgentModeShell data-testid="shell">
+            <AgentModeSidebar>
+              <SidebarPanel section="app">
+                <a href="#x">Dashboard</a>
+              </SidebarPanel>
+            </AgentModeSidebar>
+            <ActivePane>
+              <button type="button">in the page</button>
+            </ActivePane>
+          </AgentModeShell>
+        </AgentModeProvider>
+      );
+    }
+    const { rerender } = render(view("/a"));
+    const toggle = screen.getByRole("button", { name: "Menu" });
+    fireEvent.click(toggle);
+    const link = screen.getByText("Dashboard");
+    act(() => link.focus());
+    expect(document.activeElement).toBe(link);
+    // A route change closes the drawer.
+    rerender(view("/b"));
+    expect(screen.getByTestId("shell").dataset.drawerOpen).toBeUndefined();
+    expect(document.activeElement).toBe(toggle);
+
+    // Focus in the page when the drawer closes stays where it is.
+    fireEvent.click(toggle);
+    const inPage = screen.getByRole("button", { name: "in the page" });
+    act(() => inPage.focus());
+    rerender(view("/c"));
+    expect(screen.getByTestId("shell").dataset.drawerOpen).toBeUndefined();
+    expect(document.activeElement).toBe(inPage);
+  });
 });
 
 describe("guuey#427 — setActivePanel is the neutral setter its name promises", () => {

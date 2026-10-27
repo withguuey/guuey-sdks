@@ -204,6 +204,11 @@ export function useAgentMode(): UseAgentModeResult {
  * {@link ActivePane}. The wrapper is structural — the drawer must slide as
  * ONE element, so the two panels share a positioned parent (the §4 sketch
  * elides it; the contract is unchanged).
+ *
+ * guuey#2450: a closed drawer holds no focus. When it closes with focus
+ * inside it (a route change, a link click), focus moves to the toggle that
+ * reopens it, instead of dropping to the document body once the drawer is
+ * hidden.
  */
 export function AgentModeShell({
   children,
@@ -211,13 +216,26 @@ export function AgentModeShell({
   ...rest
 }: HTMLAttributes<HTMLDivElement>): ReactNode {
   const { drawerOpen, setDrawerOpen } = useAgentMode();
+  const shellRef = useRef<HTMLDivElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const wasOpenRef = useRef(drawerOpen);
+  useEffect(() => {
+    const wasOpen = wasOpenRef.current;
+    wasOpenRef.current = drawerOpen;
+    if (!wasOpen || drawerOpen) return;
+    const drawer = shellRef.current?.querySelector(".guuey-layout-sidebar");
+    const focused = document.activeElement;
+    if (drawer && focused !== null && drawer.contains(focused)) toggleRef.current?.focus();
+  }, [drawerOpen]);
   return (
     <div
       {...rest}
+      ref={shellRef}
       className={joinClass("guuey-layout-shell", className)}
       data-drawer-open={drawerOpen ? "true" : undefined}
     >
       <button
+        ref={toggleRef}
         type="button"
         className="guuey-layout-drawer-toggle"
         aria-expanded={drawerOpen}
