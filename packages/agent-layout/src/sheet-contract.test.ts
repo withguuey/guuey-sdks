@@ -74,6 +74,8 @@ describe("guuey#2450 — a tall nav scrolls; the agent panel is never crushed", 
     expect(app).toMatch(/flex: var\(--guuey-layout-app-panel-flex, 0 1 auto\)/);
     expect(app).toContain("min-height: 0");
     expect(app).toContain("overflow-y: auto");
+    // Classic scrollbars: the gutter is reserved, so rows never shift when the nav overflows.
+    expect(app).toContain("scrollbar-gutter: stable");
     expect(app).not.toContain("flex-shrink: 0");
   });
 

@@ -69,6 +69,9 @@
   flex: var(--guuey-layout-app-panel-flex, 0 1 auto);
   min-height: 0;
   overflow-y: auto;
+  /* With classic (non-overlay) scrollbars the gutter is reserved up front,
+   * so rows never shift sideways when the nav starts to overflow. */
+  scrollbar-gutter: stable;
   background: var(--guuey-layout-tone-upper);
   color: var(--guuey-layout-tone-upper-on);
 }
