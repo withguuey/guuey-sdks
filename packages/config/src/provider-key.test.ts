@@ -60,6 +60,7 @@ describe('resolveProviderKey', () => {
     expect(PROVIDER_KEY_ENV_VAR['claude-agent-sdk']).toBe('ANTHROPIC_API_KEY');
     expect(PROVIDER_KEY_ENV_VAR['openai-agents-sdk']).toBe('OPENAI_API_KEY');
     expect(PROVIDER_KEY_ENV_VAR['google-adk']).toBe('GEMINI_API_KEY');
+    expect(PROVIDER_KEY_ENV_VAR.vanilla).toBe('ANTHROPIC_API_KEY');
   });
 
   it('the shell environment wins over .env.local', () => {

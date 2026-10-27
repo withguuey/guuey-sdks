@@ -12,14 +12,27 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readGuueyJsonFile } from './loader.js';
 import type { AgentFramework } from './agent.js';
+import { BYOK_PROVIDER_SLOT_ENV, type ByokSlotEnvName } from './byok-slots.js';
+import { FRAMEWORK_REGISTRY } from './registry.js';
 
-/** The environment variable each framework's model key rides on. */
-export const PROVIDER_KEY_ENV_VAR: Record<AgentFramework, string> = {
-  'claude-agent-sdk': 'ANTHROPIC_API_KEY',
-  'openai-agents-sdk': 'OPENAI_API_KEY',
-  'google-adk': 'GEMINI_API_KEY',
-  // `vanilla` runs the bare Anthropic Messages API loop
-  vanilla: 'ANTHROPIC_API_KEY',
+/** The BYOK slot a framework's model key rides on: the slot of its registry entry's default provider. */
+function providerKeySlot(framework: AgentFramework): ByokSlotEnvName {
+  const entry = FRAMEWORK_REGISTRY.find((f) => f.framework === framework);
+  if (entry === undefined) throw new Error(`No FRAMEWORK_REGISTRY entry for framework "${framework}"`);
+  return BYOK_PROVIDER_SLOT_ENV[entry.defaultProvider];
+}
+
+/**
+ * The environment variable each framework's model key rides on, derived from
+ * {@link FRAMEWORK_REGISTRY}'s default provider and the one BYOK slot map, so
+ * a framework's key name cannot drift from the slot the platform delivers.
+ */
+export const PROVIDER_KEY_ENV_VAR: Readonly<Record<AgentFramework, ByokSlotEnvName>> = {
+  'claude-agent-sdk': providerKeySlot('claude-agent-sdk'),
+  'openai-agents-sdk': providerKeySlot('openai-agents-sdk'),
+  'google-adk': providerKeySlot('google-adk'),
+  // `vanilla` runs the bare Anthropic Messages API loop (its default provider is anthropic)
+  vanilla: providerKeySlot('vanilla'),
 };
 
 /**
