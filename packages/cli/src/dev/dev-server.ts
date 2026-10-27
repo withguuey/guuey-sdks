@@ -158,21 +158,13 @@ interface ThreadClosedWire {
 /** The prefix a worker's own close code reaches the client under (the pod's `WORKER_CODE_PREFIX`). */
 const WORKER_CODE_PREFIX = "app:";
 
-/**
- * The refusal of a turn on a closed thread: the thread store's
- * `ThreadClosedError` (`@guuey/threads`, code `THREAD_CLOSED`, message
- * `thread <id> is closed`) in the read plane's 409 envelope (threadsApi's
- * `errorToEnvelope`).
- */
-const THREAD_CLOSED_CODE = "THREAD_CLOSED";
-
 interface SessionState {
   /** `at` rides along for the history route's row shape; the worker driver's
    *  `LocalRunInput['history']` only reads `role`/`text` (structural).
    *  `failureCode` marks the row a closing worker's message is voiced on
    *  (the pod's `#agentError` row, read back as `failure.code`). */
   history: Array<{ role: "user" | "agent"; text: string; at: string; failureCode?: string }>;
-  /** guuey#2409 — set once a worker ended this conversation; it then takes no new turn. */
+  /** guuey#2409 — set once a worker ended this conversation; a later message then starts a new one. */
   closed?: ThreadClosedWire;
 }
 
@@ -515,17 +507,17 @@ async function handleInvoke(
     return;
   }
 
-  const sessionId = body.sessionId ?? randomUUID();
-  const state = sessions.get(sessionId) ?? { history: [] };
+  // guuey#2409: a closed conversation takes no new message, so a send on it
+  // starts a new conversation, the pod's `ensureThread` (`@guuey/threads`
+  // store.ts) and @guuey/worker's `endThread` contract ("any later message
+  // from the person starts a new conversation"). The closed session keeps its
+  // history and closure for the history route; the `session` frame tells the
+  // client its new thread id.
+  const requested = body.sessionId !== undefined ? sessions.get(body.sessionId) : undefined;
+  const sessionId =
+    body.sessionId === undefined || requested?.closed !== undefined ? randomUUID() : body.sessionId;
+  const state = requested !== undefined && requested.closed === undefined ? requested : { history: [] };
   sessions.set(sessionId, state);
-  // guuey#2409: a closed conversation takes no new message — the store's
-  // `ThreadClosedError`, in the read plane's 409 envelope. The chat client
-  // never sends here (it drops a closed thread's id and starts a new one).
-  if (state.closed !== undefined) {
-    res.writeHead(409, { "Content-Type": "application/json", ...CORS_HEADERS });
-    res.end(JSON.stringify({ code: THREAD_CLOSED_CODE, message: `thread ${sessionId} is closed` }));
-    return;
-  }
 
   serving.inFlight += 1;
   try {
@@ -663,6 +655,16 @@ async function streamTurn(
  * `done { stopReason, threadClosed }`. Returns the closure, or `undefined`
  * when nothing was closed. The offer is always made here (see `streamTurn`),
  * so the pod's `not_offered` and `unsupported` refusals have no local case.
+ *
+ * PARITY GAP (tracked): the pod's clean-turn test is `!turnFailedInBand() &&
+ * !aborted`, so it also refuses the close (`turn_failed`) when the turn failed
+ * in band: the facet closed the top turn as `turn.error` (other than
+ * max_turns), the provider withheld the reply, the turn stopped with no reply,
+ * or a fabricated error frame was stripped (`TopTurnErrorWatch` and
+ * `fabricatedSeen` in nocode-runtime's sse-server.ts). The dev server runs no
+ * such watch, so here only an aborted turn counts as unclean: a worker that
+ * fails in band and also asks to end the thread closes it locally but not
+ * hosted. Revisit if the watch moves to a package the CLI can share.
  */
 function closeThreadForWorker(
   res: ServerResponse,

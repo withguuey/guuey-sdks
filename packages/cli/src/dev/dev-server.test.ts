@@ -1046,16 +1046,32 @@ describe("a worker ends its conversation (guuey#2409)", { timeout: 20_000 }, () 
     expect(tail[1]?.data).toEqual({ stopReason: "end_turn", threadClosed: errorFrame.threadClosed });
   });
 
-  it("refuses a later turn on the closed thread with THREAD_CLOSED", async () => {
-    const { port, sessionId } = await bootAndClose();
+  it("starts a new conversation when a later message arrives on the closed thread, like the pod's ensureThread", async () => {
+    const { port, sessionId, text } = await bootAndClose();
+    const before = await (await fetch(`http://localhost:${port}/threads/${sessionId}/messages`)).json();
     const res = await fetch(`http://localhost:${port}/agent/invoke`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ input: "are you there?", sessionId }),
     });
-    expect(res.status).toBe(409);
-    expect(res.headers.get("access-control-allow-origin")).toBe("*");
-    expect(await res.json()).toEqual({ code: "THREAD_CLOSED", message: `thread ${sessionId} is closed` });
+    expect(res.status).toBe(200);
+    const session = z
+      .object({ sessionId: z.string(), threadId: z.string() })
+      .passthrough()
+      .parse(frames(await res.text()).find((f) => f.event === "session")?.data);
+    expect(session.sessionId).not.toBe(sessionId);
+    expect(session.threadId).toBe(session.sessionId);
+    // The closed thread keeps its three rows and its closure, untouched.
+    const done = z.object({ threadClosed: z.object({ code: z.string() }).passthrough() }).parse(
+      frames(text).find((f) => f.event === "done")?.data,
+    );
+    const after = (await (await fetch(`http://localhost:${port}/threads/${sessionId}/messages`)).json()) as {
+      rows: Array<{ authorRole: string; text: string }>;
+      thread: unknown;
+    };
+    expect(after).toEqual(before);
+    expect(after.rows).toHaveLength(3);
+    expect(after.thread).toEqual({ closed: done.threadClosed });
   });
 
   it("serves the closure and the message row on the history route, like the read plane", async () => {
