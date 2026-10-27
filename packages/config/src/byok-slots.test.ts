@@ -5,8 +5,10 @@ import * as rootEntry from './index.js';
 import {
   BYOK_PROVIDER_IDS,
   BYOK_PROVIDER_SLOT_ENV,
+  BYOK_SLOT_ENV_NAME_LIST,
   BYOK_SLOT_ENV_NAMES,
   isByokProviderId,
+  type ByokSlotEnvName,
 } from './byok-slots.js';
 
 describe('BYOK_PROVIDER_SLOT_ENV', () => {
@@ -32,6 +34,13 @@ describe('the lists derived from the map', () => {
   it('BYOK_SLOT_ENV_NAMES is the map values, in the map order', () => {
     expect([...BYOK_SLOT_ENV_NAMES]).toEqual(Object.values(BYOK_PROVIDER_SLOT_ENV));
   });
+
+  it('BYOK_SLOT_ENV_NAME_LIST is the map values, in the map order, each typed as a slot name', () => {
+    expect([...BYOK_SLOT_ENV_NAME_LIST]).toEqual(Object.values(BYOK_PROVIDER_SLOT_ENV));
+    // The type is the literal union of the map's values: a name outside it does not compile.
+    const google: ByokSlotEnvName = BYOK_PROVIDER_SLOT_ENV.google;
+    expect(BYOK_SLOT_ENV_NAME_LIST).toContain(google);
+  });
 });
 
 describe('isByokProviderId', () => {
@@ -52,6 +61,7 @@ describe('the package entries', () => {
       expect(entry.BYOK_PROVIDER_SLOT_ENV).toBe(BYOK_PROVIDER_SLOT_ENV);
       expect(entry.BYOK_PROVIDER_IDS).toBe(BYOK_PROVIDER_IDS);
       expect(entry.BYOK_SLOT_ENV_NAMES).toBe(BYOK_SLOT_ENV_NAMES);
+      expect(entry.BYOK_SLOT_ENV_NAME_LIST).toBe(BYOK_SLOT_ENV_NAME_LIST);
       expect(entry.isByokProviderId).toBe(isByokProviderId);
     }
   });

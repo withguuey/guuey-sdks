@@ -32,5 +32,14 @@ export function isByokProviderId(id: string): id is ByokProviderId {
 /** The {@link BYOK_PROVIDER_SLOT_ENV} provider ids, in the map's order. */
 export const BYOK_PROVIDER_IDS: readonly ByokProviderId[] = Object.keys(BYOK_PROVIDER_SLOT_ENV).filter(isByokProviderId);
 
-/** The env variable names a BYOK key is delivered in: the {@link BYOK_PROVIDER_SLOT_ENV} values, in the map's order. */
-export const BYOK_SLOT_ENV_NAMES: ReadonlySet<string> = new Set<string>(Object.values(BYOK_PROVIDER_SLOT_ENV));
+/** An env variable name a BYOK key is delivered in: one of the {@link BYOK_PROVIDER_SLOT_ENV} values. */
+export type ByokSlotEnvName = (typeof BYOK_PROVIDER_SLOT_ENV)[ByokProviderId];
+
+/** The {@link BYOK_PROVIDER_SLOT_ENV} values as a typed list, in the map's order. */
+export const BYOK_SLOT_ENV_NAME_LIST: readonly ByokSlotEnvName[] = BYOK_PROVIDER_IDS.map((id) => BYOK_PROVIDER_SLOT_ENV[id]);
+
+/**
+ * The same names as a set, for a membership test on any string: the env variable names a BYOK key is delivered
+ * in, in the map's order.
+ */
+export const BYOK_SLOT_ENV_NAMES: ReadonlySet<string> = new Set<string>(BYOK_SLOT_ENV_NAME_LIST);
