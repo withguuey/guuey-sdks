@@ -55,7 +55,11 @@ function Shell() {
   scroller (a bottom-edge fade shows while items are hidden below it), and
   the agent panel never shrinks under its floor, so the composer is always
   reachable. Set `--guuey-layout-agent-panel-min` (default `72px`, one line
-  of `@guuey/chat`'s composer) when your agent surface needs more.
+  of `@guuey/chat`'s composer) when your agent surface needs more. A host
+  that gives the agent panel a fixed height (`--guuey-layout-agent-panel-flex:
+0 0 auto`) sets `--guuey-layout-app-panel-flex: 1 1 auto` (default
+  `0 1 auto`) so the app panel takes the free space and the rail stays at the
+  bottom.
 - **Mode-aware**: pass the same `mode` you give your chat surface — the lib
   rides your existing light/dark machinery and adds none of its own.
 - **Not a chat dependency**: `bindGuueyChat` pairs with `@guuey/chat`

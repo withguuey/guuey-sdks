@@ -64,14 +64,14 @@ describe("guuey#429 — the shell is viewport-pinned by default", () => {
     const agent = block(".guuey-layout-panel-agent");
     expect(agent).toMatch(/flex: var\(--guuey-layout-agent-panel-flex, 1\)/);
     // The app panel never GROWS: free space stays the agent panel's.
-    expect(block(".guuey-layout-panel-app")).toMatch(/flex: 0 1 auto/);
+    expect(block(".guuey-layout-panel-app")).toMatch(/flex: var\(--guuey-layout-app-panel-flex, 0 1 auto\)/);
   });
 });
 
 describe("guuey#2450 — a tall nav scrolls; the agent panel is never crushed", () => {
   it("the app panel is the sidebar's scroller: it may shrink below its content and scrolls what it cannot show", () => {
     const app = block(".guuey-layout-panel-app");
-    expect(app).toMatch(/flex: 0 1 auto/);
+    expect(app).toMatch(/flex: var\(--guuey-layout-app-panel-flex, 0 1 auto\)/);
     expect(app).toContain("min-height: 0");
     expect(app).toContain("overflow-y: auto");
     expect(app).not.toContain("flex-shrink: 0");
