@@ -24,6 +24,15 @@ export function isInputKind(value: unknown): value is InputKind {
 }
 
 /**
+ * The input kind a stored row keeps: only a user row's, and only a kind this
+ * release knows. This is the one rule every transcript mapper calls, so a
+ * reload draws the line the live session drew.
+ */
+export function userInputKindOf(role: string, inputKind: unknown): InputKind | undefined {
+  return role === "user" && isInputKind(inputKind) ? inputKind : undefined;
+}
+
+/**
  * The input kinds a `session` frame says the agent accepts (`accepts.inputKinds`):
  * known kinds only, each once, in wire order. An absent or malformed block is
  * `[]` (an older runtime sends none), never a throw.

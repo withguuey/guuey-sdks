@@ -66,6 +66,7 @@ export {
   isInputKind,
   isInputKindRefusal,
   readAcceptedInputKinds,
+  userInputKindOf,
   type InputKind,
 } from "./input-kinds.js";
 // guuey#2293: the image attachments a turn may carry — the V1 allowlist, the

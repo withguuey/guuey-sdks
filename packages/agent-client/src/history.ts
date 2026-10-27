@@ -14,7 +14,7 @@ import { AgNoticeSource, type AgMessage, type JsonValue } from "@silverprotocol/
 import { readTapLabels } from "@guuey/mcp-apps-host/narrowing";
 import type { AgentMessage, HistoryCard, HistoryLoadResult, ThreadClosed } from "./types.js";
 import { closureFromLastRow, readThreadClosed } from "./thread-closed.js";
-import { isInputKind } from "./input-kinds.js";
+import { userInputKindOf } from "./input-kinds.js";
 
 /** One row of `GET /v1/threads/:id/messages`. */
 export interface ThreadHistoryRow {
@@ -130,7 +130,7 @@ export function threadHistoryRowsToMessages(rows: ThreadHistoryRow[]): AgentMess
         : [];
     // guuey#2549: a user row sent without words keeps its kind, so a reload
     // draws the line the live session drew (and the row is never dropped).
-    const inputKind = role === "user" && isInputKind(row.inputKind) ? row.inputKind : undefined;
+    const inputKind = userInputKindOf(role, row.inputKind);
     if (row.text == null && narration.length === 0 && inputKind === undefined) continue;
     // guuey#2031: a user row's tap labels, shape-checked (the writer's bounds are not the reader's).
     const tapLabels = role === "user" ? readTapLabels(row.tapLabels) : undefined;

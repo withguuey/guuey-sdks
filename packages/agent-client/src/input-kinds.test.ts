@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INPUT_KINDS, isInputKind, isInputKindRefusal, readAcceptedInputKinds } from "./input-kinds.js";
+import { INPUT_KINDS, isInputKind, isInputKindRefusal, readAcceptedInputKinds, userInputKindOf } from "./input-kinds.js";
 
 describe("input kinds (guuey#2549)", () => {
   it("knows exactly the context-only kind", () => {
@@ -25,5 +25,15 @@ describe("input kinds (guuey#2549)", () => {
     expect(isInputKindRefusal("pageContext: too large")).toBe(false);
     expect(isInputKindRefusal("inputKind: unknown kind")).toBe(false);
     expect(isInputKindRefusal("x input: non-empty string required")).toBe(false);
+  });
+
+  it("a stored row keeps its kind only on a user row, and only a known kind", () => {
+    expect(userInputKindOf("user", "context-only")).toBe("context-only");
+    expect(userInputKindOf("assistant", "context-only")).toBeUndefined();
+    expect(userInputKindOf("agent", "context-only")).toBeUndefined();
+    expect(userInputKindOf("system", "context-only")).toBeUndefined();
+    for (const raw of ["photo-only", "", null, undefined, 7, ["context-only"]]) {
+      expect(userInputKindOf("user", raw)).toBeUndefined();
+    }
   });
 });
