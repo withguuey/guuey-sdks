@@ -8,6 +8,7 @@ import { PassThrough } from "node:stream";
 import { serveNativeOn, type NativeEmit } from "./serve-native.js";
 import { parseControl, parseEvent } from "./parse.js";
 import { endThreadProblem, END_THREAD_MESSAGE_MAX_CHARS } from "./end-thread.js";
+import { drained } from "./fixtures/drained.js";
 
 const BASE_INVOKE = {
   type: "invoke",
@@ -31,8 +32,7 @@ async function runOne(extra: object, body: (emit: NativeEmit) => unknown): Promi
   );
   input.end(JSON.stringify({ ...BASE_INVOKE, ...extra }) + "\n");
   await done;
-  const raw: Buffer | null = output.read();
-  return { bytes: raw === null ? "" : raw.toString("utf8"), result };
+  return { bytes: drained(output), result };
 }
 
 function lastEvent(bytes: string): unknown {
@@ -147,8 +147,7 @@ describe("NativeEmit.endThread", () => {
     const line = JSON.stringify({ ...BASE_INVOKE, threadClose: {} }) + "\n";
     input.end(line + line);
     await done;
-    const raw: Buffer | null = output.read();
-    const dones = (raw === null ? "" : raw.toString("utf8"))
+    const dones = drained(output)
       .trim()
       .split("\n")
       .map((l) => JSON.parse(l))
@@ -172,8 +171,7 @@ describe("NativeEmit.endThread", () => {
     );
     input.end(JSON.stringify({ ...BASE_INVOKE, threadClose: {} }) + "\n");
     await done;
-    const raw: Buffer | null = output.read();
-    const bytes = raw === null ? "" : raw.toString("utf8");
+    const bytes = drained(output);
     expect(lastEvent(bytes)).toEqual({ type: "error", message: "boom" });
     expect(bytes).not.toContain("endThread");
   });

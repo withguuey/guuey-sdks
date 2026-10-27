@@ -3,6 +3,7 @@ import { PassThrough } from "node:stream";
 import { serveNativeOn, resolveInstalledVersion, type NativeServeInfo } from "./serve-native.js";
 import { HOST_SUSPEND_CAPABILITY, type Invoke } from "./protocol.js";
 import { parseEvent } from "./parse.js";
+import { drained } from "./fixtures/drained.js";
 
 function invokeLine(input: string): string {
   const invoke: Invoke = {
@@ -25,14 +26,8 @@ async function run(lines: string, handler: Parameters<typeof serveNativeOn>[0]) 
   );
   input.end(lines);
   await done;
-  return (
-    output
-      .read()
-      ?.toString("utf8")
-      .trim()
-      .split("\n")
-      .map((l: string) => JSON.parse(l)) ?? []
-  );
+  const bytes = drained(output).trim();
+  return bytes === "" ? [] : bytes.split("\n").map((l: string) => JSON.parse(l));
 }
 
 describe("serveNativeOn", () => {
@@ -119,8 +114,7 @@ describe("serveNativeOn — suspend", () => {
     );
     input.end(invokeWith("hi", first) + invokeWith("again", second));
     await done;
-    const raw: Buffer | null = output.read();
-    return { bytes: raw === null ? "" : raw.toString("utf8"), results };
+    return { bytes: drained(output), results };
   }
 
   it("without the host's opt-in: the offer is ignored and the bytes are today's", async () => {
@@ -171,8 +165,7 @@ describe("serveNativeOn — suspend", () => {
     );
     input.end(invokeWith("hi", { suspend: { maxEnvelopeBytes: 16 } }));
     await done;
-    const raw: Buffer | null = output.read();
-    const types = (raw === null ? "" : raw.toString("utf8")).trim().split("\n").map((l) => parseEvent(l).type);
+    const types = drained(output).trim().split("\n").map((l) => parseEvent(l).type);
     expect(result).toBe("over_cap");
     expect(types).toEqual(["hello", "done"]);
   });
