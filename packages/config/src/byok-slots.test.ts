@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import * as browserEntry from './browser.js';
 import * as rootEntry from './index.js';
@@ -35,11 +35,18 @@ describe('the lists derived from the map', () => {
     expect([...BYOK_SLOT_ENV_NAMES]).toEqual(Object.values(BYOK_PROVIDER_SLOT_ENV));
   });
 
-  it('BYOK_SLOT_ENV_NAME_LIST is the map values, in the map order, each typed as a slot name', () => {
-    expect([...BYOK_SLOT_ENV_NAME_LIST]).toEqual(Object.values(BYOK_PROVIDER_SLOT_ENV));
-    // The type is the literal union of the map's values: a name outside it does not compile.
-    const google: ByokSlotEnvName = BYOK_PROVIDER_SLOT_ENV.google;
-    expect(BYOK_SLOT_ENV_NAME_LIST).toContain(google);
+  it('BYOK_SLOT_ENV_NAME_LIST is the four slot names, in the map order, each typed as a slot name', () => {
+    expect([...BYOK_SLOT_ENV_NAME_LIST]).toEqual([
+      'ANTHROPIC_API_KEY',
+      'OPENAI_API_KEY',
+      'GEMINI_API_KEY',
+      'OPENROUTER_API_KEY',
+    ]);
+    // Checked by the typecheck: the slot name type is exactly the four literals, never widened to string.
+    expectTypeOf<ByokSlotEnvName>().toEqualTypeOf<
+      'ANTHROPIC_API_KEY' | 'OPENAI_API_KEY' | 'GEMINI_API_KEY' | 'OPENROUTER_API_KEY'
+    >();
+    expectTypeOf(BYOK_SLOT_ENV_NAME_LIST).toEqualTypeOf<readonly ByokSlotEnvName[]>();
   });
 });
 
