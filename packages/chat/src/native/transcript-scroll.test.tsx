@@ -9,7 +9,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement, createRef, forwardRef, useImperativeHandle, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { NativeScrollEvent, NativeSyntheticEvent } from "react-native";
+import type { NativeScrollEvent, NativeSyntheticEvent, TextStyle, ViewStyle } from "react-native";
 import type { DisplayItem, TranscriptInputs } from "../types.js";
 
 interface ListCalls {
@@ -35,6 +35,9 @@ const list = vi.hoisted(() => ({
   api: null as (ListCalls & { measuredThrough: number }) | null,
 }));
 
+/** The style the jump pill's Pressable last rendered with (guuey#2578). */
+const pill = vi.hoisted(() => ({ style: null as ViewStyle | null }));
+
 vi.mock("react-native", () => {
   const passthrough =
     (tag: string) =>
@@ -50,11 +53,15 @@ vi.mock("react-native", () => {
   });
   return {
     View: passthrough("div"),
-    Text: passthrough("span"),
+    // The label's colour rides out on an attribute, so the pill's face can be read (guuey#2578).
+    Text: ({ children, style }: { children?: ReactNode; style?: TextStyle }) =>
+      createElement("span", { "data-color": style?.color }, children),
     ScrollView: passthrough("div"),
     Image: passthrough("img"),
-    Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
-      createElement("button", { type: "button", onClick: onPress }, children),
+    Pressable: ({ children, onPress, style }: { children?: ReactNode; onPress?: () => void; style?: ViewStyle }) => {
+      pill.style = style ?? null;
+      return createElement("button", { type: "button", onClick: onPress }, children);
+    },
     FlatList,
     AccessibilityInfo: {
       isReduceMotionEnabled: () => Promise.resolve(false),
@@ -68,6 +75,7 @@ const { NativeTranscript } = await import("./transcript.js");
 type NativeTranscriptHandle = import("./transcript.js").NativeTranscriptHandle;
 const { calmPolicy } = await import("../policy.js");
 const { planTranscript } = await import("../plan.js");
+const { DEFAULT_CHAT_THEME, GUUEY_CHAT_THEME } = await import("../theme.js");
 
 const PANEL = 500;
 
@@ -114,6 +122,7 @@ beforeEach(() => {
   };
   list.api = calls;
   list.props = null;
+  pill.style = null;
 });
 
 afterEach(() => {
@@ -173,6 +182,38 @@ describe("no scroll props: the inverted list as before", () => {
     expect(calls.scrollToOffset).toHaveBeenCalledWith({ offset: 0, animated: true });
     expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
   });
+});
+
+describe("the jump pill's face (guuey#2578)", () => {
+  // One control, one face: the web pill's idiom. On iOS the pill had no backing (`elevation` is
+  // Android-only), so its label read straight over the transcript. It now fills with the palette
+  // ink, which separates from the transcript by its whole body, so it carries no edge; the iOS
+  // shadow keys sit beside `elevation`; and its label is never a theme token: white on the light
+  // mode's dark ink, near-black on the dark mode's light ink.
+  for (const theme of [DEFAULT_CHAT_THEME, GUUEY_CHAT_THEME]) {
+    for (const [mode, label] of [
+      ["light", "#fff"],
+      ["dark", "#111"],
+    ] as const) {
+      it(`${theme.name} ${mode}: an ink fill with no edge, the iOS shadow beside elevation, and a ${label} label`, () => {
+        const palette = theme.colors[mode];
+        render(<NativeTranscript plan={planOf(4)} theme={theme} mode={mode} {...noopCtx} />);
+        scroll(200, 2000, true);
+        expect(screen.getByRole("button", { name: "Jump to latest" })).toBeTruthy();
+        expect(pill.style).toMatchObject({
+          backgroundColor: palette.ink,
+          elevation: 3,
+          shadowColor: palette.ink,
+          shadowOpacity: 0.15,
+          shadowRadius: 4,
+          shadowOffset: { width: 0, height: 1 },
+        });
+        expect(pill.style).not.toHaveProperty("borderWidth");
+        expect(pill.style).not.toHaveProperty("borderColor");
+        expect(screen.getByText("Jump to latest").getAttribute("data-color")).toBe(label);
+      });
+    }
+  }
 });
 
 describe('follow="off"', () => {

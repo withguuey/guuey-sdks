@@ -114,6 +114,13 @@ export interface NativeTranscriptProps
   onStartNewConversation?: () => void;
 }
 
+/**
+ * The jump pill's label on its ink fill (guuey#2578): never a theme token, since a host theme
+ * can set the canvas transparent. It is the web pill's rule without `hsl(from)`: white on the
+ * light mode's dark ink, near-black on the dark mode's light ink.
+ */
+const JUMP_LABEL_ON_INK: Readonly<Record<NativeThemeMode, string>> = { light: "#fff", dark: "#111" };
+
 export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
   const {
     plan,
@@ -397,14 +404,22 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
             position: "absolute",
             bottom: 12,
             alignSelf: "center",
-            backgroundColor: tokens.palette.surface,
+            // One control, one face (guuey#2578): the web pill's idiom. The fill is the palette ink,
+            // which separates from the transcript by its whole body (17:1 and 15:1 on the shipped
+            // canvases), so the pill needs no edge. `elevation` is Android-only, so the iOS shadow
+            // keys sit beside it.
+            backgroundColor: tokens.palette.ink,
             borderRadius: 999,
             paddingHorizontal: 14,
             paddingVertical: 8,
             elevation: 3,
+            shadowColor: tokens.palette.ink,
+            shadowOpacity: 0.15,
+            shadowRadius: 4,
+            shadowOffset: { width: 0, height: 1 },
           }}
         >
-          <Text style={{ color: tokens.palette.ink, fontSize: tokens.fontSize - 2, fontFamily: tokens.fontFamily }}>
+          <Text style={{ color: JUMP_LABEL_ON_INK[mode], fontSize: tokens.fontSize - 2, fontFamily: tokens.fontFamily }}>
             {strings.jumpToLatest}
           </Text>
         </Pressable>
