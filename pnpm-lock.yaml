@@ -276,6 +276,9 @@ importers:
       '@guuey/worker':
         specifier: workspace:*
         version: link:../worker
+      '@modelcontextprotocol/sdk':
+        specifier: ~1.32.0
+        version: 1.32.2(zod@4.6.7)
       '@types/node':
         specifier: ^24.0.0
         version: 24.12.4
@@ -288,6 +291,9 @@ importers:
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@opentelemetry/api@1.9.0)(@types/node@24.12.4)(jsdom@25.0.1)(terser@5.50.0)(yaml@2.9.0)
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
 
   packages/fs:
     devDependencies:
