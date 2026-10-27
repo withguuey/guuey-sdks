@@ -150,7 +150,7 @@ describe('modelsForProvider', () => {
         'gemini-3.6-flash',
         'gemini-3.8-flash',
         'gemini-3.5-flash-lite',
-        'gemini-3.1-pro',
+        // gemini-3.1-pro is deprecated + unserved (guuey#2311): not offered.
         'gemini-2.5-flash',
         'gemini-2.5-pro',
       ],
@@ -562,7 +562,7 @@ describe('deprecated rows + retirementNotice (guuey#2309, guuey#2310)', () => {
   const frameworkFor = (p: ModelEntry['provider']) => FRAMEWORK_REGISTRY.find((f) => f.defaultProvider === p)?.framework;
 
   it('pins the deprecated set — a retirement is a deliberate, receipted change', () => {
-    expect(deprecated.map((m) => m.id).sort()).toEqual(['gemini-3.5-flash', 'gpt-4o', 'gpt-4o-mini']);
+    expect(deprecated.map((m) => m.id).sort()).toEqual(['gemini-3.1-pro', 'gemini-3.5-flash', 'gpt-4o', 'gpt-4o-mini']);
   });
 
   it('a deprecated row carries its sunset as an ISO date when the provider has published one', () => {
@@ -586,11 +586,18 @@ describe('deprecated rows + retirementNotice (guuey#2309, guuey#2310)', () => {
     }
   });
 
-  it('only deprecated rows carry sunset or replacedBy', () => {
+  it('only deprecated rows carry sunset, replacedBy or unserved', () => {
     for (const m of MODEL_REGISTRY.filter((x) => x.status !== 'deprecated')) {
       expect(m.sunset, m.id).toBeUndefined();
       expect(m.replacedBy, m.id).toBeUndefined();
+      expect(m.unserved, m.id).toBeUndefined();
     }
+  });
+
+  it('an unserved row carries no sunset: there is no shutdown ahead of a model that is already unreachable', () => {
+    const unserved = deprecated.filter((m) => m.unserved === true);
+    expect(unserved.map((m) => m.id)).toEqual(['gemini-3.1-pro']);
+    for (const m of unserved) expect(m.sunset, m.id).toBeUndefined();
   });
 
   it('a deprecated row leaves both picker halves and the offer door of the framework that runs it', () => {
@@ -628,6 +635,22 @@ describe('deprecated rows + retirementNotice (guuey#2309, guuey#2310)', () => {
     // Still loadable for an app pinned to it: the row is there, just not offered.
     expect(modelEntry('gemini-3.5-flash')?.status).toBe('deprecated');
     expect(isOfferedModel('google-adk', 'gemini-3.5-flash')).toBe(false);
+  });
+
+  it('gemini-3.1-pro gets an UNSERVED, dateless notice naming the Google default, gemini-3.6-flash (guuey#2311)', () => {
+    expect(retirementNotice('gemini-3.1-pro')).toEqual({
+      id: 'gemini-3.1-pro',
+      label: 'Gemini 3.1 Pro',
+      providerLabel: 'Google',
+      unserved: true,
+      replacement: { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash' },
+    });
+    expect(defaultModelFor('google-adk')).toBe('gemini-3.6-flash');
+    // Still loadable for an app pinned to it: the row is there, just not offered.
+    expect(modelEntry('gemini-3.1-pro')?.status).toBe('deprecated');
+    expect(isOfferedModel('google-adk', 'gemini-3.1-pro')).toBe(false);
+    // A provider-deprecated row is not marked unserved.
+    expect(retirementNotice('gemini-3.5-flash')?.unserved).toBeUndefined();
   });
 
   it('is undefined for ga, unknown and announced ids, and for a deprecated row with no replacement', () => {

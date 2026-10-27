@@ -27,6 +27,13 @@ export interface ModelEntry {
    */
   readonly replacedBy?: string;
   /**
+   * The provider does not serve this id at all, so every call to it fails
+   * (gemini-3.1-pro, guuey#2311). Deprecated rows only, and never with a
+   * `sunset`: there is no shutdown ahead, the model is already unreachable.
+   * The retirement warning says so instead of "deprecated".
+   */
+  readonly unserved?: true;
+  /**
    * The picker's FRONT SLICE. `lineup` entries are what a model picker shows
    * without asking; every other invocable entry is reachable only behind the
    * picker's "See all models" door (guuey#635: Fable 5 sits behind that
@@ -212,7 +219,15 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
   // every create door, an app pinned to it keeps loading and redeploying, and
   // its warning names the replacement without a date until Google publishes one.
   { id: "gemini-3.5-flash", provider: "google", label: "Gemini 3.5 Flash", status: "deprecated", replacedBy: "gemini-3.6-flash" },
-  { id: "gemini-3.1-pro", provider: "google", label: "Gemini 3.1 Pro", status: "ga" },
+  // DEPRECATED and UNSERVED (guuey#2311). Google does not serve the bare id:
+  // a generateContent call to it answered HTTP 404 NOT_FOUND (probe,
+  // 2026-10-15), and Google's model and deprecations pages list only
+  // gemini-3.1-pro-preview. Offering that preview is a separate entry, not
+  // this row. Same N-1 rule as above: it leaves the pickers and every create
+  // door, an app pinned to it still loads, and its warning says Google does
+  // not serve it and names the Google default as the replacement. Its rate
+  // row stays, because a -preview response is priced on it.
+  { id: "gemini-3.1-pro", provider: "google", label: "Gemini 3.1 Pro", status: "deprecated", unserved: true, replacedBy: "gemini-3.6-flash" },
   { id: "gemini-2.5-flash", provider: "google", label: "Gemini 2.5 Flash", status: "ga" },
   { id: "gemini-2.5-pro", provider: "google", label: "Gemini 2.5 Pro", status: "ga" },
 ];
@@ -316,6 +331,12 @@ export interface RetirementNotice {
    * and no before/after copy.
    */
   readonly sunset?: string;
+  /**
+   * PRESENT when the provider does not serve the id at all (guuey#2311): a
+   * warning then says the provider does not serve it, never "deprecated",
+   * and carries no date.
+   */
+  readonly unserved?: true;
   readonly replacement: { readonly id: string; readonly label: string };
 }
 
@@ -366,6 +387,8 @@ export function bindRegistry(
       providerLabel: PROVIDER_LABELS[entry.provider],
       // A date only when the provider published one (guuey#2310).
       ...(entry.sunset === undefined ? {} : { sunset: entry.sunset }),
+      // And "unserved" only when the provider does not serve the id (guuey#2311).
+      ...(entry.unserved === undefined ? {} : { unserved: entry.unserved }),
       replacement: { id: replacement.id, label: replacement.label },
     };
   };
