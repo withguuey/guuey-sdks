@@ -59,18 +59,42 @@
   transition: background-color var(--guuey-layout-tone-transition) ease-out;
 }
 .guuey-layout-panel-app {
-  /* The app panel keeps its content height; the agent panel takes the
-   * remaining lower space (guuey#429 — stuck on its bottom, never
-   * crushed nor scrolled away). */
-  flex-shrink: 0;
+  /* guuey#2450: the app panel is the sidebar's SCROLLER. It holds its
+   * content height while that fits (never grows — the free space is the
+   * agent panel's, guuey#429), and when a tall nav does not fit it is the
+   * side that yields and scrolls, never the agent panel below it. */
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   background: var(--guuey-layout-tone-upper);
   color: var(--guuey-layout-tone-upper-on);
+}
+/* The overflow affordance: a 24px bottom-edge fade in the panel's own tone,
+ * shown only while content is hidden below the edge. CSS cannot know that,
+ * so the lib writes `data-overflow="true"` from a ResizeObserver (+ scroll)
+ * on the panel. Sticky to the scrollport's bottom; the negative margin keeps
+ * it from adding layout height. */
+.guuey-layout-panel-app[data-overflow="true"]::after {
+  content: "";
+  position: sticky;
+  inset-block-end: 0;
+  display: block;
+  flex-shrink: 0;
+  block-size: 24px;
+  margin-block-start: -24px;
+  background: linear-gradient(to top, var(--guuey-layout-tone-upper), transparent);
+  pointer-events: none;
 }
 .guuey-layout-panel-agent {
   /* Host-overridable default (guuey#427): a host that wants a fixed-height
    * rail sets `--guuey-layout-agent-panel-flex` (e.g. `0 0 auto` + its own
    * height) — a custom-property seam, never a specificity fight. */
   flex: var(--guuey-layout-agent-panel-flex, 1);
+  /* guuey#2450: the floor — however tall the nav, the agent panel never
+   * shrinks below this, so the composer stays reachable. The default fits
+   * `@guuey/chat`'s one-line composer (≈63px); a host with a header row or
+   * a taller composer sets `--guuey-layout-agent-panel-min`. */
+  min-height: var(--guuey-layout-agent-panel-min, 72px);
   display: flex;
   flex-direction: column;
   background: var(--guuey-layout-tone-lower);

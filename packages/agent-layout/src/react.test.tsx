@@ -6,7 +6,7 @@
  * isolation contract's visible half (context changes only on transitions).
  */
 import { describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach } from "vitest";
 import type { ReactNode } from "react";
 import {
@@ -252,5 +252,75 @@ describe("guuey#430 — the configurable standby slot", () => {
     );
     expect(screen.getByText("PANE-LOCAL")).toBeTruthy();
     expect(screen.queryByText("BRAND SPLASH")).toBeNull();
+  });
+});
+
+describe("guuey#2450 — the app panel says when its content is hidden (the fade's flag)", () => {
+  /** A controllable ResizeObserver: jsdom ships none and performs no layout. */
+  const observers: FakeResizeObserver[] = [];
+  class FakeResizeObserver implements ResizeObserver {
+    readonly observed = new Set<Element>();
+    constructor(readonly callback: ResizeObserverCallback) {
+      observers.push(this);
+    }
+    observe(target: Element): void {
+      this.observed.add(target);
+    }
+    unobserve(target: Element): void {
+      this.observed.delete(target);
+    }
+    disconnect(): void {
+      this.observed.clear();
+    }
+  }
+
+  function setBox(el: HTMLElement, box: { scrollHeight: number; clientHeight: number; scrollTop: number }): void {
+    Object.defineProperty(el, "scrollHeight", { configurable: true, value: box.scrollHeight });
+    Object.defineProperty(el, "clientHeight", { configurable: true, value: box.clientHeight });
+    el.scrollTop = box.scrollTop;
+  }
+
+  function resize(): void {
+    act(() => {
+      for (const o of observers) o.callback([], o);
+    });
+  }
+
+  afterEach(() => {
+    observers.length = 0;
+    vi.unstubAllGlobals();
+  });
+
+  it("flags data-overflow only while content is hidden below the panel's edge, and the agent panel never carries it", () => {
+    vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+    shell();
+    const app = screen.getByTestId("app-panel");
+    // Observes the panel and its content (a nav that grows inside a bounded panel).
+    expect(observers.some((o) => o.observed.has(app))).toBe(true);
+    expect(app.dataset.overflow).toBeUndefined();
+
+    setBox(app, { scrollHeight: 600, clientHeight: 300, scrollTop: 0 });
+    resize();
+    expect(app.dataset.overflow).toBe("true");
+
+    // Scrolled to the end: nothing is hidden below, so no fade.
+    setBox(app, { scrollHeight: 600, clientHeight: 300, scrollTop: 300 });
+    act(() => {
+      fireEvent.scroll(app);
+    });
+    expect(app.dataset.overflow).toBeUndefined();
+
+    // The nav fits again: no flag.
+    setBox(app, { scrollHeight: 300, clientHeight: 300, scrollTop: 0 });
+    resize();
+    expect(app.dataset.overflow).toBeUndefined();
+
+    expect(screen.getByTestId("agent-panel").dataset.overflow).toBeUndefined();
+  });
+
+  it("without ResizeObserver the panel renders unflagged (no fade, never a throw)", () => {
+    vi.stubGlobal("ResizeObserver", undefined);
+    shell();
+    expect(screen.getByTestId("app-panel").dataset.overflow).toBeUndefined();
   });
 });

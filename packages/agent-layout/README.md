@@ -51,6 +51,11 @@ function Shell() {
 - **No stale-content hold**: while the agent has the room and nothing is
   presented yet, the pane shows a working state (your `identity` + pulse),
   never the previous page under the agent's tone.
+- **A tall nav scrolls, the agent stays**: the app panel is the sidebar's
+  scroller (a bottom-edge fade shows while items are hidden below it), and
+  the agent panel never shrinks under its floor, so the composer is always
+  reachable. Set `--guuey-layout-agent-panel-min` (default `72px`, one line
+  of `@guuey/chat`'s composer) when your agent surface needs more.
 - **Mode-aware**: pass the same `mode` you give your chat surface — the lib
   rides your existing light/dark machinery and adds none of its own.
 - **Not a chat dependency**: `bindGuueyChat` pairs with `@guuey/chat`

@@ -20,6 +20,7 @@ import {
   type CSSProperties,
   type HTMLAttributes,
   type ReactNode,
+  type RefObject,
 } from "react";
 import {
   agentModeReduce,
@@ -261,18 +262,64 @@ export interface SidebarPanelProps extends HTMLAttributes<HTMLDivElement> {
  */
 export function SidebarPanel({ section, children, className, ...rest }: SidebarPanelProps): ReactNode {
   const { dispatch } = useAgentMode();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const contentHidden = useContentHiddenBelow(panelRef, section === "app");
   const onMenuInteraction =
     section === "app" ? () => dispatch({ type: "menuInteraction" }) : undefined;
   return (
     <div
       {...rest}
+      ref={panelRef}
       className={joinClass(`guuey-layout-panel guuey-layout-panel-${section}`, className)}
+      data-overflow={contentHidden ? "true" : undefined}
       onPointerDownCapture={onMenuInteraction}
       onFocusCapture={onMenuInteraction}
     >
       {children}
     </div>
   );
+}
+
+/**
+ * guuey#2450 — whether the app panel (the sidebar's scroller) has content
+ * hidden below its bottom edge: the flag behind the stylesheet's fade. CSS
+ * cannot know it, so a ResizeObserver watches the panel AND its element
+ * children (a nav that grows inside an already-bounded panel resizes only
+ * the child), re-subscribed as children come and go; scrolling re-measures
+ * too, so the fade leaves once the end is reached. No ResizeObserver (old
+ * engines, SSR) → never flagged: no fade, the scroll itself still works.
+ */
+function useContentHiddenBelow(ref: RefObject<HTMLDivElement | null>, enabled: boolean): boolean {
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    const panel = ref.current;
+    if (!enabled || panel === null || typeof ResizeObserver === "undefined") return;
+    const measure = (): void =>
+      setHidden(panel.scrollTop + panel.clientHeight < panel.scrollHeight - 1);
+    const sizes = new ResizeObserver(measure);
+    const observeAll = (): void => {
+      sizes.disconnect();
+      sizes.observe(panel);
+      for (const child of Array.from(panel.children)) sizes.observe(child);
+    };
+    observeAll();
+    const children =
+      typeof MutationObserver === "undefined"
+        ? null
+        : new MutationObserver(() => {
+            observeAll();
+            measure();
+          });
+    children?.observe(panel, { childList: true });
+    panel.addEventListener("scroll", measure, { passive: true });
+    measure();
+    return () => {
+      sizes.disconnect();
+      children?.disconnect();
+      panel.removeEventListener("scroll", measure);
+    };
+  }, [ref, enabled]);
+  return hidden;
 }
 
 export interface ActivePaneProps extends HTMLAttributes<HTMLDivElement> {

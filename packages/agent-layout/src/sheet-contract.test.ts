@@ -14,11 +14,11 @@ const sheet = readFileSync(
   "utf8",
 );
 
-/** The rule block for one selector (first match). */
-function block(selector: string): string {
-  const start = sheet.indexOf(`${selector} {`);
+/** The rule block for one selector (first match) within `source`. */
+function block(selector: string, source: string = sheet): string {
+  const start = source.indexOf(`${selector} {`);
   if (start === -1) throw new Error(`selector missing from sheet: ${selector}`);
-  return sheet.slice(start, sheet.indexOf("}", start));
+  return source.slice(start, source.indexOf("}", start));
 }
 
 describe("guuey#429 — the shell is viewport-pinned by default", () => {
@@ -45,6 +45,36 @@ describe("guuey#429 — the shell is viewport-pinned by default", () => {
   it("the agent panel takes the sidebar's remaining lower space (stuck on its bottom)", () => {
     const agent = block(".guuey-layout-panel-agent");
     expect(agent).toMatch(/flex: var\(--guuey-layout-agent-panel-flex, 1\)/);
-    expect(block(".guuey-layout-panel-app")).toContain("flex-shrink: 0");
+    // The app panel never GROWS: free space stays the agent panel's.
+    expect(block(".guuey-layout-panel-app")).toMatch(/flex: 0 1 auto/);
+  });
+});
+
+describe("guuey#2450 — a tall nav scrolls; the agent panel is never crushed", () => {
+  it("the app panel is the sidebar's scroller: it may shrink below its content and scrolls what it cannot show", () => {
+    const app = block(".guuey-layout-panel-app");
+    expect(app).toMatch(/flex: 0 1 auto/);
+    expect(app).toContain("min-height: 0");
+    expect(app).toContain("overflow-y: auto");
+    expect(app).not.toContain("flex-shrink: 0");
+  });
+
+  it("the agent panel keeps a floor behind the --guuey-layout-agent-panel-min seam", () => {
+    expect(block(".guuey-layout-panel-agent")).toMatch(
+      /min-height: var\(--guuey-layout-agent-panel-min, \d+px\)/,
+    );
+  });
+
+  it("the overflow affordance: a 24px bottom-edge fade in the panel's own tone, only while the lib says content is hidden", () => {
+    const fade = block('.guuey-layout-panel-app[data-overflow="true"]::after');
+    expect(fade).toContain("position: sticky");
+    expect(fade).toContain("inset-block-end: 0");
+    expect(fade).toContain("block-size: 24px");
+    // Paints over the last 24px of content; never adds layout height.
+    expect(fade).toContain("margin-block-start: -24px");
+    expect(fade).toContain("linear-gradient(to top, var(--guuey-layout-tone-upper), transparent)");
+    expect(fade).toContain("pointer-events: none");
+    // No unconditional fade: the pseudo-element exists only under the flag.
+    expect(sheet).not.toMatch(/\.guuey-layout-panel-app::after/);
   });
 });
