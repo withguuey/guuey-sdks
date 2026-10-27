@@ -21,6 +21,23 @@ function block(selector: string, source: string = sheet): string {
   return source.slice(start, source.indexOf("}", start));
 }
 
+/** The body of one `@media` block, matched by its exact prelude. */
+function media(prelude: string): string {
+  const head = sheet.indexOf(`@media ${prelude} {`);
+  if (head === -1) throw new Error(`media block missing from sheet: ${prelude}`);
+  const open = sheet.indexOf("{", head);
+  let depth = 0;
+  for (let i = open; i < sheet.length; i += 1) {
+    if (sheet[i] === "{") depth += 1;
+    if (sheet[i] === "}") depth -= 1;
+    if (depth === 0) return sheet.slice(open + 1, i);
+  }
+  throw new Error(`media block never closes: ${prelude}`);
+}
+
+const DRAWER = "(max-width: 1023.98px)";
+const OPEN_SIDEBAR = '.guuey-layout-shell[data-drawer-open="true"] .guuey-layout-sidebar';
+
 describe("guuey#429 — the shell is viewport-pinned by default", () => {
   it("the root establishes the height chain itself: dvh default behind the --guuey-layout-height seam, vh fallback first", () => {
     const root = block(".guuey-agent-layout");
@@ -76,5 +93,15 @@ describe("guuey#2450 — a tall nav scrolls; the agent panel is never crushed", 
     expect(fade).toContain("pointer-events: none");
     // No unconditional fade: the pseudo-element exists only under the flag.
     expect(sheet).not.toMatch(/\.guuey-layout-panel-app::after/);
+  });
+});
+
+describe("guuey#2450 — a closed drawer casts no shadow", () => {
+  it("the parked drawer carries no box-shadow (a 24px blur at -100% bleeds onto the pane)", () => {
+    expect(block(".guuey-layout-sidebar", media(DRAWER))).not.toContain("box-shadow");
+  });
+
+  it("the shadow belongs to the open state only", () => {
+    expect(block(OPEN_SIDEBAR, media(DRAWER))).toContain("box-shadow: 0 0 24px rgba(0, 0, 0, 0.25)");
   });
 });

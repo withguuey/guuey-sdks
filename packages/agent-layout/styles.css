@@ -205,10 +205,12 @@
     z-index: 20;
     transform: translateX(-100%);
     transition: transform var(--guuey-layout-tone-transition) ease-out;
-    box-shadow: 0 0 24px rgba(0, 0, 0, 0.25);
   }
+  /* guuey#2450: the shadow is the OPEN drawer's only — a 24px blur on a
+   * drawer parked at -100% bleeds past the viewport edge onto the pane. */
   .guuey-layout-shell[data-drawer-open="true"] .guuey-layout-sidebar {
     transform: translateX(0);
+    box-shadow: 0 0 24px rgba(0, 0, 0, 0.25);
   }
   .guuey-layout-drawer-toggle {
     display: inline-flex;
