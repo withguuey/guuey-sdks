@@ -130,6 +130,12 @@ view. The room only ever shrinks, and is released once filled, on `scrollToEnd()
 following resumes, when the reader scrolls up past it, or when no item with that key renders any
 more (windowed out, say).
 
+`<NativeTranscript>` reserves the same room under `follow="off"`, measured with `measureLayout` on
+the New Architecture (on the old one, `scrollToItem` places as before, with no room). Native has no
+scroll anchoring, so content above the placed item changing height moves the item on screen, while
+the room stays exact. A `contentContainerStyle` bottom padding is added after the room, so the
+reader can scroll that much past the place.
+
 After the "↓", the transcript follows the stream from the end until the reader scrolls up again.
 The handle's core (`scrollToItem`, `scrollToEnd`) is the framework-neutral
 `TranscriptScrollHandle` exported from `@guuey/chat`, so other transcript components can

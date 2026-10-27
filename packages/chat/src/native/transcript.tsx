@@ -13,6 +13,22 @@
  *    adds the jump-to-latest affordance when the reader has left the
  *    newest turn, and its scroll animation respects the platform
  *    reduce-motion setting.
+ *  - **Room below the last item** (guuey#2850, the native twin of the web
+ *    transcript's guuey#2554): a scroll view clamps at `content - viewport`,
+ *    so under `follow="off"` an item near the end could never reach the
+ *    place `scrollToItem` asks for. The transcript reserves exactly the
+ *    shortfall in a spacer at the end of the footer. The place is kept
+ *    relative to the placed item, never as an offset, and every refit
+ *    re-measures the item and the spacer in ONE layout revision
+ *    (`measureLayout`, synchronous under the New Architecture), so a layout
+ *    event arriving late never misreads it. The room only shrinks, as later
+ *    content grows into it, and is released at 0, on a go-to-end, on a
+ *    `follow` change, when the reader drags up until releasing it moves
+ *    nothing in view, and when the item no longer renders. Without a
+ *    synchronous measure (the old architecture), `scrollToItem` places
+ *    through `scrollToIndex` with no room, as before. A host
+ *    `contentContainerStyle` bottom padding sits after the room and is
+ *    counted on top of it.
  *  - **Windowing** is the list primitive's own virtualization — FlatList
  *    windows the DOM-equivalent natively; the plan's stable keys are the
  *    `keyExtractor`, so item identity survives streaming updates.
@@ -40,7 +56,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentRef,
   type ReactNode,
+  type RefObject,
 } from "react";
 import {
   AccessibilityInfo,
@@ -56,7 +74,17 @@ import {
 import { DEFAULT_CHAT_THEME, type GuueyChatTheme } from "../theme.js";
 import { defaultChatStrings, type ChatStrings } from "../strings.js";
 import type { DisplayItem, TranscriptPlan } from "../types.js";
-import type { TranscriptFollow, TranscriptScrollHandle, TranscriptScrollProps } from "../transcript-scroll.js";
+import {
+  itemPlaceTop,
+  nextRoom,
+  reserveRoom,
+  roomShortfall,
+  type TranscriptFollow,
+  type TranscriptItemAlign,
+  type TranscriptRoom,
+  type TranscriptScrollHandle,
+  type TranscriptScrollProps,
+} from "../transcript-scroll.js";
 import {
   NativeThreadClosedBanner,
   nativeTranscriptComponents,
@@ -88,6 +116,99 @@ const distanceFromEnd = ({ offset, content, viewport }: ListGeometry, inverted: 
   if (content === null || viewport === null) return null;
   return content - offset - viewport;
 };
+
+/** A host view, as `measureLayout` takes and answers for it. */
+type HostView = ComponentRef<typeof View>;
+
+/** guuey#2850: a place, read off one layout revision. */
+interface Place {
+  /** The offset that puts the item where it was asked to be. */
+  target: number;
+  /** What the content lacks below for `target` to be reachable (0 when it is). */
+  shortfall: number;
+}
+
+/**
+ * The view's `{ y, height }` against `relativeTo` (an ancestor), or null when the measure failed
+ * or did not answer synchronously. Under the New Architecture the answer comes before the call
+ * returns, read off the current layout revision; the old architecture answers later, and a late
+ * answer is never used.
+ */
+function measureNow(view: HostView, relativeTo: HostView): { y: number; height: number } | null {
+  let box: { y: number; height: number } | null = null;
+  view.measureLayout(relativeTo, (_x, y, _width, height) => {
+    box = { y, height };
+  });
+  return box;
+}
+
+/*
+ * guuey#2850: the room helpers live at module scope and take the refs and views as arguments,
+ * like `distanceFromEnd` and the web transcript's room helpers, so the handlers that call them
+ * capture only refs and setters.
+ */
+
+/** A placement waiting for its room to be laid out. */
+interface PendingPlace {
+  animated: boolean;
+}
+
+/** What a place is measured from, read off the refs at the moment of asking. */
+interface PlaceViews {
+  /** The kit's own outer view: the ancestor every measure is read against. */
+  frame: HostView | null;
+  /** The spacer at the end of the footer; its top is where the content ends without the room. */
+  spacer: HostView | null;
+  /** The list's top inside the outer view (a host margin moves it): content offsets start there. */
+  listTop: number;
+  /** The list's viewport height, or null while the list is unmeasured. */
+  viewportHeight: number | null;
+}
+
+/** Where the content ends without the room, in content coordinates (the spacer's top), or null. */
+function bareEnd({ frame, spacer, listTop }: PlaceViews): number | null {
+  if (frame === null || spacer === null) return null;
+  const box = measureNow(spacer, frame);
+  return box === null ? null : box.y - listTop;
+}
+
+/**
+ * Where a placement of `item` puts it now, and what the content lacks below for that place, read
+ * off ONE layout revision: the item and the spacer are measured back to back, so the pair is
+ * always consistent. The arithmetic is the shared one (`transcript-scroll`), over these numbers.
+ * Null when the list is unmeasured, the item does not render (`undefined`), or the measure did not
+ * answer synchronously.
+ */
+function placeOf(
+  views: PlaceViews,
+  item: HostView | undefined,
+  align: TranscriptItemAlign,
+  offset: number,
+): Place | null {
+  const { frame, listTop, viewportHeight } = views;
+  if (frame === null || item === undefined || viewportHeight === null) return null;
+  const box = measureNow(item, frame);
+  const contentHeight = bareEnd(views);
+  if (box === null || contentHeight === null) return null;
+  const target = itemPlaceTop({ itemTop: box.y - listTop, itemHeight: box.height, viewportHeight }, align, offset);
+  return { target, shortfall: roomShortfall(target, { contentHeight, viewportHeight }) };
+}
+
+/**
+ * Hold `next` (the shared arithmetic's answer) and size the spacer to it: null releases the room
+ * and drops a placement waiting on it; the room already held changes nothing.
+ */
+function holdRoom(
+  room: RefObject<TranscriptRoom | null>,
+  pendingPlace: RefObject<PendingPlace | null>,
+  setRoomPx: (px: number) => void,
+  next: TranscriptRoom | null,
+): void {
+  if (next === room.current) return;
+  room.current = next;
+  if (next === null) pendingPlace.current = null;
+  setRoomPx(next?.px ?? 0);
+}
 
 /** The native transcript's handle — the shared core plus the list. */
 export interface NativeTranscriptHandle extends TranscriptScrollHandle {
@@ -219,6 +340,70 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
   /** An orientation flip made before the list was measured: it re-anchors once the list is. */
   const pendingFlip = useRef<{ wasInverted: boolean } | null>(null);
 
+  // guuey#2850: the room below the last item under "off".
+  /** The kit's own outer view: the ancestor every measure is read against. */
+  const frame = useRef<HostView>(null);
+  /** The spacer at the end of the footer; its top is where the content ends without the room. */
+  const spacer = useRef<HostView>(null);
+  /** The rendered item views by key, for `measureLayout`. */
+  const itemViews = useRef(new Map<string, HostView>());
+  /** One ref callback per key, so a re-render never detaches and re-attaches an item's view. */
+  const itemRefs = useRef(new Map<string, (view: HostView | null) => void>());
+  /** The list's top inside the outer view (a host margin moves it): content offsets start there. */
+  const listTop = useRef(0);
+  /** The placed item and the room its place still lacks, or null (the shared arithmetic's room). */
+  const room = useRef<TranscriptRoom | null>(null);
+  /** The spacer's height, rendered. */
+  const [roomPx, setRoomPx] = useState(0);
+  /**
+   * A placement waiting for its room to be laid out: the scroll goes once the content covers the
+   * place, never sooner, since a scroll before the content grows is clamped short (on Android a
+   * view command can run ahead of the same commit's layout).
+   */
+  const pendingPlace = useRef<PendingPlace | null>(null);
+
+  const itemRef = (key: string): ((view: HostView | null) => void) => {
+    let ref = itemRefs.current.get(key);
+    if (ref === undefined) {
+      ref = (view) => {
+        if (view !== null) {
+          itemViews.current.set(key, view);
+          return;
+        }
+        itemViews.current.delete(key);
+        itemRefs.current.delete(key);
+      };
+      itemRefs.current.set(key, ref);
+    }
+    return ref;
+  };
+
+  /**
+   * Content, panel or plan changed. The place is re-read off the placed item where it is now, and
+   * the room becomes what that place still lacks. It only ever shrinks (content growing into it);
+   * content shrinking or the panel growing never grows it. It is gone at 0, and when the item no
+   * longer renders. A placement waiting on its room scrolls once the content covers the place.
+   */
+  const fitRoom = (): void => {
+    const held = room.current;
+    if (held === null) return;
+    // An item that left the plan, or the window, no longer renders: its view is gone, so no place.
+    const place = placeOf(
+      { frame: frame.current, spacer: spacer.current, listTop: listTop.current, viewportHeight: geometry.current.viewport },
+      itemViews.current.get(held.key),
+      held.align,
+      held.offset,
+    );
+    holdRoom(room, pendingPlace, setRoomPx, nextRoom(held, { kind: "refit", shortfall: place?.shortfall ?? null }));
+    if (room.current === null) return;
+    const pending = pendingPlace.current;
+    const { content, viewport } = geometry.current;
+    if (pending === null || place === null || content === null || viewport === null) return;
+    if (content < place.target + viewport) return;
+    pendingPlace.current = null;
+    listRef.current?.scrollToOffset({ offset: place.target, animated: pending.animated });
+  };
+
   /** Report the tail entering or leaving the viewport, once per change, and place the jump chip. */
   const refresh = (): void => {
     const distance = distanceFromEnd(geometry.current, renderRef.current.inverted);
@@ -266,6 +451,31 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
     // Under "off", reaching the end by hand never starts following (only a go-to-end does);
     // dragging away from it stops following.
     if (dragging.current && distance !== null && distance >= AT_END_THRESHOLD_PX) pinned.current = false;
+    // guuey#2850: the reader dragged up until releasing the room moves nothing in view (it is
+    // wholly below the view): it is released, so the end they come back to is the content's own.
+    // The scroll height is read as the content's measured end plus the room held, never off this
+    // event's contentSize, which may predate the spacer's latest height.
+    const held = room.current;
+    const contentEnd =
+      held !== null && dragging.current
+        ? bareEnd({
+            frame: frame.current,
+            spacer: spacer.current,
+            listTop: listTop.current,
+            viewportHeight: geometry.current.viewport,
+          })
+        : null;
+    if (held !== null && contentEnd !== null) {
+      holdRoom(
+        room,
+        pendingPlace,
+        setRoomPx,
+        nextRoom(held, {
+          kind: "reader-scroll",
+          scroll: { scrollTop: contentOffset.y, scrollHeight: contentEnd + held.px, viewportHeight: layoutMeasurement.height },
+        }),
+      );
+    }
     refresh();
     hostOnScroll?.(e);
   };
@@ -273,6 +483,7 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
   const onContentSizeChange = (_width: number, height: number): void => {
     geometry.current = { ...geometry.current, content: height };
     settleFlip();
+    fitRoom();
     // Under "off", content growth moves the list only while following a go-to-end.
     if (renderRef.current.followPolicy === "off" && pinned.current) {
       listRef.current?.scrollToEnd({ animated: false });
@@ -281,14 +492,18 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
   };
 
   const onLayout = (e: LayoutChangeEvent): void => {
+    listTop.current = e.nativeEvent.layout.y;
     geometry.current = { ...geometry.current, viewport: e.nativeEvent.layout.height };
     settleFlip();
+    fitRoom();
     refresh();
   };
 
   const goToEnd = (animated: boolean): void => {
     const list = listRef.current;
     dragging.current = false;
+    // The end is the content's own end: no room is kept below it.
+    holdRoom(room, pendingPlace, setRoomPx, nextRoom(room.current, { kind: "end" }));
     if (renderRef.current.followPolicy === "off") pinned.current = true;
     setShowJump(false);
     if (list === null) return;
@@ -308,6 +523,8 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
     appliedPolicy.current = followPolicy;
     pinned.current = false;
     dragging.current = false;
+    // guuey#2850: a room belongs to a place under "off"; the flip carries the distance instead.
+    holdRoom(room, pendingPlace, setRoomPx, nextRoom(room.current, { kind: "end" }));
     // A flip still waiting for the measure keeps the orientation it started from.
     reanchor(pendingFlip.current?.wasInverted ?? wasInverted);
   }, [followPolicy, inverted]);
@@ -317,6 +534,11 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
   useEffect(() => {
     refresh();
   }, []);
+
+  // guuey#2850: a new plan may have dropped the placed item, or moved it: refit after the commit.
+  useLayoutEffect(() => {
+    fitRoom();
+  }, [data]);
 
   // The handle is built ONCE (stable for a callback ref); it reads the render through refs.
   useImperativeHandle(
@@ -328,7 +550,40 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
         const index = items.findIndex((item) => item.key === key);
         if (list === null || index < 0) return false;
         const offset = opts.offset ?? 0;
-        const top = (opts.align ?? "top") === "top";
+        const align = opts.align ?? "top";
+        const animated = opts.behavior === "smooth" && !still;
+        // guuey#2850: under "off", a place read off the layout gets the room it lacks below.
+        const place = isInverted
+          ? null
+          : placeOf(
+              {
+                frame: frame.current,
+                spacer: spacer.current,
+                listTop: listTop.current,
+                viewportHeight: geometry.current.viewport,
+              },
+              itemViews.current.get(key),
+              align,
+              offset,
+            );
+        if (place !== null) {
+          // The host placed the view: following stops until it asks for the end again.
+          pinned.current = false;
+          dragging.current = false;
+          pendingPlace.current = null;
+          const reserved = reserveRoom(key, align, offset, place.shortfall);
+          holdRoom(room, pendingPlace, setRoomPx, reserved);
+          const { content, viewport } = geometry.current;
+          if (reserved === null || (content !== null && viewport !== null && content >= place.target + viewport)) {
+            // Reachable as it is, or the room already rendered covers it: go now (a larger room
+            // rendered is trimmed to what is lacked).
+            list.scrollToOffset({ offset: place.target, animated });
+          } else {
+            pendingPlace.current = { animated };
+          }
+          return true;
+        }
+        const top = align === "top";
         // An inverted list's visual top is the item's far edge: the alignment flips with it.
         const atFarEdge = top !== isInverted;
         indexFailed.current = false;
@@ -336,7 +591,7 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
           index,
           viewPosition: atFarEdge ? 0 : 1,
           viewOffset: atFarEdge ? offset : -offset,
-          animated: opts.behavior === "smooth" && !still,
+          animated,
         });
         // An item outside the measured window has no known place: the list declined, and the
         // transcript does not guess one.
@@ -344,6 +599,8 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
         // The host placed the view: following stops until it asks for the end again.
         pinned.current = false;
         dragging.current = false;
+        // A room held for an earlier place is not this place's.
+        holdRoom(room, pendingPlace, setRoomPx, null);
         return true;
       },
       scrollToEnd(opts = {}) {
@@ -375,8 +632,24 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
       </View>
     ) : null;
 
+  // guuey#2850: under "off" the footer ends in the room's spacer, 0 high at rest. Hidden from
+  // assistive tech on both platforms, and never touchable.
+  const footer = (
+    <View>
+      {tail}
+      <View
+        ref={spacer}
+        collapsable={false}
+        pointerEvents="none"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        style={{ height: roomPx }}
+      />
+    </View>
+  );
+
   return (
-    <View style={{ flex: 1, backgroundColor: tokens.palette.canvas }}>
+    <View ref={frame} style={{ flex: 1, backgroundColor: tokens.palette.canvas }}>
       <FlatList
         ref={listRef}
         {...listProps}
@@ -399,11 +672,11 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
         data={data}
         keyExtractor={(item) => item.key}
         renderItem={({ item }) => (
-          <View style={{ paddingVertical: tokens.gap / 2 }}>
+          <View ref={itemRef(item.key)} style={{ paddingVertical: tokens.gap / 2 }}>
             {renderNativeItem(item, resolvedComponents, ctx)}
           </View>
         )}
-        {...(followPolicy === "tail" ? { ListHeaderComponent: tail } : { ListFooterComponent: tail })}
+        {...(followPolicy === "tail" ? { ListHeaderComponent: tail } : { ListFooterComponent: footer })}
       />
       {showJump && jumpToLatest ? (
         <Pressable
