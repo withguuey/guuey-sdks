@@ -142,6 +142,11 @@ export const AGENT_ERROR_CODES = {
    */
   RELAY_INTERRUPTED: "RELAY_INTERRUPTED",
   /**
+   * The agent cannot take conversations right now: the platform has nowhere to run it. A 503 before the stream,
+   * sometimes with `Retry-After`. Not retried automatically; the builder or the platform fixes it, not the reader.
+   */
+  EXECUTION_UNPLACED: "EXECUTION_UNPLACED",
+  /**
    * A resume (an invoke carrying `resume: { answers }`) could not run: the
    * paused request it answers is gone, expired, superseded, already answered,
    * or the agent could not continue it. Nothing the paused run would have
