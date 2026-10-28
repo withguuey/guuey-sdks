@@ -54,6 +54,13 @@ export const ThemePaletteV1 = z.strictObject({
   success: ColorValue.optional(),
   warning: ColorValue.optional(),
   info: ColorValue.optional(),
+  /**
+   * The widget's one-bit strokes (guuey#2611): the streaming caret and the
+   * focus ring. OPTIONAL: unstated, the kit derives it (the accent when the
+   * accent stands out on the canvas, else the muted ink); stated, it is
+   * emitted as written. It never reaches generated cards.
+   */
+  cue: ColorValue.optional(),
 });
 export type ThemePaletteV1 = z.infer<typeof ThemePaletteV1>;
 
