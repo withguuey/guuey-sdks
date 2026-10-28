@@ -103,12 +103,26 @@ describe("the busy notice while the saturation retry waits", () => {
   });
 
   it("counts down to the next try from the pod's Retry-After (guuey#2608)", async () => {
-    const invoke = stubInvoke(["saturated-12s"]);
-    send();
-    await waitFor(() => expect(invoke.calls()).toBe(1));
-    await waitFor(() =>
-      expect(screen.getByRole("status").textContent).toMatch(/^Busy right now\. Retrying in 1[12]s \(1\/4\)…$/),
-    );
+    // Fake timers that still advance with the clock: `waitFor` runs as usual,
+    // and the test can step past the 12 s wait to prove nothing fires late.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const invoke = stubInvoke(["saturated-12s"]);
+      send();
+      await waitFor(() => expect(invoke.calls()).toBe(1));
+      await waitFor(() =>
+        expect(screen.getByRole("status").textContent).toMatch(/^Busy right now\. Retrying in 1[12]s \(1\/4\)…$/),
+      );
+      // End the turn here: Stop aborts the 12 s wait, so its retry never
+      // fires a fetch into a later test's stub. Past the wait, still one call.
+      fireEvent.click(screen.getByRole("button", { name: defaultChatStrings.stop }));
+      await waitFor(() => expect(screen.queryByRole("button", { name: defaultChatStrings.stop })).toBeNull());
+      expect(screen.queryByText(/Busy right now/)).toBeNull();
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(invoke.calls()).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("a builder's strings.saturationRetrying wins", async () => {

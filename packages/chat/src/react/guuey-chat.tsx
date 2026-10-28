@@ -1462,11 +1462,11 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
 
   const handleRetry = useCallback(
     (item: UserMessageItem) => {
-      // The one retry rule (`retrySendArgs`): an action turn goes again with
-      // its words beside the directive (guuey#2031), a turn without words
-      // goes again without words (guuey#2549). guuey#2608: a failed row's
-      // re-send takes its place (`retryInPlaceArgs`), so the turn is drawn
-      // once, never beside its old "Couldn't send" row.
+      // The kit's retry rule (`retryInPlaceArgs`): the turn goes again as it
+      // was (an action turn with its words beside the directive, guuey#2031;
+      // a turn without words without words, guuey#2549), in the failed row's
+      // place, so it is drawn once, never beside its old "Couldn't send" row
+      // (guuey#2608).
       void invoke.send(...retryInPlaceArgs(item)).catch(() => {
         // Same contract as submit: the hook owns failure surfacing.
       });

@@ -1,4 +1,4 @@
-/** guuey#2549 — the one way a failed user turn is sent again (guuey#2608: in its row's place). */
+/** guuey#2549 — what a failed turn was; guuey#2608 — the retry rule re-sends it in its row's place. */
 import { describe, expect, it } from "vitest";
 import { retryInPlaceArgs, retrySendArgs } from "./retry.js";
 import type { UserMessageItem } from "./types.js";

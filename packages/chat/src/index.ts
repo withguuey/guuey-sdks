@@ -14,8 +14,8 @@ export {
   newestViewKey,
   planTranscript,
 } from "./plan.js";
-// guuey#2549: the one way a failed user turn is sent again; guuey#2608: the
-// same re-send taking the failed row's place.
+// The retry rule a host's Retry calls is `retryInPlaceArgs` (guuey#2608): the
+// turn's own arguments (`retrySendArgs`, guuey#2549) in the failed row's place.
 export { retryInPlaceArgs, retrySendArgs } from "./retry.js";
 export {
   calmPolicy,
