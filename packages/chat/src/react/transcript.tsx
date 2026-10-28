@@ -42,12 +42,60 @@ import {
 import { themeCssVars, type ThemeMode } from "./theme-css.js";
 import { facesCss, useHostFaces } from "./faces.js";
 import { PARTS } from "./parts.js";
-import { followTarget, planTurnAnchor } from "./scroll-anchor.js";
+import { followTarget, planTurnAnchor, type TurnAnchorPlan } from "./scroll-anchor.js";
 import type { TranscriptFollow, TranscriptScrollHandle, TranscriptScrollProps } from "../transcript-scroll.js";
 import type { DisplayItem } from "../types.js";
 
 /** How close to the bottom (px) still counts as pinned. */
 const PIN_THRESHOLD_PX = 48;
+
+/*
+ * The scroll helpers below read nothing from a render: they take the elements and the anchor
+ * state as arguments. So the component's own handlers capture only refs and state setters, and
+ * the effects and the handle built once around them never hold a stale render.
+ */
+
+const reducedMotion = (): boolean =>
+  typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const scrollToBottom = (el: HTMLDivElement, smooth: boolean): void => {
+  if (typeof el.scrollTo === "function") {
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth && !reducedMotion() ? "smooth" : "auto" });
+  } else {
+    // Environments without Element.scrollTo (jsdom; ancient WebViews).
+    el.scrollTop = el.scrollHeight;
+  }
+};
+
+const isAtEnd = (el: HTMLDivElement): boolean => el.scrollHeight - el.scrollTop - el.clientHeight < PIN_THRESHOLD_PX;
+
+/**
+ * The anchor card's top in scroll-content coordinates, or null (no card this turn, the hold
+ * released, or the DOM disagrees with the plan). The kit's own `view` component renders one
+ * `.guuey-chat-view` per view item as a direct child of the column; a custom `view` component, or
+ * any other mismatch, keeps plain stick-to-bottom rather than guessing.
+ */
+const anchorTop = (
+  anchor: TurnAnchorPlan,
+  releasedTurn: string | null,
+  el: HTMLDivElement,
+  col: HTMLDivElement,
+): number | null => {
+  if (anchor.anchorOrdinal === null || releasedTurn === anchor.turnKey) return null;
+  const views = Array.from(col.children).filter((c) => c.classList.contains("guuey-chat-view"));
+  if (views.length !== anchor.viewCount) return null;
+  const card = views[anchor.anchorOrdinal];
+  if (card === undefined) return null;
+  return card.getBoundingClientRect().top - el.getBoundingClientRect().top - el.clientTop + el.scrollTop;
+};
+
+/**
+ * guuey#2554 (cto STOP-1): items the kit's OWN default slot renders as no element. The default
+ * `tool` slot draws nothing for an attributed call (calm folds it into its view row's chrome,
+ * `components.tsx` `DefaultTool`). A host's own `tool` component is counted as one element.
+ */
+const rendersNothing = (item: DisplayItem, components: TranscriptComponents): boolean =>
+  item.kind === "tool" && item.attribution && components.tool === defaultTranscriptComponents.tool;
 
 // guuey#2554: the scroll API's types live in ONE shared module every transcript component
 // implements (NativeTranscript next, guuey#2569); re-exported here for `@guuey/chat/react`.
@@ -198,47 +246,14 @@ export function Transcript(props: TranscriptProps): ReactNode {
   /** The scrollTop of our own last follow, so `onScroll` can tell it from the viewer's. */
   const autoTop = useRef<number | null>(null);
 
-  const reducedMotion = (): boolean =>
-    typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  const scrollToBottom = (smooth: boolean): void => {
-    const el = scroller.current;
-    if (el === null) return;
-    if (typeof el.scrollTo === "function") {
-      el.scrollTo({ top: el.scrollHeight, behavior: smooth && !reducedMotion() ? "smooth" : "auto" });
-    } else {
-      // Environments without Element.scrollTo (jsdom; ancient WebViews).
-      el.scrollTop = el.scrollHeight;
-    }
-  };
-
-  /**
-   * The anchor card's top in scroll-content coordinates, or null (no card
-   * this turn, the hold released, or the DOM disagrees with the plan). The
-   * kit's own `view` component renders one `.guuey-chat-view` per view item
-   * as a direct child of the column; a custom `view` component, or any
-   * other mismatch, keeps plain stick-to-bottom rather than guessing.
-   */
-  const anchorTop = (): number | null => {
-    const anchor = anchorPlan.current;
-    if (anchor.anchorOrdinal === null || releasedTurn.current === anchor.turnKey) return null;
-    const el = scroller.current;
-    const col = column.current;
-    if (el === null || col === null) return null;
-    const views = Array.from(col.children).filter((c) => c.classList.contains("guuey-chat-view"));
-    if (views.length !== anchor.viewCount) return null;
-    const card = views[anchor.anchorOrdinal];
-    if (card === undefined) return null;
-    return card.getBoundingClientRect().top - el.getBoundingClientRect().top - el.clientTop + el.scrollTop;
-  };
-
   /** Follow: to the bottom, or to the turn's card when the bottom would carry it out of view. */
   const follow = (): void => {
     const el = scroller.current;
     if (el === null) return;
+    const col = column.current;
     const target = followTarget(
       { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight },
-      anchorTop(),
+      col === null ? null : anchorTop(anchorPlan.current, releasedTurn.current, el, col),
     );
     holding.current = target.held;
     // A held follow leaves content below: say so (the scroll event may not
@@ -252,9 +267,6 @@ export function Transcript(props: TranscriptProps): ReactNode {
       el.scrollTop = target.top;
     }
   };
-
-  const isAtEnd = (el: HTMLDivElement): boolean =>
-    el.scrollHeight - el.scrollTop - el.clientHeight < PIN_THRESHOLD_PX;
 
   /** guuey#2554: report the tail entering or leaving the viewport, once per change. */
   const reportAtEnd = (): void => {
@@ -355,21 +367,14 @@ export function Transcript(props: TranscriptProps): ReactNode {
     releasedTurn.current = anchorPlan.current.turnKey;
     holding.current = false;
     setShowJump(false);
-    scrollToBottom(smooth);
+    const el = scroller.current;
+    if (el !== null) scrollToBottom(el, smooth);
   };
 
   // guuey#2554 (cto MED-1): the handle is built ONCE (stable for a callback ref), so it reads the
   // render's values through refs, as the observer and the scroll handler do.
   const renderRef = useRef({ visible, hidden, plan, components: resolvedComponents });
   renderRef.current = { visible, hidden, plan, components: resolvedComponents };
-
-  /**
-   * guuey#2554 (cto STOP-1): items the kit's OWN default slot renders as no element. The default
-   * `tool` slot draws nothing for an attributed call (calm folds it into its view row's chrome,
-   * `components.tsx` `DefaultTool`). A host's own `tool` component is counted as one element.
-   */
-  const rendersNothing = (item: DisplayItem, components: TranscriptComponents): boolean =>
-    item.kind === "tool" && item.attribution && components.tool === defaultTranscriptComponents.tool;
 
   /**
    * The rendered element of a visible item, or null. The column's children are, in order: the

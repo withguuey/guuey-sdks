@@ -292,9 +292,29 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
 
   // The attachment is keyed to the mounted DOCUMENT, not to every render's
   // fresh callback identities — host config rides a ref so the effect's
-  // dependency list is honestly just the document identity.
-  const latest = useRef({ hostConfig, onPhaseChange, dangerouslyAddSandboxFlags, autoResize, maxHeight });
-  latest.current = { hostConfig, onPhaseChange, dangerouslyAddSandboxFlags, autoResize, maxHeight };
+  // dependency list is honestly just the document identity. The mount's
+  // declared CSP and its read door's advertisement ride it too: both are read
+  // when the document attaches, and a fresh mount object for the same
+  // document (a parent re-resolving its mounts) must not re-attach the view.
+  const { csp: mountCsp, admittedRequestMeta: mountAdmittedRequestMeta } = mount;
+  const latest = useRef({
+    hostConfig,
+    onPhaseChange,
+    dangerouslyAddSandboxFlags,
+    autoResize,
+    maxHeight,
+    mountCsp,
+    mountAdmittedRequestMeta,
+  });
+  latest.current = {
+    hostConfig,
+    onPhaseChange,
+    dangerouslyAddSandboxFlags,
+    autoResize,
+    maxHeight,
+    mountCsp,
+    mountAdmittedRequestMeta,
+  };
 
   useEffect(() => {
     // Keyed to the same identity the frame is (the resource uri): a new
@@ -314,10 +334,10 @@ export function GuueyView(props: GuueyViewProps): ReactNode {
     // tripwire's default filter — the declaration finally doing host-side
     // work. An explicit `cspOrigins` prop always wins; both absent keeps
     // the tripwire inert exactly as before.
-    const cspOrigins = latest.current.hostConfig.cspOrigins ?? mount.csp;
+    const cspOrigins = latest.current.hostConfig.cspOrigins ?? latest.current.mountCsp;
     // guuey#1849: the read door's advertisement, as old as this read (a card
     // mounted before its door rolled advertises what that door admitted).
-    const admittedRequestMeta = mount.admittedRequestMeta;
+    const admittedRequestMeta = latest.current.mountAdmittedRequestMeta;
     const detachHost = attachViewHost(frame, {
       ...latest.current.hostConfig,
       ...(cspOrigins !== undefined ? { cspOrigins } : {}),

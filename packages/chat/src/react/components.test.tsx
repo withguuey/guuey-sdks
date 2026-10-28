@@ -353,6 +353,49 @@ describe("DefaultView — per-mount viewProps + autoResize (guuey#135 kit-refine
     expect(sent[2]?.params).toEqual({ content: [{ type: "text", text: "ok" }], structuredContent: { temps: [21, 23] } });
   });
 
+  it("the mount's read-door advertisement reaches the view host: a tools/call keeps only the advertised _meta keys", async () => {
+    const item: ViewMountItem = {
+      ...viewItem(),
+      mount: {
+        channel: "inline",
+        resource: { uri: "ui://tool/card", mimeType: "text/html", text: "<p>card</p>" },
+        admittedRequestMeta: ["ai.ggui/view"],
+      },
+    };
+    const calls: unknown[] = [];
+    const { container } = render(
+      <DefaultView
+        item={item}
+        ctx={ctx({
+          viewProps: {
+            onCallTool: (request) => {
+              calls.push(request);
+              return Promise.resolve({ content: [] });
+            },
+          },
+        })}
+      />,
+    );
+    const source = container.querySelector("iframe")!.contentWindow;
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: {
+          jsonrpc: "2.0",
+          id: 9,
+          method: "tools/call",
+          params: { name: "ggui_runtime_submit_action", _meta: { "ai.ggui/view": "t", "x.other/key": "y" } },
+        },
+        source,
+      }),
+    );
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toEqual({
+      resourceUri: "ui://tool/card",
+      name: "ggui_runtime_submit_action",
+      requestMeta: { "ai.ggui/view": "t" },
+    });
+  });
+
   it("the viewProps FUNCTION form resolves against the item and its resolved mount", () => {
     const seen: Array<{ key: string; uri: string }> = [];
     render(
@@ -615,6 +658,25 @@ describe("DefaultView — per-mount viewProps + autoResize (guuey#135 kit-refine
       expect(floorOf(frame)).toBe(FLOOR);
       elapse(1);
       expect(floorOf(frame)).toMatch(RELEASED);
+    });
+
+    it("a fresh mount object for the SAME document (new csp and request-meta identities) keeps the attached view: its applied height stands", () => {
+      const withDeclarations = (): ViewMountItem => ({
+        ...viewItem(),
+        mount: {
+          channel: "inline",
+          resource: { uri: "ui://tool/card", mimeType: "text/html", text: "<p>card</p>" },
+          csp: { connectDomains: ["https://api.example.com"] },
+          admittedRequestMeta: ["guuey/tap"],
+        },
+      });
+      const { container, rerender } = mountAutoResize(withDeclarations());
+      report(container.querySelector("iframe")!, 152);
+      expect(container.querySelector("iframe")!.style.height).toBe("152px");
+
+      // A parent that re-resolves its mounts hands the same document with new object identities.
+      rerender(<DefaultView item={withDeclarations()} ctx={ctx({ viewProps: { autoResize: true } })} />);
+      expect(container.querySelector("iframe")!.style.height).toBe("152px");
     });
 
     it("unmounting before the height settles leaves no settle timer behind", () => {

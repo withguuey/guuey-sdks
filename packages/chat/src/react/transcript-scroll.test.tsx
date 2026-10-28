@@ -19,6 +19,8 @@ let content = 2000;
 const restore: Array<() => void> = [];
 /** The live ResizeObserver callbacks, so a test can fire "content resized". */
 let resizeCallbacks: Array<() => void> = [];
+/** How many times a ResizeObserver started observing, across the test. */
+let observeCount = 0;
 
 function planOf(messageCount: number) {
   const inputs: TranscriptInputs = {
@@ -82,6 +84,7 @@ function mockLayout(): void {
 
 beforeEach(() => {
   resizeCallbacks = [];
+  observeCount = 0;
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -90,6 +93,7 @@ beforeEach(() => {
         this.cb = cb;
       }
       observe(): void {
+        observeCount += 1;
         resizeCallbacks.push(this.cb);
       }
       disconnect(): void {
@@ -363,6 +367,18 @@ describe("cto read fixes (guuey#2554)", () => {
     rerender(<Transcript plan={{ ...plan }} handleRef={cb} {...noopCtx} />);
     expect(calls.filter((h) => h !== null)).toHaveLength(1);
     expect(calls.filter((h) => h === null)).toHaveLength(0);
+  });
+
+  it("the content observer is attached once: re-renders never re-observe the column, and a resize still follows", () => {
+    const plan = planOf(4);
+    const { container, rerender } = render(<Transcript plan={plan} {...noopCtx} />);
+    rerender(<Transcript plan={{ ...plan }} {...noopCtx} />);
+    rerender(<Transcript plan={{ ...plan }} {...noopCtx} />);
+    expect(observeCount).toBe(1);
+    // The observer built at mount still follows growth seen after those renders.
+    content = 3000;
+    resize();
+    expect(scrollerOf(container).scrollTop).toBe(content - PANEL);
   });
 
   it('MED-2: switching follow from "tail" to "off" at runtime stops following at once', () => {

@@ -71,6 +71,24 @@ const JUMP_THRESHOLD_PX = 160;
 /** How close to the end (px) still counts as at the end — the web transcript's threshold. */
 const AT_END_THRESHOLD_PX = 48;
 
+/** The list's last known geometry; the content and viewport heights are unknown until measured. */
+interface ListGeometry {
+  offset: number;
+  content: number | null;
+  viewport: number | null;
+}
+
+/**
+ * Pixels between the viewport and the end, or null while the list is unmeasured. It reads no
+ * render, so the handlers that call it capture only refs and setters.
+ */
+const distanceFromEnd = ({ offset, content, viewport }: ListGeometry, inverted: boolean): number | null => {
+  // Inverted coordinates: offset 0 IS the newest turn.
+  if (inverted) return offset;
+  if (content === null || viewport === null) return null;
+  return content - offset - viewport;
+};
+
 /** The native transcript's handle — the shared core plus the list. */
 export interface NativeTranscriptHandle extends TranscriptScrollHandle {
   /** The FlatList, for anything the handle does not cover. */
@@ -183,7 +201,7 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
   const renderRef = useRef({ data, inverted, followPolicy, reduceMotion });
   renderRef.current = { data, inverted, followPolicy, reduceMotion };
   /** The list's last known geometry; the content and viewport heights are unknown until measured. */
-  const geometry = useRef<{ offset: number; content: number | null; viewport: number | null }>({
+  const geometry = useRef<ListGeometry>({
     offset: 0,
     content: null,
     viewport: null,
@@ -201,18 +219,9 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
   /** An orientation flip made before the list was measured: it re-anchors once the list is. */
   const pendingFlip = useRef<{ wasInverted: boolean } | null>(null);
 
-  /** Pixels between the viewport and the end, or null while the list is unmeasured. */
-  const distanceFromEnd = (): number | null => {
-    const { offset, content, viewport } = geometry.current;
-    // Inverted coordinates: offset 0 IS the newest turn.
-    if (renderRef.current.inverted) return offset;
-    if (content === null || viewport === null) return null;
-    return content - offset - viewport;
-  };
-
   /** Report the tail entering or leaving the viewport, once per change, and place the jump chip. */
   const refresh = (): void => {
-    const distance = distanceFromEnd();
+    const distance = distanceFromEnd(geometry.current, renderRef.current.inverted);
     if (distance === null) return;
     setShowJump(distance > JUMP_THRESHOLD_PX);
     const cb = onAtEndRef.current;
@@ -253,7 +262,7 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
     geometry.current = { offset: contentOffset.y, content: contentSize.height, viewport: layoutMeasurement.height };
     settleFlip();
-    const distance = distanceFromEnd();
+    const distance = distanceFromEnd(geometry.current, renderRef.current.inverted);
     // Under "off", reaching the end by hand never starts following (only a go-to-end does);
     // dragging away from it stops following.
     if (dragging.current && distance !== null && distance >= AT_END_THRESHOLD_PX) pinned.current = false;

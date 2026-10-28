@@ -621,7 +621,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     return () => {
       cancelled = true;
     };
-  }, [appId]);
+  }, [appId, setThreadClosed, setAcceptedInputKinds]);
 
   const abort = useCallback(() => {
     abortRef.current?.abort();
@@ -654,7 +654,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     setAborted(false);
     setAdopted(false);
     setSendStates({});
-  }, [appId]);
+  }, [appId, setThreadClosed]);
 
   const clearProfileLinkRequest = useCallback(() => {
     setProfileLinkRequest(null);
@@ -672,6 +672,11 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
   // NEXT turn carries the new mode.
   const modeRef = useRef(opts.mode);
   modeRef.current = opts.mode;
+  // Same live-ref discipline: the advertised capabilities are the ones the
+  // consumer passes NOW (a host whose view sink comes or goes mid-session
+  // advertises the change on the next turn), and `send` keeps its identity.
+  const capabilitiesRef = useRef(opts.capabilities);
+  capabilitiesRef.current = opts.capabilities;
 
   const send = useCallback(
     async (input: string, sendOpts?: SendOptions) => {
@@ -987,7 +992,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         // explicit option wins; else a block-preserving consumer advertises
         // the hitl grant-mode card it can render, and a text-only one nothing.
         const capabilities =
-          opts.capabilities ??
+          capabilitiesRef.current ??
           (preserveBlocksRef.current ? DEFAULT_BLOCK_PRESERVING_CAPABILITIES : undefined);
         // The one wire shape, built by the pure builder so it has a name, a
         // test and a fixture (guuey#1213 — the rolling-release rule). The
@@ -1174,7 +1179,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         }
       }
     },
-    [endpointUrl, appId, status, opts.signal],
+    [endpointUrl, appId, status, opts.signal, setThreadClosed, setAcceptedInputKinds],
   );
 
   const newClientMessageId = useCallback((): string => adaptersRef.current.generateId(), []);
