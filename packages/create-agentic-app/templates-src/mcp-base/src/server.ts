@@ -184,9 +184,23 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
   }
 });
 
-httpServer.listen(PORT, () => {
-  console.log(`${SERVER_NAME} listening on :${PORT}`);
-});
+/**
+ * Where to listen. When the platform runs this server alongside your agent
+ * (a `"kind": "colocated"` server in guuey.json), it names a unix socket in
+ * `GUUEY_MCP_SOCKET`: serve HTTP on that socket and nothing else. Never bind
+ * both the socket and PORT. Everywhere else (`guuey mcp deploy`, `pnpm dev`)
+ * the server listens on PORT.
+ */
+const MCP_SOCKET = process.env.GUUEY_MCP_SOCKET;
+if (MCP_SOCKET !== undefined && MCP_SOCKET !== "") {
+  httpServer.listen(MCP_SOCKET, () => {
+    console.log(`${SERVER_NAME} listening on ${MCP_SOCKET}`);
+  });
+} else {
+  httpServer.listen(PORT, () => {
+    console.log(`${SERVER_NAME} listening on :${PORT}`);
+  });
+}
 
 function shutdown(signal: string): void {
   console.log(`${signal} received — shutting down`);

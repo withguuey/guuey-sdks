@@ -16,7 +16,9 @@
  * Runtime contract when deployed via `guuey mcp deploy` (see mcps/todo's
  * Dockerfile): the platform injects `PORT=8080` and probes `GET /health`
  * for both liveness and readiness. Locally, `pnpm dev` runs this on
- * `PORT=6782` (see ../../scripts/dev.mjs).
+ * `PORT=6782` (see ../../scripts/dev.mjs). Run alongside the agent, it
+ * listens on the unix socket named by `GUUEY_MCP_SOCKET` instead (see the
+ * listen call at the bottom).
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
@@ -188,9 +190,23 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
   }
 });
 
-httpServer.listen(PORT, () => {
-  console.log(`todo-mcp listening on :${PORT}`);
-});
+/**
+ * Where to listen. When the platform runs this server alongside your agent
+ * (a `"kind": "colocated"` server in guuey.json), it names a unix socket in
+ * `GUUEY_MCP_SOCKET`: serve HTTP on that socket and nothing else. Never bind
+ * both the socket and PORT. Everywhere else (`guuey mcp deploy`, `pnpm dev`)
+ * the server listens on PORT.
+ */
+const MCP_SOCKET = process.env.GUUEY_MCP_SOCKET;
+if (MCP_SOCKET !== undefined && MCP_SOCKET !== "") {
+  httpServer.listen(MCP_SOCKET, () => {
+    console.log(`todo-mcp listening on ${MCP_SOCKET}`);
+  });
+} else {
+  httpServer.listen(PORT, () => {
+    console.log(`todo-mcp listening on :${PORT}`);
+  });
+}
 
 function shutdown(signal: string): void {
   console.log(`${signal} received — shutting down`);
