@@ -12,7 +12,7 @@
 import { describe, it, expect } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useAgentInvoke } from "./useAgentInvoke.js";
-import { AgentResponseError } from "./errors.js";
+import { AgentResponseError, WAKE_TIMED_OUT_MESSAGE, WakeTimedOutError } from "./errors.js";
 import { CLIENT_ERROR_CODES } from "./error-codes.js";
 import type { AgentInvokeAdapters, InvokeRequest, InvokeTransport } from "./types.js";
 
@@ -149,18 +149,28 @@ describe("useAgentInvoke errorCode", () => {
 });
 
 describe("guuey#2453: a wake that ran out of budget is its own client code", () => {
-  /** What `withColdStartRetry` throws when the wake budget is spent: the latest waking refusal. */
-  const exhaustedWake = () => new AgentResponseError("agent responded 503", 503, undefined, 2, true);
+  /** The latest waking refusal: a code-less 503 carrying the waking marker. */
+  const wakingRefusal = () => new AgentResponseError("agent responded 503", 503, undefined, 2, true);
+  /** What `withColdStartRetry` throws when the wake budget is spent. */
+  const exhaustedWake = () => new WakeTimedOutError(wakingRefusal());
 
-  it("names it WAKE_TIMED_OUT, with an SDK sentence in place of the bare status line", async () => {
+  it("reads WAKE_TIMED_OUT and the SDK's one sentence off the typed error", async () => {
     const { result, send } = mountWith(throwing(exhaustedWake()));
     await send();
     expect(CLIENT_ERROR_CODES.WAKE_TIMED_OUT).toBe("WAKE_TIMED_OUT");
     expect(result.current.errorCode).toBe(CLIENT_ERROR_CODES.WAKE_TIMED_OUT);
-    expect(result.current.error).toBe("The agent did not wake up in time.");
+    expect(result.current.error).toBe(WAKE_TIMED_OUT_MESSAGE);
     expect(result.current.status).toBe("ready");
     // Refused before admission: the send itself failed, so the row offers its retry.
     expect(Object.values(result.current.sendStates)).toEqual(["failed"]);
+  });
+
+  it("a single waking refusal with no budget behind it (coldStartRetry: false) is a plain code-less 503, never a timed-out wake", async () => {
+    // Nothing waited for it, so "did not wake up in time" would be false after 0 s.
+    const { result, send } = mountWith(throwing(wakingRefusal()));
+    await send();
+    expect(result.current.errorCode).toBeNull();
+    expect(result.current.error).toBe("agent responded 503");
   });
 
   it("a plain 503 without the waking marker keeps a null code and its own message", async () => {

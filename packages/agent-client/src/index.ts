@@ -61,7 +61,9 @@ export {
   agentResponseErrorFrom,
   isWakingRefusal,
   parseRetryAfterSeconds,
+  WAKE_TIMED_OUT_MESSAGE,
   WAKING_HEADER,
+  WakeTimedOutError,
 } from "./errors.js";
 // The pod's wire-code vocabulary, mirrored — branch on these instead of
 // re-typing the string literals (see the module docblock for the sync guard).

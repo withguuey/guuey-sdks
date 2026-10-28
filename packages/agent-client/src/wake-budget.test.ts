@@ -17,8 +17,14 @@ import {
   withColdStartRetry,
   type WakeWaitInfo,
 } from "./saturation-retry.js";
-import { AgentResponseError, WAKING_HEADER, isWakingRefusal } from "./errors.js";
-import { AGENT_ERROR_CODES } from "./error-codes.js";
+import {
+  AgentResponseError,
+  WAKE_TIMED_OUT_MESSAGE,
+  WAKING_HEADER,
+  WakeTimedOutError,
+  isWakingRefusal,
+} from "./errors.js";
+import { AGENT_ERROR_CODES, CLIENT_ERROR_CODES } from "./error-codes.js";
 import { STALL_RECOVERY_DEFAULTS } from "./useAgentInvoke.js";
 import { fetchStreamTransport } from "./transport.js";
 import type { InvokeRequest } from "./types.js";
@@ -171,22 +177,34 @@ describe("withColdStartRetry — the wake budget", () => {
     expect(waits).toEqual([2_000, 10_000, 10_000, 10_000, 10_000]);
   });
 
-  it("the end of the budget surfaces the last refusal, waking", async () => {
-    const s = scripted(Array.from({ length: 30 }, () => waking(15)));
+  it("the end of the budget throws a WakeTimedOutError: the client code, the one sentence, the last refusal's fields", async () => {
+    const answers = Array.from({ length: 30 }, () => waking(15));
+    const s = scripted(answers);
     const { sleep, waits } = clockSleep();
     const err = await rejection(withColdStartRetry(s.t, { sleep })(request()));
-    expect(isWakingRefusal(err)).toBe(true);
+    expect(err).toBeInstanceOf(WakeTimedOutError);
+    expect(err).toBeInstanceOf(AgentResponseError);
+    expect(err).toMatchObject({
+      code: CLIENT_ERROR_CODES.WAKE_TIMED_OUT,
+      message: WAKE_TIMED_OUT_MESSAGE,
+      status: 503,
+      retryAfterSeconds: 15,
+      waking: true,
+      refusal: answers[s.calls() - 1],
+    });
+    // A coded answer is never itself read as waking.
+    expect(isWakingRefusal(err)).toBe(false);
     expect(waits.reduce((a, b) => a + b, 0)).toBe(WAKE_BUDGET_MS);
     expect(s.calls()).toBe(waits.length + 1);
   });
 
-  it("the end of the budget after unmarked answers still surfaces a waking refusal", async () => {
+  it("the end of the budget after unmarked answers carries the last WAKING refusal", async () => {
     const last = waking(15);
     const s = scripted([last, ...Array.from({ length: 30 }, () => plain(15))]);
     const { sleep } = clockSleep();
     const err = await rejection(withColdStartRetry(s.t, { sleep })(request()));
-    expect(err).toBe(last);
-    expect(isWakingRefusal(err)).toBe(true);
+    expect(err).toBeInstanceOf(WakeTimedOutError);
+    expect(err instanceof WakeTimedOutError && err.refusal).toBe(last);
   });
 
   it("counts the cold-start waits before the marker against the budget: the budgets do not add up", async () => {
@@ -198,7 +216,7 @@ describe("withColdStartRetry — the wake budget", () => {
     const err = await rejection(
       withColdStartRetry(s.t, { sleep, onWakeWait: (i) => infos.push(i) })(request()),
     );
-    expect(isWakingRefusal(err)).toBe(true);
+    expect(err).toBeInstanceOf(WakeTimedOutError);
     expect(waits).toEqual([10_000, 10_000, 10_000, 15_000, 15_000, 15_000, 15_000]);
     expect(waits.reduce((a, b) => a + b, 0)).toBe(WAKE_BUDGET_MS);
     expect(infos[0]).toEqual({ elapsedMs: 30_000, budgetMs: WAKE_BUDGET_MS, attempt: 1 });
@@ -219,7 +237,7 @@ describe("withColdStartRetry — the wake budget", () => {
     const { sleep, waits } = clockSleep();
     const started = Date.now();
     const err = await rejection(withColdStartRetry(t, { sleep })(request()));
-    expect(isWakingRefusal(err)).toBe(true);
+    expect(err).toBeInstanceOf(WakeTimedOutError);
     expect(waits.every((w) => w >= 2_000)).toBe(true);
     expect(Date.now() - started).toBeLessThanOrEqual(WAKE_BUDGET_MS + 700);
     // 5 × (0.7 + 15) = 78.5 s, then 0.7 → 79.2 s: 10.8 s left, waited in full;

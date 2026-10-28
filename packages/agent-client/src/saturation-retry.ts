@@ -31,6 +31,7 @@ import {
   agentResponseErrorFrom,
   hasWakingMarker,
   isWakingRefusal,
+  WakeTimedOutError,
 } from "./errors.js";
 import type { InvokeRequest, InvokeTransport } from "./types.js";
 
@@ -372,8 +373,9 @@ function wakeBudget(budgetMs: number): WakeBudget {
  *   whatever the cold-start attempts say: the wrapper re-asks on each
  *   `Retry-After` (2–15 s), keeps waiting through an envelope-less 503
  *   without the marker, and stops on a coded answer, any other status or
- *   failure, success, or the end of the budget (which surfaces the latest
- *   waking refusal). `onWakeWait` fires before each wait.
+ *   failure, success, or the end of the budget, which throws a
+ *   {@link WakeTimedOutError} carrying the latest waking refusal (the one
+ *   error a timed-out wake reads as). `onWakeWait` fires before each wait.
  *
  * The budgets do not add up: {@link WAKE_BUDGET_MS} is counted from the
  * turn's start, so cold-start waits spent before the marker appeared come
@@ -414,7 +416,8 @@ export function withColdStartRetry(
         if (yielded) throw err;
         const step = wake.step(err);
         if (step.kind === "ended") throw err;
-        if (step.kind === "exhausted") throw step.refusal;
+        // The budget ran out: the one place a wake reads as timed out.
+        if (step.kind === "exhausted") throw new WakeTimedOutError(step.refusal);
         if (step.kind === "wait") {
           options.onWakeWait?.(step.info);
           await sleep(step.waitMs, req.signal);
@@ -473,8 +476,8 @@ async function readOnce(res: Response): Promise<() => Response> {
  * before. Once the marker is seen, each 503 is read to tell keep-waiting
  * from a coded answer; the one that ends the wait comes back as an unread
  * copy, for the door to read exactly as it would have. At the end of the
- * budget the latest WAKING answer comes back (as the invoke surfaces the
- * latest waking refusal); on an abort during a wait, the answer that caused
+ * budget the latest WAKING answer comes back (a door answers a `Response`,
+ * so it has no {@link WakeTimedOutError} to throw); on an abort during a wait, the answer that caused
  * it. A `send` that throws ends the wait by throwing.
  */
 export async function sendUnderWakeBudget(

@@ -25,7 +25,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Reducer, type AgClientCapabilities, type AgReduceResult } from "@silverprotocol/core";
 import { invokeTurn, toInvokeUrl } from "./invoke-turn.js";
 import { buildInvokeBody } from "./invoke-body.js";
-import { AgentResponseError, isWakingRefusal } from "./errors.js";
+import { AgentResponseError } from "./errors.js";
 import { withActivityObserver } from "./transport.js";
 import { CLIENT_ERROR_CODES } from "./error-codes.js";
 import { HistoryUnauthorizedError } from "./history.js";
@@ -1130,14 +1130,10 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
           if (inputKindRefused) {
             setErrorCode(CLIENT_ERROR_CODES.INPUT_KIND_NOT_ADVERTISED);
             setAcceptedInputKinds([]);
-          } else if (isWakingRefusal(e)) {
-            // guuey#2453: the wake budget ran out and the latest waking
-            // refusal surfaced (code-less, so it would read as no code at all).
-            // It is its own client code with its own sentence: the bare
-            // `agent responded 503` is not a reader's line.
-            setError("The agent did not wake up in time.");
-            setErrorCode(CLIENT_ERROR_CODES.WAKE_TIMED_OUT);
           } else {
+            // guuey#2453: a wake that ran out of budget arrives as a
+            // `WakeTimedOutError`, so it reads here as WAKE_TIMED_OUT with its
+            // own sentence like any coded refusal.
             setErrorCode(e instanceof AgentResponseError ? (e.code ?? null) : null);
           }
           // A failure BEFORE admission means the message never reached the

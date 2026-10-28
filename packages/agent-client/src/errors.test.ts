@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
   AgentResponseError,
   WAKING_HEADER,
+  WakeTimedOutError,
   agentResponseErrorFrom,
   hasWakingMarker,
   isWakingRefusal,
@@ -155,5 +156,16 @@ describe("one construction path", () => {
       .filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts") && f !== "errors.ts")
       .filter((f) => readFileSync(join(dir, f), "utf8").includes("new AgentResponseError("));
     expect(builders).toEqual([]);
+  });
+});
+
+describe("WakeTimedOutError (guuey#2453)", () => {
+  it("the package entry exports it and its one sentence beside AgentResponseError", async () => {
+    const entry = await import("./index.js");
+    expect(entry.WakeTimedOutError).toBe(WakeTimedOutError);
+    expect(entry.WAKE_TIMED_OUT_MESSAGE).toBe("This agent didn't wake up in time. Please try again.");
+    const err = new entry.WakeTimedOutError(new AgentResponseError("agent responded 503", 503, undefined, 4, true));
+    expect(err).toBeInstanceOf(entry.AgentResponseError);
+    expect(err.name).toBe("WakeTimedOutError");
   });
 });

@@ -3,16 +3,21 @@
  * (`WAKE_TIMED_OUT`, minted by `@guuey/agent-client`). Nothing is broken, it
  * was only slow: the kit's own line, the transient family's in-place Retry,
  * and the RETRY tone (no error tint) on the error item. Every other code keeps
- * the fault tone.
+ * the fault tone. The SDK's error carries the same sentence the kit shows
+ * (`WAKE_TIMED_OUT_MESSAGE`, its one home), so `verbatimCodes: "all"` needs no
+ * exception for it.
  */
 import { describe, expect, it } from "vitest";
+import { WAKE_TIMED_OUT_MESSAGE } from "@guuey/agent-client";
 import { planTranscript } from "./plan.js";
 import { calmPolicy, debugPolicy } from "./policy.js";
 import { defaultChatStrings } from "./strings.js";
 import type { DisplayItem, ErrorItem, TranscriptInputs, UserMessageItem } from "./types.js";
 
 const LINE = "This agent didn't wake up in time. Please try again.";
-/** What the SDK's wake budget throws when it runs out: the bare status line. */
+/** What the SDK's `WakeTimedOutError` carries when the wake budget runs out. */
+const SOURCE = WAKE_TIMED_OUT_MESSAGE;
+/** A single waking refusal with no budget behind it (`coldStartRetry: false`): code-less, the bare status line. */
 const RAW = "agent responded 503";
 /** The widget's posture (guuey#162): every source message verbatim. */
 const widgetPolicy = () => calmPolicy({ error: { verbatim: false, copyByCode: {}, verbatimCodes: "all" } });
@@ -43,12 +48,13 @@ function userItem(items: readonly DisplayItem[]): UserMessageItem {
 }
 
 describe("guuey#2453: WAKE_TIMED_OUT", () => {
-  it("the kit's line, exactly", () => {
+  it("the kit's line, exactly, and its default is the SDK's one sentence", () => {
     expect(defaultChatStrings.errorWakeTimedOut).toBe(LINE);
+    expect(defaultChatStrings.errorWakeTimedOut).toBe(WAKE_TIMED_OUT_MESSAGE);
   });
 
   it("plans the kit's line in the transient family, wearing the retry tone", () => {
-    const item = errorItem(inputsWithError(RAW, "WAKE_TIMED_OUT"));
+    const item = errorItem(inputsWithError(SOURCE, "WAKE_TIMED_OUT"));
     expect(item.copy).toBe(LINE);
     expect(item.family).toBe("transient");
     expect(item.tone).toBe("retry");
@@ -60,16 +66,23 @@ describe("guuey#2453: WAKE_TIMED_OUT", () => {
     }
   });
 
-  it("the widget's verbatim-all posture still shows the kit's line, never the bare status line", () => {
-    const item = errorItem(inputsWithError(RAW, "WAKE_TIMED_OUT"), widgetPolicy());
+  it("the widget's verbatim-all posture shows the source, which is the same sentence: one rule, no exception", () => {
+    const item = errorItem(inputsWithError(SOURCE, "WAKE_TIMED_OUT"), widgetPolicy());
     expect(item.copy).toBe(LINE);
     expect(item.copy).not.toContain("503");
     expect(item.tone).toBe("retry");
   });
 
+  it("the widget's verbatim-all posture: a code-less 503 (a waking refusal with no budget behind it) reads its source on the fault tone", () => {
+    const item = errorItem(inputsWithError(RAW, null), widgetPolicy());
+    expect(item.copy).toBe(RAW);
+    expect(item.family).toBe("transient");
+    expect(item.tone).toBe("fault");
+  });
+
   it("a host's own sentence and an explicit verbatim listing still win (explicit host intent)", () => {
     const own = calmPolicy({ error: { verbatim: false, copyByCode: { WAKE_TIMED_OUT: "Still asleep." }, verbatimCodes: "all" } });
-    expect(errorItem(inputsWithError(RAW, "WAKE_TIMED_OUT"), own).copy).toBe("Still asleep.");
+    expect(errorItem(inputsWithError(SOURCE, "WAKE_TIMED_OUT"), own).copy).toBe("Still asleep.");
     const listed = calmPolicy({ error: { verbatim: false, copyByCode: {}, verbatimCodes: ["WAKE_TIMED_OUT"] } });
     expect(errorItem(inputsWithError("source words", "WAKE_TIMED_OUT"), listed).copy).toBe("source words");
   });
@@ -80,18 +93,18 @@ describe("guuey#2453: WAKE_TIMED_OUT", () => {
 
   it("a builder's string override wins over the default line", () => {
     const policy = calmPolicy({ strings: { ...defaultChatStrings, errorWakeTimedOut: "Schläft noch." } });
-    expect(errorItem(inputsWithError(RAW, "WAKE_TIMED_OUT"), policy).copy).toBe("Schläft noch.");
+    expect(errorItem(inputsWithError(SOURCE, "WAKE_TIMED_OUT"), policy).copy).toBe("Schläft noch.");
   });
 
   it("debug keeps the code-prefixed raw line beside the kit's line", () => {
-    const item = errorItem(inputsWithError(RAW, "WAKE_TIMED_OUT"), debugPolicy());
-    expect(item.verbatim).toBe(`WAKE_TIMED_OUT: ${RAW}`);
+    const item = errorItem(inputsWithError(SOURCE, "WAKE_TIMED_OUT"), debugPolicy());
+    expect(item.verbatim).toBe(`WAKE_TIMED_OUT: ${SOURCE}`);
     expect(item.tone).toBe("retry");
   });
 
   it("refused before admission: the failed bubble carries the kit's line and keeps Retry, even under verbatim-all", () => {
     const inputs: TranscriptInputs = {
-      ...inputsWithError(RAW, "WAKE_TIMED_OUT"),
+      ...inputsWithError(SOURCE, "WAKE_TIMED_OUT"),
       messages: [{ role: "user", text: "hello", clientMessageId: "c1" }],
       sendStates: { c1: "failed" },
     };
@@ -117,7 +130,7 @@ describe("guuey#2453: WAKE_TIMED_OUT", () => {
 /** A send refused before admission: the latest user row is `failed`. */
 function refused(code: string | null): TranscriptInputs {
   return {
-    ...inputsWithError(RAW, code),
+    ...inputsWithError(code === "WAKE_TIMED_OUT" ? SOURCE : RAW, code),
     messages: [{ role: "user", text: "hello", clientMessageId: "c1" }],
     sendStates: { c1: "failed" },
   };

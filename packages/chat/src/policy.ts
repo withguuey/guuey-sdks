@@ -115,10 +115,10 @@ export interface TranscriptPolicy {
    * plain `strings.errorPodSaturated` and `strings.errorDraining` lines. A
    * host's `copyByCode` still wins; a host that wants a pod's sentence back
    * lists the code (`verbatimCodes: ["DRAINING"]`), and `"all"` keeps every
-   * source message (the widget's #162 posture). `"all"` does not reach a code
-   * whose source is never a reader's line (`WAKE_TIMED_OUT`, guuey#2453, whose
-   * refusal held only the bare status line): its built-in line wins, and a host
-   * that wants the source back lists the code.
+   * source message (the widget's #162 posture), with no per-code exception:
+   * a client code's source is the SDK's own sentence (`WAKE_TIMED_OUT`,
+   * guuey#2453, carries `WAKE_TIMED_OUT_MESSAGE`, which is also
+   * `strings.errorWakeTimedOut`'s default).
    */
   error: {
     verbatim: boolean;

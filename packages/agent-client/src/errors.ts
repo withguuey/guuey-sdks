@@ -5,8 +5,10 @@
  * Its own module (rather than living in `./web-adapters.ts`) so `useAgentInvoke`
  * — which must stay platform-agnostic — can `instanceof`-narrow a caught error
  * without pulling the web adapter bundle (`fetch`, the history reader,
- * `@guuey/mcp-apps-host`) into a React-Native build. It imports nothing.
+ * `@guuey/mcp-apps-host`) into a React-Native build. It imports only
+ * `./error-codes.js`, which imports nothing.
  */
+import { CLIENT_ERROR_CODES } from "./error-codes.js";
 
 /**
  * The header a sleeping app's address sets on the `503` it answers while the
@@ -66,6 +68,43 @@ export function isWakingRefusal(err: unknown): err is AgentResponseError {
     err.status === 503 &&
     err.code === undefined
   );
+}
+
+/**
+ * The sentence a wake that ran out of budget reads as (guuey#2453): the
+ * message of every {@link WakeTimedOutError}, and the chat kit's default line
+ * for `WAKE_TIMED_OUT`. Its one home, so the SDK and the kit never word the
+ * same event two ways.
+ */
+export const WAKE_TIMED_OUT_MESSAGE = "This agent didn't wake up in time. Please try again.";
+
+/**
+ * Thrown when the wake budget ends (guuey#2453): the app answered waking for
+ * the whole budget, and `withColdStartRetry` gave up. Its `code` is
+ * `CLIENT_ERROR_CODES.WAKE_TIMED_OUT` and its message is
+ * {@link WAKE_TIMED_OUT_MESSAGE}; `status`, `retryAfterSeconds` and `waking`
+ * are the latest waking refusal's, which it keeps as `refusal`.
+ *
+ * Only the budget ending throws it. A single waking refusal that surfaces
+ * without a budget (`coldStartRetry: false`) stays the plain code-less
+ * {@link AgentResponseError}, since nothing waited for it. A client code, so
+ * it never appears on the wire, and as a coded answer it is never read as
+ * waking ({@link isWakingRefusal}).
+ */
+export class WakeTimedOutError extends AgentResponseError {
+  constructor(
+    /** The latest waking refusal the budget saw, as the transport built it. */
+    readonly refusal: AgentResponseError,
+  ) {
+    super(
+      WAKE_TIMED_OUT_MESSAGE,
+      refusal.status,
+      CLIENT_ERROR_CODES.WAKE_TIMED_OUT,
+      refusal.retryAfterSeconds,
+      refusal.waking,
+    );
+    this.name = "WakeTimedOutError";
+  }
 }
 
 /**
