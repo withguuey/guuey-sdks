@@ -10,9 +10,9 @@
  * `credentials: "include"`). Consumed by {@link createWebAdapters}; Portal
  * has its own copy today and can migrate onto this later.
  */
-import { AgNoticeSource, isJsonValue, type AgMessage, type JsonValue } from "@silverprotocol/core";
+import { AgNoticeSource, isJsonValue, readStoredAgMessage, type AgMessage, type JsonValue } from "@silverprotocol/core";
 import { readTapLabels } from "@guuey/mcp-apps-host/narrowing";
-import type { AgentMessage, HistoryCard, HistoryLoadResult, ThreadClosed } from "./types.js";
+import type { AgentMessage, HistoryCard, HistoryLoadResult, HistoryToolResult, ThreadClosed } from "./types.js";
 import { closureFromLastRow, readThreadClosed } from "./thread-closed.js";
 import { userInputKindOf } from "./input-kinds.js";
 
@@ -60,7 +60,26 @@ export interface ThreadHistoryRow {
    * row; a kind this release does not know maps to nothing.
    */
   inputKind?: string | null;
+  /**
+   * guuey#2487: the tool results this row carries that no card row stands
+   * for. Served only when the read asked (`include=toolResults`); absent from
+   * an older read plane and from every row that carries none. Read through
+   * {@link threadHistoryRowsToToolResults}, so an entry no writer produced
+   * maps to nothing.
+   */
+  toolResults?: ThreadHistoryToolResultRow[] | null;
 }
+
+/** One entry of {@link ThreadHistoryRow.toolResults}, as the read plane serves it. */
+export interface ThreadHistoryToolResultRow {
+  toolCallId?: string | null;
+  toolName?: string | null;
+  /** The stored `tool-result` block, without its `_meta`. */
+  block?: JsonValue | null;
+}
+
+/** The `include` value that asks the read plane for {@link ThreadHistoryRow.toolResults}. */
+export const TOOL_RESULTS_INCLUDE = "toolResults";
 
 /**
  * One page of `GET /v1/threads/:id/messages` as this client reads it: the
@@ -146,7 +165,26 @@ export function readThreadHistoryRow(value: unknown): ThreadHistoryRow | null {
   if (clientMessageId !== undefined) row.clientMessageId = clientMessageId;
   const inputKind = stringOrNull(field(value, "inputKind"));
   if (inputKind !== undefined) row.inputKind = inputKind;
+  const toolResults = field(value, "toolResults");
+  if (toolResults === null) row.toolResults = null;
+  else if (Array.isArray(toolResults)) {
+    // guuey#2487: each entry is kept only in the shape the type names; what it
+    // means is judged by threadHistoryRowsToToolResults.
+    row.toolResults = toolResults.filter(isObject).map(readThreadHistoryToolResultRow);
+  }
   return row;
+}
+
+/** One served {@link ThreadHistoryToolResultRow}, each field kept only in the shape the type names. */
+function readThreadHistoryToolResultRow(value: object): ThreadHistoryToolResultRow {
+  const entry: ThreadHistoryToolResultRow = {};
+  const toolCallId = stringOrNull(field(value, "toolCallId"));
+  if (toolCallId !== undefined) entry.toolCallId = toolCallId;
+  const toolName = stringOrNull(field(value, "toolName"));
+  if (toolName !== undefined) entry.toolName = toolName;
+  const block = field(value, "block");
+  if (block !== undefined && isJsonValue(block)) entry.block = block;
+  return entry;
 }
 
 /**
@@ -295,6 +333,112 @@ export function threadHistoryRowsToCards(rows: ThreadHistoryRow[]): HistoryCard[
   return cards;
 }
 
+/**
+ * Project raw rows to the tool results with no UI resource they carry
+ * (guuey#2487), tagged with their row's transcript position, ascending as the
+ * rows are. The sibling of {@link threadHistoryRowsToCards}: a host that drew
+ * an attachment from a tool result live matches these by `toolName` and draws
+ * it again. An entry without a string `toolCallId` or a `tool-result` block is
+ * dropped; rows from a read plane that predates the field give none.
+ *
+ * One item per result: a result whose call a card row among `rows` stands for
+ * is left out, since that card is how it is drawn. The read plane does the
+ * same within one page, but a thread a 3.17 pod wrote can hold a card row
+ * minted from a `_meta.ui` locator beside that result's stored row, which
+ * this release reads as a result with no UI resource; when a page edge falls
+ * between the two, only the reader that holds every row can pair them.
+ */
+export function threadHistoryRowsToToolResults(rows: ThreadHistoryRow[]): HistoryToolResult[] {
+  const carded = cardToolCallIds(rows);
+  const results: HistoryToolResult[] = [];
+  for (const row of rows) {
+    if (row.kind !== "text" || !Array.isArray(row.toolResults)) continue;
+    for (const entry of row.toolResults) {
+      if (entry === null || typeof entry !== "object") continue;
+      const { toolCallId, toolName } = entry;
+      if (typeof toolCallId !== "string" || toolCallId === "" || carded.has(toolCallId)) continue;
+      const block = readServedToolResultBlock(entry.block);
+      if (block === undefined || block.toolCallId !== toolCallId) continue;
+      results.push({
+        seq: row.seq,
+        at: row.at,
+        toolCallId,
+        ...(typeof toolName === "string" && toolName !== "" ? { toolName } : {}),
+        block,
+        ...(block.structuredContent !== undefined ? { structuredContent: block.structuredContent } : {}),
+      });
+    }
+  }
+  return results;
+}
+
+/**
+ * The call ids the card rows of `rows` stand for: every `tool-result` part,
+ * with a string `toolCallId`, of a card row's snapshot. A snapshot of any
+ * other shape stands for none. The read plane walks the same field on its
+ * side; none of this package's dependencies exports such a walk, so it is
+ * written here over the served `JsonValue`.
+ */
+function cardToolCallIds(rows: readonly ThreadHistoryRow[]): Set<string> {
+  const ids = new Set<string>();
+  for (const row of rows) {
+    const snapshot = row.kind === "card" ? row.cardSnapshot : undefined;
+    if (snapshot === null || snapshot === undefined || typeof snapshot !== "object" || Array.isArray(snapshot)) continue;
+    const parts = snapshot["parts"];
+    if (!Array.isArray(parts)) continue;
+    for (const part of parts) {
+      if (part === null || typeof part !== "object" || Array.isArray(part)) continue;
+      const toolCallId = part["toolCallId"];
+      if (part["type"] === "tool-result" && typeof toolCallId === "string") ids.add(toolCallId);
+    }
+  }
+  return ids;
+}
+
+/**
+ * A served block read as a stored `tool-result` block, through AgJSON's
+ * lenient stored-record reader (the reader every stored message goes through),
+ * leniently PER PART: unknown fields pass through, and a block that names a
+ * value this client's closed sets do not hold is read again without it.
+ *
+ * The stored reader omits a whole content element that fails at any depth, so
+ * a tool result carrying one content part of a type a later
+ * `@silverprotocol/core` adds, or a later `outcome` value, would be lost whole,
+ * with the `structuredContent` a host draws from. N-1 forward: when the block
+ * does not read as served, each content part is judged on its own, and the
+ * block is read again with the parts that do not read (and an outcome that
+ * does not read) left out, the way `@guuey/threads`' `readStoredRowMessage`
+ * reads a message with an elided answer: once as stored, then once rebuilt.
+ * Only a block that still does not read (not a `tool-result`, no `content`
+ * array, or another field of its own that is not valid) is `undefined`, so
+ * that one entry is dropped and the rest of the list still reads.
+ */
+function readServedToolResultBlock(
+  served: JsonValue | null | undefined,
+): HistoryToolResult["block"] | undefined {
+  if (served === null || served === undefined) return undefined;
+  const whole = readToolResultElement(served);
+  if (whole !== undefined) return whole;
+  if (typeof served !== "object" || Array.isArray(served)) return undefined;
+  const { content, outcome, ...rest } = served;
+  if (rest["type"] !== "tool-result" || !Array.isArray(content)) return undefined;
+  // Each part and the outcome are judged alone, on a probe block with nothing else in it.
+  const readable = content.filter((part) => readToolResultElement(probeBlock({ content: [part] })) !== undefined);
+  const keepsOutcome = outcome !== undefined && readToolResultElement(probeBlock({ outcome })) !== undefined;
+  return readToolResultElement({ ...rest, content: readable, ...(keepsOutcome ? { outcome } : {}) });
+}
+
+/** The smallest block the stored reader reads as a tool result, with `fields` over it: the probe a part or an outcome is judged on. */
+function probeBlock(fields: { [key: string]: JsonValue }): JsonValue {
+  return { type: "tool-result", toolCallId: "probe", content: [], ...fields };
+}
+
+/** One stored content element read alone as a `tool-result` block, or `undefined` when the stored reader omits it. */
+function readToolResultElement(element: JsonValue): HistoryToolResult["block"] | undefined {
+  const [block] = readStoredAgMessage({ id: "served-tool-result", role: "tool", content: [element] }).value?.content ?? [];
+  return block?.type === "tool-result" ? block : undefined;
+}
+
 export interface ThreadHistoryFetchOptions {
   /** Public read-plane base, already ending in `/v1`. */
   baseUrl: string;
@@ -308,6 +452,14 @@ export interface ThreadHistoryFetchOptions {
    * the persisted cards to interleave by `seq`.
    */
   includeCards?: boolean;
+  /**
+   * Opt-in (guuey#2487): ask the read plane for the tool results with no UI
+   * resource (`include=toolResults`) and project them into
+   * `result.toolResults` (see {@link threadHistoryRowsToToolResults}). Off by
+   * default, so the request and the result stay byte-identical. A read plane
+   * that predates the field ignores the ask, and `toolResults` is `[]`.
+   */
+  includeToolResults?: boolean;
   /** Injection seam for tests; defaults to the global `fetch`. */
   fetchImpl?: typeof fetch;
 }
@@ -336,6 +488,7 @@ interface HistoryWalk {
 async function walkHistory(
   routeUrl: string,
   askNewestFirst: boolean,
+  includeToolResults: boolean,
   requestInit: RequestInit | undefined,
   fetchImpl: typeof fetch,
 ): Promise<HistoryWalk | "gone" | "order-lost"> {
@@ -348,6 +501,7 @@ async function walkHistory(
     const url =
       `${routeUrl}?limit=${HISTORY_PAGE_LIMIT}` +
       (newestFirst ? "&order=desc" : "") +
+      (includeToolResults ? `&include=${TOOL_RESULTS_INCLUDE}` : "") +
       (nextToken ? `&nextToken=${encodeURIComponent(nextToken)}` : "");
     const res = await fetchImpl(url, requestInit);
     if (res.status === 403 || res.status === 404) return "gone";
@@ -393,11 +547,12 @@ export async function fetchThreadHistory({
   threadId,
   requestInit,
   includeCards = false,
+  includeToolResults = false,
   fetchImpl = fetch,
 }: ThreadHistoryFetchOptions): Promise<HistoryLoadResult> {
   const routeUrl = `${baseUrl}/threads/${encodeURIComponent(threadId)}/messages`;
-  let walk = await walkHistory(routeUrl, true, requestInit, fetchImpl);
-  if (walk === "order-lost") walk = await walkHistory(routeUrl, false, requestInit, fetchImpl);
+  let walk = await walkHistory(routeUrl, true, includeToolResults, requestInit, fetchImpl);
+  if (walk === "order-lost") walk = await walkHistory(routeUrl, false, includeToolResults, requestInit, fetchImpl);
   // An ascending walk sends no order, so it cannot lose one.
   if (walk === "order-lost") throw new Error("history load failed: an ascending read lost an order it never asked for");
   if (walk === "gone") return { gone: true };
@@ -410,6 +565,7 @@ export async function fetchThreadHistory({
   return {
     messages: threadHistoryRowsToMessages(rows),
     ...(includeCards ? { cards: threadHistoryRowsToCards(rows) } : {}),
+    ...(includeToolResults ? { toolResults: threadHistoryRowsToToolResults(rows) } : {}),
     ...(threadClosed !== undefined ? { closed: threadClosed } : {}),
     // The order says which rows a capped read left out, so it rides beside `truncated`.
     ...(walk.truncated ? { truncated: true, order: walk.newestFirst ? "desc" : "asc" } : {}),

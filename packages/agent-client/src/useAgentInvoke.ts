@@ -38,6 +38,7 @@ import type {
   AgentMessage,
   HistoryCard,
   HistoryLoadResult,
+  HistoryToolResult,
   ProfileLinkRequest,
   SendOptions,
   StallRecoveryOptions,
@@ -410,6 +411,10 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
   const [historyCards, setHistoryCards] = useState<HistoryCard[]>([]);
   // guuey#2858: the history in view stopped at its page cap (see return-type contract).
   const [historyTruncated, setHistoryTruncated] = useState(false);
+  // guuey#2487: tool results with no UI resource rehydrated from history (see
+  // return-type contract), only when the history adapter opted in. Cleared and
+  // re-seeded with `historyCards`.
+  const [historyToolResults, setHistoryToolResults] = useState<HistoryToolResult[]>([]);
   // The pod's latest cross-app profile LINK invite on this conversation (T3's
   // `profile-link-needed` SSE event), or null. Cleared on app switch / reset /
   // explicit dismiss. (Consent is NOT hook state: it rides the AgJSON fold as
@@ -488,6 +493,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     setReduceResult(null);
     setHistoryCards([]);
     setHistoryTruncated(false);
+    setHistoryToolResults([]);
     // A prior app's link invite must never leak into the new conversation.
     setProfileLinkRequest(null);
     setAborted(false);
@@ -589,6 +595,11 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
       // out; the renderer says earlier messages are not shown. A truncated
       // ascending read left the newest out, and that line would be false.
       setHistoryTruncated(result.truncated === true && result.order === "desc");
+      // guuey#2487: the same for tool results with no UI resource; absent unless
+      // the adapter asked for them, and empty from a read plane that predates them.
+      if (result.toolResults && result.toolResults.length > 0) {
+        setHistoryToolResults(result.toolResults);
+      }
       // The agent ended this conversation before the reload: say so, unless a
       // send since then has already moved this hook to another thread.
       if (result.closed !== undefined && threadIdRef.current === tid) {
@@ -625,6 +636,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     setReduceResult(null);
     setHistoryCards([]);
     setHistoryTruncated(false);
+    setHistoryToolResults([]);
     setProfileLinkRequest(null);
     setAborted(false);
     setAdopted(false);
@@ -873,6 +885,9 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
           setHistoryCards(adoptedResult.cards);
         }
         setHistoryTruncated(adoptedResult.truncated === true && adoptedResult.order === "desc");
+        if (adoptedResult.toolResults && adoptedResult.toolResults.length > 0) {
+          setHistoryToolResults(adoptedResult.toolResults);
+        }
         // The renderer's signal: calm renders the adopted turn identically;
         // debug may mark it (guuey#135 3b).
         setAdopted(true);
@@ -1160,6 +1175,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     reduceResult,
     historyCards,
     historyTruncated,
+    historyToolResults,
     profileLinkRequest,
     clearProfileLinkRequest,
     aborted,

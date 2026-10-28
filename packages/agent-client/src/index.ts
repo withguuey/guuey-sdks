@@ -89,8 +89,11 @@ export {
   fetchThreadHistory,
   threadHistoryRowsToMessages,
   threadHistoryRowsToCards,
+  threadHistoryRowsToToolResults,
   HistoryUnauthorizedError,
+  TOOL_RESULTS_INCLUDE,
   type ThreadHistoryRow,
+  type ThreadHistoryToolResultRow,
   type ThreadHistoryFetchOptions,
 } from "./history.js";
 // After a guest signs in with the app's own sign-in: move the guest's
@@ -126,6 +129,7 @@ export type {
 export type {
   AgentMessage,
   HistoryCard,
+  HistoryToolResult,
   ProfileLinkRequest,
   ThreadIdStore,
   GenerateId,

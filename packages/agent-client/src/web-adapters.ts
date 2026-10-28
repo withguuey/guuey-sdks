@@ -65,6 +65,15 @@ export interface CreateWebAdaptersOptions {
    */
   apiBaseUrl?: string;
   /**
+   * Opt-in (guuey#2487): the history read also asks for the thread's tool
+   * results with no UI resource (`fetchThreadHistory`'s `includeToolResults`),
+   * which {@link useAgentInvoke} surfaces as `historyToolResults`. For a host
+   * that draws from a tool's result itself, matched by tool name. Off by
+   * default, so the read is unchanged; a read plane that predates the field
+   * ignores the ask and the hook's `historyToolResults` stays `[]`.
+   */
+  includeToolResults?: boolean;
+  /**
    * Total send attempts on a saturated pod (guuey#406) — forwarded to
    * {@link SaturationRetryOptions.attempts}. End-user surfaces facing
    * capacity-1 pods (demo fixtures, xs plans) budget higher than the
@@ -196,6 +205,8 @@ export function createWebAdapters(
   // installs the adapter; a cookie-only caller is unidentifiable there and
   // gets no adapter at all.
   if (apiBaseUrl && (getAccessToken || getGuestSecret)) {
+    // The history read's fixed asks: cards always, tool results on the host's opt-in.
+    const includes = { includeCards: true, ...(opts.includeToolResults === true ? { includeToolResults: true } : {}) };
     adapters.history = {
       load: async (threadId) => {
         // Same precedence, and the same one-carrier rule, as the transport:
@@ -207,7 +218,7 @@ export function createWebAdapters(
               return await fetchThreadHistory({
                 baseUrl: apiBaseUrl,
                 threadId,
-                includeCards: true,
+                ...includes,
                 requestInit: { headers: { Authorization: `Bearer ${token}` } },
                 ...(fetchImpl !== undefined ? { fetchImpl } : {}),
               });
@@ -225,7 +236,7 @@ export function createWebAdapters(
               return fetchThreadHistory({
                 baseUrl: apiBaseUrl,
                 threadId,
-                includeCards: true,
+                ...includes,
                 requestInit: { headers: { Authorization: `Bearer ${fresh}` } },
                 ...(fetchImpl !== undefined ? { fetchImpl } : {}),
               });
@@ -237,7 +248,7 @@ export function createWebAdapters(
           return fetchThreadHistory({
             baseUrl: apiBaseUrl,
             threadId,
-            includeCards: true,
+            ...includes,
             requestInit: { headers: { [GUEST_HEADER]: guest } },
             ...(fetchImpl !== undefined ? { fetchImpl } : {}),
           });

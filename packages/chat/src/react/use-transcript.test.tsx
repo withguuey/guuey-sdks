@@ -278,6 +278,7 @@ function invokeReturn(over: Partial<UseAgentInvokeReturn> = {}): UseAgentInvokeR
     reduceResult: null,
     historyCards: [],
     historyTruncated: false,
+    historyToolResults: [],
     profileLinkRequest: null,
     clearProfileLinkRequest: vi.fn(),
     aborted: false,

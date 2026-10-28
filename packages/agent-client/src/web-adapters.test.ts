@@ -284,6 +284,54 @@ describe("createWebAdapters history install", () => {
 });
 
 /**
+ * guuey#2487: the default stack's history read can ask for the tool results
+ * with no UI resource, so a host on createWebAdapters + useAgentInvoke gets
+ * `historyToolResults` without a second, hand-built transcript fetch. Off by
+ * default: the read is the one it always was.
+ */
+describe("createWebAdapters history — includeToolResults", () => {
+  const apiBaseUrl = "https://api.example.com/v1";
+  const BLOCK = { type: "tool-result", toolCallId: "toolu_open_review", content: [], structuredContent: { card: "inbox" } };
+  const ROWS = {
+    rows: [
+      { seq: 3, at: "2026-10-18T10:37:02Z", kind: "text", authorRole: "agent", text: null, toolResults: [{ toolCallId: "toolu_open_review", toolName: "mcp__inbox__open_review", block: BLOCK }] },
+    ],
+    nextToken: null,
+  };
+
+  it("is not asked by default, on either identity", async () => {
+    for (const identity of [{ getGuestSecret: () => SECRET }, { getAccessToken: async () => "tok" }]) {
+      const fetchImpl = mockFetch([jsonResponse(ROWS)]);
+      const history = createWebAdapters({ apiBaseUrl, ...identity }).history;
+      if (!history) throw new Error("history adapter not installed");
+      const result = await withGlobalFetch(fetchImpl, () => history.load("t_1"));
+      expect(String(fetchImpl.mock.calls[0][0])).not.toContain("include=");
+      expect("toolResults" in result).toBe(false);
+    }
+  });
+
+  it("is asked on the guest read, the bearer read and the bearer's 401 retry when opted in", async () => {
+    const guestFetch = mockFetch([jsonResponse(ROWS)]);
+    const guest = createWebAdapters({ apiBaseUrl, getGuestSecret: () => SECRET, includeToolResults: true }).history;
+    if (!guest) throw new Error("history adapter not installed");
+    const fromGuest = await withGlobalFetch(guestFetch, () => guest.load("t_1"));
+    expect(String(guestFetch.mock.calls[0][0])).toContain("&include=toolResults");
+    expect("toolResults" in fromGuest && fromGuest.toolResults?.map((r) => r.toolName)).toEqual(["mcp__inbox__open_review"]);
+
+    const bearerFetch = mockFetch([jsonResponse({ message: "expired" }, 401), jsonResponse(ROWS)]);
+    const bearer = createWebAdapters({
+      apiBaseUrl,
+      getAccessToken: async (o) => (o?.forceRefresh ? "tok_fresh" : "tok_stale"),
+      includeToolResults: true,
+    }).history;
+    if (!bearer) throw new Error("history adapter not installed");
+    const fromBearer = await withGlobalFetch(bearerFetch, () => bearer.load("t_1"));
+    expect(bearerFetch.mock.calls.map((call) => String(call[0]).includes("&include=toolResults"))).toEqual([true, true]);
+    expect("toolResults" in fromBearer && fromBearer.toolResults).toHaveLength(1);
+  });
+});
+
+/**
  * The history-401-retry (widget wave 2 / T15, B4 live-gate finding): a token
  * this resolver already returned can be stale by the time the MOUNT-time
  * transcript read fires, before the send path's own `withIdentifiedToken` has

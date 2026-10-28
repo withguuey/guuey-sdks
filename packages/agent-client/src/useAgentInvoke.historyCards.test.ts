@@ -82,3 +82,50 @@ describe("useAgentInvoke historyCards", () => {
     unmount();
   });
 });
+
+describe("useAgentInvoke historyToolResults (guuey#2487)", () => {
+  const RESULT = {
+    seq: 3,
+    at: "2026-10-18T10:37:02Z",
+    toolCallId: "toolu_open_review",
+    toolName: "mcp__inbox__open_review",
+    block: { type: "tool-result" as const, toolCallId: "toolu_open_review", content: [], structuredContent: { card: "inbox" } },
+    structuredContent: { card: "inbox" },
+  };
+
+  it("surfaces the tool results a history load carries, beside its cards", async () => {
+    const store: Record<string, string> = { [THREAD_KEY]: "t1" };
+    const adapters = makeAdapters(store, { messages: [{ role: "assistant", text: "here" }], cards: [], toolResults: [RESULT] });
+    const { result, unmount } = renderHook(() =>
+      useAgentInvoke({ endpointUrl: "https://pod.example.com", appId: APP_ID, adapters, preserveBlocks: true }),
+    );
+    await waitFor(() => expect(result.current.historyToolResults).toEqual([RESULT]));
+    expect(result.current.historyCards).toEqual([]);
+    unmount();
+  });
+
+  it("stays [] when the load carries none (an adapter that did not ask, or an older read plane)", async () => {
+    const store: Record<string, string> = { [THREAD_KEY]: "t1" };
+    const adapters = makeAdapters(store, { messages: [{ role: "assistant", text: "here" }], cards: [] });
+    const { result, unmount } = renderHook(() =>
+      useAgentInvoke({ endpointUrl: "https://pod.example.com", appId: APP_ID, adapters }),
+    );
+    await waitFor(() => expect(result.current.messages).toHaveLength(1));
+    expect(result.current.historyToolResults).toEqual([]);
+    unmount();
+  });
+
+  it("reset() clears it back to []", async () => {
+    const store: Record<string, string> = { [THREAD_KEY]: "t1" };
+    const adapters = makeAdapters(store, { messages: [{ role: "assistant", text: "here" }], toolResults: [RESULT] });
+    const { result, unmount } = renderHook(() =>
+      useAgentInvoke({ endpointUrl: "https://pod.example.com", appId: APP_ID, adapters }),
+    );
+    await waitFor(() => expect(result.current.historyToolResults).toHaveLength(1));
+    await act(async () => {
+      result.current.reset();
+    });
+    expect(result.current.historyToolResults).toEqual([]);
+    unmount();
+  });
+});

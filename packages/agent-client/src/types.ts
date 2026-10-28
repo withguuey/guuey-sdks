@@ -13,7 +13,7 @@
  * `MessageStorageAdapter` injection pattern.
  */
 
-import type { AgClientCapabilities, AgNoticeSource, AgReduceResult, JsonValue } from "@silverprotocol/core";
+import type { AgClientCapabilities, AgMessage, AgNoticeSource, AgReduceResult, JsonValue } from "@silverprotocol/core";
 import type { ImageAttachmentCandidate } from "./attachments.js";
 import type { InputKind } from "./input-kinds.js";
 
@@ -198,6 +198,37 @@ export interface HistoryCard {
 }
 
 /**
+ * A tool result rehydrated from thread history that NO card stands for
+ * (guuey#2487): a result with no UI resource (an in-process tool's
+ * `structuredContent`, or its text alone) that a host drew from live. The read
+ * plane serves it only when asked (`fetchThreadHistory`'s `includeToolResults`).
+ * A host matches it by `toolName`, as it matches the live `tool.start`, and
+ * interleaves it by `seq` like a {@link HistoryCard}. The kit draws nothing for
+ * it: what it means is the host's.
+ *
+ * A `toolCallId` is unique across the whole thread (the model provider's
+ * contract; every minter here keeps it). The reader relies on that: a result
+ * whose id a card row anywhere in the read names is left out, since the card
+ * already stands for it.
+ */
+export interface HistoryToolResult {
+  /** The transcript position of the row that carries the result. */
+  seq: number;
+  at: string;
+  toolCallId: string;
+  /** The tool's raw wire name, when the read plane found the call; absent otherwise (never a guess). */
+  toolName?: string;
+  /**
+   * The stored `tool-result` block, without its `_meta`, as AgJSON's stored
+   * record reader reads it (`content`, `outcome`, `isError`,
+   * `structuredContent`, …): a block it cannot read is left out, never altered.
+   */
+  block: Extract<AgMessage["content"][number], { type: "tool-result" }>;
+  /** The block's `structuredContent`, when it carries one: what a host most often draws from. */
+  structuredContent?: JsonValue;
+}
+
+/**
  * Persists the durable `threadId` per app so a reload continues the same
  * conversation. `load` may be sync (localStorage) or async (AsyncStorage).
  */
@@ -240,6 +271,12 @@ export type HistoryLoadResult =
   | {
       messages: AgentMessage[];
       cards?: HistoryCard[];
+      /**
+       * guuey#2487: the thread's tool results with no UI resource, ascending by
+       * `seq`, ONLY when the loader opts in (`fetchThreadHistory`'s
+       * `includeToolResults`). Empty against a read plane that predates them.
+       */
+      toolResults?: HistoryToolResult[];
       /** The conversation was ended by its agent (see {@link ThreadClosed}); absent while it is open. */
       closed?: ThreadClosed;
       /**
@@ -556,6 +593,17 @@ export interface UseAgentInvokeReturn {
    * earliest), and after `reset()` or an app switch.
    */
   historyTruncated: boolean;
+  /**
+   * guuey#2487: tool results with no UI resource rehydrated from thread
+   * history (an in-process tool's `structuredContent`, or its text alone),
+   * ascending by `seq`. No card stands for these, so a host that drew from one
+   * live matches it by `toolName` and draws it again. Empty (`[]`) unless the
+   * injected history adapter opted in (`createWebAdapters({ includeToolResults:
+   * true })`, or `fetchThreadHistory({ includeToolResults: true })` in a host's
+   * own adapter) AND the read plane served them. The kit draws nothing for
+   * them. `reset()` and an app switch clear it back to `[]`.
+   */
+  historyToolResults: HistoryToolResult[];
   /**
    * The latest cross-app profile LINK invite the pod asked for on THIS
    * conversation, or `null`. Set from a well-formed `profile-link-needed`
