@@ -1137,6 +1137,14 @@ const BUILT_IN_OVER_ALL: ReadonlySet<string> = new Set(["WAKE_TIMED_OUT"]);
 const RETRY_TONE_CODES: ReadonlySet<string> = new Set(["WAKE_TIMED_OUT"]);
 
 /**
+ * The one tone rule, read by both faces of a failure: the error item's `tone`
+ * and a refused bubble's `failureTone`.
+ */
+function toneOf(code: string | null): "fault" | "retry" {
+  return code !== null && RETRY_TONE_CODES.has(code) ? "retry" : "fault";
+}
+
+/**
  * R11's voice resolution, shared by the live error item and a reloaded failed
  * turn's notice so one failure reads the same both ways: the host's exact
  * per-code sentence wins; then a verbatim match renders the SOURCE message
@@ -1154,6 +1162,8 @@ function codedErrorCopy(
   copy: string;
   /** The copy is this code's own sentence (host, verbatim or built-in), not the family's fallback. */
   specific: boolean;
+  /** The failure's face ({@link toneOf}): the error item's `tone`, a refused bubble's `failureTone`. */
+  tone: "fault" | "retry";
 } {
   const family = (code !== null ? ERROR_FAMILIES[code] : undefined) ?? "transient";
   const familyCopy =
@@ -1173,7 +1183,7 @@ function codedErrorCopy(
   const builtIn = code !== null ? CODE_COPY[code] : undefined;
   const specificCopy =
     perCode ?? (verbatimVoice && message !== "" ? message : undefined) ?? builtIn?.(policy.strings);
-  return { family, copy: specificCopy ?? familyCopy, specific: specificCopy !== undefined };
+  return { family, copy: specificCopy ?? familyCopy, specific: specificCopy !== undefined, tone: toneOf(code) };
 }
 
 const ERROR_FAMILIES: Record<string, "auth" | "quota" | "invalid"> = {
@@ -1496,6 +1506,8 @@ export function planTranscript(
       ...(refusal !== null && (refusal.specific || refusal.family !== "transient")
         ? { failureLine: refusal.copy }
         : {}),
+      // guuey#2453: the refused bubble wears the error item's tone rule.
+      ...(refusal !== null && refusal.tone === "retry" ? { failureTone: refusal.tone } : {}),
       // guuey#2608: the id a Retry names so its re-send takes this row's place.
       ...(sendState === "failed" && user.clientMessageId !== undefined
         ? { clientMessageId: user.clientMessageId }
@@ -1726,13 +1738,13 @@ export function planTranscript(
   // bubble (R0's `failureLine`), so its error is not drawn twice.
   if (inputs.error && refusedSend === null && !(closedVoice !== null && inputs.error.code === closedVoice.code)) {
     const code = inputs.error.code;
-    const { family, copy } = codedErrorCopy(code, inputs.error.message, policy);
+    const { family, copy, tone } = codedErrorCopy(code, inputs.error.message, policy);
     items.push({
       kind: "error",
       key: "error",
       expanded: true,
       family,
-      tone: code !== null && RETRY_TONE_CODES.has(code) ? "retry" : "fault",
+      tone,
       code,
       copy,
       message: inputs.error.message,

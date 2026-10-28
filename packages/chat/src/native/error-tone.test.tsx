@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 interface MockStyle {
   backgroundColor?: string;
   borderLeftColor?: string;
+  color?: string;
 }
 interface MockProps {
   children?: ReactNode;
@@ -25,7 +26,12 @@ vi.mock("react-native", () => {
     ({ children, style }: MockProps) =>
       createElement(
         tag,
-        { "data-bg": style?.backgroundColor, "data-rule": style?.borderLeftColor, "data-testid": tag === "div" ? "box" : undefined },
+        {
+          "data-bg": style?.backgroundColor,
+          "data-rule": style?.borderLeftColor,
+          "data-color": style?.color,
+          "data-testid": tag === "div" ? "box" : undefined,
+        },
         children,
       );
   return {
@@ -38,12 +44,12 @@ vi.mock("react-native", () => {
   };
 });
 
-const { NativeError } = await import("./components.js");
+const { NativeError, NativeUserMessage } = await import("./components.js");
 const { resolveNativeTheme } = await import("./theme-native.js");
 const { defaultChatStrings } = await import("../strings.js");
 const { DEFAULT_CHAT_THEME } = await import("../theme.js");
 
-import type { ErrorItem } from "../types.js";
+import type { ErrorItem, UserMessageItem } from "../types.js";
 import type { NativeTranscriptItemContext } from "./components.js";
 
 afterEach(cleanup);
@@ -87,5 +93,32 @@ describe("NativeError tone (guuey#2453)", () => {
       expect(screen.getAllByTestId("box")[0]!.getAttribute("data-rule")).toBe(tokens.palette.error);
       cleanup();
     }
+  });
+});
+
+describe("NativeUserMessage refused bubble tone (guuey#2453)", () => {
+  const failed = (failureTone?: "retry"): UserMessageItem => ({
+    kind: "user",
+    key: "u0",
+    expanded: true,
+    text: "hello",
+    directive: false,
+    state: "failed",
+    retry: true,
+    failureLine: defaultChatStrings.errorWakeTimedOut,
+    ...(failureTone !== undefined ? { failureTone } : {}),
+  });
+  const lineColor = () => screen.getByText(defaultChatStrings.errorWakeTimedOut).getAttribute("data-color");
+
+  it("retry: the line in the plain text colour, never the error colour, and its Retry", () => {
+    expect(tokens.palette.ink).not.toBe(tokens.palette.error);
+    render(<NativeUserMessage item={failed("retry")} ctx={ctx} />);
+    expect(lineColor()).toBe(tokens.palette.ink);
+    expect(screen.getByRole("button").textContent).toBe(defaultChatStrings.userRetry);
+  });
+
+  it("without a tone the line keeps the error colour", () => {
+    render(<NativeUserMessage item={failed()} ctx={ctx} />);
+    expect(lineColor()).toBe(tokens.palette.error);
   });
 });

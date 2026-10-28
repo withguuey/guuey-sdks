@@ -781,6 +781,15 @@
   border-color: var(--guuey-chat-accent, var(--_guuey-chat-accent));
   color: var(--guuey-chat-accent, var(--_guuey-chat-accent));
 }
+/* The refused bubble wears the same retry tone: its line in the plain text
+   colour, its Retry without the error colour. */
+.guuey-chat-send-failed-retry {
+  color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
+}
+.guuey-chat-send-failed-retry .guuey-chat-retry {
+  border-color: var(--guuey-chat-accent, var(--_guuey-chat-accent));
+  color: var(--guuey-chat-accent, var(--_guuey-chat-accent));
+}
 .guuey-chat-error-verbatim {
   margin: 8px 0 0;
   font-family: var(--guuey-chat-mono-font, var(--_guuey-chat-mono-font, ui-monospace, monospace));

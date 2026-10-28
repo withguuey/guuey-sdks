@@ -101,4 +101,24 @@ describe("guuey#2453: WAKE_TIMED_OUT", () => {
       expect(userItem(items)).toMatchObject({ state: "failed", retry: true, failureLine: LINE });
     }
   });
+
+  it("the live turn: the refused bubble wears the retry tone beside the kit's line and its Retry", () => {
+    const user = userItem(planTranscript(refused("WAKE_TIMED_OUT"), widgetPolicy()).items);
+    expect(user).toMatchObject({ state: "failed", retry: true, failureLine: LINE, failureTone: "retry" });
+  });
+
+  it("a refused bubble for any other code carries no tone (it draws as before)", () => {
+    for (const code of ["DRAINING", "POD_SATURATED", "QUOTA_EXCEEDED", null]) {
+      expect("failureTone" in userItem(planTranscript(refused(code), calmPolicy()).items), String(code)).toBe(false);
+    }
+  });
 });
+
+/** A send refused before admission: the latest user row is `failed`. */
+function refused(code: string | null): TranscriptInputs {
+  return {
+    ...inputsWithError(RAW, code),
+    messages: [{ role: "user", text: "hello", clientMessageId: "c1" }],
+    sendStates: { c1: "failed" },
+  };
+}

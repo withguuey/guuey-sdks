@@ -197,7 +197,10 @@ function CopyButton({ text, ctx }: { text: string; ctx: TranscriptItemContext })
 function SendFailed({ item, ctx }: ItemProps<UserMessageItem>): ReactNode {
   if (item.state !== "failed") return null;
   return (
-    <p className="guuey-chat-send-failed" role="status">
+    <p
+      className={item.failureTone === "retry" ? "guuey-chat-send-failed guuey-chat-send-failed-retry" : "guuey-chat-send-failed"}
+      role="status"
+    >
       {item.failureLine ?? ctx.strings.userCouldntSend}
       {item.retry ? (
         <button type="button" className="guuey-chat-retry" onClick={() => ctx.onRetry?.(item)}>

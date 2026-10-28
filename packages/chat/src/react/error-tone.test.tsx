@@ -9,9 +9,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { DefaultError, type TranscriptItemContext } from "./components.js";
+import { DefaultError, DefaultUserMessage, type TranscriptItemContext } from "./components.js";
 import { defaultChatStrings } from "../strings.js";
-import type { ErrorItem } from "../types.js";
+import type { ErrorItem, UserMessageItem } from "../types.js";
 
 afterEach(cleanup);
 
@@ -79,5 +79,42 @@ describe("DefaultError tone (guuey#2453)", () => {
     expect(action).not.toContain("chat-error");
     // The base box (the fault face) keeps its tint.
     expect(declarations(".guuey-chat-error")).toContain("--guuey-chat-error");
+  });
+});
+
+describe("the refused bubble's tone (guuey#2453)", () => {
+  const failed = (failureTone?: "retry"): UserMessageItem => ({
+    kind: "user",
+    key: "u0",
+    expanded: true,
+    text: "hello",
+    directive: false,
+    state: "failed",
+    retry: true,
+    failureLine: defaultChatStrings.errorWakeTimedOut,
+    ...(failureTone !== undefined ? { failureTone } : {}),
+  });
+  const line = () => document.querySelector(".guuey-chat-send-failed");
+
+  it("a retry bubble's line wears the retry class and keeps its Retry", () => {
+    render(<DefaultUserMessage item={failed("retry")} ctx={ctx()} />);
+    expect(Array.from(line()?.classList ?? [])).toEqual(["guuey-chat-send-failed", "guuey-chat-send-failed-retry"]);
+    expect(screen.getByText(defaultChatStrings.userRetry)).toBeTruthy();
+  });
+
+  it("a bubble without a tone draws as before", () => {
+    render(<DefaultUserMessage item={failed()} ctx={ctx()} />);
+    expect(Array.from(line()?.classList ?? [])).toEqual(["guuey-chat-send-failed"]);
+  });
+
+  it("the stylesheet draws the retry line in the plain text colour, and its Retry without the error colour", () => {
+    const text = declarations(".guuey-chat-send-failed-retry");
+    expect(text).toMatch(/color:\s*var\(--guuey-chat-ink, var\(--_guuey-chat-ink\)\)/);
+    expect(text).not.toContain("chat-error");
+    const retry = declarations(".guuey-chat-send-failed-retry .guuey-chat-retry");
+    expect(retry).toMatch(/color:\s*var\(--guuey-chat-accent/);
+    expect(retry).not.toContain("chat-error");
+    // The fault line keeps its error colour.
+    expect(declarations(".guuey-chat-send-failed")).toContain("--guuey-chat-error");
   });
 });

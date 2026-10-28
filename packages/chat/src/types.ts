@@ -322,6 +322,14 @@ export interface UserMessageItem extends BaseItem {
    */
   failureLine?: string;
   /**
+   * The failed line's face (guuey#2453), the same rule as the error item's
+   * `tone`: `retry` draws the plain text colour with the in-place Retry as its
+   * only cue: nothing is broken, it was only slow (an app that did not wake in
+   * time). Present only when the refusal's code wears that tone; absent draws
+   * as before (the error colour), so an item built without it is unchanged.
+   */
+  failureTone?: "retry";
+  /**
    * guuey#2608: the failed send's own id (its `clientMessageId`), present only
    * on a `failed` row whose message carried one. A host's Retry names it as
    * `useAgentInvoke`'s `send(…, { replaces })`, so the re-send takes this
