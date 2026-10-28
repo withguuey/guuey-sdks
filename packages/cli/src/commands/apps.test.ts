@@ -252,7 +252,7 @@ describe('appsGet endpoint discovery', () => {
       expect(requestAt(fetchSpy, 2)).toEqual({ method: 'GET', path: '/apps/app-1/keys/providers', body: undefined });
     });
 
-    it('a workspace key set before last-4 tracking says so, and no "others" when none are managed', async () => {
+    it('a workspace key with no last 4 recorded says so, and no "others" when none are managed', async () => {
       mockAppDeploymentsKeys(
         keysWire([
           { source: 'workspace', keyLast4: null },

@@ -55,7 +55,7 @@ export type StoredKeyStatus = 'active' | 'revoked';
 
 /** One stored provider-key row, as display columns only. */
 export interface StoredKeyFace {
-  /** `null` = set before last-4 tracking. */
+  /** `null` = no last 4 recorded: an older row, or a key under 16 characters. */
   keyLast4: string | null;
   status: StoredKeyStatus;
   /** When the key was written (ISO); `null` for a row that recorded no write time. */
@@ -311,7 +311,7 @@ export async function byokSet(
 
 // ─── status ──────────────────────────────────────────────────────────
 
-const NO_LAST4 = 'set before last-4 tracking. Replace to record it.';
+const NO_LAST4 = 'last 4 not recorded';
 const MANAGED = "managed (the platform's key)";
 
 /** A stored row as one status cell. */
