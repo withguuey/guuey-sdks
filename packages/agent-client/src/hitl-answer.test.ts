@@ -105,6 +105,23 @@ describe("createHitlAnswerRelay", () => {
     const out = await createHitlAnswerRelay({ endpointUrl: "https://pod.example", fetchImpl })(ANSWER);
     expect(out).toEqual({ ok: false, status: 0, code: null, message: "offline" });
   });
+
+  it("a body that is not an object reads as an empty one: a 2xx echoes the answer, a refusal carries no code (guuey#2899)", async () => {
+    for (const body of [["resolved"], "resolved", 7, null]) {
+      const ok = await createHitlAnswerRelay({ endpointUrl: "https://pod.example", fetchImpl: mkFetch(200, body) })(ANSWER);
+      expect(ok).toEqual({ ok: true, body: { askId: ANSWER.askId, status: "resolved" } });
+      const refused = await createHitlAnswerRelay({ endpointUrl: "https://pod.example", fetchImpl: mkFetch(409, body) })(ANSWER);
+      expect(refused).toEqual({ ok: false, status: 409, code: null, message: "hitl-answer failed (409)" });
+    }
+  });
+
+  it("members of the wrong type are absent: an unknown status echoes the answer's, a non-string mode is left out (guuey#2899)", async () => {
+    const out = await createHitlAnswerRelay({
+      endpointUrl: "https://pod.example",
+      fetchImpl: mkFetch(200, { askId: 42, status: "maybe", mode: { id: "once" } }),
+    })(ANSWER);
+    expect(out).toEqual({ ok: true, body: { askId: ANSWER.askId, status: "resolved" } });
+  });
 });
 
 describe("useAgentInvoke — AgJSON client capabilities on the invoke body (guuey#207)", () => {

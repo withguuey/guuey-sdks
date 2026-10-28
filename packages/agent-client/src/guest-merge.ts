@@ -27,6 +27,7 @@
  */
 import { parseRetryAfterSeconds } from "./saturation-retry.js";
 import { GUEST_HEADER, sendableGuestSecret } from "./transport.js";
+import { isWireObject } from "./wire-object.js";
 
 export interface MergeGuestThreadsOptions {
   /** The guuey public API base (`…/v1`) — the same base the transcript reads use. */
@@ -63,13 +64,6 @@ export type MergeGuestThreadsResult =
 /** Calls one merge may make while following the server's cursor. */
 const MAX_MERGE_CALLS = 5;
 
-interface MergeWire {
-  moved?: unknown;
-  skipped?: unknown;
-  nextCursor?: unknown;
-  error?: { code?: unknown };
-}
-
 export async function mergeGuestThreads(options: MergeGuestThreadsOptions): Promise<MergeGuestThreadsResult> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const token = await options.getAccessToken().catch(() => null);
@@ -99,14 +93,16 @@ export async function mergeGuestThreads(options: MergeGuestThreadsOptions): Prom
       return { supported: true, ok: false, status: 0, code: "NETWORK" };
     }
     if (res.status === 404 && call === 0) return { supported: false };
-    let wire: MergeWire | null = null;
+    let parsed: unknown;
     try {
-      wire = (await res.json()) as MergeWire;
+      parsed = await res.json();
     } catch {
-      wire = null;
+      parsed = null; // not JSON: no code on a refusal, BAD_RESPONSE on a 2xx
     }
+    const wire = isWireObject(parsed) ? parsed : null;
     if (!res.ok) {
-      const code = typeof wire?.error?.code === "string" ? wire.error.code : null;
+      const error = wire !== null && isWireObject(wire.error) ? wire.error : null;
+      const code = typeof error?.code === "string" ? error.code : null;
       const retryAfterSeconds = parseRetryAfterSeconds(res.headers.get("Retry-After"));
       return {
         supported: true,

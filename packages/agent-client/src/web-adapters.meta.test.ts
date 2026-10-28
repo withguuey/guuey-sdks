@@ -208,3 +208,33 @@ describe("createUiResourceReader — the read door's advertisement (guuey#1849)"
     });
   });
 });
+
+describe("bodies that are not what the door answers are read, never assumed (guuey#2899)", () => {
+  function podReaderAnswering(body: string) {
+    const fetchImpl: typeof fetch = async () => new Response(body, { status: 200 });
+    return createUiResourceReader({ endpointUrl: "https://pod.example/agent/invoke", guestSecret: "a".repeat(64), fetchImpl });
+  }
+
+  it("a read whose body is not an object (null, an array, a scalar, not JSON) is a miss, never a throw", async () => {
+    const entry = { uri: URI, mimeType: "text/html;profile=mcp-app", text: "<html>card</html>" };
+    for (const body of ["null", JSON.stringify([entry]), JSON.stringify("text"), "<html>"]) {
+      await expect(podReaderAnswering(body)(URI, { origin: "live" })).resolves.toBeUndefined();
+    }
+  });
+
+  it("a 400 whose body is not the refusal's shape is terminal: no resend, the action fails in-band", async () => {
+    for (const body of ["null", JSON.stringify(["BAD_REQUEST"]), JSON.stringify({ error: "BAD_REQUEST" }), "not json"]) {
+      const { fetchImpl, sent } = scripted([{ status: 400, body }]);
+      const out = await podRelay(fetchImpl)({ ...REQUEST, requestMeta: META });
+      expect(out.isError).toBe(true);
+      expect(sent).toHaveLength(1);
+    }
+  });
+
+  it("a 400 whose `error` is an array is no refusal of either shape: terminal", async () => {
+    const odd = JSON.stringify({ code: "BAD_REQUEST", message: UI_REQUEST_META_UNKNOWN_KEY_REFUSAL, error: [1] });
+    const { fetchImpl, sent } = scripted([{ status: 400, body: odd }]);
+    expect((await podRelay(fetchImpl)({ ...REQUEST, requestMeta: META })).isError).toBe(true);
+    expect(sent).toHaveLength(1);
+  });
+});

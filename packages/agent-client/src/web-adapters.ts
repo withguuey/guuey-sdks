@@ -28,6 +28,7 @@ import {
 } from "./transport.js";
 import type { SaturationRetryOptions } from "./saturation-retry.js";
 import { toInvokeUrl } from "./invoke-turn.js";
+import { isWireObject, type WireObject } from "./wire-object.js";
 
 /** Persists the threadId in `window.localStorage` (synchronously). */
 export const localStorageThreadStore: ThreadIdStore = {
@@ -406,19 +407,16 @@ export function createUiResourceReader(
       }
     }
     if (!res.ok) return undefined;
-    let body: {
-      uri?: unknown;
-      mimeType?: unknown;
-      text?: unknown;
-      blob?: unknown;
-      _meta?: unknown;
-      admittedRequestMeta?: unknown;
-    };
+    let parsed: unknown;
     try {
-      body = (await res.json()) as typeof body;
+      parsed = await res.json();
     } catch {
       return undefined;
     }
+    // A body that is not an object (`null`, an array, a scalar) is a miss like
+    // any other malformed entry, never a throw out of the reader.
+    if (!isWireObject(parsed)) return undefined;
+    const body = parsed;
     // Both doors pass the blob arm through (a blob-only resource is not
     // silently a miss — the route contract); mirror that here.
     if (typeof body.uri !== "string") return undefined;
@@ -605,7 +603,8 @@ export function createUiActionRelay(
     if (res.status === 400) return (await isUnknownMetaKeyRefusal(res)) ? "meta-key-refused" : undefined;
     if (!res.ok) return undefined;
     try {
-      return { kind: "result", value: (await res.json()) as unknown };
+      const value: unknown = await res.json();
+      return { kind: "result", value };
     } catch {
       return undefined;
     }
@@ -671,27 +670,22 @@ function withAdvertisement(keys: readonly string[] | undefined): { admittedReque
   return keys === undefined ? {} : { admittedRequestMeta: keys };
 }
 
-/** The refusal's `{ code, message }`: flat at the pod door, under `error` at the platform door. */
-interface DoorRefusal {
-  code?: unknown;
-  message?: unknown;
-  error?: { code?: unknown; message?: unknown };
-}
-
 /**
  * Whether a 400 is the action door's unknown-key refusal (guuey#1849):
  * code `BAD_REQUEST` and exactly {@link UI_REQUEST_META_UNKNOWN_KEY_REFUSAL},
  * in either door's body shape. The value refusal never matches.
  */
 async function isUnknownMetaKeyRefusal(res: Response): Promise<boolean> {
-  let body: DoorRefusal;
+  let body: unknown;
   try {
-    body = (await res.json()) as DoorRefusal;
+    body = await res.json();
   } catch {
     return false;
   }
-  if (body === null || typeof body !== "object") return false;
-  const refusal = body.error !== null && typeof body.error === "object" ? body.error : body;
+  // The refusal's `{ code, message }`: flat at the pod door, under `error` at the platform door.
+  // An `error` that is an array is no refusal of either shape.
+  if (!isWireObject(body) || Array.isArray(body.error)) return false;
+  const refusal = isWireObject(body.error) ? body.error : body;
   return refusal.code === "BAD_REQUEST" && refusal.message === UI_REQUEST_META_UNKNOWN_KEY_REFUSAL;
 }
 
@@ -785,8 +779,9 @@ export function createHitlAnswerRelay(
     } catch {
       parsed = undefined;
     }
+    // A body that is not an object reads as an empty one: every member absent.
+    const b: WireObject = isWireObject(parsed) ? parsed : {};
     if (res.ok) {
-      const b = (parsed ?? {}) as { askId?: unknown; status?: unknown; mode?: unknown };
       return {
         ok: true,
         body: {
@@ -796,12 +791,11 @@ export function createHitlAnswerRelay(
         },
       };
     }
-    const env = (parsed ?? {}) as { code?: unknown; message?: unknown };
     return {
       ok: false,
       status: res.status,
-      code: typeof env.code === "string" ? env.code : null,
-      message: typeof env.message === "string" ? env.message : `hitl-answer failed (${res.status})`,
+      code: typeof b.code === "string" ? b.code : null,
+      message: typeof b.message === "string" ? b.message : `hitl-answer failed (${res.status})`,
     };
   };
 }

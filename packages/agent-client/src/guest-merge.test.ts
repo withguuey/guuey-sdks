@@ -96,3 +96,38 @@ describe("mergeGuestThreads — the BYO guest merge door", () => {
     expect(out).toEqual({ supported: true, ok: false, status: 0, code: "NETWORK" });
   });
 });
+
+describe("mergeGuestThreads — the answer is read, never assumed (guuey#2899)", () => {
+  const merge = (responses: Response[]) =>
+    mergeGuestThreads({ apiBaseUrl: BASE, appId: "app-a", getAccessToken: async () => "tok", fetchImpl: recorder(responses).impl });
+
+  it("a 2xx whose body is not an object (an array, null, a scalar, not JSON) is BAD_RESPONSE", async () => {
+    for (const res of [json([2, 0]), json(null), json(2), new Response("<html>ok</html>", { status: 200 })]) {
+      expect(await merge([res])).toEqual({ supported: true, ok: false, status: 200, code: "BAD_RESPONSE" });
+    }
+  });
+
+  it("a 2xx whose counts are not numbers is BAD_RESPONSE", async () => {
+    expect(await merge([json({ moved: "2", skipped: 0 })])).toEqual({
+      supported: true,
+      ok: false,
+      status: 200,
+      code: "BAD_RESPONSE",
+    });
+  });
+
+  it("a cursor that is not a string ends the walk with the counts so far", async () => {
+    expect(await merge([json({ moved: 1, skipped: 1, nextCursor: 7 })])).toEqual({
+      supported: true,
+      ok: true,
+      moved: 1,
+      skipped: 1,
+    });
+  });
+
+  it("a refusal whose error is not an object, or whose code is not a string, carries a null code", async () => {
+    for (const body of [{ error: "RATE_LIMITED" }, { error: null }, { error: { code: 429 } }, ["RATE_LIMITED"]]) {
+      expect(await merge([json(body, 429)])).toEqual({ supported: true, ok: false, status: 429, code: null });
+    }
+  });
+});

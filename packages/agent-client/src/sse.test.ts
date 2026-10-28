@@ -394,3 +394,22 @@ describe("parseLinkRequest", () => {
     expect(parseLinkRequest(input)).toBeNull();
   });
 });
+
+describe("frames whose data is not an object are read, never assumed (guuey#2899)", () => {
+  it("a frame parsed to an array, a scalar or null carries no field and no text", () => {
+    const { events } = parseSseEvents('data: ["threadId","t1"]\n\ndata: 7\n\ndata: null\n\n');
+    for (const { data } of events) {
+      expect(stringField(data, "threadId")).toBeUndefined();
+      expect(stringField(data, "0")).toBeUndefined();
+      expect(extractAssistantText(data)).toBe("");
+      expect(reduceAssistantText("kept", data)).toBe("kept");
+      expect(parseLinkRequest(data)).toBeNull();
+    }
+  });
+
+  it("an assistant message whose content holds non-objects keeps only the text blocks", () => {
+    const frame = { type: "assistant", message: { content: [null, "raw", ["text"], { type: "text", text: 5 }, { type: "text", text: "kept" }] } };
+    expect(extractAssistantText(frame)).toBe("kept");
+    expect(extractAssistantText({ type: "assistant", message: ["content"] })).toBe("");
+  });
+});

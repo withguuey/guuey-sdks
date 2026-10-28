@@ -5,6 +5,7 @@
  */
 
 import type { ProfileLinkRequest } from "./types.js";
+import { isWireObject } from "./wire-object.js";
 
 export interface ParsedSseEvent {
   event: string;
@@ -40,8 +41,7 @@ export function parseSseEvents(buffer: string): { events: ParsedSseEvent[]; rest
 }
 
 function frameType(data: unknown): unknown {
-  if (typeof data !== "object" || data === null) return undefined;
-  return (data as { type?: unknown }).type;
+  return isWireObject(data) ? data.type : undefined;
 }
 
 function isResultMessage(data: unknown): boolean {
@@ -97,28 +97,21 @@ export function reduceAssistantText(current: string, data: unknown): string {
  * audit G14, confirmed by reducing a live wire capture to "").
  */
 export function extractAssistantText(data: unknown): string {
-  if (typeof data !== "object" || data === null) return "";
-  const type = (data as { type?: unknown }).type;
+  if (!isWireObject(data)) return "";
+  const type = data.type;
   if (type === "text.delta") {
-    const delta = (data as { delta?: unknown }).delta;
+    const delta = data.delta;
     return typeof delta === "string" ? delta : "";
   }
   if (type === "assistant") {
-    const message = (data as { message?: unknown }).message;
-    if (typeof message === "object" && message !== null && "content" in message) {
-      const content = (message as { content?: unknown }).content;
+    const message = data.message;
+    if (isWireObject(message)) {
+      const content = message.content;
       if (Array.isArray(content)) {
         // Distinct text blocks are distinct paragraphs (guuey#98) — same
         // block-boundary contract as the silver arm's text.start handling.
         return content
-          .filter(
-            (b): b is { type: "text"; text: string } =>
-              typeof b === "object" &&
-              b !== null &&
-              (b as { type?: unknown }).type === "text" &&
-              typeof (b as { text?: unknown }).text === "string",
-          )
-          .map((b) => b.text)
+          .map((b: unknown) => (isWireObject(b) && b.type === "text" && typeof b.text === "string" ? b.text : ""))
           .filter((t) => t.length > 0)
           .join("\n\n");
       }
@@ -126,8 +119,8 @@ export function extractAssistantText(data: unknown): string {
     return "";
   }
   if (type === "result") {
-    const subtype = (data as { subtype?: unknown }).subtype;
-    const result = (data as { result?: unknown }).result;
+    const subtype = data.subtype;
+    const result = data.result;
     if (subtype === "success" && typeof result === "string") return result;
   }
   return "";
@@ -135,8 +128,8 @@ export function extractAssistantText(data: unknown): string {
 
 /** Read a string field off an SSE `data` object, or undefined. */
 export function stringField(data: unknown, key: string): string | undefined {
-  if (typeof data !== "object" || data === null) return undefined;
-  const v = (data as Record<string, unknown>)[key];
+  if (!isWireObject(data)) return undefined;
+  const v = data[key];
   return typeof v === "string" ? v : undefined;
 }
 
@@ -149,9 +142,9 @@ export function stringField(data: unknown, key: string): string | undefined {
  * unknown extras.
  */
 export function parseLinkRequest(data: unknown): ProfileLinkRequest | null {
-  if (typeof data !== "object" || data === null || Array.isArray(data)) return null;
-  const appId = (data as { appId?: unknown }).appId;
-  const requested = (data as { requested?: unknown }).requested;
+  if (!isWireObject(data)) return null;
+  const appId = data.appId;
+  const requested = data.requested;
   if (typeof appId !== "string" || appId.length === 0) return null;
   if (requested !== "read" && requested !== "read-write") return null;
   return { appId, requested };
