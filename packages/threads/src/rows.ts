@@ -74,8 +74,14 @@ export interface ThreadRow {
    * read. Absent on every thread no seal was ever written for (a legacy,
    * wholly readable thread). Read only through `readSealState` (`seal.ts`),
    * never trusted as stored.
+   *
+   * Typed as stored, not as {@link SealInterval}[]: a binding hands the stored
+   * attribute on unchanged, and one this release cannot read must still reach
+   * `readSealState`, which reads it as wholly sealed (fail closed). A writer
+   * writes {@link SealInterval}[]; a reader gets intervals only from
+   * `readSealState` / `threadSealState`.
    */
-  sealIntervals?: SealInterval[];
+  sealIntervals?: unknown;
   /**
    * The conversation was ended for a reason (a worker asked for it, e.g. a
    * per-conversation limit): it takes no new message, and a client that sends

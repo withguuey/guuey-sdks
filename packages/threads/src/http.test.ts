@@ -8,6 +8,7 @@
 import { describe, expect, it } from "vitest";
 import { HttpThreadPersistence, HttpThreadStoreError } from "./http.js";
 import { ThreadClosedError } from "./closed.js";
+import { threadSealState } from "./seal.js";
 import type { ThreadMessageRow, ThreadRow, ThreadSnapshotRow } from "./rows.js";
 
 interface Call {
@@ -244,7 +245,7 @@ describe("HttpThreadPersistence — every answer is read, never assumed (guuey#2
     const rows: Array<[string, (c: HttpThreadPersistence) => Promise<unknown>, unknown]> = [
       ["getThread without lastSeq", (c) => c.getThread("t1"), noSeq],
       ["getThread with a string pinned", (c) => c.getThread("t1"), { ...THREAD, pinned: "false" }],
-      ["a message of a kind this release does not know", (c) => c.findByClientMessageId("t1", "c3"), { ...MESSAGE, kind: "poll" }],
+      ["a message without its clientMessageId", (c) => c.findByClientMessageId("t1", "c3"), { ...MESSAGE, clientMessageId: undefined }],
       ["a list with one unreadable row", (c) => c.listRecentMessages("t1", 10), [MESSAGE, { ...MESSAGE, seq: "4" }]],
       ["a list that is not an array", (c) => c.listRecentMessages("t1", 10), { rows: [MESSAGE] }],
       ["a snapshot whose threadMemory is not an array", (c) => c.getSnapshot("t1"), { ...SNAPSHOT, threadMemory: {} }],
@@ -256,9 +257,15 @@ describe("HttpThreadPersistence — every answer is read, never assumed (guuey#2
     }
   });
 
-  it("a stored value that would OPEN what it closes is refused, never read as absent: an unreadable seal, a non-boolean untrustedOrigin", async () => {
-    const seal = await refusal(client(scripted([ok({ ...THREAD, sealIntervals: "all" })]).fetch).getThread("t1"));
-    expect(seal.code).toBe("BAD_RESPONSE");
+  it("a stored seal this release cannot read is carried as stored, so readSealState reads the thread as wholly sealed (as over DynamoDB)", async () => {
+    for (const stored of ["all", [{ fromSeq: 0 }], { fromSeq: 1 }]) {
+      const row = await client(scripted([ok({ ...THREAD, sealIntervals: stored })]).fetch).getThread("t1");
+      expect(row).toEqual({ ...THREAD, sealIntervals: stored });
+      expect(threadSealState(row ?? THREAD)).toEqual({ kind: "unreadable" });
+    }
+  });
+
+  it("a non-boolean untrustedOrigin would read as trusted if dropped, so that row is refused", async () => {
     const origin = await refusal(
       client(scripted([ok({ ...MESSAGE, untrustedOrigin: "true" })]).fetch).findByClientMessageId("t1", "c3"),
     );
@@ -291,6 +298,39 @@ describe("HttpThreadPersistence — every answer is read, never assumed (guuey#2
     });
   });
 
+  it("N-1: a message kind or authorRole this release does not know (a newer writer's, or none on a legacy row) reads as text / agent, and never refuses the thread's history", async () => {
+    const newer = { ...MESSAGE, seq: 4, clientMessageId: "c4", kind: "poll", authorRole: "tool" };
+    const { kind: _k, authorRole: _a, ...legacy } = { ...MESSAGE, seq: 5, clientMessageId: "c5" };
+    const { fetch } = scripted([ok([MESSAGE, newer, legacy]), ok(newer)]);
+    const c = client(fetch);
+    expect(await c.listRecentMessages("t1", 10)).toEqual([
+      MESSAGE,
+      { ...newer, kind: "text", authorRole: "agent" },
+      { ...legacy, kind: "text", authorRole: "agent" },
+    ]);
+    expect(await c.findByClientMessageId("t1", "c4")).toEqual({ ...newer, kind: "text", authorRole: "agent" });
+  });
+
+  it("N-1: a legacy message row without a userId reads as the token's user, read once from scope", async () => {
+    const { userId: _u, ...noUser } = MESSAGE;
+    const { fetch, calls } = scripted([
+      ok([noUser, { ...noUser, seq: 4 }]),
+      ok({ appId: "app_1", userId: "byo_x", region: "us-east-1" }),
+      ok(noUser),
+      ok([MESSAGE]),
+    ]);
+    const c = client(fetch);
+    expect(await c.listRecentMessages("t1", 10)).toEqual([MESSAGE, { ...MESSAGE, seq: 4 }]);
+    expect(await c.findByClientMessageId("t1", "c3")).toEqual(MESSAGE);
+    expect(await c.listRecentMessages("t1", 10)).toEqual([MESSAGE]);
+    expect(calls.map((call) => call.url.split("/").pop())).toEqual([
+      "listRecentMessages",
+      "scope",
+      "findByClientMessageId",
+      "listRecentMessages",
+    ]);
+  });
+
   it("a snapshot memory element this release cannot read as a thread record is carried, never dropped", async () => {
     const orphan = { scope: "thread", key: "orphan" };
     const { fetch } = scripted([ok({ ...SNAPSHOT, threadMemory: [...SNAPSHOT.threadMemory, orphan] })]);
@@ -300,10 +340,16 @@ describe("HttpThreadPersistence — every answer is read, never assumed (guuey#2
     });
   });
 
-  it("a write reads no result, and a write's 2xx that is not JSON is BAD_RESPONSE", async () => {
-    await expect(client(scripted([jsonResponse(200, {})]).fetch).createThread(THREAD)).resolves.toBeUndefined();
-    const err = await refusal(client(scripted([new Response("", { status: 200 })]).fetch).putMessage(MESSAGE));
-    expect(err).toMatchObject({ status: 200, code: "BAD_RESPONSE" });
+  it("a write's 2xx is a committed write whatever its body holds: never BAD_RESPONSE, so a caller never retries it into CONFLICT", async () => {
+    for (const res of [
+      jsonResponse(200, {}),
+      new Response("", { status: 200 }),
+      new Response("<html>ok</html>", { status: 200 }),
+    ]) {
+      await expect(client(scripted([res]).fetch).putMessage(MESSAGE)).resolves.toBeUndefined();
+    }
+    await expect(client(scripted([new Response("not json", { status: 200 })]).fetch).createThread(THREAD)).resolves.toBeUndefined();
+    await expect(client(scripted([new Response("", { status: 201 })]).fetch).putSnapshot(SNAPSHOT)).resolves.toBeUndefined();
   });
 
   it("a refusal's code and message are read only when they are strings; anything else keeps the transport defaults", async () => {

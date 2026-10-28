@@ -10,9 +10,16 @@
  *   `Authorization: Bearer <token>`.
  * - Success: `200 { result }`.
  * - Failure: `4xx/5xx { code, message }` → {@link HttpThreadStoreError}.
- * - Every body is parsed to `unknown` and read through `http-read.ts`; a 2xx
- *   whose body is not an envelope, or whose `result` is not what the op
- *   answers, is an {@link HttpThreadStoreError} with code `BAD_RESPONSE`.
+ * - Every read's body is parsed to `unknown` and read through `http-read.ts`;
+ *   a 2xx whose body is not an envelope, or whose `result` is not what the op
+ *   answers, is an {@link HttpThreadStoreError} with code `BAD_RESPONSE`. A
+ *   write's 2xx body is never read: the write has committed, and a body that
+ *   does not parse must not turn it into a failure a caller would retry (into
+ *   `CONFLICT`, since `createThread` and `putMessage` are conditional).
+ * - A message row an older writer stored without a `userId` gets the token's
+ *   user (read once from {@link HttpThreadPersistence.scope}): the server
+ *   answers only threads that user owns, and every row the port writes there
+ *   carries that user.
  *
  * Auth + tenancy: the token is an END-USER token for the app — one the
  * app's configured identity issuer minted (your own IdP, or guuey's per-app
@@ -40,6 +47,7 @@ import {
   readThreadRow,
   readThreadScope,
   readThreadSnapshotRow,
+  type WireThreadMessageRow,
 } from "./http-read.js";
 import type {
   RowBudget,
@@ -136,6 +144,8 @@ export class HttpThreadPersistence implements ThreadPersistencePort {
   private readonly appId: string;
   private readonly token: string;
   private readonly fetchImpl: typeof fetch;
+  /** The token's user, read from `scope` the first time a row lacks its `userId`. */
+  private ownerRead: Promise<string> | undefined;
 
   constructor(opts: HttpThreadPersistenceOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, "");
@@ -175,14 +185,16 @@ export class HttpThreadPersistence implements ThreadPersistencePort {
   }
 
   async listRecentMessages(threadId: string, limit: number): Promise<ThreadMessageRow[]> {
-    return this.call("listRecentMessages", { threadId, limit }, true, readThreadMessageRows);
+    const rows = await this.call("listRecentMessages", { threadId, limit }, true, readThreadMessageRows);
+    return Promise.all(rows.map((row) => this.owned(row)));
   }
 
   async findByClientMessageId(
     threadId: string,
     clientMessageId: string,
   ): Promise<ThreadMessageRow | undefined> {
-    return this.pointRead("findByClientMessageId", { threadId, clientMessageId }, readThreadMessageRow);
+    const row = await this.pointRead("findByClientMessageId", { threadId, clientMessageId }, readThreadMessageRow);
+    return row === undefined ? undefined : this.owned(row);
   }
 
   async getSnapshot(threadId: string): Promise<ThreadSnapshotRow | undefined> {
@@ -195,9 +207,31 @@ export class HttpThreadPersistence implements ThreadPersistencePort {
 
   // ── internals ──────────────────────────────────────────────────────
 
-  /** A write: never retried, and its `result` (the server's `null`) is not read. */
+  /**
+   * A write: never retried, and its body (the server's `{ result: null }`) is
+   * never read: a 2xx means it committed, whatever the body holds. The body is
+   * cancelled, not left open, so the connection is released.
+   */
   private async write(op: string, args: object): Promise<void> {
-    await this.send(op, args, false);
+    const res = await this.send(op, args, false);
+    await res.body?.cancel();
+  }
+
+  /** `row` with its `userId`: the stored one, or the token's user for a legacy row without one. */
+  private async owned(row: WireThreadMessageRow): Promise<ThreadMessageRow> {
+    return { ...row, userId: row.userId ?? (await this.owner()) };
+  }
+
+  /** The token's user, read once; a failed read is not kept, so the next row asks again. */
+  private owner(): Promise<string> {
+    this.ownerRead ??= this.scope().then(
+      (scope) => scope.userId,
+      (err: unknown) => {
+        this.ownerRead = undefined;
+        throw err;
+      },
+    );
+    return this.ownerRead;
   }
 
   /** A point read: `null` (the port's `undefined`) or the row `read` proves. */
@@ -216,7 +250,10 @@ export class HttpThreadPersistence implements ThreadPersistencePort {
     retryable: boolean,
     read: (value: unknown) => R | undefined,
   ): Promise<R> {
-    const { res, body } = await this.send(op, args, retryable);
+    const res = await this.send(op, args, retryable);
+    const parsed = await parsedBody(res);
+    if (!parsed.parsed) throw badResponse(res, op, "the body is not JSON", parsed.cause);
+    const body = parsed.value;
     if (!isWireObject(body) || !("result" in body)) throw badResponse(res, op, "the body is not a { result } envelope");
     const value = read(body.result);
     if (value === undefined) throw badResponse(res, op, "the result does not read as this op's answer");
@@ -224,12 +261,11 @@ export class HttpThreadPersistence implements ThreadPersistencePort {
   }
 
   /**
-   * One op on the wire: the 2xx response and its parsed body (`unknown`), or
-   * the typed error. One shared retry budget (`retried`) covers BOTH retry
+   * One op on the wire: the 2xx response (its body unread), or the typed error. One shared retry budget (`retried`) covers BOTH retry
    * triggers — a network failure and a 5xx response — so a retryable op makes
    * at most 2 total requests, never 3.
    */
-  private async send(op: string, args: object, retryable: boolean): Promise<{ res: Response; body: unknown }> {
+  private async send(op: string, args: object, retryable: boolean): Promise<Response> {
     const doOnce = async (): Promise<Response> =>
       this.fetchImpl(`${this.baseUrl}/v1/thread-store/${op}`, {
         method: "POST",
@@ -263,8 +299,6 @@ export class HttpThreadPersistence implements ThreadPersistencePort {
       break;
     }
     if (!res.ok) throw await toError(res);
-    const body = await parsedBody(res);
-    if (!body.parsed) throw badResponse(res, op, "the body is not JSON", body.cause);
-    return { res, body: body.value };
+    return res;
   }
 }

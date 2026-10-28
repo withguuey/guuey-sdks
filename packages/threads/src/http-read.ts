@@ -8,17 +8,30 @@
  * `BAD_RESPONSE`, the error every caller of the binding already handles.
  *
  * What a reader checks follows the port types in `rows.ts`, read across a
- * rolling release:
- * - a REQUIRED member is proven by type (every binding writes it on every row);
- *   a row without it is refused;
+ * rolling release, and reads a stored row the way the DynamoDB binding hands
+ * the same row to its readers (the two bindings must agree):
+ * - a member that IDENTIFIES the row (a thread's own members; a message's
+ *   `threadId`, integer `seq`, `clientMessageId`, `at`, which the schema
+ *   requires on every row) is proven by type, and a row without it is refused;
+ * - a message's closed vocabularies are read the way every reader of the row
+ *   reads them: a `kind` this release does not know (a newer writer's, or none
+ *   on a legacy row) is a `text` row (it is not a card, the one kind a reader
+ *   branches on), and an `authorRole` it does not know is `agent` (not the
+ *   user's words: `rowToAgMessage` reads it as the assistant, the managed read
+ *   plane as `agent`), so one such row never refuses the thread's history;
+ * - a message's `userId` (no reader on this path reads it) is left absent when
+ *   a legacy row has none, and the binding fills in the token's user, the only
+ *   user whose threads the server answers (`http.ts`);
  * - an OPTIONAL member is kept when it reads as its type and is absent
  *   otherwise, the way each one's own reader treats it at use (`readThreadInputKind`,
  *   `readTapLabels`, `threadClosure`), so a field an older server omits reads
  *   as absent and a value a newer one adds that this release does not know is
  *   left out;
- * - where reading a malformed optional member as absent would OPEN something
- *   the stored value closes (`sealIntervals`, `untrustedOrigin`), the row is
- *   refused instead;
+ * - a thread's `sealIntervals` is carried as stored, never normalised or
+ *   dropped: `readSealState` reads it at use, and reads one it cannot read as
+ *   wholly sealed (fail closed), exactly as over the DynamoDB binding;
+ * - a message's `untrustedOrigin` that is not a boolean would read as trusted
+ *   if it were dropped, so that row is refused instead;
  * - opaque members (`content`, `cardSnapshot`, `aiContext`) are carried as
  *   they came, as the port types them (`unknown`).
  */
@@ -30,7 +43,6 @@ import {
   type ClientClass,
   type HandoffEvent,
   type ReportEvent,
-  type SealInterval,
   type ThreadMessageEvent,
   type ThreadMessageKind,
   type ThreadMessageRole,
@@ -39,10 +51,18 @@ import {
   type ThreadSnapshotRow,
   type TurnOrigin,
 } from "./rows.js";
-import { readSealState } from "./seal.js";
 import type { ThreadScope } from "./http.js";
 
-/** A JSON object as it came off the wire: every member is unread until narrowed. */
+/**
+ * A JSON object as it came off the wire: every member is unread until narrowed.
+ *
+ * `@guuey/agent-client` keeps the same guard (`wire-object.ts`). It is not
+ * shared because no package both depend on exports one that reads an
+ * `unknown`: `@guuey/mcp-apps-host`'s `isJsonObject` takes a `JsonValue` and
+ * narrows its members to `JsonValue`, which a parsed body is not proven to be,
+ * and the two packages do not depend on each other. The guard is one line and
+ * every member it yields is narrowed at its read.
+ */
 export interface WireObject {
   readonly [key: string]: unknown;
 }
@@ -64,6 +84,10 @@ function optString(obj: WireObject, key: string): string | undefined {
 
 const MESSAGE_KINDS: readonly ThreadMessageKind[] = ["text", "card", "event"];
 const MESSAGE_ROLES: readonly ThreadMessageRole[] = ["user", "agent", "system"];
+/** What a message `kind` this release does not know reads as (see the module doc). */
+const UNKNOWN_KIND_READS_AS: ThreadMessageKind = "text";
+/** What a message `authorRole` this release does not know reads as (see the module doc). */
+const UNKNOWN_ROLE_READS_AS: ThreadMessageRole = "agent";
 const TURN_ORIGINS: readonly TurnOrigin[] = ["card_action", "chip", "typed"];
 const CLIENT_CLASSES: readonly ClientClass[] = ["operator", "bot", "browser"];
 
@@ -83,14 +107,6 @@ export function readThreadScope(value: unknown): ThreadScope | undefined {
 /** `incrementSeq`'s result: the integer seq the server allocated. */
 export function readAllocatedSeq(value: unknown): number | undefined {
   return isSeqNumber(value) ? value : undefined;
-}
-
-/** A stored `sealIntervals`: absent, or intervals; `"unreadable"` when it is neither. */
-function readSealIntervals(value: unknown): SealInterval[] | undefined | "unreadable" {
-  const state = readSealState(value);
-  if (state.kind === "none") return undefined;
-  if (state.kind === "unreadable") return "unreadable";
-  return [...state.intervals];
 }
 
 /** A `getThread` row. */
@@ -115,10 +131,10 @@ export function readThreadRow(value: unknown): ThreadRow | undefined {
   ) {
     return undefined;
   }
-  // A stored seal that does not read must not read as "no seal" (every message
-  // readable); `readSealState` reads it as wholly sealed, so the row is refused.
-  const sealIntervals = readSealIntervals(value.sealIntervals);
-  if (sealIntervals === "unreadable") return undefined;
+  // Carried as stored (`null` is no seal, as `readSealState` reads it): a seal
+  // this release cannot read still reaches `readSealState`, which reads it as
+  // wholly sealed, so the thread stays usable and closed.
+  const sealIntervals = value.sealIntervals;
   const previewSeq = value.lastMessagePreviewSeq;
   const previewDigest = optString(value, "lastMessagePreviewDigest");
   const closedCode = optString(value, "closedCode");
@@ -137,7 +153,7 @@ export function readThreadRow(value: unknown): ThreadRow | undefined {
     lastMessagePreview,
     ...(isSeqNumber(previewSeq) ? { lastMessagePreviewSeq: previewSeq } : {}),
     ...(previewDigest !== undefined ? { lastMessagePreviewDigest: previewDigest } : {}),
-    ...(sealIntervals !== undefined ? { sealIntervals } : {}),
+    ...(sealIntervals !== undefined && sealIntervals !== null ? { sealIntervals } : {}),
     ...(closedCode !== undefined ? { closedCode: closedCode } : {}),
     ...(closedMessage !== undefined ? { closedMessage: closedMessage } : {}),
     ...(closedAt !== undefined ? { closedAt: closedAt } : {}),
@@ -183,23 +199,22 @@ function readThreadMessageEvent(value: unknown): ThreadMessageEvent | undefined 
   return undefined;
 }
 
+/**
+ * A message row as read off the wire: a legacy row may carry no `userId`, which
+ * the binding fills in (`HttpThreadPersistence`) before the row leaves it.
+ */
+export type WireThreadMessageRow = Omit<ThreadMessageRow, "userId"> & { userId?: string };
+
 /** A message row (`listRecentMessages`, `findByClientMessageId`). */
-export function readThreadMessageRow(value: unknown): ThreadMessageRow | undefined {
+export function readThreadMessageRow(value: unknown): WireThreadMessageRow | undefined {
   if (!isWireObject(value)) return undefined;
-  const { threadId, seq, userId, clientMessageId, at } = value;
-  const kind = oneOf(MESSAGE_KINDS, value.kind);
-  const authorRole = oneOf(MESSAGE_ROLES, value.authorRole);
-  if (
-    typeof threadId !== "string" ||
-    !isSeqNumber(seq) ||
-    typeof userId !== "string" ||
-    typeof clientMessageId !== "string" ||
-    typeof at !== "string" ||
-    kind === undefined ||
-    authorRole === undefined
-  ) {
+  const { threadId, seq, clientMessageId, at } = value;
+  if (typeof threadId !== "string" || !isSeqNumber(seq) || typeof clientMessageId !== "string" || typeof at !== "string") {
     return undefined;
   }
+  const userId = optString(value, "userId");
+  const kind = oneOf(MESSAGE_KINDS, value.kind) ?? UNKNOWN_KIND_READS_AS;
+  const authorRole = oneOf(MESSAGE_ROLES, value.authorRole) ?? UNKNOWN_ROLE_READS_AS;
   // `untrustedOrigin` marks page-derived content; a stored value that is not a
   // boolean must not read as trusted, so the row is refused.
   const untrustedOrigin = value.untrustedOrigin;
@@ -215,7 +230,7 @@ export function readThreadMessageRow(value: unknown): ThreadMessageRow | undefin
   return {
     threadId,
     seq,
-    userId,
+    ...(userId !== undefined ? { userId } : {}),
     clientMessageId,
     at,
     kind,
@@ -235,10 +250,15 @@ export function readThreadMessageRow(value: unknown): ThreadMessageRow | undefin
   };
 }
 
-/** `listRecentMessages`' result: every row must read, or the list is refused. */
-export function readThreadMessageRows(value: unknown): ThreadMessageRow[] | undefined {
+/**
+ * `listRecentMessages`' result: every row must read, or the list is refused. A
+ * row reads unless it lacks a member that identifies it or carries a malformed
+ * `untrustedOrigin` (see the module doc); a vocabulary value or a `userId` this
+ * release does not know never refuses it.
+ */
+export function readThreadMessageRows(value: unknown): WireThreadMessageRow[] | undefined {
   if (!Array.isArray(value)) return undefined;
-  const rows: ThreadMessageRow[] = [];
+  const rows: WireThreadMessageRow[] = [];
   for (const entry of value) {
     const row = readThreadMessageRow(entry);
     if (row === undefined) return undefined;

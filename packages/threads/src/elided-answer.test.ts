@@ -8,7 +8,7 @@
  * Every word here is synthetic.
  */
 import { describe, expect, it } from "vitest";
-import type { AgMessage, JsonValue } from "@silverprotocol/core";
+import { JsonValue, type AgMessage } from "@silverprotocol/core";
 import {
   ELIDED_VALUE_KEY,
   agMessageToRow,
@@ -42,7 +42,8 @@ const answerOnly = message([{ type: "text", text: ANSWER }]);
  * the answer's second copy stores it.
  */
 function elided(msg: AgMessage): JsonValue {
-  const plain: JsonValue = JSON.parse(JSON.stringify(msg));
+  const parsed: unknown = JSON.parse(JSON.stringify(msg));
+  const plain = JsonValue.parse(parsed);
   if (plain === null || typeof plain !== "object" || Array.isArray(plain)) throw new Error("not a message");
   const blocks = plain["content"];
   if (!Array.isArray(blocks)) throw new Error("no content");
