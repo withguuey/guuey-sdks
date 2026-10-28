@@ -37,6 +37,17 @@ import type { McpToolCallContent, McpToolCallResult, McpToolStructuredContent } 
  */
 export const ELIDED_VALUE_MARKER = "com.guuey/elided";
 
+/**
+ * True when `value` is the persistence elision marker: a JSON object holding
+ * the {@link ELIDED_VALUE_MARKER} key, which stands in for a stored value
+ * whole. Only a value read back from the store can be one; live never
+ * produces it. `@guuey/threads`' own recognizer is pinned to agree with this
+ * one by a sync test there.
+ */
+export function isElidedValue(value: JsonValue | undefined): boolean {
+  return isJsonObject(value) && Object.prototype.hasOwnProperty.call(value, ELIDED_VALUE_MARKER);
+}
+
 /** What a card's view is sent after `initialized`; each half only when held. */
 export interface ViewToolData {
   /** `ui/notifications/tool-input` `params.arguments`. */
@@ -52,8 +63,7 @@ type ToolResultBlock = Extract<AgBlock, { type: "tool-result" }>;
  * is not a key-value object or is the elision marker.
  */
 export function toolCallViewInput(input: JsonValue | undefined): McpToolStructuredContent | undefined {
-  if (!isJsonObject(input)) return undefined;
-  if (Object.prototype.hasOwnProperty.call(input, ELIDED_VALUE_MARKER)) return undefined;
+  if (!isJsonObject(input) || isElidedValue(input)) return undefined;
   return input;
 }
 

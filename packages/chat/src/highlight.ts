@@ -26,8 +26,9 @@ export const HIGHLIGHT_MAX_CHARS = 200_000;
 
 /**
  * `text` re-indented with two spaces when it parses as JSON (an object or an
- * array), else null. Never throws. A JSON scalar ("1", "\"x\"") is not worth
- * re-printing, so it is null too.
+ * array), else null. A JSON scalar ("1", "\"x\"") is not worth re-printing,
+ * so it is null too. Text that is not JSON is null; any other failure of the
+ * parse (not a `SyntaxError`) is rethrown, never read as "not JSON".
  */
 export function prettyJson(text: string): string | null {
   const trimmed = text.trim();
@@ -35,8 +36,9 @@ export function prettyJson(text: string): string | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(trimmed);
-  } catch {
-    return null; // not JSON: the caller shows the text as it came
+  } catch (err) {
+    if (err instanceof SyntaxError) return null; // not JSON: the caller shows the text as it came
+    throw err;
   }
   return typeof parsed === "object" && parsed !== null ? JSON.stringify(parsed, null, 2) : null;
 }

@@ -101,6 +101,7 @@ export {
 // `ui/notifications/tool-input` + `ui/notifications/tool-result`).
 export {
   ELIDED_VALUE_MARKER,
+  isElidedValue,
   snapshotViewToolData,
   toolCallViewInput,
   toolResultViewResult,

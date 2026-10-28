@@ -33,6 +33,9 @@
  */
 import { JsonValue, type AgBlock, type AgReduceResult } from "@silverprotocol/core";
 import {
+  ELIDED_VALUE_MARKER,
+  isElidedValue,
+  isJsonObject,
   isViewDirectiveText,
   readTapLabels,
   snapshotViewMount,
@@ -473,9 +476,22 @@ function toolResultMediaItems(
 }
 
 /**
+ * The `bytes` a persistence elision marker records (the UTF-8 length of the
+ * elided value's JSON), or 0 when it records no usable count.
+ */
+function elidedMarkerBytes(marker: JsonValue): number {
+  const inner = isJsonObject(marker) ? marker[ELIDED_VALUE_MARKER] : undefined;
+  const bytes = isJsonObject(inner) ? inner["bytes"] : undefined;
+  return typeof bytes === "number" && Number.isSafeInteger(bytes) && bytes >= 0 ? bytes : 0;
+}
+
+/**
  * R5 for a tool result. Image and audio parts are not part of it — they
  * render as their own rows — so a result made only of them has no data row
- * (null) instead of a byte count.
+ * (null) instead of a byte count. A `structuredContent` read back from the
+ * store as the elision marker (guuey#2388; live never produces one) is a
+ * giant result of the marker's recorded size, with no preview: the marker is
+ * not the tool's output and is never shown.
  */
 function dataResultFromToolResult(
   block: ToolResultBlock,
@@ -498,7 +514,11 @@ function dataResultFromToolResult(
   // guuey#2367: the readable whole (when it is not giant) and its language.
   let whole: string | null = null;
   let lang: "json" | undefined;
-  if (payload !== undefined) {
+  if (payload !== undefined && isElidedValue(payload)) {
+    byteCount = elidedMarkerBytes(payload);
+    preview = null;
+    state = "giant";
+  } else if (payload !== undefined) {
     byteCount = jsonByteSize(payload);
     preview = boundedPreview(payload, policy.dataResult.previewChars, policy.dataResult.prettyPrint);
     state = byteCount > GIANT_RESULT_BYTES ? "giant" : "small";
@@ -736,9 +756,12 @@ function planAssistantSource(
           name: block.name,
           title: policy.tool.humanizeTitle(block.title ?? block.name),
           state,
-          argsPreview: policy.tool.argsVisible
-            ? boundedPreview(block.input, policy.dataResult.previewChars)
-            : null,
+          // guuey#2388: an input the store elided has no arguments to show
+          // (the marker is not them, and no other field stands in for them).
+          argsPreview:
+            policy.tool.argsVisible && !isElidedValue(block.input)
+              ? boundedPreview(block.input, policy.dataResult.previewChars)
+              : null,
           result:
             result && mount === undefined && refusal === null
               ? dataResultFromToolResult(result, `${key}.result`, policy, overrides)

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgBlock, JsonValue } from "@silverprotocol/core";
 import {
   ELIDED_VALUE_MARKER,
+  isElidedValue,
   snapshotViewToolData,
   toolCallViewInput,
   toolResultViewResult,
@@ -13,6 +14,24 @@ type ToolResultBlock = Extract<AgBlock, { type: "tool-result" }>;
 function result(fields: Partial<ToolResultBlock> = {}): ToolResultBlock {
   return { type: "tool-result", toolCallId: "call-1", content: [], ...fields };
 }
+
+describe("isElidedValue — the one recognizer of the persistence elision marker", () => {
+  it("is true for the marker a store writes in place of a value", () => {
+    expect(isElidedValue({ [ELIDED_VALUE_MARKER]: { bytes: 900_000 } })).toBe(true);
+  });
+
+  it.each([
+    ["absent", undefined],
+    ["null", null],
+    ["a string", ELIDED_VALUE_MARKER],
+    ["a number", 7],
+    ["an array holding the marker", [{ [ELIDED_VALUE_MARKER]: { bytes: 1 } }]],
+    ["an object without the key", { bytes: 1 }],
+    ["an object holding the marker one level down", { value: { [ELIDED_VALUE_MARKER]: { bytes: 1 } } }],
+  ])("is false for %s", (_label, value) => {
+    expect(isElidedValue(value)).toBe(false);
+  });
+});
 
 describe("toolCallViewInput — the tool-input arguments", () => {
   it("passes a plain-object input through as the arguments", () => {

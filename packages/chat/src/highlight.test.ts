@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { HIGHLIGHT_MAX_CHARS, highlightCode, prettyJson, type HighlightToken } from "./highlight.js";
 
 const joined = (tokens: readonly HighlightToken[]): string => tokens.map((t) => t.text).join("");
@@ -64,11 +64,21 @@ describe("prettyJson", () => {
     expect(prettyJson('{"a":1,"b":[2,3]}')).toBe('{\n  "a": 1,\n  "b": [\n    2,\n    3\n  ]\n}');
     expect(prettyJson("  [1]  ")).toBe("[\n  1\n]");
   });
-  it("is null for anything that is not a JSON object or array, and never throws", () => {
+  it("is null for anything that is not a JSON object or array", () => {
     expect(prettyJson("hello")).toBeNull();
     expect(prettyJson("{not json")).toBeNull();
     expect(prettyJson("42")).toBeNull();
     expect(prettyJson('"x"')).toBeNull();
     expect(prettyJson("")).toBeNull();
+  });
+  it("rethrows a parse failure that is not a SyntaxError (guuey#2388)", () => {
+    const parse = vi.spyOn(JSON, "parse").mockImplementation(() => {
+      throw new RangeError("Maximum call stack size exceeded");
+    });
+    try {
+      expect(() => prettyJson('{"a":1}')).toThrow(RangeError);
+    } finally {
+      parse.mockRestore();
+    }
   });
 });
