@@ -855,7 +855,9 @@ export function NativeError({ item, ctx }: ItemProps<ErrorItem>): ReactNode {
       style={{
         backgroundColor: tokens.palette.surface,
         borderLeftWidth: 3,
-        borderLeftColor: tokens.palette.error,
+        // guuey#2453: the retry tone is the plain surface with a neutral rule;
+        // the in-place Retry is its only cue.
+        borderLeftColor: item.tone === "retry" ? tokens.palette.canvasMuted : tokens.palette.error,
         borderRadius: tokens.radius,
         padding: tokens.pad,
         gap: 6,

@@ -770,6 +770,17 @@
   padding: 2px 10px;
   cursor: pointer;
 }
+/* The retry tone (guuey#2453): nothing is broken, only slow (an app that did
+   not wake in time). The plain surface, no error tint; the in-place Retry is
+   the only cue. */
+.guuey-chat-error-retry {
+  border-color: var(--guuey-chat-canvas-muted, var(--_guuey-chat-canvas-muted));
+  background: var(--guuey-chat-surface, var(--_guuey-chat-surface));
+}
+.guuey-chat-error-retry .guuey-chat-error-action {
+  border-color: var(--guuey-chat-accent, var(--_guuey-chat-accent));
+  color: var(--guuey-chat-accent, var(--_guuey-chat-accent));
+}
 .guuey-chat-error-verbatim {
   margin: 8px 0 0;
   font-family: var(--guuey-chat-mono-font, var(--_guuey-chat-mono-font, ui-monospace, monospace));

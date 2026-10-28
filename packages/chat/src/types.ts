@@ -666,6 +666,14 @@ export interface ErrorItem extends BaseItem {
    */
   message: string;
   family: "auth" | "quota" | "transient" | "invalid";
+  /**
+   * The item's face (guuey#2453). `fault` draws the error tint; `retry` draws
+   * the plain surface with the in-place Retry as its only cue: nothing is
+   * broken, it was only slow (an app that did not wake in time). The planner
+   * always sets it from the code; absent reads as `fault`, so an item built
+   * without it draws as before.
+   */
+  tone?: "fault" | "retry";
   code: string | null;
   copy: string;
   /** The wire message verbatim, populated only under the debug policy. */

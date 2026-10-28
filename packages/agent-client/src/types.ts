@@ -567,8 +567,9 @@ export interface UseAgentInvokeReturn {
    * client-originated rather than pod wire codes (see `CLIENT_ERROR_CODES`):
    * `STREAM_STALLED` when the guuey#192 stall watchdog gives up,
    * `STREAM_TRUNCATED` when the stream closed without `done` and history did
-   * not hold the reply, and `THREAD_HISTORY_UNAVAILABLE` for a refused
-   * history read.
+   * not hold the reply, `THREAD_HISTORY_UNAVAILABLE` for a refused
+   * history read, and `WAKE_TIMED_OUT` when a sleeping app did not wake
+   * within the wake budget.
    */
   errorCode: string | null;
   /**

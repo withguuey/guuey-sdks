@@ -115,6 +115,13 @@ export interface ChatStrings {
    * Never the pod's own envelope, which names a pod and its re-routing.
    */
   errorDraining: string;
+  /**
+   * R11, code WAKE_TIMED_OUT (guuey#2453, a client code): the app was asleep
+   * and did not wake within the wake budget. Nothing is broken, so the error
+   * item wears the retry tone and keeps its in-place Retry. Never the bare
+   * `agent responded 503` the refusal carried.
+   */
+  errorWakeTimedOut: string;
 
   /** R3/R4. */
   toolGroup: (count: number) => string;
@@ -418,6 +425,7 @@ export const defaultChatStrings: ChatStrings = {
     "This conversation hit a temporary capacity limit and was stopped safely. Please try again in a moment.",
   errorPodSaturated: "High demand right now. Please try again in a moment.",
   errorDraining: "This agent is restarting. Please try again in a moment.",
+  errorWakeTimedOut: "Your agent didn't wake up in time. Try again.",
   errorInvalid: "The app sent a request the agent couldn't read.",
   errorAttachmentsUnsupported: "This agent can't read images yet. Send your message without the image.",
   errorAttachmentsInvalid: "That image can't be sent. Use a JPEG, PNG, GIF or WebP image, up to 4 at a time.",

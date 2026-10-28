@@ -226,6 +226,15 @@ export const CLIENT_ERROR_CODES = {
    * `error` keeps the runtime's own message.
    */
   INPUT_KIND_NOT_ADVERTISED: "INPUT_KIND_NOT_ADVERTISED",
+  /**
+   * The app was asleep and did not wake within this SDK's wake budget
+   * (guuey#2453): `withColdStartRetry` gave up and threw the latest waking
+   * refusal (a code-less 503 carrying the waking marker; see
+   * `isWakingRefusal`). Nothing reached the agent and nothing is broken, it
+   * was only slow; sending again usually finds it awake. `error` is the SDK's
+   * own sentence, never the bare status line.
+   */
+  WAKE_TIMED_OUT: "WAKE_TIMED_OUT",
 } as const;
 
 /** One of this SDK's client-originated codes — see {@link CLIENT_ERROR_CODES}. */

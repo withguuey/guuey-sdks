@@ -13,6 +13,7 @@ import { describe, it, expect } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useAgentInvoke } from "./useAgentInvoke.js";
 import { AgentResponseError } from "./errors.js";
+import { CLIENT_ERROR_CODES } from "./error-codes.js";
 import type { AgentInvokeAdapters, InvokeRequest, InvokeTransport } from "./types.js";
 
 const APP_ID = "app-error-code";
@@ -142,6 +143,48 @@ describe("useAgentInvoke errorCode", () => {
     act(() => {
       result.current.reset();
     });
+    expect(result.current.error).toBeNull();
+    expect(result.current.errorCode).toBeNull();
+  });
+});
+
+describe("guuey#2453: a wake that ran out of budget is its own client code", () => {
+  /** What `withColdStartRetry` throws when the wake budget is spent: the latest waking refusal. */
+  const exhaustedWake = () => new AgentResponseError("agent responded 503", 503, undefined, 2, true);
+
+  it("names it WAKE_TIMED_OUT, with an SDK sentence in place of the bare status line", async () => {
+    const { result, send } = mountWith(throwing(exhaustedWake()));
+    await send();
+    expect(CLIENT_ERROR_CODES.WAKE_TIMED_OUT).toBe("WAKE_TIMED_OUT");
+    expect(result.current.errorCode).toBe(CLIENT_ERROR_CODES.WAKE_TIMED_OUT);
+    expect(result.current.error).toBe("The agent did not wake up in time.");
+    expect(result.current.status).toBe("ready");
+    // Refused before admission: the send itself failed, so the row offers its retry.
+    expect(Object.values(result.current.sendStates)).toEqual(["failed"]);
+  });
+
+  it("a plain 503 without the waking marker keeps a null code and its own message", async () => {
+    const { result, send } = mountWith(throwing(new AgentResponseError("agent responded 503", 503)));
+    await send();
+    expect(result.current.errorCode).toBeNull();
+    expect(result.current.error).toBe("agent responded 503");
+  });
+
+  it("a coded 503 keeps the pod's code even when the waking marker rode along", async () => {
+    const { result, send } = mountWith(
+      throwing(new AgentResponseError("agent is at capacity", 503, "POD_SATURATED", 3, true)),
+    );
+    await send();
+    expect(result.current.errorCode).toBe("POD_SATURATED");
+    expect(result.current.error).toBe("agent is at capacity");
+  });
+
+  it("clears on the next send like every other code", async () => {
+    const { result, send, swap } = mountWith(throwing(exhaustedWake()));
+    await send();
+    expect(result.current.errorCode).toBe("WAKE_TIMED_OUT");
+    swap(streaming(frame("session", { threadId: "t1" }), frame("done", {})));
+    await send("again");
     expect(result.current.error).toBeNull();
     expect(result.current.errorCode).toBeNull();
   });

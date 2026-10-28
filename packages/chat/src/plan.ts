@@ -1114,13 +1114,34 @@ const CODE_COPY: Record<string, (s: import("./strings.js").ChatStrings) => strin
   // The pod is restarting: a plain "try again" line in place of the pod's
   // envelope, which names a pod and its re-routing; the transient Retry stays.
   DRAINING: (s) => s.errorDraining,
+  // guuey#2453: the app did not wake within the wake budget (a client code).
+  // The transient family's Retry stays (no ERROR_FAMILIES entry): sending
+  // again usually finds it awake.
+  WAKE_TIMED_OUT: (s) => s.errorWakeTimedOut,
 };
+
+/**
+ * Codes whose source message is never a reader's line, so the blanket
+ * `verbatimCodes: "all"` (which keeps reader-written source messages) does not
+ * reach them and their built-in voice wins. A host's `copyByCode` and an
+ * explicit listing of the code still win. WAKE_TIMED_OUT (guuey#2453) carries
+ * the SDK's sentence over the bare `agent responded 503` the refusal held.
+ */
+const BUILT_IN_OVER_ALL: ReadonlySet<string> = new Set(["WAKE_TIMED_OUT"]);
+
+/**
+ * Codes whose error item wears the RETRY tone (guuey#2453): nothing is broken,
+ * so the face is the plain surface with the in-place Retry as its only cue.
+ * Every other code is a fault.
+ */
+const RETRY_TONE_CODES: ReadonlySet<string> = new Set(["WAKE_TIMED_OUT"]);
 
 /**
  * R11's voice resolution, shared by the live error item and a reloaded failed
  * turn's notice so one failure reads the same both ways: the host's exact
  * per-code sentence wins; then a verbatim match renders the SOURCE message
- * ("all" covers code-less client errors too — the widget's #162 posture); then
+ * ("all" covers code-less client errors too — the widget's #162 posture — but
+ * not a {@link BUILT_IN_OVER_ALL} code, whose source is never a reader's line); then
  * the built-in per-code voice; then the family's copy. An empty source message
  * falls back rather than rendering a blank notice.
  */
@@ -1145,7 +1166,10 @@ function codedErrorCopy(
           : policy.strings.errorTransient;
   const { copyByCode, verbatimCodes } = policy.error;
   const perCode = code !== null ? copyByCode[code] : undefined;
-  const verbatimVoice = verbatimCodes === "all" || (code !== null && verbatimCodes.includes(code));
+  const verbatimVoice =
+    verbatimCodes === "all"
+      ? code === null || !BUILT_IN_OVER_ALL.has(code)
+      : code !== null && verbatimCodes.includes(code);
   const builtIn = code !== null ? CODE_COPY[code] : undefined;
   const specificCopy =
     perCode ?? (verbatimVoice && message !== "" ? message : undefined) ?? builtIn?.(policy.strings);
@@ -1708,6 +1732,7 @@ export function planTranscript(
       key: "error",
       expanded: true,
       family,
+      tone: code !== null && RETRY_TONE_CODES.has(code) ? "retry" : "fault",
       code,
       copy,
       message: inputs.error.message,
