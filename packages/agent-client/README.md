@@ -49,7 +49,7 @@ export function Chat({ endpointUrl, appId }: { endpointUrl: string; appId: strin
           {m.text}
         </p>
       ))}
-      {status === "connecting" && <p>Waking your agent…</p>}
+      {status === "connecting" && <p>Waking up…</p>}
       {status === "using-tool" && <p>Using {activeTool}…</p>}
       {error && <p role="alert">{error}</p>}
       <button disabled={status !== "ready"} onClick={() => send("hello")}>
