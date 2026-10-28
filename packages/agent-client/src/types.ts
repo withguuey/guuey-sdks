@@ -229,6 +229,27 @@ export interface HistoryToolResult {
 }
 
 /**
+ * A stored tool call rehydrated from thread history (guuey#2388), so a reload
+ * can draw the tool row the live session drew. The read plane serves it only
+ * when asked (`fetchThreadHistory`'s `includeToolCalls`), as a four-field view
+ * of the stored call, and this client reads each field on its own: any other
+ * field a later writer adds is ignored, never fatal.
+ */
+export interface HistoryToolCall {
+  /** The transcript position of the row that makes the call. */
+  seq: number;
+  at: string;
+  /** What the live tool-call arm reads off a `tool-call` block. */
+  call: { toolCallId: string; name: string; title?: string; input: JsonValue };
+  /**
+   * The card row on the same read that stands for this call's result: its
+   * position, and its `tool-result` part when that part reads. Absent when no
+   * card row the read holds names this call.
+   */
+  card?: { seq: number; result?: HistoryToolResult["block"] };
+}
+
+/**
  * Persists the durable `threadId` per app so a reload continues the same
  * conversation. `load` may be sync (localStorage) or async (AsyncStorage).
  */
@@ -277,6 +298,14 @@ export type HistoryLoadResult =
        * `includeToolResults`). Empty against a read plane that predates them.
        */
       toolResults?: HistoryToolResult[];
+      /**
+       * guuey#2388: the thread's stored tool calls, ascending by `seq`, ONLY
+       * when the loader asked (`fetchThreadHistory`'s `includeToolCalls`) AND
+       * every page of the read echoed `toolCalls` in its `include`. Absent
+       * otherwise (not asked, a read plane that predates calls, or one that
+       * stopped honouring them mid-read): draw no tool rows.
+       */
+      toolCalls?: HistoryToolCall[];
       /** The conversation was ended by its agent (see {@link ThreadClosed}); absent while it is open. */
       closed?: ThreadClosed;
       /**
@@ -610,6 +639,17 @@ export interface UseAgentInvokeReturn {
    * them. `reset()` and an app switch clear it back to `[]`.
    */
   historyToolResults: HistoryToolResult[];
+  /**
+   * guuey#2388: the stored tool calls rehydrated from thread history,
+   * ascending by `seq`, so a renderer can draw the tool rows the live session
+   * drew. `null` unless the injected history adapter asked for them
+   * (`createWebAdapters`, on by default; `fetchThreadHistory({
+   * includeToolCalls: true })` in a host's own adapter) AND every page of the
+   * read honoured the ask: `null` means draw no tool rows. `[]` is an
+   * honoured read with no calls. `reset()` and an app switch clear it back to
+   * `null`.
+   */
+  historyToolCalls: HistoryToolCall[] | null;
   /**
    * The latest cross-app profile LINK invite the pod asked for on THIS
    * conversation, or `null`. Set from a well-formed `profile-link-needed`

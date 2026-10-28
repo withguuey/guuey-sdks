@@ -12,7 +12,14 @@
  */
 import { AgNoticeSource, isJsonValue, readStoredAgMessage, type AgMessage, type JsonValue } from "@silverprotocol/core";
 import { readTapLabels } from "@guuey/mcp-apps-host/narrowing";
-import type { AgentMessage, HistoryCard, HistoryLoadResult, HistoryToolResult, ThreadClosed } from "./types.js";
+import type {
+  AgentMessage,
+  HistoryCard,
+  HistoryLoadResult,
+  HistoryToolCall,
+  HistoryToolResult,
+  ThreadClosed,
+} from "./types.js";
 import { closureFromLastRow, readThreadClosed } from "./thread-closed.js";
 import { userInputKindOf } from "./input-kinds.js";
 
@@ -68,6 +75,14 @@ export interface ThreadHistoryRow {
    * maps to nothing.
    */
   toolResults?: ThreadHistoryToolResultRow[] | null;
+  /**
+   * guuey#2388: the tool calls this row's stored message makes, in block
+   * order. Served only when the read asked (`include=toolCalls`) and the page
+   * echoes it; absent from an older read plane. Kept as served values and read
+   * entry by entry by {@link threadHistoryRowsToToolCalls}, so an entry no
+   * writer produced drops alone.
+   */
+  toolCalls?: JsonValue[] | null;
 }
 
 /** One entry of {@link ThreadHistoryRow.toolResults}, as the read plane serves it. */
@@ -80,6 +95,9 @@ export interface ThreadHistoryToolResultRow {
 
 /** The `include` value that asks the read plane for {@link ThreadHistoryRow.toolResults}. */
 export const TOOL_RESULTS_INCLUDE = "toolResults";
+
+/** The `include` value that asks the read plane for {@link ThreadHistoryRow.toolCalls} (guuey#2388). */
+export const TOOL_CALLS_INCLUDE = "toolCalls";
 
 /**
  * One page of `GET /v1/threads/:id/messages` as this client reads it: the
@@ -104,6 +122,12 @@ export interface ThreadMessagesPage {
    * predates the param, which serves ascending rows whatever was asked.
    */
   newestFirst: boolean;
+  /**
+   * guuey#2388: the `include` entries the read plane says it honoured on this
+   * page (its body's `include` echo). `[]` when the page carried none: a read
+   * plane that predates the echo, or a read that asked nothing that needs it.
+   */
+  include: readonly string[];
 }
 
 function field(value: object, key: string): unknown {
@@ -172,6 +196,12 @@ export function readThreadHistoryRow(value: unknown): ThreadHistoryRow | null {
     // means is judged by threadHistoryRowsToToolResults.
     row.toolResults = toolResults.filter(isObject).map(readThreadHistoryToolResultRow);
   }
+  const toolCalls = field(value, "toolCalls");
+  if (toolCalls === null) row.toolCalls = null;
+  else if (Array.isArray(toolCalls)) {
+    // guuey#2388: each entry is judged on its own by threadHistoryRowsToToolCalls.
+    row.toolCalls = toolCalls.filter(isJsonValue);
+  }
   return row;
 }
 
@@ -206,12 +236,14 @@ export function readThreadMessagesPage(body: unknown): ThreadMessagesPage | null
   }
   const thread = field(body, "thread");
   const threadSeen = isObject(thread);
+  const include = field(body, "include");
   return {
     rows,
     nextToken: typeof nextToken === "string" && nextToken !== "" ? nextToken : null,
     threadSeen,
     closed: threadSeen ? readThreadClosed(field(thread, "closed")) : undefined,
     newestFirst: field(body, "order") === "desc",
+    include: Array.isArray(include) ? include.filter((entry): entry is string => typeof entry === "string") : [],
   };
 }
 
@@ -349,7 +381,7 @@ export function threadHistoryRowsToCards(rows: ThreadHistoryRow[]): HistoryCard[
  * between the two, only the reader that holds every row can pair them.
  */
 export function threadHistoryRowsToToolResults(rows: ThreadHistoryRow[]): HistoryToolResult[] {
-  const carded = cardToolCallIds(rows);
+  const carded = cardPartsByToolCallId(rows);
   const results: HistoryToolResult[] = [];
   for (const row of rows) {
     if (row.kind !== "text" || !Array.isArray(row.toolResults)) continue;
@@ -373,14 +405,66 @@ export function threadHistoryRowsToToolResults(rows: ThreadHistoryRow[]): Histor
 }
 
 /**
- * The call ids the card rows of `rows` stand for: every `tool-result` part,
- * with a string `toolCallId`, of a card row's snapshot. A snapshot of any
- * other shape stands for none. The read plane walks the same field on its
- * side; none of this package's dependencies exports such a walk, so it is
- * written here over the served `JsonValue`.
+ * Project raw rows to the tool calls their stored messages make (guuey#2388),
+ * tagged with their row's transcript position, ascending as the rows are, in
+ * block order within a row. Only `kind === "text"` rows carry calls.
+ *
+ * Lenient, entry by entry: each served entry is read field by field
+ * (`toolCallId` and `name` non-empty strings, `title` a string when present,
+ * `input` any JSON value), and one that fails is dropped alone, never its row
+ * or its neighbours. Every other field is ignored, so a call a later writer
+ * describes with more (a new `uiVisibility` value, any key) still reads. A
+ * repeated `toolCallId` keeps the first, the live rule.
+ *
+ * A call whose result a card row among `rows` stands for carries that card's
+ * position and its `tool-result` part, so a renderer pairs the two without
+ * walking the snapshot again.
  */
-function cardToolCallIds(rows: readonly ThreadHistoryRow[]): Set<string> {
-  const ids = new Set<string>();
+export function threadHistoryRowsToToolCalls(rows: ThreadHistoryRow[]): HistoryToolCall[] {
+  const carded = cardPartsByToolCallId(rows);
+  const seen = new Set<string>();
+  const calls: HistoryToolCall[] = [];
+  for (const row of rows) {
+    if (row.kind !== "text" || !Array.isArray(row.toolCalls)) continue;
+    for (const entry of row.toolCalls) {
+      const call = readServedToolCall(entry);
+      if (call === undefined || seen.has(call.toolCallId)) continue;
+      seen.add(call.toolCallId);
+      const card = carded.get(call.toolCallId);
+      const result = card === undefined ? undefined : readServedToolResultBlock(card.part);
+      calls.push({
+        seq: row.seq,
+        at: row.at,
+        call,
+        ...(card !== undefined ? { card: { seq: card.seq, ...(result !== undefined ? { result } : {}) } } : {}),
+      });
+    }
+  }
+  return calls;
+}
+
+/** One served call entry read field by field into the four fields, or `undefined` when one of them does not read. */
+function readServedToolCall(entry: JsonValue): HistoryToolCall["call"] | undefined {
+  if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return undefined;
+  const { toolCallId, name, title, input } = entry;
+  if (typeof toolCallId !== "string" || toolCallId === "") return undefined;
+  if (typeof name !== "string" || name === "") return undefined;
+  if (title !== undefined && typeof title !== "string") return undefined;
+  if (input === undefined) return undefined;
+  return { toolCallId, name, ...(title !== undefined ? { title } : {}), input };
+}
+
+/**
+ * The module's one card walk: each call id the card rows of `rows` stand for,
+ * with that card row's position and the `tool-result` part that names it. A
+ * part counts when it is an object of `type: "tool-result"` with a string
+ * `toolCallId`; a snapshot of any other shape stands for none. The first card
+ * row naming an id keeps it. The read plane walks the same field on its side;
+ * none of this package's dependencies exports such a walk, so it is written
+ * here over the served `JsonValue`.
+ */
+function cardPartsByToolCallId(rows: readonly ThreadHistoryRow[]): Map<string, { seq: number; part: JsonValue }> {
+  const byId = new Map<string, { seq: number; part: JsonValue }>();
   for (const row of rows) {
     const snapshot = row.kind === "card" ? row.cardSnapshot : undefined;
     if (snapshot === null || snapshot === undefined || typeof snapshot !== "object" || Array.isArray(snapshot)) continue;
@@ -389,10 +473,12 @@ function cardToolCallIds(rows: readonly ThreadHistoryRow[]): Set<string> {
     for (const part of parts) {
       if (part === null || typeof part !== "object" || Array.isArray(part)) continue;
       const toolCallId = part["toolCallId"];
-      if (part["type"] === "tool-result" && typeof toolCallId === "string") ids.add(toolCallId);
+      if (part["type"] === "tool-result" && typeof toolCallId === "string" && !byId.has(toolCallId)) {
+        byId.set(toolCallId, { seq: row.seq, part });
+      }
     }
   }
-  return ids;
+  return byId;
 }
 
 /**
@@ -460,8 +546,32 @@ export interface ThreadHistoryFetchOptions {
    * that predates the field ignores the ask, and `toolResults` is `[]`.
    */
   includeToolResults?: boolean;
+  /**
+   * Opt-in (guuey#2388): ask the read plane for the stored tool calls
+   * (`include=toolCalls`) and project them into `result.toolCalls` (see
+   * {@link threadHistoryRowsToToolCalls}). Off by default. Asks only its own
+   * entry: with {@link includeToolResults} the two ride one comma-joined
+   * `include` param. `result.toolCalls` is present only when every page of the
+   * read echoed `toolCalls`; a read plane that predates calls sends no echo,
+   * and then it is absent.
+   */
+  includeToolCalls?: boolean;
   /** Injection seam for tests; defaults to the global `fetch`. */
   fetchImpl?: typeof fetch;
+}
+
+/**
+ * A page echo the walk needs honoured on EVERY page it reads: the newest-first
+ * `order` (guuey#2858) and the `toolCalls` include (guuey#2388).
+ */
+type HonouredEcho = "order" | typeof TOOL_CALLS_INCLUDE;
+
+/** The members of `asked` that `page` echoes. */
+function pageEchoes(page: ThreadMessagesPage, asked: ReadonlySet<HonouredEcho>): Set<HonouredEcho> {
+  const echoed = new Set<HonouredEcho>();
+  if (asked.has("order") && page.newestFirst) echoed.add("order");
+  if (asked.has(TOOL_CALLS_INCLUDE) && page.include.includes(TOOL_CALLS_INCLUDE)) echoed.add(TOOL_CALLS_INCLUDE);
+  return echoed;
 }
 
 /** One walk of the route in one order: every row it read, by seq, and the thread's state. */
@@ -471,37 +581,51 @@ interface HistoryWalk {
   threadSeen: boolean;
   /** The page cap was reached with a `nextToken` left: rows exist that this walk did not read. */
   truncated: boolean;
-  /** The pages were served newest-first (the read plane echoed the order on every page). */
-  newestFirst: boolean;
+  /** The echoes every page of this walk carried: `order` = served newest-first; `toolCalls` = calls honoured. */
+  honoured: ReadonlySet<HonouredEcho>;
+}
+
+/** The read's `include` entries, in their fixed order (#2487's first), as one comma-joined param; `""` when it asks none. */
+function includeParam(includeToolResults: boolean, includeToolCalls: boolean): string {
+  const entries = [
+    ...(includeToolResults ? [TOOL_RESULTS_INCLUDE] : []),
+    ...(includeToolCalls ? [TOOL_CALLS_INCLUDE] : []),
+  ];
+  return entries.length > 0 ? `&include=${entries.join(",")}` : "";
 }
 
 /**
- * Walk the route's pages, newest-first when `askNewestFirst` (guuey#2858).
+ * Walk the route's pages, newest-first when `asked` holds `order`
+ * (guuey#2858), keeping ONE set of the echoes honoured on every page: page 1
+ * seeds it with the asked members it echoes, and each later page narrows it.
+ * What a lost member costs is the member's own:
  *
- *  - Page 1 without the `order` echo is a read plane that predates the param:
- *    its rows are ascending, so that page is page 1 of the ascending walk, and
- *    the walk goes on ascending (no `order` sent).
- *  - A later page that loses the echo (the read plane rolled back mid-read)
- *    answers `order-lost`: its token runs the other way, so the caller
- *    discards this walk and reads again ascending.
+ *  - `order`: page 1 without the echo is a read plane that predates the
+ *    param: its rows are ascending, so that page is page 1 of the ascending
+ *    walk, and the walk goes on ascending (no `order` sent). A later page that
+ *    loses it (the read plane rolled back mid-read) answers `order-lost`: its
+ *    token runs the other way, so the caller discards this walk and reads
+ *    again ascending.
+ *  - `toolCalls` (guuey#2388): lost on any page, the walk serves no calls at
+ *    all, never a partial list. The ask itself rides every page unchanged.
  */
 async function walkHistory(
   routeUrl: string,
-  askNewestFirst: boolean,
-  includeToolResults: boolean,
+  asked: ReadonlySet<HonouredEcho>,
+  include: string,
   requestInit: RequestInit | undefined,
   fetchImpl: typeof fetch,
 ): Promise<HistoryWalk | "gone" | "order-lost"> {
   const rows = new Map<number, ThreadHistoryRow>();
-  let newestFirst = askNewestFirst;
+  let honoured = new Set(asked);
   let nextToken: string | null = null;
   let closed: ThreadClosed | undefined;
   let threadSeen = false;
   for (let page = 0; page < MAX_HISTORY_PAGES; page++) {
     const url =
       `${routeUrl}?limit=${HISTORY_PAGE_LIMIT}` +
-      (newestFirst ? "&order=desc" : "") +
-      (includeToolResults ? `&include=${TOOL_RESULTS_INCLUDE}` : "") +
+      (honoured.has("order") ? "&order=desc" : "") +
+      include +
       (nextToken ? `&nextToken=${encodeURIComponent(nextToken)}` : "");
     const res = await fetchImpl(url, requestInit);
     if (res.status === 403 || res.status === 404) return "gone";
@@ -514,8 +638,9 @@ async function walkHistory(
     const body: unknown = JSON.parse(await res.text());
     const read = readThreadMessagesPage(body);
     if (read === null) throw new Error("history load failed: the read plane returned a malformed page");
-    if (page === 0) newestFirst = newestFirst && read.newestFirst;
-    else if (newestFirst && !read.newestFirst) return "order-lost";
+    const echoed = pageEchoes(read, honoured);
+    if (page > 0 && honoured.has("order") && !echoed.has("order")) return "order-lost";
+    honoured = echoed;
     // Keyed by seq: a row served twice (an overlap after a byte cut) is one row.
     for (const row of read.rows) rows.set(row.seq, row);
     if (read.threadSeen) {
@@ -523,9 +648,9 @@ async function walkHistory(
       closed = read.closed ?? closed;
     }
     nextToken = read.nextToken;
-    if (!nextToken) return { rows, closed, threadSeen, truncated: false, newestFirst };
+    if (!nextToken) return { rows, closed, threadSeen, truncated: false, honoured };
   }
-  return { rows, closed, threadSeen, truncated: true, newestFirst };
+  return { rows, closed, threadSeen, truncated: true, honoured };
 }
 
 /**
@@ -548,11 +673,14 @@ export async function fetchThreadHistory({
   requestInit,
   includeCards = false,
   includeToolResults = false,
+  includeToolCalls = false,
   fetchImpl = fetch,
 }: ThreadHistoryFetchOptions): Promise<HistoryLoadResult> {
   const routeUrl = `${baseUrl}/threads/${encodeURIComponent(threadId)}/messages`;
-  let walk = await walkHistory(routeUrl, true, includeToolResults, requestInit, fetchImpl);
-  if (walk === "order-lost") walk = await walkHistory(routeUrl, false, includeToolResults, requestInit, fetchImpl);
+  const include = includeParam(includeToolResults, includeToolCalls);
+  const askCalls: HonouredEcho[] = includeToolCalls ? [TOOL_CALLS_INCLUDE] : [];
+  let walk = await walkHistory(routeUrl, new Set<HonouredEcho>(["order", ...askCalls]), include, requestInit, fetchImpl);
+  if (walk === "order-lost") walk = await walkHistory(routeUrl, new Set(askCalls), include, requestInit, fetchImpl);
   // An ascending walk sends no order, so it cannot lose one.
   if (walk === "order-lost") throw new Error("history load failed: an ascending read lost an order it never asked for");
   if (walk === "gone") return { gone: true };
@@ -566,9 +694,11 @@ export async function fetchThreadHistory({
     messages: threadHistoryRowsToMessages(rows),
     ...(includeCards ? { cards: threadHistoryRowsToCards(rows) } : {}),
     ...(includeToolResults ? { toolResults: threadHistoryRowsToToolResults(rows) } : {}),
+    // guuey#2388: only when every page echoed the ask; no echo means none.
+    ...(walk.honoured.has(TOOL_CALLS_INCLUDE) ? { toolCalls: threadHistoryRowsToToolCalls(rows) } : {}),
     ...(threadClosed !== undefined ? { closed: threadClosed } : {}),
     // The order says which rows a capped read left out, so it rides beside `truncated`.
-    ...(walk.truncated ? { truncated: true, order: walk.newestFirst ? "desc" : "asc" } : {}),
+    ...(walk.truncated ? { truncated: true, order: walk.honoured.has("order") ? "desc" : "asc" } : {}),
   };
 }
 

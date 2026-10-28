@@ -38,6 +38,7 @@ import type {
   AgentMessage,
   HistoryCard,
   HistoryLoadResult,
+  HistoryToolCall,
   HistoryToolResult,
   ProfileLinkRequest,
   SendOptions,
@@ -419,6 +420,10 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
   // return-type contract), only when the history adapter opted in. Cleared and
   // re-seeded with `historyCards`.
   const [historyToolResults, setHistoryToolResults] = useState<HistoryToolResult[]>([]);
+  // guuey#2388: the stored tool calls rehydrated from history (see return-type
+  // contract): null unless the adapter asked AND every page honoured the ask.
+  // Cleared and re-seeded beside `historyToolResults`.
+  const [historyToolCalls, setHistoryToolCalls] = useState<HistoryToolCall[] | null>(null);
   // The pod's latest cross-app profile LINK invite on this conversation (T3's
   // `profile-link-needed` SSE event), or null. Cleared on app switch / reset /
   // explicit dismiss. (Consent is NOT hook state: it rides the AgJSON fold as
@@ -498,6 +503,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     setHistoryCards([]);
     setHistoryTruncated(false);
     setHistoryToolResults([]);
+    setHistoryToolCalls(null);
     // A prior app's link invite must never leak into the new conversation.
     setProfileLinkRequest(null);
     setAborted(false);
@@ -604,6 +610,8 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
       if (result.toolResults && result.toolResults.length > 0) {
         setHistoryToolResults(result.toolResults);
       }
+      // guuey#2388: the calls, only when asked and honoured on every page.
+      setHistoryToolCalls(result.toolCalls ?? null);
       // The agent ended this conversation before the reload: say so, unless a
       // send since then has already moved this hook to another thread.
       if (result.closed !== undefined && threadIdRef.current === tid) {
@@ -641,6 +649,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     setHistoryCards([]);
     setHistoryTruncated(false);
     setHistoryToolResults([]);
+    setHistoryToolCalls(null);
     setProfileLinkRequest(null);
     setAborted(false);
     setAdopted(false);
@@ -892,6 +901,9 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         if (adoptedResult.toolResults && adoptedResult.toolResults.length > 0) {
           setHistoryToolResults(adoptedResult.toolResults);
         }
+        // The adopted read's own word on the calls: it holds every row the
+        // mount read held, and an unhonoured read draws none.
+        setHistoryToolCalls(adoptedResult.toolCalls ?? null);
         // The renderer's signal: calm renders the adopted turn identically;
         // debug may mark it (guuey#135 3b).
         setAdopted(true);
@@ -1180,6 +1192,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     historyCards,
     historyTruncated,
     historyToolResults,
+    historyToolCalls,
     profileLinkRequest,
     clearProfileLinkRequest,
     aborted,

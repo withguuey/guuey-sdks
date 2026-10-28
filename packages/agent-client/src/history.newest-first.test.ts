@@ -173,6 +173,7 @@ describe("readThreadMessagesPage / readThreadHistoryRow — the body is proved, 
       threadSeen: true,
       closed: { code: "X", message: "bye", closedAt: "2026-10-28T00:00:00Z" },
       newestFirst: true,
+      include: [],
     });
   });
 
@@ -183,6 +184,7 @@ describe("readThreadMessagesPage / readThreadHistoryRow — the body is proved, 
       threadSeen: false,
       closed: undefined,
       newestFirst: false,
+      include: [],
     });
     expect(readThreadMessagesPage({ rows: [], nextToken: null, order: "asc" })?.newestFirst).toBe(false);
   });

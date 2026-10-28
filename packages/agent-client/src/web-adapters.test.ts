@@ -234,7 +234,7 @@ describe("createWebAdapters history install", () => {
     const history = createWebAdapters({ apiBaseUrl, getGuestSecret: () => SECRET }).history;
     if (!history) throw new Error("history adapter not installed in guest mode");
     const result = await withGlobalFetch(fetchImpl, () => history.load("t_1"));
-    expect(result).toEqual({ messages: [], cards: [] });
+    expect(result).toEqual({ messages: [], cards: [], toolResults: [] });
     expect(String(fetchImpl.mock.calls[0][0])).toContain("/threads/t_1/messages");
     expect(fetchImpl.mock.calls[0][1]).toEqual({ headers: { "x-guuey-guest": SECRET } });
   });
@@ -279,55 +279,71 @@ describe("createWebAdapters history install", () => {
     const history = createWebAdapters({ apiBaseUrl, getGuestSecret: () => SECRET }).history;
     if (!history) throw new Error("history adapter not installed in guest mode");
     const result = await withGlobalFetch(fetchImpl, () => history.load("t_1"));
-    expect(result).toEqual({ messages: [{ role: "user", text: "hi", seq: 1 }], cards: [] });
+    expect(result).toEqual({ messages: [{ role: "user", text: "hi", seq: 1 }], cards: [], toolResults: [] });
   });
 });
 
 /**
- * guuey#2487: the default stack's history read can ask for the tool results
- * with no UI resource, so a host on createWebAdapters + useAgentInvoke gets
- * `historyToolResults` without a second, hand-built transcript fetch. Off by
- * default: the read is the one it always was.
+ * guuey#2487 + guuey#2388: the default stack's history read asks for the
+ * thread's tool results with no UI resource AND its stored tool calls, so a
+ * host on createWebAdapters + useAgentInvoke gets `historyToolResults` and
+ * `historyToolCalls` without a second, hand-built transcript fetch. Both are
+ * on by default; a host turns either off on its own, and each option asks
+ * exactly its own `include` entry, in one comma-joined param.
  */
-describe("createWebAdapters history — includeToolResults", () => {
+describe("createWebAdapters history — includeToolResults and includeToolCalls", () => {
   const apiBaseUrl = "https://api.example.com/v1";
+  const ROUTE = `${apiBaseUrl}/threads/t_1/messages?limit=100&order=desc`;
   const BLOCK = { type: "tool-result", toolCallId: "toolu_open_review", content: [], structuredContent: { card: "inbox" } };
   const ROWS = {
     rows: [
+      { seq: 2, at: "2026-10-18T10:37:01Z", kind: "text", authorRole: "agent", text: null, toolCalls: [{ toolCallId: "toolu_open_review", name: "mcp__inbox__open_review", input: {} }] },
       { seq: 3, at: "2026-10-18T10:37:02Z", kind: "text", authorRole: "agent", text: null, toolResults: [{ toolCallId: "toolu_open_review", toolName: "mcp__inbox__open_review", block: BLOCK }] },
     ],
     nextToken: null,
+    include: ["toolCalls", "toolResults"],
   };
 
-  it("is not asked by default, on either identity", async () => {
-    for (const identity of [{ getGuestSecret: () => SECRET }, { getAccessToken: async () => "tok" }]) {
-      const fetchImpl = mockFetch([jsonResponse(ROWS)]);
-      const history = createWebAdapters({ apiBaseUrl, ...identity }).history;
-      if (!history) throw new Error("history adapter not installed");
-      const result = await withGlobalFetch(fetchImpl, () => history.load("t_1"));
-      expect(String(fetchImpl.mock.calls[0][0])).not.toContain("include=");
-      expect("toolResults" in result).toBe(false);
-    }
-  });
-
-  it("is asked on the guest read, the bearer read and the bearer's 401 retry when opted in", async () => {
+  it("asks both by default on the guest read, the bearer read and the bearer's 401 retry", async () => {
     const guestFetch = mockFetch([jsonResponse(ROWS)]);
-    const guest = createWebAdapters({ apiBaseUrl, getGuestSecret: () => SECRET, includeToolResults: true }).history;
+    const guest = createWebAdapters({ apiBaseUrl, getGuestSecret: () => SECRET }).history;
     if (!guest) throw new Error("history adapter not installed");
     const fromGuest = await withGlobalFetch(guestFetch, () => guest.load("t_1"));
-    expect(String(guestFetch.mock.calls[0][0])).toContain("&include=toolResults");
+    expect(guestFetch.mock.calls.map((call) => String(call[0]))).toEqual([`${ROUTE}&include=toolResults,toolCalls`]);
     expect("toolResults" in fromGuest && fromGuest.toolResults?.map((r) => r.toolName)).toEqual(["mcp__inbox__open_review"]);
+    expect("toolCalls" in fromGuest && fromGuest.toolCalls?.map((c) => c.call.name)).toEqual(["mcp__inbox__open_review"]);
 
     const bearerFetch = mockFetch([jsonResponse({ message: "expired" }, 401), jsonResponse(ROWS)]);
     const bearer = createWebAdapters({
       apiBaseUrl,
       getAccessToken: async (o) => (o?.forceRefresh ? "tok_fresh" : "tok_stale"),
-      includeToolResults: true,
     }).history;
     if (!bearer) throw new Error("history adapter not installed");
     const fromBearer = await withGlobalFetch(bearerFetch, () => bearer.load("t_1"));
-    expect(bearerFetch.mock.calls.map((call) => String(call[0]).includes("&include=toolResults"))).toEqual([true, true]);
+    expect(bearerFetch.mock.calls.map((call) => String(call[0]))).toEqual([
+      `${ROUTE}&include=toolResults,toolCalls`,
+      `${ROUTE}&include=toolResults,toolCalls`,
+    ]);
     expect("toolResults" in fromBearer && fromBearer.toolResults).toHaveLength(1);
+    expect("toolCalls" in fromBearer && fromBearer.toolCalls).toHaveLength(1);
+  });
+
+  const options: { name: string; set: { includeToolResults?: boolean; includeToolCalls?: boolean }; include: string | null }[] = [
+    { name: "results off: calls alone", set: { includeToolResults: false }, include: "toolCalls" },
+    { name: "calls off: results alone, #2487's request byte for byte", set: { includeToolCalls: false }, include: "toolResults" },
+    { name: "both off: no include at all", set: { includeToolResults: false, includeToolCalls: false }, include: null },
+    { name: "both on, explicitly", set: { includeToolResults: true, includeToolCalls: true }, include: "toolResults,toolCalls" },
+  ];
+  it.each(options)("$name, on every identity", async ({ set, include }) => {
+    for (const identity of [{ getGuestSecret: () => SECRET }, { getAccessToken: async () => "tok" }]) {
+      const fetchImpl = mockFetch([jsonResponse(ROWS)]);
+      const history = createWebAdapters({ apiBaseUrl, ...identity, ...set }).history;
+      if (!history) throw new Error("history adapter not installed");
+      const result = await withGlobalFetch(fetchImpl, () => history.load("t_1"));
+      expect(fetchImpl.mock.calls.map((call) => String(call[0]))).toEqual([include === null ? ROUTE : `${ROUTE}&include=${include}`]);
+      expect("toolResults" in result).toBe(set.includeToolResults !== false);
+      expect("toolCalls" in result).toBe(set.includeToolCalls !== false);
+    }
   });
 });
 
@@ -354,7 +370,7 @@ describe("createWebAdapters history — 401 retry", () => {
     const history = createWebAdapters({ apiBaseUrl, getAccessToken }).history;
     if (!history) throw new Error("history adapter not installed");
     const result = await withGlobalFetch(fetchImpl, () => history.load("t_1"));
-    expect(result).toEqual({ messages: [{ role: "user", text: "hi", seq: 1 }], cards: [] });
+    expect(result).toEqual({ messages: [{ role: "user", text: "hi", seq: 1 }], cards: [], toolResults: [] });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(headersOf(fetchImpl.mock.calls[0][1]).Authorization).toBe("Bearer stale-token");
     expect(headersOf(fetchImpl.mock.calls[1][1]).Authorization).toBe("Bearer fresh-token");

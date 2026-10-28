@@ -70,14 +70,23 @@ export interface CreateWebAdaptersOptions {
    */
   apiBaseUrl?: string;
   /**
-   * Opt-in (guuey#2487): the history read also asks for the thread's tool
-   * results with no UI resource (`fetchThreadHistory`'s `includeToolResults`),
-   * which {@link useAgentInvoke} surfaces as `historyToolResults`. For a host
-   * that draws from a tool's result itself, matched by tool name. Off by
-   * default, so the read is unchanged; a read plane that predates the field
-   * ignores the ask and the hook's `historyToolResults` stays `[]`.
+   * guuey#2487: the history read also asks for the thread's tool results with
+   * no UI resource (`fetchThreadHistory`'s `includeToolResults`), which
+   * {@link useAgentInvoke} surfaces as `historyToolResults`. On by default;
+   * `false` leaves `toolResults` out of the ask and only that. A read plane
+   * that predates the field ignores the ask and the hook's
+   * `historyToolResults` stays `[]`.
    */
   includeToolResults?: boolean;
+  /**
+   * guuey#2388: the history read also asks for the thread's stored tool calls
+   * (`fetchThreadHistory`'s `includeToolCalls`), which {@link useAgentInvoke}
+   * surfaces as `historyToolCalls`, so a reload draws the tool rows the live
+   * session drew. On by default; `false` leaves `toolCalls` out of the ask and
+   * only that (the hook's `historyToolCalls` is then `null`). A read plane
+   * that predates calls sends no echo, and `historyToolCalls` stays `null`.
+   */
+  includeToolCalls?: boolean;
   /**
    * Total send attempts on a saturated pod (guuey#406) — forwarded to
    * {@link SaturationRetryOptions.attempts}. End-user surfaces facing
@@ -219,8 +228,13 @@ export function createWebAdapters(
   // installs the adapter; a cookie-only caller is unidentifiable there and
   // gets no adapter at all.
   if (apiBaseUrl && (getAccessToken || getGuestSecret)) {
-    // The history read's fixed asks: cards always, tool results on the host's opt-in.
-    const includes = { includeCards: true, ...(opts.includeToolResults === true ? { includeToolResults: true } : {}) };
+    // The history read's asks: cards always; tool results and tool calls
+    // unless the host turned that one off.
+    const includes = {
+      includeCards: true,
+      includeToolResults: opts.includeToolResults !== false,
+      includeToolCalls: opts.includeToolCalls !== false,
+    };
     adapters.history = {
       load: async (threadId) => {
         // Same precedence, and the same one-carrier rule, as the transport:
