@@ -15,8 +15,26 @@
  *    waits inside the turn's one wake budget. No ticker: the plan swaps the
  *    waking line once, on the elapsed time it already has.
  *
- * The latest report wins. `wait` is the plan's `connectWait`; the host calls
- * `clear` when the turn leaves `connecting` (the wait belongs to that phase).
+ * The latest report wins. `wait` is the plan's `connectWait`.
+ *
+ * ONE scoping rule, owned here: a wait belongs to the turn's `connecting`
+ * phase, so it ends when the status moves OUT of `connecting`, and only then.
+ * Entering `connecting` never clears, so a report made as the turn starts
+ * (even synchronously, before the host's effects run) is kept, and a change
+ * between other states does not touch it. The rule needs the status, and the
+ * status exists only after `useAgentInvoke` returns, while the observers must
+ * exist BEFORE it (they feed the transport `useAgentInvoke` is given). So the
+ * hook is called first and hands back `useEnd`, a hook the host calls with
+ * the status right after `useAgentInvoke`, unconditionally:
+ *
+ *     const { wait, onSaturationWait, coldStartRetry, useEnd } = useConnectWait();
+ *     const adapters = useMemo(() => createWebAdapters({ onSaturationWait, coldStartRetry }), [...]);
+ *     const invoke = useAgentInvoke({ ..., adapters });
+ *     useEnd(invoke.status);
+ *
+ * Destructure `useEnd` before calling it: the hooks lint only treats a member
+ * call as a hook when the object is PascalCase, so `cw.useEnd(status)` would
+ * escape its rules-of-hooks check, while a bare `useEnd(status)` does not.
  * `<GuueyChat>` uses it for its default adapters; a host that builds its own
  * adapters wires the two observers into them the same way.
  *
@@ -26,7 +44,7 @@
  * never reports a wake, and the connecting ladder runs as before.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { SaturationRetryOptions, WakeWaitInfo } from "@guuey/agent-client";
+import type { AgentInvokeStatus, SaturationRetryOptions, WakeWaitInfo } from "@guuey/agent-client";
 import type { ConnectWait } from "../types.js";
 
 /** One wait exactly as `@guuey/agent-client`'s `onSaturationWait` reports it. */
@@ -47,12 +65,41 @@ export interface ConnectWaitState {
   onSaturationWait: (info: SaturationWaitReport) => void;
   /** The transport's `coldStartRetry` observer (the waking report). Stable for the hook's life. */
   coldStartRetry: { onWakeWait: (info: WakeWaitInfo) => void };
-  /** Ends the wait (the turn moved on). Stable for the hook's life. */
-  clear: () => void;
+  /**
+   * A hook: call it with the turn's status right after `useAgentInvoke`, on
+   * every render, unconditionally. It ends the wait when the status moves out
+   * of `connecting`, and at no other time. Stable for the hook's life.
+   */
+  useEnd: (status: AgentInvokeStatus) => void;
+}
+
+/**
+ * Build the `useEnd` hook over the wait's setter: the one rule that ends a
+ * wait. It keeps the status it last saw in its own state and adjusts the wait
+ * DURING render when that status leaves `connecting` (React's "adjust state
+ * on a prop change" pattern), rather than in an effect or a ref:
+ *  - an effect runs after commit, so a report landing between the commit and
+ *    the effect would be wiped by a clear meant for the phase before it;
+ *  - a ref written during render survives a render React throws away, so a
+ *    discarded render could swallow the transition and the clear with it.
+ * State set during render is applied before the commit, and only for the
+ * render that is kept. Its hook calls are fixed: one `useState`.
+ */
+function makeUseEnd(setWait: (wait: ConnectWait | null) => void): (status: AgentInvokeStatus) => void {
+  return function useEnd(status: AgentInvokeStatus): void {
+    const [seen, setSeen] = useState(status);
+    if (seen !== status) {
+      setSeen(status);
+      if (seen === "connecting") setWait(null);
+    }
+  };
 }
 
 export function useConnectWait(now: () => number = Date.now): ConnectWaitState {
   const [wait, setWait] = useState<ConnectWait | null>(null);
+  // Made once: the setter is stable, so `useEnd` keeps one identity (and one
+  // set of hook calls) for the hook's life.
+  const [useEnd] = useState(() => makeUseEnd(setWait));
   const retryAtRef = useRef(0);
   const nowRef = useRef(now);
   nowRef.current = now;
@@ -69,7 +116,6 @@ export function useConnectWait(now: () => number = Date.now): ConnectWaitState {
   }, []);
   const onWakeWait = useCallback((): void => setWait({ kind: "waking" }), []);
   const coldStartRetry = useMemo(() => ({ onWakeWait }), [onWakeWait]);
-  const clear = useCallback((): void => setWait(null), []);
 
   const counting = wait?.kind === "busy";
   useEffect(() => {
@@ -84,5 +130,5 @@ export function useConnectWait(now: () => number = Date.now): ConnectWaitState {
     return () => clearInterval(timer);
   }, [counting]);
 
-  return { wait, onSaturationWait, coldStartRetry, clear };
+  return { wait, onSaturationWait, coldStartRetry, useEnd };
 }

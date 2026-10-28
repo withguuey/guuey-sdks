@@ -658,11 +658,13 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // guuey#2453: the same one wait carries the wake (the default transport's
   // cold-start retry reports each wait on a waking app), drawn as the waking
   // line in the same place.
+  // The wait ends when the turn leaves `connecting`: `useEndConnectWait`
+  // below, called with the status once `useAgentInvoke` has returned it.
   const {
     wait: connectWait,
     onSaturationWait,
     coldStartRetry,
-    clear: clearConnectWait,
+    useEnd: useEndConnectWait,
   } = useConnectWait();
   const adapters = useMemo(
     () =>
@@ -700,6 +702,8 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     adapters,
     preserveBlocks: true,
   });
+  // guuey#2453: the connect wait ends when the turn leaves `connecting`.
+  useEndConnectWait(invoke.status);
 
   // guuey#2031 — the tap echo: a card tap draws at once as the visitor's
   // action turn (the chip's own words when this kit holds the card's props),
@@ -784,11 +788,6 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   }, [preset, stablePolicyOverrides, stableStringOverrides]);
 
   const { inputs, resolvePrompt, answerHitlPrompt } = useTranscriptInputs(invoke);
-  // A wait belongs to the turn's `connecting` phase: any status change (the
-  // retry got through, the refusal surfaced, a stop, the next turn) ends it.
-  useEffect(() => {
-    clearConnectWait();
-  }, [invoke.status, clearConnectWait]);
   // Memoized: once a chip is selected (`promotedViewKey` set) this object
   // is on the plan's identity path — a per-render fresh spread here was the
   // second leg of the render loop the template surfaced.
