@@ -780,6 +780,9 @@ export interface StatusLineItem {
    * differ from `copy`. The busy line's countdown ticks every second in
    * `copy`; `announce` holds the same line without it, so a screen reader
    * hears each attempt once, never each tick.
+   * guuey#2453: it is also the row's steady form, the line without its
+   * per-second change, which a host that draws the status on one row (a
+   * header) draws as `announce ?? copy`.
    */
   announce?: string;
   /** Literal state + elapsed, populated only under the debug policy. */

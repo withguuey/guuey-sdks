@@ -57,7 +57,7 @@ describe("DefaultError tone (guuey#2453)", () => {
   it("a retry item wears the retry class and keeps its in-place Retry", () => {
     render(<DefaultError item={item("retry")} ctx={ctx()} />);
     expect(toneClass()).toEqual(["guuey-chat-error-retry"]);
-    expect(screen.getByRole("alert").textContent).toContain("Your agent didn't wake up in time. Try again.");
+    expect(screen.getByRole("alert").textContent).toContain("This agent didn't wake up in time. Please try again.");
     expect(screen.getByRole("button").textContent).toBe(defaultChatStrings.userRetry);
   });
 

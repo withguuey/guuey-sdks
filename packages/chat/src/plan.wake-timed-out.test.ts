@@ -11,7 +11,7 @@ import { calmPolicy, debugPolicy } from "./policy.js";
 import { defaultChatStrings } from "./strings.js";
 import type { DisplayItem, ErrorItem, TranscriptInputs, UserMessageItem } from "./types.js";
 
-const LINE = "Your agent didn't wake up in time. Try again.";
+const LINE = "This agent didn't wake up in time. Please try again.";
 /** What the SDK's wake budget throws when it runs out: the bare status line. */
 const RAW = "agent responded 503";
 /** The widget's posture (guuey#162): every source message verbatim. */

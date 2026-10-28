@@ -414,7 +414,7 @@ export function humanizeToolName(wireName: string): string {
 export const defaultChatStrings: ChatStrings = {
   connecting: "Connecting…",
   starting: "Getting ready…",
-  longStart: "Still getting ready. The first reply can take a little longer.",
+  longStart: "Still getting ready…",
   thinking: "Thinking…",
   usingTool: (toolTitle) => `Using ${toolTitle}…`,
   preparingCard: "Preparing interactive card…",
@@ -422,8 +422,8 @@ export const defaultChatStrings: ChatStrings = {
     secondsLeft !== undefined && secondsLeft > 0
       ? `Busy right now. Retrying in ${secondsLeft}s (${attempt}/${totalAttempts})…`
       : `Busy right now. Retrying (${attempt}/${totalAttempts})…`,
-  waking: "Waking your agent…",
-  wakingLong: "Waking your agent… This can take a little while.",
+  waking: "Waking up…",
+  wakingLong: "Still waking up…",
   stopped: "Stopped.",
 
   errorAuth: "Sign in to continue.",
@@ -436,7 +436,7 @@ export const defaultChatStrings: ChatStrings = {
     "This conversation hit a temporary capacity limit and was stopped safely. Please try again in a moment.",
   errorPodSaturated: "High demand right now. Please try again in a moment.",
   errorDraining: "This agent is restarting. Please try again in a moment.",
-  errorWakeTimedOut: "Your agent didn't wake up in time. Try again.",
+  errorWakeTimedOut: "This agent didn't wake up in time. Please try again.",
   errorInvalid: "The app sent a request the agent couldn't read.",
   errorAttachmentsUnsupported: "This agent can't read images yet. Send your message without the image.",
   errorAttachmentsInvalid: "That image can't be sent. Use a JPEG, PNG, GIF or WebP image, up to 4 at a time.",

@@ -110,6 +110,17 @@ describe("the busy status line (guuey#2604)", () => {
     expect(nextTick?.announce).toBe(status?.announce);
   });
 
+  it("guuey#2453: announce is exactly the policy's no-seconds busy line, the row's steady form", () => {
+    // The display words with no seconds, the same line a one-row header draws
+    // as `announce ?? copy`; never a second wording spelled for speech.
+    for (const policy of [calmPolicy(), calmPolicy({ strings: { saturationRetrying: (a, t, sec) => (sec ? `Gleich ${sec}s ${a}/${t}` : `Gleich ${a}/${t}`) } })]) {
+      const status = planTranscript(inputs("connecting", { attempt: 3, totalAttempts: 5, secondsLeft: 7 }), policy).status;
+      expect(status?.state).toBe("busy");
+      expect(status?.announce).toBe(policy.strings.saturationRetrying(3, 5));
+      expect(status?.announce).not.toContain("7s");
+    }
+  });
+
   it("guuey#2608: with no countdown the line announces itself (no announce field)", () => {
     expect(planTranscript(inputs("connecting", { attempt: 2, totalAttempts: 4 }), calmPolicy()).status).not.toHaveProperty(
       "announce",

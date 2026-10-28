@@ -33,8 +33,8 @@ const WAKING: ConnectWait = { kind: "waking" };
 
 describe("the waking line (guuey#2453)", () => {
   it("the kit's words", () => {
-    expect(defaultChatStrings.waking).toBe("Waking your agent…");
-    expect(defaultChatStrings.wakingLong).toBe("Waking your agent… This can take a little while.");
+    expect(defaultChatStrings.waking).toBe("Waking up…");
+    expect(defaultChatStrings.wakingLong).toBe("Still waking up…");
   });
 
   it("a waking wait draws the waking line at 0 ms: the signal, never a guess", () => {
@@ -42,7 +42,7 @@ describe("the waking line (guuey#2453)", () => {
       kind: "status",
       key: "status",
       state: "waking",
-      copy: "Waking your agent…",
+      copy: "Waking up…",
       detail: null,
     });
   });
@@ -102,7 +102,7 @@ describe("the busy arm and the ladder are unchanged (guuey#2453)", () => {
         kind: "status",
         key: "status",
         state: "long-start",
-        copy: "Still getting ready. The first reply can take a little longer.",
+        copy: "Still getting ready…",
         detail: null,
       });
     }
