@@ -129,7 +129,7 @@ describe("createNativeAdapters — transport", () => {
     expect(err).toMatchObject({ status: 429, code: "QUOTA_EXCEEDED", message: "Upgrade to keep chatting." });
   });
 
-  it("forwards coldStartRetry and onWakeWait to the web adapters' transport", async () => {
+  it("forwards coldStartRetry, with its onWakeWait, to the web adapters' transport", async () => {
     vi.useFakeTimers();
     try {
       // coldStartRetry reaches the transport: zero cold-start retries, so a
@@ -140,13 +140,17 @@ describe("createNativeAdapters — transport", () => {
       expect(err).toMatchObject({ status: 503, waking: false });
       expect(plain).toHaveBeenCalledTimes(1);
 
-      // onWakeWait reaches it too: a waking answer is waited out and reported.
+      // Its onWakeWait reaches it too: a waking answer is waited out and reported.
       const woken = fakeFetch([
         new Response(null, { status: 503, headers: { "X-Guuey-Waking": "1", "Retry-After": "3" } }),
         new Response("data: ok\n\n", { status: 200 }),
       ]);
       const onWakeWait = vi.fn();
-      const adapters = createNativeAdapters({ fetch: woken, storage: fakeStorage(), onWakeWait });
+      const adapters = createNativeAdapters({
+        fetch: woken,
+        storage: fakeStorage(),
+        coldStartRetry: { onWakeWait },
+      });
       const streamed = drain(adapters.transport(invokeRequest()));
       await vi.advanceTimersByTimeAsync(3_000);
       expect(await streamed).toBe("data: ok\n\n");

@@ -84,10 +84,14 @@ afterEach(() => {
 });
 
 describe("createWebAdapters — the wake budget reaches the transport", () => {
-  it("is on by default and forwards onWakeWait", async () => {
+  it("is on by default and forwards coldStartRetry.onWakeWait", async () => {
     const fetchImpl = queueFetch([() => wakingResponse("4"), () => sse()]);
     const infos: WakeWaitInfo[] = [];
-    const adapters = createWebAdapters({ fetchImpl, getGuestSecret: () => SECRET, onWakeWait: (i) => infos.push(i) });
+    const adapters = createWebAdapters({
+      fetchImpl,
+      getGuestSecret: () => SECRET,
+      coldStartRetry: { onWakeWait: (i) => infos.push(i) },
+    });
     const streamed = drain(adapters.transport(invokeRequest()));
     await vi.advanceTimersByTimeAsync(4_000);
     expect(await streamed).toBe("data: ok\n\n");
@@ -114,47 +118,27 @@ describe("createWebAdapters — the wake budget reaches the transport", () => {
 
   it("coldStartRetry: false turns the wrapper off, the wake budget with it", async () => {
     const fetchImpl = queueFetch([() => wakingResponse("4"), () => sse()]);
-    const onWakeWait = vi.fn();
-    const adapters = createWebAdapters({ fetchImpl, getGuestSecret: () => SECRET, coldStartRetry: false, onWakeWait });
+    const adapters = createWebAdapters({ fetchImpl, getGuestSecret: () => SECRET, coldStartRetry: false });
     const err = await drain(adapters.transport(invokeRequest())).then(
       () => undefined,
       (e: unknown) => e,
     );
     expect(isWakingRefusal(err)).toBe(true);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(onWakeWait).not.toHaveBeenCalled();
   });
 
-  it("onWakeWait rides beside a re-budgeted coldStartRetry", async () => {
+  it("onWakeWait rides inside a re-budgeted coldStartRetry", async () => {
     const fetchImpl = queueFetch([() => wakingResponse("4"), () => sse()]);
     const onWakeWait = vi.fn();
     const adapters = createWebAdapters({
       fetchImpl,
       getGuestSecret: () => SECRET,
-      coldStartRetry: { attempts: 0 },
-      onWakeWait,
+      coldStartRetry: { attempts: 0, onWakeWait },
     });
     const streamed = drain(adapters.transport(invokeRequest()));
     await vi.advanceTimersByTimeAsync(4_000);
     expect(await streamed).toBe("data: ok\n\n");
     expect(onWakeWait).toHaveBeenCalledTimes(1);
-  });
-
-  it("the top-level onWakeWait wins over one inside coldStartRetry", async () => {
-    const fetchImpl = queueFetch([() => wakingResponse("4"), () => sse()]);
-    const inner = vi.fn();
-    const outer = vi.fn();
-    const adapters = createWebAdapters({
-      fetchImpl,
-      getGuestSecret: () => SECRET,
-      coldStartRetry: { onWakeWait: inner },
-      onWakeWait: outer,
-    });
-    const streamed = drain(adapters.transport(invokeRequest()));
-    await vi.advanceTimersByTimeAsync(4_000);
-    expect(await streamed).toBe("data: ok\n\n");
-    expect(outer).toHaveBeenCalledTimes(1);
-    expect(inner).not.toHaveBeenCalled();
   });
 });
 

@@ -28,7 +28,6 @@ import {
 } from "./transport.js";
 import {
   sendUnderWakeBudget,
-  type ColdStartRetryOptions,
   type SaturationRetryOptions,
   type SendUnderWakeBudgetOptions,
   type WakeBudgetOptions,
@@ -92,17 +91,11 @@ export interface CreateWebAdaptersOptions {
   /**
    * Forwarded to {@link FetchStreamTransportOptions.coldStartRetry}: the
    * cold-start retry's budget, and the wrapper that also carries the wake
-   * budget for a sleeping app. Omit for the defaults; `false` turns both off.
+   * budget for a sleeping app. Its `onWakeWait` is the surface's hook for a
+   * "waking your agent" state, fired before each wait while a sleeping app
+   * wakes. Omit for the defaults; `false` turns both off.
    */
   coldStartRetry?: FetchStreamTransportOptions["coldStartRetry"];
-  /**
-   * Forwarded to {@link ColdStartRetryOptions.onWakeWait}, beside any
-   * `coldStartRetry` budget: fired before each wait while a sleeping app
-   * wakes — the surface's hook for a "waking your agent" state. Never fires
-   * when `coldStartRetry` is `false`. When `coldStartRetry` carries its own
-   * `onWakeWait` as well, this one wins (only one hook fires).
-   */
-  onWakeWait?: ColdStartRetryOptions["onWakeWait"];
   /**
    * Resolve the caller's Cognito access token (fresh), or `null` when signed
    * out. When a token is present the chat transport AND the history read
@@ -189,12 +182,7 @@ export interface CreateWebAdaptersOptions {
 export function createWebAdapters(
   opts: CreateWebAdaptersOptions = {},
 ): AgentInvokeAdapters {
-  const { apiBaseUrl, getAccessToken, getGuestSecret, fetchImpl } = opts;
-  // The wake hook rides inside the cold-start options, the wrapper it belongs to.
-  const coldStartRetry: FetchStreamTransportOptions["coldStartRetry"] =
-    opts.coldStartRetry === false || opts.onWakeWait === undefined
-      ? opts.coldStartRetry
-      : { ...opts.coldStartRetry, onWakeWait: opts.onWakeWait };
+  const { apiBaseUrl, getAccessToken, getGuestSecret, fetchImpl, coldStartRetry } = opts;
 
   const transport: InvokeTransport = async function* (req) {
     // Both candidates go to the transport; it owns the precedence (and the
