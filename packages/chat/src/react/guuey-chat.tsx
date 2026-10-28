@@ -1464,7 +1464,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     (item: UserMessageItem) => {
       // The kit's retry rule (`retryInPlaceArgs`): the turn goes again as it
       // was (an action turn with its words beside the directive, guuey#2031;
-      // a turn without words without words, guuey#2549), in the failed row's
+      // a turn without words goes again without words, guuey#2549), in the failed row's
       // place, so it is drawn once, never beside its old "Couldn't send" row
       // (guuey#2608).
       void invoke.send(...retryInPlaceArgs(item)).catch(() => {
