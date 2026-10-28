@@ -198,8 +198,11 @@ export interface FetchStreamTransportOptions extends SaturationRetryOptions {
    * eats for ~30–60s after the agent redeploys (guuey#186 Gap 3). ON by
    * default (small budget: 3 attempts, 2s/4s/8s) for parity with guuey's
    * first-party embeds; pass `false` to disable, or options to re-budget.
-   * See {@link withColdStartRetry} for exactly what matches (and what
-   * deliberately stays with the saturation policy instead).
+   * The same wrapper carries the wake budget for a sleeping app (a 503 with
+   * `X-Guuey-Waking: 1`, waited out until 90 s from the turn's start;
+   * `onWakeWait` here is its hook), so `false` turns that off too. See {@link withColdStartRetry} for
+   * exactly what matches (and what deliberately stays with the saturation
+   * policy instead).
    */
   coldStartRetry?: ColdStartRetryOptions | false;
   /**

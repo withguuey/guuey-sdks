@@ -43,8 +43,13 @@ export {
 export {
   withSaturationRetry,
   withColdStartRetry,
+  sendUnderWakeBudget,
+  WAKE_BUDGET_MS,
   type SaturationRetryOptions,
   type ColdStartRetryOptions,
+  type WakeBudgetOptions,
+  type WakeWaitInfo,
+  type SendUnderWakeBudgetOptions,
 } from "./saturation-retry.js";
 // The refusal error and the one builder of it: a host transport that brings
 // its own `fetch` builds its refusals with `agentResponseErrorFrom`, so the

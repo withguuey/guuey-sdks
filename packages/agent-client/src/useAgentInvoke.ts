@@ -230,8 +230,12 @@ export const STALL_RECOVERY_DEFAULTS = {
    * on the first chunk (so a silent cold start never trips it) — which left
    * a turn that never receives ANY byte with no watchdog at all: the
    * eternal-"Thinking…" face of the 2026-08-22 invoke-rail turn death.
-   * Deliberately much longer than `windowMs`: the transport's cold-start
-   * retries legitimately spend up to ~90s before the first byte.
+   * Deliberately much longer than `windowMs`: before the first byte the
+   * transport legitimately spends its cold-start budget (about 14–30 s by
+   * default) and then its wake budget (`WAKE_BUDGET_MS`, 90 s counted from
+   * the turn's start, so the cold-start waits come out of it), plus the
+   * requests and a capacity wait at the pod's usual hint — a test composes
+   * that worst case under this window.
    */
   preFirstByteWindowMs: 120_000,
 } as const;

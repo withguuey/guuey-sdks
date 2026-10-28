@@ -350,8 +350,14 @@ export interface StallRecoveryOptions {
    * ANY byte (an invoke-rail death upstream of the pod, or an in-pod
    * pre-spawn hang) previously showed "Thinking…" forever with no error
    * item; this window bounds it. Much longer than `windowMs` on purpose —
-   * the transport's cold-start retries legitimately spend up to ~90s before
-   * the first byte. Default 120000.
+   * the transport legitimately spends time before the first byte under its
+   * two budgets (`withColdStartRetry`): the cold-start budget (about 14–30 s
+   * by default) and the wake budget for a sleeping app. They run back to
+   * back, but the wake budget (`WAKE_BUDGET_MS`, 90 s) is counted from the
+   * turn's start, so the cold-start waits before it come out of it; the
+   * window's default leaves room on top for the requests and one capacity
+   * wait at the pod's usual hint (a test composes that worst case).
+   * Default 120000.
    */
   preFirstByteWindowMs?: number;
   /**
