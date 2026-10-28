@@ -71,6 +71,7 @@ export {
 } from "./hitl.js";
 export {
   OAUTH_LINK_PARAMS,
+  OAUTH_RETRY_ERRORS,
   OAUTH_RETURN_PARAMS,
   OAUTH_SCHEME,
   OAUTH_UPFRONT_METADATA,
@@ -78,12 +79,16 @@ export {
   isNavigableUrl,
   oauthAuthorizeAsk,
   oauthAuthorizeHref,
+  oauthReturnNoticeLine,
+  oauthReturnTone,
   parseOAuthReturn,
   stripOAuthReturn,
   type AuthRequired,
   type AuthRequiredServer,
   type OAuthAuthorizeAsk,
   type OAuthReturn,
+  type OAuthReturnNoticeStrings,
+  type OAuthReturnTone,
 } from "./oauth.js";
 export {
   DEFAULT_CHAT_GLASS,

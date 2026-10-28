@@ -13,9 +13,13 @@ import {
   OAUTH_UPFRONT_METADATA,
   oauthAuthorizeAsk,
   oauthAuthorizeHref,
+  OAUTH_RETRY_ERRORS,
+  oauthReturnNoticeLine,
+  oauthReturnTone,
   parseOAuthReturn,
   stripOAuthReturn,
 } from "./oauth.js";
+import { defaultChatStrings } from "./strings.js";
 
 const START = "https://mcp.dev.sandbox.guuey.com/oauth/start?state=" + "a".repeat(64);
 const ASK: AgPausedAsk = {
@@ -213,5 +217,54 @@ describe("the URL an auth ask opens", () => {
     const withModes: AgPausedAsk = { ...relayed("https://accounts.example/o/oauth2/auth", COMPLETE), grantModes: [{ id: "once" }] };
     expect(oauthAuthorizeHref(withModes, "once", "https://app.example/chat")).toBe(COMPLETE);
     expect(() => oauthAuthorizeHref(withModes, "always", "https://app.example/chat")).toThrow(/not declared/);
+  });
+});
+
+describe("oauthReturnTone (guuey#2834)", () => {
+  it("reads connected, retry for a code in OAUTH_RETRY_ERRORS, and error for any other code", () => {
+    expect(oauthReturnTone({ kind: "connected", serverName: "linear" })).toBe("connected");
+    expect(oauthReturnTone({ kind: "error", reason: "first_party_allowlist_unavailable" })).toBe("retry");
+    expect(oauthReturnTone({ kind: "error", reason: "access_denied" })).toBe("error");
+    expect(oauthReturnTone({ kind: "error", reason: "first_party_not_allowed" })).toBe("error");
+  });
+});
+
+describe("oauthReturnNoticeLine (guuey#2834)", () => {
+  it("a connected return reads the connected line, naming the server", () => {
+    expect(oauthReturnNoticeLine({ kind: "connected", serverName: "linear" }, defaultChatStrings)).toBe(
+      "Connected linear. The agent can use it from your next message.",
+    );
+  });
+
+  it("the server's retry code reads as try-again-later, and never shows the code", () => {
+    expect(OAUTH_RETRY_ERRORS).toEqual(["first_party_allowlist_unavailable"]);
+    const line = oauthReturnNoticeLine({ kind: "error", reason: "first_party_allowlist_unavailable" }, defaultChatStrings);
+    expect(line).toBe("We couldn't check this connection just now. Try again in a moment.");
+    expect(line).not.toContain("first_party_allowlist_unavailable");
+  });
+
+  it("any other code reads exactly as before: Couldn't connect: <code>", () => {
+    expect(oauthReturnNoticeLine({ kind: "error", reason: "access_denied" }, defaultChatStrings)).toBe(
+      "Couldn't connect: access_denied",
+    );
+    expect(oauthReturnNoticeLine({ kind: "error", reason: "first_party_not_allowed" }, defaultChatStrings)).toBe(
+      "Couldn't connect: first_party_not_allowed",
+    );
+  });
+
+  it("a builder's strings override wins on every arm", () => {
+    const strings = {
+      ...defaultChatStrings,
+      oauthConnected: (serverName: string) => `${serverName} verbunden.`,
+      oauthRetryLater: "Bitte gleich noch einmal versuchen.",
+      oauthFailed: (reason: string) => `Verbindung fehlgeschlagen: ${reason}`,
+    };
+    expect(oauthReturnNoticeLine({ kind: "connected", serverName: "linear" }, strings)).toBe("linear verbunden.");
+    expect(oauthReturnNoticeLine({ kind: "error", reason: "first_party_allowlist_unavailable" }, strings)).toBe(
+      "Bitte gleich noch einmal versuchen.",
+    );
+    expect(oauthReturnNoticeLine({ kind: "error", reason: "access_denied" }, strings)).toBe(
+      "Verbindung fehlgeschlagen: access_denied",
+    );
   });
 });

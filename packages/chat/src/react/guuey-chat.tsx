@@ -99,6 +99,7 @@ import { useTranscript, useTranscriptInputs } from "./use-transcript.js";
 import { useTapEcho } from "./use-tap-echo.js";
 import type { ClaimedTap } from "../tap-ledger.js";
 import { oauthPromptAction, useOAuthReturn } from "./oauth-return.js";
+import { oauthReturnNoticeLine, oauthReturnTone } from "../oauth.js";
 import { PARTS } from "./parts.js";
 import { ATTACHMENT_ACCEPT, readImageFile, type AttachmentRefusalReason } from "./composer-attachments.js";
 import { ChatHeader, type GuueyChatHeader } from "./chat-header.js";
@@ -1625,11 +1626,9 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       {oauthReturn.notice !== null && (
         <p
           role="status"
-          className={`guuey-chat-oauth-notice guuey-chat-oauth-${oauthReturn.notice.kind}`}
+          className={`guuey-chat-oauth-notice guuey-chat-oauth-${oauthReturnTone(oauthReturn.notice)}`}
         >
-          {oauthReturn.notice.kind === "connected"
-            ? strings.oauthConnected(oauthReturn.notice.serverName)
-            : strings.oauthFailed(oauthReturn.notice.reason)}
+          {oauthReturnNoticeLine(oauthReturn.notice, strings)}
           <button type="button" className="guuey-chat-oauth-dismiss" onClick={oauthReturn.dismiss}>
             {strings.promptDismissed}
           </button>

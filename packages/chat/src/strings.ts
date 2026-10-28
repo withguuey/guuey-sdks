@@ -251,6 +251,12 @@ export interface ChatStrings {
   promptOAuthSent: (modeLabel: string) => string;
   oauthConnected: (serverName: string) => string;
   oauthFailed: (reason: string) => string;
+  /**
+   * guuey#2834: the return notice for a reason the broker sends when nothing
+   * was decided (`OAUTH_RETRY_ERRORS`: it could not finish the check just
+   * now). Names no code; the user only needs to try again.
+   */
+  oauthRetryLater: string;
 
   /**
    * The `authMode:'upfront'` connect-first framing (guuey#605): the agent
@@ -493,6 +499,7 @@ export const defaultChatStrings: ChatStrings = {
   promptOAuthSent: (modeLabel) => `Connecting — ${modeLabel}`,
   oauthConnected: (serverName) => `Connected ${serverName}. The agent can use it from your next message.`,
   oauthFailed: (reason) => `Couldn't connect: ${reason}`,
+  oauthRetryLater: "We couldn't check this connection just now. Try again in a moment.",
 
   authRequiredHeading: (serverLabels) => `Connect ${serverLabels} to start`,
   authRequiredHint: "This agent needs the account before it can answer.",

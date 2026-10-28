@@ -36,6 +36,7 @@
  * identically on React Native, whose URL polyfill is partial.
  */
 import { hitlAnswerChannel } from "./hitl.js";
+import type { ChatStrings } from "./strings.js";
 import type { AgPausedAsk, JsonValue } from "@silverprotocol/core";
 
 /** The `authConfig.scheme` this arm recognises (the spec's OAuth 2 vocabulary). */
@@ -46,6 +47,19 @@ export const OAUTH_LINK_PARAMS = { mode: "mode", returnTo: "returnTo" } as const
 
 /** The query params the broker's callback appends to `returnTo`. */
 export const OAUTH_RETURN_PARAMS = { connected: "connected", error: "error" } as const;
+
+/**
+ * The broker's RETRY vocabulary on the return (`?error=<reason>`): a reason
+ * here means nothing was decided, the server only could not finish the check
+ * just now, so a surface says "try again in a moment" instead of naming the
+ * code. Every other reason is a refusal or a failure and reads as one.
+ *
+ * SYNC with mcp-proxy's `oauth-routes.ts` (`FIRST_PARTY_ALLOWLIST_UNAVAILABLE`:
+ * the first-party allowlist could not be read). The equality test belongs on
+ * the server side, which can read this file (it is not written yet); this
+ * package cannot read the server.
+ */
+export const OAUTH_RETRY_ERRORS = ["first_party_allowlist_unavailable"] as const;
 
 /**
  * The producer's ask-metadata contract for guuey#605 (`authMode:'upfront'` —
@@ -235,6 +249,35 @@ export function oauthAuthorizeHref(ask: AgPausedAsk, grantModeId: string | null,
 export type OAuthReturn =
   | { kind: "connected"; serverName: string }
   | { kind: "error"; reason: string };
+
+/** The strings {@link oauthReturnNoticeLine} reads (a surface passes its whole `ChatStrings`). */
+export type OAuthReturnNoticeStrings = Pick<ChatStrings, "oauthConnected" | "oauthRetryLater" | "oauthFailed">;
+
+/**
+ * What a return notice MEANS, so its face can match its words: `connected`,
+ * `retry` (a reason in {@link OAUTH_RETRY_ERRORS}: nothing was decided, try
+ * again in a moment) or `error` (a refusal or a failure). {@link OAuthReturn}
+ * stays the wire's two arms; the tone is read off it, never stored.
+ */
+export type OAuthReturnTone = "connected" | "retry" | "error";
+
+/** The {@link OAuthReturnTone} of a broker return. */
+export function oauthReturnTone(notice: OAuthReturn): OAuthReturnTone {
+  if (notice.kind === "connected") return "connected";
+  const retry: readonly string[] = OAUTH_RETRY_ERRORS;
+  return retry.includes(notice.reason) ? "retry" : "error";
+}
+
+/**
+ * The ONE line every surface shows for the broker's return, by its
+ * {@link oauthReturnTone}: the connected line for `?connected=`,
+ * {@link ChatStrings.oauthRetryLater} for a retry (the code is never shown),
+ * else `oauthFailed(reason)`.
+ */
+export function oauthReturnNoticeLine(notice: OAuthReturn, strings: OAuthReturnNoticeStrings): string {
+  if (notice.kind === "connected") return strings.oauthConnected(notice.serverName);
+  return oauthReturnTone(notice) === "retry" ? strings.oauthRetryLater : strings.oauthFailed(notice.reason);
+}
 
 /** `decodeURIComponent` that yields the raw text for a malformed escape (a foreign param is not ours to fail on). */
 function safeDecode(s: string): string {
