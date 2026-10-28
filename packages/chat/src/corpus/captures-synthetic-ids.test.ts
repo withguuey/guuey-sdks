@@ -33,6 +33,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
+import { JsonValue as JsonValueSchema } from "@silverprotocol/core";
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type JsonObject = { [key: string]: JsonValue };
@@ -80,6 +81,12 @@ function isSyntheticUuid(value: string): boolean {
 /** A userId holds either a synthetic uuid or a synthetic guest id. */
 function isSyntheticUserId(value: string): boolean {
   return isSyntheticUuid(value) || SYNTHETIC_GUEST_ID.test(value);
+}
+
+/** A capture's JSON text, read through the protocol's JsonValue schema: the parse is `unknown` until it reads. */
+function parseJson(text: string): JsonValue {
+  const parsed: unknown = JSON.parse(text);
+  return JsonValueSchema.parse(parsed);
 }
 
 function isObject(value: JsonValue | undefined): value is JsonObject {
@@ -164,7 +171,7 @@ class Scan {
     let data: string[] = [];
     const dispatch = (): void => {
       if (data.length === 0) return;
-      const payload: JsonValue = JSON.parse(data.join("\n"));
+      const payload = parseJson(data.join("\n"));
       const at = `frames[${frame}](${event})`;
       this.json(payload, at);
       const type = isObject(payload) ? payload.type : undefined;
@@ -205,7 +212,7 @@ class Scan {
 /** Scan one capture's text; `name` picks the reader (`.json`, `.sse.txt`, else plain text). */
 function scanCapture(name: string, source: string): ScanResult {
   const scan = new Scan(name);
-  if (name.endsWith(".json")) scan.json(JSON.parse(source), "$");
+  if (name.endsWith(".json")) scan.json(parseJson(source), "$");
   else if (name.endsWith(".sse.txt")) scan.sse(source);
   else scan.text(source, "<text>");
   return { offenders: scan.offenders, seen: scan.seen };

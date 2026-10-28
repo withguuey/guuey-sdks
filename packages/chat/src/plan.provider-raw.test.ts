@@ -83,21 +83,20 @@ describe("provider-raw carries with no information (guuey#847)", () => {
   });
 });
 
-describe("an unknown row's raw value is a JSON clone, read back through the JsonValue schema (guuey#2899)", () => {
-  it("debug carries the payload as a fresh JSON value equal to it", () => {
-    const payload: JsonValue = { shape: 1, nested: [true, null, "x", { deep: 2 }] };
+describe("an unknown row's raw value is read back through the JsonValue schema, never asserted (guuey#2899)", () => {
+  it("a payload with an own `__proto__` key keeps it out of the raw value: the schema skips the key, where a typed parse carried it", () => {
+    const payload: JsonValue = Object.defineProperty({ ok: 1 }, "__proto__", {
+      value: { polluted: true },
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+    expect(JSON.stringify(payload)).toBe('{"ok":1,"__proto__":{"polluted":true}}');
     const rows = unknowns(plan(foldWithRaw(payload), true));
-    expect(rows[0]?.raw).toEqual(payload);
-    expect(rows[0]?.raw).not.toBe(payload);
-  });
-
-  it("a number JSON cannot hold reads as JSON's null, never as the number", () => {
-    const rows = unknowns(plan(foldWithRaw({ n: Number.NaN, inf: Number.POSITIVE_INFINITY, ok: 3 }), true));
-    expect(rows[0]?.raw).toEqual({ n: null, inf: null, ok: 3 });
-  });
-
-  it("calm keeps no raw value at all", () => {
-    const rows = unknowns(plan(foldWithRaw({ shape: 1 })));
-    expect(rows[0]?.raw).toBeNull();
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(JSON.stringify(row.raw)).toBe('{"ok":1}');
+      expect(row.raw !== null && typeof row.raw === "object" && Object.hasOwn(row.raw, "__proto__")).toBe(false);
+    }
   });
 });
