@@ -15,18 +15,33 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { UI_REQUEST_META_UNKNOWN_KEY_REFUSAL } from "@guuey/mcp-apps-host";
 import { createUiActionRelay, createUiResourceReader } from "./web-adapters.js";
+import { isWireObject, type WireObject } from "./wire-object.js";
 
 const FIXTURES = new URL("./fixtures/", import.meta.url);
 
-interface Provenance {
-  captures: { [file: string]: { status: number; contentType: string; sha256: string; bytes: number } };
+interface CaptureProvenance {
+  status: number;
+  contentType: string;
+  sha256: string;
+  bytes: number;
 }
-const PROVENANCE: Provenance = JSON.parse(readFileSync(new URL("ui-action-meta-refusal.provenance.json", FIXTURES), "utf8"));
+const PROVENANCE: unknown = JSON.parse(readFileSync(new URL("ui-action-meta-refusal.provenance.json", FIXTURES), "utf8"));
+
+/** `file`'s entry in the provenance record, read member by member. */
+function provenanceOf(file: string): CaptureProvenance {
+  const captures = isWireObject(PROVENANCE) ? PROVENANCE.captures : undefined;
+  const entry = isWireObject(captures) ? captures[file] : undefined;
+  if (!isWireObject(entry)) throw new Error(`no provenance for ${file}`);
+  const { status, contentType, sha256, bytes } = entry;
+  if (typeof status !== "number" || typeof contentType !== "string" || typeof sha256 !== "string" || typeof bytes !== "number") {
+    throw new Error(`malformed provenance for ${file}`);
+  }
+  return { status, contentType, sha256, bytes };
+}
 
 /** A captured refusal, checked against its recorded hash before any test uses it. */
 function captured(file: string): { status: number; contentType: string; body: Buffer } {
-  const meta = PROVENANCE.captures[file];
-  if (meta === undefined) throw new Error(`no provenance for ${file}`);
+  const meta = provenanceOf(file);
   const body = readFileSync(new URL(file, FIXTURES));
   expect(body.length).toBe(meta.bytes);
   expect(createHash("sha256").update(body).digest("hex")).toBe(meta.sha256);
@@ -51,9 +66,11 @@ const refusal = (c: { status: number; contentType: string; body: Buffer }): Answ
 
 /** A fetch that answers each call from `answers` in order and records every body sent. */
 function scripted(answers: Answer[]) {
-  const sent: { url: string; body: { [key: string]: unknown } }[] = [];
+  const sent: { url: string; body: WireObject }[] = [];
   const fetchImpl: typeof fetch = async (url, init) => {
-    sent.push({ url: String(url), body: JSON.parse(String(init?.body)) as { [key: string]: unknown } });
+    const body: unknown = JSON.parse(String(init?.body));
+    if (!isWireObject(body)) throw new Error("the relay sent a body that is not a JSON object");
+    sent.push({ url: String(url), body });
     const next = answers.shift();
     if (next === undefined) throw new Error("unexpected extra request");
     return new Response(next.body, {

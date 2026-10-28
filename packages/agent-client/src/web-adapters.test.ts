@@ -9,6 +9,7 @@ import {
 } from "./web-adapters.js";
 import { AGENT_ERROR_CODES } from "./error-codes.js";
 import type { InvokeRequest } from "./types.js";
+import { isWireObject } from "./wire-object.js";
 
 /** A well-formed guest secret: 64 lowercase hex chars. */
 const SECRET = "0123456789abcdef".repeat(4);
@@ -723,7 +724,8 @@ describe("createUiActionRelay", () => {
     try {
       let pullLive = false;
       const fetchImpl = vi.fn(async (_url: string, init: { body: string }) => {
-        const { name } = JSON.parse(init.body) as { name: string };
+        const sent: unknown = JSON.parse(init.body);
+        const name = isWireObject(sent) ? sent.name : undefined;
         const ok = name === "ggui_runtime_refresh_ws_token" || pullLive;
         return { ok, status: ok ? 200 : 404, json: async () => OK_BODY };
       }) as unknown as typeof fetch;

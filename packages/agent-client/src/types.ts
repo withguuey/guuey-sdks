@@ -14,7 +14,7 @@
  */
 
 import type { AgClientCapabilities, AgNoticeSource, AgReduceResult, JsonValue } from "@silverprotocol/core";
-import type { ImageAttachment } from "./attachments.js";
+import type { ImageAttachmentCandidate } from "./attachments.js";
 import type { InputKind } from "./input-kinds.js";
 
 /** A flat chat turn as rendered by the consumer UI. */
@@ -126,8 +126,13 @@ export interface SendOptions {
    * `ATTACHMENTS_INVALID`. A runtime that does not acknowledge the images on
    * its `session` frame ends the turn with `ATTACHMENTS_UNSUPPORTED` before
    * any reply, since an older runtime would otherwise answer without them.
+   *
+   * Typed as the judge reads it ({@link ImageAttachmentCandidate}), not as
+   * the accepted `ImageAttachment`: the judge reads strings and decides,
+   * so a caller holding an attachment it did not type (a JavaScript caller, a
+   * file read off disk) passes it as it is and gets the judge's refusal.
    */
-  attachments?: readonly ImageAttachment[];
+  attachments?: readonly ImageAttachmentCandidate[];
   /**
    * A turn without words (guuey#2549): pass `input` as `""` (blank text reads
    * as `""`) and name where the content rides. `"context-only"`: it rode on

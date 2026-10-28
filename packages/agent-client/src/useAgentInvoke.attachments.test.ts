@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { useAgentInvoke } from "./useAgentInvoke.js";
 import { CLIENT_ERROR_CODES } from "./error-codes.js";
-import type { ImageAttachment } from "./attachments.js";
+import type { ImageAttachment, ImageAttachmentCandidate } from "./attachments.js";
 import type { AgentInvokeAdapters, InvokeRequest } from "./types.js";
 
 const PNG: ImageAttachment = {
@@ -119,7 +119,7 @@ describe("useAgentInvoke — image attachments ride the send (guuey#2293)", () =
   it("a type off the allowlist is refused the same way (a JS caller is not held by the type)", async () => {
     const { adapters, bodies } = podAdapters({ threadId: "t-1" });
     const { result, unmount } = hook(adapters);
-    const audio = JSON.parse('{"kind":"inline","mimeType":"audio/webm","data":"AAAA"}') as ImageAttachment;
+    const audio: ImageAttachmentCandidate = { kind: "inline", mimeType: "audio/webm", data: "AAAA" };
     await act(async () => {
       await result.current.send("listen", { attachments: [audio] });
     });
