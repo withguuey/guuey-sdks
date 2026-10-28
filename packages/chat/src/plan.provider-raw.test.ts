@@ -82,3 +82,22 @@ describe("provider-raw carries with no information (guuey#847)", () => {
     expect(unknowns(plan(foldWithRaw({ videoMetadata: { startOffset: "1s" } })))).toHaveLength(2);
   });
 });
+
+describe("an unknown row's raw value is a JSON clone, read back through the JsonValue schema (guuey#2899)", () => {
+  it("debug carries the payload as a fresh JSON value equal to it", () => {
+    const payload: JsonValue = { shape: 1, nested: [true, null, "x", { deep: 2 }] };
+    const rows = unknowns(plan(foldWithRaw(payload), true));
+    expect(rows[0]?.raw).toEqual(payload);
+    expect(rows[0]?.raw).not.toBe(payload);
+  });
+
+  it("a number JSON cannot hold reads as JSON's null, never as the number", () => {
+    const rows = unknowns(plan(foldWithRaw({ n: Number.NaN, inf: Number.POSITIVE_INFINITY, ok: 3 }), true));
+    expect(rows[0]?.raw).toEqual({ n: null, inf: null, ok: 3 });
+  });
+
+  it("calm keeps no raw value at all", () => {
+    const rows = unknowns(plan(foldWithRaw({ shape: 1 })));
+    expect(rows[0]?.raw).toBeNull();
+  });
+});

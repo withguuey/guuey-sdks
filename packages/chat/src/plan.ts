@@ -31,7 +31,7 @@
  * prompts, `error`, `history` boundaries. Append-only streams only ever
  * append ordinals, so every existing key survives each re-plan.
  */
-import type { AgBlock, AgReduceResult, JsonValue } from "@silverprotocol/core";
+import { JsonValue, type AgBlock, type AgReduceResult } from "@silverprotocol/core";
 import {
   isViewDirectiveText,
   readTapLabels,
@@ -89,13 +89,16 @@ function boundedPreview(value: unknown, previewChars: number, pretty = true): st
 
 /**
  * A JSON round-trip clone: any serializable value becomes a `JsonValue`
- * without asserting a shape the source type does not promise. `JSON.parse`'s
- * output IS JsonValue by construction — the assertion states that fact.
+ * without asserting a shape the source type does not promise. The parse is
+ * `unknown` until the protocol's own `JsonValue` schema reads it; a value it
+ * does not read (none should, after a round trip) is shown as no raw value.
  */
 function jsonClone(value: unknown): JsonValue | null {
   const text = JSON.stringify(value);
   if (text === undefined) return null;
-  return JSON.parse(text) as JsonValue;
+  const parsed: unknown = JSON.parse(text);
+  const read = JsonValue.safeParse(parsed);
+  return read.success ? read.data : null;
 }
 
 function resolveExpanded(
