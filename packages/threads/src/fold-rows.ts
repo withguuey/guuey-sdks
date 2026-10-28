@@ -112,18 +112,92 @@ export interface StoredTextParts {
  * the row's `text` on purpose (`undefined` or null when the row has none).
  */
 export function storedTextParts(content: unknown, text: StoredRowText): StoredTextParts | null {
+  const msg = readStoredContentMessage(content, text);
+  if (msg === undefined) return null;
+  return { answer: messageText(msg), narration: messageNarration(msg), all: messageFullText(msg) };
+}
+
+/**
+ * A stored row's `content` read as its message: a stored `AgMessage` object,
+ * or the JSON string an AppSync writer stores, through
+ * {@link readStoredRowMessage}. `undefined` for anything else (not JSON, or
+ * not a message core can materialize).
+ */
+function readStoredContentMessage(content: unknown, text: StoredRowText): AgMessage | undefined {
   let raw: unknown = content;
   if (typeof content === "string") {
     try {
       raw = JSON.parse(content);
     } catch (err) {
-      if (err instanceof SyntaxError) return null; // not JSON: not a stored AgMessage
+      if (err instanceof SyntaxError) return undefined; // not JSON: not a stored AgMessage
       throw err;
     }
   }
-  const msg = readStoredRowMessage(raw, text);
-  if (msg === undefined) return null;
-  return { answer: messageText(msg), narration: messageNarration(msg), all: messageFullText(msg) };
+  return readStoredRowMessage(raw, text);
+}
+
+/** A tool-result block as a fold stores it. */
+export type StoredToolResultBlock = Extract<AgMessage["content"][number], { type: "tool-result" }>;
+
+/** A tool call a stored message names: its id and the tool's raw wire name (guuey#402). */
+export interface StoredToolCall {
+  toolCallId: string;
+  name: string;
+}
+
+/**
+ * The tool calls a stored row's message makes, in block order (guuey#2487).
+ * The name rides only the call; a result carries just the id, and a facet may
+ * store the result in a message (and so a row) of its own, so a reader that
+ * names a result reads the calls of the rows around it. Empty when `content`
+ * is not a stored message.
+ */
+export function storedToolCalls(content: unknown, text: StoredRowText): StoredToolCall[] {
+  const msg = readStoredContentMessage(content, text);
+  if (msg === undefined) return [];
+  const calls: StoredToolCall[] = [];
+  for (const block of msg.content) {
+    if (block.type === "tool-call") calls.push({ toolCallId: block.toolCallId, name: block.name });
+  }
+  return calls;
+}
+
+/**
+ * The tool results a stored row's message carries that NO card row stands for
+ * (guuey#2487): every `tool-result` block that does not carry a UI resource
+ * ({@link toolResultCarriesUi}), without its `_meta` (guuey#122), in block
+ * order. A host draws from such a result (an in-process tool's
+ * `structuredContent`, or its text) live; this is how a reader finds it again
+ * after a reload. A UI-carrying result is left out: its card row already
+ * carries it. Empty when `content` is not a stored message.
+ */
+export function storedToolResults(content: unknown, text: StoredRowText): StoredToolResultBlock[] {
+  const msg = readStoredContentMessage(content, text);
+  if (msg === undefined) return [];
+  const results: StoredToolResultBlock[] = [];
+  for (const block of msg.content) {
+    if (block.type === "tool-result" && !toolResultCarriesUi(block)) results.push(withoutToolResultMeta(block));
+  }
+  return results;
+}
+
+/**
+ * The call id of EVERY `tool-result` block a stored row's message carries, in
+ * block order, whether it carries a UI resource or not (guuey#2487). A reader
+ * that names results by their calls uses it to tell where a call's results
+ * sit on a page, card-drawn ones included: a call's first result row is
+ * written straight after the call row, and a UI-carrying result's card row
+ * straight after the result (guuey#2396). Empty when `content` is not a
+ * stored message.
+ */
+export function storedToolResultCallIds(content: unknown, text: StoredRowText): string[] {
+  const msg = readStoredContentMessage(content, text);
+  if (msg === undefined) return [];
+  const ids: string[] = [];
+  for (const block of msg.content) {
+    if (block.type === "tool-result") ids.push(block.toolCallId);
+  }
+  return ids;
 }
 
 /**
@@ -577,6 +651,60 @@ function withoutToolResultMeta(
   return rest;
 }
 
+/**
+ * Whether a tool-result block carries a UI resource, and so becomes a card row
+ * ({@link uiCardArtifactsFromMessages}) rather than a stored tool result
+ * ({@link storedToolResults}). The one predicate both share, so a result is a
+ * card or a stored tool result, never both and never neither.
+ *
+ * It judges the block AS STORED: without its `_meta` (guuey#122), which never
+ * persists. The card projection sees the live block and the stored-row reader
+ * sees the stored one, so a predicate that read `_meta` would answer the two
+ * differently (a `_meta.ui` locator is visible to the first only). Judging the
+ * stored view gives one answer on both sides by construction.
+ *
+ * A block carries UI only on DURABLE evidence, what a card row needs to mount
+ * after a reload. As stored:
+ *  - its `uiData` is an MCP resource payload (`{ uri, text|blob }`, bare or as
+ *    `{ resource }`), which mounts inline;
+ *  - its `uiData` or `structuredContent` names a `ui://` locator, which mounts
+ *    by a fresh read of the uri (`structuredContent` for a producer that
+ *    withholds `_meta`, guuey#209);
+ *  - its `uiData` is the {@link ELIDED_VALUE_KEY} marker, which stands in for
+ *    an inline resource the turn's card row carries whole
+ *    ({@link agMessageToBoundedRow});
+ *  - or a `provider-raw` part carries a `ui://` resource.
+ *
+ * Anything else is a stored tool result, which a host reads by its tool name.
+ * That includes plain view data in `uiData`: AgJSON §2.1 routes a result's
+ * payload there whenever the producer set any `_meta.ui` sibling, so an
+ * object in `uiData` alone is no evidence that a card can mount. When
+ * `_meta.ui` named no `ui://` locator, nothing could ever mount it; when it
+ * did, the locator rode `_meta` alone and the writer strips it, so the stored
+ * row cannot mount it either. A card row for either would draw as an expired
+ * chip on every reload. (A writer that persisted that locator would make it a
+ * card here, by this same rule.)
+ *
+ * `_meta` alone never mints a card (the guuey#170 pin). Across a rolling
+ * release: a writer before this predicate minted a card row from a `_meta.ui`
+ * locator, so a thread written then holds that card row while this predicate
+ * reads the same stored result as one with no UI resource. A reader that
+ * serves both kinds keeps one item per result by leaving out a stored tool
+ * result whose call already has a card row on its read (the public transcript
+ * read does).
+ */
+export function toolResultCarriesUi(block: StoredToolResultBlock): boolean {
+  const stored = withoutToolResultMeta(block);
+  return (
+    asUiResource(stored.uiData) !== undefined ||
+    isElidedMarker(stored.uiData) ||
+    toolResultLocator(stored) !== undefined ||
+    stored.content.some(
+      (part) => part.type === "provider-raw" && scanProviderRawForUiResource(part.raw) !== undefined,
+    )
+  );
+}
+
 export function uiCardArtifactsFromMessages(messages: AgMessage[]): AgArtifact[] {
   const artifacts: AgArtifact[] = [];
   for (const msg of messages) {
@@ -594,15 +722,10 @@ export function uiCardArtifactsFromMessages(messages: AgMessage[]): AgArtifact[]
       // read the render's own locator would never mint a placeholder row and
       // the read plane 404s it. Mount MATERIAL still never rides `_meta` here
       // (see the metaOnly pin in fold-rows.test.ts): a bare locator persists
-      // as a placeholder whose mount is a re-fetch.
-      const carriesUi =
-        asUiResource(block.uiData) !== undefined ||
-        toolResultLocator(block) !== undefined ||
-        block.content.some(
-          (part) =>
-            part.type === "provider-raw" && scanProviderRawForUiResource(part.raw) !== undefined,
-        );
-      if (!carriesUi) continue;
+      // as a placeholder whose mount is a re-fetch. A locator named ONLY in
+      // `_meta.ui` mints nothing: it does not persist, so its card could not
+      // mount after a reload (toolResultCarriesUi judges durable evidence).
+      if (!toolResultCarriesUi(block)) continue;
       artifacts.push({
         artifactId: `${msg.id}#ui#${i}`,
         turnId: msg.turnId ?? "",
