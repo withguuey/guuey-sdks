@@ -139,25 +139,39 @@ function readStoredContentMessage(content: unknown, text: StoredRowText): AgMess
 /** A tool-result block as a fold stores it. */
 export type StoredToolResultBlock = Extract<AgMessage["content"][number], { type: "tool-result" }>;
 
-/** A tool call a stored message names: its id and the tool's raw wire name (guuey#402). */
-export interface StoredToolCall {
+/**
+ * A stored tool call as a reader serves it (guuey#2388): its id, the tool's
+ * raw wire name (guuey#402), its display title when the producer gave one,
+ * and its input, exactly what a host's live tool-call row reads. Built field
+ * by field, never core's block: core's call also carries provider and
+ * transport fields (`providerMetadata`, whose `wireInput` is a second copy of
+ * the input, `_meta`, `signature`, `toolMetadata`, `uiVisibility` and more)
+ * that a reader must not serve, and a served view only ever gains fields.
+ */
+export interface StoredToolCallView {
   toolCallId: string;
   name: string;
+  title?: string;
+  input: JsonValue;
 }
 
 /**
- * The tool calls a stored row's message makes, in block order (guuey#2487).
- * The name rides only the call; a result carries just the id, and a facet may
- * store the result in a message (and so a row) of its own, so a reader that
- * names a result reads the calls of the rows around it. Empty when `content`
- * is not a stored message.
+ * The tool calls a stored row's message makes, in block order, as
+ * {@link StoredToolCallView}s (guuey#2388). The name rides only the call; a
+ * result carries just the id, and a facet may store the result in a message
+ * (and so a row) of its own, so a reader that names a result reads the calls
+ * of the rows around it (guuey#2487). Empty when `content` is not a stored
+ * message.
  */
-export function storedToolCalls(content: unknown, text: StoredRowText): StoredToolCall[] {
+export function storedToolCallViews(content: unknown, text: StoredRowText): StoredToolCallView[] {
   const msg = readStoredContentMessage(content, text);
   if (msg === undefined) return [];
-  const calls: StoredToolCall[] = [];
+  const calls: StoredToolCallView[] = [];
   for (const block of msg.content) {
-    if (block.type === "tool-call") calls.push({ toolCallId: block.toolCallId, name: block.name });
+    if (block.type !== "tool-call") continue;
+    const view: StoredToolCallView = { toolCallId: block.toolCallId, name: block.name, input: block.input };
+    if (block.title !== undefined) view.title = block.title;
+    calls.push(view);
   }
   return calls;
 }

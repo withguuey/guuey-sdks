@@ -12,12 +12,12 @@
  * different rows.
  */
 import { describe, expect, it } from "vitest";
-import { Reducer, type AgEvent, type AgMessage, type AgReduceResult, type JsonValue } from "@silverprotocol/core";
+import { AgProviderMeta, Reducer, type AgEvent, type AgMessage, type AgReduceResult, type JsonValue } from "@silverprotocol/core";
 import { InMemoryThreadPersistence } from "./in-memory.js";
 import {
   cardRowToAgArtifact,
   ELIDED_VALUE_KEY,
-  storedToolCalls,
+  storedToolCallViews,
   storedToolResultCallIds,
   storedToolResults,
   toolResultCarriesUi,
@@ -96,8 +96,8 @@ describe("a tool result with no UI resource, read back from the rows a fold stor
     expect(rows.map((r) => r.kind)).toEqual(["text", "text", "text"]);
     expect(rows.some((r) => r.toolName !== undefined)).toBe(false);
 
-    expect(rows.map((r) => storedToolCalls(r.content, r.text))).toEqual([
-      [{ toolCallId: "toolu_open_review", name: "mcp__inbox__open_review" }],
+    expect(rows.map((r) => storedToolCallViews(r.content, r.text))).toStrictEqual([
+      [{ toolCallId: "toolu_open_review", name: "mcp__inbox__open_review", input: {} }],
       [],
       [],
     ]);
@@ -173,10 +173,10 @@ describe("a tool result with no UI resource, read back from the rows a fold stor
     const rows = await storedRows(OPEN_REVIEW);
     const row = rows[1]!;
     expect(storedToolResults(JSON.stringify(row.content), row.text)).toEqual(storedToolResults(row.content, row.text));
-    expect(storedToolCalls(JSON.stringify(rows[0]!.content), rows[0]!.text)).toEqual(storedToolCalls(rows[0]!.content, rows[0]!.text));
+    expect(storedToolCallViews(JSON.stringify(rows[0]!.content), rows[0]!.text)).toStrictEqual(storedToolCallViews(rows[0]!.content, rows[0]!.text));
     for (const notAMessage of ["answer", "{not json", JSON.stringify({ kind: "text", text: "x" }), null, 5, { blocks: [] }, undefined]) {
       expect(storedToolResults(notAMessage, undefined)).toEqual([]);
-      expect(storedToolCalls(notAMessage, undefined)).toEqual([]);
+      expect(storedToolCallViews(notAMessage, undefined)).toEqual([]);
     }
   });
 });
@@ -293,8 +293,11 @@ describe("every stored tool result is a card row or a stored tool result, never 
   for (const c of cases) {
     it(c.name, async () => {
       const rows = await storedRows(c.events);
-      const [call] = rows.flatMap((r) => storedToolCalls(r.content, r.text));
+      // The call a reader names the result by (guuey#2388): its id and raw name, read through the one call reader.
+      const started = c.events.flatMap((e) => (e.type === "tool.start" ? [{ toolCallId: e.toolCallId, name: e.name, input: {} }] : []));
+      const [call] = rows.flatMap((r) => storedToolCallViews(r.content, r.text));
       expect(call).toBeDefined();
+      expect(rows.flatMap((r) => storedToolCallViews(r.content, r.text))).toStrictEqual(started);
       expect(classified(rows)).toEqual(c.card ? { cards: [call!.toolCallId], results: [] } : { cards: [], results: [call!.toolCallId] });
     });
   }
@@ -320,5 +323,84 @@ describe("every stored tool result is a card row or a stored tool result, never 
     const rows = (await mem.listRecentMessages(threadId, 10)).slice().sort((a, b) => a.seq - b.seq);
     expect(JSON.stringify(rows[0]!.content)).toContain(ELIDED_VALUE_KEY);
     expect(classified(rows)).toEqual({ cards: ["call_ui"], results: [] });
+  });
+});
+
+/** The four fields a reader serves for a stored call (guuey#2388), and nothing else core's block carries. */
+const VIEW_KEYS = ["input", "name", "title", "toolCallId"];
+
+/** A call block carrying every optional field core 0.12.7 knows, so a view that copied any of them shows it. */
+function fullCall(toolCallId: string, name: string): Extract<AgMessage["content"][number], { type: "tool-call" }> {
+  return {
+    type: "tool-call",
+    toolCallId,
+    name,
+    title: `Title of ${name}`,
+    input: { city: "Seoul", days: [1, 2] },
+    serverName: "inbox",
+    providerExecuted: false,
+    signature: "sig-secret",
+    provider: "anthropic",
+    toolMetadata: { owner: "tool-metadata-secret" },
+    itemId: "item_1",
+    providerCallIndex: 0,
+    uiVisibility: ["model", "app"],
+    providerMetadata: AgProviderMeta.parse({ wireInput: { city: "wire-input-copy" } }),
+    annotations: { audience: ["assistant"] },
+    _meta: { "anthropic/agentOutput": { wsToken: "meta-secret" } },
+  };
+}
+
+describe("storedToolCallViews: a stored call as a reader serves it (guuey#2388)", () => {
+  const message: AgMessage = {
+    id: "m_calls",
+    role: "assistant",
+    content: [
+      { type: "text", text: "Looking." },
+      fullCall("call_a", "mcp__inbox__open_review"),
+      { type: "reasoning", text: "thinking" },
+      { type: "tool-call", toolCallId: "call_b", name: "mcp__guest__sign_up", input: "raw" },
+      { type: "tool-result", toolCallId: "call_a", content: [{ type: "text", text: "ok" }] },
+      fullCall("call_c", "mcp__inbox__close"),
+    ],
+  };
+
+  it("keeps block order, reads only tool-call blocks, and serves exactly toolCallId, name, title and input", () => {
+    expect(storedToolCallViews(message, undefined)).toStrictEqual([
+      { toolCallId: "call_a", name: "mcp__inbox__open_review", title: "Title of mcp__inbox__open_review", input: { city: "Seoul", days: [1, 2] } },
+      { toolCallId: "call_b", name: "mcp__guest__sign_up", input: "raw" },
+      { toolCallId: "call_c", name: "mcp__inbox__close", title: "Title of mcp__inbox__close", input: { city: "Seoul", days: [1, 2] } },
+    ]);
+  });
+
+  it("never serves providerMetadata, _meta, signature, toolMetadata, uiVisibility or any other field of core's block", () => {
+    for (const content of [message, JSON.stringify(message)]) {
+      const views = storedToolCallViews(content, undefined);
+      expect(views).toHaveLength(3);
+      for (const view of views) {
+        expect(Object.keys(view).every((key) => VIEW_KEYS.includes(key)), Object.keys(view).join(",")).toBe(true);
+        for (const field of ["providerMetadata", "_meta", "signature", "toolMetadata", "uiVisibility"]) {
+          expect(view).not.toHaveProperty(field);
+        }
+      }
+      const served = JSON.stringify(views);
+      for (const secret of ["sig-secret", "tool-metadata-secret", "wire-input-copy", "meta-secret", "uiVisibility"]) {
+        expect(served).not.toContain(secret);
+      }
+    }
+  });
+
+  it("through the real writer: the stored row keeps the call's _meta, the view does not serve it", async () => {
+    const mem = new InMemoryThreadPersistence();
+    const store = new ThreadStore(mem);
+    const threadId = await store.ensureThread({ userId: USER, appId: "app_2388", region: "us-east-1" });
+    const stored: AgMessage = { id: "m0", role: "assistant", turnId: "turn1", threadId, content: [fullCall("call_w", "mcp__inbox__open_review")] };
+    const fold: AgReduceResult = { messages: [stored], artifacts: [], memory: [], turns: [{ turnId: "turn1", threadId, finishReason: "stop" }] };
+    await store.appendFold({ threadId, userId: USER, fold, clientMessageIdBase: "u1" });
+    const rows = (await mem.listRecentMessages(threadId, 10)).slice().sort((a, b) => a.seq - b.seq);
+    expect(JSON.stringify(rows.map((r) => r.content))).toContain("meta-secret");
+    expect(rows.flatMap((r) => storedToolCallViews(r.content, r.text))).toStrictEqual([
+      { toolCallId: "call_w", name: "mcp__inbox__open_review", title: "Title of mcp__inbox__open_review", input: { city: "Seoul", days: [1, 2] } },
+    ]);
   });
 });
