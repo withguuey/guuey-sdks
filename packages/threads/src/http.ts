@@ -211,10 +211,18 @@ export class HttpThreadPersistence implements ThreadPersistencePort {
    * A write: never retried, and its body (the server's `{ result: null }`) is
    * never read: a 2xx means it committed, whatever the body holds. The body is
    * cancelled, not left open, so the connection is released.
+   *
+   * Releasing is best effort and never awaited: a body stream that errors
+   * after the 2xx headers (a connection reset) rejects `cancel()`, and that
+   * rejection must not turn a committed write into a thrown one, which a
+   * caller would retry into `CONFLICT`. The failure is reported on
+   * `console.warn` instead: the write stands, and the stream is already dead.
    */
   private async write(op: string, args: object): Promise<void> {
     const res = await this.send(op, args, false);
-    await res.body?.cancel();
+    void res.body?.cancel().catch((err: unknown) => {
+      console.warn(`@guuey/threads: ${op} committed, but releasing its response body failed`, err);
+    });
   }
 
   /** `row` with its `userId`: the stored one, or the token's user for a legacy row without one. */

@@ -5,7 +5,7 @@
  * URL/headers/body shape, `null → undefined` on point-reads, the read-only
  * retry budget, and error mapping — against a scripted `fetch`.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { HttpThreadPersistence, HttpThreadStoreError } from "./http.js";
 import { ThreadClosedError } from "./closed.js";
 import { threadSealState } from "./seal.js";
@@ -350,6 +350,18 @@ describe("HttpThreadPersistence — every answer is read, never assumed (guuey#2
     }
     await expect(client(scripted([new Response("not json", { status: 200 })]).fetch).createThread(THREAD)).resolves.toBeUndefined();
     await expect(client(scripted([new Response("", { status: 201 })]).fetch).putSnapshot(SNAPSHOT)).resolves.toBeUndefined();
+  });
+
+  it("a write's 2xx whose body stream errors (a reset after the headers) is still a committed write, and the failed release is reported", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const reset = new TypeError("terminated");
+      const body = new ReadableStream<Uint8Array>({ start: (controller) => controller.error(reset) });
+      await expect(client(scripted([new Response(body, { status: 200 })]).fetch).putMessage(MESSAGE)).resolves.toBeUndefined();
+      await vi.waitFor(() => expect(warn).toHaveBeenCalledWith(expect.stringContaining("putMessage"), reset));
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("a refusal's code and message are read only when they are strings; anything else keeps the transport defaults", async () => {
