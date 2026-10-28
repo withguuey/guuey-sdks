@@ -12,7 +12,7 @@
  * different rows.
  */
 import { describe, expect, it } from "vitest";
-import { AgProviderMeta, Reducer, type AgEvent, type AgMessage, type AgReduceResult, type JsonValue } from "@silverprotocol/core";
+import { AgProviderMeta, Reducer, type AgBlock, type AgEvent, type AgMessage, type AgReduceResult, type JsonValue } from "@silverprotocol/core";
 import { InMemoryThreadPersistence } from "./in-memory.js";
 import {
   cardRowToAgArtifact,
@@ -22,6 +22,7 @@ import {
   storedToolResults,
   toolResultCarriesUi,
   uiCardArtifactsFromMessages,
+  type StoredToolCallView,
 } from "./fold-rows.js";
 import type { ThreadMessageRow } from "./rows.js";
 import { ThreadStore } from "./store.js";
@@ -326,11 +327,15 @@ describe("every stored tool result is a card row or a stored tool result, never 
   });
 });
 
-/** The four fields a reader serves for a stored call (guuey#2388), and nothing else core's block carries. */
-const VIEW_KEYS = ["input", "name", "title", "toolCallId"];
+/**
+ * The fields a reader serves for a stored call (guuey#2388), and nothing else core's block carries: every key
+ * of {@link StoredToolCallView}, checked by the compiler (a key the view gains or loses fails to compile here).
+ */
+const VIEW_FIELDS: { [K in keyof Required<StoredToolCallView>]: true } = { toolCallId: true, name: true, title: true, input: true };
+const VIEW_KEYS: string[] = Object.keys(VIEW_FIELDS);
 
 /** A call block carrying every optional field core 0.12.7 knows, so a view that copied any of them shows it. */
-function fullCall(toolCallId: string, name: string): Extract<AgMessage["content"][number], { type: "tool-call" }> {
+function fullCall(toolCallId: string, name: string): AgBlock {
   return {
     type: "tool-call",
     toolCallId,
