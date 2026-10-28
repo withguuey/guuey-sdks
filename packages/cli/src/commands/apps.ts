@@ -1753,6 +1753,8 @@ export interface AppThreadMessageWire {
   elided?: string;
   failure?: { code: string | null; detail?: string };
   notice?: { source: string | null };
+  /** guuey#2549: present only on a user text row sent without words; where its content rode. */
+  inputKind?: 'context-only';
 }
 
 /** `GET /v1/apps/:id/byo-users/threads` (mirror of cli-wire `ByoUserThreadsPageWire`). */
