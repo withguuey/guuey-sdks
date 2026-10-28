@@ -10,8 +10,23 @@
  * inputs for the same settled conversation — that identity is what lets a
  * server-rendered transcript hydrate under the live one without a repaint.
  */
-import type { HistoryLoadResult } from "@guuey/agent-client";
+import type { HistoryLoadResult, HistoryToolCall, HistoryToolResult } from "@guuey/agent-client";
 import type { TranscriptInputs } from "./types.js";
+
+/**
+ * guuey#2388: the one rule both assemblers build `historyTools` by. Tool rows
+ * exist only when the read asked for calls and every page honoured the ask
+ * (`calls` is an array); results ride beside them, empty when they were not
+ * asked. `Array.isArray`, not `!== undefined`, so the live state's `null`
+ * (calls not honoured) and an older agent-client with neither field both
+ * draw nothing. Absent calls → `undefined`: no `historyTools` key at all.
+ */
+export function historyToolsOf(
+  calls: readonly HistoryToolCall[] | null | undefined,
+  results: readonly HistoryToolResult[] | undefined,
+): TranscriptInputs["historyTools"] {
+  return Array.isArray(calls) ? { calls, results: results ?? [] } : undefined;
+}
 
 /** The settled-idle baseline every assembled input starts from. */
 function idleInputs(): TranscriptInputs {
@@ -39,14 +54,13 @@ export function transcriptInputsFromHistory(load: HistoryLoadResult | null): Tra
   const base = idleInputs();
   if (load === null) return { ...base, historyState: "loading" };
   if ("gone" in load) return { ...base, historyState: "gone" };
+  const historyTools = historyToolsOf(load.toolCalls, load.toolResults);
   return {
     ...base,
     historyState: "loaded",
     messages: load.messages,
     ...(load.cards && load.cards.length > 0 ? { historyCards: load.cards } : {}),
-    // guuey#2388: tool rows only when the read asked for calls and every page
-    // honoured it; results ride beside them, empty when they were not asked.
-    ...(load.toolCalls !== undefined ? { historyTools: { calls: load.toolCalls, results: load.toolResults ?? [] } } : {}),
+    ...(historyTools !== undefined ? { historyTools } : {}),
     ...(load.closed !== undefined ? { threadClosed: { code: load.closed.code, message: load.closed.message } } : {}),
     // guuey#2858: only a newest-first read that stopped at its cap left the
     // OLDEST rows out; a truncated ascending read left out the newest.

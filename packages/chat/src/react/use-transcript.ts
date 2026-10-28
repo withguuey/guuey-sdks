@@ -21,6 +21,7 @@ import {
   type ViewCspDiagnosis,
   type ViewHostPhase,
 } from "@guuey/mcp-apps-host";
+import { historyToolsOf } from "../history-inputs.js";
 import { buildHitlAnswer, hitlPromptsFromFold, type HitlAnswerRecord, type HitlPromptAction } from "../hitl.js";
 import { planTranscript } from "../plan.js";
 import type { TranscriptPolicy } from "../policy.js";
@@ -377,6 +378,7 @@ export function useTranscriptInputs(invoke: UseAgentInvokeReturn): UseTranscript
       assistantText = last.text;
       messages = messages.slice(0, -1);
     }
+    const historyTools = historyToolsOf(invoke.historyToolCalls, invoke.historyToolResults);
     return {
       result: invoke.reduceResult,
       assistantText,
@@ -390,12 +392,8 @@ export function useTranscriptInputs(invoke: UseAgentInvokeReturn): UseTranscript
       prompts: [...prompts, ...hitlPromptsFromFold(invoke.reduceResult, hitlAnswers)],
       messages,
       ...(invoke.historyCards.length > 0 ? { historyCards: invoke.historyCards } : {}),
-      // guuey#2388: the one gate the history assembler keys on, calls asked and
-      // honoured. `Array.isArray` (not `!== null`) so an older agent-client with
-      // neither field draws nothing, and its missing results read as none.
-      ...(Array.isArray(invoke.historyToolCalls)
-        ? { historyTools: { calls: invoke.historyToolCalls, results: invoke.historyToolResults ?? [] } }
-        : {}),
+      // guuey#2388: built by the history assembler's own rule (calls asked and honoured).
+      ...(historyTools !== undefined ? { historyTools } : {}),
       // guuey#2858: `=== true`, so an older agent-client without the field reads as whole.
       ...(invoke.historyTruncated === true ? { historyTruncated: true } : {}),
       sendStates: invoke.sendStates,
