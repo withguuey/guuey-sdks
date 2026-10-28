@@ -43,26 +43,6 @@ const SATURATION_FALLBACK_DELAY_SECONDS = 15;
 const SATURATION_MAX_DELAY_SECONDS = 30;
 
 /**
- * Read `Retry-After` as WHOLE SECONDS, or `undefined`.
- *
- * HTTP also allows an absolute HTTP-date, which is deliberately NOT parsed:
- * the pod only ever emits a delta-seconds integer, and silently mis-reading a
- * date as `NaN` seconds is worse than falling back to the fixed delay.
- *
- * Exported because every transport that builds an {@link AgentResponseError}
- * has to fill `retryAfterSeconds` the same way for {@link withSaturationRetry}
- * to honour the same hint — a second hand-rolled regex in a host adapter is
- * exactly the drift this module exists to prevent.
- */
-export function parseRetryAfterSeconds(header: string | null): number | undefined {
-  if (header === null) return undefined;
-  const trimmed = header.trim();
-  if (!/^\d+$/.test(trimmed)) return undefined;
-  const seconds = Number(trimmed);
-  return Number.isSafeInteger(seconds) ? seconds : undefined;
-}
-
-/**
  * The refusal codes {@link withSaturationRetry} re-sends: the transient
  * "no room for this turn right now" answers. `POD_SATURATED` is the pod's
  * concurrent-turn cap; `WORKER_POD_RESOURCE_EXHAUSTED` before the stream is

@@ -40,17 +40,23 @@ export {
 // The invoke-refusal retry wrappers, transport-agnostic: a host that brings
 // its own `fetch` (Portal's React-Native transport) wraps them to wear the
 // same semantics as the web transport instead of hand-rolling second copies.
-// `parseRetryAfterSeconds` ships with them because filling
-// `AgentResponseError.retryAfterSeconds` the same way is what makes the
-// wrappers honour the pod's hint.
 export {
   withSaturationRetry,
   withColdStartRetry,
-  parseRetryAfterSeconds,
   type SaturationRetryOptions,
   type ColdStartRetryOptions,
 } from "./saturation-retry.js";
-export { AgentResponseError } from "./errors.js";
+// The refusal error and the one builder of it: a host transport that brings
+// its own `fetch` builds its refusals with `agentResponseErrorFrom`, so the
+// status, code, Retry-After hint and waking marker read the same way the web
+// transport reads them and the wrappers above see the same shape.
+export {
+  AgentResponseError,
+  agentResponseErrorFrom,
+  isWakingRefusal,
+  parseRetryAfterSeconds,
+  WAKING_HEADER,
+} from "./errors.js";
 // The pod's wire-code vocabulary, mirrored — branch on these instead of
 // re-typing the string literals (see the module docblock for the sync guard).
 export {

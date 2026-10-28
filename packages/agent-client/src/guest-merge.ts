@@ -25,7 +25,7 @@
  * `{ supported: false }` — keep the pre-merge behaviour (a new thread under
  * the bearer). Never throws.
  */
-import { parseRetryAfterSeconds } from "./saturation-retry.js";
+import { parseRetryAfterSeconds } from "./errors.js";
 import { GUEST_HEADER, sendableGuestSecret } from "./transport.js";
 import { isWireObject } from "./wire-object.js";
 

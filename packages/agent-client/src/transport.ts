@@ -16,9 +16,8 @@
  * publishes exactly this graph.
  */
 import type { InvokeRequest, InvokeTransport } from "./types.js";
-import { AgentResponseError } from "./errors.js";
+import { agentResponseErrorFrom } from "./errors.js";
 import {
-  parseRetryAfterSeconds,
   withColdStartRetry,
   withSaturationRetry,
   type ColdStartRetryOptions,
@@ -179,25 +178,9 @@ async function* streamInvokeOnce(
   }
   if (!resp.ok || !resp.body) {
     // Surface a structured pod error ({ code, message }) when present — e.g. a
-    // QUOTA_EXCEEDED 429 carries an upgrade message the UI should show. Fall
-    // back to the bare status for non-JSON failures.
-    const body: unknown = await resp.json().catch(() => null);
-    let message = `agent responded ${resp.status}`;
-    let code: string | undefined;
-    if (body !== null && typeof body === "object") {
-      if ("message" in body && typeof body.message === "string" && body.message) {
-        message = body.message;
-      }
-      if ("code" in body && typeof body.code === "string") {
-        code = body.code;
-      }
-    }
-    throw new AgentResponseError(
-      message,
-      resp.status,
-      code,
-      parseRetryAfterSeconds(resp.headers.get("Retry-After")),
-    );
+    // QUOTA_EXCEEDED 429 carries an upgrade message the UI should show — plus
+    // the Retry-After hint and the waking marker the retry wrappers read.
+    throw await agentResponseErrorFrom(resp);
   }
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
