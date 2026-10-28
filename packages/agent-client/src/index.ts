@@ -23,6 +23,7 @@ export {
   type DeleteThreadOptions,
   type DeleteThreadResult,
   localStorageThreadStore,
+  UI_ACTION_WAKE_BUDGET_MS,
   webGenerateId,
   type CreateWebAdaptersOptions,
 } from "./web-adapters.js";

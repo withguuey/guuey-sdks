@@ -26,7 +26,13 @@ import {
   GUEST_HEADER,
   type FetchStreamTransportOptions,
 } from "./transport.js";
-import type { SaturationRetryOptions } from "./saturation-retry.js";
+import {
+  sendUnderWakeBudget,
+  type ColdStartRetryOptions,
+  type SaturationRetryOptions,
+  type SendUnderWakeBudgetOptions,
+  type WakeBudgetOptions,
+} from "./saturation-retry.js";
 import { toInvokeUrl } from "./invoke-turn.js";
 import { isWireObject, type WireObject } from "./wire-object.js";
 
@@ -83,6 +89,20 @@ export interface CreateWebAdaptersOptions {
   saturationAttempts?: number;
   /** Forwarded to {@link SaturationRetryOptions.onSaturationWait}. */
   onSaturationWait?: SaturationRetryOptions["onSaturationWait"];
+  /**
+   * Forwarded to {@link FetchStreamTransportOptions.coldStartRetry}: the
+   * cold-start retry's budget, and the wrapper that also carries the wake
+   * budget for a sleeping app. Omit for the defaults; `false` turns both off.
+   */
+  coldStartRetry?: FetchStreamTransportOptions["coldStartRetry"];
+  /**
+   * Forwarded to {@link ColdStartRetryOptions.onWakeWait}, beside any
+   * `coldStartRetry` budget: fired before each wait while a sleeping app
+   * wakes — the surface's hook for a "waking your agent" state. Never fires
+   * when `coldStartRetry` is `false`. When `coldStartRetry` carries its own
+   * `onWakeWait` as well, this one wins (only one hook fires).
+   */
+  onWakeWait?: ColdStartRetryOptions["onWakeWait"];
   /**
    * Resolve the caller's Cognito access token (fresh), or `null` when signed
    * out. When a token is present the chat transport AND the history read
@@ -170,6 +190,11 @@ export function createWebAdapters(
   opts: CreateWebAdaptersOptions = {},
 ): AgentInvokeAdapters {
   const { apiBaseUrl, getAccessToken, getGuestSecret, fetchImpl } = opts;
+  // The wake hook rides inside the cold-start options, the wrapper it belongs to.
+  const coldStartRetry: FetchStreamTransportOptions["coldStartRetry"] =
+    opts.coldStartRetry === false || opts.onWakeWait === undefined
+      ? opts.coldStartRetry
+      : { ...opts.coldStartRetry, onWakeWait: opts.onWakeWait };
 
   const transport: InvokeTransport = async function* (req) {
     // Both candidates go to the transport; it owns the precedence (and the
@@ -188,6 +213,7 @@ export function createWebAdapters(
       ...(opts.onSaturationWait !== undefined
         ? { onSaturationWait: opts.onSaturationWait }
         : {}),
+      ...(coldStartRetry !== undefined ? { coldStartRetry } : {}),
       ...(opts.allowedDomainsHint !== undefined
         ? { allowedDomainsHint: opts.allowedDomainsHint }
         : {}),
@@ -519,9 +545,37 @@ export interface CreateUiActionRelayOptions {
    * stays open for the mount.
    */
   onSessionRestored?: (resourceUri: string) => void;
+  /**
+   * Fired before each wait while a door answers that a sleeping app is
+   * waking: an action sent to a sleeping app waits out the wake under the
+   * invoke's wake policy ({@link sendUnderWakeBudget}), bounded by
+   * {@link UI_ACTION_WAKE_BUDGET_MS} so the card's view hears the answer
+   * before its own request times out.
+   */
+  onWakeWait?: WakeBudgetOptions["onWakeWait"];
+  /**
+   * Ends a wake wait early — the surface tearing down (a closed chat, an
+   * unmounted card host): the door answers with the waking refusal it was
+   * waiting out, so the action reports the in-band error and nothing more is
+   * sent. A request already in flight is not cancelled.
+   */
+  signal?: AbortSignal;
   /** Injectable for tests. */
   fetchImpl?: typeof fetch;
 }
+
+/**
+ * How long a card action waits out a sleeping app, across every door it
+ * tries: 40 s from the click. A spec MCP App view awaits its `tools/call`
+ * under the MCP SDK's default request timeout (60 s); a relay still waiting
+ * past that would leave the view showing a failure for an action that then
+ * runs — and runs twice on a second click. Sized like the host's own
+ * `MESSAGE_ANSWER_CAP_MS` (50 s, under the same timeout) and below it, with
+ * room for the requests and the woken app's tool call. When it runs out the
+ * relay stops re-asking and the view gets the in-band error. A test pins the
+ * relation.
+ */
+export const UI_ACTION_WAKE_BUDGET_MS = 40_000;
 
 /**
  * Build the card action relay over guuey's authenticated `tools/call` proxy
@@ -560,9 +614,14 @@ export function createUiActionRelay(
    * the persisted door cannot relay a mid-turn click either, so falling
    * through would only trade one honest error for a misleading 404.
    */
+  const wakeOptions: SendUnderWakeBudgetOptions = {
+    ...(options.onWakeWait !== undefined ? { onWakeWait: options.onWakeWait } : {}),
+    ...(options.signal !== undefined ? { signal: options.signal } : {}),
+  };
   const postDoor = async (
     requestUrl: string,
     body: string,
+    wakeDeadline: number,
   ): Promise<{ kind: "result"; value: unknown } | "miss" | "meta-key-refused" | undefined> => {
     // Exactly ONE identity carrier per call — the reader's rule verbatim:
     // bearer → guest header → else cookie credentials (the HttpOnly
@@ -587,7 +646,13 @@ export function createUiActionRelay(
     }
     let res: Response;
     try {
-      res = await fetchImpl(requestUrl, init);
+      // A sleeping app's door answers 503 + X-Guuey-Waking while it wakes:
+      // wait that out under the invoke's wake policy, within what is left of
+      // the action's wake budget; every other answer comes back as it was.
+      res = await sendUnderWakeBudget(() => fetchImpl(requestUrl, init), {
+        ...wakeOptions,
+        budgetMs: Math.max(0, wakeDeadline - Date.now()),
+      });
     } catch {
       return undefined; // transport failure — the host relay answers in-band
     }
@@ -633,15 +698,16 @@ export function createUiActionRelay(
     requestUrl: string,
     action: { uri: string; name: string; arguments?: McpToolStructuredContent },
     requestMeta: McpToolStructuredContent | undefined,
+    wakeDeadline: number,
   ): Promise<{ kind: "result"; value: unknown } | "miss" | undefined> => {
     const bare = JSON.stringify(action);
     if (requestMeta === undefined) {
-      const answer = await postDoor(requestUrl, bare);
+      const answer = await postDoor(requestUrl, bare, wakeDeadline);
       return answer === "meta-key-refused" ? undefined : answer;
     }
-    const answer = await postDoor(requestUrl, JSON.stringify({ ...action, requestMeta }));
+    const answer = await postDoor(requestUrl, JSON.stringify({ ...action, requestMeta }), wakeDeadline);
     if (answer !== "meta-key-refused") return answer;
-    const resent = await postDoor(requestUrl, bare);
+    const resent = await postDoor(requestUrl, bare, wakeDeadline);
     return resent === "meta-key-refused" ? undefined : resent;
   };
 
@@ -655,8 +721,10 @@ export function createUiActionRelay(
     // The kit sends only what the click carries; the pod overwrites any
     // sessionId/appId from the authorized locator + its own binding.
     const action = { uri, name, ...(args !== undefined ? { arguments: args } : {}) };
+    // One wake budget for the whole action, however many doors it tries.
+    const wakeDeadline = Date.now() + UI_ACTION_WAKE_BUDGET_MS;
     if (podUrl !== null) {
-      const live = await postAction(podUrl, action, requestMeta);
+      const live = await postAction(podUrl, action, requestMeta, wakeDeadline);
       if (live === undefined) return undefined; // terminal on the pod — no fall-through
       if (live !== "miss") return live.value;
       // 404 → not live here (completed turn past grace, or never live):
@@ -666,6 +734,7 @@ export function createUiActionRelay(
       `${options.apiBaseUrl}/threads/${encodeURIComponent(options.threadId)}/ui-action`,
       action,
       requestMeta,
+      wakeDeadline,
     );
     return persisted === undefined || persisted === "miss" ? undefined : persisted.value;
   };
@@ -713,6 +782,18 @@ export interface CreateHitlAnswerRelayOptions {
   getAccessToken?: (opts?: { forceRefresh?: boolean }) => Promise<string | null>;
   /** Caller-owned anonymous guest secret (widget / guest chat). */
   guestSecret?: string | null;
+  /**
+   * Fired before each wait while the door answers that a sleeping app is
+   * waking: the answer waits out the wake under the same budget as the
+   * invoke ({@link sendUnderWakeBudget}).
+   */
+  onWakeWait?: WakeBudgetOptions["onWakeWait"];
+  /**
+   * Ends a wake wait early — the surface tearing down: the door answers with
+   * the waking refusal it was waiting out and nothing more is sent. A request
+   * already in flight is not cancelled.
+   */
+  signal?: AbortSignal;
   /** Injectable for tests. */
   fetchImpl?: typeof fetch;
 }
@@ -751,6 +832,10 @@ export function createHitlAnswerRelay(
 ): (answer: AgHitlAnswer) => Promise<HitlAnswerRelayResult> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const url = toHitlAnswerUrl(options.endpointUrl);
+  const wakeOptions: SendUnderWakeBudgetOptions = {
+    ...(options.onWakeWait !== undefined ? { onWakeWait: options.onWakeWait } : {}),
+    ...(options.signal !== undefined ? { signal: options.signal } : {}),
+  };
   return async (answer) => {
     const headers: Record<string, string> = { "content-type": "application/json" };
     const body = JSON.stringify(answer);
@@ -766,7 +851,9 @@ export function createHitlAnswerRelay(
     }
     let res: Response;
     try {
-      res = await fetchImpl(url, init);
+      // A sleeping app answers 503 + X-Guuey-Waking while it wakes: wait that
+      // out under the invoke's wake budget; every other answer is unchanged.
+      res = await sendUnderWakeBudget(() => fetchImpl(url, init), wakeOptions);
     } catch (err) {
       return { ok: false, status: 0, code: null, message: err instanceof Error ? err.message : String(err) };
     }

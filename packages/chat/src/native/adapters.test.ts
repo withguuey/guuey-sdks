@@ -129,6 +129,34 @@ describe("createNativeAdapters — transport", () => {
     expect(err).toMatchObject({ status: 429, code: "QUOTA_EXCEEDED", message: "Upgrade to keep chatting." });
   });
 
+  it("forwards coldStartRetry and onWakeWait to the web adapters' transport", async () => {
+    vi.useFakeTimers();
+    try {
+      // coldStartRetry reaches the transport: zero cold-start retries, so a
+      // plain 503 surfaces on the first send.
+      const plain = fakeFetch([new Response("Service Unavailable", { status: 503 })]);
+      const off = createNativeAdapters({ fetch: plain, storage: fakeStorage(), coldStartRetry: { attempts: 0 } });
+      const err = await drain(off.transport(invokeRequest())).catch((e: unknown) => e);
+      expect(err).toMatchObject({ status: 503, waking: false });
+      expect(plain).toHaveBeenCalledTimes(1);
+
+      // onWakeWait reaches it too: a waking answer is waited out and reported.
+      const woken = fakeFetch([
+        new Response(null, { status: 503, headers: { "X-Guuey-Waking": "1", "Retry-After": "3" } }),
+        new Response("data: ok\n\n", { status: 200 }),
+      ]);
+      const onWakeWait = vi.fn();
+      const adapters = createNativeAdapters({ fetch: woken, storage: fakeStorage(), onWakeWait });
+      const streamed = drain(adapters.transport(invokeRequest()));
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(await streamed).toBe("data: ok\n\n");
+      expect(onWakeWait).toHaveBeenCalledTimes(1);
+      expect(onWakeWait.mock.calls[0]?.[0]).toMatchObject({ elapsedMs: 0, attempt: 1 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("sends an async guest secret as the one identity carrier", async () => {
     const fetchImpl = fakeFetch([new Response("data: ok\n\n", { status: 200 })]);
     const adapters = createNativeAdapters({

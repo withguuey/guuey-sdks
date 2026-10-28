@@ -78,6 +78,8 @@ export interface CreateNativeAdaptersOptions
     | "getGuestSecret"
     | "saturationAttempts"
     | "onSaturationWait"
+    | "coldStartRetry"
+    | "onWakeWait"
     | "allowedDomainsHint"
   > {
   /**
@@ -117,6 +119,8 @@ export function createNativeAdapters(opts: CreateNativeAdaptersOptions): AgentIn
       ? { saturationAttempts: opts.saturationAttempts }
       : {}),
     ...(opts.onSaturationWait !== undefined ? { onSaturationWait: opts.onSaturationWait } : {}),
+    ...(opts.coldStartRetry !== undefined ? { coldStartRetry: opts.coldStartRetry } : {}),
+    ...(opts.onWakeWait !== undefined ? { onWakeWait: opts.onWakeWait } : {}),
     ...(opts.allowedDomainsHint !== undefined
       ? { allowedDomainsHint: opts.allowedDomainsHint }
       : {}),
