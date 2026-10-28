@@ -235,7 +235,6 @@ export const STALL_RECOVERY_DEFAULTS = {
   preFirstByteWindowMs: 120_000,
 } as const;
 
-/** Resolve after `ms`, or at once when `signal` aborts (the wait never outlives the turn). */
 /**
  * The rows without a failed send's own row (guuey#2608): the user row keyed
  * `clientMessageId` and the empty reply placeholder pushed right after it. A
@@ -249,6 +248,7 @@ function withoutFailedRow(rows: readonly AgentMessage[], clientMessageId: string
   return [...rows.slice(0, at), ...rows.slice(at + span)];
 }
 
+/** Resolve after `ms`, or at once when `signal` aborts (the wait never outlives the turn). */
 function delayUnlessAborted(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise<void>((resolve) => {
     if (signal.aborted) {
