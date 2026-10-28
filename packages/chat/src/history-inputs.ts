@@ -44,6 +44,9 @@ export function transcriptInputsFromHistory(load: HistoryLoadResult | null): Tra
     historyState: "loaded",
     messages: load.messages,
     ...(load.cards && load.cards.length > 0 ? { historyCards: load.cards } : {}),
+    // guuey#2388: tool rows only when the read asked for calls and every page
+    // honoured it; results ride beside them, empty when they were not asked.
+    ...(load.toolCalls !== undefined ? { historyTools: { calls: load.toolCalls, results: load.toolResults ?? [] } } : {}),
     ...(load.closed !== undefined ? { threadClosed: { code: load.closed.code, message: load.closed.message } } : {}),
     // guuey#2858: only a newest-first read that stopped at its cap left the
     // OLDEST rows out; a truncated ascending read left out the newest.

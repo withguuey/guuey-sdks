@@ -20,7 +20,13 @@ import type {
   AgSource,
   JsonValue,
 } from "@silverprotocol/core";
-import type { AgentInvokeStatus, HistoryCard, InputKind } from "@guuey/agent-client";
+import type {
+  AgentInvokeStatus,
+  HistoryCard,
+  HistoryToolCall,
+  HistoryToolResult,
+  InputKind,
+} from "@guuey/agent-client";
 import type {
   TapLabels,
   ViewCspDiagnosis,
@@ -235,6 +241,18 @@ export interface TranscriptInputs {
    */
   messages: TranscriptMessage[];
   historyCards?: HistoryCard[];
+  /**
+   * guuey#2388: the history read's stored tool calls and the results no card
+   * stands for (`@guuey/agent-client`'s `historyToolCalls` /
+   * `historyToolResults`, or a load's `toolCalls` / `toolResults`), each
+   * ascending by `seq`. The planner splices them by `seq` into the rehydrated
+   * turns and draws them with the live tool-call arm; a call whose result a
+   * card stands for draws that card right after it. Present only when the
+   * read asked for calls and every page honoured the ask; absent, no tool row
+   * is drawn from history (today's reload). `results` is empty when results
+   * were not asked: each call then draws as a settled call with no result.
+   */
+  historyTools?: { calls: readonly HistoryToolCall[]; results: readonly HistoryToolResult[] };
   /** R13 rehydration state; absent means loaded. */
   historyState?: "loading" | "gone" | "loaded";
   /**
@@ -470,6 +488,14 @@ export interface ToolItem extends BaseItem {
    * instead of a standalone line (R4's display-bearing rule).
    */
   attribution: boolean;
+  /**
+   * guuey#2388: set on a call drawn from a history read that carried no
+   * result for it (the host asked for calls only, or none was stored). Its
+   * `state` is `"orphaned"`, but the read does not say the call did not
+   * finish, so the row draws settled and plain: no "didn't finish" note.
+   * Absent on every live row.
+   */
+  reloadedWithoutResult?: true;
 }
 
 /** R4 — a collapsed run of adjacent settled SILENT tools. */

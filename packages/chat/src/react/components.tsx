@@ -447,7 +447,7 @@ export function DefaultTool({ item, ctx }: ItemProps<ToolItem>): ReactNode {
         {TOOL_GLYPH[item.state]}
       </span>
       <span className="guuey-chat-tool-title">{item.title}</span>
-      {item.state === "orphaned" ? (
+      {item.state === "orphaned" && item.reloadedWithoutResult !== true ? (
         <span className="guuey-chat-tool-note">{ctx.strings.toolDidntFinish}</span>
       ) : null}
     </span>

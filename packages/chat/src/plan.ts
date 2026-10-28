@@ -42,11 +42,13 @@ import {
   snapshotViewToolData,
   toolResultLocator,
   toolResultRenderRefusal,
+  toolCallViewInput,
   toolResultViewMount,
   uiResourceChannel,
   viewToolData,
   type ViewMount,
 } from "@guuey/mcp-apps-host";
+import type { HistoryCard, HistoryToolCall, HistoryToolResult } from "@guuey/agent-client";
 import type { TranscriptPolicy } from "./policy.js";
 import { prettyJson } from "./highlight.js";
 import { mediaDisplay } from "./media.js";
@@ -126,6 +128,12 @@ interface AssistantSource {
    * between that turn's text rows, where it was drawn live.
    */
   blockSeqs?: Array<number | undefined>;
+  /**
+   * guuey#2388: the reloaded calls this flat group holds, by `toolCallId`
+   * (`TranscriptInputs.historyTools`). The tool-call arm reads a call's card
+   * here, and tells a reloaded call the read gave no result from a live one.
+   */
+  historyCalls?: Map<string, HistoryToolCall>;
 }
 
 /** A fold-borne `role:"notice"` row, anchored to the source it followed. */
@@ -284,7 +292,10 @@ function foldAssistantSources(
  * feature, so ANY app carrying one is count-mismatched from its first
  * exchange) rendered `hey / welcome card`, the same face as the live bug.
  */
-function flatSettledGroups(messages: TranscriptInputs["messages"]): {
+function flatSettledGroups(
+  messages: TranscriptInputs["messages"],
+  historyTools: TranscriptInputs["historyTools"],
+): {
   groups: AssistantSource[];
   userOrder: number[];
 } {
@@ -293,7 +304,39 @@ function flatSettledGroups(messages: TranscriptInputs["messages"]): {
   let current: AssistantSource | null = null;
   // A user row seen with no assistant row after it yet.
   let openUserTurn = false;
+  // guuey#2388: the read's tool entries, spliced in by `seq`. A tool-only row
+  // never enters `messages`, so its entries are placed against the rows that
+  // did: each entry acts like an agent row (it joins the open group or opens
+  // one, and closes the user turn), so a turn whose agent rows were all
+  // tool-only fills its guuey#1101 slot instead of leaving it empty.
+  const entries = historyToolEntries(historyTools);
+  let nextEntry = 0;
+  /** Place every entry not yet placed whose seq passes `due`, in seq order. */
+  const flushEntries = (due: (seq: number) => boolean): void => {
+    while (nextEntry < entries.length && due(entries[nextEntry]!.seq)) {
+      const entry = entries[nextEntry++]!;
+      if (current === null) {
+        current = { blocks: [], live: false, stopped: false, blockSeqs: [] };
+        groups.push(current);
+      }
+      if (entry.kind === "call") {
+        const { toolCallId, name, title, input } = entry.call.call;
+        current.blocks.push({ type: "tool-call", toolCallId, name, input, ...(title !== undefined ? { title } : {}) });
+        (current.historyCalls ??= new Map()).set(toolCallId, entry.call);
+      } else {
+        current.blocks.push(entry.result.block);
+      }
+      current.blockSeqs?.push(entry.seq);
+      openUserTurn = false;
+    }
+  };
   for (const m of messages) {
+    const seq = m.seq;
+    // Before a row with a seq: every entry older than it. At the first row
+    // without one (a live row: the send after a reload): EVERY entry left, so
+    // a trailing tool-only turn closes its own turn and never opens the group
+    // the new send's reply pairs with (guuey#2676's face).
+    flushEntries(seq !== undefined ? (s) => s < seq : () => true);
     if (m.role === "user") {
       // guuey#1101: a user turn CLOSED by the next user row with no assistant
       // rows between is an EMPTY slot, never a vanished one. The history
@@ -321,8 +364,27 @@ function flatSettledGroups(messages: TranscriptInputs["messages"]): {
       current.blockSeqs?.push(m.seq);
       openUserTurn = false;
     }
+    // An entry stored on this row itself goes right after its text.
+    if (seq !== undefined) flushEntries((s) => s <= seq);
   }
+  flushEntries(() => true);
   return { groups, userOrder };
+}
+
+/** One reloaded tool entry: a stored call, or a stored result no card stands for. */
+type HistoryToolEntry =
+  | { kind: "call"; seq: number; call: HistoryToolCall }
+  | { kind: "result"; seq: number; result: HistoryToolResult };
+
+/** The read's calls and results in one list by seq; at an equal seq a call comes before a result. */
+function historyToolEntries(historyTools: TranscriptInputs["historyTools"]): HistoryToolEntry[] {
+  if (historyTools === undefined) return [];
+  const entries: HistoryToolEntry[] = [
+    ...historyTools.calls.map((call): HistoryToolEntry => ({ kind: "call", seq: call.seq, call })),
+    ...historyTools.results.map((result): HistoryToolEntry => ({ kind: "result", seq: result.seq, result })),
+  ];
+  // A stable sort keeps the call-first order of equal seqs.
+  return entries.sort((a, b) => a.seq - b.seq);
 }
 
 /** The seam clamped into the flat groups: never negative, never past the last group. */
@@ -414,7 +476,7 @@ function liveSuffix(
 }
 
 function flatAssistantSources(inputs: TranscriptInputs, inFlight: boolean): AssistantSource[] {
-  const settled: AssistantSource[] = flatSettledGroups(inputs.messages).groups;
+  const settled: AssistantSource[] = flatSettledGroups(inputs.messages, inputs.historyTools).groups;
   // The in-flight (or abort-kept) partial is its own trailing slot — settled
   // turns live in `messages`; `assistantText` is ignored once `ready` again
   // UNLESS the turn ended by abort (R1 aborted-partial keeps it).
@@ -651,6 +713,22 @@ function unknownFromValue(
   };
 }
 
+/**
+ * guuey#2388: what a reloaded call hands the R13 view builder so its card is
+ * drawn at the call's own position, as the call drew it live.
+ */
+interface CardCall {
+  /** The call's `title ?? name`, humanized: names the card as it names the row. */
+  toolTitle: string;
+  /** R4's `via <tool>` fold, as the live arm gives it. */
+  attribution: string | null;
+  /** The call's input, sent to the view as tool-input. */
+  input: JsonValue;
+}
+
+/** The card at `cardSeq` drawn for a reloaded call, or null when R13's rules draw it nowhere. */
+type CardAtCall = (cardSeq: number, call: CardCall) => ViewMountItem | null;
+
 /** Walk one assistant slot's blocks into display items (matrix R1–R9, R14, R15). */
 function planAssistantSource(
   source: AssistantSource,
@@ -660,6 +738,7 @@ function planAssistantSource(
   overrides: TranscriptOverrides,
   /** Filled with the read-plane seq of each text item drawn from a seq-bearing flat row (guuey#2400). */
   seqByKey: Map<ItemKey, number>,
+  cardAtCall: CardAtCall,
 ): DisplayItem[] {
   const items: DisplayItem[] = [];
   const prefix = `a${slot}`;
@@ -733,28 +812,47 @@ function planAssistantSource(
       }
       case "tool-call": {
         const key = `tool.${block.toolCallId}`;
-        const result = resultsById.get(block.toolCallId);
+        // guuey#2388: a reloaded call whose result a card stands for. The
+        // card is the result: its stored part decides the state, and the card
+        // is drawn right after the row, where the live mount was.
+        const reloaded = source.historyCalls?.get(block.toolCallId);
+        const card = reloaded?.card;
+        const result = card === undefined ? resultsById.get(block.toolCallId) : undefined;
         if (result) consumedResults.add(block.toolCallId);
         const mount: ViewMount | undefined = result ? toolResultViewMount(result) : undefined;
         // guuey#836 — a pre-generation refusal is named, not shown as an
         // opaque tool error: no mount (nothing was rendered), no data-result
         // dump (the envelope IS the message), the row faces the refusal.
         const refusal = result ? (toolResultRenderRefusal(result) ?? null) : null;
-        const failed = result !== undefined && (refusal !== null || toolFailed(result));
-        const state: ToolItem["state"] = result
-          ? failed
-            ? "failed"
-            : "done"
-          : source.live && inputs.aborted !== true
-            ? "running"
-            : "orphaned";
+        const failed =
+          result !== undefined
+            ? refusal !== null || toolFailed(result)
+            : card?.result !== undefined && toolFailed(card.result);
+        const state: ToolItem["state"] =
+          result || card
+            ? failed
+              ? "failed"
+              : "done"
+            : source.live && inputs.aborted !== true
+              ? "running"
+              : "orphaned";
+        const title = policy.tool.humanizeTitle(block.title ?? block.name);
+        const isGguiProtocol = isGguiProtocolTool(block.name);
+        const cardView =
+          card === undefined
+            ? null
+            : cardAtCall(card.seq, {
+                toolTitle: title,
+                attribution: policy.debugDetail || isGguiProtocol ? null : policy.strings.viaTool(title),
+                input: block.input,
+              });
         const tool: ToolItem = {
           kind: "tool",
           key,
           expanded: resolveExpanded(key, policy.tool.expandByDefault, overrides),
           toolCallId: block.toolCallId,
           name: block.name,
-          title: policy.tool.humanizeTitle(block.title ?? block.name),
+          title,
           state,
           // guuey#2388: an input the store elided has no arguments to show
           // (the marker is not them, and no other field stands in for them).
@@ -769,14 +867,15 @@ function planAssistantSource(
           refusal,
           // R4's display-bearing rule: in calm the call line folds into the
           // view row's chrome as attribution; debug keeps the explicit line.
-          attribution: mount !== undefined && !policy.debugDetail,
+          attribution: (mount !== undefined || cardView !== null) && !policy.debugDetail,
+          // guuey#2388: a reloaded call the read gave no result: not "didn't finish".
+          ...(reloaded !== undefined && state === "orphaned" ? { reloadedWithoutResult: true as const } : {}),
         };
         // guuey#1279: ggui protocol/lifecycle rows (handshake/render/consume)
         // are machinery, not chrome — filtered from the transcript by
         // construction under `showToolRows: "non-ggui"` (default). The wire is
         // unchanged (the pod still emits the events); only the ROW is dropped —
         // the render card MOUNT below still shows.
-        const isGguiProtocol = isGguiProtocolTool(block.name);
         // A FAILED ggui row is a NAMED error the user needs (guuey#836's
         // refusal), NOT chatter — keep it even under the ggui filter; only the
         // done/running SUCCESS narration is machinery to drop.
@@ -819,6 +918,7 @@ function planAssistantSource(
           view.label = viewLabel(view, policy);
           items.push(view);
         }
+        if (cardView !== null) items.push(cardView);
         break;
       }
       case "tool-result": {
@@ -1224,6 +1324,63 @@ const ERROR_FAMILIES: Record<string, "auth" | "quota" | "invalid"> = {
   INPUT_KIND_NOT_ADVERTISED: "invalid",
 };
 
+/** A persisted card with its mount and its surface identity (null when it has no mount). */
+interface HistoryCardEntry {
+  card: HistoryCard;
+  mount: ViewMount | undefined;
+  scope: string | null;
+}
+
+/**
+ * The ONE R13 view builder: a persisted card as a view item. A card a
+ * reloaded call stands beside (guuey#2388) is named and attributed by that
+ * call, as the live mount was, and is sent the call's input; a card with no
+ * call on the read keeps its own tool name and no attribution.
+ */
+function historyCardView(
+  { card, mount, scope }: HistoryCardEntry,
+  inputs: TranscriptInputs,
+  policy: TranscriptPolicy,
+  overrides: TranscriptOverrides,
+  call?: CardCall,
+): ViewMountItem {
+  const key = `card.${card.seq}`;
+  const view: ViewMountItem = {
+    kind: "view",
+    key,
+    expanded: resolveExpanded(key, true, overrides),
+    mount: mount ?? null,
+    channel: mount?.channel ?? null,
+    phase: mount === undefined ? "expired" : (inputs.viewPhases?.[key] ?? "negotiating"),
+    label: null,
+    diagnosis: mount === undefined ? null : (inputs.viewDiagnoses?.[key] ?? null),
+    attribution: call !== undefined ? call.attribution : null,
+    // guuey#402: the chip titles with the producing tool's humanized
+    // name once the read plane persists it (the platform half); absent
+    // keeps the generic fallback — pre-enabler rows are indistinguishable
+    // by construction, never by invention. A call on the read outranks it.
+    toolTitle:
+      call !== undefined
+        ? call.toolTitle
+        : card.toolName !== undefined
+          ? policy.tool.humanizeTitle(card.toolName)
+          : null,
+    actionScope: scope,
+  };
+  // The stored result; the projection stores no call, so the tool-input is
+  // the paired call's (none when the store elided it).
+  const stored = mount === undefined ? undefined : snapshotViewToolData(card.cardSnapshot);
+  if (stored !== undefined) {
+    const input = call !== undefined ? toolCallViewInput(call.input) : stored.input;
+    view.toolData = {
+      ...(input !== undefined ? { input } : {}),
+      ...(stored.result !== undefined ? { result: stored.result } : {}),
+    };
+  }
+  view.label = viewLabel(view, policy);
+  return view;
+}
+
 /** The one pure function (spec §7). */
 export function planTranscript(
   inputs: TranscriptInputs,
@@ -1382,7 +1539,7 @@ export function planTranscript(
   /** A live row's stamp (fold turns before it) as fold SOURCES before it. */
   const sourcesBefore = (turnCount: number): number =>
     stampedSourceTurns === null ? turnCount : stampedSourceTurns.filter((t) => t < turnCount).length;
-  const flat = flatSettledGroups(inputs.messages);
+  const flat = flatSettledGroups(inputs.messages, inputs.historyTools);
   if (inputs.result) {
     const fold = foldAssistantSources(inputs.result, inFlight, inputs.aborted === true);
     const foldSources = fold.sources;
@@ -1460,6 +1617,40 @@ export function planTranscript(
               : (flatUserOrder[i] ?? i))),
         )
       : null;
+  // R13's persisted cards, seq order, each with its mount and its surface
+  // identity (guuey#535: the LATEST reference to a surface anchors it). Read
+  // here, before the conversation, because a reloaded call draws its card at
+  // its own position (guuey#2388); the R13 pass below places the rest.
+  const cards = [...(inputs.historyCards ?? [])].sort((a, b) => a.seq - b.seq);
+  const scopes = cards.map((card): HistoryCardEntry => {
+    const mount = snapshotViewMount(card.cardSnapshot);
+    return {
+      card,
+      mount,
+      scope:
+        mount === undefined
+          ? null
+          : mount.channel === "locator"
+            ? mount.resourceUri
+            : mount.resource.uri,
+    };
+  });
+  const latestSeqByScope = new Map<string, number>();
+  for (const { card, scope } of scopes) {
+    if (scope !== null) latestSeqByScope.set(scope, card.seq);
+  }
+  const cardEntryBySeq = new Map(scopes.map((entry) => [entry.card.seq, entry]));
+  /** Keys of the cards a reloaded call drew at its own position. */
+  const cardsAtCalls = new Set<ItemKey>();
+  const cardAtCall: CardAtCall = (cardSeq, call) => {
+    const entry = cardEntryBySeq.get(cardSeq);
+    if (entry === undefined || cardsAtCalls.has(`card.${cardSeq}`)) return null;
+    // R13's rule decides whether the card is drawn; the call decides only where.
+    if (entry.scope !== null && latestSeqByScope.get(entry.scope) !== cardSeq) return null;
+    const view = historyCardView(entry, inputs, policy, overrides, call);
+    cardsAtCalls.add(view.key);
+    return view;
+  };
   const conversation: DisplayItem[] = [];
   /** guuey#2400: the read-plane seq of each assistant text item drawn from a rehydrated row. */
   const assistantSeqByKey = new Map<ItemKey, number>();
@@ -1553,14 +1744,33 @@ export function planTranscript(
     else emitUsersBefore(slot);
     const assistant = assistants[slot];
     if (assistant) {
-      conversation.push(...planAssistantSource(assistant, slot, inputs, policy, overrides, assistantSeqByKey));
+      conversation.push(
+        ...planAssistantSource(assistant, slot, inputs, policy, overrides, assistantSeqByKey, cardAtCall),
+      );
     }
     for (const n of notices) if (n.afterSlot === slot) conversation.push(noticeItem(n));
   }
   // Users stamped as following the LAST agent turn (or sent while it is
   // still in flight) have no source to precede — they close the transcript.
   if (order !== null) while (nextUser < users.length) pushUser(nextUser++);
-  items.push(...groupTools(conversation, policy, overrides));
+  // Dedupe against LIVE mounts by actionScope (the persisted `ui://`
+  // identity both sides carry): a session whose fold still holds a turn the
+  // read plane has ALSO persisted — the #192 adopted turn, a thread view's
+  // post-handoff refetch — would otherwise render the same card twice. The
+  // fold's view row owns it (richer phase state); the history snapshot
+  // renders only when no live mount claims its identity, whether a reloaded
+  // call drew it or R13 places it below.
+  const liveViewScopes = new Set<string>();
+  for (const item of conversation) {
+    if (item.kind === "view" && !cardsAtCalls.has(item.key) && item.actionScope !== null) {
+      liveViewScopes.add(item.actionScope);
+    }
+  }
+  const placed = conversation.filter(
+    (item) =>
+      !(item.kind === "view" && cardsAtCalls.has(item.key) && item.actionScope !== null && liveViewScopes.has(item.actionScope)),
+  );
+  items.push(...groupTools(placed, policy, overrides));
 
   // R13 — persisted cards, seq order. POSITION (guuey#423): interleaved at
   // their TRUE transcript positions when the flat surface carries read-plane
@@ -1570,19 +1780,8 @@ export function planTranscript(
   // bearing turn — and every card in a seq-less (live-only) session — keep
   // the tail, byte-identical to the old behavior. The old tail-always
   // placement + bottom-pin buried a returning visitor's conversation above
-  // a stale trailing card (the #423 face).
-  //
-  // Dedupe against LIVE mounts by actionScope (the persisted `ui://`
-  // identity both sides carry): a session whose fold still holds a turn the
-  // read plane has ALSO persisted — the #192 adopted turn, a thread view's
-  // post-handoff refetch — would otherwise render the same card twice. The
-  // fold's view row owns it (richer phase state); the history snapshot
-  // renders only when no live mount claims its identity.
-  const liveViewScopes = new Set<string>();
-  for (const item of items) {
-    if (item.kind === "view" && item.actionScope !== null) liveViewScopes.add(item.actionScope);
-  }
-  const cards = [...(inputs.historyCards ?? [])].sort((a, b) => a.seq - b.seq);
+  // a stale trailing card (the #423 face). A card a reloaded call drew at
+  // its own position (guuey#2388) is not placed again.
   // guuey#2031 §4.7: the first LIVE user row, on a surface whose rows carry read-plane seqs.
   const surfaceCarriesSeqs = inputs.messages.some((m) => m.seq !== undefined);
   const firstLiveUserSlot = surfaceCarriesSeqs ? users.findIndex((u) => u.seq === undefined) : -1;
@@ -1594,54 +1793,18 @@ export function planTranscript(
   // anchors the surface; earlier references emit nothing — and latest
   // wins even when it is locator-only, because the locator re-fetch
   // restores CURRENT session state, better than an older frozen snapshot.
-  const scopes = cards.map((card) => {
-    const mount = snapshotViewMount(card.cardSnapshot);
-    return {
-      card,
-      mount,
-      scope:
-        mount === undefined
-          ? null
-          : mount.channel === "locator"
-            ? mount.resourceUri
-            : mount.resource.uri,
-    };
-  });
   /** The read-plane seq an item was drawn from: a history user row or a rehydrated assistant text row. */
   const userSeqByKey = new Map<ItemKey, number>();
   users.forEach((u, i) => {
     if (u.seq !== undefined) userSeqByKey.set(`u${i}`, u.seq);
   });
   const itemSeq = (key: ItemKey): number | undefined => userSeqByKey.get(key) ?? assistantSeqByKey.get(key);
-  const latestSeqByScope = new Map<string, number>();
-  for (const { card, scope } of scopes) {
-    if (scope !== null) latestSeqByScope.set(scope, card.seq);
-  }
-  for (const { card, mount, scope } of scopes) {
-    const key = `card.${card.seq}`;
+  for (const entry of scopes) {
+    const { card, scope } = entry;
+    if (cardsAtCalls.has(`card.${card.seq}`)) continue; // its call drew it
     if (scope !== null && latestSeqByScope.get(scope) !== card.seq) continue; // a later turn re-anchored it
     if (scope !== null && liveViewScopes.has(scope)) continue; // live mount owns it
-    const view: ViewMountItem = {
-      kind: "view",
-      key,
-      expanded: resolveExpanded(key, true, overrides),
-      mount: mount ?? null,
-      channel: mount?.channel ?? null,
-      phase: mount === undefined ? "expired" : (inputs.viewPhases?.[key] ?? "negotiating"),
-      label: null,
-      diagnosis: mount === undefined ? null : (inputs.viewDiagnoses?.[key] ?? null),
-      attribution: null,
-      // guuey#402: the chip titles with the producing tool's humanized
-      // name once the read plane persists it (the platform half); absent
-      // keeps the generic fallback — pre-enabler rows are indistinguishable
-      // by construction, never by invention.
-      toolTitle: card.toolName !== undefined ? policy.tool.humanizeTitle(card.toolName) : null,
-      actionScope: scope,
-    };
-    // The stored result (the projection stores no call, so no tool-input).
-    const toolData = mount === undefined ? undefined : snapshotViewToolData(card.cardSnapshot);
-    if (toolData !== undefined) view.toolData = toolData;
-    view.label = viewLabel(view, policy);
+    const view = historyCardView(entry, inputs, policy, overrides);
     // The interleave: find the first seq-bearing user turn NEWER than the
     // card; insert before its item. Cards processed in ascending seq order,
     // so same-target cards keep their relative order (each splice lands

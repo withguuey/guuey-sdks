@@ -390,6 +390,12 @@ export function useTranscriptInputs(invoke: UseAgentInvokeReturn): UseTranscript
       prompts: [...prompts, ...hitlPromptsFromFold(invoke.reduceResult, hitlAnswers)],
       messages,
       ...(invoke.historyCards.length > 0 ? { historyCards: invoke.historyCards } : {}),
+      // guuey#2388: the one gate the history assembler keys on, calls asked and
+      // honoured. `Array.isArray` (not `!== null`) so an older agent-client with
+      // neither field draws nothing, and its missing results read as none.
+      ...(Array.isArray(invoke.historyToolCalls)
+        ? { historyTools: { calls: invoke.historyToolCalls, results: invoke.historyToolResults ?? [] } }
+        : {}),
       // guuey#2858: `=== true`, so an older agent-client without the field reads as whole.
       ...(invoke.historyTruncated === true ? { historyTruncated: true } : {}),
       sendStates: invoke.sendStates,
@@ -405,6 +411,8 @@ export function useTranscriptInputs(invoke: UseAgentInvokeReturn): UseTranscript
     invoke.threadClosed,
     invoke.reduceResult,
     invoke.historyCards,
+    invoke.historyToolCalls,
+    invoke.historyToolResults,
     invoke.historyTruncated,
     invoke.sendStates,
     invoke.aborted,

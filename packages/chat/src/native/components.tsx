@@ -438,7 +438,7 @@ export function NativeTool({ item, ctx }: ItemProps<ToolItem>): ReactNode {
         }}
       >
         {item.title}
-        {item.state === "orphaned" ? ` — ${ctx.strings.toolDidntFinish}` : ""}
+        {item.state === "orphaned" && item.reloadedWithoutResult !== true ? ` — ${ctx.strings.toolDidntFinish}` : ""}
       </Text>
     </>
   );

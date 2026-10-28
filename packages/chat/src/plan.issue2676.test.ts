@@ -149,3 +149,69 @@ describe("guuey#2676: live-session shapes stay as they were", () => {
     expect(rows(plan(PAST, null, "ready"))).toEqual(["u:Q1", "A1", "u:Q2", "A2"]);
   });
 });
+
+/**
+ * guuey#2388: a reloaded thread often ends on a tool-only turn (a turn whose
+ * rows carry a call and its result but no text). Its rows sit in the group of
+ * the turn they belong to, never in the group the next send's reply pairs
+ * with, at every moment of that send.
+ */
+describe("guuey#2388 × guuey#2676: a trailing tool-only turn keeps its place at every moment of the next send", () => {
+  const TOOL_PAST: TranscriptMessage[] = [
+    { role: "user", text: "Q1", seq: 1 },
+    { role: "assistant", text: "A1", seq: 2 },
+    { role: "user", text: "Q2", seq: 3 },
+  ];
+  const historyTools: NonNullable<TranscriptInputs["historyTools"]> = {
+    calls: [{ seq: 4, at: "2026-10-28T00:00:04.000Z", call: { toolCallId: "toolu_look", name: "look_up", input: { q: "Q2" } } }],
+    results: [
+      {
+        seq: 5,
+        at: "2026-10-28T00:00:05.000Z",
+        toolCallId: "toolu_look",
+        block: { type: "tool-result", toolCallId: "toolu_look", content: [{ type: "text", text: "found" }], outcome: "ok" },
+      },
+    ],
+  };
+  function planWithTools(
+    messages: TranscriptMessage[],
+    result: AgReduceResult | null,
+    status: TranscriptInputs["status"],
+    assistantText = "",
+  ): DisplayItem[] {
+    return planTranscript(
+      { result, assistantText, status, statusElapsedMs: 0, activeTool: null, error: null, prompts: [], messages, historyTools },
+      calmPolicy(),
+    ).items;
+  }
+  const rowsWithTools = (items: DisplayItem[]): string[] =>
+    items.flatMap((i) =>
+      i.kind === "user" ? [`u:${i.text}`] : i.kind === "text" ? [i.text] : i.kind === "tool" ? [`tool:${i.name}:${i.state}`] : [],
+    );
+  const SETTLED = ["u:Q1", "A1", "u:Q2", "tool:look_up:done", "u:NEW"];
+
+  it("reloaded, nothing sent: the tool row closes Q2's turn", () => {
+    expect(rowsWithTools(planWithTools(TOOL_PAST, null, "ready"))).toEqual(["u:Q1", "A1", "u:Q2", "tool:look_up:done"]);
+  });
+
+  it("sent, no frame yet: Q1 A1 Q2 tool NEW", () => {
+    expect(rowsWithTools(planWithTools([...TOOL_PAST, SENT, { role: "assistant", text: "" }], null, "connecting"))).toEqual(
+      SETTLED,
+    );
+  });
+
+  it("turn open, streaming: Q1 A1 Q2 tool NEW NEWA", () => {
+    const messages = [...TOOL_PAST, SENT, { role: "assistant" as const, text: "NEWA" }];
+    expect(rowsWithTools(planWithTools(messages, fold("NEWA", false), "responding", "NEWA"))).toEqual([...SETTLED, "NEWA"]);
+  });
+
+  it("turn.done, status still responding: the tool row stays in Q2's turn", () => {
+    const messages = [...TOOL_PAST, SENT, { role: "assistant" as const, text: "NEWA" }];
+    expect(rowsWithTools(planWithTools(messages, fold("NEWA", true), "responding", "NEWA"))).toEqual([...SETTLED, "NEWA"]);
+  });
+
+  it("ready: Q1 A1 Q2 tool NEW NEWA", () => {
+    const messages = [...TOOL_PAST, SENT, { role: "assistant" as const, text: "NEWA" }];
+    expect(rowsWithTools(planWithTools(messages, fold("NEWA", true), "ready"))).toEqual([...SETTLED, "NEWA"]);
+  });
+});

@@ -6,10 +6,12 @@
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { act, renderHook , cleanup } from "@testing-library/react";
-import type { UseAgentInvokeReturn } from "@guuey/agent-client";
+import type { HistoryLoadResult, UseAgentInvokeReturn } from "@guuey/agent-client";
 import { Reducer, type AgHitlAnswer, type AgPausedAsk, type AgReduceResult } from "@silverprotocol/core";
 import { calmPolicy, debugPolicy } from "../policy.js";
 import type { ChatDebugEvent, TranscriptInputs } from "../types.js";
+import { transcriptInputsFromHistory } from "../history-inputs.js";
+import { planTranscript } from "../plan.js";
 import { useTranscript, useTranscriptInputs } from "./use-transcript.js";
 
 afterEach(cleanup);
@@ -449,5 +451,86 @@ describe("useTranscriptInputs — the truncated-history line (guuey#2858)", () =
     expect(truncated.result.current.inputs.historyTruncated).toBe(true);
     const whole = renderHook(() => useTranscriptInputs(invokeReturn({ status: "ready" })));
     expect(whole.result.current.inputs).not.toHaveProperty("historyTruncated");
+  });
+});
+
+/**
+ * guuey#2388: the two assemblers carry a history read's tool calls and results
+ * under ONE gate (calls asked and honoured), and give deep-equal planner input
+ * for the same read, as `history-inputs.ts` promises.
+ */
+describe("useTranscriptInputs — history tool rows (guuey#2388), assembler equality", () => {
+  type Loaded = Extract<HistoryLoadResult, { messages: unknown }>;
+  const AT = "2026-10-28T00:00:00.000Z";
+  const cardPart = {
+    type: "tool-result" as const,
+    toolCallId: "toolu_card",
+    content: [{ type: "text" as const, text: "shown" }],
+    uiData: { uri: "ui://cards/1", mimeType: "text/html", text: "<p>card</p>" },
+  };
+  const both: Loaded = {
+    messages: [
+      { role: "user", text: "show me", seq: 1 },
+      { role: "assistant", text: "There.", seq: 6 },
+    ],
+    cards: [{ seq: 3, at: AT, cardSnapshot: { parts: [cardPart] }, toolName: "show_card" }],
+    toolCalls: [
+      { seq: 2, at: AT, call: { toolCallId: "toolu_card", name: "show_card", input: {} }, card: { seq: 3, result: cardPart } },
+      { seq: 4, at: AT, call: { toolCallId: "toolu_look", name: "look_up", input: { q: "x" } } },
+    ],
+    toolResults: [
+      {
+        seq: 5,
+        at: AT,
+        toolCallId: "toolu_look",
+        toolName: "look_up",
+        block: { type: "tool-result", toolCallId: "toolu_look", content: [{ type: "text", text: "found" }] },
+      },
+    ],
+  };
+  const { toolResults: _results, ...callsOnly } = both;
+  const { toolCalls: _calls, ...resultsOnly } = both;
+
+  /** The hook's state after the mount load of `load` (the seeding `useAgentInvoke` does). */
+  const seeded = (load: Loaded): UseAgentInvokeReturn =>
+    invokeReturn({
+      status: "ready",
+      messages: load.messages,
+      historyCards: load.cards ?? [],
+      historyToolCalls: load.toolCalls ?? null,
+      historyToolResults: load.toolResults ?? [],
+    });
+
+  for (const [name, load] of [
+    ["calls and results asked", both],
+    ["calls only asked", callsOnly],
+    ["results only asked", resultsOnly],
+  ] as const) {
+    it(`${name}: messages, historyCards and historyTools are deep-equal`, () => {
+      const live = renderHook(() => useTranscriptInputs(seeded(load))).result.current.inputs;
+      const history = transcriptInputsFromHistory(load);
+      expect(live.messages).toEqual(history.messages);
+      expect(live.historyCards).toEqual(history.historyCards);
+      expect(live.historyTools).toEqual(history.historyTools);
+      expect(planTranscript(live, calmPolicy()).items).toEqual(planTranscript(history, calmPolicy()).items);
+    });
+  }
+
+  it("draws no tool rows unless calls were asked and honoured (historyToolCalls null)", () => {
+    const live = renderHook(() => useTranscriptInputs(seeded(resultsOnly))).result.current.inputs;
+    expect(live).not.toHaveProperty("historyTools");
+    expect(planTranscript(live, calmPolicy()).items.some((i) => i.kind === "tool" || i.kind === "data-result")).toBe(false);
+  });
+
+  it("carries the read's calls and results when calls were honoured", () => {
+    const live = renderHook(() => useTranscriptInputs(seeded(both))).result.current.inputs;
+    expect(live.historyTools).toEqual({ calls: both.toolCalls, results: both.toolResults });
+    expect(planTranscript(live, calmPolicy()).items.map((i) => i.key)).toEqual([
+      "u0",
+      "tool.toolu_card",
+      "card.3",
+      "tool.toolu_look",
+      "a0.t0",
+    ]);
   });
 });
