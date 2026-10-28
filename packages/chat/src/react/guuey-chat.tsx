@@ -77,7 +77,7 @@ import type {
 import { calmPolicy, debugPolicy, type TranscriptPolicyOverrides } from "../policy.js";
 import { isWaitingOnUser } from "../listen.js";
 import { retryInPlaceArgs } from "../retry.js";
-import { useSaturationCountdown } from "./use-saturation-countdown.js";
+import { useConnectWait } from "./use-connect-wait.js";
 import { useStructuralIdentity } from "./structural-identity.js";
 import { defaultChatStrings, type ChatStrings } from "../strings.js";
 import { DEFAULT_CHAT_THEME, type GuueyChatTheme } from "../theme.js";
@@ -333,9 +333,10 @@ export interface GuueyChatProps {
    * localStorage thread persistence + the web SSE transport (cookie/guest
    * identity, saturation + cold-start retries), plus history when
    * `apiBaseUrl` is set. The default's saturation retries show as the
-   * `busy` status line (`strings.saturationRetrying`); a host's own
-   * adapters own their retry and pass `saturationWait` to the plan
-   * themselves if they want the same line.
+   * `busy` status line (`strings.saturationRetrying`) and its wake waits as
+   * the `waking` line (`strings.waking`); a host's own adapters own their
+   * retries and pass `connectWait` to the plan themselves (`useConnectWait`)
+   * if they want the same lines.
    */
   adapters?: AgentInvokeAdapters;
   /** Policy preset (spec §5). Default `"calm"`. */
@@ -654,11 +655,15 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // connecting ladder. A host's own `adapters` own their transport and their
   // retry, so the notice is the default adapters' only.
   // guuey#2608: counted down from each reported wait, so the line says when.
+  // guuey#2453: the same one wait carries the wake (the default transport's
+  // cold-start retry reports each wait on a waking app), drawn as the waking
+  // line in the same place.
   const {
-    wait: saturationWait,
-    report: reportSaturationWait,
-    clear: clearSaturationWait,
-  } = useSaturationCountdown();
+    wait: connectWait,
+    onSaturationWait,
+    coldStartRetry,
+    clear: clearConnectWait,
+  } = useConnectWait();
   const adapters = useMemo(
     () =>
       adaptersProp ??
@@ -666,7 +671,8 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         // The widget's end-user budget (guuey#406): three retries, each one
         // shown, before the refusal surfaces as the plain busy error.
         saturationAttempts: SATURATION_RETRIES,
-        onSaturationWait: reportSaturationWait,
+        onSaturationWait,
+        coldStartRetry,
         ...(apiBaseUrl !== undefined ? { apiBaseUrl } : {}),
         ...(hasAccessToken
           ? {
@@ -678,7 +684,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
           ? { getGuestSecret: () => getGuestSecretRef.current?.() ?? null }
           : {}),
       }),
-    [adaptersProp, apiBaseUrl, hasAccessToken, hasGuestSecret, reportSaturationWait],
+    [adaptersProp, apiBaseUrl, hasAccessToken, hasGuestSecret, onSaturationWait, coldStartRetry],
   );
   // A card's `ui/message` becomes the next turn only through the kit's own
   // sink, so the kit declares it only where that sink is provably in effect
@@ -781,23 +787,23 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // A wait belongs to the turn's `connecting` phase: any status change (the
   // retry got through, the refusal surfaced, a stop, the next turn) ends it.
   useEffect(() => {
-    clearSaturationWait();
-  }, [invoke.status, clearSaturationWait]);
+    clearConnectWait();
+  }, [invoke.status, clearConnectWait]);
   // Memoized: once a chip is selected (`promotedViewKey` set) this object
   // is on the plan's identity path — a per-render fresh spread here was the
   // second leg of the render loop the template surfaced.
   const transcriptInputs = useMemo(
     () =>
-      promotedViewKey === undefined && echo.pendingTaps.length === 0 && saturationWait === null
+      promotedViewKey === undefined && echo.pendingTaps.length === 0 && connectWait === null
         ? inputs
         : {
             ...inputs,
             ...(promotedViewKey !== undefined ? { promotedViewKey } : {}),
             // guuey#2031: taps drawn before their turn is sent.
             ...(echo.pendingTaps.length > 0 ? { pendingTaps: echo.pendingTaps } : {}),
-            ...(saturationWait !== null ? { saturationWait } : {}),
+            ...(connectWait !== null ? { connectWait } : {}),
           },
-    [inputs, promotedViewKey, echo.pendingTaps, saturationWait],
+    [inputs, promotedViewKey, echo.pendingTaps, connectWait],
   );
   const { plan, toggle, resolvedMounts, onViewPhase, onViewDiagnosis } = useTranscript({
     inputs: transcriptInputs,

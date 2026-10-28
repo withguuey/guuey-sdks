@@ -12,7 +12,7 @@
  *    `transcriptInputsFromHistory`.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { UseAgentInvokeReturn } from "@guuey/agent-client";
+import type { AgentInvokeStatus, UseAgentInvokeReturn } from "@guuey/agent-client";
 import type { AgHitlAnswer, AgPausedAsk } from "@silverprotocol/core";
 import {
   resolveViewMount,
@@ -281,18 +281,27 @@ export interface UseTranscriptInputsResult {
 /** How often the escalation clock ticks while a status needs one. */
 const ELAPSED_TICK_MS = 500;
 
-export function useTranscriptInputs(invoke: UseAgentInvokeReturn): UseTranscriptInputsResult {
-  // §4: the elapsed clock is a view-model INPUT — this is the renderer-side
-  // timer that feeds it. Reset on every status change; ticking only while a
-  // status line is showing (R12 escalation + debug detail).
+/**
+ * §4: the elapsed clock is a view-model INPUT, and this is the renderer-side
+ * timer that feeds it (`statusElapsedMs`). Reset on every status change;
+ * ticking only while a status line is showing (R12 escalation + debug
+ * detail). guuey#2453: exported, so the transcript and a host header that
+ * reads `planStatusLine` share one clock.
+ */
+export function useStatusElapsedMs(status: AgentInvokeStatus): number {
   const [elapsedMs, setElapsedMs] = useState(0);
   useEffect(() => {
     setElapsedMs(0);
-    if (invoke.status === "ready" || invoke.status === "responding") return;
+    if (status === "ready" || status === "responding") return;
     const startedAt = Date.now();
     const timer = setInterval(() => setElapsedMs(Date.now() - startedAt), ELAPSED_TICK_MS);
     return () => clearInterval(timer);
-  }, [invoke.status]);
+  }, [status]);
+  return elapsedMs;
+}
+
+export function useTranscriptInputs(invoke: UseAgentInvokeReturn): UseTranscriptInputsResult {
+  const elapsedMs = useStatusElapsedMs(invoke.status);
 
   // R10 ledger (the LINK invite): the hook exposes only the LATEST pending
   // invite; the transcript keeps the record of every ask and its resolution.

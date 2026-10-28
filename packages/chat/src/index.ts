@@ -12,7 +12,9 @@
  */
 export {
   newestViewKey,
+  planStatusLine,
   planTranscript,
+  type StatusInputs,
 } from "./plan.js";
 // The retry rule a host's Retry calls is `retryInPlaceArgs` (guuey#2608): the
 // turn's own arguments (`retrySendArgs`, guuey#2549) in the failed row's place.
@@ -131,6 +133,7 @@ export type {
   PromptItem,
   PromptItemInput,
   ReasoningItem,
+  ConnectWait,
   SaturationWait,
   StatusLineItem,
   TapItem,

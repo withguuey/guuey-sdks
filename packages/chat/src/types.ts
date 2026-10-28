@@ -207,12 +207,15 @@ export interface TranscriptInputs {
   /** Renderer-supplied elapsed ms in the current status; drives R12 escalation. */
   statusElapsedMs: number;
   /**
-   * guuey#2604: renderer-supplied, set while the transport waits to resend a
-   * turn the agent refused at its concurrent-turn ceiling (the saturation
-   * retry's `onSaturationWait`). While `status` is `connecting` it plans the
-   * `busy` status line. Absent or null when no such wait is under way.
+   * guuey#2453: renderer-supplied, the wait the connecting turn is in, as the
+   * transport reports it (`useConnectWait` keeps it): `busy` while it waits to
+   * resend a turn the agent refused at its concurrent-turn ceiling (the
+   * saturation retry's `onSaturationWait`, guuey#2604), `waking` while a
+   * sleeping app wakes (`coldStartRetry.onWakeWait`). Read only while `status`
+   * is `connecting`, where it picks the status line. Absent or null when no
+   * such wait is under way.
    */
-  saturationWait?: SaturationWait | null;
+  connectWait?: ConnectWait | null;
   activeTool: string | null;
   error: { message: string; code: string | null } | null;
   /**
@@ -751,6 +754,13 @@ export interface SaturationWait {
   secondsLeft?: number;
 }
 
+/**
+ * guuey#2453: the wait a connecting turn is in, one ladder: the agent is busy
+ * (its {@link SaturationWait}), or the app is waking. See
+ * {@link TranscriptInputs.connectWait}.
+ */
+export type ConnectWait = ({ kind: "busy" } & SaturationWait) | { kind: "waking" };
+
 /** R12/§4 — the derived status line with its resolved copy. */
 export interface StatusLineItem {
   kind: "status";
@@ -760,6 +770,7 @@ export interface StatusLineItem {
     | "starting"
     | "long-start"
     | "busy"
+    | "waking"
     | "thinking"
     | "using-tool"
     | "aborted";

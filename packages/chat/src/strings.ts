@@ -38,6 +38,15 @@ export interface ChatStrings {
    * one (absent, or 0 once that try is under way).
    */
   saturationRetrying: (attempt: number, totalAttempts: number, secondsLeft?: number) => string;
+  /**
+   * guuey#2453: the status while a sleeping app wakes (the transport's
+   * `coldStartRetry.onWakeWait`). Shown at once on the signal, in place of the
+   * connecting ladder; it swaps once to {@link ChatStrings.wakingLong} at the
+   * policy's `status.longStartMs`.
+   */
+  waking: string;
+  /** guuey#2453: the waking line once the wait has run past `status.longStartMs`. */
+  wakingLong: string;
   /** R1 aborted-partial marker + §4.2 aborted line. */
   stopped: string;
 
@@ -413,6 +422,8 @@ export const defaultChatStrings: ChatStrings = {
     secondsLeft !== undefined && secondsLeft > 0
       ? `Busy right now. Retrying in ${secondsLeft}s (${attempt}/${totalAttempts})…`
       : `Busy right now. Retrying (${attempt}/${totalAttempts})…`,
+  waking: "Waking your agent…",
+  wakingLong: "Waking your agent… This can take a little while.",
   stopped: "Stopped.",
 
   errorAuth: "Sign in to continue.",

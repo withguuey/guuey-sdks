@@ -1013,8 +1013,18 @@ function groupTools(
   return out;
 }
 
-/** §4's status derivation — thresholds and copy from policy, elapsed as input. */
-function deriveStatus(inputs: TranscriptInputs, policy: TranscriptPolicy): StatusLineItem | null {
+/** The fields {@link planStatusLine} reads: a host header passes exactly these. */
+export type StatusInputs = Pick<
+  TranscriptInputs,
+  "status" | "statusElapsedMs" | "activeTool" | "aborted" | "connectWait"
+>;
+
+/**
+ * §4's status derivation — thresholds and copy from policy, elapsed as input.
+ * The ONE status line (guuey#2453): `planTranscript` draws it, and a host
+ * header that reads the same line calls it with the same fields.
+ */
+export function planStatusLine(inputs: StatusInputs, policy: TranscriptPolicy): StatusLineItem | null {
   const s = policy.strings;
   const detail = policy.debugDetail ? `${inputs.status} · ${inputs.statusElapsedMs} ms` : null;
   if (inputs.aborted === true) {
@@ -1028,8 +1038,8 @@ function deriveStatus(inputs: TranscriptInputs, policy: TranscriptPolicy): Statu
       // guuey#2604: the transport is waiting to send again because the agent
       // is at its concurrent-turn ceiling. Say so, rather than letting the
       // connecting ladder climb to "Still getting ready…" over the wait.
-      const wait = inputs.saturationWait;
-      if (wait !== undefined && wait !== null) {
+      const wait = inputs.connectWait;
+      if (wait?.kind === "busy") {
         const copy = s.saturationRetrying(wait.attempt, wait.totalAttempts, wait.secondsLeft);
         // guuey#2608: the countdown changes the visible words every second; the
         // live region announces the attempt only (the line without it).
@@ -1042,6 +1052,13 @@ function deriveStatus(inputs: TranscriptInputs, policy: TranscriptPolicy): Statu
           ...(announce !== copy ? { announce } : {}),
           detail,
         };
+      }
+      // guuey#2453: a sleeping app is waking. The signal names it at once (no
+      // guess from the elapsed time), and the line swaps once to its long
+      // words at the policy's one long threshold.
+      if (wait?.kind === "waking") {
+        const copy = inputs.statusElapsedMs < policy.status.longStartMs ? s.waking : s.wakingLong;
+        return { kind: "status", key: "status", state: "waking", copy, detail };
       }
       const state =
         inputs.statusElapsedMs >= policy.status.longStartMs
@@ -1829,7 +1846,7 @@ export function planTranscript(
 
   return {
     items: finalItems,
-    status: deriveStatus(inputs, policy),
+    status: planStatusLine(inputs, policy),
     recovery:
       inputs.adopted === true && policy.debugDetail ? policy.strings.recoveredFromHistory : null,
     views,

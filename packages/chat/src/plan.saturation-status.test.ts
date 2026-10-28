@@ -7,13 +7,16 @@
 import { describe, expect, it } from "vitest";
 import { planTranscript } from "./plan.js";
 import { calmPolicy, debugPolicy } from "./policy.js";
-import type { SaturationWait, TranscriptInputs } from "./types.js";
+import type { ConnectWait, SaturationWait, TranscriptInputs } from "./types.js";
 
 function inputs(
   status: TranscriptInputs["status"],
-  saturationWait: SaturationWait | null | undefined,
+  busy: SaturationWait | null | undefined,
   statusElapsedMs = 0,
 ): TranscriptInputs {
+  // guuey#2453: the busy arm of the one connect wait.
+  const connectWait: ConnectWait | null | undefined =
+    busy === undefined || busy === null ? busy : { kind: "busy", ...busy };
   return {
     result: null,
     assistantText: "",
@@ -23,7 +26,7 @@ function inputs(
     error: null,
     prompts: [],
     messages: [],
-    ...(saturationWait !== undefined ? { saturationWait } : {}),
+    ...(connectWait !== undefined ? { connectWait } : {}),
   };
 }
 

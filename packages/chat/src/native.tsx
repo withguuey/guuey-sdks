@@ -60,9 +60,17 @@ export {
 // The React-generic renderer-state owner + live assembler — shared with
 // the web kit (one implementation, two walks).
 export {
+  useStatusElapsedMs,
   useTranscript,
   useTranscriptInputs,
   type UseTranscriptArgs,
   type UseTranscriptResult,
   type UseTranscriptInputsResult,
 } from "./react/use-transcript.js";
+// guuey#2453 — the one connect wait (React-generic, no DOM), so a native host
+// feeds the same status line from its own transport's observers.
+export {
+  useConnectWait,
+  type ConnectWaitState,
+  type SaturationWaitReport,
+} from "./react/use-connect-wait.js";
