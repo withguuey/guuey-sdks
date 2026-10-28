@@ -1113,7 +1113,7 @@ function groupTools(
   return out;
 }
 
-/** The fields {@link planStatusLine} reads: a host header passes exactly these. */
+/** The fields {@link planStatusLine} reads. */
 export type StatusInputs = Pick<
   TranscriptInputs,
   "status" | "statusElapsedMs" | "activeTool" | "aborted" | "connectWait"
@@ -1121,8 +1121,9 @@ export type StatusInputs = Pick<
 
 /**
  * §4's status derivation — thresholds and copy from policy, elapsed as input.
- * The ONE status line (guuey#2453): `planTranscript` draws it, and a host
- * header that reads the same line calls it with the same fields.
+ * The ONE status line (guuey#2453): `planTranscript` draws it as
+ * `plan.status`; how a one-row header draws that row is on
+ * {@link StatusLineItem.announce}. Exported so a test can pin one row.
  */
 export function planStatusLine(inputs: StatusInputs, policy: TranscriptPolicy): StatusLineItem | null {
   const s = policy.strings;
