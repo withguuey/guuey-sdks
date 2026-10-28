@@ -220,6 +220,8 @@ export interface ChatStrings {
   /** R13 states. */
   historyLoading: string;
   threadGone: string;
+  /** guuey#2858: the history read stopped at its page cap, so the oldest messages are left out. */
+  historyTruncated: string;
 
   /** Renderer chrome (spec §3.2 — the 3b kit's own affordances). */
   jumpToLatest: string;
@@ -470,6 +472,7 @@ export const defaultChatStrings: ChatStrings = {
 
   historyLoading: "Loading conversation…",
   threadGone: "This conversation is no longer available.",
+  historyTruncated: "Earlier messages aren't shown.",
 
   jumpToLatest: "Jump to latest",
   showEarlier: (count) => `Show ${count} earlier`,

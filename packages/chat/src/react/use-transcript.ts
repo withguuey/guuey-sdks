@@ -381,6 +381,8 @@ export function useTranscriptInputs(invoke: UseAgentInvokeReturn): UseTranscript
       prompts: [...prompts, ...hitlPromptsFromFold(invoke.reduceResult, hitlAnswers)],
       messages,
       ...(invoke.historyCards.length > 0 ? { historyCards: invoke.historyCards } : {}),
+      // guuey#2858: `=== true`, so an older agent-client without the field reads as whole.
+      ...(invoke.historyTruncated === true ? { historyTruncated: true } : {}),
       sendStates: invoke.sendStates,
       aborted: invoke.aborted,
       adopted: invoke.adopted,
@@ -394,6 +396,7 @@ export function useTranscriptInputs(invoke: UseAgentInvokeReturn): UseTranscript
     invoke.threadClosed,
     invoke.reduceResult,
     invoke.historyCards,
+    invoke.historyTruncated,
     invoke.sendStates,
     invoke.aborted,
     invoke.adopted,

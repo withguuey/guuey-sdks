@@ -277,6 +277,7 @@ function invokeReturn(over: Partial<UseAgentInvokeReturn> = {}): UseAgentInvokeR
     reset: vi.fn(),
     reduceResult: null,
     historyCards: [],
+    historyTruncated: false,
     profileLinkRequest: null,
     clearProfileLinkRequest: vi.fn(),
     aborted: false,
@@ -437,5 +438,14 @@ describe("useTranscriptInputs (the live assembler)", () => {
     // The built answer is spec-valid and ready for the host's relay.
     expect(answer).toEqual({ askId: ask.askId, status: "resolved", grantModeId: "once" });
     expect(result.current.inputs.prompts[0]).toMatchObject({ kind: "hitl", state: "resolved", grantModeId: "once" });
+  });
+});
+
+describe("useTranscriptInputs — the truncated-history line (guuey#2858)", () => {
+  it("carries the hook's historyTruncated only when it is true, as the history assembler does", () => {
+    const truncated = renderHook(() => useTranscriptInputs(invokeReturn({ status: "ready", historyTruncated: true })));
+    expect(truncated.result.current.inputs.historyTruncated).toBe(true);
+    const whole = renderHook(() => useTranscriptInputs(invokeReturn({ status: "ready" })));
+    expect(whole.result.current.inputs).not.toHaveProperty("historyTruncated");
   });
 });

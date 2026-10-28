@@ -11,6 +11,7 @@ export {
   applyHistoryResult,
   type HistoryApplication,
   stallProbeDecision,
+  type StallProbeTurn,
   STALL_RECOVERY_DEFAULTS,
   DEFAULT_BLOCK_PRESERVING_CAPABILITIES,
   VIEW_MESSAGE_TURN_CAPABILITIES,

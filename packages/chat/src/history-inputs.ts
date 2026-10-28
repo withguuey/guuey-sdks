@@ -45,5 +45,8 @@ export function transcriptInputsFromHistory(load: HistoryLoadResult | null): Tra
     messages: load.messages,
     ...(load.cards && load.cards.length > 0 ? { historyCards: load.cards } : {}),
     ...(load.closed !== undefined ? { threadClosed: { code: load.closed.code, message: load.closed.message } } : {}),
+    // guuey#2858: only a newest-first read that stopped at its cap left the
+    // OLDEST rows out; a truncated ascending read left out the newest.
+    ...(load.truncated === true && load.order === "desc" ? { historyTruncated: true } : {}),
   };
 }

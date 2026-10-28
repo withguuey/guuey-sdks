@@ -10,7 +10,7 @@
  * `credentials: "include"`). Consumed by {@link createWebAdapters}; Portal
  * has its own copy today and can migrate onto this later.
  */
-import { AgNoticeSource, type AgMessage, type JsonValue } from "@silverprotocol/core";
+import { AgNoticeSource, isJsonValue, type AgMessage, type JsonValue } from "@silverprotocol/core";
 import { readTapLabels } from "@guuey/mcp-apps-host/narrowing";
 import type { AgentMessage, HistoryCard, HistoryLoadResult, ThreadClosed } from "./types.js";
 import { closureFromLastRow, readThreadClosed } from "./thread-closed.js";
@@ -62,14 +62,119 @@ export interface ThreadHistoryRow {
   inputKind?: string | null;
 }
 
-interface ThreadMessagesResponse {
+/**
+ * One page of `GET /v1/threads/:id/messages` as this client reads it: the
+ * body is parsed into `unknown` and proved field by field
+ * ({@link readThreadMessagesPage}), never asserted.
+ */
+export interface ThreadMessagesPage {
+  /** The page's rows, in the order served (ascending, or newest-first when {@link newestFirst}). */
   rows: ThreadHistoryRow[];
   nextToken: string | null;
   /**
-   * The thread's own state, on every page: `{}` while open, `closed` once its
-   * agent ended it. Absent from an older read plane.
+   * Whether the page carried the thread's own state (`thread`, on every page
+   * of a read plane that has it: `{}` while open). An older read plane sends
+   * none, and then the closure is read from the last row.
    */
-  thread?: { closed?: { code?: string | null; message?: string | null; closedAt?: string | null } | null } | null;
+  threadSeen: boolean;
+  /** The read plane's word that the agent ended the conversation (`thread.closed`). */
+  closed: ThreadClosed | undefined;
+  /**
+   * guuey#2858: the read plane honoured `?order=desc` and served this page
+   * newest-first (its body's `order: "desc"` echo). False on a read plane that
+   * predates the param, which serves ascending rows whatever was asked.
+   */
+  newestFirst: boolean;
+}
+
+function field(value: object, key: string): unknown {
+  return Reflect.get(value, key);
+}
+
+function isObject(value: unknown): value is object {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringOrNull(value: unknown): string | null | undefined {
+  return typeof value === "string" || value === null ? value : undefined;
+}
+
+/**
+ * One served row as a {@link ThreadHistoryRow}, or null when it lacks the
+ * fields every row has (`seq`, `at`, `kind`, `authorRole`, and `text` as a
+ * string or null): such a row cannot be placed in the transcript, and no
+ * writer produces one. Each optional field is kept only in the shape the
+ * type names, so a value no writer produced reads as absent, exactly as the
+ * row mappers read it.
+ */
+export function readThreadHistoryRow(value: unknown): ThreadHistoryRow | null {
+  if (!isObject(value)) return null;
+  const seq = field(value, "seq");
+  const at = field(value, "at");
+  const kind = field(value, "kind");
+  const authorRole = field(value, "authorRole");
+  const text = field(value, "text");
+  if (typeof seq !== "number" || !Number.isInteger(seq)) return null;
+  if (typeof at !== "string" || typeof kind !== "string" || typeof authorRole !== "string") return null;
+  if (typeof text !== "string" && text !== null) return null;
+  const row: ThreadHistoryRow = { seq, at, kind, authorRole, text };
+  const cardSnapshot = field(value, "cardSnapshot");
+  if (cardSnapshot !== undefined && isJsonValue(cardSnapshot)) row.cardSnapshot = cardSnapshot;
+  const toolName = stringOrNull(field(value, "toolName"));
+  if (toolName !== undefined) row.toolName = toolName;
+  const narration = field(value, "narration");
+  if (narration === null) row.narration = null;
+  else if (Array.isArray(narration)) row.narration = narration.filter((line): line is string => typeof line === "string");
+  const failure = field(value, "failure");
+  if (failure === null) row.failure = null;
+  else if (isObject(failure)) {
+    const code = stringOrNull(field(failure, "code"));
+    row.failure = code !== undefined ? { code } : {};
+  }
+  const notice = field(value, "notice");
+  if (notice === null) row.notice = null;
+  else if (isObject(notice)) {
+    const source = stringOrNull(field(notice, "source"));
+    row.notice = source !== undefined ? { source } : {};
+  }
+  const tapLabels = field(value, "tapLabels");
+  if (tapLabels === null) row.tapLabels = null;
+  else if (Array.isArray(tapLabels) && tapLabels.every((l) => typeof l === "string" || l === null)) {
+    row.tapLabels = tapLabels.filter((l): l is string | null => typeof l === "string" || l === null);
+  }
+  const clientMessageId = stringOrNull(field(value, "clientMessageId"));
+  if (clientMessageId !== undefined) row.clientMessageId = clientMessageId;
+  const inputKind = stringOrNull(field(value, "inputKind"));
+  if (inputKind !== undefined) row.inputKind = inputKind;
+  return row;
+}
+
+/**
+ * A transcript page body (already parsed from JSON) as a
+ * {@link ThreadMessagesPage}, or null when it is not one: not an object, no
+ * `rows` array, or a `nextToken` that is neither a string nor null. A row in
+ * the array that is not a row ({@link readThreadHistoryRow}) is left out.
+ */
+export function readThreadMessagesPage(body: unknown): ThreadMessagesPage | null {
+  if (!isObject(body)) return null;
+  const rawRows = field(body, "rows");
+  const nextToken = field(body, "nextToken");
+  if (!Array.isArray(rawRows)) return null;
+  if (typeof nextToken !== "string" && nextToken !== null && nextToken !== undefined) return null;
+  const rows: ThreadHistoryRow[] = [];
+  for (const raw of rawRows) {
+    const row = readThreadHistoryRow(raw);
+    if (row !== null) rows.push(row);
+  }
+  const thread = field(body, "thread");
+  const threadSeen = isObject(thread);
+  return {
+    rows,
+    nextToken: typeof nextToken === "string" && nextToken !== "" ? nextToken : null,
+    threadSeen,
+    closed: threadSeen ? readThreadClosed(field(thread, "closed")) : undefined,
+    newestFirst: field(body, "order") === "desc",
+  };
 }
 
 /**
@@ -92,12 +197,13 @@ export class HistoryUnauthorizedError extends Error {
 const HISTORY_PAGE_LIMIT = 100;
 
 /**
- * Hard bound on `nextToken` pagination: 10 pages × 100 rows = 1000 messages.
- * The server pages in ASCENDING seq order and the newest turns arrive on the
- * LAST pages, so we follow `nextToken` to completion within this cap rather
- * than stopping at page 1 (which would drop exactly the turns a resuming user
- * cares about). A >1000-message thread truncates its tail — accepted here;
- * a server-side `sort=desc`/`from`-seq param would be the fix if it matters.
+ * Hard bound on `nextToken` pagination: at most 10 pages per read. A page is
+ * at most 100 rows, and far fewer when its rows are large (a page is cut at a
+ * byte budget, so a card-heavy page holds a handful), so a long thread can
+ * outrun the cap. The read asks for newest-first pages (guuey#2858), so the
+ * cap drops the OLDEST rows and the result says so (`truncated`); a read plane
+ * that predates the order serves ascending pages, and there the cap drops the
+ * newest, as it always did.
  */
 const MAX_HISTORY_PAGES = 10;
 
@@ -206,12 +312,77 @@ export interface ThreadHistoryFetchOptions {
   fetchImpl?: typeof fetch;
 }
 
+/** One walk of the route in one order: every row it read, by seq, and the thread's state. */
+interface HistoryWalk {
+  rows: Map<number, ThreadHistoryRow>;
+  closed: ThreadClosed | undefined;
+  threadSeen: boolean;
+  /** The page cap was reached with a `nextToken` left: rows exist that this walk did not read. */
+  truncated: boolean;
+  /** The pages were served newest-first (the read plane echoed the order on every page). */
+  newestFirst: boolean;
+}
+
 /**
- * Fetch a thread's transcript across all pages. Returns `{ gone: true }` on
- * 403/404 (a stale local threadId the caller no longer owns / that no longer
- * exists) so the hook can drop the persisted id; throws on any other non-OK
- * status so `useAgentInvoke`'s best-effort caller can swallow it and leave
- * the chat empty.
+ * Walk the route's pages, newest-first when `askNewestFirst` (guuey#2858).
+ *
+ *  - Page 1 without the `order` echo is a read plane that predates the param:
+ *    its rows are ascending, so that page is page 1 of the ascending walk, and
+ *    the walk goes on ascending (no `order` sent).
+ *  - A later page that loses the echo (the read plane rolled back mid-read)
+ *    answers `order-lost`: its token runs the other way, so the caller
+ *    discards this walk and reads again ascending.
+ */
+async function walkHistory(
+  routeUrl: string,
+  askNewestFirst: boolean,
+  requestInit: RequestInit | undefined,
+  fetchImpl: typeof fetch,
+): Promise<HistoryWalk | "gone" | "order-lost"> {
+  const rows = new Map<number, ThreadHistoryRow>();
+  let newestFirst = askNewestFirst;
+  let nextToken: string | null = null;
+  let closed: ThreadClosed | undefined;
+  let threadSeen = false;
+  for (let page = 0; page < MAX_HISTORY_PAGES; page++) {
+    const url =
+      `${routeUrl}?limit=${HISTORY_PAGE_LIMIT}` +
+      (newestFirst ? "&order=desc" : "") +
+      (nextToken ? `&nextToken=${encodeURIComponent(nextToken)}` : "");
+    const res = await fetchImpl(url, requestInit);
+    if (res.status === 403 || res.status === 404) return "gone";
+    if (res.status === 401) throw new HistoryUnauthorizedError();
+    if (!res.ok) throw new Error(`history load failed: ${res.status}`);
+    const body: unknown = await res.json();
+    const read = readThreadMessagesPage(body);
+    if (read === null) throw new Error("history load failed: the read plane returned a malformed page");
+    if (page === 0) newestFirst = newestFirst && read.newestFirst;
+    else if (newestFirst && !read.newestFirst) return "order-lost";
+    // Keyed by seq: a row served twice (an overlap after a byte cut) is one row.
+    for (const row of read.rows) rows.set(row.seq, row);
+    if (read.threadSeen) {
+      threadSeen = true;
+      closed = read.closed ?? closed;
+    }
+    nextToken = read.nextToken;
+    if (!nextToken) return { rows, closed, threadSeen, truncated: false, newestFirst };
+  }
+  return { rows, closed, threadSeen, truncated: true, newestFirst };
+}
+
+/**
+ * Fetch a thread's transcript across its pages, newest-first (guuey#2858), so
+ * a thread longer than the page cap loses its OLDEST rows, never the turns a
+ * resuming reader came back for, and the result says so (`truncated`).
+ * Rows are gathered by `seq` and returned ascending, the render order. A read
+ * plane that predates the order serves ascending pages and is read exactly as
+ * before; one that stops honouring it mid-read is read again ascending.
+ *
+ * Returns `{ gone: true }` on 403/404 (a stale local threadId the caller no
+ * longer owns / that no longer exists) so the hook can drop the persisted id;
+ * throws on any other non-OK status, or a body that is not a page, so
+ * `useAgentInvoke`'s best-effort caller can swallow it and leave the chat
+ * empty.
  */
 export async function fetchThreadHistory({
   baseUrl,
@@ -221,39 +392,23 @@ export async function fetchThreadHistory({
   fetchImpl = fetch,
 }: ThreadHistoryFetchOptions): Promise<HistoryLoadResult> {
   const routeUrl = `${baseUrl}/threads/${encodeURIComponent(threadId)}/messages`;
-  const rows: ThreadHistoryRow[] = [];
-  let nextToken: string | null = null;
-  // The read plane's own word on a closed thread, from any page; and whether
-  // it spoke at all (an older read plane sends no `thread` field).
-  let closed: ThreadClosed | undefined;
-  let threadFieldSeen = false;
-
-  for (let page = 0; page < MAX_HISTORY_PAGES; page++) {
-    const url =
-      `${routeUrl}?limit=${HISTORY_PAGE_LIMIT}` +
-      (nextToken ? `&nextToken=${encodeURIComponent(nextToken)}` : "");
-    const res = await fetchImpl(url, requestInit);
-    if (res.status === 403 || res.status === 404) return { gone: true };
-    if (res.status === 401) throw new HistoryUnauthorizedError();
-    if (!res.ok) throw new Error(`history load failed: ${res.status}`);
-    const body: ThreadMessagesResponse = await res.json();
-    rows.push(...body.rows);
-    if (body.thread != null && typeof body.thread === "object") {
-      threadFieldSeen = true;
-      closed = readThreadClosed(body.thread.closed) ?? closed;
-    }
-    nextToken = body.nextToken;
-    if (!nextToken) break;
-  }
+  let walk = await walkHistory(routeUrl, true, requestInit, fetchImpl);
+  if (walk === "order-lost") walk = await walkHistory(routeUrl, false, requestInit, fetchImpl);
+  // An ascending walk sends no order, so it cannot lose one.
+  if (walk === "order-lost") throw new Error("history load failed: an ascending read lost an order it never asked for");
+  if (walk === "gone") return { gone: true };
+  const rows = [...walk.rows.values()].sort((a, b) => a.seq - b.seq);
 
   // A read plane that sends `thread` decides alone (`{}` = open, even when the
   // last row is an `app:` failure row on a thread that stayed open). Only an
   // older read plane, which sends no `thread`, is read from its last row.
-  const threadClosed = closed ?? (threadFieldSeen ? undefined : closureFromLastRow(rows));
+  const threadClosed = walk.closed ?? (walk.threadSeen ? undefined : closureFromLastRow(rows));
   return {
     messages: threadHistoryRowsToMessages(rows),
     ...(includeCards ? { cards: threadHistoryRowsToCards(rows) } : {}),
     ...(threadClosed !== undefined ? { closed: threadClosed } : {}),
+    // The order says which rows a capped read left out, so it rides beside `truncated`.
+    ...(walk.truncated ? { truncated: true, order: walk.newestFirst ? "desc" : "asc" } : {}),
   };
 }
 

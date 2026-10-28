@@ -1162,6 +1162,16 @@ export function planTranscript(
       state: "gone",
       label: policy.strings.threadGone,
     });
+  } else if (inputs.historyTruncated === true) {
+    // guuey#2858: the history read stopped at its page cap and left the
+    // OLDEST messages out; say so once, above the earliest message drawn.
+    items.push({
+      kind: "history-boundary",
+      key: "history",
+      expanded: true,
+      state: "truncated",
+      label: policy.strings.historyTruncated,
+    });
   }
 
   const inFlight = inputs.status !== "ready";

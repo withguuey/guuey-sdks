@@ -234,6 +234,14 @@ export interface TranscriptInputs {
   historyCards?: HistoryCard[];
   /** R13 rehydration state; absent means loaded. */
   historyState?: "loading" | "gone" | "loaded";
+  /**
+   * guuey#2858: the loaded history stopped at its page cap on a newest-first
+   * read, so the conversation's OLDEST messages are not in `messages`. Plans
+   * one quiet R13 line before the conversation. Absent or false when the
+   * history is whole, and when a truncated read left out the newest messages
+   * instead (an ascending read from an older read plane).
+   */
+  historyTruncated?: boolean;
   /** R0: optimistic-send lifecycle, keyed by clientMessageId; absent = settled. */
   sendStates?: Readonly<Record<string, "sending" | "failed">>;
   /**
@@ -657,10 +665,14 @@ export interface ErrorItem extends BaseItem {
   verbatim: string | null;
 }
 
-/** R13 — history rehydration boundary states. */
+/**
+ * R13 — history rehydration boundary states. `truncated` (guuey#2858): the
+ * loaded history leaves out the conversation's oldest messages, said once
+ * before the earliest one drawn.
+ */
 export interface HistoryBoundaryItem extends BaseItem {
   kind: "history-boundary";
-  state: "loading" | "gone";
+  state: "loading" | "gone" | "truncated";
   label: string;
 }
 

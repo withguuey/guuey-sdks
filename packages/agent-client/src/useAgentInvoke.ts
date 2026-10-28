@@ -165,6 +165,61 @@ export function adoptedTranscript(
   return { messages: keepsFold ? messages : history, keepsFold };
 }
 
+/** What {@link stallProbeDecision} knows of the turn it probes for (guuey#2858); each absent field reads as before. */
+export interface StallProbeTurn {
+  /** The send's idempotency key, which the read plane serves on its user row. */
+  clientMessageId?: string;
+  /** The history read stopped at its page cap (`HistoryLoadResult.truncated`). */
+  truncated?: boolean;
+  /** The order the read walked (`HistoryLoadResult.order`): a truncated `"desc"` read still holds the newest row. */
+  order?: "desc" | "asc";
+  /**
+   * The local transcript the probe compares against, this send's own row
+   * included. A truncated keyed read needs it to place the window history
+   * covers; without it such a read is not adopted.
+   */
+  localRows?: readonly AgentMessage[];
+}
+
+/**
+ * guuey#2858: a history read holds the conversation's NEWEST row. A whole read
+ * holds every row; a truncated newest-first read (`order: "desc"`) left out the
+ * oldest. A truncated ascending read (a read plane that predates the order, or
+ * a loader that does not say) left out the newest, so a turn at its end may be
+ * missing its last rows.
+ */
+function historyHoldsNewest(read: { truncated?: boolean; order?: "desc" | "asc" }): boolean {
+  return read.order === "desc" || read.truncated !== true;
+}
+
+/**
+ * guuey#2858: on a truncated keyed read, the user-count rule over the window
+ * history covers. Every keyed local user row (a live send, a failed one the
+ * read plane never stored, or a row an earlier read seeded) must be in history
+ * by its key, or sit before history's oldest keyed user row in the local
+ * transcript (the read left it out with the other old rows). A local row
+ * inside the window that history does not hold is a send that was never
+ * stored, and adopting would drop it. When history's oldest key is not in the
+ * local transcript, the window cannot be placed, and every keyed local row
+ * must be in history.
+ */
+function localSendsInWindowStored(history: readonly AgentMessage[], local: readonly AgentMessage[]): boolean {
+  const stored = new Set<string>();
+  let oldestKey: string | undefined;
+  for (const m of history) {
+    if (m.role !== "user" || m.clientMessageId === undefined) continue;
+    oldestKey ??= m.clientMessageId;
+    stored.add(m.clientMessageId);
+  }
+  const windowStart = Math.max(0, local.findIndex((m) => m.role === "user" && m.clientMessageId === oldestKey));
+  return local.every(
+    (m, i) => i < windowStart || m.role !== "user" || m.clientMessageId === undefined || stored.has(m.clientMessageId),
+  );
+}
+
+/** A history read that holds a transcript (not `gone`). */
+type HistoryTranscript = Extract<HistoryLoadResult, { messages: AgentMessage[] }>;
+
 /** The guuey#192 stall watchdog's resolved tuning (see {@link stallProbeDecision}). */
 export const STALL_RECOVERY_DEFAULTS = {
   windowMs: 25_000,
@@ -235,13 +290,72 @@ function resolveStallRecovery(
  * assistant rows), this heuristic needs the read plane to grow a
  * turn-completion marker — do not "fix" it client-side by text comparison,
  * which cannot distinguish a partial row from a finished one.
+ *
+ * guuey#2858: a history read can stop at its page cap (`truncated`), and then
+ * it does not hold every row, so the user-count rule cannot hold as written.
+ * `turn` carries the send's `clientMessageId`: where history's user rows carry
+ * keys, the turn is the row with that key and the rows after it up to the next
+ * user row, and it is finished when the last of them is a non-empty reply.
+ *
+ *  - A whole keyed read must ALSO pass the user-count rule (fewer user rows
+ *    than the local transcript means a local send was never stored, as the
+ *    `guuey dev` server does for a failed run, and adopting would drop it).
+ *  - A truncated keyed read passes the same rule over the window it covers
+ *    (`turn.localRows`, see {@link localSendsInWindowStored}).
+ *  - A read that may have left out the newest rows (a truncated ascending
+ *    read, {@link historyHoldsNewest}) cannot say a turn at its end is
+ *    finished, so such a turn is in flight.
+ *  - A keyless history is read by position, which needs the newest row: the
+ *    rules above run only when the read holds it. A truncated ascending
+ *    keyless read is in flight (pending), never adopted.
  */
 export function stallProbeDecision(
   history: AgentMessage[],
   localUserCount: number,
+  turn: StallProbeTurn = {},
 ): "adopt" | "in-flight" {
   let historyUserCount = 0;
   for (const m of history) if (m.role === "user") historyUserCount += 1;
+  const holdsNewest = historyHoldsNewest(turn);
+  // guuey#2858: a history that serves keys finds THIS turn by its key, so a
+  // read that stopped at its page cap (and so holds fewer user turns than the
+  // local transcript) can still be adopted. The count rule holds as well: over
+  // the whole conversation on a whole read, over the window the read covers on
+  // a truncated one. A local send history should hold and does not was never
+  // stored, and adopting would drop it from the transcript.
+  const key = turn.clientMessageId;
+  if (key !== undefined && history.some((m) => m.role === "user" && m.clientMessageId !== undefined)) {
+    if (turn.truncated !== true) {
+      if (historyUserCount < localUserCount) return "in-flight";
+    } else if (turn.localRows === undefined || !localSendsInWindowStored(history, turn.localRows)) {
+      return "in-flight";
+    }
+    let at = -1;
+    for (let i = history.length - 1; i >= 0; i -= 1) {
+      const m = history[i];
+      if (m !== undefined && m.role === "user" && m.clientMessageId === key) {
+        at = i;
+        break;
+      }
+    }
+    if (at === -1) return "in-flight";
+    let end = history.length;
+    for (let i = at + 1; i < history.length; i += 1) {
+      if (history[i]?.role === "user") {
+        end = i;
+        break;
+      }
+    }
+    // A turn that runs to the end of a read that left out the newest rows may
+    // have more rows past the cut: its last row read is not its last row.
+    if (end === history.length && !holdsNewest) return "in-flight";
+    const tail = end - 1 > at ? history[end - 1] : undefined;
+    return tail === undefined || tail.role === "user" || tail.text.trim() === "" ? "in-flight" : "adopt";
+  }
+  // A keyless history is read by position, which needs the newest row: a
+  // truncated ascending read left it out and cannot say whether this turn is
+  // in it, so the turn stays pending.
+  if (!holdsNewest) return "in-flight";
   if (historyUserCount < localUserCount) return "in-flight";
   const last = history[history.length - 1];
   // A notice tail is a finished turn too: the runtime persists a turn's rows
@@ -281,6 +395,8 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
   // contract). Independent of the live `reduceResult` fold — populated only
   // when a card-carrying history load seeds the transcript.
   const [historyCards, setHistoryCards] = useState<HistoryCard[]>([]);
+  // guuey#2858: the history in view stopped at its page cap (see return-type contract).
+  const [historyTruncated, setHistoryTruncated] = useState(false);
   // The pod's latest cross-app profile LINK invite on this conversation (T3's
   // `profile-link-needed` SSE event), or null. Cleared on app switch / reset /
   // explicit dismiss. (Consent is NOT hook state: it rides the AgJSON fold as
@@ -354,6 +470,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     reducerRef.current = null;
     setReduceResult(null);
     setHistoryCards([]);
+    setHistoryTruncated(false);
     // A prior app's link invite must never leak into the new conversation.
     setProfileLinkRequest(null);
     setAborted(false);
@@ -451,6 +568,10 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
       if ("cards" in result && result.cards && result.cards.length > 0) {
         setHistoryCards(result.cards);
       }
+      // guuey#2858: the read stopped at its page cap and left the OLDEST rows
+      // out; the renderer says earlier messages are not shown. A truncated
+      // ascending read left the newest out, and that line would be false.
+      setHistoryTruncated(result.truncated === true && result.order === "desc");
       // The agent ended this conversation before the reload: say so, unless a
       // send since then has already moved this hook to another thread.
       if (result.closed !== undefined && threadIdRef.current === tid) {
@@ -486,6 +607,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     reducerRef.current = null;
     setReduceResult(null);
     setHistoryCards([]);
+    setHistoryTruncated(false);
     setProfileLinkRequest(null);
     setAborted(false);
     setAdopted(false);
@@ -663,13 +785,19 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         controller.abort();
       };
       /** A history read that already holds THIS turn's finished reply (see {@link stallProbeDecision}). */
-      const holdsFinishedReply = (
-        result: HistoryLoadResult | null,
-      ): result is { messages: AgentMessage[]; cards?: HistoryCard[] } => {
+      const holdsFinishedReply = (result: HistoryLoadResult | null): result is HistoryTranscript => {
         if (!result || "gone" in result) return false;
+        const local = localRows();
         let localUserCount = 0;
-        for (const m of localRows()) if (m.role === "user") localUserCount += 1;
-        return stallProbeDecision(result.messages, localUserCount) === "adopt";
+        for (const m of local) if (m.role === "user") localUserCount += 1;
+        return (
+          stallProbeDecision(result.messages, localUserCount, {
+            clientMessageId,
+            truncated: result.truncated === true,
+            ...(result.order !== undefined ? { order: result.order } : {}),
+            localRows: local,
+          }) === "adopt"
+        );
       };
       /**
        * Adopt the persisted turn: the transcript IS history's (each live
@@ -677,7 +805,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
        * be tied to every live send, see {@link adoptedTranscript}), and the
        * renderer is told.
        */
-      const adoptFrom = (adoptedResult: { messages: AgentMessage[]; cards?: HistoryCard[] }): void => {
+      const adoptFrom = (adoptedResult: HistoryTranscript): void => {
         const adoption = adoptedTranscript(adoptedResult.messages, localRows());
         if (!adoption.keepsFold) {
           // The next valid AgEvent starts a new fold, and the next send's
@@ -707,6 +835,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         if (adoptedResult.cards && adoptedResult.cards.length > 0) {
           setHistoryCards(adoptedResult.cards);
         }
+        setHistoryTruncated(adoptedResult.truncated === true && adoptedResult.order === "desc");
         // The renderer's signal: calm renders the adopted turn identically;
         // debug may mark it (guuey#135 3b).
         setAdopted(true);
@@ -993,6 +1122,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     reset,
     reduceResult,
     historyCards,
+    historyTruncated,
     profileLinkRequest,
     clearProfileLinkRequest,
     aborted,

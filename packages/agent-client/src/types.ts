@@ -227,6 +227,24 @@ export type HistoryLoadResult =
       cards?: HistoryCard[];
       /** The conversation was ended by its agent (see {@link ThreadClosed}); absent while it is open. */
       closed?: ThreadClosed;
+      /**
+       * guuey#2858: the read stopped at its page cap with rows left, so
+       * `messages` (and `cards`) do not hold the whole conversation. On a
+       * newest-first read the rows left out are the OLDEST; on a read plane
+       * that predates the order they are the newest. Absent when the read
+       * holds every row.
+       */
+      truncated?: true;
+      /**
+       * guuey#2858: the order the read walked, set beside `truncated` (a read
+       * that holds every row has no left-out rows to place). `"desc"`: the read
+       * plane served newest-first pages, so the rows left out are the OLDEST
+       * and the newest row is held. `"asc"`: a read plane that predates the
+       * order served ascending pages, so the rows left out are the NEWEST.
+       * Absent beside `truncated` (a loader that does not say) reads as
+       * `"asc"`: nothing proves the newest row is held.
+       */
+      order?: "desc" | "asc";
     }
   | { gone: true };
 
@@ -514,6 +532,15 @@ export interface UseAgentInvokeReturn {
    * `reset()` clears it back to `[]`.
    */
   historyCards: HistoryCard[];
+  /**
+   * guuey#2858: the transcript history seeded (or a recovery adopted) does not
+   * hold the OLDEST rows of the conversation: the read stopped at its page cap
+   * on a newest-first walk (`HistoryLoadResult.truncated` with `order:
+   * "desc"`). A renderer says so above the earliest message it draws. `false`
+   * otherwise (a truncated ascending read left out the newest rows, not the
+   * earliest), and after `reset()` or an app switch.
+   */
+  historyTruncated: boolean;
   /**
    * The latest cross-app profile LINK invite the pod asked for on THIS
    * conversation, or `null`. Set from a well-formed `profile-link-needed`
