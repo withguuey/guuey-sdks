@@ -10,6 +10,9 @@
  *   `Authorization: Bearer <token>`.
  * - Success: `200 { result }`.
  * - Failure: `4xx/5xx { code, message }` → {@link HttpThreadStoreError}.
+ * - Every body is parsed to `unknown` and read through `http-read.ts`; a 2xx
+ *   whose body is not an envelope, or whose `result` is not what the op
+ *   answers, is an {@link HttpThreadStoreError} with code `BAD_RESPONSE`.
  *
  * Auth + tenancy: the token is an END-USER token for the app — one the
  * app's configured identity issuer minted (your own IdP, or guuey's per-app
@@ -29,6 +32,15 @@
  */
 import { DYNAMODB_ROW_BUDGET } from "./item-size.js";
 import { ThreadClosedError } from "./closed.js";
+import {
+  isWireObject,
+  readAllocatedSeq,
+  readThreadMessageRow,
+  readThreadMessageRows,
+  readThreadRow,
+  readThreadScope,
+  readThreadSnapshotRow,
+} from "./http-read.js";
 import type {
   RowBudget,
   ThreadMessageRow,
@@ -57,22 +69,12 @@ export interface HttpThreadPersistenceOptions {
   fetchImpl?: typeof fetch;
 }
 
-/** Shape of a `4xx/5xx` error response body. */
-interface ErrorEnvelope {
-  readonly code?: string;
-  readonly message?: string;
-}
-
-/** Shape of a `200` success response body. */
-interface ResultEnvelope<R> {
-  readonly result: R;
-}
-
 /**
  * Thrown for every non-2xx response and every exhausted network failure.
  * `code` is the server's flat error code (`UNAUTHORIZED`, `FORBIDDEN`,
  * `INVALID_ARGUMENT`, `INVALID_CONTEXT`, `THREAD_NOT_FOUND`, `CONFLICT`,
- * `NOT_FOUND`, `TRANSPORT`; `incrementSeq`'s `THREAD_CLOSED` is thrown as
+ * `NOT_FOUND`, `TRANSPORT`, and the client's own `BAD_RESPONSE` for a 2xx body
+ * it cannot read; `incrementSeq`'s `THREAD_CLOSED` is thrown as
  * `ThreadClosedError` instead); `status` is the HTTP status (`0` for a network
  * failure that never produced a response).
  */
@@ -88,17 +90,38 @@ export class HttpThreadStoreError extends Error {
   }
 }
 
-async function toError(res: Response): Promise<HttpThreadStoreError> {
-  let body: ErrorEnvelope;
+/** A response body: the parsed JSON (`unknown` until read), or why it did not parse. */
+type ParsedBody = { readonly parsed: true; readonly value: unknown } | { readonly parsed: false; readonly cause: unknown };
+
+async function parsedBody(res: Response): Promise<ParsedBody> {
   try {
-    body = (await res.json()) as ErrorEnvelope;
-  } catch {
-    body = {};
+    const value: unknown = await res.json();
+    return { parsed: true, value };
+  } catch (cause) {
+    return { parsed: false, cause };
   }
+}
+
+async function toError(res: Response): Promise<HttpThreadStoreError> {
+  // `{ code, message }`, each read only when it is a string: a body that is
+  // not one (not JSON, a gateway's HTML page) keeps the transport defaults.
+  const body = await parsedBody(res);
+  const env = body.parsed && isWireObject(body.value) ? body.value : undefined;
   return new HttpThreadStoreError(
     res.status,
-    body.code ?? "TRANSPORT",
-    body.message ?? `guuey thread API error (HTTP ${res.status})`,
+    typeof env?.code === "string" ? env.code : "TRANSPORT",
+    typeof env?.message === "string" ? env.message : `guuey thread API error (HTTP ${res.status})`,
+    body.parsed ? undefined : { cause: body.cause },
+  );
+}
+
+/** The refusal for a 2xx whose body the op cannot read. */
+function badResponse(res: Response, op: string, what: string, cause?: unknown): HttpThreadStoreError {
+  return new HttpThreadStoreError(
+    res.status,
+    "BAD_RESPONSE",
+    `guuey thread API ${op}: ${what} (HTTP ${res.status})`,
+    cause !== undefined ? { cause } : undefined,
   );
 }
 
@@ -123,20 +146,20 @@ export class HttpThreadPersistence implements ThreadPersistencePort {
 
   /** The `(appId, userId, region)` the server bound this token to. */
   async scope(): Promise<ThreadScope> {
-    return this.call<ThreadScope>("scope", {}, true);
+    return this.call("scope", {}, true, readThreadScope);
   }
 
   async getThread(threadId: string): Promise<ThreadRow | undefined> {
-    return (await this.call<ThreadRow | null>("getThread", { threadId }, true)) ?? undefined;
+    return this.pointRead("getThread", { threadId }, readThreadRow);
   }
 
   async createThread(row: ThreadRow): Promise<void> {
-    await this.call<null>("createThread", { row }, false);
+    await this.write("createThread", { row });
   }
 
   async incrementSeq(threadId: string, preview: string | null, atIso: string): Promise<number> {
     try {
-      return await this.call<number>("incrementSeq", { threadId, preview, atIso }, false);
+      return await this.call("incrementSeq", { threadId, preview, atIso }, false, readAllocatedSeq);
     } catch (err) {
       // The server's word for a closed thread (guuey#2355) becomes the typed
       // refusal every binding gives, so a ThreadStore reads it the same way.
@@ -148,42 +171,65 @@ export class HttpThreadPersistence implements ThreadPersistencePort {
   }
 
   async putMessage(row: ThreadMessageRow): Promise<void> {
-    await this.call<null>("putMessage", { row }, false);
+    await this.write("putMessage", { row });
   }
 
   async listRecentMessages(threadId: string, limit: number): Promise<ThreadMessageRow[]> {
-    return this.call<ThreadMessageRow[]>("listRecentMessages", { threadId, limit }, true);
+    return this.call("listRecentMessages", { threadId, limit }, true, readThreadMessageRows);
   }
 
   async findByClientMessageId(
     threadId: string,
     clientMessageId: string,
   ): Promise<ThreadMessageRow | undefined> {
-    return (
-      (await this.call<ThreadMessageRow | null>(
-        "findByClientMessageId",
-        { threadId, clientMessageId },
-        true,
-      )) ?? undefined
-    );
+    return this.pointRead("findByClientMessageId", { threadId, clientMessageId }, readThreadMessageRow);
   }
 
   async getSnapshot(threadId: string): Promise<ThreadSnapshotRow | undefined> {
-    return (await this.call<ThreadSnapshotRow | null>("getSnapshot", { threadId }, true)) ?? undefined;
+    return this.pointRead("getSnapshot", { threadId }, readThreadSnapshotRow);
   }
 
   async putSnapshot(row: ThreadSnapshotRow): Promise<void> {
-    await this.call<null>("putSnapshot", { row }, false);
+    await this.write("putSnapshot", { row });
   }
 
   // ── internals ──────────────────────────────────────────────────────
 
+  /** A write: never retried, and its `result` (the server's `null`) is not read. */
+  private async write(op: string, args: object): Promise<void> {
+    await this.send(op, args, false);
+  }
+
+  /** A point read: `null` (the port's `undefined`) or the row `read` proves. */
+  private async pointRead<R>(op: string, args: object, read: (value: unknown) => R | undefined): Promise<R | undefined> {
+    const row = await this.call(op, args, true, (value) => (value === null ? null : read(value)));
+    return row ?? undefined;
+  }
+
   /**
-   * One shared retry budget (`retried`) covers BOTH retry triggers — a
-   * network failure and a 5xx response — so a retryable op makes at most
-   * 2 total requests, never 3.
+   * The op's `{ result }` envelope, its `result` read by `read`. `undefined`
+   * from `read` (the result is not this op's answer) is `BAD_RESPONSE`.
    */
-  private async call<R>(op: string, args: object, retryable: boolean): Promise<R> {
+  private async call<R>(
+    op: string,
+    args: object,
+    retryable: boolean,
+    read: (value: unknown) => R | undefined,
+  ): Promise<R> {
+    const { res, body } = await this.send(op, args, retryable);
+    if (!isWireObject(body) || !("result" in body)) throw badResponse(res, op, "the body is not a { result } envelope");
+    const value = read(body.result);
+    if (value === undefined) throw badResponse(res, op, "the result does not read as this op's answer");
+    return value;
+  }
+
+  /**
+   * One op on the wire: the 2xx response and its parsed body (`unknown`), or
+   * the typed error. One shared retry budget (`retried`) covers BOTH retry
+   * triggers — a network failure and a 5xx response — so a retryable op makes
+   * at most 2 total requests, never 3.
+   */
+  private async send(op: string, args: object, retryable: boolean): Promise<{ res: Response; body: unknown }> {
     const doOnce = async (): Promise<Response> =>
       this.fetchImpl(`${this.baseUrl}/v1/thread-store/${op}`, {
         method: "POST",
@@ -217,7 +263,8 @@ export class HttpThreadPersistence implements ThreadPersistencePort {
       break;
     }
     if (!res.ok) throw await toError(res);
-    const body = (await res.json()) as ResultEnvelope<R>;
-    return body.result;
+    const body = await parsedBody(res);
+    if (!body.parsed) throw badResponse(res, op, "the body is not JSON", body.cause);
+    return { res, body: body.value };
   }
 }

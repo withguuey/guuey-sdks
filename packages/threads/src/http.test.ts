@@ -8,7 +8,7 @@
 import { describe, expect, it } from "vitest";
 import { HttpThreadPersistence, HttpThreadStoreError } from "./http.js";
 import { ThreadClosedError } from "./closed.js";
-import type { ThreadRow } from "./rows.js";
+import type { ThreadMessageRow, ThreadRow, ThreadSnapshotRow } from "./rows.js";
 
 interface Call {
   url: string;
@@ -150,5 +150,170 @@ describe("HttpThreadPersistence — a closed thread (guuey#2355)", () => {
     const err = await client(fetch).incrementSeq("t1", "p", "2026-10-15T00:00:00.000Z").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(HttpThreadStoreError);
     expect(err).not.toBeInstanceOf(ThreadClosedError);
+  });
+});
+
+const MESSAGE: ThreadMessageRow = {
+  threadId: "t1",
+  seq: 3,
+  userId: "byo_x",
+  clientMessageId: "c3",
+  at: "2026-08-17T00:00:03.000Z",
+  kind: "text",
+  authorRole: "user",
+  text: "hello",
+  content: { role: "user", content: [{ type: "text", text: "hello" }] },
+  untrustedOrigin: true,
+  turnOrigin: "chip",
+  clientClass: "browser",
+  inputKind: "context-only",
+  answeredCardSessionId: "s1",
+  tapLabels: ["Yes", null],
+  event: { type: "handoff", question: "a human?", contactEmail: "a@b.c" },
+};
+
+const SNAPSHOT: ThreadSnapshotRow = {
+  threadId: "t1",
+  userId: "byo_x",
+  workingState: { step: 2, items: ["a", null] },
+  threadMemory: [{ scope: "thread", key: "k", value: "v1" }],
+  carriedThreadMemory: [{ scope: "team", key: "plan", value: { tier: "pro" } }],
+  lastTurnId: "turn-1",
+  updatedAt: "2026-08-17T00:00:04.000Z",
+};
+
+const ok = (result: unknown) => jsonResponse(200, { result });
+
+/** The error a call rejects with (every refusal here is an HttpThreadStoreError). */
+async function refusal(p: Promise<unknown>): Promise<HttpThreadStoreError> {
+  const err = await p.then(
+    () => undefined,
+    (e: unknown) => e,
+  );
+  if (!(err instanceof HttpThreadStoreError)) throw new Error(`expected an HttpThreadStoreError, got ${String(err)}`);
+  return err;
+}
+
+describe("HttpThreadPersistence — every answer is read, never assumed (guuey#2899)", () => {
+  it("reads a full row of each kind back exactly as it was written", async () => {
+    const { fetch } = scripted([
+      ok({ ...THREAD, lastMessagePreviewSeq: 2, sealIntervals: [{ fromSeq: 1, toSeq: 2 }], closedAt: "2026-08-18T00:00:00.000Z", closedCode: "app:limit", closedMessage: "done" }),
+      ok([MESSAGE]),
+      ok(MESSAGE),
+      ok(SNAPSHOT),
+      ok(4),
+    ]);
+    const c = client(fetch);
+    expect(await c.getThread("t1")).toEqual({
+      ...THREAD,
+      lastMessagePreviewSeq: 2,
+      sealIntervals: [{ fromSeq: 1, toSeq: 2 }],
+      closedAt: "2026-08-18T00:00:00.000Z",
+      closedCode: "app:limit",
+      closedMessage: "done",
+    });
+    expect(await c.listRecentMessages("t1", 10)).toEqual([MESSAGE]);
+    expect(await c.findByClientMessageId("t1", "c3")).toEqual(MESSAGE);
+    expect(await c.getSnapshot("t1")).toEqual(SNAPSHOT);
+    expect(await c.incrementSeq("t1", "p", "2026-08-17T00:00:00.000Z")).toBe(4);
+  });
+
+  it("a 2xx body that is not JSON, or not a { result } envelope, is BAD_RESPONSE with the status", async () => {
+    for (const res of [
+      new Response("<html>gateway</html>", { status: 200 }),
+      jsonResponse(200, {}),
+      jsonResponse(200, [THREAD]),
+      jsonResponse(200, null),
+    ]) {
+      const err = await refusal(client(scripted([res]).fetch).getThread("t1"));
+      expect(err).toMatchObject({ status: 200, code: "BAD_RESPONSE" });
+    }
+  });
+
+  it("a result that is not the op's answer is BAD_RESPONSE: a scope missing a member, a seq that is not an integer", async () => {
+    const scope = await refusal(client(scripted([ok({ appId: "app_1", userId: "byo_abc" })]).fetch).scope());
+    expect(scope.code).toBe("BAD_RESPONSE");
+    for (const seq of ["4", 4.5, null]) {
+      const err = await refusal(client(scripted([ok(seq)]).fetch).incrementSeq("t1", "p", "2026-08-17T00:00:00.000Z"));
+      expect(err.code).toBe("BAD_RESPONSE");
+    }
+  });
+
+  it("a row missing a required member, or with one of the wrong type, is BAD_RESPONSE", async () => {
+    const { lastSeq: _dropped, ...noSeq } = THREAD;
+    const rows: Array<[string, (c: HttpThreadPersistence) => Promise<unknown>, unknown]> = [
+      ["getThread without lastSeq", (c) => c.getThread("t1"), noSeq],
+      ["getThread with a string pinned", (c) => c.getThread("t1"), { ...THREAD, pinned: "false" }],
+      ["a message of a kind this release does not know", (c) => c.findByClientMessageId("t1", "c3"), { ...MESSAGE, kind: "poll" }],
+      ["a list with one unreadable row", (c) => c.listRecentMessages("t1", 10), [MESSAGE, { ...MESSAGE, seq: "4" }]],
+      ["a list that is not an array", (c) => c.listRecentMessages("t1", 10), { rows: [MESSAGE] }],
+      ["a snapshot whose threadMemory is not an array", (c) => c.getSnapshot("t1"), { ...SNAPSHOT, threadMemory: {} }],
+      ["a snapshot whose carried memory is not an array", (c) => c.getSnapshot("t1"), { ...SNAPSHOT, carriedThreadMemory: "x" }],
+    ];
+    for (const [label, op, result] of rows) {
+      const err = await refusal(op(client(scripted([ok(result)]).fetch)));
+      expect({ label, code: err.code }).toEqual({ label, code: "BAD_RESPONSE" });
+    }
+  });
+
+  it("a stored value that would OPEN what it closes is refused, never read as absent: an unreadable seal, a non-boolean untrustedOrigin", async () => {
+    const seal = await refusal(client(scripted([ok({ ...THREAD, sealIntervals: "all" })]).fetch).getThread("t1"));
+    expect(seal.code).toBe("BAD_RESPONSE");
+    const origin = await refusal(
+      client(scripted([ok({ ...MESSAGE, untrustedOrigin: "true" })]).fetch).findByClientMessageId("t1", "c3"),
+    );
+    expect(origin.code).toBe("BAD_RESPONSE");
+  });
+
+  it("an optional member an older server omits, or one of the wrong type, reads as absent", async () => {
+    const { fetch } = scripted([
+      ok({ ...THREAD, sealIntervals: null, closedAt: 5, lastMessagePreviewSeq: "2" }),
+      ok({ ...MESSAGE, text: null, turnOrigin: "voice", clientClass: 1, inputKind: "audio", tapLabels: "Yes", event: { type: "poll" } }),
+      ok({ threadId: "t1", userId: "byo_x", threadMemory: [], updatedAt: "2026-08-17T00:00:04.000Z", lastTurnId: 9 }),
+    ]);
+    const c = client(fetch);
+    expect(await c.getThread("t1")).toEqual(THREAD);
+    const {
+      text: _t,
+      turnOrigin: _o,
+      clientClass: _k,
+      inputKind: _i,
+      tapLabels: _l,
+      event: _e,
+      ...bare
+    } = MESSAGE;
+    expect(await c.findByClientMessageId("t1", "c3")).toEqual(bare);
+    expect(await c.getSnapshot("t1")).toEqual({
+      threadId: "t1",
+      userId: "byo_x",
+      threadMemory: [],
+      updatedAt: "2026-08-17T00:00:04.000Z",
+    });
+  });
+
+  it("a snapshot memory element this release cannot read as a thread record is carried, never dropped", async () => {
+    const orphan = { scope: "thread", key: "orphan" };
+    const { fetch } = scripted([ok({ ...SNAPSHOT, threadMemory: [...SNAPSHOT.threadMemory, orphan] })]);
+    expect(await client(fetch).getSnapshot("t1")).toEqual({
+      ...SNAPSHOT,
+      carriedThreadMemory: [...(SNAPSHOT.carriedThreadMemory ?? []), orphan],
+    });
+  });
+
+  it("a write reads no result, and a write's 2xx that is not JSON is BAD_RESPONSE", async () => {
+    await expect(client(scripted([jsonResponse(200, {})]).fetch).createThread(THREAD)).resolves.toBeUndefined();
+    const err = await refusal(client(scripted([new Response("", { status: 200 })]).fetch).putMessage(MESSAGE));
+    expect(err).toMatchObject({ status: 200, code: "BAD_RESPONSE" });
+  });
+
+  it("a refusal's code and message are read only when they are strings; anything else keeps the transport defaults", async () => {
+    for (const res of [
+      jsonResponse(403, { code: 403, message: ["no"] }),
+      jsonResponse(403, ["FORBIDDEN"]),
+      new Response("<html>forbidden</html>", { status: 403 }),
+    ]) {
+      const err = await refusal(client(scripted([res]).fetch).getThread("t1"));
+      expect(err).toMatchObject({ status: 403, code: "TRANSPORT", message: "guuey thread API error (HTTP 403)" });
+    }
   });
 });
