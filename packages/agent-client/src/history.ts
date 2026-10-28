@@ -585,12 +585,13 @@ interface HistoryWalk {
   honoured: ReadonlySet<HonouredEcho>;
 }
 
-/** The read's `include` entries, in their fixed order (#2487's first), as one comma-joined param; `""` when it asks none. */
-function includeParam(includeToolResults: boolean, includeToolCalls: boolean): string {
-  const entries = [
-    ...(includeToolResults ? [TOOL_RESULTS_INCLUDE] : []),
-    ...(includeToolCalls ? [TOOL_CALLS_INCLUDE] : []),
-  ];
+/**
+ * The read's `include` entries, in their fixed order (#2487's first), as one
+ * comma-joined param; `""` when it asks none. `askCalls` is the calls ask the
+ * walk also waits to see echoed, so the two are one derivation.
+ */
+function includeParam(includeToolResults: boolean, askCalls: readonly (typeof TOOL_CALLS_INCLUDE)[]): string {
+  const entries = [...(includeToolResults ? [TOOL_RESULTS_INCLUDE] : []), ...askCalls];
   return entries.length > 0 ? `&include=${entries.join(",")}` : "";
 }
 
@@ -677,8 +678,8 @@ export async function fetchThreadHistory({
   fetchImpl = fetch,
 }: ThreadHistoryFetchOptions): Promise<HistoryLoadResult> {
   const routeUrl = `${baseUrl}/threads/${encodeURIComponent(threadId)}/messages`;
-  const include = includeParam(includeToolResults, includeToolCalls);
-  const askCalls: HonouredEcho[] = includeToolCalls ? [TOOL_CALLS_INCLUDE] : [];
+  const askCalls: (typeof TOOL_CALLS_INCLUDE)[] = includeToolCalls ? [TOOL_CALLS_INCLUDE] : [];
+  const include = includeParam(includeToolResults, askCalls);
   let walk = await walkHistory(routeUrl, new Set<HonouredEcho>(["order", ...askCalls]), include, requestInit, fetchImpl);
   if (walk === "order-lost") walk = await walkHistory(routeUrl, new Set(askCalls), include, requestInit, fetchImpl);
   // An ascending walk sends no order, so it cannot lose one.
