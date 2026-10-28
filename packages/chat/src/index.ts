@@ -14,8 +14,9 @@ export {
   newestViewKey,
   planTranscript,
 } from "./plan.js";
-// guuey#2549: the one way a failed user turn is sent again.
-export { retrySendArgs } from "./retry.js";
+// guuey#2549: the one way a failed user turn is sent again; guuey#2608: the
+// same re-send taking the failed row's place.
+export { retryInPlaceArgs, retrySendArgs } from "./retry.js";
 export {
   calmPolicy,
   type TranscriptPolicyOverrides,

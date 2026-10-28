@@ -76,7 +76,8 @@ import type {
 } from "@guuey/mcp-apps-host";
 import { calmPolicy, debugPolicy, type TranscriptPolicyOverrides } from "../policy.js";
 import { isWaitingOnUser } from "../listen.js";
-import { retrySendArgs } from "../retry.js";
+import { retryInPlaceArgs } from "../retry.js";
+import { useSaturationCountdown } from "./use-saturation-countdown.js";
 import { useStructuralIdentity } from "./structural-identity.js";
 import { defaultChatStrings, type ChatStrings } from "../strings.js";
 import { DEFAULT_CHAT_THEME, type GuueyChatTheme } from "../theme.js";
@@ -85,7 +86,6 @@ import type {
   ErrorItem,
   PlanViewSummary,
   PromptItem,
-  SaturationWait,
   TapWithdrawReason,
   UserMessageItem,
   ViewRefItem,
@@ -652,7 +652,12 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // this beside the status to say "busy, retrying" instead of climbing the
   // connecting ladder. A host's own `adapters` own their transport and their
   // retry, so the notice is the default adapters' only.
-  const [saturationWait, setSaturationWait] = useState<SaturationWait | null>(null);
+  // guuey#2608: counted down from each reported wait, so the line says when.
+  const {
+    wait: saturationWait,
+    report: reportSaturationWait,
+    clear: clearSaturationWait,
+  } = useSaturationCountdown();
   const adapters = useMemo(
     () =>
       adaptersProp ??
@@ -660,7 +665,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         // The widget's end-user budget (guuey#406): three retries, each one
         // shown, before the refusal surfaces as the plain busy error.
         saturationAttempts: SATURATION_RETRIES,
-        onSaturationWait: ({ attempt, totalAttempts }) => setSaturationWait({ attempt, totalAttempts }),
+        onSaturationWait: reportSaturationWait,
         ...(apiBaseUrl !== undefined ? { apiBaseUrl } : {}),
         ...(hasAccessToken
           ? {
@@ -672,7 +677,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
           ? { getGuestSecret: () => getGuestSecretRef.current?.() ?? null }
           : {}),
       }),
-    [adaptersProp, apiBaseUrl, hasAccessToken, hasGuestSecret],
+    [adaptersProp, apiBaseUrl, hasAccessToken, hasGuestSecret, reportSaturationWait],
   );
   // A card's `ui/message` becomes the next turn only through the kit's own
   // sink, so the kit declares it only where that sink is provably in effect
@@ -775,8 +780,8 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // A wait belongs to the turn's `connecting` phase: any status change (the
   // retry got through, the refusal surfaced, a stop, the next turn) ends it.
   useEffect(() => {
-    setSaturationWait(null);
-  }, [invoke.status]);
+    clearSaturationWait();
+  }, [invoke.status, clearSaturationWait]);
   // Memoized: once a chip is selected (`promotedViewKey` set) this object
   // is on the plan's identity path — a per-render fresh spread here was the
   // second leg of the render loop the template surfaced.
@@ -1459,8 +1464,10 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     (item: UserMessageItem) => {
       // The one retry rule (`retrySendArgs`): an action turn goes again with
       // its words beside the directive (guuey#2031), a turn without words
-      // goes again without words (guuey#2549).
-      void invoke.send(...retrySendArgs(item)).catch(() => {
+      // goes again without words (guuey#2549). guuey#2608: a failed row's
+      // re-send takes its place (`retryInPlaceArgs`), so the turn is drawn
+      // once, never beside its old "Couldn't send" row.
+      void invoke.send(...retryInPlaceArgs(item)).catch(() => {
         // Same contract as submit: the hook owns failure surfacing.
       });
     },

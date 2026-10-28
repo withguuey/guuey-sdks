@@ -61,6 +61,13 @@ export {
 // place for the turn its doorbell sends: the React owner of the tap ledger, for
 // every host that sinks `ui/message` itself.
 export { useTapEcho, type TapEcho, type UseTapEchoArgs } from "./react/use-tap-echo.js";
+// guuey#2608 — the busy line's countdown at the agent's concurrent-turn ceiling:
+// what `<GuueyChat>` feeds its plan, for every host that builds its own adapters.
+export {
+  useSaturationCountdown,
+  type SaturationCountdown,
+  type SaturationWaitReport,
+} from "./react/use-saturation-countdown.js";
 export {
   GuueyChat,
   type GuueyChatActivityEvent,

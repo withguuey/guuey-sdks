@@ -1,6 +1,6 @@
-/** guuey#2549 — the one way a failed user turn is sent again. */
+/** guuey#2549 — the one way a failed user turn is sent again (guuey#2608: in its row's place). */
 import { describe, expect, it } from "vitest";
-import { retrySendArgs } from "./retry.js";
+import { retryInPlaceArgs, retrySendArgs } from "./retry.js";
 import type { UserMessageItem } from "./types.js";
 
 const item = (over: Partial<UserMessageItem>): UserMessageItem => ({
@@ -26,5 +26,22 @@ describe("retrySendArgs", () => {
   });
   it("anything else is its text", () => {
     expect(retrySendArgs(item({}))).toEqual(["hello", undefined]);
+  });
+});
+
+describe("retryInPlaceArgs", () => {
+  it("a failed row's re-send names the row it replaces, beside the same arguments", () => {
+    expect(retryInPlaceArgs(item({ clientMessageId: "cmid-1" }))).toEqual(["hello", { replaces: "cmid-1" }]);
+    expect(retryInPlaceArgs(item({ text: "", inputKind: "context-only", clientMessageId: "cmid-2" }))).toEqual([
+      "",
+      { inputKind: "context-only", replaces: "cmid-2" },
+    ]);
+    expect(
+      retryInPlaceArgs(item({ text: "<ggui_directive", directive: true, tapLabels: ["Open"], clientMessageId: "cmid-3" })),
+    ).toEqual(["<ggui_directive", { tapLabels: ["Open"], replaces: "cmid-3" }]);
+  });
+  it("a row that is not failed, or has no id, replaces nothing", () => {
+    expect(retryInPlaceArgs(item({ state: "sent", clientMessageId: "cmid-1" }))).toEqual(["hello", undefined]);
+    expect(retryInPlaceArgs(item({}))).toEqual(["hello", undefined]);
   });
 });

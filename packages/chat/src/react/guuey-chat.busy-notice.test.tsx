@@ -28,10 +28,10 @@ const POD_SENTENCE = "this conversation's agent is at capacity (2 concurrent tur
 const BUSY_LINE = "High demand right now. Please try again in a moment.";
 
 /** The governor's refusal; `Retry-After: 0` keeps the test's waits at zero. */
-function saturated(): Response {
+function saturated(retryAfterSeconds = 0): Response {
   return new Response(JSON.stringify({ code: AGENT_ERROR_CODES.POD_SATURATED, message: POD_SENTENCE }), {
     status: 503,
-    headers: { "Content-Type": "application/json", "Retry-After": "0" },
+    headers: { "Content-Type": "application/json", "Retry-After": String(retryAfterSeconds) },
   });
 }
 
@@ -46,7 +46,7 @@ function streamed(): Response {
  * Invoke calls answer from `script` in order; the first `"hold"` parks that
  * call until `release()` answers it with a streamed reply.
  */
-function stubInvoke(script: readonly ("saturated" | "hold")[]) {
+function stubInvoke(script: readonly ("saturated" | "saturated-12s" | "hold")[]) {
   let calls = 0;
   let release: () => void = () => {
     throw new Error("no held call yet");
@@ -57,6 +57,7 @@ function stubInvoke(script: readonly ("saturated" | "hold")[]) {
       const step = script[calls] ?? "saturated";
       calls += 1;
       if (step === "saturated") return saturated();
+      if (step === "saturated-12s") return saturated(12);
       return new Promise<Response>((resolve) => {
         release = () => resolve(streamed());
       });
@@ -99,6 +100,15 @@ describe("the busy notice while the saturation retry waits", () => {
     await waitFor(() => expect(screen.getByRole("status").textContent).toBe("Busy right now. Retrying (1/4)…"));
     invoke.release();
     await waitFor(() => expect(screen.queryByText(/Busy right now/)).toBeNull());
+  });
+
+  it("counts down to the next try from the pod's Retry-After (guuey#2608)", async () => {
+    const invoke = stubInvoke(["saturated-12s"]);
+    send();
+    await waitFor(() => expect(invoke.calls()).toBe(1));
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toMatch(/^Busy right now\. Retrying in 1[12]s \(1\/4\)…$/),
+    );
   });
 
   it("a builder's strings.saturationRetrying wins", async () => {
@@ -168,5 +178,47 @@ describe("the busy error once the retries run out", () => {
     stubInvoke([]);
     send({ strings: { errorPodSaturated: "Too busy, try soon." } });
     await waitFor(() => expect(failedLine()).toContain("Too busy, try soon."));
+  });
+});
+
+/**
+ * guuey#2608 — Retry on the refused send's bubble re-sends in its place: the
+ * turn is drawn once, never beside its old failed bubble (the inline
+ * transcript layout of the widget mounts this component).
+ */
+describe("Retry on a refused send", () => {
+  function userBubbles(): number {
+    return document.querySelectorAll(".guuey-chat-user").length;
+  }
+
+  it("a retry that gets through leaves one bubble and no failed line", async () => {
+    const invoke = stubInvoke(["saturated", "saturated", "saturated", "saturated", "hold"]);
+    send();
+    await waitFor(() => expect(failedLine()).toContain(BUSY_LINE));
+    expect(userBubbles()).toBe(1);
+
+    fireEvent.click(screen.getByRole("button", { name: defaultChatStrings.userRetry }));
+    await waitFor(() => expect(invoke.calls()).toBe(5));
+    await waitFor(() => expect(failedLine()).toBeNull());
+    expect(userBubbles()).toBe(1);
+    expect(screen.getAllByText("hello")).toHaveLength(1);
+
+    invoke.release();
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+    expect(userBubbles()).toBe(1);
+    expect(failedLine()).toBeNull();
+  });
+
+  it("a retry refused again leaves one failed bubble with one Retry", async () => {
+    const invoke = stubInvoke([]);
+    send();
+    await waitFor(() => expect(failedLine()).toContain(BUSY_LINE));
+
+    fireEvent.click(screen.getByRole("button", { name: defaultChatStrings.userRetry }));
+    await waitFor(() => expect(invoke.calls()).toBe(8));
+    await waitFor(() => expect(failedLine()).toContain(BUSY_LINE));
+    expect(userBubbles()).toBe(1);
+    expect(document.querySelectorAll(".guuey-chat-send-failed")).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: defaultChatStrings.userRetry })).toHaveLength(1);
   });
 });
