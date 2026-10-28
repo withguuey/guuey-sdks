@@ -70,7 +70,31 @@ describe("the busy status line (guuey#2604)", () => {
     expect(status?.detail).toBe("connecting · 1200 ms");
   });
 
+  it("guuey#2608: a renderer's countdown names the seconds to the next try", () => {
+    const status = planTranscript(
+      inputs("connecting", { attempt: 1, totalAttempts: 4, secondsLeft: 12 }),
+      calmPolicy(),
+    ).status;
+    expect(status?.state).toBe("busy");
+    expect(status?.copy).toBe("Busy right now. Retrying in 12s (1/4)…");
+  });
+
+  it("guuey#2608: at 0 the try is under way, and the line names no time", () => {
+    const status = planTranscript(inputs("connecting", { attempt: 2, totalAttempts: 4, secondsLeft: 0 }), calmPolicy()).status;
+    expect(status?.copy).toBe("Busy right now. Retrying (2/4)…");
+  });
+
+  it("guuey#2608: a builder's two-argument string keeps working beside a countdown", () => {
+    const policy = calmPolicy({
+      strings: { ...calmPolicy().strings, saturationRetrying: (n, total) => `Attente ${n} sur ${total}` },
+    });
+    expect(
+      planTranscript(inputs("connecting", { attempt: 2, totalAttempts: 4, secondsLeft: 9 }), policy).status?.copy,
+    ).toBe("Attente 2 sur 4");
+  });
+
   it("the default copy carries no em dash", () => {
+    expect(calmPolicy().strings.saturationRetrying(1, 4, 12)).not.toContain("—");
     expect(calmPolicy().strings.saturationRetrying(1, 4)).not.toContain("—");
     expect(calmPolicy().strings.errorPodSaturated).not.toContain("—");
   });

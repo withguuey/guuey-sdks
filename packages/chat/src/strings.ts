@@ -33,9 +33,11 @@ export interface ChatStrings {
    * because every concurrent-turn slot on the agent is taken (`POD_SATURATED`,
    * the saturation retry). `attempt` is the try that was refused (1-based) and
    * `totalAttempts` the whole budget. Replaces the connecting ladder for the
-   * wait, so the reader sees why nothing is happening yet.
+   * wait, so the reader sees why nothing is happening yet. guuey#2608:
+   * `secondsLeft` is the countdown to the next try when the renderer keeps
+   * one (absent, or 0 once that try is under way).
    */
-  saturationRetrying: (attempt: number, totalAttempts: number) => string;
+  saturationRetrying: (attempt: number, totalAttempts: number, secondsLeft?: number) => string;
   /** R1 aborted-partial marker + §4.2 aborted line. */
   stopped: string;
 
@@ -394,7 +396,10 @@ export const defaultChatStrings: ChatStrings = {
   thinking: "Thinking…",
   usingTool: (toolTitle) => `Using ${toolTitle}…`,
   preparingCard: "Preparing interactive card…",
-  saturationRetrying: (attempt, totalAttempts) => `Busy right now. Retrying (${attempt}/${totalAttempts})…`,
+  saturationRetrying: (attempt, totalAttempts, secondsLeft) =>
+    secondsLeft !== undefined && secondsLeft > 0
+      ? `Busy right now. Retrying in ${secondsLeft}s (${attempt}/${totalAttempts})…`
+      : `Busy right now. Retrying (${attempt}/${totalAttempts})…`,
   stopped: "Stopped.",
 
   errorAuth: "Sign in to continue.",

@@ -1004,7 +1004,7 @@ function deriveStatus(inputs: TranscriptInputs, policy: TranscriptPolicy): Statu
       // connecting ladder climb to "Still getting ready…" over the wait.
       const wait = inputs.saturationWait;
       if (wait !== undefined && wait !== null) {
-        const copy = s.saturationRetrying(wait.attempt, wait.totalAttempts);
+        const copy = s.saturationRetrying(wait.attempt, wait.totalAttempts, wait.secondsLeft);
         return { kind: "status", key: "status", state: "busy", copy, detail };
       }
       const state =
@@ -1435,6 +1435,10 @@ export function planTranscript(
         (refusal === null || refusal.family === "transient"),
       ...(refusal !== null && (refusal.specific || refusal.family !== "transient")
         ? { failureLine: refusal.copy }
+        : {}),
+      // guuey#2608: the id a Retry names so its re-send takes this row's place.
+      ...(sendState === "failed" && user.clientMessageId !== undefined
+        ? { clientMessageId: user.clientMessageId }
         : {}),
       directive,
       ...(tapLabels !== undefined ? { tapLabels } : {}),

@@ -1803,6 +1803,7 @@ exports[`corpus > 16. user-send-failure — R0 failed with retry; the message ne
   "authRequired": null,
   "items": [
     {
+      "clientMessageId": "cm-1",
       "directive": false,
       "expanded": true,
       "key": "u0",

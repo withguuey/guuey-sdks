@@ -322,6 +322,13 @@ export interface UserMessageItem extends BaseItem {
    */
   failureLine?: string;
   /**
+   * guuey#2608: the failed send's own id (its `clientMessageId`), present only
+   * on a `failed` row whose message carried one. A host's Retry names it as
+   * `useAgentInvoke`'s `send(…, { replaces })`, so the re-send takes this
+   * row's place instead of drawing beside it.
+   */
+  clientMessageId?: string;
+  /**
    * The turn is a forwarded view directive (guuey#422 — a `ui/message`
    * doorbell's `<ggui_directive>` carrier, relayed through the composer's
    * send gate). DISPLAY-ONLY: `text` stays wire-verbatim — the calm
@@ -719,6 +726,13 @@ export type DisplayItem =
 export interface SaturationWait {
   attempt: number;
   totalAttempts: number;
+  /**
+   * guuey#2608: whole seconds until the transport sends again, when the
+   * renderer counts the wait down (it ticks this from the reported `waitMs`,
+   * as it ticks `statusElapsedMs`). Absent, or 0 once the resend is under
+   * way: the line names no time.
+   */
+  secondsLeft?: number;
 }
 
 /** R12/§4 — the derived status line with its resolved copy. */

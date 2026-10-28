@@ -140,3 +140,15 @@ describe("guuey#2604: a refused send is one state", () => {
     expect(userItem(items).retry).toBe(false);
   });
 });
+
+describe("guuey#2608: a failed row names its own send", () => {
+  it("a failed row carries its clientMessageId, so a Retry can take its place", () => {
+    const { items } = planTranscript(inputs("POD_SATURATED", "failed"), calmPolicy());
+    expect(userItem(items).clientMessageId).toBe("c1");
+  });
+
+  it("a sending or sent row carries none", () => {
+    expect(userItem(planTranscript(inputs(null, "sending"), calmPolicy()).items).clientMessageId).toBeUndefined();
+    expect(userItem(planTranscript(inputs(null, "sent"), calmPolicy()).items).clientMessageId).toBeUndefined();
+  });
+});
