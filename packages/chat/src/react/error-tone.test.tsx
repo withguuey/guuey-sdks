@@ -2,8 +2,8 @@
 /**
  * guuey#2453 — the error item's face follows its planned tone. `retry` (an
  * app that did not wake in time: nothing is broken) draws the plain surface
- * with no error tint, and the in-place Retry is the only cue; `fault` (and an
- * item built without a tone) keeps the error tint.
+ * with no error tint, and the in-place Retry is the only cue; an item without
+ * a tone is a fault and keeps the error tint (the `failureTone` convention).
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -61,12 +61,20 @@ describe("DefaultError tone (guuey#2453)", () => {
     expect(screen.getByRole("button").textContent).toBe(defaultChatStrings.userRetry);
   });
 
-  it("a fault item, and an item built without a tone, wear the fault class", () => {
-    render(<DefaultError item={item("fault")} ctx={ctx()} />);
-    expect(toneClass()).toEqual(["guuey-chat-error-fault"]);
-    cleanup();
+  it("an item without a tone is a fault and wears the fault class", () => {
     render(<DefaultError item={item(undefined)} ctx={ctx()} />);
     expect(toneClass()).toEqual(["guuey-chat-error-fault"]);
+  });
+
+  it("the two retry Retry buttons share ONE accent rule", () => {
+    const blocks = css.match(/[^{}]+\{[^{}]*\}/g) ?? [];
+    const accent = blocks.filter((b) => /color:\s*var\(--guuey-chat-accent/.test(b) && /-retry\s/.test(b));
+    expect(accent).toHaveLength(1);
+    const selectors = (accent[0] ?? "").split("{")[0]!.split(",").map((s) => s.trim());
+    expect(selectors).toEqual([
+      ".guuey-chat-error-retry .guuey-chat-error-action",
+      ".guuey-chat-send-failed-retry .guuey-chat-retry",
+    ]);
   });
 
   it("the stylesheet draws the retry tone on the plain surface, with no error tint on the box or its Retry", () => {

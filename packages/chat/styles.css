@@ -777,15 +777,13 @@
   border-color: var(--guuey-chat-canvas-muted, var(--_guuey-chat-canvas-muted));
   background: var(--guuey-chat-surface, var(--_guuey-chat-surface));
 }
-.guuey-chat-error-retry .guuey-chat-error-action {
-  border-color: var(--guuey-chat-accent, var(--_guuey-chat-accent));
-  color: var(--guuey-chat-accent, var(--_guuey-chat-accent));
-}
 /* The refused bubble wears the same retry tone: its line in the plain text
    colour, its Retry without the error colour. */
 .guuey-chat-send-failed-retry {
   color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
 }
+/* Both retry faces' Retry: the accent, never the error colour. */
+.guuey-chat-error-retry .guuey-chat-error-action,
 .guuey-chat-send-failed-retry .guuey-chat-retry {
   border-color: var(--guuey-chat-accent, var(--_guuey-chat-accent));
   color: var(--guuey-chat-accent, var(--_guuey-chat-accent));

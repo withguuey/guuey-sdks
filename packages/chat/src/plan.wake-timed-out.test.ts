@@ -60,9 +60,9 @@ describe("guuey#2453: WAKE_TIMED_OUT", () => {
     expect(item.tone).toBe("retry");
   });
 
-  it("every other code, and a code-less error, keeps the fault tone", () => {
+  it("every other code, and a code-less error, is a fault: no tone at all (one convention with failureTone)", () => {
     for (const code of ["POD_SATURATED", "QUOTA_EXCEEDED", "UNAUTHORIZED", "STREAM_STALLED", "TIMEOUT", null]) {
-      expect(errorItem(inputsWithError("x", code)).tone, String(code)).toBe("fault");
+      expect("tone" in errorItem(inputsWithError("x", code)), String(code)).toBe(false);
     }
   });
 
@@ -77,7 +77,7 @@ describe("guuey#2453: WAKE_TIMED_OUT", () => {
     const item = errorItem(inputsWithError(RAW, null), widgetPolicy());
     expect(item.copy).toBe(RAW);
     expect(item.family).toBe("transient");
-    expect(item.tone).toBe("fault");
+    expect("tone" in item).toBe(false);
   });
 
   it("a host's own sentence and an explicit verbatim listing still win (explicit host intent)", () => {

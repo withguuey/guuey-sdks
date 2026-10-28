@@ -1246,10 +1246,11 @@ const RETRY_TONE_CODES: ReadonlySet<string> = new Set(["WAKE_TIMED_OUT"]);
 
 /**
  * The one tone rule, read by both faces of a failure: the error item's `tone`
- * and a refused bubble's `failureTone`.
+ * and a refused bubble's `failureTone`. `undefined` is a fault: both fields are
+ * set only for the retry tone.
  */
-function toneOf(code: string | null): "fault" | "retry" {
-  return code !== null && RETRY_TONE_CODES.has(code) ? "retry" : "fault";
+function toneOf(code: string | null): "retry" | undefined {
+  return code !== null && RETRY_TONE_CODES.has(code) ? "retry" : undefined;
 }
 
 /**
@@ -1271,8 +1272,8 @@ function codedErrorCopy(
   copy: string;
   /** The copy is this code's own sentence (host, verbatim or built-in), not the family's fallback. */
   specific: boolean;
-  /** The failure's face ({@link toneOf}): the error item's `tone`, a refused bubble's `failureTone`. */
-  tone: "fault" | "retry";
+  /** The failure's face ({@link toneOf}): the error item's `tone`, a refused bubble's `failureTone`; `undefined` is a fault. */
+  tone: "retry" | undefined;
 } {
   const family = (code !== null ? ERROR_FAMILIES[code] : undefined) ?? "transient";
   const familyCopy =
@@ -1704,7 +1705,7 @@ export function planTranscript(
         ? { failureLine: refusal.copy }
         : {}),
       // guuey#2453: the refused bubble wears the error item's tone rule.
-      ...(refusal !== null && refusal.tone === "retry" ? { failureTone: refusal.tone } : {}),
+      ...(refusal !== null && refusal.tone !== undefined ? { failureTone: refusal.tone } : {}),
       // guuey#2608: the id a Retry names so its re-send takes this row's place.
       ...(sendState === "failed" && user.clientMessageId !== undefined
         ? { clientMessageId: user.clientMessageId }
@@ -1913,7 +1914,7 @@ export function planTranscript(
       key: "error",
       expanded: true,
       family,
-      tone,
+      ...(tone !== undefined ? { tone } : {}),
       code,
       copy,
       message: inputs.error.message,

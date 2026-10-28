@@ -927,7 +927,7 @@ export function DefaultNotice({ item, ctx }: ItemProps<NoticeItem>): ReactNode {
 
 export function DefaultError({ item, ctx }: ItemProps<ErrorItem>): ReactNode {
   return (
-    <div className={`guuey-chat-error guuey-chat-error-${item.family} guuey-chat-error-${item.tone ?? "fault"}`} role="alert">
+    <div className={`guuey-chat-error guuey-chat-error-${item.family} guuey-chat-error-${item.tone === "retry" ? "retry" : "fault"}`} role="alert">
       <p>{item.copy}</p>
       {ctx.onErrorAction !== undefined && (item.family === "transient" || item.family === "auth") ? (
         <button type="button" className="guuey-chat-error-action" onClick={() => ctx.onErrorAction?.(item)}>

@@ -2,7 +2,7 @@
 /**
  * guuey#2453 — the native error item's face follows its planned tone: `retry`
  * draws the plain surface with a neutral rule (no error tint) and the in-place
- * Retry as the only cue; `fault`, and an item built without a tone, keep the
+ * Retry as the only cue; an item without a tone is a fault and keeps the
  * error rule.
  */
 import { cleanup, render, screen } from "@testing-library/react";
@@ -87,12 +87,9 @@ describe("NativeError tone (guuey#2453)", () => {
     expect(screen.getByRole("button").textContent).toBe(defaultChatStrings.userRetry);
   });
 
-  it("fault, and an item built without a tone, keep the error rule", () => {
-    for (const tone of ["fault", undefined] as const) {
-      render(<NativeError item={item(tone)} ctx={ctx} />);
-      expect(screen.getAllByTestId("box")[0]!.getAttribute("data-rule")).toBe(tokens.palette.error);
-      cleanup();
-    }
+  it("an item without a tone is a fault and keeps the error rule", () => {
+    render(<NativeError item={item(undefined)} ctx={ctx} />);
+    expect(screen.getAllByTestId("box")[0]!.getAttribute("data-rule")).toBe(tokens.palette.error);
   });
 });
 

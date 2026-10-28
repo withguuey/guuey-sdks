@@ -343,11 +343,11 @@ export interface UserMessageItem extends BaseItem {
    */
   failureLine?: string;
   /**
-   * The failed line's face (guuey#2453), the same rule as the error item's
-   * `tone`: `retry` draws the plain text colour with the in-place Retry as its
-   * only cue: nothing is broken, it was only slow (an app that did not wake in
-   * time). Present only when the refusal's code wears that tone; absent draws
-   * as before (the error colour), so an item built without it is unchanged.
+   * The failed line's face (guuey#2453), the same rule and convention as the
+   * error item's `tone`: `retry` draws the plain text colour with the in-place
+   * Retry as its only cue: nothing is broken, it was only slow (an app that
+   * did not wake in time). Present only when the refusal's code wears that
+   * tone; absent is a fault, drawn in the error colour.
    */
   failureTone?: "retry";
   /**
@@ -704,13 +704,13 @@ export interface ErrorItem extends BaseItem {
   message: string;
   family: "auth" | "quota" | "transient" | "invalid";
   /**
-   * The item's face (guuey#2453). `fault` draws the error tint; `retry` draws
-   * the plain surface with the in-place Retry as its only cue: nothing is
-   * broken, it was only slow (an app that did not wake in time). The planner
-   * always sets it from the code; absent reads as `fault`, so an item built
-   * without it draws as before.
+   * The item's face (guuey#2453), the same convention as a refused bubble's
+   * `failureTone`: `retry` draws the plain surface with the in-place Retry as
+   * its only cue: nothing is broken, it was only slow (an app that did not
+   * wake in time). Absent is a fault, drawn with the error tint. The planner
+   * sets it only for a code that wears the retry tone.
    */
-  tone?: "fault" | "retry";
+  tone?: "retry";
   code: string | null;
   copy: string;
   /** The wire message verbatim, populated only under the debug policy. */
