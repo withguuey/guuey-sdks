@@ -283,13 +283,12 @@ describe.skipIf(!haveWire)('CLI wire mirrors — sync guards against @guuey-priv
   it('the provider-key mirrors declare exactly the wire fields (guuey#2412)', () => {
     // `guuey byok status` renders every one of these; `set` and `remove` print from their results. The
     // nested shapes are named interfaces on both sides, because the member parser reads top-level
-    // members only. A renamed field is a blank line or a lost "In use" stamp, silently.
+    // members only. A renamed field is a blank line, silently.
     const cli = read(CLI_BYOK);
     const wire = read(WIRE_PROVIDER_KEYS);
     for (const name of [
       'StoredKeyFace',
       'ConfiguredProviderKey',
-      'ProviderKeyInUse',
       'AppProviderKeyEntry',
       'PersonalAppOwner',
       'WorkspaceAppOwner',

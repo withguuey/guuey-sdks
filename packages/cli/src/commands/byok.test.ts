@@ -417,7 +417,6 @@ function appWire(over: Partial<AppProviderKeysWire> = {}): AppProviderKeysWire {
         configured: { source: 'managed', keyLast4: null },
         app: null,
         workspace: null,
-        inUse: { source: 'managed', keyLast4: null, build: 7 },
       },
       { provider: 'openrouter', configured: { source: 'managed', keyLast4: null }, app: null, workspace: null },
     ],
@@ -444,22 +443,18 @@ describe('guuey byok status — an app', () => {
       '    Configured:    app key ••••abcd',
       '    App key:       ••••abcd · active · set 2026-10-20T09:00:00.000Z',
       '    Workspace key: ••••wxyz · active · set 2026-10-20T09:00:00.000Z',
-      '    In use:        unknown until the next deploy records it',
       '  openai',
       '    Configured:    workspace key (set before last-4 tracking. Replace to record it.)',
       '    App key:       none',
       '    Workspace key: set before last-4 tracking. Replace to record it. · active · set unknown',
-      '    In use:        unknown until the next deploy records it',
       '  google',
       "    Configured:    managed (the platform's key)",
       '    App key:       none',
       '    Workspace key: none',
-      "    In use:        managed (the platform's key), build 7",
       '  openrouter',
       "    Configured:    managed (the platform's key)",
       '    App key:       none',
       '    Workspace key: none',
-      '    In use:        unknown until the next deploy records it',
       '',
       'bedrock (app): no runtime reads this key. Remove it: guuey byok remove --provider bedrock --app-id app1',
       'bedrock (workspace): no runtime reads this key. Remove it: guuey byok remove --provider bedrock --workspace acme',
@@ -490,34 +485,9 @@ describe('guuey byok status — an app', () => {
       '  anthropic',
       "    Configured:    managed (the platform's key)",
       '    App key:       none',
-      '    In use:        unknown until the next deploy records it',
       '',
       'Keys apply on the next deploy.',
     ]);
-  });
-
-  it('an in-use stamp with a fallback reason prints it', async () => {
-    fetchSpy.mockResolvedValueOnce(
-      json(
-        200,
-        appWire({
-          providers: [
-            {
-              provider: 'anthropic',
-              configured: { source: 'app', keyLast4: 'abcd' },
-              app: face('abcd'),
-              workspace: null,
-              inUse: { source: 'managed', keyLast4: null, build: 12, fallbackReason: 'decrypt failed' },
-            },
-          ],
-          unsupported: [],
-        }),
-      ),
-    );
-
-    await byokStatus({});
-
-    expect(stdoutLines()).toContain("    In use:        managed (the platform's key), build 12 (decrypt failed)");
   });
 
   it('plainSlotEnvNames: each name prints under its heading with its env unset line', async () => {

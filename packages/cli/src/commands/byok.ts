@@ -68,14 +68,6 @@ export interface ConfiguredProviderKey {
   keyLast4: string | null;
 }
 
-/** What the running build uses (the deployment's own stamp). Absent until the server records it. */
-export interface ProviderKeyInUse {
-  source: KeySource | 'unknown';
-  keyLast4: string | null;
-  build: number;
-  fallbackReason?: string;
-}
-
 /** One provider on an app. */
 export interface AppProviderKeyEntry {
   provider: ByokProviderId;
@@ -83,7 +75,6 @@ export interface AppProviderKeyEntry {
   app: StoredKeyFace | null;
   /** Always `null` for a personal app. */
   workspace: StoredKeyFace | null;
-  inUse?: ProviderKeyInUse;
 }
 
 /** A personal app. */
@@ -330,18 +321,11 @@ function storedCell(face: StoredKeyFace | null): string {
   return `${key} · ${face.status} · set ${face.setAt ?? 'unknown'}`;
 }
 
-/** A source and its last 4, as the Configured / In use cells say it. */
+/** A source and its last 4, as the Configured cell says it. */
 function sourceCell(source: KeySource, keyLast4: string | null): string {
   if (source === 'managed') return MANAGED;
   const label = source === 'app' ? 'app key' : 'workspace key';
   return keyLast4 === null ? `${label} (${NO_LAST4})` : `${label} ••••${keyLast4}`;
-}
-
-function inUseCell(inUse: ProviderKeyInUse | undefined): string {
-  if (inUse === undefined) return 'unknown until the next deploy records it';
-  const head = inUse.source === 'unknown' ? 'unknown' : sourceCell(inUse.source, inUse.keyLast4);
-  const reason = inUse.fallbackReason === undefined ? '' : ` (${inUse.fallbackReason})`;
-  return `${head}, build ${inUse.build}${reason}`;
 }
 
 /** The exact command that removes an unsupported row. */
@@ -358,7 +342,6 @@ function printAppStatus(wire: AppProviderKeysWire): void {
     console.log(`    Configured:    ${sourceCell(entry.configured.source, entry.configured.keyLast4)}`);
     console.log(`    App key:       ${storedCell(entry.app)}`);
     if (wire.owner.kind === 'workspace') console.log(`    Workspace key: ${storedCell(entry.workspace)}`);
-    console.log(`    In use:        ${inUseCell(entry.inUse)}`);
   }
   if (wire.unsupported.length > 0) {
     console.log('');
