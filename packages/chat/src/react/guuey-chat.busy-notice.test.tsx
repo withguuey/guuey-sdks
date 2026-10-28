@@ -110,8 +110,15 @@ describe("the busy notice while the saturation retry waits", () => {
       const invoke = stubInvoke(["saturated-12s"]);
       send();
       await waitFor(() => expect(invoke.calls()).toBe(1));
+      // The countdown is SEEN (aria-hidden); the live region SPEAKS the
+      // attempt line, which does not change on each tick.
       await waitFor(() =>
-        expect(screen.getByRole("status").textContent).toMatch(/^Busy right now\. Retrying in 1[12]s \(1\/4\)…$/),
+        expect(screen.getByRole("status").querySelector('[aria-hidden="true"]')?.textContent).toMatch(
+          /^Busy right now\. Retrying in 1[12]s \(1\/4\)…$/,
+        ),
+      );
+      expect(screen.getByRole("status").querySelector(".guuey-chat-visually-hidden")?.textContent).toBe(
+        "Busy right now. Retrying (1/4)…",
       );
       // End the turn here: Stop aborts the 12 s wait, so its retry never
       // fires a fetch into a later test's stub. Past the wait, still one call.

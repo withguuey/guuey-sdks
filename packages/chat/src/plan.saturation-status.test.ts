@@ -93,6 +93,29 @@ describe("the busy status line (guuey#2604)", () => {
     ).toBe("Attente 2 sur 4");
   });
 
+  it("guuey#2608: a ticking countdown carries the attempt-only line to announce", () => {
+    const status = planTranscript(
+      inputs("connecting", { attempt: 1, totalAttempts: 4, secondsLeft: 12 }),
+      calmPolicy(),
+    ).status;
+    expect(status?.copy).toBe("Busy right now. Retrying in 12s (1/4)…");
+    expect(status?.announce).toBe("Busy right now. Retrying (1/4)…");
+    const nextTick = planTranscript(
+      inputs("connecting", { attempt: 1, totalAttempts: 4, secondsLeft: 11 }),
+      calmPolicy(),
+    ).status;
+    expect(nextTick?.announce).toBe(status?.announce);
+  });
+
+  it("guuey#2608: with no countdown the line announces itself (no announce field)", () => {
+    expect(planTranscript(inputs("connecting", { attempt: 2, totalAttempts: 4 }), calmPolicy()).status).not.toHaveProperty(
+      "announce",
+    );
+    expect(
+      planTranscript(inputs("connecting", { attempt: 2, totalAttempts: 4, secondsLeft: 0 }), calmPolicy()).status,
+    ).not.toHaveProperty("announce");
+  });
+
   it("the default copy carries no em dash", () => {
     expect(calmPolicy().strings.saturationRetrying(1, 4, 12)).not.toContain("—");
     expect(calmPolicy().strings.saturationRetrying(1, 4)).not.toContain("—");

@@ -1005,7 +1005,17 @@ function deriveStatus(inputs: TranscriptInputs, policy: TranscriptPolicy): Statu
       const wait = inputs.saturationWait;
       if (wait !== undefined && wait !== null) {
         const copy = s.saturationRetrying(wait.attempt, wait.totalAttempts, wait.secondsLeft);
-        return { kind: "status", key: "status", state: "busy", copy, detail };
+        // guuey#2608: the countdown changes the visible words every second; the
+        // live region announces the attempt only (the line without it).
+        const announce = s.saturationRetrying(wait.attempt, wait.totalAttempts);
+        return {
+          kind: "status",
+          key: "status",
+          state: "busy",
+          copy,
+          ...(announce !== copy ? { announce } : {}),
+          detail,
+        };
       }
       const state =
         inputs.statusElapsedMs >= policy.status.longStartMs

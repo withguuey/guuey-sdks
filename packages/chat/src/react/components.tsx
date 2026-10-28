@@ -1012,7 +1012,16 @@ export function DefaultUnknown({ item, ctx }: ItemProps<UnknownItem>): ReactNode
 export function DefaultStatus({ item }: ItemProps<StatusLineItem>): ReactNode {
   return (
     <p className={`guuey-chat-status guuey-chat-status-${item.state} guuey-chat-pulse`} role="status">
-      {item.copy}
+      {item.announce !== undefined ? (
+        // guuey#2608: the ticking words are seen, not announced; the live
+        // region reads the stable line, so it speaks once per attempt.
+        <>
+          <span aria-hidden="true">{item.copy}</span>
+          <span className="guuey-chat-visually-hidden">{item.announce}</span>
+        </>
+      ) : (
+        item.copy
+      )}
       {item.detail !== null ? <span className="guuey-chat-status-detail"> · {item.detail}</span> : null}
     </p>
   );

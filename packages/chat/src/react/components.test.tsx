@@ -254,6 +254,26 @@ describe("status + error live semantics", () => {
     expect(screen.getByRole("status").textContent).toBe("Thinking…");
   });
 
+  it("guuey#2608: a ticking countdown is seen, not announced; the live region holds the attempt line", () => {
+    const item = (secondsLeft: number): StatusLineItem => ({
+      kind: "status",
+      key: "status",
+      state: "busy",
+      copy: `Busy right now. Retrying in ${secondsLeft}s (1/3)…`,
+      announce: "Busy right now. Retrying (1/3)…",
+      detail: null,
+    });
+    const { rerender } = render(<DefaultStatus item={item(12)} ctx={ctx()} />);
+    const region = screen.getByRole("status");
+    const seen = region.querySelector('[aria-hidden="true"]');
+    const spoken = region.querySelector(".guuey-chat-visually-hidden");
+    expect(seen?.textContent).toBe("Busy right now. Retrying in 12s (1/3)…");
+    expect(spoken?.textContent).toBe("Busy right now. Retrying (1/3)…");
+    rerender(<DefaultStatus item={item(11)} ctx={ctx()} />);
+    expect(region.querySelector('[aria-hidden="true"]')?.textContent).toBe("Busy right now. Retrying in 11s (1/3)…");
+    expect(region.querySelector(".guuey-chat-visually-hidden")?.textContent).toBe("Busy right now. Retrying (1/3)…");
+  });
+
   it("errors are alerts with family copy; verbatim only when populated", () => {
     const item: ErrorItem = {
       kind: "error",

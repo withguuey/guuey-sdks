@@ -20,15 +20,22 @@ interface MockProps {
   style?: MockStyle;
   nestedScrollEnabled?: boolean;
   onPress?: () => void;
+  accessibilityLabel?: string;
 }
 
 vi.mock("react-native", () => {
   const passthrough =
     (tag: string) =>
-    ({ children, style }: MockProps) =>
+    ({ children, style, accessibilityLabel }: MockProps) =>
       createElement(
         tag,
-        { "data-max-height": style?.maxHeight, "data-overflow": style?.overflow, "data-flex-shrink": style?.flexShrink, "data-align-items": style?.alignItems },
+        {
+          "data-max-height": style?.maxHeight,
+          "data-overflow": style?.overflow,
+          "data-flex-shrink": style?.flexShrink,
+          "data-align-items": style?.alignItems,
+          "data-a11y-label": accessibilityLabel,
+        },
         children,
       );
   return {
@@ -51,12 +58,12 @@ vi.mock("react-native", () => {
   };
 });
 
-const { NativeDataResult, NativeUserMessage } = await import("./components.js");
+const { NativeDataResult, NativeStatus, NativeUserMessage } = await import("./components.js");
 const { resolveNativeTheme } = await import("./theme-native.js");
 const { defaultChatStrings } = await import("../strings.js");
 const { DEFAULT_CHAT_THEME } = await import("../theme.js");
 
-import type { DataResultItem, UserMessageItem } from "../types.js";
+import type { DataResultItem, StatusLineItem, UserMessageItem } from "../types.js";
 import type { NativeTranscriptItemContext } from "./components.js";
 
 afterEach(cleanup);
@@ -194,5 +201,27 @@ describe("NativeUserMessage, a turn sent without words (guuey#2549)", () => {
       }),
     );
     expect(screen.getByText(defaultChatStrings.errorInputKindNotDeclared)).toBeTruthy();
+  });
+});
+
+describe("NativeStatus (guuey#2608)", () => {
+  it("a ticking countdown is read once per attempt: the label is the attempt line", () => {
+    const item: StatusLineItem = {
+      kind: "status",
+      key: "status",
+      state: "busy",
+      copy: "Busy right now. Retrying in 12s (1/3)…",
+      announce: "Busy right now. Retrying (1/3)…",
+      detail: null,
+    };
+    const { container } = render(createElement(NativeStatus, { item, ctx }));
+    expect(container.querySelector('[data-a11y-label="Busy right now. Retrying (1/3)…"]')).toBeTruthy();
+    expect(screen.getByText("Busy right now. Retrying in 12s (1/3)…")).toBeTruthy();
+  });
+
+  it("a line with nothing separate to announce carries no label", () => {
+    const item: StatusLineItem = { kind: "status", key: "status", state: "thinking", copy: "Thinking…", detail: null };
+    const { container } = render(createElement(NativeStatus, { item, ctx }));
+    expect(container.querySelector("[data-a11y-label]")).toBeNull();
   });
 });

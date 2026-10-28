@@ -977,7 +977,13 @@ export function NativeUnknown({ item, ctx }: ItemProps<UnknownItem>): ReactNode 
 export function NativeStatus({ item, ctx }: ItemProps<StatusLineItem>): ReactNode {
   const { tokens } = ctx;
   return (
-    <View accessibilityLiveRegion="polite" accessible style={{ paddingHorizontal: tokens.pad, paddingVertical: 2 }}>
+    <View
+      accessibilityLiveRegion="polite"
+      accessible
+      // guuey#2608: a ticking countdown is read once per attempt (the stable line).
+      {...(item.announce !== undefined ? { accessibilityLabel: item.announce } : {})}
+      style={{ paddingHorizontal: tokens.pad, paddingVertical: 2 }}
+    >
       <MutedText ctx={ctx}>
         {item.copy}
         {item.detail !== null ? ` · ${item.detail}` : ""}

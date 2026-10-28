@@ -748,6 +748,13 @@ export interface StatusLineItem {
     | "using-tool"
     | "aborted";
   copy: string;
+  /**
+   * guuey#2608: the words a live region announces, present only when they
+   * differ from `copy`. The busy line's countdown ticks every second in
+   * `copy`; `announce` holds the same line without it, so a screen reader
+   * hears each attempt once, never each tick.
+   */
+  announce?: string;
   /** Literal state + elapsed, populated only under the debug policy. */
   detail: string | null;
 }
