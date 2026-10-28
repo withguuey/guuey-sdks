@@ -353,7 +353,11 @@ async function walkHistory(
     if (res.status === 403 || res.status === 404) return "gone";
     if (res.status === 401) throw new HistoryUnauthorizedError();
     if (!res.ok) throw new Error(`history load failed: ${res.status}`);
-    const body: unknown = await res.json();
+    // Parsed HERE, from the body text: a fetch from another JS realm (Node's
+    // fetch under a jsdom suite, a vm or SSR host) builds `res.json()` on that
+    // realm's Object.prototype, and the card snapshot's plain-object check
+    // would drop every card without a word.
+    const body: unknown = JSON.parse(await res.text());
     const read = readThreadMessagesPage(body);
     if (read === null) throw new Error("history load failed: the read plane returned a malformed page");
     if (page === 0) newestFirst = newestFirst && read.newestFirst;

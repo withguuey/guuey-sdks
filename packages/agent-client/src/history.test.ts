@@ -1,3 +1,4 @@
+import { runInNewContext } from "node:vm";
 import { describe, it, expect, vi } from "vitest";
 import {
   fetchThreadHistory,
@@ -240,6 +241,25 @@ describe("fetchThreadHistory", () => {
       messages: [{ role: "user", text: "hi", seq: 1 }],
       cards: [{ seq: 2, at: "2026-07-15T00:00:02Z", cardSnapshot: CARD }],
     });
+  });
+
+  it("a page parsed in another JS realm keeps its cards: the reader parses the body text itself", async () => {
+    const body = JSON.stringify({
+      rows: [row({ seq: 2, at: "2026-07-15T00:00:02Z", kind: "card", authorRole: "agent", text: null, cardSnapshot: CARD })],
+      nextToken: null,
+    });
+    // A fetch from another realm (Node's fetch under a jsdom suite, a vm or SSR
+    // host) builds the parsed page on that realm's Object.prototype, which the
+    // plain-object check of a card snapshot does not accept.
+    const res = new Response(body, { status: 200 });
+    Object.defineProperty(res, "json", { value: async () => runInNewContext(`(${body})`) });
+    const result = await fetchThreadHistory({
+      baseUrl: "https://api.example.com/v1",
+      threadId: "t_1",
+      includeCards: true,
+      fetchImpl: mockFetch([res]),
+    });
+    expect(result).toEqual({ messages: [], cards: [{ seq: 2, at: "2026-07-15T00:00:02Z", cardSnapshot: CARD }] });
   });
 
   it("passes the caller's requestInit (identity headers) to fetch", async () => {
