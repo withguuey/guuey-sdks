@@ -142,6 +142,16 @@ export interface SendOptions {
    * says what the agent last offered, as a hint for the UI.
    */
   inputKind?: InputKind;
+  /**
+   * The `clientMessageId` of a failed send this one sends again (a Retry,
+   * guuey#2608). When that row is still marked `"failed"` in
+   * {@link UseAgentInvokeReturn.sendStates}, it leaves the transcript (with
+   * its empty reply placeholder) and its ledger entry as this send starts, so
+   * the retried turn is drawn once, not beside its old "Couldn't send" row.
+   * Local only: never sent, and this send still takes its own id. Ignored for
+   * a row that is not marked failed (it reached the agent, so it stays).
+   */
+  replaces?: string;
 }
 
 /**

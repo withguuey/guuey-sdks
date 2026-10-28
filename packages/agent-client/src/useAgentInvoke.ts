@@ -236,6 +236,19 @@ export const STALL_RECOVERY_DEFAULTS = {
 } as const;
 
 /** Resolve after `ms`, or at once when `signal` aborts (the wait never outlives the turn). */
+/**
+ * The rows without a failed send's own row (guuey#2608): the user row keyed
+ * `clientMessageId` and the empty reply placeholder pushed right after it. A
+ * failed send produced no agent turn, so nothing else belongs to it.
+ */
+function withoutFailedRow(rows: readonly AgentMessage[], clientMessageId: string): AgentMessage[] {
+  const at = rows.findIndex((m) => m.role === "user" && m.clientMessageId === clientMessageId);
+  if (at < 0) return rows.slice();
+  const next = rows[at + 1];
+  const span = next !== undefined && next.role === "assistant" && next.text === "" ? 2 : 1;
+  return [...rows.slice(0, at), ...rows.slice(at + span)];
+}
+
 function delayUnlessAborted(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise<void>((resolve) => {
     if (signal.aborted) {
@@ -410,6 +423,10 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
   const [aborted, setAborted] = useState(false);
   const [adopted, setAdopted] = useState(false);
   const [sendStates, setSendStates] = useState<Readonly<Record<string, "sending" | "failed">>>({});
+  // guuey#2608: `send` reads the ledger at call time (a Retry names the failed
+  // row it replaces) without depending on it — the render-time mirror idiom.
+  const sendStatesRef = useRef(sendStates);
+  sendStatesRef.current = sendStates;
   // guuey#2549: the input kinds the latest session frame offered (null before
   // any admitted turn of this app). A hint only; the runtime judges each turn.
   const [acceptedInputKinds, setAcceptedInputKindsState] = useState<readonly InputKind[] | null>(null);
@@ -711,7 +728,27 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         ...(tapLabels !== undefined ? { tapLabels } : {}),
         ...(inputKind !== undefined ? { inputKind } : {}),
       };
-      setMessages((prev) => [...prev, ownRow, { role: "assistant", text: "" }]);
+      // guuey#2608: a Retry of a send that never reached the agent takes its
+      // row's place. The failed row (and its empty reply placeholder) leaves
+      // with its ledger entry, so the turn is drawn once, not beside its old
+      // "Couldn't send" row. A row that is not marked failed reached the
+      // agent and stays.
+      const replaced = sendOpts?.replaces;
+      const replacing =
+        replaced !== undefined && replaced !== clientMessageId && sendStatesRef.current[replaced] === "failed";
+      if (replacing) {
+        setSendStates((prev) => {
+          if (!(replaced in prev)) return prev;
+          const next: Record<string, "sending" | "failed"> = { ...prev };
+          delete next[replaced];
+          return next;
+        });
+      }
+      setMessages((prev) => [
+        ...(replacing ? withoutFailedRow(prev, replaced) : prev),
+        ownRow,
+        { role: "assistant", text: "" },
+      ]);
       /**
        * The rows this send's history decisions compare against: the last
        * render's, with this send's own row even when no render has drawn it
