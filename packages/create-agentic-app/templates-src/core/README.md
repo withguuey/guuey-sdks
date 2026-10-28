@@ -149,11 +149,13 @@ nothing is duplicated.
 ## Filesystem + memory
 
 Every deployed invoke gets three bound directories — `$GUUEY_HOME_DIR`
-(durable, per-user), `$GUUEY_APP_DIR` (read-only, shared), and cwd (session
-scratch) — plain `node:fs`, no wrapper API required. Signed-in users get
-durable cross-session memory for free (a platform-owned prompt tells the
-model to read/write `$GUUEY_HOME_DIR/memories/MEMORY.md`); guests never get
-durable storage, by design. **This recall is `claude-agent-sdk`-only today**
+(per-user, durable where the environment enables it, otherwise temporary),
+`$GUUEY_APP_DIR` (read-only, shared), and cwd (session scratch) —
+plain `node:fs`, no wrapper API required. Where the durable filesystem is
+enabled, signed-in users get durable cross-session memory for free (a
+platform-owned prompt tells the model to read/write
+`$GUUEY_HOME_DIR/memories/MEMORY.md`); guests never get durable storage, by
+design. **This recall is `claude-agent-sdk`-only today**
 — openai-agents-sdk and google-adk agents get the three bound directories
 but not the automatic memory-file recall; all-framework support arrives
 with guuey's own memory MCP (a platform tool every framework can call over
