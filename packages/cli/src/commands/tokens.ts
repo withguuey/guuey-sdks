@@ -4,21 +4,24 @@
  *
  * Usage:
  *   guuey tokens create --label "ggui CI"   # Mint; prints the secret ONCE
- *   guuey tokens list                       # Prefix + label + lifecycle, never the secret
+ *   guuey tokens create --label "agent server" --scope threads-agent
+ *   guuey tokens list                       # Prefix + label + scope + lifecycle, never the secret
  *   guuey tokens revoke <tokenId>           # Stamp revokedAt (idempotent)
  *
- * A service token (`guuey_svc_*`) is the durable headless-CI credential
- * for agents-as-code: bound to exactly ONE app, honored only on that
- * app's reconcile route + deployment reads, acting on behalf of the
- * owner who minted it. It never expires — revoke is the kill switch —
- * and unlike a personal PAT it cannot be clobbered by a laptop login,
- * carries no personal authority, and survives `guuey login` churn.
+ * A service token is bound to exactly ONE app and acts on behalf of the
+ * owner who minted it. It never expires: revoke is the kill switch. Each
+ * scope has its own prefix and reaches exactly one door:
  *
- * CI usage: store the printed secret as a CI secret and pass it per
- * invocation via `GUUEY_API_KEY` (honored by every CLI command since
- * guuey#182) or as the raw `Authorization: Bearer` on direct curl calls.
+ * - `deploy` (`guuey_svc_*`, the default): the durable headless-CI
+ *   credential for agents-as-code, honored only on that app's reconcile
+ *   route and deployment reads. Pass it per invocation via `GUUEY_API_KEY`
+ *   (honored by every CLI command since guuey#182) or as the raw
+ *   `Authorization: Bearer` on direct curl calls.
+ * - `threads-agent` (`guuey_agt_*`, guuey#3006): the app's agent server
+ *   writing to the hosted thread store as the agent. Set it as
+ *   `GUUEY_THREADS_AGENT_TOKEN` in the agent server's environment.
  *
- * Mint/list/revoke themselves are app-OWNER operations — they require
+ * Mint/list/revoke themselves are app-OWNER operations: they require
  * your personal login (or PAT), never a service token.
  */
 
@@ -33,14 +36,38 @@ import { cliApiAuthHeaders } from '../cli-api-headers';
  * it keeps hand-written copies pinned field-for-field by the sync guard in
  * `tokens.test.ts` (widget-keys/domains precedent).
  */
+/** The scopes of the service-token family, in the wire's order (`ServiceTokenScope`). */
+export const SERVICE_TOKEN_SCOPES = ['deploy', 'threads-agent'] as const;
+export type ServiceTokenScope = (typeof SERVICE_TOKEN_SCOPES)[number];
+
+/**
+ * The bearer prefix each scope's secret starts with. Pinned against the
+ * wire's `SERVICE_TOKEN_PREFIX_BY_SCOPE` by the sync guard in `tokens.test.ts`.
+ */
+export const SERVICE_TOKEN_PREFIX_BY_SCOPE: { readonly [S in ServiceTokenScope]: string } = {
+  deploy: 'guuey_svc_',
+  'threads-agent': 'guuey_agt_',
+};
+
+function isServiceTokenScope(value: string): value is ServiceTokenScope {
+  return (SERVICE_TOKEN_SCOPES as readonly string[]).includes(value);
+}
+
+/** `POST /v1/apps/:appId/service-tokens` request body. */
+export interface ServiceTokenCreateBody {
+  label: string;
+  /** Absent = deploy. A server that predates the field ignores it and mints deploy. */
+  scope?: ServiceTokenScope;
+}
+
 export interface ServiceTokenItem {
   id: string;
   appId: string;
-  /** 14-char display tail (`guuey_svc_xxxx`) — never enough to authenticate. */
+  /** 14-char display tail (`guuey_svc_xxxx` / `guuey_agt_xxxx`), never enough to authenticate. */
   tokenPrefix: string;
   label: string;
   /** The token's scope; a server that predates the field omits it (absent = deploy). */
-  scope?: string;
+  scope?: ServiceTokenScope;
   createdAt: string;
   lastUsedAt?: string;
   revokedAt?: string;
@@ -120,35 +147,77 @@ async function handleApiError(res: Response): Promise<never> {
   process.exit(1);
 }
 
+const CREATE_USAGE =
+  'Usage: guuey tokens create --label "<what uses this token>" [--scope deploy|threads-agent]';
+
 export async function tokensCreate(
   flags?: Record<string, string | true>,
 ): Promise<void> {
   const labelFlag = flags?.['label'];
   const label = typeof labelFlag === 'string' ? labelFlag.trim() : '';
   if (!label) {
-    out.error('Usage: guuey tokens create --label "<what uses this token>"');
+    out.error(CREATE_USAGE);
     process.exit(1);
   }
 
+  const scopeFlag = flags?.['scope'];
+  if (scopeFlag !== undefined && (typeof scopeFlag !== 'string' || !isServiceTokenScope(scopeFlag))) {
+    out.error(`--scope must be one of: ${SERVICE_TOKEN_SCOPES.join(', ')}. ${CREATE_USAGE}`);
+    process.exit(1);
+  }
+  const requested: ServiceTokenScope = scopeFlag ?? 'deploy';
+
   const { pat, baseUrl, appId } = requestContext(flags);
 
-  const res = await apiRequest(pat, baseUrl, 'POST', `/apps/${appId}/service-tokens`, { label });
+  // The flag is sent only when given, so a plain create stays the body every
+  // server has always accepted.
+  const body: ServiceTokenCreateBody = scopeFlag === undefined ? { label } : { label, scope: scopeFlag };
+  const res = await apiRequest(pat, baseUrl, 'POST', `/apps/${appId}/service-tokens`, body);
   if (!res.ok) await handleApiError(res);
   const data = (await res.json()) as ServiceTokenCreateResponse;
 
+  // A server that predates scopes ignores the field and mints a deploy token,
+  // so success is reported only on the server's own word: the echoed scope
+  // (absent = deploy) and the secret's prefix must both match what was asked.
+  // Otherwise the secret is withheld and the minted token named for revoke.
+  const minted = data.item.scope ?? 'deploy';
+  if (minted !== requested || !data.token.startsWith(SERVICE_TOKEN_PREFIX_BY_SCOPE[requested])) {
+    out.error(
+      `Asked for a ${requested} token, but the server minted ${data.item.tokenPrefix}… with scope ${minted}. ` +
+        'This server does not support that scope, so the token was not shown. Revoke it with:',
+    );
+    console.error(`    guuey tokens revoke ${data.item.id}${appFlagSuffix(flags)}`);
+    process.exit(1);
+  }
+
   console.log('');
-  out.success(`Service token minted for app ${appId} (${data.item.label}).`);
+  out.success(`Service token minted for app ${appId} (${data.item.label}, scope ${requested}).`);
   console.log('');
-  console.log('  This secret is shown ONCE. Store it as a CI secret now:');
+  if (requested === 'threads-agent') {
+    console.log('  This secret is shown ONCE. Set it in your agent server\'s environment now:');
+    console.log('');
+    console.log(`    GUUEY_THREADS_AGENT_TOKEN=${data.token}`);
+    console.log('');
+    console.log('  It lets this app\'s agent server write to the hosted thread store as');
+    console.log('  the agent, and nothing else. It never expires. Revoke it with:');
+  } else {
+    console.log('  This secret is shown ONCE. Store it as a CI secret now:');
+    console.log('');
+    console.log(`    ${data.token}`);
+    console.log('');
+    console.log('  Use it headlessly via GUUEY_API_KEY (CLI) or as the raw');
+    console.log('  Authorization bearer (curl). Scope: this app\'s reconcile');
+    console.log('  route + deployment reads only. It never expires. Revoke it with:');
+  }
   console.log('');
-  console.log(`    ${data.token}`);
+  console.log(`    guuey tokens revoke ${data.item.id}${appFlagSuffix(flags)}`);
   console.log('');
-  console.log('  Use it headlessly via GUUEY_API_KEY (CLI) or as the raw');
-  console.log('  Authorization bearer (curl). Scope: this app\'s reconcile');
-  console.log('  route + deployment reads only. It never expires — revoke with:');
-  console.log('');
-  console.log(`    guuey tokens revoke ${data.item.id}`);
-  console.log('');
+}
+
+/** ` --app-id <id>` when the caller targeted an app by flag, so a printed recipe targets the same app. */
+function appFlagSuffix(flags?: Record<string, string | true>): string {
+  const appId = flags?.['app-id'];
+  return typeof appId === 'string' ? ` --app-id ${appId}` : '';
 }
 
 export async function tokensList(
@@ -174,7 +243,7 @@ export async function tokensList(
         ? `✓ active, last used ${item.lastUsedAt}`
         : '✓ active, never used';
     console.log(`  ${item.tokenPrefix}…  ${item.label}`);
-    console.log(`    id ${item.id} · created ${item.createdAt} · ${state}`);
+    console.log(`    id ${item.id} · scope ${item.scope ?? 'deploy'} · created ${item.createdAt} · ${state}`);
   }
   console.log('');
 }

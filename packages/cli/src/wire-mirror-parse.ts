@@ -142,3 +142,23 @@ export function parseStringConstant(source: string, name: string): string {
   }
   return match[1];
 }
+
+/**
+ * The entries of a `const X … = { key: 'value', 'other-key': 'value' };`
+ * object of string values (a prefix per scope, a route per op), as a plain
+ * record. Keys may be bare or quoted. Throws when there is no such object or
+ * it has no entries, so a guard never compares two empty records.
+ */
+export function parseStringRecord(source: string, name: string): { [key: string]: string } {
+  const block = new RegExp(`(?:export\\s+)?const\\s+${name}\\b[^=]*=\\s*\\{([^}]*)\\}`).exec(stripComments(source));
+  if (block === null) {
+    throw new Error(`no object constant named ${name} in source`);
+  }
+  const entries = [...block[1].matchAll(/['"]?([\w$-]+)['"]?\s*:\s*'([^']*)'/g)].map(
+    (match): [string, string] => [match[1], match[2]],
+  );
+  if (entries.length === 0) {
+    throw new Error(`object constant ${name} has no string entries`);
+  }
+  return Object.fromEntries(entries);
+}

@@ -592,7 +592,11 @@ Service tokens (headless CI, guuey#217):
                                  reads. Secret printed ONCE — store it as
                                  a CI secret, pass via GUUEY_API_KEY. No
                                  expiry; revoke is the kill switch.
-  tokens list                   Prefix, label, and lifecycle per token
+    --scope threads-agent       Mint the agent token instead (guuey_agt_*):
+                                 set it as GUUEY_THREADS_AGENT_TOKEN in your
+                                 agent server so it writes to the hosted
+                                 thread store as the agent. Default: deploy
+  tokens list                   Prefix, label, scope, and lifecycle per token
                                  (never the secret)
   tokens revoke <tokenId>       Revoke — auth stops within seconds
     --app-id <id>               Target a specific app (all subcommands)

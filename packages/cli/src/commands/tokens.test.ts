@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 import {
+  SERVICE_TOKEN_PREFIX_BY_SCOPE,
   tokensCreate,
   tokensList,
   tokensRevoke,
@@ -20,7 +21,7 @@ import {
   type ServiceTokenListResponse,
   type ServiceTokenRevokeResponse,
 } from './tokens.js';
-import { parseInterfaceFields } from '../wire-mirror-parse';
+import { parseInterfaceFields, parseStringLiterals, parseStringRecord } from '../wire-mirror-parse';
 
 vi.mock('../auth.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../auth.js')>();
@@ -113,6 +114,75 @@ describe('tokensCreate', () => {
   });
 });
 
+describe('tokensCreate --scope (guuey#3006)', () => {
+  const AGT_ITEM = { ...ITEM, id: 'st-9', tokenPrefix: 'guuey_agt_wxyz', label: 'agent server', scope: 'threads-agent' as const };
+
+  it('sends the scope and prints the agent env line once the server echoes it', async () => {
+    const wire: ServiceTokenCreateResponse = { token: 'guuey_agt_raw-secret-once', item: AGT_ITEM };
+    fetchMock.mockResolvedValue(jsonResponse(201, wire));
+
+    await tokensCreate({ label: 'agent server', scope: 'threads-agent' });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({ label: 'agent server', scope: 'threads-agent' });
+    const output = logs.join('\n');
+    expect(output).toContain('GUUEY_THREADS_AGENT_TOKEN=guuey_agt_raw-secret-once');
+    expect(output).toContain('guuey tokens revoke st-9');
+    expect(output).not.toContain('GUUEY_API_KEY');
+  });
+
+  it('an old server that ignores the scope and mints deploy: refused, secret withheld, revoke named', async () => {
+    const wire: ServiceTokenCreateResponse = { token: 'guuey_svc_raw-secret-once', item: ITEM };
+    fetchMock.mockResolvedValue(jsonResponse(201, wire));
+
+    await expect(tokensCreate({ label: 'agent server', scope: 'threads-agent', 'app-id': 'app-1' })).rejects.toThrow(
+      ExitSignal,
+    );
+
+    const output = logs.join('\n');
+    expect(output).toContain('Asked for a threads-agent token, but the server minted guuey_svc_abcd… with scope deploy.');
+    expect(output).toContain('guuey tokens revoke st-1 --app-id app-1');
+    expect(output).not.toContain('guuey_svc_raw-secret-once');
+    expect(output).not.toContain('minted for app');
+  });
+
+  it('an echoed scope whose secret has the wrong prefix is refused too', async () => {
+    const wire: ServiceTokenCreateResponse = { token: 'guuey_svc_raw-secret-once', item: AGT_ITEM };
+    fetchMock.mockResolvedValue(jsonResponse(201, wire));
+
+    await expect(tokensCreate({ label: 'agent server', scope: 'threads-agent' })).rejects.toThrow(ExitSignal);
+
+    const output = logs.join('\n');
+    expect(output).not.toContain('guuey_svc_raw-secret-once');
+    expect(output).toContain('guuey tokens revoke st-9');
+  });
+
+  it('a plain create that comes back as another scope is refused', async () => {
+    const wire: ServiceTokenCreateResponse = { token: 'guuey_agt_raw-secret-once', item: AGT_ITEM };
+    fetchMock.mockResolvedValue(jsonResponse(201, wire));
+
+    await expect(tokensCreate({ label: 'ggui CI' })).rejects.toThrow(ExitSignal);
+
+    expect(logs.join('\n')).not.toContain('guuey_agt_raw-secret-once');
+  });
+
+  it('--scope deploy is sent and accepted with or without the echo', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(201, { token: 'guuey_svc_raw-secret-once', item: ITEM }));
+
+    await tokensCreate({ label: 'ggui CI', scope: 'deploy' });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({ label: 'ggui CI', scope: 'deploy' });
+    expect(logs.join('\n')).toContain('guuey_svc_raw-secret-once');
+  });
+
+  it.each([['admin'], [true]] as const)('--scope %s exits 1 before any request', async (scope) => {
+    await expect(tokensCreate({ label: 'x', scope })).rejects.toThrow(ExitSignal);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(logs.join('\n')).toContain('--scope must be one of: deploy, threads-agent.');
+  });
+});
+
 describe('tokensList', () => {
   it('renders prefix/label/lifecycle and never expects a secret field', async () => {
     const wire: ServiceTokenListResponse = {
@@ -127,6 +197,7 @@ describe('tokensList', () => {
 
     const output = logs.join('\n');
     expect(output).toContain('guuey_svc_abcd…');
+    expect(output).toContain('scope deploy');
     expect(output).toContain('active, last used');
     expect(output).toContain('revoked');
   });
@@ -194,6 +265,7 @@ describe.skipIf(!haveWire)('tokens wire mirrors — sync guard against @guuey-pr
   const read = (path: string): string => readFileSync(path, 'utf8');
 
   it.each([
+    'ServiceTokenCreateBody',
     'ServiceTokenItem',
     'ServiceTokenCreateResponse',
     'ServiceTokenListResponse',
@@ -201,6 +273,18 @@ describe.skipIf(!haveWire)('tokens wire mirrors — sync guard against @guuey-pr
   ])('%s declares exactly the wire fields, with the same optionality', (name) => {
     expect(parseInterfaceFields(read(CLI_TOKENS), name)).toEqual(
       parseInterfaceFields(read(WIRE_TOKENS), name),
+    );
+  });
+
+  it('SERVICE_TOKEN_SCOPES lists exactly the wire ServiceTokenScope union', () => {
+    expect(parseStringLiterals(read(CLI_TOKENS), 'SERVICE_TOKEN_SCOPES')).toEqual(
+      parseStringLiterals(read(WIRE_TOKENS), 'ServiceTokenScope'),
+    );
+  });
+
+  it('SERVICE_TOKEN_PREFIX_BY_SCOPE names the wire prefix of each scope', () => {
+    expect(parseStringRecord(read(WIRE_TOKENS), 'SERVICE_TOKEN_PREFIX_BY_SCOPE')).toEqual(
+      SERVICE_TOKEN_PREFIX_BY_SCOPE,
     );
   });
 });
