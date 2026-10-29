@@ -322,6 +322,24 @@ describe('streamToStdout — renders the pod stream (AgJSON), not Anthropic-nati
     ]);
   });
 
+  it('a preliminary tool.done (more: true) keeps the name for the call\'s final done', async () => {
+    const { logged } = capture();
+    await streamToStdout(
+      sseStream([
+        frame('message', { type: 'tool.start', toolCallId: 'c1', name: 'research', seq: 1 }),
+        frame('message', { type: 'tool.done', toolCallId: 'c1', content: [], more: true, seq: 2 }),
+        frame('message', { type: 'tool.done', toolCallId: 'c1', content: [], seq: 3 }),
+        frame('done', { stopReason: 'end_turn' }),
+      ]),
+    );
+
+    const done = logged()
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('[tool.done'));
+    expect(done).toEqual(['[tool.done] research', '[tool.done] research']);
+  });
+
   it('surfaces an error frame and reports errored', async () => {
     const { written } = capture();
     const result = await streamToStdout(

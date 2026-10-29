@@ -409,7 +409,8 @@ function printAgEvent(payload: unknown, toolNames: Map<string, string>): void {
       break;
     case 'tool.done': {
       const name = typeof e.toolCallId === 'string' ? toolNames.get(e.toolCallId) : undefined;
-      if (typeof e.toolCallId === 'string') toolNames.delete(e.toolCallId);
+      // A preliminary done (`more: true`) is followed by the call's final done, which needs the name too.
+      if (typeof e.toolCallId === 'string' && e.more !== true) toolNames.delete(e.toolCallId);
       const error = e.isError === true || e.outcome === 'error' ? ' error' : '';
       console.log(`  [tool.done]${name === undefined ? '' : ` ${name}`}${error}`);
       break;
