@@ -199,13 +199,18 @@ is the access-control story:
   hosted binding is per-rung: guuey-hosted and colocated MCP servers
   get `GUUEY_KV_URL` injected automatically; a dev-hosted `external`
   server sets it itself (see "Hosted binding" above).
-- **Blast radius:** within its own app an MCP server necessarily
-  handles every one of its users' requests, so a compromised server
-  can touch its own app's scopes — never another app's. Cross-MCP
-  isolation is enforced by the storage layer, not by cooperation.
-- **Data ownership:** per-user export + delete lands in the guuey
-  console together with the hosted binding — end users can see and
-  remove what an MCP stored about them.
+- **Scope is per server, not per app:** `mcpId` comes from the MCP
+  server's resource URL, so every app that attaches the same server
+  shares that server's per-user namespaces.
+- **Blast radius:** an MCP server necessarily handles every request
+  its users send it, so a compromised server can touch its own
+  scopes — never another server's. Cross-MCP isolation is enforced by
+  the storage layer, not by cooperation.
+- **Data ownership:** the builder who owns a server can list, export
+  and wipe each user's stored values for it, in the guuey console or
+  with `guuey mcp state list|export|wipe`. There is no end-user
+  self-serve view yet. Every key expires within its TTL (90 days at
+  most).
 
 If you outgrow any of these, you're having a **Case-B moment** (per
 the hosting policy) — build a real backend on a real cloud and treat
@@ -267,13 +272,13 @@ hard caps are **locked and enforced** — code written against this
 package today keeps working unchanged when the hosted binding ships.
 What exists vs. what's coming:
 
-| Piece                                       | Status                                 |
-| ------------------------------------------- | -------------------------------------- |
-| `Kv` API, typed errors, context middleware  | ✅ locked + tested                     |
-| Cap enforcement (scope/value/TTL/key rules) | ✅ enforced in every binding           |
-| In-memory binding (dev, tests)              | ✅ shipped                             |
-| Hosted binding (durable, cross-pod)         | ✅ shipped (dev gate green 2026-07-27) |
-| Console export + delete (data ownership)    | ✅ shipped with the hosted binding     |
+| Piece                                           | Status                                 |
+| ----------------------------------------------- | -------------------------------------- |
+| `Kv` API, typed errors, context middleware      | ✅ locked + tested                     |
+| Cap enforcement (scope/value/TTL/key rules)     | ✅ enforced in every binding           |
+| In-memory binding (dev, tests)                  | ✅ shipped                             |
+| Hosted binding (durable, cross-pod)             | ✅ shipped (dev gate green 2026-07-27) |
+| Builder export + wipe per server (console, CLI) | ✅ shipped with the hosted binding     |
 
 The hosted-binding client (`HttpKv`) and its server counterpart already
 ship — the 🔜 rows track **per-environment availability** (whether

@@ -16,8 +16,10 @@
  * `withGuueyContext` (see `./context`).
  *
  * `userId` is the end-user's guuey identity (Cognito sub, or the
- * platform-derived id for BYO-auth users). `mcpId` is the MCP
- * server's stable identifier (the deploy's app id).
+ * platform-derived id for BYO-auth users). `mcpId` identifies the MCP
+ * server: a hash of its canonical resource URL (`mcpIdFromResourceUrl`).
+ * The scope is per server, not per app: apps that attach the same server
+ * share its `(user, mcp)` namespaces.
  *
  * **Trust model (spec §3):** the hosted CLIENT binding (`HttpKv`)
  * and the server (`stateApi`, the actual verifier) both ship. The
@@ -27,8 +29,8 @@
  * AUTHORITATIVELY server-side — the `context` this package puts on
  * the wire is advisory-must-match, never trusted on its own. An MCP
  * can only present tokens guuey itself issued it, so a compromised
- * MCP's blast radius is its own app's scopes, across its own calling
- * users — never another app's. Tokens minted for guest sessions
+ * MCP's blast radius is its own server's scopes, across the users who
+ * call it — never another server's. Tokens minted for guest sessions
  * (`issuerAuthMode: 'anonymous'`) are rejected: guests get no
  * durable scope (mirrors the GuueyFS rule). `ScopeContext` itself
  * stays caller-asserted at the type level — `scopeFromAuthorization`
