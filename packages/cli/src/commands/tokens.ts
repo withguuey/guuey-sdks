@@ -39,6 +39,8 @@ export interface ServiceTokenItem {
   /** 14-char display tail (`guuey_svc_xxxx`) — never enough to authenticate. */
   tokenPrefix: string;
   label: string;
+  /** The token's scope; a server that predates the field omits it (absent = deploy). */
+  scope?: string;
   createdAt: string;
   lastUsedAt?: string;
   revokedAt?: string;

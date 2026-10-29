@@ -26,6 +26,7 @@ RULES=(
   'user API key body|guuey_user_[A-Za-z0-9_-]{20,}'
   'workspace API key body|guuey_wkz_[A-Za-z0-9_-]{20,}'
   'service token body|guuey_svc_[A-Za-z0-9_-]{20,}'
+  'agent token body|guuey_agt_[A-Za-z0-9_-]{20,}'
   'widget app secret body|guuey_widget_[A-Za-z0-9_-]{20,}'
   'anthropic key body|sk-ant-[A-Za-z0-9_-]{20,}'
   'openai key body|sk-proj-[A-Za-z0-9_-]{20,}'
