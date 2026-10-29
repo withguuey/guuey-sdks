@@ -1785,7 +1785,7 @@ function exitOnCallerCredentialHttp(agent: GuueyJsonV1['agent']): void {
   }
 }
 
-/** Refuse a `federate: true` entry whose minted resource is not an https:// url ending in "/" (both deploy paths). */
+/** Refuse a `federate: true` entry whose minted resource the mint refuses: not an https:// url ending in "/", or not the server it dials (both deploy paths). */
 function exitOnFederateResourceUrl(agent: GuueyJsonV1['agent']): void {
   const violations = validateFederateResourceUrl(agent);
   if (violations.length > 0) {

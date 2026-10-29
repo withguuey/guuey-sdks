@@ -11,6 +11,7 @@ import {
   validateReservedPlatformNames,
   validateCallerCredentialHttps,
   validateFederateResourceUrl,
+  federateResourceCoversDial,
   validateToolGates,
   validateSubmittedToolGates,
   validateToolAllowlistsNotEmpty,
@@ -1686,6 +1687,34 @@ describe('validateFederateResourceUrl', () => {
   it('judges mcpResourceUrl when it is set, since that is the resource minted for', () => {
     expect(validateFederateResourceUrl(federated('https://crm.example.com/mcp', 'https://crm.example.com/mcp/'))).toEqual([]);
     expect(validateFederateResourceUrl(federated('https://crm.example.com/mcp/', 'https://crm.example.com/mcp'))).toHaveLength(1);
+  });
+
+  it('passes an mcpResourceUrl that names the server dialed: same origin, url under its path at a segment boundary', () => {
+    expect(validateFederateResourceUrl(federated('https://mcp.example.com/mcp/', 'https://mcp.example.com/'))).toEqual([]);
+    expect(validateFederateResourceUrl(federated('https://mcp.example.com/mcp/', 'https://mcp.example.com/mcp/'))).toEqual([]);
+    expect(validateFederateResourceUrl(federated('https://mcp.example.com/a/b/', 'https://mcp.example.com/a/'))).toEqual([]);
+    expect(validateFederateResourceUrl(federated('https://MCP.example.com:443/mcp/', 'https://mcp.example.com/'))).toEqual([]);
+  });
+
+  it('refuses an mcpResourceUrl that names another server, naming the server key', () => {
+    for (const [url, resource] of [
+      ['https://mcp.example.com/mcp/', 'https://other.example.com/'],
+      ['https://mcp.example.com/mcp/', 'https://mcp.example.com:8443/'],
+      ['https://host.example.com/b/mcp/', 'https://host.example.com/a/'],
+      ['https://host.example.com/ab/', 'https://host.example.com/a/'],
+      ['https://mcp.example.com/', 'https://mcp.example.com/mcp/'],
+      ['https://mcp.example.com/mcp/', 'https://mcp.example.com/?x=/'],
+    ] as const) {
+      const v = validateFederateResourceUrl(federated(url, resource));
+      expect(v, `${url} ← ${resource}`).toHaveLength(1);
+      expect(v[0]).toMatch(/^mcpServers\.crm: "mcpResourceUrl" must name the server this entry dials/);
+    }
+  });
+
+  it('federateResourceCoversDial: an entry without mcpResourceUrl mints for its url and always passes', () => {
+    expect(federateResourceCoversDial({ url: 'https://crm.example.com/mcp/' })).toBe(true);
+    expect(federateResourceCoversDial({ url: 'https://${platform.mcpDomain}/crm/' })).toBe(true);
+    expect(federateResourceCoversDial({ url: 'https://crm.example.com/mcp/', mcpResourceUrl: 'not a url' })).toBe(false);
   });
 
   it('skips a ggui render server, which mints for its own app address', () => {

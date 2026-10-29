@@ -238,8 +238,11 @@ const ExternalMcp = z
     /** Local dev-loop port (`guuey dev`) this MCP is served on for name→localhost URL resolution. */
     devPort: z.number().int().min(1).max(65535).optional(),
     /**
-     * INTERNAL — set only by Router lowering; when present the federation mint
-     * uses this as the RFC 8707 resource instead of `url`.
+     * The RFC 8707 resource the federation mint uses instead of `url`. The
+     * deploy-controller sets it when it lowers a `credential: 'oauth'` entry
+     * (the broker route). On a `federate: true` entry it may be declared when
+     * the server's resource identifier differs from the url it is dialed at,
+     * and it must name that server ({@link federateResourceCoversDial}).
      */
     mcpResourceUrl: PlatformUrl.optional(),
     /**
@@ -1207,8 +1210,9 @@ export function validateCallerCredentialHttps(
 //
 // A `federate: true` entry gets a per-invoke token minted for its resource
 // (`mcpResourceUrl` when set, else `url`), and the mint accepts only an
-// `https://` resource ending in `/`. Any other shape fails the mint at turn
-// time, so `validateFederateResourceUrl` refuses it at deploy instead (the
+// `https://` resource ending in `/` that names the server the entry dials.
+// Any other shape fails the mint at turn time, so
+// `validateFederateResourceUrl` refuses it at deploy instead (the
 // CLI before upload; the cliApi deploy door and reconcile on a newly
 // submitted document). A write-path lint only, NOT a schema rule: a stored
 // definition always loads.
@@ -1226,10 +1230,31 @@ export function isMintableFederateResource(entry: { url: string; mcpResourceUrl?
 }
 
 /**
+ * Whether a `federate: true` external entry's minted resource names the server
+ * it dials. When `mcpResourceUrl` is set, it must share `url`'s origin, carry no
+ * query or fragment, and `url`'s path must sit under its path at a segment
+ * boundary: the same path, the same path without its trailing `/`, or a path
+ * that continues past it (RFC 9728: resource `https://mcp.example.com/` for
+ * `https://mcp.example.com/mcp/`). An entry without `mcpResourceUrl` mints for
+ * `url` itself and always passes. The one predicate behind the second check of
+ * {@link validateFederateResourceUrl}.
+ */
+export function federateResourceCoversDial(entry: { url: string; mcpResourceUrl?: string }): boolean {
+  if (entry.mcpResourceUrl === undefined) return true;
+  if (!URL.canParse(entry.mcpResourceUrl) || !URL.canParse(entry.url)) return false;
+  const resource = new URL(entry.mcpResourceUrl);
+  const dial = new URL(entry.url);
+  if (resource.origin !== dial.origin || resource.search !== '' || resource.hash !== '') return false;
+  const base = resource.pathname.endsWith('/') ? resource.pathname : `${resource.pathname}/`;
+  return dial.pathname === base.slice(0, -1) || dial.pathname.startsWith(base);
+}
+
+/**
  * Validate that every `federate: true` external entry is
- * {@link isMintableFederateResource}. Run it on the document AFTER
- * `${env.NAME}` resolution. Returns one human-readable violation per
- * offending entry, each naming the server key (empty = clean).
+ * {@link isMintableFederateResource} and {@link federateResourceCoversDial}.
+ * Run it on the document AFTER `${env.NAME}` resolution. Returns one
+ * human-readable violation per failed check, each naming the server key
+ * (empty = clean).
  */
 export function validateFederateResourceUrl(
   agent: Pick<GuueyAgent, 'mcpServers'> | undefined,
@@ -1243,6 +1268,11 @@ export function validateFederateResourceUrl(
     if (!isMintableFederateResource(server)) {
       violations.push(
         `mcpServers.${name}: "federate": true needs an https:// url ending in "/" (for example "https://mcp.example.com/mcp/") — the token is minted for exactly that resource, and any other shape fails every turn`,
+      );
+    }
+    if (!federateResourceCoversDial(server)) {
+      violations.push(
+        `mcpServers.${name}: "mcpResourceUrl" must name the server this entry dials: the same origin as "url", no query or fragment, and "url"'s path under its path (for example "https://mcp.example.com/" for "https://mcp.example.com/mcp/")`,
       );
     }
   }
