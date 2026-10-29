@@ -131,8 +131,8 @@ export interface HostRuntime {
    */
   authToken?: string;
   /**
-   * Returns every credential the Router broker wrote to
-   * `<sessionDir>/.guuey/credentials/` this invoke. Injected so the run path
+   * Returns every credential the Router broker wrote for this invoke (the
+   * servers file, else `<sessionDir>/.guuey/credentials/`). Injected so the run path
    * stays pure (no disk access inside `runInvoke`).
    */
   listCredentials: () => Array<{ name: string; cred: CredentialFile }>;

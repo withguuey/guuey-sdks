@@ -3,18 +3,19 @@
  * `backend/services/nocode-runtime/src/agent-runner.ts` (the pure-logic half),
  * with the B2-mcp amendment: `@guuey/host` is a THIN CRED-DIR READER. All MCP
  * resolution (default, federation, mint, env-substitution) now lives once on the
- * Router-side credential broker. The worker just reads
- * `<sessionDir>/.guuey/credentials/*.json` (via ctx.listCredentials) and shapes
- * each entry into the framework-neutral `SdkMcpServer` map.
+ * Router-side credential broker. The worker just reads the broker's entries
+ * (via ctx.listCredentials: the servers file when `GUUEY_MCP_SERVERS_FILE` is
+ * set, else `<sessionDir>/.guuey/credentials/*.json`) and shapes each entry
+ * into the framework-neutral `SdkMcpServer` map.
  *
  * Two responsibilities:
  *
  * 1. **Snapshot → SDK options mapping.** Translates the agent.json shape
- *    (model, allowedTools, maxTurns, GuueyFS binding) and the cred-dir contents
+ *    (model, allowedTools, maxTurns, GuueyFS binding) and the credential entries
  *    into the Claude Agent SDK's `allowedTools` + `maxTurns` (the MCP servers go
  *    to the CLI over stdin with `setMcpServers`, guuey#2139, never as options).
- * 2. **Cred-dir mapping.** `resolveMcpServers(ctx)` globs the cred dir via
- *    `ctx.listCredentials()` → one `SdkMcpServer` per file; ALL the old
+ * 2. **Credential mapping.** `resolveMcpServers(ctx)` reads the entries via
+ *    `ctx.listCredentials()` → one `SdkMcpServer` per entry; ALL the old
  *    federation/default/isGguiUrl/env-sub logic is DELETED (Router-side now).
  *
  * OSS-legality: this package imports ONLY `@anthropic-ai/claude-agent-sdk`,
@@ -304,10 +305,10 @@ export interface BuildOptionsContext {
    */
   gguiAttached?: boolean;
   /**
-   * Returns every credential the Router broker wrote to
-   * `<sessionDir>/.guuey/credentials/` this invoke — one `{name, cred}` per
-   * usable MCP server. `name` is the filename stem (server name); `cred` is the
-   * parsed `CredentialFile`. Injected so option-building stays pure (no disk).
+   * Returns every credential the Router broker wrote for this invoke (the
+   * servers file, else `<sessionDir>/.guuey/credentials/`) — one `{name, cred}`
+   * per usable MCP server. `name` is the server name; `cred` is the parsed
+   * `CredentialFile`. Injected so option-building stays pure (no disk).
    */
   listCredentials: () => Array<{ name: string; cred: CredentialFile }>;
   /** Cancels the in-flight `query` when the client disconnects. */
@@ -614,8 +615,9 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
 /**
  * Map the Router-resolved cred files to the framework-neutral SdkMcpServer map.
  * The Router (credential-broker) owns ALL resolution — default, federation, mint,
- * env-substitution; this worker just reads `<session>/.guuey/credentials/*.json`
- * (via ctx.listCredentials) and shapes each entry. Keyed by the server name.
+ * env-substitution; this worker just reads the broker's entries (via
+ * ctx.listCredentials, `@guuey/worker`'s two sources) and shapes each entry.
+ * Keyed by the server name.
  */
 export function resolveMcpServers(ctx: BuildOptionsContext): Record<string, SdkMcpServer> {
   const out: Record<string, SdkMcpServer> = {};

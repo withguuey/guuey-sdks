@@ -18,9 +18,11 @@
  * framework needs; a missing peer fails with an actionable install hint, not
  * a bare module-resolution stack.
  *
- * Runs inside bubblewrap with NO IRSA — it never mints federation tokens. A
- * federated MCP server's credentials are read from the well-known path the
- * Router-side credential broker wrote: `<sessionDir>/.guuey/credentials/<srv>.json`.
+ * Runs inside bubblewrap with NO IRSA — it never mints federation tokens. Every
+ * MCP server's entry comes from what the Router-side credential broker wrote,
+ * read by `@guuey/worker`'s `listCredentials`: the servers file named by
+ * `GUUEY_MCP_SERVERS_FILE` when the platform sets it (the session directory is
+ * then never read), else `<sessionDir>/.guuey/credentials/<srv>.json`.
  *
  * Protocol wiring (per `@guuey/worker`): Router→Worker control on fd 0 (stdin),
  * Worker→Router events on fd 3. We use the raw emitter (NOT the text-only
