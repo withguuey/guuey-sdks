@@ -208,9 +208,13 @@ is the access-control story:
   the storage layer, not by cooperation.
 - **Data ownership:** the builder who owns a server can list, export
   and wipe each user's stored values for it, in the guuey console or
-  with `guuey mcp state list|export|wipe`. There is no end-user
-  self-serve view yet. Every key expires within its TTL (90 days at
-  most).
+  with `guuey mcp state list|export|wipe`. For a guuey-hosted server
+  the owner is the workspace that owns it; for a colocated server, the
+  owner of the app that runs it. A dev-hosted `external` server has no
+  builder view: guuey holds no ownership record for the server behind
+  a URL, and naming a URL in an app's config does not make you its
+  owner. There is no end-user self-serve view yet. Every key expires
+  within its TTL (90 days at most).
 
 If you outgrow any of these, you're having a **Case-B moment** (per
 the hosting policy) — build a real backend on a real cloud and treat
@@ -278,7 +282,7 @@ What exists vs. what's coming:
 | Cap enforcement (scope/value/TTL/key rules)     | ✅ enforced in every binding           |
 | In-memory binding (dev, tests)                  | ✅ shipped                             |
 | Hosted binding (durable, cross-pod)             | ✅ shipped (dev gate green 2026-07-27) |
-| Builder export + wipe per server (console, CLI) | ✅ shipped with the hosted binding     |
+| Builder export + wipe per server (console, CLI) | ✅ hosted and colocated servers        |
 
 The hosted-binding client (`HttpKv`) and its server counterpart already
 ship — the 🔜 rows track **per-environment availability** (whether
