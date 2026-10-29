@@ -290,10 +290,36 @@ describe('streamToStdout — renders the pod stream (AgJSON), not Anthropic-nati
     expect(written()).toBe('Sunny in Tokyo\n');
     expect(logged()).toContain('[session] sess-1 · thread t-9');
     expect(logged()).toContain('[tool.start] weather');
-    expect(logged()).toContain('[tool.done]');
+    expect(logged()).toContain('[tool.done] weather');
     expect(result).toEqual({ stopReason: 'end_turn', errored: false, threadId: 't-9' });
     expect(errSpy).not.toHaveBeenCalled();
     expect(stdoutSpy).toHaveBeenCalled();
+  });
+
+  it('names each tool.done by its call id, so interleaved calls pair by name, not by order', async () => {
+    const { logged } = capture();
+    await streamToStdout(
+      sseStream([
+        frame('message', { type: 'tool.start', toolCallId: 'c1', name: 'weather', seq: 1 }),
+        frame('message', { type: 'tool.start', toolCallId: 'c2', name: 'render', seq: 2 }),
+        frame('message', { type: 'tool.done', toolCallId: 'c2', content: [], isError: true, seq: 3 }),
+        frame('message', { type: 'tool.done', toolCallId: 'c1', content: [], seq: 4 }),
+        frame('message', { type: 'tool.done', toolCallId: 'c9', content: [], seq: 5 }),
+        frame('done', { stopReason: 'end_turn' }),
+      ]),
+    );
+
+    const lines = logged()
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('[tool.'));
+    expect(lines).toEqual([
+      '[tool.start] weather',
+      '[tool.start] render',
+      '[tool.done] render error',
+      '[tool.done] weather',
+      '[tool.done]',
+    ]);
   });
 
   it('surfaces an error frame and reports errored', async () => {

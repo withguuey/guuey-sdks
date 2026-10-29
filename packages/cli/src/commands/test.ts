@@ -342,7 +342,8 @@ function isErrorFrame(v: unknown): v is ErrorFrame {
  * Pipe the pod's SSE stream to stdout. `message` frames carry AgJSON
  * (silver mode, the default): text deltas print as they arrive, tool
  * start/done get marker lines so the reader can tell what phase the agent
- * is in; every other AgJSON event (folds, artifacts, ext.*) and a
+ * is in (each done line names its tool, so interleaved calls pair by name,
+ * not by adjacency); every other AgJSON event (folds, artifacts, ext.*) and a
  * bypass-mode pod's raw native frames are skipped, never mis-rendered.
  * Exported for unit test.
  */
@@ -352,6 +353,8 @@ export async function streamToStdout(
   let stopReason: string | undefined;
   let errored = false;
   let threadId: string | undefined;
+  // tool.done carries only the call's id; its name came on the matching tool.start.
+  const toolNames = new Map<string, string>();
   for await (const ev of parseSse(body)) {
     const payload = parseJson(ev.data);
     if (payload === undefined) continue;
@@ -365,7 +368,7 @@ export async function streamToStdout(
         }
         break;
       case 'message':
-        printAgEvent(payload);
+        printAgEvent(payload, toolNames);
         break;
       case 'done':
         if (isDoneFrame(payload)) stopReason = payload.stopReason;
@@ -384,7 +387,7 @@ export async function streamToStdout(
   return { stopReason, errored, threadId };
 }
 
-function printAgEvent(payload: unknown): void {
+function printAgEvent(payload: unknown, toolNames: Map<string, string>): void {
   const parsed = AgEvent.safeParse(payload);
   if (!parsed.success) return;
   // AgEvent's last union member is the forward-compat catch-all (`type:
@@ -399,11 +402,18 @@ function printAgEvent(payload: unknown): void {
       process.stdout.write('\n');
       break;
     case 'tool.start':
-      if (typeof e.name === 'string') console.log(`\n  [tool.start] ${e.name}`);
+      if (typeof e.name === 'string') {
+        if (typeof e.toolCallId === 'string') toolNames.set(e.toolCallId, e.name);
+        console.log(`\n  [tool.start] ${e.name}`);
+      }
       break;
-    case 'tool.done':
-      console.log(`  [tool.done]${e.isError === true || e.outcome === 'error' ? ' error' : ''}`);
+    case 'tool.done': {
+      const name = typeof e.toolCallId === 'string' ? toolNames.get(e.toolCallId) : undefined;
+      if (typeof e.toolCallId === 'string') toolNames.delete(e.toolCallId);
+      const error = e.isError === true || e.outcome === 'error' ? ' error' : '';
+      console.log(`  [tool.done]${name === undefined ? '' : ` ${name}`}${error}`);
       break;
+    }
     default:
       break;
   }
