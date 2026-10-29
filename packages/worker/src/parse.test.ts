@@ -491,6 +491,19 @@ describe("parseEvent (Worker→Router fd-3 events)", () => {
     expect(() => parseEvent(JSON.stringify({ type: "frob" }))).toThrow(/unknown event type/);
   });
 
+  it("an event carries no identity: userId, appId, threadId or authMode on a worker line is never parsed into the event", () => {
+    const planted = { userId: "u-other", appId: "app-other", threadId: "t-other", authMode: "authenticated" };
+    const events = [
+      parseEvent(JSON.stringify({ type: "text", text: "hi", ...planted })),
+      parseEvent(JSON.stringify({ type: "done", stopReason: "end_turn", result: "ok", ...planted })),
+      parseEvent(JSON.stringify({ type: "error", message: "boom", ...planted })),
+      parseEvent(JSON.stringify({ type: "hello", framework: "vanilla", ...planted })),
+    ];
+    for (const event of events) {
+      for (const key of Object.keys(planted)) expect(Object.keys(event)).not.toContain(key);
+    }
+  });
+
   it("parses hello with sdkName/sdkVersion present", () => {
     const ev = parseEvent(
       JSON.stringify({
