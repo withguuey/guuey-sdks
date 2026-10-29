@@ -86,8 +86,8 @@ export async function envSet(args: string[], flags?: Record<string, string | tru
 
   const res = await apiRequest(auth.pat, config, 'PATCH', `/apps/${appId}/env`, { vars: pairs });
   if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as Record<string, string>;
-    out.error(data.error ?? `Failed: HTTP ${res.status}`);
+    const body: unknown = await res.json().catch(() => undefined);
+    out.error(out.appApiErrorMessage(res.status, body, appId, 'set env vars on', `Failed: HTTP ${res.status}`));
     process.exit(1);
   }
 
@@ -120,8 +120,8 @@ export async function envList(
 
   const res = await apiRequest(auth.pat, config, 'GET', `/apps/${appId}/env`);
   if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as Record<string, string>;
-    out.error(data.error ?? `Failed: HTTP ${res.status}`);
+    const body: unknown = await res.json().catch(() => undefined);
+    out.error(out.appApiErrorMessage(res.status, body, appId, 'read env vars from', `Failed: HTTP ${res.status}`));
     process.exit(1);
   }
 
@@ -172,8 +172,8 @@ export async function envUnset(args: string[], flags?: Record<string, string | t
 
   const res = await apiRequest(auth.pat, config, 'DELETE', `/apps/${appId}/env`, { keys });
   if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as Record<string, string>;
-    out.error(data.error ?? `Failed: HTTP ${res.status}`);
+    const body: unknown = await res.json().catch(() => undefined);
+    out.error(out.appApiErrorMessage(res.status, body, appId, 'unset env vars on', `Failed: HTTP ${res.status}`));
     process.exit(1);
   }
 

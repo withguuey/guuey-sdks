@@ -11,7 +11,7 @@
 import { RUNTIME_RESERVED_ENV_NAMES } from '@guuey/config';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
-import { envSet } from './env.js';
+import { envList, envSet, envUnset } from './env.js';
 
 vi.mock('../auth.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../auth.js')>();
@@ -79,5 +79,40 @@ describe('guuey env set', () => {
     expect(JSON.parse(String(init?.body))).toEqual({
       vars: { FEATURE_FLAG: 'on', LD_SDK_KEY: 'abc', ld_preload: 'y' },
     });
+  });
+});
+
+describe('a refused env call prints the API message, never an object (the cliApi error envelope)', () => {
+  const refusal = (status: number, code: string, message: string): Response =>
+    new Response(JSON.stringify({ error: { code, message } }), { status });
+
+  it.each([
+    ['set', () => envSet(['FEATURE_FLAG=on'])],
+    ['list', () => envList({})],
+    ['unset', () => envUnset(['FEATURE_FLAG'])],
+  ] as const)('env %s: a 403 prints the code and message', async (_verb, run) => {
+    fetchSpy.mockResolvedValue(refusal(403, 'FORBIDDEN', 'needs a higher role'));
+
+    await expect(run()).rejects.toThrow(ExitSignal);
+
+    expect(errorSpy).toHaveBeenCalledWith('✗ FORBIDDEN: needs a higher role');
+  });
+
+  it('env list: the uniform 404 prints the not-found-or-not-allowed line', async () => {
+    fetchSpy.mockResolvedValue(refusal(404, 'NOT_FOUND', 'App app1 not found'));
+
+    await expect(envList({})).rejects.toThrow(ExitSignal);
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('App app1 was not found, or this account is not allowed to read env vars from it.'),
+    );
+  });
+
+  it('a body that is not JSON falls back to the HTTP status', async () => {
+    fetchSpy.mockResolvedValue(new Response('upstream died', { status: 502 }));
+
+    await expect(envList({})).rejects.toThrow(ExitSignal);
+
+    expect(errorSpy).toHaveBeenCalledWith('✗ Failed: HTTP 502');
   });
 });
