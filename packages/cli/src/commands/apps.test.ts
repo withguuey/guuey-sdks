@@ -1215,12 +1215,15 @@ describe('appsAccess', () => {
     await expect(appsAccess('app1', {})).rejects.toBeInstanceOf(ExitSignal);
 
     expect(String(errSpy.mock.calls[0]?.[0])).toContain('--guest-app-daily-limit N|off');
+    expect(String(errSpy.mock.calls[0]?.[0])).toContain('--guest-thread-ttl-days N|default');
   });
 
   interface AccessEcho {
     guestAccess: boolean | null;
     guestDailyMessageLimit: number | null;
     guestAppDailyMessageLimit?: number | null;
+    guestThreadTtlDays?: number | null;
+    effectiveGuestThreadTtlDays?: number;
   }
   function echo(app: AccessEcho): Response {
     return new Response(JSON.stringify({ app }), { status: 200 });
@@ -1299,6 +1302,114 @@ describe('appsAccess', () => {
 
     const printed = logSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
     expect(JSON.parse(printed)).toEqual({ guestAccess: false, guestDailyMessageLimit: 20 });
+  });
+
+  // guuey#2573: the guest thread window. pick B (guuey#2572): 1-365 days or
+  // the platform default; there is no off.
+  describe('--guest-thread-ttl-days', () => {
+    const base = { guestAccess: true, guestDailyMessageLimit: 20, guestAppDailyMessageLimit: null };
+
+    it('maps 30 onto guestThreadTtlDays: 30 and prints the window', async () => {
+      fetchSpy.mockResolvedValueOnce(
+        echo({ ...base, guestThreadTtlDays: 30, effectiveGuestThreadTtlDays: 30 }),
+      );
+
+      await appsAccess('app1', { guestThreadTtlDays: '30' });
+
+      expect(lastRequest(fetchSpy)).toEqual({
+        method: 'PUT',
+        path: '/apps/app1',
+        body: { guestThreadTtlDays: 30 },
+      });
+      expect(printed()).toContain('Guest thread expiry:   30 days');
+      expect(printed()).not.toContain('platform default');
+      expect(exitSpy).not.toHaveBeenCalled();
+    });
+
+    it("maps 'default' onto guestThreadTtlDays: null and prints the server's default window", async () => {
+      fetchSpy.mockResolvedValueOnce(
+        echo({ ...base, guestThreadTtlDays: null, effectiveGuestThreadTtlDays: 90 }),
+      );
+
+      await appsAccess('app1', { guestThreadTtlDays: 'default' });
+
+      expect(lastRequest(fetchSpy).body).toEqual({ guestThreadTtlDays: null });
+      expect(printed()).toContain('Guest thread expiry:   90 days (platform default)');
+      expect(exitSpy).not.toHaveBeenCalled();
+    });
+
+    it.each([['1'], ['365']])('accepts the range edge %s', async (value) => {
+      fetchSpy.mockResolvedValueOnce(
+        echo({ ...base, guestThreadTtlDays: Number(value), effectiveGuestThreadTtlDays: Number(value) }),
+      );
+
+      await appsAccess('app1', { guestThreadTtlDays: value });
+
+      expect(lastRequest(fetchSpy).body).toEqual({ guestThreadTtlDays: Number(value) });
+    });
+
+    it("rejects 'off' with its own message, before any API call", async () => {
+      await expect(appsAccess('app1', { guestThreadTtlDays: 'off' })).rejects.toBeInstanceOf(ExitSignal);
+
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
+      expect(String(errSpy.mock.calls[0]?.[0])).toContain("there is no 'off'");
+      expect(String(errSpy.mock.calls[0]?.[0])).toContain("'default'");
+    });
+
+    it.each<[string | true]>([['0'], ['366'], ['2.5'], ['1e2'], ['-7'], ['abc'], [true]])(
+      'rejects %s before any API call',
+      async (value: string | true) => {
+        await expect(appsAccess('app1', { guestThreadTtlDays: value })).rejects.toBeInstanceOf(ExitSignal);
+
+        expect(fetchSpy).not.toHaveBeenCalled();
+        expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
+        expect(String(errSpy.mock.calls[0]?.[0])).toContain(
+          'Invalid --guest-thread-ttl-days value. Use a number of days (1-365)',
+        );
+      },
+    );
+
+    // A server before guuey#3021 echoes no effective member. Its own-value
+    // `null` is "off" before guuey#2572 and "default" after, so the CLI never
+    // reads one in place of the other.
+    it('an echo with no effective member prints "not reported" and exits 0 when the flag was not sent', async () => {
+      fetchSpy.mockResolvedValueOnce(echo({ ...base, guestThreadTtlDays: null }));
+
+      await appsAccess('app1', { guests: 'on' });
+
+      expect(printed()).toContain(
+        'Guest thread expiry:   not reported by this server (it may not support this setting yet)',
+      );
+      expect(printed()).not.toContain('platform default');
+      expect(exitSpy).not.toHaveBeenCalled();
+      expect(errSpy).not.toHaveBeenCalled();
+    });
+
+    it.each([['30'], ['default']])(
+      'setting %s against a server that echoes no effective member exits 1 after printing the state',
+      async (value) => {
+        fetchSpy.mockResolvedValueOnce(echo(base));
+
+        await expect(appsAccess('app1', { guestThreadTtlDays: value })).rejects.toBeInstanceOf(ExitSignal);
+
+        expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
+        expect(printed()).toContain('Guest thread expiry:   not reported by this server');
+        expect(String(errSpy.mock.calls[0]?.[0])).toContain(
+          'This server did not confirm --guest-thread-ttl-days',
+        );
+      },
+    );
+
+    it('--json prints the echo verbatim, effective member included', async () => {
+      const app = { ...base, guestThreadTtlDays: null, effectiveGuestThreadTtlDays: 90 };
+      fetchSpy.mockResolvedValueOnce(echo(app));
+
+      await appsAccess('app1', { guestThreadTtlDays: 'default', json: true });
+
+      expect(JSON.parse(printed())).toEqual(app);
+      expect(exitSpy).not.toHaveBeenCalled();
+    });
   });
 });
 

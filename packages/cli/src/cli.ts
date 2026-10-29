@@ -490,7 +490,12 @@ Apps:
                                  every guest (UTC day; 'off' clears it). Once
                                  reached, guests are refused until the next UTC
                                  day; signed-in users are not counted.
-                                 At least one of the three flags is required.
+    --guest-thread-ttl-days <n|default>
+                                 Days a guest's thread is kept after its last
+                                 message (1-365). 'default' returns the app to
+                                 the platform default (90 days). There is no
+                                 off: guest threads always expire.
+                                 At least one of the four flags is required.
   apps publish [appId]          List the app in the store. Allowed for a
                                  personal app's creator, or an owner or admin of
                                  the workspace that owns the app (a user login).
@@ -1106,6 +1111,7 @@ async function main(): Promise<void> {
             guests: flags.guests as string | true | undefined,
             guestLimit: flags['guest-limit'] as string | true | undefined,
             guestAppDailyLimit: flags['guest-app-daily-limit'] as string | true | undefined,
+            guestThreadTtlDays: flags['guest-thread-ttl-days'] as string | true | undefined,
             json: jsonFlag,
           });
           break;

@@ -182,6 +182,17 @@ interface AppAccessState {
    * reported, never as unlimited.
    */
   guestAppDailyMessageLimit?: number | null;
+  /**
+   * guuey#2456: the app's own guest thread window, in days. `null` = none set,
+   * so the platform default applies (guuey#2572: there is no off).
+   */
+  guestThreadTtlDays?: number | null;
+  /**
+   * guuey#3021: the window in force, in days (the app's own, or the platform
+   * default). The ONE member the CLI trusts for what is in force: a server
+   * before guuey#3021 echoes none, and absent is not "no window".
+   */
+  effectiveGuestThreadTtlDays?: number;
 }
 
 interface AppListing {
@@ -680,6 +691,11 @@ export interface UpdateAppRequest {
   guestDailyMessageLimit?: number | null;
   /** The app's daily guest total (`apps access --guest-app-daily-limit`, guuey#2455); `null` clears it. */
   guestAppDailyMessageLimit?: number | null;
+  /**
+   * The guest thread window in days (`apps access --guest-thread-ttl-days`,
+   * guuey#2573); `null` returns it to the platform default. There is no off.
+   */
+  guestThreadTtlDays?: number | null;
   userAuthMode?: string;
   userAuthConfig?:
     | {
@@ -1441,6 +1457,8 @@ export async function appsAccess(
     guestLimit?: string | true;
     /** `--guest-app-daily-limit` (guuey#2455): the app's daily guest total. */
     guestAppDailyLimit?: string | true;
+    /** `--guest-thread-ttl-days` (guuey#2573): the guest thread window, `n` days or `default`. */
+    guestThreadTtlDays?: string | true;
     json?: boolean;
   },
 ): Promise<void> {
@@ -1450,9 +1468,14 @@ export async function appsAccess(
     process.exit(1);
   }
 
-  if (opts.guests === undefined && opts.guestLimit === undefined && opts.guestAppDailyLimit === undefined) {
+  if (
+    opts.guests === undefined &&
+    opts.guestLimit === undefined &&
+    opts.guestAppDailyLimit === undefined &&
+    opts.guestThreadTtlDays === undefined
+  ) {
     out.error(
-      'No flags provided. Use --guests on|off, --guest-limit N|off and/or --guest-app-daily-limit N|off. See: guuey apps access --help',
+      'No flags provided. Use --guests on|off, --guest-limit N|off, --guest-app-daily-limit N|off and/or --guest-thread-ttl-days N|default. See: guuey apps access --help',
     );
     process.exit(1);
   }
@@ -1473,6 +1496,9 @@ export async function appsAccess(
   if (opts.guestAppDailyLimit !== undefined) {
     body.guestAppDailyMessageLimit = parseDailyLimitFlag(opts.guestAppDailyLimit, '--guest-app-daily-limit');
   }
+  if (opts.guestThreadTtlDays !== undefined) {
+    body.guestThreadTtlDays = parseGuestThreadTtlFlag(opts.guestThreadTtlDays);
+  }
 
   const res = await apiRequest('PUT', `/apps/${resolved}`, body);
   if (!res.ok) return handleError(res, undefined, { id: resolved, action: 'change guest access for' });
@@ -1481,6 +1507,11 @@ export async function appsAccess(
   // An echo with no app-total member is a server that predates guuey#2455: it
   // never applied the key, so asking it to set one is a failure, not a success.
   const appTotalReported = data.app.guestAppDailyMessageLimit !== undefined;
+  // guuey#3021: only the effective member says which window is in force. A
+  // server without it may still store the own value, but a `null` there is
+  // "off" on a server before guuey#2572 and "default" after it, so the CLI
+  // never guesses.
+  const effectiveTtl = data.app.effectiveGuestThreadTtlDays;
 
   if (opts.json) {
     out.json(data.app);
@@ -1497,6 +1528,13 @@ export async function appsAccess(
           : 'not reported by this server (it may not support this setting yet)'
       }`,
     );
+    console.log(
+      `  Guest thread expiry:   ${
+        effectiveTtl === undefined
+          ? 'not reported by this server (it may not support this setting yet)'
+          : `${effectiveTtl} days${data.app.guestThreadTtlDays == null ? ' (platform default)' : ''}`
+      }`,
+    );
   }
 
   if (opts.guestAppDailyLimit !== undefined && !appTotalReported) {
@@ -1505,6 +1543,46 @@ export async function appsAccess(
     );
     process.exit(1);
   }
+  if (opts.guestThreadTtlDays !== undefined && effectiveTtl === undefined) {
+    out.error(
+      'This server did not confirm --guest-thread-ttl-days (it may not support this setting yet). Any other access change was saved.',
+    );
+    process.exit(1);
+  }
+}
+
+/**
+ * `--guest-thread-ttl-days` (guuey#2573): `default` returns the app to the
+ * platform default (`null`); otherwise an integer 1–365, digits only (the
+ * server's own range, guuey#2456). There is no off (guuey#2572): guest
+ * threads always expire, so `off` gets its own message rather than the
+ * generic one. Anything invalid exits 1 before any API call.
+ */
+function parseGuestThreadTtlFlag(value: string | true): number | null {
+  if (value === 'default') return null;
+  if (value === 'off') {
+    out.error(
+      "Invalid --guest-thread-ttl-days value. Guest threads always expire, so there is no 'off'. Use a number of days (1-365), or 'default' for the platform default.",
+    );
+    process.exit(1);
+  }
+  const n = parseDigits(value);
+  if (!Number.isInteger(n) || n < 1 || n > 365) {
+    out.error("Invalid --guest-thread-ttl-days value. Use a number of days (1-365), or 'default' for the platform default.");
+    process.exit(1);
+  }
+  return n;
+}
+
+/**
+ * The ONE digits parse behind every guest access number flag: the trimmed
+ * value as a number when it is digits only, else `NaN`. `Number()` alone
+ * would admit '1e2', '0x10', '2.5' and so on. Each caller keeps its own clear
+ * word, range and message.
+ */
+function parseDigits(value: string | true): number {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  return /^[0-9]+$/.test(raw) ? Number(raw) : NaN;
 }
 
 /**
@@ -1515,8 +1593,7 @@ export async function appsAccess(
  */
 function parseDailyLimitFlag(value: string | true, flag: '--guest-limit' | '--guest-app-daily-limit'): number | null {
   if (value === 'off') return null;
-  const raw = typeof value === 'string' ? value.trim() : '';
-  const n = /^[0-9]+$/.test(raw) ? Number(raw) : NaN;
+  const n = parseDigits(value);
   if (!Number.isInteger(n) || n < 1) {
     out.error(`Invalid ${flag} value. Use a positive integer, or 'off' to clear.`);
     process.exit(1);

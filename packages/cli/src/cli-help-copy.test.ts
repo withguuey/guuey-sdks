@@ -132,11 +132,23 @@ describe('cli.ts --help — apps access section', () => {
   it('documents --guest-app-daily-limit next to --guest-limit', () => {
     expect(accessHelp).toContain('--guest-limit <n|off>');
     expect(accessHelp).toContain('--guest-app-daily-limit <n|off>');
-    expect(accessHelp).toContain('At least one of the three flags is required.');
+    expect(accessHelp).toContain('At least one of the four flags is required.');
   });
 
   it('the dispatch forwards --guest-app-daily-limit to appsAccess', () => {
     expect(CLI_SOURCE).toContain("guestAppDailyLimit: flags['guest-app-daily-limit']");
+  });
+
+  // guuey#2573 (pick B, guuey#2572): 1-365 or default, and no off.
+  it('documents --guest-thread-ttl-days with its range, the default and that there is no off', () => {
+    expect(accessHelp).toContain('--guest-thread-ttl-days <n|default>');
+    expect(accessHelp).toContain('(1-365)');
+    expect(accessHelp).toContain('the platform default (90 days)');
+    expect(accessHelp).toMatch(/There is no\s+off: guest threads always expire\./);
+  });
+
+  it('the dispatch forwards --guest-thread-ttl-days to appsAccess', () => {
+    expect(CLI_SOURCE).toContain("guestThreadTtlDays: flags['guest-thread-ttl-days']");
   });
 });
 

@@ -101,6 +101,16 @@ describe.skipIf(!haveWire)('CLI wire mirrors — sync guards against @guuey-priv
     }
   });
 
+  it('AppAccessState reads a SUBSET of AppWire — what `apps access` prints from the PUT echo (guuey#2573)', () => {
+    // Subset, like AppSummary/AppDetail: the echo is the full AppWire and the
+    // command prints four of its settings. A field read here and renamed or
+    // dropped there would print "not reported" against every server.
+    const wireFields = new Set(fieldNames(read(WIRE_APPS), 'AppWire'));
+    for (const field of fieldNames(read(CLI_APPS), 'AppAccessState')) {
+      expect(wireFields).toContain(field);
+    }
+  });
+
   it('AppStoredDetail declares exactly AppStoredWire — the `--theme-json` raw read (guuey#1130 G08)', () => {
     expect(parseInterfaceFields(read(CLI_APPS), 'AppStoredDetail')).toEqual(
       parseInterfaceFields(read(WIRE_APPS), 'AppStoredWire'),
