@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GuueyAgent, RunSnapshot } from "@guuey/config";
 import { GUUEY_DEFAULT_SYSTEM_PROMPT } from "@guuey/config";
+import { PLATFORM_TRUST_ENV_NAMES } from "@guuey/worker";
 import {
   buildOptions,
   reservedEnvNamesDropped,
@@ -447,6 +448,61 @@ describe("buildOptions — Anthropic second seam (loopback proxy)", () => {
     expect(opts.env?.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
     expect(Object.values(opts.env ?? {})).not.toContain("sk-local");
   });
+});
+
+describe("buildOptions — the platform's trust variables reach the CLI env (guuey#3114)", () => {
+  const BUNDLE = "/run/guuey/ca-bundle.pem";
+  const proxy = (): Partial<BuildOptionsContext> => ({ baseUrl: "https://models.test/m", authToken: "opaque" });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("copies each trust variable the host holds into the CLI env, on the proxy path", () => {
+    for (const name of PLATFORM_TRUST_ENV_NAMES) vi.stubEnv(name, BUNDLE);
+    const opts = buildOptions({}, ctx(proxy()));
+    for (const name of PLATFORM_TRUST_ENV_NAMES) expect(opts.env?.[name]).toBe(BUNDLE);
+  });
+
+  it("copies them on the local key path too", () => {
+    vi.stubEnv("NODE_EXTRA_CA_CERTS", BUNDLE);
+    const opts = buildOptions({}, ctx({ apiKey: "sk-local" }));
+    expect(opts.env?.NODE_EXTRA_CA_CERTS).toBe(BUNDLE);
+  });
+
+  it("copies only the ones set: an unset or empty variable stays out of the CLI env", () => {
+    for (const name of PLATFORM_TRUST_ENV_NAMES) vi.stubEnv(name, "");
+    vi.stubEnv("NODE_EXTRA_CA_CERTS", BUNDLE);
+    const opts = buildOptions({}, ctx(proxy()));
+    expect(opts.env?.NODE_EXTRA_CA_CERTS).toBe(BUNDLE);
+    expect(Object.keys(opts.env ?? {})).not.toContain("SSL_CERT_FILE");
+    expect(Object.keys(opts.env ?? {})).not.toContain("REQUESTS_CA_BUNDLE");
+  });
+
+  it("the platform's value wins over a builder's snapshot.env value of the same name", () => {
+    vi.stubEnv("SSL_CERT_FILE", BUNDLE);
+    vi.stubEnv("REQUESTS_CA_BUNDLE", BUNDLE);
+    const s: GuueyAgent = { env: { SSL_CERT_FILE: "/app/mine.pem", REQUESTS_CA_BUNDLE: "/app/mine.pem" } };
+    const opts = buildOptions(s, ctx(proxy()));
+    expect(opts.env?.SSL_CERT_FILE).toBe(BUNDLE);
+    expect(opts.env?.REQUESTS_CA_BUNDLE).toBe(BUNDLE);
+  });
+
+  it("with no platform value, a builder's unreserved SSL_CERT_FILE is kept as before", () => {
+    for (const name of PLATFORM_TRUST_ENV_NAMES) vi.stubEnv(name, "");
+    const s: GuueyAgent = { env: { SSL_CERT_FILE: "/app/mine.pem" } };
+    const opts = buildOptions(s, ctx(proxy()));
+    expect(opts.env?.SSL_CERT_FILE).toBe("/app/mine.pem");
+  });
+
+  it("a builder's NODE_EXTRA_CA_CERTS stays reserved: dropped, and only the platform's reaches the CLI", () => {
+    vi.stubEnv("NODE_EXTRA_CA_CERTS", "");
+    const dropped = buildOptions({ env: { NODE_EXTRA_CA_CERTS: "/app/mine.pem" } }, ctx(proxy()));
+    expect(Object.keys(dropped.env ?? {})).not.toContain("NODE_EXTRA_CA_CERTS");
+    vi.stubEnv("NODE_EXTRA_CA_CERTS", BUNDLE);
+    const platform = buildOptions({ env: { NODE_EXTRA_CA_CERTS: "/app/mine.pem" } }, ctx(proxy()));
+    expect(platform.env?.NODE_EXTRA_CA_CERTS).toBe(BUNDLE);
+  });
+
 });
 
 describe("buildOptions — a bound first impression turns extended thinking OFF for the invoke (guuey#1183)", () => {

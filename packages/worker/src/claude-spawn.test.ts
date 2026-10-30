@@ -13,9 +13,11 @@ import {
   CLAUDE_KEY_FD_ENV,
   CLAUDE_OAUTH_FD_ENV,
   ClaudeSpawnRefusedError,
+  PLATFORM_TRUST_ENV_NAMES,
   makeClaudeSpawner,
   redactSecrets,
   secretForms,
+  trustEnvOf,
   type ClaudeKeyKind,
   type ClaudeSpawnRequest,
 } from "./claude-spawn.js";
@@ -52,6 +54,23 @@ function refusal(run: () => unknown): ClaudeSpawnRefusedError | undefined {
   }
   return undefined;
 }
+
+describe("the platform trust variables (guuey#3114)", () => {
+  it("are the three names a platform launcher sets, in order", () => {
+    expect(PLATFORM_TRUST_ENV_NAMES).toEqual(["NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE"]);
+  });
+
+  it("none is a forbidden CLI variable, so the spawner never refuses a trust variable", () => {
+    for (const name of PLATFORM_TRUST_ENV_NAMES) expect(CLAUDE_FORBIDDEN_ENV).not.toContain(name);
+  });
+
+  it("trustEnvOf reads only the trust names, each only when set to a non-empty value", () => {
+    expect(trustEnvOf({ NODE_EXTRA_CA_CERTS: "/b.pem", SSL_CERT_FILE: "", REQUESTS_CA_BUNDLE: undefined, PATH: "/usr/bin" })).toEqual({
+      NODE_EXTRA_CA_CERTS: "/b.pem",
+    });
+    expect(trustEnvOf({})).toEqual({});
+  });
+});
 
 describe("makeClaudeSpawner refusals", () => {
   for (const name of CLAUDE_FORBIDDEN_ENV) {

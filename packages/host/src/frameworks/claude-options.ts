@@ -23,7 +23,7 @@
  */
 import type { CanUseTool, Options, SDKMessage, Settings } from "@anthropic-ai/claude-agent-sdk";
 import type { FirstImpressionPush, FirstImpressionShown, Fs, HistoryMessage, JsonValue, McpAvailability, ProfileSection, WithheldTool } from "@guuey/worker";
-import { forbiddenClaudeEnvNames, makeClaudeSpawner } from "@guuey/worker";
+import { forbiddenClaudeEnvNames, makeClaudeSpawner, trustEnvOf } from "@guuey/worker";
 import {
   GUUEY_DEFAULT_SYSTEM_PROMPT,
   claudeToolRules,
@@ -60,7 +60,6 @@ const DEFAULT_MAX_TURNS = 25;
  */
 export const ENV_HOME_DIR = "GUUEY_HOME_DIR";
 export const ENV_APP_DIR = "GUUEY_APP_DIR";
-
 /**
  * File tools enabled when GuueyFS layers are bound
  * ({@link BuildOptionsContext.fsBound}). `Bash` is added separately (see
@@ -468,12 +467,18 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
         XDG_CACHE_HOME: fs.session,
       }
     : {};
+  // The trust variables the host process holds (`PLATFORM_TRUST_ENV_NAMES`):
+  // this env replaces the CLI's environment, so without them the CLI trusts
+  // public roots only (guuey#3114). After the builder's env, so a builder
+  // value never replaces the platform's.
+  const trustEnv = trustEnvOf(process.env);
   let env: Record<string, string>;
   let key: string;
   if (baseUrl !== undefined && authToken !== undefined) {
     env = {
       ...builderEnv,
       ...fsEnv,
+      ...trustEnv,
       ANTHROPIC_BASE_URL: baseUrl,
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
     };
@@ -484,6 +489,7 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
     env = {
       ...builderEnv,
       ...fsEnv,
+      ...trustEnv,
     };
     key = apiKey;
   }

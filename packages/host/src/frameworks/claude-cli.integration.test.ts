@@ -25,7 +25,9 @@
  * Linux-only sub-assertions (procfs) are skipped elsewhere with that reason;
  * everything else runs on every platform the pinned CLI ships for.
  */
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { execFileSync } from "node:child_process";
+import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -128,14 +130,21 @@ function bashTurn(command: string): Array<{ event: string; data: object }> {
   ];
 }
 
-/** A fake Anthropic API. The main conversation (marked system prompt) runs the Bash report once, then answers. */
-async function startFakeUpstream(key: string, bashCommand: string | undefined): Promise<{
+/** A loopback server certificate for `localhost` + `127.0.0.1`, issued by a fresh throwaway test CA. */
+interface TestTls {
+  caPath: string;
+  key: Buffer;
+  cert: Buffer;
+}
+
+/** A fake Anthropic API. The main conversation (marked system prompt) runs the Bash report once, then answers. Over https when `tls` is given. */
+async function startFakeUpstream(key: string, bashCommand: string | undefined, tls?: TestTls): Promise<{
   url: string;
   requests: UpstreamRequest[];
   close: () => Promise<void>;
 }> {
   const requests: UpstreamRequest[] = [];
-  const server: Server = createServer((req, res) => {
+  const handler: RequestListener = (req, res) => {
     void (async () => {
       const raw = await readBody(req);
       const path = req.url ?? "";
@@ -187,12 +196,13 @@ async function startFakeUpstream(key: string, bashCommand: string | undefined): 
       res.writeHead(500);
       res.end();
     });
-  });
+  };
+  const server: Server = tls === undefined ? createServer(handler) : createHttpsServer({ key: tls.key, cert: tls.cert }, handler);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
   const address = server.address();
   if (address === null || typeof address === "string") throw new Error("fake upstream has no TCP address");
   return {
-    url: `http://127.0.0.1:${String(address.port)}`,
+    url: tls === undefined ? `http://127.0.0.1:${String(address.port)}` : `https://localhost:${String(address.port)}`,
     requests,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
@@ -495,4 +505,65 @@ describe("real Claude CLI: MCP-ready deadline (guuey#2139)", () => {
       expect((log.promptPulledAt ?? 0) - started).toBeGreaterThanOrEqual(0);
     },
   );
+});
+
+/** A throwaway CA and a leaf it signs for localhost/127.0.0.1, made with the openssl CLI in a fresh temp dir. */
+function makeTestTls(): TestTls {
+  const dir = mkdtempSync(join(tmpdir(), "claude-cli-tls-"));
+  roots.push(dir);
+  const at = (name: string): string => join(dir, name);
+  const openssl = (...args: string[]): void => {
+    execFileSync("openssl", args, { stdio: "ignore" });
+  };
+  openssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", at("ca.key"), "-out", at("ca.pem"), "-days", "1", "-subj", "/CN=guuey host test CA 3114");
+  openssl("req", "-newkey", "rsa:2048", "-nodes", "-keyout", at("leaf.key"), "-out", at("leaf.csr"), "-subj", "/CN=localhost");
+  writeFileSync(at("ext.cnf"), "subjectAltName=DNS:localhost,IP:127.0.0.1\nbasicConstraints=CA:FALSE\nextendedKeyUsage=serverAuth\n");
+  openssl("x509", "-req", "-in", at("leaf.csr"), "-CA", at("ca.pem"), "-CAkey", at("ca.key"), "-CAcreateserial", "-out", at("leaf.pem"), "-days", "1", "-extfile", at("ext.cnf"));
+  return { caPath: at("ca.pem"), key: readFileSync(at("leaf.key")), cert: readFileSync(at("leaf.pem")) };
+}
+
+/**
+ * guuey#3114: the host builds the CLI's env, which REPLACES the CLI's environment. A model endpoint under a CA the
+ * public roots lack is reachable only when the host carries its trust variables into that env. Consumer judges
+ * producer: the real pinned CLI against an https fake whose leaf a throwaway test CA signed.
+ */
+describe("real Claude CLI: the host's trust variables reach the CLI (guuey#3114)", () => {
+  async function turnAgainstHttps(trustVar: string): Promise<{ mainHits: number; terminal: string[] }> {
+    const tls = makeTestTls();
+    vi.stubEnv("NODE_EXTRA_CA_CERTS", trustVar === "NODE_EXTRA_CA_CERTS" ? tls.caPath : "");
+    vi.stubEnv("SSL_CERT_FILE", trustVar === "SSL_CERT_FILE" ? tls.caPath : "");
+    vi.stubEnv("REQUESTS_CA_BUNDLE", "");
+    const key = sentinel();
+    const { fs } = turnDirs();
+    const upstream = await startFakeUpstream(key, undefined, tls);
+    const { events, emit } = collector();
+    try {
+      await runInvoke(
+        { systemPrompt: `${MAIN_MARKER}: answer.` },
+        { input: "go", identity: { userId: "u-3114", authMode: "anonymous" }, fs, history: [] },
+        { baseUrl: upstream.url, authToken: key, listCredentials: () => [] },
+        emit,
+        recordingQuery([], { statusPending: [] }),
+      );
+    } finally {
+      await upstream.close();
+      vi.unstubAllEnvs();
+    }
+    return {
+      mainHits: upstream.requests.filter((r) => r.main).length,
+      terminal: events.filter((e) => e.type === "done" || e.type === "error").map((e) => e.type),
+    };
+  }
+
+  it("with NODE_EXTRA_CA_CERTS on the host, the CLI reaches the https upstream and the turn completes", { timeout: TURN_BUDGET_MS }, async () => {
+    const run = await turnAgainstHttps("NODE_EXTRA_CA_CERTS");
+    expect(run.mainHits).toBeGreaterThanOrEqual(1);
+    expect(run.terminal).toEqual(["done"]);
+  });
+
+  it("with no trust variable on the host, the CLI never reaches the upstream (the control)", { timeout: TURN_BUDGET_MS }, async () => {
+    const run = await turnAgainstHttps("none");
+    expect(run.mainHits).toBe(0);
+    expect(run.terminal).toHaveLength(1);
+  });
 });

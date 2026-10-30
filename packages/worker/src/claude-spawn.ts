@@ -76,6 +76,26 @@ export const INSPECTOR_ENV: readonly string[] = [
   "BUN_INSPECT_NOTIFY",
 ];
 
+/**
+ * The trust variables a platform sets on the worker process so it trusts extra
+ * CA certificates: Node adds the `NODE_EXTRA_CA_CERTS` bundle to its roots
+ * (the Claude CLI's model call honours this one), OpenSSL and Python's
+ * requests read the other two. The Claude CLI's env REPLACES its environment,
+ * so the host copies these into it ({@link trustEnvOf}). The one list: the
+ * platform's launcher sets exactly these names.
+ */
+export const PLATFORM_TRUST_ENV_NAMES: readonly string[] = ["NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE"];
+
+/** The trust variables `env` holds, by name, each only when set to a non-empty value. */
+export function trustEnvOf(env: { readonly [name: string]: string | undefined }): { [name: string]: string } {
+  const out: { [name: string]: string } = {};
+  for (const name of PLATFORM_TRUST_ENV_NAMES) {
+    const value = env[name];
+    if (value !== undefined && value !== "") out[name] = value;
+  }
+  return out;
+}
+
 /** Every variable the CLI environment must not carry from its caller. */
 export const CLAUDE_FORBIDDEN_ENV: readonly string[] = [
   ...CLAUDE_CREDENTIAL_ENV,
