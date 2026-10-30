@@ -46,12 +46,13 @@ function assistantMessage(text: string): SDKMessage {
 }
 
 /** A terminal result-message fixture (the only arm `runInvoke` reads beyond `.type`). */
-function resultMessage(subtype: string, result: string): SDKMessage {
-  const msg: { type: "result"; subtype: string; result: string; stop_reason: string } = {
+function resultMessage(subtype: string, result: string, isError = false): SDKMessage {
+  const msg: { type: "result"; subtype: string; result: string; stop_reason: string; is_error: boolean } = {
     type: "result",
     subtype,
     result,
     stop_reason: "end_turn",
+    is_error: isError,
   };
   return msg as unknown as SDKMessage;
 }
@@ -122,6 +123,22 @@ describe("runInvoke — native emission", () => {
     const dones = events.filter((e) => e.type === "done");
     expect(dones).toHaveLength(1);
     expect(dones[0]).toMatchObject({ type: "done", result: "hello world" });
+    expect(events.some((e) => e.type === "error")).toBe(false);
+  });
+
+  it.each([
+    ["success", false, "end_turn"],
+    ["success", true, "error"],
+    ["error_max_turns", true, "max_turns"],
+    ["error_during_execution", true, "error"],
+  ] as const)("a %s result with is_error %s ends in one `done` with stopReason %s, never an `error` event (guuey#3114)", async (subtype, isError, stopReason) => {
+    const { events, sink } = collector();
+    const emit = createEmitter(sink);
+    const query: QueryFn = () => streamOf(resultMessage(subtype, "API Error: Connection error.", isError));
+    await runInvoke({}, invoke(), { apiKey: "sk-test", listCredentials: () => [] }, emit, query);
+    const dones = events.filter((e) => e.type === "done");
+    expect(dones).toHaveLength(1);
+    expect(dones[0]).toMatchObject({ type: "done", stopReason, result: "API Error: Connection error." });
     expect(events.some((e) => e.type === "error")).toBe(false);
   });
 

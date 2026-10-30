@@ -259,18 +259,29 @@ interface ResultMessage {
   subtype?: string;
   result?: string;
   stop_reason?: string | null;
+  is_error?: boolean;
 }
 
 function isResultMessage(msg: SDKMessage): msg is SDKMessage & ResultMessage {
   return (msg as { type?: unknown }).type === "result";
 }
 
-/** Map the SDK result message → the Worker Protocol `done` stopReason + result. */
+/**
+ * Map the SDK result message → the Worker Protocol `done` stopReason + result.
+ * A `success` result with `is_error: true` is a failed turn whose `result` is
+ * the CLI's error text (an API or connection error): it ends with stopReason
+ * `error`, never `end_turn`, so a consumer reading only the line protocol does
+ * not take that text for the agent's answer (guuey#3114). It stays a `done`,
+ * not an `error` event: the turn did end, and its native result carries the
+ * failure's detail.
+ */
 function resultToDone(msg: SDKMessage & ResultMessage): { stopReason: StopReason; result: string } {
   const result = typeof msg.result === "string" ? msg.result : "";
   const stopReason: StopReason =
     msg.subtype === "success"
-      ? "end_turn"
+      ? msg.is_error === true
+        ? "error"
+        : "end_turn"
       : msg.subtype === "error_max_turns"
         ? "max_turns"
         : "error";
