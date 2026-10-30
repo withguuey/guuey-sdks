@@ -505,6 +505,28 @@ describe("buildOptions — the platform's trust variables reach the CLI env (guu
 
 });
 
+describe("buildOptions — the platform's Claude Code binary (guuey#3114)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("hands GUUEY_CLAUDE_CODE_EXECUTABLE to the SDK as pathToClaudeCodeExecutable when the host holds it", () => {
+    vi.stubEnv("GUUEY_CLAUDE_CODE_EXECUTABLE", "/shared/node_modules/claude");
+    expect(buildOptions({}, ctx()).pathToClaudeCodeExecutable).toBe("/shared/node_modules/claude");
+  });
+
+  it("leaves the SDK's own lookup when it is unset or empty", () => {
+    vi.stubEnv("GUUEY_CLAUDE_CODE_EXECUTABLE", "");
+    expect("pathToClaudeCodeExecutable" in buildOptions({}, ctx())).toBe(false);
+  });
+
+  it("a builder's snapshot.env value never names the binary: only the host's env does", () => {
+    vi.stubEnv("GUUEY_CLAUDE_CODE_EXECUTABLE", "");
+    const opts = buildOptions({ env: { GUUEY_CLAUDE_CODE_EXECUTABLE: "/app/evil" } }, ctx());
+    expect("pathToClaudeCodeExecutable" in opts).toBe(false);
+  });
+});
+
 describe("buildOptions — a bound first impression turns extended thinking OFF for the invoke (guuey#1183)", () => {
   const push = { chipKey: "opening-hours", intent: "show opening hours", contract: { kind: "hours" } };
 

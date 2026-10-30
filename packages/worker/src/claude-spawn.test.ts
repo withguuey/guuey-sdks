@@ -12,8 +12,10 @@ import {
   CLAUDE_FORBIDDEN_ENV,
   CLAUDE_KEY_FD_ENV,
   CLAUDE_OAUTH_FD_ENV,
+  CLAUDE_CODE_EXECUTABLE_ENV,
   ClaudeSpawnRefusedError,
   PLATFORM_TRUST_ENV_NAMES,
+  claudeCodeExecutableOf,
   makeClaudeSpawner,
   redactSecrets,
   secretForms,
@@ -69,6 +71,19 @@ describe("the platform trust variables (guuey#3114)", () => {
       NODE_EXTRA_CA_CERTS: "/b.pem",
     });
     expect(trustEnvOf({})).toEqual({});
+  });
+});
+
+describe("the platform's Claude Code binary variable (guuey#3114)", () => {
+  it("is GUUEY_CLAUDE_CODE_EXECUTABLE, which is not a forbidden CLI variable", () => {
+    expect(CLAUDE_CODE_EXECUTABLE_ENV).toBe("GUUEY_CLAUDE_CODE_EXECUTABLE");
+    expect(CLAUDE_FORBIDDEN_ENV).not.toContain(CLAUDE_CODE_EXECUTABLE_ENV);
+  });
+
+  it("claudeCodeExecutableOf returns the named path, or undefined when unset or empty", () => {
+    expect(claudeCodeExecutableOf({ GUUEY_CLAUDE_CODE_EXECUTABLE: "/shared/claude" })).toBe("/shared/claude");
+    expect(claudeCodeExecutableOf({ GUUEY_CLAUDE_CODE_EXECUTABLE: "" })).toBeUndefined();
+    expect(claudeCodeExecutableOf({})).toBeUndefined();
   });
 });
 

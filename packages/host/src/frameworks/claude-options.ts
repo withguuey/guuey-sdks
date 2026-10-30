@@ -23,7 +23,7 @@
  */
 import type { CanUseTool, Options, SDKMessage, Settings } from "@anthropic-ai/claude-agent-sdk";
 import type { FirstImpressionPush, FirstImpressionShown, Fs, HistoryMessage, JsonValue, McpAvailability, ProfileSection, WithheldTool } from "@guuey/worker";
-import { forbiddenClaudeEnvNames, makeClaudeSpawner, trustEnvOf } from "@guuey/worker";
+import { claudeCodeExecutableOf, forbiddenClaudeEnvNames, makeClaudeSpawner, trustEnvOf } from "@guuey/worker";
 import {
   GUUEY_DEFAULT_SYSTEM_PROMPT,
   claudeToolRules,
@@ -542,6 +542,7 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
   const thinkingOff = firstImpressionBound || snapshot.thinking?.type === "disabled";
   const disableThinking = thinkingOff && !rejectsDisabledThinking(model);
 
+  const executable = claudeCodeExecutableOf(process.env);
   const options: Options = {
     model,
     ...(disableThinking ? { thinking: { type: "disabled" as const } } : {}),
@@ -578,6 +579,9 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
     strictMcpConfig: true,
     maxTurns,
     env,
+    // The Claude Code binary the platform resolved in its own image, when it
+    // names one (`GUUEY_CLAUDE_CODE_EXECUTABLE`); otherwise the SDK's own lookup.
+    ...(executable !== undefined ? { pathToClaudeCodeExecutable: executable } : {}),
     spawnClaudeCodeProcess: makeClaudeSpawner({ key, secrets: mcpHeaderValues }),
     systemPrompt,
     // GuueyFS binding (opt-in): session dir as cwd, home+app as extra roots.

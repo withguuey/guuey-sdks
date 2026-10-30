@@ -96,6 +96,20 @@ export function trustEnvOf(env: { readonly [name: string]: string | undefined })
   return out;
 }
 
+/**
+ * The variable a platform sets on the worker process to name the Claude Code
+ * binary it ships (an absolute path in its own image). When set, the host
+ * hands it to the SDK as `pathToClaudeCodeExecutable`, so the CLI that runs is
+ * the one the platform resolved, not a second lookup of its own.
+ */
+export const CLAUDE_CODE_EXECUTABLE_ENV = "GUUEY_CLAUDE_CODE_EXECUTABLE";
+
+/** The Claude Code binary `env` names ({@link CLAUDE_CODE_EXECUTABLE_ENV}), or undefined when unset or empty. */
+export function claudeCodeExecutableOf(env: { readonly [name: string]: string | undefined }): string | undefined {
+  const value = env[CLAUDE_CODE_EXECUTABLE_ENV];
+  return value === undefined || value === "" ? undefined : value;
+}
+
 /** Every variable the CLI environment must not carry from its caller. */
 export const CLAUDE_FORBIDDEN_ENV: readonly string[] = [
   ...CLAUDE_CREDENTIAL_ENV,

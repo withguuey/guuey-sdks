@@ -29,9 +29,10 @@ import { execFileSync } from "node:child_process";
 import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { query as realQuery, type Options, type SDKUserMessage, type SpawnOptions } from "@anthropic-ai/claude-agent-sdk";
@@ -565,5 +566,53 @@ describe("real Claude CLI: the host's trust variables reach the CLI (guuey#3114)
     const run = await turnAgainstHttps("none");
     expect(run.mainHits).toBe(0);
     expect(run.terminal).toHaveLength(1);
+  });
+});
+
+/**
+ * guuey#3114: a platform names the Claude Code binary it ships in GUUEY_CLAUDE_CODE_EXECUTABLE; the host hands it
+ * to the SDK, so the process spawned is that binary. The variable points at a symlink to the pinned binary in a
+ * fresh temp dir, a path the SDK's own lookup can never produce, so the spawned command proves the host used it.
+ */
+describe("real Claude CLI: the platform's binary is the one spawned (guuey#3114)", () => {
+  it("spawns the binary GUUEY_CLAUDE_CODE_EXECUTABLE names, and the turn completes", { timeout: TURN_BUDGET_MS }, async () => {
+    const sdkEntry = createRequire(import.meta.url).resolve("@anthropic-ai/claude-agent-sdk");
+    const pinned = createRequire(sdkEntry).resolve(`@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}/claude`);
+    const dir = mkdtempSync(join(tmpdir(), "claude-cli-bin-"));
+    roots.push(dir);
+    const named = join(dir, "claude");
+    symlinkSync(pinned, named);
+    vi.stubEnv("GUUEY_CLAUDE_CODE_EXECUTABLE", named);
+    const key = sentinel();
+    const { fs } = turnDirs();
+    const upstream = await startFakeUpstream(key, undefined);
+    const commands: string[] = [];
+    const recording: QueryFn = (params) => {
+      const spawner = params.options.spawnClaudeCodeProcess;
+      if (spawner === undefined) throw new Error("the host installed no spawner");
+      const options: Options = {
+        ...params.options,
+        spawnClaudeCodeProcess: (request: SpawnOptions) => {
+          commands.push(request.command);
+          return spawner(request);
+        },
+      };
+      return realQuery({ prompt: params.prompt, options });
+    };
+    const { events, emit } = collector();
+    try {
+      await runInvoke(
+        { systemPrompt: `${MAIN_MARKER}: answer.` },
+        { input: "go", identity: { userId: "u-3114", authMode: "anonymous" }, fs, history: [] },
+        { baseUrl: upstream.url, authToken: key, listCredentials: () => [] },
+        emit,
+        recording,
+      );
+    } finally {
+      await upstream.close();
+      vi.unstubAllEnvs();
+    }
+    expect(commands).toEqual([named]);
+    expect(events.filter((e) => e.type === "done" || e.type === "error").map((e) => e.type)).toEqual(["done"]);
   });
 });
