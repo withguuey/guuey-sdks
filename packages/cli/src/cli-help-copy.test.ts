@@ -140,3 +140,13 @@ describe('cli.ts --help — apps update --home (guuey#2871)', () => {
     expect(updateHelp).toMatch(/durable\s+keeps it between sessions, ephemeral starts\s+each session fresh/);
   });
 });
+
+describe('guuey test --bearer-stdin help (guuey#2719)', () => {
+  // Which token the pod takes is the pod's rule; the byo verifier's side is pinned by the sync guard in
+  // commands/test.test.ts. This pins only the words a builder reads.
+  it('names the byo ID token, and offers no guuey-account route yet (guuey#3211)', () => {
+    expect(CLI_SOURCE).toMatch(
+      /own sign-in \(byo\), the ID token your identity\s+provider issues\. Not available yet for apps\s+whose users sign in with a guuey account\./,
+    );
+  });
+});

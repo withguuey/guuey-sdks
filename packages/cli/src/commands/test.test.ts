@@ -872,7 +872,8 @@ describe.skipIf(!existsSync(POD_SSE_SERVER) || !existsSync(POD_IDENTITY))(
 
 // The help text's per-mode rule (guuey#2719, docs' read): a `byo` app's pod takes the token whose `aud` is the app's
 // audience and refuses a Cognito ACCESS token (`token_use` not `id`), the opposite of the guuey pool. Pinned from the
-// verifier the pod calls; skipped outside the monorepo.
+// verifier the pod calls; skipped outside the monorepo. The help wording itself is pinned in cli-help-copy.test.ts,
+// which reads no private path: the help text is copy, not a mirrored wire shape.
 const BYO_VERIFY = fileURLToPath(new URL('../../../../../backend/libs/byo-identity/src/verify.ts', import.meta.url));
 
 describe.skipIf(!existsSync(BYO_VERIFY))('byo token sync guard — a byo app takes an ID-type token, as the help says (guuey#2719)', () => {
@@ -880,9 +881,5 @@ describe.skipIf(!existsSync(BYO_VERIFY))('byo token sync guard — a byo app tak
     const verify = readFileSync(BYO_VERIFY, 'utf8');
     expect(verify).toContain("token_use_not_id: 'enforce',");
     expect(verify).toContain("if (payload.token_use !== undefined && payload.token_use !== 'id') {");
-  });
-  it("cli.ts --help names the byo ID token, and offers no guuey-account route yet (guuey#3211)", () => {
-    const help = readFileSync(fileURLToPath(new URL('../cli.ts', import.meta.url)), 'utf8');
-    expect(help).toMatch(/own sign-in \(byo\), the ID token your identity\s+provider issues\. Not available yet for apps\s+whose users sign in with a guuey account\./);
   });
 });
