@@ -32,8 +32,10 @@ describe('findHandBuiltBearers — the source guard', () => {
   it('no CLI source builds a bearer header by hand: every cliApi request goes through the builder', () => {
     // Not cliApi, so not this header's business: the builder itself; `guuey dev`'s
     // local MCP servers; and the programmatic admin client (`createClient`, part of
-    // the package's public API), which calls the console host's /api/admin.
-    const EXEMPT = new Set(['cli-api-headers.ts', 'dev/dev-server.ts', 'client.ts']);
+    // the package's public API), which calls the console host's /api/admin; and
+    // `guuey test --bearer-stdin`'s end-user token, sent to the agent pod
+    // (guuey#2719), held in its own module so the rest of `test.ts` stays guarded.
+    const EXEMPT = new Set(['cli-api-headers.ts', 'dev/dev-server.ts', 'client.ts', 'commands/pod-bearer.ts']);
     const files: string[] = [];
     const walk = (dir: string): void => {
       for (const name of readdirSync(dir)) {

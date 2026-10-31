@@ -21,8 +21,16 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 import {
+  BEARER_ARGV_FLAGS,
+  BEARER_IN_ARGV,
+  bearerArgvRefusal,
+  BearerInputError,
   buildInvokeRequest,
   GUEST_HEADER_NAME,
+  MAX_BEARER_BYTES,
+  POD_STREAM_EVENTS,
+  readBearer,
+  redactCaller,
   isGuestSecret,
   loadThreadSecret,
   mintGuestSecret,
@@ -34,6 +42,7 @@ import {
   threadSecretPath,
   toInvokeUrl,
 } from './test.js';
+import type { BearerInput } from './test.js';
 import type { resolveConfig } from '../config.js';
 import { parseInterfaceFields } from '../wire-mirror-parse';
 
@@ -57,6 +66,7 @@ vi.mock('../config.js', async (importOriginal) => {
 });
 
 const SECRET = 'a'.repeat(64);
+const GUEST = { kind: 'guest', secret: SECRET } as const;
 
 /** Thrown by the process.exit mock so execution stops like the real thing. */
 class ExitSignal extends Error {
@@ -98,14 +108,14 @@ describe('buildInvokeRequest — the pod contract, not the retired one', () => {
     const { url, init } = buildInvokeRequest('https://pod.example', {
       input: 'hello',
       sessionId: 'sess-1',
-    }, SECRET);
+    }, GUEST);
     expect(url).toBe('https://pod.example/agent/invoke');
     expect(init.method).toBe('POST');
     expect(JSON.parse(String(init.body))).toEqual({ input: 'hello', sessionId: 'sess-1' });
   });
 
   it('never sends the retired { message, history } shape', () => {
-    const { init } = buildInvokeRequest('https://pod.example', { input: 'hello' }, SECRET);
+    const { init } = buildInvokeRequest('https://pod.example', { input: 'hello' }, GUEST);
     const body = JSON.parse(String(init.body));
     expect(body).toEqual({ input: 'hello' });
     expect(body).not.toHaveProperty('message');
@@ -113,7 +123,7 @@ describe('buildInvokeRequest — the pod contract, not the retired one', () => {
   });
 
   it('carries the visitor guest header and NO Authorization — the PAT authenticates the platform API, never the pod (guuey#1600)', () => {
-    const { init } = buildInvokeRequest('https://pod.example', { input: 'hello' }, SECRET);
+    const { init } = buildInvokeRequest('https://pod.example', { input: 'hello' }, GUEST);
     const headers = new Headers(init.headers);
     expect([...headers.keys()].sort()).toEqual(['accept', 'content-type', 'x-guuey-guest']);
     expect(headers.get('accept')).toBe('text/event-stream');
@@ -123,11 +133,11 @@ describe('buildInvokeRequest — the pod contract, not the retired one', () => {
   });
 
   it('refuses a guest secret the pod would ignore (not 64 hex)', () => {
-    expect(() => buildInvokeRequest('https://pod.example', { input: 'hi' }, 'short')).toThrow(/64 hex/);
+    expect(() => buildInvokeRequest('https://pod.example', { input: 'hi' }, { kind: 'guest', secret: 'short' })).toThrow(/64 hex/);
   });
 
   it('carries threadId when continuing a conversation', () => {
-    const { init } = buildInvokeRequest('https://pod.example', { input: 'hi', threadId: 't-1' }, SECRET);
+    const { init } = buildInvokeRequest('https://pod.example', { input: 'hi', threadId: 't-1' }, GUEST);
     expect(JSON.parse(String(init.body))).toEqual({ input: 'hi', threadId: 't-1' });
   });
 });
@@ -212,7 +222,7 @@ describe("threadFollowUp — save the thread's visitor, say how to continue (guu
     dir = mkdtempSync(join(tmpdir(), 'guuey-test-threads-'));
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
-  const base = { appId: 'app-1', appIdFlag: undefined, guestSecret: SECRET, errored: false } as const;
+  const base = { appId: 'app-1', appIdFlag: undefined, caller: GUEST, errored: false } as const;
 
   it('a new thread: saves its secret and prints the exact next command', () => {
     const lines = threadFollowUp({ ...base, threadFlag: undefined, threadId: 't-9', dir });
@@ -553,5 +563,326 @@ describe('guuey test --thread / --app-id — the command end to end (guuey#1600)
     expect(loadThreadSecret('app-1', 't-x', threadsDir.current)).toBeUndefined();
     expect(logs.join('\n')).toContain('App:      app-2');
     expect(logs.join('\n')).toContain('--thread t-x --app-id app-2');
+  });
+});
+
+// ─── guuey#2719: the signed-in mode (`--bearer-stdin`) ──────────────────────
+
+/** A JWT-shaped plant: never a real credential, only a string every output is searched for. */
+const PLANT = 'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJwbGFudGVkLTI3MTkifQ.cGxhbnRlZC1zaWduYXR1cmUtMjcxOQ';
+const BEARER = { kind: 'bearer', token: PLANT } as const;
+
+/** A stand-in for `process.stdin`: the given chunks, optionally a terminal. */
+function stdinOf(chunks: Array<string | Buffer>, isTTY?: boolean): BearerInput {
+  return {
+    ...(isTTY === undefined ? {} : { isTTY }),
+    async *[Symbol.asyncIterator]() {
+      for (const c of chunks) yield c;
+    },
+  };
+}
+
+describe('buildInvokeRequest — a signed-in caller sends its token, and nothing of a guest (guuey#2719)', () => {
+  it('carries Authorization: Bearer <token> and NO guest header', () => {
+    const { init } = buildInvokeRequest('https://pod.example', { input: 'hello' }, BEARER);
+    const headers = new Headers(init.headers);
+    expect([...headers.keys()].sort()).toEqual(['accept', 'authorization', 'content-type']);
+    expect(headers.get('authorization')).toBe(`Bearer ${PLANT}`);
+    expect(headers.has(GUEST_HEADER_NAME)).toBe(false);
+    expect(JSON.parse(String(init.body))).toEqual({ input: 'hello' });
+  });
+
+  it('refuses a token that is not one JWT, without echoing it', () => {
+    expect(() => buildInvokeRequest('https://pod.example', { input: 'hi' }, { kind: 'bearer', token: 'not a jwt' })).toThrow(
+      BearerInputError,
+    );
+  });
+});
+
+describe('bearerArgvRefusal — a token on the command line is refused by name, never echoed (guuey#2719)', () => {
+  it.each(BEARER_ARGV_FLAGS)('--%s <value> is refused; the message names the flag and not the value', (name) => {
+    const message = bearerArgvRefusal({ [name]: PLANT });
+    expect(message).toMatch(new RegExp(`^${BEARER_IN_ARGV}: --${name} is refused`));
+    expect(message).toContain('--bearer-stdin');
+    expect(message).not.toContain(PLANT);
+  });
+
+  it('a valueless token flag is refused too: it says the caller meant to pass one there', () => {
+    expect(bearerArgvRefusal({ bearer: true })).toMatch(/^bearer-in-argv: --bearer is refused/);
+  });
+
+  it('--bearer-stdin that picked up a value is refused, and the value is not shown', () => {
+    const message = bearerArgvRefusal({ 'bearer-stdin': PLANT });
+    expect(message).toMatch(/^bearer-in-argv: --bearer-stdin takes no value/);
+    expect(message).not.toContain(PLANT);
+  });
+
+  it('a bare --bearer-stdin, or no token flag at all, is no refusal', () => {
+    expect(bearerArgvRefusal({ 'bearer-stdin': true })).toBeUndefined();
+    expect(bearerArgvRefusal({ thread: 't-1' })).toBeUndefined();
+    expect(bearerArgvRefusal(undefined)).toBeUndefined();
+  });
+});
+
+describe('readBearer — one JWT from stdin, and no refusal shows what was read (guuey#2719)', () => {
+  it('reads the token across chunks (string or Buffer) and drops the trailing newline', async () => {
+    const half = PLANT.length >> 1;
+    await expect(readBearer(stdinOf([PLANT.slice(0, half), Buffer.from(`${PLANT.slice(half)}\n`)]))).resolves.toBe(PLANT);
+  });
+
+  it('refuses a terminal before reading a byte (a pasted token would echo on screen)', async () => {
+    let read = false;
+    const tty: BearerInput = {
+      isTTY: true,
+      async *[Symbol.asyncIterator]() {
+        read = true;
+        yield PLANT;
+      },
+    };
+    await expect(readBearer(tty)).rejects.toThrow(/stdin is a terminal/);
+    expect(read).toBe(false);
+  });
+
+  it('refuses an empty input', async () => {
+    await expect(readBearer(stdinOf(['  \n']))).rejects.toThrow(/stdin was empty/);
+  });
+
+  it('refuses an input larger than any user token', async () => {
+    await expect(readBearer(stdinOf(['a'.repeat(MAX_BEARER_BYTES + 1)]))).rejects.toThrow(/more than 16384 bytes/);
+  });
+
+  it.each([
+    ['a "Bearer " prefix', `Bearer ${PLANT}`],
+    ['two tokens', `${PLANT}\n${PLANT}`],
+    ['a two-part string', 'abc.def'],
+    ['a JSON token response', `{"access_token":"${PLANT}"}`],
+  ])('refuses %s, and the refusal carries none of it', async (_label, input) => {
+    const err = await readBearer(stdinOf([input])).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BearerInputError);
+    expect((err as BearerInputError).message).toMatch(/exactly one JWT/);
+    expect((err as BearerInputError).message).not.toContain(PLANT);
+  });
+});
+
+describe('redactCaller — the token is cut out of any text the CLI prints (guuey#2719)', () => {
+  it('replaces every occurrence for a signed-in caller', () => {
+    expect(redactCaller(`a ${PLANT} b ${PLANT}`, BEARER)).toBe('a [token redacted] b [token redacted]');
+  });
+  it("leaves a guest's text as it is", () => {
+    expect(redactCaller(`a ${SECRET}`, GUEST)).toBe(`a ${SECRET}`);
+  });
+});
+
+describe('streamToStdout — the [user] line names who the pod resolved the caller to (guuey#2719)', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  async function render(session: Record<string, string>): Promise<string[]> {
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => void logs.push(a.join(' ')));
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await streamToStdout(sseStream([frame('session', session), frame('done', { stopReason: 'end_turn' })]));
+    return logs;
+  }
+
+  it('a signed-in turn: the session line is unchanged, then the subject and authMode', async () => {
+    const logs = await render({ sessionId: 's-1', threadId: 't-1', userId: 'sub-123', authMode: 'authenticated' });
+    expect(logs).toEqual(['  [session] s-1 · thread t-1', '  [user] sub-123 · authenticated']);
+  });
+
+  it('a guest turn renders the same two lines, with its g_ id', async () => {
+    const logs = await render({ sessionId: 's-1', userId: 'g_abc', authMode: 'anonymous' });
+    expect(logs).toEqual(['  [session] s-1', '  [user] g_abc · anonymous']);
+  });
+
+  it('a session frame without a userId prints no [user] line', async () => {
+    expect(await render({ sessionId: 's-1' })).toEqual(['  [session] s-1']);
+  });
+});
+
+describe('guuey test --bearer-stdin — the command end to end (guuey#2719)', () => {
+  let fetchSpy: MockInstance<typeof fetch>;
+  let printed: string[];
+
+  beforeEach(() => {
+    threadsDir.current = mkdtempSync(join(tmpdir(), 'guuey-test-threads-'));
+    printed = [];
+    const keep = (...a: unknown[]) => void printed.push(a.map(String).join(' '));
+    vi.spyOn(console, 'log').mockImplementation(keep);
+    vi.spyOn(console, 'error').mockImplementation(keep);
+    vi.spyOn(console, 'warn').mockImplementation(keep);
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      printed.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      printed.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new ExitSignal(code);
+    }) as typeof process.exit);
+    fetchSpy = vi.spyOn(globalThis, 'fetch');
+  });
+  afterEach(() => {
+    rmSync(threadsDir.current, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  const signedInAnswer = (threadId: string) =>
+    new Response(
+      sseStream([
+        frame('session', { sessionId: threadId, userId: 'sub-123', authMode: 'authenticated', threadId }),
+        frame('message', { type: 'text.delta', id: 'm1', delta: 'hello, signed-in user', seq: 1 }),
+        frame('message', { type: 'text.end', id: 'm1', seq: 2 }),
+        frame('done', { stopReason: 'end_turn', threadId }),
+      ]),
+      { status: 200 },
+    );
+  const sent = (i = 0) => {
+    const [url, init] = fetchSpy.mock.calls[i] as [string, RequestInit];
+    return { url, headers: new Headers(init.headers), body: String(init.body) };
+  };
+
+  it('sends the token as the Bearer, no guest header, saves no visitor secret, and renders the same lines as a guest turn', async () => {
+    fetchSpy.mockResolvedValueOnce(signedInAnswer('t-s1'));
+    await testCommand('hello', { url: 'https://pod.example', 'bearer-stdin': true }, { stdin: stdinOf([`${PLANT}\n`]) });
+    const req = sent();
+    expect(req.headers.get('authorization')).toBe(`Bearer ${PLANT}`);
+    expect(req.headers.has(GUEST_HEADER_NAME)).toBe(false);
+    expect(JSON.parse(req.body)).toEqual({ input: 'hello' });
+    expect(existsSync(join(threadsDir.current, 'app-1'))).toBe(false);
+    const all = printed.join('\n');
+    expect(all).toContain('  Auth:     bearer (user token from stdin)');
+    expect(all).toContain('  [session] t-s1 · thread t-s1');
+    expect(all).toContain('  [user] sub-123 · authenticated');
+    expect(all).toContain('hello, signed-in user');
+    expect(all).toContain('  [done] end_turn');
+    expect(all).toContain('guuey test "<message>" --thread t-s1 --bearer-stdin < <token file>');
+  });
+
+  it('--thread needs no saved visitor: the pod keys a signed-in thread to the subject', async () => {
+    fetchSpy.mockResolvedValueOnce(signedInAnswer('t-s1'));
+    await testCommand('again', { url: 'https://pod.example', thread: 't-s1', 'bearer-stdin': true }, { stdin: stdinOf([PLANT]) });
+    expect(JSON.parse(sent().body)).toEqual({ input: 'again', threadId: 't-s1' });
+    expect(printed.join('\n')).not.toContain('No visitor identity saved');
+  });
+
+  it("the wrong kind of token (an ID token on the guuey pool): the pod's refusal is printed verbatim and the run exits 1", async () => {
+    const refusal = { code: 'UNAUTHORIZED', message: 'Invalid or unverifiable bearer token: Token use not allowed: id' };
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(refusal), { status: 401, statusText: 'Unauthorized' }));
+    await expect(
+      testCommand('hello', { url: 'https://pod.example', 'bearer-stdin': true }, { stdin: stdinOf([PLANT]) }),
+    ).rejects.toThrow(ExitSignal);
+    expect(printed.join('\n')).toContain(`Invoke failed: HTTP 401 Unauthorized — ${JSON.stringify(refusal)}`);
+  });
+
+  it('a terminal on stdin is refused before any network call', async () => {
+    await expect(
+      testCommand('hello', { url: 'https://pod.example', 'bearer-stdin': true }, { stdin: stdinOf([PLANT], true) }),
+    ).rejects.toThrow(ExitSignal);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(printed.join('\n')).toMatch(/stdin is a terminal/);
+  });
+
+  it('a token flag is refused before the usage check, any read of stdin or any network call', async () => {
+    let read = false;
+    const stdin: BearerInput = {
+      async *[Symbol.asyncIterator]() {
+        read = true;
+        yield PLANT;
+      },
+    };
+    // `guuey test --bearer <token>` with no message: the refusal, not the usage line.
+    await expect(testCommand(undefined, { bearer: PLANT }, { stdin })).rejects.toThrow(ExitSignal);
+    expect(printed.join('\n')).toMatch(/bearer-in-argv: --bearer is refused/);
+    expect(read).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('NO ESCAPE: across every path a planted JWT reaches only the Authorization header — 0 hits in output, argv, env, URL or body', async () => {
+    // 1. A good turn, then a failure whose body echoes the token (a misbehaving proxy): it prints redacted.
+    fetchSpy.mockResolvedValueOnce(signedInAnswer('t-n1'));
+    await testCommand('hello', { url: 'https://pod.example', 'bearer-stdin': true }, { stdin: stdinOf([`${PLANT}\n`]) });
+    fetchSpy.mockResolvedValueOnce(
+      new Response(`upstream rejected Authorization: Bearer ${PLANT}`, { status: 502, statusText: 'Bad Gateway' }),
+    );
+    await expect(
+      testCommand('hello', { url: 'https://pod.example', 'bearer-stdin': true }, { stdin: stdinOf([PLANT]) }),
+    ).rejects.toThrow(ExitSignal);
+    // 2. The argv refusals and a malformed stdin.
+    const argvFlags: Array<Record<string, string | true>> = [{ bearer: PLANT }, { token: PLANT }, { 'bearer-stdin': PLANT }];
+    for (const flags of argvFlags) {
+      await expect(testCommand('hello', { url: 'https://pod.example', ...flags }, { stdin: stdinOf([]) })).rejects.toThrow(
+        ExitSignal,
+      );
+    }
+    await expect(
+      testCommand('hello', { url: 'https://pod.example', 'bearer-stdin': true }, { stdin: stdinOf([`Bearer ${PLANT}`]) }),
+    ).rejects.toThrow(ExitSignal);
+
+    const all = printed.join('\n');
+    expect(all).toContain('[token redacted]');
+    expect(all.split(PLANT).length - 1).toBe(0);
+    expect(process.argv.join(' ').split(PLANT).length - 1).toBe(0);
+    expect(JSON.stringify(process.env).split(PLANT).length - 1).toBe(0);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    for (let i = 0; i < 2; i++) {
+      const req = sent(i);
+      expect(req.url).not.toContain(PLANT);
+      expect(req.body).not.toContain(PLANT);
+      expect(req.headers.get('authorization')).toBe(`Bearer ${PLANT}`);
+    }
+  });
+});
+
+// cto's term on guuey#2719: the event names the renderer handles are pinned from the runtime EMITTER, never from this
+// renderer, so a signed-in turn and a guest turn render the same frames. Read off disk; skip outside the monorepo.
+const POD_SSE_SERVER = fileURLToPath(
+  new URL('../../../../../backend/services/nocode-runtime/src/sse-server.ts', import.meta.url),
+);
+
+describe.skipIf(!existsSync(POD_SSE_SERVER) || !existsSync(POD_IDENTITY))(
+  'pod stream + Bearer sync guard — the emitter sends what the renderer handles, and the pod reads the Bearer the CLI sends (guuey#2719)',
+  () => {
+    it('every rendered event name is one the emitter sends, and the renderer has a case for each', () => {
+      const emitter = readFileSync(POD_SSE_SERVER, 'utf8');
+      const renderer = readFileSync(CLI_TEST_COMMAND, 'utf8');
+      for (const name of POD_STREAM_EVENTS) {
+        expect(emitter, `sse-server.ts sends no '${name}' event`).toContain(`pauseCapture.send('${name}',`);
+        expect(renderer, `streamToStdout has no case for '${name}'`).toContain(`case '${name}':`);
+      }
+    });
+
+    it('the session frame carries the userId and authMode the [user] line prints', () => {
+      const emitter = readFileSync(POD_SSE_SERVER, 'utf8');
+      expect(emitter).toContain('userId: identity.userId,');
+      expect(emitter).toContain('authMode: identity.authMode,');
+    });
+
+    it('the pod reads `Authorization: Bearer`, takes only ACCESS tokens from the guuey pool, and 401s with { code, message }', () => {
+      const identity = readFileSync(POD_IDENTITY, 'utf8');
+      expect(identity).toContain("const auth = req.headers['authorization'];");
+      expect(identity).toContain("auth.toLowerCase().startsWith('bearer ')");
+      expect(identity).toContain("tokenUse: 'access'");
+      const emitter = readFileSync(POD_SSE_SERVER, 'utf8');
+      expect(emitter).toContain('res.end(JSON.stringify({ code: ERROR_CODES.UNAUTHORIZED, message: err.message }));');
+    });
+  },
+);
+
+// The help text's per-mode rule (guuey#2719, docs' read): a `byo` app's pod takes the token whose `aud` is the app's
+// audience and refuses a Cognito ACCESS token (`token_use` not `id`), the opposite of the guuey pool. Pinned from the
+// verifier the pod calls; skipped outside the monorepo.
+const BYO_VERIFY = fileURLToPath(new URL('../../../../../backend/libs/byo-identity/src/verify.ts', import.meta.url));
+
+describe.skipIf(!existsSync(BYO_VERIFY))('byo token sync guard — a byo app takes an ID-type token, as the help says (guuey#2719)', () => {
+  it('the byo verifier enforces token_use_not_id', () => {
+    const verify = readFileSync(BYO_VERIFY, 'utf8');
+    expect(verify).toContain("token_use_not_id: 'enforce',");
+    expect(verify).toContain("if (payload.token_use !== undefined && payload.token_use !== 'id') {");
+  });
+  it("cli.ts --help names the byo ID token, and offers no guuey-account route yet (guuey#3211)", () => {
+    const help = readFileSync(fileURLToPath(new URL('../cli.ts', import.meta.url)), 'utf8');
+    expect(help).toMatch(/own sign-in \(byo\), the ID token your identity\s+provider issues\. Not available yet for apps\s+whose users sign in with a guuey account\./);
   });
 });

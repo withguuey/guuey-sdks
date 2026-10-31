@@ -144,8 +144,16 @@ Agent Development:
                                  bridge/QR "coming soon" note (slice 2+).
   test <message>                 Send a test message and print agent response
                                  (as an anonymous visitor; prints the thread id)
+    --bearer-stdin               Speak as a signed-in user of the app instead:
+                                 reads one token from stdin, e.g.
+                                 < token-file (chmod 600): for an app on your
+                                 own sign-in (byo), the ID token your identity
+                                 provider issues. Not available yet for apps
+                                 whose users sign in with a guuey account.
+                                 Never pass a token as an argument: refused
     --thread <id>                Continue a conversation this CLI started here
-                                 (the thread id the first turn printed)
+                                 (the thread id the first turn printed), or,
+                                 with --bearer-stdin, one of that user's threads
     --app-id <id>                Test this app instead of the guuey.json
                                  binding (the binding is left untouched)
     --session <id>               Reuse existing session

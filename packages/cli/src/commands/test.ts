@@ -20,14 +20,34 @@
  *      `GET /apps/:id/deployments` — already `…/agent/invoke`, exactly as the
  *      deploy-controller records it (`k8s/ingress.ts`)
  *
- * Identity: `guuey test` speaks as an anonymous visitor. The pod verifies a
- * `Bearer` against the app's user pool (or BYO issuer) and answers 401 to
- * anything else — never a guest fallback (`nocode-runtime/src/identity.ts`)
- * — so the platform PAT is NEVER sent to the pod; it authenticates the
- * deployments lookup only. No Bearer of any kind goes to the pod, so the
- * pod's access-vs-ID token-use refusal (`Token use not allowed: id`) cannot
- * arise on this path. An app that has closed guest access refuses the
- * visitor, and the refusal is printed verbatim.
+ * Identity: `guuey test` speaks as ONE of two callers ({@link InvokeCaller}),
+ * and the platform PAT is never either of them: it authenticates the
+ * deployments lookup only. The pod verifies a `Bearer` against the app's user
+ * pool (or BYO issuer) and answers 401 to anything else, never a guest
+ * fallback (`nocode-runtime/src/identity.ts`), so a PAT sent there would only
+ * be refused.
+ *
+ *   - **guest** (the default): an anonymous visitor, below. An app that has
+ *     closed guest access refuses the visitor, and the refusal is printed
+ *     verbatim.
+ *   - **bearer** (`--bearer-stdin`, guuey#2719): a signed-in end user of the
+ *     app. The user's token is read from stdin and sent as
+ *     `Authorization: Bearer`, so the pod's `userId` is derived from the
+ *     token's subject. WHICH token depends on how the app signs users in, and
+ *     the pod decides, never this CLI (it checks only that stdin holds one JWT):
+ *       - the guuey end-user pool: the ACCESS token. The pod refuses an ID token
+ *         (`Token use not allowed: id`, identity.ts `tokenUse: 'access'`). A
+ *         builder has no supported way to obtain one yet (guuey#3211), so the
+ *         help text offers this mode for `byo` apps only;
+ *       - a `byo` app: the token whose `aud` is the app's configured audience,
+ *         with most IdPs (Cognito included) the ID token. The pod refuses a
+ *         token without that audience (`Missing Audience …`) and a Cognito
+ *         access token (`@guuey-private/byo-identity`, `token_use_not_id`).
+ *     Either refusal is printed verbatim. The token never travels in argv or
+ *     env (a process list shows both), and the CLI never prints it: a flag
+ *     that would carry a token on the command line is refused by name, and the
+ *     token is cut out of any pod reply printed on a failure. The stream is
+ *     rendered by the SAME printer as a guest turn.
  *
  * The visitor is the pod's NON-BROWSER guest (guuey#1600): every request
  * carries `x-guuey-guest: <64-hex>` (identity.ts `extractGuestHeader`, the
@@ -39,7 +59,9 @@
  * thread this CLI starts is saved at `~/.guuey/test-threads/<appId>/<threadId>`
  * (dir 0700, file 0600, like `auth.json`) and `--thread <id>` loads it. A
  * thread with no saved secret on this machine is refused before any network
- * call — never a silent new thread.
+ * call — never a silent new thread. A signed-in thread needs no saved secret:
+ * the pod keys it to the token's subject, so `--thread` with the same user's
+ * token continues it.
  *
  * Usage:
  *   guuey test "What's the weather in Tokyo?"
@@ -47,6 +69,7 @@
  *   guuey test "hi" --app-id <id>   # overrides the project binding, left untouched
  *   guuey test "Show me a dashboard" --session sess_existing
  *   guuey test "hi" --url https://my-app.agents.sandbox.guuey.com
+ *   guuey test "hi" --bearer-stdin < user-token.txt   # signed in (file mode 0600)
  */
 
 import { randomBytes } from 'node:crypto';
@@ -57,6 +80,7 @@ import { resolveConfig, loadAmplifyOutputs } from '../config';
 import { getTestThreadsDir } from '../paths';
 import { requireAuth } from '../auth';
 import { apiRequest } from '../deploy-shared';
+import { podBearerHeader } from './pod-bearer';
 import * as out from '../output';
 
 /**
@@ -85,6 +109,106 @@ export function isGuestSecret(value: string): boolean {
 /** A fresh visitor: 32 random bytes, hex — the same shape the pod mints for a cookie. */
 export function mintGuestSecret(): string {
   return randomBytes(32).toString('hex');
+}
+
+/**
+ * Who a `guuey test` turn speaks as (see the file header): an anonymous
+ * visitor holding a guest secret, or a signed-in end user holding their
+ * token (guuey#2719; which token, see the file header).
+ */
+export type InvokeCaller = { kind: 'guest'; secret: string } | { kind: 'bearer'; token: string };
+
+/**
+ * Flags that would carry a token on the command line, where any process list
+ * shows it. Each is refused by name before anything else runs; the value is
+ * never echoed.
+ */
+export const BEARER_ARGV_FLAGS = ['bearer', 'token', 'access-token', 'id-token', 'jwt', 'authorization'] as const;
+
+/** The flag that reads the user's token from stdin. */
+export const BEARER_STDIN_FLAG = 'bearer-stdin';
+
+/** Every refusal of a token on the command line starts with this name, so a script or judge can match it. */
+export const BEARER_IN_ARGV = 'bearer-in-argv';
+
+/**
+ * The refusal for a token on the command line, or `undefined` when there is
+ * none. A `--bearer-stdin` that picked up a value is refused too: the parser
+ * reads the word after a flag as its value, and that word may be a token (or
+ * the message, put after the flag). The value is never part of the message.
+ */
+export function bearerArgvRefusal(flags: Record<string, string | true> | undefined): string | undefined {
+  const pipeIt = `pipe the token on stdin instead: guuey test "<message>" --${BEARER_STDIN_FLAG} < <token file>`;
+  for (const name of BEARER_ARGV_FLAGS) {
+    if (flags?.[name] !== undefined) {
+      return `${BEARER_IN_ARGV}: --${name} is refused: a token on the command line shows in the process list; ${pipeIt}`;
+    }
+  }
+  if (typeof flags?.[BEARER_STDIN_FLAG] === 'string') {
+    return (
+      `${BEARER_IN_ARGV}: --${BEARER_STDIN_FLAG} takes no value; the word after it was not used and is not shown. ` +
+      `Put the message first: guuey test "<message>" --${BEARER_STDIN_FLAG} < <token file>`
+    );
+  }
+  return undefined;
+}
+
+/** A refusal of what `--bearer-stdin` read. Its message never carries the input. */
+export class BearerInputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BearerInputError';
+  }
+}
+
+/** What `--bearer-stdin` reads: `process.stdin`, or a stand-in in tests. */
+export interface BearerInput extends AsyncIterable<Buffer | string> {
+  readonly isTTY?: boolean;
+}
+
+/** More than any real user token; a larger input is refused, not buffered. */
+export const MAX_BEARER_BYTES = 16 * 1024;
+
+/** A compact JWS: three base64url segments. The pod verifies nothing else (aws-jwt-verify). */
+const JWT_SHAPE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+
+/**
+ * Read the user's token from stdin: one JWT, surrounding whitespace dropped.
+ * A terminal is refused (a pasted token would echo on screen), as are an
+ * empty input, an oversized one and anything that is not one JWT. No refusal
+ * shows what was read.
+ */
+export async function readBearer(input: BearerInput): Promise<string> {
+  if (input.isTTY === true) {
+    throw new BearerInputError(
+      `--${BEARER_STDIN_FLAG} reads the user's token from stdin, and stdin is a terminal. ` +
+        'Redirect it from a file only you can read (chmod 600): guuey test "<message>" --bearer-stdin < <token file>',
+    );
+  }
+  let raw = '';
+  let bytes = 0;
+  for await (const chunk of input) {
+    const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+    bytes += Buffer.byteLength(text);
+    if (bytes > MAX_BEARER_BYTES) {
+      throw new BearerInputError(`--${BEARER_STDIN_FLAG}: stdin holds more than ${MAX_BEARER_BYTES} bytes, more than any user token.`);
+    }
+    raw += text;
+  }
+  const token = raw.trim();
+  if (token === '') throw new BearerInputError(`--${BEARER_STDIN_FLAG}: stdin was empty; it must hold the user's token.`);
+  if (!JWT_SHAPE.test(token)) {
+    throw new BearerInputError(
+      `--${BEARER_STDIN_FLAG}: stdin must hold exactly one JWT (three base64url parts joined by dots, no "Bearer " prefix); ` +
+        'what it holds is not shown.',
+    );
+  }
+  return token;
+}
+
+/** `text` with every occurrence of the caller's token cut out; a guest's text is returned as is. */
+export function redactCaller(text: string, caller: InvokeCaller): string {
+  return caller.kind === 'bearer' ? text.split(caller.token).join('[token redacted]') : text;
 }
 
 /** One path segment, never a traversal: the appId / threadId that name a secret file. */
@@ -129,10 +253,25 @@ interface SseEvent {
   data: string;
 }
 
-/** The pod's `event: session` payload (sse-server.ts header). */
+/**
+ * The `event:` names the renderer handles, one `case` each in
+ * {@link streamToStdout}. Pinned against the runtime EMITTER
+ * (`nocode-runtime/src/sse-server.ts`), never against this renderer, by the
+ * sync guard in `test.test.ts`.
+ */
+export const POD_STREAM_EVENTS = ['session', 'message', 'done', 'error'] as const;
+
+/**
+ * The pod's `event: session` payload (sse-server.ts header). `userId` and
+ * `authMode` are who the pod resolved the caller to: `g_<hash>` +
+ * `anonymous` for a guest, the token's subject + `authenticated` for a
+ * signed-in caller. Optional, so a frame without them still renders.
+ */
 interface SessionFrame {
   sessionId: string;
   threadId?: string;
+  userId?: string;
+  authMode?: string;
 }
 
 /** The pod's `event: done` payload. */
@@ -149,7 +288,15 @@ interface ErrorFrame {
 export async function test(
   message: string | undefined,
   flags?: Record<string, string | true>,
+  io: { stdin: BearerInput } = { stdin: process.stdin },
 ): Promise<void> {
+  // First, before the usage check: a token on the command line is refused even
+  // when the parser took the message as that flag's value.
+  const argvRefusal = bearerArgvRefusal(flags);
+  if (argvRefusal !== undefined) {
+    out.error(argvRefusal);
+    process.exit(1);
+  }
   if (!message) {
     out.error('Usage: guuey test <message>');
     process.exit(1);
@@ -172,8 +319,16 @@ export async function test(
   const appId = config.appId;
 
   const threadFlag = typeof flags?.thread === 'string' ? flags.thread : undefined;
-  let guestSecret: string;
-  if (threadFlag !== undefined) {
+  let caller: InvokeCaller;
+  if (flags?.[BEARER_STDIN_FLAG] === true) {
+    try {
+      caller = { kind: 'bearer', token: await readBearer(io.stdin) };
+    } catch (err) {
+      if (!(err instanceof BearerInputError)) throw err;
+      out.error(err.message);
+      process.exit(1);
+    }
+  } else if (threadFlag !== undefined) {
     const saved = loadThreadSecret(appId, threadFlag);
     if (saved === undefined) {
       out.error(
@@ -183,9 +338,9 @@ export async function test(
       );
       process.exit(1);
     }
-    guestSecret = saved;
+    caller = { kind: 'guest', secret: saved };
   } else {
-    guestSecret = mintGuestSecret();
+    caller = { kind: 'guest', secret: mintGuestSecret() };
   }
 
   const { pat } = requireAuth();
@@ -198,6 +353,7 @@ export async function test(
   const endpoint = await resolveAgentEndpoint(config, flags, pat);
 
   console.log(`  App:      ${appId}`);
+  console.log(`  Auth:     ${caller.kind === 'bearer' ? 'bearer (user token from stdin)' : 'guest'}`);
   console.log(`  Thread:   ${threadFlag ?? 'new'}`);
   console.log(`  Session:  ${sessionId ?? '(keyed to the thread)'}`);
   console.log(`  Endpoint: ${endpoint}`);
@@ -209,11 +365,12 @@ export async function test(
     ...(sessionId !== undefined ? { sessionId } : {}),
     ...(threadFlag !== undefined ? { threadId: threadFlag } : {}),
   };
-  const { url, init } = buildInvokeRequest(endpoint, body, guestSecret);
+  const { url, init } = buildInvokeRequest(endpoint, body, caller);
   const res = await fetch(url, init);
 
   if (!res.ok) {
-    const body = await res.text().catch(() => '');
+    // Redact BEFORE the cut, so a token straddling the 400-char edge is never half-printed.
+    const body = redactCaller(await res.text().catch(() => ''), caller);
     out.error(`Invoke failed: HTTP ${res.status} ${res.statusText}${body ? ` — ${body.slice(0, 400)}` : ''}`);
     process.exit(1);
   }
@@ -225,26 +382,27 @@ export async function test(
   const { stopReason, errored, threadId } = await streamToStdout(res.body);
   console.log('');
   if (stopReason !== undefined) console.log(`  [done] ${stopReason}`);
-  for (const line of threadFollowUp({ appId, appIdFlag, threadFlag, threadId, guestSecret, errored })) console.log(line);
+  for (const line of threadFollowUp({ appId, appIdFlag, threadFlag, threadId, caller, errored })) console.log(line);
   if (errored) process.exit(1);
 }
 
 /**
- * After the stream: save the visitor secret of the thread the pod named, and
- * say how to continue it. A requested thread the pod did NOT continue (thread
- * persistence off, or the owner check minted a fresh one) is a warning, never
- * silent. Exported for unit test.
+ * After the stream: save the visitor secret of the thread the pod named (a
+ * guest's; a signed-in thread is keyed to the token's subject and needs none),
+ * and say how to continue it. A requested thread the pod did NOT continue
+ * (thread persistence off, or the owner check minted a fresh one) is a
+ * warning, never silent. Exported for unit test.
  */
 export function threadFollowUp(args: {
   appId: string;
   appIdFlag: string | undefined;
   threadFlag: string | undefined;
   threadId: string | undefined;
-  guestSecret: string;
+  caller: InvokeCaller;
   errored: boolean;
   dir?: string;
 }): string[] {
-  const { appId, appIdFlag, threadFlag, threadId, guestSecret, errored, dir } = args;
+  const { appId, appIdFlag, threadFlag, threadId, caller, errored, dir } = args;
   if (threadId === undefined) {
     // An invoke that failed before its session frame already printed why.
     if (errored) return [];
@@ -253,14 +411,14 @@ export function threadFollowUp(args: {
       ? [`  (the pod named no thread — ${why}; there is nothing to continue)`]
       : [`  ! the pod named no thread — ${why}; thread ${threadFlag} was not continued`];
   }
-  saveThreadSecret(appId, threadId, guestSecret, dir);
+  if (caller.kind === 'guest') saveThreadSecret(appId, threadId, caller.secret, dir);
   const lines: string[] = [];
   if (threadFlag !== undefined && threadFlag !== threadId) {
     lines.push(`  ! the pod started a NEW thread ${threadId} instead of continuing ${threadFlag}`);
   }
-  lines.push(
-    `  Continue this conversation: guuey test "<message>" --thread ${threadId}${appIdFlag !== undefined ? ` --app-id ${appIdFlag}` : ''}`,
-  );
+  const appIdPart = appIdFlag !== undefined ? ` --app-id ${appIdFlag}` : '';
+  const signedInPart = caller.kind === 'bearer' ? ` --${BEARER_STDIN_FLAG} < <token file>` : '';
+  lines.push(`  Continue this conversation: guuey test "<message>" --thread ${threadId}${appIdPart}${signedInPart}`);
   return lines;
 }
 
@@ -279,16 +437,24 @@ export function toInvokeUrl(endpointUrl: string): string {
 
 /**
  * The invoke request: the normalised URL plus a fetch init carrying the
- * content-type/accept pair, the visitor's guest header and the JSON body.
- * Never an `Authorization` header — see the file header for why the PAT
- * never reaches the pod.
+ * content-type/accept pair, the caller's ONE credential and the JSON body.
+ * A guest sends its guest header and no `Authorization`; a signed-in caller
+ * sends `Authorization: Bearer <user token>` and no guest header. The PAT
+ * is never either (see the file header).
  */
 export function buildInvokeRequest(
   endpoint: string,
   body: InvokeBody,
-  guestSecret: string,
+  caller: InvokeCaller,
 ): { url: string; init: RequestInit } {
-  if (!isGuestSecret(guestSecret)) throw new Error('guest secret must be 64 hex chars');
+  let credential: Record<string, string>;
+  if (caller.kind === 'guest') {
+    if (!isGuestSecret(caller.secret)) throw new Error('guest secret must be 64 hex chars');
+    credential = { [GUEST_HEADER_NAME]: caller.secret };
+  } else {
+    if (!JWT_SHAPE.test(caller.token)) throw new BearerInputError('the user token must be one JWT');
+    credential = podBearerHeader(caller.token);
+  }
   return {
     url: toInvokeUrl(endpoint),
     init: {
@@ -296,7 +462,7 @@ export function buildInvokeRequest(
       headers: {
         'Content-Type': 'application/json',
         Accept: 'text/event-stream',
-        [GUEST_HEADER_NAME]: guestSecret,
+        ...credential,
       },
       body: JSON.stringify(body),
     },
@@ -317,7 +483,9 @@ function isSessionFrame(v: unknown): v is SessionFrame {
     v !== null &&
     'sessionId' in v &&
     typeof v.sessionId === 'string' &&
-    (!('threadId' in v) || typeof v.threadId === 'string')
+    (!('threadId' in v) || typeof v.threadId === 'string') &&
+    (!('userId' in v) || typeof v.userId === 'string') &&
+    (!('authMode' in v) || typeof v.authMode === 'string')
   );
 }
 
@@ -365,6 +533,10 @@ export async function streamToStdout(
           console.log(
             `  [session] ${payload.sessionId}${payload.threadId ? ` · thread ${payload.threadId}` : ''}`,
           );
+          // Who the pod resolved the caller to: the proof a signed-in turn ran as the token's subject.
+          if (payload.userId) {
+            console.log(`  [user] ${payload.userId}${payload.authMode ? ` · ${payload.authMode}` : ''}`);
+          }
         }
         break;
       case 'message':
