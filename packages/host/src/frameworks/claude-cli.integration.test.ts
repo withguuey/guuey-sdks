@@ -616,3 +616,35 @@ describe("real Claude CLI: the platform's binary is the one spawned (guuey#3114)
     expect(events.filter((e) => e.type === "done" || e.type === "error").map((e) => e.type)).toEqual(["done"]);
   });
 });
+
+/**
+ * guuey#3140: the CLI's env replaces its environment, so the host carries its own PATH into it. Before, the CLI's
+ * Bash child had an empty PATH and found no external command (infra-hardening measured `ls: No such file or
+ * directory` on linux/arm64, `command not found: sleep` on darwin). The model asks Bash for `command -v ls` with
+ * only shell builtins and an absolute output path, so the command itself needs no PATH to run and report.
+ */
+describe("real Claude CLI: the CLI's Bash finds external commands on the host's PATH (guuey#3140)", () => {
+  it("an fsBound turn's Bash resolves `ls`, and the turn completes", { timeout: TURN_BUDGET_MS }, async () => {
+    const key = sentinel();
+    const { fs, root } = turnDirs();
+    const outPath = join(root, "path-probe.txt");
+    const upstream = await startFakeUpstream(key, `command -v ls > ${outPath} 2>&1; echo "rc=$?" >> ${outPath}`);
+    const { events, emit } = collector();
+    try {
+      await runInvoke(
+        { systemPrompt: `${MAIN_MARKER}: run the report tool once, then answer.` },
+        { input: "go", identity: { userId: "u-3140", authMode: "anonymous" }, fs, fsBound: true, history: [] },
+        { baseUrl: upstream.url, authToken: key, listCredentials: () => [] },
+        emit,
+        recordingQuery([], { statusPending: [] }),
+      );
+    } finally {
+      await upstream.close();
+    }
+    expect(events.filter((e) => e.type === "done" || e.type === "error").map((e) => e.type)).toEqual(["done"]);
+    expect(existsSync(outPath)).toBe(true);
+    const out = readFileSync(outPath, "utf8");
+    expect(out).toMatch(/^\/\S*\/ls$/m);
+    expect(out).toMatch(/^rc=0$/m);
+  });
+});

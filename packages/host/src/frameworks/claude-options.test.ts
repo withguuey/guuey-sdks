@@ -4,6 +4,7 @@ import { GUUEY_DEFAULT_SYSTEM_PROMPT } from "@guuey/config";
 import { PLATFORM_TRUST_ENV_NAMES } from "@guuey/worker";
 import {
   buildOptions,
+  hostPathEnvOf,
   reservedEnvNamesDropped,
   resolveMcpServers,
   resolveToolGates,
@@ -503,6 +504,30 @@ describe("buildOptions — the platform's trust variables reach the CLI env (guu
     expect(platform.env?.NODE_EXTRA_CA_CERTS).toBe(BUNDLE);
   });
 
+});
+
+describe("buildOptions — the host's PATH reaches the CLI env, so its Bash finds external commands (guuey#3140)", () => {
+  const IMAGE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("carries the host's PATH on the proxy path and on the local key path", () => {
+    vi.stubEnv("PATH", IMAGE_PATH);
+    expect(buildOptions({}, ctx({ baseUrl: "https://models.test/m", authToken: "opaque" })).env?.PATH).toBe(IMAGE_PATH);
+    expect(buildOptions({}, ctx({ apiKey: "sk-local" })).env?.PATH).toBe(IMAGE_PATH);
+  });
+
+  it("an unset or empty host PATH stays out of the CLI env", () => {
+    vi.stubEnv("PATH", "");
+    expect(Object.keys(buildOptions({}, ctx({ apiKey: "sk-local" })).env ?? {})).not.toContain("PATH");
+    expect(hostPathEnvOf({})).toEqual({});
+  });
+
+  it("a builder's agent.env PATH still replaces the host's, as it did when it was the only PATH", () => {
+    vi.stubEnv("PATH", IMAGE_PATH);
+    expect(buildOptions({ env: { PATH: "/app/bin:/usr/bin:/bin" } }, ctx({ apiKey: "sk-local" })).env?.PATH).toBe("/app/bin:/usr/bin:/bin");
+  });
 });
 
 describe("buildOptions — the platform's Claude Code binary (guuey#3114)", () => {

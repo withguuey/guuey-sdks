@@ -339,6 +339,12 @@ export function reservedEnvNamesDropped(snapshot: Pick<RunSnapshot, "env">): str
   return withoutReservedEnvNames(snapshot.env).dropped;
 }
 
+/** The `PATH` `env` holds, only when set to a non-empty value (guuey#3140). */
+export function hostPathEnvOf(env: { readonly [name: string]: string | undefined }): { PATH?: string } {
+  const value = env.PATH;
+  return value === undefined || value === "" ? {} : { PATH: value };
+}
+
 /**
  * Build the Claude Agent SDK `Options` for one invoke. Pure: all disk/env access
  * is injected via {@link BuildOptionsContext}. Throws on an unresolved `{file}`
@@ -472,10 +478,17 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
   // public roots only (guuey#3114). After the builder's env, so a builder
   // value never replaces the platform's.
   const trustEnv = trustEnvOf(process.env);
+  // The host's own PATH (guuey#3140): this env replaces the CLI's environment,
+  // so without it the CLI's Bash child finds no external command (`ls`,
+  // `head`, `sleep`); only shell builtins and absolute paths ran. FIRST, so a
+  // builder's agent.env PATH (not reserved, and the only PATH a stored
+  // definition could give) still replaces it, as it did before.
+  const pathEnv = hostPathEnvOf(process.env);
   let env: Record<string, string>;
   let key: string;
   if (baseUrl !== undefined && authToken !== undefined) {
     env = {
+      ...pathEnv,
       ...builderEnv,
       ...fsEnv,
       ...trustEnv,
@@ -487,6 +500,7 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
     // apiKey is guaranteed non-null by the guard; the if-check narrows the type.
     if (!apiKey) throw new Error("unreachable: apiKey guard should have prevented this path");
     env = {
+      ...pathEnv,
       ...builderEnv,
       ...fsEnv,
       ...trustEnv,
