@@ -162,4 +162,13 @@ describe("assembled manage-only template (guuey#581 pt 5)", () => {
       open: "guuey open",
     });
   });
+
+  it("ships AGENTS.md steering a coding agent to apply (plan first), never deploy or dev", () => {
+    const steering = readFileSync(join(agentDir, "AGENTS.md"), "utf8");
+    expect(steering).toContain("guuey agent apply --dry-run");
+    expect(steering).toContain('"appId"');
+    expect(steering).toMatch(/\*\*Never\*\* run `guuey deploy`/);
+    // The scaffold fills the runner; the shipped file still carries the placeholder.
+    expect(steering).toContain("PNPM_PLACEHOLDER apply");
+  });
 });
