@@ -232,6 +232,9 @@ describe('eject() — the flow', () => {
     expect(written.ggui).toBeUndefined();
     expect(steps.gguiAtDeploy).toEqual([false]);
     expect(printedLog()).toContain('Took the ggui block out of guuey.json');
+    // Never "add it back": for an app whose assets came from the console, that deploy wipes them.
+    expect(printedLog()).toContain('a deploy then replaces the app\'s set with yours');
+    expect(printedLog()).not.toContain('Add the block back');
   });
 
   it('--framework overrides the live definition', async () => {
@@ -262,11 +265,13 @@ describe('eject() — the flow', () => {
     expect(steps.log).toEqual([]);
   });
 
-  it('an app with nothing live is refused, naming the scaffold that starts it as code', async () => {
+  it('an app with nothing live is refused, pointing at its builds and never at a second project', async () => {
     mockPlatform({ before: [] });
     await expect(eject({ 'app-id': 'app-1', yes: true })).rejects.toBeInstanceOf(ExitSignal);
     expect(printedErr()).toContain('has no live no-code build to eject');
-    expect(printedErr()).toContain('--app app-1');
+    expect(printedErr()).toContain('guuey deployments list --app-id app-1');
+    // An agent mid-eject that reads a scaffold command runs it: a second project.
+    expect(printedErr()).not.toContain('create-agentic-app');
     expect(steps.log).toEqual([]);
   });
 

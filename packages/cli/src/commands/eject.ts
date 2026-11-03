@@ -145,7 +145,7 @@ function dropGguiBlock(dir: string): void {
   const { ggui: _gguiBlock, ...rest } = parsed.data;
   saveProjectConfig(rest, path);
   console.log(
-    "  Took the ggui block out of guuey.json: a deploy replaces all of an app's ggui assets, so eject's deploy keeps the app's as they are. Add the block back after eject to push your own.",
+    "  Took the ggui block out of guuey.json: a deploy replaces all of an app's ggui assets, so eject's deploy keeps the app's as they are. To push your own ggui assets later, add a ggui block: a deploy then replaces the app's set with yours.",
   );
 }
 
@@ -189,7 +189,7 @@ export async function eject(flags?: Record<string, string | true>): Promise<void
   if (live === null || buildNumber === null) {
     out.error(
       `App ${appId} has no live no-code build to eject. ` +
-        `To start it as code, scaffold a project bound to it (npx @guuey/create-agentic-app my-agent --app ${appId}) and run guuey deploy there.`,
+        `Eject copies a live no-code agent into a code project; guuey deployments list --app-id ${appId} shows this app's builds.`,
     );
     process.exit(1);
   }
