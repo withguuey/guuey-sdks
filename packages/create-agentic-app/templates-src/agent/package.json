@@ -5,12 +5,15 @@
   "type": "module",
   "scripts": {
     "login": "guuey login",
+    "pull": "guuey pull",
     "apply": "guuey agent apply",
-    "dev": "guuey dev",
-    "status": "guuey status",
+    "status": "guuey agent status",
     "open": "guuey open"
   },
   "devDependencies": {
     "@guuey/cli": "0.0.0"
+  },
+  "allowScripts": {
+    "esbuild": true
   }
 }

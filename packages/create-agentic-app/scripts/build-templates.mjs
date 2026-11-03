@@ -39,7 +39,7 @@
 import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defaultModelFor, GUUEY_SCAFFOLD_SYSTEM_PROMPT } from '@guuey/config';
+import { defaultModelFor, GUUEY_DEFAULT_SYSTEM_PROMPT, GUUEY_SCAFFOLD_SYSTEM_PROMPT } from '@guuey/config';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const packageRoot = join(here, '..');
@@ -212,17 +212,22 @@ emitMcpBase();
  * "who wants to manage agent only") — to `dist/templates/agent/`. A
  * SIBLING family like mcp-base, deliberately outside the template x
  * framework matrix: a declarative definition has no framework axis (the
- * agent is prompt + manifest; the stock runtime pod runs it). The system
- * prompt is the same single-source stamped copy core carries (the
- * byte-equality guard covers it); MODEL_PLACEHOLDER resolves to the
- * platform default provider's GA default; versions stamp as everywhere.
+ * agent is prompt + manifest; the stock runtime pod runs it). Its system
+ * prompt is `@guuey/config`'s GUUEY_DEFAULT_SYSTEM_PROMPT, the runtime
+ * default, NOT core's scaffold prompt: core's names the todo tool server a
+ * manage-only agent does not have. The default carries no template name, so
+ * the scaffold's rename leaves it byte-identical and `guuey pull`'s
+ * known-default rule still recognizes it as untouched (check-templates.mjs
+ * guards the byte form). MODEL_PLACEHOLDER resolves to the platform default
+ * provider's GA default; versions stamp as everywhere.
  */
 function emitAgentTemplate() {
   const srcDir = join(templatesSrcDir, 'agent');
   const outDir = join(distTemplatesDir, 'agent');
   rmSync(outDir, { recursive: true, force: true });
   cpSync(srcDir, outDir, { recursive: true });
-  cpSync(join(coreDir, 'prompts', 'system.md'), join(outDir, 'prompts', 'system.md'));
+  mkdirSync(join(outDir, 'prompts'), { recursive: true });
+  writeFileSync(join(outDir, 'prompts', 'system.md'), `${GUUEY_DEFAULT_SYSTEM_PROMPT}\n`, 'utf8');
   stampVersions(join(outDir, 'package.json'));
   const guueyJsonPath = join(outDir, 'guuey.json');
   writeFileSync(

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { GUUEY_DEFAULT_SYSTEM_PROMPT } from "@guuey/config";
 
 const dist = join(__dirname, "..", "dist", "templates");
 
@@ -130,10 +131,35 @@ describe("assembled manage-only template (guuey#581 pt 5)", () => {
     expect(guuey.agent.model).not.toContain("PLACEHOLDER"); // resolved to the platform default
     const pkg = JSON.parse(readFileSync(join(agentDir, "package.json"), "utf8"));
     expect(pkg.devDependencies["@guuey/cli"]).not.toBe("0.0.0"); // versions.json stamped
-    // The single-source system prompt, byte-identical (the publish guard's rule).
-    const core = readFileSync(join(__dirname, "..", "templates-src", "core", "prompts", "system.md"), "utf8");
-    expect(readFileSync(join(agentDir, "prompts", "system.md"), "utf8")).toBe(core);
     // NO web app in the manage-only repo — that's the persona split.
     expect(existsSync(join(agentDir, "apps"))).toBe(false);
+  });
+
+  it("ships the runtime default prompt, not core's: no todo tool it does not have, and pull still knows it", () => {
+    const prompt = readFileSync(join(agentDir, "prompts", "system.md"), "utf8");
+    expect(prompt).toBe(`${GUUEY_DEFAULT_SYSTEM_PROMPT}\n`);
+    expect(prompt).not.toMatch(/todo/i);
+    // No template name in it, so the scaffold's rename cannot change a byte.
+    expect(prompt).not.toContain("agentic-app-template");
+  });
+
+  it("installs cleanly on pnpm 10/11 and npm 11: esbuild's postinstall is allowlisted for each", () => {
+    const ws = readFileSync(join(agentDir, "pnpm-workspace.yaml"), "utf8");
+    expect(ws).toMatch(/^allowBuilds:\n {2}esbuild: true$/m); // pnpm 11
+    expect(ws).toMatch(/^onlyBuiltDependencies:\n {2}- esbuild$/m); // pnpm 10
+    expect(ws).not.toMatch(/^packages:/m); // one package, not a workspace
+    const pkg = JSON.parse(readFileSync(join(agentDir, "package.json"), "utf8"));
+    expect(pkg.allowScripts).toEqual({ esbuild: true }); // npm 11
+  });
+
+  it("every script is a manage-only verb: no dead `dev`, status is what is live, never `guuey deploy`", () => {
+    const { scripts } = JSON.parse(readFileSync(join(agentDir, "package.json"), "utf8"));
+    expect(scripts).toEqual({
+      login: "guuey login",
+      pull: "guuey pull",
+      apply: "guuey agent apply",
+      status: "guuey agent status",
+      open: "guuey open",
+    });
   });
 });

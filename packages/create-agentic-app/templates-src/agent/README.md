@@ -13,7 +13,14 @@ PNPM_PLACEHOLDER install
 PNPM_PLACEHOLDER login          # once — opens the guuey console
 # edit prompts/system.md (the agent's voice) and guuey.json (model, MCP servers)
 PNPM_PLACEHOLDER apply          # push the definition to your live agent
+PNPM_PLACEHOLDER status         # what is live: build, provenance, drift
 ```
+
+`prompts/system.md` starts as guuey's default agent prompt: replace it with
+what your agent is for.
+
+There is no local dev server for a manage-only agent: `apply` is how a
+change goes live. (`guuey deploy` is the code-mode verb; it is not used here.)
 
 `guuey.json`'s `appId` binds this repo to your app. If it was scaffolded
 from the console it is already set; otherwise `PNPM_PLACEHOLDER apply` will tell you
@@ -22,7 +29,7 @@ what to do.
 ## Guest & authenticated modes
 
 If your agent was drafted in the guuey console with guest/auth mode
-prompts, **run `guuey pull` before your first `PNPM_PLACEHOLDER apply`** — it writes
+prompts, **run `PNPM_PLACEHOLDER pull` before your first `PNPM_PLACEHOLDER apply`** — it writes
 the live definition (modes included) into this repo. Apply is
 doc-is-desired-state: a document without `agent.modes` declares an agent
 without modes, and the CLI will refuse a first apply that would strip

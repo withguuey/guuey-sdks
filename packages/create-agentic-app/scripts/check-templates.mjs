@@ -37,7 +37,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GUUEY_SCAFFOLD_SYSTEM_PROMPT } from '@guuey/config';
+import { GUUEY_DEFAULT_SYSTEM_PROMPT, GUUEY_SCAFFOLD_SYSTEM_PROMPT } from '@guuey/config';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const packageRoot = join(here, '..');
@@ -162,15 +162,25 @@ function checkPackageJsonPins(file, relPath, content) {
  * form `build-templates.mjs` stamps (`text + '\n'`). `guuey pull`'s
  * known-default replace rule compares a builder's local file against that
  * constant, so any drift here silently breaks pull's clobber-safety.
+ *
+ * The one exception is the manage-only `agent` template: it ships
+ * `GUUEY_DEFAULT_SYSTEM_PROMPT` (the runtime default, pull's other known
+ * default), because the scaffold prompt names a todo tool server that
+ * template does not have. Same byte rule, other constant.
  */
+const AGENT_TEMPLATE_PROMPT = relative(packageRoot, join(distTemplatesDir, 'agent', 'prompts', 'system.md'));
+
 function checkScaffoldPrompt(relPath, content) {
   if (!relPath.endsWith(join('prompts', 'system.md'))) return;
-  if (content === `${GUUEY_SCAFFOLD_SYSTEM_PROMPT}\n`) return;
+  const [name, text] =
+    relPath === AGENT_TEMPLATE_PROMPT
+      ? ['GUUEY_DEFAULT_SYSTEM_PROMPT', GUUEY_DEFAULT_SYSTEM_PROMPT]
+      : ['GUUEY_SCAFFOLD_SYSTEM_PROMPT', GUUEY_SCAFFOLD_SYSTEM_PROMPT];
+  if (content === `${text}\n`) return;
   violations.push({
     file: relPath,
     line: 1,
-    message:
-      'prompts/system.md is not byte-identical to @guuey/config GUUEY_SCAFFOLD_SYSTEM_PROMPT + "\\n" — rerun build-templates.mjs (and commit the restamped file), or update the constant',
+    message: `prompts/system.md is not byte-identical to @guuey/config ${name} + "\\n" — rerun build-templates.mjs (and commit the restamped file), or update the constant`,
   });
 }
 

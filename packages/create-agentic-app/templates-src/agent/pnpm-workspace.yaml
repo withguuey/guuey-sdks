@@ -1,0 +1,20 @@
+# Install settings only: this repo is one package, not a workspace.
+#
+# The one dependency, @guuey/cli, pulls esbuild, whose postinstall fetches its
+# platform binary. pnpm 11 blocks dependency build scripts by default and fails
+# the whole first `install` with ERR_PNPM_IGNORED_BUILDS unless the package is
+# allowlisted. pnpm 11 reads `allowBuilds`; pnpm 10 reads
+# `onlyBuiltDependencies`. Both are kept so either major installs cleanly; keep
+# them in step. (npm 11 reads `allowScripts` in package.json.)
+allowBuilds:
+  esbuild: true
+onlyBuiltDependencies:
+  - esbuild
+
+# pnpm 11 re-verifies the lockfile before every `pnpm run <script>`; only
+# verify on an explicit `pnpm install`, as pnpm 9/10 did.
+verifyDepsBeforeRun: false
+
+# A nonzero minimumReleaseAge refuses a just-published @guuey/cli; the
+# scaffold pins the version it was cut with.
+minimumReleaseAge: 0
