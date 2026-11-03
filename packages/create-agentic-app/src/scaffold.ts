@@ -3,7 +3,7 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { pnpmInvocation, pnpmRunner, noPnpmMessage, type PnpmInvocation } from './pnpm.js';
+import { pnpmInvocation, pnpmRunner, pnpmSpawn, noPnpmMessage, type PnpmInvocation } from './pnpm.js';
 import { renameContent, fillPnpmRunner, isProbablyText } from './rename.js';
 import { assertNpmSafeName, ensureTargetDir, isErrnoException, pathExists } from './shared.js';
 
@@ -210,7 +210,8 @@ export async function runInstall(projectDir: string, inv: PnpmInvocation | null)
     return;
   }
   try {
-    await execFileAsync(inv.file, [...inv.prefix, 'install'], { cwd: projectDir });
+    const call = pnpmSpawn(inv.file, [...inv.prefix, 'install']);
+    await execFileAsync(call.file, [...call.args], { cwd: projectDir, shell: call.shell });
   } catch {
     console.error(
       `Warning: "${pnpmRunner(inv)} install" failed to run automatically. Run it manually:\n  cd ${projectDir}\n  ${pnpmRunner(inv)} install`,

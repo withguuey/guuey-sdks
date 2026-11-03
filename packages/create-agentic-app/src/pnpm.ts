@@ -35,9 +35,38 @@ export interface PnpmInvocation {
   readonly prefix: readonly string[];
 }
 
+/** What to hand `spawnSync`/`execFile` to run one pnpm or npx call on this machine. */
+export interface PnpmSpawn {
+  readonly file: string;
+  readonly args: readonly string[];
+  readonly shell: boolean;
+}
+
+/**
+ * How to spawn `file args…` here. On Windows `pnpm` and `npx` are `.cmd` shims
+ * (`pnpm.cmd` from npm or corepack, Node's own `npx.cmd`): a spawn without a
+ * shell searches PATH for `.com`/`.exe` only, so it never finds them, and Node
+ * refuses to spawn a `.cmd` without a shell (EINVAL since the CVE-2024-27980
+ * fix). So on Windows the call goes through cmd.exe, as ONE command line with
+ * no separate arguments (Node warns on arguments passed beside `shell: true`,
+ * DEP0190). Nothing needs quoting: every piece is a fixed executable name, a
+ * fixed flag, a `pnpm@<semver>` specifier or a caller's literal subcommand,
+ * the same pieces {@link pnpmCommandLine} joins.
+ */
+export function pnpmSpawn(
+  file: string,
+  args: readonly string[],
+  platform: NodeJS.Platform = process.platform,
+): PnpmSpawn {
+  return platform === 'win32'
+    ? { file: [file, ...args].join(' '), args: [], shell: true }
+    : { file, args, shell: false };
+}
+
 function runs(file: string, args: string[]): boolean {
+  const call = pnpmSpawn(file, args);
   try {
-    return spawnSync(file, args, { stdio: 'ignore' }).status === 0;
+    return spawnSync(call.file, [...call.args], { stdio: 'ignore', shell: call.shell }).status === 0;
   } catch {
     return false;
   }
