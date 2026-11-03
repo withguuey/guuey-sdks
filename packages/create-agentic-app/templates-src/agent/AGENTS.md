@@ -13,17 +13,25 @@ server to start and no build.
 ```bash
 PNPM_PLACEHOLDER install
 PNPM_PLACEHOLDER login                          # once; opens the browser
+PNPM_PLACEHOLDER pull                           # first, when guuey.json already has an appId: the live agent into the repo
 PNPM_PLACEHOLDER exec guuey agent apply --dry-run   # the plan, and nothing written (exit 2 = changes pending)
 PNPM_PLACEHOLDER apply                          # make the live agent match this repo
 PNPM_PLACEHOLDER status                         # what is live
 ```
 
 `apply` is the only way a change goes live, and it is doc-is-desired-state: what `guuey.json` and
-`prompts/system.md` say is what the agent becomes. Run the dry run first and read the plan.
+`prompts/system.md` say is what the agent becomes. Run the dry run first and read the plan. If `guuey.json` came
+with an `appId` (a repo started from the guuey console), run `pull` before the first `apply`: until then the repo
+holds the template's prompt, and an `apply` would replace the live agent's prompt and MCP servers with it.
 
 **Never** run `guuey deploy` (that is the code-mode verb, for apps with an agent worker) or look for a `dev` server
-(a manage-only agent has none). If the user wants agent code, a web app or their own tools in this repo, that is a
-different template: `npx @guuey/create-agentic-app <dir> --template base`.
+(a manage-only agent has none). If the user wants agent code, a web app or their own tools, that is code mode:
+
+- for this app, once it is live: `guuey eject --app-id <id>` switches it to a code project, and it is one-way (guuey
+  can no longer update the app's runtime, and `apply`, the console and Studio can no longer publish to it). Show the
+  user that, and ask them to run it themselves in their own terminal, where it asks [y/N]. Never run it for them,
+  and never pass `--yes`;
+- for a new app: `npx @guuey/create-agentic-app <dir> --template base`.
 
 ## Binding to an app
 

@@ -11,6 +11,7 @@ embed, the share page, the portal).
 ```bash
 PNPM_PLACEHOLDER install
 PNPM_PLACEHOLDER login          # once — opens the guuey console
+PNPM_PLACEHOLDER pull           # first, if guuey.json already has an appId (see below)
 # edit prompts/system.md (the agent's voice) and guuey.json (model, MCP servers)
 PNPM_PLACEHOLDER apply          # push the definition to your live agent
 PNPM_PLACEHOLDER status         # what is live: build, provenance, drift
@@ -23,8 +24,10 @@ There is no local dev server for a manage-only agent: `apply` is how a
 change goes live. (`guuey deploy` is the code-mode verb; it is not used here.)
 
 `guuey.json`'s `appId` binds this repo to your app. If it was scaffolded
-from the console it is already set; otherwise `PNPM_PLACEHOLDER apply` will tell you
-what to do.
+from the console it is already set: **run `PNPM_PLACEHOLDER pull` before your first
+`PNPM_PLACEHOLDER apply`**, so the live prompt and MCP servers are in the repo; an
+apply before the pull replaces them with this template's. Otherwise
+`PNPM_PLACEHOLDER apply` will tell you what to do.
 
 ## Guest & authenticated modes
 

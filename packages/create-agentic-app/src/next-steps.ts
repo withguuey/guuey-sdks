@@ -23,6 +23,13 @@ export interface NextStepsInput {
   readonly kind: NextStepsKind;
   /** How the user runs the guuey CLI in the project. Default `npx guuey`: the scaffold pins @guuey/cli. */
   readonly guuey?: string;
+  /**
+   * The scaffold is bound to an EXISTING app (`--app`). Its live definition is
+   * not in the repo yet, and `apply` makes the live agent match the repo, so
+   * the agent steps pull first: an apply before the pull would replace the
+   * console-authored prompt and MCP servers with the template's.
+   */
+  readonly bound?: boolean;
 }
 
 /** The lines to print, `Next steps:` first. Each command line runs as printed, from the project directory. */
@@ -41,6 +48,9 @@ export function nextSteps(input: NextStepsInput): string[] {
       break;
     case 'agent':
       lines.push(`  ${run} login          # once — opens the guuey console`);
+      if (input.bound === true) {
+        lines.push(`  ${run} pull           # first: bring the live agent (prompt, MCP servers, modes) into this repo`);
+      }
       lines.push(`  ${run} apply          # push prompts/system.md and guuey.json to your live agent`);
       break;
     case 'app':

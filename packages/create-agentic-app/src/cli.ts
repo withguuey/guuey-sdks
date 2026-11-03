@@ -253,7 +253,9 @@ async function main(): Promise<void> {
   // guuey commands keep the npx form (guuey#451): the scaffold pins @guuey/cli,
   // so the in-dir resolution is version-matched and needs no global install.
   const kind = template === 'agent' ? 'agent' : 'app';
-  for (const line of nextSteps({ projectDir, pnpm, installed: install, kind, guuey: 'npx guuey' })) console.log(line);
+  for (const line of nextSteps({ projectDir, pnpm, installed: install, kind, guuey: 'npx guuey', bound: appId !== undefined })) {
+    console.log(line);
+  }
   console.log('  Need help? https://guuey.com/discord');
 }
 

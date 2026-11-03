@@ -171,4 +171,24 @@ describe("assembled manage-only template (guuey#581 pt 5)", () => {
     // The scaffold fills the runner; the shipped file still carries the placeholder.
     expect(steering).toContain("PNPM_PLACEHOLDER apply");
   });
+
+  // A repo bound to a console-made app holds the template's prompt until it
+  // pulls; the loop and the README both put pull before the first apply.
+  it("puts pull before the first apply in the AGENTS.md loop and the README loop", () => {
+    for (const file of ["AGENTS.md", "README.md"]) {
+      const text = readFileSync(join(agentDir, file), "utf8");
+      const pull = text.indexOf("PNPM_PLACEHOLDER pull");
+      const apply = text.indexOf("PNPM_PLACEHOLDER apply");
+      expect(pull, file).toBeGreaterThan(-1);
+      expect(pull, file).toBeLessThan(apply);
+    }
+  });
+
+  it("names guuey eject, one-way and run by the user in their own terminal, as the road from a live app to code", () => {
+    const steering = readFileSync(join(agentDir, "AGENTS.md"), "utf8");
+    expect(steering).toContain("guuey eject --app-id <id>");
+    expect(steering).toContain("one-way");
+    expect(steering).toContain("run it themselves in their own terminal");
+    expect(steering).toContain("never pass `--yes`");
+  });
 });

@@ -67,6 +67,19 @@ describe('nextSteps', () => {
     expect(agent.join('\n')).not.toContain('bootstrap');
   });
 
+  // A scaffold bound to an existing app (`--app`, the console's "Take it to
+  // code" line) holds the template's prompt until it pulls; an apply first
+  // would replace the console-authored prompt and MCP servers.
+  it('a manage-only scaffold bound to an existing app pulls before it applies', () => {
+    const npx = { file: 'npx', prefix: ['--yes', SCAFFOLD_PNPM] };
+    const agent = nextSteps({ projectDir, pnpm: npx, installed: true, kind: 'agent', bound: true }).slice(2);
+    expect(agent).toEqual([
+      `  ${NPX_RUNNER} login          # once — opens the guuey console`,
+      `  ${NPX_RUNNER} pull           # first: bring the live agent (prompt, MCP servers, modes) into this repo`,
+      `  ${NPX_RUNNER} apply          # push prompts/system.md and guuey.json to your live agent`,
+    ]);
+  });
+
   it('a machine that runs no pnpm is told to install it first', () => {
     const lines = nextSteps({ projectDir, pnpm: null, installed: false, kind: 'app' });
     expect(lines[2]).toBe(`  # pnpm is not on your PATH and \`npx ${SCAFFOLD_PNPM}\` did not run: install pnpm first (https://pnpm.io/installation)`);
