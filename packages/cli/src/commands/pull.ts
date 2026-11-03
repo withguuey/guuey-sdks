@@ -14,15 +14,16 @@
  *      section with `snapshot.agent`; externalize the inlined
  *      systemPrompt string back out to `prompts/system.md` so the
  *      ejected project stays editable (round-trips losslessly through
- *      `guuey deploy`, which re-inlines it via `buildDeploySnapshot`).
+ *      `guuey agent apply`, which submits the file's bytes for the server
+ *      to inline).
  *   5. When there is no live nocode snapshot (code-mode app, or nothing
  *      deployed yet), refresh identity (`appId`) only and leave the
  *      local agent section untouched — the code project's local source
  *      is authoritative. In an EMPTY directory (no `guuey.json` at all,
  *      guuey#1287) a nocode snapshot SCAFFOLDS the file instead — a
- *      declarative project with no `agent.mode` key, which `guuey deploy`
- *      routes as no-code (a `guuey.json` alone is declarative) — so the
- *      Behavior page's `guuey pull` → edit → `guuey deploy` path works
+ *      declarative project with no `agent.mode` key (a `guuey.json` alone
+ *      is declarative) — so the Behavior page's `guuey pull` → edit →
+ *      `guuey agent apply` path works
  *      without a `guuey create` detour that would have defaulted the
  *      project to code mode; with nothing to eject the command still
  *      refuses, naming why. The one exception is the console-authored
@@ -212,9 +213,9 @@ export interface PullMapping {
  * - When there is NO local overlay (`existing === null`, guuey#1287): a
  *   nocode snapshot becomes the whole file — the snapshot's own top-level
  *   fields plus the refreshed identity, the prompt externalized, and NO
- *   `agent.mode` key (a hand-authored declarative project; `guuey deploy`
- *   routes a `guuey.json` alone as no-code, and the scaffold's `'code'`
- *   is exactly the trap this branch removes). With no snapshot either
+ *   `agent.mode` key (a hand-authored declarative project: a `guuey.json`
+ *   alone is declarative, and the scaffold's `'code'` is exactly the trap
+ *   this branch removes). With no snapshot either
  *   there is nothing to write, and the mapper throws — the command turns
  *   that into the named refusal.
  *
@@ -529,7 +530,7 @@ export async function pull(
   if (agentReplaced) {
     out.success(
       scaffolded
-        ? 'guuey.json created from the latest no-code deployment (declarative — `guuey deploy` routes it as no-code)'
+        ? 'guuey.json created from the latest no-code deployment (declarative — apply your edits with `guuey agent apply`)'
         : 'guuey.json ejected from the latest no-code deployment',
     );
     console.log('');

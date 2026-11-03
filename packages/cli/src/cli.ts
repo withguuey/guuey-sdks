@@ -42,6 +42,7 @@ import { dev } from './commands/dev';
 import { test as testCmd } from './commands/test';
 import { logs } from './commands/logs';
 import { deploy } from './commands/deploy';
+import { eject } from './commands/eject';
 import {
   mcpDeploy,
   mcpList,
@@ -157,14 +158,15 @@ Agent Development:
     --app-id <id>                Test this app instead of the guuey.json
                                  binding (the binding is left untouched)
     --session <id>               Reuse existing session
-  deploy                         Deploy agent to guuey hosting (auto-detects
-                                 declarative vs code mode; code mode deploys
-                                 MCP + ggui + agent legs in one command)
+  deploy                         Deploy a code-mode agent to guuey hosting (MCP +
+                                 ggui + agent legs in one command). A declarative
+                                 project is refused with its "guuey agent apply"
+                                 line; an app whose live build is declarative is
+                                 refused with "guuey eject"
     --app-id <id>                Deploy to this app instead of the guuey.json
                                  binding (the binding is left untouched)
-    --declarative                Force declarative mode (uses guuey.json, no build)
-    --code                       Force code mode (builds+deploys guuey.worker.js,
-                                 or uses a root Dockerfile if present)
+    --code                       Build+deploy guuey.worker.js even when a root
+                                 Dockerfile is present
     --no-install                 Stop instead of installing when node_modules is missing (code mode; the default installs)
     --size <s>                   Pod size: xs | sm | md | lg | xl (default: xs)
     --build-size <s>             Build Job size: sm | md | lg | xl (default: md, code-mode only)
@@ -181,6 +183,19 @@ Agent Development:
     --env-file <path>            NAME=value file for guuey.json's \${env.NAME}
                                  placeholders (MCP url, app.access issuer and
                                  audience), added to the shell environment
+  eject                          Switch a declarative app to code mode, for good:
+                                 asks [y/N] on a terminal (guuey can no longer
+                                 update the app's runtime; apply, the console and
+                                 Studio can no longer publish to it), scaffolds a
+                                 code project bound to the app, pulls its live
+                                 definition into it, and deploys it as code
+    --app-id <id>                The app to eject (required)
+    --dir <path>                 Project directory (default: the app's name)
+    --framework <id>             Worker framework: claude-agent-sdk |
+                                 openai-agents-sdk | google-adk (default: the
+                                 live definition's)
+    --yes                        Confirm without the prompt (required when not
+                                 running in an interactive terminal)
   pull                           Refresh guuey.json from hosted state
     --app-id <id>                Override the resolved appId
   undeploy                       Tear down deployed agent (keeps app)
@@ -710,6 +725,10 @@ async function main(): Promise<void> {
 
     case 'deploy':
       await deploy(flags);
+      break;
+
+    case 'eject':
+      await eject(flags);
       break;
 
     case 'mcp':

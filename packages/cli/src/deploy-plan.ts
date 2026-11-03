@@ -15,16 +15,17 @@ import { declaredServerEntries, type GuueyAgent, type GuueyJsonV1 } from '@guuey
 // ─── Deploy-mode routing ─────────────────────────────────────────────────
 
 /**
- * The three deploy shapes `guuey deploy` dispatches on:
+ * The two deploy shapes `guuey deploy` dispatches on. `guuey deploy` deploys
+ * CODE only; a declarative (no-code) project is applied with `guuey agent
+ * apply`, and an app moves from no-code to code once, through `guuey eject`.
  *
  * - `'code-orchestrated'` — the one-command orchestrator (MCP legs → ggui
  *   leg → build-then-pack agent leg). Selected EXPLICITLY: the `--code`
  *   flag or `guuey.json#agent.mode === 'code'`.
  * - `'code-legacy-dockerfile'` — the pre-orchestrator code path for a
  *   user-committed root Dockerfile with no explicit code declaration.
- * - `'declarative'` — snapshot-only POST, stock nocode-runtime pod.
  */
-export type DeployMode = 'declarative' | 'code-orchestrated' | 'code-legacy-dockerfile';
+export type DeployMode = 'code-orchestrated' | 'code-legacy-dockerfile';
 
 /** The observable signals `resolveDeployMode` routes on. All I/O-free. */
 export interface DeployModeSignals {
@@ -42,41 +43,39 @@ export interface DeployModeSignals {
   agentMode: 'code' | 'declarative' | undefined;
 }
 
-/** Discriminated routing outcome — a mode to dispatch, or an actionable error. */
+/**
+ * Discriminated routing outcome — a code mode to dispatch, a declarative
+ * project (deploy refuses it and names `guuey agent apply`, see
+ * {@link declarativeRedirect}), or an actionable error.
+ */
 export type DeployModeDecision =
   | { kind: 'mode'; mode: DeployMode }
+  | { kind: 'declarative' }
   | { kind: 'error'; message: string };
 
 /**
  * Decide which deploy shape to run — made ONCE, dispatched on directly
  * (never re-derived from raw signals a second time).
  *
- * Routing rules (Task 13 review, controller-decided):
- * - Flags win: `--declarative` / `--code` (mutually exclusive).
- * - `agent.mode` in `guuey.json` is the explicit per-project declaration:
- *   `'code'` routes to the orchestrator even when a Dockerfile is present;
- *   `'declarative'` routes declarative even when a Dockerfile is present.
+ * Routing rules:
+ * - `--declarative`, or `guuey.json#agent.mode === 'declarative'`, is a
+ *   no-code project: `guuey deploy` refuses it. The declaration in guuey.json
+ *   wins over `--code` (an app goes code through `guuey eject`, never by a
+ *   flag on a no-code project).
+ * - `--code` / `agent.mode: 'code'` route to the orchestrator even when a
+ *   Dockerfile is present.
  * - Absent `agent.mode`: a root Dockerfile keeps the legacy code path
  *   (pre-existing behavior, even alongside a guuey.json); a guuey.json
- *   alone is declarative. `package.json` presence is NOT a routing signal.
+ *   alone is a no-code project (e.g. a `guuey pull`'d Studio agent).
+ *   `package.json` presence is NOT a routing signal.
  * - The orchestrated code path requires a root `package.json` (the CLI
  *   runs `pnpm build` to produce `guuey.worker.js`) — checked
  *   here so the failure is an early named error, not a confusing build
  *   crash.
  */
 export function resolveDeployMode(s: DeployModeSignals): DeployModeDecision {
-  if (s.forceDeclarative && s.forceCode) {
-    return { kind: 'error', message: 'Cannot pass both --declarative and --code. Pick one.' };
-  }
-
-  if (s.forceDeclarative) {
-    if (!s.hasGuueyJson) {
-      return {
-        kind: 'error',
-        message: '--declarative requires a guuey.json in the project root.',
-      };
-    }
-    return { kind: 'mode', mode: 'declarative' };
+  if (s.forceDeclarative || s.agentMode === 'declarative') {
+    return { kind: 'declarative' };
   }
 
   // Explicit code declaration: the --code flag, or guuey.json#agent.mode.
@@ -107,24 +106,106 @@ export function resolveDeployMode(s: DeployModeSignals): DeployModeDecision {
     };
   }
 
-  if (s.agentMode === 'declarative') {
-    return { kind: 'mode', mode: 'declarative' };
-  }
-
   // No explicit declaration — infer.
   if (s.hasDockerfile) {
     return { kind: 'mode', mode: 'code-legacy-dockerfile' };
   }
   if (s.hasGuueyJson) {
-    return { kind: 'mode', mode: 'declarative' };
+    return { kind: 'declarative' };
   }
   return {
     kind: 'error',
     message:
       'No guuey.json or Dockerfile found in the project root.\n' +
-      '  - Declarative agents: add a guuey.json.\n' +
-      '  - Code-mode agents: run "guuey create" (scaffolds guuey.json + a buildable worker).',
+      '  - Code-mode agents: run "guuey create" (scaffolds guuey.json + a buildable worker), then "guuey deploy".\n' +
+      '  - No-code agents: "guuey pull --app-id <id>" writes guuey.json, then "guuey agent apply".',
   };
+}
+
+/** The `guuey deploy` flags a declarative project's redirect translates. */
+export interface DeclarativeRedirectFlags {
+  appId?: string;
+  envFile?: string;
+  size?: string;
+  maxPods?: string;
+  runtimeAutoUpdate?: string;
+  label?: string;
+}
+
+/**
+ * What `guuey deploy` prints when it refuses a declarative (no-code)
+ * project: the ready-to-run `guuey agent apply` line built from the flags
+ * the builder passed, where each no-code knob now lives, and the one door to
+ * code mode. Pure, so every line is pinned by `deploy-plan.test.ts`.
+ *
+ * - `--app-id` / `--env-file` carry onto `agent apply` unchanged.
+ * - `--size` lives in guuey.json `agent.deploy.size`: the deploy door sizes a
+ *   no-code build from it when the request carries no size (guuey#193).
+ * - `--max-pods` / `--runtime-auto-update` live on `guuey agent config`
+ *   (the live knob, no redeploy).
+ * - `--label` has no no-code home: apply records provenance instead.
+ * - `--wait` keeps deploy's old "poll until live" behavior.
+ */
+export function declarativeRedirect(f: DeclarativeRedirectFlags): string {
+  const apply = ['guuey agent apply --wait'];
+  if (f.appId !== undefined) apply.push(`--app-id ${f.appId}`);
+  if (f.envFile !== undefined) apply.push(`--env-file ${f.envFile}`);
+  const lines = [
+    'guuey deploy deploys code-mode apps. This project is declarative (no-code), so its command is guuey agent apply:',
+    '',
+    `  ${apply.join(' ')}`,
+  ];
+  const knobs: string[] = [];
+  if (f.maxPods !== undefined) knobs.push(`--max-pods ${f.maxPods}`);
+  if (f.runtimeAutoUpdate !== undefined) knobs.push(`--runtime-auto-update ${f.runtimeAutoUpdate}`);
+  if (knobs.length > 0) {
+    lines.push(`  guuey agent config${f.appId !== undefined ? ` --app-id ${f.appId}` : ''} ${knobs.join(' ')}`);
+  }
+  if (f.size !== undefined) {
+    lines.push('', `  Pod size lives in guuey.json: set "deploy": { "size": "${f.size}" } under "agent", then apply.`);
+  }
+  if (f.label !== undefined) {
+    lines.push(
+      '',
+      '  --label is for code-mode builds. A no-code build records where it came from instead: guuey agent apply --provenance <org/repo>@<sha> (the default reads git).',
+    );
+  }
+  lines.push(
+    '',
+    `To switch this app to code mode for good, run: guuey eject${f.appId !== undefined ? ` --app-id ${f.appId}` : ''}`,
+  );
+  return lines.join('\n');
+}
+
+/**
+ * The agent mode of the build that is serving right now: the newest
+ * (highest `buildNumber`) row whose status is `'live'`, or `null` when
+ * nothing is live. Reads the `GET /apps/:id/deployments` rows, whose
+ * `agentMode` and `status` every served door carries.
+ */
+export function liveAgentMode(
+  deployments: ReadonlyArray<{ buildNumber: number; status: string; agentMode: 'code' | 'nocode' }>,
+): 'code' | 'nocode' | null {
+  let newest: { buildNumber: number; agentMode: 'code' | 'nocode' } | null = null;
+  for (const d of deployments) {
+    if (d.status !== 'live') continue;
+    if (newest === null || d.buildNumber > newest.buildNumber) newest = d;
+  }
+  return newest === null ? null : newest.agentMode;
+}
+
+/**
+ * Why `guuey deploy` refuses a code deploy onto an app whose live build is
+ * no-code: that deploy would switch the app to code mode for good, and the
+ * switch is `guuey eject`'s alone, behind its confirmation.
+ */
+export function nocodeLiveRefusal(appId: string): string {
+  return (
+    `App ${appId} is live on guuey's no-code runtime. A code deploy would switch it to code mode for good, ` +
+    `so guuey deploy will not do it on its own.\n` +
+    `  To switch, run: guuey eject --app-id ${appId}\n` +
+    `  To keep it no-code, edit its definition and run: guuey agent apply`
+  );
 }
 
 /**
@@ -147,7 +228,7 @@ export function shouldOfferAppCreate(
  * The "no app linked" remedy `guuey deploy` prints when it will NOT open
  * the create prompt (guuey#1064). The interactive-terminal sentence is
  * true only where {@link shouldOfferAppCreate} can ever say yes — the
- * code-orchestrated shape. A declarative (or legacy Dockerfile) project
+ * code-orchestrated shape. A legacy Dockerfile project
  * following it would loop: auto-create never offers there, so it is told
  * the doors that exist for it instead. Pure, so the two sentences are
  * pinned by `deploy-plan.test.ts` and never drift apart again.

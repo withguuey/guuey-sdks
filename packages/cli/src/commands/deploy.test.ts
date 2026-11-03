@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -42,6 +42,26 @@ vi.mock('node:child_process', async (importOriginal) => {
     spawnSync: vi.fn((file: string) => ({ status: file === 'pnpm' ? 0 : 1 })),
   };
 });
+// Every case starts with an empty child-process record: the code-path suites
+// run the (recorded, never real) build, and a case that pins "nothing ran"
+// or "install ran first" reads only its own calls.
+beforeEach(async () => {
+  childProcessLog.calls.length = 0;
+  vi.mocked((await import('node:child_process')).execSync).mockClear();
+});
+
+// The code deploy packs its source with tar; stubbed (as in
+// deploy-code-access.test.ts) so a suite can drive the real deploy() through
+// build, upload and trigger with every platform call on the fetch spy.
+const packed = vi.hoisted(() => ({ path: '' }));
+vi.mock('../deploy-shared.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../deploy-shared.js')>();
+  return {
+    ...actual,
+    packSource: vi.fn(() => ({ tarballPath: packed.path, tarballSize: 4, sourceHash: 'sha256:test' })),
+    cleanup: vi.fn(),
+  };
+});
 import { resolveDeployTarget } from './deploy.js';
 import { defaultModelFor, isOfferedModel, safeParseGuueyJson, type GuueyAgent } from '@guuey/config';
 import type { apiRequest } from '../deploy-shared.js';
@@ -51,6 +71,49 @@ class ExitSignal extends Error {
   constructor(readonly code: number | undefined) {
     super(`process.exit(${code})`);
   }
+}
+
+/**
+ * A code project the stubbed build and pack carry to the trigger:
+ * guuey.json, package.json, node_modules, the built worker, and the tarball
+ * `packSource` hands back. Deploy it with `{ code: true }` (the config mock
+ * reads no guuey.json, so `agent.mode` never reaches the mode decision).
+ */
+function writeCodeProject(dir: string, doc: object): void {
+  writeFileSync(join(dir, 'guuey.json'), JSON.stringify(doc));
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
+  mkdirSync(join(dir, 'node_modules'));
+  writeFileSync(join(dir, 'guuey.worker.js'), '// built worker');
+  packed.path = join(dir, 'source.tar.gz');
+  writeFileSync(packed.path, 'tar!');
+}
+
+const LIVE_STATUS = {
+  status: 'live',
+  endpointUrl: 'https://app-1.guuey.app',
+  errorMessage: null,
+  pageUrl: 'https://app-k7q2.agents.guuey.test/',
+};
+
+/**
+ * The platform as a code deploy meets it, through to Live: nothing live yet
+ * (so the no-code check passes), the upload, the S3 put, the trigger and the
+ * status poll. `null` for any other call, which the caller answers.
+ */
+function codeDeployResponse(url: string): Response | null {
+  if (/\/apps\/[^/]+\/deployments$/.test(url)) return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
+  if (/\/apps\/[^/]+\/deploy\/upload$/.test(url)) {
+    return new Response(JSON.stringify({ uploadUrl: 'https://s3.test/upload', uploadId: 'up-1', buildNumber: 1 }), { status: 200 });
+  }
+  if (url === 'https://s3.test/upload') return new Response('', { status: 200 });
+  if (/\/apps\/[^/]+\/deploy\/trigger$/.test(url)) return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
+  if (url.includes('/deployments/1/status')) return new Response(JSON.stringify(LIVE_STATUS), { status: 200 });
+  return null;
+}
+
+/** `codeDeployResponse`, else a 404 for the best-effort reads (theme, origin gap, runtime pin). */
+async function codePlatform(input: string | URL | Request): Promise<Response> {
+  return codeDeployResponse(String(input)) ?? new Response('{}', { status: 404 });
 }
 
 vi.mock('../auth.js', async (importOriginal) => {
@@ -700,11 +763,10 @@ describe('deploy() — no app linked, no interactive offer (S4)', () => {
   beforeEach(() => {
     originalCwd = process.cwd();
     dir = mkdtempSync(join(tmpdir(), 'deploy-notty-test-'));
-    // A guuey.json with no `agent.mode` + no Dockerfile resolves to
-    // 'declarative' (deploy-plan.ts#resolveDeployMode) — NOT
-    // 'code-orchestrated', so the interactive create-offer never applies
-    // regardless of TTY state, and the plain fail-fast error fires.
-    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ agent: {} }));
+    // A bound-less code project. The interactive create-offer needs a
+    // terminal, which vitest's stdin is not, so the plain fail-fast error fires.
+    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ agent: { mode: 'code' } }));
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture' }));
     process.chdir(dir);
 
     vi.mocked(resolveConfig).mockReturnValue({
@@ -728,7 +790,7 @@ describe('deploy() — no app linked, no interactive offer (S4)', () => {
   });
 
   it('prints the actionable message (never "guuey create", which mints no appId) and exits 1', async () => {
-    await expect(deploy({})).rejects.toBeInstanceOf(ExitSignal);
+    await expect(deploy({ code: true })).rejects.toBeInstanceOf(ExitSignal);
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
@@ -754,7 +816,7 @@ describe('deploy() — no app linked, no interactive offer (S4)', () => {
     // UNBOUND (no appId) — the trimly-checkout shape from the near-miss.
     const parsed = safeParseGuueyJson({
       schema: '1',
-      agent: { model: 'claude-sonnet-5', systemPrompt: 'x' },
+      agent: { mode: 'code', model: 'claude-sonnet-5', systemPrompt: 'x' },
     });
     if (!parsed.success) throw new Error('test fixture is schema-invalid');
     vi.mocked(loadProjectConfig).mockReturnValue(parsed.data);
@@ -775,10 +837,8 @@ describe('deploy() — no app linked, no interactive offer (S4)', () => {
 // `lowerColocated` composes it into `colocatedResourceUrl(appId, name)`,
 // which THROWS for anything outside `/^[A-Za-z0-9_-]+$/` — an unactionable
 // POD_FATAL_BOOT_ERROR crash-loop. `validateColocatedServerNames`
-// (`@guuey/config`) is the deploy-time pre-flight `deployDeclarative` runs
-// right before the trigger POST; these tests drive the real `deploy()`
-// declarative path end-to-end (appId linked, no Dockerfile/agent.mode ->
-// 'declarative' per `deploy-plan.ts#resolveDeployMode`).
+// (`@guuey/config`) is the deploy-time pre-flight the code deploy runs before
+// any leg leaves the machine; these tests drive the real `deploy()` code path.
 describe('deploy() — colocated MCP server-name validation (deploy-time gate)', () => {
   let dir: string;
   let originalCwd: string;
@@ -791,6 +851,7 @@ describe('deploy() — colocated MCP server-name validation (deploy-time gate)',
       join(dir, 'guuey.json'),
       JSON.stringify({
         schema: '1',
+        appId: 'app-1',
         agent: {
           mcpServers: {
             [colocatedName]: { kind: 'colocated', source: './mcps/tool' },
@@ -798,6 +859,7 @@ describe('deploy() — colocated MCP server-name validation (deploy-time gate)',
         },
       }),
     );
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
   }
 
   beforeEach(() => {
@@ -829,7 +891,7 @@ describe('deploy() — colocated MCP server-name validation (deploy-time gate)',
     writeGuueyJson('my tool');
     fetchSpy = vi.spyOn(globalThis, 'fetch');
 
-    await expect(deploy({})).rejects.toBeInstanceOf(ExitSignal);
+    await expect(deploy({ code: true, 'no-install': true })).rejects.toBeInstanceOf(ExitSignal);
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
@@ -839,38 +901,19 @@ describe('deploy() — colocated MCP server-name validation (deploy-time gate)',
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it(
-    'a valid colocated name passes the gate (deploy proceeds to the trigger call)',
-    async () => {
-      writeGuueyJson('notes_v1');
-      fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-        const url = String(input);
-        if (url.includes('/deploy/trigger')) {
-          return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
-        }
-        if (url.includes('/deployments/1/status')) {
-          return new Response(
-            JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null, pageUrl: 'https://app-k7q2.agents.guuey.test/' }),
-            { status: 200 },
-          );
-        }
-        throw new Error(`unexpected fetch: ${url}`);
-      });
-
-      await deploy({});
-
-      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
-      expect(printed).not.toContain('colocated MCP server name');
-      expect(fetchSpy).toHaveBeenCalled();
-      const triggerCall = fetchSpy.mock.calls.find(([u]) => String(u).includes('/deploy/trigger'));
-      expect(triggerCall).toBeDefined();
-    },
-    10_000,
-  );
+  it('a valid colocated name passes the gate', async () => {
+    writeGuueyJson('notes_v1');
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      throw new Error(`stop after the gate: ${String(input)}`);
+    });
+    await deploy({ code: true, 'no-install': true }).catch(() => undefined);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).not.toContain('colocated MCP server name');
+  });
 });
 
 // guuey#2258: an empty `agent.tools.allowlist` reads as "every tool", so the
-// declarative deploy refuses it before upload; a non-empty list passes.
+// deploy refuses it before upload; a non-empty list passes.
 describe('deploy() — empty tool allowlist refusal (deploy-time gate)', () => {
   let dir: string;
   let originalCwd: string;
@@ -881,8 +924,9 @@ describe('deploy() — empty tool allowlist refusal (deploy-time gate)', () => {
   function writeGuueyJson(allowlist: string[]): void {
     writeFileSync(
       join(dir, 'guuey.json'),
-      JSON.stringify({ schema: '1', agent: { tools: { allowlist } } }),
+      JSON.stringify({ schema: '1', appId: 'app-1', agent: { tools: { allowlist } } }),
     );
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
   }
 
   beforeEach(() => {
@@ -912,7 +956,7 @@ describe('deploy() — empty tool allowlist refusal (deploy-time gate)', () => {
     writeGuueyJson([]);
     fetchSpy = vi.spyOn(globalThis, 'fetch');
 
-    await expect(deploy({})).rejects.toBeInstanceOf(ExitSignal);
+    await expect(deploy({ code: true, 'no-install': true })).rejects.toBeInstanceOf(ExitSignal);
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
@@ -920,48 +964,31 @@ describe('deploy() — empty tool allowlist refusal (deploy-time gate)', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it(
-    'a non-empty allowlist passes the gate (deploy proceeds to the trigger call)',
-    async () => {
-      writeGuueyJson(['ggui.*']);
-      fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-        const url = String(input);
-        if (url.includes('/deploy/trigger')) {
-          return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
-        }
-        if (url.includes('/deployments/1/status')) {
-          return new Response(
-            JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null, pageUrl: 'https://app-k7q2.agents.guuey.test/' }),
-            { status: 200 },
-          );
-        }
-        throw new Error(`unexpected fetch: ${url}`);
-      });
-
-      await deploy({});
-
-      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
-      expect(printed).not.toContain('allowlist is empty');
-      expect(fetchSpy.mock.calls.some(([u]) => String(u).includes('/deploy/trigger'))).toBe(true);
-    },
-    10_000,
-  );
+  it('a non-empty allowlist passes the gate', async () => {
+    writeGuueyJson(['ggui.*']);
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      throw new Error(`stop after the gate: ${String(input)}`);
+    });
+    await deploy({ code: true, 'no-install': true }).catch(() => undefined);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).not.toContain('allowlist is empty');
+  });
 });
 
 // guuey#2262: "@none" declares no tools only ALONE in an allowlist. A list
 // that mixes it with other entries, or a denylist that names it, is refused
-// before upload on BOTH paths; a plain ["@none"] passes the gate.
-describe('deploy() — the "@none" (no tools) entry gate, declarative and code paths', () => {
+// before upload; a plain ["@none"] passes the gate.
+describe('deploy() — the "@none" (no tools) entry gate', () => {
   let dir: string;
   let originalCwd: string;
   let errSpy: MockInstance<typeof console.error>;
 
-  function writeGuueyJson(agent: GuueyAgent, code: boolean): void {
+  function writeGuueyJson(agent: GuueyAgent): void {
     writeFileSync(
       join(dir, 'guuey.json'),
-      JSON.stringify({ schema: '1', ...(code ? { appId: 'app-1' } : {}), agent }),
+      JSON.stringify({ schema: '1', appId: 'app-1', agent }),
     );
-    if (code) writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
   }
 
   beforeEach(() => {
@@ -987,60 +1014,54 @@ describe('deploy() — the "@none" (no tools) entry gate, declarative and code p
     vi.restoreAllMocks();
   });
 
-  for (const code of [false, true]) {
-    const path = code ? 'code' : 'declarative';
-    const run = (): Promise<void> => deploy(code ? { code: true, 'no-install': true } : {});
+  const run = (): Promise<void> => deploy({ code: true, 'no-install': true });
 
-    it(`${path}: refuses "@none" mixed with other allowlist entries, before any network call`, async () => {
-      writeGuueyJson({ framework: 'claude-agent-sdk', tools: { allowlist: ['@none', 'ggui.*'] } }, code);
-      const fetchSpy = vi.spyOn(globalThis, 'fetch');
-      await expect(run()).rejects.toBeInstanceOf(ExitSignal);
-      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
-      expect(printed).toContain('agent.tools.allowlist mixes "@none" with other entries');
-      expect(fetchSpy).not.toHaveBeenCalled();
-      expect(childProcessLog.calls).toEqual([]);
-    });
+  it(`refuses "@none" mixed with other allowlist entries, before any network call`, async () => {
+    writeGuueyJson({ framework: 'claude-agent-sdk', tools: { allowlist: ['@none', 'ggui.*'] } });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    await expect(run()).rejects.toBeInstanceOf(ExitSignal);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('agent.tools.allowlist mixes "@none" with other entries');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(childProcessLog.calls).toEqual([]);
+  });
 
-    it(`${path}: refuses "@none" in a mode denylist, naming the mode, before any network call`, async () => {
-      writeGuueyJson(
-        { framework: 'claude-agent-sdk', modes: { guest: { tools: { denylist: ['@none'] } } } },
-        code,
-      );
-      const fetchSpy = vi.spyOn(globalThis, 'fetch');
-      await expect(run()).rejects.toBeInstanceOf(ExitSignal);
-      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
-      expect(printed).toContain('agent.modes.guest.tools.denylist lists "@none" in mode "guest"');
-      expect(fetchSpy).not.toHaveBeenCalled();
-    });
+  it(`refuses "@none" in a mode denylist, naming the mode, before any network call`, async () => {
+    writeGuueyJson(
+      { framework: 'claude-agent-sdk', modes: { guest: { tools: { denylist: ['@none'] } } } });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    await expect(run()).rejects.toBeInstanceOf(ExitSignal);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('agent.modes.guest.tools.denylist lists "@none" in mode "guest"');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 
-    it(`${path}: a plain ["@none"] passes the gate`, async () => {
-      writeGuueyJson({ framework: 'claude-agent-sdk', tools: { allowlist: ['@none'] } }, code);
-      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-        throw new Error(`stop after the gate: ${String(input)}`);
-      });
-      // Whatever the deploy does after the gate (the code path's
-      // node_modules preflight, the declarative trigger), the gate passed.
-      await run().catch(() => undefined);
-      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
-      expect(printed).not.toContain('"@none"');
+  it(`a plain ["@none"] passes the gate`, async () => {
+    writeGuueyJson({ framework: 'claude-agent-sdk', tools: { allowlist: ['@none'] } });
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      throw new Error(`stop after the gate: ${String(input)}`);
     });
-  }
+    // Whatever the deploy does after the gate, the gate passed.
+    await run().catch(() => undefined);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).not.toContain('"@none"');
+  });
 });
 
 // guuey#2585: a "*" is valid only as the whole entry or as "<server>.*", and a
 // mode's tool lists follow the same grammar as the base. The builder's file is
-// a document submitted now, so both are refused before upload on BOTH paths.
-describe('deploy() — the misplaced "*" and mode tool-entry gate, declarative and code paths', () => {
+// a document submitted now, so both are refused before upload.
+describe('deploy() — the misplaced "*" and mode tool-entry gate', () => {
   let dir: string;
   let originalCwd: string;
   let errSpy: MockInstance<typeof console.error>;
 
-  function writeGuueyJson(agent: GuueyAgent, code: boolean): void {
+  function writeGuueyJson(agent: GuueyAgent): void {
     writeFileSync(
       join(dir, 'guuey.json'),
-      JSON.stringify({ schema: '1', ...(code ? { appId: 'app-1' } : {}), agent }),
+      JSON.stringify({ schema: '1', appId: 'app-1', agent }),
     );
-    if (code) writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
   }
 
   beforeEach(() => {
@@ -1066,75 +1087,68 @@ describe('deploy() — the misplaced "*" and mode tool-entry gate, declarative a
     vi.restoreAllMocks();
   });
 
-  for (const code of [false, true]) {
-    const path = code ? 'code' : 'declarative';
-    const run = (): Promise<void> => deploy(code ? { code: true, 'no-install': true } : {});
+  const run = (): Promise<void> => deploy({ code: true, 'no-install': true });
 
-    it(`${path}: refuses a bare "delete_*" on the base, before any network call`, async () => {
-      writeGuueyJson({ framework: 'claude-agent-sdk', tools: { denylist: ['delete_*'] } }, code);
-      const fetchSpy = vi.spyOn(globalThis, 'fetch');
-      await expect(run()).rejects.toBeInstanceOf(ExitSignal);
-      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
-      expect(printed).toContain('agent.tools.denylist: "delete_*": "*" is only valid as the whole entry ("*")');
-      expect(fetchSpy).not.toHaveBeenCalled();
-      expect(childProcessLog.calls).toEqual([]);
-    });
+  it(`refuses a bare "delete_*" on the base, before any network call`, async () => {
+    writeGuueyJson({ framework: 'claude-agent-sdk', tools: { denylist: ['delete_*'] } });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    await expect(run()).rejects.toBeInstanceOf(ExitSignal);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('agent.tools.denylist: "delete_*": "*" is only valid as the whole entry ("*")');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(childProcessLog.calls).toEqual([]);
+  });
 
-    it(`${path}: refuses a mode entry naming a server the agent does not connect, before any network call`, async () => {
-      writeGuueyJson(
-        { framework: 'claude-agent-sdk', modes: { guest: { tools: { allowlist: ['linear.create_issue'] } } } },
-        code,
-      );
-      const fetchSpy = vi.spyOn(globalThis, 'fetch');
-      await expect(run()).rejects.toBeInstanceOf(ExitSignal);
-      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
-      expect(printed).toContain('agent.modes.guest.tools.allowlist: "linear.create_issue" names MCP server "linear"');
-      expect(fetchSpy).not.toHaveBeenCalled();
-    });
+  it(`refuses a mode entry naming a server the agent does not connect, before any network call`, async () => {
+    writeGuueyJson(
+      { framework: 'claude-agent-sdk', modes: { guest: { tools: { allowlist: ['linear.create_issue'] } } } });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    await expect(run()).rejects.toBeInstanceOf(ExitSignal);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('agent.modes.guest.tools.allowlist: "linear.create_issue" names MCP server "linear"');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 
-    it(`${path}: "*" and "<server>.*", on the base and in a mode, pass the gate`, async () => {
-      writeGuueyJson(
-        {
-          framework: 'claude-agent-sdk',
-          tools: { allowlist: ['*'], denylist: ['ggui.*'] },
-          modes: { guest: { tools: { allowlist: ['ggui.*'] } } },
-        },
-        code,
-      );
-      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-        throw new Error(`stop after the gate: ${String(input)}`);
+  it(`"*" and "<server>.*", on the base and in a mode, pass the gate`, async () => {
+    writeGuueyJson(
+      {
+        framework: 'claude-agent-sdk',
+        tools: { allowlist: ['*'], denylist: ['ggui.*'] },
+        modes: { guest: { tools: { allowlist: ['ggui.*'] } } },
       });
-      await run().catch(() => undefined);
-      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
-      expect(printed).not.toContain('is only valid as the whole entry');
-      expect(printed).not.toContain('which this agent does not connect');
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      throw new Error(`stop after the gate: ${String(input)}`);
     });
-  }
+    await run().catch(() => undefined);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).not.toContain('is only valid as the whole entry');
+    expect(printed).not.toContain('which this agent does not connect');
+  });
 });
 
 // A `credential: "caller"` entry carries the user's own bearer, so its url must
-// be https://. Refused before upload on BOTH paths, checked on the document
+// be https://. Refused before upload, checked on the document
 // after `${env.NAME}` resolution.
-describe('deploy() — credential: "caller" requires an https:// url, declarative and code paths', () => {
+describe('deploy() — credential: "caller" requires an https:// url', () => {
   let dir: string;
   let originalCwd: string;
   let errSpy: MockInstance<typeof console.error>;
   const HTTPS_REFUSAL =
     'mcpServers.crm: credential: "caller" requires an https:// url — the user\'s bearer would travel in cleartext';
 
-  function writeGuueyJson(url: string, code: boolean): void {
+  function writeGuueyJson(url: string): void {
     writeFileSync(
       join(dir, 'guuey.json'),
       JSON.stringify({
         schema: '1',
-        ...(code ? { appId: 'app-1' } : {}),
+        appId: 'app-1',
         agent: {
           framework: 'claude-agent-sdk',
           mcpServers: { crm: { kind: 'external', url, credential: 'caller' } },
         },
       }),
     );
-    if (code) writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
   }
 
   beforeEach(() => {
@@ -1161,65 +1175,62 @@ describe('deploy() — credential: "caller" requires an https:// url, declarativ
     vi.restoreAllMocks();
   });
 
-  for (const code of [false, true]) {
-    const path = code ? 'code' : 'declarative';
-    const run = (): Promise<void> => deploy(code ? { code: true, 'no-install': true } : {});
+  const run = (): Promise<void> => deploy({ code: true, 'no-install': true });
 
-    it(`${path}: refuses an http:// caller url, naming the server, before any network call`, async () => {
-      writeGuueyJson('http://crm.example.com/mcp', code);
-      const fetchSpy = vi.spyOn(globalThis, 'fetch');
-      await expect(run()).rejects.toBeInstanceOf(ExitSignal);
-      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
-      expect(printed).toContain(HTTPS_REFUSAL);
-      expect(fetchSpy).not.toHaveBeenCalled();
-      expect(childProcessLog.calls).toEqual([]);
-    });
+  it(`refuses an http:// caller url, naming the server, before any network call`, async () => {
+    writeGuueyJson('http://crm.example.com/mcp');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    await expect(run()).rejects.toBeInstanceOf(ExitSignal);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain(HTTPS_REFUSAL);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(childProcessLog.calls).toEqual([]);
+  });
 
-    it(`${path}: refuses a caller url whose \${env.NAME} resolves to http://`, async () => {
-      vi.stubEnv('CRM_URL', 'http://crm.example.com/mcp');
-      writeGuueyJson('${env.CRM_URL}', code);
-      const fetchSpy = vi.spyOn(globalThis, 'fetch');
-      await expect(run()).rejects.toBeInstanceOf(ExitSignal);
-      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
-      expect(printed).toContain(HTTPS_REFUSAL);
-      expect(fetchSpy).not.toHaveBeenCalled();
-    });
+  it(`refuses a caller url whose \${env.NAME} resolves to http://`, async () => {
+    vi.stubEnv('CRM_URL', 'http://crm.example.com/mcp');
+    writeGuueyJson('${env.CRM_URL}');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    await expect(run()).rejects.toBeInstanceOf(ExitSignal);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain(HTTPS_REFUSAL);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 
-    it(`${path}: an https:// caller url (direct or via \${env.NAME}) passes the gate`, async () => {
-      vi.stubEnv('CRM_URL', 'https://crm.example.com/mcp');
-      writeGuueyJson('${env.CRM_URL}', code);
-      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-        throw new Error(`stop after the gate: ${String(input)}`);
-      });
-      await run().catch(() => undefined);
-      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
-      expect(printed).not.toContain('requires an https:// url');
+  it(`an https:// caller url (direct or via \${env.NAME}) passes the gate`, async () => {
+    vi.stubEnv('CRM_URL', 'https://crm.example.com/mcp');
+    writeGuueyJson('${env.CRM_URL}');
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      throw new Error(`stop after the gate: ${String(input)}`);
     });
-  }
+    await run().catch(() => undefined);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).not.toContain('requires an https:// url');
+  });
 });
 
 // A `federate: true` entry's token is minted for its exact resource, which must
 // be an https:// url ending in "/". Any other shape fails the mint every turn,
-// so it is refused before upload on BOTH paths, after `${env.NAME}` resolution.
-describe('deploy() — federate: true requires an https:// url ending in "/", declarative and code paths', () => {
+// so it is refused before upload, after `${env.NAME}` resolution.
+describe('deploy() — federate: true requires an https:// url ending in "/"', () => {
   let dir: string;
   let originalCwd: string;
   let errSpy: MockInstance<typeof console.error>;
   const SLASH_REFUSAL = 'mcpServers.crm: "federate": true needs an https:// url ending in "/"';
 
-  function writeGuueyJson(url: string, code: boolean): void {
+  function writeGuueyJson(url: string): void {
     writeFileSync(
       join(dir, 'guuey.json'),
       JSON.stringify({
         schema: '1',
-        ...(code ? { appId: 'app-1' } : {}),
+        appId: 'app-1',
         agent: {
           framework: 'claude-agent-sdk',
           mcpServers: { crm: { kind: 'external', url, federate: true } },
         },
       }),
     );
-    if (code) writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
   }
 
   beforeEach(() => {
@@ -1246,51 +1257,48 @@ describe('deploy() — federate: true requires an https:// url ending in "/", de
     vi.restoreAllMocks();
   });
 
-  for (const code of [false, true]) {
-    const path = code ? 'code' : 'declarative';
-    const run = (): Promise<void> => deploy(code ? { code: true, 'no-install': true } : {});
+  const run = (): Promise<void> => deploy({ code: true, 'no-install': true });
 
-    it(`${path}: refuses a federated url without a trailing "/", naming the server, before any network call`, async () => {
-      writeGuueyJson('https://crm.example.com/mcp', code);
-      const fetchSpy = vi.spyOn(globalThis, 'fetch');
-      await expect(run()).rejects.toBeInstanceOf(ExitSignal);
-      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
-      expect(printed).toContain(SLASH_REFUSAL);
-      expect(fetchSpy).not.toHaveBeenCalled();
-      expect(childProcessLog.calls).toEqual([]);
-    });
+  it(`refuses a federated url without a trailing "/", naming the server, before any network call`, async () => {
+    writeGuueyJson('https://crm.example.com/mcp');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    await expect(run()).rejects.toBeInstanceOf(ExitSignal);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain(SLASH_REFUSAL);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(childProcessLog.calls).toEqual([]);
+  });
 
-    it(`${path}: a federated url ending in "/" (via \${env.NAME}) passes the gate`, async () => {
-      vi.stubEnv('CRM_URL', 'https://crm.example.com/mcp/');
-      writeGuueyJson('${env.CRM_URL}', code);
-      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-        throw new Error(`stop after the gate: ${String(input)}`);
-      });
-      await run().catch(() => undefined);
-      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
-      expect(printed).not.toContain('needs an https:// url ending in');
+  it(`a federated url ending in "/" (via \${env.NAME}) passes the gate`, async () => {
+    vi.stubEnv('CRM_URL', 'https://crm.example.com/mcp/');
+    writeGuueyJson('${env.CRM_URL}');
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      throw new Error(`stop after the gate: ${String(input)}`);
     });
-  }
+    await run().catch(() => undefined);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).not.toContain('needs an https:// url ending in');
+  });
 });
 
-// An agent.env name the platform runtime owns is refused before upload on BOTH
-// paths, naming the name and never its value. Other names, including an LD_
+// An agent.env name the platform runtime owns is refused before upload,
+// naming the name and never its value. Other names, including an LD_
 // name outside the list, pass.
-describe('deploy() — agent.env may not set a runtime-reserved name, declarative and code paths', () => {
+describe('deploy() — agent.env may not set a runtime-reserved name', () => {
   let dir: string;
   let originalCwd: string;
   let errSpy: MockInstance<typeof console.error>;
 
-  function writeGuueyJson(env: Record<string, string>, code: boolean): void {
+  function writeGuueyJson(env: Record<string, string>): void {
     writeFileSync(
       join(dir, 'guuey.json'),
       JSON.stringify({
         schema: '1',
-        ...(code ? { appId: 'app-1' } : {}),
+        appId: 'app-1',
         agent: { framework: 'claude-agent-sdk', env },
       }),
     );
-    if (code) writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
   }
 
   beforeEach(() => {
@@ -1316,40 +1324,36 @@ describe('deploy() — agent.env may not set a runtime-reserved name, declarativ
     vi.restoreAllMocks();
   });
 
-  for (const code of [false, true]) {
-    const path = code ? 'code' : 'declarative';
-    const run = (): Promise<void> => deploy(code ? { code: true, 'no-install': true } : {});
+  const run = (): Promise<void> => deploy({ code: true, 'no-install': true });
 
-    it(`${path}: refuses LD_PRELOAD and GLIBC_TUNABLES, naming each and no value, before any network call`, async () => {
-      writeGuueyJson({ KEEP: '1', LD_PRELOAD: '/preload.so', GLIBC_TUNABLES: 'glibc.x=1' }, code);
-      const fetchSpy = vi.spyOn(globalThis, 'fetch');
-      await expect(run()).rejects.toBeInstanceOf(ExitSignal);
-      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
-      expect(printed).toContain('agent.env.LD_PRELOAD');
-      expect(printed).toContain('agent.env.GLIBC_TUNABLES');
-      expect(printed).not.toContain('/preload.so');
-      expect(printed).not.toContain('glibc.x=1');
-      expect(fetchSpy).not.toHaveBeenCalled();
-      expect(childProcessLog.calls).toEqual([]);
-    });
+  it(`refuses LD_PRELOAD and GLIBC_TUNABLES, naming each and no value, before any network call`, async () => {
+    writeGuueyJson({ KEEP: '1', LD_PRELOAD: '/preload.so', GLIBC_TUNABLES: 'glibc.x=1' });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    await expect(run()).rejects.toBeInstanceOf(ExitSignal);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('agent.env.LD_PRELOAD');
+    expect(printed).toContain('agent.env.GLIBC_TUNABLES');
+    expect(printed).not.toContain('/preload.so');
+    expect(printed).not.toContain('glibc.x=1');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(childProcessLog.calls).toEqual([]);
+  });
 
-    it(`${path}: an LD_ name outside the list (LD_SDK_KEY) passes the gate`, async () => {
-      writeGuueyJson({ LD_SDK_KEY: 'k' }, code);
-      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-        throw new Error(`stop after the gate: ${String(input)}`);
-      });
-      await run().catch(() => undefined);
-      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
-      expect(printed).not.toContain('reserved by the platform runtime');
+  it(`an LD_ name outside the list (LD_SDK_KEY) passes the gate`, async () => {
+    writeGuueyJson({ LD_SDK_KEY: 'k' });
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      throw new Error(`stop after the gate: ${String(input)}`);
     });
-  }
+    await run().catch(() => undefined);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).not.toContain('reserved by the platform runtime');
+  });
 });
 
 // `guuey deploy --max-pods N` (scaling S1-F4, guuey#162): the flag rides
-// `DeployTriggerBody.maxPods` at every trigger POST. Driven through the
-// declarative shape — it is the one that reaches the trigger with no
-// tarball, no build, and no S3 round trip — plus a body-literal guard that
-// the other two shapes carry the field too.
+// `DeployTriggerBody.maxPods` at every trigger POST. Driven through the code
+// trigger (build and pack stubbed), plus a body-literal guard that the
+// legacy Dockerfile shape carries the field too.
 describe('deploy() — --max-pods rides the trigger body', () => {
   let dir: string;
   let originalCwd: string;
@@ -1367,7 +1371,7 @@ describe('deploy() — --max-pods rides the trigger body', () => {
   beforeEach(() => {
     originalCwd = process.cwd();
     dir = mkdtempSync(join(tmpdir(), 'deploy-max-pods-test-'));
-    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {} }));
+    writeCodeProject(dir, { schema: '1', appId: 'app-1', agent: { mode: 'code' } });
     process.chdir(dir);
 
     vi.mocked(resolveConfig).mockReturnValue({
@@ -1382,19 +1386,7 @@ describe('deploy() — --max-pods rides the trigger body', () => {
     });
     errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(console, 'log').mockImplementation(() => {});
-    fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const url = String(input);
-      if (url.includes('/deploy/trigger')) {
-        return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
-      }
-      if (url.includes('/deployments/1/status')) {
-        return new Response(
-          JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null, pageUrl: 'https://app-k7q2.agents.guuey.test/' }),
-          { status: 200 },
-        );
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    });
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(codePlatform);
   });
 
   afterEach(() => {
@@ -1404,13 +1396,13 @@ describe('deploy() — --max-pods rides the trigger body', () => {
   });
 
   it('sends maxPods on the trigger body when the flag is given', async () => {
-    await deploy({ 'max-pods': '3' });
+    await deploy({ code: true, 'max-pods': '3' });
 
     expect(triggerBody()?.maxPods).toBe(3);
   });
 
   it('OMITS maxPods when the flag is absent, so a redeploy never resets the knob', async () => {
-    await deploy({});
+    await deploy({ code: true });
 
     const body = triggerBody();
     expect(body).toBeDefined();
@@ -1420,7 +1412,7 @@ describe('deploy() — --max-pods rides the trigger body', () => {
   it.each(['0', '-2', '1.5', 'many', ''])(
     'rejects --max-pods %j client-side, before any network call',
     async (value) => {
-      await expect(deploy({ 'max-pods': value })).rejects.toBeInstanceOf(ExitSignal);
+      await expect(deploy({ code: true, 'max-pods': value })).rejects.toBeInstanceOf(ExitSignal);
 
       expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
       expect(fetchSpy).not.toHaveBeenCalled();
@@ -1430,7 +1422,7 @@ describe('deploy() — --max-pods rides the trigger body', () => {
   );
 
   it('rejects a valueless --max-pods (parsed as `true`) rather than sending NaN', async () => {
-    await expect(deploy({ 'max-pods': true })).rejects.toBeInstanceOf(ExitSignal);
+    await expect(deploy({ code: true, 'max-pods': true })).rejects.toBeInstanceOf(ExitSignal);
 
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -1448,14 +1440,73 @@ describe('deploy() — --max-pods rides the trigger body', () => {
           { status: 409 },
         );
       }
-      throw new Error(`unexpected fetch: ${String(input)}`);
+      return codePlatform(input);
     });
 
-    await expect(deploy({ 'max-pods': '9' })).rejects.toBeInstanceOf(ExitSignal);
+    await expect(deploy({ code: true, 'max-pods': '9' })).rejects.toBeInstanceOf(ExitSignal);
 
     const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
     expect(printed).toContain('[AGENT_MAX_PODS]');
     expect(printed).toContain("ceiling of 3");
+  });
+});
+
+// The ggui asset push is a FULL-STATE replace on the server (cliApi
+// ggui-assets.ts), so a project with no `ggui` block must never push: that is
+// how guuey eject's first code deploy keeps the assets a console-built app
+// already has (eject leaves the template's block out).
+describe('deploy() — a project with no ggui block never pushes ggui assets', () => {
+  let dir: string;
+  let originalCwd: string;
+  let fetchSpy: MockInstance<typeof fetch>;
+
+  const pushCalls = (): string[] =>
+    fetchSpy.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('/ggui-assets/push'));
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    dir = mkdtempSync(join(tmpdir(), 'deploy-ggui-skip-test-'));
+    process.chdir(dir);
+    vi.mocked(resolveConfig).mockReturnValue({
+      host: 'https://platform.guuey.test',
+      apiUrl: 'https://api.guuey.test',
+      appId: 'app-1',
+    });
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/ggui-assets/push')) return new Response(JSON.stringify({}), { status: 200 });
+      return codePlatform(input);
+    });
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it('★ no ggui block: the deploy reaches the trigger and sends no asset push', async () => {
+    writeCodeProject(dir, { schema: '1', appId: 'app-1', agent: { mode: 'code' } });
+
+    await deploy({ code: true });
+
+    expect(fetchSpy.mock.calls.some(([u]) => String(u).includes('/deploy/trigger'))).toBe(true);
+    expect(pushCalls()).toEqual([]);
+  });
+
+  it('positive control: the same project WITH a ggui block pushes once', async () => {
+    writeCodeProject(dir, { schema: '1', appId: 'app-1', agent: { mode: 'code' }, ggui: { configFile: 'ggui.json' } });
+    writeFileSync(join(dir, 'ggui.json'), JSON.stringify({ gadgets: [] }));
+
+    await deploy({ code: true });
+
+    expect(pushCalls()).toEqual(['https://api.guuey.test/apps/app-1/ggui-assets/push']);
   });
 });
 
@@ -1475,24 +1526,26 @@ describe('deploy() — deploy-time ${env.NAME} placeholders resolve before the t
   };
   const saved = new Map<string, string | undefined>();
 
-  function writeManifest(code: boolean): void {
-    writeFileSync(
-      join(dir, 'guuey.json'),
-      JSON.stringify({
-        schema: '1',
-        ...(code ? { appId: 'app-1' } : {}),
-        agent: {
-          mcpServers: { product: { kind: 'external', url: '${env.PRODUCT_MCP_URL}' } },
+  function writeManifest(): void {
+    writeCodeProject(dir, {
+      schema: '1',
+      appId: 'app-1',
+      agent: {
+        mode: 'code',
+        mcpServers: { product: { kind: 'external', url: '${env.PRODUCT_MCP_URL}' } },
+      },
+      app: {
+        access: {
+          userAuthMode: 'byo',
+          userAuthConfig: { issuerUrl: '${env.PRODUCT_ISSUER_URL}', audience: '${env.PRODUCT_AUDIENCE}' },
         },
-        app: {
-          access: {
-            userAuthMode: 'byo',
-            userAuthConfig: { issuerUrl: '${env.PRODUCT_ISSUER_URL}', audience: '${env.PRODUCT_AUDIENCE}' },
-          },
-        },
-      }),
-    );
-    if (code) writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
+      },
+    });
+  }
+
+  /** The snapshot the code trigger sends (a JSON string inside the body). */
+  function triggerSnapshot(): { agent: { mcpServers: { product: { url: string } } }; app: { access: { userAuthConfig: unknown } } } {
+    return JSON.parse(String(JSON.parse(triggerWire()!).snapshotConfig));
   }
 
   /** The trigger POST's raw body text (what goes on the wire), or `undefined` if it never fired. */
@@ -1522,13 +1575,8 @@ describe('deploy() — deploy-time ${env.NAME} placeholders resolve before the t
     });
     fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input);
-      if (url.includes('/deploy/trigger')) return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
-      if (url.includes('/deployments/1/status')) {
-        return new Response(
-          JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null, pageUrl: 'https://app-k7q2.agents.guuey.test/' }),
-          { status: 200 },
-        );
-      }
+      const deployed = codeDeployResponse(url);
+      if (deployed) return deployed;
       // guuey#2358: `app.access` converges through the app's own read + write.
       if (url.endsWith('/apps/app-1') && init?.method === 'PUT') {
         return new Response(JSON.stringify({ app: { id: 'app-1' } }), { status: 200 });
@@ -1539,8 +1587,7 @@ describe('deploy() — deploy-time ${env.NAME} placeholders resolve before the t
           { status: 200 },
         );
       }
-      if (url.endsWith('/apps/app-1/config')) return new Response('{}', { status: 404 });
-      throw new Error(`unexpected fetch: ${url}`);
+      return new Response('{}', { status: 404 });
     });
   });
 
@@ -1554,15 +1601,14 @@ describe('deploy() — deploy-time ${env.NAME} placeholders resolve before the t
     vi.restoreAllMocks();
   });
 
-  it('declarative: the snapshot carries the resolved url, issuer and audience — no `${` reaches the server', async () => {
-    writeManifest(false);
+  it('the snapshot carries the resolved url, issuer and audience — no `${` reaches the server', async () => {
+    writeManifest();
     Object.assign(process.env, ENV);
-    await deploy({});
+    await deploy({ code: true });
     const wire = triggerWire();
     expect(wire).toBeDefined();
     expect(wire).not.toContain('${');
-    // The declarative trigger carries the snapshot as a JSON object.
-    const snapshot = JSON.parse(wire!).snapshotConfig;
+    const snapshot = triggerSnapshot();
     expect(snapshot.agent.mcpServers.product.url).toBe(ENV.PRODUCT_MCP_URL);
     expect(snapshot.app.access.userAuthConfig).toEqual({ issuerUrl: ENV.PRODUCT_ISSUER_URL, audience: ENV.PRODUCT_AUDIENCE });
     // The access converge writes the same resolved values the snapshot carries.
@@ -1575,26 +1621,23 @@ describe('deploy() — deploy-time ${env.NAME} placeholders resolve before the t
     expect(printed).not.toContain(ENV.PRODUCT_AUDIENCE);
   });
 
-  it('declarative: --env-file supplies the values', async () => {
-    writeManifest(false);
+  it('--env-file supplies the values', async () => {
+    writeManifest();
     for (const name of Object.keys(ENV)) delete process.env[name];
     writeFileSync(join(dir, '.env.staging'), Object.entries(ENV).map(([k, v]) => `${k}="${v}"`).join('\n'));
-    await deploy({ 'env-file': '.env.staging' });
-    expect(JSON.parse(triggerWire()!).snapshotConfig.agent.mcpServers.product.url).toBe(ENV.PRODUCT_MCP_URL);
+    await deploy({ code: true, 'env-file': '.env.staging' });
+    expect(triggerSnapshot().agent.mcpServers.product.url).toBe(ENV.PRODUCT_MCP_URL);
   });
 
-  for (const code of [false, true]) {
-    const path = code ? 'code' : 'declarative';
-    it(`${path}: an unset variable stops the deploy before any network call or build`, async () => {
-      writeManifest(code);
-      for (const name of Object.keys(ENV)) delete process.env[name];
-      await expect(deploy(code ? { code: true, 'no-install': true } : {})).rejects.toBeInstanceOf(ExitSignal);
-      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
-      expect(printed).toContain('PRODUCT_MCP_URL is not set');
-      expect(fetchSpy).not.toHaveBeenCalled();
-      expect(childProcessLog.calls).toEqual([]);
-    });
-  }
+  it('an unset variable stops the deploy before any network call or build', async () => {
+    writeManifest();
+    for (const name of Object.keys(ENV)) delete process.env[name];
+    await expect(deploy({ code: true, 'no-install': true })).rejects.toBeInstanceOf(ExitSignal);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('PRODUCT_MCP_URL is not set');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(childProcessLog.calls).toEqual([]);
+  });
 });
 
 // `guuey deploy` has no `--force`: every deploy rebuilds, and the upload route
@@ -1614,7 +1657,7 @@ describe('deploy() — --force is not a deploy option', () => {
   beforeEach(() => {
     originalCwd = process.cwd();
     dir = mkdtempSync(join(tmpdir(), 'deploy-force-noop-test-'));
-    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {} }));
+    writeCodeProject(dir, { schema: '1', appId: 'app-1', agent: { mode: 'code' } });
     process.chdir(dir);
 
     vi.mocked(resolveConfig).mockReturnValue({
@@ -1629,19 +1672,7 @@ describe('deploy() — --force is not a deploy option', () => {
     });
     vi.spyOn(console, 'error').mockImplementation(() => {});
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const url = String(input);
-      if (url.includes('/deploy/trigger')) {
-        return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
-      }
-      if (url.includes('/deployments/1/status')) {
-        return new Response(
-          JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null, pageUrl: 'https://app-k7q2.agents.guuey.test/' }),
-          { status: 200 },
-        );
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    });
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(codePlatform);
   });
 
   afterEach(() => {
@@ -1661,20 +1692,20 @@ describe('deploy() — --force is not a deploy option', () => {
   }
 
   it('a --force run prints nothing about --force', async () => {
-    await expect(deploy({ force: true })).resolves.toBeUndefined();
+    await expect(deploy({ code: true, force: true })).resolves.toBeUndefined();
 
     expect(printed()).not.toContain('--force');
     expect(printed()).not.toContain('no longer needed');
   }, FULL_RUN_BUDGET_MS);
 
   it('a --force run sends the same trigger as a run without it', async () => {
-    await deploy({});
+    await deploy({ code: true });
     const without = triggerBodies();
     expect(without).toHaveLength(1);
 
     fetchSpy.mockClear();
     logSpy.mockClear();
-    await deploy({ force: 'yes' });
+    await deploy({ code: true, force: 'yes' });
 
     expect(triggerBodies()).toEqual(without);
     expect(printed()).not.toContain('--force');
@@ -1702,12 +1733,6 @@ describe('deploy.ts — no upload site waits for a 304', () => {
   });
 });
 
-// The declarative test above proves ONE of the three trigger POST sites
-// carries the field. The other two (code-orchestrated, legacy Dockerfile)
-// each need a build + tarball + presigned-S3 round trip to reach their
-// trigger, which this suite has no harness for — so they are pinned at the
-// source level instead: every `/deploy/trigger` body literal in deploy.ts
-// must spread maxPods. A new deploy shape that forgets the field fails here.
 describe('deploy() — app.theme in guuey.json reaches a code app (guuey#1130 G59)', () => {
   let dir: string;
   let originalCwd: string;
@@ -1744,14 +1769,12 @@ describe('deploy() — app.theme in guuey.json reaches a code app (guuey#1130 G5
     errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input);
-      if (url.includes('/deploy/trigger')) return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
-      if (url.includes('/deployments/1/status')) {
-        return new Response(JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null, pageUrl: 'https://app-k7q2.agents.guuey.test/' }), { status: 200 });
-      }
+      const deployed = codeDeployResponse(url);
+      if (deployed) return deployed;
       if (url.endsWith('/apps/app-1') && init?.method === 'PUT') return new Response(JSON.stringify({ id: 'app-1' }), { status: 200 });
       // The app has no theme yet — the first-write-free case, in the real `{ app }` body (guuey#2401); the hint's GET after the PUT reads the same mock.
       if (url.endsWith('/apps/app-1')) return new Response(JSON.stringify({ app: { id: 'app-1', chatTheme: null } }), { status: 200 });
-      throw new Error(`unexpected fetch: ${url}`);
+      return new Response('{}', { status: 404 });
     });
   });
 
@@ -1762,8 +1785,8 @@ describe('deploy() — app.theme in guuey.json reaches a code app (guuey#1130 G5
   });
 
   it('an inline app.theme is PUT as chatTheme after the deploy goes live, and the Theme: line prints', async () => {
-    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {}, app: { theme: THEME } }));
-    await deploy({});
+    writeCodeProject(dir, { schema: '1', appId: 'app-1', agent: { mode: 'code' }, app: { theme: THEME } });
+    await deploy({ code: true });
     const put = themePut();
     expect(put).toBeDefined();
     expect(put!.body).toEqual({ chatTheme: THEME });
@@ -1774,22 +1797,22 @@ describe('deploy() — app.theme in guuey.json reaches a code app (guuey#1130 G5
 
   it('a { file } reference writes the resolved document', async () => {
     writeFileSync(join(dir, 'theme.json'), JSON.stringify(THEME));
-    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {}, app: { theme: { file: 'theme.json' } } }));
-    await deploy({});
+    writeCodeProject(dir, { schema: '1', appId: 'app-1', agent: { mode: 'code' }, app: { theme: { file: 'theme.json' } } });
+    await deploy({ code: true });
     expect(themePut()?.body).toEqual({ chatTheme: THEME });
   });
 
   it('an app that already has a chat theme is NEVER overwritten by a deploy — no PUT, the kept line names the doors', async () => {
-    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {}, app: { theme: THEME } }));
+    writeCodeProject(dir, { schema: '1', appId: 'app-1', agent: { mode: 'code' }, app: { theme: THEME } });
     fetchSpy.mockImplementation(async (input, init) => {
       const url = String(input);
-      if (url.includes('/deploy/trigger')) return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
-      if (url.includes('/deployments/1/status')) return new Response(JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null, pageUrl: 'https://app-k7q2.agents.guuey.test/' }), { status: 200 });
+      const deployed = codeDeployResponse(url);
+      if (deployed) return deployed;
       if (url.endsWith('/apps/app-1') && init?.method === 'PUT') throw new Error('a deploy must never PUT over an existing theme');
       if (url.endsWith('/apps/app-1')) return new Response(JSON.stringify({ app: { id: 'app-1', chatTheme: { ...THEME, name: 'console-set' } } }), { status: 200 });
-      throw new Error(`unexpected fetch: ${url}`);
+      return new Response('{}', { status: 404 });
     });
-    await deploy({});
+    await deploy({ code: true });
     expect(themePut()).toBeUndefined();
     const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
     expect(printed).toContain('already has a chat theme');
@@ -1797,24 +1820,24 @@ describe('deploy() — app.theme in guuey.json reaches a code app (guuey#1130 G5
   });
 
   it('no app.theme → no PUT (a redeploy never touches the theme)', async () => {
-    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {} }));
-    await deploy({});
+    writeCodeProject(dir, { schema: '1', appId: 'app-1', agent: { mode: 'code' } });
+    await deploy({ code: true });
     expect(themePut()).toBeUndefined();
   });
 
   it("a validator refusal prints the server's path-naming message and the deploy still succeeds", async () => {
-    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {}, app: { theme: THEME } }));
+    writeCodeProject(dir, { schema: '1', appId: 'app-1', agent: { mode: 'code' }, app: { theme: THEME } });
     fetchSpy.mockImplementation(async (input, init) => {
       const url = String(input);
-      if (url.includes('/deploy/trigger')) return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
-      if (url.includes('/deployments/1/status')) return new Response(JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null, pageUrl: 'https://app-k7q2.agents.guuey.test/' }), { status: 200 });
+      const deployed = codeDeployResponse(url);
+      if (deployed) return deployed;
       if (url.endsWith('/apps/app-1') && init?.method === 'PUT') {
         return new Response(JSON.stringify({ error: { code: 'CHAT_THEME_INVALID', message: 'chatTheme.colors.light.accent must be a hex colour like #2f6bff' } }), { status: 400 });
       }
       if (url.endsWith('/apps/app-1')) return new Response(JSON.stringify({ app: { id: 'app-1', chatTheme: null } }), { status: 200 });
-      throw new Error(`unexpected fetch: ${url}`);
+      return new Response('{}', { status: 404 });
     });
-    await expect(deploy({})).resolves.toBeUndefined();
+    await expect(deploy({ code: true })).resolves.toBeUndefined();
     const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
     expect(printed).toContain('app.theme was NOT applied');
     expect(printed).toContain('chatTheme.colors.light.accent');
@@ -1822,142 +1845,18 @@ describe('deploy() — app.theme in guuey.json reaches a code app (guuey#1130 G5
   });
 });
 
-// guuey#2358 — the declarative path converges `app.access` the same way the
-// code path does (deploy-code-access.test.ts drives that one): before the
-// trigger, through `PUT /apps/:id`, with an `Access:` line.
-describe('deploy() — app.access in guuey.json converges on a declarative deploy (guuey#2358)', () => {
-  let dir: string;
-  let originalCwd: string;
-  let fetchSpy: MockInstance<typeof fetch>;
-  let logSpy: MockInstance<typeof console.log>;
-  let errSpy: MockInstance<typeof console.error>;
-  const ACCESS = {
-    userAuthMode: 'byo',
-    userAuthConfig: { issuerUrl: 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_Pool', audience: 'client-123' },
-    allowedDomains: ['https://app.example.com'],
-    guestAccess: false,
-  };
-
-  function mockPlatform(putStatus: number, putBody: unknown = { app: { id: 'app-1' } }): void {
-    fetchSpy.mockImplementation(async (input, init) => {
-      const url = String(input);
-      if (url.includes('/deploy/trigger')) return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
-      if (url.includes('/deployments/1/status')) {
-        return new Response(JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null, pageUrl: 'https://app-k7q2.agents.guuey.test/' }), { status: 200 });
-      }
-      if (url.endsWith('/apps/app-1') && init?.method === 'PUT') return new Response(JSON.stringify(putBody), { status: putStatus });
-      if (url.endsWith('/apps/app-1')) {
-        return new Response(JSON.stringify({ app: { id: 'app-1', chatTheme: null, userAuthMode: null, userAuthConfig: null, allowedDomains: [], guestAccess: null } }), { status: 200 });
-      }
-      if (url.endsWith('/apps/app-1/config')) return new Response('{}', { status: 404 });
-      throw new Error(`unexpected fetch: ${url}`);
-    });
-  }
-  const accessPutAt = (): number => fetchSpy.mock.calls.findIndex(([u, init]) => String(u).endsWith('/apps/app-1') && init?.method === 'PUT');
-  const triggerAt = (): number => fetchSpy.mock.calls.findIndex(([u]) => String(u).includes('/deploy/trigger'));
-  const printed = (): string => [...logSpy.mock.calls, ...errSpy.mock.calls].map((c) => String(c[0] ?? '')).join('\n');
-
-  beforeEach(() => {
-    originalCwd = process.cwd();
-    dir = mkdtempSync(join(tmpdir(), 'deploy-access-test-'));
-    process.chdir(dir);
-    vi.mocked(resolveConfig).mockReturnValue({ host: 'https://platform.guuey.test', apiUrl: 'https://api.guuey.test', appId: 'app-1' });
-    vi.mocked(loadProjectConfig).mockReturnValue(null);
-    vi.spyOn(process, 'exit').mockImplementation((code) => {
-      throw new ExitSignal(typeof code === 'number' ? code : undefined);
-    });
-    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    fetchSpy = vi.spyOn(globalThis, 'fetch');
-  });
-
-  afterEach(() => {
-    process.chdir(originalCwd);
-    rmSync(dir, { recursive: true, force: true });
-    vi.restoreAllMocks();
-  });
-
-  it('a byo app.access is PUT before the trigger and the Access: line names mode, issuer host and guest access', async () => {
-    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {}, app: { access: ACCESS } }));
-    mockPlatform(200);
-    await deploy({});
-    expect(accessPutAt()).toBeGreaterThanOrEqual(0);
-    expect(triggerAt()).toBeGreaterThan(accessPutAt());
-    expect(JSON.parse(String(fetchSpy.mock.calls[accessPutAt()]![1]?.body))).toEqual(ACCESS);
-    expect(printed()).toContain('Access: app.access applied (userAuthMode, userAuthConfig, allowedDomains, guestAccess) — mode byo · issuer cognito-idp.us-east-1.amazonaws.com · guest access off.');
-  });
-
-  it('a refused write stops the deploy: exit 1, no trigger', async () => {
-    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {}, app: { access: ACCESS } }));
-    mockPlatform(400, { error: { code: 'VALIDATION_ERROR', message: 'userAuthConfig.issuerUrl must be https' } });
-    await expect(deploy({})).rejects.toMatchObject({ code: 1 });
-    expect(triggerAt()).toBe(-1);
-    expect(printed()).toContain('app.access was NOT applied');
-  });
-
-  describe('deploy-time ${env.NAME} placeholders in app.access.userAuthConfig', () => {
-    const ENV = { ISSUER_HOST: 'id.staging.example.com', AUD: 'staging-client' };
-    const ENV_ACCESS = {
-      userAuthMode: 'byo',
-      userAuthConfig: { issuerUrl: 'https://${env.ISSUER_HOST}/pool', audience: '${env.AUD}' },
-    };
-    const saved = new Map<string, string | undefined>();
-    beforeEach(() => {
-      for (const name of Object.keys(ENV)) saved.set(name, process.env[name]);
-    });
-    afterEach(() => {
-      for (const [name, value] of saved) {
-        if (value === undefined) delete process.env[name];
-        else process.env[name] = value;
-      }
-    });
-
-    it('the PUT carries the env-resolved issuer and audience — no `${` reaches the app', async () => {
-      writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {}, app: { access: ENV_ACCESS } }));
-      Object.assign(process.env, ENV);
-      mockPlatform(200);
-      await deploy({});
-      expect(accessPutAt()).toBeGreaterThanOrEqual(0);
-      expect(triggerAt()).toBeGreaterThan(accessPutAt());
-      const wire = String(fetchSpy.mock.calls[accessPutAt()]![1]?.body);
-      expect(wire).not.toContain('${');
-      expect(JSON.parse(wire)).toEqual({
-        userAuthMode: 'byo',
-        userAuthConfig: { issuerUrl: 'https://id.staging.example.com/pool', audience: 'staging-client' },
-      });
-      expect(printed().split('resolved from the environment: AUD, ISSUER_HOST')).toHaveLength(2);
-    });
-
-    it('an unset variable stops the deploy: exit 1, no access PUT, no trigger', async () => {
-      writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {}, app: { access: ENV_ACCESS } }));
-      process.env.AUD = ENV.AUD;
-      delete process.env.ISSUER_HOST;
-      mockPlatform(200);
-      await expect(deploy({})).rejects.toMatchObject({ code: 1 });
-      expect(accessPutAt()).toBe(-1);
-      expect(triggerAt()).toBe(-1);
-      expect(printed()).toContain('ISSUER_HOST is not set');
-    });
-  });
-
-  it('no app.access → no access write and no Access: line', async () => {
-    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', agent: {} }));
-    mockPlatform(200);
-    await deploy({});
-    expect(accessPutAt()).toBe(-1);
-    expect(triggerAt()).toBeGreaterThanOrEqual(0);
-    expect(printed()).not.toContain('Access:');
-  });
-});
-
+// The --max-pods suite drives the code trigger. The legacy Dockerfile
+// trigger is pinned at the source with it: every `/deploy/trigger` body
+// literal in deploy.ts spreads maxPods, so a new deploy shape that forgets
+// the field fails here.
 describe('deploy.ts — every trigger POST site carries maxPods', () => {
-  it('all three body literals spread the knob', () => {
+  it('both body literals spread the knob', () => {
     const source = readFileSync(
       fileURLToPath(new URL('./deploy.ts', import.meta.url)),
       'utf8',
     );
     const triggerPosts = source.split("'POST', `/apps/${appId}/deploy/trigger`").slice(1);
-    expect(triggerPosts).toHaveLength(3);
+    expect(triggerPosts).toHaveLength(2);
     for (const site of triggerPosts) {
       const body = site.slice(0, site.indexOf('});'));
       expect(body).toContain('...(maxPods !== undefined ? { maxPods } : {})');
@@ -1965,16 +1864,15 @@ describe('deploy.ts — every trigger POST site carries maxPods', () => {
   });
 });
 
-// The code path's trigger needs a build + tarball + S3 round trip this suite
-// has no harness for (see the maxPods pin above), so its ${env.NAME}
-// resolution is pinned at the source: every snapshot deploy.ts builds goes
-// through resolveEnvOrExit before it is sent.
+// The ${env.NAME} suite drives the code snapshot; this pins the rule at the
+// source too: every snapshot deploy.ts builds goes through resolveEnvOrExit
+// before it is sent.
 describe('deploy.ts — every snapshot sent is ${env.NAME}-resolved', () => {
   it('each buildDeploySnapshot call is wrapped by resolveEnvOrExit', () => {
     const source = readFileSync(fileURLToPath(new URL('./deploy.ts', import.meta.url)), 'utf8');
     const built = source.match(/buildDeploySnapshot\(/g) ?? [];
     const wrapped = source.match(/resolveEnvOrExit\(\s*buildDeploySnapshot\(/g) ?? [];
-    expect(built.length).toBe(2);
+    expect(built.length).toBe(1);
     expect(wrapped.length).toBe(built.length);
   });
 });
@@ -1992,7 +1890,7 @@ describe('deploy() — --app-id overrides the guuey.json binding (guuey#232)', (
   beforeEach(() => {
     originalCwd = process.cwd();
     dir = mkdtempSync(join(tmpdir(), 'deploy-app-id-test-'));
-    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', appId: 'app-bound', agent: {} }));
+    writeCodeProject(dir, { schema: '1', appId: 'app-bound', agent: { mode: 'code' } });
     process.chdir(dir);
     vi.mocked(resolveConfig).mockReturnValue({
       host: 'https://platform.guuey.test',
@@ -2005,19 +1903,7 @@ describe('deploy() — --app-id overrides the guuey.json binding (guuey#232)', (
     });
     vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(console, 'log').mockImplementation(() => {});
-    fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const url = String(input);
-      if (url.includes('/deploy/trigger')) {
-        return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
-      }
-      if (url.includes('/deployments/1/status')) {
-        return new Response(
-          JSON.stringify({ status: 'live', endpointUrl: 'https://x.guuey.app', errorMessage: null, pageUrl: 'https://x-k7q2.agents.guuey.test/' }),
-          { status: 200 },
-        );
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    });
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(codePlatform);
   });
 
   afterEach(() => {
@@ -2027,7 +1913,7 @@ describe('deploy() — --app-id overrides the guuey.json binding (guuey#232)', (
   });
 
   it('★ a bound scaffold + --app-id Y deploys to Y — never silently to the bound id', async () => {
-    await deploy({ 'app-id': 'app-other' });
+    await deploy({ code: true, 'app-id': 'app-other' });
     expect(triggerUrl()).toContain('/apps/app-other/deploy/trigger');
     expect(triggerUrl()).not.toContain('app-bound');
     // The binding on disk is untouched: an override is per-deploy, not a rebind.
@@ -2035,12 +1921,12 @@ describe('deploy() — --app-id overrides the guuey.json binding (guuey#232)', (
   });
 
   it('without the flag the binding is used, exactly as before', async () => {
-    await deploy({});
+    await deploy({ code: true });
     expect(triggerUrl()).toContain('/apps/app-bound/deploy/trigger');
   });
 
   it('a valueless --app-id (parsed as `true`) is rejected before any network call', async () => {
-    await expect(deploy({ 'app-id': true })).rejects.toBeInstanceOf(ExitSignal);
+    await expect(deploy({ code: true, 'app-id': true })).rejects.toBeInstanceOf(ExitSignal);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

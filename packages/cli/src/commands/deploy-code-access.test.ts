@@ -81,10 +81,20 @@ describe('deploy() --code — app.access converges before the trigger (guuey#235
   let logSpy: MockInstance<typeof console.log>;
   let errSpy: MockInstance<typeof console.error>;
 
-  function mockPlatform(opts: { stored: StoredApp; putStatus?: number; putBody?: unknown }): void {
+  function mockPlatform(opts: {
+    stored: StoredApp;
+    putStatus?: number;
+    putBody?: unknown;
+    /** `GET /apps/app-1/deployments` rows; none by default (nothing live). */
+    deployments?: Array<{ buildNumber: number; status: string; agentMode: 'code' | 'nocode' }>;
+    deploymentsStatus?: number;
+  }): void {
     fetchSpy.mockImplementation(async (input, init) => {
       const url = String(input);
       const method = init?.method ?? 'GET';
+      if (url.endsWith('/apps/app-1/deployments')) {
+        return new Response(JSON.stringify({ deployments: opts.deployments ?? [] }), { status: opts.deploymentsStatus ?? 200 });
+      }
       if (url.endsWith('/apps/app-1/deploy/upload')) {
         return new Response(JSON.stringify({ uploadUrl: 'https://s3.test/upload', uploadId: 'up-1', buildNumber: 1 }), { status: 200 });
       }
@@ -108,6 +118,8 @@ describe('deploy() --code — app.access converges before the trigger (guuey#235
   }
   const isAccessPut = (url: string, method: string): boolean => url.endsWith('/apps/app-1') && method === 'PUT';
   const isTrigger = (url: string): boolean => url.endsWith('/deploy/trigger');
+  const isUpload = (url: string): boolean => url.endsWith('/deploy/upload');
+  const isDeploymentsRead = (url: string): boolean => url.endsWith('/apps/app-1/deployments');
 
   function writeProject(app: unknown): void {
     writeFileSync(
@@ -244,5 +256,51 @@ describe('deploy() --code — app.access converges before the trigger (guuey#235
     expect(callIndex(isTrigger)).toBeGreaterThanOrEqual(0);
     const printed = [...logSpy.mock.calls, ...errSpy.mock.calls].map((c) => String(c[0] ?? '')).join('\n');
     expect(printed).not.toContain('Access:');
+  });
+
+  // A code deploy onto a LIVE no-code build would switch the app to code mode
+  // for good; that switch is `guuey eject`'s alone (it passes allowNocodeToCode
+  // after its confirmation). The read sits after every local check and before
+  // the first leg leaves the machine.
+  describe('a live no-code build is guuey eject\'s to switch', () => {
+    it('refuses with the eject line: exit 1, nothing uploaded, no trigger', async () => {
+      writeProject(undefined);
+      mockPlatform({
+        stored: STORED_DEFAULT,
+        deployments: [
+          { buildNumber: 2, status: 'live', agentMode: 'nocode' },
+          { buildNumber: 1, status: 'superseded', agentMode: 'code' },
+        ],
+      });
+      await expect(deploy({ code: true })).rejects.toMatchObject({ code: 1 });
+      expect(callIndex(isUpload)).toBe(-1);
+      expect(callIndex(isTrigger)).toBe(-1);
+      const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+      expect(printed).toContain("App app-1 is live on guuey's no-code runtime.");
+      expect(printed).toContain('guuey eject --app-id app-1');
+    });
+
+    it('a live code build deploys as before', async () => {
+      writeProject(undefined);
+      mockPlatform({ stored: STORED_DEFAULT, deployments: [{ buildNumber: 3, status: 'live', agentMode: 'code' }] });
+      await deploy({ code: true });
+      expect(callIndex(isTrigger)).toBeGreaterThan(callIndex(isDeploymentsRead));
+    });
+
+    it('a failed read stops the deploy before the upload', async () => {
+      writeProject(undefined);
+      mockPlatform({ stored: STORED_DEFAULT, deploymentsStatus: 500 });
+      await expect(deploy({ code: true })).rejects.toMatchObject({ code: 1 });
+      expect(callIndex(isUpload)).toBe(-1);
+      expect(errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n')).toContain("Could not read app app-1's deployments");
+    });
+
+    it('eject (allowNocodeToCode) deploys over the live no-code build without the read', async () => {
+      writeProject(undefined);
+      mockPlatform({ stored: STORED_DEFAULT, deployments: [{ buildNumber: 2, status: 'live', agentMode: 'nocode' }] });
+      await deploy({ code: true }, { allowNocodeToCode: true });
+      expect(callIndex(isDeploymentsRead)).toBe(-1);
+      expect(callIndex(isTrigger)).toBeGreaterThanOrEqual(0);
+    });
   });
 });

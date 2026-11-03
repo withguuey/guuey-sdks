@@ -1,7 +1,13 @@
 /**
  * guuey deploy -- Package, upload, and deploy an agent to guuey cloud.
  *
- * Three deploy shapes, routed by `resolveDeployMode` (`../deploy-plan.ts`
+ * `guuey deploy` deploys CODE. A declarative (no-code) project is refused
+ * with the `guuey agent apply` line that replaces it (`declarativeRedirect`),
+ * and a code deploy onto an app whose live build is no-code is refused with
+ * `guuey eject` (`nocodeLiveRefusal`): that switch is one-way, so it is
+ * eject's alone, behind its confirmation.
+ *
+ * Two deploy shapes, routed by `resolveDeployMode` (`../deploy-plan.ts`
  * — pure, unit-tested; see its doc comment for the full rule table):
  *
  *   1. **Code (worker-based, orchestrated)** — selected EXPLICITLY via the
@@ -18,20 +24,14 @@
  *      and no explicit code declaration. Preserved unchanged: packs +
  *      uploads + triggers + polls with no MCP/ggui legs, no build step, no
  *      config snapshot.
- *   3. **Declarative** — `guuey.json` with `agent.mode: 'declarative'` or
- *      no mode + no Dockerfile (e.g. `guuey pull`'d Studio/no-code agent).
- *      No tarball, no build. The snapshot (system prompt inlined) is
- *      POSTed directly to the control plane and the stock
- *      `nocode-runtime` pod boots off it.
  *
- * Shapes 1 and 3 converge guuey.json's `app.access` onto the app BEFORE the
- * trigger (`./deploy-access.ts`, guuey#2358) and apply `app.theme` after
+ * Shape 1 converges guuey.json's `app.access` onto the app BEFORE the
+ * trigger (`./deploy-access.ts`, guuey#2358) and applies `app.theme` after
  * Live (`./deploy-theme.ts`); the legacy shape loads no guuey.json.
  *
  * Usage:
- *   guuey deploy                 # Auto-detect mode
- *   guuey deploy --declarative   # Force declarative (uses guuey.json, no build)
- *   guuey deploy --code          # Force code mode
+ *   guuey deploy                 # Auto-detect the code shape
+ *   guuey deploy --code          # Force the orchestrated code shape
  *   guuey deploy --size sm       # Override pod size
  *   guuey deploy --build-size lg # Override build Job size (code mode only)
  *   guuey deploy --max-pods 3    # Set the app's replica count (scaling S1)
@@ -57,7 +57,6 @@ import {
   validateToolAllowlistsNotEmpty,
   validateNoToolsEntry,
   writeGuueyJsonFile,
-  declaredServerEntries,
   resolveEnvPlaceholders,
   type EnvSource,
   type ResolvedGuueyJson,
@@ -87,7 +86,11 @@ import {
   resolveDeployMode,
   shouldOfferAppCreate,
   noAppLinkedRemedy,
+  declarativeRedirect,
+  liveAgentMode,
+  nocodeLiveRefusal,
 } from '../deploy-plan';
+import type { DeploymentsResponse } from './pull';
 import { buildGguiAssetPush, pushGguiAssetsLeg, type GguiAssetPushBody } from '../ggui-assets';
 import * as out from '../output';
 import { DEPLOY_WAIT_MS, stillDeployingMessage } from './deploy-wait';
@@ -295,9 +298,19 @@ export function resolveDeployTarget(input: DeployTargetInput): DeployTargetDecis
   return { kind: 'unbound', notes };
 }
 
-export async function deploy(flags?: Record<string, string | true>): Promise<void> {
-  const auth = requireAuth();
-  const config = resolveConfig();
+/** Internal options: only `guuey eject` may let a code deploy replace a live no-code build. */
+export interface DeployOptions {
+  /** Set by `guuey eject` after its confirmation; never reachable from a flag. */
+  allowNocodeToCode?: boolean;
+}
+
+/** A string flag's trimmed value, or undefined when the flag is absent or bare. */
+function stringFlag(flags: Record<string, string | true> | undefined, name: string): string | undefined {
+  const v = flags?.[name];
+  return typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined;
+}
+
+export async function deploy(flags?: Record<string, string | true>, opts: DeployOptions = {}): Promise<void> {
   let project = loadProjectConfig();
 
   const cwd = process.cwd();
@@ -312,6 +325,7 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
   // `agent.mode` must come from the ROOT guuey.json — loadProjectConfig
   // walks parent directories, so gate on hasGuueyJson (cwd) to avoid a
   // parent project's declaration leaking into an unrelated subdirectory.
+  // Decided BEFORE auth: a refusal here is offline and needs no login.
   const decision = resolveDeployMode({
     forceDeclarative: flags?.declarative === true,
     forceCode: flags?.code === true,
@@ -324,13 +338,28 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
     out.error(decision.message);
     process.exit(1);
   }
+  if (decision.kind === 'declarative') {
+    out.error(
+      declarativeRedirect({
+        appId: stringFlag(flags, 'app-id'),
+        envFile: stringFlag(flags, 'env-file'),
+        size: stringFlag(flags, 'size'),
+        maxPods: stringFlag(flags, 'max-pods'),
+        runtimeAutoUpdate: stringFlag(flags, 'runtime-auto-update'),
+        label: stringFlag(flags, 'label'),
+      }),
+    );
+    process.exit(1);
+  }
   const mode = decision.mode;
+  const auth = requireAuth();
+  const config = resolveConfig();
   if (mode === 'code-legacy-dockerfile' && hasGuueyJson) {
     console.log(
       `  Both Dockerfile and ${GUUEY_JSON_FILENAME} found — using Dockerfile (legacy code mode).`,
     );
     console.log(
-      `  Set ${GUUEY_JSON_FILENAME}#agent.mode or pass --declarative/--code to route explicitly.`,
+      `  Set ${GUUEY_JSON_FILENAME}#agent.mode to "code" to route the orchestrated code deploy explicitly.`,
     );
   }
 
@@ -460,19 +489,7 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
     process.exit(1);
   }
 
-  if (mode === 'declarative') {
-    await deployDeclarative({
-      auth,
-      config,
-      appId,
-      guueyJsonPath: cwdGuueyJson,
-      env,
-      size,
-      maxPods,
-      runtimeAutoUpdate,
-      label,
-    });
-  } else if (mode === 'code-orchestrated') {
+  if (mode === 'code-orchestrated') {
     await deployCode({
       install: flags?.['no-install'] !== true,
       auth,
@@ -487,9 +504,20 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
       runtimeAutoUpdate,
       label,
       flags,
+      allowNocodeToCode: opts.allowNocodeToCode === true,
     });
   } else {
-    await deployLegacyDockerfile({ auth, config, appId, size, buildSize, maxPods, runtimeAutoUpdate, label });
+    await deployLegacyDockerfile({
+      auth,
+      config,
+      appId,
+      size,
+      buildSize,
+      maxPods,
+      runtimeAutoUpdate,
+      label,
+      allowNocodeToCode: opts.allowNocodeToCode === true,
+    });
   }
 
   // A deployed byo app with an empty origin allowlist is an embed browsers
@@ -499,6 +527,35 @@ export async function deploy(flags?: Record<string, string | true>): Promise<voi
   // network-free, and best-effort by the helper's own contract (a failed
   // read means no warning).
   if (await fetchByoOriginGap(appId)) printByoOriginWarning(appId);
+}
+
+/**
+ * A code deploy onto a LIVE no-code build would switch the app to code mode
+ * for good (the door admits it in place, guuey#2357, and refuses the reverse
+ * in every state). That switch is `guuey eject`'s alone, so deploy reads the
+ * serving build's mode (`liveAgentMode` over `GET /apps/:id/deployments`)
+ * first. It runs after every local check and before the first leg leaves
+ * the machine; a failed read stops the deploy, since without it deploy cannot
+ * tell whether it is about to make that switch.
+ */
+async function refuseNocodeLive(
+  auth: AuthTokens,
+  config: ResolvedConfig,
+  appId: string,
+  allowNocodeToCode: boolean,
+): Promise<void> {
+  if (allowNocodeToCode) return;
+  const res = await apiRequest(auth.pat, config, 'GET', `/apps/${appId}/deployments`);
+  if (!res.ok) {
+    const data: unknown = await res.json().catch(() => ({}));
+    out.error(parseApiError(data, `Could not read app ${appId}'s deployments: HTTP ${res.status}`));
+    process.exit(1);
+  }
+  const { deployments } = (await res.json()) as DeploymentsResponse;
+  if (liveAgentMode(deployments) === 'nocode') {
+    out.error(nocodeLiveRefusal(appId));
+    process.exit(1);
+  }
 }
 
 // ─── Preflight: first-run app create + link write-back ───────────────────
@@ -760,6 +817,7 @@ async function deployCode(opts: {
   runtimeAutoUpdate?: boolean | undefined;
   label: string | undefined;
   flags?: Record<string, string | true>;
+  allowNocodeToCode: boolean;
 }): Promise<void> {
   const { auth, config, appId, guueyJsonPath, env, root, size, buildSize, maxPods, runtimeAutoUpdate, label, flags } =
     opts;
@@ -858,6 +916,9 @@ async function deployCode(opts: {
     out.error(installed.message);
     process.exit(1);
   }
+
+  // Every local check passed; the next step leaves the machine.
+  await refuseNocodeLive(auth, config, appId, opts.allowNocodeToCode);
 
   // ── Step 2: MCP legs ──
   // Re-deploys of an entry that already has `server` still run — the
@@ -1102,9 +1163,8 @@ async function deployCode(opts: {
   await maybePrintRuntimePinNotice(auth.pat, config, appId, runtimePinBefore);
   // guuey#1130 G59: `app.theme` in guuey.json reaches the app through the
   // same door as `apps update --chat-theme-file` — BEFORE the "Look:" hint,
-  // which then reads the state this write produced. Same line in the
-  // declarative path below (its trigger carries no theme either — only
-  // `agent apply` ever did); the legacy Dockerfile path loads no guuey.json.
+  // which then reads the state this write produced. The legacy Dockerfile
+  // path loads no guuey.json.
   await maybeApplyThemeFromConfig(auth.pat, config, appId, loaded);
   await maybePrintThemeHint(auth.pat, config, appId);
   console.log('');
@@ -1127,7 +1187,7 @@ async function deployCode(opts: {
 
 /**
  * Poll `GET /apps/:id/deployments/:n/status` to a terminal status. Shared by
- * every deploy path (code-orchestrated, legacy-Dockerfile, declarative).
+ * both deploy paths (code-orchestrated, legacy-Dockerfile) and `guuey agent apply`.
  *
  * The route + response shape MUST match the real handler
  * (`backend/amplify/functions/cliApi/handler.ts` route table +
@@ -1136,7 +1196,7 @@ async function deployCode(opts: {
  * doesn't exist), returning `endpointUrl`/`errorMessage` (NOT `url`/`error`).
  *
  * `tarballPath` is optional — code-mode callers pass it so a timeout/error
- * cleans up the tarball; the declarative path has no tarball to clean up.
+ * cleans up the tarball; `agent apply` has no tarball to clean up.
  *
  * `deps.api` defaults to the real `apiRequest` and exists purely for test
  * injection (mirrors `deployMcpFromSource`'s `deps.api` seam in `commands/mcp.ts`).
@@ -1359,8 +1419,10 @@ async function deployLegacyDockerfile(opts: {
   maxPods: number | undefined;
   runtimeAutoUpdate?: boolean | undefined;
   label: string | undefined;
+  allowNocodeToCode: boolean;
 }): Promise<void> {
   const { auth, config, appId, size, buildSize, maxPods, runtimeAutoUpdate, label } = opts;
+  await refuseNocodeLive(auth, config, appId, opts.allowNocodeToCode);
 
   console.log('');
   console.log('  Deploying agent to guuey cloud...');
@@ -1487,208 +1549,6 @@ async function deployLegacyDockerfile(opts: {
   console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
   console.log(`  Size:   runtime=${size}, build=${buildSize}`);
   if (maxPods !== undefined) console.log(`  Pods:   max=${maxPods}`);
-  printPodLifetime(maxPods);
-  console.log('');
-}
-
-/**
- * Declarative deploy path: skips tarball + S3 + Kaniko build entirely.
- * Loads guuey.json, inlines `agent.systemPrompt.file` references, and
- * POSTs the resolved snapshot (whole guuey.json document) to the trigger
- * endpoint. The control plane writes an AgentDeployment with
- * `agentMode='nocode'` + a JSON-stringified `snapshotConfig`; the stock
- * nocode-runtime pod reads the snapshot at boot and runs the framework
- * adapter with no per-agent image build.
- *
- * Status polling re-uses the same `/deployments/:n/status` endpoint as
- * code-mode; the controller surfaces 'live' once the pod is ready.
- */
-async function deployDeclarative(opts: {
-  auth: { pat: string };
-  config: { apiUrl?: string };
-  appId: string;
-  guueyJsonPath: string;
-  /** What deploy-time `${env.NAME}` placeholders resolve from. */
-  env: EnvSource;
-  size: string;
-  maxPods: number | undefined;
-  runtimeAutoUpdate?: boolean | undefined;
-  label: string | undefined;
-}): Promise<void> {
-  const { auth, config, appId, guueyJsonPath, env, size, maxPods, runtimeAutoUpdate, label } = opts;
-
-  console.log('');
-  console.log('  Deploying declarative agent to guuey cloud...');
-  console.log('');
-
-  // 1. Load + validate guuey.json + build deploy snapshot
-  //    (inlines `agent.systemPrompt.file` references into the resolved string).
-  let resolved: ResolvedGuueyJson;
-  try {
-    resolved = loadGuueyJson(guueyJsonPath);
-  } catch (err) {
-    out.error(`Failed to load ${GUUEY_JSON_FILENAME}: ${guueyJsonLoadErrorMessage(err)}`);
-    process.exit(1);
-  }
-
-  // Deploy-time `${env.NAME}` placeholders resolve here: the snapshot the
-  // platform stores holds the resolved url / issuer / audience only.
-  const envResolved = resolveEnvOrExit(buildDeploySnapshot(resolved), env);
-  printSubstituted(envResolved.substituted);
-  const snapshot = envResolved.doc;
-  const agent = snapshot.agent;
-
-  // A `credential: "caller"` server receives the user's own bearer: its url
-  // must be https://. The backend re-checks a newly submitted snapshot.
-  exitOnCallerCredentialHttp(agent);
-  exitOnFederateResourceUrl(agent);
-  exitOnReservedEnvName(agent);
-
-  // Reject literal secrets in mcpServers[].headers before upload — they'd ride
-  // into the pod's config as plaintext. The backend re-checks authoritatively;
-  // this is the fast, friendly client-side guard.
-  const secretViolations = validateNoLiteralSecrets(agent);
-  if (secretViolations.length > 0) {
-    out.error(
-      'Found literal secrets in mcpServers[].headers:\n' +
-        secretViolations.map((s) => `  - ${s}`).join('\n') +
-        '\nMove the value out of guuey.json: reference it as ${env.NAME}, declare NAME in agent.secrets, and add the value under Secrets in the Guuey console (Settings → Deployment & scaling). The CLI has no command for app secrets yet (`guuey mcp secrets` is for hosted MCP servers); `guuey env set` stores plain app configuration. A secret is sealed at rest and kept out of the stored deploy snapshot, but code running in your agent may still be able to read it as an environment variable.',
-    );
-    process.exit(1);
-  }
-
-  // Same colocated-server-name gate as the code-orchestrated path (see
-  // deployCode) — the declarative path skips the build/pack pipeline but
-  // still ships a snapshot the pod's `lowerColocated` will crash-loop on
-  // if a colocated name is invalid.
-  const colocatedNameViolations = validateColocatedServerNames(agent);
-  if (colocatedNameViolations.length > 0) {
-    out.error(colocatedNameViolations.map((v) => `  - ${v}`).join('\n'));
-    process.exit(1);
-  }
-
-  // Same tool-gate grammar gate as the code-orchestrated path (guuey#234).
-  const toolGateViolations = validateToolGates(agent);
-  if (toolGateViolations.length > 0) {
-    out.error(
-      'Invalid tools.allowlist / tools.denylist entries:\n' +
-        toolGateViolations.map((v) => `  - ${v}`).join('\n') +
-        '\nUse "<server>.<tool>", "<server>.*", or a bare tool name.',
-    );
-    process.exit(1);
-  }
-  // guuey#2258: an empty allowlist reads as "every tool", never "no tools".
-  const emptyAllowlistViolations = validateToolAllowlistsNotEmpty(agent);
-  if (emptyAllowlistViolations.length > 0) {
-    out.error(emptyAllowlistViolations.map((v) => `  - ${v}`).join('\n'));
-    process.exit(1);
-  }
-  // guuey#2262: "@none" declares no tools only alone in an allowlist.
-  const noToolsViolations = validateNoToolsEntry(agent);
-  if (noToolsViolations.length > 0) {
-    out.error(noToolsViolations.map((v) => `  - ${v}`).join('\n'));
-    process.exit(1);
-  }
-  // guuey#2585: a "*" outside "*" and "<server>.*", and a mode's tool entries.
-  const submittedToolGateViolations = validateSubmittedToolGates(agent);
-  if (submittedToolGateViolations.length > 0) {
-    out.error(submittedToolGateViolations.map((v) => `  - ${v}`).join('\n'));
-    process.exit(1);
-  }
-
-  const systemPromptLen =
-    typeof agent.systemPrompt === 'string' ? agent.systemPrompt.length : 0;
-  // `declaredServerEntries` drops the `ggui: false` opt-out — it is not a
-  // configured server, and listing it here would read as "ggui is on".
-  const mcpServers = agent.mcpServers
-    ? declaredServerEntries(agent.mcpServers).map(([name]) => name).join(', ') || '(none — ggui disabled)'
-    : 'ggui (default)';
-  console.log(`  framework:    ${agent.framework ?? 'claude-agent-sdk (default)'}`);
-  console.log(`  model:        ${agent.model ?? '(framework default)'}`);
-  console.log(`  systemPrompt: ${systemPromptLen} chars`);
-  console.log(`  mcpServers:   ${mcpServers}`);
-  console.log('');
-
-  // guuey#2358 — the same converge as the code path, before the trigger,
-  // from the same env-resolved snapshot the trigger carries.
-  if ((await convergeAccessFromConfig(auth.pat, config, appId, snapshot)).kind === 'refused') {
-    process.exit(1);
-  }
-
-  // 2. POST the trigger directly. No tarball, no upload step.
-  const deploymentId = randomUUID().slice(0, 12);
-  const runtimePinBefore = await captureRuntimePin(auth.pat, config, appId);
-  const triggerRes = await apiRequest(auth.pat, config, 'POST', `/apps/${appId}/deploy/trigger`, {
-    deploymentId,
-    size,
-    agentMode: 'nocode',
-    snapshotConfig: snapshot,
-    ...(label ? { versionLabel: label } : {}),
-    ...(maxPods !== undefined ? { maxPods } : {}),
-    ...(runtimeAutoUpdate !== undefined ? { runtimeAutoUpdate } : {}),
-  });
-
-  if (triggerRes.status !== 202) {
-    const data = (await triggerRes.json().catch(() => ({}))) as { retryAfterSeconds?: number };
-    if (triggerRes.status === 429) {
-      const secs = Number(
-        data.retryAfterSeconds ?? triggerRes.headers.get('Retry-After') ?? 0,
-      );
-      const when = secs > 0 ? ` Retry in ~${Math.ceil(secs / 60)} minute(s).` : '';
-      out.error(`${parseApiError(data, 'Deploy quota exceeded.')}${when}`);
-    } else {
-      out.error(parseApiError(data, `Deploy trigger failed: HTTP ${triggerRes.status}`));
-    }
-    process.exit(1);
-  }
-
-  const { buildNumber } = (await triggerRes.json()) as { buildNumber: number };
-
-  // 3. Poll for live (no Kaniko log stream — declarative deploys skip the
-  //    build; no tarball either, so `pollDeployStatus` gets no tarballPath).
-  console.log('  Provisioning pod...');
-  // Declarative deploys skip the build, but a size that needs a NEW node
-  // still pays the controller's provisioning budget (10 min) before the pod
-  // even schedules — the old 7-minute ceiling reported green deploys as
-  // failed (guuey#759). One wait for every path.
-  const { status, url, pageUrl: polledPageUrl, timedOut } = await pollDeployStatus({
-    auth,
-    config,
-    appId,
-    buildNumber,
-    timeoutMs: DEPLOY_WAIT_MS,
-  });
-
-  if (timedOut) {
-    console.log('');
-    console.log(stillDeployingMessage(DEPLOY_WAIT_MS));
-    return;
-  }
-
-  if (status === 'superseded') {
-    console.log('');
-    out.error('Deployment superseded by a newer deploy. Run "guuey deploy" again if needed.');
-    process.exit(1);
-  }
-
-  if (status === 'failed') {
-    console.log('');
-    out.error('Deployment failed. Run "guuey deployments list" for details.');
-    process.exit(1);
-  }
-
-  console.log('');
-  out.success(`Live at ${url}`);
-  printPageLine(await awaitPageUrl({ auth, config, appId, buildNumber, pageUrl: polledPageUrl }));
-  await maybePrintRuntimePinNotice(auth.pat, config, appId, runtimePinBefore);
-  // guuey#1130 G59 — see the code path: the same write, the same door.
-  await maybeApplyThemeFromConfig(auth.pat, config, appId, resolved);
-  await maybePrintThemeHint(auth.pat, config, appId);
-  console.log('');
-  console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
-  console.log(`  Size:   runtime=${size}`);
-  if (maxPods !== undefined) console.log(`  Pods:   max=${maxPods}`);
-  console.log('  Stock nocode-runtime pod.');
   printPodLifetime(maxPods);
   console.log('');
 }

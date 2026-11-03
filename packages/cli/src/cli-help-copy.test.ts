@@ -64,13 +64,21 @@ const agentConfigHelp = section(
 // route has no "unchanged" answer for the flag to override, so deploy has no
 // --force and its help does not offer one. `undeploy --force` is a different
 // flag and stays listed.
-const deployHelp = section('deploy                         Deploy agent', '\n  pull ');
+const deployHelp = section('deploy                         Deploy a code-mode agent', '\n  eject ');
 const undeployHelp = section('undeploy                       Tear down', '\n  env set ');
 
 describe('cli.ts --help — deploy does not offer --force', () => {
   it('the deploy section still lists its real flags', () => {
-    expect(deployHelp).toMatch(/--declarative/);
+    expect(deployHelp).toMatch(/--code\s/);
     expect(deployHelp).toMatch(/--label <tag>/);
+  });
+
+  // `guuey deploy` deploys code only: a declarative project is refused with
+  // its `guuey agent apply` line, so the help offers no --declarative.
+  it('the deploy section offers no --declarative and names the apply and eject doors', () => {
+    expect(deployHelp).not.toMatch(/--declarative/);
+    expect(deployHelp).toMatch(/guuey agent apply/);
+    expect(deployHelp).toMatch(/guuey eject/);
   });
 
   it('the deploy section does not list --force', () => {
