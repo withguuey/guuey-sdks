@@ -5,7 +5,7 @@
  * (3c) maps the same object to style values instead — no CSS here is
  * load-bearing for the view-model.
  */
-import { paletteCue, type GuueyChatTheme } from "../theme.js";
+import { paletteChipFace, paletteCue, type ChipFace, type GuueyChatTheme } from "../theme.js";
 
 export type ThemeMode = "light" | "dark";
 
@@ -35,6 +35,22 @@ const DENSITY_GAP: Record<GuueyChatTheme["shape"]["density"], string> = {
  * stamp silently shadowing the documented one (the trap the landing
  * home-hero embed hit four rounds of).
  */
+const tokenRef = (token: string): string => `var(--guuey-chat-${token}, var(--_guuey-chat-${token}))`;
+
+/** Each chip face as the three internal properties the stylesheet's chip reads. */
+const CHIP_FACE_VARS: Record<ChipFace, Record<string, string>> = {
+  accent: {
+    "--_guuey-chat-chip-fill": tokenRef("accent"),
+    "--_guuey-chat-chip-ink": tokenRef("on-accent"),
+    "--_guuey-chat-chip-edge": "transparent",
+  },
+  hollow: {
+    "--_guuey-chat-chip-fill": tokenRef("surface"),
+    "--_guuey-chat-chip-ink": tokenRef("ink"),
+    "--_guuey-chat-chip-edge": tokenRef("ink"),
+  },
+};
+
 export function themeCssVars(theme: GuueyChatTheme, mode: ThemeMode): Record<string, string> {
   const palette = theme.colors[mode];
   const vars: Record<string, string> = {
@@ -48,6 +64,10 @@ export function themeCssVars(theme: GuueyChatTheme, mode: ThemeMode): Record<str
     "--_guuey-chat-error": palette.error,
     // Always stamped: an unstated cue derives from the accent and canvas.
     "--_guuey-chat-cue": paletteCue(palette),
+    // The Retry chip's face (`paletteChipFace`), stamped as references to the
+    // token channels so a host's accent, ink or surface variable still
+    // reaches the chip; a host can also set --guuey-chat-chip-* itself.
+    ...CHIP_FACE_VARS[paletteChipFace(palette)],
     "--_guuey-chat-radius": RADIUS_PX[theme.shape.radius],
     "--_guuey-chat-gap": DENSITY_GAP[theme.shape.density],
     "--_guuey-chat-scale": String(theme.typography.scale ?? 1),

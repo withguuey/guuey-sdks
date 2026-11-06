@@ -5,7 +5,7 @@
  * schema resolved into a flat token object RN components read as style
  * values. No new vocabulary: every field here derives from the schema.
  */
-import { paletteCue, resolveTheme, type GuueyChatPalette, type GuueyChatTheme } from "../theme.js";
+import { paletteChipFace, paletteCue, resolveTheme, type GuueyChatPalette, type GuueyChatTheme } from "../theme.js";
 
 export type NativeThemeMode = "light" | "dark";
 
@@ -15,6 +15,13 @@ export interface NativeChatTokens {
   palette: GuueyChatPalette;
   /** The palette's cue (`paletteCue`): the streaming caret and other one-bit strokes. */
   cue: string;
+  /**
+   * A small action chip on the canvas (Retry on a failed send), by
+   * `paletteChipFace`: the accent fill under on-accent words, or the hollow
+   * face (surface fill, 1px ink edge, ink words) when the accent does not
+   * stand out on the canvas. `edge` is undefined on the accent face.
+   */
+  chip: { fill: string; ink: string; edge: string | undefined };
   /** shape.radius → px: none 0, soft 10, round 18. */
   radius: number;
   /** shape.density → the bubble padding / row gap pair. */
@@ -47,6 +54,10 @@ export function resolveNativeTheme(theme: GuueyChatTheme, mode: NativeThemeMode)
   return {
     palette,
     cue: paletteCue(palette),
+    chip:
+      paletteChipFace(palette) === "accent"
+        ? { fill: palette.accent, ink: palette.onAccent, edge: undefined }
+        : { fill: palette.surface, ink: palette.ink, edge: palette.ink },
     radius: RADIUS[resolved.shape.radius],
     pad: comfortable ? 12 : 8,
     gap: comfortable ? 10 : 6,

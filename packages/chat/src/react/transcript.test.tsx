@@ -55,8 +55,12 @@ describe("Transcript", () => {
     // The documented `--guuey-chat-*` channel is NEVER stamped inline — a
     // host CSS variable set on any ancestor must win per-token (the
     // stylesheet reads `var(--guuey-chat-<t>, var(--_guuey-chat-<t>))`),
-    // so the two theming channels compose instead of shadowing.
-    expect(style).not.toMatch(/(?<!_)guuey-chat-accent/);
+    // so the two theming channels compose instead of shadowing. A stamped
+    // VALUE may read the public channel (the chip face does); no stamp
+    // DECLARES it.
+    const declared = style.split(";").map((d) => d.split(":")[0]?.trim() ?? "");
+    expect(declared.filter((name) => name.startsWith("--guuey-chat-"))).toEqual([]);
+    expect(declared).toContain("--_guuey-chat-chip-fill");
     expect(root?.getAttribute("data-guuey-chat-mode")).toBe("dark");
   });
 

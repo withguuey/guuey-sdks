@@ -5,7 +5,7 @@
  * regresses regresses every such app at once.
  */
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CHAT_THEME, GUUEY_CHAT_THEME, paletteCue, type GuueyChatPalette } from "./theme.js";
+import { DEFAULT_CHAT_THEME, GUUEY_CHAT_THEME, paletteChipFace, paletteCue, type GuueyChatPalette } from "./theme.js";
 
 /** WCAG 2.x relative luminance of a `#rrggbb` colour. */
 function luminance(hex: string): number {
@@ -67,6 +67,19 @@ describe("the shipped palettes clear AA for normal text on every ground, both mo
           expect(contrast(paletteCue(palette), colour(palette, ground))).toBeGreaterThanOrEqual(3);
         });
       }
+      // The Retry chip in its face reads as a control: its words clear AA on its fill, and its
+      // boundary (the fill on the accent face, the ink edge on the hollow face) clears 3:1 on the
+      // grounds the row sits on.
+      it(`${theme.name} ${mode}: the Retry chip (${paletteChipFace(palette)} face) reads as a control`, () => {
+        const accentFace = paletteChipFace(palette) === "accent";
+        const fill = accentFace ? colour(palette, "accent") : colour(palette, "surface");
+        const words = accentFace ? colour(palette, "onAccent") : colour(palette, "ink");
+        const boundary = accentFace ? fill : colour(palette, "ink");
+        expect(contrast(words, fill)).toBeGreaterThanOrEqual(AA_NORMAL);
+        for (const ground of ["canvas", "surface"] as const) {
+          expect(contrast(boundary, colour(palette, ground))).toBeGreaterThanOrEqual(3);
+        }
+      });
       it(`${theme.name} ${mode}: onAccent on accent (the send button)`, () => {
         expect(contrast(colour(palette, "onAccent"), colour(palette, "accent"))).toBeGreaterThanOrEqual(AA_NORMAL);
       });

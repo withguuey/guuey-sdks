@@ -136,12 +136,31 @@ export const CUE_CONTRAST_FLOOR = 3;
  */
 export function paletteCue(palette: GuueyChatPalette): string {
   if (palette.cue !== undefined) return palette.cue;
+  return accentStandsOut(palette) ? palette.accent : palette.inkMuted;
+}
+
+/**
+ * Whether the palette's accent clears 3:1 against its canvas: false when it
+ * does not, or when either is a colour this cannot measure. It decides the
+ * unstated cue and the face of a small accent control (`paletteChipFace`).
+ */
+export function accentStandsOut(palette: GuueyChatPalette): boolean {
   const accent = parseOpaqueColor(palette.accent);
   const canvas = parseOpaqueColor(palette.canvas);
-  if (accent !== null && canvas !== null && contrastRatio(accent, canvas) >= CUE_CONTRAST_FLOOR) {
-    return palette.accent;
-  }
-  return palette.inkMuted;
+  return accent !== null && canvas !== null && contrastRatio(accent, canvas) >= CUE_CONTRAST_FLOOR;
+}
+
+/**
+ * The face of a small action chip that sits on the canvas (Retry on a
+ * failed send). `"accent"`: the accent fill under its on-accent words, when
+ * the accent stands out on the canvas. `"hollow"`: the surface fill, a 1px
+ * ink edge and ink words, when it does not, so a light accent on a light
+ * canvas still reads as a control.
+ */
+export type ChipFace = "accent" | "hollow";
+
+export function paletteChipFace(palette: GuueyChatPalette): ChipFace {
+  return accentStandsOut(palette) ? "accent" : "hollow";
 }
 
 /**

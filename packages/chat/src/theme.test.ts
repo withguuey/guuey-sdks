@@ -6,7 +6,9 @@ import {
   GUUEY_CHAT_THEME,
   GuueyChatFace,
   GuueyChatTheme,
+  accentStandsOut,
   contrastRatio,
+  paletteChipFace,
   paletteCue,
   parseOpaqueColor,
   resolveTheme,
@@ -343,5 +345,23 @@ describe("the opaque colour measure the cue uses, exported for every surface tha
     if (black === null || white === null) throw new Error("the fixtures parse");
     expect(contrastRatio(black, white)).toBeCloseTo(21, 5);
     expect(contrastRatio(white, black)).toBeCloseTo(21, 5);
+  });
+});
+
+describe("the chip face: an accent chip only where the accent stands out", () => {
+  it("is the accent face when the accent clears 3:1 on the canvas", () => {
+    expect(accentStandsOut(DEFAULT_CHAT_THEME.colors.light)).toBe(true);
+    expect(paletteChipFace(DEFAULT_CHAT_THEME.colors.light)).toBe("accent");
+    expect(paletteChipFace(GUUEY_CHAT_THEME.colors.dark)).toBe("accent");
+  });
+
+  it("is the hollow face for the light slime on fog, and for colours it cannot measure", () => {
+    expect(accentStandsOut(GUUEY_CHAT_THEME.colors.light)).toBe(false);
+    expect(paletteChipFace(GUUEY_CHAT_THEME.colors.light)).toBe("hollow");
+    expect(paletteChipFace({ ...DEFAULT_CHAT_THEME.colors.light, accent: "rebeccapurple" })).toBe("hollow");
+  });
+
+  it("ignores a stated cue: the face reads the accent against the canvas", () => {
+    expect(paletteChipFace({ ...GUUEY_CHAT_THEME.colors.light, cue: "#000000" })).toBe("hollow");
   });
 });

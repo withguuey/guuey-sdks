@@ -1604,7 +1604,8 @@ describe("theme scope — composer, chips, clear-row, link-ask resolve the theme
     // documented `--guuey-chat-*` channel stays the host's, guuey#521).
     expect(surface?.style.getPropertyValue("--_guuey-chat-accent")).toBe("#b8ff3a");
     expect(surface?.style.getPropertyValue("--_guuey-chat-canvas")).toBe("#0e1014");
-    expect(surface?.getAttribute("style") ?? "").not.toMatch(/(?<!_)guuey-chat-accent/);
+    const declared = (surface?.getAttribute("style") ?? "").split(";").map((d) => d.split(":")[0]?.trim() ?? "");
+    expect(declared.filter((name) => name.startsWith("--guuey-chat-"))).toEqual([]);
 
     // Every piece of chrome that sits OUTSIDE the transcript root reads
     // `var(--guuey-chat-X, var(--_guuey-chat-X))` — it resolves only when

@@ -1,7 +1,8 @@
 /**
- * guuey#2304 — the kit has ONE focus ring for its controls: a 2px cue ring
- * 2px off the control plus a 1px ink hairline at its edge, so the indicator
- * clears 3:1 on any ground and with any builder accent. Read from the shipped
+ * guuey#2304 — the kit has ONE focus ring for its controls, one stroke: a 2px
+ * cue ring 2px off the control. The cue clears 3:1 on every shipped ground
+ * (theme.contrast.test.ts) and derives that way when unstated. Nothing else
+ * changes on focus: no hairline, no border flip. Read from the shipped
  * stylesheet.
  */
 import { readFileSync } from "node:fs";
@@ -37,20 +38,20 @@ const CONTROLS = [
 ];
 
 describe("the kit's focus ring (guuey#2304)", () => {
-  it("every control's :focus-visible is the ONE shared rule: cue ring 2px off + ink hairline", () => {
+  it("every control's :focus-visible is the ONE shared rule: one 2px cue ring 2px off, no hairline", () => {
     const shared = rules().filter(([sels]) => CONTROLS.every((c) => sels.includes(`${c}:focus-visible`)));
     expect(shared).toHaveLength(1);
     const body = shared[0]![1];
     expect(body).toMatch(/outline:\s*2px solid var\(--guuey-chat-cue, var\(--_guuey-chat-cue\)\)/);
     expect(body).toMatch(/outline-offset:\s*2px/);
-    expect(body).toMatch(/box-shadow:\s*0 0 0 1px var\(--guuey-chat-ink/);
+    expect(body).not.toMatch(/box-shadow/);
   });
 
-  it("no other rule paints a hairline-less outline on those controls", () => {
+  it("no other rule draws a second focus stroke on a control (no outline, shadow or border change)", () => {
     for (const [sels, body] of rules()) {
-      if (!/outline:\s*2px solid/.test(body)) continue;
-      const hitsControl = sels.some((s) => CONTROLS.some((c) => s === `${c}:focus-visible`));
-      if (hitsControl) expect(body).toMatch(/box-shadow:\s*0 0 0 1px/);
+      const onFocus = sels.some((s) => CONTROLS.some((c) => s === `${c}:focus` || s === `${c}:focus-visible`));
+      const shared = CONTROLS.every((c) => sels.includes(`${c}:focus-visible`));
+      if (onFocus && !shared) expect(body, sels.join(", ")).not.toMatch(/\b(outline|box-shadow|border)[a-z-]*\s*:/);
     }
   });
 
@@ -61,15 +62,11 @@ describe("the kit's focus ring (guuey#2304)", () => {
     }
   });
 
-  it("the composer keeps its accent border on focus beside the shared ring", () => {
-    const focus = rules().filter(([sels]) => sels.length === 1 && sels[0] === ".guuey-chat-composer-input:focus");
-    expect(focus).toHaveLength(1);
-    expect(focus[0]![1]).toMatch(/border-color:\s*var\(--guuey-chat-accent/);
-  });
-
-  it("the jump chip keeps its drop shadow under the hairline when focused", () => {
-    const jump = rules().filter(([sels]) => sels.length === 1 && sels[0] === ".guuey-chat-jump:focus-visible");
-    expect(jump).toHaveLength(1);
-    expect(jump[0]![1]).toMatch(/0 0 0 1px var\(--guuey-chat-ink[^)]*\)\),\s*0 2px 8px/);
+  it("the composer's insertion caret is a cue stroke", () => {
+    const input = rules().filter(
+      ([sels, body]) => sels.length === 1 && sels[0] === ".guuey-chat-composer-input" && /caret-color/.test(body),
+    );
+    expect(input).toHaveLength(1);
+    expect(input[0]![1]).toMatch(/caret-color:\s*var\(--guuey-chat-cue, var\(--_guuey-chat-cue\)\)/);
   });
 });

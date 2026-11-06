@@ -170,11 +170,15 @@
   color: var(--guuey-chat-error, var(--_guuey-chat-error));
   text-align: end;
 }
+/* Retry's face follows the theme (`paletteChipFace`): the accent fill under
+   its on-accent words when the accent stands out on the canvas, else the
+   hollow face (surface fill, ink edge, ink words), so a light accent on a
+   light canvas still reads as a control. */
 .guuey-chat-retry {
   margin-inline-start: 8px;
-  border: 1px solid transparent;
-  background: var(--guuey-chat-accent, var(--_guuey-chat-accent));
-  color: var(--guuey-chat-on-accent, var(--_guuey-chat-on-accent));
+  border: 1px solid var(--guuey-chat-chip-edge, var(--_guuey-chat-chip-edge));
+  background: var(--guuey-chat-chip-fill, var(--_guuey-chat-chip-fill));
+  color: var(--guuey-chat-chip-ink, var(--_guuey-chat-chip-ink));
   border-radius: 6px;
   padding: 1px 8px;
   cursor: pointer;
@@ -425,11 +429,10 @@
 .guuey-chat-toggle:hover {
   background: color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 6%, transparent);
 }
-/* guuey#2304 — the kit's ONE focus ring: a 2px cue ring 2px off the control.
-   The cue clears 3:1 against the canvas (it derives that way when a theme
-   states none), and a 1px ink hairline at the control's edge keeps the
-   indicator at or above 3:1 (WCAG 2.4.11) on any other ground and when a
-   host sets the cue itself. */
+/* guuey#2304 — the kit's ONE focus ring: one stroke, a 2px cue ring 2px off
+   the control. The cue clears 3:1 against the canvas (a shipped theme states
+   one that does, and an unstated cue derives that way); a host that sets
+   --guuey-chat-cue itself owns that choice. */
 .guuey-chat-toggle:focus-visible,
 .guuey-chat-prompt-actions button:focus-visible,
 .guuey-chat-jump:focus-visible,
@@ -445,13 +448,6 @@
 .guuey-chat-composer-input:focus-visible {
   outline: 2px solid var(--guuey-chat-cue, var(--_guuey-chat-cue));
   outline-offset: 2px;
-  box-shadow: 0 0 0 1px var(--guuey-chat-ink, var(--_guuey-chat-ink));
-}
-/* The jump chip floats on its own drop shadow; focus keeps it under the hairline. */
-.guuey-chat-jump:focus-visible {
-  box-shadow:
-    0 0 0 1px var(--guuey-chat-ink, var(--_guuey-chat-ink)),
-    0 2px 8px rgb(0 0 0 / 0.25);
 }
 .guuey-chat-body {
   margin-top: 4px;
@@ -1078,6 +1074,8 @@
   border-radius: var(--guuey-chat-radius, var(--_guuey-chat-radius));
   background: var(--guuey-chat-surface, var(--_guuey-chat-surface));
   color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
+  /* The insertion caret is a one-bit stroke: it takes the cue. */
+  caret-color: var(--guuey-chat-cue, var(--_guuey-chat-cue));
   font: inherit;
 }
 /* iOS Safari auto-zooms the page when a focused control's font-size is
@@ -1092,12 +1090,6 @@
   .guuey-chat-composer-input {
     font-size: max(16px, calc(15px * var(--guuey-chat-scale, var(--_guuey-chat-scale, 1))));
   }
-}
-/* The accent border is the field's brand signal on focus; the ring itself is
-   the kit's ONE focus rule above (guuey#2304), so a field and a button
-   announce focus the same way. No `outline: none` here: it would cancel it. */
-.guuey-chat-composer-input:focus {
-  border-color: var(--guuey-chat-accent, var(--_guuey-chat-accent));
 }
 .guuey-chat-composer-input:disabled {
   opacity: 0.5;

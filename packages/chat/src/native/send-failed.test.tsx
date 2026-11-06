@@ -4,8 +4,10 @@
  * is calm in both tones, hollow (surface fill, a 1 px muted-ink border, ink
  * words, full opacity), and its words stay selectable. The tone lives on the
  * line under it: a fault keeps the error colour, the retry tone draws plain
- * ink. Retry is an accent chip in both tones (the accent fill under its paired
- * on-accent words, 32pt tall, dimmed while pressed).
+ * ink. Retry is a chip in the theme's chip face in both tones (the accent fill
+ * under on-accent words when the accent stands out on the canvas, else surface
+ * fill, ink edge and ink words; 32pt tall at the default scale and growing
+ * with it; dimmed while pressed).
  */
 import { cleanup, render, screen } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
@@ -18,6 +20,8 @@ interface MockStyle {
   borderColor?: string;
   opacity?: number;
   minHeight?: number;
+  lineHeight?: number;
+  paddingTop?: number;
 }
 interface MockProps {
   children?: ReactNode;
@@ -33,6 +37,8 @@ function styleData(style: MockStyle | undefined): Record<string, string | undefi
     "data-border-width": style?.borderWidth === undefined ? undefined : String(style.borderWidth),
     "data-border-color": style?.borderColor,
     "data-opacity": style?.opacity === undefined ? undefined : String(style.opacity),
+    "data-line-height": style?.lineHeight === undefined ? undefined : String(style.lineHeight),
+    "data-padding-top": style?.paddingTop === undefined ? undefined : String(style.paddingTop),
   };
 }
 
@@ -65,7 +71,7 @@ vi.mock("react-native", () => ({
 const { NativeUserMessage } = await import("./components.js");
 const { resolveNativeTheme } = await import("./theme-native.js");
 const { defaultChatStrings } = await import("../strings.js");
-const { DEFAULT_CHAT_THEME } = await import("../theme.js");
+const { DEFAULT_CHAT_THEME, GUUEY_CHAT_THEME } = await import("../theme.js");
 
 import type { UserMessageItem } from "../types.js";
 import type { NativeTranscriptItemContext } from "./components.js";
@@ -125,7 +131,7 @@ describe("NativeUserMessage, failed send", () => {
   }
 
   for (const tone of [undefined, "retry"] as const) {
-    it(`puts the ${tone ?? "fault"} tone on the line and makes Retry an accent chip: accent fill, on-accent words`, () => {
+    it(`puts the ${tone ?? "fault"} tone on the line and, on an accent that stands out, makes Retry an accent chip: accent fill, on-accent words, no edge`, () => {
       render(<NativeUserMessage item={user({ failureTone: tone })} ctx={ctx} />);
       const label = screen.getByText(defaultChatStrings.userCouldntSend);
       expect(label.dataset.color).toBe(tone === "retry" ? tokens.palette.ink : tokens.palette.error);
@@ -133,13 +139,47 @@ describe("NativeUserMessage, failed send", () => {
       expect(words.dataset.color).toBe(tokens.palette.onAccent);
       const chip = words.closest("button");
       expect(chip?.dataset.bg).toBe(tokens.palette.accent);
+      expect(chip?.dataset.borderWidth).toBe("0");
     });
   }
+
+  it("on a light accent that does not stand out (guuey light), Retry takes the hollow face: surface fill, 1px ink edge, ink words", () => {
+    const guuey = resolveNativeTheme(GUUEY_CHAT_THEME, "light");
+    render(<NativeUserMessage item={user()} ctx={{ ...ctx, tokens: guuey }} />);
+    const words = screen.getByText(defaultChatStrings.userRetry);
+    expect(words.dataset.color).toBe(guuey.palette.ink);
+    const chip = words.closest("button");
+    expect(chip?.dataset.bg).toBe(guuey.palette.surface);
+    expect(chip?.dataset.borderWidth).toBe("1");
+    expect(chip?.dataset.borderColor).toBe(guuey.palette.ink);
+  });
+
+  it("on guuey dark the slime stands out on the canvas, so Retry is the accent chip again", () => {
+    const guuey = resolveNativeTheme(GUUEY_CHAT_THEME, "dark");
+    render(<NativeUserMessage item={user()} ctx={{ ...ctx, tokens: guuey }} />);
+    const chip = screen.getByText(defaultChatStrings.userRetry).closest("button");
+    expect(chip?.dataset.bg).toBe(guuey.palette.accent);
+  });
+
+  it("the row's line and the chip grow with the type scale, the reason's first line still centred on the chip", () => {
+    const big = resolveNativeTheme({ ...DEFAULT_CHAT_THEME, typography: { ...DEFAULT_CHAT_THEME.typography, scale: 2 } }, "light");
+    render(<NativeUserMessage item={user()} ctx={{ ...ctx, tokens: big }} />);
+    const words = screen.getByText(defaultChatStrings.userRetry);
+    const line = Number(words.dataset.lineHeight);
+    expect(line).toBeGreaterThanOrEqual((big.fontSize - 2) * 1.3);
+    const chip = words.closest("button");
+    const height = Number(chip?.dataset.minHeight);
+    expect(height).toBeGreaterThan(32);
+    const label = screen.getByText(defaultChatStrings.userCouldntSend);
+    expect(Number(label.dataset.lineHeight)).toBe(line);
+    expect(Number(label.dataset.paddingTop)).toBe((height - line) / 2);
+  });
 
   it("the Retry chip is 32pt tall, full opacity at rest and 0.85 while pressed", () => {
     render(<NativeUserMessage item={user()} ctx={ctx} />);
     const chip = screen.getByText(defaultChatStrings.userRetry).closest("button");
     expect(chip?.dataset.minHeight).toBe("32");
+    expect(screen.getByText(defaultChatStrings.userCouldntSend).dataset.paddingTop).toBe("7");
     expect(chip?.dataset.opacity).toBe("1");
     expect(chip?.dataset.pressedOpacity).toBe("0.85");
   });

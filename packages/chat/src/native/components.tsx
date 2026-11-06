@@ -201,19 +201,24 @@ function NativeActionWords({ labels, ctx }: { labels: readonly (string | null)[]
   );
 }
 
-/** The native Retry chip's height, and the line height its row's words take. */
-const RETRY_CHIP_HEIGHT = 32;
-const RETRY_LINE = 18;
+/** The native Retry chip's least height, and its padding around the words' line. */
+const RETRY_CHIP_MIN_HEIGHT = 32;
+const RETRY_CHIP_PAD = 14;
 
 function NativeSendFailed({ item, ctx }: ItemProps<UserMessageItem>): ReactNode {
   const { tokens } = ctx;
   if (item.state !== "failed") return null;
+  // The row's words are two sizes under the body; their line and the chip
+  // grow with the type scale, so a larger scale never clips the words.
+  const retrySize = tokens.fontSize - 2;
+  const retryLine = Math.round(retrySize * 1.4);
+  const chipHeight = Math.max(RETRY_CHIP_MIN_HEIGHT, retryLine + RETRY_CHIP_PAD);
   return (
     <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
-      {/* The tone lives on this line and on Retry, never on the bubble above it (the reader's own words stay calm).
-          guuey#2453: the retry tone draws the line in the plain text colour; a fault keeps the error colour. Retry is an
-          accent chip in both tones, the web chip's twin (the accent fill under its paired on-accent words): an action
-          takes the cue, not the fault.
+      {/* The tone lives on this line, never on the bubble above it (the reader's own words stay calm).
+          guuey#2453: the retry tone draws the line in the plain text colour; a fault keeps the error colour. Retry is a
+          chip in both tones, the web chip's twin in the theme's chip face (tokens.chip): an action takes the cue, not
+          the fault.
           The line shrinks and wraps; Retry keeps its size at the row's end, so a long reason never pushes it off a narrow screen.
           The row aligns to the top, and the line's top padding centres its first line on the chip, so Retry sits
           beside that line rather than mid-paragraph. */}
@@ -221,9 +226,9 @@ function NativeSendFailed({ item, ctx }: ItemProps<UserMessageItem>): ReactNode 
         style={{
           flexShrink: 1,
           color: item.failureTone === "retry" ? tokens.palette.ink : tokens.palette.error,
-          fontSize: tokens.fontSize - 2,
-          lineHeight: RETRY_LINE,
-          paddingTop: (RETRY_CHIP_HEIGHT - RETRY_LINE) / 2,
+          fontSize: retrySize,
+          lineHeight: retryLine,
+          paddingTop: (chipHeight - retryLine) / 2,
         }}
       >
         {item.failureLine ?? ctx.strings.userCouldntSend}
@@ -233,16 +238,18 @@ function NativeSendFailed({ item, ctx }: ItemProps<UserMessageItem>): ReactNode 
           accessibilityRole="button"
           style={({ pressed }) => ({
             flexShrink: 0,
-            minHeight: RETRY_CHIP_HEIGHT,
+            minHeight: chipHeight,
             justifyContent: "center",
             paddingHorizontal: 12,
             borderRadius: 6,
-            backgroundColor: tokens.palette.accent,
+            backgroundColor: tokens.chip.fill,
+            borderWidth: tokens.chip.edge === undefined ? 0 : 1,
+            borderColor: tokens.chip.edge,
             opacity: pressed ? 0.85 : 1,
           })}
           onPress={() => ctx.onRetry?.(item)}
         >
-          <Text style={{ color: tokens.palette.onAccent, fontSize: tokens.fontSize - 2, lineHeight: RETRY_LINE, fontWeight: "600" }}>
+          <Text style={{ color: tokens.chip.ink, fontSize: retrySize, lineHeight: retryLine, fontWeight: "600" }}>
             {ctx.strings.userRetry}
           </Text>
         </Pressable>

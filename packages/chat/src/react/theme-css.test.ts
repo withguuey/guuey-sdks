@@ -153,3 +153,22 @@ describe("the cue reaches the web renderer", () => {
     expect(rule).not.toMatch(/accent/);
   });
 });
+
+describe("the chip face reaches the web renderer", () => {
+  const ref = (t: string): string => `var(--guuey-chat-${t}, var(--_guuey-chat-${t}))`;
+
+  it("an accent that stands out on the canvas stamps the accent face", () => {
+    const vars = themeCssVars(DEFAULT_CHAT_THEME, "light");
+    expect(vars["--_guuey-chat-chip-fill"]).toBe(ref("accent"));
+    expect(vars["--_guuey-chat-chip-ink"]).toBe(ref("on-accent"));
+    expect(vars["--_guuey-chat-chip-edge"]).toBe("transparent");
+    expect(themeCssVars(GUUEY_CHAT_THEME, "dark")["--_guuey-chat-chip-fill"]).toBe(ref("accent"));
+  });
+
+  it("the guuey light slime on fog stamps the hollow face: surface fill, ink edge, ink words", () => {
+    const vars = themeCssVars(GUUEY_CHAT_THEME, "light");
+    expect(vars["--_guuey-chat-chip-fill"]).toBe(ref("surface"));
+    expect(vars["--_guuey-chat-chip-ink"]).toBe(ref("ink"));
+    expect(vars["--_guuey-chat-chip-edge"]).toBe(ref("ink"));
+  });
+});
