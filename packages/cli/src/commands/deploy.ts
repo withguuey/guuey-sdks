@@ -1166,7 +1166,7 @@ async function deployCode(opts: {
   // which then reads the state this write produced. The legacy Dockerfile
   // path loads no guuey.json.
   await maybeApplyThemeFromConfig(auth.pat, config, appId, loaded);
-  await maybePrintThemeHint(auth.pat, config, appId);
+  await maybePrintThemeHint(auth.pat, config, appId, 'guuey deploy');
   console.log('');
   console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
   console.log(`  Size:   runtime=${size}, build=${buildSize}`);
@@ -1544,7 +1544,7 @@ async function deployLegacyDockerfile(opts: {
   out.success(`Live at ${url}`);
   printPageLine(await awaitPageUrl({ auth, config, appId, buildNumber, pageUrl: polledPageUrl }));
   await maybePrintRuntimePinNotice(auth.pat, config, appId, runtimePinBefore);
-  await maybePrintThemeHint(auth.pat, config, appId);
+  await maybePrintThemeHint(auth.pat, config, appId, 'guuey deploy');
   console.log('');
   console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
   console.log(`  Size:   runtime=${size}, build=${buildSize}`);

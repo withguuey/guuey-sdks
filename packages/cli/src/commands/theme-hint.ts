@@ -3,8 +3,12 @@
  *
  * One line after `Live at <url>` when the app renders the guuey theme (no
  * `chatTheme` of its own), naming the two write paths — the console's
- * Design → Chat theme and `app.theme` in guuey.json (applied by `guuey deploy`
- * for code apps since guuey#1130 G59, and by `guuey agent apply`).
+ * Design → Chat theme and `app.theme` in guuey.json, applied by the command
+ * that just ran. Since 0.33.0 each mode has one command: `guuey deploy` for
+ * code apps (guuey#1130 G59) and `guuey agent apply` for declarative apps,
+ * which refuses a code app. So the hint names only the caller's own command:
+ * a builder who just ejected or deployed code is never pointed at
+ * `guuey agent apply`.
  * Nothing else on the post-deploy screens (console chip, CLI) reached the
  * theme before this; a builder who wanted the widget to look like their
  * product had to know the Design tab existed.
@@ -43,15 +47,21 @@ export function appChatThemeState(body: unknown): AppChatThemeState {
   return app[CHAT_THEME_FIELD] === null ? 'none' : 'set';
 }
 
-export const THEME_HINT_LINES: readonly string[] = [
-  '  Look:   the chat panel renders the Guuey theme. Make it yours in the console',
-  '          (Design → Chat theme), or add app.theme to guuey.json — `guuey deploy` (code apps) and `guuey agent apply` both apply it.',
-];
+/** The command that applies `app.theme` for the caller's mode: `guuey deploy` (code) or `guuey agent apply` (declarative). */
+export type ThemeApplyCommand = 'guuey deploy' | 'guuey agent apply';
+
+export function themeHintLines(applyCommand: ThemeApplyCommand): readonly string[] {
+  return [
+    '  Look:   the chat panel renders the Guuey theme. Make it yours in the console',
+    `          (Design → Chat theme), or add app.theme to guuey.json — \`${applyCommand}\` applies it.`,
+  ];
+}
 
 export async function maybePrintThemeHint(
   pat: string,
   config: { apiUrl?: string },
   appId: string,
+  applyCommand: ThemeApplyCommand,
   deps?: { api?: typeof apiRequest; log?: (line: string) => void },
 ): Promise<void> {
   const api = deps?.api ?? apiRequest;
@@ -71,5 +81,5 @@ export async function maybePrintThemeHint(
   }
   if (state !== 'none') return;
   log('');
-  for (const line of THEME_HINT_LINES) log(line);
+  for (const line of themeHintLines(applyCommand)) log(line);
 }

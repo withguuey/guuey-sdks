@@ -725,7 +725,7 @@ export async function agentApply(flags?: Record<string, string | true>): Promise
           pageUrl,
         }),
       );
-      await maybePrintThemeHint(ctx.pat, ctx.config, ctx.appId);
+      await maybePrintThemeHint(ctx.pat, ctx.config, ctx.appId, 'guuey agent apply');
       return;
     }
     out.error(
@@ -881,7 +881,7 @@ export async function agentRollback(flags?: Record<string, string | true>): Prom
     }
     if (status === 'live') {
       out.success(`Live at ${url}`);
-      await maybePrintThemeHint(ctx.pat, ctx.config, ctx.appId);
+      await maybePrintThemeHint(ctx.pat, ctx.config, ctx.appId, 'guuey agent apply');
       return;
     }
     out.error(
