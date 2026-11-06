@@ -63,7 +63,16 @@ vi.mock('../deploy-shared.js', async (importOriginal) => {
   };
 });
 import { resolveDeployTarget } from './deploy.js';
-import { defaultModelFor, isOfferedModel, safeParseGuueyJson, type GuueyAgent } from '@guuey/config';
+import {
+  bindRegistry,
+  defaultModelFor,
+  isOfferedModel,
+  modelEntry,
+  retirementNotice,
+  safeParseGuueyJson,
+  type GuueyAgent,
+} from '@guuey/config';
+import { createInterface } from 'node:readline';
 import type { apiRequest } from '../deploy-shared.js';
 
 /** Thrown by the process.exit mock so execution stops like the real thing. */
@@ -138,6 +147,32 @@ vi.mock('../config.js', async (importOriginal) => {
     loadProjectConfig: vi.fn(() => null),
     loadConfig: vi.fn(() => ({})),
     saveConfig: vi.fn(),
+  };
+});
+
+// guuey#2310 — the registry's two retirement readers, passed through to the
+// real registry. One case swaps in a deprecated row with no notice, a row the
+// live registry does not carry (every live deprecated row names a replacement).
+vi.mock('@guuey/config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@guuey/config')>();
+  return {
+    ...actual,
+    retirementNotice: vi.fn(actual.retirementNotice),
+    modelEntry: vi.fn(actual.modelEntry),
+  };
+});
+
+// The first-run create offer asks its questions through readline. Every
+// question is answered with an empty line (the default), so a case that
+// reaches the prompt runs on instead of waiting on the runner's stdin.
+vi.mock('node:readline', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:readline')>();
+  return {
+    ...actual,
+    createInterface: vi.fn(() => ({
+      question: (_query: string, answer: (line: string) => void) => answer(''),
+      close: () => {},
+    })),
   };
 });
 
@@ -2234,5 +2269,242 @@ describe('ensureInstalled (guuey#979 / #1000)', () => {
     const r = ensureInstalled({ root: '/p', install: false, ...io(new Set()) });
     expect(r).toEqual({ kind: 'not-applicable' });
     expect(calls).toEqual([]);
+  });
+});
+
+// guuey#2310 — a deprecated `agent.model` (registry `status: "deprecated"`)
+// is never silently dropped. The deploy that CREATES the app refuses it before
+// any prompt and before any request; a redeploy of an existing app warns on
+// stderr and proceeds. An id the registry does not list keeps today's path.
+describe('deploy() — a retired agent.model (guuey#2310)', () => {
+  let dir: string;
+  let originalCwd: string;
+  let exitSpy: MockInstance<typeof process.exit>;
+  let errSpy: MockInstance<typeof console.error>;
+  let fetchSpy: MockInstance<typeof fetch>;
+
+  /** Write guuey.json to disk AND hand the same parsed overlay to loadProjectConfig. */
+  function manifest(doc: object): void {
+    writeFileSync(join(dir, 'guuey.json'), JSON.stringify(doc));
+    const parsed = safeParseGuueyJson(doc);
+    if (!parsed.success) throw new Error('fixture manifest must parse');
+    vi.mocked(loadProjectConfig).mockReturnValue(parsed.data);
+  }
+
+  /** An unbound code-mode project: the deploy offers to create the app. */
+  function firstDeploy(framework: string, model: string): void {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'retired-model-test' }));
+    manifest({ schema: '1', app: { builtFor: 'customers' }, agent: { mode: 'code', framework, model } });
+  }
+
+  /**
+   * A bound code-mode project: the deploy redeploys an existing app. (Deploy
+   * is code-only; a declarative project redeploys with `guuey agent apply`.)
+   */
+  function redeploy(framework: string, model: string): void {
+    const doc = { schema: '1', appId: 'app-1', agent: { mode: 'code', framework, model } };
+    writeCodeProject(dir, doc);
+    manifest(doc);
+  }
+
+  function createCall(): Parameters<typeof fetch> | undefined {
+    return fetchSpy.mock.calls.find(([u, init]) => new URL(String(u)).pathname === '/apps' && init?.method === 'POST');
+  }
+  function triggered(): boolean {
+    return fetchSpy.mock.calls.some(([u]) => String(u).includes('/deploy/trigger'));
+  }
+  function stderr(): string {
+    return errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+  }
+
+  async function withTTY(fn: () => Promise<void>): Promise<void> {
+    const stdinDesc = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
+    const stdoutDesc = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+    try {
+      await fn();
+    } finally {
+      if (stdinDesc) Object.defineProperty(process.stdin, 'isTTY', stdinDesc);
+      else Reflect.deleteProperty(process.stdin, 'isTTY');
+      if (stdoutDesc) Object.defineProperty(process.stdout, 'isTTY', stdoutDesc);
+      else Reflect.deleteProperty(process.stdout, 'isTTY');
+    }
+  }
+
+  /** A deprecated row with no retirement notice: the live registry carries none. */
+  async function withNoticelessDeprecatedRow(id: string): Promise<void> {
+    const actual = await vi.importActual<typeof import('@guuey/config')>('@guuey/config');
+    const fixture = bindRegistry([{ id, provider: 'anthropic', label: 'Test Retired', status: 'deprecated' }]);
+    expect(fixture.retirementNotice(id)).toBeUndefined();
+    vi.mocked(retirementNotice).mockImplementation((m) => (m === id ? undefined : actual.retirementNotice(m)));
+    vi.mocked(modelEntry).mockImplementation((m) => (m === id ? fixture.modelEntry(m) : actual.modelEntry(m)));
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    dir = mkdtempSync(join(tmpdir(), 'deploy-model-2310-'));
+    process.chdir(dir);
+    vi.mocked(resolveConfig).mockReturnValue({
+      host: 'https://platform.guuey.test',
+      apiUrl: 'https://api.guuey.test',
+    });
+    vi.mocked(createInterface).mockClear();
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (new URL(url).pathname === '/apps') {
+        return new Response(JSON.stringify({ app: { id: 'app-new', displayName: 'Retired' } }), { status: 201 });
+      }
+      if (url.includes('/deploy/trigger')) {
+        return new Response(JSON.stringify({ buildNumber: 1 }), { status: 202 });
+      }
+      // A redeploy rides the code deploy through to Live.
+      const code = codeDeployResponse(url);
+      if (code !== null) return code;
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+  });
+
+  afterEach(async () => {
+    process.chdir(originalCwd);
+    rmSync(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+    const actual = await vi.importActual<typeof import('@guuey/config')>('@guuey/config');
+    vi.mocked(retirementNotice).mockImplementation(actual.retirementNotice);
+    vi.mocked(modelEntry).mockImplementation(actual.modelEntry);
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+  });
+
+  describe('the first deploy, which creates the app, REFUSES before anything is asked or sent', () => {
+    it.each([
+      ['google-adk', 'gemini-3.1-pro', 'Google does not serve gemini-3.1-pro; use gemini-3.6-flash'],
+      ['google-adk', 'gemini-3.5-flash', 'gemini-3.5-flash is retired for new apps; use gemini-3.6-flash'],
+      ['openai-agents-sdk', 'gpt-4o', 'gpt-4o is retired for new apps; use gpt-6-luna'],
+    ])('%s %s', async (framework, model, says) => {
+      firstDeploy(framework, model);
+
+      await withTTY(async () => {
+        await expect(deploy({})).rejects.toBeInstanceOf(ExitSignal);
+      });
+
+      expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(createInterface).not.toHaveBeenCalled();
+      expect(stderr()).toContain(says);
+      expect(stderr()).toContain('agent.model in guuey.json');
+    });
+
+    it('a deprecated id with no retirement notice is refused too, naming no replacement', async () => {
+      await withNoticelessDeprecatedRow('claude-test-retired-0');
+      firstDeploy('claude-agent-sdk', 'claude-test-retired-0');
+
+      await withTTY(async () => {
+        await expect(deploy({})).rejects.toBeInstanceOf(ExitSignal);
+      });
+
+      expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(stderr()).toContain('claude-test-retired-0 is retired for new apps');
+      expect(stderr()).not.toContain('; use ');
+      expect(stderr()).toContain('agent.model in guuey.json');
+    });
+
+    it('an offered (ga) model still creates the app, carrying the model', async () => {
+      const model = defaultModelFor('google-adk');
+      firstDeploy('google-adk', model);
+
+      await withTTY(async () => {
+        await deploy({}).catch(() => undefined);
+      });
+
+      const call = createCall();
+      expect(call).toBeDefined();
+      expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({ intendedFramework: 'google-adk', intendedModel: model });
+      expect(stderr()).not.toContain('retired');
+    });
+
+    it('an unlisted model still creates the app, without intendedModel', async () => {
+      firstDeploy('google-adk', 'gemini-test-unlisted-0');
+
+      await withTTY(async () => {
+        await deploy({}).catch(() => undefined);
+      });
+
+      const call = createCall();
+      expect(call).toBeDefined();
+      expect(JSON.parse(String(call?.[1]?.body))).not.toHaveProperty('intendedModel');
+      expect(stderr()).not.toContain('retired');
+    });
+  });
+
+  describe('a redeploy of an existing app WARNS on stderr and proceeds', () => {
+    it('unserved: says every call fails and names the replacement, never "deprecated", no date', async () => {
+      redeploy('google-adk', 'gemini-3.1-pro');
+
+      await deploy({});
+
+      expect(exitSpy).not.toHaveBeenCalled();
+      expect(triggered()).toBe(true);
+      const said = stderr();
+      expect(said).toContain('Google does not serve gemini-3.1-pro, so every call to it fails');
+      expect(said).toContain('gemini-3.6-flash');
+      expect(said).not.toContain('deprecated');
+      expect(said).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+    });
+
+    it('deprecated with no published date: retired for new apps, keeps running, names the replacement', async () => {
+      redeploy('google-adk', 'gemini-3.5-flash');
+
+      await deploy({});
+
+      expect(exitSpy).not.toHaveBeenCalled();
+      expect(triggered()).toBe(true);
+      const said = stderr();
+      expect(said).toContain('gemini-3.5-flash is retired for new apps');
+      expect(said).toContain('This app keeps running on it');
+      expect(said).toContain('gemini-3.6-flash');
+      expect(said).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+    });
+
+    it('deprecated with a sunset: carries the provider and the date', async () => {
+      redeploy('openai-agents-sdk', 'gpt-4o');
+
+      await deploy({});
+
+      expect(triggered()).toBe(true);
+      const said = stderr();
+      expect(said).toContain('gpt-4o is retired for new apps');
+      expect(said).toContain('OpenAI stops serving it on 2027-01-14');
+      expect(said).toContain('gpt-6-luna');
+    });
+
+    it('deprecated with no notice: retired for new apps, keeps running', async () => {
+      await withNoticelessDeprecatedRow('claude-test-retired-0');
+      redeploy('claude-agent-sdk', 'claude-test-retired-0');
+
+      await deploy({});
+
+      expect(triggered()).toBe(true);
+      expect(stderr()).toContain('claude-test-retired-0 is retired for new apps');
+      expect(stderr()).toContain('This app keeps running on it');
+    });
+
+    it.each([
+      ['google-adk', defaultModelFor('google-adk')],
+      ['google-adk', 'gemini-test-unlisted-0'],
+    ])('%s %s: no warning', async (framework, model) => {
+      redeploy(framework, model);
+
+      await deploy({});
+
+      expect(triggered()).toBe(true);
+      expect(stderr()).not.toContain('retired');
+      expect(stderr()).not.toContain('does not serve');
+    });
   });
 });

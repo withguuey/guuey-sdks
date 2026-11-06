@@ -63,6 +63,8 @@ import {
   type GuueyJsonV1,
   type AppBuiltFor,
   isOfferedModel,
+  modelEntry,
+  retirementNotice,
 } from '@guuey/config';
 import { requireAuth, type AuthTokens } from '../auth';
 import { deployEnv, substitutedLine } from '../deploy-env';
@@ -402,6 +404,13 @@ export async function deploy(flags?: Record<string, string | true>, opts: Deploy
   let appId = appTarget.kind === 'bound' ? appTarget.appId : undefined;
   if (!appId) {
     if (shouldOfferAppCreate(mode, process.stdin.isTTY, process.stdout.isTTY)) {
+      // guuey#2310: a retired model never creates an app. Refused here,
+      // before the create prompts and before any request leaves the machine.
+      const refusal = retiredModelRefusal(project?.agent.model);
+      if (refusal !== undefined) {
+        out.error(refusal);
+        process.exit(1);
+      }
       appId = await ensureLinkedApp({ auth, config, project, guueyJsonPath: cwdGuueyJson });
       // ensureLinkedApp may have written `appId` into guuey.json — reload so
       // downstream reads (deploy.size default, etc.) see it.
@@ -414,6 +423,12 @@ export async function deploy(flags?: Record<string, string | true>, opts: Deploy
       );
       process.exit(1);
     }
+  } else if (mode !== 'code-legacy-dockerfile') {
+    // guuey#2310: an existing app on a retired model keeps deploying; the
+    // builder is told before the deploy, never silently. (The legacy
+    // Dockerfile path ships no guuey.json model.)
+    const warning = retiredModelWarning(project?.agent.model);
+    if (warning !== undefined) out.printWarnings([{ message: warning }]);
   }
 
   // `deploy.size` on the canonical overlay is the app-level default
@@ -556,6 +571,47 @@ async function refuseNocodeLive(
     out.error(nocodeLiveRefusal(appId));
     process.exit(1);
   }
+}
+
+// ─── guuey#2310: a retired `agent.model` ─────────────────────────────────
+// "Retired" is the registry's `status: "deprecated"` and nothing else. The
+// copy reads `retirementNotice` (the one reader of the replacement, the date
+// and "unserved"); `modelEntry` is read only for the status of a deprecated
+// row that has no notice. An id the registry does not list is neither.
+
+const FIX_THE_MODEL = `Change agent.model in ${GUUEY_JSON_FILENAME}, then run guuey deploy again. No app was created.`;
+
+/** What the deploy that would CREATE the app refuses with, or undefined to go on. */
+function retiredModelRefusal(model: string | undefined): string | undefined {
+  if (model === undefined) return undefined;
+  const notice = retirementNotice(model);
+  if (notice === undefined) {
+    return modelEntry(model)?.status === 'deprecated'
+      ? `${model} is retired for new apps. ${FIX_THE_MODEL}`
+      : undefined;
+  }
+  const verdict =
+    notice.unserved === true
+      ? `${notice.providerLabel} does not serve ${notice.id}; use ${notice.replacement.id}.`
+      : `${notice.id} is retired for new apps; use ${notice.replacement.id}.`;
+  return `${verdict} ${FIX_THE_MODEL}`;
+}
+
+/** What a redeploy of an existing app warns before it proceeds, or undefined. */
+function retiredModelWarning(model: string | undefined): string | undefined {
+  if (model === undefined) return undefined;
+  const notice = retirementNotice(model);
+  if (notice === undefined) {
+    return modelEntry(model)?.status === 'deprecated'
+      ? `${model} is retired for new apps. This app keeps running on it.`
+      : undefined;
+  }
+  // An unserved id has no shutdown ahead: every call to it already fails.
+  if (notice.unserved === true) {
+    return `${notice.providerLabel} does not serve ${notice.id}, so every call to it fails. Change agent.model in ${GUUEY_JSON_FILENAME} to ${notice.replacement.id}.`;
+  }
+  const until = notice.sunset === undefined ? '' : `, until ${notice.providerLabel} stops serving it on ${notice.sunset}`;
+  return `${notice.id} is retired for new apps. This app keeps running on it${until}. Move it to ${notice.replacement.id}: change agent.model in ${GUUEY_JSON_FILENAME}.`;
 }
 
 // ─── Preflight: first-run app create + link write-back ───────────────────
