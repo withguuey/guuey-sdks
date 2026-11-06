@@ -11,10 +11,15 @@
 
 /**
  * Dismiss the pending cross-app profile link prompt for the calling byo
- * end-user. `baseUrl` is the public read-plane base already ending in `/v1`
- * (same convention as {@link fetchThreadHistory}'s `baseUrl`); `bearer` is the
- * caller's byo access token, sent as `Authorization: Bearer <bearer>` — the
- * ONLY thing the pod's route reads to determine the dismissal subject.
+ * end-user. `baseUrl` is the AGENT's endpoint (the `Live at` URL, or
+ * `guuey apps get`) plus `/v1`, for example `https://<agent endpoint>/v1`:
+ * the route is the agent pod's own. It is NOT {@link fetchThreadHistory}'s
+ * base: the public API host (`https://api.<region>.guuey.com/v1`) has no
+ * link-prompt route, so a dismiss sent there fails. (On a custom domain the
+ * edge sends `/v1/link-prompt/*` to the pod and every other `/v1/*` path to
+ * the public API, so there one base serves both.) `bearer` is the caller's
+ * byo access token, sent as `Authorization: Bearer <bearer>`: the ONLY thing
+ * the pod's route reads to determine the dismissal subject.
  *
  * Resolves on a 204 (the route's only success response); throws on any
  * non-2xx status (401 unauthenticated, 403 non-byo caller, 500 write failure).
