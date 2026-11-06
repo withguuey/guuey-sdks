@@ -32,6 +32,7 @@ const WIRE_MCP_CONNECTIONS = repoPath(`${CLI_WIRE_DIR}/mcp-connections.ts`);
 const WIRE_BILLING = repoPath(`${CLI_WIRE_DIR}/billing.ts`);
 const WIRE_BILLING_INVOICING = repoPath(`${CLI_WIRE_DIR}/billing-invoicing.ts`);
 const WIRE_USAGE_EXPORT = repoPath(`${CLI_WIRE_DIR}/usage-export.ts`);
+const WIRE_TEST_TOKEN = repoPath(`${CLI_WIRE_DIR}/test-token.ts`);
 
 const CLI_APPS = repoPath('./apps.ts');
 const CLI_MCP = repoPath('./mcp.ts');
@@ -42,6 +43,7 @@ const CLI_BILLING = repoPath('./billing.ts');
 const CLI_PULL = repoPath('./pull.ts');
 const CLI_USAGE = repoPath('./usage.ts');
 const CLI_DEPLOY = repoPath('./deploy.ts');
+const CLI_TEST = repoPath('./test.ts');
 
 const haveWire =
   existsSync(WIRE_APPS) &&
@@ -245,5 +247,14 @@ describe.skipIf(!haveWire)('CLI wire mirrors — sync guards against @guuey-priv
     for (const name of ['UsageExportLlm', 'UsageExportRenders', 'UsageExportSessions', 'UsageExportStorage']) {
       expect(parseInterfaceFields(cli, name)).toEqual(parseInterfaceFields(wire, name));
     }
+  });
+
+  // Its own skip: the module is newer than `haveWire`'s set, and a cell that reads a path outside oss/ skips when it is absent.
+  it.skipIf(!existsSync(WIRE_TEST_TOKEN))('BuilderTestTokenResponse declares exactly the wire fields (guuey#3211)', () => {
+    // `guuey test --as-me` reads `token` off this answer and checks its shape;
+    // a renamed field would refuse every answer as "not one the CLI reads".
+    expect(parseInterfaceFields(read(CLI_TEST), 'BuilderTestTokenResponse')).toEqual(
+      parseInterfaceFields(read(WIRE_TEST_TOKEN), 'BuilderTestTokenResponse'),
+    );
   });
 });

@@ -152,9 +152,18 @@ describe('cli.ts --help — apps update --home (guuey#2871)', () => {
 describe('guuey test --bearer-stdin help (guuey#2719)', () => {
   // Which token the pod takes is the pod's rule; the byo verifier's side is pinned by the sync guard in
   // commands/test.test.ts. This pins only the words a builder reads.
-  it('names the byo ID token, and offers no guuey-account route yet (guuey#3211)', () => {
+  it('names the byo ID token, and sends a guuey-account app to --as-me (guuey#3211)', () => {
     expect(CLI_SOURCE).toMatch(
-      /own sign-in \(byo\), the ID token your identity\s+provider issues\. Not available yet for apps\s+whose users sign in with a guuey account\./,
+      /own sign-in \(byo\), the ID token your identity\s+provider issues\. For apps whose users sign\s+in with a guuey account, use --as-me\./,
+    );
+  });
+});
+
+describe('guuey test --as-me help (guuey#3211)', () => {
+  // The words platform-identity checked (strings v2, S1).
+  it('says whose account the turn is sent as, which apps, and that it lands in real history', () => {
+    expect(CLI_SOURCE).toMatch(
+      /--as-me\s+Send the turn signed in as your own guuey\s+account \(apps that use guuey sign-in\)\. It\s+lands in your real chat history\./,
     );
   });
 });
