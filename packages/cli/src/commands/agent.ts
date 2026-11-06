@@ -7,8 +7,9 @@
  *                              chosen: a FIXED count, the auto-scaler off — guuey#933)
  *   config --worker-reservation-mib <n>   Per-turn worker memory reservation (MiB)
  *   config --clear-worker-reservation     Back to the platform default (256 MiB)
- *   config --scaling <mode>    Choose `auto` (the platform adds pods under
- *                              load, up to the limit) or `fixed` (it runs
+ *   config --scaling <mode>    Choose `auto` (between one pod and the limit;
+ *                              it may stay at one, and code-mode apps stay at
+ *                              one for now) or `fixed` (it runs
  *                              exactly the limit, always)
  *
  * Usage:
@@ -56,8 +57,10 @@ export interface AgentConfig {
   maxPodsCeiling: number;
   /**
    * RESOLVED scaling mode — what the platform does, not the raw knob:
-   * `'auto'` adds a pod when every turn slot is busy, up to the limit (an
-   * unset `maxPods` means the ceiling); `'fixed'` runs `maxPods ?? 1` and
+   * `'auto'` runs between the floor (one pod) and the limit (an unset
+   * `maxPods` means the ceiling): a live auto-scaler adds a pod when every turn
+   * slot is busy; with none, and for every code-mode app (guuey#3238), it holds
+   * the floor. `'fixed'` runs `maxPods ?? 1` and
    * never scales. An app that set a pod count before this knob existed reads
    * `'fixed'` until it opts in; an app that touched neither reads `'auto'`.
    */
@@ -171,7 +174,7 @@ export async function agentConfig(
   }
   if (scalingFlag !== undefined) {
     if (scalingFlag !== 'auto' && scalingFlag !== 'fixed') {
-      out.error('--scaling takes "auto" or "fixed" (auto lets the platform add pods under load, up to your pod limit; fixed runs exactly that many).');
+      out.error('--scaling takes "auto" or "fixed" (auto runs between one pod and your pod limit, and may stay at one pod; code-mode apps stay at one pod for now; fixed always runs exactly that many).');
       process.exit(1);
     }
     patch.scaling = scalingFlag;
@@ -219,12 +222,12 @@ export async function agentConfig(
   if (patch.maxPods !== undefined || patch.scaling !== undefined) {
     out.success(
       updated.scaling === 'auto'
-        ? `Scaling: auto — the platform adds a pod when every turn slot is busy, up to ${updated.maxPods ?? updated.maxPodsCeiling}.`
+        ? `Scaling: auto — runs between one pod and ${updated.maxPods ?? updated.maxPodsCeiling}, and may stay at one pod; code-mode apps stay at one pod for now.`
         : `Scaling: fixed — this agent runs exactly ${updated.maxPods ?? 1} pod${(updated.maxPods ?? 1) === 1 ? '' : 's'}.`,
     );
     if (updated.scaling === 'fixed' && patch.scaling === undefined) {
       console.log(
-        '  Under fixed the auto-scaler is off. To keep this number as the ceiling the platform may scale up to instead, run "guuey agent config --scaling auto".',
+        '  Under fixed the auto-scaler is off. To make this number the most pods it may run instead (auto may stay at one pod; code-mode apps stay at one pod for now), run "guuey agent config --scaling auto".',
       );
     }
   }

@@ -335,7 +335,7 @@ describe('guuey agent config', () => {
       await agentConfig({ 'max-pods': '3' });
 
       expect(stdout()).toContain(
-        'Scaling: auto — the platform adds a pod when every turn slot is busy, up to 3.',
+        'Scaling: auto — runs between one pod and 3, and may stay at one pod; code-mode apps stay at one pod for now.',
       );
       expect(stdout()).not.toContain('auto-scaler is off');
       expect(stdout()).not.toContain('--scaling auto');
@@ -452,7 +452,7 @@ describe('guuey agent config', () => {
 
       await agentConfig({ scaling: 'auto' });
 
-      expect(stdout()).toContain('Scaling: auto — the platform adds a pod when every turn slot is busy, up to 3.');
+      expect(stdout()).toContain('Scaling: auto — runs between one pod and 3, and may stay at one pod; code-mode apps stay at one pod for now.');
       // …and the config block relabels the same number as a ceiling.
       expect(stdout()).toContain('Pod ceiling:   3');
     });

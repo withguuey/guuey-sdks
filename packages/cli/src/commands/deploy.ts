@@ -154,7 +154,7 @@ export function printPodLifetime(maxPods: number | undefined): void {
     // where the number was just set; the knob that keeps it a ceiling stands
     // on `guuey agent config` (deploy carries no --scaling).
     console.log(
-      '  With no scaling mode chosen this is a fixed count — the auto-scaler is off; "guuey agent config --scaling auto" keeps it as the ceiling the scaler may grow to.',
+      '  With no scaling mode chosen this is a fixed count — the auto-scaler is off; under "guuey agent config --scaling auto" it is the most pods the app may run, and it may stay at one (code-mode apps stay at one pod for now).',
     );
   }
 }

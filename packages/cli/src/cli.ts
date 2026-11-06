@@ -177,9 +177,10 @@ Agent Development:
     --max-pods <n>               How many pods the app may run (plan ceiling
                                  applies; omit to leave the current setting untouched).
                                  With no scaling mode chosen this is a fixed count —
-                                 the auto-scaler is off; "guuey agent config
-                                 --scaling auto" keeps it as the ceiling the
-                                 scaler may grow to
+                                 the auto-scaler is off; under "guuey agent config
+                                 --scaling auto" it is the most pods the app may
+                                 run, and it may stay at one (code-mode apps stay
+                                 at one pod for now)
     --runtime-auto-update on|off Runtime image update channel: "on" (the default)
                                  keeps the agent on the platform's current runtime
                                  image; "off" pins it at each deploy's image
@@ -216,11 +217,12 @@ Agent Development:
                                  LIVE app, no redeploy (converges within ~5 minutes).
                                  With no scaling mode chosen this sets Scaling to
                                  fixed — the auto-scaler is off; add --scaling auto
-                                 to keep <n> as the ceiling the scaler may grow to
-    --scaling auto|fixed         auto: the platform adds a pod when every turn slot
-                                 is busy, up to the pod limit (the default for an
-                                 app that never hand-set a count); fixed: runs
-                                 exactly the pod limit — the auto-scaler is off
+                                 to make <n> the most pods the app may run instead
+    --scaling auto|fixed         auto: runs between one pod and the pod limit, and
+                                 may stay at one pod; code-mode apps stay at one
+                                 pod for now (the default for an app that never
+                                 hand-set a count); fixed: always runs exactly the
+                                 pod limit — the auto-scaler is off
     --runtime-auto-update on|off Automatic runtime image updates (default on) or
                                  pinned to the image captured at the last deploy
     --worker-reservation-mib <n> Per-turn worker memory reservation in MiB — the
