@@ -4,7 +4,8 @@
  * is calm in both tones, hollow (surface fill, a 1 px muted-ink border, ink
  * words, full opacity), and its words stay selectable. The tone lives on the
  * line under it: a fault keeps the error colour, the retry tone draws plain
- * ink. Retry is the accent in both tones.
+ * ink. Retry is an accent chip in both tones (the accent fill under its paired
+ * on-accent words, 32pt tall, dimmed while pressed).
  */
 import { cleanup, render, screen } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
@@ -16,6 +17,7 @@ interface MockStyle {
   borderWidth?: number;
   borderColor?: string;
   opacity?: number;
+  minHeight?: number;
 }
 interface MockProps {
   children?: ReactNode;
@@ -38,7 +40,23 @@ vi.mock("react-native", () => ({
   View: ({ children, style }: MockProps) => createElement("div", styleData(style), children),
   Text: ({ children, style, selectable }: MockProps) =>
     createElement("span", { ...styleData(style), "data-selectable": String(selectable === true) }, children),
-  Pressable: ({ children, onPress }: MockProps) => createElement("button", { onClick: onPress }, children),
+  Pressable: ({
+    children,
+    onPress,
+    style,
+  }: Omit<MockProps, "style"> & { style?: MockStyle | ((state: { pressed: boolean }) => MockStyle) }) => {
+    const at = (pressed: boolean): MockStyle | undefined => (typeof style === "function" ? style({ pressed }) : style);
+    return createElement(
+      "button",
+      {
+        onClick: onPress,
+        ...styleData(at(false)),
+        "data-min-height": at(false)?.minHeight === undefined ? undefined : String(at(false)?.minHeight),
+        "data-pressed-opacity": at(true)?.opacity === undefined ? undefined : String(at(true)?.opacity),
+      },
+      children,
+    );
+  },
   Image: ({ children }: MockProps) => createElement("img", {}, children),
   ScrollView: ({ children }: MockProps) => createElement("div", {}, children),
   Linking: { openURL: () => Promise.resolve() },
@@ -106,14 +124,24 @@ describe("NativeUserMessage, failed send", () => {
     });
   }
 
-  it("puts the tone on the line: a fault in the error colour, the retry tone in ink; Retry is the accent in both", () => {
+  for (const tone of [undefined, "retry"] as const) {
+    it(`puts the ${tone ?? "fault"} tone on the line and makes Retry an accent chip: accent fill, on-accent words`, () => {
+      render(<NativeUserMessage item={user({ failureTone: tone })} ctx={ctx} />);
+      const label = screen.getByText(defaultChatStrings.userCouldntSend);
+      expect(label.dataset.color).toBe(tone === "retry" ? tokens.palette.ink : tokens.palette.error);
+      const words = screen.getByText(defaultChatStrings.userRetry);
+      expect(words.dataset.color).toBe(tokens.palette.onAccent);
+      const chip = words.closest("button");
+      expect(chip?.dataset.bg).toBe(tokens.palette.accent);
+    });
+  }
+
+  it("the Retry chip is 32pt tall, full opacity at rest and 0.85 while pressed", () => {
     render(<NativeUserMessage item={user()} ctx={ctx} />);
-    expect(screen.getByText(defaultChatStrings.userCouldntSend).dataset.color).toBe(tokens.palette.error);
-    expect(screen.getByText(defaultChatStrings.userRetry).dataset.color).toBe(tokens.palette.accent);
-    cleanup();
-    render(<NativeUserMessage item={user({ failureTone: "retry" })} ctx={ctx} />);
-    expect(screen.getByText(defaultChatStrings.userCouldntSend).dataset.color).toBe(tokens.palette.ink);
-    expect(screen.getByText(defaultChatStrings.userRetry).dataset.color).toBe(tokens.palette.accent);
+    const chip = screen.getByText(defaultChatStrings.userRetry).closest("button");
+    expect(chip?.dataset.minHeight).toBe("32");
+    expect(chip?.dataset.opacity).toBe("1");
+    expect(chip?.dataset.pressedOpacity).toBe("0.85");
   });
 
   it("keeps the bubble's words selectable", () => {

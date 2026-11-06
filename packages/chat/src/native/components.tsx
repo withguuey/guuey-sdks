@@ -201,28 +201,48 @@ function NativeActionWords({ labels, ctx }: { labels: readonly (string | null)[]
   );
 }
 
+/** The native Retry chip's height, and the line height its row's words take. */
+const RETRY_CHIP_HEIGHT = 32;
+const RETRY_LINE = 18;
+
 function NativeSendFailed({ item, ctx }: ItemProps<UserMessageItem>): ReactNode {
   const { tokens } = ctx;
   if (item.state !== "failed") return null;
   return (
     <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
       {/* The tone lives on this line and on Retry, never on the bubble above it (the reader's own words stay calm).
-          guuey#2453: the retry tone draws the line in the plain text colour; a fault keeps the error colour. Retry is the
-          accent in both tones: an action takes the cue, not the fault.
+          guuey#2453: the retry tone draws the line in the plain text colour; a fault keeps the error colour. Retry is an
+          accent chip in both tones, the web chip's twin (the accent fill under its paired on-accent words): an action
+          takes the cue, not the fault.
           The line shrinks and wraps; Retry keeps its size at the row's end, so a long reason never pushes it off a narrow screen.
-          The row aligns to the top, so Retry sits on the line's first line rather than mid-paragraph. */}
+          The row aligns to the top, and the line's top padding centres its first line on the chip, so Retry sits
+          beside that line rather than mid-paragraph. */}
       <Text
         style={{
           flexShrink: 1,
           color: item.failureTone === "retry" ? tokens.palette.ink : tokens.palette.error,
           fontSize: tokens.fontSize - 2,
+          lineHeight: RETRY_LINE,
+          paddingTop: (RETRY_CHIP_HEIGHT - RETRY_LINE) / 2,
         }}
       >
         {item.failureLine ?? ctx.strings.userCouldntSend}
       </Text>
       {item.retry ? (
-        <Pressable accessibilityRole="button" style={{ flexShrink: 0, marginTop: 1 }} onPress={() => ctx.onRetry?.(item)}>
-          <Text style={{ color: tokens.palette.accent, fontSize: tokens.fontSize - 2, fontWeight: "600" }}>
+        <Pressable
+          accessibilityRole="button"
+          style={({ pressed }) => ({
+            flexShrink: 0,
+            minHeight: RETRY_CHIP_HEIGHT,
+            justifyContent: "center",
+            paddingHorizontal: 12,
+            borderRadius: 6,
+            backgroundColor: tokens.palette.accent,
+            opacity: pressed ? 0.85 : 1,
+          })}
+          onPress={() => ctx.onRetry?.(item)}
+        >
+          <Text style={{ color: tokens.palette.onAccent, fontSize: tokens.fontSize - 2, lineHeight: RETRY_LINE, fontWeight: "600" }}>
             {ctx.strings.userRetry}
           </Text>
         </Pressable>

@@ -22,6 +22,10 @@ interface MockProps {
   onPress?: () => void;
   accessibilityLabel?: string;
 }
+/** RN's Pressable takes a style or a function of its pressed state. */
+interface PressableMockProps extends Omit<MockProps, "style"> {
+  style?: MockStyle | ((state: { pressed: boolean }) => MockStyle);
+}
 
 vi.mock("react-native", () => {
   const passthrough =
@@ -41,8 +45,10 @@ vi.mock("react-native", () => {
   return {
     View: passthrough("div"),
     Text: passthrough("span"),
-    Pressable: ({ children, style, onPress }: MockProps) =>
-      createElement("button", { onClick: onPress, "data-flex-shrink": style?.flexShrink }, children),
+    Pressable: ({ children, style, onPress }: PressableMockProps) => {
+      const resolved = typeof style === "function" ? style({ pressed: false }) : style;
+      return createElement("button", { onClick: onPress, "data-flex-shrink": resolved?.flexShrink }, children);
+    },
     Image: passthrough("img"),
     ScrollView: ({ children, style, nestedScrollEnabled }: MockProps) =>
       createElement(
