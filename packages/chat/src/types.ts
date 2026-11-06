@@ -344,7 +344,7 @@ export interface UserMessageItem extends BaseItem {
   failureLine?: string;
   /**
    * The failed line's face (guuey#2453), the same rule and convention as the
-   * error item's `tone`: `retry` draws the plain text colour with the in-place
+   * error item's `tone`: `retry` draws the line in muted ink with the in-place
    * Retry as its only cue: nothing is broken, it was only slow (an app that
    * did not wake in time). Present only when the refusal's code wears that
    * tone; absent is a fault, drawn in the error colour.

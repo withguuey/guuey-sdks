@@ -216,7 +216,7 @@ function NativeSendFailed({ item, ctx }: ItemProps<UserMessageItem>): ReactNode 
   return (
     <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
       {/* The tone lives on this line, never on the bubble above it (the reader's own words stay calm).
-          guuey#2453: the retry tone draws the line in the plain text colour; a fault keeps the error colour. Retry is a
+          guuey#2453: the retry tone draws the line in muted ink, a quiet notice; a fault keeps the error colour. Retry is a
           chip in both tones, the web chip's twin in the theme's chip face (tokens.chip): an action takes the cue, not
           the fault.
           The line shrinks and wraps; Retry keeps its size at the row's end, so a long reason never pushes it off a narrow screen.
@@ -225,7 +225,7 @@ function NativeSendFailed({ item, ctx }: ItemProps<UserMessageItem>): ReactNode 
       <Text
         style={{
           flexShrink: 1,
-          color: item.failureTone === "retry" ? tokens.palette.ink : tokens.palette.error,
+          color: item.failureTone === "retry" ? tokens.palette.inkMuted : tokens.palette.error,
           fontSize: retrySize,
           lineHeight: retryLine,
           paddingTop: (chipHeight - retryLine) / 2,

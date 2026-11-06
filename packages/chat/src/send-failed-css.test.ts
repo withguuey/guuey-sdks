@@ -2,7 +2,7 @@
  * A user send that did not go, on the web tier: the failed bubble is the
  * reader's own words, so it is calm in both tones, hollow (surface fill, a 1px
  * muted-ink border, ink words, full opacity). The tone lives on the line under
- * it: a fault keeps the error colour, the retry tone draws plain text. Retry is
+ * it: a fault keeps the error colour, the retry tone draws muted ink. Retry is
  * the accent in both tones. Read from the shipped stylesheet, located by
  * selector.
  */
@@ -41,13 +41,13 @@ describe("the failed send (web)", () => {
     expect(block).not.toMatch(ERROR);
   });
 
-  it("puts the tone on the line: a fault in the error colour, the retry tone in plain text", () => {
+  it("puts the tone on the line: a fault in the error colour, the retry tone in muted ink", () => {
     const fault = blocksFor(".guuey-chat-send-failed");
     expect(fault.length).toBeGreaterThan(0);
     expect(declaration(fault[0] ?? "", "color")).toMatch(/^var\(--guuey-chat-error,/);
     const retry = blocksFor(".guuey-chat-send-failed-retry");
     expect(retry).toHaveLength(1);
-    expect(declaration(retry[0] ?? "", "color")).toMatch(/^var\(--guuey-chat-ink,/);
+    expect(declaration(retry[0] ?? "", "color")).toMatch(/^var\(--guuey-chat-ink-muted,/);
   });
 
   it("draws Retry in the theme's chip face in both tones (the stamped chip tokens, through the host channel)", () => {

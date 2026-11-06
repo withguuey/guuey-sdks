@@ -3,7 +3,7 @@
  * A user send that did not go: the bubble holds the reader's own words, so it
  * is calm in both tones, hollow (surface fill, a 1 px muted-ink border, ink
  * words, full opacity), and its words stay selectable. The tone lives on the
- * line under it: a fault keeps the error colour, the retry tone draws plain
+ * line under it: a fault keeps the error colour, the retry tone draws muted
  * ink. Retry is a chip in the theme's chip face in both tones (the accent fill
  * under on-accent words when the accent stands out on the canvas, else surface
  * fill, ink edge and ink words; 32pt tall at the default scale and growing
@@ -134,7 +134,7 @@ describe("NativeUserMessage, failed send", () => {
     it(`puts the ${tone ?? "fault"} tone on the line and, on an accent that stands out, makes Retry an accent chip: accent fill, on-accent words, no edge`, () => {
       render(<NativeUserMessage item={user({ failureTone: tone })} ctx={ctx} />);
       const label = screen.getByText(defaultChatStrings.userCouldntSend);
-      expect(label.dataset.color).toBe(tone === "retry" ? tokens.palette.ink : tokens.palette.error);
+      expect(label.dataset.color).toBe(tone === "retry" ? tokens.palette.inkMuted : tokens.palette.error);
       const words = screen.getByText(defaultChatStrings.userRetry);
       expect(words.dataset.color).toBe(tokens.palette.onAccent);
       const chip = words.closest("button");

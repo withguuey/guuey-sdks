@@ -798,10 +798,11 @@
   border-color: var(--guuey-chat-canvas-muted, var(--_guuey-chat-canvas-muted));
   background: var(--guuey-chat-surface, var(--_guuey-chat-surface));
 }
-/* The refused bubble wears the same retry tone: its line in the plain text
-   colour, its Retry without the error colour. */
+/* The refused bubble wears the same retry tone: its line in muted ink, a quiet
+   notice under the reader's own words, like the history boundary and busy
+   lines; its Retry without the error colour. */
 .guuey-chat-send-failed-retry {
-  color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
 }
 /* The retry error row's Retry: the accent, never the error colour. A failed send's Retry is the accent in both
    tones from its own rule (.guuey-chat-retry), so it needs no retry-tone override here. */

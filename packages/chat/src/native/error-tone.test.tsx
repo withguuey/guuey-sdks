@@ -107,10 +107,10 @@ describe("NativeUserMessage refused bubble tone (guuey#2453)", () => {
   });
   const lineColor = () => screen.getByText(defaultChatStrings.errorWakeTimedOut).getAttribute("data-color");
 
-  it("retry: the line in the plain text colour, never the error colour, and its Retry", () => {
-    expect(tokens.palette.ink).not.toBe(tokens.palette.error);
+  it("retry: the line in muted ink, never the error colour, and its Retry", () => {
+    expect(tokens.palette.inkMuted).not.toBe(tokens.palette.error);
     render(<NativeUserMessage item={failed("retry")} ctx={ctx} />);
-    expect(lineColor()).toBe(tokens.palette.ink);
+    expect(lineColor()).toBe(tokens.palette.inkMuted);
     expect(screen.getByRole("button").textContent).toBe(defaultChatStrings.userRetry);
   });
 

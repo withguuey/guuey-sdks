@@ -115,9 +115,9 @@ describe("the refused bubble's tone (guuey#2453)", () => {
     expect(Array.from(line()?.classList ?? [])).toEqual(["guuey-chat-send-failed"]);
   });
 
-  it("the stylesheet draws the retry line in the plain text colour, and Retry without the error colour in both tones", () => {
+  it("the stylesheet draws the retry line in muted ink, and Retry without the error colour in both tones", () => {
     const text = declarations(".guuey-chat-send-failed-retry");
-    expect(text).toMatch(/color:\s*var\(--guuey-chat-ink, var\(--_guuey-chat-ink\)\)/);
+    expect(text).toMatch(/color:\s*var\(--guuey-chat-ink-muted, var\(--_guuey-chat-ink-muted\)\)/);
     expect(text).not.toContain("chat-error");
     const retry = declarations(".guuey-chat-retry");
     expect(retry).toMatch(/background:\s*var\(--guuey-chat-chip-fill/);
