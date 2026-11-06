@@ -172,9 +172,9 @@
 }
 .guuey-chat-retry {
   margin-inline-start: 8px;
-  border: 1px solid var(--guuey-chat-accent, var(--_guuey-chat-accent));
-  background: none;
-  color: var(--guuey-chat-accent, var(--_guuey-chat-accent));
+  border: 1px solid transparent;
+  background: var(--guuey-chat-accent, var(--_guuey-chat-accent));
+  color: var(--guuey-chat-on-accent, var(--_guuey-chat-on-accent));
   border-radius: 6px;
   padding: 1px 8px;
   cursor: pointer;

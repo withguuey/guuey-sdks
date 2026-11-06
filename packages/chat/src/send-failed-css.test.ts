@@ -50,10 +50,12 @@ describe("the failed send (web)", () => {
     expect(declaration(retry[0] ?? "", "color")).toMatch(/^var\(--guuey-chat-ink,/);
   });
 
-  it("keeps Retry in the accent, in both tones", () => {
+  it("draws Retry as an accent chip in both tones: accent fill with its paired on-accent words", () => {
     const block = blocksFor(".guuey-chat-retry")[0] ?? "";
-    expect(declaration(block, "color")).toMatch(/^var\(--guuey-chat-accent,/);
-    expect(declaration(block, "border")).toMatch(/^1px solid var\(--guuey-chat-accent,/);
+    expect(declaration(block, "background")).toMatch(/^var\(--guuey-chat-accent,/);
+    expect(declaration(block, "color")).toMatch(/^var\(--guuey-chat-on-accent,/);
+    expect(declaration(block, "border")).toBe("1px solid transparent");
+    expect(declaration(block, "border-radius")).toBe("6px");
     expect(block).not.toMatch(ERROR);
   });
 

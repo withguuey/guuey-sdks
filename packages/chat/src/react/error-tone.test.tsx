@@ -66,12 +66,14 @@ describe("DefaultError tone (guuey#2453)", () => {
     expect(toneClass()).toEqual(["guuey-chat-error-fault"]);
   });
 
-  it("both Retry buttons wear the accent: the retry row's by its tone rule, a failed send's in both tones by its own", () => {
+  it("both Retry buttons wear the accent: the retry row's by its tone rule, a failed send's chip in both tones by its own", () => {
     const blocks = css.match(/[^{}]+\{[^{}]*\}/g) ?? [];
     const accent = blocks.filter((b) => /color:\s*var\(--guuey-chat-accent/.test(b) && /-retry\s/.test(b));
     const selectorsOf = (b: string) => b.split("{")[0]!.split(",").map((s) => s.trim());
-    expect(accent.map(selectorsOf)).toEqual([[".guuey-chat-retry"], [".guuey-chat-error-retry .guuey-chat-error-action"]]);
-    // guuey#2611: no failed-send Retry rule is tone-gated, so a fault's Retry never falls back to the error colour.
+    expect(accent.map(selectorsOf)).toEqual([[".guuey-chat-error-retry .guuey-chat-error-action"]]);
+    // guuey#2611: a failed send's Retry is an accent chip (accent fill, on-accent words) in both tones, and no
+    // retry-tone rule overrides it, so a fault's Retry never takes the error colour and the chip's words keep their pair.
+    expect(declarations(".guuey-chat-retry")).toMatch(/background:\s*var\(--guuey-chat-accent/);
     expect(blocks.filter((b) => b.includes(".guuey-chat-send-failed-retry .guuey-chat-retry"))).toEqual([]);
   });
 
@@ -118,7 +120,8 @@ describe("the refused bubble's tone (guuey#2453)", () => {
     expect(text).toMatch(/color:\s*var\(--guuey-chat-ink, var\(--_guuey-chat-ink\)\)/);
     expect(text).not.toContain("chat-error");
     const retry = declarations(".guuey-chat-retry");
-    expect(retry).toMatch(/color:\s*var\(--guuey-chat-accent/);
+    expect(retry).toMatch(/background:\s*var\(--guuey-chat-accent/);
+    expect(retry).toMatch(/color:\s*var\(--guuey-chat-on-accent/);
     expect(retry).not.toContain("chat-error");
     // The fault line keeps its error colour.
     expect(declarations(".guuey-chat-send-failed")).toContain("--guuey-chat-error");
