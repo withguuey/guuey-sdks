@@ -28,6 +28,7 @@ import { findProjectConfig } from '../config.js';
 import { guueyJsonLoadErrorMessage } from '../guuey-json-load-error.js';
 import { startDevServer, lowerForDev } from '../dev/dev-server.js';
 import { spawnColocatedDev, type ColocatedDevEntry } from '../dev/colocated-dev.js';
+import { runnerPreflight } from '../dev/runner-peer.js';
 import * as out from '../output.js';
 import { substitutedLine } from '../deploy-env.js';
 
@@ -169,6 +170,15 @@ export async function dev(flags?: Record<string, string | true>): Promise<void> 
     // (google-adk) additionally points the host at the built agent module.
     const require = createRequire(import.meta.url);
     workerEntry = require.resolve('@guuey/host');
+    // The host loads the framework's runtime as an optional peer, from its
+    // own location: refuse here, with the line that installs it, rather than
+    // start a server whose every turn fails.
+    const missingRunner = runnerPreflight({ framework, hostEntry: workerEntry, projectRoot });
+    if (missingRunner !== null) {
+      out.error(missingRunner);
+      process.exit(1);
+      return;
+    }
     if (gracefulEntry !== undefined) process.env.GUUEY_AGENT_ENTRY = gracefulEntry;
     process.env.GUUEY_WORKER_ROOT = projectRoot;
   }
