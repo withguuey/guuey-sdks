@@ -359,9 +359,13 @@ export interface LocalArtifacts {
   systemPrompt?: string;
 }
 
-/** What {@link loadLocalArtifacts} read: the artifacts, and the `${env.NAME}` variables it filled in (names only). */
+/**
+ * What {@link loadLocalArtifacts} read: the artifacts, the validated (env-resolved) document a caller reads fields from,
+ * and the `${env.NAME}` variables it filled in (names only).
+ */
 export interface LoadedLocalArtifacts {
   artifacts: LocalArtifacts;
+  doc: GuueyJsonV1;
   substituted: string[];
 }
 
@@ -418,7 +422,7 @@ export function loadLocalArtifacts(cwd: string, env: EnvSource = process.env): L
     ref !== undefined && typeof ref !== 'string' && loaded.resolvedSystemPrompt !== undefined
       ? { guueyJson: submitted, systemPrompt: loaded.resolvedSystemPrompt }
       : { guueyJson: submitted };
-  return { artifacts, substituted };
+  return { artifacts, doc, substituted };
 }
 
 /**
@@ -427,7 +431,7 @@ export function loadLocalArtifacts(cwd: string, env: EnvSource = process.env): L
  * under `--json`, so stdout stays one JSON document). Exits 1 on any
  * failure, before a request is made.
  */
-function loadForCommand(flags: Record<string, string | true> | undefined, jsonOut: boolean, failPrefix: string): LocalArtifacts {
+function loadForCommand(flags: Record<string, string | true> | undefined, jsonOut: boolean, failPrefix: string): LoadedLocalArtifacts {
   let loaded: LoadedLocalArtifacts;
   try {
     loaded = loadLocalArtifacts(process.cwd(), deployEnv(flags, process.env));
@@ -440,7 +444,7 @@ function loadForCommand(flags: Record<string, string | true> | undefined, jsonOu
     if (jsonOut) console.error(line);
     else console.log(line);
   }
-  return loaded.artifacts;
+  return loaded;
 }
 
 // ─── Rendering ───────────────────────────────────────────────────────────
@@ -588,17 +592,14 @@ export async function agentApply(flags?: Record<string, string | true>): Promise
   const ctx = context(flags);
   const cwd = process.cwd();
 
-  const artifacts = loadForCommand(flags, jsonOut, `Failed to load ${GUUEY_JSON_FILENAME}`);
+  const { artifacts, doc: localDoc } = loadForCommand(flags, jsonOut, `Failed to load ${GUUEY_JSON_FILENAME}`);
 
-  const localDoc = JSON.parse(artifacts.guueyJson) as { agent?: { modes?: unknown; model?: string } };
   // guuey#2310: an app on a retired model keeps applying; the builder is told
   // on stderr first (so a --json document on stdout stays clean), never silently.
-  const retired = retiredModelWarning(localDoc.agent?.model);
+  // Both reads use the loader's validated document, never a re-parse of the bytes.
+  const retired = retiredModelWarning(localDoc.agent.model);
   if (retired !== undefined) out.printWarnings([{ message: retired }]);
-  const localHasModes =
-    localDoc.agent?.modes !== undefined &&
-    localDoc.agent.modes !== null &&
-    Object.keys(localDoc.agent.modes as object).length > 0;
+  const localHasModes = localDoc.agent.modes !== undefined && Object.keys(localDoc.agent.modes).length > 0;
   if (!localHasModes && flags?.replace !== true) {
     const live = await liveSnapshotModes(ctx);
     if (live === 'has-modes') {
@@ -754,7 +755,7 @@ export async function agentStatus(flags?: Record<string, string | true>): Promis
 
   let parity: AgentReconcileResult | undefined;
   if (check) {
-    const artifacts = loadForCommand(flags, jsonOut, `--check needs a loadable ${GUUEY_JSON_FILENAME} in the current directory`);
+    const { artifacts } = loadForCommand(flags, jsonOut, `--check needs a loadable ${GUUEY_JSON_FILENAME} in the current directory`);
     parity = await postReconcile(ctx, { artifacts, dryRun: true });
   }
 

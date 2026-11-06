@@ -62,7 +62,7 @@ vi.mock('../deploy-shared.js', async (importOriginal) => {
     cleanup: vi.fn(),
   };
 });
-import { resolveDeployTarget } from './deploy.js';
+import { resolveDeployTarget, retiredModelWarning } from './deploy.js';
 import {
   bindRegistry,
   defaultModelFor,
@@ -2457,7 +2457,7 @@ describe('deploy() — a retired agent.model (guuey#2310)', () => {
       expect(said).not.toMatch(/\d{4}-\d{2}-\d{2}/);
     });
 
-    it('deprecated with no published date: retired for new apps, keeps running, names the replacement', async () => {
+    it('deprecated with no published date: retired for new apps, names the replacement, claims nothing about what serves it', async () => {
       redeploy('google-adk', 'gemini-3.5-flash');
 
       await deploy({});
@@ -2466,8 +2466,10 @@ describe('deploy() — a retired agent.model (guuey#2310)', () => {
       expect(triggered()).toBe(true);
       const said = stderr();
       expect(said).toContain('gemini-3.5-flash is retired for new apps');
-      expect(said).toContain('This app keeps running on it');
+      expect(said).toContain('Google has deprecated it without naming a shutdown date');
       expect(said).toContain('gemini-3.6-flash');
+      // Google routes the id to 3.6 Flash: the line never claims the app still runs on 3.5.
+      expect(said).not.toContain('keeps running on it');
       expect(said).not.toMatch(/\d{4}-\d{2}-\d{2}/);
     });
 
@@ -2483,7 +2485,7 @@ describe('deploy() — a retired agent.model (guuey#2310)', () => {
       expect(said).toContain('gpt-6-luna');
     });
 
-    it('deprecated with no notice: retired for new apps, keeps running', async () => {
+    it('deprecated with no notice: retired for new apps, and nothing more is claimed', async () => {
       await withNoticelessDeprecatedRow('claude-test-retired-0');
       redeploy('claude-agent-sdk', 'claude-test-retired-0');
 
@@ -2491,7 +2493,7 @@ describe('deploy() — a retired agent.model (guuey#2310)', () => {
 
       expect(triggered()).toBe(true);
       expect(stderr()).toContain('claude-test-retired-0 is retired for new apps');
-      expect(stderr()).toContain('This app keeps running on it');
+      expect(stderr()).not.toContain('keeps running on it');
     });
 
     it.each([
@@ -2506,5 +2508,26 @@ describe('deploy() — a retired agent.model (guuey#2310)', () => {
       expect(stderr()).not.toContain('retired');
       expect(stderr()).not.toContain('does not serve');
     });
+  });
+});
+
+// guuey#2310 follow-up: the sunset's before / after faces read a clock, like the console's ModelRetirementBanner.
+describe('retiredModelWarning — the sunset date', () => {
+  const at = (iso: string) => Date.parse(iso);
+  it('through the sunset day itself: keeps running until the date', () => {
+    const said = retiredModelWarning('gpt-4o', at('2027-01-14T23:59:59.000Z'));
+    expect(said).toContain('This app keeps running on it until OpenAI stops serving it on 2027-01-14');
+    expect(said).toContain('gpt-6-luna');
+  });
+  it('from the day after: stopped, every call fails, never "keeps running"', () => {
+    const said = retiredModelWarning('gpt-4o', at('2027-01-15T00:00:00.000Z'));
+    expect(said).toContain('OpenAI stopped serving gpt-4o on 2027-01-14, so every call to it fails');
+    expect(said).toContain('gpt-6-luna');
+    expect(said).not.toContain('keeps running');
+  });
+  it('a date-less deprecation reads the same at any clock', () => {
+    expect(retiredModelWarning('gemini-3.5-flash', at('2030-01-01T00:00:00.000Z'))).toBe(
+      retiredModelWarning('gemini-3.5-flash', at('2026-01-01T00:00:00.000Z')),
+    );
   });
 });

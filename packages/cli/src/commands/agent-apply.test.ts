@@ -399,7 +399,7 @@ describe('agentApply — a retired agent.model (guuey#2310)', () => {
 
   it.each([
     ['gemini-3.1-pro', ['Google does not serve gemini-3.1-pro, so every call to it fails', 'gemini-3.6-flash']],
-    ['gemini-3.5-flash', ['gemini-3.5-flash is retired for new apps. This app keeps running on it.', 'gemini-3.6-flash']],
+    ['gemini-3.5-flash', ['gemini-3.5-flash is retired for new apps, and Google has deprecated it without naming a shutdown date', 'gemini-3.6-flash']],
     ['gpt-4o', ['gpt-4o is retired for new apps', 'OpenAI stops serving it on 2027-01-14', 'gpt-6-luna']],
   ])('%s: warns on stderr, then applies as before', async (model, says) => {
     const sent = onModel(model);

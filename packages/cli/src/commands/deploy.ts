@@ -602,20 +602,29 @@ function retiredModelRefusal(model: string | undefined): string | undefined {
  * `guuey agent apply` prints the same line: apply always targets an app that
  * already exists, so it warns and never refuses.
  */
-export function retiredModelWarning(model: string | undefined): string | undefined {
+export function retiredModelWarning(model: string | undefined, nowMs: number = Date.now()): string | undefined {
   if (model === undefined) return undefined;
   const notice = retirementNotice(model);
   if (notice === undefined) {
-    return modelEntry(model)?.status === 'deprecated'
-      ? `${model} is retired for new apps. This app keeps running on it.`
-      : undefined;
+    return modelEntry(model)?.status === 'deprecated' ? `${model} is retired for new apps.` : undefined;
   }
+  const move = `Change agent.model in ${GUUEY_JSON_FILENAME} to ${notice.replacement.id}.`;
   // An unserved id has no shutdown ahead: every call to it already fails.
   if (notice.unserved === true) {
-    return `${notice.providerLabel} does not serve ${notice.id}, so every call to it fails. Change agent.model in ${GUUEY_JSON_FILENAME} to ${notice.replacement.id}.`;
+    return `${notice.providerLabel} does not serve ${notice.id}, so every call to it fails. ${move}`;
   }
-  const until = notice.sunset === undefined ? '' : `, until ${notice.providerLabel} stops serving it on ${notice.sunset}`;
-  return `${notice.id} is retired for new apps. This app keeps running on it${until}. Move it to ${notice.replacement.id}: change agent.model in ${GUUEY_JSON_FILENAME}.`;
+  // No published date (guuey#2310): the provider has deprecated the id and may already route it elsewhere,
+  // so the line claims nothing about what serves this app; it names the replacement only.
+  if (notice.sunset === undefined) {
+    return `${notice.id} is retired for new apps, and ${notice.providerLabel} has deprecated it without naming a shutdown date. ${move}`;
+  }
+  // The sunset is a calendar date and the shutdown happens during it, so "stopped" starts the day AFTER
+  // (the same rule as the console's ModelRetirementBanner).
+  const passed = nowMs >= Date.parse(`${notice.sunset}T00:00:00.000Z`) + 24 * 60 * 60 * 1000;
+  if (passed) {
+    return `${notice.providerLabel} stopped serving ${notice.id} on ${notice.sunset}, so every call to it fails. ${move}`;
+  }
+  return `${notice.id} is retired for new apps. This app keeps running on it until ${notice.providerLabel} stops serving it on ${notice.sunset}. ${move}`;
 }
 
 // ─── Preflight: first-run app create + link write-back ───────────────────
