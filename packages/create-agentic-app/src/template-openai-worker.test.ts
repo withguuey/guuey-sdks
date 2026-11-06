@@ -41,6 +41,8 @@ const h = vi.hoisted(() => ({
   handler: undefined as NativeHandler | undefined,
   servers: [] as ServerOptions[],
   defaultKeys: [] as string[],
+  /** The options each `run()` call received. */
+  runOptions: [] as Array<{ stream?: boolean }>,
 }));
 
 vi.mock("@openai/agents", () => ({
@@ -56,11 +58,14 @@ vi.mock("@openai/agents", () => ({
   setDefaultOpenAIKey: (key: string) => {
     h.defaultKeys.push(key);
   },
-  run: async () => ({
+  run: async (_agent: object, _input: unknown, options: { stream?: boolean }) => {
+    h.runOptions.push(options);
+    return {
     async *[Symbol.asyncIterator]() {},
     completed: Promise.resolve(),
     finalOutput: "ok",
-  }),
+    };
+  },
 }));
 
 vi.mock("@guuey/worker", async (importOriginal) => ({
@@ -284,6 +289,15 @@ describe("OpenAI template worker: a mode-narrowed GUUEY_AGENT_SNAPSHOT (guuey#25
     } finally {
       vi.stubEnv("GUUEY_AGENT_SNAPSHOT", JSON.stringify(agent));
     }
+  });
+});
+
+describe("OpenAI template worker: streaming", () => {
+  it("runs streamed, so each model event reaches the end user as it arrives (never one whole reply)", async () => {
+    if (h.handler === undefined) throw new Error("the worker entry never called serveNative");
+    h.runOptions.length = 0;
+    expect(await h.handler(invokeWith(undefined), emit)).toBe("ok");
+    expect(h.runOptions.at(-1)?.stream).toBe(true);
   });
 });
 

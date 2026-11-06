@@ -177,6 +177,13 @@ await serveNative(
         //   the end user's DURABLE home, so the default would keep every
         //   turn's text there across sessions and pods.
         persistSession: false,
+        // - includePartialMessages: true — token streaming. Without it the SDK
+        //   yields each assistant message only when it is complete, so the end
+        //   user sees a reply arrive whole. With it, `stream_event` partials
+        //   are emitted between them and the platform turns them into text
+        //   deltas, deduped against the complete message that follows. Same
+        //   posture as `@guuey/host` (frameworks/claude-options.ts).
+        includePartialMessages: true,
         env: cliEnv(),
         ...(credential !== undefined
           ? { spawnClaudeCodeProcess: makeClaudeSpawner({ ...credential, secrets: headerValues }) }

@@ -22,6 +22,7 @@ interface CapturedOptions {
   env?: Record<string, string>;
   mcpServers?: object;
   persistSession?: boolean;
+  includePartialMessages?: boolean;
   spawnClaudeCodeProcess?: (request: ClaudeSpawnRequest) => ClaudeSpawnedProcess;
   allowedTools?: string[];
   disallowedTools?: string[];
@@ -145,6 +146,14 @@ describe("Claude template worker: private key and MCP delivery (guuey#2139)", ()
     const q = h.queries.at(-1);
     if (q === undefined) throw new Error("no query");
     expect(q.options.persistSession).toBe(false);
+  });
+
+  it("streams token by token: partial messages on, the same posture as @guuey/host", async () => {
+    if (h.handler === undefined) throw new Error("the worker entry never called serveNative");
+    expect(await h.handler(invokeWithServer(), emit)).toBe("ok");
+    const q = h.queries.at(-1);
+    if (q === undefined) throw new Error("no query");
+    expect(q.options.includePartialMessages).toBe(true);
   });
 
   it("a CLI that never answers setMcpServers fails the turn at the startup deadline: query closed, no user message", async () => {
