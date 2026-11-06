@@ -142,19 +142,20 @@ describe("startDevServer", () => {
     expect(sessData.threadId).toBe(sessData.sessionId);
     expect(text).toMatch(/event: done\ndata: \{"stopReason":"end_turn"\}/);
 
-    const messageFrames = [...text.matchAll(/event: message\ndata: (\[.*?\])\n\n/g)].map((m) =>
-      JSON.parse(m[1]!) as unknown[],
+    const messageFrames: unknown[] = [...text.matchAll(/event: message\ndata: ([^\n]+)\n\n/g)].map((m) =>
+      JSON.parse(m[1]!),
     );
     expect(messageFrames.length).toBeGreaterThan(0);
-    const allEvents = messageFrames.flat();
-    expect(allEvents.length).toBeGreaterThan(0);
-    for (const e of allEvents) {
+    // One event per frame, as the pod sends them: a frame is never an array
+    // (`guuey test` parses each frame as ONE event and printed nothing for a batch).
+    for (const e of messageFrames) {
+      expect(Array.isArray(e)).toBe(false);
       expect(e).toHaveProperty("type");
       expect(e).toHaveProperty("seq");
     }
     // Every turn.start / message.start names the session's thread, not the SDK's own session id.
-    const claudeEvents = [...text.matchAll(/event: message\ndata: (\[.*?\])\n\n/g)].flatMap(
-      (m) => JSON.parse(m[1]!) as AgEvent[],
+    const claudeEvents = [...text.matchAll(/event: message\ndata: ([^\n]+)\n\n/g)].map(
+      (m) => JSON.parse(m[1]!) as AgEvent,
     );
     const stampedClaude = claudeEvents.filter(
       (e): e is Extract<AgEvent, { type: "turn.start" | "message.start" }> => e.type === "turn.start" || e.type === "message.start",
@@ -194,8 +195,8 @@ describe("startDevServer", () => {
     expect(sessData.threadId).toBe(sessData.sessionId);
     expect(text).toMatch(/event: done\ndata: \{"stopReason":"end_turn"\}/);
 
-    const events = [...text.matchAll(/event: message\ndata: (\[.*?\])\n\n/g)].flatMap(
-      (m) => JSON.parse(m[1]!) as AgEvent[],
+    const events = [...text.matchAll(/event: message\ndata: ([^\n]+)\n\n/g)].map(
+      (m) => JSON.parse(m[1]!) as AgEvent,
     );
     // Tool turn: the captured functionCall/functionResponse pair came out as
     // AgJSON tool lifecycle under the REAL adk call id.
@@ -257,8 +258,8 @@ describe("startDevServer", () => {
       body: JSON.stringify({ input: "hi" }),
     });
     const text = await res.text();
-    const events = [...text.matchAll(/event: message\ndata: (\[.*?\])\n\n/g)].flatMap(
-      (m) => JSON.parse(m[1]!) as AgEvent[],
+    const events = [...text.matchAll(/event: message\ndata: ([^\n]+)\n\n/g)].map(
+      (m) => JSON.parse(m[1]!) as AgEvent,
     );
     const terminals = events.filter((e) => e.type === "turn.done" || e.type === "turn.abort" || e.type === "turn.error");
     expect(terminals.map((e) => e.type)).toEqual([terminal]);

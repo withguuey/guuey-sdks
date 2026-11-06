@@ -609,8 +609,10 @@ async function streamTurn(
         break;
       }
       if (ev.type === "native" && normalizer) {
-        const batch = normalizer.push(ev.event);
-        if (batch.length > 0) sendEvent(res, "message", batch);
+        // One event per frame, as the pod sends them (`sse-server.ts`
+        // `pauseCapture.send('message', e)`): `guuey test` and every client
+        // parse a frame as ONE event, so a batched array frame printed nothing.
+        for (const e of normalizer.push(ev.event)) sendEvent(res, "message", e);
         continue;
       }
       // bypass mode (any event type), OR a `text` event in silver mode (no
@@ -626,8 +628,7 @@ async function streamTurn(
       sendEvent(res, "message", ev);
     }
     if (normalizer) {
-      const flushed = normalizer.flush();
-      if (flushed.length > 0) sendEvent(res, "message", flushed);
+      for (const e of normalizer.flush()) sendEvent(res, "message", e);
     }
     state.history.push({ role: "user", text: input, at: new Date().toISOString() });
     if (agentText) {
