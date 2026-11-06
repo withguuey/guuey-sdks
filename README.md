@@ -31,7 +31,7 @@ The scaffold installs its own dependencies (pass `--no-install` to skip that).
 
 ## Consumer surfaces and the pairing of record
 
-The `@guuey/*` cohort is published lockstep (one version across all fourteen `@guuey/*` packages, `latest` moves only when all fourteen agree on npm; the bare-name `guuey` forwarder carries `1.<minor>.<patch>` of the `@guuey/cli` it runs) and is paired with two wire families it re-exports. **Pairing of record: `@guuey/*@0.33.x` + `@silverprotocol/*@0.12.7` + `@ggui-ai/*@0.29.0`** — a wire-family move is a cohort MINOR (a caret on the previous minor deliberately excludes it), so consumers move all three in the same hour; each release names the pairing.
+The `@guuey/*` cohort is published lockstep (one version across all fourteen `@guuey/*` packages, `latest` moves only when all fourteen agree on npm; the bare-name `guuey` forwarder carries `1.<minor>.<patch>` of the `@guuey/cli` it runs) and is paired with two wire families it re-exports. **Pairing of record: `@guuey/*@0.34.x` + `@silverprotocol/*@0.12.7` + `@ggui-ai/*@0.29.0`** — a wire-family move is a cohort MINOR (a caret on the previous minor deliberately excludes it), so consumers move all three in the same hour; each release names the pairing.
 
 A **consumer surface** is anything a consumer's code or tooling reads without importing a type: wire fields mirrored from the platform, error codes, dist-tags, and **readiness/health probe paths**. The rule (guuey#879): a rename or removal of a consumer surface is a **breaking line in the release notes** and an entry here — never a silent minor. Current entries:
 
