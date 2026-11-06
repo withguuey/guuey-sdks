@@ -9,6 +9,7 @@
       "file": "prompts/system.md"
     },
     "mcpServers": {
+      "ggui": false,
       "todo": {
         "kind": "colocated",
         "source": "./mcps/todo",

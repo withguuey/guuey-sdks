@@ -50,8 +50,8 @@ bind:
 
 ## Tools: MCP servers
 
-The platform's generative-UI server (`ggui`) is attached by default. Servers you declare under `agent.mcpServers` are
-added on top of it (`"ggui": false` opts out). A server reached by URL is an `external` entry:
+Generative UI is opt-in: the scaffold's `"ggui": false` keeps the platform's generative-UI server (`ggui`) off.
+Delete that line to turn it on. Servers you declare under `agent.mcpServers` sit beside it. A server reached by URL is an `external` entry:
 
 ```jsonc
 // guuey.json → agent

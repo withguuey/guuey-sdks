@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { GuueyJsonV1, newRepDefaultHooks } from '@guuey/config';
+import { GuueyJsonV1, effectiveMcpServers, newRepDefaultHooks } from '@guuey/config';
 
 const FRAMEWORKS = ['claude-agent-sdk', 'google-adk', 'openai-agents-sdk'];
 
@@ -11,15 +11,15 @@ describe('framework template guuey.json (guuey#24 §2c)', () => {
       readFileSync(join(__dirname, '..', 'templates-src', 'frameworks', fw, 'guuey.json'), 'utf8')
     );
 
-    it(`${fw}: does NOT declare a ggui entry — injection owns it (guuey#368)`, () => {
-      // The old #24 §2c pin (declare the platform default verbatim) is
-      // INVERTED by #368: a declared platform-default entry suppressed
-      // lowerForDev's local injection and was un-dialable locally, so the
-      // out-of-box scaffold silently lost generative UI. The platform
-      // injects mcp.ggui.ai on deploy; guuey dev injects the local
-      // endpoint — the template stays silent and both environments work.
-      expect(raw.agent.mcpServers.ggui).toBeUndefined();
+    it(`${fw}: is born with generative UI off — \`ggui: false\`, opt-in by deleting it`, () => {
+      // Generative UI is opt-in for a NEW agent: the scaffold declares the
+      // opt-out, so neither the deployed agent (effectiveMcpServers) nor
+      // `guuey dev` (lowerForDev skips its local injection when a ggui key
+      // is present) attaches it. Deleting the line turns it on in both.
+      expect(raw.agent.mcpServers.ggui).toBe(false);
       expect(raw.agent.mcpServers.todo).toBeDefined();
+      const parsed = GuueyJsonV1.parse(JSON.parse(JSON.stringify(raw).replace('MODEL_PLACEHOLDER', 'claude-sonnet-5')));
+      expect(effectiveMcpServers(parsed.agent.mcpServers)).not.toHaveProperty('ggui');
     });
 
     it(`${fw}: round-trips the config schema`, () => {
@@ -37,6 +37,12 @@ describe('the declarative agent template (guuey#1738)', () => {
 
   it('starts a new rep with the platform default hooks, verbatim (a JSON twin of newRepDefaultHooks)', () => {
     expect(raw.agent.hooks).toEqual(newRepDefaultHooks());
+  });
+
+  it('is born with generative UI off — `ggui: false`, opt-in by deleting it', () => {
+    expect(raw.agent.mcpServers).toEqual({ ggui: false });
+    const parsed = GuueyJsonV1.parse(JSON.parse(JSON.stringify(raw).replace('MODEL_PLACEHOLDER', 'claude-sonnet-5')));
+    expect(effectiveMcpServers(parsed.agent.mcpServers)).not.toHaveProperty('ggui');
   });
 
   it('round-trips the config schema with the hooks block', () => {

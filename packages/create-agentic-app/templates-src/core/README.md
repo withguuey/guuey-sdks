@@ -15,7 +15,9 @@ locally with one command, and deployable to guuey with one more.
 ├── prompts/system.md    # system prompt, referenced from guuey.json#agent.systemPrompt.file
 ├── mcps/todo/           # the "copy-me" custom MCP server — @modelcontextprotocol/sdk,
 │                         #   Streamable HTTP, in-memory todo list, port :6782
-├── ggui/                # ggui.json + blueprints/ — generative-UI config.
+├── ggui/                # ggui.json + blueprints/ — generative-UI config. Generative UI is
+│                         #   opt-in: delete `"ggui": false` from guuey.json#agent.mcpServers
+│                         #   to turn it on (it starts off).
 │                         #   `ggui serve` runs against this locally; `guuey deploy` pushes
 │                         #   generation config + blueprints (the deployed RENDER THEME is
 │                         #   platform data, not this dir — ggui.json#theme is local-preview

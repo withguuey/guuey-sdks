@@ -4,6 +4,7 @@
     "mode": "declarative",
     "model": "MODEL_PLACEHOLDER",
     "systemPrompt": { "file": "prompts/system.md" },
+    "mcpServers": { "ggui": false },
     "hooks": { "session.ended": [{ "use": "email-reporter" }] }
   }
 }
