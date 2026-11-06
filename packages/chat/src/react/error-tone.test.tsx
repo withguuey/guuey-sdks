@@ -66,15 +66,13 @@ describe("DefaultError tone (guuey#2453)", () => {
     expect(toneClass()).toEqual(["guuey-chat-error-fault"]);
   });
 
-  it("the two retry Retry buttons share ONE accent rule", () => {
+  it("both Retry buttons wear the accent: the retry row's by its tone rule, a failed send's in both tones by its own", () => {
     const blocks = css.match(/[^{}]+\{[^{}]*\}/g) ?? [];
     const accent = blocks.filter((b) => /color:\s*var\(--guuey-chat-accent/.test(b) && /-retry\s/.test(b));
-    expect(accent).toHaveLength(1);
-    const selectors = (accent[0] ?? "").split("{")[0]!.split(",").map((s) => s.trim());
-    expect(selectors).toEqual([
-      ".guuey-chat-error-retry .guuey-chat-error-action",
-      ".guuey-chat-send-failed-retry .guuey-chat-retry",
-    ]);
+    const selectorsOf = (b: string) => b.split("{")[0]!.split(",").map((s) => s.trim());
+    expect(accent.map(selectorsOf)).toEqual([[".guuey-chat-retry"], [".guuey-chat-error-retry .guuey-chat-error-action"]]);
+    // guuey#2611: no failed-send Retry rule is tone-gated, so a fault's Retry never falls back to the error colour.
+    expect(blocks.filter((b) => b.includes(".guuey-chat-send-failed-retry .guuey-chat-retry"))).toEqual([]);
   });
 
   it("the stylesheet draws the retry tone on the plain surface, with no error tint on the box or its Retry", () => {
@@ -115,11 +113,11 @@ describe("the refused bubble's tone (guuey#2453)", () => {
     expect(Array.from(line()?.classList ?? [])).toEqual(["guuey-chat-send-failed"]);
   });
 
-  it("the stylesheet draws the retry line in the plain text colour, and its Retry without the error colour", () => {
+  it("the stylesheet draws the retry line in the plain text colour, and Retry without the error colour in both tones", () => {
     const text = declarations(".guuey-chat-send-failed-retry");
     expect(text).toMatch(/color:\s*var\(--guuey-chat-ink, var\(--_guuey-chat-ink\)\)/);
     expect(text).not.toContain("chat-error");
-    const retry = declarations(".guuey-chat-send-failed-retry .guuey-chat-retry");
+    const retry = declarations(".guuey-chat-retry");
     expect(retry).toMatch(/color:\s*var\(--guuey-chat-accent/);
     expect(retry).not.toContain("chat-error");
     // The fault line keeps its error colour.

@@ -154,6 +154,16 @@
 .guuey-chat-user-sending .guuey-chat-user-bubble {
   opacity: 0.6;
 }
+/* In flight is dimmed; not sent is hollow: surface fill, 1px muted-ink border, ink words, full opacity.
+   The bubble holds the reader's own words, so it is calm in both tones; the tone lives on the line under it. */
+.guuey-chat-user-failed .guuey-chat-user-bubble {
+  background: var(--guuey-chat-surface, var(--_guuey-chat-surface));
+  color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
+  border: 1px solid var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
+  opacity: 1;
+}
+/* The line carries the tone: a fault keeps the error colour, the retry tone draws plain text (below).
+   Retry is the accent in both tones: an action takes the cue, not the fault. */
 .guuey-chat-send-failed {
   margin: 4px 0 0;
   font-size: 0.85em;
@@ -162,9 +172,9 @@
 }
 .guuey-chat-retry {
   margin-inline-start: 8px;
-  border: 1px solid var(--guuey-chat-error, var(--_guuey-chat-error));
+  border: 1px solid var(--guuey-chat-accent, var(--_guuey-chat-accent));
   background: none;
-  color: var(--guuey-chat-error, var(--_guuey-chat-error));
+  color: var(--guuey-chat-accent, var(--_guuey-chat-accent));
   border-radius: 6px;
   padding: 1px 8px;
   cursor: pointer;
@@ -782,9 +792,9 @@
 .guuey-chat-send-failed-retry {
   color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
 }
-/* Both retry faces' Retry: the accent, never the error colour. */
-.guuey-chat-error-retry .guuey-chat-error-action,
-.guuey-chat-send-failed-retry .guuey-chat-retry {
+/* The retry error row's Retry: the accent, never the error colour. A failed send's Retry is the accent in both
+   tones from its own rule (.guuey-chat-retry), so it needs no retry-tone override here. */
+.guuey-chat-error-retry .guuey-chat-error-action {
   border-color: var(--guuey-chat-accent, var(--_guuey-chat-accent));
   color: var(--guuey-chat-accent, var(--_guuey-chat-accent));
 }

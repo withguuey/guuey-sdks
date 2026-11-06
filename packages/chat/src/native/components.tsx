@@ -190,7 +190,10 @@ function NativeActionWords({ labels, ctx }: { labels: readonly (string | null)[]
           style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: tokens.palette.ink, opacity: 0.07 }}
         />
         {/* The label is QUOTED, never rendered — whitespace preserved. */}
-        <Text style={{ color: tokens.palette.ink, fontSize: tokens.fontSize, fontFamily: tokens.fontFamily, fontWeight: "500" }}>
+        <Text
+          selectable
+          style={{ color: tokens.palette.ink, fontSize: tokens.fontSize, fontFamily: tokens.fontFamily, fontWeight: "500" }}
+        >
           {label}
         </Text>
       </View>
@@ -203,9 +206,11 @@ function NativeSendFailed({ item, ctx }: ItemProps<UserMessageItem>): ReactNode 
   if (item.state !== "failed") return null;
   return (
     <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
-      {/* The line shrinks and wraps; Retry keeps its size at the row's end, so a long reason never pushes it off a narrow screen.
+      {/* The tone lives on this line and on Retry, never on the bubble above it (the reader's own words stay calm).
+          guuey#2453: the retry tone draws the line in the plain text colour; a fault keeps the error colour. Retry is the
+          accent in both tones: an action takes the cue, not the fault.
+          The line shrinks and wraps; Retry keeps its size at the row's end, so a long reason never pushes it off a narrow screen.
           The row aligns to the top, so Retry sits on the line's first line rather than mid-paragraph. */}
-      {/* guuey#2453: the retry tone draws the line in the plain text colour; the Retry is its only cue. */}
       <Text
         style={{
           flexShrink: 1,
@@ -251,19 +256,30 @@ export function NativeUserMessage({ item, ctx }: ItemProps<UserMessageItem>): Re
       </View>
     );
   }
+  // In flight is dimmed; not sent is hollow: the surface fill inside a 1 px
+  // muted-ink border, the words in ink, at full opacity.
+  const failed = item.state === "failed";
   return (
     <View style={{ alignItems: "flex-end", gap: 4, opacity: item.state === "sending" ? 0.6 : 1 }}>
       <View
         style={{
           maxWidth: "82%",
-          backgroundColor: tokens.palette.ink,
+          backgroundColor: failed ? tokens.palette.surface : tokens.palette.ink,
+          ...(failed ? { borderWidth: 1, borderColor: tokens.palette.inkMuted } : {}),
           borderRadius: tokens.radius,
           paddingHorizontal: tokens.pad,
           paddingVertical: tokens.pad - 2,
         }}
       >
         {/* User text is QUOTED, never rendered — whitespace preserved. */}
-        <Text style={{ color: tokens.palette.canvas, fontSize: tokens.fontSize, fontFamily: tokens.fontFamily }}>
+        <Text
+          selectable
+          style={{
+            color: failed ? tokens.palette.ink : tokens.palette.canvas,
+            fontSize: tokens.fontSize,
+            fontFamily: tokens.fontFamily,
+          }}
+        >
           {item.text}
         </Text>
       </View>
