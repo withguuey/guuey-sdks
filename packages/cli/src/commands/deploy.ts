@@ -597,8 +597,12 @@ function retiredModelRefusal(model: string | undefined): string | undefined {
   return `${verdict} ${FIX_THE_MODEL}`;
 }
 
-/** What a redeploy of an existing app warns before it proceeds, or undefined. */
-function retiredModelWarning(model: string | undefined): string | undefined {
+/**
+ * What a redeploy of an existing app warns before it proceeds, or undefined.
+ * `guuey agent apply` prints the same line: apply always targets an app that
+ * already exists, so it warns and never refuses.
+ */
+export function retiredModelWarning(model: string | undefined): string | undefined {
   if (model === undefined) return undefined;
   const notice = retirementNotice(model);
   if (notice === undefined) {

@@ -59,7 +59,7 @@ import { resolveTargetAppId } from '../app-id';
 import { apiRequest, parseApiError } from '../deploy-shared';
 import { deployEnv, substitutedLine } from '../deploy-env';
 import { guueyJsonLoadErrorMessage } from '../guuey-json-load-error';
-import { awaitPageUrl, pollDeployStatus, printPageLine } from './deploy';
+import { awaitPageUrl, pollDeployStatus, printPageLine, retiredModelWarning } from './deploy';
 import { DEPLOY_WAIT_MS, stillDeployingMessage } from './deploy-wait';
 import { maybePrintThemeHint } from './theme-hint';
 import { themeForwardLines, themeForwardOf, type ThemeForwardWire } from '../theme-forward';
@@ -590,7 +590,11 @@ export async function agentApply(flags?: Record<string, string | true>): Promise
 
   const artifacts = loadForCommand(flags, jsonOut, `Failed to load ${GUUEY_JSON_FILENAME}`);
 
-  const localDoc = JSON.parse(artifacts.guueyJson) as { agent?: { modes?: unknown } };
+  const localDoc = JSON.parse(artifacts.guueyJson) as { agent?: { modes?: unknown; model?: string } };
+  // guuey#2310: an app on a retired model keeps applying; the builder is told
+  // on stderr first (so a --json document on stdout stays clean), never silently.
+  const retired = retiredModelWarning(localDoc.agent?.model);
+  if (retired !== undefined) out.printWarnings([{ message: retired }]);
   const localHasModes =
     localDoc.agent?.modes !== undefined &&
     localDoc.agent.modes !== null &&

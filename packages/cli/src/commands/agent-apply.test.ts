@@ -50,7 +50,9 @@ vi.mock('../config.js', async (importOriginal) => {
 });
 
 // `--wait` polls through the deploy module's poller; stub it so no timers run.
-vi.mock('./deploy.js', () => ({
+vi.mock('./deploy.js', async (importOriginal) => ({
+  // guuey#2310: the retired-model line is deploy's own, read for real.
+  retiredModelWarning: (await importOriginal<typeof import('./deploy.js')>()).retiredModelWarning,
   pollDeployStatus: vi.fn(async () => ({
     status: 'live',
     url: 'https://app-1.agents.guuey.test',
@@ -378,6 +380,74 @@ describe('loadLocalArtifacts — ${env.NAME} in mcpServers url and app.access.us
 });
 
 // ─── Commands ────────────────────────────────────────────────────────────
+
+describe('agentApply — a retired agent.model (guuey#2310)', () => {
+  /** guuey.json as the fixture has it, on `model`. */
+  function onModel(model: string): string {
+    const doc = JSON.parse(GUUEY_JSON) as { agent: { model: string } };
+    doc.agent.model = model;
+    const text = JSON.stringify(doc, null, 2);
+    writeFileSync(join(dir, 'guuey.json'), text);
+    return text;
+  }
+  function stderr(): string {
+    return vi
+      .mocked(console.error)
+      .mock.calls.map((c) => c.join(' '))
+      .join('\n');
+  }
+
+  it.each([
+    ['gemini-3.1-pro', ['Google does not serve gemini-3.1-pro, so every call to it fails', 'gemini-3.6-flash']],
+    ['gemini-3.5-flash', ['gemini-3.5-flash is retired for new apps. This app keeps running on it.', 'gemini-3.6-flash']],
+    ['gpt-4o', ['gpt-4o is retired for new apps', 'OpenAI stops serving it on 2027-01-14', 'gpt-6-luna']],
+  ])('%s: warns on stderr, then applies as before', async (model, says) => {
+    const sent = onModel(model);
+    fetchMock.mockResolvedValue(jsonResponse(200, reconcileResult()));
+
+    await agentApply({ provenance: 'none' });
+
+    for (const line of says) expect(stderr()).toContain(line);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://api.guuey.test/apps/app-1/reconcile');
+    expect(JSON.parse(init.body as string).artifacts.guueyJson).toBe(sent);
+    expect(logs.join('\n')).toContain('Applied — build #12 queued');
+  });
+
+  it('an unserved id never says "deprecated" and gives no date', async () => {
+    onModel('gemini-3.1-pro');
+    fetchMock.mockResolvedValue(jsonResponse(200, reconcileResult()));
+
+    await agentApply({ provenance: 'none' });
+
+    expect(stderr()).not.toContain('deprecated');
+    expect(stderr()).not.toContain('stops serving it on');
+  });
+
+  it('--json keeps the warning on stderr, so stdout is the one JSON document', async () => {
+    onModel('gemini-3.1-pro');
+    fetchMock.mockResolvedValue(jsonResponse(200, reconcileResult()));
+
+    await agentApply({ provenance: 'none', json: true });
+
+    expect(stderr()).toContain('Google does not serve gemini-3.1-pro');
+    const stdout = vi
+      .mocked(console.log)
+      .mock.calls.map((c) => c.join(' '))
+      .join('\n');
+    expect(stdout).not.toContain('gemini-3.1-pro');
+  });
+
+  it.each(['claude-sonnet-5', 'claude-test-unlisted-0'])('%s: no warning', async (model) => {
+    onModel(model);
+    fetchMock.mockResolvedValue(jsonResponse(200, reconcileResult()));
+
+    await agentApply({ provenance: 'none' });
+
+    expect(stderr()).not.toContain('retired');
+    expect(stderr()).not.toContain('does not serve');
+  });
+});
 
 describe('agentApply', () => {
   it('POSTs artifacts + explicit provenance to /apps/:id/reconcile and reports the queued build + plan', async () => {
