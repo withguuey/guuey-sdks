@@ -226,3 +226,101 @@ describe("WORKER_POD_RESOURCE_EXHAUSTED before the stream is a capacity retry (g
     expect(calls).toBe(1);
   });
 });
+
+describe("withSaturationRetry — SESSION_BUSY: one retry after the hinted wait", () => {
+  function busy(retryAfterSeconds?: number): AgentResponseError {
+    return new AgentResponseError(
+      "This conversation is still answering a message. Try again in a few seconds.",
+      409,
+      AGENT_ERROR_CODES.SESSION_BUSY,
+      retryAfterSeconds,
+    );
+  }
+
+  /** A transport that throws each queued error in turn, then yields "ok". */
+  function scripted(errors: AgentResponseError[]): { calls: () => number; t: (req: InvokeRequest) => AsyncGenerator<string> } {
+    let calls = 0;
+    return {
+      calls: () => calls,
+      t: async function* (_req: InvokeRequest) {
+        const err = errors[calls];
+        calls += 1;
+        if (err !== undefined) throw err;
+        yield "ok";
+      },
+    };
+  }
+
+  it("a reply sent while the last answer settles goes through after the pod's 5 s hint, with no capacity callback", async () => {
+    const f = scripted([busy(5)]);
+    const sleeps: number[] = [];
+    const waits: unknown[] = [];
+    const wrapped = withSaturationRetry(f.t, {
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+      onSaturationWait: (info) => waits.push(info),
+    });
+    expect(await drain(wrapped(REQ))).toEqual(["ok"]);
+    expect(f.calls()).toBe(2);
+    expect(sleeps).toEqual([5000]);
+    expect(waits).toEqual([]);
+  });
+
+  it("retries once only: a conversation still busy surfaces its refusal", async () => {
+    const f = scripted([busy(5), busy(5), busy(5)]);
+    const wrapped = withSaturationRetry(f.t, { sleep: instantSleep, attempts: 5 });
+    await expect(drain(wrapped(REQ))).rejects.toMatchObject({ code: AGENT_ERROR_CODES.SESSION_BUSY, status: 409 });
+    expect(f.calls()).toBe(2);
+  });
+
+  it("no hint waits the pod's usual 5 s; an outsized hint is capped at 30 s", async () => {
+    for (const [hint, expected] of [
+      [undefined, 5000],
+      [60, 30000],
+    ] as const) {
+      const sleeps: number[] = [];
+      const f = scripted([busy(hint)]);
+      const wrapped = withSaturationRetry(f.t, {
+        sleep: async (ms) => {
+          sleeps.push(ms);
+        },
+      });
+      await drain(wrapped(REQ));
+      expect(sleeps, String(hint)).toEqual([expected]);
+    }
+  });
+
+  it("has its own budget: a busy retry never spends a capacity retry, nor the reverse", async () => {
+    const f = scripted([saturated(), busy(5)]);
+    const wrapped = withSaturationRetry(f.t, { sleep: instantSleep });
+    expect(await drain(wrapped(REQ))).toEqual(["ok"]);
+    expect(f.calls()).toBe(3);
+  });
+
+  it("never re-sends once a chunk has streamed", async () => {
+    let calls = 0;
+    const midStream = async function* (_req: InvokeRequest): AsyncGenerator<string> {
+      calls += 1;
+      yield "partial";
+      throw busy(5);
+    };
+    const wrapped = withSaturationRetry(midStream, { sleep: instantSleep });
+    await expect(drain(wrapped(REQ))).rejects.toMatchObject({ code: AGENT_ERROR_CODES.SESSION_BUSY });
+    expect(calls).toBe(1);
+  });
+
+  it("an abort during the wait surfaces the refusal without a second send", async () => {
+    const controller = new AbortController();
+    const f = scripted([busy(5)]);
+    const wrapped = withSaturationRetry(f.t, {
+      sleep: async () => {
+        controller.abort();
+      },
+    });
+    await expect(drain(wrapped({ ...REQ, signal: controller.signal }))).rejects.toMatchObject({
+      code: AGENT_ERROR_CODES.SESSION_BUSY,
+    });
+    expect(f.calls()).toBe(1);
+  });
+});

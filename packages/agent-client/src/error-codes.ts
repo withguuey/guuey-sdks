@@ -120,7 +120,9 @@ export const AGENT_ERROR_CODES = {
   /**
    * The conversation is still answering a message — this one, or another of
    * the user's conversations with the same agent. A 409 carrying a
-   * `Retry-After` hint. Not retried by this SDK; the message names the case.
+   * `Retry-After` hint. Refused before the turn was admitted, so the SDK's
+   * web transport retries it ONCE after the hint (`withSaturationRetry`);
+   * a conversation still busy then surfaces it. The message names the case.
    */
   SESSION_BUSY: "SESSION_BUSY",
   /**

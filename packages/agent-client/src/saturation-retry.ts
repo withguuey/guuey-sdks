@@ -63,9 +63,21 @@ const CAPACITY_RETRY_CODES: ReadonlySet<string> = new Set([
   AGENT_ERROR_CODES.WORKER_POD_RESOURCE_EXHAUSTED,
 ]);
 
+/**
+ * Fallback wait before the `SESSION_BUSY` retry when the refusal carried no
+ * usable `Retry-After`: the 5 s the pod sends with that code today.
+ */
+const SESSION_BUSY_FALLBACK_DELAY_SECONDS = 5;
+
 /** How long to wait before each capacity retry, in milliseconds. */
 function saturationDelayMs(retryAfterSeconds: number | undefined): number {
   const hinted = retryAfterSeconds ?? SATURATION_FALLBACK_DELAY_SECONDS;
+  return Math.min(hinted, SATURATION_MAX_DELAY_SECONDS) * 1000;
+}
+
+/** How long to wait before the one `SESSION_BUSY` retry, in milliseconds (same ceiling). */
+function sessionBusyDelayMs(retryAfterSeconds: number | undefined): number {
+  const hinted = retryAfterSeconds ?? SESSION_BUSY_FALLBACK_DELAY_SECONDS;
   return Math.min(hinted, SATURATION_MAX_DELAY_SECONDS) * 1000;
 }
 
@@ -149,6 +161,16 @@ const MAX_SATURATION_RETRIES = 5;
  * one by luck), which is not a guarantee worth building on. When the retry can
  * be made routing-aware, this is the code to revisit.
  *
+ * `SESSION_BUSY` (409 + `Retry-After`) means the conversation is still
+ * answering a message: the visitor's last one, or another of their
+ * conversations with the same agent. It is refused before admission too, so
+ * nothing ran and a re-send with the same request is a fresh admission (the
+ * pod's duplicate-request guard answers a double). It is retried ONCE, on its
+ * own budget, after the hinted wait (5 s when none, the same 30 s ceiling): a
+ * reply sent the moment the previous answer ends then just goes through, and
+ * a conversation that stays busy surfaces its refusal. It never fires
+ * `onSaturationWait`, which speaks of capacity, not of this conversation.
+ *
  * At most `attempts` retries, one budget across both capacity codes: the
  * refusal after the last retry propagates as {@link AgentResponseError}, so a
  * genuinely overloaded agent surfaces instead of looping. Nothing is
@@ -173,7 +195,9 @@ export function withSaturationRetry(
 ): InvokeTransport {
   const retries = Math.min(Math.max(options.attempts ?? 1, 1), MAX_SATURATION_RETRIES);
   return async function* retrying(req: InvokeRequest): AsyncGenerator<string> {
-    for (let attempt = 1; ; attempt += 1) {
+    let capacityRetries = 0;
+    let busyRetried = false;
+    for (;;) {
       let yielded = false;
       try {
         for await (const chunk of transport(req)) {
@@ -182,11 +206,18 @@ export function withSaturationRetry(
         }
         return;
       } catch (err) {
-        const saturated =
-          err instanceof AgentResponseError && err.code !== undefined && CAPACITY_RETRY_CODES.has(err.code);
-        if (!saturated || yielded || attempt > retries) throw err;
-        const waitMs = saturationDelayMs(err.retryAfterSeconds);
-        options.onSaturationWait?.({ attempt, totalAttempts: retries + 1, waitMs });
+        if (yielded || !(err instanceof AgentResponseError) || err.code === undefined) throw err;
+        let waitMs: number;
+        if (CAPACITY_RETRY_CODES.has(err.code) && capacityRetries < retries) {
+          capacityRetries += 1;
+          waitMs = saturationDelayMs(err.retryAfterSeconds);
+          options.onSaturationWait?.({ attempt: capacityRetries, totalAttempts: retries + 1, waitMs });
+        } else if (err.code === AGENT_ERROR_CODES.SESSION_BUSY && !busyRetried) {
+          busyRetried = true;
+          waitMs = sessionBusyDelayMs(err.retryAfterSeconds);
+        } else {
+          throw err;
+        }
         await (options.sleep ?? delay)(waitMs, req.signal);
         // Aborted mid-wait: the user is done with this turn. Surface the
         // refusal that caused the wait rather than spending a request that

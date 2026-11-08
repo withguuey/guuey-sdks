@@ -1236,6 +1236,10 @@ const CODE_COPY: Record<string, (s: import("./strings.js").ChatStrings) => strin
   // The transient family's Retry stays (no ERROR_FAMILIES entry): sending
   // again usually finds it awake.
   WAKE_TIMED_OUT: (s) => s.errorWakeTimedOut,
+  // The conversation was still answering a message after the SDK's one
+  // retry: its own plain line in place of the family's "something went
+  // wrong"; the transient family's Retry stays.
+  SESSION_BUSY: (s) => s.errorSessionBusy,
 };
 
 /**
@@ -1243,7 +1247,7 @@ const CODE_COPY: Record<string, (s: import("./strings.js").ChatStrings) => strin
  * so the face is the plain surface with the in-place Retry as its only cue.
  * Every other code is a fault.
  */
-const RETRY_TONE_CODES: ReadonlySet<string> = new Set(["WAKE_TIMED_OUT"]);
+const RETRY_TONE_CODES: ReadonlySet<string> = new Set(["WAKE_TIMED_OUT", "SESSION_BUSY"]);
 
 /**
  * The one tone rule, read by both faces of a failure: the error item's `tone`

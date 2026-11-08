@@ -135,6 +135,14 @@ export interface ChatStrings {
    * shows the same sentence.
    */
   errorWakeTimedOut: string;
+  /**
+   * R11, code SESSION_BUSY: the conversation (or another of the reader's
+   * conversations with the same agent) was still answering a message, and the
+   * SDK's one retry after the hinted wait met the same answer. Nothing is
+   * broken, so the error item wears the retry tone and keeps its in-place
+   * Retry. One line for both busy reasons, never "something went wrong".
+   */
+  errorSessionBusy: string;
 
   /** R3/R4. */
   toolGroup: (count: number) => string;
@@ -441,6 +449,7 @@ export const defaultChatStrings: ChatStrings = {
   errorPodSaturated: "High demand right now. Please try again in a moment.",
   errorDraining: "This agent is restarting. Please try again in a moment.",
   errorWakeTimedOut: WAKE_TIMED_OUT_MESSAGE,
+  errorSessionBusy: "The agent is still answering a message. Try again in a few seconds.",
   errorInvalid: "The app sent a request the agent couldn't read.",
   errorAttachmentsUnsupported: "This agent can't read images yet. Send your message without the image.",
   errorAttachmentsInvalid: "That image can't be sent. Use a JPEG, PNG, GIF or WebP image, up to 4 at a time.",
