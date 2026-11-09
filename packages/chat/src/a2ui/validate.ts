@@ -14,11 +14,20 @@
  *
  * Conformance (ruling 4): every message `@ggui-ai/preview-a2ui` accepts whose
  * ids fall in guuey's id charset is accepted here and draws as the same kinds
- * (the frozen vectors, `__fixtures__/`). guuey accepts more (its superset
- * fields; an unknown component degrades to a placeholder instead of rejecting
- * the message). Two deliberate refusals differ from preview's: an id outside
- * the charset (preview takes any non-empty string), and a message with two
- * recognized keys (preview's union keeps the first and drops the other).
+ * (the frozen vectors, `corpus/fixtures/`, judged against 0.29.0, the release
+ * the lockfile resolves). guuey accepts more (its superset fields; an unknown
+ * component degrades to a placeholder instead of rejecting the message).
+ *
+ * Deliberate divergences, where preview accepts and guuey refuses (spec §5.6):
+ *  - an id outside the charset (preview takes any non-empty string);
+ *  - a message with two recognized keys (preview's union keeps the first);
+ *  - a prop guuey types but preview strips or types loosely, since an
+ *    interactive surface with a prop guuey cannot honour must not draw:
+ *    a TextField `min`/`max` without `inputType: "number"`, a Button `action`
+ *    that is not `{name, context?}` (a bare string, an `{event}`), a TextField
+ *    `maxLength` over guuey's bound (`bad-prop`), and a binding whose path
+ *    does not read, in `action.context` too (`bad-path`).
+ * The prop and path cases are pinned as divergence vectors.
  */
 import type { JsonValue } from "@silverprotocol/core";
 import { isJsonObject } from "@guuey/mcp-apps-host";

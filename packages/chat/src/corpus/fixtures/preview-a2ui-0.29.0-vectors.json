@@ -3,9 +3,10 @@
     "package": "@ggui-ai/preview-a2ui",
     "version": "0.29.0",
     "integrity": "sha512-7HdimOlfrhKVctZthdRnzacNI0Wtt9atHyxrCx1FU6/ezJBHXN8QAEJySSZD4nKUPMtA48ZVG9i1nIjso3DmIA==",
-    "read": ["dist/messages.js", "dist/components.js", "dist/emitters/deterministic.js"]
+    "read": ["dist/messages.js", "dist/components.js", "dist/emitters/deterministic.js"],
+    "generator": "src/corpus/a2ui-preview-vectors.mjs"
   },
-  "scope": "Every vector is a message sequence the package's parseServerMessage accepts, one message at a time. The set keeps to guuey's id charset, its §6 bounds, and reference-complete trees: an id outside the charset, an over-bound value or a dangling child are guuey's deliberate refusals or degrades, pinned in validate.test.ts and fold.test.ts, not conformance vectors.",
+  "scope": "Every vector is a message sequence the package's parseServerMessage accepts, one message at a time (its verdict is recorded per vector). The conformance set keeps to guuey's id charset, its §6 bounds, and reference-complete trees: an id outside the charset, an over-bound value or a dangling child are guuey's refusals or degrades, pinned in validate.test.ts and fold.test.ts. The divergence vectors are guuey's deliberate refusals of what preview accepts (spec §5.6): a TextField min without inputType number, a Button action that is not {name, context?}, a TextField maxLength over guuey's bound, and a binding path that does not read.",
   "vectors": [
     {
       "name": "deterministic emitter, none shell (3 frames)",
@@ -72,7 +73,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "deterministic emitter, form shell (3 frames)",
@@ -164,7 +166,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "deterministic emitter, list shell (3 frames)",
@@ -264,7 +267,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Row, required only",
@@ -312,7 +316,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Row, every preview field",
@@ -363,7 +368,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Column, required only",
@@ -398,7 +404,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Column, every preview field",
@@ -449,7 +456,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Card, required only",
@@ -484,7 +492,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Card, every preview field",
@@ -526,7 +535,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "List, required only",
@@ -561,7 +571,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "List, every preview field",
@@ -609,7 +620,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Divider, required only",
@@ -644,7 +656,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Divider, every preview field",
@@ -680,7 +693,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Text, required only",
@@ -716,7 +730,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Text, every preview field",
@@ -753,7 +768,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Image, required only",
@@ -789,7 +805,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Image, every preview field",
@@ -826,7 +843,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Icon, required only",
@@ -862,7 +880,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Icon, every preview field",
@@ -898,7 +917,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Button, required only",
@@ -934,7 +954,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Button, every preview field",
@@ -970,7 +991,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "TextField, required only",
@@ -1005,7 +1027,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "TextField, every preview field",
@@ -1043,7 +1066,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "CheckBox, required only",
@@ -1078,7 +1102,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "CheckBox, every preview field",
@@ -1115,7 +1140,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "ChoicePicker, required only",
@@ -1150,7 +1176,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "ChoicePicker, every preview field",
@@ -1197,7 +1224,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Row align start",
@@ -1233,7 +1261,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Row align center",
@@ -1269,7 +1298,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Row align end",
@@ -1305,7 +1335,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Row align stretch",
@@ -1341,7 +1372,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Column justify start",
@@ -1377,7 +1409,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Column justify center",
@@ -1413,7 +1446,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Column justify end",
@@ -1449,7 +1483,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Column justify between",
@@ -1485,7 +1520,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Column justify around",
@@ -1521,7 +1557,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Column justify evenly",
@@ -1557,7 +1594,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Divider horizontal",
@@ -1593,7 +1631,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Divider vertical",
@@ -1629,7 +1668,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Row gap \"\"",
@@ -1665,7 +1705,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Row gap \"0\"",
@@ -1701,7 +1742,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Row gap \"12\"",
@@ -1737,7 +1779,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Row gap \"none\"",
@@ -1773,7 +1816,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Row gap \"xl\"",
@@ -1809,7 +1853,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Row gap \"calc(1px)\"",
@@ -1845,7 +1890,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Text variant \"\"",
@@ -1882,7 +1928,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Text variant \"h3\"",
@@ -1919,7 +1966,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Text variant \"caption\"",
@@ -1956,7 +2004,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Text variant \"label\"",
@@ -1993,7 +2042,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Text variant \"display\"",
@@ -2030,7 +2080,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "Text variant \"x;color:red\"",
@@ -2067,7 +2118,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "empty components (a legal no-op)",
@@ -2095,7 +2147,8 @@
           "kinds": {},
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "updateComponents with no createSurface first (an orphan: accepted, drawn nowhere)",
@@ -2122,7 +2175,8 @@
           "kinds": {},
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "createSurface then deleteSurface",
@@ -2162,7 +2216,8 @@
           "kinds": {},
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "unknown extra fields on the message, the payload and each component (stripped)",
@@ -2211,7 +2266,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "an id replaced by a later batch (the replace key)",
@@ -2259,7 +2315,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "empty strings where preview allows them (Text text, Button label, labels)",
@@ -2315,7 +2372,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "empty child and option lists",
@@ -2363,7 +2421,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "an Image src preview takes and policy A refuses: still an Image (its chip)",
@@ -2402,7 +2461,8 @@
             "refused-image": 1
           }
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "an off-policy https Image: still an Image (a link with its host)",
@@ -2440,7 +2500,8 @@
             "refused-image": 1
           }
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "an unknown Icon name: still an Icon (the host draws nothing)",
@@ -2476,7 +2537,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "two surfaces in one sequence",
@@ -2540,7 +2602,8 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
     },
     {
       "name": "ids that are valid in both (charset letters, digits, _ . : -)",
@@ -2582,7 +2645,212 @@
           },
           "carveOuts": {}
         }
-      ]
+      ],
+      "preview": "accepted"
+    },
+    {
+      "name": "TextField min without inputType number",
+      "origin": "divergence",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "d",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "d",
+            "components": [
+              {
+                "id": "root",
+                "component": "TextField",
+                "label": "Age",
+                "min": 1
+              }
+            ]
+          }
+        }
+      ],
+      "refused": {
+        "reason": "bad-prop",
+        "level": "component"
+      },
+      "preview": "accepted"
+    },
+    {
+      "name": "TextField min with inputType text",
+      "origin": "divergence",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "d",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "d",
+            "components": [
+              {
+                "id": "root",
+                "component": "TextField",
+                "label": "Age",
+                "inputType": "text",
+                "min": 1
+              }
+            ]
+          }
+        }
+      ],
+      "refused": {
+        "reason": "bad-prop",
+        "level": "component"
+      },
+      "preview": "accepted"
+    },
+    {
+      "name": "Button action as a bare string",
+      "origin": "divergence",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "d",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "d",
+            "components": [
+              {
+                "id": "root",
+                "component": "Button",
+                "label": "Go",
+                "action": "go"
+              }
+            ]
+          }
+        }
+      ],
+      "refused": {
+        "reason": "bad-prop",
+        "level": "component"
+      },
+      "preview": "accepted"
+    },
+    {
+      "name": "Button action as {event}",
+      "origin": "divergence",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "d",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "d",
+            "components": [
+              {
+                "id": "root",
+                "component": "Button",
+                "label": "Go",
+                "action": {
+                  "event": {
+                    "name": "go"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "refused": {
+        "reason": "bad-prop",
+        "level": "component"
+      },
+      "preview": "accepted"
+    },
+    {
+      "name": "TextField maxLength over guuey's bound (1e9)",
+      "origin": "divergence",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "d",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "d",
+            "components": [
+              {
+                "id": "root",
+                "component": "TextField",
+                "label": "Bio",
+                "maxLength": 1000000000
+              }
+            ]
+          }
+        }
+      ],
+      "refused": {
+        "reason": "bad-prop",
+        "level": "component"
+      },
+      "preview": "accepted"
+    },
+    {
+      "name": "action.context binding whose path does not read (\"nope\")",
+      "origin": "divergence",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "d",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "d",
+            "components": [
+              {
+                "id": "root",
+                "component": "Button",
+                "label": "Go",
+                "action": {
+                  "name": "go",
+                  "context": {
+                    "a": {
+                      "path": "nope"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "refused": {
+        "reason": "bad-path",
+        "level": "envelope"
+      },
+      "preview": "accepted"
     }
   ]
 }
