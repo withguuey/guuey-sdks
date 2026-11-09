@@ -6,7 +6,9 @@
  * BEFORE the a2ui kind existed, so it is the old client's face: an old kit
  * (F1, F5, F8, F9, and a history page whose stored results carry carriers)
  * and a new kit reading an old server (F2) must keep planning exactly that.
- * A new kit draws F1, F8 and (since S5, guuey#2385) F9's carriers natively.
+ * A new kit draws F1, F8 and (since S5, guuey#2385) F9's carriers natively,
+ * and (since S4, guuey#2384) F5's row as an action turn: from then on F5's
+ * old face is read from its base-sha snapshot, never re-planned.
  * The history snapshot was planned by the base sha's chat sources over this
  * tree's client mapper (unchanged since the base), the same pairing that
  * reproduces F2's history snapshot byte for byte.
@@ -23,6 +25,7 @@ import {
   type ThreadHistoryRow,
 } from "@guuey/agent-client";
 import { toolResultViewMount } from "@guuey/mcp-apps-host";
+import { isA2uiActionText } from "@guuey/mcp-apps-host/narrowing";
 import { transcriptInputsFromHistory } from "../history-inputs.js";
 import { newestViewKey, planTranscript } from "../plan.js";
 import { calmPolicy, type TranscriptPolicy } from "../policy.js";
@@ -110,18 +113,26 @@ describe("guuey#2381 — A2UI N−1 fixtures (spec §10)", () => {
       expect(newestViewKey(inputs)).toBeUndefined();
       const tool = plan.items.find((i) => i.kind === "tool");
       expect(tool?.kind === "tool" ? tool.result?.kind : undefined).toBe("data-result");
+      // F4 (guuey#2384): an old kit has nothing to press, so it never writes an action turn.
+      expect(plan.items.some((i) => i.kind === "a2ui")).toBe(false);
       await expect(serialize(plan)).toMatchFileSnapshot(snap(name));
     });
   }
 
-  it("a2ui-n1-old-client-action-row: an action row is the user's own plain text", async () => {
-    const plan = planTranscript(settledInputs(rows("a2ui-n1-old-client-action-row.json").messages), calmPolicy());
-    const users = plan.items.filter((i) => i.kind === "user");
+  it("a2ui-n1-old-client-action-row: an old kit (its plan at the base sha) draws an action row as the user's own plain text", () => {
+    // Since S4 (guuey#2384) this tree's planner draws the row as an action
+    // turn, so the old face is read from the base sha's snapshot itself,
+    // never re-planned here: the row is the user's text, verbatim, no action.
+    const fixture = rows("a2ui-n1-old-client-action-row.json");
+    const old: TranscriptPlan = JSON.parse(readFileSync(new URL(snap("a2ui-n1-old-client-action-row"), import.meta.url), "utf8"));
+    const users = old.items.filter((i) => i.kind === "user");
     expect(users).toHaveLength(2);
     const action = users[1];
-    expect(action?.kind === "user" ? action.text : undefined).toContain("<guuey_a2ui_action");
+    expect(action?.kind === "user" ? action.text : undefined).toBe(fixture.messages[2]?.text);
     expect(action?.kind === "user" ? action.directive : undefined).toBe(false);
-    await expect(serialize(plan)).toMatchFileSnapshot(snap("a2ui-n1-old-client-action-row"));
+    expect(action).not.toHaveProperty("actionSummary");
+    // The row the old kit drew as text is the one reader's action turn.
+    expect(isA2uiActionText(fixture.messages[2]?.text ?? "")).toBe(true);
   });
 
   it("a2ui-n1-old-client-history: stored results with carriers reload as tool rows with JSON previews", async () => {
@@ -166,9 +177,18 @@ describe("guuey#2381 — the same fixtures on a kit that draws the a2ui kind", (
     expect(items[1]).toMatchObject({ dataModel: { partySize: 6 } });
   });
 
-  it("F5: an action row is still the user's plain text (the action turn is S4)", async () => {
-    const plan = planTranscript(settledInputs(rows("a2ui-n1-old-client-action-row.json").messages), renderOn());
-    await expect(serialize(plan)).toMatchFileSnapshot(snap("a2ui-n1-old-client-action-row"));
+  it("F5: a new kit draws the same row as an action turn (S4), its text verbatim, its human line the words", () => {
+    const fixture = rows("a2ui-n1-old-client-action-row.json");
+    for (const policy of [renderOn(), calmPolicy()]) {
+      const plan = planTranscript(settledInputs(fixture.messages), policy);
+      const users = plan.items.filter((i) => i.kind === "user");
+      expect(users[0]).toMatchObject({ directive: false });
+      expect(users[1]).toMatchObject({
+        text: fixture.messages[2]?.text,
+        directive: true,
+        actionSummary: "Book table: Party size = 4; Date = 2026-10-20",
+      });
+    }
   });
 
   it("F9: a new kit draws a json-render carrier natively (S5); the old kit's face is the base snapshot above", () => {

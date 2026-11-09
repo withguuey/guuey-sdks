@@ -13,7 +13,7 @@
  * face too (spec §5.7). A URL over its bound is outside policy (chip or inert,
  * in place on every surface). The action payload bound is a send-time check.
  */
-import { A2UI_CARRIER_MAX_UNITS } from "@guuey/mcp-apps-host/narrowing";
+import { A2UI_ACTION_PAYLOAD_MAX_UNITS, A2UI_CARRIER_MAX_UNITS } from "@guuey/mcp-apps-host/narrowing";
 
 export const A2UI_LIMITS = {
   /** Carrier JSON (the carrier reader's own bound): envelope fault. */
@@ -46,8 +46,8 @@ export const A2UI_LIMITS = {
   dataPathSegmentUnits: 64,
   /** Keys in one action's `context`: envelope fault. */
   actionContextKeys: 32,
-  /** The resolved action payload (escaped JSON): the send is refused (S4, send time). */
-  actionPayloadUnits: 4_096,
+  /** The resolved action payload (escaped JSON, the action text writer's own bound): the send is refused (S4, send time). */
+  actionPayloadUnits: A2UI_ACTION_PAYLOAD_MAX_UNITS,
   /** `a2ui` items planned per transcript: later carriers draw the old face. */
   itemsPerTranscript: 64,
   /** The largest `TextField.maxLength` a carrier may declare. */

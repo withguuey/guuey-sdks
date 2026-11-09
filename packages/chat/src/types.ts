@@ -372,6 +372,8 @@ export interface UserMessageItem extends BaseItem {
    * guuey#2031: a directive row is an ACTION turn, never typed speech. With
    * {@link tapLabels} it draws the tapped controls' words; without, the
    * continuation line — a static line on visitor surfaces (no expand).
+   * guuey#2384: an A2UI action turn is an action turn too, drawn with its
+   * {@link actionSummary} under the same policy and the same raw toggle.
    */
   directive: boolean;
   /**
@@ -387,6 +389,15 @@ export interface UserMessageItem extends BaseItem {
    * draws `strings.contextOnlyTurn` in place of an empty bubble.
    */
   inputKind?: InputKind;
+  /**
+   * guuey#2384: the row is an A2UI action turn (a form submission written by
+   * `writeA2uiActionText`), and this is its human line: the button's label
+   * and the values sent, drawn as the turn's words in place of tap labels.
+   * Present only on a `directive` row whose text is that form and whose human
+   * line holds no control or bidi formatting character (else the turn draws
+   * the continuation line). Display-only, like the tap labels: never sent.
+   */
+  actionSummary?: string;
   /**
    * The renderer offers the wire-verbatim directive in a quiet toggle BELOW
    * the action turn (guuey#2031) — the builder surface's debug preset only
@@ -605,6 +616,13 @@ export interface A2uiItem extends BaseItem {
    * revision draws below, or a later carrier for this surface took the old face.
    */
   phase: "open" | "sending" | "submitted" | "superseded";
+  /**
+   * guuey#2384: on a `sending` or `submitted` revision, the action turn that
+   * moved it there (its action id, the turn's `clientMessageId`). A host's
+   * "Edit answers" reopens the revision against this one turn, so a later
+   * submit closes it again.
+   */
+  actionId?: string;
   /**
    * The resolved chip line a superseded revision draws instead of its tree
    * (`strings.a2uiUpdatedBelow(title)`, or `strings.a2uiCouldntDraw` when the

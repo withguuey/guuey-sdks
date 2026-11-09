@@ -48,7 +48,14 @@ import {
   viewToolData,
   type ViewMount,
 } from "@guuey/mcp-apps-host";
-import { A2UI_CARRIER_MAX_UNITS, a2uiCarrierUnits, readA2uiCarrier, tapText } from "@guuey/mcp-apps-host/narrowing";
+import {
+  A2UI_CARRIER_MAX_UNITS,
+  a2uiCarrierUnits,
+  parseA2uiActionText,
+  readA2uiCarrier,
+  tapText,
+  type A2uiActionText,
+} from "@guuey/mcp-apps-host/narrowing";
 import type { HistoryCard, HistoryToolCall, HistoryToolResult } from "@guuey/agent-client";
 import type { TranscriptPolicy } from "./policy.js";
 import { prettyJson } from "./highlight.js";
@@ -755,7 +762,9 @@ type A2uiLedgerEntry =
   | { type: "drawn"; item: A2uiItem; interactive: boolean }
   | { type: "deleted"; surfaceId: string }
   /** The carrier took the old face: an open interactive revision of each surface it targets is closed. */
-  | { type: "failed"; surfaceIds: string[] };
+  | { type: "failed"; surfaceIds: string[] }
+  /** A user row is an action turn for the surface (guuey#2384): its latest interactive revision is sent or answered. */
+  | { type: "action"; surfaceId: string; actionId: string; state: "sending" | "sent" | "failed" };
 
 /**
  * The transcript's one A2UI surface fold. Carriers are read in transcript
@@ -780,6 +789,12 @@ interface A2uiPlanner {
    * surface a later carrier failed to draw is closed.
    */
   settle(items: DisplayItem[]): DisplayItem[];
+  /**
+   * A user row that is an action turn (guuey#2384), folded in at its place in
+   * the transcript: in flight, the surface's latest interactive revision is
+   * `sending`; sent, `submitted`; a refused send leaves it as it was.
+   */
+  action(turn: A2uiActionText, state: "sending" | "sent" | "failed"): void;
   /** The debug facts, filled only under `policy.debugDetail`. */
   events: A2uiDebugEvent[];
 }
@@ -800,8 +815,18 @@ function a2uiPlanner(policy: TranscriptPolicy, overrides: TranscriptOverrides): 
   const chipTitle = (item: A2uiItem): string =>
     (item.title !== null ? tapText(item.title) : null) ?? item.toolTitle ?? policy.strings.viewRefFallbackTitle;
 
+  /** Close a revision: its chip line replaces its tree, and it answers no action turn. */
+  const supersede = (item: A2uiItem, label: string): void => {
+    item.phase = "superseded";
+    item.label = label;
+    delete item.actionId;
+  };
+
   return {
     events,
+    action(turn, state) {
+      ledger.push({ type: "action", surfaceId: turn.surfaceId, actionId: turn.actionId, state });
+    },
     read(result, site) {
       const carrier = readA2uiCarrier(result);
       if (carrier === undefined) return null;
@@ -879,9 +904,8 @@ function a2uiPlanner(policy: TranscriptPolicy, overrides: TranscriptOverrides): 
         if (entry.type === "drawn") {
           const { surfaceId } = entry.item;
           const before = latest.get(surfaceId);
-          if (before !== undefined && before.item.phase === "open") {
-            before.item.phase = "superseded";
-            before.item.label = policy.strings.a2uiUpdatedBelow(chipTitle(before.item));
+          if (before !== undefined && before.item.phase !== "superseded") {
+            supersede(before.item, policy.strings.a2uiUpdatedBelow(chipTitle(before.item)));
           }
           latest.set(surfaceId, entry);
           revisionsOf.set(surfaceId, [...(revisionsOf.get(surfaceId) ?? []), entry.item]);
@@ -889,12 +913,19 @@ function a2uiPlanner(policy: TranscriptPolicy, overrides: TranscriptOverrides): 
           for (const item of revisionsOf.get(entry.surfaceId) ?? []) removed.add(item.key);
           revisionsOf.delete(entry.surfaceId);
           latest.delete(entry.surfaceId);
+        } else if (entry.type === "action") {
+          // An action turn answers the revision drawn above it: never a
+          // read-only one (nothing on it sends), never a closed one.
+          const at = latest.get(entry.surfaceId);
+          if (at === undefined || !at.interactive || at.item.phase === "superseded" || entry.state === "failed") continue;
+          at.item.phase = entry.state === "sending" ? "sending" : "submitted";
+          at.item.actionId = entry.actionId;
         } else {
+          // Sent or not, a revision the agent has moved past takes no more answers.
           for (const surfaceId of entry.surfaceIds) {
             const before = latest.get(surfaceId);
-            if (before === undefined || !before.interactive || before.item.phase !== "open") continue;
-            before.item.phase = "superseded";
-            before.item.label = policy.strings.a2uiCouldntDraw;
+            if (before === undefined || !before.interactive || before.item.phase === "superseded") continue;
+            supersede(before.item, policy.strings.a2uiCouldntDraw);
           }
         }
       }
@@ -1905,9 +1936,19 @@ export function planTranscript(
     // directive predicate the runtime shares (`isViewDirectiveText`), so a
     // row draws the same live and after a reload whatever ggui's directive
     // looks like inside.
-    const directive = policy.userMessage.collapseDirectives && isViewDirectiveText(user.text);
+    //
+    // guuey#2384: an A2UI action turn (the action text form, one reader for
+    // live and history rows alike) is an action turn too. Read on USER rows
+    // only: an agent that echoes the block draws as its own text. Its human
+    // line is its words, through the tap-label reader (a control or bidi
+    // character reads as no words); its block folds into the surface it names.
+    const actionTurn = parseA2uiActionText(user.text);
+    if (actionTurn !== undefined) a2ui?.action(actionTurn, sendState);
+    const asAction = policy.userMessage.collapseDirectives && actionTurn !== undefined;
+    const directive = asAction || (policy.userMessage.collapseDirectives && isViewDirectiveText(user.text));
+    const actionSummary = asAction ? readTapLabels([actionTurn.summary])?.[0] : undefined;
     // The reader contract (`readTapLabels`): typed text never shows a label.
-    const tapLabels = directive ? readTapLabels(user.tapLabels) : undefined;
+    const tapLabels = directive && !asAction ? readTapLabels(user.tapLabels) : undefined;
     // guuey#2549: a turn sent without words draws its own line, never an empty
     // bubble: only a row whose text is empty (typed text, and a relayed
     // directive, never take it). The kind arrives already read: the live send
@@ -1935,6 +1976,7 @@ export function planTranscript(
         : {}),
       directive,
       ...(tapLabels !== undefined ? { tapLabels } : {}),
+      ...(typeof actionSummary === "string" ? { actionSummary } : {}),
       ...(inputKind !== undefined ? { inputKind } : {}),
       ...(directive && policy.userMessage.rawDirective ? { rawDirective: true } : {}),
     });
