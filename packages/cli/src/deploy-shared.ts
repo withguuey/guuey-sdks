@@ -9,6 +9,7 @@
  */
 
 import {
+  cpSync,
   readFileSync,
   writeFileSync,
   unlinkSync,
@@ -18,7 +19,7 @@ import {
   existsSync,
   statSync,
 } from 'node:fs';
-import { join, basename, resolve } from 'node:path';
+import { join, basename, relative, resolve, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -87,9 +88,11 @@ export function workingTreeTarSourceArgs(cwd: string): string[] {
 /**
  * Every child process in this module is `execFileSync` with a bound argv
  * (guuey#896 for the working-tree tar, guuey#907 for the rest — git status,
- * pnpm pack, tar -xOzf, rsync, npm, tar czf, git archive): no shell on any
- * platform, so a path or an entry name is a byte string the tool receives
- * verbatim. The working-tree tar's own note follows — `execFileSync` with a
+ * tar -xOzf, tar czf, git archive): no shell on any platform, so a path or
+ * an entry name is a byte string the tool receives verbatim. The two
+ * package-manager calls (pnpm pack, npm's lockfile) are the exception on
+ * Windows only, where a `.cmd` shim needs cmd.exe: see
+ * {@link packageManagerSpawn}, which quotes or refuses each argument. The working-tree tar's own note follows — `execFileSync` with a
  * bound argv — no shell on any platform, so an entry name is a byte string
  * tar receives verbatim (CodeQL js/shell-command-injection-from-environment
  * #37/#38/#39 named the three `execSync('tar czf …')` strings this replaces;
@@ -209,10 +212,12 @@ export function packSource(opts: {
       continue;
     }
     try {
-      const packOutput = execFileSync('pnpm', ['pack', '--pack-destination', stagingDir], {
+      const pack = packageManagerSpawn('pnpm', ['pack', '--pack-destination', stagingDir]);
+      const packOutput = execFileSync(pack.file, [...pack.args], {
         encoding: 'utf-8',
         stdio: 'pipe',
         cwd: sourceDir,
+        shell: pack.shell,
       }).trim();
       const tgzName = packOutput.split('\n').pop()!.trim();
       const tgzBase = basename(tgzName);
@@ -268,34 +273,11 @@ export function packSource(opts: {
   // Create the tarball — use tar (not git archive) to include staged workspace deps
   try {
     if (useStagingPath) {
-      // rsync FIRST, so our later writes (modified package.json, generated
-      // package-lock.json) are not clobbered by the source's workspace:*
-      // package.json.
-      // `--exclude=/dist` (leading `/`) anchors to the root of the rsync
-      // transfer (here, `cwd`) on both GNU rsync and BSD/openrsync —
-      // verified empirically on rsync 3.2.7 (Linux) and openrsync (macOS).
-      // A bare `--exclude=dist` matches at ANY depth on both, which would
-      // silently strip a vendored dependency's `vendor/some-dep/dist/`.
-      // argv, no shell: the quotes the shell form carried around `.env*` and
-      // `*.tsbuildinfo` only stopped the SHELL from globbing them — rsync does
-      // its own pattern matching on the bare strings, so the semantics hold.
-      execFileSync(
-        'rsync',
-        [
-          '-a',
-          '--exclude=node_modules',
-          '--exclude=/dist',
-          '--exclude=.git',
-          '--exclude=.env*',
-          '--exclude=.guuey-dev',
-          '--exclude=*.tsbuildinfo',
-          '--exclude=.ggui',
-          '--exclude=.guuey',
-          '.',
-          `${stagingDir}/`,
-        ],
-        { stdio: 'pipe', cwd },
-      );
+      // Copy the project FIRST, so our later writes (modified package.json,
+      // generated package-lock.json) are not clobbered by the source's
+      // workspace:* package.json. A Node copy, not rsync (guuey#3285): rsync
+      // is usually absent on Windows.
+      copyStagingTree(cwd, stagingDir);
       // Move packed tarballs to .ggui-deps/ inside staging
       mkdirSync(join(stagingDir, '.ggui-deps'), { recursive: true });
       for (const f of readdirSync(stagingDir)) {
@@ -306,14 +288,12 @@ export function packSource(opts: {
       if (hasWorkspaceDeps) {
         // Now write the modified package.json (with file:./.ggui-deps/*.tgz
         // refs + overrides) and generate its matching lockfile. Order matters
-        // — must be after rsync so rsync doesn't overwrite it.
+        // — must be after the copy so the copy doesn't overwrite it.
         writeFileSync(join(stagingDir, 'package.json'), JSON.stringify(pkgJson, null, 2));
         try {
-          // stderr is piped (the shell form's `2>/dev/null`), no shell involved.
-          execFileSync('npm', ['install', '--package-lock-only', '--ignore-scripts', '--legacy-peer-deps'], {
-            stdio: 'pipe',
-            cwd: stagingDir,
-          });
+          // stderr is piped (the shell form's `2>/dev/null`).
+          const lock = packageManagerSpawn('npm', ['install', '--package-lock-only', '--ignore-scripts', '--legacy-peer-deps']);
+          execFileSync(lock.file, [...lock.args], { stdio: 'pipe', cwd: stagingDir, shell: lock.shell });
         } catch {
           // lockfile gen may warn but still produce a valid file
         }
@@ -360,6 +340,80 @@ export function packSource(opts: {
   console.log(`  Packaged ${(tarballSize / 1024).toFixed(0)} KB`);
 
   return { tarballPath, tarballSize, sourceHash };
+}
+
+/** What to hand `execFileSync` to run one package-manager call on this machine. */
+export interface PackageManagerSpawn {
+  readonly file: string;
+  readonly args: readonly string[];
+  readonly shell: boolean;
+}
+
+/**
+ * How to spawn `pnpm`/`npm` here (guuey#3285), create-agentic-app's rule
+ * (`pnpmSpawn`). On Windows both are `.cmd` shims: a spawn without a shell
+ * searches PATH for `.com`/`.exe` only and never finds them, and Node refuses
+ * to spawn a `.cmd` without one (EINVAL since the CVE-2024-27980 fix). So on
+ * Windows the call is ONE command line through cmd.exe (arguments beside
+ * `shell: true` are deprecated, DEP0190). Unlike the scaffold's fixed pieces,
+ * an argument here can be a path (the staging dir under the user's temp
+ * folder, which may hold a space), so each one that is not plainly safe is
+ * double-quoted; one carrying `"` or `%` (which cmd.exe expands even inside
+ * quotes) or a line break cannot be passed safely and throws instead.
+ */
+export function packageManagerSpawn(
+  file: 'pnpm' | 'npm',
+  args: readonly string[],
+  platform: NodeJS.Platform = process.platform,
+): PackageManagerSpawn {
+  if (platform !== 'win32') return { file, args, shell: false };
+  return { file: [file, ...args.map((arg) => cmdArg(file, arg))].join(' '), args: [], shell: true };
+}
+
+function cmdArg(file: string, arg: string): string {
+  if (/^[\w\-.,:/\\=@+]+$/.test(arg)) return arg;
+  if (/["%\r\n]/.test(arg)) {
+    throw new Error(`cannot pass ${JSON.stringify(arg)} to ${file} through cmd.exe`);
+  }
+  return `"${arg}"`;
+}
+
+/**
+ * What the staging copy leaves out (guuey#3285; the excludes the rsync call
+ * carried): `node_modules`, `.git`, `.env*`, `.guuey-dev`, `.ggui`, `.guuey`
+ * and `*.tsbuildinfo` at any depth, and `dist` at the project ROOT only, so a
+ * vendored dependency's `vendor/some-dep/dist/` still ships. `relPath` is
+ * relative to the project root, in this platform's separators.
+ */
+export function isStagingExcluded(relPath: string): boolean {
+  if (relPath === '') return false;
+  const parts = relPath.split(sep);
+  const name = parts[parts.length - 1]!;
+  if (parts.length === 1 && name === 'dist') return true;
+  return (
+    name === 'node_modules' ||
+    name === '.git' ||
+    name === '.guuey-dev' ||
+    name === '.ggui' ||
+    name === '.guuey' ||
+    name.startsWith('.env') ||
+    name.endsWith('.tsbuildinfo')
+  );
+}
+
+/**
+ * Copy the project at `cwd` into `stagingDir` (which may already hold the
+ * packed workspace tarballs), minus {@link isStagingExcluded}. Symlinks are
+ * copied as links with their target text unchanged, and timestamps are kept,
+ * as `rsync -a` did.
+ */
+export function copyStagingTree(cwd: string, stagingDir: string): void {
+  cpSync(cwd, stagingDir, {
+    recursive: true,
+    verbatimSymlinks: true,
+    preserveTimestamps: true,
+    filter: (src) => !isStagingExcluded(relative(cwd, src)),
+  });
 }
 
 /** Remove the temporary tarball file, ignoring errors. */

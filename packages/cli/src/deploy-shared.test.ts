@@ -1,9 +1,18 @@
 import { execSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, isServingBuild, newestBuild, packSource, parseApiError } from './deploy-shared.js';
+import {
+  cleanup,
+  copyStagingTree,
+  isServingBuild,
+  isStagingExcluded,
+  newestBuild,
+  packageManagerSpawn,
+  packSource,
+  parseApiError,
+} from './deploy-shared.js';
 
 /** List every path inside a gzip tarball (relative, `./`-stripped). */
 function tarballContents(tarballPath: string): string[] {
@@ -183,5 +192,103 @@ describe('newestBuild / isServingBuild (guuey#3283)', () => {
     for (const status of ['queued', 'building', 'deploying', 'superseded', 'undeploying', 'undeployed', 'failed']) {
       expect(isServingBuild({ status })).toBe(false);
     }
+  });
+});
+
+// guuey#3285 — the workspace-deps staging path runs on Windows: pnpm/npm through cmd.exe as one quoted
+// command line, and a Node copy in place of rsync.
+describe('packageManagerSpawn (guuey#3285)', () => {
+  const staging = 'C:\\Users\\Jo Doe\\AppData\\Local\\Temp\\ggui-deploy-staging-b1';
+
+  it('posix: the executable and its argv, no shell', () => {
+    expect(packageManagerSpawn('pnpm', ['pack', '--pack-destination', '/tmp/s'], 'darwin')).toEqual({
+      file: 'pnpm',
+      args: ['pack', '--pack-destination', '/tmp/s'],
+      shell: false,
+    });
+  });
+
+  it('win32 pnpm pack: one command line through the shell, the staging path quoted', () => {
+    expect(packageManagerSpawn('pnpm', ['pack', '--pack-destination', staging], 'win32')).toEqual({
+      file: `pnpm pack --pack-destination "${staging}"`,
+      args: [],
+      shell: true,
+    });
+  });
+
+  it('win32 npm lockfile: plain flags stay bare', () => {
+    expect(
+      packageManagerSpawn('npm', ['install', '--package-lock-only', '--ignore-scripts', '--legacy-peer-deps'], 'win32'),
+    ).toEqual({
+      file: 'npm install --package-lock-only --ignore-scripts --legacy-peer-deps',
+      args: [],
+      shell: true,
+    });
+  });
+
+  it('win32: an argument cmd.exe would expand or split is refused, never passed', () => {
+    for (const bad of ['C:\\%TEMP%\\s', 'C:\\a"b', 'a\nb']) {
+      expect(() => packageManagerSpawn('pnpm', ['pack', '--pack-destination', bad], 'win32')).toThrow(/through cmd\.exe/);
+    }
+  });
+});
+
+describe('isStagingExcluded (guuey#3285): the excludes rsync carried', () => {
+  it.each([
+    ['node_modules', true],
+    [['packages', 'a', 'node_modules'].join(sep), true],
+    ['dist', true],
+    [['vendor', 'dep', 'dist'].join(sep), false],
+    ['.git', true],
+    ['.env', true],
+    [['config', '.env.local'].join(sep), true],
+    ['.guuey-dev', true],
+    ['.ggui', true],
+    ['.guuey', true],
+    [['src', 'tsconfig.tsbuildinfo'].join(sep), true],
+    ['src', false],
+    ['package.json', false],
+    ['', false],
+  ])('%j → %s', (rel, excluded) => {
+    expect(isStagingExcluded(rel)).toBe(excluded);
+  });
+});
+
+describe('copyStagingTree (guuey#3285)', () => {
+  let root: string;
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'guuey-staging-copy-'));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('copies the project minus the excludes, keeps symlinks as links, and keeps what staging already holds', () => {
+    const src = join(root, 'app');
+    const staging = join(root, 'staging');
+    for (const dir of ['src', 'dist', 'vendor/dep/dist', 'node_modules/x', 'packages/a/node_modules', '.git', '.ggui']) {
+      mkdirSync(join(src, dir), { recursive: true });
+    }
+    writeFileSync(join(src, 'package.json'), '{}');
+    writeFileSync(join(src, 'src', 'index.ts'), 'export {};');
+    writeFileSync(join(src, 'dist', 'out.js'), '');
+    writeFileSync(join(src, 'vendor', 'dep', 'dist', 'lib.js'), '');
+    writeFileSync(join(src, 'node_modules', 'x', 'i.js'), '');
+    writeFileSync(join(src, '.env.local'), 'SECRET=1');
+    writeFileSync(join(src, 'src', 'a.tsbuildinfo'), '');
+    symlinkSync('src/index.ts', join(src, 'entry.ts'));
+    mkdirSync(staging);
+    writeFileSync(join(staging, 'dep-1.0.0.tgz'), '');
+
+    copyStagingTree(src, staging);
+
+    for (const kept of ['package.json', 'src/index.ts', 'vendor/dep/dist/lib.js', 'dep-1.0.0.tgz']) {
+      expect(existsSync(join(staging, kept)), kept).toBe(true);
+    }
+    for (const gone of ['dist', 'node_modules', 'packages/a/node_modules', '.git', '.ggui', '.env.local', 'src/a.tsbuildinfo']) {
+      expect(existsSync(join(staging, gone)), gone).toBe(false);
+    }
+    expect(lstatSync(join(staging, 'entry.ts')).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(join(staging, 'entry.ts'))).toBe('src/index.ts');
   });
 });
