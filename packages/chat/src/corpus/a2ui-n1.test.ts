@@ -55,7 +55,7 @@ const serialize = (plan: TranscriptPlan): string => `${JSON.stringify(plan, null
 const live = (f: StreamFixture): TranscriptInputs => driveTurn(f.events, { userText: f.userText });
 
 /** A new kit that draws the a2ui kind (S2/S3 turn this on in their renderers). */
-const renderOn = (): TranscriptPolicy => calmPolicy({ a2ui: { render: true } });
+const renderOn = (): TranscriptPolicy => ({ ...calmPolicy(), a2ui: { render: true } });
 
 function settledInputs(messages: TranscriptMessage[]): TranscriptInputs {
   return {

@@ -10,6 +10,7 @@
 export { A2UI_CARRIER_KEY, A2UI_CARRIER_MAX_UNITS, a2uiCarrierUnits } from "@guuey/mcp-apps-host/narrowing";
 export {
   foldA2uiCarrier,
+  namedA2uiSurfaceIds,
   parseA2uiCarrier,
   validateA2uiCarrier,
   type A2uiEnvelopeResult,

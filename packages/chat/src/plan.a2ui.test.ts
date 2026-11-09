@@ -4,14 +4,17 @@
  * - A valid carrier under `policy.a2ui.render`: the tool row folds into the
  *   item's chrome (no data result, attribution), and one `a2ui` item per surface.
  * - An invalid carrier, render off, or a failed result: today's plan, byte-identical.
+ * - One precedence with the view mount, the store's: a result that mounts a
+ *   view is a card live and reloaded, and its carrier is never read.
  * - The surface fold across the transcript: a later revision supersedes, a
- *   deleted surface draws nothing, an orphan update without components is ignored,
- *   and a carrier that cannot draw closes the open form above it.
+ *   deleted surface draws nothing, an orphan update keeps today's face, and
+ *   any carrier that takes the old face (invalid, oversize, or on a failed
+ *   result) closes the open form it names.
  * - History: the same carriers, served as `toolResults` on a history read
  *   (guuey#2388), plan through the same fold as live.
  */
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import type { AgBlock, AgReduceResult, JsonValue } from "@silverprotocol/core";
 import {
   threadHistoryRowsToCards,
@@ -22,10 +25,10 @@ import {
   type ThreadHistoryRow,
 } from "@guuey/agent-client";
 import { transcriptInputsFromHistory } from "./history-inputs.js";
-import { planTranscript } from "./plan.js";
-import { calmPolicy, debugPolicy, type TranscriptPolicy } from "./policy.js";
+import { newestViewKey, planTranscript } from "./plan.js";
+import { calmPolicy, debugPolicy, type TranscriptPolicy, type TranscriptPolicyOverrides } from "./policy.js";
 import { A2UI_LIMITS } from "./a2ui/limits.js";
-import type { A2uiItem, DisplayItem, ToolItem, TranscriptInputs, TranscriptPlan } from "./types.js";
+import type { A2uiItem, ChatDebugEvent, DisplayItem, ToolItem, TranscriptInputs, TranscriptPlan } from "./types.js";
 import { driveTurn } from "./corpus/drive.js";
 
 const V = "v0.9";
@@ -141,12 +144,23 @@ describe("S1 (d) — the planner arm", () => {
     expect(p.views).toEqual([]);
   });
 
-  it("render off (the default): the carrier keeps today's face exactly", () => {
-    const f = fold(withCarrier("t1", form("form-1")));
-    const off = plan(f, calmPolicy());
+  it("render off (the default, the key absent): the carrier keeps today's face", () => {
+    // The byte-level baseline is the a2ui-n1 corpus: each snapshot there was
+    // planned by the kit at the base sha, before this kind existed.
+    expect(Object.hasOwn(calmPolicy(), "a2ui")).toBe(false);
+    expect(Object.hasOwn(debugPolicy(), "a2ui")).toBe(false);
+    const off = plan(fold(withCarrier("t1", form("form-1"))), calmPolicy());
     expect(a2uiOf(off.items)).toEqual([]);
     expect(toolsOf(off.items)[0]?.result?.kind).toBe("data-result");
-    expect(off).toEqual(plan(fold({ id: "t1", structuredContent: { "com.guuey/a2ui": carrier(form("form-1")) } }), calmPolicy()));
+  });
+
+  it("a2ui is no override and no public debug event: an override object cannot turn it on", () => {
+    expectTypeOf<"a2ui" extends keyof TranscriptPolicyOverrides ? true : false>().toEqualTypeOf<false>();
+    expectTypeOf<Extract<ChatDebugEvent, { type: "a2ui-invalid" | "a2ui-degraded" | "a2ui-orphan" }>>().toBeNever();
+    // A host's untyped object (a JSON config, a JS caller) that names it anyway.
+    const fromJson: TranscriptPolicyOverrides = JSON.parse('{"a2ui":{"render":true}}');
+    expect(Object.hasOwn(calmPolicy(fromJson), "a2ui")).toBe(false);
+    expect(a2uiOf(plan(fold(withCarrier("t1", form("form-1"))), calmPolicy(fromJson)).items)).toEqual([]);
   });
 
   it("an invalid carrier → today's plan, byte-identical to render off", () => {
@@ -243,6 +257,32 @@ describe("S1 (d) — the planner arm", () => {
     expect(a2uiOf(p.items)).toEqual([expect.objectContaining({ key: "a2ui.t9.note-9", attribution: null, toolTitle: null })]);
     expect(p.items.some((i) => i.kind === "data-result")).toBe(false);
   });
+
+  it("a result drawn without its call keeps its media like a paired one, and a carrier that drew nothing keeps its data row", () => {
+    const PNG = "iVBORw0KGgo=";
+    const withImage = (c: Call): ToolResultBlock => {
+      const block = resultBlock(c);
+      return { ...block, content: [...block.content, { type: "image", source: { type: "base64", mediaType: "image/png", data: PNG } }] };
+    };
+    const alone = (...blocks: ToolResultBlock[]): AgReduceResult => ({
+      messages: [{ id: "r", role: "assistant", content: blocks }],
+      artifacts: [],
+      memory: [],
+      turns: [],
+    });
+    const paired = plan({
+      ...fold(withCarrier("t8", card("n8", "Paired"))),
+      messages: [
+        { id: "m-t8", role: "assistant", content: [{ type: "tool-call", toolCallId: "t8", name: "show_form", input: {} }] },
+        { id: "r-t8", role: "tool", content: [withImage(withCarrier("t8", card("n8", "Paired")))] },
+      ],
+    });
+    expect(paired.items.map((i) => i.kind)).toEqual(["user", "tool", "media", "a2ui"]);
+    const drawn = plan(alone(withImage(withCarrier("t9", card("n9", "Alone")))));
+    expect(drawn.items.map((i) => i.kind)).toEqual(["user", "a2ui", "media"]);
+    const deleted = plan(alone(resultBlock(withCarrier("t1", card("n1", "One"))), withImage(withCarrier("t2", [del("n1")]))));
+    expect(deleted.items.map((i) => i.kind)).toEqual(["user", "data-result", "media"]);
+  });
 });
 
 describe("S1 (e) — the surface fold across the transcript", () => {
@@ -284,15 +324,25 @@ describe("S1 (e) — the surface fold across the transcript", () => {
     expect(a2uiOf(p.items).map((i) => [i.key, i.phase, i.revision])).toEqual([["a2ui.t3.s", "open", 2]]);
   });
 
-  it("an orphan update without components is ignored: nothing drawn, the result consumed", () => {
-    const p = plan(fold(withCarrier("t1", [dataModel("ghost", { a: 1 })])));
-    expect(a2uiOf(p.items)).toEqual([]);
-    expect(toolsOf(p.items)[0]).toMatchObject({ result: null, attribution: false });
+  it("an orphan update draws nothing and hides nothing: today's face, and debug names it", () => {
+    const orphans: Array<[string, Json]> = [
+      ["ghost", dataModel("ghost", { a: 1 })],
+      ["late", components("late", [{ id: "root", component: "Text", text: "here" }])],
+    ];
+    for (const [surfaceId, message] of orphans) {
+      const f = fold(withCarrier("t1", [message]));
+      expect(JSON.stringify(plan(f))).toBe(JSON.stringify(plan(f, calmPolicy())));
+      const debug = plan(f, on(debugPolicy()));
+      expect(a2uiOf(debug.items)).toEqual([]);
+      expect(toolsOf(debug.items)[0]?.result?.kind).toBe("data-result");
+      expect(debug.a2uiEvents).toEqual([{ type: "a2ui-orphan", key: "tool.t1", surfaceId }]);
+    }
   });
 
-  it("an orphan update with components is an orphan too: no surface is created", () => {
-    const p = plan(fold(withCarrier("t1", [components("late", [{ id: "root", component: "Text", text: "here" }])])));
-    expect(a2uiOf(p.items)).toEqual([]);
+  it("an orphan beside a drawn surface: the surface draws, the orphan is named", () => {
+    const p = plan(fold(withCarrier("t1", [...card("n", "here"), dataModel("ghost", { a: 1 })])), on(debugPolicy()));
+    expect(a2uiOf(p.items).map((i) => i.key)).toEqual(["a2ui.t1.n"]);
+    expect(p.a2uiEvents).toEqual([{ type: "a2ui-orphan", key: "tool.t1", surfaceId: "ghost" }]);
   });
 
   it("surfaces fold independently", () => {
@@ -321,6 +371,23 @@ describe("S1 (a4) — a carrier that cannot draw closes the open form above it",
   it("an envelope fault naming the surface closes it too", () => {
     const p = plan(fold(withCarrier("t1", form("form-1")), withCarrier("t2", [dataModel("form-1", 1, "/a~2")])));
     expect(a2uiOf(p.items)[0]).toMatchObject({ phase: "superseded", label: "Updated below, couldn't draw" });
+  });
+
+  it("an oversize carrier naming the form closes it (its ids read by the bounded scan)", () => {
+    const huge = withCarrier("t2", [dataModel("form-1", { blob: "x".repeat(20_000) })]);
+    const p = plan(fold(withCarrier("t1", form("form-1")), huge), on(debugPolicy()));
+    expect(a2uiOf(p.items)[0]).toMatchObject({ key: "a2ui.t1.form-1", phase: "superseded", label: "Updated below, couldn't draw" });
+    expect(toolsOf(p.items)[1]?.result?.kind).toBe("data-result");
+    expect(p.a2uiEvents).toEqual([{ type: "a2ui-invalid", key: "tool.t2", reason: "too-large" }]);
+  });
+
+  it("a carrier on a failed result naming the form closes it; the failed row keeps today's face", () => {
+    const failed: Call = { ...withCarrier("t2", [dataModel("form-1", { name: "Ada" })]), isError: true };
+    const p = plan(fold(withCarrier("t1", form("form-1")), failed), on(debugPolicy()));
+    expect(a2uiOf(p.items)).toHaveLength(1);
+    expect(a2uiOf(p.items)[0]).toMatchObject({ key: "a2ui.t1.form-1", phase: "superseded", label: "Updated below, couldn't draw" });
+    expect(toolsOf(p.items)[1]).toMatchObject({ key: "tool.t2", state: "failed", attribution: false });
+    expect(p.a2uiEvents).toEqual([{ type: "a2ui-invalid", key: "tool.t2", reason: "tool-failed" }]);
   });
 
   it("a read-only surface stays open: nothing on it can be submitted", () => {
@@ -415,6 +482,43 @@ describe("history (spec §11, adapted to guuey#2388's toolResults) — the same 
     expect(toolsOf(reloaded.items).map((t) => [t.key, t.attribution, t.result?.kind ?? null])).toEqual(
       toolsOf(live.items).map((t) => [t.key, t.attribution, t.result?.kind ?? null]),
     );
+  });
+
+  it("a result with a uiData resource and the marker mounts its view live and reloaded; newestViewKey names a view in the plan", () => {
+    const CARD_UI: Json = { uri: "ui://cards/c1", mimeType: "text/html", text: "<div>card</div>" };
+    const both: Call = { ...withCarrier("t1", form("form-1")), uiData: CARD_UI };
+    const f = fold(both);
+    const live = plan(f);
+    const kinds = (items: DisplayItem[]): string[] => items.map((i) => i.kind);
+    expect(kinds(live.items)).toEqual(["user", "tool", "view"]);
+    const newest = newestViewKey({ result: f });
+    expect(newest?.key).toBe("view.t1");
+    expect(live.items.some((i) => i.key === newest?.key)).toBe(true);
+    // The store keeps a UI-carrying result as its card row (fold-rows' toolResultCarriesUi).
+    const stored: ThreadHistoryRow[] = [
+      { seq: 1, at: "2026-10-01T00:00:01.000Z", kind: "text", authorRole: "user", text: "go", clientMessageId: "cm_1" },
+      {
+        seq: 2,
+        at: "2026-10-01T00:00:02.000Z",
+        kind: "text",
+        authorRole: "agent",
+        text: null,
+        clientMessageId: "cm_1#agent#0",
+        toolCalls: [{ toolCallId: "t1", name: "show_form", input: {} }],
+      },
+      {
+        seq: 3,
+        at: "2026-10-01T00:00:03.000Z",
+        kind: "card",
+        authorRole: "agent",
+        text: null,
+        toolName: "show_form",
+        cardSnapshot: {
+          parts: [{ type: "tool-result", toolCallId: "t1", content: [], structuredContent: { "com.guuey/a2ui": carrier(form("form-1")) }, uiData: CARD_UI }],
+        },
+      },
+    ];
+    expect(kinds(planTranscript(historyInputs(stored), on()).items)).toEqual(kinds(live.items));
   });
 
   it("render off: the reloaded carrier is today's tool row with its JSON preview", () => {

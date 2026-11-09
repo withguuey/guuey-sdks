@@ -59,7 +59,7 @@ import { isGguiConsumeTool, isGguiProtocolTool } from "./listen.js";
 import { EMPTY_A2UI_STATE, type A2uiFoldState } from "./a2ui/fold.js";
 import { A2UI_LIMITS } from "./a2ui/limits.js";
 import type { A2uiInvalidReason } from "./a2ui/schema.js";
-import { foldA2uiCarrier } from "./a2ui/validate.js";
+import { foldA2uiCarrier, namedA2uiSurfaceIds } from "./a2ui/validate.js";
 import type {
   A2uiDebugEvent,
   A2uiItem,
@@ -765,14 +765,16 @@ type A2uiLedgerEntry =
  * The transcript's one A2UI surface fold. Carriers are read in transcript
  * order (the slot walk's order: the settled prefix, then the fold), live and
  * history alike, through the one validator, so a reloaded carrier plans as
- * it did live. Created only under `policy.a2ui.render`.
+ * it did live. Created only under `policy.a2ui?.render`.
  */
 interface A2uiPlanner {
   /**
-   * A tool result's carrier folded in. `null`: the arm keeps today's face
-   * (no carrier, or the carrier took the old face). A list, possibly empty
-   * (a `deleteSurface`, an ignored orphan update): the carrier is consumed and
-   * these items draw in place of the result.
+   * A tool result's carrier folded in; the caller reads it only when the
+   * result mounts no view. `null`: the arm keeps today's face (no carrier,
+   * an orphan update that drew nothing, or a carrier that took the old face:
+   * invalid, oversize, past the cap, or on a failed result). A list,
+   * possibly empty (a `deleteSurface`): the carrier is consumed and these
+   * items draw in place of the result.
    */
   read(result: ToolResultBlock, site: A2uiSite): A2uiItem[] | null;
   /**
@@ -792,7 +794,7 @@ function a2uiPlanner(policy: TranscriptPolicy, overrides: TranscriptOverrides): 
   const ledger: A2uiLedgerEntry[] = [];
   const events: A2uiDebugEvent[] = [];
   let planned = 0;
-  const invalid = (site: A2uiSite, reason: A2uiInvalidReason | "too-many-items"): null => {
+  const invalid = (site: A2uiSite, reason: A2uiInvalidReason | "too-many-items" | "tool-failed"): null => {
     if (policy.debugDetail) events.push({ type: "a2ui-invalid", key: site.rowKey, reason });
     return null;
   };
@@ -803,12 +805,30 @@ function a2uiPlanner(policy: TranscriptPolicy, overrides: TranscriptOverrides): 
     read(result, site) {
       const carrier = readA2uiCarrier(result);
       if (carrier === undefined) return null;
-      if (carrier.kind === "oversize") return invalid(site, "too-large");
+      // Any carrier that takes the old face closes the open interactive
+      // revisions of the surfaces it names (spec §5.7, §9.4 a4). A failed
+      // result is never folded; its ids come from the bounded scan. An
+      // oversize carrier fails the envelope's too-large check, which names
+      // its surfaces by the same scan: the first `messagesPerCarrier`
+      // messages, so a surface named only past them stays open.
+      if (toolFailed(result) || toolResultRenderRefusal(result) !== undefined) {
+        ledger.push({ type: "failed", surfaceIds: namedA2uiSurfaceIds(carrier.carrier) });
+        return invalid(site, "tool-failed");
+      }
       const out = foldA2uiCarrier(state, carrier.carrier, policy.media);
       if (!out.ok) {
         ledger.push({ type: "failed", surfaceIds: out.surfaceIds });
         return invalid(site, out.reason);
       }
+      // An orphan update (no createSurface opened its surface) draws nothing.
+      // It is named under debug, and a carrier of nothing but orphans hides
+      // nothing: the result keeps today's face.
+      if (policy.debugDetail) {
+        for (const outcome of out.surfaces) {
+          if (outcome.kind === "ignored") events.push({ type: "a2ui-orphan", key: site.rowKey, surfaceId: outcome.surfaceId });
+        }
+      }
+      if (out.surfaces.every((s) => s.kind === "ignored")) return null;
       const drawn = out.surfaces.filter((s) => s.kind === "drawn").length;
       if (planned + drawn > A2UI_LIMITS.itemsPerTranscript) {
         ledger.push({
@@ -982,11 +1002,14 @@ function planAssistantSource(
         const refusal = result ? (toolResultRenderRefusal(result) ?? null) : null;
         const title = policy.tool.humanizeTitle(block.title ?? block.name);
         const isGguiProtocol = isGguiProtocolTool(block.name);
-        // guuey#2366: an A2UI carrier is read before the view mount. A valid
-        // one draws its surfaces in place of the result (and excludes a mount);
-        // an invalid one, or one on a failed result, keeps today's arm exactly.
+        const mount: ViewMount | undefined = result ? toolResultViewMount(result) : undefined;
+        // guuey#2366: one precedence, the store's (fold-rows'
+        // `toolResultCarriesUi`): a result that mounts a view is a card, live
+        // and reloaded, and its A2UI carrier is never read. Otherwise a valid
+        // carrier draws its surfaces in place of the result; one that takes
+        // the old face keeps today's arm exactly.
         const a2uiItems =
-          result && refusal === null && a2ui !== null && !toolFailed(result)
+          result && mount === undefined && a2ui !== null
             ? a2ui.read(result, {
                 toolCallId: block.toolCallId,
                 toolTitle: title,
@@ -995,7 +1018,6 @@ function planAssistantSource(
                 origin,
               })
             : null;
-        const mount: ViewMount | undefined = result && a2uiItems === null ? toolResultViewMount(result) : undefined;
         const failed =
           result !== undefined
             ? refusal !== null || toolFailed(result)
@@ -1106,9 +1128,13 @@ function planAssistantSource(
         );
         if (hasCall) break; // its call renders it
         // guuey#2366: a result drawn without its call (a history read that kept
-        // the result only) still draws its A2UI surfaces, unattributed.
+        // the result only) still draws its A2UI surfaces, unattributed, by the
+        // paired arm's rules: the carrier is read only when no view mounts,
+        // the surfaces stand in for the data row, and the media stay. A carrier
+        // that drew nothing (a deleteSurface) keeps the data row: it is this
+        // arm's only row, where the paired arm keeps its tool row.
         const a2uiItems =
-          a2ui !== null && !toolFailed(block)
+          a2ui !== null && toolResultViewMount(block) === undefined
             ? a2ui.read(block, {
                 toolCallId: block.toolCallId,
                 toolTitle: null,
@@ -1117,14 +1143,14 @@ function planAssistantSource(
                 origin,
               })
             : null;
-        if (a2uiItems !== null) {
+        if (a2uiItems !== null && a2uiItems.length > 0) {
           items.push(...a2uiItems);
-          break;
-        }
-        const data = dataResultFromToolResult(block, `${prefix}.d${ordinals.d}`, policy, overrides);
-        if (data !== null) {
-          ordinals.d++;
-          items.push(data);
+        } else {
+          const data = dataResultFromToolResult(block, `${prefix}.d${ordinals.d}`, policy, overrides);
+          if (data !== null) {
+            ordinals.d++;
+            items.push(data);
+          }
         }
         items.push(...toolResultMediaItems(block, policy, overrides));
         break;
@@ -1838,7 +1864,7 @@ export function planTranscript(
   };
   const conversation: DisplayItem[] = [];
   /** guuey#2366: the transcript's one A2UI surface fold (live and history alike). */
-  const a2ui = policy.a2ui.render ? a2uiPlanner(policy, overrides) : null;
+  const a2ui = policy.a2ui?.render === true ? a2uiPlanner(policy, overrides) : null;
   /** guuey#2400: the read-plane seq of each assistant text item drawn from a rehydrated row. */
   const assistantSeqByKey = new Map<ItemKey, number>();
   // A reloaded failed turn's notice speaks with the live error's voice for its

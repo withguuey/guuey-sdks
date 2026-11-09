@@ -956,18 +956,22 @@ export type ChatDebugEvent =
       threadId: string | null;
       outcome: "merged" | "unsupported" | "failed" | "skipped";
       moved?: number;
-    }
-  | A2uiDebugEvent;
+    };
 
 /**
- * guuey#2366: an A2UI carrier's debug facts, counts-only. `a2ui-invalid`: the
- * carrier took the old face (its validator reason, or `too-many-items` past
- * the per-transcript cap); `key` is its tool row's. `a2ui-degraded`: a drawn
- * revision carries in-place degrades; `key` is its item's.
+ * guuey#2366: an A2UI carrier's debug facts, counts-only, carried on
+ * {@link TranscriptPlan.a2uiEvents}. Not a {@link ChatDebugEvent} yet: the
+ * sink fires them once a kit's renderer draws the kind (S2/S3).
+ * `a2ui-invalid`: the carrier took the old face (its validator reason,
+ * `too-many-items` past the per-transcript cap, or `tool-failed` on a failed
+ * result); `key` is its tool row's. `a2ui-degraded`: a drawn revision carries
+ * in-place degrades; `key` is its item's. `a2ui-orphan`: an update for a
+ * surface no createSurface opened drew nothing; `key` is its tool row's.
  */
 export type A2uiDebugEvent =
-  | { type: "a2ui-invalid"; key: ItemKey; reason: A2uiInvalidReason | "too-many-items" }
-  | { type: "a2ui-degraded"; key: ItemKey; counts: A2uiDegradeCounts };
+  | { type: "a2ui-invalid"; key: ItemKey; reason: A2uiInvalidReason | "too-many-items" | "tool-failed" }
+  | { type: "a2ui-degraded"; key: ItemKey; counts: A2uiDegradeCounts }
+  | { type: "a2ui-orphan"; key: ItemKey; surfaceId: string };
 
 /**
  * One renderable view the plan saw, BEFORE any chips/promotion pass —
@@ -1033,7 +1037,7 @@ export interface TranscriptPlan {
   /**
    * guuey#2366: the A2UI debug facts this plan produced, in transcript order.
    * Present only under the debug policy and only when non-empty, so a calm
-   * plan stays byte-identical (fixture 17); the debug sink fires them.
+   * plan stays byte-identical (fixture 17).
    */
   a2uiEvents?: A2uiDebugEvent[];
 }

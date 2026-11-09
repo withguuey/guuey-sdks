@@ -34,8 +34,13 @@ export type A2uiCarrierSource = "structuredContent" | "uiData";
 export type A2uiCarrierRead =
   /** The marker's value, unjudged, within the bound. */
   | { kind: "carrier"; carrier: JsonValue; via: A2uiCarrierSource; units: number }
-  /** The marker is there but its value is over the bound: an envelope fault, the value is not handed on. */
-  | { kind: "oversize"; via: A2uiCarrierSource; units: number };
+  /**
+   * The marker is there but its value is over the bound: an envelope fault.
+   * The value is handed on only so a reader can name the surfaces it targets
+   * (a bounded scan, `@guuey/chat/a2ui`'s `namedA2uiSurfaceIds`); it is never
+   * judged or drawn.
+   */
+  | { kind: "oversize"; carrier: JsonValue; via: A2uiCarrierSource; units: number };
 
 /** The size of a JSON value in UTF-16 code units of its `JSON.stringify` text. */
 export function a2uiCarrierUnits(value: JsonValue): number {
@@ -53,7 +58,7 @@ function readFrom(container: JsonValue | undefined, via: A2uiCarrierSource): A2u
   const carrier = container[A2UI_CARRIER_KEY];
   if (carrier === undefined) return undefined;
   const units = a2uiCarrierUnits(carrier);
-  return units > A2UI_CARRIER_MAX_UNITS ? { kind: "oversize", via, units } : { kind: "carrier", carrier, via, units };
+  return { kind: units > A2UI_CARRIER_MAX_UNITS ? "oversize" : "carrier", carrier, via, units };
 }
 
 /**

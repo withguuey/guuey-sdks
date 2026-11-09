@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonValue } from "@silverprotocol/core";
 import { a2uiCarrierUnits } from "@guuey/mcp-apps-host/narrowing";
 import { A2UI_LIMITS } from "./limits.js";
-import { parseA2uiCarrier, validateA2uiCarrier } from "./validate.js";
+import { namedA2uiSurfaceIds, parseA2uiCarrier, validateA2uiCarrier } from "./validate.js";
 
 type Json = JsonValue;
 
@@ -115,6 +115,19 @@ describe("envelope bounds — at the bound and one over (spec §6, S1 (b))", () 
     expect(a2uiCarrierUnits(make(A2UI_LIMITS.carrierUnits))).toBe(A2UI_LIMITS.carrierUnits);
     expect(reasonOf(make(A2UI_LIMITS.carrierUnits))).toBeUndefined();
     expect(reasonOf(make(A2UI_LIMITS.carrierUnits + 1))).toBe("too-large");
+  });
+
+  it("a too-large carrier still names its surfaces, read by a bounded lenient scan of its first messages", () => {
+    const dm = (surfaceId: string, value: Json): Json => ({ version: V, updateDataModel: { surfaceId, value } });
+    const pad = "x".repeat(A2UI_LIMITS.carrierUnits);
+    const named = carrier([dm("f1", { blob: pad }), components("f2", [text("root")])]);
+    expect(validateA2uiCarrier(named)).toMatchObject({ ok: false, reason: "too-large", surfaceIds: ["f1", "f2"] });
+    const late = carrier([
+      ...Array.from({ length: A2UI_LIMITS.messagesPerCarrier }, () => dm("early", { blob: pad.slice(0, 600) })),
+      dm("late", 1),
+    ]);
+    expect(namedA2uiSurfaceIds(late)).toEqual(["early"]);
+    expect(namedA2uiSurfaceIds(7)).toEqual([]);
   });
 
   it(`messages: ${A2UI_LIMITS.messagesPerCarrier} read, one more is too-many-messages`, () => {

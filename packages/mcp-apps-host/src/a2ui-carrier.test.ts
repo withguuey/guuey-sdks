@@ -62,13 +62,14 @@ describe("readA2uiCarrier", () => {
     expect(readA2uiCarrier({ structuredContent: { [A2UI_CARRIER_KEY]: 7 } })).toMatchObject({ kind: "carrier", carrier: 7 });
   });
 
-  it("a carrier at the bound is read; one unit over is oversize, without the value", () => {
+  it("a carrier at the bound is read; one unit over is oversize (the value handed on only to name its surfaces)", () => {
     const atBound = carrierOfUnits(A2UI_CARRIER_MAX_UNITS);
     expect(a2uiCarrierUnits(atBound)).toBe(A2UI_CARRIER_MAX_UNITS);
     expect(readA2uiCarrier({ structuredContent: { [A2UI_CARRIER_KEY]: atBound } })?.kind).toBe("carrier");
     const over = carrierOfUnits(A2UI_CARRIER_MAX_UNITS + 1);
     expect(readA2uiCarrier({ structuredContent: { [A2UI_CARRIER_KEY]: over } })).toEqual({
       kind: "oversize",
+      carrier: over,
       via: "structuredContent",
       units: A2UI_CARRIER_MAX_UNITS + 1,
     });

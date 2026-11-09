@@ -79,10 +79,13 @@ export interface TranscriptPolicy {
   /**
    * R6b (guuey#2366): `render` plans a tool result's valid `"com.guuey/a2ui"`
    * carrier as an `a2ui` item (and folds its tool row into the item's
-   * chrome). Off by default in both presets until a kit's renderer draws the
-   * kind; off, the carrier keeps today's face, the tool row with its preview.
+   * chrome). Absent means off, and neither preset sets it until a kit's
+   * renderer draws the kind (S2/S3); off, the carrier keeps today's face, the
+   * tool row with its preview. It is no override (see
+   * {@link TranscriptPolicyOverrides}): a host cannot turn on a kind its
+   * renderer would not draw.
    */
-  a2ui: { render: boolean };
+  a2ui?: { render: boolean };
   /**
    * R7. `origins` and `maxInlineBytes` decide what the viewer's device may
    * load (guuey#2369, see `mediaDisplay`): `data:` / base64 bytes under the
@@ -150,12 +153,12 @@ export interface TranscriptPolicy {
  * restating the section's other fields (guuey#321 surfaced the lie).
  */
 export type TranscriptPolicyOverrides = {
-  [K in keyof TranscriptPolicy]?: Partial<TranscriptPolicy[K]>;
+  [K in Exclude<keyof TranscriptPolicy, "a2ui">]?: Partial<TranscriptPolicy[K]>;
 };
 
 function withOverrides(base: TranscriptPolicy, overrides?: TranscriptPolicyOverrides): TranscriptPolicy {
   if (!overrides) return base;
-  return {
+  const merged: TranscriptPolicy = {
     ...base,
     ...overrides,
     strings: { ...base.strings, ...(overrides.strings ?? {}) },
@@ -166,7 +169,6 @@ function withOverrides(base: TranscriptPolicy, overrides?: TranscriptPolicyOverr
     toolGroup: { ...base.toolGroup, ...(overrides.toolGroup ?? {}) },
     dataResult: { ...base.dataResult, ...(overrides.dataResult ?? {}) },
     view: { ...base.view, ...(overrides.view ?? {}) },
-    a2ui: { ...base.a2ui, ...(overrides.a2ui ?? {}) },
     media: { ...base.media, ...(overrides.media ?? {}) },
     code: { ...base.code, ...(overrides.code ?? {}) },
     citations: { ...base.citations, ...(overrides.citations ?? {}) },
@@ -177,6 +179,10 @@ function withOverrides(base: TranscriptPolicy, overrides?: TranscriptPolicyOverr
     compaction: { ...base.compaction, ...(overrides.compaction ?? {}) },
     unknown: { ...base.unknown, ...(overrides.unknown ?? {}) },
   };
+  // guuey#2381: `a2ui` is no override. An untyped override object (a JSON
+  // config, a JS caller) that names it anyway does not turn it on.
+  delete merged.a2ui;
+  return base.a2ui === undefined ? merged : { ...merged, a2ui: base.a2ui };
 }
 
 function calmBase(): TranscriptPolicy {
@@ -191,7 +197,6 @@ function calmBase(): TranscriptPolicy {
     toolGroup: { threshold: 2 },
     dataResult: { capRem: 16, prettyPrint: true, alwaysShowBytes: false, previewChars: 2048 },
     view: { timeoutMs: 8000, presentation: "inline" },
-    a2ui: { render: false },
     media: {
       inlineImageCapRem: 20,
       chipOnly: false,

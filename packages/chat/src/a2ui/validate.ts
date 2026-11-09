@@ -76,10 +76,11 @@ function isId(value: JsonValue | undefined): value is string {
 }
 
 /** The surface ids a carrier's messages name, read leniently (charset-valid ids only, first-seen order). */
-function namedSurfaceIds(messages: JsonValue | undefined): string[] {
+function namedSurfaceIds(messages: JsonValue | undefined, maxMessages = Infinity): string[] {
   const ids: string[] = [];
   if (!Array.isArray(messages)) return ids;
-  for (const message of messages) {
+  for (const [i, message] of messages.entries()) {
+    if (i >= maxMessages) break;
     if (!isJsonObject(message)) continue;
     for (const key of A2UI_MESSAGE_KEYS) {
       const payload = message[key];
@@ -300,6 +301,17 @@ function readMessage(raw: JsonValue, at: string): MessageRead {
   }
 }
 
+/**
+ * The surface ids a carrier names, read leniently without judging anything
+ * else: what a carrier that takes the old face closes (spec §5.7). Bounded,
+ * so it holds for a carrier over the size bound too: only the first
+ * `messagesPerCarrier` messages are read, and a surface named only after
+ * them is not named.
+ */
+export function namedA2uiSurfaceIds(value: JsonValue): string[] {
+  return isJsonObject(value) ? namedSurfaceIds(value["messages"], A2UI_LIMITS.messagesPerCarrier) : [];
+}
+
 /** The envelope stage: everything judged without a surface's state. */
 export function parseA2uiCarrier(value: JsonValue): A2uiEnvelopeResult {
   const fail = (reason: A2uiEnvelopeFault, path: string, surfaceIds: string[] = []): A2uiEnvelopeResult => ({
@@ -308,7 +320,7 @@ export function parseA2uiCarrier(value: JsonValue): A2uiEnvelopeResult {
     path,
     surfaceIds,
   });
-  if (a2uiCarrierUnits(value) > A2UI_CARRIER_MAX_UNITS) return fail("too-large", "");
+  if (a2uiCarrierUnits(value) > A2UI_CARRIER_MAX_UNITS) return fail("too-large", "", namedA2uiSurfaceIds(value));
   if (!isJsonObject(value)) return fail("not-object", "");
   const named = namedSurfaceIds(value["messages"]);
   const format = value["format"];
