@@ -200,6 +200,27 @@ export const A2UI_PROPS_SCHEMAS = {
 /** One component kind's props as the validator hands them on (every prop optional). */
 export type A2uiPropsOf<N extends A2uiComponentName> = z.infer<(typeof A2UI_PROPS_SCHEMAS)[N]>;
 
+/** Whether a prop's schema admits a `{path}` binding: the binding itself, or a union with it as a member. */
+function admitsPathBinding(schema: z.core.$ZodType): boolean {
+  return schema === A2uiPathBinding || (schema instanceof z.ZodUnion && schema.options.some((option) => option === A2uiPathBinding));
+}
+
+const BINDING_PROPS = new Map<A2uiComponentName, readonly string[]>(
+  A2UI_COMPONENT_NAMES.map((name) => {
+    const shape: z.ZodRawShape = A2UI_COMPONENT_PROPS[name];
+    return [name, Object.keys(shape).filter((prop) => admitsPathBinding(shape[prop]))];
+  }),
+);
+
+/**
+ * Where a component kind reads a `{path}` binding: the props whose schema in
+ * {@link A2UI_COMPONENT_PROPS} admits {@link A2uiPathBinding}. Derived from
+ * those unions, so a prop that gains or loses a binding there moves here with it.
+ */
+export function a2uiBindingProps(name: A2uiComponentName): readonly string[] {
+  return BINDING_PROPS.get(name) ?? [];
+}
+
 /** The four message keys, in the order the validator recognizes them. */
 export const A2UI_MESSAGE_KEYS = ["createSurface", "updateComponents", "updateDataModel", "deleteSurface"] as const;
 export type A2uiMessageKey = (typeof A2UI_MESSAGE_KEYS)[number];

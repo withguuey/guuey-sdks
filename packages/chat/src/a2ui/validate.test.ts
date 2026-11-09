@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonValue } from "@silverprotocol/core";
 import { a2uiCarrierUnits } from "@guuey/mcp-apps-host/narrowing";
 import { A2UI_LIMITS } from "./limits.js";
+import { A2UI_COMPONENT_NAMES, a2uiBindingProps } from "./schema.js";
 import { namedA2uiSurfaceIds, parseA2uiCarrier, validateA2uiCarrier } from "./validate.js";
 
 type Json = JsonValue;
@@ -220,5 +221,36 @@ describe("S1 (a7) — Text content is a string, with no markup check", () => {
     const surface = out.surfaces[0];
     expect(surface?.kind).toBe("drawn");
     expect(surface?.kind === "drawn" ? surface.surface.degrade : undefined).toEqual({});
+  });
+});
+
+describe("where a component reads a binding comes from the schema, never a second list", () => {
+  it("the binding props are exactly the props whose schema admits a {path} binding", () => {
+    const table = Object.fromEntries(A2UI_COMPONENT_NAMES.map((name) => [name, a2uiBindingProps(name)]));
+    expect(table).toEqual({
+      Row: [],
+      Column: [],
+      Card: [],
+      List: [],
+      Divider: [],
+      Text: ["text"],
+      Image: [],
+      Icon: [],
+      Button: [],
+      TextField: ["value"],
+      CheckBox: ["checked"],
+      ChoicePicker: ["value"],
+    });
+  });
+
+  it("a malformed binding on each derived prop is an envelope fault", () => {
+    const bad = { path: "no-leading-slash" };
+    const cases: Json[] = [
+      { id: "root", component: "Text", text: bad },
+      { id: "root", component: "TextField", label: "N", value: bad },
+      { id: "root", component: "CheckBox", label: "C", checked: bad },
+      { id: "root", component: "ChoicePicker", label: "P", options: [{ label: "a", value: "a" }], value: bad },
+    ];
+    for (const c of cases) expect(reasonOf(carrier([create("s"), components("s", [c])]))).toBe("bad-path");
   });
 });

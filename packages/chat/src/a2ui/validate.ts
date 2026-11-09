@@ -39,6 +39,7 @@ import {
   A2UI_MESSAGE_KEYS,
   A2UI_PROPS_SCHEMAS,
   A2UI_VERSION,
+  a2uiBindingProps,
   isA2uiComponentName,
   readA2uiDataPath,
   type A2uiComponentFault,
@@ -107,21 +108,13 @@ function bindingFault(value: JsonValue | undefined): A2uiEnvelopeFault | null {
   return "fault" in read ? (read.fault === "too-deep" ? "path-too-deep" : "bad-path") : null;
 }
 
-/** Where a component kind reads a binding. */
-const BINDING_PROPS: { [N in A2uiComponentName]?: readonly string[] } = {
-  Text: ["text"],
-  TextField: ["value"],
-  CheckBox: ["checked"],
-  ChoicePicker: ["value"],
-};
-
 /** The envelope faults inside one component: a malformed binding, or too many action context keys. */
 function componentEnvelopeFault(
   name: A2uiComponentName,
   raw: A2uiJsonObject,
   at: string,
 ): { reason: A2uiEnvelopeFault; path: string } | null {
-  for (const prop of BINDING_PROPS[name] ?? []) {
+  for (const prop of a2uiBindingProps(name)) {
     const fault = bindingFault(raw[prop]);
     if (fault !== null) return { reason: fault, path: `${at}/${prop}` };
   }
