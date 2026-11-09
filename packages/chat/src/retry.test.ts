@@ -1,5 +1,6 @@
 /** guuey#2549 — what a failed turn was; guuey#2608 — the retry rule re-sends it in its row's place. */
 import { describe, expect, it } from "vitest";
+import { parseA2uiActionText, writeA2uiActionText } from "@guuey/mcp-apps-host/narrowing";
 import { retryInPlaceArgs, retrySendArgs } from "./retry.js";
 import type { UserMessageItem } from "./types.js";
 
@@ -43,5 +44,28 @@ describe("retryInPlaceArgs", () => {
   it("a row that is not failed, or has no id, replaces nothing", () => {
     expect(retryInPlaceArgs(item({ state: "sent", clientMessageId: "cmid-1" }))).toEqual(["hello", undefined]);
     expect(retryInPlaceArgs(item({}))).toEqual(["hello", undefined]);
+  });
+});
+
+describe("an A2UI action turn's retry keeps its id equal to the turn's clientMessageId (guuey#2384, spec §9.3)", () => {
+  const record = { surfaceId: "order", name: "submit", sourceComponentId: "go", context: { name: "Ada", size: 4 } };
+  const summary = { label: "Place order", pairs: [{ label: "Name", value: "Ada" }] };
+  const failed = item({ text: writeA2uiActionText({ ...record, actionId: "cm_A" }, summary) ?? "", directive: true, actionSummary: "Place order: Name = Ada", clientMessageId: "cm_A" });
+
+  it("the block is written again under the new turn's id, by the one writer, and the send carries that id", () => {
+    const [text, options] = retryInPlaceArgs(failed, () => "cm_B");
+    expect(text).toBe(writeA2uiActionText({ ...record, actionId: "cm_B" }, summary));
+    expect(parseA2uiActionText(text)?.actionId).toBe("cm_B");
+    expect(options).toEqual({ clientMessageId: "cm_B", replaces: "cm_A" });
+  });
+
+  it("re-sent beside its row, it is written again too", () => {
+    const [text, options] = retrySendArgs(failed, () => "cm_C");
+    expect(parseA2uiActionText(text)?.actionId).toBe("cm_C");
+    expect(options).toEqual({ clientMessageId: "cm_C" });
+  });
+
+  it("a typed turn's retry mints nothing (the hook mints its id, as before)", () => {
+    expect(retryInPlaceArgs(item({ clientMessageId: "cm_1" }), () => "cm_X")).toEqual(["hello", { replaces: "cm_1" }]);
   });
 });

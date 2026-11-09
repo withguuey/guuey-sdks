@@ -255,6 +255,8 @@ export interface ChatStrings {
   a2uiCantSend: string;
   /** guuey#2384: an A2UI action whose answers are too long to send together. */
   a2uiTooLong: string;
+  /** guuey#2384: an A2UI press that found field errors (each field says why; focus moves to the first). */
+  a2uiCheckAnswers: string;
   /** guuey#2384: an A2UI field's error: longer than the field allows. */
   a2uiFieldTooLong: (max: number) => string;
   /** guuey#2384: an A2UI number field's error: not a number. */
@@ -586,6 +588,7 @@ export const defaultChatStrings: ChatStrings = {
   a2uiWaitForReply: "Wait for the reply to finish",
   a2uiCantSend: "This form can't be sent",
   a2uiTooLong: "Too long to send. Shorten your answers.",
+  a2uiCheckAnswers: "Check your answers",
   a2uiFieldTooLong: (max) => `${max} characters at most`,
   a2uiFieldNumber: "Enter a number",
   a2uiFieldMin: (min) => `${min} or more`,

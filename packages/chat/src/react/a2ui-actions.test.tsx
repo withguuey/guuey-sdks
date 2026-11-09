@@ -366,3 +366,72 @@ describe("the action turn's face (S4 (e) on the renderer)", () => {
     expect(screen.queryByText(/partySize|"name"/)).toBeNull();
   });
 });
+
+describe("review r1 — one press, one turn; a refused press says why", () => {
+  const actionRow = (id: string): TranscriptMessage => ({
+    role: "user",
+    text:
+      writeA2uiActionText(
+        { surfaceId: "order", name: "save", sourceComponentId: "save", actionId: id, context: {} },
+        { label: "Save draft", pairs: [] },
+      ) ?? "",
+    clientMessageId: id,
+    precedingTurnCount: 1,
+  });
+  const twoButtons = form([
+    { id: "root", component: "Row", children: ["save", "go"] },
+    { id: "save", component: "Button", label: "Save draft", action: { name: "save" } },
+    { id: "go", component: "Button", label: "Submit", action: { name: "submit" }, confirm: { title: "Submit now?", message: "It goes to the agent." } },
+  ]);
+
+  for (const state of ["sending", "sent"] as const) {
+    it(`an open confirm closes when the surface locks (${state}), and nothing it held can send`, () => {
+      const h = host();
+      const view = draw(planOf([twoButtons]), { onA2uiAction: h.onA2uiAction });
+      fireEvent.click(button(view.surface, "Submit"));
+      const confirm = within(view.surface).getByRole("button", { name: S.a2uiConfirm });
+      // "sent" is a row with no send state: the pod admitted it.
+      const locked = planOf([twoButtons], [actionRow("cm_1")], state === "sending" ? { sendStates: { cm_1: state } } : {});
+      act(() => view.rerender(<Transcript plan={locked} window={false} {...noop} onA2uiAction={h.onA2uiAction} />));
+      expect(within(view.surface).queryByRole("alertdialog")).toBeNull();
+      // A click that was already on its way still sends nothing.
+      fireEvent.click(confirm);
+      expect(h.onA2uiAction).not.toHaveBeenCalled();
+    });
+  }
+
+  it("a number box holding text the browser cannot read is not a number: its error, and nothing is sent", () => {
+    const h = host();
+    const { surface } = draw(planOf([ORDER]), { onA2uiAction: h.onA2uiAction });
+    fireEvent.change(box(surface, "Name"), { target: { value: "Ada" } });
+    // What <input type=number> reports for "1.2.3": an empty value with validity.badInput.
+    Object.defineProperty(spin(surface, "Party size"), "validity", { value: { badInput: true } });
+    fireEvent.click(button(surface, "Place order"));
+    expect(h.onA2uiAction).not.toHaveBeenCalled();
+    const size = spin(surface, "Party size");
+    expect(size.getAttribute("aria-invalid")).toBe("true");
+    expect(document.getElementById(size.getAttribute("aria-describedby") ?? "")?.textContent).toBe(S.a2uiFieldNumber);
+  });
+
+  it("a press that fails validation moves focus to the first invalid field and says so in the button's live note", () => {
+    const h = host();
+    const { surface } = draw(planOf([ORDER]), { onA2uiAction: h.onA2uiAction });
+    fireEvent.change(spin(surface, "Party size"), { target: { value: "40" } });
+    fireEvent.click(button(surface, "Place order"));
+    expect(document.activeElement).toBe(box(surface, "Name"));
+    const note = within(surface).getByText(S.a2uiCheckAnswers);
+    expect(note.getAttribute("role")).toBe("status");
+    expect(button(surface, "Place order").getAttribute("aria-describedby")).toBe(note.id);
+  });
+
+  it("the wait note clears once the host can take a press again", () => {
+    const h = host("busy");
+    const view = draw(planOf([ORDER]), { onA2uiAction: h.onA2uiAction, a2uiActionsReady: false });
+    fireEvent.change(box(view.surface, "Name"), { target: { value: "Ada" } });
+    fireEvent.click(button(view.surface, "Place order"));
+    expect(within(view.surface).getByText(S.a2uiWaitForReply)).toBeTruthy();
+    act(() => view.rerender(<Transcript plan={planOf([ORDER])} window={false} {...noop} onA2uiAction={h.onA2uiAction} a2uiActionsReady />));
+    expect(within(view.surface).queryByText(S.a2uiWaitForReply)).toBeNull();
+    expect(button(view.surface, "Place order").hasAttribute("aria-describedby")).toBe(false);
+  });
+});

@@ -204,6 +204,8 @@ export interface A2uiRenderContext {
   a2uiEdits?: A2uiEditStore;
   a2uiIcon?: ComponentType<A2uiIconProps>;
   onA2uiAction?: (item: A2uiItem, request: A2uiActionRequest) => A2uiActionOutcome;
+  /** Whether the host would take a press now; true clears a "wait" note. */
+  a2uiActionsReady?: boolean;
 }
 
 // ─── Closed tables: the only way a payload word becomes a class ─────────
@@ -295,6 +297,8 @@ interface Env {
   send: ((node: NodeOf<"Button">) => string | null) | undefined;
   /** The error a field shows since the last press, by its data path. */
   errors: { readonly [path: string]: string };
+  /** The host would take a press now. */
+  ready: boolean;
   /** A unique, DOM-safe id for a component's part. */
   idFor(componentId: string, part: string): string;
 }
@@ -361,6 +365,16 @@ export function DefaultA2ui({ item, ctx }: { item: A2uiItem; ctx: A2uiRenderCont
   const base = useId();
   // The errors the last press found, by data path: an edit clears its path's.
   const [errors, setErrors] = useState<{ readonly [path: string]: string }>({});
+  const root = useRef<HTMLDivElement>(null);
+  // A press that found errors moves focus to the first field it names, once drawn.
+  const jump = useRef(false);
+  useEffect(() => {
+    if (!jump.current) return;
+    jump.current = false;
+    const error = root.current?.querySelector(".guuey-chat-a2ui-error");
+    const field = error ? root.current?.querySelector<HTMLElement>(`[aria-describedby~="${error.id}"]`) : null;
+    (field?.matches("input,textarea,button") ? field : field?.querySelector<HTMLElement>("input,button"))?.focus();
+  }, [errors]);
   if (item.phase === "superseded") {
     return (
       <p className="guuey-chat-a2ui-superseded" role="note" dir="auto">
@@ -395,11 +409,18 @@ export function DefaultA2ui({ item, ctx }: { item: A2uiItem; ctx: A2uiRenderCont
         : (node) => {
             const action = node.action;
             if (action === null) return null;
+            // A number box whose text the browser cannot read reports "" (validity.badInput):
+            // it reads as text that is no number, so the check names it.
+            const unread = new Set<string>();
+            root.current?.querySelectorAll<HTMLInputElement>("input[type=number]").forEach((el) => el.validity.badInput && unread.add(el.name));
             // §9.2: the payload is judged before anything is sent; every failing field says why.
-            const check = checkA2uiAction(item.fields, action, (path) => read(path, readA2uiModel(item.dataModel, path) ?? null));
+            const check = checkA2uiAction(item.fields, action, (path) =>
+              unread.has(path) ? "NaN" : read(path, readA2uiModel(item.dataModel, path) ?? null),
+            );
             if (!check.ok) {
+              jump.current = true;
               setErrors(Object.fromEntries(Object.entries(check.fields).map(([path, error]) => [path, fieldError(error, strings)])));
-              return check.form === "too-large" ? strings.a2uiTooLong : check.form === "undeclared" ? strings.a2uiCantSend : null;
+              return check.form === "too-large" ? strings.a2uiTooLong : check.form === "undeclared" ? strings.a2uiCantSend : strings.a2uiCheckAnswers;
             }
             setErrors({});
             const pairs: Array<{ label: string; value: string }> = [];
@@ -420,11 +441,12 @@ export function DefaultA2ui({ item, ctx }: { item: A2uiItem; ctx: A2uiRenderCont
             return outcome === "busy" ? strings.a2uiWaitForReply : outcome === "refused" ? strings.a2uiCantSend : null;
           },
     errors,
+    ready: ctx.a2uiActionsReady === true,
     idFor: (componentId, part) => `${base}-${domIdSegment(componentId)}-${part}`,
   };
   const titleId = `${base}-title`;
   return (
-    <div className="guuey-chat-a2ui" role="group" {...(title !== null ? { "aria-labelledby": titleId } : {})}>
+    <div ref={root} className="guuey-chat-a2ui" role="group" {...(title !== null ? { "aria-labelledby": titleId } : {})}>
       {title !== null ? (
         <p className="guuey-chat-a2ui-title" id={titleId} dir="auto">
           {title}
@@ -599,6 +621,9 @@ function A2uiButton({ node, env }: { node: NodeOf<"Button">; env: Env }): ReactN
   useEffect(() => {
     if (confirming) cancel.current?.focus();
   }, [confirming]);
+  // A surface that locks closes an open confirm; a wait note goes once the host can take a press.
+  if (confirming && env.locked) setConfirming(false);
+  if (said === env.strings.a2uiWaitForReply && env.ready) setSaid(null);
   const label = words(node.label);
   // A button with no words cannot say what it does: the placeholder, like a missing label.
   if (label === null) return <Unknown env={env} />;
@@ -625,7 +650,7 @@ function A2uiButton({ node, env }: { node: NodeOf<"Button">; env: Env }): ReactN
   const done = (confirmed: boolean): void => {
     setConfirming(false);
     ref.current?.focus();
-    if (confirmed && send !== undefined) setSaid(send(node));
+    if (confirmed && send !== undefined && !env.locked) setSaid(send(node));
   };
   const message = confirm !== null ? words(confirm.message) : null;
   return (
@@ -717,6 +742,7 @@ function A2uiTextField({ node, env }: { node: NodeOf<"TextField">; env: Env }): 
     value,
     dir: "auto",
     readOnly: env.locked,
+    name: key,
     onChange: (e: { target: { value: string } }) => env.write(key, e.target.value, bound.value),
     ...(placeholder !== null ? { placeholder } : {}),
     ...(label === null && placeholder !== null ? { "aria-label": placeholder } : {}),

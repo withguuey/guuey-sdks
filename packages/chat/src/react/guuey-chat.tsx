@@ -996,12 +996,11 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // guuey#2355: the agent ended this conversation; the composer holds until
   // the person opens a new one (the banner's control).
   const threadClosed = plan.threadClosed !== null;
-  const canSend =
-    available &&
-    (!busy || waitingOnUser) &&
-    authRequired === null &&
-    !threadClosed &&
-    (input.trim() !== "" || pendingImages.length > 0);
+  // The composer's refusal: no endpoint, a pending connect card, or an ended
+  // conversation. Every send path reads this one gate (the textarea, Send,
+  // dictation, and an A2UI action's press, guuey#2384).
+  const composerClosed = !available || authRequired !== null || threadClosed;
+  const canSend = !composerClosed && (!busy || waitingOnUser) && (input.trim() !== "" || pendingImages.length > 0);
 
   // ── Dictation (guuey#2446) ───────────────────────────────────────────
   // The engine exists only when voice is on, so an off chat reads no speech
@@ -1027,10 +1026,9 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   });
   const { abort: abortSpeech, start: startSpeech, stop: stopSpeech, listening: speechListening } = speech;
   // The textarea's own gate. Closing it mid-session aborts the session.
-  const voiceGateClosed = !available || authRequired !== null || threadClosed;
   useEffect(() => {
-    if (voiceGateClosed) abortSpeech();
-  }, [voiceGateClosed, abortSpeech]);
+    if (composerClosed) abortSpeech();
+  }, [composerClosed, abortSpeech]);
   const toggleVoice = useCallback((): void => {
     // Pressing the mic while live STOPS: the field stays live until the
     // engine's end, so the last sentence still lands.
@@ -1047,9 +1045,9 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // ONE stable handle for the component's whole life (hosts capture it in
   // `onReady` and keep it), reading live truth through a ref so a call
   // always sees the CURRENT gate — never a stale closure's.
-  const liveRef = useRef({ available, busy, invoke, onReady });
+  const liveRef = useRef({ available, busy, composerClosed, invoke, onReady });
   useEffect(() => {
-    liveRef.current = { available, busy, invoke, onReady };
+    liveRef.current = { available, busy, composerClosed, invoke, onReady };
   });
 
   // The DEFAULT ACTION RELAY (guuey#335 — the Confirm bug):
@@ -1390,7 +1388,10 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   const handleA2uiAction = useCallback(
     (_item: A2uiItem, request: A2uiActionRequest): A2uiActionOutcome => {
       const live = liveRef.current;
-      if (!live.available || live.busy) return "busy";
+      // The composer's own refusal (an ended conversation, a pending connect
+      // card, no endpoint) refuses the press; a live reply asks it to wait.
+      if (live.composerClosed) return "refused";
+      if (live.busy) return "busy";
       const clientMessageId = live.invoke.newClientMessageId();
       const text = a2uiActionTurnText(request, clientMessageId);
       if (text === undefined) return "refused";
@@ -1528,7 +1529,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     const images = pendingImagesRef.current.map((p) => p.attachment);
     // guuey#605: the connect-first gate belongs on the SEND path too, not
     // just the disabled attribute — an Enter keypress reaches here directly.
-    if ((typed === "" && images.length === 0) || !available || authRequired !== null || threadClosed) return;
+    if ((typed === "" && images.length === 0) || composerClosed) return;
     // guuey#2293: images with no words still need a non-empty input (every
     // runtime refuses an empty one); the kit's neutral line stands in.
     const text = typed !== "" ? typed : policy.strings.attachmentsOnlyInput;
@@ -1556,7 +1557,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     void invoke.send(text, sendOptionsFor(images)).catch(() => {
       // The hook surfaces the failure (`error` / R0 failed-send).
     });
-  }, [input, available, busy, waitingOnUser, authRequired, threadClosed, invoke, analytics, policy.strings, setPendingImages, abortSpeech]);
+  }, [input, composerClosed, busy, waitingOnUser, invoke, analytics, policy.strings, setPendingImages, abortSpeech]);
 
   // guuey#2293 — take picked or pasted files: the count and the turn's size
   // are judged against the list as it stands, each file is read (and redrawn
@@ -1630,8 +1631,9 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       // was (an action turn with its words beside the directive, guuey#2031;
       // a turn without words goes again without words, guuey#2549), in the failed row's
       // place, so it is drawn once, never beside its old "Couldn't send" row
-      // (guuey#2608).
-      void invoke.send(...retryInPlaceArgs(item)).catch(() => {
+      // (guuey#2608). An A2UI action turn is written again under the new
+      // turn's id, which the send carries (guuey#2384).
+      void invoke.send(...retryInPlaceArgs(item, invoke.newClientMessageId)).catch(() => {
         // Same contract as submit: the hook owns failure surfacing.
       });
     },
@@ -1731,6 +1733,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         viewProps={effectiveViewProps}
         a2uiEdits={a2uiEdits}
         onA2uiAction={handleA2uiAction}
+        a2uiActionsReady={!composerClosed && !busy}
         onStartNewConversation={startNewConversation}
       />
       {chips.length > 0 && inputs.messages.length === 0 && (
@@ -1870,7 +1873,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
               part={PARTS.composerAttach}
               aria-label={strings.attachImage}
               title={strings.attachImage}
-              disabled={!available || authRequired !== null || threadClosed || pendingImages.length >= IMAGE_ATTACHMENTS_MAX_COUNT}
+              disabled={composerClosed || pendingImages.length >= IMAGE_ATTACHMENTS_MAX_COUNT}
               onClick={() => fileInputRef.current?.click()}
             >
               <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1889,7 +1892,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
             aria-pressed={speechListening}
             aria-label={strings.voiceInput}
             title={strings.voiceInput}
-            disabled={voiceGateClosed}
+            disabled={composerClosed}
             onClick={toggleVoice}
           >
             <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1931,7 +1934,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
               submit();
             }
           }}
-          disabled={!available || authRequired !== null || threadClosed}
+          disabled={composerClosed}
           aria-label={strings.composerLabel}
           placeholder={
             !available

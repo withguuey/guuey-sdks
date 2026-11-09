@@ -125,6 +125,12 @@ export interface TranscriptItemContext {
    * drawn disabled with "Not available here": never a dead button.
    */
   onA2uiAction?: (item: A2uiItem, request: A2uiActionRequest) => A2uiActionOutcome;
+  /**
+   * guuey#2384: whether the host's send path would take a press now. When it
+   * turns true, a "Wait for the reply to finish" note clears; absent, the note
+   * stays until the next press.
+   */
+  a2uiActionsReady?: boolean;
 }
 
 /** The per-view slice of `GuueyViewProps` a transcript may configure. */

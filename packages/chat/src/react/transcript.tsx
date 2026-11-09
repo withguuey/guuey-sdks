@@ -135,6 +135,7 @@ export interface TranscriptProps
     | "a2uiEdits"
     | "a2uiIcon"
     | "onA2uiAction"
+    | "a2uiActionsReady"
   > {
   plan: TranscriptPlan;
   /** Per-slot component overrides (spec §3's override column). */
@@ -186,6 +187,7 @@ export function Transcript(props: TranscriptProps): ReactNode {
     a2uiEdits,
     a2uiIcon,
     onA2uiAction,
+    a2uiActionsReady,
     onStartNewConversation,
     follow: followPolicy = "tail",
     onAtEndChange,
@@ -215,8 +217,9 @@ export function Transcript(props: TranscriptProps): ReactNode {
       a2uiEdits: edits,
       ...(a2uiIcon !== undefined ? { a2uiIcon } : {}),
       ...(onA2uiAction !== undefined ? { onA2uiAction } : {}),
+      ...(a2uiActionsReady !== undefined ? { a2uiActionsReady } : {}),
     }),
-    [strings, onToggle, onRetry, onPromptAction, onErrorAction, resolvedMounts, onViewPhase, onViewDiagnosis, onViewRef, viewProps, edits, a2uiIcon, onA2uiAction],
+    [strings, onToggle, onRetry, onPromptAction, onErrorAction, resolvedMounts, onViewPhase, onViewDiagnosis, onViewRef, viewProps, edits, a2uiIcon, onA2uiAction, a2uiActionsReady],
   );
 
   // ── Windowing ────────────────────────────────────────────────────────

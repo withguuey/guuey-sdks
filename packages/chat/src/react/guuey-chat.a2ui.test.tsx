@@ -249,5 +249,34 @@ describe("<GuueyChat> sends an A2UI action through the composer's gate (guuey#23
     expect(screen.getByRole("button", { name: "Place order" }).getAttribute("aria-describedby")).toBe(note.id);
     expect(t.bodies).toHaveLength(2);
     t.release();
+    // The reply ends: the note no longer tells the person to wait (review r1).
+    await waitFor(() => expect(screen.queryByText(defaultChatStrings.a2uiWaitForReply)).toBeNull());
+    expect(screen.getByRole("button", { name: "Place order" }).hasAttribute("aria-describedby")).toBe(false);
+  });
+
+  it("an ended conversation refuses the press the way it refuses the composer: nothing is sent (review r1)", async () => {
+    const bodies: unknown[] = [];
+    const ended: AgentInvokeAdapters = {
+      storage: { load: () => null, save: () => {} },
+      generateId: (() => {
+        let n = 0;
+        return () => `cm_${n++}`;
+      })(),
+      transport: async function* (req) {
+        bodies.push(req.body);
+        yield SESSION_FRAME;
+        for (const f of TOOL_FRAMES) yield f;
+        yield `event: error\ndata: ${JSON.stringify({ code: CLOSED.code, message: CLOSED.message, threadClosed: CLOSED })}\n\n`;
+        yield `event: done\ndata: ${JSON.stringify({ stopReason: "end_turn", threadId: "t-a2ui", threadClosed: CLOSED })}\n\n`;
+      },
+    };
+    const { container } = render(<GuueyChat endpointUrl="https://pod.example/agent/invoke" adapters={ended} />);
+    send();
+    await waitFor(() => expect(container.querySelector(".guuey-chat-a2ui")).not.toBeNull());
+    await waitFor(() => expect((screen.getByLabelText("Message") as HTMLTextAreaElement).disabled).toBe(true));
+    fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Ada" } });
+    fireEvent.click(screen.getByRole("button", { name: "Place order" }));
+    await screen.findByText(defaultChatStrings.a2uiCantSend);
+    expect(bodies).toHaveLength(1);
   });
 });
