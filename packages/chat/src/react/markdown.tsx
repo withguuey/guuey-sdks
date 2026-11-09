@@ -85,15 +85,24 @@ function trimTrailingPunctuation(url: string): string {
 export type InlineLinkGate = (url: string) => { url: string; host: string } | null;
 
 /**
- * A gated link: opens in a new tab, sends no referrer, and shows its host
- * beside its text. Agent text cannot reorder that chrome (spec §7.1, §7.3):
- * the anchor is a bidi isolate (the sheet), its words are one isolate, so an
- * unterminated override stops there, and the host is a left-to-right isolate
- * of its own.
+ * The kit's one gated link (guuey#2382, A2UI): opens in a new tab, sends no
+ * referrer, and shows its host beside its words (spec §7.3). Agent text
+ * cannot reorder that chrome (§7.1): the words are one isolate, so an
+ * unterminated override stops there, and the host is a left-to-right
+ * isolate of its own. Text's links, a link Button and an image's Open link
+ * all draw through it; `className` is the only thing that differs.
  */
-function GatedLink({ target, children }: { target: { url: string; host: string }; children: ReactNode }): ReactNode {
+export function GatedLink({
+  target,
+  className,
+  children,
+}: {
+  target: { url: string; host: string };
+  className: string;
+  children: ReactNode;
+}): ReactNode {
   return (
-    <a className="guuey-chat-a2ui-link" href={target.url} target="_blank" rel="noopener noreferrer nofollow" referrerPolicy="no-referrer">
+    <a className={className} href={target.url} target="_blank" rel="noopener noreferrer nofollow" referrerPolicy="no-referrer">
       <bdi>{children}</bdi>
       <bdi className="guuey-chat-a2ui-host" dir="ltr">
         {" · "}
@@ -103,31 +112,15 @@ function GatedLink({ target, children }: { target: { url: string; host: string }
   );
 }
 
-/** {@link linkify} under a gate: a bare URL links only when the gate admits it. */
-function linkifyGated(text: string, gate: InlineLinkGate): ReactNode {
-  if (!text.includes("http")) return text;
-  const out: ReactNode[] = [];
-  let consumed = 0;
-  for (const match of text.matchAll(BARE_URL)) {
-    const start = match.index;
-    if (start === undefined) continue;
-    const url = trimTrailingPunctuation(match[0]);
-    const target = url.length === 0 ? null : gate(url);
-    if (target === null) continue;
-    if (start > consumed) out.push(text.slice(consumed, start));
-    out.push(
-      <GatedLink key={`url-${start}`} target={target}>
-        {url}
-      </GatedLink>,
-    );
-    consumed = start + url.length;
-  }
-  if (out.length === 0) return text;
-  if (consumed < text.length) out.push(text.slice(consumed));
-  return out;
-}
+/** Text's links (the inline-only mode): the anchor is a bidi isolate too (the sheet). */
+const TEXT_LINK_CLASS = "guuey-chat-a2ui-link";
 
-function linkify(text: string): ReactNode {
+/**
+ * Bare URLs as links. With a `gate` (the inline-only mode) a URL links only
+ * when the gate admits it, as a {@link GatedLink}; without one, every match
+ * is the markdown surface's plain link.
+ */
+function linkify(text: string, gate?: InlineLinkGate): ReactNode {
   if (!text.includes("http")) return text;
   const out: ReactNode[] = [];
   let consumed = 0;
@@ -136,11 +129,19 @@ function linkify(text: string): ReactNode {
     if (start === undefined) continue;
     const url = trimTrailingPunctuation(match[0]);
     if (url.length === 0) continue;
+    const target = gate === undefined ? undefined : gate(url);
+    if (target === null) continue;
     if (start > consumed) out.push(text.slice(consumed, start));
     out.push(
-      <a key={`url-${start}`} href={url} target="_blank" rel="noopener noreferrer">
-        {url}
-      </a>,
+      target === undefined ? (
+        <a key={`url-${start}`} href={url} target="_blank" rel="noopener noreferrer">
+          {url}
+        </a>
+      ) : (
+        <GatedLink key={`url-${start}`} target={target} className={TEXT_LINK_CLASS}>
+          {url}
+        </GatedLink>
+      ),
     );
     consumed = start + url.length;
   }
@@ -153,7 +154,7 @@ function Inline({ nodes, link }: { nodes: RichTextInline[]; link?: InlineLinkGat
   return nodes.map((node, i) => {
     switch (node.type) {
       case "text":
-        return <span key={i}>{link === undefined ? linkify(node.text) : linkifyGated(node.text, link)}</span>;
+        return <span key={i}>{linkify(node.text, link)}</span>;
       case "break":
         return <br key={i} />;
       case "strong":
@@ -179,7 +180,7 @@ function Inline({ nodes, link }: { nodes: RichTextInline[]; link?: InlineLinkGat
           // The inline-only mode: the gate decides, on the parser's own safe href only.
           const target = node.href !== undefined ? link(node.href) : null;
           return target !== null ? (
-            <GatedLink key={i} target={target}>
+            <GatedLink key={i} target={target} className={TEXT_LINK_CLASS}>
               <Inline nodes={node.children} link={link} />
             </GatedLink>
           ) : (

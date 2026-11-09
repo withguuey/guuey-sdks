@@ -42,7 +42,7 @@ import type {
 } from "../a2ui/schema.js";
 import type { A2uiItem, DisplayItem, ItemKey } from "../types.js";
 import type { ChatStrings } from "../strings.js";
-import { InlineRichText, type InlineLinkGate } from "./markdown.js";
+import { GatedLink, InlineRichText, type InlineLinkGate } from "./markdown.js";
 
 // ─── The host-owned edit store (§5.4) ───────────────────────────────────
 
@@ -473,10 +473,9 @@ function A2uiImage({ node, env }: { node: NodeOf<"Image">; env: Env }): ReactNod
     return (
       <span className="guuey-chat-a2ui-image-chip" dir="auto">
         {label}{" "}
-        <a className="guuey-chat-a2ui-open" href={display.url} target="_blank" rel="noopener noreferrer nofollow" referrerPolicy="no-referrer">
+        <GatedLink target={display} className="guuey-chat-a2ui-open">
           {env.strings.mediaOpenLink}
-          <HostLabel host={display.host} />
-        </a>
+        </GatedLink>
       </span>
     );
   }
@@ -487,16 +486,6 @@ function A2uiImage({ node, env }: { node: NodeOf<"Image">; env: Env }): ReactNod
   );
 }
 
-/** The host a link shows beside its words (§7.3): a left-to-right isolate, so agent text cannot reorder it. */
-function HostLabel({ host }: { host: string }): ReactNode {
-  return (
-    <bdi className="guuey-chat-a2ui-host" dir="ltr">
-      {" · "}
-      {host}
-    </bdi>
-  );
-}
-
 function A2uiButton({ node, env }: { node: NodeOf<"Button">; env: Env }): ReactNode {
   const label = words(node.label);
   // A button with no words cannot say what it does: the placeholder, like a missing label.
@@ -504,10 +493,9 @@ function A2uiButton({ node, env }: { node: NodeOf<"Button">; env: Env }): ReactN
   const className = BUTTON_CLASS[node.variant ?? "secondary"];
   if (node.link !== null) {
     return (
-      <a className={className} href={node.link.url} target="_blank" rel="noopener noreferrer nofollow" referrerPolicy="no-referrer">
-        <span dir="auto">{label}</span>
-        <HostLabel host={node.link.host} />
-      </a>
+      <GatedLink target={node.link} className={className}>
+        {label}
+      </GatedLink>
     );
   }
   return (
