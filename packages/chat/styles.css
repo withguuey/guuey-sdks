@@ -829,6 +829,10 @@
   border-radius: 5px;
   background: color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 7%, transparent);
 }
+/* A code fence in Text stays its literal source: indentation and runs of spaces kept, long lines wrapped. */
+.guuey-chat-a2ui-literal {
+  white-space: pre-wrap;
+}
 .guuey-chat-a2ui-text a,
 .guuey-chat-a2ui-open {
   color: var(--guuey-chat-link, var(--_guuey-chat-link, inherit));

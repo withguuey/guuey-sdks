@@ -232,22 +232,17 @@ function fenceRuns(text: string): Array<{ literal: boolean; text: string }> {
  * URL links only when the gate admits it. Every string is a text node.
  */
 export function InlineRichText({ text, link }: { text: string; link: InlineLinkGate }): ReactNode {
-  return fenceRuns(text).map((run, i) => {
-    const lines = run.text.split("\n");
-    return (
-      <Fragment key={i}>
-        {i > 0 ? <br /> : null}
-        {run.literal
-          ? lines.map((line, j) => (
-              <Fragment key={j}>
-                {j > 0 ? <br /> : null}
-                {line}
-              </Fragment>
-            ))
-          : <Inline nodes={parseInlineRichText(run.text)} link={link} />}
-      </Fragment>
-    );
-  });
+  return fenceRuns(text).map((run, i) => (
+    <Fragment key={i}>
+      {i > 0 ? <br /> : null}
+      {run.literal ? (
+        // One text node, its line breaks and runs of spaces kept by the sheet (pre-wrap).
+        <span className="guuey-chat-a2ui-literal">{run.text}</span>
+      ) : (
+        <Inline nodes={parseInlineRichText(run.text)} link={link} />
+      )}
+    </Fragment>
+  ));
 }
 
 /**

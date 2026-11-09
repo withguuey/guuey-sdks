@@ -120,6 +120,10 @@ describe("the A2UI surface's look (spec §5.3)", () => {
     }
   });
 
+  it("a code fence's literal run keeps its whitespace and still wraps", () => {
+    expect(value(".guuey-chat-a2ui-literal", "white-space")).toBe("pre-wrap");
+  });
+
   it("agent text sits in a bidi isolate", () => {
     for (const selector of [".guuey-chat-a2ui", ".guuey-chat-a2ui-text", ".guuey-chat-a2ui-label", ".guuey-chat-a2ui-superseded"]) {
       expect(value(selector, "unicode-bidi"), selector).toBe("isolate");

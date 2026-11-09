@@ -649,6 +649,17 @@ describe("(e)(f) Text's inline-only formatting, and a link shows its host", () =
     expect(lines).toBe(source);
   });
 
+  it("a code fence keeps its indentation and runs of spaces: one literal run, whitespace kept by the sheet", () => {
+    const fence = "```\nif x:\n    return  1\n```";
+    const t = textOf(`before\n${fence}\nafter`);
+    const literal = t.querySelector<HTMLElement>(".guuey-chat-a2ui-literal");
+    expect(literal?.textContent).toBe(fence);
+    expect(literal?.querySelector("*")).toBeNull();
+    // Prose around it is not in the run (it keeps collapsing).
+    expect(t.textContent).toContain("before");
+    expect(literal?.textContent).not.toContain("before");
+  });
+
   it("**x** in a label stays literal asterisks", () => {
     const { surface } = draw([{ id: "root", component: "TextField", label: "**Name**", value: { path: "/n" } }]);
     expect(within(surface).getByRole("textbox", { name: "**Name**" })).toBeTruthy();
