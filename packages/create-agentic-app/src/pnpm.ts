@@ -27,7 +27,7 @@
 import { spawnSync } from 'node:child_process';
 
 /** The pnpm fetched when this machine has none of its own. */
-export const SCAFFOLD_PNPM = 'pnpm@11.2.2';
+export const SCAFFOLD_PNPM = 'pnpm@12.16.0';
 
 /** A runnable pnpm: the executable and the arguments that must precede pnpm's own. */
 export interface PnpmInvocation {

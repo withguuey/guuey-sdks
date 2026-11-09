@@ -4,7 +4,7 @@
   "private": true,
   "description": "guuey open-source SDKs — the @guuey/* npm cohort (CLI, worker protocol, config, scaffolder)",
   "license": "MIT",
-  "packageManager": "pnpm@11.2.2",
+  "packageManager": "pnpm@12.16.0",
   "engines": {
     "node": ">=24.0.0"
   },
