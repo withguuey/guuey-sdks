@@ -87,6 +87,11 @@ export function themeCssVars(theme: GuueyChatTheme, mode: ThemeMode): Record<str
   // sampled for the harvest fixture, so this is the common case, not an edge.
   if (theme.typography.headingFontFamily !== undefined) {
     vars["--_guuey-chat-heading-font"] = theme.typography.headingFontFamily;
+    // The panel title wears the stated face at the kit's in-app title size,
+    // weight 400: a display face often ships one weight, and the title's 600
+    // would synthesize a fake bold. Unstated, the title stays as it was.
+    vars["--_guuey-chat-header-title-size"] = "20px";
+    vars["--_guuey-chat-header-title-weight"] = "400";
   }
   return vars;
 }

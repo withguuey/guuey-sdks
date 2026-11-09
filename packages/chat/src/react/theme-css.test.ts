@@ -140,6 +140,37 @@ describe("guuey#1280 — the display face reaches the web renderer", () => {
   });
 });
 
+describe("the panel title wears the host's heading face (cdo ruling, 2026-11-09)", () => {
+  const css = readFileSync(new URL("../../styles.css", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const titleRule = (): string => {
+    const m = /^\.guuey-chat-header-title\s*\{([^}]*)\}/m.exec(css);
+    if (m === null) throw new Error("no .guuey-chat-header-title rule");
+    return m[1] ?? "";
+  };
+
+  it("a stated heading family stamps the title at 20px / 400 beside it", () => {
+    const vars = themeCssVars({ ...GUUEY_CHAT_THEME, typography: { headingFontFamily: "Lilita One" } }, "light");
+    expect(vars["--_guuey-chat-heading-font"]).toBe("Lilita One");
+    expect(vars["--_guuey-chat-header-title-size"]).toBe("20px");
+    expect(vars["--_guuey-chat-header-title-weight"]).toBe("400");
+  });
+
+  it("no heading family stamps neither, so the title renders as before", () => {
+    const vars = themeCssVars({ ...GUUEY_CHAT_THEME, typography: { fontFamily: "Archivo" } }, "light");
+    expect("--_guuey-chat-header-title-size" in vars).toBe(false);
+    expect("--_guuey-chat-header-title-weight" in vars).toBe(false);
+  });
+
+  it("the title rule reads the heading face and falls back to the body font, its size and 600", () => {
+    const body = titleRule();
+    expect(body).toMatch(/font-family:\s*var\(--guuey-chat-heading-font, var\(--_guuey-chat-heading-font, inherit\)\);/);
+    expect(body).toMatch(/font-size:\s*var\(--guuey-chat-header-title-size, var\(--_guuey-chat-header-title-size, inherit\)\);/);
+    expect(body).toMatch(/font-weight:\s*var\(--guuey-chat-header-title-weight, var\(--_guuey-chat-header-title-weight, 600\)\);/);
+    expect(body).toMatch(/white-space:\s*nowrap;/);
+    expect(body).toMatch(/text-overflow:\s*ellipsis;/);
+  });
+});
+
 describe("the cue reaches the web renderer", () => {
   it("is stamped in both modes, stated or derived", () => {
     expect(themeCssVars(GUUEY_CHAT_THEME, "light")["--_guuey-chat-cue"]).toBe("#4e740d");

@@ -1051,7 +1051,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 600;
+  /* The host's heading face when the theme states one, at 20px / 400 (the
+     theme emits the size and weight beside the family). Unstated, every
+     fallback is what the title rendered before: the body font, its size, 600. */
+  font-family: var(--guuey-chat-heading-font, var(--_guuey-chat-heading-font, inherit));
+  font-size: var(--guuey-chat-header-title-size, var(--_guuey-chat-header-title-size, inherit));
+  font-weight: var(--guuey-chat-header-title-weight, var(--_guuey-chat-header-title-weight, 600));
 }
 .guuey-chat-header-actions {
   display: flex;
