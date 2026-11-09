@@ -43,6 +43,12 @@
       "import": "./dist/native-adapters.js",
       "default": "./dist/native-adapters.js"
     },
+    "./a2ui": {
+      "react-native": "./src/a2ui.ts",
+      "types": "./dist/a2ui.d.ts",
+      "import": "./dist/a2ui.js",
+      "default": "./dist/a2ui.js"
+    },
     "./styles.css": "./styles.css"
   },
   "scripts": {
@@ -107,6 +113,11 @@
         "types": "./dist/native-adapters.d.ts",
         "import": "./dist/native-adapters.js",
         "default": "./dist/native-adapters.js"
+      },
+      "./a2ui": {
+        "types": "./dist/a2ui.d.ts",
+        "import": "./dist/a2ui.js",
+        "default": "./dist/a2ui.js"
       },
       "./styles.css": "./styles.css"
     }
