@@ -69,3 +69,21 @@ describe("a disabled composer button is a colour, never an opacity", () => {
     });
   }
 });
+
+describe("no composer button dims by opacity: Send loses its fill instead", () => {
+  it(".guuey-chat-composer-send:disabled: the composer's off-ground under the muted ink", () => {
+    const disabled = rules().filter((r) => r.selectors.includes(".guuey-chat-composer-send:disabled"));
+    expect(disabled).toHaveLength(1);
+    const body = disabled[0]?.body ?? "";
+    expect(declaration(body, "background")).toBe("var(--guuey-chat-canvas-muted, var(--_guuey-chat-canvas-muted))");
+    expect(declaration(body, "color")).toBe("var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted))");
+  });
+
+  it("no rule for any of the three composer buttons sets an opacity", () => {
+    const buttons = [".guuey-chat-composer-send", ".guuey-chat-composer-attach", ".guuey-chat-composer-voice"];
+    const offenders = rules().filter(
+      (r) => r.selectors.some((s) => buttons.some((b) => s.startsWith(b))) && declaration(r.body, "opacity") !== undefined,
+    );
+    expect(offenders.map((r) => r.selectors.join(", "))).toEqual([]);
+  });
+});

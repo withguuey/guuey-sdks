@@ -1132,9 +1132,12 @@
   background: var(--guuey-chat-accent, var(--_guuey-chat-accent));
   color: var(--guuey-chat-on-accent, var(--_guuey-chat-on-accent));
 }
+/* Disabled Send loses its fill: the composer's off-ground (the stop button's)
+   under the muted ink, a colour, never an opacity. */
 .guuey-chat-composer-send:disabled {
   cursor: not-allowed;
-  opacity: 0.4;
+  background: var(--guuey-chat-canvas-muted, var(--_guuey-chat-canvas-muted));
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
 }
 .guuey-chat-composer-stop {
   background: var(--guuey-chat-canvas-muted, var(--_guuey-chat-canvas-muted));
