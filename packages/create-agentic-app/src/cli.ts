@@ -9,7 +9,7 @@
  */
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-import { nextSteps, pnpmInvocation, pnpmRunner, scaffold, scaffoldExample, type Framework, type Template } from './index.js';
+import { addCode, nextSteps, pnpmInvocation, pnpmRunner, scaffold, scaffoldExample, type Framework, type Template } from './index.js';
 import { installByDefault } from './shared.js';
 import { parseAnalyticsFlag } from './analytics.js';
 
@@ -90,6 +90,10 @@ Options:
                         comes from VITE_POSTHOG_KEY at build time (default: no analytics bytes — guuey#1062)
   --no-git              Skip "git init" + initial commit
   --force               Scaffold into a non-empty target directory
+  --add-code [dir]      Add the code worker to an existing --template agent
+                        project IN PLACE (default dir: .) for --framework
+                        (default claude-agent-sdk), and switch its guuey.json
+                        to agent.mode "code". guuey eject runs this for you
   --list-agents         List available frameworks and exit
   --help                Show this help
 
@@ -138,6 +142,32 @@ async function main(): Promise<void> {
 
   if (flags['list-agents']) {
     console.log(FRAMEWORKS.join('\n'));
+    return;
+  }
+
+  // guuey#3276 — convert a declarative project in place. `guuey eject` calls
+  // `addCode` itself; this flag is the same step for a builder without eject.
+  if (flags['add-code'] !== undefined) {
+    const dirFlag = flags['add-code'];
+    const projectDir = typeof dirFlag === 'string' ? dirFlag : (positional[0] ?? '.');
+    const frameworkFlag = flags.framework ?? flags.agent;
+    const frameworkInput = typeof frameworkFlag === 'string' ? frameworkFlag : 'claude-agent-sdk';
+    if (!isFramework(frameworkInput)) {
+      console.error(`Unknown framework "${frameworkInput}". Available: ${FRAMEWORKS.join(', ')}`);
+      process.exit(1);
+      return;
+    }
+    const install = installByDefault(flags);
+    const result = await addCode({ projectDir, framework: frameworkInput, install });
+    console.log(`\nAdded the ${frameworkInput} worker to ${result.projectDir}: ${result.changed.join(', ')}.`);
+    if (result.keptWorkspaceFile) {
+      console.log(
+        `  Kept your pnpm-workspace.yaml: add the build-script allow and ignore lists a ${frameworkInput} worker needs if an install refuses.`,
+      );
+    }
+    // A code deploy onto a live declarative app goes through eject only
+    // (guuey#3282); in this project eject resumes: it asks, pulls, deploys.
+    console.log('  Finish the switch with: npx guuey eject --app-id <your appId> (one way: it asks first, then pulls and deploys).');
     return;
   }
 

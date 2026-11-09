@@ -150,6 +150,26 @@ describe('pickSnapshotBuild', () => {
 // ─── mapHostedStateToOverlay (pure) ──────────────────────────────────
 
 describe('mapHostedStateToOverlay', () => {
+  it("a code project keeps its own framework and entry: they describe the worker it ships (guuey#3276)", () => {
+    const local = localScaffold();
+    local.agent = { ...local.agent, framework: 'google-adk', entry: 'agent.js' };
+    const { overlay } = mapHostedStateToOverlay(APP, nocodeSnapshot(), local);
+
+    expect(overlay.agent.mode).toBe('code');
+    expect(overlay.agent.framework).toBe('google-adk');
+    expect(overlay.agent.entry).toBe('agent.js');
+    // The definition is still the live one.
+    expect(overlay.agent.model).toBe('claude-opus-4-8');
+  });
+
+  it('a declarative project takes the snapshot framework as the definition (no local code to describe)', () => {
+    const local = localScaffold();
+    local.agent = { ...local.agent, mode: 'declarative', framework: 'openai-agents-sdk' };
+    const { overlay } = mapHostedStateToOverlay(APP, nocodeSnapshot(), local);
+
+    expect(overlay.agent.framework).toBe('claude-agent-sdk');
+  });
+
   it('replaces the local agent with the nocode snapshot + externalizes the systemPrompt', () => {
     const { overlay, promptFile, agentReplaced } = mapHostedStateToOverlay(
       APP,

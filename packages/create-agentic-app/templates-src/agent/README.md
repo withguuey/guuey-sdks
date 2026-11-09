@@ -49,8 +49,20 @@ modes here directly:
 
 ## Wanting more?
 
-If you outgrow manage-only — you want your OWN site with the agent
-embedded — scaffold the app template next to this repo:
+If you want to write the agent's code yourself, eject, here in this repo:
+
+```bash
+npx guuey eject --app-id <your appId>
+```
+
+It adds the agent worker beside `guuey.json` (the same definition, now
+`agent.mode: "code"`), installs, pulls and makes the first code deploy.
+It is one-way: guuey no longer updates the app's runtime, `apply`, the
+console and Studio no longer publish to it, and `guuey deploy` is how a
+change goes live from then on. It asks before it does anything.
+
+If you want your OWN site with the agent embedded, scaffold the app
+template next to this repo:
 
 ```bash
 npx @guuey/create-agentic-app my-site --template agentic-app --app <your appId>

@@ -5,7 +5,7 @@
  * with the scaffold, `pull` and `deploy` stubbed, so each case reads which
  * steps ran, in what order, and what reached the platform.
  */
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -17,11 +17,12 @@ import {
   ejectFramework,
   ejectOutcomeLine,
   ejectQuestion,
+  ejectTargetDir,
   resolveEjectConfirmation,
 } from './eject.js';
 import { resolveConfig } from '../config.js';
 
-const steps = vi.hoisted(() => ({ log: [] as string[], gguiAtDeploy: [] as boolean[] }));
+const steps = vi.hoisted(() => ({ log: [] as string[], gguiAtDeploy: [] as boolean[], addCodeRefusal: null as string | null }));
 
 vi.mock('@guuey/create-agentic-app', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@guuey/create-agentic-app')>();
@@ -43,6 +44,18 @@ vi.mock('@guuey/create-agentic-app', async (importOriginal) => {
         }),
       );
       steps.log.push(`scaffold ${opts.template} ${opts.framework} ${opts.appId ?? ''}`);
+    }),
+    // Like the real addCode (guuey#3276): the same directory, its guuey.json
+    // switched to code for the framework, the definition kept.
+    addCode: vi.fn(async (opts: { projectDir: string; framework: string; install?: boolean }) => {
+      if (steps.addCodeRefusal !== null) throw new actual.AddCodeError(steps.addCodeRefusal);
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      const file = path.join(opts.projectDir, 'guuey.json');
+      const doc = JSON.parse(fs.readFileSync(file, 'utf8')) as { agent?: object };
+      fs.writeFileSync(file, JSON.stringify({ ...doc, agent: { ...doc.agent, mode: 'code', framework: opts.framework } }));
+      steps.log.push(`addCode ${opts.framework} ${path.basename(opts.projectDir)} install=${String(opts.install)}`);
+      return { projectDir: opts.projectDir, changed: ['src/worker.ts', 'package.json', 'guuey.json'], keptWorkspaceFile: false, pnpm: null };
     }),
   };
 });
@@ -123,8 +136,19 @@ describe('eject helpers', () => {
     expect(ejectDirState(true, [], null, 'app-1')).toBe('fresh');
     expect(ejectDirState(true, ['guuey.json'], { appId: 'app-1', agent: { mode: 'code' } }, 'app-1')).toBe('resume');
     expect(ejectDirState(true, ['guuey.json'], { appId: 'app-2', agent: { mode: 'code' } }, 'app-1')).toBe('occupied');
-    expect(ejectDirState(true, ['guuey.json'], { appId: 'app-1' }, 'app-1')).toBe('occupied');
+    // This app's declarative project (the console's export path) converts in place (guuey#3276).
+    expect(ejectDirState(true, ['guuey.json'], { appId: 'app-1' }, 'app-1')).toBe('convert');
+    expect(ejectDirState(true, ['guuey.json'], { appId: 'app-1', agent: { mode: 'declarative' } }, 'app-1')).toBe('convert');
+    expect(ejectDirState(true, ['guuey.json'], { appId: 'app-2', agent: { mode: 'declarative' } }, 'app-1')).toBe('occupied');
     expect(ejectDirState(true, ['notes.txt'], null, 'app-1')).toBe('occupied');
+  });
+
+  it('the target: --dir, else the current directory when it is bound to this app, else a new one named after it', () => {
+    expect(ejectTargetDir('elsewhere', '/w/proj', { appId: 'app-1' }, 'app-1', 'Bot')).toMatch(/elsewhere$/);
+    expect(ejectTargetDir(undefined, '/w/proj', { appId: 'app-1' }, 'app-1', 'Bot')).toBe('/w/proj');
+    expect(ejectTargetDir('  ', '/w/proj', { appId: 'app-1' }, 'app-1', 'Bot')).toBe('/w/proj');
+    expect(ejectTargetDir(undefined, '/w/proj', { appId: 'app-2' }, 'app-1', 'Bot')).toMatch(/\/bot$/);
+    expect(ejectTargetDir(undefined, '/w/proj', null, 'app-1', 'Bot')).toMatch(/\/bot$/);
   });
 
   it('the outcome line reads the serving build', () => {
@@ -187,6 +211,7 @@ describe('eject() — the flow', () => {
   beforeEach(() => {
     steps.log = [];
     steps.gguiAtDeploy = [];
+    steps.addCodeRefusal = null;
     originalCwd = process.cwd();
     dir = mkdtempSync(join(tmpdir(), 'eject-test-'));
     process.chdir(dir);
@@ -309,6 +334,51 @@ describe('eject() — the flow', () => {
     expect(steps.gguiAtDeploy).toEqual([false]);
     expect(JSON.parse(readFileSync(join(dir, 'bot', 'guuey.json'), 'utf8'))).not.toHaveProperty('ggui');
     expect(printedLog()).toContain('Took the ggui block out of guuey.json');
+  });
+
+  // guuey#3276 — the console's export path ends in a declarative project bound
+  // to the app; eject run there converts it, no second directory.
+  it('★ inside this app\'s declarative project: adds the worker in place (installing), pulls, deploys; no scaffold', async () => {
+    mockPlatform({ before: NOCODE_LIVE, after: CODE_LIVE, framework: 'claude-agent-sdk' });
+    writeFileSync(
+      join(dir, 'guuey.json'),
+      JSON.stringify({ schema: '1', appId: 'app-1', agent: { mode: 'declarative', systemPrompt: { file: 'prompts/system.md' } } }),
+    );
+    await eject({ 'app-id': 'app-1', yes: true });
+    expect(steps.log).toEqual([
+      `addCode claude-agent-sdk ${dir.split('/').pop()} install=true`,
+      'pull app-1',
+      'deploy app-id=app-1 allowNocodeToCode=true',
+    ]);
+    expect(process.cwd()).toBe(realpathSync(dir));
+    const written = JSON.parse(readFileSync(join(dir, 'guuey.json'), 'utf8')) as { agent: { mode: string; systemPrompt: unknown } };
+    expect(written.agent.mode).toBe('code');
+    expect(written.agent.systemPrompt).toEqual({ file: 'prompts/system.md' });
+    expect(printedLog()).toContain('Adding the claude-agent-sdk worker to');
+  });
+
+  it('--framework picks the worker a conversion adds', async () => {
+    mockPlatform({ before: NOCODE_LIVE, after: CODE_LIVE, framework: 'claude-agent-sdk' });
+    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', appId: 'app-1', agent: { mode: 'declarative' } }));
+    await eject({ 'app-id': 'app-1', yes: true, framework: 'openai-agents-sdk' });
+    expect(steps.log[0]).toMatch(/^addCode openai-agents-sdk /);
+  });
+
+  it("a declarative project bound to ANOTHER app is not converted: eject scaffolds this app's own project", async () => {
+    mockPlatform({ before: NOCODE_LIVE, after: CODE_LIVE, framework: 'claude-agent-sdk' });
+    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', appId: 'app-2', agent: { mode: 'declarative' } }));
+    await eject({ 'app-id': 'app-1', yes: true });
+    expect(steps.log[0]).toBe('scaffold base claude-agent-sdk app-1');
+    expect(JSON.parse(readFileSync(join(dir, 'guuey.json'), 'utf8'))).toMatchObject({ appId: 'app-2', agent: { mode: 'declarative' } });
+  });
+
+  it('a conversion addCode refuses stops with its reason: nothing is pulled or deployed', async () => {
+    mockPlatform({ before: NOCODE_LIVE, framework: 'claude-agent-sdk' });
+    writeFileSync(join(dir, 'guuey.json'), JSON.stringify({ schema: '1', appId: 'app-1', agent: { mode: 'declarative' } }));
+    steps.addCodeRefusal = "src/worker.ts already exists and is not the claude-agent-sdk worker's.";
+    await expect(eject({ 'app-id': 'app-1', yes: true })).rejects.toBeInstanceOf(ExitSignal);
+    expect(printedErr()).toContain('src/worker.ts already exists');
+    expect(steps.log).toEqual([]);
   });
 
   it('a deploy whose wait ran out says it is still deploying, and not to run eject again', async () => {

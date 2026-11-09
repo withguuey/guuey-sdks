@@ -15,6 +15,11 @@
  *      the `base` template, `--framework` or else the live definition's),
  *      without the template's `ggui` block: the asset push is a full-state
  *      replace, so the template's empty ggui assets would wipe the app's own.
+ *      Run inside (or `--dir` at) the declarative project the console's
+ *      export path made for this app (`--template agent --app <id>`), eject
+ *      converts THAT project in place instead (guuey#3276): create-agentic-app's
+ *      `addCode` adds the worker beside the definition and flips
+ *      `agent.mode`, then installs the worker's dependencies.
  *   4. `guuey pull` the live definition into it (the project keeps
  *      `agent.mode: "code"`).
  *   5. `guuey deploy` it: the first code build replaces the no-code one.
@@ -30,7 +35,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
-import { scaffold, type Framework } from '@guuey/create-agentic-app';
+import { AddCodeError, addCode, scaffold, type Framework } from '@guuey/create-agentic-app';
 import { GUUEY_JSON_FILENAME, safeParseGuueyJson } from '@guuey/config';
 import { requireAuth } from '../auth';
 import { resolveConfig, saveProjectConfig } from '../config';
@@ -93,16 +98,39 @@ export interface EjectDirBinding {
   agent?: { mode?: string | undefined } | undefined;
 }
 
-/** What a directory holds for this eject: nothing yet, this app's code project (resume), or something else. */
+/**
+ * What a directory holds for this eject: nothing yet (scaffold), this app's
+ * code project (resume), this app's declarative project (convert it in place,
+ * guuey#3276), or something else.
+ */
 export function ejectDirState(
   dirExists: boolean,
   entries: readonly string[],
   guueyJson: EjectDirBinding | null,
   appId: string,
-): 'fresh' | 'resume' | 'occupied' {
+): 'fresh' | 'resume' | 'convert' | 'occupied' {
   if (!dirExists || entries.length === 0) return 'fresh';
-  if (guueyJson !== null && guueyJson.appId === appId && guueyJson.agent?.mode === 'code') return 'resume';
+  if (guueyJson !== null && guueyJson.appId === appId) {
+    return guueyJson.agent?.mode === 'code' ? 'resume' : 'convert';
+  }
   return 'occupied';
+}
+
+/**
+ * The directory eject works in: `--dir` when given; else the current
+ * directory when its guuey.json is bound to this app (the console's export
+ * path ends there, guuey#3276); else a new directory named after the app.
+ */
+export function ejectTargetDir(
+  dirFlag: string | undefined,
+  cwd: string,
+  cwdBinding: EjectDirBinding | null,
+  appId: string,
+  displayName: string | null | undefined,
+): string {
+  if (dirFlag !== undefined && dirFlag.trim() !== '') return resolve(dirFlag.trim());
+  if (cwdBinding !== null && cwdBinding.appId === appId) return resolve(cwd);
+  return resolve(ejectDirName(displayName));
 }
 
 /**
@@ -198,8 +226,11 @@ export async function eject(flags?: Record<string, string | true>): Promise<void
     await apiRequest(auth.pat, config, 'GET', `/apps/${appId}`),
     `app ${appId}`,
   );
-  const dirFlag = flags?.dir;
-  const dir = resolve(typeof dirFlag === 'string' && dirFlag.trim() !== '' ? dirFlag.trim() : ejectDirName(app.displayName));
+  const dirFlag = typeof flags?.dir === 'string' ? flags.dir : undefined;
+  const cwd = process.cwd();
+  // The current directory's binding matters only when no --dir names one.
+  const cwdBinding = dirFlag === undefined || dirFlag.trim() === '' ? readDirBinding(cwd) : null;
+  const dir = ejectTargetDir(dirFlag, cwd, cwdBinding, appId, app.displayName);
   const dirExists = existsSync(dir);
   const state = ejectDirState(dirExists, dirExists ? readdirSync(dir) : [], dirExists ? readDirBinding(dir) : null, appId);
   if (state === 'occupied') {
@@ -207,9 +238,9 @@ export async function eject(flags?: Record<string, string | true>): Promise<void
     process.exit(1);
   }
 
-  // The framework is chosen only for a scaffold; a resumed project has one.
+  // The framework is chosen for a scaffold or a conversion; a resumed project has one.
   let framework: Framework | undefined;
-  if (state === 'fresh') {
+  if (state === 'fresh' || state === 'convert') {
     const { snapshot } = await readOk<DeploymentSnapshotResponse>(
       await apiRequest(auth.pat, config, 'GET', `/apps/${appId}/deployments/${buildNumber}`),
       `build #${buildNumber}'s definition`,
@@ -250,7 +281,25 @@ export async function eject(flags?: Record<string, string | true>): Promise<void
   }
 
   // 3–4. A code project bound to the app, carrying its live definition.
-  if (framework !== undefined) {
+  if (state === 'convert' && framework !== undefined) {
+    console.log('');
+    console.log(`  Adding the ${framework} worker to ${dir} ...`);
+    try {
+      const added = await addCode({ projectDir: dir, framework, install: true });
+      console.log(`  Changed: ${added.changed.join(', ')}.`);
+      if (added.keptWorkspaceFile) {
+        console.log(
+          `  Kept your pnpm-workspace.yaml: if the install refuses a build script, add the allow and ignore lists a ${framework} worker needs.`,
+        );
+      }
+    } catch (err) {
+      if (err instanceof AddCodeError) {
+        out.error(err.message);
+        process.exit(1);
+      }
+      throw err;
+    }
+  } else if (framework !== undefined) {
     console.log('');
     console.log(`  Scaffolding a code project in ${dir} ...`);
     await scaffold({

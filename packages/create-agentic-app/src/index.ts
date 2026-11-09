@@ -7,3 +7,4 @@ export { scaffoldMcp } from './scaffold-mcp.js';
 export { isNpmSafeName } from './shared.js';
 export { pnpmInvocation, pnpmCommandLine, pnpmRunner, noPnpmMessage, SCAFFOLD_PNPM, type PnpmInvocation } from './pnpm.js';
 export { nextSteps, type NextStepsInput, type NextStepsKind } from './next-steps.js';
+export { addCode, AddCodeError, type AddCodeOptions, type AddCodeResult } from './add-code.js';

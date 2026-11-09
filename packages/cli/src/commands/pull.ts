@@ -322,6 +322,19 @@ export function mapHostedStateToOverlay(
   } else {
     agent = { ...agent, mode: localMode };
   }
+  // guuey#3276: a code project's framework and `entry` describe the code it
+  // ships (the worker eject added), not the live definition, so the local
+  // values win. Otherwise a pull into a converted google-adk project would
+  // drop `entry` and import the declarative snapshot's framework, and the
+  // next deploy would build one worker and look for another.
+  if (localMode === 'code' && existing !== null) {
+    const { framework: _snapshotFramework, entry: _snapshotEntry, ...definition } = agent;
+    agent = {
+      ...definition,
+      ...(existing.agent.framework !== undefined ? { framework: existing.agent.framework } : {}),
+      ...(existing.agent.entry !== undefined ? { entry: existing.agent.entry } : {}),
+    };
+  }
 
   // guuey#1287: with no local file the snapshot IS the file (its own
   // top-level fields — `protocol`, `app`, `ggui`, … — are the deployed

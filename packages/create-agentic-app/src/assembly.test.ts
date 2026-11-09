@@ -190,5 +190,7 @@ describe("assembled manage-only template (guuey#581 pt 5)", () => {
     expect(steering).toContain("one-way");
     expect(steering).toContain("run it themselves in their own terminal");
     expect(steering).toContain("never pass `--yes`");
+    // guuey#3276: eject converts THIS repo in place, never a second project.
+    expect(steering).toContain("run in THIS directory, turns this repo into the code");
   });
 });

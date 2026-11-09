@@ -27,10 +27,11 @@ holds the template's prompt, and an `apply` would replace the live agent's promp
 **Never** run `guuey deploy` (that is the code-mode verb, for apps with an agent worker) or look for a `dev` server
 (a manage-only agent has none). If the user wants agent code, a web app or their own tools, that is code mode:
 
-- for this app, once it is live: `guuey eject --app-id <id>` switches it to a code project, and it is one-way (guuey
-  can no longer update the app's runtime, and `apply`, the console and Studio can no longer publish to it). Show the
-  user that, and ask them to run it themselves in their own terminal, where it asks [y/N]. Never run it for them,
-  and never pass `--yes`;
+- for this app, once it is live: `guuey eject --app-id <id>`, run in THIS directory, turns this repo into the code
+  project in place: it adds the agent worker beside `guuey.json` (same definition, `agent.mode: "code"`), installs,
+  pulls and makes the first code deploy. It is the one-way door (guuey can no longer update the app's runtime,
+  and `apply`, the console and Studio can no longer publish to it). Show the user that, and ask them to
+  run it themselves in their own terminal, where it asks [y/N]. Never run it for them, and never pass `--yes`;
 - for a new app: `npx @guuey/create-agentic-app <dir> --template base`.
 
 ## Binding to an app
