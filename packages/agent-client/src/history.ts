@@ -22,6 +22,8 @@ import type {
 } from "./types.js";
 import { closureFromLastRow, readThreadClosed } from "./thread-closed.js";
 import { userInputKindOf } from "./input-kinds.js";
+import { RequestCancelledError } from "./errors.js";
+import { runOneShot, type OneShotRequestOptions, type ScopedFetch } from "./one-shot.js";
 
 /** One row of `GET /v1/threads/:id/messages`. */
 export interface ThreadHistoryRow {
@@ -525,7 +527,19 @@ function readToolResultElement(element: JsonValue): HistoryToolResult["block"] |
   return block?.type === "tool-result" ? block : undefined;
 }
 
-export interface ThreadHistoryFetchOptions {
+/**
+ * `signal` / `timeoutMs` (guuey#2492) bound the whole read, every page
+ * included: either rejects with {@link RequestCancelledError}.
+ *
+ * `requestInit.signal`, the cancel this read honoured before those options,
+ * keeps its old behaviour when neither is given: `requestInit` reaches `fetch`
+ * untouched, so an abort rejects with `fetch`'s own `AbortError`. When
+ * `signal` or a finite `timeoutMs` is given too, `requestInit.signal` is
+ * linked into the same scope and cancels exactly as `signal` does (it rejects
+ * with {@link RequestCancelledError}, reason `"aborted"`), and `fetch` gets
+ * that scope's signal in its place.
+ */
+export interface ThreadHistoryFetchOptions extends OneShotRequestOptions {
   /** Public read-plane base, already ending in `/v1`. */
   baseUrl: string;
   threadId: string;
@@ -615,7 +629,7 @@ async function walkHistory(
   asked: ReadonlySet<HonouredEcho>,
   include: string,
   requestInit: RequestInit | undefined,
-  fetchImpl: typeof fetch,
+  send: ScopedFetch,
 ): Promise<HistoryWalk | "gone" | "order-lost"> {
   const rows = new Map<number, ThreadHistoryRow>();
   let honoured = new Set(asked);
@@ -628,7 +642,7 @@ async function walkHistory(
       (honoured.has("order") ? "&order=desc" : "") +
       include +
       (nextToken ? `&nextToken=${encodeURIComponent(nextToken)}` : "");
-    const res = await fetchImpl(url, requestInit);
+    const res = await send(url, requestInit);
     if (res.status === 403 || res.status === 404) return "gone";
     if (res.status === 401) throw new HistoryUnauthorizedError();
     if (!res.ok) throw new Error(`history load failed: ${res.status}`);
@@ -668,20 +682,34 @@ async function walkHistory(
  * `useAgentInvoke`'s best-effort caller can swallow it and leave the chat
  * empty.
  */
-export async function fetchThreadHistory({
-  baseUrl,
-  threadId,
-  requestInit,
-  includeCards = false,
-  includeToolResults = false,
-  includeToolCalls = false,
-  fetchImpl = fetch,
-}: ThreadHistoryFetchOptions): Promise<HistoryLoadResult> {
+export async function fetchThreadHistory(options: ThreadHistoryFetchOptions): Promise<HistoryLoadResult> {
+  const outcome = await runOneShot(
+    options,
+    options.fetchImpl ?? fetch,
+    (send) => readHistory(send, options),
+    options.requestInit?.signal,
+  );
+  if (outcome.kind === "cancelled") throw new RequestCancelledError(outcome.reason);
+  return outcome.value;
+}
+
+/** {@link fetchThreadHistory}'s read, every page through the call's scoped `send`. */
+async function readHistory(
+  send: ScopedFetch,
+  {
+    baseUrl,
+    threadId,
+    requestInit,
+    includeCards = false,
+    includeToolResults = false,
+    includeToolCalls = false,
+  }: ThreadHistoryFetchOptions,
+): Promise<HistoryLoadResult> {
   const routeUrl = `${baseUrl}/threads/${encodeURIComponent(threadId)}/messages`;
   const askCalls: (typeof TOOL_CALLS_INCLUDE)[] = includeToolCalls ? [TOOL_CALLS_INCLUDE] : [];
   const include = includeParam(includeToolResults, askCalls);
-  let walk = await walkHistory(routeUrl, new Set<HonouredEcho>(["order", ...askCalls]), include, requestInit, fetchImpl);
-  if (walk === "order-lost") walk = await walkHistory(routeUrl, new Set(askCalls), include, requestInit, fetchImpl);
+  let walk = await walkHistory(routeUrl, new Set<HonouredEcho>(["order", ...askCalls]), include, requestInit, send);
+  if (walk === "order-lost") walk = await walkHistory(routeUrl, new Set(askCalls), include, requestInit, send);
   // An ascending walk sends no order, so it cannot lose one.
   if (walk === "order-lost") throw new Error("history load failed: an ascending read lost an order it never asked for");
   if (walk === "gone") return { gone: true };

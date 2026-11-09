@@ -168,3 +168,37 @@ export async function agentResponseErrorFrom(resp: Response): Promise<AgentRespo
     hasWakingMarker(resp),
   );
 }
+
+/**
+ * Why a one-shot call stopped waiting (guuey#2492): `"aborted"` — the
+ * caller's own `signal` fired; `"timeout"` — the caller's `timeoutMs` ran out.
+ */
+export type RequestCancelReason = "aborted" | "timeout";
+
+/**
+ * Thrown by the one-shot calls whose contract is to throw on failure
+ * (`dismissLinkPrompt`, `fetchThreadHistory`) when the caller's `signal`
+ * aborts or its `timeoutMs` runs out. The calls that never throw report the
+ * cancel in their own result instead (see `./one-shot`). `code` is the matching
+ * `CLIENT_ERROR_CODES` value, so a host branches on it the same way it does
+ * on every other code.
+ */
+export class RequestCancelledError extends Error {
+  readonly code: RequestCancelCode;
+
+  constructor(readonly reason: RequestCancelReason) {
+    super(reason === "timeout" ? "request timed out" : "request aborted");
+    this.name = "RequestCancelledError";
+    this.code = requestCancelCode(reason);
+  }
+}
+
+/** The `CLIENT_ERROR_CODES` value a {@link RequestCancelReason} reports as. */
+export type RequestCancelCode =
+  | typeof CLIENT_ERROR_CODES.REQUEST_ABORTED
+  | typeof CLIENT_ERROR_CODES.REQUEST_TIMEOUT;
+
+/** Map a cancel reason to its client code — the one place the pairing lives. */
+export function requestCancelCode(reason: RequestCancelReason): RequestCancelCode {
+  return reason === "timeout" ? CLIENT_ERROR_CODES.REQUEST_TIMEOUT : CLIENT_ERROR_CODES.REQUEST_ABORTED;
+}

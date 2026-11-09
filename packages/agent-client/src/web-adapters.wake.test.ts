@@ -16,6 +16,7 @@ import {
   createWebAdapters,
 } from "./web-adapters.js";
 import { AgentResponseError, WAKING_HEADER, isWakingRefusal } from "./errors.js";
+import { CLIENT_ERROR_CODES } from "./error-codes.js";
 import { WAKE_BUDGET_MS, type WakeWaitInfo } from "./saturation-retry.js";
 import type { InvokeRequest } from "./types.js";
 
@@ -267,6 +268,25 @@ describe("createUiActionRelay — the pod door waits out a wake", () => {
     expect((await out).isError).toBe(true);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
+
+  it("a timeoutMs shorter than the wake ends the wait in-band and sends nothing more (guuey#2492)", async () => {
+    const fetchImpl = queueFetch([() => wakingResponse("15"), () => json(OK_BODY)]);
+    const relay = createUiActionRelay({
+      apiBaseUrl: "https://api.example/v1",
+      threadId: "t1",
+      endpointUrl: POD,
+      guestSecret: SECRET,
+      fetchImpl,
+      timeoutMs: 5_000,
+    });
+    const out = relay(REQUEST);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect((await out).isError).toBe(true);
+    // The timeout ended the wake wait itself: no timer is left running.
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("createHitlAnswerRelay — the answer door waits out a wake", () => {
@@ -321,6 +341,57 @@ describe("createHitlAnswerRelay — the answer door waits out a wake", () => {
     await vi.advanceTimersByTimeAsync(3_000);
     controller.abort();
     expect(await out).toEqual({ ok: false, status: 503, code: null, message: "hitl-answer failed (503)" });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("with a timeoutMs set too, the wake signal still ends the wait as the waking refusal (guuey#2492)", async () => {
+    const controller = new AbortController();
+    const fetchImpl = queueFetch([() => wakingResponse("15"), () => json({})]);
+    const relay = createHitlAnswerRelay({
+      endpointUrl: POD,
+      guestSecret: SECRET,
+      fetchImpl,
+      signal: controller.signal,
+      timeoutMs: 60_000,
+    });
+    const out = relay(ANSWER);
+    await vi.advanceTimersByTimeAsync(3_000);
+    controller.abort();
+    expect(await out).toEqual({ ok: false, status: 503, code: null, message: "hitl-answer failed (503)" });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("a cancelSignal abort during a wake wait reports the caller's cancel at once and sends nothing more (guuey#2492)", async () => {
+    const controller = new AbortController();
+    const fetchImpl = queueFetch([() => wakingResponse("15"), () => json({})]);
+    const relay = createHitlAnswerRelay({ endpointUrl: POD, guestSecret: SECRET, fetchImpl, cancelSignal: controller.signal });
+    const out = relay(ANSWER);
+    await vi.advanceTimersByTimeAsync(3_000);
+    controller.abort();
+    expect(await out).toEqual({
+      ok: false,
+      status: 0,
+      code: CLIENT_ERROR_CODES.REQUEST_ABORTED,
+      message: "hitl-answer aborted",
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("a timeoutMs shorter than the wake ends the wait as a timeout and sends nothing more (guuey#2492)", async () => {
+    const fetchImpl = queueFetch([() => wakingResponse("15"), () => json({})]);
+    const relay = createHitlAnswerRelay({ endpointUrl: POD, guestSecret: SECRET, fetchImpl, timeoutMs: 5_000 });
+    const out = relay(ANSWER);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await out).toEqual({
+      ok: false,
+      status: 0,
+      code: CLIENT_ERROR_CODES.REQUEST_TIMEOUT,
+      message: "hitl-answer timed out",
+    });
+    // The timeout ended the wake wait itself: no timer is left running.
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(30_000);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });

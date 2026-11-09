@@ -244,6 +244,19 @@ export const CLIENT_ERROR_CODES = {
    * line.
    */
   WAKE_TIMED_OUT: "WAKE_TIMED_OUT",
+  /**
+   * A one-shot call (`deleteThread`, the card relays, `dismissLinkPrompt`,
+   * `mergeGuestThreads`, `fetchThreadHistory`) was cancelled by the caller's
+   * own `signal` (guuey#2492). Nothing more is sent; a request already in
+   * flight is aborted, so the server may or may not have acted on it.
+   */
+  REQUEST_ABORTED: "REQUEST_ABORTED",
+  /**
+   * A one-shot call ran past the caller's `timeoutMs` (guuey#2492) and was
+   * abandoned: the request in flight is aborted, so the server may or may not
+   * have acted on it.
+   */
+  REQUEST_TIMEOUT: "REQUEST_TIMEOUT",
 } as const;
 
 /** One of this SDK's client-originated codes — see {@link CLIENT_ERROR_CODES}. */

@@ -23,13 +23,15 @@
  * A run the guest left paused does not resume after the merge: the user sends
  * again. A plane without the route answers 404, reported as
  * `{ supported: false }` — keep the pre-merge behaviour (a new thread under
- * the bearer). Never throws.
+ * the bearer). `signal` / `timeoutMs` (guuey#2492) bound the whole call, its
+ * cursor pages included. Never throws.
  */
-import { parseRetryAfterSeconds } from "./errors.js";
+import { parseRetryAfterSeconds, requestCancelCode } from "./errors.js";
+import { runOneShot, type OneShotRequestOptions, type ScopedFetch } from "./one-shot.js";
 import { GUEST_HEADER, sendableGuestSecret } from "./transport.js";
 import { isWireObject } from "./wire-object.js";
 
-export interface MergeGuestThreadsOptions {
+export interface MergeGuestThreadsOptions extends OneShotRequestOptions {
   /** The guuey public API base (`…/v1`) — the same base the transcript reads use. */
   apiBaseUrl: string;
   /** The app whose guest threads move. The bearer must come from this app's sign-in. */
@@ -56,7 +58,11 @@ export type MergeGuestThreadsResult =
       ok: false;
       /** The HTTP status; 0 when no response came back. */
       status: number;
-      /** The server's error code, or `NO_ACCESS_TOKEN` / `NETWORK` / `BAD_RESPONSE`. */
+      /**
+       * The server's error code, or `NO_ACCESS_TOKEN` / `NETWORK` / `BAD_RESPONSE`,
+       * or `CLIENT_ERROR_CODES.REQUEST_ABORTED` / `REQUEST_TIMEOUT` when the
+       * caller's `signal` or `timeoutMs` ended the call (guuey#2492).
+       */
       code: string | null;
       retryAfterSeconds?: number;
     };
@@ -65,7 +71,13 @@ export type MergeGuestThreadsResult =
 const MAX_MERGE_CALLS = 5;
 
 export async function mergeGuestThreads(options: MergeGuestThreadsOptions): Promise<MergeGuestThreadsResult> {
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const outcome = await runOneShot(options, options.fetchImpl ?? fetch, (send) => mergeOnce(send, options));
+  if (outcome.kind === "settled") return outcome.value;
+  return { supported: true, ok: false, status: 0, code: requestCancelCode(outcome.reason) };
+}
+
+/** {@link mergeGuestThreads}' requests, through the call's scoped `send`. */
+async function mergeOnce(send: ScopedFetch, options: MergeGuestThreadsOptions): Promise<MergeGuestThreadsResult> {
   const token = await options.getAccessToken().catch(() => null);
   if (!token) return { supported: true, ok: false, status: 0, code: "NO_ACCESS_TOKEN" };
   const guest = sendableGuestSecret(options.getGuestSecret?.() ?? null);
@@ -88,7 +100,7 @@ export async function mergeGuestThreads(options: MergeGuestThreadsOptions): Prom
           : {};
     let res: Response;
     try {
-      res = await fetchImpl(url, { method: "POST", headers, credentials: "include", body: JSON.stringify(body) });
+      res = await send(url, { method: "POST", headers, credentials: "include", body: JSON.stringify(body) });
     } catch {
       return { supported: true, ok: false, status: 0, code: "NETWORK" };
     }

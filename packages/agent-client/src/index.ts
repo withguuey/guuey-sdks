@@ -64,7 +64,12 @@ export {
   WAKE_TIMED_OUT_MESSAGE,
   WAKING_HEADER,
   WakeTimedOutError,
+  RequestCancelledError,
+  type RequestCancelReason,
+  type RequestCancelCode,
 } from "./errors.js";
+// guuey#2492: the `signal` / `timeoutMs` every one-shot call accepts.
+export type { OneShotRequestOptions } from "./one-shot.js";
 // The pod's wire-code vocabulary, mirrored — branch on these instead of
 // re-typing the string literals (see the module docblock for the sync guard).
 export {

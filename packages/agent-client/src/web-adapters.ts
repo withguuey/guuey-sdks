@@ -34,6 +34,8 @@ import {
 } from "./saturation-retry.js";
 import { toInvokeUrl } from "./invoke-turn.js";
 import { isWireObject, type WireObject } from "./wire-object.js";
+import { requestCancelCode } from "./errors.js";
+import { runOneShot, type OneShotRequestOptions, type ScopedFetch } from "./one-shot.js";
 
 /** Persists the threadId in `window.localStorage` (synchronously). */
 export const localStorageThreadStore: ThreadIdStore = {
@@ -291,8 +293,15 @@ export function createWebAdapters(
   return adapters;
 }
 
-/** Options for {@link createUiResourceReader} — same credential surface as the history adapter. */
-export interface CreateUiResourceReaderOptions {
+/**
+ * Options for {@link createUiResourceReader} — same credential surface as the history adapter.
+ *
+ * `signal` (guuey#2492) cancels every read this reader makes, now and later
+ * (pass the surface's unmount signal); a cancelled read is a miss. `timeoutMs`
+ * bounds each door separately, so a hung pod door is a miss and the platform
+ * door still gets its own full budget.
+ */
+export interface CreateUiResourceReaderOptions extends OneShotRequestOptions {
   /**
    * The guuey public API base (`…/v1`) — the PLATFORM door's half.
    * Optional since guuey#368's local-dev fix: a surface with only a pod
@@ -403,8 +412,20 @@ export function createUiResourceReader(
     );
   }
 
-  /** One door: fetch + the history adapter's 401-forceRefresh recovery + parse. */
+  /**
+   * One door, under the caller's signal and per-door timeout: a cancelled or
+   * timed-out door is a miss, the same as a transport failure.
+   */
   const readDoor = async (requestUrl: string): Promise<McpResourceReadResult | undefined> => {
+    const outcome = await runOneShot(options, fetchImpl, (send) => readDoorOnce(send, requestUrl));
+    return outcome.kind === "settled" ? outcome.value : undefined;
+  };
+
+  /** One door: fetch + the history adapter's 401-forceRefresh recovery + parse. */
+  const readDoorOnce = async (
+    send: ScopedFetch,
+    requestUrl: string,
+  ): Promise<McpResourceReadResult | undefined> => {
     // Exactly ONE identity carrier per read, the invoke transport's rule
     // (`streamInvokeOnce`): bearer → guest header → else cookie credentials,
     // which round-trip the HttpOnly `guuey_guest` cookie the pod mints for
@@ -425,7 +446,7 @@ export function createUiResourceReader(
     }
     let res: Response;
     try {
-      res = await fetchImpl(requestUrl, init);
+      res = await send(requestUrl, init);
     } catch {
       return undefined; // transport failure == miss (the next door may still answer)
     }
@@ -437,7 +458,7 @@ export function createUiResourceReader(
       const fresh = await options.getAccessToken({ forceRefresh: true }).catch(() => null);
       if (fresh) {
         try {
-          res = await fetchImpl(requestUrl, {
+          res = await send(requestUrl, {
             headers: { ...headers, authorization: `Bearer ${fresh}` },
           });
         } catch {
@@ -502,8 +523,17 @@ export function createUiResourceReader(
   return createMcpUiResourceReader({ readResource });
 }
 
-/** Options for {@link createUiActionRelay} — same credential surface as the reader. */
-export interface CreateUiActionRelayOptions {
+/**
+ * Options for {@link createUiActionRelay} — same credential surface as the reader.
+ *
+ * Two cancels, by strength. `signal` (guuey#2452) only ends a wake wait and
+ * leaves a request already in flight alone, so a click sent just before the
+ * surface closes still lands. `cancelSignal` and `timeoutMs` (guuey#2492) are
+ * opt-in: they abort the request in flight too. `timeoutMs` bounds each door,
+ * a wake wait included. A cancelled or timed-out action is terminal, answered
+ * in-band as an `isError` result like every other failure.
+ */
+export interface CreateUiActionRelayOptions extends RelayCancelOptions {
   /** The guuey public API base (`…/v1`). */
   apiBaseUrl: string;
   /** The thread whose persisted cards this relay may act for. */
@@ -562,6 +592,14 @@ export interface CreateUiActionRelayOptions {
    * sent. A request already in flight is not cancelled.
    */
   signal?: AbortSignal;
+  /**
+   * The caller's cancel authority (guuey#2492), opt-in and stronger than
+   * `signal`: when it aborts, the action stops waiting at once, wherever it
+   * is (the credential, the request, the 401 retry, a wake wait), ABORTS the
+   * request in flight and sends nothing more, now and for every later action.
+   * Pass it only where losing a click already sent is acceptable.
+   */
+  cancelSignal?: AbortSignal;
   /** Injectable for tests. */
   fetchImpl?: typeof fetch;
 }
@@ -616,15 +654,26 @@ export function createUiActionRelay(
    * the persisted door cannot relay a mid-turn click either, so falling
    * through would only trade one honest error for a misleading 404.
    */
-  const wakeOptions: SendUnderWakeBudgetOptions = {
-    ...(options.onWakeWait !== undefined ? { onWakeWait: options.onWakeWait } : {}),
-    ...(options.signal !== undefined ? { signal: options.signal } : {}),
+  /**
+   * One door under the caller's `signal` and per-door `timeoutMs`: a cancelled
+   * or timed-out door is terminal (`undefined`), answered in-band like every
+   * other failure.
+   */
+  const postDoor = async (requestUrl: string, body: string, wakeDeadline: number): Promise<DoorAnswer> => {
+    const outcome = await runOneShot(relayOneShot(options), fetchImpl, (send, scope) =>
+      postDoorOnce(send, scope, requestUrl, body, wakeDeadline),
+    );
+    return outcome.kind === "settled" ? outcome.value : undefined;
   };
-  const postDoor = async (
+
+  /** {@link postDoor}'s request, made through the call's scoped `send`. */
+  const postDoorOnce = async (
+    send: ScopedFetch,
+    scope: AbortSignal | undefined,
     requestUrl: string,
     body: string,
     wakeDeadline: number,
-  ): Promise<{ kind: "result"; value: unknown } | "miss" | "meta-key-refused" | undefined> => {
+  ): Promise<DoorAnswer> => {
     // Exactly ONE identity carrier per call — the reader's rule verbatim:
     // bearer → guest header → else cookie credentials (the HttpOnly
     // `guuey_guest` cookie the pod mints for anonymous browser callers).
@@ -646,17 +695,21 @@ export function createUiActionRelay(
     } else {
       init.credentials = "include";
     }
+    const wake = wakeOf(options, scope);
     let res: Response;
     try {
       // A sleeping app's door answers 503 + X-Guuey-Waking while it wakes:
       // wait that out under the invoke's wake policy, within what is left of
       // the action's wake budget; every other answer comes back as it was.
-      res = await sendUnderWakeBudget(() => fetchImpl(requestUrl, init), {
-        ...wakeOptions,
+      // The wake `signal` and the call's cancel both end the wait.
+      res = await sendUnderWakeBudget(() => send(requestUrl, init), {
+        ...wake.options,
         budgetMs: Math.max(0, wakeDeadline - Date.now()),
       });
     } catch {
       return undefined; // transport failure — the host relay answers in-band
+    } finally {
+      wake.release();
     }
     // One forceRefresh retry on 401 with a bearer in play — the same
     // expired-but-refreshable recovery the reader performs. The retry
@@ -665,7 +718,7 @@ export function createUiActionRelay(
       const fresh = await options.getAccessToken({ forceRefresh: true }).catch(() => null);
       if (fresh) {
         try {
-          res = await fetchImpl(requestUrl, {
+          res = await send(requestUrl, {
             method: "POST",
             headers: { ...headers, authorization: `Bearer ${fresh}` },
             body,
@@ -747,6 +800,60 @@ export function createUiActionRelay(
   });
 }
 
+/**
+ * One action door's answer: the parsed result on 2xx, `"miss"` on 404,
+ * `"meta-key-refused"` on the unknown-key refusal, `undefined` for every other
+ * failure (a cancel or timeout included).
+ */
+type DoorAnswer = { kind: "result"; value: unknown } | "miss" | "meta-key-refused" | undefined;
+
+/**
+ * The relays' cancel options (guuey#2492): every one-shot option except
+ * `signal`, which on a relay is the older, weaker wake signal (guuey#2452);
+ * the full cancel is `cancelSignal`.
+ */
+interface RelayCancelOptions extends Omit<OneShotRequestOptions, "signal"> {
+  cancelSignal?: AbortSignal;
+}
+
+/** A relay's {@link runOneShot} options: its `cancelSignal` is the call's cancel authority. */
+function relayOneShot(options: RelayCancelOptions): OneShotRequestOptions {
+  return {
+    ...(options.cancelSignal !== undefined ? { signal: options.cancelSignal } : {}),
+    ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+  };
+}
+
+/**
+ * A relay's wake policy for one call: the host's `onWakeWait`, and a signal
+ * that ends a wake wait early when either the relay's wake `signal` or the
+ * call's cancel scope aborts. Built without `AbortSignal.any` (React Native);
+ * `release` drops the links once the wait is over.
+ */
+function wakeOf(
+  options: { onWakeWait?: WakeBudgetOptions["onWakeWait"]; signal?: AbortSignal },
+  scope: AbortSignal | undefined,
+): { options: SendUnderWakeBudgetOptions; release: () => void } {
+  const onWakeWait = options.onWakeWait !== undefined ? { onWakeWait: options.onWakeWait } : {};
+  const wakeSignal = options.signal;
+  if (wakeSignal === undefined || scope === undefined) {
+    const one = wakeSignal ?? scope;
+    return { options: { ...onWakeWait, ...(one !== undefined ? { signal: one } : {}) }, release: () => {} };
+  }
+  const either = new AbortController();
+  const abort = (): void => either.abort();
+  if (wakeSignal.aborted || scope.aborted) either.abort();
+  wakeSignal.addEventListener("abort", abort, { once: true });
+  scope.addEventListener("abort", abort, { once: true });
+  return {
+    options: { ...onWakeWait, signal: either.signal },
+    release: () => {
+      wakeSignal.removeEventListener("abort", abort);
+      scope.removeEventListener("abort", abort);
+    },
+  };
+}
+
 /** `{ admittedRequestMeta }` when the door advertised keys, else nothing. */
 function withAdvertisement(keys: readonly string[] | undefined): { admittedRequestMeta?: readonly string[] } {
   return keys === undefined ? {} : { admittedRequestMeta: keys };
@@ -776,8 +883,17 @@ function toHitlAnswerUrl(endpointUrl: string): string {
   return toInvokeUrl(endpointUrl).replace(/\/agent\/invoke$/, "/agent/hitl-answer");
 }
 
-/** Options for {@link createHitlAnswerRelay} — the same credential surface as the card relays. */
-export interface CreateHitlAnswerRelayOptions {
+/**
+ * Options for {@link createHitlAnswerRelay} — the same credential surface as the card relays.
+ *
+ * Two cancels, by strength. `signal` (guuey#2452) only ends a wake wait and
+ * leaves an answer already in flight alone, so an answer sent just before the
+ * surface closes still lands. `cancelSignal` and `timeoutMs` (guuey#2492) are
+ * opt-in: they abort the request in flight too, and settle the answer as
+ * `{ ok: false, status: 0, code: CLIENT_ERROR_CODES.REQUEST_ABORTED | REQUEST_TIMEOUT }`.
+ * `timeoutMs` bounds each answer, a wake wait included.
+ */
+export interface CreateHitlAnswerRelayOptions extends RelayCancelOptions {
   /** The surface's invoke endpoint (pod base URL or full `/agent/invoke` URL) — the answer door lives on the pod. */
   endpointUrl: string;
   /** Signed-in bearer — wins over the guest secret (same rule as the transport). */
@@ -796,6 +912,14 @@ export interface CreateHitlAnswerRelayOptions {
    * already in flight is not cancelled.
    */
   signal?: AbortSignal;
+  /**
+   * The caller's cancel authority (guuey#2492), opt-in and stronger than
+   * `signal`: when it aborts, the answer stops waiting at once, wherever it is
+   * (the credential, the request, the 401 retry, a wake wait), ABORTS the
+   * request in flight and sends nothing more, now and for every later answer.
+   * Pass it only where losing an answer already sent is acceptable.
+   */
+  cancelSignal?: AbortSignal;
   /** Injectable for tests. */
   fetchImpl?: typeof fetch;
 }
@@ -807,7 +931,8 @@ export interface CreateHitlAnswerRelayOptions {
  * `{ code, message }` envelope (the same vocabulary as `AGENT_ERROR_CODES`,
  * e.g. `NOT_FOUND` for an ask this pod did not mint, `INVALID_REQUEST` for a
  * spec-invalid answer) with the HTTP status; a transport failure is
- * `status: 0` with a null code.
+ * `status: 0` with a null code; the caller's abort or timeout is `status: 0`
+ * with `CLIENT_ERROR_CODES.REQUEST_ABORTED` / `REQUEST_TIMEOUT` (guuey#2492).
  */
 export type HitlAnswerRelayResult =
   | { ok: true; body: { askId: string; status: AgHitlAnswer["status"]; mode?: string } }
@@ -834,11 +959,18 @@ export function createHitlAnswerRelay(
 ): (answer: AgHitlAnswer) => Promise<HitlAnswerRelayResult> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const url = toHitlAnswerUrl(options.endpointUrl);
-  const wakeOptions: SendUnderWakeBudgetOptions = {
-    ...(options.onWakeWait !== undefined ? { onWakeWait: options.onWakeWait } : {}),
-    ...(options.signal !== undefined ? { signal: options.signal } : {}),
-  };
   return async (answer) => {
+    const outcome = await runOneShot(relayOneShot(options), fetchImpl, (send, scope) => sendAnswer(send, scope, answer));
+    if (outcome.kind === "settled") return outcome.value;
+    const code = requestCancelCode(outcome.reason);
+    return { ok: false, status: 0, code, message: `hitl-answer ${outcome.reason === "timeout" ? "timed out" : "aborted"}` };
+  };
+
+  async function sendAnswer(
+    send: ScopedFetch,
+    scope: AbortSignal | undefined,
+    answer: AgHitlAnswer,
+  ): Promise<HitlAnswerRelayResult> {
     const headers: Record<string, string> = { "content-type": "application/json" };
     const body = JSON.stringify(answer);
     const init: RequestInit = { method: "POST", headers, body };
@@ -851,19 +983,23 @@ export function createHitlAnswerRelay(
     } else {
       init.credentials = "include";
     }
+    const wake = wakeOf(options, scope);
     let res: Response;
     try {
       // A sleeping app answers 503 + X-Guuey-Waking while it wakes: wait that
       // out under the invoke's wake budget; every other answer is unchanged.
-      res = await sendUnderWakeBudget(() => fetchImpl(url, init), wakeOptions);
+      // The wake `signal` and the call's cancel both end the wait.
+      res = await sendUnderWakeBudget(() => send(url, init), wake.options);
     } catch (err) {
       return { ok: false, status: 0, code: null, message: err instanceof Error ? err.message : String(err) };
+    } finally {
+      wake.release();
     }
     if (res.status === 401 && options.getAccessToken) {
       const fresh = await options.getAccessToken({ forceRefresh: true }).catch(() => null);
       if (fresh) {
         try {
-          res = await fetchImpl(url, {
+          res = await send(url, {
             method: "POST",
             headers: { ...headers, authorization: `Bearer ${fresh}` },
             body,
@@ -897,11 +1033,18 @@ export function createHitlAnswerRelay(
       code: typeof b.code === "string" ? b.code : null,
       message: typeof b.message === "string" ? b.message : `hitl-answer failed (${res.status})`,
     };
-  };
+  }
 }
 
-/** Options for {@link deleteThread} — the same credential surface as the sibling platform doors. */
-export interface DeleteThreadOptions {
+/**
+ * Options for {@link deleteThread} — the same credential surface as the sibling platform doors.
+ *
+ * `signal` and `timeoutMs` (guuey#2492) bound the whole call, its single 401
+ * retry included: it settles as `"failed"` instead of waiting on a hung
+ * request (the request is abandoned, so the thread may still exist). A caller
+ * that needs to tell its own abort apart reads its signal's `aborted`.
+ */
+export interface DeleteThreadOptions extends OneShotRequestOptions {
   /** The guuey public API base (`…/v1`) — the same base the transcript reads use. */
   apiBaseUrl: string;
   /** The thread to erase. Must be the id the SAME identity created. */
@@ -926,7 +1069,10 @@ export interface DeleteThreadOptions {
  * the credential did not own the thread (401/403; guuey#526's
  * unlinkability fallback applies: clear locally anyway, surface nothing
  * louder than a debug line); `"failed"` — transport or server failure
- * (the thread may still exist server-side).
+ * (the thread may still exist server-side), and also the caller's `signal`
+ * firing or its `timeoutMs` running out first (guuey#2492): the request was
+ * abandoned, so the thread may likewise still exist. Kept to three values so
+ * a consumer that branches on all of them keeps compiling.
  */
 export type DeleteThreadResult = "deleted" | "denied" | "failed";
 
@@ -941,7 +1087,12 @@ export type DeleteThreadResult = "deleted" | "denied" | "failed";
  * throws — every failure collapses into the result union.
  */
 export async function deleteThread(options: DeleteThreadOptions): Promise<DeleteThreadResult> {
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const outcome = await runOneShot(options, options.fetchImpl ?? fetch, (send) => deleteThreadOnce(send, options));
+  return outcome.kind === "settled" ? outcome.value : "failed";
+}
+
+/** {@link deleteThread}'s request and its 401 retry, through the call's scoped `send`. */
+async function deleteThreadOnce(send: ScopedFetch, options: DeleteThreadOptions): Promise<DeleteThreadResult> {
   const requestUrl = `${options.apiBaseUrl}/threads/${encodeURIComponent(options.threadId)}`;
   const headers: Record<string, string> = {};
   const init: RequestInit = { method: "DELETE", headers };
@@ -956,7 +1107,7 @@ export async function deleteThread(options: DeleteThreadOptions): Promise<Delete
   }
   let res: Response;
   try {
-    res = await fetchImpl(requestUrl, init);
+    res = await send(requestUrl, init);
   } catch {
     return "failed";
   }
@@ -964,7 +1115,7 @@ export async function deleteThread(options: DeleteThreadOptions): Promise<Delete
     const fresh = await options.getAccessToken({ forceRefresh: true }).catch(() => null);
     if (fresh) {
       try {
-        res = await fetchImpl(requestUrl, {
+        res = await send(requestUrl, {
           method: "DELETE",
           headers: { authorization: `Bearer ${fresh}` },
         });

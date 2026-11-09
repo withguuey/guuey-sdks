@@ -9,6 +9,9 @@
  * injectable `fetchImpl` for tests, defaulting to the global `fetch`.
  */
 
+import { RequestCancelledError } from "./errors.js";
+import { runOneShot, type OneShotRequestOptions } from "./one-shot.js";
+
 /**
  * Dismiss the pending cross-app profile link prompt for the calling byo
  * end-user. `baseUrl` is the AGENT's endpoint (the `Live at` URL, or
@@ -23,17 +26,24 @@
  *
  * Resolves on a 204 (the route's only success response); throws on any
  * non-2xx status (401 unauthenticated, 403 non-byo caller, 500 write failure).
+ * `options.signal` / `options.timeoutMs` (guuey#2492) bound the call: either
+ * rejects with {@link RequestCancelledError} instead of waiting on a hung
+ * request.
  */
 export async function dismissLinkPrompt(
   baseUrl: string,
   bearer: string,
   fetchImpl: typeof fetch = fetch,
+  options: OneShotRequestOptions = {},
 ): Promise<void> {
-  const res = await fetchImpl(`${baseUrl}/link-prompt/dismiss`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${bearer}` },
-  });
-  if (!res.ok) {
-    throw new Error(`link prompt dismiss failed: ${res.status}`);
+  const outcome = await runOneShot(options, fetchImpl, (send) =>
+    send(`${baseUrl}/link-prompt/dismiss`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${bearer}` },
+    }),
+  );
+  if (outcome.kind === "cancelled") throw new RequestCancelledError(outcome.reason);
+  if (!outcome.value.ok) {
+    throw new Error(`link prompt dismiss failed: ${outcome.value.status}`);
   }
 }
