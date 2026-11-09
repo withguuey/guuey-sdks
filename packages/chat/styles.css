@@ -451,7 +451,7 @@
 .guuey-chat-composer-input:focus-visible,
 .guuey-chat-a2ui-button:focus-visible,
 .guuey-chat-a2ui-open:focus-visible,
-.guuey-chat-a2ui-text a:focus-visible,
+.guuey-chat-a2ui-link:focus-visible,
 .guuey-chat-a2ui-input:focus-visible,
 .guuey-chat-a2ui-filter:focus-visible,
 .guuey-chat-a2ui-picker:focus-visible,
@@ -872,6 +872,9 @@
   color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
 }
 .guuey-chat-a2ui-button {
+  /* One box model for <a> and <button>, so a link Button stands as tall as an
+     action button at the same min-height. */
+  box-sizing: border-box;
   display: inline-flex;
   width: fit-content;
   max-width: 100%;

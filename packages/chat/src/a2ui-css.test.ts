@@ -152,6 +152,10 @@ describe("the A2UI surface's look (spec §5.3)", () => {
   });
 
   it("one height per button row: every button is 36px and one line, its words ellipsized, its host kept whole", () => {
+    // An <a> computes content-box and a <button> border-box: without one
+    // box model a link Button's 36px min-height grows by its padding and
+    // border, and stands 50px tall beside 36px action buttons.
+    expect(value(".guuey-chat-a2ui-button", "box-sizing")).toBe("border-box");
     expect(value(".guuey-chat-a2ui-button", "min-height")).toBe("36px");
     expect(value(".guuey-chat-a2ui-button", "white-space")).toBe("nowrap");
     expect(value(".guuey-chat-a2ui-button", "max-width")).toBe("100%");

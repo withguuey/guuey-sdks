@@ -277,6 +277,28 @@ describe("(a) each component, and each prop through its closed table", () => {
     expect(surface.querySelector(".guuey-chat-a2ui-unavailable")).toBeNull();
   });
 
+  it("every anchor the surface draws wears a class the kit's focus ring names", () => {
+    const sheet = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../styles.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const ring = Array.from(sheet.matchAll(/([^{}]+)\{([^{}]*)\}/g)).find(
+      (m) => /outline:\s*2px solid var\(--guuey-chat-cue/.test(m[2] ?? "") && (m[1] ?? "").includes(".guuey-chat-a2ui-button:focus-visible"),
+    );
+    const ringed = (ring?.[1] ?? "").split(",").map((s) => s.trim());
+    const { surface } = draw([
+      { id: "root", component: "Column", children: ["t", "b", "i"] },
+      { id: "t", component: "Text", text: "See [the menu](https://menu.example/m)" },
+      { id: "b", component: "Button", label: "Menu", href: "https://menu.example/m" },
+      { id: "i", component: "Image", src: "https://pics.example/p.png", alt: "Holiday" },
+    ]);
+    const anchors = Array.from(surface.querySelectorAll<HTMLElement>("a"));
+    expect(anchors).toHaveLength(3);
+    for (const a of anchors) {
+      expect(
+        Array.from(a.classList).some((c) => ringed.includes(`.${c}:focus-visible`)),
+        a.className,
+      ).toBe(true);
+    }
+  });
+
   it("Button: every button's words sit in one words element, a link button's host beside them on the same row", () => {
     const { surface } = draw([
       { id: "root", component: "Row", children: ["a", "l"] },
