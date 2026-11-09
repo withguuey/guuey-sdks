@@ -280,3 +280,56 @@ describe("<GuueyChat> sends an A2UI action through the composer's gate (guuey#23
     expect(bodies).toHaveLength(1);
   });
 });
+
+describe("<GuueyChat> advertises the A2UI catalogs because it wires their actions (guuey#2386)", () => {
+  function recordingBodies() {
+    const bodies: Array<{ [key: string]: unknown }> = [];
+    const t: AgentInvokeAdapters = {
+      storage: { load: () => null, save: () => {} },
+      generateId: (() => {
+        let n = 0;
+        return () => `cm_${n++}`;
+      })(),
+      transport: async function* (req) {
+        const body = req.body;
+        if (typeof body === "object" && body !== null && !Array.isArray(body)) bodies.push({ ...body });
+        yield SESSION_FRAME;
+        for (const f of TOOL_FRAMES) yield f;
+        yield DONE_FRAME;
+      },
+    };
+    return { bodies, adapters: t };
+  }
+
+  for (const viewMessageTurns of [true, false]) {
+    it(`every turn carries the catalogs (viewMessageTurns ${viewMessageTurns ? "declared" : "not declared"}), and the surface's actions are wired`, async () => {
+      const t = recordingBodies();
+      const { container } = render(<GuueyChat endpointUrl="https://pod.example/agent/invoke" adapters={t.adapters} viewMessageTurns={viewMessageTurns} />);
+      send();
+      await waitFor(() => expect(container.querySelector(".guuey-chat-a2ui")).not.toBeNull());
+      expect(t.bodies[0]?.["capabilities"]).toEqual({
+        hitl: { ask: true, grantModes: true },
+        uiResources: { ...(viewMessageTurns ? { viewMessageTurns: true } : {}), catalogs: ["guuey.a2ui.v1", "guuey.json-render.v1"] },
+      });
+      // S6 (c): an advertising surface draws its action buttons live, never "Not available here".
+      await waitFor(() => expect(screen.queryByRole("button", { name: defaultChatStrings.stop })).toBeNull());
+      expect((screen.getByRole("button", { name: "Place order" }) as HTMLButtonElement).disabled).toBe(false);
+      expect(container.querySelector(".guuey-chat-a2ui-unavailable")).toBeNull();
+    });
+  }
+});
+
+describe("GuueyChatHandle.send reads the composer's one refusal (guuey#2386)", () => {
+  it("an ended conversation refuses a handle send, as it refuses the composer and an A2UI press", async () => {
+    const ref = createRef<GuueyChatHandle>();
+    render(<GuueyChat ref={ref} endpointUrl="https://pod.example/agent/invoke" adapters={adapters({ closeFirst: true })} />);
+    send();
+    await waitFor(() => expect((screen.getByLabelText("Message") as HTMLTextAreaElement).disabled).toBe(true));
+    await waitFor(() => expect(screen.queryByRole("button", { name: defaultChatStrings.stop })).toBeNull());
+    let sent = true;
+    act(() => {
+      sent = ref.current?.send("one more thing") ?? true;
+    });
+    expect(sent).toBe(false);
+  });
+});

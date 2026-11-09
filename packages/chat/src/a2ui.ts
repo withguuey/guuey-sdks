@@ -23,6 +23,8 @@ export {
 // guuey#2384: forms and actions — the payload check before a send, and the turn text a press sends.
 export {
   a2uiActionTurnText,
+  sendA2uiAction,
+  type A2uiActionSender,
   checkA2uiAction,
   type A2uiActionCheck,
   type A2uiActionOutcome,

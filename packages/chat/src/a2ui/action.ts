@@ -147,3 +147,28 @@ export function a2uiActionTurnText(request: A2uiActionRequest, actionId: string)
   const { summary, ...record } = request;
   return writeA2uiActionText({ ...record, actionId }, summary);
 }
+
+/** The send path a press goes out on: the invoke hook's own id mint and send. */
+export interface A2uiActionSender {
+  newClientMessageId(): string;
+  send(text: string, options: { clientMessageId: string }): Promise<unknown>;
+}
+
+/**
+ * A press through a host's composer gate (spec §9.1), the one rule every
+ * surface that wires `onA2uiAction` applies: `closed` while its composer
+ * refuses (no endpoint, a pending connect card, an ended conversation),
+ * `busy` while a reply is live; otherwise the turn's id is minted, the action
+ * text written under it, and the turn sent with that id.
+ */
+export function sendA2uiAction(gate: { closed: boolean; busy: boolean }, invoke: A2uiActionSender, request: A2uiActionRequest): A2uiActionOutcome {
+  if (gate.closed) return "closed";
+  if (gate.busy) return "busy";
+  const clientMessageId = invoke.newClientMessageId();
+  const text = a2uiActionTurnText(request, clientMessageId);
+  if (text === undefined) return "refused";
+  void invoke.send(text, { clientMessageId }).catch(() => {
+    // The hook surfaces a failed send on its row (with Retry); a press adds nothing.
+  });
+  return "sent";
+}

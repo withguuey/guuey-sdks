@@ -108,15 +108,17 @@ describe("<GuueyChat> advertises the view-message-turn capability only where its
     expect(body.capabilities.uiResources?.viewMessageTurns).toBe(true);
   });
 
+  // guuey#2386: uiResources always carries the A2UI catalogs now (the kit wires their
+  // actions), so "not declared" reads the viewMessageTurns key itself.
   it("does NOT declare it when the host replaces onUserMessage (even with undefined, which leaves the slot no sink), or passes a function-form viewProps", async () => {
     const replaced = await firstBody({ viewProps: { onUserMessage: async () => ({ delivered: false, reason: "host" }) } });
-    expect(replaced.capabilities.uiResources).toBeUndefined();
+    expect(replaced.capabilities.uiResources?.viewMessageTurns).toBeUndefined();
     cleanup();
     const blanked = await firstBody({ viewProps: { onUserMessage: undefined } });
-    expect(blanked.capabilities.uiResources).toBeUndefined();
+    expect(blanked.capabilities.uiResources?.viewMessageTurns).toBeUndefined();
     cleanup();
     const perItem = await firstBody({ viewProps: () => ({ autoResize: true }) });
-    expect(perItem.capabilities.uiResources).toBeUndefined();
+    expect(perItem.capabilities.uiResources?.viewMessageTurns).toBeUndefined();
   });
 
   it("a host-stated viewMessageTurns wins either way, and never drops the default hitl set", async () => {
@@ -125,7 +127,7 @@ describe("<GuueyChat> advertises the view-message-turn capability only where its
     expect(stated.capabilities.hitl).toEqual(VIEW_MESSAGE_TURN_CAPABILITIES.hitl);
     cleanup();
     const withheld = await firstBody({ viewMessageTurns: false });
-    expect(withheld.capabilities.uiResources).toBeUndefined();
+    expect(withheld.capabilities.uiResources?.viewMessageTurns).toBeUndefined();
     expect(withheld.capabilities.hitl).toEqual(VIEW_MESSAGE_TURN_CAPABILITIES.hitl);
   });
 

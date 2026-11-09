@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonValue } from "@silverprotocol/core";
 import { A2UI_ACTION_PAYLOAD_MAX_UNITS, a2uiActionPayload } from "@guuey/mcp-apps-host/narrowing";
-import { checkA2uiAction } from "./action.js";
+import { checkA2uiAction, sendA2uiAction, type A2uiActionRequest } from "./action.js";
 import type { A2uiAction, A2uiFieldSpec } from "./schema.js";
 import { A2UI_LIMITS } from "./limits.js";
 
@@ -146,5 +146,34 @@ describe("review r2 — a field the browser could not read is not a number, what
     const fields = { "/v": text() };
     const out = checkA2uiAction(fields, { name: "go", context: { v: { path: "/v" } } }, () => "typed", new Set(["/v"]));
     expect(out).toEqual({ ok: false, fields: { "/v": { kind: "not-a-number" } }, form: null });
+  });
+});
+
+describe("sendA2uiAction — the one press rule behind a surface's composer gate (guuey#2386)", () => {
+  const request: A2uiActionRequest = { surfaceId: "order", name: "submit", sourceComponentId: "go", context: { n: 1 }, summary: { label: "Go", pairs: [] } };
+  function sender() {
+    const sent: Array<{ text: string; clientMessageId: string }> = [];
+    return { sent, newClientMessageId: () => "cm_9", send: async (text: string, o: { clientMessageId: string }) => void sent.push({ text, ...o }) };
+  }
+
+  it("closed, then busy, refuse before anything is minted or sent", () => {
+    const s = sender();
+    expect(sendA2uiAction({ closed: true, busy: true }, s, request)).toBe("closed");
+    expect(sendA2uiAction({ closed: false, busy: true }, s, request)).toBe("busy");
+    expect(s.sent).toEqual([]);
+  });
+
+  it("an open gate sends the action text under the minted id, as the turn's clientMessageId", () => {
+    const s = sender();
+    expect(sendA2uiAction({ closed: false, busy: false }, s, request)).toBe("sent");
+    expect(s.sent).toHaveLength(1);
+    expect(s.sent[0]?.clientMessageId).toBe("cm_9");
+    expect(s.sent[0]?.text).toContain('id="cm_9"');
+  });
+
+  it("a record the writer refuses is refused, and nothing is sent", () => {
+    const s = sender();
+    expect(sendA2uiAction({ closed: false, busy: false }, s, { ...request, name: "no spaces allowed" })).toBe("refused");
+    expect(s.sent).toEqual([]);
   });
 });

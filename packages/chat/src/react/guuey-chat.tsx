@@ -83,7 +83,12 @@ import {
   type SendOptions,
 } from "@guuey/agent-client";
 import type { AgHitlAnswer, AgPausedAsk } from "@silverprotocol/core";
-import { useAgentInvoke, VIEW_MESSAGE_TURN_CAPABILITIES } from "@guuey/agent-client/react";
+import {
+  DEFAULT_BLOCK_PRESERVING_CAPABILITIES,
+  useAgentInvoke,
+  VIEW_MESSAGE_TURN_CAPABILITIES,
+  withA2uiCatalogs,
+} from "@guuey/agent-client/react";
 import { mountedCardProps, unavailableToolCallResult } from "@guuey/mcp-apps-host";
 import type {
   MountedCardProps,
@@ -114,7 +119,7 @@ import { facesCss, useHostFaces } from "./faces.js";
 import { hostContextStyles, hostStyleVariables, type HostStyleVariables } from "../host-style-variables.js";
 import { Transcript, type TranscriptWindowing } from "./transcript.js";
 import { useA2uiEditStore } from "./a2ui.js";
-import { a2uiActionTurnText, type A2uiActionOutcome, type A2uiActionRequest } from "../a2ui/action.js";
+import { sendA2uiAction, type A2uiActionOutcome, type A2uiActionRequest } from "../a2ui/action.js";
 import type { TranscriptComponents, TranscriptItemContext, ViewSlotProps } from "./components.js";
 import { useTranscript, useTranscriptInputs } from "./use-transcript.js";
 import { useTapEcho } from "./use-tap-echo.js";
@@ -771,7 +776,8 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     endpointUrl,
     ...(appId !== undefined ? { appId } : {}),
     ...(agentMode !== undefined ? { mode: agentMode } : {}),
-    ...(advertiseViewMessageTurns ? { capabilities: VIEW_MESSAGE_TURN_CAPABILITIES } : {}),
+    // guuey#2386: this kit draws A2UI and wires its actions, so every turn says so.
+    capabilities: withA2uiCatalogs(advertiseViewMessageTurns ? VIEW_MESSAGE_TURN_CAPABILITIES : DEFAULT_BLOCK_PRESERVING_CAPABILITIES),
     adapters,
     preserveBlocks: true,
   });
@@ -1390,16 +1396,9 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       const live = liveRef.current;
       // The composer's own refusal (an ended conversation, a pending connect
       // card, no endpoint) refuses the press; a live reply asks it to wait.
-      if (live.composerClosed) return "closed";
-      if (live.busy) return "busy";
-      const clientMessageId = live.invoke.newClientMessageId();
-      const text = a2uiActionTurnText(request, clientMessageId);
-      if (text === undefined) return "refused";
-      analytics.messageSent();
-      void live.invoke.send(text, { clientMessageId }).catch(() => {
-        // Same contract as submit: the hook owns failure surfacing.
-      });
-      return "sent";
+      const outcome = sendA2uiAction({ closed: live.composerClosed, busy: live.busy }, live.invoke, request);
+      if (outcome === "sent") analytics.messageSent();
+      return outcome;
     },
     [analytics],
   );
@@ -1411,8 +1410,8 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         const trimmed = text.trim();
         // guuey#2549: a turn without words; the agent's runtime judges it.
         const inputKind = trimmed === "" ? opts?.inputKind : undefined;
-        // Exactly the Send button's gate — a handle send never bypasses it.
-        if (!live.available || live.busy || (trimmed === "" && inputKind === undefined)) return false;
+        // Exactly the Send button's gate (the composer's one refusal) — a handle send never bypasses it.
+        if (live.composerClosed || live.busy || (trimmed === "" && inputKind === undefined)) return false;
         analytics.messageSent();
         void live.invoke.send(trimmed, inputKind !== undefined ? { inputKind } : undefined).catch(() => {
           // Same contract as submit: the hook owns failure surfacing.
