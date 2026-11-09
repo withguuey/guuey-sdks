@@ -104,6 +104,7 @@ describe('deploy() --code — the size is the builder\'s or the server\'s, never
     dir = mkdtempSync(join(tmpdir(), 'deploy-size-test-'));
     writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
     mkdirSync(join(dir, 'node_modules'));
+    writeFileSync(join(dir, 'node_modules', '.modules.yaml'), ''); // a finished install (guuey#3280)
     writeFileSync(join(dir, 'guuey.worker.js'), '// built worker');
     packed.path = join(dir, 'source.tar.gz');
     writeFileSync(packed.path, 'tar!');

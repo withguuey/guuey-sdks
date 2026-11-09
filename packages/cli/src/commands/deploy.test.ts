@@ -17,6 +17,7 @@ import {
   portalOriginForHost,
   printPageLine, printPodLifetime,
   ensureInstalled,
+  INSTALL_FINISHED_MARKERS,
 } from './deploy.js';
 import { DEPLOY_WAIT_MS, NODE_PROVISION_BUDGET_MS, stillDeployingMessage } from './deploy-wait.js';
 import { resolveConfig, loadProjectConfig } from '../config.js';
@@ -92,6 +93,7 @@ function writeCodeProject(dir: string, doc: object): void {
   writeFileSync(join(dir, 'guuey.json'), JSON.stringify(doc));
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
   mkdirSync(join(dir, 'node_modules'));
+  writeFileSync(join(dir, 'node_modules', '.modules.yaml'), ''); // a finished install (guuey#3280)
   writeFileSync(join(dir, 'guuey.worker.js'), '// built worker');
   packed.path = join(dir, 'source.tar.gz');
   writeFileSync(packed.path, 'tar!');
@@ -2255,11 +2257,43 @@ describe('ensureInstalled (guuey#979 / #1000)', () => {
     expect(logs.join('\n')).toMatch(/No node_modules yet — installing dependencies \(pnpm install\)/);
   });
 
-  it('a project with node_modules present is untouched (no install, no message)', () => {
+  it('a project with a finished install is untouched (no install, no message)', () => {
     const r = ensureInstalled({
       root: '/p',
       install: true,
-      ...io(new Set(['/p/package.json', '/p/node_modules'])),
+      ...io(new Set(['/p/package.json', '/p/node_modules', '/p/node_modules/.modules.yaml'])),
+    });
+    expect(r).toEqual({ kind: 'present' });
+    expect(calls).toEqual([]);
+  });
+
+  it.each(INSTALL_FINISHED_MARKERS)('guuey#3280: %s marks a finished install', (marker) => {
+    const r = ensureInstalled({
+      root: '/p',
+      install: true,
+      ...io(new Set(['/p/package.json', '/p/node_modules', `/p/node_modules/${marker}`])),
+    });
+    expect(r).toEqual({ kind: 'present' });
+  });
+
+  it('guuey#3280: a node_modules no package manager finished is installed again, and the line says why', () => {
+    const r = ensureInstalled({ root: '/p', install: true, ...io(new Set(['/p/package.json', '/p/node_modules'])) });
+    expect(r).toEqual({ kind: 'installed' });
+    expect(calls).toEqual(['pnpm install']);
+    expect(logs.join('\n')).toMatch(/from an install that did not finish — installing dependencies \(pnpm install\)/);
+  });
+
+  it('guuey#3280: with --no-install, a partial node_modules stops the deploy naming the cause', () => {
+    const r = ensureInstalled({ root: '/p', install: false, ...io(new Set(['/p/package.json', '/p/node_modules'])) });
+    expect(r.kind === 'missing' ? r.message : '').toMatch(/install that did not finish — you passed --no-install; run "pnpm install"/);
+    expect(calls).toEqual([]);
+  });
+
+  it('guuey#3280: a bun project is taken as installed (its finish marker is not known here)', () => {
+    const r = ensureInstalled({
+      root: '/p',
+      install: true,
+      ...io(new Set(['/p/package.json', '/p/node_modules', '/p/bun.lock'])),
     });
     expect(r).toEqual({ kind: 'present' });
     expect(calls).toEqual([]);

@@ -840,6 +840,26 @@ async function askBuiltFor(rl: ReturnType<typeof createInterface>): Promise<AppB
 }
 
 // ─── guuey#979: node_modules preflight for the code-mode build ─────────────
+
+/**
+ * guuey#3280: what a package manager writes into node_modules only once an
+ * install FINISHES. pnpm writes `.modules.yaml` last (measured: absent in an
+ * install interrupted after node_modules/.pnpm exists, present after a full
+ * one); npm writes `.package-lock.json`; yarn classic `.yarn-integrity`, yarn
+ * berry's node-modules linker `.yarn-state.yml`. A node_modules with none of
+ * them is an install that stopped part-way (Ctrl-C, a network drop, a full
+ * disk), and building on it fails with a missing module that names no cause.
+ */
+export const INSTALL_FINISHED_MARKERS: readonly string[] = [
+  '.modules.yaml',
+  '.package-lock.json',
+  '.yarn-integrity',
+  '.yarn-state.yml',
+];
+
+/** Lockfiles of a package manager whose finish marker is not known here: its node_modules is taken as it is. */
+const UNMARKED_MANAGER_LOCKFILES: readonly string[] = ['bun.lock', 'bun.lockb'];
+
 export type EnsureInstalledResult =
   | { kind: 'not-applicable' }
   | { kind: 'present' }
@@ -865,13 +885,21 @@ export function ensureInstalled(opts: {
 }): EnsureInstalledResult {
   const { root, install, exists, run, log } = opts;
   if (!exists(join(root, 'package.json'))) return { kind: 'not-applicable' };
-  if (exists(join(root, 'node_modules'))) return { kind: 'present' };
+  const nodeModules = join(root, 'node_modules');
+  // guuey#3280: node_modules counts as installed only when a package manager
+  // finished an install there (an interrupted one leaves a partial tree).
+  const partial =
+    exists(nodeModules) &&
+    !UNMARKED_MANAGER_LOCKFILES.some((lockfile) => exists(join(root, lockfile))) &&
+    !INSTALL_FINISHED_MARKERS.some((marker) => exists(join(nodeModules, marker)));
+  if (exists(nodeModules) && !partial) return { kind: 'present' };
   if (!install) {
     // The --no-install face (guuey#1000): the caller chose to stop here.
     return {
       kind: 'missing',
-      message:
-        `No node_modules in ${root} — you passed --no-install; run "pnpm install" and re-run guuey deploy.`,
+      message: partial
+        ? `The node_modules in ${root} is from an install that did not finish — you passed --no-install; run "pnpm install" and re-run guuey deploy.`
+        : `No node_modules in ${root} — you passed --no-install; run "pnpm install" and re-run guuey deploy.`,
     };
   }
   // guuey#1441: whatever pnpm this machine can run — never corepack, which
@@ -880,7 +908,11 @@ export function ensureInstalled(opts: {
   if (installCmd === null) {
     return { kind: 'missing', message: noPnpmMessage('Install the dependencies', root) };
   }
-  log(`  No node_modules yet — installing dependencies (${installCmd})...`);
+  log(
+    partial
+      ? `  The node_modules here is from an install that did not finish — installing dependencies (${installCmd})...`
+      : `  No node_modules yet — installing dependencies (${installCmd})...`,
+  );
   run(installCmd);
   return { kind: 'installed' };
 }

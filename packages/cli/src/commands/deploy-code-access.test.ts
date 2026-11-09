@@ -133,6 +133,7 @@ describe('deploy() --code — app.access converges before the trigger (guuey#235
     dir = mkdtempSync(join(tmpdir(), 'deploy-code-access-test-'));
     writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { build: 'tsup' } }));
     mkdirSync(join(dir, 'node_modules'));
+    writeFileSync(join(dir, 'node_modules', '.modules.yaml'), ''); // a finished install (guuey#3280)
     writeFileSync(join(dir, 'guuey.worker.js'), '// built worker');
     packed.path = join(dir, 'source.tar.gz');
     writeFileSync(packed.path, 'tar!');
