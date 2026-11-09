@@ -584,8 +584,11 @@ export function renderGenerativeUiSection(
  * when the runtime threads them through (S6b). The framework call sites, and
  * their byte-identity pins beside {@link GENERATIVE_UI_SECTION}, land with it.
  */
+/** guuey's A2UI catalog id; mirrors `A2UI_GUUEY_CATALOG_ID` in oss/packages/chat/src/a2ui/schema.ts. */
+const A2UI_GUUEY_CATALOG_ID = "guuey.a2ui.v1";
+
 export const A2UI_SECTION =
-  `\n\n## Interactive surfaces\n\n` +
+  `\n\n## Native forms and cards\n\n` +
   `This chat draws guuey A2UI surfaces as native UI. When a tool returns one, the person sees it here. ` +
   `A form they submit comes back to you as their next turn, tagged \`<guuey_a2ui_action>\`. ` +
   `Keep one line of plain text beside every surface.`;
@@ -599,7 +602,7 @@ export function renderA2uiSection(
   catalogs: readonly string[] | undefined,
   surfaceHints: boolean | undefined,
 ): string {
-  if (catalogs?.includes("guuey.a2ui.v1") !== true || surfaceHints === false) return "";
+  if (catalogs?.includes(A2UI_GUUEY_CATALOG_ID) !== true || surfaceHints === false) return "";
   return A2UI_SECTION;
 }
 

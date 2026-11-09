@@ -332,7 +332,7 @@ describe("renderA2uiSection — native A2UI surfaces, only where the client draw
 
   it("byte pin — one paragraph: surfaces draw natively, forms come back tagged, a line of text beside each", () => {
     expect(A2UI_SECTION).toBe(
-      `\n\n## Interactive surfaces\n\n` +
+      `\n\n## Native forms and cards\n\n` +
         `This chat draws guuey A2UI surfaces as native UI. When a tool returns one, the person sees it here. ` +
         `A form they submit comes back to you as their next turn, tagged \`<guuey_a2ui_action>\`. ` +
         `Keep one line of plain text beside every surface.`,
