@@ -52,6 +52,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { requireAuth } from '../auth';
+import { isServingBuild, newestBuild } from '../deploy-shared';
 import {
   getProjectConfigPath,
   loadProjectConfig,
@@ -150,16 +151,9 @@ export interface PlatformTemplates {
 }
 
 /**
- * Statuses that mean a build is the live serving workload. `guuey pull`
- * ejects the definition that is CURRENTLY deployed and serving, so only
- * `'live'` qualifies. In-flight (`queued`/`building`/`deploying`) and
- * terminal (`superseded`/`undeployed`/`failed`) rows are skipped.
- */
-const DEPLOYED_STATUSES: ReadonlySet<string> = new Set(['live']);
-
-/**
  * Pick the build number to eject from a deployments list: the newest
- * (highest `buildNumber`) row that is both LIVE and NOCODE. Returns
+ * (highest `buildNumber`) row that is both serving ({@link isServingBuild}:
+ * `guuey pull` ejects the definition that is CURRENTLY deployed) and NOCODE. Returns
  * `null` when the app has no live nocode deployment (code-mode app, or
  * nothing currently deployed) — the caller then degrades to an
  * identity-only refresh.
@@ -170,13 +164,7 @@ const DEPLOYED_STATUSES: ReadonlySet<string> = new Set(['live']);
  * Exported for unit tests.
  */
 export function pickSnapshotBuild(deployments: DeploymentRow[]): number | null {
-  let picked: number | null = null;
-  for (const d of deployments) {
-    if (d.agentMode !== 'nocode') continue;
-    if (!DEPLOYED_STATUSES.has(d.status)) continue;
-    if (picked === null || d.buildNumber > picked) picked = d.buildNumber;
-  }
-  return picked;
+  return newestBuild(deployments, (d) => d.agentMode === 'nocode' && isServingBuild(d))?.buildNumber ?? null;
 }
 
 /**

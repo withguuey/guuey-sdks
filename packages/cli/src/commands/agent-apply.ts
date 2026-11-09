@@ -56,7 +56,7 @@ import {
 import { requireAuth } from '../auth';
 import { resolveConfig } from '../config';
 import { resolveTargetAppId } from '../app-id';
-import { apiRequest, parseApiError } from '../deploy-shared';
+import { apiRequest, isServingBuild, newestBuild, parseApiError } from '../deploy-shared';
 import { deployEnv, substitutedLine } from '../deploy-env';
 import { guueyJsonLoadErrorMessage } from '../guuey-json-load-error';
 import { awaitPageUrl, pollDeployStatus, printPageLine, retiredModelWarning } from './deploy';
@@ -570,11 +570,7 @@ async function liveSnapshotModes(ctx: Ctx): Promise<'has-modes' | 'no-modes' | '
     if (!listRes.ok) return 'unknown';
     const list = (await listRes.json()) as DeploymentsListShape;
     if (!Array.isArray(list.deployments)) return 'unknown';
-    let picked: number | null = null;
-    for (const d of list.deployments) {
-      if (d.agentMode !== 'nocode' || d.status !== 'live') continue;
-      if (picked === null || d.buildNumber > picked) picked = d.buildNumber;
-    }
+    const picked = newestBuild(list.deployments, (d) => d.agentMode === 'nocode' && isServingBuild(d))?.buildNumber ?? null;
     if (picked === null) return 'no-modes'; // nothing live to clobber
     const snapRes = await apiRequest(
       ctx.pat,

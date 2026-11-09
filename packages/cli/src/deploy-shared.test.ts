@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, packSource, parseApiError } from './deploy-shared.js';
+import { cleanup, isServingBuild, newestBuild, packSource, parseApiError } from './deploy-shared.js';
 
 /** List every path inside a gzip tarball (relative, `./`-stripped). */
 function tarballContents(tarballPath: string): string[] {
@@ -154,5 +154,34 @@ describe('parseApiError', () => {
 
   it('ignores an empty nested message and falls through to the default', () => {
     expect(parseApiError({ error: { code: 'X', message: '' } }, 'fallback')).toBe('fallback');
+  });
+});
+
+// guuey#3283 — the CLI's one definition of "the newest build" and of "serving".
+describe('newestBuild / isServingBuild (guuey#3283)', () => {
+  const rows = [
+    { buildNumber: 4, status: 'superseded', agentMode: 'nocode' },
+    { buildNumber: 7, status: 'building', agentMode: 'code' },
+    { buildNumber: 2, status: 'live', agentMode: 'nocode' },
+    { buildNumber: 5, status: 'live', agentMode: 'code' },
+  ] as const;
+
+  it('picks the highest buildNumber the predicate keeps, whatever the list order', () => {
+    expect(newestBuild(rows, () => true)?.buildNumber).toBe(7);
+    expect(newestBuild([...rows].reverse(), () => true)?.buildNumber).toBe(7);
+    expect(newestBuild(rows, isServingBuild)?.buildNumber).toBe(5);
+    expect(newestBuild(rows, (r) => r.agentMode === 'nocode' && isServingBuild(r))?.buildNumber).toBe(2);
+  });
+
+  it('null when nothing is kept', () => {
+    expect(newestBuild([], () => true)).toBeNull();
+    expect(newestBuild(rows, (r) => r.buildNumber > 100)).toBeNull();
+  });
+
+  it('serving is live only: in-flight and terminal rows are not', () => {
+    expect(isServingBuild({ status: 'live' })).toBe(true);
+    for (const status of ['queued', 'building', 'deploying', 'superseded', 'undeploying', 'undeployed', 'failed']) {
+      expect(isServingBuild({ status })).toBe(false);
+    }
   });
 });

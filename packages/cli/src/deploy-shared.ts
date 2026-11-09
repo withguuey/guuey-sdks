@@ -474,3 +474,32 @@ export async function apiRequest(
     body: body ? JSON.stringify(body) : undefined,
   });
 }
+
+/**
+ * The CLI's one rule for which `GET /apps/:id/deployments` row is SERVING
+ * (guuey#3283): status `'live'`. In-flight rows (`queued`/`building`/
+ * `deploying`) and terminal ones (`superseded`/`undeployed`/`failed`) are not.
+ * Every "what is this app running" read in the CLI goes through this and
+ * {@link newestBuild}, so the rule has one definition on this side of the
+ * publish boundary (the console's is `pickLatestLiveDeployment`).
+ */
+export function isServingBuild(row: { status: string }): boolean {
+  return row.status === 'live';
+}
+
+/**
+ * The newest (highest `buildNumber`) row that `keep` accepts, whatever order
+ * the list came in (an older backend in a rolling release sorts by
+ * `updatedAt`), or `null` when none does.
+ */
+export function newestBuild<T extends { buildNumber: number }>(
+  rows: ReadonlyArray<T>,
+  keep: (row: T) => boolean,
+): T | null {
+  let newest: T | null = null;
+  for (const row of rows) {
+    if (!keep(row)) continue;
+    if (newest === null || row.buildNumber > newest.buildNumber) newest = row;
+  }
+  return newest;
+}

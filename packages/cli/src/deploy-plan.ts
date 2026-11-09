@@ -11,6 +11,7 @@
  * §7 for the 5-step deploy pipeline this supports.
  */
 import { declaredServerEntries, type GuueyAgent, type GuueyJsonV1 } from '@guuey/config';
+import { isServingBuild, newestBuild } from './deploy-shared';
 
 // ─── Deploy-mode routing ─────────────────────────────────────────────────
 
@@ -178,20 +179,15 @@ export function declarativeRedirect(f: DeclarativeRedirectFlags): string {
 }
 
 /**
- * The agent mode of the build that is serving right now: the newest
- * (highest `buildNumber`) row whose status is `'live'`, or `null` when
- * nothing is live. Reads the `GET /apps/:id/deployments` rows, whose
- * `agentMode` and `status` every served door carries.
+ * The agent mode of the build that is serving right now: the newest serving
+ * row ({@link isServingBuild}), or `null` when nothing is live. Reads the
+ * `GET /apps/:id/deployments` rows, whose `agentMode` and `status` every
+ * served door carries.
  */
 export function liveAgentMode(
   deployments: ReadonlyArray<{ buildNumber: number; status: string; agentMode: 'code' | 'nocode' }>,
 ): 'code' | 'nocode' | null {
-  let newest: { buildNumber: number; agentMode: 'code' | 'nocode' } | null = null;
-  for (const d of deployments) {
-    if (d.status !== 'live') continue;
-    if (newest === null || d.buildNumber > newest.buildNumber) newest = d;
-  }
-  return newest === null ? null : newest.agentMode;
+  return newestBuild(deployments, isServingBuild)?.agentMode ?? null;
 }
 
 /**
