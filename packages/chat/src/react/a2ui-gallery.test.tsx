@@ -19,6 +19,7 @@ import type { AgReduceResult, JsonValue } from "@silverprotocol/core";
 import { planTranscript } from "../plan.js";
 import { calmPolicy } from "../policy.js";
 import { GUUEY_CHAT_THEME } from "../theme.js";
+import { themeCssVars } from "./theme-css.js";
 import type { TranscriptInputs } from "../types.js";
 import { Transcript } from "./transcript.js";
 import type { A2uiIconProps } from "./a2ui.js";
@@ -128,6 +129,17 @@ function inputs(): TranscriptInputs {
   return { result, assistantText: "", status: "ready", statusElapsedMs: 0, activeTool: null, error: null, prompts: [], messages: [{ role: "user", text: "Book me a table for four" }] };
 }
 
+/** Relative luminance of a #rrggbb colour (WCAG 2). */
+function luminance(hex: string): number {
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+  if (m === null) throw new Error(`not #rrggbb: ${hex}`);
+  const [r, g, b] = [m[1], m[2], m[3]].map((h) => {
+    const c = parseInt(h ?? "0", 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0);
+}
+
 /** The host's icon component (the kit takes no icon dependency). */
 function HostIcon({ name, label }: A2uiIconProps) {
   return (
@@ -178,6 +190,15 @@ describe("the A2UI gallery (guuey#2382)", () => {
       expect(html.split(`class="${cls}`).length - 1, cls).toBeGreaterThanOrEqual(2);
     }
     expect(html.split('aria-label="Location"').length - 1).toBe(2);
+    // Each half really is its mode: the root's mode stamp, and the theme's own
+    // surface token for that mode, dark under dark and light under light.
+    for (const mode of ["light", "dark"] as const) {
+      const half = html.slice(html.indexOf(`aria-label="${mode}"`));
+      expect(half, mode).toContain(`data-guuey-chat-mode="${mode}"`);
+      const surface = themeCssVars(GUUEY_CHAT_THEME, mode)["--_guuey-chat-surface"] ?? "";
+      expect(half.slice(0, half.indexOf("data-guuey-chat-mode")), mode).toContain(`--_guuey-chat-surface:${surface}`);
+      expect(luminance(surface) < 0.2, `${mode} surface ${surface}`).toBe(mode === "dark");
+    }
     const out = process.env["A2UI_GALLERY_OUT"];
     if (out !== undefined && out !== "") writeFileSync(out, html);
   });
