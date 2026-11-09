@@ -24,9 +24,10 @@
  * Streaming-tolerant by upstream design: unclosed emphasis mid-delta
  * renders as formatted-so-far.
  */
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import type { ReactNode } from "react";
 import {
+  parseInlineRichText,
   parseRichText,
   type RichTextBlock,
   type RichTextInline,
@@ -76,6 +77,47 @@ function trimTrailingPunctuation(url: string): string {
   }
 }
 
+/**
+ * The link rule of the inline-only mode ({@link InlineRichText}): a URL's
+ * navigable form and the host shown beside it, or `null` when the URL may not
+ * be a link (it then draws as inert text).
+ */
+export type InlineLinkGate = (url: string) => { url: string; host: string } | null;
+
+/** A gated link: opens in a new tab, sends no referrer, and shows its host beside its text. */
+function GatedLink({ target, children }: { target: { url: string; host: string }; children: ReactNode }): ReactNode {
+  return (
+    <a href={target.url} target="_blank" rel="noopener noreferrer nofollow" referrerPolicy="no-referrer">
+      {children}
+      <span className="guuey-chat-a2ui-host"> · {target.host}</span>
+    </a>
+  );
+}
+
+/** {@link linkify} under a gate: a bare URL links only when the gate admits it. */
+function linkifyGated(text: string, gate: InlineLinkGate): ReactNode {
+  if (!text.includes("http")) return text;
+  const out: ReactNode[] = [];
+  let consumed = 0;
+  for (const match of text.matchAll(BARE_URL)) {
+    const start = match.index;
+    if (start === undefined) continue;
+    const url = trimTrailingPunctuation(match[0]);
+    const target = url.length === 0 ? null : gate(url);
+    if (target === null) continue;
+    if (start > consumed) out.push(text.slice(consumed, start));
+    out.push(
+      <GatedLink key={`url-${start}`} target={target}>
+        {url}
+      </GatedLink>,
+    );
+    consumed = start + url.length;
+  }
+  if (out.length === 0) return text;
+  if (consumed < text.length) out.push(text.slice(consumed));
+  return out;
+}
+
 function linkify(text: string): ReactNode {
   if (!text.includes("http")) return text;
   const out: ReactNode[] = [];
@@ -98,23 +140,23 @@ function linkify(text: string): ReactNode {
   return out;
 }
 
-function Inline({ nodes }: { nodes: RichTextInline[] }): ReactNode {
+function Inline({ nodes, link }: { nodes: RichTextInline[]; link?: InlineLinkGate }): ReactNode {
   return nodes.map((node, i) => {
     switch (node.type) {
       case "text":
-        return <span key={i}>{linkify(node.text)}</span>;
+        return <span key={i}>{link === undefined ? linkify(node.text) : linkifyGated(node.text, link)}</span>;
       case "break":
         return <br key={i} />;
       case "strong":
         return (
           <strong key={i}>
-            <Inline nodes={node.children} />
+            <Inline nodes={node.children} {...(link !== undefined ? { link } : {})} />
           </strong>
         );
       case "em":
         return (
           <em key={i}>
-            <Inline nodes={node.children} />
+            <Inline nodes={node.children} {...(link !== undefined ? { link } : {})} />
           </em>
         );
       case "code":
@@ -123,7 +165,20 @@ function Inline({ nodes }: { nodes: RichTextInline[] }): ReactNode {
             {node.code}
           </code>
         );
-      case "link":
+      case "link": {
+        if (link !== undefined) {
+          // The inline-only mode: the gate decides, on the parser's own safe href only.
+          const target = node.href !== undefined ? link(node.href) : null;
+          return target !== null ? (
+            <GatedLink key={i} target={target}>
+              <Inline nodes={node.children} link={link} />
+            </GatedLink>
+          ) : (
+            <span key={i}>
+              <Inline nodes={node.children} link={link} />
+            </span>
+          );
+        }
         return node.href ? (
           <a key={i} href={node.href} target="_blank" rel="noopener noreferrer">
             <Inline nodes={node.children} />
@@ -134,7 +189,64 @@ function Inline({ nodes }: { nodes: RichTextInline[] }): ReactNode {
             <Inline nodes={node.children} />
           </span>
         );
+      }
     }
+  });
+}
+
+/** An opening code-fence line (CommonMark: up to 3 spaces, then 3 or more backticks). */
+const FENCE_OPEN = /^ {0,3}(`{3,})/;
+
+/**
+ * Split text into runs the inline parser may read and code-fence runs it may
+ * not: the inline parser reads a fence's backticks as code spans, so a fence
+ * is carved out first and stays its literal source.
+ */
+function fenceRuns(text: string): Array<{ literal: boolean; text: string }> {
+  const runs: Array<{ literal: boolean; lines: string[] }> = [];
+  const push = (literal: boolean, line: string): void => {
+    const last = runs.at(-1);
+    if (last !== undefined && last.literal === literal) last.lines.push(line);
+    else runs.push({ literal, lines: [line] });
+  };
+  let fence: number | null = null;
+  for (const line of text.split("\n")) {
+    if (fence === null) {
+      const open = FENCE_OPEN.exec(line);
+      if (open?.[1] !== undefined) fence = open[1].length;
+      push(fence !== null, line);
+      continue;
+    }
+    push(true, line);
+    const close = /^ {0,3}(`{3,})\s*$/.exec(line);
+    if (close?.[1] !== undefined && close[1].length >= fence) fence = null;
+  }
+  return runs.map((run) => ({ literal: run.literal, text: run.lines.join("\n") }));
+}
+
+/**
+ * The inline-only mode (guuey#2382, A2UI `Text`): bold, italic, inline code
+ * and links draw as structure; a heading, list, table, code fence or raw HTML
+ * draws as its literal source text, line breaks kept. Links follow `link`
+ * alone: the parser's own safe href, then the gate, else inert text; a bare
+ * URL links only when the gate admits it. Every string is a text node.
+ */
+export function InlineRichText({ text, link }: { text: string; link: InlineLinkGate }): ReactNode {
+  return fenceRuns(text).map((run, i) => {
+    const lines = run.text.split("\n");
+    return (
+      <Fragment key={i}>
+        {i > 0 ? <br /> : null}
+        {run.literal
+          ? lines.map((line, j) => (
+              <Fragment key={j}>
+                {j > 0 ? <br /> : null}
+                {line}
+              </Fragment>
+            ))
+          : <Inline nodes={parseInlineRichText(run.text)} link={link} />}
+      </Fragment>
+    );
   });
 }
 

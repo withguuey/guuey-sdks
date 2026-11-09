@@ -31,6 +31,7 @@ import type { PreGenerationRefusal, ResolvedViewMount, ViewCspDiagnosis, ViewHos
 import type { ChatStrings } from "../strings.js";
 import type { MediaChipReason, MediaDisplay } from "../media.js";
 import type {
+  A2uiItem,
   CitationsItem,
   CodeItem,
   CompactionItem,
@@ -56,6 +57,7 @@ import type {
 } from "../types.js";
 import { Markdown } from "./markdown.js";
 import { PARTS, messagePart } from "./parts.js";
+import { DefaultA2ui, type A2uiEditStore, type A2uiIconProps } from "./a2ui.js";
 
 /** Everything a rendered item may need beyond itself. */
 export interface TranscriptItemContext {
@@ -102,6 +104,19 @@ export interface TranscriptItemContext {
    * unchanged.
    */
   viewProps?: ViewSlotProps | ((item: ViewMountItem, mount: ResolvedViewMount) => ViewSlotProps);
+  /**
+   * guuey#2382: the A2UI surfaces' local edits, held at transcript level so
+   * a row that unmounts keeps them (spec §5.4). `<Transcript>` supplies its
+   * own when the host passes none; a hand-built context without one keeps
+   * each surface's edits in the row.
+   */
+  a2uiEdits?: A2uiEditStore;
+  /**
+   * guuey#2382: the host's icon component for A2UI `Icon` (spec §5.3). The
+   * kit takes no icon dependency: with none, or for a name the host does not
+   * know, the icon draws nothing.
+   */
+  a2uiIcon?: ComponentType<A2uiIconProps>;
 }
 
 /** The per-view slice of `GuueyViewProps` a transcript may configure. */
@@ -1056,6 +1071,8 @@ export interface TranscriptComponents {
   compaction: ComponentType<ItemProps<CompactionItem>>;
   unknown: ComponentType<ItemProps<UnknownItem>>;
   status: ComponentType<ItemProps<StatusLineItem>>;
+  /** guuey#2382: an A2UI surface (R6b), drawn by the kit's own DOM unless the host supplies its renderer. */
+  a2ui: ComponentType<ItemProps<A2uiItem>>;
 }
 
 export const defaultTranscriptComponents: TranscriptComponents = {
@@ -1078,6 +1095,7 @@ export const defaultTranscriptComponents: TranscriptComponents = {
   compaction: DefaultCompaction,
   unknown: DefaultUnknown,
   status: DefaultStatus,
+  a2ui: DefaultA2ui,
 };
 
 /** Dispatch one display item through the (possibly overridden) map. */
@@ -1157,6 +1175,10 @@ export function renderItem(
     }
     case "unknown": {
       const C = components.unknown;
+      return <C key={item.key} item={item} ctx={ctx} />;
+    }
+    case "a2ui": {
+      const C = components.a2ui;
       return <C key={item.key} item={item} ctx={ctx} />;
     }
   }

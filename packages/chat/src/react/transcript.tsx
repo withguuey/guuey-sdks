@@ -42,6 +42,7 @@ import {
 import { themeCssVars, type ThemeMode } from "./theme-css.js";
 import { facesCss, useHostFaces } from "./faces.js";
 import { PARTS } from "./parts.js";
+import { useA2uiEditStore } from "./a2ui.js";
 import { followTarget, planTurnAnchor, type TurnAnchorPlan } from "./scroll-anchor.js";
 import type { TranscriptFollow, TranscriptScrollHandle, TranscriptScrollProps } from "../transcript-scroll.js";
 import type { DisplayItem } from "../types.js";
@@ -131,6 +132,8 @@ export interface TranscriptProps
     | "onViewDiagnosis"
     | "onViewRef"
     | "viewProps"
+    | "a2uiEdits"
+    | "a2uiIcon"
   > {
   plan: TranscriptPlan;
   /** Per-slot component overrides (spec §3's override column). */
@@ -179,6 +182,8 @@ export function Transcript(props: TranscriptProps): ReactNode {
     onViewDiagnosis,
     onViewRef,
     viewProps,
+    a2uiEdits,
+    a2uiIcon,
     onStartNewConversation,
     follow: followPolicy = "tail",
     onAtEndChange,
@@ -190,6 +195,9 @@ export function Transcript(props: TranscriptProps): ReactNode {
     () => ({ ...defaultTranscriptComponents, ...components }),
     [components],
   );
+  // guuey#2382: the A2UI surfaces' local edits live here, above the rows (spec §5.4).
+  const ownEdits = useA2uiEditStore();
+  const edits = a2uiEdits ?? ownEdits;
   const ctx: TranscriptItemContext = useMemo(
     () => ({
       strings,
@@ -202,8 +210,10 @@ export function Transcript(props: TranscriptProps): ReactNode {
       onViewDiagnosis,
       onViewRef,
       viewProps,
+      a2uiEdits: edits,
+      ...(a2uiIcon !== undefined ? { a2uiIcon } : {}),
     }),
-    [strings, onToggle, onRetry, onPromptAction, onErrorAction, resolvedMounts, onViewPhase, onViewDiagnosis, onViewRef, viewProps],
+    [strings, onToggle, onRetry, onPromptAction, onErrorAction, resolvedMounts, onViewPhase, onViewDiagnosis, onViewRef, viewProps, edits, a2uiIcon],
   );
 
   // ── Windowing ────────────────────────────────────────────────────────

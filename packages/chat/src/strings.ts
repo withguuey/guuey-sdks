@@ -243,6 +243,20 @@ export interface ChatStrings {
    * below), so nothing can be submitted against the stale revision.
    */
   a2uiCouldntDraw: string;
+  /**
+   * guuey#2382: the note an A2UI surface draws once beside its action
+   * buttons on a transcript that sends no actions; each such button is
+   * disabled and described by it (spec §9.1.5).
+   */
+  a2uiUnavailable: string;
+  /** guuey#2382: an A2UI image's chip text when the image names no `alt`. */
+  a2uiImage: string;
+  /** guuey#2382: a long A2UI choice field's row before anything is chosen. */
+  a2uiChoose: string;
+  /** guuey#2382: the accessible name of a long A2UI choice list's local filter (never sent). */
+  a2uiFilter: string;
+  /** guuey#2382: the line a filtered A2UI choice list draws when no option matches. */
+  a2uiNoMatch: string;
 
   /** #192 debug-preset marker (calm never shows it — spec §3, F10). */
   recoveredFromHistory: string;
@@ -527,6 +541,11 @@ export const defaultChatStrings: ChatStrings = {
   viewRefFallbackTitle: "Card",
   a2uiUpdatedBelow: (title) => `${title}, updated below`,
   a2uiCouldntDraw: "Updated below, couldn't draw",
+  a2uiUnavailable: "Not available here",
+  a2uiImage: "Image",
+  a2uiChoose: "Choose…",
+  a2uiFilter: "Filter options",
+  a2uiNoMatch: "No matches",
 
   recoveredFromHistory: "recovered from history",
 

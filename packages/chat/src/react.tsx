@@ -50,6 +50,15 @@ export {
   type TranscriptItemContext,
   type ViewSlotProps,
 } from "./react/components.js";
+// guuey#2382: the A2UI renderer, the default `a2ui` slot, and the host-owned edit store it reads.
+export {
+  DefaultA2ui,
+  useA2uiEditStore,
+  type A2uiEditStore,
+  type A2uiIconProps,
+  type A2uiLocalEdit,
+  type A2uiRenderContext,
+} from "./react/a2ui.js";
 export {
   useStatusElapsedMs,
   useTranscript,
