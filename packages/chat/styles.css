@@ -903,9 +903,10 @@
 .guuey-chat .guuey-chat-a2ui-button-danger {
   color: var(--guuey-chat-error, var(--_guuey-chat-error));
 }
+/* The primary's host suffix: its words' colour leaning toward the fill, a
+   colour, never an opacity. */
 .guuey-chat .guuey-chat-a2ui-button-primary .guuey-chat-a2ui-host {
-  color: inherit;
-  opacity: 0.8;
+  color: color-mix(in srgb, currentColor 80%, var(--guuey-chat-accent, var(--_guuey-chat-accent)));
 }
 /* Content-sized by default (a set width is never stretched), so start, center
    and end place a button or chip; a container that says stretch widens it. */
@@ -913,9 +914,14 @@
 .guuey-chat-a2ui-align-stretch > .guuey-chat-a2ui-image-chip {
   width: auto;
 }
-.guuey-chat-a2ui-button:disabled {
-  opacity: 0.5;
-  cursor: default;
+/* Disabled is the sheet's own contract (the composer's Send): the off-ground
+   under the muted ink, for every variant, a colour, never an opacity. Scoped
+   under the root so it outranks each variant's fill, words and edge. */
+.guuey-chat .guuey-chat-a2ui-button:disabled {
+  cursor: not-allowed;
+  background: var(--guuey-chat-canvas-muted, var(--_guuey-chat-canvas-muted));
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
+  border-color: transparent;
 }
 .guuey-chat-a2ui-unavailable {
   margin: 0;
@@ -950,8 +956,9 @@ textarea.guuey-chat-a2ui-input {
   min-height: 5em;
   resize: vertical;
 }
+/* A locked field (an action in flight or answered): muted words, a colour. */
 .guuey-chat-a2ui-input:read-only {
-  opacity: 0.7;
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
 }
 .guuey-chat-a2ui-check,
 .guuey-chat-a2ui-option {

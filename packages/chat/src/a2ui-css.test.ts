@@ -144,6 +144,34 @@ describe("the A2UI surface's look (spec §5.3)", () => {
     }
   });
 
+  it("no opacity anywhere in the A2UI rules: a mute is a colour", () => {
+    const withOpacity = rules().flatMap((r) =>
+      /(?:^|;)\s*opacity:/.test(r.body) ? r.selectors.filter((s) => s.includes("guuey-chat-a2ui")) : [],
+    );
+    expect(withOpacity).toEqual([]);
+  });
+
+  it("a disabled button, any variant, takes the sheet's disabled contract (the composer's), and it outranks every variant", () => {
+    const selector = ".guuey-chat .guuey-chat-a2ui-button:disabled";
+    expect(value(selector, "cursor")).toBe("not-allowed");
+    expect(value(selector, "background")).toBe("var(--guuey-chat-canvas-muted, var(--_guuey-chat-canvas-muted))");
+    expect(value(selector, "color")).toBe("var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted))");
+    expect(value(selector, "border-color")).toBe("transparent");
+    const variants = rules().flatMap((r) =>
+      /(?:^|;)\s*(?:color|background|border-color):/.test(r.body)
+        ? r.selectors.filter((s) => /\.guuey-chat-a2ui-button(?:-primary|-secondary|-danger)?$/.test(s))
+        : [],
+    );
+    expect(variants.length).toBeGreaterThan(0);
+    for (const s of variants) expect(outranks(specificity(selector), specificity(s)), `${selector} outranks ${s}`).toBe(true);
+  });
+
+  it("the primary's host suffix is a colour mixed toward the accent, not an opacity", () => {
+    expect(value(".guuey-chat .guuey-chat-a2ui-button-primary .guuey-chat-a2ui-host", "color")).toBe(
+      "color-mix(in srgb, currentColor 80%, var(--guuey-chat-accent, var(--_guuey-chat-accent)))",
+    );
+  });
+
   it("agent text sits in a bidi isolate", () => {
     for (const selector of [".guuey-chat-a2ui", ".guuey-chat-a2ui-text", ".guuey-chat-a2ui-label", ".guuey-chat-a2ui-superseded"]) {
       expect(value(selector, "unicode-bidi"), selector).toBe("isolate");
