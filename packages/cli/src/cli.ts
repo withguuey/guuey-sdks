@@ -172,7 +172,8 @@ Agent Development:
     --code                       Build+deploy guuey.worker.js even when a root
                                  Dockerfile is present
     --no-install                 Stop instead of installing when node_modules is missing (code mode; the default installs)
-    --size <s>                   Pod size: xs | sm | md | lg | xl (default: xs)
+    --size <s>                   Pod size: xs | sm | md | lg | xl (default: agent.deploy.size,
+                                 else the app keeps its size; a first deploy gets xs)
     --build-size <s>             Build Job size: sm | md | lg | xl (default: md, code-mode only)
     --max-pods <n>               How many pods the app may run (plan ceiling
                                  applies; omit to leave the current setting untouched).

@@ -237,6 +237,26 @@ export function printRedeploySource(body: unknown): void {
   console.log(`  Config: reused ${build} guuey.json (${why}${created}); this deploy sends none.`);
 }
 
+/**
+ * guuey#3287: the pod size the server resolved for this build, from the 202's
+ * additive `size` (guuey#3288). An older server omits it: "not stated".
+ * Exported for tests.
+ */
+export function readTriggerSize(body: unknown): string | undefined {
+  if (body === null || typeof body !== 'object') return undefined;
+  const size = (body as { size?: unknown }).size;
+  return typeof size === 'string' && size !== '' ? size : undefined;
+}
+
+/**
+ * The runtime half of the `Size:` line: the size the server says the build
+ * runs at; else the one this deploy asked for (the server honors a size it is
+ * sent); else neither is known here, and the line says who chose. Exported for tests.
+ */
+export function runtimeSizeLabel(sent: string | undefined, served: string | undefined): string {
+  return served ?? sent ?? 'chosen by the server (the app keeps its size; a first deploy gets xs)';
+}
+
 // ─── guuey#975: the deploy target, resolved SOURCE-AWARE ──────────────────
 export type DeployTargetSource = '--app-id' | 'GUUEY_APP_ID' | 'guuey.json' | 'global-config';
 export interface DeployTargetInput {
@@ -436,7 +456,10 @@ export async function deploy(flags?: Record<string, string | true>, opts: Deploy
   // §8.4 (not overlay material). `target` is implicitly `'guuey'` on
   // every record the closed CLI writes — overlay-explicit target
   // selection is a future additive if non-Guuey hosted targets land.
-  const size = (flags?.size as string) ?? project?.agent?.deploy?.size ?? 'xs';
+  // guuey#3287: with neither, NO size is sent: the server's rule decides (the
+  // app keeps the size its build runs at, a first deploy gets xs), and the 202
+  // says which. Defaulting to xs here resized a sized app on every plain deploy.
+  const size = (flags?.size as string | undefined) ?? project?.agent?.deploy?.size;
   const buildSize = (flags?.['build-size'] as string) ?? 'md';
   const target = (flags?.target as string) ?? 'ggui';
   const label = flags?.label as string | undefined;
@@ -878,7 +901,8 @@ async function deployCode(opts: {
   /** What deploy-time `${env.NAME}` placeholders resolve from. */
   env: EnvSource;
   root: string;
-  size: string;
+  /** The size the builder named (`--size`, else `agent.deploy.size`); `undefined` lets the server decide. */
+  size: string | undefined;
   buildSize: string;
   /** guuey#979/#1000: install when node_modules is missing — the default; `--no-install` refuses instead. */
   install: boolean;
@@ -1098,7 +1122,7 @@ async function deployCode(opts: {
 
   const uploadRes = await apiRequest(auth.pat, config, 'POST', `/apps/${appId}/deploy/upload`, {
     buildId,
-    size,
+    ...(size !== undefined ? { size } : {}),
     contentLength: tarballSize,
     sourceHash,
   });
@@ -1164,7 +1188,7 @@ async function deployCode(opts: {
   const deployRes = await apiRequest(auth.pat, config, 'POST', `/apps/${appId}/deploy/trigger`, {
     deploymentId: buildId,
     buildNumber,
-    size,
+    ...(size !== undefined ? { size } : {}),
     buildSize,
     sourceHash,
     sourceTarballKey: `${appId}/${uploadId}.tar.gz`,
@@ -1188,7 +1212,9 @@ async function deployCode(opts: {
     process.exit(1);
   }
 
-  printTriggerWarnings(await deployRes.clone().json().catch(() => ({})));
+  const triggerBody: unknown = await deployRes.clone().json().catch(() => ({}));
+  printTriggerWarnings(triggerBody);
+  const servedSize = readTriggerSize(triggerBody);
 
   const streamAbort = new AbortController();
   void attachBuildLogStream(auth.pat, config, appId, buildNumber, streamAbort.signal).catch(
@@ -1238,7 +1264,7 @@ async function deployCode(opts: {
   await maybePrintThemeHint(auth.pat, config, appId, 'guuey deploy');
   console.log('');
   console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
-  console.log(`  Size:   runtime=${size}, build=${buildSize}`);
+  console.log(`  Size:   runtime=${runtimeSizeLabel(size, servedSize)}, build=${buildSize}`);
   if (maxPods !== undefined) console.log(`  Pods:   max=${maxPods}`);
   printPodLifetime(maxPods);
   console.log('');
@@ -1483,7 +1509,8 @@ async function deployLegacyDockerfile(opts: {
   auth: AuthTokens;
   config: ResolvedConfig;
   appId: string;
-  size: string;
+  /** The size the builder named (`--size`, else `agent.deploy.size`); `undefined` lets the server decide. */
+  size: string | undefined;
   buildSize: string;
   maxPods: number | undefined;
   runtimeAutoUpdate?: boolean | undefined;
@@ -1505,7 +1532,7 @@ async function deployLegacyDockerfile(opts: {
 
   const uploadRes = await apiRequest(auth.pat, config, 'POST', `/apps/${appId}/deploy/upload`, {
     buildId,
-    size,
+    ...(size !== undefined ? { size } : {}),
     contentLength: tarballSize,
     sourceHash,
   });
@@ -1544,7 +1571,7 @@ async function deployLegacyDockerfile(opts: {
   const deployRes = await apiRequest(auth.pat, config, 'POST', `/apps/${appId}/deploy/trigger`, {
     deploymentId: buildId,
     buildNumber,
-    size,
+    ...(size !== undefined ? { size } : {}),
     buildSize,
     sourceHash,
     sourceTarballKey: `${appId}/${uploadId}.tar.gz`,
@@ -1572,6 +1599,7 @@ async function deployLegacyDockerfile(opts: {
   const triggerBody: unknown = await deployRes.json().catch(() => ({}));
   printRedeploySource(triggerBody);
   printTriggerWarnings(triggerBody);
+  const servedSize = readTriggerSize(triggerBody);
 
   const streamAbort = new AbortController();
   void attachBuildLogStream(auth.pat, config, appId, buildNumber, streamAbort.signal).catch(
@@ -1616,7 +1644,7 @@ async function deployLegacyDockerfile(opts: {
   await maybePrintThemeHint(auth.pat, config, appId, 'guuey deploy');
   console.log('');
   console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
-  console.log(`  Size:   runtime=${size}, build=${buildSize}`);
+  console.log(`  Size:   runtime=${runtimeSizeLabel(size, servedSize)}, build=${buildSize}`);
   if (maxPods !== undefined) console.log(`  Pods:   max=${maxPods}`);
   printPodLifetime(maxPods);
   console.log('');
