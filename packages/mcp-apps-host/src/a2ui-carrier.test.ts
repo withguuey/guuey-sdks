@@ -13,6 +13,7 @@ import {
   isA2uiActionText,
   parseA2uiActionText,
   readA2uiCarrier,
+  reissueA2uiActionText,
   writeA2uiActionText,
 } from "./narrowing.js";
 import { toolResultViewMount } from "./card-mount.js";
@@ -211,5 +212,20 @@ describe("isA2uiActionText — anchored to the form's own lines (S4 (b))", () =>
   it("plain prose and a ggui directive are not the form", () => {
     expect(isA2uiActionText("book a table for friday")).toBe(false);
     expect(isA2uiActionText('<ggui_directive kind="user-action">\n</ggui_directive>')).toBe(false);
+  });
+});
+
+describe("reissueA2uiActionText — the same turn under a retry's new id (guuey#2384)", () => {
+  const record = { surfaceId: "booking-1", name: "submit", sourceComponentId: "go", actionId: "cm_A", context: { size: 4, note: "<b>" } };
+  const summary = { label: "Book", pairs: [{ label: "Party size", value: "4" }] };
+
+  it("writes the block again under the new id, every other byte as the writer wrote it", () => {
+    const text = writeA2uiActionText(record, summary) ?? "";
+    expect(reissueA2uiActionText(text, "cm_B")).toBe(writeA2uiActionText({ ...record, actionId: "cm_B" }, summary));
+  });
+
+  it("refuses text that is not the form, and an id outside the charset", () => {
+    expect(reissueA2uiActionText("hello", "cm_B")).toBeUndefined();
+    expect(reissueA2uiActionText(writeA2uiActionText(record, summary) ?? "", 'x" y')).toBeUndefined();
   });
 });

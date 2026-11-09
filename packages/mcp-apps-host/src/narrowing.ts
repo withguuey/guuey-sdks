@@ -47,6 +47,7 @@ export {
   isA2uiActionText,
   parseA2uiActionText,
   readA2uiCarrier,
+  reissueA2uiActionText,
   writeA2uiActionText,
   type A2uiActionRecord,
   type A2uiActionSummary,

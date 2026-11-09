@@ -136,20 +136,37 @@ export function a2uiActionPayload(context: { [key: string]: JsonValue }): string
  * tag line unconstrained.
  */
 export function writeA2uiActionText(record: A2uiActionRecord, summary: A2uiActionSummary): string | undefined {
-  const attrs = [record.surfaceId, record.name, record.sourceComponentId, record.actionId];
-  if (!attrs.every((a) => ACTION_ATTR.test(a))) return undefined;
   const label = summaryText(summary.label);
   if (label === null) return undefined;
-  const payload = a2uiActionPayload(record.context);
-  if (payload.length > A2UI_ACTION_PAYLOAD_MAX_UNITS) return undefined;
   const pairs: string[] = [];
   for (const pair of summary.pairs) {
     const name = summaryText(pair.label);
     const value = summaryText(pair.value);
     if (name !== null && value !== null) pairs.push(`${name} = ${value}`);
   }
+  return actionText(record, pairs.length > 0 ? `${label}: ${pairs.join("; ")}` : label);
+}
+
+/**
+ * An action turn's text written again under another id (guuey#2384): a
+ * retried turn carries a new `clientMessageId`, and the block's `id` must
+ * name it. The same record and human line, through the same block writer;
+ * `undefined` when `text` is not the action form or the id is outside the
+ * charset.
+ */
+export function reissueA2uiActionText(text: string, actionId: string): string | undefined {
+  const turn = parseA2uiActionText(text);
+  return turn === undefined ? undefined : actionText({ ...turn, actionId }, turn.summary);
+}
+
+/** The text form itself, under a written human line: the one place the block is put together. */
+function actionText(record: A2uiActionRecord, line: string): string | undefined {
+  const attrs = [record.surfaceId, record.name, record.sourceComponentId, record.actionId];
+  if (!attrs.every((a) => ACTION_ATTR.test(a))) return undefined;
+  const payload = a2uiActionPayload(record.context);
+  if (payload.length > A2UI_ACTION_PAYLOAD_MAX_UNITS) return undefined;
   return [
-    pairs.length > 0 ? `${label}: ${pairs.join("; ")}` : label,
+    line,
     `<guuey_a2ui_action surface="${record.surfaceId}" action="${record.name}" source="${record.sourceComponentId}" id="${record.actionId}">`,
     payload,
     ACTION_CLOSE_LINE,
