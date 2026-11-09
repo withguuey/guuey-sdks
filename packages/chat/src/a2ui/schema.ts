@@ -1,6 +1,7 @@
 /**
- * The guuey A2UI schema (guuey#2366, spec §5): an A2UI v0.9 superset — the
- * same three write messages plus `updateDataModel`, the same twelve
+ * The guuey A2UI schema (guuey#2366, spec §5): A2UI v0.9's envelope, its own
+ * four messages (`createSurface`, `updateComponents`, `updateDataModel`,
+ * `deleteSurface`), drawn from guuey's catalog (`guuey.a2ui.v1`): twelve
  * components with typed props, bindings, actions and field constraints.
  *
  * ONE parser for the wire: the validator (`validate.ts`) reads the envelope
@@ -114,7 +115,12 @@ export type A2uiConfirm = z.infer<typeof A2uiConfirm>;
 export const A2uiChoiceOption = z.object({ label: z.string(), value: z.string() });
 export type A2uiChoiceOption = z.infer<typeof A2uiChoiceOption>;
 
-/** The twelve component names (A2UI v0.9's basic set, as `@ggui-ai/preview-a2ui` lists them). */
+/**
+ * The twelve component names of guuey's catalog, as `@ggui-ai/preview-a2ui`
+ * lists them. Not A2UI v0.9's basic catalog: that has eighteen components,
+ * and for these twelve it names five props differently (its `Image.url`,
+ * `Divider.axis`, `Button.child`, `CheckBox.value`, `ChoicePicker.variant`).
+ */
 export const A2UI_COMPONENT_NAMES = [
   "Row",
   "Column",

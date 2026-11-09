@@ -122,6 +122,28 @@ function typeAndSend(text: string): void {
   fireEvent.keyDown(input, { key: "Enter" });
 }
 
+/**
+ * `closingAdapters`, but turn 2 holds its stream open until `release()`, so a
+ * doorbell can ring while it is busy and queue behind it.
+ */
+function heldClosingAdapters(closing: Closing): { adapters: AgentInvokeAdapters; calls: InvokeRequest[]; release: () => void } {
+  const inner = closingAdapters(closing);
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let turns = 0;
+  const adapters: AgentInvokeAdapters = {
+    ...inner.adapters,
+    transport: async function* (req) {
+      turns += 1;
+      if (turns > 1) await held;
+      yield* inner.adapters.transport(req);
+    },
+  };
+  return { adapters, calls: inner.calls, release: () => release() };
+}
+
 /** Mounts the chat, draws the form, then closes the composer; returns the handle. */
 async function closedChat(closing: Closing) {
   const t = closingAdapters(closing);
@@ -173,6 +195,40 @@ describe.each<Closing>(["authRequired", "threadClosed"])("one gate, said once, u
     }
     await new Promise((r) => setTimeout(r, 30));
     expect(calls).toHaveLength(2);
+  });
+
+  it("a doorbell queued behind the closing turn is refused the same way once it drains", async () => {
+    const t = heldClosingAdapters(closing);
+    let handle: GuueyChatHandle | null = null;
+    render(
+      <GuueyChat
+        endpointUrl="https://pod.example/agent/invoke"
+        apiBaseUrl="https://api.example/v1"
+        adapters={t.adapters}
+        onReady={(h) => {
+          handle = h;
+        }}
+      />,
+    );
+    typeAndSend("order please");
+    await screen.findByRole("button", { name: "Place order" });
+    await waitFor(() => expect(screen.queryByRole("button", { name: defaultChatStrings.stop })).toBeNull());
+    typeAndSend("and then");
+    await screen.findByRole("button", { name: defaultChatStrings.stop });
+    if (handle === null) throw new Error("handle expected");
+    const sink = (handle as GuueyChatHandle).viewSlotProps().onUserMessage;
+    if (sink === undefined) throw new Error("message sink expected");
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      const delivery = sink({ role: "user", content: [{ type: "text", text: "ggui_consume now" }] });
+      t.release();
+      expect(await delivery).toEqual({ delivered: false, reason: "chat is closed" });
+    } finally {
+      console.warn = warn;
+    }
+    await new Promise((r) => setTimeout(r, 30));
+    expect(t.calls).toHaveLength(2);
   });
 
   it("an A2UI press is refused: the surface says the chat is closed and nothing is sent", async () => {

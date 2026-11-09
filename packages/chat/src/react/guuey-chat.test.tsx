@@ -108,8 +108,8 @@ describe("<GuueyChat> advertises the view-message-turn capability only where its
     expect(body.capabilities.uiResources?.viewMessageTurns).toBe(true);
   });
 
-  // guuey#2386: uiResources always carries the A2UI catalogs now (the kit wires their
-  // actions), so "not declared" reads the viewMessageTurns key itself.
+  // guuey#2386: uiResources carries the A2UI catalogs whenever the kit draws them
+  // (the default), so "not declared" reads the viewMessageTurns key itself.
   it("does NOT declare it when the host replaces onUserMessage (even with undefined, which leaves the slot no sink), or passes a function-form viewProps", async () => {
     const replaced = await firstBody({ viewProps: { onUserMessage: async () => ({ delivered: false, reason: "host" }) } });
     expect(replaced.capabilities.uiResources?.viewMessageTurns).toBeUndefined();

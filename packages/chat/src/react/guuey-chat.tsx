@@ -595,6 +595,9 @@ function voiceStatusLine(state: SpeechInputState, strings: ChatStrings): string 
  */
 const SATURATION_RETRIES = 3;
 
+/** A doorbell the composer's one refusal turns away: rung on a closed chat, or queued and drained after it closed. */
+const DOORBELL_CHAT_CLOSED = "chat is closed";
+
 const PROMPT_STATE = {
   accept: "answered",
   decline: "declined",
@@ -766,18 +769,44 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       }),
     [adaptersProp, apiBaseUrl, hasAccessToken, hasGuestSecret, onSaturationWait, coldStartRetry],
   );
+  // Structurally-stable overrides: `policy={{ view: { … } }}` inline
+  // literals keep ONE identity while their contents hold still, so the
+  // policy (and through it the plan) does not re-mint per host render.
+  const stablePolicyOverrides = useStructuralIdentity(policyOverrides);
+  const stableStringOverrides = useStructuralIdentity(stringOverrides);
+  const policy = useMemo(() => {
+    const factory = preset === "debug" ? debugPolicy : calmPolicy;
+    const strings: ChatStrings = {
+      ...defaultChatStrings,
+      ...stablePolicyOverrides?.strings,
+      ...stableStringOverrides,
+    };
+    // guuey#2382: this surface draws A2UI with the web kit's renderer, so it
+    // turns the kind on for its own planner path, unless the host turned it
+    // off (spec §8, amended at S2: an override can turn it off, never on). The
+    // presets never set it: a host composing `<Transcript>` itself, and the
+    // native kit until its renderer lands, keep today's face.
+    const base = factory({ ...stablePolicyOverrides, strings });
+    return base.a2ui?.render === false ? base : { ...base, a2ui: { render: true } };
+  }, [preset, stablePolicyOverrides, stableStringOverrides]);
+
   // A card's `ui/message` becomes the next turn only through the kit's own
   // sink, so the kit declares it only where that sink is provably in effect
   // (see `GuueyChatProps.viewMessageTurns`). Without the declaration a server
   // cannot rely on a view's message becoming a turn, so it holds each render
   // turn open until the view answers.
   const advertiseViewMessageTurns = viewMessageTurnsProp ?? kitSinkInEffect(viewProps);
+  const baseCapabilities = advertiseViewMessageTurns ? VIEW_MESSAGE_TURN_CAPABILITIES : DEFAULT_BLOCK_PRESERVING_CAPABILITIES;
   const invoke = useAgentInvoke({
     endpointUrl,
     ...(appId !== undefined ? { appId } : {}),
     ...(agentMode !== undefined ? { mode: agentMode } : {}),
-    // guuey#2386: this kit draws A2UI and wires its actions, so every turn says so.
-    capabilities: withA2uiCatalogs(advertiseViewMessageTurns ? VIEW_MESSAGE_TURN_CAPABILITIES : DEFAULT_BLOCK_PRESERVING_CAPABILITIES),
+    // guuey#2386: the A2UI catalogs are advertised only where this kit draws
+    // them and wires their actions. A host that turned drawing off
+    // (`policy={{ a2ui: { render: false } }}`) shows today's tool row, so its
+    // turns must not tell the server a form would draw (spec §13 item 1).
+    capabilities:
+      policy.a2ui?.render === true ? withA2uiCatalogs(baseCapabilities) : baseCapabilities,
     adapters,
     preserveBlocks: true,
   });
@@ -850,27 +879,6 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     };
   }, [apiBaseUrl, endpointUrl]);
   const effectiveReader = reader ?? defaultReader;
-
-  // Structurally-stable overrides: `policy={{ view: { … } }}` inline
-  // literals keep ONE identity while their contents hold still, so the
-  // policy (and through it the plan) does not re-mint per host render.
-  const stablePolicyOverrides = useStructuralIdentity(policyOverrides);
-  const stableStringOverrides = useStructuralIdentity(stringOverrides);
-  const policy = useMemo(() => {
-    const factory = preset === "debug" ? debugPolicy : calmPolicy;
-    const strings: ChatStrings = {
-      ...defaultChatStrings,
-      ...stablePolicyOverrides?.strings,
-      ...stableStringOverrides,
-    };
-    // guuey#2382: this surface draws A2UI with the web kit's renderer, so it
-    // turns the kind on for its own planner path, unless the host turned it
-    // off (spec §8, amended at S2: an override can turn it off, never on). The
-    // presets never set it: a host composing `<Transcript>` itself, and the
-    // native kit until its renderer lands, keep today's face.
-    const base = factory({ ...stablePolicyOverrides, strings });
-    return base.a2ui?.render === false ? base : { ...base, a2ui: { render: true } };
-  }, [preset, stablePolicyOverrides, stableStringOverrides]);
 
   const { inputs, resolvePrompt, answerHitlPrompt } = useTranscriptInputs(invoke);
   // Memoized: once a chip is selected (`promotedViewKey` set) this object
@@ -1210,7 +1218,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     if (live.composerClosed) {
       if (tap !== null) echoNow.withdraw(tap.id, "refused");
       console.warn("[guuey] ui/message doorbell dropped — the chat is closed; the view's gesture cannot start a turn here.");
-      return Promise.resolve({ delivered: false, reason: "chat is closed" });
+      return Promise.resolve({ delivered: false, reason: DOORBELL_CHAT_CLOSED });
     }
     if (live.busy) {
       return new Promise<UserMessageDelivery>((resolve) => {
@@ -1264,7 +1272,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     if (live.composerClosed) {
       console.warn("[guuey] queued ui/message doorbell dropped — the chat closed.");
       for (const tap of next.taps) echoRef.current.withdraw(tap.id, "refused");
-      for (const waiter of next.waiters) waiter({ delivered: false, reason: "chat closed" });
+      for (const waiter of next.waiters) waiter({ delivered: false, reason: DOORBELL_CHAT_CLOSED });
       return;
     }
     const sent = next.taps.length > 0 ? echoRef.current.markSent(next.taps.map((t) => t.id)) : null;

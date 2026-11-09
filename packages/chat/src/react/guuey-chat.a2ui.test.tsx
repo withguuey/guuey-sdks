@@ -319,6 +319,43 @@ describe("<GuueyChat> advertises the A2UI catalogs because it wires their action
   }
 });
 
+describe("<GuueyChat> does not advertise the A2UI catalogs when the host turns drawing off (guuey#2386)", () => {
+  for (const viewMessageTurns of [true, false]) {
+    it(`no turn carries the catalogs (viewMessageTurns ${viewMessageTurns ? "declared" : "not declared"}), and the carrier draws today's tool row`, async () => {
+      const bodies: Array<{ [key: string]: unknown }> = [];
+      const t: AgentInvokeAdapters = {
+        storage: { load: () => null, save: () => {} },
+        generateId: (() => {
+          let n = 0;
+          return () => `cm_${n++}`;
+        })(),
+        transport: async function* (req) {
+          const body = req.body;
+          if (typeof body === "object" && body !== null && !Array.isArray(body)) bodies.push({ ...body });
+          yield SESSION_FRAME;
+          for (const f of TOOL_FRAMES) yield f;
+          yield DONE_FRAME;
+        },
+      };
+      const { container } = render(
+        <GuueyChat
+          endpointUrl="https://pod.example/agent/invoke"
+          adapters={t}
+          viewMessageTurns={viewMessageTurns}
+          policy={{ a2ui: { render: false } }}
+        />,
+      );
+      send();
+      await waitFor(() => expect(screen.queryByRole("button", { name: defaultChatStrings.stop })).toBeNull());
+      expect(bodies[0]?.["capabilities"]).toEqual({
+        hitl: { ask: true, grantModes: true },
+        ...(viewMessageTurns ? { uiResources: { viewMessageTurns: true } } : {}),
+      });
+      expect(container.querySelector(".guuey-chat-a2ui")).toBeNull();
+    });
+  }
+});
+
 describe("GuueyChatHandle.send reads the composer's one refusal (guuey#2386)", () => {
   it("an ended conversation refuses a handle send, as it refuses the composer and an A2UI press", async () => {
     const ref = createRef<GuueyChatHandle>();
