@@ -58,6 +58,7 @@ import { Linking } from "react-native";
 import { NativeMarkdown } from "./markdown.js";
 import { NativeHighlightedCode } from "./highlight-native.js";
 import type { NativeChatTokens } from "./theme-native.js";
+import { USER_BUBBLE_FACE } from "../theme.js";
 
 /** Everything a rendered native item may need beyond itself. */
 export interface NativeTranscriptItemContext {
@@ -291,7 +292,7 @@ export function NativeUserMessage({ item, ctx }: ItemProps<UserMessageItem>): Re
       <View
         style={{
           maxWidth: "82%",
-          backgroundColor: failed ? tokens.palette.surface : tokens.palette.ink,
+          backgroundColor: failed ? tokens.palette.surface : tokens.palette[USER_BUBBLE_FACE.fill],
           ...(failed ? { borderWidth: 1, borderColor: tokens.palette.inkMuted } : {}),
           borderRadius: tokens.radius,
           paddingHorizontal: tokens.pad,
@@ -302,7 +303,7 @@ export function NativeUserMessage({ item, ctx }: ItemProps<UserMessageItem>): Re
         <Text
           selectable
           style={{
-            color: failed ? tokens.palette.ink : tokens.palette.canvas,
+            color: failed ? tokens.palette.ink : tokens.palette[USER_BUBBLE_FACE.ink],
             fontSize: tokens.fontSize,
             fontFamily: tokens.fontFamily,
           }}

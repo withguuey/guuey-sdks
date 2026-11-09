@@ -177,6 +177,18 @@ export const CHIP_FACES: Readonly<Record<ChipFace, ChipFaceTokens>> = {
 };
 
 /**
+ * The SENT user bubble's face, one definition for both tiers: the ink fill
+ * under canvas words. It is the kit's primary idiom, it holds a high contrast
+ * in every shipped palette, and it never depends on the accent standing out
+ * on the canvas. Native reads these palette keys and the web stylesheet's
+ * `.guuey-chat-user-bubble` reads the same tokens, pinned by
+ * `user-bubble-twin.test.tsx`. In flight dims it; not sent draws the hollow
+ * face (surface fill, muted-ink border, ink words), which both tiers state
+ * on their own.
+ */
+export const USER_BUBBLE_FACE: Readonly<{ fill: "ink"; ink: "canvas" }> = { fill: "ink", ink: "canvas" };
+
+/**
  * One declared face (D3 — "theme declares faces; widget loads, hands to
  * cards"). `src` MUST be an `https:` URL on an admitted host — the
  * platform's write gate enforces the allow-list; this schema is shape only.

@@ -142,9 +142,11 @@
   align-self: flex-end;
   max-width: 85%;
 }
+/* Sent: the ink fill under canvas words, the same face native draws (`USER_BUBBLE_FACE` in src/theme.ts).
+   A host restyles it through --guuey-chat-ink / --guuey-chat-canvas, or this class. */
 .guuey-chat-user-bubble {
-  background: var(--guuey-chat-accent, var(--_guuey-chat-accent));
-  color: var(--guuey-chat-on-accent, var(--_guuey-chat-on-accent));
+  background: var(--guuey-chat-ink, var(--_guuey-chat-ink));
+  color: var(--guuey-chat-canvas, var(--_guuey-chat-canvas));
   border-radius: var(--guuey-chat-radius, var(--_guuey-chat-radius));
   border-end-end-radius: 4px;
   padding: 8px 12px;
