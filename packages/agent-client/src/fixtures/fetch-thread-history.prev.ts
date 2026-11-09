@@ -3,7 +3,8 @@
  * transcript read could say a thread was closed. It stands in for an older
  * client reading a newer read plane's body (the N−1 direction), so do not
  * edit it to follow `../history.ts`; a later wire change gets a new frozen
- * copy beside this one. Only the imports are adjusted to this directory, and
+ * copy beside this one. Only the imports are adjusted to this directory (and
+ * the body is read with JSON.parse of its text, below), and
  * the constants and the response type it needs are kept with it. The row
  * mappers it calls are imported: they did not change.
  */
@@ -43,7 +44,10 @@ export async function fetchThreadHistory({
     if (res.status === 403 || res.status === 404) return { gone: true };
     if (res.status === 401) throw new HistoryUnauthorizedError();
     if (!res.ok) throw new Error(`history load failed: ${res.status}`);
-    const body: ThreadMessagesResponse = await res.json();
+    // JSON.parse of the text, not res.json(): without the DOM lib
+    // Response.json() is Promise<unknown>. This keeps the trust the old
+    // client had (it never checked the body), so the copy stays frozen.
+    const body: ThreadMessagesResponse = JSON.parse(await res.text());
     rows.push(...body.rows);
     nextToken = body.nextToken;
     if (!nextToken) break;
