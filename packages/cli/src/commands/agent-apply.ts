@@ -81,6 +81,8 @@ export interface AgentReconcileConfig {
   userAuthConfig?: { issuerUrl: string; audience: string } | null;
   allowedDomains?: string[];
   guestAccess?: boolean | null;
+  /** The per-guest daily message cap — an integer >= 1, or `null` for no cap (server-validated). */
+  guestDailyMessageLimit?: number | null;
   /** Full stored-form theme document; plans/status echo hashes, never the document. */
   chatTheme?: unknown;
   /** Standalone-page posture patch (guuey#286); plans/status echo the wire projection. */
@@ -123,6 +125,7 @@ export interface ReconcileContentHash {
 /** A reconcilable field's value as stored / as desired (`null` = unset/cleared). */
 export type ReconcileConfigValue =
   | string
+  | number
   | boolean
   | string[]
   | { issuerUrl: string; audience: string }
@@ -194,6 +197,12 @@ export interface AgentReconcileStatus {
     userAuthConfig: { issuerUrl: string; audience: string } | null;
     allowedDomains: string[];
     guestAccess: boolean | null;
+    /**
+     * The per-guest daily message cap; `null` = no cap. Optional HERE while
+     * the wire requires it, for the `builtFor` reason below (N−1): an older
+     * cliApi omits it, and this CLI prints "(unset)".
+     */
+    guestDailyMessageLimit?: number | null;
     chatThemeHash: string | null;
     standalonePage: StandalonePageWire;
     /**
@@ -787,6 +796,7 @@ export async function agentStatus(flags?: Record<string, string | true>): Promis
   console.log(`    userAuthConfig: ${fmtValue(c.userAuthConfig)}`);
   console.log(`    allowedDomains: ${fmtValue(c.allowedDomains)}`);
   console.log(`    guestAccess:    ${fmtValue(c.guestAccess)}`);
+  console.log(`    guestDailyMessageLimit: ${fmtValue(c.guestDailyMessageLimit)}`);
   console.log(`    chatTheme:      ${c.chatThemeHash ?? 'none'}`);
   console.log(`    standalonePage: ${fmtValue(c.standalonePage)}`);
   console.log(`    builtFor:       ${fmtValue(c.builtFor)}`);

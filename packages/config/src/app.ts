@@ -88,6 +88,12 @@ export type AppBuiltFor = (typeof APP_BUILT_FOR)[number];
  *
  * Tier is deliberately absent (admin plane, never CI); slug/customDomain/
  * listing stay declared-not-converged (they have their own ceremonies).
+ *
+ * `guestDailyMessageLimit` (guuey#2358) is the per-guest daily message cap: a
+ * positive integer, or `null` for no cap. The value is shape-checked only
+ * (a number) — the integer-and-at-least-1 rule is the platform's own write
+ * gate, the one `guuey apps access --guest-limit` meets, so the CLI surfaces
+ * its exact message (the `app.page` split).
  */
 export const AppAccessV1 = z.strictObject({
   userAuthMode: z.enum(APP_USER_AUTH_MODES).optional(),
@@ -100,6 +106,7 @@ export const AppAccessV1 = z.strictObject({
     .optional(),
   allowedDomains: z.array(z.string().min(1)).optional(),
   guestAccess: z.boolean().nullable().optional(),
+  guestDailyMessageLimit: z.number().nullable().optional(),
 });
 
 /** Static TypeScript type for `app.access`. */

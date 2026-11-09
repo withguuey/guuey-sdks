@@ -88,6 +88,8 @@ interface AppDetail extends AppSummary {
   allowedDomains?: string[];
   /** Guest (signed-out) access as stored; `null` = the platform default. */
   guestAccess?: boolean | null;
+  /** The per-guest daily message cap as stored; `null` = no cap. */
+  guestDailyMessageLimit?: number | null;
   userAuthMode?: string | null;
   userAuthConfig?: {
     issuerUrl: string | null;

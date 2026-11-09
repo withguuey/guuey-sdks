@@ -6,7 +6,7 @@
  * whose guuey.json named its own issuer went live still verifying end-user
  * tokens against whatever the app record held, and nothing said so.
  *
- * THE DOOR: `PUT /apps/:id` with the four access fields — the handler the
+ * THE DOOR: `PUT /apps/:id` with the five access fields — the handler the
  * reconcile route composes for the same converge, so every server-side rule
  * (issuer trust, the re-key guard, the domain normalization, the member gate)
  * is the one `agent apply` and `guuey apps update` already meet. Field names
@@ -19,10 +19,13 @@
  * declare. Like reconcile, only the fields that do not already hold are sent:
  * the app is read first, so a deploy whose access is already in place writes
  * nothing (and a credential that may deploy but not edit the app record — a
- * workspace API key — still deploys when the stored access matches).
+ * workspace API key — still deploys when the stored access matches). The one
+ * exception is a declared `guestDailyMessageLimit: null`, which is sent on
+ * every deploy (see `accessFieldsToSend`), so that credential cannot deploy a
+ * file declaring it.
  *
- * THE OUTPUT: one `Access:` line naming the mode, the issuer host and guest
- * access — applied or already in place. No `app.access` → nothing read,
+ * THE OUTPUT: one `Access:` line naming the mode, the issuer host, guest
+ * access and the per-guest daily limit — applied or already in place. No `app.access` → nothing read,
  * nothing sent, nothing said; the app's access stays as it is.
  */
 import type { GuueyAppAccess, GuueyJsonV1 } from '@guuey/config';
@@ -30,10 +33,13 @@ import { apiRequest, parseApiError } from '../deploy-shared';
 import type { AppDetail, UpdateAppRequest } from './apps';
 
 /** The access members of the app projection `GET /apps/:id` answers. */
-type StoredAccess = Pick<AppDetail, 'userAuthMode' | 'userAuthConfig' | 'allowedDomains' | 'guestAccess'>;
+type StoredAccess = Pick<AppDetail, 'userAuthMode' | 'userAuthConfig' | 'allowedDomains' | 'guestAccess' | 'guestDailyMessageLimit'>;
 
 /** The access members `PUT /apps/:id` takes — `app.access`'s own vocabulary. */
-export type AccessUpdate = Pick<UpdateAppRequest, 'userAuthMode' | 'userAuthConfig' | 'allowedDomains' | 'guestAccess'>;
+export type AccessUpdate = Pick<
+  UpdateAppRequest,
+  'userAuthMode' | 'userAuthConfig' | 'allowedDomains' | 'guestAccess' | 'guestDailyMessageLimit'
+>;
 
 export type ConvergeAccessOutcome =
   | { kind: 'none' }
@@ -42,10 +48,10 @@ export type ConvergeAccessOutcome =
   | { kind: 'refused'; message: string };
 
 export const ACCESS_DOOR_LINE =
-  '          The same policy can be set with `guuey apps update <app>` (--auth-mode, --issuer-url/--audience, --domains), `guuey apps access <app> --guests on|off`, or in the console.';
+  '          The same policy can be set with `guuey apps update <app>` (--auth-mode, --issuer-url/--audience, --domains), `guuey apps access <app> --guests on|off --guest-limit N|off`, or in the console.';
 
 /** The members of `app.access`, in the order the summary and the receipt name them. */
-const ACCESS_FIELDS = ['userAuthMode', 'userAuthConfig', 'allowedDomains', 'guestAccess'] as const;
+const ACCESS_FIELDS = ['userAuthMode', 'userAuthConfig', 'allowedDomains', 'guestAccess', 'guestDailyMessageLimit'] as const;
 
 /** `app.access` as guuey.json declares it, else undefined. */
 export function accessFromConfig(doc: Pick<GuueyJsonV1, 'app'>): GuueyAppAccess | undefined {
@@ -86,6 +92,18 @@ export function accessFieldsToSend(access: GuueyAppAccess, stored: StoredAccess 
   if (access.guestAccess !== undefined && (stored === undefined || (stored.guestAccess ?? null) !== access.guestAccess)) {
     update.guestAccess = access.guestAccess;
   }
+  // A declared null ("no cap") is ALWAYS sent: the read answers null for both
+  // a stored "no cap" and a limit never set, and only the stored null stops
+  // the publish-time default (20/day) from being stamped later. The PUT is
+  // idempotent, so the cost is one write that changes nothing. A declared
+  // cap is sent unless the read shows exactly it (an unread app, or a read
+  // without the member, never holds).
+  if (
+    access.guestDailyMessageLimit !== undefined &&
+    (access.guestDailyMessageLimit === null || stored?.guestDailyMessageLimit !== access.guestDailyMessageLimit)
+  ) {
+    update.guestDailyMessageLimit = access.guestDailyMessageLimit;
+  }
   return update;
 }
 
@@ -98,7 +116,8 @@ function issuerHost(issuerUrl: string): string {
 }
 
 /**
- * The summary the `Access:` line prints — mode, issuer host, guest access —
+ * The summary the `Access:` line prints — mode, issuer host, guest access,
+ * the per-guest daily limit —
  * read off the declaration, falling back to the stored value for a member the
  * file does not declare. A member neither side knows is left out.
  */
@@ -115,6 +134,9 @@ export function accessSummary(access: GuueyAppAccess, stored: StoredAccess | und
   if (guest === true) parts.push('guest access on');
   else if (guest === false) parts.push('guest access off');
   else if (guest === null) parts.push('guest access default');
+  const limit = access.guestDailyMessageLimit !== undefined ? access.guestDailyMessageLimit : stored?.guestDailyMessageLimit;
+  if (typeof limit === 'number') parts.push(`guest limit ${limit}/day`);
+  else if (limit === null) parts.push('no guest limit');
   return parts.join(' · ');
 }
 

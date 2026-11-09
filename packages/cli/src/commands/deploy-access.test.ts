@@ -77,6 +77,80 @@ describe('accessFieldsToSend (guuey#2358)', () => {
   });
 });
 
+describe('guestDailyMessageLimit — the per-guest daily cap (guuey#2358)', () => {
+  const STORED_NONE = { userAuthMode: null, userAuthConfig: null, allowedDomains: [], guestAccess: null, guestDailyMessageLimit: null };
+
+  it('sends a declared cap the app does not hold, and a declared null that clears a stored cap', () => {
+    expect(accessFieldsToSend({ guestDailyMessageLimit: 20 }, STORED_NONE)).toEqual({ guestDailyMessageLimit: 20 });
+    expect(accessFieldsToSend({ guestDailyMessageLimit: 20 }, undefined)).toEqual({ guestDailyMessageLimit: 20 });
+    expect(accessFieldsToSend({ guestDailyMessageLimit: null }, { ...STORED_NONE, guestDailyMessageLimit: 7 })).toEqual({
+      guestDailyMessageLimit: null,
+    });
+  });
+
+  it('holds when the stored cap matches', () => {
+    expect(accessFieldsToSend({ guestDailyMessageLimit: 7 }, { ...STORED_NONE, guestDailyMessageLimit: 7 })).toEqual({});
+  });
+
+  it('a declared null is sent even when the read answers null: the read cannot tell a stored "no cap" from a limit never set, and only the stored null stops the publish-time default', () => {
+    expect(accessFieldsToSend({ guestDailyMessageLimit: null }, STORED_NONE)).toEqual({ guestDailyMessageLimit: null });
+    expect(accessFieldsToSend({ guestDailyMessageLimit: null }, undefined)).toEqual({ guestDailyMessageLimit: null });
+  });
+
+  it('a projection that lacks the member (an older server) sends the declared cap or null', () => {
+    const { guestDailyMessageLimit: _omitted, ...withoutLimit } = STORED_NONE;
+    expect(accessFieldsToSend({ guestDailyMessageLimit: 20 }, withoutLimit)).toEqual({ guestDailyMessageLimit: 20 });
+    expect(accessFieldsToSend({ guestDailyMessageLimit: null }, withoutLimit)).toEqual({ guestDailyMessageLimit: null });
+  });
+
+  it('a declared null on an app the read shows without a cap is still PUT, and the applied line names it', async () => {
+    const api = apiWith({ stored: { ...STORED_MATCH, guestDailyMessageLimit: null } });
+    const { logs, deps } = io();
+    const outcome = await convergeAccessFromConfig(
+      'pat',
+      CONFIG,
+      'app-1',
+      { app: { access: { ...ACCESS, guestDailyMessageLimit: null } } },
+      { api, ...deps },
+    );
+    expect(outcome).toEqual({ kind: 'applied', fields: ['guestDailyMessageLimit'] });
+    expect(api).toHaveBeenNthCalledWith(2, 'pat', CONFIG, 'PUT', '/apps/app-1', { guestDailyMessageLimit: null });
+    expect(logs).toEqual([
+      '  Access: app.access applied (guestDailyMessageLimit) — mode byo · issuer cognito-idp.us-east-1.amazonaws.com · guest access off · no guest limit.',
+    ]);
+  });
+
+  it('a file that does not declare it never sends it — no default is injected, a stored cap stays', () => {
+    expect(accessFieldsToSend(ACCESS, { ...STORED_MATCH, guestDailyMessageLimit: 7 })).toEqual({});
+    expect(accessFieldsToSend(ACCESS, undefined)).not.toHaveProperty('guestDailyMessageLimit');
+  });
+
+  it('the Access line names the cap — declared, else as stored', () => {
+    expect(accessSummary({ guestAccess: true, guestDailyMessageLimit: 20 }, undefined)).toBe('guest access on · guest limit 20/day');
+    expect(accessSummary({ guestAccess: true }, STORED_NONE)).toBe('issuer none · guest access on · no guest limit');
+    expect(accessSummary({ guestAccess: true }, { ...STORED_NONE, guestDailyMessageLimit: 7 })).toBe(
+      'issuer none · guest access on · guest limit 7/day',
+    );
+  });
+
+  it('converges through PUT /apps/:id and names the field in the applied line', async () => {
+    const api = apiWith({ stored: { ...STORED_MATCH, guestDailyMessageLimit: null } });
+    const { logs, deps } = io();
+    const outcome = await convergeAccessFromConfig(
+      'pat',
+      CONFIG,
+      'app-1',
+      { app: { access: { ...ACCESS, guestDailyMessageLimit: 20 } } },
+      { api, ...deps },
+    );
+    expect(outcome).toEqual({ kind: 'applied', fields: ['guestDailyMessageLimit'] });
+    expect(api).toHaveBeenNthCalledWith(2, 'pat', CONFIG, 'PUT', '/apps/app-1', { guestDailyMessageLimit: 20 });
+    expect(logs).toEqual([
+      '  Access: app.access applied (guestDailyMessageLimit) — mode byo · issuer cognito-idp.us-east-1.amazonaws.com · guest access off · guest limit 20/day.',
+    ]);
+  });
+});
+
 describe('accessSummary (guuey#2358)', () => {
   it('names the mode, the issuer HOST and guest access', () => {
     expect(accessSummary(ACCESS, undefined)).toBe('mode byo · issuer cognito-idp.us-east-1.amazonaws.com · guest access off');

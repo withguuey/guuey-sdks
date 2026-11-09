@@ -93,6 +93,39 @@ describe('parseGuueyJson — app.access (agents-as-code, guuey#190)', () => {
     expect(doc.app?.access).toEqual({ userAuthConfig: null });
   });
 
+  it('guestDailyMessageLimit (guuey#2358): a number, or null for no cap; shape only — the integer >= 1 rule is the platform\'s write gate', () => {
+    expect(parseGuueyJson({ ...base, app: { access: { guestDailyMessageLimit: 20 } } }).app?.access).toEqual({
+      guestDailyMessageLimit: 20,
+    });
+    expect(parseGuueyJson({ ...base, app: { access: { guestDailyMessageLimit: null } } }).app?.access).toEqual({
+      guestDailyMessageLimit: null,
+    });
+    expect(() => parseGuueyJson({ ...base, app: { access: { guestDailyMessageLimit: '20' } } })).toThrow();
+    expect(() => parseGuueyJson({ ...base, app: { access: { guestDailyMessageLimit: true } } })).toThrow();
+  });
+
+  it('N−1 (guuey#1213): a document in the previous release\'s app.access vocabulary parses to the same bytes, no key added', () => {
+    // FROZEN from release 3.17.2's four-field app.access (captured at
+    // 7b9b33ea9, the base before guestDailyMessageLimit): never edit.
+    const prevRelease = {
+      schema: '1',
+      agent: { model: 'claude-sonnet-5', systemPrompt: 'You are the helper. Em-dash intact — verify bytes.' },
+      app: {
+        access: {
+          userAuthMode: 'byo',
+          userAuthConfig: { issuerUrl: 'https://iss.example', audience: 'aud1' },
+          allowedDomains: ['https://Console.Example.com'],
+          guestAccess: false,
+        },
+      },
+    };
+    const frozen =
+      '{"schema":"1","agent":{"model":"claude-sonnet-5","systemPrompt":"You are the helper. Em-dash intact — verify bytes."},"app":{"access":{"userAuthMode":"byo","userAuthConfig":{"issuerUrl":"https://iss.example","audience":"aud1"},"allowedDomains":["https://Console.Example.com"],"guestAccess":false}},"protocol":"silver"}';
+    const parsed = parseGuueyJson(prevRelease);
+    expect(JSON.stringify(parsed)).toBe(frozen);
+    expect(parsed.app?.access).not.toHaveProperty('guestDailyMessageLimit');
+  });
+
   it('rejects an unknown auth mode and unknown keys (tier is NOT declarable here)', () => {
     expect(() =>
       parseGuueyJson({ ...base, app: { access: { userAuthMode: 'magic' } } }),

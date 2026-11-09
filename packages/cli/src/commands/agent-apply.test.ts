@@ -475,6 +475,31 @@ describe('agentApply', () => {
     expect(output).toContain('sha256 snapshot:  ' + 'c'.repeat(64));
   });
 
+  it('guuey#2358: a declared app.access.guestDailyMessageLimit rides the document as written and its plan line prints the number', async () => {
+    const withCap = JSON.stringify(
+      { ...JSON.parse(GUUEY_JSON), app: { access: { guestAccess: false, guestDailyMessageLimit: 20 } } },
+      null,
+      2,
+    );
+    writeFileSync(join(process.cwd(), 'guuey.json'), withCap);
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        200,
+        reconcileResult({
+          plan: { snapshot: 'changed', config: [{ field: 'guestDailyMessageLimit', current: null, desired: 20 }] },
+          convergedFields: ['guestAccess', 'guestDailyMessageLimit'],
+        }),
+      ),
+    );
+    await agentApply({ provenance: 'none' });
+    const body = JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string);
+    expect(body.artifacts.guueyJson).toBe(withCap);
+    expect('config' in body).toBe(false);
+    const output = logs.join('\n');
+    expect(output).toContain('guestDailyMessageLimit: (unset) → 20');
+    expect(output).toContain('converged: guestAccess, guestDailyMessageLimit');
+  });
+
   it('says when the card side did not follow the apply\'s theme (guuey#1415) — the same Cards line apps update and deploy print', async () => {
     fetchMock.mockResolvedValue(
       jsonResponse(200, reconcileResult({ themeForward: { status: 'refused', wouldDrop: ['cssVariables', 'keyframes'] } })),
@@ -801,6 +826,17 @@ describe('agentStatus', () => {
     expect(output).toContain('allowedDomains: ["https://console.example.com"]');
     expect(output).toContain('standalonePage: {"enabled":true,');
     expect(output).toContain('"noindex":true}');
+  });
+
+  it('guuey#2358: renders the guestDailyMessageLimit; an older cliApi that omits it renders (unset), never throws', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { ...STATUS, config: { ...STATUS.config, guestDailyMessageLimit: 20 } }));
+    await agentStatus({});
+    expect(logs.join('\n')).toContain('guestDailyMessageLimit: 20');
+
+    logs.length = 0;
+    fetchMock.mockResolvedValue(jsonResponse(200, STATUS));
+    await agentStatus({});
+    expect(logs.join('\n')).toContain('guestDailyMessageLimit: (unset)');
   });
 
   it('guuey#1597: renders the builtFor; an older cliApi that omits it renders (unset), never throws', async () => {
