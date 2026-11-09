@@ -56,7 +56,18 @@ import { facesCss, useHostFaces } from "./faces.js";
 import { PARTS } from "./parts.js";
 import { useA2uiEditStore } from "./a2ui.js";
 import { followTarget, planTurnAnchor, type TurnAnchorPlan } from "./scroll-anchor.js";
-import type { TranscriptFollow, TranscriptScrollHandle, TranscriptScrollProps } from "../transcript-scroll.js";
+import {
+  itemPlaceTop,
+  nextRoom,
+  reserveRoom,
+  roomShortfall,
+  type TranscriptFollow,
+  type TranscriptItemGeometry,
+  type TranscriptRoom,
+  type TranscriptScrollClamp,
+  type TranscriptScrollHandle,
+  type TranscriptScrollProps,
+} from "../transcript-scroll.js";
 import type { DisplayItem } from "../types.js";
 
 /** How close to the bottom (px) still counts as pinned. */
@@ -102,20 +113,6 @@ const anchorTop = (
   return card.getBoundingClientRect().top - el.getBoundingClientRect().top - el.clientTop + el.scrollTop;
 };
 
-/**
- * guuey#2554: the room reserved below the last item: `key` is the item placed, `align` and `offset`
- * where it was placed (kept relative to the ITEM, never as a scrollTop, so content above it
- * changing height, or windowing dropping an item above, never misreads it), `px` the spacer's
- * height now (what that place lacks to be reachable, never more than the placement itself
- * reserved).
- */
-interface HeldRoom {
-  key: string;
-  align: "top" | "end";
-  offset: number;
-  px: number;
-}
-
 /** guuey#2554: a placement still on its way: where it goes, and the scrollTop of its last frame. */
 interface Glide {
   target: number;
@@ -123,58 +120,40 @@ interface Glide {
 }
 
 /*
- * guuey#2554: the room's helpers below take the room's refs and the elements as arguments, like the
- * scroll helpers above, so the handlers that call them capture only refs and setters.
+ * guuey#2554: the room's arithmetic is the shared module's (`transcript-scroll.ts`); the helpers
+ * below read the DOM's geometry into numbers for it and size the spacer to its answer. They take
+ * the room's refs and the elements as arguments, like the scroll helpers above, so the handlers
+ * that call them capture only refs and setters.
  */
 
-/**
- * What a scroll to `top` lacks below the content to be reachable under the browser's clamp.
- * `heldPx` is the room already reserved, which the scroll height includes and the content's own
- * end does not.
- */
-const shortfall = (el: HTMLDivElement, top: number, heldPx: number): number =>
-  Math.max(0, Math.ceil(top + el.clientHeight - (el.scrollHeight - heldPx)));
-
-/**
- * The scrollTop that puts `item` at `align` less `offset`, read off the item's geometry NOW: a
- * placement and every refit of its room ask the same question of the same item.
- */
-const placeTop = (el: HTMLDivElement, item: Element, align: "top" | "end", offset: number): number => {
-  const box = item.getBoundingClientRect();
-  const itemTop = box.top - el.getBoundingClientRect().top - el.clientTop + el.scrollTop;
-  return Math.max(0, align === "top" ? itemTop - offset : itemTop + box.height - el.clientHeight + offset);
-};
-
-/** Size the spacer: `px` of room, 0 for none. */
-const sizeRoom = (spacer: HTMLDivElement | null, px: number): void => {
-  if (spacer !== null) spacer.style.height = px > 0 ? `${px}px` : "";
-};
-
-const releaseRoom = (room: RefObject<HeldRoom | null>, spacer: HTMLDivElement | null): void => {
-  room.current = null;
-  sizeRoom(spacer, 0);
-};
-
-/**
- * Reserve what placing `key` at `top` lacks, or none (and any earlier room released) when the
- * place is reachable as it is.
- */
-const reserveFor = (
-  room: RefObject<HeldRoom | null>,
+/** Hold `next` (null: none) and size the spacer to it; the room already held changes nothing. */
+const holdRoom = (
+  room: RefObject<TranscriptRoom | null>,
   spacer: HTMLDivElement | null,
-  el: HTMLDivElement,
-  key: string,
-  align: "top" | "end",
-  offset: number,
-  top: number,
+  next: TranscriptRoom | null,
 ): void => {
-  const px = shortfall(el, top, room.current?.px ?? 0);
-  if (px === 0) {
-    releaseRoom(room, spacer);
-    return;
-  }
-  room.current = { key, align, offset, px };
-  sizeRoom(spacer, px);
+  if (next === room.current) return;
+  room.current = next;
+  if (spacer !== null) spacer.style.height = next === null ? "" : `${next.px}px`;
+};
+
+/** The browser's clamp without the `held` room, read off the scroller. */
+const clampOf = (el: HTMLDivElement, held: TranscriptRoom | null): TranscriptScrollClamp => ({
+  contentHeight: el.scrollHeight - (held?.px ?? 0),
+  viewportHeight: el.clientHeight,
+});
+
+/**
+ * The item's geometry in the scroll content's coordinates, read NOW: a placement and every refit
+ * of its room ask the same question of the same item.
+ */
+const geometryOf = (el: HTMLDivElement, item: Element): TranscriptItemGeometry => {
+  const box = item.getBoundingClientRect();
+  return {
+    itemTop: box.top - el.getBoundingClientRect().top - el.clientTop + el.scrollTop,
+    itemHeight: box.height,
+    viewportHeight: el.clientHeight,
+  };
 };
 
 /**
@@ -188,7 +167,7 @@ const reserveFor = (
  * ends at the scroll's new bottom.
  */
 const fitRoom = (
-  room: RefObject<HeldRoom | null>,
+  room: RefObject<TranscriptRoom | null>,
   placing: RefObject<Glide | null>,
   spacer: HTMLDivElement | null,
   el: HTMLDivElement | null,
@@ -198,13 +177,11 @@ const fitRoom = (
   const held = room.current;
   if (held !== null) {
     const item = itemElement(held.key);
-    const px =
-      item === null ? 0 : Math.min(held.px, shortfall(el, placeTop(el, item, held.align, held.offset), held.px));
-    if (px === 0) releaseRoom(room, spacer);
-    else if (px !== held.px) {
-      room.current = { ...held, px };
-      sizeRoom(spacer, px);
-    }
+    const shortfall =
+      item === null
+        ? null
+        : roomShortfall(itemPlaceTop(geometryOf(el, item), held.align, held.offset), clampOf(el, held));
+    holdRoom(room, spacer, nextRoom(held, { kind: "refit", shortfall }));
   }
   const glide = placing.current;
   if (glide !== null) {
@@ -387,8 +364,12 @@ export function Transcript(props: TranscriptProps): ReactNode {
   const autoTop = useRef<number | null>(null);
   /** guuey#2554: the spacer after the column that holds the room a placement reserves. */
   const spacer = useRef<HTMLDivElement>(null);
-  /** guuey#2554: the room reserved below the last item ({@link HeldRoom}), or null. */
-  const room = useRef<HeldRoom | null>(null);
+  /**
+   * guuey#2554: the room reserved below the last item ({@link TranscriptRoom}: its `px` is the
+   * spacer's height now), or null. Its arithmetic is the shared module's; this component reads the
+   * DOM's geometry into numbers for it.
+   */
+  const room = useRef<TranscriptRoom | null>(null);
   /**
    * guuey#2554: a placement still on its way, so its frames are not read as the reader's. Read
    * off the scroll itself, not the behavior asked for: a host's `scroll-behavior: smooth` turns
@@ -402,7 +383,7 @@ export function Transcript(props: TranscriptProps): ReactNode {
     if (el === null) return;
     // guuey#2554: following resumed (the reader came back to the end under "tail"): the end it
     // follows is the content's own, so no reserved room is kept below it.
-    if (room.current !== null) releaseRoom(room, spacer.current);
+    holdRoom(room, spacer.current, nextRoom(room.current, { kind: "end" }));
     const col = column.current;
     const target = followTarget(
       { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight },
@@ -476,10 +457,14 @@ export function Transcript(props: TranscriptProps): ReactNode {
     // guuey#2554: the reader scrolled up until releasing the reserved room moves nothing in view
     // (it is wholly below the view, or the content is shorter than the panel and they are at its
     // top): it is released, so the end they scroll back to is the content's own.
-    const held = room.current;
-    if (held !== null && el.scrollTop <= Math.max(0, el.scrollHeight - held.px - el.clientHeight)) {
-      releaseRoom(room, spacer.current);
-    }
+    holdRoom(
+      room,
+      spacer.current,
+      nextRoom(room.current, {
+        kind: "reader-scroll",
+        scroll: { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, viewportHeight: el.clientHeight },
+      }),
+    );
     // The viewer reached the tail while the card held: they chose the tail,
     // so this turn follows the bottom from here.
     if (nearBottom && holding.current) releasedTurn.current = anchorPlan.current.turnKey;
@@ -538,7 +523,7 @@ export function Transcript(props: TranscriptProps): ReactNode {
 
   const goToEnd = (smooth: boolean): void => {
     // The end is the content's own end: no room is kept below it, and no placement still glides.
-    releaseRoom(room, spacer.current);
+    holdRoom(room, spacer.current, nextRoom(room.current, { kind: "end" }));
     placing.current = null;
     pinned.current = true;
     // Only a smooth scroll emits frames on its way to the end; an instant one lands at once.
@@ -583,14 +568,15 @@ export function Transcript(props: TranscriptProps): ReactNode {
         if (el === null || target === null) return false;
         const align = opts.align ?? "top";
         const offset = opts.offset ?? 0;
-        const place = placeTop(el, target, align, offset);
+        const place = itemPlaceTop(geometryOf(el, target), align, offset);
         // The host placed the view: following stops until it asks for the end again, and any
         // go-to-end still gliding is over (its seek must not swallow the reader's next move).
         pinned.current = false;
         seekingEnd.current = false;
         lastSeekTop.current = null;
         // guuey#2554: a place the browser's clamp would stop short of gets the room it lacks.
-        reserveFor(room, spacer.current, el, key, align, offset, place);
+        const lacks = roomShortfall(place, clampOf(el, room.current));
+        holdRoom(room, spacer.current, reserveRoom(key, align, offset, lacks));
         const smooth = opts.behavior === "smooth" && !reducedMotion();
         const from = el.scrollTop;
         const moves = Math.abs(place - from) >= 1;
