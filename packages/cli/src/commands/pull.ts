@@ -399,17 +399,40 @@ export type DraftPromptAction =
 
 /**
  * The two texts `pull` may overwrite — the scaffold's shipped
- * `prompts/system.md` and the runtime default — each in the exact
- * newline-normalized form `build-templates.mjs` stamps (`text + '\n'`),
+ * `prompts/system.md` (under the project's name, see
+ * {@link SCAFFOLD_PROMPT_UNDER_ANY_NAME}) and the runtime default — each in
+ * the exact newline-normalized form `build-templates.mjs` stamps (`text + '\n'`),
  * plus the bare trimmed constant (an editor that strips the final
  * newline does not turn an untouched default into "builder-authored").
  * Anything else is the builder's own text and is never replaced.
  */
 function isKnownDefaultPrompt(content: string): boolean {
-  for (const text of [GUUEY_SCAFFOLD_SYSTEM_PROMPT, GUUEY_DEFAULT_SYSTEM_PROMPT]) {
-    if (content === `${text}\n` || content === text) return true;
-  }
-  return false;
+  if (content === `${GUUEY_DEFAULT_SYSTEM_PROMPT}\n` || content === GUUEY_DEFAULT_SYSTEM_PROMPT) return true;
+  return SCAFFOLD_PROMPT_UNDER_ANY_NAME.test(content);
+}
+
+/**
+ * The project name create-agentic-app's templates are authored under. Its
+ * rename (`renameContent` in create-agentic-app's `src/rename.ts`) writes the
+ * project's own name over it in every text file, the scaffold prompt included
+ * (guuey#3260). Exported for the test that pins the scaffold prompt carries it.
+ */
+export const SCAFFOLD_NAME_TOKEN = 'agentic-app-template';
+
+/**
+ * The scaffold prompt as a fresh project carries it (guuey#3260): the token
+ * stands for any one name (the same name at each occurrence), and the rest of
+ * the text matches byte for byte, with or without the final newline. A name
+ * never spans lines.
+ */
+const SCAFFOLD_PROMPT_UNDER_ANY_NAME = new RegExp(
+  `^${GUUEY_SCAFFOLD_SYSTEM_PROMPT.split(SCAFFOLD_NAME_TOKEN)
+    .map(escapeRegExp)
+    .reduce((pattern, part, i) => `${pattern}${i === 1 ? '([^\\n]+)' : '\\1'}${part}`)}\\n?$`,
+);
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**

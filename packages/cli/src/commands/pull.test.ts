@@ -56,6 +56,7 @@ import {
   pickSnapshotBuild,
   pull,
   resolveDraftPromptAction,
+  SCAFFOLD_NAME_TOKEN,
   SYSTEM_PROMPT_FILE,
   type AppResponse,
   type DeploymentRow,
@@ -336,6 +337,32 @@ describe('resolveDraftPromptAction', () => {
     ).toEqual({ kind: 'diverged' });
     expect(resolveDraftPromptAction(DRAFT, 'My own prompt.\n')).toEqual({
       kind: 'diverged',
+    });
+  });
+
+  // guuey#3260: a fresh scaffold's prompt carries the PROJECT's name, written over the template token by
+  // create-agentic-app's rename. That is still the untouched default.
+  describe('a renamed scaffold prompt (guuey#3260)', () => {
+    const renamed = (name: string): string => GUUEY_SCAFFOLD_SYSTEM_PROMPT.replaceAll(SCAFFOLD_NAME_TOKEN, name);
+
+    it('the scaffold prompt carries the token the rename replaces, so the fixture is not the bare constant', () => {
+      expect(GUUEY_SCAFFOLD_SYSTEM_PROMPT).toContain(SCAFFOLD_NAME_TOKEN);
+      expect(renamed('my-shop')).toContain('You are the my-shop assistant.');
+      expect(renamed('my-shop')).not.toBe(GUUEY_SCAFFOLD_SYSTEM_PROMPT);
+    });
+
+    it.each(['my-shop', 'a.b(c)+[d]', '$1 \\1 ^x$'])('writes over the scaffold prompt renamed to %j', (name) => {
+      expect(resolveDraftPromptAction(DRAFT, `${renamed(name)}\n`)).toEqual({ kind: 'write', content: DRAFT });
+      expect(resolveDraftPromptAction(DRAFT, renamed(name))).toEqual({ kind: 'write', content: DRAFT });
+    });
+
+    it('an edit to a renamed scaffold prompt is still diverged', () => {
+      expect(resolveDraftPromptAction(DRAFT, `${renamed('my-shop')}\nMy edit.\n`)).toEqual({ kind: 'diverged' });
+      expect(resolveDraftPromptAction(DRAFT, renamed('my-shop').replace('todo', 'task'))).toEqual({ kind: 'diverged' });
+    });
+
+    it('a "name" that spans lines is not a rename: diverged', () => {
+      expect(resolveDraftPromptAction(DRAFT, renamed('my\nshop'))).toEqual({ kind: 'diverged' });
     });
   });
 
