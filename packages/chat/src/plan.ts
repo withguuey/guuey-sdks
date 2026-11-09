@@ -48,7 +48,7 @@ import {
   viewToolData,
   type ViewMount,
 } from "@guuey/mcp-apps-host";
-import { readA2uiCarrier } from "@guuey/mcp-apps-host/narrowing";
+import { A2UI_CARRIER_MAX_UNITS, readA2uiCarrier } from "@guuey/mcp-apps-host/narrowing";
 import type { HistoryCard, HistoryToolCall, HistoryToolResult } from "@guuey/agent-client";
 import type { TranscriptPolicy } from "./policy.js";
 import { prettyJson } from "./highlight.js";
@@ -81,8 +81,11 @@ import type {
   ViewRefItem,
 } from "./types.js";
 
-/** R5's giant threshold: above this byte count the state is `giant`. */
-const GIANT_RESULT_BYTES = 16_384;
+/**
+ * R5's giant threshold: above this byte count the state is `giant`. One
+ * number with the A2UI carrier bound (spec §6), kept once in mcp-apps-host.
+ */
+const GIANT_RESULT_BYTES = A2UI_CARRIER_MAX_UNITS;
 
 type ToolResultBlock = Extract<AgBlock, { type: "tool-result" }>;
 

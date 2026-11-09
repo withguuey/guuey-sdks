@@ -16,7 +16,7 @@ import { DEFAULT_MEDIA_ORIGINS, isMediaOrigin } from "../media.js";
 import { A2UI_LIMITS } from "./limits.js";
 
 /** Raster image bytes inline; SVG is refused (it is a document that can carry script). */
-const DATA_IMAGE = /^data:image\/(?:png|jpeg|gif|webp);base64,([A-Za-z0-9+/]*={0,2})$/i;
+const DATA_IMAGE = /^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/]*={0,2}$/i;
 
 /** The parsed URL when it is an `https:` URL within the URL bound and with no userinfo. */
 function parseHttps(url: string): URL | null {

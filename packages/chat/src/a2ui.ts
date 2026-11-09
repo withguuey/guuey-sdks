@@ -7,7 +7,7 @@
  * A carrier rides a tool result's `structuredContent` under
  * {@link A2UI_CARRIER_KEY}: `{ format?: "a2ui", version: "v0.9", messages }`.
  */
-export { A2UI_CARRIER_KEY, A2UI_CARRIER_MAX_UNITS } from "@guuey/mcp-apps-host/narrowing";
+export { A2UI_CARRIER_KEY, A2UI_CARRIER_MAX_UNITS, a2uiCarrierUnits } from "@guuey/mcp-apps-host/narrowing";
 export {
   foldA2uiCarrier,
   parseA2uiCarrier,
@@ -23,7 +23,7 @@ export {
   type A2uiResolvedSurface,
   type A2uiSurfaceOutcome,
 } from "./a2ui/fold.js";
-export { A2UI_LIMITS, jsonUnits } from "./a2ui/limits.js";
+export { A2UI_LIMITS } from "./a2ui/limits.js";
 export {
   a2uiImageDisplay,
   httpsLink,
@@ -44,15 +44,11 @@ export {
   A2UI_TEXT_VARIANTS,
   A2UI_VERSION,
   A2uiAction,
-  A2uiCarrierSchema,
-  A2uiComponentSchema,
-  A2uiServerMessageSchema,
+  isA2uiCarveOut,
   isA2uiComponentName,
   readA2uiDataPath,
   type A2uiBound,
-  type A2uiCarrier,
   type A2uiCarveOut,
-  type A2uiComponent,
   type A2uiComponentFault,
   type A2uiComponentName,
   type A2uiDegradeCounts,
@@ -62,5 +58,4 @@ export {
   type A2uiJsonObject,
   type A2uiNode,
   type A2uiPathBinding,
-  type A2uiServerMessage,
 } from "./a2ui/schema.js";

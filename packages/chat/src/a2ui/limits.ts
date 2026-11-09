@@ -2,8 +2,8 @@
  * The A2UI bounds (guuey#2366, spec §6) — one table, read by the validator,
  * the surface fold and the planner.
  *
- * Units are UTF-16 code units of `JSON.stringify` text (the planner's
- * `jsonByteSize`), so live, history and limit checks agree.
+ * Units are UTF-16 code units of `JSON.stringify` text, measured once by
+ * mcp-apps-host's `a2uiCarrierUnits`, so live, history and limit checks agree.
  *
  * Over an envelope bound (carrier, messages, surfaces, components, depth, data
  * path depth, action context keys) the carrier takes the old face: today's
@@ -53,12 +53,6 @@ export const A2UI_LIMITS = {
   /** The largest `TextField.maxLength` a carrier may declare. */
   textFieldMaxLength: 4_000,
 } as const;
-
-/** The size of a JSON-serializable value in UTF-16 code units of its JSON text. */
-export function jsonUnits(value: unknown): number {
-  const text = JSON.stringify(value);
-  return text === undefined ? 0 : text.length;
-}
 
 /** The ellipsis a truncated string ends with (one unit). */
 const ELLIPSIS = "…";

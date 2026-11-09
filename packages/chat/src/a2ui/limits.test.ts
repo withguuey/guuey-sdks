@@ -1,11 +1,11 @@
 /**
- * guuey#2381 — the §6 bounds as one table, and the two measuring helpers every
- * check uses. Each bound's at-the-bound and over-the-bound behaviour is
+ * guuey#2381 — the §6 bounds as one table, and the truncation helper. Sizes
+ * are measured once, by mcp-apps-host's `a2uiCarrierUnits`. Each bound's at-the-bound and over-the-bound behaviour is
  * pinned where it bites (validate.test.ts, fold.test.ts, plan.a2ui.test.ts).
  */
 import { describe, expect, it } from "vitest";
 import { A2UI_CARRIER_MAX_UNITS } from "@guuey/mcp-apps-host/narrowing";
-import { A2UI_LIMITS, jsonUnits, truncateUnits } from "./limits.js";
+import { A2UI_LIMITS, truncateUnits } from "./limits.js";
 
 describe("A2UI_LIMITS (spec §6)", () => {
   it("pins every bound", () => {
@@ -33,13 +33,6 @@ describe("A2UI_LIMITS (spec §6)", () => {
 
   it("the carrier bound is the carrier reader's own, one number", () => {
     expect(A2UI_LIMITS.carrierUnits).toBe(A2UI_CARRIER_MAX_UNITS);
-  });
-});
-
-describe("jsonUnits", () => {
-  it("counts UTF-16 code units of the JSON text", () => {
-    expect(jsonUnits({ a: "b" })).toBe(9);
-    expect(jsonUnits("😀")).toBe(4);
   });
 });
 

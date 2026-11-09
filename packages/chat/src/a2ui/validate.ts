@@ -21,8 +21,9 @@
  * recognized keys (preview's union keeps the first and drops the other).
  */
 import type { JsonValue } from "@silverprotocol/core";
-import { A2UI_CARRIER_MAX_UNITS } from "@guuey/mcp-apps-host/narrowing";
-import { A2UI_LIMITS, jsonUnits } from "./limits.js";
+import { isJsonObject } from "@guuey/mcp-apps-host";
+import { A2UI_CARRIER_MAX_UNITS, a2uiCarrierUnits } from "@guuey/mcp-apps-host/narrowing";
+import { A2UI_LIMITS } from "./limits.js";
 import {
   A2UI_ID_PATTERN,
   A2UI_INPUT_COMPONENTS,
@@ -69,10 +70,6 @@ export type A2uiValidation =
   | { ok: true; surfaces: A2uiSurfaceOutcome[] }
   | { ok: false; reason: A2uiInvalidReason; path: string; level: "envelope" | "component"; surfaceIds: string[] };
 
-function isObject(value: JsonValue | undefined): value is A2uiJsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function isId(value: JsonValue | undefined): value is string {
   return typeof value === "string" && A2UI_ID_PATTERN.test(value);
 }
@@ -82,10 +79,10 @@ function namedSurfaceIds(messages: JsonValue | undefined): string[] {
   const ids: string[] = [];
   if (!Array.isArray(messages)) return ids;
   for (const message of messages) {
-    if (!isObject(message)) continue;
+    if (!isJsonObject(message)) continue;
     for (const key of A2UI_MESSAGE_KEYS) {
       const payload = message[key];
-      const id = isObject(payload) ? payload["surfaceId"] : undefined;
+      const id = isJsonObject(payload) ? payload["surfaceId"] : undefined;
       if (isId(id) && !ids.includes(id)) ids.push(id);
     }
   }
@@ -94,7 +91,7 @@ function namedSurfaceIds(messages: JsonValue | undefined): string[] {
 
 /** A `{path}` binding's path fault, if the value is a binding whose path does not read. */
 function bindingFault(value: JsonValue | undefined): A2uiEnvelopeFault | null {
-  if (!isObject(value) || typeof value["path"] !== "string") return null;
+  if (!isJsonObject(value) || typeof value["path"] !== "string") return null;
   const read = readA2uiDataPath(value["path"]);
   return "fault" in read ? (read.fault === "too-deep" ? "path-too-deep" : "bad-path") : null;
 }
@@ -118,8 +115,8 @@ function componentEnvelopeFault(
     if (fault !== null) return { reason: fault, path: `${at}/${prop}` };
   }
   const action = name === "Button" ? raw["action"] : undefined;
-  const context = isObject(action) ? action["context"] : undefined;
-  if (isObject(context)) {
+  const context = isJsonObject(action) ? action["context"] : undefined;
+  if (isJsonObject(context)) {
     const keys = Object.keys(context);
     if (keys.length > A2UI_LIMITS.actionContextKeys) return { reason: "too-many-context-keys", path: `${at}/action/context` };
     for (const key of keys) {
@@ -227,7 +224,7 @@ type ComponentRead =
   | { kind: "fault"; reason: A2uiEnvelopeFault; path: string };
 
 function readComponent(raw: JsonValue, at: string): ComponentRead {
-  if (!isObject(raw) || typeof raw["id"] !== "string" || typeof raw["component"] !== "string") {
+  if (!isJsonObject(raw) || typeof raw["id"] !== "string" || typeof raw["component"] !== "string") {
     return { kind: "fault", reason: "bad-shape", path: at };
   }
   const { id, component: name, ...props } = raw;
@@ -250,7 +247,7 @@ function readComponent(raw: JsonValue, at: string): ComponentRead {
 type MessageRead = { kind: "message"; message: A2uiParsedMessage } | { kind: "fault"; reason: A2uiEnvelopeFault; path: string };
 
 function readMessage(raw: JsonValue, at: string): MessageRead {
-  if (!isObject(raw)) return { kind: "fault", reason: "bad-shape", path: at };
+  if (!isJsonObject(raw)) return { kind: "fault", reason: "bad-shape", path: at };
   if (raw["version"] !== A2UI_VERSION) return { kind: "fault", reason: "bad-version", path: `${at}/version` };
   const keys = A2UI_MESSAGE_KEYS.filter((k) => Object.hasOwn(raw, k));
   const key = keys[0];
@@ -258,7 +255,7 @@ function readMessage(raw: JsonValue, at: string): MessageRead {
   if (keys.length > 1) return { kind: "fault", reason: "bad-shape", path: at };
   const payload = raw[key];
   const here = `${at}/${key}`;
-  if (!isObject(payload)) return { kind: "fault", reason: "bad-shape", path: here };
+  if (!isJsonObject(payload)) return { kind: "fault", reason: "bad-shape", path: here };
   const surfaceId = payload["surfaceId"];
   if (!isId(surfaceId)) return { kind: "fault", reason: "bad-surface-id", path: `${here}/surfaceId` };
   switch (key) {
@@ -294,7 +291,7 @@ function readMessage(raw: JsonValue, at: string): MessageRead {
       const read = readA2uiDataPath(path ?? "");
       if ("fault" in read) return { kind: "fault", reason: read.fault === "too-deep" ? "path-too-deep" : "bad-path", path: `${here}/path` };
       // A write to the whole model replaces it with an object.
-      if (read.segments.length === 0 && !isObject(value)) return { kind: "fault", reason: "bad-shape", path: `${here}/value` };
+      if (read.segments.length === 0 && !isJsonObject(value)) return { kind: "fault", reason: "bad-shape", path: `${here}/value` };
       return { kind: "message", message: { kind: "updateDataModel", surfaceId, segments: read.segments, value } };
     }
     case "deleteSurface":
@@ -310,8 +307,8 @@ export function parseA2uiCarrier(value: JsonValue): A2uiEnvelopeResult {
     path,
     surfaceIds,
   });
-  if (jsonUnits(value) > A2UI_CARRIER_MAX_UNITS) return fail("too-large", "");
-  if (!isObject(value)) return fail("not-object", "");
+  if (a2uiCarrierUnits(value) > A2UI_CARRIER_MAX_UNITS) return fail("too-large", "");
+  if (!isJsonObject(value)) return fail("not-object", "");
   const named = namedSurfaceIds(value["messages"]);
   const format = value["format"];
   if (format !== undefined && format !== "a2ui") return fail("unsupported-format", "/format", named);

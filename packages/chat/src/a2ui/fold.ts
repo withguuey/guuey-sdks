@@ -20,11 +20,13 @@
  *    place on every surface.
  */
 import type { JsonValue } from "@silverprotocol/core";
-import { A2UI_LIMITS, jsonUnits, truncateUnits } from "./limits.js";
+import { a2uiCarrierUnits } from "@guuey/mcp-apps-host/narrowing";
+import { A2UI_LIMITS, truncateUnits } from "./limits.js";
 import {
   A2UI_COMPONENT_FAULTS,
   A2UI_GAP_TOKENS,
   A2UI_TEXT_VARIANTS,
+  isA2uiCarveOut,
   readA2uiDataPath,
   type A2uiCarveOut,
   type A2uiComponentFault,
@@ -175,8 +177,6 @@ interface Fault {
   fault: A2uiComponentFault | A2uiCarveOut;
   at: string;
 }
-
-const CARVE_OUTS: ReadonlySet<string> = new Set<A2uiCarveOut>(["refused-image", "refused-link"]);
 
 function freshSurface(surfaceId: string, catalogId: string, title: string | null): A2uiSurfaceState {
   return { surfaceId, catalogId, title, components: new Map(), firstBatch: null, dataModel: {} };
@@ -465,10 +465,6 @@ function resolveSurface(
   };
 }
 
-function isComponentFault(name: string): name is A2uiComponentFault {
-  return name !== "refused-image" && name !== "refused-link";
-}
-
 function gapOf(gap: string | undefined): A2uiGap {
   return A2UI_GAP_TOKENS.find((t) => t === gap) ?? "md";
 }
@@ -522,7 +518,7 @@ export function applyA2uiMessages(state: A2uiFoldState, messages: readonly A2uiP
         const model = written.ok && typeof written.value === "object" && written.value !== null && !Array.isArray(written.value) ? written.value : null;
         if (model === null) {
           fault(id, { fault: "data-model-refused", at: `/${id}/dataModel` });
-        } else if (jsonUnits(model) > A2UI_LIMITS.dataModelUnits) {
+        } else if (a2uiCarrierUnits(model) > A2UI_LIMITS.dataModelUnits) {
           fault(id, { fault: "data-model-too-large", at: `/${id}/dataModel` });
         } else {
           working.set(id, { ...surface, dataModel: model });
@@ -550,9 +546,8 @@ export function applyA2uiMessages(state: A2uiFoldState, messages: readonly A2uiP
       return { ok: false, reason: resolved.reason, path: resolved.path, level: "envelope", surfaceIds: order };
     }
     if (resolved.surface.interactive) {
-      const first = resolved.faults.find((f) => !CARVE_OUTS.has(f.fault));
-      if (first !== undefined && isComponentFault(first.fault)) {
-        return { ok: false, reason: first.fault, path: first.at, level: "component", surfaceIds: order };
+      for (const { fault, at } of resolved.faults) {
+        if (!isA2uiCarveOut(fault)) return { ok: false, reason: fault, path: at, level: "component", surfaceIds: order };
       }
     }
     surfaces.push({ kind: "drawn", surface: resolved.surface });

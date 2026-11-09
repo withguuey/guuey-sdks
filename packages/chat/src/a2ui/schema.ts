@@ -3,18 +3,19 @@
  * same three write messages plus `updateDataModel`, the same twelve
  * components with typed props, bindings, actions and field constraints.
  *
- * ONE source: every wire type below is inferred from these zod schemas, and
- * the validator parses each component's props against the same shapes
- * (`A2UI_COMPONENT_PROPS`), prop by prop, so a bad prop is dropped alone
- * rather than voiding the component. Unknown fields are stripped (the zod
- * default, as `@ggui-ai/preview-a2ui` does).
+ * ONE parser for the wire: the validator (`validate.ts`) reads the envelope
+ * and each message by hand, and parses each component's props against these
+ * shapes (`A2UI_COMPONENT_PROPS`), prop by prop, so a bad prop is dropped
+ * alone rather than voiding the component. There is no second, producer-side
+ * schema of the envelope to drift from it. Unknown fields are stripped (the
+ * zod default, as `@ggui-ai/preview-a2ui` does).
  *
  * Every string a carrier holds is drawn as TEXT. `Text.text` alone carries the
  * kit's safe inline formatting (ruling 6), judged by the renderer, never here:
  * the schema reads it as a string with no markup check.
  */
 import { z } from "zod";
-import { JsonValue } from "@silverprotocol/core";
+import type { JsonValue } from "@silverprotocol/core";
 import type { A2uiImageDisplay, A2uiLink } from "./url-policy.js";
 import { A2UI_LIMITS } from "./limits.js";
 
@@ -54,7 +55,12 @@ export function readA2uiDataPath(path: string): { segments: string[] } | { fault
 }
 
 export const A2uiId = z.string().regex(A2UI_ID_PATTERN);
-export const A2uiDataPath = z.string().refine((p) => "segments" in readA2uiDataPath(p), "not a data path");
+/**
+ * A binding's path as the props schemas read it. The validator has already
+ * judged every binding path (`readA2uiDataPath`) before any props parse, so
+ * a malformed one never reaches here: it is an envelope fault.
+ */
+export const A2uiDataPath = z.string();
 
 /** A read from the surface's data model: a literal lookup, no expressions. */
 export const A2uiPathBinding = z.object({ path: A2uiDataPath });
@@ -194,66 +200,9 @@ export const A2UI_PROPS_SCHEMAS = {
 /** One component kind's props as the validator hands them on (every prop optional). */
 export type A2uiPropsOf<N extends A2uiComponentName> = z.infer<(typeof A2UI_PROPS_SCHEMAS)[N]>;
 
-const base = { id: A2uiId };
-
-/** A component as a producer writes it (the strict wire shape). */
-export const A2uiComponentSchema = z.discriminatedUnion("component", [
-  A2UI_PROPS_SCHEMAS.Row.extend({ ...base, component: z.literal("Row") }),
-  A2UI_PROPS_SCHEMAS.Column.extend({ ...base, component: z.literal("Column") }),
-  A2UI_PROPS_SCHEMAS.Card.extend({ ...base, component: z.literal("Card") }),
-  A2UI_PROPS_SCHEMAS.List.extend({ ...base, component: z.literal("List") }),
-  A2UI_PROPS_SCHEMAS.Divider.extend({ ...base, component: z.literal("Divider") }),
-  A2UI_PROPS_SCHEMAS.Text.extend({ ...base, component: z.literal("Text") }),
-  A2UI_PROPS_SCHEMAS.Image.extend({ ...base, component: z.literal("Image") }),
-  A2UI_PROPS_SCHEMAS.Icon.extend({ ...base, component: z.literal("Icon") }),
-  A2UI_PROPS_SCHEMAS.Button.extend({ ...base, component: z.literal("Button") }),
-  A2UI_PROPS_SCHEMAS.TextField.extend({ ...base, component: z.literal("TextField") }),
-  A2UI_PROPS_SCHEMAS.CheckBox.extend({ ...base, component: z.literal("CheckBox") }),
-  A2UI_PROPS_SCHEMAS.ChoicePicker.extend({ ...base, component: z.literal("ChoicePicker") }),
-]);
-export type A2uiComponent = z.infer<typeof A2uiComponentSchema>;
-
-const version = z.literal(A2UI_VERSION);
-
-export const A2uiCreateSurfaceMessage = z.object({
-  version,
-  createSurface: z.object({ surfaceId: A2uiId, catalogId: z.string().min(1), title: z.string().optional() }),
-});
-export const A2uiUpdateComponentsMessage = z.object({
-  version,
-  updateComponents: z.object({ surfaceId: A2uiId, components: z.array(A2uiComponentSchema) }),
-});
-export const A2uiUpdateDataModelMessage = z.object({
-  version,
-  updateDataModel: z.object({ surfaceId: A2uiId, path: A2uiDataPath.optional(), value: JsonValue }),
-});
-export const A2uiDeleteSurfaceMessage = z.object({ version, deleteSurface: z.object({ surfaceId: A2uiId }) });
-
-/** One server → client message, keyed by presence (A2UI's envelope form), as a producer writes it. */
-export const A2uiServerMessageSchema = z.union([
-  A2uiCreateSurfaceMessage,
-  A2uiUpdateComponentsMessage,
-  A2uiUpdateDataModelMessage,
-  A2uiDeleteSurfaceMessage,
-]);
-export type A2uiServerMessage = z.infer<typeof A2uiServerMessageSchema>;
-
 /** The four message keys, in the order the validator recognizes them. */
 export const A2UI_MESSAGE_KEYS = ["createSurface", "updateComponents", "updateDataModel", "deleteSurface"] as const;
 export type A2uiMessageKey = (typeof A2UI_MESSAGE_KEYS)[number];
-
-/**
- * The carrier under `structuredContent["com.guuey/a2ui"]`, as a producer
- * writes it (spec §4.1). `format` absent reads as `"a2ui"`; `mimeType` is
- * informational and ignored. (The json-render arm is S5's.)
- */
-export const A2uiCarrierSchema = z.object({
-  format: z.literal("a2ui").optional(),
-  version,
-  messages: z.array(A2uiServerMessageSchema),
-  mimeType: z.string().optional(),
-});
-export type A2uiCarrier = z.infer<typeof A2uiCarrierSchema>;
 
 // ─── What the validator and the fold hand on ─────────────────────────────
 
@@ -296,6 +245,11 @@ export type A2uiComponentFault = (typeof A2UI_COMPONENT_FAULTS)[number];
  */
 export const A2UI_CARVE_OUTS = ["refused-image", "refused-link"] as const;
 export type A2uiCarveOut = (typeof A2UI_CARVE_OUTS)[number];
+
+/** True for a fault on the closed carve-out list. */
+export function isA2uiCarveOut(fault: A2uiComponentFault | A2uiCarveOut): fault is A2uiCarveOut {
+  return (A2UI_CARVE_OUTS as readonly string[]).includes(fault);
+}
 
 /** Counts of each in-place degrade a surface revision carries (the `a2ui-degraded` debug event's counts). */
 export type A2uiDegradeCounts = { [K in A2uiComponentFault | A2uiCarveOut]?: number };

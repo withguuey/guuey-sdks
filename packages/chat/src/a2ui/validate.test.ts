@@ -7,7 +7,8 @@
  */
 import { describe, expect, it } from "vitest";
 import type { JsonValue } from "@silverprotocol/core";
-import { A2UI_LIMITS, jsonUnits } from "./limits.js";
+import { a2uiCarrierUnits } from "@guuey/mcp-apps-host/narrowing";
+import { A2UI_LIMITS } from "./limits.js";
 import { parseA2uiCarrier, validateA2uiCarrier } from "./validate.js";
 
 type Json = JsonValue;
@@ -107,11 +108,11 @@ describe("envelope bounds — at the bound and one over (spec §6, S1 (b))", () 
   it(`carrier JSON: ${A2UI_LIMITS.carrierUnits} units reads, one more is too-large`, () => {
     const make = (units: number): Json => {
       const shell = carrier([create("s"), components("s", [text("root", "")])]);
-      const pad = units - jsonUnits(shell);
+      const pad = units - a2uiCarrierUnits(shell);
       return carrier([create("s"), components("s", [text("root", "x".repeat(pad))])]);
     };
     // A Text over 4 000 truncates on a read-only surface; the bound under test is the carrier's.
-    expect(jsonUnits(make(A2UI_LIMITS.carrierUnits))).toBe(A2UI_LIMITS.carrierUnits);
+    expect(a2uiCarrierUnits(make(A2UI_LIMITS.carrierUnits))).toBe(A2UI_LIMITS.carrierUnits);
     expect(reasonOf(make(A2UI_LIMITS.carrierUnits))).toBeUndefined();
     expect(reasonOf(make(A2UI_LIMITS.carrierUnits + 1))).toBe("too-large");
   });
