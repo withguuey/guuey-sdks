@@ -29,6 +29,7 @@
  * measured again by the validator.
  */
 import type { JsonValue } from "@silverprotocol/core";
+import { JSON_RENDER_CATALOG_ID } from "@guuey/agent-client";
 import { isJsonObject } from "@guuey/mcp-apps-host";
 import { A2UI_CARRIER_MAX_UNITS, a2uiCarrierUnits } from "@guuey/mcp-apps-host/narrowing";
 import { readA2uiModel } from "./fold.js";
@@ -45,8 +46,8 @@ import {
 /** The carrier `format` this adapter reads. */
 export const JSON_RENDER_FORMAT = "json-render";
 
-/** The catalog id a mapped surface is created under. */
-export const JSON_RENDER_CATALOG_ID = "guuey.json-render.v1";
+/** The catalog id a mapped surface is created under, spelled once in `@guuey/agent-client`. */
+export { JSON_RENDER_CATALOG_ID };
 
 /**
  * The json-render versions whose `Spec` shape the adapter knows: the 0.21

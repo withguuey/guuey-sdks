@@ -125,6 +125,8 @@ export {
   type MergeGuestThreadsResult,
 } from "./guest-merge.js";
 export { ingestMessageFrame } from "./blocks.js";
+// guuey#2386: the A2UI catalog ids, spelled once (React-free).
+export { A2UI_GUUEY_CATALOG_ID, JSON_RENDER_CATALOG_ID } from "./catalogs.js";
 // Pure block-walk / resource-narrowing helpers for a block-preserving renderer
 // (shared by Studio's `AgentBlocks` and Portal-web's agent chat). React-free.
 // Transcript labeling/ordering helpers (mount narrowing itself moved to

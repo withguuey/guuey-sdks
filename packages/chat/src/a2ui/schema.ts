@@ -23,8 +23,8 @@ import { A2UI_LIMITS } from "./limits.js";
 /** The A2UI protocol version guuey reads. */
 export const A2UI_VERSION = "v0.9";
 
-/** guuey's own catalog id (advisory: any non-empty `catalogId` is accepted and components draw by name). */
-export const A2UI_GUUEY_CATALOG_ID = "guuey.a2ui.v1";
+/** guuey's own catalog id, spelled once in `@guuey/agent-client` (advisory: any non-empty `catalogId` is accepted). */
+export { A2UI_GUUEY_CATALOG_ID } from "@guuey/agent-client";
 
 /** Surface ids, component ids, action names (the action tag line's attribute charset, spec §9.3). */
 export const A2UI_ID_PATTERN = /^[A-Za-z0-9_.:-]{1,64}$/;

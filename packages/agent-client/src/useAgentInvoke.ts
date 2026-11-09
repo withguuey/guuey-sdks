@@ -23,6 +23,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Reducer, type AgClientCapabilities, type AgReduceResult } from "@silverprotocol/core";
+import { A2UI_GUUEY_CATALOG_ID, JSON_RENDER_CATALOG_ID } from "./catalogs.js";
 import { invokeTurn, toInvokeUrl } from "./invoke-turn.js";
 import { buildInvokeBody } from "./invoke-body.js";
 import { AgentResponseError } from "./errors.js";
@@ -88,7 +89,7 @@ export const VIEW_MESSAGE_TURN_CAPABILITIES: AgClientCapabilities = {
  * predates the field reads it as an ordinary capability (F6).
  */
 export const A2UI_CAPABILITIES = {
-  uiResources: { catalogs: ["guuey.a2ui.v1", "guuey.json-render.v1"] },
+  uiResources: { catalogs: [A2UI_GUUEY_CATALOG_ID, JSON_RENDER_CATALOG_ID] },
 } satisfies AgClientCapabilities;
 
 /** `base` with the A2UI catalogs merged into its `uiResources`, every other key kept. */
