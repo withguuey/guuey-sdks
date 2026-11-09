@@ -125,4 +125,20 @@ export const WIDGET_INVOKE_BODY_CASES: ReadonlyArray<{ name: string; why: string
       inputKind: "context-only",
     },
   },
+  {
+    name: "a2ui-action-turn",
+    why: "an A2UI form's submit (guuey#2384): the action text form is the input, a plain user turn whose action id is the turn's clientMessageId; line 1 is the human summary, then the tagged block with the payload as one escaped JSON line. No new body field, so a runtime that predates actions reads the values as text",
+    input: {
+      input: [
+        "Book: Name = Ada Lovelace; Guests = 2; Note = Window seat <please>; Newsletter = Yes",
+        '<guuey_a2ui_action surface="booking" action="submit_booking" source="submit" id="cm_0009">',
+        '{"name":"Ada Lovelace","guests":2,"note":"Window seat \\u003cplease\\u003e","newsletter":true}',
+        "</guuey_a2ui_action>",
+      ].join("\n"),
+      threadId: "thr_01J8ZK3Q9X",
+      clientMessageId: "cm_0009",
+      capabilities: { hitl: { ask: true, grantModes: true }, uiResources: { viewMessageTurns: true } },
+      pageContext: { hostOrigin: "https://customer.example" },
+    },
+  },
 ];

@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { parseA2uiActionText, writeA2uiActionText } from "@guuey/mcp-apps-host/narrowing";
 import { buildInvokeBody } from "./invoke-body.js";
 import { WIDGET_INVOKE_BODY_CASES } from "./fixtures/widget-invoke-body-cases.js";
 
@@ -76,7 +77,7 @@ describe("the widget's canonical bodies are pinned as the fixture (guuey#1213)",
     expect(onDisk).toBe(`${JSON.stringify(expected, null, 2)}\n`);
   });
 
-  it("the case list covers the shapes the widget actually sends: init-origin-only, a full page block, a page block without context, a mode pin, the SDK minimum, a card tap with its labels, a turn with an image, and a turn without words", () => {
+  it("the case list covers the shapes the widget actually sends: init-origin-only, a full page block, a page block without context, a mode pin, the SDK minimum, a card tap with its labels, a turn with an image, a turn without words, and an A2UI action turn", () => {
     const names = WIDGET_INVOKE_BODY_CASES.map((c) => c.name);
     expect(names).toEqual([
       "session-open-init-origin",
@@ -87,6 +88,7 @@ describe("the widget's canonical bodies are pinned as the fixture (guuey#1213)",
       "card-tap-with-labels",
       "turn-with-image",
       "turn-context-only",
+      "a2ui-action-turn",
     ]);
     const withPath = WIDGET_INVOKE_BODY_CASES.filter((c) => c.input.pageContext?.path !== undefined);
     // Every path-bearing block the widget builds also carries title + hostOrigin (WidgetChat's onPage).
@@ -94,6 +96,35 @@ describe("the widget's canonical bodies are pinned as the fixture (guuey#1213)",
       expect(c.input.pageContext?.title).toBeDefined();
       expect(c.input.pageContext?.hostOrigin).toBeDefined();
     }
+  });
+});
+
+describe("the A2UI action turn's case is the writer's own text (guuey#2384, spec §9.3, §10 F3)", () => {
+  it("its input is exactly what writeA2uiActionText writes for the press, under the turn's own clientMessageId, and it rides no new body field", () => {
+    const c = WIDGET_INVOKE_BODY_CASES.find((x) => x.name === "a2ui-action-turn");
+    if (c === undefined) throw new Error("the a2ui-action-turn case is missing");
+    const written = writeA2uiActionText(
+      {
+        surfaceId: "booking",
+        name: "submit_booking",
+        sourceComponentId: "submit",
+        actionId: "cm_0009",
+        context: { name: "Ada Lovelace", guests: 2, note: "Window seat <please>", newsletter: true },
+      },
+      {
+        label: "Book",
+        pairs: [
+          { label: "Name", value: "Ada Lovelace" },
+          { label: "Guests", value: "2" },
+          { label: "Note", value: "Window seat <please>" },
+          { label: "Newsletter", value: "Yes" },
+        ],
+      },
+    );
+    expect(c.input.input).toBe(written);
+    expect(parseA2uiActionText(c.input.input)?.actionId).toBe(c.input.clientMessageId);
+    // V1 adds no invoke-body field: the body's keys are an ordinary turn's.
+    expect(Object.keys(buildInvokeBody(c.input))).toEqual(["input", "threadId", "clientMessageId", "capabilities", "pageContext"]);
   });
 });
 

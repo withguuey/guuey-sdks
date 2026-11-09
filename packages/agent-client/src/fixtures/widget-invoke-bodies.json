@@ -175,6 +175,27 @@
         },
         "inputKind": "context-only"
       }
+    },
+    {
+      "name": "a2ui-action-turn",
+      "why": "an A2UI form's submit (guuey#2384): the action text form is the input, a plain user turn whose action id is the turn's clientMessageId; line 1 is the human summary, then the tagged block with the payload as one escaped JSON line. No new body field, so a runtime that predates actions reads the values as text",
+      "body": {
+        "input": "Book: Name = Ada Lovelace; Guests = 2; Note = Window seat <please>; Newsletter = Yes\n<guuey_a2ui_action surface=\"booking\" action=\"submit_booking\" source=\"submit\" id=\"cm_0009\">\n{\"name\":\"Ada Lovelace\",\"guests\":2,\"note\":\"Window seat \\u003cplease\\u003e\",\"newsletter\":true}\n</guuey_a2ui_action>",
+        "threadId": "thr_01J8ZK3Q9X",
+        "clientMessageId": "cm_0009",
+        "capabilities": {
+          "hitl": {
+            "ask": true,
+            "grantModes": true
+          },
+          "uiResources": {
+            "viewMessageTurns": true
+          }
+        },
+        "pageContext": {
+          "hostOrigin": "https://customer.example"
+        }
+      }
     }
   ]
 }
