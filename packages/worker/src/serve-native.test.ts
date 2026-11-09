@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { PassThrough } from "node:stream";
 import { serveNativeOn, resolveInstalledVersion, type NativeServeInfo } from "./serve-native.js";
-import { HOST_SUSPEND_CAPABILITY, inputKindCapability, type Invoke } from "./protocol.js";
+import { HOST_SUSPEND_CAPABILITY, TOOL_GATES_CAPABILITY, inputKindCapability, type Invoke } from "./protocol.js";
 import { MODEL_TEXT_INPUT_KIND_CAPABILITIES } from "./model-text.js";
 import { parseEvent } from "./parse.js";
 import { drained } from "./fixtures/drained.js";
@@ -223,6 +223,21 @@ describe("serveNativeOn — declared capabilities", () => {
   it("MODEL_TEXT_INPUT_KIND_CAPABILITIES is exactly what a scaffold declares", async () => {
     const hello = parseEvent(await helloOf({ ...info, capabilities: MODEL_TEXT_INPUT_KIND_CAPABILITIES }));
     expect(hello).toEqual({ ...info, type: "hello", capabilities: [contextOnly] });
+  });
+
+  it("guuey#2670: a worker that applies the tool gates declares tool-gates.v1 the same way, after suspend when that rides", async () => {
+    const declared = [...MODEL_TEXT_INPUT_KIND_CAPABILITIES, TOOL_GATES_CAPABILITY];
+    expect(parseEvent(await helloOf({ ...info, capabilities: declared }))).toEqual({
+      ...info,
+      type: "hello",
+      capabilities: [contextOnly, TOOL_GATES_CAPABILITY],
+    });
+    const offered = { suspend: { maxEnvelopeBytes: 1024 } };
+    expect(parseEvent(await helloOf({ ...info, suspend: true, capabilities: [TOOL_GATES_CAPABILITY] }, offered))).toEqual({
+      ...info,
+      type: "hello",
+      capabilities: [HOST_SUSPEND_CAPABILITY, TOOL_GATES_CAPABILITY],
+    });
   });
 
   it("a listed suspend capability is dropped unless the opt-in AND the offer put it there (never twice)", async () => {

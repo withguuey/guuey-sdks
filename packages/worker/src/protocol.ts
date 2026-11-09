@@ -482,6 +482,17 @@ export interface WorkerHelloEvent {
 export const ADK_HOST_COMPLETION_CAPABILITY = "adk.host-completion";
 
 /**
+ * Capability: this worker applies the agent's tool gates itself: `tools.allowlist` and
+ * `tools.denylist` as the turn's mode narrows them, and the invoke's `withheldTools`, through
+ * `@guuey/config`'s shared gate (deny wins; an unreadable denylist entry keeps no MCP tool).
+ * Announced in every invoke's hello by a worker that lists it in `serveNative`'s
+ * `capabilities` (guuey#2549's declared list; the scaffolds do). A Router only reads it: a builder worker whose hello lacks
+ * it, on a turn whose agent declares gates, may ignore them, and the Router says so. It changes
+ * nothing about the turn.
+ */
+export const TOOL_GATES_CAPABILITY = "tool-gates.v1";
+
+/**
  * The worker paused on pending asks: `envelope` is its serialized run state and
  * `askIds` the AgJSON ids of the asks it waits on. Router-plane only, like
  * `hello`: never relayed to a client, never fed to a normalizer, never
