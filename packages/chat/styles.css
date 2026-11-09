@@ -1002,11 +1002,19 @@
 .guuey-chat-shimmer {
   animation: guuey-chat-pulse 1.2s ease-in-out infinite;
 }
+/* The live mic is the composer's one moving state, so its cue moves: the
+   shimmer's breath (colour, never opacity). Here, before the reduced-motion
+   list, so that list wins by order; reduced motion keeps the static cue, the
+   tint and the "Listening…" line. */
+.guuey-chat-composer-voice[aria-pressed="true"] {
+  animation: guuey-chat-pulse 1.2s ease-in-out infinite;
+}
 @media (prefers-reduced-motion: reduce) {
   .guuey-chat-pulse,
   .guuey-chat-pulse > .guuey-chat-toggle,
   .guuey-chat-shimmer,
-  .guuey-chat-tool-running .guuey-chat-tool-glyph {
+  .guuey-chat-tool-running .guuey-chat-tool-glyph,
+  .guuey-chat-composer-voice[aria-pressed="true"] {
     animation: none;
   }
 }
@@ -1206,10 +1214,6 @@
 .guuey-chat-composer-attach:hover {
   background: color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 6%, transparent);
 }
-.guuey-chat-composer-attach:disabled {
-  cursor: not-allowed;
-  opacity: 0.4;
-}
 /* guuey#2446 — the composer's mic: the attach button's shape, and while a
    dictation session is live (aria-pressed) an accent tint behind a glyph that
    takes the cue, never the raw accent: the glyph is a one-bit stroke, like the
@@ -1235,9 +1239,14 @@
   background: color-mix(in srgb, var(--guuey-chat-accent, var(--_guuey-chat-accent)) 14%, transparent);
   color: var(--guuey-chat-cue, var(--_guuey-chat-cue));
 }
+/* Disabled is a colour, never an opacity (a mute is a colour): a transparent
+   fill under a muted glyph, for both composer buttons. After both :hover
+   rules, so a disabled button's hover stays flat. */
+.guuey-chat-composer-attach:disabled,
 .guuey-chat-composer-voice:disabled {
   cursor: not-allowed;
-  opacity: 0.4;
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
+  background: transparent;
 }
 .guuey-chat-voice-status {
   font-size: 0.875em;

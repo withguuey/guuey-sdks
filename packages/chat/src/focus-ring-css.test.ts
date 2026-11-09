@@ -72,8 +72,11 @@ describe("the kit's focus ring (guuey#2304)", () => {
   });
 
   it("the pressed mic's glyph is a cue stroke on an accent tint (guuey#2446)", () => {
+    // The face rule (colour + tint); the breath lives in its own rule in the motion section
+    // (voice-css.test.ts), before the reduced-motion list.
     const pressed = rules().filter(
-      ([sels]) => sels.length === 1 && sels[0] === '.guuey-chat-composer-voice[aria-pressed="true"]',
+      ([sels, body]) =>
+        sels.length === 1 && sels[0] === '.guuey-chat-composer-voice[aria-pressed="true"]' && /(?:^|;)\s*color:/.test(body),
     );
     expect(pressed).toHaveLength(1);
     const body = pressed[0]![1];
