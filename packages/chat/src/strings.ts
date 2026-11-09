@@ -94,7 +94,8 @@ export interface ChatStrings {
   errorAttachmentsInvalid: string;
   /**
    * R11, code INPUT_KIND_NOT_DECLARED (guuey#2549): a turn without words
-   * reached an agent that no longer takes one. Nothing was answered; the same
+   * reached an agent that does not take one (it never did, or no longer
+   * does). Nothing was answered; the same
    * turn with a few words works. Equal to the runtime's own reader line.
    */
   errorInputKindNotDeclared: string;
@@ -453,7 +454,7 @@ export const defaultChatStrings: ChatStrings = {
   errorInvalid: "The app sent a request the agent couldn't read.",
   errorAttachmentsUnsupported: "This agent can't read images yet. Send your message without the image.",
   errorAttachmentsInvalid: "That image can't be sent. Use a JPEG, PNG, GIF or WebP image, up to 4 at a time.",
-  errorInputKindNotDeclared: "This agent no longer accepts a turn without text. Send your message with a few words.",
+  errorInputKindNotDeclared: "This agent does not accept a turn without text. Send your message with a few words.",
   errorInputKindNotAdvertised: "This agent can't take a turn without words right now. Send it with a few words.",
 
   toolGroup: (count) => `Ran ${count} tools`,
