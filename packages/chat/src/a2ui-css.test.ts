@@ -183,7 +183,11 @@ describe("the A2UI surface's look (spec §5.3)", () => {
     expect(value(selector, "cursor")).toBe("not-allowed");
     expect(value(selector, "background")).toBe("var(--guuey-chat-canvas-muted, var(--_guuey-chat-canvas-muted))");
     expect(value(selector, "color")).toBe("var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted))");
-    expect(value(selector, "border-color")).toBe("transparent");
+    // A disabled button keeps its shape: a hairline edge, never transparent, so
+    // the pill still draws where the off-ground equals the card surface.
+    expect(value(selector, "border-color")).toBe(
+      "color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 15%, transparent)",
+    );
     const variants = rules().flatMap((r) =>
       /(?:^|;)\s*(?:color|background|border-color):/.test(r.body)
         ? r.selectors.filter((s) => /\.guuey-chat-a2ui-button(?:-primary|-secondary|-danger)?$/.test(s))

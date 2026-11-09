@@ -931,12 +931,15 @@
 }
 /* Disabled is the sheet's own contract (the composer's Send): the off-ground
    under the muted ink, for every variant, a colour, never an opacity. Scoped
-   under the root so it outranks each variant's fill, words and edge. */
+   under the root so it outranks each variant's fill, words and edge. A
+   disabled button loses its rank, never its shape: a hairline edge draws the
+   pill even where the off-ground equals the surface it sits on (a dark
+   palette whose canvas-muted is its surface). */
 .guuey-chat .guuey-chat-a2ui-button:disabled {
   cursor: not-allowed;
   background: var(--guuey-chat-canvas-muted, var(--_guuey-chat-canvas-muted));
   color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
-  border-color: transparent;
+  border-color: color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 15%, transparent);
 }
 .guuey-chat-a2ui-unavailable {
   margin: 0;
