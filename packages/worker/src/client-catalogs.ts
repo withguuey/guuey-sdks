@@ -1,7 +1,8 @@
 /**
- * The rule for an invoke's {@link Invoke.clientCatalogs}: one place, read by
- * `parseControl` before it keeps the field and by a Router before it writes
- * it, so the two can never bound it differently.
+ * The rule for an invoke's `clientCatalogs`: one place. `parseControl` keeps
+ * the field only through it, and a Router that writes the field is to bound
+ * it with the same function (exported from the package root), so the two can
+ * never bound it differently.
  *
  * The ids only gate prompt sections by membership (a renderer asks "does the
  * client draw this catalog?"); none of them is ever written into the prompt.
@@ -10,10 +11,12 @@
  * or one id this rule does not accept, must not cost the turn the catalogs it
  * does draw.
  *
- * It is also a bound on what crosses into the agent slot: the Router applies
- * it as the last write before the slot wire (the runtime's invoke
- * projection), and infra-hardening's projection tests pin it there. So its
- * character class and its cap change only with infra-hardening's agreement.
+ * It is also the bound infra-hardening ruled for what crosses into the agent
+ * slot: the runtime's invoke projection is to apply it as the last write
+ * before the slot wire, pinned by infra-hardening's projection tests. Until
+ * that projection lands, no Router writes the field and this parse is the
+ * only bound. Either way, its character class and its cap change only with
+ * infra-hardening's agreement.
  *
  * The field it reads is `Invoke.clientCatalogs` (protocol.ts).
  */
@@ -22,7 +25,10 @@
 export const CLIENT_CATALOGS_MAX = 16;
 /** The longest catalog id, in characters. */
 export const CLIENT_CATALOG_ID_MAX_CHARS = 64;
-/** One catalog id: 1 to 64 characters of a URL-safe ASCII class, no whitespace or control characters. */
+/**
+ * One catalog id: 1 to {@link CLIENT_CATALOG_ID_MAX_CHARS} characters of a
+ * URL-safe ASCII class, with no whitespace or control characters.
+ */
 export const CLIENT_CATALOG_ID_PATTERN = new RegExp(`^[A-Za-z0-9._~:/@+-]{1,${String(CLIENT_CATALOG_ID_MAX_CHARS)}}$`);
 
 /**

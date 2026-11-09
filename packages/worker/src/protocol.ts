@@ -265,9 +265,9 @@ export interface Invoke {
   /**
    * The UI catalogs the client that sent this turn draws natively, as it
    * declared them (`capabilities.uiResources.catalogs`, e.g. `guuey.a2ui.v1`).
-   * The Router passes them through without judging them, bounded by
-   * `parseClientCatalogs` (client-catalogs.ts), which both sides use: each id
-   * in a URL-safe ASCII class of 1 to 64 characters, at most 16. Gates
+   * A Router passes them through without judging them, bounded by
+   * `parseClientCatalogs` (client-catalogs.ts), the one rule this parse keeps
+   * the field with and a Router is to write it with. Gates
    * the host's framework-blind A2UI section (`@guuey/host`'s
    * `renderA2uiSection`) by membership alone, so no id is ever written into
    * the prompt. Written only when at least one id survives, so "this client
