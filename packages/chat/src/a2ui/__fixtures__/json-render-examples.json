@@ -3,7 +3,7 @@
   "cases": [
     {
       "name": "form",
-      "row": "README: a contact form",
+      "row": "written in the types' shape: a contact form",
       "carrier": { "title": "Contact us" },
       "spec": {
         "root": "form",
@@ -59,7 +59,7 @@
     },
     {
       "name": "select",
-      "row": "README: a select with a dependent summary",
+      "row": "written in the types' shape: a select with a dependent summary",
       "spec": {
         "root": "page",
         "elements": {

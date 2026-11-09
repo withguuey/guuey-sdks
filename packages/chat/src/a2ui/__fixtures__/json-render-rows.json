@@ -129,6 +129,35 @@
       }
     },
     {
+      "name": "unknown-around-an-input",
+      "row": "Any other type (holding an input: the drop is interactive)",
+      "spec": {
+        "root": "page",
+        "elements": {
+          "page": { "type": "Column", "props": {}, "children": ["tabs"] },
+          "tabs": { "type": "Tabs", "props": { "label": "Details" }, "children": ["q"] },
+          "q": { "type": "Input", "props": { "label": "Search", "value": { "$bindState": "/q" } } }
+        },
+        "state": { "q": "" }
+      }
+    },
+    {
+      "name": "unknown-around-a-press",
+      "row": "Any other type (holding an action: the drop is interactive)",
+      "spec": {
+        "root": "page",
+        "elements": {
+          "page": { "type": "Column", "props": {}, "children": ["tabs"] },
+          "tabs": { "type": "Tabs", "props": { "label": "Details" }, "children": ["go"] },
+          "go": {
+            "type": "Button",
+            "props": { "label": "Go" },
+            "on": { "press": { "action": "go" } }
+          }
+        }
+      }
+    },
+    {
       "name": "state",
       "row": "{ $state } in a prop",
       "spec": {
@@ -203,6 +232,83 @@
             { "id": "b", "title": "Call Ada", "done": true }
           ]
         }
+      }
+    },
+    {
+      "name": "item-paths",
+      "row": "repeat { statePath } + $item / $bindItem (the path forms)",
+      "spec": {
+        "root": "list",
+        "elements": {
+          "list": {
+            "type": "List",
+            "props": {},
+            "repeat": { "statePath": "/rows" },
+            "children": [
+              "ab",
+              "slash-ab",
+              "key",
+              "whole",
+              "escaped",
+              "bind-ab",
+              "bind-slash-ab",
+              "bind-key",
+              "bind-whole"
+            ]
+          },
+          "ab": { "type": "Text", "props": { "text": { "$item": "a/b" } } },
+          "slash-ab": { "type": "Text", "props": { "text": { "$item": "/a/b" } } },
+          "key": { "type": "Text", "props": { "text": { "$item": "k" } } },
+          "whole": { "type": "Text", "props": { "text": { "$item": "" } } },
+          "escaped": { "type": "Text", "props": { "text": { "$item": "a~1b" } } },
+          "bind-ab": {
+            "type": "Input",
+            "props": { "label": "a/b", "value": { "$bindItem": "a/b" } }
+          },
+          "bind-slash-ab": {
+            "type": "Input",
+            "props": { "label": "/a/b", "value": { "$bindItem": "/a/b" } }
+          },
+          "bind-key": { "type": "Input", "props": { "label": "k", "value": { "$bindItem": "k" } } },
+          "bind-whole": {
+            "type": "Input",
+            "props": { "label": "whole", "value": { "$bindItem": "" } }
+          }
+        },
+        "state": { "rows": [{ "a": { "b": "deep" }, "k": "one", "a/b": "slashed" }] }
+      }
+    },
+    {
+      "name": "params-in-a-repeat",
+      "row": "on.press params inside a repeat: $item, $index, $bindItem, $state, $bindState",
+      "spec": {
+        "root": "list",
+        "elements": {
+          "list": {
+            "type": "List",
+            "props": {},
+            "repeat": { "statePath": "/rows" },
+            "children": ["remove"]
+          },
+          "remove": {
+            "type": "Button",
+            "props": { "label": "Remove" },
+            "on": {
+              "press": {
+                "action": "remove_row",
+                "params": {
+                  "field": { "$item": "name" },
+                  "row": { "$item": "" },
+                  "at": { "$index": true },
+                  "name": { "$bindItem": "name" },
+                  "sort": { "$state": "/sort" },
+                  "filter": { "$bindState": "/filter" }
+                }
+              }
+            }
+          }
+        },
+        "state": { "rows": [{ "name": "Ada" }, { "name": "Grace" }], "sort": "asc", "filter": "" }
       }
     },
     {
@@ -306,7 +412,7 @@
       }
     },
     {
-      "name": "hooks-watch-slots",
+      "name": "slots",
       "row": "onSuccess, onError, watch, slots, preventDefault",
       "spec": {
         "root": "page",
@@ -351,6 +457,53 @@
           }
         },
         "state": { "q": "" }
+      }
+    },
+    {
+      "name": "hook-on-error",
+      "row": "onSuccess, onError, watch, slots, preventDefault (onError on a press)",
+      "spec": {
+        "root": "page",
+        "elements": {
+          "page": { "type": "Column", "props": {}, "children": ["save"] },
+          "save": {
+            "type": "Button",
+            "props": { "label": "Save" },
+            "on": { "press": { "action": "save", "onError": { "action": "report" } } }
+          }
+        }
+      }
+    },
+    {
+      "name": "hook-change-on-an-input",
+      "row": "Any event but press (on.change on an Input)",
+      "spec": {
+        "root": "page",
+        "elements": {
+          "page": { "type": "Column", "props": {}, "children": ["q"] },
+          "q": {
+            "type": "Input",
+            "props": { "label": "Search", "value": { "$bindState": "/q" } },
+            "on": { "change": { "action": "suggest" } }
+          }
+        },
+        "state": { "q": "" }
+      }
+    },
+    {
+      "name": "hook-press-on-a-text",
+      "row": "press on a type that is not a Button (a Text on an otherwise read-only surface)",
+      "spec": {
+        "root": "page",
+        "elements": {
+          "page": { "type": "Column", "props": {}, "children": ["tap", "note"] },
+          "tap": {
+            "type": "Text",
+            "props": { "text": "Tap to open" },
+            "on": { "press": { "action": "open" } }
+          },
+          "note": { "type": "Text", "props": { "text": "Nothing else here is interactive." } }
+        }
       }
     },
     {

@@ -23,8 +23,10 @@
  * on a read-only surface, the old face on an interactive one).
  *
  * The work is bounded before the validator sees it: the raw carrier is held to
- * the carrier bound, an expansion stops at the component, depth and unit
- * bounds, and the mapped carrier is measured again by the validator.
+ * the carrier bound, an expansion stops at the component, depth, unit and
+ * step bounds (every element visit, hidden and repeated ones included, is a
+ * step), the drop count stops at the fault bound, and the mapped carrier is
+ * measured again by the validator.
  */
 import type { JsonValue } from "@silverprotocol/core";
 import { isJsonObject } from "@guuey/mcp-apps-host";
@@ -147,17 +149,54 @@ function isExpression(value: JsonValue | undefined): value is A2uiJsonObject {
   return isJsonObject(value) && Object.keys(value).some((k) => k.startsWith("$"));
 }
 
+/** The element keys an element's `slots` name (a slot is a key or a list of keys). */
+function slotChildren(slots: JsonValue | undefined): string[] {
+  if (!isJsonObject(slots)) return [];
+  return Object.values(slots)
+    .flatMap((value) => (Array.isArray(value) ? value : [value]))
+    .filter((child): child is string => typeof child === "string");
+}
+
+/** One JSON-pointer token unescaped, as the package does (`~1` then `~0`). */
+function unescapeToken(token: string): string {
+  return token.replaceAll("~1", "/").replaceAll("~0", "~");
+}
+
+/**
+ * The segments `$item` reads in the item: the package's `getByPath` over the
+ * item, so `""` and `"/"` are the item, and one leading `/` is optional.
+ */
+function itemSegments(path: string): string[] {
+  if (path === "" || path === "/") return [];
+  return (path.startsWith("/") ? path.slice(1) : path).split("/").map(unescapeToken);
+}
+
+/**
+ * The segments `$bindItem` (and an action param's `$item`) add to the item's
+ * path: the package's `resolveBindItemPath` joins the two with `/`, so `""` is
+ * the item and a leading `/` names an empty key first.
+ */
+function bindItemSegments(path: string): string[] {
+  return path === "" ? [] : path.split("/").map(unescapeToken);
+}
+
 /** One json-render conversion. Every method is bounded; `Abort` is the only exit besides the result. */
 class Converter {
   /** Element key → its own id (outside any repeat). */
   private readonly ids = new Map<string, string>();
   private readonly taken = new Set<string>();
   private readonly reserved: ReadonlySet<string>;
-  private readonly emitted = new Map<string, string>();
+  /** Context slot → the id emitted there, or null when the element is hidden there. */
+  private readonly emitted = new Map<string, string | null>();
   private readonly onPath = new Set<string>();
+  /** Element key → its `visible` reading (it reads `spec.state` only, so it is the same in every context). */
+  private readonly visibility = new Map<string, boolean | "unevaluable">();
+  /** Element key → whether it, or anything under it, is an input or carries an action. */
+  private readonly interaction = new Map<string, boolean>();
   private readonly components: A2uiJsonObject[] = [];
   private fresh = 0;
   private units = 0;
+  private steps = 0;
   dropped = 0;
   droppedInteractive = false;
 
@@ -178,9 +217,16 @@ class Converter {
     return this.components;
   }
 
-  private drop(interactive: boolean): void {
-    this.dropped += 1;
+  /** Count `n` dropped constructs; the count stops at the fault bound, which keeps its meaning. */
+  private drop(interactive: boolean, n = 1): void {
+    this.dropped = Math.min(this.dropped + n, A2UI_LIMITS.faultsPerMessage);
     if (interactive) this.droppedInteractive = true;
+  }
+
+  /** One step of the conversion's work: past the step bound the conversion stops (`too-large`). */
+  private step(at: string): void {
+    this.steps += 1;
+    if (this.steps > A2UI_LIMITS.jsonRenderSteps) throw new Abort("too-large", at);
   }
 
   /** Spend `n` units of the mapped carrier's budget: past the carrier bound the conversion stops (`too-large`). */
@@ -227,26 +273,29 @@ class Converter {
     return isJsonObject(element) ? element : undefined;
   }
 
-  /** Whether an element, or anything under it, is an input or carries an action (bounded by `seen`). */
-  private holdsInteraction(key: string, seen: Set<string>): boolean {
-    if (seen.has(key)) return false;
-    seen.add(key);
+  /**
+   * Whether an element, or anything under it (children and slots), is an
+   * input or carries an action. Read once per key. Past the tree bound (a
+   * cycle among it) the answer is the safe one: it may hold one.
+   */
+  private holdsInteraction(key: string, depth = 0): boolean {
+    const known = this.interaction.get(key);
+    if (known !== undefined) return known;
+    if (depth > A2UI_LIMITS.treeDepth) return true;
+    this.step(`/spec/elements/${escapeSegment(key)}`);
     const element = this.element(key);
-    if (element === undefined) return false;
-    const type = own(element, "type");
-    const mapped = typeof type === "string" ? TYPE_TABLE.get(type.toLowerCase()) : undefined;
-    if (mapped !== undefined && INPUTS.has(mapped)) return true;
-    if (isJsonObject(own(element, "on")) || own(element, "watch") !== undefined) return true;
-    for (const child of this.childKeys(element)) if (this.holdsInteraction(child, seen)) return true;
-    const slots = own(element, "slots");
-    if (isJsonObject(slots)) {
-      for (const value of Object.values(slots)) {
-        for (const child of Array.isArray(value) ? value : [value]) {
-          if (typeof child === "string" && this.holdsInteraction(child, seen)) return true;
-        }
-      }
+    let holds = false;
+    if (element !== undefined) {
+      const type = own(element, "type");
+      const mapped = typeof type === "string" ? TYPE_TABLE.get(type.toLowerCase()) : undefined;
+      holds =
+        (mapped !== undefined && INPUTS.has(mapped)) ||
+        isJsonObject(own(element, "on")) ||
+        own(element, "watch") !== undefined ||
+        [...this.childKeys(element), ...slotChildren(own(element, "slots"))].some((child) => this.holdsInteraction(child, depth + 1));
     }
-    return false;
+    this.interaction.set(key, holds);
+    return holds;
   }
 
   private childKeys(element: A2uiJsonObject): string[] {
@@ -258,9 +307,10 @@ class Converter {
    * Emit one element (and what it holds) for a context; its id, or null when
    * it is hidden. An element already emitted in the same context is referenced
    * again (the validator draws it once, a shared child); one on the current
-   * path is a cycle.
+   * path is a cycle. Every visit is a step, a repeated or hidden one too.
    */
   private emit(key: string, repeat: RepeatContext | null, suffix: string, depth: number, at: string): string | null {
+    this.step(at);
     if (depth > A2UI_LIMITS.treeDepth) throw new Abort("too-deep", at);
     const slot = `${suffix}\u0000${key}`;
     if (this.onPath.has(slot)) throw new Abort("cycle", at);
@@ -277,9 +327,11 @@ class Converter {
     const type = own(raw, "type");
     if (typeof type !== "string") throw new Abort("bad-shape", `/spec/elements/${escapeSegment(key)}/type`);
 
-    const visible = this.visible(own(raw, "visible"), 0);
+    const visible = this.visibleOf(key, raw);
     if (visible !== true) {
-      if (visible === "unevaluable") this.drop(this.holdsInteraction(key, new Set()));
+      // Hidden in this context: a reference to it again is neither read nor counted again.
+      this.emitted.set(slot, null);
+      if (visible === "unevaluable") this.drop(this.holdsInteraction(key));
       return null;
     }
 
@@ -295,14 +347,16 @@ class Converter {
     const props = isJsonObject(given) ? given : {};
     const mapped = this.honoured(TYPE_TABLE.get(type.toLowerCase()), type.toLowerCase(), props);
 
-    this.dropUnmapped(raw, key, mapped);
+    this.dropUnmapped(raw, mapped);
 
     if (mapped === undefined) {
-      // A labeled placeholder; what it holds is not drawn through it.
+      // A labeled placeholder; what it holds is not drawn through it, and an
+      // input or an action among that is an interactive drop (slots count in `dropUnmapped`).
       component["component"] = type;
+      if (this.childKeys(raw).some((child) => this.holdsInteraction(child))) this.drop(true);
     } else {
       component["component"] = mapped;
-      const children = (): string[] => this.children(raw, key, repeat, suffix, depth, where);
+      const children = (): string[] => this.children(raw, repeat, suffix, depth, where);
       Object.assign(component, this.props(mapped, type.toLowerCase(), props, raw, repeat, children, id));
     }
     this.onPath.delete(slot);
@@ -325,22 +379,11 @@ class Converter {
   }
 
   /** Drop (and count) the element-level constructs no A2UI component carries. */
-  private dropUnmapped(raw: A2uiJsonObject, key: string, mapped: A2uiComponentName | undefined): void {
+  private dropUnmapped(raw: A2uiJsonObject, mapped: A2uiComponentName | undefined): void {
     const watch = own(raw, "watch");
     if (watch !== undefined) this.drop(true);
     const slots = own(raw, "slots");
-    if (slots !== undefined) {
-      const seen = new Set<string>([key]);
-      let interactive = false;
-      if (isJsonObject(slots)) {
-        for (const value of Object.values(slots)) {
-          for (const child of Array.isArray(value) ? value : [value]) {
-            if (typeof child === "string" && this.holdsInteraction(child, seen)) interactive = true;
-          }
-        }
-      }
-      this.drop(interactive);
-    }
+    if (slots !== undefined) this.drop(slotChildren(slots).some((child) => this.holdsInteraction(child)));
     const on = own(raw, "on");
     if (on === undefined) return;
     if (!isJsonObject(on)) {
@@ -355,14 +398,7 @@ class Converter {
   }
 
   /** A container's children for a context: unrolled per repeat item when the element repeats. */
-  private children(
-    raw: A2uiJsonObject,
-    key: string,
-    repeat: RepeatContext | null,
-    suffix: string,
-    depth: number,
-    where: string,
-  ): string[] {
+  private children(raw: A2uiJsonObject, repeat: RepeatContext | null, suffix: string, depth: number, where: string): string[] {
     const keys = this.childKeys(raw);
     const out: string[] = [];
     const spec = own(raw, "repeat");
@@ -377,7 +413,7 @@ class Converter {
     const read = typeof statePath === "string" ? readA2uiDataPath(statePath) : null;
     if (read === null || "fault" in read) {
       // A repeat that does not name a readable state path draws nothing of what it holds.
-      this.drop(keys.some((k) => this.holdsInteraction(k, new Set([key]))));
+      this.drop(keys.some((k) => this.holdsInteraction(k)));
       return out;
     }
     const items = readA2uiModel(this.state, read.segments);
@@ -390,19 +426,29 @@ class Converter {
         if (id !== null) out.push(id);
       }
     }
-    if (items.length > shown) {
-      const interactive = keys.some((k) => this.holdsInteraction(k, new Set([key])));
-      for (let i = shown; i < items.length; i++) this.drop(interactive);
-    }
+    // Each item past the cap is a drop (the count clamped at the fault bound).
+    if (items.length > shown) this.drop(keys.some((k) => this.holdsInteraction(k)), items.length - shown);
     return out;
   }
 
+  /** An element's `visible`, read once per element: it reads `spec.state` only, so every context reads the same. */
+  private visibleOf(key: string, raw: A2uiJsonObject): boolean | "unevaluable" {
+    const known = this.visibility.get(key);
+    if (known !== undefined) return known;
+    const read = this.visible(own(raw, "visible"), 0, `/spec/elements/${escapeSegment(key)}/visible`);
+    this.visibility.set(key, read);
+    return read;
+  }
+
   /**
-   * `visible`, read once against `spec.state`: a literal boolean; one `$state`
-   * with `eq`, `neq` or `not`, or its truthiness; `$and`/`$or` of those.
-   * Any other form is unevaluable, and hides the element.
+   * `visible`, read against `spec.state`: a literal boolean; one `$state`
+   * with `eq`, `neq` or `not`, or its truthiness; `$and`/`$or` of those, read
+   * in order up to the first term that settles them (as the package's own
+   * evaluator does). Any other form it reads is unevaluable, and hides the
+   * element. Each term read is a step.
    */
-  private visible(value: JsonValue | undefined, depth: number): boolean | "unevaluable" {
+  private visible(value: JsonValue | undefined, depth: number, at: string): boolean | "unevaluable" {
+    this.step(at);
     if (value === undefined || value === true) return true;
     if (value === false) return false;
     if (!isJsonObject(value) || depth >= VISIBLE_DEPTH) return "unevaluable";
@@ -410,9 +456,13 @@ class Converter {
     if (keys.length === 1 && (keys[0] === "$and" || keys[0] === "$or")) {
       const list = own(value, keys[0]);
       if (!Array.isArray(list) || list.length === 0) return "unevaluable";
-      const each = list.map((v) => this.visible(v, depth + 1));
-      if (each.includes("unevaluable")) return "unevaluable";
-      return keys[0] === "$and" ? each.every((v) => v === true) : each.some((v) => v === true);
+      const all = keys[0] === "$and";
+      for (const term of list) {
+        const read = this.visible(term, depth + 1, at);
+        // A false term settles `$and`, a true one `$or`.
+        if (read === "unevaluable" || read !== all) return read;
+      }
+      return all;
     }
     const allowed = new Set(["$state", "eq", "neq", "not"]);
     if (!keys.every((k) => allowed.has(k))) return "unevaluable";
@@ -443,16 +493,18 @@ class Converter {
       const read = readA2uiDataPath(state);
       return "fault" in read ? null : read.segments;
     }
-    const item = own(expression, "$item") ?? own(expression, "$bindItem");
-    if (typeof item === "string" && repeat !== null) {
-      if (item === "") return [...repeat.itemSegments];
-      if (item.startsWith("/")) {
-        const read = readA2uiDataPath(item);
-        return "fault" in read ? null : [...repeat.itemSegments, ...read.segments];
-      }
-      return [...repeat.itemSegments, item];
-    }
+    if (repeat === null) return null;
+    const item = own(expression, "$item");
+    if (typeof item === "string") return this.bounded([...repeat.itemSegments, ...itemSegments(item)]);
+    const bound = own(expression, "$bindItem");
+    if (typeof bound === "string") return this.bounded([...repeat.itemSegments, ...bindItemSegments(bound)]);
     return null;
+  }
+
+  /** A data path within the §6 path bounds (depth, segment units), or null: a path past them is dropped. */
+  private bounded(segments: string[]): string[] | null {
+    if (segments.length > A2UI_LIMITS.dataPathDepth) return null;
+    return segments.every((s) => s.length <= A2UI_LIMITS.dataPathSegmentUnits) ? segments : null;
   }
 
   /** `${/path}` lookups in a template, against `spec.state`; null when one does not read as a path. */
@@ -493,7 +545,8 @@ class Converter {
       return { kind: "value", value: out };
     }
     if (one === "$index") {
-      if (repeat === null) return DROPPED;
+      // The package reads `{ $index: true }` only.
+      if (repeat === null || own(value, "$index") !== true) return DROPPED;
       if (want === "number" || want === "raw") return { kind: "value", value: repeat.index };
       if (want === "string" || want === "bound-string") return { kind: "value", value: String(repeat.index) };
       return DROPPED;
@@ -657,8 +710,7 @@ class Converter {
       } else {
         const entries: Array<[string, JsonValue]> = [];
         for (const [key, value] of Object.entries(params)) {
-          // A literal param is a scalar; an expression maps to a binding (or a literal it names).
-          const mapped: Mapped = isExpression(value) ? this.value(value, "bound-string", repeat) : isScalar(value) ? { kind: "value", value } : DROPPED;
+          const mapped = this.param(value, repeat);
           if (mapped.kind === "value") entries.push([key, mapped.value]);
           else if (mapped.kind === "dropped") this.drop(true);
         }
@@ -676,6 +728,25 @@ class Converter {
     } else if (confirm !== undefined) {
       this.drop(false);
     }
+  }
+
+  /**
+   * One action param, as the package's `resolveActionParam` reads it: `$item`
+   * is the item's absolute state path as a string (`resolveBindItemPath`),
+   * `$index` the index number; any other expression maps as a prop does
+   * (`$state`, `$bindState` and `$bindItem` to bindings). A literal param is a scalar.
+   */
+  private param(value: JsonValue, repeat: RepeatContext | null): Mapped {
+    if (!isExpression(value)) return isScalar(value) ? { kind: "value", value } : DROPPED;
+    const keys = Object.keys(value);
+    if (keys.length === 1 && keys[0] === "$item") {
+      const item = own(value, "$item");
+      if (repeat === null || typeof item !== "string") return DROPPED;
+      const segments = this.bounded([...repeat.itemSegments, ...bindItemSegments(item)]);
+      return segments === null ? DROPPED : { kind: "value", value: pointer(segments) };
+    }
+    if (keys.length === 1 && keys[0] === "$index") return this.value(value, "number", repeat);
+    return this.value(value, "bound-string", repeat);
   }
 
   private textField(out: A2uiJsonObject, type: string, props: A2uiJsonObject, repeat: RepeatContext | null): void {

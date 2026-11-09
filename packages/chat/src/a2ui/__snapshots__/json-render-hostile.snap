@@ -186,7 +186,7 @@
   },
   {
     "name": "prototype-params",
-    "row": "__proto__ as an action param key and as a type name",
+    "row": "__proto__ as an action param key, with a scalar and with an object payload",
     "adapted": {
       "ok": true,
       "surfaceId": "s",
@@ -205,6 +205,14 @@
             "components": [
               {
                 "id": "root",
+                "component": "Column",
+                "children": [
+                  "go",
+                  "pay"
+                ]
+              },
+              {
+                "id": "go",
                 "component": "Button",
                 "label": "Go",
                 "action": {
@@ -214,20 +222,31 @@
                     "constructor": 1
                   }
                 }
+              },
+              {
+                "id": "pay",
+                "component": "Button",
+                "label": "Pay",
+                "action": {
+                  "name": "pay",
+                  "context": {
+                    "amount": 5
+                  }
+                }
               }
             ]
           }
         }
       ],
       "dropped": {
-        "count": 0,
-        "interactive": false
+        "count": 1,
+        "interactive": true
       }
     },
     "validation": {
       "ok": false,
-      "reason": "bad-prop",
-      "path": "/s/root",
+      "reason": "dropped-construct",
+      "path": "/s",
       "level": "component",
       "surfaceIds": [
         "s"

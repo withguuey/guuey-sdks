@@ -729,6 +729,113 @@
     }
   },
   {
+    "name": "unknown-around-an-input",
+    "row": "Any other type (holding an input: the drop is interactive)",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "q": ""
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "tabs"
+                ]
+              },
+              {
+                "id": "tabs",
+                "component": "Tabs"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 1,
+        "interactive": true
+      }
+    },
+    "validation": {
+      "ok": false,
+      "reason": "dropped-construct",
+      "path": "/s",
+      "level": "component",
+      "surfaceIds": [
+        "s"
+      ]
+    }
+  },
+  {
+    "name": "unknown-around-a-press",
+    "row": "Any other type (holding an action: the drop is interactive)",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "tabs"
+                ]
+              },
+              {
+                "id": "tabs",
+                "component": "Tabs"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 1,
+        "interactive": true
+      }
+    },
+    "validation": {
+      "ok": false,
+      "reason": "dropped-construct",
+      "path": "/s",
+      "level": "component",
+      "surfaceIds": [
+        "s"
+      ]
+    }
+  },
+  {
     "name": "state",
     "row": "{ $state } in a prop",
     "adapted": {
@@ -1150,6 +1257,452 @@
     }
   },
   {
+    "name": "item-paths",
+    "row": "repeat { statePath } + $item / $bindItem (the path forms)",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "rows": [
+                {
+                  "a": {
+                    "b": "deep"
+                  },
+                  "k": "one",
+                  "a/b": "slashed"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "List",
+                "children": [
+                  "ab.0",
+                  "slash-ab.0",
+                  "key.0",
+                  "whole.0",
+                  "escaped.0",
+                  "bind-ab.0",
+                  "bind-slash-ab.0",
+                  "bind-key.0",
+                  "bind-whole.0"
+                ]
+              },
+              {
+                "id": "ab.0",
+                "component": "Text",
+                "text": {
+                  "path": "/rows/0/a/b"
+                }
+              },
+              {
+                "id": "slash-ab.0",
+                "component": "Text",
+                "text": {
+                  "path": "/rows/0/a/b"
+                }
+              },
+              {
+                "id": "key.0",
+                "component": "Text",
+                "text": {
+                  "path": "/rows/0/k"
+                }
+              },
+              {
+                "id": "whole.0",
+                "component": "Text",
+                "text": {
+                  "path": "/rows/0"
+                }
+              },
+              {
+                "id": "escaped.0",
+                "component": "Text",
+                "text": {
+                  "path": "/rows/0/a~1b"
+                }
+              },
+              {
+                "id": "bind-ab.0",
+                "component": "TextField",
+                "label": "a/b",
+                "value": {
+                  "path": "/rows/0/a/b"
+                }
+              },
+              {
+                "id": "bind-slash-ab.0",
+                "component": "TextField",
+                "label": "/a/b",
+                "value": {
+                  "path": "/rows/0//a/b"
+                }
+              },
+              {
+                "id": "bind-key.0",
+                "component": "TextField",
+                "label": "k",
+                "value": {
+                  "path": "/rows/0/k"
+                }
+              },
+              {
+                "id": "bind-whole.0",
+                "component": "TextField",
+                "label": "whole",
+                "value": {
+                  "path": "/rows/0"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 0,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "List",
+            "children": [
+              {
+                "id": "ab.0",
+                "component": "Text",
+                "text": {
+                  "path": "/rows/0/a/b"
+                },
+                "variant": "body"
+              },
+              {
+                "id": "slash-ab.0",
+                "component": "Text",
+                "text": {
+                  "path": "/rows/0/a/b"
+                },
+                "variant": "body"
+              },
+              {
+                "id": "key.0",
+                "component": "Text",
+                "text": {
+                  "path": "/rows/0/k"
+                },
+                "variant": "body"
+              },
+              {
+                "id": "whole.0",
+                "component": "Text",
+                "text": {
+                  "path": "/rows/0"
+                },
+                "variant": "body"
+              },
+              {
+                "id": "escaped.0",
+                "component": "Text",
+                "text": {
+                  "path": "/rows/0/a~1b"
+                },
+                "variant": "body"
+              },
+              {
+                "id": "bind-ab.0",
+                "component": "TextField",
+                "label": "a/b",
+                "placeholder": null,
+                "value": {
+                  "path": "/rows/0/a/b"
+                },
+                "inputType": "text",
+                "required": false,
+                "maxLength": null,
+                "min": null,
+                "max": null
+              },
+              {
+                "id": "bind-slash-ab.0",
+                "component": "TextField",
+                "label": "/a/b",
+                "placeholder": null,
+                "value": {
+                  "path": "/rows/0//a/b"
+                },
+                "inputType": "text",
+                "required": false,
+                "maxLength": null,
+                "min": null,
+                "max": null
+              },
+              {
+                "id": "bind-key.0",
+                "component": "TextField",
+                "label": "k",
+                "placeholder": null,
+                "value": {
+                  "path": "/rows/0/k"
+                },
+                "inputType": "text",
+                "required": false,
+                "maxLength": null,
+                "min": null,
+                "max": null
+              },
+              {
+                "id": "bind-whole.0",
+                "component": "TextField",
+                "label": "whole",
+                "placeholder": null,
+                "value": {
+                  "path": "/rows/0"
+                },
+                "inputType": "text",
+                "required": false,
+                "maxLength": null,
+                "min": null,
+                "max": null
+              }
+            ]
+          },
+          "interactive": true,
+          "degrade": {},
+          "fields": {
+            "/rows/0/a/b": {
+              "kind": "text",
+              "componentId": "bind-ab.0",
+              "label": "a/b",
+              "inputType": "text",
+              "required": false,
+              "maxLength": null,
+              "min": null,
+              "max": null
+            },
+            "/rows/0//a/b": {
+              "kind": "text",
+              "componentId": "bind-slash-ab.0",
+              "label": "/a/b",
+              "inputType": "text",
+              "required": false,
+              "maxLength": null,
+              "min": null,
+              "max": null
+            },
+            "/rows/0/k": {
+              "kind": "text",
+              "componentId": "bind-key.0",
+              "label": "k",
+              "inputType": "text",
+              "required": false,
+              "maxLength": null,
+              "min": null,
+              "max": null
+            },
+            "/rows/0": {
+              "kind": "text",
+              "componentId": "bind-whole.0",
+              "label": "whole",
+              "inputType": "text",
+              "required": false,
+              "maxLength": null,
+              "min": null,
+              "max": null
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "params-in-a-repeat",
+    "row": "on.press params inside a repeat: $item, $index, $bindItem, $state, $bindState",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "rows": [
+                {
+                  "name": "Ada"
+                },
+                {
+                  "name": "Grace"
+                }
+              ],
+              "sort": "asc",
+              "filter": ""
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "List",
+                "children": [
+                  "remove.0",
+                  "remove.1"
+                ]
+              },
+              {
+                "id": "remove.0",
+                "component": "Button",
+                "label": "Remove",
+                "action": {
+                  "name": "remove_row",
+                  "context": {
+                    "field": "/rows/0/name",
+                    "row": "/rows/0",
+                    "at": 0,
+                    "name": {
+                      "path": "/rows/0/name"
+                    },
+                    "sort": {
+                      "path": "/sort"
+                    },
+                    "filter": {
+                      "path": "/filter"
+                    }
+                  }
+                }
+              },
+              {
+                "id": "remove.1",
+                "component": "Button",
+                "label": "Remove",
+                "action": {
+                  "name": "remove_row",
+                  "context": {
+                    "field": "/rows/1/name",
+                    "row": "/rows/1",
+                    "at": 1,
+                    "name": {
+                      "path": "/rows/1/name"
+                    },
+                    "sort": {
+                      "path": "/sort"
+                    },
+                    "filter": {
+                      "path": "/filter"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 0,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "List",
+            "children": [
+              {
+                "id": "remove.0",
+                "component": "Button",
+                "label": "Remove",
+                "action": {
+                  "name": "remove_row",
+                  "context": {
+                    "field": "/rows/0/name",
+                    "row": "/rows/0",
+                    "at": 0,
+                    "name": {
+                      "path": "/rows/0/name"
+                    },
+                    "sort": {
+                      "path": "/sort"
+                    },
+                    "filter": {
+                      "path": "/filter"
+                    }
+                  }
+                },
+                "link": null,
+                "variant": null,
+                "confirm": null
+              },
+              {
+                "id": "remove.1",
+                "component": "Button",
+                "label": "Remove",
+                "action": {
+                  "name": "remove_row",
+                  "context": {
+                    "field": "/rows/1/name",
+                    "row": "/rows/1",
+                    "at": 1,
+                    "name": {
+                      "path": "/rows/1/name"
+                    },
+                    "sort": {
+                      "path": "/sort"
+                    },
+                    "filter": {
+                      "path": "/filter"
+                    }
+                  }
+                },
+                "link": null,
+                "variant": null,
+                "confirm": null
+              }
+            ]
+          },
+          "interactive": true,
+          "degrade": {},
+          "fields": {}
+        }
+      ]
+    }
+  },
+  {
     "name": "visible",
     "row": "visible",
     "adapted": {
@@ -1477,7 +2030,7 @@
     }
   },
   {
-    "name": "hooks-watch-slots",
+    "name": "slots",
     "row": "onSuccess, onError, watch, slots, preventDefault",
     "adapted": {
       "ok": true,
@@ -1629,6 +2182,177 @@
       ],
       "dropped": {
         "count": 3,
+        "interactive": true
+      }
+    },
+    "validation": {
+      "ok": false,
+      "reason": "dropped-construct",
+      "path": "/s",
+      "level": "component",
+      "surfaceIds": [
+        "s"
+      ]
+    }
+  },
+  {
+    "name": "hook-on-error",
+    "row": "onSuccess, onError, watch, slots, preventDefault (onError on a press)",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "save"
+                ]
+              },
+              {
+                "id": "save",
+                "component": "Button",
+                "label": "Save",
+                "action": {
+                  "name": "save"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 1,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": false,
+      "reason": "dropped-construct",
+      "path": "/s",
+      "level": "component",
+      "surfaceIds": [
+        "s"
+      ]
+    }
+  },
+  {
+    "name": "hook-change-on-an-input",
+    "row": "Any event but press (on.change on an Input)",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "q": ""
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "q"
+                ]
+              },
+              {
+                "id": "q",
+                "component": "TextField",
+                "label": "Search",
+                "value": {
+                  "path": "/q"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 1,
+        "interactive": true
+      }
+    },
+    "validation": {
+      "ok": false,
+      "reason": "dropped-construct",
+      "path": "/s",
+      "level": "component",
+      "surfaceIds": [
+        "s"
+      ]
+    }
+  },
+  {
+    "name": "hook-press-on-a-text",
+    "row": "press on a type that is not a Button (a Text on an otherwise read-only surface)",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "tap",
+                  "note"
+                ]
+              },
+              {
+                "id": "tap",
+                "component": "Text",
+                "text": "Tap to open"
+              },
+              {
+                "id": "note",
+                "component": "Text",
+                "text": "Nothing else here is interactive."
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 1,
         "interactive": true
       }
     },

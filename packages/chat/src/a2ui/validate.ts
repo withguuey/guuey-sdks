@@ -195,6 +195,8 @@ function parseProps(name: A2uiComponentName, raw: A2uiJsonObject): { parsed: A2u
     case "Button": {
       // zod skips a `__proto__` record key without a word, so the action would
       // reach the agent without a key its producer declared: refuse the action.
+      // The context's own keys are the only record: a value is a scalar or a
+      // `{ path }` binding, which keeps its path and has no key to lose.
       const context = isJsonObject(raw["action"]) ? raw["action"]["context"] : undefined;
       const poisoned = isJsonObject(context) && Object.hasOwn(context, "__proto__");
       const input = poisoned ? Object.fromEntries(Object.entries(raw).filter(([key]) => key !== "action")) : raw;

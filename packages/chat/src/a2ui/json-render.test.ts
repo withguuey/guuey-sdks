@@ -16,7 +16,7 @@ import type { JsonValue } from "@silverprotocol/core";
 import { a2uiCarrierUnits as a2uiUnits } from "@guuey/mcp-apps-host/narrowing";
 import { A2UI_LIMITS } from "./limits.js";
 import type { A2uiJsonObject, A2uiNode } from "./schema.js";
-import type { A2uiResolvedSurface } from "./fold.js";
+import { applyA2uiMessages, EMPTY_A2UI_STATE, type A2uiParsedMessage, type A2uiResolvedSurface } from "./fold.js";
 import { namedA2uiSurfaceIds, parseA2uiCarrier, validateA2uiCarrier } from "./validate.js";
 import { JSON_RENDER_CATALOG_ID, jsonRenderToA2ui } from "./json-render.js";
 
@@ -258,6 +258,14 @@ describe("guuey#2385 — each row of the §12 table", () => {
     expect(surface.degrade).toEqual({ "unknown-component": 1 });
   });
 
+  it.each(["unknown-around-an-input", "unknown-around-a-press"])(
+    "%s: an unknown type holding an input or an action counts an interactive drop, so the surface takes the old face",
+    (name) => {
+      expect(jsonRenderToA2ui(caseOf("rows", name))).toMatchObject({ dropped: { count: 1, interactive: true } });
+      expect(validateA2uiCarrier(caseOf("rows", name))).toMatchObject({ ok: false, reason: "dropped-construct", level: "component" });
+    },
+  );
+
   it("$state: a binding where A2UI takes one, the state's value where it does not", () => {
     const surface = drawn(caseOf("rows", "state"));
     expect(node(surface, "greeting")).toMatchObject({ text: { path: "/greeting" } });
@@ -283,6 +291,47 @@ describe("guuey#2385 — each row of the §12 table", () => {
     expect(node(surface, "num.0")).toMatchObject({ text: "0" });
     expect(Object.keys(surface.fields)).toEqual(["/todos/0/done", "/todos/1/done"]);
     expect(surface.degrade).toEqual({});
+  });
+
+  it("$item reads a path in the item, one leading / optional; $bindItem joins the item's path and its own with /, as the package does", () => {
+    const surface = drawn(caseOf("rows", "item-paths"));
+    const at = (id: string): unknown => {
+      const found = node(surface, `${id}.0`);
+      return "text" in found ? found.text : "value" in found ? found.value : undefined;
+    };
+    // `$item` (getByPath over the item): "a/b" and "/a/b" are the same path, "" the item, ~1 an escaped /.
+    expect(at("ab")).toEqual({ path: "/rows/0/a/b" });
+    expect(at("slash-ab")).toEqual({ path: "/rows/0/a/b" });
+    expect(at("key")).toEqual({ path: "/rows/0/k" });
+    expect(at("whole")).toEqual({ path: "/rows/0" });
+    expect(at("escaped")).toEqual({ path: "/rows/0/a~1b" });
+    // `$bindItem` (resolveBindItemPath: base + "/" + path): "/a/b" names an empty key first, as it does there.
+    expect(at("bind-ab")).toEqual({ path: "/rows/0/a/b" });
+    expect(at("bind-slash-ab")).toEqual({ path: "/rows/0//a/b" });
+    expect(at("bind-key")).toEqual({ path: "/rows/0/k" });
+    expect(at("bind-whole")).toEqual({ path: "/rows/0" });
+    expect(jsonRenderToA2ui(caseOf("rows", "item-paths"))).toMatchObject({ dropped: { count: 0 } });
+  });
+
+  it("action params in a repeat: $item is the item's absolute path as a string, $index the number, the others bindings", () => {
+    const surface = drawn(caseOf("rows", "params-in-a-repeat"));
+    expect(node(surface, "remove.1")).toMatchObject({
+      action: {
+        name: "remove_row",
+        context: { field: "/rows/1/name", row: "/rows/1", at: 1, name: { path: "/rows/1/name" }, sort: { path: "/sort" }, filter: { path: "/filter" } },
+      },
+    });
+    expect(node(surface, "remove.0")).toMatchObject({ action: { context: { field: "/rows/0/name", row: "/rows/0", at: 0 } } });
+    expect(surface).toMatchObject({ interactive: true, degrade: {} });
+  });
+
+  it("$index is the flag `true` only, as the package reads it: any other value is dropped", () => {
+    const value = carrier({
+      root: "l",
+      elements: { l: { type: "List", props: {}, repeat: { statePath: "/rows" }, children: ["t"] }, t: { type: "Text", props: { text: { $index: 1 } } } },
+      state: { rows: [0] },
+    });
+    expect(jsonRenderToA2ui(value)).toMatchObject({ dropped: { count: 1 } });
   });
 
   it("repeat stops at the List cap (100), each item past it a counted drop", () => {
@@ -340,7 +389,7 @@ describe("guuey#2385 — each row of the §12 table", () => {
   });
 
   it("slots on a read-only surface: dropped and counted, the card drawn with its title and child", () => {
-    const surface = drawn(caseOf("rows", "hooks-watch-slots"));
+    const surface = drawn(caseOf("rows", "slots"));
     expect(nodes(surface.root).map((n) => [n.id, n.component])).toEqual([
       ["root", "Card"],
       ["root.body", "Column"],
@@ -354,6 +403,15 @@ describe("guuey#2385 — each row of the §12 table", () => {
   it("watch, onSuccess and preventDefault on a form: each dropped and counted, so the form takes the old face", () => {
     expect(jsonRenderToA2ui(caseOf("rows", "hooks-on-a-form"))).toMatchObject({ dropped: { count: 3, interactive: true } });
     expect(validateA2uiCarrier(caseOf("rows", "hooks-on-a-form"))).toMatchObject({ ok: false, reason: "dropped-construct" });
+  });
+
+  it.each<[string, boolean]>([
+    ["hook-on-error", false],
+    ["hook-change-on-an-input", true],
+    ["hook-press-on-a-text", true],
+  ])("%s: one counted drop (interactive: %s), and the surface takes the old face", (name, interactive) => {
+    expect(jsonRenderToA2ui(caseOf("rows", name))).toMatchObject({ dropped: { count: 1, interactive } });
+    expect(validateA2uiCarrier(caseOf("rows", name))).toMatchObject({ ok: false, reason: "dropped-construct", level: "component" });
   });
 
   it("$cond and $computed are dropped: a Text left with no text is a placeholder, an Image keeps its source", () => {
@@ -399,7 +457,7 @@ describe("guuey#2385 — each row of the §12 table", () => {
   });
 });
 
-describe("guuey#2385 — the README examples", () => {
+describe("guuey#2385 — the examples: the README's watcher, and a form and a select written in the types' shape", () => {
   it("the form draws natively, every field bound and the submit carrying the values", () => {
     const surface = drawn(caseOf("examples", "form"));
     expect(surface.title).toBe("Contact us");
@@ -542,6 +600,140 @@ describe("guuey#2385 — bounds: the raw carrier and the mapped one", () => {
   });
 });
 
+/** A fan-in carrier: `a` repeats over /o, `r` over /i (100 items) and holds `h` `refs` times, `h` shown or hidden by `visible`. */
+function fanIn(outer: number, refs: number, visible: JsonValue): A2uiJsonObject {
+  return carrier({
+    root: "a",
+    elements: {
+      a: { type: "Column", props: {}, repeat: { statePath: "/o" }, children: ["r"] },
+      r: { type: "Column", props: {}, repeat: { statePath: "/i" }, children: Array.from({ length: refs }, () => "h") },
+      h: { type: "Text", props: { text: "x" }, visible },
+    },
+    state: { o: Array.from({ length: outer }, () => 0), i: Array.from({ length: 100 }, () => 0) },
+  });
+}
+
+/** The most drops: `a` repeats over /o, `r` over /i (`inner` items, past the List cap), `h` hidden. */
+function manyDrops(outer: number, inner: number): A2uiJsonObject {
+  return carrier({
+    root: "a",
+    elements: {
+      a: { type: "Column", props: {}, repeat: { statePath: "/o" }, children: ["r"] },
+      r: { type: "Column", props: {}, repeat: { statePath: "/i" }, children: ["h"] },
+      h: { type: "Text", props: { text: "x" }, visible: false },
+    },
+    state: { o: Array.from({ length: outer }, () => 0), i: Array.from({ length: inner }, () => 0) },
+  });
+}
+
+/** `$and` of `m` `$or`s, each of `k` reads of a falsy path. */
+function nestedVisible(m: number, k: number): JsonValue {
+  return { $and: Array.from({ length: m }, () => ({ $or: Array.from({ length: k }, () => ({ $state: "/zz" })) })) };
+}
+
+describe("guuey#2385 — the conversion's work is bounded, whatever the carrier holds", () => {
+  it("a fan-in carrier past the step bound stops the mapping (too-large) at the visit that crossed it", () => {
+    // 1 × 100 × 1 500 visits of a hidden element with a 300-term condition: 150 000 visits, far past 20 000.
+    const out = jsonRenderToA2ui(fanIn(1, 1_500, { $and: Array.from({ length: 300 }, () => ({ $state: "/zz" })) }));
+    expect(out).toMatchObject({ ok: false, reason: "too-large", path: expect.stringMatching(/^\/spec\/elements\/r\/children\/\d+$/) });
+  });
+
+  it(`every visit counts, hidden and repeated ones included: 199 references per item fit the ${A2UI_LIMITS.jsonRenderSteps} steps, 201 do not`, () => {
+    // Steps: a and r (a visit and a visible read each), the first h (the same), then one per further visit: 4 + 2 + 198 + 99 × 199.
+    expect(jsonRenderToA2ui(fanIn(1, 199, false))).toMatchObject({ ok: true, dropped: { count: 0 } });
+    expect(jsonRenderToA2ui(fanIn(1, 201, false))).toMatchObject({ ok: false, reason: "too-large" });
+  });
+
+  it("a hidden element referenced again in the same context is read once and counted once", () => {
+    const value = carrier({
+      root: "c",
+      elements: { c: { type: "Column", props: {}, children: ["h", "h", "h"] }, h: { type: "Text", props: { text: "x" }, visible: "always" } },
+    });
+    expect(jsonRenderToA2ui(value)).toMatchObject({ ok: true, dropped: { count: 1, interactive: false } });
+  });
+
+  it("$and and $or stop at the first term that settles them, as the package's evaluator does", () => {
+    const value = carrier({
+      root: "c",
+      elements: {
+        c: { type: "Column", props: {}, children: ["off", "on"] },
+        off: { type: "Text", props: { text: "off" }, visible: { $and: [{ $state: "/off" }, "unread"] } },
+        on: { type: "Text", props: { text: "on" }, visible: { $or: [{ $state: "/on" }, "unread"] } },
+      },
+      state: { on: true, off: false },
+    });
+    expect(nodes(drawn(value).root).map((n) => n.id)).toEqual(["root", "on"]);
+    expect(jsonRenderToA2ui(value)).toMatchObject({ dropped: { count: 0 } });
+  });
+
+  it("the interaction check under a hidden element stops at the tree bound, a cycle among it, and then reads as interactive", () => {
+    const chain: A2uiJsonObject = { c: { type: "Column", props: {}, children: ["h"] }, h: { type: "Column", props: {}, visible: "always", children: ["d0"] } };
+    for (let i = 0; i < A2UI_LIMITS.treeDepth + 2; i++) chain[`d${i}`] = { type: "Column", props: {}, children: [`d${i + 1}`] };
+    expect(jsonRenderToA2ui(carrier({ root: "c", elements: chain }))).toMatchObject({ ok: true, dropped: { count: 1, interactive: true } });
+    const cycle = carrier({
+      root: "c",
+      elements: {
+        c: { type: "Column", props: {}, children: ["h"] },
+        h: { type: "Column", props: {}, visible: "always", children: ["k"] },
+        k: { type: "Column", props: {}, children: ["h"] },
+      },
+    });
+    expect(jsonRenderToA2ui(cycle)).toMatchObject({ ok: true, dropped: { count: 1, interactive: true } });
+  });
+
+  it(`the drop count is clamped where it is made: 100 × 1 900 items past the cap report ${A2UI_LIMITS.faultsPerMessage}`, () => {
+    const value = manyDrops(100, 2_000);
+    expect(jsonRenderToA2ui(value)).toMatchObject({ ok: true, dropped: { count: A2UI_LIMITS.faultsPerMessage, interactive: false } });
+    const parsed = parseA2uiCarrier(value);
+    expect(parsed.ok ? parsed.messages.find((m) => m.kind === "updateComponents") : undefined).toMatchObject({
+      dropped: { count: A2UI_LIMITS.faultsPerMessage },
+    });
+    // The root Column holds 100 clones of `r`: past its 50 children the rest are dropped by the validator, as for any carrier.
+    expect(drawn(value).degrade).toEqual({ "dropped-construct": A2UI_LIMITS.faultsPerMessage, "dropped-children": 50 });
+  });
+
+  it("the fold clamps a fault count it is handed, whatever made it", () => {
+    const parsed = parseA2uiCarrier(manyDrops(1, 1));
+    if (!parsed.ok) throw new Error("did not parse");
+    const inflated = parsed.messages.map(
+      (m): A2uiParsedMessage =>
+        m.kind === "updateComponents" ? { ...m, badIds: { count: 5_000, interactive: false }, dropped: { count: 5_000, interactive: false } } : m,
+    );
+    const out = applyA2uiMessages(EMPTY_A2UI_STATE, inflated);
+    const [outcome] = out.ok ? out.surfaces : [];
+    expect(outcome?.kind === "drawn" ? outcome.surface.degrade : undefined).toEqual({
+      "bad-id": A2UI_LIMITS.faultsPerMessage,
+      "dropped-construct": A2UI_LIMITS.faultsPerMessage,
+    });
+  });
+});
+
+describe("guuey#2385 — the adversarial carriers, against the clock", () => {
+  // The deterministic pins above (steps, abort reasons, clamped counts) are the proof.
+  // The clock here re-checks the budget those bounds buy, with a generous ceiling.
+
+  it("a fan-in carrier at the unit bound, with nested $and/$or, converts or aborts within 1 000 ms (15 s per outer item before)", () => {
+    const value = fanIn(2, 2_900, nestedVisible(12, 20));
+    expect(a2uiUnits(value)).toBeGreaterThan(16_000);
+    expect(a2uiUnits(value)).toBeLessThanOrEqual(A2UI_LIMITS.carrierUnits);
+    const started = performance.now();
+    const out = jsonRenderToA2ui(value);
+    const took = performance.now() - started;
+    expect(took).toBeLessThan(1_000);
+    expect(out).toMatchObject({ ok: false, reason: "too-large" });
+  });
+
+  it("the most drops at the repeat cap, through parse and the fold, within 1 000 ms (35 s before)", () => {
+    const value = manyDrops(100, 2_000);
+    const started = performance.now();
+    const parsed = parseA2uiCarrier(value);
+    const out = parsed.ok ? applyA2uiMessages(EMPTY_A2UI_STATE, parsed.messages) : parsed;
+    const took = performance.now() - started;
+    expect(took).toBeLessThan(1_000);
+    expect(out).toMatchObject({ ok: true });
+  });
+});
+
 describe("guuey#2385 — hostile carriers", () => {
   it("javascript: URLs are never links or images: an inert button, a chip, inert text (in place, spec §5.7)", () => {
     const surface = drawn(caseOf("hostile", "javascript-urls"));
@@ -561,17 +753,28 @@ describe("guuey#2385 — hostile carriers", () => {
     expect(({} as { polluted?: string }).polluted).toBeUndefined();
   });
 
-  it("a __proto__ action param is an own context key, never a prototype, and the validator refuses the action", () => {
-    const [button] = components(caseOf("hostile", "prototype-params"));
-    const action = button?.["action"];
-    expect(typeof action === "object" && action !== null && !Array.isArray(action) ? Object.keys(action["context"] ?? {}) : []).toEqual([
-      "__proto__",
-      "constructor",
-    ]);
-    expect(({} as { x?: string }).x).toBeUndefined();
-    expect(Object.getPrototypeOf({})).toBe(Object.prototype);
-    // The press would otherwise reach the agent without the key: the form takes the old face.
-    expect(validateA2uiCarrier(caseOf("hostile", "prototype-params"))).toMatchObject({ ok: false, reason: "bad-prop" });
+  it("a __proto__ action param is an own context key, an object payload under it pollutes nothing, and the action is refused", () => {
+    const value = caseOf("hostile", "prototype-params");
+    const contextOf = (id: string): A2uiJsonObject => {
+      const action = components(value).find((c) => c["id"] === id)?.["action"];
+      const context = typeof action === "object" && action !== null && !Array.isArray(action) ? action["context"] : undefined;
+      if (typeof context !== "object" || context === null || Array.isArray(context)) throw new Error(`no context on ${id}`);
+      return context;
+    };
+    // A scalar under __proto__ stays an own key (an assignment loop would lose it to the setter)...
+    expect(Object.hasOwn(contextOf("go"), "__proto__")).toBe(true);
+    expect(Object.keys(contextOf("go"))).toEqual(["__proto__", "constructor"]);
+    // ...and an object under it is not a param A2UI carries: dropped, never merged into any prototype.
+    expect(Object.hasOwn(contextOf("pay"), "__proto__")).toBe(false);
+    expect(contextOf("pay")).toEqual({ amount: 5 });
+    expect(({} as { polluted?: string }).polluted).toBeUndefined();
+    expect(jsonRenderToA2ui(value)).toMatchObject({ dropped: { count: 1, interactive: true } });
+    // The press would otherwise reach the agent without its payload, or without its key: each takes the old face.
+    expect(validateA2uiCarrier(value)).toMatchObject({ ok: false, reason: "dropped-construct", level: "component" });
+    const spec = value["spec"];
+    const go = typeof spec === "object" && spec !== null && !Array.isArray(spec) ? spec["elements"] : undefined;
+    const alone = carrier({ root: "go", elements: { go: typeof go === "object" && go !== null && !Array.isArray(go) ? (go["go"] ?? null) : null } });
+    expect(validateA2uiCarrier(alone)).toMatchObject({ ok: false, reason: "bad-prop", level: "component" });
   });
 
   it("a type named constructor or __proto__ is an unknown type, a placeholder", () => {

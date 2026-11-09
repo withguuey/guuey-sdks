@@ -52,6 +52,23 @@ export const A2UI_LIMITS = {
   itemsPerTranscript: 64,
   /** The largest `TextField.maxLength` a carrier may declare. */
   textFieldMaxLength: 4_000,
+  /**
+   * Steps one json-render conversion may take (spec §12): every element visit
+   * (hidden, dangling and repeated ones included), every `visible` term read
+   * and every element the interaction check reads. Past it the carrier is
+   * too large (an envelope fault). 200 components × 100 repeat items: a
+   * surface the other bounds allow never needs more, and the conversion's
+   * work is bounded whatever the carrier references.
+   */
+  jsonRenderSteps: 20_000,
+  /**
+   * Faults of one kind one message adds (spec §12): a json-render drop count
+   * and a bad-id count are clamped to it, where the count is made and where
+   * the fold reads it. A count only says that something was dropped (and
+   * whether it was interactive), so any bound of 1 or more keeps its meaning;
+   * 200 is the component bound, and the fold's work stays bounded.
+   */
+  faultsPerMessage: 200,
 } as const;
 
 /** The ellipsis a truncated string ends with (one unit). */

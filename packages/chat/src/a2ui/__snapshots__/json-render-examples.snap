@@ -1,7 +1,7 @@
 [
   {
     "name": "form",
-    "row": "README: a contact form",
+    "row": "written in the types' shape: a contact form",
     "adapted": {
       "ok": true,
       "surfaceId": "s",
@@ -230,7 +230,7 @@
   },
   {
     "name": "select",
-    "row": "README: a select with a dependent summary",
+    "row": "written in the types' shape: a select with a dependent summary",
     "adapted": {
       "ok": true,
       "surfaceId": "s",

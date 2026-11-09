@@ -28,6 +28,8 @@ describe("A2UI_LIMITS (spec §6)", () => {
       actionPayloadUnits: 4_096,
       itemsPerTranscript: 64,
       textFieldMaxLength: 4_000,
+      jsonRenderSteps: 20_000,
+      faultsPerMessage: 200,
     });
   });
 

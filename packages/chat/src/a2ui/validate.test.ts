@@ -41,7 +41,7 @@ describe("envelope faults → the old face, each with its reason (spec §5.7)", 
     ["not an object", [1, 2], "not-object"],
     ["a string", "a2ui", "not-object"],
     ["an unknown format", carrier([create("s")], { format: "html" }), "unsupported-format"],
-    ["json-render with no root (adapted, S5)", { format: "json-render", version: "0.21.1", surfaceId: "s", spec: {} }, "bad-shape"],
+    ["json-render with no root (adapted, S5)", { format: "json-render", version: "0.21.1", surfaceId: "s", spec: { elements: { t: { type: "Text" } } } }, "bad-shape"],
     ["a bad carrier version", carrier([create("s")], { version: "v0.8" }), "bad-version"],
     ["a bad message version", carrier([{ version: "v1.0", createSurface: { surfaceId: "s", catalogId: "c" } }]), "bad-version"],
     ["messages not a list", carrier([], { messages: { a: 1 } }), "bad-shape"],
@@ -92,6 +92,9 @@ describe("envelope faults → the old face, each with its reason (spec §5.7)", 
   it("a fault names where it is", () => {
     const out = validateA2uiCarrier(carrier([create("s"), components("s", [text("root"), "x"])]));
     expect(out).toMatchObject({ ok: false, reason: "bad-shape", path: "/messages/1/updateComponents/components/1" });
+    // A json-render carrier with elements and no root names its root, not its elements.
+    const noRoot = validateA2uiCarrier({ format: "json-render", version: "0.21.1", surfaceId: "s", spec: { elements: { t: { type: "Text" } } } });
+    expect(noRoot).toMatchObject({ ok: false, reason: "bad-shape", path: "/spec/root" });
   });
 
   it("format absent reads as a2ui; mimeType and unknown envelope keys are ignored", () => {

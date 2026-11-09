@@ -573,8 +573,13 @@ export function applyA2uiMessages(
   const pending = new Map<string, Fault[]>();
   const pendingInteractive = new Set<string>();
   const fault = (surfaceId: string, f: Fault): void => {
-    pending.set(surfaceId, [...(pending.get(surfaceId) ?? []), f]);
+    // In place: a copy per fault would make a carrier's faults quadratic.
+    const list = pending.get(surfaceId);
+    if (list === undefined) pending.set(surfaceId, [f]);
+    else list.push(f);
   };
+  // A count says that something was dropped; past the bound it says nothing more.
+  const clamp = (count: number): number => Math.min(count, A2UI_LIMITS.faultsPerMessage);
 
   for (const message of messages) {
     const id = message.surfaceId;
@@ -591,9 +596,9 @@ export function applyA2uiMessages(
         if (surface === undefined) break;
         const components = new Map(surface.components);
         for (const entry of message.components) components.set(entry.id, entry);
-        for (let i = 0; i < message.badIds.count; i++) fault(id, { fault: "bad-id", at: `/${id}` });
+        for (let i = 0; i < clamp(message.badIds.count); i++) fault(id, { fault: "bad-id", at: `/${id}` });
         if (message.badIds.interactive) pendingInteractive.add(id);
-        for (let i = 0; i < (message.dropped?.count ?? 0); i++) fault(id, { fault: "dropped-construct", at: `/${id}` });
+        for (let i = 0; i < clamp(message.dropped?.count ?? 0); i++) fault(id, { fault: "dropped-construct", at: `/${id}` });
         if (message.dropped?.interactive === true) pendingInteractive.add(id);
         const batch = message.components.map((c) => c.id);
         working.set(id, { ...surface, components, firstBatch: surface.firstBatch ?? (batch.length > 0 ? batch : null) });

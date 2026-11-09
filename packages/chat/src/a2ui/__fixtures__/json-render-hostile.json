@@ -32,14 +32,25 @@
     },
     {
       "name": "prototype-params",
-      "row": "__proto__ as an action param key and as a type name",
+      "row": "__proto__ as an action param key, with a scalar and with an object payload",
       "spec": {
-        "root": "go",
+        "root": "page",
         "elements": {
+          "page": { "type": "Column", "props": {}, "children": ["go", "pay"] },
           "go": {
             "type": "Button",
             "props": { "label": "Go" },
             "on": { "press": { "action": "go", "params": { "__proto__": "x", "constructor": 1 } } }
+          },
+          "pay": {
+            "type": "Button",
+            "props": { "label": "Pay" },
+            "on": {
+              "press": {
+                "action": "pay",
+                "params": { "__proto__": { "polluted": "yes" }, "amount": 5 }
+              }
+            }
           }
         }
       }
