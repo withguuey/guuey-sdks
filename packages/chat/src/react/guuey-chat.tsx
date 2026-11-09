@@ -112,6 +112,7 @@ import { themeCssVars, type ThemeMode } from "./theme-css.js";
 import { facesCss, useHostFaces } from "./faces.js";
 import { hostContextStyles, hostStyleVariables, type HostStyleVariables } from "../host-style-variables.js";
 import { Transcript, type TranscriptWindowing } from "./transcript.js";
+import { useA2uiEditStore } from "./a2ui.js";
 import type { TranscriptComponents, TranscriptItemContext, ViewSlotProps } from "./components.js";
 import { useTranscript, useTranscriptInputs } from "./use-transcript.js";
 import { useTapEcho } from "./use-tap-echo.js";
@@ -884,6 +885,12 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     ...(effectiveReader !== undefined ? { reader: effectiveReader } : {}),
     ...(onDebugEvent !== undefined ? { onDebugEvent } : {}),
   });
+  // guuey#2382: the A2UI surfaces' local edits are conversation state, so the
+  // kit owns them here and forgets them with the conversation (Clear, New),
+  // beside `invoke.reset()`. Read through a ref: the handle is created once.
+  const a2uiEdits = useA2uiEditStore(plan.items);
+  const a2uiEditsRef = useRef(a2uiEdits);
+  a2uiEditsRef.current = a2uiEdits;
   // guuey#2031 (the history-card path): the props a mounted card's own
   // document paints from, by render session — read off the plan's view roster
   // and the locator resolutions at TAP time only (a shell parse per tap, never
@@ -1434,6 +1441,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         // the typed draft, a pending link ask, queued doorbells — so the
         // device holds nothing of the conversation.
         live.invoke.reset();
+        a2uiEditsRef.current.clear();
         setInput("");
         setPendingLink(null);
         pendingDoorbellsRef.current = [];
@@ -1582,6 +1590,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   const startNewConversation = useCallback((): void => {
     abortSpeech();
     invoke.reset();
+    a2uiEditsRef.current.clear();
     setInput("");
     setPendingImages([]);
     setAttachmentNotice(null);
@@ -1695,6 +1704,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         onViewDiagnosis={onViewDiagnosis}
         {...(onViewRef !== undefined ? { onViewRef } : {})}
         viewProps={effectiveViewProps}
+        a2uiEdits={a2uiEdits}
         onStartNewConversation={startNewConversation}
       />
       {chips.length > 0 && inputs.messages.length === 0 && (

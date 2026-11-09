@@ -6,10 +6,12 @@
  * transport: a tool result carrying a valid carrier draws its surface, and
  * the tool row's old face (the row and its JSON preview) is gone.
  */
+import { createRef } from "react";
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { AgentInvokeAdapters } from "@guuey/agent-client";
-import { GuueyChat } from "./guuey-chat.js";
+import { defaultChatStrings } from "../strings.js";
+import { GuueyChat, type GuueyChatHandle } from "./guuey-chat.js";
 
 afterEach(cleanup);
 
@@ -57,8 +59,12 @@ const TOOL_FRAMES = [
   ]),
 ];
 
-function adapters(): AgentInvokeAdapters {
+const CLOSED = { code: "app:CHAT_FULL", message: "This chat is full.", closedAt: "2026-10-15T00:00:00.000Z" };
+
+/** Every turn draws the same form (same call id, same surface); `closeFirst` ends the first conversation after it. */
+function adapters(opts: { closeFirst?: boolean } = {}): AgentInvokeAdapters {
   const store = new Map<string, string>();
+  let calls = 0;
   return {
     storage: {
       load: (key) => store.get(key) ?? null,
@@ -71,8 +77,14 @@ function adapters(): AgentInvokeAdapters {
       return () => `cmid-${n++}`;
     })(),
     transport: async function* () {
+      calls++;
       yield SESSION_FRAME;
       for (const f of TOOL_FRAMES) yield f;
+      if (opts.closeFirst === true && calls === 1) {
+        yield `event: error\ndata: ${JSON.stringify({ code: CLOSED.code, message: CLOSED.message, threadClosed: CLOSED })}\n\n`;
+        yield `event: done\ndata: ${JSON.stringify({ stopReason: "end_turn", threadId: "t-a2ui", threadClosed: CLOSED })}\n\n`;
+        return;
+      }
       yield DONE_FRAME;
     },
   };
@@ -105,5 +117,42 @@ describe("<GuueyChat> draws A2UI surfaces (guuey#2382)", () => {
     await waitFor(() => expect(container.querySelector(".guuey-chat-a2ui")).not.toBeNull());
     expect(container.querySelector(".guuey-chat-tool")).not.toBeNull();
     expect(container.querySelector(".guuey-chat-data")).toBeNull();
+  });
+});
+
+/**
+ * "The device holds nothing of the conversation": a value typed into a
+ * surface is conversation state, so Clear and New conversation forget it.
+ * The next conversation draws the same surface (same call id, same surface
+ * id, same empty model) and must not show it.
+ */
+describe("<GuueyChat> forgets A2UI edits with the conversation (guuey#2382)", () => {
+  const nameBox = () => screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement;
+
+  it("Clear conversation: the typed value does not carry into the next conversation", async () => {
+    const ref = createRef<GuueyChatHandle>();
+    const { container } = render(<GuueyChat ref={ref} endpointUrl="https://pod.example/agent/invoke" adapters={adapters()} />);
+    send();
+    await waitFor(() => expect(container.querySelector(".guuey-chat-a2ui")).not.toBeNull());
+    fireEvent.change(nameBox(), { target: { value: "alice@x.example" } });
+    expect(nameBox().value).toBe("alice@x.example");
+    act(() => ref.current!.clearConversation());
+    expect(container.querySelector(".guuey-chat-a2ui")).toBeNull();
+    send();
+    await waitFor(() => expect(container.querySelector(".guuey-chat-a2ui")).not.toBeNull());
+    expect(nameBox().value).toBe("");
+  });
+
+  it("New conversation: the typed value does not carry into the next conversation", async () => {
+    const { container } = render(<GuueyChat endpointUrl="https://pod.example/agent/invoke" adapters={adapters({ closeFirst: true })} />);
+    send();
+    await waitFor(() => expect(screen.getByText(defaultChatStrings.threadClosedTitle)).toBeTruthy());
+    fireEvent.change(nameBox(), { target: { value: "alice@x.example" } });
+    expect(nameBox().value).toBe("alice@x.example");
+    fireEvent.click(screen.getByRole("button", { name: defaultChatStrings.threadClosedStartNew }));
+    await waitFor(() => expect(container.querySelector(".guuey-chat-a2ui")).toBeNull());
+    send();
+    await waitFor(() => expect(container.querySelector(".guuey-chat-a2ui")).not.toBeNull());
+    expect(nameBox().value).toBe("");
   });
 });
