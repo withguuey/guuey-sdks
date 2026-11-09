@@ -657,7 +657,7 @@ function messageWithoutToolResultMeta(msg: AgMessage): AgMessage {
  * Deliberately vendor-agnostic: no `_meta` key list to maintain, and the
  * next vendor's expiring credential is unpersistable by construction.
  */
-function withoutToolResultMeta(
+export function withoutToolResultMeta(
   block: Extract<AgMessage["content"][number], { type: "tool-result" }>,
 ): typeof block {
   if (block._meta === undefined) return block;
