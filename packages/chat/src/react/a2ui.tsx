@@ -284,6 +284,17 @@ function sameJson(a: JsonValue | null, b: JsonValue | null): boolean {
 
 // ─── The surface ────────────────────────────────────────────────────────
 
+/** What a press that sent nothing says beside its button: the host's outcome, or why the check refused it. */
+type PressNote = Exclude<A2uiActionOutcome, "sent"> | "undeclared" | "too-large" | "fields";
+const PRESS_NOTE = {
+  busy: "a2uiWaitForReply",
+  closed: "composerUnavailable",
+  refused: "a2uiCantSend",
+  undeclared: "a2uiCantSend",
+  "too-large": "a2uiTooLong",
+  fields: "a2uiCheckAnswers",
+} as const satisfies { [note in PressNote]: keyof ChatStrings };
+
 interface Env {
   item: A2uiItem;
   strings: ChatStrings;
@@ -293,8 +304,8 @@ interface Env {
   write(key: string, value: JsonValue, server: JsonValue | null): void;
   /** Inputs take no edits while an action for the surface is in flight or answered. */
   locked: boolean;
-  /** The host's send path; absent, action buttons draw disabled with their own note. */
-  send: ((node: NodeOf<"Button">) => string | null) | undefined;
+  /** The host's send path, answering the note a press leaves; absent, action buttons draw disabled with their own note. */
+  send: ((node: NodeOf<"Button">) => PressNote | null) | undefined;
   /** The error a field shows since the last press, by its data path. */
   errors: { readonly [path: string]: string };
   /** The host would take a press now. */
@@ -419,7 +430,7 @@ export function DefaultA2ui({ item, ctx }: { item: A2uiItem; ctx: A2uiRenderCont
             if (!check.ok) {
               jump.current = true;
               setErrors(Object.fromEntries(Object.entries(check.fields).map(([path, error]) => [path, fieldError(error, strings)])));
-              return check.form === "too-large" ? strings.a2uiTooLong : check.form === "undeclared" ? strings.a2uiCantSend : strings.a2uiCheckAnswers;
+              return check.form ?? "fields";
             }
             setErrors({});
             const pairs: Array<{ label: string; value: string }> = [];
@@ -437,7 +448,7 @@ export function DefaultA2ui({ item, ctx }: { item: A2uiItem; ctx: A2uiRenderCont
               context: check.context,
               summary: { label: words(node.label) ?? node.label, pairs },
             });
-            return { sent: null, busy: strings.a2uiWaitForReply, closed: strings.composerUnavailable, refused: strings.a2uiCantSend }[outcome];
+            return outcome === "sent" ? null : outcome;
           },
     errors,
     ready: ctx.a2uiActionsReady === true,
@@ -613,17 +624,19 @@ function Words({ text }: { text: string }): ReactNode {
  * the last press did (wait, or why nothing was sent).
  */
 function A2uiButton({ node, env }: { node: NodeOf<"Button">; env: Env }): ReactNode {
-  const [said, setSaid] = useState<string | null>(null);
+  const [said, setSaid] = useState<PressNote | null>(null);
   const [confirming, setConfirming] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (confirming) cancel.current?.focus();
   }, [confirming]);
-  // A surface that locks closes an open confirm; a wait note goes once the host can take a press.
-  const { send, strings, locked } = env;
-  if (confirming && locked) setConfirming(false);
-  if ((said === strings.a2uiWaitForReply || said === strings.composerUnavailable) && env.ready) setSaid(null);
+  // A surface that locks closes an open confirm; a wait or closed note goes once the host can take a press.
+  const { send, strings, locked, ready } = env;
+  useEffect(() => {
+    if (locked) setConfirming(false);
+    if (ready && (said === "busy" || said === "closed")) setSaid(null);
+  }, [locked, ready, said]);
   const label = words(node.label);
   // A button with no words cannot say what it does: the placeholder, like a missing label.
   if (label === null) return <Unknown env={env} />;
@@ -645,7 +658,7 @@ function A2uiButton({ node, env }: { node: NodeOf<"Button">; env: Env }): ReactN
   const { confirm } = node;
   const noteId = env.idFor(node.id, "note");
   const confirmId = env.idFor(node.id, "confirm");
-  const note = send === undefined ? strings.a2uiUnavailable : said;
+  const note = send === undefined ? strings.a2uiUnavailable : said === null ? null : strings[PRESS_NOTE[said]];
   const done = (confirmed: boolean): void => {
     setConfirming(false);
     ref.current?.focus();
@@ -671,7 +684,7 @@ function A2uiButton({ node, env }: { node: NodeOf<"Button">; env: Env }): ReactN
       >
         {note}
       </span>
-      {confirming && confirm !== null ? (
+      {confirming && !locked && confirm !== null ? (
         <div
           className="guuey-chat-a2ui-card guuey-chat-a2ui-column guuey-chat-a2ui-gap-sm"
           role="alertdialog"

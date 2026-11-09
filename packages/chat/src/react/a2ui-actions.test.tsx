@@ -464,4 +464,17 @@ describe("review r2 — no stand-in value; a closed composer's note is temporary
     act(() => view.rerender(<Transcript plan={planOf([ORDER])} window={false} {...noop} onA2uiAction={h.onA2uiAction} a2uiActionsReady />));
     expect(within(view.surface).queryByText(S.composerUnavailable)).toBeNull();
   });
+  it("the note is keyed on the press's outcome, never its words: a refusal worded like a wait stays once the host is ready", () => {
+    // A host may word two notes alike; only a wait or a closed composer clears when a press can go.
+    const same = "Not now.";
+    const strings = { ...S, a2uiWaitForReply: same, a2uiCantSend: same };
+    const plan = planOf([ORDER]);
+    const h = host("refused");
+    const view = draw(plan, { strings, onA2uiAction: h.onA2uiAction, a2uiActionsReady: false });
+    fireEvent.change(box(view.surface, "Name"), { target: { value: "Ada" } });
+    fireEvent.click(button(view.surface, "Place order"));
+    expect(within(view.surface).getByText(same)).toBeTruthy();
+    act(() => view.rerender(<Transcript plan={plan} window={false} {...noop} strings={strings} onA2uiAction={h.onA2uiAction} a2uiActionsReady />));
+    expect(within(view.surface).getByText(same)).toBeTruthy();
+  });
 });
