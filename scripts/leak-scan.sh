@@ -53,6 +53,7 @@ ALLOW=(
   'guuey_widget_kQ7ZvN3xLeakCanaryTail|widget-auth index.test.ts — leak-canary literal, not a key'
   'sk-ant-api03-deadbeefdeadbeef|config agent.test.ts fixture — deadbeef sentinel'
   'check-templates\.mjs:[0-9]+:.*/workspaces/|the publish guard names its own needle'
+  '/workspaces/[^/ ]+/keys/providers|the public workspace provider-key API route, /v1/workspaces/:ref/keys/providers, not a filesystem path'
 )
 
 FORBIDDEN_FILES=(
