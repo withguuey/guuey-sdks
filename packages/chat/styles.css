@@ -826,7 +826,7 @@
   font-family: var(--guuey-chat-mono-font, var(--_guuey-chat-mono-font, ui-monospace, monospace));
   font-size: 0.88em;
   padding: 0 4px;
-  border-radius: 5px;
+  border-radius: calc(var(--guuey-chat-radius, var(--_guuey-chat-radius)) / 2);
   background: color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 7%, transparent);
 }
 /* A code fence in Text stays its literal source: indentation and runs of spaces kept, long lines wrapped. */
@@ -837,7 +837,7 @@
 .guuey-chat-a2ui-open {
   color: var(--guuey-chat-link, var(--_guuey-chat-link, inherit));
   text-decoration: underline;
-  border-radius: 4px;
+  border-radius: calc(var(--guuey-chat-radius, var(--_guuey-chat-radius)) / 2);
 }
 /* A gated link in Text is one bidi isolate, so agent text around it cannot
    reorder its words and host (spec §7.1). */
@@ -864,6 +864,7 @@
   width: fit-content;
   max-width: 100%;
   border: 1px solid color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 12%, transparent);
+  /* A true pill (a one-line chip), not a frame: 999px, whatever the theme. */
   border-radius: 999px;
   padding: 2px 10px;
   font-size: 0.85em;
@@ -877,7 +878,7 @@
   gap: 4px;
   min-height: 36px;
   padding: 6px 14px;
-  border-radius: 8px;
+  border-radius: var(--guuey-chat-radius, var(--_guuey-chat-radius));
   border: 1px solid color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 15%, transparent);
   background: var(--guuey-chat-surface, var(--_guuey-chat-surface));
   font: inherit;
@@ -938,7 +939,7 @@
   min-height: 36px;
   padding: 6px 10px;
   border: 1px solid var(--guuey-chat-canvas-muted, var(--_guuey-chat-canvas-muted));
-  border-radius: 8px;
+  border-radius: var(--guuey-chat-radius, var(--_guuey-chat-radius));
   background: var(--guuey-chat-canvas, var(--_guuey-chat-canvas));
   color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
   caret-color: var(--guuey-chat-cue, var(--_guuey-chat-cue));
@@ -996,7 +997,7 @@ textarea.guuey-chat-a2ui-input {
   min-height: 36px;
   padding: 6px 10px;
   border: 1px solid var(--guuey-chat-canvas-muted, var(--_guuey-chat-canvas-muted));
-  border-radius: 8px;
+  border-radius: var(--guuey-chat-radius, var(--_guuey-chat-radius));
   background: var(--guuey-chat-canvas, var(--_guuey-chat-canvas));
   color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
   font: inherit;
@@ -1019,7 +1020,7 @@ textarea.guuey-chat-a2ui-input {
   max-height: 16rem;
   overflow-y: auto;
   border: 1px solid color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 10%, transparent);
-  border-radius: 8px;
+  border-radius: var(--guuey-chat-radius, var(--_guuey-chat-radius));
 }
 .guuey-chat-a2ui-filter {
   margin: 4px 0;
@@ -1041,6 +1042,7 @@ textarea.guuey-chat-a2ui-input {
   margin: 0;
   padding: 6px 12px;
   border: 1px solid color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 12%, transparent);
+  /* A true pill (a one-line chip), not a frame: 999px, whatever the theme. */
   border-radius: 999px;
   background: var(--guuey-chat-surface, var(--_guuey-chat-surface));
   color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));

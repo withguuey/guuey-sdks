@@ -130,6 +130,20 @@ describe("the A2UI surface's look (spec §5.3)", () => {
     expect(value(".guuey-chat-a2ui-host", "direction")).toBe("ltr");
   });
 
+  it("every A2UI radius follows the theme's radius token; 999px is kept for the two true pills", () => {
+    const token = "var(--guuey-chat-radius, var(--_guuey-chat-radius))";
+    const pills = new Set([".guuey-chat-a2ui-image-chip", ".guuey-chat-a2ui-superseded"]);
+    const radii = rules().flatMap((r) => {
+      const v = new RegExp(`(?:^|;)\\s*border-radius:\\s*([^;]+)`).exec(r.body)?.[1]?.trim();
+      return v === undefined ? [] : r.selectors.filter((s) => s.includes("guuey-chat-a2ui")).map((s) => ({ s, v }));
+    });
+    expect(radii.length).toBeGreaterThan(0);
+    for (const { s, v } of radii) {
+      if (pills.has(s)) expect(v, s).toBe("999px");
+      else expect(v.includes(token), `${s}: ${v}`).toBe(true);
+    }
+  });
+
   it("agent text sits in a bidi isolate", () => {
     for (const selector of [".guuey-chat-a2ui", ".guuey-chat-a2ui-text", ".guuey-chat-a2ui-label", ".guuey-chat-a2ui-superseded"]) {
       expect(value(selector, "unicode-bidi"), selector).toBe("isolate");
