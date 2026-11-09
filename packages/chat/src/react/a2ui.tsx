@@ -16,12 +16,14 @@
  *   item's display and never derives a URL.
  * - Inputs edit the surface's LOCAL data model, held by the host at
  *   transcript level ({@link A2uiEditStore}, spec §5.4), so a row that
- *   unmounts keeps its edits. A newer server value at a path wins over an
- *   edit made against the older one; untouched edits survive.
+ *   unmounts keeps its edits. An edit lives while the revision it was made
+ *   on is in the plan and every later revision keeps the server value it was
+ *   made against: a newer, different server value drops it for good, and a
+ *   deleted surface drops its edits. Untouched edits survive.
  * - Actions are S4's. With no action path wired, an action button is drawn
  *   disabled and described by one "Not available here" note (§9.1.5).
  */
-import { useId, useMemo, useState, type ComponentType, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import type { JsonValue } from "@silverprotocol/core";
 import { tapText } from "@guuey/mcp-apps-host/narrowing";
 import { A2UI_LIMITS, truncateUnits } from "../a2ui/limits.js";
@@ -38,27 +40,34 @@ import type {
   A2uiOrientation,
   A2uiTextVariant,
 } from "../a2ui/schema.js";
-import type { A2uiItem } from "../types.js";
+import type { A2uiItem, DisplayItem, ItemKey } from "../types.js";
 import type { ChatStrings } from "../strings.js";
 import { InlineRichText, type InlineLinkGate } from "./markdown.js";
 
 // ─── The host-owned edit store (§5.4) ───────────────────────────────────
 
-/** One local edit, with the server value it was made against. */
+/** One local edit, with the revision and the server value it was made against. */
 export interface A2uiLocalEdit {
   value: JsonValue;
-  /** The server value at that key when the edit was made: a newer, different server value wins. */
+  /** The server value at that key when the edit was made: a later, different server value drops the edit. */
   base: JsonValue | null;
+  /** The plan item (the surface's revision) the edit was made on: when it leaves the plan, so does the edit. */
+  at: ItemKey;
 }
 
 /**
  * A surface's local edits, held at transcript level (spec §5.4). `key` is the
  * data path an input is bound to (`/name`), or `#<componentId>` for an input
  * with a literal value (editable, never addressable by an action).
+ *
+ * `get` answers only a LIVE edit ({@link useA2uiEditStore} holds the rule); a
+ * host that supplies its own store keeps the same rule. `clear` forgets every
+ * edit: the host calls it when the conversation is cleared or replaced.
  */
 export interface A2uiEditStore {
   get(surfaceId: string, key: string): A2uiLocalEdit | undefined;
   set(surfaceId: string, key: string, edit: A2uiLocalEdit): void;
+  clear(): void;
 }
 
 /** What a host's icon component receives: the registry name and the accessible name (§5.3). */
@@ -67,15 +76,103 @@ export interface A2uiIconProps {
   label: string | null;
 }
 
-/** The kit's edit store: a transcript-level map; each write is a new map, so the rows re-render. */
-export function useA2uiEditStore(): A2uiEditStore {
-  const [edits, setEdits] = useState<ReadonlyMap<string, A2uiLocalEdit>>(() => new Map());
+interface StoredEdit {
+  surfaceId: string;
+  key: string;
+  edit: A2uiLocalEdit;
+}
+
+const entryId = (surfaceId: string, key: string): string => JSON.stringify([surfaceId, key]);
+
+/** The first node of a tree with this id. */
+function findNode(node: A2uiNode | null, id: string): A2uiNode | null {
+  if (node === null) return null;
+  if (node.id === id) return node;
+  switch (node.component) {
+    case "Row":
+    case "Column":
+    case "List":
+      for (const child of node.children) {
+        const found = findNode(child, id);
+        if (found !== null) return found;
+      }
+      return null;
+    case "Card":
+      return findNode(node.child, id);
+    default:
+      return null;
+  }
+}
+
+/**
+ * The server value a revision holds at an edit key, or `undefined` when the
+ * key no longer names an input there (the component is gone, or now reads a
+ * path): the edit has nothing left to stand over.
+ */
+function serverAt(item: A2uiItem, key: string): JsonValue | null | undefined {
+  if (!key.startsWith("#")) return readA2uiModel(item.dataModel, key) ?? null;
+  const node = findNode(item.root, key.slice(1));
+  const bound =
+    node?.component === "TextField" || node?.component === "ChoicePicker" ? node.value : node?.component === "CheckBox" ? node.checked : undefined;
+  if (bound === undefined) return undefined;
+  const server = serverValue(item, bound);
+  return server.key === null ? server.value : undefined;
+}
+
+/**
+ * The edits that are dead under this plan: the revision an edit was made on
+ * is no longer in it (the surface was deleted, or the transcript cleared), or
+ * a later revision of the surface holds a different server value at its key.
+ * A dead edit never comes back, even if the value returns to its base.
+ */
+function deadEdits(edits: ReadonlyMap<string, StoredEdit>, items: readonly DisplayItem[]): ReadonlyMap<string, StoredEdit> {
+  const dead = new Map<string, StoredEdit>();
+  if (edits.size === 0) return dead;
+  const revisions = new Map<string, A2uiItem[]>();
+  for (const item of items) {
+    if (item.kind === "a2ui") revisions.set(item.surfaceId, [...(revisions.get(item.surfaceId) ?? []), item]);
+  }
+  for (const [id, stored] of edits) {
+    const list = revisions.get(stored.surfaceId) ?? [];
+    const at = list.findIndex((item) => item.key === stored.edit.at);
+    const overridden = (later: A2uiItem): boolean => {
+      const server = serverAt(later, stored.key);
+      return server === undefined || !sameJson(server, stored.edit.base);
+    };
+    if (at < 0 || list.slice(at + 1).some(overridden)) dead.set(id, stored);
+  }
+  return dead;
+}
+
+/**
+ * The kit's edit store over a plan's items: a transcript-level map, each
+ * write a new map so the rows re-render. `get` hides a dead edit at once (a
+ * pure read of the plan), and an effect then removes it from the map, so it
+ * cannot come back; nothing is written during render.
+ */
+export function useA2uiEditStore(items: readonly DisplayItem[]): A2uiEditStore {
+  const [edits, setEdits] = useState<ReadonlyMap<string, StoredEdit>>(() => new Map());
+  const dead = useMemo(() => deadEdits(edits, items), [edits, items]);
+  useEffect(() => {
+    if (dead.size === 0) return;
+    setEdits((prev) => {
+      const next = new Map(prev);
+      // Only the entry judged dead: an edit written since then stays.
+      for (const [id, stored] of dead) if (next.get(id) === stored) next.delete(id);
+      return next;
+    });
+  }, [dead]);
+  const clear = useCallback(() => setEdits(new Map()), []);
   return useMemo(
     () => ({
-      get: (surfaceId, key) => edits.get(JSON.stringify([surfaceId, key])),
-      set: (surfaceId, key, edit) => setEdits((prev) => new Map(prev).set(JSON.stringify([surfaceId, key]), edit)),
+      get: (surfaceId, key) => {
+        const id = entryId(surfaceId, key);
+        return dead.has(id) ? undefined : edits.get(id)?.edit;
+      },
+      set: (surfaceId, key, edit) => setEdits((prev) => new Map(prev).set(entryId(surfaceId, key), { surfaceId, key, edit })),
+      clear,
     }),
-    [edits],
+    [edits, dead, clear],
   );
 }
 
@@ -207,7 +304,9 @@ function hasAction(node: A2uiNode): boolean {
 
 /** The kit's default `a2ui` slot. */
 export function DefaultA2ui({ item, ctx }: { item: A2uiItem; ctx: A2uiRenderContext }): ReactNode {
-  const own = useA2uiEditStore();
+  // A row drawn outside a transcript keeps its own edits over itself alone.
+  const ownItems = useMemo(() => [item], [item]);
+  const own = useA2uiEditStore(ownItems);
   const store = ctx.a2uiEdits ?? own;
   const base = useId();
   if (item.phase === "superseded") {
@@ -227,7 +326,7 @@ export function DefaultA2ui({ item, ctx }: { item: A2uiItem; ctx: A2uiRenderCont
       const edit = store.get(item.surfaceId, key);
       return edit !== undefined && sameJson(edit.base, server) ? edit.value : server;
     },
-    write: (key, value, server) => store.set(item.surfaceId, key, { value, base: server }),
+    write: (key, value, server) => store.set(item.surfaceId, key, { value, base: server, at: item.key }),
     locked: item.phase !== "open",
     unavailableId: `${base}-unavailable`,
     idFor: (componentId, part) => `${base}-${domIdSegment(componentId)}-${part}`,

@@ -196,7 +196,7 @@ export function Transcript(props: TranscriptProps): ReactNode {
     [components],
   );
   // guuey#2382: the A2UI surfaces' local edits live here, above the rows (spec §5.4).
-  const ownEdits = useA2uiEditStore();
+  const ownEdits = useA2uiEditStore(plan.items);
   const edits = a2uiEdits ?? ownEdits;
   const ctx: TranscriptItemContext = useMemo(
     () => ({

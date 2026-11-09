@@ -24,7 +24,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { AgBlock, AgReduceResult, JsonValue } from "@silverprotocol/core";
 import { planTranscript } from "../plan.js";
 import { calmPolicy, type TranscriptPolicy } from "../policy.js";
@@ -32,7 +32,7 @@ import { defaultChatStrings } from "../strings.js";
 import { isPolicyAImageSrc } from "../a2ui/url-policy.js";
 import type { TranscriptInputs, TranscriptPlan } from "../types.js";
 import { Transcript, type TranscriptProps } from "./transcript.js";
-import type { A2uiIconProps } from "./a2ui.js";
+import { useA2uiEditStore, type A2uiEditStore, type A2uiIconProps } from "./a2ui.js";
 
 afterEach(cleanup);
 
@@ -395,8 +395,11 @@ describe("local edits are transcript state (§5.4)", () => {
     const plan = planOf([form({ name: "Ada", city: "Lisbon" })]);
     const { container, rerender } = drawPlan(plan);
     fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Grace" } });
-    // The row leaves the DOM (windowed out, or the plan briefly drops it) and comes back.
-    rerender(<Transcript plan={{ ...plan, items: plan.items.filter((i) => i.kind !== "a2ui") }} window={false} {...noop} />);
+    // The row's component unmounts while the plan still holds the revision
+    // (windowed out, or a host slot swapped in and back) and mounts again. A
+    // revision that leaves the PLAN takes its edits with it (the next tests).
+    const hidden = { a2ui: () => null };
+    rerender(<Transcript plan={plan} window={false} {...noop} components={hidden} />);
     expect(container.querySelector(".guuey-chat-a2ui")).toBeNull();
     rerender(<Transcript plan={plan} window={false} {...noop} />);
     expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Grace");
@@ -414,13 +417,73 @@ describe("local edits are transcript state (§5.4)", () => {
     expect((screen.getByRole("textbox", { name: "City" }) as HTMLInputElement).value).toBe("Porto");
   });
 
+  it("an edit the server overrode is dropped for good: it does not come back when the value returns to its base", () => {
+    const agree = (value: boolean): Json[] => [
+      create("g", "Terms"),
+      components("g", [{ id: "root", component: "CheckBox", label: "Agree", checked: { path: "/agree" } }]),
+      dataModel("g", { agree: value }),
+    ];
+    const first = planOf([agree(false)]);
+    const { rerender } = drawPlan(first);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Agree" }));
+    expect((screen.getByRole("checkbox", { name: "Agree" }) as HTMLInputElement).checked).toBe(true);
+    // The agent sets it true, then clears it: false → true → false.
+    const third = planOf([agree(false), [dataModel("g", { agree: true })], [dataModel("g", { agree: false })]]);
+    rerender(<Transcript plan={third} window={false} {...noop} />);
+    expect((screen.getByRole("checkbox", { name: "Agree" }) as HTMLInputElement).checked).toBe(false);
+  });
+
+  it("an edit lives as long as its surface: after deleteSurface, a surface recreated under the same id starts empty", () => {
+    const fresh = (): Json[] => [
+      create("c", "Contact"),
+      components("c", [{ id: "root", component: "TextField", label: "Email", value: { path: "/email" } }]),
+    ];
+    const first = planOf([fresh()]);
+    const { rerender } = drawPlan(first);
+    fireEvent.change(screen.getByRole("textbox", { name: "Email" }), { target: { value: "bob@x.example" } });
+    const deleted = planOf([fresh(), [{ version: V, deleteSurface: { surfaceId: "c" } }]]);
+    rerender(<Transcript plan={deleted} window={false} {...noop} />);
+    expect(screen.queryByRole("textbox", { name: "Email" })).toBeNull();
+    const recreated = planOf([fresh(), [{ version: V, deleteSurface: { surfaceId: "c" } }], fresh()]);
+    rerender(<Transcript plan={recreated} window={false} {...noop} />);
+    expect((screen.getByRole("textbox", { name: "Email" }) as HTMLInputElement).value).toBe("");
+  });
+
+  it("an edit to a literal value is dropped once a later revision changes that literal", () => {
+    const note = (text: string): Json[] => [
+      create("n", "Note"),
+      components("n", [{ id: "root", component: "TextField", label: "Note", value: text }]),
+    ];
+    const { rerender } = drawPlan(planOf([note("draft")]));
+    fireEvent.change(screen.getByRole("textbox", { name: "Note" }), { target: { value: "mine" } });
+    rerender(<Transcript plan={planOf([note("draft"), [components("n", [{ id: "root", component: "TextField", label: "Note", value: "draft" }])]])} window={false} {...noop} />);
+    expect((screen.getByRole("textbox", { name: "Note" }) as HTMLInputElement).value).toBe("mine");
+    rerender(<Transcript plan={planOf([note("draft"), [components("n", [{ id: "root", component: "TextField", label: "Note", value: "final" }])]])} window={false} {...noop} />);
+    expect((screen.getByRole("textbox", { name: "Note" }) as HTMLInputElement).value).toBe("final");
+  });
+
+  it("the kit's store forgets every edit on clear()", () => {
+    const plan = planOf([form({ name: "Ada", city: "Lisbon" })]);
+    let store: A2uiEditStore | undefined;
+    function Host() {
+      store = useA2uiEditStore(plan.items);
+      return <Transcript plan={plan} window={false} {...noop} a2uiEdits={store} />;
+    }
+    render(<Host />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Grace" } });
+    expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Grace");
+    act(() => store!.clear());
+    expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Ada");
+  });
+
   it("a host's own store receives the edits (the slot the native kit shares)", () => {
     const writes: Array<[string, string, Json]> = [];
-    const store = {
+    const store: A2uiEditStore = {
       get: () => undefined,
-      set: (surfaceId: string, key: string, edit: { value: Json }) => {
+      set: (surfaceId, key, edit) => {
         writes.push([surfaceId, key, edit.value]);
       },
+      clear: () => {},
     };
     drawPlan(planOf([form({ name: "Ada", city: "Lisbon" })]), { a2uiEdits: store });
     fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Grace" } });
