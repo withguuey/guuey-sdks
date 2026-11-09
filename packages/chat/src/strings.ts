@@ -263,6 +263,11 @@ export interface ChatStrings {
    * group, the long picker's field row).
    */
   a2uiRequired: string;
+  /**
+   * guuey#2382: read by a screen reader, never drawn: what a long A2UI choice
+   * list's filter announces as it narrows ({@link a2uiNoMatch} when nothing matches).
+   */
+  a2uiMatches: (count: number) => string;
 
   /** #192 debug-preset marker (calm never shows it — spec §3, F10). */
   recoveredFromHistory: string;
@@ -553,6 +558,7 @@ export const defaultChatStrings: ChatStrings = {
   a2uiFilter: "Filter options",
   a2uiNoMatch: "No matches",
   a2uiRequired: "Required",
+  a2uiMatches: (count) => (count === 1 ? "1 option" : `${count} options`),
 
   recoveredFromHistory: "recovered from history",
 

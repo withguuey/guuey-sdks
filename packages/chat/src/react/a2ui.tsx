@@ -566,13 +566,17 @@ function A2uiChoicePicker({ node, env }: { node: NodeOf<"ChoicePicker">; env: En
   }
 
   const panelId = env.idFor(node.id, "options");
+  const listId = env.idFor(node.id, "list");
   const summaryId = env.idFor(node.id, "summary");
   const summary = options
     .filter((o) => chosen.includes(o.value))
     .map((o) => o.label)
     .join(", ");
   const needle = filter.trim().toLowerCase();
-  const shown = options.length > FILTER_OPTIONS && needle !== "" ? options.filter((o) => o.label.toLowerCase().includes(needle)) : options;
+  const filtered = options.length > FILTER_OPTIONS;
+  const shown = filtered && needle !== "" ? options.filter((o) => o.label.toLowerCase().includes(needle)) : options;
+  // What the filter's live region says: nothing until it is typed in, then the count.
+  const announcement = needle === "" ? "" : shown.length === 0 ? env.strings.a2uiNoMatch : env.strings.a2uiMatches(shown.length);
   return (
     <div className="guuey-chat-a2ui-choice">
       {label !== null ? (
@@ -596,17 +600,26 @@ function A2uiChoicePicker({ node, env }: { node: NodeOf<"ChoicePicker">; env: En
       {requiredNote}
       {open ? (
         <div className="guuey-chat-a2ui-options" id={panelId} {...groupSemantics} {...(label !== null ? { "aria-labelledby": labelId } : {})}>
-          {options.length > FILTER_OPTIONS ? (
-            <input
-              type="search"
-              className="guuey-chat-a2ui-filter"
-              aria-label={env.strings.a2uiFilter}
-              autoComplete="off"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-            />
+          {filtered ? (
+            <>
+              <input
+                type="search"
+                className="guuey-chat-a2ui-filter"
+                aria-label={env.strings.a2uiFilter}
+                aria-controls={listId}
+                autoComplete="off"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              />
+              {/* Mounted with the filter, so each change is announced, politely. */}
+              <p className="guuey-chat-visually-hidden" role="status" aria-live="polite">
+                {announcement}
+              </p>
+            </>
           ) : null}
-          {shown.length > 0 ? rows(shown) : <p className="guuey-chat-a2ui-empty">{env.strings.a2uiNoMatch}</p>}
+          <div className="guuey-chat-a2ui-option-list" id={listId}>
+            {shown.length > 0 ? rows(shown) : <p className="guuey-chat-a2ui-empty">{env.strings.a2uiNoMatch}</p>}
+          </div>
         </div>
       ) : null}
     </div>

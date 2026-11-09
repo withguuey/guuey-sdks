@@ -1024,6 +1024,10 @@ textarea.guuey-chat-a2ui-input {
 .guuey-chat-a2ui-filter {
   margin: 4px 0;
 }
+.guuey-chat-a2ui-option-list {
+  display: flex;
+  flex-direction: column;
+}
 .guuey-chat-a2ui-empty,
 .guuey-chat-a2ui-unknown {
   margin: 0;

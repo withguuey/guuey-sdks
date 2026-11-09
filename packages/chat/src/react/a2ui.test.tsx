@@ -439,7 +439,7 @@ const ALLOWED_ATTRIBUTES = new Set([
   "class", "id", "dir", "role", "aria-level", "aria-label", "aria-labelledby", "aria-describedby",
   "aria-orientation", "aria-required", "aria-expanded", "aria-controls", "aria-hidden", "href", "target",
   "rel", "referrerpolicy", "src", "alt", "type", "name", "value", "placeholder", "maxlength", "min", "max",
-  "disabled", "readonly", "checked", "for", "autocomplete",
+  "disabled", "readonly", "checked", "for", "autocomplete", "aria-live",
 ]);
 
 function scan(root: HTMLElement): string[] {
@@ -873,6 +873,31 @@ describe("(g) ChoicePicker", () => {
     fireEvent.change(filter, { target: { value: "zzz" } });
     expect(within(surface).queryAllByRole("radio")).toHaveLength(0);
     expect(surface.textContent).toContain(S.a2uiNoMatch);
+  });
+
+  it("the filter announces its result in a polite live region, mounted with the filter and quiet until it is typed in", () => {
+    const { surface } = draw([{ id: "root", component: "ChoicePicker", label: "Country", options: opts(13), value: { path: "/c" } }]);
+    fireEvent.click(within(surface).getByRole("button", { name: /Country/ }));
+    const status = within(surface).getByRole("status");
+    expect(status.getAttribute("aria-live")).toBe("polite");
+    expect(status.textContent).toBe("");
+    const filter = within(surface).getByRole("searchbox", { name: S.a2uiFilter });
+    // The box names the list it narrows.
+    const list = document.getElementById(filter.getAttribute("aria-controls") ?? "");
+    expect(list !== null && within(list).getAllByRole("radio").length).toBe(13);
+    fireEvent.change(filter, { target: { value: "Option 1" } });
+    expect(within(surface).getByRole("status")).toBe(status);
+    expect(status.textContent).toBe(S.a2uiMatches(5));
+    fireEvent.change(filter, { target: { value: "Option 13" } });
+    expect(status.textContent).toBe(S.a2uiMatches(1));
+    fireEvent.change(filter, { target: { value: "zzz" } });
+    expect(status.textContent).toBe(S.a2uiNoMatch);
+    fireEvent.change(filter, { target: { value: "" } });
+    expect(status.textContent).toBe("");
+  });
+
+  it("the default count words", () => {
+    expect([S.a2uiMatches(1), S.a2uiMatches(5)]).toEqual(["1 option", "5 options"]);
   });
 });
 
