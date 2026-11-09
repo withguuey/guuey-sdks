@@ -725,30 +725,37 @@ function OpenChoice({ choice }: { choice: Choice }): ReactNode {
         </span>
       </button>
       {choice.requiredNote}
-      {open ? (
-        <div className="guuey-chat-a2ui-options" id={panelId} {...choice.groupSemantics} {...(label !== null ? { "aria-labelledby": labelId } : {})}>
-          {filtered ? (
-            <>
-              <input
-                type="search"
-                className="guuey-chat-a2ui-filter"
-                aria-label={env.strings.a2uiFilter}
-                aria-controls={listId}
-                autoComplete="off"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-              />
-              {/* Mounted with the filter, so each change is announced, politely. */}
-              <p className="guuey-chat-visually-hidden" role="status" aria-live="polite">
-                {announcement}
-              </p>
-            </>
-          ) : null}
-          <div className="guuey-chat-a2ui-option-list" id={listId}>
-            {shown.length > 0 ? choice.rows(shown) : <p className="guuey-chat-a2ui-empty">{env.strings.a2uiNoMatch}</p>}
-          </div>
+      {/* Always in the DOM, so aria-controls never names a missing id (the
+          WAI-ARIA disclosure pattern); `hidden` keeps it out of sight, the
+          accessibility tree and Tab while closed. */}
+      <div
+        className="guuey-chat-a2ui-options"
+        id={panelId}
+        hidden={!open}
+        {...choice.groupSemantics}
+        {...(label !== null ? { "aria-labelledby": labelId } : {})}
+      >
+        {filtered ? (
+          <>
+            <input
+              type="search"
+              className="guuey-chat-a2ui-filter"
+              aria-label={env.strings.a2uiFilter}
+              aria-controls={listId}
+              autoComplete="off"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+            />
+            {/* In the DOM before the first keystroke, so each change is announced, politely. */}
+            <p className="guuey-chat-visually-hidden" role="status" aria-live="polite">
+              {announcement}
+            </p>
+          </>
+        ) : null}
+        <div className="guuey-chat-a2ui-option-list" id={listId}>
+          {shown.length > 0 ? choice.rows(shown) : <p className="guuey-chat-a2ui-empty">{env.strings.a2uiNoMatch}</p>}
         </div>
-      ) : null}
+      </div>
     </div>
   );
 }

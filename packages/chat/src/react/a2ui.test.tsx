@@ -107,10 +107,10 @@ function draw(list: Json[], opts: { model?: Json; title?: string; extra?: Partia
   return { ...view, surface, plan };
 }
 
-/** Focusable controls in DOM order: what Tab walks. */
+/** Focusable controls in DOM order: what Tab walks (never inside a `hidden` panel). */
 function tabbables(root: HTMLElement): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>("a[href], button, input, textarea, select")).filter(
-    (el) => !(el as HTMLButtonElement).disabled && el.tabIndex >= 0,
+    (el) => !(el as HTMLButtonElement).disabled && el.tabIndex >= 0 && el.closest("[hidden]") === null,
   );
 }
 
@@ -514,7 +514,7 @@ const ALLOWED_ELEMENTS = new Set([
 ]);
 const ALLOWED_ATTRIBUTES = new Set([
   "class", "id", "dir", "role", "aria-level", "aria-label", "aria-labelledby", "aria-describedby",
-  "aria-orientation", "aria-required", "aria-expanded", "aria-controls", "aria-hidden", "href", "target",
+  "aria-orientation", "aria-required", "aria-expanded", "aria-controls", "aria-hidden", "hidden", "href", "target",
   "rel", "referrerpolicy", "src", "alt", "type", "name", "value", "placeholder", "maxlength", "min", "max",
   "disabled", "readonly", "checked", "for", "autocomplete", "aria-live",
 ]);
@@ -850,6 +850,25 @@ describe("(g) ChoicePicker", () => {
     const panel = surface.querySelector(`#${field.getAttribute("aria-controls")}`)!;
     expect(within(panel as HTMLElement).getAllByRole("radio")).toHaveLength(7);
     expect(surface.querySelector(".guuey-chat-a2ui-filter")).toBeNull();
+  });
+
+  it("the field row's aria-controls always names a panel in the DOM: hidden while closed, shown while open", () => {
+    const { surface } = draw([{ id: "root", component: "ChoicePicker", label: "Pick", options: opts(13), value: { path: "/p" } }]);
+    const field = within(surface).getByRole("button", { name: /Pick/ });
+    const panelOf = (): HTMLElement | null => surface.querySelector<HTMLElement>(`#${field.getAttribute("aria-controls")}`);
+    // Closed: the panel is there for aria-controls to name, and hidden from
+    // sight, the accessibility tree and Tab alike.
+    expect(panelOf()).not.toBeNull();
+    expect(panelOf()!.hidden).toBe(true);
+    expect(within(surface).queryAllByRole("radio")).toHaveLength(0);
+    expect(within(surface).queryByRole("searchbox")).toBeNull();
+    expect(tabbables(surface)).toEqual([field]);
+    fireEvent.click(field);
+    expect(panelOf()!.hidden).toBe(false);
+    expect(within(panelOf()!).getAllByRole("radio")).toHaveLength(13);
+    fireEvent.click(field);
+    expect(panelOf()).not.toBeNull();
+    expect(panelOf()!.hidden).toBe(true);
   });
 
   it("ids that differ only by '.', ':' or '_' keep separate DOM ids, labels and radio groups", () => {

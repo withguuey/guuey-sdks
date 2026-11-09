@@ -1031,6 +1031,11 @@ textarea.guuey-chat-a2ui-input {
 .guuey-chat-a2ui-picker[aria-expanded="true"]::after {
   content: "▴";
 }
+/* The closed panel stays in the DOM for the field row's aria-controls; its
+   own display must not undo `hidden`. */
+.guuey-chat-a2ui-options[hidden] {
+  display: none;
+}
 .guuey-chat-a2ui-options {
   display: flex;
   flex-direction: column;

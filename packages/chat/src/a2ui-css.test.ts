@@ -162,6 +162,11 @@ describe("the A2UI surface's look (spec §5.3)", () => {
     expect(value(".guuey-chat-a2ui-button .guuey-chat-a2ui-host", "flex-shrink")).toBe("0");
   });
 
+  it("a closed picker's panel stays hidden: its own display never overrides [hidden]", () => {
+    expect(value(".guuey-chat-a2ui-options", "display")).toBe("flex");
+    expect(value(".guuey-chat-a2ui-options[hidden]", "display")).toBe("none");
+  });
+
   it("no opacity anywhere in the A2UI rules: a mute is a colour", () => {
     const withOpacity = rules().flatMap((r) =>
       /(?:^|;)\s*opacity:/.test(r.body) ? r.selectors.filter((s) => s.includes("guuey-chat-a2ui")) : [],
