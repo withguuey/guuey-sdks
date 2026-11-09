@@ -191,9 +191,10 @@ describe("the A2UI surface's look (spec §5.3)", () => {
     expect(value(".guuey-chat-a2ui-image-chip .guuey-chat-a2ui-host", "font-size")).toBe("1em");
   });
 
-  it("the surface title and every Text heading take the theme's heading weight, 600 when it states none", () => {
+  it("the surface title, every Text heading and the transcript's markdown heading take the theme's heading weight, 600 when it states none", () => {
     const weight = "var(--guuey-chat-heading-weight, var(--_guuey-chat-heading-weight, 600))";
-    for (const selector of [".guuey-chat-a2ui-title", ...[1, 2, 3, 4, 5, 6].map((n) => `.guuey-chat-a2ui-text-h${n}`)]) {
+    const headings = [".guuey-chat-a2ui-title", ...[1, 2, 3, 4, 5, 6].map((n) => `.guuey-chat-a2ui-text-h${n}`), ".guuey-chat-heading"];
+    for (const selector of headings) {
       expect(value(selector, "font-weight"), selector).toBe(weight);
     }
   });
