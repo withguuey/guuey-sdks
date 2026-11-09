@@ -124,6 +124,12 @@ describe("the A2UI surface's look (spec §5.3)", () => {
     expect(value(".guuey-chat-a2ui-literal", "white-space")).toBe("pre-wrap");
   });
 
+  it("a gated link is one isolate and its host a left-to-right isolate of its own (§7.1, §7.3)", () => {
+    expect(value(".guuey-chat-a2ui-link", "unicode-bidi")).toBe("isolate");
+    expect(value(".guuey-chat-a2ui-host", "unicode-bidi")).toBe("isolate");
+    expect(value(".guuey-chat-a2ui-host", "direction")).toBe("ltr");
+  });
+
   it("agent text sits in a bidi isolate", () => {
     for (const selector of [".guuey-chat-a2ui", ".guuey-chat-a2ui-text", ".guuey-chat-a2ui-label", ".guuey-chat-a2ui-superseded"]) {
       expect(value(selector, "unicode-bidi"), selector).toBe("isolate");

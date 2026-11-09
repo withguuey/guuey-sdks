@@ -433,7 +433,7 @@ describe("local edits are transcript state (§5.4)", () => {
 /** The mapping table: every element and attribute the renderer may put in the DOM. */
 const ALLOWED_ELEMENTS = new Set([
   "DIV", "P", "SPAN", "UL", "LI", "HR", "IMG", "A", "BUTTON", "LABEL", "INPUT", "TEXTAREA",
-  "FIELDSET", "LEGEND", "STRONG", "EM", "CODE", "BR",
+  "FIELDSET", "LEGEND", "STRONG", "EM", "CODE", "BR", "BDI",
 ]);
 const ALLOWED_ATTRIBUTES = new Set([
   "class", "id", "dir", "role", "aria-level", "aria-label", "aria-labelledby", "aria-describedby",
@@ -544,6 +544,66 @@ describe("(b) the hostile-payload suite: nothing agent-written becomes markup, s
     expect(surface.querySelector(".guuey-chat-a2ui-text")?.textContent).toBe("bottom");
     expect(surface.querySelectorAll(".guuey-chat-a2ui-row, .guuey-chat-a2ui-column")).toHaveLength(depth - 1);
     expect(scan(surface)).toEqual([]);
+  });
+
+  /**
+   * A link's chrome cannot be reordered by agent text (§7.1, §7.3): the
+   * words sit in their own isolate, so an unterminated override stops there,
+   * and the host is a left-to-right isolate of its own, outside the words'.
+   * (jsdom lays nothing out; the isolates are read off the DOM, the anchor's
+   * own isolate off the sheet in a2ui-css.test.ts.)
+   */
+  function expectIsolatedLink(a: HTMLElement, host: string) {
+    expect(a.classList.contains("guuey-chat-a2ui-link") || a.classList.contains("guuey-chat-a2ui-button")).toBe(true);
+    const chrome = a.querySelector<HTMLElement>(".guuey-chat-a2ui-host")!;
+    expect([chrome.tagName, chrome.getAttribute("dir")]).toEqual(["BDI", "ltr"]);
+    expect(chrome.textContent).toBe(` · ${host}`);
+    const words = Array.from(a.children).filter((c) => c !== chrome);
+    expect(words).toHaveLength(1);
+    expect(words[0]!.tagName === "BDI" || words[0]!.getAttribute("dir") === "auto", "the words are an isolate").toBe(true);
+    expect(words[0]!.contains(chrome)).toBe(false);
+    // Every text node of the anchor is inside one of the two isolates.
+    for (const node of Array.from(a.childNodes)) expect(node.nodeType, "no bare text beside the isolates").toBe(Node.ELEMENT_NODE);
+  }
+
+  it("an RLO inside a link's words stays in their isolate; the host is its own LTR isolate", () => {
+    const { surface } = draw([{ id: "root", component: "Text", text: "[Google ‮](https://moc.elgoog.ma)" }]);
+    expectIsolatedLink(within(surface).getByRole("link"), "moc.elgoog.ma");
+    expect(scan(surface)).toEqual([]);
+  });
+
+  it("an RLO before a link cannot reach the host: the host is an LTR isolate", () => {
+    const { surface } = draw([{ id: "root", component: "Text", text: "‮ see [Google](https://moc.elgoog.ma)" }]);
+    expectIsolatedLink(within(surface).getByRole("link"), "moc.elgoog.ma");
+  });
+
+  it("an RLO inside a bare URL stays in the link's words; the host is an LTR isolate", () => {
+    const { surface } = draw([{ id: "root", component: "Text", text: "go https://moc.elgoog.ma/‮ now" }]);
+    expectIsolatedLink(within(surface).getByRole("link"), "moc.elgoog.ma");
+  });
+
+  it("a link button and an image's Open link isolate their host the same way", () => {
+    const { surface } = draw([
+      { id: "root", component: "Column", children: ["b", "i"] },
+      { id: "b", component: "Button", label: "Menu", href: "https://moc.elgoog.ma/menu" },
+      { id: "i", component: "Image", src: "https://moc.elgoog.ma/x.jpg", alt: "Photo" },
+    ]);
+    const links = within(surface).getAllByRole("link");
+    expectIsolatedLink(links[0]!, "moc.elgoog.ma");
+    const open = links[1]!.querySelector(".guuey-chat-a2ui-host")!;
+    expect([open.tagName, open.getAttribute("dir"), open.textContent]).toEqual(["BDI", "ltr", " · moc.elgoog.ma"]);
+  });
+
+  it("an RLO in a surface title cannot reverse the superseded chip's own words: the title reads as no words", () => {
+    const plan = planOf([
+      [create("s", "‮eman"), components("s", [{ id: "root", component: "Text", text: "first" }])],
+      [components("s", [{ id: "root", component: "Text", text: "second" }])],
+    ]);
+    const { container } = drawPlan(plan);
+    const chip = container.querySelector(".guuey-chat-a2ui-superseded")!;
+    expect(BIDI.test(chip.textContent ?? "")).toBe(false);
+    // The call's humanized title stands in, as for a surface with no title.
+    expect(chip.textContent).toBe(S.a2uiUpdatedBelow("show form"));
   });
 
   it("RTL and mixed-direction text draws as written, isolated", () => {

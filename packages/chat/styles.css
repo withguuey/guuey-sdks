@@ -839,10 +839,18 @@
   text-decoration: underline;
   border-radius: 4px;
 }
-/* The destination host a link carries beside its words (spec §7.3). */
+/* A gated link in Text is one bidi isolate, so agent text around it cannot
+   reorder its words and host (spec §7.1). */
+.guuey-chat-a2ui-link {
+  unicode-bidi: isolate;
+}
+/* The destination host a link carries beside its words (spec §7.3): a
+   left-to-right isolate of its own, whatever the words around it say. */
 .guuey-chat-a2ui-host {
   color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
   font-size: 0.9em;
+  unicode-bidi: isolate;
+  direction: ltr;
 }
 .guuey-chat-a2ui-image {
   display: block;

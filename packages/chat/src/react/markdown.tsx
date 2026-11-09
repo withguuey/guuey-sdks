@@ -84,12 +84,21 @@ function trimTrailingPunctuation(url: string): string {
  */
 export type InlineLinkGate = (url: string) => { url: string; host: string } | null;
 
-/** A gated link: opens in a new tab, sends no referrer, and shows its host beside its text. */
+/**
+ * A gated link: opens in a new tab, sends no referrer, and shows its host
+ * beside its text. Agent text cannot reorder that chrome (spec §7.1, §7.3):
+ * the anchor is a bidi isolate (the sheet), its words are one isolate, so an
+ * unterminated override stops there, and the host is a left-to-right isolate
+ * of its own.
+ */
 function GatedLink({ target, children }: { target: { url: string; host: string }; children: ReactNode }): ReactNode {
   return (
-    <a href={target.url} target="_blank" rel="noopener noreferrer nofollow" referrerPolicy="no-referrer">
-      {children}
-      <span className="guuey-chat-a2ui-host"> · {target.host}</span>
+    <a className="guuey-chat-a2ui-link" href={target.url} target="_blank" rel="noopener noreferrer nofollow" referrerPolicy="no-referrer">
+      <bdi>{children}</bdi>
+      <bdi className="guuey-chat-a2ui-host" dir="ltr">
+        {" · "}
+        {target.host}
+      </bdi>
     </a>
   );
 }

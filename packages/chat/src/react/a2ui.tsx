@@ -201,7 +201,7 @@ export function DefaultA2ui({ item, ctx }: { item: A2uiItem; ctx: A2uiRenderCont
   if (item.phase === "superseded") {
     return (
       <p className="guuey-chat-a2ui-superseded" role="note" dir="auto">
-        {item.label ?? ctx.strings.a2uiUpdatedBelow(item.title ?? ctx.strings.viewRefFallbackTitle)}
+        {item.label ?? ctx.strings.a2uiUpdatedBelow(words(item.title) ?? ctx.strings.viewRefFallbackTitle)}
       </p>
     );
   }
@@ -364,7 +364,7 @@ function A2uiImage({ node, env }: { node: NodeOf<"Image">; env: Env }): ReactNod
         {label}{" "}
         <a className="guuey-chat-a2ui-open" href={display.url} target="_blank" rel="noopener noreferrer nofollow" referrerPolicy="no-referrer">
           {env.strings.mediaOpenLink}
-          <span className="guuey-chat-a2ui-host"> · {display.host}</span>
+          <HostLabel host={display.host} />
         </a>
       </span>
     );
@@ -373,6 +373,16 @@ function A2uiImage({ node, env }: { node: NodeOf<"Image">; env: Env }): ReactNod
     <span className="guuey-chat-a2ui-image-chip" dir="auto">
       {label}
     </span>
+  );
+}
+
+/** The host a link shows beside its words (§7.3): a left-to-right isolate, so agent text cannot reorder it. */
+function HostLabel({ host }: { host: string }): ReactNode {
+  return (
+    <bdi className="guuey-chat-a2ui-host" dir="ltr">
+      {" · "}
+      {host}
+    </bdi>
   );
 }
 
@@ -385,7 +395,7 @@ function A2uiButton({ node, env }: { node: NodeOf<"Button">; env: Env }): ReactN
     return (
       <a className={className} href={node.link.url} target="_blank" rel="noopener noreferrer nofollow" referrerPolicy="no-referrer">
         <span dir="auto">{label}</span>
-        <span className="guuey-chat-a2ui-host"> · {node.link.host}</span>
+        <HostLabel host={node.link.host} />
       </a>
     );
   }

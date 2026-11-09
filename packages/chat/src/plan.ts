@@ -48,7 +48,7 @@ import {
   viewToolData,
   type ViewMount,
 } from "@guuey/mcp-apps-host";
-import { A2UI_CARRIER_MAX_UNITS, a2uiCarrierUnits, readA2uiCarrier } from "@guuey/mcp-apps-host/narrowing";
+import { A2UI_CARRIER_MAX_UNITS, a2uiCarrierUnits, readA2uiCarrier, tapText } from "@guuey/mcp-apps-host/narrowing";
 import type { HistoryCard, HistoryToolCall, HistoryToolResult } from "@guuey/agent-client";
 import type { TranscriptPolicy } from "./policy.js";
 import { prettyJson } from "./highlight.js";
@@ -794,7 +794,11 @@ function a2uiPlanner(policy: TranscriptPolicy, overrides: TranscriptOverrides): 
     if (policy.debugDetail) events.push({ type: "a2ui-invalid", key: site.rowKey, reason });
     return null;
   };
-  const chipTitle = (item: A2uiItem): string => item.title ?? item.toolTitle ?? policy.strings.viewRefFallbackTitle;
+  // The title through the label normalizer, as the open face draws it: a
+  // control or bidi character reads as no words, so it cannot reorder the
+  // chip's own words (spec §7.1).
+  const chipTitle = (item: A2uiItem): string =>
+    (item.title !== null ? tapText(item.title) : null) ?? item.toolTitle ?? policy.strings.viewRefFallbackTitle;
 
   return {
     events,
