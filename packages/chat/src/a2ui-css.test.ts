@@ -144,6 +144,13 @@ describe("the A2UI surface's look (spec §5.3)", () => {
     }
   });
 
+  it("the 'Not available here' note is one caption step, like a caption, the chip and the placeholder", () => {
+    expect(value(".guuey-chat-a2ui-unavailable", "font-size")).toBe("0.85em");
+    for (const selector of [".guuey-chat-a2ui-text-caption", ".guuey-chat-a2ui-image-chip", ".guuey-chat-a2ui-unknown"]) {
+      expect(value(selector, "font-size"), selector).toBe("0.85em");
+    }
+  });
+
   it("no opacity anywhere in the A2UI rules: a mute is a colour", () => {
     const withOpacity = rules().flatMap((r) =>
       /(?:^|;)\s*opacity:/.test(r.body) ? r.selectors.filter((s) => s.includes("guuey-chat-a2ui")) : [],
