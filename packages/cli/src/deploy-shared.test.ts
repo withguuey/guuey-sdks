@@ -2,7 +2,7 @@ import { execSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   cleanup,
   copyStagingTree,
@@ -12,6 +12,7 @@ import {
   packageManagerSpawn,
   packSource,
   parseApiError,
+  readOk,
 } from './deploy-shared.js';
 
 /** List every path inside a gzip tarball (relative, `./`-stripped). */
@@ -290,5 +291,39 @@ describe('copyStagingTree (guuey#3285)', () => {
     }
     expect(lstatSync(join(staging, 'entry.ts')).isSymbolicLink()).toBe(true);
     expect(readlinkSync(join(staging, 'entry.ts'))).toBe('src/index.ts');
+  });
+});
+
+// guuey#3284 — the CLI's one read of a response that must succeed (promoted from eject).
+describe('readOk (guuey#3284)', () => {
+  class ExitSignal extends Error {}
+  let errSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new ExitSignal();
+    });
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('a 2xx returns the parsed body', async () => {
+    const res = new Response(JSON.stringify({ deployments: [] }), { status: 200 });
+    await expect(readOk<{ deployments: unknown[] }>(res, 'the deployments')).resolves.toEqual({ deployments: [] });
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it("a non-2xx exits 1 with the server's message and code", async () => {
+    const res = new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'No app app-9' } }), { status: 404 });
+    await expect(readOk(res, 'app app-9')).rejects.toBeInstanceOf(ExitSignal);
+    expect(process.exit).toHaveBeenCalledWith(1);
+    expect(String(errSpy.mock.calls[0]?.[0])).toContain('[NOT_FOUND] No app app-9');
+  });
+
+  it('a non-2xx with no readable body names what was read and the status', async () => {
+    const res = new Response('<html>bad gateway</html>', { status: 502 });
+    await expect(readOk(res, 'the deployments')).rejects.toBeInstanceOf(ExitSignal);
+    expect(String(errSpy.mock.calls[0]?.[0])).toContain('Could not read the deployments: HTTP 502');
   });
 });

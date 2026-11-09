@@ -24,6 +24,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { cliApiAuthHeaders } from './cli-api-headers';
+import * as out from './output';
 
 /**
  * `tar --exclude` argv shared by every non-git-archive packing path
@@ -506,6 +507,24 @@ function discoverWorkspacePackages(startDir: string): Map<string, string> {
     }
   }
   return map;
+}
+
+/**
+ * A response's JSON body, or exit 1 with the server's own message (its
+ * `[CODE]` included, via {@link parseApiError}) and `Could not read <what>:
+ * HTTP <status>` when it sent none (guuey#3284). The CLI's one way to read a
+ * response that must succeed: an inline `if (!res.ok)` copy of this is
+ * retired the next time its file is touched. Callers pass their own literal
+ * route to {@link apiRequest}, so the release gate's route derivation still
+ * reads every route.
+ */
+export async function readOk<T>(res: Response, what: string): Promise<T> {
+  if (!res.ok) {
+    const data: unknown = await res.json().catch(() => ({}));
+    out.error(parseApiError(data, `Could not read ${what}: HTTP ${res.status}`));
+    process.exit(1);
+  }
+  return (await res.json()) as T;
 }
 
 /** Make an authenticated JSON request to the CLI API. */

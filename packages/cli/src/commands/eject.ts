@@ -39,7 +39,7 @@ import { AddCodeError, addCode, scaffold, type Framework } from '@guuey/create-a
 import { GUUEY_JSON_FILENAME, safeParseGuueyJson } from '@guuey/config';
 import { requireAuth } from '../auth';
 import { resolveConfig, saveProjectConfig } from '../config';
-import { apiRequest, parseApiError } from '../deploy-shared';
+import { apiRequest, readOk } from '../deploy-shared';
 import { liveAgentMode } from '../deploy-plan';
 import * as out from '../output';
 import { pickSnapshotBuild, pull, type AppResponse, type DeploymentSnapshotResponse, type DeploymentsResponse } from './pull';
@@ -175,20 +175,6 @@ function dropGguiBlock(dir: string): void {
   console.log(
     "  Took the ggui block out of guuey.json: a deploy replaces all of an app's ggui assets, so eject's deploy keeps the app's as they are. To push your own ggui assets later, add a ggui block: a deploy then replaces the app's set with yours.",
   );
-}
-
-/**
- * A GET's body, or exit 1 with the server's message. Each caller passes its
- * own literal route to `apiRequest`, so the release gate's route derivation
- * reads every route eject calls.
- */
-async function readOk<T>(res: Response, what: string): Promise<T> {
-  if (!res.ok) {
-    const data: unknown = await res.json().catch(() => ({}));
-    out.error(parseApiError(data, `Could not read ${what}: HTTP ${res.status}`));
-    process.exit(1);
-  }
-  return (await res.json()) as T;
 }
 
 export async function eject(flags?: Record<string, string | true>): Promise<void> {
