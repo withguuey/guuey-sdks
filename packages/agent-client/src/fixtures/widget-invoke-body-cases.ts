@@ -141,4 +141,18 @@ export const WIDGET_INVOKE_BODY_CASES: ReadonlyArray<{ name: string; why: string
       pageContext: { hostOrigin: "https://customer.example" },
     },
   },
+  {
+    name: "capabilities-a2ui-catalogs",
+    why: "a surface that draws A2UI and wires its actions advertises the catalogs it renders (guuey#2386), merged into uiResources beside viewMessageTurns; a runtime that predates the field parses it as an ordinary capability",
+    input: {
+      input: "Book a table for four",
+      threadId: "thr_01J8ZK3Q9X",
+      clientMessageId: "cm_0010",
+      capabilities: {
+        hitl: { ask: true, grantModes: true },
+        uiResources: { viewMessageTurns: true, catalogs: ["guuey.a2ui.v1", "guuey.json-render.v1"] },
+      },
+      pageContext: { hostOrigin: "https://customer.example" },
+    },
+  },
 ];

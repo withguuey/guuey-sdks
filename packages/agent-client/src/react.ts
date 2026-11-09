@@ -15,6 +15,8 @@ export {
   STALL_RECOVERY_DEFAULTS,
   DEFAULT_BLOCK_PRESERVING_CAPABILITIES,
   VIEW_MESSAGE_TURN_CAPABILITIES,
+  A2UI_CAPABILITIES,
+  withA2uiCatalogs,
 } from "./useAgentInvoke.js";
 // The block-preserving transcript surfaces `AgReduceResult`; re-export it (and
 // `AgEvent`) here so `./react` consumers can type `reduceResult` without a

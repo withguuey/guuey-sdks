@@ -77,7 +77,7 @@ describe("the widget's canonical bodies are pinned as the fixture (guuey#1213)",
     expect(onDisk).toBe(`${JSON.stringify(expected, null, 2)}\n`);
   });
 
-  it("the case list covers the shapes the widget actually sends: init-origin-only, a full page block, a page block without context, a mode pin, the SDK minimum, a card tap with its labels, a turn with an image, a turn without words, and an A2UI action turn", () => {
+  it("the case list covers the shapes the widget actually sends: init-origin-only, a full page block, a page block without context, a mode pin, the SDK minimum, a card tap with its labels, a turn with an image, a turn without words, an A2UI action turn, and the A2UI catalogs advertisement", () => {
     const names = WIDGET_INVOKE_BODY_CASES.map((c) => c.name);
     expect(names).toEqual([
       "session-open-init-origin",
@@ -89,6 +89,7 @@ describe("the widget's canonical bodies are pinned as the fixture (guuey#1213)",
       "turn-with-image",
       "turn-context-only",
       "a2ui-action-turn",
+      "capabilities-a2ui-catalogs",
     ]);
     const withPath = WIDGET_INVOKE_BODY_CASES.filter((c) => c.input.pageContext?.path !== undefined);
     // Every path-bearing block the widget builds also carries title + hostOrigin (WidgetChat's onPage).
@@ -129,13 +130,33 @@ describe("the A2UI action turn's case is the writer's own text (guuey#2384, spec
 });
 
 describe("the widget cases carry exactly what the widget sends", () => {
-  it("every widget case's capabilities equal VIEW_MESSAGE_TURN_CAPABILITIES (the default plus the view-message-turn declaration); the SDK-minimal case advertises nothing", async () => {
-    const { DEFAULT_BLOCK_PRESERVING_CAPABILITIES, VIEW_MESSAGE_TURN_CAPABILITIES } = await import("./useAgentInvoke.js");
+  // guuey#2386: a widget that wires A2UI actions advertises the catalogs on top of
+  // VIEW_MESSAGE_TURN_CAPABILITIES. The earlier cases keep the pre-catalog body: a
+  // widget build from before the advertisement still sends it (the N-1 shape), and
+  // the one new case pins the advertisement itself, so each shape is pinned once.
+  it("every widget case's capabilities equal VIEW_MESSAGE_TURN_CAPABILITIES, or for the catalogs case the same with the A2UI catalogs merged in; the SDK-minimal case advertises nothing", async () => {
+    const { DEFAULT_BLOCK_PRESERVING_CAPABILITIES, VIEW_MESSAGE_TURN_CAPABILITIES, withA2uiCatalogs } = await import("./useAgentInvoke.js");
     expect(VIEW_MESSAGE_TURN_CAPABILITIES).toEqual({ ...DEFAULT_BLOCK_PRESERVING_CAPABILITIES, uiResources: { viewMessageTurns: true } });
     for (const c of WIDGET_INVOKE_BODY_CASES) {
       if (c.name === "sdk-minimal") expect(c.input.capabilities).toBeUndefined();
+      else if (c.name === "capabilities-a2ui-catalogs") expect(c.input.capabilities, c.name).toEqual(withA2uiCatalogs(VIEW_MESSAGE_TURN_CAPABILITIES));
       else expect(c.input.capabilities, c.name).toEqual(VIEW_MESSAGE_TURN_CAPABILITIES);
     }
+  });
+});
+
+describe("the A2UI catalogs advertisement (guuey#2386, spec §13)", () => {
+  it("names the two catalogs this kit renders, and merges into a base without losing its uiResources", async () => {
+    const { A2UI_CAPABILITIES, DEFAULT_BLOCK_PRESERVING_CAPABILITIES, VIEW_MESSAGE_TURN_CAPABILITIES, withA2uiCatalogs } = await import("./useAgentInvoke.js");
+    expect(A2UI_CAPABILITIES).toEqual({ uiResources: { catalogs: ["guuey.a2ui.v1", "guuey.json-render.v1"] } });
+    expect(withA2uiCatalogs(VIEW_MESSAGE_TURN_CAPABILITIES)).toEqual({
+      hitl: { ask: true, grantModes: true },
+      uiResources: { viewMessageTurns: true, catalogs: ["guuey.a2ui.v1", "guuey.json-render.v1"] },
+    });
+    expect(withA2uiCatalogs(DEFAULT_BLOCK_PRESERVING_CAPABILITIES)).toEqual({
+      hitl: { ask: true, grantModes: true },
+      uiResources: { catalogs: ["guuey.a2ui.v1", "guuey.json-render.v1"] },
+    });
   });
 });
 

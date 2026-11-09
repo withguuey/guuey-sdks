@@ -78,6 +78,24 @@ export const VIEW_MESSAGE_TURN_CAPABILITIES: AgClientCapabilities = {
   uiResources: { viewMessageTurns: true },
 };
 
+/**
+ * The A2UI catalogs a `@guuey/chat` surface renders (guuey#2386): the guuey
+ * A2UI kind and the json-render adapter. A tool can then answer with a surface
+ * instead of only text. Advertise it ONLY where the surface draws A2UI AND
+ * wires its actions (`onA2uiAction`, the guuey#1706 rule): a surface that
+ * draws forms it cannot send would invite answers it never delivers. Merge it
+ * into a surface's own capabilities with {@link withA2uiCatalogs}. A pod that
+ * predates the field reads it as an ordinary capability (F6).
+ */
+export const A2UI_CAPABILITIES = {
+  uiResources: { catalogs: ["guuey.a2ui.v1", "guuey.json-render.v1"] },
+} satisfies AgClientCapabilities;
+
+/** `base` with the A2UI catalogs merged into its `uiResources`, every other key kept. */
+export function withA2uiCatalogs(base: AgClientCapabilities): AgClientCapabilities {
+  return { ...base, uiResources: { ...base.uiResources, ...A2UI_CAPABILITIES.uiResources } };
+}
+
 /** The decision `applyHistoryResult` reaches for a loaded transcript. */
 export type HistoryApplication =
   | { kind: "seed"; messages: AgentMessage[] }
