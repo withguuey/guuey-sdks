@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonValue } from "@silverprotocol/core";
 import { a2uiCarrierUnits } from "@guuey/mcp-apps-host/narrowing";
 import { A2UI_LIMITS } from "./limits.js";
-import { A2UI_COMPONENT_NAMES, a2uiBindingProps } from "./schema.js";
+import { A2UI_COMPONENT_NAMES, a2uiBindingProps, isA2uiPathBinding } from "./schema.js";
 import { namedA2uiSurfaceIds, parseA2uiCarrier, validateA2uiCarrier } from "./validate.js";
 
 type Json = JsonValue;
@@ -241,6 +241,12 @@ describe("where a component reads a binding comes from the schema, never a secon
       CheckBox: ["checked"],
       ChoicePicker: ["value"],
     });
+  });
+
+  it("isA2uiPathBinding: a {path} read, never a literal of any bound type", () => {
+    expect(isA2uiPathBinding({ path: "/name" })).toBe(true);
+    expect(isA2uiPathBinding({ path: "" })).toBe(true);
+    for (const literal of ["text", true, false, ["a", "b"], null]) expect(isA2uiPathBinding(literal), JSON.stringify(literal)).toBe(false);
   });
 
   it("a malformed binding on each derived prop is an envelope fault", () => {

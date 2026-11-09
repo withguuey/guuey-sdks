@@ -69,6 +69,11 @@ export type A2uiPathBinding = z.infer<typeof A2uiPathBinding>;
 /** A literal, or a read from the surface's data model. */
 export type A2uiBound<T> = T | A2uiPathBinding;
 
+/** Whether a bound value reads the data model (`{ path }`) rather than being its literal. */
+export function isA2uiPathBinding<T>(bound: A2uiBound<T> | null): bound is A2uiPathBinding {
+  return typeof bound === "object" && bound !== null && !Array.isArray(bound) && "path" in bound && typeof bound.path === "string";
+}
+
 export const A2uiJsonScalar = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 export type A2uiJsonScalar = z.infer<typeof A2uiJsonScalar>;
 

@@ -27,6 +27,7 @@ import {
   A2UI_GAP_TOKENS,
   A2UI_TEXT_VARIANTS,
   isA2uiCarveOut,
+  isA2uiPathBinding,
   readA2uiDataPath,
   type A2uiCarveOut,
   type A2uiComponentFault,
@@ -393,7 +394,7 @@ export function declaredFields(root: A2uiNode | null): { [path: string]: A2uiFie
         walk(node.child);
         return;
       case "TextField":
-        if (node.value !== null && typeof node.value !== "string") {
+        if (isA2uiPathBinding(node.value)) {
           declare(node.value.path, {
             kind: "text",
             componentId: node.id,
@@ -407,12 +408,12 @@ export function declaredFields(root: A2uiNode | null): { [path: string]: A2uiFie
         }
         return;
       case "CheckBox":
-        if (node.checked !== null && typeof node.checked !== "boolean") {
+        if (isA2uiPathBinding(node.checked)) {
           declare(node.checked.path, { kind: "boolean", componentId: node.id, label: node.label, required: node.required });
         }
         return;
       case "ChoicePicker":
-        if (node.value !== null && typeof node.value === "object" && !Array.isArray(node.value)) {
+        if (isA2uiPathBinding(node.value)) {
           declare(node.value.path, {
             kind: "choice",
             componentId: node.id,

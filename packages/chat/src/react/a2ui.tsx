@@ -29,6 +29,7 @@ import { tapText } from "@guuey/mcp-apps-host/narrowing";
 import { A2UI_LIMITS, truncateUnits } from "../a2ui/limits.js";
 import { readA2uiModel } from "../a2ui/fold.js";
 import { httpsLink } from "../a2ui/url-policy.js";
+import { isA2uiPathBinding } from "../a2ui/schema.js";
 import type {
   A2uiAlign,
   A2uiBound,
@@ -359,7 +360,7 @@ export function DefaultA2ui({ item, ctx }: { item: A2uiItem; ctx: A2uiRenderCont
 /** A bound value's server side: the model at the path, or the literal itself. */
 function serverValue<T extends JsonValue>(item: A2uiItem, bound: A2uiBound<T> | null): { key: string | null; value: JsonValue | null } {
   if (bound === null) return { key: null, value: null };
-  if (typeof bound === "object" && !Array.isArray(bound) && bound !== null && "path" in bound && typeof bound.path === "string") {
+  if (isA2uiPathBinding(bound)) {
     return { key: bound.path, value: readA2uiModel(item.dataModel, bound.path) ?? null };
   }
   return { key: null, value: bound };
