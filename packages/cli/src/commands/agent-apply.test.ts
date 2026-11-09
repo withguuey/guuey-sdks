@@ -822,9 +822,9 @@ describe('agentStatus', () => {
     const output = logs.join('\n');
     expect(output).toContain('Live: build #11 (live) · xs · deployed 2026-08-16T20:00:00.000Z');
     expect(output).toContain('managed from loqu-co/ggui@da49f6dcaabc (guuey-agents/helper)');
-    expect(output).toContain('userAuthMode:     "byo"');
-    expect(output).toContain('allowedDomains:   ["https://console.example.com"]');
-    expect(output).toContain('standalonePage:   {"enabled":true,');
+    expect(output).toContain('userAuthMode:           "byo"');
+    expect(output).toContain('allowedDomains:         ["https://console.example.com"]');
+    expect(output).toContain('standalonePage:         {"enabled":true,');
     expect(output).toContain('"noindex":true}');
   });
 
@@ -842,23 +842,23 @@ describe('agentStatus', () => {
   it('guuey#1597: renders the builtFor; an older cliApi that omits it renders (unset), never throws', async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { ...STATUS, config: { ...STATUS.config, builtFor: 'personal' } }));
     await agentStatus({});
-    expect(logs.join('\n')).toContain('builtFor:         "personal"');
+    expect(logs.join('\n')).toContain('builtFor:               "personal"');
 
     logs.length = 0;
     fetchMock.mockResolvedValue(jsonResponse(200, STATUS));
     await agentStatus({});
-    expect(logs.join('\n')).toContain('builtFor:         (unset)');
+    expect(logs.join('\n')).toContain('builtFor:               (unset)');
   });
 
   it('guuey#2612: renders autoThreadTitles; an older cliApi that omits it renders (unset), never throws', async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { ...STATUS, config: { ...STATUS.config, autoThreadTitles: true } }));
     await agentStatus({});
-    expect(logs.join('\n')).toContain('autoThreadTitles: true');
+    expect(logs.join('\n')).toContain('autoThreadTitles:       true');
 
     logs.length = 0;
     fetchMock.mockResolvedValue(jsonResponse(200, STATUS));
     await agentStatus({});
-    expect(logs.join('\n')).toContain('autoThreadTitles: (unset)');
+    expect(logs.join('\n')).toContain('autoThreadTitles:       (unset)');
   });
 
   it('every Config row starts its value at one column, the longest label included', async () => {
@@ -873,6 +873,7 @@ describe('agentStatus', () => {
       'userAuthConfig',
       'allowedDomains',
       'guestAccess',
+      'guestDailyMessageLimit',
       'chatTheme',
       'standalonePage',
       'builtFor',

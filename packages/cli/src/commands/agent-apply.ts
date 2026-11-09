@@ -799,15 +799,15 @@ export async function agentStatus(flags?: Record<string, string | true>): Promis
   }
   const c = status.config;
   console.log('  Config:');
-  console.log(`    userAuthMode:   ${fmtValue(c.userAuthMode)}`);
-  console.log(`    userAuthConfig: ${fmtValue(c.userAuthConfig)}`);
-  console.log(`    allowedDomains: ${fmtValue(c.allowedDomains)}`);
-  console.log(`    guestAccess:    ${fmtValue(c.guestAccess)}`);
+  console.log(`    userAuthMode:           ${fmtValue(c.userAuthMode)}`);
+  console.log(`    userAuthConfig:         ${fmtValue(c.userAuthConfig)}`);
+  console.log(`    allowedDomains:         ${fmtValue(c.allowedDomains)}`);
+  console.log(`    guestAccess:            ${fmtValue(c.guestAccess)}`);
   console.log(`    guestDailyMessageLimit: ${fmtValue(c.guestDailyMessageLimit)}`);
-  console.log(`    chatTheme:      ${c.chatThemeHash ?? 'none'}`);
-  console.log(`    standalonePage: ${fmtValue(c.standalonePage)}`);
-  console.log(`    builtFor:       ${fmtValue(c.builtFor)}`);
-  console.log(`    autoThreadTitles: ${fmtValue(c.autoThreadTitles)}`);
+  console.log(`    chatTheme:              ${c.chatThemeHash ?? 'none'}`);
+  console.log(`    standalonePage:         ${fmtValue(c.standalonePage)}`);
+  console.log(`    builtFor:               ${fmtValue(c.builtFor)}`);
+  console.log(`    autoThreadTitles:       ${fmtValue(c.autoThreadTitles)}`);
 
   if (parity) {
     console.log('');
