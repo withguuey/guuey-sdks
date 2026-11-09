@@ -435,3 +435,33 @@ describe("review r1 — one press, one turn; a refused press says why", () => {
     expect(button(view.surface, "Place order").hasAttribute("aria-describedby")).toBe(false);
   });
 });
+
+describe("review r2 — no stand-in value; a closed composer's note is temporary", () => {
+  it("an unreadable number box fails its path even when a text field declared the path first: nothing is sent", () => {
+    const h = host();
+    const { surface } = draw(
+      planOf([
+        form([
+          { id: "root", component: "Column", children: ["words", "count", "go"] },
+          { id: "words", component: "TextField", label: "Count in words", value: { path: "/n" } },
+          { id: "count", component: "TextField", label: "Count", inputType: "number", value: { path: "/n" } },
+          { id: "go", component: "Button", label: "Send", action: { name: "go", context: { n: { path: "/n" } } } },
+        ]),
+      ]),
+      { onA2uiAction: h.onA2uiAction },
+    );
+    Object.defineProperty(spin(surface, "Count"), "validity", { value: { badInput: true } });
+    fireEvent.click(button(surface, "Send"));
+    expect(h.onA2uiAction).not.toHaveBeenCalled();
+  });
+
+  it("a press refused by a closed composer says the chat is unavailable, and the note clears once it reopens", () => {
+    const h = host("closed");
+    const view = draw(planOf([ORDER]), { onA2uiAction: h.onA2uiAction, a2uiActionsReady: false });
+    fireEvent.change(box(view.surface, "Name"), { target: { value: "Ada" } });
+    fireEvent.click(button(view.surface, "Place order"));
+    expect(within(view.surface).getByText(S.composerUnavailable)).toBeTruthy();
+    act(() => view.rerender(<Transcript plan={planOf([ORDER])} window={false} {...noop} onA2uiAction={h.onA2uiAction} a2uiActionsReady />));
+    expect(within(view.surface).queryByText(S.composerUnavailable)).toBeNull();
+  });
+});

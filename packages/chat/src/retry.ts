@@ -21,7 +21,8 @@ import type { UserMessageItem } from "./types.js";
 
 export function retrySendArgs(item: UserMessageItem, newId?: () => string): [string, SendOptions | undefined] {
   if (item.inputKind !== undefined) return ["", { inputKind: item.inputKind }];
-  if (item.actionSummary !== undefined && newId !== undefined) {
+  // The text decides (never a display field): an action turn's block goes again under the new id.
+  if (newId !== undefined) {
     const clientMessageId = newId();
     const text = reissueA2uiActionText(item.text, clientMessageId);
     if (text !== undefined) return [text, { clientMessageId }];

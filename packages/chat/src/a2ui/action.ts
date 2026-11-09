@@ -40,6 +40,9 @@ const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
  */
 const DECIMAL = /^-?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][-+]?\d+)?$/;
 
+/** Text that is no number (typed, or what the platform could not read). */
+const NOT_A_NUMBER: { error: A2uiFieldError } = { error: { kind: "not-a-number" } };
+
 /** A model value as an input's text: strings, numbers and booleans; anything else is empty (the renderer draws fields by it too). */
 export function asText(value: JsonValue | null): string {
   if (typeof value === "string") return value;
@@ -71,7 +74,7 @@ function resolveField(spec: A2uiFieldSpec, value: JsonValue | null): { value: Js
       }
       if (spec.inputType === "number") {
         const n = typeof value === "number" ? value : DECIMAL.test(raw) ? Number(raw) : NaN;
-        if (!Number.isFinite(n)) return { error: { kind: "not-a-number" } };
+        if (!Number.isFinite(n)) return NOT_A_NUMBER;
         if (spec.min !== null && n < spec.min) return { error: { kind: "too-small", min: spec.min } };
         if (spec.max !== null && n > spec.max) return { error: { kind: "too-large", max: spec.max } };
         return { value: n };
@@ -89,11 +92,15 @@ function resolveField(spec: A2uiFieldSpec, value: JsonValue | null): { value: Js
  * over its server model) and must be declared by an input on the surface,
  * whose kind and constraints the value must meet. Every field is judged, so
  * one press shows every error. The escaped payload must fit its bound.
+ * `unreadable` names the paths whose input holds text the platform could not
+ * read as a number (the web's `validity.badInput`): each is not-a-number,
+ * whatever kind declared it.
  */
 export function checkA2uiAction(
   fields: { readonly [path: string]: A2uiFieldSpec },
   action: A2uiAction,
   read: (path: string) => JsonValue | null,
+  unreadable?: ReadonlySet<string>,
 ): A2uiActionCheck {
   const context: { [key: string]: JsonValue } = {};
   const errors: { [path: string]: A2uiFieldError } = {};
@@ -104,7 +111,7 @@ export function checkA2uiAction(
     }
     const spec = Object.hasOwn(fields, bound.path) ? fields[bound.path] : undefined;
     if (spec === undefined) return { ok: false, fields: {}, form: "undeclared" };
-    const out = resolveField(spec, read(bound.path));
+    const out = unreadable?.has(bound.path) ? NOT_A_NUMBER : resolveField(spec, read(bound.path));
     if ("error" in out) errors[bound.path] = out.error;
     else context[key] = out.value;
   }
@@ -128,10 +135,12 @@ export interface A2uiActionRequest {
 
 /**
  * What the host's send path did with a press: `sent`, the turn went out;
- * `busy`, a turn is live or the chat cannot send (nothing went out, the
- * surface says to wait); `refused`, the action's text could not be written.
+ * `busy`, a reply is live (nothing went out, the surface says to wait);
+ * `closed`, the composer is closed for now (no endpoint, a pending connect
+ * card, an ended conversation); `refused`, the action's text could not be
+ * written. A `busy` or `closed` note clears once the host can take a press.
  */
-export type A2uiActionOutcome = "sent" | "busy" | "refused";
+export type A2uiActionOutcome = "sent" | "busy" | "closed" | "refused";
 
 /** The action turn's text for a press, under the id its send carries; `undefined` when the writer refuses it. */
 export function a2uiActionTurnText(request: A2uiActionRequest, actionId: string): string | undefined {

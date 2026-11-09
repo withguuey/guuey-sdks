@@ -1390,7 +1390,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       const live = liveRef.current;
       // The composer's own refusal (an ended conversation, a pending connect
       // card, no endpoint) refuses the press; a live reply asks it to wait.
-      if (live.composerClosed) return "refused";
+      if (live.composerClosed) return "closed";
       if (live.busy) return "busy";
       const clientMessageId = live.invoke.newClientMessageId();
       const text = a2uiActionTurnText(request, clientMessageId);

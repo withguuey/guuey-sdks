@@ -373,7 +373,8 @@ export function DefaultA2ui({ item, ctx }: { item: A2uiItem; ctx: A2uiRenderCont
     jump.current = false;
     const error = root.current?.querySelector(".guuey-chat-a2ui-error");
     const field = error ? root.current?.querySelector<HTMLElement>(`[aria-describedby~="${error.id}"]`) : null;
-    (field?.matches("input,textarea,button") ? field : field?.querySelector<HTMLElement>("input,button"))?.focus();
+    // The field itself, or a group's first control.
+    (field?.querySelector<HTMLElement>("input,button") ?? field)?.focus();
   }, [errors]);
   if (item.phase === "superseded") {
     return (
@@ -410,13 +411,11 @@ export function DefaultA2ui({ item, ctx }: { item: A2uiItem; ctx: A2uiRenderCont
             const action = node.action;
             if (action === null) return null;
             // A number box whose text the browser cannot read reports "" (validity.badInput):
-            // it reads as text that is no number, so the check names it.
+            // the check names its path not-a-number.
             const unread = new Set<string>();
             root.current?.querySelectorAll<HTMLInputElement>("input[type=number]").forEach((el) => el.validity.badInput && unread.add(el.name));
             // §9.2: the payload is judged before anything is sent; every failing field says why.
-            const check = checkA2uiAction(item.fields, action, (path) =>
-              unread.has(path) ? "NaN" : read(path, readA2uiModel(item.dataModel, path) ?? null),
-            );
+            const check = checkA2uiAction(item.fields, action, (path) => read(path, readA2uiModel(item.dataModel, path) ?? null), unread);
             if (!check.ok) {
               jump.current = true;
               setErrors(Object.fromEntries(Object.entries(check.fields).map(([path, error]) => [path, fieldError(error, strings)])));
@@ -438,7 +437,7 @@ export function DefaultA2ui({ item, ctx }: { item: A2uiItem; ctx: A2uiRenderCont
               context: check.context,
               summary: { label: words(node.label) ?? node.label, pairs },
             });
-            return outcome === "busy" ? strings.a2uiWaitForReply : outcome === "refused" ? strings.a2uiCantSend : null;
+            return { sent: null, busy: strings.a2uiWaitForReply, closed: strings.composerUnavailable, refused: strings.a2uiCantSend }[outcome];
           },
     errors,
     ready: ctx.a2uiActionsReady === true,
@@ -622,8 +621,9 @@ function A2uiButton({ node, env }: { node: NodeOf<"Button">; env: Env }): ReactN
     if (confirming) cancel.current?.focus();
   }, [confirming]);
   // A surface that locks closes an open confirm; a wait note goes once the host can take a press.
-  if (confirming && env.locked) setConfirming(false);
-  if (said === env.strings.a2uiWaitForReply && env.ready) setSaid(null);
+  const { send, strings, locked } = env;
+  if (confirming && locked) setConfirming(false);
+  if ((said === strings.a2uiWaitForReply || said === strings.composerUnavailable) && env.ready) setSaid(null);
   const label = words(node.label);
   // A button with no words cannot say what it does: the placeholder, like a missing label.
   if (label === null) return <Unknown env={env} />;
@@ -642,7 +642,6 @@ function A2uiButton({ node, env }: { node: NodeOf<"Button">; env: Env }): ReactN
       </button>
     );
   }
-  const { send, strings } = env;
   const { confirm } = node;
   const noteId = env.idFor(node.id, "note");
   const confirmId = env.idFor(node.id, "confirm");
@@ -650,7 +649,7 @@ function A2uiButton({ node, env }: { node: NodeOf<"Button">; env: Env }): ReactN
   const done = (confirmed: boolean): void => {
     setConfirming(false);
     ref.current?.focus();
-    if (confirmed && send !== undefined && !env.locked) setSaid(send(node));
+    if (confirmed && send !== undefined && !locked) setSaid(send(node));
   };
   const message = confirm !== null ? words(confirm.message) : null;
   return (
@@ -659,7 +658,7 @@ function A2uiButton({ node, env }: { node: NodeOf<"Button">; env: Env }): ReactN
         ref={ref}
         type="button"
         className={className}
-        disabled={send === undefined || env.locked}
+        disabled={send === undefined || locked}
         onClick={() => (confirm !== null ? setConfirming(true) : done(true))}
         {...(note !== null ? { "aria-describedby": noteId } : {})}
       >

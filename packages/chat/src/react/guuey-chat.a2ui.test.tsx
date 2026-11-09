@@ -276,7 +276,7 @@ describe("<GuueyChat> sends an A2UI action through the composer's gate (guuey#23
     await waitFor(() => expect((screen.getByLabelText("Message") as HTMLTextAreaElement).disabled).toBe(true));
     fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Ada" } });
     fireEvent.click(screen.getByRole("button", { name: "Place order" }));
-    await screen.findByText(defaultChatStrings.a2uiCantSend);
+    await screen.findByText(defaultChatStrings.composerUnavailable);
     expect(bodies).toHaveLength(1);
   });
 });

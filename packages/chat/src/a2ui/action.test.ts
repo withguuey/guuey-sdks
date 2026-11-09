@@ -140,3 +140,11 @@ describe("review r1 — the validator reads values the way the field shows them"
     expect(check(one, ["a", "b"])).toMatchObject({ ok: false, fields: { "/v": { kind: "not-an-option" } } });
   });
 });
+
+describe("review r2 — a field the browser could not read is not a number, whatever declared its path", () => {
+  it("an unreadable path is not-a-number for a text field too, and nothing stands in for its value", () => {
+    const fields = { "/v": text() };
+    const out = checkA2uiAction(fields, { name: "go", context: { v: { path: "/v" } } }, () => "typed", new Set(["/v"]));
+    expect(out).toEqual({ ok: false, fields: { "/v": { kind: "not-a-number" } }, form: null });
+  });
+});

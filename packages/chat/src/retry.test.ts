@@ -69,3 +69,13 @@ describe("an A2UI action turn's retry keeps its id equal to the turn's clientMes
     expect(retryInPlaceArgs(item({ clientMessageId: "cm_1" }), () => "cm_X")).toEqual(["hello", { replaces: "cm_1" }]);
   });
 });
+
+describe("review r2 — the retry reads the text, never a display field", () => {
+  it("with collapseDirectives off (no actionSummary on the row) the action turn is still written again under the new id", () => {
+    const text =
+      writeA2uiActionText({ surfaceId: "order", name: "submit", sourceComponentId: "go", actionId: "cm_A", context: { n: 1 } }, { label: "Go", pairs: [] }) ?? "";
+    const [sent, options] = retryInPlaceArgs(item({ text, clientMessageId: "cm_A" }), () => "cm_B");
+    expect(parseA2uiActionText(sent)?.actionId).toBe("cm_B");
+    expect(options).toEqual({ clientMessageId: "cm_B", replaces: "cm_A" });
+  });
+});
