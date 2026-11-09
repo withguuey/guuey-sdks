@@ -6,6 +6,7 @@
  * BEFORE the a2ui kind existed, so it is the old client's face: an old kit
  * (F1, F5, F8, F9, and a history page whose stored results carry carriers)
  * and a new kit reading an old server (F2) must keep planning exactly that.
+ * A new kit draws F1, F8 and (since S5, guuey#2385) F9's carriers natively.
  * The history snapshot was planned by the base sha's chat sources over this
  * tree's client mapper (unchanged since the base), the same pairing that
  * reproduces F2's history snapshot byte for byte.
@@ -170,9 +171,21 @@ describe("guuey#2381 — the same fixtures on a kit that draws the a2ui kind", (
     await expect(serialize(plan)).toMatchFileSnapshot(snap("a2ui-n1-old-client-action-row"));
   });
 
-  it("F9: a json-render carrier keeps the old face byte-identically (the adapter is S5)", async () => {
+  it("F9: a new kit draws a json-render carrier natively (S5); the old kit's face is the base snapshot above", () => {
     const plan = planTranscript(live(stream("a2ui-n1-old-client-json-render.json")), renderOn());
-    await expect(serialize(plan)).toMatchFileSnapshot(snap("a2ui-n1-old-client-json-render"));
+    const item = plan.items.find((i) => i.kind === "a2ui");
+    expect(item).toMatchObject({ key: "a2ui.call-signup.signup-1", phase: "open", origin: "live", title: "Sign up" });
+    expect(item?.kind === "a2ui" ? item.root : null).toMatchObject({
+      component: "Column",
+      children: [
+        { component: "TextField", label: "Email", value: { path: "/email" } },
+        { component: "Button", label: "Sign up", action: { name: "signup", context: { email: { path: "/email" } } } },
+      ],
+    });
+    expect(item?.kind === "a2ui" ? Object.keys(item.fields) : []).toEqual(["/email"]);
+    const tool = plan.items.find((i) => i.kind === "tool");
+    expect(tool).toMatchObject({ result: null, attribution: true });
+    expect(plan.views).toEqual([]);
   });
 
   for (const name of ["a2ui-n1-old-client-live", "a2ui-n1-old-client-uidata"] as const) {

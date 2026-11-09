@@ -12,6 +12,8 @@
     "!src/**/*.test.ts",
     "!src/**/*.test.tsx",
     "!src/corpus/**",
+    "!src/**/__fixtures__/**",
+    "!src/**/__snapshots__/**",
     "styles.css",
     "README.md"
   ],

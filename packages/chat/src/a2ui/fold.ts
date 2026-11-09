@@ -66,6 +66,8 @@ export type A2uiParsedMessage =
       components: A2uiComponentEntry[];
       /** Entries dropped for an id outside the charset: a component fault on the surface. */
       badIds: { count: number; interactive: boolean };
+      /** Constructs a json-render carrier held that its mapping dropped (spec §12): a component fault each. */
+      dropped?: { count: number; interactive: boolean };
     }
   | { kind: "updateDataModel"; surfaceId: string; segments: string[]; value: JsonValue }
   | { kind: "deleteSurface"; surfaceId: string };
@@ -591,6 +593,8 @@ export function applyA2uiMessages(
         for (const entry of message.components) components.set(entry.id, entry);
         for (let i = 0; i < message.badIds.count; i++) fault(id, { fault: "bad-id", at: `/${id}` });
         if (message.badIds.interactive) pendingInteractive.add(id);
+        for (let i = 0; i < (message.dropped?.count ?? 0); i++) fault(id, { fault: "dropped-construct", at: `/${id}` });
+        if (message.dropped?.interactive === true) pendingInteractive.add(id);
         const batch = message.components.map((c) => c.id);
         working.set(id, { ...surface, components, firstBatch: surface.firstBatch ?? (batch.length > 0 ? batch : null) });
         break;

@@ -1,0 +1,508 @@
+[
+  {
+    "name": "state-in-a-literal-prop",
+    "row": "$state where A2UI takes no binding: read from state at conversion",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "cta": "Read more"
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Button",
+                "label": "Read more"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 0,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "Button",
+            "label": "Read more",
+            "action": null,
+            "link": null,
+            "variant": null,
+            "confirm": null
+          },
+          "interactive": false,
+          "degrade": {},
+          "fields": {}
+        }
+      ]
+    }
+  },
+  {
+    "name": "state-of-the-wrong-type",
+    "row": "$state that reads a number where a string is wanted: dropped",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "n": 3
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Image",
+                "src": "https://cdn.guueyusercontent.com/p.png"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 1,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "Image",
+            "display": {
+              "kind": "image",
+              "src": "https://cdn.guueyusercontent.com/p.png"
+            },
+            "alt": null
+          },
+          "interactive": false,
+          "degrade": {
+            "dropped-construct": 1
+          },
+          "fields": {}
+        }
+      ]
+    }
+  },
+  {
+    "name": "item-outside-a-repeat",
+    "row": "$item with no repeat: dropped",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Text",
+                "text": "kept"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 1,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "Text",
+            "text": "kept",
+            "variant": "body"
+          },
+          "interactive": false,
+          "degrade": {
+            "dropped-construct": 1
+          },
+          "fields": {}
+        }
+      ]
+    }
+  },
+  {
+    "name": "index-outside-a-repeat",
+    "row": "$index with no repeat: dropped",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Text"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 1,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "unknown",
+            "name": "Text"
+          },
+          "interactive": false,
+          "degrade": {
+            "dropped-construct": 1,
+            "bad-prop": 1
+          },
+          "fields": {}
+        }
+      ]
+    }
+  },
+  {
+    "name": "cond",
+    "row": "$cond/$then/$else: never evaluated, the prop dropped",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "big": true
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Text",
+                "text": "kept"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 1,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "Text",
+            "text": "kept",
+            "variant": "body"
+          },
+          "interactive": false,
+          "degrade": {
+            "dropped-construct": 1
+          },
+          "fields": {}
+        }
+      ]
+    }
+  },
+  {
+    "name": "computed",
+    "row": "$computed: never evaluated, the prop dropped",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Text"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 1,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "unknown",
+            "name": "Text"
+          },
+          "interactive": false,
+          "degrade": {
+            "dropped-construct": 1,
+            "bad-prop": 1
+          },
+          "fields": {}
+        }
+      ]
+    }
+  },
+  {
+    "name": "template-malformed",
+    "row": "$template whose path does not read: dropped",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Text",
+                "text": "kept"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 1,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "Text",
+            "text": "kept",
+            "variant": "body"
+          },
+          "interactive": false,
+          "degrade": {
+            "dropped-construct": 1
+          },
+          "fields": {}
+        }
+      ]
+    }
+  },
+  {
+    "name": "template-object",
+    "row": "$template that would substitute an object: dropped",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "user": {
+                "name": "Ada"
+              }
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Text"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 1,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "unknown",
+            "name": "Text"
+          },
+          "interactive": false,
+          "degrade": {
+            "dropped-construct": 1,
+            "bad-prop": 1
+          },
+          "fields": {}
+        }
+      ]
+    }
+  },
+  {
+    "name": "unknown-expression",
+    "row": "an expression form outside the list: dropped",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Text"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 1,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "unknown",
+            "name": "Text"
+          },
+          "interactive": false,
+          "degrade": {
+            "dropped-construct": 1,
+            "bad-prop": 1
+          },
+          "fields": {}
+        }
+      ]
+    }
+  }
+]

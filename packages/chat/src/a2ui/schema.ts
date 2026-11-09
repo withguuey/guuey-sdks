@@ -262,6 +262,13 @@ export const A2UI_COMPONENT_FAULTS = [
   "no-root",
   /** A component nothing references and that is not the root: it would never draw. */
   "unreferenced-component",
+  /**
+   * A json-render construct the adapter does not carry (spec §12): an
+   * expression it does not map, a built-in state action, a watcher, a slot,
+   * an action hook, a check outside the closed list, an unevaluable
+   * `visible`, a repeat item past the cap, an input type it cannot honour.
+   */
+  "dropped-construct",
 ] as const;
 export type A2uiComponentFault = (typeof A2UI_COMPONENT_FAULTS)[number];
 

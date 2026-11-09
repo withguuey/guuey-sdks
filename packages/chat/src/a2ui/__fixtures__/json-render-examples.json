@@ -1,0 +1,132 @@
+{
+  "source": "guuey#2385, spec §12: the README's form, select and watcher examples, in shape. @json-render/core@0.21.1 is not in either lockfile or the pnpm store, and the lockfile is locked, so its README was not read: these are written from the Spec shape §12 documents, one per README example it names.",
+  "cases": [
+    {
+      "name": "form",
+      "row": "README: a contact form",
+      "carrier": { "title": "Contact us" },
+      "spec": {
+        "root": "form",
+        "elements": {
+          "form": {
+            "type": "Form",
+            "props": {},
+            "children": ["heading", "name", "email", "message", "send"]
+          },
+          "heading": { "type": "Heading", "props": { "text": "Contact us", "level": 2 } },
+          "name": {
+            "type": "Input",
+            "props": {
+              "label": "Name",
+              "value": { "$bindState": "/form/name" },
+              "checks": [{ "fn": "required" }]
+            }
+          },
+          "email": {
+            "type": "Input",
+            "props": {
+              "label": "Email",
+              "type": "email",
+              "value": { "$bindState": "/form/email" },
+              "checks": [{ "fn": "required" }, { "fn": "email" }]
+            }
+          },
+          "message": {
+            "type": "Textarea",
+            "props": {
+              "label": "Message",
+              "value": { "$bindState": "/form/message" },
+              "checks": [{ "fn": "maxLength", "args": { "max": 500 } }]
+            }
+          },
+          "send": {
+            "type": "Button",
+            "props": { "label": "Send", "variant": "primary" },
+            "on": {
+              "press": {
+                "action": "submit_contact",
+                "params": {
+                  "name": { "$state": "/form/name" },
+                  "email": { "$state": "/form/email" },
+                  "message": { "$state": "/form/message" }
+                }
+              }
+            }
+          }
+        },
+        "state": { "form": { "name": "", "email": "", "message": "" } }
+      }
+    },
+    {
+      "name": "select",
+      "row": "README: a select with a dependent summary",
+      "spec": {
+        "root": "page",
+        "elements": {
+          "page": {
+            "type": "Stack",
+            "props": { "gap": "md" },
+            "children": ["plan", "summary", "go"]
+          },
+          "plan": {
+            "type": "Select",
+            "props": {
+              "label": "Plan",
+              "options": [
+                { "label": "Free", "value": "free" },
+                { "label": "Team", "value": "team" },
+                { "label": "Enterprise", "value": "enterprise" }
+              ],
+              "value": { "$bindState": "/plan" }
+            }
+          },
+          "summary": {
+            "type": "Text",
+            "props": { "text": { "$template": "Current plan: ${/plan}" } }
+          },
+          "go": {
+            "type": "Button",
+            "props": { "label": "Continue" },
+            "on": {
+              "press": { "action": "choose_plan", "params": { "plan": { "$state": "/plan" } } }
+            }
+          }
+        },
+        "state": { "plan": "team" }
+      }
+    },
+    {
+      "name": "watcher",
+      "row": "README: a watcher that loads cities for a country",
+      "spec": {
+        "root": "page",
+        "elements": {
+          "page": { "type": "Stack", "props": {}, "children": ["country", "city"] },
+          "country": {
+            "type": "Select",
+            "props": {
+              "label": "Country",
+              "options": ["France", "Japan"],
+              "value": { "$bindState": "/country" }
+            },
+            "watch": {
+              "/country": {
+                "action": "load_cities",
+                "params": { "country": { "$state": "/country" } }
+              }
+            }
+          },
+          "city": {
+            "type": "Select",
+            "props": {
+              "label": "City",
+              "options": { "$state": "/cities" },
+              "value": { "$bindState": "/city" }
+            }
+          }
+        },
+        "state": { "country": "France", "cities": ["Paris", "Lyon"], "city": "" }
+      }
+    }
+  ]
+}

@@ -26,6 +26,14 @@ export {
 } from "./a2ui/fold.js";
 export { A2UI_LIMITS } from "./a2ui/limits.js";
 export {
+  JSON_RENDER_CATALOG_ID,
+  JSON_RENDER_FORMAT,
+  JSON_RENDER_VERSION_PATTERN,
+  jsonRenderToA2ui,
+  type JsonRenderDropped,
+  type JsonRenderResult,
+} from "./a2ui/json-render.js";
+export {
   a2uiImageDisplay,
   DEFAULT_A2UI_MEDIA_POLICY,
   httpsLink,

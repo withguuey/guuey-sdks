@@ -1,0 +1,493 @@
+[
+  {
+    "name": "form",
+    "row": "README: a contact form",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1",
+            "title": "Contact us"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "form": {
+                "name": "",
+                "email": "",
+                "message": ""
+              }
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "heading",
+                  "name",
+                  "email",
+                  "message",
+                  "send"
+                ]
+              },
+              {
+                "id": "heading",
+                "component": "Text",
+                "text": "Contact us",
+                "variant": "h2"
+              },
+              {
+                "id": "name",
+                "component": "TextField",
+                "label": "Name",
+                "value": {
+                  "path": "/form/name"
+                },
+                "required": true
+              },
+              {
+                "id": "email",
+                "component": "TextField",
+                "label": "Email",
+                "value": {
+                  "path": "/form/email"
+                },
+                "inputType": "email",
+                "required": true
+              },
+              {
+                "id": "message",
+                "component": "TextField",
+                "label": "Message",
+                "value": {
+                  "path": "/form/message"
+                },
+                "inputType": "long",
+                "maxLength": 500
+              },
+              {
+                "id": "send",
+                "component": "Button",
+                "label": "Send",
+                "variant": "primary",
+                "action": {
+                  "name": "submit_contact",
+                  "context": {
+                    "name": {
+                      "path": "/form/name"
+                    },
+                    "email": {
+                      "path": "/form/email"
+                    },
+                    "message": {
+                      "path": "/form/message"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 0,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "Column",
+            "children": [
+              {
+                "id": "heading",
+                "component": "Text",
+                "text": "Contact us",
+                "variant": "h2"
+              },
+              {
+                "id": "name",
+                "component": "TextField",
+                "label": "Name",
+                "placeholder": null,
+                "value": {
+                  "path": "/form/name"
+                },
+                "inputType": "text",
+                "required": true,
+                "maxLength": null,
+                "min": null,
+                "max": null
+              },
+              {
+                "id": "email",
+                "component": "TextField",
+                "label": "Email",
+                "placeholder": null,
+                "value": {
+                  "path": "/form/email"
+                },
+                "inputType": "email",
+                "required": true,
+                "maxLength": null,
+                "min": null,
+                "max": null
+              },
+              {
+                "id": "message",
+                "component": "TextField",
+                "label": "Message",
+                "placeholder": null,
+                "value": {
+                  "path": "/form/message"
+                },
+                "inputType": "long",
+                "required": false,
+                "maxLength": 500,
+                "min": null,
+                "max": null
+              },
+              {
+                "id": "send",
+                "component": "Button",
+                "label": "Send",
+                "action": {
+                  "name": "submit_contact",
+                  "context": {
+                    "name": {
+                      "path": "/form/name"
+                    },
+                    "email": {
+                      "path": "/form/email"
+                    },
+                    "message": {
+                      "path": "/form/message"
+                    }
+                  }
+                },
+                "link": null,
+                "variant": "primary",
+                "confirm": null
+              }
+            ],
+            "gap": "md",
+            "align": null,
+            "justify": null
+          },
+          "interactive": true,
+          "degrade": {},
+          "fields": {
+            "/form/name": {
+              "kind": "text",
+              "componentId": "name",
+              "label": "Name",
+              "inputType": "text",
+              "required": true,
+              "maxLength": null,
+              "min": null,
+              "max": null
+            },
+            "/form/email": {
+              "kind": "text",
+              "componentId": "email",
+              "label": "Email",
+              "inputType": "email",
+              "required": true,
+              "maxLength": null,
+              "min": null,
+              "max": null
+            },
+            "/form/message": {
+              "kind": "text",
+              "componentId": "message",
+              "label": "Message",
+              "inputType": "long",
+              "required": false,
+              "maxLength": 500,
+              "min": null,
+              "max": null
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "select",
+    "row": "README: a select with a dependent summary",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "plan": "team"
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "gap": "md",
+                "children": [
+                  "plan",
+                  "summary",
+                  "go"
+                ]
+              },
+              {
+                "id": "plan",
+                "component": "ChoicePicker",
+                "label": "Plan",
+                "value": {
+                  "path": "/plan"
+                },
+                "options": [
+                  {
+                    "label": "Free",
+                    "value": "free"
+                  },
+                  {
+                    "label": "Team",
+                    "value": "team"
+                  },
+                  {
+                    "label": "Enterprise",
+                    "value": "enterprise"
+                  }
+                ]
+              },
+              {
+                "id": "summary",
+                "component": "Text",
+                "text": "Current plan: team"
+              },
+              {
+                "id": "go",
+                "component": "Button",
+                "label": "Continue",
+                "action": {
+                  "name": "choose_plan",
+                  "context": {
+                    "plan": {
+                      "path": "/plan"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 0,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "Column",
+            "children": [
+              {
+                "id": "plan",
+                "component": "ChoicePicker",
+                "label": "Plan",
+                "options": [
+                  {
+                    "label": "Free",
+                    "value": "free"
+                  },
+                  {
+                    "label": "Team",
+                    "value": "team"
+                  },
+                  {
+                    "label": "Enterprise",
+                    "value": "enterprise"
+                  }
+                ],
+                "value": {
+                  "path": "/plan"
+                },
+                "multiple": false,
+                "required": false
+              },
+              {
+                "id": "summary",
+                "component": "Text",
+                "text": "Current plan: team",
+                "variant": "body"
+              },
+              {
+                "id": "go",
+                "component": "Button",
+                "label": "Continue",
+                "action": {
+                  "name": "choose_plan",
+                  "context": {
+                    "plan": {
+                      "path": "/plan"
+                    }
+                  }
+                },
+                "link": null,
+                "variant": null,
+                "confirm": null
+              }
+            ],
+            "gap": "md",
+            "align": null,
+            "justify": null
+          },
+          "interactive": true,
+          "degrade": {},
+          "fields": {
+            "/plan": {
+              "kind": "choice",
+              "componentId": "plan",
+              "label": "Plan",
+              "options": [
+                "free",
+                "team",
+                "enterprise"
+              ],
+              "multiple": false,
+              "required": false
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "watcher",
+    "row": "README: a watcher that loads cities for a country",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "country": "France",
+              "cities": [
+                "Paris",
+                "Lyon"
+              ],
+              "city": ""
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "country",
+                  "city"
+                ]
+              },
+              {
+                "id": "country",
+                "component": "ChoicePicker",
+                "label": "Country",
+                "value": {
+                  "path": "/country"
+                },
+                "options": [
+                  {
+                    "label": "France",
+                    "value": "France"
+                  },
+                  {
+                    "label": "Japan",
+                    "value": "Japan"
+                  }
+                ]
+              },
+              {
+                "id": "city",
+                "component": "ChoicePicker",
+                "label": "City",
+                "value": {
+                  "path": "/city"
+                },
+                "options": [
+                  {
+                    "label": "Paris",
+                    "value": "Paris"
+                  },
+                  {
+                    "label": "Lyon",
+                    "value": "Lyon"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 1,
+        "interactive": true
+      }
+    },
+    "validation": {
+      "ok": false,
+      "reason": "dropped-construct",
+      "path": "/s",
+      "level": "component",
+      "surfaceIds": [
+        "s"
+      ]
+    }
+  }
+]

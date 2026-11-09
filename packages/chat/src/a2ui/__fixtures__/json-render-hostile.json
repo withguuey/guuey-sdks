@@ -1,0 +1,122 @@
+{
+  "source": "guuey#2385, spec §7, §12: hostile json-render carriers. Written from the Spec shape §12 documents for @json-render/core@0.21.1; the package is not in either lockfile or the pnpm store, so it was not read for these. Deep nesting at the bound and huge strings are generated in the test, beside these.",
+  "cases": [
+    {
+      "name": "javascript-urls",
+      "row": "javascript: in a link, an image and a Text link: inert, a chip, inert",
+      "spec": {
+        "root": "page",
+        "elements": {
+          "page": { "type": "Column", "props": {}, "children": ["link", "pic", "words"] },
+          "link": { "type": "Link", "props": { "label": "Click", "href": "javascript:alert(1)" } },
+          "pic": { "type": "Image", "props": { "src": "javascript:alert(2)", "alt": "x" } },
+          "words": { "type": "Text", "props": { "text": "see [this](javascript:alert(3))" } }
+        }
+      }
+    },
+    {
+      "name": "prototype-keys",
+      "row": "__proto__, constructor and toString as keys: data, never inherited",
+      "spec": {
+        "root": "page",
+        "elements": {
+          "page": {
+            "type": "Column",
+            "props": {},
+            "children": ["__proto__", "constructor", "toString"]
+          },
+          "__proto__": { "type": "Text", "props": { "text": { "$state": "/__proto__/polluted" } } }
+        },
+        "state": { "__proto__": { "polluted": "yes" } }
+      }
+    },
+    {
+      "name": "prototype-params",
+      "row": "__proto__ as an action param key and as a type name",
+      "spec": {
+        "root": "go",
+        "elements": {
+          "go": {
+            "type": "Button",
+            "props": { "label": "Go" },
+            "on": { "press": { "action": "go", "params": { "__proto__": "x", "constructor": 1 } } }
+          }
+        }
+      }
+    },
+    {
+      "name": "constructor-type",
+      "row": "a type named constructor or __proto__ is an unknown type",
+      "spec": {
+        "root": "page",
+        "elements": {
+          "page": { "type": "Column", "props": {}, "children": ["a", "b"] },
+          "a": { "type": "constructor", "props": {} },
+          "b": { "type": "__proto__", "props": {} }
+        }
+      }
+    },
+    {
+      "name": "cycle",
+      "row": "an element that holds itself",
+      "spec": {
+        "root": "a",
+        "elements": {
+          "a": { "type": "Column", "props": {}, "children": ["b"] },
+          "b": { "type": "Column", "props": {}, "children": ["a"] }
+        }
+      }
+    },
+    {
+      "name": "nested-repeat",
+      "row": "a repeat inside a repeat over 100 items each: stops at the component bound",
+      "spec": {
+        "root": "outer",
+        "elements": {
+          "outer": {
+            "type": "List",
+            "props": {},
+            "repeat": { "statePath": "/rows" },
+            "children": ["inner"]
+          },
+          "inner": {
+            "type": "Row",
+            "props": {},
+            "repeat": { "statePath": "/rows" },
+            "children": ["cell"]
+          },
+          "cell": { "type": "Text", "props": { "text": { "$index": true } } }
+        },
+        "state": {
+          "rows": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90, 91, 92, 93, 94, 95, 96, 97, 98, 99
+          ]
+        }
+      }
+    },
+    {
+      "name": "password",
+      "row": "an Input of type password is never drawn as a text field",
+      "spec": {
+        "root": "form",
+        "elements": {
+          "form": { "type": "Form", "props": {}, "children": ["pw", "go"] },
+          "pw": {
+            "type": "Input",
+            "props": { "label": "Password", "type": "password", "value": { "$bindState": "/pw" } }
+          },
+          "go": {
+            "type": "Button",
+            "props": { "label": "Sign in" },
+            "on": { "press": { "action": "sign_in" } }
+          }
+        },
+        "state": { "pw": "" }
+      }
+    }
+  ]
+}

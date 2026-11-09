@@ -1,0 +1,108 @@
+{
+  "source": "guuey#2385, spec §12: each PropExpression form, on a read-only surface so its degrade draws in place. Written from the forms §12 lists for @json-render/core@0.21.1 ($state, $bindState, $item, $bindItem, $index, $cond/$then/$else, $computed, $template); the package is not in either lockfile or the pnpm store, so it was not read for these.",
+  "cases": [
+    {
+      "name": "state-in-a-literal-prop",
+      "row": "$state where A2UI takes no binding: read from state at conversion",
+      "spec": {
+        "root": "go",
+        "elements": { "go": { "type": "Button", "props": { "label": { "$state": "/cta" } } } },
+        "state": { "cta": "Read more" }
+      }
+    },
+    {
+      "name": "state-of-the-wrong-type",
+      "row": "$state that reads a number where a string is wanted: dropped",
+      "spec": {
+        "root": "pic",
+        "elements": {
+          "pic": {
+            "type": "Image",
+            "props": { "src": "https://cdn.guueyusercontent.com/p.png", "alt": { "$state": "/n" } }
+          }
+        },
+        "state": { "n": 3 }
+      }
+    },
+    {
+      "name": "item-outside-a-repeat",
+      "row": "$item with no repeat: dropped",
+      "spec": {
+        "root": "t",
+        "elements": {
+          "t": { "type": "Text", "props": { "text": "kept", "variant": { "$item": "kind" } } }
+        }
+      }
+    },
+    {
+      "name": "index-outside-a-repeat",
+      "row": "$index with no repeat: dropped",
+      "spec": {
+        "root": "t",
+        "elements": { "t": { "type": "Text", "props": { "text": { "$index": true } } } }
+      }
+    },
+    {
+      "name": "cond",
+      "row": "$cond/$then/$else: never evaluated, the prop dropped",
+      "spec": {
+        "root": "t",
+        "elements": {
+          "t": {
+            "type": "Text",
+            "props": {
+              "text": "kept",
+              "variant": { "$cond": { "$state": "/big" }, "$then": "h1", "$else": "body" }
+            }
+          }
+        },
+        "state": { "big": true }
+      }
+    },
+    {
+      "name": "computed",
+      "row": "$computed: never evaluated, the prop dropped",
+      "spec": {
+        "root": "t",
+        "elements": {
+          "t": {
+            "type": "Text",
+            "props": { "text": { "$computed": "fullName", "args": { "first": "Ada" } } }
+          }
+        }
+      }
+    },
+    {
+      "name": "template-malformed",
+      "row": "$template whose path does not read: dropped",
+      "spec": {
+        "root": "t",
+        "elements": {
+          "t": {
+            "type": "Text",
+            "props": { "text": "kept", "variant": { "$template": "${user.name}" } }
+          }
+        }
+      }
+    },
+    {
+      "name": "template-object",
+      "row": "$template that would substitute an object: dropped",
+      "spec": {
+        "root": "t",
+        "elements": {
+          "t": { "type": "Text", "props": { "text": { "$template": "You are ${/user}" } } }
+        },
+        "state": { "user": { "name": "Ada" } }
+      }
+    },
+    {
+      "name": "unknown-expression",
+      "row": "an expression form outside the list: dropped",
+      "spec": {
+        "root": "t",
+        "elements": { "t": { "type": "Text", "props": { "text": { "$eval": "1+1" } } } }
+      }
+    }
+  ]
+}

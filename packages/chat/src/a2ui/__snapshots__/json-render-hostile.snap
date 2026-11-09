@@ -1,0 +1,422 @@
+[
+  {
+    "name": "javascript-urls",
+    "row": "javascript: in a link, an image and a Text link: inert, a chip, inert",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "link",
+                  "pic",
+                  "words"
+                ]
+              },
+              {
+                "id": "link",
+                "component": "Button",
+                "label": "Click",
+                "href": "javascript:alert(1)"
+              },
+              {
+                "id": "pic",
+                "component": "Image",
+                "src": "javascript:alert(2)",
+                "alt": "x"
+              },
+              {
+                "id": "words",
+                "component": "Text",
+                "text": "see [this](javascript:alert(3))"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 0,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "Column",
+            "children": [
+              {
+                "id": "link",
+                "component": "Button",
+                "label": "Click",
+                "action": null,
+                "link": null,
+                "variant": null,
+                "confirm": null
+              },
+              {
+                "id": "pic",
+                "component": "Image",
+                "display": {
+                  "kind": "chip"
+                },
+                "alt": "x"
+              },
+              {
+                "id": "words",
+                "component": "Text",
+                "text": "see [this](javascript:alert(3))",
+                "variant": "body"
+              }
+            ],
+            "gap": "md",
+            "align": null,
+            "justify": null
+          },
+          "interactive": false,
+          "degrade": {
+            "refused-link": 1,
+            "refused-image": 1
+          },
+          "fields": {}
+        }
+      ]
+    }
+  },
+  {
+    "name": "prototype-keys",
+    "row": "__proto__, constructor and toString as keys: data, never inherited",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "__proto__": {
+                "polluted": "yes"
+              }
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "__proto__",
+                  "constructor",
+                  "toString"
+                ]
+              },
+              {
+                "id": "__proto__",
+                "component": "Text",
+                "text": {
+                  "path": "/__proto__/polluted"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 0,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "Column",
+            "children": [
+              {
+                "id": "__proto__",
+                "component": "Text",
+                "text": {
+                  "path": "/__proto__/polluted"
+                },
+                "variant": "body"
+              }
+            ],
+            "gap": "md",
+            "align": null,
+            "justify": null
+          },
+          "interactive": false,
+          "degrade": {
+            "dangling-child": 2
+          },
+          "fields": {}
+        }
+      ]
+    }
+  },
+  {
+    "name": "prototype-params",
+    "row": "__proto__ as an action param key and as a type name",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Button",
+                "label": "Go",
+                "action": {
+                  "name": "go",
+                  "context": {
+                    "__proto__": "x",
+                    "constructor": 1
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 0,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": false,
+      "reason": "bad-prop",
+      "path": "/s/root",
+      "level": "component",
+      "surfaceIds": [
+        "s"
+      ]
+    }
+  },
+  {
+    "name": "constructor-type",
+    "row": "a type named constructor or __proto__ is an unknown type",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "a",
+                  "b"
+                ]
+              },
+              {
+                "id": "a",
+                "component": "constructor"
+              },
+              {
+                "id": "b",
+                "component": "__proto__"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 0,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "Column",
+            "children": [
+              {
+                "id": "a",
+                "component": "unknown",
+                "name": "constructor"
+              },
+              {
+                "id": "b",
+                "component": "unknown",
+                "name": "__proto__"
+              }
+            ],
+            "gap": "md",
+            "align": null,
+            "justify": null
+          },
+          "interactive": false,
+          "degrade": {
+            "unknown-component": 2
+          },
+          "fields": {}
+        }
+      ]
+    }
+  },
+  {
+    "name": "cycle",
+    "row": "an element that holds itself",
+    "adapted": {
+      "ok": false,
+      "reason": "cycle",
+      "path": "/spec/elements/b/children/0",
+      "surfaceIds": [
+        "s"
+      ]
+    },
+    "validation": {
+      "ok": false,
+      "reason": "cycle",
+      "path": "/spec/elements/b/children/0",
+      "surfaceIds": [
+        "s"
+      ],
+      "level": "envelope"
+    }
+  },
+  {
+    "name": "nested-repeat",
+    "row": "a repeat inside a repeat over 100 items each: stops at the component bound",
+    "adapted": {
+      "ok": false,
+      "reason": "too-many-components",
+      "path": "/spec/elements",
+      "surfaceIds": [
+        "s"
+      ]
+    },
+    "validation": {
+      "ok": false,
+      "reason": "too-many-components",
+      "path": "/spec/elements",
+      "surfaceIds": [
+        "s"
+      ],
+      "level": "envelope"
+    }
+  },
+  {
+    "name": "password",
+    "row": "an Input of type password is never drawn as a text field",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "pw": ""
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "pw",
+                  "go"
+                ]
+              },
+              {
+                "id": "pw",
+                "component": "Input"
+              },
+              {
+                "id": "go",
+                "component": "Button",
+                "label": "Sign in",
+                "action": {
+                  "name": "sign_in"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 1,
+        "interactive": true
+      }
+    },
+    "validation": {
+      "ok": false,
+      "reason": "dropped-construct",
+      "path": "/s",
+      "level": "component",
+      "surfaceIds": [
+        "s"
+      ]
+    }
+  }
+]

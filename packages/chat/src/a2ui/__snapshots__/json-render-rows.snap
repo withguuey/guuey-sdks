@@ -1,0 +1,2006 @@
+[
+  {
+    "name": "ids",
+    "row": "root, elements map, children",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "e1",
+                  "e2",
+                  "ok-id",
+                  "e0"
+                ]
+              },
+              {
+                "id": "e1",
+                "component": "Text",
+                "text": "a key outside the charset"
+              },
+              {
+                "id": "e2",
+                "component": "Text",
+                "text": "an element keyed root that is not the root"
+              },
+              {
+                "id": "ok-id",
+                "component": "Text",
+                "text": "a key that is already an id"
+              },
+              {
+                "id": "e0",
+                "component": "Text",
+                "text": "a key that looks like a re-keyed id"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 0,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "Column",
+            "children": [
+              {
+                "id": "e1",
+                "component": "Text",
+                "text": "a key outside the charset",
+                "variant": "body"
+              },
+              {
+                "id": "e2",
+                "component": "Text",
+                "text": "an element keyed root that is not the root",
+                "variant": "body"
+              },
+              {
+                "id": "ok-id",
+                "component": "Text",
+                "text": "a key that is already an id",
+                "variant": "body"
+              },
+              {
+                "id": "e0",
+                "component": "Text",
+                "text": "a key that looks like a re-keyed id",
+                "variant": "body"
+              }
+            ],
+            "gap": "md",
+            "align": null,
+            "justify": null
+          },
+          "interactive": false,
+          "degrade": {},
+          "fields": {}
+        }
+      ]
+    }
+  },
+  {
+    "name": "every-kind",
+    "row": "type names, case-insensitive",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "row",
+                  "card",
+                  "list",
+                  "sep",
+                  "img",
+                  "icon",
+                  "go"
+                ]
+              },
+              {
+                "id": "row",
+                "component": "Row",
+                "gap": "sm",
+                "children": [
+                  "para"
+                ]
+              },
+              {
+                "id": "para",
+                "component": "Text",
+                "text": "Hello"
+              },
+              {
+                "id": "card",
+                "component": "Card",
+                "child": "badge"
+              },
+              {
+                "id": "badge",
+                "component": "Text",
+                "text": "New"
+              },
+              {
+                "id": "list",
+                "component": "List",
+                "children": [
+                  "label"
+                ]
+              },
+              {
+                "id": "label",
+                "component": "Text",
+                "text": "One"
+              },
+              {
+                "id": "sep",
+                "component": "Divider"
+              },
+              {
+                "id": "img",
+                "component": "Image",
+                "src": "https://cdn.guueyusercontent.com/a.png",
+                "alt": "Ada"
+              },
+              {
+                "id": "icon",
+                "component": "Icon",
+                "name": "star",
+                "label": "Starred"
+              },
+              {
+                "id": "go",
+                "component": "Button",
+                "label": "Docs",
+                "href": "https://docs.example/start"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 0,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "Column",
+            "children": [
+              {
+                "id": "row",
+                "component": "Row",
+                "children": [
+                  {
+                    "id": "para",
+                    "component": "Text",
+                    "text": "Hello",
+                    "variant": "body"
+                  }
+                ],
+                "gap": "sm",
+                "align": null,
+                "justify": null
+              },
+              {
+                "id": "card",
+                "component": "Card",
+                "child": {
+                  "id": "badge",
+                  "component": "Text",
+                  "text": "New",
+                  "variant": "body"
+                }
+              },
+              {
+                "id": "list",
+                "component": "List",
+                "children": [
+                  {
+                    "id": "label",
+                    "component": "Text",
+                    "text": "One",
+                    "variant": "body"
+                  }
+                ]
+              },
+              {
+                "id": "sep",
+                "component": "Divider",
+                "orientation": "horizontal"
+              },
+              {
+                "id": "img",
+                "component": "Image",
+                "display": {
+                  "kind": "image",
+                  "src": "https://cdn.guueyusercontent.com/a.png"
+                },
+                "alt": "Ada"
+              },
+              {
+                "id": "icon",
+                "component": "Icon",
+                "name": "star",
+                "label": "Starred"
+              },
+              {
+                "id": "go",
+                "component": "Button",
+                "label": "Docs",
+                "action": null,
+                "link": {
+                  "url": "https://docs.example/start",
+                  "host": "docs.example"
+                },
+                "variant": null,
+                "confirm": null
+              }
+            ],
+            "gap": "md",
+            "align": null,
+            "justify": null
+          },
+          "interactive": false,
+          "degrade": {},
+          "fields": {}
+        }
+      ]
+    }
+  },
+  {
+    "name": "every-input",
+    "row": "type names, case-insensitive (inputs)",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "name": "",
+              "note": "",
+              "agree": false,
+              "size": "M",
+              "plan": "free"
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "name",
+                  "note",
+                  "agree",
+                  "size",
+                  "plan"
+                ]
+              },
+              {
+                "id": "name",
+                "component": "TextField",
+                "label": "Name",
+                "placeholder": "Ada",
+                "value": {
+                  "path": "/name"
+                }
+              },
+              {
+                "id": "note",
+                "component": "TextField",
+                "label": "Note",
+                "value": {
+                  "path": "/note"
+                },
+                "inputType": "long"
+              },
+              {
+                "id": "agree",
+                "component": "CheckBox",
+                "label": "Agree",
+                "checked": {
+                  "path": "/agree"
+                }
+              },
+              {
+                "id": "size",
+                "component": "ChoicePicker",
+                "label": "Size",
+                "value": {
+                  "path": "/size"
+                },
+                "options": [
+                  {
+                    "label": "S",
+                    "value": "S"
+                  },
+                  {
+                    "label": "M",
+                    "value": "M"
+                  },
+                  {
+                    "label": "L",
+                    "value": "L"
+                  }
+                ]
+              },
+              {
+                "id": "plan",
+                "component": "ChoicePicker",
+                "label": "Plan",
+                "value": {
+                  "path": "/plan"
+                },
+                "options": [
+                  {
+                    "label": "Free",
+                    "value": "free"
+                  },
+                  {
+                    "label": "Pro",
+                    "value": "pro"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 0,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "Column",
+            "children": [
+              {
+                "id": "name",
+                "component": "TextField",
+                "label": "Name",
+                "placeholder": "Ada",
+                "value": {
+                  "path": "/name"
+                },
+                "inputType": "text",
+                "required": false,
+                "maxLength": null,
+                "min": null,
+                "max": null
+              },
+              {
+                "id": "note",
+                "component": "TextField",
+                "label": "Note",
+                "placeholder": null,
+                "value": {
+                  "path": "/note"
+                },
+                "inputType": "long",
+                "required": false,
+                "maxLength": null,
+                "min": null,
+                "max": null
+              },
+              {
+                "id": "agree",
+                "component": "CheckBox",
+                "label": "Agree",
+                "checked": {
+                  "path": "/agree"
+                },
+                "required": false
+              },
+              {
+                "id": "size",
+                "component": "ChoicePicker",
+                "label": "Size",
+                "options": [
+                  {
+                    "label": "S",
+                    "value": "S"
+                  },
+                  {
+                    "label": "M",
+                    "value": "M"
+                  },
+                  {
+                    "label": "L",
+                    "value": "L"
+                  }
+                ],
+                "value": {
+                  "path": "/size"
+                },
+                "multiple": false,
+                "required": false
+              },
+              {
+                "id": "plan",
+                "component": "ChoicePicker",
+                "label": "Plan",
+                "options": [
+                  {
+                    "label": "Free",
+                    "value": "free"
+                  },
+                  {
+                    "label": "Pro",
+                    "value": "pro"
+                  }
+                ],
+                "value": {
+                  "path": "/plan"
+                },
+                "multiple": false,
+                "required": false
+              }
+            ],
+            "gap": "md",
+            "align": null,
+            "justify": null
+          },
+          "interactive": true,
+          "degrade": {},
+          "fields": {
+            "/name": {
+              "kind": "text",
+              "componentId": "name",
+              "label": "Name",
+              "inputType": "text",
+              "required": false,
+              "maxLength": null,
+              "min": null,
+              "max": null
+            },
+            "/note": {
+              "kind": "text",
+              "componentId": "note",
+              "label": "Note",
+              "inputType": "long",
+              "required": false,
+              "maxLength": null,
+              "min": null,
+              "max": null
+            },
+            "/agree": {
+              "kind": "boolean",
+              "componentId": "agree",
+              "label": "Agree",
+              "required": false
+            },
+            "/size": {
+              "kind": "choice",
+              "componentId": "size",
+              "label": "Size",
+              "options": [
+                "S",
+                "M",
+                "L"
+              ],
+              "multiple": false,
+              "required": false
+            },
+            "/plan": {
+              "kind": "choice",
+              "componentId": "plan",
+              "label": "Plan",
+              "options": [
+                "free",
+                "pro"
+              ],
+              "multiple": false,
+              "required": false
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "heading-levels",
+    "row": "Heading sets variant from props.level",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "h1",
+                  "h4",
+                  "plain"
+                ]
+              },
+              {
+                "id": "h1",
+                "component": "Text",
+                "text": "Top",
+                "variant": "h1"
+              },
+              {
+                "id": "h4",
+                "component": "Text",
+                "text": "Deep",
+                "variant": "h4"
+              },
+              {
+                "id": "plain",
+                "component": "Text",
+                "text": "Default",
+                "variant": "h2"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 0,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "Column",
+            "children": [
+              {
+                "id": "h1",
+                "component": "Text",
+                "text": "Top",
+                "variant": "h1"
+              },
+              {
+                "id": "h4",
+                "component": "Text",
+                "text": "Deep",
+                "variant": "h4"
+              },
+              {
+                "id": "plain",
+                "component": "Text",
+                "text": "Default",
+                "variant": "h2"
+              }
+            ],
+            "gap": "md",
+            "align": null,
+            "justify": null
+          },
+          "interactive": false,
+          "degrade": {},
+          "fields": {}
+        }
+      ]
+    }
+  },
+  {
+    "name": "unknown-type",
+    "row": "Any other type",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "tabs",
+                  "after"
+                ]
+              },
+              {
+                "id": "tabs",
+                "component": "Tabs"
+              },
+              {
+                "id": "after",
+                "component": "Text",
+                "text": "still drawn"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 0,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "Column",
+            "children": [
+              {
+                "id": "tabs",
+                "component": "unknown",
+                "name": "Tabs"
+              },
+              {
+                "id": "after",
+                "component": "Text",
+                "text": "still drawn",
+                "variant": "body"
+              }
+            ],
+            "gap": "md",
+            "align": null,
+            "justify": null
+          },
+          "interactive": false,
+          "degrade": {
+            "unknown-component": 1
+          },
+          "fields": {}
+        }
+      ]
+    }
+  },
+  {
+    "name": "state",
+    "row": "{ $state } in a prop",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "greeting": "Good morning",
+              "cta": "Open the menu",
+              "url": "https://menu.example/m"
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "greeting",
+                  "cta"
+                ]
+              },
+              {
+                "id": "greeting",
+                "component": "Text",
+                "text": {
+                  "path": "/greeting"
+                }
+              },
+              {
+                "id": "cta",
+                "component": "Button",
+                "label": "Open the menu",
+                "href": "https://menu.example/m"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 0,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "Column",
+            "children": [
+              {
+                "id": "greeting",
+                "component": "Text",
+                "text": {
+                  "path": "/greeting"
+                },
+                "variant": "body"
+              },
+              {
+                "id": "cta",
+                "component": "Button",
+                "label": "Open the menu",
+                "action": null,
+                "link": {
+                  "url": "https://menu.example/m",
+                  "host": "menu.example"
+                },
+                "variant": null,
+                "confirm": null
+              }
+            ],
+            "gap": "md",
+            "align": null,
+            "justify": null
+          },
+          "interactive": false,
+          "degrade": {},
+          "fields": {}
+        }
+      ]
+    }
+  },
+  {
+    "name": "bind-state",
+    "row": "{ $bindState } on the value prop",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "user": {
+                "name": "Ada"
+              }
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "TextField",
+                "label": "Name",
+                "value": {
+                  "path": "/user/name"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 0,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "TextField",
+            "label": "Name",
+            "placeholder": null,
+            "value": {
+              "path": "/user/name"
+            },
+            "inputType": "text",
+            "required": false,
+            "maxLength": null,
+            "min": null,
+            "max": null
+          },
+          "interactive": true,
+          "degrade": {},
+          "fields": {
+            "/user/name": {
+              "kind": "text",
+              "componentId": "root",
+              "label": "Name",
+              "inputType": "text",
+              "required": false,
+              "maxLength": null,
+              "min": null,
+              "max": null
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "template",
+    "row": "{ $template }",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "user": {
+                "name": "Ada"
+              },
+              "count": 3
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Text",
+                "text": "Hello Ada, you have 3 items."
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 0,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "Text",
+            "text": "Hello Ada, you have 3 items.",
+            "variant": "body"
+          },
+          "interactive": false,
+          "degrade": {},
+          "fields": {}
+        }
+      ]
+    }
+  },
+  {
+    "name": "repeat",
+    "row": "repeat { statePath } + $item / $bindItem / $index",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "todos": [
+                {
+                  "id": "a",
+                  "title": "Buy milk",
+                  "done": false
+                },
+                {
+                  "id": "b",
+                  "title": "Call Ada",
+                  "done": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "List",
+                "children": [
+                  "todo.0",
+                  "todo.1"
+                ]
+              },
+              {
+                "id": "todo.0",
+                "component": "Row",
+                "children": [
+                  "done.0",
+                  "num.0"
+                ]
+              },
+              {
+                "id": "done.0",
+                "component": "CheckBox",
+                "label": "Buy milk",
+                "checked": {
+                  "path": "/todos/0/done"
+                }
+              },
+              {
+                "id": "num.0",
+                "component": "Text",
+                "text": "0"
+              },
+              {
+                "id": "todo.1",
+                "component": "Row",
+                "children": [
+                  "done.1",
+                  "num.1"
+                ]
+              },
+              {
+                "id": "done.1",
+                "component": "CheckBox",
+                "label": "Call Ada",
+                "checked": {
+                  "path": "/todos/1/done"
+                }
+              },
+              {
+                "id": "num.1",
+                "component": "Text",
+                "text": "1"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 0,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "List",
+            "children": [
+              {
+                "id": "todo.0",
+                "component": "Row",
+                "children": [
+                  {
+                    "id": "done.0",
+                    "component": "CheckBox",
+                    "label": "Buy milk",
+                    "checked": {
+                      "path": "/todos/0/done"
+                    },
+                    "required": false
+                  },
+                  {
+                    "id": "num.0",
+                    "component": "Text",
+                    "text": "0",
+                    "variant": "body"
+                  }
+                ],
+                "gap": "md",
+                "align": null,
+                "justify": null
+              },
+              {
+                "id": "todo.1",
+                "component": "Row",
+                "children": [
+                  {
+                    "id": "done.1",
+                    "component": "CheckBox",
+                    "label": "Call Ada",
+                    "checked": {
+                      "path": "/todos/1/done"
+                    },
+                    "required": false
+                  },
+                  {
+                    "id": "num.1",
+                    "component": "Text",
+                    "text": "1",
+                    "variant": "body"
+                  }
+                ],
+                "gap": "md",
+                "align": null,
+                "justify": null
+              }
+            ]
+          },
+          "interactive": true,
+          "degrade": {},
+          "fields": {
+            "/todos/0/done": {
+              "kind": "boolean",
+              "componentId": "done.0",
+              "label": "Buy milk",
+              "required": false
+            },
+            "/todos/1/done": {
+              "kind": "boolean",
+              "componentId": "done.1",
+              "label": "Call Ada",
+              "required": false
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "visible",
+    "row": "visible",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "show": true,
+              "mode": "pro",
+              "n": 5
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "yes",
+                  "truthy",
+                  "eq",
+                  "and",
+                  "or"
+                ]
+              },
+              {
+                "id": "yes",
+                "component": "Text",
+                "text": "literal true"
+              },
+              {
+                "id": "truthy",
+                "component": "Text",
+                "text": "truthy"
+              },
+              {
+                "id": "eq",
+                "component": "Text",
+                "text": "eq"
+              },
+              {
+                "id": "and",
+                "component": "Text",
+                "text": "and"
+              },
+              {
+                "id": "or",
+                "component": "Text",
+                "text": "or"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 1,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "Column",
+            "children": [
+              {
+                "id": "yes",
+                "component": "Text",
+                "text": "literal true",
+                "variant": "body"
+              },
+              {
+                "id": "truthy",
+                "component": "Text",
+                "text": "truthy",
+                "variant": "body"
+              },
+              {
+                "id": "eq",
+                "component": "Text",
+                "text": "eq",
+                "variant": "body"
+              },
+              {
+                "id": "and",
+                "component": "Text",
+                "text": "and",
+                "variant": "body"
+              },
+              {
+                "id": "or",
+                "component": "Text",
+                "text": "or",
+                "variant": "body"
+              }
+            ],
+            "gap": "md",
+            "align": null,
+            "justify": null
+          },
+          "interactive": false,
+          "degrade": {
+            "dropped-construct": 1
+          },
+          "fields": {}
+        }
+      ]
+    }
+  },
+  {
+    "name": "press",
+    "row": "on.press → { action, params }",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "when": "Friday 7pm"
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "when",
+                  "book"
+                ]
+              },
+              {
+                "id": "when",
+                "component": "TextField",
+                "label": "When",
+                "value": {
+                  "path": "/when"
+                }
+              },
+              {
+                "id": "book",
+                "component": "Button",
+                "label": "Book",
+                "action": {
+                  "name": "book_table",
+                  "context": {
+                    "when": {
+                      "path": "/when"
+                    },
+                    "party": 4,
+                    "note": "window"
+                  }
+                },
+                "confirm": {
+                  "title": "Book it?",
+                  "message": "We hold the table for 15 minutes."
+                },
+                "variant": "danger"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 0,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "Column",
+            "children": [
+              {
+                "id": "when",
+                "component": "TextField",
+                "label": "When",
+                "placeholder": null,
+                "value": {
+                  "path": "/when"
+                },
+                "inputType": "text",
+                "required": false,
+                "maxLength": null,
+                "min": null,
+                "max": null
+              },
+              {
+                "id": "book",
+                "component": "Button",
+                "label": "Book",
+                "action": {
+                  "name": "book_table",
+                  "context": {
+                    "when": {
+                      "path": "/when"
+                    },
+                    "party": 4,
+                    "note": "window"
+                  }
+                },
+                "link": null,
+                "variant": "danger",
+                "confirm": {
+                  "title": "Book it?",
+                  "message": "We hold the table for 15 minutes.",
+                  "confirmLabel": null,
+                  "cancelLabel": null
+                }
+              }
+            ],
+            "gap": "md",
+            "align": null,
+            "justify": null
+          },
+          "interactive": true,
+          "degrade": {},
+          "fields": {
+            "/when": {
+              "kind": "text",
+              "componentId": "when",
+              "label": "When",
+              "inputType": "text",
+              "required": false,
+              "maxLength": null,
+              "min": null,
+              "max": null
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "built-in-actions",
+    "row": "Built-in actions setState, pushState, removeState",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "q": "x"
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "clear"
+                ]
+              },
+              {
+                "id": "clear",
+                "component": "Button",
+                "label": "Clear"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 1,
+        "interactive": true
+      }
+    },
+    "validation": {
+      "ok": false,
+      "reason": "dropped-construct",
+      "path": "/s",
+      "level": "component",
+      "surfaceIds": [
+        "s"
+      ]
+    }
+  },
+  {
+    "name": "hooks-watch-slots",
+    "row": "onSuccess, onError, watch, slots, preventDefault",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Card",
+                "child": "root.body"
+              },
+              {
+                "id": "body",
+                "component": "Text",
+                "text": "A read-only card: the slot is dropped, the card still draws."
+              },
+              {
+                "id": "root.title",
+                "component": "Text",
+                "text": "Welcome",
+                "variant": "h3"
+              },
+              {
+                "id": "root.body",
+                "component": "Column",
+                "children": [
+                  "root.title",
+                  "body"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 1,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "Card",
+            "child": {
+              "id": "root.body",
+              "component": "Column",
+              "children": [
+                {
+                  "id": "root.title",
+                  "component": "Text",
+                  "text": "Welcome",
+                  "variant": "h3"
+                },
+                {
+                  "id": "body",
+                  "component": "Text",
+                  "text": "A read-only card: the slot is dropped, the card still draws.",
+                  "variant": "body"
+                }
+              ],
+              "gap": "md",
+              "align": null,
+              "justify": null
+            }
+          },
+          "interactive": false,
+          "degrade": {
+            "dropped-construct": 1
+          },
+          "fields": {}
+        }
+      ]
+    }
+  },
+  {
+    "name": "hooks-on-a-form",
+    "row": "onSuccess, onError, watch, slots, preventDefault (interactive)",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "q": ""
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "q",
+                  "go"
+                ]
+              },
+              {
+                "id": "q",
+                "component": "TextField",
+                "label": "Search",
+                "value": {
+                  "path": "/q"
+                }
+              },
+              {
+                "id": "go",
+                "component": "Button",
+                "label": "Search",
+                "action": {
+                  "name": "search",
+                  "context": {
+                    "q": {
+                      "path": "/q"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 3,
+        "interactive": true
+      }
+    },
+    "validation": {
+      "ok": false,
+      "reason": "dropped-construct",
+      "path": "/s",
+      "level": "component",
+      "surfaceIds": [
+        "s"
+      ]
+    }
+  },
+  {
+    "name": "cond-computed",
+    "row": "$cond, $computed",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "open": true
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "status",
+                  "pic"
+                ]
+              },
+              {
+                "id": "status",
+                "component": "Text"
+              },
+              {
+                "id": "pic",
+                "component": "Image",
+                "src": "https://cdn.guueyusercontent.com/p.png"
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 2,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "Column",
+            "children": [
+              {
+                "id": "status",
+                "component": "unknown",
+                "name": "Text"
+              },
+              {
+                "id": "pic",
+                "component": "Image",
+                "display": {
+                  "kind": "image",
+                  "src": "https://cdn.guueyusercontent.com/p.png"
+                },
+                "alt": null
+              }
+            ],
+            "gap": "md",
+            "align": null,
+            "justify": null
+          },
+          "interactive": false,
+          "degrade": {
+            "dropped-construct": 2,
+            "bad-prop": 1
+          },
+          "fields": {}
+        }
+      ]
+    }
+  },
+  {
+    "name": "checks",
+    "row": "Validation checks: required, minLength, maxLength, min, max, email, numeric",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "name": "",
+              "email": "",
+              "age": "",
+              "terms": false
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "name",
+                  "email",
+                  "age",
+                  "terms"
+                ]
+              },
+              {
+                "id": "name",
+                "component": "TextField",
+                "label": "Name",
+                "value": {
+                  "path": "/name"
+                },
+                "required": true,
+                "maxLength": 40
+              },
+              {
+                "id": "email",
+                "component": "TextField",
+                "label": "Email",
+                "value": {
+                  "path": "/email"
+                },
+                "required": true,
+                "inputType": "email"
+              },
+              {
+                "id": "age",
+                "component": "TextField",
+                "label": "Age",
+                "value": {
+                  "path": "/age"
+                },
+                "inputType": "number",
+                "min": 18,
+                "max": 120
+              },
+              {
+                "id": "terms",
+                "component": "CheckBox",
+                "label": "I agree",
+                "checked": {
+                  "path": "/terms"
+                },
+                "required": true
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 0,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": true,
+      "surfaces": [
+        {
+          "root": {
+            "id": "root",
+            "component": "Column",
+            "children": [
+              {
+                "id": "name",
+                "component": "TextField",
+                "label": "Name",
+                "placeholder": null,
+                "value": {
+                  "path": "/name"
+                },
+                "inputType": "text",
+                "required": true,
+                "maxLength": 40,
+                "min": null,
+                "max": null
+              },
+              {
+                "id": "email",
+                "component": "TextField",
+                "label": "Email",
+                "placeholder": null,
+                "value": {
+                  "path": "/email"
+                },
+                "inputType": "email",
+                "required": true,
+                "maxLength": null,
+                "min": null,
+                "max": null
+              },
+              {
+                "id": "age",
+                "component": "TextField",
+                "label": "Age",
+                "placeholder": null,
+                "value": {
+                  "path": "/age"
+                },
+                "inputType": "number",
+                "required": false,
+                "maxLength": null,
+                "min": 18,
+                "max": 120
+              },
+              {
+                "id": "terms",
+                "component": "CheckBox",
+                "label": "I agree",
+                "checked": {
+                  "path": "/terms"
+                },
+                "required": true
+              }
+            ],
+            "gap": "md",
+            "align": null,
+            "justify": null
+          },
+          "interactive": true,
+          "degrade": {},
+          "fields": {
+            "/name": {
+              "kind": "text",
+              "componentId": "name",
+              "label": "Name",
+              "inputType": "text",
+              "required": true,
+              "maxLength": 40,
+              "min": null,
+              "max": null
+            },
+            "/email": {
+              "kind": "text",
+              "componentId": "email",
+              "label": "Email",
+              "inputType": "email",
+              "required": true,
+              "maxLength": null,
+              "min": null,
+              "max": null
+            },
+            "/age": {
+              "kind": "text",
+              "componentId": "age",
+              "label": "Age",
+              "inputType": "number",
+              "required": false,
+              "maxLength": null,
+              "min": 18,
+              "max": 120
+            },
+            "/terms": {
+              "kind": "boolean",
+              "componentId": "terms",
+              "label": "I agree",
+              "required": true
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "unsupported-checks",
+    "row": "pattern, matches, requiredIf, url, custom checks",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "code": "",
+              "other": ""
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "code",
+                  "go"
+                ]
+              },
+              {
+                "id": "code",
+                "component": "TextField",
+                "label": "Code",
+                "value": {
+                  "path": "/code"
+                }
+              },
+              {
+                "id": "go",
+                "component": "Button",
+                "label": "Send",
+                "action": {
+                  "name": "send"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 5,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": false,
+      "reason": "dropped-construct",
+      "path": "/s",
+      "level": "component",
+      "surfaceIds": [
+        "s"
+      ]
+    }
+  }
+]

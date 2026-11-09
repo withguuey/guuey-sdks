@@ -1,0 +1,463 @@
+{
+  "source": "guuey#2385, spec §12. One case per row of the §12 mapping table. Written from the Spec shape §12 documents for @json-render/core@0.21.1 ({ root, elements: { [key]: { type, props, children?, slots?, visible?, on?, repeat?, watch? } }, state? }). The package is not in either lockfile or the pnpm store, and the lockfile is locked, so it was not read or run for these vectors.",
+  "cases": [
+    {
+      "name": "ids",
+      "row": "root, elements map, children",
+      "spec": {
+        "root": "page",
+        "elements": {
+          "page": {
+            "type": "Column",
+            "props": {},
+            "children": ["has space", "root", "ok-id", "e0"]
+          },
+          "has space": { "type": "Text", "props": { "text": "a key outside the charset" } },
+          "root": {
+            "type": "Text",
+            "props": { "text": "an element keyed root that is not the root" }
+          },
+          "ok-id": { "type": "Text", "props": { "text": "a key that is already an id" } },
+          "e0": { "type": "Text", "props": { "text": "a key that looks like a re-keyed id" } }
+        }
+      }
+    },
+    {
+      "name": "every-kind",
+      "row": "type names, case-insensitive",
+      "spec": {
+        "root": "page",
+        "elements": {
+          "page": {
+            "type": "VStack",
+            "props": {},
+            "children": ["row", "card", "list", "sep", "img", "icon", "go"]
+          },
+          "row": { "type": "hstack", "props": { "gap": "sm" }, "children": ["para"] },
+          "para": { "type": "Paragraph", "props": { "text": "Hello" } },
+          "card": { "type": "Card", "props": {}, "children": ["badge"] },
+          "badge": { "type": "Badge", "props": { "text": "New" } },
+          "list": { "type": "List", "props": {}, "children": ["label"] },
+          "label": { "type": "Label", "props": { "text": "One" } },
+          "sep": { "type": "Separator", "props": {} },
+          "img": {
+            "type": "Avatar",
+            "props": { "src": "https://cdn.guueyusercontent.com/a.png", "name": "Ada" }
+          },
+          "icon": { "type": "Icon", "props": { "name": "star", "label": "Starred" } },
+          "go": {
+            "type": "Link",
+            "props": { "label": "Docs", "href": "https://docs.example/start" }
+          }
+        }
+      }
+    },
+    {
+      "name": "every-input",
+      "row": "type names, case-insensitive (inputs)",
+      "spec": {
+        "root": "form",
+        "elements": {
+          "form": {
+            "type": "Form",
+            "props": {},
+            "children": ["name", "note", "agree", "size", "plan"]
+          },
+          "name": {
+            "type": "TextInput",
+            "props": { "label": "Name", "placeholder": "Ada", "value": { "$bindState": "/name" } }
+          },
+          "note": {
+            "type": "Textarea",
+            "props": { "label": "Note", "value": { "$bindState": "/note" } }
+          },
+          "agree": {
+            "type": "Switch",
+            "props": { "label": "Agree", "checked": { "$bindState": "/agree" } }
+          },
+          "size": {
+            "type": "Select",
+            "props": {
+              "label": "Size",
+              "options": ["S", "M", "L"],
+              "value": { "$bindState": "/size" }
+            }
+          },
+          "plan": {
+            "type": "RadioGroup",
+            "props": {
+              "label": "Plan",
+              "multiple": true,
+              "options": [
+                { "label": "Free", "value": "free" },
+                { "label": "Pro", "value": "pro" }
+              ],
+              "value": { "$bindState": "/plan" }
+            }
+          }
+        },
+        "state": { "name": "", "note": "", "agree": false, "size": "M", "plan": "free" }
+      }
+    },
+    {
+      "name": "heading-levels",
+      "row": "Heading sets variant from props.level",
+      "spec": {
+        "root": "page",
+        "elements": {
+          "page": { "type": "Column", "props": {}, "children": ["h1", "h4", "plain"] },
+          "h1": { "type": "Heading", "props": { "text": "Top", "level": 1 } },
+          "h4": { "type": "Heading", "props": { "text": "Deep", "level": "h4" } },
+          "plain": { "type": "Heading", "props": { "text": "Default" } }
+        }
+      }
+    },
+    {
+      "name": "unknown-type",
+      "row": "Any other type",
+      "spec": {
+        "root": "page",
+        "elements": {
+          "page": { "type": "Column", "props": {}, "children": ["tabs", "after"] },
+          "tabs": { "type": "Tabs", "props": { "label": "Sections" }, "children": ["inside"] },
+          "inside": {
+            "type": "Text",
+            "props": { "text": "only reachable through the unknown type" }
+          },
+          "after": { "type": "Text", "props": { "text": "still drawn" } }
+        }
+      }
+    },
+    {
+      "name": "state",
+      "row": "{ $state } in a prop",
+      "spec": {
+        "root": "page",
+        "elements": {
+          "page": { "type": "Column", "props": {}, "children": ["greeting", "cta"] },
+          "greeting": { "type": "Text", "props": { "text": { "$state": "/greeting" } } },
+          "cta": {
+            "type": "Link",
+            "props": { "label": { "$state": "/cta" }, "href": { "$state": "/url" } }
+          }
+        },
+        "state": {
+          "greeting": "Good morning",
+          "cta": "Open the menu",
+          "url": "https://menu.example/m"
+        }
+      }
+    },
+    {
+      "name": "bind-state",
+      "row": "{ $bindState } on the value prop",
+      "spec": {
+        "root": "name",
+        "elements": {
+          "name": {
+            "type": "Input",
+            "props": { "label": "Name", "value": { "$bindState": "/user/name" } }
+          }
+        },
+        "state": { "user": { "name": "Ada" } }
+      }
+    },
+    {
+      "name": "template",
+      "row": "{ $template }",
+      "spec": {
+        "root": "line",
+        "elements": {
+          "line": {
+            "type": "Text",
+            "props": {
+              "text": { "$template": "Hello ${/user/name}, you have ${/count} items${/missing}." }
+            }
+          }
+        },
+        "state": { "user": { "name": "Ada" }, "count": 3 }
+      }
+    },
+    {
+      "name": "repeat",
+      "row": "repeat { statePath } + $item / $bindItem / $index",
+      "spec": {
+        "root": "todos",
+        "elements": {
+          "todos": {
+            "type": "List",
+            "props": {},
+            "repeat": { "statePath": "/todos", "key": "id" },
+            "children": ["todo"]
+          },
+          "todo": { "type": "Row", "props": {}, "children": ["done", "num"] },
+          "done": {
+            "type": "Checkbox",
+            "props": { "label": { "$item": "title" }, "checked": { "$bindItem": "done" } }
+          },
+          "num": { "type": "Text", "props": { "text": { "$index": true } } }
+        },
+        "state": {
+          "todos": [
+            { "id": "a", "title": "Buy milk", "done": false },
+            { "id": "b", "title": "Call Ada", "done": true }
+          ]
+        }
+      }
+    },
+    {
+      "name": "visible",
+      "row": "visible",
+      "spec": {
+        "root": "page",
+        "elements": {
+          "page": {
+            "type": "Column",
+            "props": {},
+            "children": ["yes", "no", "truthy", "eq", "neq", "not", "and", "or", "gt"]
+          },
+          "yes": { "type": "Text", "props": { "text": "literal true" }, "visible": true },
+          "no": { "type": "Text", "props": { "text": "literal false" }, "visible": false },
+          "truthy": {
+            "type": "Text",
+            "props": { "text": "truthy" },
+            "visible": { "$state": "/show" }
+          },
+          "eq": {
+            "type": "Text",
+            "props": { "text": "eq" },
+            "visible": { "$state": "/mode", "eq": "pro" }
+          },
+          "neq": {
+            "type": "Text",
+            "props": { "text": "neq" },
+            "visible": { "$state": "/mode", "neq": "pro" }
+          },
+          "not": {
+            "type": "Text",
+            "props": { "text": "not" },
+            "visible": { "$state": "/show", "not": true }
+          },
+          "and": {
+            "type": "Text",
+            "props": { "text": "and" },
+            "visible": { "$and": [{ "$state": "/show" }, { "$state": "/mode", "eq": "pro" }] }
+          },
+          "or": {
+            "type": "Text",
+            "props": { "text": "or" },
+            "visible": { "$or": [false, { "$state": "/show" }] }
+          },
+          "gt": {
+            "type": "Text",
+            "props": { "text": "an undocumented form" },
+            "visible": { "$state": "/n", "gt": 3 }
+          }
+        },
+        "state": { "show": true, "mode": "pro", "n": 5 }
+      }
+    },
+    {
+      "name": "press",
+      "row": "on.press → { action, params }",
+      "spec": {
+        "root": "form",
+        "elements": {
+          "form": { "type": "Form", "props": {}, "children": ["when", "book"] },
+          "when": {
+            "type": "Input",
+            "props": { "label": "When", "value": { "$bindState": "/when" } }
+          },
+          "book": {
+            "type": "Button",
+            "props": { "label": "Book" },
+            "on": {
+              "press": {
+                "action": "book_table",
+                "params": { "when": { "$state": "/when" }, "party": 4, "note": "window" },
+                "confirm": {
+                  "title": "Book it?",
+                  "message": "We hold the table for 15 minutes.",
+                  "variant": "danger"
+                }
+              }
+            }
+          }
+        },
+        "state": { "when": "Friday 7pm" }
+      }
+    },
+    {
+      "name": "built-in-actions",
+      "row": "Built-in actions setState, pushState, removeState",
+      "spec": {
+        "root": "page",
+        "elements": {
+          "page": { "type": "Column", "props": {}, "children": ["clear"] },
+          "clear": {
+            "type": "Button",
+            "props": { "label": "Clear" },
+            "on": {
+              "press": { "action": "setState", "params": { "statePath": "/q", "value": "" } }
+            }
+          }
+        },
+        "state": { "q": "x" }
+      }
+    },
+    {
+      "name": "hooks-watch-slots",
+      "row": "onSuccess, onError, watch, slots, preventDefault",
+      "spec": {
+        "root": "page",
+        "elements": {
+          "page": {
+            "type": "Card",
+            "props": { "title": "Welcome" },
+            "slots": { "footer": ["fine"] },
+            "children": ["body"]
+          },
+          "body": {
+            "type": "Text",
+            "props": { "text": "A read-only card: the slot is dropped, the card still draws." }
+          },
+          "fine": { "type": "Text", "props": { "text": "print" } }
+        }
+      }
+    },
+    {
+      "name": "hooks-on-a-form",
+      "row": "onSuccess, onError, watch, slots, preventDefault (interactive)",
+      "spec": {
+        "root": "form",
+        "elements": {
+          "form": { "type": "Form", "props": {}, "children": ["q", "go"] },
+          "q": {
+            "type": "Input",
+            "props": { "label": "Search", "value": { "$bindState": "/q" } },
+            "watch": { "/q": { "action": "suggest" } }
+          },
+          "go": {
+            "type": "Button",
+            "props": { "label": "Search" },
+            "on": {
+              "press": {
+                "action": "search",
+                "params": { "q": { "$state": "/q" } },
+                "onSuccess": { "action": "setState" },
+                "preventDefault": true
+              }
+            }
+          }
+        },
+        "state": { "q": "" }
+      }
+    },
+    {
+      "name": "cond-computed",
+      "row": "$cond, $computed",
+      "spec": {
+        "root": "page",
+        "elements": {
+          "page": { "type": "Column", "props": {}, "children": ["status", "pic"] },
+          "status": {
+            "type": "Text",
+            "props": {
+              "text": { "$cond": { "$state": "/open" }, "$then": "Open", "$else": "Closed" }
+            }
+          },
+          "pic": {
+            "type": "Image",
+            "props": {
+              "src": "https://cdn.guueyusercontent.com/p.png",
+              "alt": { "$computed": "describe", "args": {} }
+            }
+          }
+        },
+        "state": { "open": true }
+      }
+    },
+    {
+      "name": "checks",
+      "row": "Validation checks: required, minLength, maxLength, min, max, email, numeric",
+      "spec": {
+        "root": "form",
+        "elements": {
+          "form": { "type": "Form", "props": {}, "children": ["name", "email", "age", "terms"] },
+          "name": {
+            "type": "Input",
+            "props": {
+              "label": "Name",
+              "value": { "$bindState": "/name" },
+              "checks": [
+                { "fn": "minLength", "args": { "min": 2 }, "message": "Too short" },
+                { "fn": "maxLength", "args": { "max": 40 } }
+              ]
+            }
+          },
+          "email": {
+            "type": "Input",
+            "props": {
+              "label": "Email",
+              "value": { "$bindState": "/email" },
+              "checks": [{ "fn": "required" }, { "fn": "email" }]
+            }
+          },
+          "age": {
+            "type": "Input",
+            "props": {
+              "label": "Age",
+              "value": { "$bindState": "/age" },
+              "validation": {
+                "checks": [
+                  { "type": "numeric" },
+                  { "type": "min", "args": { "min": 18 } },
+                  { "type": "max", "args": { "max": 120 } }
+                ]
+              }
+            }
+          },
+          "terms": {
+            "type": "Checkbox",
+            "props": {
+              "label": "I agree",
+              "checked": { "$bindState": "/terms" },
+              "checks": [{ "fn": "required" }]
+            }
+          }
+        },
+        "state": { "name": "", "email": "", "age": "", "terms": false }
+      }
+    },
+    {
+      "name": "unsupported-checks",
+      "row": "pattern, matches, requiredIf, url, custom checks",
+      "spec": {
+        "root": "form",
+        "elements": {
+          "form": { "type": "Form", "props": {}, "children": ["code", "go"] },
+          "code": {
+            "type": "Input",
+            "props": {
+              "label": "Code",
+              "value": { "$bindState": "/code" },
+              "checks": [
+                { "fn": "pattern", "args": { "pattern": "^(a+)+$" } },
+                { "fn": "matches", "args": { "other": { "$state": "/other" } } },
+                { "fn": "requiredIf", "args": { "field": "/x" } },
+                { "fn": "url" },
+                { "fn": "isPrime" }
+              ]
+            }
+          },
+          "go": {
+            "type": "Button",
+            "props": { "label": "Send" },
+            "on": { "press": { "action": "send" } }
+          }
+        },
+        "state": { "code": "", "other": "" }
+      }
+    }
+  ]
+}

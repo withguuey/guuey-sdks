@@ -58,6 +58,7 @@ import {
   type A2uiSurfaceOutcome,
 } from "./fold.js";
 import { DEFAULT_A2UI_MEDIA_POLICY, type A2uiMediaPolicy } from "./url-policy.js";
+import { JSON_RENDER_FORMAT, jsonRenderToA2ui, namedJsonRenderSurfaceIds } from "./json-render.js";
 
 /** The envelope stage's result. */
 export type A2uiEnvelopeResult =
@@ -317,7 +318,25 @@ function readMessage(raw: JsonValue, at: string): MessageRead {
  * them is not named.
  */
 export function namedA2uiSurfaceIds(value: JsonValue): string[] {
-  return isJsonObject(value) ? namedSurfaceIds(value["messages"], A2UI_LIMITS.messagesPerCarrier) : [];
+  if (!isJsonObject(value)) return [];
+  if (value["format"] === JSON_RENDER_FORMAT) return namedJsonRenderSurfaceIds(value);
+  return namedSurfaceIds(value["messages"], A2UI_LIMITS.messagesPerCarrier);
+}
+
+/**
+ * A json-render carrier (spec §12): mapped onto A2UI messages, then judged by
+ * the same envelope stage as any carrier, the mapped carrier measured again
+ * against every bound. The mapping's drops ride its `updateComponents`.
+ */
+function parseJsonRenderCarrier(value: JsonValue): A2uiEnvelopeResult {
+  const mapped = jsonRenderToA2ui(value);
+  if (!mapped.ok) return mapped;
+  const parsed = parseA2uiCarrier({ format: "a2ui", version: A2UI_VERSION, messages: mapped.messages });
+  if (!parsed.ok) return { ...parsed, surfaceIds: [mapped.surfaceId] };
+  const messages = parsed.messages.map((message) =>
+    message.kind === "updateComponents" ? { ...message, dropped: mapped.dropped } : message,
+  );
+  return { ok: true, messages };
 }
 
 /** The envelope stage: everything judged without a surface's state. */
@@ -330,8 +349,9 @@ export function parseA2uiCarrier(value: JsonValue): A2uiEnvelopeResult {
   });
   if (a2uiCarrierUnits(value) > A2UI_CARRIER_MAX_UNITS) return fail("too-large", "", namedA2uiSurfaceIds(value));
   if (!isJsonObject(value)) return fail("not-object", "");
-  const named = namedSurfaceIds(value["messages"]);
   const format = value["format"];
+  if (format === JSON_RENDER_FORMAT) return parseJsonRenderCarrier(value);
+  const named = namedSurfaceIds(value["messages"]);
   if (format !== undefined && format !== "a2ui") return fail("unsupported-format", "/format", named);
   if (value["version"] !== A2UI_VERSION) return fail("bad-version", "/version", named);
   const list = value["messages"];
