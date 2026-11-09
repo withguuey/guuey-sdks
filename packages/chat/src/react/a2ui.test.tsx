@@ -454,7 +454,7 @@ function scan(root: HTMLElement): string[] {
     const src = el.getAttribute("src");
     if (src !== null && !isPolicyAImageSrc(src)) out.push(`src ${src}`);
     for (const cls of (el.getAttribute("class") ?? "").split(" ").filter(Boolean)) {
-      if (!/^guuey-chat-(a2ui|attribution)(-[a-z0-9]+)*$/.test(cls)) out.push(`class ${cls}`);
+      if (!/^guuey-chat-(a2ui|attribution)(-[a-z0-9]+)*$/.test(cls) && cls !== "guuey-chat-visually-hidden") out.push(`class ${cls}`);
     }
   }
   return out;
@@ -634,13 +634,13 @@ describe("(c) labels, roles, and the keyboard order", () => {
     }
   });
 
-  it("a picker's options are a named group; no required error shows before a submit attempt", () => {
+  it("a single-choice picker's options are a named radio group; no required error shows before a submit attempt", () => {
     const { surface } = draw([
       { id: "root", component: "Column", children: ["p", "n"] },
       { id: "p", component: "ChoicePicker", label: "Size", required: true, options: [{ label: "S", value: "s" }, { label: "M", value: "m" }], value: { path: "/size" } },
       { id: "n", component: "TextField", label: "Name", required: true, value: { path: "/name" } },
     ]);
-    expect(within(surface).getByRole("group", { name: "Size" })).toBeTruthy();
+    expect(within(surface).getByRole("radiogroup", { name: "Size" })).toBeTruthy();
     expect(surface.querySelector("[aria-invalid]")).toBeNull();
     expect(surface.querySelector('[role="alert"]')).toBeNull();
   });
@@ -737,7 +737,7 @@ describe("(g) ChoicePicker", () => {
       [{ id: "root", component: "ChoicePicker", label: "Pick", options: opts(6), value: { path: "/p" } }],
       { model: { p: "o2" } },
     );
-    const group = within(surface).getByRole("group", { name: "Pick" });
+    const group = within(surface).getByRole("radiogroup", { name: "Pick" });
     const radios = within(group).getAllByRole("radio") as HTMLInputElement[];
     expect(radios).toHaveLength(6);
     expect(radios.map((r) => r.checked)).toEqual([false, true, false, false, false, false]);
@@ -798,6 +798,48 @@ describe("(g) ChoicePicker", () => {
     // No id appears twice in the surface.
     const ids = Array.from(surface.querySelectorAll("[id]")).map((el) => el.id);
     expect(ids.length).toBe(new Set(ids).size);
+  });
+
+  describe("a required picker is announced as required, in every layout (ARIA 1.2: not on a plain group)", () => {
+    const picker = (n: number, extra: { [k: string]: Json } = {}) =>
+      draw([{ id: "root", component: "ChoicePicker", label: "Size", required: true, options: opts(n), value: { path: "/s" }, ...extra }]).surface;
+    const describedBy = (el: Element) =>
+      (el.getAttribute("aria-describedby") ?? "")
+        .split(" ")
+        .filter(Boolean)
+        .map((id) => document.getElementById(id)?.textContent);
+
+    it("inline, single: a radio group carrying aria-required", () => {
+      expect(within(picker(3)).getByRole("radiogroup", { name: "Size" }).getAttribute("aria-required")).toBe("true");
+    });
+
+    it("inline, multiple: a group described as required (aria-required is not allowed on a group)", () => {
+      const group = within(picker(3, { multiple: true })).getByRole("group", { name: "Size" });
+      expect(group.hasAttribute("aria-required")).toBe(false);
+      expect(describedBy(group)).toContain(S.a2uiRequired);
+    });
+
+    it("7 and more: the field row is described as required, and the open list carries it too", () => {
+      const surface = picker(8);
+      const field = within(surface).getByRole("button", { name: /^Size/ });
+      expect(describedBy(field)).toContain(S.a2uiRequired);
+      fireEvent.click(field);
+      expect(within(surface).getByRole("radiogroup", { name: "Size" }).getAttribute("aria-required")).toBe("true");
+    });
+
+    it("7 and more, multiple: the open list is a group described as required", () => {
+      const surface = picker(8, { multiple: true });
+      fireEvent.click(within(surface).getByRole("button", { name: /^Size/ }));
+      const group = within(surface).getByRole("group", { name: "Size" });
+      expect(group.hasAttribute("aria-required")).toBe(false);
+      expect(describedBy(group)).toContain(S.a2uiRequired);
+    });
+
+    it("an optional picker says nothing of it", () => {
+      const { surface } = draw([{ id: "root", component: "ChoicePicker", label: "Size", options: opts(3), value: { path: "/s" } }]);
+      expect(within(surface).getByRole("radiogroup", { name: "Size" }).hasAttribute("aria-required")).toBe(false);
+      expect(surface.textContent).not.toContain(S.a2uiRequired);
+    });
   });
 
   it("with nothing chosen the field row says Choose", () => {

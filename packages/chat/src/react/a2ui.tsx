@@ -504,6 +504,20 @@ function A2uiChoicePicker({ node, env }: { node: NodeOf<"ChoicePicker">; env: En
   const options = drawnOptions(node.options);
   const name = env.idFor(node.id, "choice");
   const labelId = env.idFor(node.id, "label");
+  const requiredId = env.idFor(node.id, "required");
+  /**
+   * How a container of options says it is required (ARIA 1.2): a single
+   * choice is a radio group, which takes `aria-required`; a multiple choice
+   * is a plain group, which does not, so it is described as required.
+   */
+  const groupSemantics = !node.multiple
+    ? { role: "radiogroup", ...(node.required ? { "aria-required": true } : {}) }
+    : { role: "group", ...(node.required ? { "aria-describedby": requiredId } : {}) };
+  const requiredNote = node.required ? (
+    <span className="guuey-chat-visually-hidden" id={requiredId}>
+      {env.strings.a2uiRequired}
+    </span>
+  ) : null;
 
   const choose = (value: string, on: boolean): void => {
     if (!node.multiple) {
@@ -539,13 +553,14 @@ function A2uiChoicePicker({ node, env }: { node: NodeOf<"ChoicePicker">; env: En
 
   if (options.length <= INLINE_OPTIONS) {
     return (
-      <fieldset className="guuey-chat-a2ui-choice" {...(node.required ? { "aria-required": true } : {})}>
+      <fieldset className="guuey-chat-a2ui-choice" {...groupSemantics}>
         {label !== null ? (
           <legend className="guuey-chat-a2ui-label" dir="auto">
             {label}
           </legend>
         ) : null}
         {rows(options)}
+        {node.multiple ? requiredNote : null}
       </fieldset>
     );
   }
@@ -571,14 +586,16 @@ function A2uiChoicePicker({ node, env }: { node: NodeOf<"ChoicePicker">; env: En
         aria-expanded={open}
         aria-controls={panelId}
         aria-labelledby={label !== null ? `${labelId} ${summaryId}` : summaryId}
+        {...(node.required ? { "aria-describedby": requiredId } : {})}
         onClick={() => setOpen((o) => !o)}
       >
         <span id={summaryId} dir="auto">
           {summary !== "" ? summary : env.strings.a2uiChoose}
         </span>
       </button>
+      {requiredNote}
       {open ? (
-        <div className="guuey-chat-a2ui-options" id={panelId} role="group" {...(label !== null ? { "aria-labelledby": labelId } : {})}>
+        <div className="guuey-chat-a2ui-options" id={panelId} {...groupSemantics} {...(label !== null ? { "aria-labelledby": labelId } : {})}>
           {options.length > FILTER_OPTIONS ? (
             <input
               type="search"

@@ -257,6 +257,12 @@ export interface ChatStrings {
   a2uiFilter: string;
   /** guuey#2382: the line a filtered A2UI choice list draws when no option matches. */
   a2uiNoMatch: string;
+  /**
+   * guuey#2382: read by a screen reader, never drawn: the description of a
+   * required A2UI choice where ARIA has no `aria-required` (a multiple-choice
+   * group, the long picker's field row).
+   */
+  a2uiRequired: string;
 
   /** #192 debug-preset marker (calm never shows it — spec §3, F10). */
   recoveredFromHistory: string;
@@ -546,6 +552,7 @@ export const defaultChatStrings: ChatStrings = {
   a2uiChoose: "Choose…",
   a2uiFilter: "Filter options",
   a2uiNoMatch: "No matches",
+  a2uiRequired: "Required",
 
   recoveredFromHistory: "recovered from history",
 
