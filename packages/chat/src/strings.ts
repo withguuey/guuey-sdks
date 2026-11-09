@@ -244,11 +244,41 @@ export interface ChatStrings {
    */
   a2uiCouldntDraw: string;
   /**
-   * guuey#2382: the note an A2UI surface draws once beside its action
-   * buttons on a transcript that sends no actions; each such button is
-   * disabled and described by it (spec §9.1.5).
+   * guuey#2382: the note an A2UI action button draws with it on a transcript
+   * that sends no actions; the button is disabled and described by it (spec
+   * §9.1.5; guuey#2384: one note per button, beside the button it explains).
    */
   a2uiUnavailable: string;
+  /** guuey#2384: an A2UI action pressed while a reply is still arriving (nothing was sent). */
+  a2uiWaitForReply: string;
+  /** guuey#2384: an A2UI action that cannot be sent at all (the agent's form is broken, not the answers). */
+  a2uiCantSend: string;
+  /** guuey#2384: an A2UI action whose answers are too long to send together. */
+  a2uiTooLong: string;
+  /** guuey#2384: an A2UI field's error: longer than the field allows. */
+  a2uiFieldTooLong: (max: number) => string;
+  /** guuey#2384: an A2UI number field's error: not a number. */
+  a2uiFieldNumber: string;
+  /** guuey#2384: an A2UI number field's error: under its minimum. */
+  a2uiFieldMin: (min: number) => string;
+  /** guuey#2384: an A2UI number field's error: over its maximum. */
+  a2uiFieldMax: (max: number) => string;
+  /** guuey#2384: an A2UI email field's error. */
+  a2uiFieldEmail: string;
+  /** guuey#2384: an A2UI choice field's error: a value that is not one of its options. */
+  a2uiFieldChoice: string;
+  /** guuey#2384: the words an A2UI action turn's human line gives a ticked and an unticked box. */
+  a2uiYes: string;
+  a2uiNo: string;
+  /** guuey#2384: the kit-drawn confirm's buttons when the agent names none. */
+  a2uiConfirm: string;
+  a2uiCancel: string;
+  /** guuey#2384: an A2UI form's stamp while its action turn is on its way. */
+  a2uiSending: string;
+  /** guuey#2384: an A2UI form's stamp once its action turn was sent and the agent answered in words. */
+  a2uiSent: string;
+  /** guuey#2384: reopens a sent A2UI form here, for another submit. */
+  a2uiEditAnswers: string;
   /** guuey#2382: an A2UI image's chip text when the image names no `alt`. */
   a2uiImage: string;
   /** guuey#2382: a long A2UI choice field's row before anything is chosen. */
@@ -553,6 +583,22 @@ export const defaultChatStrings: ChatStrings = {
   a2uiUpdatedBelow: (title) => `${title}, updated below`,
   a2uiCouldntDraw: "Updated below, couldn't draw",
   a2uiUnavailable: "Not available here",
+  a2uiWaitForReply: "Wait for the reply to finish",
+  a2uiCantSend: "This form can't be sent",
+  a2uiTooLong: "Too long to send. Shorten your answers.",
+  a2uiFieldTooLong: (max) => `${max} characters at most`,
+  a2uiFieldNumber: "Enter a number",
+  a2uiFieldMin: (min) => `${min} or more`,
+  a2uiFieldMax: (max) => `${max} or less`,
+  a2uiFieldEmail: "Enter an email address",
+  a2uiFieldChoice: "Choose an option",
+  a2uiYes: "Yes",
+  a2uiNo: "No",
+  a2uiConfirm: "Confirm",
+  a2uiCancel: "Cancel",
+  a2uiSending: "Sending…",
+  a2uiSent: "Sent",
+  a2uiEditAnswers: "Edit answers",
   a2uiImage: "Image",
   a2uiChoose: "Choose…",
   a2uiFilter: "Filter options",

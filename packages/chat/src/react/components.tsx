@@ -58,6 +58,7 @@ import type {
 import { Markdown } from "./markdown.js";
 import { PARTS, messagePart } from "./parts.js";
 import { DefaultA2ui, type A2uiEditStore, type A2uiIconProps } from "./a2ui.js";
+import type { A2uiActionOutcome, A2uiActionRequest } from "../a2ui/action.js";
 
 /** Everything a rendered item may need beyond itself. */
 export interface TranscriptItemContext {
@@ -117,6 +118,13 @@ export interface TranscriptItemContext {
    * know, the icon draws nothing.
    */
   a2uiIcon?: ComponentType<A2uiIconProps>;
+  /**
+   * guuey#2384: the A2UI action path (spec §9.1). A press, validated and
+   * resolved, goes out through the host's turn path (`<GuueyChat>` wires its
+   * composer gate), which says what it did. Absent, every action button is
+   * drawn disabled with "Not available here": never a dead button.
+   */
+  onA2uiAction?: (item: A2uiItem, request: A2uiActionRequest) => A2uiActionOutcome;
 }
 
 /** The per-view slice of `GuueyViewProps` a transcript may configure. */
@@ -291,7 +299,10 @@ export function DefaultUserMessage({ item, ctx }: ItemProps<UserMessageItem>): R
         }`}
         part={messagePart("user")}
       >
-        <ActionTurnWords labels={item.tapLabels ?? [null]} strings={ctx.strings} />
+        <ActionTurnWords
+          labels={item.actionSummary !== undefined ? [item.actionSummary] : (item.tapLabels ?? [null])}
+          strings={ctx.strings}
+        />
         {item.rawDirective === true ? (
           <Collapsible
             itemKey={item.key}

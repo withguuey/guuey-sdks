@@ -32,7 +32,7 @@ const CARRIER = {
         components: [
           { id: "root", component: "Column", children: ["name", "go"] },
           { id: "name", component: "TextField", label: "Name", value: { path: "/name" } },
-          { id: "go", component: "Button", label: "Place order", action: { name: "submit" } },
+          { id: "go", component: "Button", label: "Place order", action: { name: "submit", context: { name: { path: "/name" } } } },
         ],
       },
     },
@@ -104,8 +104,9 @@ describe("<GuueyChat> draws A2UI surfaces (guuey#2382)", () => {
     const surface = container.querySelector<HTMLElement>(".guuey-chat-a2ui")!;
     expect(surface.querySelector(".guuey-chat-a2ui-title")?.textContent).toBe("Your order");
     expect(screen.getByRole("textbox", { name: "Name" })).toBeTruthy();
-    // No action path yet: the press is drawn disabled, never a dead button.
-    expect((screen.getByRole("button", { name: "Place order" }) as HTMLButtonElement).disabled).toBe(true);
+    // guuey#2384: <GuueyChat> wires the action path, so the press is live and needs no note.
+    expect((screen.getByRole("button", { name: "Place order" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(container.querySelector(".guuey-chat-a2ui-unavailable")).toBeNull();
     expect(container.querySelector(".guuey-chat-tool")).toBeNull();
     expect(container.querySelector(".guuey-chat-data")).toBeNull();
     expect(container.textContent).not.toContain("com.guuey/a2ui");
@@ -164,5 +165,89 @@ describe("<GuueyChat> forgets A2UI edits with the conversation (guuey#2382)", ()
     send();
     await waitFor(() => expect(container.querySelector(".guuey-chat-a2ui")).not.toBeNull());
     expect(nameBox().value).toBe("");
+  });
+});
+
+/**
+ * guuey#2384 (spec §9.1; S4 RED (d)): a press goes out as an ordinary turn
+ * through the composer's own gate. Its body is a typed turn's (input and
+ * clientMessageId, no new field), its input the action text; mid-turn the
+ * gate refuses it and the surface says to wait.
+ */
+describe("<GuueyChat> sends an A2UI action through the composer's gate (guuey#2384)", () => {
+  /** A transport that records each body; the second turn holds open until released. */
+  function recording() {
+    const bodies: Array<{ [key: string]: unknown }> = [];
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const adapters: AgentInvokeAdapters = {
+      storage: { load: () => null, save: () => {} },
+      generateId: (() => {
+        let n = 0;
+        return () => `cm_${n++}`;
+      })(),
+      transport: async function* (req) {
+        const body = req.body;
+        if (typeof body === "object" && body !== null && !Array.isArray(body)) bodies.push({ ...body });
+        yield SESSION_FRAME;
+        if (bodies.length === 1) for (const f of TOOL_FRAMES) yield f;
+        else await held;
+        yield DONE_FRAME;
+      },
+    };
+    return { bodies, adapters, release };
+  }
+
+  it("a press sends one turn: its input is the action text, its body a typed turn's", async () => {
+    const t = recording();
+    const { container } = render(<GuueyChat endpointUrl="https://pod.example/agent/invoke" adapters={t.adapters} />);
+    send();
+    await waitFor(() => expect(container.querySelector(".guuey-chat-a2ui")).not.toBeNull());
+    await waitFor(() => expect(screen.queryByRole("button", { name: defaultChatStrings.stop })).toBeNull());
+    fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Ada" } });
+    fireEvent.click(screen.getByRole("button", { name: "Place order" }));
+    await waitFor(() => expect(t.bodies).toHaveLength(2));
+    const body = t.bodies[1]!;
+    // A typed turn's body (spec §9.1): input, clientMessageId, the thread and the capabilities; no new field.
+    expect(Object.keys(body).sort()).toEqual(["capabilities", "clientMessageId", "input", "threadId"]);
+    expect(body["capabilities"]).toEqual(t.bodies[0]!["capabilities"]);
+    const id = body["clientMessageId"];
+    expect(body["input"]).toBe(
+      [
+        "Place order: Name = Ada",
+        `<guuey_a2ui_action surface="order" action="submit" source="go" id="${String(id)}">`,
+        '{"name":"Ada"}',
+        "</guuey_a2ui_action>",
+      ].join("\n"),
+    );
+    // The turn draws as an action turn; once the pod admits it the form is submitted, its values locked.
+    await waitFor(() => expect(container.querySelector(".guuey-chat-action-label")?.textContent).toBe("Place order: Name = Ada"));
+    expect(container.textContent).not.toContain("guuey_a2ui_action");
+    await screen.findByText(defaultChatStrings.a2uiSent);
+    expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).readOnly).toBe(true);
+    expect((screen.getByRole("button", { name: "Place order" }) as HTMLButtonElement).disabled).toBe(true);
+    t.release();
+  });
+
+  it("mid-turn the gate refuses the press: nothing is sent and the surface says to wait", async () => {
+    const t = recording();
+    const { container } = render(<GuueyChat endpointUrl="https://pod.example/agent/invoke" adapters={t.adapters} />);
+    send();
+    await waitFor(() => expect(container.querySelector(".guuey-chat-a2ui")).not.toBeNull());
+    // A second typed turn holds the stream open.
+    await waitFor(() => expect(screen.queryByRole("button", { name: defaultChatStrings.stop })).toBeNull());
+    const input = screen.getByLabelText("Message");
+    fireEvent.change(input, { target: { value: "and another thing" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(t.bodies).toHaveLength(2));
+    await screen.findByRole("button", { name: defaultChatStrings.stop });
+    fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Ada" } });
+    fireEvent.click(screen.getByRole("button", { name: "Place order" }));
+    const note = await screen.findByText(defaultChatStrings.a2uiWaitForReply);
+    expect(screen.getByRole("button", { name: "Place order" }).getAttribute("aria-describedby")).toBe(note.id);
+    expect(t.bodies).toHaveLength(2);
+    t.release();
   });
 });

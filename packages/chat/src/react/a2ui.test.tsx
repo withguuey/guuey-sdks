@@ -249,7 +249,7 @@ describe("(a) each component, and each prop through its closed table", () => {
     expect(seen.at(-1)).toEqual({ name: "star", label: "Favourite" });
   });
 
-  it("Button: an action button is disabled with the one 'Not available here' note it is described by (§9.1.5)", () => {
+  it("Button: an action button is disabled with its own 'Not available here' note beside it (§9.1.5, guuey#2384)", () => {
     const { surface } = draw([
       { id: "root", component: "Row", children: ["a", "b"] },
       { id: "a", component: "Button", label: "Save", action: { name: "save" }, variant: "primary" },
@@ -261,10 +261,12 @@ describe("(a) each component, and each prop through its closed table", () => {
     expect(save.className).toBe("guuey-chat-a2ui-button guuey-chat-a2ui-button-primary");
     expect(discard.className).toBe("guuey-chat-a2ui-button guuey-chat-a2ui-button-danger");
     const notes = surface.querySelectorAll(".guuey-chat-a2ui-unavailable");
-    expect(notes).toHaveLength(1);
-    expect(notes[0]!.textContent).toBe(S.a2uiUnavailable);
+    expect(notes).toHaveLength(2);
+    expect(Array.from(notes, (n) => n.textContent)).toEqual([S.a2uiUnavailable, S.a2uiUnavailable]);
     expect(save.getAttribute("aria-describedby")).toBe(notes[0]!.id);
-    expect(discard.getAttribute("aria-describedby")).toBe(notes[0]!.id);
+    expect(discard.getAttribute("aria-describedby")).toBe(notes[1]!.id);
+    expect(save.nextElementSibling).toBe(notes[0]);
+    expect(discard.nextElementSibling).toBe(notes[1]);
   });
 
   it("Button: a link opens in a new tab and shows its host beside its label (§7.3)", () => {
@@ -519,6 +521,8 @@ describe("local edits are transcript state (§5.4)", () => {
       set: (surfaceId, key, edit) => {
         writes.push([surfaceId, key, edit.value]);
       },
+      reopened: () => undefined,
+      reopen: () => {},
       clear: () => {},
     };
     drawPlan(planOf([form({ name: "Ada", city: "Lisbon" })]), { a2uiEdits: store });

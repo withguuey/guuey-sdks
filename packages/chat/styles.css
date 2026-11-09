@@ -934,8 +934,24 @@
 /* Content-sized by default (a set width is never stretched), so start, center
    and end place a button or chip; a container that says stretch widens it. */
 .guuey-chat-a2ui-align-stretch > .guuey-chat-a2ui-button,
-.guuey-chat-a2ui-align-stretch > .guuey-chat-a2ui-image-chip {
+.guuey-chat-a2ui-align-stretch > .guuey-chat-a2ui-image-chip,
+.guuey-chat-a2ui-align-stretch > .guuey-chat-a2ui-action,
+.guuey-chat-a2ui-align-stretch > .guuey-chat-a2ui-action > .guuey-chat-a2ui-button {
   width: auto;
+}
+/* An action button and what it says (guuey#2384): the note, the press's
+   answer and the confirm sit with the button they explain, under it. The
+   pair is placed as the button alone would be. */
+.guuey-chat-a2ui-action {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+}
+.guuey-chat-a2ui-align-stretch > .guuey-chat-a2ui-action {
+  align-items: stretch;
 }
 /* Disabled is the sheet's own contract (the composer's Send): the off-ground
    under the muted ink, for every variant, a colour, never an opacity. Scoped
@@ -949,10 +965,20 @@
   color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
   border-color: color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 15%, transparent);
 }
-.guuey-chat-a2ui-unavailable {
+.guuey-chat-a2ui-unavailable,
+.guuey-chat-a2ui-note,
+.guuey-chat-a2ui-stamp,
+.guuey-chat-a2ui-error {
   margin: 0;
   font-size: 0.85em;
   color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
+}
+.guuey-chat-a2ui-note:empty {
+  display: none;
+}
+/* A field's error since the last press: the caption step, in the error ink. */
+.guuey-chat-a2ui-error {
+  color: var(--guuey-chat-error, var(--_guuey-chat-error));
 }
 .guuey-chat-a2ui-field {
   display: flex;

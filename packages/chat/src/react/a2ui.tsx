@@ -20,14 +20,21 @@
  *   on is in the plan and every later revision keeps the server value it was
  *   made against: a newer, different server value drops it for good, and a
  *   deleted surface drops its edits. Untouched edits survive.
- * - Actions are S4's. With no action path wired, an action button is drawn
- *   disabled and described by one "Not available here" note (§9.1.5).
+ * - Actions (guuey#2384, §9): a press opens the kit's own confirm when the
+ *   button declares one, validates the payload against the declared model
+ *   (each failing field says why, nothing is sent), then hands the resolved
+ *   record to the host's send path (`onA2uiAction`), which says what it did.
+ *   A surface whose action turn is on its way, or answered, is locked;
+ *   "Edit answers" reopens a submitted one here, through the host's store.
+ *   With no action path wired, each action button is drawn disabled and
+ *   described by its own "Not available here" note, beside it (§9.1.5).
  */
-import { useCallback, useEffect, useId, useMemo, useState, type ComponentType, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import type { JsonValue } from "@silverprotocol/core";
 import { tapText } from "@guuey/mcp-apps-host/narrowing";
 import { A2UI_LIMITS, truncateUnits } from "../a2ui/limits.js";
 import { readA2uiModel } from "../a2ui/fold.js";
+import { asText, checkA2uiAction, type A2uiActionOutcome, type A2uiActionRequest, type A2uiFieldError } from "../a2ui/action.js";
 import { httpsLink } from "../a2ui/url-policy.js";
 import { isA2uiPathBinding } from "../a2ui/schema.js";
 import type {
@@ -35,6 +42,7 @@ import type {
   A2uiBound,
   A2uiButtonVariant,
   A2uiChoiceOption,
+  A2uiFieldSpec,
   A2uiGap,
   A2uiJustify,
   A2uiNode,
@@ -64,10 +72,17 @@ export interface A2uiLocalEdit {
  * `get` answers only a LIVE edit ({@link useA2uiEditStore} holds the rule); a
  * host that supplies its own store keeps the same rule. `clear` forgets every
  * edit: the host calls it when the conversation is cleared or replaced.
+ *
+ * guuey#2384: the store also holds "Edit answers": `reopen` reopens a
+ * submitted surface here against the action turn that answered it
+ * (`A2uiItem.actionId`), and `reopened` names that turn, so a later submit
+ * (a new action id) closes the surface again. `clear` forgets it too.
  */
 export interface A2uiEditStore {
   get(surfaceId: string, key: string): A2uiLocalEdit | undefined;
   set(surfaceId: string, key: string, edit: A2uiLocalEdit): void;
+  reopened(surfaceId: string): string | undefined;
+  reopen(surfaceId: string, actionId: string): void;
   clear(): void;
 }
 
@@ -153,6 +168,7 @@ function deadEdits(edits: ReadonlyMap<string, StoredEdit>, items: readonly Displ
  */
 export function useA2uiEditStore(items: readonly DisplayItem[]): A2uiEditStore {
   const [edits, setEdits] = useState<ReadonlyMap<string, StoredEdit>>(() => new Map());
+  const [reopens, setReopens] = useState<ReadonlyMap<string, string>>(() => new Map());
   const dead = useMemo(() => deadEdits(edits, items), [edits, items]);
   useEffect(() => {
     if (dead.size === 0) return;
@@ -163,7 +179,10 @@ export function useA2uiEditStore(items: readonly DisplayItem[]): A2uiEditStore {
       return next;
     });
   }, [dead]);
-  const clear = useCallback(() => setEdits(new Map()), []);
+  const clear = useCallback(() => {
+    setEdits(new Map());
+    setReopens(new Map());
+  }, []);
   return useMemo(
     () => ({
       get: (surfaceId, key) => {
@@ -171,9 +190,11 @@ export function useA2uiEditStore(items: readonly DisplayItem[]): A2uiEditStore {
         return dead.has(id) ? undefined : edits.get(id)?.edit;
       },
       set: (surfaceId, key, edit) => setEdits((prev) => new Map(prev).set(entryId(surfaceId, key), { surfaceId, key, edit })),
+      reopened: (surfaceId) => reopens.get(surfaceId),
+      reopen: (surfaceId, actionId) => setReopens((prev) => new Map(prev).set(surfaceId, actionId)),
       clear,
     }),
-    [edits, dead, clear],
+    [edits, dead, reopens, clear],
   );
 }
 
@@ -182,6 +203,7 @@ export interface A2uiRenderContext {
   strings: ChatStrings;
   a2uiEdits?: A2uiEditStore;
   a2uiIcon?: ComponentType<A2uiIconProps>;
+  onA2uiAction?: (item: A2uiItem, request: A2uiActionRequest) => A2uiActionOutcome;
 }
 
 // ─── Closed tables: the only way a payload word becomes a class ─────────
@@ -269,8 +291,10 @@ interface Env {
   write(key: string, value: JsonValue, server: JsonValue | null): void;
   /** Inputs take no edits while an action for the surface is in flight or answered. */
   locked: boolean;
-  /** The id of the surface's one "Not available here" note. */
-  unavailableId: string;
+  /** The host's send path; absent, action buttons draw disabled with their own note. */
+  send: ((node: NodeOf<"Button">) => string | null) | undefined;
+  /** The error a field shows since the last press, by its data path. */
+  errors: { readonly [path: string]: string };
   /** A unique, DOM-safe id for a component's part. */
   idFor(componentId: string, part: string): string;
 }
@@ -287,29 +311,45 @@ function domIdSegment(componentId: string): string {
   return componentId.replace(/[^A-Za-z0-9-]/g, (c) => ID_ESCAPES[c] ?? `_x${(c.codePointAt(0) ?? 0).toString(16)}_`);
 }
 
-/** Whether a tree holds an action button, so the surface draws its one note. */
-function hasAction(node: A2uiNode): boolean {
-  switch (node.component) {
-    case "Row":
-    case "Column":
-    case "List":
-      return node.children.some(hasAction);
-    case "Card":
-      return node.child !== null && hasAction(node.child);
-    case "Button":
-      return isActionButton(node);
-    default:
-      return false;
-  }
-}
-
 /**
  * A Button that draws as an action press: it has words, an action and no
- * link. Until S4 wires the action path it is drawn disabled and described by
- * the surface's one "Not available here" note, which draws when any exists.
+ * link. With no action path wired it is drawn disabled and described by its
+ * own "Not available here" note, beside it.
  */
 function isActionButton(node: NodeOf<"Button">): boolean {
   return node.action !== null && node.link === null && words(node.label) !== null;
+}
+
+/** A field error's words. */
+function fieldError(error: A2uiFieldError, strings: ChatStrings): string {
+  switch (error.kind) {
+    case "required":
+      return strings.a2uiRequired;
+    case "too-long":
+      return strings.a2uiFieldTooLong(error.max);
+    case "not-a-number":
+      return strings.a2uiFieldNumber;
+    case "too-small":
+      return strings.a2uiFieldMin(error.min);
+    case "too-large":
+      return strings.a2uiFieldMax(error.max);
+    case "not-an-email":
+      return strings.a2uiFieldEmail;
+    case "not-an-option":
+      return strings.a2uiFieldChoice;
+  }
+}
+
+/** A sent value as the action turn's human line says it: a box as yes or no, a choice by its options' words. */
+function shownValue(item: A2uiItem, spec: A2uiFieldSpec, value: JsonValue, strings: ChatStrings): string {
+  if (spec.kind === "boolean") return value === true ? strings.a2uiYes : strings.a2uiNo;
+  if (spec.kind === "text") return asText(value);
+  const node = findNode(item.root, spec.componentId);
+  const options = node?.component === "ChoicePicker" ? drawnOptions(node.options) : [];
+  return (Array.isArray(value) ? value : [value])
+    .map((v) => options.find((o) => o.value === v)?.label ?? asText(v))
+    .filter((v) => v !== "")
+    .join(", ");
 }
 
 /** The kit's default `a2ui` slot. */
@@ -319,6 +359,8 @@ export function DefaultA2ui({ item, ctx }: { item: A2uiItem; ctx: A2uiRenderCont
   const own = useA2uiEditStore(ownItems);
   const store = ctx.a2uiEdits ?? own;
   const base = useId();
+  // The errors the last press found, by data path: an edit clears its path's.
+  const [errors, setErrors] = useState<{ readonly [path: string]: string }>({});
   if (item.phase === "superseded") {
     return (
       <p className="guuey-chat-a2ui-superseded" role="note" dir="auto">
@@ -328,17 +370,56 @@ export function DefaultA2ui({ item, ctx }: { item: A2uiItem; ctx: A2uiRenderCont
   }
   const title = words(item.title);
   if (item.root === null && title === null) return null;
+  const strings = ctx.strings;
+  const onAction = ctx.onA2uiAction;
+  const { actionId } = item;
+  // "Edit answers" reopens a submitted surface here, against the one action turn that answered it.
+  const phase = item.phase === "submitted" && actionId !== undefined && store.reopened(item.surfaceId) === actionId ? "open" : item.phase;
+  const read = (key: string, server: JsonValue | null): JsonValue | null => {
+    const edit = store.get(item.surfaceId, key);
+    return edit !== undefined && sameJson(edit.base, server) ? edit.value : server;
+  };
   const env: Env = {
     item,
-    strings: ctx.strings,
+    strings,
     icon: ctx.a2uiIcon,
-    read: (key, server) => {
-      const edit = store.get(item.surfaceId, key);
-      return edit !== undefined && sameJson(edit.base, server) ? edit.value : server;
+    read,
+    write: (key, value, server) => {
+      store.set(item.surfaceId, key, { value, base: server, at: item.key });
+      if (Object.hasOwn(errors, key)) setErrors((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== key)));
     },
-    write: (key, value, server) => store.set(item.surfaceId, key, { value, base: server, at: item.key }),
-    locked: item.phase !== "open",
-    unavailableId: `${base}-unavailable`,
+    locked: phase !== "open",
+    send:
+      onAction === undefined
+        ? undefined
+        : (node) => {
+            const action = node.action;
+            if (action === null) return null;
+            // §9.2: the payload is judged before anything is sent; every failing field says why.
+            const check = checkA2uiAction(item.fields, action, (path) => read(path, readA2uiModel(item.dataModel, path) ?? null));
+            if (!check.ok) {
+              setErrors(Object.fromEntries(Object.entries(check.fields).map(([path, error]) => [path, fieldError(error, strings)])));
+              return check.form === "too-large" ? strings.a2uiTooLong : check.form === "undeclared" ? strings.a2uiCantSend : null;
+            }
+            setErrors({});
+            const pairs: Array<{ label: string; value: string }> = [];
+            for (const [key, bound] of Object.entries(action.context ?? {})) {
+              const spec = isA2uiPathBinding(bound) && Object.hasOwn(item.fields, bound.path) ? item.fields[bound.path] : undefined;
+              const value = check.context[key];
+              if (spec === undefined || value === undefined) continue;
+              const shown = shownValue(item, spec, value, strings);
+              if (shown !== "") pairs.push({ label: words(spec.label) ?? key, value: shown });
+            }
+            const outcome = onAction(item, {
+              surfaceId: item.surfaceId,
+              name: action.name,
+              sourceComponentId: node.id,
+              context: check.context,
+              summary: { label: words(node.label) ?? node.label, pairs },
+            });
+            return outcome === "busy" ? strings.a2uiWaitForReply : outcome === "refused" ? strings.a2uiCantSend : null;
+          },
+    errors,
     idFor: (componentId, part) => `${base}-${domIdSegment(componentId)}-${part}`,
   };
   const titleId = `${base}-title`;
@@ -354,9 +435,14 @@ export function DefaultA2ui({ item, ctx }: { item: A2uiItem; ctx: A2uiRenderCont
           <Node node={item.root} env={env} />
         </div>
       ) : null}
-      {item.root !== null && hasAction(item.root) ? (
-        <p className="guuey-chat-a2ui-unavailable" id={env.unavailableId}>
-          {ctx.strings.a2uiUnavailable}
+      {phase !== "open" ? (
+        <p className="guuey-chat-a2ui-stamp guuey-chat-a2ui-row guuey-chat-a2ui-gap-sm" role="status">
+          {phase === "sending" ? strings.a2uiSending : strings.a2uiSent}
+          {phase === "submitted" && onAction !== undefined && actionId !== undefined ? (
+            <button type="button" className={BUTTON_CLASS.secondary} onClick={() => store.reopen(item.surfaceId, actionId)}>
+              <Words text={strings.a2uiEditAnswers} />
+            </button>
+          ) : null}
         </p>
       ) : null}
       {item.attribution !== null ? <p className="guuey-chat-attribution">{item.attribution}</p> : null}
@@ -378,13 +464,6 @@ function serverValue<T extends JsonValue>(item: A2uiItem, bound: A2uiBound<T> | 
 /** The edit key of an input: its bound path, or `#<id>` for a literal. */
 function editKey(componentId: string, bound: { key: string | null }): string {
   return bound.key ?? `#${componentId}`;
-}
-
-/** A model value drawn as text: strings, numbers and booleans; anything else draws empty. */
-function asText(value: JsonValue | null): string {
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  return "";
 }
 
 function Node({ node, env }: { node: A2uiNode; env: Env }): ReactNode {
@@ -496,7 +575,30 @@ function A2uiImage({ node, env }: { node: NodeOf<"Image">; env: Env }): ReactNod
   );
 }
 
+/** A button's words, in the one words element every button draws. */
+function Words({ text }: { text: string }): ReactNode {
+  return (
+    <span className="guuey-chat-a2ui-words" dir="auto">
+      {text}
+    </span>
+  );
+}
+
+/**
+ * An action press (§9.1): the kit-drawn confirm when the button declares one
+ * (never `window.confirm`, which a sandboxed or embedded page may not show),
+ * opening under its button with focus on Cancel; Cancel or Escape sends
+ * nothing. Beside the button, its note: unwired, why it is off; wired, what
+ * the last press did (wait, or why nothing was sent).
+ */
 function A2uiButton({ node, env }: { node: NodeOf<"Button">; env: Env }): ReactNode {
+  const [said, setSaid] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const ref = useRef<HTMLButtonElement>(null);
+  const cancel = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (confirming) cancel.current?.focus();
+  }, [confirming]);
   const label = words(node.label);
   // A button with no words cannot say what it does: the placeholder, like a missing label.
   if (label === null) return <Unknown env={env} />;
@@ -508,13 +610,88 @@ function A2uiButton({ node, env }: { node: NodeOf<"Button">; env: Env }): ReactN
       </GatedLink>
     );
   }
+  if (!isActionButton(node)) {
+    return (
+      <button type="button" className={className} disabled>
+        <Words text={label} />
+      </button>
+    );
+  }
+  const { send, strings } = env;
+  const { confirm } = node;
+  const noteId = env.idFor(node.id, "note");
+  const confirmId = env.idFor(node.id, "confirm");
+  const note = send === undefined ? strings.a2uiUnavailable : said;
+  const done = (confirmed: boolean): void => {
+    setConfirming(false);
+    ref.current?.focus();
+    if (confirmed && send !== undefined) setSaid(send(node));
+  };
+  const message = confirm !== null ? words(confirm.message) : null;
   return (
-    <button type="button" className={className} disabled {...(isActionButton(node) ? { "aria-describedby": env.unavailableId } : {})}>
-      <span className="guuey-chat-a2ui-words" dir="auto">
-        {label}
+    <span className="guuey-chat-a2ui-action">
+      <button
+        ref={ref}
+        type="button"
+        className={className}
+        disabled={send === undefined || env.locked}
+        onClick={() => (confirm !== null ? setConfirming(true) : done(true))}
+        {...(note !== null ? { "aria-describedby": noteId } : {})}
+      >
+        <Words text={label} />
+      </button>
+      <span
+        className={send === undefined ? "guuey-chat-a2ui-unavailable" : "guuey-chat-a2ui-note"}
+        id={noteId}
+        {...(send !== undefined ? { role: "status" } : {})}
+      >
+        {note}
       </span>
-    </button>
+      {confirming && confirm !== null ? (
+        <div
+          className="guuey-chat-a2ui-card guuey-chat-a2ui-column guuey-chat-a2ui-gap-sm"
+          role="alertdialog"
+          aria-labelledby={confirmId}
+          {...(message !== null ? { "aria-describedby": `${confirmId}-m` } : {})}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") done(false);
+          }}
+        >
+          <p className={TEXT_CLASS.h4} id={confirmId} dir="auto">
+            {words(confirm.title) ?? label}
+          </p>
+          {message !== null ? (
+            <p className={TEXT_CLASS.body} id={`${confirmId}-m`} dir="auto">
+              {message}
+            </p>
+          ) : null}
+          <div className="guuey-chat-a2ui-row guuey-chat-a2ui-gap-sm">
+            <button ref={cancel} type="button" className={BUTTON_CLASS.secondary} onClick={() => done(false)}>
+              <Words text={words(confirm.cancelLabel) ?? strings.a2uiCancel} />
+            </button>
+            <button type="button" className={className} onClick={() => done(true)}>
+              <Words text={words(confirm.confirmLabel) ?? strings.a2uiConfirm} />
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </span>
   );
+}
+
+/** A field's error since the last press, beside the field it names; the input is described by it. */
+function fieldErrorOf(node: { id: string }, key: string, env: Env): { error: ReactNode; attrs: { [attr: string]: string | boolean } } {
+  const text = Object.hasOwn(env.errors, key) ? env.errors[key] : undefined;
+  if (text === undefined) return { error: null, attrs: {} };
+  const id = env.idFor(node.id, "error");
+  return {
+    error: (
+      <span className="guuey-chat-a2ui-error" id={id} dir="auto">
+        {text}
+      </span>
+    ),
+    attrs: { "aria-invalid": true, "aria-describedby": id },
+  };
 }
 
 /** A field's visible label: the normalized words in an isolate, or nothing. */
@@ -534,6 +711,7 @@ function A2uiTextField({ node, env }: { node: NodeOf<"TextField">; env: Env }): 
   const bound = serverValue(env.item, node.value);
   const key = editKey(node.id, bound);
   const value = asText(env.read(key, bound.value));
+  const invalid = fieldErrorOf(node, key, env);
   const common = {
     className: "guuey-chat-a2ui-input",
     value,
@@ -544,21 +722,25 @@ function A2uiTextField({ node, env }: { node: NodeOf<"TextField">; env: Env }): 
     ...(label === null && placeholder !== null ? { "aria-label": placeholder } : {}),
     ...(node.required ? { "aria-required": true } : {}),
     ...(node.maxLength !== null ? { maxLength: node.maxLength } : {}),
+    ...invalid.attrs,
   };
   return (
-    <label className="guuey-chat-a2ui-field">
-      <FieldLabel text={label} />
-      {node.inputType === "long" ? (
-        <textarea {...common} />
-      ) : (
-        <input
-          {...common}
-          type={INPUT_TYPE[node.inputType]}
-          {...(node.inputType === "number" && node.min !== null ? { min: node.min } : {})}
-          {...(node.inputType === "number" && node.max !== null ? { max: node.max } : {})}
-        />
-      )}
-    </label>
+    <>
+      <label className="guuey-chat-a2ui-field">
+        <FieldLabel text={label} />
+        {node.inputType === "long" ? (
+          <textarea {...common} />
+        ) : (
+          <input
+            {...common}
+            type={INPUT_TYPE[node.inputType]}
+            {...(node.inputType === "number" && node.min !== null ? { min: node.min } : {})}
+            {...(node.inputType === "number" && node.max !== null ? { max: node.max } : {})}
+          />
+        )}
+      </label>
+      {invalid.error}
+    </>
   );
 }
 
@@ -567,17 +749,22 @@ function A2uiCheckBox({ node, env }: { node: NodeOf<"CheckBox">; env: Env }): Re
   const bound = serverValue(env.item, node.checked);
   const key = editKey(node.id, bound);
   const checked = env.read(key, bound.value) === true;
+  const invalid = fieldErrorOf(node, key, env);
   return (
-    <label className="guuey-chat-a2ui-check">
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={env.locked}
-        onChange={(e) => env.write(key, e.target.checked, bound.value)}
-        {...(node.required ? { "aria-required": true } : {})}
-      />
-      <FieldLabel text={label} />
-    </label>
+    <>
+      <label className="guuey-chat-a2ui-check">
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={env.locked}
+          onChange={(e) => env.write(key, e.target.checked, bound.value)}
+          {...(node.required ? { "aria-required": true } : {})}
+          {...invalid.attrs}
+        />
+        <FieldLabel text={label} />
+      </label>
+      {invalid.error}
+    </>
   );
 }
 
@@ -600,10 +787,13 @@ interface Choice {
   chosen: string[];
   labelId: string;
   requiredId: string;
+  /** What the field row describes itself by: "Required" and the error since the last press. */
+  describedBy: { [attr: string]: string };
   /**
    * How a container of options says it is required (ARIA 1.2): a single
    * choice is a radio group, which takes `aria-required`; a multiple choice
-   * is a plain group, which does not, so it is described as required.
+   * is a plain group, which does not, so it is described as required. An
+   * error since the last press describes either.
    */
   groupSemantics: { [attr: string]: string | boolean };
   /** The visually hidden "Required" a description points at; null when optional. */
@@ -620,6 +810,9 @@ function A2uiChoicePicker({ node, env }: { node: NodeOf<"ChoicePicker">; env: En
   const options = drawnOptions(node.options);
   const name = env.idFor(node.id, "choice");
   const requiredId = env.idFor(node.id, "required");
+  const invalid = fieldErrorOf(node, key, env);
+  const ids = [...(node.required ? [requiredId] : []), ...(invalid.error !== null ? [env.idFor(node.id, "error")] : [])].join(" ");
+  const describedBy: { [attr: string]: string } = ids !== "" ? { "aria-describedby": ids } : {};
 
   const choose = (value: string, on: boolean): void => {
     if (!node.multiple) {
@@ -643,9 +836,10 @@ function A2uiChoicePicker({ node, env }: { node: NodeOf<"ChoicePicker">; env: En
     chosen,
     labelId: env.idFor(node.id, "label"),
     requiredId,
+    describedBy,
     groupSemantics: !node.multiple
-      ? { role: "radiogroup", ...(node.required ? { "aria-required": true } : {}) }
-      : { role: "group", ...(node.required ? { "aria-describedby": requiredId } : {}) },
+      ? { role: "radiogroup", ...(node.required ? { "aria-required": true } : {}), ...invalid.attrs }
+      : { role: "group", ...describedBy },
     requiredNote: node.required ? (
       <span className="guuey-chat-visually-hidden" id={requiredId}>
         {env.strings.a2uiRequired}
@@ -669,7 +863,12 @@ function A2uiChoicePicker({ node, env }: { node: NodeOf<"ChoicePicker">; env: En
         );
       }),
   };
-  return options.length <= INLINE_OPTIONS ? <InlineChoice choice={choice} /> : <OpenChoice choice={choice} />;
+  return (
+    <>
+      {options.length <= INLINE_OPTIONS ? <InlineChoice choice={choice} /> : <OpenChoice choice={choice} />}
+      {invalid.error}
+    </>
+  );
 }
 
 /** Up to {@link INLINE_OPTIONS} options: one named group of rows. */
@@ -717,7 +916,7 @@ function OpenChoice({ choice }: { choice: Choice }): ReactNode {
         aria-expanded={open}
         aria-controls={panelId}
         aria-labelledby={label !== null ? `${labelId} ${summaryId}` : summaryId}
-        {...(node.required ? { "aria-describedby": choice.requiredId } : {})}
+        {...choice.describedBy}
         onClick={() => setOpen((o) => !o)}
       >
         <span id={summaryId} dir="auto">

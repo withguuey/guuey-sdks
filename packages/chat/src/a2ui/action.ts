@@ -8,7 +8,7 @@
  * tools stay the authority over it.
  */
 import type { JsonValue } from "@silverprotocol/core";
-import { a2uiActionPayload } from "@guuey/mcp-apps-host/narrowing";
+import { a2uiActionPayload, writeA2uiActionText, type A2uiActionSummary } from "@guuey/mcp-apps-host/narrowing";
 import { A2UI_LIMITS } from "./limits.js";
 import { isA2uiPathBinding, type A2uiAction, type A2uiFieldSpec } from "./schema.js";
 
@@ -35,8 +35,8 @@ export type A2uiActionCheck =
 /** One `@` with a dot after it, nothing blank around them. */
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-/** A model value as an input's text: strings, numbers and booleans; anything else is empty. */
-function asText(value: JsonValue | null): string {
+/** A model value as an input's text: strings, numbers and booleans; anything else is empty (the renderer draws fields by it too). */
+export function asText(value: JsonValue | null): string {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   return "";
@@ -104,4 +104,30 @@ export function checkA2uiAction(
   if (Object.keys(errors).length > 0) return { ok: false, fields: errors, form: null };
   if (a2uiActionPayload(context).length > A2UI_LIMITS.actionPayloadUnits) return { ok: false, fields: {}, form: "too-large" };
   return { ok: true, context };
+}
+
+/**
+ * A pressed action as a kit hands it to the host's send path (spec §9.1): the
+ * resolved record (§5.5) without its id, which the send mints as the turn's
+ * `clientMessageId`, and the words of the turn's human line.
+ */
+export interface A2uiActionRequest {
+  surfaceId: string;
+  name: string;
+  sourceComponentId: string;
+  context: { [key: string]: JsonValue };
+  summary: A2uiActionSummary;
+}
+
+/**
+ * What the host's send path did with a press: `sent`, the turn went out;
+ * `busy`, a turn is live or the chat cannot send (nothing went out, the
+ * surface says to wait); `refused`, the action's text could not be written.
+ */
+export type A2uiActionOutcome = "sent" | "busy" | "refused";
+
+/** The action turn's text for a press, under the id its send carries; `undefined` when the writer refuses it. */
+export function a2uiActionTurnText(request: A2uiActionRequest, actionId: string): string | undefined {
+  const { summary, ...record } = request;
+  return writeA2uiActionText({ ...record, actionId }, summary);
 }

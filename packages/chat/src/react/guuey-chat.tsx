@@ -100,6 +100,7 @@ import { useStructuralIdentity } from "./structural-identity.js";
 import { defaultChatStrings, type ChatStrings } from "../strings.js";
 import { DEFAULT_CHAT_THEME, type GuueyChatTheme } from "../theme.js";
 import type {
+  A2uiItem,
   ChatDebugEvent,
   ErrorItem,
   PlanViewSummary,
@@ -113,6 +114,7 @@ import { facesCss, useHostFaces } from "./faces.js";
 import { hostContextStyles, hostStyleVariables, type HostStyleVariables } from "../host-style-variables.js";
 import { Transcript, type TranscriptWindowing } from "./transcript.js";
 import { useA2uiEditStore } from "./a2ui.js";
+import { a2uiActionTurnText, type A2uiActionOutcome, type A2uiActionRequest } from "../a2ui/action.js";
 import type { TranscriptComponents, TranscriptItemContext, ViewSlotProps } from "./components.js";
 import { useTranscript, useTranscriptInputs } from "./use-transcript.js";
 import { useTapEcho } from "./use-tap-echo.js";
@@ -1380,6 +1382,27 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         }
       : (effectiveViewProps ?? {});
 
+  // guuey#2384 (spec §9.1): an A2UI press goes out through the handle's own
+  // gate, as an ordinary turn: refused while a turn is live or the chat is
+  // unavailable (the surface then says to wait). Its text is the one writer's
+  // action form, under the id its send carries as `clientMessageId`; the body
+  // is a typed turn's, with no new field.
+  const handleA2uiAction = useCallback(
+    (_item: A2uiItem, request: A2uiActionRequest): A2uiActionOutcome => {
+      const live = liveRef.current;
+      if (!live.available || live.busy) return "busy";
+      const clientMessageId = live.invoke.newClientMessageId();
+      const text = a2uiActionTurnText(request, clientMessageId);
+      if (text === undefined) return "refused";
+      analytics.messageSent();
+      void live.invoke.send(text, { clientMessageId }).catch(() => {
+        // Same contract as submit: the hook owns failure surfacing.
+      });
+      return "sent";
+    },
+    [analytics],
+  );
+
   const handle = useMemo<GuueyChatHandle>(
     () => ({
       send: (text: string, opts?: { inputKind?: InputKind }): boolean => {
@@ -1707,6 +1730,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         {...(onViewRef !== undefined ? { onViewRef } : {})}
         viewProps={effectiveViewProps}
         a2uiEdits={a2uiEdits}
+        onA2uiAction={handleA2uiAction}
         onStartNewConversation={startNewConversation}
       />
       {chips.length > 0 && inputs.messages.length === 0 && (

@@ -7,7 +7,28 @@
  * A carrier rides a tool result's `structuredContent` under
  * {@link A2UI_CARRIER_KEY}: `{ format?: "a2ui", version: "v0.9", messages }`.
  */
-export { A2UI_CARRIER_KEY, A2UI_CARRIER_MAX_UNITS, a2uiCarrierUnits } from "@guuey/mcp-apps-host/narrowing";
+export {
+  A2UI_ACTION_PAYLOAD_MAX_UNITS,
+  A2UI_CARRIER_KEY,
+  A2UI_CARRIER_MAX_UNITS,
+  a2uiActionPayload,
+  a2uiCarrierUnits,
+  isA2uiActionText,
+  parseA2uiActionText,
+  writeA2uiActionText,
+  type A2uiActionRecord,
+  type A2uiActionSummary,
+  type A2uiActionText,
+} from "@guuey/mcp-apps-host/narrowing";
+// guuey#2384: forms and actions — the payload check before a send, and the turn text a press sends.
+export {
+  a2uiActionTurnText,
+  checkA2uiAction,
+  type A2uiActionCheck,
+  type A2uiActionOutcome,
+  type A2uiActionRequest,
+  type A2uiFieldError,
+} from "./a2ui/action.js";
 export {
   foldA2uiCarrier,
   namedA2uiSurfaceIds,
