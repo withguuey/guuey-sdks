@@ -103,6 +103,28 @@ export function tapText(raw: string): string | null {
   return text;
 }
 
+/**
+ * The SUMMARY normalizer (guuey#2384, an A2UI action turn's human line): like
+ * {@link tapText}, whitespace runs become one space and the result is trimmed,
+ * but a summary is words about a value, not a quote, so a control or bidi
+ * formatting character is dropped rather than refusing the whole, and a text
+ * over {@link MAX_TAP_LABEL_UNITS} units is cut to that bound, ending in an
+ * ellipsis (never splitting a surrogate pair). `null` when nothing is left.
+ */
+export function summaryText(raw: string): string | null {
+  let kept = "";
+  for (const ch of raw.replace(/\s+/g, " ")) if (!isRefusedCodePoint(ch.codePointAt(0) ?? 0)) kept += ch;
+  let text = kept.trim();
+  if (text === "") return null;
+  if (text.length > MAX_TAP_LABEL_UNITS) {
+    let end = MAX_TAP_LABEL_UNITS - 1;
+    const last = text.charCodeAt(end - 1);
+    if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+    text = `${text.slice(0, end)}…`;
+  }
+  return text;
+}
+
 /** UTF-8 byte length of a string, counted by code point (no encoder needed on any runtime). */
 function utf8Bytes(text: string): number {
   let bytes = 0;

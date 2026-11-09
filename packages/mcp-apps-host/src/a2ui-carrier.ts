@@ -17,6 +17,7 @@
  */
 import type { JsonValue } from "@silverprotocol/core";
 import { isJsonObject } from "./block-ui.js";
+import { summaryText } from "./tap-labels.js";
 
 /** The namespaced marker key (the store's `com.guuey/` marker convention). */
 export const A2UI_CARRIER_KEY = "com.guuey/a2ui";
@@ -68,4 +69,125 @@ function readFrom(container: JsonValue | undefined, via: A2uiCarrierSource): A2u
  */
 export function readA2uiCarrier(block: A2uiCarrierBlock): A2uiCarrierRead | undefined {
   return readFrom(block.structuredContent, "structuredContent") ?? readFrom(block.uiData, "uiData");
+}
+
+// ─── The action text form (guuey#2384, spec §9.3) ───────────────────────────
+
+/**
+ * The resolved action payload's bound, in UTF-16 code units of its escaped
+ * JSON line ({@link a2uiActionPayload}): over it the send is refused.
+ */
+export const A2UI_ACTION_PAYLOAD_MAX_UNITS = 4_096;
+
+/** The tag line's attribute charset: the id charset the carrier validator enforces on every agent-chosen id. */
+const ACTION_ATTR = /^[A-Za-z0-9_.:-]{1,64}$/;
+
+/** The opening line, its attributes in the writer's one order, alone on its line. */
+const ACTION_OPEN_LINE =
+  /^<guuey_a2ui_action surface="([A-Za-z0-9_.:-]{1,64})" action="([A-Za-z0-9_.:-]{1,64})" source="([A-Za-z0-9_.:-]{1,64})" id="([A-Za-z0-9_.:-]{1,64})">$/;
+
+/** The closing line. */
+const ACTION_CLOSE_LINE = "</guuey_a2ui_action>";
+
+/**
+ * A pressed A2UI action, resolved (spec §5.5): the surface, the action's name,
+ * the button that sent it, the turn's `clientMessageId`, and the action's
+ * `context` with every `{path}` read from the surface's data model.
+ */
+export interface A2uiActionRecord {
+  surfaceId: string;
+  name: string;
+  sourceComponentId: string;
+  actionId: string;
+  context: { [key: string]: JsonValue };
+}
+
+/** The words of the human line: the button's label, then each submitted field's label and value. */
+export interface A2uiActionSummary {
+  label: string;
+  pairs: ReadonlyArray<{ label: string; value: string }>;
+}
+
+/** An action turn read back: the record and its human line. */
+export interface A2uiActionText extends A2uiActionRecord {
+  summary: string;
+}
+
+/** `<`, `>`, `&`, U+2028 and U+2029 as JSON escapes: the payload line then holds no character that could close or forge the block. */
+function escapeLine(json: string): string {
+  return json.replace(/[<>&\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+}
+
+/**
+ * The action's payload line: its `context` as one line of JSON, escaped. Its
+ * length is what {@link A2UI_ACTION_PAYLOAD_MAX_UNITS} bounds.
+ */
+export function a2uiActionPayload(context: { [key: string]: JsonValue }): string {
+  return escapeLine(JSON.stringify(context));
+}
+
+/**
+ * THE writer of an A2UI action turn's text (spec §9.3): line 1 is the human
+ * summary (the button's label, then `Field label = value` pairs, each part
+ * through `summaryText`), then the block: the opening tag alone on its line,
+ * the payload line, the closing tag alone on its line. `undefined` (never a
+ * throw) when an attribute is outside the id charset, the label reads as no
+ * words, or the payload is over its bound: nothing agent-chosen reaches the
+ * tag line unconstrained.
+ */
+export function writeA2uiActionText(record: A2uiActionRecord, summary: A2uiActionSummary): string | undefined {
+  const attrs = [record.surfaceId, record.name, record.sourceComponentId, record.actionId];
+  if (!attrs.every((a) => ACTION_ATTR.test(a))) return undefined;
+  const label = summaryText(summary.label);
+  if (label === null) return undefined;
+  const payload = a2uiActionPayload(record.context);
+  if (payload.length > A2UI_ACTION_PAYLOAD_MAX_UNITS) return undefined;
+  const pairs: string[] = [];
+  for (const pair of summary.pairs) {
+    const name = summaryText(pair.label);
+    const value = summaryText(pair.value);
+    if (name !== null && value !== null) pairs.push(`${name} = ${value}`);
+  }
+  return [
+    pairs.length > 0 ? `${label}: ${pairs.join("; ")}` : label,
+    `<guuey_a2ui_action surface="${record.surfaceId}" action="${record.name}" source="${record.sourceComponentId}" id="${record.actionId}">`,
+    payload,
+    ACTION_CLOSE_LINE,
+  ].join("\n");
+}
+
+/**
+ * THE reader of an A2UI action turn's text, anchored to the writer's own form
+ * in one pass over its lines: exactly four lines (a line's surrounding
+ * whitespace, a CRLF join's `\r` included, is not part of the form): a
+ * non-empty human line, the opening tag with its four attributes in order,
+ * one JSON object, the closing tag. Anything else (an inline tag, an unclosed
+ * or reordered block, more prose around it) is `undefined`. Read on USER rows
+ * only: an agent that echoes the block draws as its own text.
+ */
+export function parseA2uiActionText(text: string): A2uiActionText | undefined {
+  if (!text.includes(ACTION_CLOSE_LINE)) return undefined;
+  const lines = text.trim().split("\n");
+  if (lines.length !== 4) return undefined;
+  const [summary, open, json, close] = lines.map((line) => line.trim());
+  if (summary === undefined || summary === "" || close !== ACTION_CLOSE_LINE || json === undefined || !json.startsWith("{")) {
+    return undefined;
+  }
+  const tag = ACTION_OPEN_LINE.exec(open ?? "");
+  if (tag === null) return undefined;
+  const [, surfaceId = "", name = "", sourceComponentId = "", actionId = ""] = tag;
+  let context: JsonValue;
+  try {
+    context = JSON.parse(json);
+  } catch {
+    // Not JSON: the row is not the form (it draws as the user's own text).
+    return undefined;
+  }
+  if (!isJsonObject(context)) return undefined;
+  return { surfaceId, name, sourceComponentId, actionId, context, summary };
+}
+
+/** Whether a user row's text is an A2UI action turn: {@link parseA2uiActionText}'s one rule. */
+export function isA2uiActionText(text: string): boolean {
+  return parseA2uiActionText(text) !== undefined;
 }
