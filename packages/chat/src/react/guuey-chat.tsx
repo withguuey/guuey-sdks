@@ -854,7 +854,11 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       ...stablePolicyOverrides?.strings,
       ...stableStringOverrides,
     };
-    return factory({ ...stablePolicyOverrides, strings });
+    // guuey#2382: this surface draws A2UI with the web kit's renderer, so it
+    // turns the kind on for its own planner path. The presets never set it
+    // and it is no override key (spec §8): a host composing `<Transcript>`
+    // itself, and the native kit until its renderer lands, keep today's face.
+    return { ...factory({ ...stablePolicyOverrides, strings }), a2ui: { render: true } };
   }, [preset, stablePolicyOverrides, stableStringOverrides]);
 
   const { inputs, resolvePrompt, answerHitlPrompt } = useTranscriptInputs(invoke);
