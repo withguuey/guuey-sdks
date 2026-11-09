@@ -956,12 +956,14 @@ export type ChatDebugEvent =
       threadId: string | null;
       outcome: "merged" | "unsupported" | "failed" | "skipped";
       moved?: number;
-    };
+    }
+  /** An A2UI carrier's facts (guuey#2366), once each per sighting: see {@link A2uiDebugEvent}. */
+  | A2uiDebugEvent;
 
 /**
  * guuey#2366: an A2UI carrier's debug facts, counts-only, carried on
- * {@link TranscriptPlan.a2uiEvents}. Not a {@link ChatDebugEvent} yet: the
- * sink fires them once a kit's renderer draws the kind (S2/S3).
+ * {@link TranscriptPlan.a2uiEvents} and fired to the debug sink as
+ * {@link ChatDebugEvent}s, once per sighting, by the web transcript hook.
  * `a2ui-invalid`: the carrier took the old face (its validator reason,
  * `too-many-items` past the per-transcript cap, or `tool-failed` on a failed
  * result); `key` is its tool row's. `a2ui-degraded`: a drawn revision carries

@@ -261,6 +261,79 @@ describe("useTranscript", () => {
   });
 });
 
+describe("useTranscript — the plan's A2UI facts reach the debug sink (guuey#2382)", () => {
+  const V = "v0.9";
+  /** One assistant call per carrier, its result in a tool message: the facet's fold. */
+  function withCarriers(carriers: Array<[string, unknown]>): AgReduceResult {
+    return {
+      messages: carriers.flatMap(([id, a2ui]) => [
+        { id: `m-${id}`, role: "assistant" as const, content: [{ type: "tool-call" as const, toolCallId: id, name: "show", input: {} }] },
+        {
+          id: `r-${id}`,
+          role: "tool" as const,
+          content: [{ type: "tool-result" as const, toolCallId: id, content: [], structuredContent: JSON.parse(JSON.stringify({ "com.guuey/a2ui": a2ui })) }],
+        },
+      ]),
+      artifacts: [],
+      memory: [],
+      turns: [],
+    };
+  }
+  const carriers: Array<[string, unknown]> = [
+    // A bad version: the carrier takes the old face.
+    ["bad", { format: "a2ui", version: V, messages: [{ version: "v0.8", deleteSurface: { surfaceId: "x" } }] }],
+    // An update for a surface nothing opened.
+    ["orphan", { format: "a2ui", version: V, messages: [{ version: V, updateDataModel: { surfaceId: "ghost", value: {} } }] }],
+    // A drawn surface with an in-place degrade (an unknown component on a read-only surface).
+    [
+      "degraded",
+      {
+        format: "a2ui",
+        version: V,
+        messages: [
+          { version: V, createSurface: { surfaceId: "note", catalogId: "guuey.a2ui.v1" } },
+          {
+            version: V,
+            updateComponents: {
+              surfaceId: "note",
+              components: [
+                { id: "root", component: "Column", children: ["t", "u"] },
+                { id: "t", component: "Text", text: "Hi" },
+                { id: "u", component: "Carousel" },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  ];
+  const on = (policy: ReturnType<typeof debugPolicy>): ReturnType<typeof debugPolicy> => ({ ...policy, a2ui: { render: true } });
+
+  it("under debug, each fact fires once: invalid, orphan and degraded, and a re-render does not re-fire", () => {
+    const events: ChatDebugEvent[] = [];
+    const inputs = baseInputs({ result: withCarriers(carriers), messages: [{ role: "user", text: "go" }] });
+    const policy = on(debugPolicy());
+    const { rerender } = renderHook(({ i }) => useTranscript({ inputs: i, policy, onDebugEvent: (e) => events.push(e) }), {
+      initialProps: { i: inputs },
+    });
+    rerender({ i: { ...inputs } });
+    const a2ui = events.filter((e) => e.type.startsWith("a2ui-"));
+    expect(a2ui).toEqual([
+      { type: "a2ui-invalid", key: "tool.bad", reason: "bad-version" },
+      { type: "a2ui-orphan", key: "tool.orphan", surfaceId: "ghost" },
+      { type: "a2ui-degraded", key: "a2ui.degraded.note", counts: { "unknown-component": 1 } },
+    ]);
+  });
+
+  it("calm ignores it: the plan carries no facts and the sink hears none", () => {
+    const events: ChatDebugEvent[] = [];
+    const inputs = baseInputs({ result: withCarriers(carriers), messages: [{ role: "user", text: "go" }] });
+    const { result } = renderHook(() => useTranscript({ inputs, policy: on(calmPolicy()), onDebugEvent: (e) => events.push(e) }));
+    expect(result.current.plan.a2uiEvents).toBeUndefined();
+    expect(events.filter((e) => e.type.startsWith("a2ui-"))).toEqual([]);
+  });
+});
+
 function invokeReturn(over: Partial<UseAgentInvokeReturn> = {}): UseAgentInvokeReturn {
   return {
     messages: [

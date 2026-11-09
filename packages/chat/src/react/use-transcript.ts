@@ -157,6 +157,7 @@ export function useTranscript({
   // Plan-derived debug events, emitted once per sighting (post-render — the
   // plan itself stays pure data).
   const emittedUnknowns = useRef(new Set<ItemKey>());
+  const emittedA2ui = useRef(new Set<string>());
   const recoveryEmitted = useRef(false);
   useEffect(() => {
     const sink = debugSink.current;
@@ -165,6 +166,15 @@ export function useTranscript({
       if (item.kind !== "unknown" || emittedUnknowns.current.has(item.key)) continue;
       emittedUnknowns.current.add(item.key);
       sink({ type: "unknown-block", key: item.key, typeName: item.typeName, byteSize: item.byteSize });
+    }
+    // guuey#2382: the plan's A2UI facts (present under debug only), once per
+    // sighting. A fact is named by its kind, its key and, for an orphan, the
+    // surface it names: one tool row can carry an orphan per surface.
+    for (const event of plan.a2uiEvents ?? []) {
+      const sighting = `${event.type}\u0000${event.key}\u0000${event.type === "a2ui-orphan" ? event.surfaceId : ""}`;
+      if (emittedA2ui.current.has(sighting)) continue;
+      emittedA2ui.current.add(sighting);
+      sink(event);
     }
     if (plan.recovery !== null && !recoveryEmitted.current) {
       recoveryEmitted.current = true;

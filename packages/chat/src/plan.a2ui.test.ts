@@ -29,7 +29,7 @@ import { transcriptInputsFromHistory } from "./history-inputs.js";
 import { newestViewKey, planTranscript } from "./plan.js";
 import { calmPolicy, debugPolicy, type TranscriptPolicy, type TranscriptPolicyOverrides } from "./policy.js";
 import { A2UI_LIMITS } from "./a2ui/limits.js";
-import type { A2uiItem, ChatDebugEvent, DisplayItem, ToolItem, TranscriptInputs, TranscriptPlan } from "./types.js";
+import type { A2uiDebugEvent, A2uiItem, ChatDebugEvent, DisplayItem, ToolItem, TranscriptInputs, TranscriptPlan } from "./types.js";
 import { driveTurn } from "./corpus/drive.js";
 
 const V = "v0.9";
@@ -155,9 +155,9 @@ describe("S1 (d) — the planner arm", () => {
     expect(toolsOf(off.items)[0]?.result?.kind).toBe("data-result");
   });
 
-  it("a2ui is no override and no public debug event: an override object cannot turn it on", () => {
+  it("a2ui is no override, and its facts are debug events (S2): an override object cannot turn it on", () => {
     expectTypeOf<"a2ui" extends keyof TranscriptPolicyOverrides ? true : false>().toEqualTypeOf<false>();
-    expectTypeOf<Extract<ChatDebugEvent, { type: "a2ui-invalid" | "a2ui-degraded" | "a2ui-orphan" }>>().toBeNever();
+    expectTypeOf<Extract<ChatDebugEvent, { type: "a2ui-invalid" | "a2ui-degraded" | "a2ui-orphan" }>>().toEqualTypeOf<A2uiDebugEvent>();
     // A host's untyped object (a JSON config, a JS caller) that names it anyway.
     const fromJson: TranscriptPolicyOverrides = JSON.parse('{"a2ui":{"render":true}}');
     expect(Object.hasOwn(calmPolicy(fromJson), "a2ui")).toBe(false);
