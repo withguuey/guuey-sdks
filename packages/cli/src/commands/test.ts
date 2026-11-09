@@ -513,16 +513,17 @@ export async function test(
     ...(threadFlag !== undefined ? { threadId: threadFlag } : {}),
   };
   const { url, init } = buildInvokeRequest(endpoint, body, caller);
-  const res = await fetch(url, init);
+  const { res, refusalText, retries } = await sendInvoke(url, init);
 
   if (!res.ok) {
     // Redact BEFORE the cut, so a token straddling the 400-char edge is never half-printed.
-    const body = redactCaller(await res.text().catch(() => ''), caller);
+    const body = redactCaller(refusalText ?? '', caller);
     if (res.status === 401 && caller.kind === 'bearer' && caller.source === 'as-me') {
       out.error(builderTestInvokeRefusal(appId, body));
       process.exit(1);
     }
-    out.error(`Invoke failed: HTTP ${res.status} ${res.statusText}${body ? ` — ${body.slice(0, 400)}` : ''}`);
+    const afterRetries = retries > 0 ? ` (after ${retries} ${retries === 1 ? 'retry' : 'retries'})` : '';
+    out.error(`Invoke failed: HTTP ${res.status} ${res.statusText}${afterRetries}${body ? ` — ${body.slice(0, 400)}` : ''}`);
     process.exit(1);
   }
   if (!res.body) {
@@ -629,6 +630,120 @@ export function buildInvokeRequest(
       body: JSON.stringify(body),
     },
   };
+}
+
+/**
+ * guuey#3246: the refusals `guuey test` waits out and sends again. Each is the
+ * pod refusing the turn BEFORE admitting it (a 503 with `Retry-After`), so
+ * nothing ran and a re-send is a fresh admission, never a replay. The wire
+ * contract is that the client retries them:
+ *   - `SESSION_UNAVAILABLE`: the conversation is briefly unavailable (the
+ *     Router's contention / provision window, `Retry-After` 1 s or 5 s);
+ *   - `POD_SATURATED`: the pod's concurrent-turn cap (`Retry-After` 15 s);
+ *   - `WORKER_POD_RESOURCE_EXHAUSTED`: the app's worker pods have no free slot
+ *     for the turn yet, the same capacity answer (guuey#2605).
+ * `DRAINING` is not here: the refusing pod is shutting down and a re-send goes
+ * to the same URL (the SDK's `withSaturationRetry` makes the same call). Any
+ * other refusal is printed and exits 1, as before.
+ */
+export const INVOKE_RETRY_CODES: readonly string[] = [
+  'SESSION_UNAVAILABLE',
+  'POD_SATURATED',
+  'WORKER_POD_RESOURCE_EXHAUSTED',
+];
+
+/**
+ * How long one `guuey test` turn may spend waiting on those refusals, counted
+ * from the first send: the Router's own recovery wait (`RECOVERY_WAIT_MS`,
+ * 20 s, nocode-runtime invoke-routing.ts) plus room for a few more rounds and
+ * one capacity hint (15 s). Past it, the last refusal is printed and the run
+ * exits 1.
+ */
+export const INVOKE_RETRY_BUDGET_MS = 45_000;
+
+/** The wait when a retried refusal carried no usable `Retry-After` (the pod's long hint). */
+const INVOKE_RETRY_FALLBACK_SECONDS = 5;
+/** The ceiling on one honoured hint, the SDK's (`SATURATION_MAX_DELAY_SECONDS`). */
+const INVOKE_RETRY_MAX_WAIT_SECONDS = 30;
+
+/** `Retry-After` as whole seconds, or `undefined` (the pod only sends delta seconds, never a date). */
+function retryAfterSeconds(header: string | null): number | undefined {
+  const trimmed = header?.trim() ?? '';
+  if (!/^\d+$/.test(trimmed)) return undefined;
+  const seconds = Number(trimmed);
+  return Number.isSafeInteger(seconds) ? seconds : undefined;
+}
+
+/** The refusal envelope's `code` (`{ code, message }`), or `undefined` for any other body. */
+function refusalCode(bodyText: string): string | undefined {
+  const body = parseJson(bodyText);
+  if (typeof body !== 'object' || body === null || !('code' in body)) return undefined;
+  return typeof body.code === 'string' ? body.code : undefined;
+}
+
+/**
+ * Whether to wait and send the turn again after a refused invoke, and for how
+ * long: only a 503 whose code is one of {@link INVOKE_RETRY_CODES}, waiting
+ * its `Retry-After` (else 5 s, never more than 30 s), and only while the wait
+ * ends inside {@link INVOKE_RETRY_BUDGET_MS}. `undefined` means print the
+ * refusal and stop. Exported for unit test.
+ */
+export function invokeRetryWait(refusal: {
+  status: number;
+  bodyText: string;
+  retryAfter: string | null;
+  elapsedMs: number;
+}): { code: string; waitMs: number } | undefined {
+  if (refusal.status !== 503) return undefined;
+  const code = refusalCode(refusal.bodyText);
+  if (code === undefined || !INVOKE_RETRY_CODES.includes(code)) return undefined;
+  const seconds = Math.min(retryAfterSeconds(refusal.retryAfter) ?? INVOKE_RETRY_FALLBACK_SECONDS, INVOKE_RETRY_MAX_WAIT_SECONDS);
+  const waitMs = seconds * 1000;
+  if (refusal.elapsedMs + waitMs > INVOKE_RETRY_BUDGET_MS) return undefined;
+  return { code, waitMs };
+}
+
+/** What {@link sendInvoke} needs from the world; injectable for tests. */
+export interface SendInvokeDeps {
+  fetch?: typeof fetch;
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
+  /** One line per wait, on stderr by default. */
+  note?: (line: string) => void;
+}
+
+/**
+ * Send the invoke, waiting out the refusals the pod asks the client to retry
+ * ({@link invokeRetryWait}), one line on stderr per wait. Returns the first
+ * accepted response, or the last refusal with its body read (the caller prints
+ * it). The request body is a string, so each attempt sends the same bytes.
+ */
+export async function sendInvoke(
+  url: string,
+  init: RequestInit,
+  deps: SendInvokeDeps = {},
+): Promise<{ res: Response; refusalText?: string; retries: number }> {
+  const doFetch = deps.fetch ?? fetch;
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const now = deps.now ?? Date.now;
+  const note = deps.note ?? ((line: string) => console.error(line));
+  const startedAt = now();
+  let retries = 0;
+  for (;;) {
+    const res = await doFetch(url, init);
+    if (res.ok) return { res, retries };
+    const refusalText = await res.text().catch(() => '');
+    const wait = invokeRetryWait({
+      status: res.status,
+      bodyText: refusalText,
+      retryAfter: res.headers.get('Retry-After'),
+      elapsedMs: now() - startedAt,
+    });
+    if (wait === undefined) return { res, refusalText, retries };
+    retries += 1;
+    note(`  [retry] HTTP 503 ${wait.code}: sending again in ${wait.waitMs / 1000}s (retry ${retries})`);
+    await sleep(wait.waitMs);
+  }
 }
 
 function parseJson(data: string): unknown {

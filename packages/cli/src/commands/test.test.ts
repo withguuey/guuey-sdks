@@ -31,6 +31,8 @@ import {
   BearerInputError,
   buildInvokeRequest,
   GUEST_HEADER_NAME,
+  INVOKE_RETRY_BUDGET_MS,
+  invokeRetryWait,
   MAX_BEARER_BYTES,
   POD_STREAM_EVENTS,
   readBearer,
@@ -40,6 +42,7 @@ import {
   mintGuestSecret,
   resolveAgentEndpoint,
   saveThreadSecret,
+  sendInvoke,
   streamToStdout,
   test as testCommand,
   threadFollowUp,
@@ -1188,5 +1191,140 @@ describe.skipIf(!existsSync(BYO_VERIFY))('byo token sync guard — a byo app tak
     const verify = readFileSync(BYO_VERIFY, 'utf8');
     expect(verify).toContain("token_use_not_id: 'enforce',");
     expect(verify).toContain("if (payload.token_use !== undefined && payload.token_use !== 'id') {");
+  });
+});
+
+describe('invokeRetryWait / sendInvoke: the pre-admission refusals are waited out, everything else is not (guuey#3246)', () => {
+  const refused = (code: string, retryAfter?: string, status = 503) =>
+    new Response(JSON.stringify({ code, message: 'm' }), {
+      status,
+      headers: retryAfter === undefined ? {} : { 'Retry-After': retryAfter },
+    });
+  const wait = (code: string, retryAfter: string | null, elapsedMs = 0, status = 503) =>
+    invokeRetryWait({ status, bodyText: JSON.stringify({ code }), retryAfter, elapsedMs });
+
+  it('waits the Retry-After of SESSION_UNAVAILABLE, POD_SATURATED and WORKER_POD_RESOURCE_EXHAUSTED', () => {
+    expect(wait('SESSION_UNAVAILABLE', '1')).toEqual({ code: 'SESSION_UNAVAILABLE', waitMs: 1000 });
+    expect(wait('POD_SATURATED', '15')).toEqual({ code: 'POD_SATURATED', waitMs: 15_000 });
+    expect(wait('WORKER_POD_RESOURCE_EXHAUSTED', '5')).toEqual({ code: 'WORKER_POD_RESOURCE_EXHAUSTED', waitMs: 5000 });
+  });
+
+  it('a missing or unusable Retry-After waits 5 s; a long one is capped at 30 s', () => {
+    expect(wait('SESSION_UNAVAILABLE', null)?.waitMs).toBe(5000);
+    expect(wait('SESSION_UNAVAILABLE', 'Wed, 21 Oct 2026 07:28:00 GMT')?.waitMs).toBe(5000);
+    expect(wait('POD_SATURATED', '600')?.waitMs).toBe(30_000);
+  });
+
+  it('never retries DRAINING, another code, a code-less 503, or the same code on another status', () => {
+    expect(wait('DRAINING', '1')).toBeUndefined();
+    expect(wait('SESSION_BUSY', '5', 0, 409)).toBeUndefined();
+    expect(wait('EXECUTION_UNPLACED', '30')).toBeUndefined();
+    expect(wait('SESSION_UNAVAILABLE', '1', 0, 500)).toBeUndefined();
+    expect(invokeRetryWait({ status: 503, bodyText: '<html>no ready pod</html>', retryAfter: '1', elapsedMs: 0 })).toBeUndefined();
+  });
+
+  it('stops when the wait would end past the budget', () => {
+    expect(wait('SESSION_UNAVAILABLE', '5', INVOKE_RETRY_BUDGET_MS - 5000)?.waitMs).toBe(5000);
+    expect(wait('SESSION_UNAVAILABLE', '5', INVOKE_RETRY_BUDGET_MS - 4999)).toBeUndefined();
+  });
+
+  it('sendInvoke re-sends the same request after each wait and notes every wait', async () => {
+    const fetchStub = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(refused('SESSION_UNAVAILABLE', '1'))
+      .mockResolvedValueOnce(refused('POD_SATURATED', '2'))
+      .mockResolvedValueOnce(new Response('ok', { status: 200 }));
+    const slept: number[] = [];
+    const notes: string[] = [];
+    let clock = 0;
+    const init: RequestInit = { method: 'POST', body: '{"input":"hi"}' };
+    const result = await sendInvoke('https://pod.example/agent/invoke', init, {
+      fetch: fetchStub,
+      sleep: async (ms) => {
+        slept.push(ms);
+        clock += ms;
+      },
+      now: () => clock,
+      note: (line) => notes.push(line),
+    });
+    expect(result.res.status).toBe(200);
+    expect(result.retries).toBe(2);
+    expect(slept).toEqual([1000, 2000]);
+    expect(fetchStub.mock.calls.map((c) => c[1])).toEqual([init, init, init]);
+    expect(notes).toEqual([
+      '  [retry] HTTP 503 SESSION_UNAVAILABLE: sending again in 1s (retry 1)',
+      '  [retry] HTTP 503 POD_SATURATED: sending again in 2s (retry 2)',
+    ]);
+  });
+
+  it('sendInvoke returns the last refusal, body read, once the budget is spent', async () => {
+    const fetchStub = vi.fn<typeof fetch>().mockImplementation(async () => refused('POD_SATURATED', '15'));
+    let clock = 0;
+    const result = await sendInvoke('https://pod.example/agent/invoke', {}, {
+      fetch: fetchStub,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+      now: () => clock,
+      note: () => undefined,
+    });
+    // 15 s waits: 0 -> 15 -> 30 -> 45 s fits exactly, the next would end at 60 s.
+    expect(result.retries).toBe(3);
+    expect(fetchStub).toHaveBeenCalledTimes(4);
+    expect(result.res.status).toBe(503);
+    expect(result.refusalText).toContain('POD_SATURATED');
+  });
+
+  describe('the command end to end', () => {
+    let fetchSpy: MockInstance<typeof fetch>;
+    let errors: string[];
+    beforeEach(() => {
+      threadsDir.current = mkdtempSync(join(tmpdir(), 'guuey-test-threads-'));
+      errors = [];
+      vi.useFakeTimers();
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => void errors.push(a.join(' ')));
+      vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+        throw new ExitSignal(code);
+      }) as typeof process.exit);
+      fetchSpy = vi.spyOn(globalThis, 'fetch');
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+      rmSync(threadsDir.current, { recursive: true, force: true });
+      vi.restoreAllMocks();
+    });
+
+    it('a 503 + Retry-After twice, then 200: the turn streams, exit 0, two retries on stderr', async () => {
+      fetchSpy
+        .mockResolvedValueOnce(refused('SESSION_UNAVAILABLE', '1'))
+        .mockResolvedValueOnce(refused('SESSION_UNAVAILABLE', '1'))
+        .mockResolvedValueOnce(
+          new Response(
+            sseStream([
+              frame('session', { sessionId: 't-r', threadId: 't-r' }),
+              frame('message', { type: 'text.delta', delta: 'ok' }),
+              frame('done', { stopReason: 'end_turn' }),
+            ]),
+            { status: 200 },
+          ),
+        );
+      const run = testCommand('hello', { url: 'https://pod.example' });
+      await vi.advanceTimersByTimeAsync(2000);
+      await expect(run).resolves.toBeUndefined();
+      expect(fetchSpy).toHaveBeenCalledTimes(3);
+      expect(errors.filter((l) => l.includes('[retry]'))).toHaveLength(2);
+      expect(process.exit).not.toHaveBeenCalled();
+    });
+
+    it('any other refusal still exits 1 at once, with no retry', async () => {
+      fetchSpy.mockResolvedValueOnce(refused('DRAINING', '1'));
+      await expect(testCommand('hello', { url: 'https://pod.example' })).rejects.toThrow(ExitSignal);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(process.exit).toHaveBeenCalledWith(1);
+      expect(errors.join('\n')).toMatch(/Invoke failed: HTTP 503 .*DRAINING/);
+      expect(errors.join('\n')).not.toContain('[retry]');
+    });
   });
 });
