@@ -591,8 +591,8 @@ export const A2UI_GUUEY_CATALOG_ID = "guuey.a2ui.v1";
  * {@link renderA2uiSection}, gated on the invoke's `clientCatalogs`.
  */
 export const A2UI_SECTION =
-  `\n\n## Native forms and cards\n\n` +
-  `This chat draws guuey A2UI surfaces as native UI. When a tool returns one, the person sees it here. ` +
+  `\n\n## Forms and cards\n\n` +
+  `This chat draws Guuey A2UI surfaces as native UI. When a tool returns one, the person sees it here. ` +
   `A form they submit comes back to you as their next turn, tagged \`<guuey_a2ui_action>\`. ` +
   `Keep one line of plain text beside every surface.`;
 
