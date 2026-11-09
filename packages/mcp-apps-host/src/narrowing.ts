@@ -44,7 +44,6 @@ export {
   A2UI_CARRIER_MAX_UNITS,
   a2uiActionPayload,
   a2uiCarrierUnits,
-  isA2uiActionText,
   parseA2uiActionText,
   readA2uiCarrier,
   reissueA2uiActionText,

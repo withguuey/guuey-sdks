@@ -10,7 +10,6 @@ import {
   A2UI_CARRIER_MAX_UNITS,
   a2uiActionPayload,
   a2uiCarrierUnits,
-  isA2uiActionText,
   parseA2uiActionText,
   readA2uiCarrier,
   reissueA2uiActionText,
@@ -125,7 +124,6 @@ describe("writeA2uiActionText / parseA2uiActionText — one writer, one reader (
     const text = writeA2uiActionText(record, summary);
     expect(text).toBeDefined();
     expect(parseA2uiActionText(text ?? "")).toEqual({ ...record, summary: "Book table: Party size = 4; Date = 2026-10-20" });
-    expect(isA2uiActionText(text ?? "")).toBe(true);
   });
 
   it("a button with no pairs writes its label alone on the human line", () => {
@@ -178,40 +176,46 @@ describe("writeA2uiActionText / parseA2uiActionText — one writer, one reader (
   });
 });
 
-describe("isA2uiActionText — anchored to the form's own lines (S4 (b))", () => {
+describe("parseA2uiActionText — anchored to the form's own lines (S4 (b)); the one predicate, no second reader", () => {
   const OPEN = '<guuey_a2ui_action surface="s" action="go" source="b" id="cm_1">';
   const CLOSE = "</guuey_a2ui_action>";
   const form = (lines: string[]) => lines.join("\n");
 
   it("the well-formed block, with a CRLF join or surrounding whitespace, is the form", () => {
-    expect(isA2uiActionText(form(["Go", OPEN, "{}", CLOSE]))).toBe(true);
-    expect(isA2uiActionText(["Go", OPEN, "{}", CLOSE].join("\r\n"))).toBe(true);
-    expect(isA2uiActionText(`\n${form(["Go", OPEN, "{}", CLOSE])}\n`)).toBe(true);
+    expect(parseA2uiActionText(form(["Go", OPEN, "{}", CLOSE]))).toBeDefined();
+    expect(parseA2uiActionText(["Go", OPEN, "{}", CLOSE].join("\r\n"))).toBeDefined();
+    expect(parseA2uiActionText(`\n${form(["Go", OPEN, "{}", CLOSE])}\n`)).toBeDefined();
   });
 
   it("is false for an inline tag, an unclosed block, out-of-order tags, or a line too many or too few", () => {
-    expect(isA2uiActionText(`Go ${OPEN} {} ${CLOSE}`)).toBe(false);
-    expect(isA2uiActionText(form(["Go", `${OPEN}{}${CLOSE}`]))).toBe(false);
-    expect(isA2uiActionText(form(["Go", OPEN, "{}"]))).toBe(false);
-    expect(isA2uiActionText(form(["Go", CLOSE, "{}", OPEN]))).toBe(false);
-    expect(isA2uiActionText(form(["Go", "{}", OPEN, CLOSE]))).toBe(false);
-    expect(isA2uiActionText(form([OPEN, "{}", CLOSE]))).toBe(false);
-    expect(isA2uiActionText(form(["Go", "and more", OPEN, "{}", CLOSE]))).toBe(false);
-    expect(isA2uiActionText(form(["Go", OPEN, "{}", CLOSE, "trailing words"]))).toBe(false);
+    expect(parseA2uiActionText(`Go ${OPEN} {} ${CLOSE}`)).toBeUndefined();
+    expect(parseA2uiActionText(form(["Go", `${OPEN}{}${CLOSE}`]))).toBeUndefined();
+    expect(parseA2uiActionText(form(["Go", OPEN, "{}"]))).toBeUndefined();
+    expect(parseA2uiActionText(form(["Go", CLOSE, "{}", OPEN]))).toBeUndefined();
+    expect(parseA2uiActionText(form(["Go", "{}", OPEN, CLOSE]))).toBeUndefined();
+    expect(parseA2uiActionText(form([OPEN, "{}", CLOSE]))).toBeUndefined();
+    expect(parseA2uiActionText(form(["Go", "and more", OPEN, "{}", CLOSE]))).toBeUndefined();
+    expect(parseA2uiActionText(form(["Go", OPEN, "{}", CLOSE, "trailing words"]))).toBeUndefined();
   });
 
   it("is false when the tag's attributes are out of order, unquoted, outside the charset, or the JSON line is not an object", () => {
-    expect(isA2uiActionText(form(["Go", '<guuey_a2ui_action action="go" surface="s" source="b" id="cm_1">', "{}", CLOSE]))).toBe(false);
-    expect(isA2uiActionText(form(["Go", "<guuey_a2ui_action surface=s action=go source=b id=cm_1>", "{}", CLOSE]))).toBe(false);
-    expect(isA2uiActionText(form(["Go", '<guuey_a2ui_action surface="s s" action="go" source="b" id="cm_1">', "{}", CLOSE]))).toBe(false);
-    expect(isA2uiActionText(form(["Go", OPEN, "[1]", CLOSE]))).toBe(false);
-    expect(isA2uiActionText(form(["Go", OPEN, "{not json", CLOSE]))).toBe(false);
-    expect(isA2uiActionText(form(["Go", OPEN, "", CLOSE]))).toBe(false);
+    expect(parseA2uiActionText(form(["Go", '<guuey_a2ui_action action="go" surface="s" source="b" id="cm_1">', "{}", CLOSE]))).toBeUndefined();
+    expect(parseA2uiActionText(form(["Go", "<guuey_a2ui_action surface=s action=go source=b id=cm_1>", "{}", CLOSE]))).toBeUndefined();
+    expect(parseA2uiActionText(form(["Go", '<guuey_a2ui_action surface="s s" action="go" source="b" id="cm_1">', "{}", CLOSE]))).toBeUndefined();
+    expect(parseA2uiActionText(form(["Go", OPEN, "[1]", CLOSE]))).toBeUndefined();
+    expect(parseA2uiActionText(form(["Go", OPEN, "{not json", CLOSE]))).toBeUndefined();
+    expect(parseA2uiActionText(form(["Go", OPEN, "", CLOSE]))).toBeUndefined();
+  });
+
+  it("the narrowing barrel exports no second predicate beside it", async () => {
+    const narrowing: object = await import("./narrowing.js");
+    expect(Object.keys(narrowing)).toContain("parseA2uiActionText");
+    expect(Object.keys(narrowing)).not.toContain("isA2uiActionText");
   });
 
   it("plain prose and a ggui directive are not the form", () => {
-    expect(isA2uiActionText("book a table for friday")).toBe(false);
-    expect(isA2uiActionText('<ggui_directive kind="user-action">\n</ggui_directive>')).toBe(false);
+    expect(parseA2uiActionText("book a table for friday")).toBeUndefined();
+    expect(parseA2uiActionText('<ggui_directive kind="user-action">\n</ggui_directive>')).toBeUndefined();
   });
 });
 

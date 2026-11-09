@@ -203,8 +203,3 @@ export function parseA2uiActionText(text: string): A2uiActionText | undefined {
   if (!isJsonObject(context)) return undefined;
   return { surfaceId, name, sourceComponentId, actionId, context, summary };
 }
-
-/** Whether a user row's text is an A2UI action turn: {@link parseA2uiActionText}'s one rule. */
-export function isA2uiActionText(text: string): boolean {
-  return parseA2uiActionText(text) !== undefined;
-}

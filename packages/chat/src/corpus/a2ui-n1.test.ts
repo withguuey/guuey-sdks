@@ -25,7 +25,7 @@ import {
   type ThreadHistoryRow,
 } from "@guuey/agent-client";
 import { toolResultViewMount } from "@guuey/mcp-apps-host";
-import { isA2uiActionText } from "@guuey/mcp-apps-host/narrowing";
+import { parseA2uiActionText } from "@guuey/mcp-apps-host/narrowing";
 import { transcriptInputsFromHistory } from "../history-inputs.js";
 import { newestViewKey, planTranscript } from "../plan.js";
 import { calmPolicy, type TranscriptPolicy } from "../policy.js";
@@ -132,7 +132,7 @@ describe("guuey#2381 — A2UI N−1 fixtures (spec §10)", () => {
     expect(action?.kind === "user" ? action.directive : undefined).toBe(false);
     expect(action).not.toHaveProperty("actionSummary");
     // The row the old kit drew as text is the one reader's action turn.
-    expect(isA2uiActionText(fixture.messages[2]?.text ?? "")).toBe(true);
+    expect(parseA2uiActionText(fixture.messages[2]?.text ?? "")).toBeDefined();
   });
 
   it("a2ui-n1-old-client-history: stored results with carriers reload as tool rows with JSON previews", async () => {

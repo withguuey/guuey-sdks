@@ -15,6 +15,12 @@ interface StreamFixture {
 }
 
 describe("@guuey/chat/a2ui", () => {
+  it("re-exports the one action-text reader, and no second predicate beside it", async () => {
+    const subpath: object = await import("./a2ui.js");
+    expect(Object.keys(subpath)).toContain("parseA2uiActionText");
+    expect(Object.keys(subpath)).not.toContain("isA2uiActionText");
+  });
+
   it("validates the corpus example carrier: one interactive surface that draws natively", () => {
     const f: StreamFixture = JSON.parse(
       readFileSync(new URL("./corpus/fixtures/a2ui-n1-old-client-live.json", import.meta.url), "utf8"),

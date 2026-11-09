@@ -13,7 +13,6 @@ export {
   A2UI_CARRIER_MAX_UNITS,
   a2uiActionPayload,
   a2uiCarrierUnits,
-  isA2uiActionText,
   parseA2uiActionText,
   writeA2uiActionText,
   type A2uiActionRecord,
