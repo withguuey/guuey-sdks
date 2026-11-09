@@ -249,7 +249,7 @@ export const FRAMEWORK_REGISTRY: readonly FrameworkEntry[] = [
     framework: "openai-agents-sdk",
     sdkPackage: "@openai/agents",
     platformPinnedVersion: "0.18.0",
-    facetSupportedRange: ">=0.2.0 <0.20",
+    facetSupportedRange: ">=0.2.0 <0.22",
     defaultProvider: "openai",
   },
   {
