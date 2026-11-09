@@ -104,9 +104,17 @@ export interface A2uiResolvedSurface {
   dataModel: A2uiJsonObject;
   /** The declared model: data path → the constraint of the input bound there. */
   fields: { [path: string]: A2uiFieldSpec };
-  /** At least one input component, or one `Button` carrying an `action` key. */
+  /**
+   * A drawn input component or a drawn `Button` carrying an `action` key (with
+   * no root, or after a cap cut, any one), or a message-level bad id or drop of
+   * one (spec §5.7).
+   */
   interactive: boolean;
-  /** Each in-place degrade this revision carries (component faults on a read-only surface, and carve-outs). */
+  /**
+   * Each degrade this revision carries: component faults on a read-only
+   * surface, the carve-outs, and on any surface the faults of components
+   * nothing draws and the unreferenced components (counted, never escalated).
+   */
   degrade: A2uiDegradeCounts;
 }
 
@@ -438,15 +446,21 @@ export function declaredFields(root: A2uiNode | null): { [path: string]: A2uiFie
   return fields;
 }
 
-/** The tree from the root down: each component drawn once, at its first reference, faults recorded. */
+/**
+ * The tree from the root down: each component drawn once, at its first
+ * reference, faults recorded. `cut` is set when a cap dropped children or
+ * items: what it dropped was authored into the drawn tree, so it is not
+ * "nothing draws it".
+ */
 function resolveTree(
   surface: A2uiSurfaceState,
   rootRef: string | null,
   media: A2uiMediaPolicy,
   add: (fault: Fault["fault"], at: string, n?: number) => void,
-): { root: A2uiNode | null; drawn: ReadonlySet<string> } | EnvelopeAbort {
+): { root: A2uiNode | null; drawn: ReadonlySet<string>; cut: boolean } | EnvelopeAbort {
   const where = `/${surface.surfaceId}`;
   const drawnIds = new Set<string>();
+  let cut = false;
   /** Set when a node sits deeper than the bound: an envelope fault for the whole carrier. */
   let tooDeep: EnvelopeAbort | null = null;
   const label = (value: string | undefined, at: string): string | null => {
@@ -482,7 +496,10 @@ function resolveTree(
       fault: (fault, n = 1) => add(fault, at, n),
       label: (value) => label(value, at),
       children: (refs, cap, dropFault) => {
-        if (refs.length > cap) add(dropFault, at, refs.length - cap);
+        if (refs.length > cap) {
+          add(dropFault, at, refs.length - cap);
+          cut = true;
+        }
         return refs.slice(0, cap).flatMap((ref) => resolve(ref, depth + 1, at) ?? []);
       },
       child: (ref) => (ref === undefined ? null : resolve(ref, depth + 1, at)),
@@ -490,7 +507,7 @@ function resolveTree(
   };
 
   const root = rootRef === null ? null : resolve(rootRef, 1, where);
-  return tooDeep ?? { root, drawn: drawnIds };
+  return tooDeep ?? { root, drawn: drawnIds, cut };
 }
 
 /** Resolve one surface into its tree, its declared model and its faults. */
@@ -529,11 +546,13 @@ function resolveSurface(
   // drops), and only a drawn component's fault can fail the carrier. A
   // component nothing draws, like a form an update replaced (A2UI has no
   // component delete), is counted and cannot mislead a press. With no root
-  // nothing tells drawn from undrawn, so every component counts as drawn.
+  // nothing tells drawn from undrawn, and after a cap cut an undrawn input may
+  // be one the cap dropped (a dropped interactive construct, spec §5.7): in
+  // both cases every component counts as drawn.
   let interactive = pendingInteractive;
   for (const [cid, entry] of surface.components) {
     const at = `${where}/${cid}`;
-    const drawn = tree.root === null || tree.drawn.has(cid);
+    const drawn = tree.root === null || tree.cut || tree.drawn.has(cid);
     if (drawn && entry.interactive) interactive = true;
     for (const fault of A2UI_COMPONENT_FAULTS) add(fault, at, entry.faults[fault] ?? 0, drawn ? faults : undrawn);
     if (cid !== id && !referenced.has(cid)) add("unreferenced-component", at, 1, undrawn);

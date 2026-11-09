@@ -135,7 +135,7 @@ export function isA2uiComponentName(name: string): name is A2uiComponentName {
   return (A2UI_COMPONENT_NAMES as readonly string[]).includes(name);
 }
 
-/** The input components: a surface holding one is interactive (spec §5.7). */
+/** The input components: one in the drawn tree makes a surface interactive (spec §5.7). */
 export const A2UI_INPUT_COMPONENTS: readonly A2uiComponentName[] = ["TextField", "CheckBox", "ChoicePicker"];
 
 const containerProps = {
@@ -242,8 +242,10 @@ export type A2uiParsedComponent =
   | { component: "unknown"; name: string };
 
 /**
- * Faults that degrade a component in place on a read-only surface and take
- * the old face on an interactive one (spec §5.7, §6).
+ * Faults that degrade a component in place on a read-only surface. On an
+ * interactive surface a fault takes the old face only on a drawn component; on
+ * a component nothing draws it is counted, and `unreferenced-component` never
+ * escalates (spec §5.7, §6).
  */
 export const A2UI_COMPONENT_FAULTS = [
   "unknown-component",

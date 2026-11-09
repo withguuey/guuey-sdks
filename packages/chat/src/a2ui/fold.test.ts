@@ -371,7 +371,7 @@ describe("one population: every component in the surface is drawn or counted", (
   });
 });
 
-describe("S1 (a2) — on an interactive surface every component fault takes the old face", () => {
+describe("S1 (a2) — on an interactive surface every fault on a drawn component takes the old face", () => {
   /** A form (one field, one submit) with one more component, `x0`, beside them. */
   const withExtra = (extra: { [k: string]: Json }): Json =>
     carrier(create(), update([col("root", ["name", "go", "x0"]), field("name"), submit(), { ...extra, id: "x0" }]));
@@ -580,6 +580,53 @@ describe("option (d) — a component nothing draws is counted, never escalated (
   it("a bad id on an interactive component keeps the surface interactive, drawn tree or not (pendingInteractive)", () => {
     const out = foldA2uiCarrier(formState(), carrier(update([col("root", ["done"]), txt("done", "Thanks."), field("bad id")])));
     expect(out).toMatchObject({ ok: false, reason: "bad-id", level: "component" });
+  });
+
+  it("drawn, not merely referenced: the replaced form's inputs are still referenced (by the form) and still not drawn", () => {
+    const nested = foldA2uiCarrier(
+      EMPTY_A2UI_STATE,
+      carrier(create("s", "Contact"), update([col("root", ["form"]), col("form", ["name", "go"]), field("name"), submit()])),
+    );
+    if (!nested.ok) throw new Error(nested.reason);
+    const s = surfaceOf(
+      foldA2uiCarrier(
+        nested.state,
+        carrier(update([col("root", ["done", "ok"]), txt("done", "Thanks."), { id: "ok", component: "Icon", name: "check", label: "l".repeat(201) }])),
+      ),
+    );
+    expect(ids(s.root)).toEqual(["root", "done", "ok"]);
+    expect(s.interactive).toBe(false);
+    expect(s.fields).toEqual({});
+    expect(s.degrade).toEqual({ "unreferenced-component": 1, "truncated-label": 1 });
+  });
+});
+
+/**
+ * guuey#2366: a cap cut is not "nothing draws it". The cut children were
+ * authored into the drawn tree and the cap took them out, so an input or an
+ * action among them (or inside them) is a dropped interactive construct, the
+ * same as a message-level drop: the surface is interactive and the cut takes
+ * the old face (spec §5.7).
+ */
+describe("a cap cut that drops an input or an action takes the old face (guuey#2366)", () => {
+  const texts = (n: number): Json[] => Array.from({ length: n }, (_, i) => txt(`c${i}`));
+  const kids = (n: number): string[] => Array.from({ length: n }, (_, i) => `c${i}`);
+
+  it(`a Column of ${A2UI_LIMITS.childrenPerContainer} Texts and a 51st Button with an action`, () => {
+    const out = validateA2uiCarrier(carrier(create(), update([col("root", [...kids(50), "go"]), ...texts(50), submit()])));
+    expect(out).toMatchObject({ ok: false, reason: "dropped-children", level: "component" });
+  });
+
+  it(`a List whose only actionable item is past ${A2UI_LIMITS.listItems}`, () => {
+    const out = validateA2uiCarrier(carrier(create(), update([{ id: "root", component: "List", children: [...kids(100), "go"] }, ...texts(100), submit()])));
+    expect(out).toMatchObject({ ok: false, reason: "dropped-items", level: "component" });
+  });
+
+  it("a cut container holding an input (the structure around it)", () => {
+    const out = validateA2uiCarrier(
+      carrier(create(), update([col("root", [...kids(50), "more"]), ...texts(50), col("more", ["name"]), field("name")])),
+    );
+    expect(out).toMatchObject({ ok: false, reason: "dropped-children", level: "component" });
   });
 });
 
