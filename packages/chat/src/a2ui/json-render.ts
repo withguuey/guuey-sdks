@@ -276,7 +276,10 @@ class Converter {
   /**
    * Whether an element, or anything under it (children and slots), is an
    * input or carries an action. Read once per key. Past the tree bound (a
-   * cycle among it) the answer is the safe one: it may hold one.
+   * cycle among it) the answer is the safe one: it may hold one. That answer
+   * is kept for the key, so a plain element first reached near the bound
+   * reads as holding one for the rest of the conversion (the safe face, not a
+   * memo fault).
    */
   private holdsInteraction(key: string, depth = 0): boolean {
     const known = this.interaction.get(key);

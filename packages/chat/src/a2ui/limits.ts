@@ -56,9 +56,10 @@ export const A2UI_LIMITS = {
    * Steps one json-render conversion may take (spec §12): every element visit
    * (hidden, dangling and repeated ones included), every `visible` term read
    * and every element the interaction check reads. Past it the carrier is
-   * too large (an envelope fault). 200 components × 100 repeat items: a
-   * surface the other bounds allow never needs more, and the conversion's
-   * work is bounded whatever the carrier references.
+   * too large (an envelope fault). A work budget about 100× the component
+   * bound: every surface the other bounds allow sits far below it, and the
+   * carriers that reach it are the fan-in ones (one element referenced from
+   * many places), so the conversion's work is bounded whatever it references.
    */
   jsonRenderSteps: 20_000,
   /**
