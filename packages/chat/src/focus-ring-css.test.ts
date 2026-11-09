@@ -39,6 +39,8 @@ const CONTROLS = [
   // guuey#2382: the A2UI surface's controls.
   ".guuey-chat-a2ui-button",
   ".guuey-chat-a2ui-open",
+  // A link inside A2UI Text (a link Button is `.guuey-chat-a2ui-button`).
+  ".guuey-chat-a2ui-text a",
   ".guuey-chat-a2ui-input",
   ".guuey-chat-a2ui-filter",
   ".guuey-chat-a2ui-picker",
