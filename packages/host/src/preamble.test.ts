@@ -7,8 +7,10 @@ import {
   renderUserMemoryRecall,
   renderSurfaceSection,
   renderGenerativeUiSection,
+  renderA2uiSection,
   SURFACE_FORMATTING_SECTION,
   GENERATIVE_UI_SECTION,
+  A2UI_SECTION,
   renderMcpAvailabilitySection,
   MCP_AVAILABILITY_HEADING, renderFirstImpressionSection, FIRST_IMPRESSION_HEADING,
   renderFirstImpressionShownSection, FIRST_IMPRESSION_SHOWN_HEADING,
@@ -312,6 +314,29 @@ describe("renderSurfaceSection — surface-formatting hints, default ON (guuey#5
     for (const banned of ["tone", "brand", "persona", "friendly", "polite"]) {
       expect(SURFACE_FORMATTING_SECTION.toLowerCase()).not.toContain(banned);
     }
+  });
+});
+
+describe("renderA2uiSection — native A2UI surfaces, only where the client draws them (guuey#2386)", () => {
+  it("renders the section when the client names the guuey A2UI catalog", () => {
+    expect(renderA2uiSection(["guuey.a2ui.v1", "guuey.json-render.v1"], undefined)).toBe(A2UI_SECTION);
+    expect(renderA2uiSection(["guuey.a2ui.v1"], true)).toBe(A2UI_SECTION);
+  });
+
+  it("renders nothing for a client that does not draw it, or a surface that opted out of formatting", () => {
+    expect(renderA2uiSection(undefined, undefined)).toBe("");
+    expect(renderA2uiSection([], undefined)).toBe("");
+    expect(renderA2uiSection(["guuey.json-render.v1"], undefined)).toBe("");
+    expect(renderA2uiSection(["guuey.a2ui.v1"], false)).toBe("");
+  });
+
+  it("byte pin — one paragraph: surfaces draw natively, forms come back tagged, a line of text beside each", () => {
+    expect(A2UI_SECTION).toBe(
+      `\n\n## Interactive surfaces\n\n` +
+        `This chat draws guuey A2UI surfaces as native UI. When a tool returns one, the person sees it here. ` +
+        `A form they submit comes back to you as their next turn, tagged \`<guuey_a2ui_action>\`. ` +
+        `Keep one line of plain text beside every surface.`,
+    );
   });
 });
 

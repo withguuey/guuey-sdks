@@ -573,6 +573,36 @@ export function renderGenerativeUiSection(
   return GENERATIVE_UI_SECTION;
 }
 
+/**
+ * guuey#2386 — what a turn's preamble says when the client draws guuey A2UI
+ * surfaces natively: a tool's surface shows as real UI, a submitted form comes
+ * back as the next turn tagged `<guuey_a2ui_action>`, and a line of plain
+ * text sits beside every surface (a client that does not draw them shows that
+ * line). One paragraph, framework-blind like every sibling.
+ *
+ * Written and pinned, not yet wired: the client's `catalogs` reach a turn only
+ * when the runtime threads them through (S6b). The framework call sites, and
+ * their byte-identity pins beside {@link GENERATIVE_UI_SECTION}, land with it.
+ */
+export const A2UI_SECTION =
+  `\n\n## Interactive surfaces\n\n` +
+  `This chat draws guuey A2UI surfaces as native UI. When a tool returns one, the person sees it here. ` +
+  `A form they submit comes back to you as their next turn, tagged \`<guuey_a2ui_action>\`. ` +
+  `Keep one line of plain text beside every surface.`;
+
+/**
+ * Render {@link A2UI_SECTION} only for a client that names the guuey A2UI
+ * catalog (`capabilities.uiResources.catalogs`), and never on a surface that
+ * opted out of formatting (`surfaceHints === false`, guuey#531).
+ */
+export function renderA2uiSection(
+  catalogs: readonly string[] | undefined,
+  surfaceHints: boolean | undefined,
+): string {
+  if (catalogs?.includes("guuey.a2ui.v1") !== true || surfaceHints === false) return "";
+  return A2UI_SECTION;
+}
+
 export const RESPONSE_NORMS_SECTION =
   `\n\n## Speaking to the user\n\n` +
   `Your tools' mechanics are internal working, not conversation. Never narrate ` +
