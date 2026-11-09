@@ -1,0 +1,138 @@
+{
+  "claim": "F9 (guuey#2366 spec §10): an old kit receiving a json-render carrier under the marker draws today's tool row with a JSON preview.",
+  "userText": "sign me up",
+  "events": [
+    {
+      "kind": "session",
+      "threadId": "thread-corpus",
+      "acceptedInputKinds": []
+    },
+    {
+      "kind": "message",
+      "status": "thinking",
+      "assistantText": "",
+      "agEvents": [
+        {
+          "type": "turn.start",
+          "threadId": "thread-corpus",
+          "turnId": "turn-corpus",
+          "seq": 0
+        },
+        {
+          "type": "message.start",
+          "id": "msg-corpus",
+          "role": "assistant",
+          "turnId": "turn-corpus",
+          "threadId": "thread-corpus",
+          "seq": 1
+        }
+      ]
+    },
+    {
+      "kind": "message",
+      "status": "using-tool",
+      "activeTool": "show_signup",
+      "assistantText": "",
+      "agEvents": [
+        {
+          "type": "tool.start",
+          "toolCallId": "call-signup",
+          "name": "show_signup",
+          "seq": 2
+        },
+        {
+          "type": "tool.args.assembled",
+          "toolCallId": "call-signup",
+          "input": {},
+          "seq": 3
+        },
+        {
+          "type": "tool.done",
+          "toolCallId": "call-signup",
+          "outcome": "ok",
+          "content": [
+            {
+              "type": "text",
+              "text": "Sign-up form."
+            }
+          ],
+          "structuredContent": {
+            "com.guuey/a2ui": {
+              "format": "json-render",
+              "version": "0.21.1",
+              "surfaceId": "signup-1",
+              "title": "Sign up",
+              "spec": {
+                "root": "form",
+                "elements": {
+                  "form": {
+                    "type": "Form",
+                    "props": {},
+                    "children": ["email", "submit"]
+                  },
+                  "email": {
+                    "type": "Input",
+                    "props": {
+                      "label": "Email",
+                      "value": {
+                        "$bindState": "/email"
+                      }
+                    }
+                  },
+                  "submit": {
+                    "type": "Button",
+                    "props": {
+                      "label": "Sign up"
+                    },
+                    "on": {
+                      "press": {
+                        "action": "signup",
+                        "params": {
+                          "email": {
+                            "$state": "/email"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "state": {
+                  "email": ""
+                }
+              }
+            }
+          },
+          "seq": 4
+        }
+      ]
+    },
+    {
+      "kind": "message",
+      "status": "responding",
+      "activeTool": null,
+      "assistantText": "Fill in your email.",
+      "agEvents": [
+        {
+          "type": "text.start",
+          "id": "x",
+          "seq": 5
+        },
+        {
+          "type": "text.delta",
+          "id": "x",
+          "delta": "Fill in your email.",
+          "seq": 6
+        },
+        {
+          "type": "text.end",
+          "id": "x",
+          "seq": 7
+        }
+      ]
+    },
+    {
+      "kind": "done",
+      "stopReason": "end_turn"
+    }
+  ]
+}

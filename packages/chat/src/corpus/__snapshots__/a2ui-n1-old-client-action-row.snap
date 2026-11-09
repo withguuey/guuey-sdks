@@ -1,0 +1,45 @@
+{
+  "items": [
+    {
+      "kind": "user",
+      "key": "u0",
+      "expanded": true,
+      "text": "book a table for friday",
+      "state": "sent",
+      "retry": false,
+      "directive": false
+    },
+    {
+      "kind": "text",
+      "key": "a0.t0",
+      "expanded": true,
+      "text": "Pick a date and party size.",
+      "markdown": true,
+      "streaming": false,
+      "stopped": false
+    },
+    {
+      "kind": "user",
+      "key": "u1",
+      "expanded": true,
+      "text": "Book table: Party size = 4; Date = 2026-10-20\n<guuey_a2ui_action surface=\"booking-1\" action=\"submit_booking\" source=\"confirm\" id=\"cm_0004\">\n{\"partySize\":4,\"date\":\"2026-10-20\"}\n</guuey_a2ui_action>",
+      "state": "sent",
+      "retry": false,
+      "directive": false
+    },
+    {
+      "kind": "text",
+      "key": "a1.t0",
+      "expanded": true,
+      "text": "Booked: Monday 20, four people.",
+      "markdown": true,
+      "streaming": false,
+      "stopped": false
+    }
+  ],
+  "status": null,
+  "recovery": null,
+  "views": [],
+  "authRequired": null,
+  "threadClosed": null
+}

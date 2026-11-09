@@ -1,0 +1,188 @@
+{
+  "claim": "F8 (guuey#2366 spec §10): a carrier moved to a plain-object uiData has no uri/text, so it never mounts; the result draws as today's tool row.",
+  "userText": "book a table for friday",
+  "events": [
+    {
+      "kind": "session",
+      "threadId": "thread-corpus",
+      "acceptedInputKinds": []
+    },
+    {
+      "kind": "message",
+      "status": "thinking",
+      "assistantText": "",
+      "agEvents": [
+        {
+          "type": "turn.start",
+          "threadId": "thread-corpus",
+          "turnId": "turn-corpus",
+          "seq": 0
+        },
+        {
+          "type": "message.start",
+          "id": "msg-corpus",
+          "role": "assistant",
+          "turnId": "turn-corpus",
+          "threadId": "thread-corpus",
+          "seq": 1
+        }
+      ]
+    },
+    {
+      "kind": "message",
+      "status": "using-tool",
+      "activeTool": "show_booking_form",
+      "assistantText": "",
+      "agEvents": [
+        {
+          "type": "tool.start",
+          "toolCallId": "call-booking",
+          "name": "show_booking_form",
+          "seq": 2
+        },
+        {
+          "type": "tool.args.assembled",
+          "toolCallId": "call-booking",
+          "input": {
+            "day": "friday"
+          },
+          "seq": 3
+        },
+        {
+          "type": "tool.done",
+          "toolCallId": "call-booking",
+          "outcome": "ok",
+          "content": [
+            {
+              "type": "text",
+              "text": "Booking form for Friday, 4 people."
+            }
+          ],
+          "uiData": {
+            "com.guuey/a2ui": {
+              "format": "a2ui",
+              "version": "v0.9",
+              "messages": [
+                {
+                  "version": "v0.9",
+                  "createSurface": {
+                    "surfaceId": "booking-1",
+                    "catalogId": "guuey.a2ui.v1",
+                    "title": "Book a table"
+                  }
+                },
+                {
+                  "version": "v0.9",
+                  "updateDataModel": {
+                    "surfaceId": "booking-1",
+                    "value": {
+                      "partySize": 4,
+                      "date": "2026-10-20"
+                    }
+                  }
+                },
+                {
+                  "version": "v0.9",
+                  "updateComponents": {
+                    "surfaceId": "booking-1",
+                    "components": [
+                      {
+                        "id": "root",
+                        "component": "Column",
+                        "children": ["heading", "party", "date", "confirm"],
+                        "gap": "md"
+                      },
+                      {
+                        "id": "heading",
+                        "component": "Text",
+                        "text": "**Friday** dinner for your party",
+                        "variant": "h2"
+                      },
+                      {
+                        "id": "party",
+                        "component": "TextField",
+                        "label": "Party size",
+                        "value": {
+                          "path": "/partySize"
+                        },
+                        "inputType": "number",
+                        "required": true,
+                        "min": 1,
+                        "max": 12
+                      },
+                      {
+                        "id": "date",
+                        "component": "ChoicePicker",
+                        "label": "Date",
+                        "options": [
+                          {
+                            "label": "Mon 20",
+                            "value": "2026-10-20"
+                          },
+                          {
+                            "label": "Tue 21",
+                            "value": "2026-10-21"
+                          }
+                        ],
+                        "value": {
+                          "path": "/date"
+                        },
+                        "required": true
+                      },
+                      {
+                        "id": "confirm",
+                        "component": "Button",
+                        "label": "Book table",
+                        "variant": "primary",
+                        "action": {
+                          "name": "submit_booking",
+                          "context": {
+                            "partySize": {
+                              "path": "/partySize"
+                            },
+                            "date": {
+                              "path": "/date"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "seq": 4
+        }
+      ]
+    },
+    {
+      "kind": "message",
+      "status": "responding",
+      "activeTool": null,
+      "assistantText": "Pick a date and party size.",
+      "agEvents": [
+        {
+          "type": "text.start",
+          "id": "x",
+          "seq": 5
+        },
+        {
+          "type": "text.delta",
+          "id": "x",
+          "delta": "Pick a date and party size.",
+          "seq": 6
+        },
+        {
+          "type": "text.end",
+          "id": "x",
+          "seq": 7
+        }
+      ]
+    },
+    {
+      "kind": "done",
+      "stopReason": "end_turn"
+    }
+  ]
+}

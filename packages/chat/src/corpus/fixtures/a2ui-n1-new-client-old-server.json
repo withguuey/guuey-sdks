@@ -1,0 +1,165 @@
+{
+  "claim": "F2 (guuey#2366 spec §10): a transcript and a history page with no carrier plan byte-identically to the base sha.",
+  "rows": [
+    {
+      "seq": 1,
+      "at": "2026-10-01T00:00:01.000Z",
+      "kind": "text",
+      "authorRole": "user",
+      "text": "what's the forecast",
+      "clientMessageId": "cm_0001"
+    },
+    {
+      "seq": 2,
+      "at": "2026-10-01T00:00:02.000Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": null,
+      "clientMessageId": "cm_0001#agent#0",
+      "toolCalls": [
+        {
+          "toolCallId": "call-forecast",
+          "name": "forecast",
+          "input": {
+            "city": "Lisbon"
+          }
+        }
+      ]
+    },
+    {
+      "seq": 3,
+      "at": "2026-10-01T00:00:03.000Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": null,
+      "clientMessageId": "cm_0001#agent#1",
+      "toolResults": [
+        {
+          "toolCallId": "call-forecast",
+          "toolName": "forecast",
+          "block": {
+            "type": "tool-result",
+            "toolCallId": "call-forecast",
+            "content": [
+              {
+                "type": "text",
+                "text": "Sunny, 23C."
+              }
+            ],
+            "structuredContent": {
+              "city": "Lisbon",
+              "temps": [21, 23],
+              "com.guuey/other": {
+                "note": "not the marker"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "seq": 4,
+      "at": "2026-10-01T00:00:04.000Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": "Sunny in Lisbon, 23C.",
+      "clientMessageId": "cm_0001#agent#2"
+    }
+  ],
+  "userText": "and tomorrow?",
+  "events": [
+    {
+      "kind": "session",
+      "threadId": "thread-corpus",
+      "acceptedInputKinds": []
+    },
+    {
+      "kind": "message",
+      "status": "thinking",
+      "assistantText": "",
+      "agEvents": [
+        {
+          "type": "turn.start",
+          "threadId": "thread-corpus",
+          "turnId": "turn-corpus",
+          "seq": 0
+        },
+        {
+          "type": "message.start",
+          "id": "msg-corpus",
+          "role": "assistant",
+          "turnId": "turn-corpus",
+          "threadId": "thread-corpus",
+          "seq": 1
+        }
+      ]
+    },
+    {
+      "kind": "message",
+      "status": "using-tool",
+      "activeTool": "forecast",
+      "assistantText": "",
+      "agEvents": [
+        {
+          "type": "tool.start",
+          "toolCallId": "call-forecast-2",
+          "name": "forecast",
+          "seq": 2
+        },
+        {
+          "type": "tool.args.assembled",
+          "toolCallId": "call-forecast-2",
+          "input": {
+            "city": "Lisbon",
+            "day": "tomorrow"
+          },
+          "seq": 3
+        },
+        {
+          "type": "tool.done",
+          "toolCallId": "call-forecast-2",
+          "outcome": "ok",
+          "content": [
+            {
+              "type": "text",
+              "text": "Cloudy, 19C."
+            }
+          ],
+          "structuredContent": {
+            "city": "Lisbon",
+            "temps": [17, 19]
+          },
+          "seq": 4
+        }
+      ]
+    },
+    {
+      "kind": "message",
+      "status": "responding",
+      "activeTool": null,
+      "assistantText": "Cloudy tomorrow, 19C.",
+      "agEvents": [
+        {
+          "type": "text.start",
+          "id": "x",
+          "seq": 5
+        },
+        {
+          "type": "text.delta",
+          "id": "x",
+          "delta": "Cloudy tomorrow, 19C.",
+          "seq": 6
+        },
+        {
+          "type": "text.end",
+          "id": "x",
+          "seq": 7
+        }
+      ]
+    },
+    {
+      "kind": "done",
+      "stopReason": "end_turn"
+    }
+  ]
+}

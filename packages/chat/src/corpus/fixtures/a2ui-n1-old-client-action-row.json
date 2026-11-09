@@ -1,0 +1,26 @@
+{
+  "claim": "F5 (guuey#2366 spec §10): an old kit draws an A2UI action row as the user's own plain text (human line + JSON), never HTML.",
+  "messages": [
+    {
+      "role": "user",
+      "text": "book a table for friday",
+      "seq": 1
+    },
+    {
+      "role": "assistant",
+      "text": "Pick a date and party size.",
+      "seq": 3
+    },
+    {
+      "role": "user",
+      "text": "Book table: Party size = 4; Date = 2026-10-20\n<guuey_a2ui_action surface=\"booking-1\" action=\"submit_booking\" source=\"confirm\" id=\"cm_0004\">\n{\"partySize\":4,\"date\":\"2026-10-20\"}\n</guuey_a2ui_action>",
+      "seq": 4,
+      "clientMessageId": "cm_0004"
+    },
+    {
+      "role": "assistant",
+      "text": "Booked: Monday 20, four people.",
+      "seq": 6
+    }
+  ]
+}

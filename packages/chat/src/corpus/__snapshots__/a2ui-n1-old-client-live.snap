@@ -1,0 +1,50 @@
+{
+  "items": [
+    {
+      "kind": "user",
+      "key": "u0",
+      "expanded": true,
+      "text": "book a table for friday",
+      "state": "sent",
+      "retry": false,
+      "directive": false
+    },
+    {
+      "kind": "tool",
+      "key": "tool.call-booking",
+      "expanded": false,
+      "toolCallId": "call-booking",
+      "name": "show_booking_form",
+      "title": "show booking form",
+      "state": "done",
+      "argsPreview": null,
+      "result": {
+        "kind": "data-result",
+        "key": "tool.call-booking.result",
+        "expanded": true,
+        "preview": "{\n  \"com.guuey/a2ui\": {\n    \"format\": \"a2ui\",\n    \"version\": \"v0.9\",\n    \"messages\": [\n      {\n        \"version\": \"v0.9\",\n        \"createSurface\": {\n          \"surfaceId\": \"booking-1\",\n          \"catalogId\": \"guuey.a2ui.v1\",\n          \"title\": \"Book a table\"\n        }\n      },\n      {\n        \"version\": \"v0.9\",\n        \"updateDataModel\": {\n          \"surfaceId\": \"booking-1\",\n          \"value\": {\n            \"partySize\": 4,\n            \"date\": \"2026-10-20\"\n          }\n        }\n      },\n      {\n        \"version\": \"v0.9\",\n        \"updateComponents\": {\n          \"surfaceId\": \"booking-1\",\n          \"components\": [\n            {\n              \"id\": \"root\",\n              \"component\": \"Column\",\n              \"children\": [\n                \"heading\",\n                \"party\",\n                \"date\",\n                \"confirm\"\n              ],\n              \"gap\": \"md\"\n            },\n            {\n              \"id\": \"heading\",\n              \"component\": \"Text\",\n              \"text\": \"**Friday** dinner for your party\",\n              \"variant\": \"h2\"\n            },\n            {\n              \"id\": \"party\",\n              \"component\": \"TextField\",\n              \"label\": \"Party size\",\n              \"value\": {\n                \"path\": \"/partySize\"\n              },\n              \"inputType\": \"number\",\n              \"required\": true,\n              \"min\": 1,\n              \"max\": 12\n            },\n            {\n              \"id\": \"date\",\n              \"component\": \"ChoicePicker\",\n              \"label\": \"Date\",\n              \"options\": [\n                {\n                  \"label\": \"Mon 20\",\n                  \"value\": \"2026-10-20\"\n                },\n                {\n                  \"label\": \"Tue 21\",\n                  \"value\": \"2026-10-21\"\n                }\n              ],\n              \"value\": {\n                \"path\": \"/date\"\n              },\n              \"required\": true\n            },\n            {\n              \"id\": \"confirm\",\n              \"component\": \"Button\",\n              \"label\": \"Book table\",\n              \"variant\"",
+        "byteCount": 1068,
+        "state": "small",
+        "showBytes": false,
+        "full": "{\n  \"com.guuey/a2ui\": {\n    \"format\": \"a2ui\",\n    \"version\": \"v0.9\",\n    \"messages\": [\n      {\n        \"version\": \"v0.9\",\n        \"createSurface\": {\n          \"surfaceId\": \"booking-1\",\n          \"catalogId\": \"guuey.a2ui.v1\",\n          \"title\": \"Book a table\"\n        }\n      },\n      {\n        \"version\": \"v0.9\",\n        \"updateDataModel\": {\n          \"surfaceId\": \"booking-1\",\n          \"value\": {\n            \"partySize\": 4,\n            \"date\": \"2026-10-20\"\n          }\n        }\n      },\n      {\n        \"version\": \"v0.9\",\n        \"updateComponents\": {\n          \"surfaceId\": \"booking-1\",\n          \"components\": [\n            {\n              \"id\": \"root\",\n              \"component\": \"Column\",\n              \"children\": [\n                \"heading\",\n                \"party\",\n                \"date\",\n                \"confirm\"\n              ],\n              \"gap\": \"md\"\n            },\n            {\n              \"id\": \"heading\",\n              \"component\": \"Text\",\n              \"text\": \"**Friday** dinner for your party\",\n              \"variant\": \"h2\"\n            },\n            {\n              \"id\": \"party\",\n              \"component\": \"TextField\",\n              \"label\": \"Party size\",\n              \"value\": {\n                \"path\": \"/partySize\"\n              },\n              \"inputType\": \"number\",\n              \"required\": true,\n              \"min\": 1,\n              \"max\": 12\n            },\n            {\n              \"id\": \"date\",\n              \"component\": \"ChoicePicker\",\n              \"label\": \"Date\",\n              \"options\": [\n                {\n                  \"label\": \"Mon 20\",\n                  \"value\": \"2026-10-20\"\n                },\n                {\n                  \"label\": \"Tue 21\",\n                  \"value\": \"2026-10-21\"\n                }\n              ],\n              \"value\": {\n                \"path\": \"/date\"\n              },\n              \"required\": true\n            },\n            {\n              \"id\": \"confirm\",\n              \"component\": \"Button\",\n              \"label\": \"Book table\",\n              \"variant\": \"primary\",\n              \"action\": {\n                \"name\": \"submit_booking\",\n                \"context\": {\n                  \"partySize\": {\n                    \"path\": \"/partySize\"\n                  },\n                  \"date\": {\n                    \"path\": \"/date\"\n                  }\n                }\n              }\n            }\n          ]\n        }\n      }\n    ]\n  }\n}",
+        "lang": "json"
+      },
+      "refusal": null,
+      "attribution": false
+    },
+    {
+      "kind": "text",
+      "key": "a0.t0",
+      "expanded": true,
+      "text": "Pick a date and party size.",
+      "markdown": true,
+      "streaming": false,
+      "stopped": false
+    }
+  ],
+  "status": null,
+  "recovery": null,
+  "views": [],
+  "authRequired": null,
+  "threadClosed": null
+}

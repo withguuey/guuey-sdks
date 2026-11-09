@@ -1,0 +1,48 @@
+{
+  "items": [
+    {
+      "kind": "user",
+      "key": "u0",
+      "expanded": true,
+      "text": "book a table for friday",
+      "state": "sent",
+      "retry": false,
+      "directive": false
+    },
+    {
+      "kind": "tool",
+      "key": "tool.call-booking",
+      "expanded": false,
+      "toolCallId": "call-booking",
+      "name": "show_booking_form",
+      "title": "show booking form",
+      "state": "done",
+      "argsPreview": null,
+      "result": {
+        "kind": "data-result",
+        "key": "tool.call-booking.result",
+        "expanded": true,
+        "preview": "Booking form for Friday, 4 people.",
+        "byteCount": 34,
+        "state": "small",
+        "showBytes": false
+      },
+      "refusal": null,
+      "attribution": false
+    },
+    {
+      "kind": "text",
+      "key": "a0.t0",
+      "expanded": true,
+      "text": "Pick a date and party size.",
+      "markdown": true,
+      "streaming": false,
+      "stopped": false
+    }
+  ],
+  "status": null,
+  "recovery": null,
+  "views": [],
+  "authRequired": null,
+  "threadClosed": null
+}

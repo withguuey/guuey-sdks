@@ -1,0 +1,49 @@
+{
+  "items": [
+    {
+      "kind": "user",
+      "key": "u0",
+      "expanded": true,
+      "text": "sign me up",
+      "state": "sent",
+      "retry": false,
+      "directive": false
+    },
+    {
+      "kind": "tool",
+      "key": "tool.call-signup",
+      "expanded": false,
+      "toolCallId": "call-signup",
+      "name": "show_signup",
+      "title": "show signup",
+      "state": "done",
+      "argsPreview": null,
+      "result": {
+        "kind": "data-result",
+        "key": "tool.call-signup.result",
+        "expanded": true,
+        "preview": "{\n  \"com.guuey/a2ui\": {\n    \"format\": \"json-render\",\n    \"version\": \"0.21.1\",\n    \"surfaceId\": \"signup-1\",\n    \"title\": \"Sign up\",\n    \"spec\": {\n      \"root\": \"form\",\n      \"elements\": {\n        \"form\": {\n          \"type\": \"Form\",\n          \"props\": {},\n          \"children\": [\n            \"email\",\n            \"submit\"\n          ]\n        },\n        \"email\": {\n          \"type\": \"Input\",\n          \"props\": {\n            \"label\": \"Email\",\n            \"value\": {\n              \"$bindState\": \"/email\"\n            }\n          }\n        },\n        \"submit\": {\n          \"type\": \"Button\",\n          \"props\": {\n            \"label\": \"Sign up\"\n          },\n          \"on\": {\n            \"press\": {\n              \"action\": \"signup\",\n              \"params\": {\n                \"email\": {\n                  \"$state\": \"/email\"\n                }\n              }\n            }\n          }\n        }\n      },\n      \"state\": {\n        \"email\": \"\"\n      }\n    }\n  }\n}",
+        "byteCount": 436,
+        "state": "small",
+        "showBytes": false,
+        "lang": "json"
+      },
+      "refusal": null,
+      "attribution": false
+    },
+    {
+      "kind": "text",
+      "key": "a0.t0",
+      "expanded": true,
+      "text": "Fill in your email.",
+      "markdown": true,
+      "streaming": false,
+      "stopped": false
+    }
+  ],
+  "status": null,
+  "recovery": null,
+  "views": [],
+  "authRequired": null,
+  "threadClosed": null
+}

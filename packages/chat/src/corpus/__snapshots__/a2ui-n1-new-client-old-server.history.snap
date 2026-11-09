@@ -1,0 +1,49 @@
+{
+  "items": [
+    {
+      "kind": "user",
+      "key": "u0",
+      "expanded": true,
+      "text": "what's the forecast",
+      "state": "sent",
+      "retry": false,
+      "directive": false
+    },
+    {
+      "kind": "tool",
+      "key": "tool.call-forecast",
+      "expanded": false,
+      "toolCallId": "call-forecast",
+      "name": "forecast",
+      "title": "forecast",
+      "state": "done",
+      "argsPreview": null,
+      "result": {
+        "kind": "data-result",
+        "key": "tool.call-forecast.result",
+        "expanded": true,
+        "preview": "{\n  \"city\": \"Lisbon\",\n  \"temps\": [\n    21,\n    23\n  ],\n  \"com.guuey/other\": {\n    \"note\": \"not the marker\"\n  }\n}",
+        "byteCount": 77,
+        "state": "small",
+        "showBytes": false,
+        "lang": "json"
+      },
+      "refusal": null,
+      "attribution": false
+    },
+    {
+      "kind": "text",
+      "key": "a0.t0",
+      "expanded": true,
+      "text": "Sunny in Lisbon, 23C.",
+      "markdown": true,
+      "streaming": false,
+      "stopped": false
+    }
+  ],
+  "status": null,
+  "recovery": null,
+  "views": [],
+  "authRequired": null,
+  "threadClosed": null
+}
