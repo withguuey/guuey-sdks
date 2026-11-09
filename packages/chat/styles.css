@@ -448,7 +448,14 @@
 .guuey-chat-composer-attach:focus-visible,
 .guuey-chat-composer-voice:focus-visible,
 .guuey-chat-attachment-remove:focus-visible,
-.guuey-chat-composer-input:focus-visible {
+.guuey-chat-composer-input:focus-visible,
+.guuey-chat-a2ui-button:focus-visible,
+.guuey-chat-a2ui-open:focus-visible,
+.guuey-chat-a2ui-input:focus-visible,
+.guuey-chat-a2ui-filter:focus-visible,
+.guuey-chat-a2ui-picker:focus-visible,
+.guuey-chat-a2ui-check input:focus-visible,
+.guuey-chat-a2ui-option input:focus-visible {
   outline: 2px solid var(--guuey-chat-cue, var(--_guuey-chat-cue));
   outline-offset: 2px;
 }
@@ -658,6 +665,348 @@
 .guuey-chat-media-audio {
   display: block;
   max-width: 100%;
+}
+
+/* ── R6b A2UI surfaces (guuey#2382) — the kit's own DOM for an agent's form or
+   card. Calm: the view frame's hairline and radius, the theme's gap as the
+   spacing unit, ink for words and the link colour for the one mark a choice
+   carries. Payload words reach these rules only as the closed class names
+   the renderer maps them to. ── */
+.guuey-chat-a2ui {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--guuey-chat-gap, var(--_guuey-chat-gap)) * 0.75);
+  border: 1px solid color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 8%, transparent);
+  border-radius: var(--guuey-chat-radius, var(--_guuey-chat-radius));
+  background: var(--guuey-chat-surface, var(--_guuey-chat-surface));
+  padding: var(--guuey-chat-gap, var(--_guuey-chat-gap));
+  unicode-bidi: isolate;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.guuey-chat-a2ui .guuey-chat-attribution {
+  margin: 0 calc(var(--guuey-chat-gap, var(--_guuey-chat-gap)) * -1) calc(var(--guuey-chat-gap, var(--_guuey-chat-gap)) * -1);
+}
+.guuey-chat-a2ui-title {
+  margin: 0;
+  font-weight: 600;
+  font-family: var(--guuey-chat-heading-font, var(--_guuey-chat-heading-font, inherit));
+}
+.guuey-chat-a2ui-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.guuey-chat-a2ui-row,
+.guuey-chat-a2ui-column {
+  display: flex;
+  min-width: 0;
+}
+.guuey-chat-a2ui-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.guuey-chat-a2ui-column {
+  flex-direction: column;
+}
+.guuey-chat-a2ui-gap-none {
+  gap: 0;
+}
+.guuey-chat-a2ui-gap-xs {
+  gap: calc(var(--guuey-chat-gap, var(--_guuey-chat-gap)) * 0.25);
+}
+.guuey-chat-a2ui-gap-sm {
+  gap: calc(var(--guuey-chat-gap, var(--_guuey-chat-gap)) * 0.5);
+}
+.guuey-chat-a2ui-gap-md {
+  gap: calc(var(--guuey-chat-gap, var(--_guuey-chat-gap)) * 0.75);
+}
+.guuey-chat-a2ui-gap-lg {
+  gap: var(--guuey-chat-gap, var(--_guuey-chat-gap));
+}
+.guuey-chat-a2ui-gap-xl {
+  gap: calc(var(--guuey-chat-gap, var(--_guuey-chat-gap)) * 1.5);
+}
+.guuey-chat-a2ui-align-start {
+  align-items: flex-start;
+}
+.guuey-chat-a2ui-align-center {
+  align-items: center;
+}
+.guuey-chat-a2ui-align-end {
+  align-items: flex-end;
+}
+.guuey-chat-a2ui-align-stretch {
+  align-items: stretch;
+}
+.guuey-chat-a2ui-justify-start {
+  justify-content: flex-start;
+}
+.guuey-chat-a2ui-justify-center {
+  justify-content: center;
+}
+.guuey-chat-a2ui-justify-end {
+  justify-content: flex-end;
+}
+.guuey-chat-a2ui-justify-between {
+  justify-content: space-between;
+}
+.guuey-chat-a2ui-justify-around {
+  justify-content: space-around;
+}
+.guuey-chat-a2ui-justify-evenly {
+  justify-content: space-evenly;
+}
+.guuey-chat-a2ui-card {
+  border: 1px solid color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 8%, transparent);
+  border-radius: var(--guuey-chat-radius, var(--_guuey-chat-radius));
+  padding: calc(var(--guuey-chat-gap, var(--_guuey-chat-gap)) * 0.75);
+  background: color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 2%, var(--guuey-chat-surface, var(--_guuey-chat-surface)));
+  min-width: 0;
+}
+.guuey-chat-a2ui-list {
+  margin: 0;
+  padding-inline-start: 1.25em;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--guuey-chat-gap, var(--_guuey-chat-gap)) * 0.25);
+}
+.guuey-chat-a2ui-divider {
+  align-self: stretch;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 10%, transparent);
+}
+.guuey-chat-a2ui-divider-vertical {
+  border-top: 0;
+  border-inline-start: 1px solid color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 10%, transparent);
+  min-height: 1.25em;
+}
+.guuey-chat-a2ui-text {
+  margin: 0;
+  unicode-bidi: isolate;
+}
+.guuey-chat-a2ui-text-h1,
+.guuey-chat-a2ui-text-h2,
+.guuey-chat-a2ui-text-h3,
+.guuey-chat-a2ui-text-h4,
+.guuey-chat-a2ui-text-h5,
+.guuey-chat-a2ui-text-h6 {
+  font-weight: 600;
+  font-family: var(--guuey-chat-heading-font, var(--_guuey-chat-heading-font, inherit));
+  line-height: 1.25;
+}
+.guuey-chat-a2ui-text-h1 {
+  font-size: 1.35em;
+}
+.guuey-chat-a2ui-text-h2 {
+  font-size: 1.2em;
+}
+.guuey-chat-a2ui-text-h3 {
+  font-size: 1.08em;
+}
+.guuey-chat-a2ui-text-caption {
+  font-size: 0.85em;
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
+}
+.guuey-chat-a2ui-text-label {
+  font-size: 0.85em;
+  font-weight: 600;
+}
+.guuey-chat-a2ui-text code {
+  font-family: var(--guuey-chat-mono-font, var(--_guuey-chat-mono-font, ui-monospace, monospace));
+  font-size: 0.88em;
+  padding: 0 4px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 7%, transparent);
+}
+.guuey-chat-a2ui-text a,
+.guuey-chat-a2ui-open {
+  color: var(--guuey-chat-link, var(--_guuey-chat-link, inherit));
+  text-decoration: underline;
+  border-radius: 4px;
+}
+/* The destination host a link carries beside its words (spec §7.3). */
+.guuey-chat-a2ui-host {
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
+  font-size: 0.9em;
+}
+.guuey-chat-a2ui-image {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  border-radius: var(--guuey-chat-radius, var(--_guuey-chat-radius));
+}
+.guuey-chat-a2ui-image-chip {
+  align-self: flex-start;
+  display: inline-block;
+  max-width: 100%;
+  border: 1px solid color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 12%, transparent);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.85em;
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
+}
+.guuey-chat-a2ui-button {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 15%, transparent);
+  background: var(--guuey-chat-surface, var(--_guuey-chat-surface));
+  color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.guuey-chat-a2ui-button-primary {
+  background: var(--guuey-chat-accent, var(--_guuey-chat-accent));
+  color: var(--guuey-chat-on-accent, var(--_guuey-chat-on-accent));
+  border-color: transparent;
+}
+.guuey-chat-a2ui-button-primary .guuey-chat-a2ui-host {
+  color: inherit;
+  opacity: 0.8;
+}
+.guuey-chat-a2ui-button-danger {
+  color: var(--guuey-chat-error, var(--_guuey-chat-error));
+  border-color: color-mix(in srgb, var(--guuey-chat-error, var(--_guuey-chat-error)) 40%, transparent);
+}
+.guuey-chat-a2ui-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.guuey-chat-a2ui-unavailable {
+  margin: 0;
+  font-size: 0.8em;
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
+}
+.guuey-chat-a2ui-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.guuey-chat-a2ui-label {
+  font-size: 0.85em;
+  font-weight: 600;
+  padding: 0;
+  unicode-bidi: isolate;
+}
+.guuey-chat-a2ui-input,
+.guuey-chat-a2ui-filter {
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--guuey-chat-canvas-muted, var(--_guuey-chat-canvas-muted));
+  border-radius: 8px;
+  background: var(--guuey-chat-canvas, var(--_guuey-chat-canvas));
+  color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
+  caret-color: var(--guuey-chat-cue, var(--_guuey-chat-cue));
+  font: inherit;
+  min-width: 0;
+}
+textarea.guuey-chat-a2ui-input {
+  min-height: 5em;
+  resize: vertical;
+}
+.guuey-chat-a2ui-input:read-only {
+  opacity: 0.7;
+}
+.guuey-chat-a2ui-check,
+.guuey-chat-a2ui-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  cursor: pointer;
+}
+.guuey-chat-a2ui-check input,
+.guuey-chat-a2ui-option input {
+  margin: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--guuey-chat-link, var(--_guuey-chat-link, currentColor));
+}
+.guuey-chat-a2ui-check .guuey-chat-a2ui-label {
+  font-size: 1em;
+  font-weight: 400;
+}
+.guuey-chat-a2ui-option {
+  font-weight: 400;
+}
+.guuey-chat-a2ui-option-selected {
+  font-weight: 600;
+}
+.guuey-chat-a2ui-choice {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.guuey-chat-a2ui-choice legend {
+  margin-bottom: 4px;
+}
+.guuey-chat-a2ui-picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--guuey-chat-canvas-muted, var(--_guuey-chat-canvas-muted));
+  border-radius: 8px;
+  background: var(--guuey-chat-canvas, var(--_guuey-chat-canvas));
+  color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.guuey-chat-a2ui-picker::after {
+  content: "▾";
+  margin-inline-start: 8px;
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
+}
+.guuey-chat-a2ui-picker[aria-expanded="true"]::after {
+  content: "▴";
+}
+.guuey-chat-a2ui-options {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+  padding: 4px 10px;
+  max-height: 16rem;
+  overflow-y: auto;
+  border: 1px solid color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 10%, transparent);
+  border-radius: 8px;
+}
+.guuey-chat-a2ui-filter {
+  margin: 4px 0;
+}
+.guuey-chat-a2ui-empty,
+.guuey-chat-a2ui-unknown {
+  margin: 0;
+  font-size: 0.85em;
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
+}
+/* A superseded revision: the promoted-view chip's compact face. */
+.guuey-chat-a2ui-superseded {
+  align-self: flex-start;
+  margin: 0;
+  padding: 6px 12px;
+  border: 1px solid color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 12%, transparent);
+  border-radius: 999px;
+  background: var(--guuey-chat-surface, var(--_guuey-chat-surface));
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
+  font-size: 0.85em;
+  line-height: 1.2;
+  unicode-bidi: isolate;
 }
 
 /* ── R8 code ── */
@@ -1117,7 +1466,9 @@
    devices only — max() preserves host upscaling (--guuey-chat-scale >
    16/15), and desktop keeps the 15px look untouched. */
 @media (hover: none) and (pointer: coarse) {
-  .guuey-chat-composer-input {
+  .guuey-chat-composer-input,
+  .guuey-chat-a2ui-input,
+  .guuey-chat-a2ui-filter {
     font-size: max(16px, calc(15px * var(--guuey-chat-scale, var(--_guuey-chat-scale, 1))));
   }
 }

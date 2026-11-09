@@ -36,6 +36,14 @@ const CONTROLS = [
   ".guuey-chat-composer-voice",
   ".guuey-chat-attachment-remove",
   ".guuey-chat-composer-input",
+  // guuey#2382: the A2UI surface's controls.
+  ".guuey-chat-a2ui-button",
+  ".guuey-chat-a2ui-open",
+  ".guuey-chat-a2ui-input",
+  ".guuey-chat-a2ui-filter",
+  ".guuey-chat-a2ui-picker",
+  ".guuey-chat-a2ui-check input",
+  ".guuey-chat-a2ui-option input",
 ];
 
 describe("the kit's focus ring (guuey#2304)", () => {
