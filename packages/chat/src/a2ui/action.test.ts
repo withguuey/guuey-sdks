@@ -117,3 +117,26 @@ describe("S4 (c) — literals, undeclared paths and the payload bound", () => {
     expect(check(text(), `${at}e`)).toEqual({ ok: false, fields: {}, form: "too-large" });
   });
 });
+
+describe("review r1 — the validator reads values the way the field shows them", () => {
+  it("a number is the HTML valid floating-point number, never what Number() also accepts", () => {
+    const n = text({ inputType: "number" });
+    for (const ok of ["7", "-7", "0.5", ".5", "1e3", "-2.5E-3"]) expect(check(n, ok), ok).toEqual({ ok: true, context: { v: Number(ok) } });
+    for (const bad of ["0x10", "0b11", "0o7", "+5", " 1e3 ", "1.", "1,000", "1e"]) {
+      expect(check(n, bad), bad).toMatchObject({ ok: false, fields: { "/v": { kind: "not-a-number" } } });
+    }
+  });
+
+  it('a declared "" option is a selection: it passes required and is sent as ""', () => {
+    const one: A2uiFieldSpec = { kind: "choice", componentId: "c", label: "Pref", options: ["", "window"], multiple: false, required: true };
+    expect(check(one, "")).toEqual({ ok: true, context: { v: "" } });
+    expect(check({ ...one, required: false }, "")).toEqual({ ok: true, context: { v: "" } });
+    // Without a "" option, "" is still no selection.
+    expect(check({ ...one, options: ["window"] }, "")).toMatchObject({ fields: { "/v": { kind: "required" } } });
+  });
+
+  it("a single choice holding several values is refused (the user chooses one), never cut to its first", () => {
+    const one: A2uiFieldSpec = { kind: "choice", componentId: "c", label: "Size", options: ["a", "b"], multiple: false, required: false };
+    expect(check(one, ["a", "b"])).toMatchObject({ ok: false, fields: { "/v": { kind: "not-an-option" } } });
+  });
+});

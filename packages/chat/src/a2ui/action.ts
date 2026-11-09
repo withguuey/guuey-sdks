@@ -34,6 +34,11 @@ export type A2uiActionCheck =
 
 /** One `@` with a dot after it, nothing blank around them. */
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+/**
+ * HTML's "valid floating-point number", the only text `<input type=number>`
+ * shows: no sign but `-`, no radix prefix, no space, no trailing dot.
+ */
+const DECIMAL = /^-?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][-+]?\d+)?$/;
 
 /** A model value as an input's text: strings, numbers and booleans; anything else is empty (the renderer draws fields by it too). */
 export function asText(value: JsonValue | null): string {
@@ -50,9 +55,11 @@ function resolveField(spec: A2uiFieldSpec, value: JsonValue | null): { value: Js
       return spec.required && !checked ? { error: { kind: "required" } } : { value: checked };
     }
     case "choice": {
-      const chosen = typeof value === "string" ? (value === "" ? [] : [value]) : Array.isArray(value) ? value : [];
+      // "" is no selection, unless the agent declared it as an option.
+      const chosen = typeof value === "string" ? (value === "" && !spec.options.includes("") ? [] : [value]) : Array.isArray(value) ? value : [];
       if (!chosen.every((v): v is string => typeof v === "string" && spec.options.includes(v))) return { error: { kind: "not-an-option" } };
-      if (new Set(chosen).size !== chosen.length) return { error: { kind: "not-an-option" } };
+      // Distinct members; a single choice holds one (several are refused, never cut to the first).
+      if (new Set(chosen).size !== chosen.length || (!spec.multiple && chosen.length > 1)) return { error: { kind: "not-an-option" } };
       if (spec.required && chosen.length === 0) return { error: { kind: "required" } };
       return { value: spec.multiple ? chosen : (chosen[0] ?? null) };
     }
@@ -63,7 +70,7 @@ function resolveField(spec: A2uiFieldSpec, value: JsonValue | null): { value: Js
         return { value: spec.inputType === "number" ? null : raw };
       }
       if (spec.inputType === "number") {
-        const n = typeof value === "number" ? value : Number(raw);
+        const n = typeof value === "number" ? value : DECIMAL.test(raw) ? Number(raw) : NaN;
         if (!Number.isFinite(n)) return { error: { kind: "not-a-number" } };
         if (spec.min !== null && n < spec.min) return { error: { kind: "too-small", min: spec.min } };
         if (spec.max !== null && n > spec.max) return { error: { kind: "too-large", max: spec.max } };
