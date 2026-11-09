@@ -617,6 +617,32 @@ export function applyA2uiMessages(
   }
 
   const deleted = new Set(messages.filter((m) => m.kind === "deleteSurface").map((m) => m.surfaceId));
+  return judgeSurfaces({ working, order, deleted, pending, pendingInteractive }, media);
+}
+
+/** One carrier's messages applied to a working copy of the fold, not yet judged. */
+interface AppliedCarrier {
+  /** The fold after every message, before any surface is judged. */
+  working: Map<string, A2uiSurfaceState>;
+  /** Every surface the carrier named, in the order it first named them. */
+  order: readonly string[];
+  /** The surfaces a `deleteSurface` in the carrier named. */
+  deleted: ReadonlySet<string>;
+  /** Faults the messages raised, per surface (a later `createSurface` or `deleteSurface` clears them). */
+  pending: ReadonlyMap<string, readonly Fault[]>;
+  /** Surfaces an interactive component with a bad id made interactive. */
+  pendingInteractive: ReadonlySet<string>;
+}
+
+/**
+ * Judge each surface an applied carrier touched, in the order it named them:
+ * deleted or ignored when the fold holds none, else resolved and drawn. An
+ * envelope fault, or a component fault on an interactive surface that is not
+ * a carve-out, fails the carrier whole and the working copy is dropped.
+ */
+function judgeSurfaces(applied: AppliedCarrier, media: A2uiMediaPolicy): A2uiApplyResult {
+  const { working, order, deleted, pending, pendingInteractive } = applied;
+  const surfaceIds = [...order];
   const surfaces: A2uiSurfaceOutcome[] = [];
   for (const id of order) {
     const surface = working.get(id);
@@ -626,11 +652,11 @@ export function applyA2uiMessages(
     }
     const resolved = resolveSurface(surface, pending.get(id) ?? [], pendingInteractive.has(id), media);
     if (resolved instanceof EnvelopeAbort) {
-      return { ok: false, reason: resolved.reason, path: resolved.path, level: "envelope", surfaceIds: order };
+      return { ok: false, reason: resolved.reason, path: resolved.path, level: "envelope", surfaceIds };
     }
     if (resolved.surface.interactive) {
       for (const { fault, at } of resolved.faults) {
-        if (!isA2uiCarveOut(fault)) return { ok: false, reason: fault, path: at, level: "component", surfaceIds: order };
+        if (!isA2uiCarveOut(fault)) return { ok: false, reason: fault, path: at, level: "component", surfaceIds };
       }
     }
     surfaces.push({ kind: "drawn", surface: resolved.surface });
