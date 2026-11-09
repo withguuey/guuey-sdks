@@ -100,18 +100,30 @@ describe("invokeTurn", () => {
     expect(events).toEqual([{ kind: "session", threadId: null, acceptedInputKinds: [] }]);
   });
 
-  it("reads the pod's image acknowledgement off the session frame, and only a whole non-negative count (guuey#2293)", async () => {
-    expect(await collect(transportOf(sse("session", { threadId: "t1", attachments: { accepted: 2 } })))).toEqual([
+  it("reads the pod's image acknowledgement off the session frame's accepts block, and only a whole non-negative count (guuey#2293, guuey#2876)", async () => {
+    expect(await collect(transportOf(sse("session", { threadId: "t1", accepts: { attachments: 2 } })))).toEqual([
       { kind: "session", threadId: "t1", attachmentsAccepted: 2, acceptedInputKinds: [] },
     ]);
-    expect(await collect(transportOf(sse("session", { threadId: "t1", attachments: { accepted: 0 } })))).toEqual([
+    expect(await collect(transportOf(sse("session", { threadId: "t1", accepts: { attachments: 0 } })))).toEqual([
       { kind: "session", threadId: "t1", attachmentsAccepted: 0, acceptedInputKinds: [] },
     ]);
-    // A pod that predates attachments sends no key: the event carries none either.
-    for (const attachments of [undefined, null, "2", { accepted: "2" }, { accepted: -1 }, { accepted: 1.5 }, [2]]) {
-      const events = await collect(transportOf(sse("session", { threadId: "t1", attachments })));
+    // One block says both: the count beside the input kinds.
+    expect(
+      await collect(transportOf(sse("session", { threadId: "t1", accepts: { inputKinds: ["context-only"], attachments: 1 } }))),
+    ).toEqual([{ kind: "session", threadId: "t1", attachmentsAccepted: 1, acceptedInputKinds: ["context-only"] }]);
+    // A pod that predates attachments sends no count: the event carries none either.
+    for (const attachments of [undefined, null, "2", -1, 1.5, [2], { accepted: 2 }]) {
+      const events = await collect(transportOf(sse("session", { threadId: "t1", accepts: { attachments } })));
       expect(events).toEqual([{ kind: "session", threadId: "t1", acceptedInputKinds: [] }]);
     }
+    for (const accepts of [undefined, null, 2, [2]]) {
+      const events = await collect(transportOf(sse("session", { threadId: "t1", accepts })));
+      expect(events).toEqual([{ kind: "session", threadId: "t1", acceptedInputKinds: [] }]);
+    }
+    // The key before the fold is no acknowledgement: no runtime ever sent it.
+    expect(await collect(transportOf(sse("session", { threadId: "t1", attachments: { accepted: 2 } })))).toEqual([
+      { kind: "session", threadId: "t1", acceptedInputKinds: [] },
+    ]);
   });
 
   it("leaves status AND activeTool absent for an unknown frame type", async () => {

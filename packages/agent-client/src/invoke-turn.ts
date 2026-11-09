@@ -27,7 +27,7 @@ import { parseLinkRequest, parseSseEvents, reduceAssistantText, stringField } fr
 import { ingestMessageFrame } from "./blocks.js";
 import type { AgentInvokeStatus, InvokeRequest, InvokeTransport, ProfileLinkRequest, ThreadClosed } from "./types.js";
 import { readThreadClosed } from "./thread-closed.js";
-import { type InputKind, readAcceptedInputKinds } from "./input-kinds.js";
+import { type InputKind, readAccepts } from "./input-kinds.js";
 
 /**
  * One semantic step of a turn. Field conventions:
@@ -49,8 +49,8 @@ export type InvokeTurnEvent =
       threadId: string | null;
       /**
        * How many of the turn's images the runtime accepted (guuey#2293), from
-       * the frame's `attachments.accepted`. Absent when the runtime sent no
-       * count, which is every runtime that predates attachments.
+       * the frame's `accepts.attachments` (guuey#2876). Absent when the runtime
+       * sent no count, which is every runtime that predates attachments.
        */
       attachmentsAccepted?: number;
       /**
@@ -138,12 +138,12 @@ export async function* invokeTurn(
         // The pod is awake and the turn is admitted (this frame arrives
         // within ~1s of a warm pod; a cold scale-to-zero start is exactly
         // the long wait before it).
-        const attachmentsAccepted = readAttachmentsAccepted(ev.data);
+        const accepts = readAccepts(ev.data);
         yield {
           kind: "session",
           threadId: stringField(ev.data, "threadId") ?? null,
-          ...(attachmentsAccepted !== undefined ? { attachmentsAccepted } : {}),
-          acceptedInputKinds: readAcceptedInputKinds(ev.data),
+          ...(accepts.attachments !== undefined ? { attachmentsAccepted: accepts.attachments } : {}),
+          acceptedInputKinds: accepts.inputKinds,
         };
       } else if (ev.event === "message") {
         // Status derivation (guuey#91) — read the frame's `type` before the
@@ -217,15 +217,3 @@ function closureOf(data: unknown): ThreadClosed | undefined {
   return typeof data === "object" && data !== null ? readThreadClosed(Reflect.get(data, "threadClosed")) : undefined;
 }
 
-/**
- * The session frame's image acknowledgement (guuey#2293): `attachments.accepted`
- * when it is a whole non-negative count, else absent. Anything else is read as
- * no acknowledgement, never as a count.
- */
-function readAttachmentsAccepted(data: unknown): number | undefined {
-  if (typeof data !== "object" || data === null || !("attachments" in data)) return undefined;
-  const block = data.attachments;
-  if (typeof block !== "object" || block === null || Array.isArray(block) || !("accepted" in block)) return undefined;
-  const accepted = block.accepted;
-  return typeof accepted === "number" && Number.isInteger(accepted) && accepted >= 0 ? accepted : undefined;
-}

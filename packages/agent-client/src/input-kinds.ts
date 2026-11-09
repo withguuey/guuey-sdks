@@ -33,19 +33,32 @@ export function userInputKindOf(role: string, inputKind: unknown): InputKind | u
 }
 
 /**
- * The input kinds a `session` frame says the agent accepts (`accepts.inputKinds`):
- * known kinds only, each once, in wire order. An absent or malformed block is
- * `[]` (an older runtime sends none), never a throw.
+ * What a `session` frame says the runtime accepted, read off its one `accepts`
+ * block (guuey#2876):
+ *  - `inputKinds`: the input kinds the agent accepts on its NEXT turn
+ *    (guuey#2549), known kinds only, each once, in wire order; `[]` when the
+ *    block lists none.
+ *  - `attachments`: how many of THIS turn's images it accepted (guuey#2293),
+ *    present only as a whole non-negative count.
+ * An absent or malformed block reads as `{ inputKinds: [] }` (an older runtime
+ * sends none), never a throw.
  */
-export function readAcceptedInputKinds(frame: unknown): readonly InputKind[] {
-  if (typeof frame !== "object" || frame === null || !("accepts" in frame)) return [];
+export function readAccepts(frame: unknown): { inputKinds: readonly InputKind[]; attachments?: number } {
+  if (typeof frame !== "object" || frame === null || !("accepts" in frame)) return { inputKinds: [] };
   const accepts = frame.accepts;
-  if (typeof accepts !== "object" || accepts === null || Array.isArray(accepts) || !("inputKinds" in accepts)) return [];
-  const kinds = accepts.inputKinds;
-  if (!Array.isArray(kinds)) return [];
-  const out: InputKind[] = [];
-  for (const kind of kinds) if (isInputKind(kind) && !out.includes(kind)) out.push(kind);
-  return out;
+  if (typeof accepts !== "object" || accepts === null || Array.isArray(accepts)) return { inputKinds: [] };
+  const inputKinds: InputKind[] = [];
+  const kinds = "inputKinds" in accepts ? accepts.inputKinds : undefined;
+  if (Array.isArray(kinds)) for (const kind of kinds) if (isInputKind(kind) && !inputKinds.includes(kind)) inputKinds.push(kind);
+  const attachments = "attachments" in accepts ? accepts.attachments : undefined;
+  return typeof attachments === "number" && Number.isInteger(attachments) && attachments >= 0
+    ? { inputKinds, attachments }
+    : { inputKinds };
+}
+
+/** The input kinds a `session` frame says the agent accepts ({@link readAccepts}'s `inputKinds`). */
+export function readAcceptedInputKinds(frame: unknown): readonly InputKind[] {
+  return readAccepts(frame).inputKinds;
 }
 
 /**

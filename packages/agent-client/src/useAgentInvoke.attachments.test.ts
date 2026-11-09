@@ -49,7 +49,7 @@ function hook(adapters: AgentInvokeAdapters) {
 
 describe("useAgentInvoke — image attachments ride the send (guuey#2293)", () => {
   it("puts the images on the body as the last key, and the acknowledged turn runs as any other", async () => {
-    const { adapters, bodies } = podAdapters({ threadId: "t-1", attachments: { accepted: 1 } });
+    const { adapters, bodies } = podAdapters({ threadId: "t-1", accepts: { attachments: 1 } });
     const { result, unmount } = hook(adapters);
     await act(async () => {
       await result.current.send("make flashcards", { attachments: [PNG] });
@@ -80,7 +80,7 @@ describe("useAgentInvoke — image attachments ride the send (guuey#2293)", () =
   });
 
   it("an acknowledgement for fewer images than were sent is no acknowledgement", async () => {
-    const { adapters } = podAdapters({ threadId: "t-1", attachments: { accepted: 1 } });
+    const { adapters } = podAdapters({ threadId: "t-1", accepts: { attachments: 1 } });
     const { result, unmount } = hook(adapters);
     await act(async () => {
       await result.current.send("compare these", { attachments: [PNG, PNG] });
@@ -102,7 +102,7 @@ describe("useAgentInvoke — image attachments ride the send (guuey#2293)", () =
   });
 
   it("a list the caps refuse is never sent: nothing on the wire, ATTACHMENTS_INVALID with the reason, a host-minted id reads failed", async () => {
-    const { adapters, bodies } = podAdapters({ threadId: "t-1", attachments: { accepted: 5 } });
+    const { adapters, bodies } = podAdapters({ threadId: "t-1", accepts: { attachments: 5 } });
     const { result, unmount } = hook(adapters);
     await act(async () => {
       await result.current.send("too many", { clientMessageId: "host-1", attachments: [PNG, PNG, PNG, PNG, PNG] });
