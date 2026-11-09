@@ -358,8 +358,9 @@ export interface PackageManagerSpawn {
  * `shell: true` are deprecated, DEP0190). Unlike the scaffold's fixed pieces,
  * an argument here can be a path (the staging dir under the user's temp
  * folder, which may hold a space), so each one that is not plainly safe is
- * double-quoted; one carrying `"` or `%` (which cmd.exe expands even inside
- * quotes) or a line break cannot be passed safely and throws instead.
+ * double-quoted; one carrying `"`, `%` or `!` (which cmd.exe expands even
+ * inside quotes, `!` when delayed expansion is on in the registry) or a line
+ * break cannot be passed safely and throws instead.
  */
 export function packageManagerSpawn(
   file: 'pnpm' | 'npm',
@@ -372,7 +373,7 @@ export function packageManagerSpawn(
 
 function cmdArg(file: string, arg: string): string {
   if (/^[\w\-.,:/\\=@+]+$/.test(arg)) return arg;
-  if (/["%\r\n]/.test(arg)) {
+  if (/["%!\r\n]/.test(arg)) {
     throw new Error(`cannot pass ${JSON.stringify(arg)} to ${file} through cmd.exe`);
   }
   return `"${arg}"`;

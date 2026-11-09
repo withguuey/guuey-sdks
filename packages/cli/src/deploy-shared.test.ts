@@ -227,7 +227,7 @@ describe('packageManagerSpawn (guuey#3285)', () => {
   });
 
   it('win32: an argument cmd.exe would expand or split is refused, never passed', () => {
-    for (const bad of ['C:\\%TEMP%\\s', 'C:\\a"b', 'a\nb']) {
+    for (const bad of ['C:\\%TEMP%\\s', 'C:\\a"b', 'a\nb', 'C:\\Users\\Hi!there\\s']) {
       expect(() => packageManagerSpawn('pnpm', ['pack', '--pack-destination', bad], 'win32')).toThrow(/through cmd\.exe/);
     }
   });
