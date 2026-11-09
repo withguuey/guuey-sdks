@@ -46,7 +46,7 @@ function podAdapters(opts: { acknowledge?: boolean } = {}) {
       const sent = attachmentCount(req.body);
       yield sse("session", {
         threadId: "t-img",
-        ...(opts.acknowledge !== false && sent > 0 ? { attachments: { accepted: sent } } : {}),
+        ...(opts.acknowledge !== false && sent > 0 ? { accepts: { attachments: sent } } : {}),
       });
       yield sse("message", { type: "text.delta", delta: "Here are your flashcards." });
       yield sse("done", { stopReason: "end" });
