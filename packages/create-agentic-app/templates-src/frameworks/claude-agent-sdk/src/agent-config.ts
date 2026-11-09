@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseGuueyJson, type GuueyAgent } from "@guuey/config";
-import { listCredentials, type Invoke } from "@guuey/worker";
+import { listCredentials, modelInputOf, modelTextOf, type Invoke } from "@guuey/worker";
 
 /** GUUEY_AGENT_SNAPSHOT (set by the platform pod and by `guuey dev`) wins; guuey.json is the fallback. */
 export function loadAgent(invoke: Invoke): GuueyAgent {
@@ -67,11 +67,18 @@ export function mcpEndpoints(invoke: Invoke, agent: GuueyAgent): Record<string, 
   return out;
 }
 
-/** Fold prior turns into a prompt preamble (v1 keep-it-simple history handling). */
+/**
+ * Fold prior turns into a prompt preamble (v1 keep-it-simple history handling).
+ * Every turn's text goes through `@guuey/worker`'s model text, so a turn the
+ * user sent without text (`inputKind: "context-only"`) reads the same fixed
+ * sentence now and on every later turn. That is what lets `worker.ts` declare
+ * `MODEL_TEXT_INPUT_KIND_CAPABILITIES` on its hello.
+ */
 export function withHistory(invoke: Invoke): string {
-  if (invoke.history.length === 0) return invoke.input;
+  const input = modelInputOf(invoke);
+  if (invoke.history.length === 0) return input;
   const lines = invoke.history.map(
-    (h) => `${h.role === "agent" ? "Assistant" : "User"}: ${h.text}`
+    (h) => `${h.role === "agent" ? "Assistant" : "User"}: ${modelTextOf(h)}`
   );
-  return `<conversation_history>\n${lines.join("\n")}\n</conversation_history>\n\n${invoke.input}`;
+  return `<conversation_history>\n${lines.join("\n")}\n</conversation_history>\n\n${input}`;
 }

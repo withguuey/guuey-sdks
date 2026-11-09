@@ -12,6 +12,7 @@ import { createRequire } from "node:module";
 import { query, type McpServerConfig, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import {
   CLAUDE_FORBIDDEN_ENV,
+  MODEL_TEXT_INPUT_KIND_CAPABILITIES,
   makeClaudeSpawner,
   readLaunchEnvelope,
   serveNative,
@@ -225,5 +226,11 @@ await serveNative(
     endInput();
     return result;
   },
-  { framework: "claude-agent-sdk", sdkName: "@anthropic-ai/claude-agent-sdk" }
+  {
+    framework: "claude-agent-sdk",
+    sdkName: "@anthropic-ai/claude-agent-sdk",
+    // Every turn's text goes through withHistory (agent-config.ts), so this
+    // worker handles a turn sent without text; the Router reads it here.
+    capabilities: MODEL_TEXT_INPUT_KIND_CAPABILITIES,
+  }
 );

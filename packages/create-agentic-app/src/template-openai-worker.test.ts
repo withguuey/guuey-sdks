@@ -21,7 +21,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { applyAgentMode, type GuueyAgent } from "@guuey/config";
-import type { Invoke, NativeEmit, NativeHandler, WithheldTool } from "@guuey/worker";
+import type { Invoke, NativeEmit, NativeHandler, WithheldTool, NativeServeInfo } from "@guuey/worker";
 
 /** A listed MCP tool, as the Agents SDK hands it to a `toolFilter`. */
 interface ListedTool {
@@ -39,6 +39,7 @@ interface ServerOptions {
 
 const h = vi.hoisted(() => ({
   handler: undefined as NativeHandler | undefined,
+  info: undefined as NativeServeInfo | undefined,
   servers: [] as ServerOptions[],
   defaultKeys: [] as string[],
   /** The options each `run()` call received. */
@@ -70,8 +71,9 @@ vi.mock("@openai/agents", () => ({
 
 vi.mock("@guuey/worker", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@guuey/worker")>()),
-  serveNative: async (handler: NativeHandler) => {
+  serveNative: async (handler: NativeHandler, info: NativeServeInfo) => {
     h.handler = handler;
+    h.info = info;
   },
 }));
 
@@ -304,5 +306,13 @@ describe("OpenAI template worker: streaming", () => {
 describe("OpenAI template worker: the model key (guuey#2139)", () => {
   it("applies the key in memory with setDefaultOpenAIKey (no launch envelope: the legacy env key)", () => {
     expect(h.defaultKeys).toEqual(["legacy-env-key"]);
+  });
+});
+
+describe("OpenAI template worker: declares the input kinds its text path handles (guuey#2549)", () => {
+  it("its hello declares exactly MODEL_TEXT_INPUT_KIND_CAPABILITIES, from serveNative's info", async () => {
+    const { MODEL_TEXT_INPUT_KIND_CAPABILITIES, inputKindCapability } = await import("@guuey/worker");
+    expect(h.info?.capabilities).toBe(MODEL_TEXT_INPUT_KIND_CAPABILITIES);
+    expect(h.info?.capabilities).toEqual([inputKindCapability("context-only")]);
   });
 });

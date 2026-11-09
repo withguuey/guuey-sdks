@@ -17,7 +17,13 @@
 import { Agent, MaxTurnsExceededError, MCPServerStreamableHttp, run, setDefaultOpenAIKey } from "@openai/agents";
 import type { MCPServer } from "@openai/agents";
 import { toolGateErrors, toolGatePredicate } from "@guuey/config";
-import { mcpToolCustomData, modelVisibleToolFilterWith, readLaunchEnvelope, serveNative } from "@guuey/worker";
+import {
+  MODEL_TEXT_INPUT_KIND_CAPABILITIES,
+  mcpToolCustomData,
+  modelVisibleToolFilterWith,
+  readLaunchEnvelope,
+  serveNative,
+} from "@guuey/worker";
 import { loadAgent, systemPrompt, mcpEndpoints, withHistory } from "./agent-config.js";
 
 /**
@@ -98,5 +104,11 @@ await serveNative(
       await Promise.allSettled(mcpServers.map((s) => s.close()));
     }
   },
-  { framework: "openai-agents-sdk", sdkName: "@openai/agents" }
+  {
+    framework: "openai-agents-sdk",
+    sdkName: "@openai/agents",
+    // Every turn's text goes through withHistory (agent-config.ts), so this
+    // worker handles a turn sent without text; the Router reads it here.
+    capabilities: MODEL_TEXT_INPUT_KIND_CAPABILITIES,
+  }
 );

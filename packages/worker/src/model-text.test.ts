@@ -1,11 +1,10 @@
 /**
- * guuey#2549 — one substitution for a context-only turn, the same on the current turn and in the
- * history the model reads on every later turn (cto's replay-parity condition).
+ * guuey#2549 — one substitution for a context-only turn, shared by `@guuey/host` and every
+ * `serveNative` worker that declares {@link MODEL_TEXT_INPUT_KIND_CAPABILITIES}.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { inputKindCapability } from "@guuey/worker";
-import { CONTEXT_ONLY_TURN_TEXT, HOST_INPUT_KIND_CAPABILITIES, modelInputOf, modelTextOf } from "./model-text.js";
-import { withContextPreamble } from "./preamble.js";
+import { inputKindCapability } from "./protocol.js";
+import { CONTEXT_ONLY_TURN_TEXT, MODEL_TEXT_INPUT_KIND_CAPABILITIES, modelInputOf, modelTextOf } from "./model-text.js";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -40,20 +39,7 @@ describe("modelTextOf / modelInputOf", () => {
     expect(writes).toEqual(["[guuey] input substituted: kind=context-only\n"]);
   });
 
-  it("the host declares exactly the capability the worker protocol names", () => {
-    expect(HOST_INPUT_KIND_CAPABILITIES).toEqual([inputKindCapability("context-only")]);
-  });
-});
-
-describe("replay parity (cto RED)", () => {
-  it("the current turn's model text equals what the history preamble replays for that stored turn", () => {
-    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    // The user's words for the turn are the same sentence now (after the frame) and on replay (alone).
-    const now = modelInputOf({ input: "<page_context>…</page_context>\n\n", inputKind: "context-only" });
-    expect(now.endsWith(CONTEXT_ONLY_TURN_TEXT)).toBe(true);
-    const later = withContextPreamble("SYSTEM", [{ role: "user", text: "", inputKind: "context-only" }], undefined, undefined);
-    expect(later).toContain(`: ${CONTEXT_ONLY_TURN_TEXT}`);
-    // And no empty user line is ever replayed for it.
-    expect(later).not.toMatch(/: \n/);
+  it("the declared capabilities are exactly the kinds modelTextOf handles, by the protocol's own name", () => {
+    expect(MODEL_TEXT_INPUT_KIND_CAPABILITIES).toEqual([inputKindCapability("context-only")]);
   });
 });

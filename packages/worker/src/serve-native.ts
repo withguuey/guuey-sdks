@@ -67,6 +67,32 @@ export interface NativeServeInfo {
    * no offer, the fd-3 stream is exactly what it is without the flag.
    */
   suspend?: true;
+  /**
+   * guuey#2549: what else this worker declares on its hello, beyond suspend: the
+   * {@link inputKindCapability} names of the input kinds it handles. A worker
+   * declares `input-kind:context-only` only when its current input AND its
+   * history go through {@link modelInputOf} / {@link modelTextOf} (or
+   * {@link MODEL_TEXT_INPUT_KIND_CAPABILITIES}, which names exactly that). The
+   * Router sends an empty `input` with {@link Invoke.inputKind} only to a worker
+   * whose hello declared that kind. {@link HOST_SUSPEND_CAPABILITY} is never
+   * taken from here: it rides the hello only when {@link suspend} is set and the
+   * invoke carried the offer, so a listed one is dropped.
+   */
+  capabilities?: readonly string[];
+}
+
+/**
+ * The hello's capability list for one invoke: the suspend capability exactly when
+ * the writer exists, then the worker's declared ones in order, without repeats and
+ * never a second (or ungated) suspend. Omitted when empty, as a hello without
+ * capabilities was before.
+ */
+function helloCapabilities(suspendOffered: boolean, declared: readonly string[] | undefined): string[] | undefined {
+  const out = suspendOffered ? [HOST_SUSPEND_CAPABILITY] : [];
+  for (const name of declared ?? []) {
+    if (name !== HOST_SUSPEND_CAPABILITY && !out.includes(name)) out.push(name);
+  }
+  return out.length > 0 ? out : undefined;
 }
 
 /**
@@ -134,7 +160,7 @@ export async function serveNativeOn(
         : info.sdkName
           ? resolveInstalledVersion(info.sdkName)
           : null,
-      suspendWriter !== undefined ? [HOST_SUSPEND_CAPABILITY] : undefined,
+      helloCapabilities(suspendWriter !== undefined, info.capabilities),
     );
     // This turn's request to end the conversation, held until its `done`.
     let endThread: EndThread | undefined;

@@ -18,7 +18,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GuueyAgent } from '@guuey/config';
 import type { Invoke } from '@guuey/worker';
-import { mcpEndpoints } from '../templates-src/frameworks/claude-agent-sdk/src/agent-config';
+import { CONTEXT_ONLY_TURN_TEXT } from '@guuey/worker';
+import { mcpEndpoints, withHistory } from '../templates-src/frameworks/claude-agent-sdk/src/agent-config';
 
 let root: string;
 
@@ -200,5 +201,35 @@ describe("scaffold first install is quiet (guuey#978)", () => {
       expect(entries.filter(([, on]) => on).map(([n]) => n).sort(), rel).toEqual(list("onlyBuiltDependencies"));
       expect(entries.filter(([, on]) => !on).map(([n]) => n).sort(), rel).toEqual(list("ignoredBuiltDependencies"));
     }
+  });
+});
+
+// guuey#2549: the scaffold declares `input-kind:context-only`, so a turn the user sent without
+// text must reach the model as the shared sentence, now and in every later turn's history.
+describe('template withHistory: a context-only turn (guuey#2549)', () => {
+  const turn = (over: Partial<Invoke>): Invoke => ({
+    type: 'invoke',
+    input: '',
+    identity: { userId: 'u_1', authMode: 'anonymous' },
+    fs: { app: '/app', home: '/home', session: '/session' },
+    history: [],
+    ...over,
+  });
+
+  beforeEach(() => {
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+
+  it('an empty current turn reads the sentence, never an empty prompt', () => {
+    expect(withHistory(turn({ inputKind: 'context-only' }))).toBe(CONTEXT_ONLY_TURN_TEXT);
+  });
+
+  it('a stored context-only turn replays as the same sentence; ordinary text is untouched', () => {
+    const out = withHistory(
+      turn({ input: 'and now?', history: [{ role: 'user', text: '', inputKind: 'context-only' }, { role: 'agent', text: 'a cat' }] }),
+    );
+    expect(out).toBe(
+      `<conversation_history>\nUser: ${CONTEXT_ONLY_TURN_TEXT}\nAssistant: a cat\n</conversation_history>\n\nand now?`,
+    );
   });
 });

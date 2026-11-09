@@ -25,7 +25,7 @@ import type {
   ProfileSection,
 } from "@guuey/worker";
 import type { ProfileAccess } from "@guuey/config";
-import { modelTextOf } from "./model-text.js";
+import { modelTextOf } from "@guuey/worker";
 
 export function withContextPreamble(
   systemPrompt: string,

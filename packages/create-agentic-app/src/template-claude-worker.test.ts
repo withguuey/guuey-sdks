@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { applyAgentMode, type GuueyAgent } from "@guuey/config";
-import type { ClaudeSpawnRequest, ClaudeSpawnedProcess, Invoke, NativeEmit, NativeHandler, WithheldTool } from "@guuey/worker";
+import type { ClaudeSpawnRequest, ClaudeSpawnedProcess, Invoke, NativeEmit, NativeHandler, WithheldTool, NativeServeInfo } from "@guuey/worker";
 
 /** The slice of the SDK's query options this test reads. */
 interface CapturedOptions {
@@ -40,6 +40,7 @@ interface CapturedQuery {
 
 const h = vi.hoisted(() => ({
   handler: undefined as NativeHandler | undefined,
+  info: undefined as NativeServeInfo | undefined,
   queries: [] as CapturedQuery[],
   /** `hang`: the CLI never answers `setMcpServers` (a CLI that started but answers nothing). */
   mode: "answer" as "answer" | "hang",
@@ -78,8 +79,9 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
 
 vi.mock("@guuey/worker", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@guuey/worker")>()),
-  serveNative: async (handler: NativeHandler) => {
+  serveNative: async (handler: NativeHandler, info: NativeServeInfo) => {
     h.handler = handler;
+    h.info = info;
   },
 }));
 
@@ -282,5 +284,13 @@ describe("Claude template worker: a mode-narrowed GUUEY_AGENT_SNAPSHOT (guuey#25
     expect(options.allowedTools).toEqual(["mcp__todo__add", "mcp__todo__clear"]);
     expect(options.disallowedTools).toEqual(["mcp__todo__clear", "mcp__todo__export"]);
     expect((await options.canUseTool("mcp__ggui__ggui_render", { k: "v" })).behavior).toBe("deny");
+  });
+});
+
+describe("Claude template worker: declares the input kinds its text path handles (guuey#2549)", () => {
+  it("its hello declares exactly MODEL_TEXT_INPUT_KIND_CAPABILITIES, from serveNative's info", async () => {
+    const { MODEL_TEXT_INPUT_KIND_CAPABILITIES, inputKindCapability } = await import("@guuey/worker");
+    expect(h.info?.capabilities).toBe(MODEL_TEXT_INPUT_KIND_CAPABILITIES);
+    expect(h.info?.capabilities).toEqual([inputKindCapability("context-only")]);
   });
 });

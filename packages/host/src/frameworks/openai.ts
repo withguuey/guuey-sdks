@@ -37,7 +37,7 @@ import {
   type MCPToolFilterCallable,
   type RunStreamEvent,
 } from "@openai/agents";
-import { mcpToolCustomData } from "@guuey/worker";
+import { MODEL_TEXT_INPUT_KIND_CAPABILITIES, mcpToolCustomData, modelInputOf } from "@guuey/worker";
 import { modelToolFilterFor, reportToolGateErrors, type ToolGates } from "../mcp-tool-gates.js";
 import type { Emitter, JsonValue } from "@guuey/worker";
 import {
@@ -54,7 +54,6 @@ import {
 import type { HostInvoke, HostRuntime } from "./claude.js";
 import { GUUEY_DEFAULT_SYSTEM_PROMPT, declaresNoTools, defaultModelFor, type GuueyAgent } from "@guuey/config";
 import { resolveSdkVersion } from "../sdk-version.js";
-import { HOST_INPUT_KIND_CAPABILITIES, modelInputOf } from "../model-text.js";
 
 /** The framework tag this arm runs — matches the `AgentFramework` enum value. */
 const OPENAI_FRAMEWORK = "openai-agents-sdk";
@@ -131,7 +130,7 @@ export async function runInvokeOpenai(
   // first event of this invoke's fd-3 stream, before any native/turn event.
   // `sdkVersion` is resolved at runtime, never hardcoded; `null` (SDK not
   // resolvable) is tolerated by the Router.
-  emit.hello(OPENAI_FRAMEWORK, OPENAI_SDK_PACKAGE, resolveSdkVersion(OPENAI_SDK_PACKAGE), HOST_INPUT_KIND_CAPABILITIES);
+  emit.hello(OPENAI_FRAMEWORK, OPENAI_SDK_PACKAGE, resolveSdkVersion(OPENAI_SDK_PACKAGE), MODEL_TEXT_INPUT_KIND_CAPABILITIES);
 
   // The host runs inside the Router's bubblewrap jail with NO IRSA; a federated
   // MCP server reads its Router-written credential file. `resolveMcpServers`

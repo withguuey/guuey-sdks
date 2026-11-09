@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { PassThrough } from "node:stream";
 import { serveNativeOn, resolveInstalledVersion, type NativeServeInfo } from "./serve-native.js";
-import { HOST_SUSPEND_CAPABILITY, type Invoke } from "./protocol.js";
+import { HOST_SUSPEND_CAPABILITY, inputKindCapability, type Invoke } from "./protocol.js";
+import { MODEL_TEXT_INPUT_KIND_CAPABILITIES } from "./model-text.js";
 import { parseEvent } from "./parse.js";
 import { drained } from "./fixtures/drained.js";
 
@@ -178,5 +179,64 @@ describe("resolveInstalledVersion — the hello handshake's runtime resolution",
   });
   it("returns null for a package that is not installed (bundled-worker degradation)", () => {
     expect(resolveInstalledVersion("@guuey/definitely-not-installed")).toBeNull();
+  });
+});
+
+/**
+ * guuey#2549: a serveNative worker declares the input kinds it handles on its hello
+ * (`NativeServeInfo.capabilities`). Additive: without the field the hello is
+ * byte-identical to before; suspend stays gated on its own opt-in and offer.
+ */
+describe("serveNativeOn — declared capabilities", () => {
+  const contextOnly = inputKindCapability("context-only");
+
+  async function helloOf(info: NativeServeInfo, invoke: object = {}): Promise<string> {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const done = serveNativeOn(async () => "ok", info, { input, output });
+    const base: Invoke = {
+      type: "invoke",
+      input: "hi",
+      identity: { userId: "u1", authMode: "anonymous" },
+      fs: { app: "/app", home: "/home", session: "/session" },
+      history: [],
+    };
+    input.end(JSON.stringify({ ...base, ...invoke }) + "\n");
+    await done;
+    return drained(output).split("\n")[0] ?? "";
+  }
+
+  const info = { framework: "claude-agent-sdk", sdkName: "sdk", sdkVersion: "1.0.0" } as const;
+
+  it("N−1: without capabilities the hello bytes are exactly today's", async () => {
+    expect(await helloOf(info)).toBe('{"type":"hello","framework":"claude-agent-sdk","sdkName":"sdk","sdkVersion":"1.0.0"}');
+    expect(await helloOf({ ...info, capabilities: [] })).toBe(
+      '{"type":"hello","framework":"claude-agent-sdk","sdkName":"sdk","sdkVersion":"1.0.0"}',
+    );
+  });
+
+  it("declared kinds ride the hello, in order, once", async () => {
+    const hello = parseEvent(await helloOf({ ...info, capabilities: [contextOnly, contextOnly] }));
+    expect(hello).toEqual({ ...info, type: "hello", capabilities: [contextOnly] });
+  });
+
+  it("MODEL_TEXT_INPUT_KIND_CAPABILITIES is exactly what a scaffold declares", async () => {
+    const hello = parseEvent(await helloOf({ ...info, capabilities: MODEL_TEXT_INPUT_KIND_CAPABILITIES }));
+    expect(hello).toEqual({ ...info, type: "hello", capabilities: [contextOnly] });
+  });
+
+  it("a listed suspend capability is dropped unless the opt-in AND the offer put it there (never twice)", async () => {
+    const listed = [HOST_SUSPEND_CAPABILITY, contextOnly];
+    expect(parseEvent(await helloOf({ ...info, capabilities: listed }))).toEqual({
+      ...info,
+      type: "hello",
+      capabilities: [contextOnly],
+    });
+    const offered = { suspend: { maxEnvelopeBytes: 1024 } };
+    expect(parseEvent(await helloOf({ ...info, suspend: true, capabilities: listed }, offered))).toEqual({
+      ...info,
+      type: "hello",
+      capabilities: [HOST_SUSPEND_CAPABILITY, contextOnly],
+    });
   });
 });

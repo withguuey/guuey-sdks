@@ -34,7 +34,7 @@ import {
   type PriorMemoryRecord,
 } from "./claude-options.js";
 import { resolveSdkVersion } from "../sdk-version.js";
-import { HOST_INPUT_KIND_CAPABILITIES, modelInputOf } from "../model-text.js";
+import { MODEL_TEXT_INPUT_KIND_CAPABILITIES, modelInputOf } from "@guuey/worker";
 import { reportToolGateErrors } from "../mcp-tool-gates.js";
 
 /** The framework THIS run path runs. OpenAI has its own path (`run-openai.ts`). */
@@ -53,7 +53,7 @@ export interface HostInvoke {
   input: string;
   /**
    * guuey#2549: set when the user typed nothing and the turn's content rode on the page context;
-   * the arm's model text goes through `modelInputOf` (`../model-text.ts`). See `Invoke.inputKind`.
+   * the arm's model text goes through `modelInputOf` (`@guuey/worker`'s `model-text.ts`). See `Invoke.inputKind`.
    */
   inputKind?: InputKind;
   identity: Identity;
@@ -305,7 +305,7 @@ export async function runInvoke(
   // first event of this invoke's fd-3 stream, before the framework gate or any
   // native/turn event. `sdkVersion` is resolved at runtime, never hardcoded;
   // `null` (SDK not resolvable) is tolerated by the Router.
-  emit.hello(CLAUDE_FRAMEWORK, CLAUDE_SDK_PACKAGE, resolveSdkVersion(CLAUDE_SDK_PACKAGE), HOST_INPUT_KIND_CAPABILITIES);
+  emit.hello(CLAUDE_FRAMEWORK, CLAUDE_SDK_PACKAGE, resolveSdkVersion(CLAUDE_SDK_PACKAGE), MODEL_TEXT_INPUT_KIND_CAPABILITIES);
 
   // Framework gate: this run path is the Claude SDK. OpenAI agents route to
   // `runInvokeOpenai` (selected in `index.ts` by `snapshot.framework`) and never
