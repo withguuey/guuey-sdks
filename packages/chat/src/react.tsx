@@ -57,7 +57,6 @@ export {
   type A2uiEditStore,
   type A2uiIconProps,
   type A2uiLocalEdit,
-  type A2uiRenderContext,
 } from "./react/a2ui.js";
 export {
   useStatusElapsedMs,
