@@ -9,6 +9,9 @@
  * persistence side reads: the tap-label contract and the one paint reducer.
  * Nothing that imports `@ggui-ai/protocol` at runtime (the tap reader, a
  * mounted shell's props) is reachable from here.
+ *
+ * guuey#2366 adds the A2UI carrier reader (marker extraction and the byte
+ * bound only), so the planner and any persistence side read one rule.
  */
 export {
   asResourcePayload,
@@ -34,6 +37,15 @@ export {
   writeTapLabels,
   type TapLabels,
 } from "./tap-labels.js";
+export {
+  A2UI_CARRIER_KEY,
+  A2UI_CARRIER_MAX_UNITS,
+  a2uiCarrierUnits,
+  readA2uiCarrier,
+  type A2uiCarrierBlock,
+  type A2uiCarrierRead,
+  type A2uiCarrierSource,
+} from "./a2ui-carrier.js";
 export {
   latestPaintProps,
   paintPartsOfStored,
