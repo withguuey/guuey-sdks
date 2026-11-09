@@ -3,10 +3,10 @@
  * carrier maps onto the same A2UI message list, and the one validator judges
  * it with every §6 limit.
  *
- * The vectors in `__fixtures__/json-render-*.json` are written from the Spec
- * shape §12 documents for `@json-render/core@0.21.1`: the package is not in
- * either lockfile or the pnpm store, and the lockfile is locked, so it was
- * never read or run here. Each fixture file's converted messages and drawn
+ * The vectors in `__fixtures__/json-render-*.json` are written in the shape of
+ * `@json-render/core@0.21.1`'s published types and README, read at 0.21.1.
+ * The package is not a dependency, so no vector is run through it here. Each
+ * fixture file's converted messages and drawn
  * surfaces are snapshotted beside this test; the cases below pin what each
  * row promises.
  */
@@ -363,7 +363,7 @@ describe("guuey#2385 — each row of the §12 table", () => {
     expect(surface.degrade).toEqual({ "dropped-construct": 2, "bad-prop": 1 });
   });
 
-  it("checks become field constraints: minLength ≥ 1 folds into required, email and numeric set the input type", () => {
+  it("checks become field constraints: minLength 1 is required, email and numeric set the input type", () => {
     const surface = drawn(caseOf("rows", "checks"));
     expect(node(surface, "name")).toMatchObject({ required: true, maxLength: 40, inputType: "text" });
     expect(node(surface, "email")).toMatchObject({ required: true, inputType: "email" });
@@ -378,6 +378,24 @@ describe("guuey#2385 — each row of the §12 table", () => {
     expect(out).toMatchObject({ dropped: { count: 5, interactive: false } });
     expect(made).not.toHaveBeenCalled();
     expect(validateA2uiCarrier(caseOf("rows", "unsupported-checks"))).toMatchObject({ ok: false, reason: "dropped-construct" });
+  });
+
+  it("minLength above 1 is dropped, never folded into required: a form that needs six characters takes the old face", () => {
+    expect(jsonRenderToA2ui(caseOf("rows", "min-length-above-one"))).toMatchObject({ dropped: { count: 1 } });
+    expect(validateA2uiCarrier(caseOf("rows", "min-length-above-one"))).toMatchObject({ ok: false, reason: "dropped-construct" });
+  });
+
+  it("a check is read by its type only, with args.min / args.max: other names do not read", () => {
+    const form = (check: JsonValue): A2uiJsonObject =>
+      carrier({
+        root: "x",
+        elements: { x: { type: "Input", props: { label: "X", value: { $bindState: "/x" }, checks: [check] } } },
+        state: { x: "" },
+      });
+    expect(jsonRenderToA2ui(form({ type: "maxLength", args: { max: 9 } }))).toMatchObject({ dropped: { count: 0 } });
+    expect(jsonRenderToA2ui(form({ fn: "maxLength", args: { max: 9 } }))).toMatchObject({ dropped: { count: 1 } });
+    expect(jsonRenderToA2ui(form({ type: "maxLength", args: { length: 9 } }))).toMatchObject({ dropped: { count: 1 } });
+    expect(jsonRenderToA2ui(form({ type: "minLength", args: { value: 1 } }))).toMatchObject({ dropped: { count: 1 } });
   });
 });
 

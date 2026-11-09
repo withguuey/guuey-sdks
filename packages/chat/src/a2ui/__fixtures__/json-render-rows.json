@@ -1,5 +1,5 @@
 {
-  "source": "guuey#2385, spec §12. One case per row of the §12 mapping table. Written from the Spec shape §12 documents for @json-render/core@0.21.1 ({ root, elements: { [key]: { type, props, children?, slots?, visible?, on?, repeat?, watch? } }, state? }). The package is not in either lockfile or the pnpm store, and the lockfile is locked, so it was not read or run for these vectors.",
+  "source": "guuey#2385, spec §12. One case per row of the §12 mapping table. Written in the shape of @json-render/core@0.21.1's published types ({ root, elements: { [key]: { type, props, children?, slots?, visible?, on?, repeat?, watch? } }, state? }; checks { type, args?, message }), read at 0.21.1. The package is not a dependency, so these were not run through it.",
   "cases": [
     {
       "name": "ids",
@@ -390,8 +390,8 @@
               "label": "Name",
               "value": { "$bindState": "/name" },
               "checks": [
-                { "fn": "minLength", "args": { "min": 2 }, "message": "Too short" },
-                { "fn": "maxLength", "args": { "max": 40 } }
+                { "type": "minLength", "args": { "min": 1 }, "message": "Required" },
+                { "type": "maxLength", "args": { "max": 40 } }
               ]
             }
           },
@@ -400,7 +400,7 @@
             "props": {
               "label": "Email",
               "value": { "$bindState": "/email" },
-              "checks": [{ "fn": "required" }, { "fn": "email" }]
+              "checks": [{ "type": "required" }, { "type": "email" }]
             }
           },
           "age": {
@@ -422,7 +422,7 @@
             "props": {
               "label": "I agree",
               "checked": { "$bindState": "/terms" },
-              "checks": [{ "fn": "required" }]
+              "checks": [{ "type": "required" }]
             }
           }
         },
@@ -442,11 +442,11 @@
               "label": "Code",
               "value": { "$bindState": "/code" },
               "checks": [
-                { "fn": "pattern", "args": { "pattern": "^(a+)+$" } },
-                { "fn": "matches", "args": { "other": { "$state": "/other" } } },
-                { "fn": "requiredIf", "args": { "field": "/x" } },
-                { "fn": "url" },
-                { "fn": "isPrime" }
+                { "type": "pattern", "args": { "pattern": "^(a+)+$" } },
+                { "type": "matches", "args": { "other": { "$state": "/other" } } },
+                { "type": "requiredIf", "args": { "field": { "$state": "/x" } } },
+                { "type": "url" },
+                { "type": "isPrime" }
               ]
             }
           },
@@ -457,6 +457,30 @@
           }
         },
         "state": { "code": "", "other": "" }
+      }
+    },
+    {
+      "name": "min-length-above-one",
+      "row": "minLength above 1: A2UI has no minimum length, so the check is dropped",
+      "spec": {
+        "root": "form",
+        "elements": {
+          "form": { "type": "Form", "props": {}, "children": ["pin", "go"] },
+          "pin": {
+            "type": "Input",
+            "props": {
+              "label": "Code",
+              "value": { "$bindState": "/pin" },
+              "checks": [{ "type": "minLength", "args": { "min": 6 }, "message": "Six characters" }]
+            }
+          },
+          "go": {
+            "type": "Button",
+            "props": { "label": "Send" },
+            "on": { "press": { "action": "send" } }
+          }
+        },
+        "state": { "pin": "" }
       }
     }
   ]

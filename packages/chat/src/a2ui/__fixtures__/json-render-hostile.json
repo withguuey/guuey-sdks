@@ -1,5 +1,5 @@
 {
-  "source": "guuey#2385, spec §7, §12: hostile json-render carriers. Written from the Spec shape §12 documents for @json-render/core@0.21.1; the package is not in either lockfile or the pnpm store, so it was not read for these. Deep nesting at the bound and huge strings are generated in the test, beside these.",
+  "source": "guuey#2385, spec §7, §12: hostile json-render carriers. Written in the shape of @json-render/core@0.21.1's published types, read at 0.21.1; the package is not a dependency, so these were not run through it. Deep nesting at the bound and huge strings are generated in the test, beside these.",
   "cases": [
     {
       "name": "javascript-urls",

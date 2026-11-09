@@ -413,12 +413,9 @@
           "updateDataModel": {
             "surfaceId": "s",
             "value": {
-              "country": "France",
-              "cities": [
-                "Paris",
-                "Lyon"
-              ],
-              "city": ""
+              "form": {
+                "country": ""
+              }
             }
           }
         },
@@ -429,45 +426,23 @@
             "components": [
               {
                 "id": "root",
-                "component": "Column",
-                "children": [
-                  "country",
-                  "city"
-                ]
-              },
-              {
-                "id": "country",
                 "component": "ChoicePicker",
                 "label": "Country",
                 "value": {
-                  "path": "/country"
+                  "path": "/form/country"
                 },
                 "options": [
                   {
-                    "label": "France",
-                    "value": "France"
+                    "label": "US",
+                    "value": "US"
                   },
                   {
-                    "label": "Japan",
-                    "value": "Japan"
-                  }
-                ]
-              },
-              {
-                "id": "city",
-                "component": "ChoicePicker",
-                "label": "City",
-                "value": {
-                  "path": "/city"
-                },
-                "options": [
-                  {
-                    "label": "Paris",
-                    "value": "Paris"
+                    "label": "Canada",
+                    "value": "Canada"
                   },
                   {
-                    "label": "Lyon",
-                    "value": "Lyon"
+                    "label": "UK",
+                    "value": "UK"
                   }
                 ]
               }

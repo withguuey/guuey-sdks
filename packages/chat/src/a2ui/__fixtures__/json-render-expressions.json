@@ -1,5 +1,5 @@
 {
-  "source": "guuey#2385, spec §12: each PropExpression form, on a read-only surface so its degrade draws in place. Written from the forms §12 lists for @json-render/core@0.21.1 ($state, $bindState, $item, $bindItem, $index, $cond/$then/$else, $computed, $template); the package is not in either lockfile or the pnpm store, so it was not read for these.",
+  "source": "guuey#2385, spec §12: each PropExpression form, on a read-only surface so its degrade draws in place. Written from the forms §12 lists for @json-render/core@0.21.1 ($state, $bindState, $item, $bindItem, $index, $cond/$then/$else, $computed, $template), read in the package's published PropExpression type at 0.21.1. The package is not a dependency, so these were not run through it.",
   "cases": [
     {
       "name": "state-in-a-literal-prop",

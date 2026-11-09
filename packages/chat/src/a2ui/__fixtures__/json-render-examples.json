@@ -1,5 +1,5 @@
 {
-  "source": "guuey#2385, spec §12: the README's form, select and watcher examples, in shape. @json-render/core@0.21.1 is not in either lockfile or the pnpm store, and the lockfile is locked, so its README was not read: these are written from the Spec shape §12 documents, one per README example it names.",
+  "source": "guuey#2385, spec §12: the form, select and watcher examples. The watcher is the @json-render/core@0.21.1 README's State Watchers element, verbatim, as the root. The core README carries no form or select spec, so those two are written in the shape of the package's published types (Spec, UIElement, ActionBinding, ValidationCheck, PropExpression), read at 0.21.1. The package is not a dependency, so none of these were run through it.",
   "cases": [
     {
       "name": "form",
@@ -19,7 +19,7 @@
             "props": {
               "label": "Name",
               "value": { "$bindState": "/form/name" },
-              "checks": [{ "fn": "required" }]
+              "checks": [{ "type": "required" }]
             }
           },
           "email": {
@@ -28,7 +28,7 @@
               "label": "Email",
               "type": "email",
               "value": { "$bindState": "/form/email" },
-              "checks": [{ "fn": "required" }, { "fn": "email" }]
+              "checks": [{ "type": "required" }, { "type": "email" }]
             }
           },
           "message": {
@@ -36,7 +36,7 @@
             "props": {
               "label": "Message",
               "value": { "$bindState": "/form/message" },
-              "checks": [{ "fn": "maxLength", "args": { "max": 500 } }]
+              "checks": [{ "type": "maxLength", "args": { "max": 500 } }]
             }
           },
           "send": {
@@ -99,33 +99,25 @@
       "name": "watcher",
       "row": "README: a watcher that loads cities for a country",
       "spec": {
-        "root": "page",
+        "root": "country",
         "elements": {
-          "page": { "type": "Stack", "props": {}, "children": ["country", "city"] },
           "country": {
             "type": "Select",
             "props": {
               "label": "Country",
-              "options": ["France", "Japan"],
-              "value": { "$bindState": "/country" }
+              "value": { "$bindState": "/form/country" },
+              "options": ["US", "Canada", "UK"]
             },
             "watch": {
-              "/country": {
-                "action": "load_cities",
-                "params": { "country": { "$state": "/country" } }
+              "/form/country": {
+                "action": "loadCities",
+                "params": { "country": { "$state": "/form/country" } }
               }
-            }
-          },
-          "city": {
-            "type": "Select",
-            "props": {
-              "label": "City",
-              "options": { "$state": "/cities" },
-              "value": { "$bindState": "/city" }
-            }
+            },
+            "children": []
           }
         },
-        "state": { "country": "France", "cities": ["Paris", "Lyon"], "city": "" }
+        "state": { "form": { "country": "" } }
       }
     }
   ]

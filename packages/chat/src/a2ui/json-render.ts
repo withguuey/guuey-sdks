@@ -725,10 +725,14 @@ class Converter {
   }
 
   /**
-   * Validation checks onto field constraints (§12): `required`, `minLength`
-   * (≥ 1 folds into `required`), `maxLength`, `min`, `max`, `email`,
-   * `numeric`. Any other check (`pattern`, `matches`, `requiredIf`, `url`, a
-   * custom one) is dropped: nothing in it is compiled or run.
+   * Validation checks onto field constraints (§12). A check is json-render's
+   * `{ type, args?, message }`; its numbers are `args.min` / `args.max`, as
+   * the package's built-in functions read them. Mapped: `required`,
+   * `minLength` at most 1 (1 is `required`), `maxLength`, `min`, `max`,
+   * `email`, `numeric`. Any other check (`minLength` above 1, since A2UI has
+   * no minimum length and `required` would accept what the producer refuses;
+   * `pattern`, `matches`, `requiredIf`, `url`, a custom one) is dropped:
+   * nothing in it is compiled or run.
    */
   private checks(out: A2uiJsonObject, mapped: A2uiComponentName, props: A2uiJsonObject): void {
     const validation = own(props, "validation");
@@ -744,15 +748,12 @@ class Converter {
   }
 
   private check(out: A2uiJsonObject, mapped: A2uiComponentName, check: JsonValue): void {
-    const kind = isJsonObject(check) ? (own(check, "fn") ?? own(check, "type")) : undefined;
+    const kind = isJsonObject(check) ? own(check, "type") : undefined;
     const args = isJsonObject(check) ? own(check, "args") : undefined;
-    const arg = (...names: string[]): number | null => {
+    const arg = (name: "min" | "max"): number | null => {
       if (!isJsonObject(args)) return null;
-      for (const name of names) {
-        const value = own(args, name);
-        if (typeof value === "number" && Number.isFinite(value)) return value;
-      }
-      return null;
+      const value = own(args, name);
+      return typeof value === "number" && Number.isFinite(value) ? value : null;
     };
     const field = mapped === "TextField";
     switch (kind) {
@@ -760,20 +761,21 @@ class Converter {
         out["required"] = true;
         return;
       case "minLength": {
-        const n = arg("min", "length", "value");
-        if (n === null) break;
-        if (n >= 1) out["required"] = true;
+        // length ≥ n: n ≤ 0 always holds; 0 < n ≤ 1 is non-empty, which is `required`; above 1 has no A2UI face.
+        const n = arg("min");
+        if (n === null || n > 1) break;
+        if (n > 0) out["required"] = true;
         return;
       }
       case "maxLength": {
-        const n = arg("max", "length", "value");
+        const n = arg("max");
         if (n === null || !field) break;
         out["maxLength"] = n;
         return;
       }
       case "min":
       case "max": {
-        const n = arg(kind, "value");
+        const n = arg(kind);
         if (n === null || !field) break;
         out[kind] = n;
         return;
@@ -787,7 +789,7 @@ class Converter {
         out["inputType"] = "number";
         return;
     }
-    // `pattern`, `matches`, `requiredIf`, `url`, a custom check, or one that does not read.
+    // `minLength` above 1, `pattern`, `matches`, `requiredIf`, `url`, a custom check, or one that does not read.
     this.drop(false);
   }
 }

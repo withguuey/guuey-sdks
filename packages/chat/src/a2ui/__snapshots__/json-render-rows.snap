@@ -2002,5 +2002,76 @@
         "s"
       ]
     }
+  },
+  {
+    "name": "min-length-above-one",
+    "row": "minLength above 1: A2UI has no minimum length, so the check is dropped",
+    "adapted": {
+      "ok": true,
+      "surfaceId": "s",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "s",
+            "catalogId": "guuey.json-render.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateDataModel": {
+            "surfaceId": "s",
+            "value": {
+              "pin": ""
+            }
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "s",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": [
+                  "pin",
+                  "go"
+                ]
+              },
+              {
+                "id": "pin",
+                "component": "TextField",
+                "label": "Code",
+                "value": {
+                  "path": "/pin"
+                }
+              },
+              {
+                "id": "go",
+                "component": "Button",
+                "label": "Send",
+                "action": {
+                  "name": "send"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "dropped": {
+        "count": 1,
+        "interactive": false
+      }
+    },
+    "validation": {
+      "ok": false,
+      "reason": "dropped-construct",
+      "path": "/s",
+      "level": "component",
+      "surfaceIds": [
+        "s"
+      ]
+    }
   }
 ]
