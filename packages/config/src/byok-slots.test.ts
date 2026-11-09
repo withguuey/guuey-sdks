@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import * as browserEntry from './browser.js';
@@ -10,6 +14,9 @@ import {
   isByokProviderId,
   type ByokSlotEnvName,
 } from './byok-slots.js';
+
+/** The package root: this file sits in `src/`. */
+const packageDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 describe('BYOK_PROVIDER_SLOT_ENV', () => {
   it('maps exactly the four stored provider ids to the env slot the runtime reads', () => {
@@ -71,5 +78,25 @@ describe('the package entries', () => {
       expect(entry.BYOK_SLOT_ENV_NAME_LIST).toBe(BYOK_SLOT_ENV_NAME_LIST);
       expect(entry.isByokProviderId).toBe(isByokProviderId);
     }
+  });
+
+  it('`@guuey/config/byok-slots` is its own entry, built from this module', () => {
+    const manifest: unknown = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'));
+    expect(manifest).toMatchObject({
+      exports: {
+        './byok-slots': {
+          types: './dist/byok-slots.d.ts',
+          import: './dist/byok-slots.js',
+          default: './dist/byok-slots.js',
+        },
+      },
+    });
+  });
+
+  it('the module behind that entry imports nothing, so a client bundle that takes the list takes nothing else', () => {
+    const source = readFileSync(join(packageDir, 'src', 'byok-slots.ts'), 'utf8');
+    expect(source).not.toMatch(/^\s*import\b/m);
+    expect(source).not.toMatch(/^\s*export\s+(\*|\{[^}]*\})\s+from\b/m);
+    expect(source).not.toMatch(/\bimport\s*\(|\brequire\s*\(/);
   });
 });
