@@ -160,6 +160,12 @@ async function builtFilters(
 }
 
 describe("OpenAI template worker: the turn's tool withholds", () => {
+  it("declares that it applies the gates: its serve info opts into the tool-gates.v1 hello (guuey#2670)", () => {
+    expect(h.info?.framework).toBe("openai-agents-sdk");
+    expect(h.info?.sdkName).toBe("@openai/agents");
+    expect(h.info?.capabilities).toContain("tool-gates.v1");
+  });
+
   it("drops ggui_consume from the ggui server when the invoke withholds it there", async () => {
     const filters = await builtFilters(invokeWith([{ server: "ggui", tool: "ggui_consume" }]));
     const ggui = filters.get("ggui");
@@ -310,9 +316,11 @@ describe("OpenAI template worker: the model key (guuey#2139)", () => {
 });
 
 describe("OpenAI template worker: declares the input kinds its text path handles (guuey#2549)", () => {
-  it("its hello declares exactly MODEL_TEXT_INPUT_KIND_CAPABILITIES, from serveNative's info", async () => {
+  it("its hello declares MODEL_TEXT_INPUT_KIND_CAPABILITIES and tool-gates.v1, from serveNative's info", async () => {
     const { MODEL_TEXT_INPUT_KIND_CAPABILITIES, inputKindCapability } = await import("@guuey/worker");
-    expect(h.info?.capabilities).toBe(MODEL_TEXT_INPUT_KIND_CAPABILITIES);
-    expect(h.info?.capabilities).toEqual([inputKindCapability("context-only")]);
+    const { TOOL_GATES_CAPABILITY } = await import("@guuey/worker");
+    // The input kinds, then tool-gates.v1 (guuey#2670): nothing else.
+    expect(h.info?.capabilities).toEqual([...MODEL_TEXT_INPUT_KIND_CAPABILITIES, TOOL_GATES_CAPABILITY]);
+    expect(h.info?.capabilities).toEqual([inputKindCapability("context-only"), "tool-gates.v1"]);
   });
 });

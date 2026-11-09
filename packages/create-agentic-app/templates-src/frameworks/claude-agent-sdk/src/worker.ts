@@ -13,6 +13,7 @@ import { query, type McpServerConfig, type SDKUserMessage } from "@anthropic-ai/
 import {
   CLAUDE_FORBIDDEN_ENV,
   MODEL_TEXT_INPUT_KIND_CAPABILITIES,
+  TOOL_GATES_CAPABILITY,
   makeClaudeSpawner,
   readLaunchEnvelope,
   serveNative,
@@ -231,6 +232,8 @@ await serveNative(
     sdkName: "@anthropic-ai/claude-agent-sdk",
     // Every turn's text goes through withHistory (agent-config.ts), so this
     // worker handles a turn sent without text; the Router reads it here.
-    capabilities: MODEL_TEXT_INPUT_KIND_CAPABILITIES,
+    // It also applies the agent's tool gates (the rules above), so every hello
+    // says so with tool-gates.v1 (guuey#2670).
+    capabilities: [...MODEL_TEXT_INPUT_KIND_CAPABILITIES, TOOL_GATES_CAPABILITY],
   }
 );

@@ -19,6 +19,7 @@ import type { MCPServer } from "@openai/agents";
 import { toolGateErrors, toolGatePredicate } from "@guuey/config";
 import {
   MODEL_TEXT_INPUT_KIND_CAPABILITIES,
+  TOOL_GATES_CAPABILITY,
   mcpToolCustomData,
   modelVisibleToolFilterWith,
   readLaunchEnvelope,
@@ -109,6 +110,8 @@ await serveNative(
     sdkName: "@openai/agents",
     // Every turn's text goes through withHistory (agent-config.ts), so this
     // worker handles a turn sent without text; the Router reads it here.
-    capabilities: MODEL_TEXT_INPUT_KIND_CAPABILITIES,
+    // It also applies the agent's tool gates (each server's `toolFilter` above), so every hello
+    // says so with tool-gates.v1 (guuey#2670).
+    capabilities: [...MODEL_TEXT_INPUT_KIND_CAPABILITIES, TOOL_GATES_CAPABILITY],
   }
 );
