@@ -85,6 +85,7 @@ import {
   renderSurfaceSection,
   renderMcpAvailabilitySection,
   renderGenerativeUiSection,
+  renderA2uiSection,
   renderMemorySectionForTurn,
   renderProfileSection,
   renderResourcesSection,
@@ -579,6 +580,9 @@ export function createRunner(hostBoot: HostBoot = {}, deps: AdkRunnerDeps = {}):
         // (the rail is really armed this turn) AND the same `surfaceHints:
         // false` BYO opt-out. Before the norms (LAST).
         (noTools ? "" : renderGenerativeUiSection(turn.gguiAttached, snapshot.surfaceHints)) +
+        // guuey#2386: the A2UI section, DIRECTLY AFTER generative UI (the
+        // client draws the guuey A2UI catalog, same opt-out, same no-tools rule).
+        (noTools ? "" : renderA2uiSection(turn.clientCatalogs, snapshot.surfaceHints)) +
         // guuey#556: default response norms, LAST and unconditional (see the
         // constant's doc for the confirm-gate carve-out).
         RESPONSE_NORMS_SECTION;

@@ -13,7 +13,7 @@ import {
 } from "./claude-options.js";
 import {
   RESPONSE_NORMS_SECTION,
-  SURFACE_FORMATTING_SECTION, GENERATIVE_UI_SECTION, renderResourcesSection,
+  SURFACE_FORMATTING_SECTION, GENERATIVE_UI_SECTION, A2UI_SECTION, A2UI_GUUEY_CATALOG_ID, renderResourcesSection,
   renderMcpAvailabilitySection,
   MCP_AVAILABILITY_HEADING,
 } from "../preamble.js";
@@ -661,6 +661,31 @@ describe("buildOptions — generative-UI section (guuey#630)", () => {
         GENERATIVE_UI_SECTION +
         RESPONSE_NORMS_SECTION,
     );
+  });
+});
+
+describe("buildOptions — A2UI section (guuey#2386)", () => {
+  const catalogs = [A2UI_GUUEY_CATALOG_ID, "guuey.json-render.v1"];
+
+  it("a client that draws guuey A2UI gets the section DIRECTLY AFTER generative UI, norms still LAST", () => {
+    const sp = buildOptions({ systemPrompt: "S" }, ctx({ gguiAttached: true, clientCatalogs: catalogs }))
+      .systemPrompt as string;
+    expect(sp).toBe("S" + SURFACE_FORMATTING_SECTION + GENERATIVE_UI_SECTION + A2UI_SECTION + RESPONSE_NORMS_SECTION);
+  });
+
+  it("without the ggui rail it still renders, after the surface section", () => {
+    const sp = buildOptions({ systemPrompt: "S" }, ctx({ clientCatalogs: catalogs })).systemPrompt as string;
+    expect(sp).toBe("S" + SURFACE_FORMATTING_SECTION + A2UI_SECTION + RESPONSE_NORMS_SECTION);
+  });
+
+  it("renders nothing: no catalogs, catalogs without guuey A2UI, surfaceHints:false, or no tools", () => {
+    const none = [
+      buildOptions({ systemPrompt: "S" }, ctx({ gguiAttached: true })),
+      buildOptions({ systemPrompt: "S" }, ctx({ gguiAttached: true, clientCatalogs: ["guuey.json-render.v1"] })),
+      buildOptions({ systemPrompt: "S", surfaceHints: false }, ctx({ clientCatalogs: catalogs })),
+      buildOptions({ systemPrompt: "S", tools: { allowlist: ["@none"] } }, ctx({ clientCatalogs: catalogs })),
+    ];
+    for (const opts of none) expect(opts.systemPrompt as string).not.toContain(A2UI_SECTION);
   });
 });
 

@@ -48,7 +48,7 @@ import {
 } from "./claude-options.js";
 import {
   RESPONSE_NORMS_SECTION,
-  renderSurfaceSection, renderGenerativeUiSection, renderMemorySectionForTurn, renderProfileSection, renderResourcesSection,
+  renderSurfaceSection, renderGenerativeUiSection, renderA2uiSection, renderMemorySectionForTurn, renderProfileSection, renderResourcesSection,
   renderFirstImpressionSection, renderFirstImpressionShownSection,
   renderMcpAvailabilitySection } from "../preamble.js";
 import type { HostInvoke, HostRuntime } from "./claude.js";
@@ -217,6 +217,9 @@ export async function runInvokeOpenai(
       // (the rail is really armed this turn) AND the same `surfaceHints:
       // false` BYO opt-out. Before the norms (LAST).
       (noTools ? "" : renderGenerativeUiSection(invoke.gguiAttached, snapshot.surfaceHints)) +
+      // guuey#2386: the A2UI section, DIRECTLY AFTER generative UI (the
+      // client draws the guuey A2UI catalog, same opt-out, same no-tools rule).
+      (noTools ? "" : renderA2uiSection(invoke.clientCatalogs, snapshot.surfaceHints)) +
       // guuey#556: default response norms, LAST and unconditional (see the
       // constant's doc for the confirm-gate carve-out).
       RESPONSE_NORMS_SECTION;

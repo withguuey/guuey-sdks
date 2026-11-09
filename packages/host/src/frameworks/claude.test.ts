@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createEmitter, type WorkerEvent } from "@guuey/worker";
 import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { awaitMcpReady, runInvoke, type HostInvoke, type QueryFn, type QueryHandle } from "./claude.js";
-import { FIRST_IMPRESSION_SHOWN_HEADING } from "../preamble.js";
+import { A2UI_GUUEY_CATALOG_ID, A2UI_SECTION, FIRST_IMPRESSION_SHOWN_HEADING } from "../preamble.js";
 
 /** Collect every emitted WorkerEvent into an array (the fd-3 sink, in memory). */
 function collector(): { events: WorkerEvent[]; sink: { write(s: string): void } } {
@@ -276,6 +276,17 @@ describe("runInvoke — native emission", () => {
       const seen = await gatesFor({ withheldTools: [{ server: "elsewhere", tool: "ggui_consume" }] });
       expect(seen).not.toHaveProperty("disallowedTools");
     });
+  });
+
+  it("guuey#2386: invoke.clientCatalogs reaches buildOptions on the Claude path, so the A2UI section renders", async () => {
+    const { sink } = collector();
+    let systemPrompt: string | undefined;
+    const query: QueryFn = (args) => {
+      systemPrompt = typeof args.options.systemPrompt === "string" ? args.options.systemPrompt : undefined;
+      return streamOf();
+    };
+    await runInvoke({}, invoke({ clientCatalogs: [A2UI_GUUEY_CATALOG_ID] }), { apiKey: "sk-test", listCredentials: () => [] }, createEmitter(sink), query);
+    expect(systemPrompt).toContain(A2UI_SECTION);
   });
 
   describe("guuey#1183 — the first-impression push reaches buildOptions on the Claude path", () => {

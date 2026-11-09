@@ -16,7 +16,7 @@ import type { HostInvoke } from "./claude.js";
 import {
   RESPONSE_NORMS_SECTION,
   SURFACE_FORMATTING_SECTION, renderMemorySection, renderProfileSection, renderResourcesSection,
-  FIRST_IMPRESSION_SHOWN_HEADING, GENERATIVE_UI_SECTION, renderUserMemoryRecall } from "../preamble.js";
+  FIRST_IMPRESSION_SHOWN_HEADING, GENERATIVE_UI_SECTION, A2UI_SECTION, A2UI_GUUEY_CATALOG_ID, renderUserMemoryRecall } from "../preamble.js";
 import { defaultModelFor, type GuueyAgent } from "@guuey/config";
 
 /** Collect every emitted WorkerEvent into an array (the fd-3 sink, in memory). */
@@ -282,6 +282,17 @@ describe("runInvokeOpenai — memory section (memory-mcp T5, gated on authentica
     );
   });
 
+  it("guuey#2386: a client that draws guuey A2UI gets the section DIRECTLY AFTER generative UI, byte-identical to Claude's", async () => {
+    const instructions = await captureInstructions({ gguiAttached: true, clientCatalogs: [A2UI_GUUEY_CATALOG_ID] });
+    expect(instructions?.endsWith(SURFACE_FORMATTING_SECTION + GENERATIVE_UI_SECTION + A2UI_SECTION + RESPONSE_NORMS_SECTION)).toBe(true);
+  });
+
+  it("guuey#2386: no section without the guuey A2UI catalog", async () => {
+    for (const over of [{ gguiAttached: true }, { gguiAttached: true, clientCatalogs: ["guuey.json-render.v1"] }]) {
+      expect(await captureInstructions(over)).not.toContain(A2UI_SECTION);
+    }
+  });
+
   it('guuey#2262: tools.allowlist ["@none"] leaves out the SAVE instruction and the generative-UI section, keeps the recall', async () => {
     const { sink } = collector();
     let instructions: string | undefined;
@@ -291,13 +302,14 @@ describe("runInvokeOpenai — memory section (memory-mcp T5, gated on authentica
     };
     await runInvokeOpenai(
       { framework: "openai-agents-sdk", model: "gpt-4o-mini", systemPrompt: "SYS", mcpServers: {}, tools: { allowlist: ["@none"] } },
-      invoke({ identity: authed, memoryAttached: true, userMemory: "Ada.", gguiAttached: true }),
+      invoke({ identity: authed, memoryAttached: true, userMemory: "Ada.", gguiAttached: true, clientCatalogs: [A2UI_GUUEY_CATALOG_ID] }),
       runtime,
       createEmitter(sink),
       run,
     );
     expect(instructions).not.toContain("`save_memory` tool");
     expect(instructions).not.toContain(GENERATIVE_UI_SECTION);
+    expect(instructions).not.toContain(A2UI_SECTION);
     expect(instructions?.endsWith(renderUserMemoryRecall("Ada.") + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION)).toBe(true);
   });
 

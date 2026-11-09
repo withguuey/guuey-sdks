@@ -289,6 +289,12 @@ export interface BuildOptionsContext {
    */
   gguiAttached?: boolean;
   /**
+   * The UI catalogs the client draws natively this turn (guuey#2386), as the
+   * Router passed them. Gates the A2UI section by membership. See
+   * `Invoke.clientCatalogs` in `@guuey/worker`.
+   */
+  clientCatalogs?: readonly string[];
+  /**
    * Returns every credential the Router broker wrote for this invoke (the
    * servers file, else `<sessionDir>/.guuey/credentials/`) — one `{name, cred}`
    * per usable MCP server. `name` is the server name; `cred` is the parsed
@@ -401,6 +407,12 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
     // Left out when the tools block declares no tools (guuey#2262): the
     // model cannot draw a card.
     (noTools ? "" : renderGenerativeUiSection(ctx.gguiAttached, snapshot.surfaceHints)) +
+    // guuey#2386: the A2UI section — DIRECTLY AFTER generative UI, the other
+    // way a tool's answer becomes UI. Gated inside the renderer on the
+    // client drawing the guuey A2UI catalog AND the same `surfaceHints:
+    // false` opt-out; left out with no tools, since tools are where
+    // surfaces come from.
+    (noTools ? "" : renderA2uiSection(ctx.clientCatalogs, snapshot.surfaceHints)) +
     // guuey#556: the default response norms, LAST and unconditional —
     // every hosted agent inherits them (see RESPONSE_NORMS_SECTION's doc
     // for the confirm-gate carve-out + the per-court opt-out grammar).
@@ -712,6 +724,7 @@ import {
   RESPONSE_NORMS_SECTION,
   renderSurfaceSection,
   renderGenerativeUiSection,
+  renderA2uiSection,
   renderMemorySectionForTurn,
   renderProfileSection,
   renderResourcesSection,

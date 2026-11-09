@@ -574,19 +574,22 @@ export function renderGenerativeUiSection(
 }
 
 /**
+ * guuey's A2UI catalog id. The source of truth is `A2UI_GUUEY_CATALOG_ID` in
+ * `@guuey/agent-client` (oss/packages/agent-client/src/catalogs.ts), which a
+ * server SDK cannot import (it is a client package), so this copy is pinned to
+ * that line by `preamble.catalog-id-sync.test.ts`.
+ */
+export const A2UI_GUUEY_CATALOG_ID = "guuey.a2ui.v1";
+
+/**
  * guuey#2386 — what a turn's preamble says when the client draws guuey A2UI
  * surfaces natively: a tool's surface shows as real UI, a submitted form comes
  * back as the next turn tagged `<guuey_a2ui_action>`, and a line of plain
  * text sits beside every surface (a client that does not draw them shows that
- * line). One paragraph, framework-blind like every sibling.
- *
- * Written and pinned, not yet wired: the client's `catalogs` reach a turn only
- * when the runtime threads them through (S6b). The framework call sites, and
- * their byte-identity pins beside {@link GENERATIVE_UI_SECTION}, land with it.
+ * line). One paragraph, framework-blind like every sibling. All three
+ * frameworks render it DIRECTLY AFTER {@link GENERATIVE_UI_SECTION}, through
+ * {@link renderA2uiSection}, gated on the invoke's `clientCatalogs`.
  */
-/** guuey's A2UI catalog id; mirrors `A2UI_GUUEY_CATALOG_ID` in oss/packages/chat/src/a2ui/schema.ts. */
-const A2UI_GUUEY_CATALOG_ID = "guuey.a2ui.v1";
-
 export const A2UI_SECTION =
   `\n\n## Native forms and cards\n\n` +
   `This chat draws guuey A2UI surfaces as native UI. When a tool returns one, the person sees it here. ` +

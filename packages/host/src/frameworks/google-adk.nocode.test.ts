@@ -18,6 +18,8 @@ import {
   SURFACE_FORMATTING_SECTION,
   RESPONSE_NORMS_SECTION,
   GENERATIVE_UI_SECTION,
+  A2UI_SECTION,
+  A2UI_GUUEY_CATALOG_ID,
   renderMemorySection,
   renderUserMemoryRecall,
   renderProfileSection,
@@ -364,12 +366,20 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     expect(resolved).not.toContain("`save_memory` tool");
   });
 
+  it("guuey#2386: a client that draws guuey A2UI gets the section DIRECTLY AFTER generative UI, byte-identical to Claude's", async () => {
+    const resolved = await resolveInstruction({ gguiAttached: true, clientCatalogs: [A2UI_GUUEY_CATALOG_ID] });
+    expect(resolved.endsWith(SURFACE_FORMATTING_SECTION + GENERATIVE_UI_SECTION + A2UI_SECTION + RESPONSE_NORMS_SECTION)).toBe(true);
+    const plain = await resolveInstruction({ gguiAttached: true, clientCatalogs: ["guuey.json-render.v1"] });
+    expect(plain).not.toContain(A2UI_SECTION);
+  });
+
   it('guuey#2262: tools.allowlist ["@none"] leaves out the SAVE instruction and the generative-UI section, keeps the recall', async () => {
     const turn: Partial<HostTurn> = {
       identity: { userId: "u-mem", authMode: "authenticated" },
       memoryAttached: true,
       userMemory: "Ada.",
       gguiAttached: true,
+      clientCatalogs: [A2UI_GUUEY_CATALOG_ID],
     };
     const resolved = await resolveInstruction(turn, {
       model: "gemini-3.5-pro",
@@ -378,6 +388,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     });
     expect(resolved).not.toContain("`save_memory` tool");
     expect(resolved).not.toContain(GENERATIVE_UI_SECTION);
+    expect(resolved).not.toContain(A2UI_SECTION);
     expect(resolved).toBe(
       withContextPreamble("be terse", [], undefined, undefined) +
         renderUserMemoryRecall("Ada.") +
@@ -391,7 +402,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
       tools: { allowlist: ["ggui.*"] },
     });
     expect(control).toContain("`save_memory` tool");
-    expect(control).toContain(GENERATIVE_UI_SECTION);
+    expect(control).toContain(GENERATIVE_UI_SECTION + A2UI_SECTION);
     expect(control).toContain(renderUserMemoryRecall("Ada."));
   });
 

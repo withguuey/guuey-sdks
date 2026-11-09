@@ -106,6 +106,8 @@ export interface HostInvoke {
    * `@guuey/worker`.
    */
   gguiAttached?: boolean;
+  /** guuey#2386: the UI catalogs the client draws natively; gates the A2UI section. See `Invoke.clientCatalogs`. */
+  clientCatalogs?: readonly string[];
   /** guuey#901: per OAuth server, its availability this turn — the "Connected services" section. */
   mcpAvailability?: McpAvailability[];
 }
@@ -339,6 +341,7 @@ export async function runInvoke(
       ...(invoke.profileSections !== undefined ? { profileSections: invoke.profileSections } : {}),
       ...(invoke.resourceCount !== undefined ? { resourceCount: invoke.resourceCount } : {}),
       ...(invoke.gguiAttached !== undefined ? { gguiAttached: invoke.gguiAttached } : {}),
+      ...(invoke.clientCatalogs !== undefined ? { clientCatalogs: invoke.clientCatalogs } : {}),
       // guuey#1183 — the first-impression push reaches buildOptions: it renders
       // the verbatim handshake section AND turns extended thinking off for this
       // invoke (the model-egress force is refused beside thinking). Dropped from
