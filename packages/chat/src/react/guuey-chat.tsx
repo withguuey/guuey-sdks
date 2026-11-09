@@ -204,10 +204,10 @@ export interface GuueyChatActivityEvent {
 
 export interface GuueyChatHandle {
   /**
-   * Send `text` through exactly the Send button's gate: returns `false`
-   * and does nothing when chat is unavailable (`endpointUrl === null`), a
-   * turn is in flight, or the text is blank — it NEVER bypasses the
-   * composer's rules. The typed draft is left untouched (a programmatic
+   * Send `text` through the composer's gate: returns `false` and does
+   * nothing when the composer is closed (chat is unavailable, a connect card
+   * holds it, or the conversation has ended), a turn is in flight, or the
+   * text is blank — it NEVER bypasses the composer's rules. The typed draft is left untouched (a programmatic
    * send must not eat a half-typed message). Failures surface the same
    * way a composer send's do (the hook's `error` / R0 failed-send).
    *
@@ -325,7 +325,7 @@ export interface GuueyChatProps {
    * gets, i.e. `viewProps` is absent or an object that does not carry an
    * `onUserMessage` key at all. That sink sends the message at once when
    * idle, queues it while a turn is live, and answers an undeliverable one as
-   * not delivered (logging the drop when the chat is unavailable). A host that
+   * not delivered (logging the drop when the composer is closed). A host that
    * passes a function-form `viewProps`, or its own `onUserMessage`, sets this
    * itself: `true` only when its delivery keeps the same promise.
    */
@@ -1051,9 +1051,9 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // ONE stable handle for the component's whole life (hosts capture it in
   // `onReady` and keep it), reading live truth through a ref so a call
   // always sees the CURRENT gate — never a stale closure's.
-  const liveRef = useRef({ available, busy, composerClosed, invoke, onReady });
+  const liveRef = useRef({ busy, composerClosed, invoke, onReady });
   useEffect(() => {
-    liveRef.current = { available, busy, composerClosed, invoke, onReady };
+    liveRef.current = { busy, composerClosed, invoke, onReady };
   });
 
   // The DEFAULT ACTION RELAY (guuey#335 — the Confirm bug):
@@ -1206,12 +1206,11 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       return Promise.resolve({ delivered: false, reason: "no text content" });
     }
     const live = liveRef.current;
-    if (!live.available) {
+    // The composer's one refusal: no chat, a connect card, or an ended conversation.
+    if (live.composerClosed) {
       if (tap !== null) echoNow.withdraw(tap.id, "refused");
-      console.warn(
-        "[guuey] ui/message doorbell dropped — chat is unavailable (endpointUrl null); the view's gesture cannot start a turn here.",
-      );
-      return Promise.resolve({ delivered: false, reason: "chat is unavailable" });
+      console.warn("[guuey] ui/message doorbell dropped — the chat is closed; the view's gesture cannot start a turn here.");
+      return Promise.resolve({ delivered: false, reason: "chat is closed" });
     }
     if (live.busy) {
       return new Promise<UserMessageDelivery>((resolve) => {
@@ -1262,10 +1261,10 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     const next = pendingDoorbellsRef.current.shift();
     if (next === undefined) return;
     const live = liveRef.current;
-    if (!live.available) {
-      console.warn("[guuey] queued ui/message doorbell dropped — chat became unavailable.");
+    if (live.composerClosed) {
+      console.warn("[guuey] queued ui/message doorbell dropped — the chat closed.");
       for (const tap of next.taps) echoRef.current.withdraw(tap.id, "refused");
-      for (const waiter of next.waiters) waiter({ delivered: false, reason: "chat became unavailable" });
+      for (const waiter of next.waiters) waiter({ delivered: false, reason: "chat closed" });
       return;
     }
     const sent = next.taps.length > 0 ? echoRef.current.markSent(next.taps.map((t) => t.id)) : null;
@@ -1316,10 +1315,10 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   }, [suggestions]);
   const sendSuggestion = useCallback((text: string): void => {
     const live = liveRef.current;
-    // Exactly the Send button's gate (the #210 rule): unavailable, busy,
-    // or blank -> the tap is a no-op, never a bypass. The typed draft is
-    // left untouched (a chip send must not eat a half-typed message).
-    if (!live.available || live.busy || text.trim() === "") return;
+    // The composer's gate (the #210 rule): closed, busy or blank -> the tap
+    // is a no-op, never a bypass. The typed draft is left untouched (a chip
+    // send must not eat a half-typed message).
+    if (live.composerClosed || live.busy || text.trim() === "") return;
     analytics.messageSent();
     void live.invoke.send(text).catch(() => {
       // Same contract as submit: the hook owns failure surfacing.
@@ -1410,7 +1409,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         const trimmed = text.trim();
         // guuey#2549: a turn without words; the agent's runtime judges it.
         const inputKind = trimmed === "" ? opts?.inputKind : undefined;
-        // Exactly the Send button's gate (the composer's one refusal) — a handle send never bypasses it.
+        // The composer's one refusal, and a live turn (a handle send never ends a listen) — never a bypass.
         if (live.composerClosed || live.busy || (trimmed === "" && inputKind === undefined)) return false;
         analytics.messageSent();
         void live.invoke.send(trimmed, inputKind !== undefined ? { inputKind } : undefined).catch(() => {
