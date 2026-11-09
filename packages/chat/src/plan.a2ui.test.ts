@@ -273,9 +273,9 @@ describe("S1 (e) — the surface fold across the transcript", () => {
     expect(toolsOf(p.items)[0]).toMatchObject({ result: null, attribution: false });
   });
 
-  it("an orphan update with components creates the surface", () => {
+  it("an orphan update with components is an orphan too: no surface is created", () => {
     const p = plan(fold(withCarrier("t1", [components("late", [{ id: "root", component: "Text", text: "here" }])])));
-    expect(a2uiOf(p.items)).toEqual([expect.objectContaining({ surfaceId: "late", title: null, revision: 1 })]);
+    expect(a2uiOf(p.items)).toEqual([]);
   });
 
   it("surfaces fold independently", () => {

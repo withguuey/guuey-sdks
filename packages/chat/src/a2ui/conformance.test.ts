@@ -20,7 +20,7 @@ interface Vector {
   messages: JsonValue[];
   surfaces: Array<{
     surfaceId: string;
-    outcome: "drawn" | "deleted";
+    outcome: "drawn" | "deleted" | "ignored";
     /** Component id → the kind it draws as, for every node in the resolved tree. */
     kinds: { [id: string]: A2uiNode["component"] };
     carveOuts: { [K in A2uiCarveOut]?: number };

@@ -303,8 +303,11 @@ describe("surface outcomes", () => {
     expect(out).toEqual({ ok: true, surfaces: [{ kind: "deleted", surfaceId: "s" }] });
   });
 
-  it("an update for a surface never created: with components it creates it, otherwise it is ignored", () => {
-    expect(drawn(validateA2uiCarrier(carrier(update([txt("root")], "late")))).surfaceId).toBe("late");
+  it("an update for a surface never created is an orphan: ignored, with components or without", () => {
+    expect(validateA2uiCarrier(carrier(update([txt("root")], "late")))).toEqual({
+      ok: true,
+      surfaces: [{ kind: "ignored", surfaceId: "late" }],
+    });
     expect(validateA2uiCarrier(carrier(model({ a: 1 }, undefined, "orphan")))).toEqual({
       ok: true,
       surfaces: [{ kind: "ignored", surfaceId: "orphan" }],
@@ -313,6 +316,54 @@ describe("surface outcomes", () => {
 
   it("an empty components batch (preview-a2ui: a legal no-op) draws an empty surface", () => {
     expect(drawn(validateA2uiCarrier(carrier(create(), update([])))).root).toBeNull();
+  });
+});
+
+describe("a surface with components but no root (no-root)", () => {
+  it("an empty first batch does not pin the root search: the first batch that adds a component does", () => {
+    const first = foldA2uiCarrier(EMPTY_A2UI_STATE, carrier(create(), update([])));
+    if (!first.ok) throw new Error(first.reason);
+    const second = foldA2uiCarrier(first.state, carrier(update([col("main", ["f", "go"]), field("f"), submit()])));
+    expect(second.ok).toBe(true);
+    const surface = second.ok ? second.surfaces[0] : undefined;
+    expect(surface?.kind === "drawn" ? surface.surface.root?.id : undefined).toBe("main");
+  });
+
+  it("a first batch of bad ids only does not pin it either", () => {
+    const s = drawn(validateA2uiCarrier(carrier(create(), update([txt("bad id")]), update([col("main", ["a"]), txt("a")]))));
+    expect(s.root?.id).toBe("main");
+    expect(s.degrade).toEqual({ "bad-id": 1 });
+  });
+
+  it("an interactive surface whose first-batch root is re-parented takes the old face", () => {
+    const first = foldA2uiCarrier(EMPTY_A2UI_STATE, carrier(create(), update([txt("t1")])));
+    if (!first.ok) throw new Error(first.reason);
+    const out = foldA2uiCarrier(first.state, carrier(update([col("col", ["t1", "go"]), submit()])));
+    expect(out).toMatchObject({ ok: false, reason: "no-root", level: "component" });
+  });
+
+  it("a read-only one degrades and counts it", () => {
+    const s = drawn(validateA2uiCarrier(carrier(create(), update([txt("t1")]), update([col("col", ["t1", "t2"]), txt("t2")]))));
+    expect(s.root).toBeNull();
+    expect(s.degrade).toMatchObject({ "no-root": 1 });
+  });
+});
+
+describe("one population: every component in the surface is drawn or counted", () => {
+  it("an unreferenced component that is not the root is a fault (read-only: counted)", () => {
+    const s = drawn(validateA2uiCarrier(carrier(create(), update([col("root", ["a"]), txt("a"), txt("stray")]))));
+    expect(ids(s.root)).toEqual(["root", "a"]);
+    expect(s.degrade).toEqual({ "unreferenced-component": 1 });
+  });
+
+  it("an unreferenced input takes the old face: a form never draws with a field missing", () => {
+    const out = validateA2uiCarrier(carrier(create(), update([col("root", ["name", "go"]), field("name"), field("email"), submit()])));
+    expect(out).toMatchObject({ ok: false, reason: "unreferenced-component", level: "component" });
+  });
+
+  it("a fault on an unreferenced component counts like one on a drawn component", () => {
+    const s = drawn(validateA2uiCarrier(carrier(create(), update([txt("root"), { id: "x", component: "Tabs" }]))));
+    expect(s.degrade).toEqual({ "unknown-component": 1, "unreferenced-component": 1 });
   });
 });
 

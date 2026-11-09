@@ -283,6 +283,10 @@ export const A2UI_COMPONENT_FAULTS = [
   "truncated-label",
   "data-model-refused",
   "data-model-too-large",
+  /** The surface has components but none is its root (no `root` id, and every first-batch id has a parent). */
+  "no-root",
+  /** A component nothing references and that is not the root: it would never draw. */
+  "unreferenced-component",
 ] as const;
 export type A2uiComponentFault = (typeof A2UI_COMPONENT_FAULTS)[number];
 

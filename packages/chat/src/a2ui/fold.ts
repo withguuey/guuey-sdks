@@ -24,7 +24,6 @@ import { A2UI_LIMITS, jsonUnits, truncateUnits } from "./limits.js";
 import {
   A2UI_COMPONENT_FAULTS,
   A2UI_GAP_TOKENS,
-  A2UI_GUUEY_CATALOG_ID,
   A2UI_TEXT_VARIANTS,
   readA2uiDataPath,
   type A2uiCarveOut,
@@ -73,7 +72,7 @@ export interface A2uiSurfaceState {
   title: string | null;
   /** Components by id; replace-by-id keeps the first insertion's position. */
   components: ReadonlyMap<string, A2uiComponentEntry>;
-  /** The ids of the surface's first `updateComponents` batch (the root fallback reads them), or null before one. */
+  /** The ids of the surface's first `updateComponents` batch that added a component (the root fallback reads them), or null before one. */
   firstBatch: readonly string[] | null;
   dataModel: A2uiJsonObject;
 }
@@ -227,11 +226,19 @@ function hasCycle(components: ReadonlyMap<string, A2uiComponentEntry>): boolean 
   return false;
 }
 
-/** The root: the component with id `root`, else the first of the first batch nothing references. */
-function rootId(surface: A2uiSurfaceState): string | null {
-  if (surface.components.has("root")) return "root";
+/** Every id some component references. */
+function referencedIds(surface: A2uiSurfaceState): ReadonlySet<string> {
   const referenced = new Set<string>();
   for (const entry of surface.components.values()) for (const ref of childRefs(entry)) referenced.add(ref);
+  return referenced;
+}
+
+/**
+ * The root: the component with id `root`, else the first of the first batch
+ * nothing references. `null` with components present is the `no-root` fault.
+ */
+function rootId(surface: A2uiSurfaceState, referenced: ReadonlySet<string>): string | null {
+  if (surface.components.has("root")) return "root";
   for (const id of surface.firstBatch ?? []) {
     if (surface.components.has(id) && !referenced.has(id)) return id;
   }
@@ -301,7 +308,6 @@ function resolveSurface(
     }
     drawnIds.add(id);
     const at = `${where}/${id}`;
-    for (const fault of A2UI_COMPONENT_FAULTS) add(fault, at, entry.faults[fault] ?? 0);
     const p = entry.parsed;
     switch (p.component) {
       case "Row":
@@ -433,12 +439,22 @@ function resolveSurface(
     }
   };
 
-  const id = rootId(surface);
+  const referenced = referencedIds(surface);
+  const id = rootId(surface, referenced);
+  if (id === null && surface.components.size > 0) add("no-root", where);
   const root = id === null ? null : resolve(id, 1, where);
   if (tooDeep !== null) return tooDeep;
 
+  // One population for the class and the faults: every component in the
+  // surface. Each is drawn or counted, and any one input or action makes it
+  // interactive, reachable or not.
   let interactive = pendingInteractive;
-  for (const entry of surface.components.values()) if (entry.interactive) interactive = true;
+  for (const [cid, entry] of surface.components) {
+    const at = `${where}/${cid}`;
+    if (entry.interactive) interactive = true;
+    for (const fault of A2UI_COMPONENT_FAULTS) add(fault, at, entry.faults[fault] ?? 0);
+    if (cid !== id && !referenced.has(cid)) add("unreferenced-component", at);
+  }
 
   const degrade: A2uiDegradeCounts = {};
   for (const { fault } of faults) degrade[fault] = (degrade[fault] ?? 0) + 1;
@@ -488,16 +504,15 @@ export function applyA2uiMessages(state: A2uiFoldState, messages: readonly A2uiP
         pendingInteractive.delete(id);
         break;
       case "updateComponents": {
-        let surface = working.get(id);
-        if (surface === undefined) {
-          if (message.components.length === 0 && message.badIds.count === 0) break;
-          surface = freshSurface(id, A2UI_GUUEY_CATALOG_ID, null);
-        }
+        // An update for a surface no createSurface opened is an orphan: ignored.
+        const surface = working.get(id);
+        if (surface === undefined) break;
         const components = new Map(surface.components);
         for (const entry of message.components) components.set(entry.id, entry);
         for (let i = 0; i < message.badIds.count; i++) fault(id, { fault: "bad-id", at: `/${id}` });
         if (message.badIds.interactive) pendingInteractive.add(id);
-        working.set(id, { ...surface, components, firstBatch: surface.firstBatch ?? message.components.map((c) => c.id) });
+        const batch = message.components.map((c) => c.id);
+        working.set(id, { ...surface, components, firstBatch: surface.firstBatch ?? (batch.length > 0 ? batch : null) });
         break;
       }
       case "updateDataModel": {
