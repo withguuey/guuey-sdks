@@ -67,4 +67,12 @@ describe("the native kit with a policy that has no a2ui plans as the old client 
     const tool = drawn.find((i) => i.kind === "tool");
     expect(tool?.kind === "tool" ? tool.result?.kind : undefined).toBe("data-result");
   });
+
+  it("a native host that passes render:true through an untyped object still plans the old face", () => {
+    const untyped: Parameters<typeof calmPolicy>[0] = JSON.parse('{"a2ui":{"render":true}}');
+    const policy = calmPolicy(untyped);
+    expect(Object.hasOwn(policy, "a2ui")).toBe(false);
+    const plan = planTranscript(driveTurn(fixture.events, { userText: fixture.userText }), policy);
+    expect(`${JSON.stringify(plan, null, 2)}\n`).toBe(snapshot);
+  });
 });

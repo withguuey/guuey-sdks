@@ -111,6 +111,16 @@ describe("<GuueyChat> draws A2UI surfaces (guuey#2382)", () => {
     expect(container.textContent).not.toContain("com.guuey/a2ui");
   });
 
+  it("a host can turn it off: policy {a2ui:{render:false}} plans the carrier as today's tool row", async () => {
+    const { container } = render(
+      <GuueyChat endpointUrl="https://pod.example/agent/invoke" adapters={adapters()} policy={{ a2ui: { render: false } }} />,
+    );
+    send();
+    await waitFor(() => expect(container.querySelector(".guuey-chat-tool")).not.toBeNull());
+    expect(container.querySelector(".guuey-chat-a2ui")).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+  });
+
   it("debug: the surface draws too, beside the tool row the debug preset keeps", async () => {
     const { container } = render(<GuueyChat endpointUrl="https://pod.example/agent/invoke" adapters={adapters()} preset="debug" />);
     send();

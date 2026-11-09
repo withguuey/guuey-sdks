@@ -155,13 +155,22 @@ describe("S1 (d) — the planner arm", () => {
     expect(toolsOf(off.items)[0]?.result?.kind).toBe("data-result");
   });
 
-  it("a2ui is no override, and its facts are debug events (S2): an override object cannot turn it on", () => {
-    expectTypeOf<"a2ui" extends keyof TranscriptPolicyOverrides ? true : false>().toEqualTypeOf<false>();
+  it("an override can turn a2ui OFF, never on (amended at S2); its facts are debug events", () => {
+    // The type admits only `false`.
+    expectTypeOf<NonNullable<TranscriptPolicyOverrides["a2ui"]>>().toEqualTypeOf<{ render: false }>();
     expectTypeOf<Extract<ChatDebugEvent, { type: "a2ui-invalid" | "a2ui-degraded" | "a2ui-orphan" }>>().toEqualTypeOf<A2uiDebugEvent>();
-    // A host's untyped object (a JSON config, a JS caller) that names it anyway.
+    // A host's untyped object (a JSON config, a JS caller) that names `true` anyway: dropped.
     const fromJson: TranscriptPolicyOverrides = JSON.parse('{"a2ui":{"render":true}}');
     expect(Object.hasOwn(calmPolicy(fromJson), "a2ui")).toBe(false);
     expect(a2uiOf(plan(fold(withCarrier("t1", form("form-1"))), calmPolicy(fromJson)).items)).toEqual([]);
+    // Nor does anything but an explicit false reach the policy.
+    for (const raw of ['{"a2ui":{"render":"false"}}', '{"a2ui":true}', '{"a2ui":null}', '{"a2ui":{}}']) {
+      const odd: TranscriptPolicyOverrides = JSON.parse(raw);
+      expect(Object.hasOwn(calmPolicy(odd), "a2ui"), raw).toBe(false);
+    }
+    // An explicit false is honoured, over either preset.
+    expect(calmPolicy({ a2ui: { render: false } }).a2ui).toEqual({ render: false });
+    expect(debugPolicy({ a2ui: { render: false } }).a2ui).toEqual({ render: false });
   });
 
   it("an invalid carrier → today's plan, byte-identical to render off", () => {

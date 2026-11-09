@@ -79,11 +79,12 @@ export interface TranscriptPolicy {
   /**
    * R6b (guuey#2366): `render` plans a tool result's valid `"com.guuey/a2ui"`
    * carrier as an `a2ui` item (and folds its tool row into the item's
-   * chrome). Absent means off, and neither preset sets it until a kit's
-   * renderer draws the kind (S2/S3); off, the carrier keeps today's face, the
-   * tool row with its preview. It is no override (see
-   * {@link TranscriptPolicyOverrides}): a host cannot turn on a kind its
-   * renderer would not draw.
+   * chrome). Absent means off, and neither preset sets it; off, the carrier
+   * keeps today's face, the tool row with its preview. A surface whose kit
+   * draws the kind turns it on for its own planner path (`<GuueyChat>` does,
+   * S2). The override rule (amended at S2, see {@link TranscriptPolicyOverrides}):
+   * a host can turn it OFF, never on, so no host turns on a kind its renderer
+   * would not draw.
    */
   a2ui?: { render: boolean };
   /**
@@ -154,6 +155,14 @@ export interface TranscriptPolicy {
  */
 export type TranscriptPolicyOverrides = {
   [K in Exclude<keyof TranscriptPolicy, "a2ui">]?: Partial<TranscriptPolicy[K]>;
+} & {
+  /**
+   * Amended at S2 (guuey#2382): a host can turn A2UI rendering OFF, never on.
+   * The type admits only `false`; at run time only an explicit
+   * `render: false` is honoured, and anything else an untyped object names
+   * (`true` included) is dropped.
+   */
+  a2ui?: { render: false };
 };
 
 function withOverrides(base: TranscriptPolicy, overrides?: TranscriptPolicyOverrides): TranscriptPolicy {
@@ -179,9 +188,12 @@ function withOverrides(base: TranscriptPolicy, overrides?: TranscriptPolicyOverr
     compaction: { ...base.compaction, ...(overrides.compaction ?? {}) },
     unknown: { ...base.unknown, ...(overrides.unknown ?? {}) },
   };
-  // guuey#2381: `a2ui` is no override. An untyped override object (a JSON
-  // config, a JS caller) that names it anyway does not turn it on.
+  // guuey#2381, amended at S2 (guuey#2382): `a2ui` can only be turned off.
+  // An untyped override object (a JSON config, a JS caller) that names
+  // anything but an explicit `render: false` does not reach the policy.
+  const off = overrides.a2ui?.render === false;
   delete merged.a2ui;
+  if (off) return { ...merged, a2ui: { render: false } };
   return base.a2ui === undefined ? merged : { ...merged, a2ui: base.a2ui };
 }
 
