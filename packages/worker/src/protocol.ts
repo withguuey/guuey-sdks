@@ -263,6 +263,19 @@ export interface Invoke {
    */
   gguiAttached?: boolean;
   /**
+   * The UI catalogs the client that sent this turn draws natively, as it
+   * declared them (`capabilities.uiResources.catalogs`, e.g. `guuey.a2ui.v1`).
+   * The Router passes them through without judging them, bounded by
+   * `parseClientCatalogs` (client-catalogs.ts), which both sides use: each id
+   * in a URL-safe ASCII class of 1 to 64 characters, at most 16. Gates
+   * the host's framework-blind A2UI section (`@guuey/host`'s
+   * `renderA2uiSection`) by membership alone, so no id is ever written into
+   * the prompt. Written only when at least one id survives, so "this client
+   * draws no catalog" is always the ABSENT field. An older worker ignores it
+   * and renders no section; an older Router never writes it.
+   */
+  clientCatalogs?: readonly string[];
+  /**
    * MCP tools the Router withholds from THIS turn's catalog, each named by its
    * server's key (the credential file's name) and the tool's own name. Every
    * framework removes them before the model sees the catalog: Claude through

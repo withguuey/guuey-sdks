@@ -55,6 +55,12 @@ export { INPUT_KINDS, type InputKind, isInputKind, inputKindCapability } from ".
 export { CONTEXT_ONLY_TURN_TEXT, MODEL_TEXT_INPUT_KIND_CAPABILITIES, modelInputOf, modelTextOf } from "./model-text.js";
 export { createEmitter, type Emitter, type WriteSink } from "./emit.js";
 export { endThreadProblem, END_THREAD_CODE_PATTERN, END_THREAD_MESSAGE_MAX_CHARS } from "./end-thread.js";
+export {
+  parseClientCatalogs,
+  CLIENT_CATALOGS_MAX,
+  CLIENT_CATALOG_ID_MAX_CHARS,
+  CLIENT_CATALOG_ID_PATTERN,
+} from "./client-catalogs.js";
 export { createSuspendWriter, type SuspendWriter, type SuspendWriteResult } from "./suspend-writer.js";
 export { listCredentials, MCP_SERVERS_FILE_ENV, type CredentialFile, type McpServersFile } from "./creds.js";
 export { serve, serveOn, type ServeOptions } from "./serve.js";

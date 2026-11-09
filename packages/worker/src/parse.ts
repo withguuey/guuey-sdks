@@ -32,6 +32,7 @@ import type {
   SuspendEvent,
   EndThread,
 } from "./protocol.js";
+import { parseClientCatalogs } from "./client-catalogs.js";
 import { endThreadProblem } from "./end-thread.js";
 import { isInputKind } from "./protocol.js";
 
@@ -236,6 +237,7 @@ export function parseControl(line: string): ControlMessage {
       const priorMemory = parsePriorMemory(raw.priorMemory);
       const profileSections = parseProfileSections(raw.profileSections);
       const withheldTools = parseWithheldTools(raw.withheldTools);
+      const clientCatalogs = parseClientCatalogs(raw.clientCatalogs);
       const firstImpressionShown = parseFirstImpressionShown(raw.firstImpressionShown);
       const firstImpression = parseFirstImpression(raw.firstImpression);
       const mcpAvailability = parseMcpAvailability(raw.mcpAvailability);
@@ -293,6 +295,9 @@ export function parseControl(line: string): ControlMessage {
         // never lands as `undefined` (and a missing field reads as NO rail,
         // fail-closed: never promise a card the turn cannot draw).
         ...(typeof raw.gguiAttached === "boolean" ? { gguiAttached: raw.gguiAttached } : {}),
+        // The catalogs the client draws: the well-formed ids alone, under the
+        // one bound the Router writes with; omitted when none survives.
+        ...(clientCatalogs ? { clientCatalogs } : {}),
         // The per-turn withheld tools: only well-formed `{server, tool}` entries
         // (both non-empty strings) land, carrying those two fields alone; the
         // field is omitted unless at least one survives, so an older Router's
