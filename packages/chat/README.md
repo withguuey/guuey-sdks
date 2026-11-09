@@ -122,6 +122,14 @@ useEffect(() => {
 {!atEnd && <button onClick={() => handle.current?.scrollToEnd({ behavior: "smooth" })}>↓</button>}
 ```
 
+An item near the end still lands where you asked: the transcript reserves the room the scroll
+lacks below the last item. The room is measured from the item itself, so content above it changing
+height (an image loading, an older item leaving the window) keeps the item where you put it, with
+the browser's scroll anchoring moving the view. The reply grows into that room without moving the
+view. The room only ever shrinks, and is released once filled, on `scrollToEnd()` or when
+following resumes, when the reader scrolls up past it, or when no item with that key renders any
+more (windowed out, say).
+
 After the "↓", the transcript follows the stream from the end until the reader scrolls up again.
 The handle's core (`scrollToItem`, `scrollToEnd`) is the framework-neutral
 `TranscriptScrollHandle` exported from `@guuey/chat`, so other transcript components can

@@ -11,6 +11,17 @@
  *    below behind "jump to latest", and reaching the tail yourself (or the
  *    jump) releases the hold for that turn. `prefers-reduced-motion`
  *    downgrades smooth scrolling to instant.
+ *  - **Room below the last item** (guuey#2554): a browser clamps a scroll
+ *    at `scrollHeight - clientHeight`, so an item near the end could never
+ *    reach the place `scrollToItem` asks for. The transcript reserves
+ *    exactly the shortfall in a spacer after the column. The place is kept
+ *    relative to the placed item, never as a scrollTop, so content above it
+ *    changing height (an image loading, windowing dropping an item) is read
+ *    off the item where it is now. The room only shrinks (content shrinking
+ *    never grows it), as later content grows into it, and is released at 0,
+ *    on a go-to-end or following resuming, when no item with the placed
+ *    key renders any more, or when the reader scrolls up until releasing it
+ *    moves nothing in view.
  *  - **Windowing:** long transcripts render the trailing `window.tail`
  *    items with a "show earlier" expander — the DOM is capped even though
  *    the plan (already O(groups)) carries everything; the plan's stable
@@ -28,6 +39,7 @@ import {
   useState,
   type CSSProperties,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { DEFAULT_CHAT_THEME, type GuueyChatTheme } from "../theme.js";
 import { defaultChatStrings, type ChatStrings } from "../strings.js";
@@ -88,6 +100,118 @@ const anchorTop = (
   const card = views[anchor.anchorOrdinal];
   if (card === undefined) return null;
   return card.getBoundingClientRect().top - el.getBoundingClientRect().top - el.clientTop + el.scrollTop;
+};
+
+/**
+ * guuey#2554: the room reserved below the last item: `key` is the item placed, `align` and `offset`
+ * where it was placed (kept relative to the ITEM, never as a scrollTop, so content above it
+ * changing height, or windowing dropping an item above, never misreads it), `px` the spacer's
+ * height now (what that place lacks to be reachable, never more than the placement itself
+ * reserved).
+ */
+interface HeldRoom {
+  key: string;
+  align: "top" | "end";
+  offset: number;
+  px: number;
+}
+
+/** guuey#2554: a placement still on its way: where it goes, and the scrollTop of its last frame. */
+interface Glide {
+  target: number;
+  last: number;
+}
+
+/*
+ * guuey#2554: the room's helpers below take the room's refs and the elements as arguments, like the
+ * scroll helpers above, so the handlers that call them capture only refs and setters.
+ */
+
+/**
+ * What a scroll to `top` lacks below the content to be reachable under the browser's clamp.
+ * `heldPx` is the room already reserved, which the scroll height includes and the content's own
+ * end does not.
+ */
+const shortfall = (el: HTMLDivElement, top: number, heldPx: number): number =>
+  Math.max(0, Math.ceil(top + el.clientHeight - (el.scrollHeight - heldPx)));
+
+/**
+ * The scrollTop that puts `item` at `align` less `offset`, read off the item's geometry NOW: a
+ * placement and every refit of its room ask the same question of the same item.
+ */
+const placeTop = (el: HTMLDivElement, item: Element, align: "top" | "end", offset: number): number => {
+  const box = item.getBoundingClientRect();
+  const itemTop = box.top - el.getBoundingClientRect().top - el.clientTop + el.scrollTop;
+  return Math.max(0, align === "top" ? itemTop - offset : itemTop + box.height - el.clientHeight + offset);
+};
+
+/** Size the spacer: `px` of room, 0 for none. */
+const sizeRoom = (spacer: HTMLDivElement | null, px: number): void => {
+  if (spacer !== null) spacer.style.height = px > 0 ? `${px}px` : "";
+};
+
+const releaseRoom = (room: RefObject<HeldRoom | null>, spacer: HTMLDivElement | null): void => {
+  room.current = null;
+  sizeRoom(spacer, 0);
+};
+
+/**
+ * Reserve what placing `key` at `top` lacks, or none (and any earlier room released) when the
+ * place is reachable as it is.
+ */
+const reserveFor = (
+  room: RefObject<HeldRoom | null>,
+  spacer: HTMLDivElement | null,
+  el: HTMLDivElement,
+  key: string,
+  align: "top" | "end",
+  offset: number,
+  top: number,
+): void => {
+  const px = shortfall(el, top, room.current?.px ?? 0);
+  if (px === 0) {
+    releaseRoom(room, spacer);
+    return;
+  }
+  room.current = { key, align, offset, px };
+  sizeRoom(spacer, px);
+};
+
+/**
+ * Content or panel changed. The place is re-read off the placed item where it is now (content
+ * above it may have grown or shrunk, or been windowed out, and the browser's scroll anchoring
+ * moved the view with it), and the room is what that place still lacks. It only ever shrinks, by
+ * what grew into it (the view never moves), and is gone at 0; content shrinking never grows it.
+ * When the placed item no longer renders (`itemElement` answers null: windowed out, a thread
+ * swap, a new conversation), the room has no item to hold and is released, so the browser's clamp
+ * brings the view back to the content. A placement still on its way that the change cut short now
+ * ends at the scroll's new bottom.
+ */
+const fitRoom = (
+  room: RefObject<HeldRoom | null>,
+  placing: RefObject<Glide | null>,
+  spacer: HTMLDivElement | null,
+  el: HTMLDivElement | null,
+  itemElement: (key: string) => Element | null,
+): void => {
+  if (el === null) return;
+  const held = room.current;
+  if (held !== null) {
+    const item = itemElement(held.key);
+    const px =
+      item === null ? 0 : Math.min(held.px, shortfall(el, placeTop(el, item, held.align, held.offset), held.px));
+    if (px === 0) releaseRoom(room, spacer);
+    else if (px !== held.px) {
+      room.current = { ...held, px };
+      sizeRoom(spacer, px);
+    }
+  }
+  const glide = placing.current;
+  if (glide !== null) {
+    const bottom = Math.max(0, el.scrollHeight - el.clientHeight);
+    // Its last frame is the clamp's own, at the new bottom: that one is still ours.
+    if (glide.target > bottom) placing.current = { target: bottom, last: glide.last };
+  }
 };
 
 /**
@@ -261,11 +385,24 @@ export function Transcript(props: TranscriptProps): ReactNode {
   const releasedTurn = useRef<string | null>(null);
   /** The scrollTop of our own last follow, so `onScroll` can tell it from the viewer's. */
   const autoTop = useRef<number | null>(null);
+  /** guuey#2554: the spacer after the column that holds the room a placement reserves. */
+  const spacer = useRef<HTMLDivElement>(null);
+  /** guuey#2554: the room reserved below the last item ({@link HeldRoom}), or null. */
+  const room = useRef<HeldRoom | null>(null);
+  /**
+   * guuey#2554: a placement still on its way, so its frames are not read as the reader's. Read
+   * off the scroll itself, not the behavior asked for: a host's `scroll-behavior: smooth` turns
+   * an instant scroll into a glide too.
+   */
+  const placing = useRef<Glide | null>(null);
 
   /** Follow: to the bottom, or to the turn's card when the bottom would carry it out of view. */
   const follow = (): void => {
     const el = scroller.current;
     if (el === null) return;
+    // guuey#2554: following resumed (the reader came back to the end under "tail"): the end it
+    // follows is the content's own, so no reserved room is kept below it.
+    if (room.current !== null) releaseRoom(room, spacer.current);
     const col = column.current;
     const target = followTarget(
       { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight },
@@ -317,12 +454,31 @@ export function Transcript(props: TranscriptProps): ReactNode {
       seekingEnd.current = false;
       lastSeekTop.current = null;
     }
+    const glide = placing.current;
+    if (glide !== null) {
+      // A frame of a smooth placement on its way (never moving away from its target): ours.
+      const left = Math.abs(el.scrollTop - glide.target);
+      if (left <= Math.abs(glide.last - glide.target) + 1) {
+        placing.current = left <= 1 ? null : { target: glide.target, last: el.scrollTop };
+        setShowJump(!nearBottom);
+        return;
+      }
+      // The reader took over mid-glide.
+      placing.current = null;
+    }
     const ours = autoTop.current !== null && Math.abs(el.scrollTop - autoTop.current) <= 1;
     autoTop.current = null;
     if (ours) {
-      // Our own follow (to the bottom or to the card): following continues.
+      // Our own follow (to the bottom or to the card), or a placement: following does not change.
       setShowJump(!nearBottom);
       return;
+    }
+    // guuey#2554: the reader scrolled up until releasing the reserved room moves nothing in view
+    // (it is wholly below the view, or the content is shorter than the panel and they are at its
+    // top): it is released, so the end they scroll back to is the content's own.
+    const held = room.current;
+    if (held !== null && el.scrollTop <= Math.max(0, el.scrollHeight - held.px - el.clientHeight)) {
+      releaseRoom(room, spacer.current);
     }
     // The viewer reached the tail while the card held: they chose the tail,
     // so this turn follows the bottom from here.
@@ -356,6 +512,7 @@ export function Transcript(props: TranscriptProps): ReactNode {
   // New content while pinned keeps following (before paint, so per-frame
   // streaming updates never visibly jump).
   useLayoutEffect(() => {
+    fitRoom(room, placing, spacer.current, scroller.current, itemElement);
     if (pinned.current) follow();
     reportAtEnd();
   }, [plan]);
@@ -363,19 +520,26 @@ export function Transcript(props: TranscriptProps): ReactNode {
   // Content RESIZE (an R6 card connecting and growing, an image loading)
   // re-runs the follow too — scrollHeight changes with no plan change. A
   // card growing past the panel no longer drives the viewport past itself:
-  // the follow clamps at its top.
+  // the follow clamps at its top. guuey#2554: the scroller itself is observed
+  // too, so the panel resizing (a virtual keyboard) refits the reserved room.
   useEffect(() => {
     const el = column.current;
-    if (el === null || typeof ResizeObserver === "undefined") return;
+    const panel = scroller.current;
+    if (el === null || panel === null || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
+      fitRoom(room, placing, spacer.current, scroller.current, itemElement);
       if (pinned.current) follow();
       reportAtEnd();
     });
     observer.observe(el);
+    observer.observe(panel);
     return () => observer.disconnect();
   }, []);
 
   const goToEnd = (smooth: boolean): void => {
+    // The end is the content's own end: no room is kept below it, and no placement still glides.
+    releaseRoom(room, spacer.current);
+    placing.current = null;
     pinned.current = true;
     // Only a smooth scroll emits frames on its way to the end; an instant one lands at once.
     seekingEnd.current = smooth && !reducedMotion();
@@ -417,27 +581,31 @@ export function Transcript(props: TranscriptProps): ReactNode {
         const el = scroller.current;
         const target = itemElement(key);
         if (el === null || target === null) return false;
-        const box = target.getBoundingClientRect();
-        const view = el.getBoundingClientRect();
-        const itemTop = box.top - view.top - el.clientTop + el.scrollTop;
+        const align = opts.align ?? "top";
         const offset = opts.offset ?? 0;
-        const top =
-          (opts.align ?? "top") === "top"
-            ? itemTop - offset
-            : itemTop + box.height - el.clientHeight + offset;
+        const place = placeTop(el, target, align, offset);
         // The host placed the view: following stops until it asks for the end again, and any
         // go-to-end still gliding is over (its seek must not swallow the reader's next move).
         pinned.current = false;
         seekingEnd.current = false;
         lastSeekTop.current = null;
-        // Nor is any earlier follow's marker still ours: the next scroll event is this move or the reader's.
-        autoTop.current = null;
+        // guuey#2554: a place the browser's clamp would stop short of gets the room it lacks.
+        reserveFor(room, spacer.current, el, key, align, offset, place);
         const smooth = opts.behavior === "smooth" && !reducedMotion();
+        const from = el.scrollTop;
+        const moves = Math.abs(place - from) >= 1;
         if (typeof el.scrollTo === "function") {
-          el.scrollTo({ top: Math.max(0, top), behavior: smooth ? "smooth" : "auto" });
+          el.scrollTo({ top: place, behavior: smooth ? "smooth" : "auto" });
         } else {
-          el.scrollTop = Math.max(0, top);
+          el.scrollTop = place;
         }
+        // The move's own scroll events are ours, never the reader's: an earlier follow's marker
+        // is replaced by this move's (none when the view is already in place: no event comes). A
+        // move that landed has one event, at its target; one still on its way (smooth, or a
+        // host's `scroll-behavior: smooth` gliding an instant scroll) has frames toward it.
+        const landed = Math.abs(el.scrollTop - place) <= 1;
+        autoTop.current = moves && landed ? place : null;
+        placing.current = moves && !landed ? { target: place, last: from } : null;
         return true;
       },
       scrollToEnd(opts = {}) {
@@ -487,6 +655,8 @@ export function Transcript(props: TranscriptProps): ReactNode {
             />
           ) : null}
         </div>
+        {/* guuey#2554: the room a placement near the end reserves; sized from code, 0 at rest. */}
+        <div ref={spacer} className="guuey-chat-reserve" aria-hidden="true" />
       </div>
       {showJump && jumpToLatest ? (
         <button
