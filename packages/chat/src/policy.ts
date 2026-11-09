@@ -77,6 +77,13 @@ export interface TranscriptPolicy {
    */
   view: { timeoutMs: number; presentation: "inline" | "chips" };
   /**
+   * R6b (guuey#2366): `render` plans a tool result's valid `"com.guuey/a2ui"`
+   * carrier as an `a2ui` item (and folds its tool row into the item's
+   * chrome). Off by default in both presets until a kit's renderer draws the
+   * kind; off, the carrier keeps today's face, the tool row with its preview.
+   */
+  a2ui: { render: boolean };
+  /**
    * R7. `origins` and `maxInlineBytes` decide what the viewer's device may
    * load (guuey#2369, see `mediaDisplay`): `data:` / base64 bytes under the
    * cap, `blob:` URLs, and https URLs on `origins`; any other https URL is
@@ -159,6 +166,7 @@ function withOverrides(base: TranscriptPolicy, overrides?: TranscriptPolicyOverr
     toolGroup: { ...base.toolGroup, ...(overrides.toolGroup ?? {}) },
     dataResult: { ...base.dataResult, ...(overrides.dataResult ?? {}) },
     view: { ...base.view, ...(overrides.view ?? {}) },
+    a2ui: { ...base.a2ui, ...(overrides.a2ui ?? {}) },
     media: { ...base.media, ...(overrides.media ?? {}) },
     code: { ...base.code, ...(overrides.code ?? {}) },
     citations: { ...base.citations, ...(overrides.citations ?? {}) },
@@ -183,6 +191,7 @@ function calmBase(): TranscriptPolicy {
     toolGroup: { threshold: 2 },
     dataResult: { capRem: 16, prettyPrint: true, alwaysShowBytes: false, previewChars: 2048 },
     view: { timeoutMs: 8000, presentation: "inline" },
+    a2ui: { render: false },
     media: {
       inlineImageCapRem: 20,
       chipOnly: false,

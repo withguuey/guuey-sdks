@@ -21,7 +21,7 @@ import {
 import { toolResultViewMount } from "@guuey/mcp-apps-host";
 import { transcriptInputsFromHistory } from "../history-inputs.js";
 import { newestViewKey, planTranscript } from "../plan.js";
-import { calmPolicy } from "../policy.js";
+import { calmPolicy, type TranscriptPolicy } from "../policy.js";
 import type { TranscriptInputs, TranscriptMessage, TranscriptPlan } from "../types.js";
 import { driveTurn } from "./drive.js";
 
@@ -53,6 +53,9 @@ const snap = (name: string): string => `./__snapshots__/${name}.snap`;
 const serialize = (plan: TranscriptPlan): string => `${JSON.stringify(plan, null, 2)}\n`;
 
 const live = (f: StreamFixture): TranscriptInputs => driveTurn(f.events, { userText: f.userText });
+
+/** A new kit that draws the a2ui kind (S2/S3 turn this on in their renderers). */
+const renderOn = (): TranscriptPolicy => calmPolicy({ a2ui: { render: true } });
 
 function settledInputs(messages: TranscriptMessage[]): TranscriptInputs {
   return {
@@ -119,4 +122,37 @@ describe("guuey#2381 — A2UI N−1 fixtures (spec §10)", () => {
       snap("a2ui-n1-new-client-old-server.live"),
     );
   });
+});
+
+describe("guuey#2381 — the same fixtures on a kit that draws the a2ui kind", () => {
+  it("F2: a page and a turn with no carrier plan byte-identically to the base snapshots", async () => {
+    const f = page("a2ui-n1-new-client-old-server.json");
+    await expect(serialize(planTranscript(historyInputs(f), renderOn()))).toMatchFileSnapshot(
+      snap("a2ui-n1-new-client-old-server.history"),
+    );
+    await expect(serialize(planTranscript(live(f), renderOn()))).toMatchFileSnapshot(
+      snap("a2ui-n1-new-client-old-server.live"),
+    );
+  });
+
+  it("F5: an action row is still the user's plain text (the action turn is S4)", async () => {
+    const plan = planTranscript(settledInputs(rows("a2ui-n1-old-client-action-row.json").messages), renderOn());
+    await expect(serialize(plan)).toMatchFileSnapshot(snap("a2ui-n1-old-client-action-row"));
+  });
+
+  it("F9: a json-render carrier keeps the old face byte-identically (the adapter is S5)", async () => {
+    const plan = planTranscript(live(stream("a2ui-n1-old-client-json-render.json")), renderOn());
+    await expect(serialize(plan)).toMatchFileSnapshot(snap("a2ui-n1-old-client-json-render"));
+  });
+
+  for (const name of ["a2ui-n1-old-client-live", "a2ui-n1-old-client-uidata"] as const) {
+    it(`${name}: a new kit draws the carrier natively, the tool row folded into its chrome`, () => {
+      const plan = planTranscript(live(stream(`${name}.json`)), renderOn());
+      const item = plan.items.find((i) => i.kind === "a2ui");
+      expect(item).toMatchObject({ key: "a2ui.call-booking.booking-1", phase: "open", origin: "live" });
+      const tool = plan.items.find((i) => i.kind === "tool");
+      expect(tool).toMatchObject({ result: null, attribution: true });
+      expect(plan.views).toEqual([]);
+    });
+  }
 });

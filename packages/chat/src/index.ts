@@ -139,6 +139,8 @@ export {
   type HostStyleVariables,
 } from "./host-style-variables.js";
 export type {
+  A2uiDebugEvent,
+  A2uiItem,
   ChatDebugEvent,
   CitationsItem,
   CodeItem,
@@ -177,6 +179,17 @@ export type {
   ViewMountItem,
   ViewRefItem,
 } from "./types.js";
+// guuey#2366: the tree an `a2ui` item carries, for a renderer drawing the kind
+// (the validator itself is at `@guuey/chat/a2ui`).
+export type {
+  A2uiAction,
+  A2uiBound,
+  A2uiFieldSpec,
+  A2uiJsonObject,
+  A2uiNode,
+  A2uiPathBinding,
+} from "./a2ui/schema.js";
+export type { A2uiImageDisplay, A2uiLink } from "./a2ui/url-policy.js";
 // The inline chat's usage events (`<GuueyChat analytics>`): the vocabulary,
 // the sink shapes, and the tracker a host composing its own surface reuses.
 export {

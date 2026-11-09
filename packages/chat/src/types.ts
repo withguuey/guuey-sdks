@@ -37,6 +37,7 @@ import type {
   PreGenerationRefusal } from "@guuey/mcp-apps-host";
 import type { AuthRequired, OAuthAuthorizeAsk } from "./oauth.js";
 import type { MediaDisplay } from "./media.js";
+import type { A2uiDegradeCounts, A2uiFieldSpec, A2uiInvalidReason, A2uiJsonObject, A2uiNode } from "./a2ui/schema.js";
 
 /**
  * One settled entry of the flat conversation transcript — structurally
@@ -577,6 +578,46 @@ export interface ViewRefItem extends BaseItem {
   phase: ViewHostPhase | "expired";
 }
 
+/**
+ * R6b — a guuey A2UI surface drawn natively (guuey#2366), from a tool
+ * result's `"com.guuey/a2ui"` carrier. Planned only under `policy.a2ui.render`;
+ * with it off (the default until a kit draws the kind) the carrier keeps
+ * today's face, the tool row with its JSON preview.
+ *
+ * The item is pure: its component draws from the item and the context only.
+ * Local edits and the `sending` overlay are host-owned transcript state.
+ */
+export interface A2uiItem extends BaseItem {
+  kind: "a2ui";
+  surfaceId: string;
+  /** The surface's monotonic revision in this plan (the count of carriers that drew it). */
+  revision: number;
+  title: string | null;
+  /** The resolved, validated tree. Children are nested and ids are kept for keys. */
+  root: A2uiNode | null;
+  /** The server data model at this revision (the host's edit store layers local edits on top). */
+  dataModel: A2uiJsonObject;
+  /** The declared model: data path → the constraint of the input bound there. */
+  fields: { [path: string]: A2uiFieldSpec };
+  /**
+   * open: interactive; sending: an action turn for this surface is in flight;
+   * submitted: an action row follows the latest revision; superseded: a later
+   * revision draws below, or a later carrier for this surface took the old face.
+   */
+  phase: "open" | "sending" | "submitted" | "superseded";
+  /**
+   * The resolved chip line a superseded revision draws instead of its tree
+   * (`strings.a2uiUpdatedBelow(title)`, or `strings.a2uiCouldntDraw` when the
+   * carrier after it took the old face); null while the revision draws.
+   */
+  label: string | null;
+  /** Calm chrome: "via {tool}" (R4's display-bearing rule, like a view). */
+  attribution: string | null;
+  /** The producing call's humanized title; null for a result drawn without its call. */
+  toolTitle: string | null;
+  origin: "live" | "history";
+}
+
 /** R7 — media blocks. */
 export interface MediaItem extends BaseItem {
   kind: "media";
@@ -754,6 +795,7 @@ export type DisplayItem =
   | DataResultItem
   | ViewMountItem
   | ViewRefItem
+  | A2uiItem
   | MediaItem
   | CodeItem
   | CitationsItem
@@ -914,7 +956,18 @@ export type ChatDebugEvent =
       threadId: string | null;
       outcome: "merged" | "unsupported" | "failed" | "skipped";
       moved?: number;
-    };
+    }
+  | A2uiDebugEvent;
+
+/**
+ * guuey#2366: an A2UI carrier's debug facts, counts-only. `a2ui-invalid`: the
+ * carrier took the old face (its validator reason, or `too-many-items` past
+ * the per-transcript cap); `key` is its tool row's. `a2ui-degraded`: a drawn
+ * revision carries in-place degrades; `key` is its item's.
+ */
+export type A2uiDebugEvent =
+  | { type: "a2ui-invalid"; key: ItemKey; reason: A2uiInvalidReason | "too-many-items" }
+  | { type: "a2ui-degraded"; key: ItemKey; counts: A2uiDegradeCounts };
 
 /**
  * One renderable view the plan saw, BEFORE any chips/promotion pass —
@@ -977,6 +1030,12 @@ export interface TranscriptPlan {
    * reloaded notice row carrying the same code. `null` on every open plan.
    */
   threadClosed: ThreadClosedNotice | null;
+  /**
+   * guuey#2366: the A2UI debug facts this plan produced, in transcript order.
+   * Present only under the debug policy and only when non-empty, so a calm
+   * plan stays byte-identical (fixture 17); the debug sink fires them.
+   */
+  a2uiEvents?: A2uiDebugEvent[];
 }
 
 /** See {@link TranscriptPlan.threadClosed}. */

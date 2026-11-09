@@ -48,6 +48,7 @@ import {
   viewToolData,
   type ViewMount,
 } from "@guuey/mcp-apps-host";
+import { readA2uiCarrier } from "@guuey/mcp-apps-host/narrowing";
 import type { HistoryCard, HistoryToolCall, HistoryToolResult } from "@guuey/agent-client";
 import type { TranscriptPolicy } from "./policy.js";
 import { prettyJson } from "./highlight.js";
@@ -55,7 +56,13 @@ import { mediaDisplay } from "./media.js";
 import { grantModeDisplay, hitlAnswerChannel } from "./hitl.js";
 import { authRequiredFromAsks, oauthAuthorizeAsk } from "./oauth.js";
 import { isGguiConsumeTool, isGguiProtocolTool } from "./listen.js";
+import { EMPTY_A2UI_STATE, type A2uiFoldState } from "./a2ui/fold.js";
+import { A2UI_LIMITS } from "./a2ui/limits.js";
+import type { A2uiInvalidReason } from "./a2ui/schema.js";
+import { foldA2uiCarrier } from "./a2ui/validate.js";
 import type {
+  A2uiDebugEvent,
+  A2uiItem,
   CitationsItem,
   DataResultItem,
   DisplayItem,
@@ -729,6 +736,150 @@ interface CardCall {
 /** The card at `cardSeq` drawn for a reloaded call, or null when R13's rules draw it nowhere. */
 type CardAtCall = (cardSeq: number, call: CardCall) => ViewMountItem | null;
 
+// ─── R6b: A2UI surfaces (guuey#2366) ────────────────────────────────────────
+
+/** Where an A2UI carrier sits in the transcript. */
+interface A2uiSite {
+  toolCallId: string;
+  /** The producing call's humanized title; null for a result drawn without its call. */
+  toolTitle: string | null;
+  /** R4's `via <tool>` fold, as the view arm gives it. */
+  attribution: string | null;
+  /** The row that draws the carrier's old face (the `a2ui-invalid` event names it). */
+  rowKey: ItemKey;
+  /** A seq-bearing flat group is a history read; a fold source is live. */
+  origin: "live" | "history";
+}
+
+/** One carrier's effect on the transcript's surfaces, in fold order. */
+type A2uiLedgerEntry =
+  | { type: "drawn"; item: A2uiItem; interactive: boolean }
+  | { type: "deleted"; surfaceId: string }
+  /** The carrier took the old face: an open interactive revision of each surface it targets is closed. */
+  | { type: "failed"; surfaceIds: string[] };
+
+/**
+ * The transcript's one A2UI surface fold. Carriers are read in transcript
+ * order (the slot walk's order: the settled prefix, then the fold), live and
+ * history alike, through the one validator, so a reloaded carrier plans as
+ * it did live. Created only under `policy.a2ui.render`.
+ */
+interface A2uiPlanner {
+  /**
+   * A tool result's carrier folded in. `null`: the arm keeps today's face
+   * (no carrier, or the carrier took the old face). A list, possibly empty
+   * (a `deleteSurface`, an ignored orphan update): the carrier is consumed and
+   * these items draw in place of the result.
+   */
+  read(result: ToolResultBlock, site: A2uiSite): A2uiItem[] | null;
+  /**
+   * The transcript-level pass after the walk: a surface draws once, at its
+   * latest revision. An earlier revision becomes a superseded chip; a deleted
+   * surface's revisions draw nothing; an open interactive revision whose
+   * surface a later carrier failed to draw is closed.
+   */
+  settle(items: DisplayItem[]): DisplayItem[];
+  /** The debug facts, filled only under `policy.debugDetail`. */
+  events: A2uiDebugEvent[];
+}
+
+function a2uiPlanner(policy: TranscriptPolicy, overrides: TranscriptOverrides): A2uiPlanner {
+  let state: A2uiFoldState = EMPTY_A2UI_STATE;
+  const revisions = new Map<string, number>();
+  const ledger: A2uiLedgerEntry[] = [];
+  const events: A2uiDebugEvent[] = [];
+  let planned = 0;
+  const invalid = (site: A2uiSite, reason: A2uiInvalidReason | "too-many-items"): null => {
+    if (policy.debugDetail) events.push({ type: "a2ui-invalid", key: site.rowKey, reason });
+    return null;
+  };
+  const chipTitle = (item: A2uiItem): string => item.title ?? item.toolTitle ?? policy.strings.viewRefFallbackTitle;
+
+  return {
+    events,
+    read(result, site) {
+      const carrier = readA2uiCarrier(result);
+      if (carrier === undefined) return null;
+      if (carrier.kind === "oversize") return invalid(site, "too-large");
+      const out = foldA2uiCarrier(state, carrier.carrier);
+      if (!out.ok) {
+        ledger.push({ type: "failed", surfaceIds: out.surfaceIds });
+        return invalid(site, out.reason);
+      }
+      const drawn = out.surfaces.filter((s) => s.kind === "drawn").length;
+      if (planned + drawn > A2UI_LIMITS.itemsPerTranscript) {
+        ledger.push({
+          type: "failed",
+          surfaceIds: out.surfaces.map((s) => (s.kind === "drawn" ? s.surface.surfaceId : s.surfaceId)),
+        });
+        return invalid(site, "too-many-items");
+      }
+      state = out.state;
+      planned += drawn;
+      const items: A2uiItem[] = [];
+      for (const outcome of out.surfaces) {
+        if (outcome.kind === "deleted") ledger.push({ type: "deleted", surfaceId: outcome.surfaceId });
+        if (outcome.kind !== "drawn") continue;
+        const surface = outcome.surface;
+        const revision = (revisions.get(surface.surfaceId) ?? 0) + 1;
+        revisions.set(surface.surfaceId, revision);
+        const key = `a2ui.${site.toolCallId}.${surface.surfaceId}`;
+        const item: A2uiItem = {
+          kind: "a2ui",
+          key,
+          expanded: resolveExpanded(key, true, overrides),
+          surfaceId: surface.surfaceId,
+          revision,
+          title: surface.title,
+          root: surface.root,
+          dataModel: surface.dataModel,
+          fields: surface.fields,
+          phase: "open",
+          label: null,
+          attribution: site.attribution,
+          toolTitle: site.toolTitle,
+          origin: site.origin,
+        };
+        ledger.push({ type: "drawn", item, interactive: surface.interactive });
+        if (policy.debugDetail && Object.keys(surface.degrade).length > 0) {
+          events.push({ type: "a2ui-degraded", key, counts: surface.degrade });
+        }
+        items.push(item);
+      }
+      return items;
+    },
+    settle(items) {
+      const latest = new Map<string, { item: A2uiItem; interactive: boolean }>();
+      const revisionsOf = new Map<string, A2uiItem[]>();
+      const removed = new Set<ItemKey>();
+      for (const entry of ledger) {
+        if (entry.type === "drawn") {
+          const { surfaceId } = entry.item;
+          const before = latest.get(surfaceId);
+          if (before !== undefined && before.item.phase === "open") {
+            before.item.phase = "superseded";
+            before.item.label = policy.strings.a2uiUpdatedBelow(chipTitle(before.item));
+          }
+          latest.set(surfaceId, entry);
+          revisionsOf.set(surfaceId, [...(revisionsOf.get(surfaceId) ?? []), entry.item]);
+        } else if (entry.type === "deleted") {
+          for (const item of revisionsOf.get(entry.surfaceId) ?? []) removed.add(item.key);
+          revisionsOf.delete(entry.surfaceId);
+          latest.delete(entry.surfaceId);
+        } else {
+          for (const surfaceId of entry.surfaceIds) {
+            const before = latest.get(surfaceId);
+            if (before === undefined || !before.interactive || before.item.phase !== "open") continue;
+            before.item.phase = "superseded";
+            before.item.label = policy.strings.a2uiCouldntDraw;
+          }
+        }
+      }
+      return removed.size === 0 ? items : items.filter((item) => !(item.kind === "a2ui" && removed.has(item.key)));
+    },
+  };
+}
+
 /** Walk one assistant slot's blocks into display items (matrix R1–R9, R14, R15). */
 function planAssistantSource(
   source: AssistantSource,
@@ -739,9 +890,12 @@ function planAssistantSource(
   /** Filled with the read-plane seq of each text item drawn from a seq-bearing flat row (guuey#2400). */
   seqByKey: Map<ItemKey, number>,
   cardAtCall: CardAtCall,
+  /** The transcript's A2UI surface fold; null when `policy.a2ui.render` is off. */
+  a2ui: A2uiPlanner | null,
 ): DisplayItem[] {
   const items: DisplayItem[] = [];
   const prefix = `a${slot}`;
+  const origin: A2uiSite["origin"] = source.blockSeqs !== undefined ? "history" : "live";
   const ordinals = { t: 0, r: 0, m: 0, c: 0, d: 0, s: 0, k: 0, u: 0 };
   const resultsById = new Map<string, ToolResultBlock>();
   for (const block of source.blocks) {
@@ -819,11 +973,26 @@ function planAssistantSource(
         const card = reloaded?.card;
         const result = card === undefined ? resultsById.get(block.toolCallId) : undefined;
         if (result) consumedResults.add(block.toolCallId);
-        const mount: ViewMount | undefined = result ? toolResultViewMount(result) : undefined;
         // guuey#836 — a pre-generation refusal is named, not shown as an
         // opaque tool error: no mount (nothing was rendered), no data-result
         // dump (the envelope IS the message), the row faces the refusal.
         const refusal = result ? (toolResultRenderRefusal(result) ?? null) : null;
+        const title = policy.tool.humanizeTitle(block.title ?? block.name);
+        const isGguiProtocol = isGguiProtocolTool(block.name);
+        // guuey#2366: an A2UI carrier is read before the view mount. A valid
+        // one draws its surfaces in place of the result (and excludes a mount);
+        // an invalid one, or one on a failed result, keeps today's arm exactly.
+        const a2uiItems =
+          result && refusal === null && a2ui !== null && !toolFailed(result)
+            ? a2ui.read(result, {
+                toolCallId: block.toolCallId,
+                toolTitle: title,
+                attribution: policy.debugDetail || isGguiProtocol ? null : policy.strings.viaTool(title),
+                rowKey: key,
+                origin,
+              })
+            : null;
+        const mount: ViewMount | undefined = result && a2uiItems === null ? toolResultViewMount(result) : undefined;
         const failed =
           result !== undefined
             ? refusal !== null || toolFailed(result)
@@ -836,8 +1005,6 @@ function planAssistantSource(
             : source.live && inputs.aborted !== true
               ? "running"
               : "orphaned";
-        const title = policy.tool.humanizeTitle(block.title ?? block.name);
-        const isGguiProtocol = isGguiProtocolTool(block.name);
         const cardView =
           card === undefined
             ? null
@@ -861,13 +1028,16 @@ function planAssistantSource(
               ? boundedPreview(block.input, policy.dataResult.previewChars)
               : null,
           result:
-            result && mount === undefined && refusal === null
+            result && mount === undefined && refusal === null && a2uiItems === null
               ? dataResultFromToolResult(result, `${key}.result`, policy, overrides)
               : null,
           refusal,
           // R4's display-bearing rule: in calm the call line folds into the
           // view row's chrome as attribution; debug keeps the explicit line.
-          attribution: (mount !== undefined || cardView !== null) && !policy.debugDetail,
+          // A carrier that drew nothing (a deleted surface) leaves the row unattributed.
+          attribution:
+            (mount !== undefined || cardView !== null || (a2uiItems !== null && a2uiItems.length > 0)) &&
+            !policy.debugDetail,
           // guuey#2388: a reloaded call the read gave no result: not "didn't finish".
           ...(reloaded !== undefined && state === "orphaned" ? { reloadedWithoutResult: true as const } : {}),
         };
@@ -918,6 +1088,7 @@ function planAssistantSource(
           view.label = viewLabel(view, policy);
           items.push(view);
         }
+        if (a2uiItems !== null) items.push(...a2uiItems);
         if (cardView !== null) items.push(cardView);
         break;
       }
@@ -931,6 +1102,22 @@ function planAssistantSource(
           (b) => b.type === "tool-call" && b.toolCallId === block.toolCallId,
         );
         if (hasCall) break; // its call renders it
+        // guuey#2366: a result drawn without its call (a history read that kept
+        // the result only) still draws its A2UI surfaces, unattributed.
+        const a2uiItems =
+          a2ui !== null && !toolFailed(block)
+            ? a2ui.read(block, {
+                toolCallId: block.toolCallId,
+                toolTitle: null,
+                attribution: null,
+                rowKey: `${prefix}.d${ordinals.d}`,
+                origin,
+              })
+            : null;
+        if (a2uiItems !== null) {
+          items.push(...a2uiItems);
+          break;
+        }
         const data = dataResultFromToolResult(block, `${prefix}.d${ordinals.d}`, policy, overrides);
         if (data !== null) {
           ordinals.d++;
@@ -1647,6 +1834,8 @@ export function planTranscript(
     return view;
   };
   const conversation: DisplayItem[] = [];
+  /** guuey#2366: the transcript's one A2UI surface fold (live and history alike). */
+  const a2ui = policy.a2ui.render ? a2uiPlanner(policy, overrides) : null;
   /** guuey#2400: the read-plane seq of each assistant text item drawn from a rehydrated row. */
   const assistantSeqByKey = new Map<ItemKey, number>();
   // A reloaded failed turn's notice speaks with the live error's voice for its
@@ -1740,7 +1929,7 @@ export function planTranscript(
     const assistant = assistants[slot];
     if (assistant) {
       conversation.push(
-        ...planAssistantSource(assistant, slot, inputs, policy, overrides, assistantSeqByKey, cardAtCall),
+        ...planAssistantSource(assistant, slot, inputs, policy, overrides, assistantSeqByKey, cardAtCall, a2ui),
       );
     }
     for (const n of notices) if (n.afterSlot === slot) conversation.push(noticeItem(n));
@@ -1755,13 +1944,14 @@ export function planTranscript(
   // fold's view row owns it (richer phase state); the history snapshot
   // renders only when no live mount claims its identity, whether a reloaded
   // call drew it or R13 places it below.
+  const settled = a2ui !== null ? a2ui.settle(conversation) : conversation;
   const liveViewScopes = new Set<string>();
-  for (const item of conversation) {
+  for (const item of settled) {
     if (item.kind === "view" && !cardsAtCalls.has(item.key) && item.actionScope !== null) {
       liveViewScopes.add(item.actionScope);
     }
   }
-  const placed = conversation.filter(
+  const placed = settled.filter(
     (item) =>
       !(item.kind === "view" && cardsAtCalls.has(item.key) && item.actionScope !== null && liveViewScopes.has(item.actionScope)),
   );
@@ -2016,6 +2206,8 @@ export function planTranscript(
       inputs.prompts.flatMap((p) => (p.kind === "hitl" && p.state === "pending" ? [p.ask] : [])),
     ),
     threadClosed: closedVoice !== null ? { code: closedVoice.code, message: closedVoice.message } : null,
+    // guuey#2366: present only when a debug plan produced A2UI facts, so a calm plan is unchanged.
+    ...(a2ui !== null && a2ui.events.length > 0 ? { a2uiEvents: a2ui.events } : {}),
   };
 }
 

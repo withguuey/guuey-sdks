@@ -231,6 +231,18 @@ export interface ChatStrings {
   viewChipExpired: (title: string) => string;
   /** Chip title when the mount has no producing-call title (history cards). */
   viewRefFallbackTitle: string;
+  /**
+   * guuey#2366: the one-line chip an A2UI surface's earlier revision draws
+   * once a later revision of it draws below. Receives the surface's title
+   * (or its tool's, or `viewRefFallbackTitle`).
+   */
+  a2uiUpdatedBelow: (title: string) => string;
+  /**
+   * guuey#2366: the chip an open interactive A2UI revision draws when a
+   * later carrier for the same surface could not draw (its tool row shows
+   * below), so nothing can be submitted against the stale revision.
+   */
+  a2uiCouldntDraw: string;
 
   /** #192 debug-preset marker (calm never shows it — spec §3, F10). */
   recoveredFromHistory: string;
@@ -513,6 +525,8 @@ export const defaultChatStrings: ChatStrings = {
   viewChip: (title) => title,
   viewChipExpired: (title) => `${title} — expired`,
   viewRefFallbackTitle: "Card",
+  a2uiUpdatedBelow: (title) => `${title}, updated below`,
+  a2uiCouldntDraw: "Updated below, couldn't draw",
 
   recoveredFromHistory: "recovered from history",
 
