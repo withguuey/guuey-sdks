@@ -1,0 +1,213 @@
+{
+  "claim": "An old kit reads a history page whose stored tool results carry A2UI carriers (guuey#2388's toolResults): each draws its tool row with a bounded JSON preview, no view item, no mount.",
+  "rows": [
+    {
+      "seq": 1,
+      "at": "2026-10-01T00:00:01.000Z",
+      "kind": "text",
+      "authorRole": "user",
+      "text": "book a table for four",
+      "clientMessageId": "cm_0001"
+    },
+    {
+      "seq": 2,
+      "at": "2026-10-01T00:00:02.000Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": null,
+      "clientMessageId": "cm_0001#agent#0",
+      "toolCalls": [
+        {
+          "toolCallId": "call-booking",
+          "name": "show_booking",
+          "input": {
+            "party": 4
+          }
+        }
+      ]
+    },
+    {
+      "seq": 3,
+      "at": "2026-10-01T00:00:03.000Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": null,
+      "clientMessageId": "cm_0001#agent#1",
+      "toolResults": [
+        {
+          "toolCallId": "call-booking",
+          "toolName": "show_booking",
+          "block": {
+            "type": "tool-result",
+            "toolCallId": "call-booking",
+            "content": [
+              {
+                "type": "text",
+                "text": "Here is the booking form."
+              }
+            ],
+            "structuredContent": {
+              "com.guuey/a2ui": {
+                "format": "a2ui",
+                "version": "v0.9",
+                "messages": [
+                  {
+                    "version": "v0.9",
+                    "createSurface": {
+                      "surfaceId": "booking-1",
+                      "catalogId": "guuey.a2ui.v1",
+                      "title": "Book a table"
+                    }
+                  },
+                  {
+                    "version": "v0.9",
+                    "updateDataModel": {
+                      "surfaceId": "booking-1",
+                      "value": {
+                        "partySize": 4,
+                        "date": "2026-10-20"
+                      }
+                    }
+                  },
+                  {
+                    "version": "v0.9",
+                    "updateComponents": {
+                      "surfaceId": "booking-1",
+                      "components": [
+                        {
+                          "id": "root",
+                          "component": "Column",
+                          "children": ["heading", "party", "date", "confirm"],
+                          "gap": "md"
+                        },
+                        {
+                          "id": "heading",
+                          "component": "Text",
+                          "text": "**Friday** dinner for your party",
+                          "variant": "h2"
+                        },
+                        {
+                          "id": "party",
+                          "component": "TextField",
+                          "label": "Party size",
+                          "value": {
+                            "path": "/partySize"
+                          },
+                          "inputType": "number",
+                          "required": true,
+                          "min": 1,
+                          "max": 12
+                        },
+                        {
+                          "id": "date",
+                          "component": "ChoicePicker",
+                          "label": "Date",
+                          "options": [
+                            {
+                              "label": "Mon 20",
+                              "value": "2026-10-20"
+                            },
+                            {
+                              "label": "Tue 21",
+                              "value": "2026-10-21"
+                            }
+                          ],
+                          "value": {
+                            "path": "/date"
+                          },
+                          "required": true
+                        },
+                        {
+                          "id": "confirm",
+                          "component": "Button",
+                          "label": "Book table",
+                          "variant": "primary",
+                          "action": {
+                            "name": "submit_booking",
+                            "context": {
+                              "partySize": {
+                                "path": "/partySize"
+                              },
+                              "date": {
+                                "path": "/date"
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "seq": 4,
+      "at": "2026-10-01T00:00:04.000Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": null,
+      "clientMessageId": "cm_0001#agent#2",
+      "toolCalls": [
+        {
+          "toolCallId": "call-party",
+          "name": "set_party",
+          "input": {
+            "party": 6
+          }
+        }
+      ]
+    },
+    {
+      "seq": 5,
+      "at": "2026-10-01T00:00:05.000Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": null,
+      "clientMessageId": "cm_0001#agent#3",
+      "toolResults": [
+        {
+          "toolCallId": "call-party",
+          "toolName": "set_party",
+          "block": {
+            "type": "tool-result",
+            "toolCallId": "call-party",
+            "content": [
+              {
+                "type": "text",
+                "text": "Party of six."
+              }
+            ],
+            "structuredContent": {
+              "com.guuey/a2ui": {
+                "format": "a2ui",
+                "version": "v0.9",
+                "messages": [
+                  {
+                    "version": "v0.9",
+                    "updateDataModel": {
+                      "surfaceId": "booking-1",
+                      "path": "/partySize",
+                      "value": 6
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "seq": 6,
+      "at": "2026-10-01T00:00:06.000Z",
+      "kind": "text",
+      "authorRole": "agent",
+      "text": "Pick a date.",
+      "clientMessageId": "cm_0001#agent#4"
+    }
+  ]
+}

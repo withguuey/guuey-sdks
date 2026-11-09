@@ -6,11 +6,11 @@
  */
 import { describe, expect, it } from "vitest";
 import { createMcpUiResourceReader, resolveViewMount } from "@guuey/mcp-apps-host";
-import { calmPolicy, debugPolicy } from "../policy.js";
+import { calmPolicy, debugPolicy, type TranscriptPolicy } from "../policy.js";
 import { buildHitlAnswer, hitlPromptsFromFold } from "../hitl.js";
 import { oauthAuthorizeAsk, oauthAuthorizeHref } from "../oauth.js";
 import { newestViewKey, planTranscript } from "../plan.js";
-import type { DisplayItem, ToolGroupItem, ToolItem, ViewMountItem, ViewRefItem } from "../types.js";
+import type { DisplayItem, ToolGroupItem, ToolItem, TranscriptInputs, ViewMountItem, ViewRefItem } from "../types.js";
 import {
   abortedMidStream,
   bypassVsSilver,
@@ -43,6 +43,7 @@ import {
   userSendFailure,
   viewNeverHandshakes,
 } from "./fixtures.js";
+import { productionGguiRenderCapture } from "./capture.js";
 
 const calm = calmPolicy();
 const debug = debugPolicy();
@@ -618,5 +619,53 @@ describe("corpus", () => {
     const plan = planTranscript(inputs, calm, { "g.tool.t1": { expanded: true } });
     const group = plan.items.find((i) => i.kind === "tool-group");
     expect(group?.expanded).toBe(true);
+  });
+});
+
+describe("guuey#2381 — the a2ui kind changes nothing a transcript without a carrier plans", () => {
+  const on = (policy: TranscriptPolicy): TranscriptPolicy => ({ ...policy, a2ui: { render: true } });
+  const forty = fortyTools();
+  const bypass = bypassVsSilver();
+  const saturated = saturatedThenServed();
+  const stalled = stalledThenAdopted();
+  const corpus: Array<[string, TranscriptInputs]> = [
+    ["forty-tools", forty.full],
+    ["forty-tools mid-stream", forty.midStream],
+    ["midstream-tool-failure", midstreamToolFailure()],
+    ["cold-start", coldStart(0)],
+    ["cold-start long", coldStart(20_000)],
+    ["consent-gate pending", consentGate("pending")],
+    ["consent-gate answered", consentGate("answered")],
+    ["bypass", bypass.bypass],
+    ["silver", bypass.silver],
+    ["giant-json-result", giantJsonResult()],
+    ["view-never-handshakes", viewNeverHandshakes()],
+    ["aborted-mid-stream", abortedMidStream()],
+    ["history-dead-locators", historyDeadLocators()],
+    ["empty-turn", emptyTurn()],
+    ["unknown-block-storm", unknownBlockStorm()],
+    ["interleaved-media-code-citations", interleavedMediaCodeCitations()],
+    ["saturated waiting", saturated.waiting],
+    ["saturated served", saturated.served],
+    ["reasoning-heavy", reasoningHeavy()],
+    ["tools-around-a-view", toolsAroundAView()],
+    ["user-send-failure", userSendFailure()],
+    ["persisted-plus-live", persistedPlusLive()],
+    ["stalled adopted", stalled.adopted],
+    ["stalled streamed", stalled.streamed],
+    ["hitl-grant-modes", hitlGrantModes()],
+    ["notice-rows", noticeRows()],
+    ["promoted-view", promotedView().inputs],
+    ["meta-less-locator", metaLessLocator()],
+    ["prod-wire-ggui-render", prodWireGguiRender()],
+    ["oauth-auth-ask", oauthAuthAsk()],
+  ];
+
+  it("every corpus capture plans deep-equal with render on, calm and debug", async () => {
+    const all: Array<[string, TranscriptInputs]> = [...corpus, ["production-capture-ggui-render", await productionGguiRenderCapture()]];
+    for (const [name, inputs] of all) {
+      expect(planTranscript(inputs, on(calm)), `${name} (calm)`).toEqual(planTranscript(inputs, calm));
+      expect(planTranscript(inputs, on(debug)), `${name} (debug)`).toEqual(planTranscript(inputs, debug));
+    }
   });
 });
