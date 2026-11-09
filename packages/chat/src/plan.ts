@@ -48,7 +48,7 @@ import {
   viewToolData,
   type ViewMount,
 } from "@guuey/mcp-apps-host";
-import { A2UI_CARRIER_MAX_UNITS, readA2uiCarrier } from "@guuey/mcp-apps-host/narrowing";
+import { A2UI_CARRIER_MAX_UNITS, a2uiCarrierUnits, readA2uiCarrier } from "@guuey/mcp-apps-host/narrowing";
 import type { HistoryCard, HistoryToolCall, HistoryToolResult } from "@guuey/agent-client";
 import type { TranscriptPolicy } from "./policy.js";
 import { prettyJson } from "./highlight.js";
@@ -83,17 +83,13 @@ import type {
 
 /**
  * R5's giant threshold: above this byte count the state is `giant`. One
- * number with the A2UI carrier bound (spec §6), kept once in mcp-apps-host.
+ * number with the A2UI carrier bound (spec §6), kept once in mcp-apps-host,
+ * and one measure: a value's size is `a2uiCarrierUnits` (the UTF-16 units of
+ * its JSON text), the function the carrier bound is judged by.
  */
 const GIANT_RESULT_BYTES = A2UI_CARRIER_MAX_UNITS;
 
 type ToolResultBlock = Extract<AgBlock, { type: "tool-result" }>;
-
-/** Approximate byte size of a JSON value — deterministic, allocation-bounded. */
-function jsonByteSize(value: unknown): number {
-  const text = JSON.stringify(value);
-  return text === undefined ? 0 : text.length;
-}
 
 /** Bounded (optionally pretty-printed) preview — never the full payload. */
 function boundedPreview(value: unknown, previewChars: number, pretty = true): string | null {
@@ -591,7 +587,7 @@ function dataResultFromToolResult(
     preview = null;
     state = "giant";
   } else if (payload !== undefined) {
-    byteCount = jsonByteSize(payload);
+    byteCount = a2uiCarrierUnits(payload);
     preview = boundedPreview(payload, policy.dataResult.previewChars, policy.dataResult.prettyPrint);
     state = byteCount > GIANT_RESULT_BYTES ? "giant" : "small";
     lang = "json";
@@ -613,7 +609,7 @@ function dataResultFromToolResult(
         ? readable.slice(0, policy.dataResult.previewChars)
         : readable;
   } else if (mediaParts.length > 0) {
-    byteCount = jsonByteSize(mediaParts);
+    byteCount = a2uiCarrierUnits(mediaParts);
     preview = null;
     state = "binary";
   } else if (block.errorText !== undefined && block.errorText !== "") {
@@ -708,7 +704,7 @@ function isInformationless(value: JsonValue | undefined): boolean {
 function unknownFromValue(
   key: ItemKey,
   typeName: string,
-  value: unknown,
+  value: JsonValue,
   policy: TranscriptPolicy,
   overrides: TranscriptOverrides,
 ): UnknownItem {
@@ -718,7 +714,7 @@ function unknownFromValue(
     expanded: resolveExpanded(key, false, overrides),
     label: policy.strings.unknownLabel,
     typeName,
-    byteSize: jsonByteSize(value),
+    byteSize: a2uiCarrierUnits(value),
     raw: policy.unknown.raw ? jsonClone(value) : null,
   };
 }
@@ -1179,7 +1175,7 @@ function planAssistantSource(
         // R5's standalone arms (no R3 pair to live inside).
         const key = `${prefix}.d${ordinals.d++}`;
         const payload = block.type === "data" ? block.data : block.output;
-        const byteCount = block.type === "data" ? jsonByteSize(payload) : block.output.length;
+        const byteCount = block.type === "data" ? a2uiCarrierUnits(payload) : block.output.length;
         const preview =
           block.type === "data"
             ? boundedPreview(payload, policy.dataResult.previewChars)
