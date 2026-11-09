@@ -271,6 +271,17 @@ function deriveEnv(app) {
   return m ? m[1] : null;
 }
 
+/**
+ * Why `--link` kept the app's own accent or chat theme (guuey#3281):
+ * `undefined` is a CLI that does not report the field, anything else is
+ * the app's own value.
+ */
+function appFieldKeptReason(value, what) {
+  return value === undefined
+    ? `the CLI did not report the app's ${what}, so it was left as it is`
+    : `the app already has its own ${what}${typeof value === "string" ? ` (${value})` : ""}, kept`;
+}
+
 async function linkPhase(config, flags, yes) {
   const guueyJson = existsSync(GUUEY_JSON_PATH) ? JSON.parse(readFileSync(GUUEY_JSON_PATH, "utf8")) : {};
   let appId = typeof flags["app-id"] === "string" ? flags["app-id"] : guueyJson.appId;
@@ -352,24 +363,50 @@ async function linkPhase(config, flags, yes) {
       result: await guuey(["apps", "update", appId, "--domains", domains]),
     });
   }
-  pushes.push({
-    step: "brand-accent",
-    result: await guuey(["apps", "update", appId, "--brand-accent", config.theme.accent]),
-  });
+  // The brand accent and the chat theme are the APP's (guuey#3281): the
+  // template's are pushed only into an app that has none. An app whose
+  // builder already set one in the console keeps it, and the run says so
+  // with the one line that pushes the local one on purpose. `apps get`
+  // answers each field as null when the app has none; a field it does not
+  // answer at all (an older CLI) is read as "cannot tell", which keeps too.
+  const kept = [];
+  if (app.brandAccent === null) {
+    pushes.push({
+      step: "brand-accent",
+      result: await guuey(["apps", "update", appId, "--brand-accent", config.theme.accent]),
+    });
+  } else {
+    kept.push({
+      step: "brand-accent",
+      why: appFieldKeptReason(app.brandAccent, "accent"),
+      push: `npx guuey apps update ${appId} --brand-accent ${config.theme.accent}`,
+    });
+  }
   // The chat theme: the whole of theme.json, through the same door the
   // console editor writes (`--chat-theme-file`, guuey#283). A platform
   // refusal names the offending token and the run keeps converging; a
   // deleted document is reported, never silently omitted.
-  pushes.push({
-    step: "chat-theme",
-    result: existsSync(THEME_PATH)
-      ? await guuey(["apps", "update", appId, "--chat-theme-file", THEME_PATH])
-      : { ok: false, error: `skipped: ${THEME_PATH} not found (restore it from the template to push a chat theme)` },
-  });
+  if (app.chatTheme === null) {
+    pushes.push({
+      step: "chat-theme",
+      result: existsSync(THEME_PATH)
+        ? await guuey(["apps", "update", appId, "--chat-theme-file", THEME_PATH])
+        : { ok: false, error: `skipped: ${THEME_PATH} not found (restore it from the template to push a chat theme)` },
+    });
+  } else {
+    kept.push({
+      step: "chat-theme",
+      why: appFieldKeptReason(app.chatTheme, "chat theme"),
+      push: `npx guuey apps update ${appId} --chat-theme-file theme.json`,
+    });
+  }
 
   for (const { step, result } of pushes) {
     if (result.ok) console.log(`  ✓ ${step}`);
     else console.log(`  – ${step}: ${result.error}`);
+  }
+  for (const { step, why, push } of kept) {
+    console.log(`  = ${step}: ${why}; not pushed. To use this project's instead: ${push}`);
   }
 
   console.log("\nNext steps (each is one command — run when ready):");

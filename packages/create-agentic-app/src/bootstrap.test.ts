@@ -33,7 +33,10 @@ const coreDir = join(__dirname, '..', 'templates-src', 'core');
 
 /**
  * The fake `pnpm`: appends its argv to $BOOTSTRAP_TEST_LOG, answers
- * `apps get … --json` with a dev-env app record, and refuses the
+ * `apps get … --json` with a dev-env app record (no accent and no chat
+ * theme unless $BOOTSTRAP_TEST_APP_ACCENT / $BOOTSTRAP_TEST_APP_THEME=1 set
+ * the app's own; $BOOTSTRAP_TEST_APP_OLD_CLI=1 drops both fields, as a CLI
+ * that does not report them would), and refuses the
  * `--chat-theme-file` push with a field-naming error when
  * $BOOTSTRAP_TEST_REFUSE_THEME=1 (the platform validator's own wording).
  */
@@ -48,6 +51,12 @@ if (cli[0] === "apps" && cli[1] === "get") {
     endpointUrl: "https://" + cli[2] + ".agents.dev.sandbox.guuey.com/agent/invoke",
     urlSlug: null,
     pageUrl: null,
+    ...(process.env.BOOTSTRAP_TEST_APP_OLD_CLI === "1"
+      ? {}
+      : {
+          brandAccent: process.env.BOOTSTRAP_TEST_APP_ACCENT || null,
+          chatTheme: process.env.BOOTSTRAP_TEST_APP_THEME === "1" ? { name: "Console theme", mode: "light" } : null,
+        }),
   }) + "\\n");
   process.exit(0);
 }
@@ -247,6 +256,53 @@ describe('bootstrap.mjs — the chat theme document (guuey#1131)', () => {
     expect(run.stdout).toContain('– chat-theme: skipped:');
     expect(run.stdout).toContain('theme.json not found');
     expect((await cliCalls(project)).some((call) => call.includes('--chat-theme-file'))).toBe(false);
+  });
+});
+
+describe("bootstrap.mjs --link keeps the app's own accent and chat theme (guuey#3281)", () => {
+  async function linkedRun(env: Record<string, string>): Promise<{ project: Project; run: RunResult }> {
+    const project = await makeProject();
+    const local = await runBootstrap(project, ['--yes', '--mode', 'dark']);
+    expect(local.code, local.stderr).toBe(0);
+    const run = await runBootstrap(project, ['--yes', '--link', '--app-id', 'app_test1'], env);
+    expect(run.code, run.stderr).toBe(0);
+    return { project, run };
+  }
+
+  it('an app with its own accent and chat theme gets neither pushed, and each kept line carries the command to push on purpose', async () => {
+    const { project, run } = await linkedRun({ BOOTSTRAP_TEST_APP_ACCENT: '#123abc', BOOTSTRAP_TEST_APP_THEME: '1' });
+
+    expect(await cliCalls(project)).toEqual([['exec', 'guuey', 'apps', 'get', 'app_test1', '--json']]);
+    expect(run.stdout).toContain(
+      "= brand-accent: the app already has its own accent (#123abc), kept; not pushed. To use this project's instead: npx guuey apps update app_test1 --brand-accent #8b7cf6",
+    );
+    expect(run.stdout).toContain(
+      "= chat-theme: the app already has its own chat theme, kept; not pushed. To use this project's instead: npx guuey apps update app_test1 --chat-theme-file theme.json",
+    );
+    expect(run.stdout).not.toContain('✓ brand-accent');
+    expect(run.stdout).not.toContain('✓ chat-theme');
+    // The link itself still completes.
+    const config = await readJson(join(project.projectDir, 'guuey.app.json'));
+    expect(config.link.appId).toBe('app_test1');
+  });
+
+  it('each field is judged alone: an app with only its own accent still gets the chat theme', async () => {
+    const { project, run } = await linkedRun({ BOOTSTRAP_TEST_APP_ACCENT: '#123abc' });
+
+    expect(await cliCalls(project)).toEqual([
+      ['exec', 'guuey', 'apps', 'get', 'app_test1', '--json'],
+      ['exec', 'guuey', 'apps', 'update', 'app_test1', '--chat-theme-file', join(project.projectDir, 'theme.json')],
+    ]);
+    expect(run.stdout).toContain('= brand-accent: the app already has its own accent (#123abc), kept');
+    expect(run.stdout).toContain('✓ chat-theme');
+  });
+
+  it('a CLI that does not report the fields pushes nothing and says it could not tell', async () => {
+    const { project, run } = await linkedRun({ BOOTSTRAP_TEST_APP_OLD_CLI: '1' });
+
+    expect(await cliCalls(project)).toEqual([['exec', 'guuey', 'apps', 'get', 'app_test1', '--json']]);
+    expect(run.stdout).toContain("= brand-accent: the CLI did not report the app's accent, so it was left as it is; not pushed.");
+    expect(run.stdout).toContain("= chat-theme: the CLI did not report the app's chat theme, so it was left as it is; not pushed.");
   });
 });
 

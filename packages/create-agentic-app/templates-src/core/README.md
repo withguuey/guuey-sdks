@@ -56,7 +56,9 @@ PNPM_PLACEHOLDER dev
 When the agent is deployed (`npx guuey login && npx guuey deploy`), bind it into the
 frontend: `PNPM_PLACEHOLDER bootstrap -- --link` — that records the app id, endpoint,
 widget origin and portal link in `guuey.app.json` and pushes the brand accent
-and `theme.json` (the chat theme) to the platform. `PNPM_PLACEHOLDER status` shows the live
+and `theme.json` (the chat theme) to an app that has none. An app that already has
+its own keeps it, and the run prints the command that pushes this project's on purpose.
+`PNPM_PLACEHOLDER status` shows the live
 app state; `PNPM_PLACEHOLDER bootstrap -- --check`
 prints machine-readable configuration state.
 
