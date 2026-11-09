@@ -1,0 +1,2590 @@
+{
+  "source": {
+    "package": "@ggui-ai/preview-a2ui",
+    "version": "0.29.0",
+    "integrity": "sha512-7HdimOlfrhKVctZthdRnzacNI0Wtt9atHyxrCx1FU6/ezJBHXN8QAEJySSZD4nKUPMtA48ZVG9i1nIjso3DmIA==",
+    "read": ["dist/messages.js", "dist/components.js", "dist/emitters/deterministic.js"]
+  },
+  "scope": "Every vector is a message sequence the package's parseServerMessage accepts, one message at a time. The set keeps to guuey's id charset, its §6 bounds, and reference-complete trees: an id outside the charset, an over-bound value or a dangling child are guuey's deliberate refusals or degrades, pinned in validate.test.ts and fold.test.ts, not conformance vectors.",
+  "vectors": [
+    {
+      "name": "deterministic emitter, none shell (3 frames)",
+      "origin": "package-example",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "session-1",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "session-1",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": ["heading"],
+                "gap": "12",
+                "align": "stretch"
+              },
+              {
+                "id": "heading",
+                "component": "Text",
+                "variant": "h2",
+                "text": "Plan a weekend in Lisbon"
+              }
+            ]
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "session-1",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": ["heading", "body"],
+                "gap": "12",
+                "align": "stretch"
+              },
+              {
+                "id": "body",
+                "component": "Text",
+                "variant": "caption",
+                "text": "plan a weekend in Lisbon."
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "session-1",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Column",
+            "heading": "Text",
+            "body": "Text"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "deterministic emitter, form shell (3 frames)",
+      "origin": "package-example",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "session-1",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "session-1",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": ["heading"],
+                "gap": "12",
+                "align": "stretch"
+              },
+              {
+                "id": "heading",
+                "component": "Text",
+                "variant": "h2",
+                "text": "Build a sign up form for the beta"
+              }
+            ]
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "session-1",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": ["heading", "body", "form-card"],
+                "gap": "12",
+                "align": "stretch"
+              },
+              {
+                "id": "body",
+                "component": "Text",
+                "variant": "caption",
+                "text": "build a sign up form for the beta."
+              },
+              {
+                "id": "form-card",
+                "component": "Card",
+                "child": "form-col"
+              },
+              {
+                "id": "form-col",
+                "component": "Column",
+                "children": ["tf", "btn"],
+                "gap": "8"
+              },
+              {
+                "id": "tf",
+                "component": "TextField",
+                "label": "Input"
+              },
+              {
+                "id": "btn",
+                "component": "Button",
+                "label": "Submit"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "session-1",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Column",
+            "heading": "Text",
+            "body": "Text",
+            "form-card": "Card",
+            "form-col": "Column",
+            "tf": "TextField",
+            "btn": "Button"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "deterministic emitter, list shell (3 frames)",
+      "origin": "package-example",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "session-1",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "session-1",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": ["heading"],
+                "gap": "12",
+                "align": "stretch"
+              },
+              {
+                "id": "heading",
+                "component": "Text",
+                "variant": "h2",
+                "text": "Show my todos for today"
+              }
+            ]
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "session-1",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": ["heading", "body", "list-card"],
+                "gap": "12",
+                "align": "stretch"
+              },
+              {
+                "id": "body",
+                "component": "Text",
+                "variant": "caption",
+                "text": "show my todos for today."
+              },
+              {
+                "id": "list-card",
+                "component": "Card",
+                "child": "list"
+              },
+              {
+                "id": "list",
+                "component": "List",
+                "children": ["l1", "l2", "l3"]
+              },
+              {
+                "id": "l1",
+                "component": "Text",
+                "variant": "body",
+                "text": "—"
+              },
+              {
+                "id": "l2",
+                "component": "Text",
+                "variant": "body",
+                "text": "—"
+              },
+              {
+                "id": "l3",
+                "component": "Text",
+                "variant": "body",
+                "text": "—"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "session-1",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Column",
+            "heading": "Text",
+            "body": "Text",
+            "list-card": "Card",
+            "list": "List",
+            "l1": "Text",
+            "l2": "Text",
+            "l3": "Text"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Row, required only",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-row",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-row",
+            "components": [
+              {
+                "id": "root",
+                "component": "Row",
+                "children": ["c1", "c2"]
+              },
+              {
+                "id": "c1",
+                "component": "Text",
+                "text": "item"
+              },
+              {
+                "id": "c2",
+                "component": "Text",
+                "text": "item"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-row",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Row",
+            "c1": "Text",
+            "c2": "Text"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Row, every preview field",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-row",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-row",
+            "components": [
+              {
+                "id": "root",
+                "component": "Row",
+                "children": ["c1", "c2"],
+                "gap": "16",
+                "align": "center",
+                "justify": "between"
+              },
+              {
+                "id": "c1",
+                "component": "Text",
+                "text": "item"
+              },
+              {
+                "id": "c2",
+                "component": "Text",
+                "text": "item"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-row",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Row",
+            "c1": "Text",
+            "c2": "Text"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Column, required only",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-column",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-column",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-column",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Column"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Column, every preview field",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-column",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-column",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": ["c1", "c2"],
+                "gap": "md",
+                "align": "end",
+                "justify": "evenly"
+              },
+              {
+                "id": "c1",
+                "component": "Text",
+                "text": "item"
+              },
+              {
+                "id": "c2",
+                "component": "Text",
+                "text": "item"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-column",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Column",
+            "c1": "Text",
+            "c2": "Text"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Card, required only",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-card",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-card",
+            "components": [
+              {
+                "id": "root",
+                "component": "Card"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-card",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Card"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Card, every preview field",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-card",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-card",
+            "components": [
+              {
+                "id": "root",
+                "component": "Card",
+                "child": "c1"
+              },
+              {
+                "id": "c1",
+                "component": "Text",
+                "text": "item"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-card",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Card",
+            "c1": "Text"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "List, required only",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-list",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-list",
+            "components": [
+              {
+                "id": "root",
+                "component": "List"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-list",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "List"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "List, every preview field",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-list",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-list",
+            "components": [
+              {
+                "id": "root",
+                "component": "List",
+                "children": ["c1", "c2"]
+              },
+              {
+                "id": "c1",
+                "component": "Text",
+                "text": "item"
+              },
+              {
+                "id": "c2",
+                "component": "Text",
+                "text": "item"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-list",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "List",
+            "c1": "Text",
+            "c2": "Text"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Divider, required only",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-divider",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-divider",
+            "components": [
+              {
+                "id": "root",
+                "component": "Divider"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-divider",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Divider"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Divider, every preview field",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-divider",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-divider",
+            "components": [
+              {
+                "id": "root",
+                "component": "Divider",
+                "orientation": "vertical"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-divider",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Divider"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Text, required only",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-text",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-text",
+            "components": [
+              {
+                "id": "root",
+                "component": "Text",
+                "text": "Hello"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-text",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Text"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Text, every preview field",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-text",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-text",
+            "components": [
+              {
+                "id": "root",
+                "component": "Text",
+                "text": "Hello",
+                "variant": "h1"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-text",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Text"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Image, required only",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-image",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-image",
+            "components": [
+              {
+                "id": "root",
+                "component": "Image",
+                "src": "data:image/png;base64,iVBORw0KGgo="
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-image",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Image"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Image, every preview field",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-image",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-image",
+            "components": [
+              {
+                "id": "root",
+                "component": "Image",
+                "src": "data:image/png;base64,iVBORw0KGgo=",
+                "alt": "A dot"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-image",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Image"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Icon, required only",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-icon",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-icon",
+            "components": [
+              {
+                "id": "root",
+                "component": "Icon",
+                "name": "star"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-icon",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Icon"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Icon, every preview field",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-icon",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-icon",
+            "components": [
+              {
+                "id": "root",
+                "component": "Icon",
+                "name": "star"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-icon",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Icon"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Button, required only",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-button",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-button",
+            "components": [
+              {
+                "id": "root",
+                "component": "Button",
+                "label": "Go"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-button",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Button"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Button, every preview field",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-button",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-button",
+            "components": [
+              {
+                "id": "root",
+                "component": "Button",
+                "label": "Go"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-button",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Button"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "TextField, required only",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-textfield",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-textfield",
+            "components": [
+              {
+                "id": "root",
+                "component": "TextField"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-textfield",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "TextField"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "TextField, every preview field",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-textfield",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-textfield",
+            "components": [
+              {
+                "id": "root",
+                "component": "TextField",
+                "label": "Name",
+                "placeholder": "Your name",
+                "value": "Ada"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-textfield",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "TextField"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "CheckBox, required only",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-checkbox",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-checkbox",
+            "components": [
+              {
+                "id": "root",
+                "component": "CheckBox"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-checkbox",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "CheckBox"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "CheckBox, every preview field",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-checkbox",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-checkbox",
+            "components": [
+              {
+                "id": "root",
+                "component": "CheckBox",
+                "label": "Agree",
+                "checked": true
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-checkbox",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "CheckBox"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "ChoicePicker, required only",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-choicepicker",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-choicepicker",
+            "components": [
+              {
+                "id": "root",
+                "component": "ChoicePicker"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-choicepicker",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "ChoicePicker"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "ChoicePicker, every preview field",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "gen-choicepicker",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "gen-choicepicker",
+            "components": [
+              {
+                "id": "root",
+                "component": "ChoicePicker",
+                "label": "Size",
+                "options": [
+                  {
+                    "label": "Small",
+                    "value": "s"
+                  },
+                  {
+                    "label": "Large",
+                    "value": "l"
+                  }
+                ],
+                "value": "s"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "gen-choicepicker",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "ChoicePicker"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Row align start",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Row",
+                "align": "start"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Row"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Row align center",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Row",
+                "align": "center"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Row"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Row align end",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Row",
+                "align": "end"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Row"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Row align stretch",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Row",
+                "align": "stretch"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Row"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Column justify start",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "justify": "start"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Column"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Column justify center",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "justify": "center"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Column"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Column justify end",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "justify": "end"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Column"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Column justify between",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "justify": "between"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Column"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Column justify around",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "justify": "around"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Column"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Column justify evenly",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "justify": "evenly"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Column"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Divider horizontal",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Divider",
+                "orientation": "horizontal"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Divider"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Divider vertical",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Divider",
+                "orientation": "vertical"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Divider"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Row gap \"\"",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Row",
+                "gap": ""
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Row"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Row gap \"0\"",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Row",
+                "gap": "0"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Row"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Row gap \"12\"",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Row",
+                "gap": "12"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Row"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Row gap \"none\"",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Row",
+                "gap": "none"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Row"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Row gap \"xl\"",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Row",
+                "gap": "xl"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Row"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Row gap \"calc(1px)\"",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Row",
+                "gap": "calc(1px)"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Row"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Text variant \"\"",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Text",
+                "text": "Hi",
+                "variant": ""
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Text"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Text variant \"h3\"",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Text",
+                "text": "Hi",
+                "variant": "h3"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Text"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Text variant \"caption\"",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Text",
+                "text": "Hi",
+                "variant": "caption"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Text"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Text variant \"label\"",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Text",
+                "text": "Hi",
+                "variant": "label"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Text"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Text variant \"display\"",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Text",
+                "text": "Hi",
+                "variant": "display"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Text"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "Text variant \"x;color:red\"",
+      "origin": "generated",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "g",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "g",
+            "components": [
+              {
+                "id": "root",
+                "component": "Text",
+                "text": "Hi",
+                "variant": "x;color:red"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "g",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Text"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "empty components (a legal no-op)",
+      "origin": "edge",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "e",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "e",
+            "components": []
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "e",
+          "outcome": "drawn",
+          "kinds": {},
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "updateComponents with no createSurface first",
+      "origin": "edge",
+      "messages": [
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "e",
+            "components": [
+              {
+                "id": "root",
+                "component": "Text",
+                "text": "Orphan"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "e",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Text"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "createSurface then deleteSurface",
+      "origin": "edge",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "e",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "e",
+            "components": [
+              {
+                "id": "root",
+                "component": "Text",
+                "text": "item"
+              }
+            ]
+          }
+        },
+        {
+          "version": "v0.9",
+          "deleteSurface": {
+            "surfaceId": "e"
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "e",
+          "outcome": "deleted",
+          "kinds": {},
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "unknown extra fields on the message, the payload and each component (stripped)",
+      "origin": "edge",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "e",
+            "catalogId": "ggui.preview.v1",
+            "theme": {
+              "primary": "#000"
+            }
+          },
+          "sentAt": 1
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "e",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": ["a"],
+                "weight": 2
+              },
+              {
+                "id": "a",
+                "component": "Text",
+                "text": "x",
+                "color": "red"
+              }
+            ],
+            "extra": true
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "e",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Column",
+            "a": "Text"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "an id replaced by a later batch (the replace key)",
+      "origin": "edge",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "e",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "e",
+            "components": [
+              {
+                "id": "root",
+                "component": "Text",
+                "text": "one"
+              }
+            ]
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "e",
+            "components": [
+              {
+                "id": "root",
+                "component": "Divider"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "e",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Divider"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "empty strings where preview allows them (Text text, Button label, labels)",
+      "origin": "edge",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "e",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "e",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": ["a", "b", "c"]
+              },
+              {
+                "id": "a",
+                "component": "Text",
+                "text": ""
+              },
+              {
+                "id": "b",
+                "component": "Button",
+                "label": ""
+              },
+              {
+                "id": "c",
+                "component": "TextField",
+                "label": "",
+                "placeholder": "",
+                "value": ""
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "e",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Column",
+            "a": "Text",
+            "b": "Button",
+            "c": "TextField"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "empty child and option lists",
+      "origin": "edge",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "e",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "e",
+            "components": [
+              {
+                "id": "root",
+                "component": "Column",
+                "children": ["l", "p"]
+              },
+              {
+                "id": "l",
+                "component": "List",
+                "children": []
+              },
+              {
+                "id": "p",
+                "component": "ChoicePicker",
+                "options": []
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "e",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Column",
+            "l": "List",
+            "p": "ChoicePicker"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "an Image src preview takes and policy A refuses: still an Image (its chip)",
+      "origin": "edge",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "e",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "e",
+            "components": [
+              {
+                "id": "root",
+                "component": "Image",
+                "src": "http://example.com/a.png",
+                "alt": "a"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "e",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Image"
+          },
+          "carveOuts": {
+            "refused-image": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "an off-policy https Image: still an Image (a link with its host)",
+      "origin": "edge",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "e",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "e",
+            "components": [
+              {
+                "id": "root",
+                "component": "Image",
+                "src": "https://example.com/a.png"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "e",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Image"
+          },
+          "carveOuts": {
+            "refused-image": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "an unknown Icon name: still an Icon (the host draws nothing)",
+      "origin": "edge",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "e",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "e",
+            "components": [
+              {
+                "id": "root",
+                "component": "Icon",
+                "name": "no-such-icon"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "e",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Icon"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "two surfaces in one sequence",
+      "origin": "edge",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "a",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "b",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "a",
+            "components": [
+              {
+                "id": "root",
+                "component": "Text",
+                "text": "A"
+              }
+            ]
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "b",
+            "components": [
+              {
+                "id": "root",
+                "component": "Text",
+                "text": "B"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "a",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Text"
+          },
+          "carveOuts": {}
+        },
+        {
+          "surfaceId": "b",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Text"
+          },
+          "carveOuts": {}
+        }
+      ]
+    },
+    {
+      "name": "ids that are valid in both (charset letters, digits, _ . : -)",
+      "origin": "edge",
+      "messages": [
+        {
+          "version": "v0.9",
+          "createSurface": {
+            "surfaceId": "Surface_1.a:b-c",
+            "catalogId": "ggui.preview.v1"
+          }
+        },
+        {
+          "version": "v0.9",
+          "updateComponents": {
+            "surfaceId": "Surface_1.a:b-c",
+            "components": [
+              {
+                "id": "root",
+                "component": "Card",
+                "child": "x.y:z-0_9"
+              },
+              {
+                "id": "x.y:z-0_9",
+                "component": "Text",
+                "text": "item"
+              }
+            ]
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "Surface_1.a:b-c",
+          "outcome": "drawn",
+          "kinds": {
+            "root": "Card",
+            "x.y:z-0_9": "Text"
+          },
+          "carveOuts": {}
+        }
+      ]
+    }
+  ]
+}
