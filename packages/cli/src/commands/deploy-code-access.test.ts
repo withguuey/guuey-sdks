@@ -303,5 +303,24 @@ describe('deploy() --code — app.access converges before the trigger (guuey#235
       expect(callIndex(isDeploymentsRead)).toBe(-1);
       expect(callIndex(isTrigger)).toBeGreaterThanOrEqual(0);
     });
+
+    // guuey#3282: eject's trigger carries its intent so a later server can
+    // refuse a code deploy over a live no-code build without it.
+    it("eject's trigger carries ejectFromNocode: true", async () => {
+      writeProject(undefined);
+      mockPlatform({ stored: STORED_DEFAULT, deployments: [{ buildNumber: 2, status: 'live', agentMode: 'nocode' }] });
+      await deploy({ code: true }, { allowNocodeToCode: true });
+      const trigger = callIndex(isTrigger);
+      expect(JSON.parse(String(fetchSpy.mock.calls[trigger]![1]?.body))).toMatchObject({ agentMode: 'code', ejectFromNocode: true });
+    });
+
+    it('a plain code deploy sends no ejectFromNocode key', async () => {
+      writeProject(undefined);
+      mockPlatform({ stored: STORED_DEFAULT, deployments: [] });
+      await deploy({ code: true });
+      const trigger = callIndex(isTrigger);
+      expect(trigger).toBeGreaterThanOrEqual(0);
+      expect(JSON.parse(String(fetchSpy.mock.calls[trigger]![1]?.body))).not.toHaveProperty('ejectFromNocode');
+    });
   });
 });

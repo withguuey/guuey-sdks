@@ -569,6 +569,17 @@ export async function deploy(flags?: Record<string, string | true>, opts: Deploy
 }
 
 /**
+ * The trigger body's eject intent (guuey#3282): `ejectFromNocode: true` rides
+ * only `guuey eject`'s code deploy, the one deploy that may replace a live
+ * no-code build. Today's server strips it like any unknown key; a later
+ * server refuses a code deploy over a live no-code build without it, once the
+ * CLIs that do not send it are out of the roll window. Exported for tests.
+ */
+export function ejectIntentField(allowNocodeToCode: boolean): { ejectFromNocode?: true } {
+  return allowNocodeToCode ? { ejectFromNocode: true } : {};
+}
+
+/**
  * A code deploy onto a LIVE no-code build would switch the app to code mode
  * for good (the door admits it in place, guuey#2357, and refuses the reverse
  * in every state). That switch is `guuey eject`'s alone, so deploy reads the
@@ -1221,6 +1232,7 @@ async function deployCode(opts: {
     sourceHash,
     sourceTarballKey: `${appId}/${uploadId}.tar.gz`,
     agentMode: 'code',
+    ...ejectIntentField(opts.allowNocodeToCode),
     snapshotConfig,
     ...(label ? { versionLabel: label } : {}),
     ...(maxPods !== undefined ? { maxPods } : {}),
@@ -1604,6 +1616,7 @@ async function deployLegacyDockerfile(opts: {
     sourceHash,
     sourceTarballKey: `${appId}/${uploadId}.tar.gz`,
     agentMode: 'code',
+    ...ejectIntentField(opts.allowNocodeToCode),
     ...(label ? { versionLabel: label } : {}),
     ...(maxPods !== undefined ? { maxPods } : {}),
     ...(runtimeAutoUpdate !== undefined ? { runtimeAutoUpdate } : {}),
