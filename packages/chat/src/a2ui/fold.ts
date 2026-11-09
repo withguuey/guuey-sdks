@@ -30,6 +30,7 @@ import {
   readA2uiDataPath,
   type A2uiCarveOut,
   type A2uiComponentFault,
+  type A2uiComponentName,
   type A2uiDegradeCounts,
   type A2uiEnvelopeFault,
   type A2uiFieldSpec,
@@ -38,6 +39,7 @@ import {
   type A2uiJsonObject,
   type A2uiNode,
   type A2uiParsedComponent,
+  type A2uiPropsOf,
   type A2uiTextVariant,
 } from "./schema.js";
 import { a2uiImageDisplay, httpsLink } from "./url-policy.js";
@@ -252,44 +254,196 @@ class EnvelopeAbort {
   ) {}
 }
 
-/** Resolve one surface into its tree, its declared model and its faults. */
-function resolveSurface(
-  surface: A2uiSurfaceState,
-  pending: readonly Fault[],
-  pendingInteractive: boolean,
-): { ok: true; surface: A2uiResolvedSurface; faults: Fault[] } | EnvelopeAbort {
-  const where = `/${surface.surfaceId}`;
-  if (surface.components.size > A2UI_LIMITS.componentsPerSurface) return new EnvelopeAbort("too-many-components", where);
-  if (hasCycle(surface.components)) return new EnvelopeAbort("cycle", where);
+/** What a node builder needs from the walk: where it is, and how to record, bound and descend. */
+interface NodeBuild {
+  id: string;
+  /** `/<surfaceId>/<componentId>`: where this node's faults are recorded. */
+  at: string;
+  /** The surface's data model (a bound `Text` is measured against it). */
+  model: A2uiJsonObject;
+  fault(fault: Fault["fault"], n?: number): void;
+  /** A label-class string within the label bound, or null when absent. */
+  label(value: string | undefined): string | null;
+  /** Child nodes, at most `cap` of them (the rest dropped and counted as `dropFault`). */
+  children(refs: readonly string[], cap: number, dropFault: A2uiComponentFault): A2uiNode[];
+  /** One child node, or null. */
+  child(ref: string | undefined): A2uiNode | null;
+}
 
-  const faults: Fault[] = [...pending];
-  const add = (fault: Fault["fault"], at: string, n = 1): void => {
-    for (let i = 0; i < n; i++) faults.push({ fault, at });
+type NodeBuilders = { [K in A2uiComponentName]: (props: A2uiPropsOf<K>, b: NodeBuild) => A2uiNode };
+
+function containerNode(component: "Row" | "Column", props: A2uiPropsOf<"Row">, b: NodeBuild): A2uiNode {
+  return {
+    id: b.id,
+    component,
+    children: b.children(props.children ?? [], A2UI_LIMITS.childrenPerContainer, "dropped-children"),
+    gap: gapOf(props.gap),
+    align: props.align ?? null,
+    justify: props.justify ?? null,
   };
+}
+
+/** One builder per component kind: parsed props in, the resolved node out, faults recorded on the way. */
+const NODE_BUILDERS: NodeBuilders = {
+  Row: (props, b) => containerNode("Row", props, b),
+  Column: (props, b) => containerNode("Column", props, b),
+  List: (props, b) => ({ id: b.id, component: "List", children: b.children(props.children ?? [], A2UI_LIMITS.listItems, "dropped-items") }),
+  Card: (props, b) => ({ id: b.id, component: "Card", child: b.child(props.child) }),
+  Divider: (props, b) => ({ id: b.id, component: "Divider", orientation: props.orientation ?? "horizontal" }),
+  Text: (props, b) => {
+    const raw = props.text ?? "";
+    let text = raw;
+    if (typeof raw === "string") {
+      const cut = truncateUnits(raw, A2UI_LIMITS.textUnits);
+      if (cut.truncated) b.fault("truncated-text");
+      text = cut.text;
+    } else {
+      const bound = readA2uiModel(b.model, raw.path);
+      if (typeof bound === "string" && bound.length > A2UI_LIMITS.textUnits) b.fault("truncated-text");
+    }
+    return { id: b.id, component: "Text", text, variant: variantOf(props.variant) };
+  },
+  Image: (props, b) => {
+    const display = props.src !== undefined ? a2uiImageDisplay(props.src) : { kind: "chip" as const };
+    if (props.src !== undefined && display.kind !== "image") b.fault("refused-image");
+    return { id: b.id, component: "Image", display, alt: b.label(props.alt) };
+  },
+  Icon: (props, b) => ({ id: b.id, component: "Icon", name: props.name ?? null, label: b.label(props.label) }),
+  Button: (props, b) => {
+    const link = props.href !== undefined ? httpsLink(props.href) : null;
+    if (props.href !== undefined && link === null) b.fault("refused-link");
+    const confirm = props.confirm;
+    return {
+      id: b.id,
+      component: "Button",
+      label: b.label(props.label) ?? "",
+      action: props.action ?? null,
+      link,
+      variant: props.variant ?? null,
+      confirm:
+        confirm === undefined
+          ? null
+          : {
+              title: b.label(confirm.title) ?? "",
+              message: b.label(confirm.message) ?? "",
+              confirmLabel: b.label(confirm.confirmLabel),
+              cancelLabel: b.label(confirm.cancelLabel),
+            },
+    };
+  },
+  TextField: (props, b) => ({
+    id: b.id,
+    component: "TextField",
+    label: b.label(props.label),
+    placeholder: b.label(props.placeholder),
+    value: props.value ?? null,
+    inputType: props.inputType ?? "text",
+    required: props.required ?? false,
+    maxLength: props.maxLength ?? null,
+    min: props.min ?? null,
+    max: props.max ?? null,
+  }),
+  CheckBox: (props, b) => ({
+    id: b.id,
+    component: "CheckBox",
+    label: b.label(props.label),
+    checked: props.checked ?? null,
+    required: props.required ?? false,
+  }),
+  ChoicePicker: (props, b) => {
+    const all = props.options ?? [];
+    if (all.length > A2UI_LIMITS.choiceOptions) b.fault("dropped-options", all.length - A2UI_LIMITS.choiceOptions);
+    return {
+      id: b.id,
+      component: "ChoicePicker",
+      label: b.label(props.label),
+      options: all.slice(0, A2UI_LIMITS.choiceOptions).map((o) => ({ label: b.label(o.label) ?? "", value: o.value })),
+      value: props.value ?? null,
+      multiple: props.multiple ?? false,
+      required: props.required ?? false,
+    };
+  },
+};
+
+function buildNode<K extends A2uiComponentName>(component: K, props: A2uiPropsOf<K>, b: NodeBuild): A2uiNode {
+  const builder: NodeBuilders[K] = NODE_BUILDERS[component];
+  return builder(props, b);
+}
+
+/**
+ * The declared model (spec §5.4): each input bound by a path, with its
+ * constraint, in tree order; the first input bound to a path declares it.
+ */
+export function declaredFields(root: A2uiNode | null): { [path: string]: A2uiFieldSpec } {
+  const fields: { [path: string]: A2uiFieldSpec } = {};
+  const declare = (path: string, spec: A2uiFieldSpec): void => {
+    if (!Object.hasOwn(fields, path)) fields[path] = spec;
+  };
+  const walk = (node: A2uiNode | null): void => {
+    if (node === null) return;
+    switch (node.component) {
+      case "Row":
+      case "Column":
+      case "List":
+        node.children.forEach(walk);
+        return;
+      case "Card":
+        walk(node.child);
+        return;
+      case "TextField":
+        if (node.value !== null && typeof node.value !== "string") {
+          declare(node.value.path, {
+            kind: "text",
+            componentId: node.id,
+            label: node.label,
+            inputType: node.inputType,
+            required: node.required,
+            maxLength: node.maxLength,
+            min: node.min,
+            max: node.max,
+          });
+        }
+        return;
+      case "CheckBox":
+        if (node.checked !== null && typeof node.checked !== "boolean") {
+          declare(node.checked.path, { kind: "boolean", componentId: node.id, label: node.label, required: node.required });
+        }
+        return;
+      case "ChoicePicker":
+        if (node.value !== null && typeof node.value === "object" && !Array.isArray(node.value)) {
+          declare(node.value.path, {
+            kind: "choice",
+            componentId: node.id,
+            label: node.label,
+            options: node.options.map((o) => o.value),
+            multiple: node.multiple,
+            required: node.required,
+          });
+        }
+        return;
+      default:
+        return;
+    }
+  };
+  walk(root);
+  return fields;
+}
+
+/** The tree from the root down: each component drawn once, at its first reference, faults recorded. */
+function resolveTree(
+  surface: A2uiSurfaceState,
+  rootRef: string | null,
+  add: (fault: Fault["fault"], at: string, n?: number) => void,
+): { root: A2uiNode | null } | EnvelopeAbort {
+  const where = `/${surface.surfaceId}`;
+  const drawnIds = new Set<string>();
+  /** Set when a node sits deeper than the bound: an envelope fault for the whole carrier. */
+  let tooDeep: EnvelopeAbort | null = null;
   const label = (value: string | undefined, at: string): string | null => {
     if (value === undefined) return null;
     const cut = truncateUnits(value, A2UI_LIMITS.labelUnits);
     if (cut.truncated) add("truncated-label", at);
     return cut.text;
-  };
-  const fields: { [path: string]: A2uiFieldSpec } = {};
-  const declare = (path: string, spec: A2uiFieldSpec): void => {
-    if (!Object.hasOwn(fields, path)) fields[path] = spec;
-  };
-
-  const title = label(surface.title ?? undefined, where);
-  const drawnIds = new Set<string>();
-  /** Set when a node sits deeper than the bound: an envelope fault for the whole carrier. */
-  let tooDeep: EnvelopeAbort | null = null;
-
-  const children = (refs: readonly string[], cap: number, dropFault: A2uiComponentFault, at: string, depth: number) => {
-    if (refs.length > cap) add(dropFault, at, refs.length - cap);
-    const nodes: A2uiNode[] = [];
-    for (const ref of refs.slice(0, cap)) {
-      const node = resolve(ref, depth, at);
-      if (node !== null) nodes.push(node);
-    }
-    return nodes;
   };
 
   const resolve = (id: string, depth: number, parentAt: string): A2uiNode | null => {
@@ -309,141 +463,51 @@ function resolveSurface(
     drawnIds.add(id);
     const at = `${where}/${id}`;
     const p = entry.parsed;
-    switch (p.component) {
-      case "Row":
-      case "Column":
-        return {
-          id,
-          component: p.component,
-          children: children(p.props.children ?? [], A2UI_LIMITS.childrenPerContainer, "dropped-children", at, depth + 1),
-          gap: gapOf(p.props.gap),
-          align: p.props.align ?? null,
-          justify: p.props.justify ?? null,
-        };
-      case "List":
-        return { id, component: "List", children: children(p.props.children ?? [], A2UI_LIMITS.listItems, "dropped-items", at, depth + 1) };
-      case "Card":
-        return { id, component: "Card", child: p.props.child !== undefined ? resolve(p.props.child, depth + 1, at) : null };
-      case "Divider":
-        return { id, component: "Divider", orientation: p.props.orientation ?? "horizontal" };
-      case "Text": {
-        const raw = p.props.text ?? "";
-        let text = raw;
-        if (typeof raw === "string") {
-          const cut = truncateUnits(raw, A2UI_LIMITS.textUnits);
-          if (cut.truncated) add("truncated-text", at);
-          text = cut.text;
-        } else {
-          const bound = readA2uiModel(surface.dataModel, raw.path);
-          if (typeof bound === "string" && bound.length > A2UI_LIMITS.textUnits) add("truncated-text", at);
-        }
-        return { id, component: "Text", text, variant: variantOf(p.props.variant) };
-      }
-      case "Image": {
-        const display = p.props.src !== undefined ? a2uiImageDisplay(p.props.src) : { kind: "chip" as const };
-        if (p.props.src !== undefined && display.kind !== "image") add("refused-image", at);
-        return { id, component: "Image", display, alt: label(p.props.alt, at) };
-      }
-      case "Icon":
-        return { id, component: "Icon", name: p.props.name ?? null, label: label(p.props.label, at) };
-      case "Button": {
-        const link = p.props.href !== undefined ? httpsLink(p.props.href) : null;
-        if (p.props.href !== undefined && link === null) add("refused-link", at);
-        const confirm = p.props.confirm;
-        return {
-          id,
-          component: "Button",
-          label: label(p.props.label, at) ?? "",
-          action: p.props.action ?? null,
-          link,
-          variant: p.props.variant ?? null,
-          confirm:
-            confirm === undefined
-              ? null
-              : {
-                  title: label(confirm.title, at) ?? "",
-                  message: label(confirm.message, at) ?? "",
-                  confirmLabel: label(confirm.confirmLabel, at),
-                  cancelLabel: label(confirm.cancelLabel, at),
-                },
-        };
-      }
-      case "TextField": {
-        const node = {
-          id,
-          component: "TextField" as const,
-          label: label(p.props.label, at),
-          placeholder: label(p.props.placeholder, at),
-          value: p.props.value ?? null,
-          inputType: p.props.inputType ?? "text",
-          required: p.props.required ?? false,
-          maxLength: p.props.maxLength ?? null,
-          min: p.props.min ?? null,
-          max: p.props.max ?? null,
-        };
-        if (node.value !== null && typeof node.value !== "string") {
-          declare(node.value.path, {
-            kind: "text",
-            componentId: id,
-            label: node.label,
-            inputType: node.inputType,
-            required: node.required,
-            maxLength: node.maxLength,
-            min: node.min,
-            max: node.max,
-          });
-        }
-        return node;
-      }
-      case "CheckBox": {
-        const node = {
-          id,
-          component: "CheckBox" as const,
-          label: label(p.props.label, at),
-          checked: p.props.checked ?? null,
-          required: p.props.required ?? false,
-        };
-        if (node.checked !== null && typeof node.checked !== "boolean") {
-          declare(node.checked.path, { kind: "boolean", componentId: id, label: node.label, required: node.required });
-        }
-        return node;
-      }
-      case "ChoicePicker": {
-        const all = p.props.options ?? [];
-        if (all.length > A2UI_LIMITS.choiceOptions) add("dropped-options", at, all.length - A2UI_LIMITS.choiceOptions);
-        const options = all.slice(0, A2UI_LIMITS.choiceOptions).map((o) => ({ label: label(o.label, at) ?? "", value: o.value }));
-        const value = p.props.value ?? null;
-        const node = {
-          id,
-          component: "ChoicePicker" as const,
-          label: label(p.props.label, at),
-          options,
-          value,
-          multiple: p.props.multiple ?? false,
-          required: p.props.required ?? false,
-        };
-        if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-          declare(value.path, {
-            kind: "choice",
-            componentId: id,
-            label: node.label,
-            options: options.map((o) => o.value),
-            multiple: node.multiple,
-            required: node.required,
-          });
-        }
-        return node;
-      }
-      case "unknown":
-        return { id, component: "unknown", name: p.name };
-    }
+    if (p.component === "unknown") return { id, component: "unknown", name: p.name };
+    return buildNode(p.component, p.props, {
+      id,
+      at,
+      model: surface.dataModel,
+      fault: (fault, n = 1) => add(fault, at, n),
+      label: (value) => label(value, at),
+      children: (refs, cap, dropFault) => {
+        if (refs.length > cap) add(dropFault, at, refs.length - cap);
+        return refs.slice(0, cap).flatMap((ref) => resolve(ref, depth + 1, at) ?? []);
+      },
+      child: (ref) => (ref === undefined ? null : resolve(ref, depth + 1, at)),
+    });
   };
+
+  const root = rootRef === null ? null : resolve(rootRef, 1, where);
+  return tooDeep ?? { root };
+}
+
+/** Resolve one surface into its tree, its declared model and its faults. */
+function resolveSurface(
+  surface: A2uiSurfaceState,
+  pending: readonly Fault[],
+  pendingInteractive: boolean,
+): { ok: true; surface: A2uiResolvedSurface; faults: Fault[] } | EnvelopeAbort {
+  const where = `/${surface.surfaceId}`;
+  if (surface.components.size > A2UI_LIMITS.componentsPerSurface) return new EnvelopeAbort("too-many-components", where);
+  if (hasCycle(surface.components)) return new EnvelopeAbort("cycle", where);
+
+  const faults: Fault[] = [...pending];
+  const add = (fault: Fault["fault"], at: string, n = 1): void => {
+    for (let i = 0; i < n; i++) faults.push({ fault, at });
+  };
+  let title: string | null = null;
+  if (surface.title !== null) {
+    const cut = truncateUnits(surface.title, A2UI_LIMITS.labelUnits);
+    if (cut.truncated) add("truncated-label", where);
+    title = cut.text;
+  }
 
   const referenced = referencedIds(surface);
   const id = rootId(surface, referenced);
   if (id === null && surface.components.size > 0) add("no-root", where);
-  const root = id === null ? null : resolve(id, 1, where);
-  if (tooDeep !== null) return tooDeep;
+  const tree = resolveTree(surface, id, add);
+  if (tree instanceof EnvelopeAbort) return tree;
 
   // One population for the class and the faults: every component in the
   // surface. Each is drawn or counted, and any one input or action makes it
@@ -460,7 +524,16 @@ function resolveSurface(
   for (const { fault } of faults) degrade[fault] = (degrade[fault] ?? 0) + 1;
   return {
     ok: true,
-    surface: { surfaceId: surface.surfaceId, catalogId: surface.catalogId, title, root, dataModel: surface.dataModel, fields, interactive, degrade },
+    surface: {
+      surfaceId: surface.surfaceId,
+      catalogId: surface.catalogId,
+      title,
+      root: tree.root,
+      dataModel: surface.dataModel,
+      fields: declaredFields(tree.root),
+      interactive,
+      degrade,
+    },
     faults,
   };
 }
