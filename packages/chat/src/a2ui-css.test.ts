@@ -97,6 +97,23 @@ describe("the A2UI surface's look (spec §5.3)", () => {
     for (const s of coloured) expect(outranks(specificity(s), link), `${s} outranks .guuey-chat a`).toBe(true);
   });
 
+  it("a Row or Column's align word reaches a button and an image chip: no child rule overrides it", () => {
+    // The divider alone fills the cross axis by design (a rule, not an alignment).
+    const overriding = rules().flatMap((r) =>
+      /(?:^|;)\s*align-self:/.test(r.body) ? r.selectors.filter((s) => s.includes("guuey-chat-a2ui") && s !== ".guuey-chat-a2ui-divider") : [],
+    );
+    expect(overriding).toEqual([]);
+    // Content-sized under start/center/end (a set width is never stretched) and never wider than the surface…
+    for (const selector of [".guuey-chat-a2ui-button", ".guuey-chat-a2ui-image-chip", ".guuey-chat-a2ui-superseded"]) {
+      expect(value(selector, "width"), selector).toBe("fit-content");
+      expect(value(selector, "max-width"), selector).toBe("100%");
+    }
+    // …and stretched when the container says stretch.
+    for (const selector of [".guuey-chat-a2ui-align-stretch > .guuey-chat-a2ui-button", ".guuey-chat-a2ui-align-stretch > .guuey-chat-a2ui-image-chip"]) {
+      expect(value(selector, "width"), selector).toBe("auto");
+    }
+  });
+
   it("agent text sits in a bidi isolate", () => {
     for (const selector of [".guuey-chat-a2ui", ".guuey-chat-a2ui-text", ".guuey-chat-a2ui-label", ".guuey-chat-a2ui-superseded"]) {
       expect(value(selector, "unicode-bidi"), selector).toBe("isolate");

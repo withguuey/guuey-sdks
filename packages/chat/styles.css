@@ -840,8 +840,8 @@
   border-radius: var(--guuey-chat-radius, var(--_guuey-chat-radius));
 }
 .guuey-chat-a2ui-image-chip {
-  align-self: flex-start;
   display: inline-block;
+  width: fit-content;
   max-width: 100%;
   border: 1px solid color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 12%, transparent);
   border-radius: 999px;
@@ -850,8 +850,9 @@
   color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
 }
 .guuey-chat-a2ui-button {
-  align-self: flex-start;
   display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
   align-items: center;
   gap: 4px;
   min-height: 36px;
@@ -884,6 +885,12 @@
 .guuey-chat .guuey-chat-a2ui-button-primary .guuey-chat-a2ui-host {
   color: inherit;
   opacity: 0.8;
+}
+/* Content-sized by default (a set width is never stretched), so start, center
+   and end place a button or chip; a container that says stretch widens it. */
+.guuey-chat-a2ui-align-stretch > .guuey-chat-a2ui-button,
+.guuey-chat-a2ui-align-stretch > .guuey-chat-a2ui-image-chip {
+  width: auto;
 }
 .guuey-chat-a2ui-button:disabled {
   opacity: 0.5;
@@ -1005,7 +1012,8 @@ textarea.guuey-chat-a2ui-input {
 }
 /* A superseded revision: the promoted-view chip's compact face. */
 .guuey-chat-a2ui-superseded {
-  align-self: flex-start;
+  width: fit-content;
+  max-width: 100%;
   margin: 0;
   padding: 6px 12px;
   border: 1px solid color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 12%, transparent);
