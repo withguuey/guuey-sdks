@@ -47,6 +47,7 @@ import {
   type A2uiParsedMessage,
   type A2uiSurfaceOutcome,
 } from "./fold.js";
+import { DEFAULT_A2UI_MEDIA_POLICY, type A2uiMediaPolicy } from "./url-policy.js";
 
 /** The envelope stage's result. */
 export type A2uiEnvelopeResult =
@@ -327,10 +328,14 @@ export function parseA2uiCarrier(value: JsonValue): A2uiEnvelopeResult {
 }
 
 /** A carrier judged on a fold state: the envelope stage, then the messages applied (the class read on the resulting tree). */
-export function foldA2uiCarrier(state: A2uiFoldState, value: JsonValue): A2uiFoldResult {
+export function foldA2uiCarrier(
+  state: A2uiFoldState,
+  value: JsonValue,
+  media: A2uiMediaPolicy = DEFAULT_A2UI_MEDIA_POLICY,
+): A2uiFoldResult {
   const envelope = parseA2uiCarrier(value);
   if (!envelope.ok) return { ...envelope, level: "envelope" };
-  return applyA2uiMessages(state, envelope.messages);
+  return applyA2uiMessages(state, envelope.messages, media);
 }
 
 /** A carrier judged on its own, as a producer checks what it emits. */

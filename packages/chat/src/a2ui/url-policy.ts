@@ -9,14 +9,46 @@
  * `DEFAULT_MEDIA_ORIGINS`), on the parsed, lower-cased, IDNA-normalized
  * hostname. An agent-chosen URL is never fetched by the viewer.
  *
+ * Policy A is the ceiling. The host's own media policy (`policy.media`,
+ * R7) can only narrow it: `chipOnly` loads nothing, `origins` must also
+ * admit an https source, and `maxInlineBytes` caps inline bytes. A wider
+ * host list never makes an off-policy-A source load.
+ *
  * Links (a `Button.href`, a `Text` link): `https:` only, no userinfo, and the
  * host is shown beside the label so a label cannot hide its target.
  */
-import { DEFAULT_MEDIA_ORIGINS, isMediaOrigin } from "../media.js";
+import {
+  base64DecodedBytes,
+  DEFAULT_MAX_INLINE_MEDIA_BYTES,
+  DEFAULT_MEDIA_ORIGINS,
+  isMediaOrigin,
+  type MediaLoadPolicy,
+} from "../media.js";
 import { A2UI_LIMITS } from "./limits.js";
 
 /** Raster image bytes inline; SVG is refused (it is a document that can carry script). */
 const DATA_IMAGE = /^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/]*={0,2}$/i;
+
+/** The host's media policy slice an A2UI image obeys (`TranscriptPolicy["media"]` satisfies it). */
+export interface A2uiMediaPolicy extends MediaLoadPolicy {
+  /** Nothing loads: an https source offers to open, anything else is a plain chip. */
+  chipOnly: boolean;
+}
+
+/** The calm preset's media slice: policy A alone decides. */
+export const DEFAULT_A2UI_MEDIA_POLICY: A2uiMediaPolicy = {
+  chipOnly: false,
+  origins: DEFAULT_MEDIA_ORIGINS,
+  maxInlineBytes: DEFAULT_MAX_INLINE_MEDIA_BYTES,
+};
+
+/** True when a policy-A `src` also passes the host's narrower media policy. */
+function hostAdmits(src: string, media: A2uiMediaPolicy): boolean {
+  if (media.chipOnly) return false;
+  if (/^data:/i.test(src)) return base64DecodedBytes(src.slice(src.indexOf(",") + 1)) <= media.maxInlineBytes;
+  if (/^blob:/i.test(src)) return true;
+  return isMediaOrigin(src, media.origins);
+}
 
 /** The parsed URL when it is an `https:` URL within the URL bound and with no userinfo. */
 function parseHttps(url: string): URL | null {
@@ -50,9 +82,12 @@ export function httpsLink(url: string): A2uiLink | null {
 /** How an `Image` draws: loaded, a chip that offers to open its https URL, or a plain chip. */
 export type A2uiImageDisplay = { kind: "image"; src: string } | ({ kind: "link" } & A2uiLink) | { kind: "chip" };
 
-/** The planned display of an `Image.src` (policy A; anything else never loads). */
-export function a2uiImageDisplay(src: string): A2uiImageDisplay {
-  if (isPolicyAImageSrc(src)) return { kind: "image", src };
+/**
+ * The planned display of an `Image.src`: it loads only under policy A and
+ * the host's media policy both; anything else never loads.
+ */
+export function a2uiImageDisplay(src: string, media: A2uiMediaPolicy = DEFAULT_A2UI_MEDIA_POLICY): A2uiImageDisplay {
+  if (isPolicyAImageSrc(src) && hostAdmits(src, media)) return { kind: "image", src };
   const link = httpsLink(src);
   return link === null ? { kind: "chip" } : { kind: "link", ...link };
 }

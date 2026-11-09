@@ -109,3 +109,40 @@ describe("a2uiImageDisplay (load, open-link chip, or plain chip)", () => {
     expect(a2uiImageDisplay("javascript:alert(1)")).toEqual({ kind: "chip" });
   });
 });
+
+describe("a2uiImageDisplay under the host's media policy (policy A stays the ceiling)", () => {
+  const HOSTED = "https://cdn.guueyusercontent.com/a.png";
+  const base = { chipOnly: false, origins: ["https://*.guueyusercontent.com"], maxInlineBytes: 1024 };
+
+  it("chipOnly: nothing loads; an https src offers to open, bytes and blobs are a plain chip", () => {
+    const chipOnly = { ...base, chipOnly: true };
+    expect(a2uiImageDisplay(HOSTED, chipOnly)).toEqual({ kind: "link", url: HOSTED, host: "cdn.guueyusercontent.com" });
+    expect(a2uiImageDisplay(PNG, chipOnly)).toEqual({ kind: "chip" });
+    expect(a2uiImageDisplay("blob:https://app.example/1", chipOnly)).toEqual({ kind: "chip" });
+  });
+
+  it("narrowed origins: a policy-A host off the host's list opens as a link, never loads", () => {
+    const narrowed = { ...base, origins: ["https://only.guueyusercontent.com"] };
+    expect(a2uiImageDisplay(HOSTED, narrowed)).toEqual({ kind: "link", url: HOSTED, host: "cdn.guueyusercontent.com" });
+    expect(a2uiImageDisplay("https://only.guueyusercontent.com/a.png", narrowed)).toEqual({
+      kind: "image",
+      src: "https://only.guueyusercontent.com/a.png",
+    });
+  });
+
+  it("a host's wider list never widens policy A: an off-policy-A host still never loads", () => {
+    const widened = { ...base, origins: ["https://cdn.example"] };
+    expect(a2uiImageDisplay("https://cdn.example/a.png", widened)).toEqual({
+      kind: "link",
+      url: "https://cdn.example/a.png",
+      host: "cdn.example",
+    });
+  });
+
+  it("inline bytes over maxInlineBytes are a plain chip; under the cap they load", () => {
+    const under = `data:image/png;base64,${"A".repeat(1364)}`; // 1023 decoded bytes
+    const over = `data:image/png;base64,${"A".repeat(1368)}`; // 1026 decoded bytes
+    expect(a2uiImageDisplay(under, base)).toEqual({ kind: "image", src: under });
+    expect(a2uiImageDisplay(over, base)).toEqual({ kind: "chip" });
+  });
+});

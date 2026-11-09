@@ -182,6 +182,23 @@ describe("S1 (d) — the planner arm", () => {
     expect(toolsOf(p.items)[0]).toMatchObject({ result: null, attribution: true });
   });
 
+  it("an a2ui image obeys policy.media under policy A: chipOnly, a narrowed list or the byte cap never loads it", () => {
+    const hosted = "https://cdn.guueyusercontent.com/a.png";
+    const f = fold(withCarrier("t1", [create("s"), components("s", [{ id: "root", component: "Image", src: hosted, alt: "a" }])]));
+    const display = (policy: TranscriptPolicy) => {
+      const root = a2uiOf(plan(f, policy).items)[0]?.root;
+      return root?.component === "Image" ? root.display : undefined;
+    };
+    const base = on();
+    expect(display(base)).toEqual({ kind: "image", src: hosted });
+    expect(display({ ...base, media: { ...base.media, chipOnly: true } })).toMatchObject({ kind: "link", url: hosted });
+    expect(display({ ...base, media: { ...base.media, origins: ["https://only.guueyusercontent.com"] } })).toMatchObject({ kind: "link" });
+    const big = `data:image/png;base64,${"A".repeat(2000)}`;
+    const g = fold(withCarrier("t1", [create("s"), components("s", [{ id: "root", component: "Image", src: big }])]));
+    const root = a2uiOf(plan(g, { ...base, media: { ...base.media, maxInlineBytes: 1000 } }).items)[0]?.root;
+    expect(root).toMatchObject({ component: "Image", display: { kind: "chip" } });
+  });
+
   it("the F1 stream (live) draws the booking form natively", () => {
     const f: { userText: string; events: InvokeTurnEvent[] } = JSON.parse(
       readFileSync(new URL("./corpus/fixtures/a2ui-n1-old-client-live.json", import.meta.url), "utf8"),

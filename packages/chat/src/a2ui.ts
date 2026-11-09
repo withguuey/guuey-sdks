@@ -26,10 +26,12 @@ export {
 export { A2UI_LIMITS } from "./a2ui/limits.js";
 export {
   a2uiImageDisplay,
+  DEFAULT_A2UI_MEDIA_POLICY,
   httpsLink,
   isPolicyAImageSrc,
   type A2uiImageDisplay,
   type A2uiLink,
+  type A2uiMediaPolicy,
 } from "./a2ui/url-policy.js";
 export {
   A2UI_CARVE_OUTS,

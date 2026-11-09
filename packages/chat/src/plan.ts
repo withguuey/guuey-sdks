@@ -804,7 +804,7 @@ function a2uiPlanner(policy: TranscriptPolicy, overrides: TranscriptOverrides): 
       const carrier = readA2uiCarrier(result);
       if (carrier === undefined) return null;
       if (carrier.kind === "oversize") return invalid(site, "too-large");
-      const out = foldA2uiCarrier(state, carrier.carrier);
+      const out = foldA2uiCarrier(state, carrier.carrier, policy.media);
       if (!out.ok) {
         ledger.push({ type: "failed", surfaceIds: out.surfaceIds });
         return invalid(site, out.reason);

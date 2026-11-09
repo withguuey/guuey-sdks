@@ -428,6 +428,23 @@ describe("S1 (a5) — the closed carve-out list stays in place on an interactive
     expect(s.degrade).toEqual({ "refused-image": 1 });
   });
 
+  it("the host's media policy narrows what loads, and a narrowed image is a refused-image carve-out", () => {
+    const hosted = "https://cdn.guueyusercontent.com/a.png";
+    const value = carrier(create(), update([col("root", ["img", "name", "go"]), { id: "img", component: "Image", src: hosted }, field("name"), submit()]));
+    const open = foldA2uiCarrier(EMPTY_A2UI_STATE, value);
+    const chipOnly = foldA2uiCarrier(EMPTY_A2UI_STATE, value, { chipOnly: true, origins: ["https://*.guueyusercontent.com"], maxInlineBytes: 1024 });
+    const img = (out: typeof open) => {
+      const s = drawn(out.ok ? { ok: true, surfaces: out.surfaces } : out);
+      return { node: s.root?.component === "Column" ? s.root.children[0] : undefined, degrade: s.degrade, interactive: s.interactive };
+    };
+    expect(img(open)).toMatchObject({ node: { display: { kind: "image", src: hosted } }, degrade: {} });
+    expect(img(chipOnly)).toMatchObject({
+      node: { display: { kind: "link", url: hosted } },
+      degrade: { "refused-image": 1 },
+      interactive: true,
+    });
+  });
+
   it("a refused Button.href is inert; every field and the submit stay", () => {
     const s = drawn(
       validateA2uiCarrier(carrier(create(), update([col("root", ["link", "name", "go"]), { id: "link", component: "Button", label: "Help", href: "http://help.example" }, field("name"), submit()]))),

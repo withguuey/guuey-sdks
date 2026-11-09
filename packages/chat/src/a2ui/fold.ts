@@ -42,7 +42,7 @@ import {
   type A2uiPropsOf,
   type A2uiTextVariant,
 } from "./schema.js";
-import { a2uiImageDisplay, httpsLink } from "./url-policy.js";
+import { a2uiImageDisplay, DEFAULT_A2UI_MEDIA_POLICY, httpsLink, type A2uiMediaPolicy } from "./url-policy.js";
 
 /** One parsed component as the validator hands it on. */
 export interface A2uiComponentEntry {
@@ -261,6 +261,8 @@ interface NodeBuild {
   at: string;
   /** The surface's data model (a bound `Text` is measured against it). */
   model: A2uiJsonObject;
+  /** The host's media policy an `Image` obeys under policy A. */
+  media: A2uiMediaPolicy;
   fault(fault: Fault["fault"], n?: number): void;
   /** A label-class string within the label bound, or null when absent. */
   label(value: string | undefined): string | null;
@@ -304,7 +306,7 @@ const NODE_BUILDERS: NodeBuilders = {
     return { id: b.id, component: "Text", text, variant: variantOf(props.variant) };
   },
   Image: (props, b) => {
-    const display = props.src !== undefined ? a2uiImageDisplay(props.src) : { kind: "chip" as const };
+    const display = props.src !== undefined ? a2uiImageDisplay(props.src, b.media) : { kind: "chip" as const };
     if (props.src !== undefined && display.kind !== "image") b.fault("refused-image");
     return { id: b.id, component: "Image", display, alt: b.label(props.alt) };
   },
@@ -433,6 +435,7 @@ export function declaredFields(root: A2uiNode | null): { [path: string]: A2uiFie
 function resolveTree(
   surface: A2uiSurfaceState,
   rootRef: string | null,
+  media: A2uiMediaPolicy,
   add: (fault: Fault["fault"], at: string, n?: number) => void,
 ): { root: A2uiNode | null } | EnvelopeAbort {
   const where = `/${surface.surfaceId}`;
@@ -468,6 +471,7 @@ function resolveTree(
       id,
       at,
       model: surface.dataModel,
+      media,
       fault: (fault, n = 1) => add(fault, at, n),
       label: (value) => label(value, at),
       children: (refs, cap, dropFault) => {
@@ -487,6 +491,7 @@ function resolveSurface(
   surface: A2uiSurfaceState,
   pending: readonly Fault[],
   pendingInteractive: boolean,
+  media: A2uiMediaPolicy,
 ): { ok: true; surface: A2uiResolvedSurface; faults: Fault[] } | EnvelopeAbort {
   const where = `/${surface.surfaceId}`;
   if (surface.components.size > A2UI_LIMITS.componentsPerSurface) return new EnvelopeAbort("too-many-components", where);
@@ -506,7 +511,7 @@ function resolveSurface(
   const referenced = referencedIds(surface);
   const id = rootId(surface, referenced);
   if (id === null && surface.components.size > 0) add("no-root", where);
-  const tree = resolveTree(surface, id, add);
+  const tree = resolveTree(surface, id, media, add);
   if (tree instanceof EnvelopeAbort) return tree;
 
   // One population for the class and the faults: every component in the
@@ -549,9 +554,14 @@ function variantOf(variant: string | undefined): A2uiTextVariant {
 /**
  * Apply one carrier's parsed messages onto `state`. The carrier is atomic: an
  * envelope fault, or a component fault on any interactive surface it targets,
- * fails it whole and leaves `state` as it was.
+ * fails it whole and leaves `state` as it was. `media` is the host's media
+ * policy every `Image` obeys under policy A (the calm preset's by default).
  */
-export function applyA2uiMessages(state: A2uiFoldState, messages: readonly A2uiParsedMessage[]): A2uiApplyResult {
+export function applyA2uiMessages(
+  state: A2uiFoldState,
+  messages: readonly A2uiParsedMessage[],
+  media: A2uiMediaPolicy = DEFAULT_A2UI_MEDIA_POLICY,
+): A2uiApplyResult {
   const working = new Map(state);
   const order: string[] = [];
   const touch = (surfaceId: string): void => {
@@ -614,7 +624,7 @@ export function applyA2uiMessages(state: A2uiFoldState, messages: readonly A2uiP
       surfaces.push(deleted.has(id) ? { kind: "deleted", surfaceId: id } : { kind: "ignored", surfaceId: id });
       continue;
     }
-    const resolved = resolveSurface(surface, pending.get(id) ?? [], pendingInteractive.has(id));
+    const resolved = resolveSurface(surface, pending.get(id) ?? [], pendingInteractive.has(id), media);
     if (resolved instanceof EnvelopeAbort) {
       return { ok: false, reason: resolved.reason, path: resolved.path, level: "envelope", surfaceIds: order };
     }
