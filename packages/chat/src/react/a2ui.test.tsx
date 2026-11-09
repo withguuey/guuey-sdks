@@ -775,6 +775,31 @@ describe("(g) ChoicePicker", () => {
     expect(surface.querySelector(".guuey-chat-a2ui-filter")).toBeNull();
   });
 
+  it("ids that differ only by '.', ':' or '_' keep separate DOM ids, labels and radio groups", () => {
+    const { surface } = draw([
+      { id: "root", component: "Column", children: ["size.a", "size_a", "size:a", "long.a", "long_a"] },
+      { id: "size.a", component: "ChoicePicker", label: "Dot", options: opts(3), value: { path: "/d" } },
+      { id: "size_a", component: "ChoicePicker", label: "Underscore", options: opts(3), value: { path: "/u" } },
+      { id: "size:a", component: "ChoicePicker", label: "Colon", options: opts(3), value: { path: "/c" } },
+      { id: "long.a", component: "ChoicePicker", label: "Long dot", options: opts(7), value: { path: "/ld" } },
+      { id: "long_a", component: "ChoicePicker", label: "Long underscore", options: opts(7), value: { path: "/lu" } },
+    ]);
+    // Inline: three radio groups, three names; choosing in one leaves the others alone.
+    const groups = ["Dot", "Underscore", "Colon"].map((name) => within(surface).getByText(name).closest("fieldset") as HTMLElement);
+    const names = groups.map((g) => (within(g).getAllByRole("radio")[0] as HTMLInputElement).name);
+    expect(new Set(names).size).toBe(3);
+    fireEvent.click(within(groups[0]!).getAllByRole("radio")[0]!);
+    fireEvent.click(within(groups[1]!).getAllByRole("radio")[1]!);
+    expect((within(groups[0]!).getAllByRole("radio") as HTMLInputElement[]).map((r) => r.checked)).toEqual([true, false, false]);
+    // Disclosure: each field row is named by its own label, and controls its own list.
+    const dot = within(surface).getByRole("button", { name: /^Long dot/ });
+    const underscore = within(surface).getByRole("button", { name: /^Long underscore/ });
+    expect(dot.getAttribute("aria-controls")).not.toBe(underscore.getAttribute("aria-controls"));
+    // No id appears twice in the surface.
+    const ids = Array.from(surface.querySelectorAll("[id]")).map((el) => el.id);
+    expect(ids.length).toBe(new Set(ids).size);
+  });
+
   it("with nothing chosen the field row says Choose", () => {
     const { surface } = draw([{ id: "root", component: "ChoicePicker", label: "Pick", options: opts(8), value: { path: "/p" } }]);
     expect(surface.querySelector(".guuey-chat-a2ui-picker")?.textContent).toContain(S.a2uiChoose);

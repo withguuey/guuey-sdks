@@ -177,6 +177,18 @@ interface Env {
   idFor(componentId: string, part: string): string;
 }
 
+const ID_ESCAPES: { readonly [c: string]: string } = { _: "__", ".": "_d", ":": "_c" };
+
+/**
+ * A component id as a DOM id segment, injectively: `_` is the escape, so
+ * `size.a`, `size:a` and `size_a` stay three ids (and three radio groups).
+ * The id grammar admits only `[A-Za-z0-9_.:-]`; anything else would still
+ * map one-to-one as `_x<hex>_`.
+ */
+function domIdSegment(componentId: string): string {
+  return componentId.replace(/[^A-Za-z0-9-]/g, (c) => ID_ESCAPES[c] ?? `_x${(c.codePointAt(0) ?? 0).toString(16)}_`);
+}
+
 /** Whether a tree holds an action button, so the surface draws its one note. */
 function hasAction(node: A2uiNode): boolean {
   switch (node.component) {
@@ -218,7 +230,7 @@ export function DefaultA2ui({ item, ctx }: { item: A2uiItem; ctx: A2uiRenderCont
     write: (key, value, server) => store.set(item.surfaceId, key, { value, base: server }),
     locked: item.phase !== "open",
     unavailableId: `${base}-unavailable`,
-    idFor: (componentId, part) => `${base}-${componentId.replace(/[^A-Za-z0-9_-]/g, "_")}-${part}`,
+    idFor: (componentId, part) => `${base}-${domIdSegment(componentId)}-${part}`,
   };
   const titleId = `${base}-title`;
   return (
