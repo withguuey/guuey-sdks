@@ -141,7 +141,9 @@ overrides:
   # express-rate-limit, both through @modelcontextprotocol/sdk).
   "fast-uri@3": ^3.1.9
   "ip-address@10": ^10.7.4
-  "qs@6": ^6.16.0
+  # qs <=6.16.0 (GHSA-6pq8-jhm2-2vcw, DoS: stringify with arrayFormat 'comma' throws an uncaught TypeError on an
+  # element whose own toString is not callable): floor ^6.16.1, resolving 6.17.1.
+  "qs@6": ^6.16.1
   # 2026-10-11 security floors (see the root pnpm-workspace.yaml comment; this lock held shell-quote 1.10.0,
   # source-map-js 1.2.1 and proxy-addr 2.0.7).
   "shell-quote@1": ^1.11.0
