@@ -167,6 +167,17 @@ describe("envelope bounds — at the bound and one over (spec §6, S1 (b))", () 
     expect(reasonOf(at(A2UI_LIMITS.actionContextKeys))).toBeUndefined();
     expect(reasonOf(at(A2UI_LIMITS.actionContextKeys + 1))).toBe("too-many-context-keys");
   });
+
+  it("an action context key named __proto__ refuses the action (bad-prop), never reaches the agent without it", () => {
+    // JSON.parse makes `__proto__` an own key, as it arrives on the wire.
+    const button = (context: string): Json =>
+      carrier([create("s"), components("s", [JSON.parse(`{"id":"root","component":"Button","label":"Go","action":{"name":"go","context":${context}}}`)])]);
+    // An interactive surface: the refused action is a component fault, the old face.
+    expect(validateA2uiCarrier(button('{"__proto__":"x","a":1}'))).toMatchObject({ ok: false, reason: "bad-prop", level: "component" });
+    expect(validateA2uiCarrier(button('{"__proto__":{"path":"/x"}}'))).toMatchObject({ ok: false, reason: "bad-prop" });
+    // `constructor` is an ordinary own key, and kept.
+    expect(reasonOf(button('{"constructor":1}'))).toBeUndefined();
+  });
 });
 
 describe("parseA2uiCarrier — the envelope stage", () => {

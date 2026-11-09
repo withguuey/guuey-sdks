@@ -192,14 +192,20 @@ function parseProps(name: A2uiComponentName, raw: A2uiJsonObject): { parsed: A2u
       return { parsed: { component: name, props }, bad: props.name === undefined ? Math.max(1, bad.length) : bad.length };
     }
     case "Button": {
-      const { props, bad } = lenientParse(A2UI_PROPS_SCHEMAS.Button, raw);
-      if (props.label === undefined) return { parsed: { component: "unknown", name }, bad: Math.max(1, bad.length) };
+      // zod skips a `__proto__` record key without a word, so the action would
+      // reach the agent without a key its producer declared: refuse the action.
+      const context = isJsonObject(raw["action"]) ? raw["action"]["context"] : undefined;
+      const poisoned = isJsonObject(context) && Object.hasOwn(context, "__proto__");
+      const input = poisoned ? Object.fromEntries(Object.entries(raw).filter(([key]) => key !== "action")) : raw;
+      const { props, bad: refused } = lenientParse(A2UI_PROPS_SCHEMAS.Button, input);
+      const bad = refused.length + (poisoned ? 1 : 0);
+      if (props.label === undefined) return { parsed: { component: "unknown", name }, bad: Math.max(1, bad) };
       // `action` and `href` are mutually exclusive: both are dropped, and the button is inert.
       if (props.action !== undefined && props.href !== undefined) {
         const { action: _action, href: _href, ...rest } = props;
-        return { parsed: { component: name, props: rest }, bad: bad.length + 1 };
+        return { parsed: { component: name, props: rest }, bad: bad + 1 };
       }
-      return { parsed: { component: name, props }, bad: bad.length };
+      return { parsed: { component: name, props }, bad };
     }
     case "TextField": {
       const { props, bad } = lenientParse(A2UI_PROPS_SCHEMAS.TextField, raw);
