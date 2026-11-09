@@ -297,10 +297,19 @@ function hasAction(node: A2uiNode): boolean {
     case "Card":
       return node.child !== null && hasAction(node.child);
     case "Button":
-      return node.action !== null && node.link === null && words(node.label) !== null;
+      return isActionButton(node);
     default:
       return false;
   }
+}
+
+/**
+ * A Button that draws as an action press: it has words, an action and no
+ * link. Until S4 wires the action path it is drawn disabled and described by
+ * the surface's one "Not available here" note, which draws when any exists.
+ */
+function isActionButton(node: NodeOf<"Button">): boolean {
+  return node.action !== null && node.link === null && words(node.label) !== null;
 }
 
 /** The kit's default `a2ui` slot. */
@@ -500,7 +509,7 @@ function A2uiButton({ node, env }: { node: NodeOf<"Button">; env: Env }): ReactN
     );
   }
   return (
-    <button type="button" className={className} disabled {...(node.action !== null ? { "aria-describedby": env.unavailableId } : {})}>
+    <button type="button" className={className} disabled {...(isActionButton(node) ? { "aria-describedby": env.unavailableId } : {})}>
       <span dir="auto">{label}</span>
     </button>
   );
@@ -580,10 +589,27 @@ function drawnOptions(options: readonly A2uiChoiceOption[]): Array<{ value: stri
   return out;
 }
 
+/** What both ChoicePicker layouts share: the field's words, the chosen values, the rows, and how a group says it is required. */
+interface Choice {
+  node: NodeOf<"ChoicePicker">;
+  env: Env;
+  label: string | null;
+  options: Array<{ value: string; label: string }>;
+  chosen: string[];
+  labelId: string;
+  requiredId: string;
+  /**
+   * How a container of options says it is required (ARIA 1.2): a single
+   * choice is a radio group, which takes `aria-required`; a multiple choice
+   * is a plain group, which does not, so it is described as required.
+   */
+  groupSemantics: { [attr: string]: string | boolean };
+  /** The visually hidden "Required" a description points at; null when optional. */
+  requiredNote: ReactNode;
+  rows(shown: ReadonlyArray<{ value: string; label: string }>): ReactNode;
+}
+
 function A2uiChoicePicker({ node, env }: { node: NodeOf<"ChoicePicker">; env: Env }): ReactNode {
-  const [open, setOpen] = useState(false);
-  const [filter, setFilter] = useState("");
-  const label = words(node.label);
   const bound = serverValue(env.item, node.value);
   const key = editKey(node.id, bound);
   const current = env.read(key, bound.value);
@@ -591,21 +617,7 @@ function A2uiChoicePicker({ node, env }: { node: NodeOf<"ChoicePicker">; env: En
     typeof current === "string" ? [current] : Array.isArray(current) ? current.filter((v): v is string => typeof v === "string") : [];
   const options = drawnOptions(node.options);
   const name = env.idFor(node.id, "choice");
-  const labelId = env.idFor(node.id, "label");
   const requiredId = env.idFor(node.id, "required");
-  /**
-   * How a container of options says it is required (ARIA 1.2): a single
-   * choice is a radio group, which takes `aria-required`; a multiple choice
-   * is a plain group, which does not, so it is described as required.
-   */
-  const groupSemantics = !node.multiple
-    ? { role: "radiogroup", ...(node.required ? { "aria-required": true } : {}) }
-    : { role: "group", ...(node.required ? { "aria-describedby": requiredId } : {}) };
-  const requiredNote = node.required ? (
-    <span className="guuey-chat-visually-hidden" id={requiredId}>
-      {env.strings.a2uiRequired}
-    </span>
-  ) : null;
 
   const choose = (value: string, on: boolean): void => {
     if (!node.multiple) {
@@ -621,38 +633,63 @@ function A2uiChoicePicker({ node, env }: { node: NodeOf<"ChoicePicker">; env: En
     );
   };
 
-  const rows = (shown: typeof options): ReactNode =>
-    shown.map((option) => {
-      const selected = chosen.includes(option.value);
-      return (
-        <label key={option.value} className={selected ? "guuey-chat-a2ui-option guuey-chat-a2ui-option-selected" : "guuey-chat-a2ui-option"}>
-          <input
-            type={node.multiple ? "checkbox" : "radio"}
-            name={name}
-            value={option.value}
-            checked={selected}
-            disabled={env.locked}
-            onChange={(e) => choose(option.value, e.target.checked)}
-          />
-          <span dir="auto">{option.label}</span>
-        </label>
-      );
-    });
+  const choice: Choice = {
+    node,
+    env,
+    label: words(node.label),
+    options,
+    chosen,
+    labelId: env.idFor(node.id, "label"),
+    requiredId,
+    groupSemantics: !node.multiple
+      ? { role: "radiogroup", ...(node.required ? { "aria-required": true } : {}) }
+      : { role: "group", ...(node.required ? { "aria-describedby": requiredId } : {}) },
+    requiredNote: node.required ? (
+      <span className="guuey-chat-visually-hidden" id={requiredId}>
+        {env.strings.a2uiRequired}
+      </span>
+    ) : null,
+    rows: (shown) =>
+      shown.map((option) => {
+        const selected = chosen.includes(option.value);
+        return (
+          <label key={option.value} className={selected ? "guuey-chat-a2ui-option guuey-chat-a2ui-option-selected" : "guuey-chat-a2ui-option"}>
+            <input
+              type={node.multiple ? "checkbox" : "radio"}
+              name={name}
+              value={option.value}
+              checked={selected}
+              disabled={env.locked}
+              onChange={(e) => choose(option.value, e.target.checked)}
+            />
+            <span dir="auto">{option.label}</span>
+          </label>
+        );
+      }),
+  };
+  return options.length <= INLINE_OPTIONS ? <InlineChoice choice={choice} /> : <OpenChoice choice={choice} />;
+}
 
-  if (options.length <= INLINE_OPTIONS) {
-    return (
-      <fieldset className="guuey-chat-a2ui-choice" {...groupSemantics}>
-        {label !== null ? (
-          <legend className="guuey-chat-a2ui-label" dir="auto">
-            {label}
-          </legend>
-        ) : null}
-        {rows(options)}
-        {node.multiple ? requiredNote : null}
-      </fieldset>
-    );
-  }
+/** Up to {@link INLINE_OPTIONS} options: one named group of rows. */
+function InlineChoice({ choice }: { choice: Choice }): ReactNode {
+  return (
+    <fieldset className="guuey-chat-a2ui-choice" {...choice.groupSemantics}>
+      {choice.label !== null ? (
+        <legend className="guuey-chat-a2ui-label" dir="auto">
+          {choice.label}
+        </legend>
+      ) : null}
+      {choice.rows(choice.options)}
+      {choice.node.multiple ? choice.requiredNote : null}
+    </fieldset>
+  );
+}
 
+/** More options: a field row naming the choice, opening the rows, with a local filter above {@link FILTER_OPTIONS}. */
+function OpenChoice({ choice }: { choice: Choice }): ReactNode {
+  const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState("");
+  const { node, env, label, options, chosen, labelId } = choice;
   const panelId = env.idFor(node.id, "options");
   const listId = env.idFor(node.id, "list");
   const summaryId = env.idFor(node.id, "summary");
@@ -678,16 +715,16 @@ function A2uiChoicePicker({ node, env }: { node: NodeOf<"ChoicePicker">; env: En
         aria-expanded={open}
         aria-controls={panelId}
         aria-labelledby={label !== null ? `${labelId} ${summaryId}` : summaryId}
-        {...(node.required ? { "aria-describedby": requiredId } : {})}
+        {...(node.required ? { "aria-describedby": choice.requiredId } : {})}
         onClick={() => setOpen((o) => !o)}
       >
         <span id={summaryId} dir="auto">
           {summary !== "" ? summary : env.strings.a2uiChoose}
         </span>
       </button>
-      {requiredNote}
+      {choice.requiredNote}
       {open ? (
-        <div className="guuey-chat-a2ui-options" id={panelId} {...groupSemantics} {...(label !== null ? { "aria-labelledby": labelId } : {})}>
+        <div className="guuey-chat-a2ui-options" id={panelId} {...choice.groupSemantics} {...(label !== null ? { "aria-labelledby": labelId } : {})}>
           {filtered ? (
             <>
               <input
@@ -706,11 +743,10 @@ function A2uiChoicePicker({ node, env }: { node: NodeOf<"ChoicePicker">; env: En
             </>
           ) : null}
           <div className="guuey-chat-a2ui-option-list" id={listId}>
-            {shown.length > 0 ? rows(shown) : <p className="guuey-chat-a2ui-empty">{env.strings.a2uiNoMatch}</p>}
+            {shown.length > 0 ? choice.rows(shown) : <p className="guuey-chat-a2ui-empty">{env.strings.a2uiNoMatch}</p>}
           </div>
         </div>
       ) : null}
     </div>
   );
 }
-
