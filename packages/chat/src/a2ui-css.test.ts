@@ -114,6 +114,12 @@ describe("the A2UI surface's look (spec §5.3)", () => {
     }
   });
 
+  it("native controls follow the kit's mode: the surface's color-scheme reads the root's mode stamp", () => {
+    for (const mode of ["light", "dark"]) {
+      expect(value(`.guuey-chat[data-guuey-chat-mode="${mode}"] .guuey-chat-a2ui`, "color-scheme"), mode).toBe(mode);
+    }
+  });
+
   it("agent text sits in a bidi isolate", () => {
     for (const selector of [".guuey-chat-a2ui", ".guuey-chat-a2ui-text", ".guuey-chat-a2ui-label", ".guuey-chat-a2ui-superseded"]) {
       expect(value(selector, "unicode-bidi"), selector).toBe("isolate");

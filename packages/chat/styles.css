@@ -684,6 +684,14 @@
   overflow-wrap: anywhere;
   min-width: 0;
 }
+/* The surface's native controls (checkbox, radio, number, search) draw in
+   the kit's mode, from the root's one mode stamp, not the host page's. */
+.guuey-chat[data-guuey-chat-mode="light"] .guuey-chat-a2ui {
+  color-scheme: light;
+}
+.guuey-chat[data-guuey-chat-mode="dark"] .guuey-chat-a2ui {
+  color-scheme: dark;
+}
 .guuey-chat-a2ui .guuey-chat-attribution {
   margin: 0 calc(var(--guuey-chat-gap, var(--_guuey-chat-gap)) * -1) calc(var(--guuey-chat-gap, var(--_guuey-chat-gap)) * -1);
 }
