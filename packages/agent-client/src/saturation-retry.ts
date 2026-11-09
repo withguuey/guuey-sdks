@@ -69,16 +69,13 @@ const CAPACITY_RETRY_CODES: ReadonlySet<string> = new Set([
  */
 const SESSION_BUSY_FALLBACK_DELAY_SECONDS = 5;
 
-/** How long to wait before each capacity retry, in milliseconds. */
-function saturationDelayMs(retryAfterSeconds: number | undefined): number {
-  const hinted = retryAfterSeconds ?? SATURATION_FALLBACK_DELAY_SECONDS;
-  return Math.min(hinted, SATURATION_MAX_DELAY_SECONDS) * 1000;
-}
-
-/** How long to wait before the one `SESSION_BUSY` retry, in milliseconds (same ceiling). */
-function sessionBusyDelayMs(retryAfterSeconds: number | undefined): number {
-  const hinted = retryAfterSeconds ?? SESSION_BUSY_FALLBACK_DELAY_SECONDS;
-  return Math.min(hinted, SATURATION_MAX_DELAY_SECONDS) * 1000;
+/**
+ * How long to wait before a retry, in milliseconds: the refusal's
+ * `Retry-After`, else the arm's own fallback, under the one ceiling both arms
+ * share.
+ */
+function retryDelayMs(retryAfterSeconds: number | undefined, fallbackSeconds: number): number {
+  return Math.min(retryAfterSeconds ?? fallbackSeconds, SATURATION_MAX_DELAY_SECONDS) * 1000;
 }
 
 /**
@@ -210,11 +207,11 @@ export function withSaturationRetry(
         let waitMs: number;
         if (CAPACITY_RETRY_CODES.has(err.code) && capacityRetries < retries) {
           capacityRetries += 1;
-          waitMs = saturationDelayMs(err.retryAfterSeconds);
+          waitMs = retryDelayMs(err.retryAfterSeconds, SATURATION_FALLBACK_DELAY_SECONDS);
           options.onSaturationWait?.({ attempt: capacityRetries, totalAttempts: retries + 1, waitMs });
         } else if (err.code === AGENT_ERROR_CODES.SESSION_BUSY && !busyRetried) {
           busyRetried = true;
-          waitMs = sessionBusyDelayMs(err.retryAfterSeconds);
+          waitMs = retryDelayMs(err.retryAfterSeconds, SESSION_BUSY_FALLBACK_DELAY_SECONDS);
         } else {
           throw err;
         }
