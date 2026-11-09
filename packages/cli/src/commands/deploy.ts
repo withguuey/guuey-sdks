@@ -67,6 +67,7 @@ import {
   retirementNotice,
 } from '@guuey/config';
 import { requireAuth, type AuthTokens } from '../auth';
+import { bindAppIdIntoProject } from '../project-binding';
 import { deployEnv, substitutedLine } from '../deploy-env';
 import {
   resolveConfig,
@@ -745,12 +746,7 @@ export async function createLinkedApp(opts: {
   if (project) {
     // The prompt's answer lands in the manifest too, so the file keeps
     // declaring what the app stores (`guuey agent apply` converges it).
-    const appSection = builtFor !== undefined ? { ...project.app, builtFor } : project.app;
-    writeGuueyJsonFile(guueyJsonPath, {
-      ...project,
-      appId: app.id,
-      ...(appSection !== undefined ? { app: appSection } : {}),
-    });
+    bindAppIdIntoProject({ guueyJsonPath, project, appId: app.id, ...(builtFor !== undefined ? { builtFor } : {}) });
     console.log(
       `  Wrote appId${builtFor !== undefined ? ' and app.builtFor' : ''} back to ${GUUEY_JSON_FILENAME}`,
     );

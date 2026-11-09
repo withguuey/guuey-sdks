@@ -520,7 +520,7 @@ function context(flags: Record<string, string | true> | undefined): Ctx {
   const appId = resolveTargetAppId(flags, config);
   if (!appId) {
     out.error(
-      `No app linked. Set "appId" in ${GUUEY_JSON_FILENAME}, run "guuey pull --app-id <id>", or pass --app-id <id>.`,
+      `No app linked. Run "guuey apps create --name <name>" here (it binds the new app into ${GUUEY_JSON_FILENAME}), set "appId" in ${GUUEY_JSON_FILENAME}, run "guuey pull --app-id <id>", or pass --app-id <id>.`,
     );
     process.exit(1);
   }

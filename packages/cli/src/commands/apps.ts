@@ -7,7 +7,8 @@
 import { readFileSync } from 'node:fs';
 import { GuueyChatTheme } from '@guuey/chat';
 import { extname } from 'node:path';
-import { resolveConfig, saveConfig, loadConfig } from '../config';
+import { resolveConfig, saveConfig, loadConfig, getProjectConfigPath, loadProjectConfig } from '../config';
+import { bindAppIdIntoProject } from '../project-binding';
 import { isLoggedIn, requireAuth } from '../auth';
 import { login } from './login';
 import { resolveTargetAppId } from '../app-id';
@@ -539,6 +540,53 @@ export async function appsGet(
  * without `owner`, and a create that asked for one then exits 1, loudly,
  * instead of reporting a success in the wrong place.
  */
+/** Where `guuey apps create` saved the new app id (guuey#3263). */
+export type CreatedAppBinding =
+  | { kind: 'project'; path: string }
+  | { kind: 'kept'; path: string; boundAppId: string }
+  | { kind: 'unreadable-project'; path: string }
+  | { kind: 'global'; path: '~/.guuey/config.json' };
+
+function saveCreatedAppId(appId: string, builtFor: ReturnType<typeof parseBuiltForFlag>): CreatedAppBinding {
+  const guueyJsonPath = getProjectConfigPath();
+  if (guueyJsonPath !== null) {
+    const project = loadProjectConfig();
+    if (project !== null && project.appId === undefined) {
+      bindAppIdIntoProject({ guueyJsonPath, project, appId, ...(builtFor !== undefined ? { builtFor } : {}) });
+      return { kind: 'project', path: guueyJsonPath };
+    }
+    if (project !== null && project.appId !== undefined) {
+      return { kind: 'kept', path: guueyJsonPath, boundAppId: project.appId };
+    }
+  }
+  const existing = loadConfig();
+  existing.appId = appId;
+  saveConfig(existing);
+  return guueyJsonPath !== null
+    ? { kind: 'unreadable-project', path: guueyJsonPath }
+    : { kind: 'global', path: '~/.guuey/config.json' };
+}
+
+/** The one line that says where the new app id went. Exported for tests. */
+export function createdAppBindingLine(binding: CreatedAppBinding, appId: string): string {
+  switch (binding.kind) {
+    case 'project':
+      return `Bound: appId saved to ${binding.path}, where guuey agent apply and guuey deploy read it.`;
+    case 'kept':
+      return (
+        `${binding.path} stays bound to app ${binding.boundAppId}; it was not changed. ` +
+        `To use the new app there, set "appId": "${appId}" in it, or pass --app-id ${appId}.`
+      );
+    case 'unreadable-project':
+      return (
+        `${binding.path} could not be read as a guuey.json, so the app was not bound to it; ` +
+        `app-id saved to ~/.guuey/config.json (a project ignores that default). Fix the file and set "appId": "${appId}".`
+      );
+    case 'global':
+      return 'Auto-configured: app-id saved to ~/.guuey/config.json';
+  }
+}
+
 export async function appsCreate(opts: {
   name?: string;
   json?: boolean;
@@ -605,16 +653,20 @@ export async function appsCreate(opts: {
   const owner: CreatedAppOwner | { kind: 'personal'; workspaceId: null } =
     data.owner ?? { kind: 'personal', workspaceId: null };
 
-  // Auto-configure the CLI with the new app id.
-  const existing = loadConfig();
-  existing.appId = appId;
-  saveConfig(existing);
+  // guuey#3263: where the new app id is saved. `agent apply` and `deploy`
+  // read a project's app from its guuey.json, never from the global default,
+  // so inside a project with no app yet the id is bound THERE. A project
+  // already bound to another app keeps its binding. Outside a project the
+  // global default is set, as before.
+  const binding = saveCreatedAppId(appId, builtFor);
 
   if (opts.json) {
     out.json({
       appId,
       displayName: data.app.displayName,
       owner,
+      // Additive (guuey#3263): the file the id was saved to; null when a bound project kept its own app.
+      savedTo: binding.kind === 'kept' ? null : binding.path,
       ...(data.firstImpression !== undefined ? { firstImpression: data.firstImpression } : {}),
     });
     return;
@@ -630,7 +682,7 @@ export async function appsCreate(opts: {
     console.log(`  Built for: ${BUILT_FOR_LABEL[storedFor]}`);
   }
   console.log('');
-  console.log('  Auto-configured: app-id saved to ~/.guuey/config.json');
+  console.log(`  ${createdAppBindingLine(binding, appId)}`);
   // guuey#1181: ONE legible line for a Free wallet — never a silent skip.
   if (data.firstImpression !== undefined && data.firstImpression.entitled === false) {
     console.log('');

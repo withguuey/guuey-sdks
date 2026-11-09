@@ -9,6 +9,9 @@
  * `saveConfig` is a spy, so a test run never writes the operator's real
  * `~/.guuey/config.json`.
  */
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 import { appsCreate } from './apps.js';
@@ -68,7 +71,15 @@ function printed(spy: MockInstance<typeof console.log>): string {
   return spy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
 }
 
+// Every test runs in a fresh empty directory, so no guuey.json up the real
+// tree decides where the app id goes (guuey#3263 binds into one when present).
+let originalCwd: string;
+let workDir: string;
+
 beforeEach(() => {
+  originalCwd = process.cwd();
+  workDir = realpathSync(mkdtempSync(join(tmpdir(), 'guuey-apps-create-')));
+  process.chdir(workDir);
   fetchSpy = vi.spyOn(globalThis, 'fetch');
   logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -78,8 +89,91 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  process.chdir(originalCwd);
+  rmSync(workDir, { recursive: true, force: true });
   vi.restoreAllMocks();
   vi.mocked(saveConfig).mockClear();
+});
+
+describe('guuey apps create binds the new app into the project guuey.json (guuey#3263)', () => {
+  const guueyJson = (): string => join(workDir, 'guuey.json');
+  const readGuueyJson = (): { appId?: string; app?: { builtFor?: string }; agent?: { framework?: string } } =>
+    JSON.parse(readFileSync(guueyJson(), 'utf-8'));
+
+  it('inside a project with no appId: the id is written to guuey.json, the global default is untouched, and the line says so', async () => {
+    writeFileSync(guueyJson(), JSON.stringify({ schema: '1', agent: { framework: 'claude-agent-sdk' } }));
+    fetchSpy.mockResolvedValue(created({ id: 'app-b', displayName: 'Bound' }));
+
+    await appsCreate({ name: 'Bound' });
+
+    expect(readGuueyJson()).toMatchObject({ appId: 'app-b', agent: { framework: 'claude-agent-sdk' } });
+    expect(saveConfig).not.toHaveBeenCalled();
+    const out = printed(logSpy);
+    expect(out).toContain(`appId saved to ${guueyJson()}`);
+    expect(out).toContain('guuey agent apply and guuey deploy read it');
+    expect(out).not.toContain('~/.guuey/config.json');
+  });
+
+  it('--for is bound into the project too, beside the appId', async () => {
+    writeFileSync(guueyJson(), JSON.stringify({ schema: '1', agent: {} }));
+    fetchSpy.mockResolvedValue(created({ id: 'app-f', displayName: 'Mine', builtFor: 'personal' }));
+
+    await appsCreate({ name: 'Mine', for: 'personal' });
+
+    expect(readGuueyJson()).toMatchObject({ appId: 'app-f', app: { builtFor: 'personal' } });
+  });
+
+  it('a project already bound to another app keeps its binding, nothing is saved, and the line names both ids', async () => {
+    const before = JSON.stringify({ schema: '1', appId: 'app-old', agent: {} });
+    writeFileSync(guueyJson(), before);
+    fetchSpy.mockResolvedValue(created({ id: 'app-new', displayName: 'Second' }));
+
+    await appsCreate({ name: 'Second' });
+
+    expect(readFileSync(guueyJson(), 'utf-8')).toBe(before);
+    expect(saveConfig).not.toHaveBeenCalled();
+    const out = printed(logSpy);
+    expect(out).toContain('stays bound to app app-old');
+    expect(out).toContain('--app-id app-new');
+  });
+
+  it('a guuey.json that does not parse is left alone; the id goes to the global default and the line names the file', async () => {
+    writeFileSync(guueyJson(), '{ not json');
+    fetchSpy.mockResolvedValue(created({ id: 'app-u', displayName: 'Broken' }));
+
+    await appsCreate({ name: 'Broken' });
+
+    expect(readFileSync(guueyJson(), 'utf-8')).toBe('{ not json');
+    expect(saveConfig).toHaveBeenCalledWith(expect.objectContaining({ appId: 'app-u' }));
+    expect(printed(logSpy)).toContain(`${guueyJson()} could not be read as a guuey.json`);
+  });
+
+  it('outside a project the global default is set, as before', async () => {
+    fetchSpy.mockResolvedValue(created({ id: 'app-g', displayName: 'Loose' }));
+
+    await appsCreate({ name: 'Loose' });
+
+    expect(saveConfig).toHaveBeenCalledWith(expect.objectContaining({ appId: 'app-g' }));
+    expect(printed(logSpy)).toContain('Auto-configured: app-id saved to ~/.guuey/config.json');
+  });
+
+  it('--json carries savedTo: the guuey.json path when bound, null when a bound project kept its app', async () => {
+    const outSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    writeFileSync(guueyJson(), JSON.stringify({ schema: '1', agent: {} }));
+    fetchSpy.mockResolvedValue(created({ id: 'app-j', displayName: 'J' }));
+
+    await appsCreate({ name: 'J', json: true });
+
+    const text = (): string =>
+      [...outSpy.mock.calls.map((c) => String(c[0])), ...logSpy.mock.calls.map((c) => String(c[0]))].join('');
+    expect(JSON.parse(text())).toMatchObject({ appId: 'app-j', savedTo: guueyJson() });
+
+    outSpy.mockClear();
+    logSpy.mockClear();
+    fetchSpy.mockResolvedValue(created({ id: 'app-k', displayName: 'K' }));
+    await appsCreate({ name: 'K', json: true });
+    expect(JSON.parse(text())).toMatchObject({ appId: 'app-k', savedTo: null });
+  });
 });
 
 describe('guuey apps create --for (guuey#1670)', () => {
