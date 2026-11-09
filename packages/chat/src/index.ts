@@ -48,7 +48,7 @@ export {
   type SpeechSession,
   type SpeechStartOptions,
 } from "./speech-input.js";
-export { transcriptInputsFromHistory } from "./history-inputs.js";
+export { historyToolsOf, transcriptInputsFromHistory } from "./history-inputs.js";
 export {
   DEFAULT_MAX_INLINE_MEDIA_BYTES,
   DEFAULT_MEDIA_ORIGINS,

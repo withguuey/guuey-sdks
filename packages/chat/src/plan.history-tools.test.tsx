@@ -240,3 +240,50 @@ describe("guuey#2388: a calls-only read (no result on the read) draws a settled,
     expect(container.textContent).toContain(defaultChatStrings.toolDidntFinish);
   });
 });
+
+describe("guuey#2388: a turn the live fold covers draws its tool rows once, from the fold", () => {
+  // A host that keeps both (portal's thread screen): the persisted rows hold the
+  // finished turn, and the session's fold still covers it. The read's tool entries
+  // join the flat group of their turn, and the plan keeps only the flat groups
+  // before the fold's seam, so the covered turn's entries leave with its group.
+  const messages: TranscriptMessage[] = [
+    { role: "user", text: "Q1", seq: 1 },
+    { role: "assistant", text: "A1", seq: 2 },
+    { role: "user", text: "Q2", seq: 3 },
+    { role: "assistant", text: "A2", seq: 5 },
+  ];
+  const fold: NonNullable<TranscriptInputs["result"]> = {
+    messages: [
+      {
+        id: "m1",
+        role: "assistant",
+        turnId: "t1",
+        content: [{ type: "tool-call", toolCallId: "toolu_b", name: "look_up", input: { q: "look_up" } }],
+      },
+      {
+        id: "m1r",
+        role: "tool",
+        turnId: "t1",
+        content: [{ type: "tool-result", toolCallId: "toolu_b", content: [{ type: "text", text: "found" }], outcome: "ok" }],
+      },
+      { id: "m2", role: "assistant", turnId: "t1", content: [{ type: "text", text: "A2" }] },
+    ],
+    artifacts: [],
+    memory: [],
+    turns: [{ turnId: "t1", threadId: "th", outcome: { type: "success" } }],
+  };
+  const historyTools = { calls: [call(4, "toolu_b", "look_up")], results: [result(4, "toolu_b", "found")] };
+  const tools = (items: DisplayItem[]): ToolItem[] => items.filter((i): i is ToolItem => i.kind === "tool");
+
+  it("the covered turn's call is one tool row, and it is the fold's", () => {
+    const items = plan({ ...inputs(messages, { historyTools }), result: fold });
+    expect(tools(items).map((t) => t.toolCallId)).toEqual(["toolu_b"]);
+    expect(tools(items)[0]?.reloadedWithoutResult).toBeUndefined();
+  });
+
+  it("an earlier turn's reloaded call, before the seam, still draws beside the fold's", () => {
+    const earlier = { calls: [call(2, "toolu_a", "look_up"), ...historyTools.calls], results: historyTools.results };
+    const items = plan({ ...inputs(messages, { historyTools: earlier }), result: fold });
+    expect(tools(items).map((t) => t.toolCallId)).toEqual(["toolu_a", "toolu_b"]);
+  });
+});
