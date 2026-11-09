@@ -92,6 +92,8 @@ export function themeCssVars(theme: GuueyChatTheme, mode: ThemeMode): Record<str
     // would synthesize a fake bold. Unstated, the title stays as it was.
     vars["--_guuey-chat-header-title-size"] = "20px";
     vars["--_guuey-chat-header-title-weight"] = "400";
+    // A2UI titles and headings, same reason (styles.css reads it, 600 unstated).
+    vars["--_guuey-chat-heading-weight"] = "400";
   }
   return vars;
 }

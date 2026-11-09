@@ -696,9 +696,12 @@
 .guuey-chat-a2ui .guuey-chat-attribution {
   margin: 0 calc(var(--guuey-chat-gap, var(--_guuey-chat-gap)) * -1) calc(var(--guuey-chat-gap, var(--_guuey-chat-gap)) * -1);
 }
+/* A heading's weight follows the theme: 600, or 400 when the theme states a
+   heading face, which often ships one weight (a 600 would synthesize a fake
+   bold). The same rule as the panel title. */
 .guuey-chat-a2ui-title {
   margin: 0;
-  font-weight: 600;
+  font-weight: var(--guuey-chat-heading-weight, var(--_guuey-chat-heading-weight, 600));
   font-family: var(--guuey-chat-heading-font, var(--_guuey-chat-heading-font, inherit));
 }
 .guuey-chat-a2ui-body {
@@ -802,7 +805,7 @@
 .guuey-chat-a2ui-text-h4,
 .guuey-chat-a2ui-text-h5,
 .guuey-chat-a2ui-text-h6 {
-  font-weight: 600;
+  font-weight: var(--guuey-chat-heading-weight, var(--_guuey-chat-heading-weight, 600));
   font-family: var(--guuey-chat-heading-font, var(--_guuey-chat-heading-font, inherit));
   line-height: 1.25;
 }
@@ -852,6 +855,10 @@
   font-size: 0.9em;
   unicode-bidi: isolate;
   direction: ltr;
+}
+/* Inside the image chip the host takes the chip's own size, never 0.9 of it. */
+.guuey-chat-a2ui-image-chip .guuey-chat-a2ui-host {
+  font-size: 1em;
 }
 .guuey-chat-a2ui-image {
   display: block;
@@ -977,6 +984,13 @@ textarea.guuey-chat-a2ui-input {
 /* A locked field (an action in flight or answered): muted words, a colour. */
 .guuey-chat-a2ui-input:read-only {
   color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
+}
+/* The agent's placeholder words in the kit's muted ink, never the browser's
+   grey. `opacity: 1` resets Firefox's own placeholder opacity; it is not a mute. */
+.guuey-chat-a2ui-input::placeholder,
+.guuey-chat-a2ui-filter::placeholder {
+  color: var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted));
+  opacity: 1;
 }
 .guuey-chat-a2ui-check,
 .guuey-chat-a2ui-option {

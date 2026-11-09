@@ -171,11 +171,31 @@ describe("the A2UI surface's look (spec §5.3)", () => {
     expect(value(".guuey-chat-a2ui-options[hidden]", "display")).toBe("none");
   });
 
-  it("no opacity anywhere in the A2UI rules: a mute is a colour", () => {
-    const withOpacity = rules().flatMap((r) =>
-      /(?:^|;)\s*opacity:/.test(r.body) ? r.selectors.filter((s) => s.includes("guuey-chat-a2ui")) : [],
-    );
+  it("no opacity anywhere in the A2UI rules: a mute is a colour (a placeholder's `opacity: 1` is a reset, the one exception)", () => {
+    const withOpacity = rules().flatMap((r) => {
+      const opacity = /(?:^|;)\s*opacity:\s*([^;]+)/.exec(r.body)?.[1]?.trim();
+      if (opacity === undefined) return [];
+      return r.selectors.filter((s) => s.includes("guuey-chat-a2ui") && !(opacity === "1" && s.endsWith("::placeholder")));
+    });
     expect(withOpacity).toEqual([]);
+  });
+
+  it("an input's and the filter's placeholder words are the kit's muted ink at full strength, never the browser's grey", () => {
+    for (const selector of [".guuey-chat-a2ui-input::placeholder", ".guuey-chat-a2ui-filter::placeholder"]) {
+      expect(value(selector, "color")).toBe("var(--guuey-chat-ink-muted, var(--_guuey-chat-ink-muted))");
+      expect(value(selector, "opacity")).toBe("1");
+    }
+  });
+
+  it("the host inside the image chip takes the chip's size, never 0.9 of it", () => {
+    expect(value(".guuey-chat-a2ui-image-chip .guuey-chat-a2ui-host", "font-size")).toBe("1em");
+  });
+
+  it("the surface title and every Text heading take the theme's heading weight, 600 when it states none", () => {
+    const weight = "var(--guuey-chat-heading-weight, var(--_guuey-chat-heading-weight, 600))";
+    for (const selector of [".guuey-chat-a2ui-title", ...[1, 2, 3, 4, 5, 6].map((n) => `.guuey-chat-a2ui-text-h${n}`)]) {
+      expect(value(selector, "font-weight"), selector).toBe(weight);
+    }
   });
 
   it("a disabled button, any variant, takes the sheet's disabled contract (the composer's), and it outranks every variant", () => {

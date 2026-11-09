@@ -153,12 +153,14 @@ describe("the panel title wears the host's heading face (cdo ruling, 2026-11-09)
     expect(vars["--_guuey-chat-heading-font"]).toBe("Lilita One");
     expect(vars["--_guuey-chat-header-title-size"]).toBe("20px");
     expect(vars["--_guuey-chat-header-title-weight"]).toBe("400");
+    expect(vars["--_guuey-chat-heading-weight"]).toBe("400");
   });
 
   it("no heading family stamps neither, so the title renders as before", () => {
     const vars = themeCssVars({ ...GUUEY_CHAT_THEME, typography: { fontFamily: "Archivo" } }, "light");
     expect("--_guuey-chat-header-title-size" in vars).toBe(false);
     expect("--_guuey-chat-header-title-weight" in vars).toBe(false);
+    expect("--_guuey-chat-heading-weight" in vars).toBe(false);
   });
 
   it("the title rule reads the heading face and falls back to the body font, its size and 600", () => {
