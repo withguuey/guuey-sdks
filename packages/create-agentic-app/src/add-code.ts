@@ -14,13 +14,14 @@
  *  - `src/**`, `tsup.config.ts` and `tsconfig.json`, copied (a file already
  *    there with the same bytes is kept; different bytes stop the conversion
  *    before anything is written);
- *  - package.json: the template's dependencies and its build devDependencies
- *    are added (a version the project already pins is kept), plus the
- *    `build` and `typecheck` scripts;
+ *  - package.json: the template's dependencies and devDependencies are added
+ *    (all but the web app's, a version the project already pins is kept),
+ *    plus the `build` and `typecheck` scripts;
  *  - pnpm-workspace.yaml: the template's install settings (the build-script
  *    allow and ignore lists a worker's dependencies need), without its
- *    `packages:` list, when the project's file holds only the settings the
- *    agent template ships; a file the builder changed is kept and named;
+ *    `packages:` list, when the project's file is still the agent template's,
+ *    byte for byte (the same test as the worker files); a file the builder
+ *    changed is kept and named;
  *  - .gitignore: the template's lines the project lacks (the build output);
  *  - guuey.json, LAST: `agent.mode: "code"`, the framework, and the
  *    template's worker entry (`worker` / `agent.entry`) when it names one.
@@ -37,21 +38,17 @@ import { fillPnpmRunner, isProbablyText, renameContent } from './rename.js';
 import { pathExists } from './shared.js';
 import { runInstall, type Framework } from './scaffold.js';
 
-/** The template devDependencies a worker build needs; the rest (`@ggui-ai/cli`, `tsx`) serve the web app and dev loop. */
-const WORKER_BUILD_DEV_DEPENDENCIES: readonly string[] = ['tsup', 'typescript', '@guuey/config', '@guuey/cli'];
+/**
+ * The template devDependencies a converted project does NOT take: they serve
+ * the web app and its dev loop, which the conversion does not add. Every other
+ * template devDependency is taken, so a build tool the template gains reaches
+ * converted projects too; a name missing here costs one unused devDependency,
+ * never a broken build.
+ */
+const WEB_ONLY_DEV_DEPENDENCIES: ReadonlySet<string> = new Set(['@ggui-ai/cli', 'tsx']);
 
 /** The files and directories the worker brings, relative to the project root. */
 const WORKER_PATHS: readonly string[] = ['src', 'tsup.config.ts', 'tsconfig.json'];
-
-/** The top-level keys of the pnpm-workspace.yaml `--template agent` ships: a file with only these is ours to replace. */
-const AGENT_WORKSPACE_KEYS: ReadonlySet<string> = new Set([
-  'allowBuilds',
-  'onlyBuiltDependencies',
-  'ignoredBuiltDependencies',
-  'strictDepBuilds',
-  'verifyDepsBeforeRun',
-  'minimumReleaseAge',
-]);
 
 export interface AddCodeOptions {
   /** The declarative project to convert (its guuey.json is read from here). */
@@ -61,7 +58,7 @@ export interface AddCodeOptions {
   install?: boolean;
   /** How this machine runs pnpm, when the caller already asked (`null`: none). Omitted, asked once here. */
   pnpm?: PnpmInvocation | null;
-  /** Root holding `base/<framework>` (the assembled templates). Default: dist/templates. */
+  /** Root holding `base/<framework>` and `agent` (the assembled templates). Default: dist/templates. */
   templatesDir?: string;
 }
 
@@ -94,7 +91,9 @@ async function readJson<T>(path: string, what: string): Promise<T> {
   let text: string;
   try {
     text = await fs.readFile(path, 'utf8');
-  } catch {
+  } catch (err) {
+    // Only a missing file means "not a project"; any other read error is itself the answer.
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
     throw new AddCodeError(`No ${what} at ${path}: run this in a project made with --template agent.`);
   }
   try {
@@ -126,16 +125,6 @@ async function renderedFile(src: string, name: string, runner: string): Promise<
   return Buffer.from(fillPnpmRunner(renameContent(buf.toString('utf8'), name, name), runner), 'utf8');
 }
 
-/** The top-level keys of a YAML file (lines that start a mapping key at column 0). */
-export function topLevelYamlKeys(text: string): string[] {
-  const keys: string[] = [];
-  for (const line of text.split('\n')) {
-    const match = /^([A-Za-z_][A-Za-z0-9_-]*):/.exec(line);
-    if (match) keys.push(match[1]!);
-  }
-  return keys;
-}
-
 /** The template's pnpm-workspace.yaml without its `packages:` block: a converted project is one package. */
 export function workspaceSettingsOnly(text: string): string {
   const out: string[] = [];
@@ -157,7 +146,8 @@ export function workspaceSettingsOnly(text: string): string {
 
 export async function addCode(opts: AddCodeOptions): Promise<AddCodeResult> {
   const projectDir = resolve(opts.projectDir);
-  const templateDir = join(opts.templatesDir ?? defaultTemplatesDir, 'base', opts.framework);
+  const templatesDir = opts.templatesDir ?? defaultTemplatesDir;
+  const templateDir = join(templatesDir, 'base', opts.framework);
   if (!(await pathExists(templateDir))) {
     throw new AddCodeError(`No code template for framework "${opts.framework}" under ${templateDir}.`);
   }
@@ -168,7 +158,9 @@ export async function addCode(opts: AddCodeOptions): Promise<AddCodeResult> {
     throw new AddCodeError(`${guueyJsonPath} declares no agent: run this in a project made with --template agent.`);
   }
   if (manifest.agent.mode === 'code') {
-    throw new AddCodeError(`${guueyJsonPath} is already a code project (agent.mode is "code").`);
+    throw new AddCodeError(
+      `${guueyJsonPath} is already a code project (agent.mode is "code"). If its dependencies are not installed yet, run "pnpm install" there.`,
+    );
   }
   const packageJsonPath = join(projectDir, 'package.json');
   const pkg = await readJson<ProjectPackageJson>(packageJsonPath, 'package.json');
@@ -215,9 +207,9 @@ export async function addCode(opts: AddCodeOptions): Promise<AddCodeResult> {
     dependencies[dep] ??= version;
   }
   const devDependencies = { ...(pkg.devDependencies ?? {}) };
-  for (const dep of WORKER_BUILD_DEV_DEPENDENCIES) {
-    const version = templatePkg.devDependencies?.[dep];
-    if (version !== undefined && dependencies[dep] === undefined) devDependencies[dep] ??= version;
+  for (const [dep, version] of Object.entries(templatePkg.devDependencies ?? {})) {
+    if (WEB_ONLY_DEV_DEPENDENCIES.has(dep) || dependencies[dep] !== undefined) continue;
+    devDependencies[dep] ??= version;
   }
   const scripts = { ...(pkg.scripts ?? {}) };
   for (const script of ['build', 'typecheck']) {
@@ -227,13 +219,19 @@ export async function addCode(opts: AddCodeOptions): Promise<AddCodeResult> {
   await writeJson(packageJsonPath, { ...pkg, scripts, dependencies, devDependencies });
   changed.push('package.json');
 
-  // pnpm-workspace.yaml: the worker dependencies' install settings.
+  // pnpm-workspace.yaml: the worker dependencies' install settings. The
+  // project's file is ours to replace only while it is still the agent
+  // template's, byte for byte; a builder's edit (a key or a value) keeps it.
   let keptWorkspaceFile = false;
   const templateWorkspace = join(templateDir, 'pnpm-workspace.yaml');
   if (await pathExists(templateWorkspace)) {
     const projectWorkspace = join(projectDir, 'pnpm-workspace.yaml');
-    const current = (await pathExists(projectWorkspace)) ? await fs.readFile(projectWorkspace, 'utf8') : '';
-    if (topLevelYamlKeys(current).every((key) => AGENT_WORKSPACE_KEYS.has(key))) {
+    const agentWorkspace = join(templatesDir, 'agent', 'pnpm-workspace.yaml');
+    const ours =
+      !(await pathExists(projectWorkspace)) ||
+      ((await pathExists(agentWorkspace)) &&
+        (await fs.readFile(projectWorkspace)).equals(await renderedFile(agentWorkspace, name, runner)));
+    if (ours) {
       await fs.writeFile(projectWorkspace, workspaceSettingsOnly(await fs.readFile(templateWorkspace, 'utf8')), 'utf8');
       changed.push('pnpm-workspace.yaml');
     } else {

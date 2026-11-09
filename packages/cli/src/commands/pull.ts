@@ -193,6 +193,20 @@ export interface PullMapping {
   overlay: GuueyJsonV1;
   promptFile: { path: string; content: string } | null;
   agentReplaced: boolean;
+  /**
+   * guuey#3276: in a code project, the agent fields where the local value was
+   * kept over a different value the live definition names (a field it leaves
+   * out is no claim), so pull can name the drift instead of
+   * hiding it.
+   */
+  keptLocal?: KeptLocalField[];
+}
+
+/** One code-project field pull kept over a different value in the live definition. */
+export interface KeptLocalField {
+  field: 'framework' | 'entry';
+  local: string | undefined;
+  live: string | undefined;
 }
 
 /**
@@ -327,8 +341,15 @@ export function mapHostedStateToOverlay(
   // values win. Otherwise a pull into a converted google-adk project would
   // drop `entry` and import the declarative snapshot's framework, and the
   // next deploy would build one worker and look for another.
+  const keptLocal: KeptLocalField[] = [];
   if (localMode === 'code' && existing !== null) {
-    const { framework: _snapshotFramework, entry: _snapshotEntry, ...definition } = agent;
+    const { framework: liveFramework, entry: liveEntry, ...definition } = agent;
+    if (liveFramework !== undefined && liveFramework !== existing.agent.framework) {
+      keptLocal.push({ field: 'framework', local: existing.agent.framework, live: liveFramework });
+    }
+    if (liveEntry !== undefined && liveEntry !== existing.agent.entry) {
+      keptLocal.push({ field: 'entry', local: existing.agent.entry, live: liveEntry });
+    }
     agent = {
       ...definition,
       ...(existing.agent.framework !== undefined ? { framework: existing.agent.framework } : {}),
@@ -345,7 +366,7 @@ export function mapHostedStateToOverlay(
     appId: app.id,
     agent,
   };
-  return { overlay, promptFile, agentReplaced: true };
+  return { overlay, promptFile, agentReplaced: true, ...(keptLocal.length > 0 ? { keptLocal } : {}) };
 }
 
 /**
@@ -505,7 +526,7 @@ export async function pull(
     process.exit(1);
   }
   const scaffolded = existing === null;
-  const { overlay, promptFile, agentReplaced } = mapHostedStateToOverlay(
+  const { overlay, promptFile, agentReplaced, keptLocal } = mapHostedStateToOverlay(
     app,
     snapshot,
     existing,
@@ -552,6 +573,11 @@ export async function pull(
     console.log(`  Agent:        replaced the local agent section with the deployed snapshot`);
     console.log(`  framework:    ${overlay.agent.framework ?? 'claude-agent-sdk (default)'}`);
     console.log(`  model:        ${overlay.agent.model ?? '(framework default)'}`);
+    for (const kept of keptLocal ?? []) {
+      console.log(
+        `  ${`${kept.field}:`.padEnd(14)}kept "${kept.local ?? '(none)'}" from this code project; the live definition says "${kept.live}"`,
+      );
+    }
     if (promptFile) {
       console.log(`  systemPrompt: ${promptFile.path} (${promptFile.content.length} chars)`);
     }

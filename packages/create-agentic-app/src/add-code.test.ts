@@ -10,13 +10,18 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { safeParseGuueyJson } from '@guuey/config';
-import { AddCodeError, addCode, topLevelYamlKeys, workspaceSettingsOnly } from './add-code.js';
+import { AddCodeError, addCode, workspaceSettingsOnly } from './add-code.js';
 import { scaffold, type Framework } from './scaffold.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dist = join(__dirname, '..', 'dist', 'templates');
 const PNPM = { file: 'pnpm', prefix: [] } as const;
 const FRAMEWORKS: readonly Framework[] = ['claude-agent-sdk', 'openai-agents-sdk', 'google-adk'];
+
+/** The top-level keys of a YAML file (lines that start a mapping key at column 0). */
+function topLevelYamlKeys(text: string): string[] {
+  return text.split('\n').flatMap((line) => /^([A-Za-z_][A-Za-z0-9_-]*):/.exec(line)?.[1] ?? []);
+}
 
 let root: string;
 let project: string;
@@ -88,12 +93,20 @@ describe('addCode (guuey#3276)', () => {
     const pkg = await readJson<{ scripts: Record<string, string>; dependencies: Record<string, string>; devDependencies: Record<string, string> }>(
       join(project, 'package.json'),
     );
-    const templatePkg = await readJson<{ dependencies: Record<string, string> }>(join(templateDir, 'package.json'));
+    const templatePkg = await readJson<{ dependencies: Record<string, string>; devDependencies: Record<string, string> }>(
+      join(templateDir, 'package.json'),
+    );
     expect(pkg.dependencies).toMatchObject(templatePkg.dependencies);
     expect(pkg.scripts.build).toBe('tsup');
     expect(pkg.scripts.apply).toBe('guuey agent apply');
-    expect(pkg.devDependencies.tsup).toBeDefined();
-    expect(pkg.devDependencies['@ggui-ai/cli']).toBeUndefined();
+    // Every template devDependency but the web app's: a build tool the template gains reaches here too.
+    for (const dep of Object.keys(templatePkg.devDependencies)) {
+      if (dep === '@ggui-ai/cli' || dep === 'tsx') {
+        expect(pkg.devDependencies[dep]).toBeUndefined();
+      } else {
+        expect({ ...pkg.dependencies, ...pkg.devDependencies }[dep]).toBeDefined();
+      }
+    }
 
     // pnpm-workspace.yaml: the template's install settings, one package (no `packages:`).
     const yaml = await fs.readFile(join(project, 'pnpm-workspace.yaml'), 'utf8');
@@ -111,7 +124,7 @@ describe('addCode (guuey#3276)', () => {
     await agentProject();
     await addCode({ projectDir: project, framework: 'claude-agent-sdk', pnpm: PNPM });
     await expect(addCode({ projectDir: project, framework: 'claude-agent-sdk', pnpm: PNPM })).rejects.toThrow(
-      /already a code project/,
+      /already a code project .*run "pnpm install" there/,
     );
   });
 
@@ -150,6 +163,39 @@ describe('addCode (guuey#3276)', () => {
     expect(await fs.readFile(join(project, 'pnpm-workspace.yaml'), 'utf8')).toBe(custom);
   });
 
+  it('a value edit to the agent pnpm-workspace.yaml keeps it too (same keys, different bytes)', async () => {
+    await agentProject();
+    const workspacePath = join(project, 'pnpm-workspace.yaml');
+    const edited = (await fs.readFile(workspacePath, 'utf8')).replace('  - esbuild\n', '  - esbuild\n  - better-sqlite3\n');
+    expect(edited).toContain('better-sqlite3');
+    await fs.writeFile(workspacePath, edited);
+
+    const result = await addCode({ projectDir: project, framework: 'claude-agent-sdk', pnpm: PNPM });
+    expect(result.keptWorkspaceFile).toBe(true);
+    expect(await fs.readFile(workspacePath, 'utf8')).toBe(edited);
+  });
+
+  it('a project with no pnpm-workspace.yaml gets the install settings', async () => {
+    await agentProject();
+    await fs.rm(join(project, 'pnpm-workspace.yaml'));
+
+    const result = await addCode({ projectDir: project, framework: 'claude-agent-sdk', pnpm: PNPM });
+    expect(result.keptWorkspaceFile).toBe(false);
+    expect(topLevelYamlKeys(await fs.readFile(join(project, 'pnpm-workspace.yaml'), 'utf8'))).toContain('allowBuilds');
+  });
+
+  it('a guuey.json it cannot read is that error, not "no project here"', async () => {
+    await agentProject();
+    await fs.chmod(join(project, 'guuey.json'), 0o000);
+    try {
+      await expect(addCode({ projectDir: project, framework: 'claude-agent-sdk', pnpm: PNPM })).rejects.toMatchObject({
+        code: 'EACCES',
+      });
+    } finally {
+      await fs.chmod(join(project, 'guuey.json'), 0o644);
+    }
+  });
+
   it('a directory with no guuey.json is refused, naming the template it expects', async () => {
     await fs.mkdir(project, { recursive: true });
     await expect(addCode({ projectDir: project, framework: 'claude-agent-sdk', pnpm: PNPM })).rejects.toThrow(
@@ -158,14 +204,7 @@ describe('addCode (guuey#3276)', () => {
   });
 });
 
-describe('the workspace file helpers', () => {
-  it('reads top-level keys only', () => {
-    expect(topLevelYamlKeys('# c\nallowBuilds:\n  esbuild: true\nminimumReleaseAge: 0\n')).toEqual([
-      'allowBuilds',
-      'minimumReleaseAge',
-    ]);
-  });
-
+describe('the workspace file helper', () => {
   it('drops the packages block and keeps every setting', () => {
     const out = workspaceSettingsOnly('packages:\n  - "mcps/*"\n  - "web"\n\n# why\nstrictDepBuilds: false\n');
     expect(topLevelYamlKeys(out)).toEqual(['strictDepBuilds']);

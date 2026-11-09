@@ -153,13 +153,24 @@ describe('mapHostedStateToOverlay', () => {
   it("a code project keeps its own framework and entry: they describe the worker it ships (guuey#3276)", () => {
     const local = localScaffold();
     local.agent = { ...local.agent, framework: 'google-adk', entry: 'agent.js' };
-    const { overlay } = mapHostedStateToOverlay(APP, nocodeSnapshot(), local);
+    const { overlay, keptLocal } = mapHostedStateToOverlay(APP, nocodeSnapshot(), local);
 
     expect(overlay.agent.mode).toBe('code');
     expect(overlay.agent.framework).toBe('google-adk');
     expect(overlay.agent.entry).toBe('agent.js');
     // The definition is still the live one.
     expect(overlay.agent.model).toBe('claude-opus-4-8');
+    // The drift is named, not hidden: the live definition says claude-agent-sdk.
+    // It names no entry, which is no claim, so entry is not reported.
+    expect(keptLocal).toEqual([{ field: 'framework', local: 'google-adk', live: 'claude-agent-sdk' }]);
+  });
+
+  it('a code project whose framework matches the live one reports no drift (guuey#3276)', () => {
+    const local = localScaffold();
+    local.agent = { ...local.agent, framework: 'claude-agent-sdk' };
+    const { keptLocal } = mapHostedStateToOverlay(APP, nocodeSnapshot(), local);
+
+    expect(keptLocal).toBeUndefined();
   });
 
   it('a declarative project takes the snapshot framework as the definition (no local code to describe)', () => {
