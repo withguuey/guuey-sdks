@@ -1,7 +1,12 @@
 // guuey#2381 — writes the frozen preview-a2ui conformance vectors
 // (fixtures/preview-a2ui-0.29.0-vectors.json, read by a2ui/conformance.test.ts).
 //
-//   node src/corpus/a2ui-preview-vectors.mjs <dir of @ggui-ai/preview-a2ui@0.29.0>
+//   pnpm vectors:a2ui
+//   node src/corpus/a2ui-preview-vectors.mjs [<dir of @ggui-ai/preview-a2ui@0.29.0>]
+//
+// With no argument the package is found in node_modules the way it is
+// installed: this package does not depend on it, @ggui-ai/iframe-runtime
+// does, so it is resolved through that package (no dependency is added here).
 //
 // Version: the spec names preview-a2ui 0.25.0; the lockfile resolves 0.29.0
 // (the @ggui-ai family pin), so 0.29.0 is the release a guuey surface meets
@@ -13,12 +18,28 @@
 // generated, edge) must then be accepted by guuey and draw every component as
 // the same kind; a divergence vector is one preview accepts and guuey refuses
 // on purpose, with the refusal it must give.
-import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const previewDir = process.argv[2];
-if (previewDir === undefined) throw new Error("usage: a2ui-preview-vectors.mjs <preview-a2ui package dir>");
+/** The installed preview-a2ui's package dir, reached through @ggui-ai/iframe-runtime, the package that depends on it. */
+function installedPreviewDir() {
+  let runtimeEntry;
+  try {
+    runtimeEntry = createRequire(import.meta.url).resolve("@ggui-ai/iframe-runtime");
+  } catch (cause) {
+    throw new Error("@ggui-ai/iframe-runtime is not installed where this package can reach it: install the workspace, or pass the preview-a2ui dir", { cause });
+  }
+  const previewEntry = createRequire(runtimeEntry).resolve("@ggui-ai/preview-a2ui");
+  for (let dir = dirname(previewEntry); dir !== dirname(dir); dir = dirname(dir)) {
+    const manifest = join(dir, "package.json");
+    if (existsSync(manifest) && JSON.parse(readFileSync(manifest, "utf8")).name === "@ggui-ai/preview-a2ui") return dir;
+  }
+  throw new Error(`no @ggui-ai/preview-a2ui package.json above ${previewEntry}`);
+}
+
+const previewDir = process.argv[2] ?? installedPreviewDir();
 const previewPkg = JSON.parse(readFileSync(join(previewDir, "package.json"), "utf8"));
 if (previewPkg.name !== "@ggui-ai/preview-a2ui" || previewPkg.version !== "0.29.0") {
   throw new Error(`expected @ggui-ai/preview-a2ui@0.29.0, got ${previewPkg.name}@${previewPkg.version}`);

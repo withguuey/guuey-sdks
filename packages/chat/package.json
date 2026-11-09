@@ -57,7 +57,8 @@
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "vectors:a2ui": "node src/corpus/a2ui-preview-vectors.mjs"
   },
   "dependencies": {
     "@guuey/agent-client": "workspace:*",
