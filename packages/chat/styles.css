@@ -875,6 +875,7 @@
   display: inline-flex;
   width: fit-content;
   max-width: 100%;
+  white-space: nowrap;
   align-items: center;
   gap: 4px;
   min-height: 36px;
@@ -908,6 +909,16 @@
    colour, never an opacity. */
 .guuey-chat .guuey-chat-a2ui-button-primary .guuey-chat-a2ui-host {
   color: color-mix(in srgb, currentColor 80%, var(--guuey-chat-accent, var(--_guuey-chat-accent)));
+}
+/* One height per button row: one line, the words ellipsized inside the
+   button's max width, the host (§7.3) kept whole beside them. */
+.guuey-chat-a2ui-button .guuey-chat-a2ui-words {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.guuey-chat-a2ui-button .guuey-chat-a2ui-host {
+  flex-shrink: 0;
 }
 /* Content-sized by default (a set width is never stretched), so start, center
    and end place a button or chip; a container that says stretch widens it. */

@@ -510,7 +510,9 @@ function A2uiButton({ node, env }: { node: NodeOf<"Button">; env: Env }): ReactN
   }
   return (
     <button type="button" className={className} disabled {...(isActionButton(node) ? { "aria-describedby": env.unavailableId } : {})}>
-      <span dir="auto">{label}</span>
+      <span className="guuey-chat-a2ui-words" dir="auto">
+        {label}
+      </span>
     </button>
   );
 }

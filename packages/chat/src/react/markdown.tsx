@@ -103,7 +103,7 @@ export function GatedLink({
 }): ReactNode {
   return (
     <a className={className} href={target.url} target="_blank" rel="noopener noreferrer nofollow" referrerPolicy="no-referrer">
-      <bdi>{children}</bdi>
+      <bdi className="guuey-chat-a2ui-words">{children}</bdi>
       <bdi className="guuey-chat-a2ui-host" dir="ltr">
         {" · "}
         {target.host}

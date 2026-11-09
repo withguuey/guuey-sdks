@@ -277,6 +277,20 @@ describe("(a) each component, and each prop through its closed table", () => {
     expect(surface.querySelector(".guuey-chat-a2ui-unavailable")).toBeNull();
   });
 
+  it("Button: every button's words sit in one words element, a link button's host beside them on the same row", () => {
+    const { surface } = draw([
+      { id: "root", component: "Row", children: ["a", "l"] },
+      { id: "a", component: "Button", label: "Hold my table", action: { name: "submit" } },
+      { id: "l", component: "Button", label: "Menu", href: "https://menu.example/m" },
+    ]);
+    for (const button of Array.from(surface.querySelectorAll<HTMLElement>(".guuey-chat-a2ui-button"))) {
+      const words = Array.from(button.children).filter((c) => c.classList.contains("guuey-chat-a2ui-words"));
+      expect(words, button.textContent ?? "").toHaveLength(1);
+    }
+    const link = within(surface).getByRole("link");
+    expect(Array.from(link.children).map((c) => c.className)).toEqual(["guuey-chat-a2ui-words", "guuey-chat-a2ui-host"]);
+  });
+
   it("Button: with neither action nor link it is inert, drawn disabled, and needs no note", () => {
     const { surface } = draw([{ id: "root", component: "Button", label: "Nothing" }]);
     expect((within(surface).getByRole("button", { name: "Nothing" }) as HTMLButtonElement).disabled).toBe(true);

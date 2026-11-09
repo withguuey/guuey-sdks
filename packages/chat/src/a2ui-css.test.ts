@@ -151,6 +151,17 @@ describe("the A2UI surface's look (spec §5.3)", () => {
     }
   });
 
+  it("one height per button row: every button is 36px and one line, its words ellipsized, its host kept whole", () => {
+    expect(value(".guuey-chat-a2ui-button", "min-height")).toBe("36px");
+    expect(value(".guuey-chat-a2ui-button", "white-space")).toBe("nowrap");
+    expect(value(".guuey-chat-a2ui-button", "max-width")).toBe("100%");
+    expect(value(".guuey-chat-a2ui-button .guuey-chat-a2ui-words", "overflow")).toBe("hidden");
+    expect(value(".guuey-chat-a2ui-button .guuey-chat-a2ui-words", "text-overflow")).toBe("ellipsis");
+    expect(value(".guuey-chat-a2ui-button .guuey-chat-a2ui-words", "min-width")).toBe("0");
+    // The host is what §7.3 promises the reader: it never shrinks away.
+    expect(value(".guuey-chat-a2ui-button .guuey-chat-a2ui-host", "flex-shrink")).toBe("0");
+  });
+
   it("no opacity anywhere in the A2UI rules: a mute is a colour", () => {
     const withOpacity = rules().flatMap((r) =>
       /(?:^|;)\s*opacity:/.test(r.body) ? r.selectors.filter((s) => s.includes("guuey-chat-a2ui")) : [],
