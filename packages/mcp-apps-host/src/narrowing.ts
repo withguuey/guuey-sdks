@@ -22,9 +22,11 @@ export {
   scanProviderRawForUiResource,
   snapshotUiResource,
   toolResultLocator,
+  toolResultMountSource,
   toolResultUiResource,
   uiLocator,
   type McpUiResourcePayload,
+  type ToolResultMountSource,
 } from "./block-ui.js";
 export {
   isViewDirectiveText,

@@ -40,7 +40,7 @@
  * (`uiResourceChannel` in `reader.ts` — `ui://ggui/…` → `"ggui"`), never
  * from the response and never from mount material a producer inlined.
  */
-import { snapshotUiResource, toolResultLocator, toolResultUiResource, type McpUiResourcePayload } from "./block-ui.js";
+import { snapshotUiResource, toolResultLocator, toolResultMountSource, type McpUiResourcePayload } from "./block-ui.js";
 import type { McpUiResourceCsp } from "@modelcontextprotocol/ext-apps";
 import type { AgBlock, JsonValue } from "@silverprotocol/core";
 
@@ -137,7 +137,8 @@ export interface UiResourceReadHints {
 /**
  * A live `tool-result` block → the card to mount: an inline resource, else the
  * `ui://` locator (either channel — see `toolResultLocator`), else `undefined`
- * when the block carries no generative UI at all.
+ * when the block carries no generative UI at all. The decision is
+ * `toolResultMountSource`, the one rule the store's card predicate reads too.
  *
  * A locator on a LIVE turn resolves through the pod door (its live-card
  * ledger registers the locator the moment the result streams — guuey#209
@@ -147,10 +148,7 @@ export interface UiResourceReadHints {
 export function toolResultViewMount(
   block: Extract<AgBlock, { type: "tool-result" }>,
 ): ViewMount | undefined {
-  const inline = toolResultUiResource(block);
-  if (inline) return { resource: inline, channel: "inline" };
-  const locator = toolResultLocator(block);
-  return locator !== undefined ? { channel: "locator", resourceUri: locator } : undefined;
+  return toolResultMountSource(block);
 }
 
 /**

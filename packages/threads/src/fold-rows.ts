@@ -16,7 +16,7 @@ import type {
 } from "@silverprotocol/core";
 import { AgProviderMeta, readStoredAgMemoryRecords, readStoredAgMessage } from "@silverprotocol/core";
 import type { RowBudget, ThreadMessageRow, ThreadMessageRole, ThreadMessageKind, ThreadSnapshotRow } from "./rows.js";
-import { asUiResource, scanProviderRawForUiResource, toolResultLocator } from "@guuey/mcp-apps-host/narrowing";
+import { asUiResource, toolResultMountSource } from "@guuey/mcp-apps-host/narrowing";
 
 export interface RowCtx {
   threadId: string;
@@ -709,14 +709,12 @@ function withoutToolResultMeta(
  */
 export function toolResultCarriesUi(block: StoredToolResultBlock): boolean {
   const stored = withoutToolResultMeta(block);
-  return (
-    asUiResource(stored.uiData) !== undefined ||
-    isElidedMarker(stored.uiData) ||
-    toolResultLocator(stored) !== undefined ||
-    stored.content.some(
-      (part) => part.type === "provider-raw" && scanProviderRawForUiResource(part.raw) !== undefined,
-    )
-  );
+  // The mount rule is mcp-apps-host's, the one the live planner asks
+  // (guuey#2366), read over the stored view. The elided marker is the store's
+  // own input: only its bounded writer leaves one, and only where the turn's
+  // card row carries the resource whole, so no other reader ever meets it on
+  // a result alone (`has-mount.sync.test.ts` pins both halves).
+  return toolResultMountSource(stored) !== undefined || isElidedMarker(stored.uiData);
 }
 
 export function uiCardArtifactsFromMessages(messages: AgMessage[]): AgArtifact[] {

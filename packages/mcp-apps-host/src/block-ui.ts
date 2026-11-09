@@ -152,6 +152,30 @@ export function toolResultUiResource(
   return undefined;
 }
 
+/** What a tool result mounts: its inline resource, or the `ui://` locator to fetch one by. */
+export type ToolResultMountSource =
+  | { channel: "inline"; resource: McpUiResourcePayload }
+  | { channel: "locator"; resourceUri: string };
+
+/**
+ * The ONE "has a mount" rule for a `tool-result` block (guuey#2366): an
+ * inline resource ({@link toolResultUiResource}), else a `ui://` locator from
+ * any channel ({@link toolResultLocator}), else `undefined` when the block
+ * mounts nothing. The live planner's `toolResultViewMount` returns exactly
+ * this, and the store's card predicate (`@guuey/threads`'
+ * `toolResultCarriesUi`) reads it over the block as stored, so a result is a
+ * card on both sides or on neither. An A2UI carrier beside a mount changes
+ * nothing here: the mount wins and the carrier is never read.
+ */
+export function toolResultMountSource(
+  block: Extract<AgBlock, { type: "tool-result" }>,
+): ToolResultMountSource | undefined {
+  const inline = toolResultUiResource(block);
+  if (inline) return { channel: "inline", resource: inline };
+  const locator = toolResultLocator(block);
+  return locator !== undefined ? { channel: "locator", resourceUri: locator } : undefined;
+}
+
 /**
  * A persisted `HistoryCard`'s `cardSnapshot` → a mountable UI resource. The
  * snapshot is the verbatim `AgArtifact` the pod stored (`{ parts: AgBlock[] }`),

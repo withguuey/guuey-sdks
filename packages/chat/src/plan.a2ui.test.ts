@@ -15,6 +15,7 @@
  */
 import { readFileSync } from "node:fs";
 import { describe, expect, expectTypeOf, it } from "vitest";
+import { toolResultMountSource } from "@guuey/mcp-apps-host";
 import type { AgBlock, AgReduceResult, JsonValue } from "@silverprotocol/core";
 import {
   threadHistoryRowsToCards,
@@ -525,5 +526,30 @@ describe("history (spec §11, adapted to guuey#2388's toolResults) — the same 
     const reloaded = planTranscript(historyInputs(rows([withCarrier("t1", form("form-1"))])), calmPolicy());
     expect(a2uiOf(reloaded.items)).toEqual([]);
     expect(toolsOf(reloaded.items)[0]?.result?.kind).toBe("data-result");
+  });
+});
+
+describe("one has-a-mount rule: the planner asks mcp-apps-host's, as the store does (guuey#2366)", () => {
+  const RESOURCE: Json = { uri: "ui://x/inline", mimeType: "text/html", text: "<p>card</p>" };
+  const marker = { "com.guuey/a2ui": carrier(form("form-1")) };
+  const channels: ReadonlyArray<readonly [string, Call]> = [
+    ["an inline resource in uiData", { id: "t1", structuredContent: marker, uiData: RESOURCE }],
+    ["a ui:// locator in uiData", { id: "t1", structuredContent: marker, uiData: { resourceUri: "ui://x/1" } }],
+    ["a ui:// locator in structuredContent", { id: "t1", structuredContent: { ...marker, resourceUri: "ui://x/2" } }],
+    ["view data in uiData with no locator", { id: "t1", structuredContent: marker, uiData: { items: [1, 2] } }],
+    ["the carrier alone", { id: "t1", structuredContent: marker }],
+  ];
+
+  for (const [name, call] of channels) {
+    it(`${name}, beside a carrier: the surfaces draw exactly when no mount source exists`, () => {
+      const mounts = toolResultMountSource(resultBlock(call)) !== undefined;
+      const items = plan(fold(call)).items;
+      expect(a2uiOf(items).length > 0).toBe(!mounts);
+      expect(items.some((i) => i.kind === "view")).toBe(mounts);
+    });
+  }
+
+  it("the pins are not vacuous: the channels split between mount and no mount", () => {
+    expect(channels.map(([, c]) => toolResultMountSource(resultBlock(c)) !== undefined)).toEqual([true, true, true, false, false]);
   });
 });
