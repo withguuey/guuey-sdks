@@ -162,6 +162,29 @@ describe("S4 (f) — the round trip", () => {
     expect(kinds.lastIndexOf("a2ui")).toBeGreaterThan(kinds.lastIndexOf("user"));
   });
 
+  it("action row → the agent replaces the form with a confirmation via updateComponents: revision 2 draws open, never the old face (guuey#2366)", () => {
+    // A2UI v0.9 has no component delete: the form's inputs stay behind, unreachable, counted and never drawn.
+    const CONFIRM: Json[] = [
+      {
+        version: V,
+        updateComponents: {
+          surfaceId: "booking-1",
+          components: [
+            { id: "root", component: "Column", children: ["done"] },
+            { id: "done", component: "Text", text: "Booked for 4." },
+          ],
+        },
+      },
+    ];
+    const plan = planTranscript(liveInputs([{ tool: { id: "t1", messages: FORM } }, { tool: { id: "t2", messages: CONFIRM } }], USERS), on());
+    const [first, second] = a2uiOf(plan.items);
+    expect(first).toMatchObject({ revision: 1, phase: "superseded" });
+    expect(second).toMatchObject({ revision: 2, phase: "open", fields: {} });
+    expect(second?.root).toMatchObject({ id: "root", children: [{ id: "done", text: "Booked for 4." }] });
+    // The old face is a tool row with its JSON preview; both rows here fold into their surfaces.
+    expect(plan.items.flatMap((i) => (i.kind === "tool" ? [i.result] : []))).toEqual([null, null]);
+  });
+
   it("a text-only reply leaves the form submitted, naming the action turn that answered it", () => {
     const plan = planTranscript(liveInputs([{ tool: { id: "t1", messages: FORM } }, { reply: "Booked for four." }], USERS), on());
     expect(a2uiOf(plan.items)).toMatchObject([{ revision: 1, phase: "submitted", actionId: "cm_2" }]);

@@ -356,9 +356,13 @@ describe("one population: every component in the surface is drawn or counted", (
     expect(s.degrade).toEqual({ "unreferenced-component": 1 });
   });
 
-  it("an unreferenced input takes the old face: a form never draws with a field missing", () => {
-    const out = validateA2uiCarrier(carrier(create(), update([col("root", ["name", "go"]), field("name"), field("email"), submit()])));
-    expect(out).toMatchObject({ ok: false, reason: "unreferenced-component", level: "component" });
+  it("an unreferenced input is counted, never drawn: the form draws without it (guuey#2366, option (d))", () => {
+    // Nothing draws it, so it cannot mislead a press: the press sends only fields the drawn tree declares,
+    // and an action bound to its path is refused at send time as undeclared.
+    const s = drawn(validateA2uiCarrier(carrier(create(), update([col("root", ["name", "go"]), field("name"), field("email"), submit()]))));
+    expect(ids(s.root)).toEqual(["root", "name", "go"]);
+    expect(Object.keys(s.fields)).toEqual(["/name"]);
+    expect(s.degrade).toEqual({ "unreferenced-component": 1 });
   });
 
   it("a fault on an unreferenced component counts like one on a drawn component", () => {
@@ -512,5 +516,112 @@ describe("determinism", () => {
   it("the same carrier validates to a deep-equal result", () => {
     const value = carrier(create("s", "T"), model({ a: [1, { b: 2 }] }), update([col("root", ["name", "go"]), field("name", "/a/1/b"), submit()]));
     expect(validateA2uiCarrier(value)).toEqual(validateA2uiCarrier(value));
+  });
+});
+
+/**
+ * guuey#2366, option (d): the atomic escalation exists so a DRAWN faulty
+ * component can never mislead a press. A component nothing draws cannot, so
+ * its faults are counted but fail nothing, and the interactive class comes
+ * from the drawn tree (plus the message-level bad ids and drops). A2UI v0.9
+ * has no component delete: an update that replaces a form's root leaves the
+ * form's inputs behind, unreachable.
+ */
+describe("option (d) — a component nothing draws is counted, never escalated (guuey#2366)", () => {
+  const FORM = carrier(create("s", "Contact"), update([col("root", ["name", "go"]), field("name"), submit()]));
+  const formState = (): A2uiFoldState => {
+    const out = foldA2uiCarrier(EMPTY_A2UI_STATE, FORM);
+    if (!out.ok) throw new Error(out.reason);
+    return out.state;
+  };
+  const surfaceOf = (out: ReturnType<typeof foldA2uiCarrier>) => {
+    if (!out.ok) throw new Error(`not drawn: ${out.reason} at ${out.path}`);
+    const first = out.surfaces[0];
+    if (first?.kind !== "drawn") throw new Error(`surface ${first?.kind ?? "missing"}`);
+    return first.surface;
+  };
+
+  it("(i) an update that replaces the form's root with a confirmation draws it; the form's inputs are counted", () => {
+    const s = surfaceOf(foldA2uiCarrier(formState(), carrier(update([col("root", ["done"]), txt("done", "Thanks, we'll be in touch.")]))));
+    expect(ids(s.root)).toEqual(["root", "done"]);
+    expect(s.interactive).toBe(false);
+    expect(s.fields).toEqual({});
+    expect(s.degrade).toEqual({ "unreferenced-component": 2 });
+  });
+
+  it("(ii) the same, with a truncated label on the confirmation: it still draws, the truncation counted in place", () => {
+    const s = surfaceOf(
+      foldA2uiCarrier(
+        formState(),
+        carrier(update([col("root", ["done", "ok"]), txt("done", "Thanks."), { id: "ok", component: "Icon", name: "check", label: "l".repeat(201) }])),
+      ),
+    );
+    expect(ids(s.root)).toEqual(["root", "done", "ok"]);
+    expect(s.interactive).toBe(false);
+    expect(s.degrade).toEqual({ "unreferenced-component": 2, "truncated-label": 1 });
+  });
+
+  it("(iii) a dangling child on an interactive first batch still takes the old face (it catches a typo'd id)", () => {
+    const out = validateA2uiCarrier(carrier(create(), update([col("root", ["name", "go", "nmae"]), field("name"), submit()])));
+    expect(out).toMatchObject({ ok: false, reason: "dangling-child", level: "component" });
+  });
+
+  it("a fault on an unreachable component of an interactive surface is counted; the drawn form still draws", () => {
+    const s = drawn(validateA2uiCarrier(carrier(create(), update([col("root", ["name", "go"]), field("name"), submit(), { id: "x", component: "Tabs" }]))));
+    expect(s.interactive).toBe(true);
+    expect(s.degrade).toEqual({ "unknown-component": 1, "unreferenced-component": 1 });
+  });
+
+  it("a fault on a DRAWN component of an interactive surface still takes the old face", () => {
+    const out = validateA2uiCarrier(carrier(create(), update([col("root", ["name", "go", "x"]), field("name"), submit(), { id: "x", component: "Tabs" }])));
+    expect(out).toMatchObject({ ok: false, reason: "unknown-component", level: "component" });
+  });
+
+  it("a bad id on an interactive component keeps the surface interactive, drawn tree or not (pendingInteractive)", () => {
+    const out = foldA2uiCarrier(formState(), carrier(update([col("root", ["done"]), txt("done", "Thanks."), field("bad id")])));
+    expect(out).toMatchObject({ ok: false, reason: "bad-id", level: "component" });
+  });
+});
+
+/**
+ * Pinned as the fold does it today (the producer docs cite these). The vendor
+ * protocol (A2UI v0.9, a2ui_protocol.md line 180) calls a createSurface for an
+ * id that exists, without deleting it first, an error; it allows one after a
+ * delete.
+ */
+describe("re-creating a surface id (guuey#2366, pinned as built)", () => {
+  const FORM = carrier(create("s", "Contact"), update([col("root", ["name", "go"]), field("name"), submit()]), model({ name: "Ada" }));
+  const formState = (): A2uiFoldState => {
+    const out = foldA2uiCarrier(EMPTY_A2UI_STATE, FORM);
+    if (!out.ok) throw new Error(out.reason);
+    return out.state;
+  };
+
+  it("(v a) deleteSurface, then createSurface for the same id in the NEXT carrier: deleted, then a fresh surface", () => {
+    const gone = foldA2uiCarrier(formState(), carrier(del("s")));
+    expect(gone).toMatchObject({ ok: true, surfaces: [{ kind: "deleted", surfaceId: "s" }] });
+    if (!gone.ok) throw new Error(gone.reason);
+    expect(gone.state.has("s")).toBe(false);
+    const again = foldA2uiCarrier(gone.state, carrier(create("s", "Again"), update([txt("root", "New.")])));
+    expect(again).toMatchObject({ ok: true, surfaces: [{ kind: "drawn", surface: { surfaceId: "s", title: "Again", dataModel: {}, degrade: {} } }] });
+  });
+
+  it("(v b) deleteSurface then createSurface for the same id in ONE carrier: one fresh surface, drawn (not deleted)", () => {
+    const out = foldA2uiCarrier(formState(), carrier(del("s"), create("s", "Again"), update([txt("root", "New.")])));
+    expect(out).toMatchObject({ ok: true, surfaces: [{ kind: "drawn", surface: { surfaceId: "s", title: "Again", dataModel: {}, degrade: {} } }] });
+    if (!out.ok) throw new Error(out.reason);
+    expect([...(out.state.get("s")?.components.keys() ?? [])]).toEqual(["root"]);
+  });
+
+  it("(vi) createSurface for an id that exists, with no delete: a RESET (components and data model start fresh), drawn", () => {
+    const out = foldA2uiCarrier(formState(), carrier(create("s", "Again"), update([txt("root", "New.")])));
+    expect(out).toMatchObject({ ok: true, surfaces: [{ kind: "drawn", surface: { surfaceId: "s", title: "Again", dataModel: {}, degrade: {} } }] });
+    if (!out.ok) throw new Error(out.reason);
+    expect([...(out.state.get("s")?.components.keys() ?? [])]).toEqual(["root"]);
+  });
+
+  it("(vi) a bare createSurface for an id that exists: the surface resets to empty and draws with no root", () => {
+    const out = foldA2uiCarrier(formState(), carrier(create("s", "Again")));
+    expect(out).toMatchObject({ ok: true, surfaces: [{ kind: "drawn", surface: { surfaceId: "s", title: "Again", root: null, dataModel: {}, degrade: {} } }] });
   });
 });

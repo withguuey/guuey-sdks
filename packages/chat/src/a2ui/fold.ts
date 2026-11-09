@@ -15,7 +15,11 @@
  *  - a component fault (a placeholder, a skipped or dropped node, a dropped
  *    prop, a truncation, a refused data-model update) degrades in place on a
  *    read-only surface and takes the old face on an interactive one (an input
- *    component, or a `Button` carrying an `action` key, anywhere on it);
+ *    component, or a `Button` carrying an `action` key, in the tree drawn from
+ *    its root, or a bad id or dropped construct on one in its messages);
+ *  - a component nothing draws (unreachable from the root, like a form an
+ *    update replaced: A2UI v0.9 has no component delete) is counted, and its
+ *    faults never fail the carrier: it cannot mislead a press (guuey#2366);
  *  - the closed carve-out list (a refused image, a refused link) stays in
  *    place on every surface.
  */
@@ -440,7 +444,7 @@ function resolveTree(
   rootRef: string | null,
   media: A2uiMediaPolicy,
   add: (fault: Fault["fault"], at: string, n?: number) => void,
-): { root: A2uiNode | null } | EnvelopeAbort {
+): { root: A2uiNode | null; drawn: ReadonlySet<string> } | EnvelopeAbort {
   const where = `/${surface.surfaceId}`;
   const drawnIds = new Set<string>();
   /** Set when a node sits deeper than the bound: an envelope fault for the whole carrier. */
@@ -486,7 +490,7 @@ function resolveTree(
   };
 
   const root = rootRef === null ? null : resolve(rootRef, 1, where);
-  return tooDeep ?? { root };
+  return tooDeep ?? { root, drawn: drawnIds };
 }
 
 /** Resolve one surface into its tree, its declared model and its faults. */
@@ -501,8 +505,10 @@ function resolveSurface(
   if (hasCycle(surface.components)) return new EnvelopeAbort("cycle", where);
 
   const faults: Fault[] = [...pending];
-  const add = (fault: Fault["fault"], at: string, n = 1): void => {
-    for (let i = 0; i < n; i++) faults.push({ fault, at });
+  /** Faults of components nothing draws: counted, never escalated (they cannot mislead a press). */
+  const undrawn: Fault[] = [];
+  const add = (fault: Fault["fault"], at: string, n = 1, to = faults): void => {
+    for (let i = 0; i < n; i++) to.push({ fault, at });
   };
   let title: string | null = null;
   if (surface.title !== null) {
@@ -517,19 +523,24 @@ function resolveSurface(
   const tree = resolveTree(surface, id, media, add);
   if (tree instanceof EnvelopeAbort) return tree;
 
-  // One population for the class and the faults: every component in the
-  // surface. Each is drawn or counted, and any one input or action makes it
-  // interactive, reachable or not.
+  // One population for the counts: every component in the surface is drawn or
+  // counted. The class and the escalation read the DRAWN tree (guuey#2366): a
+  // drawn input or action makes it interactive (as do the messages' bad ids and
+  // drops), and only a drawn component's fault can fail the carrier. A
+  // component nothing draws, like a form an update replaced (A2UI has no
+  // component delete), is counted and cannot mislead a press. With no root
+  // nothing tells drawn from undrawn, so every component counts as drawn.
   let interactive = pendingInteractive;
   for (const [cid, entry] of surface.components) {
     const at = `${where}/${cid}`;
-    if (entry.interactive) interactive = true;
-    for (const fault of A2UI_COMPONENT_FAULTS) add(fault, at, entry.faults[fault] ?? 0);
-    if (cid !== id && !referenced.has(cid)) add("unreferenced-component", at);
+    const drawn = tree.root === null || tree.drawn.has(cid);
+    if (drawn && entry.interactive) interactive = true;
+    for (const fault of A2UI_COMPONENT_FAULTS) add(fault, at, entry.faults[fault] ?? 0, drawn ? faults : undrawn);
+    if (cid !== id && !referenced.has(cid)) add("unreferenced-component", at, 1, undrawn);
   }
 
   const degrade: A2uiDegradeCounts = {};
-  for (const { fault } of faults) degrade[fault] = (degrade[fault] ?? 0) + 1;
+  for (const { fault } of [...faults, ...undrawn]) degrade[fault] = (degrade[fault] ?? 0) + 1;
   return {
     ok: true,
     surface: {
@@ -556,8 +567,8 @@ function variantOf(variant: string | undefined): A2uiTextVariant {
 
 /**
  * Apply one carrier's parsed messages onto `state`. The carrier is atomic: an
- * envelope fault, or a component fault on any interactive surface it targets,
- * fails it whole and leaves `state` as it was. `media` is the host's media
+ * envelope fault, or a drawn component's fault on any interactive surface it
+ * targets, fails it whole and leaves `state` as it was. `media` is the host's media
  * policy every `Image` obeys under policy A (the calm preset's by default).
  */
 export function applyA2uiMessages(
@@ -647,8 +658,8 @@ interface AppliedCarrier {
 /**
  * Judge each surface an applied carrier touched, in the order it named them:
  * deleted or ignored when the fold holds none, else resolved and drawn. An
- * envelope fault, or a component fault on an interactive surface that is not
- * a carve-out, fails the carrier whole and the working copy is dropped.
+ * envelope fault, or a drawn component's fault on an interactive surface that
+ * is not a carve-out, fails the carrier whole and the working copy is dropped.
  */
 function judgeSurfaces(applied: AppliedCarrier, media: A2uiMediaPolicy): A2uiApplyResult {
   const { working, order, deleted, pending, pendingInteractive } = applied;

@@ -307,7 +307,7 @@ export const A2UI_ENVELOPE_FAULTS = [
 ] as const;
 export type A2uiEnvelopeFault = (typeof A2UI_ENVELOPE_FAULTS)[number];
 
-/** Every reason a carrier takes the old face: an envelope fault, or a component fault on an interactive surface. */
+/** Every reason a carrier takes the old face: an envelope fault, or a drawn component's fault on an interactive surface. */
 export type A2uiInvalidReason = A2uiEnvelopeFault | A2uiComponentFault;
 
 // ─── The resolved tree a renderer draws ──────────────────────────────────

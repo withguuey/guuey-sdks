@@ -8,9 +8,10 @@
  * Over an envelope bound (carrier, messages, surfaces, components, depth, data
  * path depth, action context keys) the carrier takes the old face: today's
  * tool row with a JSON preview. The drops and truncations, and the refused
- * data-model update, degrade in place only on a read-only surface; on an
- * interactive surface each is a component fault and the surface takes the old
- * face too (spec §5.7). A URL over its bound is outside policy (chip or inert,
+ * data-model update, degrade in place only on a read-only surface; on a drawn
+ * component of an interactive surface each is a component fault and the
+ * surface takes the old face too (spec §5.7). On a component nothing draws
+ * they are counted only. A URL over its bound is outside policy (chip or inert,
  * in place on every surface). The action payload bound is a send-time check.
  */
 import { A2UI_ACTION_PAYLOAD_MAX_UNITS, A2UI_CARRIER_MAX_UNITS } from "@guuey/mcp-apps-host/narrowing";
