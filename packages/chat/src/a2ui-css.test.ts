@@ -28,6 +28,33 @@ function value(selector: string, property: string): string {
   return new RegExp(`(?:^|;)\\s*${property}:\\s*([^;]+)`).exec(declarations(selector))?.[1]?.trim() ?? "";
 }
 
+/** Every top-level rule as its selector list and declarations. */
+function rules(): Array<{ selectors: string[]; body: string }> {
+  const out: Array<{ selectors: string[]; body: string }> = [];
+  const re = /([^{}]+)\{([^{}]*)\}/g;
+  for (let m = re.exec(css); m !== null; m = re.exec(css)) {
+    out.push({ selectors: (m[1] ?? "").split(",").map((s) => s.trim()), body: m[2] ?? "" });
+  }
+  return out;
+}
+
+/**
+ * A simple selector's specificity as [ids, classes + attributes + pseudo-classes, types + pseudo-elements]
+ * (Selectors 4 §17, for the plain compound and descendant selectors this sheet writes).
+ */
+function specificity(selector: string): [number, number, number] {
+  const s = selector.replace(/\[[^\]]*\]/g, " .attr ").replace(/::[a-z-]+/g, " @E ");
+  const ids = (s.match(/#[\w-]+/g) ?? []).length;
+  const classes = (s.match(/\.[\w-]+/g) ?? []).length + (s.match(/(?<!:):[a-z-]+/g) ?? []).length;
+  const types = (s.match(/(?:^|[\s>+~])(?:[a-z][a-z0-9]*)/g) ?? []).length + (s.match(/@E/g) ?? []).length;
+  return [ids, classes, types];
+}
+
+function outranks(a: [number, number, number], b: [number, number, number]): boolean {
+  for (let i = 0; i < 3; i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
+  return false;
+}
+
 describe("the A2UI surface's look (spec §5.3)", () => {
   it("an image is full width, capped at 220px, contained", () => {
     expect(value(".guuey-chat-a2ui-image", "width")).toBe("100%");
@@ -55,6 +82,19 @@ describe("the A2UI surface's look (spec §5.3)", () => {
       expect(v, gap).not.toBe("");
       if (gap !== "none") expect(v, gap).toContain("var(--guuey-chat-gap, var(--_guuey-chat-gap))");
     }
+  });
+
+  it("a button's colour wins over the kit's link colour, so a link button keeps its variant (a or button)", () => {
+    expect(specificity(".guuey-chat a")).toEqual([0, 1, 1]);
+    const link = specificity(".guuey-chat a");
+    const coloured = rules().flatMap((r) =>
+      /(?:^|;)\s*color:/.test(r.body) ? r.selectors.filter((s) => /\.guuey-chat-a2ui-button(?:-primary|-danger)?$/.test(s)) : [],
+    );
+    // One colour rule for the base face and one per coloured variant.
+    for (const face of ["", "-primary", "-danger"]) {
+      expect(coloured.some((s) => s.endsWith(`.guuey-chat-a2ui-button${face}`)), `a colour rule for .guuey-chat-a2ui-button${face}`).toBe(true);
+    }
+    for (const s of coloured) expect(outranks(specificity(s), link), `${s} outranks .guuey-chat a`).toBe(true);
   });
 
   it("agent text sits in a bidi isolate", () => {

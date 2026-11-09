@@ -859,23 +859,31 @@
   border-radius: 8px;
   border: 1px solid color-mix(in srgb, var(--guuey-chat-ink, var(--_guuey-chat-ink)) 15%, transparent);
   background: var(--guuey-chat-surface, var(--_guuey-chat-surface));
-  color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
   font: inherit;
   text-decoration: none;
   cursor: pointer;
 }
 .guuey-chat-a2ui-button-primary {
   background: var(--guuey-chat-accent, var(--_guuey-chat-accent));
-  color: var(--guuey-chat-on-accent, var(--_guuey-chat-on-accent));
   border-color: transparent;
 }
-.guuey-chat-a2ui-button-primary .guuey-chat-a2ui-host {
+.guuey-chat-a2ui-button-danger {
+  border-color: color-mix(in srgb, var(--guuey-chat-error, var(--_guuey-chat-error)) 40%, transparent);
+}
+/* A button's words take its variant's colour on <a> and <button> alike: scoped
+   under the root, these outrank the kit's link colour (`.guuey-chat a`). */
+.guuey-chat .guuey-chat-a2ui-button {
+  color: var(--guuey-chat-ink, var(--_guuey-chat-ink));
+}
+.guuey-chat .guuey-chat-a2ui-button-primary {
+  color: var(--guuey-chat-on-accent, var(--_guuey-chat-on-accent));
+}
+.guuey-chat .guuey-chat-a2ui-button-danger {
+  color: var(--guuey-chat-error, var(--_guuey-chat-error));
+}
+.guuey-chat .guuey-chat-a2ui-button-primary .guuey-chat-a2ui-host {
   color: inherit;
   opacity: 0.8;
-}
-.guuey-chat-a2ui-button-danger {
-  color: var(--guuey-chat-error, var(--_guuey-chat-error));
-  border-color: color-mix(in srgb, var(--guuey-chat-error, var(--_guuey-chat-error)) 40%, transparent);
 }
 .guuey-chat-a2ui-button:disabled {
   opacity: 0.5;
