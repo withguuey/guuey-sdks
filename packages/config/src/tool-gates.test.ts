@@ -6,6 +6,7 @@
  * three tools.
  */
 import { describe, expect, it } from 'vitest';
+import { BUILTIN_TOOLS } from './agent.js';
 import {
   claudeToolRules,
   toolGateErrors,
@@ -47,6 +48,8 @@ const ROWS: Row[] = [
   { label: '@none keeps no MCP tool', gates: { allowlist: ['@none'] }, kept: [] },
   { label: '@none mixed: only the real entries count', gates: { allowlist: ['@none', 'b.read'] }, kept: ['b.read'] },
   { label: '@none in a denylist subtracts nothing', gates: { denylist: ['@none'] }, kept: EVERY },
+  { label: '@builtins in a denylist names no MCP tool', gates: { denylist: ['@builtins'] }, kept: EVERY },
+  { label: '@builtins alone in an allowlist never widens', gates: { allowlist: ['@builtins'] }, kept: [] },
   {
     label: 'withheld subtracts',
     gates: undefined,
@@ -149,6 +152,7 @@ describe('toolGatePredicate', () => {
     expect(toolGatePredicate({ allowlist: ['a.*'], denylist: ['b.read'] }, 'a')).toBeUndefined();
     expect(toolGatePredicate({ allowlist: ['*'] }, 'a')).toBeUndefined();
     expect(toolGatePredicate(undefined, 'a', [{ server: 'b', tool: 'read' }])).toBeUndefined();
+    expect(toolGatePredicate({ denylist: ['@builtins'] }, 'a')).toBeUndefined();
   });
 
   it('never matches the "@none" sentinel as a tool name', () => {
@@ -157,6 +161,19 @@ describe('toolGatePredicate', () => {
 });
 
 describe('claudeToolRules', () => {
+  it('"@builtins" in a denylist removes this turn\'s built-ins and is never an MCP name (guuey#2651)', () => {
+    const bound = claudeToolRules({ allowlist: ['@none'], denylist: ['@builtins'] }, SERVERS, {
+      builtins: BUILTIN_TOOLS,
+    });
+    expect(bound.allowedTools).toEqual([...BUILTIN_TOOLS]);
+    expect(bound.disallowedTools).toEqual(['mcp__a', 'mcp__b', ...BUILTIN_TOOLS]);
+    const unbound = claudeToolRules({ denylist: ['@builtins'] }, SERVERS, { builtins: [] });
+    expect(unbound.disallowedTools).toEqual([]);
+    for (const rules of [bound, unbound]) {
+      expect([...rules.allowedTools, ...rules.disallowedTools].some((n) => n.includes('@builtins'))).toBe(false);
+    }
+  });
+
   it('spells every rule the SDK way, never the config grammar', () => {
     const rules = claudeToolRules({ allowlist: ['a.read', 'b.*', 'search'], denylist: ['write'] }, SERVERS, {
       builtins: [],

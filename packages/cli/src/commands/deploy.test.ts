@@ -1146,6 +1146,16 @@ describe('deploy() — the misplaced "*" and mode tool-entry gate', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it(`refuses a "@builtins" entry until guuey#2652, before any network call (guuey#2651)`, async () => {
+    writeGuueyJson({ framework: 'claude-agent-sdk', tools: { denylist: ['@builtins'] } });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    await expect(run()).rejects.toBeInstanceOf(ExitSignal);
+    const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+    expect(printed).toContain('agent.tools.denylist: "@builtins" is not accepted yet');
+    expect(printed).toContain('guuey#2652');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it(`"*" and "<server>.*", on the base and in a mode, pass the gate`, async () => {
     writeGuueyJson(
       {

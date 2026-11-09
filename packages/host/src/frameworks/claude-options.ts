@@ -25,6 +25,7 @@ import type { CanUseTool, Options, SDKMessage, Settings } from "@anthropic-ai/cl
 import type { FirstImpressionPush, FirstImpressionShown, Fs, HistoryMessage, JsonValue, McpAvailability, ProfileSection, WithheldTool } from "@guuey/worker";
 import { claudeCodeExecutableOf, forbiddenClaudeEnvNames, makeClaudeSpawner, trustEnvOf } from "@guuey/worker";
 import {
+  BUILTIN_TOOLS,
   GUUEY_DEFAULT_SYSTEM_PROMPT,
   claudeToolRules,
   declaresNoTools,
@@ -60,29 +61,13 @@ const DEFAULT_MAX_TURNS = 25;
  */
 export const ENV_HOME_DIR = "GUUEY_HOME_DIR";
 export const ENV_APP_DIR = "GUUEY_APP_DIR";
-/**
- * File tools enabled when GuueyFS layers are bound
- * ({@link BuildOptionsContext.fsBound}). `Bash` is added separately (see
- * {@link BASH_TOOL}) so the two are independently testable.
- */
-const FS_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep"];
-
-/**
- * Real shell exec, enabled alongside the file tools when GuueyFS layers are
- * bound. Unlike the source runner — which enabled `Bash` only when the SDK's OWN
- * `sandbox:{}` block was on — this host runs entirely INSIDE the Router's
- * bubblewrap jail, so the OS isolation is always present whenever fs is bound.
- * The SDK `sandbox:{}` block is therefore NOT set here (it would spawn a nested
- * bubblewrap inside the Router's bwrap); the Router's bwrap IS the isolation.
- */
-const BASH_TOOL = "Bash";
-
-/**
- * The built-in tool catalog this host can expose — exactly the file tools plus
- * `Bash`, all keyed on {@link BuildOptionsContext.fsBound}. A bare tool-gate
- * entry (`"Bash"`, `"Write"`) matches one of these by name.
- */
-const BUILTIN_TOOLS: readonly string[] = [...FS_TOOLS, BASH_TOOL];
+// The built-in catalog (the file tools plus `Bash`) is `BUILTIN_TOOLS`, the one
+// list in `@guuey/config` (guuey#2651). It is enabled when GuueyFS layers are
+// bound ({@link BuildOptionsContext.fsBound}). `Bash` here is real shell exec:
+// this host runs entirely INSIDE the Router's bubblewrap jail, so the OS
+// isolation is always present whenever fs is bound, and the SDK `sandbox:{}`
+// block is NOT set (it would spawn a nested bubblewrap inside the Router's
+// bwrap).
 
 /**
  * Belt-and-braces (spec §4): guuey's memory mechanism is prompted file memory
@@ -666,7 +651,7 @@ export function resolveMcpServers(ctx: BuildOptionsContext): Record<string, SdkM
  * Exported for the invariant tests ("an explicit allowlist can never hang").
  */
 export interface ResolvedToolGates {
-  /** The built-in catalog: `[...FS_TOOLS, Bash]` when fs is bound, else `[]`. */
+  /** The built-in catalog: `BUILTIN_TOOLS` when fs is bound, else `[]`. */
   tools: string[];
   /** SDK allow rules — MCP names in the SDK's `mcp__<server>[__<tool>]` spelling plus the built-ins in `tools`. */
   allowedTools: string[];

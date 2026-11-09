@@ -786,14 +786,29 @@ export function newRepDefaultHooks(): GuueyAgentHooks {
 /** The v1 mode axis — the caller's REAL auth state, server-derived. */
 export type ModeAudienceClass = 'guest' | 'auth';
 
+/**
+ * The pin that selects the connector mode (guuey#2651, the #2255 connector):
+ * the narrowed agent a gateway forwards a signed-in end user's question to.
+ * Honoured for an authenticated caller only, and only when the served mode
+ * narrows ({@link connectorModeNarrows}).
+ */
+export const CONNECTOR_MODE = 'connector';
+
 /** The result of {@link applyAgentMode} — the effective snapshot + provenance. */
 export interface AppliedAgentMode {
   /** The snapshot to SERVE this invoke (a new object when a mode applied; the same reference otherwise). */
   agent: GuueyAgent;
   /** The mode key actually applied, or `null` when serving the bare base. */
   applied: string | null;
-  /** Present when the resolution took a non-obvious branch (all fail-soft). */
-  fallback?: 'unknown-mode' | 'pin-clamped' | 'auth-undeclared';
+  /**
+   * Present when the resolution took a non-obvious branch (all fail-soft).
+   * The two `connector-*` reasons mean a `connector` pin was NOT honoured and
+   * the caller's audience mode was served instead (guuey#2651).
+   * 'connector-not-narrowed' also covers a connector mode that cannot be
+   * served at all (a `{ file }` prompt, unusable at serve time), since
+   * nothing then narrows.
+   */
+  fallback?: 'unknown-mode' | 'pin-clamped' | 'auth-undeclared' | 'connector-undeclared' | 'connector-not-narrowed';
 }
 
 /**
@@ -807,6 +822,13 @@ export interface AppliedAgentMode {
  * a guest pinning 'auth' is CLAMPED to guest ('pin-clamped'), and an
  * unrecognized pin key is ignored ('unknown-mode') — fail-soft always, an
  * embed never breaks.
+ *
+ * The `connector` pin ({@link CONNECTOR_MODE}, guuey#2651) is honoured for
+ * an authenticated caller only, and only when the served connector mode
+ * narrows ({@link connectorModeNarrows}). A guest pinning it is clamped
+ * ('pin-clamped'). An undeclared connector mode ('connector-undeclared') or
+ * one that does not narrow ('connector-not-narrowed') serves the caller's
+ * 'auth' mode instead, never a widened connector turn.
  *
  * Fallback chain: the selected key's def; an undeclared 'auth' falls to
  * 'guest''s def ('auth-undeclared' — an app that only configures the
@@ -828,6 +850,16 @@ export function applyAgentMode(
   const modes = agent.modes;
   if (modes === undefined) return { agent, applied: null };
 
+  // ── The connector pin (guuey#2651): signed-in only, and only a mode that narrows ──
+  if (pin === CONNECTOR_MODE) {
+    if (audience === 'guest') return resolveAudienceMode(agent, modes, 'guest', 'pin-clamped');
+    const def = modes[CONNECTOR_MODE];
+    if (def === undefined) return resolveAudienceMode(agent, modes, 'auth', 'connector-undeclared');
+    const served = applyModeDef(agent, CONNECTOR_MODE, def);
+    if (served.applied !== null && connectorModeNarrows(agent, served.agent)) return served;
+    return resolveAudienceMode(agent, modes, 'auth', 'connector-not-narrowed');
+  }
+
   // ── Selection: derived, then the pin within permission ──────────────
   let fallback: AppliedAgentMode['fallback'];
   let selected: ModeAudienceClass = audience;
@@ -840,28 +872,44 @@ export function applyAgentMode(
       selected = pin; // authed pinning 'guest' — preview-as-visitor
     }
   }
+  return resolveAudienceMode(agent, modes, selected, fallback);
+}
 
-  // ── Fallback chain: selected → guest → base ─────────────────────────
-  let applied: string = selected;
+/** The fallback chain for an audience mode: selected → guest (for 'auth') → base. */
+function resolveAudienceMode(
+  agent: GuueyAgent,
+  modes: NonNullable<GuueyAgent['modes']>,
+  selected: ModeAudienceClass,
+  fallback: AppliedAgentMode['fallback'],
+): AppliedAgentMode {
+  let key: string = selected;
   let def = modes[selected];
   if (def === undefined && selected === 'auth') {
     def = modes['guest'];
     if (def !== undefined) {
-      applied = 'guest';
+      key = 'guest';
       fallback = fallback ?? 'auth-undeclared';
     }
   }
-  if (def === undefined) {
-    return { agent, applied: null, ...(fallback !== undefined ? { fallback } : {}) };
-  }
+  const served = def === undefined ? { agent, applied: null } : applyModeDef(agent, key, def);
+  return { ...served, ...(fallback !== undefined ? { fallback } : {}) };
+}
 
-  // ── Application (unchanged) ─────────────────────────────────────────
-  // An EMPTY def (legal — "at most one") IS the base: same reference out,
-  // so callers can cheaply detect "nothing to override" by identity.
+/**
+ * Apply one mode's def to the base (unchanged from the first cut,
+ * test-pinned). An EMPTY def (legal — "at most one") IS the base: same
+ * reference out, so callers can cheaply detect "nothing to override" by
+ * identity. A `{ file }` prompt is unusable at serve time → the base, with
+ * `applied: null`.
+ */
+function applyModeDef(
+  agent: GuueyAgent,
+  key: string,
+  def: GuueyAgentMode,
+): { agent: GuueyAgent; applied: string | null } {
   if (def.systemPrompt === undefined && def.systemPromptAppend === undefined && def.tools === undefined) {
-    return { agent, applied, ...(fallback !== undefined ? { fallback } : {}) };
+    return { agent, applied: key };
   }
-
   const basePrompt = typeof agent.systemPrompt === 'string' ? agent.systemPrompt : undefined;
   let systemPrompt = agent.systemPrompt;
   if (typeof def.systemPrompt === 'string') {
@@ -870,19 +918,52 @@ export function applyAgentMode(
     systemPrompt =
       basePrompt !== undefined ? `${basePrompt}\n\n${def.systemPromptAppend}` : def.systemPromptAppend;
   } else if (def.systemPrompt !== undefined || def.systemPromptAppend !== undefined) {
-    // { file } shape — unusable at serve time; base verbatim.
-    return { agent, applied: null, ...(fallback !== undefined ? { fallback } : {}) };
+    return { agent, applied: null };
   }
-
   return {
     agent: {
       ...agent,
       ...(systemPrompt !== undefined ? { systemPrompt } : {}),
       ...(def.tools !== undefined ? { tools: modeToolGates(agent.tools, def.tools) } : {}),
     },
-    applied,
-    ...(fallback !== undefined ? { fallback } : {}),
+    applied: key,
   };
+}
+
+/**
+ * Does a connector mode, AS SERVED, narrow the agent enough to be applied
+ * (guuey#2651; #2255 §4.3)? The one rule: {@link applyAgentMode} calls it for
+ * the `connector` pin, and the gateway's toolless check (#2262 L4) composes
+ * it. `served` is the snapshot after the mode's def is applied, so its tools
+ * already carry #2268's inheritance (a mode with no allowlist keeps the
+ * base's; the denylists are unioned). All of:
+ *
+ * - no `claude.permissions.mode` is pinned (under a pinned mode an old host
+ *   installs no tool check, so an allowlist is advisory there);
+ * - the served denylist carries {@link BUILTINS_ENTRY}, so the file tools and
+ *   `Bash` are gone;
+ * - the served allowlist is exactly `["@none"]` ({@link declaresNoTools}),
+ *   or is non-empty with every entry a single tool or a bare name — no
+ *   `"<server>.*"`, no `"*"` — that the base allowlist permits
+ *   ({@link baseAllowlistPermits}).
+ *
+ * Fail closed: a connector mode that does not narrow is never served as one.
+ * It is NOT a parse rule, so a stored config with such a mode still loads.
+ */
+export function connectorModeNarrows(base: GuueyAgent, served: GuueyAgent): boolean {
+  if (base.claude?.permissions?.mode !== undefined) return false;
+  const gates = served.tools;
+  if (!(gates?.denylist ?? []).some((entry) => entry.trim() === BUILTINS_ENTRY)) return false;
+  if (declaresNoTools(gates)) return true;
+  const allowlist = gates?.allowlist ?? [];
+  if (allowlist.length === 0) return false;
+  return allowlist.every((raw) => {
+    const entry = raw.trim();
+    const parsed = parseToolGateEntry(entry);
+    if ('error' in parsed || parsed.kind === 'server-all') return false;
+    if (parsed.kind === 'bare' && (parsed.tool === '*' || parsed.tool.startsWith('@'))) return false;
+    return baseAllowlistPermits(base.tools?.allowlist, entry);
+  });
 }
 
 /**
@@ -1442,6 +1523,14 @@ export function validateToolGates(agent: GuueyAgent | undefined): string[] {
   return violations;
 }
 
+/** The `"@builtins"` refusal (guuey#2651), worded the same everywhere; guuey#2652 deletes it. */
+function builtinsNotYetAccepted(): string {
+  return (
+    `"${BUILTINS_ENTRY}" is not accepted yet: some runtimes would read it as a tool name and keep the file ` +
+    `tools. Deny-list them by name until it is (guuey#2652): ${BUILTIN_TOOLS.map((tool) => `"${tool}"`).join(', ')}`
+  );
+}
+
 /** An entry naming a server the agent does not connect, worded the same everywhere. */
 function unknownServer(raw: string, server: string): string {
   return `"${raw}" names MCP server "${server}", which this agent does not connect — declare it under mcpServers`;
@@ -1455,7 +1544,12 @@ function unknownServer(raw: string, server: string): string {
  *   `"S*.a"`) on the base or in a mode;
  * - in a mode's lists, every entry {@link validateToolGates} would refuse on
  *   the base: a malformed entry, or a server-qualified entry naming a server
- *   this agent does not connect.
+ *   this agent does not connect;
+ * - a `"@builtins"` entry ({@link BUILTINS_ENTRY}, guuey#2651) on the base or
+ *   in a mode, in either list. A runtime from before guuey#2651 reads it as a
+ *   bare tool name, denying only a tool literally named "@builtins" and
+ *   keeping the file tools, so a write refuses it until every pod serves the
+ *   expansion; guuey#2652 lifts it.
  *
  * Deliberately NOT part of {@link validateToolGates} and NOT a schema rule:
  * the deploy gate accepted a misplaced `*` until guuey#2585 and never read a
@@ -1476,6 +1570,10 @@ export function validateSubmittedToolGates(
   const check = (gates: GuueyAgentToolGates | undefined, path: string, wholeGrammar: boolean): void => {
     for (const list of ['allowlist', 'denylist'] as const) {
       for (const raw of gates?.[list] ?? []) {
+        if (raw.trim() === BUILTINS_ENTRY) {
+          violations.push(`${path}.${list}: ${builtinsNotYetAccepted()}`);
+          continue;
+        }
         const misplaced = misplacedWildcard(raw.trim());
         if (misplaced !== undefined) {
           violations.push(`${path}.${list}: ${misplaced.reason}`);
@@ -1553,6 +1651,24 @@ export function validateToolAllowlistsNotEmpty(
  * shipped parser accepts it, and every shipped host already denies it.
  */
 export const NO_TOOLS_ENTRY = '@none';
+
+/**
+ * The built-in tools a Claude host exposes when GuueyFS layers are bound: the
+ * file tools plus `Bash` (guuey#2651 moved the one list here from
+ * `@guuey/host`, which imports it). A bare tool-gate entry (`"Bash"`,
+ * `"Write"`) matches one of these by name.
+ */
+export const BUILTIN_TOOLS: readonly string[] = ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash'];
+
+/**
+ * The reserved denylist entry that denies every {@link BUILTIN_TOOLS} entry
+ * (guuey#2651): one named entry instead of copying the host's list into a
+ * stored config, so the list never drifts when a built-in is added. The host
+ * expands it at turn time. It only means something in a denylist; like
+ * {@link NO_TOOLS_ENTRY} it lies outside the MCP tool-name grammar, so no
+ * server has a tool of that name.
+ */
+export const BUILTINS_ENTRY = '@builtins';
 
 /**
  * Does this tools block declare "no tools" (guuey#2262)? True when the

@@ -16,6 +16,8 @@ import {
   validateSubmittedToolGates,
   validateToolAllowlistsNotEmpty,
   validateNoToolsEntry,
+  connectorModeNarrows,
+  BUILTIN_TOOLS,
   declaresNoTools,
   NO_TOOLS_ENTRY,
   EVERY_TOOL_ENTRY,
@@ -1398,6 +1400,113 @@ describe('RESERVED_HANDOFF_SERVER_NAME (guuey#552 A1)', () => {
     expect(violations).toHaveLength(1);
     expect(violations[0]).toContain('guuey-handoff');
     expect(violations[0]).toContain('reserved');
+  });
+});
+
+describe('applyAgentMode — the connector pin (guuey#2651)', () => {
+  const narrowed = { allowlist: ['@none'], denylist: ['@builtins'] };
+  const base = (extra: Partial<GuueyAgent> = {}): GuueyAgent => ({
+    systemPrompt: 'base',
+    modes: { auth: { systemPromptAppend: 'signed in' }, connector: { systemPrompt: 'connector', tools: narrowed } },
+    ...extra,
+  });
+
+  it('an authenticated caller pinning connector gets the connector mode, its tools as served', () => {
+    const r = applyAgentMode(base(), 'connector', 'auth');
+    expect(r.applied).toBe('connector');
+    expect(r.fallback).toBeUndefined();
+    expect(r.agent.systemPrompt).toBe('connector');
+    expect(r.agent.tools).toEqual(narrowed);
+  });
+
+  it('a guest pinning connector is clamped to the guest chain, never served the connector mode', () => {
+    const r = applyAgentMode(base(), 'connector', 'guest');
+    expect(r.applied).not.toBe('connector');
+    expect(r.fallback).toBe('pin-clamped');
+  });
+
+  it('an undeclared connector mode serves the auth mode, with connector-undeclared', () => {
+    const agent: GuueyAgent = { systemPrompt: 'base', modes: { auth: { systemPromptAppend: 'signed in' } } };
+    const r = applyAgentMode(agent, 'connector', 'auth');
+    expect(r.applied).toBe('auth');
+    expect(r.fallback).toBe('connector-undeclared');
+  });
+
+  it('a connector mode that does not narrow serves the auth mode, with connector-not-narrowed', () => {
+    for (const tools of [
+      { allowlist: ['@none'] }, // built-ins not denied
+      { allowlist: ['ggui.*'], denylist: ['@builtins'] }, // a whole server
+      { allowlist: ['*'], denylist: ['@builtins'] }, // everything
+      { denylist: ['@builtins'] }, // no allowlist on a base without one: every tool
+    ]) {
+      const agent = base({ modes: { auth: { systemPromptAppend: 'x' }, connector: { tools } } });
+      const r = applyAgentMode(agent, 'connector', 'auth');
+      expect(r.applied, JSON.stringify(tools)).toBe('auth');
+      expect(r.fallback).toBe('connector-not-narrowed');
+    }
+  });
+
+  it('a pinned claude.permissions.mode never qualifies', () => {
+    const r = applyAgentMode(base({ claude: { permissions: { mode: 'acceptEdits' } } }), 'connector', 'auth');
+    expect(r.fallback).toBe('connector-not-narrowed');
+  });
+
+  it('a stored connector key without the pin is never applied (guest and auth derive as before)', () => {
+    expect(applyAgentMode(base(), undefined, 'auth').applied).toBe('auth');
+    expect(applyAgentMode(base(), undefined, 'guest').applied).toBeNull();
+  });
+
+  it('a narrowed enumeration inside the base qualifies, through #2268 inheritance as served', () => {
+    const agent: GuueyAgent = {
+      systemPrompt: 'base',
+      tools: { allowlist: ['docs.search_docs', 'docs.read_doc'] },
+      modes: { connector: { tools: { denylist: ['@builtins'] } } },
+    };
+    const r = applyAgentMode(agent, 'connector', 'auth');
+    expect(r.applied).toBe('connector');
+    expect(r.agent.tools).toEqual({ allowlist: ['docs.search_docs', 'docs.read_doc'], denylist: ['@builtins'] });
+  });
+});
+
+describe('connectorModeNarrows (guuey#2651)', () => {
+  const served = (tools: GuueyAgent['tools']): GuueyAgent => ({ systemPrompt: 'x', tools });
+  it('accepts ["@none"] or an enumeration inside the base, each with "@builtins" denied', () => {
+    expect(connectorModeNarrows(served(undefined), served({ allowlist: ['@none'], denylist: ['@builtins'] }))).toBe(true);
+    expect(
+      connectorModeNarrows(served({ allowlist: ['docs.*'] }), served({ allowlist: ['docs.search_docs', 'search'], denylist: ['@builtins'] })),
+    ).toBe(false); // "search" (bare) is not permitted by a base of docs.*
+    expect(
+      connectorModeNarrows(served({ allowlist: ['docs.*'] }), served({ allowlist: ['docs.search_docs'], denylist: [' @builtins '] })),
+    ).toBe(true);
+  });
+  it('refuses a mixed "@none", an empty list, a server-wide or reserved entry, and a missing "@builtins"', () => {
+    const b = served(undefined);
+    expect(connectorModeNarrows(b, served({ allowlist: ['@none', 'a.b'], denylist: ['@builtins'] }))).toBe(false);
+    expect(connectorModeNarrows(b, served({ allowlist: [], denylist: ['@builtins'] }))).toBe(false);
+    expect(connectorModeNarrows(b, served({ allowlist: ['a.*'], denylist: ['@builtins'] }))).toBe(false);
+    expect(connectorModeNarrows(b, served({ allowlist: ['@builtins'], denylist: ['@builtins'] }))).toBe(false);
+    expect(connectorModeNarrows(b, served({ allowlist: ['@none'], denylist: [...BUILTIN_TOOLS] }))).toBe(false);
+  });
+});
+
+describe('validateSubmittedToolGates — "@builtins" is refused until guuey#2652 (guuey#2651)', () => {
+  it('refuses it in any list, base or mode, naming the path, the row and the by-name fix', () => {
+    const v = validateSubmittedToolGates({
+      tools: { denylist: ['@builtins'] },
+      modes: { connector: { tools: { allowlist: ['@none'], denylist: [' @builtins '] } } },
+    });
+    expect(v).toHaveLength(2);
+    expect(v[0]).toMatch(/^agent\.tools\.denylist: "@builtins" is not accepted yet/);
+    expect(v[1]).toMatch(/^agent\.modes\.connector\.tools\.denylist: "@builtins" is not accepted yet/);
+    expect(v[0]).toContain('guuey#2652');
+    expect(v[0]).toContain(BUILTIN_TOOLS.map((tool) => `"${tool}"`).join(', '));
+    expect(validateSubmittedToolGates({ tools: { allowlist: ['@builtins'] } })).toEqual([
+      expect.stringMatching(/^agent\.tools\.allowlist: "@builtins" is not accepted yet/),
+    ]);
+  });
+  it('passes the by-name denylist, and is not a schema rule (a stored entry still loads)', () => {
+    expect(validateSubmittedToolGates({ tools: { denylist: [...BUILTIN_TOOLS] } })).toEqual([]);
+    expect(safeParseGuueyJson({ schema: '1', agent: { systemPrompt: 'x', tools: { denylist: ['@builtins'] } } }).success).toBe(true);
   });
 });
 

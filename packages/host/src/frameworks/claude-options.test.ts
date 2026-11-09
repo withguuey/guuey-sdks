@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GuueyAgent, RunSnapshot } from "@guuey/config";
-import { GUUEY_DEFAULT_SYSTEM_PROMPT } from "@guuey/config";
+import { BUILTIN_TOOLS, GUUEY_DEFAULT_SYSTEM_PROMPT } from "@guuey/config";
 import { PLATFORM_TRUST_ENV_NAMES } from "@guuey/worker";
 import {
   buildOptions,
@@ -1040,7 +1040,6 @@ describe('"no tools" — tools.allowlist: ["@none"] (guuey#2262)', () => {
     { name: "b", cred: { url: "https://b.example.com", transport: "http" as const, headers: {} } },
   ];
   const fs = { app: "/a", home: "/h", session: "/s" };
-  const BUILTINS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash"];
 
   it("resolveToolGates: no MCP allow rule, every attached server disallowed whole, the deny-unlisted posture, and never an mcp__<s>__@none rule", () => {
     const g = resolveToolGates({ tools: { allowlist: ["@none"] } }, ["ggui", "b"], false);
@@ -1087,16 +1086,25 @@ describe('"no tools" — tools.allowlist: ["@none"] (guuey#2262)', () => {
     expect(opts.disallowedTools).toEqual(["mcp__ggui", "mcp__b"]);
   });
 
+  it("\"@builtins\" in a denylist removes every built-in when fs is bound, and is never an MCP name (guuey#2651)", () => {
+    const g = resolveToolGates({ tools: { allowlist: ["@none"], denylist: ["@builtins"] } }, ["ggui", "b"], true);
+    expect(g.tools).toEqual(BUILTIN_TOOLS);
+    expect(g.disallowedTools).toEqual(expect.arrayContaining(["mcp__ggui", "mcp__b", ...BUILTIN_TOOLS]));
+    expect([...g.allowedTools, ...g.disallowedTools].some((n) => n.includes("@builtins"))).toBe(false);
+    const unbound = resolveToolGates({ tools: { denylist: ["@builtins"] } }, ["b"], false);
+    expect(unbound.disallowedTools).toEqual([]);
+  });
+
   it("built-ins follow fsBound as always; only the denylist removes them", () => {
     const kept = buildOptions({ tools: { allowlist: ["@none"] } }, ctx({ fs, fsBound: true, listCredentials: servers }));
-    expect(kept.tools).toEqual(BUILTINS);
-    expect(kept.allowedTools).toEqual(BUILTINS);
+    expect(kept.tools).toEqual(BUILTIN_TOOLS);
+    expect(kept.allowedTools).toEqual(BUILTIN_TOOLS);
     const denied = buildOptions(
-      { tools: { allowlist: ["@none"], denylist: BUILTINS } },
+      { tools: { allowlist: ["@none"], denylist: [...BUILTIN_TOOLS] } },
       ctx({ fs, fsBound: true, listCredentials: servers }),
     );
     // A bare denylist entry also names that tool on every server; the built-ins are what matter here.
-    expect(denied.disallowedTools).toEqual(expect.arrayContaining(["mcp__ggui", "mcp__b", ...BUILTINS]));
+    expect(denied.disallowedTools).toEqual(expect.arrayContaining(["mcp__ggui", "mcp__b", ...BUILTIN_TOOLS]));
   });
 
   it("a mixed list (refused at deploy; a stored one could carry it) allows only the real entries, the sentinel never translated", () => {

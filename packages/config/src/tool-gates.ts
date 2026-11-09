@@ -43,6 +43,13 @@
  *      `*`. This module reads it by this rule, never as a tool name: in an
  *      allowlist it means every tool, the same as an absent list; in a
  *      denylist it denies every MCP tool, the same as `["@none"]`.
+ *   8. `"@builtins"` ({@link BUILTINS_ENTRY}, guuey#2651) names every
+ *      built-in at once and no MCP tool. In a Claude denylist it removes this
+ *      turn's built-ins ({@link claudeToolRules}); it is never translated to
+ *      an MCP name, and it gates nothing in {@link toolGatePredicate}. In an
+ *      allowlist it still counts as a narrowing entry, so it never widens:
+ *      there it names the built-ins, which are allowed anyway, and no MCP
+ *      tool.
  *
  * When the gates keep no MCP tool, the Claude permission check's denial
  * names the actual cause: the allowlist (`["@none"]`, or a pick outside an
@@ -70,6 +77,7 @@
  * | any              | `["mcp__S__a"]`  | nothing, plus an error naming the entry    |
  * | any              | `["*.*"]`        | nothing, plus an error naming the entry    |
  * | any              | `["a*"]`         | nothing, plus an error naming the entry    |
+ * |                  | `["@builtins"]`  | every tool (it names no MCP tool)          |
  *
  * This turn's withholds then subtract from whatever the table keeps.
  *
@@ -78,6 +86,7 @@
  * built-in name there gates only an MCP tool of that name.
  */
 import {
+  BUILTINS_ENTRY,
   EVERY_TOOL_ENTRY,
   NO_TOOLS_ENTRY,
   declaresNoTools,
@@ -186,7 +195,7 @@ function namesOn(server: string, entries: readonly string[]): { whole: boolean; 
   let whole = false;
   const tools = new Set<string>();
   for (const raw of entries) {
-    if (!isRealEntry(raw)) continue;
+    if (!isRealEntry(raw) || raw.trim() === BUILTINS_ENTRY) continue;
     const parsed = parseToolGateEntry(raw);
     if ('error' in parsed) continue;
     if (parsed.kind === 'bare') tools.add(parsed.tool);
@@ -308,10 +317,12 @@ export interface ClaudeToolRules {
  * Translate one gate entry into the SDK's tool-name spelling(s). A bare name
  * fans out to every declared server (a server's tools are not known before it
  * connects) and, when it names one of this turn's built-ins, to that built-in.
- * A malformed entry yields nothing: an unknown allow rule is inert, and an
- * unknown name reaching the ask stage is a headless hang.
+ * `"@builtins"` (rule 8) is every one of this turn's built-ins and never an
+ * MCP name. A malformed entry yields nothing: an unknown allow rule is inert,
+ * and an unknown name reaching the ask stage is a headless hang.
  */
 function toSdkToolNames(raw: string, servers: readonly string[], builtins: readonly string[]): string[] {
+  if (raw.trim() === BUILTINS_ENTRY) return [...builtins];
   const parsed = parseToolGateEntry(raw);
   if ('error' in parsed) return [];
   switch (parsed.kind) {
@@ -344,7 +355,7 @@ function dedupe(names: string[]): string[] {
  *   cannot be read, rule 5): no MCP allow rule, the
  *   deny-unlisted posture, and `mcp__<server>` disallowed for every server,
  *   so it holds even where no `canUseTool` is installed. The built-ins stay;
- *   only a denylist entry naming one removes it.
+ *   only a denylist entry naming one, or `"@builtins"` (rule 8), removes them.
  */
 export function claudeToolRules(
   gates: ToolGates,
