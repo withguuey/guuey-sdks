@@ -1157,8 +1157,11 @@ describe.skipIf(!existsSync(POD_SSE_SERVER) || !existsSync(POD_IDENTITY))(
     it('every rendered event name is one the emitter sends, and the renderer has a case for each', () => {
       const emitter = readFileSync(POD_SSE_SERVER, 'utf8');
       const renderer = readFileSync(CLI_TEST_COMMAND, 'utf8');
+      // The session frame goes out through the image gate, which holds it on an image turn until the worker's word
+      // (guuey#2293); every other frame through the pause capture.
+      const emitterSite = (name: string): string => (name === 'session' ? 'imageAck.openSession({' : `pauseCapture.send('${name}',`);
       for (const name of POD_STREAM_EVENTS) {
-        expect(emitter, `sse-server.ts sends no '${name}' event`).toContain(`pauseCapture.send('${name}',`);
+        expect(emitter, `sse-server.ts sends no '${name}' event`).toContain(emitterSite(name));
         expect(renderer, `streamToStdout has no case for '${name}'`).toContain(`case '${name}':`);
       }
     });
