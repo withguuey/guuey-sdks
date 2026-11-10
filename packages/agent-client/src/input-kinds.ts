@@ -8,20 +8,13 @@
  * accepts one only when the agent's worker declared the kind, and otherwise
  * refuses the body before the stream starts, storing nothing. This client
  * carries the kind and reads the refusal; it never decides on the agent's
- * behalf. The list is this package's own copy (it depends on no runtime
- * package); the runtime's tests pin it equal to the worker protocol's list.
+ * behalf. The list, its type and `isInputKind` are from `@guuey/worker`
+ * (`@guuey/worker/input-kinds`, the one list, guuey#2877), re-exported here
+ * under the same names.
  */
+import { isInputKind, type InputKind } from "@guuey/worker/input-kinds";
 
-/** Every input kind this client can send, in wire spelling. */
-export const INPUT_KINDS = ["context-only"] as const;
-
-/** One input kind. */
-export type InputKind = (typeof INPUT_KINDS)[number];
-
-/** Whether `value` is a known input kind; anything else, including a kind this release does not know, is not. */
-export function isInputKind(value: unknown): value is InputKind {
-  return typeof value === "string" && INPUT_KINDS.some((kind) => kind === value);
-}
+export { INPUT_KINDS, isInputKind, type InputKind } from "@guuey/worker/input-kinds";
 
 /**
  * The input kind a stored row keeps: only a user row's, and only a kind this

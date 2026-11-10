@@ -12,13 +12,14 @@
 import type { AgMemoryRecord, JsonValue } from "@silverprotocol/core";
 import type { TapLabels } from "@guuey/mcp-apps-host/narrowing";
 import type { TitleWrite, TitleWriteResult } from "./title.js";
+import { INPUT_KINDS, type InputKind } from "@guuey/worker/input-kinds";
 
 /**
- * guuey#2549: what a user turn's content rides on when its text is empty. Mirrors `@guuey/worker`'s
- * `INPUT_KINDS` (this package does not depend on it); nocode-runtime's sync test pins them equal.
+ * guuey#2549: what a user turn's content rides on when its text is empty. From `@guuey/worker`'s
+ * `INPUT_KINDS` (`@guuey/worker/input-kinds`, the one list, guuey#2877), under this package's names.
  */
-export const THREAD_INPUT_KINDS = ['context-only'] as const;
-export type ThreadInputKind = (typeof THREAD_INPUT_KINDS)[number];
+export { INPUT_KINDS as THREAD_INPUT_KINDS } from "@guuey/worker/input-kinds";
+export type ThreadInputKind = InputKind;
 
 /**
  * The reader contract for a stored row's `inputKind`: a known kind, or
@@ -26,7 +27,7 @@ export type ThreadInputKind = (typeof THREAD_INPUT_KINDS)[number];
  * know). Never throws: a stored row is read across a rolling release.
  */
 export function readThreadInputKind(raw: unknown): ThreadInputKind | undefined {
-  return THREAD_INPUT_KINDS.find((kind) => kind === raw);
+  return INPUT_KINDS.find((kind) => kind === raw);
 }
 
 export type ThreadMessageRole = "user" | "agent" | "system";

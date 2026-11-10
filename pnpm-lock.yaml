@@ -226,6 +226,9 @@ importers:
       '@guuey/mcp-apps-host':
         specifier: workspace:*
         version: link:../mcp-apps-host
+      '@guuey/worker':
+        specifier: workspace:*
+        version: link:../worker
       '@silverprotocol/core':
         specifier: 0.12.11
         version: 0.12.11
@@ -584,6 +587,9 @@ importers:
       '@guuey/mcp-apps-host':
         specifier: workspace:*
         version: link:../mcp-apps-host
+      '@guuey/worker':
+        specifier: workspace:*
+        version: link:../worker
       '@silverprotocol/core':
         specifier: 0.12.11
         version: 0.12.11

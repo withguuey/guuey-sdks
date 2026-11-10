@@ -16,6 +16,12 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./input-kinds": {
+      "react-native": "./src/input-kinds.ts",
+      "types": "./dist/input-kinds.d.ts",
+      "import": "./dist/input-kinds.js",
+      "default": "./dist/input-kinds.js"
     }
   },
   "scripts": {
@@ -31,7 +37,19 @@
     "vitest": "^4.1.11"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js",
+        "default": "./dist/index.js"
+      },
+      "./input-kinds": {
+        "types": "./dist/input-kinds.d.ts",
+        "import": "./dist/input-kinds.js",
+        "default": "./dist/input-kinds.js"
+      }
+    }
   },
   "keywords": [
     "guuey",

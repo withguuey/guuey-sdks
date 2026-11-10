@@ -34,27 +34,10 @@ export interface Fs {
   home: string;
   session: string;
 }
-/**
- * guuey#2549: what a user turn's content rides on when its text is empty. `context-only`: the
- * turn's content is the page context the app sent (a photo the app named there, say), and the
- * user typed nothing. More kinds are added additively (`attachment-only` when attachments reach a
- * model, guuey#2293).
- */
-export const INPUT_KINDS = ["context-only"] as const;
-export type InputKind = (typeof INPUT_KINDS)[number];
-
-export function isInputKind(value: unknown): value is InputKind {
-  return typeof value === "string" && (INPUT_KINDS as readonly string[]).includes(value);
-}
-
-/**
- * The hello capability name a worker declares when it handles turns of this kind (an empty
- * `input` plus `inputKind`). A Router sends such a turn ONLY to a worker whose hello for that
- * same invoke declared it.
- */
-export function inputKindCapability(kind: InputKind): string {
-  return `input-kind:${kind}`;
-}
+// guuey#2877: the input-kind list lives in ONE file, published on its own browser-safe subpath
+// (`@guuey/worker/input-kinds`); the protocol re-exports it unchanged.
+import type { InputKind } from "./input-kinds.js";
+export { INPUT_KINDS, isInputKind, inputKindCapability, type InputKind } from "./input-kinds.js";
 
 export interface HistoryMessage {
   role: "user" | "agent";
