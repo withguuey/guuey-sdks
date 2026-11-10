@@ -30,9 +30,9 @@
  * package's `dependencies`, `peerDependencies` or `optionalDependencies` must
  * sit EARLIER in ORDER. `devDependencies` do not gate an install and are out.
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /** The one line every release.yml step uses to read the ORDER file. */
 export const ORDER_READ = "mapfile -t ORDER < publish-order.txt";
@@ -152,7 +152,12 @@ export function publishOrderProblems({ orderText, workflow, packages }) {
   return { order, expected, problems };
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+// Run as a script only when started directly. Both sides are realpathed, so a symlinked or relative
+// argv path still runs the check instead of exiting 0 having done nothing (scripts/lib/entry-script-lint).
+const startedDirectly =
+  process.argv[1] !== undefined &&
+  realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url));
+if (startedDirectly) {
   const root = new URL("../", import.meta.url).pathname;
   const packagesDir = join(root, "packages");
   const read = (path) => {
