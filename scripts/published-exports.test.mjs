@@ -1,7 +1,7 @@
 /**
  * guuey#2299 — a published package's export map points at compiled output only.
  *
- * Inside this workspace, three packages declare a `react-native` export condition that
+ * Inside this workspace, four packages declare a `react-native` export condition that
  * targets their TypeScript source (`./src/*.ts`), so an app bundling them from the
  * workspace can use the source directly. That source imports its siblings by
  * NodeNext-style `./x.js` specifiers, which a stock Metro resolver does not map to
@@ -90,8 +90,9 @@ test("publishConfig.exports equals exports minus the source-targeting react-nati
     );
     checked.push(manifest.name);
   }
-  // The three packages that carry a workspace source condition today.
-  assert.deepEqual(checked.sort(), ["@guuey/agent-client", "@guuey/chat", "@guuey/mcp-apps-host"]);
+  // The four packages that carry a workspace source condition today (@guuey/worker since its
+  // browser-safe ./input-kinds subpath, guuey#2877). A new one is added here in the same commit.
+  assert.deepEqual(checked.sort(), ["@guuey/agent-client", "@guuey/chat", "@guuey/mcp-apps-host", "@guuey/worker"]);
 });
 
 test("controls: a source target is caught, a drifted publish map is caught", () => {
