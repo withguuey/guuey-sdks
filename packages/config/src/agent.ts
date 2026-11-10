@@ -1473,9 +1473,12 @@ export function parseToolGateEntry(raw: string): ToolGateEntry | { error: string
  * ({@link RESERVED_MCP_SERVER_NAMES}: memory / profile, spliced at invoke time
  * for authenticated callers).
  */
-export function toolGateServerNames(agent: Pick<GuueyAgent, 'mcpServers'> | undefined): string[] {
+export function toolGateServerNames(
+  agent: Pick<GuueyAgent, 'mcpServers'> | undefined,
+  opts: SeedOptions = {},
+): string[] {
   return [
-    ...Object.keys(effectiveMcpServers(agent?.mcpServers)),
+    ...Object.keys(effectiveMcpServers(agent?.mcpServers, opts)),
     ...RESERVED_MCP_SERVER_NAMES,
   ];
 }
@@ -1496,11 +1499,11 @@ export function toolGateServerNames(agent: Pick<GuueyAgent, 'mcpServers'> | unde
  * through here, its server still checked as before;
  * {@link validateSubmittedToolGates} refuses one a submitted document adds.
  */
-export function validateToolGates(agent: GuueyAgent | undefined): string[] {
+export function validateToolGates(agent: GuueyAgent | undefined, opts: SeedOptions = {}): string[] {
   const violations: string[] = [];
   const gates = agent?.tools;
   if (!gates) return violations;
-  const known = new Set(toolGateServerNames(agent));
+  const known = new Set(toolGateServerNames(agent, opts));
   for (const list of ['allowlist', 'denylist'] as const) {
     for (const raw of gates[list] ?? []) {
       const misplaced = misplacedWildcard(raw.trim());
@@ -1564,9 +1567,10 @@ function unknownServer(raw: string, server: string): string {
  */
 export function validateSubmittedToolGates(
   agent: Pick<GuueyAgent, 'tools' | 'modes' | 'mcpServers'> | undefined,
+  opts: SeedOptions = {},
 ): string[] {
   const violations: string[] = [];
-  const known = new Set(toolGateServerNames(agent));
+  const known = new Set(toolGateServerNames(agent, opts));
   const check = (gates: GuueyAgentToolGates | undefined, path: string, wholeGrammar: boolean): void => {
     for (const list of ['allowlist', 'denylist'] as const) {
       for (const raw of gates?.[list] ?? []) {
@@ -1786,14 +1790,28 @@ export function isGguiRenderUrl(url: string): boolean {
 }
 
 /**
+ * Whether the platform default ({@link DEFAULT_AGENT_MCP_SERVERS}) is seeded
+ * for one app (guuey#3361, the retirement input of #3335). `seedGgui` absent
+ * means seeded, exactly as before the option existed; `false` seeds nothing and
+ * leaves the declared map alone. The caller decides: the Router seeds an app
+ * only while it holds a ggui binding.
+ */
+export interface SeedOptions {
+  seedGgui?: boolean;
+}
+
+/**
  * The EFFECTIVE server map (guuey#24, option A): seed the platform default,
  * layer the declared map on top (explicit wins), drop `ggui: false`. This is
  * the ONE owner of default-application semantics — the resolution seams
  * (credential broker, render-tool resolution) call this; declared-map
- * ITERATION sites use {@link declaredServerEntries} instead.
+ * ITERATION sites use {@link declaredServerEntries} instead. With
+ * `{ seedGgui: false }` ({@link SeedOptions}) nothing is seeded: the result is
+ * the declared map with `ggui: false` dropped.
  */
 export function effectiveMcpServers(
-  declared: DeclaredMcpServers | undefined
+  declared: DeclaredMcpServers | undefined,
+  opts: SeedOptions = {},
 ): Record<string, GuueyAgentMcpServer> {
   // guuey#955: seed the default ONLY when no declared entry is already THE
   // render server (`isGguiRenderUrl`: ggui host at its root, or a per-app
@@ -1806,7 +1824,7 @@ export function effectiveMcpServers(
   const declaredHasGgui = declaredServerEntries(declared).some(
     ([, entry]) => entry.kind === 'external' && isGguiRenderUrl(entry.url)
   );
-  const merged: DeclaredMcpServers = declaredHasGgui
+  const merged: DeclaredMcpServers = declaredHasGgui || opts.seedGgui === false
     ? { ...declared }
     : { ...DEFAULT_AGENT_MCP_SERVERS, ...declared };
   const out: Record<string, GuueyAgentMcpServer> = {};
