@@ -1,0 +1,14 @@
+hooks
+config
+state
+fs
+agent-layout
+mcp-apps-host
+widget-auth
+worker
+threads
+agent-client
+chat
+host
+create-agentic-app
+cli

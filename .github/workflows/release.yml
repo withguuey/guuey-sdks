@@ -5,25 +5,13 @@ name: npm Release
 # guuey-sdks mirror (withguuey/guuey-sdks) — the repo the npmjs
 # trusted-publisher config points at.
 #
-# Cohort (leaf-first, mirrors the ORDER array below): @guuey/hooks (the
-# hook spec — types + zod schemas + the per-event table, guuey#1528; a leaf
-# @guuey/config composes), @guuey/config,
-# @guuey/state (KV developer preview — in-memory binding, contract locked),
-# @guuey/fs (GuueyFS dev-guidance helper — homeDir/appDir/sessionDir, zero
-# deps, a leaf), @guuey/mcp-apps-host (the MCP Apps SEP-1865 Host role —
-# view-mount narrowing + locator rehydration; deps @silverprotocol/core +
-# @ggui-ai/protocol, a leaf), @guuey/widget-auth (embeddable-widget
-# token minting for a customer's backend — zero deps, a leaf), @guuey/worker
-# (zero runtime deps, a leaf), @guuey/threads (universal session/thread
-# persistence — ThreadStore + fold↔row mapping + in-memory binding; npm
-# deps are @silverprotocol/core, @guuey/mcp-apps-host/narrowing and
-# @guuey/worker/input-kinds, guuey#2877, so it publishes after worker),
-# @guuey/agent-client (the embed chat SDK; deps mcp-apps-host + worker),
-# @guuey/chat (the default
-# transcript UI — wave 3a headless view-model + calm/debug presets + the
-# GuueyChatTheme platform-data schema; deps agent-client + mcp-apps-host +
-# @silverprotocol/core), @guuey/host,
-# @guuey/create-agentic-app, @guuey/cli.
+# Cohort and order: publish-order.txt, one package directory per line,
+# leaf-first; every step below reads it with
+# `mapfile -t ORDER < publish-order.txt`, and nothing else lists it.
+# `pnpm check:publish-order` (gate job + CI) proves the file covers every
+# publishable package and that each package publishes after every cohort
+# package in its dependencies / peerDependencies / optionalDependencies, read
+# off the manifests (guuey#1383, guuey#2877).
 # First-ever publishes are MANUAL: a trusted publisher can only be attached
 # to a package that already exists on npm (the org owner's live read on
 # npmjs, 2026-09-19, and the registry agrees — @guuey/chat@0.4.0, the
@@ -167,13 +155,8 @@ jobs:
           DRY_RUN: ${{ steps.mode.outputs.dry_run }}
         run: |
           set -euo pipefail
-          # Fixed leaf-first order: config/state/fs/agent-layout/widget-auth/
-          # worker are leaves (agent-layout: react peer only, guuey#403);
-          # host needs config+worker, threads needs mcp-apps-host+worker,
-          # agent-client needs mcp-apps-host+worker (guuey#2877),
-          # chat needs agent-client+mcp-apps-host,
-          # create-agentic-app needs config, cli needs all.
-          ORDER=(hooks config state fs agent-layout mcp-apps-host widget-auth worker threads agent-client chat host create-agentic-app cli)
+          # Leaf-first, from publish-order.txt (see the header).
+          mapfile -t ORDER < publish-order.txt
 
           TODO=()
           for pkg in "${ORDER[@]}"; do
@@ -225,7 +208,7 @@ jobs:
           # half of #439 — publishing on `next` and advancing `latest`
           # leaf-first — stays open on the issue: it needs npm's OIDC
           # trusted publishing to cover `dist-tag add`, unverified.)
-          ORDER=(hooks config state fs agent-layout mcp-apps-host widget-auth worker threads agent-client chat host create-agentic-app cli)
+          mapfile -t ORDER < publish-order.txt
           for pkg in "${ORDER[@]}"; do
             name=$(node -pe "require('./packages/$pkg/package.json').name")
             ver=$(node -pe "require('./packages/$pkg/package.json').version")
@@ -288,7 +271,7 @@ jobs:
           # approve` is human-2FA proof-of-presence, not CI-automatable —
           # both re-verified 2026-08-31).
           VER=$(node -pe "require('./packages/config/package.json').version")
-          ORDER=(hooks config state fs agent-layout mcp-apps-host widget-auth worker threads agent-client chat host create-agentic-app cli)
+          mapfile -t ORDER < publish-order.txt
           for pkg in "${ORDER[@]}"; do
             name=$(node -pe "require('./packages/$pkg/package.json').name")
             ok=""
