@@ -234,7 +234,7 @@ export interface NativeTranscriptProps
   extends TranscriptScrollProps<NativeTranscriptHandle>,
     Pick<
     NativeTranscriptItemContext,
-    "onToggle" | "onRetry" | "onPromptAction" | "onErrorAction" | "resolvedMounts" | "onViewPhase" | "onViewRef"
+    "onToggle" | "onRetry" | "onPromptAction" | "onErrorAction" | "resolvedMounts" | "onViewPhase" | "onViewRef" | "onCopyText"
   > {
   plan: TranscriptPlan;
   /** Per-slot component overrides (spec §3's override column). */
@@ -275,6 +275,7 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
     resolvedMounts,
     onViewPhase,
     onViewRef,
+    onCopyText,
     onStartNewConversation,
     follow: followPolicy = "tail",
     onAtEndChange,
@@ -288,8 +289,8 @@ export function NativeTranscript(props: NativeTranscriptProps): ReactNode {
     [components],
   );
   const ctx: NativeTranscriptItemContext = useMemo(
-    () => ({ strings, tokens, onToggle, onRetry, onPromptAction, onErrorAction, resolvedMounts, onViewPhase, onViewRef }),
-    [strings, tokens, onToggle, onRetry, onPromptAction, onErrorAction, resolvedMounts, onViewPhase, onViewRef],
+    () => ({ strings, tokens, onToggle, onRetry, onPromptAction, onErrorAction, resolvedMounts, onViewPhase, onViewRef, onCopyText }),
+    [strings, tokens, onToggle, onRetry, onPromptAction, onErrorAction, resolvedMounts, onViewPhase, onViewRef, onCopyText],
   );
 
   // Under "tail": an inverted list over the reversed plan, newest at index 0

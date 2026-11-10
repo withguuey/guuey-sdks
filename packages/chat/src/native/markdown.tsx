@@ -18,8 +18,8 @@
  * token-driven descendant (colors/fonts come from the kit's resolved
  * `NativeChatTokens`, not an app theme context).
  */
-import type { ReactNode } from "react";
-import { Linking, Text, View } from "react-native";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Linking, Pressable, Text, View } from "react-native";
 import {
   parseRichText,
   type RichTextBlock,
@@ -110,16 +110,94 @@ function InlineRuns({
   });
 }
 
+/** A host's clipboard write (guuey#2368); a rejected promise is a failed copy. */
+export type NativeCopyText = (text: string) => Promise<void>;
+
+/** Calls the host's write now, turning a synchronous throw into the rejection a failed copy is. */
+function startCopy(onCopyText: NativeCopyText, code: string): Promise<void> {
+  try {
+    return onCopyText(code);
+  } catch (err: unknown) {
+    return Promise.reject(err instanceof Error ? err : new Error(String(err)));
+  }
+}
+
+/** How long "Copied" shows before the label returns to "Copy": the web fence's interval. */
+const COPIED_RESET_MS = 1600;
+
+/**
+ * A code fence's copy control (guuey#2368), the native twin of the web
+ * `CodeFence` button (`react/markdown.tsx`): the same words and accessibility
+ * labels, the same reset, and a failed copy keeps "Copy" (truthful, as web
+ * does). It copies the fence text exactly as parsed. The clipboard is the
+ * host's: the kit takes no clipboard dependency.
+ */
+function NativeCodeCopy({
+  code,
+  onCopyText,
+  color,
+  tokens,
+}: {
+  code: string;
+  onCopyText: NativeCopyText;
+  color: string;
+  tokens: NativeChatTokens;
+}): ReactNode {
+  const [copied, setCopied] = useState(false);
+  const reset = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mounted = useRef(true);
+  useEffect(
+    () => () => {
+      mounted.current = false;
+      if (reset.current !== null) clearTimeout(reset.current);
+    },
+    [],
+  );
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={copied ? "Copied" : "Copy code"}
+      hitSlop={8}
+      style={{ alignSelf: "flex-end" }}
+      onPress={() => {
+        // The host's write runs inside the press: a web clipboard (react-native-web hosts) may
+        // need the user gesture's own call stack. A host that throws synchronously instead of
+        // rejecting takes the same failed-copy path.
+        startCopy(onCopyText, code).then(
+          () => {
+            if (!mounted.current) return;
+            setCopied(true);
+            if (reset.current !== null) clearTimeout(reset.current);
+            reset.current = setTimeout(() => {
+              reset.current = null;
+              if (mounted.current) setCopied(false);
+            }, COPIED_RESET_MS);
+          },
+          () => {
+            if (mounted.current) setCopied(false);
+          },
+        );
+      }}
+    >
+      <Text style={{ color, fontSize: tokens.fontSize - 2, fontFamily: tokens.fontFamily, fontWeight: "600" }}>
+        {copied ? "Copied" : "Copy"}
+      </Text>
+    </Pressable>
+  );
+}
+
 function BlockView({
   block,
   color,
   tokens,
   trailing,
+  onCopyText,
 }: {
   block: RichTextBlock;
   color: string;
   tokens: NativeChatTokens;
   trailing?: ReactNode;
+  onCopyText?: NativeCopyText;
 }): ReactNode {
   switch (block.type) {
     case "table":
@@ -163,6 +241,9 @@ function BlockView({
             fontSize={tokens.fontSize - 2}
             tokens={tokens}
           />
+          {onCopyText !== undefined ? (
+            <NativeCodeCopy code={block.code} onCopyText={onCopyText} color={color} tokens={tokens} />
+          ) : null}
           {trailing}
         </View>
       );
@@ -245,12 +326,15 @@ export function NativeMarkdown({
   color,
   tokens,
   trailing,
+  onCopyText,
 }: {
   text: string;
   color: string;
   tokens: NativeChatTokens;
   /** Appended inside the LAST block so a streaming caret hugs the text. */
   trailing?: ReactNode;
+  /** guuey#2368: the host's clipboard write; absent ⇒ code fences draw no copy control. */
+  onCopyText?: NativeCopyText;
 }): ReactNode {
   const blocks = parseRichText(text);
   return (
@@ -262,6 +346,7 @@ export function NativeMarkdown({
           color={color}
           tokens={tokens}
           trailing={i === blocks.length - 1 ? trailing : undefined}
+          onCopyText={onCopyText}
         />
       ))}
     </View>

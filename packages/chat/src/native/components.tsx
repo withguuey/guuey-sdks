@@ -55,7 +55,7 @@ import type {
   ViewRefItem,
 } from "../types.js";
 import { Linking } from "react-native";
-import { NativeMarkdown } from "./markdown.js";
+import { NativeMarkdown, type NativeCopyText } from "./markdown.js";
 import { NativeHighlightedCode } from "./highlight-native.js";
 import type { NativeChatTokens } from "./theme-native.js";
 import { USER_BUBBLE_FACE } from "../theme.js";
@@ -85,6 +85,12 @@ export interface NativeTranscriptItemContext {
    * focuses/reveals its stage. Absent ⇒ the chip renders as a label.
    */
   onViewRef?: (item: ViewRefItem) => void;
+  /**
+   * guuey#2368: writes a code fence's text to the host's clipboard. Absent ⇒
+   * fences draw no copy control (a host without a clipboard shows no dead
+   * button). A rejected promise is a failed copy: the label stays "Copy".
+   */
+  onCopyText?: NativeCopyText;
 }
 
 /** The props every native item component takes — type a slot override with it. */
@@ -342,7 +348,7 @@ export function NativeText({ item, ctx }: ItemProps<TextItem>): ReactNode {
         style={{ alignSelf: "flex-start", maxWidth: "92%", paddingHorizontal: tokens.pad, paddingVertical: 2, gap: 4 }}
       >
         {item.markdown ? (
-          <NativeMarkdown text={item.text} color={tokens.palette.inkMuted} tokens={tokens} trailing={caret} />
+          <NativeMarkdown text={item.text} color={tokens.palette.inkMuted} tokens={tokens} trailing={caret} onCopyText={ctx.onCopyText} />
         ) : (
           <MutedText ctx={ctx}>
             {item.text}
@@ -367,7 +373,7 @@ export function NativeText({ item, ctx }: ItemProps<TextItem>): ReactNode {
       }}
     >
       {item.markdown ? (
-        <NativeMarkdown text={item.text} color={tokens.palette.ink} tokens={tokens} trailing={caret} />
+        <NativeMarkdown text={item.text} color={tokens.palette.ink} tokens={tokens} trailing={caret} onCopyText={ctx.onCopyText} />
       ) : (
         <Text style={{ color: tokens.palette.ink, fontSize: tokens.fontSize, fontFamily: tokens.fontFamily }}>
           {item.text}
