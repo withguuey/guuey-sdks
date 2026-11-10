@@ -64,6 +64,7 @@ import {
   useEffect,
   useId,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -1058,9 +1059,12 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // ── The imperative seam (guuey#210) ──────────────────────────────────
   // ONE stable handle for the component's whole life (hosts capture it in
   // `onReady` and keep it), reading live truth through a ref so a call
-  // always sees the CURRENT gate — never a stale closure's.
+  // always sees the CURRENT gate — never a stale closure's. Written in the
+  // commit (a layout effect), not after it: a loaded page can split a commit
+  // from its passive effects across tasks, and a tap on the composer that
+  // already shows closed must not read the gate from before it closed.
   const liveRef = useRef({ busy, composerClosed, invoke, onReady });
-  useEffect(() => {
+  useLayoutEffect(() => {
     liveRef.current = { busy, composerClosed, invoke, onReady };
   });
 

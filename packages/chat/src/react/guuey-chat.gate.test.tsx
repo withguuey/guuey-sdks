@@ -6,7 +6,7 @@
  * pending connect card, or an ended conversation. Over the real hook stack
  * with scripted transports.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { AgentInvokeAdapters, InvokeRequest } from "@guuey/agent-client";
 import { defaultChatStrings } from "../strings.js";
@@ -259,5 +259,46 @@ describe("one gate, said once: a suggestion chip", () => {
     fireEvent.click(screen.getByRole("button", { name: "Plan my afternoon" }));
     await new Promise((r) => setTimeout(r, 30));
     expect(calls).toHaveLength(0);
+  });
+
+  it("is refused from the moment the closed composer is on screen, even when the scheduler yields before the commit's effects", async () => {
+    // A loaded machine runs React's commit and its passive effects in two
+    // macrotasks; between them the page already shows the closed composer
+    // and can take a tap. Every scheduler frame expiring at once makes that
+    // split happen on every commit here.
+    let clock = 0;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => (clock += 50));
+    try {
+      const calls: InvokeRequest[] = [];
+      const adapters: AgentInvokeAdapters = {
+        storage: { load: () => THREAD, save: () => {} },
+        generateId: () => "cmid-0",
+        transport: async function* (req) {
+          calls.push(req);
+          yield SESSION_FRAME;
+          yield DONE_FRAME;
+        },
+        history: { load: async () => ({ messages: [], closed: CLOSED }) },
+      };
+      render(
+        <GuueyChat endpointUrl="https://pod.example/agent/invoke" adapters={adapters} suggestions={["Plan my afternoon"]} />,
+      );
+      const field = screen.getByLabelText("Message") as HTMLTextAreaElement;
+      // Tap in the same microtask checkpoint that first sees the field disabled.
+      const tapped = new Promise<void>((resolve) => {
+        const observer = new MutationObserver(() => {
+          if (!field.disabled) return;
+          observer.disconnect();
+          fireEvent.click(screen.getByRole("button", { name: "Plan my afternoon" }));
+          resolve();
+        });
+        observer.observe(field, { attributes: true, attributeFilter: ["disabled"] });
+      });
+      await tapped;
+      await new Promise((r) => setTimeout(r, 30));
+      expect(calls).toHaveLength(0);
+    } finally {
+      now.mockRestore();
+    }
   });
 });
