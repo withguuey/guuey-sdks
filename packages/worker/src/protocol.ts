@@ -328,7 +328,39 @@ export interface Invoke {
    * knowing this id grants nothing. An older worker ignores the field.
    */
   threadId?: string;
+  /**
+   * The images the person attached to this turn, inline as base64, already
+   * judged by the Router (an allowlisted image type, standard base64, within
+   * the Router's per-image, per-turn and count caps). Present only when the
+   * turn carries at least one. A worker that hands them to its model with
+   * `input` announces {@link INVOKE_IMAGES_CAPABILITY} in this invoke's hello;
+   * the Router tells the person's client the images were accepted only on that
+   * word. An older worker ignores the field, runs `input` alone and announces
+   * nothing, so the client refuses the turn instead of the images being
+   * dropped in silence.
+   */
+  attachments?: InvokeImageAttachment[];
 }
+/** The image types an {@link InvokeImageAttachment} may carry. */
+export const INVOKE_IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
+/** One of {@link INVOKE_IMAGE_MIME_TYPES}. */
+export type InvokeImageMimeType = (typeof INVOKE_IMAGE_MIME_TYPES)[number];
+/**
+ * One attached image: its bytes in standard base64 (RFC 4648: no `data:`
+ * prefix, no line breaks) and its type.
+ */
+export interface InvokeImageAttachment {
+  kind: "inline";
+  mimeType: InvokeImageMimeType;
+  data: string;
+}
+/**
+ * Capability (worker → Router, in the hello of the invoke it applies to): this
+ * worker hands the invoke's {@link Invoke.attachments} to its model with the
+ * turn's input. Announced only on an invoke that carried attachments, before
+ * the invoke's first native.
+ */
+export const INVOKE_IMAGES_CAPABILITY = "invoke.images.v1";
 /**
  * Router → worker: "I can end this conversation for you on this turn." It has
  * no fields today; its presence is the offer.

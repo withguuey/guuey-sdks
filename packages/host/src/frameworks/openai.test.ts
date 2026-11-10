@@ -176,7 +176,7 @@ describe("runInvokeOpenai — native emission", () => {
   it("builds the Agent from the snapshot: model + preamble instructions, input as the run prompt", async () => {
     const { sink } = collector();
     const emit = createEmitter(sink);
-    const seen: { model?: string; instructions?: string; input?: string; maxTurns?: number } = {};
+    const seen: { model?: string; instructions?: string; input?: Parameters<OpenaiRunFn>[1]; maxTurns?: number } = {};
     const run: OpenaiRunFn = (agent, input, options) => {
       seen.model = typeof agent.model === "string" ? agent.model : undefined;
       seen.instructions = typeof agent.instructions === "string" ? agent.instructions : undefined;

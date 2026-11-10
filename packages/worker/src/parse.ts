@@ -31,10 +31,12 @@ import type {
   ResumeAnswer,
   SuspendEvent,
   EndThread,
+  InvokeImageAttachment,
 } from "./protocol.js";
 import { parseClientCatalogs } from "./client-catalogs.js";
 import { endThreadProblem } from "./end-thread.js";
 import { isInputKind } from "./protocol.js";
+import { isInvokeImageMimeType, isStandardBase64 } from "./images.js";
 
 export function isInvoke(m: ControlMessage): m is Invoke {
   return m.type === "invoke";
@@ -221,6 +223,26 @@ function parseResume(v: JsonValue | undefined): InvokeResume | undefined {
   return { envelope, answers: parsed };
 }
 
+/**
+ * The turn's images: kept only when EVERY entry is an inline image of an
+ * allowlisted type whose data is non-empty standard base64. Anything else drops
+ * the whole list, never part of it: a worker must not announce that it reads
+ * the turn's images and then show its model fewer than the person sent. Never
+ * throws, so a malformed list reads as a turn without images.
+ */
+function parseAttachments(v: JsonValue | undefined): InvokeImageAttachment[] | undefined {
+  if (!Array.isArray(v) || v.length === 0) return undefined;
+  const out: InvokeImageAttachment[] = [];
+  for (const entry of v) {
+    if (!isObject(entry) || entry.kind !== "inline") return undefined;
+    const { mimeType, data } = entry;
+    if (!isInvokeImageMimeType(mimeType)) return undefined;
+    if (typeof data !== "string" || !isStandardBase64(data)) return undefined;
+    out.push({ kind: "inline", mimeType, data });
+  }
+  return out;
+}
+
 export function parseControl(line: string): ControlMessage {
   let raw: JsonValue;
   try {
@@ -243,6 +265,7 @@ export function parseControl(line: string): ControlMessage {
       const mcpAvailability = parseMcpAvailability(raw.mcpAvailability);
       const suspend = parseSuspendOffer(raw.suspend);
       const resume = parseResume(raw.resume);
+      const attachments = parseAttachments(raw.attachments);
       return {
         type: "invoke",
         input: raw.input,
@@ -318,6 +341,8 @@ export function parseControl(line: string): ControlMessage {
         // string, otherwise absent (never thrown), so a stateless invoke and an
         // older Router's invoke both read with no thread id.
         ...(typeof raw.threadId === "string" && raw.threadId.length > 0 ? { threadId: raw.threadId } : {}),
+        // The turn's images: all well formed, or none (see parseAttachments).
+        ...(attachments ? { attachments } : {}),
       };
     }
     case "shutdown":

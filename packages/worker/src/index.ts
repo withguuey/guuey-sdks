@@ -7,6 +7,8 @@ export {
   ADK_HOST_COMPLETION_CAPABILITY,
   HOST_SUSPEND_CAPABILITY,
   TOOL_GATES_CAPABILITY,
+  INVOKE_IMAGES_CAPABILITY,
+  INVOKE_IMAGE_MIME_TYPES,
   SUSPEND_ENVELOPE_MAX_BYTES,
   type ProtocolVersion,
   type JsonValue,
@@ -23,6 +25,8 @@ export {
   type McpAvailabilityState,
   type StopReason,
   type Invoke,
+  type InvokeImageAttachment,
+  type InvokeImageMimeType,
   type InvokeSuspendOffer,
   type InvokeResume,
   type InvokeThreadCloseOffer,
@@ -53,6 +57,7 @@ export {
 } from "./parse.js";
 export { INPUT_KINDS, type InputKind, isInputKind, inputKindCapability } from "./protocol.js";
 export { CONTEXT_ONLY_TURN_TEXT, MODEL_TEXT_INPUT_KIND_CAPABILITIES, modelInputOf, modelTextOf } from "./model-text.js";
+export { invokeImagesCapabilities, isInvokeImageMimeType, isStandardBase64 } from "./images.js";
 export { createEmitter, type Emitter, type WriteSink } from "./emit.js";
 export { endThreadProblem, END_THREAD_CODE_PATTERN, END_THREAD_MESSAGE_MAX_CHARS } from "./end-thread.js";
 export {

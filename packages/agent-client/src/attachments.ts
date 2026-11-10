@@ -12,7 +12,11 @@
  *    characters (about 3.75 MB of image), under the model API's 5 MB
  *    per-image limit however that limit is counted;
  *  - one turn's images at most {@link IMAGE_ATTACHMENTS_MAX_TOTAL_BASE64_CHARS}
- *    characters, which leaves room for the rest of the body under the 10 MB
+ *    characters, sized so a typical turn fits the 8 MiB frame that carries
+ *    it to the agent's executor together with the conversation's history,
+ *    its tool credentials and the rest of the turn (the runtime holds the
+ *    same number). It is not a worst-case bound: the runtime refuses a turn
+ *    whose frame would still be too large. It is also well under the 10 MB
  *    request limit in front of the agent runtime, so a valid body is never
  *    refused at the edge;
  *  - at most {@link IMAGE_ATTACHMENTS_MAX_COUNT} images in one turn.
@@ -35,7 +39,7 @@ export const IMAGE_ATTACHMENTS_MAX_COUNT = 4;
 export const IMAGE_ATTACHMENT_MAX_BASE64_CHARS = 5_000_000;
 
 /** One turn's images together are at most this many base64 characters. */
-export const IMAGE_ATTACHMENTS_MAX_TOTAL_BASE64_CHARS = 8_000_000;
+export const IMAGE_ATTACHMENTS_MAX_TOTAL_BASE64_CHARS = 6_000_000;
 
 /**
  * One image on the wire: the runtime's `inline` attachment. `data` is the

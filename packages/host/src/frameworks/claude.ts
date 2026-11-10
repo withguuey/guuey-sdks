@@ -25,7 +25,8 @@ import type { CredentialFile,
   InputKind,
   JsonValue,
   ProfileSection,
-  StopReason, McpAvailability, FirstImpressionPush, FirstImpressionShown, WithheldTool } from "@guuey/worker";
+  StopReason, McpAvailability, FirstImpressionPush, FirstImpressionShown, WithheldTool, InvokeImageAttachment } from "@guuey/worker";
+import { invokeImagesCapabilities } from "@guuey/worker";
 import {
   buildOptions,
   reservedEnvNamesDropped,
@@ -110,6 +111,24 @@ export interface HostInvoke {
   clientCatalogs?: readonly string[];
   /** guuey#901: per OAuth server, its availability this turn — the "Connected services" section. */
   mcpAvailability?: McpAvailability[];
+  /** The turn's images (guuey#2293) — see `Invoke.attachments` in `@guuey/worker`; they reach the model beside `input`. */
+  attachments?: InvokeImageAttachment[];
+}
+
+/**
+ * The turn's one user message content (guuey#2293): an image block per
+ * attached image, in the order sent, then the text block (the model text,
+ * through `modelInputOf`). Without images it is the single text block the turn
+ * always sent.
+ */
+export function claudeUserContent(invoke: Pick<HostInvoke, "input" | "inputKind" | "attachments">): SDKUserMessage["message"]["content"] {
+  return [
+    ...(invoke.attachments ?? []).map((image) => ({
+      type: "image" as const,
+      source: { type: "base64" as const, media_type: image.mimeType, data: image.data },
+    })),
+    { type: "text" as const, text: modelInputOf(invoke) },
+  ];
 }
 
 /** Per-process config the worker resolves once at boot. */
@@ -307,7 +326,12 @@ export async function runInvoke(
   // first event of this invoke's fd-3 stream, before the framework gate or any
   // native/turn event. `sdkVersion` is resolved at runtime, never hardcoded;
   // `null` (SDK not resolvable) is tolerated by the Router.
-  emit.hello(CLAUDE_FRAMEWORK, CLAUDE_SDK_PACKAGE, resolveSdkVersion(CLAUDE_SDK_PACKAGE), MODEL_TEXT_INPUT_KIND_CAPABILITIES);
+  // guuey#2293: an invoke carrying images announces that this run path hands
+  // them to the model (the Router acknowledges them to the client on this word).
+  emit.hello(CLAUDE_FRAMEWORK, CLAUDE_SDK_PACKAGE, resolveSdkVersion(CLAUDE_SDK_PACKAGE), [
+    ...MODEL_TEXT_INPUT_KIND_CAPABILITIES,
+    ...invokeImagesCapabilities(invoke),
+  ]);
 
   // Framework gate: this run path is the Claude SDK. OpenAI agents route to
   // `runInvokeOpenai` (selected in `index.ts` by `snapshot.framework`) and never
@@ -388,7 +412,7 @@ export async function runInvoke(
     if (!sendMessage) return;
     yield {
       type: "user",
-      message: { role: "user", content: [{ type: "text", text: modelInputOf(invoke) }] },
+      message: { role: "user", content: claudeUserContent(invoke) },
       parent_tool_use_id: null,
     };
     await inputDone;

@@ -35,10 +35,10 @@ describe("the V1 allowlist and caps", () => {
     expect(isImageAttachmentMimeType("image/svg+xml")).toBe(false);
   });
 
-  it("caps 4 images, 5,000,000 base64 characters each and 8,000,000 in one turn", () => {
+  it("caps 4 images, 5,000,000 base64 characters each and 6,000,000 in one turn", () => {
     expect(IMAGE_ATTACHMENTS_MAX_COUNT).toBe(4);
     expect(IMAGE_ATTACHMENT_MAX_BASE64_CHARS).toBe(5_000_000);
-    expect(IMAGE_ATTACHMENTS_MAX_TOTAL_BASE64_CHARS).toBe(8_000_000);
+    expect(IMAGE_ATTACHMENTS_MAX_TOTAL_BASE64_CHARS).toBe(6_000_000);
   });
 });
 
@@ -90,11 +90,11 @@ describe("validateImageAttachments", () => {
   });
 
   it("refuses a list whose images are each under the cap but together over the turn's cap", () => {
-    const each = 4_000_004; // two of these exceed 8,000,000
-    expect(validateImageAttachments([png(base64OfLength(4_000_000)), png(base64OfLength(4_000_000))]).ok).toBe(true);
+    const each = 3_000_004; // two of these exceed 6,000,000
+    expect(validateImageAttachments([png(base64OfLength(3_000_000)), png(base64OfLength(3_000_000))]).ok).toBe(true);
     expect(validateImageAttachments([png(base64OfLength(each)), png(base64OfLength(each))])).toEqual({
       ok: false,
-      refusal: { reason: "total_too_large", max: 8_000_000 },
+      refusal: { reason: "total_too_large", max: 6_000_000 },
     });
   });
 

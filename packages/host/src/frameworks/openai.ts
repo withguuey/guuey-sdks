@@ -35,9 +35,10 @@ import {
   MCPServerStreamableHttp,
   type MCPServer,
   type MCPToolFilterCallable,
+  type AgentInputItem,
   type RunStreamEvent,
 } from "@openai/agents";
-import { MODEL_TEXT_INPUT_KIND_CAPABILITIES, mcpToolCustomData, modelInputOf } from "@guuey/worker";
+import { MODEL_TEXT_INPUT_KIND_CAPABILITIES, invokeImagesCapabilities, mcpToolCustomData, modelInputOf } from "@guuey/worker";
 import { modelToolFilterFor, reportToolGateErrors, type ToolGates } from "../mcp-tool-gates.js";
 import type { Emitter, JsonValue } from "@guuey/worker";
 import {
@@ -96,7 +97,7 @@ export interface OpenaiRunResult extends AsyncIterable<RunStreamEvent> {
  */
 export type OpenaiRunFn = (
   agent: Agent,
-  input: string,
+  input: string | AgentInputItem[],
   options: { stream: true; maxTurns?: number },
 ) => Promise<OpenaiRunResult>;
 
@@ -115,6 +116,27 @@ type HostErrorSentinel = {
 };
 
 /**
+ * The turn's input for `run` (guuey#2293): the model text (`modelInputOf`) when the
+ * turn carries no images, as it always was; otherwise one user message whose
+ * content is an `input_image` per attached image (a base64 `data:` URL), in
+ * the order sent, then the text.
+ */
+export function openaiTurnInput(invoke: Pick<HostInvoke, "input" | "inputKind" | "attachments">): string | AgentInputItem[] {
+  const images = invoke.attachments ?? [];
+  const text = modelInputOf(invoke);
+  if (images.length === 0) return text;
+  return [
+    {
+      role: "user",
+      content: [
+        ...images.map((image) => ({ type: "input_image" as const, image: `data:${image.mimeType};base64,${image.data}` })),
+        { type: "input_text" as const, text },
+      ],
+    },
+  ];
+}
+
+/**
  * Run one invoke through `@openai/agents`. Emits `native` per `RunStreamEvent`,
  * `done` on completion (with the `max_turns` sentinel + reason on a turn-cap),
  * `error` on a build failure or any non-max-turns throw. Never throws.
@@ -130,7 +152,11 @@ export async function runInvokeOpenai(
   // first event of this invoke's fd-3 stream, before any native/turn event.
   // `sdkVersion` is resolved at runtime, never hardcoded; `null` (SDK not
   // resolvable) is tolerated by the Router.
-  emit.hello(OPENAI_FRAMEWORK, OPENAI_SDK_PACKAGE, resolveSdkVersion(OPENAI_SDK_PACKAGE), MODEL_TEXT_INPUT_KIND_CAPABILITIES);
+  // guuey#2293: an invoke carrying images announces that this run path hands them to the model.
+  emit.hello(OPENAI_FRAMEWORK, OPENAI_SDK_PACKAGE, resolveSdkVersion(OPENAI_SDK_PACKAGE), [
+    ...MODEL_TEXT_INPUT_KIND_CAPABILITIES,
+    ...invokeImagesCapabilities(invoke),
+  ]);
 
   // The host runs inside the Router's bubblewrap jail with NO IRSA; a federated
   // MCP server reads its Router-written credential file. `resolveMcpServers`
@@ -252,7 +278,7 @@ export async function runInvokeOpenai(
       model: snapshot.model ?? DEFAULT_MODEL,
     });
 
-    const stream = await run(agent, modelInputOf(invoke), {
+    const stream = await run(agent, openaiTurnInput(invoke), {
       stream: true,
       ...(maxTurns !== undefined ? { maxTurns } : {}),
     });
