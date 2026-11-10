@@ -22,6 +22,7 @@ import {
   TOOL_GATES_CAPABILITY,
   mcpToolCustomData,
   modelVisibleToolFilterWith,
+  openaiTurnInput,
   readLaunchEnvelope,
   serveNative,
 } from "@guuey/worker";
@@ -78,7 +79,8 @@ await serveNative(
         ...(agent.model ? { model: agent.model } : {}),
       });
 
-      const stream = await run(sdkAgent, withHistory(invoke), {
+      // The turn's images (if any) as input_image parts, then the text.
+      const stream = await run(sdkAgent, openaiTurnInput(invoke, withHistory(invoke)), {
         stream: true,
         ...(agent.runtime?.maxTurns ? { maxTurns: agent.runtime.maxTurns } : {}),
       });
@@ -113,5 +115,8 @@ await serveNative(
     // It also applies the agent's tool gates (each server's `toolFilter` above), so every hello
     // says so with tool-gates.v1 (guuey#2670).
     capabilities: [...MODEL_TEXT_INPUT_KIND_CAPABILITIES, TOOL_GATES_CAPABILITY],
+    // The turn's images reach the model (openaiTurnInput above) and are stored
+    // in the turn's session storage, so the hello says so.
+    images: true,
   }
 );

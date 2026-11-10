@@ -15,6 +15,8 @@ import { lines } from "./lines.js";
 import { isInvoke, isShutdown, parseControl } from "./parse.js";
 import { HOST_SUSPEND_CAPABILITY, type EndThread, type Invoke, type JsonValue } from "./protocol.js";
 import { endThreadProblem } from "./end-thread.js";
+import { invokeImagesCapabilities } from "./images.js";
+import { storeTurnImages } from "./turn-images-store.js";
 import type { ServeOptions } from "./serve.js";
 import { createSuspendWriter, type SuspendWriteResult } from "./suspend-writer.js";
 
@@ -79,6 +81,18 @@ export interface NativeServeInfo {
    * invoke carried the offer, so a listed one is dropped.
    */
   capabilities?: readonly string[];
+  /**
+   * guuey#2293: this worker hands the invoke's images ({@link Invoke.attachments})
+   * to its model, for example through {@link anthropicUserContent},
+   * {@link openaiTurnInput} or {@link geminiUserParts}. On an invoke that carries
+   * images, the hello then announces {@link INVOKE_IMAGES_CAPABILITY}, the word
+   * the Router acknowledges the images to the person's client on. Without this
+   * flag, or on an invoke with no images, the hello is exactly what it is
+   * without the flag, and the Router refuses an image turn up front. With the
+   * flag the turn's images are also stored in its session storage
+   * ({@link storeTurnImages}) before the handler runs.
+   */
+  images?: true;
 }
 
 /**
@@ -160,8 +174,21 @@ export async function serveNativeOn(
         : info.sdkName
           ? resolveInstalledVersion(info.sdkName)
           : null,
-      helloCapabilities(suspendWriter !== undefined, info.capabilities),
+      helloCapabilities(suspendWriter !== undefined, [
+        ...(info.capabilities ?? []),
+        ...(info.images === true ? invokeImagesCapabilities(msg) : []),
+      ]),
     );
+    // guuey#2293: a worker that hands the turn's images to its model also stores
+    // them in the turn's session storage before the turn runs; a refusal is the
+    // person's face, and the turn does not run.
+    if (info.images === true) {
+      const face = storeTurnImages(msg);
+      if (face !== undefined) {
+        emitter.error(face);
+        continue;
+      }
+    }
     // This turn's request to end the conversation, held until its `done`.
     let endThread: EndThread | undefined;
     const closeOffered = msg.threadClose !== undefined;

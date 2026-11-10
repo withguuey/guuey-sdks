@@ -26,7 +26,7 @@ import type { CredentialFile,
   JsonValue,
   ProfileSection,
   StopReason, McpAvailability, FirstImpressionPush, FirstImpressionShown, WithheldTool, InvokeImageAttachment } from "@guuey/worker";
-import { invokeImagesCapabilities } from "@guuey/worker";
+import { anthropicUserContent, invokeImagesCapabilities, storeTurnImages } from "@guuey/worker";
 import {
   buildOptions,
   reservedEnvNamesDropped,
@@ -35,7 +35,7 @@ import {
   type PriorMemoryRecord,
 } from "./claude-options.js";
 import { resolveSdkVersion } from "../sdk-version.js";
-import { MODEL_TEXT_INPUT_KIND_CAPABILITIES, modelInputOf } from "@guuey/worker";
+import { MODEL_TEXT_INPUT_KIND_CAPABILITIES } from "@guuey/worker";
 import { reportToolGateErrors } from "../mcp-tool-gates.js";
 
 /** The framework THIS run path runs. OpenAI has its own path (`run-openai.ts`). */
@@ -113,22 +113,6 @@ export interface HostInvoke {
   mcpAvailability?: McpAvailability[];
   /** The turn's images (guuey#2293) — see `Invoke.attachments` in `@guuey/worker`; they reach the model beside `input`. */
   attachments?: InvokeImageAttachment[];
-}
-
-/**
- * The turn's one user message content (guuey#2293): an image block per
- * attached image, in the order sent, then the text block (the model text,
- * through `modelInputOf`). Without images it is the single text block the turn
- * always sent.
- */
-export function claudeUserContent(invoke: Pick<HostInvoke, "input" | "inputKind" | "attachments">): SDKUserMessage["message"]["content"] {
-  return [
-    ...(invoke.attachments ?? []).map((image) => ({
-      type: "image" as const,
-      source: { type: "base64" as const, media_type: image.mimeType, data: image.data },
-    })),
-    { type: "text" as const, text: modelInputOf(invoke) },
-  ];
 }
 
 /** Per-process config the worker resolves once at boot. */
@@ -332,6 +316,14 @@ export async function runInvoke(
     ...MODEL_TEXT_INPUT_KIND_CAPABILITIES,
     ...invokeImagesCapabilities(invoke),
   ]);
+  // guuey#2293: the turn's images are also stored in its session storage
+  // (@guuey/worker storeTurnImages); a refusal is the person's face, and the
+  // turn does not run.
+  const imagesFace = storeTurnImages(invoke);
+  if (imagesFace !== undefined) {
+    emit.error(imagesFace);
+    return;
+  }
 
   // Framework gate: this run path is the Claude SDK. OpenAI agents route to
   // `runInvokeOpenai` (selected in `index.ts` by `snapshot.framework`) and never
@@ -412,7 +404,7 @@ export async function runInvoke(
     if (!sendMessage) return;
     yield {
       type: "user",
-      message: { role: "user", content: claudeUserContent(invoke) },
+      message: { role: "user", content: anthropicUserContent(invoke) },
       parent_tool_use_id: null,
     };
     await inputDone;

@@ -63,10 +63,12 @@ import { pathToFileURL } from "node:url";
 import { GUUEY_DEFAULT_SYSTEM_PROMPT, declaresNoTools, defaultModelFor, type GuueyContext } from "@guuey/config";
 import {
   ADK_HOST_COMPLETION_CAPABILITY,
+  geminiUserParts,
   invokeImagesCapabilities,
+  storeTurnImages,
+  type GeminiPart,
   listCredentials,
   MODEL_TEXT_INPUT_KIND_CAPABILITIES,
-  modelInputOf,
   type CredentialFile,
   type Emitter,
   type JsonValue,
@@ -203,22 +205,6 @@ export type AdkAgent = object;
 /** Opaque model handle — a `Gemini` constructed here with the sanctioned key (guuey#1342). */
 export type AdkLlm = object;
 
-/** One part of the turn's user message: text, or an inline image (`@google/genai`'s `Part.inlineData`). */
-export type AdkPart = { text: string } | { inlineData: { mimeType: string; data: string } };
-
-/**
- * The turn's user message parts (guuey#2293): an `inlineData` part per attached
- * image (base64, as sent), in the order sent, then the text part (the model
- * text, through `modelInputOf`). Without images it is the single text part the
- * turn always sent.
- */
-export function adkUserParts(turn: Pick<HostTurn, "input" | "inputKind" | "attachments">): AdkPart[] {
-  return [
-    ...(turn.attachments ?? []).map((image) => ({ inlineData: { mimeType: image.mimeType, data: image.data } })),
-    { text: modelInputOf(turn) },
-  ];
-}
-
 interface AdkRunner {
   readonly appName: string;
   readonly sessionService: {
@@ -227,7 +213,7 @@ interface AdkRunner {
   runAsync(params: {
     userId: string;
     sessionId: string;
-    newMessage: { role: "user"; parts: AdkPart[] };
+    newMessage: { role: "user"; parts: GeminiPart[] };
     runConfig: { streamingMode: "sse" };
   }): AsyncGenerator<JsonValue, void, undefined>;
 }
@@ -415,6 +401,14 @@ export async function runAdkTurn(
     ...MODEL_TEXT_INPUT_KIND_CAPABILITIES,
     ...invokeImagesCapabilities(turn),
   ]);
+  // guuey#2293: the turn's images are also stored in its session storage
+  // (@guuey/worker storeTurnImages); a refusal is the person's face, and the
+  // turn does not run.
+  const imagesFace = storeTurnImages(turn);
+  if (imagesFace !== undefined) {
+    emit.error(imagesFace);
+    return;
+  }
   try {
     const runner = new adk.InMemoryRunner({ agent });
     const session = await runner.sessionService.createSession({
@@ -426,7 +420,7 @@ export async function runAdkTurn(
       userId: turn.identity.userId,
       sessionId: session.id,
       // `role` pinned — see the module header (adk-js#475).
-      newMessage: { role: "user", parts: adkUserParts(turn) },
+      newMessage: { role: "user", parts: geminiUserParts(turn) },
       // SSE streaming, matching the Python host's RunConfig(streaming_mode=SSE)
       // — the ADK default is NONE, which silently drops incremental text
       // "sse" is StreamingMode.SSE's literal value.

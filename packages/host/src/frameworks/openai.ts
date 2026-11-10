@@ -38,7 +38,7 @@ import {
   type AgentInputItem,
   type RunStreamEvent,
 } from "@openai/agents";
-import { MODEL_TEXT_INPUT_KIND_CAPABILITIES, invokeImagesCapabilities, mcpToolCustomData, modelInputOf } from "@guuey/worker";
+import { MODEL_TEXT_INPUT_KIND_CAPABILITIES, invokeImagesCapabilities, mcpToolCustomData, openaiTurnInput, storeTurnImages } from "@guuey/worker";
 import { modelToolFilterFor, reportToolGateErrors, type ToolGates } from "../mcp-tool-gates.js";
 import type { Emitter, JsonValue } from "@guuey/worker";
 import {
@@ -116,27 +116,6 @@ type HostErrorSentinel = {
 };
 
 /**
- * The turn's input for `run` (guuey#2293): the model text (`modelInputOf`) when the
- * turn carries no images, as it always was; otherwise one user message whose
- * content is an `input_image` per attached image (a base64 `data:` URL), in
- * the order sent, then the text.
- */
-export function openaiTurnInput(invoke: Pick<HostInvoke, "input" | "inputKind" | "attachments">): string | AgentInputItem[] {
-  const images = invoke.attachments ?? [];
-  const text = modelInputOf(invoke);
-  if (images.length === 0) return text;
-  return [
-    {
-      role: "user",
-      content: [
-        ...images.map((image) => ({ type: "input_image" as const, image: `data:${image.mimeType};base64,${image.data}` })),
-        { type: "input_text" as const, text },
-      ],
-    },
-  ];
-}
-
-/**
  * Run one invoke through `@openai/agents`. Emits `native` per `RunStreamEvent`,
  * `done` on completion (with the `max_turns` sentinel + reason on a turn-cap),
  * `error` on a build failure or any non-max-turns throw. Never throws.
@@ -157,6 +136,14 @@ export async function runInvokeOpenai(
     ...MODEL_TEXT_INPUT_KIND_CAPABILITIES,
     ...invokeImagesCapabilities(invoke),
   ]);
+  // guuey#2293: the turn's images are also stored in its session storage
+  // (@guuey/worker storeTurnImages); a refusal is the person's face, and the
+  // turn does not run.
+  const imagesFace = storeTurnImages(invoke);
+  if (imagesFace !== undefined) {
+    emit.error(imagesFace);
+    return;
+  }
 
   // The host runs inside the Router's bubblewrap jail with NO IRSA; a federated
   // MCP server reads its Router-written credential file. `resolveMcpServers`

@@ -58,6 +58,27 @@ export {
 export { INPUT_KINDS, type InputKind, isInputKind, inputKindCapability } from "./protocol.js";
 export { CONTEXT_ONLY_TURN_TEXT, MODEL_TEXT_INPUT_KIND_CAPABILITIES, modelInputOf, modelTextOf } from "./model-text.js";
 export { invokeImagesCapabilities, isInvokeImageMimeType, isStandardBase64 } from "./images.js";
+export {
+  anthropicUserContent,
+  geminiUserParts,
+  openaiTurnInput,
+  type AnthropicUserBlock,
+  type GeminiPart,
+  type ImageTurn,
+  type OpenAiUserPart,
+} from "./image-parts.js";
+export {
+  TURN_IMAGES_DIR,
+  TURN_IMAGES_FACES,
+  TURN_IMAGES_MAX,
+  TURN_IMAGE_MAX_BYTES,
+  TurnImagesError,
+  attachmentFileName,
+  saveTurnImages,
+  storeTurnImages,
+  type StoredTurnImage,
+  type TurnImagesProblem,
+} from "./turn-images-store.js";
 export { createEmitter, type Emitter, type WriteSink } from "./emit.js";
 export { endThreadProblem, END_THREAD_CODE_PATTERN, END_THREAD_MESSAGE_MAX_CHARS } from "./end-thread.js";
 export {

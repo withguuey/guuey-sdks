@@ -14,6 +14,7 @@ import {
   CLAUDE_FORBIDDEN_ENV,
   MODEL_TEXT_INPUT_KIND_CAPABILITIES,
   TOOL_GATES_CAPABILITY,
+  anthropicUserContent,
   makeClaudeSpawner,
   readLaunchEnvelope,
   serveNative,
@@ -143,7 +144,8 @@ await serveNative(
     async function* prompt(): AsyncGenerator<SDKUserMessage> {
       await gate;
       if (!send) return;
-      yield { type: "user", message: { role: "user", content: withHistory(invoke) }, parent_tool_use_id: null };
+      // The turn's images (if any) as image blocks, then the text.
+      yield { type: "user", message: { role: "user", content: anthropicUserContent(invoke, withHistory(invoke)) }, parent_tool_use_id: null };
       await inputDone;
     }
     const q = query({
@@ -235,5 +237,8 @@ await serveNative(
     // It also applies the agent's tool gates (the rules above), so every hello
     // says so with tool-gates.v1 (guuey#2670).
     capabilities: [...MODEL_TEXT_INPUT_KIND_CAPABILITIES, TOOL_GATES_CAPABILITY],
+    // The turn's images reach the model (anthropicUserContent above) and are
+    // stored in the turn's session storage, so the hello says so.
+    images: true,
   }
 );

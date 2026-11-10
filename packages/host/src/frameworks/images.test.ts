@@ -5,7 +5,10 @@
  * `invoke.images.v1` exactly when the invoke carried images. A turn without
  * images keeps the prompt and the hello it always had.
  */
-import { describe, expect, it } from "vitest";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
 import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 
 const noMessages: SDKMessage[] = [];
@@ -19,10 +22,18 @@ import {
   type WorkerEvent,
 } from "@guuey/worker";
 import type { HostTurn } from "../index.js";
-import { claudeUserContent, runInvoke, type HostInvoke, type QueryFn } from "./claude.js";
-import { openaiTurnInput, runInvokeOpenai, type OpenaiRunFn, type OpenaiRunResult } from "./openai.js";
-import { adkUserParts, runAdkTurn } from "./google-adk.js";
-import { CONTEXT_ONLY_TURN_TEXT, MODEL_TEXT_INPUT_KIND_CAPABILITIES } from "@guuey/worker";
+import { runInvoke, type HostInvoke, type QueryFn } from "./claude.js";
+import { runInvokeOpenai, type OpenaiRunFn, type OpenaiRunResult } from "./openai.js";
+import { runAdkTurn } from "./google-adk.js";
+import {
+  CONTEXT_ONLY_TURN_TEXT,
+  MODEL_TEXT_INPUT_KIND_CAPABILITIES,
+  TURN_IMAGES_FACES,
+  anthropicUserContent,
+  attachmentFileName,
+  geminiUserParts,
+  openaiTurnInput,
+} from "@guuey/worker";
 
 const PNG: InvokeImageAttachment = {
   kind: "inline",
@@ -43,11 +54,15 @@ function collector(): { events: WorkerEvent[]; sink: { write(s: string): void } 
   };
 }
 
+// A real session directory: an image turn stores its images there before it runs.
+const SESSION = mkdtempSync(join(tmpdir(), "host-images-session-"));
+afterAll(() => rmSync(SESSION, { recursive: true, force: true }));
+
 function turn(over: Partial<HostInvoke> = {}): HostInvoke {
   return {
     input: "Make flashcards from this page.",
     identity: { userId: "u1", authMode: "anonymous" },
-    fs: { app: "/fs/app", home: "/fs/home", session: "/fs/session" },
+    fs: { app: "/fs/app", home: "/fs/home", session: SESSION },
     history: [],
     ...over,
   };
@@ -95,8 +110,24 @@ describe("Claude: the images reach the model as image blocks before the text", (
     expect(helloOf(events)).toMatchObject({ capabilities: [...MODEL_TEXT_INPUT_KIND_CAPABILITIES] });
   });
 
-  it("claudeUserContent is the text block alone for an empty list", () => {
-    expect(claudeUserContent({ input: "hi", attachments: [] })).toEqual([{ type: "text", text: "hi" }]);
+  it("stores each image in the turn's session storage under attachmentFileName, before the model runs", async () => {
+    await claudeTurn({ attachments: [PNG, JPEG] });
+    for (const image of [PNG, JPEG]) {
+      const file = join(SESSION, attachmentFileName(image));
+      expect(existsSync(file)).toBe(true);
+      expect(readFileSync(file).equals(Buffer.from(image.data, "base64"))).toBe(true);
+    }
+  });
+
+  it("a refused store is the person's face, and the model is never sent the turn", async () => {
+    const { sent, events } = await claudeTurn({ attachments: [PNG], fs: { app: "/fs/app", home: "/fs/home", session: join(SESSION, "missing", "dir") } });
+    expect(sent).toBeUndefined();
+    expect(events.filter((e) => e.type === "error")).toEqual([{ type: "error", message: TURN_IMAGES_FACES.write_failed }]);
+    expect(events.some((e) => e.type === "done")).toBe(false);
+  });
+
+  it("anthropicUserContent is the text block alone for an empty list", () => {
+    expect(anthropicUserContent({ input: "hi", attachments: [] })).toEqual([{ type: "text", text: "hi" }]);
   });
 });
 
@@ -197,15 +228,15 @@ describe("ADK: the images reach the model as inlineData parts before the text", 
     const { newMessage, events } = await adkTurn({});
     expect(newMessage).toEqual({ role: "user", parts: [{ text: "Make flashcards from this page." }] });
     expect(helloOf(events)).toMatchObject({ capabilities: [ADK_HOST_COMPLETION_CAPABILITY, ...MODEL_TEXT_INPUT_KIND_CAPABILITIES] });
-    expect(adkUserParts({ input: "hi", attachments: [] })).toEqual([{ text: "hi" }]);
+    expect(geminiUserParts({ input: "hi", attachments: [] })).toEqual([{ text: "hi" }]);
   });
 });
 
 describe("an image turn's text is the model text (guuey#2549 beside guuey#2293)", () => {
   it("a context-only turn with images reads the fixed sentence after its images, on every framework", () => {
     const turn = { input: "", inputKind: "context-only" as const, attachments: [PNG] };
-    expect(claudeUserContent(turn).at(-1)).toEqual({ type: "text", text: CONTEXT_ONLY_TURN_TEXT });
-    expect(adkUserParts(turn).at(-1)).toEqual({ text: CONTEXT_ONLY_TURN_TEXT });
+    expect(anthropicUserContent(turn).at(-1)).toEqual({ type: "text", text: CONTEXT_ONLY_TURN_TEXT });
+    expect(geminiUserParts(turn).at(-1)).toEqual({ text: CONTEXT_ONLY_TURN_TEXT });
     const openai = openaiTurnInput(turn);
     expect(Array.isArray(openai) ? openai[0] : openai).toMatchObject({
       content: [{ type: "input_image" }, { type: "input_text", text: CONTEXT_ONLY_TURN_TEXT }],
