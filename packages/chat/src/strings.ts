@@ -89,7 +89,10 @@ export interface ChatStrings {
   /**
    * R11, code ATTACHMENTS_INVALID (guuey#2293): the send's images broke the
    * V1 rules and nothing was sent. The kit's own composer judges each file
-   * first, so this reads on a host that called `send` itself.
+   * first, so this reads on a host that called `send` itself. One code covers
+   * an image by link the runtime turned down too (a guest's link, or one it
+   * could not read), so the sentence says to attach the image: that works in
+   * every case, signed in or not.
    */
   errorAttachmentsInvalid: string;
   /**
@@ -534,7 +537,7 @@ export const defaultChatStrings: ChatStrings = {
   errorSessionBusy: "The agent is still answering a message. Try again in a few seconds.",
   errorInvalid: "The app sent a request the agent couldn't read.",
   errorAttachmentsUnsupported: "This agent can't read images yet. Send your message without the image.",
-  errorAttachmentsInvalid: "That image can't be sent. Use a JPEG, PNG, GIF or WebP image, up to 4 at a time.",
+  errorAttachmentsInvalid: "That image can't be sent. Attach a JPEG, PNG, GIF or WebP image, up to 4 at a time.",
   errorInputKindNotDeclared: "This agent does not accept a turn without text. Send your message with a few words.",
   errorInputKindNotAdvertised: "This agent can't take a turn without words right now. Send it with a few words.",
 

@@ -103,6 +103,8 @@ export {
   type ImageAttachmentMimeType,
   type ImageAttachmentRefusal,
   type ImageAttachmentsVerdict,
+  type ImageLinkAttachment,
+  type TurnAttachment,
 } from "./attachments.js";
 export {
   fetchThreadHistory,

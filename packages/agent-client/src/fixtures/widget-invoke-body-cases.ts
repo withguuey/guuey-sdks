@@ -109,6 +109,18 @@ export const WIDGET_INVOKE_BODY_CASES: ReadonlyArray<{ name: string; why: string
     },
   },
   {
+    name: "turn-with-image-link",
+    why: "a turn with a photo by link (guuey#2293, the link door): an https URL the app already has rides on the same InvokeAttachment union as its `url` member, which every released runtime parses (and, before the link door, ignores, so the client's acknowledgement gate stops the turn there)",
+    input: {
+      input: "What is in this photo?",
+      threadId: "thr_01J8ZK3Q9X",
+      clientMessageId: "cm_0011",
+      capabilities: { hitl: { ask: true, grantModes: true }, uiResources: { viewMessageTurns: true } },
+      pageContext: { hostOrigin: "https://customer.example" },
+      attachments: [{ kind: "url", url: "https://assets.customer.example/photos/receipt.jpg", mimeType: "image/jpeg" }],
+    },
+  },
+  {
     name: "turn-context-only",
     why: "a turn without words (guuey#2549): an empty input beside inputKind 'context-only', as the last key; the content rode on the page context. A runtime that predates input kinds refuses it before the stream by design, and the client reads that refusal as INPUT_KIND_NOT_ADVERTISED",
     input: {

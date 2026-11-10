@@ -28,7 +28,7 @@
 import type { AgClientCapabilities } from "@silverprotocol/core";
 import type { TapLabels } from "@guuey/mcp-apps-host/narrowing";
 import type { PageContext } from "./types.js";
-import type { ImageAttachment } from "./attachments.js";
+import type { TurnAttachment } from "./attachments.js";
 import type { InputKind } from "./input-kinds.js";
 
 export interface InvokeBodyInput {
@@ -57,7 +57,7 @@ export interface InvokeBodyInput {
    * The turn's images (guuey#2293), already judged by
    * `validateImageAttachments`. An empty list is the same as none: no key.
    */
-  attachments?: readonly ImageAttachment[];
+  attachments?: readonly TurnAttachment[];
   /**
    * Where a turn without text has its content (guuey#2549): put on the wire
    * only beside an empty input, which is the runtime's own rule (beside text
@@ -75,7 +75,7 @@ export interface InvokeBody {
   pageContext?: PageContext;
   mode?: string;
   tapLabels?: TapLabels;
-  attachments?: readonly ImageAttachment[];
+  attachments?: readonly TurnAttachment[];
   inputKind?: InputKind;
 }
 

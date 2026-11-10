@@ -98,8 +98,51 @@ describe("validateImageAttachments", () => {
     });
   });
 
-  it("refuses a kind other than inline (V1 sends no url or storage attachment)", () => {
-    const list = [{ kind: "url", mimeType: "image/png", data: "AAAA" }] as const;
+  it("refuses a kind other than inline or url (the client sends no storage reference)", () => {
+    const list = [{ kind: "storage", mimeType: "image/png", data: "AAAA" }] as const;
     expect(validateImageAttachments(list)).toEqual({ ok: false, refusal: { reason: "unsupported_kind", index: 0 } });
+  });
+});
+
+describe("validateImageAttachments: an image by link (the link door's client half)", () => {
+  const LINK = "https://bucket.s3.amazonaws.com/photos/a.png?X-Amz-Signature=abc";
+
+  it("passes an https link through as given; a stated type rides only when it is on the allowlist", () => {
+    expect(validateImageAttachments([{ kind: "url", url: LINK }])).toEqual({ ok: true, attachments: [{ kind: "url", url: LINK }] });
+    expect(validateImageAttachments([{ kind: "url", url: LINK, mimeType: "image/jpeg" }])).toEqual({
+      ok: true,
+      attachments: [{ kind: "url", url: LINK, mimeType: "image/jpeg" }],
+    });
+    // The runtime decides the type from the fetched bytes, so a type off the list is dropped, not refused.
+    expect(validateImageAttachments([{ kind: "url", url: LINK, mimeType: "image/heic" }])).toEqual({
+      ok: true,
+      attachments: [{ kind: "url", url: LINK }],
+    });
+  });
+
+  it("keeps a link that is not https off the wire (the runtime judges everything else)", () => {
+    for (const url of ["http://example.com/a.png", "javascript:alert(1)", "data:image/png;base64,AAAA", "/photos/a.png", "", "HTTPS://example.com/a.png"]) {
+      expect(validateImageAttachments([{ kind: "url", url }]), url).toEqual({ ok: false, refusal: { reason: "not_https", index: 0 } });
+    }
+    expect(validateImageAttachments([{ kind: "url" }])).toEqual({ ok: false, refusal: { reason: "not_https", index: 0 } });
+  });
+
+  it("a link counts toward the count cap, not toward the base64 total", () => {
+    const four = [png(), { kind: "url", url: LINK }, png(), { kind: "url", url: LINK }];
+    expect(validateImageAttachments(four).ok).toBe(true);
+    expect(validateImageAttachments([...four, { kind: "url", url: LINK }])).toEqual({
+      ok: false,
+      refusal: { reason: "too_many", max: IMAGE_ATTACHMENTS_MAX_COUNT },
+    });
+    const biggest = png(base64OfLength(IMAGE_ATTACHMENT_MAX_BASE64_CHARS - (IMAGE_ATTACHMENT_MAX_BASE64_CHARS % 4)));
+    expect(validateImageAttachments([biggest, { kind: "url", url: LINK }]).ok).toBe(true);
+  });
+
+  it("an inline image still needs its type and its data (a link's leniency is the link's alone)", () => {
+    expect(validateImageAttachments([{ kind: "inline", data: PNG_1PX }])).toEqual({
+      ok: false,
+      refusal: { reason: "unsupported_type", index: 0, mimeType: "" },
+    });
+    expect(validateImageAttachments([{ kind: "inline", mimeType: "image/png" }])).toEqual({ ok: false, refusal: { reason: "not_base64", index: 0 } });
   });
 });

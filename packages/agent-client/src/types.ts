@@ -120,7 +120,9 @@ export interface SendOptions {
    */
   tapLabels?: readonly (string | null)[];
   /**
-   * The turn's images (guuey#2293): inline base64, judged at send by
+   * The turn's images (guuey#2293): inline base64, or an `https` link the app
+   * already has (`{ kind: "url", url, mimeType? }`, which the runtime fetches
+   * once, for a signed-in person only; never logged or stored here), judged at send by
    * `validateImageAttachments` (the allowlist, the count and the size caps in
    * `./attachments`). A refused list is not sent at all: the send ends with
    * `ATTACHMENTS_INVALID`. A runtime that does not acknowledge the images on

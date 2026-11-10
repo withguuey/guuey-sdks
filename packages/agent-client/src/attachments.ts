@@ -52,14 +52,36 @@ export interface ImageAttachment {
 }
 
 /**
- * What a caller hands the judge. Wider than {@link ImageAttachment} on purpose:
+ * One image by link (guuey#2293, the link door): an `https` URL the app
+ * already has (its own storage, a presigned link). The runtime fetches it once
+ * through its relay guards and hands the bytes to the model as it does an
+ * inline image; the client never fetches it. A presigned URL is a bearer: it
+ * is sent once, on this turn's body, and this package neither logs nor stores
+ * it. `mimeType` rides only when it is one of the allowlisted types; the
+ * runtime ignores it for a link and reads the type from the fetched bytes.
+ * Links are for a signed-in person: a guest's turn with a link is refused
+ * before it runs (`ATTACHMENTS_INVALID`), while an inline image still works.
+ */
+export interface ImageLinkAttachment {
+  kind: "url";
+  url: string;
+  mimeType?: ImageAttachmentMimeType;
+}
+
+/** What a turn's `attachments` carries on the wire: images inline or by link. */
+export type TurnAttachment = ImageAttachment | ImageLinkAttachment;
+
+/**
+ * What a caller hands the judge. Wider than {@link TurnAttachment} on purpose:
  * a JavaScript caller (or a host reading a file it did not type) is not held
- * by the type, so the judge reads strings and decides.
+ * by the type, so the judge reads strings and decides. An inline image sets
+ * `mimeType` and `data`; a link sets `url` (and may set `mimeType`).
  */
 export interface ImageAttachmentCandidate {
   readonly kind: string;
-  readonly mimeType: string;
-  readonly data: string;
+  readonly mimeType?: string;
+  readonly data?: string;
+  readonly url?: string;
 }
 
 /** Why a list was refused. `index` names the first image that broke a rule. */
@@ -69,10 +91,11 @@ export type ImageAttachmentRefusal =
   | { reason: "unsupported_type"; index: number; mimeType: string }
   | { reason: "not_base64"; index: number }
   | { reason: "too_large"; index: number; max: number }
-  | { reason: "total_too_large"; max: number };
+  | { reason: "total_too_large"; max: number }
+  | { reason: "not_https"; index: number };
 
 export type ImageAttachmentsVerdict =
-  | { ok: true; attachments: ImageAttachment[] }
+  | { ok: true; attachments: TurnAttachment[] }
   | { ok: false; refusal: ImageAttachmentRefusal };
 
 /** Whether `mimeType` is on {@link IMAGE_ATTACHMENT_MIME_TYPES}. */
@@ -92,14 +115,20 @@ export function validateImageAttachments(list: readonly ImageAttachmentCandidate
   if (list.length > IMAGE_ATTACHMENTS_MAX_COUNT) {
     return { ok: false, refusal: { reason: "too_many", max: IMAGE_ATTACHMENTS_MAX_COUNT } };
   }
-  const attachments: ImageAttachment[] = [];
+  const attachments: TurnAttachment[] = [];
   let total = 0;
   for (const [index, candidate] of list.entries()) {
-    if (candidate.kind !== "inline") return { ok: false, refusal: { reason: "unsupported_kind", index } };
-    const { mimeType, data } = candidate;
-    if (!isImageAttachmentMimeType(mimeType)) {
-      return { ok: false, refusal: { reason: "unsupported_type", index, mimeType } };
+    const { kind, mimeType = "", data = "", url = "" } = candidate;
+    if (kind === "url") {
+      // The runtime is the one judge of a link (its host allowlist, the fetched
+      // bytes' type and size) and refuses it with ATTACHMENTS_INVALID. The client
+      // keeps only a link that is not https off the wire, and sends it as given.
+      if (!url.startsWith("https://")) return { ok: false, refusal: { reason: "not_https", index } };
+      attachments.push(isImageAttachmentMimeType(mimeType) ? { kind, url, mimeType } : { kind, url });
+      continue;
     }
+    if (kind !== "inline") return { ok: false, refusal: { reason: "unsupported_kind", index } };
+    if (!isImageAttachmentMimeType(mimeType)) return { ok: false, refusal: { reason: "unsupported_type", index, mimeType } };
     if (data.length > IMAGE_ATTACHMENT_MAX_BASE64_CHARS) {
       return { ok: false, refusal: { reason: "too_large", index, max: IMAGE_ATTACHMENT_MAX_BASE64_CHARS } };
     }
@@ -130,5 +159,7 @@ export function describeImageAttachmentRefusal(refusal: ImageAttachmentRefusal):
       return `Attachment ${refusal.index + 1} is too large to send.`;
     case "total_too_large":
       return "These images are too large to send together.";
+    case "not_https":
+      return `Attachment ${refusal.index + 1} is not an https link.`;
   }
 }

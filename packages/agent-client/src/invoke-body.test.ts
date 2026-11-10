@@ -77,7 +77,7 @@ describe("the widget's canonical bodies are pinned as the fixture (guuey#1213)",
     expect(onDisk).toBe(`${JSON.stringify(expected, null, 2)}\n`);
   });
 
-  it("the case list covers the shapes the widget actually sends: init-origin-only, a full page block, a page block without context, a mode pin, the SDK minimum, a card tap with its labels, a turn with an image, a turn without words, an A2UI action turn, and the A2UI catalogs advertisement", () => {
+  it("the case list covers the shapes the widget actually sends: init-origin-only, a full page block, a page block without context, a mode pin, the SDK minimum, a card tap with its labels, a turn with an image, a turn with an image by link, a turn without words, an A2UI action turn, and the A2UI catalogs advertisement", () => {
     const names = WIDGET_INVOKE_BODY_CASES.map((c) => c.name);
     expect(names).toEqual([
       "session-open-init-origin",
@@ -87,6 +87,7 @@ describe("the widget's canonical bodies are pinned as the fixture (guuey#1213)",
       "sdk-minimal",
       "card-tap-with-labels",
       "turn-with-image",
+      "turn-with-image-link",
       "turn-context-only",
       "a2ui-action-turn",
       "capabilities-a2ui-catalogs",
