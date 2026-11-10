@@ -1,16 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { promises as fs } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scaffoldMcp } from './scaffold-mcp.js';
+import { testTempDir } from './test-temp-dir.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, '__fixtures__', 'templates');
 
 describe('scaffoldMcp', () => {
   it('copies mcp-base, resolving NAME_PLACEHOLDER to the name and the scope tokens to the given scope', async () => {
-    const target = await fs.mkdtemp(join(tmpdir(), 'caa-mcp-'));
+    const target = await testTempDir('caa-mcp-');
     const mcpTarget = join(target, 'billing');
     const { mcpDir } = await scaffoldMcp({
       targetDir: mcpTarget,
@@ -31,7 +31,7 @@ describe('scaffoldMcp', () => {
   });
 
   it('defaults scope to name (standalone mode)', async () => {
-    const target = await fs.mkdtemp(join(tmpdir(), 'caa-mcp-standalone-'));
+    const target = await testTempDir('caa-mcp-standalone-');
     const mcpTarget = join(target, 'weather');
     const { mcpDir } = await scaffoldMcp({
       targetDir: mcpTarget,
@@ -45,7 +45,7 @@ describe('scaffoldMcp', () => {
   it('rejects invalid npm-unsafe names', async () => {
     await expect(
       scaffoldMcp({
-        targetDir: join(await fs.mkdtemp(join(tmpdir(), 'caa-mcp-bad-'))),
+        targetDir: join(await testTempDir('caa-mcp-bad-')),
         name: 'Bad Name!',
         templatesDir: fixturesDir,
       })
@@ -53,7 +53,7 @@ describe('scaffoldMcp', () => {
   });
 
   it('refuses a non-empty target directory', async () => {
-    const target = await fs.mkdtemp(join(tmpdir(), 'caa-mcp-exists-'));
+    const target = await testTempDir('caa-mcp-exists-');
     await fs.writeFile(join(target, 'existing.txt'), 'hi');
     await expect(
       scaffoldMcp({
@@ -65,8 +65,8 @@ describe('scaffoldMcp', () => {
   });
 
   it('throws a clear error when the mcp-base template is missing', async () => {
-    const target = await fs.mkdtemp(join(tmpdir(), 'caa-mcp-missing-'));
-    const emptyTemplatesDir = await fs.mkdtemp(join(tmpdir(), 'caa-mcp-empty-templates-'));
+    const target = await testTempDir('caa-mcp-missing-');
+    const emptyTemplatesDir = await testTempDir('caa-mcp-empty-templates-');
     await expect(
       scaffoldMcp({
         targetDir: join(target, 'billing'),

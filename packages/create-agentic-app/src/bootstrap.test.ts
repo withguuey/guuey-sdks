@@ -21,11 +21,11 @@ import { describe, it, expect, vi } from 'vitest';
 // explicit.
 vi.setConfig({ testTimeout: 60_000 });
 import { promises as fs, readFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
+import { testTempDir } from './test-temp-dir.js';
 
 const execFileAsync = promisify(execFile);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -77,7 +77,7 @@ async function makeProject(): Promise<Project> {
   // realpath: the script resolves its own location through the main-module
   // realpath, and the pushed theme path must compare equal on macOS
   // (/var → /private/var).
-  const root = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'caa-bootstrap-')));
+  const root = await fs.realpath(await testTempDir('caa-bootstrap-'));
   const projectDir = join(root, 'app');
   await fs.mkdir(join(projectDir, 'scripts'), { recursive: true });
   await fs.mkdir(join(projectDir, 'ggui'), { recursive: true });

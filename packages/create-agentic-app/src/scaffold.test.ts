@@ -1,12 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { promises as fs } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { APP_BUILT_FOR, safeParseGuueyJson, type AppBuiltFor } from '@guuey/config';
 import { scaffold as scaffoldAsking, type ScaffoldBuiltFor, type ScaffoldOptions } from './scaffold.js';
+import { testTempDir } from './test-temp-dir.js';
 
 /**
  * These cases are about the tree, not the pnpm ladder: each one passes the
@@ -22,7 +22,7 @@ const fixturesDir = join(__dirname, '__fixtures__', 'templates');
 
 describe('scaffold', () => {
   it('copies the tree, renames, seeds .env.local, refuses non-empty without force', async () => {
-    const target = await fs.mkdtemp(join(tmpdir(), 'caa-'));
+    const target = await testTempDir('caa-');
     const { projectDir } = await scaffold({
       targetDir: target,
       name: 'demo',
@@ -56,7 +56,7 @@ describe('scaffold', () => {
   });
 
   it('overwrites into a non-empty target when force is set', async () => {
-    const target = await fs.mkdtemp(join(tmpdir(), 'caa-force-'));
+    const target = await testTempDir('caa-force-');
     await fs.writeFile(join(target, 'existing.txt'), 'hi');
     const { projectDir } = await scaffold({
       targetDir: target,
@@ -71,7 +71,7 @@ describe('scaffold', () => {
   });
 
   it('throws a clear error naming available frameworks when the template dir is missing', async () => {
-    const target = await fs.mkdtemp(join(tmpdir(), 'caa-missing-'));
+    const target = await testTempDir('caa-missing-');
     await expect(
       scaffold({
         targetDir: target,
@@ -85,7 +85,7 @@ describe('scaffold', () => {
   });
 
   it('initializes a git repo with an initial commit when git is enabled', async () => {
-    const target = await fs.mkdtemp(join(tmpdir(), 'caa-git-'));
+    const target = await testTempDir('caa-git-');
     const { projectDir } = await scaffold({
       targetDir: target,
       name: 'demo-git',
@@ -100,7 +100,7 @@ describe('scaffold', () => {
   });
 
   it('scaffolds successfully when git is unavailable (git init is non-fatal)', async () => {
-    const target = await fs.mkdtemp(join(tmpdir(), 'caa-nogit-'));
+    const target = await testTempDir('caa-nogit-');
     const originalPath = process.env.PATH;
     const warn = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
@@ -126,7 +126,7 @@ describe('scaffold', () => {
 
 describe('scaffold --app binding (guuey#580 point 4)', () => {
   it('stamps top-level appId into guuey.json — the key bootstrap --link defaults from', async () => {
-    const target = await fs.mkdtemp(join(tmpdir(), 'caa-app-'));
+    const target = await testTempDir('caa-app-');
     const { projectDir } = await scaffold({
       targetDir: target,
       name: 'bound',
@@ -142,7 +142,7 @@ describe('scaffold --app binding (guuey#580 point 4)', () => {
   });
 
   it('without --app the manifest carries NO appId key (absent, not empty)', async () => {
-    const target = await fs.mkdtemp(join(tmpdir(), 'caa-noapp-'));
+    const target = await testTempDir('caa-noapp-');
     const { projectDir } = await scaffold({
       targetDir: target,
       name: 'unbound',
@@ -157,7 +157,7 @@ describe('scaffold --app binding (guuey#580 point 4)', () => {
 
 describe('scaffold builtFor — who the agent is for (guuey#1670)', () => {
   it('stamps app.builtFor into guuey.json and keeps the rest of the manifest', async () => {
-    const target = await fs.mkdtemp(join(tmpdir(), 'caa-for-'));
+    const target = await testTempDir('caa-for-');
     const { projectDir } = await scaffold({
       targetDir: target,
       name: 'mine',
@@ -177,7 +177,7 @@ describe('scaffold builtFor — who the agent is for (guuey#1670)', () => {
   });
 
   it('composes with --app: both stamps land in one write', async () => {
-    const target = await fs.mkdtemp(join(tmpdir(), 'caa-for-app-'));
+    const target = await testTempDir('caa-for-app-');
     const { projectDir } = await scaffold({
       targetDir: target,
       name: 'theirs',
@@ -194,7 +194,7 @@ describe('scaffold builtFor — who the agent is for (guuey#1670)', () => {
   });
 
   it('without builtFor the manifest carries NO app key: absent, never a guessed default', async () => {
-    const target = await fs.mkdtemp(join(tmpdir(), 'caa-nofor-'));
+    const target = await testTempDir('caa-nofor-');
     const { projectDir } = await scaffold({
       targetDir: target,
       name: 'unasked',
@@ -218,7 +218,7 @@ describe('scaffold builtFor — who the agent is for (guuey#1670)', () => {
 
 describe('manage-only template (guuey#581 point 5)', () => {
   it('--template agent resolves the FLAT frameworkless layout and scaffolds prompt + manifest', async () => {
-    const target = await fs.mkdtemp(join(tmpdir(), 'caa-agent-'));
+    const target = await testTempDir('caa-agent-');
     const { projectDir } = await scaffold({
       targetDir: target,
       name: 'my-agent',

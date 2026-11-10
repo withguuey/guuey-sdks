@@ -24,7 +24,7 @@
 // Slow + network-touching (npmjs uplink for every non-internal dep) — gated
 // on RUN_VERDACCIO_SMOKE=1, NOT part of `make test-fast`.
 import { spawn, execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, accessSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, accessSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { INTERNAL_COHORT } from "./lib/pack-cohort.mjs";
@@ -165,6 +165,9 @@ async function cleanup() {
   cleanedUp = true;
   console.log("[verdaccio-smoke] tearing down verdaccio");
   await killGroup(verdaccio);
+  // The work dir holds verdaccio's storage, so it goes after the process does,
+  // on every path that reaches cleanup (the end of the run and both signals).
+  rmSync(work, { recursive: true, force: true });
 }
 process.on("SIGINT", () => {
   cleanup().finally(() => process.exit(130));
