@@ -32,6 +32,12 @@ export function systemPrompt(invoke: Invoke, agent: GuueyAgent): string | undefi
  * resolve a server onto the `sse` transport arm.
  */
 export interface McpEndpoint {
+  /**
+   * One opaque MCP endpoint: connect to it verbatim, never use it as a base
+   * URL. When deployed, a credentialed server's URL is a platform relay that
+   * carries MCP to this endpoint only; another path or a query string built
+   * from it never reaches your server.
+   */
   url: string;
   transport: "http" | "sse";
   headers: Record<string, string>;

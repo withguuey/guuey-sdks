@@ -28,7 +28,15 @@ import type { Fs } from "./protocol.js";
  * owns ALL resolution including transport).
  */
 export interface CredentialFile {
-  /** The resolved MCP URL (may be scoped `<host>/apps/<id>` for federated ggui). */
+  /**
+   * The resolved MCP URL (may be scoped `<host>/apps/<id>` for federated ggui).
+   * One opaque MCP endpoint: use it verbatim, never as a base URL. Hosted, it
+   * is a platform relay capability that carries MCP requests to this one
+   * endpoint and nothing else, so a URL derived from it (another path, a query
+   * string) never reaches the server. Locally it may be the server's own URL,
+   * which is why a derived URL can seem to work in `guuey dev` and then fail
+   * once deployed.
+   */
   url: string;
   /** Transport the broker selected for this server. */
   transport: "http" | "sse";
