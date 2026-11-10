@@ -574,6 +574,29 @@ export interface ThreadHistoryFetchOptions extends OneShotRequestOptions {
   fetchImpl?: typeof fetch;
 }
 
+/** {@link fetchThreadHistoryRows}'s options: the read's, without the card projection it leaves to the caller. */
+export type ThreadHistoryRowsOptions = Omit<ThreadHistoryFetchOptions, "includeCards">;
+
+/**
+ * guuey#2388: one read of a thread's rows, before any projection. `gone` is the
+ * 403 or 404 status (a thread the caller does not own, or that no longer
+ * exists), as {@link HistoryLoadResult}'s `gone` is.
+ * Otherwise `rows` are every row the walk read, once each, ascending by `seq`.
+ * `toolCallsHonoured` says every page echoed the `toolCalls` ask: when false,
+ * a row's `toolCalls` are not the thread's calls and are read as none.
+ */
+export type ThreadHistoryRowsResult =
+  | { gone: 403 | 404 }
+  | {
+      rows: ThreadHistoryRow[];
+      toolCallsHonoured: boolean;
+      /** The thread's closure, as {@link HistoryLoadResult.closed} reads it. */
+      closed?: ThreadClosed;
+      /** The page cap was reached with rows left unread; `order` says which end was kept. */
+      truncated?: true;
+      order?: "desc" | "asc";
+    };
+
 /**
  * A page echo the walk needs honoured on EVERY page it reads: the newest-first
  * `order` (guuey#2858) and the `toolCalls` include (guuey#2388).
@@ -630,7 +653,7 @@ async function walkHistory(
   include: string,
   requestInit: RequestInit | undefined,
   send: ScopedFetch,
-): Promise<HistoryWalk | "gone" | "order-lost"> {
+): Promise<HistoryWalk | { gone: 403 | 404 } | "order-lost"> {
   const rows = new Map<number, ThreadHistoryRow>();
   let honoured = new Set(asked);
   let nextToken: string | null = null;
@@ -643,7 +666,8 @@ async function walkHistory(
       include +
       (nextToken ? `&nextToken=${encodeURIComponent(nextToken)}` : "");
     const res = await send(url, requestInit);
-    if (res.status === 403 || res.status === 404) return "gone";
+    const status = res.status;
+    if (status === 403 || status === 404) return { gone: status };
     if (res.status === 401) throw new HistoryUnauthorizedError();
     if (!res.ok) throw new Error(`history load failed: ${res.status}`);
     // Parsed HERE, from the body text: a fetch from another JS realm (Node's
@@ -693,7 +717,62 @@ export async function fetchThreadHistory(options: ThreadHistoryFetchOptions): Pr
   return outcome.value;
 }
 
-/** {@link fetchThreadHistory}'s read, every page through the call's scoped `send`. */
+/**
+ * guuey#2388: {@link fetchThreadHistory}'s read, stopped at the rows: the same
+ * walk, the same asks and echoes, the same errors, with no projection. A host
+ * that keeps its own message shape reads the thread through this and projects
+ * the rows itself, so the route has ONE walker. `gone` carries the status;
+ * every other failure throws exactly as {@link fetchThreadHistory} does.
+ */
+export async function fetchThreadHistoryRows(options: ThreadHistoryRowsOptions): Promise<ThreadHistoryRowsResult> {
+  const outcome = await runOneShot(
+    options,
+    options.fetchImpl ?? fetch,
+    (send) => readHistoryRows(send, options),
+    options.requestInit?.signal,
+  );
+  if (outcome.kind === "cancelled") throw new RequestCancelledError(outcome.reason);
+  return outcome.value;
+}
+
+/** {@link fetchThreadHistoryRows}'s read, every page through the call's scoped `send`. */
+async function readHistoryRows(
+  send: ScopedFetch,
+  { baseUrl, threadId, requestInit, includeToolResults = false, includeToolCalls = false }: ThreadHistoryRowsOptions,
+): Promise<ThreadHistoryRowsResult> {
+  const routeUrl = `${baseUrl}/threads/${encodeURIComponent(threadId)}/messages`;
+  const askCalls: (typeof TOOL_CALLS_INCLUDE)[] = includeToolCalls ? [TOOL_CALLS_INCLUDE] : [];
+  const include = includeParam(includeToolResults, askCalls);
+  let walk = await walkHistory(routeUrl, new Set<HonouredEcho>(["order", ...askCalls]), include, requestInit, send);
+  if (walk === "order-lost") walk = await walkHistory(routeUrl, new Set(askCalls), include, requestInit, send);
+  // An ascending walk sends no order, so it cannot lose one.
+  if (walk === "order-lost") throw new Error("history load failed: an ascending read lost an order it never asked for");
+  if ("gone" in walk) return walk;
+  const rows = [...walk.rows.values()].sort((a, b) => a.seq - b.seq);
+
+  // A read plane that sends `thread` decides alone (`{}` = open, even when the
+  // last row is an `app:` failure row on a thread that stayed open). Only an
+  // older read plane, which sends no `thread`, is read from its last row.
+  const closed = walk.closed ?? (walk.threadSeen ? undefined : closureFromLastRow(rows));
+  return {
+    rows,
+    // guuey#2388: only when every page echoed the ask; no echo means none.
+    toolCallsHonoured: walk.honoured.has(TOOL_CALLS_INCLUDE),
+    ...(closed !== undefined ? { closed } : {}),
+    // The order says which rows a capped read left out, so it rides beside `truncated`.
+    ...(walk.truncated ? { truncated: true, order: walk.honoured.has("order") ? "desc" : "asc" } : {}),
+  };
+}
+
+/**
+ * {@link fetchThreadHistory}'s read, every page through the call's scoped `send`.
+ * It walks with the same {@link walkHistory} and settles the walk (the
+ * ascending re-read, the sort, the closure) as {@link readHistoryRows} does,
+ * then projects. The settle is written in both rather than shared: this read
+ * ships in the widget's inline host, whose byte budget a shared settle object
+ * overruns, and the rows read tree-shakes out of it. history.rows.test.ts pins
+ * that the two reads agree on every outcome.
+ */
 async function readHistory(
   send: ScopedFetch,
   {
@@ -710,23 +789,16 @@ async function readHistory(
   const include = includeParam(includeToolResults, askCalls);
   let walk = await walkHistory(routeUrl, new Set<HonouredEcho>(["order", ...askCalls]), include, requestInit, send);
   if (walk === "order-lost") walk = await walkHistory(routeUrl, new Set(askCalls), include, requestInit, send);
-  // An ascending walk sends no order, so it cannot lose one.
   if (walk === "order-lost") throw new Error("history load failed: an ascending read lost an order it never asked for");
-  if (walk === "gone") return { gone: true };
+  if ("gone" in walk) return { gone: true };
   const rows = [...walk.rows.values()].sort((a, b) => a.seq - b.seq);
-
-  // A read plane that sends `thread` decides alone (`{}` = open, even when the
-  // last row is an `app:` failure row on a thread that stayed open). Only an
-  // older read plane, which sends no `thread`, is read from its last row.
   const threadClosed = walk.closed ?? (walk.threadSeen ? undefined : closureFromLastRow(rows));
   return {
     messages: threadHistoryRowsToMessages(rows),
     ...(includeCards ? { cards: threadHistoryRowsToCards(rows) } : {}),
     ...(includeToolResults ? { toolResults: threadHistoryRowsToToolResults(rows) } : {}),
-    // guuey#2388: only when every page echoed the ask; no echo means none.
     ...(walk.honoured.has(TOOL_CALLS_INCLUDE) ? { toolCalls: threadHistoryRowsToToolCalls(rows) } : {}),
     ...(threadClosed !== undefined ? { closed: threadClosed } : {}),
-    // The order says which rows a capped read left out, so it rides beside `truncated`.
     ...(walk.truncated ? { truncated: true, order: walk.honoured.has("order") ? "desc" : "asc" } : {}),
   };
 }

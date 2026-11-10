@@ -106,6 +106,7 @@ export {
 } from "./attachments.js";
 export {
   fetchThreadHistory,
+  fetchThreadHistoryRows,
   threadHistoryRowsToMessages,
   threadHistoryRowsToCards,
   threadHistoryRowsToToolResults,
@@ -116,6 +117,8 @@ export {
   type ThreadHistoryRow,
   type ThreadHistoryToolResultRow,
   type ThreadHistoryFetchOptions,
+  type ThreadHistoryRowsOptions,
+  type ThreadHistoryRowsResult,
 } from "./history.js";
 // After a guest signs in with the app's own sign-in: move the guest's
 // threads in this app to the signed-in user (the BYO guest merge door).
