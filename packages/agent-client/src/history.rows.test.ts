@@ -36,7 +36,7 @@ function status(code: number) {
 }
 
 function textRow(seq: number, extra: Partial<ThreadHistoryRow> = {}): ThreadHistoryRow {
-  return { seq, at: `2026-10-28T00:00:0${seq}.000Z`, kind: "text", authorRole: "agent", text: null, ...extra };
+  return { seq, at: `2026-10-28T00:00:0${seq}.000Z`, kind: "text", authorRole: "agent", text: `m${seq}`, ...extra };
 }
 
 const FIND = { toolCallId: "toolu_find", name: "mcp__travel__find_flights", input: { from: "ICN", to: "SFO" } };
@@ -157,10 +157,25 @@ describe("fetchThreadHistoryRows and fetchThreadHistory settle every walk alike"
     ["the page cap", () => pages(...capped)],
     ["gone (404)", () => status(404)],
   ];
-  it.each(OUTCOMES)("%s", async (_label, make) => {
-    const rows = await fetchThreadHistoryRows({ ...ASKED, fetchImpl: make() });
-    const load = await fetchThreadHistory({ ...ASKED, fetchImpl: make() });
+  it.each(OUTCOMES)("%s", async (label, make) => {
+    const rowsFetch = make();
+    const loadFetch = make();
+    const rows = await fetchThreadHistoryRows({ ...ASKED, fetchImpl: rowsFetch });
+    const load = await fetchThreadHistory({ ...ASKED, fetchImpl: loadFetch });
     expect(project(rows)).toEqual(load);
+    // The same requests, page for page, not only the same result.
+    expect(rowsFetch.mock.calls.map((c) => String(c[0]))).toEqual(loadFetch.mock.calls.map((c) => String(c[0])));
+    // Every outcome but gone projects real messages, so the equality above compares rows, not two empty lists.
+    if (!("gone" in rows)) {
+      if (!("messages" in load)) throw new Error(`${label}: expected messages`);
+      expect(load.messages.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("a rollback mid-read keeps every row once, ascending", async () => {
+    const read = await fetchThreadHistoryRows({ ...ASKED, fetchImpl: OUTCOMES[2]![1]() });
+    if ("gone" in read) throw new Error("expected rows");
+    expect(read.rows.map((r) => r.seq)).toEqual([2, 3, 4]);
   });
 
   it("the closure cases read a closure at all (the fixtures are live)", async () => {

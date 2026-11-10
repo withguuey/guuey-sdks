@@ -770,8 +770,10 @@ async function readHistoryRows(
  * ascending re-read, the sort, the closure) as {@link readHistoryRows} does,
  * then projects. The settle is written in both rather than shared: this read
  * ships in the widget's inline host, whose byte budget a shared settle object
- * overruns, and the rows read tree-shakes out of it. history.rows.test.ts pins
- * that the two reads agree on every outcome.
+ * overruns (+277 B against the 819,200 B budget, with 39 B to spare when it
+ * was measured), and the rows read tree-shakes out of it. Fold the two back
+ * into one settle once the budget has room for it. history.rows.test.ts pins
+ * that the two reads agree on every outcome, request for request.
  */
 async function readHistory(
   send: ScopedFetch,
