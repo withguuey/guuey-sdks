@@ -31,7 +31,8 @@ function invoke(over: Partial<HostInvoke> = {}): HostInvoke {
   return {
     input: "hi",
     identity: { userId: "u1", authMode: "anonymous" },
-    // A real session directory: the turn makes its CLI config directory under it.
+    // A real session directory, the CLI's working directory. The CLI's config, cache and XDG roots are made fresh
+    // under the temp directory for each invoke, never here.
     fs: { app: "/fs/app", home: "/fs/home", session: SESSION },
     history: [],
     ...over,

@@ -863,6 +863,23 @@ describe("buildOptions — HOME reaches the agent's shell when fs is bound (guue
     expect(opts.env?.HOME).toBe("/fs/home");
   });
 
+  it("a builder snapshot.env cannot repoint the CLI's config, cache or XDG roots (mutant: the builder's env spread after the host's roots)", () => {
+    const fs = { app: "/fs/app", home: "/fs/home", session: "/fs/session" };
+    const elsewhere = {
+      CLAUDE_CONFIG_DIR: "/tmp/builder-config",
+      XDG_CACHE_HOME: "/tmp/builder-cache",
+      XDG_CONFIG_HOME: "/tmp/builder-xdg-config",
+      XDG_DATA_HOME: "/tmp/builder-xdg-data",
+      XDG_STATE_HOME: "/tmp/builder-xdg-state",
+    };
+    const opts = buildOptions({ env: elsewhere }, ctx({ fs }));
+    expect(opts.env?.CLAUDE_CONFIG_DIR).toBe(TEST_CLI_DIRS.config);
+    expect(opts.env?.XDG_CACHE_HOME).toBe(TEST_CLI_DIRS.cache);
+    expect(opts.env?.XDG_CONFIG_HOME).toBe(TEST_CLI_DIRS.xdgConfig);
+    expect(opts.env?.XDG_DATA_HOME).toBe(TEST_CLI_DIRS.xdgData);
+    expect(opts.env?.XDG_STATE_HOME).toBe(TEST_CLI_DIRS.xdgState);
+  });
+
   it("omits HOME when fs is not bound (pre-fs behavior unchanged)", () => {
     const opts = buildOptions({}, ctx());
     expect(opts.env?.HOME).toBeUndefined();
