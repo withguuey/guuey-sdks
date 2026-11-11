@@ -11,10 +11,11 @@ import {
 } from './reserved-env.js';
 
 describe('RUNTIME_RESERVED_ENV_NAMES', () => {
-  it('is the exact runtime-owned list: Node, OpenSSL, the sandbox switch, the loader names and GLIBC_TUNABLES', () => {
+  it('is the exact runtime-owned list: Node, OpenSSL, the sandbox switch, the CLI root, the loader names and GLIBC_TUNABLES', () => {
     expect([...RUNTIME_RESERVED_ENV_NAMES].sort()).toEqual(
       [
         'GLIBC_TUNABLES',
+        'GUUEY_CLI_ROOT',
         'GUUEY_SANDBOX',
         'LD_ASSUME_KERNEL',
         'LD_AUDIT',
