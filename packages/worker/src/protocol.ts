@@ -340,6 +340,11 @@ export interface Invoke {
    * dropped in silence.
    */
   attachments?: InvokeImageAttachment[];
+  /**
+   * Thread resume (guuey#3407 B3): run this turn's Claude CLI session under the Router's id ({@link InvokeCliSession}).
+   * Named apart from {@link resume}, which continues a paused run. An older host ignores it.
+   */
+  cliSession?: InvokeCliSession;
 }
 /** The image types an {@link InvokeImageAttachment} may carry. */
 export const INVOKE_IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
@@ -499,6 +504,107 @@ export interface WorkerHelloEvent {
    * from a hello that PRECEDES the invoke's first native event; a later hello changes nothing.
    */
   readonly capabilities?: readonly string[];
+  /**
+   * Thread resume (guuey#3407 B3): what the host passed this turn and, on a `resume`, what it measured in the
+   * stored session before the CLI started. Sent ONLY in the FIRST hello of an invoke that carried
+   * {@link Invoke.cliSession} and that the host applied, beside {@link CLI_SESSION_CAPABILITY}. A Router
+   * accepts it only from that first frame; an older Router ignores it.
+   */
+  readonly cliSession?: HelloCliSession;
+}
+
+/**
+ * Capability: this host runs the invoke's {@link Invoke.cliSession} (a `start` under the Router's session id, or a
+ * `resume` of it) and reports {@link WorkerHelloEvent.cliSession}. Announced only on an invoke that carried the
+ * field and that the host applied. A Router stamps a thread for resume only after a hello that announced it.
+ */
+export const CLI_SESSION_CAPABILITY = "cli-session.v1";
+
+/**
+ * The form of `@guuey/host`'s one content hash (`cli-session-hash.ts`): which fields of which blocks, in which
+ * order, length-prefixed how. Bumped whenever that form changes, so a Router comparing values of two forms
+ * resets the thread benignly instead of reading the change as a tamper.
+ */
+export const CLI_SESSION_HASH_VERSION = 1;
+
+/**
+ * The `error` event's message prefix when a `resume` could not be confirmed: the CLI did not open the session the Router
+ * named (its first message was not the `init` of that id), so nothing was forwarded. The host never falls back on its
+ * own; the Router resets the thread (`resume-failed`) and re-runs the turn once as a `start`.
+ */
+export const CLI_SESSION_RESUME_FAILED = "cli_session_resume_failed";
+
+/**
+ * Run this turn's Claude CLI session under the Router's id: `start` creates it (the turn carries its history as
+ * today), `resume` continues it (the turn carries no history; the session file is the transcript). Absent: the
+ * host runs exactly as before, under a random id. The id is the Router's, never derived by the host, and must be
+ * a UUID. An older host ignores the field and never announces {@link CLI_SESSION_CAPABILITY}.
+ */
+export interface InvokeCliSession {
+  readonly mode: "start" | "resume";
+  readonly id: string;
+}
+
+/** The hello's thread-resume block ({@link WorkerHelloEvent.cliSession}). Every sha is `@guuey/host`'s content hash. */
+export interface HelloCliSession {
+  /** {@link CLI_SESSION_HASH_VERSION} of the host that computed every value below. */
+  readonly hashVersion: number;
+  /** The class-level system prompt passed to the SDK this turn. */
+  readonly systemPromptSha256: string;
+  /** The agent configuration passed to the SDK this turn, one sha per field. */
+  readonly headerShas: HelloHeaderShas;
+  /** This turn's user message, every block exactly as passed to the CLI. */
+  readonly promptSha: string;
+  /** The UTF-8 byte length of that message's text blocks. */
+  readonly promptBytes: number;
+  /** This turn's own text block, the last block of the message. */
+  readonly lastPromptSha: string;
+  /** On a `resume` only: the stored session, measured without following links before the CLI started. */
+  readonly stored?: HelloStoredMeasures;
+}
+
+/** One sha per agent-configuration field passed to the SDK. */
+export interface HelloHeaderShas {
+  readonly model: string;
+  readonly permissionMode: string;
+  readonly tools: string;
+  readonly mcpConfig: string;
+}
+
+/** What a `resume` found in the stored session (see {@link HelloCliSession.stored}). */
+export interface HelloStoredMeasures {
+  /** Set when the session file could not be read as a regular file; every other measure is then empty. */
+  readonly readError?: "missing" | "not-regular" | "link";
+  /** Every stored system prompt, in file order. */
+  readonly systemPromptShas: readonly string[];
+  /** One walk per leaf of the session's entry graph. */
+  readonly walks: readonly HelloWalk[];
+  /** Every stored last-prompt text, in file order. */
+  readonly lastPromptShas: readonly string[];
+  /** The session directory's tree, relative paths, links suffixed `@link`. */
+  readonly entries: readonly string[];
+  /** Lines and entries the host could not classify as the pinned CLI writes them (an edit it cannot vouch for). */
+  readonly unclassified: number;
+  /** Damage rather than an edit: unparseable lines, a parent that names no entry, a loop, an entry no walk reaches. */
+  readonly corrupt: number;
+  /** Repeated entries equal to their first occurrence except for an added `slug`. */
+  readonly benignDuplicates: number;
+  /** Distinct prompt entries in the whole file. */
+  readonly filePromptEntries: number;
+  /** Distinct compaction-summary entries in the whole file. */
+  readonly fileCompactSummaries: number;
+}
+
+/** One root-to-leaf path of the stored session. */
+export interface HelloWalk {
+  /** Whether this is the leaf the file's last last-prompt names. */
+  readonly fromLastPromptLeaf: boolean;
+  /** The prompt entries on the path, root to leaf. */
+  readonly promptShas: readonly string[];
+  /** The compaction-summary entries on the path. */
+  readonly compactSummaries: number;
+  /** Whether the path's root is a compaction boundary pointing at the other walk's leaf, elsewhere, or not at all. */
+  readonly boundary: "none" | "links-other-leaf" | "dangling";
 }
 
 /**

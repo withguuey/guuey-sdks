@@ -4,7 +4,7 @@
  * fd-3 stream; tests pass an in-memory stream. Each event is written immediately
  * (one `write` per line) so streaming never stalls behind a buffer.
  */
-import type { DoneEvent, EndThread, JsonValue, StopReason, WorkerEvent } from "./protocol.js";
+import type { DoneEvent, EndThread, HelloCliSession, JsonValue, StopReason, WorkerEvent } from "./protocol.js";
 
 /** Minimal write interface accepted by {@link createEmitter}. `NodeJS.WritableStream` satisfies this. */
 export interface WriteSink {
@@ -19,8 +19,15 @@ export interface Emitter {
   native(framework: string, event: JsonValue): void;
   /** The SDK-version handshake (additive-optional, §8 item B). Emit at most
    *  once, before any native/turn event. `capabilities` names what this worker
-   *  does beyond protocol v1 (e.g. `ADK_HOST_COMPLETION_CAPABILITY`). */
-  hello(framework: string, sdkName: string | null, sdkVersion: string | null, capabilities?: readonly string[]): void;
+   *  does beyond protocol v1 (e.g. `ADK_HOST_COMPLETION_CAPABILITY`). `cliSession` is the thread-resume block
+   *  ({@link WorkerHelloEvent.cliSession}), sent only beside `CLI_SESSION_CAPABILITY`. */
+  hello(
+    framework: string,
+    sdkName: string | null,
+    sdkVersion: string | null,
+    capabilities?: readonly string[],
+    cliSession?: HelloCliSession,
+  ): void;
 }
 
 export function createEmitter(out: WriteSink): Emitter {
@@ -36,13 +43,14 @@ export function createEmitter(out: WriteSink): Emitter {
     },
     error: (message) => write({ type: "error", message }),
     native: (framework, event) => write({ type: "native", framework, event }),
-    hello: (framework, sdkName, sdkVersion, capabilities) =>
+    hello: (framework, sdkName, sdkVersion, capabilities, cliSession) =>
       write({
         type: "hello",
         framework,
         sdkName,
         sdkVersion,
         ...(capabilities !== undefined && capabilities.length > 0 ? { capabilities } : {}),
+        ...(cliSession !== undefined ? { cliSession } : {}),
       }),
   };
 }

@@ -32,6 +32,11 @@ import type {
   SuspendEvent,
   EndThread,
   InvokeImageAttachment,
+  InvokeCliSession,
+  HelloCliSession,
+  HelloHeaderShas,
+  HelloStoredMeasures,
+  HelloWalk,
 } from "./protocol.js";
 import { parseClientCatalogs } from "./client-catalogs.js";
 import { endThreadProblem } from "./end-thread.js";
@@ -243,6 +248,93 @@ function parseAttachments(v: JsonValue | undefined): InvokeImageAttachment[] | u
   return out;
 }
 
+/**
+ * Thread resume (guuey#3407 B3): a well-formed `{mode, id}` with a known mode and a non-empty id, or nothing. The host
+ * checks the id is a UUID before it spawns anything; the parser keeps any non-empty string so that check can name it.
+ * Never throws: a malformed field reads as absent, which is today's turn exactly.
+ */
+function parseInvokeCliSession(v: JsonValue | undefined): InvokeCliSession | undefined {
+  if (!isObject(v)) return undefined;
+  const { mode, id } = v;
+  if ((mode !== "start" && mode !== "resume") || typeof id !== "string" || id.length === 0) return undefined;
+  return { mode, id };
+}
+
+const isString = (v: JsonValue): v is string => typeof v === "string";
+const isCount = (v: JsonValue | undefined): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0;
+function stringList(v: JsonValue | undefined): string[] | undefined {
+  return Array.isArray(v) && v.every(isString) ? v : undefined;
+}
+
+function parseHeaderShas(v: JsonValue | undefined): HelloHeaderShas | undefined {
+  if (!isObject(v)) return undefined;
+  const { model, permissionMode, tools, mcpConfig } = v;
+  if (typeof model !== "string" || typeof permissionMode !== "string" || typeof tools !== "string" || typeof mcpConfig !== "string") {
+    return undefined;
+  }
+  return { model, permissionMode, tools, mcpConfig };
+}
+
+function parseWalk(v: JsonValue): HelloWalk | undefined {
+  if (!isObject(v)) return undefined;
+  const promptShas = stringList(v.promptShas);
+  const { fromLastPromptLeaf, compactSummaries, boundary } = v;
+  if (typeof fromLastPromptLeaf !== "boolean" || promptShas === undefined || !isCount(compactSummaries)) return undefined;
+  if (boundary !== "none" && boundary !== "links-other-leaf" && boundary !== "dangling") return undefined;
+  return { fromLastPromptLeaf, promptShas, compactSummaries, boundary };
+}
+
+function parseStoredMeasures(v: JsonValue | undefined): HelloStoredMeasures | undefined {
+  if (!isObject(v)) return undefined;
+  const { readError, unclassified, corrupt, benignDuplicates, filePromptEntries, fileCompactSummaries } = v;
+  if (readError !== undefined && readError !== "missing" && readError !== "not-regular" && readError !== "link") return undefined;
+  const systemPromptShas = stringList(v.systemPromptShas);
+  const lastPromptShas = stringList(v.lastPromptShas);
+  const entries = stringList(v.entries);
+  if (systemPromptShas === undefined || lastPromptShas === undefined || entries === undefined || !Array.isArray(v.walks)) return undefined;
+  const walks: HelloWalk[] = [];
+  for (const w of v.walks) {
+    const walk = parseWalk(w);
+    if (walk === undefined) return undefined;
+    walks.push(walk);
+  }
+  if (!isCount(unclassified) || !isCount(corrupt) || !isCount(benignDuplicates) || !isCount(filePromptEntries) || !isCount(fileCompactSummaries)) {
+    return undefined;
+  }
+  return {
+    ...(readError !== undefined ? { readError } : {}),
+    systemPromptShas,
+    walks,
+    lastPromptShas,
+    entries,
+    unclassified,
+    corrupt,
+    benignDuplicates,
+    filePromptEntries,
+    fileCompactSummaries,
+  };
+}
+
+/**
+ * The hello's thread-resume block: kept WHOLE when every field is well formed, otherwise dropped whole. A Router that
+ * sees {@link CLI_SESSION_CAPABILITY} without the block reads a host fault and resets without a tamper event; a
+ * half-parsed block could otherwise read as a measure the host never took. A `stored` that is present but malformed
+ * drops the whole block for the same reason.
+ */
+function parseHelloCliSession(v: JsonValue | undefined): HelloCliSession | undefined {
+  if (!isObject(v)) return undefined;
+  const { hashVersion, systemPromptSha256, promptSha, promptBytes, lastPromptSha } = v;
+  const headerShas = parseHeaderShas(v.headerShas);
+  if (!isCount(hashVersion) || typeof systemPromptSha256 !== "string" || headerShas === undefined) return undefined;
+  if (typeof promptSha !== "string" || !isCount(promptBytes) || typeof lastPromptSha !== "string") return undefined;
+  let stored: HelloStoredMeasures | undefined;
+  if (v.stored !== undefined) {
+    stored = parseStoredMeasures(v.stored);
+    if (stored === undefined) return undefined;
+  }
+  return { hashVersion, systemPromptSha256, headerShas, promptSha, promptBytes, lastPromptSha, ...(stored ? { stored } : {}) };
+}
+
 export function parseControl(line: string): ControlMessage {
   let raw: JsonValue;
   try {
@@ -266,6 +358,7 @@ export function parseControl(line: string): ControlMessage {
       const suspend = parseSuspendOffer(raw.suspend);
       const resume = parseResume(raw.resume);
       const attachments = parseAttachments(raw.attachments);
+      const cliSession = parseInvokeCliSession(raw.cliSession);
       return {
         type: "invoke",
         input: raw.input,
@@ -343,6 +436,8 @@ export function parseControl(line: string): ControlMessage {
         ...(typeof raw.threadId === "string" && raw.threadId.length > 0 ? { threadId: raw.threadId } : {}),
         // The turn's images: all well formed, or none (see parseAttachments).
         ...(attachments ? { attachments } : {}),
+        // Thread resume (guuey#3407 B3): kept only when well formed, otherwise absent, which is today exactly.
+        ...(cliSession ? { cliSession } : {}),
       };
     }
     case "shutdown":
@@ -421,12 +516,16 @@ export function parseEvent(line: string): WorkerEvent {
       const caps = raw.capabilities;
       const capabilities =
         Array.isArray(caps) && caps.every((c): c is string => typeof c === "string") ? caps : undefined;
+      // Thread resume (guuey#3407 B3): the whole block well formed, or none. A Router that sees the capability without
+      // the block reads it as a host fault, never as a measure.
+      const cliSession = parseHelloCliSession(raw.cliSession);
       return {
         type: "hello",
         framework: raw.framework,
         sdkName,
         sdkVersion,
         ...(capabilities !== undefined && capabilities.length > 0 ? { capabilities } : {}),
+        ...(cliSession ? { cliSession } : {}),
       };
     }
     case "suspend": {

@@ -1,0 +1,502 @@
+/**
+ * FROZEN test fixture: `parse.ts` (both `parseControl` and `parseEvent`) exactly as it stood before the invoke
+ * carried `cliSession` and the hello carried its thread-resume block (guuey#3407 B3). It stands in for an older
+ * worker reading a newer Router's invoke, and an older Router reading a newer host's hello (both N−1 directions),
+ * so do not edit it to follow `../parse.ts`; a later protocol change gets a new frozen copy beside this one. Only
+ * the import paths are adjusted to this directory.
+ *
+ * Tier-1 typed interpreter: validate one NDJSON control line (Router→Worker, fd
+ * 0) into a typed {@link ControlMessage}. Hand-rolled guards keep the package
+ * dependency-free. A malformed line throws a clear error (never a silent skip).
+ */
+import type {
+  AuthMode,
+  ControlMessage,
+  DoneEvent,
+  ErrorEvent,
+  Fs,
+  HistoryMessage,
+  Identity,
+  Invoke,
+  JsonValue,
+  NativeEvent,
+  PriorMemoryRecord,
+  ProfileSection,
+  FirstImpressionPush,
+  Shutdown,
+  StopReason,
+  TextEvent,
+  WorkerEvent,
+  WorkerHelloEvent,
+  McpAvailability,
+  McpAvailabilityState,
+  WithheldTool,
+  FirstImpressionShown,
+  InvokeResume,
+  InvokeSuspendOffer,
+  ResumeAnswer,
+  SuspendEvent,
+  EndThread,
+  InvokeImageAttachment,
+} from "../protocol.js";
+import { parseClientCatalogs } from "../client-catalogs.js";
+import { endThreadProblem } from "../end-thread.js";
+import { isInputKind } from "../protocol.js";
+import { isInvokeImageMimeType, isStandardBase64 } from "../images.js";
+
+export function isInvoke(m: ControlMessage): m is Invoke {
+  return m.type === "invoke";
+}
+export function isShutdown(m: ControlMessage): m is Shutdown {
+  return m.type === "shutdown";
+}
+
+function isObject(v: unknown): v is Record<string, JsonValue> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function parseIdentity(v: JsonValue | undefined): Identity {
+  if (!isObject(v) || typeof v.userId !== "string") {
+    throw new Error("invoke.identity missing string `userId`");
+  }
+  const authMode: AuthMode = v.authMode === "authenticated" ? "authenticated" : "anonymous";
+  return { userId: v.userId, authMode };
+}
+
+function parseFs(v: JsonValue | undefined): Fs {
+  if (
+    !isObject(v) ||
+    typeof v.app !== "string" ||
+    typeof v.home !== "string" ||
+    typeof v.session !== "string"
+  ) {
+    throw new Error("invoke.fs missing string `app`/`home`/`session`");
+  }
+  return { app: v.app, home: v.home, session: v.session };
+}
+
+function parseHistory(v: JsonValue | undefined): HistoryMessage[] {
+  if (v === undefined) return [];
+  if (!Array.isArray(v)) throw new Error("invoke.history must be an array");
+  return v.map((m) => {
+    if (!isObject(m) || typeof m.text !== "string") {
+      throw new Error("invoke.history entry missing string `text`");
+    }
+    return {
+      role: m.role === "agent" ? "agent" : "user",
+      text: m.text,
+      // guuey#2549: an unknown kind reads as none (additive, never fatal).
+      ...(isInputKind(m.inputKind) ? { inputKind: m.inputKind } : {}),
+    };
+  });
+}
+
+/**
+ * Parse the optional `priorMemory` push (§1.4). Lenient by design — a malformed
+ * entry (no `value`, or a non-object) is DROPPED rather than throwing, so a
+ * stray memory record never fails an otherwise-valid turn. Returns `undefined`
+ * when absent or when no entry survives (so the field stays off the Invoke).
+ */
+function parsePriorMemory(v: JsonValue | undefined): PriorMemoryRecord[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: PriorMemoryRecord[] = [];
+  for (const entry of v) {
+    if (isObject(entry) && "value" in entry) {
+      out.push({
+        value: entry.value,
+        ...(typeof entry.key === "string" ? { key: entry.key } : {}),
+      });
+    }
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+/**
+ * Parse the optional `profileSections` push (cross-app-profile T7). Lenient like
+ * {@link parsePriorMemory}: a non-conforming entry (not an object, or missing a
+ * string `app`/`content`) is DROPPED, never throwing. Returns `undefined` when
+ * absent or when no entry survives (so the field stays off the Invoke).
+ */
+/** Parse the optional `firstImpression` push (guuey#1183): the identity fields
+ *  (+ `variance` when a non-empty object, guuey#1256) or nothing. */
+function parseFirstImpression(v: JsonValue | undefined): FirstImpressionPush | undefined {
+  if (!isObject(v)) return undefined;
+  if (typeof v.chipKey !== "string" || v.chipKey === "") return undefined;
+  if (typeof v.intent !== "string" || v.intent === "") return undefined;
+  if (!isObject(v.contract)) return undefined;
+  // guuey#1256: carry a non-empty `variance` through so the host can emit
+  // `blueprintDraft.variance` and ggui's exact `(contract, variance)` key
+  // reaches the variance-named binding. An empty/absent variance collapses to
+  // ggui's default variant → dropped so the field stays off the args.
+  // Forwarded verbatim (ggui validates the strict shape at its wire), parallel
+  // to `contract`; an unknown top-level key is ignored (N-1 tolerance, #1213).
+  const variance = isObject(v.variance) && Object.keys(v.variance).length > 0 ? v.variance : undefined;
+  return {
+    chipKey: v.chipKey,
+    intent: v.intent,
+    contract: v.contract,
+    ...(typeof v.blueprintId === "string" && v.blueprintId !== "" ? { blueprintId: v.blueprintId } : {}),
+    ...(variance !== undefined ? { variance } : {}),
+  };
+}
+
+function parseProfileSections(v: JsonValue | undefined): ProfileSection[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: ProfileSection[] = [];
+  for (const entry of v) {
+    if (isObject(entry) && typeof entry.app === "string" && typeof entry.content === "string") {
+      out.push({ app: entry.app, content: entry.content });
+    }
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+const MCP_AVAILABILITY_STATES: ReadonlySet<string> = new Set([
+  "connected",
+  "needs_authorization",
+  "denied",
+  "unavailable",
+]);
+
+function isMcpAvailabilityState(v: unknown): v is McpAvailabilityState {
+  return typeof v === "string" && MCP_AVAILABILITY_STATES.has(v);
+}
+
+/**
+ * guuey#901 — `mcpAvailability`: an array of `{ server, state }`; a malformed
+ * entry (no string server, out-of-enum state) is DROPPED, not coerced, and an
+ * absent / non-array / empty field is `undefined` so it never lands on the
+ * typed Invoke as an empty list the renderers would have to re-gate.
+ */
+function parseMcpAvailability(v: JsonValue | undefined): McpAvailability[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: McpAvailability[] = [];
+  for (const entry of v) {
+    if (!isObject(entry)) continue;
+    if (typeof entry.server !== "string" || entry.server.length === 0) continue;
+    if (!isMcpAvailabilityState(entry.state)) continue;
+    out.push({ server: entry.server, state: entry.state });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+/**
+ * The Router's pause offer: kept only when `maxEnvelopeBytes` is a positive
+ * integer, reduced to that one field. Anything else is dropped (never thrown),
+ * so a malformed offer reads as "no offer" and the worker never pauses.
+ */
+function parseSuspendOffer(v: JsonValue | undefined): InvokeSuspendOffer | undefined {
+  if (!isObject(v)) return undefined;
+  const max = v.maxEnvelopeBytes;
+  if (typeof max !== "number" || !Number.isInteger(max) || max <= 0) return undefined;
+  return { maxEnvelopeBytes: max };
+}
+
+function parseResumeAnswer(v: JsonValue): ResumeAnswer | undefined {
+  if (!isObject(v)) return undefined;
+  const { askId, toolCallId, status } = v;
+  if (typeof askId !== "string" || askId.length === 0) return undefined;
+  if (typeof toolCallId !== "string" || toolCallId.length === 0) return undefined;
+  if (status !== "resolved" && status !== "declined") return undefined;
+  return { askId, toolCallId, status };
+}
+
+/**
+ * The Router's resume: kept only when EVERY part is well formed (a non-empty
+ * string `envelope`, a non-empty `answers` list whose every entry has a
+ * non-empty `askId` and `toolCallId` and a known `status`, and, when present, a
+ * non-negative integer `pausedUserSeq`). Anything else drops the whole value,
+ * never part of it: a resume missing one decision must not continue the run.
+ * Never throws, so a malformed resume reads as an ordinary turn.
+ */
+function parseResume(v: JsonValue | undefined): InvokeResume | undefined {
+  if (!isObject(v)) return undefined;
+  const { envelope, answers, pausedUserSeq } = v;
+  if (typeof envelope !== "string" || envelope.length === 0) return undefined;
+  if (!Array.isArray(answers) || answers.length === 0) return undefined;
+  const parsed: ResumeAnswer[] = [];
+  for (const entry of answers) {
+    const answer = parseResumeAnswer(entry);
+    if (answer === undefined) return undefined;
+    parsed.push(answer);
+  }
+  if (pausedUserSeq !== undefined) {
+    if (typeof pausedUserSeq !== "number" || !Number.isInteger(pausedUserSeq) || pausedUserSeq < 0) {
+      return undefined;
+    }
+    return { envelope, answers: parsed, pausedUserSeq };
+  }
+  return { envelope, answers: parsed };
+}
+
+/**
+ * The turn's images: kept only when EVERY entry is an inline image of an
+ * allowlisted type whose data is non-empty standard base64. Anything else drops
+ * the whole list, never part of it: a worker must not announce that it reads
+ * the turn's images and then show its model fewer than the person sent. Never
+ * throws, so a malformed list reads as a turn without images.
+ */
+function parseAttachments(v: JsonValue | undefined): InvokeImageAttachment[] | undefined {
+  if (!Array.isArray(v) || v.length === 0) return undefined;
+  const out: InvokeImageAttachment[] = [];
+  for (const entry of v) {
+    if (!isObject(entry) || entry.kind !== "inline") return undefined;
+    const { mimeType, data } = entry;
+    if (!isInvokeImageMimeType(mimeType)) return undefined;
+    if (typeof data !== "string" || !isStandardBase64(data)) return undefined;
+    out.push({ kind: "inline", mimeType, data });
+  }
+  return out;
+}
+
+export function parseControl(line: string): ControlMessage {
+  let raw: JsonValue;
+  try {
+    raw = JSON.parse(line) as JsonValue;
+  } catch {
+    throw new Error(`non-JSON control line: ${line.slice(0, 200)}`);
+  }
+  if (!isObject(raw)) {
+    throw new Error(`control line is not an object: ${line.slice(0, 200)}`);
+  }
+  switch (raw.type) {
+    case "invoke": {
+      if (typeof raw.input !== "string") throw new Error("invoke missing string `input`");
+      const priorMemory = parsePriorMemory(raw.priorMemory);
+      const profileSections = parseProfileSections(raw.profileSections);
+      const withheldTools = parseWithheldTools(raw.withheldTools);
+      const clientCatalogs = parseClientCatalogs(raw.clientCatalogs);
+      const firstImpressionShown = parseFirstImpressionShown(raw.firstImpressionShown);
+      const firstImpression = parseFirstImpression(raw.firstImpression);
+      const mcpAvailability = parseMcpAvailability(raw.mcpAvailability);
+      const suspend = parseSuspendOffer(raw.suspend);
+      const resume = parseResume(raw.resume);
+      const attachments = parseAttachments(raw.attachments);
+      return {
+        type: "invoke",
+        input: raw.input,
+        // guuey#2549: an unknown kind reads as none (a Router sends only a kind this worker declared).
+        ...(isInputKind(raw.inputKind) ? { inputKind: raw.inputKind } : {}),
+        identity: parseIdentity(raw.identity),
+        fs: parseFs(raw.fs),
+        // guuey#234: the "fs names REAL GuueyFS layers" signal — the host's
+        // built-in tool gate. Omitted unless a real boolean so it never lands
+        // as `undefined` (and a missing field reads as NOT bound, fail-closed).
+        ...(typeof raw.fsBound === "boolean" ? { fsBound: raw.fsBound } : {}),
+        history: parseHistory(raw.history),
+        // §1.4 push-by-value context — additive, both optional. `priorState` uses
+        // a `!== undefined` gate (not truthiness) so a falsy blob (null/0/"") is
+        // preserved; `priorMemory` is omitted when empty/absent.
+        ...(priorMemory ? { priorMemory } : {}),
+        ...(raw.priorState !== undefined ? { priorState: raw.priorState } : {}),
+        // memory-mcp prompted memory (spec §4) — DISTINCT from `priorMemory`
+        // above (see the `Invoke.userMemory` doc). Omitted when absent/non-string
+        // so it never lands on the typed Invoke as `undefined`.
+        ...(typeof raw.userMemory === "string" ? { userMemory: raw.userMemory } : {}),
+        // memory-mcp T5: the memory-child attachment signal — gates the SAVE
+        // instruction (all three frameworks) independent of `userMemory`.
+        // Omitted unless a real boolean so it never lands as `undefined`.
+        ...(typeof raw.memoryAttached === "boolean" ? { memoryAttached: raw.memoryAttached } : {}),
+        // cross-app-profile T7: the resolved profile access + recall sections.
+        // `profileAccess` is an explicit enum allowlist (an out-of-enum string —
+        // e.g. `'write'` — is dropped, not coerced), mirroring the fail-closed
+        // mint-claim check; `profileSections` drops malformed entries. Both
+        // omitted when absent so they never land as `undefined`.
+        ...(raw.profileAccess === "read" || raw.profileAccess === "read-write"
+          ? { profileAccess: raw.profileAccess }
+          : {}),
+        ...(profileSections ? { profileSections } : {}),
+        ...(firstImpression ? { firstImpression } : {}),
+        // guuey#901: the OAuth servers' availability this turn — absent unless
+        // at least one well-formed entry arrived.
+        ...(mcpAvailability ? { mcpAvailability } : {}),
+        // guuey#456 B4: the app-resources count — only a POSITIVE integer
+        // lands (0 / negative / fractional / non-number is dropped, matching
+        // the Router's only-when->0 write), so "no resources" is always the
+        // ABSENT field, never a 0 the renderers would have to re-gate.
+        ...(typeof raw.resourceCount === "number" &&
+        Number.isInteger(raw.resourceCount) &&
+        raw.resourceCount > 0
+          ? { resourceCount: raw.resourceCount }
+          : {}),
+        // guuey#630: the ggui-rail-armed signal — gates the generative-UI
+        // section (all three frameworks). Omitted unless a real boolean so it
+        // never lands as `undefined` (and a missing field reads as NO rail,
+        // fail-closed: never promise a card the turn cannot draw).
+        ...(typeof raw.gguiAttached === "boolean" ? { gguiAttached: raw.gguiAttached } : {}),
+        // The catalogs the client draws: the well-formed ids alone, under the
+        // one bound the Router writes with; omitted when none survives.
+        ...(clientCatalogs ? { clientCatalogs } : {}),
+        // The per-turn withheld tools: only well-formed `{server, tool}` entries
+        // (both non-empty strings) land, carrying those two fields alone; the
+        // field is omitted unless at least one survives, so an older Router's
+        // invoke and a malformed one both read as the full catalog.
+        ...(withheldTools.length > 0 ? { withheldTools } : {}),
+        // The welcome card the Router already drew: kept only when every field
+        // is well-formed, so a malformed one reads as "no card was drawn".
+        ...(firstImpressionShown ? { firstImpressionShown } : {}),
+        // The pause offer and the resume: each kept only when well formed,
+        // otherwise absent (never thrown), so a malformed one reads as an
+        // ordinary turn that cannot pause.
+        ...(suspend ? { suspend } : {}),
+        ...(resume ? { resume } : {}),
+        // The offer to end the conversation: any object reads as the offer
+        // (reduced to `{}`, its only shape today); anything else is no offer.
+        ...(isObject(raw.threadClose) ? { threadClose: {} } : {}),
+        // The turn's durable thread, as data: kept only when a non-empty
+        // string, otherwise absent (never thrown), so a stateless invoke and an
+        // older Router's invoke both read with no thread id.
+        ...(typeof raw.threadId === "string" && raw.threadId.length > 0 ? { threadId: raw.threadId } : {}),
+        // The turn's images: all well formed, or none (see parseAttachments).
+        ...(attachments ? { attachments } : {}),
+      };
+    }
+    case "shutdown":
+      return { type: "shutdown" };
+    default:
+      throw new Error(`unknown control message type: ${String(raw.type)}`);
+  }
+}
+
+export function isText(e: WorkerEvent): e is TextEvent {
+  return e.type === "text";
+}
+export function isDone(e: WorkerEvent): e is DoneEvent {
+  return e.type === "done";
+}
+export function isError(e: WorkerEvent): e is ErrorEvent {
+  return e.type === "error";
+}
+export function isNative(e: WorkerEvent): e is NativeEvent {
+  return e.type === "native";
+}
+export function isHello(e: WorkerEvent): e is WorkerHelloEvent {
+  return e.type === "hello";
+}
+export function isSuspend(e: WorkerEvent): e is SuspendEvent {
+  return e.type === "suspend";
+}
+
+/**
+ * Router-side typed interpreter: validate one NDJSON event line (Worker→Router,
+ * fd 3) into a typed {@link WorkerEvent}. Mirror of {@link parseControl}; a
+ * malformed line throws (never a silent skip).
+ */
+export function parseEvent(line: string): WorkerEvent {
+  let raw: JsonValue;
+  try {
+    raw = JSON.parse(line) as JsonValue;
+  } catch {
+    throw new Error(`non-JSON event line: ${line.slice(0, 200)}`);
+  }
+  if (!isObject(raw)) {
+    throw new Error(`event line is not an object: ${line.slice(0, 200)}`);
+  }
+  switch (raw.type) {
+    case "text": {
+      if (typeof raw.text !== "string") throw new Error("text event missing string `text`");
+      return { type: "text", text: raw.text };
+    }
+    case "done": {
+      const stopReason: StopReason =
+        raw.stopReason === "max_turns" || raw.stopReason === "error" ? raw.stopReason : "end_turn";
+      const result = typeof raw.result === "string" ? raw.result : "";
+      const endThread = parseEndThread(raw.endThread);
+      return { type: "done", stopReason, result, ...(endThread ? { endThread } : {}) };
+    }
+    case "error": {
+      const message = typeof raw.message === "string" ? raw.message : "unknown worker error";
+      return { type: "error", message };
+    }
+    case "native": {
+      if (typeof raw.framework !== "string") {
+        throw new Error("native event missing string `framework`");
+      }
+      if (raw.event === undefined) {
+        throw new Error("native event missing `event`");
+      }
+      return { type: "native", framework: raw.framework, event: raw.event };
+    }
+    case "hello": {
+      if (typeof raw.framework !== "string") {
+        throw new Error("hello event missing string `framework`");
+      }
+      const sdkName = typeof raw.sdkName === "string" ? raw.sdkName : null;
+      const sdkVersion = typeof raw.sdkVersion === "string" ? raw.sdkVersion : null;
+      // Additive-optional: kept only as a list of strings; any other shape reads as none.
+      const caps = raw.capabilities;
+      const capabilities =
+        Array.isArray(caps) && caps.every((c): c is string => typeof c === "string") ? caps : undefined;
+      return {
+        type: "hello",
+        framework: raw.framework,
+        sdkName,
+        sdkVersion,
+        ...(capabilities !== undefined && capabilities.length > 0 ? { capabilities } : {}),
+      };
+    }
+    case "suspend": {
+      if (typeof raw.envelope !== "string") {
+        throw new Error("suspend event missing string `envelope`");
+      }
+      const ids = raw.askIds;
+      if (!Array.isArray(ids) || !ids.every((id): id is string => typeof id === "string")) {
+        throw new Error("suspend event `askIds` must be a list of strings");
+      }
+      return { type: "suspend", envelope: raw.envelope, askIds: ids };
+    }
+    default:
+      throw new Error(`unknown event type: ${String(raw.type)}`);
+  }
+}
+
+/**
+ * An invoke's `firstImpressionShown`, reduced to its three fields: a non-empty
+ * `heading`, a string `message`, and `options` as an array of strings. Anything
+ * else (a missing field, a wrong type, a non-string option) drops the whole
+ * value, never part of it: the section must describe the card exactly or not
+ * at all.
+ */
+function parseFirstImpressionShown(raw: unknown): FirstImpressionShown | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const heading: unknown = Reflect.get(raw, "heading");
+  const message: unknown = Reflect.get(raw, "message");
+  const options: unknown = Reflect.get(raw, "options");
+  if (typeof heading !== "string" || heading.length === 0 || typeof message !== "string") return undefined;
+  if (!Array.isArray(options)) return undefined;
+  const labels: string[] = [];
+  for (const option of options) {
+    if (typeof option !== "string") return undefined;
+    labels.push(option);
+  }
+  return { heading, message, options: labels };
+}
+
+/** The well-formed entries of an invoke's `withheldTools`, each reduced to `{server, tool}`; anything else is dropped. */
+function parseWithheldTools(raw: unknown): WithheldTool[] {
+  if (!Array.isArray(raw)) return [];
+  const out: WithheldTool[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const server: unknown = Reflect.get(entry, "server");
+    const tool: unknown = Reflect.get(entry, "tool");
+    if (typeof server === "string" && server.length > 0 && typeof tool === "string" && tool.length > 0) {
+      out.push({ server, tool });
+    }
+  }
+  return out;
+}
+
+/**
+ * A `done`'s request to end the conversation, reduced to its two fields: kept
+ * only when both are strings that pass {@link endThreadProblem}. Anything else
+ * is dropped (never thrown), so a malformed request ends the turn as an
+ * ordinary one.
+ */
+function parseEndThread(v: JsonValue | undefined): EndThread | undefined {
+  if (!isObject(v)) return undefined;
+  const { code, message } = v;
+  if (typeof code !== "string" || typeof message !== "string") return undefined;
+  const request: EndThread = { code, message };
+  return endThreadProblem(request) === undefined ? request : undefined;
+}
