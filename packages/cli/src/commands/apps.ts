@@ -1615,7 +1615,7 @@ export async function appsAccess(
     console.log(
       `  Guest thread expiry:   ${
         effectiveTtl === undefined
-          ? 'not reported by this server (it may not support this setting yet)'
+          ? GUEST_TTL_NOT_REPORTED
           : `${effectiveTtl} days${data.app.guestThreadTtlDays == null ? ' (platform default)' : ''}`
       }`,
     );
@@ -1634,6 +1634,16 @@ export async function appsAccess(
     process.exit(1);
   }
 }
+
+/**
+ * What `apps access` prints when the echo carries no guest thread window in
+ * force. Absent means one of two things the CLI cannot tell apart: the app is
+ * not enrolled in guest thread expiry yet (a current server omits the window
+ * then, rather than claim a default the sweep never applies), or the server
+ * predates the setting. Any window write enrolls the app.
+ */
+const GUEST_TTL_NOT_REPORTED =
+  'no window in force reported: this app may not be enrolled yet (set one with --guest-thread-ttl-days <n> or default), or this server predates the setting';
 
 /**
  * `--guest-thread-ttl-days` (guuey#2573): `default` returns the app to the

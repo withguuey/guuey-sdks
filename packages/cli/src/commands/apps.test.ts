@@ -1451,17 +1451,19 @@ describe('appsAccess', () => {
       },
     );
 
-    // A server before guuey#3021 echoes no effective member. Its own-value
-    // `null` is "off" before guuey#2572 and "default" after, so the CLI never
-    // reads one in place of the other.
-    it('an echo with no effective member prints "not reported" and exits 0 when the flag was not sent', async () => {
+    // No effective member: a server before guuey#3021, OR a current server for
+    // an app the guest-thread sweep has not enrolled. Its own-value `null` is
+    // "off" before guuey#2572 and "default" after, so the CLI never reads one in
+    // place of the other, and the line names both causes, never just one.
+    it('an echo with no effective member names both causes and exits 0 when the flag was not sent', async () => {
       fetchSpy.mockResolvedValueOnce(echo({ ...base, guestThreadTtlDays: null }));
 
       await appsAccess('app1', { guests: 'on' });
 
       expect(printed()).toContain(
-        'Guest thread expiry:   not reported by this server (it may not support this setting yet)',
+        'Guest thread expiry:   no window in force reported: this app may not be enrolled yet (set one with --guest-thread-ttl-days <n> or default), or this server predates the setting',
       );
+      expect(printed()).not.toContain('it may not support this setting yet');
       expect(printed()).not.toContain('platform default');
       expect(exitSpy).not.toHaveBeenCalled();
       expect(errSpy).not.toHaveBeenCalled();
@@ -1475,7 +1477,7 @@ describe('appsAccess', () => {
         await expect(appsAccess('app1', { guestThreadTtlDays: value })).rejects.toBeInstanceOf(ExitSignal);
 
         expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1);
-        expect(printed()).toContain('Guest thread expiry:   not reported by this server');
+        expect(printed()).toContain('Guest thread expiry:   no window in force reported');
         expect(String(errSpy.mock.calls[0]?.[0])).toContain(
           'This server did not confirm --guest-thread-ttl-days',
         );
