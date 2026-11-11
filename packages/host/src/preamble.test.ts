@@ -833,6 +833,36 @@ describe("A1: the turn's context blocks", () => {
     expect(escapeTurnData("a < b, <b>bold</b>, <conversation_history>, {json}")).toBe("a < b, <b>bold</b>, <conversation_history>, {json}");
   });
 
+  it("the escape never widens into everyday text: ordinary angle brackets in history and the push pass through byte-identical", () => {
+    // TURN_DATA_TAG matches a `<` only before `turn_context>` / `turn_directive>` (either with a
+    // leading `/`) or before a CLOSER of an inner data block. `<turn_contextual>` is neither: the `>`
+    // must follow `turn_context` directly, so it passes unchanged; so does an inner block's OPENER.
+    const everyday = ["<b>bold</b>", "a < b", "</div>", "<turn_contextual>", "</turn_directives>", "<conversation_history>", "x<y>z"];
+    for (const s of everyday) expect(escapeTurnData(s)).toBe(s);
+    const text = everyday.join(" ");
+    const push: FirstImpressionPush = {
+      chipKey: "c5c73c61f370",
+      intent: `Opening hours ${text}`,
+      contract: { propsSpec: { properties: { note: { description: text } } }, [text]: [text, "a < b"] },
+      variance: { tone: text },
+    };
+    const blocks = buildTurnContextBlocks(
+      { history: [{ role: "user", text }, { role: "agent", text }], firstImpression: push },
+      classOf({ gguiAttached: true }),
+    );
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toBe(
+      "<turn_context>\n" +
+        "Prior conversation with this user, for context. Continue naturally;\n" +
+        "do not repeat it back verbatim.\n" +
+        `<conversation_history>\nUser: ${text}\nAssistant: ${text}\n</conversation_history>` +
+        "\n</turn_context>",
+    );
+    // The directive is the section rendered from the RAW push: intent, contract (keys too) and
+    // variance came through the escape untouched.
+    expect(blocks[1]).toBe(`<turn_directive>\n${renderFirstImpressionSection(push).slice(2)}\n</turn_directive>`);
+  });
+
   it("a guest gets no recall in the turn context even if one rode the invoke", () => {
     expect(
       buildTurnContextBlocks({ userMemory: "x", profileSections: [{ app: "A", content: "y" }] }, classOf({ memoryAttached: true, profileAccess: "read" })),

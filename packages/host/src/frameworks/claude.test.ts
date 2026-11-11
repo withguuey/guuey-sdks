@@ -398,6 +398,59 @@ describe("runInvoke — native emission", () => {
     expect(seen.systemPrompt).toContain("`save_memory` tool");
   });
 
+  it("A1: the turn blocks reach ONLY the query's user message — no emitted text or native payload carries them", async () => {
+    const { events, sink } = collector();
+    let content: SDKUserMessage["message"]["content"] | undefined;
+    const query: QueryFn = (args) => ({
+      ...idleControl,
+      async *[Symbol.asyncIterator]() {
+        for await (const message of args.prompt) {
+          content = message.message.content;
+          break;
+        }
+        yield assistantMessage("Here are the hours.");
+        yield resultMessage("success", "Here are the hours.");
+      },
+    });
+    await runInvoke(
+      {},
+      invoke({
+        input: "when are you open?",
+        identity: { userId: "u1", authMode: "authenticated" },
+        history: [
+          { role: "user", text: "hello" },
+          { role: "agent", text: "hi, how can I help?" },
+        ],
+        memoryAttached: true,
+        userMemory: "Likes tea.",
+        gguiAttached: true,
+        firstImpression: { chipKey: "opening-hours", intent: "show opening hours", contract: { kind: "hours" } },
+      }),
+      { apiKey: "sk-test", listCredentials: () => [] },
+      createEmitter(sink),
+      query,
+    );
+
+    // The query's user message carries both blocks, ahead of the user's own text.
+    const texts = textsOf(content);
+    expect(texts).toHaveLength(3);
+    expect(texts[0]).toMatch(/^<turn_context>\n/);
+    expect(texts[0]).toContain("<conversation_history>");
+    expect(texts[0]).toContain("Likes tea.");
+    expect(texts[1]).toMatch(/^<turn_directive>\n## First impression \(this turn\)/);
+    expect(texts[2]).toBe("when are you open?");
+
+    // What the worker emits is the SDK's own stream, never the platform's turn blocks.
+    const payloads = events.flatMap((e) =>
+      e.type === "text" ? [e.text] : e.type === "native" ? [JSON.stringify(e.event)] : [],
+    );
+    expect(events.some((e) => e.type === "native")).toBe(true);
+    for (const payload of payloads) {
+      expect(payload).not.toContain("<turn_context");
+      expect(payload).not.toContain("<turn_directive");
+    }
+  });
+
   it("BOOTSTRAP: authenticated + memoryAttached + no userMemory → save instruction still renders (no recall block)", async () => {
     const { sink } = collector();
     const emit = createEmitter(sink);
