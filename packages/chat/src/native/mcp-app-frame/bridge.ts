@@ -6,9 +6,9 @@
  * Derived from `src/components/mcp-apps-bridge.ts` and `mintBridgeNonce` in
  * `src/McpAppIframe/McpAppIframe.tsx` of `@ggui-ai/mcp-apps-react-native`
  * 0.29.0 (https://github.com/ggui-ai/ggui, `packages/mcp-apps-react-native`),
- * Copyright ggui contributors, licensed under the Apache License, Version 2.0
- * (see LICENSE-APACHE-2.0 in this package). Changed for
- * guuey: the JSON-RPC dispatcher is removed (the host machine in
+ * Copyright 2026 Loqu, Inc. (Guuey), licensed under the Apache License,
+ * Version 2.0 (see LICENSE-APACHE-2.0 in this package). Changed for guuey:
+ * the JSON-RPC dispatcher is removed (the host machine in
  * `@guuey/mcp-apps-host` answers the view), the envelope key and page globals
  * are renamed from `ggui` to `guuey`, and the envelope parse is new.
  *
