@@ -59,18 +59,21 @@ export interface GuueyContextMemoryRecord {
  * toolset type (e.g. `MCPToolset` from `@google/adk`) — defaults to `unknown`
  * so the type stays framework-neutral.
  *
- * History, memory, and working state are ALSO auto-injected into
- * `instruction` as the standard context preamble — a factory that ignores
- * them still yields a conversational agent. They appear here read-only so an
- * advanced factory can do better than the default preamble.
+ * History, memory, and working state are ALSO auto-injected: the platform
+ * leads each turn's user message with a `<turn_context>` block that carries
+ * them, so a factory that ignores them still yields a conversational agent.
+ * They appear here read-only for a factory that wants them in its own logic.
+ * `instruction` carries none of them: it is the same for every turn of one
+ * class of caller, so the model provider can cache it.
  */
 export interface GuueyContext<TToolset = unknown> {
   /** Resolved model id (from guuey.json / registry default). */
   model: string;
   /**
-   * The system prompt WITH the standard context preamble (history, thread
-   * memory, working state) already prepended. Feed this to the agent unless
-   * you are rendering context yourself from the raw fields below.
+   * The assembled system prompt: your prompt plus the platform's standing
+   * sections. It holds no per-turn data (history, thread memory and working
+   * state lead the turn's user message instead), so feed it to the agent
+   * as-is.
    */
   instruction: string;
   /** Ready-to-use MCP toolsets for every server declared in guuey.json. */
@@ -79,9 +82,9 @@ export interface GuueyContext<TToolset = unknown> {
   user: GuueyContextUser;
   /** The three-tier file storage paths. */
   files: GuueyContextFiles;
-  /** Recent conversation window (read side; auto-preambled). */
+  /** Recent conversation window (read side; also in the turn's `<turn_context>`). */
   history: GuueyContextMessage[];
-  /** Thread memory records (read side; auto-preambled). */
+  /** Thread memory records (read side; also in the turn's `<turn_context>`). */
   memory: GuueyContextMemoryRecord[];
   /** Prior working state carried from the previous turn (read side). */
   workingState: unknown | undefined;
