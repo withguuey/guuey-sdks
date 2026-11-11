@@ -85,7 +85,10 @@ export interface CreateMcpAppFrameOptions {
 
 /**
  * A top-frame load is allowed only to `about:blank`, the URL the inline
- * document (`source={{ html }}`) loads as on both platforms; every other
+ * document (`source={{ html }}`) is expected to load as on both platforms
+ * (to be confirmed on iOS and Android in the first real-WebView run: if a
+ * platform reports another URL, the card does not mount, the loud and safe
+ * failure); every other
  * top-frame navigation is refused (links go through `ui/open-link`). A
  * card's own sub-frame loads are allowed: they follow from its unconfined
  * network reach, and are not a confinement.
