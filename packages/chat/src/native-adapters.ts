@@ -8,7 +8,10 @@
  *    (AsyncStorage);
  *  - {@link asyncStorageThreadStore} — that thread-id store on its own;
  *  - {@link createNativeViewHost} — a `view` slot that mounts cards in an
- *    injected MCP App WebView host (`McpAppIframe`).
+ *    injected MCP App WebView host (`McpAppIframe`);
+ *  - {@link createMcpAppFrame} — that host, built from an injected
+ *    react-native-webview `WebView` and answered by the same MCP Apps host
+ *    machine as the web (guuey#3377).
  *  - {@link expoSpeechRecognizer} — composer dictation's engine for
  *    `useSpeechInput`, over an injected expo-speech-recognition module
  *    (guuey#2446).
@@ -30,6 +33,16 @@ export {
   type NativeMcpAppFrameProps,
   type NativeViewHost,
 } from "./native/view-host.js";
+export {
+  createMcpAppFrame,
+  isInitialDocumentLoad,
+  type CreateMcpAppFrameOptions,
+  type McpAppWebView,
+  type McpAppWebViewHandle,
+  type McpAppWebViewLoadRequest,
+  type McpAppWebViewMessageEvent,
+  type McpAppWebViewProps,
+} from "./native/mcp-app-frame/frame.js";
 export {
   expoSpeechRecognizer,
   type ExpoSpeechEventMap,

@@ -82,6 +82,13 @@ export const RUNTIME_ENTRIES = {
  * under the prefix is allowed.
  */
 export const RUNTIME_ASSETS = {
+  '@guuey/chat': [
+    {
+      prefix: 'LICENSE-APACHE-2.0',
+      reason:
+        'the Apache-2.0 notice for src/native/mcp-app-frame/bridge.ts, derived from @ggui-ai/mcp-apps-react-native (guuey#3377); a license file no entry point imports, shipped because Apache-2.0 §4 asks the notice to travel with the derived file',
+    },
+  ],
   '@guuey/create-agentic-app': [
     {
       prefix: 'dist/templates/',

@@ -1,7 +1,7 @@
 /**
  * A reference `view` slot for `<NativeTranscript>`: mounts each view item in
- * an injected MCP App WebView host — `<McpAppIframe>` from
- * `@ggui-ai/mcp-apps-react-native` is the one it is shaped for.
+ * an injected MCP App WebView host — the kit's own `createMcpAppFrame`
+ * (`./native-adapters`) is the one it is shaped for.
  *
  * The kit's native tier ships no WebView dependency, so the host is passed
  * in rather than imported: this module adds no dependency and no peer.
@@ -67,7 +67,7 @@ export interface NativeMcpAppFrameProps {
 
 /** Options for {@link createNativeViewHost}. */
 export interface CreateNativeViewHostOptions {
-  /** The WebView host component — `McpAppIframe` from `@ggui-ai/mcp-apps-react-native`. */
+  /** The WebView host component — `createMcpAppFrame({ WebView })`'s result. */
   McpAppIframe: ComponentType<NativeMcpAppFrameProps>;
   /**
    * Relays a card's `tools/call` (`createUiActionRelay`'s result fits). Absent:

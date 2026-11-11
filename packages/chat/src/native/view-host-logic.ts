@@ -108,10 +108,15 @@ export function nextNativeViewPhase(current: ViewHostPhase, signal: NativeFrameS
   return current === "negotiating" ? "no-handshake" : current;
 }
 
-/** A renderer lifecycle state → the frame signal it carries, if any. */
+/**
+ * A lifecycle state → the frame signal it carries, if any. The kit's own
+ * frame (`createMcpAppFrame`) reports the host machine's phase
+ * (`connected`, `no-handshake`); a ggui frame reports its renderer's
+ * (`code-ready`, `error`).
+ */
 export function lifecycleSignal(state: string): NativeFrameSignal | null {
-  if (state === "code-ready") return "alive";
-  if (state === "error") return "failed";
+  if (state === "connected" || state === "code-ready") return "alive";
+  if (state === "no-handshake" || state === "error") return "failed";
   return null;
 }
 

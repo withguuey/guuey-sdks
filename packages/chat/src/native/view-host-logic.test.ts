@@ -95,6 +95,12 @@ describe("nextNativeViewPhase", () => {
     expect(lifecycleSignal("error")).toBe("failed");
     expect(lifecycleSignal("mounting")).toBeNull();
   });
+
+  it("maps the kit frame's machine phases (guuey#3377)", () => {
+    expect(lifecycleSignal("connected")).toBe("alive");
+    expect(lifecycleSignal("no-handshake")).toBe("failed");
+    expect(lifecycleSignal("negotiating")).toBeNull();
+  });
 });
 
 describe("relayNativeToolCall", () => {
