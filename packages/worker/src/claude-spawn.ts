@@ -122,6 +122,36 @@ export function forbiddenClaudeEnvNames(env: { readonly [name: string]: string |
   return CLAUDE_FORBIDDEN_ENV.filter((name) => env[name] !== undefined);
 }
 
+/**
+ * Variables that decide which session the CLI writes to and what its model
+ * call sends upstream. The host owns them on the CLI's environment, so an
+ * agent definition's `env` never sets them:
+ *  - `CLAUDE_CODE_REMOTE_SESSION_ID` and `CLAUDE_CODE_SESSION_ID` give the CLI
+ *    a session id the host did not choose, and `CLAUDE_CODE_CHILD_SESSION`,
+ *    `CLAUDE_CODE_DISABLE_NESTED_SESSION_ID` and `CLAUDECODE` mark the run as
+ *    nested inside another session;
+ *  - `_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL` and `CLAUDE_CODE_CLIENT_DATA_URL`
+ *    change the fields the CLI adds to each model request.
+ *
+ * Unlike {@link CLAUDE_FORBIDDEN_ENV}, these are DROPPED from a definition's
+ * env and reported, never refused: a stored definition that already names one
+ * keeps running.
+ */
+export const CLAUDE_HOST_OWNED_ENV: readonly string[] = [
+  "CLAUDE_CODE_REMOTE_SESSION_ID",
+  "CLAUDE_CODE_SESSION_ID",
+  "CLAUDE_CODE_CHILD_SESSION",
+  "CLAUDE_CODE_DISABLE_NESTED_SESSION_ID",
+  "CLAUDECODE",
+  "_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL",
+  "CLAUDE_CODE_CLIENT_DATA_URL",
+];
+
+/** Whether `name` is one of {@link CLAUDE_HOST_OWNED_ENV} (exact, case-sensitive). */
+export function isClaudeHostOwnedEnvName(name: string): boolean {
+  return CLAUDE_HOST_OWNED_ENV.includes(name);
+}
+
 /** The SDK's spawn request, structurally (the SDK's `SpawnOptions`). */
 export interface ClaudeSpawnRequest {
   command: string;

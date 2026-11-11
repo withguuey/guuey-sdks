@@ -380,13 +380,13 @@ export async function runInvoke(
     emit.error(err instanceof Error ? err.message : String(err));
     return;
   }
-  // The runtime-owned names buildOptions left out of the agent's environment,
+  // The platform-owned names buildOptions left out of the agent's environment,
   // reported on stderr (names only) so the drop is never silent.
   const droppedEnv = reservedEnvNamesDropped(snapshot);
   if (droppedEnv.length > 0) {
     process.stderr.write(
       `[guuey] agent.env: ${droppedEnv.join(", ")} left out of the agent's environment: ` +
-        "reserved by the platform runtime. Remove them from agent.env.\n",
+        "reserved by the platform. Remove them from agent.env.\n",
     );
   }
 

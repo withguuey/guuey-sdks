@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GuueyAgent, RunSnapshot } from "@guuey/config";
 import { BUILTIN_TOOLS, GUUEY_DEFAULT_SYSTEM_PROMPT } from "@guuey/config";
-import { PLATFORM_TRUST_ENV_NAMES } from "@guuey/worker";
+import { CLAUDE_HOST_OWNED_ENV, PLATFORM_TRUST_ENV_NAMES } from "@guuey/worker";
 import {
   buildOptions,
   claudePromptClass,
@@ -429,6 +429,34 @@ describe("buildOptions — runtime-owned names in a stored agent.env are left ou
     expect(reservedEnvNamesDropped(stored)).toEqual(["LD_PRELOAD", "GLIBC_TUNABLES", "NODE_PATH"]);
     expect(reservedEnvNamesDropped({ env: { KEEP: "1" } })).toEqual([]);
     expect(reservedEnvNamesDropped({})).toEqual([]);
+  });
+
+  it("the host-owned CLI variables are dropped too, every one, and named with the reserved ones in map order", () => {
+    const withHostOwned: GuueyAgent = {
+      env: {
+        KEEP: "1",
+        CLAUDE_CODE_REMOTE_SESSION_ID: "s",
+        LD_PRELOAD: "/x.so",
+        ...Object.fromEntries(CLAUDE_HOST_OWNED_ENV.map((name) => [name, "1"])),
+      },
+    };
+    for (const over of [{ baseUrl: "http://127.0.0.1:9911", authToken: "opaque" }, { apiKey: "sk-local" }] as const) {
+      const opts = buildOptions(withHostOwned, ctx(over));
+      for (const name of CLAUDE_HOST_OWNED_ENV) expect(opts.env?.[name]).toBeUndefined();
+      expect(opts.env?.KEEP).toBe("1");
+    }
+    expect(reservedEnvNamesDropped(withHostOwned)).toEqual(
+      Object.keys(withHostOwned.env ?? {}).filter((name) => name !== "KEEP"),
+    );
+  });
+
+  it("an exact, case-sensitive match: a lower-case or prefixed lookalike stays in the env", () => {
+    const opts = buildOptions(
+      { env: { claudecode: "1", CLAUDE_CODE_SESSION_ID_X: "2" } },
+      ctx({ apiKey: "sk-local" }),
+    );
+    expect(opts.env?.claudecode).toBe("1");
+    expect(opts.env?.CLAUDE_CODE_SESSION_ID_X).toBe("2");
   });
 
   it("a name the CLI env refuses outright (NODE_OPTIONS) is still refused, not dropped", () => {

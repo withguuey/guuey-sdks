@@ -23,7 +23,7 @@
  */
 import type { CanUseTool, Options, SDKMessage, Settings } from "@anthropic-ai/claude-agent-sdk";
 import type { CredentialFile, FirstImpressionPush, FirstImpressionShown, Fs, HistoryMessage, JsonValue, McpAvailability, ProfileSection, WithheldTool } from "@guuey/worker";
-import { claudeCodeExecutableOf, forbiddenClaudeEnvNames, makeClaudeSpawner, trustEnvOf } from "@guuey/worker";
+import { claudeCodeExecutableOf, forbiddenClaudeEnvNames, isClaudeHostOwnedEnvName, makeClaudeSpawner, trustEnvOf } from "@guuey/worker";
 import {
   BUILTIN_TOOLS,
   GUUEY_DEFAULT_SYSTEM_PROMPT,
@@ -252,11 +252,31 @@ export class ClaudeBuilderEnvError extends Error {
 
 /**
  * The `snapshot.env` names {@link buildOptions} leaves out of the CLI's
- * environment because the platform runtime owns them, in the map's order.
- * Names only, never values.
+ * environment because the platform owns them (the runtime's reserved names and
+ * the host-owned CLI variables), in the map's order. Names only, never values.
  */
 export function reservedEnvNamesDropped(snapshot: Pick<RunSnapshot, "env">): string[] {
-  return withoutReservedEnvNames(snapshot.env).dropped;
+  return builderEnvOf(snapshot).dropped;
+}
+
+/**
+ * `snapshot.env` without the names the platform owns on the CLI's environment:
+ * the runtime's reserved names (`RUNTIME_RESERVED_ENV_NAMES`, `@guuey/config`)
+ * and the CLI session and request variables the host owns
+ * (`CLAUDE_HOST_OWNED_ENV`, `@guuey/worker`). The dropped names come back in
+ * the map's order, so {@link buildOptions} and the report the caller writes
+ * never disagree.
+ */
+function builderEnvOf(snapshot: Pick<RunSnapshot, "env">): { env: Record<string, string>; dropped: string[] } {
+  const reserved = withoutReservedEnvNames(snapshot.env);
+  const env: Record<string, string> = {};
+  const hostOwned: string[] = [];
+  for (const [name, value] of Object.entries(reserved.env)) {
+    if (isClaudeHostOwnedEnvName(name)) hostOwned.push(name);
+    else env[name] = value;
+  }
+  const droppedSet = new Set([...reserved.dropped, ...hostOwned]);
+  return { env, dropped: Object.keys(snapshot.env ?? {}).filter((name) => droppedSet.has(name)) };
 }
 
 /** The `PATH` `env` holds, only when set to a non-empty value (guuey#3140). */
@@ -360,13 +380,15 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
   // CLAUDE_CONFIG_DIR + XDG_CACHE_HOME below (the G5 leak this env once
   // avoided by omission).
   //
-  // The names the platform runtime owns (`RUNTIME_RESERVED_ENV_NAMES`,
-  // `@guuey/config`) are then left out of the builder's env. A new document
-  // that sets one is refused at deploy; a stored one keeps running without
-  // them, and the caller reports each dropped name ({@link reservedEnvNamesDropped}).
+  // The names the platform owns are then left out of the builder's env: the
+  // runtime's reserved names (`RUNTIME_RESERVED_ENV_NAMES`, `@guuey/config`; a
+  // new document that sets one is refused at deploy) and the CLI session and
+  // request variables the host owns (`CLAUDE_HOST_OWNED_ENV`, `@guuey/worker`).
+  // A stored definition that names one keeps running without it, and the
+  // caller reports each dropped name ({@link reservedEnvNamesDropped}).
   const refusedNames = forbiddenClaudeEnvNames(snapshot.env ?? {});
   if (refusedNames.length > 0) throw new ClaudeBuilderEnvError(refusedNames);
-  const builderEnv = withoutReservedEnvNames(snapshot.env).env;
+  const builderEnv = builderEnvOf(snapshot).env;
   const fsEnv: Record<string, string> = fs
     ? {
         HOME: fs.home,

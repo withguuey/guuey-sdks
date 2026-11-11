@@ -10,12 +10,14 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import {
   CLAUDE_FORBIDDEN_ENV,
+  CLAUDE_HOST_OWNED_ENV,
   CLAUDE_KEY_FD_ENV,
   CLAUDE_OAUTH_FD_ENV,
   CLAUDE_CODE_EXECUTABLE_ENV,
   ClaudeSpawnRefusedError,
   PLATFORM_TRUST_ENV_NAMES,
   claudeCodeExecutableOf,
+  isClaudeHostOwnedEnvName,
   makeClaudeSpawner,
   redactSecrets,
   secretForms,
@@ -71,6 +73,31 @@ describe("the platform trust variables (guuey#3114)", () => {
       NODE_EXTRA_CA_CERTS: "/b.pem",
     });
     expect(trustEnvOf({})).toEqual({});
+  });
+});
+
+describe("the host-owned CLI session and request variables", () => {
+  it("are exactly these seven names, in order", () => {
+    expect(CLAUDE_HOST_OWNED_ENV).toEqual([
+      "CLAUDE_CODE_REMOTE_SESSION_ID",
+      "CLAUDE_CODE_SESSION_ID",
+      "CLAUDE_CODE_CHILD_SESSION",
+      "CLAUDE_CODE_DISABLE_NESTED_SESSION_ID",
+      "CLAUDECODE",
+      "_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL",
+      "CLAUDE_CODE_CLIENT_DATA_URL",
+    ]);
+  });
+
+  it("none is a forbidden CLI variable, so a stored definition naming one is dropped, never refused", () => {
+    for (const name of CLAUDE_HOST_OWNED_ENV) expect(CLAUDE_FORBIDDEN_ENV).not.toContain(name);
+  });
+
+  it("isClaudeHostOwnedEnvName matches exact, case-sensitive names only", () => {
+    for (const name of CLAUDE_HOST_OWNED_ENV) expect(isClaudeHostOwnedEnvName(name)).toBe(true);
+    expect(isClaudeHostOwnedEnvName("claudecode")).toBe(false);
+    expect(isClaudeHostOwnedEnvName("CLAUDE_CODE_SESSION_ID_X")).toBe(false);
+    expect(isClaudeHostOwnedEnvName("CLAUDE_CODE_EXECUTABLE")).toBe(false);
   });
 });
 
