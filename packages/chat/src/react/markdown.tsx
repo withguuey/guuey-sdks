@@ -24,7 +24,7 @@
  * Streaming-tolerant by upstream design: unclosed emphasis mid-delta
  * renders as formatted-so-far.
  */
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   parseInlineRichText,
@@ -333,8 +333,22 @@ function Block({ block }: { block: RichTextBlock }): ReactNode {
  * (clipboard access needs a secure context + the iframe's
  * clipboard-write grant — manual selection always still works).
  */
+/** How long the copy button reads "Copied" before it returns to "Copy". */
+const COPIED_RESET_MS = 1600;
+
 function CodeFence({ code, lang }: { code: string; lang: string | undefined }): ReactNode {
   const [copied, setCopied] = useState(false);
+  // The pending "Copied" reset, cleared on unmount (parity with the native fence): a fence that
+  // leaves the transcript never sets state afterwards, and a second copy restarts one timer.
+  const reset = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mounted = useRef(true);
+  useEffect(
+    () => () => {
+      mounted.current = false;
+      if (reset.current !== null) clearTimeout(reset.current);
+    },
+    [],
+  );
   return (
     <div className="guuey-chat-code-wrap">
       <pre className="guuey-chat-code-fence">
@@ -347,12 +361,20 @@ function CodeFence({ code, lang }: { code: string; lang: string | undefined }): 
         onClick={() => {
           const clipboard = navigator.clipboard;
           if (clipboard === undefined) return;
+          // The write runs inside the click: a browser clipboard may need the gesture's own call stack.
           clipboard.writeText(code).then(
             () => {
+              if (!mounted.current) return;
               setCopied(true);
-              setTimeout(() => setCopied(false), 1600);
+              if (reset.current !== null) clearTimeout(reset.current);
+              reset.current = setTimeout(() => {
+                reset.current = null;
+                if (mounted.current) setCopied(false);
+              }, COPIED_RESET_MS);
             },
-            () => setCopied(false),
+            () => {
+              if (mounted.current) setCopied(false);
+            },
           );
         }}
       >

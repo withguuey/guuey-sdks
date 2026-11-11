@@ -150,4 +150,26 @@ describe("code-fence copy button (guuey#529)", () => {
       Reflect.deleteProperty(navigator, "clipboard");
     }
   });
+
+  it("an unmount while it reads Copied clears the pending reset (parity with the native fence)", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    const clear = vi.spyOn(globalThis, "clearTimeout");
+    try {
+      const { container, unmount } = render(<Markdown text={"```\nnpm install @guuey/chat\n```"} />);
+      const button = container.querySelector("button.guuey-chat-code-copy");
+      if (!(button instanceof HTMLButtonElement)) throw new Error("no copy button");
+      fireEvent.click(button);
+      await waitFor(() => expect(button.textContent).toBe("Copied"));
+      const before = clear.mock.calls.length;
+      unmount();
+      expect(clear.mock.calls.length).toBeGreaterThan(before);
+    } finally {
+      clear.mockRestore();
+      Reflect.deleteProperty(navigator, "clipboard");
+    }
+  });
 });
