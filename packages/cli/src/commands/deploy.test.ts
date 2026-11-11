@@ -18,6 +18,7 @@ import {
   printPageLine, printPodLifetime,
   ensureInstalled,
   INSTALL_FINISHED_MARKERS,
+  pythonMarkerWarning,
 } from './deploy.js';
 import { DEPLOY_WAIT_MS, NODE_PROVISION_BUDGET_MS, stillDeployingMessage } from './deploy-wait.js';
 import { resolveConfig, loadProjectConfig } from '../config.js';
@@ -2573,5 +2574,90 @@ describe('retiredModelWarning — the sunset date', () => {
     expect(retiredModelWarning('gemini-3.5-flash', at('2030-01-01T00:00:00.000Z'))).toBe(
       retiredModelWarning('gemini-3.5-flash', at('2026-01-01T00:00:00.000Z')),
     );
+  });
+});
+
+describe('pythonMarkerWarning: a Node worker beside a root Python marker (the build Job reads the marker first)', () => {
+  let root: string;
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'cli-pymarker-'));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('nothing to say for a plain Node project', () => {
+    expect(pythonMarkerWarning(root, 'guuey.worker.js')).toBeUndefined();
+  });
+
+  it('names a stray requirements.txt, says what happens and what to do', () => {
+    writeFileSync(join(root, 'requirements.txt'), '');
+    const warning = pythonMarkerWarning(root, 'guuey.worker.js');
+    expect(warning).toBe(
+      "Found requirements.txt at the project root. Guuey's build treats a project with that file as Python, so this deploy is likely to fail. Move it out of the project root and deploy again.",
+    );
+  });
+
+  it('names both markers when both are there', () => {
+    writeFileSync(join(root, 'requirements.txt'), '');
+    writeFileSync(join(root, 'pyproject.toml'), '');
+    expect(pythonMarkerWarning(root, 'dist/worker.mjs')).toContain('Found requirements.txt and pyproject.toml at the project root.');
+  });
+
+  it('a worker that is not a JS file is not judged here', () => {
+    writeFileSync(join(root, 'requirements.txt'), '');
+    expect(pythonMarkerWarning(root, 'guuey.worker.py')).toBeUndefined();
+  });
+});
+
+describe('deploy() — a root Python marker beside the Node worker warns, and the deploy still goes', () => {
+  let dir: string;
+  let originalCwd: string;
+  let errSpy: MockInstance<typeof console.error>;
+  let fetchSpy: MockInstance<typeof fetch>;
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    dir = mkdtempSync(join(tmpdir(), 'deploy-pymarker-test-'));
+    process.chdir(dir);
+    vi.mocked(resolveConfig).mockReturnValue({
+      host: 'https://platform.guuey.test',
+      apiUrl: 'https://api.guuey.test',
+      appId: 'app-1',
+    });
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => codePlatform(input));
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  const printed = (): string => errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
+
+  it('a stray requirements.txt: the warning prints and the trigger is still sent (a warning, never a refusal)', async () => {
+    writeCodeProject(dir, { schema: '1', appId: 'app-1', agent: { mode: 'code' } });
+    writeFileSync(join(dir, 'requirements.txt'), 'requests\n');
+
+    await deploy({ code: true });
+
+    expect(printed()).toContain('Found requirements.txt at the project root.');
+    expect(fetchSpy.mock.calls.some(([u]) => String(u).includes('/deploy/trigger'))).toBe(true);
+  });
+
+  it('positive control: the same project without it prints no such warning', async () => {
+    writeCodeProject(dir, { schema: '1', appId: 'app-1', agent: { mode: 'code' } });
+
+    await deploy({ code: true });
+
+    expect(printed()).not.toContain('at the project root. Guuey');
+    expect(fetchSpy.mock.calls.some(([u]) => String(u).includes('/deploy/trigger'))).toBe(true);
   });
 });

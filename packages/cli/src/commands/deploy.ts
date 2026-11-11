@@ -873,6 +873,26 @@ export type EnsureInstalledResult =
   | { kind: 'installed' }
   | { kind: 'missing'; message: string };
 
+/** The files the build Job reads as "this project is Python", whatever else the project holds. */
+export const PYTHON_PROJECT_MARKERS = ['requirements.txt', 'pyproject.toml'] as const;
+
+/**
+ * The warning for a Node worker shipped beside a root Python marker, or
+ * nothing. The build Job checks those markers before `package.json`, so such a
+ * project is built and run as Python, and the deploy fails.
+ */
+export function pythonMarkerWarning(root: string, workerOut: string): string | undefined {
+  if (!/\.[cm]?js$/.test(workerOut)) return undefined;
+  const present = PYTHON_PROJECT_MARKERS.filter((name) => existsSync(join(root, name)));
+  if (present.length === 0) return undefined;
+  const one = present.length === 1;
+  return (
+    `Found ${present.join(' and ')} at the project root. Guuey's build treats a project with ` +
+    `${one ? 'that file' : 'those files'} as Python, so this deploy is likely to fail. ` +
+    `Move ${one ? 'it' : 'them'} out of the project root and deploy again.`
+  );
+}
+
 /**
  * `deploy --code` runs the project's build LOCALLY (`pnpm build`),
  * so a fresh scaffold with no `node_modules` used to die INSIDE the build
@@ -1151,6 +1171,13 @@ async function deployCode(opts: {
     );
     process.exit(1);
   }
+
+  // The build Job reads a root Python marker before anything Node, so a Node
+  // worker shipped beside one is built as Python and the deploy fails with an
+  // error that never names the cause. Warn, never refuse: the recipe's fix
+  // (guuey#3395) makes this moot once it serves.
+  const pythonMarker = pythonMarkerWarning(root, expectedOut);
+  if (pythonMarker !== undefined) out.printWarnings([{ message: pythonMarker }]);
 
   const buildId = randomUUID().slice(0, 12);
   const { tarballPath, tarballSize, sourceHash } = packSource({
