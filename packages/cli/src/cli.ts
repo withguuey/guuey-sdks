@@ -149,16 +149,12 @@ Agent Development:
                                  reads one token from stdin, e.g.
                                  < token-file (chmod 600): for an app on your
                                  own sign-in (byo), the ID token your identity
-                                 provider issues. For apps whose users sign
-                                 in with a guuey account, use --as-me.
+                                 provider issues. Not available yet for apps
+                                 whose users sign in with a guuey account.
                                  Never pass a token as an argument: refused
-    --as-me                      Send the turn signed in as your own guuey
-                                 account (apps that use guuey sign-in). It
-                                 lands in your real chat history.
     --thread <id>                Continue a conversation this CLI started here
                                  (the thread id the first turn printed), or,
-                                 with --bearer-stdin or --as-me, one of that
-                                 user's threads
+                                 with --bearer-stdin, one of that user's threads
     --app-id <id>                Test this app instead of the guuey.json
                                  binding (the binding is left untouched)
     --session <id>               Reuse existing session

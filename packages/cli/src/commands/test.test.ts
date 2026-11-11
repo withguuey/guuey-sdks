@@ -22,9 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 import {
   AS_ME_FLAG,
-  asMeFlagRefusal,
-  builderTestInvokeRefusal,
-  testTokenRefusal,
+  asMeHeldRefusal,
   BEARER_ARGV_FLAGS,
   BEARER_IN_ARGV,
   bearerArgvRefusal,
@@ -577,7 +575,7 @@ describe('guuey test --thread / --app-id — the command end to end (guuey#1600)
 
 /** A JWT-shaped plant: never a real credential, only a string every output is searched for. */
 const PLANT = 'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJwbGFudGVkLTI3MTkifQ.cGxhbnRlZC1zaWduYXR1cmUtMjcxOQ';
-const BEARER = { kind: 'bearer', token: PLANT, source: 'stdin' } as const;
+const BEARER = { kind: 'bearer', token: PLANT } as const;
 
 /** A stand-in for `process.stdin`: the given chunks, optionally a terminal. */
 function stdinOf(chunks: Array<string | Buffer>, isTTY?: boolean): BearerInput {
@@ -600,7 +598,7 @@ describe('buildInvokeRequest — a signed-in caller sends its token, and nothing
   });
 
   it('refuses a token that is not one JWT, without echoing it', () => {
-    expect(() => buildInvokeRequest('https://pod.example', { input: 'hi' }, { kind: 'bearer', token: 'not a jwt', source: 'stdin' })).toThrow(
+    expect(() => buildInvokeRequest('https://pod.example', { input: 'hi' }, { kind: 'bearer', token: 'not a jwt' })).toThrow(
       BearerInputError,
     );
   });
@@ -842,309 +840,6 @@ describe('guuey test --bearer-stdin — the command end to end (guuey#2719)', ()
   });
 });
 
-// ─── guuey#3211: the builder's own account (`--as-me`) ──────────────────────
-
-/** A second JWT-shaped plant: the test token cliApi hands out. Never a real credential. */
-const TEST_TOKEN = 'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJidWlsZGVyLTMyMTEifQ.YnVpbGRlci10ZXN0LXNpZ25hdHVyZS0zMjEx';
-const tokenAnswer = () =>
-  new Response(JSON.stringify({ token: TEST_TOKEN, expiresAtEpoch: 4102444800 }), { status: 200 });
-const cliApiRefusal = (status: number, code: string, message: string) =>
-  new Response(JSON.stringify({ error: { code, message } }), { status });
-
-describe('asMeFlagRefusal — one way to choose who the turn is sent as (guuey#3211)', () => {
-  it('passes a bare --as-me, and says nothing when it is absent', () => {
-    expect(asMeFlagRefusal({ [AS_ME_FLAG]: true })).toBeUndefined();
-    expect(asMeFlagRefusal({ 'bearer-stdin': true })).toBeUndefined();
-    expect(asMeFlagRefusal(undefined)).toBeUndefined();
-  });
-
-  it('refuses --as-me with --bearer-stdin, in the frozen words', () => {
-    expect(asMeFlagRefusal({ [AS_ME_FLAG]: true, 'bearer-stdin': true })).toBe(
-      '--as-me and --bearer-stdin both choose who the turn is sent as. Pass one of them.',
-    );
-  });
-
-  it('refuses a --as-me that took the next word as its value, and says to put the message first', () => {
-    expect(asMeFlagRefusal({ [AS_ME_FLAG]: 'hello' })).toBe(
-      '--as-me takes no value. Put the message first: guuey test "<message>" --as-me',
-    );
-  });
-});
-
-describe("testTokenRefusal — cliApi's refusals of a test token, in the frozen words (guuey#3211)", () => {
-  it('409 APP_IS_BYO: the app uses its own identity provider; pass that ID token instead', () => {
-    expect(testTokenRefusal(409, { error: { code: 'APP_IS_BYO', message: 'x' } }, 'app-1')).toBe(
-      "App app-1 signs users in through your own identity provider, so guuey can't issue a test token for it. " +
-        'Pass an ID token from that provider: guuey test "<message>" --bearer-stdin < <token file>',
-    );
-  });
-
-  it('403, whatever its code: a personal sign-in with full access is needed', () => {
-    for (const code of ['FORBIDDEN', 'INSUFFICIENT_SCOPE', 'ANYTHING']) {
-      expect(testTokenRefusal(403, { error: { code, message: 'x' } }, 'app-1')).toBe(
-        '--as-me needs your personal sign-in with full access. Run guuey login, then try again. ' +
-          "A read-only key, a workspace key, a service token or a key another app got through guuey's OAuth consent " +
-          "can't get a test token.",
-      );
-    }
-  });
-
-  it("404 NOT_FOUND: the CLI's existing not-found-or-not-allowed line", () => {
-    expect(testTokenRefusal(404, { error: { code: 'NOT_FOUND', message: 'x' } }, 'app-1')).toBe(
-      'App app-1 was not found, or this account is not allowed to test it. ' +
-        'Check the app id ("guuey apps list") and which account you are signed in as ("guuey whoami").',
-    );
-  });
-
-  it("any other refusal (an archived app's 409) keeps the API's own message; no body at all names the status", () => {
-    expect(testTokenRefusal(409, { error: { code: 'CONFLICT', message: 'App is archived' } }, 'app-1')).toBe(
-      'CONFLICT: App is archived',
-    );
-    expect(testTokenRefusal(502, undefined, 'app-1')).toBe('Could not get a test token for app app-1: HTTP 502');
-  });
-});
-
-describe("builderTestInvokeRefusal — the pod's 401 of a test token, read off its builderTest field (guuey#3211)", () => {
-  const pod = (extra: Record<string, string>) =>
-    JSON.stringify({ code: 'UNAUTHORIZED', message: 'invalid or unverifiable bearer token', ...extra });
-
-  it('no builderTest field (a pod that predates test tokens): redeploy', () => {
-    const redeploy =
-      "App app-1's runtime doesn't accept test tokens (it may predate them). " +
-      'Redeploy the app, then try again, or pass a token with --bearer-stdin.';
-    expect(builderTestInvokeRefusal('app-1', pod({}))).toBe(redeploy);
-    // A body that is not JSON at all (a proxy's page) reads the same: nothing marks it.
-    expect(builderTestInvokeRefusal('app-1', '<html>401</html>')).toBe(redeploy);
-    expect(builderTestInvokeRefusal('app-1', '')).toBe(redeploy);
-  });
-
-  it('expired, unverifiable and rejected each get their own line', () => {
-    expect(builderTestInvokeRefusal('app-1', pod({ builderTest: 'expired' }))).toBe(
-      "The test token had expired by the time app app-1's runtime checked it. Run the command again: each run gets a new token.",
-    );
-    expect(builderTestInvokeRefusal('app-1', pod({ builderTest: 'unverifiable' }))).toBe(
-      "App app-1's runtime couldn't check the test token because it couldn't reach guuey's signing keys. " +
-        "That's a fault on the app's side, not your sign-in. Try again shortly, or pass a token with --bearer-stdin.",
-    );
-    expect(builderTestInvokeRefusal('app-1', pod({ builderTest: 'rejected' }))).toBe(
-      "App app-1's runtime refused the test token. Run the command again. If it keeps happening, report it with the app id.",
-    );
-  });
-
-  it('a value this CLI does not know (a newer pod) reads as a refusal, never as "redeploy"', () => {
-    expect(builderTestInvokeRefusal('app-1', pod({ builderTest: 'something-new' }))).toBe(
-      builderTestInvokeRefusal('app-1', pod({ builderTest: 'rejected' })),
-    );
-  });
-});
-
-describe('guuey test --as-me — the command end to end (guuey#3211)', () => {
-  let fetchSpy: MockInstance<typeof fetch>;
-  let printed: string[];
-
-  beforeEach(() => {
-    threadsDir.current = mkdtempSync(join(tmpdir(), 'guuey-test-threads-'));
-    printed = [];
-    const keep = (...a: unknown[]) => void printed.push(a.map(String).join(' '));
-    vi.spyOn(console, 'log').mockImplementation(keep);
-    vi.spyOn(console, 'error').mockImplementation(keep);
-    vi.spyOn(console, 'warn').mockImplementation(keep);
-    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
-      printed.push(String(chunk));
-      return true;
-    });
-    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
-      printed.push(String(chunk));
-      return true;
-    });
-    vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
-      throw new ExitSignal(code);
-    }) as typeof process.exit);
-    fetchSpy = vi.spyOn(globalThis, 'fetch');
-  });
-  afterEach(() => {
-    rmSync(threadsDir.current, { recursive: true, force: true });
-    vi.restoreAllMocks();
-  });
-
-  const asMeAnswer = (threadId: string) =>
-    new Response(
-      sseStream([
-        frame('session', { sessionId: threadId, userId: 'builder-3211', authMode: 'authenticated', threadId }),
-        frame('message', { type: 'text.delta', id: 'm1', delta: 'hello, builder', seq: 1 }),
-        frame('message', { type: 'text.end', id: 'm1', seq: 2 }),
-        frame('done', { stopReason: 'end_turn', threadId }),
-      ]),
-      { status: 200 },
-    );
-  const sent = (i: number) => {
-    const [url, init] = fetchSpy.mock.calls[i] as [string, RequestInit];
-    return { url, method: init.method, headers: new Headers(init.headers), body: init.body };
-  };
-  const asMe = { url: 'https://pod.example', [AS_ME_FLAG]: true } as const;
-
-  it('fetches a fresh test token with the PAT (POST, no body), then sends it as the Bearer with no guest header', async () => {
-    fetchSpy.mockResolvedValueOnce(tokenAnswer()).mockResolvedValueOnce(asMeAnswer('t-m1'));
-    await testCommand('hello', { ...asMe });
-    const mint = sent(0);
-    expect(mint.url).toBe('https://api.guuey.test/apps/app-1/test-token');
-    expect(mint.method).toBe('POST');
-    expect(mint.body).toBeUndefined();
-    expect(mint.headers.get('authorization')).toBe('Bearer pat-test');
-    const invoke = sent(1);
-    expect(invoke.url).toBe('https://pod.example/agent/invoke');
-    expect(invoke.headers.get('authorization')).toBe(`Bearer ${TEST_TOKEN}`);
-    expect(invoke.headers.has(GUEST_HEADER_NAME)).toBe(false);
-    expect(JSON.parse(String(invoke.body))).toEqual({ input: 'hello' });
-    expect(existsSync(join(threadsDir.current, 'app-1'))).toBe(false);
-    const all = printed.join('\n');
-    expect(all).toContain('  Auth:     you (your guuey account, a test token for this run)');
-    expect(all).toContain('  [user] builder-3211 · authenticated');
-    expect(all).toContain('hello, builder');
-    expect(all).toContain('guuey test "<message>" --thread t-m1 --as-me');
-    expect(all).not.toContain('--bearer-stdin < <token file>');
-  });
-
-  it('every run fetches its own token: two runs, two mints', async () => {
-    fetchSpy
-      .mockResolvedValueOnce(tokenAnswer())
-      .mockResolvedValueOnce(asMeAnswer('t-m2'))
-      .mockResolvedValueOnce(tokenAnswer())
-      .mockResolvedValueOnce(asMeAnswer('t-m2'));
-    await testCommand('one', { ...asMe });
-    await testCommand('two', { ...asMe, thread: 't-m2' });
-    const mints = fetchSpy.mock.calls.filter(([url]) => String(url).endsWith('/test-token'));
-    expect(mints).toHaveLength(2);
-  });
-
-  it('--thread needs no saved visitor: the pod keys a signed-in thread to the subject', async () => {
-    fetchSpy.mockResolvedValueOnce(tokenAnswer()).mockResolvedValueOnce(asMeAnswer('t-m3'));
-    await testCommand('again', { ...asMe, thread: 't-m3' });
-    expect(JSON.parse(String(sent(1).body))).toEqual({ input: 'again', threadId: 't-m3' });
-    expect(printed.join('\n')).not.toContain('No visitor identity saved');
-  });
-
-  it('no token is minted for a run with nowhere to send it (each mint writes an audit row)', async () => {
-    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ deployments: [] }), { status: 200 }));
-    await expect(testCommand('hello', { [AS_ME_FLAG]: true })).rejects.toThrow(ExitSignal);
-    expect(printed.join('\n')).toContain('No live deployment found');
-    expect(fetchSpy.mock.calls.map(([url]) => String(url)).some((u) => u.endsWith('/test-token'))).toBe(false);
-  });
-
-  it("cliApi's refusal is printed in its frozen words and the pod is never called", async () => {
-    const cases: Array<[Response, string]> = [
-      [cliApiRefusal(409, 'APP_IS_BYO', 'byo'), 'signs users in through your own identity provider'],
-      [cliApiRefusal(403, 'FORBIDDEN', 'no'), '--as-me needs your personal sign-in with full access.'],
-      [cliApiRefusal(404, 'NOT_FOUND', 'no'), 'App app-1 was not found, or this account is not allowed to test it.'],
-      [cliApiRefusal(409, 'CONFLICT', 'App is archived'), 'CONFLICT: App is archived'],
-    ];
-    for (const [answer, line] of cases) {
-      fetchSpy.mockReset();
-      fetchSpy.mockResolvedValueOnce(answer);
-      printed.length = 0;
-      await expect(testCommand('hello', { ...asMe })).rejects.toThrow(ExitSignal);
-      expect(printed.join('\n')).toContain(line);
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
-    }
-  });
-
-  it('a 200 that is not the wire shape is refused without printing it (it may hold the token)', async () => {
-    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ token: TEST_TOKEN }), { status: 200 }));
-    await expect(testCommand('hello', { ...asMe })).rejects.toThrow(ExitSignal);
-    const all = printed.join('\n');
-    expect(all).toContain("guuey's answer for app app-1's test token was not one the CLI reads (it is not shown).");
-    expect(all).not.toContain(TEST_TOKEN);
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it('a 200 whose token is not one JWT is refused the same way, before the pod is called', async () => {
-    fetchSpy.mockResolvedValueOnce(
-      new Response(JSON.stringify({ token: 'not-a-jwt', expiresAtEpoch: 4102444800 }), { status: 200 }),
-    );
-    await expect(testCommand('hello', { ...asMe })).rejects.toThrow(ExitSignal);
-    expect(printed.join('\n')).toContain("was not one the CLI reads (it is not shown).");
-    expect(printed.join('\n')).not.toContain('not-a-jwt');
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it("the pod's 401 is read off builderTest; an unmarked one says redeploy", async () => {
-    const cases: Array<[Record<string, string>, string]> = [
-      [{}, "doesn't accept test tokens (it may predate them). Redeploy the app"],
-      [{ builderTest: 'expired' }, 'The test token had expired'],
-      [{ builderTest: 'unverifiable' }, "couldn't reach guuey's signing keys"],
-      [{ builderTest: 'rejected' }, "runtime refused the test token"],
-    ];
-    for (const [extra, line] of cases) {
-      fetchSpy.mockReset();
-      fetchSpy
-        .mockResolvedValueOnce(tokenAnswer())
-        .mockResolvedValueOnce(
-          new Response(JSON.stringify({ code: 'UNAUTHORIZED', message: 'invalid or unverifiable bearer token', ...extra }), {
-            status: 401,
-            statusText: 'Unauthorized',
-          }),
-        );
-      printed.length = 0;
-      await expect(testCommand('hello', { ...asMe })).rejects.toThrow(ExitSignal);
-      expect(printed.join('\n')).toContain(line);
-      expect(printed.join('\n')).not.toContain('Invoke failed');
-    }
-  });
-
-  it('a non-401 failure keeps the existing "Invoke failed" line', async () => {
-    fetchSpy.mockResolvedValueOnce(tokenAnswer()).mockResolvedValueOnce(new Response('busy', { status: 503, statusText: 'Service Unavailable' }));
-    await expect(testCommand('hello', { ...asMe })).rejects.toThrow(ExitSignal);
-    expect(printed.join('\n')).toContain('Invoke failed: HTTP 503 Service Unavailable — busy');
-  });
-
-  it('--as-me with --bearer-stdin, or with a value, is refused before any read of stdin or any network call', async () => {
-    let read = false;
-    const stdin: BearerInput = {
-      async *[Symbol.asyncIterator]() {
-        read = true;
-        yield PLANT;
-      },
-    };
-    await expect(testCommand('hello', { ...asMe, 'bearer-stdin': true }, { stdin })).rejects.toThrow(ExitSignal);
-    expect(printed.join('\n')).toContain('--as-me and --bearer-stdin both choose who the turn is sent as. Pass one of them.');
-    // `guuey test --as-me "hello"`: the parser took the message as the flag's value.
-    await expect(testCommand(undefined, { [AS_ME_FLAG]: 'hello' }, { stdin })).rejects.toThrow(ExitSignal);
-    expect(printed.join('\n')).toContain('--as-me takes no value. Put the message first');
-    expect(read).toBe(false);
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it('NO ESCAPE: the test token reaches only the invoke Authorization header — 0 hits in output, argv, env, URL, body or disk', async () => {
-    // A good turn, then a failure whose body echoes the token (a misbehaving proxy): it prints redacted.
-    fetchSpy.mockResolvedValueOnce(tokenAnswer()).mockResolvedValueOnce(asMeAnswer('t-n2'));
-    await testCommand('hello', { ...asMe });
-    fetchSpy
-      .mockResolvedValueOnce(tokenAnswer())
-      .mockResolvedValueOnce(new Response(`upstream rejected Authorization: Bearer ${TEST_TOKEN}`, { status: 502, statusText: 'Bad Gateway' }));
-    await expect(testCommand('hello', { ...asMe })).rejects.toThrow(ExitSignal);
-    // A 401 whose body echoes it too.
-    fetchSpy
-      .mockResolvedValueOnce(tokenAnswer())
-      .mockResolvedValueOnce(new Response(`{"code":"UNAUTHORIZED","message":"${TEST_TOKEN}"}`, { status: 401 }));
-    await expect(testCommand('hello', { ...asMe })).rejects.toThrow(ExitSignal);
-
-    const all = printed.join('\n');
-    expect(all).toContain('[token redacted]');
-    expect(all.split(TEST_TOKEN).length - 1).toBe(0);
-    expect(process.argv.join(' ').split(TEST_TOKEN).length - 1).toBe(0);
-    expect(JSON.stringify(process.env).split(TEST_TOKEN).length - 1).toBe(0);
-    expect(existsSync(join(threadsDir.current, 'app-1'))).toBe(false);
-    expect(fetchSpy).toHaveBeenCalledTimes(6);
-    for (const i of [1, 3, 5]) {
-      const req = sent(i);
-      expect(req.url).not.toContain(TEST_TOKEN);
-      expect(String(req.body)).not.toContain(TEST_TOKEN);
-      expect(req.headers.get('authorization')).toBe(`Bearer ${TEST_TOKEN}`);
-    }
-    for (const i of [0, 2, 4]) expect(sent(i).headers.get('authorization')).toBe('Bearer pat-test');
-  });
-});
-
 // cto's term on guuey#2719: the event names the renderer handles are pinned from the runtime EMITTER, never from this
 // renderer, so a signed-in turn and a guest turn render the same frames. Read off disk; skip outside the monorepo.
 const POD_SSE_SERVER = fileURLToPath(
@@ -1329,5 +1024,43 @@ describe('invokeRetryWait / sendInvoke: the pre-admission refusals are waited ou
       expect(errors.join('\n')).toMatch(/Invoke failed: HTTP 503 .*DRAINING/);
       expect(errors.join('\n')).not.toContain('[retry]');
     });
+  });
+});
+
+// ─── guuey#3211: `--as-me` is held until a guuey runtime accepts its test tokens ──────
+describe('asMeHeldRefusal — --as-me says it is not available yet, with or without a value (guuey#3211)', () => {
+  const held =
+    "--as-me isn't available yet. " +
+    "To test as a signed-in user of an app on its own sign-in, pipe that user's ID token with --bearer-stdin.";
+
+  it('refuses a bare --as-me, and one that took the next word as its value, in the same words', () => {
+    expect(AS_ME_FLAG).toBe('as-me');
+    expect(asMeHeldRefusal({ [AS_ME_FLAG]: true })).toBe(held);
+    expect(asMeHeldRefusal({ [AS_ME_FLAG]: 'hello' })).toBe(held);
+  });
+
+  it('says nothing when --as-me is absent', () => {
+    expect(asMeHeldRefusal({ 'bearer-stdin': true })).toBeUndefined();
+    expect(asMeHeldRefusal(undefined)).toBeUndefined();
+  });
+
+  it('the command stops before any request: no test token is minted and no turn is sent', async () => {
+    const printed: string[] = [];
+    const keep = (...a: unknown[]) => void printed.push(a.map(String).join(' '));
+    vi.spyOn(console, 'error').mockImplementation(keep);
+    vi.spyOn(console, 'log').mockImplementation(keep);
+    vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new ExitSignal(code);
+    }) as typeof process.exit);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    try {
+      await expect(testCommand('hello', { url: 'https://pod.example', [AS_ME_FLAG]: true })).rejects.toBeInstanceOf(
+        ExitSignal,
+      );
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(printed.join('\n')).toContain(held);
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });

@@ -22,7 +22,7 @@
  *
  * Identity: `guuey test` speaks as ONE of two callers ({@link InvokeCaller}),
  * and the platform PAT is never either of them: it authenticates the
- * deployments lookup and the test-token fetch only. The pod verifies a `Bearer` against the app's user
+ * deployments lookup only. The pod verifies a `Bearer` against the app's user
  * pool (or BYO issuer) and answers 401 to anything else, never a guest
  * fallback (`nocode-runtime/src/identity.ts`), so a PAT sent there would only
  * be refused.
@@ -37,8 +37,8 @@
  *     the pod decides, never this CLI (it checks only that stdin holds one JWT):
  *       - the guuey end-user pool: the ACCESS token. The pod refuses an ID token
  *         (`Token use not allowed: id`, identity.ts `tokenUse: 'access'`). A
- *         builder gets no such token; `--as-me` below is their route, so the
- *         help text offers this mode for `byo` apps;
+ *         builder has no supported way to obtain one yet (guuey#3211), so the
+ *         help text offers this mode for `byo` apps only;
  *       - a `byo` app: the token whose `aud` is the app's configured audience,
  *         with most IdPs (Cognito included) the ID token. The pod refuses a
  *         token without that audience (`Missing Audience …`) and a Cognito
@@ -48,15 +48,6 @@
  *     that would carry a token on the command line is refused by name, and the
  *     token is cut out of any pod reply printed on a failure. The stream is
  *     rendered by the SAME printer as a guest turn.
- *   - **as me** (`--as-me`, guuey#3211): the builder, as their own guuey
- *     account, on an app whose users sign in with a guuey account. Each run
- *     asks cliApi `POST /v1/apps/:appId/test-token` (with the PAT) for a FRESH
- *     short-lived test token and sends it as a bearer like the one above. The
- *     token lives in memory for this one run: never on disk, in argv or env,
- *     and never printed. A pod that refuses it says why in a `builderTest`
- *     field on its 401 (`expired` / `unverifiable` / `rejected`); a pod that
- *     predates test tokens sends no such field, which the CLI reads as
- *     "redeploy the app". The turn lands in the builder's real chat history.
  *
  * The visitor is the pod's NON-BROWSER guest (guuey#1600): every request
  * carries `x-guuey-guest: <64-hex>` (identity.ts `extractGuestHeader`, the
@@ -79,7 +70,6 @@
  *   guuey test "Show me a dashboard" --session sess_existing
  *   guuey test "hi" --url https://my-app.agents.sandbox.guuey.com
  *   guuey test "hi" --bearer-stdin < user-token.txt   # signed in (file mode 0600)
- *   guuey test "hi" --as-me                           # as your own guuey account
  */
 
 import { randomBytes } from 'node:crypto';
@@ -123,13 +113,10 @@ export function mintGuestSecret(): string {
 
 /**
  * Who a `guuey test` turn speaks as (see the file header): an anonymous
- * visitor holding a guest secret, or a signed-in caller holding a token.
- * `source` says where that token came from: stdin (an end user's,
- * guuey#2719) or `--as-me` (the builder's own test token, guuey#3211).
+ * visitor holding a guest secret, or a signed-in end user holding their
+ * token (guuey#2719; which token, see the file header).
  */
-export type InvokeCaller =
-  | { kind: 'guest'; secret: string }
-  | { kind: 'bearer'; token: string; source: 'stdin' | 'as-me' };
+export type InvokeCaller = { kind: 'guest'; secret: string } | { kind: 'bearer'; token: string };
 
 /**
  * Flags that would carry a token on the command line, where any process list
@@ -143,9 +130,6 @@ export const BEARER_STDIN_FLAG = 'bearer-stdin';
 
 /** Every refusal of a token on the command line starts with this name, so a script or judge can match it. */
 export const BEARER_IN_ARGV = 'bearer-in-argv';
-
-/** The flag that sends the turn as the builder's own guuey account (guuey#3211). */
-export const AS_ME_FLAG = 'as-me';
 
 /**
  * The refusal for a token on the command line, or `undefined` when there is
@@ -170,125 +154,19 @@ export function bearerArgvRefusal(flags: Record<string, string | true> | undefin
 }
 
 /**
- * The refusal for a `--as-me` the command cannot run, or `undefined`. Both
- * `--as-me` and `--bearer-stdin` choose who the turn is sent as, so only one
- * may be passed. A `--as-me` that picked up a value is refused like
- * `--bearer-stdin`'s: the parser read the word after it (most likely the
- * message) as its value.
+ * `--as-me` (guuey#3211) sends the turn signed in as the builder's own guuey account, with a short-lived test token.
+ * It is held: no guuey runtime accepts that token yet, so every turn would be refused. Published 0.34.0 advertised
+ * the flag, so it stays recognized and says so before anything is minted, instead of failing at the app.
  */
-export function asMeFlagRefusal(flags: Record<string, string | true> | undefined): string | undefined {
-  const asMe = flags?.[AS_ME_FLAG];
-  if (asMe === undefined) return undefined;
-  if (typeof asMe === 'string') {
-    return `--${AS_ME_FLAG} takes no value. Put the message first: guuey test "<message>" --${AS_ME_FLAG}`;
-  }
-  if (flags?.[BEARER_STDIN_FLAG] !== undefined) {
-    return `--${AS_ME_FLAG} and --${BEARER_STDIN_FLAG} both choose who the turn is sent as. Pass one of them.`;
-  }
-  return undefined;
-}
+export const AS_ME_FLAG = 'as-me';
 
-/**
- * `POST /v1/apps/:appId/test-token`: 200. MIRROR of `@guuey-private/cli-wire`'s
- * `BuilderTestTokenResponse` (`backend/libs/cli-wire/test-token.ts`), pinned
- * by the sync guard in `wire-sync.test.ts`. `expiresAtEpoch` is Unix epoch
- * SECONDS; the lifetime is the mint's, never restated here.
- */
-export interface BuilderTestTokenResponse {
-  token: string;
-  expiresAtEpoch: number;
-}
-
-function isBuilderTestTokenResponse(v: unknown): v is BuilderTestTokenResponse {
-  if (typeof v !== 'object' || v === null) return false;
-  const { token, expiresAtEpoch } = v as { token?: unknown; expiresAtEpoch?: unknown };
-  return typeof token === 'string' && JWT_SHAPE.test(token) && typeof expiresAtEpoch === 'number';
-}
-
-/**
- * What to print when cliApi will not issue a test token. `body` is the
- * parsed reply (the cliApi `{error:{code,message}}` envelope), never a token.
- * Exported for unit test.
- */
-export function testTokenRefusal(status: number, body: unknown, appId: string): string {
-  if (status === 409 && out.apiErrorCode(body) === 'APP_IS_BYO') {
-    return (
-      `App ${appId} signs users in through your own identity provider, so guuey can't issue a test token for it. ` +
-      `Pass an ID token from that provider: guuey test "<message>" --${BEARER_STDIN_FLAG} < <token file>`
-    );
-  }
-  if (status === 403) {
-    return (
-      `--${AS_ME_FLAG} needs your personal sign-in with full access. Run guuey login, then try again. ` +
-      "A read-only key, a workspace key, a service token or a key another app got through guuey's OAuth consent " +
-      "can't get a test token."
-    );
-  }
-  return out.appApiErrorMessage(
-    status,
-    body,
-    appId,
-    'test',
-    `Could not get a test token for app ${appId}: HTTP ${status}`,
+/** The refusal for any `--as-me`, with or without a value, or `undefined` when it is absent. */
+export function asMeHeldRefusal(flags: Record<string, string | true> | undefined): string | undefined {
+  if (flags?.[AS_ME_FLAG] === undefined) return undefined;
+  return (
+    `--${AS_ME_FLAG} isn't available yet. ` +
+    `To test as a signed-in user of an app on its own sign-in, pipe that user's ID token with --${BEARER_STDIN_FLAG}.`
   );
-}
-
-/**
- * Fetch a FRESH builder test token for this one run (guuey#3211): cliApi
- * `POST /v1/apps/:appId/test-token` with the PAT, no body (the mint decides
- * the audience). On a refusal it prints {@link testTokenRefusal} and exits 1.
- * An answer that is not the wire shape is refused without printing it: it
- * may hold the token.
- */
-export async function fetchBuilderTestToken(
-  pat: string,
-  config: { apiUrl?: string },
-  appId: string,
-): Promise<string> {
-  const res = await apiRequest(pat, config, 'POST', `/apps/${appId}/test-token`);
-  const body: unknown = await res.json().catch(() => undefined);
-  if (!res.ok) {
-    out.error(testTokenRefusal(res.status, body, appId));
-    process.exit(1);
-  }
-  if (!isBuilderTestTokenResponse(body)) {
-    out.error(`guuey's answer for app ${appId}'s test token was not one the CLI reads (it is not shown). Update guuey and try again.`);
-    process.exit(1);
-  }
-  return body.token;
-}
-
-/**
- * The pod's 401 refusal of a builder test token (design v0.4 §3): the pod's
- * one envelope `{code, message}`, plus `builderTest` on a pod that knows test
- * tokens. Its absence means the app's runtime predates them. An unknown value
- * (a newer pod) reads as a refusal. Exported for unit test.
- */
-export function builderTestInvokeRefusal(appId: string, bodyText: string): string {
-  let marker: unknown;
-  try {
-    const parsed: unknown = JSON.parse(bodyText);
-    marker = typeof parsed === 'object' && parsed !== null ? (parsed as { builderTest?: unknown }).builderTest : undefined;
-  } catch (err) {
-    if (!(err instanceof SyntaxError)) throw err;
-    marker = undefined;
-  }
-  switch (marker) {
-    case undefined:
-      return (
-        `App ${appId}'s runtime doesn't accept test tokens (it may predate them). ` +
-        `Redeploy the app, then try again, or pass a token with --${BEARER_STDIN_FLAG}.`
-      );
-    case 'expired':
-      return `The test token had expired by the time app ${appId}'s runtime checked it. Run the command again: each run gets a new token.`;
-    case 'unverifiable':
-      return (
-        `App ${appId}'s runtime couldn't check the test token because it couldn't reach guuey's signing keys. ` +
-        `That's a fault on the app's side, not your sign-in. Try again shortly, or pass a token with --${BEARER_STDIN_FLAG}.`
-      );
-    default:
-      return `App ${appId}'s runtime refused the test token. Run the command again. If it keeps happening, report it with the app id.`;
-  }
 }
 
 /** A refusal of what `--bearer-stdin` read. Its message never carries the input. */
@@ -430,7 +308,7 @@ export async function test(
 ): Promise<void> {
   // First, before the usage check: a token on the command line is refused even
   // when the parser took the message as that flag's value.
-  const argvRefusal = bearerArgvRefusal(flags) ?? asMeFlagRefusal(flags);
+  const argvRefusal = bearerArgvRefusal(flags) ?? asMeHeldRefusal(flags);
   if (argvRefusal !== undefined) {
     out.error(argvRefusal);
     process.exit(1);
@@ -457,15 +335,10 @@ export async function test(
   const appId = config.appId;
 
   const threadFlag = typeof flags?.thread === 'string' ? flags.thread : undefined;
-  // `as-me` is settled after the endpoint resolves, so no token is minted for a
-  // run that has nowhere to send it (each mint writes an audit row).
-  let choice: InvokeCaller | { kind: 'as-me' };
-  if (flags?.[AS_ME_FLAG] === true) {
-    // A signed-in thread is keyed to the token's subject: `--thread` needs no saved visitor.
-    choice = { kind: 'as-me' };
-  } else if (flags?.[BEARER_STDIN_FLAG] === true) {
+  let caller: InvokeCaller;
+  if (flags?.[BEARER_STDIN_FLAG] === true) {
     try {
-      choice = { kind: 'bearer', token: await readBearer(io.stdin), source: 'stdin' };
+      caller = { kind: 'bearer', token: await readBearer(io.stdin) };
     } catch (err) {
       if (!(err instanceof BearerInputError)) throw err;
       out.error(err.message);
@@ -481,9 +354,9 @@ export async function test(
       );
       process.exit(1);
     }
-    choice = { kind: 'guest', secret: saved };
+    caller = { kind: 'guest', secret: saved };
   } else {
-    choice = { kind: 'guest', secret: mintGuestSecret() };
+    caller = { kind: 'guest', secret: mintGuestSecret() };
   }
 
   const { pat } = requireAuth();
@@ -494,13 +367,9 @@ export async function test(
   // its own. An explicit --session still wins.
   const sessionId = typeof flags?.session === 'string' ? flags.session : undefined;
   const endpoint = await resolveAgentEndpoint(config, flags, pat);
-  const caller: InvokeCaller =
-    choice.kind === 'as-me'
-      ? { kind: 'bearer', token: await fetchBuilderTestToken(pat, config, appId), source: 'as-me' }
-      : choice;
 
   console.log(`  App:      ${appId}`);
-  console.log(`  Auth:     ${authLabel(caller)}`);
+  console.log(`  Auth:     ${caller.kind === 'bearer' ? 'bearer (user token from stdin)' : 'guest'}`);
   console.log(`  Thread:   ${threadFlag ?? 'new'}`);
   console.log(`  Session:  ${sessionId ?? '(keyed to the thread)'}`);
   console.log(`  Endpoint: ${endpoint}`);
@@ -518,10 +387,6 @@ export async function test(
   if (!res.ok) {
     // Redact BEFORE the cut, so a token straddling the 400-char edge is never half-printed.
     const body = redactCaller(refusalText ?? '', caller);
-    if (res.status === 401 && caller.kind === 'bearer' && caller.source === 'as-me') {
-      out.error(builderTestInvokeRefusal(appId, body));
-      process.exit(1);
-    }
     const afterRetries = retries > 0 ? ` (after ${retries} ${retries === 1 ? 'retry' : 'retries'})` : '';
     out.error(`Invoke failed: HTTP ${res.status} ${res.statusText}${afterRetries}${body ? ` — ${body.slice(0, 400)}` : ''}`);
     process.exit(1);
@@ -536,12 +401,6 @@ export async function test(
   if (stopReason !== undefined) console.log(`  [done] ${stopReason}`);
   for (const line of threadFollowUp({ appId, appIdFlag, threadFlag, threadId, caller, errored })) console.log(line);
   if (errored) process.exit(1);
-}
-
-/** The `Auth:` line: who this turn is sent as. */
-function authLabel(caller: InvokeCaller): string {
-  if (caller.kind === 'guest') return 'guest';
-  return caller.source === 'as-me' ? 'you (your guuey account, a test token for this run)' : 'bearer (user token from stdin)';
 }
 
 /**
@@ -575,12 +434,7 @@ export function threadFollowUp(args: {
     lines.push(`  ! the pod started a NEW thread ${threadId} instead of continuing ${threadFlag}`);
   }
   const appIdPart = appIdFlag !== undefined ? ` --app-id ${appIdFlag}` : '';
-  const signedInPart =
-    caller.kind === 'guest'
-      ? ''
-      : caller.source === 'as-me'
-        ? ` --${AS_ME_FLAG}`
-        : ` --${BEARER_STDIN_FLAG} < <token file>`;
+  const signedInPart = caller.kind === 'bearer' ? ` --${BEARER_STDIN_FLAG} < <token file>` : '';
   lines.push(`  Continue this conversation: guuey test "<message>" --thread ${threadId}${appIdPart}${signedInPart}`);
   return lines;
 }
