@@ -5,7 +5,12 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import { anthropicUserContent, createEmitter, type WorkerEvent } from "@guuey/worker";
 import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { awaitMcpReady, runInvoke, type HostInvoke, type QueryFn, type QueryHandle } from "./claude.js";
-import { A2UI_GUUEY_CATALOG_ID, A2UI_SECTION, FIRST_IMPRESSION_SHOWN_HEADING } from "../preamble.js";
+import { A2UI_GUUEY_CATALOG_ID, A2UI_SECTION, FIRST_IMPRESSION_SHOWN_HEADING, TURN_CONTEXT_LEAD } from "../preamble.js";
+
+/** The constant head every `<turn_context>` block opens with (A1: the tag, then the lead line). */
+const CONTEXT_HEAD = `<turn_context>\n${TURN_CONTEXT_LEAD}\n`;
+/** The `<turn_context>` block with no section: the lead alone. */
+const EMPTY_CONTEXT = `${CONTEXT_HEAD}</turn_context>`;
 
 /** Collect every emitted WorkerEvent into an array (the fd-3 sink, in memory). */
 function collector(): { events: WorkerEvent[]; sink: { write(s: string): void } } {
@@ -254,7 +259,7 @@ describe("runInvoke — native emission", () => {
     const [context, directive, ...rest] = content;
     expect(context?.type).toBe("text");
     const contextText = context?.type === "text" ? context.text : "";
-    expect(contextText.startsWith("<turn_context>\n")).toBe(true);
+    expect(contextText.startsWith(`${CONTEXT_HEAD}\n`)).toBe(true);
     expect(contextText).toContain("<thread_memory>");
     expect(contextText).toContain("<working_state>");
     expect(contextText).toContain("Ada");
@@ -278,7 +283,7 @@ describe("runInvoke — native emission", () => {
     const seen = await turnFor(turn);
     const content = Array.isArray(seen.content) ? seen.content : [];
     expect(content.slice(0, 2)).toEqual([
-      { type: "text", text: "<turn_context></turn_context>" },
+      { type: "text", text: EMPTY_CONTEXT },
       { type: "text", text: expect.stringMatching(/^<turn_directive>\n## Welcome card \(already on screen\)/) },
     ]);
     expect(content.slice(2)).toEqual(anthropicUserContent(turn));
@@ -436,7 +441,7 @@ describe("runInvoke — native emission", () => {
     // The query's user message carries both blocks, ahead of the user's own text.
     const texts = textsOf(content);
     expect(texts).toHaveLength(3);
-    expect(texts[0]).toMatch(/^<turn_context>\n/);
+    expect(texts[0]?.startsWith(`${CONTEXT_HEAD}\n`)).toBe(true);
     expect(texts[0]).toContain("<conversation_history>");
     expect(texts[0]).toContain("Likes tea.");
     expect(texts[1]).toMatch(/^<turn_directive>\n## First impression \(this turn\)/);
@@ -581,7 +586,7 @@ describe("the welcome card the Router already drew reaches the Claude turn's dir
 
   it("no card drawn: no section, an EMPTY directive block still second", async () => {
     const seen = await turnFor({ gguiAttached: true });
-    expect(textsOf(seen.content)).toEqual(["<turn_context></turn_context>", "<turn_directive></turn_directive>", "hi"]);
+    expect(textsOf(seen.content)).toEqual([EMPTY_CONTEXT, "<turn_directive></turn_directive>", "hi"]);
   });
 });
 

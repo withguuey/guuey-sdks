@@ -25,6 +25,7 @@ import type { HostTurn } from "../index.js";
 import { runInvoke, type HostInvoke, type QueryFn } from "./claude.js";
 import { runInvokeOpenai, type OpenaiRunFn, type OpenaiRunResult } from "./openai.js";
 import { runAdkTurn } from "./google-adk.js";
+import { TURN_CONTEXT_LEAD } from "../preamble.js";
 import {
   CONTEXT_ONLY_TURN_TEXT,
   MODEL_TEXT_INPUT_KIND_CAPABILITIES,
@@ -43,9 +44,10 @@ const PNG: InvokeImageAttachment = {
 const JPEG: InvokeImageAttachment = { kind: "inline", mimeType: "image/jpeg", data: "/9j/4AAQ" };
 /**
  * A1: every turn's message leads with its two platform blocks, the context block then the directive block
- * (both empty here); the images and the text follow unchanged.
+ * (here the context carries only its constant lead line and the directive is empty); the images and the
+ * text follow unchanged.
  */
-const EMPTY_TURN_CONTEXT = "<turn_context></turn_context>";
+const EMPTY_TURN_CONTEXT = `<turn_context>\n${TURN_CONTEXT_LEAD}\n</turn_context>`;
 const EMPTY_TURN_DIRECTIVE = "<turn_directive></turn_directive>";
 
 function collector(): { events: WorkerEvent[]; sink: { write(s: string): void } } {

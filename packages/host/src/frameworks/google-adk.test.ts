@@ -12,7 +12,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import type { BaseLlmConnection, LlmRequest, LlmResponse } from "@google/adk";
 import { ADK_HOST_COMPLETION_CAPABILITY, type Emitter, type JsonValue, type StopReason } from "@guuey/worker";
 import type { HostTurn } from "../index.js";
-import { TURN_AUTHORITY_SECTION } from "../preamble.js";
+import { TURN_AUTHORITY_SECTION, TURN_CONTEXT_LEAD } from "../preamble.js";
 import {
   buildToolsets,
   finalTextOf,
@@ -90,8 +90,10 @@ const TURN: HostTurn = {
   fs: { app: "/tmp/nope-app", home: "/tmp/nope-home", session: "/tmp/nope-session" },
   history: [],
 };
-/** A1: the turn's two context blocks (here the empty `<turn_context>` and `<turn_directive>`), which lead the message. */
-const TURN_CONTEXT = ["<turn_context></turn_context>", "<turn_directive></turn_directive>"];
+/** The `<turn_context>` block with no section: the constant lead line alone (A1). */
+const EMPTY_CONTEXT = `<turn_context>\n${TURN_CONTEXT_LEAD}\n</turn_context>`;
+/** A1: the turn's two context blocks (here the section-less `<turn_context>` and the empty `<turn_directive>`), which lead the message. */
+const TURN_CONTEXT = [EMPTY_CONTEXT, "<turn_directive></turn_directive>"];
 
 // ── toolset mapping ──────────────────────────────────────────────────────────
 
@@ -132,7 +134,7 @@ describe("runAdkTurn — the wire contract", () => {
       sessionId: "sess-u-42",
       newMessage: {
         role: "user",
-        parts: [{ text: "<turn_context></turn_context>" }, { text: "<turn_directive></turn_directive>" }, { text: "hi there" }],
+        parts: [{ text: EMPTY_CONTEXT }, { text: "<turn_directive></turn_directive>" }, { text: "hi there" }],
       },
       runConfig: { streamingMode: "sse" },
     });

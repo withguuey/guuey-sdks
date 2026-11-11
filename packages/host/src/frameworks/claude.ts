@@ -406,7 +406,8 @@ export async function runInvoke(
     await gate;
     if (!sendMessage) return;
     // A1: the turn's two context blocks (`<turn_context>` then `<turn_directive>`,
-    // always both, either possibly empty) lead the message, each its own text
+    // always both; the context block always opens with its constant lead line, the
+    // directive may be empty) lead the message, each its own text
     // block, then the invoke's own content (its images, then its text) unchanged.
     yield {
       type: "user",

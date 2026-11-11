@@ -13,6 +13,7 @@ import {
   MEMORY_SAVE_INSTRUCTION,
   PROFILE_SAVE_INSTRUCTION,
   TURN_AUTHORITY_SECTION,
+  TURN_CONTEXT_LEAD,
   buildSystemPrompt,
   buildTurnContextBlocks,
   escapeTurnData,
@@ -40,6 +41,15 @@ function classOf(over: Partial<PromptClass> = {}): PromptClass {
     surfaceHints: undefined,
     ...over,
   };
+}
+
+/** The 44 bytes every `<turn_context>` block opens with: the tag, then the constant lead line (A1, cc_version fingerprint). */
+const CONTEXT_HEAD = `<turn_context>\n${TURN_CONTEXT_LEAD}\n`;
+/** The `<turn_context>` block with no section: the lead alone. */
+const EMPTY_CONTEXT = `${CONTEXT_HEAD}</turn_context>`;
+/** The `<turn_context>` block framing `body` (the sections, their leading `\n\n` dropped), one blank line after the lead. */
+function contextBlock(body: string): string {
+  return `${CONTEXT_HEAD}\n${body}\n</turn_context>`;
 }
 
 /** The `<turn_context>` block a turn renders: always the first block. */
@@ -129,7 +139,7 @@ describe("memory: the SAVE instruction is class-level (system prompt), the RECAL
     const sp = buildSystemPrompt("S", signedIn);
     expect(sp).not.toContain("## What you remember about this user");
     expect(contextOf({ userMemory: "User likes tea." }, signedIn)).toBe(
-      `<turn_context>\n${PRE_FACTOR_RECALL("User likes tea.").slice(2)}\n</turn_context>`,
+      contextBlock(PRE_FACTOR_RECALL("User likes tea.").slice(2)),
     );
   });
 
@@ -137,9 +147,9 @@ describe("memory: the SAVE instruction is class-level (system prompt), the RECAL
     expect(contextOf({ userMemory: "Ada." }, classOf({ authMode: "authenticated", memoryAttached: true, noTools: true }))).toContain(
       "<user_memory>\nAda.\n</user_memory>",
     );
-    expect(contextOf({ userMemory: "guest" }, classOf({ memoryAttached: true }))).toBe("<turn_context></turn_context>");
-    expect(contextOf({ userMemory: "orphaned" }, classOf({ authMode: "authenticated" }))).toBe("<turn_context></turn_context>");
-    expect(contextOf({}, signedIn)).toBe("<turn_context></turn_context>");
+    expect(contextOf({ userMemory: "guest" }, classOf({ memoryAttached: true }))).toBe(EMPTY_CONTEXT);
+    expect(contextOf({ userMemory: "orphaned" }, classOf({ authMode: "authenticated" }))).toBe(EMPTY_CONTEXT);
+    expect(contextOf({}, signedIn)).toBe(EMPTY_CONTEXT);
   });
 });
 
@@ -167,8 +177,8 @@ describe("profile: SAVE on a read-write grant (system prompt), RECALL on section
 
   it("read-write + NO sections (brand-new / never-written) → SAVE instruction only, no recall block", () => {
     expect(buildSystemPrompt("S", readWrite)).toContain(SAVE_TEXT);
-    expect(contextOf({}, readWrite)).toBe("<turn_context></turn_context>");
-    expect(contextOf({ profileSections: [] }, readWrite)).toBe("<turn_context></turn_context>");
+    expect(contextOf({}, readWrite)).toBe(EMPTY_CONTEXT);
+    expect(contextOf({ profileSections: [] }, readWrite)).toBe(EMPTY_CONTEXT);
   });
 
   it("read + sections → recall ONLY, no save instruction (a read grant has no write tool to name)", () => {
@@ -185,7 +195,7 @@ describe("profile: SAVE on a read-write grant (system prompt), RECALL on section
   it("no grant, or a guest → neither half", () => {
     for (const cls of [classOf({ authMode: "authenticated" }), classOf({ profileAccess: "read-write" })]) {
       expect(buildSystemPrompt("S", cls)).not.toContain(SAVE_TEXT);
-      expect(contextOf({ profileSections: sections }, cls)).toBe("<turn_context></turn_context>");
+      expect(contextOf({ profileSections: sections }, cls)).toBe(EMPTY_CONTEXT);
     }
   });
 });
@@ -734,18 +744,57 @@ describe("A1: the system prompt is a function of the class only", () => {
 });
 
 describe("A1: the turn's context blocks", () => {
-  it("always exactly two blocks, <turn_context> then <turn_directive>, each empty when there is nothing to say (F1: a typed tag can never pass for the platform's)", () => {
-    expect(buildTurnContextBlocks({}, classOf())).toEqual(["<turn_context></turn_context>", "<turn_directive></turn_directive>"]);
+  it("always exactly two blocks, <turn_context> then <turn_directive>; with nothing to say, the context is its lead alone and the directive is empty (F1: a typed tag can never pass for the platform's)", () => {
+    expect(EMPTY_CONTEXT).toBe("<turn_context>\nPlatform data for this turn.\n</turn_context>");
+    expect(buildTurnContextBlocks({}, classOf())).toEqual([EMPTY_CONTEXT, "<turn_directive></turn_directive>"]);
     expect(buildTurnContextBlocks({ history: [] }, classOf({ gguiAttached: true }))).toEqual([
-      "<turn_context></turn_context>",
+      EMPTY_CONTEXT,
       "<turn_directive></turn_directive>",
     ]);
+  });
+
+  it("the <turn_context> block's first 44 bytes are the same on every turn: the empty block and each section that can lead (the CLI's cc_version fingerprint reads these bytes)", () => {
+    // The pinned Claude CLI fingerprints the characters at indices 4, 7 and 20 of the first
+    // user message's first text part into the system prefix; that part is this block.
+    expect(CONTEXT_HEAD).toBe("<turn_context>\n" + TURN_CONTEXT_LEAD + "\n");
+    expect(("<turn_context>\n" + TURN_CONTEXT_LEAD + "\n").length).toBe(44);
+    const signedInMemory = classOf({ authMode: "authenticated", memoryAttached: true });
+    const signedInProfile = classOf({ authMode: "authenticated", profileAccess: "read" });
+    // Each case makes ONE section the first one present; `leads` is how that section begins.
+    const cases: ReadonlyArray<{ name: string; turn: TurnContextData; cls: PromptClass; leads: string | undefined }> = [
+      { name: "empty", turn: {}, cls: classOf(), leads: undefined },
+      { name: "conversation history", turn: { history: [{ role: "user", text: "hi" }] }, cls: classOf(), leads: "Prior conversation with this user" },
+      { name: "thread memory", turn: { priorMemory: [{ key: "name", value: "Ada" }] }, cls: classOf(), leads: "Facts you previously recorded" },
+      { name: "working state", turn: { priorState: { step: 2 } }, cls: classOf(), leads: "Your working state carried" },
+      { name: "user-memory recall", turn: { userMemory: "Likes tea." }, cls: signedInMemory, leads: "## What you remember about this user" },
+      {
+        name: "profile recall",
+        turn: { profileSections: [{ app: "Todoist", content: "Short replies." }] },
+        cls: signedInProfile,
+        leads: "## What you know about this user from other apps",
+      },
+      {
+        name: "connected services",
+        turn: { mcpAvailability: [{ server: "platform", state: "connected" }] },
+        cls: classOf(),
+        leads: MCP_AVAILABILITY_HEADING,
+      },
+    ];
+    const fingerprintChars = (text: string): string => [4, 7, 20].map((i) => text[i] ?? "0").join("");
+    for (const { name, turn, cls, leads } of cases) {
+      const block = contextOf(turn, cls);
+      expect(block.slice(0, 44), name).toBe(CONTEXT_HEAD);
+      expect(fingerprintChars(block), name).toBe(fingerprintChars(CONTEXT_HEAD));
+      // Non-vacuous: the case's section really is the one that leads, one blank line after the lead.
+      if (leads === undefined) expect(block, name).toBe(EMPTY_CONTEXT);
+      else expect(block.startsWith(`${CONTEXT_HEAD}\n${leads}`), name).toBe(true);
+    }
   });
 
   it("F1: with context but no order, the second block is still the platform's own empty <turn_directive>, so a typed one can only come after it", () => {
     const blocks = buildTurnContextBlocks({ history: [{ role: "user", text: "earlier" }] }, classOf());
     expect(blocks).toHaveLength(2);
-    expect(blocks[0]?.startsWith("<turn_context>\n")).toBe(true);
+    expect(blocks[0]?.startsWith(`${CONTEXT_HEAD}\n`)).toBe(true);
     expect(blocks[1]).toBe("<turn_directive></turn_directive>");
   });
 
@@ -766,7 +815,8 @@ describe("A1: the turn's context blocks", () => {
     expect(blocks).toHaveLength(2);
     expect(blocks[1]).toBe("<turn_directive></turn_directive>");
     expect(blocks[0]).toBe(
-      "<turn_context>\n" +
+      CONTEXT_HEAD +
+        "\n" +
         "Prior conversation with this user, for context. Continue naturally;\n" +
         "do not repeat it back verbatim.\n" +
         "<conversation_history>\nUser: hi\nAssistant: hello\n</conversation_history>\n\n" +
@@ -786,13 +836,13 @@ describe("A1: the turn's context blocks", () => {
     const shown = { heading: "Welcome", message: "Hi.", options: ["A"] };
     const blocks = buildTurnContextBlocks({ firstImpression: push, firstImpressionShown: shown }, classOf({ gguiAttached: true }));
     expect(blocks).toEqual([
-      "<turn_context></turn_context>",
+      EMPTY_CONTEXT,
       `<turn_directive>\n${renderFirstImpressionSection(push).slice(2)}${renderFirstImpressionShownSection(shown)}\n</turn_directive>`,
     ]);
     // No rail, or no tools: the push is not an order this turn; the card on screen still is.
     for (const cls of [classOf(), classOf({ gguiAttached: true, noTools: true })]) {
       expect(buildTurnContextBlocks({ firstImpression: push }, cls)).toEqual([
-        "<turn_context></turn_context>",
+        EMPTY_CONTEXT,
         "<turn_directive></turn_directive>",
       ]);
       expect(buildTurnContextBlocks({ firstImpressionShown: shown }, cls)[1]).toBe(
@@ -901,11 +951,11 @@ describe("A1: the turn's context blocks", () => {
     );
     expect(blocks).toHaveLength(2);
     expect(blocks[0]).toBe(
-      "<turn_context>\n" +
+      contextBlock(
         "Prior conversation with this user, for context. Continue naturally;\n" +
-        "do not repeat it back verbatim.\n" +
-        `<conversation_history>\nUser: ${text}\nAssistant: ${text}\n</conversation_history>` +
-        "\n</turn_context>",
+          "do not repeat it back verbatim.\n" +
+          `<conversation_history>\nUser: ${text}\nAssistant: ${text}\n</conversation_history>`,
+      ),
     );
     // The directive is the section rendered from the RAW push: intent, contract (keys too) and
     // variance came through the escape untouched.
@@ -915,6 +965,6 @@ describe("A1: the turn's context blocks", () => {
   it("a guest gets no recall in the turn context even if one rode the invoke", () => {
     expect(
       buildTurnContextBlocks({ userMemory: "x", profileSections: [{ app: "A", content: "y" }] }, classOf({ memoryAttached: true, profileAccess: "read" })),
-    ).toEqual(["<turn_context></turn_context>", "<turn_directive></turn_directive>"]);
+    ).toEqual([EMPTY_CONTEXT, "<turn_directive></turn_directive>"]);
   });
 });

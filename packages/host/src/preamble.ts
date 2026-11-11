@@ -12,9 +12,13 @@
  *    services, the first-impression orders) as the leading text blocks of the
  *    message this turn adds: exactly two platform blocks, always, in this
  *    order: one `<turn_context>` data block, then one `<turn_directive>` order
- *    block. Either is empty (`<tag></tag>`) when there is nothing to say, so a
- *    tag the user types at the start of their text can never pass for one of
- *    the platform's.
+ *    block. Both are always sent, so a tag the user types at the start of their
+ *    text can never pass for one of the platform's. The `<turn_context>` block
+ *    always opens with the constant line {@link TURN_CONTEXT_LEAD}, even when
+ *    it carries no section (`<turn_context>\nPlatform data for this turn.\n</turn_context>`),
+ *    so its first 44 bytes are the same on every turn (see that constant for
+ *    why). `<turn_directive>` is empty (`<turn_directive></turn_directive>`)
+ *    when there is no order.
  *
  * Every data string a block frames goes through {@link escapeTurnData} first,
  * so data can never close a block early.
@@ -587,6 +591,28 @@ export const TURN_CONTEXT_TAG = "turn_context";
 export const TURN_DIRECTIVE_TAG = "turn_directive";
 
 /**
+ * The constant first line of every `<turn_context>` block (guuey#3407 A1).
+ * NOT decorative: do not delete it, reword it, or make it conditional.
+ *
+ * Why: the pinned Claude CLI writes `cc_version=<version>.<fp>` into system
+ * block 1 (its attribution block, ahead of our system prompt), where `fp` is
+ * the first 3 hex digits of sha256(salt + the characters at indices 4, 7 and 20
+ * of the FIRST user message's first text part + version). Since A1, that first
+ * text part is this block. Without a constant lead, index 20 falls inside
+ * whichever section happens to lead (history, memory recall, the empty block,
+ * ...), so the system prefix the provider caches split into one variant per
+ * leading-section kind. With it, every `<turn_context>` block begins with the
+ * same 44 bytes, `<turn_context>\nPlatform data for this turn.\n`, so indices
+ * 4, 7 and 20 are constant and the system prefix is identical on every turn of
+ * a class. Measured on the pinned CLI and designed under guuey#3407 (A1).
+ *
+ * It is inert data, never an instruction, and it never varies by user, app,
+ * locale, auth state or section mix. `preamble.test.ts` pins the 44-byte lead
+ * for the empty block and for each section that can lead.
+ */
+export const TURN_CONTEXT_LEAD = "Platform data for this turn.";
+
+/**
  * The class of a turn: every input {@link buildSystemPrompt} reads, and nothing
  * that varies per turn or per user beyond it. Two turns of one class get a
  * byte-identical system prompt. Built by {@link promptClassOf}.
@@ -775,19 +801,32 @@ function escapedWelcomeCard(shown: FirstImpressionShown | undefined): FirstImpre
   };
 }
 
-/** One turn block: the sections inside the tag, the renderers' leading `\n\n` dropped; empty as `<tag></tag>`. */
-function frameTurnBlock(tag: string, sections: string): string {
+/**
+ * One turn block: the sections inside the tag, the renderers' leading `\n\n`
+ * dropped. Without a `lead`, an empty block is `<tag></tag>`. With one, the
+ * block always opens with `<tag>\n{lead}\n`: alone when there is no section
+ * (`<tag>\n{lead}\n</tag>`), else one blank line before the first section
+ * (`<tag>\n{lead}\n\n{sections}\n</tag>`).
+ */
+function frameTurnBlock(tag: string, sections: string, lead?: string): string {
   const body = sections.startsWith("\n\n") ? sections.slice(2) : sections;
-  return body === "" ? `<${tag}></${tag}>` : `<${tag}>\n${body}\n</${tag}>`;
+  let inner = body;
+  if (lead !== undefined) inner = body === "" ? lead : `${lead}\n\n${body}`;
+  return inner === "" ? `<${tag}></${tag}>` : `<${tag}>\n${inner}\n</${tag}>`;
 }
 
 /**
  * The leading text blocks of the message this turn adds: ALWAYS exactly two,
- * in order, each empty (`<tag></tag>`) when there is nothing to say, so a tag
- * the user typed can never be taken for either of the platform's:
- *  1. one `<turn_context>` block: the prior conversation, thread memory and
- *     working state, the user-memory recall (signed in, memory attached), the
- *     profile recall (signed in, a grant), the connected services;
+ * in order, so a tag the user typed can never be taken for either of the
+ * platform's:
+ *  1. one `<turn_context>` block, which always opens with the constant line
+ *     {@link TURN_CONTEXT_LEAD} (so its first 44 bytes,
+ *     `<turn_context>\nPlatform data for this turn.\n`, never vary), then, one
+ *     blank line on, the sections present: the prior conversation, thread
+ *     memory and working state, the user-memory recall (signed in, memory
+ *     attached), the profile recall (signed in, a grant), the connected
+ *     services. With no section it is
+ *     `<turn_context>\nPlatform data for this turn.\n</turn_context>`;
  *  2. one `<turn_directive>` block: the first-impression push (ggui rail
  *     armed, tools declared) and the welcome card already on screen;
  *     `<turn_directive></turn_directive>` on a turn with no order.
@@ -809,5 +848,5 @@ export function buildTurnContextBlocks(turn: TurnContextData, cls: PromptClass):
   const directive =
     (cls.gguiAttached && !cls.noTools ? renderFirstImpressionSection(escapedFirstImpression(turn.firstImpression)) : "") +
     renderFirstImpressionShownSection(escapedWelcomeCard(turn.firstImpressionShown));
-  return [frameTurnBlock(TURN_CONTEXT_TAG, context), frameTurnBlock(TURN_DIRECTIVE_TAG, directive)];
+  return [frameTurnBlock(TURN_CONTEXT_TAG, context, TURN_CONTEXT_LEAD), frameTurnBlock(TURN_DIRECTIVE_TAG, directive)];
 }

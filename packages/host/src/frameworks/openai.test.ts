@@ -16,8 +16,18 @@ import type { HostInvoke } from "./claude.js";
 import {
   RESPONSE_NORMS_SECTION, TURN_AUTHORITY_SECTION, MEMORY_SAVE_INSTRUCTION, PROFILE_SAVE_INSTRUCTION,
   SURFACE_FORMATTING_SECTION, renderResourcesSection, renderProfileRecall,
-  FIRST_IMPRESSION_SHOWN_HEADING, GENERATIVE_UI_SECTION, A2UI_SECTION, A2UI_GUUEY_CATALOG_ID, renderUserMemoryRecall } from "../preamble.js";
+  FIRST_IMPRESSION_SHOWN_HEADING, GENERATIVE_UI_SECTION, A2UI_SECTION, A2UI_GUUEY_CATALOG_ID, renderUserMemoryRecall,
+  TURN_CONTEXT_LEAD } from "../preamble.js";
 import { defaultModelFor, type GuueyAgent } from "@guuey/config";
+
+/** The constant head every `<turn_context>` block opens with (A1: the tag, then the lead line). */
+const CONTEXT_HEAD = `<turn_context>\n${TURN_CONTEXT_LEAD}\n`;
+/** The `<turn_context>` block with no section: the lead alone. */
+const EMPTY_CONTEXT = `${CONTEXT_HEAD}</turn_context>`;
+/** The `<turn_context>` block framing `body` (the sections, their leading `\n\n` dropped), one blank line after the lead. */
+function contextBlock(body: string): string {
+  return `${CONTEXT_HEAD}\n${body}\n</turn_context>`;
+}
 
 /** Collect every emitted WorkerEvent into an array (the fd-3 sink, in memory). */
 function collector(): { events: WorkerEvent[]; sink: { write(s: string): void } } {
@@ -233,7 +243,7 @@ describe("runInvokeOpenai — native emission", () => {
     // then the user's text: three parts joined by blank lines.
     expect(typeof seen.input).toBe("string");
     const input = typeof seen.input === "string" ? seen.input : "";
-    expect(input.startsWith("<turn_context>\n")).toBe(true);
+    expect(input.startsWith(`${CONTEXT_HEAD}\n`)).toBe(true);
     expect(input.endsWith("\n</turn_context>\n\n<turn_directive></turn_directive>\n\ndo it")).toBe(true);
     expect(input).toContain("<thread_memory>");
     expect(input).toContain("Ada");
@@ -304,7 +314,7 @@ describe("runInvokeOpenai — memory section (memory-mcp T5, gated on authentica
     // Identical block content to Claude/ADK.
     expect(instructions).toBe(instructionsOf(MEMORY_SAVE));
     expect(input).toBe(
-      `<turn_context>\n${renderUserMemoryRecall("User's name is Ada.").slice(2)}\n</turn_context>\n\n<turn_directive></turn_directive>\n\nhi`,
+      `${contextBlock(renderUserMemoryRecall("User's name is Ada.").slice(2))}\n\n<turn_directive></turn_directive>\n\nhi`,
     );
   });
 
@@ -358,7 +368,7 @@ describe("runInvokeOpenai — memory section (memory-mcp T5, gated on authentica
   it("BOOTSTRAP: authenticated + attached + NO userMemory (brand-new user) → save-only section, NO recall block", async () => {
     const { instructions, input } = await captureTurn({ identity: authed, memoryAttached: true });
     expect(instructions).toBe(instructionsOf(MEMORY_SAVE));
-    expect(input).toBe("<turn_context></turn_context>\n\n<turn_directive></turn_directive>\n\nhi");
+    expect(input).toBe(`${EMPTY_CONTEXT}\n\n<turn_directive></turn_directive>\n\nhi`);
   });
 
   it("authenticated + NOT attached → NO section even if userMemory somehow present (no tool → no instruction)", async () => {
@@ -410,7 +420,7 @@ describe("runInvokeOpenai — cross-app profile section (profile T7, gated on au
     // the instructions (memory first), the recalls leading the input.
     expect(instructions).toBe(instructionsOf(MEMORY_SAVE, PROFILE_SAVE));
     expect(input).toBe(
-      `<turn_context>\n${renderUserMemoryRecall("Ada").slice(2)}${renderProfileRecall(sections)}\n</turn_context>\n\n` +
+      `${contextBlock(`${renderUserMemoryRecall("Ada").slice(2)}${renderProfileRecall(sections)}`)}\n\n` +
         `<turn_directive></turn_directive>\n\nhi`,
     );
   });
@@ -563,13 +573,13 @@ describe("the welcome card the Router already drew reaches the OpenAI run input'
   it("renders the section with or without the ggui rail; none when no card was drawn; never in the instructions", async () => {
     for (const gguiAttached of [true, false]) {
       const { instructions, input } = await captureTurn({ firstImpressionShown: shown, gguiAttached });
-      expect(input.startsWith(`<turn_context></turn_context>\n\n<turn_directive>\n${FIRST_IMPRESSION_SHOWN_HEADING}`)).toBe(true);
+      expect(input.startsWith(`${EMPTY_CONTEXT}\n\n<turn_directive>\n${FIRST_IMPRESSION_SHOWN_HEADING}`)).toBe(true);
       expect(input).toContain('"options":["Find a book","Opening hours"]');
       expect(instructions).not.toContain(FIRST_IMPRESSION_SHOWN_HEADING);
     }
     const noCard = (await captureTurn({ gguiAttached: true })).input;
     expect(noCard).not.toContain(FIRST_IMPRESSION_SHOWN_HEADING);
-    expect(noCard.startsWith("<turn_context></turn_context>\n\n<turn_directive></turn_directive>\n\n")).toBe(true);
+    expect(noCard.startsWith(`${EMPTY_CONTEXT}\n\n<turn_directive></turn_directive>\n\n`)).toBe(true);
   });
 });
 

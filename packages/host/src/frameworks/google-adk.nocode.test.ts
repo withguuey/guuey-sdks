@@ -28,8 +28,16 @@ import {
   renderResourcesSection,
   renderMcpAvailabilitySection,
   renderFirstImpressionShownSection,
+  TURN_CONTEXT_LEAD,
 } from "../preamble.js";
 import { createRunner, importConditionEntry, loadAdk } from "./google-adk.js";
+
+/** The constant head every `<turn_context>` block opens with (A1: the tag, then the lead line). */
+const CONTEXT_HEAD = `<turn_context>\n${TURN_CONTEXT_LEAD}\n`;
+/** The `<turn_context>` block framing `body` (the sections, their leading `\n\n` dropped), one blank line after the lead. */
+function contextBlock(body: string): string {
+  return `${CONTEXT_HEAD}\n${body}\n</turn_context>`;
+}
 
 function fakeEmitter() {
   const got = {
@@ -241,7 +249,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     expect(call.newMessage).toMatchObject({ role: "user" });
     expect(call.newMessage.parts).toHaveLength(3);
     const context = call.newMessage.parts[0]?.text ?? "";
-    expect(context.startsWith("<turn_context>\n")).toBe(true);
+    expect(context.startsWith(`${CONTEXT_HEAD}\n`)).toBe(true);
     expect(context).toContain("<conversation_history>");
     expect(context).toContain("<thread_memory>");
     expect(context).toContain("<working_state>");
@@ -257,7 +265,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
   }
   const MEMORY_SAVE = `\n\n${MEMORY_SAVE_INSTRUCTION}`;
   const PROFILE_SAVE = `\n\n${PROFILE_SAVE_INSTRUCTION}`;
-  const EMPTY_CONTEXT = "<turn_context></turn_context>";
+  const EMPTY_CONTEXT = `${CONTEXT_HEAD}</turn_context>`;
   const EMPTY_DIRECTIVE = "<turn_directive></turn_directive>";
 
   /**
@@ -346,7 +354,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     // Identical section content to Claude/OpenAI.
     expect(instruction).toBe(systemPromptOf(MEMORY_SAVE));
     expect(instruction).toContain("`save_memory` tool");
-    expect(texts[0]).toBe(`<turn_context>\n${renderUserMemoryRecall("User's name is Ada.").slice(2)}\n</turn_context>`);
+    expect(texts[0]).toBe(contextBlock(renderUserMemoryRecall("User's name is Ada.").slice(2)));
     expect(texts[0]).toContain("<user_memory>\nUser's name is Ada.\n</user_memory>");
   });
 
@@ -400,7 +408,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
       tools: { allowlist: ["@none"] },
     });
     expect(none.instruction).toBe(systemPromptOf());
-    expect(none.texts[0]).toBe(`<turn_context>\n${renderUserMemoryRecall("Ada.").slice(2)}\n</turn_context>`);
+    expect(none.texts[0]).toBe(contextBlock(renderUserMemoryRecall("Ada.").slice(2)));
     // Control: an allowlist that keeps a tool keeps both sections.
     const control = await resolveTurn(turn, {
       model: "gemini-3.5-pro",
@@ -442,7 +450,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     });
     expect(instruction).toBe(systemPromptOf(MEMORY_SAVE, PROFILE_SAVE));
     expect(texts[0]).toBe(
-      `<turn_context>\n${renderUserMemoryRecall("User's name is Ada.").slice(2)}${renderProfileRecall(PROFILE_SECTIONS)}\n</turn_context>`,
+      contextBlock(`${renderUserMemoryRecall("User's name is Ada.").slice(2)}${renderProfileRecall(PROFILE_SECTIONS)}`),
     );
     expect(texts[0]).toContain("### From Todoist");
   });
@@ -454,7 +462,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
       profileSections: PROFILE_SECTIONS,
     });
     expect(instruction).toBe(systemPromptOf());
-    expect(texts[0]).toBe(`<turn_context>\n${renderProfileRecall(PROFILE_SECTIONS).slice(2)}\n</turn_context>`);
+    expect(texts[0]).toBe(contextBlock(renderProfileRecall(PROFILE_SECTIONS).slice(2)));
   });
 
   it("authenticated + NO profileAccess → NO profile section (fail-closed default)", async () => {
@@ -559,7 +567,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
       mcpAvailability: availability,
     });
     expect(instruction).toBe(systemPromptOf());
-    expect(texts[0]).toBe(`<turn_context>\n${renderMcpAvailabilitySection(availability).slice(2)}\n</turn_context>`);
+    expect(texts[0]).toBe(contextBlock(renderMcpAvailabilitySection(availability).slice(2)));
   });
 
   it("A1: two users of one class get a byte-identical instruction; the class change (guest) changes it", async () => {

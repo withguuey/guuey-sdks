@@ -382,7 +382,8 @@ export async function runAdkTurn(
   turn: HostTurn,
   /**
    * The turn's context blocks (A1, `buildTurnContextBlocks`): always two,
-   * `<turn_context>` then `<turn_directive>` (either possibly empty), each
+   * `<turn_context>` (always opening with its constant lead line) then
+   * `<turn_directive>` (possibly empty), each
    * leading the message as its own text part.
    */
   turnContext: readonly string[],
