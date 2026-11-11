@@ -28,12 +28,22 @@ const CONTEXT_HEAD = `<turn_context>\n${TURN_CONTEXT_LEAD}\n`;
 const EMPTY_CONTEXT = `${CONTEXT_HEAD}</turn_context>`;
 
 /** Minimal invoke context with no FS layers, no credentials, default env. */
+/** A fixed set of per-invoke CLI state roots for buildOptions reads (buildOptions makes no directory). */
+const TEST_CLI_DIRS = {
+  config: "/tmp/guuey-cli-test/config",
+  cache: "/tmp/guuey-cli-test/cache",
+  xdgConfig: "/tmp/guuey-cli-test/xdg-config",
+  xdgData: "/tmp/guuey-cli-test/xdg-data",
+  xdgState: "/tmp/guuey-cli-test/xdg-state",
+};
+
 function ctx(over: Partial<BuildOptionsContext> = {}): BuildOptionsContext {
   return {
     input: "hi",
     identity: { userId: "u1", authMode: "anonymous" },
     apiKey: "sk-test",
     listCredentials: () => [],
+    cliDirs: TEST_CLI_DIRS,
     ...over,
   };
 }
@@ -796,16 +806,31 @@ describe("buildOptions — settings: autoMemoryEnabled:false UNCONDITIONALLY (sp
   });
 });
 
-describe("buildOptions — CLAUDE_CONFIG_DIR pinned to the session dir when fs is bound", () => {
-  it("sets CLAUDE_CONFIG_DIR = fs.session", () => {
+describe("buildOptions — the CLI's config, cache and XDG roots are the caller's fresh per-invoke directories when fs is bound", () => {
+  it("points CLAUDE_CONFIG_DIR, XDG_CACHE_HOME and the XDG config, data and state roots at ctx.cliDirs, never at fs.session; cwd stays fs.session", () => {
     const fs = { app: "/fs/app", home: "/fs/home", session: "/fs/session" };
     const opts = buildOptions({}, ctx({ fs }));
-    expect(opts.env?.CLAUDE_CONFIG_DIR).toBe("/fs/session");
+    expect(opts.env?.CLAUDE_CONFIG_DIR).toBe(TEST_CLI_DIRS.config);
+    expect(opts.env?.XDG_CACHE_HOME).toBe(TEST_CLI_DIRS.cache);
+    expect(opts.env?.XDG_CONFIG_HOME).toBe(TEST_CLI_DIRS.xdgConfig);
+    expect(opts.env?.XDG_DATA_HOME).toBe(TEST_CLI_DIRS.xdgData);
+    expect(opts.env?.XDG_STATE_HOME).toBe(TEST_CLI_DIRS.xdgState);
+    for (const name of ["CLAUDE_CONFIG_DIR", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"]) {
+      expect(opts.env?.[name]).not.toBe(fs.session);
+    }
+    expect(opts.cwd).toBe("/fs/session");
   });
 
-  it("omits CLAUDE_CONFIG_DIR when fs is not bound", () => {
+  it("refuses fs without cliDirs, so no caller can fall back to a shared config root", () => {
+    const fs = { app: "/fs/app", home: "/fs/home", session: "/fs/session" };
+    const { cliDirs: _omitted, ...withoutDirs } = ctx({ fs });
+    expect(() => buildOptions({}, withoutDirs)).toThrow(/cliDirs/);
+  });
+
+  it("omits CLAUDE_CONFIG_DIR and the XDG roots when fs is not bound", () => {
     const opts = buildOptions({}, ctx());
     expect(opts.env?.CLAUDE_CONFIG_DIR).toBeUndefined();
+    expect(opts.env?.XDG_CACHE_HOME).toBeUndefined();
   });
 });
 

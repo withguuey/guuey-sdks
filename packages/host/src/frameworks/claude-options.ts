@@ -100,6 +100,20 @@ export interface PriorMemoryRecord {
 }
 
 /**
+ * The Claude CLI's own state roots for one invoke, each a fresh, empty
+ * directory: its config root (`CLAUDE_CONFIG_DIR`, where `.claude.json` and
+ * the session transcripts live), its cache, and the XDG config, data and
+ * state roots. None is a directory an earlier turn could have written.
+ */
+export interface CliDirs {
+  config: string;
+  cache: string;
+  xdgConfig: string;
+  xdgData: string;
+  xdgState: string;
+}
+
+/**
  * Per-invoke context `buildOptions` needs beyond the static snapshot. Sourced by
  * the worker loop from the `invoke` control message + boot env.
  */
@@ -148,6 +162,17 @@ export interface BuildOptionsContext {
    * agent's catalog on EVERY env).
    */
   fsBound?: boolean;
+  /**
+   * The CLI's own state roots for THIS invoke: fresh, empty directories the
+   * caller made for this invoke alone ({@link CliDirs}). Required whenever
+   * {@link fs} is set. The CLI reads `.claude.json` from its config root on
+   * every start and applies the `env` block it finds there, even with
+   * `settingSources: []`; with the root at `fs.session`, a file a turn wrote
+   * there steered the next turn of the same session (the CLI's model calls
+   * went to the URL the file named). Roots no earlier turn could write remove
+   * that path by construction.
+   */
+  cliDirs?: CliDirs;
   /** Recent conversation window for the `<conversation_history>` preamble. */
   history?: HistoryMessage[];
   /** guuey#901: the OAuth servers' availability this turn (the "Connected services" section); absent = no such server. */
@@ -364,14 +389,18 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
   // `CLAUDE_CODE_REMOTE` would make the CLI persist the key to disk and
   // `CLAUDE_CODE_SIMPLE` would make it ignore the descriptor.
   //
-  // CLAUDE_CONFIG_DIR pins the CLI's own config/state root to the (ephemeral,
-  // pod-local) session dir — spec §4 belt-and-braces, alongside the
-  // unconditional `settings.autoMemoryEnabled:false` below — so CLI session
-  // state never lands in the durable, quota-billed home layer.
-  // XDG_CACHE_HOME likewise: the CLI's cache tree (~/.cache/claude-cli-nodejs,
-  // MCP logs etc.) follows $HOME by XDG default, and $HOME resolves inside the
-  // durable home mount — live-found on the first G5 gate run (2026-07-20)
-  // leaking per-invoke log files into quota-billed storage.
+  // CLAUDE_CONFIG_DIR pins the CLI's own config/state root to a fresh, empty
+  // per-invoke directory the caller made ({@link BuildOptionsContext.cliDirs}),
+  // so CLI session state never lands in the durable, quota-billed home layer
+  // (spec §4 belt-and-braces, alongside the unconditional
+  // `settings.autoMemoryEnabled:false` below), and no `.claude.json` an earlier
+  // turn wrote is read by this one.
+  // XDG_CACHE_HOME and the XDG config, data and state roots likewise: the
+  // CLI's cache tree (~/.cache/claude-cli-nodejs, MCP logs etc.) follows $HOME
+  // by XDG default, and $HOME resolves inside the durable home mount —
+  // live-found on the first G5 gate run (2026-07-20) leaking per-invoke log
+  // files into quota-billed storage. Each is fresh per invoke, for the same
+  // reason as the config root.
   // HOME rides along (guuey#176): this env REPLACES the subprocess env
   // wholesale, and omitting HOME left the agent's shell with no `~` even
   // though bwrap set HOME=/home on the worker (live-found on the multi-pod
@@ -389,15 +418,23 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
   const refusedNames = forbiddenClaudeEnvNames(snapshot.env ?? {});
   if (refusedNames.length > 0) throw new ClaudeBuilderEnvError(refusedNames);
   const builderEnv = builderEnvOf(snapshot).env;
-  const fsEnv: Record<string, string> = fs
-    ? {
-        HOME: fs.home,
-        [ENV_HOME_DIR]: fs.home,
-        [ENV_APP_DIR]: fs.app,
-        CLAUDE_CONFIG_DIR: fs.session,
-        XDG_CACHE_HOME: fs.session,
-      }
-    : {};
+  const cliDirs = ctx.cliDirs;
+  if (fs && cliDirs === undefined) {
+    throw new Error("@guuey/host: buildOptions needs fresh per-invoke cliDirs whenever fs is set.");
+  }
+  const fsEnv: Record<string, string> =
+    fs && cliDirs !== undefined
+      ? {
+          HOME: fs.home,
+          [ENV_HOME_DIR]: fs.home,
+          [ENV_APP_DIR]: fs.app,
+          CLAUDE_CONFIG_DIR: cliDirs.config,
+          XDG_CACHE_HOME: cliDirs.cache,
+          XDG_CONFIG_HOME: cliDirs.xdgConfig,
+          XDG_DATA_HOME: cliDirs.xdgData,
+          XDG_STATE_HOME: cliDirs.xdgState,
+        }
+      : {};
   // The trust variables the host process holds (`PLATFORM_TRUST_ENV_NAMES`):
   // this env replaces the CLI's environment, so without them the CLI trusts
   // public roots only (guuey#3114). After the builder's env, so a builder

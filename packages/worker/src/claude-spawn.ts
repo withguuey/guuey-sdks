@@ -104,6 +104,21 @@ export function trustEnvOf(env: { readonly [name: string]: string | undefined })
  */
 export const CLAUDE_CODE_EXECUTABLE_ENV = "GUUEY_CLAUDE_CODE_EXECUTABLE";
 
+/**
+ * The variable a platform sets on the worker process to name the FIXED root of
+ * the Claude CLI's per-invoke state directories (its config, cache and XDG
+ * roots), when the platform must know the path before the worker starts (to
+ * bind into it). The root must not exist when an invoke starts: the host makes
+ * it with an exclusive mkdir and refuses the turn if it is already there, and
+ * removes it when the turn ends. Unset or empty: the host makes a fresh root
+ * with a random name under its temp dir instead. When set, its value must be
+ * exactly {@link CLAUDE_CLI_FIXED_ROOT}; any other value refuses the turn.
+ */
+export const CLAUDE_CLI_ROOT_ENV = "GUUEY_CLI_ROOT";
+
+/** The one fixed root {@link CLAUDE_CLI_ROOT_ENV} may name: under the jail's per-start `/tmp`. */
+export const CLAUDE_CLI_FIXED_ROOT = "/tmp/guuey-cli";
+
 /** The Claude Code binary `env` names ({@link CLAUDE_CODE_EXECUTABLE_ENV}), or undefined when unset or empty. */
 export function claudeCodeExecutableOf(env: { readonly [name: string]: string | undefined }): string | undefined {
   const value = env[CLAUDE_CODE_EXECUTABLE_ENV];

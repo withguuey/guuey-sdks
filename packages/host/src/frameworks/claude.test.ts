@@ -1,10 +1,10 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { anthropicUserContent, createEmitter, type WorkerEvent } from "@guuey/worker";
+import { anthropicUserContent, CLAUDE_CLI_FIXED_ROOT, CLAUDE_CLI_ROOT_ENV, createEmitter, type WorkerEvent } from "@guuey/worker";
 import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import { awaitMcpReady, runInvoke, type HostInvoke, type QueryFn, type QueryHandle } from "./claude.js";
+import { awaitMcpReady, CLI_ROOT_PREFIX, runInvoke, type HostInvoke, type QueryFn, type QueryHandle } from "./claude.js";
 import { A2UI_GUUEY_CATALOG_ID, A2UI_SECTION, FIRST_IMPRESSION_SHOWN_HEADING, TURN_CONTEXT_LEAD } from "../preamble.js";
 
 /** The constant head every `<turn_context>` block opens with (A1: the tag, then the lead line). */
@@ -31,7 +31,8 @@ function invoke(over: Partial<HostInvoke> = {}): HostInvoke {
   return {
     input: "hi",
     identity: { userId: "u1", authMode: "anonymous" },
-    fs: { app: "/fs/app", home: "/fs/home", session: "/fs/session" },
+    // A real session directory: the turn makes its CLI config directory under it.
+    fs: { app: "/fs/app", home: "/fs/home", session: SESSION },
     history: [],
     ...over,
   };
@@ -394,7 +395,7 @@ describe("runInvoke — native emission", () => {
   it("threads invoke.userMemory + memoryAttached into the buildOptions ctx → the recall block renders in the turn context", async () => {
     const seen = await turnFor({
       identity: { userId: "u1", authMode: "authenticated" },
-      fs: { app: "/fs/app", home: "/fs/home", session: "/fs/session" },
+      fs: { app: "/fs/app", home: "/fs/home", session: SESSION },
       memoryAttached: true,
       userMemory: "User's favorite color is teal.",
     });
@@ -471,7 +472,7 @@ describe("runInvoke — native emission", () => {
       {},
       invoke({
         identity: { userId: "u1", authMode: "authenticated" },
-        fs: { app: "/fs/app", home: "/fs/home", session: "/fs/session" },
+        fs: { app: "/fs/app", home: "/fs/home", session: SESSION },
         memoryAttached: true,
       }),
       { apiKey: "sk-test", listCredentials: () => [] },
@@ -696,5 +697,174 @@ describe("an unreadable denylist entry is named on stderr (guuey#2585)", () => {
     );
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatch(/^\[guuey\] tools\.denylist entry "mcp__x__y" cannot be read/);
+  });
+});
+
+describe("runInvoke — the CLI's state roots are fresh, empty directories per invoke, removed when the turn ends", () => {
+  const ROOT_ENV = ["CLAUDE_CONFIG_DIR", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"] as const;
+  interface Seen { dirs: string[]; allExistedEmpty: boolean }
+
+  /** One turn on a fake query; returns the five roots it was handed and whether each existed, empty, at spawn. */
+  async function rootsOfOneTurn(): Promise<Seen> {
+    const { sink } = collector();
+    const seen: Seen = { dirs: [], allExistedEmpty: true };
+    const query: QueryFn = (args) => {
+      for (const name of ROOT_ENV) {
+        const dir = args.options.env?.[name];
+        if (dir === undefined) { seen.allExistedEmpty = false; continue; }
+        seen.dirs.push(dir);
+        if (!existsSync(dir) || readdirSync(dir).length > 0) seen.allExistedEmpty = false;
+      }
+      return { ...idleControl, async *[Symbol.asyncIterator]() { yield resultMessage("success", "ok"); } };
+    };
+    await runInvoke({}, invoke(), { apiKey: "sk-test", listCredentials: () => [] }, createEmitter(sink), query);
+    return seen;
+  }
+
+  it("each turn gets five distinct empty roots under one fresh temp root, none is the session dir, and all are gone after the turn", async () => {
+    // A `.claude.json` an earlier turn left in the session dir (the old config root) is in none of the new roots.
+    writeFileSync(join(SESSION, ".claude.json"), JSON.stringify({ env: { ANTHROPIC_BASE_URL: "http://127.0.0.1:9" } }));
+    try {
+      const first = await rootsOfOneTurn();
+      const second = await rootsOfOneTurn();
+      for (const turn of [first, second]) {
+        expect(turn.dirs).toHaveLength(ROOT_ENV.length);
+        expect(new Set(turn.dirs).size).toBe(ROOT_ENV.length);
+        expect(turn.allExistedEmpty).toBe(true);
+        for (const dir of turn.dirs) {
+          expect(dir).not.toBe(SESSION);
+          expect(dir.startsWith(join(tmpdir(), CLI_ROOT_PREFIX))).toBe(true);
+          expect(existsSync(dir)).toBe(false);
+        }
+      }
+      expect(first.dirs[0]).not.toBe(second.dirs[0]);
+    } finally {
+      rmSync(join(SESSION, ".claude.json"), { force: true });
+    }
+  });
+
+  /** One turn whose query does `during` while the CLI would be running; returns the terminal event types and whether it queried. */
+  async function oneTurnWith(during: (env: Record<string, string | undefined>) => void = () => undefined): Promise<{ terminal: string[]; queried: boolean }> {
+    const { events, sink } = collector();
+    let queried = false;
+    const query: QueryFn = (args) => {
+      queried = true;
+      during({ ...args.options.env });
+      return { ...idleControl, async *[Symbol.asyncIterator]() { yield resultMessage("success", "ok"); } };
+    };
+    await runInvoke({}, invoke(), { apiKey: "sk-test", listCredentials: () => [] }, createEmitter(sink), query);
+    return { terminal: events.filter((e) => e.type === "error" || e.type === "done").map((e) => e.type), queried };
+  }
+
+  it("every root is 0700 (G-5)", async () => {
+    const modes: number[] = [];
+    const { terminal } = await oneTurnWith((env) => {
+      for (const name of ROOT_ENV) {
+        const dir = env[name];
+        if (dir !== undefined) modes.push(lstatSync(dir).mode & 0o777);
+      }
+      const config = env.CLAUDE_CONFIG_DIR;
+      if (config !== undefined) modes.push(lstatSync(join(config, "..")).mode & 0o777);
+    });
+    expect(terminal).toEqual(["done"]);
+    expect(modes).toHaveLength(ROOT_ENV.length + 1);
+    for (const mode of modes) expect(mode).toBe(0o700);
+  });
+
+  it("a link planted inside the root during the turn is removed as a link at the end; its outside target survives (G-4)", async () => {
+    const outside = mkdtempSync(join(tmpdir(), "host-claude-sentinel-"));
+    const sentinel = join(outside, "sentinel.txt");
+    writeFileSync(sentinel, "keep");
+    try {
+      const { terminal } = await oneTurnWith((env) => {
+        const config = env.CLAUDE_CONFIG_DIR;
+        if (config !== undefined) {
+          symlinkSync(outside, join(config, "link-to-outside-dir"));
+          symlinkSync(sentinel, join(config, "link-to-outside-file"));
+        }
+      });
+      expect(terminal).toEqual(["done"]);
+      expect(readFileSync(sentinel, "utf8")).toBe("keep");
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("the root is removed when the turn fails, too (G-4)", async () => {
+    const seen: string[] = [];
+    const { events, sink } = collector();
+    const query: QueryFn = (args) => {
+      const dir = args.options.env?.CLAUDE_CONFIG_DIR;
+      if (dir !== undefined) seen.push(dir);
+      return throwingStream("the CLI died");
+    };
+    await runInvoke({}, invoke(), { apiKey: "sk-test", listCredentials: () => [] }, createEmitter(sink), query);
+    expect(events.filter((e) => e.type === "error" || e.type === "done").map((e) => e.type)).toEqual(["error"]);
+    expect(seen).toHaveLength(1);
+    expect(existsSync(join(seen[0] ?? "", ".."))).toBe(false);
+  });
+
+  // The fixed root is one absolute path (G-2), shared by the machine, so these cases refuse to run over one that is
+  // already there rather than touch it.
+  it(`with ${CLAUDE_CLI_ROOT_ENV} = ${CLAUDE_CLI_FIXED_ROOT}, the roots are made inside it and it is removed after the turn`, async () => {
+    expect(existsSync(CLAUDE_CLI_FIXED_ROOT)).toBe(false);
+    vi.stubEnv(CLAUDE_CLI_ROOT_ENV, CLAUDE_CLI_FIXED_ROOT);
+    try {
+      const turn = await rootsOfOneTurn();
+      expect(turn.allExistedEmpty).toBe(true);
+      for (const dir of turn.dirs) expect(dir.startsWith(`${CLAUDE_CLI_FIXED_ROOT}/`)).toBe(true);
+      expect(existsSync(CLAUDE_CLI_FIXED_ROOT)).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it(`a fixed root already there refuses the turn with one error, before any query, and is left untouched`, async () => {
+    expect(existsSync(CLAUDE_CLI_FIXED_ROOT)).toBe(false);
+    mkdirSync(CLAUDE_CLI_FIXED_ROOT);
+    writeFileSync(join(CLAUDE_CLI_FIXED_ROOT, "earlier.json"), "{}");
+    vi.stubEnv(CLAUDE_CLI_ROOT_ENV, CLAUDE_CLI_FIXED_ROOT);
+    try {
+      const { terminal, queried } = await oneTurnWith();
+      expect(queried).toBe(false);
+      expect(terminal).toEqual(["error"]);
+      expect(readFileSync(join(CLAUDE_CLI_FIXED_ROOT, "earlier.json"), "utf8")).toBe("{}");
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(CLAUDE_CLI_FIXED_ROOT, { recursive: true, force: true });
+    }
+  });
+
+  it(`${CLAUDE_CLI_ROOT_ENV} naming any other path refuses the turn before any query, and makes nothing (G-2)`, async () => {
+    const other = join(SESSION, "not-the-fixed-root");
+    vi.stubEnv(CLAUDE_CLI_ROOT_ENV, other);
+    try {
+      const { terminal, queried } = await oneTurnWith();
+      expect(queried).toBe(false);
+      expect(terminal).toEqual(["error"]);
+      expect(existsSync(other)).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("a temp dir the roots cannot be made in fails the turn with one named error, before any query", async () => {
+    const { events, sink } = collector();
+    let queried = false;
+    const query: QueryFn = () => {
+      queried = true;
+      return { ...idleControl, async *[Symbol.asyncIterator]() { yield resultMessage("success", "ok"); } };
+    };
+    vi.stubEnv("TMPDIR", join(SESSION, "missing", "dir"));
+    try {
+      await runInvoke({}, invoke(), { apiKey: "sk-test", listCredentials: () => [] }, createEmitter(sink), query);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(queried).toBe(false);
+    const terminal = events.filter((e) => e.type === "error" || e.type === "done");
+    expect(terminal).toHaveLength(1);
+    expect(terminal[0]?.type).toBe("error");
+    expect(JSON.stringify(terminal[0])).toContain("per-invoke state directories");
   });
 });

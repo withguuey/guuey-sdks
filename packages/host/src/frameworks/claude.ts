@@ -9,6 +9,9 @@
  * worker entrypoint (`index.ts`) passes the real `@anthropic-ai/claude-agent-sdk`
  * `query`.
  */
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type {
   McpServerConfig,
   McpServerStatus,
@@ -26,13 +29,14 @@ import type { CredentialFile,
   JsonValue,
   ProfileSection,
   StopReason, McpAvailability, FirstImpressionPush, FirstImpressionShown, WithheldTool, InvokeImageAttachment } from "@guuey/worker";
-import { anthropicUserContent, invokeImagesCapabilities, storeTurnImages } from "@guuey/worker";
+import { anthropicUserContent, CLAUDE_CLI_FIXED_ROOT, CLAUDE_CLI_ROOT_ENV, invokeImagesCapabilities, storeTurnImages } from "@guuey/worker";
 import {
   buildOptions,
   claudeTurnContext,
   reservedEnvNamesDropped,
   resolveMcpServers,
   type BuildOptionsContext,
+  type CliDirs,
   type PriorMemoryRecord,
 } from "./claude-options.js";
 import { resolveSdkVersion } from "../sdk-version.js";
@@ -337,6 +341,71 @@ export async function runInvoke(
     return;
   }
 
+  // The CLI's own state roots for this invoke: one fresh root made here,
+  // holding the config, cache and XDG roots, and removed when the turn ends.
+  // No `.claude.json` an earlier turn wrote is read by this one
+  // (BuildOptionsContext.cliDirs). The root is the platform's fixed path when
+  // it names one (CLAUDE_CLI_ROOT_ENV), made by an exclusive mkdir that
+  // refuses a path already there; otherwise a random name under this
+  // process's temp dir (in the jail, its per-start tmpfs).
+  let root: string;
+  let cliDirs: CliDirs;
+  try {
+    const fixedRoot = process.env[CLAUDE_CLI_ROOT_ENV];
+    if (fixedRoot !== undefined && fixedRoot !== "") {
+      if (fixedRoot !== CLAUDE_CLI_FIXED_ROOT) {
+        throw new Error(`${CLAUDE_CLI_ROOT_ENV} may only name ${CLAUDE_CLI_FIXED_ROOT}`);
+      }
+      mkdirSync(fixedRoot, { mode: 0o700 });
+      root = fixedRoot;
+    } else {
+      root = mkdtempSync(join(tmpdir(), CLI_ROOT_PREFIX));
+    }
+    cliDirs = {
+      config: join(root, "config"),
+      cache: join(root, "cache"),
+      xdgConfig: join(root, "xdg-config"),
+      xdgData: join(root, "xdg-data"),
+      xdgState: join(root, "xdg-state"),
+    };
+    for (const dir of Object.values(cliDirs)) mkdirSync(dir, { mode: 0o700 });
+  } catch (err) {
+    emit.error(`@guuey/host: could not make the CLI's per-invoke state directories: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+  try {
+    await runClaudeTurn(snapshot, invoke, runtime, emit, query, timing, cliDirs);
+  } finally {
+    removeCliRoot(root);
+  }
+}
+
+/** The name prefix of the CLI's per-invoke state root, made under the temp dir with a random suffix. */
+export const CLI_ROOT_PREFIX = "guuey-cli-";
+
+/**
+ * Removes the per-invoke state root once the turn has ended. A link inside it
+ * is removed as a link, never followed. A failure is reported on stderr, by
+ * path only.
+ */
+function removeCliRoot(root: string): void {
+  try {
+    rmSync(root, { recursive: true, force: true });
+  } catch (err) {
+    process.stderr.write(`[guuey] could not remove the CLI state directory ${root}: ${err instanceof Error ? err.message : String(err)}\n`);
+  }
+}
+
+/** The Claude turn proper, after the hello, the image store and the framework gate, with this invoke's state roots. */
+async function runClaudeTurn(
+  snapshot: { framework?: string } & Parameters<typeof buildOptions>[0],
+  invoke: HostInvoke,
+  runtime: HostRuntime,
+  emit: Emitter,
+  query: QueryFn,
+  timing: ClaudeTurnTiming,
+  cliDirs: CliDirs,
+): Promise<void> {
   let options: Options;
   let ctx: BuildOptionsContext;
   let turnContext: string[];
@@ -345,6 +414,7 @@ export async function runInvoke(
       input: invoke.input,
       identity: invoke.identity,
       fs: invoke.fs,
+      cliDirs,
       ...(invoke.fsBound !== undefined ? { fsBound: invoke.fsBound } : {}),
       history: invoke.history,
       listCredentials: runtime.listCredentials,

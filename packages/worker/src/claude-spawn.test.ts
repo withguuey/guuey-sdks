@@ -9,6 +9,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import {
+  CLAUDE_CLI_FIXED_ROOT,
+  CLAUDE_CLI_ROOT_ENV,
   CLAUDE_FORBIDDEN_ENV,
   CLAUDE_HOST_OWNED_ENV,
   CLAUDE_KEY_FD_ENV,
@@ -98,6 +100,15 @@ describe("the host-owned CLI session and request variables", () => {
     expect(isClaudeHostOwnedEnvName("claudecode")).toBe(false);
     expect(isClaudeHostOwnedEnvName("CLAUDE_CODE_SESSION_ID_X")).toBe(false);
     expect(isClaudeHostOwnedEnvName("CLAUDE_CODE_EXECUTABLE")).toBe(false);
+  });
+});
+
+describe("the platform's fixed CLI state root variable", () => {
+  it("is GUUEY_CLI_ROOT, may name only /tmp/guuey-cli, and is neither a forbidden nor a host-owned CLI variable", () => {
+    expect(CLAUDE_CLI_ROOT_ENV).toBe("GUUEY_CLI_ROOT");
+    expect(CLAUDE_CLI_FIXED_ROOT).toBe("/tmp/guuey-cli");
+    expect(CLAUDE_FORBIDDEN_ENV).not.toContain(CLAUDE_CLI_ROOT_ENV);
+    expect(CLAUDE_HOST_OWNED_ENV).not.toContain(CLAUDE_CLI_ROOT_ENV);
   });
 });
 
