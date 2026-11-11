@@ -239,13 +239,15 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     const call = captured.runAsync as { newMessage: { parts: Array<{ text?: string }> } };
     expect(captured.runAsync).toMatchObject({ userId: "u-1", sessionId: "s-u-1", runConfig: { streamingMode: "sse" } });
     expect(call.newMessage).toMatchObject({ role: "user" });
-    expect(call.newMessage.parts).toHaveLength(2);
+    expect(call.newMessage.parts).toHaveLength(3);
     const context = call.newMessage.parts[0]?.text ?? "";
     expect(context.startsWith("<turn_context>\n")).toBe(true);
     expect(context).toContain("<conversation_history>");
     expect(context).toContain("<thread_memory>");
     expect(context).toContain("<working_state>");
-    expect(call.newMessage.parts[1]).toEqual({ text: "do the thing" });
+    // No order this turn: the directive block is still the second part, empty.
+    expect(call.newMessage.parts[1]).toEqual({ text: "<turn_directive></turn_directive>" });
+    expect(call.newMessage.parts[2]).toEqual({ text: "do the thing" });
     expect(got.done[0]?.result).toBe("streamed answer");
   });
 
@@ -256,6 +258,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
   const MEMORY_SAVE = `\n\n${MEMORY_SAVE_INSTRUCTION}`;
   const PROFILE_SAVE = `\n\n${PROFILE_SAVE_INSTRUCTION}`;
   const EMPTY_CONTEXT = "<turn_context></turn_context>";
+  const EMPTY_DIRECTIVE = "<turn_directive></turn_directive>";
 
   /**
    * Run one no-code turn and return the resolved F7 function-instruction string
@@ -331,7 +334,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
       texts: [EMPTY_CONTEXT, directive, "hi"],
     });
     expect((await resolveTurn({ firstImpressionShown: shown, gguiAttached: true })).texts[1]).toBe(directive);
-    expect((await resolveTurn({})).texts).toEqual([EMPTY_CONTEXT, "hi"]);
+    expect((await resolveTurn({})).texts).toEqual([EMPTY_CONTEXT, EMPTY_DIRECTIVE, "hi"]);
   });
 
   it("authenticated + attached + userMemory → the save instruction in the instruction, the byte-identical recall block in the turn context (memory-mcp T5)", async () => {

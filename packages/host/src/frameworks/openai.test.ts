@@ -229,11 +229,12 @@ describe("runInvokeOpenai — native emission", () => {
     expect(seen.model).toBe("gpt-4o-mini");
     expect(seen.maxTurns).toBe(7);
     expect(seen.instructions).toBe(instructionsOf());
-    // A1: the context leads the input, its own block, then the user's text.
+    // A1: the context leads the input, its own block, then the (empty, no order) directive block,
+    // then the user's text: three parts joined by blank lines.
     expect(typeof seen.input).toBe("string");
     const input = typeof seen.input === "string" ? seen.input : "";
     expect(input.startsWith("<turn_context>\n")).toBe(true);
-    expect(input.endsWith("\n</turn_context>\n\ndo it")).toBe(true);
+    expect(input.endsWith("\n</turn_context>\n\n<turn_directive></turn_directive>\n\ndo it")).toBe(true);
     expect(input).toContain("<thread_memory>");
     expect(input).toContain("Ada");
     expect(input).toContain("<working_state>");
@@ -302,7 +303,9 @@ describe("runInvokeOpenai — memory section (memory-mcp T5, gated on authentica
     });
     // Identical block content to Claude/ADK.
     expect(instructions).toBe(instructionsOf(MEMORY_SAVE));
-    expect(input).toBe(`<turn_context>\n${renderUserMemoryRecall("User's name is Ada.").slice(2)}\n</turn_context>\n\nhi`);
+    expect(input).toBe(
+      `<turn_context>\n${renderUserMemoryRecall("User's name is Ada.").slice(2)}\n</turn_context>\n\n<turn_directive></turn_directive>\n\nhi`,
+    );
   });
 
   it("guuey#2386: a client that draws guuey A2UI gets the section DIRECTLY AFTER generative UI, byte-identical to Claude's", async () => {
@@ -344,9 +347,10 @@ describe("runInvokeOpenai — memory section (memory-mcp T5, gated on authentica
     expect(none.instructions).not.toContain("save_profile");
     expect(none.input).toContain("Prefers short replies.");
     expect(none.input).not.toContain("ggui_handshake");
+    expect(none.input).toContain("<turn_directive></turn_directive>");
     const control = await capture(["ggui.*"]);
     expect(control.instructions).toContain("save_profile");
-    expect(control.input).toContain("<turn_directive>");
+    expect(control.input).toContain("<turn_directive>\n## First impression (this turn)");
     expect(control.input).toContain("ggui_handshake");
     expect(control.instructions).not.toContain("ggui_handshake");
   });
@@ -354,7 +358,7 @@ describe("runInvokeOpenai — memory section (memory-mcp T5, gated on authentica
   it("BOOTSTRAP: authenticated + attached + NO userMemory (brand-new user) → save-only section, NO recall block", async () => {
     const { instructions, input } = await captureTurn({ identity: authed, memoryAttached: true });
     expect(instructions).toBe(instructionsOf(MEMORY_SAVE));
-    expect(input).toBe("<turn_context></turn_context>\n\nhi");
+    expect(input).toBe("<turn_context></turn_context>\n\n<turn_directive></turn_directive>\n\nhi");
   });
 
   it("authenticated + NOT attached → NO section even if userMemory somehow present (no tool → no instruction)", async () => {
@@ -406,7 +410,8 @@ describe("runInvokeOpenai — cross-app profile section (profile T7, gated on au
     // the instructions (memory first), the recalls leading the input.
     expect(instructions).toBe(instructionsOf(MEMORY_SAVE, PROFILE_SAVE));
     expect(input).toBe(
-      `<turn_context>\n${renderUserMemoryRecall("Ada").slice(2)}${renderProfileRecall(sections)}\n</turn_context>\n\nhi`,
+      `<turn_context>\n${renderUserMemoryRecall("Ada").slice(2)}${renderProfileRecall(sections)}\n</turn_context>\n\n` +
+        `<turn_directive></turn_directive>\n\nhi`,
     );
   });
 
@@ -562,7 +567,9 @@ describe("the welcome card the Router already drew reaches the OpenAI run input'
       expect(input).toContain('"options":["Find a book","Opening hours"]');
       expect(instructions).not.toContain(FIRST_IMPRESSION_SHOWN_HEADING);
     }
-    expect((await captureTurn({ gguiAttached: true })).input).not.toContain(FIRST_IMPRESSION_SHOWN_HEADING);
+    const noCard = (await captureTurn({ gguiAttached: true })).input;
+    expect(noCard).not.toContain(FIRST_IMPRESSION_SHOWN_HEADING);
+    expect(noCard.startsWith("<turn_context></turn_context>\n\n<turn_directive></turn_directive>\n\n")).toBe(true);
   });
 });
 

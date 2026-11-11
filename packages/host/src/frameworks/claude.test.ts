@@ -250,14 +250,16 @@ describe("runInvoke — native emission", () => {
     const seen = await turnFor(turn, { systemPrompt: "SYS" });
     expect(Array.isArray(seen.content)).toBe(true);
     const content = Array.isArray(seen.content) ? seen.content : [];
-    expect(content).toHaveLength(2);
-    const [context, ...rest] = content;
+    expect(content).toHaveLength(3);
+    const [context, directive, ...rest] = content;
     expect(context?.type).toBe("text");
     const contextText = context?.type === "text" ? context.text : "";
     expect(contextText.startsWith("<turn_context>\n")).toBe(true);
     expect(contextText).toContain("<thread_memory>");
     expect(contextText).toContain("<working_state>");
     expect(contextText).toContain("Ada");
+    // No order this turn: the directive block is still sent, empty.
+    expect(directive).toEqual({ type: "text", text: "<turn_directive></turn_directive>" });
     expect(rest).toEqual(anthropicUserContent(turn));
     expect(rest).toEqual([{ type: "text", text: "do it" }]);
     // The system prompt carries none of it.
@@ -577,9 +579,9 @@ describe("the welcome card the Router already drew reaches the Claude turn's dir
     }
   });
 
-  it("no card drawn: no section, no directive block", async () => {
+  it("no card drawn: no section, an EMPTY directive block still second", async () => {
     const seen = await turnFor({ gguiAttached: true });
-    expect(textsOf(seen.content)).toEqual(["<turn_context></turn_context>", "hi"]);
+    expect(textsOf(seen.content)).toEqual(["<turn_context></turn_context>", "<turn_directive></turn_directive>", "hi"]);
   });
 });
 

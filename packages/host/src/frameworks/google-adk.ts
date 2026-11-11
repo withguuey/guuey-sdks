@@ -380,7 +380,11 @@ export async function runAdkTurn(
   adk: Pick<AdkModule, "InMemoryRunner">,
   agent: AdkAgent,
   turn: HostTurn,
-  /** The turn's context blocks (A1, `buildTurnContextBlocks`): each leads the message as its own text part. */
+  /**
+   * The turn's context blocks (A1, `buildTurnContextBlocks`): always two,
+   * `<turn_context>` then `<turn_directive>` (either possibly empty), each
+   * leading the message as its own text part.
+   */
   turnContext: readonly string[],
   emit: Emitter,
   sdkVersion: string | null,
@@ -410,7 +414,8 @@ export async function runAdkTurn(
       userId: turn.identity.userId,
       sessionId: session.id,
       // `role` pinned — see the module header (adk-js#475).
-      // A1: the turn's context blocks first, each its own text part, then the
+      // A1: the turn's two context blocks first (`<turn_context>` then
+      // `<turn_directive>`, always both), each its own text part, then the
       // turn's own parts (its images, then its text) unchanged.
       newMessage: { role: "user", parts: [...turnContext.map((text) => ({ text })), ...geminiUserParts(turn)] },
       // SSE streaming, matching the Python host's RunConfig(streaming_mode=SSE)

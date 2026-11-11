@@ -276,10 +276,10 @@ export function claudePromptClass(snapshot: GuueyAgent, ctx: BuildOptionsContext
 }
 
 /**
- * The leading text blocks of the SDK user message this turn adds (A1): the
- * `<turn_context>` block, always, then a `<turn_directive>` block when the
- * platform has an order this turn. `runInvoke` puts each in its own content
- * block, ahead of the invoke's own content.
+ * The leading text blocks of the SDK user message this turn adds (A1): always
+ * exactly two, the `<turn_context>` block then the `<turn_directive>` block,
+ * each empty (`<tag></tag>`) when there is nothing to say. `runInvoke` puts
+ * each in its own content block, ahead of the invoke's own content.
  */
 export function claudeTurnContext(snapshot: GuueyAgent, ctx: BuildOptionsContext): string[] {
   return buildTurnContextBlocks(ctx, claudePromptClass(snapshot, ctx));

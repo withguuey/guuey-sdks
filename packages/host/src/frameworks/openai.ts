@@ -246,10 +246,11 @@ export async function runInvokeOpenai(
 }
 
 /**
- * The run input with the turn's context blocks first (A1). A string input (no
- * images) becomes the blocks and the text joined by blank lines; the one-user-
- * message input (images) gets each block as its own leading `input_text` part,
- * ahead of the images and the text.
+ * The run input with the turn's two context blocks first (A1: `<turn_context>`
+ * then `<turn_directive>`, each possibly empty, always both). A string input
+ * (no images) becomes the two blocks and the text joined by blank lines; the
+ * one-user-message input (images) gets each block as its own leading
+ * `input_text` part, ahead of the images and the text.
  */
 export function withTurnContext(
   blocks: readonly string[],

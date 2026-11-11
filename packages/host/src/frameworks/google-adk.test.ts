@@ -90,8 +90,8 @@ const TURN: HostTurn = {
   fs: { app: "/tmp/nope-app", home: "/tmp/nope-home", session: "/tmp/nope-session" },
   history: [],
 };
-/** A1: the turn's context blocks (here the empty `<turn_context>`), which lead the message. */
-const TURN_CONTEXT = ["<turn_context></turn_context>"];
+/** A1: the turn's two context blocks (here the empty `<turn_context>` and `<turn_directive>`), which lead the message. */
+const TURN_CONTEXT = ["<turn_context></turn_context>", "<turn_directive></turn_directive>"];
 
 // ── toolset mapping ──────────────────────────────────────────────────────────
 
@@ -130,7 +130,10 @@ describe("runAdkTurn — the wire contract", () => {
     expect(capture.runAsyncParams).toEqual({
       userId: "u-42",
       sessionId: "sess-u-42",
-      newMessage: { role: "user", parts: [{ text: "<turn_context></turn_context>" }, { text: "hi there" }] },
+      newMessage: {
+        role: "user",
+        parts: [{ text: "<turn_context></turn_context>" }, { text: "<turn_directive></turn_directive>" }, { text: "hi there" }],
+      },
       runConfig: { streamingMode: "sse" },
     });
   });

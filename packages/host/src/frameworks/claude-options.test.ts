@@ -721,7 +721,8 @@ describe("buildOptions — systemPrompt + preamble integration", () => {
     expect(typeof opts.systemPrompt).toBe("string");
     expect(opts.systemPrompt).toBe("SYS" + SURFACE_FORMATTING_SECTION + TURN_AUTHORITY_SECTION + RESPONSE_NORMS_SECTION);
     const blocks = claudeTurnContext({ systemPrompt: "SYS" }, c);
-    expect(blocks).toHaveLength(1);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[1]).toBe("<turn_directive></turn_directive>");
     expect(blocks[0]?.startsWith("<turn_context>\nPrior conversation with this user")).toBe(true);
     expect(blocks[0]).toContain("<conversation_history>");
     expect(blocks[0]).toContain("<thread_memory>");
@@ -852,7 +853,7 @@ describe("buildOptions — platform-owned memory sections: SAVE in the system pr
     const sp = buildOptions({}, c).systemPrompt as string;
     expect(sp).not.toContain(SAVE_TEXT);
     expect(sp).not.toContain(RECALL_HEADING);
-    expect(turnText({}, c)).toBe("<turn_context></turn_context>");
+    expect(turnText({}, c)).toBe("<turn_context></turn_context>\n\n<turn_directive></turn_directive>");
   });
 
   it("gate change: authenticated + attached but NO fs → save-only STILL renders (attachment, not fs, is the gate now)", () => {
@@ -866,7 +867,7 @@ describe("buildOptions — platform-owned memory sections: SAVE in the system pr
   it("anonymous + attached → NO memory section at all, even if userMemory were somehow present", () => {
     const c = ctx({ identity: anon, fs, memoryAttached: true, userMemory: "should never render for a guest" });
     expect(buildOptions({}, c).systemPrompt as string).not.toContain(SAVE_TEXT);
-    expect(turnText({}, c)).toBe("<turn_context></turn_context>");
+    expect(turnText({}, c)).toBe("<turn_context></turn_context>\n\n<turn_directive></turn_directive>");
   });
 
   it("anonymous + NOT attached (the bare default ctx()) → NO memory section", () => {
@@ -994,7 +995,8 @@ describe("claudeTurnContext — the prior-context sections (formerly the system-
       {},
       ctx({ history: [{ role: "user", text: "hi" }], priorMemory: [{ key: "name", value: "Ada" }], priorState: { step: 2 } }),
     );
-    expect(blocks).toHaveLength(1);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[1]).toBe("<turn_directive></turn_directive>");
     const out = blocks[0] ?? "";
     expect(out).toContain("<conversation_history>");
     expect(out).toContain("<thread_memory>");
@@ -1005,8 +1007,11 @@ describe("claudeTurnContext — the prior-context sections (formerly the system-
     expect(out.endsWith("\n</turn_context>")).toBe(true);
   });
 
-  it("omits empty sections; with none the block is still sent, empty", () => {
-    expect(claudeTurnContext({}, ctx({ priorMemory: [] }))).toEqual(["<turn_context></turn_context>"]);
+  it("omits empty sections; with none both blocks are still sent, empty", () => {
+    expect(claudeTurnContext({}, ctx({ priorMemory: [] }))).toEqual([
+      "<turn_context></turn_context>",
+      "<turn_directive></turn_directive>",
+    ]);
     const out2 = turnText({}, ctx({ priorMemory: [{ key: "k", value: "v" }] }));
     expect(out2).toContain("<thread_memory>");
     expect(out2).not.toContain("<working_state>");
@@ -1034,6 +1039,7 @@ describe("the connected-services section rides the invoke into the turn context 
     const section = renderMcpAvailabilitySection(availability);
     expect(claudeTurnContext({ systemPrompt: "S" }, c)).toEqual([
       `<turn_context>\n${renderUserMemoryRecall("Ada.").slice(2)}${section}\n</turn_context>`,
+      "<turn_directive></turn_directive>",
     ]);
   });
 });
@@ -1191,7 +1197,7 @@ describe('"no tools" — tools.allowlist: ["@none"] (guuey#2262)', () => {
       expect(buildOptions(snapshot, c).systemPrompt as string).toBe(
         "S" + SURFACE_FORMATTING_SECTION + TURN_AUTHORITY_SECTION + RESPONSE_NORMS_SECTION,
       );
-      expect(claudeTurnContext(snapshot, c)).toEqual(["<turn_context></turn_context>"]);
+      expect(claudeTurnContext(snapshot, c)).toEqual(["<turn_context></turn_context>", "<turn_directive></turn_directive>"]);
     });
 
     it("leaves out the profile SAVE instruction (RECALL kept) and the first impression's handshake call", () => {
