@@ -70,6 +70,13 @@ const CAPACITY_RETRY_CODES: ReadonlySet<string> = new Set([
 const SESSION_BUSY_FALLBACK_DELAY_SECONDS = 5;
 
 /**
+ * Fallback wait before the `DRAINING` retry when the refusal carried no usable
+ * `Retry-After`: the 15 s the draining pod sends, sized so the retry lands after
+ * the pod has left the ingress's endpoints.
+ */
+const DRAINING_FALLBACK_DELAY_SECONDS = 15;
+
+/**
  * How long to wait before a retry, in milliseconds: the refusal's
  * `Retry-After`, else the arm's own fallback, under the one ceiling both arms
  * share.
@@ -150,13 +157,15 @@ const MAX_SATURATION_RETRIES = 5;
  * `event: error` after frames were yielded) is never re-sent: the
  * nothing-yielded guard below holds for every code (guuey#2605).
  *
- * `DRAINING` (also 503 + `Retry-After`) is NOT retried in v1. The refusing pod
- * is shutting down: its readiness probe is already failing and the endpoint
- * pull is in flight, so the useful retry is the one that reaches a DIFFERENT
- * pod — and a wrapped transport re-sends to the same URL. Retrying here would
- * spend the user's 15s to arrive back at the same draining pod (or at a fresh
- * one by luck), which is not a guarantee worth building on. When the retry can
- * be made routing-aware, this is the code to revisit.
+ * `DRAINING` (also 503 + `Retry-After`) means the pod that took the turn is
+ * stepping down on a deploy or roll, and refused the turn before admitting it,
+ * so nothing ran. It is retried ONCE, on its own budget, after the hinted wait
+ * (15 s when none, the same 30 s ceiling). A re-send goes to the same URL, but
+ * the agent ingress hashes over its CURRENT endpoints with no affinity that
+ * outlives the endpoint pull, so once the pod has left the endpoints the retry
+ * lands on another pod; the pod's hint is sized to outlast that pull (guuey#3390).
+ * A retry that meets another refusal surfaces it. It never fires
+ * `onSaturationWait`, which speaks of capacity, not of a restart.
  *
  * `SESSION_BUSY` (409 + `Retry-After`) means the conversation is still
  * answering a message: the visitor's last one, or another of their
@@ -194,6 +203,7 @@ export function withSaturationRetry(
   return async function* retrying(req: InvokeRequest): AsyncGenerator<string> {
     let capacityRetries = 0;
     let busyRetried = false;
+    let drainRetried = false;
     for (;;) {
       let yielded = false;
       try {
@@ -212,6 +222,9 @@ export function withSaturationRetry(
         } else if (err.code === AGENT_ERROR_CODES.SESSION_BUSY && !busyRetried) {
           busyRetried = true;
           waitMs = retryDelayMs(err.retryAfterSeconds, SESSION_BUSY_FALLBACK_DELAY_SECONDS);
+        } else if (err.code === AGENT_ERROR_CODES.DRAINING && !drainRetried) {
+          drainRetried = true;
+          waitMs = retryDelayMs(err.retryAfterSeconds, DRAINING_FALLBACK_DELAY_SECONDS);
         } else {
           throw err;
         }
@@ -313,8 +326,8 @@ function wakeDelayMs(retryAfterSeconds: number | undefined): number {
  * after a redeploy), so there is no wire `code`. A 503 that DOES carry a code
  * is the pod itself refusing (`POD_SATURATED`, `WORKER_POD_RESOURCE_EXHAUSTED`,
  * `DRAINING`) and belongs to
- * {@link withSaturationRetry}'s policy — including its deliberate decision NOT
- * to retry `DRAINING` — never to this wrapper. Inside an open wake budget the
+ * {@link withSaturationRetry}'s policy — including its one `DRAINING` retry —
+ * never to this wrapper. Inside an open wake budget the
  * same shape means "keep waiting" (see {@link wakeBudget}).
  */
 function isColdStartRefusal(err: unknown): err is AgentResponseError {

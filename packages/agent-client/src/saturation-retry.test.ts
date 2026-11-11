@@ -192,7 +192,7 @@ describe("WORKER_POD_RESOURCE_EXHAUSTED before the stream is a capacity retry (g
     expect(calls).toBe(1);
   });
 
-  it("a non-capacity 503 + Retry-After code (DRAINING) is still never retried", async () => {
+  it("a non-capacity 503 + Retry-After code (DRAINING) never spends the capacity budget", async () => {
     let calls = 0;
     const draining = async function* (_req: InvokeRequest): AsyncGenerator<string> {
       calls += 1;
@@ -206,7 +206,8 @@ describe("WORKER_POD_RESOURCE_EXHAUSTED before the stream is a capacity retry (g
       onSaturationWait: (i) => waits.push(i),
     });
     await expect(drain(wrapped(REQ))).rejects.toMatchObject({ code: AGENT_ERROR_CODES.DRAINING });
-    expect(calls).toBe(1);
+    // Its own single retry only (guuey#3390), never the three capacity retries.
+    expect(calls).toBe(2);
     expect(waits).toHaveLength(0);
   });
 
@@ -320,6 +321,100 @@ describe("withSaturationRetry — SESSION_BUSY: one retry after the hinted wait"
     });
     await expect(drain(wrapped({ ...REQ, signal: controller.signal }))).rejects.toMatchObject({
       code: AGENT_ERROR_CODES.SESSION_BUSY,
+    });
+    expect(f.calls()).toBe(1);
+  });
+});
+
+describe("withSaturationRetry — DRAINING: one retry after the hinted wait (guuey#3390)", () => {
+  function draining(retryAfterSeconds?: number): AgentResponseError {
+    return new AgentResponseError("this pod is shutting down; retry shortly", 503, AGENT_ERROR_CODES.DRAINING, retryAfterSeconds);
+  }
+
+  /** A transport that throws each queued error in turn, then yields "ok". */
+  function scripted(errors: AgentResponseError[]): { calls: () => number; t: (req: InvokeRequest) => AsyncGenerator<string> } {
+    let calls = 0;
+    return {
+      calls: () => calls,
+      t: async function* (_req: InvokeRequest) {
+        const err = errors[calls];
+        calls += 1;
+        if (err !== undefined) throw err;
+        yield "ok";
+      },
+    };
+  }
+
+  it("a turn refused by a stepping-down pod goes through after the pod's 15 s hint, with no capacity callback", async () => {
+    const f = scripted([draining(15)]);
+    const sleeps: number[] = [];
+    const waits: unknown[] = [];
+    const wrapped = withSaturationRetry(f.t, {
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+      onSaturationWait: (info) => waits.push(info),
+    });
+    expect(await drain(wrapped(REQ))).toEqual(["ok"]);
+    expect(f.calls()).toBe(2);
+    expect(sleeps).toEqual([15000]);
+    expect(waits).toEqual([]);
+  });
+
+  it("retries once only: a second DRAINING surfaces its refusal", async () => {
+    const f = scripted([draining(15), draining(15), draining(15)]);
+    const wrapped = withSaturationRetry(f.t, { sleep: instantSleep, attempts: 5 });
+    await expect(drain(wrapped(REQ))).rejects.toMatchObject({ code: AGENT_ERROR_CODES.DRAINING, status: 503 });
+    expect(f.calls()).toBe(2);
+  });
+
+  it("no hint waits 15 s; an outsized hint is capped at 30 s", async () => {
+    for (const [hint, expected] of [
+      [undefined, 15000],
+      [60, 30000],
+    ] as const) {
+      const sleeps: number[] = [];
+      const f = scripted([draining(hint)]);
+      const wrapped = withSaturationRetry(f.t, {
+        sleep: async (ms) => {
+          sleeps.push(ms);
+        },
+      });
+      await drain(wrapped(REQ));
+      expect(sleeps, String(hint)).toEqual([expected]);
+    }
+  });
+
+  it("has its own budget: a drain retry spends neither the capacity retries nor the busy retry", async () => {
+    const busy = new AgentResponseError("busy", 409, AGENT_ERROR_CODES.SESSION_BUSY, 5);
+    const f = scripted([saturated(), draining(15), busy]);
+    const wrapped = withSaturationRetry(f.t, { sleep: instantSleep });
+    expect(await drain(wrapped(REQ))).toEqual(["ok"]);
+    expect(f.calls()).toBe(4);
+  });
+
+  it("never re-sends once a chunk has streamed", async () => {
+    let calls = 0;
+    const midStream = async function* (_req: InvokeRequest): AsyncGenerator<string> {
+      calls += 1;
+      yield "partial";
+      throw draining(15);
+    };
+    const wrapped = withSaturationRetry(midStream, { sleep: instantSleep });
+    await expect(drain(wrapped(REQ))).rejects.toMatchObject({ code: AGENT_ERROR_CODES.DRAINING });
+    expect(calls).toBe(1);
+  });
+
+  it("an abort during the wait surfaces the refusal without a second send", async () => {
+    const controller = new AbortController();
+    const f = scripted([draining(15)]);
+    const wrapped = withSaturationRetry(f.t, {
+      sleep: async () => {
+        controller.abort();
+      },
+    });
+    await expect(drain(wrapped({ ...REQ, signal: controller.signal }))).rejects.toMatchObject({
+      code: AGENT_ERROR_CODES.DRAINING,
     });
     expect(f.calls()).toBe(1);
   });

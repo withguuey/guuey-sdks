@@ -215,10 +215,14 @@ describe("fetchStreamTransport identity headers", () => {
  */
 describe("fetchStreamTransport — AgentResponseError envelope", () => {
   it("carries the pod's code, message, status and Retry-After hint", async () => {
-    const fetchImpl = mockFetch([
-      refusal(AGENT_ERROR_CODES.DRAINING, 503, "7", "this pod is shutting down; retry shortly"),
-    ]);
-    const err = await withGlobalFetch(fetchImpl, () => rejection(fetchStreamTransport(invokeRequest())));
+    // DRAINING is re-sent once (guuey#3390), so the pod answers it twice and the second refusal surfaces.
+    const drainingRefusal = (): Response =>
+      refusal(AGENT_ERROR_CODES.DRAINING, 503, "7", "this pod is shutting down; retry shortly");
+    const fetchImpl = mockFetch([drainingRefusal(), drainingRefusal()]);
+    const { sleep } = fakeSleep();
+    const err = await withGlobalFetch(fetchImpl, () =>
+      rejection(fetchStreamTransport(invokeRequest(), null, null, { sleep })),
+    );
     expect(err).toBeInstanceOf(AgentResponseError);
     const responseError = err as AgentResponseError;
     expect(responseError.message).toBe("this pod is shutting down; retry shortly");
@@ -246,9 +250,11 @@ describe("fetchStreamTransport — AgentResponseError envelope", () => {
     ["empty", ""],
     ["non-numeric", "soon"],
   ])("ignores a Retry-After we cannot read as whole seconds (%s)", async (_label, header) => {
-    const fetchImpl = mockFetch([refusal(AGENT_ERROR_CODES.DRAINING, 503, header)]);
+    // DRAINING is re-sent once (guuey#3390): two refusals, and the retry waits on a fake sleep.
+    const fetchImpl = mockFetch([refusal(AGENT_ERROR_CODES.DRAINING, 503, header), refusal(AGENT_ERROR_CODES.DRAINING, 503, header)]);
+    const { sleep } = fakeSleep();
     const err = (await withGlobalFetch(fetchImpl, () =>
-      rejection(fetchStreamTransport(invokeRequest())),
+      rejection(fetchStreamTransport(invokeRequest(), null, null, { sleep })),
     )) as AgentResponseError;
     expect(err.retryAfterSeconds).toBeUndefined();
   });
@@ -324,15 +330,28 @@ describe("fetchStreamTransport — POD_SATURATED auto-retry", () => {
     expect(waits).toEqual([1000]);
   });
 
-  it("does NOT retry DRAINING — the useful retry reaches a different pod, which this cannot do", async () => {
-    const fetchImpl = mockFetch([refusal(AGENT_ERROR_CODES.DRAINING, 503, "15")]);
-    const { sleep } = fakeSleep();
+  it("retries DRAINING once after its Retry-After — the re-send lands after the pod has left the endpoints (guuey#3390)", async () => {
+    const fetchImpl = mockFetch([refusal(AGENT_ERROR_CODES.DRAINING, 503, "15"), sseResponse("data: ok\n\n")]);
+    const { sleep, waits } = fakeSleep();
+    await withGlobalFetch(fetchImpl, () =>
+      drain(fetchStreamTransport(invokeRequest(), null, null, { sleep })),
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(waits).toEqual([15000]);
+  });
+
+  it("a second DRAINING surfaces rather than looping", async () => {
+    const fetchImpl = mockFetch([
+      refusal(AGENT_ERROR_CODES.DRAINING, 503, "15"),
+      refusal(AGENT_ERROR_CODES.DRAINING, 503, "15"),
+    ]);
+    const { sleep, waits } = fakeSleep();
     const err = (await withGlobalFetch(fetchImpl, () =>
       rejection(fetchStreamTransport(invokeRequest(), null, null, { sleep })),
     )) as AgentResponseError;
     expect(err.code).toBe("DRAINING");
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(sleep).not.toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(waits).toEqual([15000]);
   });
 
   it.each([
