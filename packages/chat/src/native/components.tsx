@@ -78,6 +78,11 @@ export interface NativeTranscriptItemContext {
   onErrorAction?: (item: ErrorItem) => void;
   /** R6: locator mounts resolved by `useTranscript` ("expired" = failed). */
   resolvedMounts: ReadonlyMap<ItemKey, ResolvedViewMount | "expired">;
+  /**
+   * guuey#3372: the expired locators `useTranscript` saw answered RETIRED. Optional: without it a
+   * retired card keeps the expired face.
+   */
+  retiredMounts?: ReadonlySet<ItemKey>;
   /** R6: live phase reports wired back into the next plan. */
   onViewPhase: (key: ItemKey, phase: ViewHostPhase) => void;
   /**
@@ -567,10 +572,13 @@ export function NativeView({ item, ctx }: ItemProps<ViewMountItem>): ReactNode {
   // no default mount host — the `view` slot is a REQUIRED override on
   // native (labeled here, never blank; portal's card machinery is the
   // reference override). The expired/labeled states still render honestly.
+  // guuey#3372: a retired card's one fixed face, whatever its phase.
   const label =
-    item.phase === "expired"
-      ? ctx.strings.viewExpired
-      : (item.label ?? ctx.strings.viewSandboxUnavailable);
+    ctx.retiredMounts?.has(item.key) === true
+      ? ctx.strings.viewRetired
+      : item.phase === "expired"
+        ? ctx.strings.viewExpired
+        : (item.label ?? ctx.strings.viewSandboxUnavailable);
   return (
     <View
       accessibilityRole="summary"

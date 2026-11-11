@@ -80,6 +80,11 @@ export interface TranscriptItemContext {
   onErrorAction?: (item: ErrorItem) => void;
   /** R6: locator mounts resolved by `useTranscript` ("expired" = failed). */
   resolvedMounts: ReadonlyMap<ItemKey, ResolvedViewMount | "expired">;
+  /**
+   * guuey#3372: the expired locators `useTranscript` saw answered RETIRED. Optional: without it a
+   * retired card keeps the expired face.
+   */
+  retiredMounts?: ReadonlySet<ItemKey>;
   /** R6: live phase reports wired back into the next plan. */
   onViewPhase: (key: ItemKey, phase: ViewHostPhase) => void;
   /**
@@ -567,6 +572,14 @@ export function DefaultView({ item, ctx }: ItemProps<ViewMountItem>): ReactNode 
         : null;
   const expired = item.phase === "expired" || resolution === "expired";
 
+  // guuey#3372: the door said this card's feature is retired. One fixed face, at once.
+  if (ctx.retiredMounts?.has(item.key) === true) {
+    return (
+      <div className="guuey-chat-view guuey-chat-view-expired guuey-chat-view-retired">
+        <p role="status">{ctx.strings.viewRetired}</p>
+      </div>
+    );
+  }
   if (expired) {
     return (
       <div className="guuey-chat-view guuey-chat-view-expired">

@@ -229,6 +229,7 @@ export interface TranscriptProps
     | "onPromptAction"
     | "onErrorAction"
     | "resolvedMounts"
+    | "retiredMounts"
     | "onViewPhase"
     | "onViewDiagnosis"
     | "onViewRef"
@@ -281,6 +282,7 @@ export function Transcript(props: TranscriptProps): ReactNode {
     onPromptAction,
     onErrorAction,
     resolvedMounts,
+    retiredMounts,
     onViewPhase,
     onViewDiagnosis,
     onViewRef,
@@ -311,6 +313,7 @@ export function Transcript(props: TranscriptProps): ReactNode {
       onPromptAction,
       onErrorAction,
       resolvedMounts,
+      ...(retiredMounts !== undefined ? { retiredMounts } : {}),
       onViewPhase,
       onViewDiagnosis,
       onViewRef,
@@ -320,7 +323,7 @@ export function Transcript(props: TranscriptProps): ReactNode {
       ...(onA2uiAction !== undefined ? { onA2uiAction } : {}),
       ...(a2uiActionsReady !== undefined ? { a2uiActionsReady } : {}),
     }),
-    [strings, onToggle, onRetry, onPromptAction, onErrorAction, resolvedMounts, onViewPhase, onViewDiagnosis, onViewRef, viewProps, edits, a2uiIcon, onA2uiAction, a2uiActionsReady],
+    [strings, onToggle, onRetry, onPromptAction, onErrorAction, resolvedMounts, retiredMounts, onViewPhase, onViewDiagnosis, onViewRef, viewProps, edits, a2uiIcon, onA2uiAction, a2uiActionsReady],
   );
 
   // ── Windowing ────────────────────────────────────────────────────────

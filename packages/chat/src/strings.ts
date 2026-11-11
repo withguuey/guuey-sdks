@@ -214,6 +214,11 @@ export interface ChatStrings {
   viewBootFailure: string;
   viewInlineFallback: string;
   viewExpired: string;
+  /**
+   * guuey#3372: a past card made with a feature the platform has retired. One fixed face, shown at
+   * once, never "expired" (it was retired, not lost).
+   */
+  viewRetired: string;
   viewSandboxUnavailable: string;
   /**
    * R6 no-handshake with a CSP diagnosis (guuey#235): the embedding page's
@@ -578,6 +583,7 @@ export const defaultChatStrings: ChatStrings = {
   viewBootFailure: "This view couldn't start",
   viewInlineFallback: "Showing plain content",
   viewExpired: "This view expired",
+  viewRetired: "This card was made with a feature that has been retired.",
   viewSandboxUnavailable: "Interactive view unavailable",
   viewCspBlocked: (d) =>
     `This page's Content-Security-Policy blocks ${d.blockedUri} — add "${d.violatedDirective} ${d.suggestedEntry}" to the policy so the view can start`,

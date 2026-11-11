@@ -123,6 +123,17 @@ describe("createNativeViewHost", () => {
     expect(screen.getByText(defaultChatStrings.viewExpired)).toBeTruthy();
   });
 
+  it("guuey#3372: renders the retired label for a locator the door answered RETIRED", () => {
+    const { FakeMcpAppIframe } = fakeFrame();
+    const View = createNativeViewHost({ McpAppIframe: FakeMcpAppIframe });
+    const locator = viewItem({ mount: { channel: "locator", resourceUri: "ui://ggui/render/r/h" } });
+    const ctx = { ...context(new Map([["view:1", "expired"]])), retiredMounts: new Set(["view:1"]) };
+    render(createElement(View, { item: locator, ctx }));
+    expect(screen.queryByTestId("frame")).toBeNull();
+    expect(screen.getByText(defaultChatStrings.viewRetired)).toBeTruthy();
+    expect(screen.queryByText(defaultChatStrings.viewExpired)).toBeNull();
+  });
+
   it("clamps reported heights and reports connected once", () => {
     const { seen, FakeMcpAppIframe } = fakeFrame();
     const View = createNativeViewHost({ McpAppIframe: FakeMcpAppIframe, minHeight: 100, maxHeight: 500 });

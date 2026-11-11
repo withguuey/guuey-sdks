@@ -1108,6 +1108,50 @@ describe("createUiResourceReader — the origin hint (guuey#421)", () => {
   });
 });
 
+describe("createUiResourceReader — a retired card (guuey#3372)", () => {
+  const retiredBody = { error: { code: "RETIRED", message: "This card was made with a feature that has been retired" } };
+  const assemble = (fetchImpl: typeof fetch) =>
+    createUiResourceReader({ apiBaseUrl: "https://api.example/v1", threadId: "t-3372", endpointUrl: null, fetchImpl });
+
+  it("the platform door's 410 RETIRED calls onRetired once and reads as a miss", async () => {
+    const fetchImpl = mockFetch([jsonResponse(retiredBody, 410)]);
+    const onRetired = vi.fn();
+    await expect(assemble(fetchImpl)("ui://ggui/render/r1/h", { origin: "history", onRetired })).resolves.toBeUndefined();
+    expect(onRetired).toHaveBeenCalledTimes(1);
+  });
+
+  it("no hint passed: the same answer is the plain miss it always was", async () => {
+    const fetchImpl = mockFetch([jsonResponse(retiredBody, 410)]);
+    await expect(assemble(fetchImpl)("ui://ggui/render/r1/h")).resolves.toBeUndefined();
+  });
+
+  it.each([
+    ["a 410 with another code", jsonResponse({ error: { code: "GONE", message: "x" } }, 410)],
+    ["a 410 with no JSON body", new Response("gone", { status: 410 })],
+    ["a 404 miss", jsonResponse({ error: { code: "NOT_FOUND", message: "x" } }, 404)],
+    ["a 502 outage", jsonResponse({ error: { code: "UPSTREAM_UNAVAILABLE", message: "x" } }, 502)],
+  ])("%s never reads as retired", async (_label, response) => {
+    const fetchImpl = mockFetch([response]);
+    const onRetired = vi.fn();
+    await expect(assemble(fetchImpl)("ui://ggui/render/r1/h", { onRetired })).resolves.toBeUndefined();
+    expect(onRetired).not.toHaveBeenCalled();
+  });
+
+  it("a live read whose pod door misses reaches the platform door's retired answer", async () => {
+    const fetchImpl = mockFetch([jsonResponse({ error: "not_found" }, 404), jsonResponse(retiredBody, 410)]);
+    const read = createUiResourceReader({
+      apiBaseUrl: "https://api.example/v1",
+      threadId: "t-3372",
+      endpointUrl: "https://pod.example",
+      fetchImpl,
+    });
+    const onRetired = vi.fn();
+    await expect(read("ui://ggui/render/r1/h", { onRetired })).resolves.toBeUndefined();
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(onRetired).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("createUiResourceReader — pod-only assembly (guuey#368)", () => {
   it("no threadId, no apiBaseUrl: the POD door still dials and resolves — the local-dev shape", async () => {
     const calls: string[] = [];

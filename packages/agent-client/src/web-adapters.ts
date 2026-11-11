@@ -16,6 +16,7 @@ import {
   type McpToolStructuredContent,
   type ResolvedViewMount,
   type UiActionRequest,
+  type UiResourceReadHints,
 } from "@guuey/mcp-apps-host";
 import type { AgHitlAnswer } from "@silverprotocol/core";
 import type { AgentInvokeAdapters, InvokeTransport, ThreadIdStore } from "./types.js";
@@ -355,6 +356,25 @@ export function __resetReaderEndpointWarning(): void {
   readerEndpointWarned = false;
 }
 
+/** A door's answer that the card was made with a retired feature (guuey#3372); never leaves this module. */
+const RETIRED = "retired";
+
+/**
+ * Is this 410 the platform door's typed retired answer (`{"error":{"code":"RETIRED",…}}`, publicApi's
+ * `httpError` shape)? Any other 410, or an unreadable body, is a plain miss.
+ */
+async function isRetiredAnswer(res: Response): Promise<boolean> {
+  let parsed: unknown;
+  try {
+    parsed = await res.json();
+  } catch {
+    return false;
+  }
+  if (!isWireObject(parsed)) return false;
+  const error = parsed.error;
+  return isWireObject(error) && error.code === "RETIRED";
+}
+
 /** `<pod base>/agent/ui-resource` from whatever endpoint shape the surface holds. */
 function toUiResourceUrl(endpointUrl: string): string {
   return toInvokeUrl(endpointUrl).replace(/\/agent\/invoke$/, "/agent/ui-resource");
@@ -398,7 +418,7 @@ export function createUiResourceReader(
   options: CreateUiResourceReaderOptions,
 ): (
   resourceUri: string,
-  hints?: { origin?: "live" | "history" },
+  hints?: UiResourceReadHints,
 ) => Promise<ResolvedViewMount | undefined> {
   const fetchImpl = options.fetchImpl ?? fetch;
   // A platform door without a pod door is almost always a live surface
@@ -416,7 +436,7 @@ export function createUiResourceReader(
    * One door, under the caller's signal and per-door timeout: a cancelled or
    * timed-out door is a miss, the same as a transport failure.
    */
-  const readDoor = async (requestUrl: string): Promise<McpResourceReadResult | undefined> => {
+  const readDoor = async (requestUrl: string): Promise<McpResourceReadResult | typeof RETIRED | undefined> => {
     const outcome = await runOneShot(options, fetchImpl, (send) => readDoorOnce(send, requestUrl));
     return outcome.kind === "settled" ? outcome.value : undefined;
   };
@@ -425,7 +445,7 @@ export function createUiResourceReader(
   const readDoorOnce = async (
     send: ScopedFetch,
     requestUrl: string,
-  ): Promise<McpResourceReadResult | undefined> => {
+  ): Promise<McpResourceReadResult | typeof RETIRED | undefined> => {
     // Exactly ONE identity carrier per read, the invoke transport's rule
     // (`streamInvokeOnce`): bearer → guest header → else cookie credentials,
     // which round-trip the HttpOnly `guuey_guest` cookie the pod mints for
@@ -466,6 +486,8 @@ export function createUiResourceReader(
         }
       }
     }
+    // guuey#3372: the platform door's typed answer for a card whose feature is retired.
+    if (res.status === 410) return (await isRetiredAnswer(res)) ? RETIRED : undefined;
     if (!res.ok) return undefined;
     let parsed: unknown;
     try {
@@ -500,9 +522,18 @@ export function createUiResourceReader(
   };
 
   const podUrl = options.endpointUrl ? toUiResourceUrl(options.endpointUrl) : null;
+  /** A door's answer as the assembly sees it: a retired card is reported on the hint, then read as a miss. */
+  const answered = (
+    answer: McpResourceReadResult | typeof RETIRED | undefined,
+    hints: UiResourceReadHints | undefined,
+  ): McpResourceReadResult | undefined => {
+    if (answer !== RETIRED) return answer;
+    hints?.onRetired?.();
+    return undefined;
+  };
   const readResource = async (
     resourceUri: string,
-    hints?: { origin?: "live" | "history" },
+    hints?: UiResourceReadHints,
   ): Promise<McpResourceReadResult | undefined> => {
     const query = `?uri=${encodeURIComponent(resourceUri)}`;
     // guuey#421: a PERSISTED card's locator skips the pod door — pods serve
@@ -510,14 +541,15 @@ export function createUiResourceReader(
     // pod-first-always order fired a 404 pair on every old-conversation
     // load (noise that read as breakage in every capture).
     if (podUrl !== null && hints?.origin !== "history") {
-      const live = await readDoor(`${podUrl}${query}`);
+      const live = answered(await readDoor(`${podUrl}${query}`), hints);
       if (live !== undefined) return live;
     }
     // The platform door needs both its halves; a pod-only assembly stops
     // here — the pod miss above IS the answer (honest placeholder).
     if (options.apiBaseUrl === undefined || options.threadId === undefined) return undefined;
-    return readDoor(
-      `${options.apiBaseUrl}/threads/${encodeURIComponent(options.threadId)}/ui-resource${query}`,
+    return answered(
+      await readDoor(`${options.apiBaseUrl}/threads/${encodeURIComponent(options.threadId)}/ui-resource${query}`),
+      hints,
     );
   };
   return createMcpUiResourceReader({ readResource });

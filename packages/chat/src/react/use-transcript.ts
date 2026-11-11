@@ -72,6 +72,12 @@ export interface UseTranscriptResult {
   onViewDiagnosis: (key: ItemKey, diagnosis: ViewCspDiagnosis) => void;
   /** Locator resolutions: mount material, or `"expired"` for a miss. */
   resolvedMounts: ReadonlyMap<ItemKey, ResolvedViewMount | "expired">;
+  /**
+   * guuey#3372: the expired locators the door answered RETIRED (the card was made with a feature the
+   * platform has retired). Each is also `"expired"` in {@link resolvedMounts}, so a host that ignores
+   * this set keeps its expired face; pass it on (`<Transcript retiredMounts>`) to draw the retired one.
+   */
+  retiredMounts: ReadonlySet<ItemKey>;
 }
 
 export function useTranscript({
@@ -86,6 +92,7 @@ export function useTranscript({
   const [resolvedMounts, setResolvedMounts] = useState<
     ReadonlyMap<ItemKey, ResolvedViewMount | "expired">
   >(new Map());
+  const [retiredMounts, setRetiredMounts] = useState<ReadonlySet<ItemKey>>(new Set());
 
   // The debug sink (gated on the debug policy — calm ignores it, spec §5).
   const debugSink = useRef<((event: ChatDebugEvent) => void) | null>(null);
@@ -244,8 +251,22 @@ export function useTranscript({
           origin: item.origin,
         });
       };
-      void resolveViewMount(locator, read, { origin: item.origin }).then(
+      // guuey#3372: the door's retired answer is reported on the hint; the read itself resolves as a miss.
+      let retired = false;
+      const hints = {
+        origin: item.origin,
+        onRetired: () => {
+          retired = true;
+        },
+      };
+      void resolveViewMount(locator, read, hints).then(
         (resolved) => {
+          // A retired card is a verdict at once: no re-read at settle, no loud miss.
+          if (resolved === undefined && retired) {
+            setRetiredMounts((prev) => new Set(prev).add(item.key));
+            settle("expired");
+            return;
+          }
           if (resolved === undefined && item.origin === "live" && readWhileStreaming && !reread.current.has(item.key)) {
             // Not yet a verdict (guuey#1837): hold it for the one re-read at settle.
             inFlight.current.delete(item.key);
@@ -263,7 +284,7 @@ export function useTranscript({
     }
   }, [plan, resolvedMounts, turnSettled]);
 
-  return { plan, toggle, overrides, onViewPhase, onViewDiagnosis, resolvedMounts };
+  return { plan, toggle, overrides, onViewPhase, onViewDiagnosis, resolvedMounts, retiredMounts };
 }
 
 // ─── useTranscriptInputs (the live assembler) ──────────────────────────────

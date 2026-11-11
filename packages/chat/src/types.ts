@@ -1004,7 +1004,13 @@ export interface PlanViewSummary {
   key: ItemKey;
   /** The display title (the producing call's, or the strings fallback). */
   title: string;
+  /**
+   * `"expired"` covers a retired card too; {@link PlanViewSummary.retired} tells the two apart for a
+   * stage that draws its own face.
+   */
   phase: ViewHostPhase | "expired";
+  /** True when the expired card is a RETIRED one (guuey#3372): its feature is gone, not the card. */
+  retired?: true;
   channel: ViewMountChannel | null;
   /** Null when the locator is dead (the R13 expired path). */
   mount: ViewMount | null;

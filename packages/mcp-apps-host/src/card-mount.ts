@@ -132,6 +132,15 @@ export type UiResourceReader = (
  */
 export interface UiResourceReadHints {
   origin?: "live" | "history";
+  /**
+   * Called when the door answers that this card was made with a feature the
+   * platform has retired (guuey's `410 RETIRED`, guuey#3372). The read still
+   * resolves `undefined`, the miss every host already handles, so a host that
+   * passes nothing is unchanged; a host that passes it can draw a retired face
+   * instead of its expired one. Advisory like `origin`: a reader that never
+   * calls it stays correct.
+   */
+  onRetired?: () => void;
 }
 
 /**

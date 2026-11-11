@@ -898,7 +898,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
           },
     [inputs, promotedViewKey, echo.pendingTaps, connectWait],
   );
-  const { plan, toggle, resolvedMounts, onViewPhase, onViewDiagnosis } = useTranscript({
+  const { plan, toggle, resolvedMounts, retiredMounts, onViewPhase, onViewDiagnosis } = useTranscript({
     inputs: transcriptInputs,
     policy,
     ...(effectiveReader !== undefined ? { reader: effectiveReader } : {}),
@@ -946,11 +946,14 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     const overlaid = plan.views.map((view) => {
       const resolved = resolvedMounts.get(view.key);
       if (resolved === undefined) return view;
-      if (resolved === "expired") return { ...view, phase: "expired" as const };
+      // guuey#3372: a retired card reads as expired to a stage, flagged so it can draw the retired face.
+      if (resolved === "expired") {
+        return { ...view, phase: "expired" as const, ...(retiredMounts.has(view.key) ? { retired: true as const } : {}) };
+      }
       return { ...view, mount: resolved };
     });
     onViewsChangeRef.current(overlaid);
-  }, [plan.views, resolvedMounts]);
+  }, [plan.views, resolvedMounts, retiredMounts]);
 
   // The theme announce, completed at the kit tier (guuey#302): every
   // inline mount carries `hostContext.theme` from the transcript's `mode`
@@ -1737,6 +1740,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
         onPromptAction={handlePromptAction}
         {...(onErrorAction !== undefined ? { onErrorAction } : {})}
         resolvedMounts={resolvedMounts}
+        retiredMounts={retiredMounts}
         onViewPhase={onViewPhase}
         onViewDiagnosis={onViewDiagnosis}
         {...(onViewRef !== undefined ? { onViewRef } : {})}

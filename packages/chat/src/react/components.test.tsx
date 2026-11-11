@@ -307,6 +307,43 @@ describe("R15 unknown stays labeled and collapsed", () => {
   });
 });
 
+describe("DefaultView — a retired card (guuey#3372)", () => {
+  const locatorItem = (): ViewMountItem => ({
+    kind: "view",
+    key: "view.r1",
+    expanded: true,
+    mount: { channel: "locator", resourceUri: "ui://ggui/render/r1/h" },
+    channel: "ggui",
+    phase: "negotiating",
+    label: null,
+    diagnosis: null,
+    attribution: null,
+    toolTitle: null,
+    actionScope: "ui://ggui/render/r1/h",
+  });
+
+  it("draws the one retired face at once, never 'expired' and never a frame", () => {
+    const { container } = render(
+      <DefaultView
+        item={locatorItem()}
+        ctx={ctx({ resolvedMounts: new Map([["view.r1", "expired"]]), retiredMounts: new Set(["view.r1"]) })}
+      />,
+    );
+    expect(screen.getByRole("status").textContent).toBe(defaultChatStrings.viewRetired);
+    expect(container.querySelector(".guuey-chat-view-retired")).not.toBeNull();
+    expect(container.querySelector("iframe")).toBeNull();
+    expect(container.textContent).not.toContain(defaultChatStrings.viewExpired);
+  });
+
+  it("a plain miss (or a host that passes no retiredMounts) keeps the expired face", () => {
+    const { container } = render(
+      <DefaultView item={locatorItem()} ctx={ctx({ resolvedMounts: new Map([["view.r1", "expired"]]) })} />,
+    );
+    expect(screen.getByRole("status").textContent).toBe(defaultChatStrings.viewExpired);
+    expect(container.querySelector(".guuey-chat-view-retired")).toBeNull();
+  });
+});
+
 describe("DefaultView — per-mount viewProps + autoResize (guuey#135 kit-refinement)", () => {
   const viewItem = (): ViewMountItem => ({
     kind: "view",

@@ -10,6 +10,7 @@ import type { HistoryLoadResult, UseAgentInvokeReturn } from "@guuey/agent-clien
 import { Reducer, type AgHitlAnswer, type AgPausedAsk, type AgReduceResult } from "@silverprotocol/core";
 import { calmPolicy, debugPolicy } from "../policy.js";
 import type { ChatDebugEvent, TranscriptInputs } from "../types.js";
+import type { UiResourceReadHints } from "@guuey/mcp-apps-host";
 import { transcriptInputsFromHistory } from "../history-inputs.js";
 import { planTranscript } from "../plan.js";
 import { useTranscript, useTranscriptInputs } from "./use-transcript.js";
@@ -219,6 +220,7 @@ describe("useTranscript", () => {
     });
     const view = result.current.plan.items.find((i) => i.kind === "view");
     expect(result.current.resolvedMounts.get(view!.key)).toBe("expired");
+    expect(result.current.retiredMounts.size).toBe(0);
     const misses = events.filter((e) => e.type === "locator-read-miss");
     expect(misses).toHaveLength(1);
     expect(misses[0]).toMatchObject({
@@ -226,6 +228,43 @@ describe("useTranscript", () => {
       resourceUri: "ui://app/1",
       origin: "history",
     });
+  });
+
+  it("guuey#3372: a reader that reports the card retired settles it expired AND retired, with no loud miss", async () => {
+    const events: ChatDebugEvent[] = [];
+    const inputs = baseInputs({
+      historyCards: [
+        {
+          seq: 1,
+          at: "2026-08-15T00:00:00Z",
+          cardSnapshot: {
+            parts: [
+              {
+                type: "tool-result",
+                toolCallId: "c1",
+                content: [],
+                uiData: { resourceUri: "ui://ggui/render/r1/h" },
+              },
+            ],
+          },
+        },
+      ],
+    });
+    const reader = vi.fn((_uri: string, hints?: UiResourceReadHints) => {
+      hints?.onRetired?.();
+      return Promise.resolve(undefined);
+    });
+    const { result } = renderHook(() =>
+      useTranscript({ inputs, policy: debugPolicy(), reader, onDebugEvent: (e) => events.push(e) }),
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const view = result.current.plan.items.find((i) => i.kind === "view");
+    expect(result.current.resolvedMounts.get(view!.key)).toBe("expired");
+    expect(result.current.retiredMounts.has(view!.key)).toBe(true);
+    expect(reader).toHaveBeenCalledWith("ui://ggui/render/r1/h", expect.objectContaining({ origin: "history" }));
+    expect(events.filter((e) => e.type === "locator-read-miss")).toHaveLength(0);
   });
 
   it("a THROWING reader also emits the loud miss (transport failure == miss, still named)", async () => {
