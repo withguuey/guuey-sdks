@@ -169,7 +169,7 @@ describe("graceful turn end-to-end (fixture worker tree)", () => {
         "  constructor({ agent }) { this.agent = agent; this.appName = 'fixture-app';",
         "    this.sessionService = { createSession: async ({ userId }) => ({ id: 'sess-' + userId }) }; }",
         "  async *runAsync({ newMessage }) {",
-        "    yield { content: { parts: [{ text: 'echo:' + newMessage.parts[0].text + ':role=' + newMessage.role + ':agent=' + this.agent.copy } ] } };",
+        "    yield { content: { parts: [{ text: 'echo:' + newMessage.parts[newMessage.parts.length - 1].text + ':firstPart=' + newMessage.parts[0].text.slice(0, 14) + ':role=' + newMessage.role + ':agent=' + this.agent.copy } ] } };",
         "  }",
         "}",
       ].join("\n"),
@@ -190,6 +190,6 @@ describe("graceful turn end-to-end (fixture worker tree)", () => {
 
     expect(got.error).toEqual([]);
     expect(got.hello[0]?.sdkVersion).toBe("7.7.7-fixture"); // the ENTRY tree's copy, not the host's 1.3.0
-    expect(got.done[0]?.result).toBe("echo:what's next?:role=user:agent=entry-tree");
+    expect(got.done[0]?.result).toBe("echo:what's next?:firstPart=<turn_context>:role=user:agent=entry-tree");
   });
 });

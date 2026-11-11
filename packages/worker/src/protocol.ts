@@ -252,7 +252,7 @@ export interface Invoke {
    * `parseClientCatalogs` (client-catalogs.ts), the one rule this parse keeps
    * the field with and a Router is to write it with. Gates
    * the host's framework-blind A2UI section (`@guuey/host`'s
-   * `renderA2uiSection`) by membership alone, so no id is ever written into
+   * `drawsGuueyA2ui`) by membership alone, so no id is ever written into
    * the prompt. Written only when at least one id survives, so "this client
    * draws no catalog" is always the ABSENT field. An older worker ignores it
    * and renders no section; an older Router never writes it.

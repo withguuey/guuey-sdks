@@ -22,7 +22,7 @@
  * `@guuey/worker`, `@guuey/config`, and Node built-ins.
  */
 import type { CanUseTool, Options, SDKMessage, Settings } from "@anthropic-ai/claude-agent-sdk";
-import type { FirstImpressionPush, FirstImpressionShown, Fs, HistoryMessage, JsonValue, McpAvailability, ProfileSection, WithheldTool } from "@guuey/worker";
+import type { CredentialFile, FirstImpressionPush, FirstImpressionShown, Fs, HistoryMessage, JsonValue, McpAvailability, ProfileSection, WithheldTool } from "@guuey/worker";
 import { claudeCodeExecutableOf, forbiddenClaudeEnvNames, makeClaudeSpawner, trustEnvOf } from "@guuey/worker";
 import {
   BUILTIN_TOOLS,
@@ -36,6 +36,7 @@ import {
   type RunSnapshot,
   withoutReservedEnvNames,
 } from "@guuey/config";
+import { buildSystemPrompt, buildTurnContextBlocks, promptClassOf, type PromptClass } from "../preamble.js";
 
 export type { SDKMessage };
 
@@ -71,84 +72,12 @@ export const ENV_APP_DIR = "GUUEY_APP_DIR";
 
 /**
  * Belt-and-braces (spec §4): guuey's memory mechanism is prompted file memory
- * (a platform-owned system-prompt section, below), never the SDK's own
+ * (a platform-owned system-prompt section, `../preamble.js`), never the SDK's own
  * auto-memory. Set UNCONDITIONALLY on every `Options` this module builds so a
  * future SDK default flip can never start writing its own memory format into
  * the durable, quota-billed home layer without Guuey explicitly opting in.
  */
 const AUTO_MEMORY_DISABLED: Settings = { autoMemoryEnabled: false };
-
-/**
- * Build the platform-owned memory system-prompt section (memory-mcp spec §4):
- * the SAVE instruction plus, when {@link BuildOptionsContext.userMemory} is
- * present, a RECALL block rendering the Router-read `MEMORY.md` content. Gated
- * on `authMode === "authenticated"` AND {@link BuildOptionsContext.memoryAttached}
- * — the memory child booted this pod, so the `save_memory` tool is spliced. A
- * guest has no memory tool (the spec forbids offering it), and an unattached pod
- * has no tool to name. Returns `""` (append-safe) when out of scope.
- *
- * The SAVE gate is ATTACHMENT, not file presence — so a brand-new authenticated
- * user (no `MEMORY.md` yet) STILL gets the save instruction (save-only section)
- * and can bootstrap turn-one durable memory. The RECALL block is separately
- * gated on `userMemory` presence INSIDE {@link renderMemorySection}.
- *
- * Gate change (memory-mcp T5 review): was `ctx.fs` (a proxy for attachment).
- * `memoryAttached` is the REAL signal — it no longer over-renders in the
- * transient fs-on-but-child-unattached window, and no longer under-renders when
- * the tool exists. Delegates to the framework-neutral {@link renderMemorySectionForTurn}
- * (`../preamble.js`) so Claude, OpenAI, and ADK all render the IDENTICAL section;
- * its RECALL block is byte-identical to the pre-factor inline string (pinned).
- */
-function buildMemorySection(ctx: BuildOptionsContext, noTools: boolean): string {
-  if (ctx.identity.authMode !== "authenticated" || !ctx.memoryAttached) return "";
-  // guuey#2262: with no tools declared, the RECALL block alone (no SAVE).
-  return renderMemorySectionForTurn(ctx.userMemory, noTools);
-}
-
-/**
- * Build the platform-owned cross-app profile system-prompt section
- * (cross-app-profile spec §4) — the SIBLING of {@link buildMemorySection},
- * appended AFTER it. Gated on `authMode === "authenticated"` AND a resolved
- * {@link BuildOptionsContext.profileAccess} (the Router's fail-closed grant
- * check produced a live, clamped access level). A guest / an ungranted app never
- * reaches here. Delegates to the framework-neutral {@link renderProfileSection}
- * (`../preamble.js`) so Claude, OpenAI, and ADK render the IDENTICAL section; that
- * renderer owns the two inner gates (SAVE on `read-write`, RECALL on sections
- * presence). Returns `""` (append-safe) when out of scope.
- */
-function buildProfileSection(ctx: BuildOptionsContext, noTools: boolean): string {
-  if (ctx.identity.authMode !== "authenticated" || ctx.profileAccess === undefined) return "";
-  // guuey#2262: with no tools declared the model cannot call `save_profile`,
-  // so the section renders as for a read grant (RECALL only).
-  return renderProfileSection(ctx.profileSections, noTools ? "read" : ctx.profileAccess);
-}
-
-/**
- * Build the app-resources system-prompt section (guuey#456 B4) — the hint
- * that builder-provided reference files exist at `<fs.app>/resources`. SIBLING
- * of {@link buildMemorySection}/{@link buildProfileSection}, appended AFTER
- * the profile section. Gated on {@link BuildOptionsContext.fsBound} — the
- * REAL "file tools are armed" signal (guuey#234), never `fs` presence — AND a
- * positive {@link BuildOptionsContext.resourceCount} (the Router only writes
- * it when > 0; re-checked here fail-closed). Deliberately NOT auth-gated: the
- * app layer is shared, public-by-definition content — guests read it too.
- * Delegates to the framework-neutral {@link renderResourcesSection}
- * (`../preamble.js`) so Claude, OpenAI, and ADK render the IDENTICAL section.
- * Returns `""` (append-safe) when out of scope.
- */
-function buildFirstImpressionSection(ctx: BuildOptionsContext, noTools: boolean): string {
-  // guuey#2262: the first impression asks for a `ggui_handshake` call, which a
-  // turn that declares no tools cannot make.
-  if (ctx.gguiAttached !== true || noTools) return "";
-  return renderFirstImpressionSection(ctx.firstImpression);
-}
-function buildResourcesSection(ctx: BuildOptionsContext): string {
-  const count = ctx.resourceCount;
-  if (ctx.fsBound !== true || count === undefined || count <= 0 || ctx.fs === undefined) return "";
-  return renderResourcesSection(count, ctx.fs.app);
-}
-
-import type { CredentialFile } from "@guuey/worker";
 
 /**
  * SDK's `mcpServers` value shape — recreated structurally rather than imported
@@ -255,7 +184,7 @@ export interface BuildOptionsContext {
    * The Router's fail-closed cross-app profile access for this invoke
    * (cross-app-profile T7) — present ONLY for a consenting authenticated caller,
    * clamped to the app's declared posture. Gates the profile system-prompt
-   * section ({@link buildProfileSection}): the `save_profile` SAVE instruction on
+   * section ({@link promptClassOf}): the `save_profile` SAVE instruction on
    * `read-write`, the RECALL block on {@link profileSections}. DISTINCT from
    * {@link memoryAttached}: that is this app's own memory tool; this is the
    * consent-gated cross-app profile.
@@ -275,7 +204,7 @@ export interface BuildOptionsContext {
    * turn (guuey#456 B4) — counted Router-side at invoke assembly and written
    * onto the wire only when the layers are REAL and the count is positive.
    * Gates the app-resources system-prompt section
-   * ({@link buildResourcesSection}) together with {@link fsBound}, so the hint
+   * ({@link promptClassOf}) together with {@link fsBound}, so the hint
    * never renders on a turn whose file tools are off (the memory-mcp T5
    * lesson: gate on the real signal, never on `fs` presence). See
    * `Invoke.resourceCount` in `@guuey/worker`.
@@ -337,6 +266,26 @@ export function hostPathEnvOf(env: { readonly [name: string]: string | undefined
 }
 
 /**
+ * The turn's prompt class (A1): every input the system prompt reads, from the
+ * snapshot and the invoke context. `tools.allowlist: ["@none"]` (guuey#2262)
+ * makes it a no-tools class, which leaves out the sections that name tools the
+ * model cannot call.
+ */
+export function claudePromptClass(snapshot: GuueyAgent, ctx: BuildOptionsContext): PromptClass {
+  return promptClassOf(ctx, { noTools: declaresNoTools(snapshot.tools), surfaceHints: snapshot.surfaceHints });
+}
+
+/**
+ * The leading text blocks of the SDK user message this turn adds (A1): the
+ * `<turn_context>` block, always, then a `<turn_directive>` block when the
+ * platform has an order this turn. `runInvoke` puts each in its own content
+ * block, ahead of the invoke's own content.
+ */
+export function claudeTurnContext(snapshot: GuueyAgent, ctx: BuildOptionsContext): string[] {
+  return buildTurnContextBlocks(ctx, claudePromptClass(snapshot, ctx));
+}
+
+/**
  * Build the Claude Agent SDK `Options` for one invoke. Pure: all disk/env access
  * is injected via {@link BuildOptionsContext}. Throws on an unresolved `{file}`
  * system prompt or a missing API key (the same loud failures the source had).
@@ -369,54 +318,10 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
   const mcpServers = resolveMcpServers(ctx);
   const fsBound = ctx.fsBound === true;
   const gates = resolveToolGates(snapshot, Object.keys(mcpServers), fsBound, ctx.withheldTools);
-  // guuey#2262: `tools.allowlist: ["@none"]` — no MCP tool this turn, so the
-  // sections that tell the model about tools it cannot call are left out.
-  const noTools = declaresNoTools(snapshot.tools);
-  const systemPrompt =
-    withContextPreamble(
-      snapshot.systemPrompt ?? GUUEY_DEFAULT_SYSTEM_PROMPT,
-      ctx.history,
-      ctx.priorMemory,
-      ctx.priorState,
-    ) +
-    buildMemorySection(ctx, noTools) +
-    // cross-app-profile T7: the profile section is a SIBLING of the memory
-    // section, appended AFTER it (memory first, then profile). Both are
-    // framework-blind renderers from ../preamble.js.
-    buildProfileSection(ctx, noTools) +
-    // guuey#456 B4: the app-resources hint, appended AFTER the profile
-    // section (memory → profile → resources) — same framework-blind renderer
-    // family from ../preamble.js, gated on fsBound && resourceCount > 0.
-    buildResourcesSection(ctx) +
-    buildFirstImpressionSection(ctx, noTools) +
-    // The welcome card the Router already drew (never beside a first-impression push).
-    renderFirstImpressionShownSection(ctx.firstImpressionShown) +
-    // guuey#901: the connected-services section — the pod's per-turn fact about
-    // each OAuth server, placed with the tool-shaped sections and before the
-    // surface/norms sections. Empty (byte-identical prompt) without OAuth servers.
-    renderMcpAvailabilitySection(ctx.mcpAvailability) +
-    // guuey#531: the surface-formatting section — default ON, suppressed
-    // only by an explicit `agent.surfaceHints: false` (BYO plain-text
-    // surfaces). Before the norms, which stay LAST.
-    renderSurfaceSection(snapshot.surfaceHints) +
-    // guuey#630: the generative-UI section — DIRECTLY AFTER the surface
-    // section it qualifies ("use a table when comparing things" is right
-    // for a text answer, wrong for a shaped one). Gated inside the
-    // renderer on `gguiAttached` (the rail is really armed) AND the same
-    // `surfaceHints: false` BYO opt-out. Before the norms, which stay LAST.
-    // Left out when the tools block declares no tools (guuey#2262): the
-    // model cannot draw a card.
-    (noTools ? "" : renderGenerativeUiSection(ctx.gguiAttached, snapshot.surfaceHints)) +
-    // guuey#2386: the A2UI section — DIRECTLY AFTER generative UI, the other
-    // way a tool's answer becomes UI. Gated inside the renderer on the
-    // client drawing the guuey A2UI catalog AND the same `surfaceHints:
-    // false` opt-out; left out with no tools, since tools are where
-    // surfaces come from.
-    (noTools ? "" : renderA2uiSection(ctx.clientCatalogs, snapshot.surfaceHints)) +
-    // guuey#556: the default response norms, LAST and unconditional —
-    // every hosted agent inherits them (see RESPONSE_NORMS_SECTION's doc
-    // for the confirm-gate carve-out + the per-court opt-out grammar).
-    RESPONSE_NORMS_SECTION;
+  // A1: the system prompt is a function of the turn's CLASS only (byte-stable
+  // across turns and users of a class: the prompt-cache prefix); what varies
+  // per turn rides the turn's own message ({@link claudeTurnContext}).
+  const systemPrompt = buildSystemPrompt(snapshot.systemPrompt ?? GUUEY_DEFAULT_SYSTEM_PROMPT, claudePromptClass(snapshot, ctx));
   const model = snapshot.model ?? DEFAULT_MODEL;
   const maxTurns = snapshot.runtime?.maxTurns ?? DEFAULT_MAX_TURNS;
   const fs = ctx.fs;
@@ -714,22 +619,3 @@ export function resolveToolGates(
     canUseTool: rules.canUseTool,
   };
 }
-
-// withContextPreamble now lives in ../preamble.js (framework-neutral — the
-// ADK runner renders the same preamble); re-exported for existing importers.
-// `renderMemorySection` (the memory SAVE + RECALL block, memory-mcp T5) lives
-// there too — framework-blind, so openai/adk render the identical section.
-export { withContextPreamble } from "../preamble.js";
-import {
-  RESPONSE_NORMS_SECTION,
-  renderSurfaceSection,
-  renderGenerativeUiSection,
-  renderA2uiSection,
-  renderMemorySectionForTurn,
-  renderProfileSection,
-  renderResourcesSection,
-  renderFirstImpressionSection,
-  renderFirstImpressionShownSection,
-  withContextPreamble,
-  renderMcpAvailabilitySection,
-} from "../preamble.js";

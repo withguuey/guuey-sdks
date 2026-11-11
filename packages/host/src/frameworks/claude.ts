@@ -29,6 +29,7 @@ import type { CredentialFile,
 import { anthropicUserContent, invokeImagesCapabilities, storeTurnImages } from "@guuey/worker";
 import {
   buildOptions,
+  claudeTurnContext,
   reservedEnvNamesDropped,
   resolveMcpServers,
   type BuildOptionsContext,
@@ -338,6 +339,7 @@ export async function runInvoke(
 
   let options: Options;
   let ctx: BuildOptionsContext;
+  let turnContext: string[];
   try {
     ctx = {
       input: invoke.input,
@@ -368,10 +370,11 @@ export async function runInvoke(
       ...(invoke.mcpAvailability !== undefined ? { mcpAvailability: invoke.mcpAvailability } : {}),
       // The Router's per-turn tool withholds → `disallowedTools` (servers attached this turn only).
       ...(invoke.withheldTools !== undefined ? { withheldTools: invoke.withheldTools } : {}),
-      // The welcome card the Router already drew → its section in the system prompt.
+      // The welcome card the Router already drew → its section in the turn's directive block.
       ...(invoke.firstImpressionShown !== undefined ? { firstImpressionShown: invoke.firstImpressionShown } : {}),
     };
     options = buildOptions(snapshot, ctx);
+    turnContext = claudeTurnContext(snapshot, ctx);
     reportToolGateErrors(snapshot.tools);
   } catch (err) {
     emit.error(err instanceof Error ? err.message : String(err));
@@ -402,9 +405,14 @@ export async function runInvoke(
   async function* userMessages(): AsyncGenerator<SDKUserMessage> {
     await gate;
     if (!sendMessage) return;
+    // A1: the turn's context blocks lead the message, each its own text block,
+    // then the invoke's own content (its images, then its text) unchanged.
     yield {
       type: "user",
-      message: { role: "user", content: anthropicUserContent(invoke) },
+      message: {
+        role: "user",
+        content: [...turnContext.map((text) => ({ type: "text" as const, text })), ...anthropicUserContent(invoke)],
+      },
       parent_tool_use_id: null,
     };
     await inputDone;
@@ -437,7 +445,7 @@ export async function runInvoke(
     const problems = await awaitMcpReady(q, resolveMcpServers(ctx), timing);
     // Reported on stderr only, NOT through the `mcpAvailability` / `error`
     // path (guuey#2139): `mcpAvailability` is the Router's pre-turn input,
-    // already rendered into the system prompt the CLI was spawned with, so a
+    // already rendered into the turn's context block, so a
     // server that fails here cannot reach it; and a new worker event for it
     // would be a cross-surface wire change. This equals the pre-change CLI,
     // which also went on without a server that failed to connect at its

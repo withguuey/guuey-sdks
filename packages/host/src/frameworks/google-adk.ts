@@ -2,7 +2,7 @@
  * Google-ADK runner — drives the OFFICIAL `@google/adk` (JS) per invoke and
  * emits every native ADK `Event` to fd-3 for the Router's
  * `createAdkNormalizer`. Replaces the Python ADK host (`guuey_adk_host`)
- * behavior-for-behavior: same hello handshake, same context preamble, same
+ * behavior-for-behavior: same hello handshake, same prompt assembly, same
  * per-invoke `InMemoryRunner` semantics, same final-text extraction.
  *
  * Deliberate mechanics (each one adversarially reviewed):
@@ -83,19 +83,7 @@ import {
   nativeLoad,
   resolveAgentEntry,
 } from "../agent-entry.js";
-import {
-  RESPONSE_NORMS_SECTION,
-  renderSurfaceSection,
-  renderMcpAvailabilitySection,
-  renderGenerativeUiSection,
-  renderA2uiSection,
-  renderMemorySectionForTurn,
-  renderProfileSection,
-  renderResourcesSection,
-  renderFirstImpressionSection,
-  renderFirstImpressionShownSection,
-  withContextPreamble,
-} from "../preamble.js";
+import { buildSystemPrompt, buildTurnContextBlocks, promptClassOf } from "../preamble.js";
 import { resolveSdkVersion } from "../sdk-version.js";
 import { modelToolFilterFor, reportToolGateErrors, type ToolGates } from "../mcp-tool-gates.js";
 import {
@@ -171,10 +159,10 @@ interface AdkModule {
     // — ADK invokes it with a context argument our closures simply ignore.
     // F7: a plain string instruction goes through ADK's `{var}` session-state
     // substitution (`canonicalInstruction` → `requireStateInjection: true`);
-    // our preamble embeds user-authored conversation content, so a message
-    // containing `{anything}` throws `Context variable not found` and kills
-    // the turn. The function form sets `requireStateInjection: false`,
-    // bypassing substitution entirely.
+    // the instruction embeds the builder's prompt, which may carry `{...}`
+    // text, and a string instruction with `{anything}` throws `Context
+    // variable not found` and kills the turn. The function form sets
+    // `requireStateInjection: false`, bypassing substitution entirely.
     instruction: string | (() => string);
     tools: unknown[];
   }) => AdkAgent;
@@ -392,6 +380,8 @@ export async function runAdkTurn(
   adk: Pick<AdkModule, "InMemoryRunner">,
   agent: AdkAgent,
   turn: HostTurn,
+  /** The turn's context blocks (A1, `buildTurnContextBlocks`): each leads the message as its own text part. */
+  turnContext: readonly string[],
   emit: Emitter,
   sdkVersion: string | null,
 ): Promise<void> {
@@ -420,7 +410,9 @@ export async function runAdkTurn(
       userId: turn.identity.userId,
       sessionId: session.id,
       // `role` pinned — see the module header (adk-js#475).
-      newMessage: { role: "user", parts: geminiUserParts(turn) },
+      // A1: the turn's context blocks first, each its own text part, then the
+      // turn's own parts (its images, then its text) unchanged.
+      newMessage: { role: "user", parts: [...turnContext.map((text) => ({ text })), ...geminiUserParts(turn)] },
       // SSE streaming, matching the Python host's RunConfig(streaming_mode=SSE)
       // — the ADK default is NONE, which silently drops incremental text
       // "sse" is StreamingMode.SSE's literal value.
@@ -447,9 +439,10 @@ export async function runAdkTurn(
 
 /**
  * Assemble the per-turn {@link GuueyContext} — the ONE discoverable object a
- * graceful factory receives (spec §2.2). `instruction` carries the standard
- * context preamble already prepended; the raw fields ride alongside for
- * factories that render context themselves.
+ * graceful factory receives (spec §2.2). `instruction` is the assembled
+ * system prompt (A1: class-level only; the turn's context blocks lead the
+ * turn's message instead); the raw fields ride alongside for factories that
+ * render context themselves.
  */
 export function buildGuueyContext(
   snapshot: HostSnapshot,
@@ -536,72 +529,14 @@ export function createRunner(hostBoot: HostBoot = {}, deps: AdkRunnerDeps = {}):
         );
         return;
       }
-      // The context preamble PLUS the framework-blind memory section (memory-mcp
-      // T5: `save_memory` instruction + optional RECALL block, identical to the
-      // Claude & OpenAI renderers). The SAVE half is gated on `authenticated &&
-      // memoryAttached` — the memory child booted, so the `save_memory` tool is
-      // spliced (T4) — NOT on `userMemory` presence: a brand-new authenticated
-      // user has no file yet but must still be told the tool exists (the
-      // bootstrap fix). The RECALL block inside `renderMemorySection` stays
-      // gated on `userMemory` presence. Brace-content in recalled memory is
-      // safe: no-code rides `instruction` as a FUNCTION (F7 — bypasses ADK
-      // `{var}` substitution), and the graceful path hands it to the dev's
-      // factory verbatim.
-      const memoryOn = turn.identity.authMode === "authenticated" && turn.memoryAttached === true;
-      // cross-app-profile T7: the profile section is a SIBLING of the memory
-      // section, appended AFTER it, gated on `authenticated && profileAccess`
-      // (a live, clamped grant). Brace-content in recalled profile sections is
-      // safe: no-code rides `instruction` as a FUNCTION (F7), and the graceful
-      // path hands it to the dev's factory verbatim. `profileAccess` is aliased
-      // to a const so the truthy branch narrows it to the required `ProfileAccess`.
-      const profileAccess = turn.profileAccess;
-      const profileOn = turn.identity.authMode === "authenticated" && profileAccess !== undefined;
-      // guuey#456 B4: the app-resources hint is a SIBLING of the memory/
-      // profile sections, appended AFTER the profile section. Gated on
-      // `fsBound && resourceCount > 0` — `fsBound` is the REAL "file tools
-      // are armed" signal (guuey#234), so the hint never names files the
-      // model has no tools to read; deliberately NOT auth-gated (the app
-      // layer is shared, public-by-definition content). `resourceCount` is
-      // aliased to a const so the truthy branch narrows it.
-      const resourceCount = turn.resourceCount;
-      const resourcesOn =
-        turn.fsBound === true && resourceCount !== undefined && resourceCount > 0;
-      // guuey#2262: `tools.allowlist: ["@none"]` keeps no tool on any server, so
-      // the memory and profile SAVE instructions, the first impression (a
-      // `ggui_handshake` call) and the generative-UI section are left out.
-      const noTools = declaresNoTools(snapshot.tools);
-      const instruction =
-        // Prompt-less snapshots run the platform default — same fallback as
-        // the claude and openai arms (this arm used to fall back to "",
-        // leaving google-adk agents effectively promptless).
-        withContextPreamble(
-          snapshot.systemPrompt ?? GUUEY_DEFAULT_SYSTEM_PROMPT,
-          turn.history,
-          turn.priorMemory,
-          turn.priorState,
-        ) +
-        (memoryOn ? renderMemorySectionForTurn(turn.userMemory, noTools) : "") +
-        (profileOn ? renderProfileSection(turn.profileSections, noTools ? "read" : profileAccess) : "") +
-        (resourcesOn ? renderResourcesSection(resourceCount, turn.fs.app) : "") +
-        // guuey#1183: the bound first impression — only with the ggui rail armed.
-        (turn.gguiAttached === true && !noTools ? renderFirstImpressionSection(turn.firstImpression) : "") +
-        // The welcome card the Router already drew — whenever present.
-        renderFirstImpressionShownSection(turn.firstImpressionShown) +
-        // guuey#531: surface-formatting hints — default ON, only an explicit
-        // `agent.surfaceHints: false` suppresses. Before the norms (LAST).
-        renderMcpAvailabilitySection(turn.mcpAvailability) +
-        renderSurfaceSection(snapshot.surfaceHints) +
-        // guuey#630: the generative-UI section — DIRECTLY AFTER the surface
-        // section it qualifies. Gated inside the renderer on `gguiAttached`
-        // (the rail is really armed this turn) AND the same `surfaceHints:
-        // false` BYO opt-out. Before the norms (LAST).
-        (noTools ? "" : renderGenerativeUiSection(turn.gguiAttached, snapshot.surfaceHints)) +
-        // guuey#2386: the A2UI section, DIRECTLY AFTER generative UI (the
-        // client draws the guuey A2UI catalog, same opt-out, same no-tools rule).
-        (noTools ? "" : renderA2uiSection(turn.clientCatalogs, snapshot.surfaceHints)) +
-        // guuey#556: default response norms, LAST and unconditional (see the
-        // constant's doc for the confirm-gate carve-out).
-        RESPONSE_NORMS_SECTION;
+      // A1: the instruction is a function of the turn's CLASS only, from the
+      // one assembler every runner shares (prompt-less snapshots run the
+      // platform default, as on the claude and openai arms); what varies per
+      // turn leads the turn's message (`runAdkTurn`). `tools.allowlist:
+      // ["@none"]` (guuey#2262) makes a no-tools class.
+      const cls = promptClassOf(turn, { noTools: declaresNoTools(snapshot.tools), surfaceHints: snapshot.surfaceHints });
+      const instruction = buildSystemPrompt(snapshot.systemPrompt ?? GUUEY_DEFAULT_SYSTEM_PROMPT, cls);
+      const turnContext = buildTurnContextBlocks(turn, cls);
       let agent: AdkAgent;
       try {
         const creds = listCredentials(turn.fs)();
@@ -626,10 +561,9 @@ export function createRunner(hostBoot: HostBoot = {}, deps: AdkRunnerDeps = {}):
           }
         } else {
           // No-code: construct from the snapshot. `instruction` rides as a
-          // function (F7, see AdkModule) — the preamble embeds user-authored
-          // conversation content that may itself contain `{...}`, and a
-          // string instruction would run it through ADK's session-state
-          // substitution.
+          // function (F7, see AdkModule) — the builder's prompt may itself
+          // contain `{...}`, and a string instruction would run it through
+          // ADK's session-state substitution.
           // guuey#1342: the sanctioned key channel WINS. Handing the key to
           // the model explicitly ends the precedence question the SDK's env
           // chain (`GOOGLE_GENAI_API_KEY || GOOGLE_API_KEY || GEMINI_API_KEY`)
@@ -649,7 +583,7 @@ export function createRunner(hostBoot: HostBoot = {}, deps: AdkRunnerDeps = {}):
         emit.error(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
         return;
       }
-      await runAdkTurn(adk, agent, turn, emit, sdkVersion);
+      await runAdkTurn(adk, agent, turn, turnContext, emit, sdkVersion);
     },
   };
 }

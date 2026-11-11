@@ -14,8 +14,8 @@ import {
 import { mcpToolCustomData as mcpCustomData } from "@guuey/worker";
 import type { HostInvoke } from "./claude.js";
 import {
-  RESPONSE_NORMS_SECTION,
-  SURFACE_FORMATTING_SECTION, renderMemorySection, renderProfileSection, renderResourcesSection,
+  RESPONSE_NORMS_SECTION, TURN_AUTHORITY_SECTION, MEMORY_SAVE_INSTRUCTION, PROFILE_SAVE_INSTRUCTION,
+  SURFACE_FORMATTING_SECTION, renderResourcesSection, renderProfileRecall,
   FIRST_IMPRESSION_SHOWN_HEADING, GENERATIVE_UI_SECTION, A2UI_SECTION, A2UI_GUUEY_CATALOG_ID, renderUserMemoryRecall } from "../preamble.js";
 import { defaultModelFor, type GuueyAgent } from "@guuey/config";
 
@@ -84,6 +84,29 @@ const snapshot: GuueyAgent = {
   model: "gpt-4o-mini",
   mcpServers: {},
 };
+
+/** The class-level sections of the "SYS" agent's instructions: `mid`, then surface, authority, norms (A1). */
+function instructionsOf(...mid: string[]): string {
+  return "SYS" + mid.join("") + SURFACE_FORMATTING_SECTION + TURN_AUTHORITY_SECTION + RESPONSE_NORMS_SECTION;
+}
+const MEMORY_SAVE = `\n\n${MEMORY_SAVE_INSTRUCTION}`;
+const PROFILE_SAVE = `\n\n${PROFILE_SAVE_INSTRUCTION}`;
+
+/** One "SYS" turn: the built Agent's `instructions` and the run input (A1: the turn context leads it), as text. */
+async function captureTurn(
+  over: Partial<HostInvoke>,
+  agentSnapshot: GuueyAgent & { framework?: string } = { framework: "openai-agents-sdk", model: "gpt-4o-mini", systemPrompt: "SYS", mcpServers: {} },
+): Promise<{ instructions: string; input: string }> {
+  const { sink } = collector();
+  const seen = { instructions: "", input: "" };
+  const run: OpenaiRunFn = (agent, input) => {
+    seen.instructions = typeof agent.instructions === "string" ? agent.instructions : "";
+    seen.input = typeof input === "string" ? input : JSON.stringify(input);
+    return Promise.resolve(fakeResult({ events: [], finalOutput: "ok" }));
+  };
+  await runInvokeOpenai(agentSnapshot, invoke(over), runtime, createEmitter(sink), run);
+  return seen;
+}
 
 describe("runInvokeOpenai — native emission", () => {
   it("emits one `native('openai-agents-sdk', ev)` per stream event, then a single `done`", async () => {
@@ -173,7 +196,7 @@ describe("runInvokeOpenai — native emission", () => {
     expect(events.some((e) => e.type === "done")).toBe(false);
   });
 
-  it("builds the Agent from the snapshot: model + preamble instructions, input as the run prompt", async () => {
+  it("builds the Agent from the snapshot: model + class-only instructions, the turn context then the input as the run prompt", async () => {
     const { sink } = collector();
     const emit = createEmitter(sink);
     const seen: { model?: string; instructions?: string; input?: Parameters<OpenaiRunFn>[1]; maxTurns?: number } = {};
@@ -204,12 +227,16 @@ describe("runInvokeOpenai — native emission", () => {
     );
 
     expect(seen.model).toBe("gpt-4o-mini");
-    expect(seen.input).toBe("do it");
     expect(seen.maxTurns).toBe(7);
-    expect(seen.instructions).toContain("SYS");
-    expect(seen.instructions).toContain("<thread_memory>");
-    expect(seen.instructions).toContain("Ada");
-    expect(seen.instructions).toContain("<working_state>");
+    expect(seen.instructions).toBe(instructionsOf());
+    // A1: the context leads the input, its own block, then the user's text.
+    expect(typeof seen.input).toBe("string");
+    const input = typeof seen.input === "string" ? seen.input : "";
+    expect(input.startsWith("<turn_context>\n")).toBe(true);
+    expect(input.endsWith("\n</turn_context>\n\ndo it")).toBe(true);
+    expect(input).toContain("<thread_memory>");
+    expect(input).toContain("Ada");
+    expect(input).toContain("<working_state>");
     // Default invoke is anonymous + not attached → NO memory section (the SAVE
     // gate is `authenticated && memoryAttached`).
     expect(seen.instructions).not.toContain("`save_memory` tool");
@@ -267,24 +294,20 @@ describe("runInvokeOpenai — memory section (memory-mcp T5, gated on authentica
   }
   const authed = { userId: "u1", authMode: "authenticated" as const };
 
-  it("authenticated + attached + userMemory → save + byte-identical recall block, after the preamble", async () => {
-    const instructions = await captureInstructions({
+  it("authenticated + attached + userMemory → save in the instructions, the byte-identical recall block leading the input", async () => {
+    const { instructions, input } = await captureTurn({
       identity: authed,
       memoryAttached: true,
       userMemory: "User's name is Ada.",
     });
-    // Identical block content to Claude/ADK, appended AFTER the context preamble.
-    expect(instructions).toContain("SYS");
-    expect(instructions).toContain("`save_memory` tool");
-    expect(instructions?.endsWith(renderMemorySection("User's name is Ada.") + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION)).toBe(true);
-    expect((instructions ?? "").indexOf("SYS")).toBeLessThan(
-      (instructions ?? "").indexOf("`save_memory` tool"),
-    );
+    // Identical block content to Claude/ADK.
+    expect(instructions).toBe(instructionsOf(MEMORY_SAVE));
+    expect(input).toBe(`<turn_context>\n${renderUserMemoryRecall("User's name is Ada.").slice(2)}\n</turn_context>\n\nhi`);
   });
 
   it("guuey#2386: a client that draws guuey A2UI gets the section DIRECTLY AFTER generative UI, byte-identical to Claude's", async () => {
     const instructions = await captureInstructions({ gguiAttached: true, clientCatalogs: [A2UI_GUUEY_CATALOG_ID] });
-    expect(instructions?.endsWith(SURFACE_FORMATTING_SECTION + GENERATIVE_UI_SECTION + A2UI_SECTION + RESPONSE_NORMS_SECTION)).toBe(true);
+    expect(instructions?.endsWith(SURFACE_FORMATTING_SECTION + GENERATIVE_UI_SECTION + A2UI_SECTION + TURN_AUTHORITY_SECTION + RESPONSE_NORMS_SECTION)).toBe(true);
   });
 
   it("guuey#2386: no section without the guuey A2UI catalog", async () => {
@@ -294,62 +317,44 @@ describe("runInvokeOpenai — memory section (memory-mcp T5, gated on authentica
   });
 
   it('guuey#2262: tools.allowlist ["@none"] leaves out the SAVE instruction and the generative-UI section, keeps the recall', async () => {
-    const { sink } = collector();
-    let instructions: string | undefined;
-    const run: OpenaiRunFn = (agent) => {
-      instructions = typeof agent.instructions === "string" ? agent.instructions : undefined;
-      return Promise.resolve(fakeResult({ events: [], finalOutput: "ok" }));
-    };
-    await runInvokeOpenai(
+    const { instructions, input } = await captureTurn(
+      { identity: authed, memoryAttached: true, userMemory: "Ada.", gguiAttached: true, clientCatalogs: [A2UI_GUUEY_CATALOG_ID] },
       { framework: "openai-agents-sdk", model: "gpt-4o-mini", systemPrompt: "SYS", mcpServers: {}, tools: { allowlist: ["@none"] } },
-      invoke({ identity: authed, memoryAttached: true, userMemory: "Ada.", gguiAttached: true, clientCatalogs: [A2UI_GUUEY_CATALOG_ID] }),
-      runtime,
-      createEmitter(sink),
-      run,
     );
     expect(instructions).not.toContain("`save_memory` tool");
     expect(instructions).not.toContain(GENERATIVE_UI_SECTION);
     expect(instructions).not.toContain(A2UI_SECTION);
-    expect(instructions?.endsWith(renderUserMemoryRecall("Ada.") + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION)).toBe(true);
+    expect(instructions).toBe(instructionsOf());
+    expect(input).toContain(renderUserMemoryRecall("Ada.").slice(2));
   });
 
   it('guuey#2262: tools.allowlist ["@none"] leaves out the profile SAVE instruction and the first impression, keeps the profile recall', async () => {
-    const capture = async (allowlist: string[]): Promise<string> => {
-      const { sink } = collector();
-      let instructions = "";
-      const run: OpenaiRunFn = (agent) => {
-        instructions = typeof agent.instructions === "string" ? agent.instructions : "";
-        return Promise.resolve(fakeResult({ events: [], finalOutput: "ok" }));
-      };
-      await runInvokeOpenai(
-        { framework: "openai-agents-sdk", model: "gpt-4o-mini", systemPrompt: "SYS", mcpServers: {}, tools: { allowlist } },
-        invoke({
+    const capture = (allowlist: string[]) =>
+      captureTurn(
+        {
           identity: authed,
           gguiAttached: true,
           profileAccess: "read-write",
           profileSections: [{ app: "Todoist", content: "Prefers short replies." }],
           firstImpression: { chipKey: "c5c73c61f370", intent: "Opening hours", contract: { propsSpec: { properties: {} } } },
-        }),
-        runtime,
-        createEmitter(sink),
-        run,
+        },
+        { framework: "openai-agents-sdk", model: "gpt-4o-mini", systemPrompt: "SYS", mcpServers: {}, tools: { allowlist } },
       );
-      return instructions;
-    };
     const none = await capture(["@none"]);
-    expect(none).not.toContain("save_profile");
-    expect(none).toContain("Prefers short replies.");
-    expect(none).not.toContain("ggui_handshake");
+    expect(none.instructions).not.toContain("save_profile");
+    expect(none.input).toContain("Prefers short replies.");
+    expect(none.input).not.toContain("ggui_handshake");
     const control = await capture(["ggui.*"]);
-    expect(control).toContain("save_profile");
-    expect(control).toContain("ggui_handshake");
+    expect(control.instructions).toContain("save_profile");
+    expect(control.input).toContain("<turn_directive>");
+    expect(control.input).toContain("ggui_handshake");
+    expect(control.instructions).not.toContain("ggui_handshake");
   });
 
   it("BOOTSTRAP: authenticated + attached + NO userMemory (brand-new user) → save-only section, NO recall block", async () => {
-    const instructions = await captureInstructions({ identity: authed, memoryAttached: true });
-    expect(instructions).toContain("`save_memory` tool");
-    expect(instructions?.endsWith(renderMemorySection(undefined) + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION)).toBe(true);
-    expect(instructions).not.toContain("## What you remember about this user");
+    const { instructions, input } = await captureTurn({ identity: authed, memoryAttached: true });
+    expect(instructions).toBe(instructionsOf(MEMORY_SAVE));
+    expect(input).toBe("<turn_context></turn_context>\n\nhi");
   });
 
   it("authenticated + NOT attached → NO section even if userMemory somehow present (no tool → no instruction)", async () => {
@@ -389,40 +394,31 @@ describe("runInvokeOpenai — cross-app profile section (profile T7, gated on au
   const authed = { userId: "u1", authMode: "authenticated" as const };
   const sections = [{ app: "Todoist", content: "Prefers short replies." }];
 
-  it("authenticated + read-write + sections → save + recall, byte-identical to renderProfileSection, after the memory section", async () => {
-    const instructions = await captureInstructions({
+  it("authenticated + read-write + sections → save in the instructions + recall leading the input, after the memory ones", async () => {
+    const { instructions, input } = await captureTurn({
       identity: authed,
       memoryAttached: true,
       userMemory: "Ada",
       profileAccess: "read-write",
       profileSections: sections,
     });
-    // The section content is byte-identical to Claude/ADK.
-    expect(
-      instructions?.endsWith(
-        renderMemorySection("Ada") +
-          renderProfileSection(sections, "read-write") +
-          SURFACE_FORMATTING_SECTION +
-          RESPONSE_NORMS_SECTION,
-      ),
-    ).toBe(true);
-    expect(instructions).toContain("`save_profile` tool");
-    expect(instructions).toContain("### From Todoist");
-    // memory section precedes profile section.
-    expect((instructions ?? "").indexOf("`save_memory` tool")).toBeLessThan(
-      (instructions ?? "").indexOf("`save_profile` tool"),
+    // The section content is byte-identical to Claude/ADK: SAVE instructions in
+    // the instructions (memory first), the recalls leading the input.
+    expect(instructions).toBe(instructionsOf(MEMORY_SAVE, PROFILE_SAVE));
+    expect(input).toBe(
+      `<turn_context>\n${renderUserMemoryRecall("Ada").slice(2)}${renderProfileRecall(sections)}\n</turn_context>\n\nhi`,
     );
   });
 
   it("authenticated + read (read-only) + sections → recall only, NO save instruction", async () => {
-    const instructions = await captureInstructions({
+    const { instructions, input } = await captureTurn({
       identity: authed,
       profileAccess: "read",
       profileSections: sections,
     });
     expect(instructions).not.toContain("`save_profile` tool");
-    expect(instructions).toContain("## What you know about this user from other apps");
-    expect(instructions).toContain("### From Todoist");
+    expect(input).toContain("## What you know about this user from other apps");
+    expect(input).toContain("### From Todoist");
   });
 
   it("authenticated + NO profileAccess → NO profile section", async () => {
@@ -464,7 +460,7 @@ describe("runInvokeOpenai — app-resources section (guuey#456 B4, gated on fsBo
   it("fsBound + resourceCount > 0 → byte-identical to renderResourcesSection, naming the invoke's fs.app", async () => {
     const instructions = await captureInstructions({ fsBound: true, resourceCount: 3 });
     // The invoke fixture's fs.app is "/fs/app" — the section names THAT path.
-    expect(instructions?.endsWith(renderResourcesSection(3, "/fs/app") + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION)).toBe(true);
+    expect(instructions).toBe(instructionsOf(renderResourcesSection(3, "/fs/app")));
     expect(instructions).toContain("3 reference files at /fs/app/resources");
   });
 
@@ -478,15 +474,7 @@ describe("runInvokeOpenai — app-resources section (guuey#456 B4, gated on fsBo
       profileAccess: "read-write",
       profileSections: sections,
     });
-    expect(
-      instructions?.endsWith(
-        renderMemorySection("Ada") +
-          renderProfileSection(sections, "read-write") +
-          renderResourcesSection(2, "/fs/app") +
-          SURFACE_FORMATTING_SECTION +
-          RESPONSE_NORMS_SECTION,
-      ),
-    ).toBe(true);
+    expect(instructions).toBe(instructionsOf(MEMORY_SAVE, PROFILE_SAVE, renderResourcesSection(2, "/fs/app")));
   });
 
   it("an ANONYMOUS caller still gets the section (app resources are shared, public-by-definition — NOT auth-gated)", async () => {
@@ -564,34 +552,17 @@ describe("mcpCustomData (guuey#981)", () => {
   });
 });
 
-describe("the welcome card the Router already drew reaches the OpenAI instructions", () => {
+describe("the welcome card the Router already drew reaches the OpenAI run input's directive block", () => {
   const shown = { heading: "Welcome to Harbor Books", message: "Glad you're here.", options: ["Find a book", "Opening hours"] };
 
-  async function instructionsFor(over: Partial<HostInvoke>): Promise<string | undefined> {
-    const { sink } = collector();
-    const emit = createEmitter(sink);
-    let instructions: string | undefined;
-    const run: OpenaiRunFn = (agent) => {
-      instructions = typeof agent.instructions === "string" ? agent.instructions : undefined;
-      return Promise.resolve(fakeResult({ events: [], finalOutput: "ok" }));
-    };
-    await runInvokeOpenai(
-      { framework: "openai-agents-sdk", model: "gpt-4o-mini", systemPrompt: "SYS", mcpServers: {} },
-      invoke(over),
-      runtime,
-      emit,
-      run,
-    );
-    return instructions;
-  }
-
-  it("renders the section with or without the ggui rail; none when no card was drawn", async () => {
+  it("renders the section with or without the ggui rail; none when no card was drawn; never in the instructions", async () => {
     for (const gguiAttached of [true, false]) {
-      const out = await instructionsFor({ firstImpressionShown: shown, gguiAttached });
-      expect(out).toContain(FIRST_IMPRESSION_SHOWN_HEADING);
-      expect(out).toContain('"options":["Find a book","Opening hours"]');
+      const { instructions, input } = await captureTurn({ firstImpressionShown: shown, gguiAttached });
+      expect(input.startsWith(`<turn_context></turn_context>\n\n<turn_directive>\n${FIRST_IMPRESSION_SHOWN_HEADING}`)).toBe(true);
+      expect(input).toContain('"options":["Find a book","Opening hours"]');
+      expect(instructions).not.toContain(FIRST_IMPRESSION_SHOWN_HEADING);
     }
-    expect(await instructionsFor({ gguiAttached: true })).not.toContain(FIRST_IMPRESSION_SHOWN_HEADING);
+    expect((await captureTurn({ gguiAttached: true })).input).not.toContain(FIRST_IMPRESSION_SHOWN_HEADING);
   });
 });
 

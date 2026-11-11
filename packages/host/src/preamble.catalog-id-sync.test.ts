@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
-import { A2UI_GUUEY_CATALOG_ID, renderA2uiSection, A2UI_SECTION } from "./preamble.js";
+import { A2UI_GUUEY_CATALOG_ID, drawsGuueyA2ui } from "./preamble.js";
 
 const SOURCE = fileURLToPath(new URL("../../agent-client/src/catalogs.ts", import.meta.url));
 
@@ -21,6 +21,6 @@ describe("the host's A2UI catalog id matches @guuey/agent-client's", () => {
   });
 
   it("is the id the A2UI section is gated on", () => {
-    expect(renderA2uiSection([A2UI_GUUEY_CATALOG_ID], undefined)).toBe(A2UI_SECTION);
+    expect(drawsGuueyA2ui([A2UI_GUUEY_CATALOG_ID], undefined)).toBe(true);
   });
 });

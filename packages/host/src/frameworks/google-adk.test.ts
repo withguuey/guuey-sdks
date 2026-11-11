@@ -12,7 +12,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import type { BaseLlmConnection, LlmRequest, LlmResponse } from "@google/adk";
 import { ADK_HOST_COMPLETION_CAPABILITY, type Emitter, type JsonValue, type StopReason } from "@guuey/worker";
 import type { HostTurn } from "../index.js";
-import { withContextPreamble } from "../preamble.js";
+import { TURN_AUTHORITY_SECTION } from "../preamble.js";
 import {
   buildToolsets,
   finalTextOf,
@@ -90,6 +90,8 @@ const TURN: HostTurn = {
   fs: { app: "/tmp/nope-app", home: "/tmp/nope-home", session: "/tmp/nope-session" },
   history: [],
 };
+/** A1: the turn's context blocks (here the empty `<turn_context>`), which lead the message. */
+const TURN_CONTEXT = ["<turn_context></turn_context>"];
 
 // ── toolset mapping ──────────────────────────────────────────────────────────
 
@@ -124,11 +126,11 @@ describe("runAdkTurn — the wire contract", () => {
     const capture: { runAsyncParams?: unknown } = {};
     const adk = fakeAdk([], capture);
     const { emit } = fakeEmitter();
-    await runAdkTurn(adk, {}, TURN, emit, "1.3.0");
+    await runAdkTurn(adk, {}, TURN, TURN_CONTEXT, emit, "1.3.0");
     expect(capture.runAsyncParams).toEqual({
       userId: "u-42",
       sessionId: "sess-u-42",
-      newMessage: { role: "user", parts: [{ text: "hi there" }] },
+      newMessage: { role: "user", parts: [{ text: "<turn_context></turn_context>" }, { text: "hi there" }] },
       runConfig: { streamingMode: "sse" },
     });
   });
@@ -141,7 +143,7 @@ describe("runAdkTurn — the wire contract", () => {
     ];
     const adk = fakeAdk(events, {});
     const { emit, got } = fakeEmitter();
-    await runAdkTurn(adk, {}, TURN, emit, "1.3.0");
+    await runAdkTurn(adk, {}, TURN, TURN_CONTEXT, emit, "1.3.0");
     expect(got.order).toEqual(["hello", "native", "native", "native", "native", "done"]);
     expect(got.hello[0]).toEqual({
       framework: "google-adk",
@@ -172,7 +174,7 @@ describe("runAdkTurn — the wire contract", () => {
       },
     };
     const { emit, got } = fakeEmitter();
-    await runAdkTurn(adk, {}, TURN, emit, null);
+    await runAdkTurn(adk, {}, TURN, TURN_CONTEXT, emit, null);
     expect(got.order).toEqual(["hello", "native", "error"]);
     // AgJSON §8.0 host obligation 1: the open turn (or a synthetic one) closes as turn.error, never truncated.
     expect(got.native[0]).toEqual({
@@ -200,7 +202,7 @@ describe("runAdkTurn — the host→facet sentinels (guuey#1823)", () => {
       },
     };
     const { emit, got } = fakeEmitter();
-    await runAdkTurn(adk, {}, TURN, emit, "2.1.0");
+    await runAdkTurn(adk, {}, TURN, TURN_CONTEXT, emit, "2.1.0");
     expect(got.order).toEqual(["hello", "native", "native", "error"]);
     expect(got.native[1]?.event).toEqual({ type: "__host_error__", code: "RangeError", message: "llm call limit reached" });
     expect(got.native.some((n) => JSON.stringify(n.event).includes("__host_complete__"))).toBe(false);
@@ -220,7 +222,7 @@ describe("runAdkTurn — the host→facet sentinels (guuey#1823)", () => {
       },
     };
     const { emit, got } = fakeEmitter();
-    await runAdkTurn(adk, {}, TURN, emit, null);
+    await runAdkTurn(adk, {}, TURN, TURN_CONTEXT, emit, null);
     expect(got.native[0]?.event).toEqual({ type: "__host_error__", code: "host_error", message: "odd" });
   });
 });
@@ -232,9 +234,9 @@ describe("runAdkTurn — the host→facet sentinels (guuey#1823)", () => {
 // installed 1.3.0 source at agents/llm_agent.js +
 // agents/processors/instructions_llm_request_processor.js); a function
 // instruction (`InstructionProvider`) sets `requireStateInjection: false` and
-// is never substituted. Our preamble embeds user-authored conversation
-// content, so a STRING-instruction agent crashes on a turn whose input
-// contains `{anything}`-shaped text. These tests drive the REAL @google/adk
+// is never substituted. The instruction embeds the builder's prompt, which
+// may carry `{anything}`-shaped text, so a STRING-instruction agent crashes
+// on it. These tests drive the REAL @google/adk
 // `LlmAgent` + `InMemoryRunner` runtime loop (a fake `BaseLlm` subclass
 // stands in for the network call, so nothing here hits a real model) — the
 // crash is reproducible in-harness, not just a type-level claim.
@@ -261,12 +263,8 @@ const BRACE_TURN: HostTurn = {
   ...TURN,
   input: "please format the answer as {anything} for me",
 };
-const BRACE_PREAMBLE = withContextPreamble(
-  "Be terse.",
-  [{ role: "user", text: "please format the answer as {anything} for me" }],
-  undefined,
-  undefined,
-);
+// A builder prompt carrying `{...}` text, as the assembled instruction carries it.
+const BRACE_PREAMBLE = "Be terse. When asked, format the answer as {anything}." + TURN_AUTHORITY_SECTION;
 
 /**
  * Every case below constructs or imports the REAL `@google/adk` (an
@@ -281,21 +279,21 @@ const BRACE_PREAMBLE = withContextPreamble(
 const REAL_ADK_BUDGET_MS = 60_000;
 
 describe("F7 — instruction as function bypasses ADK's {var} substitution (real SDK)", () => {
-  it("STRING instruction throws Context-variable-not-found on {anything} user content (RED)", { timeout: REAL_ADK_BUDGET_MS }, async () => {
+  it("STRING instruction throws Context-variable-not-found on {anything} prompt content (RED)", { timeout: REAL_ADK_BUDGET_MS }, async () => {
     const agent = await buildRealAgentWithInstruction(BRACE_PREAMBLE);
     const adk = await loadAdk();
     const { emit, got } = fakeEmitter();
-    await runAdkTurn(adk, agent, BRACE_TURN, emit, "1.3.0");
+    await runAdkTurn(adk, agent, BRACE_TURN, TURN_CONTEXT, emit, "1.3.0");
     expect(got.error).toHaveLength(1);
     expect(got.error[0]).toMatch(/Context variable not found.*anything/);
     expect(got.done).toHaveLength(0);
   });
 
-  it("FUNCTION instruction survives the same {anything} user content (GREEN)", { timeout: REAL_ADK_BUDGET_MS }, async () => {
+  it("FUNCTION instruction survives the same {anything} prompt content (GREEN)", { timeout: REAL_ADK_BUDGET_MS }, async () => {
     const agent = await buildRealAgentWithInstruction(() => BRACE_PREAMBLE);
     const adk = await loadAdk();
     const { emit, got } = fakeEmitter();
-    await runAdkTurn(adk, agent, BRACE_TURN, emit, "1.3.0");
+    await runAdkTurn(adk, agent, BRACE_TURN, TURN_CONTEXT, emit, "1.3.0");
     expect(got.error).toEqual([]);
     expect(got.done[0]?.result).toBe("fake reply");
   });

@@ -41,6 +41,8 @@ const PNG: InvokeImageAttachment = {
   data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
 };
 const JPEG: InvokeImageAttachment = { kind: "inline", mimeType: "image/jpeg", data: "/9j/4AAQ" };
+/** A1: every turn's message leads with its (here empty) context block; the images and the text follow unchanged. */
+const EMPTY_TURN_CONTEXT = "<turn_context></turn_context>";
 
 function collector(): { events: WorkerEvent[]; sink: { write(s: string): void } } {
   const events: WorkerEvent[] = [];
@@ -97,6 +99,7 @@ describe("Claude: the images reach the model as image blocks before the text", (
   it("sends each image as a base64 image block, in order, then the text; the hello announces invoke.images.v1", async () => {
     const { sent, events } = await claudeTurn({ attachments: [PNG, JPEG] });
     expect(sent?.message.content).toEqual([
+      { type: "text", text: EMPTY_TURN_CONTEXT },
       { type: "image", source: { type: "base64", media_type: "image/png", data: PNG.data } },
       { type: "image", source: { type: "base64", media_type: "image/jpeg", data: JPEG.data } },
       { type: "text", text: "Make flashcards from this page." },
@@ -104,9 +107,12 @@ describe("Claude: the images reach the model as image blocks before the text", (
     expect(helloOf(events)).toMatchObject({ type: "hello", capabilities: [...MODEL_TEXT_INPUT_KIND_CAPABILITIES, INVOKE_IMAGES_CAPABILITY] });
   });
 
-  it("without images: the one text block, and a hello with only the input kinds it always declared", async () => {
+  it("without images: the turn context, then the one text block, and a hello with only the input kinds it always declared", async () => {
     const { sent, events } = await claudeTurn({});
-    expect(sent?.message.content).toEqual([{ type: "text", text: "Make flashcards from this page." }]);
+    expect(sent?.message.content).toEqual([
+      { type: "text", text: EMPTY_TURN_CONTEXT },
+      { type: "text", text: "Make flashcards from this page." },
+    ]);
     expect(helloOf(events)).toMatchObject({ capabilities: [...MODEL_TEXT_INPUT_KIND_CAPABILITIES] });
   });
 
@@ -168,6 +174,7 @@ describe("OpenAI: the images reach the model as input_image parts before the tex
       {
         role: "user",
         content: [
+          { type: "input_text", text: EMPTY_TURN_CONTEXT },
           { type: "input_image", image: `data:image/png;base64,${PNG.data}` },
           { type: "input_image", image: `data:image/jpeg;base64,${JPEG.data}` },
           { type: "input_text", text: "Make flashcards from this page." },
@@ -177,9 +184,9 @@ describe("OpenAI: the images reach the model as input_image parts before the tex
     expect(helloOf(events)).toMatchObject({ type: "hello", capabilities: [...MODEL_TEXT_INPUT_KIND_CAPABILITIES, INVOKE_IMAGES_CAPABILITY] });
   });
 
-  it("without images: the bare input string, as always, and a hello with only the input kinds it always declared", async () => {
+  it("without images: the input string after the turn context, and a hello with only the input kinds it always declared", async () => {
     const { input, events } = await openaiTurn({});
-    expect(input).toBe("Make flashcards from this page.");
+    expect(input).toBe(`${EMPTY_TURN_CONTEXT}\n\nMake flashcards from this page.`);
     expect(helloOf(events)).toMatchObject({ capabilities: [...MODEL_TEXT_INPUT_KIND_CAPABILITIES] });
     expect(openaiTurnInput({ input: "hi", attachments: [] })).toBe("hi");
   });
@@ -204,7 +211,7 @@ function fakeAdk(capture: { newMessage?: JsonValue }) {
 async function adkTurn(over: Partial<HostTurn>): Promise<{ newMessage: JsonValue | undefined; events: WorkerEvent[] }> {
   const { events, sink } = collector();
   const capture: { newMessage?: JsonValue } = {};
-  await runAdkTurn(fakeAdk(capture), {}, turn(over), createEmitter(sink), "2.1.0");
+  await runAdkTurn(fakeAdk(capture), {}, turn(over), [EMPTY_TURN_CONTEXT], createEmitter(sink), "2.1.0");
   return { newMessage: capture.newMessage, events };
 }
 
@@ -214,6 +221,7 @@ describe("ADK: the images reach the model as inlineData parts before the text", 
     expect(newMessage).toEqual({
       role: "user",
       parts: [
+        { text: EMPTY_TURN_CONTEXT },
         { inlineData: { mimeType: "image/png", data: PNG.data } },
         { inlineData: { mimeType: "image/jpeg", data: JPEG.data } },
         { text: "Make flashcards from this page." },
@@ -226,7 +234,7 @@ describe("ADK: the images reach the model as inlineData parts before the text", 
 
   it("without images: the one text part, and host completion with the input kinds on the hello", async () => {
     const { newMessage, events } = await adkTurn({});
-    expect(newMessage).toEqual({ role: "user", parts: [{ text: "Make flashcards from this page." }] });
+    expect(newMessage).toEqual({ role: "user", parts: [{ text: EMPTY_TURN_CONTEXT }, { text: "Make flashcards from this page." }] });
     expect(helloOf(events)).toMatchObject({ capabilities: [ADK_HOST_COMPLETION_CAPABILITY, ...MODEL_TEXT_INPUT_KIND_CAPABILITIES] });
     expect(geminiUserParts({ input: "hi", attachments: [] })).toEqual([{ text: "hi" }]);
   });

@@ -18,8 +18,9 @@
  *                     `defaultModelFor("openai-agents-sdk")` — NOT the
  *                     `@openai/agents` SDK's own built-in fallback. Mirrors
  *                     `claude-options.ts`'s `DEFAULT_MODEL` idiom.
- *  - `instructions` → `systemPrompt` + the §1.4 context preamble (reuses
- *                     `withContextPreamble`, identical to the Claude path).
+ *  - `instructions` → `buildSystemPrompt` over the turn's class (A1: the
+ *                     same assembler as the Claude path); the turn's context
+ *                     blocks lead the run input (`withTurnContext`).
  *  - `mcpServers`   → the framework-neutral `resolveMcpServers` output (same
  *                     federation/env-substitution as Claude), each `http`/`sse`
  *                     entry → an `MCPServerStreamableHttp` carrying its
@@ -43,15 +44,10 @@ import { modelToolFilterFor, reportToolGateErrors, type ToolGates } from "../mcp
 import type { Emitter, JsonValue } from "@guuey/worker";
 import {
   resolveMcpServers,
-  withContextPreamble,
   type BuildOptionsContext,
   type SdkMcpServer,
 } from "./claude-options.js";
-import {
-  RESPONSE_NORMS_SECTION,
-  renderSurfaceSection, renderGenerativeUiSection, renderA2uiSection, renderMemorySectionForTurn, renderProfileSection, renderResourcesSection,
-  renderFirstImpressionSection, renderFirstImpressionShownSection,
-  renderMcpAvailabilitySection } from "../preamble.js";
+import { buildSystemPrompt, buildTurnContextBlocks, promptClassOf } from "../preamble.js";
 import type { HostInvoke, HostRuntime } from "./claude.js";
 import { GUUEY_DEFAULT_SYSTEM_PROMPT, declaresNoTools, defaultModelFor, type GuueyAgent } from "@guuey/config";
 import { resolveSdkVersion } from "../sdk-version.js";
@@ -152,11 +148,8 @@ export async function runInvokeOpenai(
     input: invoke.input,
     identity: invoke.identity,
     fs: invoke.fs,
-    history: invoke.history,
     listCredentials: runtime.listCredentials,
     ...(runtime.apiKey !== undefined ? { apiKey: runtime.apiKey } : {}),
-    ...(invoke.priorMemory !== undefined ? { priorMemory: invoke.priorMemory } : {}),
-    ...(invoke.priorState !== undefined ? { priorState: invoke.priorState } : {}),
     // The Router's per-turn tool withholds → the named servers' `toolFilter` (with the snapshot's tool gates).
     ...(invoke.withheldTools !== undefined ? { withheldTools: invoke.withheldTools } : {}),
   };
@@ -165,6 +158,7 @@ export async function runInvokeOpenai(
   // unresolved {file} system prompt, or an unsupported MCP arm) is a terminal
   // `error` — never a throw out of this function.
   let instructions: string;
+  let turnContext: string[];
   let mcpServers: MCPServerStreamableHttp[];
   try {
     // Snapshots reach the worker fully resolved — the CLI inlines any `{file}`
@@ -177,65 +171,12 @@ export async function runInvokeOpenai(
         )}). The CLI inlines {file} references before upload; workers never read the filesystem.`,
       );
     }
-    // `instructions` = the context preamble PLUS the framework-blind memory
-    // section (memory-mcp T5: `save_memory` instruction + optional RECALL block,
-    // identical to the Claude & ADK renderers). The SAVE half is gated on
-    // `authenticated && memoryAttached` — the memory child booted, so the
-    // `save_memory` tool is spliced (T4) — NOT on `userMemory` presence: a
-    // brand-new authenticated user has no file yet but must still be told the
-    // tool exists (the bootstrap fix). The RECALL block inside
-    // `renderMemorySection` stays gated on `userMemory` presence.
-    const memoryOn = invoke.identity.authMode === "authenticated" && invoke.memoryAttached === true;
-    // cross-app-profile T7: the profile section is a SIBLING of the memory
-    // section, appended AFTER it. Gated on `authenticated && profileAccess`
-    // (a live, clamped grant); `renderProfileSection` owns the inner SAVE/RECALL
-    // gates. `profileAccess` is aliased to a const so the truthy branch narrows
-    // it to the non-undefined `ProfileAccess` the renderer requires.
-    const profileAccess = invoke.profileAccess;
-    const profileOn = invoke.identity.authMode === "authenticated" && profileAccess !== undefined;
-    // guuey#456 B4: the app-resources hint is a SIBLING of the memory/profile
-    // sections, appended AFTER the profile section. Gated on `fsBound &&
-    // resourceCount > 0` — `fsBound` is the REAL "file tools are armed"
-    // signal (guuey#234), so the hint never names files the model has no
-    // tools to read; deliberately NOT auth-gated (the app layer is shared,
-    // public-by-definition content). `resourceCount` is aliased to a const so
-    // the truthy branch narrows it to the `number` the renderer requires.
-    const resourceCount = invoke.resourceCount;
-    const resourcesOn =
-      invoke.fsBound === true && resourceCount !== undefined && resourceCount > 0;
-    // guuey#2262: `tools.allowlist: ["@none"]` keeps no tool on any server, so
-    // the memory and profile SAVE instructions, the first impression (a
-    // `ggui_handshake` call) and the generative-UI section are left out.
-    const noTools = declaresNoTools(snapshot.tools);
-    instructions =
-      withContextPreamble(
-        snapshot.systemPrompt ?? GUUEY_DEFAULT_SYSTEM_PROMPT,
-        ctx.history,
-        ctx.priorMemory,
-        ctx.priorState,
-      ) +
-      (memoryOn ? renderMemorySectionForTurn(invoke.userMemory, noTools) : "") +
-      (profileOn ? renderProfileSection(invoke.profileSections, noTools ? "read" : profileAccess) : "") +
-      (resourcesOn ? renderResourcesSection(resourceCount, invoke.fs.app) : "") +
-      // guuey#1183: the bound first impression — only with the ggui rail armed.
-      (invoke.gguiAttached === true && !noTools ? renderFirstImpressionSection(invoke.firstImpression) : "") +
-      // The welcome card the Router already drew — whenever present.
-      renderFirstImpressionShownSection(invoke.firstImpressionShown) +
-      // guuey#531: surface-formatting hints — default ON, only an explicit
-      // `agent.surfaceHints: false` suppresses. Before the norms (LAST).
-      renderMcpAvailabilitySection(invoke.mcpAvailability) +
-      renderSurfaceSection(snapshot.surfaceHints) +
-      // guuey#630: the generative-UI section — DIRECTLY AFTER the surface
-      // section it qualifies. Gated inside the renderer on `gguiAttached`
-      // (the rail is really armed this turn) AND the same `surfaceHints:
-      // false` BYO opt-out. Before the norms (LAST).
-      (noTools ? "" : renderGenerativeUiSection(invoke.gguiAttached, snapshot.surfaceHints)) +
-      // guuey#2386: the A2UI section, DIRECTLY AFTER generative UI (the
-      // client draws the guuey A2UI catalog, same opt-out, same no-tools rule).
-      (noTools ? "" : renderA2uiSection(invoke.clientCatalogs, snapshot.surfaceHints)) +
-      // guuey#556: default response norms, LAST and unconditional (see the
-      // constant's doc for the confirm-gate carve-out).
-      RESPONSE_NORMS_SECTION;
+    // A1: `instructions` is a function of the turn's CLASS only, from the one
+    // assembler every runner shares; what varies per turn leads the run input.
+    // `tools.allowlist: ["@none"]` (guuey#2262) makes a no-tools class.
+    const cls = promptClassOf(invoke, { noTools: declaresNoTools(snapshot.tools), surfaceHints: snapshot.surfaceHints });
+    instructions = buildSystemPrompt(snapshot.systemPrompt ?? GUUEY_DEFAULT_SYSTEM_PROMPT, cls);
+    turnContext = buildTurnContextBlocks(invoke, cls);
     mcpServers = buildOpenaiMcpServers(ctx, snapshot.tools);
     reportToolGateErrors(snapshot.tools);
   } catch (err) {
@@ -265,7 +206,7 @@ export async function runInvokeOpenai(
       model: snapshot.model ?? DEFAULT_MODEL,
     });
 
-    const stream = await run(agent, openaiTurnInput(invoke), {
+    const stream = await run(agent, withTurnContext(turnContext, openaiTurnInput(invoke)), {
       stream: true,
       ...(maxTurns !== undefined ? { maxTurns } : {}),
     });
@@ -302,6 +243,24 @@ export async function runInvokeOpenai(
   } finally {
     await closeAll(mcpServers);
   }
+}
+
+/**
+ * The run input with the turn's context blocks first (A1). A string input (no
+ * images) becomes the blocks and the text joined by blank lines; the one-user-
+ * message input (images) gets each block as its own leading `input_text` part,
+ * ahead of the images and the text.
+ */
+export function withTurnContext(
+  blocks: readonly string[],
+  input: ReturnType<typeof openaiTurnInput>,
+): ReturnType<typeof openaiTurnInput> {
+  if (typeof input === "string") return [...blocks, input].join("\n\n");
+  return input.map((message, index) =>
+    index === 0
+      ? { ...message, content: [...blocks.map((text) => ({ type: "input_text" as const, text })), ...message.content] }
+      : message,
+  );
 }
 
 /**

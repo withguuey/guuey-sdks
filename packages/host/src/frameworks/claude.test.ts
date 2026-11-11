@@ -1,5 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
-import { createEmitter, type WorkerEvent } from "@guuey/worker";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import { anthropicUserContent, createEmitter, type WorkerEvent } from "@guuey/worker";
 import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { awaitMcpReady, runInvoke, type HostInvoke, type QueryFn, type QueryHandle } from "./claude.js";
 import { A2UI_GUUEY_CATALOG_ID, A2UI_SECTION, FIRST_IMPRESSION_SHOWN_HEADING } from "../preamble.js";
@@ -88,15 +91,44 @@ function throwingStream(message: string): QueryHandle {
   };
 }
 
-/** The text of the first user message a streaming prompt yields. */
-async function firstPromptText(prompt: AsyncIterable<SDKUserMessage>): Promise<string | undefined> {
-  for await (const message of prompt) {
-    const content = message.message.content;
-    if (typeof content === "string") return content;
-    for (const block of content) if (block.type === "text") return block.text;
-    return undefined;
-  }
-  return undefined;
+// A real session directory: an image turn stores its images there before it runs.
+const SESSION = mkdtempSync(join(tmpdir(), "host-claude-session-"));
+afterAll(() => rmSync(SESSION, { recursive: true, force: true }));
+
+/** What one turn handed the SDK: the options' system prompt and thinking knob, and the user message's content. */
+interface TurnSeen {
+  systemPrompt?: string;
+  thinking?: unknown;
+  content?: SDKUserMessage["message"]["content"];
+}
+
+/** Every text block of a user message's content, in order. */
+function textsOf(content: SDKUserMessage["message"]["content"] | undefined): string[] {
+  if (content === undefined) return [];
+  if (typeof content === "string") return [content];
+  return content.flatMap((block) => (block.type === "text" ? [block.text] : []));
+}
+
+/** Run one turn on a fake query that reads the one user message, and return what the SDK was handed. */
+async function turnFor(over: Partial<HostInvoke>, snapshot: { model?: string; systemPrompt?: string } = {}): Promise<TurnSeen> {
+  const { sink } = collector();
+  const seen: TurnSeen = {};
+  const query: QueryFn = (args) => {
+    if (typeof args.options.systemPrompt === "string") seen.systemPrompt = args.options.systemPrompt;
+    if ("thinking" in args.options) seen.thinking = args.options.thinking;
+    return {
+      ...idleControl,
+      async *[Symbol.asyncIterator]() {
+        for await (const message of args.prompt) {
+          seen.content = message.message.content;
+          break;
+        }
+        yield resultMessage("success", "ok");
+      },
+    };
+  };
+  await runInvoke(snapshot, invoke(over), { apiKey: "sk-test", listCredentials: () => [] }, createEmitter(sink), query);
+  return seen;
 }
 
 describe("runInvoke — native emission", () => {
@@ -209,38 +241,46 @@ describe("runInvoke — native emission", () => {
     });
   });
 
-  it("passes input as the prompt and reads priorMemory/priorState into the preamble", async () => {
-    const seen: { prompt?: string; systemPrompt?: string } = {};
-    const { sink } = collector();
-    const emit = createEmitter(sink);
-    const query: QueryFn = (args) => {
-      const sp = args.options.systemPrompt;
-      seen.systemPrompt = typeof sp === "string" ? sp : undefined;
-      return {
-        ...idleControl,
-        async *[Symbol.asyncIterator]() {
-          seen.prompt = await firstPromptText(args.prompt);
-          yield resultMessage("success", "ok");
-        },
-      };
+  it("A1: the user message leads with the turn context (priorMemory/priorState), then the invoke's own content unchanged", async () => {
+    const turn = invoke({
+      input: "do it",
+      priorMemory: [{ key: "name", value: "Ada" }],
+      priorState: { step: 1 },
+    });
+    const seen = await turnFor(turn, { systemPrompt: "SYS" });
+    expect(Array.isArray(seen.content)).toBe(true);
+    const content = Array.isArray(seen.content) ? seen.content : [];
+    expect(content).toHaveLength(2);
+    const [context, ...rest] = content;
+    expect(context?.type).toBe("text");
+    const contextText = context?.type === "text" ? context.text : "";
+    expect(contextText.startsWith("<turn_context>\n")).toBe(true);
+    expect(contextText).toContain("<thread_memory>");
+    expect(contextText).toContain("<working_state>");
+    expect(contextText).toContain("Ada");
+    expect(rest).toEqual(anthropicUserContent(turn));
+    expect(rest).toEqual([{ type: "text", text: "do it" }]);
+    // The system prompt carries none of it.
+    expect(seen.systemPrompt).not.toContain("<thread_memory>");
+    expect(seen.systemPrompt).not.toContain("Ada");
+  });
+
+  it("A1: an empty turn context is still its own first block; a directive is its own second block; images follow", async () => {
+    const png = {
+      kind: "inline" as const,
+      mimeType: "image/png" as const,
+      data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
     };
-
-    await runInvoke(
-      { systemPrompt: "SYS" },
-      invoke({
-        input: "do it",
-        priorMemory: [{ key: "name", value: "Ada" }],
-        priorState: { step: 1 },
-      }),
-      { apiKey: "sk-test", listCredentials: () => [] },
-      emit,
-      query,
-    );
-
-    expect(seen.prompt).toBe("do it");
-    expect(seen.systemPrompt).toContain("<thread_memory>");
-    expect(seen.systemPrompt).toContain("<working_state>");
-    expect(seen.systemPrompt).toContain("Ada");
+    const shown = { heading: "Welcome", message: "Hi", options: ["One"] };
+    const turn = invoke({ input: "look", firstImpressionShown: shown, attachments: [png], fs: { app: "/fs/app", home: "/fs/home", session: SESSION } });
+    const seen = await turnFor(turn);
+    const content = Array.isArray(seen.content) ? seen.content : [];
+    expect(content.slice(0, 2)).toEqual([
+      { type: "text", text: "<turn_context></turn_context>" },
+      { type: "text", text: expect.stringMatching(/^<turn_directive>\n## Welcome card \(already on screen\)/) },
+    ]);
+    expect(content.slice(2)).toEqual(anthropicUserContent(turn));
+    expect(content.slice(2)[0]).toMatchObject({ type: "image" });
   });
 
   describe("withheldTools — the Router's per-turn withholds reach the SDK catalog on the Claude path", () => {
@@ -292,41 +332,34 @@ describe("runInvoke — native emission", () => {
   describe("guuey#1183 — the first-impression push reaches buildOptions on the Claude path", () => {
     const push = { chipKey: "opening-hours", intent: "show opening hours", contract: { kind: "hours" } };
 
+    /** The turn's options knob and its directive text (A1: the handshake rides the turn's <turn_directive> block). */
     async function optionsFor(
       over: Partial<HostInvoke>,
       snapshot: { model?: string } = {},
-    ): Promise<{ systemPrompt?: string; thinking?: unknown }> {
-      const { sink } = collector();
-      const emit = createEmitter(sink);
-      let seen: { systemPrompt?: string; thinking?: unknown } = {};
-      const query: QueryFn = (args) => {
-        seen = {
-          ...(typeof args.options.systemPrompt === "string" ? { systemPrompt: args.options.systemPrompt } : {}),
-          ...("thinking" in args.options ? { thinking: args.options.thinking } : {}),
-        };
-        return streamOf();
-      };
-      await runInvoke(snapshot, invoke(over), { apiKey: "sk-test", listCredentials: () => [] }, emit, query);
-      return seen;
+    ): Promise<{ systemPrompt?: string; thinking?: unknown; turn: string }> {
+      const { content, ...seen } = await turnFor(over, snapshot);
+      return { ...seen, turn: textsOf(content).join("\n\n") };
     }
 
     // On a model that takes `disabled` (Sonnet 5, explicit since #2270 made the default Sonnet 5.5).
     it("rail armed + push → the verbatim handshake section renders AND extended thinking is off (the served red: neither ran)", async () => {
       const seen = await optionsFor({ gguiAttached: true, firstImpression: push }, { model: "claude-sonnet-5" });
-      expect(seen.systemPrompt).toContain("<first_impression_handshake>");
-      expect(seen.systemPrompt).toContain('"intent":"show opening hours"');
+      expect(seen.turn).toContain("<turn_directive>\n## First impression (this turn)");
+      expect(seen.turn).toContain("<first_impression_handshake>");
+      expect(seen.turn).toContain('"intent":"show opening hours"');
+      expect(seen.systemPrompt).not.toContain("<first_impression_handshake>");
       expect(seen.thinking).toEqual({ type: "disabled" });
     });
 
     it("no push → no section, and the SDK default thinking stands (no `thinking` key)", async () => {
       const seen = await optionsFor({ gguiAttached: true });
-      expect(seen.systemPrompt).not.toContain("<first_impression_handshake>");
+      expect(seen.turn).not.toContain("<first_impression_handshake>");
       expect(seen).not.toHaveProperty("thinking");
     });
 
     it("push without the ggui rail → neither the section nor the knob (the same gate)", async () => {
       const seen = await optionsFor({ firstImpression: push });
-      expect(seen.systemPrompt).not.toContain("<first_impression_handshake>");
+      expect(seen.turn).not.toContain("<first_impression_handshake>");
       expect(seen).not.toHaveProperty("thinking");
     });
 
@@ -337,7 +370,7 @@ describe("runInvoke — native emission", () => {
       "%s (refuses `disabled`) → the handshake section still renders, thinking is left at the SDK default",
       async (model) => {
         const seen = await optionsFor({ gguiAttached: true, firstImpression: push }, { model });
-        expect(seen.systemPrompt).toContain("<first_impression_handshake>");
+        expect(seen.turn).toContain("<first_impression_handshake>");
         expect(seen).not.toHaveProperty("thinking");
       },
     );
@@ -351,30 +384,18 @@ describe("runInvoke — native emission", () => {
     );
   });
 
-  it("threads invoke.userMemory + memoryAttached into the buildOptions ctx → the recall block renders", async () => {
-    const { sink } = collector();
-    const emit = createEmitter(sink);
-    let seenSystemPrompt: string | undefined;
-    const query: QueryFn = (args) => {
-      seenSystemPrompt = typeof args.options.systemPrompt === "string" ? args.options.systemPrompt : undefined;
-      return streamOf();
-    };
-
-    await runInvoke(
-      {},
-      invoke({
-        identity: { userId: "u1", authMode: "authenticated" },
-        fs: { app: "/fs/app", home: "/fs/home", session: "/fs/session" },
-        memoryAttached: true,
-        userMemory: "User's favorite color is teal.",
-      }),
-      { apiKey: "sk-test", listCredentials: () => [] },
-      emit,
-      query,
-    );
-
-    expect(seenSystemPrompt).toContain("## What you remember about this user");
-    expect(seenSystemPrompt).toContain("User's favorite color is teal.");
+  it("threads invoke.userMemory + memoryAttached into the buildOptions ctx → the recall block renders in the turn context", async () => {
+    const seen = await turnFor({
+      identity: { userId: "u1", authMode: "authenticated" },
+      fs: { app: "/fs/app", home: "/fs/home", session: "/fs/session" },
+      memoryAttached: true,
+      userMemory: "User's favorite color is teal.",
+    });
+    const [context] = textsOf(seen.content);
+    expect(context).toContain("## What you remember about this user");
+    expect(context).toContain("User's favorite color is teal.");
+    expect(seen.systemPrompt).not.toContain("User's favorite color is teal.");
+    expect(seen.systemPrompt).toContain("`save_memory` tool");
   });
 
   it("BOOTSTRAP: authenticated + memoryAttached + no userMemory → save instruction still renders (no recall block)", async () => {
@@ -490,31 +511,22 @@ describe("runInvoke — hello handshake (§8 item B)", () => {
   });
 });
 
-describe("the welcome card the Router already drew reaches the Claude system prompt", () => {
+describe("the welcome card the Router already drew reaches the Claude turn's directive block", () => {
   const shown = { heading: "Welcome to Harbor Books", message: "Glad you're here.", options: ["Find a book", "Opening hours"] };
-
-  async function systemPromptFor(over: Partial<HostInvoke>): Promise<string | undefined> {
-    const { sink } = collector();
-    const emit = createEmitter(sink);
-    let prompt: string | undefined;
-    const query: QueryFn = (args) => {
-      prompt = typeof args.options.systemPrompt === "string" ? args.options.systemPrompt : undefined;
-      return streamOf();
-    };
-    await runInvoke({}, invoke(over), { apiKey: "sk-test", listCredentials: () => [] }, emit, query);
-    return prompt;
-  }
 
   it("renders the section through runInvoke, with or without the ggui rail (the card is on screen either way)", async () => {
     for (const gguiAttached of [true, false]) {
-      const prompt = await systemPromptFor({ firstImpressionShown: shown, gguiAttached });
-      expect(prompt).toContain(FIRST_IMPRESSION_SHOWN_HEADING);
-      expect(prompt).toContain('"heading":"Welcome to Harbor Books"');
+      const seen = await turnFor({ firstImpressionShown: shown, gguiAttached });
+      const directive = textsOf(seen.content)[1];
+      expect(directive).toContain(FIRST_IMPRESSION_SHOWN_HEADING);
+      expect(directive).toContain('"heading":"Welcome to Harbor Books"');
+      expect(seen.systemPrompt).not.toContain(FIRST_IMPRESSION_SHOWN_HEADING);
     }
   });
 
-  it("no card drawn: no section", async () => {
-    expect(await systemPromptFor({ gguiAttached: true })).not.toContain(FIRST_IMPRESSION_SHOWN_HEADING);
+  it("no card drawn: no section, no directive block", async () => {
+    const seen = await turnFor({ gguiAttached: true });
+    expect(textsOf(seen.content)).toEqual(["<turn_context></turn_context>", "hi"]);
   });
 });
 

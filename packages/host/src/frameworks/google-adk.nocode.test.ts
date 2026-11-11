@@ -17,17 +17,17 @@ import { assertGracefulSupport, loadRunner, type HostSnapshot, type HostTurn } f
 import {
   SURFACE_FORMATTING_SECTION,
   RESPONSE_NORMS_SECTION,
+  TURN_AUTHORITY_SECTION,
   GENERATIVE_UI_SECTION,
   A2UI_SECTION,
   A2UI_GUUEY_CATALOG_ID,
-  renderMemorySection,
+  MEMORY_SAVE_INSTRUCTION,
+  PROFILE_SAVE_INSTRUCTION,
   renderUserMemoryRecall,
-  renderProfileSection,
+  renderProfileRecall,
   renderResourcesSection,
-  withContextPreamble,
   renderMcpAvailabilitySection,
   renderFirstImpressionShownSection,
-  FIRST_IMPRESSION_SHOWN_HEADING,
 } from "../preamble.js";
 import { createRunner, importConditionEntry, loadAdk } from "./google-adk.js";
 
@@ -157,7 +157,7 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     expect(captured.model.params).toEqual({ model: "gemini-3.5-pro", apiKey: "envelope-token" });
   });
 
-  it("constructs the LlmAgent from the snapshot (preambled instruction, cred toolsets, model), streams SSE, role-pinned", async () => {
+  it("constructs the LlmAgent from the snapshot (class-only instruction, cred toolsets, model), streams SSE, role-pinned, the turn context first", async () => {
     // A real cred file on disk — the production contract the broker writes.
     const session = join(base, "session");
     mkdirSync(join(session, ".guuey", "credentials"), { recursive: true });
@@ -220,46 +220,55 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     expect(agent.params.model).toBe("gemini-3.5-pro");
     // F7: instruction rides as a FUNCTION, never a raw string — a string
     // instruction is routed through ADK's `{var}` session-state substitution,
-    // and the preamble embeds user-authored conversation content that may
-    // itself contain `{...}` (see google-adk.test.ts for the crash proof
-    // against the real SDK). Invoking it must return the EXACT preamble
-    // `withContextPreamble` assembles — byte-identical to the old string form.
+    // and the builder's prompt may itself contain `{...}` (see
+    // google-adk.test.ts for the crash proof against the real SDK). A1: it is
+    // the class-only system prompt; the per-turn context leads the message.
     expect(typeof agent.params.instruction).toBe("function");
     const resolvedInstruction = (agent.params.instruction as () => string)();
-    expect(resolvedInstruction).toBe(withContextPreamble("be terse", turn.history, turn.priorMemory, turn.priorState) + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION);
-    // preamble AUTO-INJECTED (history + memory + state) even in no-code:
-    expect(resolvedInstruction).toContain("<conversation_history>");
-    expect(resolvedInstruction).toContain("<thread_memory>");
-    expect(resolvedInstruction).toContain("<working_state>");
-    expect(resolvedInstruction.endsWith(RESPONSE_NORMS_SECTION)).toBe(true);
+    expect(resolvedInstruction).toBe(systemPromptOf());
+    expect(resolvedInstruction).not.toContain("<conversation_history>");
     expect(agent.params.tools).toHaveLength(1);
     expect(captured.toolsets[0]).toEqual({
       type: "StreamableHTTPConnectionParams",
       url: "https://mcp.dev/proxy/x/",
       transportOptions: { requestInit: { headers: { authorization: "Bearer t" } } },
     });
-    // role pin + SSE streaming mode (Python-host parity) on the real call:
-    expect(captured.runAsync).toEqual({
-      userId: "u-1",
-      sessionId: "s-u-1",
-      newMessage: { role: "user", parts: [{ text: "do the thing" }] },
-      runConfig: { streamingMode: "sse" },
-    });
+    // role pin + SSE streaming mode (Python-host parity) on the real call; the
+    // context (history + memory + state) AUTO-INJECTED even in no-code, as the
+    // message's first part:
+    const call = captured.runAsync as { newMessage: { parts: Array<{ text?: string }> } };
+    expect(captured.runAsync).toMatchObject({ userId: "u-1", sessionId: "s-u-1", runConfig: { streamingMode: "sse" } });
+    expect(call.newMessage).toMatchObject({ role: "user" });
+    expect(call.newMessage.parts).toHaveLength(2);
+    const context = call.newMessage.parts[0]?.text ?? "";
+    expect(context.startsWith("<turn_context>\n")).toBe(true);
+    expect(context).toContain("<conversation_history>");
+    expect(context).toContain("<thread_memory>");
+    expect(context).toContain("<working_state>");
+    expect(call.newMessage.parts[1]).toEqual({ text: "do the thing" });
     expect(got.done[0]?.result).toBe("streamed answer");
   });
 
+  /** The no-code system prompt for "be terse": the class-level sections `mid`, then surface, authority, norms. */
+  function systemPromptOf(...mid: string[]): string {
+    return "be terse" + mid.join("") + SURFACE_FORMATTING_SECTION + TURN_AUTHORITY_SECTION + RESPONSE_NORMS_SECTION;
+  }
+  const MEMORY_SAVE = `\n\n${MEMORY_SAVE_INSTRUCTION}`;
+  const PROFILE_SAVE = `\n\n${PROFILE_SAVE_INSTRUCTION}`;
+  const EMPTY_CONTEXT = "<turn_context></turn_context>";
+
   /**
    * Run one no-code turn and return the resolved F7 function-instruction string
-   * (memory-mcp T5 gate coverage). Asserts the instruction is a FUNCTION (F7
-   * brace-safety) and returns its resolved value.
+   * and the text parts of the message the turn sent (its context blocks, then
+   * its input). Asserts the instruction is a FUNCTION (F7 brace-safety).
    */
-  async function resolveInstruction(
+  async function resolveTurn(
     over: Partial<HostTurn>,
     snapshot: HostSnapshot = { model: "gemini-3.5-pro", systemPrompt: "be terse" }
-  ): Promise<string> {
+  ): Promise<{ instruction: string; texts: string[] }> {
     const session = join(base, `mem-${Math.random().toString(36).slice(2)}`);
     mkdirSync(join(session, ".guuey", "credentials"), { recursive: true });
-    const captured: { agent?: unknown } = {};
+    const captured: { agent?: unknown; texts: string[] } = { texts: [] };
     const fakeAdk = {
       LlmAgent: class {
         constructor(
@@ -280,7 +289,8 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
           createSession: ({ userId }: { appName: string; userId: string }) => Promise.resolve({ id: `s-${userId}` }),
         };
         constructor(_: { agent: object }) {}
-        async *runAsync(): AsyncGenerator<JsonValue, void, undefined> {
+        async *runAsync(params: { newMessage: { parts: Array<{ text: string } | { inlineData: object }> } }): AsyncGenerator<JsonValue, void, undefined> {
+          captured.texts = params.newMessage.parts.flatMap((part) => ("text" in part ? [part.text] : []));
           yield { content: { parts: [{ text: "ok" }] } };
         }
       },
@@ -297,78 +307,78 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     await runner.runTurn(snapshot, turn, emit);
     expect(got.error).toEqual([]);
     const agent = captured.agent as { params: { instruction: string | (() => string) } };
-    // Still a FUNCTION (F7 brace-safety) — recalled memory may contain `{...}`,
+    // Still a FUNCTION (F7 brace-safety) — the builder's prompt may contain `{...}`,
     // which a string instruction would 400 on.
     expect(typeof agent.params.instruction).toBe("function");
-    return (agent.params.instruction as () => string)();
+    return { instruction: (agent.params.instruction as () => string)(), texts: captured.texts };
   }
 
-  it("prompt-less snapshot → GUUEY_DEFAULT_SYSTEM_PROMPT rides the preamble (parity with the claude/openai arms)", async () => {
+  /** The resolved instruction alone. */
+  async function resolveInstruction(over: Partial<HostTurn>, snapshot?: HostSnapshot): Promise<string> {
+    return (await resolveTurn(over, snapshot)).instruction;
+  }
+
+  it("prompt-less snapshot → GUUEY_DEFAULT_SYSTEM_PROMPT rides the instruction (parity with the claude/openai arms)", async () => {
     const resolved = await resolveInstruction({}, { model: "gemini-3.5-pro" });
-    expect(resolved).toBe(withContextPreamble(GUUEY_DEFAULT_SYSTEM_PROMPT, [], undefined, undefined) + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION);
+    expect(resolved).toBe(GUUEY_DEFAULT_SYSTEM_PROMPT + SURFACE_FORMATTING_SECTION + TURN_AUTHORITY_SECTION + RESPONSE_NORMS_SECTION);
   });
 
-  it("the welcome card the Router already drew → its section, byte-identical to the shared renderer, rail or no rail", async () => {
+  it("the welcome card the Router already drew → its section in the turn's directive block, byte-identical to the shared renderer, rail or no rail", async () => {
     const shown = { heading: "Welcome to Harbor Books", message: "Glad you're here.", options: ["Find a book", "Opening hours"] };
-    expect(await resolveInstruction({ firstImpressionShown: shown })).toBe(
-      withContextPreamble("be terse", [], undefined, undefined) +
-        renderFirstImpressionShownSection(shown) +
-        SURFACE_FORMATTING_SECTION +
-        RESPONSE_NORMS_SECTION,
-    );
-    expect(await resolveInstruction({ firstImpressionShown: shown, gguiAttached: true })).toContain(
-      renderFirstImpressionShownSection(shown),
-    );
-    expect(await resolveInstruction({})).not.toContain(FIRST_IMPRESSION_SHOWN_HEADING);
+    const directive = `<turn_directive>\n${renderFirstImpressionShownSection(shown).slice(2)}\n</turn_directive>`;
+    expect(await resolveTurn({ firstImpressionShown: shown })).toEqual({
+      instruction: systemPromptOf(),
+      texts: [EMPTY_CONTEXT, directive, "hi"],
+    });
+    expect((await resolveTurn({ firstImpressionShown: shown, gguiAttached: true })).texts[1]).toBe(directive);
+    expect((await resolveTurn({})).texts).toEqual([EMPTY_CONTEXT, "hi"]);
   });
 
-  it("authenticated + attached + userMemory → save + byte-identical recall block after the preamble (memory-mcp T5)", async () => {
-    const resolved = await resolveInstruction({
+  it("authenticated + attached + userMemory → the save instruction in the instruction, the byte-identical recall block in the turn context (memory-mcp T5)", async () => {
+    const { instruction, texts } = await resolveTurn({
       identity: { userId: "u-mem", authMode: "authenticated" },
       memoryAttached: true,
       userMemory: "User's name is Ada.",
     });
-    // Identical section content to Claude/OpenAI, appended after the preamble.
-    expect(resolved).toBe(
-      withContextPreamble("be terse", [], undefined, undefined) + renderMemorySection("User's name is Ada.") + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION);
-    expect(resolved).toContain("`save_memory` tool");
-    expect(resolved).toContain("<user_memory>\nUser's name is Ada.\n</user_memory>");
+    // Identical section content to Claude/OpenAI.
+    expect(instruction).toBe(systemPromptOf(MEMORY_SAVE));
+    expect(instruction).toContain("`save_memory` tool");
+    expect(texts[0]).toBe(`<turn_context>\n${renderUserMemoryRecall("User's name is Ada.").slice(2)}\n</turn_context>`);
+    expect(texts[0]).toContain("<user_memory>\nUser's name is Ada.\n</user_memory>");
   });
 
-  it("BOOTSTRAP: authenticated + attached + NO userMemory (brand-new user) → save-only section, NO recall block", async () => {
-    const resolved = await resolveInstruction({
+  it("BOOTSTRAP: authenticated + attached + NO userMemory (brand-new user) → save-only, NO recall block", async () => {
+    const { instruction, texts } = await resolveTurn({
       identity: { userId: "u-mem", authMode: "authenticated" },
       memoryAttached: true,
     });
-    expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined) + renderMemorySection(undefined) + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION);
-    expect(resolved).toContain("`save_memory` tool");
-    expect(resolved).not.toContain("## What you remember about this user");
+    expect(instruction).toBe(systemPromptOf(MEMORY_SAVE));
+    expect(texts[0]).toBe(EMPTY_CONTEXT);
   });
 
   it("authenticated + NOT attached → NO memory section, even with userMemory (no tool → no instruction)", async () => {
-    const resolved = await resolveInstruction({
+    const { instruction, texts } = await resolveTurn({
       identity: { userId: "u-mem", authMode: "authenticated" },
       memoryAttached: false,
       userMemory: "orphaned",
     });
-    expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined) + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION);
-    expect(resolved).not.toContain("`save_memory` tool");
-    expect(resolved).not.toContain("orphaned");
+    expect(instruction).toBe(systemPromptOf());
+    expect(texts[0]).toBe(EMPTY_CONTEXT);
   });
 
   it("anonymous + attached → NO memory section (guest never gets the memory tool)", async () => {
-    const resolved = await resolveInstruction({
+    const { instruction, texts } = await resolveTurn({
       identity: { userId: "g-1", authMode: "anonymous" },
       memoryAttached: true,
       userMemory: "guest",
     });
-    expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined) + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION);
-    expect(resolved).not.toContain("`save_memory` tool");
+    expect(instruction).toBe(systemPromptOf());
+    expect(texts[0]).toBe(EMPTY_CONTEXT);
   });
 
   it("guuey#2386: a client that draws guuey A2UI gets the section DIRECTLY AFTER generative UI, byte-identical to Claude's", async () => {
     const resolved = await resolveInstruction({ gguiAttached: true, clientCatalogs: [A2UI_GUUEY_CATALOG_ID] });
-    expect(resolved.endsWith(SURFACE_FORMATTING_SECTION + GENERATIVE_UI_SECTION + A2UI_SECTION + RESPONSE_NORMS_SECTION)).toBe(true);
+    expect(resolved.endsWith(SURFACE_FORMATTING_SECTION + GENERATIVE_UI_SECTION + A2UI_SECTION + TURN_AUTHORITY_SECTION + RESPONSE_NORMS_SECTION)).toBe(true);
     const plain = await resolveInstruction({ gguiAttached: true, clientCatalogs: ["guuey.json-render.v1"] });
     expect(plain).not.toContain(A2UI_SECTION);
   });
@@ -381,29 +391,22 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
       gguiAttached: true,
       clientCatalogs: [A2UI_GUUEY_CATALOG_ID],
     };
-    const resolved = await resolveInstruction(turn, {
+    const none = await resolveTurn(turn, {
       model: "gemini-3.5-pro",
       systemPrompt: "be terse",
       tools: { allowlist: ["@none"] },
     });
-    expect(resolved).not.toContain("`save_memory` tool");
-    expect(resolved).not.toContain(GENERATIVE_UI_SECTION);
-    expect(resolved).not.toContain(A2UI_SECTION);
-    expect(resolved).toBe(
-      withContextPreamble("be terse", [], undefined, undefined) +
-        renderUserMemoryRecall("Ada.") +
-        SURFACE_FORMATTING_SECTION +
-        RESPONSE_NORMS_SECTION,
-    );
+    expect(none.instruction).toBe(systemPromptOf());
+    expect(none.texts[0]).toBe(`<turn_context>\n${renderUserMemoryRecall("Ada.").slice(2)}\n</turn_context>`);
     // Control: an allowlist that keeps a tool keeps both sections.
-    const control = await resolveInstruction(turn, {
+    const control = await resolveTurn(turn, {
       model: "gemini-3.5-pro",
       systemPrompt: "be terse",
       tools: { allowlist: ["ggui.*"] },
     });
-    expect(control).toContain("`save_memory` tool");
-    expect(control).toContain(GENERATIVE_UI_SECTION + A2UI_SECTION);
-    expect(control).toContain(renderUserMemoryRecall("Ada."));
+    expect(control.instruction).toContain("`save_memory` tool");
+    expect(control.instruction).toContain(GENERATIVE_UI_SECTION + A2UI_SECTION);
+    expect(control.texts[0]).toContain(renderUserMemoryRecall("Ada.").slice(2));
   });
 
   it('guuey#2262: tools.allowlist ["@none"] leaves out the profile SAVE instruction and the first impression, keeps the profile recall', async () => {
@@ -414,80 +417,74 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
       profileSections: [{ app: "Todoist", content: "Prefers short replies." }],
       firstImpression: { chipKey: "c5c73c61f370", intent: "Opening hours", contract: { propsSpec: { properties: {} } } },
     };
-    const none = await resolveInstruction(turn, { model: "gemini-3.5-pro", systemPrompt: "be terse", tools: { allowlist: ["@none"] } });
-    expect(none).not.toContain("save_profile");
-    expect(none).toContain("Prefers short replies.");
-    expect(none).not.toContain("ggui_handshake");
-    const control = await resolveInstruction(turn, { model: "gemini-3.5-pro", systemPrompt: "be terse", tools: { allowlist: ["ggui.*"] } });
-    expect(control).toContain("save_profile");
-    expect(control).toContain("ggui_handshake");
+    const none = await resolveTurn(turn, { model: "gemini-3.5-pro", systemPrompt: "be terse", tools: { allowlist: ["@none"] } });
+    expect(none.instruction).not.toContain("save_profile");
+    expect(none.texts.join("\n\n")).toContain("Prefers short replies.");
+    expect(none.texts.join("\n\n")).not.toContain("ggui_handshake");
+    const control = await resolveTurn(turn, { model: "gemini-3.5-pro", systemPrompt: "be terse", tools: { allowlist: ["ggui.*"] } });
+    expect(control.instruction).toContain("save_profile");
+    expect(control.texts[1]).toContain("ggui_handshake");
   });
 
-  // ── cross-app profile section (profile T7) — SIBLING of the memory section ──
+  // ── cross-app profile sections (profile T7) — SIBLINGS of the memory sections ──
   const PROFILE_SECTIONS = [{ app: "Todoist", content: "Prefers short replies." }];
 
-  it("authenticated + read-write + sections → memory THEN profile, byte-identical to the framework-blind renderers", async () => {
-    const resolved = await resolveInstruction({
+  it("authenticated + read-write + sections → memory THEN profile, in both the instruction and the turn context", async () => {
+    const { instruction, texts } = await resolveTurn({
       identity: { userId: "u-mem", authMode: "authenticated" },
       memoryAttached: true,
       userMemory: "User's name is Ada.",
       profileAccess: "read-write",
       profileSections: PROFILE_SECTIONS,
     });
-    expect(resolved).toBe(
-      withContextPreamble("be terse", [], undefined, undefined) +
-        renderMemorySection("User's name is Ada.") +
-        renderProfileSection(PROFILE_SECTIONS, "read-write") + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION);
-    expect(resolved).toContain("`save_profile` tool");
-    expect(resolved).toContain("### From Todoist");
+    expect(instruction).toBe(systemPromptOf(MEMORY_SAVE, PROFILE_SAVE));
+    expect(texts[0]).toBe(
+      `<turn_context>\n${renderUserMemoryRecall("User's name is Ada.").slice(2)}${renderProfileRecall(PROFILE_SECTIONS)}\n</turn_context>`,
+    );
+    expect(texts[0]).toContain("### From Todoist");
   });
 
   it("authenticated + read (read-only) + sections → recall only, NO save instruction", async () => {
-    const resolved = await resolveInstruction({
+    const { instruction, texts } = await resolveTurn({
       identity: { userId: "u-mem", authMode: "authenticated" },
       profileAccess: "read",
       profileSections: PROFILE_SECTIONS,
     });
-    expect(resolved).toBe(
-      withContextPreamble("be terse", [], undefined, undefined) +
-        renderProfileSection(PROFILE_SECTIONS, "read") + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION);
-    expect(resolved).not.toContain("`save_profile` tool");
-    expect(resolved).toContain("## What you know about this user from other apps");
+    expect(instruction).toBe(systemPromptOf());
+    expect(texts[0]).toBe(`<turn_context>\n${renderProfileRecall(PROFILE_SECTIONS).slice(2)}\n</turn_context>`);
   });
 
   it("authenticated + NO profileAccess → NO profile section (fail-closed default)", async () => {
-    const resolved = await resolveInstruction({
+    const { instruction, texts } = await resolveTurn({
       identity: { userId: "u-mem", authMode: "authenticated" },
       profileSections: PROFILE_SECTIONS,
     });
-    expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined) + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION);
-    expect(resolved).not.toContain("`save_profile` tool");
-    expect(resolved).not.toContain("Prefers short replies.");
+    expect(instruction).toBe(systemPromptOf());
+    expect(texts[0]).toBe(EMPTY_CONTEXT);
   });
 
   it("anonymous + profileAccess present → NO profile section (guest never gets the profile)", async () => {
-    const resolved = await resolveInstruction({
+    const { instruction, texts } = await resolveTurn({
       identity: { userId: "g-1", authMode: "anonymous" },
       profileAccess: "read-write",
       profileSections: PROFILE_SECTIONS,
     });
-    expect(resolved).toBe(withContextPreamble("be terse", [], undefined, undefined) + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION);
-    expect(resolved).not.toContain("`save_profile` tool");
+    expect(instruction).toBe(systemPromptOf());
+    expect(texts[0]).toBe(EMPTY_CONTEXT);
   });
 
-  // ── app-resources section (guuey#456 B4) — SIBLING of memory/profile, after profile ──
+  // ── app-resources section (guuey#456 B4) — after the SAVE instructions ──
 
   it("fsBound + resourceCount > 0 → the resources hint, byte-identical to the framework-blind renderer, naming the turn's fs.app", async () => {
     const resolved = await resolveInstruction({ fsBound: true, resourceCount: 2 });
     // The helper's turn fs.app is `base` (a real tmp path) — the section names
     // THAT dir, never a hardcoded /app.
-    expect(resolved).toBe(
-      withContextPreamble("be terse", [], undefined, undefined) + renderResourcesSection(2, base) + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION);
+    expect(resolved).toBe(systemPromptOf(renderResourcesSection(2, base)));
     expect(resolved).toContain("## App resources");
     expect(resolved).toContain(`2 reference files at ${base}/resources`);
   });
 
-  it("memory + profile + resources → appended in that order, byte-identical to the three renderers", async () => {
+  it("memory + profile + resources → appended in that order, byte-identical to the renderers", async () => {
     const resolved = await resolveInstruction({
       identity: { userId: "u-mem", authMode: "authenticated" },
       memoryAttached: true,
@@ -497,25 +494,17 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
       fsBound: true,
       resourceCount: 1,
     });
-    expect(resolved).toBe(
-      withContextPreamble("be terse", [], undefined, undefined) +
-        renderMemorySection("Ada") +
-        renderProfileSection(PROFILE_SECTIONS, "read-write") +
-        renderResourcesSection(1, base) + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION);
+    expect(resolved).toBe(systemPromptOf(MEMORY_SAVE, PROFILE_SAVE, renderResourcesSection(1, base)));
   });
 
   it("fsBound false/absent + resourceCount present → NO resources section (no file tools to read them)", async () => {
-    const boundOff = await resolveInstruction({ fsBound: false, resourceCount: 3 });
-    expect(boundOff).toBe(withContextPreamble("be terse", [], undefined, undefined) + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION);
-    const boundAbsent = await resolveInstruction({ resourceCount: 3 });
-    expect(boundAbsent).toBe(withContextPreamble("be terse", [], undefined, undefined) + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION);
+    expect(await resolveInstruction({ fsBound: false, resourceCount: 3 })).toBe(systemPromptOf());
+    expect(await resolveInstruction({ resourceCount: 3 })).toBe(systemPromptOf());
   });
 
   it("resourceCount 0/absent → NO resources section", async () => {
-    const zero = await resolveInstruction({ fsBound: true, resourceCount: 0 });
-    expect(zero).toBe(withContextPreamble("be terse", [], undefined, undefined) + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION);
-    const absent = await resolveInstruction({ fsBound: true });
-    expect(absent).toBe(withContextPreamble("be terse", [], undefined, undefined) + SURFACE_FORMATTING_SECTION + RESPONSE_NORMS_SECTION);
+    expect(await resolveInstruction({ fsBound: true, resourceCount: 0 })).toBe(systemPromptOf());
+    expect(await resolveInstruction({ fsBound: true })).toBe(systemPromptOf());
   });
 
   it("an sse cred file fails the turn with the actionable transport error", async () => {
@@ -560,15 +549,34 @@ describe("no-code turn (createRunner without GUUEY_AGENT_ENTRY)", () => {
     expect(got.done).toHaveLength(0);
   });
 
-  it("connected-services section (guuey#901): present → between the base prompt and the surface section, identical renderer", async () => {
+  it("connected-services section (guuey#901): present → in the turn context, identical renderer; never in the instruction", async () => {
     const availability = [{ server: "platform", state: "connected" as const }];
-    const resolved = await resolveInstruction({
+    const { instruction, texts } = await resolveTurn({
       identity: { userId: "u-oauth", authMode: "authenticated" },
       mcpAvailability: availability,
     });
-    const section = renderMcpAvailabilitySection(availability);
-    expect(resolved).toContain(section);
-    expect(resolved.indexOf(section)).toBeLessThan(resolved.indexOf(SURFACE_FORMATTING_SECTION));
+    expect(instruction).toBe(systemPromptOf());
+    expect(texts[0]).toBe(`<turn_context>\n${renderMcpAvailabilitySection(availability).slice(2)}\n</turn_context>`);
+  });
+
+  it("A1: two users of one class get a byte-identical instruction; the class change (guest) changes it", async () => {
+    const a = await resolveTurn({
+      identity: { userId: "u-a", authMode: "authenticated" },
+      memoryAttached: true,
+      userMemory: "A likes tea.",
+      history: [{ role: "user", text: "first" }],
+    });
+    const b = await resolveTurn({
+      identity: { userId: "u-b", authMode: "authenticated" },
+      memoryAttached: true,
+      userMemory: "B is vegan.",
+      priorState: { step: 2 },
+      mcpAvailability: [{ server: "linear", state: "denied" }],
+    });
+    expect(a.instruction).toBe(b.instruction);
+    expect(a.texts).not.toEqual(b.texts);
+    const guest = await resolveTurn({ identity: { userId: "g", authMode: "anonymous" }, memoryAttached: true });
+    expect(guest.instruction).not.toBe(a.instruction);
   });
 });
 
