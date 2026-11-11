@@ -821,6 +821,16 @@ describe("buildOptions — the CLI's config, cache and XDG roots are the caller'
     expect(opts.cwd).toBe("/fs/session");
   });
 
+  it.each(["config", "cache", "xdgConfig", "xdgData", "xdgState"] as const)(
+    "refuses an empty or relative cliDirs.%s, so the CLI can never fall back under HOME or cwd (B3, hardening)",
+    (name) => {
+      const fs = { app: "/fs/app", home: "/fs/home", session: "/fs/session" };
+      for (const bad of ["", "relative/dir"]) {
+        expect(() => buildOptions({}, ctx({ fs, cliDirs: { ...TEST_CLI_DIRS, [name]: bad } }))).toThrow(new RegExp(`cliDirs\\.${name}`));
+      }
+    },
+  );
+
   it("refuses fs without cliDirs, so no caller can fall back to a shared config root", () => {
     const fs = { app: "/fs/app", home: "/fs/home", session: "/fs/session" };
     const { cliDirs: _omitted, ...withoutDirs } = ctx({ fs });

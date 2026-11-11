@@ -9,7 +9,7 @@
  * worker entrypoint (`index.ts`) passes the real `@anthropic-ai/claude-agent-sdk`
  * `query`.
  */
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -28,8 +28,20 @@ import type { CredentialFile,
   InputKind,
   JsonValue,
   ProfileSection,
-  StopReason, McpAvailability, FirstImpressionPush, FirstImpressionShown, WithheldTool, InvokeImageAttachment } from "@guuey/worker";
-import { anthropicUserContent, CLAUDE_CLI_FIXED_ROOT, CLAUDE_CLI_ROOT_ENV, invokeImagesCapabilities, storeTurnImages } from "@guuey/worker";
+  StopReason, McpAvailability, FirstImpressionPush, FirstImpressionShown, WithheldTool, InvokeImageAttachment,
+  AnthropicUserBlock, HelloCliSession, HelloHeaderShas, InvokeCliSession } from "@guuey/worker";
+import {
+  anthropicUserContent,
+  CLAUDE_CLI_FIXED_ROOT,
+  CLAUDE_CLI_ROOT_ENV,
+  CLI_SESSION_CAPABILITY,
+  CLI_SESSION_HASH_VERSION,
+  CLI_SESSION_RESUME_FAILED,
+  invokeImagesCapabilities,
+  storeTurnImages,
+} from "@guuey/worker";
+import { hashSystemPrompt, hashUserBlocks, hashUserText, sha256OfFields } from "./cli-session-hash.js";
+import { measureStoredSession } from "./cli-session-store.js";
 import {
   buildOptions,
   claudeTurnContext,
@@ -118,6 +130,8 @@ export interface HostInvoke {
   mcpAvailability?: McpAvailability[];
   /** The turn's images (guuey#2293) — see `Invoke.attachments` in `@guuey/worker`; they reach the model beside `input`. */
   attachments?: InvokeImageAttachment[];
+  /** Thread resume (guuey#3407 B3): run the CLI session under the Router's id — see `Invoke.cliSession` in `@guuey/worker`. */
+  cliSession?: InvokeCliSession;
 }
 
 /** Per-process config the worker resolves once at boot. */
@@ -317,15 +331,20 @@ export async function runInvoke(
   // `null` (SDK not resolvable) is tolerated by the Router.
   // guuey#2293: an invoke carrying images announces that this run path hands
   // them to the model (the Router acknowledges them to the client on this word).
-  emit.hello(CLAUDE_FRAMEWORK, CLAUDE_SDK_PACKAGE, resolveSdkVersion(CLAUDE_SDK_PACKAGE), [
-    ...MODEL_TEXT_INPUT_KIND_CAPABILITIES,
-    ...invokeImagesCapabilities(invoke),
-  ]);
+  // guuey#3407 B3: an invoke carrying `cliSession` sends its hello only once the
+  // turn's options exist, because that hello reports them (and, on a resume, the
+  // stored session). It is still the first event: every failure before it sends
+  // a hello without the capability, then the error. Without `cliSession` the
+  // hello goes first, exactly as before.
+  const hello = helloOnce(emit, [...MODEL_TEXT_INPUT_KIND_CAPABILITIES, ...invokeImagesCapabilities(invoke)]);
+  const session = invoke.cliSession;
+  if (session === undefined) hello();
   // guuey#2293: the turn's images are also stored in its session storage
   // (@guuey/worker storeTurnImages); a refusal is the person's face, and the
   // turn does not run.
   const imagesFace = storeTurnImages(invoke);
   if (imagesFace !== undefined) {
+    hello();
     emit.error(imagesFace);
     return;
   }
@@ -335,9 +354,18 @@ export async function runInvoke(
   // reach here. A non-claude framework arriving here (e.g. `google-adk`,
   // `vanilla`) has no run path yet → a clear `error`, never a silent mis-run.
   if (snapshot.framework && snapshot.framework !== CLAUDE_FRAMEWORK) {
+    hello();
     emit.error(
       `@guuey/host: the claude run path got framework '${snapshot.framework}'; no run path for it yet.`,
     );
+    return;
+  }
+
+  // B3 (R5): the session id is the Router's, and only a UUID is run. The host
+  // never derives one (R4), and a malformed id stops here, before any spawn.
+  if (session !== undefined && !UUID.test(session.id)) {
+    hello();
+    emit.error(`@guuey/host: cliSession.id must be a UUID (got ${JSON.stringify(session.id.slice(0, 80))}).`);
     return;
   }
 
@@ -345,10 +373,17 @@ export async function runInvoke(
   // holding the config, cache and XDG roots, and removed when the turn ends.
   // No `.claude.json` an earlier turn wrote is read by this one
   // (BuildOptionsContext.cliDirs). The root is the platform's fixed path when
-  // it names one (CLAUDE_CLI_ROOT_ENV), made by an exclusive mkdir that
-  // refuses a path already there; otherwise a random name under this
+  // it names one (CLAUDE_CLI_ROOT_ENV); otherwise a random name under this
   // process's temp dir (in the jail, its per-start tmpfs).
+  //
+  // B3 (hardening's B-2, R23): when the jail has bound the thread directory
+  // in, bwrap has already made the fixed root's `config/projects/-session`.
+  // The host then CHECKS that tree, never makes it: exactly `config/` →
+  // `projects/` → `-session/`, all directories, no link, nothing else. A fixed
+  // root that is absent is made by an exclusive mkdir, as before. Either way
+  // the host makes `cache/` and the three XDG roots itself, exclusively.
   let root: string;
+  let bound = false;
   let cliDirs: CliDirs;
   try {
     const fixedRoot = process.env[CLAUDE_CLI_ROOT_ENV];
@@ -356,7 +391,8 @@ export async function runInvoke(
       if (fixedRoot !== CLAUDE_CLI_FIXED_ROOT) {
         throw new Error(`${CLAUDE_CLI_ROOT_ENV} may only name ${CLAUDE_CLI_FIXED_ROOT}`);
       }
-      mkdirSync(fixedRoot, { mode: 0o700 });
+      bound = isBoundRoot(fixedRoot);
+      if (!bound) mkdirSync(fixedRoot, { mode: 0o700 });
       root = fixedRoot;
     } else {
       root = mkdtempSync(join(tmpdir(), CLI_ROOT_PREFIX));
@@ -368,15 +404,73 @@ export async function runInvoke(
       xdgData: join(root, "xdg-data"),
       xdgState: join(root, "xdg-state"),
     };
-    for (const dir of Object.values(cliDirs)) mkdirSync(dir, { mode: 0o700 });
+    for (const [name, dir] of Object.entries(cliDirs)) {
+      if (bound && name === "config") continue;
+      mkdirSync(dir, { mode: 0o700 });
+    }
   } catch (err) {
+    hello();
     emit.error(`@guuey/host: could not make the CLI's per-invoke state directories: ${err instanceof Error ? err.message : String(err)}`);
     return;
   }
   try {
-    await runClaudeTurn(snapshot, invoke, runtime, emit, query, timing, cliDirs);
+    await runClaudeTurn(snapshot, invoke, runtime, emit, query, timing, cliDirs, hello);
   } finally {
-    removeCliRoot(root);
+    if (bound) removeAroundBind(root);
+    else removeCliRoot(root);
+  }
+}
+
+/** A UUID in its canonical text form (any version): the only session id the host runs (B3 R5). */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The bound thread directory's path under the fixed root, as bwrap makes it (B3 §2; `-session` is the CLI's name for cwd `/session`). */
+const BOUND_TREE = ["config", "projects", "-session"] as const;
+
+/**
+ * Whether the fixed root is the jail's bound tree (B3 R23). Absent → false, and the caller makes it. Present → it
+ * must be EXACTLY `config/` → `projects/` → `-session/`, each a directory and none a link, with nothing beside
+ * them; anything else throws, so a planted entry or a link refuses the turn before the CLI starts.
+ */
+export function isBoundRoot(root: string): boolean {
+  try {
+    lstatSync(root);
+  } catch (err) {
+    if (err instanceof Error && "code" in err && err.code === "ENOENT") return false;
+    throw err;
+  }
+  // Each level, from the root down to the bound directory; every level but the last holds exactly the next one.
+  const levels = [root, ...BOUND_TREE.map((_, i) => join(root, ...BOUND_TREE.slice(0, i + 1)))];
+  levels.forEach((dir, i) => {
+    const st = lstatSync(dir);
+    if (st.isSymbolicLink() || !st.isDirectory()) throw new Error(`the CLI state root's ${dir.slice(root.length) || "/"} is not a plain directory`);
+    if (i === BOUND_TREE.length) return;
+    const children = readdirSync(dir);
+    if (children.length !== 1 || children[0] !== BOUND_TREE[i]) {
+      throw new Error(`the CLI state root's ${dir.slice(root.length) || "/"} must hold exactly ${BOUND_TREE[i]}/ (found ${String(children.length)} entries)`);
+    }
+  });
+  return true;
+}
+
+/**
+ * After a bound turn: remove everything the turn left under the fixed root EXCEPT the bound thread directory, entry
+ * by entry, never entering the bind (a recursive remove of the root would empty the thread's durable session through
+ * it). Links are removed as links. A failure is reported on stderr, by path only.
+ */
+function removeAroundBind(root: string): void {
+  const sweep = (dir: string, keep: string | undefined): void => {
+    for (const name of readdirSync(dir)) {
+      if (name === keep) continue;
+      rmSync(join(dir, name), { recursive: true, force: true });
+    }
+  };
+  try {
+    sweep(root, BOUND_TREE[0]);
+    sweep(join(root, BOUND_TREE[0]), BOUND_TREE[1]);
+    sweep(join(root, BOUND_TREE[0], BOUND_TREE[1]), BOUND_TREE[2]);
+  } catch (err) {
+    process.stderr.write(`[guuey] could not clear the CLI state directory ${root}: ${err instanceof Error ? err.message : String(err)}\n`);
   }
 }
 
@@ -405,10 +499,14 @@ async function runClaudeTurn(
   query: QueryFn,
   timing: ClaudeTurnTiming,
   cliDirs: CliDirs,
+  hello: HelloOnce,
 ): Promise<void> {
+  const session = invoke.cliSession;
   let options: Options;
   let ctx: BuildOptionsContext;
   let turnContext: string[];
+  let content: AnthropicUserBlock[];
+  let block: HelloCliSession | undefined;
   try {
     ctx = {
       input: invoke.input,
@@ -416,7 +514,9 @@ async function runClaudeTurn(
       fs: invoke.fs,
       cliDirs,
       ...(invoke.fsBound !== undefined ? { fsBound: invoke.fsBound } : {}),
-      history: invoke.history,
+      // B3 (R3): a resumed session already holds the conversation, so the turn
+      // carries no history section, even when the invoke sent one.
+      history: session?.mode === "resume" ? [] : invoke.history,
       listCredentials: runtime.listCredentials,
       ...(runtime.apiKey !== undefined ? { apiKey: runtime.apiKey } : {}),
       ...(runtime.baseUrl !== undefined ? { baseUrl: runtime.baseUrl } : {}),
@@ -446,10 +546,25 @@ async function runClaudeTurn(
     options = buildOptions(snapshot, ctx);
     turnContext = claudeTurnContext(snapshot, ctx);
     reportToolGateErrors(snapshot.tools);
+    // A1: the turn's two context blocks (`<turn_context>` then `<turn_directive>`,
+    // always both; the context block always opens with its constant lead line, the
+    // directive may be empty) lead the message, each its own text
+    // block, then the invoke's own content (its images, then its text) unchanged.
+    content = [...turnContext.map((text) => ({ type: "text" as const, text })), ...anthropicUserContent(invoke)];
+    if (session !== undefined) {
+      // B3 (R2, R3): `start` creates the session under the Router's id, `resume`
+      // continues it; never both, and never a fork.
+      options = session.mode === "start" ? { ...options, sessionId: session.id } : { ...options, resume: session.id };
+      block = cliSessionBlock(options, resolveMcpServers(ctx), content, session, invoke.fs, cliDirs);
+    }
   } catch (err) {
+    hello();
     emit.error(err instanceof Error ? err.message : String(err));
     return;
   }
+  // B3: the turn's first event, when it carried `cliSession` (R-1: the only
+  // frame the Router takes these values from).
+  hello(block);
   // The platform-owned names buildOptions left out of the agent's environment,
   // reported on stderr (names only) so the drop is never silent.
   const droppedEnv = reservedEnvNamesDropped(snapshot);
@@ -475,16 +590,10 @@ async function runClaudeTurn(
   async function* userMessages(): AsyncGenerator<SDKUserMessage> {
     await gate;
     if (!sendMessage) return;
-    // A1: the turn's two context blocks (`<turn_context>` then `<turn_directive>`,
-    // always both; the context block always opens with its constant lead line, the
-    // directive may be empty) lead the message, each its own text
-    // block, then the invoke's own content (its images, then its text) unchanged.
+    // The same blocks the hello's `promptSha` hashed (B3 R-2): one array.
     yield {
       type: "user",
-      message: {
-        role: "user",
-        content: [...turnContext.map((text) => ({ type: "text" as const, text })), ...anthropicUserContent(invoke)],
-      },
+      message: { role: "user", content },
       parent_tool_use_id: null,
     };
     await inputDone;
@@ -498,8 +607,27 @@ async function runClaudeTurn(
     return;
   }
   let done: { stopReason: StopReason; result: string } | undefined;
+  // B3 (R14, cto point 1): a resume is confirmed POSITIVELY before anything is
+  // forwarded. The CLI's first message must be the `init` of the id the Router
+  // sent; R7b measured that every failure face (missing, empty, unreadable,
+  // a directory) ends in an error result with no `init` first. Anything else
+  // ends the turn with CLI_SESSION_RESUME_FAILED and forwards nothing: the host
+  // never falls back on its own, the Router resets and re-runs once.
+  let resumeFailed: string | undefined;
   const messages = (async (): Promise<void> => {
+    let confirmed = session?.mode !== "resume";
     for await (const msg of q) {
+      if (!confirmed) {
+        if (isInitOf(msg, session?.id)) {
+          confirmed = true;
+        } else {
+          resumeFailed = describeFirstMessage(msg);
+          endInput();
+          openGate();
+          q.close();
+          return;
+        }
+      }
       emit.native(CLAUDE_FRAMEWORK, toJson(msg));
       if (isResultMessage(msg)) {
         done = resultToDone(msg);
@@ -530,18 +658,123 @@ async function runClaudeTurn(
     openGate();
     q.close();
     await streamOutcome;
-    emit.error(err instanceof Error ? err.message : String(err));
+    emit.error(resumeFailed !== undefined ? resumeFailedMessage(resumeFailed) : err instanceof Error ? err.message : String(err));
+    return;
+  }
+  if (resumeFailed !== undefined) {
+    await streamOutcome;
+    emit.error(resumeFailedMessage(resumeFailed));
     return;
   }
   sendMessage = true;
   openGate();
   const failure = await streamOutcome;
   endInput();
+  if (resumeFailed !== undefined) {
+    emit.error(resumeFailedMessage(resumeFailed));
+    return;
+  }
   if (failure !== undefined) {
     emit.error(failure.message);
     return;
   }
   emit.done(done?.result ?? "", done?.stopReason ?? "end_turn");
+}
+
+/** The `error` message of an unconfirmed resume: the protocol's prefix, then what the CLI said first. */
+function resumeFailedMessage(firstMessage: string): string {
+  return `${CLI_SESSION_RESUME_FAILED}: the CLI's first message was ${firstMessage}, not the init of the session sent`;
+}
+
+/** Whether an SDK message is the `system`/`init` of exactly this session id. */
+function isInitOf(msg: SDKMessage, id: string | undefined): boolean {
+  return msg.type === "system" && msg.subtype === "init" && id !== undefined && msg.session_id === id;
+}
+
+/** A short, content-free description of an SDK message, for the resume-failed error. */
+function describeFirstMessage(msg: SDKMessage): string {
+  const subtype = "subtype" in msg && typeof msg.subtype === "string" ? `/${msg.subtype}` : "";
+  return `${msg.type}${subtype}`;
+}
+
+/** Sends the invoke's hello at most once (see `runInvoke`); a block adds the thread-resume capability. */
+type HelloOnce = (block?: HelloCliSession) => void;
+
+function helloOnce(emit: Emitter, capabilities: readonly string[]): HelloOnce {
+  let sent = false;
+  return (block) => {
+    if (sent) return;
+    sent = true;
+    emit.hello(
+      CLAUDE_FRAMEWORK,
+      CLAUDE_SDK_PACKAGE,
+      resolveSdkVersion(CLAUDE_SDK_PACKAGE),
+      block === undefined ? capabilities : [...capabilities, CLI_SESSION_CAPABILITY],
+      block,
+    );
+  };
+}
+
+/**
+ * The CLI's directory name for a cwd (R7a, measured on 2.1.282 and read in its bundle): the cwd's real path with every
+ * character outside `[a-zA-Z0-9]` turned into `-`. `/session` gives `-session`. The CLI shortens a name over 200
+ * characters with a hash this host does not reproduce, so such a cwd refuses rather than measuring the wrong file.
+ */
+export function cliProjectSlug(cwd: string): string {
+  const slug = realpathSync(cwd).replace(/[^a-zA-Z0-9]/g, "-");
+  if (slug.length > 200) throw new Error("@guuey/host: the session directory's path is too long to resume a CLI session in");
+  return slug;
+}
+
+/** The hello's thread-resume block for this turn (B3 v1.9, wire v1.2), with the stored measures on a resume. */
+function cliSessionBlock(
+  options: Options,
+  servers: Record<string, McpServerConfig>,
+  content: readonly AnthropicUserBlock[],
+  session: InvokeCliSession,
+  fs: Fs,
+  cliDirs: CliDirs,
+): HelloCliSession {
+  const own = content[content.length - 1];
+  if (own === undefined || own.type !== "text") throw new Error("@guuey/host: the turn's message must end with its own text block");
+  if (typeof options.systemPrompt !== "string") throw new Error("@guuey/host: the system prompt must be one string to resume a CLI session");
+  const promptBytes = content.reduce((n, b) => n + (b.type === "text" ? Buffer.byteLength(b.text, "utf8") : 0), 0);
+  return {
+    hashVersion: CLI_SESSION_HASH_VERSION,
+    systemPromptSha256: hashSystemPrompt(options.systemPrompt),
+    headerShas: headerShas(options, servers),
+    promptSha: hashUserBlocks(content),
+    promptBytes,
+    lastPromptSha: hashUserText(own.text),
+    ...(session.mode === "resume"
+      ? { stored: measureStoredSession(join(cliDirs.config, "projects", cliProjectSlug(fs.session)), session.id) }
+      : {}),
+  };
+}
+
+/**
+ * One sha per agent-configuration field passed to the SDK (B-3; all four are `agent-config`-only, B3 v1.8 item 3).
+ * Each is a fixed canonical form: sorted names, the MCP servers by name with their transport and URL, never a header.
+ */
+function headerShas(options: Options, servers: Record<string, McpServerConfig>): HelloHeaderShas {
+  const list = (v: readonly string[] | undefined): string[] => [...(v ?? [])].sort();
+  const tools = Array.isArray(options.tools) ? options.tools : [];
+  return {
+    model: sha256OfFields(["model", options.model ?? ""]),
+    permissionMode: sha256OfFields(["permissionMode", options.permissionMode ?? (options.canUseTool !== undefined ? "canUseTool" : "")]),
+    tools: sha256OfFields([
+      "tools", ...list(tools),
+      "allowed", ...list(options.allowedTools),
+      "disallowed", ...list(options.disallowedTools),
+    ]),
+    mcpConfig: sha256OfFields([
+      "mcp",
+      ...Object.keys(servers).sort().flatMap((name) => {
+        const s = servers[name];
+        return [name, "type" in s && typeof s.type === "string" ? s.type : "", "url" in s && typeof s.url === "string" ? s.url : ""];
+      }),
+    ]),
+  };
 }
 
 /**

@@ -21,6 +21,7 @@
  * OSS-legality: this package imports ONLY `@anthropic-ai/claude-agent-sdk`,
  * `@guuey/worker`, `@guuey/config`, and Node built-ins.
  */
+import { isAbsolute } from "node:path";
 import type { CanUseTool, Options, SDKMessage, Settings } from "@anthropic-ai/claude-agent-sdk";
 import type { CredentialFile, FirstImpressionPush, FirstImpressionShown, Fs, HistoryMessage, JsonValue, McpAvailability, ProfileSection, WithheldTool } from "@guuey/worker";
 import { claudeCodeExecutableOf, forbiddenClaudeEnvNames, isClaudeHostOwnedEnvName, makeClaudeSpawner, trustEnvOf } from "@guuey/worker";
@@ -421,6 +422,15 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
   const cliDirs = ctx.cliDirs;
   if (fs && cliDirs === undefined) {
     throw new Error("@guuey/host: buildOptions needs fresh per-invoke cliDirs whenever fs is set.");
+  }
+  // guuey#3407 B3 (hardening): an empty value would let the CLI fall back to a
+  // default under HOME (`XDG_CACHE_HOME || HOME/.cache` in its own resolver), the
+  // durable layer; a relative one would resolve against cwd, the session
+  // directory. Refused here, where the env is written, whoever built cliDirs.
+  if (cliDirs !== undefined) {
+    for (const [name, dir] of Object.entries(cliDirs)) {
+      if (!isAbsolute(dir)) throw new Error(`@guuey/host: cliDirs.${name} must be an absolute path (got ${JSON.stringify(dir)}).`);
+    }
   }
   const fsEnv: Record<string, string> =
     fs && cliDirs !== undefined
