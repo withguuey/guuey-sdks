@@ -1173,6 +1173,15 @@ export function validateColocatedServerNames(
 export const RESERVED_MEMORY_SERVER_NAME = 'guuey-memory';
 
 /**
+ * The reserved name of the builder's read of an end user's memory (guuey#3404): the audience a memory-read token is
+ * minted for is `colocatedResourceUrl(appId, this)`. Not {@link RESERVED_MEMORY_SERVER_NAME}, which is the memory MCP's
+ * own audience, and not `memory`, which a builder's own colocated server may already use. The ONE source of the
+ * literal: the mint, the pod's verifier and cliApi's read handler import it. It joins
+ * {@link RESERVED_PLATFORM_NAMES}, so a newly written document may not declare a server under it.
+ */
+export const RESERVED_MEMORY_READ_NAME = 'guuey-memory-read';
+
+/**
  * The reserved colocated key the auto-injected cross-app profile MCP is
  * booted + spliced under (profile T1+). NEVER builder-declarable — mirrors
  * {@link RESERVED_MEMORY_SERVER_NAME}'s reservation for the same reason: a
@@ -1203,13 +1212,13 @@ export const RESERVED_MCP_SERVER_NAMES: readonly string[] = [
 
 /**
  * Names the platform uses itself, with no server spliced under them
- * (`guuey-media`). A newly written document may not declare a server under one
+ * (`guuey-media`, and {@link RESERVED_MEMORY_READ_NAME}). A newly written document may not declare a server under one
  * ({@link validateReservedPlatformNames}). Kept apart from
  * {@link RESERVED_MCP_SERVER_NAMES} because there is no server behind it: the
  * tool-gate grammar ({@link toolGateServerNames}) never names it, and nothing
  * is spliced.
  */
-export const RESERVED_PLATFORM_NAMES = ['guuey-media'] as const;
+export const RESERVED_PLATFORM_NAMES = ['guuey-media', RESERVED_MEMORY_READ_NAME] as const;
 
 /**
  * Validate that no `agent.mcpServers` entry uses a platform-RESERVED name

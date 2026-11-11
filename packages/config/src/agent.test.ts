@@ -27,6 +27,7 @@ import {
   RESERVED_HANDOFF_SERVER_NAME,
   RESERVED_MCP_SERVER_NAMES,
   RESERVED_PLATFORM_NAMES,
+  RESERVED_MEMORY_READ_NAME,
   toolGateServerNames,
   DEFAULT_AGENT_MCP_SERVERS,
   effectiveMcpServers,
@@ -338,12 +339,38 @@ describe('RESERVED_PLATFORM_NAMES — the guuey-media name (guuey#2393)', () => 
   });
 
   it('is a reserved name, not a platform server: the tool-gate grammar does not name it', () => {
-    expect(RESERVED_PLATFORM_NAMES).toEqual(['guuey-media']);
+    expect(RESERVED_PLATFORM_NAMES).toEqual(['guuey-media', RESERVED_MEMORY_READ_NAME]);
     expect(RESERVED_MCP_SERVER_NAMES).not.toContain('guuey-media');
     expect(toolGateServerNames({})).not.toContain('guuey-media');
     const v = validateToolGates({ tools: { allowlist: ['guuey-media.sign'] } });
     expect(v).toHaveLength(1);
     expect(v[0]).toContain('"guuey-media"');
+  });
+});
+
+describe('RESERVED_MEMORY_READ_NAME — the builder memory read\'s reserved name (guuey#3404)', () => {
+  it('is guuey-memory-read, apart from the memory MCP\'s own guuey-memory', () => {
+    expect(RESERVED_MEMORY_READ_NAME).toBe('guuey-memory-read');
+    expect(RESERVED_MEMORY_READ_NAME).not.toBe(RESERVED_MEMORY_SERVER_NAME);
+  });
+
+  it('a newly written guuey.json declaring it is refused, whatever its kind', () => {
+    for (const entry of [
+      { kind: 'colocated', source: './mcps/read' },
+      { kind: 'external', url: 'https://mcp.example.com' },
+    ] satisfies GuueyAgentMcpServer[]) {
+      expect(validateReservedPlatformNames({ mcpServers: { [RESERVED_MEMORY_READ_NAME]: entry, memory: entry } })).toEqual([
+        'MCP server "guuey-memory-read": that name is reserved by the platform — rename this server.',
+      ]);
+    }
+  });
+
+  it('a stored snapshot declaring it still passes the lints every deploy runs, and the tool-gate grammar never names it', () => {
+    expect(
+      validateReservedServerNames({ mcpServers: { [RESERVED_MEMORY_READ_NAME]: { kind: 'external', url: 'https://mcp.example.com' } } }),
+    ).toEqual([]);
+    expect(RESERVED_MCP_SERVER_NAMES).not.toContain(RESERVED_MEMORY_READ_NAME);
+    expect(toolGateServerNames({})).not.toContain(RESERVED_MEMORY_READ_NAME);
   });
 });
 
