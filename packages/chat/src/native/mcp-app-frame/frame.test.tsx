@@ -95,6 +95,7 @@ describe("createMcpAppFrame", () => {
       javaScriptCanOpenWindowsAutomatically: false,
       mediaPlaybackRequiresUserAction: true,
       incognito: true,
+      injectedJavaScriptBeforeContentLoadedForMainFrameOnly: true,
     });
   });
 
@@ -139,6 +140,16 @@ describe("createMcpAppFrame", () => {
     expect(rec.injected.flatMap(delivered)).toContainEqual(expect.objectContaining({ method: "ui/resource-teardown" }));
   });
 
+  it("reports a link the OS cannot open as an error, never an unhandled rejection", async () => {
+    openURL.mockImplementationOnce(() => Promise.reject(new Error("no handler")));
+    const { rec, props } = mount();
+    post(rec, INITIALIZE);
+    post(rec, { jsonrpc: "2.0", id: 3, method: "ui/open-link", params: { url: "https://example.com/" } });
+    await act(async () => {});
+    expect(openURL).toHaveBeenCalledWith("https://example.com/");
+    expect(props.onError).toHaveBeenCalledWith({ kind: "open-link-failed" });
+  });
+
   it("reports a resource with no decodable document and mounts no WebView", () => {
     const { rec, props } = mount({ resource: { uri: "ui://app/card", mimeType: "text/html", blob: "%%%" } });
     expect(props.onError).toHaveBeenCalledWith({ kind: "malformed-resource" });
@@ -149,7 +160,7 @@ describe("createMcpAppFrame", () => {
 describe("isInitialDocumentLoad", () => {
   it("allows the initial inline document and a card's own sub-frames; refuses a top-frame navigation", () => {
     expect(isInitialDocumentLoad({ url: "about:blank" })).toBe(true);
-    expect(isInitialDocumentLoad({ url: "data:text/html;base64,PHA+" })).toBe(true);
+    expect(isInitialDocumentLoad({ url: "data:text/html;base64,PHA+" })).toBe(false);
     expect(isInitialDocumentLoad({ url: "https://example.com/embed", isTopFrame: false })).toBe(true);
     expect(isInitialDocumentLoad({ url: "https://evil.example/" })).toBe(false);
     expect(isInitialDocumentLoad({ url: "https://evil.example/", isTopFrame: true })).toBe(false);

@@ -56,6 +56,22 @@ describe("the injected shim", () => {
     expect(native).toHaveBeenCalledTimes(1);
   });
 
+  it("captures JSON.stringify at install: a card that replaces it later never sees the envelope", () => {
+    const native = vi.fn<(data: string) => void>();
+    const page: PageWindow = { ReactNativeWebView: { postMessage: native } };
+    runShim(page, "secret-nonce");
+    const swapped = vi.spyOn(JSON, "stringify");
+    let seen = -1;
+    try {
+      page.parent?.postMessage({ hello: 1 });
+      seen = swapped.mock.calls.length;
+    } finally {
+      swapped.mockRestore();
+    }
+    expect(seen).toBe(0);
+    expect(native).toHaveBeenCalledTimes(1);
+  });
+
   it("delivers host messages to the page's message listeners with the parent object as source", () => {
     const page: PageWindow = { ReactNativeWebView: { postMessage: () => {} } };
     runShim(page, "n1");

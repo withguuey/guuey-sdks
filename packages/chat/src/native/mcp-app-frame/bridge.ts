@@ -30,9 +30,10 @@
 export const NATIVE_BRIDGE_ENVELOPE_KEY = "__guuey_mcp_apps";
 
 /**
- * A per-mount nonce: `crypto.getRandomValues` when the runtime has it (Hermes
- * does), else `crypto.randomUUID`, else two `Math.random` segments. The host
- * drops a wrong nonce silently, so a stranger has no oracle.
+ * A per-mount nonce: `crypto.getRandomValues` when the runtime or a polyfill
+ * provides it, else `crypto.randomUUID`, else two `Math.random` segments. The
+ * host drops a wrong nonce silently, so a stranger has no oracle, and a
+ * nested frame cannot observe the host realm's generator.
  */
 export function mintBridgeNonce(): string {
   const g: {
@@ -61,10 +62,13 @@ export function buildInjectedBridgeScript(nonce: string): string {
     if (window.__guueyMcpAppsBridge) return;
     window.__guueyMcpAppsBridge = { version: 1 };
 
-    // The native post function, captured NOW, before any card script runs:
-    // a card that later wraps window.ReactNativeWebView.postMessage never
-    // sees an envelope (so never the nonce). Looked up once more on first
-    // use only if the native bridge was not yet installed at this point.
+    // The native post function and JSON.stringify, captured NOW, before any
+    // card script runs: a card that later wraps
+    // window.ReactNativeWebView.postMessage or replaces JSON.stringify never
+    // sees an envelope (so never the nonce). The post function is looked up
+    // once more on first use only if the native bridge was not yet installed
+    // at this point.
+    var stringify = JSON.stringify;
     var nativePost = null;
     function captureNativePost() {
       var rn = window.ReactNativeWebView;
@@ -78,7 +82,7 @@ export function buildInjectedBridgeScript(nonce: string): string {
         if (nativePost === null) return;
         var envelope = { nonce: ${nonceLiteral}, payload: msg };
         envelope[${keyLiteral}] = true;
-        nativePost(JSON.stringify(envelope));
+        nativePost(stringify(envelope));
       } catch (_e) {}
     }
 

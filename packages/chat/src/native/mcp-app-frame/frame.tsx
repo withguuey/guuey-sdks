@@ -11,8 +11,9 @@
  * component is the guard that the slice matches it.
  *
  * Posture, stated: the document mounts from inline `text` (or a `blob`
- * decoded by the web host's own decoder), never a bare `uri`; a top-level
- * navigation away from the initial document is refused (links go only
+ * decoded by the web host's own decoder), never a bare `uri`; the shim is
+ * injected into the main frame only; a top-level navigation anywhere but
+ * `about:blank` is refused (links go only
  * through `ui/open-link`, whose `http:`/`https:` gate is the machine's);
  * popups and gesture-free media are off; `incognito` keeps the card's
  * cookies and storage apart from every other WebView. A card's NETWORK reach
@@ -54,6 +55,8 @@ export interface McpAppWebViewLoadRequest {
 export interface McpAppWebViewProps {
   source: { html: string };
   injectedJavaScriptBeforeContentLoaded: string;
+  /** Always `true`: the shim, which carries this mount's nonce, must never reach a nested frame. */
+  injectedJavaScriptBeforeContentLoadedForMainFrameOnly: boolean;
   onMessage: (event: McpAppWebViewMessageEvent) => void;
   onShouldStartLoadWithRequest: (request: McpAppWebViewLoadRequest) => boolean;
   onError?: () => void;
@@ -80,10 +83,16 @@ export interface CreateMcpAppFrameOptions {
   WebView: McpAppWebView;
 }
 
-/** A top-frame load is the initial inline document, or nothing. Sub-frame loads are the card's own. */
+/**
+ * A top-frame load is allowed only to `about:blank`, the URL the inline
+ * document (`source={{ html }}`) loads as on both platforms; every other
+ * top-frame navigation is refused (links go through `ui/open-link`). A
+ * card's own sub-frame loads are allowed: they follow from its unconfined
+ * network reach, and are not a confinement.
+ */
 export function isInitialDocumentLoad(request: McpAppWebViewLoadRequest): boolean {
   if (request.isTopFrame === false) return true;
-  return request.url === "about:blank" || request.url.startsWith("data:");
+  return request.url === "about:blank";
 }
 
 /** The machine's phase → the lifecycle state the frame reports (the view host maps it). */
@@ -166,7 +175,7 @@ export function createMcpAppFrame({ WebView }: CreateMcpAppFrameOptions): Compon
         },
         onSizeChanged: (size) => latest.current.onSizeChanged?.(size),
         onOpenLink: (url) => {
-          void Linking.openURL(url);
+          Linking.openURL(url).catch(() => latest.current.onError?.({ kind: "open-link-failed" }));
         },
         onPhaseChange: (phase) => latest.current.onLifecycle?.(phaseLifecycle(phase)),
       });
@@ -195,6 +204,7 @@ export function createMcpAppFrame({ WebView }: CreateMcpAppFrameOptions): Compon
             testID="mcp-app-frame-webview"
             source={{ html }}
             injectedJavaScriptBeforeContentLoaded={injected}
+            injectedJavaScriptBeforeContentLoadedForMainFrameOnly
             onMessage={onMessage}
             onShouldStartLoadWithRequest={isInitialDocumentLoad}
             onError={onWebViewError}
