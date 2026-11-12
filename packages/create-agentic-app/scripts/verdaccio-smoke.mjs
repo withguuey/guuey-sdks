@@ -295,8 +295,13 @@ try {
     pnpm(["typecheck"]); // root worker (not a workspace member of `-r`)
     console.log(`[verdaccio-smoke] build ${framework}`);
     pnpm(["-r", "build"]);
-    pnpm(["build"]); // root build → guuey.worker.js
-    accessSync(join(appDir, "guuey.worker.js"));
+    pnpm(["build"]); // root build → the worker guuey.json names
+    // The worker file is what the scaffold's own guuey.json declares
+    // (openai-agents-sdk: `worker.js`); with no `worker` key, the platform's
+    // default `guuey.worker.js` (claude-agent-sdk).
+    const workerFile =
+      JSON.parse(readFileSync(join(appDir, "guuey.json"), "utf8")).worker ?? "guuey.worker.js";
+    accessSync(join(appDir, workerFile));
     console.log(`\n✓ ${framework} scaffold (via real Verdaccio npx resolution) builds clean\n`);
   }
 
