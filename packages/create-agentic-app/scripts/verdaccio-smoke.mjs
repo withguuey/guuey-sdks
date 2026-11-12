@@ -11,11 +11,15 @@
 //   - npx resolves the scaffolder itself FROM THE REGISTRY, so the registry
 //     pin must reach npx's own resolution, not just the scaffolded app's
 //     installs — hence `npm_config_registry` (npx honors config env vars).
-//   - pnpm 11 silently IGNORES an env-var `cache-dir`/`store-dir` override
-//     (proven in that harness), so the scaffolded project also gets a
-//     project-local `.npmrc` pinning `registry` (+ hermetic cache/store dirs)
-//     — a project `.npmrc` beats env vars and is honored by the whole
-//     workspace install.
+//   - The scaffolded project gets a project-local `.npmrc` pinning `registry`
+//     (a project `.npmrc` beats env vars and is honored by the whole
+//     workspace install). pnpm 11+ reads ONLY auth and registry from
+//     `.npmrc`, so the hermetic per-run `storeDir`/`cacheDir` go in the
+//     scaffold's `pnpm-workspace.yaml` instead (guuey#2880: written to
+//     `.npmrc`, they were ignored and every run landed in the machine's
+//     shared global store). The run asserts its store path before installing.
+//   - Every pnpm call in the scaffold runs the pinned `SCAFFOLD_PNPM` (the one
+//     the scaffolder itself falls back to), never corepack's floating default.
 //   - Verdaccio is spawned + torn down with process-group discipline: `npx`
 //     spawns the actual `verdaccio` server as a CHILD process, so a plain
 //     `child.kill()` (which only signals npx) orphans the server and leaks
@@ -24,9 +28,10 @@
 // Slow + network-touching (npmjs uplink for every non-internal dep) — gated
 // on RUN_VERDACCIO_SMOKE=1, NOT part of `make test-fast`.
 import { spawn, execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, accessSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, accessSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { INTERNAL_COHORT } from "./lib/pack-cohort.mjs";
 
 if (process.env.RUN_VERDACCIO_SMOKE !== "1") {
@@ -195,6 +200,13 @@ try {
     ...names.map((n) => `--filter=${n}`),
   ]);
 
+  // The scaffold's pnpm, read from the build just made (src/pnpm.ts is the one
+  // place it is written down).
+  const { SCAFFOLD_PNPM } = await import(
+    pathToFileURL(join(import.meta.dirname, "..", "dist", "index.js")).href
+  );
+  console.log(`[verdaccio-smoke] scaffold pnpm: ${SCAFFOLD_PNPM}`);
+
   // 4. Publish the internal cohort for real — `pnpm publish` rewrites every
   // `workspace:*` dependency to the real local version, exactly as a publish
   // to npmjs would.
@@ -226,28 +238,45 @@ try {
 
     // Project `.npmrc` pins the whole workspace install to Verdaccio (env
     // vars alone are NOT honored by pnpm 11's nested resolution — proven in
-    // the ggui reference). Per-run cache/store dirs keep it hermetic. No auth
-    // token needed (verified: `publish: $all` requires none — see above).
-    writeFileSync(
-      join(appDir, ".npmrc"),
-      `registry=${REGISTRY}/
-cache-dir=${join(work, `pnpm-cache-${framework}`)}
-store-dir=${join(work, `pnpm-store-${framework}`)}
-`,
+    // the ggui reference). No auth token needed (verified: `publish: $all`
+    // requires none — see above). `.npmrc` carries nothing else: pnpm 11+
+    // reads only auth and registry from it.
+    writeFileSync(join(appDir, ".npmrc"), `registry=${REGISTRY}/\n`);
+
+    // Per-run store/cache dirs keep the install hermetic. They are pnpm
+    // settings, so they go in the scaffold's pnpm-workspace.yaml.
+    const storeDir = join(work, `pnpm-store-${framework}`);
+    const cacheDir = join(work, `pnpm-cache-${framework}`);
+    const workspaceYaml = join(appDir, "pnpm-workspace.yaml");
+    if (/^(storeDir|cacheDir):/m.test(readFileSync(workspaceYaml, "utf8"))) {
+      throw new Error(`[verdaccio-smoke] ${workspaceYaml} already sets storeDir/cacheDir; the smoke will not override a template's setting`);
+    }
+    appendFileSync(
+      workspaceYaml,
+      `\n# verdaccio-smoke: per-run store and cache\nstoreDir: ${JSON.stringify(storeDir)}\ncacheDir: ${JSON.stringify(cacheDir)}\n`,
     );
+    const pnpm = (args) => sh("corepack", [SCAFFOLD_PNPM, ...args], { cwd: appDir });
+    const storePath = execFileSync("corepack", [SCAFFOLD_PNPM, "store", "path"], {
+      cwd: appDir,
+      encoding: "utf8",
+    }).trim();
+    if (!storePath.startsWith(storeDir)) {
+      throw new Error(`[verdaccio-smoke] pnpm store path is ${storePath}, not under the per-run ${storeDir}`);
+    }
+    console.log(`[verdaccio-smoke] ${framework}: pnpm store ${storePath}`);
 
     // The golden path's bootstrap step — production web builds are gated on it.
     console.log(`[verdaccio-smoke] bootstrap ${framework}`);
     sh("node", ["scripts/bootstrap.mjs", "--yes"], { cwd: appDir });
 
     console.log(`[verdaccio-smoke] installing ${framework}`);
-    sh("corepack", ["pnpm", "install"], { cwd: appDir });
+    pnpm(["install"]);
     console.log(`[verdaccio-smoke] typecheck ${framework}`);
-    sh("corepack", ["pnpm", "-r", "typecheck"], { cwd: appDir }); // workspace packages (mcps/*, web)
-    sh("corepack", ["pnpm", "typecheck"], { cwd: appDir }); // root worker (not a workspace member of `-r`)
+    pnpm(["-r", "typecheck"]); // workspace packages (mcps/*, web)
+    pnpm(["typecheck"]); // root worker (not a workspace member of `-r`)
     console.log(`[verdaccio-smoke] build ${framework}`);
-    sh("corepack", ["pnpm", "-r", "build"], { cwd: appDir });
-    sh("corepack", ["pnpm", "build"], { cwd: appDir }); // root build → guuey.worker.js
+    pnpm(["-r", "build"]);
+    pnpm(["build"]); // root build → guuey.worker.js
     accessSync(join(appDir, "guuey.worker.js"));
     console.log(`\n✓ ${framework} scaffold (via real Verdaccio npx resolution) builds clean\n`);
   }
