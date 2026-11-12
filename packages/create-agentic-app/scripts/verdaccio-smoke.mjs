@@ -234,13 +234,18 @@ try {
 
   // 5. Scaffold + install + build each framework via the REAL npx-resolution
   // path (npx fetches `@guuey/create-agentic-app` itself from the registry).
+  // `--no-install`: the scaffolder's own default install runs silently, before
+  // the project's registry pin and per-run store exist, so it resolved from
+  // npmjs into the machine's global store and left a lockfile whose integrity
+  // the Verdaccio tarballs then failed (measured 11-12). The install below is
+  // the one this smoke proves.
   for (const framework of FRAMEWORKS) {
     const appDir = join(work, `app-${framework}`);
     const npmCache = join(work, `npm-cache-${framework}`);
     console.log(`[verdaccio-smoke] scaffolding ${framework} → ${appDir}`);
     sh(
       "npx",
-      ["-y", "--registry", REGISTRY, "@guuey/create-agentic-app", appDir, "--framework", framework, "--name", "smoke-app", "--no-git"],
+      ["-y", "--registry", REGISTRY, "@guuey/create-agentic-app", appDir, "--framework", framework, "--name", "smoke-app", "--no-git", "--no-install"],
       {
         env: {
           ...process.env,
