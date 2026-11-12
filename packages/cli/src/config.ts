@@ -45,16 +45,6 @@ export const DEFAULT_API_URL = 'https://api.us-east-1.guuey.com/v1';
 /** Default WebSocket URL for end-user session events (API Gateway WS). */
 export const DEFAULT_WS_URL = 'wss://ws.guuey.com/v1';
 
-/**
- * Default WebSocket URL for the dev-link bridge (`guuey dev` CLI ↔ pod).
- * Path B: replaces the old API Gateway WS at `wss://ws.guuey.com/v1` with
- * the EKS bridge-gateway pod's Ingress.
- */
-export const DEFAULT_BRIDGE_URL = 'wss://mcp.guuey.com/bridge-ws';
-
-/** Default MCP endpoint URL */
-export const DEFAULT_MCP_URL = 'https://mcp.guuey.com/v1';
-
 /** Override config file path via --config flag. Set from CLI entry point. */
 let configFileOverride: string | null = null;
 
@@ -278,6 +268,11 @@ export interface ResolvedConfig {
   host: string;
   apiKey?: string;
   appId?: string;
+  /**
+   * Dev-link bridge WebSocket URL (`guuey dev` ↔ pod). Set only by
+   * `GUUEY_BRIDGE_URL` or a sandbox `amplify_outputs.json`: the
+   * bridge-gateway is not deployed, so there is no public default.
+   */
   bridgeUrl?: string;
   /** Platform WebSocket URL (for session events) */
   wsUrl?: string;
@@ -285,7 +280,10 @@ export interface ResolvedConfig {
   renderUrl?: string;
   /** App config API URL */
   appConfigUrl?: string;
-  /** MCP endpoint URL */
+  /**
+   * MCP endpoint URL. Set only by `GUUEY_MCP_URL` or a sandbox
+   * `amplify_outputs.json`; there is no public default host.
+   */
   mcpUrl?: string;
   /** REST API endpoint URL (for BYOK etc.) */
   apiUrl?: string;
@@ -317,15 +315,12 @@ export function resolveConfig(): ResolvedConfig {
     host: process.env.GUUEY_HOST ?? global.host ?? DEFAULT_ENDPOINT,
     apiKey: process.env.GUUEY_API_KEY ?? global.apiKey,
     appId: process.env.GUUEY_APP_ID ?? project?.appId ?? global.appId,
-    bridgeUrl:
-      process.env.GUUEY_BRIDGE_URL ??
-      amplify.bridgeWebSocketUrl ??
-      DEFAULT_BRIDGE_URL,
+    bridgeUrl: process.env.GUUEY_BRIDGE_URL ?? amplify.bridgeWebSocketUrl,
     wsUrl:
       process.env.GUUEY_WS_URL ?? amplify.websocketUrl ?? DEFAULT_WS_URL,
     renderUrl: process.env.GUUEY_RENDER_URL ?? amplify.renderUrl,
     appConfigUrl: process.env.GGUI_APP_CONFIG_URL ?? amplify.appConfigUrl,
-    mcpUrl: process.env.GUUEY_MCP_URL ?? amplify.mcpUrl ?? DEFAULT_MCP_URL,
+    mcpUrl: process.env.GUUEY_MCP_URL ?? amplify.mcpUrl,
     apiUrl: process.env.GUUEY_API_URL ?? amplify.apiUrl ?? DEFAULT_API_URL,
     platformUrl: process.env.GGUI_PLATFORM_URL ?? amplify.platformUrl,
     portalUrl: process.env.GGUI_PORTAL_URL ?? amplify.portalUrl,
