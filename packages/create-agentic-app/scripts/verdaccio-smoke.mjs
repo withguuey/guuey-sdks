@@ -52,8 +52,8 @@ const REGISTRY = `http://${HOST}:${PORT}`;
 // Single-sourced publish cohort (`./lib/pack-cohort.mjs`, shared with
 // scaffold-smoke.mjs, the clean-room run-gate.mjs and dev-env-e2e.mjs):
 // every internal package a scaffolded app depends on, directly or
-// transitively (@guuey/cli depends on the silverprotocol facet packages +
-// create-agentic-app itself).
+// transitively (@guuey/cli depends on create-agentic-app itself; the
+// @silverprotocol/* packages it also uses come from npm, through the proxy).
 const INTERNAL = INTERNAL_COHORT;
 const FRAMEWORKS = ["claude-agent-sdk", "openai-agents-sdk"];
 
@@ -116,18 +116,20 @@ async function waitForReady(url, deadlineMs, child, dump) {
   throw new Error(`verdaccio never became ready at ${url}. Output:\n${dump().slice(-3000)}`);
 }
 
-// 1. Temp verdaccio config: `@guuey/*` + `@silverprotocol/*` are LOCAL-only
+// 1. Temp verdaccio config: `@guuey/*` is LOCAL-only
 // publish/access (no uplink fallthrough — a fallthrough to the real npmjs
 // prerelease of these names, if one ever exists, would silently false-pass
 // the gate), no auth required (verified empirically: `publish: $all` lets
 // pnpm publish through with zero auth config — no htpasswd/token dance
-// needed for a throwaway smoke registry). Everything else proxies to npmjs.
-// A cohort member outside those two scopes (the unscoped `guuey` forwarder)
-// gets its own local-only entry, derived from the cohort, so a new one cannot
-// fall through to `'**'` (no publish there: verdaccio answers 401).
+// needed for a throwaway smoke registry). Everything else proxies to npmjs,
+// `@silverprotocol/*` included: it is consumed from npm and is not in the
+// cohort, so a local-only rule for it answered 404 on every install.
+// A cohort member outside `@guuey/*` (the unscoped `guuey` forwarder) gets its
+// own local-only entry, derived from the cohort, so a new one cannot fall
+// through to `'**'` (no publish there: verdaccio answers 401).
 const unscopedCohort = INTERNAL.map(
   (dir) => JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).name,
-).filter((name) => !name.startsWith("@guuey/") && !name.startsWith("@silverprotocol/"));
+).filter((name) => !name.startsWith("@guuey/"));
 const storageDir = join(work, "storage");
 mkdirSync(storageDir, { recursive: true });
 const configPath = join(work, "config.yaml");
@@ -139,9 +141,6 @@ uplinks:
     url: https://registry.npmjs.org/
 packages:
   '@guuey/*':
-    access: $all
-    publish: $all
-  '@silverprotocol/*':
     access: $all
     publish: $all
 ${unscopedCohort.map((name) => `  '${name}':\n    access: $all\n    publish: $all\n`).join("")}  '**':
