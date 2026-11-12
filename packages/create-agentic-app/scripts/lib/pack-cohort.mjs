@@ -24,7 +24,7 @@ import { join, resolve } from "node:path";
 // lives at <pkg>/scripts/lib/), NOT repo-root-relative: the same tree is
 // `oss/packages/*` in the guuey monorepo and `packages/*` in the public
 // guuey-sdks mirror — a hardcoded prefix broke the mirror's cold-clone smoke
-// (nonexistent cwd surfaces as a misleading `spawnSync corepack ENOENT`).
+// (nonexistent cwd surfaces as a misleading `spawnSync pnpm ENOENT`).
 const PACKAGES_ROOT = resolve(import.meta.dirname, "../../..");
 
 /** Is this sibling directory a publishable guuey package (`@guuey/*` or the bare `guuey` forwarder)? */
@@ -49,7 +49,11 @@ export const INTERNAL_COHORT = readdirSync(PACKAGES_ROOT, { withFileTypes: true 
 export function packInternalCohort(destDir) {
   const tarballs = {};
   for (const dir of INTERNAL_COHORT) {
-    const out = execFileSync("corepack", ["pnpm", "pack", "--pack-destination", destDir], {
+    // Plain `pnpm`, never `corepack pnpm`: each package's prepack runs
+    // `pnpm build`, and under corepack's environment a PATH pnpm of another
+    // version refuses to switch to the workspace's pinned packageManager and
+    // exits 1 (measured for the same nesting in verdaccio-smoke, guuey#2880).
+    const out = execFileSync("pnpm", ["pack", "--pack-destination", destDir], {
       cwd: dir,
       encoding: "utf8",
     })
