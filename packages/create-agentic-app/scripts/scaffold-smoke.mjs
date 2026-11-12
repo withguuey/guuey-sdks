@@ -9,6 +9,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { packInternalCohort, applyPackOverrides } from "./lib/pack-cohort.mjs";
 import { installWithRetry } from "./lib/install-retry.mjs";
 
@@ -18,6 +19,13 @@ const pkgRoot = resolve(import.meta.dirname, "..");
 const work = mkdtempSync(join(tmpdir(), "caa-smoke-"));
 const sh = (cmd, args, opts = {}) =>
   execFileSync(cmd, args, { stdio: "inherit", cwd: pkgRoot, ...opts });
+
+// Every pnpm call in a scaffold runs the pinned `SCAFFOLD_PNPM` (the one the
+// scaffolder itself falls back to), read from this package's build, which the
+// smoke already needs for dist/cli.js. A scaffold pins no packageManager, so a
+// bare `corepack pnpm` would run whatever corepack's default is that day.
+const { SCAFFOLD_PNPM } = await import(pathToFileURL(join(pkgRoot, "dist", "index.js")).href);
+console.log(`[scaffold-smoke] scaffold pnpm: ${SCAFFOLD_PNPM}`);
 
 // The work dir holds the packed cohort and six installed apps (several GB):
 // it is removed on every exit, pass or fail.
@@ -44,6 +52,10 @@ try {
       "--name",
       "smoke-app",
       "--no-git",
+      // The scaffolder's default install runs silently, against the published
+      // cohort, before step 4 points the app at the packed tarballs; the
+      // install in step 5 is the one this smoke proves (guuey#2880).
+      "--no-install",
     ]);
 
     // 3. The golden path's next step: bootstrap (local phase, no account, no
@@ -57,7 +69,7 @@ try {
     // guuey#1191: retries only a transient registry state (see scripts/lib/install-retry.mjs).
     installWithRetry({
       run: () =>
-        execFileSync("corepack", ["pnpm", "install", "--no-frozen-lockfile"], {
+        execFileSync("corepack", [SCAFFOLD_PNPM, "install", "--no-frozen-lockfile"], {
           cwd: appDir,
           stdio: ["inherit", "inherit", "pipe"],
           encoding: "utf8",
@@ -72,11 +84,11 @@ try {
     // A resolution check is deterministic where a full dev-stack boot in CI
     // would be flaky; `pnpm exec` fails loudly when the bin has no provider.
     for (const bin of ["ggui", "guuey", "tsup"]) {
-      sh("corepack", ["pnpm", "exec", bin, "--version"], { cwd: appDir });
+      sh("corepack", [SCAFFOLD_PNPM, "exec", bin, "--version"], { cwd: appDir });
     }
-    sh("corepack", ["pnpm", "-r", "typecheck"], { cwd: appDir }); // workspace packages (mcps/*, web)
-    sh("corepack", ["pnpm", "typecheck"], { cwd: appDir }); // root worker (not a workspace member of `-r`)
-    sh("corepack", ["pnpm", "-r", "build"], { cwd: appDir });
+    sh("corepack", [SCAFFOLD_PNPM, "-r", "typecheck"], { cwd: appDir }); // workspace packages (mcps/*, web)
+    sh("corepack", [SCAFFOLD_PNPM, "typecheck"], { cwd: appDir }); // root worker (not a workspace member of `-r`)
+    sh("corepack", [SCAFFOLD_PNPM, "-r", "build"], { cwd: appDir });
     // Root build output: claude bundles self-contained guuey.worker.js; openai
     // emits worker.js (external deps, guuey.json#worker — the guuey.worker.js
     // name means skip-install to the image build); google-adk emits the
@@ -87,7 +99,7 @@ try {
         : framework === "openai-agents-sdk"
           ? "worker.js"
           : "guuey.worker.js";
-    sh("corepack", ["pnpm", "build"], { cwd: appDir });
+    sh("corepack", [SCAFFOLD_PNPM, "build"], { cwd: appDir });
     sh("node", ["-e", `require('fs').accessSync('${expectedOut}')`], { cwd: appDir });
     console.log(`\n✓ ${template}/${framework} scaffold builds clean\n`);
   }
