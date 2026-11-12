@@ -187,12 +187,17 @@ try {
 
   // 3. Build the cohort so `dist/` is fresh before packing (turbo's
   // dependsOn:['^build'] pulls in the transitive internal deps too).
+  // The repo's own steps (this build, the publish below) run plain `pnpm`,
+  // which switches itself to the repo's pinned packageManager. Under
+  // `corepack pnpm`, turbo's child `pnpm run build` inherits corepack's
+  // environment, and a PATH pnpm of another version then refuses to switch
+  // and exits 1 on every cache miss (measured 11-12: Homebrew pnpm 11.2.2
+  // against the pinned 12.16.0).
   const names = INTERNAL.map(
     (dir) => JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).name,
   );
   console.log(`[verdaccio-smoke] building cohort: ${names.join(", ")}`);
-  sh("corepack", [
-    "pnpm",
+  sh("pnpm", [
     "exec",
     "turbo",
     "run",
@@ -213,7 +218,7 @@ try {
   for (const dir of INTERNAL) {
     const name = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).name;
     console.log(`[verdaccio-smoke] publishing ${name} (${dir})`);
-    sh("corepack", ["pnpm", "publish", "--registry", REGISTRY, "--no-git-checks", "--access", "public"], {
+    sh("pnpm", ["publish", "--registry", REGISTRY, "--no-git-checks", "--access", "public"], {
       cwd: dir,
     });
   }
