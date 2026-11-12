@@ -42,8 +42,12 @@ if (process.env.RUN_VERDACCIO_SMOKE !== "1") {
 }
 
 const repoRoot = resolve(import.meta.dirname, "../../../..");
-const REGISTRY = "http://localhost:4874";
+// Loopback only, by address: the registry hands this Mac packages it then
+// installs and builds, and most of them are publish-$all, so nothing off this
+// machine may reach it. `localhost` is not used, since it can resolve to ::1.
+const HOST = "127.0.0.1";
 const PORT = 4874;
+const REGISTRY = `http://${HOST}:${PORT}`;
 
 // Single-sourced publish cohort (`./lib/pack-cohort.mjs`, shared with
 // scaffold-smoke.mjs, the clean-room run-gate.mjs and dev-env-e2e.mjs):
@@ -146,7 +150,7 @@ ${unscopedCohort.map((name) => `  '${name}':\n    access: $all\n    publish: $al
 server:
   keepAliveTimeout: 60
 max_body_size: 50mb
-listen: 0.0.0.0:${PORT}
+listen: ${HOST}:${PORT}
 log:
   type: stdout
   format: pretty
@@ -158,7 +162,7 @@ log:
 // server child inherits it) so teardown can SIGTERM the whole tree.
 console.log(`[verdaccio-smoke] booting verdaccio on :${PORT}`);
 let verdaccioLog = "";
-const verdaccio = spawn("npx", ["-y", "verdaccio@6", "--config", configPath, "--listen", String(PORT)], {
+const verdaccio = spawn("npx", ["-y", "verdaccio@6", "--config", configPath, "--listen", `${HOST}:${PORT}`], {
   cwd: work,
   stdio: ["ignore", "pipe", "pipe"],
   detached: true,
