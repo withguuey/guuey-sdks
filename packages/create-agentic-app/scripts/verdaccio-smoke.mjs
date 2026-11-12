@@ -118,6 +118,12 @@ async function waitForReady(url, deadlineMs, child, dump) {
 // the gate), no auth required (verified empirically: `publish: $all` lets
 // pnpm publish through with zero auth config — no htpasswd/token dance
 // needed for a throwaway smoke registry). Everything else proxies to npmjs.
+// A cohort member outside those two scopes (the unscoped `guuey` forwarder)
+// gets its own local-only entry, derived from the cohort, so a new one cannot
+// fall through to `'**'` (no publish there: verdaccio answers 401).
+const unscopedCohort = INTERNAL.map(
+  (dir) => JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).name,
+).filter((name) => !name.startsWith("@guuey/") && !name.startsWith("@silverprotocol/"));
 const storageDir = join(work, "storage");
 mkdirSync(storageDir, { recursive: true });
 const configPath = join(work, "config.yaml");
@@ -134,7 +140,7 @@ packages:
   '@silverprotocol/*':
     access: $all
     publish: $all
-  '**':
+${unscopedCohort.map((name) => `  '${name}':\n    access: $all\n    publish: $all\n`).join("")}  '**':
     access: $all
     proxy: npmjs
 server:
