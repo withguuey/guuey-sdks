@@ -51,6 +51,16 @@ import {
   type CliDirs,
   type PriorMemoryRecord,
 } from "./claude-options.js";
+import {
+  CLAUDE_SPARE_PLACEHOLDER_TOKEN,
+  SPARE_PARKING_DIR,
+  claimOptionsOf,
+  delegatingCanUseTool,
+  spareKeyOf,
+  spareMismatch,
+  type ParkedSpare,
+  type PrewarmFn,
+} from "./claude-spare.js";
 import { resolveSdkVersion } from "../sdk-version.js";
 import { MODEL_TEXT_INPUT_KIND_CAPABILITIES } from "@guuey/worker";
 import { reportToolGateErrors } from "../mcp-tool-gates.js";
@@ -324,6 +334,7 @@ export async function runInvoke(
   emit: Emitter,
   query: QueryFn,
   timing: ClaudeTurnTiming = {},
+  takeSpare?: () => Promise<ParkedSpare | undefined>,
 ): Promise<void> {
   // The SDK-version handshake (§8 item B, additive-optional) — ALWAYS the
   // first event of this invoke's fd-3 stream, before the framework gate or any
@@ -369,56 +380,182 @@ export async function runInvoke(
     return;
   }
 
-  // The CLI's own state roots for this invoke: one fresh root made here,
-  // holding the config, cache and XDG roots, and removed when the turn ends.
-  // No `.claude.json` an earlier turn wrote is read by this one
-  // (BuildOptionsContext.cliDirs). The root is the platform's fixed path when
-  // it names one (CLAUDE_CLI_ROOT_ENV); otherwise a random name under this
-  // process's temp dir (in the jail, its per-start tmpfs).
-  //
-  // B3 (hardening's B-2, R23): when the jail has bound the thread directory
-  // in, bwrap has already made the fixed root's `config/projects/-session`.
-  // The host then CHECKS that tree, never makes it: exactly `config/` →
-  // `projects/` → `-session/`, all directories, no link, nothing else. A fixed
-  // root that is absent is made by an exclusive mkdir, as before. Either way
-  // the host makes `cache/` and the three XDG roots itself, exclusively.
+  // guuey#3407 leg 5: a spare parked at boot serves this turn only when the
+  // turn names no CLI session and its fixed options agree with the spare's;
+  // otherwise the spare is closed and the turn starts cold, as before.
+  // A discarded spare's root is removed before this turn makes its own: with
+  // the platform's fixed root (CLAUDE_CLI_ROOT_ENV) both are the same path.
+  let parked = takeSpare !== undefined ? await takeSpare() : undefined;
+  if (parked !== undefined && session !== undefined) {
+    discardSpare(parked, "the turn names a CLI session");
+    parked = undefined;
+  }
+  if (parked !== undefined) {
+    const why = spareMismatchFor(parked, snapshot, invoke, runtime);
+    if (why !== undefined) {
+      discardSpare(parked, why);
+      parked = undefined;
+    }
+  }
+
+  // The CLI's own state roots for this invoke (BuildOptionsContext.cliDirs):
+  // the claimed spare's, or one fresh root made here; removed when the turn ends.
+  let made: CliRoot;
+  if (parked !== undefined) {
+    made = { root: parked.root, bound: false, cliDirs: parked.cliDirs };
+  } else {
+    try {
+      made = makeCliRoot();
+    } catch (err) {
+      hello();
+      emit.error(`@guuey/host: could not make the CLI's per-invoke state directories: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+  }
+  try {
+    await runClaudeTurn(snapshot, invoke, runtime, emit, query, timing, made.cliDirs, hello, parked);
+  } finally {
+    if (made.bound) removeAroundBind(made.root);
+    else removeCliRoot(made.root);
+  }
+}
+
+/** One turn's CLI state root and the five roots under it. */
+interface CliRoot {
+  root: string;
+  /** Whether the root is the jail's bound thread directory tree (B3 R23). */
+  bound: boolean;
+  cliDirs: CliDirs;
+}
+
+/**
+ * Make a fresh CLI state root holding the config, cache and XDG roots. No
+ * `.claude.json` an earlier turn wrote is read by the CLI that runs in it
+ * (BuildOptionsContext.cliDirs). The root is the platform's fixed path when it
+ * names one (CLAUDE_CLI_ROOT_ENV); otherwise a random name under this process's
+ * temp dir (in the jail, its per-start tmpfs).
+ *
+ * B3 (hardening's B-2, R23): when the jail has bound the thread directory in,
+ * bwrap has already made the fixed root's `config/projects/-session`. The host
+ * then CHECKS that tree, never makes it: exactly `config/` → `projects/` →
+ * `-session/`, all directories, no link, nothing else. A fixed root that is
+ * absent is made by an exclusive mkdir. Either way the host makes `cache/` and
+ * the three XDG roots itself, exclusively. Throws when a root cannot be made.
+ */
+function makeCliRoot(): CliRoot {
   let root: string;
   let bound = false;
-  let cliDirs: CliDirs;
+  const fixedRoot = process.env[CLAUDE_CLI_ROOT_ENV];
+  if (fixedRoot !== undefined && fixedRoot !== "") {
+    if (fixedRoot !== CLAUDE_CLI_FIXED_ROOT) {
+      throw new Error(`${CLAUDE_CLI_ROOT_ENV} may only name ${CLAUDE_CLI_FIXED_ROOT}`);
+    }
+    bound = isBoundRoot(fixedRoot);
+    if (!bound) mkdirSync(fixedRoot, { mode: 0o700 });
+    root = fixedRoot;
+  } else {
+    root = mkdtempSync(join(tmpdir(), CLI_ROOT_PREFIX));
+  }
+  const cliDirs: CliDirs = {
+    config: join(root, "config"),
+    cache: join(root, "cache"),
+    xdgConfig: join(root, "xdg-config"),
+    xdgData: join(root, "xdg-data"),
+    xdgState: join(root, "xdg-state"),
+  };
+  for (const [name, dir] of Object.entries(cliDirs)) {
+    if (bound && name === "config") continue;
+    mkdirSync(dir, { mode: 0o700 });
+  }
+  return { root, bound, cliDirs };
+}
+
+/**
+ * Start a Claude CLI as a parked spare before any turn (guuey#3407 leg 5): the
+ * options a turn of `template` would get, with no MCP server, the placeholder
+ * credential ({@link CLAUDE_SPARE_PLACEHOLDER_TOKEN}), a permission callback
+ * the claiming turn binds, and a constant parking directory under a fresh CLI
+ * root. Never throws: a spare that cannot start is reported on stderr, and
+ * every turn then starts cold.
+ */
+export async function prewarmClaudeSpare(
+  snapshot: { framework?: string } & Parameters<typeof buildOptions>[0],
+  template: HostInvoke,
+  runtime: HostRuntime,
+  prewarm: PrewarmFn,
+  timing: ClaudeTurnTiming = {},
+): Promise<ParkedSpare | undefined> {
+  const skip = (why: string): undefined => {
+    process.stderr.write(`[guuey] Claude spare not started: ${why}\n`);
+    return undefined;
+  };
+  if (snapshot.framework !== undefined && snapshot.framework !== CLAUDE_FRAMEWORK) return skip("the agent's framework is not Claude");
+  // The platform binds the turn on the model-egress side, so a spare runs only behind its base URL.
+  if (runtime.baseUrl === undefined) return skip("no model-egress base URL");
+  let made: CliRoot;
   try {
-    const fixedRoot = process.env[CLAUDE_CLI_ROOT_ENV];
-    if (fixedRoot !== undefined && fixedRoot !== "") {
-      if (fixedRoot !== CLAUDE_CLI_FIXED_ROOT) {
-        throw new Error(`${CLAUDE_CLI_ROOT_ENV} may only name ${CLAUDE_CLI_FIXED_ROOT}`);
-      }
-      bound = isBoundRoot(fixedRoot);
-      if (!bound) mkdirSync(fixedRoot, { mode: 0o700 });
-      root = fixedRoot;
-    } else {
-      root = mkdtempSync(join(tmpdir(), CLI_ROOT_PREFIX));
-    }
-    cliDirs = {
-      config: join(root, "config"),
-      cache: join(root, "cache"),
-      xdgConfig: join(root, "xdg-config"),
-      xdgData: join(root, "xdg-data"),
-      xdgState: join(root, "xdg-state"),
-    };
-    for (const [name, dir] of Object.entries(cliDirs)) {
-      if (bound && name === "config") continue;
-      mkdirSync(dir, { mode: 0o700 });
-    }
+    made = makeCliRoot();
   } catch (err) {
-    hello();
-    emit.error(`@guuey/host: could not make the CLI's per-invoke state directories: ${err instanceof Error ? err.message : String(err)}`);
-    return;
+    return skip(`could not make the CLI's state directories: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (made.bound) {
+    removeAroundBind(made.root);
+    return skip("the CLI root is a bound thread directory");
   }
   try {
-    await runClaudeTurn(snapshot, invoke, runtime, emit, query, timing, cliDirs, hello);
-  } finally {
-    if (bound) removeAroundBind(root);
-    else removeCliRoot(root);
+    const parking = join(made.root, SPARE_PARKING_DIR);
+    mkdirSync(parking, { mode: 0o700 });
+    const spareRuntime: HostRuntime = {
+      baseUrl: runtime.baseUrl,
+      authToken: CLAUDE_SPARE_PLACEHOLDER_TOKEN,
+      listCredentials: () => [],
+    };
+    const built = buildOptions(snapshot, turnOptionsContext(template, spareRuntime, made.cliDirs));
+    if (built.permissionMode !== undefined) throw new Error("the agent pins a permission mode");
+    const { cwd: _cwd, additionalDirectories: _dirs, ...fixed } = built;
+    const permission = delegatingCanUseTool();
+    const spare = await prewarm({
+      options: { ...fixed, cwd: parking, canUseTool: permission.canUseTool },
+      initializeTimeoutMs: timing.startupDeadlineMs ?? CLAUDE_STARTUP_DEADLINE_MS,
+    });
+    let exited = false;
+    void spare.exited.then(() => {
+      exited = true;
+    });
+    return {
+      spare,
+      root: made.root,
+      cliDirs: made.cliDirs,
+      key: spareKeyOf(built),
+      bindCanUseTool: permission.bind,
+      exited: () => exited,
+    };
+  } catch (err) {
+    removeCliRoot(made.root);
+    return skip(err instanceof Error ? err.message : String(err));
   }
+}
+
+/** Why this turn cannot claim `parked`, built with the spare's own state roots; undefined when it can. */
+function spareMismatchFor(
+  parked: ParkedSpare,
+  snapshot: Parameters<typeof buildOptions>[0],
+  invoke: HostInvoke,
+  runtime: HostRuntime,
+): string | undefined {
+  try {
+    return spareMismatch(parked, buildOptions(snapshot, turnOptionsContext(invoke, runtime, parked.cliDirs)));
+  } catch {
+    // The turn's own path reports the same failure as its error.
+    return "the turn's options could not be built";
+  }
+}
+
+/** Close a spare no turn will claim, and remove its state root. Reported on stderr. */
+function discardSpare(parked: ParkedSpare, why: string): void {
+  process.stderr.write(`[guuey] Claude spare not used: ${why}\n`);
+  parked.spare.close();
+  removeCliRoot(parked.root);
 }
 
 /** A UUID in its canonical text form (any version): the only session id the host runs (B3 R5). */
@@ -500,6 +637,7 @@ async function runClaudeTurn(
   timing: ClaudeTurnTiming,
   cliDirs: CliDirs,
   hello: HelloOnce,
+  parked: ParkedSpare | undefined,
 ): Promise<void> {
   const session = invoke.cliSession;
   let options: Options;
@@ -508,41 +646,7 @@ async function runClaudeTurn(
   let content: AnthropicUserBlock[];
   let block: HelloCliSession | undefined;
   try {
-    ctx = {
-      input: invoke.input,
-      identity: invoke.identity,
-      fs: invoke.fs,
-      cliDirs,
-      ...(invoke.fsBound !== undefined ? { fsBound: invoke.fsBound } : {}),
-      // B3 (R3): a resumed session already holds the conversation, so the turn
-      // carries no history section, even when the invoke sent one.
-      history: session?.mode === "resume" ? [] : invoke.history,
-      listCredentials: runtime.listCredentials,
-      ...(runtime.apiKey !== undefined ? { apiKey: runtime.apiKey } : {}),
-      ...(runtime.baseUrl !== undefined ? { baseUrl: runtime.baseUrl } : {}),
-      ...(runtime.authToken !== undefined ? { authToken: runtime.authToken } : {}),
-      ...(invoke.priorMemory !== undefined ? { priorMemory: invoke.priorMemory } : {}),
-      ...(invoke.priorState !== undefined ? { priorState: invoke.priorState } : {}),
-      ...(invoke.userMemory !== undefined ? { userMemory: invoke.userMemory } : {}),
-      ...(invoke.memoryAttached !== undefined ? { memoryAttached: invoke.memoryAttached } : {}),
-      ...(invoke.profileAccess !== undefined ? { profileAccess: invoke.profileAccess } : {}),
-      ...(invoke.profileSections !== undefined ? { profileSections: invoke.profileSections } : {}),
-      ...(invoke.resourceCount !== undefined ? { resourceCount: invoke.resourceCount } : {}),
-      ...(invoke.gguiAttached !== undefined ? { gguiAttached: invoke.gguiAttached } : {}),
-      ...(invoke.clientCatalogs !== undefined ? { clientCatalogs: invoke.clientCatalogs } : {}),
-      // guuey#1183 — the first-impression push reaches buildOptions: it renders
-      // the verbatim handshake section AND turns extended thinking off for this
-      // invoke (the model-egress force is refused beside thinking). Dropped from
-      // this ctx since the push landed (30c0db0ad): the OpenAI and ADK paths
-      // read `invoke.firstImpression` directly, the Claude path only through
-      // here — so on claude-agent-sdk neither the section nor the knob ever ran.
-      ...(invoke.firstImpression !== undefined ? { firstImpression: invoke.firstImpression } : {}),
-      ...(invoke.mcpAvailability !== undefined ? { mcpAvailability: invoke.mcpAvailability } : {}),
-      // The Router's per-turn tool withholds → `disallowedTools` (servers attached this turn only).
-      ...(invoke.withheldTools !== undefined ? { withheldTools: invoke.withheldTools } : {}),
-      // The welcome card the Router already drew → its section in the turn's directive block.
-      ...(invoke.firstImpressionShown !== undefined ? { firstImpressionShown: invoke.firstImpressionShown } : {}),
-    };
+    ctx = turnOptionsContext(invoke, runtime, cliDirs);
     options = buildOptions(snapshot, ctx);
     turnContext = claudeTurnContext(snapshot, ctx);
     reportToolGateErrors(snapshot.tools);
@@ -587,21 +691,27 @@ async function runClaudeTurn(
     endInput = resolve;
   });
   let sendMessage = false;
-  async function* userMessages(): AsyncGenerator<SDKUserMessage> {
-    await gate;
-    if (!sendMessage) return;
-    // The same blocks the hello's `promptSha` hashed (B3 R-2): one array.
-    yield {
-      type: "user",
-      message: { role: "user", content },
-      parent_tool_use_id: null,
-    };
-    await inputDone;
+  // Only the stream handed to the CLI that runs the turn yields: a refused
+  // spare claim leaves its stream waiting, and it ends without a message.
+  let activeStream = 0;
+  function userMessages(): AsyncGenerator<SDKUserMessage> {
+    const stream = ++activeStream;
+    return (async function* (): AsyncGenerator<SDKUserMessage> {
+      await gate;
+      if (!sendMessage || stream !== activeStream) return;
+      // The same blocks the hello's `promptSha` hashed (B3 R-2): one array.
+      yield {
+        type: "user",
+        message: { role: "user", content },
+        parent_tool_use_id: null,
+      };
+      await inputDone;
+    })();
   }
 
   let q: QueryHandle;
   try {
-    q = query({ prompt: userMessages(), options });
+    q = parked !== undefined ? await claimSpare(parked, options, userMessages, query, timing) : query({ prompt: userMessages(), options });
   } catch (err) {
     emit.error(err instanceof Error ? err.message : String(err));
     return;
@@ -679,6 +789,86 @@ async function runClaudeTurn(
     return;
   }
   emit.done(done?.result ?? "", done?.stopReason ?? "end_turn");
+}
+
+/** The option-building context of one invoke: its own fields, the boot runtime's credential, and the turn's state roots. */
+function turnOptionsContext(invoke: HostInvoke, runtime: HostRuntime, cliDirs: CliDirs): BuildOptionsContext {
+  return {
+    input: invoke.input,
+    identity: invoke.identity,
+    fs: invoke.fs,
+    cliDirs,
+    ...(invoke.fsBound !== undefined ? { fsBound: invoke.fsBound } : {}),
+    // B3 (R3): a resumed session already holds the conversation, so the turn
+    // carries no history section, even when the invoke sent one.
+    history: invoke.cliSession?.mode === "resume" ? [] : invoke.history,
+    listCredentials: runtime.listCredentials,
+    ...(runtime.apiKey !== undefined ? { apiKey: runtime.apiKey } : {}),
+    ...(runtime.baseUrl !== undefined ? { baseUrl: runtime.baseUrl } : {}),
+    ...(runtime.authToken !== undefined ? { authToken: runtime.authToken } : {}),
+    ...(invoke.priorMemory !== undefined ? { priorMemory: invoke.priorMemory } : {}),
+    ...(invoke.priorState !== undefined ? { priorState: invoke.priorState } : {}),
+    ...(invoke.userMemory !== undefined ? { userMemory: invoke.userMemory } : {}),
+    ...(invoke.memoryAttached !== undefined ? { memoryAttached: invoke.memoryAttached } : {}),
+    ...(invoke.profileAccess !== undefined ? { profileAccess: invoke.profileAccess } : {}),
+    ...(invoke.profileSections !== undefined ? { profileSections: invoke.profileSections } : {}),
+    ...(invoke.resourceCount !== undefined ? { resourceCount: invoke.resourceCount } : {}),
+    ...(invoke.gguiAttached !== undefined ? { gguiAttached: invoke.gguiAttached } : {}),
+    ...(invoke.clientCatalogs !== undefined ? { clientCatalogs: invoke.clientCatalogs } : {}),
+    // guuey#1183 — the first-impression push reaches buildOptions: it renders
+    // the verbatim handshake section AND turns extended thinking off for this
+    // invoke (the model-egress force is refused beside thinking). Dropped from
+    // this ctx since the push landed (30c0db0ad): the OpenAI and ADK paths
+    // read `invoke.firstImpression` directly, the Claude path only through
+    // here — so on claude-agent-sdk neither the section nor the knob ever ran.
+    ...(invoke.firstImpression !== undefined ? { firstImpression: invoke.firstImpression } : {}),
+    ...(invoke.mcpAvailability !== undefined ? { mcpAvailability: invoke.mcpAvailability } : {}),
+    // The Router's per-turn tool withholds → `disallowedTools` (servers attached this turn only).
+    ...(invoke.withheldTools !== undefined ? { withheldTools: invoke.withheldTools } : {}),
+    // The welcome card the Router already drew → its section in the turn's directive block.
+    ...(invoke.firstImpressionShown !== undefined ? { firstImpressionShown: invoke.firstImpressionShown } : {}),
+  };
+}
+
+/**
+ * Claim the parked spare for this turn: bind the turn's permission check, send
+ * the claim with the turn's working directories and its gated prompt, and wait
+ * for the CLI's answer. A refused or failed claim closes the spare's Query and
+ * starts this turn cold with `query()` and a fresh prompt stream; the refused
+ * stream never yields. `option_not_applied` means the session already runs
+ * (the SDK's contract), so it is kept, though this host sets no such option.
+ */
+async function claimSpare(
+  parked: ParkedSpare,
+  options: Options,
+  prompt: () => AsyncGenerator<SDKUserMessage>,
+  query: QueryFn,
+  timing: ClaudeTurnTiming,
+): Promise<QueryHandle> {
+  const startupMs = timing.startupDeadlineMs ?? CLAUDE_STARTUP_DEADLINE_MS;
+  const cwd = options.cwd;
+  const check = options.canUseTool;
+  if (cwd === undefined || check === undefined) {
+    // spareMismatch refused these already; the turn's state root is the spare's, so it stays.
+    process.stderr.write("[guuey] Claude spare not used: the turn has no working directory or permission callback\n");
+    parked.spare.close();
+    return query({ prompt: prompt(), options });
+  }
+  let claimed: QueryHandle | undefined;
+  try {
+    parked.bindCanUseTool(check);
+    claimed = parked.spare.claim({ prompt: prompt(), options: claimOptionsOf(cwd, options) });
+    await withDeadline(parked.spare.claimed, startupMs, () => new ClaudeStartupError(`no answer to the spare's claim within ${String(startupMs)} ms`));
+    process.stderr.write("[guuey] Claude spare claimed\n");
+    return claimed;
+  } catch (err) {
+    const why = err instanceof Error ? err.message : String(err);
+    if (claimed !== undefined && why.startsWith("option_not_applied")) return claimed;
+    process.stderr.write(`[guuey] Claude spare not used: the claim failed (${why})\n`);
+    if (claimed !== undefined) claimed.close();
+    else parked.spare.close();
+    return query({ prompt: prompt(), options });
+  }
 }
 
 /** The `error` message of an unconfirmed resume: the protocol's prefix, then what the CLI said first. */

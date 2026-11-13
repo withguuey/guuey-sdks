@@ -14,15 +14,32 @@
  *  (`buildOptions` installs the spawner), never in its environment.
  *  A missing key is NOT fatal at boot — the run path emits a clear `error`
  *  per invoke if neither form is present.
+ *
+ * guuey#3407 leg 5: when the launcher sets `GUUEY_CLAUDE_SPARE` (the spare's
+ * template), a Claude CLI is started here, at boot, as a parked spare holding
+ * no credential, and the first turn that fits it claims it. Unset, nothing is
+ * started and every turn runs exactly as before.
  */
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { prewarm, query } from "@anthropic-ai/claude-agent-sdk";
 import { listCredentials, type Emitter } from "@guuey/worker";
 import type { FrameworkRunner, HostSnapshot, HostTurn } from "../index.js";
-import { runInvoke, type HostRuntime } from "./claude.js";
-import { buildHostContext, type HostBoot } from "../boot-context.js";
+import { prewarmClaudeSpare, runInvoke, type HostRuntime } from "./claude.js";
+import { CLAUDE_SPARE_ENV, parseSpareTemplate, type ParkedSpare } from "./claude-spare.js";
+import { buildHostContext, type HostBoot, type HostBootContext } from "../boot-context.js";
 
 export function createRunner(boot: HostBoot = {}): FrameworkRunner {
   const bootCtx = buildHostContext(process.env, boot.envelope);
+  const spare = boot.snapshot !== undefined ? startSpare(boot.snapshot, bootCtx, process.env[CLAUDE_SPARE_ENV]) : undefined;
+  let spareTaken = false;
+  // The spare serves at most one turn: the first one that takes it.
+  const takeSpare =
+    spare === undefined
+      ? undefined
+      : (): Promise<ParkedSpare | undefined> => {
+          if (spareTaken) return Promise.resolve(undefined);
+          spareTaken = true;
+          return spare;
+        };
   return {
     async runTurn(snapshot: HostSnapshot, turn: HostTurn, emit: Emitter): Promise<void> {
       const runtime: HostRuntime = {
@@ -31,7 +48,22 @@ export function createRunner(boot: HostBoot = {}): FrameworkRunner {
         ...(bootCtx.anthropicBaseUrl !== undefined ? { baseUrl: bootCtx.anthropicBaseUrl } : {}),
         ...(bootCtx.anthropicAuthToken !== undefined ? { authToken: bootCtx.anthropicAuthToken } : {}),
       };
-      await runInvoke(snapshot, turn, runtime, emit, query);
+      await runInvoke(snapshot, turn, runtime, emit, query, {}, takeSpare);
     },
   };
+}
+
+/** Start the parked spare when the launcher asked for one; undefined (the path is off) when it did not. */
+function startSpare(snapshot: HostSnapshot, bootCtx: HostBootContext, raw: string | undefined): Promise<ParkedSpare | undefined> | undefined {
+  if (raw === undefined || raw === "") return undefined;
+  const template = parseSpareTemplate(raw);
+  if (!template.ok) {
+    process.stderr.write(`[guuey] Claude spare not started: ${template.reason}\n`);
+    return undefined;
+  }
+  const runtime: HostRuntime = {
+    listCredentials: () => [],
+    ...(bootCtx.anthropicBaseUrl !== undefined ? { baseUrl: bootCtx.anthropicBaseUrl } : {}),
+  };
+  return prewarmClaudeSpare(snapshot, template.invoke, runtime, prewarm);
 }

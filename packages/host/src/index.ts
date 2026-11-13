@@ -173,7 +173,7 @@ async function main(): Promise<void> {
   // Load ONCE at boot — the pod runs one framework for its whole life, and a
   // missing peer must fail the first turn loudly, not lazily mid-session.
   assertGracefulSupport(framework, process.env.GUUEY_AGENT_ENTRY);
-  const runner = await loadRunner(framework, envelope !== undefined ? { envelope } : {});
+  const runner = await loadRunner(framework, { ...(envelope !== undefined ? { envelope } : {}), snapshot });
 
   for await (const line of lines(process.stdin)) {
     const msg = parseControl(line);

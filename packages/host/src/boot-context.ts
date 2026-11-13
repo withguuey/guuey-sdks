@@ -16,6 +16,7 @@
  * OSS-legal: no guuey-private imports.
  */
 import type { LaunchEnvelope } from "@guuey/worker";
+import type { HostSnapshot } from "./index.js";
 
 /**
  * Parts of the worker boot context: the model credential and the provider base
@@ -49,9 +50,11 @@ export const BUILDER_KEY_LANE_LEGACY_ENV = "legacy-env";
 /** The variable a builder-constructed ADK model reads its key from on that lane (the Gemini key slot). */
 export const LEGACY_GEMINI_KEY_ENV = "GEMINI_API_KEY";
 
-/** What the boot hands every runner: the envelope it read, if any. */
+/** What the boot hands every runner: the envelope it read, if any, and the agent snapshot it booted from. */
 export interface HostBoot {
   envelope?: LaunchEnvelope;
+  /** The boot snapshot, for a runner that prepares before its first turn (the Claude runner's parked spare, guuey#3407). */
+  snapshot?: HostSnapshot;
 }
 
 function nonEmpty(value: string | undefined): string | undefined {
