@@ -25,7 +25,6 @@ import type {
   UnknownControl,
   UnknownEvent,
   TextEvent,
-  WorkerEvent,
   WorkerHelloEvent,
   McpAvailability,
   McpAvailabilityState,
@@ -468,22 +467,22 @@ export function parseControl(line: string): ControlMessage {
   }
 }
 
-export function isText(e: WorkerEvent): e is TextEvent {
+export function isText(e: ParsedEvent): e is TextEvent {
   return e.type === "text";
 }
-export function isDone(e: WorkerEvent): e is DoneEvent {
+export function isDone(e: ParsedEvent): e is DoneEvent {
   return e.type === "done";
 }
-export function isError(e: WorkerEvent): e is ErrorEvent {
+export function isError(e: ParsedEvent): e is ErrorEvent {
   return e.type === "error";
 }
-export function isNative(e: WorkerEvent): e is NativeEvent {
+export function isNative(e: ParsedEvent): e is NativeEvent {
   return e.type === "native";
 }
-export function isHello(e: WorkerEvent): e is WorkerHelloEvent {
+export function isHello(e: ParsedEvent): e is WorkerHelloEvent {
   return e.type === "hello";
 }
-export function isSuspend(e: WorkerEvent): e is SuspendEvent {
+export function isSuspend(e: ParsedEvent): e is SuspendEvent {
   return e.type === "suspend";
 }
 
@@ -571,17 +570,6 @@ export function readEvent(line: string): ParsedEvent {
       if (typeof raw.type === "string") return { type: "unknown", rawType: raw.type };
       throw new Error("event line has no string `type`");
   }
-}
-
-/**
- * {@link readEvent} for a reader that has no skip yet: an unknown type throws,
- * as every release before guuey#3434 did. Kept only until the Router's readers
- * move to `readEvent` (guuey#3435); then it is deleted.
- */
-export function parseEvent(line: string): WorkerEvent {
-  const event = readEvent(line);
-  if (isUnknownEvent(event)) throw new Error(`unknown event type: ${event.rawType}`);
-  return event;
 }
 
 /**

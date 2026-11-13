@@ -11,7 +11,7 @@
  * - The current parsers read the older wires exactly as the previous ones did.
  */
 import { describe, it, expect } from "vitest";
-import { parseControl, parseEvent } from "./parse.js";
+import { parseControl, readEvent } from "./parse.js";
 import { parseEvent as parseEventPrev } from "./fixtures/parse-event.prev.js";
 import { parseControl as parseControlPrev } from "./fixtures/parse-control.prev.js";
 
@@ -28,7 +28,7 @@ const OLD_INVOKE = {
 };
 const NEW_INVOKE = { ...OLD_INVOKE, threadClose: {} };
 
-describe("the previous Router's parseEvent (frozen) × a new worker's closing done", () => {
+describe("the previous Router's readEvent (frozen) × a new worker's closing done", () => {
   it("reads it as the same done without endThread", () => {
     expect(parseEventPrev(JSON.stringify(NEW_DONE))).toEqual(OLD_DONE);
     expect(parseEventPrev(JSON.stringify(NEW_DONE))).toEqual(parseEventPrev(JSON.stringify(OLD_DONE)));
@@ -39,15 +39,15 @@ describe("the previous Router's parseEvent (frozen) × a new worker's closing do
   });
 });
 
-describe("the current parseEvent × an old worker's done", () => {
+describe("the current readEvent × an old worker's done", () => {
   it("reads it as the previous parser does, with no endThread", () => {
-    const now = parseEvent(JSON.stringify(OLD_DONE));
+    const now = readEvent(JSON.stringify(OLD_DONE));
     expect(now).toEqual(parseEventPrev(JSON.stringify(OLD_DONE)));
     expect("endThread" in now).toBe(false);
   });
 
   it("differs from the previous parser on the new done ONLY by endThread", () => {
-    expect(parseEvent(JSON.stringify(NEW_DONE))).toEqual({ ...parseEventPrev(JSON.stringify(NEW_DONE)), endThread: NEW_DONE.endThread });
+    expect(readEvent(JSON.stringify(NEW_DONE))).toEqual({ ...parseEventPrev(JSON.stringify(NEW_DONE)), endThread: NEW_DONE.endThread });
   });
 });
 

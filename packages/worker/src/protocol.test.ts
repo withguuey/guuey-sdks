@@ -7,7 +7,7 @@ import {
   type JsonValue,
   type WorkerHelloEvent,
 } from "./protocol.js";
-import { parseEvent, isNative, isHello } from "./parse.js";
+import { readEvent, isNative, isHello } from "./parse.js";
 import { createEmitter } from "./emit.js";
 
 describe("protocol v1 shapes", () => {
@@ -82,7 +82,7 @@ describe("WorkerHelloEvent — the SDK-version handshake (additive-optional, §8
       },
     });
     emitter.hello("claude-agent-sdk", "@anthropic-ai/claude-agent-sdk", "0.3.199");
-    const ev = parseEvent(lines[0].trim());
+    const ev = readEvent(lines[0].trim());
     expect(isHello(ev)).toBe(true);
     if (isHello(ev)) {
       expect(ev.framework).toBe("claude-agent-sdk");
@@ -101,7 +101,7 @@ describe("NativeEvent carrier", () => {
       },
     });
     emitter.native("claude-agent-sdk", { type: "assistant", message: { id: "m1" } });
-    const ev = parseEvent(lines[0].trim());
+    const ev = readEvent(lines[0].trim());
     expect(isNative(ev)).toBe(true);
     if (isNative(ev)) {
       expect(ev.framework).toBe("claude-agent-sdk");
@@ -110,6 +110,6 @@ describe("NativeEvent carrier", () => {
   });
 
   it("text/done/error still parse (unchanged)", () => {
-    expect(isNative(parseEvent('{"type":"text","text":"hi"}'))).toBe(false);
+    expect(isNative(readEvent('{"type":"text","text":"hi"}'))).toBe(false);
   });
 });

@@ -4,14 +4,15 @@
  * - The current parsers return a well-formed line of an unknown type as a typed "unknown" (`UnknownControl`,
  *   `UnknownEvent`): a FRESH object with exactly `type` and `rawType`, never the line itself, so no other field of
  *   the sender's object rides along (hardening's ask for guuey#3435).
- * - `parseEvent` keeps today's throw on an unknown type until the Router's readers move to `readEvent` (guuey#3435).
+ * - Every reader now uses `readEvent` (the Router's since guuey#3435), and `parseEvent` is gone (guuey#3437): one
+ *   event parser.
  * - The parser frozen BEFORE this change (`fixtures/parse.pre-unknown-type.prev.ts`) still throws on an unknown type
  *   in both directions. That is why a new type may only be sent to a peer that advertised it (the capability gate):
  *   a side deployed before this fix cannot be fixed after the fact.
  * - Every line the frozen parser accepts, the current one reads exactly the same.
  */
 import { describe, expect, it } from "vitest";
-import { isUnknownControl, isUnknownEvent, parseControl, parseEvent, readEvent } from "./parse.js";
+import { isUnknownControl, isUnknownEvent, parseControl, readEvent } from "./parse.js";
 import { parseControl as parseControlPrev, parseEvent as parseEventPrev } from "./fixtures/parse.pre-unknown-type.prev.js";
 
 const INVOKE = JSON.stringify({
@@ -63,10 +64,6 @@ describe("event direction: a NEWER host's event type reaches this release", () =
     expect(Object.keys(ev)).toEqual(["type", "rawType"]);
   });
 
-  it("parseEvent still throws on it, as before, until the Router's readers move (guuey#3435)", () => {
-    expect(() => parseEvent(FUTURE_EVENT)).toThrow(/unknown event type: progress/);
-  });
-
   it("the frozen OLDER parser throws on the same line (an older Router ends the turn)", () => {
     expect(() => parseEventPrev(FUTURE_EVENT)).toThrow(/unknown event type: progress/);
   });
@@ -85,7 +82,6 @@ describe("event direction: a NEWER host's event type reaches this release", () =
       JSON.stringify({ type: "error", message: "m" }),
     ]) {
       expect(readEvent(line)).toEqual(parseEventPrev(line));
-      expect(parseEvent(line)).toEqual(parseEventPrev(line));
     }
   });
 });

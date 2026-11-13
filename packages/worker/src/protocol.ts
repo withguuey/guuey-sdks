@@ -678,6 +678,12 @@ export type WorkerEvent = TextEvent | DoneEvent | ErrorEvent | NativeEvent | Wor
  * (guuey#3434): a newer worker may emit it. Returned by `readEvent`, never
  * interpreted; only `rawType` (exactly as received, untruncated) is kept. It is
  * NOT a {@link WorkerEvent}: a reader must decide, by its own bounds, to skip it.
+ *
+ * Before adding a NEW event type (cto, guuey#3435 N1): an older Router skips an
+ * unknown type only within a bounded budget per turn (its queued-events and
+ * queued-bytes limits), so the skip is a fallback, not a channel. A new type
+ * that can repeat within a turn is emitted only to a Router that announced it
+ * knows that type (a capability gate); never rely on the skip for it.
  */
 export interface UnknownEvent {
   readonly type: "unknown";

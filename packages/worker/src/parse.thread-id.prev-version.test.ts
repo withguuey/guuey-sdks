@@ -13,9 +13,9 @@
  */
 import { describe, it, expect } from "vitest";
 import { PassThrough } from "node:stream";
-import { parseControl, parseEvent } from "./parse.js";
+import { parseControl, readEvent } from "./parse.js";
 import { serveNativeOn } from "./serve-native.js";
-import type { WorkerEvent } from "./protocol.js";
+import type { ParsedEvent } from "./protocol.js";
 import { parseControl as parseControlPrev } from "./fixtures/parse-control.pre-thread-id.prev.js";
 import { drained } from "./fixtures/drained.js";
 
@@ -68,7 +68,7 @@ describe("the current parseControl × an old Router's invoke (no threadId)", () 
 
 describe("the current worker serves both invoke shapes", () => {
   /** Serve one invoke line; return the fd-3 events and what the handler saw as `threadId`. */
-  async function serveOne(invoke: object): Promise<{ events: WorkerEvent[]; seen: string[] }> {
+  async function serveOne(invoke: object): Promise<{ events: ParsedEvent[]; seen: string[] }> {
     const input = new PassThrough();
     const output = new PassThrough();
     const seen: string[] = [];
@@ -87,7 +87,7 @@ describe("the current worker serves both invoke shapes", () => {
       .trim()
       .split("\n")
       .filter(Boolean)
-      .map((l) => parseEvent(l));
+      .map((l) => readEvent(l));
     return { events, seen };
   }
 

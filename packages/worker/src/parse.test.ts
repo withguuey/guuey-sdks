@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseControl, isInvoke, isShutdown } from "./parse.js";
-import { parseEvent, isText, isDone, isError, isHello, isSuspend } from "./parse.js";
+import { readEvent, isText, isDone, isError, isHello, isSuspend } from "./parse.js";
 
 const INVOKE = JSON.stringify({
   type: "invoke",
@@ -468,39 +468,42 @@ describe("parseControl", () => {
   });
 });
 
-describe("parseEvent (Worker→Router fd-3 events)", () => {
+describe("readEvent (Worker→Router fd-3 events)", () => {
   it("parses text / done / error", () => {
-    expect(parseEvent(JSON.stringify({ type: "text", text: "hi" }))).toEqual({
+    expect(readEvent(JSON.stringify({ type: "text", text: "hi" }))).toEqual({
       type: "text",
       text: "hi",
     });
-    const done = parseEvent(JSON.stringify({ type: "done", stopReason: "end_turn", result: "ok" }));
+    const done = readEvent(JSON.stringify({ type: "done", stopReason: "end_turn", result: "ok" }));
     expect(isDone(done)).toBe(true);
     if (isDone(done)) expect(done.result).toBe("ok");
-    expect(isError(parseEvent(JSON.stringify({ type: "error", message: "boom" })))).toBe(true);
-    expect(isText(parseEvent(JSON.stringify({ type: "text", text: "x" })))).toBe(true);
+    expect(isError(readEvent(JSON.stringify({ type: "error", message: "boom" })))).toBe(true);
+    expect(isText(readEvent(JSON.stringify({ type: "text", text: "x" })))).toBe(true);
   });
 
   it("done normalizes an unknown stopReason to end_turn + defaults a missing result", () => {
-    const d = parseEvent(JSON.stringify({ type: "done", stopReason: "weird" }));
+    const d = readEvent(JSON.stringify({ type: "done", stopReason: "weird" }));
     expect(d).toEqual({ type: "done", stopReason: "end_turn", result: "" });
   });
 
-  it("throws on non-JSON, non-object, missing text, and unknown type", () => {
-    expect(() => parseEvent("nope")).toThrow(/non-JSON event line/);
+  it("throws on non-JSON, non-object and missing text", () => {
+    expect(() => readEvent("nope")).toThrow(/non-JSON event line/);
     // A valid-JSON, non-object line (e.g. a bare number) is a protocol violation.
-    expect(() => parseEvent("42")).toThrow(/event line is not an object/);
-    expect(() => parseEvent(JSON.stringify({ type: "text" }))).toThrow(/text event missing string/);
-    expect(() => parseEvent(JSON.stringify({ type: "frob" }))).toThrow(/unknown event type/);
+    expect(() => readEvent("42")).toThrow(/event line is not an object/);
+    expect(() => readEvent(JSON.stringify({ type: "text" }))).toThrow(/text event missing string/);
+  });
+
+  it("returns an unknown event type as UnknownEvent, never throws (guuey#3434)", () => {
+    expect(readEvent(JSON.stringify({ type: "frob" }))).toEqual({ type: "unknown", rawType: "frob" });
   });
 
   it("an event carries no identity: userId, appId, threadId or authMode on a worker line is never parsed into the event", () => {
     const planted = { userId: "u-other", appId: "app-other", threadId: "t-other", authMode: "authenticated" };
     const events = [
-      parseEvent(JSON.stringify({ type: "text", text: "hi", ...planted })),
-      parseEvent(JSON.stringify({ type: "done", stopReason: "end_turn", result: "ok", ...planted })),
-      parseEvent(JSON.stringify({ type: "error", message: "boom", ...planted })),
-      parseEvent(JSON.stringify({ type: "hello", framework: "vanilla", ...planted })),
+      readEvent(JSON.stringify({ type: "text", text: "hi", ...planted })),
+      readEvent(JSON.stringify({ type: "done", stopReason: "end_turn", result: "ok", ...planted })),
+      readEvent(JSON.stringify({ type: "error", message: "boom", ...planted })),
+      readEvent(JSON.stringify({ type: "hello", framework: "vanilla", ...planted })),
     ];
     for (const event of events) {
       for (const key of Object.keys(planted)) expect(Object.keys(event)).not.toContain(key);
@@ -508,7 +511,7 @@ describe("parseEvent (Worker→Router fd-3 events)", () => {
   });
 
   it("parses hello with sdkName/sdkVersion present", () => {
-    const ev = parseEvent(
+    const ev = readEvent(
       JSON.stringify({
         type: "hello",
         framework: "claude-agent-sdk",
@@ -525,13 +528,13 @@ describe("parseEvent (Worker→Router fd-3 events)", () => {
   });
 
   it("parses hello, normalizing missing/null sdkName/sdkVersion to null", () => {
-    const ev = parseEvent(JSON.stringify({ type: "hello", framework: "vanilla" }));
+    const ev = readEvent(JSON.stringify({ type: "hello", framework: "vanilla" }));
     expect(isHello(ev)).toBe(true);
     if (isHello(ev)) {
       expect(ev.sdkName).toBeNull();
       expect(ev.sdkVersion).toBeNull();
     }
-    const ev2 = parseEvent(
+    const ev2 = readEvent(
       JSON.stringify({ type: "hello", framework: "vanilla", sdkName: null, sdkVersion: null }),
     );
     if (isHello(ev2)) {
@@ -541,18 +544,18 @@ describe("parseEvent (Worker→Router fd-3 events)", () => {
   });
 
   it("throws on hello missing string `framework`", () => {
-    expect(() => parseEvent(JSON.stringify({ type: "hello" }))).toThrow(
+    expect(() => readEvent(JSON.stringify({ type: "hello" }))).toThrow(
       /hello event missing string `framework`/,
     );
   });
 });
 
-describe("parseEvent — hello capabilities (additive-optional)", () => {
+describe("readEvent — hello capabilities (additive-optional)", () => {
   const hello = (extra: object) =>
     JSON.stringify({ type: "hello", framework: "google-adk", sdkName: "@google/adk", sdkVersion: "2.1.0", ...extra });
 
   it("keeps a list of strings", () => {
-    expect(parseEvent(hello({ capabilities: ["adk.host-completion", "future.thing"] }))).toEqual({
+    expect(readEvent(hello({ capabilities: ["adk.host-completion", "future.thing"] }))).toEqual({
       type: "hello",
       framework: "google-adk",
       sdkName: "@google/adk",
@@ -564,7 +567,7 @@ describe("parseEvent — hello capabilities (additive-optional)", () => {
   it("reads any other shape, an empty list, or absence as none: no key, never a throw", () => {
     const none = { type: "hello", framework: "google-adk", sdkName: "@google/adk", sdkVersion: "2.1.0" };
     for (const extra of [{}, { capabilities: [] }, { capabilities: "adk.host-completion" }, { capabilities: ["ok", 7] }, { capabilities: null }]) {
-      expect(parseEvent(hello(extra))).toEqual(none);
+      expect(readEvent(hello(extra))).toEqual(none);
     }
   });
 });
@@ -696,9 +699,9 @@ describe("suspend / resume — the pause offer and the resume on the invoke", ()
   });
 });
 
-describe("parseEvent — suspend (Router-plane, like hello)", () => {
+describe("readEvent — suspend (Router-plane, like hello)", () => {
   it("round-trips a suspend event", () => {
-    const ev = parseEvent(
+    const ev = readEvent(
       JSON.stringify({ type: "suspend", envelope: '{"s":1}', askIds: ["approval_a", "approval_b"] }),
     );
     expect(isSuspend(ev)).toBe(true);
@@ -706,16 +709,16 @@ describe("parseEvent — suspend (Router-plane, like hello)", () => {
   });
 
   it("throws on a malformed suspend, like any malformed line", () => {
-    expect(() => parseEvent(JSON.stringify({ type: "suspend", askIds: [] }))).toThrow(
+    expect(() => readEvent(JSON.stringify({ type: "suspend", askIds: [] }))).toThrow(
       /suspend event missing string `envelope`/,
     );
-    expect(() => parseEvent(JSON.stringify({ type: "suspend", envelope: 3, askIds: [] }))).toThrow(
+    expect(() => readEvent(JSON.stringify({ type: "suspend", envelope: 3, askIds: [] }))).toThrow(
       /suspend event missing string `envelope`/,
     );
-    expect(() => parseEvent(JSON.stringify({ type: "suspend", envelope: "e" }))).toThrow(
+    expect(() => readEvent(JSON.stringify({ type: "suspend", envelope: "e" }))).toThrow(
       /suspend event `askIds` must be a list of strings/,
     );
-    expect(() => parseEvent(JSON.stringify({ type: "suspend", envelope: "e", askIds: ["a", 1] }))).toThrow(
+    expect(() => readEvent(JSON.stringify({ type: "suspend", envelope: "e", askIds: ["a", 1] }))).toThrow(
       /suspend event `askIds` must be a list of strings/,
     );
   });

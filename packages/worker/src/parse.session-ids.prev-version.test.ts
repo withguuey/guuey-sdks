@@ -8,7 +8,7 @@
  *   good older block is never turned into a host fault. A present but malformed `sessionIds` drops the block whole.
  */
 import { describe, expect, it } from "vitest";
-import { parseControl, parseEvent } from "./parse.js";
+import { parseControl, readEvent } from "./parse.js";
 import { CLI_SESSION_CAPABILITY, CLI_SESSION_HASH_VERSION, type HelloCliSession, type HelloStoredMeasures } from "./protocol.js";
 import { parseControl as parseControlPrev, parseEvent as parseEventPrev } from "./fixtures/parse.pre-session-ids.prev.js";
 
@@ -47,13 +47,13 @@ describe("the previous Router's parser (frozen) × a new host's stored sessionId
 describe("the current parser × stored sessionIds", () => {
   it("keeps sessionIds when well formed", () => {
     const hello = { ...HELLO, cliSession: NEW_BLOCK };
-    expect(parseEvent(JSON.stringify(hello))).toEqual(hello);
+    expect(readEvent(JSON.stringify(hello))).toEqual(hello);
   });
 
   it("reads an older host's block without sessionIds exactly as the previous parser did", () => {
     const hello = JSON.stringify({ ...HELLO, cliSession: OLD_BLOCK });
-    expect(parseEvent(hello)).toEqual(parseEventPrev(hello));
-    expect(parseEvent(hello)).toEqual({ ...HELLO, cliSession: OLD_BLOCK });
+    expect(readEvent(hello)).toEqual(parseEventPrev(hello));
+    expect(readEvent(hello)).toEqual({ ...HELLO, cliSession: OLD_BLOCK });
   });
 
   it.each([
@@ -61,7 +61,7 @@ describe("the current parser × stored sessionIds", () => {
     ["a non-array", SESSION_ID],
   ])("drops the WHOLE block on %s, keeping the rest of the hello", (_label, sessionIds) => {
     const hello = { ...HELLO, cliSession: { ...OLD_BLOCK, stored: { ...OLD_STORED, sessionIds } } };
-    const now = parseEvent(JSON.stringify(hello));
+    const now = readEvent(JSON.stringify(hello));
     expect(now).toEqual(HELLO);
   });
 });

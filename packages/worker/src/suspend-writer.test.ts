@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createSuspendWriter } from "./suspend-writer.js";
-import { parseEvent } from "./parse.js";
+import { readEvent } from "./parse.js";
 import { SUSPEND_ENVELOPE_MAX_BYTES, type Invoke } from "./protocol.js";
 
 const baseInvoke: Invoke = {
@@ -74,7 +74,7 @@ describe("createSuspendWriter — the cap, measured on the envelope's JSON-strin
     expect(writes).toHaveLength(1);
     expect(writes[0]!.endsWith("\n")).toBe(true);
     expect(writes[0]!.indexOf("\n")).toBe(writes[0]!.length - 1);
-    expect(parseEvent(writes[0]!.trim())).toEqual({
+    expect(readEvent(writes[0]!.trim())).toEqual({
       type: "suspend",
       envelope,
       askIds: ["approval_a", "approval_b"],

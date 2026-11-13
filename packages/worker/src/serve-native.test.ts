@@ -3,7 +3,7 @@ import { PassThrough } from "node:stream";
 import { serveNativeOn, resolveInstalledVersion, type NativeServeInfo } from "./serve-native.js";
 import { HOST_SUSPEND_CAPABILITY, TOOL_GATES_CAPABILITY, inputKindCapability, type Invoke } from "./protocol.js";
 import { MODEL_TEXT_INPUT_KIND_CAPABILITIES } from "./model-text.js";
-import { parseEvent } from "./parse.js";
+import { readEvent } from "./parse.js";
 import { drained } from "./fixtures/drained.js";
 
 function invokeLine(input: string): string {
@@ -133,7 +133,7 @@ describe("serveNativeOn — suspend", () => {
 
   it("with both: hello{capabilities:[host.suspend.v1]} → native* → suspend → done, and only on the offered invoke", async () => {
     const { bytes, results } = await runRaw({ ...baseInfo, suspend: true }, offered, {});
-    const events = bytes.trim().split("\n").map((l) => parseEvent(l));
+    const events = bytes.trim().split("\n").map((l) => readEvent(l));
     expect(events.map((e) => e.type)).toEqual([
       "hello", "native", "text", "suspend", "done",
       "hello", "native", "text", "done",
@@ -166,7 +166,7 @@ describe("serveNativeOn — suspend", () => {
     );
     input.end(invokeWith("hi", { suspend: { maxEnvelopeBytes: 16 } }));
     await done;
-    const types = drained(output).trim().split("\n").map((l) => parseEvent(l).type);
+    const types = drained(output).trim().split("\n").map((l) => readEvent(l).type);
     expect(result).toBe("over_cap");
     expect(types).toEqual(["hello", "done"]);
   });
@@ -216,24 +216,24 @@ describe("serveNativeOn — declared capabilities", () => {
   });
 
   it("declared kinds ride the hello, in order, once", async () => {
-    const hello = parseEvent(await helloOf({ ...info, capabilities: [contextOnly, contextOnly] }));
+    const hello = readEvent(await helloOf({ ...info, capabilities: [contextOnly, contextOnly] }));
     expect(hello).toEqual({ ...info, type: "hello", capabilities: [contextOnly] });
   });
 
   it("MODEL_TEXT_INPUT_KIND_CAPABILITIES is exactly what a scaffold declares", async () => {
-    const hello = parseEvent(await helloOf({ ...info, capabilities: MODEL_TEXT_INPUT_KIND_CAPABILITIES }));
+    const hello = readEvent(await helloOf({ ...info, capabilities: MODEL_TEXT_INPUT_KIND_CAPABILITIES }));
     expect(hello).toEqual({ ...info, type: "hello", capabilities: [contextOnly] });
   });
 
   it("guuey#2670: a worker that applies the tool gates declares tool-gates.v1 the same way, after suspend when that rides", async () => {
     const declared = [...MODEL_TEXT_INPUT_KIND_CAPABILITIES, TOOL_GATES_CAPABILITY];
-    expect(parseEvent(await helloOf({ ...info, capabilities: declared }))).toEqual({
+    expect(readEvent(await helloOf({ ...info, capabilities: declared }))).toEqual({
       ...info,
       type: "hello",
       capabilities: [contextOnly, TOOL_GATES_CAPABILITY],
     });
     const offered = { suspend: { maxEnvelopeBytes: 1024 } };
-    expect(parseEvent(await helloOf({ ...info, suspend: true, capabilities: [TOOL_GATES_CAPABILITY] }, offered))).toEqual({
+    expect(readEvent(await helloOf({ ...info, suspend: true, capabilities: [TOOL_GATES_CAPABILITY] }, offered))).toEqual({
       ...info,
       type: "hello",
       capabilities: [HOST_SUSPEND_CAPABILITY, TOOL_GATES_CAPABILITY],
@@ -242,13 +242,13 @@ describe("serveNativeOn — declared capabilities", () => {
 
   it("a listed suspend capability is dropped unless the opt-in AND the offer put it there (never twice)", async () => {
     const listed = [HOST_SUSPEND_CAPABILITY, contextOnly];
-    expect(parseEvent(await helloOf({ ...info, capabilities: listed }))).toEqual({
+    expect(readEvent(await helloOf({ ...info, capabilities: listed }))).toEqual({
       ...info,
       type: "hello",
       capabilities: [contextOnly],
     });
     const offered = { suspend: { maxEnvelopeBytes: 1024 } };
-    expect(parseEvent(await helloOf({ ...info, suspend: true, capabilities: listed }, offered))).toEqual({
+    expect(readEvent(await helloOf({ ...info, suspend: true, capabilities: listed }, offered))).toEqual({
       ...info,
       type: "hello",
       capabilities: [HOST_SUSPEND_CAPABILITY, contextOnly],

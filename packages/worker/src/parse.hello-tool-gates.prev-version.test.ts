@@ -11,14 +11,14 @@
  *   agent's tool gates.
  */
 import { describe, it, expect } from "vitest";
-import { parseEvent } from "./parse.js";
+import { readEvent } from "./parse.js";
 import { parseEvent as parseEventPrev } from "./fixtures/parse-event.prev.js";
 import { createEmitter } from "./emit.js";
 import {
   ADK_HOST_COMPLETION_CAPABILITY,
   HOST_SUSPEND_CAPABILITY,
   TOOL_GATES_CAPABILITY,
-  type WorkerEvent,
+  type ParsedEvent,
 } from "./protocol.js";
 
 /** The hello a 0.31.1 Claude scaffold worker writes: bundled, so its SDK version does not resolve. */
@@ -34,7 +34,7 @@ const NEW_HELLO_WITH_SUSPEND =
   '{"type":"hello","framework":"claude-agent-sdk","sdkName":"@anthropic-ai/claude-agent-sdk","sdkVersion":null,"capabilities":["tool-gates.v1","host.suspend.v1"]}';
 
 /** How every Router reads a hello's capability: present only when the list names it. */
-function announces(event: WorkerEvent, capability: string): boolean {
+function announces(event: ParsedEvent, capability: string): boolean {
   return event.type === "hello" && event.capabilities?.includes(capability) === true;
 }
 
@@ -48,7 +48,7 @@ describe("the new hello's bytes", () => {
   });
 });
 
-describe("the previous Router's parseEvent (frozen) × a new worker's hello", () => {
+describe("the previous Router's readEvent (frozen) × a new worker's hello", () => {
   it("parses it, and differs from the old hello only by the capability list", () => {
     expect(parseEventPrev(NEW_CLAUDE_HELLO)).toEqual({ ...parseEventPrev(OLD_CLAUDE_HELLO), capabilities: ["tool-gates.v1"] });
   });
@@ -66,10 +66,10 @@ describe("the previous Router's parseEvent (frozen) × a new worker's hello", ()
   });
 });
 
-describe("the current parseEvent × an old worker's hello", () => {
+describe("the current readEvent × an old worker's hello", () => {
   it("reads it as the previous parser does, with no capabilities", () => {
     for (const line of [OLD_CLAUDE_HELLO, OLD_OPENAI_HELLO]) {
-      const now = parseEvent(line);
+      const now = readEvent(line);
       expect(now).toEqual(parseEventPrev(line));
       expect("capabilities" in now).toBe(false);
       expect(announces(now, TOOL_GATES_CAPABILITY)).toBe(false);
@@ -77,14 +77,14 @@ describe("the current parseEvent × an old worker's hello", () => {
   });
 
   it("reads the new hello as announcing tool-gates.v1", () => {
-    expect(announces(parseEvent(NEW_CLAUDE_HELLO), TOOL_GATES_CAPABILITY)).toBe(true);
-    expect(announces(parseEvent(NEW_HELLO_WITH_SUSPEND), TOOL_GATES_CAPABILITY)).toBe(true);
+    expect(announces(readEvent(NEW_CLAUDE_HELLO), TOOL_GATES_CAPABILITY)).toBe(true);
+    expect(announces(readEvent(NEW_HELLO_WITH_SUSPEND), TOOL_GATES_CAPABILITY)).toBe(true);
   });
 
   it("reads a malformed capability list as none, so the worker counts as old, never as a refusal", () => {
     for (const capabilities of ["tool-gates.v1", ["tool-gates.v1", 7], null]) {
       const line = JSON.stringify({ ...JSON.parse(OLD_CLAUDE_HELLO), capabilities });
-      expect(parseEvent(line)).toEqual(parseEventPrev(OLD_CLAUDE_HELLO));
+      expect(readEvent(line)).toEqual(parseEventPrev(OLD_CLAUDE_HELLO));
       expect(parseEventPrev(line)).toEqual(parseEventPrev(OLD_CLAUDE_HELLO));
     }
   });

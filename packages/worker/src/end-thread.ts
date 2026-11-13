@@ -1,7 +1,7 @@
 /**
  * The rules for a worker's request to end the conversation
  * ({@link EndThread}): one place, read by the worker SDK before it writes the
- * request, by `parseEvent` before it keeps one, and by a Router before it acts
+ * request, by `readEvent` before it keeps one, and by a Router before it acts
  * on one. A request that breaks a rule is refused whole, never trimmed.
  */
 import type { EndThread } from "./protocol.js";

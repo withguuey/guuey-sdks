@@ -56,7 +56,6 @@ export {
 } from "./protocol.js";
 export {
   parseControl,
-  parseEvent,
   readEvent,
   isInvoke,
   isShutdown,

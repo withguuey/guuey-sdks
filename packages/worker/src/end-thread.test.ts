@@ -6,7 +6,7 @@
 import { describe, it, expect } from "vitest";
 import { PassThrough } from "node:stream";
 import { serveNativeOn, type NativeEmit } from "./serve-native.js";
-import { parseControl, parseEvent } from "./parse.js";
+import { parseControl, readEvent } from "./parse.js";
 import { endThreadProblem, END_THREAD_MESSAGE_MAX_CHARS } from "./end-thread.js";
 import { drained } from "./fixtures/drained.js";
 
@@ -193,11 +193,11 @@ describe("parseControl: invoke.threadClose", () => {
   );
 });
 
-describe("parseEvent: done.endThread", () => {
+describe("readEvent: done.endThread", () => {
   const done = { type: "done", stopReason: "end_turn", result: "r" };
 
   it("keeps a valid endThread, reduced to its two fields", () => {
-    expect(parseEvent(JSON.stringify({ ...done, endThread: { code: "CHAT_FULL", message: "full", x: 1 } }))).toEqual({
+    expect(readEvent(JSON.stringify({ ...done, endThread: { code: "CHAT_FULL", message: "full", x: 1 } }))).toEqual({
       ...done,
       endThread: { code: "CHAT_FULL", message: "full" },
     });
@@ -210,6 +210,6 @@ describe("parseEvent: done.endThread", () => {
     ["a string", "CHAT_FULL"],
     ["null", null],
   ])("drops %s and keeps the done", (_label, endThread) => {
-    expect(parseEvent(JSON.stringify({ ...done, endThread }))).toEqual(done);
+    expect(readEvent(JSON.stringify({ ...done, endThread }))).toEqual(done);
   });
 });

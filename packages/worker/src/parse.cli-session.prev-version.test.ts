@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { createEmitter } from "./emit.js";
-import { parseControl, parseEvent } from "./parse.js";
+import { parseControl, readEvent } from "./parse.js";
 import { CLI_SESSION_CAPABILITY, CLI_SESSION_HASH_VERSION, type HelloCliSession } from "./protocol.js";
 import { parseControl as parseControlPrev, parseEvent as parseEventPrev } from "./fixtures/parse.pre-cli-session.prev.js";
 
@@ -70,7 +70,7 @@ describe("the current parser × the older shapes", () => {
     expect(parseControl(JSON.stringify(OLD_INVOKE))).toEqual(parseControlPrev(JSON.stringify(OLD_INVOKE)));
   });
   it("reads an old host's hello exactly as the previous parser did", () => {
-    expect(parseEvent(JSON.stringify(OLD_HELLO))).toEqual(parseEventPrev(JSON.stringify(OLD_HELLO)));
+    expect(readEvent(JSON.stringify(OLD_HELLO))).toEqual(parseEventPrev(JSON.stringify(OLD_HELLO)));
   });
 });
 
@@ -100,15 +100,15 @@ describe("the current parser × the new invoke field", () => {
 
 describe("the current parser × the hello's thread-resume block", () => {
   it("keeps a well-formed block whole, with and without stored measures", () => {
-    expect(parseEvent(JSON.stringify(NEW_HELLO))).toEqual(NEW_HELLO);
+    expect(readEvent(JSON.stringify(NEW_HELLO))).toEqual(NEW_HELLO);
     const { stored: _stored, ...startBlock } = BLOCK;
     const start = { ...NEW_HELLO, cliSession: startBlock };
-    expect(parseEvent(JSON.stringify(start))).toEqual(start);
+    expect(readEvent(JSON.stringify(start))).toEqual(start);
   });
 
   it("keeps a readError with the other measures empty", () => {
     const readError = { ...NEW_HELLO, cliSession: { ...BLOCK, stored: { ...BLOCK.stored, readError: "missing", systemPromptShas: [], walks: [], lastPromptShas: [], entries: [], filePromptEntries: 0 } } };
-    expect(parseEvent(JSON.stringify(readError))).toEqual(readError);
+    expect(readEvent(JSON.stringify(readError))).toEqual(readError);
   });
 
   it.each([
@@ -124,7 +124,7 @@ describe("the current parser × the hello's thread-resume block", () => {
     ["a stored block missing corrupt (wire v1.3)", { stored: { ...BLOCK.stored, corrupt: undefined } }],
   ])("drops the WHOLE block on %s, keeping the rest of the hello", (_label, patch) => {
     const hello = { ...NEW_HELLO, cliSession: { ...BLOCK, ...patch } };
-    const now = parseEvent(JSON.stringify(hello));
+    const now = readEvent(JSON.stringify(hello));
     expect(now).toEqual({ ...OLD_HELLO, capabilities: ["tool-gates.v1", CLI_SESSION_CAPABILITY] });
     expect("cliSession" in now).toBe(false);
   });
@@ -141,7 +141,7 @@ describe("the emitter writes the block the parser reads back", () => {
       BLOCK,
     );
     expect(lines).toHaveLength(1);
-    expect(parseEvent(lines[0].trimEnd())).toEqual(NEW_HELLO);
+    expect(readEvent(lines[0].trimEnd())).toEqual(NEW_HELLO);
   });
 
   it("writes no block when none is given: today's hello", () => {
