@@ -78,6 +78,19 @@ describe("serveOn", () => {
     expect(h.events().at(-1)).toEqual({ type: "done", stopReason: "end_turn", result: "ab" });
   });
 
+  it("skips a control line of a type this release does not know, and the next invoke still runs (guuey#3434)", async () => {
+    const h = harness();
+    const done = serveOn(async (turn: Turn) => turn.input.toUpperCase(), {
+      input: h.input,
+      output: h.output,
+    });
+    h.send({ type: "cancel", turnId: "t1" });
+    h.send({ ...INVOKE, input: "after" });
+    h.send({ type: "shutdown" });
+    await done;
+    expect(h.events()).toEqual([{ type: "done", stopReason: "end_turn", result: "AFTER" }]);
+  });
+
   it("runs multiple sequential turns over one stream", async () => {
     const h = harness();
     const done = serveOn(async (turn: Turn) => turn.input.toUpperCase(), {

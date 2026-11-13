@@ -46,10 +46,13 @@ describe("parseControl", () => {
     expect(() => parseControl(JSON.stringify({ type: "invoke", input: "x" }))).toThrow(/invoke/);
   });
 
-  it("throws on an unknown control type", () => {
-    expect(() => parseControl(JSON.stringify({ type: "frobnicate" }))).toThrow(
-      /unknown control message type/
-    );
+  it("returns a well-formed line of an unknown control type as UnknownControl, never throws (guuey#3434)", () => {
+    expect(parseControl(JSON.stringify({ type: "frobnicate" }))).toEqual({ type: "unknown", rawType: "frobnicate" });
+  });
+
+  it("still throws on a control line with no string type", () => {
+    expect(() => parseControl(JSON.stringify({ input: "x" }))).toThrow(/no string `type`/);
+    expect(() => parseControl(JSON.stringify({ type: 7 }))).toThrow(/no string `type`/);
   });
 
   it("round-trips priorMemory (array) + priorState (JsonValue) onto the typed Invoke", () => {

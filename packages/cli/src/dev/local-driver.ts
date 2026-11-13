@@ -144,7 +144,12 @@ export function createLocalDriver(opts: {
 
     try {
       let sawDone = false;
-      for await (const ev of readNdjson(fd3)) {
+      // guuey#3434: an event of a type this CLI does not know (a newer host's) is
+      // skipped, never forwarded, and named once on stderr.
+      const onUnknown = (rawType: string): void => {
+        process.stderr.write(`[guuey dev] skipped a worker event of unknown type ${JSON.stringify(rawType.slice(0, 64))}\n`);
+      };
+      for await (const ev of readNdjson(fd3, onUnknown)) {
         if (isError(ev)) {
           // Surface the worker's terminal failure as a thrown turn error.
           throw new Error(`worker error: ${ev.message}`);

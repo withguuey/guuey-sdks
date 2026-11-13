@@ -33,9 +33,6 @@ import { fileURLToPath } from "node:url";
 import {
   LAUNCH_ENVELOPE_FD_ENV,
   createEmitter,
-  isInvoke,
-  isShutdown,
-  parseControl,
   readLaunchEnvelope,
   type Emitter,
   type Invoke,
@@ -43,6 +40,7 @@ import {
 } from "@guuey/worker";
 import type { GuueyAgent } from "@guuey/config";
 import { lines } from "./stdin-lines.js";
+import { readControlLine } from "./control-line.js";
 import type { HostBoot } from "./boot-context.js";
 import { assertHostInspectorGuard } from "./inspector-guard.js";
 
@@ -178,10 +176,15 @@ async function main(): Promise<void> {
   const runner = await loadRunner(framework, { ...(envelope !== undefined ? { envelope } : {}), snapshot });
 
   for await (const line of lines(process.stdin)) {
-    const msg = parseControl(line);
-    if (isShutdown(msg)) break;
-    if (!isInvoke(msg)) continue;
-    const { type: _type, ...turn } = msg;
+    // guuey#3434: a line the host cannot use is skipped or refused, never fatal.
+    const step = readControlLine(line);
+    if (step.kind === "shutdown") break;
+    if (step.kind !== "invoke") {
+      process.stderr.write(`${step.note}\n`);
+      if (step.kind === "refuse") emit.error(step.error);
+      continue;
+    }
+    const { type: _type, ...turn } = step.invoke;
     // Turns are sequential — await this invoke before reading the next line.
     await runner.runTurn(snapshot, turn, emit);
   }

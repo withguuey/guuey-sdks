@@ -1,7 +1,9 @@
 /**
  * Tier-1 typed interpreter: validate one NDJSON control line (Router→Worker, fd
  * 0) into a typed {@link ControlMessage}. Hand-rolled guards keep the package
- * dependency-free. A malformed line throws a clear error (never a silent skip).
+ * dependency-free. A malformed line throws a clear error (never a silent skip);
+ * a well-formed line of a type this release does not know is returned as an
+ * {@link UnknownControl} (guuey#3434), so a newer Router never kills it.
  */
 import type {
   AuthMode,
@@ -19,6 +21,9 @@ import type {
   FirstImpressionPush,
   Shutdown,
   StopReason,
+  ParsedEvent,
+  UnknownControl,
+  UnknownEvent,
   TextEvent,
   WorkerEvent,
   WorkerHelloEvent,
@@ -48,6 +53,9 @@ export function isInvoke(m: ControlMessage): m is Invoke {
 }
 export function isShutdown(m: ControlMessage): m is Shutdown {
   return m.type === "shutdown";
+}
+export function isUnknownControl(m: ControlMessage): m is UnknownControl {
+  return m.type === "unknown";
 }
 
 function isObject(v: unknown): v is Record<string, JsonValue> {
@@ -453,7 +461,10 @@ export function parseControl(line: string): ControlMessage {
     case "shutdown":
       return { type: "shutdown" };
     default:
-      throw new Error(`unknown control message type: ${String(raw.type)}`);
+      // guuey#3434: a type a NEWER Router may send. Returned, never thrown; a
+      // line with no string `type` is malformed and still throws.
+      if (typeof raw.type === "string") return { type: "unknown", rawType: raw.type };
+      throw new Error("control line has no string `type`");
   }
 }
 
@@ -476,12 +487,18 @@ export function isSuspend(e: WorkerEvent): e is SuspendEvent {
   return e.type === "suspend";
 }
 
+export function isUnknownEvent(e: ParsedEvent): e is UnknownEvent {
+  return e.type === "unknown";
+}
+
 /**
  * Router-side typed interpreter: validate one NDJSON event line (Worker→Router,
- * fd 3) into a typed {@link WorkerEvent}. Mirror of {@link parseControl}; a
- * malformed line throws (never a silent skip).
+ * fd 3). Mirror of {@link parseControl}: a malformed line throws (never a silent
+ * skip), and a well-formed line of a type this release does not know is returned
+ * as an {@link UnknownEvent} (guuey#3434), which a reader skips within its own
+ * bounds.
  */
-export function parseEvent(line: string): WorkerEvent {
+export function readEvent(line: string): ParsedEvent {
   let raw: JsonValue;
   try {
     raw = JSON.parse(line) as JsonValue;
@@ -549,8 +566,22 @@ export function parseEvent(line: string): WorkerEvent {
       return { type: "suspend", envelope: raw.envelope, askIds: ids };
     }
     default:
-      throw new Error(`unknown event type: ${String(raw.type)}`);
+      // guuey#3434: a type a NEWER worker may emit. Returned, never thrown; a
+      // line with no string `type` is malformed and still throws.
+      if (typeof raw.type === "string") return { type: "unknown", rawType: raw.type };
+      throw new Error("event line has no string `type`");
   }
+}
+
+/**
+ * {@link readEvent} for a reader that has no skip yet: an unknown type throws,
+ * as every release before guuey#3434 did. Kept only until the Router's readers
+ * move to `readEvent` (guuey#3435); then it is deleted.
+ */
+export function parseEvent(line: string): WorkerEvent {
+  const event = readEvent(line);
+  if (isUnknownEvent(event)) throw new Error(`unknown event type: ${event.rawType}`);
+  return event;
 }
 
 /**

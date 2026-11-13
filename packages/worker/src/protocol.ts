@@ -424,7 +424,17 @@ export interface FirstImpressionShown {
 export interface Shutdown {
   type: "shutdown";
 }
-export type ControlMessage = Invoke | Shutdown;
+/**
+ * A well-formed control line whose `type` this release does not know
+ * (guuey#3434). A newer Router may send it, so it is returned, never thrown:
+ * the worker skips it and reads on. Never interpreted; only `rawType` (the type
+ * string exactly as received, untruncated) is kept, so a reader can log it.
+ */
+export interface UnknownControl {
+  readonly type: "unknown";
+  readonly rawType: string;
+}
+export type ControlMessage = Invoke | Shutdown | UnknownControl;
 
 // ── Worker → Router: the event stream (fd 3) ────────────────────────────────
 
@@ -663,3 +673,15 @@ export interface SuspendEvent {
   readonly askIds: readonly string[];
 }
 export type WorkerEvent = TextEvent | DoneEvent | ErrorEvent | NativeEvent | WorkerHelloEvent | SuspendEvent;
+/**
+ * A well-formed event line whose `type` this release does not know
+ * (guuey#3434): a newer worker may emit it. Returned by `readEvent`, never
+ * interpreted; only `rawType` (exactly as received, untruncated) is kept. It is
+ * NOT a {@link WorkerEvent}: a reader must decide, by its own bounds, to skip it.
+ */
+export interface UnknownEvent {
+  readonly type: "unknown";
+  readonly rawType: string;
+}
+/** What `readEvent` returns: a known event, or an {@link UnknownEvent}. */
+export type ParsedEvent = WorkerEvent | UnknownEvent;

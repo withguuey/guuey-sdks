@@ -9,7 +9,7 @@ import { Readable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { parseEvent, isDone, type WorkerEvent } from "@guuey/worker";
+import { isDone, isUnknownEvent, readEvent, type WorkerEvent } from "@guuey/worker";
 import * as out from "../output";
 
 export interface VerifyCheck {
@@ -77,7 +77,10 @@ export async function verifyWorker(opts: {
         if (line.length === 0) continue;
         let ev: WorkerEvent;
         try {
-          ev = parseEvent(line);
+          const parsed = readEvent(line);
+          // guuey#3434: a type this CLI does not know (a newer worker's) is skipped, never verified.
+          if (isUnknownEvent(parsed)) continue;
+          ev = parsed;
         } catch (e) {
           parseError = e instanceof Error ? e.message : String(e);
           continue;
