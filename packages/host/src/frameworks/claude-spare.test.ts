@@ -5,12 +5,16 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import type { CanUseTool, ClaimOptions, Options, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { createEmitter, type WorkerEvent } from "@guuey/worker";
 import { prewarmClaudeSpare, runInvoke, type HostInvoke, type HostRuntime, type QueryFn, type QueryHandle } from "./claude.js";
+import { buildOptions, type BuildOptionsContext } from "./claude-options.js";
 import {
   CLAUDE_SPARE_PLACEHOLDER_TOKEN,
+  SPARE_KEY_FIELDS,
   SPARE_PARKING_DIR,
+  SPARE_UNKEYED_FIELDS,
   delegatingCanUseTool,
   parseSpareTemplate,
   spareKeyOf,
+  sparePrewarmOf,
   type ParkedSpare,
   type PrewarmFn,
   type SpareHandle,
@@ -121,13 +125,17 @@ function fakeSpare(answer: "accept" | "refuse"): {
 }
 
 /** Park a spare through the real boot path with a fake `prewarm`, recording the options it was started with. */
-async function park(spare: SpareHandle, template: HostInvoke = invoke()): Promise<{ parked: ParkedSpare; started: Options[] }> {
+async function park(
+  spare: SpareHandle,
+  template: HostInvoke = invoke(),
+  snapshot: Parameters<typeof prewarmClaudeSpare>[0] = {},
+): Promise<{ parked: ParkedSpare; started: Options[] }> {
   const started: Options[] = [];
   const prewarm: PrewarmFn = (params) => {
     started.push(params.options);
     return Promise.resolve(spare);
   };
-  const parked = await prewarmClaudeSpare({}, template, RUNTIME, prewarm);
+  const parked = await prewarmClaudeSpare(snapshot, template, RUNTIME, prewarm);
   if (parked === undefined) throw new Error("the spare did not park");
   return { parked, started };
 }
@@ -178,6 +186,53 @@ describe("spareKeyOf", () => {
     expect(spareKeyOf({ ...base, systemPrompt: "other" })).not.toBe(spareKeyOf(base));
     expect(spareKeyOf({ ...base, disallowedTools: ["mcp__a__b"] })).not.toBe(spareKeyOf(base));
     expect(spareKeyOf({ ...base, env: { A: "1", B: "3" } })).not.toBe(spareKeyOf(base));
+  });
+});
+
+describe("the compared fields (cto A10, A8)", () => {
+  /** A context that makes buildOptions return every field it can. */
+  function richContext(over: Partial<BuildOptionsContext> = {}): BuildOptionsContext {
+    return {
+      input: "hi",
+      identity: { userId: "u1", authMode: "authenticated" },
+      fs: { app: "/app", home: "/home", session: SESSION },
+      fsBound: true,
+      cliDirs: { config: "/c/config", cache: "/c/cache", xdgConfig: "/c/xc", xdgData: "/c/xd", xdgState: "/c/xs" },
+      history: [],
+      baseUrl: "http://127.0.0.1:9911",
+      authToken: "turn-token",
+      gguiAttached: true,
+      firstImpression: { chipKey: "welcome", intent: "show the welcome card", contract: {} },
+      withheldTools: [{ server: "srv", tool: "danger" }],
+      listCredentials: () => [{ name: "srv", cred: { url: "https://mcp.example/x", transport: "http", headers: { Authorization: "Bearer T1" } } }],
+      abortController: new AbortController(),
+      ...over,
+    };
+  }
+
+  it("names every field buildOptions returns as compared or not compared, never both", () => {
+    const listed = new Set<string>([...SPARE_KEY_FIELDS, ...SPARE_UNKEYED_FIELDS]);
+    expect(listed.size).toBe(SPARE_KEY_FIELDS.length + SPARE_UNKEYED_FIELDS.length);
+    for (const options of [buildOptions({ tools: { allowlist: ["srv.do_thing"] } }, richContext()), buildOptions({}, richContext({ fs: undefined, cliDirs: undefined }))]) {
+      for (const name of Object.keys(options)) expect(listed.has(name), name).toBe(true);
+    }
+  });
+
+  it("gives two users of the same prompt class the same key: no per-user value is compared", () => {
+    const a = buildOptions({}, richContext({ identity: { userId: "user-a", authMode: "authenticated" } }));
+    const b = buildOptions({}, richContext({ identity: { userId: "user-b", authMode: "authenticated" } }));
+    expect(spareKeyOf(a)).toBe(spareKeyOf(b));
+    // A class input does change the key: without the generative-UI rail the prompt has no such section.
+    const noRail = buildOptions({}, richContext({ identity: { userId: "user-a", authMode: "authenticated" }, gguiAttached: false }));
+    expect(spareKeyOf(noRail)).not.toBe(spareKeyOf(a));
+  });
+});
+
+describe("sparePrewarmOf (cto A1)", () => {
+  it("is undefined for an SDK without prewarm, and the SDK's own function otherwise", () => {
+    expect(sparePrewarmOf({})).toBeUndefined();
+    const prewarm: PrewarmFn = () => Promise.reject(new Error("unused"));
+    expect(sparePrewarmOf({ prewarm })).toBe(prewarm);
   });
 });
 
@@ -273,6 +328,29 @@ describe("runInvoke with a parked spare", () => {
     expect(seen.messages).toBe(1);
     expect(fake.seen.messages).toBe(0);
     expect(events.at(-1)?.type).toBe("done");
+  });
+
+  it("binds the turn's own allow-list to the spare's callback, and hands its MCP header values to the redaction (cto A9, A3)", async () => {
+    const fake = fakeSpare("accept");
+    const snapshot = { tools: { allowlist: ["srv.do_thing"] } };
+    const { parked, started } = await park(fake.spare, invoke(), snapshot);
+    const addSecrets = vi.spyOn(parked, "addSecrets");
+    const runtime: HostRuntime = {
+      ...RUNTIME,
+      listCredentials: () => [{ name: "srv", cred: { url: "https://mcp.example/x", transport: "http", headers: { Authorization: "Bearer T1" } } }],
+    };
+    const { sink } = collector();
+    const query = vi.fn<QueryFn>();
+    await runInvoke(snapshot, invoke(), runtime, createEmitter(sink), query, {}, () => Promise.resolve(parked));
+    expect(query).not.toHaveBeenCalled();
+    expect(addSecrets).toHaveBeenCalledWith(["Bearer T1"]);
+    const check = started[0].canUseTool;
+    if (check === undefined) throw new Error("the spare was started without a permission callback");
+    const signal = new AbortController().signal;
+    const allowed = await check("mcp__srv__do_thing", {}, { signal, toolUseID: "t1", requestId: "r1" });
+    const denied = await check("mcp__srv__other", {}, { signal, toolUseID: "t2", requestId: "r2" });
+    expect(allowed?.behavior).toBe("allow");
+    expect(denied?.behavior).toBe("deny");
   });
 
   it("closes the spare for a turn that names a CLI session", async () => {

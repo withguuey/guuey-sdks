@@ -258,6 +258,12 @@ export interface BuildOptionsContext {
   listCredentials: () => Array<{ name: string; cred: CredentialFile }>;
   /** Cancels the in-flight `query` when the client disconnects. */
   abortController?: AbortController;
+  /**
+   * Secrets that arrive after the CLI is spawned (guuey#3407 leg 5: a parked
+   * spare's claiming turn and its MCP header values). The spawner redacts them
+   * from the CLI's stderr from the moment they are added.
+   */
+  lateSecrets?: () => readonly string[];
 }
 
 /**
@@ -483,9 +489,7 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
   // claude.ts), never as `--mcp-config` argv: their header values are
   // registered with the spawner, which refuses any argument or environment
   // value that carries one.
-  const mcpHeaderValues = Object.values(mcpServers).flatMap((server) =>
-    "headers" in server && server.headers !== undefined ? Object.values(server.headers) : [],
-  );
+  const mcpHeaderValues = mcpHeaderValuesOf(mcpServers);
 
   // Whether the operator pinned a Claude permission mode in agent.json. When
   // set we forward it verbatim and let the SDK's mode govern the posture; when
@@ -568,7 +572,11 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
     // The Claude Code binary the platform resolved in its own image, when it
     // names one (`GUUEY_CLAUDE_CODE_EXECUTABLE`); otherwise the SDK's own lookup.
     ...(executable !== undefined ? { pathToClaudeCodeExecutable: executable } : {}),
-    spawnClaudeCodeProcess: makeClaudeSpawner({ key, secrets: mcpHeaderValues }),
+    spawnClaudeCodeProcess: makeClaudeSpawner({
+      key,
+      secrets: mcpHeaderValues,
+      ...(ctx.lateSecrets !== undefined ? { lateSecrets: ctx.lateSecrets } : {}),
+    }),
     systemPrompt,
     // GuueyFS binding (opt-in): session dir as cwd, home+app as extra roots.
     ...(fs ? { cwd: fs.session, additionalDirectories: [fs.home, fs.app] } : {}),
@@ -606,6 +614,13 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
   };
 
   return options;
+}
+
+/** Every header value of `servers`: the secrets the CLI's spawner must keep out of its arguments, environment and stderr. */
+export function mcpHeaderValuesOf(servers: Record<string, SdkMcpServer>): string[] {
+  return Object.values(servers).flatMap((server) =>
+    "headers" in server && server.headers !== undefined ? Object.values(server.headers) : [],
+  );
 }
 
 /**

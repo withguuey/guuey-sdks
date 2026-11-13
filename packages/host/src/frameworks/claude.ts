@@ -45,6 +45,7 @@ import { measureStoredSession } from "./cli-session-store.js";
 import {
   buildOptions,
   claudeTurnContext,
+  mcpHeaderValuesOf,
   reservedEnvNamesDropped,
   resolveMcpServers,
   type BuildOptionsContext,
@@ -510,7 +511,9 @@ export async function prewarmClaudeSpare(
       authToken: CLAUDE_SPARE_PLACEHOLDER_TOKEN,
       listCredentials: () => [],
     };
-    const built = buildOptions(snapshot, turnOptionsContext(template, spareRuntime, made.cliDirs));
+    // The claiming turn's MCP header values join the spare's stderr redaction at the claim.
+    const late: string[] = [];
+    const built = buildOptions(snapshot, { ...turnOptionsContext(template, spareRuntime, made.cliDirs), lateSecrets: () => late });
     if (built.permissionMode !== undefined) throw new Error("the agent pins a permission mode");
     const { cwd: _cwd, additionalDirectories: _dirs, ...fixed } = built;
     const permission = delegatingCanUseTool();
@@ -518,16 +521,21 @@ export async function prewarmClaudeSpare(
       options: { ...fixed, cwd: parking, canUseTool: permission.canUseTool },
       initializeTimeoutMs: timing.startupDeadlineMs ?? CLAUDE_STARTUP_DEADLINE_MS,
     });
+    // `exited` settles, never rejects, in the SDK; a rejection would mean the same: the spare is gone.
     let exited = false;
-    void spare.exited.then(() => {
+    const markExited = (): void => {
       exited = true;
-    });
+    };
+    void spare.exited.then(markExited, markExited);
     return {
       spare,
       root: made.root,
       cliDirs: made.cliDirs,
       key: spareKeyOf(built),
       bindCanUseTool: permission.bind,
+      addSecrets: (values) => {
+        late.push(...values);
+      },
       exited: () => exited,
     };
   } catch (err) {
@@ -545,10 +553,15 @@ function spareMismatchFor(
 ): string | undefined {
   try {
     return spareMismatch(parked, buildOptions(snapshot, turnOptionsContext(invoke, runtime, parked.cliDirs)));
-  } catch {
-    // The turn's own path reports the same failure as its error.
-    return "the turn's options could not be built";
+  } catch (err) {
+    // The turn's own path then reports the same failure as its error.
+    return `the turn's options could not be built (${err instanceof Error ? err.message : String(err)})`;
   }
+}
+
+/** Close a spare no turn claimed, at host shutdown, and remove its state root. */
+export function closeParkedSpare(parked: ParkedSpare): void {
+  discardSpare(parked, "the host is shutting down");
 }
 
 /** Close a spare no turn will claim, and remove its state root. Reported on stderr. */
@@ -711,7 +724,10 @@ async function runClaudeTurn(
 
   let q: QueryHandle;
   try {
-    q = parked !== undefined ? await claimSpare(parked, options, userMessages, query, timing) : query({ prompt: userMessages(), options });
+    q =
+      parked !== undefined
+        ? await claimSpare(parked, options, mcpHeaderValuesOf(resolveMcpServers(ctx)), userMessages, query, timing)
+        : query({ prompt: userMessages(), options });
   } catch (err) {
     emit.error(err instanceof Error ? err.message : String(err));
     return;
@@ -841,6 +857,7 @@ function turnOptionsContext(invoke: HostInvoke, runtime: HostRuntime, cliDirs: C
 async function claimSpare(
   parked: ParkedSpare,
   options: Options,
+  secrets: readonly string[],
   prompt: () => AsyncGenerator<SDKUserMessage>,
   query: QueryFn,
   timing: ClaudeTurnTiming,
@@ -857,6 +874,8 @@ async function claimSpare(
   let claimed: QueryHandle | undefined;
   try {
     parked.bindCanUseTool(check);
+    // Before the claim, so the turn's MCP header values are redacted from the spare's first line on.
+    parked.addSecrets(secrets);
     claimed = parked.spare.claim({ prompt: prompt(), options: claimOptionsOf(cwd, options) });
     await withDeadline(parked.spare.claimed, startupMs, () => new ClaudeStartupError(`no answer to the spare's claim within ${String(startupMs)} ms`));
     process.stderr.write("[guuey] Claude spare claimed\n");

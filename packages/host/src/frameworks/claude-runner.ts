@@ -20,11 +20,11 @@
  * no credential, and the first turn that fits it claims it. Unset, nothing is
  * started and every turn runs exactly as before.
  */
-import { prewarm, query } from "@anthropic-ai/claude-agent-sdk";
+import * as claudeAgentSdk from "@anthropic-ai/claude-agent-sdk";
 import { listCredentials, type Emitter } from "@guuey/worker";
 import type { FrameworkRunner, HostSnapshot, HostTurn } from "../index.js";
-import { prewarmClaudeSpare, runInvoke, type HostRuntime } from "./claude.js";
-import { CLAUDE_SPARE_ENV, parseSpareTemplate, type ParkedSpare } from "./claude-spare.js";
+import { closeParkedSpare, prewarmClaudeSpare, runInvoke, type HostRuntime } from "./claude.js";
+import { CLAUDE_SPARE_ENV, parseSpareTemplate, sparePrewarmOf, type ParkedSpare } from "./claude-spare.js";
 import { buildHostContext, type HostBoot, type HostBootContext } from "../boot-context.js";
 
 export function createRunner(boot: HostBoot = {}): FrameworkRunner {
@@ -48,7 +48,14 @@ export function createRunner(boot: HostBoot = {}): FrameworkRunner {
         ...(bootCtx.anthropicBaseUrl !== undefined ? { baseUrl: bootCtx.anthropicBaseUrl } : {}),
         ...(bootCtx.anthropicAuthToken !== undefined ? { authToken: bootCtx.anthropicAuthToken } : {}),
       };
-      await runInvoke(snapshot, turn, runtime, emit, query, {}, takeSpare);
+      await runInvoke(snapshot, turn, runtime, emit, claudeAgentSdk.query, {}, takeSpare);
+    },
+    async close(): Promise<void> {
+      // A spare no turn took is closed with the host, and its state root removed.
+      if (spare === undefined || spareTaken) return;
+      spareTaken = true;
+      const parked = await spare;
+      if (parked !== undefined) closeParkedSpare(parked);
     },
   };
 }
@@ -59,6 +66,11 @@ function startSpare(snapshot: HostSnapshot, bootCtx: HostBootContext, raw: strin
   const template = parseSpareTemplate(raw);
   if (!template.ok) {
     process.stderr.write(`[guuey] Claude spare not started: ${template.reason}\n`);
+    return undefined;
+  }
+  const prewarm = sparePrewarmOf(claudeAgentSdk);
+  if (prewarm === undefined) {
+    process.stderr.write("[guuey] Claude spare not started: the installed @anthropic-ai/claude-agent-sdk has no prewarm\n");
     return undefined;
   }
   const runtime: HostRuntime = {

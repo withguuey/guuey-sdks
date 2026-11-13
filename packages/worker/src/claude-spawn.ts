@@ -194,6 +194,13 @@ export interface ClaudeSpawnerOptions {
   keyKind?: ClaudeKeyKind;
   /** Further values that must appear in no argument and no environment value (MCP header values). */
   secrets?: readonly string[];
+  /**
+   * Secrets that exist only after the spawn (a parked CLI's claiming turn
+   * hands its MCP header values later, over stdin). Read on every stderr line
+   * and redacted like {@link secrets}; never checked against the spawn's
+   * arguments or environment, which were fixed before they existed.
+   */
+  lateSecrets?: () => readonly string[];
   /** Receives each redacted stderr line. Defaults to the host's stderr. */
   stderr?: (line: string) => void;
   /** Injectable for tests; production uses `node:child_process` spawn. */
@@ -235,6 +242,9 @@ export function makeClaudeSpawner(options: ClaudeSpawnerOptions): (request: Clau
     ...new Set([options.key, ...(options.secrets ?? []).flatMap(secretForms)].filter((s) => s.length > 0)),
   ];
   const keyFdEnv = options.keyKind === "oauth-token" ? CLAUDE_OAUTH_FD_ENV : CLAUDE_KEY_FD_ENV;
+  const lateSecrets = options.lateSecrets;
+  const withLate = (): readonly string[] =>
+    lateSecrets === undefined ? secrets : [...secrets, ...lateSecrets().flatMap(secretForms).filter((s) => s.length > 0)];
   const sink = options.stderr ?? ((line: string) => process.stderr.write(`${line}\n`));
   const spawnImpl = options.spawnFn ?? ((command: string, args: readonly string[], spawnOptions: SpawnOptions) => spawn(command, args, spawnOptions));
 
@@ -289,13 +299,13 @@ export function makeClaudeSpawner(options: ClaudeSpawnerOptions): (request: Clau
         pending += chunk;
         let newline = pending.indexOf("\n");
         while (newline !== -1) {
-          sink(redactSecrets(pending.slice(0, newline), secrets));
+          sink(redactSecrets(pending.slice(0, newline), withLate()));
           pending = pending.slice(newline + 1);
           newline = pending.indexOf("\n");
         }
       });
       stderr.on("end", () => {
-        if (pending.length > 0) sink(redactSecrets(pending, secrets));
+        if (pending.length > 0) sink(redactSecrets(pending, withLate()));
         pending = "";
       });
     }

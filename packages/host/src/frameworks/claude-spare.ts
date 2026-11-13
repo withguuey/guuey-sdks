@@ -29,6 +29,20 @@ import type { QueryHandle } from "./claude.js";
  * turn's prompt class: `fsBound`, `memoryAttached`, `profileAccess`,
  * `resourceCount`, `gguiAttached`, `clientCatalogs`, `firstImpression`).
  * Unset = the spare path is off.
+ *
+ * Before setting it, know:
+ *  - A claimed turn calls the model with {@link CLAUDE_SPARE_PLACEHOLDER_TOKEN}:
+ *    the claim cannot hand a parked CLI a credential. So the switch works only
+ *    where the platform binds the turn outside the CLI (the launcher's per-turn
+ *    channel); anywhere else a claimed turn's model calls are refused.
+ *  - The first turn waits for a prewarm still in progress, up to the SDK's
+ *    initialize limit (60 s, `CLAUDE_STARTUP_DEADLINE_MS` in claude.ts).
+ *  - One spare serves one prompt class. No per-user value is fixed at the park
+ *    (the user id never reaches the options; HOME is the constant home mount),
+ *    but the class is: the auth mode, the memory tool, the profile access, the
+ *    generative-UI rail, the A2UI catalog, real file layers (the built-in
+ *    tools) and a bound first impression (thinking off). An app needs one
+ *    spare, so one plain snapshot, per class its first turns arrive in.
  */
 export const CLAUDE_SPARE_ENV = "GUUEY_CLAUDE_SPARE";
 
@@ -53,6 +67,17 @@ export interface SpareHandle {
 /** The SDK's `prewarm`, as this host calls it. */
 export type PrewarmFn = (params: { options: Options; initializeTimeoutMs?: number }) => Promise<SpareHandle>;
 
+/**
+ * The SDK module's `prewarm`, or undefined when the installed SDK does not
+ * export one. `@guuey/host` accepts SDK versions older than `prewarm`, so it
+ * is looked up on the module, never imported by name: a named import of a
+ * missing export would stop the Claude runner from loading at all. Delete this
+ * lookup when the declared SDK floor reaches the first version with `prewarm`.
+ */
+export function sparePrewarmOf(sdk: { readonly prewarm?: PrewarmFn }): PrewarmFn | undefined {
+  return typeof sdk.prewarm === "function" ? sdk.prewarm : undefined;
+}
+
 /** A spare parked at boot, with the state root it was started in. */
 export interface ParkedSpare {
   readonly spare: SpareHandle;
@@ -63,6 +88,12 @@ export interface ParkedSpare {
   readonly key: string;
   /** Hands the claiming turn's permission check to the callback the spare was started with. */
   bindCanUseTool(check: CanUseTool): void;
+  /**
+   * Adds the claiming turn's secrets (its MCP header values) to the spare's
+   * stderr redaction. The spare was spawned before they existed, so its
+   * spawner reads this list on every line.
+   */
+  addSecrets(values: readonly string[]): void;
   /** Whether the spare's process has exited while parked. */
   exited(): boolean;
 }
@@ -98,28 +129,49 @@ export function parseSpareTemplate(raw: string): SpareTemplate {
 }
 
 /**
- * The fields a spare fixes at prewarm, as one comparable string. Left out on
- * purpose: what the claim sets (`cwd`, `additionalDirectories`), what the turn
- * hands the spare's callback (`canUseTool`, and `allowedTools`, which names the
- * turn's MCP servers and only skips that callback), the per-start spawner and
- * the session fields (a spare never serves a named session).
+ * The option fields a spare fixes at prewarm and a claiming turn must match
+ * exactly ({@link spareKeyOf}). Every other field `buildOptions` returns is in
+ * {@link SPARE_UNKEYED_FIELDS}, with its reason; a test pins the two lists
+ * against `buildOptions`, so a new option cannot go uncompared unnoticed.
  */
+export const SPARE_KEY_FIELDS = [
+  "model",
+  "thinking",
+  "tools",
+  "disallowedTools",
+  "systemPrompt",
+  "settingSources",
+  "settings",
+  "strictMcpConfig",
+  "maxTurns",
+  "includePartialMessages",
+  "env",
+  "pathToClaudeCodeExecutable",
+  "permissionMode",
+] as const satisfies readonly (keyof Options)[];
+
+/**
+ * The option fields not compared: what the claim sets (`cwd`,
+ * `additionalDirectories`), what the turn hands the spare's callback
+ * (`canUseTool`, and `allowedTools`, which names the turn's MCP servers and
+ * only skips that callback), the per-start spawner, the turn's cancel handle,
+ * and the session fields (a spare never serves a named session).
+ */
+export const SPARE_UNKEYED_FIELDS = [
+  "cwd",
+  "additionalDirectories",
+  "canUseTool",
+  "allowedTools",
+  "spawnClaudeCodeProcess",
+  "abortController",
+  "sessionId",
+  "resume",
+] as const satisfies readonly (keyof Options)[];
+
+/** The fields of {@link SPARE_KEY_FIELDS}, as one comparable string (the environment in name order). */
 export function spareKeyOf(options: Options): string {
-  return JSON.stringify({
-    model: options.model ?? null,
-    thinking: options.thinking ?? null,
-    tools: options.tools ?? null,
-    disallowedTools: options.disallowedTools ?? [],
-    systemPrompt: options.systemPrompt ?? null,
-    settingSources: options.settingSources ?? null,
-    settings: options.settings ?? null,
-    strictMcpConfig: options.strictMcpConfig ?? null,
-    maxTurns: options.maxTurns ?? null,
-    includePartialMessages: options.includePartialMessages ?? null,
-    env: Object.entries(options.env ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
-    executable: options.pathToClaudeCodeExecutable ?? null,
-    permissionMode: options.permissionMode ?? null,
-  });
+  const env = Object.entries(options.env ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return JSON.stringify(SPARE_KEY_FIELDS.map((name) => (name === "env" ? env : (options[name] ?? null))));
 }
 
 /** Why a turn cannot claim the spare, or undefined when it can. */

@@ -61,6 +61,8 @@ export type { HostBoot } from "./boot-context.js";
 export interface FrameworkRunner {
   /** Run one turn: drive the SDK, emit native events; resolve when the turn ends. */
   runTurn(snapshot: HostSnapshot, turn: HostTurn, emit: Emitter): Promise<void>;
+  /** Release what the runner prepared before its turns (the Claude runner's parked spare); called once, after the last turn. */
+  close?(): Promise<void>;
 }
 
 /**
@@ -183,6 +185,7 @@ async function main(): Promise<void> {
     // Turns are sequential — await this invoke before reading the next line.
     await runner.runTurn(snapshot, turn, emit);
   }
+  await runner.close?.();
 }
 
 /**

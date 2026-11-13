@@ -220,6 +220,8 @@ describe("makeClaudeSpawner delivery (real child)", () => {
     echo?: "key" | "stdin";
     keyKind?: ClaudeKeyKind;
     secrets?: readonly string[];
+    lateSecrets?: () => readonly string[];
+    onSpawn?: () => void;
     stdinLine?: string;
   } = {}): Promise<{ report: FakeReport; sink: string[]; key: string }> {
     const key = sentinel();
@@ -228,6 +230,8 @@ describe("makeClaudeSpawner delivery (real child)", () => {
       key,
       ...(opts.keyKind !== undefined ? { keyKind: opts.keyKind } : {}),
       ...(opts.secrets !== undefined ? { secrets: opts.secrets } : {}),
+      ...(opts.lateSecrets !== undefined ? { lateSecrets: opts.lateSecrets } : {}),
+      ...(opts.onSpawn !== undefined ? { onSpawn: opts.onSpawn } : {}),
       stderr: (line) => sink.push(line),
     });
     const echoEnv =
@@ -265,6 +269,22 @@ describe("makeClaudeSpawner delivery (real child)", () => {
   it("redacts the bare token of a registered Bearer header value from a stderr line that carries only the token", async () => {
     const token = sentinel();
     const { sink } = await runFake({ echo: "stdin", secrets: [`Bearer ${token}`], stdinLine: token });
+    expect(sink.some((line) => line.startsWith("error: upstream refused credential [redacted]"))).toBe(true);
+    expect(sink.some((line) => line.includes(token))).toBe(false);
+  });
+
+  it("redacts a secret added after the spawn (a parked CLI's claiming turn), and its bare Bearer token", async () => {
+    const token = sentinel();
+    const late: string[] = [];
+    // Registered once the child is spawned and before the line arrives, as a claim does.
+    const { sink } = await runFake({
+      echo: "stdin",
+      lateSecrets: () => late,
+      onSpawn: () => {
+        late.push(`Bearer ${token}`);
+      },
+      stdinLine: token,
+    });
     expect(sink.some((line) => line.startsWith("error: upstream refused credential [redacted]"))).toBe(true);
     expect(sink.some((line) => line.includes(token))).toBe(false);
   });
