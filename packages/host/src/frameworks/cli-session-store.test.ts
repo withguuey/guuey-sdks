@@ -97,6 +97,26 @@ describe("measureStoredSession: a session the pinned CLI wrote", () => {
   });
 });
 
+describe("measureStoredSession: the file's own session ids (guuey#3407 6a, cto D1)", () => {
+  const OTHER = "11111111-1111-4111-8111-111111111111";
+  it("reports every distinct session id its records carry, in file order", () => {
+    write(twoTurns);
+    expect(measureStoredSession(dir, ID).sessionIds).toEqual([ID]);
+  });
+
+  it("reports another session's id when the file under this id was written by another session", () => {
+    write([...bookkeeping, prompt("u1", null, "turn one"), assistant("r1", "u1", "reply one"), { ...lastPrompt("turn one", "r1"), sessionId: OTHER }]);
+    expect(measureStoredSession(dir, ID).sessionIds).toEqual([OTHER]);
+  });
+
+  it("is empty when no record carries one, and for a file it cannot read", () => {
+    write([...bookkeeping, prompt("u1", null, "turn one"), assistant("r1", "u1", "reply one")]);
+    expect(measureStoredSession(dir, ID).sessionIds).toEqual([]);
+    rmSync(join(dir, `${ID}.jsonl`));
+    expect(measureStoredSession(dir, ID)).toMatchObject({ readError: "missing", sessionIds: [] });
+  });
+});
+
 describe("measureStoredSession: the session file cannot be read", () => {
   it("missing", () => {
     expect(measureStoredSession(dir, ID)).toMatchObject({ readError: "missing", walks: [], systemPromptShas: [] });

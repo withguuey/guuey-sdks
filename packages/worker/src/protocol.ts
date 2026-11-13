@@ -581,6 +581,12 @@ export interface HelloStoredMeasures {
   readonly walks: readonly HelloWalk[];
   /** Every stored last-prompt text, in file order. */
   readonly lastPromptShas: readonly string[];
+  /**
+   * Every distinct session id written in the file's own records, in file order (guuey#3407 6a, cto D1): the file's
+   * identity, which is not its prompts (two threads whose last prompts are equal hash equal). Absent from a host that
+   * predates it; a comparison then cannot vouch for the file's identity ({@link compareStoredSession} refuses).
+   */
+  readonly sessionIds?: readonly string[];
   /** The session directory's tree, relative paths, links suffixed `@link`. */
   readonly entries: readonly string[];
   /** Lines and entries the host could not classify as the pinned CLI writes them (an edit it cannot vouch for). */

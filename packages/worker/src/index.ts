@@ -64,6 +64,7 @@ export {
   isSuspend,
 } from "./parse.js";
 export { INPUT_KINDS, type InputKind, isInputKind, inputKindCapability } from "./protocol.js";
+export { compareStoredSession, type CliSessionRecord, type CliSessionRefusal, type CliSessionVerdict } from "./cli-session-compare.js";
 export { CONTEXT_ONLY_TURN_TEXT, MODEL_TEXT_INPUT_KIND_CAPABILITIES, modelInputOf, modelTextOf } from "./model-text.js";
 export { invokeImagesCapabilities, isInvokeImageMimeType, isStandardBase64 } from "./images.js";
 export {

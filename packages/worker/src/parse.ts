@@ -292,6 +292,9 @@ function parseStoredMeasures(v: JsonValue | undefined): HelloStoredMeasures | un
   const lastPromptShas = stringList(v.lastPromptShas);
   const entries = stringList(v.entries);
   if (systemPromptShas === undefined || lastPromptShas === undefined || entries === undefined || !Array.isArray(v.walks)) return undefined;
+  // Optional (added after wire v1.2): absent from an older host; present but malformed drops the block whole.
+  const sessionIds = v.sessionIds === undefined ? undefined : stringList(v.sessionIds);
+  if (v.sessionIds !== undefined && sessionIds === undefined) return undefined;
   const walks: HelloWalk[] = [];
   for (const w of v.walks) {
     const walk = parseWalk(w);
@@ -306,6 +309,7 @@ function parseStoredMeasures(v: JsonValue | undefined): HelloStoredMeasures | un
     systemPromptShas,
     walks,
     lastPromptShas,
+    ...(sessionIds !== undefined ? { sessionIds } : {}),
     entries,
     unclassified,
     corrupt,

@@ -148,6 +148,7 @@ export function measureStoredSession(sessionDir: string, id: string): HelloStore
     systemPromptShas: [],
     walks: [],
     lastPromptShas: [],
+    sessionIds: [],
     entries,
     unclassified: 0,
     corrupt: 0,
@@ -170,6 +171,7 @@ export function measureStoredSession(sessionDir: string, id: string): HelloStore
   let benignDuplicates = 0;
   const systemPromptShas: string[] = [];
   const lastPromptShas: string[] = [];
+  const sessionIds: string[] = [];
   let lastPromptLeaf: string | null = null;
   const byUuid = new Map<string, { line: Line; kind: Kind; sha: string | null }>();
   const boundaries: string[] = [];
@@ -188,6 +190,8 @@ export function measureStoredSession(sessionDir: string, id: string): HelloStore
       continue;
     }
     const line = parsed;
+    // The session id the CLI wrote into this record, whatever its type: the file's own identity (cto D1).
+    if (typeof line.sessionId === "string" && !sessionIds.includes(line.sessionId)) sessionIds.push(line.sessionId);
     if (line.type === "system" && line.subtype !== COMPACT_BOUNDARY) {
       unclassified += 1;
       continue;
@@ -291,6 +295,7 @@ export function measureStoredSession(sessionDir: string, id: string): HelloStore
     systemPromptShas,
     walks,
     lastPromptShas,
+    sessionIds,
     entries,
     unclassified,
     corrupt,
