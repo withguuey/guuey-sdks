@@ -1,8 +1,9 @@
 /**
  * FROZEN test fixture: `parse.ts` (both `parseControl` and `parseEvent`) exactly as it stood before the hello's stored
- * measures carried `sessionIds` (guuey#3407 6a, cto D1), at main fef041a3b3ed. It stands in for an older Router reading
- * a newer host's hello (N−1), so do not edit it to follow `../parse.ts`; a later protocol change gets a new frozen copy
- * beside this one. Only the import paths are adjusted to this directory.
+ * measures carried `sessionIds` (guuey#3407 6a, cto D1) and the invoke's `cliSession` carried `expectLastPromptSha`
+ * (6a, F1), at main fef041a3b3ed. It stands in for an older Router reading a newer host's hello and an older worker
+ * reading a newer Router's invoke (both N−1 directions), so do not edit it to follow `../parse.ts`; a later protocol
+ * change gets a new frozen copy beside this one. Only the import paths are adjusted to this directory.
  *
  * Tier-1 typed interpreter: validate one NDJSON control line (Router→Worker, fd
  * 0) into a typed {@link ControlMessage}. Hand-rolled guards keep the package

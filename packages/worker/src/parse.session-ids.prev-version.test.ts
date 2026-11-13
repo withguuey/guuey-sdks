@@ -8,9 +8,9 @@
  *   good older block is never turned into a host fault. A present but malformed `sessionIds` drops the block whole.
  */
 import { describe, expect, it } from "vitest";
-import { parseEvent } from "./parse.js";
+import { parseControl, parseEvent } from "./parse.js";
 import { CLI_SESSION_CAPABILITY, CLI_SESSION_HASH_VERSION, type HelloCliSession, type HelloStoredMeasures } from "./protocol.js";
-import { parseEvent as parseEventPrev } from "./fixtures/parse.pre-session-ids.prev.js";
+import { parseControl as parseControlPrev, parseEvent as parseEventPrev } from "./fixtures/parse.pre-session-ids.prev.js";
 
 const SHA = "a".repeat(64);
 const SESSION_ID = "6f9619ff-8b86-4011-b42d-00c04fc964ff";
@@ -63,5 +63,42 @@ describe("the current parser × stored sessionIds", () => {
     const hello = { ...HELLO, cliSession: { ...OLD_BLOCK, stored: { ...OLD_STORED, sessionIds } } };
     const now = parseEvent(JSON.stringify(hello));
     expect(now).toEqual(HELLO);
+  });
+});
+
+// The invoke's side of the same change: cliSession.expectLastPromptSha, the platform's record a host checks before it
+// starts the CLI on a resume (guuey#3407 6a, F1, the lead's ruling (B) plus the Router hold).
+const INVOKE = {
+  type: "invoke",
+  input: "hello",
+  identity: { userId: "u1", authMode: "authenticated" },
+  fs: { app: "/app", home: "/home", session: "/session" },
+  history: [],
+};
+const EXPECT = "e".repeat(64);
+
+describe("the previous worker's parser (frozen) × a new Router's cliSession with expectLastPromptSha", () => {
+  it("keeps the resume and drops only the new field: no host check, as before", () => {
+    const fromNew = parseControlPrev(JSON.stringify({ ...INVOKE, cliSession: { mode: "resume", id: SESSION_ID, expectLastPromptSha: EXPECT } }));
+    expect(fromNew).toMatchObject({ cliSession: { mode: "resume", id: SESSION_ID } });
+    expect(JSON.stringify(fromNew)).not.toContain("expectLastPromptSha");
+  });
+});
+
+describe("the current parser × cliSession.expectLastPromptSha", () => {
+  it("keeps a 64-hex record, and reads an older Router's cliSession without it as before", () => {
+    const withRecord = { ...INVOKE, cliSession: { mode: "resume", id: SESSION_ID, expectLastPromptSha: EXPECT } };
+    expect(parseControl(JSON.stringify(withRecord))).toMatchObject({ cliSession: { mode: "resume", id: SESSION_ID, expectLastPromptSha: EXPECT } });
+    const older = JSON.stringify({ ...INVOKE, cliSession: { mode: "resume", id: SESSION_ID } });
+    expect(parseControl(older)).toEqual(parseControlPrev(older));
+  });
+
+  it.each([
+    ["upper-case hex", "E".repeat(64)],
+    ["too short", "e".repeat(63)],
+    ["not a string", 7],
+  ])("drops the whole cliSession on a record that is %s: no resume, never an unchecked one", (_label, expectLastPromptSha) => {
+    const parsed = parseControl(JSON.stringify({ ...INVOKE, cliSession: { mode: "resume", id: SESSION_ID, expectLastPromptSha } }));
+    expect("cliSession" in parsed).toBe(false);
   });
 });

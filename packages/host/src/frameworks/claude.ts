@@ -37,6 +37,8 @@ import {
   CLI_SESSION_CAPABILITY,
   CLI_SESSION_HASH_VERSION,
   CLI_SESSION_RESUME_FAILED,
+  compareStoredSession,
+  type CliSessionVerdict,
   invokeImagesCapabilities,
   storeTurnImages,
 } from "@guuey/worker";
@@ -682,6 +684,21 @@ async function runClaudeTurn(
   // B3: the turn's first event, when it carried `cliSession` (R-1: the only
   // frame the Router takes these values from).
   hello(block);
+  // guuey#3407 6a (F1): a resume that carries the platform's record is checked
+  // HERE, against the measures the hello just reported, before the CLI starts:
+  // a refused file is never loaded and nothing reaches the model. This is the
+  // cooperative half; the platform's own comparison on the hello gates the turn.
+  if (session?.mode === "resume" && session.expectLastPromptSha !== undefined) {
+    const stored = block?.stored;
+    const verdict: CliSessionVerdict =
+      stored === undefined
+        ? { ok: false, reason: "unreadable" }
+        : compareStoredSession({ id: session.id, lastPromptSha: session.expectLastPromptSha }, stored);
+    if (!verdict.ok) {
+      emit.error(`${CLI_SESSION_RESUME_FAILED}: refused (${verdict.reason})`);
+      return;
+    }
+  }
   // The platform-owned names buildOptions left out of the agent's environment,
   // reported on stderr (names only) so the drop is never silent.
   const droppedEnv = reservedEnvNamesDropped(snapshot);

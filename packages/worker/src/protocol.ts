@@ -543,6 +543,13 @@ export const CLI_SESSION_RESUME_FAILED = "cli_session_resume_failed";
 export interface InvokeCliSession {
   readonly mode: "start" | "resume";
   readonly id: string;
+  /**
+   * On a `resume`, the platform's record of the thread's last turn: that turn's hello `lastPromptSha` (64 lowercase
+   * hex). The host compares the stored session with it ({@link compareStoredSession}) BEFORE it starts the CLI and
+   * refuses on a mismatch: the cooperative half (guuey#3407 6a, F1). The platform's own comparison on the hello stays
+   * the one that gates the turn. Absent from an older Router: no host check, as before.
+   */
+  readonly expectLastPromptSha?: string;
 }
 
 /** The hello's thread-resume block ({@link WorkerHelloEvent.cliSession}). Every sha is `@guuey/host`'s content hash. */

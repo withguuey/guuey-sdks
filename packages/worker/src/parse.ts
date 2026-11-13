@@ -253,11 +253,17 @@ function parseAttachments(v: JsonValue | undefined): InvokeImageAttachment[] | u
  * checks the id is a UUID before it spawns anything; the parser keeps any non-empty string so that check can name it.
  * Never throws: a malformed field reads as absent, which is today's turn exactly.
  */
+/** A sha the host computes: 64 lowercase hex. */
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
 function parseInvokeCliSession(v: JsonValue | undefined): InvokeCliSession | undefined {
   if (!isObject(v)) return undefined;
-  const { mode, id } = v;
+  const { mode, id, expectLastPromptSha } = v;
   if ((mode !== "start" && mode !== "resume") || typeof id !== "string" || id.length === 0) return undefined;
-  return { mode, id };
+  if (expectLastPromptSha === undefined) return { mode, id };
+  // Present but malformed drops the field whole: the turn runs without a resume, never with an unchecked one.
+  if (typeof expectLastPromptSha !== "string" || !SHA256_HEX.test(expectLastPromptSha)) return undefined;
+  return { mode, id, expectLastPromptSha };
 }
 
 const isString = (v: JsonValue): v is string => typeof v === "string";

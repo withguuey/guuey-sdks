@@ -191,6 +191,31 @@ describe("R14: a resume is confirmed by the init of the id sent, before anything
   });
 });
 
+describe("6a F1: a resume carrying the platform's record is checked before the CLI starts (the cooperative half)", () => {
+  const EXPECT = "d".repeat(64);
+
+  it("a stored session the host cannot vouch for: one refusal after the hello, and no CLI start", async () => {
+    const t = await oneTurn(invoke({ cliSession: { mode: "resume", id: ID, expectLastPromptSha: EXPECT } }), initMessage(ID), resultMessage("success"));
+    expect(t.events.map((e) => e.type)).toEqual(["hello", "error"]);
+    const err = t.events[1];
+    expect(err.type === "error" ? err.message : "").toBe(`${CLI_SESSION_RESUME_FAILED}: refused (unreadable)`);
+    expect(t.hello?.cliSession?.stored).toMatchObject({ readError: "missing" });
+    expect(t.queried).toBe(false);
+    expect(t.content).toBeUndefined();
+  });
+
+  it("without the record (an older Router), no host check: the CLI starts, as before", async () => {
+    const t = await oneTurn(invoke({ cliSession: { mode: "resume", id: ID } }), initMessage(ID), resultMessage("success"));
+    expect(t.queried).toBe(true);
+  });
+
+  it("a start is never checked, even with a record", async () => {
+    const t = await oneTurn(invoke({ cliSession: { mode: "start", id: ID, expectLastPromptSha: EXPECT } }), resultMessage("success"));
+    expect(t.queried).toBe(true);
+    expect(t.events.map((e) => e.type)).toEqual(["hello", "native", "done"]);
+  });
+});
+
 describe("R5: a malformed id stops before any spawn", () => {
   it.each(["not-a-uuid", "6f9619ff8b864011b42d00c04fc964ff", " " + ID])("%j: a hello without the capability, then one error, no query", async (id) => {
     const t = await oneTurn(invoke({ cliSession: { mode: "start", id } }), resultMessage("success"));
