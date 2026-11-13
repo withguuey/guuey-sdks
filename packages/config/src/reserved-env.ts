@@ -1,9 +1,11 @@
 /**
  * Environment names the platform runtime owns on the agent container: the
  * Node, OpenSSL, dynamic-loader and glibc settings its processes start with,
- * the runtime's own sandbox switch, and `GUUEY_CLI_ROOT` (the Claude CLI's
+ * the runtime's own sandbox switch, `GUUEY_CLI_ROOT` (the Claude CLI's
  * fixed state root, which the platform will set for the worker; `CLAUDE_CLI_ROOT_ENV`
- * in `@guuey/worker`). `agent.env` never sets them.
+ * in `@guuey/worker`) and `GUUEY_CLAUDE_SPARE` (the launcher's switch and
+ * template for the Claude runner's parked CLI; `CLAUDE_SPARE_ENV` in
+ * `@guuey/host`). `agent.env` never sets them.
  *
  * EXACT, case-sensitive names, no prefix rule: the dynamic loader honours a
  * closed set of `LD_*` names (the ones listed here), so an unrelated name that
@@ -32,6 +34,7 @@ export const RUNTIME_RESERVED_ENV_NAMES = [
   'OPENSSL_ENGINES',
   'GUUEY_SANDBOX',
   'GUUEY_CLI_ROOT',
+  'GUUEY_CLAUDE_SPARE',
   'LD_PRELOAD',
   'LD_LIBRARY_PATH',
   'LD_AUDIT',
