@@ -1,9 +1,9 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import type { CanUseTool, ClaimOptions, Options, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import { createEmitter, type WorkerEvent } from "@guuey/worker";
+import type { CanUseTool, ClaimOptions, McpServerConfig, Options, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { createEmitter, listCredentials, MCP_SERVERS_FILE_ENV, type McpServersFile, type WorkerEvent } from "@guuey/worker";
 import { prewarmClaudeSpare, runInvoke, spareRuntimeOf, type HostInvoke, type HostRuntime, type QueryFn, type QueryHandle } from "./claude.js";
 import { buildOptions, type BuildOptionsContext } from "./claude-options.js";
 import {
@@ -61,10 +61,18 @@ function resultMessage(): SDKMessage {
   return msg as unknown as SDKMessage;
 }
 
-/** A fake Query that reads its prompt's one message into `seen`, then ends with a result. */
-function answeringQuery(prompt: AsyncIterable<SDKUserMessage>, seen: { messages: number }, closed: { count: number }): QueryHandle {
+/** A fake Query that reads its prompt's one message into `seen`, records each `setMcpServers` into `sets`, then ends with a result. */
+function answeringQuery(
+  prompt: AsyncIterable<SDKUserMessage>,
+  seen: { messages: number },
+  closed: { count: number },
+  sets: Array<Record<string, McpServerConfig>> = [],
+): QueryHandle {
   return {
-    setMcpServers: () => Promise.resolve({ added: [], removed: [], errors: {} }),
+    setMcpServers: (servers) => {
+      sets.push(servers);
+      return Promise.resolve({ added: [], removed: [], errors: {} });
+    },
     mcpServerStatus: () => Promise.resolve([]),
     close: () => {
       closed.count += 1;
@@ -86,8 +94,10 @@ function fakeSpare(answer: "accept" | "refuse"): {
   seen: { messages: number };
   closed: { count: number };
   queryClosed: { count: number };
+  mcpSets: Array<Record<string, McpServerConfig>>;
 } {
   const claims: ClaimOptions[] = [];
+  const mcpSets: Array<Record<string, McpServerConfig>> = [];
   const seen = { messages: 0 };
   const closed = { count: 0 };
   const queryClosed = { count: 0 };
@@ -115,7 +125,7 @@ function fakeSpare(answer: "accept" | "refuse"): {
           async *[Symbol.asyncIterator]() {},
         };
       }
-      return answeringQuery(prompt, seen, queryClosed);
+      return answeringQuery(prompt, seen, queryClosed, mcpSets);
     },
     claimed,
     exited: new Promise<void>(() => undefined),
@@ -123,7 +133,7 @@ function fakeSpare(answer: "accept" | "refuse"): {
       closed.count += 1;
     },
   };
-  return { spare, claims, seen, closed, queryClosed };
+  return { spare, claims, seen, closed, queryClosed, mcpSets };
 }
 
 /** Park a spare through the real boot path with a fake `prewarm`, recording the options it was started with. */
@@ -410,6 +420,52 @@ describe("runInvoke with a parked spare", () => {
     const denied = await check("mcp__srv__other", {}, { signal, toolUseID: "t2", requestId: "r2" });
     expect(allowed?.behavior).toBe("allow");
     expect(denied?.behavior).toBe("deny");
+  });
+
+  // guuey#3407 S1-MCP: a spare is parked with no MCP server; the claiming turn's servers are read at the claim
+  // and sent to the live CLI over stdin. The trusted side writes the servers file before the claiming invoke.
+  const SRV: { name: string; cred: { url: string; transport: "http"; headers: Record<string, string> } } = {
+    name: "srv",
+    cred: { url: "https://mcp.example/x", transport: "http", headers: { Authorization: "Bearer T1" } },
+  };
+
+  it("sends the claiming turn's MCP servers to the claimed CLI, though the park listed none (S1-MCP; mutant: the park's empty list)", async () => {
+    const fake = fakeSpare("accept");
+    const { parked, started } = await park(fake.spare);
+    expect(started[0].mcpServers).toBeUndefined();
+    const query = vi.fn<QueryFn>();
+    const { sink } = collector();
+    await runInvoke({}, invoke(), { ...RUNTIME, listCredentials: () => [SRV] }, createEmitter(sink), query, {}, () => Promise.resolve(parked));
+    expect(query).not.toHaveBeenCalled();
+    expect(fake.claims).toHaveLength(1);
+    expect(fake.mcpSets).toHaveLength(1);
+    expect(Object.keys(fake.mcpSets[0])).toEqual(["srv"]);
+    expect(fake.mcpSets[0].srv).toMatchObject({ type: "http", url: SRV.cred.url, headers: SRV.cred.headers });
+  });
+
+  it("reads the servers file at the claim: absent at the park, written (temp then rename) before the claim (S1-MCP; mutant: read once at the park)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "host-spare-servers-"));
+    const path = join(dir, "mcp-servers.json");
+    const runtime: HostRuntime = { ...RUNTIME, listCredentials: listCredentials(invoke().fs, { [MCP_SERVERS_FILE_ENV]: path }) };
+    expect(runtime.listCredentials()).toEqual([]);
+    const fake = fakeSpare("accept");
+    const started: Options[] = [];
+    const prewarm: PrewarmFn = (params) => {
+      started.push(params.options);
+      return Promise.resolve(fake.spare);
+    };
+    const parked = await prewarmClaudeSpare({}, invoke(), runtime, prewarm);
+    if (parked === undefined) throw new Error("the spare did not park");
+    expect(existsSync(path)).toBe(false);
+    const file: McpServersFile = { version: 1, servers: [{ name: SRV.name, credential: SRV.cred }] };
+    writeFileSync(`${path}.tmp`, JSON.stringify(file), { mode: 0o600 });
+    renameSync(`${path}.tmp`, path);
+    const { sink } = collector();
+    await runInvoke({}, invoke(), runtime, createEmitter(sink), vi.fn<QueryFn>(), {}, () => Promise.resolve(parked));
+    expect(fake.mcpSets).toHaveLength(1);
+    expect(fake.mcpSets[0].srv).toMatchObject({ type: "http", url: SRV.cred.url, headers: SRV.cred.headers });
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(parked.root, { recursive: true, force: true });
   });
 
   it("closes the spare for a turn that names a CLI session", async () => {
