@@ -25,8 +25,9 @@ RULES=(
   'AWS account id (any 12-digit in an arn)|arn:aws:[a-z0-9-]*:[a-z0-9-]*:[0-9]{12}:'
   # One rule for every guuey credential family, present and future (user,
   # wkz, svc, agt, widget, rt, rat, client, deploy, thr, ...): a per-family
-  # list missed each new family until someone remembered to add it.
-  'guuey credential body (any guuey_<family>_ prefix)|guuey_[a-z]+_[A-Za-z0-9_-]{20,}'
+  # list missed each new family until someone remembered to add it. The
+  # family may carry digits; scripts/leak-scan.test.mjs holds the rule.
+  'guuey credential body (any guuey_<family>_ prefix)|guuey_[a-z0-9]+_[A-Za-z0-9_-]{20,}'
   'anthropic key body|sk-ant-[A-Za-z0-9_-]{20,}'
   'openai key body|sk-proj-[A-Za-z0-9_-]{20,}'
   'private e-mail domain|@loqu\.co\b'
@@ -69,17 +70,32 @@ SKIP_PATH_RE='(^|/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock)$|\.(png|jpg|j
 main() {
   local fail=0 files
   files="$(git ls-files)"
+  files="$(printf '%s\n' "$files" | grep -vE '^scripts/leak-scan\.sh$' | grep -vE "$SKIP_PATH_RE" | sed '/^$/d' || true)"
+  # A scan that read nothing is not a clean scan.
   if [ -z "$files" ]; then
-    echo "leak-scan: no tracked files"
-    return 0
+    echo "leak-scan: NOTHING SCANNED: no tracked file to read, so this is not a clean result" >&2
+    return 1
   fi
-  files="$(printf '%s\n' "$files" | grep -vE '^scripts/leak-scan\.sh$' | grep -vE "$SKIP_PATH_RE" || true)"
 
-  local rule desc pattern hits allow allow_re
+  # Each file name is one argument (a name with a space stays whole).
+  local file_args=() line
+  while IFS= read -r line; do
+    file_args+=("$line")
+  done <<<"$files"
+
+  local rule desc pattern hits allow allow_re rc
   for rule in "${RULES[@]}"; do
     desc="${rule%%|*}"
     pattern="${rule#*|}"
-    hits="$(printf '%s\n' "$files" | xargs -r grep -InE -- "$pattern" 2>/dev/null || true)"
+    # grep exits 0 on a hit, 1 on no hit and 2 on an error (a bad pattern, an
+    # unreadable file). An error says nothing about the tree, so it fails.
+    rc=0
+    hits="$(grep -HInE -- "$pattern" "${file_args[@]}")" || rc=$?
+    if [ "$rc" -gt 1 ]; then
+      echo "leak-scan ERROR [$desc] pattern '$pattern': grep exited $rc, so this rule scanned nothing" >&2
+      fail=1
+      continue
+    fi
     for allow in ${ALLOW[@]+"${ALLOW[@]}"}; do
       allow_re="${allow%%|*}"
       hits="$(printf '%s\n' "$hits" | grep -vE -- "$allow_re" || true)"
