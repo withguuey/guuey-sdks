@@ -4,16 +4,18 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import type { CanUseTool, ClaimOptions, Options, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { createEmitter, type WorkerEvent } from "@guuey/worker";
-import { prewarmClaudeSpare, runInvoke, type HostInvoke, type HostRuntime, type QueryFn, type QueryHandle } from "./claude.js";
+import { prewarmClaudeSpare, runInvoke, spareRuntimeOf, type HostInvoke, type HostRuntime, type QueryFn, type QueryHandle } from "./claude.js";
 import { buildOptions, type BuildOptionsContext } from "./claude-options.js";
 import {
   CLAUDE_SPARE_PLACEHOLDER_TOKEN,
   SPARE_KEY_FIELDS,
   SPARE_PARKING_DIR,
+  SPARE_THREAD_TOKEN_PREFIX,
   SPARE_UNKEYED_FIELDS,
   delegatingCanUseTool,
   parseSpareTemplate,
   spareKeyOf,
+  spareAuthTokenOf,
   sparePrewarmOf,
   type ParkedSpare,
   type PrewarmFn,
@@ -248,6 +250,38 @@ describe("delegatingCanUseTool", () => {
   });
 });
 
+// guuey#3456 (the token door's worker binding, host half). The test token is visibly fake and short.
+const THREAD_TOKEN = `${SPARE_THREAD_TOKEN_PREFIX}test`;
+
+describe("spareAuthTokenOf: the credential a spare is parked with (guuey#3456)", () => {
+  it("keeps the platform's thread token", () => {
+    expect(spareAuthTokenOf(THREAD_TOKEN)).toBe(THREAD_TOKEN);
+  });
+
+  it("parks any other value on the placeholder: an older Router's per-turn token (#1213), none, a bare prefix, a look-alike (mutant: includes, or case-folded)", () => {
+    for (const other of ["turn-token", undefined, SPARE_THREAD_TOKEN_PREFIX, `x${THREAD_TOKEN}`, THREAD_TOKEN.toUpperCase(), ` ${THREAD_TOKEN}`]) {
+      expect(spareAuthTokenOf(other)).toBe(CLAUDE_SPARE_PLACEHOLDER_TOKEN);
+    }
+  });
+});
+
+describe("spareRuntimeOf: the runtime a spare is parked with (guuey#3456)", () => {
+  it("carries the base URL and the thread token, and lists no MCP credential", () => {
+    const runtime = spareRuntimeOf({
+      baseUrl: "http://127.0.0.1:9911",
+      authToken: THREAD_TOKEN,
+      listCredentials: () => [{ name: "srv", cred: { url: "https://mcp.example/x", transport: "http", headers: { Authorization: "Bearer T1" } } }],
+    });
+    expect(runtime.baseUrl).toBe("http://127.0.0.1:9911");
+    expect(runtime.authToken).toBe(THREAD_TOKEN);
+    expect(runtime.listCredentials()).toEqual([]);
+  });
+
+  it("parks a per-turn token on the placeholder, so a credential that names one turn never outlives it in a parked CLI", () => {
+    expect(spareRuntimeOf(RUNTIME).authToken).toBe(CLAUDE_SPARE_PLACEHOLDER_TOKEN);
+  });
+});
+
 describe("prewarmClaudeSpare", () => {
   it("starts nothing without a model-egress base URL", async () => {
     const prewarm = vi.fn<PrewarmFn>();
@@ -270,6 +304,22 @@ describe("prewarmClaudeSpare", () => {
     expect(envValues).not.toContain(CLAUDE_SPARE_PLACEHOLDER_TOKEN);
     expect(envValues).not.toContain("turn-token");
     expect(options.env?.CLAUDE_CONFIG_DIR).toBe(parked.cliDirs.config);
+    rmSync(parked.root, { recursive: true, force: true });
+  });
+
+  it("parks with the thread token and still puts no credential in the environment (guuey#3456)", async () => {
+    const { spare } = fakeSpare("accept");
+    const started: Options[] = [];
+    const prewarm: PrewarmFn = (params) => {
+      started.push(params.options);
+      return Promise.resolve(spare);
+    };
+    const parked = await prewarmClaudeSpare({}, invoke(), { ...RUNTIME, authToken: THREAD_TOKEN }, prewarm);
+    if (parked === undefined) throw new Error("the spare did not park");
+    const envValues = Object.values(started[0].env ?? {});
+    expect(envValues).not.toContain(THREAD_TOKEN);
+    expect(envValues).not.toContain(CLAUDE_SPARE_PLACEHOLDER_TOKEN);
+    expect(started[0].spawnClaudeCodeProcess).toBeTypeOf("function");
     rmSync(parked.root, { recursive: true, force: true });
   });
 

@@ -13,10 +13,17 @@
  * when that turn's own options agree with the spare's on every fixed field
  * ({@link spareKeyOf}); any other turn closes the spare and starts cold.
  *
- * The spare holds no turn's credential: its CLI is given
- * {@link CLAUDE_SPARE_PLACEHOLDER_TOKEN}, and the platform binds the turn by
- * the channel it reaches the model through (the launcher's door, never the
- * string). Its MCP servers arrive after the claim over stdin, as on every turn.
+ * The spare's model credential is fixed at the park, before any turn (the
+ * claim cannot hand a parked CLI a credential). When the launch envelope
+ * carries the platform's thread token (`guuey_thr_…`, guuey#3456, the token
+ * door's worker binding), the spare is started WITH that token, so the parked
+ * CLI holds it from the park for its whole life; the platform admits its model
+ * calls only during the bound thread's live turn. Any other envelope token,
+ * or none, leaves it on {@link CLAUDE_SPARE_PLACEHOLDER_TOKEN}, a constant that
+ * names no turn. Either way the token reaches the CLI only on the spawner's
+ * private descriptor (never its environment, argv or a file) and is redacted
+ * from its stderr. Its MCP servers arrive after the claim over stdin, as on
+ * every turn.
  */
 import type { CanUseTool, ClaimOptions, Options, PermissionResult, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { isInvoke, parseControl, type Invoke } from "@guuey/worker";
@@ -31,10 +38,11 @@ import type { QueryHandle } from "./claude.js";
  * Unset = the spare path is off.
  *
  * Before setting it, know:
- *  - A claimed turn calls the model with {@link CLAUDE_SPARE_PLACEHOLDER_TOKEN}:
- *    the claim cannot hand a parked CLI a credential. So the switch works only
- *    where the platform binds the turn outside the CLI (the launcher's per-turn
- *    channel); anywhere else a claimed turn's model calls are refused.
+ *  - A claimed turn calls the model with the credential the spare was parked
+ *    with ({@link spareAuthTokenOf}): the platform's thread token when the
+ *    launch carried one, else {@link CLAUDE_SPARE_PLACEHOLDER_TOKEN}. With the
+ *    placeholder the switch works only where the platform binds the turn
+ *    outside the CLI; anywhere else a claimed turn's model calls are refused.
  *  - The first turn waits for a prewarm still in progress, up to the SDK's
  *    initialize limit (60 s, `CLAUDE_STARTUP_DEADLINE_MS` in claude.ts).
  *  - One spare serves one prompt class. No per-user value is fixed at the park
@@ -47,11 +55,30 @@ import type { QueryHandle } from "./claude.js";
 export const CLAUDE_SPARE_ENV = "GUUEY_CLAUDE_SPARE";
 
 /**
- * The model credential a parked CLI holds: a constant that names no turn and
- * grants nothing. The turn is bound outside the CLI (the launcher's per-turn
- * channel), so no credential is ever read before the claim.
+ * The model credential a parked CLI holds when the launch carried no thread
+ * token: a constant that names no turn and grants nothing. The turn is then
+ * bound outside the CLI (the launcher's per-turn channel).
  */
 export const CLAUDE_SPARE_PLACEHOLDER_TOKEN = "guuey-spare-unbound";
+
+/** The prefix of the platform's thread token (the token door's worker binding, guuey#3456): the only credential a spare may be parked with. */
+export const SPARE_THREAD_TOKEN_PREFIX = "guuey_thr_";
+
+/**
+ * The credential a spare is parked with (guuey#3456): the launch envelope's
+ * model token when it is the platform's thread token (it begins
+ * {@link SPARE_THREAD_TOKEN_PREFIX} and carries more after it), else
+ * {@link CLAUDE_SPARE_PLACEHOLDER_TOKEN}. The prefix alone decides: a per-turn
+ * token (an older Router's launch) never reaches a parked CLI, whose credential
+ * outlives the turn.
+ */
+export function spareAuthTokenOf(envelopeToken: string | undefined): string {
+  return envelopeToken !== undefined &&
+    envelopeToken.length > SPARE_THREAD_TOKEN_PREFIX.length &&
+    envelopeToken.startsWith(SPARE_THREAD_TOKEN_PREFIX)
+    ? envelopeToken
+    : CLAUDE_SPARE_PLACEHOLDER_TOKEN;
+}
 
 /** The parking directory's name under the spare's CLI state root: a constant path, outside every mount. */
 export const SPARE_PARKING_DIR = "spare-parking";

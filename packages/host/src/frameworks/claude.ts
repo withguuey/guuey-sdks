@@ -55,10 +55,10 @@ import {
   type PriorMemoryRecord,
 } from "./claude-options.js";
 import {
-  CLAUDE_SPARE_PLACEHOLDER_TOKEN,
   SPARE_PARKING_DIR,
   claimOptionsOf,
   delegatingCanUseTool,
+  spareAuthTokenOf,
   spareKeyOf,
   spareMismatch,
   type ParkedSpare,
@@ -474,9 +474,23 @@ function makeCliRoot(): CliRoot {
 }
 
 /**
+ * The runtime a spare is parked with (guuey#3407 leg 5, guuey#3456): the model-egress base URL, the credential
+ * {@link spareAuthTokenOf} gives the boot's token (the platform's thread token, else the placeholder), and NO MCP
+ * credential (a spare's MCP servers arrive after the claim). Pure, so the credential decision is pinned by a test.
+ */
+export function spareRuntimeOf(runtime: HostRuntime): HostRuntime {
+  return {
+    ...(runtime.baseUrl !== undefined ? { baseUrl: runtime.baseUrl } : {}),
+    authToken: spareAuthTokenOf(runtime.authToken),
+    listCredentials: () => [],
+  };
+}
+
+/**
  * Start a Claude CLI as a parked spare before any turn (guuey#3407 leg 5): the
- * options a turn of `template` would get, with no MCP server, the placeholder
- * credential ({@link CLAUDE_SPARE_PLACEHOLDER_TOKEN}), a permission callback
+ * options a turn of `template` would get, with no MCP server, the credential
+ * {@link spareAuthTokenOf} gives `runtime.authToken` (the platform's thread
+ * token, guuey#3456, else the spare placeholder), a permission callback
  * the claiming turn binds, and a constant parking directory under a fresh CLI
  * root. Never throws: a spare that cannot start is reported on stderr, and
  * every turn then starts cold.
@@ -508,11 +522,7 @@ export async function prewarmClaudeSpare(
   try {
     const parking = join(made.root, SPARE_PARKING_DIR);
     mkdirSync(parking, { mode: 0o700 });
-    const spareRuntime: HostRuntime = {
-      baseUrl: runtime.baseUrl,
-      authToken: CLAUDE_SPARE_PLACEHOLDER_TOKEN,
-      listCredentials: () => [],
-    };
+    const spareRuntime = spareRuntimeOf(runtime);
     // The claiming turn's MCP header values join the spare's stderr redaction at the claim.
     const late: string[] = [];
     const built = buildOptions(snapshot, { ...turnOptionsContext(template, spareRuntime, made.cliDirs), lateSecrets: () => late });

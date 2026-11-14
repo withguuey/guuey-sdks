@@ -73,9 +73,12 @@ function startSpare(snapshot: HostSnapshot, bootCtx: HostBootContext, raw: strin
     process.stderr.write("[guuey] Claude spare not started: the installed @anthropic-ai/claude-agent-sdk has no prewarm\n");
     return undefined;
   }
+  // The envelope's token is handed on, and prewarmClaudeSpare keeps it only when it is the platform's thread token
+  // (spareAuthTokenOf, guuey#3456); any other value parks the spare on the placeholder.
   const runtime: HostRuntime = {
     listCredentials: () => [],
     ...(bootCtx.anthropicBaseUrl !== undefined ? { baseUrl: bootCtx.anthropicBaseUrl } : {}),
+    ...(bootCtx.anthropicAuthToken !== undefined ? { authToken: bootCtx.anthropicAuthToken } : {}),
   };
   return prewarmClaudeSpare(snapshot, template.invoke, runtime, prewarm);
 }
