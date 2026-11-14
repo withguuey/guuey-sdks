@@ -22,6 +22,11 @@
       "types": "./dist/input-kinds.d.ts",
       "import": "./dist/input-kinds.js",
       "default": "./dist/input-kinds.js"
+    },
+    "./protocol": {
+      "types": "./dist/protocol.d.ts",
+      "import": "./dist/protocol.js",
+      "default": "./dist/protocol.js"
     }
   },
   "scripts": {
@@ -48,6 +53,11 @@
         "types": "./dist/input-kinds.d.ts",
         "import": "./dist/input-kinds.js",
         "default": "./dist/input-kinds.js"
+      },
+      "./protocol": {
+        "types": "./dist/protocol.d.ts",
+        "import": "./dist/protocol.js",
+        "default": "./dist/protocol.js"
       }
     }
   },
