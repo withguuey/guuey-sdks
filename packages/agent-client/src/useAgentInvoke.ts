@@ -978,6 +978,47 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
           })
         : adapters.transport;
 
+      // The #192 verdict for a turn whose connection was CUT before `done`:
+      // a clean close without it, or (guuey#3436) a body that threw after the
+      // turn was admitted. History already holding the finished reply is
+      // adopted (the reply landed, the connection didn't). The pod may persist
+      // it only seconds after the cut, so a first read that misses gets ONE
+      // bounded re-read after the watchdog's window before the turn fails with
+      // STREAM_TRUNCATED; reporting a finished turn as cut would invite a
+      // duplicate ask. `turnEnded` is set only when the verdict lands, so a
+      // user abort during the probe stays a user abort.
+      const probeAfterCut = async (): Promise<void> => {
+        clearStallTimer();
+        probeInFlight = true;
+        const tid = threadIdRef.current;
+        const history = adaptersRef.current.history;
+        const readHistory = async (): Promise<HistoryLoadResult | null> => {
+          if (!tid || !history) return null;
+          try {
+            return await history.load(tid);
+          } catch {
+            return null; // a failed read finds no reply, like the stall probe's
+          }
+        };
+        let result = await readHistory();
+        if (!holdsFinishedReply(result) && tid && history && !controller.signal.aborted) {
+          await delayUnlessAborted(stall?.windowMs ?? STALL_RECOVERY_DEFAULTS.windowMs, controller.signal);
+          if (!controller.signal.aborted) result = await readHistory();
+        }
+        probeInFlight = false;
+        if (!controller.signal.aborted) {
+          if (holdsFinishedReply(result)) {
+            const adoptedResult = result;
+            endTurnWith(() => adoptFrom(adoptedResult));
+          } else {
+            endTurnWith(() => {
+              setError("The response stream ended before the reply finished, and the finished reply was not found in history.");
+              setErrorCode(CLIENT_ERROR_CODES.STREAM_TRUNCATED);
+            });
+          }
+        }
+      };
+
       try {
         // Wait for the persisted threadId to load before deciding whether to
         // replay it — otherwise a fast first send mints a new orphan thread and
@@ -1095,46 +1136,27 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         // The pod sends `done` on every path where the client is still
         // connected, so a clean close without it means the connection was
         // cut (a proxy, a pod restart). Not a quiet end: the #192 machinery
-        // decides. History already holding the finished reply is adopted (the
-        // reply landed, the connection didn't). The pod may persist it only
-        // seconds after the cut, so a first read that misses gets ONE bounded
-        // re-read after the watchdog's window before the turn fails with
-        // STREAM_TRUNCATED; reporting a finished turn as cut would invite a
-        // duplicate ask. A failure the pod already voiced in-band keeps its
-        // own words and code, with no probe. `turnEnded` is set only when the
-        // verdict lands, so a user abort during the probe stays a user abort.
+        // decides ({@link probeAfterCut}). A failure the pod already voiced
+        // in-band keeps its own words and code, with no probe.
         if (!sawDone && !sawErrorFrame && !turnEnded && !controller.signal.aborted) {
-          clearStallTimer();
-          probeInFlight = true;
-          const tid = threadIdRef.current;
-          const history = adaptersRef.current.history;
-          const readHistory = async (): Promise<HistoryLoadResult | null> => {
-            if (!tid || !history) return null;
-            try {
-              return await history.load(tid);
-            } catch {
-              return null; // a failed read finds no reply, like the stall probe's
-            }
-          };
-          let result = await readHistory();
-          if (!holdsFinishedReply(result) && tid && history && !controller.signal.aborted) {
-            await delayUnlessAborted(stall?.windowMs ?? STALL_RECOVERY_DEFAULTS.windowMs, controller.signal);
-            if (!controller.signal.aborted) result = await readHistory();
-          }
-          probeInFlight = false;
-          if (!controller.signal.aborted) {
-            if (holdsFinishedReply(result)) {
-              const adoptedResult = result;
-              endTurnWith(() => adoptFrom(adoptedResult));
-            } else {
-              endTurnWith(() => {
-                setError("The response stream ended before the reply finished, and the finished reply was not found in history.");
-                setErrorCode(CLIENT_ERROR_CODES.STREAM_TRUNCATED);
-              });
-            }
-          }
+          await probeAfterCut();
         }
       } catch (e) {
+        // guuey#3436: an ADMITTED turn whose body THROWS after the first
+        // chunk (the connection was RESET, not closed: `reader.read()`
+        // rejects) is the same cut as a clean close without `done`, so it gets
+        // the same treatment. If the pod already voiced its failure in-band,
+        // its words and code stand: the reset changes nothing the user reads,
+        // and the browser's exception text must never overwrite them. Else the
+        // #192 probe decides: adopt the finished reply, or STREAM_TRUNCATED.
+        // A coded refusal (`AgentResponseError`) and a user abort keep their
+        // own handling below.
+        const cutAfterAdmission =
+          admitted && !(e instanceof AgentResponseError) && !turnEnded && !controller.signal.aborted;
+        if (cutAfterAdmission) {
+          if (!sawErrorFrame) await probeAfterCut();
+          return;
+        }
         if (!controller.signal.aborted) {
           setError(e instanceof Error ? e.message : "failed to reach agent");
           // Pre-stream refusals arrive as a thrown AgentResponseError carrying
