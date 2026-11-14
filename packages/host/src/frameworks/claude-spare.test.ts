@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -307,7 +307,7 @@ describe("prewarmClaudeSpare", () => {
     rmSync(parked.root, { recursive: true, force: true });
   });
 
-  it("parks with the thread token and still puts no credential in the environment (guuey#3456)", async () => {
+  it("parks with the thread token and puts it in no environment value, argument or file (guuey#3456)", async () => {
     const { spare } = fakeSpare("accept");
     const started: Options[] = [];
     const prewarm: PrewarmFn = (params) => {
@@ -316,10 +316,19 @@ describe("prewarmClaudeSpare", () => {
     };
     const parked = await prewarmClaudeSpare({}, invoke(), { ...RUNTIME, authToken: THREAD_TOKEN }, prewarm);
     if (parked === undefined) throw new Error("the spare did not park");
-    const envValues = Object.values(started[0].env ?? {});
+    const options = started[0];
+    const envValues = Object.values(options.env ?? {});
     expect(envValues).not.toContain(THREAD_TOKEN);
     expect(envValues).not.toContain(CLAUDE_SPARE_PLACEHOLDER_TOKEN);
-    expect(started[0].spawnClaudeCodeProcess).toBeTypeOf("function");
+    // Every serializable option (env, executableArgs, extraArgs, settings, …): the token is in none of them.
+    expect(JSON.stringify(options)).not.toContain(THREAD_TOKEN);
+    // Nothing under the spare's CLI root holds it either.
+    const files = readdirSync(parked.root, { recursive: true, encoding: "utf8" })
+      .map((rel) => join(parked.root, rel))
+      .filter((path) => statSync(path).isFile());
+    for (const path of files) expect(readFileSync(path, "utf8")).not.toContain(THREAD_TOKEN);
+    // It reaches the CLI only through the spawner (its private descriptor).
+    expect(options.spawnClaudeCodeProcess).toBeTypeOf("function");
     rmSync(parked.root, { recursive: true, force: true });
   });
 
