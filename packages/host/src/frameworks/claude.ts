@@ -439,7 +439,7 @@ interface CliRoot {
  * temp dir (in the jail, its per-start tmpfs).
  *
  * B3 (hardening's B-2, R23): when the jail has bound the thread directory in,
- * bwrap has already made the fixed root's `config/projects/-session`. The host
+ * the jail has already made the fixed root's `config/projects/-session`. The host
  * then CHECKS that tree, never makes it: exactly `config/` → `projects/` →
  * `-session/`, all directories, no link, nothing else. A fixed root that is
  * absent is made by an exclusive mkdir. Either way the host makes `cache/` and
@@ -586,7 +586,7 @@ function discardSpare(parked: ParkedSpare, why: string): void {
 /** A UUID in its canonical text form (any version): the only session id the host runs (B3 R5). */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** The bound thread directory's path under the fixed root, as bwrap makes it (B3 §2; `-session` is the CLI's name for cwd `/session`). */
+/** The bound thread directory's path under the fixed root, as the jail makes it (B3 §2; `-session` is the CLI's name for cwd `/session`). */
 const BOUND_TREE = ["config", "projects", "-session"] as const;
 
 /**

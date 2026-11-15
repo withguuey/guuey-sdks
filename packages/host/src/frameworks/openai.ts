@@ -141,7 +141,7 @@ export async function runInvokeOpenai(
     return;
   }
 
-  // The host runs inside the Router's bubblewrap jail with NO IRSA; a federated
+  // The host runs inside the Router's jail with NO IRSA; a federated
   // MCP server reads its Router-written credential file. `resolveMcpServers`
   // needs the same per-invoke context the Claude path builds.
   const ctx: BuildOptionsContext = {

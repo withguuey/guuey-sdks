@@ -1,5 +1,7 @@
 # @guuey/cli
 
+Guuey is a serverless, framework-agnostic agent runtime.
+
 The [guuey](https://guuey.com) command line — deploy and operate hosted AI
 agents and their MCP servers.
 
@@ -30,7 +32,7 @@ workers implement the open
 `guuey dev --serve` runs your agent **unsandboxed, as you**:
 
 - the worker is a plain child process — no jail on any platform (in
-  production every invocation runs inside a gVisor-isolated pod);
+  production every invocation runs inside a sandboxed pod);
 - it inherits your **full shell environment**, including credentials that
   have nothing to do with this agent;
 - when filesystem layers are bound, the host grants the agent shell and

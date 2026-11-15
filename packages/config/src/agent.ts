@@ -83,7 +83,7 @@ export type ProfileAccess = z.infer<typeof ProfileAccessSchema>;
 
 /**
  * `kind: 'colocated'` — MCP server runs as a guuey-managed HTTP child
- * **inside the agent pod** (co-locate = same gVisor sandbox). COGS: ~$0
+ * **inside the agent pod** (co-locate = same sandbox). COGS: ~$0
  * (rides the agent pod). `source` is a project-relative path the Router
  * lowering builds/boots as a local HTTP server; `devPort` mirrors the
  * `hosted`/`external` dev-loop story (name→localhost URL resolution for

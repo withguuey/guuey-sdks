@@ -1,6 +1,6 @@
 /**
  * `guuey dev` local worker driver — the CLI-side mirror of the pod's
- * `worker-driver.ts` (`createWorkerDriver`), bare-spawn only (no bwrap/sandbox/
+ * `worker-driver.ts` (`createWorkerDriver`), bare-spawn only (no jail/sandbox/
  * layers — the pod's hosted branches). Spawns the framework worker as a plain
  * child process, writes one v1 `invoke` to its stdin, and yields the worker's
  * fd-3 NDJSON events (Worker Protocol v1) as typed {@link WorkerEvent}s —
@@ -8,7 +8,7 @@
  * worker locally against the same wire contract as production.
  *
  * Transcribed from `backend/services/nocode-runtime/src/worker-driver.ts:236-347`
- * (`createWorkerDriver`'s `run` closure) MINUS the sandbox/bwrap/layers branches
+ * (`createWorkerDriver`'s `run` closure) MINUS the sandbox/jail/layers branches
  * and the §1.4 `priorMemory`/`priorState` push (no thread-memory fold in local
  * dev) — see the task report's transcription-fidelity section for the itemized
  * diff.
@@ -73,7 +73,7 @@ export function createLocalDriver(opts: {
   const killGraceMs = opts.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
 
   return async function* run(input: LocalRunInput): AsyncIterable<WorkerEvent> {
-    // Bare spawn only — no bwrap/sandbox wrap (pod's `buildWorkerArgv` w/
+    // Bare spawn only — no jail/sandbox wrap (pod's `buildWorkerArgv` w/
     // `sandbox: true` branch). `env` is passed explicitly so the child sees
     // ONLY the caller-provided env, matching the pod's non-sandbox contract.
     const child = spawn(opts.command, opts.args, {

@@ -18,7 +18,7 @@
  * framework needs; a missing peer fails with an actionable install hint, not
  * a bare module-resolution stack.
  *
- * Runs inside bubblewrap with NO IRSA — it never mints federation tokens. Every
+ * Runs inside the Router's jail with NO IRSA — it never mints federation tokens. Every
  * MCP server's entry comes from what the Router-side credential broker wrote,
  * read by `@guuey/worker`'s `listCredentials`: the servers file named by
  * `GUUEY_MCP_SERVERS_FILE` when the platform sets it (the session directory is

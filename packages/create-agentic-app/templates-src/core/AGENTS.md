@@ -7,8 +7,8 @@ something working" — **don't.** Every pod this project deploys to
 (the agent entry's pod — `src/worker.ts`, or `src/agent.ts` in a google-adk scaffold — including every `kind: colocated` `mcps/*`
 server auto-spawned inside it, like this scaffold's `mcps/todo` — and every
 `mcps/*` server deployed with `kind: hosted`) is **ephemeral and horizontally
-replaced**: gVisor-isolated,
-scale-to-zero, ordinary process death on every deploy or idle timeout. A
+replaced**: sandboxed, with ordinary process death on every deploy or
+restart (and a `kind: hosted` server scales to zero when idle). A
 local file or an in-process `Map` used as a database is not a shortcut —
 it is silent data loss the first time the pod recycles.
 

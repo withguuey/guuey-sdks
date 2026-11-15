@@ -97,7 +97,7 @@ two that only matter once real users and real money are involved, and one
 you should read twice:
 
 - **No sandboxing — read this one twice.** Locally your worker runs as a
-  plain child process: no `bwrap`/gVisor isolation on any platform, it
+  plain child process: no sandbox isolation on any platform, it
   inherits your **full shell environment** (every variable, including
   credentials unrelated to this agent), and when filesystem layers are
   bound the host grants the agent shell and file tools **without
@@ -108,7 +108,7 @@ you should read twice:
   from the internet: run `guuey dev` in a throwaway shell/container with
   a minimal environment if your agent (or any MCP server it talks to)
   handles untrusted input. In production every invocation runs inside a
-  gVisor-isolated pod with only its declared environment.
+  sandboxed pod with only its declared environment.
 - **Permissive auth.** `ggui serve --dev-allow-all` accepts any bearer
   locally. The deployed ggui instance enforces real auth.
 - **No metering or history.** Local runs aren't billed and aren't persisted.
@@ -141,8 +141,8 @@ anything user-visible changes:
 2. **ggui asset leg** — pushes `ggui/` (generation config, blueprints) to your
    app's guuey-managed ggui instance.
 3. **Agent leg** — builds `src/worker.ts` into `guuey.worker.js`, packs the
-   project root (including `mcps/`), and deploys it as a gVisor-isolated,
-   scale-to-zero pod. Each `colocated` entry (e.g. `mcps/todo`) is built into
+   project root (including `mcps/`), and deploys it as a sandboxed,
+   long-running pod. Each `colocated` entry (e.g. `mcps/todo`) is built into
    the worker image and auto-spawned as a supervised, sandboxed child at pod
    boot — no separate server, registry row, or write-back.
 4. **Output** — prints your agent's endpoint URL and a Portal deep link.

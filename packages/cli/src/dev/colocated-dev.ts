@@ -10,7 +10,7 @@
  * `external` entry), spawn the entry's own dev server as a plain child
  * process, bound to that port.
  *
- * Bare spawn only — no bwrap/sandbox (mirrors `local-driver.ts`'s documented
+ * Bare spawn only — no jail/sandbox (mirrors `local-driver.ts`'s documented
  * bare-spawn stance: the pod's sandbox branches don't apply outside a pod).
  * stdio is prefixed per-child and forwarded to this process's own
  * stdout/stderr, mirroring the scaffolded template's `scripts/dev.mjs`

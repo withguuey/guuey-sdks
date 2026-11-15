@@ -248,7 +248,7 @@ describe("buildOptions — layer binding (from the invoke fs field) vs the tool 
   });
 });
 
-describe("buildOptions — Bash re-enabled prompt-free (Router bwrap is the isolation)", () => {
+describe("buildOptions — Bash re-enabled prompt-free (the Router's jail is the isolation)", () => {
   const fs = { app: "/fs/app", home: "/fs/home", session: "/fs/session" };
   const bound = { fs, fsBound: true };
 
@@ -325,7 +325,7 @@ describe("buildOptions — Bash re-enabled prompt-free (Router bwrap is the isol
     expect("canUseTool" in opts).toBe(false);
   });
 
-  it("does NOT set the SDK's own sandbox block (the Router bwrap is the isolation, not a nested bwrap)", () => {
+  it("does NOT set the SDK's own sandbox block (the Router's jail is the isolation, not a nested jail)", () => {
     const opts = buildOptions({}, ctx(bound));
     expect("sandbox" in opts).toBe(false);
   });
@@ -847,7 +847,7 @@ describe("buildOptions — the CLI's config, cache and XDG roots are the caller'
 describe("buildOptions — HOME reaches the agent's shell when fs is bound (guuey#176)", () => {
   it("sets HOME = fs.home so `~` expansion works inside the sandbox", () => {
     // This env REPLACES the subprocess env wholesale — omitting HOME left
-    // the agent shell with no `~` even though bwrap set it on the worker
+    // the agent shell with no `~` even though the jail set it on the worker
     // (live-found on the multi-pod gate walk, leg (a)2).
     const fs = { app: "/fs/app", home: "/fs/home", session: "/fs/session" };
     const opts = buildOptions({}, ctx({ fs }));

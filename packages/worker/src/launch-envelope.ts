@@ -30,7 +30,7 @@ import { Socket } from "node:net";
 
 /** Environment name carrying the envelope's descriptor number. Not a secret. */
 export const LAUNCH_ENVELOPE_FD_ENV = "GUUEY_LAUNCH_ENVELOPE_FD";
-/** The descriptor the envelope rides: 0-2 stdio, 3 events, 4 bwrap options. */
+/** The descriptor the envelope rides: 0-2 stdio, 3 events, 4 jail options. */
 export const LAUNCH_ENVELOPE_FD = 5;
 /** The envelope format this package reads and writes. */
 export const LAUNCH_ENVELOPE_VERSION = 1;

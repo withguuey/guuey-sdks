@@ -66,10 +66,9 @@ export const ENV_APP_DIR = "GUUEY_APP_DIR";
 // The built-in catalog (the file tools plus `Bash`) is `BUILTIN_TOOLS`, the one
 // list in `@guuey/config` (guuey#2651). It is enabled when GuueyFS layers are
 // bound ({@link BuildOptionsContext.fsBound}). `Bash` here is real shell exec:
-// this host runs entirely INSIDE the Router's bubblewrap jail, so the OS
-// isolation is always present whenever fs is bound, and the SDK `sandbox:{}`
-// block is NOT set (it would spawn a nested bubblewrap inside the Router's
-// bwrap).
+// this host runs entirely INSIDE the Router's jail, so the OS isolation is
+// always present whenever fs is bound, and the SDK `sandbox:{}` block is NOT
+// set (it would spawn a nested jail inside the Router's).
 
 /**
  * Belt-and-braces (spec §4): guuey's memory mechanism is prompted file memory
@@ -410,7 +409,7 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
   // reason as the config root.
   // HOME rides along (guuey#176): this env REPLACES the subprocess env
   // wholesale, and omitting HOME left the agent's shell with no `~` even
-  // though bwrap set HOME=/home on the worker (live-found on the multi-pod
+  // though the jail set HOME=/home on the worker (live-found on the multi-pod
   // gate walk — GUUEY_HOME_DIR set, `~` expansion dead). Safe now that the
   // CLI's own state is pinned away from the durable layer via
   // CLAUDE_CONFIG_DIR + XDG_CACHE_HOME below (the G5 leak this env once
@@ -552,7 +551,7 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
     // With GuueyFS layers REALLY bound (`fsBound`, guuey#234 — never `fs`
     // presence, which is unconditional on the wire), expose the file tools PLUS
     // real `Bash`; otherwise purely MCP-driven. `Bash` is safe here because the
-    // host already runs inside the Router's bubblewrap jail — that bwrap, NOT
+    // host already runs inside the Router's jail — that jail, NOT
     // the SDK's own `sandbox:{}` block, is the isolation.
     tools: gates.tools,
     // Settings isolation. Empty array = "no filesystem settings loaded" — guards
@@ -594,9 +593,9 @@ export function buildOptions(snapshot: RunSnapshot, ctx: BuildOptionsContext): O
     //    the agent would HANG. The callback short-circuits that stage: with no
     //    explicit allowlist every pick is allowed (the tool surface is already
     //    capped by `tools`/`allowedTools` + `settingSources:[]` +
-    //    `strictMcpConfig`, and the Router's bubblewrap jail is the real
+    //    `strictMcpConfig`, and the Router's jail is the real
     //    isolation boundary — NOT the SDK's own `sandbox:{}` block, which is
-    //    intentionally absent to avoid a nested bwrap); with an explicit
+    //    intentionally absent to avoid a nested jail); with an explicit
     //    allowlist an UNLISTED pick is DENIED with a message the model can read
     //    — that is what makes the allowlist a real narrowing, and it can never
     //    hang. The callback is `@guuey/config`'s own check (`claudeToolRules`,
@@ -669,7 +668,7 @@ export interface ResolvedToolGates {
    * `claudeToolRules(...).canUseTool`. With no explicit allowlist it allows
    * every pick (the surface is already capped by `tools` / `allowedTools` /
    * `disallowedTools`, `settingSources: []` and `strictMcpConfig`; the
-   * Router's bubblewrap jail is the isolation). Otherwise it DENIES every
+   * Router's jail is the isolation). Otherwise it DENIES every
    * pick outside `allowedSet` with a message naming the cause, never an ask
    * (guuey#234: an explicit allowlist can never hang the pod).
    */
