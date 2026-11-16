@@ -476,6 +476,7 @@
           "promptBytes": 120,
           "lastPromptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "stored": {
+            "readError": "link",
             "systemPromptShas": [
               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -495,6 +496,9 @@
               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             ],
+            "sessionIds": [
+              "6f9619ff-8b86-4011-b42d-00c04fc964ff"
+            ],
             "entries": [
               "x.jsonl"
             ],
@@ -502,16 +506,12 @@
             "corrupt": 0,
             "benignDuplicates": 0,
             "filePromptEntries": 2,
-            "fileCompactSummaries": 0,
-            "readError": "link",
-            "sessionIds": [
-              "6f9619ff-8b86-4011-b42d-00c04fc964ff"
-            ]
+            "fileCompactSummaries": 0
           }
         }
       }
     ],
-    "expected": "{\"type\":\"hello\",\"framework\":\"f\",\"sdkName\":null,\"sdkVersion\":null,\"capabilities\":[\"cli-session.v1\"],\"cliSession\":{\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"permissionMode\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"systemPromptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],\"walks\":[{\"fromLastPromptLeaf\":true,\"promptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],\"compactSummaries\":0,\"boundary\":\"none\"}],\"lastPromptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],\"entries\":[\"x.jsonl\"],\"unclassified\":0,\"corrupt\":0,\"benignDuplicates\":0,\"filePromptEntries\":2,\"fileCompactSummaries\":0,\"readError\":\"link\",\"sessionIds\":[\"6f9619ff-8b86-4011-b42d-00c04fc964ff\"]}}}\n"
+    "expected": "{\"type\":\"hello\",\"framework\":\"f\",\"sdkName\":null,\"sdkVersion\":null,\"capabilities\":[\"cli-session.v1\"],\"cliSession\":{\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"permissionMode\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"readError\":\"link\",\"systemPromptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],\"walks\":[{\"fromLastPromptLeaf\":true,\"promptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],\"compactSummaries\":0,\"boundary\":\"none\"}],\"lastPromptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],\"sessionIds\":[\"6f9619ff-8b86-4011-b42d-00c04fc964ff\"],\"entries\":[\"x.jsonl\"],\"unclassified\":0,\"corrupt\":0,\"benignDuplicates\":0,\"filePromptEntries\":2,\"fileCompactSummaries\":0}}}\n"
   },
   {
     "name": "hello: thread-resume block without stored",
