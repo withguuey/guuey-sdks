@@ -33,6 +33,8 @@ type ResumeAnswerStatus = Literal["resolved", "declined"]
 type CliSessionMode = Literal["start", "resume"]
 type StoredReadError = Literal["missing", "not-regular", "link"]
 type WalkBoundary = Literal["none", "links-other-leaf", "dangling"]
+type SdkSessionKind = Literal["openai-agents", "google-adk"]
+type SdkStoredReadError = Literal["missing", "not-regular", "link", "side-file"]
 
 type InputKind = Literal["context-only"]
 """What a user turn's content rides on when its text is empty (guuey#2549; input-kinds.ts)."""
@@ -58,6 +60,19 @@ CLI_SESSION_CAPABILITY: Final = "cli-session.v1"
 
 CLI_SESSION_HASH_VERSION: Final = 1
 """The form of ``@guuey/host``'s content hash; bumped whenever that form changes."""
+
+SDK_SESSION_CAPABILITY: Final = "sdk-session.v1"
+"""Capability: this host runs the invoke's ``cliSession`` against an SDK's own session store and reports
+``WorkerHelloEvent.session``."""
+
+SDK_SESSION_HASH_VERSION: Final = 1
+"""The form of the SDK host's content hashes in :class:`HelloSdkSession`; bumped whenever that form changes."""
+
+SDK_SESSION_PROMPT_SHAS_MAX: Final = 256
+"""The most entries :attr:`HelloSdkStored.prompt_shas` and :attr:`HelloSdkStored.last_prompt_shas` may each hold."""
+
+SDK_SESSION_IDS_MAX: Final = 16
+"""The most entries :attr:`HelloSdkStored.session_ids` may hold."""
 
 CLI_SESSION_RESUME_FAILED: Final = "cli_session_resume_failed"
 """The ``error`` event's message prefix when a ``resume`` could not be confirmed."""
@@ -538,6 +553,76 @@ class HelloCliSession:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class HelloSdkHeaderShas:
+    """One sha per agent-configuration field passed to the SDK (no permission mode: the SDKs have none)."""
+
+    model: str
+    tools: str
+    mcp_config: str
+
+    def to_wire(self) -> JsonObject:
+        return {"model": self.model, "tools": self.tools, "mcpConfig": self.mcp_config}
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class HelloSdkStored:
+    """What a ``resume`` found in the SDK's stored session (guuey#3517)."""
+
+    read_error: SdkStoredReadError | None = None
+    file_sha256: str
+    """PLAIN sha256 of the store's bytes as found, lowercase hex (on a ``read_error``, the sha256 of no bytes)."""
+    item_count: int
+    prompt_shas: tuple[str, ...]
+    last_prompt_shas: tuple[str, ...]
+    session_ids: tuple[str, ...]
+    corrupt: int
+    unclassified: int
+    compactions: int
+
+    def to_wire(self) -> JsonObject:
+        out: JsonObject = {}
+        if self.read_error is not None:
+            out["readError"] = self.read_error
+        out["fileSha256"] = self.file_sha256
+        out["itemCount"] = self.item_count
+        out["promptShas"] = list(self.prompt_shas)
+        out["lastPromptShas"] = list(self.last_prompt_shas)
+        out["sessionIds"] = list(self.session_ids)
+        out["corrupt"] = self.corrupt
+        out["unclassified"] = self.unclassified
+        out["compactions"] = self.compactions
+        return out
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class HelloSdkSession:
+    """The hello's SDK thread-resume block (guuey#3517): :class:`HelloCliSession`'s twin for an SDK's own store."""
+
+    kind: SdkSessionKind
+    hash_version: int
+    system_prompt_sha256: str
+    header_shas: HelloSdkHeaderShas
+    prompt_sha: str
+    prompt_bytes: int
+    last_prompt_sha: str
+    stored: HelloSdkStored | None = None
+
+    def to_wire(self) -> JsonObject:
+        out: JsonObject = {
+            "kind": self.kind,
+            "hashVersion": self.hash_version,
+            "systemPromptSha256": self.system_prompt_sha256,
+            "headerShas": self.header_shas.to_wire(),
+            "promptSha": self.prompt_sha,
+            "promptBytes": self.prompt_bytes,
+            "lastPromptSha": self.last_prompt_sha,
+        }
+        if self.stored is not None:
+            out["stored"] = self.stored.to_wire()
+        return out
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class WorkerHelloEvent:
     """The SDK-version handshake: emitted at most once per invoke, before any native/turn event."""
 
@@ -547,6 +632,7 @@ class WorkerHelloEvent:
     sdk_version: str | None
     capabilities: tuple[str, ...] | None = None
     cli_session: HelloCliSession | None = None
+    session: HelloSdkSession | None = None
 
     def to_wire(self) -> JsonObject:
         out: JsonObject = {
@@ -559,6 +645,8 @@ class WorkerHelloEvent:
             out["capabilities"] = list(self.capabilities)
         if self.cli_session is not None:
             out["cliSession"] = self.cli_session.to_wire()
+        if self.session is not None:
+            out["session"] = self.session.to_wire()
         return out
 
 

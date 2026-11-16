@@ -41,10 +41,14 @@ import type {
   HelloHeaderShas,
   HelloStoredMeasures,
   HelloWalk,
+  HelloSdkSession,
+  HelloSdkHeaderShas,
+  HelloSdkStored,
+  SdkSessionKind,
 } from "./protocol.js";
 import { parseClientCatalogs } from "./client-catalogs.js";
 import { endThreadProblem } from "./end-thread.js";
-import { isInputKind } from "./protocol.js";
+import { isInputKind, SDK_SESSION_IDS_MAX, SDK_SESSION_PROMPT_SHAS_MAX } from "./protocol.js";
 import { isInvokeImageMimeType, isStandardBase64 } from "./images.js";
 
 export function isInvoke(m: ControlMessage): m is Invoke {
@@ -352,6 +356,88 @@ function parseHelloCliSession(v: JsonValue | undefined): HelloCliSession | undef
   return { hashVersion, systemPromptSha256, headerShas, promptSha, promptBytes, lastPromptSha, ...(stored ? { stored } : {}) };
 }
 
+/**
+ * A UUID, the grammar `@guuey/host` holds an invoke's `cliSession.id` to before it spawns anything: 8-4-4-4-12 hex,
+ * either case.
+ */
+const UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const isSha = (v: JsonValue | undefined): v is string => typeof v === "string" && SHA256_HEX.test(v);
+const isSdkSessionKind = (v: JsonValue | undefined): v is SdkSessionKind => v === "openai-agents" || v === "google-adk";
+
+/** A list of strings of at most `max` entries, each matching `entry`, or nothing. */
+function boundedList(v: JsonValue | undefined, max: number, entry: RegExp): string[] | undefined {
+  const list = stringList(v);
+  return list !== undefined && list.length <= max && list.every((s) => entry.test(s)) ? list : undefined;
+}
+
+function parseSdkHeaderShas(v: JsonValue | undefined): HelloSdkHeaderShas | undefined {
+  if (!isObject(v)) return undefined;
+  const { model, tools, mcpConfig } = v;
+  if (!isSha(model) || !isSha(tools) || !isSha(mcpConfig)) return undefined;
+  return { model, tools, mcpConfig };
+}
+
+function parseSdkStored(v: JsonValue | undefined): HelloSdkStored | undefined {
+  if (!isObject(v)) return undefined;
+  const { readError, fileSha256, itemCount, corrupt, unclassified, compactions } = v;
+  if (
+    readError !== undefined &&
+    readError !== "missing" &&
+    readError !== "not-regular" &&
+    readError !== "link" &&
+    readError !== "side-file"
+  ) {
+    return undefined;
+  }
+  const promptShas = boundedList(v.promptShas, SDK_SESSION_PROMPT_SHAS_MAX, SHA256_HEX);
+  const lastPromptShas = boundedList(v.lastPromptShas, SDK_SESSION_PROMPT_SHAS_MAX, SHA256_HEX);
+  const sessionIds = boundedList(v.sessionIds, SDK_SESSION_IDS_MAX, UUID);
+  if (!isSha(fileSha256) || promptShas === undefined || lastPromptShas === undefined || sessionIds === undefined) return undefined;
+  if (!isCount(itemCount) || !isCount(corrupt) || !isCount(unclassified) || !isCount(compactions)) return undefined;
+  return {
+    ...(readError !== undefined ? { readError } : {}),
+    fileSha256,
+    itemCount,
+    promptShas,
+    lastPromptShas,
+    sessionIds,
+    corrupt,
+    unclassified,
+    compactions,
+  };
+}
+
+/**
+ * The hello's SDK thread-resume block (guuey#3517): kept WHOLE when every field is well formed and within bounds,
+ * otherwise dropped whole, as {@link parseHelloCliSession} does. Bounds: every sha 64 lowercase hex; every count an
+ * integer of at least 0 and `hashVersion` of at least 1; `promptShas` and `lastPromptShas` at most
+ * {@link SDK_SESSION_PROMPT_SHAS_MAX} entries each; `sessionIds` at most {@link SDK_SESSION_IDS_MAX}, each a UUID;
+ * `kind` a known SDK. A `stored` that is present but malformed drops the whole block.
+ */
+function parseHelloSdkSession(v: JsonValue | undefined): HelloSdkSession | undefined {
+  if (!isObject(v)) return undefined;
+  const { kind, hashVersion, systemPromptSha256, promptSha, promptBytes, lastPromptSha } = v;
+  const headerShas = parseSdkHeaderShas(v.headerShas);
+  if (!isSdkSessionKind(kind) || !isCount(hashVersion) || hashVersion < 1) return undefined;
+  if (!isSha(systemPromptSha256) || headerShas === undefined) return undefined;
+  if (!isSha(promptSha) || !isCount(promptBytes) || !isSha(lastPromptSha)) return undefined;
+  let stored: HelloSdkStored | undefined;
+  if (v.stored !== undefined) {
+    stored = parseSdkStored(v.stored);
+    if (stored === undefined) return undefined;
+  }
+  return {
+    kind,
+    hashVersion,
+    systemPromptSha256,
+    headerShas,
+    promptSha,
+    promptBytes,
+    lastPromptSha,
+    ...(stored ? { stored } : {}),
+  };
+}
+
 export function parseControl(line: string): ControlMessage {
   let raw: JsonValue;
   try {
@@ -545,6 +631,8 @@ export function readEvent(line: string): ParsedEvent {
       // Thread resume (guuey#3407 B3): the whole block well formed, or none. A Router that sees the capability without
       // the block reads it as a host fault, never as a measure.
       const cliSession = parseHelloCliSession(raw.cliSession);
+      // SDK thread resume (guuey#3517): the same rule for an SDK's own session store, parsed here and nowhere else.
+      const session = parseHelloSdkSession(raw.session);
       return {
         type: "hello",
         framework: raw.framework,
@@ -552,6 +640,7 @@ export function readEvent(line: string): ParsedEvent {
         sdkVersion,
         ...(capabilities !== undefined && capabilities.length > 0 ? { capabilities } : {}),
         ...(cliSession ? { cliSession } : {}),
+        ...(session ? { session } : {}),
       };
     }
     case "suspend": {

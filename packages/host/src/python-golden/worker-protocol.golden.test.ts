@@ -33,6 +33,10 @@ import {
   LAUNCH_ENVELOPE_VERSION,
   MODEL_TEXT_INPUT_KIND_CAPABILITIES,
   PROTOCOL_VERSION,
+  SDK_SESSION_CAPABILITY,
+  SDK_SESSION_HASH_VERSION,
+  SDK_SESSION_IDS_MAX,
+  SDK_SESSION_PROMPT_SHAS_MAX,
   SUSPEND_ENVELOPE_MAX_BYTES,
   TOOL_GATES_CAPABILITY,
   compareStoredSession,
@@ -55,6 +59,8 @@ import {
   type CliSessionRecord,
   type EndThread,
   type HelloCliSession,
+  type HelloSdkSession,
+  type HelloSdkStored,
   type HelloStoredMeasures,
   type InputKind,
   type JsonValue,
@@ -194,6 +200,41 @@ const NEW_CLAUDE_HELLO =
   '{"type":"hello","framework":"claude-agent-sdk","sdkName":"@anthropic-ai/claude-agent-sdk","sdkVersion":null,"capabilities":["tool-gates.v1"]}';
 const NEW_HELLO_WITH_SUSPEND =
   '{"type":"hello","framework":"claude-agent-sdk","sdkName":"@anthropic-ai/claude-agent-sdk","sdkVersion":null,"capabilities":["tool-gates.v1","host.suspend.v1"]}';
+// parse.sdk-session.test.ts and parse.sdk-session.prev-version.test.ts (guuey#3517, P4)
+const SDK_STORED: HelloSdkStored = {
+  fileSha256: "b".repeat(64),
+  itemCount: 6,
+  promptShas: [SHA, "c".repeat(64)],
+  lastPromptShas: [SHA, "d".repeat(64)],
+  sessionIds: [SESSION_ID],
+  corrupt: 0,
+  unclassified: 0,
+  compactions: 0,
+};
+const SDK_BLOCK: HelloSdkSession = {
+  kind: "google-adk",
+  hashVersion: SDK_SESSION_HASH_VERSION,
+  systemPromptSha256: SHA,
+  headerShas: { model: SHA, tools: SHA, mcpConfig: SHA },
+  promptSha: SHA,
+  promptBytes: 120,
+  lastPromptSha: SHA,
+  stored: SDK_STORED,
+};
+const SDK_HELLO = {
+  type: "hello",
+  framework: "google-adk",
+  sdkName: "google-adk",
+  sdkVersion: "1.2.0",
+  capabilities: ["adk.host-completion", SDK_SESSION_CAPABILITY],
+};
+const sdkShas = (n: number): string[] => Array.from({ length: n }, (_v, i) => i.toString(16).padStart(64, "0"));
+const sdkIds = (n: number): string[] => Array.from({ length: n }, (_v, i) => `6f9619ff-8b86-4011-b42d-${i.toString(16).padStart(12, "0")}`);
+// Today's JavaScript OpenAI and ADK hosts' hellos: no block, no capability.
+const OLD_JS_OPENAI_HELLO =
+  '{"type":"hello","framework":"openai-agents-sdk","sdkName":"@openai/agents","sdkVersion":"0.3.1","capabilities":["input-kind:context-only"]}';
+const OLD_JS_ADK_HELLO =
+  '{"type":"hello","framework":"google-adk","sdkName":"@google/adk","sdkVersion":"1.0.0","capabilities":["adk.host-completion","input-kind:context-only"]}';
 // parse.end-thread.prev-version.test.ts
 const OLD_DONE = { type: "done", stopReason: "end_turn", result: "This chat is full." };
 const NEW_DONE = { ...OLD_DONE, endThread: { code: "CHAT_FULL", message: "This chat is full." } };
@@ -432,6 +473,63 @@ const PARSE_CONTROL: readonly (readonly [string, string])[] = [
 // ── read-event ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
 const helloWith = (cliSession: object): string => j({ ...NEW_HELLO, cliSession });
+const sdkHelloWith = (session: object | string | null): string => j({ ...SDK_HELLO, session });
+const sdkStoredWith = (patch: object): string => sdkHelloWith({ ...SDK_BLOCK, stored: { ...SDK_STORED, ...patch } });
+const { stored: _sdkStored, ...SDK_START_BLOCK } = SDK_BLOCK;
+const { kind: _sdkKind, ...SDK_NO_KIND } = SDK_BLOCK;
+/** The SDK session block (guuey#3517, P4): kept whole, or dropped whole on any malformed member or bound breach. */
+const READ_EVENT_SDK_SESSION: readonly (readonly [string, string])[] = [
+  ["hello: SDK session block kept whole", sdkHelloWith(SDK_BLOCK)],
+  ["hello: SDK session start block without stored", sdkHelloWith(SDK_START_BLOCK)],
+  ["hello: SDK session openai-agents kind", sdkHelloWith({ ...SDK_BLOCK, kind: "openai-agents" })],
+  ["hello: SDK session readError side-file kept", sdkStoredWith({ readError: "side-file", promptShas: [], lastPromptShas: [], sessionIds: [], itemCount: 0 })],
+  ["hello: SDK session readError missing kept", sdkStoredWith({ readError: "missing", promptShas: [], lastPromptShas: [], sessionIds: [], itemCount: 0 })],
+  ["hello: SDK session members reordered and extra", sdkHelloWith({ extra: 1, ...Object.fromEntries(Object.entries(SDK_BLOCK).reverse()), stored: { z: 1, ...Object.fromEntries(Object.entries(SDK_STORED).reverse()) } })],
+  ["hello: SDK session upper-case UUID kept", sdkStoredWith({ sessionIds: [SESSION_ID.toUpperCase()] })],
+  ["hello: SDK session counts written 2.0 read as integers", sdkHelloWith(SDK_BLOCK).replace('"hashVersion":1', '"hashVersion":1.0').replace('"promptBytes":120', '"promptBytes":120.0').replace('"itemCount":6', '"itemCount":6.0')],
+  ["hello: SDK session beside a thread-resume block, both kept", j({ ...NEW_HELLO, session: SDK_BLOCK })],
+  [`hello: SDK session ${SDK_SESSION_PROMPT_SHAS_MAX} promptShas and lastPromptShas kept`, sdkStoredWith({ promptShas: sdkShas(SDK_SESSION_PROMPT_SHAS_MAX), lastPromptShas: sdkShas(SDK_SESSION_PROMPT_SHAS_MAX) })],
+  [`hello: SDK session dropped on ${SDK_SESSION_PROMPT_SHAS_MAX + 1} promptShas`, sdkStoredWith({ promptShas: sdkShas(SDK_SESSION_PROMPT_SHAS_MAX + 1) })],
+  [`hello: SDK session dropped on ${SDK_SESSION_PROMPT_SHAS_MAX + 1} lastPromptShas`, sdkStoredWith({ lastPromptShas: sdkShas(SDK_SESSION_PROMPT_SHAS_MAX + 1) })],
+  [`hello: SDK session ${SDK_SESSION_IDS_MAX} sessionIds kept`, sdkStoredWith({ sessionIds: sdkIds(SDK_SESSION_IDS_MAX) })],
+  [`hello: SDK session dropped on ${SDK_SESSION_IDS_MAX + 1} sessionIds`, sdkStoredWith({ sessionIds: sdkIds(SDK_SESSION_IDS_MAX + 1) })],
+  ["hello: SDK session dropped on an upper-case systemPromptSha256", sdkHelloWith({ ...SDK_BLOCK, systemPromptSha256: "A".repeat(64) })],
+  ["hello: SDK session dropped on a 65-character headerShas.model", sdkHelloWith({ ...SDK_BLOCK, headerShas: { ...SDK_BLOCK.headerShas, model: "a".repeat(65) } })],
+  ["hello: SDK session dropped on a 63-character headerShas.tools", sdkHelloWith({ ...SDK_BLOCK, headerShas: { ...SDK_BLOCK.headerShas, tools: "a".repeat(63) } })],
+  ["hello: SDK session dropped on an upper-case headerShas.mcpConfig", sdkHelloWith({ ...SDK_BLOCK, headerShas: { ...SDK_BLOCK.headerShas, mcpConfig: "F".repeat(64) } })],
+  ["hello: SDK session dropped on a promptSha with a trailing newline", sdkHelloWith({ ...SDK_BLOCK, promptSha: SHA + "\n" })],
+  ["hello: SDK session dropped on a non-hex lastPromptSha", sdkHelloWith({ ...SDK_BLOCK, lastPromptSha: "g".repeat(64) })],
+  ["hello: SDK session dropped on an upper-case fileSha256", sdkStoredWith({ fileSha256: "B".repeat(64) })],
+  ["hello: SDK session dropped on a short promptShas entry", sdkStoredWith({ promptShas: [SHA, "c".repeat(63)] })],
+  ["hello: SDK session dropped on a lastPromptShas entry with a trailing newline", sdkStoredWith({ lastPromptShas: [SHA + "\n"] })],
+  ["hello: SDK session dropped on negative promptBytes", sdkHelloWith({ ...SDK_BLOCK, promptBytes: -1 })],
+  ["hello: SDK session dropped on promptBytes past the largest double", sdkHelloWith(SDK_BLOCK).replace('"promptBytes":120', '"promptBytes":1e400')],
+  ["hello: SDK session dropped on a fractional itemCount", sdkStoredWith({ itemCount: 0.5 })],
+  ["hello: SDK session dropped on a string corrupt", sdkStoredWith({ corrupt: "0" })],
+  ["hello: SDK session dropped on a boolean unclassified", sdkStoredWith({ unclassified: false })],
+  ["hello: SDK session dropped on a null compactions", sdkStoredWith({ compactions: null })],
+  ["hello: SDK session dropped on a negative compactions", sdkStoredWith({ compactions: -1 })],
+  ["hello: SDK session dropped on hashVersion 0", sdkHelloWith({ ...SDK_BLOCK, hashVersion: 0 })],
+  ["hello: SDK session dropped on a fractional hashVersion", sdkHelloWith({ ...SDK_BLOCK, hashVersion: 1.5 })],
+  ["hello: SDK session dropped on a string hashVersion", sdkHelloWith({ ...SDK_BLOCK, hashVersion: "1" })],
+  ["hello: SDK session dropped on an unknown kind", sdkHelloWith({ ...SDK_BLOCK, kind: "claude" })],
+  ["hello: SDK session dropped on the framework spelling as kind", sdkHelloWith({ ...SDK_BLOCK, kind: "openai-agents-sdk" })],
+  ["hello: SDK session dropped on a missing kind", sdkHelloWith(SDK_NO_KIND)],
+  ["hello: SDK session dropped on a non-UUID session id", sdkStoredWith({ sessionIds: [SESSION_ID, "not-a-uuid"] })],
+  ["hello: SDK session dropped on a session id with a trailing newline", sdkStoredWith({ sessionIds: [SESSION_ID + "\n"] })],
+  ["hello: SDK session dropped on a braced UUID", sdkStoredWith({ sessionIds: [`{${SESSION_ID}}`] })],
+  ["hello: SDK session dropped on a number session id", sdkStoredWith({ sessionIds: [7] })],
+  ["hello: SDK session dropped on an unknown readError", sdkStoredWith({ readError: "gone" })],
+  ["hello: SDK session dropped on a null readError", sdkStoredWith({ readError: null })],
+  ["hello: SDK session dropped on a null stored", sdkHelloWith({ ...SDK_BLOCK, stored: null })],
+  ["hello: SDK session dropped on a missing fileSha256", sdkStoredWith({ fileSha256: undefined })],
+  ["hello: SDK session dropped on a missing sessionIds", sdkStoredWith({ sessionIds: undefined })],
+  ["hello: SDK session dropped on a missing header sha", sdkHelloWith({ ...SDK_BLOCK, headerShas: { model: SHA, tools: SHA } })],
+  ["hello: SDK session a string reads as none", sdkHelloWith("session")],
+  ["hello: SDK session null reads as none", sdkHelloWith(null)],
+  ["prev: today's JS OpenAI host hello, no SDK session", OLD_JS_OPENAI_HELLO],
+  ["prev: today's JS ADK host hello, no SDK session", OLD_JS_ADK_HELLO],
+];
 const READ_EVENT: readonly (readonly [string, string])[] = [
   ["non-JSON: plain text", "nope"],
   ["non-JSON: NaN literal", '{"type":"text","text":NaN}'],
@@ -891,6 +989,10 @@ const CONSTANTS = {
   CLI_SESSION_CAPABILITY,
   CLI_SESSION_HASH_VERSION,
   CLI_SESSION_RESUME_FAILED,
+  SDK_SESSION_CAPABILITY,
+  SDK_SESSION_HASH_VERSION,
+  SDK_SESSION_PROMPT_SHAS_MAX,
+  SDK_SESSION_IDS_MAX,
   INVOKE_IMAGES_CAPABILITY,
   INVOKE_IMAGE_MIME_TYPES,
   SUSPEND_ENVELOPE_MAX_BYTES,
@@ -917,7 +1019,7 @@ describe("worker protocol golden corpus for the Python port", () => {
   });
 
   it("read-event.json", async () => {
-    await writeGolden("read-event.json", READ_EVENT.map(([name, input]) => ({ name, input, expected: outcome(() => readEvent(input)) })));
+    await writeGolden("read-event.json", [...READ_EVENT, ...READ_EVENT_SDK_SESSION].map(([name, input]) => ({ name, input, expected: outcome(() => readEvent(input)) })));
   });
 
   it("emit.json", async () => {

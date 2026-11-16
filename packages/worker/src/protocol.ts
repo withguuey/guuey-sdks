@@ -521,6 +521,13 @@ export interface WorkerHelloEvent {
    * accepts it only from that first frame; an older Router ignores it.
    */
   readonly cliSession?: HelloCliSession;
+  /**
+   * SDK thread resume (guuey#3517): {@link HelloCliSession}'s twin for a host that keeps an SDK's own session store
+   * (OpenAI Agents, Google ADK) instead of a Claude CLI session file. Sent beside {@link SDK_SESSION_CAPABILITY}, only
+   * in the FIRST hello of an invoke that carried {@link Invoke.cliSession} and that the host applied. Every value is
+   * the slot's own word: diagnostics and a cooperative check, never authority. An older Router ignores it.
+   */
+  readonly session?: HelloSdkSession;
 }
 
 /**
@@ -536,6 +543,30 @@ export const CLI_SESSION_CAPABILITY = "cli-session.v1";
  * resets the thread benignly instead of reading the change as a tamper.
  */
 export const CLI_SESSION_HASH_VERSION = 1;
+
+/**
+ * Capability: this host runs the invoke's {@link Invoke.cliSession} against an SDK's own session store (a `start`
+ * under the Router's session id, or a `resume` of it) and reports {@link WorkerHelloEvent.session}. Announced only on
+ * an invoke that carried the field and that the host applied. A host without it ignores `cliSession` entirely, so a
+ * Router sends a `resume` for an SDK kind only to an image whose trusted build record names it.
+ */
+export const SDK_SESSION_CAPABILITY = "sdk-session.v1";
+
+/**
+ * The form of the SDK host's content hashes in {@link HelloSdkSession} (every sha but `stored.fileSha256`), bumped
+ * whenever that form changes, so a Router comparing values of two forms resets the thread benignly instead of
+ * reading the change as a tamper. Independent of {@link CLI_SESSION_HASH_VERSION}.
+ */
+export const SDK_SESSION_HASH_VERSION = 1;
+
+/**
+ * The most entries {@link HelloSdkStored.promptShas} and {@link HelloSdkStored.lastPromptShas} may each hold (about
+ * 34 KB of hello). A thread past it is not resumable: the host rotates it to a fresh `start` with history.
+ */
+export const SDK_SESSION_PROMPT_SHAS_MAX = 256;
+
+/** The most entries {@link HelloSdkStored.sessionIds} may hold. */
+export const SDK_SESSION_IDS_MAX = 16;
 
 /**
  * The `error` event's message prefix when a `resume` could not be confirmed: the CLI did not open the session the Router
@@ -628,6 +659,70 @@ export interface HelloWalk {
   readonly compactSummaries: number;
   /** Whether the path's root is a compaction boundary pointing at the other walk's leaf, elsewhere, or not at all. */
   readonly boundary: "none" | "links-other-leaf" | "dangling";
+}
+
+/** The SDK whose own session store a {@link HelloSdkSession} measures. */
+export type SdkSessionKind = "openai-agents" | "google-adk";
+
+/**
+ * The hello's SDK thread-resume block ({@link WorkerHelloEvent.session}): the twin of {@link HelloCliSession} for an
+ * SDK's own session store, with the same field meanings where the names match. Every sha is 64 lowercase hex.
+ * A Router keeps it only when EVERY field is well formed and within bounds ({@link SDK_SESSION_PROMPT_SHAS_MAX},
+ * {@link SDK_SESSION_IDS_MAX}); anything else drops the whole block, never part of it.
+ */
+export interface HelloSdkSession {
+  /** The SDK the host ran this turn. */
+  readonly kind: SdkSessionKind;
+  /** {@link SDK_SESSION_HASH_VERSION} of the host that computed every value below; an integer of at least 1. */
+  readonly hashVersion: number;
+  /** The class-level system prompt passed to the SDK this turn. */
+  readonly systemPromptSha256: string;
+  /** The agent configuration passed to the SDK this turn, one sha per field. */
+  readonly headerShas: HelloSdkHeaderShas;
+  /** This turn's user item, every block exactly as passed to the SDK. */
+  readonly promptSha: string;
+  /** The UTF-8 byte length of that item's text blocks. */
+  readonly promptBytes: number;
+  /** This turn's own text block, the last block of the item. */
+  readonly lastPromptSha: string;
+  /** On a `resume` only: the stored session, measured without following links before the run. */
+  readonly stored?: HelloSdkStored;
+}
+
+/** One sha per agent-configuration field passed to the SDK (no permission mode: the SDKs have none). */
+export interface HelloSdkHeaderShas {
+  readonly model: string;
+  readonly tools: string;
+  readonly mcpConfig: string;
+}
+
+/** What a `resume` found in the SDK's stored session (see {@link HelloSdkSession.stored}). */
+export interface HelloSdkStored {
+  /**
+   * Set when the store could not be read as one regular file: absent, not a regular file, a link, or a side file
+   * (`-wal`, `-shm`, a journal) beside it. Neither a link nor a side file is opened; every list is then empty and
+   * every count 0.
+   */
+  readonly readError?: "missing" | "not-regular" | "link" | "side-file";
+  /**
+   * PLAIN sha256 of the store's bytes as found, lowercase hex: the supervisor's form, not the length-prefixed
+   * content hash (on a `readError`, the sha256 of no bytes).
+   */
+  readonly fileSha256: string;
+  /** The stored items, a diagnostic only. */
+  readonly itemCount: number;
+  /** Entry i is turn i's hello `promptSha` (the whole stored user item); at most {@link SDK_SESSION_PROMPT_SHAS_MAX}. */
+  readonly promptShas: readonly string[];
+  /** Entry i is turn i's hello `lastPromptSha` (that item's own text block); at most {@link SDK_SESSION_PROMPT_SHAS_MAX}. */
+  readonly lastPromptShas: readonly string[];
+  /** Every distinct session id in the store, in store order, each a UUID; at most {@link SDK_SESSION_IDS_MAX}. */
+  readonly sessionIds: readonly string[];
+  /** Rows that fail to parse as the SDK writes them. */
+  readonly corrupt: number;
+  /** Rows of a type the host's SDK never writes. */
+  readonly unclassified: number;
+  /** SDK compaction rows: the host pins compaction off, so any is a stored mismatch. */
+  readonly compactions: number;
 }
 
 /**

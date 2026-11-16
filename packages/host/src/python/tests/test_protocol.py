@@ -28,6 +28,10 @@ from guuey_host.protocol import (
     INVOKE_IMAGE_MIME_TYPES,
     INVOKE_IMAGES_CAPABILITY,
     PROTOCOL_VERSION,
+    SDK_SESSION_CAPABILITY,
+    SDK_SESSION_HASH_VERSION,
+    SDK_SESSION_IDS_MAX,
+    SDK_SESSION_PROMPT_SHAS_MAX,
     SUSPEND_ENVELOPE_MAX_BYTES,
     TOOL_GATES_CAPABILITY,
     EndThread,
@@ -78,7 +82,7 @@ GOLDEN_DIR: Final = Path(__file__).resolve().parent.parent / "golden" / "worker-
 
 MIN_CASES: Final[dict[str, int]] = {
     "parse-control.json": 193,
-    "read-event.json": 89,
+    "read-event.json": 139,
     "emit.json": 32,
     "suspend-writer.json": 9,
     "lines.json": 24,
@@ -94,10 +98,10 @@ MIN_CASES: Final[dict[str, int]] = {
 """The fewest cases each case file may hold: the count the generator writes today. A missing directory, a missing
 file, an empty list or a shrunken one FAILS the replay; nothing here ever skips."""
 
-MIN_TOTAL_CASES: Final = 471
+MIN_TOTAL_CASES: Final = 521
 """The fewest cases all case files hold together: the sum the generator writes today."""
 
-MIN_CONSTANTS: Final = 23
+MIN_CONSTANTS: Final = 27
 
 
 def _load(file: str) -> JsonValue:
@@ -265,6 +269,10 @@ PYTHON_CONSTANTS: Final[dict[str, JsonValue]] = {
     "CLI_SESSION_CAPABILITY": CLI_SESSION_CAPABILITY,
     "CLI_SESSION_HASH_VERSION": CLI_SESSION_HASH_VERSION,
     "CLI_SESSION_RESUME_FAILED": CLI_SESSION_RESUME_FAILED,
+    "SDK_SESSION_CAPABILITY": SDK_SESSION_CAPABILITY,
+    "SDK_SESSION_HASH_VERSION": SDK_SESSION_HASH_VERSION,
+    "SDK_SESSION_PROMPT_SHAS_MAX": SDK_SESSION_PROMPT_SHAS_MAX,
+    "SDK_SESSION_IDS_MAX": SDK_SESSION_IDS_MAX,
     "INVOKE_IMAGES_CAPABILITY": INVOKE_IMAGES_CAPABILITY,
     "INVOKE_IMAGE_MIME_TYPES": list[JsonValue](INVOKE_IMAGE_MIME_TYPES),
     "SUSPEND_ENVELOPE_MAX_BYTES": SUSPEND_ENVELOPE_MAX_BYTES,

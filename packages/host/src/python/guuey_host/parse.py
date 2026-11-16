@@ -14,6 +14,8 @@ from typing import Final, Literal, TypeIs
 
 from guuey_host.protocol import (
     ABSENT,
+    SDK_SESSION_IDS_MAX,
+    SDK_SESSION_PROMPT_SHAS_MAX,
     AuthMode,
     CliSessionMode,
     ControlMessage,
@@ -25,6 +27,9 @@ from guuey_host.protocol import (
     Fs,
     HelloCliSession,
     HelloHeaderShas,
+    HelloSdkHeaderShas,
+    HelloSdkSession,
+    HelloSdkStored,
     HelloStoredMeasures,
     HelloWalk,
     HistoryMessage,
@@ -44,6 +49,8 @@ from guuey_host.protocol import (
     ProfileSection,
     ResumeAnswer,
     ResumeAnswerStatus,
+    SdkSessionKind,
+    SdkStoredReadError,
     Shutdown,
     StopReason,
     StoredReadError,
@@ -595,6 +602,112 @@ def _parse_hello_cli_session(value: _Member) -> HelloCliSession | None:
     )
 
 
+_UUID: Final = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+"""A UUID, the grammar ``@guuey/host`` holds an invoke's ``cliSession.id`` to: 8-4-4-4-12 hex, either case. Matched
+with ``fullmatch`` only, as JavaScript's anchored ``^...$`` (no trailing newline slips through)."""
+
+
+def _is_sha(value: _Member) -> TypeIs[str]:
+    """64 lowercase hex."""
+    return isinstance(value, str) and _SHA256_HEX.fullmatch(value) is not None
+
+
+def _is_sdk_session_kind(value: _Member) -> TypeIs[SdkSessionKind]:
+    return isinstance(value, str) and value in ("openai-agents", "google-adk")
+
+
+def _is_sdk_stored_read_error(value: _Member) -> TypeIs[SdkStoredReadError]:
+    return isinstance(value, str) and value in ("missing", "not-regular", "link", "side-file")
+
+
+def _bounded_list(value: _Member, maximum: int, entry: re.Pattern[str]) -> tuple[str, ...] | None:
+    """A list of strings of at most ``maximum`` entries, each matching ``entry`` whole, or ``None``."""
+    items = _string_list(value)
+    if items is None or len(items) > maximum:
+        return None
+    if not all(entry.fullmatch(item) is not None for item in items):
+        return None
+    return items
+
+
+def _parse_sdk_header_shas(value: _Member) -> HelloSdkHeaderShas | None:
+    if not _is_object(value):
+        return None
+    model, tools, mcp_config = _member(value, "model"), _member(value, "tools"), _member(value, "mcpConfig")
+    if not _is_sha(model) or not _is_sha(tools) or not _is_sha(mcp_config):
+        return None
+    return HelloSdkHeaderShas(model=model, tools=tools, mcp_config=mcp_config)
+
+
+def _parse_sdk_stored(value: _Member) -> HelloSdkStored | None:
+    """The SDK store's measures, kept whole or dropped whole."""
+    if not _is_object(value):
+        return None
+    read_error = _member(value, "readError")
+    if read_error is not _MISSING and not _is_sdk_stored_read_error(read_error):
+        return None
+    prompt_shas = _bounded_list(_member(value, "promptShas"), SDK_SESSION_PROMPT_SHAS_MAX, _SHA256_HEX)
+    last_prompt_shas = _bounded_list(_member(value, "lastPromptShas"), SDK_SESSION_PROMPT_SHAS_MAX, _SHA256_HEX)
+    session_ids = _bounded_list(_member(value, "sessionIds"), SDK_SESSION_IDS_MAX, _UUID)
+    file_sha256 = _member(value, "fileSha256")
+    if not _is_sha(file_sha256) or prompt_shas is None or last_prompt_shas is None or session_ids is None:
+        return None
+    item_count = _count(_member(value, "itemCount"))
+    corrupt = _count(_member(value, "corrupt"))
+    unclassified = _count(_member(value, "unclassified"))
+    compactions = _count(_member(value, "compactions"))
+    if item_count is None or corrupt is None or unclassified is None or compactions is None:
+        return None
+    return HelloSdkStored(
+        read_error=read_error if _is_sdk_stored_read_error(read_error) else None,
+        file_sha256=file_sha256,
+        item_count=item_count,
+        prompt_shas=prompt_shas,
+        last_prompt_shas=last_prompt_shas,
+        session_ids=session_ids,
+        corrupt=corrupt,
+        unclassified=unclassified,
+        compactions=compactions,
+    )
+
+
+def _parse_hello_sdk_session(value: _Member) -> HelloSdkSession | None:
+    """The hello's SDK thread-resume block (guuey#3517): kept WHOLE when every member is well formed and within
+    bounds, otherwise dropped whole. The bounds are ``parse.ts``'s: every sha 64 lowercase hex, every count an integer
+    of at least 0 and ``hashVersion`` of at least 1, the prompt lists at most :data:`SDK_SESSION_PROMPT_SHAS_MAX`
+    entries each, ``sessionIds`` at most :data:`SDK_SESSION_IDS_MAX` UUIDs, ``kind`` a known SDK."""
+    if not _is_object(value):
+        return None
+    kind = _member(value, "kind")
+    hash_version = _count(_member(value, "hashVersion"))
+    system_prompt_sha256 = _member(value, "systemPromptSha256")
+    header_shas = _parse_sdk_header_shas(_member(value, "headerShas"))
+    if not _is_sdk_session_kind(kind) or hash_version is None or hash_version < 1:
+        return None
+    if not _is_sha(system_prompt_sha256) or header_shas is None:
+        return None
+    prompt_sha, last_prompt_sha = _member(value, "promptSha"), _member(value, "lastPromptSha")
+    prompt_bytes = _count(_member(value, "promptBytes"))
+    if not _is_sha(prompt_sha) or prompt_bytes is None or not _is_sha(last_prompt_sha):
+        return None
+    stored_value = _member(value, "stored")
+    stored: HelloSdkStored | None = None
+    if stored_value is not _MISSING:
+        stored = _parse_sdk_stored(stored_value)
+        if stored is None:
+            return None
+    return HelloSdkSession(
+        kind=kind,
+        hash_version=hash_version,
+        system_prompt_sha256=system_prompt_sha256,
+        header_shas=header_shas,
+        prompt_sha=prompt_sha,
+        prompt_bytes=prompt_bytes,
+        last_prompt_sha=last_prompt_sha,
+        stored=stored,
+    )
+
+
 def _parse_end_thread(value: _Member) -> EndThread | None:
     """A ``done``'s request to end the conversation: kept only when it passes :func:`end_thread_problem`."""
     if not _is_object(value):
@@ -648,6 +761,8 @@ def read_event(line: str) -> ParsedEvent:
             sdk_version=sdk_version if isinstance(sdk_version, str) else None,
             capabilities=capabilities if capabilities else None,
             cli_session=_parse_hello_cli_session(_member(raw, "cliSession")),
+            # SDK thread resume (guuey#3517): the same whole-or-dropped rule for an SDK's own session store.
+            session=_parse_hello_sdk_session(_member(raw, "session")),
         )
     if kind == "suspend":
         envelope = _member(raw, "envelope")
