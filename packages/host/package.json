@@ -22,7 +22,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/build-python.mjs",
     "prepack": "rm -rf dist && pnpm build",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",

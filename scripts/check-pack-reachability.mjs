@@ -89,6 +89,13 @@ export const RUNTIME_ASSETS = {
         'the Apache-2.0 notice for src/native/mcp-app-frame/bridge.ts, derived from @ggui-ai/mcp-apps-react-native (guuey#3377); a license file no entry point imports, shipped because Apache-2.0 §4 asks the notice to travel with the derived file',
     },
   ],
+  '@guuey/host': [
+    {
+      prefix: 'dist/python/',
+      reason:
+        'the Python host (guuey#3517 / #3515): copied by scripts/build-python.mjs from src/python/guuey_host/, and RUN by the worker image\'s pinned Python 3.15.2 interpreter (`python -I -m guuey_host`), never imported or read with fs by any JS entry point',
+    },
+  ],
   '@guuey/create-agentic-app': [
     {
       prefix: 'dist/templates/',
