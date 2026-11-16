@@ -1,35 +1,48 @@
-"""Credential-file reading for a Python worker: a port of @guuey/worker's listCredentials (src/creds.ts).
+"""Credential-file reading for a Python worker: the servers-file arm of @guuey/worker's listCredentials (src/creds.ts).
 
-The platform's credential broker resolves everything; a worker only reads and shapes. Entries reach a worker in one
-of two places:
+The platform's credential broker resolves everything; a worker only reads and shapes. Every MCP server's entry
+reaches a Python worker in ONE place: the servers file named by ``GUUEY_MCP_SERVERS_FILE``, one JSON file placed by
+the platform outside every tree the worker can write. A missing, unreadable, malformed or relative-path file is no
+servers. An EMPTY value is the platform's "no servers this turn".
 
-- The servers file, when the platform sets ``GUUEY_MCP_SERVERS_FILE``: one JSON file holding every server's entry,
-  placed outside every tree the worker can write. While the variable is set, and even when it is EMPTY (the
-  platform's "no servers this turn"), the session directory is never read: an entry planted there by an earlier turn
-  is never picked up. A missing, unreadable, malformed or relative-path file is no servers, never a fall back.
-- The session directory, when the variable is unset (local development): one JSON file per server at
-  ``<session>/.guuey/credentials/<server>.json``.
+Two deliberate divergences from creds.ts:
 
-The environment supplies only the servers file's PATH. No credential is ever read from an environment variable.
+1. No session folder. When the variable is UNSET this returns no servers and reads nothing. The JavaScript reader then
+   falls back to ``<session>/.guuey/credentials/<server>.json``, an arm it keeps for workers launched by older
+   supervisors that never set the variable. The Python host is new: no older supervisor launches it, so it has no
+   such arm to keep, and it takes no session path at all.
+2. A regular file, by its exact path, or nothing. The file is opened once with ``O_NOFOLLOW``, and the open descriptor
+   is checked with ``fstat`` to be a regular file before anything is read (never a stat first and an open second).
+   A symlink as the path's last component, a directory, a FIFO, a socket or a device is no servers, and one line on
+   stderr names the reason class only: ``servers file refused: link`` or ``servers file refused: not-regular``. The
+   JavaScript reader follows a symlink and reads a FIFO. The open also carries ``O_NONBLOCK``, so a FIFO is refused
+   rather than waited on (it has no effect on reading a regular file), and ``O_NOCTTY``. Directories earlier in the
+   path resolve as the kernel resolves them.
 
-Like the JavaScript reader this never raises: nothing to read, or nothing valid, is an empty list (never crash the
-turn). It does what creds.ts does and no more: one read of the servers file (no stat, no existence check, so a pipe
-is read exactly once), symlinks followed as Node's readFileSync follows them, and no permission checks. The golden
-corpus in ../golden/creds/ is written by the JavaScript reader and replayed against this module.
+It never falls back to any other source, for any input, and no credential is ever read from an environment variable:
+the environment gives only the servers file's path. Like the JavaScript reader it never raises: nothing to read, or
+nothing valid, is an empty list (never crash the turn). The golden corpus in ../golden/creds/ is written by the
+JavaScript reader and replayed against this module, with the divergent cases named in the tests.
 """
 
+import errno
 import json
 import os
-import posixpath
+import stat
+import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Final, Literal, NoReturn, NotRequired, Protocol, TypedDict, TypeGuard
+from typing import Final, Literal, NoReturn, NotRequired, TypedDict, TypeGuard
 
 MCP_SERVERS_FILE_ENV: Final = "GUUEY_MCP_SERVERS_FILE"
 """The variable naming the servers file. Set only by the platform; an empty value means no servers this turn."""
 
 type JsonValue = None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]
 type Transport = Literal["http", "sse"]
+type RefusalReason = Literal["link", "not-regular"]
+
+_OPEN_FLAGS: Final = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK | os.O_NOCTTY
+_READ_CHUNK: Final = 1 << 16
 
 
 class CredentialFile(TypedDict):
@@ -54,14 +67,12 @@ class CredentialEntry:
     cred: CredentialFile
 
 
-class SessionFs(Protocol):
-    """The part of the worker's filesystem layout this module reads (the protocol's Fs satisfies it)."""
+class ServersFileRefused(Exception):
+    """The servers file is not a regular file reached by its exact path. Carries the reason class, never the path."""
 
-    @property
-    def session(self) -> str: ...
-
-
-_JSON_SUFFIX: Final = ".json"
+    def __init__(self, reason: RefusalReason) -> None:
+        super().__init__(reason)
+        self.reason: RefusalReason = reason
 
 
 def _refuse_constant(token: str) -> NoReturn:
@@ -73,18 +84,26 @@ def _parse(text: str) -> JsonValue:
     return json.loads(text, parse_constant=_refuse_constant)
 
 
-def _read_text(path: str) -> str:
-    """Node's readFileSync(path, "utf8"): one open, read to the end, invalid UTF-8 replaced with U+FFFD."""
-    with open(path, "rb", buffering=0) as handle:
-        data = handle.readall()
-    return data.decode("utf-8", errors="replace")
+def _read_regular_file(path: str) -> str:
+    """Open ``path`` once without following a last-component symlink, check the descriptor is a regular file, read it.
 
-
-def _node_join(*segments: str) -> str:
-    """Node's path.posix.join: empty segments dropped, the rest joined with '/' and normalized."""
-    joined = posixpath.normpath("/".join(segment for segment in segments if segment != ""))
-    # POSIX normpath keeps exactly two leading slashes; Node's normalize collapses them to one.
-    return joined[1:] if joined.startswith("//") and not joined.startswith("///") else joined
+    Invalid UTF-8 decodes to U+FFFD, as Node's readFileSync(path, "utf8") decodes it.
+    """
+    try:
+        fd = os.open(path, _OPEN_FLAGS)
+    except OSError as error:
+        if error.errno == errno.ELOOP:
+            raise ServersFileRefused("link") from None
+        raise
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise ServersFileRefused("not-regular")
+        chunks: list[bytes] = []
+        while chunk := os.read(fd, _READ_CHUNK):
+            chunks.append(chunk)
+    finally:
+        os.close(fd)
+    return b"".join(chunks).decode("utf-8", errors="replace")
 
 
 def _is_credential_file(value: JsonValue) -> TypeGuard[CredentialFile]:
@@ -99,7 +118,10 @@ def _read_servers_file(path: str) -> list[CredentialEntry]:
     if not path.startswith("/"):
         return []
     try:
-        parsed = _parse(_read_text(path))
+        parsed = _parse(_read_regular_file(path))
+    except ServersFileRefused as refused:
+        print(f"servers file refused: {refused.reason}", file=sys.stderr, flush=True)
+        return []
     except (OSError, ValueError, RecursionError):
         return []  # no file, or not JSON: no MCP (never crash the turn), as creds.ts.
     if not isinstance(parsed, dict):
@@ -121,39 +143,15 @@ def _read_servers_file(path: str) -> list[CredentialEntry]:
     return out
 
 
-def _read_session_dir(session: str) -> list[CredentialEntry]:
-    """The session directory's entries, one per valid ``.json`` file, in byte order of the file names.
-
-    Node's readdirSync returns names sorted bytewise and decoded as UTF-8 with replacement; a name that was not valid
-    UTF-8 then names no file and is skipped. Listing bytes, sorting and decoding the same way keeps that behaviour.
-    """
-    folder = _node_join(session, ".guuey", "credentials")
-    try:
-        listed = os.listdir(os.fsencode(folder))
-    except (OSError, ValueError):
-        return []  # no credentials folder this turn: no MCP, as creds.ts.
-    names = [raw.decode("utf-8", errors="replace") for raw in sorted(listed)]
-    out: list[CredentialEntry] = []
-    for file in names:
-        if not file.endswith(_JSON_SUFFIX):
-            continue
-        try:
-            parsed = _parse(_read_text(_node_join(folder, file)))
-        except (OSError, ValueError, RecursionError):
-            continue  # a malformed or unreadable file is skipped (never crash the turn), as creds.ts.
-        if _is_credential_file(parsed):
-            out.append(CredentialEntry(name=file[: -len(_JSON_SUFFIX)], cred=parsed))
-    return out
-
-
-def list_credentials(fs: SessionFs, env: Mapping[str, str] | None = None) -> Callable[[], list[CredentialEntry]]:
+def list_credentials(env: Mapping[str, str] | None = None) -> Callable[[], list[CredentialEntry]]:
     """Every credential entry the broker wrote for this invoke, read afresh on each call of the returned function.
 
     ``env`` is read on every call; ``None`` reads ``os.environ`` at call time. Its only use is the servers file's path.
+    Unset, there are no servers and nothing is read.
     """
 
     def read() -> list[CredentialEntry]:
         servers_file = (os.environ if env is None else env).get(MCP_SERVERS_FILE_ENV)
-        return _read_session_dir(fs.session) if servers_file is None else _read_servers_file(servers_file)
+        return [] if servers_file is None else _read_servers_file(servers_file)
 
     return read

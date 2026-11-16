@@ -1,11 +1,16 @@
 /**
- * The golden corpus for the Python host's credentials reader (`../python/guuey_host/creds.py`, guuey#3494).
+ * The golden corpus for the Python host's credentials reader (`../python/guuey_host/creds.py`, guuey#3517).
  *
- * Each case describes a small tree: what `GUUEY_MCP_SERVERS_FILE` names (or that it is unset or empty), the
- * session's `.guuey/credentials` folder, and any other environment variables. This file lays the tree out in a
- * temp directory, runs the real `@guuey/worker` `listCredentials` over it, and records the case together with
- * what the JavaScript reader returned. The Python tests (`../python/tests/test_creds.py`) rebuild the same tree
- * from the recorded case and must return exactly the same entries, in the same order.
+ * Each case describes a small tree: what `GUUEY_MCP_SERVERS_FILE` names (always set: a path, or empty), the
+ * session's `.guuey/credentials` folder (planted, to show it is never read), and any other environment variables.
+ * This file lays the tree out in a temp directory, runs the real `@guuey/worker` `listCredentials` over it, and
+ * records the case together with what the JavaScript reader returned. The Python tests
+ * (`../python/tests/test_creds.py`) rebuild the same tree from the recorded case and must return exactly the same
+ * entries, in the same order.
+ *
+ * Only the servers-file arm is recorded. The JavaScript reader keeps the session-folder arm (variable unset) for
+ * older supervisors; the Python host has no older supervisor and reads no session folder, so a corpus of that arm
+ * would be one Python must contradict. Its own tests pin that it returns nothing there.
  *
  * The reader never throws: every case's answer is a list of entries, empty when there is nothing to read.
  */
@@ -24,7 +29,6 @@ type TreeNode = Content | { kind: "directory" } | { kind: "symlink"; target: Con
 
 /** What the servers-file variable holds. */
 type ServersFileEnv =
-  | { kind: "unset" }
   | { kind: "empty" }
   /** An absolute path to `<root>/control/mcp-servers.json`, holding `node`. */
   | { kind: "file"; node: TreeNode }
@@ -37,11 +41,8 @@ type ServersFileEnv =
   /** This exact value. */
   | { kind: "literal"; value: string };
 
-/** The session's `.guuey/credentials`: absent, a regular file, or a folder holding `entries` by file name. */
-type SessionCredentials =
-  | { kind: "absent" }
-  | { kind: "not-a-directory" }
-  | { kind: "folder"; entries: { [fileName: string]: TreeNode } };
+/** The session's `.guuey/credentials`: absent, or a folder holding `entries` by file name. */
+type SessionCredentials = { kind: "absent" } | { kind: "folder"; entries: { [fileName: string]: TreeNode } };
 
 interface CaseInput {
   name: string;
@@ -191,92 +192,6 @@ const SERVERS_FILE_CASES: CaseInput[] = [
   { name: "legacy env variables change nothing when the file is malformed", serversFile: file(text("{ not json")), session: PLANTED, env: LEGACY_ENV },
 ];
 
-const SESSION_DIR_CASES: CaseInput[] = [
-  { name: "no credentials folder is no servers", serversFile: { kind: "unset" }, session: { kind: "absent" }, env: {} },
-  { name: "an empty credentials folder is no servers", serversFile: { kind: "unset" }, session: { kind: "folder", entries: {} }, env: {} },
-  { name: "a credentials path that is a regular file is no servers", serversFile: { kind: "unset" }, session: { kind: "not-a-directory" }, env: {} },
-  {
-    name: "one entry per valid .json file, keyed by the file name stem",
-    serversFile: { kind: "unset" },
-    session: { kind: "folder", entries: { "ggui.json": json({ url: "https://mcp.example/apps/app_123", transport: "http", headers: { authorization: "Bearer tok" } }), "guuey-memory.json": json({ url: "http://127.0.0.1:9111/mcp", transport: "sse", headers: {}, expiresAt: "2026-07-29T00:00:00.000Z" }) } },
-    env: {},
-  },
-  {
-    name: "entries come back in byte order of their file names",
-    serversFile: { kind: "unset" },
-    session: { kind: "folder", entries: { "b.json": json(GOOD), "a.json": json(GOOD), "B.json": json(GOOD), "_.json": json(GOOD), "a-b.json": json(GOOD), "aa.json": json(GOOD), "0.json": json(GOOD) } },
-    env: {},
-  },
-  {
-    name: "files not ending in .json are ignored",
-    serversFile: { kind: "unset" },
-    session: { kind: "folder", entries: { "ggui.json": json(GOOD), "README.txt": text("not a credential"), ".keep": text(""), "upper.JSON": json(GOOD), "backup.json.bak": json(GOOD), "nojson": json(GOOD) } },
-    env: {},
-  },
-  {
-    name: "malformed files are skipped",
-    serversFile: { kind: "unset" },
-    session: {
-      kind: "folder",
-      entries: {
-        "good.json": json(GOOD),
-        "not-json.json": text("{ this is not json"),
-        "array.json": json([GOOD]),
-        "null.json": text("null"),
-        "empty.json": text(""),
-        "no-url.json": json({ transport: "http", headers: {} }),
-        "bad-transport.json": json({ url: "https://c.example", transport: "grpc", headers: {} }),
-        "bom.json": text('﻿{"url":"https://a.example","transport":"http","headers":{}}'),
-        "nan.json": text('{"url":"https://a.example","transport":"http","headers":{},"n":NaN}'),
-        "servers-shape.json": servers({ name: "x", credential: GOOD }),
-      },
-    },
-    env: {},
-  },
-  {
-    name: "unknown keys and unchecked fields pass through verbatim",
-    serversFile: { kind: "unset" },
-    session: { kind: "folder", entries: { "extra.json": json({ url: "https://a.example", transport: "sse", later: { nested: [1, "two", null] } }), "headers-number.json": json({ url: "https://a.example", transport: "http", headers: 3 }) } },
-    env: {},
-  },
-  {
-    name: "odd file names: a bare .json, a doubled extension, a leading dot",
-    serversFile: { kind: "unset" },
-    session: { kind: "folder", entries: { ".json": json(GOOD), "a.json.json": json(GOOD), ".hidden.json": json(GOOD), "with space.json": json(GOOD) } },
-    env: {},
-  },
-  {
-    name: "a folder named like a credential is skipped",
-    serversFile: { kind: "unset" },
-    session: { kind: "folder", entries: { "dir.json": { kind: "directory" }, "good.json": json(GOOD) } },
-    env: {},
-  },
-  {
-    name: "a symlinked credential is followed, a dangling one skipped",
-    serversFile: { kind: "unset" },
-    session: { kind: "folder", entries: { "linked.json": { kind: "symlink", target: json(GOOD) }, "dangling.json": { kind: "dangling-symlink" } } },
-    env: {},
-  },
-  {
-    name: "an invalid UTF-8 byte in a credential file reads as U+FFFD",
-    serversFile: { kind: "unset" },
-    session: { kind: "folder", entries: { "bytes.json": bytes('{"url":"https://a.example/', [0xff], '","transport":"http","headers":{}}') } },
-    env: {},
-  },
-  {
-    name: "legacy env variables change nothing with no credentials folder",
-    serversFile: { kind: "unset" },
-    session: { kind: "absent" },
-    env: LEGACY_ENV,
-  },
-  {
-    name: "legacy env variables change nothing next to a valid folder",
-    serversFile: { kind: "unset" },
-    session: { kind: "folder", entries: { "ggui.json": json(GOOD) } },
-    env: LEGACY_ENV,
-  },
-];
-
 let root: string;
 
 beforeEach(() => {
@@ -323,10 +238,6 @@ function run(c: CaseInput): GoldenCase {
   switch (c.session.kind) {
     case "absent":
       break;
-    case "not-a-directory":
-      mkdirSync(join(session, ".guuey"));
-      writeFileSync(credentials, "", "utf8");
-      break;
     case "folder":
       mkdirSync(credentials, { recursive: true });
       for (const [fileName, node] of Object.entries(c.session.entries)) place(join(credentials, fileName), node, targets);
@@ -336,8 +247,6 @@ function run(c: CaseInput): GoldenCase {
   const control = join(root, "control");
   const sf = c.serversFile;
   switch (sf.kind) {
-    case "unset":
-      break;
     case "empty":
       env[MCP_SERVERS_FILE_ENV] = "";
       break;
@@ -383,15 +292,5 @@ describe("golden corpus: @guuey/worker listCredentials", () => {
     // The planted session folder never reaches a result while the variable is set.
     expect(JSON.stringify(cases.map((c) => c.expected))).not.toContain("attacker.example");
     await expect(serialize(cases)).toMatchFileSnapshot("../python/golden/creds/servers-file.json");
-  });
-
-  it("the session folder (GUUEY_MCP_SERVERS_FILE unset)", async () => {
-    const cases: GoldenCase[] = [];
-    for (const c of SESSION_DIR_CASES) {
-      rmSync(root, { recursive: true, force: true });
-      mkdirSync(root);
-      cases.push(run(c));
-    }
-    await expect(serialize(cases)).toMatchFileSnapshot("../python/golden/creds/session-dir.json");
   });
 });
