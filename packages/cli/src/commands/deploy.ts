@@ -77,7 +77,7 @@ import {
   type ResolvedConfig,
   type ProjectConfig,
 } from '../config';
-import { apiRequest, cleanup, packSource, parseApiError } from '../deploy-shared';
+import { apiRequest, cleanup, localWebAppEntries, packSource, parseApiError } from '../deploy-shared';
 import { guueyJsonLoadErrorMessage } from '../guuey-json-load-error';
 import { deployMcpFromSource, resolveServerName, resolveWorkspaceId, readPackageName } from './mcp';
 import { fetchByoOriginGap, printByoOriginWarning } from './apps';
@@ -1179,11 +1179,23 @@ async function deployCode(opts: {
   const pythonMarker = pythonMarkerWarning(root, expectedOut);
   if (pythonMarker !== undefined) out.printWarnings([{ message: pythonMarker }]);
 
+  // The scaffold's local web app (`web/`, a pnpm workspace member that runs
+  // with `pnpm dev`) is not part of the agent: leave it out of the upload
+  // unless guuey.json points into it (guuey#3504).
+  const mcpSources = Object.values(doc.agent?.mcpServers ?? {}).flatMap((server) =>
+    server !== false && 'source' in server && typeof server.source === 'string' ? [server.source] : [],
+  );
+  const omitTopLevel = localWebAppEntries(root, [expectedOut, ...mcpSources]);
+  if (omitTopLevel.length > 0) {
+    console.log('  Leaving out web/: your local web app runs with pnpm dev and is not part of the agent.');
+  }
+
   const buildId = randomUUID().slice(0, 12);
   const { tarballPath, tarballSize, sourceHash } = packSource({
     buildId,
     cwd: root,
     includeWorkingTree: true,
+    omitTopLevel,
   });
 
   const uploadRes = await apiRequest(auth.pat, config, 'POST', `/apps/${appId}/deploy/upload`, {

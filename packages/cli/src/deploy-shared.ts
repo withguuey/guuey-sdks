@@ -23,6 +23,7 @@ import { join, basename, relative, resolve, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
+import { parse as parseYaml } from 'yaml';
 import { cliApiAuthHeaders } from './cli-api-headers';
 import * as out from './output';
 
@@ -80,9 +81,9 @@ export const WORKING_TREE_TAR_EXCLUDE_ARGV: readonly string[] = [
  * and `tar --exclude` still applies to these explicitly-named top-level
  * arguments, not just implicit recursion.
  */
-export function workingTreeTarSourceArgs(cwd: string): string[] {
+export function workingTreeTarSourceArgs(cwd: string, omitTopLevel: readonly string[] = []): string[] {
   return readdirSync(cwd)
-    .filter((entry) => entry !== 'dist')
+    .filter((entry) => entry !== 'dist' && !omitTopLevel.includes(entry))
     .map((entry) => `./${entry}`);
 }
 
@@ -100,12 +101,45 @@ export function workingTreeTarSourceArgs(cwd: string): string[] {
  * the single-quote escaping they carried was POSIX-only and passed literal
  * quotes to tar on Windows).
  */
-export function tarWorkingTree(tarballPath: string, cwd: string): void {
+export function tarWorkingTree(tarballPath: string, cwd: string, omitTopLevel: readonly string[] = []): void {
   execFileSync(
     'tar',
-    ['czf', tarballPath, ...WORKING_TREE_TAR_EXCLUDE_ARGV, ...workingTreeTarSourceArgs(cwd)],
+    ['czf', tarballPath, ...WORKING_TREE_TAR_EXCLUDE_ARGV, ...workingTreeTarSourceArgs(cwd, omitTopLevel)],
     { stdio: 'pipe', cwd },
   );
+}
+
+/**
+ * The project's LOCAL web app (guuey#3504, N3): a top-level `web/` that is a
+ * member of the project's own pnpm workspace (`pnpm-workspace.yaml` lists
+ * `web`), has its own `package.json`, and that `guuey.json` does not point
+ * into (`referencedPaths`: the worker, the agent entry and every MCP server
+ * `source`). That is the create-agentic-app scaffold's `web/`: it runs on the
+ * builder's machine (`pnpm dev`) and never on guuey, yet a code deploy
+ * uploaded it, and a build that installs dependencies installed its
+ * production dependencies into the agent. Returns the top-level entries a
+ * code deploy leaves out: `['web']`, or `[]` when any condition fails, so a
+ * builder's own `web/` that the agent uses still ships.
+ *
+ * N-1 (measured 2026-11-16, pnpm 11.2.2 and 12.16.0, offline, on a scaffold
+ * copy): `pnpm install --prod --frozen-lockfile` accepts the lockfile with the
+ * `web` member absent ("Lockfile is up to date"), so a server that installs
+ * from the lockfile builds the upload without it.
+ */
+export function localWebAppEntries(cwd: string, referencedPaths: readonly string[]): string[] {
+  const workspaceFile = join(cwd, 'pnpm-workspace.yaml');
+  if (!existsSync(workspaceFile) || !existsSync(join(cwd, 'web', 'package.json'))) return [];
+  const parsed: unknown = parseYaml(readFileSync(workspaceFile, 'utf-8'));
+  if (parsed === null || typeof parsed !== 'object' || !('packages' in parsed)) return [];
+  const members = parsed.packages;
+  if (!Array.isArray(members)) return [];
+  const listsWeb = members.some((m) => typeof m === 'string' && (m === 'web' || m === './web'));
+  if (!listsWeb) return [];
+  const pointsIntoWeb = referencedPaths.some((p) => {
+    const rel = relative(cwd, resolve(cwd, p)).split(sep);
+    return rel[0] === 'web';
+  });
+  return pointsIntoWeb ? [] : ['web'];
 }
 
 /** Result of packing a project's source into an upload-ready tarball. */
@@ -147,8 +181,17 @@ export function packSource(opts: {
   cwd: string;
   /** Tar the working tree instead of `git archive` (committed-only). Default `false`. */
   includeWorkingTree?: boolean;
+  /**
+   * Top-level entries to leave out of the tarball (e.g. {@link localWebAppEntries}).
+   * Working-tree packing only: `git archive` ships committed files as they are,
+   * so passing this without `includeWorkingTree` is a programming error.
+   */
+  omitTopLevel?: readonly string[];
 }): PackResult {
-  const { buildId, cwd, includeWorkingTree = false } = opts;
+  const { buildId, cwd, includeWorkingTree = false, omitTopLevel = [] } = opts;
+  if (omitTopLevel.length > 0 && !includeWorkingTree) {
+    throw new Error('packSource: omitTopLevel needs includeWorkingTree');
+  }
   const tarballPath = join(tmpdir(), `ggui-deploy-${buildId}.tar.gz`);
 
   console.log('  Packaging source...');
@@ -278,7 +321,7 @@ export function packSource(opts: {
       // generated package-lock.json) are not clobbered by the source's
       // workspace:* package.json. A Node copy, not rsync (guuey#3285): rsync
       // is usually absent on Windows.
-      copyStagingTree(cwd, stagingDir);
+      copyStagingTree(cwd, stagingDir, omitTopLevel);
       // Move packed tarballs to .ggui-deps/ inside staging
       mkdirSync(join(stagingDir, '.ggui-deps'), { recursive: true });
       for (const f of readdirSync(stagingDir)) {
@@ -306,7 +349,7 @@ export function packSource(opts: {
       // `guuey.worker.js`) are included. SECURITY-CRITICAL: exclude secrets
       // and build/dev artifacts explicitly, since this is the one packing
       // path that ships more than `git archive`'s committed-files snapshot.
-      tarWorkingTree(tarballPath, cwd);
+      tarWorkingTree(tarballPath, cwd, omitTopLevel);
     } else {
       // User has their own Dockerfile and no workspace deps — git archive
       // is fastest (only ships committed files). CRITICAL: run git archive
@@ -332,7 +375,7 @@ export function packSource(opts: {
     }
   } catch {
     // Fallback: use tar directly
-    tarWorkingTree(tarballPath, cwd);
+    tarWorkingTree(tarballPath, cwd, omitTopLevel);
   }
 
   const tarballBuffer = readFileSync(tarballPath);
@@ -387,11 +430,11 @@ function cmdArg(file: string, arg: string): string {
  * vendored dependency's `vendor/some-dep/dist/` still ships. `relPath` is
  * relative to the project root, in this platform's separators.
  */
-export function isStagingExcluded(relPath: string): boolean {
+export function isStagingExcluded(relPath: string, omitTopLevel: readonly string[] = []): boolean {
   if (relPath === '') return false;
   const parts = relPath.split(sep);
   const name = parts[parts.length - 1]!;
-  if (parts.length === 1 && name === 'dist') return true;
+  if (parts.length === 1 && (name === 'dist' || omitTopLevel.includes(name))) return true;
   return (
     name === 'node_modules' ||
     name === '.git' ||
@@ -409,12 +452,12 @@ export function isStagingExcluded(relPath: string): boolean {
  * copied as links with their target text unchanged, and timestamps are kept,
  * as `rsync -a` did.
  */
-export function copyStagingTree(cwd: string, stagingDir: string): void {
+export function copyStagingTree(cwd: string, stagingDir: string, omitTopLevel: readonly string[] = []): void {
   cpSync(cwd, stagingDir, {
     recursive: true,
     verbatimSymlinks: true,
     preserveTimestamps: true,
-    filter: (src) => !isStagingExcluded(relative(cwd, src)),
+    filter: (src) => !isStagingExcluded(relative(cwd, src), omitTopLevel),
   });
 }
 
