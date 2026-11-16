@@ -28,29 +28,92 @@ import { cliApiAuthHeaders } from './cli-api-headers';
 import * as out from './output';
 
 /**
- * `tar --exclude` argv shared by every non-git-archive packing path
- * (working-tree tar, and both tar fallbacks). `.env*` (glob, not the
- * previous exact-match `.env`) so `.env.local`/`.env.production` etc. never
- * land in a tarball; `.npmrc` is a registry-token carrier; `.guuey-dev` and
- * `*.tsbuildinfo` are dev/build artifacts that don't belong in a deploy
- * either.
+ * guuey#3502: the ONE list of what never leaves the builder's machine, at
+ * any depth, on every packing path a code-mode deploy can take: the
+ * working-tree tar (and its tar fallbacks) and the staging copy. Before this
+ * list each path carried its own copy, and they drifted: the staging copy
+ * kept `.npmrc`, a registry-token carrier.
  *
- * NOTE: deliberately no `--exclude=dist` here — see `workingTreeTarSourceArgs`
- * below for why the project's OWN root `dist/` is stripped by omitting it
- * from the tar source arguments instead of via a pattern flag.
+ * Each path derives its own form from the lists below, never a hand copy:
+ * {@link WORKING_TREE_TAR_EXCLUDE_ARGV} (tar) and {@link isStagingExcluded}
+ * (the staging copy).
+ *
+ * The `git archive HEAD` path (a project with its own Dockerfile and no
+ * workspace dependencies) is deliberately left as it ships: it carries
+ * committed files as they are. That path never feeds a shared-worker
+ * package, and a project there may read a committed `.npmrc` in its own
+ * build.
+ * - `.env*` matches `.env.local`, `.env.production`, `.env.example`, etc.;
+ * - `.npmrc`, `.netrc`, `.pypirc`, `.aws/credentials`, `.docker/config.json`
+ *   and the default-named SSH private keys carry credentials;
+ * - the rest are dev or build artifacts.
+ *
+ * This is a convenience that saves an upload, never the guard: the server
+ * build is the guard for what may be deployed.
+ *
+ * NOTE: deliberately no `dist` here. See `workingTreeTarSourceArgs` below for
+ * why the project's OWN root `dist/` is stripped by omitting it from the tar
+ * source arguments instead of by a pattern.
+ */
+const PACK_EXCLUDED_NAMES = [
+  'node_modules',
+  '.git',
+  '.guuey-dev',
+  '.ggui',
+  '.guuey',
+  // Credential carriers: registry and login tokens, and SSH private keys under their default names. Exact names only,
+  // because tar and git pathspecs cannot express "id_rsa* except *.pub". A key under another name is left to the
+  // server build, which refuses it by name.
+  '.npmrc',
+  '.netrc',
+  '.pypirc',
+  'id_rsa',
+  'id_ecdsa',
+  'id_ed25519',
+] as const;
+const PACK_EXCLUDED_PREFIXES = ['.env'] as const;
+const PACK_EXCLUDED_SUFFIXES = ['.tsbuildinfo'] as const;
+/** A file excluded only inside a directory of the given name: `[directory, file]`. */
+const PACK_EXCLUDED_IN_DIR = [
+  ['.aws', 'credentials'],
+  ['.docker', 'config.json'],
+] as const;
+
+/** Whether one path segment's name is on the shared never-packed list, whatever its parent. */
+export function isPackExcludedName(name: string): boolean {
+  return (
+    PACK_EXCLUDED_NAMES.some((n) => name === n) ||
+    PACK_EXCLUDED_PREFIXES.some((p) => name.startsWith(p)) ||
+    PACK_EXCLUDED_SUFFIXES.some((s) => name.endsWith(s))
+  );
+}
+
+/**
+ * Whether a path, given as its segments from the project root, is on the shared never-packed list: by its own name,
+ * or as one of the directory-qualified files (`.aws/credentials`, `.docker/config.json`) at any depth.
+ */
+export function isPackExcludedPath(segments: readonly string[]): boolean {
+  const name = segments[segments.length - 1];
+  if (name === undefined) return false;
+  if (isPackExcludedName(name)) return true;
+  const parent = segments[segments.length - 2];
+  return PACK_EXCLUDED_IN_DIR.some(([dir, file]) => parent === dir && name === file);
+}
+
+/**
+ * `tar --exclude` argv for every tar packing path (the working-tree tar and
+ * both tar fallbacks), derived from the shared list. guuey#896 (CodeQL
+ * #37/#38/#39): argv, not a shell string. The patterns reach tar unquoted on
+ * every OS (`.env*` / `*.tsbuildinfo` are tar's own globs, matching at any
+ * depth), and no interpreter ever sees a directory entry's name.
  */
 export const WORKING_TREE_TAR_EXCLUDE_ARGV: readonly string[] = [
-  // guuey#896 (CodeQL #37/#38/#39): argv, not a shell string — the patterns
-  // reach tar unquoted on every OS (`.env*` / `*.tsbuildinfo` are tar's own
-  // globs), and no interpreter ever sees a directory entry's name.
-  '--exclude=node_modules',
-  '--exclude=.git',
-  '--exclude=.env*',
-  '--exclude=.npmrc',
-  '--exclude=.guuey-dev',
-  '--exclude=*.tsbuildinfo',
-  '--exclude=.ggui',
-  '--exclude=.guuey',
+  ...PACK_EXCLUDED_NAMES.map((n) => `--exclude=${n}`),
+  ...PACK_EXCLUDED_PREFIXES.map((p) => `--exclude=${p}*`),
+  ...PACK_EXCLUDED_SUFFIXES.map((s) => `--exclude=*${s}`),
+  // Every member is named `./<entry>/…` (see workingTreeTarSourceArgs), and an exclude wildcard matches `/` on both
+  // GNU tar and bsdtar, so the leading `*` covers the root and any depth.
+  ...PACK_EXCLUDED_IN_DIR.map(([dir, file]) => `--exclude=*/${dir}/${file}`),
 ];
 
 /**
@@ -424,26 +487,20 @@ function cmdArg(file: string, arg: string): string {
 }
 
 /**
- * What the staging copy leaves out (guuey#3285; the excludes the rsync call
- * carried): `node_modules`, `.git`, `.env*`, `.guuey-dev`, `.ggui`, `.guuey`
- * and `*.tsbuildinfo` at any depth, and `dist` at the project ROOT only, so a
- * vendored dependency's `vendor/some-dep/dist/` still ships. `relPath` is
- * relative to the project root, in this platform's separators.
+ * What the staging copy leaves out (guuey#3285, guuey#3502):
+ * - the shared never-packed list ({@link isPackExcludedPath}) at any depth;
+ * - `dist` at the project ROOT only, so a vendored dependency's
+ *   `vendor/some-dep/dist/` still ships;
+ * - the caller's `omitTopLevel` entries, at the root only.
+ *
+ * `relPath` is relative to the project root, in this platform's separators.
  */
 export function isStagingExcluded(relPath: string, omitTopLevel: readonly string[] = []): boolean {
   if (relPath === '') return false;
   const parts = relPath.split(sep);
   const name = parts[parts.length - 1]!;
   if (parts.length === 1 && (name === 'dist' || omitTopLevel.includes(name))) return true;
-  return (
-    name === 'node_modules' ||
-    name === '.git' ||
-    name === '.guuey-dev' ||
-    name === '.ggui' ||
-    name === '.guuey' ||
-    name.startsWith('.env') ||
-    name.endsWith('.tsbuildinfo')
-  );
+  return isPackExcludedPath(parts);
 }
 
 /**

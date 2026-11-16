@@ -4,7 +4,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { WORKING_TREE_TAR_EXCLUDE_ARGV, cleanup, packSource, tarWorkingTree, workingTreeTarSourceArgs } from './deploy-shared.js';
+import {
+  WORKING_TREE_TAR_EXCLUDE_ARGV,
+  cleanup,
+  copyStagingTree,
+  isPackExcludedName,
+  isPackExcludedPath,
+  packSource,
+  tarWorkingTree,
+  workingTreeTarSourceArgs,
+} from './deploy-shared.js';
 
 // guuey#867: this file spawns the real tar — a 2-vCPU runner is not the 5 s
 // default; the budget is the file's own, from birth.
@@ -122,4 +131,136 @@ describe('packSource — the git-archive path is argv too (guuey#907)', () => {
       cleanup(result.tarballPath);
     }
   }, TAR_BUDGET_MS);
+});
+
+/**
+ * guuey#3502: ONE never-packed list on the packing paths a code-mode deploy
+ * can take. The same fixture tree, with every secret-shaped file COMMITTED,
+ * goes through the real tar and the staging copy (which kept `.npmrc` before
+ * this list), and each must leave out exactly the same set. A real `git
+ * archive HEAD` of the same repo pins that the Dockerfile path is unchanged.
+ */
+describe('one never-packed list on the code-mode packing paths (guuey#3502)', () => {
+  // Paths relative to the project root, with POSIX separators (the archives list them that way).
+  const LEFT_OUT = [
+    '.env',
+    'config/.env.production',
+    '.npmrc',
+    'packages/a/.npmrc',
+    'node_modules/dep/index.js',
+    'packages/a/node_modules/dep/index.js',
+    '.guuey/state.json',
+    '.guuey-dev',
+    '.ggui/cache.json',
+    'a.tsbuildinfo',
+    '.env.example',
+    '.netrc',
+    'deploy/.pypirc',
+    '.aws/credentials',
+    'ops/.aws/credentials',
+    '.docker/config.json',
+    'keys/id_rsa',
+    'id_ed25519',
+    'id_ecdsa',
+  ];
+  const KEPT = [
+    'index.js',
+    'package.json',
+    'src/env.ts',
+    'src/npmrc-docs.md',
+    'Dockerfile',
+    // The directory-qualified names leave their neighbours alone, and a public key always ships.
+    '.aws/config',
+    'credentials',
+    '.docker/daemon.json',
+    'config.json',
+    'keys/id_rsa.pub',
+    'id_ed25519.pub',
+  ];
+
+  let cwd: string;
+  let env: NodeJS.ProcessEnv;
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), 'guuey-3502-'));
+    for (const rel of [...LEFT_OUT, ...KEPT]) {
+      const abs = join(cwd, ...rel.split('/'));
+      mkdirSync(join(abs, '..'), { recursive: true });
+      writeFileSync(abs, rel === 'package.json' ? JSON.stringify({ name: 'fixture-3502', private: true }) : 'x\n');
+    }
+    // A hermetic repo, as guuey#907's fixture: no global config, no hooks, HEAD asserted. `-f` commits the
+    // secret-shaped files on purpose (the case under test), whatever an ignore file says.
+    env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', HOME: cwd };
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'core.hooksPath=/dev/null', ...args], { cwd, stdio: 'pipe', env });
+    git('init', '-q');
+    git('add', '-f', '.');
+    git('commit', '-q', '-m', 'init');
+    const committed = execFileSync('git', ['ls-files'], { cwd, encoding: 'utf8', env }).split('\n');
+    for (const rel of LEFT_OUT) expect(committed).toContain(rel);
+  });
+  afterEach(() => rmSync(cwd, { recursive: true, force: true }));
+
+  function listTgz(tarballPath: string): string[] {
+    return execFileSync('tar', ['tzf', tarballPath], { encoding: 'utf8' })
+      .split('\n')
+      .map((l) => l.replace(/^\.\//, '').replace(/\/$/, ''))
+      .filter(Boolean);
+  }
+
+  function assertSameSet(listed: readonly string[]): void {
+    for (const rel of LEFT_OUT) expect(listed, rel).not.toContain(rel);
+    for (const rel of KEPT) expect(listed, rel).toContain(rel);
+  }
+
+  it('git archive HEAD (a project with its own Dockerfile) is left as it ships: committed files go as they are', () => {
+    // That path never feeds a shared-worker package, and a project there may read a committed `.npmrc` in its own
+    // build, so the shared list does not apply to it. An UNTRACKED file proves the tarball came from git archive,
+    // not from the tar fallback (which applies the list).
+    writeFileSync(join(cwd, 'untracked-3502.txt'), 'x\n');
+    const result = packSource({ buildId: 'g3502', cwd });
+    try {
+      const listed = listTgz(result.tarballPath);
+      expect(listed, 'the tarball came from git archive, not the tar fallback').not.toContain('untracked-3502.txt');
+      expect(listed).toContain('.npmrc');
+      expect(listed).toContain('.env');
+      for (const rel of KEPT) expect(listed, rel).toContain(rel);
+    } finally {
+      cleanup(result.tarballPath);
+    }
+  }, TAR_BUDGET_MS);
+
+  it('the working-tree tar: the same set', () => {
+    const result = packSource({ buildId: 't3502', cwd, includeWorkingTree: true });
+    try {
+      assertSameSet(listTgz(result.tarballPath));
+    } finally {
+      cleanup(result.tarballPath);
+    }
+  }, TAR_BUDGET_MS);
+
+  it('the staging copy: the same set', () => {
+    const staging = mkdtempSync(join(tmpdir(), 'guuey-3502-staging-'));
+    try {
+      copyStagingTree(cwd, staging);
+      for (const rel of LEFT_OUT) expect(existsSync(join(staging, ...rel.split('/'))), rel).toBe(false);
+      for (const rel of KEPT) expect(existsSync(join(staging, ...rel.split('/'))), rel).toBe(true);
+    } finally {
+      rmSync(staging, { recursive: true, force: true });
+    }
+  }, TAR_BUDGET_MS);
+
+  it('the name test and the tar argv agree on every listed name', () => {
+    for (const name of ['.env', '.env.local', '.npmrc', 'node_modules', '.git', '.guuey', '.guuey-dev', '.ggui', 'x.tsbuildinfo']) {
+      expect(isPackExcludedName(name), name).toBe(true);
+    }
+    for (const name of ['env.ts', 'npmrc-docs.md', 'src', 'dist', 'package.json', 'id_rsa.pub', 'credentials']) {
+      expect(isPackExcludedName(name), name).toBe(false);
+    }
+    expect(isPackExcludedPath(['ops', '.aws', 'credentials'])).toBe(true);
+    expect(isPackExcludedPath(['.docker', 'config.json'])).toBe(true);
+    expect(isPackExcludedPath(['config.json'])).toBe(false);
+    expect(isPackExcludedPath([])).toBe(false);
+    expect(WORKING_TREE_TAR_EXCLUDE_ARGV).toContain('--exclude=.npmrc');
+    expect(WORKING_TREE_TAR_EXCLUDE_ARGV).toContain('--exclude=*/.aws/credentials');
+  });
 });
