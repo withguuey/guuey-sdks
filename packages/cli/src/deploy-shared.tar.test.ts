@@ -261,6 +261,8 @@ describe('one never-packed list on the code-mode packing paths (guuey#3502)', ()
     expect(isPackExcludedPath(['config.json'])).toBe(false);
     expect(isPackExcludedPath([])).toBe(false);
     expect(WORKING_TREE_TAR_EXCLUDE_ARGV).toContain('--exclude=.npmrc');
+    // Both forms: bsdtar matches a root member without its `./`, so the root needs the bare pattern.
+    expect(WORKING_TREE_TAR_EXCLUDE_ARGV).toContain('--exclude=.aws/credentials');
     expect(WORKING_TREE_TAR_EXCLUDE_ARGV).toContain('--exclude=*/.aws/credentials');
   });
 });

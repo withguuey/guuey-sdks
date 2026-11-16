@@ -111,9 +111,11 @@ export const WORKING_TREE_TAR_EXCLUDE_ARGV: readonly string[] = [
   ...PACK_EXCLUDED_NAMES.map((n) => `--exclude=${n}`),
   ...PACK_EXCLUDED_PREFIXES.map((p) => `--exclude=${p}*`),
   ...PACK_EXCLUDED_SUFFIXES.map((s) => `--exclude=*${s}`),
-  // Every member is named `./<entry>/…` (see workingTreeTarSourceArgs), and an exclude wildcard matches `/` on both
-  // GNU tar and bsdtar, so the leading `*` covers the root and any depth.
-  ...PACK_EXCLUDED_IN_DIR.map(([dir, file]) => `--exclude=*/${dir}/${file}`),
+  // A directory-qualified file needs two patterns. bsdtar (macOS) drops the members' leading `./` before matching, so
+  // a root `./.aws/credentials` is matched as `.aws/credentials`, and `*/.aws/credentials` misses it (the `*` needs a
+  // leading segment). The bare form catches the root, and the `*/` form catches any depth on both bsdtar and GNU tar,
+  // where an exclude wildcard matches `/`.
+  ...PACK_EXCLUDED_IN_DIR.flatMap(([dir, file]) => [`--exclude=${dir}/${file}`, `--exclude=*/${dir}/${file}`]),
 ];
 
 /**
