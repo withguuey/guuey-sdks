@@ -17,7 +17,8 @@ Two deliberate divergences from creds.ts:
    stderr names the reason class only: ``servers file refused: link`` or ``servers file refused: not-regular``. The
    JavaScript reader follows a symlink and reads a FIFO. The open also carries ``O_NONBLOCK``, so a FIFO is refused
    rather than waited on (it has no effect on reading a regular file), and ``O_NOCTTY``. Directories earlier in the
-   path resolve as the kernel resolves them.
+   path resolve as the kernel resolves them: they are the platform's, outside every bind the worker can write, and the
+   path must be absolute. A file over ``MAX_SERVERS_FILE_BYTES`` is refused as ``too-large``, never read whole.
 
 It never falls back to any other source, for any input, and no credential is ever read from an environment variable:
 the environment gives only the servers file's path. Like the JavaScript reader it never raises: nothing to read, or
@@ -39,7 +40,12 @@ MCP_SERVERS_FILE_ENV: Final = "GUUEY_MCP_SERVERS_FILE"
 
 type JsonValue = None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]
 type Transport = Literal["http", "sse"]
-type RefusalReason = Literal["link", "not-regular"]
+type RefusalReason = Literal["link", "not-regular", "too-large"]
+
+MAX_SERVERS_FILE_BYTES: Final = 1 << 20
+"""The servers file's ceiling, 1 MiB: a platform file listing one endpoint and a few headers per server has no reason to
+be unbounded, and an unbounded read is the one way left to stall the turn (hardening C-1). Past it the file is refused
+as ``too-large``, read no further than this plus one chunk."""
 
 _OPEN_FLAGS: Final = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK | os.O_NOCTTY
 _READ_CHUNK: Final = 1 << 16
@@ -96,10 +102,19 @@ def _read_regular_file(path: str) -> str:
             raise ServersFileRefused("link") from None
         raise
     try:
-        if not stat.S_ISREG(os.fstat(fd).st_mode):
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
             raise ServersFileRefused("not-regular")
+        if info.st_size > MAX_SERVERS_FILE_BYTES:
+            raise ServersFileRefused("too-large")
         chunks: list[bytes] = []
+        total = 0
+        # The size above is the file's size at the fstat; one that grows while it is read is caught here, after at
+        # most one chunk past the ceiling.
         while chunk := os.read(fd, _READ_CHUNK):
+            total += len(chunk)
+            if total > MAX_SERVERS_FILE_BYTES:
+                raise ServersFileRefused("too-large")
             chunks.append(chunk)
     finally:
         os.close(fd)

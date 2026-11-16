@@ -27,7 +27,14 @@ from pathlib import Path
 from typing import Literal, TypedDict
 from unittest import mock
 
-from guuey_host.creds import MCP_SERVERS_FILE_ENV, CredentialEntry, CredentialFile, RefusalReason, list_credentials
+from guuey_host.creds import (
+    MAX_SERVERS_FILE_BYTES,
+    MCP_SERVERS_FILE_ENV,
+    CredentialEntry,
+    CredentialFile,
+    RefusalReason,
+    list_credentials,
+)
 
 GOLDEN = Path(__file__).resolve().parent.parent / "golden" / "creds"
 # The case count each corpus file must hold at least (the generator writes 49). A missing directory or file raises
@@ -504,6 +511,46 @@ class ReaderBehaviour(unittest.TestCase):
         run = self.read(self.servers_file(GOOD_DOCUMENT))
         self.assertEqual(run.result, [{"name": "ggui", "cred": GOOD}])
         self.assertEqual(run.stderr, "")
+
+    def padded(self, size: int) -> str:
+        """GOOD_DOCUMENT padded with trailing whitespace (still valid JSON) to exactly ``size`` bytes."""
+        return GOOD_DOCUMENT + " " * (size - len(GOOD_DOCUMENT.encode("utf-8")))
+
+    def test_a_file_exactly_at_the_cap_gives_its_entries(self) -> None:
+        run = self.read(self.servers_file(self.padded(MAX_SERVERS_FILE_BYTES)))
+        self.assertEqual(run.result, [{"name": "ggui", "cred": GOOD}])
+        self.assertEqual(run.stderr, "")
+
+    def test_a_file_one_byte_over_the_cap_is_refused_as_too_large(self) -> None:
+        """RED for hardening C-1. MUTANT it kills: a creds.py with no ceiling, which reads any size whole."""
+        run = self.read(self.servers_file(self.padded(MAX_SERVERS_FILE_BYTES + 1)))
+        self.assertEqual(run.result, [])
+        self.assertEqual(run.stderr, refusal_line("too-large"))
+
+    def test_a_file_over_the_cap_is_read_no_further_than_the_cap_plus_one_chunk(self) -> None:
+        """The loop's own guard, for a file larger than its fstat said (one that grows while read): fstat is made to
+        report 0 bytes, so only the read loop can stop it, and the bytes read are counted."""
+        path = self.servers_file(self.padded(4 * MAX_SERVERS_FILE_BYTES))
+        real_fstat = os.fstat
+        real_read = os.read
+        read_bytes: list[int] = []
+
+        def small_fstat(fd: int) -> os.stat_result:
+            fields = list(real_fstat(fd))
+            fields[6] = 0  # st_size
+            return os.stat_result(fields)
+
+        def counting_read(fd: int, n: int) -> bytes:
+            chunk = real_read(fd, n)
+            read_bytes.append(len(chunk))
+            return chunk
+
+        with mock.patch("guuey_host.creds.os.fstat", small_fstat), mock.patch("guuey_host.creds.os.read", counting_read):
+            run = self.read(path)
+        self.assertEqual(run.result, [])
+        self.assertEqual(run.stderr, refusal_line("too-large"))
+        self.assertLessEqual(sum(read_bytes), MAX_SERVERS_FILE_BYTES + max(read_bytes))
+        self.assertLess(sum(read_bytes), 4 * MAX_SERVERS_FILE_BYTES)
 
     def test_a_symlink_to_a_valid_file_is_refused(self) -> None:
         target = self.servers_file(GOOD_DOCUMENT)
