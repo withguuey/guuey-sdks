@@ -82,7 +82,7 @@ GOLDEN_DIR: Final = Path(__file__).resolve().parent.parent / "golden" / "worker-
 
 MIN_CASES: Final[dict[str, int]] = {
     "parse-control.json": 193,
-    "read-event.json": 139,
+    "read-event.json": 157,
     "emit.json": 32,
     "suspend-writer.json": 9,
     "lines.json": 24,
@@ -98,7 +98,7 @@ MIN_CASES: Final[dict[str, int]] = {
 """The fewest cases each case file may hold: the count the generator writes today. A missing directory, a missing
 file, an empty list or a shrunken one FAILS the replay; nothing here ever skips."""
 
-MIN_TOTAL_CASES: Final = 521
+MIN_TOTAL_CASES: Final = 539
 """The fewest cases all case files hold together: the sum the generator writes today."""
 
 MIN_CONSTANTS: Final = 27

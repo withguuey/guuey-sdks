@@ -9,6 +9,7 @@
  *
  * A diff in those files is a wire change the Python port must follow. Rewrite them with `vitest run -u`.
  */
+import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
 import {
@@ -228,6 +229,10 @@ const SDK_HELLO = {
   sdkVersion: "1.2.0",
   capabilities: ["adk.host-completion", SDK_SESSION_CAPABILITY],
 };
+/** The plain sha256 of no bytes: the only `fileSha256` a stored `readError` may carry (P4b). */
+const SDK_EMPTY_SHA256 = createHash("sha256").digest("hex");
+/** A stored `readError` with nothing measured: every list empty, every count 0, the sha256 of no bytes. */
+const SDK_UNREAD = { fileSha256: SDK_EMPTY_SHA256, promptShas: [], lastPromptShas: [], sessionIds: [], itemCount: 0, corrupt: 0, unclassified: 0, compactions: 0 };
 const sdkShas = (n: number): string[] => Array.from({ length: n }, (_v, i) => i.toString(16).padStart(64, "0"));
 const sdkIds = (n: number): string[] => Array.from({ length: n }, (_v, i) => `6f9619ff-8b86-4011-b42d-${i.toString(16).padStart(12, "0")}`);
 // Today's JavaScript OpenAI and ADK hosts' hellos: no block, no capability.
@@ -482,8 +487,27 @@ const READ_EVENT_SDK_SESSION: readonly (readonly [string, string])[] = [
   ["hello: SDK session block kept whole", sdkHelloWith(SDK_BLOCK)],
   ["hello: SDK session start block without stored", sdkHelloWith(SDK_START_BLOCK)],
   ["hello: SDK session openai-agents kind", sdkHelloWith({ ...SDK_BLOCK, kind: "openai-agents" })],
-  ["hello: SDK session readError side-file kept", sdkStoredWith({ readError: "side-file", promptShas: [], lastPromptShas: [], sessionIds: [], itemCount: 0 })],
-  ["hello: SDK session readError missing kept", sdkStoredWith({ readError: "missing", promptShas: [], lastPromptShas: [], sessionIds: [], itemCount: 0 })],
+  ["hello: SDK session readError side-file kept", sdkStoredWith({ readError: "side-file", ...SDK_UNREAD })],
+  ["hello: SDK session readError missing kept", sdkStoredWith({ readError: "missing", ...SDK_UNREAD })],
+  // P4b: the stored block's consistency rules, each breach dropping the whole block, each edge kept.
+  ["hello: SDK session readError link kept", sdkStoredWith({ readError: "link", ...SDK_UNREAD })],
+  ["hello: SDK session readError not-regular kept", sdkStoredWith({ readError: "not-regular", ...SDK_UNREAD })],
+  ["hello: SDK session empty-store sha without a readError kept", sdkStoredWith(SDK_UNREAD)],
+  ["hello: SDK session dropped on a readError with prompt list entries", sdkStoredWith({ readError: "missing", ...SDK_UNREAD, promptShas: [SHA], lastPromptShas: [SHA] })],
+  ["hello: SDK session dropped on a readError with a session id", sdkStoredWith({ readError: "missing", ...SDK_UNREAD, sessionIds: [SESSION_ID] })],
+  ["hello: SDK session dropped on a readError with an itemCount", sdkStoredWith({ readError: "link", ...SDK_UNREAD, itemCount: 1 })],
+  ["hello: SDK session dropped on a readError with a corrupt count", sdkStoredWith({ readError: "not-regular", ...SDK_UNREAD, corrupt: 1 })],
+  ["hello: SDK session dropped on a readError with an unclassified count", sdkStoredWith({ readError: "side-file", ...SDK_UNREAD, unclassified: 1 })],
+  ["hello: SDK session dropped on a readError with a compactions count", sdkStoredWith({ readError: "missing", ...SDK_UNREAD, compactions: 1 })],
+  ["hello: SDK session dropped on a readError with the fileSha256 of some bytes", sdkStoredWith({ readError: "missing", ...SDK_UNREAD, fileSha256: SHA })],
+  ["hello: SDK session two empty prompt lists kept", sdkStoredWith({ promptShas: [], lastPromptShas: [], itemCount: 0 })],
+  ["hello: SDK session dropped on promptShas longer than lastPromptShas", sdkStoredWith({ promptShas: [SHA, "c".repeat(64)], lastPromptShas: [SHA] })],
+  ["hello: SDK session dropped on lastPromptShas longer than promptShas", sdkStoredWith({ promptShas: [SHA], lastPromptShas: [SHA, "d".repeat(64)] })],
+  ["hello: SDK session dropped on empty promptShas beside a lastPromptShas entry", sdkStoredWith({ promptShas: [], lastPromptShas: [SHA] })],
+  ["hello: SDK session session ids differing only in case kept", sdkStoredWith({ sessionIds: [SESSION_ID, SESSION_ID.toUpperCase()] })],
+  ["hello: SDK session dropped on an adjacent repeated session id", sdkStoredWith({ sessionIds: [SESSION_ID, SESSION_ID] })],
+  ["hello: SDK session dropped on a repeated session id apart", sdkStoredWith({ sessionIds: sdkIds(2).concat(sdkIds(1)) })],
+  [`hello: SDK session dropped on ${SDK_SESSION_IDS_MAX} session ids with a repeat`, sdkStoredWith({ sessionIds: sdkIds(SDK_SESSION_IDS_MAX - 1).concat(sdkIds(1)) })],
   ["hello: SDK session members reordered and extra", sdkHelloWith({ extra: 1, ...Object.fromEntries(Object.entries(SDK_BLOCK).reverse()), stored: { z: 1, ...Object.fromEntries(Object.entries(SDK_STORED).reverse()) } })],
   ["hello: SDK session upper-case UUID kept", sdkStoredWith({ sessionIds: [SESSION_ID.toUpperCase()] })],
   ["hello: SDK session counts written 2.0 read as integers", sdkHelloWith(SDK_BLOCK).replace('"hashVersion":1', '"hashVersion":1.0').replace('"promptBytes":120', '"promptBytes":120.0').replace('"itemCount":6', '"itemCount":6.0')],

@@ -1,8 +1,10 @@
 /**
  * The hello's SDK thread-resume block `session` (guuey#3517, P4), parsed once in `readEvent`'s hello case. The block
  * is kept WHOLE when every field is well formed and within bounds, and dropped WHOLE otherwise, never in part; the
- * rest of the hello is unaffected either way. Hardening's bounds (T-P4b), one RED each.
+ * rest of the hello is unaffected either way. Hardening's bounds (T-P4b), one RED each, and the `stored` consistency
+ * rules (P4b tightenings): equal-length prompt lists, distinct session ids, and a `readError` with nothing measured.
  */
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { readEvent } from "./parse.js";
 import {
@@ -15,6 +17,8 @@ import {
 } from "./protocol.js";
 
 const SHA = "a".repeat(64);
+/** The plain sha256 of no bytes, computed here rather than copied, so a typo in the parser's literal shows RED. */
+const EMPTY_SHA256 = createHash("sha256").digest("hex");
 const SESSION_ID = "6f9619ff-8b86-4011-b42d-00c04fc964ff";
 const STORED: HelloSdkStored = {
   fileSha256: "b".repeat(64),
@@ -75,8 +79,8 @@ describe("the SDK session block: well formed", () => {
     expectKept(helloLine({ ...BLOCK, kind: "openai-agents" }), { ...BLOCK, kind: "openai-agents" });
   });
 
-  it.each(["missing", "not-regular", "link", "side-file"] as const)("keeps a stored readError %s", (readError) => {
-    const stored: HelloSdkStored = { ...STORED, readError, promptShas: [], lastPromptShas: [], sessionIds: [], itemCount: 0 };
+  it.each(["missing", "not-regular", "link", "side-file"] as const)("keeps a stored readError %s with nothing measured", (readError) => {
+    const stored: HelloSdkStored = { ...STORED, readError, fileSha256: EMPTY_SHA256, promptShas: [], lastPromptShas: [], sessionIds: [], itemCount: 0 };
     expectKept(helloLine({ ...BLOCK, stored }), { ...BLOCK, stored });
   });
 
@@ -105,12 +109,11 @@ describe("the SDK session block: the caps at their edges", () => {
     expectKept(helloLine({ ...BLOCK, stored }), { ...BLOCK, stored });
   });
 
-  it(`RED: drops the block on ${SDK_SESSION_PROMPT_SHAS_MAX + 1} promptShas`, () => {
-    expectDropped(helloLine({ ...BLOCK, stored: { ...STORED, promptShas: shas(SDK_SESSION_PROMPT_SHAS_MAX + 1) } }));
-  });
-
-  it(`RED: drops the block on ${SDK_SESSION_PROMPT_SHAS_MAX + 1} lastPromptShas`, () => {
-    expectDropped(helloLine({ ...BLOCK, stored: { ...STORED, lastPromptShas: shas(SDK_SESSION_PROMPT_SHAS_MAX + 1) } }));
+  // The two lists must be the same length, so the cap is breached by both at once: one list alone over the cap would
+  // also be unequal, and could not show the cap's own refusal.
+  it(`RED: drops the block on ${SDK_SESSION_PROMPT_SHAS_MAX + 1} promptShas and lastPromptShas`, () => {
+    const over = shas(SDK_SESSION_PROMPT_SHAS_MAX + 1);
+    expectDropped(helloLine({ ...BLOCK, stored: { ...STORED, promptShas: over, lastPromptShas: over } }));
   });
 
   it(`keeps ${SDK_SESSION_IDS_MAX} sessionIds`, () => {
@@ -142,7 +145,7 @@ describe("the SDK session block: every bound breach drops the WHOLE block (RED)"
       ["lastPromptSha", { ...BLOCK, lastPromptSha: bad }],
       ["stored.fileSha256", { ...BLOCK, stored: { ...STORED, fileSha256: bad } }],
       ["a stored.promptShas entry", { ...BLOCK, stored: { ...STORED, promptShas: [SHA, bad] } }],
-      ["a stored.lastPromptShas entry", { ...BLOCK, stored: { ...STORED, lastPromptShas: [bad] } }],
+      ["a stored.lastPromptShas entry", { ...BLOCK, stored: { ...STORED, lastPromptShas: [SHA, bad] } }],
     ])("RED: in %s", (_field, block) => {
       expectDropped(helloLine(block));
     });
@@ -203,6 +206,85 @@ describe("the SDK session block: every bound breach drops the WHOLE block (RED)"
     ["a number", 7],
   ])("RED: a session id that is %s", (_label, id) => {
     expectDropped(helloLine({ ...BLOCK, stored: { ...STORED, sessionIds: [SESSION_ID, id] } }));
+  });
+});
+
+describe("the SDK session block: stored.promptShas and stored.lastPromptShas are of equal length", () => {
+  it("keeps equal-length lists", () => {
+    expectKept(helloLine(BLOCK), BLOCK);
+  });
+
+  it("keeps two empty lists (a store with no items yet)", () => {
+    const stored = { ...STORED, promptShas: [], lastPromptShas: [], itemCount: 0 };
+    expectKept(helloLine({ ...BLOCK, stored }), { ...BLOCK, stored });
+  });
+
+  it.each([
+    ["promptShas longer", [SHA, "c".repeat(64)], [SHA]],
+    ["lastPromptShas longer", [SHA], [SHA, "d".repeat(64)]],
+    ["promptShas empty, lastPromptShas not", [], [SHA]],
+    ["lastPromptShas empty, promptShas not", [SHA], []],
+  ])("RED: drops the block on unequal lengths, %s", (_label, promptShas, lastPromptShas) => {
+    expectDropped(helloLine({ ...BLOCK, stored: { ...STORED, promptShas, lastPromptShas } }));
+  });
+});
+
+describe("the SDK session block: a stored.readError comes with nothing measured", () => {
+  const UNREAD: HelloSdkStored = {
+    readError: "missing",
+    fileSha256: EMPTY_SHA256,
+    itemCount: 0,
+    promptShas: [],
+    lastPromptShas: [],
+    sessionIds: [],
+    corrupt: 0,
+    unclassified: 0,
+    compactions: 0,
+  };
+
+  it("keeps a readError with every list empty, every count 0 and the sha256 of no bytes", () => {
+    expectKept(helloLine({ ...BLOCK, stored: UNREAD }), { ...BLOCK, stored: UNREAD });
+  });
+
+  it("keeps the sha256 of no bytes WITHOUT a readError (an empty store that was read)", () => {
+    const { readError: _readError, ...read } = UNREAD;
+    expectKept(helloLine({ ...BLOCK, stored: read }), { ...BLOCK, stored: read });
+  });
+
+  it.each([
+    ["a promptShas and lastPromptShas entry", { promptShas: [SHA], lastPromptShas: [SHA] }],
+    ["a sessionIds entry", { sessionIds: [SESSION_ID] }],
+    ["an itemCount of 1", { itemCount: 1 }],
+    ["a corrupt of 1", { corrupt: 1 }],
+    ["an unclassified of 1", { unclassified: 1 }],
+    ["a compactions of 1", { compactions: 1 }],
+    ["the fileSha256 of some bytes", { fileSha256: SHA }],
+  ])("RED: drops the block on a readError with %s", (_label, patch) => {
+    expectDropped(helloLine({ ...BLOCK, stored: { ...UNREAD, ...patch } }));
+  });
+
+  it.each(["not-regular", "link", "side-file"] as const)("RED: drops the block on readError %s with an item counted", (readError) => {
+    expectDropped(helloLine({ ...BLOCK, stored: { ...UNREAD, readError, itemCount: 3 } }));
+  });
+});
+
+describe("the SDK session block: stored.sessionIds are distinct", () => {
+  it("keeps distinct ids", () => {
+    const stored = { ...STORED, sessionIds: ids(3) };
+    expectKept(helloLine({ ...BLOCK, stored }), { ...BLOCK, stored });
+  });
+
+  it("keeps two ids that differ only in case (distinct is byte for byte)", () => {
+    const stored = { ...STORED, sessionIds: [SESSION_ID, SESSION_ID.toUpperCase()] };
+    expectKept(helloLine({ ...BLOCK, stored }), { ...BLOCK, stored });
+  });
+
+  it.each([
+    ["adjacent", [SESSION_ID, SESSION_ID]],
+    ["apart", ids(2).concat(ids(1))],
+    [`at the cap of ${SDK_SESSION_IDS_MAX}`, ids(SDK_SESSION_IDS_MAX - 1).concat(ids(1))],
+  ])("RED: drops the block on a repeated session id, %s", (_label, sessionIds) => {
+    expectDropped(helloLine({ ...BLOCK, stored: { ...STORED, sessionIds } }));
   });
 });
 

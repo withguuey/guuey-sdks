@@ -668,7 +668,8 @@ export type SdkSessionKind = "openai-agents" | "google-adk";
  * The hello's SDK thread-resume block ({@link WorkerHelloEvent.session}): the twin of {@link HelloCliSession} for an
  * SDK's own session store, with the same field meanings where the names match. Every sha is 64 lowercase hex.
  * A Router keeps it only when EVERY field is well formed and within bounds ({@link SDK_SESSION_PROMPT_SHAS_MAX},
- * {@link SDK_SESSION_IDS_MAX}); anything else drops the whole block, never part of it.
+ * {@link SDK_SESSION_IDS_MAX}) and `stored` is consistent (equal-length prompt lists, distinct session ids, and on a
+ * `readError` nothing listed or counted); anything else drops the whole block, never part of it.
  */
 export interface HelloSdkSession {
   /** The SDK the host ran this turn. */
@@ -700,22 +701,31 @@ export interface HelloSdkHeaderShas {
 export interface HelloSdkStored {
   /**
    * Set when the store could not be read as one regular file: absent, not a regular file, a link, or a side file
-   * (`-wal`, `-shm`, a journal) beside it. Neither a link nor a side file is opened; every list is then empty and
-   * every count 0.
+   * (`-wal`, `-shm`, a journal) beside it. Neither a link nor a side file is opened; every list is then empty, every
+   * count 0 and `fileSha256` the sha256 of no bytes, and a Router drops the whole block when any of them is not.
    */
   readonly readError?: "missing" | "not-regular" | "link" | "side-file";
   /**
    * PLAIN sha256 of the store's bytes as found, lowercase hex: the supervisor's form, not the length-prefixed
-   * content hash (on a `readError`, the sha256 of no bytes).
+   * content hash (on a `readError`, the sha256 of no bytes, enforced).
    */
   readonly fileSha256: string;
   /** The stored items, a diagnostic only. */
   readonly itemCount: number;
-  /** Entry i is turn i's hello `promptSha` (the whole stored user item); at most {@link SDK_SESSION_PROMPT_SHAS_MAX}. */
+  /**
+   * Entry i is turn i's hello `promptSha` (the whole stored user item); at most {@link SDK_SESSION_PROMPT_SHAS_MAX},
+   * and exactly as many entries as {@link lastPromptShas} (unequal lengths drop the whole block).
+   */
   readonly promptShas: readonly string[];
-  /** Entry i is turn i's hello `lastPromptSha` (that item's own text block); at most {@link SDK_SESSION_PROMPT_SHAS_MAX}. */
+  /**
+   * Entry i is turn i's hello `lastPromptSha` (that item's own text block); at most {@link SDK_SESSION_PROMPT_SHAS_MAX},
+   * and exactly as many entries as {@link promptShas}.
+   */
   readonly lastPromptShas: readonly string[];
-  /** Every distinct session id in the store, in store order, each a UUID; at most {@link SDK_SESSION_IDS_MAX}. */
+  /**
+   * Every distinct session id in the store, in store order, each a UUID; at most {@link SDK_SESSION_IDS_MAX}. Distinct
+   * is enforced byte for byte: a repeated id drops the whole block (ids differing only in case are not repeats).
+   */
   readonly sessionIds: readonly string[];
   /** Rows that fail to parse as the SDK writes them. */
   readonly corrupt: number;

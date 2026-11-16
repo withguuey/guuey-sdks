@@ -363,6 +363,8 @@ function parseHelloCliSession(v: JsonValue | undefined): HelloCliSession | undef
 const UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const isSha = (v: JsonValue | undefined): v is string => typeof v === "string" && SHA256_HEX.test(v);
 const isSdkSessionKind = (v: JsonValue | undefined): v is SdkSessionKind => v === "openai-agents" || v === "google-adk";
+/** The plain sha256 of no bytes: a `stored.fileSha256` on a `readError`. */
+const EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
 /** A list of strings of at most `max` entries, each matching `entry`, or nothing. */
 function boundedList(v: JsonValue | undefined, max: number, entry: RegExp): string[] | undefined {
@@ -394,6 +396,16 @@ function parseSdkStored(v: JsonValue | undefined): HelloSdkStored | undefined {
   const sessionIds = boundedList(v.sessionIds, SDK_SESSION_IDS_MAX, UUID);
   if (!isSha(fileSha256) || promptShas === undefined || lastPromptShas === undefined || sessionIds === undefined) return undefined;
   if (!isCount(itemCount) || !isCount(corrupt) || !isCount(unclassified) || !isCount(compactions)) return undefined;
+  // Entry i of each prompt list is turn i's, so the two lists are the same length.
+  if (promptShas.length !== lastPromptShas.length) return undefined;
+  // Every DISTINCT session id: a byte-equal repeat is not a measure the host takes.
+  if (new Set(sessionIds).size !== sessionIds.length) return undefined;
+  // A store that could not be read was never opened: nothing listed, nothing counted, the sha256 of no bytes.
+  if (readError !== undefined) {
+    if (promptShas.length !== 0 || lastPromptShas.length !== 0 || sessionIds.length !== 0) return undefined;
+    if (itemCount !== 0 || corrupt !== 0 || unclassified !== 0 || compactions !== 0) return undefined;
+    if (fileSha256 !== EMPTY_SHA256) return undefined;
+  }
   return {
     ...(readError !== undefined ? { readError } : {}),
     fileSha256,
@@ -411,8 +423,10 @@ function parseSdkStored(v: JsonValue | undefined): HelloSdkStored | undefined {
  * The hello's SDK thread-resume block (guuey#3517): kept WHOLE when every field is well formed and within bounds,
  * otherwise dropped whole, as {@link parseHelloCliSession} does. Bounds: every sha 64 lowercase hex; every count an
  * integer of at least 0 and `hashVersion` of at least 1; `promptShas` and `lastPromptShas` at most
- * {@link SDK_SESSION_PROMPT_SHAS_MAX} entries each; `sessionIds` at most {@link SDK_SESSION_IDS_MAX}, each a UUID;
- * `kind` a known SDK. A `stored` that is present but malformed drops the whole block.
+ * {@link SDK_SESSION_PROMPT_SHAS_MAX} entries each, and of EQUAL length; `sessionIds` at most
+ * {@link SDK_SESSION_IDS_MAX}, each a UUID, no two byte-equal; on a `readError`, every list empty, every count 0 and
+ * `fileSha256` the sha256 of no bytes; `kind` a known SDK. A `stored` that is present but malformed drops the whole
+ * block.
  */
 function parseHelloSdkSession(v: JsonValue | undefined): HelloSdkSession | undefined {
   if (!isObject(v)) return undefined;

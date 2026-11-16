@@ -607,6 +607,10 @@ _UUID: Final = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-f
 with ``fullmatch`` only, as JavaScript's anchored ``^...$`` (no trailing newline slips through)."""
 
 
+_EMPTY_SHA256: Final = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+"""The plain sha256 of no bytes: a ``stored.fileSha256`` on a ``readError``."""
+
+
 def _is_sha(value: _Member) -> TypeIs[str]:
     """64 lowercase hex."""
     return isinstance(value, str) and _SHA256_HEX.fullmatch(value) is not None
@@ -658,6 +662,20 @@ def _parse_sdk_stored(value: _Member) -> HelloSdkStored | None:
     compactions = _count(_member(value, "compactions"))
     if item_count is None or corrupt is None or unclassified is None or compactions is None:
         return None
+    # Entry i of each prompt list is turn i's, so the two lists are the same length.
+    if len(prompt_shas) != len(last_prompt_shas):
+        return None
+    # Every DISTINCT session id: a byte-equal repeat is not a measure the host takes.
+    if len(frozenset(session_ids)) != len(session_ids):
+        return None
+    # A store that could not be read was never opened: nothing listed, nothing counted, the sha256 of no bytes.
+    if read_error is not _MISSING:
+        if prompt_shas or last_prompt_shas or session_ids:
+            return None
+        if item_count != 0 or corrupt != 0 or unclassified != 0 or compactions != 0:
+            return None
+        if file_sha256 != _EMPTY_SHA256:
+            return None
     return HelloSdkStored(
         read_error=read_error if _is_sdk_stored_read_error(read_error) else None,
         file_sha256=file_sha256,
@@ -675,7 +693,9 @@ def _parse_hello_sdk_session(value: _Member) -> HelloSdkSession | None:
     """The hello's SDK thread-resume block (guuey#3517): kept WHOLE when every member is well formed and within
     bounds, otherwise dropped whole. The bounds are ``parse.ts``'s: every sha 64 lowercase hex, every count an integer
     of at least 0 and ``hashVersion`` of at least 1, the prompt lists at most :data:`SDK_SESSION_PROMPT_SHAS_MAX`
-    entries each, ``sessionIds`` at most :data:`SDK_SESSION_IDS_MAX` UUIDs, ``kind`` a known SDK."""
+    entries each and of equal length, ``sessionIds`` at most :data:`SDK_SESSION_IDS_MAX` UUIDs with no two byte-equal,
+    on a ``readError`` every list empty, every count 0 and ``fileSha256`` the sha256 of no bytes, ``kind`` a known
+    SDK."""
     if not _is_object(value):
         return None
     kind = _member(value, "kind")
