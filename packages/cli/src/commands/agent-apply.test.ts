@@ -57,6 +57,7 @@ vi.mock('./deploy.js', async (importOriginal) => ({
     status: 'live',
     url: 'https://app-1.agents.guuey.test',
     pageUrl: null,
+    packageDigest: null,
     timedOut: false,
   })),
   // guuey#249 — the page URL is read back from the status projection (the
@@ -637,6 +638,7 @@ describe('agentApply', () => {
       status: 'deploying',
       url: '',
       pageUrl: null,
+      packageDigest: null,
       timedOut: true,
     });
     await agentApply({ wait: true, json: true, provenance: 'none' });
@@ -654,6 +656,7 @@ describe('agentApply', () => {
       status: 'deploying',
       url: '',
       pageUrl: null,
+      packageDigest: null,
       timedOut: true,
     });
     await agentApply({ wait: true, provenance: 'none' });
@@ -668,6 +671,7 @@ describe('agentApply', () => {
       status: 'failed',
       url: '',
       pageUrl: null,
+      packageDigest: null,
       timedOut: false,
     });
     await expect(agentApply({ wait: true, json: true, provenance: 'none' })).rejects.toThrow(

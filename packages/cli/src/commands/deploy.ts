@@ -221,6 +221,58 @@ export function readRedeploySource(value: unknown): RedeploySourceWire | undefin
   };
 }
 
+/**
+ * guuey#3504 N3: a code-mode build is published as ONE fingerprinted package,
+ * and the status poll names it in the additive `packageDigest`. MIRROR of
+ * `@guuey-private/cli-wire`'s `PACKAGE_DIGEST_PATTERN` / `readPackageDigest`
+ * (`backend/libs/cli-wire/deploy.ts`), pinned by `wire-sync.test.ts`: bare 64
+ * lowercase hex, the same string the platform grants the package by. An older
+ * server sends no field, and anything else reads null: nothing prints.
+ */
+export const PACKAGE_DIGEST_PATTERN = /^[a-f0-9]{64}$/;
+
+/** MIRROR of cli-wire's `readPackageDigest`: only the bare form survives; anything else is null. */
+export function readPackageDigest(value: unknown): string | null {
+  return typeof value === 'string' && PACKAGE_DIGEST_PATTERN.test(value) ? value : null;
+}
+
+/** The one line naming a build's package, by its first 12 hex; null when the server names none. */
+export function packageLine(packageDigest: string | null): string | null {
+  return packageDigest === null ? null : `  Package ${packageDigest.slice(0, 12)}`;
+}
+
+/**
+ * The notice under a package built from a pnpm project: pnpm's default layout
+ * refuses an import the app never declared, but the package installs flat
+ * (hoisted), which lets one resolve.
+ */
+export const HOISTED_INSTALL_NOTICE =
+  '  Note: your package is installed flat (hoisted), so a dependency you never declared can resolve at run time. Declare every package you import.';
+
+/**
+ * Whether {@link HOISTED_INSTALL_NOTICE} applies to a build: only a pnpm
+ * project (a `pnpm-lock.yaml` at its root) whose build the server names a
+ * package for. An older server, a no-code build, or an npm / yarn project
+ * prints nothing.
+ */
+export function hoistedInstallNoticeApplies(opts: { hasPnpmLock: boolean; packageDigest: string | null }): boolean {
+  return opts.hasPnpmLock && opts.packageDigest !== null;
+}
+
+/** Print the Package line and, when it applies, the hoisted-install notice, once per build. Exported for tests. */
+export function printPackageLines(
+  packageDigest: string | null,
+  projectRoot: string,
+  exists: (path: string) => boolean = existsSync,
+): void {
+  const line = packageLine(packageDigest);
+  if (line === null) return;
+  console.log(line);
+  if (hoistedInstallNoticeApplies({ hasPnpmLock: exists(join(projectRoot, 'pnpm-lock.yaml')), packageDigest })) {
+    console.log(HOISTED_INSTALL_NOTICE);
+  }
+}
+
 /** Print which build's guuey.json the trigger re-served, when the 202 says. Exported for tests. */
 export function printRedeploySource(body: unknown): void {
   if (body === null || typeof body !== 'object') return;
@@ -1302,7 +1354,7 @@ async function deployCode(opts: {
     },
   );
 
-  const { status, url, pageUrl: polledPageUrl, timedOut } = await pollDeployStatus({
+  const { status, url, pageUrl: polledPageUrl, packageDigest, timedOut } = await pollDeployStatus({
     auth,
     config,
     appId,
@@ -1343,6 +1395,7 @@ async function deployCode(opts: {
   await maybePrintThemeHint(auth.pat, config, appId, 'guuey deploy');
   console.log('');
   console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
+  printPackageLines(packageDigest, root);
   console.log(`  Size:   runtime=${runtimeSizeLabel(size, servedSize)}, build=${buildSize}`);
   if (maxPods !== undefined) console.log(`  Pods:   max=${maxPods}`);
   printPodLifetime(maxPods);
@@ -1432,6 +1485,7 @@ export async function pollDeployStatus(
   let status = 'queued';
   let url = '';
   let pageUrl: string | null = null;
+  let packageDigest: string | null = null;
   let lastMessage = '';
   const startTime = now();
 
@@ -1441,7 +1495,7 @@ export async function pollDeployStatus(
       // client stops watching, so the caller says so and exits 0 — only a
       // `failed` / `superseded` row is a failure exit. The caller owns the
       // tarball cleanup on every return path.
-      return { status, url, pageUrl, timedOut: true };
+      return { status, url, pageUrl, packageDigest, timedOut: true };
     }
 
     await sleep(3000);
@@ -1479,6 +1533,9 @@ export async function pollDeployStatus(
     status = data.status;
     if (data.endpointUrl) url = data.endpointUrl;
     if (data.pageUrl) pageUrl = data.pageUrl;
+    // guuey#3504 N3: narrowed, never trusted raw; an older server sends no field.
+    const digest = readPackageDigest(data.packageDigest);
+    if (digest !== null) packageDigest = digest;
     if (data.errorMessage) {
       out.error(data.errorMessage);
       if (tarballPath) cleanup(tarballPath);
@@ -1486,7 +1543,7 @@ export async function pollDeployStatus(
     }
   }
 
-  return { status, url, pageUrl, timedOut: false };
+  return { status, url, pageUrl, packageDigest, timedOut: false };
 }
 
 /**
@@ -1499,6 +1556,13 @@ export interface DeployPollResult {
   status: string;
   url: string;
   pageUrl: string | null;
+  /**
+   * guuey#3504 N3: the bare digest of the ONE package a code-mode build was
+   * published as, the last non-null value the poll read through
+   * {@link readPackageDigest}; null on a no-code build, a build that has not
+   * written one, and an older server.
+   */
+  packageDigest: string | null;
   timedOut: boolean;
 }
 
@@ -1514,6 +1578,8 @@ interface DeploymentStatusPoll {
   endpointUrl?: string | null;
   errorMessage?: string | null;
   pageUrl?: string | null;
+  /** guuey#3504 N3: read through {@link readPackageDigest} only. */
+  packageDigest?: string | null;
 }
 
 /** How long {@link awaitPageUrl} re-reads after Live before giving up. */
@@ -1688,7 +1754,7 @@ async function deployLegacyDockerfile(opts: {
     },
   );
 
-  const { status, url, pageUrl: polledPageUrl, timedOut } = await pollDeployStatus({
+  const { status, url, pageUrl: polledPageUrl, packageDigest, timedOut } = await pollDeployStatus({
     auth,
     config,
     appId,
@@ -1724,6 +1790,7 @@ async function deployLegacyDockerfile(opts: {
   await maybePrintThemeHint(auth.pat, config, appId, 'guuey deploy');
   console.log('');
   console.log(`  Build:  #${buildNumber}${label ? ` (${label})` : ''}`);
+  printPackageLines(packageDigest, process.cwd());
   console.log(`  Size:   runtime=${runtimeSizeLabel(size, servedSize)}, build=${buildSize}`);
   if (maxPods !== undefined) console.log(`  Pods:   max=${maxPods}`);
   printPodLifetime(maxPods);

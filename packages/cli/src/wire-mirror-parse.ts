@@ -144,6 +144,22 @@ export function parseStringConstant(source: string, name: string): string {
 }
 
 /**
+ * The source text of a `const X = /…/flags;` regular-expression literal (a
+ * wire value's form, e.g. a digest pattern), so two sides compare the exact
+ * pattern. Throws when there is none, so a guard never compares `undefined`
+ * with `undefined`.
+ */
+export function parseRegexConstant(source: string, name: string): string {
+  const match = new RegExp(`(?:export\\s+)?const\\s+${name}\\s*(?::\\s*RegExp\\s*)?=\\s*(/(?:\\\\/|[^/\\n])+/[a-z]*)\\s*;`).exec(
+    source,
+  );
+  if (match === null) {
+    throw new Error(`no regular-expression constant named ${name} in source`);
+  }
+  return match[1];
+}
+
+/**
  * The entries of a `const X … = { key: 'value', 'other-key': 'value' };`
  * object of string values (a prefix per scope, a route per op), as a plain
  * record. Keys may be bare or quoted. Throws when there is no such object or

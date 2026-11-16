@@ -18,7 +18,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { parseInterfaceFields, parseStringConstant, parseStringLiterals } from '../wire-mirror-parse';
+import { parseInterfaceFields, parseRegexConstant, parseStringConstant, parseStringLiterals } from '../wire-mirror-parse';
 
 function repoPath(relativeToThisFile: string): string {
   return fileURLToPath(new URL(relativeToThisFile, import.meta.url));
@@ -193,6 +193,18 @@ describe.skipIf(!haveWire)('CLI wire mirrors — sync guards against @guuey-priv
     expect(parseStringLiterals(read(CLI_DEPLOY), 'REDEPLOY_SOURCE_KINDS')).toEqual(
       parseStringLiterals(read(WIRE_DEPLOY), 'REDEPLOY_SOURCE_KINDS'),
     );
+  });
+
+  it('the status poll\'s packageDigest mirrors the wire: the same field, the same pattern (guuey#3504 N3)', () => {
+    // The CLI reads the digest off the status poll and narrows it with its own
+    // `readPackageDigest`; a renamed wire field or a changed form would print
+    // nothing against every server, silently.
+    expect(fieldNames(read(WIRE_DEPLOY), 'DeploymentStatusWire')).toContain('packageDigest');
+    expect(fieldNames(read(CLI_DEPLOY), 'DeploymentStatusPoll')).toContain('packageDigest');
+    expect(parseRegexConstant(read(CLI_DEPLOY), 'PACKAGE_DIGEST_PATTERN')).toBe(
+      parseRegexConstant(read(WIRE_DEPLOY), 'PACKAGE_DIGEST_PATTERN'),
+    );
+    expect(parseRegexConstant(read(WIRE_DEPLOY), 'PACKAGE_DIGEST_PATTERN')).toBe('/^[a-f0-9]{64}$/');
   });
 
   it('MCP_SIZES is exactly the wire McpServerSize union', () => {

@@ -8,6 +8,11 @@ import {
   printTriggerWarnings,
   printRedeploySource,
   readRedeploySource,
+  readPackageDigest,
+  packageLine,
+  hoistedInstallNoticeApplies,
+  printPackageLines,
+  HOISTED_INSTALL_NOTICE,
   awaitPageUrl,
   createIntentFromProject,
   createLinkedApp,
@@ -222,6 +227,7 @@ describe('pollDeployStatus', () => {
         status: 'live',
         url: 'https://app-1.guuey.app',
         pageUrl: null,
+        packageDigest: null,
         timedOut: false,
       });
       expect(calls).toEqual([{ method: 'GET', path: '/apps/app-1/deployments/4/status' }]);
@@ -248,6 +254,34 @@ describe('pollDeployStatus', () => {
         { api },
       );
       expect(result.pageUrl).toBe('https://weather-bot-k7q2.agents.guuey.test/');
+    },
+    10_000,
+  );
+
+  // guuey#3504 N3, N-1 both ways (guuey#1213): today's status payload (no
+  // packageDigest) reads null; a payload naming one carries it through; a
+  // malformed one reads null, never printed raw.
+  it(
+    'carries the projection\'s packageDigest through, null from an older server or a malformed value (guuey#3504 N3)',
+    async () => {
+      const digest = '0123456789abcdef'.repeat(4);
+      const run = async (extra: { packageDigest?: unknown }) => {
+        const api: typeof apiRequest = vi.fn(async () =>
+          new Response(
+            JSON.stringify({ status: 'live', endpointUrl: 'https://app-1.guuey.app', errorMessage: null, pageUrl: null, ...extra }),
+            { status: 200 },
+          ),
+        );
+        return pollDeployStatus(
+          { auth, config, appId: 'app-1', buildNumber: 4, timeoutMs: 60_000 },
+          { api, sleep: async () => {} },
+        );
+      };
+      expect((await run({})).packageDigest).toBeNull();
+      expect((await run({ packageDigest: null })).packageDigest).toBeNull();
+      expect((await run({ packageDigest: digest })).packageDigest).toBe(digest);
+      expect((await run({ packageDigest: `sha256:${digest}` })).packageDigest).toBeNull();
+      expect((await run({ packageDigest: digest.toUpperCase() })).packageDigest).toBeNull();
     },
     10_000,
   );
@@ -355,7 +389,7 @@ describe('pollDeployStatus', () => {
       { api, sleep, now },
     );
 
-    expect(result).toEqual({ status: 'deploying', url: '', pageUrl: null, timedOut: true });
+    expect(result).toEqual({ status: 'deploying', url: '', pageUrl: null, packageDigest: null, timedOut: true });
     expect(exitSpy).not.toHaveBeenCalled();
     expect(errorSpy.mock.calls.flat().join('\n')).not.toMatch(/timed out/i);
     // The wait is measured on the injected clock: 10 s budget, 3 s per tick → 4 polls.
@@ -457,6 +491,66 @@ describe('awaitPageUrl / printPageLine (guuey#249)', () => {
     logSpy.mockClear();
     printPodLifetime(undefined);
     expect(logSpy.mock.calls.flat().join('\n')).not.toMatch(/auto-scaler/);
+  });
+});
+
+// guuey#3504 N3: once a code build is live, the CLI names its package (one
+// line, first 12 hex) and, for a pnpm project, says once that the package
+// installs flat. Nothing prints when the server names no package.
+describe('readPackageDigest / packageLine / the hoisted-install notice (guuey#3504 N3)', () => {
+  const digest = '0123456789abcdef'.repeat(4);
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('readPackageDigest keeps only bare 64 lowercase hex', () => {
+    expect(readPackageDigest(digest)).toBe(digest);
+    for (const bad of [`sha256:${digest}`, digest.toUpperCase(), digest.slice(1), `${digest}0`, '', null, undefined, 64]) {
+      expect(readPackageDigest(bad)).toBeNull();
+    }
+  });
+
+  it('packageLine names the package by its first 12 hex, and is null when there is none', () => {
+    expect(packageLine(digest)).toBe('  Package 0123456789ab');
+    expect(packageLine(null)).toBeNull();
+  });
+
+  it('hoistedInstallNoticeApplies only to a pnpm project whose build names a package', () => {
+    expect(hoistedInstallNoticeApplies({ hasPnpmLock: true, packageDigest: digest })).toBe(true);
+    expect(hoistedInstallNoticeApplies({ hasPnpmLock: false, packageDigest: digest })).toBe(false);
+    expect(hoistedInstallNoticeApplies({ hasPnpmLock: true, packageDigest: null })).toBe(false);
+    expect(hoistedInstallNoticeApplies({ hasPnpmLock: false, packageDigest: null })).toBe(false);
+  });
+
+  it('printPackageLines: the Package line, then the notice once for a pnpm project; the line alone otherwise; nothing without a digest', () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const checked: string[] = [];
+    const pnpmProject = (path: string): boolean => {
+      checked.push(path);
+      return path === join('/proj', 'pnpm-lock.yaml');
+    };
+
+    printPackageLines(digest, '/proj', pnpmProject);
+    expect(logSpy.mock.calls.flat()).toEqual(['  Package 0123456789ab', HOISTED_INSTALL_NOTICE]);
+    expect(checked).toEqual([join('/proj', 'pnpm-lock.yaml')]);
+
+    logSpy.mockClear();
+    printPackageLines(digest, '/npm-proj', () => false);
+    expect(logSpy.mock.calls.flat()).toEqual(['  Package 0123456789ab']);
+
+    logSpy.mockClear();
+    checked.length = 0;
+    printPackageLines(null, '/proj', pnpmProject);
+    expect(logSpy.mock.calls.flat()).toEqual([]);
+    expect(checked).toEqual([]);
+  });
+
+  it('the notice says "package", never "image", and tells the builder what to do', () => {
+    expect(HOISTED_INSTALL_NOTICE).toBe(
+      '  Note: your package is installed flat (hoisted), so a dependency you never declared can resolve at run time. Declare every package you import.',
+    );
+    expect(HOISTED_INSTALL_NOTICE).not.toMatch(/image/i);
   });
 });
 
@@ -1396,6 +1490,77 @@ describe('deploy() — agent.env may not set a runtime-reserved name', () => {
     const printed = errSpy.mock.calls.map((c) => String(c[0] ?? '')).join('\n');
     expect(printed).not.toContain('reserved by the platform runtime');
   });
+});
+
+// guuey#3504 N3: a live code deploy names its package once, and a pnpm project
+// gets the hoisted-install notice once; an older server (no packageDigest on
+// the status poll) prints neither.
+describe('deploy() — the Package line and the hoisted-install notice (guuey#3504 N3)', () => {
+  const digest = '0123456789abcdef'.repeat(4);
+  let dir: string;
+  let originalCwd: string;
+  let logSpy: MockInstance<typeof console.log>;
+
+  function servePackage(packageDigest: string | undefined): void {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/deployments/1/status')) {
+        const body = packageDigest === undefined ? LIVE_STATUS : { ...LIVE_STATUS, packageDigest };
+        return new Response(JSON.stringify(body), { status: 200 });
+      }
+      return codePlatform(input);
+    });
+  }
+
+  const printed = (): string[] => logSpy.mock.calls.flat().map(String);
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    dir = mkdtempSync(join(tmpdir(), 'deploy-package-line-test-'));
+    writeCodeProject(dir, { schema: '1', appId: 'app-1', agent: { mode: 'code' } });
+    process.chdir(dir);
+    vi.mocked(resolveConfig).mockReturnValue({
+      host: 'https://platform.guuey.test',
+      apiUrl: 'https://api.guuey.test',
+      appId: 'app-1',
+    });
+    vi.mocked(loadProjectConfig).mockReturnValue(null);
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new ExitSignal(typeof code === 'number' ? code : undefined);
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it('a pnpm project: the Package line, then the notice, each exactly once', async () => {
+    writeFileSync(join(dir, 'pnpm-lock.yaml'), "lockfileVersion: '9.0'\n");
+    servePackage(digest);
+    await deploy({ code: true });
+    expect(printed().filter((line) => line === '  Package 0123456789ab')).toHaveLength(1);
+    expect(printed().filter((line) => line === HOISTED_INSTALL_NOTICE)).toHaveLength(1);
+    expect(printed().indexOf(HOISTED_INSTALL_NOTICE)).toBe(printed().indexOf('  Package 0123456789ab') + 1);
+  }, 10_000);
+
+  it('a project without pnpm-lock.yaml: the Package line alone', async () => {
+    servePackage(digest);
+    await deploy({ code: true });
+    expect(printed()).toContain('  Package 0123456789ab');
+    expect(printed()).not.toContain(HOISTED_INSTALL_NOTICE);
+  }, 10_000);
+
+  it('an older server (no packageDigest on the poll): neither line, even in a pnpm project', async () => {
+    writeFileSync(join(dir, 'pnpm-lock.yaml'), "lockfileVersion: '9.0'\n");
+    servePackage(undefined);
+    await deploy({ code: true });
+    expect(printed().some((line) => line.startsWith('  Package '))).toBe(false);
+    expect(printed()).not.toContain(HOISTED_INSTALL_NOTICE);
+  }, 10_000);
 });
 
 // `guuey deploy --max-pods N` (scaling S1-F4, guuey#162): the flag rides
