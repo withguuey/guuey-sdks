@@ -87,7 +87,8 @@ describe('localWebAppEntries (guuey#3504)', () => {
   });
 });
 
-describe('omitTopLevel reaches both working-tree packing paths at the ROOT only (guuey#3504)', () => {
+// The packSource case spawns the real tar, so the whole describe carries the budget (guuey#867's guard reads it here).
+describe('omitTopLevel reaches both working-tree packing paths at the ROOT only (guuey#3504)', { timeout: TAR_BUDGET_MS }, () => {
   let cwd: string;
   beforeEach(() => {
     cwd = mkdtempSync(join(tmpdir(), 'guuey-web-omit-pack-'));
@@ -131,24 +132,20 @@ describe('omitTopLevel reaches both working-tree packing paths at the ROOT only 
     }
   });
 
-  it(
-    'packSource with the real tar: the root web/ is not in the tarball, a nested web/ is',
-    () => {
-      const { tarballPath } = packSource({ buildId: 'webomit', cwd, includeWorkingTree: true, omitTopLevel: ['web'] });
-      try {
-        const listed = execFileSync('tar', ['tzf', tarballPath], { encoding: 'utf8' })
-          .split('\n')
-          .map((l) => l.replace(/\/$/, ''))
-          .filter(Boolean);
-        expect(listed.some((l) => l === './web' || l.startsWith('./web/'))).toBe(false);
-        expect(listed).toContain('./vendor/dep/web/keep.js');
-        expect(listed).toContain('./guuey.worker.js');
-      } finally {
-        cleanup(tarballPath);
-      }
-    },
-    TAR_BUDGET_MS,
-  );
+  it('packSource with the real tar: the root web/ is not in the tarball, a nested web/ is', () => {
+    const { tarballPath } = packSource({ buildId: 'webomit', cwd, includeWorkingTree: true, omitTopLevel: ['web'] });
+    try {
+      const listed = execFileSync('tar', ['tzf', tarballPath], { encoding: 'utf8' })
+        .split('\n')
+        .map((l) => l.replace(/\/$/, ''))
+        .filter(Boolean);
+      expect(listed.some((l) => l === './web' || l.startsWith('./web/'))).toBe(false);
+      expect(listed).toContain('./vendor/dep/web/keep.js');
+      expect(listed).toContain('./guuey.worker.js');
+    } finally {
+      cleanup(tarballPath);
+    }
+  });
 
   it('refuses omitTopLevel on the git-archive path (committed files ship as they are)', () => {
     expect(() => packSource({ buildId: 'webomit2', cwd, omitTopLevel: ['web'] })).toThrow(
