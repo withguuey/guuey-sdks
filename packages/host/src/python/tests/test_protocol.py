@@ -94,6 +94,9 @@ MIN_CASES: Final[dict[str, int]] = {
 """The fewest cases each case file may hold: the count the generator writes today. A missing directory, a missing
 file, an empty list or a shrunken one FAILS the replay; nothing here ever skips."""
 
+MIN_TOTAL_CASES: Final = 471
+"""The fewest cases all case files hold together: the sum the generator writes today."""
+
 MIN_CONSTANTS: Final = 23
 
 
@@ -306,6 +309,11 @@ class GoldenCorpusTest(_GoldenCase):
         self.assertEqual(frozenset(MIN_CASES) | {"constants.json"}, GOLDEN_FILES, "every case file has a minimum count")
         on_disk = frozenset(path.name for path in GOLDEN_DIR.glob("*.json"))
         self.assertEqual(on_disk, GOLDEN_FILES, "a golden file with no checker here, or a checker with no file")
+
+    def test_the_corpus_holds_at_least_its_total(self) -> None:
+        self.assertEqual(sum(MIN_CASES.values()), MIN_TOTAL_CASES, "the total floor is the sum of the file floors")
+        total = sum(len(_cases(file)) for file in MIN_CASES)
+        self.assertGreaterEqual(total, MIN_TOTAL_CASES, "the corpus lost cases")
 
     def test_parse_control(self) -> None:
         for case in _cases("parse-control.json"):
