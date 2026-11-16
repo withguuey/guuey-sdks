@@ -1547,7 +1547,7 @@
   },
   {
     "name": "hello: SDK session readError side-file kept",
-    "input": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"itemCount\":0,\"promptShas\":[],\"lastPromptShas\":[],\"sessionIds\":[],\"corrupt\":0,\"unclassified\":0,\"compactions\":0,\"readError\":\"side-file\"}}}",
+    "input": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"itemCount\":0,\"promptShas\":[],\"lastPromptShas\":[],\"sessionIds\":[],\"corrupt\":0,\"unclassified\":0,\"compactions\":0,\"readError\":\"side-file\"}}}",
     "expected": {
       "ok": {
         "type": "hello",
@@ -1572,7 +1572,7 @@
           "lastPromptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "stored": {
             "readError": "side-file",
-            "fileSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "fileSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
             "itemCount": 0,
             "promptShas": [],
             "lastPromptShas": [],
@@ -1583,12 +1583,12 @@
           }
         }
       },
-      "line": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"readError\":\"side-file\",\"fileSha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"itemCount\":0,\"promptShas\":[],\"lastPromptShas\":[],\"sessionIds\":[],\"corrupt\":0,\"unclassified\":0,\"compactions\":0}}}"
+      "line": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"readError\":\"side-file\",\"fileSha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"itemCount\":0,\"promptShas\":[],\"lastPromptShas\":[],\"sessionIds\":[],\"corrupt\":0,\"unclassified\":0,\"compactions\":0}}}"
     }
   },
   {
     "name": "hello: SDK session readError missing kept",
-    "input": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"itemCount\":0,\"promptShas\":[],\"lastPromptShas\":[],\"sessionIds\":[],\"corrupt\":0,\"unclassified\":0,\"compactions\":0,\"readError\":\"missing\"}}}",
+    "input": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"itemCount\":0,\"promptShas\":[],\"lastPromptShas\":[],\"sessionIds\":[],\"corrupt\":0,\"unclassified\":0,\"compactions\":0,\"readError\":\"missing\"}}}",
     "expected": {
       "ok": {
         "type": "hello",
@@ -1613,7 +1613,7 @@
           "lastPromptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "stored": {
             "readError": "missing",
-            "fileSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "fileSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
             "itemCount": 0,
             "promptShas": [],
             "lastPromptShas": [],
@@ -1624,7 +1624,441 @@
           }
         }
       },
-      "line": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"readError\":\"missing\",\"fileSha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"itemCount\":0,\"promptShas\":[],\"lastPromptShas\":[],\"sessionIds\":[],\"corrupt\":0,\"unclassified\":0,\"compactions\":0}}}"
+      "line": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"readError\":\"missing\",\"fileSha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"itemCount\":0,\"promptShas\":[],\"lastPromptShas\":[],\"sessionIds\":[],\"corrupt\":0,\"unclassified\":0,\"compactions\":0}}}"
+    }
+  },
+  {
+    "name": "hello: SDK session readError link kept",
+    "input": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"itemCount\":0,\"promptShas\":[],\"lastPromptShas\":[],\"sessionIds\":[],\"corrupt\":0,\"unclassified\":0,\"compactions\":0,\"readError\":\"link\"}}}",
+    "expected": {
+      "ok": {
+        "type": "hello",
+        "framework": "google-adk",
+        "sdkName": "google-adk",
+        "sdkVersion": "1.2.0",
+        "capabilities": [
+          "adk.host-completion",
+          "sdk-session.v1"
+        ],
+        "session": {
+          "kind": "google-adk",
+          "hashVersion": 1,
+          "systemPromptSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "headerShas": {
+            "model": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tools": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "mcpConfig": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "promptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "promptBytes": 120,
+          "lastPromptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "stored": {
+            "readError": "link",
+            "fileSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "itemCount": 0,
+            "promptShas": [],
+            "lastPromptShas": [],
+            "sessionIds": [],
+            "corrupt": 0,
+            "unclassified": 0,
+            "compactions": 0
+          }
+        }
+      },
+      "line": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"readError\":\"link\",\"fileSha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"itemCount\":0,\"promptShas\":[],\"lastPromptShas\":[],\"sessionIds\":[],\"corrupt\":0,\"unclassified\":0,\"compactions\":0}}}"
+    }
+  },
+  {
+    "name": "hello: SDK session readError not-regular kept",
+    "input": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"itemCount\":0,\"promptShas\":[],\"lastPromptShas\":[],\"sessionIds\":[],\"corrupt\":0,\"unclassified\":0,\"compactions\":0,\"readError\":\"not-regular\"}}}",
+    "expected": {
+      "ok": {
+        "type": "hello",
+        "framework": "google-adk",
+        "sdkName": "google-adk",
+        "sdkVersion": "1.2.0",
+        "capabilities": [
+          "adk.host-completion",
+          "sdk-session.v1"
+        ],
+        "session": {
+          "kind": "google-adk",
+          "hashVersion": 1,
+          "systemPromptSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "headerShas": {
+            "model": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tools": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "mcpConfig": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "promptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "promptBytes": 120,
+          "lastPromptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "stored": {
+            "readError": "not-regular",
+            "fileSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "itemCount": 0,
+            "promptShas": [],
+            "lastPromptShas": [],
+            "sessionIds": [],
+            "corrupt": 0,
+            "unclassified": 0,
+            "compactions": 0
+          }
+        }
+      },
+      "line": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"readError\":\"not-regular\",\"fileSha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"itemCount\":0,\"promptShas\":[],\"lastPromptShas\":[],\"sessionIds\":[],\"corrupt\":0,\"unclassified\":0,\"compactions\":0}}}"
+    }
+  },
+  {
+    "name": "hello: SDK session empty-store sha without a readError kept",
+    "input": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"itemCount\":0,\"promptShas\":[],\"lastPromptShas\":[],\"sessionIds\":[],\"corrupt\":0,\"unclassified\":0,\"compactions\":0}}}",
+    "expected": {
+      "ok": {
+        "type": "hello",
+        "framework": "google-adk",
+        "sdkName": "google-adk",
+        "sdkVersion": "1.2.0",
+        "capabilities": [
+          "adk.host-completion",
+          "sdk-session.v1"
+        ],
+        "session": {
+          "kind": "google-adk",
+          "hashVersion": 1,
+          "systemPromptSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "headerShas": {
+            "model": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tools": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "mcpConfig": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "promptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "promptBytes": 120,
+          "lastPromptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "stored": {
+            "fileSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "itemCount": 0,
+            "promptShas": [],
+            "lastPromptShas": [],
+            "sessionIds": [],
+            "corrupt": 0,
+            "unclassified": 0,
+            "compactions": 0
+          }
+        }
+      },
+      "line": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"itemCount\":0,\"promptShas\":[],\"lastPromptShas\":[],\"sessionIds\":[],\"corrupt\":0,\"unclassified\":0,\"compactions\":0}}}"
+    }
+  },
+  {
+    "name": "hello: SDK session dropped on a readError with prompt list entries",
+    "input": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"itemCount\":0,\"promptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],\"lastPromptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],\"sessionIds\":[],\"corrupt\":0,\"unclassified\":0,\"compactions\":0,\"readError\":\"missing\"}}}",
+    "expected": {
+      "ok": {
+        "type": "hello",
+        "framework": "google-adk",
+        "sdkName": "google-adk",
+        "sdkVersion": "1.2.0",
+        "capabilities": [
+          "adk.host-completion",
+          "sdk-session.v1"
+        ]
+      },
+      "line": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"]}"
+    }
+  },
+  {
+    "name": "hello: SDK session dropped on a readError with a session id",
+    "input": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"itemCount\":0,\"promptShas\":[],\"lastPromptShas\":[],\"sessionIds\":[\"6f9619ff-8b86-4011-b42d-00c04fc964ff\"],\"corrupt\":0,\"unclassified\":0,\"compactions\":0,\"readError\":\"missing\"}}}",
+    "expected": {
+      "ok": {
+        "type": "hello",
+        "framework": "google-adk",
+        "sdkName": "google-adk",
+        "sdkVersion": "1.2.0",
+        "capabilities": [
+          "adk.host-completion",
+          "sdk-session.v1"
+        ]
+      },
+      "line": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"]}"
+    }
+  },
+  {
+    "name": "hello: SDK session dropped on a readError with an itemCount",
+    "input": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"itemCount\":1,\"promptShas\":[],\"lastPromptShas\":[],\"sessionIds\":[],\"corrupt\":0,\"unclassified\":0,\"compactions\":0,\"readError\":\"link\"}}}",
+    "expected": {
+      "ok": {
+        "type": "hello",
+        "framework": "google-adk",
+        "sdkName": "google-adk",
+        "sdkVersion": "1.2.0",
+        "capabilities": [
+          "adk.host-completion",
+          "sdk-session.v1"
+        ]
+      },
+      "line": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"]}"
+    }
+  },
+  {
+    "name": "hello: SDK session dropped on a readError with a corrupt count",
+    "input": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"itemCount\":0,\"promptShas\":[],\"lastPromptShas\":[],\"sessionIds\":[],\"corrupt\":1,\"unclassified\":0,\"compactions\":0,\"readError\":\"not-regular\"}}}",
+    "expected": {
+      "ok": {
+        "type": "hello",
+        "framework": "google-adk",
+        "sdkName": "google-adk",
+        "sdkVersion": "1.2.0",
+        "capabilities": [
+          "adk.host-completion",
+          "sdk-session.v1"
+        ]
+      },
+      "line": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"]}"
+    }
+  },
+  {
+    "name": "hello: SDK session dropped on a readError with an unclassified count",
+    "input": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"itemCount\":0,\"promptShas\":[],\"lastPromptShas\":[],\"sessionIds\":[],\"corrupt\":0,\"unclassified\":1,\"compactions\":0,\"readError\":\"side-file\"}}}",
+    "expected": {
+      "ok": {
+        "type": "hello",
+        "framework": "google-adk",
+        "sdkName": "google-adk",
+        "sdkVersion": "1.2.0",
+        "capabilities": [
+          "adk.host-completion",
+          "sdk-session.v1"
+        ]
+      },
+      "line": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"]}"
+    }
+  },
+  {
+    "name": "hello: SDK session dropped on a readError with a compactions count",
+    "input": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"itemCount\":0,\"promptShas\":[],\"lastPromptShas\":[],\"sessionIds\":[],\"corrupt\":0,\"unclassified\":0,\"compactions\":1,\"readError\":\"missing\"}}}",
+    "expected": {
+      "ok": {
+        "type": "hello",
+        "framework": "google-adk",
+        "sdkName": "google-adk",
+        "sdkVersion": "1.2.0",
+        "capabilities": [
+          "adk.host-completion",
+          "sdk-session.v1"
+        ]
+      },
+      "line": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"]}"
+    }
+  },
+  {
+    "name": "hello: SDK session dropped on a readError with the fileSha256 of some bytes",
+    "input": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"itemCount\":0,\"promptShas\":[],\"lastPromptShas\":[],\"sessionIds\":[],\"corrupt\":0,\"unclassified\":0,\"compactions\":0,\"readError\":\"missing\"}}}",
+    "expected": {
+      "ok": {
+        "type": "hello",
+        "framework": "google-adk",
+        "sdkName": "google-adk",
+        "sdkVersion": "1.2.0",
+        "capabilities": [
+          "adk.host-completion",
+          "sdk-session.v1"
+        ]
+      },
+      "line": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"]}"
+    }
+  },
+  {
+    "name": "hello: SDK session two empty prompt lists kept",
+    "input": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"itemCount\":0,\"promptShas\":[],\"lastPromptShas\":[],\"sessionIds\":[\"6f9619ff-8b86-4011-b42d-00c04fc964ff\"],\"corrupt\":0,\"unclassified\":0,\"compactions\":0}}}",
+    "expected": {
+      "ok": {
+        "type": "hello",
+        "framework": "google-adk",
+        "sdkName": "google-adk",
+        "sdkVersion": "1.2.0",
+        "capabilities": [
+          "adk.host-completion",
+          "sdk-session.v1"
+        ],
+        "session": {
+          "kind": "google-adk",
+          "hashVersion": 1,
+          "systemPromptSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "headerShas": {
+            "model": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tools": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "mcpConfig": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "promptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "promptBytes": 120,
+          "lastPromptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "stored": {
+            "fileSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "itemCount": 0,
+            "promptShas": [],
+            "lastPromptShas": [],
+            "sessionIds": [
+              "6f9619ff-8b86-4011-b42d-00c04fc964ff"
+            ],
+            "corrupt": 0,
+            "unclassified": 0,
+            "compactions": 0
+          }
+        }
+      },
+      "line": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"itemCount\":0,\"promptShas\":[],\"lastPromptShas\":[],\"sessionIds\":[\"6f9619ff-8b86-4011-b42d-00c04fc964ff\"],\"corrupt\":0,\"unclassified\":0,\"compactions\":0}}}"
+    }
+  },
+  {
+    "name": "hello: SDK session dropped on promptShas longer than lastPromptShas",
+    "input": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"itemCount\":6,\"promptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"],\"lastPromptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],\"sessionIds\":[\"6f9619ff-8b86-4011-b42d-00c04fc964ff\"],\"corrupt\":0,\"unclassified\":0,\"compactions\":0}}}",
+    "expected": {
+      "ok": {
+        "type": "hello",
+        "framework": "google-adk",
+        "sdkName": "google-adk",
+        "sdkVersion": "1.2.0",
+        "capabilities": [
+          "adk.host-completion",
+          "sdk-session.v1"
+        ]
+      },
+      "line": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"]}"
+    }
+  },
+  {
+    "name": "hello: SDK session dropped on lastPromptShas longer than promptShas",
+    "input": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"itemCount\":6,\"promptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],\"lastPromptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"],\"sessionIds\":[\"6f9619ff-8b86-4011-b42d-00c04fc964ff\"],\"corrupt\":0,\"unclassified\":0,\"compactions\":0}}}",
+    "expected": {
+      "ok": {
+        "type": "hello",
+        "framework": "google-adk",
+        "sdkName": "google-adk",
+        "sdkVersion": "1.2.0",
+        "capabilities": [
+          "adk.host-completion",
+          "sdk-session.v1"
+        ]
+      },
+      "line": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"]}"
+    }
+  },
+  {
+    "name": "hello: SDK session dropped on empty promptShas beside a lastPromptShas entry",
+    "input": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"itemCount\":6,\"promptShas\":[],\"lastPromptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],\"sessionIds\":[\"6f9619ff-8b86-4011-b42d-00c04fc964ff\"],\"corrupt\":0,\"unclassified\":0,\"compactions\":0}}}",
+    "expected": {
+      "ok": {
+        "type": "hello",
+        "framework": "google-adk",
+        "sdkName": "google-adk",
+        "sdkVersion": "1.2.0",
+        "capabilities": [
+          "adk.host-completion",
+          "sdk-session.v1"
+        ]
+      },
+      "line": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"]}"
+    }
+  },
+  {
+    "name": "hello: SDK session session ids differing only in case kept",
+    "input": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"itemCount\":6,\"promptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"],\"lastPromptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"],\"sessionIds\":[\"6f9619ff-8b86-4011-b42d-00c04fc964ff\",\"6F9619FF-8B86-4011-B42D-00C04FC964FF\"],\"corrupt\":0,\"unclassified\":0,\"compactions\":0}}}",
+    "expected": {
+      "ok": {
+        "type": "hello",
+        "framework": "google-adk",
+        "sdkName": "google-adk",
+        "sdkVersion": "1.2.0",
+        "capabilities": [
+          "adk.host-completion",
+          "sdk-session.v1"
+        ],
+        "session": {
+          "kind": "google-adk",
+          "hashVersion": 1,
+          "systemPromptSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "headerShas": {
+            "model": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tools": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "mcpConfig": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "promptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "promptBytes": 120,
+          "lastPromptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "stored": {
+            "fileSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "itemCount": 6,
+            "promptShas": [
+              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            ],
+            "lastPromptShas": [
+              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            ],
+            "sessionIds": [
+              "6f9619ff-8b86-4011-b42d-00c04fc964ff",
+              "6F9619FF-8B86-4011-B42D-00C04FC964FF"
+            ],
+            "corrupt": 0,
+            "unclassified": 0,
+            "compactions": 0
+          }
+        }
+      },
+      "line": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"itemCount\":6,\"promptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"],\"lastPromptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"],\"sessionIds\":[\"6f9619ff-8b86-4011-b42d-00c04fc964ff\",\"6F9619FF-8B86-4011-B42D-00C04FC964FF\"],\"corrupt\":0,\"unclassified\":0,\"compactions\":0}}}"
+    }
+  },
+  {
+    "name": "hello: SDK session dropped on an adjacent repeated session id",
+    "input": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"itemCount\":6,\"promptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"],\"lastPromptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"],\"sessionIds\":[\"6f9619ff-8b86-4011-b42d-00c04fc964ff\",\"6f9619ff-8b86-4011-b42d-00c04fc964ff\"],\"corrupt\":0,\"unclassified\":0,\"compactions\":0}}}",
+    "expected": {
+      "ok": {
+        "type": "hello",
+        "framework": "google-adk",
+        "sdkName": "google-adk",
+        "sdkVersion": "1.2.0",
+        "capabilities": [
+          "adk.host-completion",
+          "sdk-session.v1"
+        ]
+      },
+      "line": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"]}"
+    }
+  },
+  {
+    "name": "hello: SDK session dropped on a repeated session id apart",
+    "input": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"itemCount\":6,\"promptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"],\"lastPromptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"],\"sessionIds\":[\"6f9619ff-8b86-4011-b42d-000000000000\",\"6f9619ff-8b86-4011-b42d-000000000001\",\"6f9619ff-8b86-4011-b42d-000000000000\"],\"corrupt\":0,\"unclassified\":0,\"compactions\":0}}}",
+    "expected": {
+      "ok": {
+        "type": "hello",
+        "framework": "google-adk",
+        "sdkName": "google-adk",
+        "sdkVersion": "1.2.0",
+        "capabilities": [
+          "adk.host-completion",
+          "sdk-session.v1"
+        ]
+      },
+      "line": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"]}"
+    }
+  },
+  {
+    "name": "hello: SDK session dropped on 16 session ids with a repeat",
+    "input": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"],\"session\":{\"kind\":\"google-adk\",\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"fileSha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"itemCount\":6,\"promptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"],\"lastPromptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"],\"sessionIds\":[\"6f9619ff-8b86-4011-b42d-000000000000\",\"6f9619ff-8b86-4011-b42d-000000000001\",\"6f9619ff-8b86-4011-b42d-000000000002\",\"6f9619ff-8b86-4011-b42d-000000000003\",\"6f9619ff-8b86-4011-b42d-000000000004\",\"6f9619ff-8b86-4011-b42d-000000000005\",\"6f9619ff-8b86-4011-b42d-000000000006\",\"6f9619ff-8b86-4011-b42d-000000000007\",\"6f9619ff-8b86-4011-b42d-000000000008\",\"6f9619ff-8b86-4011-b42d-000000000009\",\"6f9619ff-8b86-4011-b42d-00000000000a\",\"6f9619ff-8b86-4011-b42d-00000000000b\",\"6f9619ff-8b86-4011-b42d-00000000000c\",\"6f9619ff-8b86-4011-b42d-00000000000d\",\"6f9619ff-8b86-4011-b42d-00000000000e\",\"6f9619ff-8b86-4011-b42d-000000000000\"],\"corrupt\":0,\"unclassified\":0,\"compactions\":0}}}",
+    "expected": {
+      "ok": {
+        "type": "hello",
+        "framework": "google-adk",
+        "sdkName": "google-adk",
+        "sdkVersion": "1.2.0",
+        "capabilities": [
+          "adk.host-completion",
+          "sdk-session.v1"
+        ]
+      },
+      "line": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"google-adk\",\"sdkVersion\":\"1.2.0\",\"capabilities\":[\"adk.host-completion\",\"sdk-session.v1\"]}"
     }
   },
   {
