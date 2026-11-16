@@ -26,11 +26,14 @@ function main() {
   if (!existsSync(sourceDir) || !statSync(sourceDir).isDirectory()) {
     throw new Error(`build-python: the Python host source is missing: ${sourceDir}`);
   }
-  const modules = shippedModules(
-    readdirSync(sourceDir, { withFileTypes: true })
-      .filter((entry) => entry.isFile())
-      .map((entry) => entry.name),
-  );
+  const entries = readdirSync(sourceDir, { withFileTypes: true });
+  // The copy is flat on purpose: a subpackage (guuey_host/x/) would be dropped from dist without a word and the image
+  // would fail at import. Refuse it here, loudly, until the copy is taught to carry it.
+  const subdirs = entries.filter((entry) => entry.isDirectory() && entry.name !== '__pycache__').map((e) => e.name);
+  if (subdirs.length > 0) {
+    throw new Error(`build-python: guuey_host/ has subdirectories this flat copy would drop: ${subdirs.join(', ')}`);
+  }
+  const modules = shippedModules(entries.filter((entry) => entry.isFile()).map((entry) => entry.name));
   if (!modules.includes('__init__.py') || modules.length < 2) {
     throw new Error(`build-python: the copy would ship no Python host (found: ${modules.join(', ') || 'nothing'})`);
   }

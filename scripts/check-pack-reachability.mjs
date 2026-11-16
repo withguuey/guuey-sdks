@@ -93,7 +93,7 @@ export const RUNTIME_ASSETS = {
     {
       prefix: 'dist/python/',
       reason:
-        'the Python host (guuey#3517 / #3515): copied by scripts/build-python.mjs from src/python/guuey_host/, and RUN by the worker image\'s pinned Python 3.15.2 interpreter (`python -I -m guuey_host`), never imported or read with fs by any JS entry point',
+        'the Python host (guuey#3517 / #3515): copied by scripts/build-python.mjs from src/python/guuey_host/, and run by the worker image\'s pinned Python 3.15.2 interpreter (the planned entry is `python -I -m guuey_host`, landing with the host entry leg), never imported or read with fs by any JS entry point',
     },
   ],
   '@guuey/create-agentic-app': [
